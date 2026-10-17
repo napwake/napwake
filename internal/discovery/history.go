@@ -323,8 +323,8 @@ func earliestSample(history []containerCPU) (int64, bool) {
 // historyShare is how much of the time left to a scan its history reads may
 // take. A Thanos or Prometheus too slow for a big window would otherwise
 // spend the whole of --timeout, and the scan would have nothing to show;
-// this way it loses only the replay of the namespaces Prometheus didn't
-// answer for, and has the rest of the time for the API server.
+// this way it loses only the replay of the namespaces whose history wasn't
+// read in time, and has the rest of the time for the API server.
 const historyShare = 0.6
 
 // historyBudget is the context history is read within: historyShare of the

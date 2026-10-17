@@ -779,8 +779,8 @@ func TestCLI_ScanIncompleteAdvice(t *testing.T) {
 
 // A Prometheus that answers its check but is too slow for the history,
 // as a big namespace on a slow Thanos is, costs the replay, not the scan:
-// it finishes from CPU right now, blames Prometheus, and suggests
-// --window 0, rather than failing on the API server.
+// it finishes from CPU right now, says it ran out of history's time, and
+// suggests --window 0, rather than failing on the API server.
 func TestCLI_ScanSlowPrometheus(t *testing.T) {
 	prom := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if strings.HasSuffix(r.URL.Path, "/api/v1/query") {
@@ -805,7 +805,7 @@ func TestCLI_ScanSlowPrometheus(t *testing.T) {
 	require.NoError(t, json.Unmarshal([]byte(out), &result))
 	require.Len(t, result.Workloads, 1)
 	notes := strings.Join(result.Notes, "\n")
-	assert.Contains(t, notes, "Prometheus didn't return CPU history for 1 namespace")
+	assert.Contains(t, notes, "the scan ran out of the time it gives CPU history")
 	assert.Contains(t, notes, "--window 0")
 }
 

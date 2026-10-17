@@ -28,12 +28,14 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	appsv1 "k8s.io/api/apps/v1"
+	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	metricsv1beta1 "k8s.io/metrics/pkg/apis/metrics/v1beta1"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
+	"sigs.k8s.io/controller-runtime/pkg/client/interceptor"
 
 	v1alpha1 "github.com/okedeji/hybernate/api/v1alpha1"
 )
@@ -475,10 +477,42 @@ func TestScanCluster_SlowPrometheus(t *testing.T) {
 	w := byName(report)["api"]
 	assert.Equal(t, StateIdle, w.State, "judged from CPU right now")
 	assert.Nil(t, w.History)
-	assert.Contains(t, strings.Join(report.Notes, "\n"), "Prometheus didn't return CPU history for 1 namespace "+
-		"in the time the scan gives it, so workloads there are judged from CPU right now: "+testNamespace)
+	assert.Contains(t, strings.Join(report.Notes, "\n"), "the scan ran out of the time it gives CPU history, "+
+		"shared by reading the API server and querying Prometheus, before it had read the history of 1 namespace, "+
+		"so workloads there are judged from CPU right now: "+testNamespace)
 	assert.Contains(t, strings.Join(report.Notes, "\n"), "--window 0")
 	assert.Nil(t, report.Incomplete, "everything the cluster holds was read")
+}
+
+// When reading the API server spends the time the scan gives history,
+// Prometheus isn't queried at all, so it's neither waited on nor blamed.
+func TestScanCluster_SlowAPIServerSpendsTheHistoryBudget(t *testing.T) {
+	f := &fakePrometheus{from: scanTime.Add(-7 * 24 * time.Hour)}
+	objs := deploymentWithRollout("api", testNamespace, 1, 30*24*time.Hour)
+	objs = append(objs, makePodMetrics("api", testNamespace, "1m", "20Mi"))
+	opts := scanOptions(testNamespace)
+	opts.History, opts.Window, opts.IdleAfter = newFakePrometheus(t, f), 7*24*time.Hour, time.Hour
+	c := fake.NewClientBuilder().WithScheme(newScheme()).WithRuntimeObjects(objs...).
+		WithInterceptorFuncs(interceptor.Funcs{
+			List: func(ctx context.Context, c client.WithWatch, list client.ObjectList, opts ...client.ListOption) error {
+				if _, ok := list.(*corev1.ServiceList); ok {
+					deadline, _ := ctx.Deadline()
+					time.Sleep(time.Until(deadline) - 300*time.Millisecond)
+				}
+				return c.List(ctx, list, opts...)
+			},
+		}).Build()
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+	defer cancel()
+
+	report, err := NewScanner(c, c).ScanCluster(ctx, opts)
+
+	require.NoError(t, err)
+	assert.Empty(t, f.queries, "history wasn't queried after its time was spent")
+	assert.Nil(t, byName(report)["api"].History)
+	notes := strings.Join(report.Notes, "\n")
+	assert.Contains(t, notes, "the scan ran out of the time it gives CPU history")
+	assert.NotContains(t, notes, "Prometheus didn't")
 }
 
 func TestJudgeFromHistory(t *testing.T) {

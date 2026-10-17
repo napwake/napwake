@@ -64,9 +64,9 @@ type namespaceScan struct {
 	historySince time.Time
 	// noHistory are its workloads Prometheus has no CPU for.
 	noHistory []string
-	// historyTooSlow says Prometheus didn't return its history in the time
-	// the scan gives it.
-	historyTooSlow     bool
+	// historyOutOfTime says the scan ran out of the time it gives history
+	// before it had read the namespace's.
+	historyOutOfTime   bool
 	metricsUnavailable bool
 	problems           []readProblem
 }
@@ -199,14 +199,20 @@ func (s *Scanner) scanNamespace(ctx, historyCtx context.Context, namespace strin
 	return scan
 }
 
-// readHistoryOf reads a namespace's history within historyCtx, telling a
-// Prometheus too slow for the time it's given from one that failed.
+// readHistoryOf reads a namespace's history within historyCtx, telling the
+// scan running out of the time it gives history from Prometheus failing.
+// The time is shared with the namespace's reads from the API server, which
+// come first, so it isn't queried once that's spent.
 func (s *Scanner) readHistoryOf(ctx, historyCtx context.Context, scan *namespaceScan,
 	opts ClusterOptions) []containerCPU {
+	if opts.History != nil && historyCtx.Err() != nil && ctx.Err() == nil {
+		scan.historyOutOfTime = true
+		return nil
+	}
 	history, err := s.readHistory(historyCtx, scan.namespace, opts)
 	switch {
 	case err != nil && ctx.Err() == nil && isTimeout(err):
-		scan.historyTooSlow = true
+		scan.historyOutOfTime = true
 	case err != nil:
 		scan.problem(readingHistory, err)
 	}
