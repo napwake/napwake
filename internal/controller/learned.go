@@ -68,7 +68,7 @@ const (
 func (r *Reconciler) learnDependencies(ctx context.Context, workload *v1alpha1.ManagedWorkload,
 	target client.Object) error {
 	ignored := ignoredDependencies(workload, target)
-	from := learnedFrom(target, ignored)
+	from := learnedFrom(r.templateHashes.of(workload.UID, target), ignored)
 	now := r.clockTime()
 	if l := workload.Status.LearnedDependencies; l != nil && l.From == from &&
 		(workload.Status.Phase == v1alpha1.PhasePaused || now.Sub(l.At.Time) < relearnAfter) {
@@ -319,13 +319,13 @@ func ignoredDependencies(workload *v1alpha1.ManagedWorkload, target client.Objec
 
 // learnedFrom identifies the pod template and ignore list dependencies are
 // learned from.
-func learnedFrom(target client.Object, ignored map[string]bool) string {
+func learnedFrom(template string, ignored map[string]bool) string {
 	names := make([]string, 0, len(ignored))
 	for name := range ignored {
 		names = append(names, name)
 	}
 	slices.Sort(names)
-	sum := sha256.Sum256([]byte(podTemplateHash(target) + "\n" + strings.Join(names, ",")))
+	sum := sha256.Sum256([]byte(template + "\n" + strings.Join(names, ",")))
 	return hex.EncodeToString(sum[:8])
 }
 

@@ -176,7 +176,7 @@ func (r *Reconciler) observeActivity(ctx context.Context, workload *v1alpha1.Man
 	}
 
 	if target != nil {
-		if hash := podTemplateHash(target); hash != "" {
+		if hash := r.templateHashes.of(workload.UID, target); hash != "" {
 			if status.TemplateHash != "" && status.TemplateHash != hash {
 				recordActivity(status, now, v1alpha1.ActivitySourceRollout)
 			}
@@ -531,6 +531,50 @@ func quoted(values []string) []string {
 		out[i] = strconv.Quote(v)
 	}
 	return out
+}
+
+// templateHashes keeps each workload's target's pod template hash, for the
+// version of the target it was worked out from. The clock and learning
+// dependencies both need it on every check, and working it out encodes the
+// whole template.
+type templateHashes struct {
+	mu     sync.Mutex
+	hashes map[types.UID]templateHash
+}
+
+type templateHash struct {
+	target          types.UID
+	resourceVersion string
+	hash            string
+}
+
+// of is the hash of target, the workload's target. A target never written
+// to the API server, with no resource version, is hashed every time.
+func (h *templateHashes) of(workload types.UID, target client.Object) string {
+	version := templateHash{target: target.GetUID(), resourceVersion: target.GetResourceVersion()}
+	if version.resourceVersion == "" {
+		return podTemplateHash(target)
+	}
+	h.mu.Lock()
+	cached, ok := h.hashes[workload]
+	h.mu.Unlock()
+	if ok && cached.target == version.target && cached.resourceVersion == version.resourceVersion {
+		return cached.hash
+	}
+	version.hash = podTemplateHash(target)
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	if h.hashes == nil {
+		h.hashes = make(map[types.UID]templateHash)
+	}
+	h.hashes[workload] = version
+	return version.hash
+}
+
+func (h *templateHashes) forget(workload types.UID) {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	delete(h.hashes, workload)
 }
 
 // podTemplateHash fingerprints the target's pod template. Scaling changes

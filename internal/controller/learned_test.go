@@ -192,6 +192,7 @@ func TestLearnDependencies_WhenToRelearn(t *testing.T) {
 
 	changed := target.DeepCopy()
 	changed.Spec.Template.Spec.Containers[0].Env[0].Value = "redis:6379"
+	changed.ResourceVersion += "1" // as the update that changed it would
 	require.NoError(t, r.learnDependencies(context.Background(), api, changed))
 	assert.Equal(t, []string{"default/redis DATABASE_URL"}, learnedNames(api), "the template changed")
 	relearnedAt := api.Status.LearnedDependencies.At

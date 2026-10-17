@@ -755,6 +755,30 @@ func TestPodTemplateHash(t *testing.T) {
 	assert.NotEqual(t, podTemplateHash(base), podTemplateHash(clockTarget("app:v2", nil)))
 }
 
+// The hash is worked out once for each version of the target, not on each
+// of the checks that need it.
+func TestTemplateHashes(t *testing.T) {
+	var hashes templateHashes
+	target := clockTarget("app:v1", nil)
+	target.UID, target.ResourceVersion = "deploy-uid", "1"
+	v1 := hashes.of("workload-uid", target)
+	require.Equal(t, podTemplateHash(target), v1)
+
+	target.Spec.Template.Spec.Containers[0].Image = "app:v2"
+	assert.Equal(t, v1, hashes.of("workload-uid", target), "the same version isn't hashed again")
+
+	target.ResourceVersion = "2"
+	assert.Equal(t, podTemplateHash(target), hashes.of("workload-uid", target), "a new version is")
+	assert.NotEqual(t, v1, hashes.of("workload-uid", target))
+
+	recreated := clockTarget("app:v3", nil)
+	recreated.UID, recreated.ResourceVersion = "other-uid", "2"
+	assert.Equal(t, podTemplateHash(recreated), hashes.of("workload-uid", recreated), "and so is a new target")
+
+	unsaved := clockTarget("app:v4", nil)
+	assert.Equal(t, podTemplateHash(unsaved), hashes.of("workload-uid", unsaved))
+}
+
 func TestNextCheck(t *testing.T) {
 	now := fixedTime
 	assert.Equal(t, activityCheckInterval, nextCheck(now, now.Add(time.Hour), time.Time{}))

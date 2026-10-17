@@ -118,6 +118,7 @@ type Reconciler struct {
 	activityMemo    activityMemo
 	querySeries     querySeries
 	activityWarned  annotationWarnings
+	templateHashes  templateHashes
 	phaseWrites     phaseWrites
 	doormanPorts    portAllocator
 	doormanFailures failureBackoff
@@ -612,6 +613,7 @@ func (r *Reconciler) reconcileDelete(ctx context.Context, workload *v1alpha1.Man
 	r.activityMemo.forget(workload.UID)
 	r.querySeries.forget(workload.UID)
 	r.activityWarned.forget(workload.UID)
+	r.templateHashes.forget(workload.UID)
 	r.phaseWrites.forget(workload.UID)
 	r.doormanFailures.reset(workload.UID)
 	r.forgetForecast(workload)
