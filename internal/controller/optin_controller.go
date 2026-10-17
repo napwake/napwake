@@ -151,9 +151,10 @@ func (r *OptInReconciler) isHybernate(obj client.Object) bool {
 }
 
 // optedIn reports whether the workload is managed through the label: its
-// own, or its namespace's, unless it's marked to be ignored or its
-// namespace is protected. A label value
-// other than "true" doesn't opt in, and is pointed out, since it's most
+// own, or its namespace's, unless it's marked to be ignored, it's
+// Hybernate's own, or its namespace is protected. The workload's own label
+// wins over its namespace's: "false" opts it out, like the ignore label. Any
+// other value doesn't opt in either, and is pointed out, since it's most
 // likely a setting meant for an annotation.
 func (r *OptInReconciler) optedIn(obj client.Object, ns *corev1.Namespace) bool {
 	if obj.GetLabels()[v1alpha1.LabelIgnore] == v1alpha1.True {
@@ -174,8 +175,11 @@ func (r *OptInReconciler) optedIn(obj client.Object, ns *corev1.Namespace) bool 
 		return false
 	}
 	if v, ok := obj.GetLabels()[v1alpha1.LabelManaged]; ok {
-		if v == v1alpha1.True {
+		switch v {
+		case v1alpha1.True:
 			return true
+		case "false":
+			return false
 		}
 		r.Recorder.Eventf(obj, nil, "Warning", ReasonLabelIgnored, actionOptIn,
 			`%s=%q isn't "true", so it doesn't opt the workload in; settings such as dry-run are annotations`,

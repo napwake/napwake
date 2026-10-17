@@ -4,7 +4,7 @@
 
 | Label | Value | Applied To | Description |
 |-------|-------|-----------|-------------|
-| `hybernate.io/managed` | `"true"` | Deployments, StatefulSets, Namespaces | Opts the workload, or every Deployment and StatefulSet in the namespace, in. Hybernate creates a ManagedWorkload for it from its annotations. Any other value doesn't opt in, and is pointed out in an event. See [Opting In](../guides/opt-in.md). |
+| `hybernate.io/managed` | `"true"` | Deployments, StatefulSets, Namespaces | Opts the workload, or every Deployment and StatefulSet in the namespace, in. Hybernate creates a ManagedWorkload for it from its annotations. `"false"` on a workload leaves it out of a managed namespace, like `hybernate.io/ignore`. Any other value doesn't opt in, and is pointed out in an event. See [Opting In](../guides/opt-in.md). |
 | `hybernate.io/ignore` | `"true"` | Deployments, StatefulSets | Leaves the workload out, even in a managed namespace. A ManagedWorkload you wrote for it reports `TargetAvailable=False`, reason `TargetIgnored`, and does nothing; a workload Hybernate had paused is scaled back up first. |
 | `hybernate.io/protected` | `"true"` | Namespaces | Hybernate never manages anything in the namespace, whatever its workloads' labels, and wakes what it had paused there. `kube-*` namespaces and Hybernate's own are protected without it. See [Protected namespaces](../guides/opt-in.md#protected-namespaces). |
 | `hybernate.io/allow-protected` | `"true"` | Namespaces | Lets Hybernate manage a namespace that's labelled protected, matches `protectedNamespaces`, or is always protected, such as `kube-system` or Hybernate's own. The operator's and the doorman's own Deployments are never managed. Set on purpose; Hybernate never sets it. |

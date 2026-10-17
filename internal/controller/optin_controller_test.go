@@ -147,6 +147,19 @@ func TestOptIn_NotOptedIn(t *testing.T) {
 	assert.Contains(t, ignored[0], "settings such as dry-run are annotations")
 }
 
+// managed: "false" on a workload in a managed namespace opts it out
+// quietly, as ignore does: it says what it means.
+func TestOptIn_ManagedFalseOptsOutQuietly(t *testing.T) {
+	r, recorder := optInReconciler(t, optInNamespace(managedLabel, nil),
+		optInDeployment("api", map[string]string{v1alpha1.LabelManaged: "false"}, nil))
+
+	reconcileOptIn(t, r, "api")
+
+	_, ok := managedWorkload(t, r, "api")
+	assert.False(t, ok)
+	assert.Empty(t, recorded(recorder, ReasonLabelIgnored))
+}
+
 func TestOptIn_InvalidSettingIsReported(t *testing.T) {
 	r, recorder := optInReconciler(t, optInNamespace(nil, nil),
 		optInDeployment("api", managedLabel, map[string]string{v1alpha1.AnnotationIdleAfter: "soon"}))
