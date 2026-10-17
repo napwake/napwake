@@ -138,7 +138,8 @@ func (r *Reader) CPURequestPerReplica(ctx context.Context, workload *v1alpha1.Ma
 	if err != nil {
 		return 0, err
 	}
-	cpuMillis, fromPod := AppCPURequest(pods, podSpecFromTarget(target))
+	replica, settled := replicaPod(target, pods)
+	cpuMillis, fromPod := AppCPURequest(replica, podSpecFromTarget(target))
 	switch {
 	case cpuMillis == 0 && fromPod:
 		return 0, fmt.Errorf("the running pods of %s %s request no CPU for their containers",
@@ -146,7 +147,7 @@ func (r *Reader) CPURequestPerReplica(ctx context.Context, workload *v1alpha1.Ma
 	case cpuMillis == 0:
 		return 0, fmt.Errorf("no pod of %s %s is running, and its pod template requests no CPU",
 			workload.Spec.Target.Kind, workload.Spec.Target.Name)
-	case fromPod:
+	case fromPod && settled:
 		r.cacheRequest(target, cpuMillis)
 	}
 	return float64(cpuMillis), nil
@@ -190,8 +191,65 @@ func (r *Reader) PodRequestsPerReplica(ctx context.Context, workload *v1alpha1.M
 	if err != nil {
 		return 0, 0, err
 	}
-	cpu, mem := PodRequests(pods, podSpecFromTarget(target))
+	replica, _ := replicaPod(target, pods)
+	cpu, mem := PodRequests(replica, podSpecFromTarget(target))
 	return float64(cpu), float64(mem), nil
+}
+
+// replicaPod returns the pod whose requests stand for a replica's, as a
+// slice of pods holding it, or none when no pod is running. Only a running
+// pod is read: a failed or completed one, such as an evicted pod, stays
+// listed until it's collected, with whatever its revision requested. When
+// the running pods are of more than one revision, as during a rollout, the
+// current one's pod is read: for a StatefulSet the update revision, and
+// for a Deployment the newest pod's, since the ReplicaSet a rollout or a
+// rollback scales up is the one creating pods. settled is false while
+// it's unclear which revision a replica will have, so what's read isn't
+// kept.
+func replicaPod(target client.Object, pods []corev1.Pod) (replica []corev1.Pod, settled bool) {
+	label, current := revisionOf(target)
+	chosen := -1
+	mixed := false
+	for i := range pods {
+		pod := &pods[i]
+		if pod.Status.Phase != corev1.PodRunning || pod.DeletionTimestamp != nil {
+			continue
+		}
+		if chosen < 0 {
+			chosen = i
+			continue
+		}
+		if pod.Labels[label] != pods[chosen].Labels[label] {
+			mixed = true
+		}
+		if newerRevision(pod, &pods[chosen], label, current) {
+			chosen = i
+		}
+	}
+	if chosen < 0 {
+		return nil, false
+	}
+	settled = !mixed || (current != "" && pods[chosen].Labels[label] == current)
+	return pods[chosen : chosen+1], settled
+}
+
+// revisionOf returns the label a target's pods carry their revision in,
+// and the revision current pods have when the target records it.
+func revisionOf(target client.Object) (label, current string) {
+	if sts, ok := target.(*appsv1.StatefulSet); ok {
+		return appsv1.ControllerRevisionHashLabelKey, sts.Status.UpdateRevision
+	}
+	return appsv1.DefaultDeploymentUniqueLabelKey, ""
+}
+
+func newerRevision(pod, than *corev1.Pod, label, current string) bool {
+	if current != "" {
+		isCurrent, wasCurrent := pod.Labels[label] == current, than.Labels[label] == current
+		if isCurrent != wasCurrent {
+			return isCurrent
+		}
+	}
+	return than.CreationTimestamp.Before(&pod.CreationTimestamp)
 }
 
 // ListRates is what the nodes the workload's pods run on cost per vCPU and
@@ -209,7 +267,7 @@ func (r *Reader) ListRates(ctx context.Context, workload *v1alpha1.ManagedWorklo
 	var rates []cost.Rates
 	scheduled := 0
 	for _, pod := range pods {
-		if pod.DeletionTimestamp != nil || pod.Spec.NodeName == "" {
+		if !live(&pod) || pod.Spec.NodeName == "" {
 			continue
 		}
 		scheduled++
@@ -379,36 +437,44 @@ func Requests(containers []corev1.Container) (cpuMillis, memBytes int64) {
 }
 
 // PodRequests returns what one of a workload's pods requests, from the first
-// of pods that isn't being deleted. Injected sidecars appear only in a real
-// pod, so the template is the fallback when no pod is running.
+// of pods that's still running or starting. Injected sidecars appear only in
+// a real pod, so the template is the fallback when no pod is.
 func PodRequests(pods []corev1.Pod, template corev1.PodSpec) (cpuMillis, memBytes int64) {
-	for _, pod := range pods {
-		if pod.DeletionTimestamp == nil {
-			return Requests(WorkloadContainers(pod.Spec))
+	for i := range pods {
+		if live(&pods[i]) {
+			return Requests(WorkloadContainers(pods[i].Spec))
 		}
 	}
 	return Requests(WorkloadContainers(template))
 }
 
+// live reports whether a pod is neither being deleted nor finished. A failed
+// pod, evicted or shut down with its node, stays listed until it's
+// collected, with the requests of whatever revision it ran.
+func live(pod *corev1.Pod) bool {
+	return pod.DeletionTimestamp == nil &&
+		pod.Status.Phase != corev1.PodFailed && pod.Status.Phase != corev1.PodSucceeded
+}
+
 // AppCPURequest returns the CPU (millicores) one of a workload's pods
 // requests for the WorkloadContainers of template, and whether it was read
 // from a pod. A pod has the requests admission settled, from a LimitRange
-// default or a Vertical Pod Autoscaler, so the first of pods that isn't
-// being deleted is read, counting the containers the template names: an
+// default or a Vertical Pod Autoscaler, so the first of pods that's still
+// running or starting is read, counting the containers the template names: an
 // injected sidecar's request isn't the workload's. With no pod running, the
 // template is read, a container's CPU limit standing in for a request it
 // doesn't set, as it would in a pod.
 func AppCPURequest(pods []corev1.Pod, template corev1.PodSpec) (cpuMillis int64, fromPod bool) {
 	own := WorkloadContainers(template)
-	for _, pod := range pods {
-		if pod.DeletionTimestamp != nil {
+	for i := range pods {
+		if !live(&pods[i]) {
 			continue
 		}
 		names := make(map[string]bool, len(own))
 		for _, c := range own {
 			names[c.Name] = true
 		}
-		for _, c := range WorkloadContainers(pod.Spec) {
+		for _, c := range WorkloadContainers(pods[i].Spec) {
 			if names[c.Name] {
 				cpuMillis += c.Resources.Requests.Cpu().MilliValue()
 			}

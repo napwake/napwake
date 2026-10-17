@@ -110,6 +110,7 @@ func TestReader_InjectedSidecar(t *testing.T) {
 			InitContainers: []corev1.Container{proxy},
 			Containers:     []corev1.Container{container("web", "10m")},
 		},
+		Status: corev1.PodStatus{Phase: corev1.PodRunning},
 	}
 	podMetrics := &metricsv1beta1.PodMetrics{
 		ObjectMeta: metav1.ObjectMeta{Name: "web-5d8f9-x2kqp", Namespace: "mesh", Labels: podLabels},
@@ -145,6 +146,9 @@ func TestPodRequests(t *testing.T) {
 	deleting := running
 	deleting.DeletionTimestamp = ptr.To(metav1.Now())
 	deleting.Spec = corev1.PodSpec{Containers: []corev1.Container{container("web", "10m"), container("linkerd-proxy", "500m")}}
+	evicted := deleting
+	evicted.DeletionTimestamp = nil
+	evicted.Status.Phase = corev1.PodFailed
 
 	tests := []struct {
 		name    string
@@ -153,6 +157,7 @@ func TestPodRequests(t *testing.T) {
 	}{
 		{name: "a running pod, sidecar included", pods: []corev1.Pod{running}, wantCPU: 110},
 		{name: "a pod being deleted is skipped", pods: []corev1.Pod{deleting, running}, wantCPU: 110},
+		{name: "a failed pod is skipped", pods: []corev1.Pod{evicted, running}, wantCPU: 110},
 		{name: "no pod running falls back to the template", pods: nil, wantCPU: 10},
 	}
 	for _, tt := range tests {
@@ -174,7 +179,8 @@ func webPod(name, node string) *corev1.Pod {
 	return &corev1.Pod{
 		ObjectMeta: metav1.ObjectMeta{Name: "web-5d8f9-" + name, Namespace: "shop",
 			Labels: map[string]string{"app": "web", appsv1.DefaultDeploymentUniqueLabelKey: "5d8f9"}},
-		Spec: corev1.PodSpec{NodeName: node, Containers: []corev1.Container{container("web", "100m")}},
+		Spec:   corev1.PodSpec{NodeName: node, Containers: []corev1.Container{container("web", "100m")}},
+		Status: corev1.PodStatus{Phase: corev1.PodRunning},
 	}
 }
 
@@ -257,7 +263,8 @@ func podOf(name, hash, cpu string) (*corev1.Pod, *metricsv1beta1.PodMetrics) {
 	if hash != "" {
 		meta.Labels[appsv1.DefaultDeploymentUniqueLabelKey] = hash
 	}
-	pod := &corev1.Pod{ObjectMeta: meta, Spec: corev1.PodSpec{Containers: []corev1.Container{container("web", cpu)}}}
+	pod := &corev1.Pod{ObjectMeta: meta, Spec: corev1.PodSpec{Containers: []corev1.Container{container("web", cpu)}},
+		Status: corev1.PodStatus{Phase: corev1.PodRunning}}
 	used := &metricsv1beta1.PodMetrics{ObjectMeta: *meta.DeepCopy(),
 		Containers: []metricsv1beta1.ContainerMetrics{usage("web", cpu, "10Mi")}}
 	return pod, used
@@ -502,4 +509,117 @@ func TestAppCPURequest_CountsOnlyTheTemplatesContainers(t *testing.T) {
 
 	assert.True(t, fromPod)
 	assert.Equal(t, int64(100), cpu, "an injected sidecar's request isn't the workload's")
+}
+
+func runningPod(name, revision, cpu string, created time.Time) *corev1.Pod {
+	pod, _ := podOf(name, revision, cpu)
+	pod.CreationTimestamp = metav1.NewTime(created)
+	return pod
+}
+
+// The request activity is judged against, and a pause is priced at, is a
+// running pod's of the target's current revision. A failed pod, evicted or
+// shut down with its node, stays listed with whatever its revision asked
+// for: after a cut from 1 core to 100m, 50m of real use judged against it
+// reads as 5%, and a busy workload is paused.
+func TestReader_RequestsOfTheCurrentRevision(t *testing.T) {
+	start := time.Date(2026, 10, 17, 9, 0, 0, 0, time.UTC)
+	evicted := runningPod("web-1aaaa-old00", "1aaaa", "1", start)
+	evicted.Status.Phase = corev1.PodFailed
+	evicted.Status.Reason = "Evicted"
+	completed := runningPod("web-1aaaa-old01", "1aaaa", "1", start)
+	completed.Status.Phase = corev1.PodSucceeded
+	pending := runningPod("web-2bbbb-new01", "2bbbb", "2", start.Add(2*time.Hour))
+	pending.Status.Phase = corev1.PodPending
+
+	tests := []struct {
+		name string
+		pods []client.Object
+		want float64
+	}{
+		{name: "an evicted pod of an old revision",
+			pods: []client.Object{evicted, runningPod("web-9zzzz-new00", "9zzzz", "100m", start.Add(time.Hour))}, want: 100},
+		{name: "a completed pod", pods: []client.Object{completed, runningPod("web-9zzzz-new00", "9zzzz", "100m", start)}, want: 100},
+		{name: "a pod not running yet", pods: []client.Object{pending, runningPod("web-9zzzz-new00", "9zzzz", "100m", start)}, want: 100},
+		{name: "mid-rollout, the newest revision's pod",
+			pods: []client.Object{runningPod("web-1aaaa-old00", "1aaaa", "1", start),
+				runningPod("web-9zzzz-new00", "9zzzz", "100m", start.Add(time.Hour)),
+				runningPod("web-1aaaa-old01", "1aaaa", "1", start)}, want: 100},
+		{name: "only failed pods, the template", pods: []client.Object{evicted}, want: 300},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			objs := append([]client.Object{webDeployment(container("web", "300m"))}, tt.pods...)
+			c := fake.NewClientBuilder().WithScheme(readerScheme(t)).WithObjects(objs...).Build()
+			r := NewReader(c, c)
+
+			activity, err := r.CPURequestPerReplica(context.Background(), webWorkload())
+			require.NoError(t, err)
+			pause, _, err := r.PodRequestsPerReplica(context.Background(), webWorkload())
+			require.NoError(t, err)
+
+			assert.InDelta(t, tt.want, activity, 0.001, "judged against")
+			assert.InDelta(t, tt.want, pause, 0.001, "priced at")
+		})
+	}
+}
+
+// A StatefulSet's pods carry their revision, and it records which is
+// current: its pods are replaced from the highest ordinal down, so the
+// newest pod needn't be of it.
+func TestReader_RequestsOfAStatefulSetsUpdateRevision(t *testing.T) {
+	labels := map[string]string{"app": "db"}
+	sts := &appsv1.StatefulSet{
+		ObjectMeta: metav1.ObjectMeta{Name: "db", Namespace: "shop", UID: "db-uid", Generation: 2},
+		Spec: appsv1.StatefulSetSpec{
+			Selector: &metav1.LabelSelector{MatchLabels: labels},
+			Template: corev1.PodTemplateSpec{ObjectMeta: metav1.ObjectMeta{Labels: labels},
+				Spec: corev1.PodSpec{Containers: []corev1.Container{container("db", "100m")}}},
+		},
+		Status: appsv1.StatefulSetStatus{CurrentRevision: "db-old", UpdateRevision: "db-new"},
+	}
+	start := time.Date(2026, 10, 17, 9, 0, 0, 0, time.UTC)
+	pod := func(name, revision, cpu string, created time.Time) *corev1.Pod {
+		return &corev1.Pod{
+			ObjectMeta: metav1.ObjectMeta{Name: name, Namespace: "shop", CreationTimestamp: metav1.NewTime(created),
+				Labels: map[string]string{"app": "db", appsv1.ControllerRevisionHashLabelKey: revision}},
+			Spec:   corev1.PodSpec{Containers: []corev1.Container{container("db", cpu)}},
+			Status: corev1.PodStatus{Phase: corev1.PodRunning},
+		}
+	}
+	c := fake.NewClientBuilder().WithScheme(readerScheme(t)).WithObjects(sts,
+		pod("db-0", "db-old", "1", start.Add(time.Hour)), pod("db-1", "db-new", "100m", start)).Build()
+	workload := &v1alpha1.ManagedWorkload{
+		ObjectMeta: metav1.ObjectMeta{Name: "db", Namespace: "shop"},
+		Spec:       v1alpha1.ManagedWorkloadSpec{Target: v1alpha1.WorkloadRef{Kind: v1alpha1.TargetKindStatefulSet, Name: "db"}},
+	}
+
+	got, err := NewReader(c, c).CPURequestPerReplica(context.Background(), workload)
+
+	require.NoError(t, err)
+	assert.InDelta(t, 100, got, 0.001)
+}
+
+// Mid-rollout, what's read isn't kept: the first read after a change can
+// find only the old revision's pods running, and keeping that would judge
+// activity against the old request for requestTTL after the new pods run.
+func TestReader_RequestReadMidRolloutIsntKept(t *testing.T) {
+	start := time.Date(2026, 10, 17, 9, 0, 0, 0, time.UTC)
+	old := runningPod("web-1aaaa-old00", "1aaaa", "1", start)
+	current := runningPod("web-9zzzz-new00", "9zzzz", "100m", start.Add(time.Hour))
+	c := fake.NewClientBuilder().WithScheme(readerScheme(t)).WithObjects(webDeployment(container("web", "100m")), old, current).Build()
+	r := NewReader(c, c)
+	ctx := context.Background()
+
+	got, err := r.CPURequestPerReplica(ctx, webWorkload())
+	require.NoError(t, err)
+	assert.InDelta(t, 100, got, 0.001)
+	_, cached := r.cachedRequest(webDeployment(container("web", "100m")))
+	assert.False(t, cached, "two revisions running")
+
+	require.NoError(t, c.Delete(ctx, old))
+	_, err = r.CPURequestPerReplica(ctx, webWorkload())
+	require.NoError(t, err)
+	_, cached = r.cachedRequest(webDeployment(container("web", "100m")))
+	assert.True(t, cached, "the rollout done")
 }
