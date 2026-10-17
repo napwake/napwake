@@ -210,6 +210,32 @@ func TestEnable_WontPause(t *testing.T) {
 	}
 }
 
+// Of a ManagedWorkload and its duplicate, enable goes by the one the
+// operator manages the workload through, whichever is listed first.
+func TestEnable_GoesByTheOneThatIsntADuplicate(t *testing.T) {
+	for _, duplicateName := range []string{"aa-api", "zz-api"} {
+		t.Run(duplicateName, func(t *testing.T) {
+			owner := &v1alpha1.ManagedWorkload{
+				ObjectMeta: metav1.ObjectMeta{Name: "api-mw", Namespace: "dev"},
+				Spec: v1alpha1.ManagedWorkloadSpec{
+					Target: v1alpha1.WorkloadRef{Kind: v1alpha1.TargetKindDeployment, Name: "api"}, DryRun: true},
+			}
+			duplicate := owner.DeepCopy()
+			duplicate.Name = duplicateName
+			duplicate.Status.Conditions = []metav1.Condition{{Type: "DuplicateTarget", Status: metav1.ConditionTrue,
+				Reason: "DuplicateTarget"}}
+			c := fake.NewClientBuilder().WithScheme(scheme).
+				WithObjects(enableNamespaceObj(nil, nil), enableDeployment("api", nil, nil), owner, duplicate).Build()
+
+			require.NoError(t, enableWorkload(context.Background(), c, "dev", "api", enableOptions{}, &bytes.Buffer{}))
+
+			var got v1alpha1.ManagedWorkload
+			require.NoError(t, c.Get(context.Background(), client.ObjectKeyFromObject(owner), &got))
+			assert.False(t, got.Spec.DryRun)
+		})
+	}
+}
+
 // enable --all leaves out, and lists, what the operator never pauses.
 func TestEnable_AllLeavesOutWhatWontPause(t *testing.T) {
 	mw := &v1alpha1.ManagedWorkload{

@@ -678,8 +678,15 @@ func managedByTarget(ctx context.Context, c client.Client, namespace string) (ma
 		return managedWorkloads{}, fmt.Errorf("listing ManagedWorkloads in %s: %w", namespace, err)
 	}
 	out := managedWorkloads{byTarget: make(map[targetKey]*v1alpha1.ManagedWorkload, len(list.Items)), readable: true}
+	// Of two for one target, the operator manages it through the one it
+	// doesn't mark a duplicate.
 	for i := range list.Items {
-		out.byTarget[targetOfManaged(&list.Items[i])] = &list.Items[i]
+		mw := &list.Items[i]
+		key := targetOfManaged(mw)
+		if have := out.byTarget[key]; have != nil && meta.IsStatusConditionTrue(mw.Status.Conditions, "DuplicateTarget") {
+			continue
+		}
+		out.byTarget[key] = mw
 	}
 	return out, nil
 }
