@@ -74,15 +74,15 @@ status:
     storageHours: "4125"
     pausedCPUHours: "664500m"
     pausedMemoryHours: "1329"
-    costThisMonth: "$6.71"
-    savedThisMonth: "$25.92"
-    costWithoutHybernateThisMonth: "$32.63"
-    projectedMonthlyCost: "$12.11"
-    projectedMonthlySavings: "$46.71"
+    costThisMonth: "$6.84"
+    savedThisMonth: "$26.47"
+    costWithoutHybernateThisMonth: "$33.31"
+    projectedMonthlyCost: "$12.35"
+    projectedMonthlySavings: "$47.74"
     running:
       replicas: 2
-      cpuMillis: 500
-      memoryBytes: 1073741824
+      cpuMillis: 1000
+      memoryBytes: 2147483648
       storageBytes: 10737418240
     pricedAt: "2026-10-18T14:00:00Z"
     pricedTemplateHash: 3f9c2a71d0e4b815

@@ -66,7 +66,7 @@ A workload at zero replicas that Hybernate didn't pause isn't checked at all: it
 
 Without an `idlePolicy`, none of this runs, and the workload is only paused when someone asks.
 
-A [pause request](../guides/pause.md#pause-now), from `kubectl hybernate pause`, runs the clock out at once. Steps 1, 3 and 4 don't apply, and nor does the hour Hybernate waits after a GitOps tool undid its last pause, since someone asked; an `active-until` hold, awake dependents and a `dependsOn` cycle still keep the workload up, and the request is answered with the reason.
+A [pause request](../guides/pause.md#pause-now), from `kubectl hybernate pause`, runs the clock out at once. Steps 1 and 3 don't apply, and nor does the hour Hybernate waits after a GitOps tool undid its last pause, since someone asked; an `active-until` hold, awake dependents and a `dependsOn` cycle still keep the workload up, and so does the forecast (step 4) unless the request comes with `hybernate.io/pause-overrides-forecast: "true"`, which `kubectl hybernate pause --yes` sets. A request held back is answered with the reason.
 
 With `dryRun: true`, the phase still becomes `Idle` and the `IdleDetected` event carries a `[dry-run]` prefix, but nothing is changed. If activity resumes, the phase goes back to `Running`. See [Dry Run](../guides/dry-run.md).
 
