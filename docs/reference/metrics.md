@@ -24,7 +24,7 @@ These metrics help you understand what the operator is doing and why.
 | `hybernate_prediction_data_points` | Gauge | `namespace`, `workload` | Data points collected |
 | `hybernate_prediction_anomalies_total` | Counter | `namespace`, `workload` | Anomalies detected |
 | `hybernate_idle_detections_total` | Counter | `namespace`, `workload` | Times each workload's idle clock ran out |
-| `hybernate_external_scale_ups_total` | Counter | `by` | Paused workloads scaled up outside Hybernate, by `argo-cd`, `flux`, or `other` |
+| `hybernate_external_scale_ups_total` | Counter | `by` | Paused workloads scaled up outside Hybernate, by the GitOps tool that did it (`argo-cd`, `flux`, `fleet`, `kapp`, `kluctl`), or `other` |
 
 ## Tier 3: Debugging
 
