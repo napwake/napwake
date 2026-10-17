@@ -261,7 +261,7 @@ func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (res ctrl.
 // under way for, and writes its status if that changed it.
 func (r *Reconciler) reconcileSettled(ctx context.Context, workload *v1alpha1.ManagedWorkload, target client.Object,
 	observed *v1alpha1.ManagedWorkloadStatus) (ctrl.Result, error) {
-	r.clearResumeIncomplete(workload, target)
+	allReady := r.clearResumeIncomplete(workload, target)
 	result, err := r.reconcileAutomation(ctx, workload, target)
 	if err != nil {
 		return ctrl.Result{}, err
@@ -271,6 +271,11 @@ func (r *Reconciler) reconcileSettled(ctx context.Context, workload *v1alpha1.Ma
 	r.accumulateCost(ctx, workload)
 	if err := r.persistStatus(ctx, workload, observed); err != nil {
 		return ctrl.Result{}, err
+	}
+	// Announced once written, so a write that fails isn't announced twice.
+	if allReady {
+		r.emitEvent(workload, false, "Normal", ReasonAllReplicasReady, actionResume,
+			"all %d replicas are Ready, after the last resume stopped waiting for them", lifecycle.ReadyReplicas(target))
 	}
 
 	log.FromContext(ctx).V(1).Info("reconciled", "workload", workload.Name, "namespace", workload.Namespace,
@@ -507,14 +512,13 @@ const (
 // clearResumeIncomplete sets ResumeIncomplete False once the replicas its
 // last resume stopped waiting for are Ready after all, so it isn't reported
 // as needing attention until the next resume.
-func (r *Reconciler) clearResumeIncomplete(workload *v1alpha1.ManagedWorkload, target client.Object) {
+func (r *Reconciler) clearResumeIncomplete(workload *v1alpha1.ManagedWorkload, target client.Object) bool {
 	if !meta.IsStatusConditionTrue(workload.Status.Conditions, conditionResumeIncomplete) ||
 		!lifecycle.IsReady(target) {
-		return
+		return false
 	}
 	r.setCondition(workload, conditionResumeIncomplete, metav1.ConditionFalse, ReasonAllReplicasReady, "")
-	r.emitEvent(workload, false, "Normal", ReasonAllReplicasReady, actionResume,
-		"all %d replicas are Ready, after the last resume stopped waiting for them", lifecycle.ReadyReplicas(target))
+	return true
 }
 
 // sinceFirstReady is how long a resuming workload has had a replica Ready,

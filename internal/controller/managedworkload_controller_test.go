@@ -898,6 +898,46 @@ func TestReconcile_ReplicasReadyAfterAShortResumeClearIt(t *testing.T) {
 	assert.Contains(t, drainEvents(t, r), "Normal "+ReasonAllReplicasReady)
 }
 
+// AllReplicasReady is announced once the condition is written: a write that
+// fails, retried on the next reconcile, doesn't announce it twice.
+func TestReconcile_AllReplicasReadyAnnouncedOnceWritten(t *testing.T) {
+	workload := lifecycleWorkload("api", v1alpha1.PhaseRunning)
+	meta.SetStatusCondition(&workload.Status.Conditions, metav1.Condition{Type: conditionResumeIncomplete,
+		Status: metav1.ConditionTrue, Reason: "ReplicasNotReady", LastTransitionTime: metav1.NewTime(fixedTime)})
+	r := newTestReconcilerWithReplicas(t, workload, &stubPauser{}, 3)
+	var d appsv1.Deployment
+	require.NoError(t, r.Get(context.Background(), client.ObjectKey{Namespace: "default", Name: "api"}, &d))
+	d.Status.ReadyReplicas = 2
+	require.NoError(t, r.Status().Update(context.Background(), &d))
+	_, err := r.Reconcile(context.Background(), reconcileFor("api"))
+	require.NoError(t, err)
+	d.Status.ReadyReplicas, d.Status.ObservedGeneration = 3, d.Generation
+	require.NoError(t, r.Status().Update(context.Background(), &d))
+	base := r.Client.(client.WithWatch)
+	r.Client = interceptor.NewClient(base, interceptor.Funcs{SubResourceUpdate: func(ctx context.Context,
+		c client.Client, sub string, obj client.Object, opts ...client.SubResourceUpdateOption) error {
+		if _, ok := obj.(*v1alpha1.ManagedWorkload); ok {
+			return apierrors.NewServiceUnavailable("the API server is restarting")
+		}
+		return c.SubResource(sub).Update(ctx, obj, opts...)
+	}, SubResourcePatch: func(ctx context.Context, c client.Client, sub string, obj client.Object, patch client.Patch,
+		opts ...client.SubResourcePatchOption) error {
+		if _, ok := obj.(*v1alpha1.ManagedWorkload); ok {
+			return apierrors.NewServiceUnavailable("the API server is restarting")
+		}
+		return c.SubResource(sub).Patch(ctx, obj, patch, opts...)
+	}})
+
+	_, err = r.Reconcile(context.Background(), reconcileFor("api"))
+	require.Error(t, err)
+	assert.NotContains(t, drainEvents(t, r), "Normal "+ReasonAllReplicasReady)
+
+	r.Client = base
+	_, err = r.Reconcile(context.Background(), reconcileFor("api"))
+	require.NoError(t, err)
+	assert.Equal(t, 1, strings.Count(drainEvents(t, r), ReasonAllReplicasReady))
+}
+
 // servingPauser resumes to a given outcome and keeps how long it was told
 // it had waited.
 type servingPauser struct {
