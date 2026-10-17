@@ -112,6 +112,12 @@ type route struct {
 
 func (r route) draining() bool { return !r.drainUntil.IsZero() }
 
+// sameAs reports whether two routes send a port's traffic to the same
+// place. Anything else a route carries can change without a drain.
+func (r route) sameAs(o route) bool {
+	return r.workload == o.workload && r.service == o.service && r.portName == o.portName
+}
+
 func (r route) backendKey() backendKey {
 	return backendKey{service: serviceRef{namespace: r.workload.Namespace, name: r.service}, portName: r.portName}
 }
@@ -139,8 +145,11 @@ type Server struct {
 	backends  *backends
 	admission *admission
 
-	mu        sync.Mutex
-	routes    map[int32]route
+	mu     sync.Mutex
+	routes map[int32]route
+	// drains are the routes that have left status, or been replaced, by
+	// port, kept until their drain ends whatever claims the port since.
+	drains    map[int32]route
 	conflicts map[int32]bool
 	listeners map[int32]net.Listener
 	conns     map[net.Conn]struct{}
@@ -177,6 +186,7 @@ func NewServer(c client.Client, recorder events.EventRecorder, opts Options) *Se
 		healthCheckAgents: healthCheckAgents(opts.HealthCheckAgents),
 		admission:         newAdmission(defaultLimits),
 		routes:            map[int32]route{},
+		drains:            map[int32]route{},
 		conflicts:         map[int32]bool{},
 		listeners:         map[int32]net.Listener{},
 		conns:             map[net.Conn]struct{}{},
@@ -346,7 +356,9 @@ func (s *Server) shutdown(cancelConns context.CancelFunc, grace time.Duration) {
 // syncRoutes opens a listener for every route and closes listeners whose
 // route is gone. Closing a listener doesn't affect connections it accepted.
 // A port claimed by more than one route is served for none of them: picking
-// one would send another workload's traffic to it.
+// one would send another workload's traffic to it. A route that leaves,
+// or whose port goes to another Service, drains for RouteDrain, and until
+// it's over, it counts as one of the port's claims.
 func (s *Server) syncRoutes(ctx, connCtx context.Context) error {
 	var list v1alpha1.ManagedWorkloadList
 	if err := s.client.List(ctx, &list); err != nil {
@@ -378,36 +390,40 @@ func (s *Server) syncRoutes(ctx, connCtx context.Context) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.forgetDeleted(existing)
+	for port, old := range s.routes {
+		if old.draining() {
+			continue
+		}
+		if rs := claims[port]; len(rs) == 1 && rs[0].sameAs(old) {
+			continue
+		}
+		old.drainUntil = now.Add(RouteDrain)
+		s.drains[port] = old
+		s.backends.changed(old.backendKey().service)
+	}
+	for port, d := range s.drains {
+		rs := claims[port]
+		if !now.Before(d.drainUntil) || (len(rs) == 1 && rs[0].sameAs(d)) {
+			delete(s.drains, port)
+		}
+	}
+
 	routes := map[int32]route{}
 	conflicts := map[int32][]route{}
 	for port, rs := range claims {
+		if d, ok := s.drains[port]; ok {
+			rs = append([]route{d}, rs...)
+		}
 		if len(rs) > 1 {
 			conflicts[port] = rs
 			continue
 		}
 		routes[port] = rs[0]
 	}
-	for port, old := range s.routes {
-		if _, ok := conflicts[port]; ok {
-			continue
+	for port, d := range s.drains {
+		if _, claimed := claims[port]; !claimed {
+			routes[port] = d
 		}
-		current, ok := routes[port]
-		if ok && current.workload == old.workload {
-			continue
-		}
-		if !old.draining() {
-			old.drainUntil = now.Add(RouteDrain)
-			s.backends.changed(old.backendKey().service)
-		}
-		if !now.Before(old.drainUntil) {
-			continue
-		}
-		if ok {
-			conflicts[port] = []route{old, current}
-			delete(routes, port)
-			continue
-		}
-		routes[port] = old
 	}
 	s.reportConflicts(ctx, conflicts)
 	s.routes = routes
@@ -477,7 +493,11 @@ func (s *Server) reportConflicts(ctx context.Context, conflicts map[int32][]rout
 		}
 		claimants := make([]string, 0, len(rs))
 		for _, rt := range rs {
-			claimants = append(claimants, rt.workload.String()+" service "+rt.service)
+			claimant := rt.workload.String() + " service " + rt.service
+			if rt.draining() {
+				claimant += " (draining)"
+			}
+			claimants = append(claimants, claimant)
 		}
 		slices.Sort(claimants)
 		logger.Error(errors.New("doorman port claimed more than once"), "not serving the port",
@@ -541,7 +561,7 @@ func (s *Server) forget(conn net.Conn) {
 func (s *Server) currentRoute(port int32, accepted route) route {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	if rt, ok := s.routes[port]; ok && rt.workload == accepted.workload && rt.service == accepted.service {
+	if rt, ok := s.routes[port]; ok && rt.sameAs(accepted) {
 		return rt
 	}
 	if !accepted.draining() {

@@ -1614,3 +1614,84 @@ func TestServer_ClosesProxiedConnectionsOnceTheRouteDrains(t *testing.T) {
 	}
 	closedWithin(t, conn)
 }
+
+func refused(t *testing.T, port int32) bool {
+	t.Helper()
+	conn, err := net.DialTimeout("tcp", net.JoinHostPort("127.0.0.1", strconv.Itoa(int(port))), time.Second)
+	if err == nil {
+		_ = conn.Close()
+	}
+	return err != nil
+}
+
+// A port given to another workload while its old route drains is served
+// for neither until the drain is over, however many syncs that takes:
+// traffic still sent to it for the old workload must not reach the new
+// one's pods, which may be in another namespace.
+func TestServer_APortReassignedWhileDrainingWaitsForTheDrain(t *testing.T) {
+	port := freePort(t)
+	clock := &testClock{now: time.Now()}
+	s, c := startServerWith(t, func(s *Server) { s.now = clock.Now }, pausedWorkload("api", port, time.Minute))
+	ctx := context.Background()
+	removeRoute(t, s, c)
+
+	other := pausedWorkload("billing", port, time.Minute)
+	other.Namespace = "other-team"
+	require.NoError(t, c.Create(ctx, other))
+	for range 3 {
+		clock.Advance(routeSyncInterval)
+		require.NoError(t, s.syncRoutes(ctx, ctx))
+		assert.True(t, refused(t, port), "the port is served for neither while the old route drains")
+		assert.Equal(t, float64(1), testutil.ToFloat64(opmetrics.DoormanPortConflicts))
+	}
+
+	clock.Advance(RouteDrain)
+	require.NoError(t, s.syncRoutes(ctx, ctx))
+	dial(t, port)
+	assert.Zero(t, testutil.ToFloat64(opmetrics.DoormanPortConflicts))
+}
+
+// A port the same workload moves to another of its Services drains like
+// any other change: the old Service's in-flight traffic must not reach the
+// new Service's pods.
+func TestServer_APortMovedToAnotherServiceDrains(t *testing.T) {
+	port := freePort(t)
+	clock := &testClock{now: time.Now()}
+	s, c := startServerWith(t, func(s *Server) { s.now = clock.Now }, pausedWorkload("api", port, time.Minute))
+	ctx := context.Background()
+
+	var w v1alpha1.ManagedWorkload
+	require.NoError(t, c.Get(ctx, apiKey, &w))
+	w.Status.Doorman[0].Service = "api-v2"
+	require.NoError(t, c.Update(ctx, &w))
+	require.NoError(t, s.syncRoutes(ctx, ctx))
+	assert.True(t, refused(t, port), "the port is served for neither while the old route drains")
+
+	clock.Advance(RouteDrain)
+	require.NoError(t, s.syncRoutes(ctx, ctx))
+	dial(t, port)
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	assert.Equal(t, "api-v2", s.routes[port].service)
+}
+
+// A workload that takes its own draining route back, as when it's paused
+// again moments after waking, is served again at once.
+func TestServer_ARouteTakenBackStopsDraining(t *testing.T) {
+	port := freePort(t)
+	s, c := startServer(t, pausedWorkload("api", port, time.Minute))
+	ctx := context.Background()
+	removeRoute(t, s, c)
+
+	var w v1alpha1.ManagedWorkload
+	require.NoError(t, c.Get(ctx, apiKey, &w))
+	w.Status.Doorman = pausedWorkload("api", port, time.Minute).Status.Doorman
+	require.NoError(t, c.Update(ctx, &w))
+	require.NoError(t, s.syncRoutes(ctx, ctx))
+
+	dial(t, port)
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	assert.False(t, s.routes[port].draining())
+	assert.Empty(t, s.drains)
+}
