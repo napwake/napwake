@@ -88,35 +88,37 @@ func NewReader(c client.Client, pods client.Reader) *Reader {
 }
 
 // WorkloadCPUMillis returns the CPU in millicores used by the workload's own
-// containers across its pods, for deciding whether it's active. See
-// WorkloadContainers.
-func (r *Reader) WorkloadCPUMillis(ctx context.Context, workload *v1alpha1.ManagedWorkload) (float64, error) {
+// containers across its pods, for deciding whether it's active, and how
+// many pods that was measured over. A pod that's Pending, or just started,
+// reports nothing yet, so usage is only comparable with what the measured
+// pods request. See WorkloadContainers.
+func (r *Reader) WorkloadCPUMillis(ctx context.Context, workload *v1alpha1.ManagedWorkload) (cpuMillis float64, pods int, err error) {
 	ctx, cancel := context.WithTimeout(ctx, callTimeout)
 	defer cancel()
 	target, err := r.getTarget(ctx, workload)
 	if err != nil {
-		return 0, err
+		return 0, 0, err
 	}
 	selector, err := selectorFromTarget(target)
 	if err != nil {
-		return 0, err
+		return 0, 0, err
 	}
 	var list metricsv1beta1.PodMetricsList
 	if err := r.client.List(ctx, &list, client.InNamespace(workload.Namespace),
 		client.MatchingLabelsSelector{Selector: selector}); err != nil {
-		return 0, fmt.Errorf("listing pod metrics for %s/%s: %w", workload.Namespace, workload.Spec.Target.Name, err)
+		return 0, 0, fmt.Errorf("listing pod metrics for %s/%s: %w", workload.Namespace, workload.Spec.Target.Name, err)
 	}
-	pods := make([]metricsv1beta1.PodMetrics, 0, len(list.Items))
+	measured := make([]metricsv1beta1.PodMetrics, 0, len(list.Items))
 	for _, pod := range list.Items {
 		if runBy(target, &pod) {
-			pods = append(pods, pod)
+			measured = append(measured, pod)
 		}
 	}
-	if len(pods) == 0 {
-		return 0, fmt.Errorf("%w for %s/%s", ErrNoPodMetrics, workload.Namespace, workload.Spec.Target.Name)
+	if len(measured) == 0 {
+		return 0, 0, fmt.Errorf("%w for %s/%s", ErrNoPodMetrics, workload.Namespace, workload.Spec.Target.Name)
 	}
-	cpuMillis, _ := Usage(pods, podSpecFromTarget(target))
-	return float64(cpuMillis), nil
+	used, _ := Usage(measured, podSpecFromTarget(target))
+	return float64(used), len(measured), nil
 }
 
 // CPURequestPerReplica returns the CPU request in millicores of one replica's

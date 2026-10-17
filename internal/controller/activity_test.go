@@ -148,6 +148,14 @@ func TestActivityClock_StaysAwake(t *testing.T) {
 			wantSource: v1alpha1.ActivitySourceCPU,
 		},
 		{
+			name:     "one pod of three serving while the others are Pending",
+			target:   clockTarget("app:v1", nil),
+			workload: func(d *appsv1.Deployment) *v1alpha1.ManagedWorkload { return clockWorkload(stale, d) },
+			// 25% of the one pod's request; 8% of all three replicas'.
+			metrics:    stubMetrics{cpuMillis: 250, cpuPerReplica: 1000, replicas: 3, measuredPods: 1},
+			wantSource: v1alpha1.ActivitySourceCPU,
+		},
+		{
 			name:   "rollout changed the pod template",
 			target: clockTarget("app:v2", nil),
 			workload: func(_ *appsv1.Deployment) *v1alpha1.ManagedWorkload {

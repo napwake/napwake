@@ -16,7 +16,7 @@ Hybernate learns these two patterns independently by feeding hourly CPU utilizat
 
 ## What an Hour Records
 
-The forecast learns CPU utilization: usage as a percentage of what the workload's own containers request across its replicas, the same measure `cpuThreshold` is set in (see [Idle Detection](idle-detection.md#what-counts-as-activity)). Holding back a pause and waking ahead of demand compare its forecast with `cpuThreshold` directly, so a forecast that keeps an idle workload awake would also wake it once paused.
+The forecast learns CPU utilization: usage as a percentage of what the workload's own containers request in the pods reporting it, the same measure `cpuThreshold` is set in (see [Idle Detection](idle-detection.md#what-counts-as-activity)). Holding back a pause and waking ahead of demand compare its forecast with `cpuThreshold` directly, so a forecast that keeps an idle workload awake would also wake it once paused.
 
 It's fed each hour once it's over, as the busiest moment seen in it:
 

@@ -125,11 +125,12 @@ func TestReader_InjectedSidecar(t *testing.T) {
 	ctx := context.Background()
 
 	t.Run("activity counts only the app", func(t *testing.T) {
-		used, err := r.WorkloadCPUMillis(ctx, workload)
+		used, pods, err := r.WorkloadCPUMillis(ctx, workload)
 		require.NoError(t, err)
 		requested, err := r.CPURequestPerReplica(ctx, workload)
 		require.NoError(t, err)
 		assert.InDelta(t, 0.1, used/requested, 0.001, "10% of the app's own request, not 40%")
+		assert.Equal(t, 1, pods)
 	})
 
 	t.Run("pausing frees the whole pod's requests", func(t *testing.T) {
@@ -298,9 +299,10 @@ func TestReader_CountsOnlyTheTargetsPods(t *testing.T) {
 	}
 	ctx := context.Background()
 
-	used, err := r.WorkloadCPUMillis(ctx, workload)
+	used, pods, err := r.WorkloadCPUMillis(ctx, workload)
 	require.NoError(t, err)
 	assert.InDelta(t, 100, used, 0.001, "only the stable pod's usage")
+	assert.Equal(t, 1, pods, "measured over the stable pod alone")
 
 	cpu, _, err := r.PodRequestsPerReplica(ctx, workload)
 	require.NoError(t, err)

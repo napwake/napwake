@@ -18,7 +18,7 @@ Every source is checked, and the most recent one wins. None has priority over an
 
 | Source | Counts as activity when | Setup |
 |--------|------------------------|-------|
-| **CPU** | Usage is above `activity.cpuThreshold`% of the CPU requested across all replicas | Requires metrics-server |
+| **CPU** | Usage is above `activity.cpuThreshold`% of the CPU requested by the pods reporting it | Requires metrics-server |
 | **Deploy** | The target's pod template changes: a new image, environment variable, or other template edit | None |
 | **`hybernate.io/last-activity`** | The annotation holds a time newer than the last recorded activity | Set by your own tooling |
 | **`hybernate.io/active-until`** | The annotation holds a time in the future (a hold, not an activity time) | Set by your own tooling |
@@ -31,7 +31,7 @@ Memory isn't a source: it stays allocated whether or not anyone uses the workloa
 
 CPU is measured for the containers in the target's pod template, including native sidecars (init containers with `restartPolicy: Always`). Sidecars injected when the pod is created, such as an Istio or Linkerd proxy, aren't counted: their own background work isn't use of the workload, and they aren't in the template's requests. [Cost](cost-tracking.md) does count them, since they cost the same as any container and pausing frees them too.
 
-Usage is compared with what those containers request in a running pod, not in the template, so a request set when the pod was created counts: a LimitRange default, or a Vertical Pod Autoscaler's recommendation. The pod read is a running one of the target's current revision: a failed pod, such as one evicted, keeps the requests of whatever revision it ran until it's cleaned up, and isn't read. The request is read again every 5 minutes, at once when the target's spec changes, and on every check while it's unclear which revision a replica will have, as during a Deployment's rollout. With no pod running, the newest that's starting is read, such as a Pending one in a `Recreate` rollout, and only with none at all are the template's requests used, a container that sets only a CPU limit taken to request its limit, as Kubernetes does.
+Usage is measured over the pods metrics-server reports and compared with what those pods request, so one pod serving while the others are Pending or crash-looping, or before new pods from a scale-up report, reads at its own utilization rather than a fraction of it. Usage is compared with what those containers request in a running pod, not in the template, so a request set when the pod was created counts: a LimitRange default, or a Vertical Pod Autoscaler's recommendation. The pod read is a running one of the target's current revision: a failed pod, such as one evicted, keeps the requests of whatever revision it ran until it's cleaned up, and isn't read. The request is read again every 5 minutes, at once when the target's spec changes, and on every check while it's unclear which revision a replica will have, as during a Deployment's rollout. With no pod running, the newest that's starting is read, such as a Pending one in a `Recreate` rollout, and only with none at all are the template's requests used, a container that sets only a CPU limit taken to request its limit, as Kubernetes does.
 
 ### Activity annotations
 
