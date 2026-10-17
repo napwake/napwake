@@ -294,6 +294,26 @@ func TestTransition_SettlesCostInThePhaseItWasSpentIn(t *testing.T) {
 	assert.InDelta(t, 2*6.0/60, w.Status.Cost.AwakeCPUHours.AsApproximateFloat64(), 1e-9, "and running since")
 }
 
+// A transition settles the time before it in the phase it was spent in,
+// even when the replicas can't be read then: left unsettled, the minutes
+// awake before a pause would be counted as paused, saved rather than
+// spent.
+func TestTransition_SettlesAtTheLastReadWhenReplicasCantBeRead(t *testing.T) {
+	w := costWorkload(v1alpha1.PhaseRunning)
+	w.Status.Cost = accumulatedAt(fixedTime.Add(-4 * time.Minute))
+	w.Status.Cost.Running = &v1alpha1.ResourceSnapshot{Replicas: 2, CPUMillis: 1000, MemoryBytes: bytesPerGiB}
+	w.Status.Cost.PricedAt = &metav1.Time{Time: fixedTime}
+	r := newTestReconciler(t, w, &stubPauser{})
+	r.metrics = &stubMetrics{err: errors.New("the API server timed out")}
+
+	require.NoError(t, r.transition(context.Background(), w, v1alpha1.PhasePausing, "PauseRequested"))
+
+	c := w.Status.Cost
+	assert.True(t, c.LastAccumulatedAt.Time.Equal(fixedTime), "settled up to the transition")
+	assert.InDelta(t, 2*4.0/60, c.AwakeCPUHours.AsApproximateFloat64(), 1e-9, "counted awake, at the last read")
+	assert.Zero(t, c.PausedCPUHours.AsApproximateFloat64())
+}
+
 type countingPricer struct {
 	stubPricer
 	calls int
