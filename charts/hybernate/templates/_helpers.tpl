@@ -63,6 +63,19 @@ app.kubernetes.io/instance: {{ .Release.Name }}
 control-plane: doorman
 {{- end }}
 
+{{/*
+Uninstall guard labels. Distinct from the operator's, so the operator's
+metrics Service and NetworkPolicy don't select the hook's pod.
+*/}}
+{{- define "hybernate.uninstallGuardLabels" -}}
+helm.sh/chart: {{ include "hybernate.chart" . }}
+app.kubernetes.io/name: {{ include "hybernate.name" . }}
+app.kubernetes.io/instance: {{ .Release.Name }}
+control-plane: uninstall-guard
+app.kubernetes.io/version: {{ .Chart.AppVersion | quote }}
+app.kubernetes.io/managed-by: {{ .Release.Service }}
+{{- end }}
+
 {{- define "hybernate.doormanLabels" -}}
 helm.sh/chart: {{ include "hybernate.chart" . }}
 {{ include "hybernate.doormanSelectorLabels" . }}
