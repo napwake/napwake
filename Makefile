@@ -153,6 +153,10 @@ check-chart: ## Lint the Helm chart, render it for each provider's Kubernetes ve
 		! helm template hybernate charts/hybernate --set defaults.idleAfter=$$d >/dev/null 2>&1 || { \
 			echo "the chart accepts defaults.idleAfter=$$d, which the operator refuses to start with"; exit 1; }; \
 	done
+	@for v in 'watchNamespace={staging}' doorman.enabeld=false metrics.serviceMonitor.enable=true; do \
+		! helm template hybernate charts/hybernate --set "$$v" >/dev/null 2>&1 || { \
+			echo "the chart accepts $$v, a value it doesn't have, and would ignore it"; exit 1; }; \
+	done
 	@for d in 1h30m 0.5s 0h5m; do \
 		helm template hybernate charts/hybernate --set defaults.idleAfter=$$d >/dev/null || exit 1; \
 	done
