@@ -85,7 +85,7 @@ func depReconciler(t *testing.T, pauser *stubPauser, objs ...client.Object) *Rec
 	scheme := testScheme(t)
 	metrics := idleCPU
 	return &Reconciler{
-		Client: fake.NewClientBuilder().WithScheme(scheme).
+		Client: withWorkloadIndexes(fake.NewClientBuilder().WithScheme(scheme)).
 			WithStatusSubresource(&v1alpha1.ManagedWorkload{}).WithObjects(objs...).Build(),
 		Scheme:   scheme,
 		Recorder: events.NewFakeRecorder(20),

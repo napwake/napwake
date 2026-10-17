@@ -26,12 +26,14 @@ import (
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	discoveryv1 "k8s.io/api/discovery/v1"
+	"k8s.io/apimachinery/pkg/api/equality"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/client-go/tools/events"
+	"k8s.io/client-go/util/workqueue"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/builder"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -177,19 +179,8 @@ func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (res ctrl.
 	}()
 
 	var workload v1alpha1.ManagedWorkload
-	if err := r.Get(ctx, req.NamespacedName, &workload); err != nil {
-		// Deleted without its finalizer running, it would leave its series
-		// and what's kept in memory for it.
-		if apierrors.IsNotFound(err) {
-			if uid, ok := r.uids.take(req.NamespacedName); ok {
-				r.forgetWorkload(uid)
-			}
-			metrics.DeleteWorkload(req.Namespace, req.Name)
-		}
-		return ctrl.Result{}, client.IgnoreNotFound(err)
-	}
-	if replaced, ok := r.uids.see(req.NamespacedName, workload.UID); ok {
-		r.forgetWorkload(replaced)
+	if found, err := r.readWorkload(ctx, req.NamespacedName, &workload); err != nil || !found {
+		return ctrl.Result{}, err
 	}
 
 	if !workload.DeletionTimestamp.IsZero() {
@@ -240,10 +231,7 @@ func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (res ctrl.
 		return r.reconcileProtected(ctx, &workload, *p)
 	}
 	r.clearCondition(&workload, conditionProtected, "NotProtected")
-	if err := r.wakeOnScaleUp(ctx, &workload, target); err != nil {
-		return ctrl.Result{}, err
-	}
-	if err := r.reportAutoscaler(ctx, &workload); err != nil {
+	if err := r.observeTarget(ctx, &workload, target); err != nil {
 		return ctrl.Result{}, err
 	}
 
@@ -277,6 +265,38 @@ func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (res ctrl.
 	}
 
 	return r.reconcileSettled(ctx, &workload, target, observed)
+}
+
+// observeTarget takes in what's changed on the target Hybernate manages:
+// a scale-up outside it, and the autoscaler that scales it.
+func (r *Reconciler) observeTarget(ctx context.Context, workload *v1alpha1.ManagedWorkload, target client.Object) error {
+	if err := r.wakeOnScaleUp(ctx, workload, target); err != nil {
+		return err
+	}
+	return r.reportAutoscaler(ctx, workload)
+}
+
+// readWorkload reads the workload, and reports whether it exists. One
+// deleted without its finalizer running would otherwise leave its metric
+// series and what's kept in memory for it, and one created again under the
+// same name what was kept for the one before.
+func (r *Reconciler) readWorkload(ctx context.Context, name types.NamespacedName,
+	workload *v1alpha1.ManagedWorkload) (bool, error) {
+	err := r.Get(ctx, name, workload)
+	if apierrors.IsNotFound(err) {
+		if uid, ok := r.uids.take(name); ok {
+			r.forgetWorkload(uid)
+		}
+		metrics.DeleteWorkload(name.Namespace, name.Name)
+		return false, nil
+	}
+	if err != nil {
+		return false, fmt.Errorf("getting managed workload: %w", err)
+	}
+	if replaced, ok := r.uids.see(name, workload.UID); ok {
+		r.forgetWorkload(replaced)
+	}
+	return true, nil
 }
 
 // reconcileSettled runs automation on a workload no pause or resume is
@@ -1153,6 +1173,70 @@ func claimsTargetFirst(a, b *v1alpha1.ManagedWorkload) bool {
 	return a.UID < b.UID
 }
 
+// Field indexes on ManagedWorkloads, so a watch event finds the few a change
+// concerns without listing, and copying, every one in the cluster.
+const (
+	// targetField is the Deployment or StatefulSet a ManagedWorkload
+	// manages, as kind/name, in its own namespace.
+	targetField = "hybernate.io/target"
+
+	// dependencyField is each workload a ManagedWorkload depends on, as
+	// namespace/kind/name: those dependsOn lists, and those it learned.
+	dependencyField = "hybernate.io/dependency"
+)
+
+func targetKey(kind v1alpha1.TargetKind, name string) string {
+	return string(kind) + "/" + name
+}
+
+func dependencyKey(id workloadID) string {
+	return id.namespace + "/" + string(id.kind) + "/" + id.name
+}
+
+// workloadIndexes are the field indexes the watches look ManagedWorkloads
+// up by.
+func workloadIndexes() map[string]client.IndexerFunc {
+	return map[string]client.IndexerFunc{
+		targetField: func(obj client.Object) []string {
+			w, ok := obj.(*v1alpha1.ManagedWorkload)
+			if !ok {
+				return nil
+			}
+			return []string{targetKey(w.Spec.Target.Kind, w.Spec.Target.Name)}
+		},
+		dependencyField: func(obj client.Object) []string {
+			w, ok := obj.(*v1alpha1.ManagedWorkload)
+			if !ok {
+				return nil
+			}
+			refs := dependencyRefs(w)
+			keys := make([]string, 0, len(refs))
+			for _, ref := range refs {
+				keys = append(keys, dependencyKey(dependencyID(w, ref)))
+			}
+			return keys
+		},
+	}
+}
+
+// workloadsBy enqueues the ManagedWorkloads a lookup by index finds, other
+// than skip. They're only read for their names, so the cache's own objects
+// are listed rather than copies.
+func (r *Reconciler) workloadsBy(ctx context.Context, skip types.UID, opts ...client.ListOption) []reconcile.Request {
+	var list v1alpha1.ManagedWorkloadList
+	if err := r.List(ctx, &list, append(opts, client.UnsafeDisableDeepCopy)...); err != nil {
+		log.FromContext(ctx).Error(err, "listing related managed workloads")
+		return nil
+	}
+	requests := make([]reconcile.Request, 0, len(list.Items))
+	for i := range list.Items {
+		if w := &list.Items[i]; w.UID != skip {
+			requests = append(requests, reconcile.Request{NamespacedName: client.ObjectKeyFromObject(w)})
+		}
+	}
+	return requests
+}
+
 // findRelatedWorkloads enqueues the ManagedWorkloads affected by a change to
 // another: those sharing its target, so a blocked duplicate takes over when
 // the owner is deleted; its dependencies, so they re-check the hold when it
@@ -1162,33 +1246,58 @@ func (r *Reconciler) findRelatedWorkloads(ctx context.Context, obj client.Object
 	if !ok {
 		return nil
 	}
-
-	var list v1alpha1.ManagedWorkloadList
-	if err := r.List(ctx, &list); err != nil {
-		log.FromContext(ctx).Error(err, "listing related managed workloads",
-			"workload", changed.Name, "namespace", changed.Namespace)
-		return nil
-	}
-
-	dependsOn := map[workloadID]bool{}
+	requests := r.workloadsBy(ctx, changed.UID, client.InNamespace(changed.Namespace),
+		client.MatchingFields{targetField: targetKey(changed.Spec.Target.Kind, changed.Spec.Target.Name)})
 	for _, ref := range dependencyRefs(changed) {
-		dependsOn[dependencyID(changed, ref)] = true
+		id := dependencyID(changed, ref)
+		requests = append(requests, r.workloadsBy(ctx, changed.UID, client.InNamespace(id.namespace),
+			client.MatchingFields{targetField: targetKey(id.kind, id.name)})...)
 	}
-	changedTarget := targetID(changed)
+	return append(requests, r.workloadsBy(ctx, changed.UID,
+		client.MatchingFields{dependencyField: dependencyKey(targetID(changed))})...)
+}
 
-	var requests []reconcile.Request
-	for i := range list.Items {
-		w := &list.Items[i]
-		if w.UID == changed.UID {
-			continue
-		}
-		if targetID(w) == changedTarget || dependsOn[targetID(w)] || dependsOnTarget(w, changedTarget) {
-			requests = append(requests, reconcile.Request{
-				NamespacedName: types.NamespacedName{Name: w.Name, Namespace: w.Namespace},
-			})
+// relatedHandler enqueues what findRelatedWorkloads finds for a
+// ManagedWorkload both before and after a change, so a dependency it no
+// longer has re-checks the hold it took part in.
+func (r *Reconciler) relatedHandler() handler.EventHandler {
+	enqueue := func(q workqueue.TypedRateLimitingInterface[reconcile.Request], requests []reconcile.Request) {
+		for _, req := range requests {
+			q.Add(req)
 		}
 	}
-	return requests
+	return handler.Funcs{
+		CreateFunc: func(ctx context.Context, e event.CreateEvent, q workqueue.TypedRateLimitingInterface[reconcile.Request]) {
+			enqueue(q, r.findRelatedWorkloads(ctx, e.Object))
+		},
+		UpdateFunc: func(ctx context.Context, e event.UpdateEvent, q workqueue.TypedRateLimitingInterface[reconcile.Request]) {
+			enqueue(q, r.findRelatedWorkloads(ctx, e.ObjectOld))
+			enqueue(q, r.findRelatedWorkloads(ctx, e.ObjectNew))
+		},
+		DeleteFunc: func(ctx context.Context, e event.DeleteEvent, q workqueue.TypedRateLimitingInterface[reconcile.Request]) {
+			enqueue(q, r.findRelatedWorkloads(ctx, e.Object))
+		},
+	}
+}
+
+// relationsChanged passes a ManagedWorkload's updates that its related
+// workloads act on: its phase, which holds its dependencies awake and lets
+// its dependents' resumes go on, its spec, its dependencies, and its
+// deletion. Its own status writes otherwise, such as cost and activity
+// flushes, concern no other workload.
+func relationsChanged() predicate.Predicate {
+	return predicate.Funcs{
+		UpdateFunc: func(e event.UpdateEvent) bool {
+			old, okOld := e.ObjectOld.(*v1alpha1.ManagedWorkload)
+			cur, okNew := e.ObjectNew.(*v1alpha1.ManagedWorkload)
+			if !okOld || !okNew {
+				return true
+			}
+			return old.Status.Phase != cur.Status.Phase || old.Generation != cur.Generation ||
+				!old.DeletionTimestamp.Equal(cur.DeletionTimestamp) ||
+				!equality.Semantic.DeepEqual(old.Status.LearnedDependencies, cur.Status.LearnedDependencies)
+		},
+	}
 }
 
 // findRoutedNeighbours enqueues the paused workloads in a namespace whose
@@ -1249,33 +1358,9 @@ func (r *Reconciler) findWorkloadsForTarget(ctx context.Context, obj client.Obje
 		return nil
 	}
 	id := workloadID{namespace: obj.GetNamespace(), kind: target.Kind, name: target.Name}
-
-	var workloads v1alpha1.ManagedWorkloadList
-	if err := r.List(ctx, &workloads); err != nil {
-		log.FromContext(ctx).Error(err, "listing managed workloads for target",
-			"target", target.Name, "kind", target.Kind, "namespace", obj.GetNamespace())
-		return nil
-	}
-
-	var requests []reconcile.Request
-	for i := range workloads.Items {
-		w := &workloads.Items[i]
-		if targetID(w) == id || dependsOnTarget(w, id) {
-			requests = append(requests, reconcile.Request{
-				NamespacedName: types.NamespacedName{Name: w.Name, Namespace: w.Namespace},
-			})
-		}
-	}
-	return requests
-}
-
-func dependsOnTarget(workload *v1alpha1.ManagedWorkload, id workloadID) bool {
-	for _, ref := range dependencyRefs(workload) {
-		if dependencyID(workload, ref) == id {
-			return true
-		}
-	}
-	return false
+	requests := r.workloadsBy(ctx, "", client.InNamespace(id.namespace),
+		client.MatchingFields{targetField: targetKey(id.kind, id.name)})
+	return append(requests, r.workloadsBy(ctx, "", client.MatchingFields{dependencyField: dependencyKey(id)})...)
 }
 
 func (r *Reconciler) transition(ctx context.Context, workload *v1alpha1.ManagedWorkload, phase v1alpha1.WorkloadPhase, reason string) error {
@@ -1399,10 +1484,15 @@ func (r *Reconciler) SetupWithManager(mgr ctrl.Manager) error {
 	if err := r.setupDoormanSliceSync(mgr); err != nil {
 		return err
 	}
+	for field, index := range workloadIndexes() {
+		if err := mgr.GetFieldIndexer().IndexField(context.Background(), &v1alpha1.ManagedWorkload{}, field, index); err != nil {
+			return fmt.Errorf("indexing managed workloads by %s: %w", field, err)
+		}
+	}
 	targetHandler := handler.EnqueueRequestsFromMapFunc(r.findWorkloadsForTarget)
 	return ctrl.NewControllerManagedBy(mgr).
 		For(&v1alpha1.ManagedWorkload{}).
-		Watches(&v1alpha1.ManagedWorkload{}, handler.EnqueueRequestsFromMapFunc(r.findRelatedWorkloads)).
+		Watches(&v1alpha1.ManagedWorkload{}, r.relatedHandler(), builder.WithPredicates(relationsChanged())).
 		Watches(&v1alpha1.ManagedWorkload{}, handler.EnqueueRequestsFromMapFunc(r.findRoutedNeighbours),
 			builder.WithPredicates(phaseChanged())).
 		Watches(&appsv1.Deployment{}, targetHandler).

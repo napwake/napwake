@@ -498,16 +498,10 @@ func TestWakeOnScaleUp_WhilePausing(t *testing.T) {
 // scaled it up means it to be off: it's left there, as a running workload
 // scaled to zero outside Hybernate is, rather than scaled up again.
 func TestResume_ScaledToZeroWhileResumingIsLeftOff(t *testing.T) {
-	so := &unstructured.Unstructured{Object: map[string]any{"spec": map[string]any{
-		"scaleTargetRef": map[string]any{"name": "api"}}}}
-	so.SetGroupVersionKind(kedaScaledObject)
-	so.SetNamespace("default")
-	so.SetName("api-scaler")
-	so.SetAnnotations(map[string]string{autoscaler.PausedReplicasAnnotation: "3"})
 	workload := pausedWorkload(v1alpha1.PhaseResuming)
-	workload.Status.Pause.ScaledObject = "api-scaler"
+	workload.Status.Pause.ScaledObject = apiScaler
 	workload.Status.Pause.ResumedAt = ptr.To(metav1.NewTime(fixedTime.Add(-30 * time.Second)))
-	r := lifecycleReconciler(t, workload, 0, interceptor.Funcs{}, so)
+	r := lifecycleReconciler(t, workload, 0, interceptor.Funcs{}, apiScaledObject("3"))
 
 	for range 2 {
 		_, err := r.Reconcile(context.Background(), reconcileFor("api"))

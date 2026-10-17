@@ -35,6 +35,21 @@ import (
 	"github.com/okedeji/hybernate/internal/autoscaler"
 )
 
+// apiScaler is the KEDA ScaledObject that scales default/api.
+const apiScaler = "api-scaler"
+
+// apiScaledObject is default/api's ScaledObject, its own paused-replicas
+// annotation set to pausedReplicas.
+func apiScaledObject(pausedReplicas string) *unstructured.Unstructured {
+	so := &unstructured.Unstructured{Object: map[string]any{"spec": map[string]any{
+		"scaleTargetRef": map[string]any{"name": "api"}, "minReplicaCount": int64(1)}}}
+	so.SetGroupVersionKind(kedaScaledObject)
+	so.SetNamespace("default")
+	so.SetName(apiScaler)
+	so.SetAnnotations(map[string]string{autoscaler.PausedReplicasAnnotation: pausedReplicas})
+	return so
+}
+
 func targetDeploymentOf(t *testing.T, r *Reconciler) *appsv1.Deployment {
 	t.Helper()
 	var d appsv1.Deployment
@@ -58,14 +73,8 @@ func copyPauseRecord(t *testing.T, r *Reconciler, record string) {
 // Without it the target would be taken for one scaled to zero outside
 // Hybernate and left off for good, held there by KEDA.
 func TestPause_StatusLostWhilePausedIsTakenUpFromTheTarget(t *testing.T) {
-	so := &unstructured.Unstructured{Object: map[string]any{"spec": map[string]any{
-		"scaleTargetRef": map[string]any{"name": "api"}, "minReplicaCount": int64(1)}}}
-	so.SetGroupVersionKind(kedaScaledObject)
-	so.SetNamespace("default")
-	so.SetName("api-scaler")
-	so.SetAnnotations(map[string]string{autoscaler.PausedReplicasAnnotation: "5"})
 	workload := withPauseRequested(lifecycleWorkload("api", v1alpha1.PhaseRunning))
-	r := lifecycleReconciler(t, workload, 3, interceptor.Funcs{}, so)
+	r := lifecycleReconciler(t, workload, 3, interceptor.Funcs{}, apiScaledObject("5"))
 	reconcileUntilSettled(t, r)
 	require.Equal(t, v1alpha1.PhasePaused, getWorkload(t, r, "api").Status.Phase)
 	require.Equal(t, int32(0), targetReplicas(t, r))

@@ -35,7 +35,6 @@ import (
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/apimachinery/pkg/types"
@@ -626,19 +625,13 @@ func TestReconcile_DuplicateTargetBlocksNewer(t *testing.T) {
 // paused, as when an older one for it appears, hands the target back, or
 // it would stay at zero with nothing to wake it.
 func TestReconcile_BecomingTheDuplicateHandsBackAPause(t *testing.T) {
-	older := lifecycleWorkload("owner", v1alpha1.PhaseRunning)
-	older.Spec.Target.Name = "api"
-	older.UID, older.CreationTimestamp = "aaa", metav1.NewTime(fixedTime.Add(-time.Hour))
 	paused := pausedWorkload(v1alpha1.PhasePaused)
 	paused.UID, paused.CreationTimestamp = "bbb", metav1.NewTime(fixedTime)
-	paused.Status.Pause.ScaledObject = "api-scaler"
-	so := &unstructured.Unstructured{Object: map[string]any{"spec": map[string]any{
-		"scaleTargetRef": map[string]any{"name": "api"}}}}
-	so.SetGroupVersionKind(kedaScaledObject)
-	so.SetNamespace("default")
-	so.SetName("api-scaler")
-	so.SetAnnotations(map[string]string{autoscaler.PausedReplicasAnnotation: "0"})
-	r := lifecycleReconciler(t, paused, 0, interceptor.Funcs{}, older, so)
+	paused.Status.Pause.ScaledObject = apiScaler
+	older := lifecycleWorkload("owner", v1alpha1.PhaseRunning)
+	older.Spec.Target = paused.Spec.Target
+	older.UID, older.CreationTimestamp = "aaa", metav1.NewTime(fixedTime.Add(-time.Hour))
+	r := lifecycleReconciler(t, paused, 0, interceptor.Funcs{}, older, apiScaledObject("0"))
 
 	_, err := r.Reconcile(context.Background(), reconcileFor("api"))
 	require.NoError(t, err)
@@ -784,8 +777,7 @@ func newSharedTargetReconciler(t *testing.T, objs ...client.Object) (*Reconciler
 	t.Helper()
 	scheme := testScheme(t)
 	recorder := events.NewFakeRecorder(10)
-	k := fake.NewClientBuilder().
-		WithScheme(scheme).
+	k := withWorkloadIndexes(fake.NewClientBuilder().WithScheme(scheme)).
 		WithStatusSubresource(&v1alpha1.ManagedWorkload{}).
 		WithObjects(append(objs, targetDeployment("idle-app", "default"))...).
 		Build()
