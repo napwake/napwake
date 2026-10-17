@@ -26,6 +26,8 @@ import (
 	appsv1 "k8s.io/api/apps/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/utils/ptr"
+	"sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/controller-runtime/pkg/client/interceptor"
 
 	"github.com/okedeji/hybernate/internal/autoscaler"
 )
@@ -274,4 +276,28 @@ func TestRestore_NoPauseIsNoOp(t *testing.T) {
 	require.NoError(t, err)
 	assert.Zero(t, got)
 	assert.Zero(t, replicas(t, c), "nothing Hybernate paused is started")
+}
+
+// KEDA, still holding a ScaledObject that may scale to zero at zero, would
+// take the target straight back down if the scale-up came first, so Restore
+// holds it at the restored count before scaling, as a resume does.
+func TestRestore_HoldsKEDAAtTheRestoredCountWhileScaling(t *testing.T) {
+	var heldAt string
+	c := interceptor.NewClient(newClient(t, deployment(0, 0), scaledObjectFor(0)), interceptor.Funcs{
+		SubResourceUpdate: func(ctx context.Context, inner client.Client, sub string, obj client.Object,
+			opts ...client.SubResourceUpdateOption) error {
+			heldAt, _ = pausedAnnotation(t, inner)
+			return inner.SubResource(sub).Update(ctx, obj, opts...)
+		}})
+	workload := pausedWorkload(3)
+	workload.Status.Pause.ScaledObject = scaledObjectName
+	require.NoError(t, autoscaler.HoldKEDA(context.Background(), c, "default", scaledObjectName, 0))
+
+	got, err := newTestPauser(c).Restore(context.Background(), workload)
+
+	require.NoError(t, err)
+	assert.Equal(t, int32(3), got)
+	assert.Equal(t, "3", heldAt, "held at the restored count as it's scaled up")
+	_, held := pausedAnnotation(t, c)
+	assert.False(t, held, "then released")
 }

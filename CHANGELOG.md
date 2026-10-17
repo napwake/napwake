@@ -115,6 +115,7 @@ The relaunch. The 0.1.x releases were early experiments, and 0.2.0 is a fresh st
 ### Fixed
 
 - A StatefulSet whose `persistentVolumeClaimRetentionPolicy.whenScaled` is `Delete` is never paused, since scaling it to zero has its controller delete every claim: it reports `Protected=True`, reason `PVCsDeletedOnScaleDown`, with a `Protected` warning event, and one paused before its policy changed is handed back. Set `whenScaled: Retain` to let Hybernate pause it
+- Handing back a paused workload a KEDA ScaledObject scales, on deletion, the ignore label, protection, or a scale-up outside Hybernate, holds KEDA at the restored replicas while scaling it up, so a ScaledObject that may scale to zero can't take it straight back down before it's released
 - A resume of a workload that wasn't wholly Ready before its pause, such as one with a pod crash-looping, finishes instead of staying in `Resuming` with KEDA held; readiness is judged only from a status the workload's controller wrote for the scale-up
 - A dependency learned from a single request no longer ties two workloads together for good: one learned from a wake is forgotten after 14 days with no request confirming it (`lastSeen`)
 - A namespace-level `hybernate.io/depends-on` no longer makes the dependency depend on itself, which held it awake as a cycle; `hybernate.io/managed: "false"` on a workload opts it out without a warning

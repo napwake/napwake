@@ -240,6 +240,13 @@ func (p *Pauser) scaleUpFromZero(ctx context.Context, workload *v1alpha1.Managed
 	if err != nil || replicas == 0 {
 		return 0, err
 	}
+	// KEDA, still holding the target at zero, would scale it straight back
+	// down between the scale-up and its release.
+	if so := workload.Status.Pause.ScaledObject; so != "" {
+		if err := autoscaler.HoldKEDA(ctx, p.client, workload.Namespace, so, replicas); err != nil {
+			return 0, err
+		}
+	}
 	scale.Spec.Replicas = replicas
 	if err := p.scaler.UpdateScale(ctx, target, scale); err != nil {
 		return 0, fmt.Errorf("updating scale to %d: %w", replicas, err)
