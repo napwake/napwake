@@ -164,6 +164,12 @@ check-chart: ## Lint the Helm chart, render it for each provider's Kubernetes ve
 		echo "the chart accepts doorman.networkPolicy.ingressFrom without networkPolicy.enabled, which leaves the doorman open"; exit 1; }
 	helm template hybernate charts/hybernate | go run ./hack/rbaccheck config/rbac/role.yaml
 	helm template hybernate charts/hybernate --set 'watchNamespaces={shop,blog}' | go run ./hack/rbaccheck config/rbac/role.yaml
+	@for field in terminationGracePeriodSeconds: seconds:; do \
+		chart=$$(helm template hybernate charts/hybernate --show-only templates/doorman.yaml | awk -v f="$$field" '$$1 == f {print $$2}'); \
+		kustomize=$$(awk -v f="$$field" '$$1 == f {print $$2}' config/manager/doorman.yaml); \
+		[ -n "$$chart" ] && [ "$$chart" = "$$kustomize" ] || { \
+			echo "config/manager's doorman has $$field '$$kustomize', the chart's '$$chart', so one drops connections on shutdown"; exit 1; }; \
+	done
 
 .PHONY: verify-generated
 verify-generated: manifests generate ## Fail if generated code or manifests, or go.mod, aren't up to date
