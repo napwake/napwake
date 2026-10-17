@@ -33,20 +33,31 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 )
 
-// ServesTraffic reports whether any of a Service's EndpointSlices has a
-// Ready pod the doorman would pass a connection to. While one does, the
-// Service has somewhere to send traffic, so it isn't routed to the doorman.
-func ServesTraffic(endpointSlices []discoveryv1.EndpointSlice) bool {
+// PodEndpoint is a Ready endpoint of a Service: a pod, by name, and the
+// address its EndpointSlice gives for it.
+type PodEndpoint struct {
+	Namespace string
+	Pod       string
+	Addr      netip.Addr
+}
+
+// ReadyPodEndpoints are the Ready pod endpoints of a Service's trusted
+// EndpointSlices: where the doorman would pass a connection once each is
+// confirmed to be a pod that has its address, since a slice's label is only
+// a claim.
+func ReadyPodEndpoints(endpointSlices []discoveryv1.EndpointSlice) []PodEndpoint {
+	var endpoints []PodEndpoint
 	for i := range endpointSlices {
-		if trusted(&endpointSlices[i]) {
-			for _, ep := range endpointSlices[i].Endpoints {
-				if _, ok := readyAddress(ep); ok {
-					return true
-				}
+		if !trusted(&endpointSlices[i]) {
+			continue
+		}
+		for _, ep := range endpointSlices[i].Endpoints {
+			if addr, ok := readyAddress(ep); ok {
+				endpoints = append(endpoints, PodEndpoint{Namespace: ep.TargetRef.Namespace, Pod: ep.TargetRef.Name, Addr: addr})
 			}
 		}
 	}
-	return false
+	return endpoints
 }
 
 // trusted reports whether a slice says it was written by the EndpointSlice

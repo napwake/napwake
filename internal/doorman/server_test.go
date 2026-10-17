@@ -399,7 +399,8 @@ func TestTrimEndpointSlice_KeepsWhatBackendsRead(t *testing.T) {
 
 	assert.Equal(t, []string{"10.244.1.9:8080"}, backendsOf(full))
 	assert.Equal(t, backendsOf(full), backendsOf(trimmed.(*discoveryv1.EndpointSlice)))
-	assert.True(t, ServesTraffic([]discoveryv1.EndpointSlice{*trimmed.(*discoveryv1.EndpointSlice)}))
+	assert.Equal(t, ReadyPodEndpoints([]discoveryv1.EndpointSlice{*full}),
+		ReadyPodEndpoints([]discoveryv1.EndpointSlice{*trimmed.(*discoveryv1.EndpointSlice)}))
 }
 
 // Pod networks are allocated from private, unique-local and shared address

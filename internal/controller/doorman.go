@@ -498,7 +498,9 @@ func (r *Reconciler) planDoorman(ctx context.Context, workload *v1alpha1.Managed
 // Ready pod, which can only be another workload's while this one is paused.
 // They're read from the API server: the operator caches only the doorman's
 // slices, since caching every Service's would cost memory in proportion to
-// every pod in the cluster.
+// every pod in the cluster. An endpoint counts only once the pod it names,
+// in the Service's namespace, has its address: anyone who may write
+// EndpointSlices could otherwise keep a Service from being routed.
 func (r *Reconciler) servedByOthers(ctx context.Context, svc corev1.Service) (bool, error) {
 	ctx, cancel := context.WithTimeout(ctx, endpointsReadTimeout)
 	defer cancel()
@@ -507,7 +509,35 @@ func (r *Reconciler) servedByOthers(ctx context.Context, svc corev1.Service) (bo
 		client.MatchingLabels{discoveryv1.LabelServiceName: svc.Name}); err != nil {
 		return false, fmt.Errorf("listing endpoints of service %s: %w", svc.Name, err)
 	}
-	return doorman.ServesTraffic(list.Items), nil
+	for _, ep := range doorman.ReadyPodEndpoints(list.Items) {
+		if ep.Namespace != svc.Namespace {
+			continue
+		}
+		has, err := r.podHasAddress(ctx, types.NamespacedName{Namespace: svc.Namespace, Name: ep.Pod}, ep.Addr)
+		if err != nil {
+			return false, err
+		}
+		if has {
+			return true, nil
+		}
+	}
+	return false, nil
+}
+
+func (r *Reconciler) podHasAddress(ctx context.Context, name types.NamespacedName, addr netip.Addr) (bool, error) {
+	var pod corev1.Pod
+	if err := r.apiReader().Get(ctx, name, &pod); err != nil {
+		if apierrors.IsNotFound(err) {
+			return false, nil
+		}
+		return false, fmt.Errorf("reading pod %s: %w", name, err)
+	}
+	for _, ip := range pod.Status.PodIPs {
+		if parsed, err := netip.ParseAddr(ip.IP); err == nil && parsed.Unmap() == addr {
+			return true, nil
+		}
+	}
+	return false, nil
 }
 
 // routablePorts are a Service's TCP ports, less those its

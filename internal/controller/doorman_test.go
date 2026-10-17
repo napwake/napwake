@@ -111,6 +111,14 @@ func servingSlice() *discoveryv1.EndpointSlice {
 	}
 }
 
+// servingPod is the pod servingSlice names, with the address it gives.
+func servingPod() *corev1.Pod {
+	return &corev1.Pod{
+		ObjectMeta: metav1.ObjectMeta{Name: "shop-pod", Namespace: "default"},
+		Status:     corev1.PodStatus{PodIP: "10.244.1.9", PodIPs: []corev1.PodIP{{IP: "10.244.1.9"}}},
+	}
+}
+
 func doormanReconciler(t *testing.T, objs ...client.Object) *Reconciler {
 	t.Helper()
 	r := depReconciler(t, &stubPauser{}, objs...)
@@ -657,6 +665,7 @@ func TestReconcileDoorman_SharedService(t *testing.T) {
 	stable.Status.Phase = v1alpha1.PhaseRunning
 	require.NoError(t, doormanErr(ctx, r, stable, target("stable")))
 	require.NoError(t, r.Create(ctx, servingSlice()))
+	require.NoError(t, r.Create(ctx, servingPod()))
 	require.NoError(t, doormanErr(ctx, r, canary, target("canary")))
 
 	assert.Empty(t, doormanSlices(t, r), "stable is running, so the Service's traffic goes to it")
@@ -1032,7 +1041,7 @@ func TestRouteDoorman_RechecksAServiceLeftToOtherPods(t *testing.T) {
 	target := appTarget()
 	target.Spec.Template.Labels = map[string]string{"app": "shop", "track": "canary"}
 	shop := service("shop", map[string]string{"app": "shop"}, corev1.ServicePort{Name: "http", Port: 80})
-	r := doormanReconciler(t, workload, doormanEndpoints("10.0.0.7"), shop, servingSlice())
+	r := doormanReconciler(t, workload, doormanEndpoints("10.0.0.7"), shop, servingSlice(), servingPod())
 
 	assert.Equal(t, servedRecheck, r.routeDoorman(context.Background(), workload, target))
 	assert.Empty(t, doormanSlices(t, r))
@@ -1040,6 +1049,39 @@ func TestRouteDoorman_RechecksAServiceLeftToOtherPods(t *testing.T) {
 	require.NoError(t, r.Delete(context.Background(), servingSlice()))
 	assert.Zero(t, r.routeDoorman(context.Background(), workload, target), "routed: nothing to wait for")
 	assert.Len(t, doormanSlices(t, r), 1)
+}
+
+// A slice anyone may write can claim the EndpointSlice controller wrote it.
+// Its endpoints count as serving the Service only when the pods they name
+// have their addresses, or a forged slice could keep a paused workload's
+// Service from being routed, so requests through it would wake nothing.
+func TestRouteDoorman_RoutesAServiceWhoseServingPodsAreForged(t *testing.T) {
+	tests := []struct {
+		name string
+		pod  *corev1.Pod
+	}{
+		{name: "no such pod"},
+		{name: "a pod without that address", pod: &corev1.Pod{
+			ObjectMeta: metav1.ObjectMeta{Name: "shop-pod", Namespace: "default"},
+			Status:     corev1.PodStatus{PodIPs: []corev1.PodIP{{IP: "10.244.7.7"}}},
+		}},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			workload := lifecycleWorkload("canary", v1alpha1.PhasePaused)
+			target := appTarget()
+			target.Spec.Template.Labels = map[string]string{"app": "shop", "track": "canary"}
+			shop := service("shop", map[string]string{"app": "shop"}, corev1.ServicePort{Name: "http", Port: 80})
+			objs := []client.Object{workload, doormanEndpoints("10.0.0.7"), shop, servingSlice()}
+			if tt.pod != nil {
+				objs = append(objs, tt.pod)
+			}
+			r := doormanReconciler(t, objs...)
+
+			assert.Zero(t, r.routeDoorman(context.Background(), workload, target))
+			assert.Len(t, doormanSlices(t, r), 1, "routed: the slice's pod isn't there to serve it")
+		})
+	}
 }
 
 // A reconcile that applies the slices but fails before status is written
