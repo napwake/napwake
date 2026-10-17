@@ -700,6 +700,21 @@ func TestNextSteps_SkipDryRunScaledByHand(t *testing.T) {
 	assert.Equal(t, "preview", got.Name)
 }
 
+// A workload Hybernate refuses to pause isn't suggested, and could save
+// nothing, however idle it is.
+func TestNextSteps_SkipWhatWontPause(t *testing.T) {
+	postgres := Workload{Namespace: "dev", Kind: v1alpha1.TargetKindStatefulSet, Name: "postgres",
+		State: discovery.StateIdle, WontPause: "PVCs deleted on scale-down",
+		History: &discovery.History{MonthlyFreed: 90}}
+	api := Workload{Namespace: "dev", Kind: v1alpha1.TargetKindDeployment, Name: "api", State: discovery.StateIdle}
+
+	idle, _ := nextStepTargets([]Workload{postgres, api})
+
+	require.NotNil(t, idle)
+	assert.Equal(t, "api", idle.Name)
+	assert.Equal(t, "-", couldSaveCell(postgres))
+}
+
 // Under an hour is shown in minutes, rounded first, so what rounds to an
 // hour says so.
 func TestHours(t *testing.T) {

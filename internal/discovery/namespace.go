@@ -197,6 +197,7 @@ func (s *Scanner) scanNamespace(ctx, historyCtx context.Context, namespace strin
 				judgeUnmanaged(&w, obj, now, thresholdFor(mw, opts), idleAfterFor(mw, opts))
 			}
 		}
+		w.WontPause = wontPause(obj)
 		w.Clues = clues(w, now)
 		w.rates, w.OnSpot = pricing.ratesFor(running, mw, opts)
 		w.HourlyCost = hourlyCost(w, w.rates)
@@ -243,6 +244,21 @@ func (s *Scanner) readHistoryOf(ctx, historyCtx context.Context, scan *namespace
 		scan.historySince = time.Unix(first, 0).UTC()
 	}
 	return history
+}
+
+// wontPause says why the operator refuses to pause a workload whatever its
+// activity: a StatefulSet whose PVCs are deleted when it's scaled down
+// would lose its data to a pause.
+func wontPause(obj client.Object) string {
+	sts, ok := obj.(*appsv1.StatefulSet)
+	if !ok {
+		return ""
+	}
+	if p := sts.Spec.PersistentVolumeClaimRetentionPolicy; p != nil &&
+		p.WhenScaled == appsv1.DeletePersistentVolumeClaimRetentionPolicyType {
+		return "PVCs deleted on scale-down"
+	}
+	return ""
 }
 
 // measure sets a workload's CPU use from its pods' metrics, as a share of

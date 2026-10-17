@@ -831,7 +831,8 @@ func savedCell(wl Workload) string {
 // couldSaveCell is what pausing a workload Hybernate doesn't pause yet
 // would free a month, from what dry-run measured or history shows.
 func couldSaveCell(wl Workload) string {
-	if wl.ScaledByHand || (wl.Measured == nil && (wl.Managed || wl.Protected || wl.History == nil)) {
+	if wl.ScaledByHand || wl.WontPause != "" ||
+		(wl.Measured == nil && (wl.Managed || wl.Protected || wl.History == nil)) {
 		return "-"
 	}
 	return dollars(discovery.CouldSave(wl))
@@ -841,16 +842,16 @@ func couldSaveCell(wl Workload) string {
 // one Hybernate could manage, to measure, and the first already measuring
 // in dry-run, to go live. Workloads come sorted most savings first, so each
 // is the best example. Protected workloads are left out, as Hybernate won't
-// manage them, and so are those whose replicas are set from Git, whose
-// GitOps tool would revert a label put on by hand and undo every pause; the
-// notes say how to bring those in. Nor is the cluster's own
+// manage them, and those it refuses to pause, and so are those whose
+// replicas are set from Git, whose GitOps tool would revert a label put on
+// by hand and undo every pause; the notes say how to bring those in. Nor is the cluster's own
 // infrastructure, which the report keeps apart from the workloads anyway,
 // or a workload in dry-run someone scaled to zero, which going live frees
 // nothing more of.
 func nextStepTargets(workloads []Workload) (idle, measuring *Workload) {
 	for i := range workloads {
 		wl := &workloads[i]
-		if wl.Protected || wl.ReplicasFromGit != "" || wl.Platform != "" {
+		if wl.Protected || wl.WontPause != "" || wl.ReplicasFromGit != "" || wl.Platform != "" {
 			continue
 		}
 		if idle == nil && wl.State == discovery.StateIdle && !wl.Managed {

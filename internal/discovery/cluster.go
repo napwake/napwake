@@ -149,6 +149,10 @@ type Workload struct {
 	// Protected means its namespace is labelled protected, so Hybernate
 	// won't manage it whatever its labels.
 	Protected bool `json:"protected,omitempty"`
+	// WontPause says why Hybernate refuses to pause it however idle it is,
+	// as for a StatefulSet that deletes its PVCs when scaled down, so it's
+	// left out of what pausing could save.
+	WontPause string `json:"wontPause,omitempty"`
 	// Platform is the part of the cluster's own infrastructure it runs, such
 	// as Kubernetes, Hybernate or cert-manager, for one the scan leaves out
 	// of what pausing could save.
@@ -662,6 +666,9 @@ func plural(n int, one, many string) string {
 
 func clues(w Workload, now time.Time) []string {
 	var out []string
+	if w.WontPause != "" {
+		out = append(out, "won't pause: "+w.WontPause)
+	}
 	if w.LastDeployed != nil {
 		if age := now.Sub(*w.LastDeployed); age >= staleAfter {
 			out = append(out, fmt.Sprintf("last deployed %d days ago", int(age.Hours()/24)))
@@ -682,7 +689,7 @@ func totals(workloads []Workload) Totals {
 		t.Workloads++
 		t.SavedThisMonth += w.SavedThisMonth
 		switch {
-		case w.Measured != nil && w.ScaledByHand:
+		case w.Measured != nil && (w.ScaledByHand || w.WontPause != ""):
 			t.DryRun++
 		case w.Measured != nil:
 			t.DryRun++
@@ -694,7 +701,7 @@ func totals(workloads []Workload) Totals {
 			t.Live++
 		}
 		judged := w.State != StateUnknown
-		replayed := w.History != nil && !w.Managed && !w.Protected && judged
+		replayed := w.History != nil && !w.Managed && !w.Protected && w.WontPause == "" && judged
 		if h := w.History; replayed {
 			t.Replayed.Workloads++
 			if h.SleepHours > 0 {
