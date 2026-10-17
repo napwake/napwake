@@ -21,6 +21,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"fmt"
+	"maps"
 	"slices"
 	"strings"
 	"time"
@@ -31,6 +32,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/apimachinery/pkg/types"
+	"k8s.io/apimachinery/pkg/util/validation"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	v1alpha1 "github.com/okedeji/hybernate/api/v1alpha1"
@@ -61,20 +63,21 @@ func (r *Reconciler) learnDependencies(ctx context.Context, workload *v1alpha1.M
 	if err != nil {
 		return err
 	}
-	var services corev1.ServiceList
-	if err := r.List(ctx, &services); err != nil {
-		return fmt.Errorf("listing Services: %w", err)
-	}
 	byNamespace := map[string]map[string]corev1.Service{}
-	for _, svc := range services.Items {
-		if byNamespace[svc.Namespace] == nil {
-			byNamespace[svc.Namespace] = map[string]corev1.Service{}
+	var targets []discovery.Target
+	for _, ns := range r.namespacesNamed(workload.Namespace, spec, configMaps) {
+		found, err := r.addServices(ctx, ns, byNamespace)
+		if err != nil {
+			return err
 		}
-		byNamespace[svc.Namespace][svc.Name] = svc
-	}
-	targets, err := r.dependencyTargets(ctx)
-	if err != nil {
-		return err
+		if !found {
+			continue
+		}
+		in, err := r.dependencyTargets(ctx, ns)
+		if err != nil {
+			return err
+		}
+		targets = append(targets, in...)
 	}
 
 	found, _ := discovery.DependenciesOf(workload.Namespace, workload.Spec.Target.Kind, workload.Spec.Target.Name,
@@ -136,16 +139,79 @@ func (r *Reconciler) configMapsFor(ctx context.Context, namespace string, spec c
 	return out, nil
 }
 
-// dependencyTargets are the Deployments and StatefulSets a dependency can
-// resolve to.
-func (r *Reconciler) dependencyTargets(ctx context.Context) ([]discovery.Target, error) {
+// maxNamedNamespaces bounds how many namespaces an environment can have
+// listed one by one. An environment naming more, such as a ConfigMap
+// holding a whole config file, has the cluster listed once instead.
+const maxNamedNamespaces = 32
+
+// namespacesNamed are the namespaces the pod's environment could address a
+// Service in: its own, which a bare name resolves in, and every word of its
+// values that could be a namespace, since an address names one as a label
+// of its host, as in postgres.data or postgres.data.svc.cluster.local. That
+// is more than the addresses name, and never fewer. Nil means every
+// namespace. In a namespaced install, only the namespaces it watches can be
+// read.
+func (r *Reconciler) namespacesNamed(own string, spec corev1.PodSpec, configMaps map[string]map[string]string) []string {
+	named := map[string]bool{own: true}
+	addWords := func(value string) {
+		for word := range strings.FieldsFuncSeq(strings.ToLower(value), func(c rune) bool {
+			return (c < 'a' || c > 'z') && (c < '0' || c > '9') && c != '-'
+		}) {
+			if len(validation.IsDNS1123Label(word)) == 0 {
+				named[word] = true
+			}
+		}
+	}
+	for _, c := range append(slices.Clone(spec.InitContainers), spec.Containers...) {
+		for _, env := range c.Env {
+			addWords(env.Value)
+		}
+	}
+	for _, data := range configMaps {
+		for _, value := range data {
+			addWords(value)
+		}
+	}
+	if len(r.WatchNamespaces) > 0 {
+		for ns := range named {
+			if !slices.Contains(r.WatchNamespaces, ns) {
+				delete(named, ns)
+			}
+		}
+	} else if len(named) > maxNamedNamespaces {
+		return []string{metav1.NamespaceAll}
+	}
+	return slices.Sorted(maps.Keys(named))
+}
+
+// addServices adds the Services in a namespace to byNamespace, and reports
+// whether there were any. They're read from the cache without copying:
+// dependencies are learned only by reading them.
+func (r *Reconciler) addServices(ctx context.Context, namespace string,
+	byNamespace map[string]map[string]corev1.Service) (bool, error) {
+	var services corev1.ServiceList
+	if err := r.List(ctx, &services, client.InNamespace(namespace), client.UnsafeDisableDeepCopy); err != nil {
+		return false, fmt.Errorf("listing Services in %q: %w", namespace, err)
+	}
+	for _, svc := range services.Items {
+		if byNamespace[svc.Namespace] == nil {
+			byNamespace[svc.Namespace] = map[string]corev1.Service{}
+		}
+		byNamespace[svc.Namespace][svc.Name] = svc
+	}
+	return len(services.Items) > 0, nil
+}
+
+// dependencyTargets are the Deployments and StatefulSets in a namespace a
+// dependency can resolve to.
+func (r *Reconciler) dependencyTargets(ctx context.Context, namespace string) ([]discovery.Target, error) {
 	var deployments appsv1.DeploymentList
-	if err := r.List(ctx, &deployments); err != nil {
-		return nil, fmt.Errorf("listing Deployments: %w", err)
+	if err := r.List(ctx, &deployments, client.InNamespace(namespace), client.UnsafeDisableDeepCopy); err != nil {
+		return nil, fmt.Errorf("listing Deployments in %q: %w", namespace, err)
 	}
 	var statefulSets appsv1.StatefulSetList
-	if err := r.List(ctx, &statefulSets); err != nil {
-		return nil, fmt.Errorf("listing StatefulSets: %w", err)
+	if err := r.List(ctx, &statefulSets, client.InNamespace(namespace), client.UnsafeDisableDeepCopy); err != nil {
+		return nil, fmt.Errorf("listing StatefulSets in %q: %w", namespace, err)
 	}
 	targets := make([]discovery.Target, 0, len(deployments.Items)+len(statefulSets.Items))
 	for _, d := range deployments.Items {

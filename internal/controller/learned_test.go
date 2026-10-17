@@ -19,6 +19,9 @@ package controller
 import (
 	"context"
 	"errors"
+	"fmt"
+	"maps"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -119,6 +122,53 @@ func TestLearnDependencies(t *testing.T) {
 				assert.Equal(t, tt.wantAddress, api.Status.LearnedDependencies.Dependencies[0].Address,
 					"only scheme, host and port shown")
 			}
+		})
+	}
+}
+
+// Learning lists Services and workloads only in the namespaces the
+// environment could address, not across the cluster, hourly, for every
+// workload. An environment naming more than it's worth listing one by one
+// has the cluster listed once.
+func TestLearnDependencies_ListsOnlyTheNamespacesNamed(t *testing.T) {
+	labels := map[string]string{"app": "pg"}
+	pg := &appsv1.StatefulSet{ObjectMeta: metav1.ObjectMeta{Name: "pg", Namespace: "data"},
+		Spec: appsv1.StatefulSetSpec{Template: corev1.PodTemplateSpec{ObjectMeta: metav1.ObjectMeta{Labels: labels}}}}
+	pgService := &corev1.Service{ObjectMeta: metav1.ObjectMeta{Name: "pg", Namespace: "data"},
+		Spec: corev1.ServiceSpec{Selector: labels}}
+	many := make([]string, 0, maxNamedNamespaces+1)
+	for i := range maxNamedNamespaces + 1 {
+		many = append(many, fmt.Sprintf("word%d", i))
+	}
+	tests := []struct {
+		name  string
+		value string
+		want  []string
+	}{
+		{name: "an address in another namespace", value: "postgres://app@pg.data.svc.cluster.local:5432/app",
+			want: []string{"5432", "app", "cluster", "data", "default", "local", "pg", "postgres", "svc"}},
+		{name: "too many words to list one by one", value: "pg.data:5432 " + strings.Join(many, " "),
+			want: []string{metav1.NamespaceAll}},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			target := apiWith(nil, corev1.EnvVar{Name: "DATABASE_URL", Value: tt.value})
+			api := depWorkload("default", "api", v1alpha1.TargetKindDeployment, v1alpha1.PhaseRunning)
+			r := depReconciler(t, &stubPauser{}, api, target, pg, pgService)
+			listed := map[string]bool{}
+			r.Client = interceptor.NewClient(r.Client.(client.WithWatch), interceptor.Funcs{
+				List: func(ctx context.Context, c client.WithWatch, list client.ObjectList, opts ...client.ListOption) error {
+					if _, ok := list.(*corev1.ServiceList); ok {
+						o := (&client.ListOptions{}).ApplyOptions(opts)
+						listed[o.Namespace] = true
+					}
+					return c.List(ctx, list, opts...)
+				}})
+
+			require.NoError(t, r.learnDependencies(context.Background(), api, target))
+
+			assert.Equal(t, []string{"data/pg DATABASE_URL"}, learnedNames(api))
+			assert.Equal(t, tt.want, slices.Sorted(maps.Keys(listed)), "namespaces whose Services were listed")
 		})
 	}
 }
