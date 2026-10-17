@@ -670,7 +670,7 @@ func writeStatusTable(w io.Writer, result statusResult, now time.Time) error {
 	p.line("%s: Hybernate manages %s.", result.Cluster, countOf(len(result.Workloads), "workload"))
 	p.line("  %s", phaseCounts(result.Workloads))
 	if result.SavedThisMonth > 0 {
-		p.line("  Saved %s this month.", cents(result.SavedThisMonth))
+		p.line("  Saved %s this month.", savedMoney(result.SavedThisMonth))
 	}
 	if result.Note != "" {
 		p.line("  %s", result.Note)
@@ -776,7 +776,16 @@ func statusSavedCell(wl statusWorkload) string {
 	if wl.DryRun || wl.SavedThisMonth == 0 {
 		return "-"
 	}
-	return cents(wl.SavedThisMonth)
+	return savedMoney(wl.SavedThisMonth)
+}
+
+// savedMoney is a saving in whole dollars, as scan shows one. A saving
+// under half a dollar isn't nothing, so it isn't shown as $0.
+func savedMoney(amount float64) string {
+	if amount > 0 && amount < 0.5 {
+		return "<$1"
+	}
+	return dollars(amount)
 }
 
 func ago(t, now time.Time) string {

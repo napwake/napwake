@@ -225,15 +225,15 @@ kubectl hybernate status
 ```
 staging (EKS us-east-1): Hybernate manages 4 workloads.
   1 paused, 2 running, 1 resuming; 1 in dry-run, measured but never paused
-  Saved $42.45 this month.
+  Saved $42 this month.
 
 Needs attention:
   preview-7/worker   GitOpsConflict   Argo CD set the replicas from Git, undoing the pause; ...
   preview-7/worker   Stuck            resuming for 25m: waiting for preview-42/postgres
 
   NAMESPACE    WORKLOAD               STATE               FOR   LAST ACTIVITY      NEXT                             SAVED THIS MONTH
-  preview-42   deployment/api         paused              3h    request, 4h ago    wakes on a request or activity   $12.40
-  preview-42   statefulset/postgres   running             5h    cpu, 2h ago        held awake by its dependents     $30.05
+  preview-42   deployment/api         paused              3h    request, 4h ago    wakes on a request or activity   $12
+  preview-42   statefulset/postgres   running             5h    cpu, 2h ago        held awake by its dependents     $30
   preview-7    deployment/web         running (dry-run)   2h    rollout, 15m ago   would pause in 45m               -
   preview-7    deployment/worker      resuming            25m   -                  -                                -
 
@@ -245,7 +245,7 @@ Recent pauses and wakes:
 
 `status` is one screen of every workload Hybernate manages, read from their ManagedWorkloads and events:
 
-- **The summary:** how many workloads are in each phase, how many are in dry-run, and what Hybernate has saved this month pausing live ones.
+- **The summary:** how many workloads are in each phase, how many are in dry-run, and what Hybernate has saved this month pausing live ones, in whole dollars as `scan` shows it.
 - **Needs attention:** what keeps Hybernate from doing its job, from each workload's conditions: a GitOps tool undoing pauses (`GitOpsConflict`), a dependency that's missing or in a cycle, two ManagedWorkloads for one target, a protected namespace, a target that's gone, metrics or Prometheus that can't be read, a paused workload whose requests can't wake it (`WakeOnRequest`), and a pause or wake taking over 10 minutes (`Stuck`), with what it waits for. `kubectl describe managedworkload` has the rest.
 - **The table:** each workload as `kind/name`, with its ManagedWorkload's name in brackets when you wrote one under another name; its state and for how long; its last activity and where it came from; what it has saved this month, where a saving last brought up to date in an earlier month counts as none; and **NEXT**:
     - when it pauses: `pauses in 45m`, `pauses now` once it's `Idle`, and `would pause …` in dry-run. Status is written every few minutes, so for up to 7 minutes after the time it showed, a workload still running reads `pauses soon`; after that, `overdue to pause`, which means something the table can't see holds it, and `kubectl describe managedworkload` says what

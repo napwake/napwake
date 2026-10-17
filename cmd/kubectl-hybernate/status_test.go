@@ -145,15 +145,15 @@ func TestStatus(t *testing.T) {
 	//nolint:lll // the expected screen is as wide as the command prints it
 	assert.Equal(t, `staging (EKS us-east-1): Hybernate manages 4 workloads.
   1 paused, 2 running, 1 resuming; 1 in dry-run, measured but never paused
-  Saved $42.45 this month.
+  Saved $42 this month.
 
 Needs attention:
   preview-7/worker   GitOpsConflict   Argo CD set the replicas from Git
   preview-7/worker   Stuck            resuming for 25m: waiting for preview-42/postgres
 
   NAMESPACE    WORKLOAD               STATE               FOR   LAST ACTIVITY      NEXT                             SAVED THIS MONTH
-  preview-42   deployment/api         paused              3h    request, 4h ago    wakes on a request or activity   $12.40
-  preview-42   statefulset/postgres   running             5h    cpu, 2h ago        held awake by its dependents     $30.05
+  preview-42   deployment/api         paused              3h    request, 4h ago    wakes on a request or activity   $12
+  preview-42   statefulset/postgres   running             5h    cpu, 2h ago        held awake by its dependents     $30
   preview-7    deployment/web         running (dry-run)   2h    rollout, 15m ago   would pause in 45m               -
   preview-7    deployment/worker      resuming            25m   -                  -                                -
 
@@ -527,6 +527,21 @@ func TestStatus_NamespaceThatDoesntExist(t *testing.T) {
 	opts.namespaces = namespaceFlags{names: []string{"nope"}}
 	_, err = clusterStatus(context.Background(), newStatusClient(t, cantGet), "default", opts)
 	require.NoError(t, err)
+}
+
+// Savings read as scan shows them, in whole dollars with thousands
+// separators, and a saving under a dollar isn't $0.
+func TestStatus_SavedInDollars(t *testing.T) {
+	big := statusWorkloadObj("preview-42", "api", v1alpha1.TargetKindDeployment, v1alpha1.PhasePaused, time.Hour)
+	big.Status.Cost = &v1alpha1.CostStatus{SavedThisMonth: "$1234.56"}
+	small := statusWorkloadObj("preview-42", "web", v1alpha1.TargetKindDeployment, v1alpha1.PhasePaused, time.Hour)
+	small.Status.Cost = &v1alpha1.CostStatus{SavedThisMonth: "$0.20"}
+
+	out := runStatus(t, newStatusClient(t, interceptor.Funcs{}, big, small), statusOpts())
+
+	assert.Contains(t, out, "  Saved $1,235 this month.\n")
+	assert.Regexp(t, `deployment/api .* \$1,235\n`, out)
+	assert.Regexp(t, `deployment/web .* <\$1\n`, out)
 }
 
 func TestStatus_Since(t *testing.T) {
