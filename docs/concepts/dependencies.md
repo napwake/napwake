@@ -49,7 +49,7 @@ dependsOn:
 The dependent then stays in `Resuming`, without scaling up, until every replica of that dependency is Ready:
 
 ```
-WaitingForDependencies=True   waiting for preview-42/postgres (0 ready)
+WaitingForDependencies=True   waiting for preview-42/statefulset/postgres (0 ready)
 ```
 
 There's no timeout, because a slow start is exactly why you'd set it. If the wait runs past 15 minutes, the `HybernateWorkloadStuck` alert fires. It doesn't wait for a dependency that can't start by waiting, which would leave the dependent at zero for good: one Hybernate doesn't manage that's scaled to zero. `WaitingForDependencies=False` then names it. A managed dependency that's still paused is woken again every few seconds while the dependent waits.

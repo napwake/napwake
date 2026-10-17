@@ -59,8 +59,10 @@ type workloadID struct {
 	name      string
 }
 
+// String is namespace/kind/name, as hybernate.io/depends-on names it, since
+// a Deployment and a StatefulSet can share a name.
 func (id workloadID) String() string {
-	return id.namespace + "/" + id.name
+	return id.namespace + "/" + strings.ToLower(string(id.kind)) + "/" + id.name
 }
 
 func targetID(workload *v1alpha1.ManagedWorkload) workloadID {
@@ -428,7 +430,7 @@ func (r *Reconciler) checkDependenciesExist(ctx context.Context, workload *v1alp
 				"namespace", workload.Namespace, "dependency", id.String(), "error", err.Error())
 			continue
 		}
-		name := string(id.kind) + " " + id.String()
+		name := id.String()
 		switch state {
 		case dependencyMissing:
 			missing = append(missing, name)

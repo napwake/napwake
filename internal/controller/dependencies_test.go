@@ -303,7 +303,11 @@ func TestDependencies_WaitForReady(t *testing.T) {
 				assert.Equal(t, 0, pauser.resumeCalls, "the dependent must not scale up before its dependency is Ready")
 				require.NotNil(t, result)
 				assert.Equal(t, dependencyReadyCheckInterval, result.RequeueAfter)
-				assert.True(t, meta.IsStatusConditionTrue(fetch(t, r, "api").Status.Conditions, conditionWaitingForDependencies))
+				waiting := meta.FindStatusCondition(fetch(t, r, "api").Status.Conditions, conditionWaitingForDependencies)
+				require.NotNil(t, waiting)
+				assert.Equal(t, metav1.ConditionTrue, waiting.Status)
+				assert.Equal(t, "waiting for default/statefulset/postgres (0 ready)", waiting.Message,
+					"the kind tells a StatefulSet from a Deployment of the same name")
 				return
 			}
 			assert.Equal(t, 1, pauser.resumeCalls, "a dependency that won't start never strands the dependent at zero")
@@ -377,6 +381,10 @@ func TestDependencies_NotFoundCondition(t *testing.T) {
 			require.NoError(t, err)
 
 			assert.Equal(t, tt.wantMissing, meta.IsStatusConditionTrue(api.Status.Conditions, conditionDependencyNotFound))
+			if tt.wantMissing {
+				assert.Equal(t, "not found: default/statefulset/postgres",
+					meta.FindStatusCondition(api.Status.Conditions, conditionDependencyNotFound).Message)
+			}
 		})
 	}
 }
