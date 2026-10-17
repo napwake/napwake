@@ -42,7 +42,7 @@ The primary reconciler. Watches `ManagedWorkload` CRs and drives each workload t
 11. Runs the activity clock and the forecast: records activity, and pauses once there has been none for `idleAfter` and no demand is forecast; for a paused workload, checks whether anything, or `autoResume`, asks it to wake
 12. Adds up what dry-run held back, accumulates cost, and writes status
 
-Each ManagedWorkload gets its own forecast engine, kept in memory and saved to the ManagedWorkload's `status.prediction.state` as it learns each hour, so it survives operator restarts and leader changes. Every reconcile is bounded by a 2-minute timeout, and `--max-concurrent-reconciles` (4 by default) workloads are reconciled at once, so one slow metrics or Prometheus query doesn't hold up another workload's wake.
+Each ManagedWorkload gets its own forecast engine, kept in memory and saved to the ManagedWorkload's `status.prediction.state` as it learns each hour, so it survives operator restarts and leader changes. Every reconcile is bounded by a 2-minute timeout, and `--max-concurrent-reconciles` (8 by default) workloads are reconciled at once, so one slow metrics or Prometheus query doesn't hold up another workload's wake. Reconciles wait in one queue ordered by priority: what wakes a workload (a request the doorman holds, an activity or pause annotation, a scale-up from zero) and a resume under way come first, then other changes, and the periodic checks of awake and paused workloads last, so a wake isn't queued behind every workload's metrics and Prometheus checks.
 
 ### Opt-In Reconcilers
 

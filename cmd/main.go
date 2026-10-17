@@ -120,7 +120,7 @@ func main() {
 		"The most doorman ports the workloads of one namespace may hold together.")
 	flag.StringVar(&prometheusURL, "prometheus-url", "",
 		"Base URL of the Prometheus API used for activity queries, e.g. http://prometheus.monitoring.svc:9090.")
-	flag.IntVar(&maxConcurrentReconciles, "max-concurrent-reconciles", 4,
+	flag.IntVar(&maxConcurrentReconciles, "max-concurrent-reconciles", 8,
 		"How many ManagedWorkloads are reconciled at once, so one slow metrics or Prometheus query doesn't hold up wakes.")
 	flag.StringVar(&timezone, "timezone", "UTC",
 		"IANA time zone, such as Europe/London, whose hours and weekdays forecasts learn, so they follow daylight saving.")

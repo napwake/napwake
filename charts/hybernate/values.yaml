@@ -22,7 +22,7 @@ leaderElection:
 
 # How many ManagedWorkloads the operator reconciles at once, so one slow
 # metrics or Prometheus query doesn't hold up waking another workload.
-maxConcurrentReconciles: 4
+maxConcurrentReconciles: 8
 
 # IANA time zone, such as Europe/London, whose hours and weekdays forecasts
 # learn. Use your users' zone, so forecasts follow daylight saving.

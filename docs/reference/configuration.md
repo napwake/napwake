@@ -14,7 +14,7 @@ These flags are passed to the binary (`/manager`), which runs as the operator, o
 | `--enable-http2` | `false` | Allow HTTP/2 for the metrics server |
 | `--health-probe-bind-address` | `:8081` | Address for the health and readiness probes |
 | `--leader-elect` | `false` | Elect a leader, so only one replica reconciles. A leader that stops releases its lease, so the next replica, or the new one in a rollout, takes over at once. Ignored by the doorman |
-| `--max-concurrent-reconciles` | `4` | How many ManagedWorkloads are reconciled at once, so one slow metrics or Prometheus query doesn't hold up wakes. At least 1 |
+| `--max-concurrent-reconciles` | `8` | How many ManagedWorkloads are reconciled at once, so one slow metrics or Prometheus query doesn't hold up wakes, which are queued ahead of periodic checks. At least 1 |
 | `--timezone` | `UTC` | IANA time zone, such as `Europe/London`, whose hours and weekdays forecasts learn, so they follow daylight saving. The time zone database is built in |
 | `--prometheus-url` | | Base URL of the Prometheus API for Prometheus activity queries, such as `http://prometheus.monitoring.svc:9090`; `http` or `https` with a host. Required only if workloads set `idlePolicy.activity.prometheus` |
 | `--watch-namespaces` | every namespace | Comma-separated namespaces to work in, with a Role in each |

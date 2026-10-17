@@ -19,6 +19,7 @@ package controller
 import (
 	"context"
 	"fmt"
+	"maps"
 	"strings"
 	"sync"
 	"time"
@@ -34,11 +35,13 @@ import (
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/client-go/tools/events"
 	"k8s.io/client-go/util/workqueue"
+	"k8s.io/utils/ptr"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/builder"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
+	"sigs.k8s.io/controller-runtime/pkg/controller/priorityqueue"
 	"sigs.k8s.io/controller-runtime/pkg/event"
 	"sigs.k8s.io/controller-runtime/pkg/handler"
 	"sigs.k8s.io/controller-runtime/pkg/log"
@@ -166,19 +169,23 @@ func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (res ctrl.
 	ctx, cancel := context.WithTimeout(ctx, reconcileTimeout)
 	defer cancel()
 
+	var workload v1alpha1.ManagedWorkload
 	var doormanRetry time.Duration
 	defer func() {
+		if retErr == nil {
+			if doormanRetry > 0 && (res.RequeueAfter == 0 || res.RequeueAfter > doormanRetry) {
+				res.RequeueAfter = doormanRetry
+			}
+			res.Priority = requeuePriority(&workload, res)
+		}
+		// A write that lost to a newer one is retried at the priority of what
+		// brought it, such as a wake.
 		res, retErr = retryIfStale(ctx, res, retErr)
 		if retErr != nil {
 			metrics.ReconcileErrors.WithLabelValues("managedworkload").Inc()
-			return
-		}
-		if doormanRetry > 0 && (res.RequeueAfter == 0 || res.RequeueAfter > doormanRetry) {
-			res.RequeueAfter = doormanRetry
 		}
 	}()
 
-	var workload v1alpha1.ManagedWorkload
 	if found, err := r.readWorkload(ctx, req.NamespacedName, &workload); err != nil || !found {
 		return ctrl.Result{}, err
 	}
@@ -265,6 +272,71 @@ func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (res ctrl.
 	}
 
 	return r.reconcileSettled(ctx, &workload, target, observed)
+}
+
+// Every workload's reconciles share one queue, ordered by priority, so a
+// wake, which a held request or a person waits on, isn't queued behind the
+// periodic checks of every awake workload, each of which may read metrics
+// and Prometheus. Events come at the queue's default priority, ahead of
+// those checks, and a request, an activity or pause annotation, or a
+// scale-up that wakes a workload ahead of other events.
+const priorityWake = 100
+
+// requeuePriority is the priority a workload's next reconcile is queued at:
+// the wake's while it resumes, its own for the rest of a pause, and below
+// any event's for a periodic check.
+func requeuePriority(workload *v1alpha1.ManagedWorkload, res ctrl.Result) *int {
+	if res.Priority != nil || res.RequeueAfter == 0 {
+		return res.Priority
+	}
+	switch workload.Status.Phase {
+	case v1alpha1.PhaseResuming:
+		return ptr.To(priorityWake)
+	case v1alpha1.PhasePausing:
+		return nil
+	default:
+		return ptr.To(handler.LowPriority)
+	}
+}
+
+// enqueueAt adds requests to the queue at priority, where it's a priority
+// queue.
+func enqueueAt(q workqueue.TypedRateLimitingInterface[reconcile.Request], priority int, requests ...reconcile.Request) {
+	if pq, ok := q.(priorityqueue.PriorityQueue[reconcile.Request]); ok {
+		pq.AddWithOpts(priorityqueue.AddOpts{Priority: ptr.To(priority)}, requests...)
+		return
+	}
+	for _, req := range requests {
+		q.Add(req)
+	}
+}
+
+// wakeHandler enqueues at priorityWake a ManagedWorkload whose annotations
+// changed, as the doorman's stamp of a held request, kubectl hybernate wake
+// and pause, and other tools' activity annotations change them.
+func wakeHandler() handler.EventHandler {
+	return handler.Funcs{
+		UpdateFunc: func(_ context.Context, e event.UpdateEvent, q workqueue.TypedRateLimitingInterface[reconcile.Request]) {
+			if !maps.Equal(e.ObjectOld.GetAnnotations(), e.ObjectNew.GetAnnotations()) {
+				enqueueAt(q, priorityWake, reconcile.Request{NamespacedName: client.ObjectKeyFromObject(e.ObjectNew)})
+			}
+		},
+	}
+}
+
+// scaleUpHandler enqueues at priorityWake the ManagedWorkloads of a
+// Deployment or StatefulSet scaled up from zero, which wakes one paused.
+func (r *Reconciler) scaleUpHandler() handler.EventHandler {
+	return handler.Funcs{
+		UpdateFunc: func(ctx context.Context, e event.UpdateEvent, q workqueue.TypedRateLimitingInterface[reconcile.Request]) {
+			target, ok := targetRefFor(e.ObjectNew)
+			if !ok || replicasFromTarget(e.ObjectOld) > 0 || replicasFromTarget(e.ObjectNew) == 0 {
+				return
+			}
+			enqueueAt(q, priorityWake, r.workloadsBy(ctx, "", client.InNamespace(e.ObjectNew.GetNamespace()),
+				client.MatchingFields{targetField: targetKey(target.Kind, target.Name)})...)
+		},
+	}
 }
 
 // observeTarget takes in what's changed on the target Hybernate manages:
@@ -1220,8 +1292,8 @@ func workloadIndexes() map[string]client.IndexerFunc {
 }
 
 // workloadsBy enqueues the ManagedWorkloads a lookup by index finds, other
-// than skip. They're only read for their names, so the cache's own objects
-// are listed rather than copies.
+// than the one whose UID is skip, if it's set. They're only read for their
+// names, so the cache's own objects are listed rather than copies.
 func (r *Reconciler) workloadsBy(ctx context.Context, skip types.UID, opts ...client.ListOption) []reconcile.Request {
 	var list v1alpha1.ManagedWorkloadList
 	if err := r.List(ctx, &list, append(opts, client.UnsafeDisableDeepCopy)...); err != nil {
@@ -1230,7 +1302,7 @@ func (r *Reconciler) workloadsBy(ctx context.Context, skip types.UID, opts ...cl
 	}
 	requests := make([]reconcile.Request, 0, len(list.Items))
 	for i := range list.Items {
-		if w := &list.Items[i]; w.UID != skip {
+		if w := &list.Items[i]; skip == "" || w.UID != skip {
 			requests = append(requests, reconcile.Request{NamespacedName: client.ObjectKeyFromObject(w)})
 		}
 	}
@@ -1492,17 +1564,21 @@ func (r *Reconciler) SetupWithManager(mgr ctrl.Manager) error {
 	targetHandler := handler.EnqueueRequestsFromMapFunc(r.findWorkloadsForTarget)
 	return ctrl.NewControllerManagedBy(mgr).
 		For(&v1alpha1.ManagedWorkload{}).
+		Watches(&v1alpha1.ManagedWorkload{}, wakeHandler()).
 		Watches(&v1alpha1.ManagedWorkload{}, r.relatedHandler(), builder.WithPredicates(relationsChanged())).
 		Watches(&v1alpha1.ManagedWorkload{}, handler.EnqueueRequestsFromMapFunc(r.findRoutedNeighbours),
 			builder.WithPredicates(phaseChanged())).
 		Watches(&appsv1.Deployment{}, targetHandler).
 		Watches(&appsv1.StatefulSet{}, targetHandler).
+		Watches(&appsv1.Deployment{}, r.scaleUpHandler()).
+		Watches(&appsv1.StatefulSet{}, r.scaleUpHandler()).
 		Watches(&discoveryv1.EndpointSlice{}, handler.EnqueueRequestsFromMapFunc(r.findWorkloadsForDoorman),
 			builder.WithPredicates(predicate.NewPredicateFuncs(r.isDoormanEndpoints))).
 		Watches(&corev1.Service{}, handler.EnqueueRequestsFromMapFunc(r.findPausedWorkloadsInNamespace)).
 		Watches(&corev1.Namespace{}, handler.EnqueueRequestsFromMapFunc(r.findWorkloadsInNamespace),
 			builder.WithPredicates(inWatchedNamespaces(r.WatchNamespaces))).
 		Named("managedworkload").
-		WithOptions(controller.Options{MaxConcurrentReconciles: max(r.MaxConcurrentReconciles, 1)}).
+		WithOptions(controller.Options{MaxConcurrentReconciles: max(r.MaxConcurrentReconciles, 1),
+			UsePriorityQueue: ptr.To(true)}).
 		Complete(r)
 }

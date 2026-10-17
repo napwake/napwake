@@ -19,13 +19,17 @@ package controller
 import (
 	"context"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/client-go/util/workqueue"
+	"k8s.io/utils/ptr"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
+	"sigs.k8s.io/controller-runtime/pkg/controller/priorityqueue"
 	"sigs.k8s.io/controller-runtime/pkg/event"
+	"sigs.k8s.io/controller-runtime/pkg/handler"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 
 	v1alpha1 "github.com/okedeji/hybernate/api/v1alpha1"
@@ -109,4 +113,88 @@ func TestFindWorkloadsForTarget_UnrelatedTargetEnqueuesNothing(t *testing.T) {
 
 	assert.Empty(t, r.findWorkloadsForTarget(context.Background(), targetDeployment("unrelated", "default")))
 	require.Len(t, r.findWorkloadsForTarget(context.Background(), targetDeployment("api", "default")), 1)
+}
+
+// nextPriority is the priority the next request in q was queued at, or
+// false if none is queued in time.
+func nextPriority(t *testing.T, q priorityqueue.PriorityQueue[reconcile.Request]) (int, bool) {
+	t.Helper()
+	got := make(chan int, 1)
+	go func() {
+		req, priority, shutdown := q.GetWithPriority()
+		if !shutdown {
+			q.Done(req)
+			got <- priority
+		}
+	}()
+	select {
+	case p := <-got:
+		return p, true
+	case <-time.After(time.Second):
+		return 0, false
+	}
+}
+
+// What wakes a paused workload, a request held by the doorman, an activity
+// or pause annotation, or a scale-up from zero, is queued ahead of every
+// other event and of the periodic checks of awake workloads.
+func TestWakesAreQueuedFirst(t *testing.T) {
+	paused := lifecycleWorkload("api", v1alpha1.PhasePaused)
+	stamped := paused.DeepCopy()
+	stamped.Annotations = map[string]string{v1alpha1.AnnotationLastRequest: fixedTime.Format(time.RFC3339)}
+	r := depReconciler(t, &stubPauser{}, paused)
+	tests := []struct {
+		name    string
+		handler func(context.Context, event.UpdateEvent, workqueue.TypedRateLimitingInterface[reconcile.Request])
+		event   event.UpdateEvent
+		queued  bool
+	}{
+		{name: "a request stamped by the doorman", handler: wakeHandler().Update,
+			event: event.UpdateEvent{ObjectOld: paused, ObjectNew: stamped}, queued: true},
+		{name: "a status write", handler: wakeHandler().Update,
+			event: event.UpdateEvent{ObjectOld: paused, ObjectNew: paused.DeepCopy()}},
+		{name: "a scale-up from zero", handler: r.scaleUpHandler().Update,
+			event: event.UpdateEvent{ObjectOld: targetDeploymentWithReplicas("api", "default", 0),
+				ObjectNew: targetDeploymentWithReplicas("api", "default", 2)}, queued: true},
+		{name: "a scale-up of a running workload", handler: r.scaleUpHandler().Update,
+			event: event.UpdateEvent{ObjectOld: targetDeploymentWithReplicas("api", "default", 2),
+				ObjectNew: targetDeploymentWithReplicas("api", "default", 3)}},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			q := priorityqueue.New[reconcile.Request]("test")
+			defer q.ShutDown()
+
+			tt.handler(context.Background(), tt.event, q)
+
+			priority, queued := nextPriority(t, q)
+			assert.Equal(t, tt.queued, queued)
+			if tt.queued {
+				assert.Equal(t, priorityWake, priority)
+			}
+		})
+	}
+}
+
+// A resume's rechecks keep the wake's priority, and an awake or paused
+// workload's periodic checks yield to every event.
+func TestRequeuePriority(t *testing.T) {
+	t.Run("resuming", func(t *testing.T) {
+		r := newTestReconciler(t, wokenByActivity(pausedWorkload(v1alpha1.PhasePaused)), &stubPauser{})
+
+		res, err := r.Reconcile(context.Background(), reconcileFor("api"))
+
+		require.NoError(t, err)
+		require.Equal(t, v1alpha1.PhaseResuming, getWorkload(t, r, "api").Status.Phase)
+		assert.Equal(t, ptr.To(priorityWake), res.Priority)
+	})
+	t.Run("paused", func(t *testing.T) {
+		r := newTestReconciler(t, pausedWorkload(v1alpha1.PhasePaused), &stubPauser{})
+
+		res, err := r.Reconcile(context.Background(), reconcileFor("api"))
+
+		require.NoError(t, err)
+		require.Positive(t, res.RequeueAfter)
+		assert.Equal(t, ptr.To(handler.LowPriority), res.Priority)
+	})
 }
