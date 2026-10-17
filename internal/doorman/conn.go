@@ -195,9 +195,7 @@ func (h *heldConn) hold(ctx context.Context) (net.Conn, string) {
 		h.servePage(waitCtx, req)
 		return nil, resultPage
 	}
-	// An HTTP client's EOF is its leaving, as HTTP servers take it; a
-	// client of another protocol may only be done sending.
-	h.streamClient(!isHTTP)
+	h.streamClient()
 	return h.await(ctx, waitCtx, wakeErr)
 }
 
@@ -267,8 +265,8 @@ func (h *heldConn) passThrough(ctx context.Context) (net.Conn, string) {
 }
 
 // streamClient starts reading the caller in the background.
-func (h *heldConn) streamClient(halfClose bool) {
-	h.stream = newClientStream(h.conn, h.admission, halfClose)
+func (h *heldConn) streamClient() {
+	h.stream = newClientStream(h.conn, h.admission)
 	h.handling.Go(h.stream.run)
 }
 

@@ -841,9 +841,10 @@ func TestServer_HeldConnectionsAreCapped(t *testing.T) {
 		5*time.Second, 10*time.Millisecond, "counted as resultLimited")
 }
 
-// A caller that goes away while held frees its place: an HTTP client that
-// closes its connection, as HTTP servers take it, or any client whose
-// connection is reset.
+// A caller that goes away while held frees its place, whatever its
+// protocol: closing a connection and shutting down its sending side are the
+// same FIN on the wire, and a database driver whose connect timed out, or an
+// ingress closing an HTTPS upstream, sends one when it gives up.
 func TestServer_ACallerLeavingFreesItsPlace(t *testing.T) {
 	tests := []struct {
 		name  string
@@ -853,6 +854,10 @@ func TestServer_ACallerLeavingFreesItsPlace(t *testing.T) {
 		{name: "an HTTP client closing", send: "GET /api HTTP/1.1\r\nHost: api\r\n\r\n",
 			leave: func(c *net.TCPConn) error { return c.Close() }},
 		{name: "an HTTP client half-closing", send: "GET /api HTTP/1.1\r\nHost: api\r\n\r\n",
+			leave: func(c *net.TCPConn) error { return c.CloseWrite() }},
+		{name: "another protocol's client closing", send: "hello\n",
+			leave: func(c *net.TCPConn) error { return c.Close() }},
+		{name: "another protocol's client half-closing", send: "hello\n",
 			leave: func(c *net.TCPConn) error { return c.CloseWrite() }},
 		{name: "a reset", send: "hello\n", leave: func(c *net.TCPConn) error {
 			if err := c.SetLinger(0); err != nil {
@@ -878,26 +883,6 @@ func TestServer_ACallerLeavingFreesItsPlace(t *testing.T) {
 			assert.Eventually(t, func() bool { return heldCount(s) == 0 }, 5*time.Second, 10*time.Millisecond)
 		})
 	}
-}
-
-// A client of a protocol other than HTTP may send what it has and close its
-// side, as nc -N and many scripts do, and still wait for the answer. It's
-// held, and what it sent reaches the workload, followed by its EOF.
-func TestServer_HoldsAHalfClosedCaller(t *testing.T) {
-	port := freePort(t)
-	s, c := startServer(t, pausedWorkload("api", port, time.Minute))
-
-	conn := dial(t, port)
-	send(t, conn, "hello\n")
-	require.NoError(t, conn.(*net.TCPConn).CloseWrite())
-	require.Eventually(t, func() bool { return lastRequest(t, c) != "" }, 5*time.Second, 20*time.Millisecond)
-	assert.Equal(t, 1, heldCount(s), "still held")
-	require.NoError(t, c.Create(context.Background(), readySlice(echoPort(t))))
-
-	echoed(t, conn, "hello\n")
-	n, err := conn.Read(make([]byte, 1))
-	assert.Zero(t, n)
-	assert.ErrorIs(t, err, io.EOF, "the workload saw the caller's EOF and closed its side")
 }
 
 // A caller that sent a request body before leaving frees its place too,
