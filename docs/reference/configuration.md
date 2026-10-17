@@ -40,7 +40,7 @@ The operator checks its flags at startup and exits with an error naming the flag
 | Endpoint | Port | Description |
 |----------|------|-------------|
 | `/healthz` | 8081 | Liveness probe. Returns 200 while the process is running |
-| `/readyz` | 8081 | Readiness probe. For the doorman, 200 once it has loaded its routes in the last 30 seconds, and failing while it shuts down |
+| `/readyz` | 8081 | Readiness probe. For the doorman, 200 once it has loaded its routes and reached the API server in the last 30 seconds; failing while it can't listen on a routed port for more than 30 seconds, and while it shuts down |
 | `/metrics` | 8443 in the chart | Prometheus metrics, HTTPS by default; see [Metrics](metrics.md) |
 
 ## Leader Election

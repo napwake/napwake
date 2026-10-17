@@ -1746,3 +1746,75 @@ func TestServer_TheBufferBudgetCountsWholeChunks(t *testing.T) {
 	assert.Eventually(t, func() bool { return bufferedBytes(s) == clientBufferSize }, 5*time.Second, 10*time.Millisecond,
 		"a second chunk, though barely used, counts in full")
 }
+
+// The doorman's cache answers from memory however long its watches have
+// been failing, so readiness also needs the API server to answer: without
+// it, the routes it serves may be stale.
+func TestServer_ReadinessFollowsTheAPIServer(t *testing.T) {
+	clock := &testClock{now: time.Now()}
+	var down atomic.Bool
+	s, _ := newTestServer(t, nil, pausedWorkload("api", freePort(t), time.Minute))
+	s.now = clock.Now
+	s.checkAPI = func(context.Context) error {
+		if down.Load() {
+			return errors.New("connection refused")
+		}
+		return nil
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	var wg sync.WaitGroup
+	t.Cleanup(func() {
+		cancel()
+		wg.Wait()
+		for _, l := range s.listeners {
+			_ = l.Close()
+		}
+	})
+	require.NoError(t, s.syncRoutes(ctx, ctx))
+	assert.Error(t, s.Ready(nil), "not Ready before the API server is reached")
+
+	wg.Go(func() { s.watchAPI(ctx) })
+	require.Eventually(t, func() bool { return s.Ready(nil) == nil }, 5*time.Second, 10*time.Millisecond)
+
+	down.Store(true)
+	clock.Advance(readyStaleness + time.Second)
+	require.NoError(t, s.syncRoutes(ctx, ctx), "the cache still answers")
+	assert.ErrorContains(t, s.Ready(nil), "API server last reached")
+}
+
+// A doorman that can't listen on a route's port refuses every connection
+// to it. After listenGrace, it stops being Ready, so the operator routes
+// paused workloads to doorman pods that can serve them.
+func TestServer_ReadinessFollowsListenFailures(t *testing.T) {
+	taken, err := net.Listen("tcp", "127.0.0.1:0")
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = taken.Close() })
+	port := int32(taken.Addr().(*net.TCPAddr).Port)
+	clock := &testClock{now: time.Now()}
+	s, c := newTestServer(t, nil, pausedWorkload("api", port, time.Minute))
+	s.now = clock.Now
+	ctx := context.Background()
+	t.Cleanup(func() {
+		for _, l := range s.listeners {
+			_ = l.Close()
+		}
+	})
+
+	require.Error(t, s.syncRoutes(ctx, ctx))
+	assert.NoError(t, s.Ready(nil), "a moment's failure is retried")
+	assert.Equal(t, float64(1), testutil.ToFloat64(opmetrics.DoormanListenFailures))
+
+	clock.Advance(listenGrace + time.Second)
+	require.Error(t, s.syncRoutes(ctx, ctx))
+	assert.ErrorContains(t, s.Ready(nil), "can't listen on doorman port")
+
+	var w v1alpha1.ManagedWorkload
+	require.NoError(t, c.Get(ctx, apiKey, &w))
+	w.Status.Doorman = nil
+	require.NoError(t, c.Update(ctx, &w))
+	require.Error(t, s.syncRoutes(ctx, ctx), "a draining route is still served")
+	clock.Advance(RouteDrain)
+	require.NoError(t, s.syncRoutes(ctx, ctx))
+	assert.NoError(t, s.Ready(nil), "a port no longer routed doesn't count")
+	assert.Zero(t, testutil.ToFloat64(opmetrics.DoormanListenFailures))
+}

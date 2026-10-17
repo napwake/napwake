@@ -56,8 +56,20 @@ const (
 	backendResyncInterval = 5 * time.Second
 
 	// readyStaleness is how long the doorman stays Ready without loading its
-	// routes. Past it, it's serving routes that may be gone or wrong.
+	// routes, or without reaching the API server. Past it, it's serving
+	// routes that may be gone or wrong: its cache answers from memory
+	// however long its watches have been failing.
 	readyStaleness = 30 * time.Second
+
+	// apiCheckInterval and apiCheckTimeout pace the checks that the API
+	// server, and so the doorman's cache, is reachable.
+	apiCheckInterval = 10 * time.Second
+	apiCheckTimeout  = 5 * time.Second
+
+	// listenGrace is how long a route's port may fail to listen, retried
+	// each sync, before the doorman reports itself not Ready, so the
+	// operator routes paused workloads to doorman pods that can serve them.
+	listenGrace = 30 * time.Second
 
 	// shutdownGrace is how long a stopping doorman keeps its connections.
 	// It fits in the manager's 30s graceful shutdown and the pod's
@@ -94,6 +106,10 @@ type Options struct {
 	// scrapers to recognise besides the built-in ones, such as an in-house
 	// uptime monitor's, so their requests don't wake workloads.
 	HealthCheckAgents []string
+
+	// CheckAPI, when set, reports whether the API server answers. The
+	// doorman isn't Ready while it hasn't for readyStaleness.
+	CheckAPI func(ctx context.Context) error
 }
 
 // route is what the doorman knows about one listening port.
@@ -141,6 +157,7 @@ type Server struct {
 	proxyCheck      time.Duration
 
 	healthCheckAgents []string
+	checkAPI          func(ctx context.Context) error
 
 	backends  *backends
 	admission *admission
@@ -152,7 +169,10 @@ type Server struct {
 	drains    map[int32]route
 	conflicts map[int32]bool
 	listeners map[int32]net.Listener
-	conns     map[net.Conn]struct{}
+	// listenFailed is when each routed port without a listener first
+	// failed to get one.
+	listenFailed map[int32]time.Time
+	conns        map[net.Conn]struct{}
 	wakeCalls map[types.NamespacedName]*wakeCall
 	stamped   map[types.NamespacedName]stampRecord
 	lastWarn  map[types.NamespacedName]time.Time
@@ -162,6 +182,7 @@ type Server struct {
 	accepting sync.WaitGroup
 	handling  sync.WaitGroup
 	lastSync  atomic.Int64
+	lastAPI   atomic.Int64
 	stopping  atomic.Bool
 }
 
@@ -184,11 +205,13 @@ func NewServer(c client.Client, recorder events.EventRecorder, opts Options) *Se
 		proxyCheck:      proxyCheckInterval,
 
 		healthCheckAgents: healthCheckAgents(opts.HealthCheckAgents),
+		checkAPI:          opts.CheckAPI,
 		admission:         newAdmission(defaultLimits),
 		routes:            map[int32]route{},
 		drains:            map[int32]route{},
 		conflicts:         map[int32]bool{},
 		listeners:         map[int32]net.Listener{},
+		listenFailed:      map[int32]time.Time{},
 		conns:             map[net.Conn]struct{}{},
 		wakeCalls:         map[types.NamespacedName]*wakeCall{},
 		stamped:           map[types.NamespacedName]stampRecord{},
@@ -233,8 +256,13 @@ func (s *Server) Start(ctx context.Context) error {
 	pollTicker := time.NewTicker(poll)
 	defer pollTicker.Stop()
 
+	var checking sync.WaitGroup
+	if s.checkAPI != nil {
+		checking.Go(func() { s.watchAPI(ctx) })
+	}
 	s.sync(ctx, connCtx)
 	s.serve(ctx, connCtx, ctx.Done(), syncTicker.C, pollTicker.C)
+	checking.Wait()
 
 	s.stopping.Store(true)
 	grace := s.grace
@@ -302,19 +330,59 @@ func (s *Server) watchEndpoints(ctx context.Context) (func(), error) {
 	return func() { _ = informer.RemoveEventHandler(registration) }, nil // the informer stops with the cache anyway
 }
 
-// Ready reports whether the doorman's routes are current. A doorman that
-// can't load them, or is shutting down, leaves its Service, and the operator
-// stops sending paused workloads' traffic to it.
+// watchAPI checks the API server every apiCheckInterval until ctx is done.
+func (s *Server) watchAPI(ctx context.Context) {
+	ticker := time.NewTicker(apiCheckInterval)
+	defer ticker.Stop()
+	for {
+		checkCtx, cancel := context.WithTimeout(ctx, apiCheckTimeout)
+		err := s.checkAPI(checkCtx)
+		cancel()
+		if err == nil {
+			s.lastAPI.Store(s.now().UnixNano())
+		} else if ctx.Err() == nil {
+			log.FromContext(ctx).WithName("doorman").Error(err, "checking the API server")
+		}
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+		}
+	}
+}
+
+// Ready reports whether the doorman's routes are current and it serves
+// them all. A doorman that can't load them, can't reach the API server its
+// cache follows, can't listen on a route's port, or is shutting down,
+// leaves its Service, and the operator stops sending paused workloads'
+// traffic to it.
 func (s *Server) Ready(_ *http.Request) error {
 	if s.stopping.Load() {
 		return errors.New("doorman is shutting down")
 	}
+	now := s.now()
 	last := s.lastSync.Load()
 	if last == 0 {
 		return errors.New("doorman routes not loaded yet")
 	}
-	if age := s.now().Sub(time.Unix(0, last)); age > readyStaleness {
+	if age := now.Sub(time.Unix(0, last)); age > readyStaleness {
 		return fmt.Errorf("doorman routes last loaded %s ago", age.Round(time.Second))
+	}
+	if s.checkAPI != nil {
+		reached := s.lastAPI.Load()
+		if reached == 0 {
+			return errors.New("API server not reached yet")
+		}
+		if age := now.Sub(time.Unix(0, reached)); age > readyStaleness {
+			return fmt.Errorf("API server last reached %s ago, so routes may be stale", age.Round(time.Second))
+		}
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	for port, since := range s.listenFailed {
+		if age := now.Sub(since); age > listenGrace {
+			return fmt.Errorf("can't listen on doorman port %d for %s", port, age.Round(time.Second))
+		}
 	}
 	return nil
 }
@@ -440,6 +508,12 @@ func (s *Server) syncRoutes(ctx, connCtx context.Context) error {
 			delete(s.listeners, port)
 		}
 	}
+	for port := range s.listenFailed {
+		if _, ok := routes[port]; !ok {
+			delete(s.listenFailed, port)
+		}
+	}
+	defer func() { opmetrics.DoormanListenFailures.Set(float64(len(s.listenFailed))) }()
 	if s.stopping.Load() {
 		return nil
 	}
@@ -450,9 +524,13 @@ func (s *Server) syncRoutes(ctx, connCtx context.Context) error {
 		}
 		l, err := net.Listen("tcp", net.JoinHostPort(s.host, strconv.Itoa(int(port))))
 		if err != nil {
+			if _, ok := s.listenFailed[port]; !ok {
+				s.listenFailed[port] = now
+			}
 			errs = append(errs, fmt.Errorf("listening on doorman port %d: %w", port, err))
 			continue
 		}
+		delete(s.listenFailed, port)
 		s.listeners[port] = l
 		s.accepting.Go(func() { s.accept(connCtx, port, l) })
 	}

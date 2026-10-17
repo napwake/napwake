@@ -151,6 +151,11 @@ var (
 		Name: "hybernate_doorman_port_conflicts",
 		Help: "Doorman ports claimed by more than one route, which the doorman refuses to serve.",
 	})
+
+	DoormanListenFailures = prometheus.NewGauge(prometheus.GaugeOpts{
+		Name: "hybernate_doorman_listen_failures",
+		Help: "Routed doorman ports this doorman pod can't listen on, which refuse every connection.",
+	})
 )
 
 func init() {
@@ -182,6 +187,7 @@ func init() {
 		DoormanHeldConnections,
 		DoormanProxiedConnections,
 		DoormanPortConflicts,
+		DoormanListenFailures,
 	)
 }
 

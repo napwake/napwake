@@ -17,6 +17,7 @@ limitations under the License.
 package main
 
 import (
+	"context"
 	"crypto/tls"
 	"encoding/json"
 	"errors"
@@ -44,6 +45,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
+	"k8s.io/client-go/discovery"
 	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
 	metricsv1beta1 "k8s.io/metrics/pkg/apis/metrics/v1beta1"
 	ctrl "sigs.k8s.io/controller-runtime"
@@ -226,9 +228,19 @@ func main() {
 	c := client.WithFieldOwner(mgr.GetClient(), v1alpha1.FieldManager)
 	readyz := healthz.Ping
 	if runDoorman {
+		api, err := discovery.NewDiscoveryClientForConfig(mgr.GetConfig())
+		if err != nil {
+			setupLog.Error(err, "unable to create API server client")
+			os.Exit(1)
+		}
 		server := doorman.NewServer(c, mgr.GetEventRecorder("hybernate-doorman"), doorman.Options{
 			Informers:         mgr.GetCache(),
 			HealthCheckAgents: strings.Split(doormanHealthCheckAgents, ","),
+			// Every authenticated client may read /readyz, so this needs
+			// no RBAC, whichever namespaces the doorman is limited to.
+			CheckAPI: func(ctx context.Context) error {
+				return api.RESTClient().Get().AbsPath("/readyz").Do(ctx).Error()
+			},
 		})
 		if err := mgr.Add(server); err != nil {
 			setupLog.Error(err, "unable to add doorman")

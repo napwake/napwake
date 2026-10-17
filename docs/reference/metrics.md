@@ -49,6 +49,7 @@ Served by the doorman pods, on the same port and path as the operator's metrics.
 | `hybernate_doorman_held_connections` | Gauge | | Connections held right now, waiting for their workload to wake |
 | `hybernate_doorman_proxied_connections` | Gauge | | Connections passed to a woken workload and still being carried |
 | `hybernate_doorman_port_conflicts` | Gauge | | Doorman ports claimed by more than one route, which the doorman refuses to serve. Should be 0 |
+| `hybernate_doorman_listen_failures` | Gauge | | Routed doorman ports this pod can't listen on, which refuse every connection. Should be 0; a pod that can't listen on one for 30 seconds reports itself not Ready |
 
 | `result` | Meaning |
 |----------|---------|
