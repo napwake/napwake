@@ -1,0 +1,64 @@
+# Holds the doorman's ServiceAccount to the two annotations that record a
+# request on ManagedWorkloads, though its role may patch them, as the Helm
+# chart's doorman.admissionPolicy does. Kustomize can't rewrite the
+# ServiceAccount's name inside the expression, so it names the default
+# install's, hybernate-system/hybernate-doorman: change it with the
+# namespace or name prefix.
+apiVersion: admissionregistration.k8s.io/v1
+kind: ValidatingAdmissionPolicy
+metadata:
+  name: doorman
+  labels:
+    app.kubernetes.io/name: hybernate
+    app.kubernetes.io/managed-by: kustomize
+    control-plane: doorman
+spec:
+  failurePolicy: Fail
+  matchConstraints:
+    resourceRules:
+      - apiGroups: [hybernate.io]
+        apiVersions: ["*"]
+        operations: [UPDATE]
+        resources: [managedworkloads]
+  matchConditions:
+    - name: doorman
+      expression: request.userInfo.username == "system:serviceaccount:hybernate-system:hybernate-doorman"
+  variables:
+    - name: allowed
+      expression: "['hybernate.io/last-request', 'hybernate.io/last-request-from']"
+    - name: annotations
+      expression: "has(object.metadata.annotations) ? object.metadata.annotations : {}"
+    - name: oldAnnotations
+      expression: "has(oldObject.metadata.annotations) ? oldObject.metadata.annotations : {}"
+  validations:
+    - expression: object.spec == oldObject.spec
+      message: The doorman may not change a ManagedWorkload's spec.
+    - expression: >-
+        variables.annotations.all(k, k in variables.allowed
+          || (k in variables.oldAnnotations && variables.oldAnnotations[k] == variables.annotations[k]))
+        && variables.oldAnnotations.all(k, k in variables.allowed || k in variables.annotations)
+      message: The doorman may only set the hybernate.io/last-request and hybernate.io/last-request-from annotations.
+    - expression: >-
+        (has(object.metadata.labels) ? object.metadata.labels : {})
+        == (has(oldObject.metadata.labels) ? oldObject.metadata.labels : {})
+      message: The doorman may not change a ManagedWorkload's labels.
+    - expression: >-
+        (has(object.metadata.finalizers) ? object.metadata.finalizers : [])
+        == (has(oldObject.metadata.finalizers) ? oldObject.metadata.finalizers : [])
+      message: The doorman may not change a ManagedWorkload's finalizers.
+    - expression: >-
+        (has(object.metadata.ownerReferences) ? object.metadata.ownerReferences : [])
+        == (has(oldObject.metadata.ownerReferences) ? oldObject.metadata.ownerReferences : [])
+      message: The doorman may not change a ManagedWorkload's owners.
+---
+apiVersion: admissionregistration.k8s.io/v1
+kind: ValidatingAdmissionPolicyBinding
+metadata:
+  name: doorman
+  labels:
+    app.kubernetes.io/name: hybernate
+    app.kubernetes.io/managed-by: kustomize
+    control-plane: doorman
+spec:
+  policyName: hybernate-doorman
+  validationActions: [Deny]

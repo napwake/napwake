@@ -8,6 +8,7 @@ resources:
 - doorman_service_account.yaml
 - doorman_role.yaml
 - doorman_role_binding.yaml
+- doorman_admission_policy.yaml
 - role.yaml
 - role_binding.yaml
 - leader_election_role.yaml
