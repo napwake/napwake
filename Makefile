@@ -223,6 +223,10 @@ check-chart: ## Lint the Helm chart, render it for each provider's Kubernetes ve
 		echo "HybernateDown and HybernateDoormanDown aren't created exactly with the ServiceMonitors whose jobs they match, so they fire forever"; exit 1; }
 	@! helm template hybernate charts/hybernate --set metrics.enabled=false | grep -q 'system:auth-delegator' || { \
 		echo "the chart lets the operator and the doorman review tokens with metrics disabled, when nothing checks one"; exit 1; }
+	@[ "$$(helm template hybernate charts/hybernate --show-only templates/user-roles.yaml | grep -c 'aggregate-to-view: "true"')" = 1 ] && \
+		grep -q 'aggregate-to-view: "true"' config/rbac/managedworkload_viewer_role.yaml && \
+		grep -q 'aggregate-to-edit: "true"' config/rbac/managedworkload_editor_role.yaml || { \
+		echo "ManagedWorkloads aren't in the built-in view and edit roles, so namespace users can't see or pause them"; exit 1; }
 	@helm template hybernate charts/hybernate --set leaderElection.enabled=false --show-only templates/deployment.yaml | grep -q 'type: Recreate' && \
 		! helm template hybernate charts/hybernate --show-only templates/deployment.yaml | grep -q 'type: Recreate' || { \
 		echo "without leader election, a rolling update runs two operators at once"; exit 1; }
