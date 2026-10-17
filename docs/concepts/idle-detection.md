@@ -31,6 +31,8 @@ Memory isn't a source: it stays allocated whether or not anyone uses the workloa
 
 CPU is measured for the containers in the target's pod template, including native sidecars (init containers with `restartPolicy: Always`). Sidecars injected when the pod is created, such as an Istio or Linkerd proxy, aren't counted: their own background work isn't use of the workload, and they aren't in the template's requests. [Cost](cost-tracking.md) does count them, since they cost the same as any container and pausing frees them too.
 
+Usage is compared with what those containers request in a running pod, not in the template, so a request set when the pod was created counts: a LimitRange default, or a Vertical Pod Autoscaler's recommendation. The request is read again every 5 minutes, and at once when the target's spec changes. With no pod running, the template's requests are used, and a container that sets only a CPU limit is taken to request its limit, as Kubernetes does.
+
 ### Activity annotations
 
 Set either annotation on the ManagedWorkload or on its target Deployment or StatefulSet. Values are RFC 3339 times.
@@ -77,7 +79,7 @@ Hybernate never pauses a workload while one of its activity sources can't be rea
 | Reason | Meaning |
 |--------|---------|
 | `NoPodMetrics` | The target has replicas but the Metrics API reports no pods. Check that metrics-server is installed. |
-| `NoCPURequests` | The target's containers set no CPU requests, so utilization can't be measured. Set CPU requests. |
+| `NoCPURequests` | The target's running pods request no CPU for its containers, or, with none running, its pod template requests none, so utilization can't be measured. Set CPU requests, or a default in the namespace's LimitRange. |
 | `MetricsUnavailable` | The Metrics API itself failed. The condition message has the error. |
 
 A target scaled to zero isn't an error: it has no usage, which is real data.

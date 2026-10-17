@@ -385,3 +385,121 @@ func TestReader_TotalPVCBytes(t *testing.T) {
 		})
 	}
 }
+
+func webDeployment(template corev1.Container) *appsv1.Deployment {
+	labels := map[string]string{"app": "web"}
+	return &appsv1.Deployment{
+		ObjectMeta: metav1.ObjectMeta{Name: "web", Namespace: "shop", UID: "web-uid", Generation: 1},
+		Spec: appsv1.DeploymentSpec{
+			Selector: &metav1.LabelSelector{MatchLabels: labels},
+			Template: corev1.PodTemplateSpec{
+				ObjectMeta: metav1.ObjectMeta{Labels: labels},
+				Spec:       corev1.PodSpec{Containers: []corev1.Container{template}},
+			},
+		},
+	}
+}
+
+func webWorkload() *v1alpha1.ManagedWorkload {
+	return &v1alpha1.ManagedWorkload{
+		ObjectMeta: metav1.ObjectMeta{Name: "web", Namespace: "shop"},
+		Spec:       v1alpha1.ManagedWorkloadSpec{Target: v1alpha1.WorkloadRef{Kind: v1alpha1.TargetKindDeployment, Name: "web"}},
+	}
+}
+
+// Activity is judged against what the running pods request: a LimitRange
+// default, or a Vertical Pod Autoscaler's, is set on the pod at admission
+// and isn't in the template. Judged against the template, a workload with
+// LimitRange defaults could never be measured, and one under a VPA would
+// be measured against requests its pods don't have.
+func TestReader_CPURequestPerReplica(t *testing.T) {
+	limitsOnly := corev1.Container{Name: "web", Resources: corev1.ResourceRequirements{
+		Limits: corev1.ResourceList{corev1.ResourceCPU: resource.MustParse("250m")}}}
+	tests := []struct {
+		name     string
+		template corev1.Container
+		podCPU   string
+		want     float64
+		wantErr  string
+	}{
+		{name: "a LimitRange default on the pod", template: corev1.Container{Name: "web"}, podCPU: "100m", want: 100},
+		{name: "a VPA's request on the pod", template: container("web", "1"), podCPU: "50m", want: 50},
+		{name: "no pod running reads the template", template: container("web", "300m"), want: 300},
+		{name: "no pod running, a limit stands in", template: limitsOnly, want: 250},
+		{name: "no pod running and no request", template: corev1.Container{Name: "web"},
+			wantErr: "no pod of Deployment web is running, and its pod template requests no CPU"},
+		{name: "running pods with no request", template: corev1.Container{Name: "web"}, podCPU: "0",
+			wantErr: "the running pods of Deployment web request no CPU"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			objs := []client.Object{webDeployment(tt.template)}
+			if tt.podCPU != "" {
+				pod, _ := podOf("web-5d8f9-x2kqp", "5d8f9", tt.podCPU)
+				objs = append(objs, pod)
+			}
+			c := fake.NewClientBuilder().WithScheme(readerScheme(t)).WithObjects(objs...).Build()
+
+			got, err := NewReader(c, c).CPURequestPerReplica(context.Background(), webWorkload())
+
+			if tt.wantErr != "" {
+				require.ErrorContains(t, err, tt.wantErr)
+				return
+			}
+			require.NoError(t, err)
+			assert.InDelta(t, tt.want, got, 0.001)
+		})
+	}
+}
+
+// What a pod requests is read again after requestTTL, or at once when the
+// target's spec changes, rather than listing pods on every check.
+func TestReader_CPURequestPerReplicaIsKeptBriefly(t *testing.T) {
+	deploy := webDeployment(container("web", "1"))
+	pod, _ := podOf("web-5d8f9-x2kqp", "5d8f9", "100m")
+	c := fake.NewClientBuilder().WithScheme(readerScheme(t)).WithObjects(deploy, pod).Build()
+	now := time.Date(2026, 10, 17, 9, 0, 0, 0, time.UTC)
+	r := NewReader(c, c)
+	r.now = func() time.Time { return now }
+	ctx := context.Background()
+	read := func() float64 {
+		t.Helper()
+		got, err := r.CPURequestPerReplica(ctx, webWorkload())
+		require.NoError(t, err)
+		return got
+	}
+	resize := func(cpu string) {
+		t.Helper()
+		require.NoError(t, c.Get(ctx, client.ObjectKeyFromObject(pod), pod))
+		pod.Spec.Containers[0].Resources.Requests[corev1.ResourceCPU] = resource.MustParse(cpu)
+		require.NoError(t, c.Update(ctx, pod))
+	}
+
+	assert.InDelta(t, 100, read(), 0.001)
+	resize("200m")
+	now = now.Add(requestTTL - time.Second)
+	assert.InDelta(t, 100, read(), 0.001, "kept within requestTTL")
+	now = now.Add(time.Second)
+	assert.InDelta(t, 200, read(), 0.001, "read again after it")
+
+	resize("300m")
+	require.NoError(t, c.Get(ctx, client.ObjectKeyFromObject(deploy), deploy))
+	deploy.Generation++
+	require.NoError(t, c.Update(ctx, deploy))
+	assert.InDelta(t, 300, read(), 0.001, "read again once the target changes")
+}
+
+func TestAppCPURequest_CountsOnlyTheTemplatesContainers(t *testing.T) {
+	template := corev1.PodSpec{Containers: []corev1.Container{{Name: "web"}}}
+	proxy := container("istio-proxy", "100m")
+	proxy.RestartPolicy = ptr.To(corev1.ContainerRestartPolicyAlways)
+	pod := corev1.Pod{Spec: corev1.PodSpec{
+		InitContainers: []corev1.Container{proxy},
+		Containers:     []corev1.Container{container("web", "100m"), container("linkerd-proxy", "100m")},
+	}}
+
+	cpu, fromPod := AppCPURequest([]corev1.Pod{pod}, template)
+
+	assert.True(t, fromPod)
+	assert.Equal(t, int64(100), cpu, "an injected sidecar's request isn't the workload's")
+}

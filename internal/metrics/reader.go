@@ -22,6 +22,7 @@ import (
 	"fmt"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	appsv1 "k8s.io/api/apps/v1"
@@ -49,12 +50,33 @@ var ErrNoScheduledPods = errors.New("no pods on a node")
 // and every wake queued behind it, for as long as the connection lasts.
 const callTimeout = 5 * time.Second
 
+// requestTTL is how long the CPU a replica requests, read from a running
+// pod, is kept before it's read again. Activity is judged against it every
+// minute, and pods aren't cached, so reading them each time would double
+// what judging activity asks of the API server. A change to the target's
+// spec reads it again at once; this catches what changes pods without one:
+// a Vertical Pod Autoscaler, or a LimitRange edited since they started.
+const requestTTL = 5 * time.Minute
+
 // Reader reads workload metrics from the Kubernetes Metrics API and the
 // workload's pods, finding them by the target's selector and keeping only
 // the ones the target itself runs.
 type Reader struct {
 	client client.Client
 	pods   client.Reader
+	now    func() time.Time
+
+	mu       sync.Mutex
+	requests map[types.UID]podRequest
+	sweptAt  time.Time
+}
+
+// podRequest is the CPU one replica's own containers request, as a running
+// pod of a target at generation showed it at readAt.
+type podRequest struct {
+	generation int64
+	cpuMillis  int64
+	readAt     time.Time
 }
 
 // NewReader returns a Reader. Pods are read through pods rather than c so
@@ -62,7 +84,7 @@ type Reader struct {
 // when its pricing is refreshed, at most hourly, and a cluster's pods are
 // the largest thing an operator could cache.
 func NewReader(c client.Client, pods client.Reader) *Reader {
-	return &Reader{client: c, pods: pods}
+	return &Reader{client: c, pods: pods, now: time.Now, requests: map[types.UID]podRequest{}}
 }
 
 // WorkloadCPUMillis returns the CPU in millicores used by the workload's own
@@ -98,7 +120,10 @@ func (r *Reader) WorkloadCPUMillis(ctx context.Context, workload *v1alpha1.Manag
 }
 
 // CPURequestPerReplica returns the CPU request in millicores of one replica's
-// own containers, the counterpart of WorkloadCPUMillis.
+// own containers, the counterpart of WorkloadCPUMillis. It's read from a
+// running pod, which has the requests a LimitRange or a Vertical Pod
+// Autoscaler set when it was created, and from the pod template only when
+// no pod is running.
 func (r *Reader) CPURequestPerReplica(ctx context.Context, workload *v1alpha1.ManagedWorkload) (float64, error) {
 	ctx, cancel := context.WithTimeout(ctx, callTimeout)
 	defer cancel()
@@ -106,11 +131,52 @@ func (r *Reader) CPURequestPerReplica(ctx context.Context, workload *v1alpha1.Ma
 	if err != nil {
 		return 0, err
 	}
-	cpuMillis, _ := Requests(WorkloadContainers(podSpecFromTarget(target)))
-	if cpuMillis == 0 {
-		return 0, fmt.Errorf("no cpu requests found in pod template for %s %s", workload.Spec.Target.Kind, workload.Spec.Target.Name)
+	if cpuMillis, ok := r.cachedRequest(target); ok {
+		return float64(cpuMillis), nil
+	}
+	pods, err := r.podsOf(ctx, workload, target)
+	if err != nil {
+		return 0, err
+	}
+	cpuMillis, fromPod := AppCPURequest(pods, podSpecFromTarget(target))
+	switch {
+	case cpuMillis == 0 && fromPod:
+		return 0, fmt.Errorf("the running pods of %s %s request no CPU for their containers",
+			workload.Spec.Target.Kind, workload.Spec.Target.Name)
+	case cpuMillis == 0:
+		return 0, fmt.Errorf("no pod of %s %s is running, and its pod template requests no CPU",
+			workload.Spec.Target.Kind, workload.Spec.Target.Name)
+	case fromPod:
+		r.cacheRequest(target, cpuMillis)
 	}
 	return float64(cpuMillis), nil
+}
+
+func (r *Reader) cachedRequest(target client.Object) (int64, bool) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	cached, ok := r.requests[target.GetUID()]
+	if !ok || cached.generation != target.GetGeneration() || r.now().Sub(cached.readAt) >= requestTTL {
+		return 0, false
+	}
+	return cached.cpuMillis, true
+}
+
+// cacheRequest keeps what a target's pod requests. Targets no longer read,
+// deleted or no longer managed, are dropped once their requests expire.
+func (r *Reader) cacheRequest(target client.Object, cpuMillis int64) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	now := r.now()
+	if now.Sub(r.sweptAt) >= requestTTL {
+		for uid, cached := range r.requests {
+			if now.Sub(cached.readAt) >= requestTTL {
+				delete(r.requests, uid)
+			}
+		}
+		r.sweptAt = now
+	}
+	r.requests[target.GetUID()] = podRequest{generation: target.GetGeneration(), cpuMillis: cpuMillis, readAt: now}
 }
 
 // PodRequestsPerReplica returns the CPU (millicores) and memory (bytes) that
@@ -171,14 +237,22 @@ func (r *Reader) targetPods(ctx context.Context, workload *v1alpha1.ManagedWorkl
 	if err != nil {
 		return nil, nil, err
 	}
-	selector, err := selectorFromTarget(target)
+	pods, err := r.podsOf(ctx, workload, target)
 	if err != nil {
 		return nil, nil, err
+	}
+	return target, pods, nil
+}
+
+func (r *Reader) podsOf(ctx context.Context, workload *v1alpha1.ManagedWorkload, target client.Object) ([]corev1.Pod, error) {
+	selector, err := selectorFromTarget(target)
+	if err != nil {
+		return nil, err
 	}
 	var list corev1.PodList
 	if err := r.pods.List(ctx, &list, client.InNamespace(workload.Namespace),
 		client.MatchingLabelsSelector{Selector: selector}); err != nil {
-		return nil, nil, fmt.Errorf("listing pods for %s/%s: %w", workload.Namespace, workload.Spec.Target.Name, err)
+		return nil, fmt.Errorf("listing pods for %s/%s: %w", workload.Namespace, workload.Spec.Target.Name, err)
 	}
 	pods := make([]corev1.Pod, 0, len(list.Items))
 	for _, pod := range list.Items {
@@ -186,7 +260,7 @@ func (r *Reader) targetPods(ctx context.Context, workload *v1alpha1.ManagedWorkl
 			pods = append(pods, pod)
 		}
 	}
-	return target, pods, nil
+	return pods, nil
 }
 
 // TotalPVCBytes returns the capacity provisioned for the claims the target's
@@ -314,6 +388,41 @@ func PodRequests(pods []corev1.Pod, template corev1.PodSpec) (cpuMillis, memByte
 		}
 	}
 	return Requests(WorkloadContainers(template))
+}
+
+// AppCPURequest returns the CPU (millicores) one of a workload's pods
+// requests for the WorkloadContainers of template, and whether it was read
+// from a pod. A pod has the requests admission settled, from a LimitRange
+// default or a Vertical Pod Autoscaler, so the first of pods that isn't
+// being deleted is read, counting the containers the template names: an
+// injected sidecar's request isn't the workload's. With no pod running, the
+// template is read, a container's CPU limit standing in for a request it
+// doesn't set, as it would in a pod.
+func AppCPURequest(pods []corev1.Pod, template corev1.PodSpec) (cpuMillis int64, fromPod bool) {
+	own := WorkloadContainers(template)
+	for _, pod := range pods {
+		if pod.DeletionTimestamp != nil {
+			continue
+		}
+		names := make(map[string]bool, len(own))
+		for _, c := range own {
+			names[c.Name] = true
+		}
+		for _, c := range WorkloadContainers(pod.Spec) {
+			if names[c.Name] {
+				cpuMillis += c.Resources.Requests.Cpu().MilliValue()
+			}
+		}
+		return cpuMillis, true
+	}
+	for _, c := range own {
+		cpu, ok := c.Resources.Requests[corev1.ResourceCPU]
+		if !ok {
+			cpu = c.Resources.Limits[corev1.ResourceCPU]
+		}
+		cpuMillis += cpu.MilliValue()
+	}
+	return cpuMillis, false
 }
 
 // Usage sums the CPU and memory used by the WorkloadContainers of spec across

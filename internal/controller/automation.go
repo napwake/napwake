@@ -455,7 +455,9 @@ func (r *Reconciler) reportMetricsUnavailable(ctx context.Context, workload *v1a
 		msg = "target has replicas but no pod metrics, so idle detection and the forecast are paused; check that metrics-server is installed and reporting"
 	case errors.Is(err, errNoCPURequests):
 		reason = "NoCPURequests"
-		msg = "target sets no CPU requests, so CPU activity can't be measured and idle detection is paused; set CPU requests on its containers"
+		msg = "the target's containers request no CPU, in its running pods or, with none running, in its pod template, " +
+			"so CPU activity can't be measured and idle detection is paused; set CPU requests on its containers, " +
+			"or a default in the namespace's LimitRange"
 	}
 
 	firstFailure := !meta.IsStatusConditionFalse(workload.Status.Conditions, conditionMetricsAvailable)
