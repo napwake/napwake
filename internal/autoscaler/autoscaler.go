@@ -89,8 +89,10 @@ const kedaRecheck = 10 * time.Minute
 // a namespace. ScaledObjects are read unstructured, which the manager's
 // cache doesn't serve, so each list goes to the API server, and Find runs
 // on every reconcile of every workload. What it finds only reports what
-// scales a workload, which can lag by this much.
-const scaledObjectsReuse = time.Minute
+// scales a workload, which can lag by this much. What it saves are the
+// lists for a namespace's workloads reconciled together, as a change there
+// requeues them all.
+const scaledObjectsReuse = 15 * time.Second
 
 // Finder finds what scales a workload.
 type Finder struct {
@@ -115,8 +117,9 @@ func NewFinder(c client.Reader) *Finder {
 
 // Find is what scales the workload, and false when nothing does, relying
 // on what it last learned of whether KEDA is installed, and on the
-// namespace's ScaledObjects as it listed them up to a minute ago. A KEDA
-// ScaledObject also creates an HPA for its target, so it's looked for first.
+// namespace's ScaledObjects as it listed them up to scaledObjectsReuse ago.
+// A KEDA ScaledObject also creates an HPA for its target, so it's looked for
+// first.
 func (f *Finder) Find(ctx context.Context, namespace string, kind v1alpha1.TargetKind, name string) (
 	Autoscaler, bool, error) {
 	return f.find(ctx, namespace, kind, name, false)

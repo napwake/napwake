@@ -158,7 +158,7 @@ func TestFind_RemembersKEDAIsntInstalled(t *testing.T) {
 }
 
 // ScaledObjects are read past the manager's cache, so Find, which runs on
-// every reconcile, reuses a namespace's list for a minute. A pause or
+// every reconcile, reuses a namespace's list for a while. A pause or
 // resume always lists them afresh.
 func TestFind_ReusesANamespacesScaledObjects(t *testing.T) {
 	lists := 0
@@ -191,7 +191,7 @@ func TestFind_ReusesANamespacesScaledObjects(t *testing.T) {
 
 	now = now.Add(scaledObjectsReuse)
 	find(f.Find)
-	assert.Equal(t, 3, lists, "listed again once a minute old")
+	assert.Equal(t, 3, lists, "listed again once the list is as old as it's reused for")
 }
 
 // KEDA uninstalled while the operator runs: the client still maps the kind,

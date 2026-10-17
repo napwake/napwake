@@ -18,6 +18,7 @@ package controller
 
 import (
 	"context"
+	"fmt"
 	"sync"
 	"testing"
 	"time"
@@ -307,12 +308,18 @@ func TestKEDAUninstalledWhileTheOperatorRuns(t *testing.T) {
 		return apierrors.IsNotFound(c.Get(ctx, client.ObjectKeyFromObject(crd), kedaCRD()))
 	}, 30*time.Second, 100*time.Millisecond, "KEDA's CRD is gone")
 
-	poke := client.RawPatch(types.MergePatchType, []byte(`{"metadata":{"annotations":{"poke":"after-keda"}}}`))
-	for _, name := range []string{"api", "web"} {
-		require.NoError(t, c.Patch(ctx, workload(name), poke))
-	}
-	assert.Eventually(t, func() bool { return !autoscaled("api") && !autoscaled("web") },
-		30*time.Second, 100*time.Millisecond, "every workload reconciles again, and no longer reports KEDA")
+	// The ScaledObjects listed before are reused for a few seconds, so the
+	// workloads are poked until a reconcile lists them again.
+	pokes := 0
+	assert.Eventually(t, func() bool {
+		pokes++
+		poke := client.RawPatch(types.MergePatchType,
+			fmt.Appendf(nil, `{"metadata":{"annotations":{"poke":"after-keda-%d"}}}`, pokes))
+		for _, name := range []string{"api", "web"} {
+			require.NoError(t, c.Patch(ctx, workload(name), poke))
+		}
+		return !autoscaled("api") && !autoscaled("web")
+	}, 45*time.Second, time.Second, "every workload reconciles again, and no longer reports KEDA")
 
 	require.NoError(t, c.Delete(ctx, workload("api")))
 	assert.Eventually(t, func() bool {
