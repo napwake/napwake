@@ -18,14 +18,21 @@ spec:
       {{- include "hybernate.doormanSelectorLabels" . | nindent 6 }}
   template:
     metadata:
+      {{- with .Values.doorman.podAnnotations | default .Values.podAnnotations }}
+      annotations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
       labels:
-        {{- include "hybernate.doormanSelectorLabels" . | nindent 8 }}
+        {{- merge (include "hybernate.doormanSelectorLabels" . | fromYaml) (.Values.doorman.podLabels | default .Values.podLabels) | toYaml | nindent 8 }}
     spec:
       {{- with .Values.imagePullSecrets }}
       imagePullSecrets:
         {{- toYaml . | nindent 8 }}
       {{- end }}
       serviceAccountName: {{ include "hybernate.doormanName" . }}
+      {{- with .Values.doorman.priorityClassName | default .Values.priorityClassName }}
+      priorityClassName: {{ . }}
+      {{- end }}
       {{- /*
       The 5s preStop sleep, then up to 25s for held and proxied
       connections to finish, with room to exit before SIGKILL.
@@ -60,6 +67,9 @@ spec:
               valueFrom:
                 resourceFieldRef:
                   resource: limits.memory
+            {{- with .Values.doorman.extraEnv }}
+            {{- toYaml . | nindent 12 }}
+            {{- end }}
           ports:
             {{- if .Values.metrics.enabled }}
             - name: metrics

@@ -145,6 +145,10 @@ The doorman holds requests to paused workloads and wakes them. See [Wake on Requ
 | `doorman.tolerations` | `[]` | Tolerations; empty uses the operator's `tolerations` |
 | `doorman.affinity` | `{}` | Affinity; empty uses the operator's `affinity` |
 | `doorman.topologySpreadConstraints` | `[]` | Topology spread; empty spreads the replicas across nodes and zones where it can |
+| `doorman.podAnnotations` | `{}` | Pod annotations; empty uses the operator's `podAnnotations` |
+| `doorman.podLabels` | `{}` | Pod labels; empty uses the operator's `podLabels` |
+| `doorman.priorityClassName` | `""` | PriorityClass; empty uses the operator's `priorityClassName` |
+| `doorman.extraEnv` | `[]` | Extra environment variables for the doorman. The operator's `extraEnv` doesn't apply to it |
 | `doorman.resources.requests.cpu` | `10m` | CPU request |
 | `doorman.resources.requests.memory` | `64Mi` | Memory request |
 | `doorman.resources.limits.cpu` | `500m` | CPU limit |
@@ -195,6 +199,10 @@ Without the operator, a ManagedWorkload's finalizer never runs: its workload sta
 | `nodeSelector` | `{}` | Node selector constraints, for the operator, and for the doorman unless `doorman.nodeSelector` is set |
 | `tolerations` | `[]` | Pod tolerations, likewise |
 | `affinity` | `{}` | Pod affinity/anti-affinity rules, likewise |
+| `podAnnotations` | `{}` | Pod annotations, likewise |
+| `podLabels` | `{}` | Pod labels, likewise. They can't replace the labels the chart selects pods by |
+| `priorityClassName` | `""` | PriorityClass, likewise. A paused workload's requests wait on the doorman and the operator, so on a cluster that preempts, give them a class above the workloads they wake |
+| `extraEnv` | `[]` | Extra environment variables for the operator, as container `env` entries, such as `GOMAXPROCS` |
 
 ## Security
 

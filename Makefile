@@ -164,6 +164,12 @@ check-chart: ## Lint the Helm chart, render it for each provider's Kubernetes ve
 		echo "the chart accepts doorman.networkPolicy.ingressFrom without networkPolicy.enabled, which leaves the doorman open"; exit 1; }
 	helm template hybernate charts/hybernate | go run ./hack/rbaccheck config/rbac/role.yaml
 	helm template hybernate charts/hybernate --set 'watchNamespaces={shop,blog}' | go run ./hack/rbaccheck config/rbac/role.yaml
+	@out=$$(helm template hybernate charts/hybernate --set-string podLabels.team=checkout \
+		--set-string podLabels.control-plane=other --set priorityClassName=hybernate-critical \
+		--set 'doorman.extraEnv[0].name=GOMAXPROCS' --set-string 'doorman.extraEnv[0].value=2'); \
+	[ "$$(grep -c 'team: checkout' <<<"$$out")" = 2 ] && [ "$$(grep -c 'priorityClassName: hybernate-critical' <<<"$$out")" = 2 ] && \
+		grep -q 'name: GOMAXPROCS' <<<"$$out" && ! grep -q 'control-plane: other' <<<"$$out" || { \
+		echo "podLabels, priorityClassName or doorman.extraEnv don't reach both pods, or podLabels replaced a selector label"; exit 1; }
 	@for field in terminationGracePeriodSeconds: seconds:; do \
 		chart=$$(helm template hybernate charts/hybernate --show-only templates/doorman.yaml | awk -v f="$$field" '$$1 == f {print $$2}'); \
 		kustomize=$$(awk -v f="$$field" '$$1 == f {print $$2}' config/manager/doorman.yaml); \

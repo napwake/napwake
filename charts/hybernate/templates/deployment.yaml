@@ -13,15 +13,21 @@ spec:
   template:
     metadata:
       annotations:
+        {{- with .Values.podAnnotations }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
         kubectl.kubernetes.io/default-container: manager
       labels:
-        {{- include "hybernate.selectorLabels" . | nindent 8 }}
+        {{- merge (include "hybernate.selectorLabels" . | fromYaml) .Values.podLabels | toYaml | nindent 8 }}
     spec:
       {{- with .Values.imagePullSecrets }}
       imagePullSecrets:
         {{- toYaml . | nindent 8 }}
       {{- end }}
       serviceAccountName: {{ include "hybernate.serviceAccountName" . }}
+      {{- with .Values.priorityClassName }}
+      priorityClassName: {{ . }}
+      {{- end }}
       terminationGracePeriodSeconds: 10
       securityContext:
         runAsNonRoot: true
@@ -67,6 +73,9 @@ spec:
               valueFrom:
                 resourceFieldRef:
                   resource: limits.memory
+            {{- with .Values.extraEnv }}
+            {{- toYaml . | nindent 12 }}
+            {{- end }}
           ports:
             {{- if .Values.metrics.enabled }}
             - name: metrics

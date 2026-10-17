@@ -7,6 +7,20 @@
   "then": {
     "properties": {"replicaCount": {"maximum": 1}}
   },
+  "definitions": {
+    "stringMap": {
+      "type": "object",
+      "additionalProperties": {"type": "string"}
+    },
+    "env": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["name"],
+        "properties": {"name": {"type": "string", "minLength": 1}}
+      }
+    }
+  },
   "properties": {
     "image": {
       "type": "object",
@@ -32,6 +46,10 @@
       }
     },
     "maxConcurrentReconciles": {"type": "integer", "minimum": 1},
+    "podAnnotations": {"$ref": "#/definitions/stringMap"},
+    "podLabels": {"$ref": "#/definitions/stringMap"},
+    "priorityClassName": {"type": "string"},
+    "extraEnv": {"$ref": "#/definitions/env"},
     "timezone": {"type": "string", "minLength": 1},
     "metrics": {
       "type": "object",
@@ -96,6 +114,10 @@
           }
         },
         "topologySpreadConstraints": {"type": "array"},
+        "podAnnotations": {"$ref": "#/definitions/stringMap"},
+        "podLabels": {"$ref": "#/definitions/stringMap"},
+        "priorityClassName": {"type": "string"},
+        "extraEnv": {"$ref": "#/definitions/env"},
         "networkPolicy": {
           "type": "object",
           "properties": {
