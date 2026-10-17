@@ -139,7 +139,7 @@ The doorman holds requests to paused workloads and wakes them. See [Wake on Requ
 |-------|---------|-------------|
 | `doorman.enabled` | `true` | Deploy the doorman. When `false`, requests to paused workloads fail |
 | `doorman.replicaCount` | `2` | Doorman replicas. Every replica serves traffic |
-| `doorman.healthCheckUserAgents` | `[]` | `User-Agent` prefixes of health checkers and scrapers whose `GET` and `HEAD` requests don't wake a paused workload, besides the built-in ones, such as `["MyCorpMonitor/"]`. See [What wakes a workload](../concepts/wake-on-request.md#what-wakes-a-workload-and-what-doesnt) |
+| `doorman.healthCheckUserAgents` | `[]` | `User-Agent` prefixes of health checkers and scrapers whose `GET` and `HEAD` requests don't wake a paused workload, besides the built-in ones (`kube-probe`, Prometheus, load balancers' checks, `Blackbox Exporter/`, `Datadog/Synthetics`, `Amazon-Route53-Health-Check-Service`, `GoogleStackdriverMonitoring-UptimeChecks`, `UptimeRobot`, `Pingdom.com_bot`, `NewRelicPinger/`, `Uptime-Kuma/`, `Gatus/` and others), such as `["MyCorpMonitor/"]`. See [What wakes a workload](../concepts/wake-on-request.md#what-wakes-a-workload-and-what-doesnt) |
 | `doorman.podDisruptionBudget.enabled` | `true` | A PodDisruptionBudget keeping one doorman serving through node drains, when `replicaCount` is above 1 |
 | `doorman.nodeSelector` | `{}` | Node selector; empty uses the operator's `nodeSelector` |
 | `doorman.tolerations` | `[]` | Tolerations; empty uses the operator's `tolerations` |
