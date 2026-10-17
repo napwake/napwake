@@ -108,10 +108,12 @@ func (p *Pauser) Pause(ctx context.Context, workload *v1alpha1.ManagedWorkload) 
 	return true, nil
 }
 
-// ServingWait is how long a resume with some of its replicas Ready waits
-// for the rest. They serve, and one that's crash-looping, or was never
-// Ready before the pause, would otherwise hold the resume, and KEDA, for
-// good.
+// ServingWait is how long a resume waits for the rest of its replicas from
+// when it first saw one Ready. Those serve, and one that's crash-looping, or
+// was never Ready before the pause, would otherwise hold the resume, and
+// KEDA, for good. It's timed from the first Ready replica, not the scale-up,
+// so replicas that are slow to start together, such as pods waiting for new
+// nodes, aren't cut short just as they come up.
 const ServingWait = 2 * time.Minute
 
 // Resumption is how far a resume has got: the replicas the target is
@@ -123,15 +125,21 @@ type Resumption struct {
 	Settled         bool
 }
 
+// Waited is how long a resume has waited for the workload's replicas:
+// since it scaled the workload up, and since it first saw one of them
+// Ready, zero until it has.
+type Waited struct {
+	ScaledUp, Serving time.Duration
+}
+
 // Resume scales a paused workload back up, and settles once its replicas
-// are Ready, or once it has waited for them long enough: ServingWait when
-// some are Ready, and the target's progress deadline when none are, by
-// which its own controller reports them stuck. waited is how long it has
-// waited since it scaled the workload up. Settled, the workload's KEDA
-// ScaledObject is released. The pause record is left for the caller to
-// clear as it records the workload Running, so a retry after that write
-// fails can resume again.
-func (p *Pauser) Resume(ctx context.Context, workload *v1alpha1.ManagedWorkload, waited time.Duration) (
+// are Ready, or once it has waited for them long enough: ServingWait from
+// the first Ready replica while some are Ready, and the target's progress
+// deadline from the scale-up while none are, by which its own controller
+// reports them stuck. Settled, the workload's KEDA ScaledObject is
+// released. The pause record is left for the caller to clear as it records
+// the workload Running, so a retry after that write fails can resume again.
+func (p *Pauser) Resume(ctx context.Context, workload *v1alpha1.ManagedWorkload, waited Waited) (
 	Resumption, error) {
 	pause := workload.Status.Pause
 	if pause == nil {
@@ -180,8 +188,8 @@ func (p *Pauser) Resume(ctx context.Context, workload *v1alpha1.ManagedWorkload,
 	r := Resumption{Replicas: replicas, Ready: ready}
 	switch {
 	case ready >= replicas:
-	case ready > 0 && waited >= ServingWait:
-	case waited >= progressDeadline(target):
+	case ready > 0 && waited.Serving >= ServingWait:
+	case ready == 0 && waited.ScaledUp >= progressDeadline(target):
 	default:
 		return r, nil
 	}

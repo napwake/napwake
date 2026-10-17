@@ -60,6 +60,7 @@ A duration is a Go duration above zero, such as `45s`, `90m` or `1h30m`. Days an
 | `pause` | `PauseStatus` | What a pause changed, from before the workload is scaled to zero until it's running again |
 | `pause.previousReplicas` | int32 | Replicas before the pause, restored on resume |
 | `pause.pausedAt` | time | When it was scaled to zero; unset while the pause is under way |
+| `pause.firstReadyAt` | time | When the resume under way first saw one of its replicas Ready; the rest get 2 minutes from then |
 | `pause.scaledObject` | string | The KEDA ScaledObject held at zero while paused; see [HPA and KEDA](../guides/autoscalers.md) |
 | `pause.scaledObjectPausedReplicas` | string | The ScaledObject's own `autoscaling.keda.sh/paused-replicas` from before the pause, put back after it |
 | `pause.resources` | `ResourceSnapshot` | What the workload ran when the pause began: `replicas`, and per replica `cpuMillis`, `memoryBytes`, and its claims' `storageBytes` |

@@ -120,7 +120,7 @@ func TestKEDAHoldFailures(t *testing.T) {
 		workload := pausedWorkload(3)
 		workload.Status.Pause.ScaledObject = scaledObjectName
 
-		_, err := newTestPauser(failingPatches(c)).Resume(context.Background(), workload, 0)
+		_, err := newTestPauser(failingPatches(c)).Resume(context.Background(), workload, Waited{})
 
 		require.ErrorIs(t, err, errAPIServer)
 		assert.Zero(t, replicas(t, c), "not scaled up for KEDA to take back down")
@@ -133,7 +133,7 @@ func TestKEDAHoldFailures(t *testing.T) {
 		require.NoError(t, err)
 		settle(t, c, 3)
 
-		r, err := newTestPauser(failingPatches(c)).Resume(context.Background(), workload, 0)
+		r, err := newTestPauser(failingPatches(c)).Resume(context.Background(), workload, Waited{})
 
 		require.ErrorIs(t, err, errAPIServer)
 		assert.False(t, r.Settled)
@@ -205,7 +205,7 @@ func TestTargetFailures(t *testing.T) {
 			assert.ErrorIs(t, p.Prepare(context.Background(), apiWorkload()), errAPIServer)
 			_, err := p.Pause(context.Background(), pausedWorkload(3))
 			assert.ErrorIs(t, err, errAPIServer)
-			_, err = p.Resume(context.Background(), pausedWorkload(3), 0)
+			_, err = p.Resume(context.Background(), pausedWorkload(3), Waited{})
 			assert.ErrorIs(t, err, errAPIServer)
 			_, err = p.Restore(context.Background(), pausedWorkload(3))
 			assert.ErrorIs(t, err, errAPIServer)
@@ -218,7 +218,7 @@ func TestUnsupportedTargetKind(t *testing.T) {
 	workload := pausedWorkload(3)
 	workload.Spec.Target.Kind = "DaemonSet"
 
-	_, err := newTestPauser(newClient(t)).Resume(context.Background(), workload, 0)
+	_, err := newTestPauser(newClient(t)).Resume(context.Background(), workload, Waited{})
 
 	assert.ErrorContains(t, err, "unsupported kind: DaemonSet")
 }

@@ -147,20 +147,23 @@ func TestResume_WaitsForAStatusOfTheScaleUp(t *testing.T) {
 
 // A workload that wasn't wholly Ready before its pause, such as one with a
 // pod crash-looping, never has every replica Ready again. Its resume
-// settles with those that are once they've had ServingWait, and with none
-// once its controller's progress deadline has passed, releasing KEDA
-// either way, rather than holding the workload Resuming, and KEDA, for
-// good.
+// settles with those that are once ServingWait has passed since the first
+// of them was, and with none once its controller's progress deadline has
+// passed, releasing KEDA either way, rather than holding the workload
+// Resuming, and KEDA, for good. Replicas slow to start together, such as
+// pods waiting for new nodes, get ServingWait from when the first is Ready
+// however long that took.
 func TestResume_SettlesWithTheReplicasThatBecomeReady(t *testing.T) {
 	tests := []struct {
 		name     string
 		ready    int32
 		deadline *int32
 		waited   time.Duration
+		served   time.Duration
 		settled  bool
 	}{
-		{name: "some Ready, not waited long", ready: 2, waited: ServingWait - time.Second},
-		{name: "some Ready, waited long enough", ready: 2, waited: ServingWait, settled: true},
+		{name: "some Ready, not for long", ready: 2, waited: time.Hour, served: ServingWait - time.Second},
+		{name: "some Ready for long enough", ready: 2, served: ServingWait, settled: true},
 		{name: "none Ready, within the default deadline", waited: 9 * time.Minute},
 		{name: "none Ready, past the default deadline", waited: 10 * time.Minute, settled: true},
 		{name: "none Ready, past its own deadline", deadline: ptr.To[int32](60), waited: time.Minute, settled: true},
@@ -177,7 +180,7 @@ func TestResume_SettlesWithTheReplicasThatBecomeReady(t *testing.T) {
 			require.NoError(t, err)
 			settle(t, c, tt.ready)
 
-			r, err := p.Resume(context.Background(), workload, tt.waited)
+			r, err := p.Resume(context.Background(), workload, Waited{ScaledUp: tt.waited, Serving: tt.served})
 
 			require.NoError(t, err)
 			assert.Equal(t, Resumption{Replicas: 3, Ready: tt.ready, Settled: tt.settled}, r)
@@ -203,7 +206,7 @@ func TestResume_LeavesTheReplicasToTheAutoscalerOnceScaledUp(t *testing.T) {
 	require.NoError(t, c.Update(context.Background(), &d))
 	settle(t, c, 2)
 
-	r, err := p.Resume(context.Background(), workload, 0)
+	r, err := p.Resume(context.Background(), workload, Waited{})
 
 	require.NoError(t, err)
 	assert.Equal(t, Resumption{Replicas: 2, Ready: 2, Settled: true}, r)

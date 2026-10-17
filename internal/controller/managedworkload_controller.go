@@ -123,7 +123,7 @@ type Reconciler struct {
 type lifecyclePauser interface {
 	Prepare(ctx context.Context, workload *v1alpha1.ManagedWorkload) error
 	Pause(ctx context.Context, workload *v1alpha1.ManagedWorkload) (bool, error)
-	Resume(ctx context.Context, workload *v1alpha1.ManagedWorkload, waited time.Duration) (lifecycle.Resumption, error)
+	Resume(ctx context.Context, workload *v1alpha1.ManagedWorkload, waited lifecycle.Waited) (lifecycle.Resumption, error)
 	Restore(ctx context.Context, workload *v1alpha1.ManagedWorkload) (int32, error)
 }
 
@@ -449,13 +449,16 @@ func (r *Reconciler) handleResume(ctx context.Context, workload *v1alpha1.Manage
 	}
 
 	source := wakeSource(workload)
-	waited := r.sinceScaledUp(workload)
+	waited := lifecycle.Waited{ScaledUp: r.sinceScaledUp(workload), Serving: r.sinceFirstReady(workload)}
 	resumed, err := r.pauser.Resume(ctx, workload, waited)
 	if err != nil {
 		return nil, fmt.Errorf("resuming workload: %w", err)
 	}
 	if !resumed.Settled {
-		return &ctrl.Result{RequeueAfter: resumeRecheck(waited)}, nil
+		if err := r.recordFirstReady(ctx, workload, resumed); err != nil {
+			return nil, err
+		}
+		return &ctrl.Result{RequeueAfter: resumeRecheck(waited.ScaledUp)}, nil
 	}
 
 	r.stampLastActed(workload)
@@ -466,7 +469,7 @@ func (r *Reconciler) handleResume(ctx context.Context, workload *v1alpha1.Manage
 	var shortfall string
 	if short {
 		shortfall = fmt.Sprintf("resumed with %d of %d replicas Ready: Hybernate stopped waiting for the rest after %s",
-			resumed.Ready, resumed.Replicas, roundedDuration(waited))
+			resumed.Ready, resumed.Replicas, roundedDuration(waited.ScaledUp))
 		r.setCondition(workload, conditionResumeIncomplete, metav1.ConditionTrue, "ReplicasNotReady", shortfall)
 	} else {
 		r.clearCondition(workload, conditionResumeIncomplete, "AllReplicasReady")
@@ -493,6 +496,32 @@ const (
 
 	ReasonResumeIncomplete = "ResumeIncomplete"
 )
+
+// sinceFirstReady is how long a resuming workload has had a replica Ready,
+// as recordFirstReady wrote when it first did, or zero.
+func (r *Reconciler) sinceFirstReady(workload *v1alpha1.ManagedWorkload) time.Duration {
+	if workload.Status.Pause == nil || workload.Status.Pause.FirstReadyAt == nil {
+		return 0
+	}
+	return r.now().Sub(workload.Status.Pause.FirstReadyAt.Time)
+}
+
+// recordFirstReady writes when a resume first saw one of its replicas Ready,
+// from which the rest are given lifecycle.ServingWait. It's kept in the
+// pause record, so the time they're given survives an operator restart.
+func (r *Reconciler) recordFirstReady(ctx context.Context, workload *v1alpha1.ManagedWorkload,
+	resumed lifecycle.Resumption) error {
+	pause := workload.Status.Pause
+	if resumed.Ready == 0 || pause == nil || pause.FirstReadyAt != nil {
+		return nil
+	}
+	now := r.clockTime()
+	pause.FirstReadyAt = &now
+	if err := r.Status().Update(ctx, workload); err != nil {
+		return fmt.Errorf("recording its first replica Ready: %w", err)
+	}
+	return nil
+}
 
 // sinceScaledUp is how long a resuming workload has waited for its own
 // replicas: since it began resuming, or since the dependencies it waits for

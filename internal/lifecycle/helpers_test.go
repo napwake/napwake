@@ -80,7 +80,7 @@ func newTestPauser(c client.Client) *Pauser {
 // resume resumes w as a resume that has only just scaled it up, and
 // reports whether it's settled.
 func resume(p *Pauser, w *v1alpha1.ManagedWorkload) (bool, error) {
-	r, err := p.Resume(context.Background(), w, 0)
+	r, err := p.Resume(context.Background(), w, Waited{})
 	return r.Settled, err
 }
 

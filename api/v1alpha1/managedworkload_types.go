@@ -559,6 +559,12 @@ type PauseStatus struct {
 	// +optional
 	Resources *ResourceSnapshot `json:"resources,omitempty"`
 
+	// FirstReadyAt is when the resume under way first saw one of the
+	// workload's replicas Ready. The rest are waited for 2 minutes from
+	// then, and the workload runs with those that are Ready by that time.
+	// +optional
+	FirstReadyAt *metav1.Time `json:"firstReadyAt,omitempty"`
+
 	// WakeAnnotations are the activity annotations as the pause began. One
 	// that has changed since wakes the workload whatever time it states, so
 	// a clock behind the operator's can't lose a wake.

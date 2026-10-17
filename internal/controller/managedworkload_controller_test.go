@@ -63,7 +63,7 @@ type stubPauser struct {
 	resumeCalls  int
 	restoreCalls int
 	// waited is how long the last resume said it had waited for its
-	// replicas.
+	// replicas since it scaled them up.
 	waited time.Duration
 }
 
@@ -77,9 +77,9 @@ func (s *stubPauser) Pause(_ context.Context, _ *v1alpha1.ManagedWorkload) (bool
 	return s.pauseDone, s.pauseErr
 }
 
-func (s *stubPauser) Resume(_ context.Context, _ *v1alpha1.ManagedWorkload, waited time.Duration) (lifecycle.Resumption, error) {
+func (s *stubPauser) Resume(_ context.Context, _ *v1alpha1.ManagedWorkload, waited lifecycle.Waited) (lifecycle.Resumption, error) {
 	s.resumeCalls++
-	s.waited = waited
+	s.waited = waited.ScaledUp
 	if !s.resumeDone {
 		return lifecycle.Resumption{Replicas: 1}, s.resumeErr
 	}
@@ -844,6 +844,43 @@ func TestResume_TimesItsReplicasOnceWhenADependencyWontStart(t *testing.T) {
 	assert.Equal(t, 5*time.Minute, pauser.waited, "the wait for its own replicas started over")
 }
 
+// The rest of a resume's replicas are given their time from when the first
+// was Ready, as written then, not from the scale-up: one Ready just before
+// two minutes are up, while the rest wait for a new node, would otherwise
+// end the resume short as they're about to be Ready.
+func TestResume_TimesTheRestFromTheFirstReplicaReady(t *testing.T) {
+	workload := pausedWorkload(v1alpha1.PhaseResuming)
+	began := metav1.NewTime(fixedTime.Add(-110 * time.Second))
+	workload.Status.LastTransitionTime = &began
+	pauser := &servingPauser{resumption: lifecycle.Resumption{Replicas: 3, Ready: 1}}
+	r := newTestReconciler(t, workload, &stubPauser{})
+	r.pauser = pauser
+
+	_, err := r.handleResume(context.Background(), getWorkload(t, r, "api"), nil)
+	require.NoError(t, err)
+	assert.Zero(t, pauser.waited.Serving, "none was Ready before")
+	assert.Equal(t, 110*time.Second, pauser.waited.ScaledUp)
+
+	r.clock = func() time.Time { return fixedTime.Add(90 * time.Second) }
+	_, err = r.handleResume(context.Background(), getWorkload(t, r, "api"), nil)
+	require.NoError(t, err)
+	assert.Equal(t, 90*time.Second, pauser.waited.Serving, "from what was written as the first became Ready")
+}
+
+// servingPauser resumes to a given outcome and keeps how long it was told
+// it had waited.
+type servingPauser struct {
+	stubPauser
+	resumption lifecycle.Resumption
+	waited     lifecycle.Waited
+}
+
+func (p *servingPauser) Resume(_ context.Context, _ *v1alpha1.ManagedWorkload, waited lifecycle.Waited) (
+	lifecycle.Resumption, error) {
+	p.waited = waited
+	return p.resumption, nil
+}
+
 // A resume that settles with some replicas not Ready says so, and a later
 // one with every replica Ready clears it.
 func TestResume_ReportsReplicasNotReady(t *testing.T) {
@@ -927,7 +964,7 @@ type resumingPauser struct {
 	resumption lifecycle.Resumption
 }
 
-func (p *resumingPauser) Resume(context.Context, *v1alpha1.ManagedWorkload, time.Duration) (lifecycle.Resumption, error) {
+func (p *resumingPauser) Resume(context.Context, *v1alpha1.ManagedWorkload, lifecycle.Waited) (lifecycle.Resumption, error) {
 	return p.resumption, nil
 }
 
