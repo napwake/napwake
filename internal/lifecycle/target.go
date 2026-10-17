@@ -91,11 +91,14 @@ func scaleTo(ctx context.Context, scaler WorkloadScaler, target client.Object, n
 // checkReady re-reads the target and reports whether at least desired
 // replicas are Ready. The scale subresource's status counts pods that exist,
 // which includes pods still starting, such as a database replaying its log.
+// A read that doesn't yet show the target scaled to desired, or a status
+// its controller wrote before it saw that, still counts the pods from
+// before: those of a pause just made, which may not have stopped yet.
 func checkReady(ctx context.Context, c client.Client, target client.Object, desired int32) (bool, error) {
 	if err := c.Get(ctx, client.ObjectKeyFromObject(target), target); err != nil {
 		return false, fmt.Errorf("getting %s: %w", target.GetName(), err)
 	}
-	return ReadyReplicas(target) >= desired, nil
+	return specReplicas(target) == desired && observed(target) && ReadyReplicas(target) >= desired, nil
 }
 
 // ReadyReplicas returns how many of the target's replicas are Ready.
@@ -111,18 +114,39 @@ func ReadyReplicas(target client.Object) int32 {
 }
 
 // IsReady reports whether every replica the target asks for is Ready, and
-// it asks for at least one.
+// it asks for at least one, by a status written for its current spec.
 func IsReady(target client.Object) bool {
-	desired := int32(1)
+	desired := specReplicas(target)
+	return desired > 0 && observed(target) && ReadyReplicas(target) >= desired
+}
+
+// specReplicas is the replicas the target asks for, one when unset as the
+// API server defaults it.
+func specReplicas(target client.Object) int32 {
+	var replicas *int32
 	switch t := target.(type) {
 	case *appsv1.Deployment:
-		if t.Spec.Replicas != nil {
-			desired = *t.Spec.Replicas
-		}
+		replicas = t.Spec.Replicas
 	case *appsv1.StatefulSet:
-		if t.Spec.Replicas != nil {
-			desired = *t.Spec.Replicas
-		}
+		replicas = t.Spec.Replicas
 	}
-	return desired > 0 && ReadyReplicas(target) >= desired
+	if replicas == nil {
+		return 1
+	}
+	return *replicas
+}
+
+// observed reports whether the target's status was written by its
+// controller after it saw the current spec. A StatefulSet's revisions
+// aren't compared: under the OnDelete strategy they never converge on
+// their own, and a rollout still under way has Ready pods that serve.
+func observed(target client.Object) bool {
+	switch t := target.(type) {
+	case *appsv1.Deployment:
+		return t.Status.ObservedGeneration >= t.Generation
+	case *appsv1.StatefulSet:
+		return t.Status.ObservedGeneration >= t.Generation
+	default:
+		return false
+	}
 }
