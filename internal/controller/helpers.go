@@ -133,11 +133,6 @@ func (r *Reconciler) updatePredictionStatus(ctx context.Context, workload *v1alp
 	opmetrics.PredictionDataPoints.WithLabelValues(ns, name).Set(float64(engine.GetDataPoints()))
 }
 
-// forgetForecast drops a deleted workload's engine and its metric series.
-func (r *Reconciler) forgetForecast(workload *v1alpha1.ManagedWorkload) {
-	r.engines.forget(workload.UID)
-}
-
 const (
 	seasonObserving  = "Observing"
 	seasonSuggesting = "Suggesting"

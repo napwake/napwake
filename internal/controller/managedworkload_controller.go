@@ -131,6 +131,7 @@ type Reconciler struct {
 	doormanFailures failureBackoff
 	prometheus      *signal.Prometheus
 	doormanFamilies doormanFamilies
+	uids            workloadUIDs
 	clock           func() time.Time
 }
 
@@ -177,11 +178,18 @@ func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (res ctrl.
 
 	var workload v1alpha1.ManagedWorkload
 	if err := r.Get(ctx, req.NamespacedName, &workload); err != nil {
-		// Deleted without its finalizer running, it would leave its series.
+		// Deleted without its finalizer running, it would leave its series
+		// and what's kept in memory for it.
 		if apierrors.IsNotFound(err) {
+			if uid, ok := r.uids.take(req.NamespacedName); ok {
+				r.forgetWorkload(uid)
+			}
 			metrics.DeleteWorkload(req.Namespace, req.Name)
 		}
 		return ctrl.Result{}, client.IgnoreNotFound(err)
+	}
+	if replaced, ok := r.uids.see(req.NamespacedName, workload.UID); ok {
+		r.forgetWorkload(replaced)
 	}
 
 	if !workload.DeletionTimestamp.IsZero() {
@@ -782,13 +790,8 @@ func (r *Reconciler) reconcileDelete(ctx context.Context, workload *v1alpha1.Man
 	if released {
 		r.announceHandBack(workload, replicas, "no longer managed")
 	}
-	r.activityMemo.forget(workload.UID)
-	r.querySeries.forget(workload.UID)
-	r.activityWarned.forget(workload.UID)
-	r.templateHashes.forget(workload.UID)
-	r.phaseWrites.forget(workload.UID)
-	r.doormanFailures.reset(workload.UID)
-	r.forgetForecast(workload)
+	r.uids.take(client.ObjectKeyFromObject(workload))
+	r.forgetWorkload(workload.UID)
 	metrics.DeleteWorkload(workload.Namespace, workload.Name)
 	return 0, nil
 }
@@ -825,6 +828,49 @@ func (r *Reconciler) abandonHandBack(ctx context.Context, workload *v1alpha1.Man
 		"namespace %s is being deleted and handing the target back has failed for %s, so Hybernate lets it go: %v",
 		workload.Namespace, roundedDuration(handBackGiveUpAfter), failure)
 	return true
+}
+
+// forgetWorkload drops what's kept in memory for a workload that's gone.
+// Its doorman ports drain before another workload may have them.
+func (r *Reconciler) forgetWorkload(uid types.UID) {
+	r.activityMemo.forget(uid)
+	r.querySeries.forget(uid)
+	r.activityWarned.forget(uid)
+	r.templateHashes.forget(uid)
+	r.phaseWrites.forget(uid)
+	r.doormanFailures.reset(uid)
+	r.doormanPorts.release(uid, r.now())
+	r.engines.forget(uid)
+}
+
+// workloadUIDs remembers the UID of each workload by name. A workload
+// deleted without its finalizer running leaves only its name to reconcile,
+// and one deleted and created again under the same name a new UID, while
+// what's kept in memory for it is kept by UID.
+type workloadUIDs struct {
+	mu     sync.Mutex
+	byName map[types.NamespacedName]types.UID
+}
+
+// see records the workload's UID, and returns the one it replaces, if any.
+func (u *workloadUIDs) see(name types.NamespacedName, uid types.UID) (types.UID, bool) {
+	u.mu.Lock()
+	defer u.mu.Unlock()
+	if u.byName == nil {
+		u.byName = make(map[types.NamespacedName]types.UID)
+	}
+	previous, ok := u.byName[name]
+	u.byName[name] = uid
+	return previous, ok && previous != uid
+}
+
+// take forgets the workload's UID, returning it if it was known.
+func (u *workloadUIDs) take(name types.NamespacedName) (types.UID, bool) {
+	u.mu.Lock()
+	defer u.mu.Unlock()
+	uid, ok := u.byName[name]
+	delete(u.byName, name)
+	return uid, ok
 }
 
 // drainLeft is how long until the last of the workload's doorman ports has

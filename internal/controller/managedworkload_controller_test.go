@@ -210,6 +210,35 @@ func TestReconcile_SetsInitialPhaseToRunning(t *testing.T) {
 	assert.True(t, len(w.Finalizers) > 0, "finalizer should be set")
 }
 
+// A ManagedWorkload deleted without its finalizer running, such as one
+// whose finalizer was removed by hand, leaves nothing behind in memory: its
+// forecast, activity clock, routing backoff and doorman ports.
+func TestReconcile_DeletedWithoutItsFinalizerIsForgotten(t *testing.T) {
+	workload := lifecycleWorkload("api", v1alpha1.PhaseRunning)
+	workload.UID = "api-uid"
+	r := newTestReconciler(t, workload, &stubPauser{})
+	_, err := r.Reconcile(context.Background(), reconcileFor("api"))
+	require.NoError(t, err)
+	r.forecastEngine(getWorkload(t, r, "api"))
+	r.activityMemo.put("api-uid", v1alpha1.ActivityStatus{})
+	r.doormanFailures.next("api-uid")
+	r.doormanPorts.claims = map[int32]portClaim{30001: {owner: "api-uid", at: fixedTime}}
+
+	gone := getWorkload(t, r, "api")
+	gone.Finalizers = nil
+	require.NoError(t, r.Update(context.Background(), gone))
+	require.NoError(t, r.Delete(context.Background(), gone))
+	_, err = r.Reconcile(context.Background(), reconcileFor("api"))
+	require.NoError(t, err)
+
+	assert.NotContains(t, r.engines.engines, types.UID("api-uid"))
+	_, remembered := r.activityMemo.get("api-uid")
+	assert.False(t, remembered)
+	assert.NotContains(t, r.doormanFailures.failures, types.UID("api-uid"))
+	assert.Empty(t, r.doormanPorts.claims)
+	assert.Contains(t, r.doormanPorts.draining, int32(30001), "its port drains before another workload may have it")
+}
+
 func TestReconcile_NotFoundIsNoOp(t *testing.T) {
 	r := newTestReconciler(t, nil, &stubPauser{})
 	result, err := r.Reconcile(context.Background(), reconcileFor("missing"))
