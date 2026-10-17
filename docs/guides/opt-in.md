@@ -76,7 +76,7 @@ kubectl hybernate enable checkout-api -n preview-42
 kubectl hybernate enable --all -n preview-42     # every workload in the namespace
 ```
 
-`enable` sets the workload's own `hybernate.io/dry-run` annotation to `"false"`, which wins over its namespace's annotation and the cluster default, wherever the dry-run came from. `enable --all` sets the namespace's annotation to `"false"` instead, and drops the workloads' own.
+`enable` sets the workload's own `hybernate.io/dry-run` annotation to `"false"`, which wins over its namespace's annotation and the cluster default, wherever the dry-run came from. `enable --all` ends dry-run for everything in the namespace that's in it. When the namespace has its own `hybernate.io/dry-run`, or a workload takes its dry-run from the namespace or the cluster default, it sets the namespace's annotation to `"false"` and drops the workloads' own; otherwise it sets each workload's own to `"false"` and leaves the namespace alone. A ManagedWorkload you wrote has its `spec.dryRun` set to `false`.
 
 If Argo CD or Flux applies the workload or namespace, `enable` doesn't change the cluster, since the tool would put the annotation back. It names the tool, prints the change to make in Git, and exits non-zero; `--force` changes the cluster anyway.
 

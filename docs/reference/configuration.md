@@ -79,10 +79,11 @@ The operator and the doorman log JSON by default, through `logr` (controller-run
 
 | Field | Description |
 |-------|-------------|
-| `workload` | ManagedWorkload name |
-| `namespace` | Workload namespace |
-| `phase` | Current lifecycle phase |
-| `from` / `to` | Phase transition |
-| `reason` | Action reason |
+| `name`, `namespace` | The object a reconcile is for, such as the ManagedWorkload, added by controller-runtime to every entry it logs, with `controller` and `reconcileID` |
+| `workload` | The workload or ManagedWorkload an entry is about, on entries that name it themselves, with its `namespace` |
+| `from`, `to` | The phases of a `phase transition` entry |
+| `reason` | Why: what caused a phase transition |
+| `phase` | The phase after a reconcile, on `reconciled` entries at debug level (`--zap-log-level=debug`) |
+| `error` | What went wrong, on entries about a failure |
 
 For logs to read by eye, use `--zap-encoder=console` (the chart's `logEncoder: console`).
