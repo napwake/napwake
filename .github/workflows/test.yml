@@ -43,8 +43,12 @@ jobs:
         with:
           go-version-file: go.mod
       - uses: azure/setup-helm@1a275c3b69536ee54be43f2070a358922e12c8d4 # v4.3.1
+        with:
+          version: v3.22.1
       # Lints the chart, renders it for EKS-, GKE- and AKS-style versions,
       # and checks it grants the operator what config/rbac/role.yaml does.
+      # With Helm 3, while helm-smoke installs with Helm 4, so the chart is
+      # proven on both.
       - run: make check-chart
 
   alerts:
@@ -56,4 +60,6 @@ jobs:
         with:
           go-version-file: go.mod
       - uses: azure/setup-helm@1a275c3b69536ee54be43f2070a358922e12c8d4 # v4.3.1
+        with:
+          version: v3.22.1
       - run: make test-alerts

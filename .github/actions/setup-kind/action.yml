@@ -1,5 +1,5 @@
 name: Set up kind
-description: Installs a pinned kind release for linux/amd64, checking it against a pinned checksum.
+description: Installs pinned kind and kubectl releases for linux/amd64, checking each against a pinned checksum.
 
 inputs:
   version:
@@ -8,6 +8,12 @@ inputs:
   sha256:
     description: The SHA-256 of that release's kind-linux-amd64.
     required: true
+  kubectl-version:
+    description: The kubectl release, such as v1.35.9.
+    default: v1.35.9
+  kubectl-sha256:
+    description: The SHA-256 of that release's linux/amd64 kubectl.
+    default: 3cfeaf80be482b435b0aa214aff6e0b2c312ee23c0ff20810c75517b6004c6eb
 
 runs:
   using: composite
@@ -16,9 +22,17 @@ runs:
       env:
         VERSION: ${{ inputs.version }}
         SHA256: ${{ inputs.sha256 }}
+        KUBECTL_VERSION: ${{ inputs.kubectl-version }}
+        KUBECTL_SHA256: ${{ inputs.kubectl-sha256 }}
       run: |
         curl -fsSLo kind "https://github.com/kubernetes-sigs/kind/releases/download/${VERSION}/kind-linux-amd64"
         echo "${SHA256}  kind" | sha256sum --check --strict
         chmod +x kind
         sudo mv kind /usr/local/bin/kind
         kind version
+
+        curl -fsSLo kubectl "https://dl.k8s.io/release/${KUBECTL_VERSION}/bin/linux/amd64/kubectl"
+        echo "${KUBECTL_SHA256}  kubectl" | sha256sum --check --strict
+        chmod +x kubectl
+        sudo mv kubectl /usr/local/bin/kubectl
+        kubectl version --client
