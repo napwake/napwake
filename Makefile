@@ -174,7 +174,7 @@ cleanup-test-e2e: ## Tear down the Kind cluster used for e2e tests
 lint: golangci-lint ## Run golangci-lint linter
 	"$(GOLANGCI_LINT)" run
 
-GOVULNCHECK_VERSION ?= v1.8.0
+GOVULNCHECK_VERSION ?= v1.9.0
 
 .PHONY: vulncheck
 vulncheck: ## Report vulnerabilities in Go dependencies that Hybernate's code reaches
