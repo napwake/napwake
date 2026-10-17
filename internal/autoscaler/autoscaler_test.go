@@ -157,6 +157,43 @@ func TestFind_RemembersKEDAIsntInstalled(t *testing.T) {
 	assert.Equal(t, 3, lookups, "looked for again, in case KEDA was installed since")
 }
 
+// ScaledObjects are read past the manager's cache, so Find, which runs on
+// every reconcile, reuses a namespace's list for a minute. A pause or
+// resume always lists them afresh.
+func TestFind_ReusesANamespacesScaledObjects(t *testing.T) {
+	lists := 0
+	c := interceptor.NewClient(withKEDA(t, keda("web", map[string]any{
+		"scaleTargetRef": map[string]any{"name": "web"}})).(client.WithWatch), interceptor.Funcs{
+		List: func(ctx context.Context, c client.WithWatch, list client.ObjectList, opts ...client.ListOption) error {
+			if _, ok := list.(*unstructured.UnstructuredList); ok {
+				lists++
+			}
+			return c.List(ctx, list, opts...)
+		}})
+	now := time.Date(2026, 10, 4, 9, 0, 0, 0, time.UTC)
+	f := NewFinder(c)
+	f.now = func() time.Time { return now }
+	find := func(find func(context.Context, string, v1alpha1.TargetKind, string) (Autoscaler, bool, error)) {
+		t.Helper()
+		got, found, err := find(context.Background(), "shop", v1alpha1.TargetKindDeployment, "web")
+		require.NoError(t, err)
+		require.True(t, found)
+		assert.Equal(t, KEDA, got.Kind)
+	}
+
+	for range 3 {
+		find(f.Find)
+	}
+	assert.Equal(t, 1, lists)
+
+	find(f.FindNow)
+	assert.Equal(t, 2, lists, "a pause or resume lists them afresh")
+
+	now = now.Add(scaledObjectsReuse)
+	find(f.Find)
+	assert.Equal(t, 3, lists, "listed again once a minute old")
+}
+
 // KEDA uninstalled while the operator runs: the client still maps the kind,
 // and the API server answers NotFound for it.
 func TestFind_KEDAUninstalledWhileRunning(t *testing.T) {

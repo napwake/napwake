@@ -85,6 +85,13 @@ func (a Autoscaler) HeldAt(n int32) bool {
 // kind it doesn't know, which on every reconcile of every workload adds up.
 const kedaRecheck = 10 * time.Minute
 
+// scaledObjectsReuse is how long Find reuses the ScaledObjects it listed in
+// a namespace. ScaledObjects are read unstructured, which the manager's
+// cache doesn't serve, so each list goes to the API server, and Find runs
+// on every reconcile of every workload. What it finds only reports what
+// scales a workload, which can lag by this much.
+const scaledObjectsReuse = time.Minute
+
 // Finder finds what scales a workload.
 type Finder struct {
 	c   client.Reader
@@ -92,24 +99,33 @@ type Finder struct {
 
 	mu          sync.Mutex
 	noKEDAUntil time.Time
+	listed      map[string]scaledObjectList
+}
+
+// scaledObjectList is a namespace's ScaledObjects as listed at a time.
+type scaledObjectList struct {
+	items []unstructured.Unstructured
+	at    time.Time
 }
 
 // NewFinder returns a Finder that reads through c.
 func NewFinder(c client.Reader) *Finder {
-	return &Finder{c: c, now: time.Now}
+	return &Finder{c: c, now: time.Now, listed: map[string]scaledObjectList{}}
 }
 
 // Find is what scales the workload, and false when nothing does, relying
-// on what it last learned of whether KEDA is installed. A KEDA ScaledObject
-// also creates an HPA for its target, so it's looked for first.
+// on what it last learned of whether KEDA is installed, and on the
+// namespace's ScaledObjects as it listed them up to a minute ago. A KEDA
+// ScaledObject also creates an HPA for its target, so it's looked for first.
 func (f *Finder) Find(ctx context.Context, namespace string, kind v1alpha1.TargetKind, name string) (
 	Autoscaler, bool, error) {
 	return f.find(ctx, namespace, kind, name, false)
 }
 
-// FindNow is Find, but looks for KEDA whatever Find learned: for a pause or
-// a resume, which mustn't miss a KEDA installed since. It's rare enough
-// that asking the API server again costs nothing.
+// FindNow is Find, but lists the ScaledObjects afresh whatever Find
+// learned: for a pause or a resume, which mustn't miss a KEDA installed
+// since, or a ScaledObject created or changed. It's rare enough that asking
+// the API server again costs nothing.
 func (f *Finder) FindNow(ctx context.Context, namespace string, kind v1alpha1.TargetKind, name string) (
 	Autoscaler, bool, error) {
 	return f.find(ctx, namespace, kind, name, true)
@@ -142,27 +158,11 @@ func (f *Finder) find(ctx context.Context, namespace string, kind v1alpha1.Targe
 
 func (f *Finder) findScaledObject(ctx context.Context, namespace string, kind v1alpha1.TargetKind,
 	name string, now bool) (Autoscaler, bool, error) {
-	f.mu.Lock()
-	skip := !now && f.now().Before(f.noKEDAUntil)
-	f.mu.Unlock()
-	if skip {
-		return Autoscaler{}, false, nil
+	items, err := f.scaledObjects(ctx, namespace, now)
+	if err != nil {
+		return Autoscaler{}, false, err
 	}
-	var list unstructured.UnstructuredList
-	list.SetGroupVersionKind(scaledObjects)
-	if err := f.c.List(ctx, &list, client.InNamespace(namespace)); err != nil {
-		if kedaMissing(err) {
-			f.mu.Lock()
-			f.noKEDAUntil = f.now().Add(kedaRecheck)
-			f.mu.Unlock()
-			return Autoscaler{}, false, nil
-		}
-		return Autoscaler{}, false, fmt.Errorf("listing KEDA ScaledObjects in %s: %w", namespace, err)
-	}
-	f.mu.Lock()
-	f.noKEDAUntil = time.Time{}
-	f.mu.Unlock()
-	for _, so := range list.Items {
+	for _, so := range items {
 		targetName, _, _ := unstructured.NestedString(so.Object, "spec", "scaleTargetRef", "name")
 		targetKind, _, _ := unstructured.NestedString(so.Object, "spec", "scaleTargetRef", "kind")
 		if targetKind == "" {
@@ -184,6 +184,48 @@ func (f *Finder) findScaledObject(ctx context.Context, namespace string, kind v1
 		return a, true, nil
 	}
 	return Autoscaler{}, false, nil
+}
+
+// scaledObjects lists the namespace's ScaledObjects, none when KEDA isn't
+// installed. Unless now, it reuses a list made in the last
+// scaledObjectsReuse, and relies on KEDA's absence for kedaRecheck.
+func (f *Finder) scaledObjects(ctx context.Context, namespace string, now bool) ([]unstructured.Unstructured, error) {
+	f.mu.Lock()
+	at := f.now()
+	if !now {
+		if at.Before(f.noKEDAUntil) {
+			f.mu.Unlock()
+			return nil, nil
+		}
+		if l, ok := f.listed[namespace]; ok && at.Sub(l.at) < scaledObjectsReuse {
+			f.mu.Unlock()
+			return l.items, nil
+		}
+	}
+	f.mu.Unlock()
+
+	var list unstructured.UnstructuredList
+	list.SetGroupVersionKind(scaledObjects)
+	err := f.c.List(ctx, &list, client.InNamespace(namespace))
+	if err != nil && !kedaMissing(err) {
+		return nil, fmt.Errorf("listing KEDA ScaledObjects in %s: %w", namespace, err)
+	}
+
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if err != nil {
+		f.noKEDAUntil = at.Add(kedaRecheck)
+		clear(f.listed)
+		return nil, nil
+	}
+	f.noKEDAUntil = time.Time{}
+	for ns, l := range f.listed {
+		if at.Sub(l.at) >= scaledObjectsReuse {
+			delete(f.listed, ns)
+		}
+	}
+	f.listed[namespace] = scaledObjectList{items: list.Items, at: at}
+	return list.Items, nil
 }
 
 // HoldKEDA has KEDA hold a ScaledObject's target at replicas and stop

@@ -30,4 +30,4 @@ KEDA already scales a workload to zero when its triggers say there's no work, su
 
 ## Permissions
 
-The operator reads HPAs, and reads and annotates ScaledObjects. Without KEDA installed there are no ScaledObjects, and Hybernate looks for them again every 10 minutes in case it's installed later.
+The operator reads HPAs, and reads and annotates ScaledObjects. Without KEDA installed there are no ScaledObjects, and Hybernate looks for them again every 10 minutes in case it's installed later. The `Autoscaled` condition reflects a ScaledObject created or changed within a minute; a pause or wake always reads them afresh.
