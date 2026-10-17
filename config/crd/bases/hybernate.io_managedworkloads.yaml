@@ -54,28 +54,29 @@ spec:
             properties:
               costTracking:
                 description: |-
-                  CostTracking configures custom cost rates for this workload.
-                  Cost tracking is always enabled with AWS on-demand defaults.
-                  Set this field only to override pricing rates.
+                  CostTracking sets this workload's own cost rates. Cost is always
+                  tracked: without them, it's priced at the list price of the nodes the
+                  workload's pods run on (status.cost.listRates), or at Hybernate's
+                  default rates for nodes it has no price for.
                 properties:
                   rates:
-                    description: Rates overrides the default cost rates. Omit to use
-                      AWS on-demand defaults.
+                    description: |-
+                      Rates are what you pay. Each one set is used in place of the list
+                      price of the workload's nodes and of Hybernate's default rates; one
+                      left out is priced as if Rates weren't set.
                     properties:
                       cpuPerHour:
                         anyOf:
                         - type: integer
                         - type: string
-                        description: 'CPUPerHour is the cost per vCPU-hour (default:
-                          $0.031, AWS on-demand).'
+                        description: CPUPerHour is the cost per vCPU-hour.
                         pattern: ^(\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))(([KMGTPE]i)|[numkMGTPE]|([eE](\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))))?$
                         x-kubernetes-int-or-string: true
                       memoryPerHour:
                         anyOf:
                         - type: integer
                         - type: string
-                        description: 'MemoryPerHour is the cost per GiB-hour (default:
-                          $0.004, AWS on-demand).'
+                        description: MemoryPerHour is the cost per GiB-hour.
                         pattern: ^(\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))(([KMGTPE]i)|[numkMGTPE]|([eE](\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))))?$
                         x-kubernetes-int-or-string: true
                       storagePerMonth:
@@ -83,8 +84,8 @@ spec:
                         - type: integer
                         - type: string
                         description: |-
-                          StoragePerMonth is the cost per GiB-month for PVC storage
-                          (default: $0.08, AWS EBS gp3).
+                          StoragePerMonth is the cost per GiB-month of PersistentVolumeClaim
+                          storage.
                         pattern: ^(\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))(([KMGTPE]i)|[numkMGTPE]|([eE](\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))))?$
                         x-kubernetes-int-or-string: true
                     type: object
@@ -126,8 +127,10 @@ spec:
                 x-kubernetes-list-type: atomic
               dryRun:
                 description: |-
-                  DryRun makes the operator evaluate all policies and emit events but
-                  take no action. Useful for validating configuration before going live.
+                  DryRun measures the workload without ever pausing it: the operator
+                  tracks activity, emits events, and records in status.dryRun the pauses
+                  it would have made. A workload already paused when dry-run is turned
+                  on is woken, so turning it on never leaves one off.
                 type: boolean
               idlePolicy:
                 description: |-
@@ -421,16 +424,14 @@ spec:
                         anyOf:
                         - type: integer
                         - type: string
-                        description: 'CPUPerHour is the cost per vCPU-hour (default:
-                          $0.031, AWS on-demand).'
+                        description: CPUPerHour is the cost per vCPU-hour.
                         pattern: ^(\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))(([KMGTPE]i)|[numkMGTPE]|([eE](\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))))?$
                         x-kubernetes-int-or-string: true
                       memoryPerHour:
                         anyOf:
                         - type: integer
                         - type: string
-                        description: 'MemoryPerHour is the cost per GiB-hour (default:
-                          $0.004, AWS on-demand).'
+                        description: MemoryPerHour is the cost per GiB-hour.
                         pattern: ^(\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))(([KMGTPE]i)|[numkMGTPE]|([eE](\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))))?$
                         x-kubernetes-int-or-string: true
                       storagePerMonth:
@@ -438,8 +439,8 @@ spec:
                         - type: integer
                         - type: string
                         description: |-
-                          StoragePerMonth is the cost per GiB-month for PVC storage
-                          (default: $0.08, AWS EBS gp3).
+                          StoragePerMonth is the cost per GiB-month of PersistentVolumeClaim
+                          storage.
                         pattern: ^(\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))(([KMGTPE]i)|[numkMGTPE]|([eE](\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))))?$
                         x-kubernetes-int-or-string: true
                     type: object
