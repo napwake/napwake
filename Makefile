@@ -202,12 +202,23 @@ test-doorman-policy: setup-envtest ## Check against envtest that the chart's adm
 		go test -count=1 ./hack/doormanpolicy
 
 .PHONY: verify-generated
-verify-generated: manifests generate ## Fail if generated code or manifests, or go.mod, aren't up to date
+verify-generated: manifests generate verify-go-version ## Fail if generated code or manifests, or go.mod, aren't up to date
 	@git diff --exit-code -- api config charts || { \
 		echo "Generated files are out of date; run make manifests generate and commit the result."; exit 1; }
 	@test -z "$$(git status --porcelain -- api config charts)" || { \
 		git status --porcelain -- api config charts; echo "Generated files are untracked; commit them."; exit 1; }
 	go mod tidy -diff
+
+# CI tests and scans with go.mod's toolchain, so the image must be built
+# with the same Go, and the devcontainer develops with it.
+.PHONY: verify-go-version
+verify-go-version: ## Fail unless the Dockerfile and the devcontainer use go.mod's toolchain
+	@want=$$(awk '$$1 == "toolchain" {sub(/^go/, "", $$2); print $$2}' go.mod); \
+	[ -n "$$want" ] || { echo "go.mod names no toolchain"; exit 1; }; \
+	for f in Dockerfile .devcontainer/devcontainer.json; do \
+		grep -qE "golang:$${want//./\\.}@sha256:" "$$f" || { \
+			echo "$$f doesn't use golang:$$want, go.mod's toolchain; bump them together"; exit 1; }; \
+	done
 
 .PHONY: cleanup-test-e2e
 cleanup-test-e2e: ## Tear down the Kind cluster used for e2e tests

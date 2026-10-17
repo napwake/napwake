@@ -30,8 +30,9 @@ jobs:
         with:
           go-version-file: go.mod
       # Regenerates the CRDs, the chart's copy of them, RBAC and deepcopy
-      # code, and fails if any differ from what's committed, or if go.mod
-      # and go.sum aren't tidy.
+      # code, and fails if any differ from what's committed, if go.mod
+      # and go.sum aren't tidy, or if the image or the devcontainer isn't
+      # built with go.mod's toolchain.
       - run: make verify-generated
 
   chart:
