@@ -63,7 +63,10 @@ type namespaceScan struct {
 	// historySince is where its CPU history begins; zero without any.
 	historySince time.Time
 	// noHistory are its workloads Prometheus has no CPU for.
-	noHistory          []string
+	noHistory []string
+	// historyTooSlow says Prometheus didn't return its history in the time
+	// the scan gives it.
+	historyTooSlow     bool
 	metricsUnavailable bool
 	problems           []readProblem
 }
@@ -75,8 +78,10 @@ func (n *namespaceScan) problem(what reading, err error) {
 // scanNamespace scans one namespace's Deployments and StatefulSets. It makes
 // the same few reads however many workloads the namespace has, and matches
 // pods and their metrics to workloads in memory. What it can't read is
-// recorded as a problem, and the scan carries on without it.
-func (s *Scanner) scanNamespace(ctx context.Context, namespace string, pricing nodePricing,
+// recorded as a problem, and the scan carries on without it. History is read
+// within historyCtx, and a namespace Prometheus doesn't answer for by then
+// is judged from CPU right now.
+func (s *Scanner) scanNamespace(ctx, historyCtx context.Context, namespace string, pricing nodePricing,
 	opts ClusterOptions) namespaceScan {
 	scan := namespaceScan{namespace: namespace, sources: map[workloadKey]workloadSource{}}
 	protected, err := s.protectedNamespace(ctx, namespace)
@@ -116,8 +121,11 @@ func (s *Scanner) scanNamespace(ctx context.Context, namespace string, pricing n
 	if err != nil {
 		scan.problem(readingConfigMaps, err)
 	}
-	history, err := s.readHistory(ctx, namespace, opts)
-	if err != nil {
+	history, err := s.readHistory(historyCtx, namespace, opts)
+	switch {
+	case err != nil && ctx.Err() == nil && isTimeout(err):
+		scan.historyTooSlow = true
+	case err != nil:
 		scan.problem(readingHistory, err)
 	}
 	if first, ok := earliestSample(history); ok {

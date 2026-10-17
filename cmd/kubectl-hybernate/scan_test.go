@@ -22,8 +22,12 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -711,6 +715,38 @@ func TestCLI_ScanIncompleteAdvice(t *testing.T) {
 			assert.Equal(t, tt.want, err.Error())
 		})
 	}
+}
+
+// A Prometheus that answers its check but is too slow for the history,
+// as a big namespace on a slow Thanos is, costs the replay, not the scan:
+// it finishes from CPU right now, blames Prometheus, and suggests
+// --window 0, rather than failing on the API server.
+func TestCLI_ScanSlowPrometheus(t *testing.T) {
+	prom := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if strings.HasSuffix(r.URL.Path, "/api/v1/query") {
+			_, _ = io.WriteString(w, `{"status":"success","data":{"resultType":"vector","result":[]}}`)
+			return
+		}
+		<-r.Context().Done()
+	}))
+	t.Cleanup(prom.Close)
+	d := &appsv1.Deployment{ObjectMeta: metav1.ObjectMeta{Name: "api", Namespace: "preview-42"},
+		Spec: appsv1.DeploymentSpec{Replicas: ptr.To[int32](1),
+			Selector: &metav1.LabelSelector{MatchLabels: map[string]string{"app": "api"}},
+			Template: corev1.PodTemplateSpec{ObjectMeta: metav1.ObjectMeta{Labels: map[string]string{"app": "api"}},
+				Spec: corev1.PodSpec{Containers: []corev1.Container{{Name: "main"}}}}}}
+	ns := &corev1.Namespace{ObjectMeta: metav1.ObjectMeta{Name: "preview-42"}}
+
+	out, err := runCLI(t, newStatusClient(t, interceptor.Funcs{}, d, ns), "scan", "-n", "preview-42", "-o", "json",
+		"--timeout", "1s", "--prometheus-url", prom.URL)
+
+	require.NoError(t, err)
+	var result scanResult
+	require.NoError(t, json.Unmarshal([]byte(out), &result))
+	require.Len(t, result.Workloads, 1)
+	notes := strings.Join(result.Notes, "\n")
+	assert.Contains(t, notes, "Prometheus didn't return CPU history for 1 namespace")
+	assert.Contains(t, notes, "--window 0")
 }
 
 // An empty cluster says so, rather than pointing at notes it doesn't have.

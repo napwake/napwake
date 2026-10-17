@@ -27,6 +27,7 @@ import (
 	"io"
 	"maps"
 	"math"
+	"net"
 	"net/http"
 	"net/url"
 	"os"
@@ -431,6 +432,16 @@ func (p *Prometheus) Check(ctx context.Context) error {
 		return fmt.Errorf("%s didn't answer like a Prometheus API", p.Source)
 	}
 	return nil
+}
+
+// isTimeout says a query ran out of time: its deadline passed, the HTTP
+// client gave up, or the API server's proxy timed out waiting on it.
+func isTimeout(err error) bool {
+	if errors.Is(err, context.DeadlineExceeded) || apierrors.IsTimeout(err) {
+		return true
+	}
+	netErr, ok := errors.AsType[net.Error](err)
+	return ok && netErr.Timeout()
 }
 
 // containerCPU is the CPU one container of one pod used at each step, in

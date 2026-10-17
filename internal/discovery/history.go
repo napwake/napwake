@@ -314,6 +314,23 @@ func earliestSample(history []containerCPU) (int64, bool) {
 	return first, found
 }
 
+// historyShare is how much of the time left to a scan its history reads may
+// take. A Thanos or Prometheus too slow for a big window would otherwise
+// spend the whole of --timeout, and the scan would have nothing to show;
+// this way it loses only the replay of the namespaces Prometheus didn't
+// answer for, and has the rest of the time for the API server.
+const historyShare = 0.6
+
+// historyBudget is the context history is read within: historyShare of the
+// time ctx has left, or ctx's own lifetime when it has no deadline.
+func historyBudget(ctx context.Context) (context.Context, context.CancelFunc) {
+	deadline, ok := ctx.Deadline()
+	if !ok {
+		return context.WithCancel(ctx)
+	}
+	return context.WithTimeout(ctx, time.Duration(float64(time.Until(deadline))*historyShare))
+}
+
 // readHistory reads a namespace's CPU history over the window. It returns
 // nothing when the scan has no history to read, or the namespace has none
 // recorded.

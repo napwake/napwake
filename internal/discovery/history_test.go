@@ -19,6 +19,8 @@ package discovery
 import (
 	"context"
 	"math"
+	"net/http"
+	"net/http/httptest"
 	"strings"
 	"testing"
 	"time"
@@ -445,6 +447,38 @@ func TestScanCluster_JudgesFromHistoryWithoutMetrics(t *testing.T) {
 	assert.InDelta(t, got["idle-api"].History.MonthlyCost+got["busy-api"].History.MonthlyCost,
 		report.Totals.SavingsBasis, 0.001, "the one that couldn't be judged isn't in the share's basis")
 	assert.Zero(t, CouldSave(Workload{State: StateUnknown, History: &History{MonthlyFreed: 5}}))
+}
+
+// A Prometheus too slow to answer in the scan's time costs the replay of
+// the namespaces it didn't answer for, not the scan: they're judged from CPU
+// right now, the notes say Prometheus was slow, and there's time left for
+// the rest.
+func TestScanCluster_SlowPrometheus(t *testing.T) {
+	slow := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		<-r.Context().Done()
+	}))
+	t.Cleanup(slow.Close)
+	prom, err := NewPrometheusURL(slow.URL, slow.Client(), nil)
+	require.NoError(t, err)
+	objs := deploymentWithRollout("api", testNamespace, 1, 30*24*time.Hour)
+	objs = append(objs, makePodMetrics("api", testNamespace, "1m", "20Mi"))
+	opts := scanOptions(testNamespace)
+	opts.History, opts.Window, opts.IdleAfter = prom, 7*24*time.Hour, time.Hour
+	c := fake.NewClientBuilder().WithScheme(newScheme()).WithRuntimeObjects(objs...).Build()
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+	defer cancel()
+
+	report, err := NewScanner(c, c).ScanCluster(ctx, opts)
+
+	require.NoError(t, err)
+	require.NoError(t, ctx.Err(), "the scan finished within its own deadline")
+	w := byName(report)["api"]
+	assert.Equal(t, StateIdle, w.State, "judged from CPU right now")
+	assert.Nil(t, w.History)
+	assert.Contains(t, strings.Join(report.Notes, "\n"), "Prometheus didn't return CPU history for 1 namespace "+
+		"in the time the scan gives it, so workloads there are judged from CPU right now: "+testNamespace)
+	assert.Contains(t, strings.Join(report.Notes, "\n"), "--window 0")
+	assert.Nil(t, report.Incomplete, "everything the cluster holds was read")
 }
 
 func TestJudgeFromHistory(t *testing.T) {

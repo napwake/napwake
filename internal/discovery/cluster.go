@@ -275,18 +275,21 @@ func (s *Scanner) ScanCluster(ctx context.Context, opts ClusterOptions) (*Cluste
 	pricing, nodePrices := s.readNodePrices(ctx)
 	report.NodePrices = nodePrices
 
+	historyCtx, cancel := historyBudget(ctx)
+	defer cancel()
 	scans := make([]namespaceScan, len(opts.Namespaces))
 	var g errgroup.Group
 	g.SetLimit(namespaceWorkers)
 	for i, namespace := range opts.Namespaces {
 		g.Go(func() error {
-			scans[i] = s.scanNamespace(ctx, namespace, pricing, opts)
+			scans[i] = s.scanNamespace(ctx, historyCtx, namespace, pricing, opts)
 			return nil
 		})
 	}
 	_ = g.Wait() // each namespace's problems are in its scan; none is returned
 
 	var since time.Time
+	var historyTooSlow []string
 	noHistory := make([]string, 0, len(scans))
 	problems := make([]readProblem, 0, len(scans))
 	metricsUnavailable := false
@@ -297,6 +300,9 @@ func (s *Scanner) ScanCluster(ctx context.Context, opts ClusterOptions) (*Cluste
 		report.Workloads = append(report.Workloads, scan.workloads...)
 		problems = append(problems, scan.problems...)
 		noHistory = append(noHistory, scan.noHistory...)
+		if scan.historyTooSlow {
+			historyTooSlow = append(historyTooSlow, scan.namespace)
+		}
 		metricsUnavailable = metricsUnavailable || scan.metricsUnavailable
 		maps.Copy(sources, scan.sources)
 		if scan.services != nil {
@@ -325,6 +331,12 @@ func (s *Scanner) ScanCluster(ctx context.Context, opts ClusterOptions) (*Cluste
 			report.Notes = append(report.Notes, fmt.Sprintf("Prometheus keeps %s of history, so the replay covers that, not the %s asked for",
 				duration(covered), duration(opts.Window)))
 		}
+	}
+	if len(historyTooSlow) > 0 {
+		report.Notes = append(report.Notes, fmt.Sprintf("Prometheus didn't return CPU history for %s in the time "+
+			"the scan gives it, so workloads there are judged from CPU right now: %s. Pass a longer --timeout, "+
+			"or --window 0 to judge every namespace from CPU right now",
+			plural(len(historyTooSlow), "namespace", "namespaces"), listSome(historyTooSlow)))
 	}
 	if opts.History != nil {
 		if note := opts.History.mixedSourcesNote(); note != "" {
