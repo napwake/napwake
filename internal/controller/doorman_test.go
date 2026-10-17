@@ -455,12 +455,53 @@ func TestReconcileDoorman_LeavesASliceItDoesNotOwn(t *testing.T) {
 	}
 	r := doormanReconciler(t, workload, theirs, doormanEndpoints("10.0.0.7"),
 		service("api", map[string]string{"app": "api"}, corev1.ServicePort{Name: "http", Port: 80}))
+	withOperatorCache(r)
 
-	require.Error(t, doormanErr(context.Background(), r, workload, appTarget()))
+	retry := r.routeDoorman(context.Background(), workload, appTarget())
 
+	assert.Equal(t, doormanRetryMin, retry, "backed off, not retried as a stale cache would be")
+	assert.True(t, conditionFalseWith(workload, conditionWakeOnRequest, reasonRoutingFailed))
+	assert.Contains(t, wakeCondition(t, workload).Message, "isn't the doorman's")
 	var got discoveryv1.EndpointSlice
-	require.NoError(t, r.Get(context.Background(), client.ObjectKeyFromObject(theirs), &got))
+	require.NoError(t, r.PodReader.Get(context.Background(), client.ObjectKeyFromObject(theirs), &got))
 	assert.Equal(t, []string{"10.1.1.1"}, got.Endpoints[0].Addresses, "another controller's slice is never overwritten")
+}
+
+// withOperatorCache makes r.Client see EndpointSlices as the operator's
+// cache does (see EndpointSliceCache): outside the doorman's namespace,
+// only the doorman's own. r.PodReader, the API server, sees every one.
+func withOperatorCache(r *Reconciler) {
+	api := r.Client.(client.WithWatch)
+	r.PodReader = api
+	cached := func(obj client.Object) bool {
+		return obj.GetNamespace() == r.DoormanNamespace || obj.GetLabels()[discoveryv1.LabelManagedBy] == doorman.ManagedBy
+	}
+	r.Client = interceptor.NewClient(api, interceptor.Funcs{
+		Get: func(ctx context.Context, c client.WithWatch, key client.ObjectKey, obj client.Object, opts ...client.GetOption) error {
+			if err := c.Get(ctx, key, obj, opts...); err != nil {
+				return err
+			}
+			if _, ok := obj.(*discoveryv1.EndpointSlice); ok && !cached(obj) {
+				return apierrors.NewNotFound(discoveryv1.Resource("endpointslices"), key.Name)
+			}
+			return nil
+		},
+		List: func(ctx context.Context, c client.WithWatch, list client.ObjectList, opts ...client.ListOption) error {
+			if err := c.List(ctx, list, opts...); err != nil {
+				return err
+			}
+			if l, ok := list.(*discoveryv1.EndpointSliceList); ok {
+				var kept []discoveryv1.EndpointSlice
+				for i := range l.Items {
+					if cached(&l.Items[i]) {
+						kept = append(kept, l.Items[i])
+					}
+				}
+				l.Items = kept
+			}
+			return nil
+		},
+	})
 }
 
 func TestReconcileDoorman_CopiesTheServiceProxyName(t *testing.T) {

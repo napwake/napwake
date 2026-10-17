@@ -208,6 +208,9 @@ func (r *Reconciler) reconcileDoorman(ctx context.Context, workload *v1alpha1.Ma
 			name := doorman.SliceName(s.svc.Name, workload.Name, family)
 			keep[name] = true
 			err := r.applyDoormanSlice(ctx, workload, s.svc, name, family, svcRoutes, endpoints[family])
+			if apierrors.IsAlreadyExists(err) {
+				err = r.claimedSlice(ctx, workload.Namespace, name, err)
+			}
 			switch {
 			case err == nil:
 			// The cache hasn't caught up with a slice written moments
@@ -893,6 +896,28 @@ func (r *Reconciler) applyDoormanSlice(ctx context.Context, workload *v1alpha1.M
 		return fmt.Errorf("applying doorman slice for service %s: %w", svc.Name, err)
 	}
 	return nil
+}
+
+// claimedSlice tells apart the two reasons creating a doorman slice the
+// cache doesn't have finds one already there. The cache holds only the
+// doorman's slices, so the one there is either the doorman's, written
+// moments ago, and createErr is returned for the write to be repeated; or
+// someone else's under the same name, which the doorman never overwrites,
+// and routing that Service has failed.
+func (r *Reconciler) claimedSlice(ctx context.Context, namespace, name string, createErr error) error {
+	ctx, cancel := context.WithTimeout(ctx, endpointsReadTimeout)
+	defer cancel()
+	var slice discoveryv1.EndpointSlice
+	if err := r.apiReader().Get(ctx, types.NamespacedName{Namespace: namespace, Name: name}, &slice); err != nil {
+		if apierrors.IsNotFound(err) {
+			return createErr
+		}
+		return fmt.Errorf("reading endpointslice %s: %w", name, err)
+	}
+	if slice.Labels[discoveryv1.LabelManagedBy] != doorman.ManagedBy {
+		return fmt.Errorf("endpointslice %s exists and isn't the doorman's", name)
+	}
+	return createErr
 }
 
 // listDoormanSlices lists the doorman slices the workload has written.
