@@ -159,13 +159,13 @@ Seasonal slots are keyed to wall-clock time, not to a running counter. The hour 
 
 ## Tuning
 
-The default smoothing parameters work well for most workloads:
+The only setting is the confidence threshold, `spec.prediction.confidence` (see [Phase Lifecycle](#phase-lifecycle)). The smoothing parameters are fixed, the same for every workload, and can't be configured:
 
-| Parameter | Default | Effect of increasing |
-|-----------|---------|---------------------|
+| Parameter | Value | What a higher value would do |
+|-----------|-------|------------------------------|
 | \( \alpha \) | 0.01 | Level reacts faster to demand changes |
 | \( \beta \) | 0.001 | Trend detection is more aggressive |
 | \( \gamma_1 \) | 0.1 | Daily pattern adapts faster |
 | \( \gamma_2 \) | 0.5 | Weekly pattern adapts faster |
 
-Lower values produce more stable, smoother forecasts. Higher values make the model more reactive but noisier. A weekly component is updated once a week, so \( \gamma_2 \) is high enough for a weekday/weekend pattern to be learned in about three weeks; the defaults were chosen by simulating office-hours, always-on, idle, and noisy workloads.
+Lower values give more stable, smoother forecasts; higher ones a more reactive but noisier model. A weekly component is updated once a week, so \( \gamma_2 \) is high enough for a weekday/weekend pattern to be learned in about three weeks. The values were chosen by simulating office-hours, always-on, idle, and noisy workloads.
