@@ -327,9 +327,9 @@ func checkOptedIn(obj client.Object, ns *corev1.Namespace, ref string) error {
 
 // inDryRun says whether an opted-in workload is in dry-run. Its
 // ManagedWorkload says so for certain, having weighed the annotations with
-// the cluster's default, which the plugin can't read. Before the operator
-// has made one, the annotations are all there is; without either, the
-// cluster's default is unknown, so it may be.
+// the cluster's default, which the plugin can't read. For a user who may
+// not read ManagedWorkloads, the annotations are all there is; without
+// either, the cluster's default is unknown, so it may be.
 func inDryRun(mw *v1alpha1.ManagedWorkload, obj client.Object, ns *corev1.Namespace) bool {
 	if mw != nil {
 		return mw.Spec.DryRun
