@@ -311,6 +311,27 @@ Not changed, because Hybernate hasn't picked them up: no ManagedWorkload manages
 	})
 }
 
+// A bare name a Deployment and a StatefulSet share could mean either, so
+// enable asks for the kind instead of picking the Deployment; the kind
+// settles it.
+func TestEnable_NameBothKindsShare(t *testing.T) {
+	sts := &appsv1.StatefulSet{ObjectMeta: metav1.ObjectMeta{Name: "db", Namespace: "dev", Labels: optedIn,
+		Annotations: measuring(nil)}}
+	mw := labelManaged("db-statefulset", true)
+	mw.Spec.Target = v1alpha1.WorkloadRef{Kind: v1alpha1.TargetKindStatefulSet, Name: "db"}
+	c := fake.NewClientBuilder().WithScheme(scheme).
+		WithObjects(enableNamespaceObj(nil, nil), enableDeployment("db", nil, nil), sts, mw).Build()
+
+	err := enableWorkload(context.Background(), c, "dev", "db", enableOptions{}, &bytes.Buffer{})
+
+	assert.EqualError(t, err, "db in dev names both deployment/db and statefulset/db; name one by its kind, "+
+		"such as statefulset/db")
+
+	var out bytes.Buffer
+	require.NoError(t, enableWorkload(context.Background(), c, "dev", "statefulset/db", enableOptions{}, &out))
+	assert.Equal(t, "statefulset/db: dry-run ended, Hybernate will pause it while idle\n", out.String())
+}
+
 // A bare name that's neither kind says so, rather than that no StatefulSet
 // has it, which reads as though a Deployment would have been found.
 func TestEnable_NotFound(t *testing.T) {

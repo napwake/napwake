@@ -146,22 +146,32 @@ func getWorkload(ctx context.Context, c client.Client, namespace, arg string) (c
 		return nil, err
 	}
 	key := client.ObjectKey{Namespace: namespace, Name: name}
-	if kind != kindStatefulSet {
-		var d appsv1.Deployment
-		err := c.Get(ctx, key, &d)
-		if err == nil || kind == kindDeployment {
-			return &d, wrapNotFound(err, kindDeployment, key)
-		}
-		if !apierrors.IsNotFound(err) {
-			return nil, fmt.Errorf("getting deployment %s: %w", key, err)
-		}
-	}
+	var d appsv1.Deployment
 	var s appsv1.StatefulSet
-	err = c.Get(ctx, key, &s)
-	if kind == "" && apierrors.IsNotFound(err) {
-		return nil, fmt.Errorf("no Deployment or StatefulSet in %s is named %s: %w", namespace, name, err)
+	switch kind {
+	case kindDeployment:
+		return &d, wrapNotFound(c.Get(ctx, key, &d), kindDeployment, key)
+	case kindStatefulSet:
+		return &s, wrapNotFound(c.Get(ctx, key, &s), kindStatefulSet, key)
 	}
-	return &s, wrapNotFound(err, kindStatefulSet, key)
+	dErr := c.Get(ctx, key, &d)
+	if dErr != nil && !apierrors.IsNotFound(dErr) {
+		return nil, wrapNotFound(dErr, kindDeployment, key)
+	}
+	sErr := c.Get(ctx, key, &s)
+	if sErr != nil && !apierrors.IsNotFound(sErr) {
+		return nil, wrapNotFound(sErr, kindStatefulSet, key)
+	}
+	switch {
+	case dErr == nil && sErr == nil:
+		return nil, fmt.Errorf("%s in %s names both deployment/%s and statefulset/%s; name one by its kind, such as "+
+			"statefulset/%s", name, namespace, name, name, name)
+	case dErr == nil:
+		return &d, nil
+	case sErr == nil:
+		return &s, nil
+	}
+	return nil, fmt.Errorf("no Deployment or StatefulSet in %s is named %s: %w", namespace, name, sErr)
 }
 
 func wrapNotFound(err error, kind string, key client.ObjectKey) error {

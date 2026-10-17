@@ -426,7 +426,7 @@ Or pass --force to change the cluster anyway.
 
 When Helm set it, `enable` changes it, since Helm only applies a chart when you run it, and warns that the next `helm upgrade` puts the chart's value back, so set it in the chart too. See [Argo CD and Flux](../guides/gitops.md#ending-dry-run).
 
-A bare name is looked up as a Deployment first, then a StatefulSet; prefix it with `deployment/` or `statefulset/` to be exact.
+A bare name is looked up as a Deployment and as a StatefulSet. When both have it, `enable` lists them and asks for the kind; prefix the name with `deployment/` or `statefulset/` to be exact.
 
 | Flag | Short | Default | Description |
 |------|-------|---------|-------------|
