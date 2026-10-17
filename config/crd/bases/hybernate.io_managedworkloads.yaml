@@ -238,11 +238,13 @@ spec:
                     default: 2m
                     description: |-
                       MaxWait is how long the doorman holds a connection while the workload
-                      wakes. After it, the connection is closed; the wake carries on.
+                      wakes, at most 1h. After it, the connection is closed; the wake
+                      carries on.
                     type: string
                     x-kubernetes-validations:
-                    - message: must be a duration above zero, such as 90s or 5m
-                      rule: duration(self) > duration('0s')
+                    - message: must be a duration above zero and at most 1h, such
+                        as 90s or 5m
+                      rule: duration(self) > duration('0s') && duration(self) <= duration('1h')
                   onRequest:
                     default: true
                     description: |-
