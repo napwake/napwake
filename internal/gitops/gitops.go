@@ -161,9 +161,8 @@ func Fix(t Tool) []string {
 		}
 	case Kluctl:
 		return []string{
-			"Kluctl only overwrites replicas Hybernate set when it force-applies; annotate the workload",
-			"kluctl.io/ignore-conflicts-manager: hybernate in Git so it leaves them even then,",
-			"or leave replicas out of the workload's manifest.",
+			"Leave replicas out of the workload's manifest in Git, so Kluctl doesn't set them;",
+			"for a Helm chart that always sets them, remove them with a patch in the deployment item's kustomization.yaml.",
 		}
 	}
 	return nil

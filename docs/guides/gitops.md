@@ -84,7 +84,7 @@ rebaseRules:
 
 ## Kluctl
 
-Kluctl overwrites replicas another manager set only when it force-applies. Annotate the workload in Git with `kluctl.io/ignore-conflicts-manager: hybernate` so it leaves them even then, or leave `replicas` out of its manifest.
+Leave `replicas` out of the workload's manifest in Git. For a Helm chart that always sets them, remove them with a patch in the deployment item's `kustomization.yaml`. Kluctl's conflict settings, such as `kluctl.io/ignore-conflicts-manager`, can't help: a scale through the scale subresource leaves the replicas with no field manager, so Kluctl's next deploy sets them back without a conflict to ignore.
 
 ## Ending dry-run
 
