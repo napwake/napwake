@@ -136,7 +136,7 @@ type Reconciler struct {
 
 type lifecyclePauser interface {
 	Prepare(ctx context.Context, workload *v1alpha1.ManagedWorkload) error
-	Pause(ctx context.Context, workload *v1alpha1.ManagedWorkload) (bool, error)
+	Pause(ctx context.Context, workload *v1alpha1.ManagedWorkload) (lifecycle.Suspension, error)
 	Resume(ctx context.Context, workload *v1alpha1.ManagedWorkload, waited lifecycle.Waited) (lifecycle.Resumption, error)
 	Restore(ctx context.Context, workload *v1alpha1.ManagedWorkload) (int32, error)
 }
@@ -276,6 +276,7 @@ func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (res ctrl.
 func (r *Reconciler) reconcileSettled(ctx context.Context, workload *v1alpha1.ManagedWorkload, target client.Object,
 	observed *v1alpha1.ManagedWorkloadStatus) (ctrl.Result, error) {
 	allReady := r.clearResumeIncomplete(workload, target)
+	r.clearPauseIncomplete(workload, target)
 	result, err := r.reconcileAutomation(ctx, workload, target)
 	if err != nil {
 		return ctrl.Result{}, err
@@ -377,22 +378,66 @@ func (r *Reconciler) handlePause(ctx context.Context, workload *v1alpha1.Managed
 		return nil, nil
 	}
 
-	done, err := r.pauser.Pause(ctx, workload)
+	scaledDown := workload.Status.Pause.PausedAt != nil
+	paused, err := r.pauser.Pause(ctx, workload)
 	if err != nil {
 		return nil, fmt.Errorf("pausing workload: %w", err)
 	}
-	if !done {
+	if !paused.Done {
+		// When it was scaled to zero is written as it's first scaled, so the
+		// wait for its pods, and a scale-up meanwhile, outlive a restart.
+		if !scaledDown {
+			if err := r.Status().Update(ctx, workload); err != nil {
+				return nil, fmt.Errorf("recording the workload scaled to zero: %w", err)
+			}
+		}
 		return &ctrl.Result{RequeueAfter: 5 * time.Second}, nil
 	}
 
 	r.stampLastActed(workload)
 	took := r.sinceTransition(workload)
+	var stillRunning string
+	if paused.Running > 0 {
+		stillRunning = fmt.Sprintf("paused with %d pods still running %s after it was scaled to zero: they may be "+
+			"stuck terminating, or a StatefulSet with OrderedReady pod management may be waiting on one that isn't "+
+			"Ready", paused.Running, roundedDuration(r.now().Sub(workload.Status.Pause.PausedAt.Time)))
+		r.setCondition(workload, conditionPauseIncomplete, metav1.ConditionTrue, "PodsStillRunning", stillRunning)
+	} else if meta.IsStatusConditionTrue(workload.Status.Conditions, conditionPauseIncomplete) {
+		r.setCondition(workload, conditionPauseIncomplete, metav1.ConditionFalse, reasonPodsStopped, "")
+	}
 	if err := r.transition(ctx, workload, v1alpha1.PhasePaused, "Paused"); err != nil {
 		return nil, err
 	}
 	metrics.LifecycleActionDuration.WithLabelValues("pause").Observe(took.Seconds())
-	r.emitEvent(workload, false, "Normal", ReasonPaused, actionPause, "paused")
+	if stillRunning != "" {
+		r.emitEvent(workload, false, "Warning", ReasonPauseIncomplete, actionPause, "%s", stillRunning)
+	} else {
+		r.emitEvent(workload, false, "Normal", ReasonPaused, actionPause, "paused")
+	}
 	return &ctrl.Result{RequeueAfter: r.pausedRecheck()}, nil
+}
+
+// conditionPauseIncomplete says the workload's last pause stopped waiting
+// for its pods with some still running.
+const (
+	conditionPauseIncomplete = "PauseIncomplete"
+
+	ReasonPauseIncomplete = "PauseIncomplete"
+	reasonPodsStopped     = "PodsStopped"
+)
+
+// clearPauseIncomplete sets PauseIncomplete False once the pods its last
+// pause stopped waiting for are gone, or the workload is awake again.
+func (r *Reconciler) clearPauseIncomplete(workload *v1alpha1.ManagedWorkload, target client.Object) {
+	if !meta.IsStatusConditionTrue(workload.Status.Conditions, conditionPauseIncomplete) {
+		return
+	}
+	switch {
+	case workload.Status.Phase != v1alpha1.PhasePaused:
+		r.setCondition(workload, conditionPauseIncomplete, metav1.ConditionFalse, "NotPaused", "")
+	case lifecycle.Pods(target) == 0:
+		r.setCondition(workload, conditionPauseIncomplete, metav1.ConditionFalse, reasonPodsStopped, "")
+	}
 }
 
 // preparePause records in workload.Status.Pause what the pause will change,

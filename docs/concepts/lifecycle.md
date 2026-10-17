@@ -16,7 +16,7 @@ Every ManagedWorkload moves through a defined set of phases. The operator drives
 | _(none)_ | A ManagedWorkload that has just been created has no phase until its first reconcile, which sets `Running`. `kubectl hybernate status` shows it as `creating`. (`Creating` is accepted by the API but never set.) |
 | **Running** | Workload is active. Its activity clock is evaluated on each reconcile. |
 | **Idle** | No activity for `idleAfter`, or a pause was requested. The operator pauses it, or in dry-run reports the pause it would make. |
-| **Pausing** | What the pause will change is recorded, and the workload is being scaled to zero. |
+| **Pausing** | What the pause will change is recorded, and the workload is being scaled to zero and its pods stopped. |
 | **Paused** | Workload is at zero replicas. |
 | **Resuming** | Previous replica count is being restored. Transitions to Running when the pods are Ready, or when Hybernate stops waiting for those that aren't. |
 
@@ -71,6 +71,7 @@ The operator sets standard Kubernetes conditions on the CR, each with `Reason`, 
 | `PauseRequest` | The last [pause request](../guides/pause.md#pause-now) paused the workload, or found it paused; `False` says why it didn't | `Pausing`, `AlreadyPaused`; `False`: `DryRun`, `ForecastExpectsDemand`, `ActiveUntil`, `HeldByDependents`, `DependencyCycle`, `Protected`, `ScaledToZero`, `TargetNotFound`, `TargetIgnored`, `DuplicateTarget` |
 | `GitOpsConflict` | A GitOps tool undid its last pause; removed once a pause holds. See [GitOps tools](../guides/gitops.md) | `PauseUndone` |
 | `ResumeIncomplete` | The last resume stopped waiting with some replicas not Ready, and the workload runs with those that are, until they all are; see [Workload resumed with replicas not Ready](../operations/troubleshooting.md#workload-resumed-with-replicas-not-ready) | `ReplicasNotReady`; `False`: `AllReplicasReady` |
+| `PauseIncomplete` | The last pause stopped waiting for its pods with some still running, after their termination grace period and a minute more, and the workload is `Paused` regardless; see [Workload paused with pods still running](../operations/troubleshooting.md#workload-paused-with-pods-still-running) | `PodsStillRunning`; `False`: `PodsStopped`, `NotPaused` |
 | `Autoscaled` | An HPA or KEDA ScaledObject scales it, and its range; see [HPA and KEDA](../guides/autoscalers.md) | `HPA`, `KEDA` |
 | `ScaledToZero` | It was scaled to zero outside Hybernate, so Hybernate leaves it off: it doesn't pause it, wake it, or route requests for it until its replicas are set above zero | `ScaledToZero`; `False`: `HasReplicas` |
 
@@ -85,7 +86,7 @@ User-visible state changes emit Kubernetes events that show up in `kubectl descr
 - Scaled to zero outside Hybernate, and left off: `ScaledToZero`
 - What holds it awake: `IdleVetoed`, `HeldByDependents`, `DependencyCycle`
 - A GitOps tool undoing a pause, and the conflict ending: `GitOpsConflict`, `GitOpsConflictResolved`
-- Problems: `TargetNotFound`, `DuplicateTarget`, `NoPodMetrics`, `NoCPURequests`, `MetricsUnavailable`, `QueryFailed`, `EndpointNotConfigured`, `PrometheusQueryEmpty`, `InvalidActivityAnnotation`, `RoutingFailed`, `UnsupportedLoadBalancer`, `RequestNotServed`, `Protected`, `ResumeIncomplete` (a resume that stopped waiting for replicas not Ready, in place of `Resumed`; `AllReplicasReady` once they are)
+- Problems: `TargetNotFound`, `DuplicateTarget`, `NoPodMetrics`, `NoCPURequests`, `MetricsUnavailable`, `QueryFailed`, `EndpointNotConfigured`, `PrometheusQueryEmpty`, `InvalidActivityAnnotation`, `RoutingFailed`, `UnsupportedLoadBalancer`, `RequestNotServed`, `Protected`, `ResumeIncomplete` (a resume that stopped waiting for replicas not Ready, in place of `Resumed`; `AllReplicasReady` once they are), `PauseIncomplete` (a pause that stopped waiting for pods that didn't stop, in place of `Paused`)
 - The forecast: `PredictionFed` each hour it learns, `RegimeChange` when it's demoted, `ForecastReset` when its saved state can't be read
 - Learned dependencies: `DependenciesLearned`
 

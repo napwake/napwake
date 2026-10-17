@@ -56,6 +56,7 @@ var fixedTime = time.Date(2026, 3, 14, 12, 0, 0, 0, time.UTC)
 
 type stubPauser struct {
 	pauseDone    bool
+	podsRunning  int32
 	pauseErr     error
 	resumeDone   bool
 	resumeErr    error
@@ -73,9 +74,15 @@ func (s *stubPauser) Prepare(_ context.Context, workload *v1alpha1.ManagedWorklo
 	return nil
 }
 
-func (s *stubPauser) Pause(_ context.Context, _ *v1alpha1.ManagedWorkload) (bool, error) {
+func (s *stubPauser) Pause(_ context.Context, w *v1alpha1.ManagedWorkload) (lifecycle.Suspension, error) {
 	s.pauseCalls++
-	return s.pauseDone, s.pauseErr
+	if s.pauseErr != nil {
+		return lifecycle.Suspension{}, s.pauseErr
+	}
+	if w.Status.Pause.PausedAt == nil {
+		w.Status.Pause.PausedAt = ptr.To(metav1.NewTime(fixedTime))
+	}
+	return lifecycle.Suspension{Done: s.pauseDone, Running: s.podsRunning}, nil
 }
 
 func (s *stubPauser) Resume(_ context.Context, _ *v1alpha1.ManagedWorkload, waited lifecycle.Waited) (lifecycle.Resumption, error) {

@@ -19,11 +19,15 @@ package controller
 import (
 	"context"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	appsv1 "k8s.io/api/apps/v1"
+	"k8s.io/apimachinery/pkg/api/meta"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
+	"k8s.io/utils/ptr"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/interceptor"
 
@@ -118,4 +122,45 @@ func TestPause_RecordCopyOnARunningTarget(t *testing.T) {
 			assert.NotContains(t, targetDeploymentOf(t, r).Annotations, v1alpha1.AnnotationPausedFrom)
 		})
 	}
+}
+
+// A pause is Paused once the target's pods have stopped. Until then it's
+// Pausing, with when it was scaled to zero written so the wait survives a
+// restart; pods that never stop are waited for only so long, and reported.
+func TestPause_WaitsForThePodsToStop(t *testing.T) {
+	workload := withPauseRequested(lifecycleWorkload("api", v1alpha1.PhaseRunning))
+	pauser := &stubPauser{}
+	r := newTestReconcilerWithReplicas(t, workload, pauser, 3)
+
+	res, err := r.Reconcile(context.Background(), reconcileFor("api"))
+	require.NoError(t, err)
+
+	got := getWorkload(t, r, "api")
+	assert.Equal(t, v1alpha1.PhasePausing, got.Status.Phase)
+	require.NotNil(t, got.Status.Pause.PausedAt, "written as it's scaled to zero")
+	assert.Equal(t, 5*time.Second, res.RequeueAfter)
+
+	pauser.pauseDone, pauser.podsRunning = true, 2
+	_, err = r.Reconcile(context.Background(), reconcileFor("api"))
+	require.NoError(t, err)
+
+	got = getWorkload(t, r, "api")
+	assert.Equal(t, v1alpha1.PhasePaused, got.Status.Phase, "never wedged in Pausing")
+	c := meta.FindStatusCondition(got.Status.Conditions, conditionPauseIncomplete)
+	require.NotNil(t, c)
+	assert.Equal(t, metav1.ConditionTrue, c.Status)
+	assert.Contains(t, c.Message, "2 pods still running")
+	assert.Contains(t, drainEvents(t, r), ReasonPauseIncomplete)
+
+	stopped := targetDeploymentOf(t, r)
+	stopped.Spec.Replicas = ptr.To[int32](0)
+	require.NoError(t, r.Update(context.Background(), stopped))
+	_, err = r.Reconcile(context.Background(), reconcileFor("api"))
+	require.NoError(t, err)
+	got = getWorkload(t, r, "api")
+	assert.Equal(t, v1alpha1.PhasePaused, got.Status.Phase)
+	c = meta.FindStatusCondition(got.Status.Conditions, conditionPauseIncomplete)
+	require.NotNil(t, c)
+	assert.Equal(t, metav1.ConditionFalse, c.Status, "cleared once they've gone")
+	assert.Equal(t, reasonPodsStopped, c.Reason)
 }

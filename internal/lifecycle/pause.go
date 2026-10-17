@@ -22,6 +22,8 @@ import (
 	"fmt"
 	"time"
 
+	appsv1 "k8s.io/api/apps/v1"
+	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -81,38 +83,75 @@ func (p *Pauser) Prepare(ctx context.Context, workload *v1alpha1.ManagedWorkload
 	return nil
 }
 
+// Suspension is how far a pause has got: whether it's over, and how many of
+// the target's pods are still running. A pause that's over with pods still
+// running stopped waiting for them.
+type Suspension struct {
+	Done    bool
+	Running int32
+}
+
 // Pause scales a prepared workload to zero, holding its KEDA ScaledObject
-// there, and returns true when it's done. Before anything is scaled, the
-// record is copied onto the target, where RecordOn finds it should the
+// there, and is done once its pods have stopped, or once it has waited
+// for them as long as stopWait allows. PausedAt records when it was scaled
+// to zero, from which that's timed. Before anything is scaled, the record
+// is copied onto the target, where RecordOn finds it should the
 // ManagedWorkload's status be lost. Its PVCs stay only while its
 // controller keeps them: a StatefulSet whose
 // persistentVolumeClaimRetentionPolicy.whenScaled is Delete deletes them as
 // it scales down, so the caller must never pause one.
-func (p *Pauser) Pause(ctx context.Context, workload *v1alpha1.ManagedWorkload) (bool, error) {
+func (p *Pauser) Pause(ctx context.Context, workload *v1alpha1.ManagedWorkload) (Suspension, error) {
 	pause := workload.Status.Pause
 	if pause == nil {
-		return false, ErrNotPrepared
+		return Suspension{}, ErrNotPrepared
 	}
 	target, err := getTarget(ctx, p.client, workload)
 	if err != nil {
-		return false, fmt.Errorf("getting target workload: %w", err)
+		return Suspension{}, fmt.Errorf("getting target workload: %w", err)
 	}
 	if err := copyRecord(ctx, p.client, target, pause); err != nil {
-		return false, err
+		return Suspension{}, err
 	}
 	if so := pause.ScaledObject; so != "" {
 		if err := autoscaler.HoldKEDA(ctx, p.client, workload.Namespace, so, 0); err != nil {
-			return false, err
+			return Suspension{}, err
 		}
 	}
-	if err := scaleTo(ctx, p.scaler, target, 0); err != nil {
-		return false, fmt.Errorf("scaling to zero: %w", err)
+	scale, err := scaleTo(ctx, p.scaler, target, 0)
+	if err != nil {
+		return Suspension{}, fmt.Errorf("scaling to zero: %w", err)
 	}
+	now := p.clock()
 	if pause.PausedAt == nil {
-		now := p.clock()
 		pause.PausedAt = &now
 	}
-	return true, nil
+	running := scale.Status.Replicas
+	waited := now.Sub(pause.PausedAt.Time)
+	return Suspension{Done: running == 0 || waited >= stopWait(target, pause.PreviousReplicas), Running: running}, nil
+}
+
+// stopWait is how long a pause waits for the target's pods to stop once
+// it's scaled to zero: each pod's termination grace period, and a minute
+// more for its controller to see them go. A Deployment's pods stop
+// together, and a StatefulSet's one after another. One that never stops,
+// such as a StatefulSet pod that isn't Ready, which OrderedReady pod
+// management waits on before stopping the rest, would otherwise hold the
+// pause for good.
+func stopWait(target client.Object, replicas int32) time.Duration {
+	grace := int64(corev1.DefaultTerminationGracePeriodSeconds)
+	var pods int64 = 1
+	switch t := target.(type) {
+	case *appsv1.Deployment:
+		if g := t.Spec.Template.Spec.TerminationGracePeriodSeconds; g != nil {
+			grace = *g
+		}
+	case *appsv1.StatefulSet:
+		if g := t.Spec.Template.Spec.TerminationGracePeriodSeconds; g != nil {
+			grace = *g
+		}
+		pods = int64(max(replicas, 1))
+	}
+	return time.Duration(pods*grace)*time.Second + time.Minute
 }
 
 // ServingWait is how long a resume waits for the rest of its replicas from
@@ -183,7 +222,7 @@ func (p *Pauser) Resume(ctx context.Context, workload *v1alpha1.ManagedWorkload,
 		}
 	}
 	if scale.Spec.Replicas != replicas {
-		if err := scaleTo(ctx, p.scaler, target, replicas); err != nil {
+		if _, err := scaleTo(ctx, p.scaler, target, replicas); err != nil {
 			return Resumption{}, fmt.Errorf("scaling to %d: %w", replicas, err)
 		}
 	}

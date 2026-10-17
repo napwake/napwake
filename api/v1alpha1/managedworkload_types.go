@@ -543,8 +543,8 @@ type PauseStatus struct {
 	// restore on resume.
 	PreviousReplicas int32 `json:"previousReplicas"`
 
-	// PausedAt is when the workload was scaled to zero. Unset while the
-	// pause is under way.
+	// PausedAt is when the workload was scaled to zero. Unset until then.
+	// The pause waits from then for its pods to stop.
 	// +optional
 	PausedAt *metav1.Time `json:"pausedAt,omitempty"`
 
