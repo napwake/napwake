@@ -232,6 +232,7 @@ func main() {
 			PodReader:               mgr.GetAPIReader(),
 			ProtectedNamespaces:     protected,
 			WatchNamespaces:         watched,
+			HybernateNamespaces:     own,
 			MaxConcurrentReconciles: maxConcurrentReconciles,
 			Timezone:                location,
 		}).SetupWithManager(mgr); err != nil {
