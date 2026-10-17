@@ -189,13 +189,10 @@ func main() {
 		cacheOpts = operatorCacheOptions(watched, routedNamespace)
 	}
 
-	mgr, err := ctrl.NewManager(ctrl.GetConfigOrDie(), ctrl.Options{
+	mgr, err := ctrl.NewManager(ctrl.GetConfigOrDie(), withLeaderElection(ctrl.Options{
 		Scheme:                 scheme,
 		Metrics:                metricsServerOptions,
 		HealthProbeBindAddress: probeAddr,
-		// Every doorman replica serves traffic, so only the operator elects a leader.
-		LeaderElection:   enableLeaderElection && !runDoorman,
-		LeaderElectionID: "479a98fc.hybernate.io",
 		Client: client.Options{
 			Cache: &client.CacheOptions{
 				// ConfigMaps are read one at a time, for the few a workload
@@ -204,7 +201,7 @@ func main() {
 			},
 		},
 		Cache: cacheOpts,
-	})
+	}, enableLeaderElection && !runDoorman))
 	if err != nil {
 		setupLog.Error(err, "unable to start manager")
 		os.Exit(1)
@@ -273,6 +270,21 @@ func main() {
 		setupLog.Error(err, "manager exited with error")
 		os.Exit(1)
 	}
+}
+
+// withLeaderElection has the operator elect a leader when enabled; every
+// doorman replica serves traffic, so the doorman never does.
+//
+// The leader gives up its lease as it stops, rather than leaving it to
+// expire, so a new operator moves paused workloads' Services to the new
+// doorman pods at once when both are upgraded together. That's safe only
+// because main exits as soon as the manager stops: nothing reconciles once
+// the lease is released.
+func withLeaderElection(opts ctrl.Options, enabled bool) ctrl.Options {
+	opts.LeaderElection = enabled
+	opts.LeaderElectionID = "479a98fc.hybernate.io"
+	opts.LeaderElectionReleaseOnCancel = true
+	return opts
 }
 
 // envMemoryLimit is the container's memory limit in bytes, which the

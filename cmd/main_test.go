@@ -20,6 +20,7 @@ import (
 	"context"
 	"os"
 	"path/filepath"
+	"sync"
 	"testing"
 	"time"
 
@@ -31,9 +32,11 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/rest"
 	"k8s.io/utils/ptr"
+	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/cache"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/envtest"
+	metricsserver "sigs.k8s.io/controller-runtime/pkg/metrics/server"
 
 	v1alpha1 "github.com/okedeji/hybernate/api/v1alpha1"
 	"github.com/okedeji/hybernate/internal/controller"
@@ -214,6 +217,49 @@ func TestTrimForCacheKeepsManagedWorkloadsLastApplied(t *testing.T) {
 	assert.Empty(t, got.ManagedFields)
 	assert.Contains(t, got.Annotations, corev1.LastAppliedConfigAnnotation,
 		"the operator updates ManagedWorkloads whole, which would delete kubectl's record")
+}
+
+// A stopping leader hands over its lease, so the next operator leads at
+// once rather than after the lease expires.
+func TestLeaderElectionHandsOverOnStop(t *testing.T) {
+	cfg := startEnvtest(t)
+	newManager := func() ctrl.Manager {
+		opts := withLeaderElection(ctrl.Options{
+			Metrics:                 metricsserver.Options{BindAddress: "0"},
+			HealthProbeBindAddress:  "0",
+			LeaderElectionNamespace: "default",
+		}, true)
+		mgr, err := ctrl.NewManager(cfg, opts)
+		require.NoError(t, err)
+		return mgr
+	}
+
+	first := newManager()
+	ctx, stop := context.WithCancel(context.Background())
+	var running sync.WaitGroup
+	running.Go(func() { assert.NoError(t, first.Start(ctx)) })
+	select {
+	case <-first.Elected():
+	case <-time.After(30 * time.Second):
+		t.Fatal("the first operator never led")
+	}
+	stop()
+	running.Wait()
+
+	second := newManager()
+	ctx, stop = context.WithCancel(context.Background())
+	defer func() {
+		stop()
+		running.Wait()
+	}()
+	started := time.Now()
+	running.Go(func() { assert.NoError(t, second.Start(ctx)) })
+	select {
+	case <-second.Elected():
+		assert.Less(t, time.Since(started), 10*time.Second, "the lease was handed over, not left to expire")
+	case <-time.After(30 * time.Second):
+		t.Fatal("the second operator never led")
+	}
 }
 
 func startEnvtest(t *testing.T) *rest.Config {
