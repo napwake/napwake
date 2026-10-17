@@ -9,6 +9,7 @@ metadata:
 spec:
   endpoints:
     - path: /metrics
+      honorLabels: true
       port: https
       scheme: https
       bearerTokenFile: /var/run/secrets/kubernetes.io/serviceaccount/token
@@ -31,6 +32,7 @@ metadata:
 spec:
   endpoints:
     - path: /metrics
+      honorLabels: true
       port: https
       scheme: https
       bearerTokenFile: /var/run/secrets/kubernetes.io/serviceaccount/token

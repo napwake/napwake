@@ -73,3 +73,55 @@ tests:
             exp_annotations:
               summary: Doorman wakes failing for web
               description: Requests to paused workload shop/web are timing out or failing while it wakes. Check its events and the doorman logs.
+
+  # Series as the ServiceMonitors scrape them: honorLabels keeps the
+  # workload's namespace, and the target's labels name the doorman or
+  # operator pod in hybernate-system.
+  - name: same-named workloads in two namespaces alert separately
+    interval: 1m
+    input_series:
+      - series: hybernate_doorman_wakes_total{job="hybernate-doorman", service="hybernate-doorman", endpoint="https", instance="10.244.0.7:8443", pod="hybernate-doorman-7d9c6b5f4-x2k8p", container="doorman", namespace="shop", workload="web", result="timeout"}
+        values: 0+1x40
+      - series: hybernate_doorman_wakes_total{job="hybernate-doorman", service="hybernate-doorman", endpoint="https", instance="10.244.0.7:8443", pod="hybernate-doorman-7d9c6b5f4-x2k8p", container="doorman", namespace="blog", workload="web", result="error"}
+        values: 0+1x40
+    alert_rule_test:
+      - eval_time: 30m
+        alertname: HybernateDoormanWakesFailing
+        exp_alerts:
+          - exp_labels:
+              severity: warning
+              namespace: blog
+              workload: web
+            exp_annotations:
+              summary: Doorman wakes failing for web
+              description: Requests to paused workload blog/web are timing out or failing while it wakes. Check its events and the doorman logs.
+          - exp_labels:
+              severity: warning
+              namespace: shop
+              workload: web
+            exp_annotations:
+              summary: Doorman wakes failing for web
+              description: Requests to paused workload shop/web are timing out or failing while it wakes. Check its events and the doorman logs.
+
+  - name: a missing target names the workload's namespace, not the operator's
+    interval: 1m
+    input_series:
+      - series: hybernate_target_unavailable_total{job="hybernate-metrics", service="hybernate-metrics", endpoint="https", instance="10.244.0.5:8443", pod="hybernate-6f8d9c7b5-q4m2n", container="manager", namespace="shop", workload="web"}
+        values: 0+1x60
+    alert_rule_test:
+      - eval_time: 45m
+        alertname: HybernateTargetUnavailable
+        exp_alerts:
+          - exp_labels:
+              severity: warning
+              job: hybernate-metrics
+              service: hybernate-metrics
+              endpoint: https
+              instance: 10.244.0.5:8443
+              pod: hybernate-6f8d9c7b5-q4m2n
+              container: manager
+              namespace: shop
+              workload: web
+            exp_annotations:
+              summary: Target workload not found for web
+              description: ManagedWorkload shop/web cannot find its target. It may have been deleted or renamed.

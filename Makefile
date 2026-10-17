@@ -124,6 +124,13 @@ PROMETHEUS_IMAGE ?= prom/prometheus:v3.15.0@sha256:efd719c99d83b060d9daefdcf0036
 
 .PHONY: test-alerts
 test-alerts: ## Unit-test the chart's and config/prometheus's alert rules with promtool
+	@# The tests' series carry the workload's namespace, as a scrape keeps it
+	@# only when every ServiceMonitor endpoint honors the target's labels.
+	@test "$$(helm template hybernate charts/hybernate --set metrics.serviceMonitor.enabled=true \
+		--show-only templates/servicemonitor.yaml | grep -c 'honorLabels: true')" = 2 || { \
+		echo "the chart's ServiceMonitors don't both set honorLabels, so the workload's namespace label is overwritten"; exit 1; }
+	@test "$$(grep -c 'honorLabels: true' config/prometheus/monitor.yaml)" = 2 || { \
+		echo "config/prometheus's ServiceMonitors don't both set honorLabels, so the workload's namespace label is overwritten"; exit 1; }
 	@dir=$$(mktemp -d); trap 'rm -rf "$$dir"' EXIT; \
 	cp tests/prometheus/*_test.yaml "$$dir"; \
 	go run ./hack/promrules < config/prometheus/alerts.yaml > "$$dir/kustomize.rules.yaml"; \

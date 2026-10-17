@@ -120,14 +120,16 @@ It also creates ClusterRoleBindings to `system:auth-delegator` for the operator 
 |-------|---------|-------------|
 | `metrics.serviceMonitor.enabled` | `false` | Create Prometheus Operator ServiceMonitors for the operator and the doorman |
 | `metrics.serviceMonitor.interval` | `30s` | Scrape interval |
-| `metrics.serviceMonitor.additionalLabels` | `{}` | Extra labels on the ServiceMonitors |
+| `metrics.serviceMonitor.additionalLabels` | `{}` | Extra labels on the ServiceMonitors. Your Prometheus picks them up only if these match its `serviceMonitorSelector`: kube-prometheus-stack needs `release: <its release name>` |
+
+The ServiceMonitors set `honorLabels: true`, so the metrics keep the workload's `namespace` label. kube-prometheus-stack's Prometheus runs as the `<its release name>-kube-prometheus-prometheus` ServiceAccount, the subject for `metrics.readerSubjects`. See [Monitoring](../operations/monitoring.md#scraping).
 
 ### PrometheusRule
 
 | Value | Default | Description |
 |-------|---------|-------------|
 | `metrics.prometheusRule.enabled` | `false` | Create a PrometheusRule with the alerts in [Monitoring](../operations/monitoring.md#alerting-rules) |
-| `metrics.prometheusRule.additionalLabels` | `{}` | Extra labels on the PrometheusRule |
+| `metrics.prometheusRule.additionalLabels` | `{}` | Extra labels on the PrometheusRule. Your Prometheus loads it only if these match its `ruleSelector`: kube-prometheus-stack needs `release: <its release name>` |
 
 ## Doorman
 
