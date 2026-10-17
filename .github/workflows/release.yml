@@ -137,7 +137,8 @@ jobs:
           cosign attest --yes --predicate sbom.spdx.json --type spdxjson ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}@${{ steps.build.outputs.digest }}
 
       # Static, so the Linux binaries run on Alpine and Amazon Linux as well
-      # as glibc distributions, and krew-index requires the LICENSE in each.
+      # as glibc distributions. krew-index requires the LICENSE in each, and
+      # NOTICE credits the price data the plugin embeds.
       - name: Build kubectl-hybernate plugin binaries
         run: |
           for platform in linux/amd64 linux/arm64 darwin/amd64 darwin/arm64 windows/amd64; do
@@ -148,7 +149,7 @@ jobs:
             bin=kubectl-hybernate-${os}-${arch}${ext}
             CGO_ENABLED=0 GOOS=$os GOARCH=$arch go build -trimpath -ldflags "-s -w -X main.version=${TAG}" \
               -o "$bin" ./cmd/kubectl-hybernate
-            tar czf "kubectl-hybernate-${os}-${arch}.tar.gz" "$bin" LICENSE
+            tar czf "kubectl-hybernate-${os}-${arch}.tar.gz" "$bin" LICENSE NOTICE
           done
 
       - name: Generate and validate the Krew manifest
