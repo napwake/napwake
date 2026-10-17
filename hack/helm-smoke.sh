@@ -33,6 +33,15 @@ METRICS_SERVER_IMAGE=registry.k8s.io/metrics-server/metrics-server:v0.7.2
 # chart is installed with the tag alone.
 GUARD_IMAGE=registry.k8s.io/kubectl:$(helm show values charts/hybernate | awk '/^uninstallGuard:/{g=1} g&&/tag:/{print $2; exit}')
 METRICS_SERVER_MANIFEST="$(dirname "$0")/../test/e2e/testdata/metrics-server-v0.7.2.yaml"
+# A ManagedWorkload that routed through the doorman is deleted only once its
+# ports have drained, twice the doorman's RouteDrain, so its deletion is
+# given that plus a minute for the requeue and the finalizer's write.
+ROUTE_DRAIN=$(awk '/^\tRouteDrain = [0-9]+ \* time\.Second$/ {print $3}' "$(dirname "$0")/../internal/doorman/routes.go")
+if [ -z "$ROUTE_DRAIN" ]; then
+  echo "can't read RouteDrain from internal/doorman/routes.go" >&2
+  exit 1
+fi
+DELETE_TIMEOUT=$((2 * ROUTE_DRAIN + 60))
 
 if "$KIND" get clusters 2>/dev/null | grep -qx "$CLUSTER"; then
   echo "kind cluster $CLUSTER already exists; set KIND_CLUSTER to a new name" >&2
@@ -298,8 +307,8 @@ is deployment/hybernate "$RELEASE_NAMESPACE" '{.status.readyReplicas}' 1
 echo "stopping managing the workloads, which restores the paused StatefulSet, then uninstalling"
 kubectl label deployment "$APP" -n "$WATCHED" hybernate.io/managed-
 kubectl label statefulset "$DB" -n "$WATCHED" hybernate.io/managed-
-eventually 60 "the Deployment's ManagedWorkload to be deleted" gone managedworkload/$APP "$WATCHED"
-eventually 120 "the StatefulSet's ManagedWorkload to be deleted" gone managedworkload/$DB "$WATCHED"
+eventually "$DELETE_TIMEOUT" "the Deployment's ManagedWorkload to be deleted" gone managedworkload/$APP "$WATCHED"
+eventually "$DELETE_TIMEOUT" "the StatefulSet's ManagedWorkload to be deleted" gone managedworkload/$DB "$WATCHED"
 is statefulset/$DB "$WATCHED" '{.spec.replicas}' 1
 helm uninstall hybernate --namespace "$RELEASE_NAMESPACE" --wait --timeout 5m
 echo "ok"
