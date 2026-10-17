@@ -22,9 +22,15 @@ Hybernate is installed in namespace {{ .Release.Namespace }}.
 
    kubectl get managedworkloads -A
 
-{{- if .Values.metrics.serviceMonitor.enabled }}
+{{- if and .Values.metrics.enabled .Values.metrics.serviceMonitor.enabled }}
 
-5. Metrics are scraped through a ServiceMonitor; check Prometheus's targets for the hybernate endpoints.
+5. Metrics are scraped through ServiceMonitors; check Prometheus's targets for the hybernate endpoints.
+{{- if and .Values.metrics.secure (not .Values.metrics.readerSubjects) }}
+   They're served over HTTPS only to callers allowed to get /metrics, and
+   metrics.readerSubjects is empty: until your Prometheus's ServiceAccount
+   is listed there, or bound to the {{ include "hybernate.fullname" . }}-metrics-reader ClusterRole,
+   its scrapes are refused with 401 or 403{{ if .Values.metrics.prometheusRule.enabled }}, and HybernateDown fires{{ end }}.
+{{- end }}
 {{- end }}
 
 Docs: https://okedeji.io/hybernate
