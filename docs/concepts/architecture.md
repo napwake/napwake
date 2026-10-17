@@ -31,12 +31,12 @@ The primary reconciler. Watches `ManagedWorkload` CRs and drives each workload t
 
 1. Checks for another ManagedWorkload managing the same target
 2. Checks that the target Deployment or StatefulSet exists and isn't labelled `hybernate.io/ignore`; an ignored one is let go of, scaled back up first if it's paused
-3. Lets go of a workload whose namespace is protected, or that is Hybernate's own operator or doorman, scaled back up first if it's paused
+3. Lets go of a workload whose namespace is protected, that is Hybernate's own operator or doorman, or that is a StatefulSet deleting its PVCs on scale-down, scaled back up first if it's paused
 4. Wakes a paused workload scaled up outside Hybernate
 5. Reports the HPA or KEDA ScaledObject that scales the workload
 6. Learns the workload's dependencies from its environment, and from the requests that woke it
 7. Routes a paused workload's Services to the doorman, or stops routing them
-8. Finishes a pause or resume an earlier reconcile started, and wakes a paused workload put in dry-run
+8. Finishes a pause or resume an earlier reconcile started, taking a pause up again from the target's `hybernate.io/paused-from` if status lost it, and wakes a paused workload put in dry-run
 9. Leaves alone a target scaled to zero outside Hybernate
 10. Acts on a pause someone asked for with `kubectl hybernate pause`
 11. Runs the activity clock and the forecast: records activity, and pauses once there has been none for `idleAfter` and no demand is forecast; for a paused workload, checks whether anything, or `autoResume`, asks it to wake

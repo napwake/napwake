@@ -51,7 +51,7 @@ This means the operator can crash and restart at any point without leaving workl
 
 ## Status Conditions
 
-The operator sets standard Kubernetes conditions on the CR, each with `Reason`, `Message`, and `LastTransitionTime`. A problem that's resolved is shown as `False` rather than removed.
+The operator sets standard Kubernetes conditions on the CR, each with `Reason`, `Message`, and `LastTransitionTime`. A condition appears once it first applies. After that, one that no longer applies is shown as `False`, with the reason listed after `False` below, rather than removed; only `GitOpsConflict` and `Autoscaled` are removed instead.
 
 | Type | `True` means | Reasons |
 |------|--------------|---------|
@@ -60,7 +60,7 @@ The operator sets standard Kubernetes conditions on the CR, each with `Reason`, 
 | `PrometheusAvailable` | The Prometheus activity queries answer; only set when there are some | `QueriesEvaluated`; `False`: `QueryFailed`, `EndpointNotConfigured` |
 | `PrometheusQueryEmpty` | A Prometheus activity query has matched no series since it was first evaluated, which usually means a misspelt metric or label; informational, it doesn't stop a pause | `NoSeries`; `False`: `QueriesMatchSeries` |
 | `IdleVetoed` | It's idle, but a confident forecast expects demand in the coming hour, so the pause waits; the message names the hour | `ForecastExpectsDemand`; `False`: `NotVetoed` |
-| `WakeOnRequest` | Requests to the paused workload's Services wake it | `DoormanRouted`; `False`: see [When a workload isn't routed](wake-on-request.md#when-a-workload-isnt-routed) (`NoServices`, `ServedByOtherPods`, `UnsupportedIPFamily`, `UnsupportedLoadBalancer`, `DoormanUnavailable`, `NoFreePort`, `RoutingFailed`, `DoormanDisabled`, `NodeLocalTraffic`), or `NotPaused`, `TargetNotFound` once routing is removed |
+| `WakeOnRequest` | Requests to the paused workload's Services wake it | `DoormanRouted`; `False`: see [When a workload isn't routed](wake-on-request.md#when-a-workload-isnt-routed) (`NoServices`, `ServedByOtherPods`, `UnsupportedIPFamily`, `UnsupportedLoadBalancer`, `DoormanUnavailable`, `NoFreePort`, `TooManyPorts`, `RoutingFailed`, `DoormanDisabled`, `NodeLocalTraffic`), or `NotPaused`, `TargetNotFound`, `DuplicateTarget` once routing is removed |
 | `HeldByDependents` | It's kept awake for the workloads that depend on it | `DependentsAwake`; `False`: `NoAwakeDependents` |
 | `WaitingForDependencies` | Its resume waits for a `waitForReady` dependency to be Ready | `DependencyNotReady`; `False`: `DependenciesReady`; `DependencyWontStart`, naming a dependency it doesn't wait for because it can't start or wasn't Ready in time; or `DependencyCycle`, naming one that waits for it in turn |
 | `DependencyCycle` | `dependsOn` forms a cycle through it, so it won't pause | `DependencyCycle`; `False`: `NoCycle` |
@@ -72,7 +72,7 @@ The operator sets standard Kubernetes conditions on the CR, each with `Reason`, 
 | `GitOpsConflict` | A GitOps tool undid its last pause; removed once a pause holds for an hour. See [GitOps tools](../guides/gitops.md) | `PauseUndone` |
 | `ResumeIncomplete` | The last resume stopped waiting with some replicas not Ready, and the workload runs with those that are, until they all are; see [Workload resumed with replicas not Ready](../operations/troubleshooting.md#workload-resumed-with-replicas-not-ready) | `ReplicasNotReady`; `False`: `AllReplicasReady` |
 | `PauseIncomplete` | The last pause stopped waiting for its pods with some still running, after their termination grace period and a minute more, and the workload is `Paused` regardless; see [Workload paused with pods still running](../operations/troubleshooting.md#workload-paused-with-pods-still-running) | `PodsStillRunning`; `False`: `PodsStopped`, `NotPaused` |
-| `Autoscaled` | An HPA or KEDA ScaledObject scales it, and its range; see [HPA and KEDA](../guides/autoscalers.md) | `HPA`, `KEDA` |
+| `Autoscaled` | An HPA or KEDA ScaledObject scales it, and its range; removed when neither does. See [HPA and KEDA](../guides/autoscalers.md) | `HPA`, `KEDA` |
 | `ScaledToZero` | It was scaled to zero outside Hybernate, so Hybernate leaves it off: it doesn't pause it, wake it, or route requests for it until its replicas are set above zero | `ScaledToZero`; `False`: `HasReplicas` |
 
 ## Events
@@ -86,7 +86,8 @@ User-visible state changes emit Kubernetes events that show up in `kubectl descr
 - Scaled to zero outside Hybernate, and left off: `ScaledToZero`
 - What holds it awake: `IdleVetoed`, `HeldByDependents`, `DependencyCycle`
 - A GitOps tool undoing a pause, and the conflict ending: `GitOpsConflict`, `GitOpsConflictResolved`
-- Problems: `TargetNotFound`, `DuplicateTarget`, `NoPodMetrics`, `NoCPURequests`, `MetricsUnavailable`, `QueryFailed`, `EndpointNotConfigured`, `PrometheusQueryEmpty`, `InvalidActivityAnnotation`, `RoutingFailed`, `UnsupportedLoadBalancer`, `RequestNotServed`, `Protected`, `ResumeIncomplete` (a resume that stopped waiting for replicas not Ready, in place of `Resumed`; `AllReplicasReady` once they are), `PauseIncomplete` (a pause that stopped waiting for pods that didn't stop, in place of `Paused`)
+- Dependencies: `DependencyWontStart` and `DependencyCycle` (warnings: a resume that starts without waiting for a `waitForReady` dependency), `DependencyWakeFailed` (a warning: a dependency couldn't be woken)
+- Problems: `TargetNotFound`, `DuplicateTarget`, `NoPodMetrics`, `NoCPURequests`, `MetricsUnavailable`, `QueryFailed`, `EndpointNotConfigured`, `PrometheusQueryEmpty`, `InvalidActivityAnnotation`, `RoutingFailed`, `UnsupportedLoadBalancer`, `RequestNotServed`, `Protected`, `ResumeIncomplete` (a resume that stopped waiting for replicas not Ready, in place of `Resumed`; `AllReplicasReady` once they are), `PauseIncomplete` (a pause that stopped waiting for pods that didn't stop, in place of `Paused`), `HandBackAbandoned` (a ManagedWorkload in a namespace being deleted letting go of its workload)
 - The forecast: `PredictionFed` each hour it learns, `RegimeChange` when it's demoted, `ForecastReset` when its saved state can't be read
 - Learned dependencies: `DependenciesLearned`
 

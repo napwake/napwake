@@ -147,7 +147,7 @@ The engine's learned state (the model's components, the scored errors, the anoma
 - No external database, persistent volume, or ConfigMap is needed
 - Each workload has its own independent engine
 
-State that can't be read, from an older version or a hand edit, is discarded with a `ForecastReset` warning event, and the engine starts learning again. State saved by a version of Hybernate that learned millicores rather than utilization is from an older version.
+State that can't be read, from an older version or a hand edit, is discarded with a `ForecastReset` warning event, and the engine starts learning again.
 
 ## Wall-Clock Alignment
 
