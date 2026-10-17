@@ -240,6 +240,9 @@ type owners struct {
 	replicaSets map[types.UID][]string
 	// deploymentOf is the Deployment that owns each ReplicaSet, by its name.
 	deploymentOf map[string]types.UID
+	// ownerOf is whatever controls each ReplicaSet, by its name, or ""
+	// when nothing does.
+	ownerOf map[string]types.UID
 	// replicaSetsRead says the ReplicaSets were read, so a pod whose
 	// ReplicaSet isn't among them isn't a Deployment's.
 	replicaSetsRead bool
@@ -251,14 +254,16 @@ type owners struct {
 // are matched by their selectors.
 func (s *Scanner) readOwners(ctx context.Context, scan *namespaceScan) owners {
 	o := owners{rollouts: map[types.UID][]time.Time{}, replicaSets: map[types.UID][]string{},
-		deploymentOf: map[string]types.UID{}}
+		deploymentOf: map[string]types.UID{}, ownerOf: map[string]types.UID{}}
 	namespace := scan.namespace
 	err := listAll(ctx, s.client, func(list *appsv1.ReplicaSetList) {
 		for _, rs := range list.Items {
 			ref := controllerRef(rs.OwnerReferences)
 			if ref == nil {
+				o.ownerOf[rs.Name] = ""
 				continue
 			}
+			o.ownerOf[rs.Name] = ref.UID
 			o.rollouts[ref.UID] = append(o.rollouts[ref.UID], rs.CreationTimestamp.Time)
 			if ref.Kind == "Deployment" {
 				o.replicaSets[ref.UID] = append(o.replicaSets[ref.UID], rs.Name)
@@ -305,12 +310,28 @@ func (o owners) controllerOf(pod *corev1.Pod) (types.UID, bool) {
 }
 
 // podsOf matches the names of a workload's pods in CPU history, which
-// records pods long gone, so by the names their controllers give them.
+// records pods long gone, so by the names their controllers give them. A
+// Deployment's are its ReplicaSets' pods, and those of ReplicaSets since
+// deleted, which only their names tell apart; a ReplicaSet that still
+// exists and isn't the Deployment's keeps its pods out.
 func (o owners) podsOf(wl workload) podNames {
+	name := wl.obj.GetName()
 	if wl.kind == v1alpha1.TargetKindStatefulSet {
-		return statefulSetPods(wl.obj.GetName())
+		return statefulSetPods(name)
 	}
-	return replicaSetPods(o.replicaSets[wl.obj.GetUID()])
+	uid := wl.obj.GetUID()
+	current := replicaSetPods(o.replicaSets[uid])
+	return func(pod string) bool {
+		if current(pod) {
+			return true
+		}
+		rs, ok := deploymentReplicaSet(name, pod)
+		if !ok {
+			return false
+		}
+		owner, exists := o.ownerOf[rs]
+		return !exists || owner == uid
+	}
 }
 
 func controllerRef(refs []metav1.OwnerReference) *metav1.OwnerReference {

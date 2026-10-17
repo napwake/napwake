@@ -89,7 +89,7 @@ const (
 var deniedConsequence = map[reading]string{
 	readingWorkloads: "so they weren't scanned",
 	readingReplicaSets: "so Deployments' rollouts there aren't seen, their pods are matched to them by labels " +
-		"alone, and their CPU history isn't found",
+		"alone, and only pods named as a Deployment names them are in their history",
 	readingControllerRevisions: "so StatefulSets' rollouts there aren't seen",
 	readingPods: "so sidecars added at pod creation aren't priced, and pods are matched to workloads by " +
 		"labels alone",

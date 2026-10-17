@@ -32,6 +32,9 @@ import (
 	v1alpha1 "github.com/okedeji/hybernate/api/v1alpha1"
 )
 
+// longDeployment is a name long enough that the API server cuts its pods' names short.
+const longDeployment = "payments-reconciliation-worker-eu-west-primary-blue"
+
 var weekStart = time.Date(2026, 9, 28, 0, 0, 0, 0, time.UTC) // a Monday
 
 // week is a replay of seven days at five-minute steps, of a workload with
@@ -168,7 +171,7 @@ func TestWorkloadSeries(t *testing.T) {
 }
 
 func TestReplicaSetPods(t *testing.T) {
-	long := "payments-reconciliation-worker-eu-west-primary-blue"
+	long := longDeployment
 	longRS := long + "-7d9f8c6b5"
 	tests := []struct {
 		name        string
@@ -405,10 +408,68 @@ func TestScanCluster_HistoryIsTheWorkloadsOwn(t *testing.T) {
 	assert.InDelta(t, 167, h.SleepHours, 1, "web was quiet all week; the migration Job and web-api aren't web")
 }
 
+// A Deployment's pods from a ReplicaSet since deleted, past its revision
+// history limit, are still its history; a bare ReplicaSet's that still
+// exists aren't.
+func TestScanCluster_HistoryOfDeletedReplicaSets(t *testing.T) {
+	busy := func(time.Time) float64 { return 2 }
+	quiet := func(time.Time) float64 { return 0.001 }
+	f := &fakePrometheus{from: scanTime.Add(-7 * 24 * time.Hour), byNamespace: map[string][]series{testNamespace: {
+		{pod: "web-7d9f8c6b5-x7k2p", container: "main", cores: quiet},
+		{pod: "web-5c6d7f8b9-q2w4r", container: "main", cores: func(t time.Time) float64 {
+			if t.Before(scanTime.Add(-3 * 24 * time.Hour)) {
+				return 2
+			}
+			return 0
+		}},
+		{pod: "web-6b8c9d4f5-z9x8c", container: "main", cores: busy},
+	}}}
+	bare := &appsv1.ReplicaSet{ObjectMeta: metav1.ObjectMeta{Name: "web-6b8c9d4f5", Namespace: testNamespace}}
+	objs := deploymentWithRollout("web", testNamespace, 1, 30*24*time.Hour)
+	objs = append(objs, bare, makePodMetrics("web", testNamespace, "1m", "20Mi"))
+	opts := scanOptions(testNamespace)
+	opts.History, opts.Window, opts.IdleAfter = newFakePrometheus(t, f), 7*24*time.Hour, time.Hour
+	c := fake.NewClientBuilder().WithScheme(newScheme()).WithRuntimeObjects(objs...).Build()
+
+	report, err := NewScanner(c, c).ScanCluster(context.Background(), opts)
+
+	require.NoError(t, err)
+	h := byName(report)["web"].History
+	require.NotNil(t, h)
+	assert.InDelta(t, 72-1, h.SleepHours, 1, "busy for its first four days, on a ReplicaSet since deleted")
+}
+
+func TestDeploymentReplicaSet(t *testing.T) {
+	long := longDeployment
+	tests := []struct {
+		name, deployment, pod, want string
+	}{
+		{"a Deployment's pod", "api", "api-7d9f8c6b5-x7k2p", "api-7d9f8c6b5"},
+		{"a short hash", "api", "api-65bd9-x2k4p", "api-65bd9"},
+		{"a longer-named Deployment's pod", "api", "api-gateway-7d9f8c6b5-x7k2p", ""},
+		{"a Job's pod", "api", "api-migrate-x7k2p", ""},
+		{"a CronJob's pod", "api", "api-29312345-x7k2p", ""},
+		{"a timestamp in generated digits", "api", "api-29245678-x7k2p", ""},
+		{"a DaemonSet's pod", "api", "api-x7k2p", ""},
+		{"a StatefulSet's pod", "api", "api-0", ""},
+		{"a suffix Kubernetes doesn't generate", "api", "api-7d9f8c6b5-abcde", ""},
+		{"a hash too long", "api", "api-7d9f8c6b5bcd-x7k2p", ""},
+		{"another Deployment's pod", "api", "web-7d9f8c6b5-x7k2p", ""},
+		{"a name cut short", long, (long + "-7d9f8c6b5-")[:58] + "x7k2p", ""},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			rs, ok := deploymentReplicaSet(tt.deployment, tt.pod)
+			assert.Equal(t, tt.want, rs)
+			assert.Equal(t, tt.want != "", ok)
+		})
+	}
+}
+
 // A Deployment's name long enough that the API server cuts its pods' names
 // short still has its history found.
 func TestScanCluster_HistoryOfALongName(t *testing.T) {
-	name := "payments-reconciliation-worker-eu-west-primary-blue"
+	name := longDeployment
 	pod := (name + "-7d9f8c6b5-")[:58] + "x7k2p"
 	f := &fakePrometheus{from: scanTime.Add(-7 * 24 * time.Hour), byNamespace: map[string][]series{testNamespace: {
 		{pod: pod, container: "main", cores: func(time.Time) float64 { return 0.001 }},

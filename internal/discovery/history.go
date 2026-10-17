@@ -192,6 +192,41 @@ func replicaSetPods(replicaSets []string) podNames {
 	}
 }
 
+// generatedRunes are what Kubernetes writes a ReplicaSet's pod-template-hash
+// and a generated name's suffix with: no vowels, and no 0, 1 or 3.
+const generatedRunes = "bcdfghjklmnpqrstvwxz2456789"
+
+// maxTemplateHashLength is the longest a pod-template-hash is written: a
+// 32-bit hash in generatedRunes.
+const maxTemplateHashLength = 10
+
+// deploymentReplicaSet is the ReplicaSet a pod's name says it's from, when
+// it's named as a Deployment called deployment names its pods:
+// <deployment>-<pod-template-hash>-<suffix>. A hash is a mix of letters and
+// digits, which tells it apart from a CronJob's timestamp, and only
+// generatedRunes, which a Job's name rarely is. A name the API server cut
+// short can't be read this way, so it isn't matched.
+func deploymentReplicaSet(deployment, pod string) (string, bool) {
+	rest, ok := strings.CutPrefix(pod, deployment+"-")
+	if !ok {
+		return "", false
+	}
+	hash, suffix, ok := strings.Cut(rest, "-")
+	if !ok || len(suffix) != generatedSuffixLength || !generated(suffix) || len(hash) > maxTemplateHashLength ||
+		!generated(hash) || !strings.ContainsAny(hash, "bcdfghjklmnpqrstvwxz") {
+		return "", false
+	}
+	rs := deployment + "-" + hash
+	if len(rs)+1 > maxGeneratedNameBase {
+		return "", false
+	}
+	return rs, true
+}
+
+func generated(s string) bool {
+	return s != "" && strings.Trim(s, generatedRunes) == ""
+}
+
 // statefulSetPods matches a StatefulSet's pods, named after it with an
 // ordinal.
 func statefulSetPods(name string) podNames {
