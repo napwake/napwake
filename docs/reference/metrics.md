@@ -1,6 +1,6 @@
 # Metrics Reference
 
-All metrics are prefixed with `hybernate_` and registered with the controller-runtime metrics registry. They are served on the metrics endpoint, which the chart and the kustomize manifests serve on `:8443` over HTTPS; a scraper needs a token allowed to `get` `/metrics` (see [Monitoring](../operations/monitoring.md#prometheus)). The operator drops a workload's series when its ManagedWorkload is deleted; the doorman drops its `hybernate_doorman_wakes_total` series when the workload's route is removed.
+All metrics are prefixed with `hybernate_` and registered with the controller-runtime metrics registry. They are served on the metrics endpoint, which the chart and the kustomize manifests serve on `:8443` over HTTPS; a scraper needs a token allowed to `get` `/metrics` (see [Monitoring](../operations/monitoring.md#prometheus)). The operator drops a workload's series when its ManagedWorkload is deleted; the doorman drops its `hybernate_doorman_wakes_total` series then too, on its next sync of routes, not when the workload merely stops being routed.
 
 ## Tier 1: Cluster Health
 
@@ -56,7 +56,7 @@ Served by the doorman pods, on the same port and path as the operator's metrics.
 | `timeout` | No pod was Ready within `wake.maxWait` |
 | `error` | The woken pods couldn't be reached, or the wake couldn't be recorded, by `wake.maxWait` |
 | `canceled` | The caller left, or the doorman shut down, while the connection was held |
-| `ignored` | A health check or scraper, recognised by its `User-Agent`, or a connection that closed without sending anything |
+| `ignored` | A health check or scraper, recognised by its `User-Agent` and answered 503; a request for a hidden file such as `/.env`, answered 404; or a connection that closed without sending anything |
 | `limited` | Refused by a cap on held connections or a wake rate limit; see [Limits](../concepts/wake-on-request.md#limits) |
 | `refused` | The workload's route is draining and none of its pods is Ready |
 
