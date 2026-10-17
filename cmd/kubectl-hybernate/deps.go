@@ -152,6 +152,8 @@ func deps(ctx context.Context, c client.Client, key client.ObjectKey, out io.Wri
 	phase := func(ref depRef) string {
 		m, ok := byTarget[ref]
 		switch {
+		case !ok && partial && ref.namespace != key.Namespace:
+			return "unknown (can't read " + ref.namespace + ")"
 		case !ok:
 			return "not managed"
 		case m.Status.Phase == "":
