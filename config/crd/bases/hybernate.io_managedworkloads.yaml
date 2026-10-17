@@ -778,8 +778,11 @@ spec:
                           type: string
                         lastSeen:
                           description: |-
-                            LastSeen is when a request last confirmed one learned from a wake.
-                            One no request has confirmed for 14 days is forgotten.
+                            LastSeen is when a request that woke the dependency last confirmed one
+                            learned from a wake, written at most once a day. Held awake and woken
+                            with the dependent while it's kept, the dependency isn't woken by its
+                            requests, so one in steady use goes unconfirmed too: after 14 days it's
+                            forgotten, and learned again from the next request that wakes it.
                           format: date-time
                           type: string
                         name:
