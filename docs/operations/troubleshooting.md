@@ -101,7 +101,7 @@ kubectl get managedworkload my-api -n staging \
   -o jsonpath='{.status.conditions[?(@.type=="PauseRequest")]}'
 ```
 
-`False` gives the reason: workloads that depend on it are awake (`HeldByDependents`), a `hybernate.io/active-until` annotation holds it (`ActiveUntil`), it's in dry-run (`DryRun`) or a protected namespace (`Protected`), or it's scaled to zero already (`ScaledToZero`). Each request is answered once: fix the reason, then run `pause` again. See [Pause Now](../guides/pause.md#pause-now).
+`False` gives the reason: a confident forecast expects demand within the hour (`ForecastExpectsDemand`; `kubectl hybernate pause --yes` pauses it anyway), workloads that depend on it are awake (`HeldByDependents`) or it's in a `dependsOn` cycle (`DependencyCycle`), a `hybernate.io/active-until` annotation holds it (`ActiveUntil`), it's in dry-run (`DryRun`) or protected (`Protected`), it's scaled to zero already (`ScaledToZero`), or its target is missing, ignored or managed by another ManagedWorkload (`TargetNotFound`, `TargetIgnored`, `DuplicateTarget`). Each request is answered once: fix the reason, then run `pause` again. See [Pause Now](../guides/pause.md#pause-now).
 
 ### Requests to a paused workload fail instead of waking it
 
@@ -110,7 +110,7 @@ kubectl get managedworkload my-api -n staging \
   -o jsonpath='{.status.conditions[?(@.type=="WakeOnRequest")]}'
 ```
 
-- **No condition, or `NotPaused`**: the workload isn't routed. A workload with `wake.onRequest: false` doesn't wake on request.
+- **No condition, or `NotPaused`**: the workload isn't routed. A workload with `wake.onRequest: false`, or `hybernate.io/wake-on-request: "false"` when it's opted in with the label, doesn't wake on request.
 - **`NoServices`**: no Service with a selector and a ClusterIP selects the workload's pods on a TCP port, or every such port is in `hybernate.io/doorman-ignore-ports`. Headless Services aren't routed; see [Wake on Request](../concepts/wake-on-request.md#when-a-workload-isnt-routed).
 - **`ServedByOtherPods`**: another workload's Ready pods are behind the same Service, so requests go to them. See [Services shared with other workloads](../concepts/wake-on-request.md#services-shared-with-other-workloads).
 - **`UnsupportedLoadBalancer`**, or a Service named in the message as not routed: the Service is behind GKE container-native load balancing, which can't use the doorman. See [Compatibility](../reference/compatibility.md#cloud-load-balancers).
@@ -118,6 +118,7 @@ kubectl get managedworkload my-api -n staging \
 - **`UnsupportedIPFamily`**: no doorman pod has an address in the Service's IP family, such as an IPv6-only Service in a cluster whose doorman pods have only IPv4 addresses.
 - **`DoormanUnavailable`**: no doorman pod is Ready. Check `kubectl get pods -A -l control-plane=doorman`.
 - **`NoFreePort`**: every doorman port (20000-29999) is in use.
+- **`TooManyPorts`**: the workload would hold more than `doorman.portsPerWorkload` doorman ports (32 by default), one per Service port, or its namespace more than `doorman.portsPerNamespace` (256); the message says which. Raise the cap, or list ports that needn't wake it in `hybernate.io/doorman-ignore-ports`.
 - **`RoutingFailed`**: writing the doorman's EndpointSlices failed; the message has the error, and it's retried with backoff. Check the operator's RBAC and logs.
 - **`DoormanDisabled`**: the doorman isn't installed (`doorman.enabled: false`).
 - **`TargetNotFound`**: the Deployment or StatefulSet is gone, so there's nothing to wake.
@@ -136,9 +137,39 @@ The doorman's logs name the workload and Service for each held connection: `kube
 
 ### Workload keeps cycling between paused and running
 
-Something keeps waking it. Check the events for `WokeByActivity` (an activity annotation newer than the pause, or a held request: `WokenByRequest` names the Service) or `AutoResume` (the forecast expected demand). A health check or monitor that calls the Service on a timer and sends a request wakes the workload each time. The doorman already ignores connections that close without sending anything, and HTTP requests from common probes and scrapers (see [Wake on Request](../concepts/wake-on-request.md#what-wakes-a-workload-and-what-doesnt)); for anything else, point it elsewhere, list its port in `hybernate.io/doorman-ignore-ports` on the Service, or opt the workload out with `wake.onRequest: false`. A tool that refreshes `hybernate.io/last-activity` on a timer, rather than on real use, will keep waking the workload.
+Something keeps waking it. Check the events for `WokeByActivity` (an activity annotation changed since the pause, or a held request: `WokenByRequest` names the Service) or `AutoResume` (the forecast expected demand). A health check or monitor that calls the Service on a timer and sends a request wakes the workload each time. The doorman already ignores connections that close without sending anything, and HTTP requests from common probes and scrapers (see [Wake on Request](../concepts/wake-on-request.md#what-wakes-a-workload-and-what-doesnt)); for anything else, point it elsewhere, list its port in `hybernate.io/doorman-ignore-ports` on the Service, or opt the workload out with `wake.onRequest: false` (`hybernate.io/wake-on-request: "false"`). A tool that refreshes `hybernate.io/last-activity` on a timer, rather than on real use, will keep waking the workload.
 
 `ScaledUp` means something scaled it up outside Hybernate, named in the event and `status.lastScaledUp`. If it's a GitOps tool, the workload also reports `GitOpsConflict=True`: it sets the replicas from Git and will undo every pause until it's told to leave them; see [GitOps tools](../guides/gitops.md).
+
+### A dependency isn't held awake, woken or waited for
+
+```bash
+kubectl hybernate deps my-api -n preview-42
+```
+
+`deps` lists the workload's dependencies and where each came from. The ManagedWorkload's conditions say why one is left out:
+
+- **`DependencyNotAllowed=True`**: the dependency is in another namespace, and that namespace's `hybernate.io/dependents-from` annotation doesn't list this one, so it isn't held, woken or waited for. Annotate the dependency's namespace; see [Across namespaces](../concepts/dependencies.md#across-namespaces).
+- **`DependencyNotFound=True`**: a `dependsOn` workload doesn't exist (reason `DependencyNotFound`), or is outside `watchNamespaces` or can't be read by the operator (reason `DependencyNotVisible`). Neither blocks the workload.
+- **A `DependencyWakeFailed` warning event**: Hybernate couldn't set the activity annotation that wakes a dependency, such as when a policy engine refuses the write; the message has the error. The workload wakes anyway, and the dependency may still be paused.
+
+### A Prometheus query never matches
+
+`PrometheusQueryEmpty=True`, reason `NoSeries`, with a warning event, means one of the workload's Prometheus activity queries has matched no series since Hybernate first evaluated it, which usually means a misspelt metric or label. Such a query can never keep the workload awake. It doesn't stop a pause either: the other sources decide. Run the query in Prometheus to check it; see [Test the query directly](../guides/prometheus-signals.md#test-the-query-directly).
+
+### An activity annotation is ignored
+
+An `InvalidActivityAnnotation` warning event means a `hybernate.io/last-activity`, `last-request` or `active-until` value isn't an RFC 3339 time, such as epoch seconds or a date without a time. It neither keeps the workload awake nor wakes it. Write the time as `date -u +%Y-%m-%dT%H:%M:%SZ` gives it; see [Activity annotations](../concepts/idle-detection.md#activity-annotations).
+
+### A paused workload's ManagedWorkload lost its status
+
+A ManagedWorkload restored from a backup without its status, or deleted without its finalizer and created again, no longer has the record of its pause. Hybernate takes the pause up again from the copy on the workload's `hybernate.io/paused-from` annotation, with a `PauseRecovered` event: the workload is `Paused` again if it's still at zero, and wakes as usual. Leave the annotation alone; Hybernate removes it when it hands the workload back.
+
+A `PauseRecordLost` warning event means there was no record to finish from, or the annotation couldn't be read; the message says which. A workload left `Pausing`, `Paused` or `Resuming` with no record anywhere was never scaled, since the copy is written first, and is `Running` again. If its replicas are at zero all the same, Hybernate takes it for a workload scaled to zero outside it and leaves it off: scale it back up yourself.
+
+### A ManagedWorkload let go of its workload without handing it back
+
+A `HandBackAbandoned` warning event means the ManagedWorkload's namespace is being deleted, and handing its paused workload back failed for 5 minutes, such as when a KEDA webhook that's down refuses the release of its ScaledObject. The ManagedWorkload lets go rather than hold up the namespace's deletion; the workload is deleted with the namespace. The message has the error.
 
 ### Prediction confidence stays at 0
 

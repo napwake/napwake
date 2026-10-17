@@ -35,7 +35,7 @@ kubectl create clusterrolebinding hybernate-metrics-reader \
   --clusterrole=hybernate-metrics-reader --serviceaccount=monitoring:prometheus-k8s
 ```
 
-Without that binding, the targets show as down with `401` or `403`, and the `HybernateDown` alert fires. With `metrics.secure: false` in the chart, metrics are plain HTTP and need no binding, but anyone who can reach the port can read them.
+Without that binding, the targets show as down with `401` or `403`, and the `HybernateDown` and `HybernateDoormanDown` alerts fire. With `metrics.secure: false` in the chart, metrics are plain HTTP and need no binding, but anyone who can reach the port can read them.
 
 **Prometheus must select the ServiceMonitors.** A Prometheus picks up only the ServiceMonitors that match its `serviceMonitorSelector` (and `serviceMonitorNamespaceSelector`). The chart's carry no label a Prometheus selects by default, so targets that never appear usually mean the selector doesn't match. [kube-prometheus-stack](https://github.com/prometheus-community/helm-charts/tree/main/charts/kube-prometheus-stack) selects `release: <its release name>`, and its Prometheus runs as the `<its release name>-kube-prometheus-prometheus` ServiceAccount. For a stack installed as `kube-prometheus-stack` in `monitoring`:
 
