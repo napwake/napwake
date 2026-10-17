@@ -82,8 +82,10 @@ func (p *Pauser) Prepare(ctx context.Context, workload *v1alpha1.ManagedWorkload
 }
 
 // Pause scales a prepared workload to zero, holding its KEDA ScaledObject
-// there, and returns true when it's done. PVCs are left intact: they persist
-// independently of the replica count.
+// there, and returns true when it's done. Its PVCs stay only while its
+// controller keeps them: a StatefulSet whose
+// persistentVolumeClaimRetentionPolicy.whenScaled is Delete deletes them as
+// it scales down, so the caller must never pause one.
 func (p *Pauser) Pause(ctx context.Context, workload *v1alpha1.ManagedWorkload) (bool, error) {
 	pause := workload.Status.Pause
 	if pause == nil {

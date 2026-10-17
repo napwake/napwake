@@ -56,7 +56,7 @@ kubectl get managedworkload my-api -n staging \
 
 - Without an `idlePolicy`, nothing pauses it on its own; [`kubectl hybernate pause`](../guides/pause.md#pause-now) pauses it when you ask.
 - `PrometheusAvailable=False`: a Prometheus activity query fails, or the operator has no `--prometheus-url`.
-- `Protected=True`: its namespace is protected (`ProtectedNamespace`), or it's Hybernate's own operator or doorman (`HybernateComponent`), which is never paused.
+- `Protected=True`: its namespace is protected (`ProtectedNamespace`), it's Hybernate's own operator or doorman (`HybernateComponent`), which is never paused, or it's a StatefulSet whose `persistentVolumeClaimRetentionPolicy.whenScaled` is `Delete` (`PVCsDeletedOnScaleDown`), which would lose its PVCs to a pause: set `whenScaled: Retain` to let Hybernate pause it.
 - `GitOpsConflict=True`: a GitOps tool undid its last pause, and Hybernate waits an hour before pausing again.
 
 **Check 6: Is something depending on it?**

@@ -1,6 +1,6 @@
 # Pause and Resume
 
-Hybernate's one action is to **pause**: scale a workload to zero replicas. The Deployment or StatefulSet stays, and so do its PVCs and their data; only the pods are removed. Hybernate never deletes a workload or its storage.
+Hybernate's one action is to **pause**: scale a workload to zero replicas. The Deployment or StatefulSet stays, and so do its PVCs and their data; only the pods are removed. Hybernate never deletes a workload or its storage. A StatefulSet whose `persistentVolumeClaimRetentionPolicy.whenScaled` is `Delete` has its own controller delete its PVCs as it scales down, so Hybernate never pauses one: it reports `Protected=True`, reason `PVCsDeletedOnScaleDown`, until `whenScaled` is `Retain`.
 
 ## Pause
 
