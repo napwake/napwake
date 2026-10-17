@@ -28,6 +28,10 @@ DB=db
 WEB_IMAGE=registry.k8s.io/e2e-test-images/agnhost:2.52
 CURL_IMAGE=curlimages/curl:8.7.1
 METRICS_SERVER_IMAGE=registry.k8s.io/metrics-server/metrics-server:v0.7.2
+# The uninstall guard's image, preloaded so a slow pull doesn't outlast the
+# uninstall's timeout. A preloaded image keeps no registry digest, so the
+# chart is installed with the tag alone.
+GUARD_IMAGE=registry.k8s.io/kubectl:$(helm show values charts/hybernate | awk '/^uninstallGuard:/{g=1} g&&/tag:/{print $2; exit}')
 METRICS_SERVER_MANIFEST="$(dirname "$0")/../test/e2e/testdata/metrics-server-v0.7.2.yaml"
 
 if "$KIND" get clusters 2>/dev/null | grep -qx "$CLUSTER"; then
@@ -119,7 +123,7 @@ unrouted() {
 
 "$KIND" create cluster --name "$CLUSTER" --wait 2m
 make docker-build IMG="$IMG"
-make load-test-e2e-images KIND_CLUSTER="$CLUSTER" E2E_IMAGES="$WEB_IMAGE $CURL_IMAGE $METRICS_SERVER_IMAGE"
+make load-test-e2e-images KIND_CLUSTER="$CLUSTER" E2E_IMAGES="$WEB_IMAGE $CURL_IMAGE $METRICS_SERVER_IMAGE $GUARD_IMAGE"
 "$KIND" load docker-image "$IMG" --name "$CLUSTER"
 PLUGIN="$PLUGIN_DIR/kubectl-hybernate"
 go build -o "$PLUGIN" ./cmd/kubectl-hybernate
@@ -134,7 +138,7 @@ kubectl create namespace "$WATCHED"
 kubectl create namespace "$UNWATCHED"
 helm install hybernate charts/hybernate --namespace "$RELEASE_NAMESPACE" --create-namespace --wait --timeout 5m \
   --set image.repository=hybernate --set image.tag=smoke --set image.pullPolicy=Never \
-  --set "watchNamespaces={$WATCHED}"
+  --set "watchNamespaces={$WATCHED}" --set uninstallGuard.image.digest=
 kubectl wait --for=condition=Available apiservice/v1beta1.metrics.k8s.io --timeout=3m
 
 for ns in "$WATCHED" "$UNWATCHED"; do
@@ -278,7 +282,7 @@ if [ -n "$errors" ]; then
 fi
 
 echo "checking helm uninstall is refused while ManagedWorkloads are left"
-if refusal=$(helm uninstall hybernate --namespace "$RELEASE_NAMESPACE" --wait --timeout 3m 2>&1); then
+if refusal=$(helm uninstall hybernate --namespace "$RELEASE_NAMESPACE" --wait --timeout 5m 2>&1); then
   echo "$refusal" >&2
   echo "helm uninstall went ahead, leaving ManagedWorkloads with no operator" >&2
   exit 1
@@ -297,5 +301,5 @@ kubectl label statefulset "$DB" -n "$WATCHED" hybernate.io/managed-
 eventually 60 "the Deployment's ManagedWorkload to be deleted" gone managedworkload/$APP "$WATCHED"
 eventually 120 "the StatefulSet's ManagedWorkload to be deleted" gone managedworkload/$DB "$WATCHED"
 is statefulset/$DB "$WATCHED" '{.spec.replicas}' 1
-helm uninstall hybernate --namespace "$RELEASE_NAMESPACE" --wait --timeout 3m
+helm uninstall hybernate --namespace "$RELEASE_NAMESPACE" --wait --timeout 5m
 echo "ok"
