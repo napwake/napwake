@@ -172,6 +172,8 @@ When enabled, the operator's and the doorman's metrics port admits only namespac
 
 The doorman's egress policy is separate from `networkPolicy.enabled`, and needs a CNI that enforces egress policies. The doorman needs no DNS: it reaches the API server by address, and pods by their endpoint addresses. If a routed workload uses `hostNetwork`, add your node CIDRs to `podCIDRs`.
 
+On Cilium, a NetworkPolicy `ipBlock` may not match the API server, which Cilium identifies as the `kube-apiserver` entity rather than by address, so the egress policy can cut the doorman off from it: its pods then fail readiness and log API errors. Leave `doorman.networkPolicy.egress.enabled` off there, and write a CiliumNetworkPolicy instead that allows egress `toEntities: [kube-apiserver]` and `toCIDR` your pod CIDRs.
+
 ## Service Account
 
 | Value | Default | Description |
