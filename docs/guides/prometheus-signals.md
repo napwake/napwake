@@ -31,10 +31,10 @@ Prometheus queries can't be set with an annotation. On a ManagedWorkload created
 
 ## Prometheus Endpoint
 
-Set the Prometheus URL with the `prometheus.url` Helm value, which passes `--prometheus-url` to the operator:
+Set the Prometheus URL with the `prometheus.url` Helm value, which passes `--prometheus-url` to the operator. Pass the chart version you have installed as `--version`, which `helm list -n hybernate-system` shows, or Helm upgrades to the newest chart too:
 
 ```bash
-helm upgrade hybernate oci://ghcr.io/okedeji/charts/hybernate \
+helm upgrade hybernate oci://ghcr.io/okedeji/charts/hybernate --version X.Y.Z \
   --namespace hybernate-system --reuse-values \
   --set prometheus.url=http://prometheus.monitoring.svc.cluster.local:9090
 ```

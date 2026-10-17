@@ -103,9 +103,11 @@ The Helm chart creates these rules when `metrics.prometheusRule.enabled` is `tru
 
 ## Health Checks
 
-The operator and the doorman expose health endpoints on port 8081, which the chart and the kustomize manifests already use as liveness and readiness probes:
+The operator and the doorman expose health endpoints on port 8081, which the chart and the kustomize manifests already use as liveness and readiness probes. To check them yourself, forward the port first, here the operator's, from a Helm install named `hybernate`:
 
 ```bash
+kubectl port-forward -n hybernate-system deployment/hybernate 8081:8081
+
 # Liveness
 curl http://localhost:8081/healthz
 

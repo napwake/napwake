@@ -70,9 +70,9 @@ spec:
             port: 8081
           initialDelaySeconds: 5
           periodSeconds: 10
-        # The operator caches the cluster's workloads, Services, PVCs and
-        # nodes, so its memory grows with the cluster; see the Helm chart's
-        # values for the reasoning.
+        # The operator caches the cluster's ManagedWorkloads, workloads,
+        # Services, PVCs, HPAs, nodes and namespaces, so its memory grows with
+        # the cluster; see the Helm chart's values for the reasoning.
         resources:
           limits:
             cpu: 500m

@@ -28,9 +28,10 @@ maxConcurrentReconciles: 4
 # learn. Use your users' zone, so forecasts follow daylight saving.
 timezone: UTC
 
-# The operator caches the cluster's Deployments, StatefulSets, Services,
-# PVCs, HPAs, nodes and namespaces (or only the watched namespaces'), so its
-# memory grows with the cluster. Raise the limit on clusters with many
+# The operator caches the cluster's ManagedWorkloads, Deployments,
+# StatefulSets, Services, PVCs, HPAs, nodes and namespaces, or only the
+# watched namespaces', and the EndpointSlices it writes and the doorman's,
+# so its memory grows with the cluster. Raise the limit on clusters with many
 # thousands of workloads. The garbage collector aims at 90% of the limit,
 # leaving the rest for memory outside its heap, and works harder near it
 # rather than letting the operator be OOM-killed.
@@ -133,7 +134,7 @@ doorman:
   priorityClassName: ""
   # The doorman's own, not the operator's extraEnv.
   extraEnv: []
-  # Empty spreads the replicas across nodes, where it can.
+  # Empty spreads the replicas across nodes and zones, where it can.
   topologySpreadConstraints: []
   # The doorman caches ManagedWorkloads, and the Services' EndpointSlices
   # in the watched namespaces, cut down to about 300 bytes per pod and
