@@ -103,6 +103,8 @@ spec:
     page: false
 ```
 
+For a workload opted in with the label, set the annotation `hybernate.io/wake-page: "false"` on it instead.
+
 ## How long a connection is held
 
 The doorman holds each connection for up to `wake.maxWait`, 2 minutes by default and at most 1 hour, which is the most the ManagedWorkload accepts. If no pod is Ready by then, it closes the connection. The wake carries on, so a retry a little later succeeds.
@@ -112,6 +114,8 @@ spec:
   wake:
     maxWait: 5m     # a slow starter, such as a database replaying its log
 ```
+
+For a workload opted in with the label, set the annotation `hybernate.io/wake-max-wait: "5m"` on it instead.
 
 Callers have their own timeouts. Most HTTP clients wait at least 30 seconds, and browsers wait minutes. A proxy in front of the Service can give up sooner: ingress-nginx closes an upstream request after 60 seconds by default. For a workload that takes longer than that to start, raise the Ingress timeout to match `maxWait`:
 

@@ -48,7 +48,7 @@ This covers dev and preview namespaces, and third-party charts that don't let yo
 | `hybernate.io/wake-max-wait` | duration, at most `1h` | `2m` | How long a request is held while the workload wakes |
 | `hybernate.io/wake-page` | `"true"`, `"false"` | `"true"` | Show browsers a waking-up page |
 
-Leaving an annotation out means its default. A value that can't be read, such as `idle-after: "soon"` or `dry-run: "True"`, is reported in an `InvalidSetting` warning event on the workload and skipped, as if it weren't there: the setting comes from the next place in [Which setting wins](#which-setting-wins), and the others still apply. Booleans are exactly `"true"` or `"false"`; durations must be above zero. In `depends-on`, an entry that can't be read is skipped and the rest apply.
+Leaving an annotation out means its default. A value that can't be read, such as `idle-after: "soon"` or `dry-run: "True"`, is reported in an `InvalidSetting` warning event on the workload and skipped, as if it weren't there: the setting comes from the next place in [Which setting wins](#which-setting-wins), and the others still apply. Booleans are exactly `"true"` or `"false"`; `idle-after` is at least `1m`, and `wake-max-wait` above zero and at most `1h`. In `depends-on`, an entry that can't be read is skipped and the rest apply.
 
 `dry-run` is the exception: a value that can't be read turns dry-run on, whatever comes after it, since a typo in the setting meant to stop pauses must never start them.
 
@@ -58,7 +58,7 @@ hybernate.io/depends-on: "statefulset/postgres, messaging/statefulset/nats"
 
 On a namespace, `depends-on` reaches every workload in it except those it names, and those they depend on by their own `depends-on`: they're what the others depend on, and taking the list too would make them depend on each other, so none could pause.
 
-Settings that need more than one value aren't annotations: Prometheus activity queries, `waitForReady` on a dependency, and cost rates. For those, write a [ManagedWorkload](managed-workload.md) yourself.
+Settings that need more than one value aren't annotations: Prometheus activity queries, `waitForReady` on a dependency, cost rates, and the forecast's `prediction.confidence`. Set those on the ManagedWorkload Hybernate creates, such as with `kubectl patch`, which keeps them (see [What Hybernate does with the label](#what-hybernate-does-with-the-label)), or write a [ManagedWorkload](managed-workload.md) yourself.
 
 ### Which setting wins
 

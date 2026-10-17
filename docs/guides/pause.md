@@ -83,7 +83,7 @@ A paused workload is looked at again at least every 5 minutes, 15 minutes before
 kubectl hybernate wake my-api -n staging
 ```
 
-`wake` marks the workload active, which wakes it and restarts its idle clock, so it pauses again once it's had no activity for `idleAfter`. `--for 2h` keeps it awake for at least that long, as for a demo. To keep a workload running for good, remove its `idlePolicy`, or label it `hybernate.io/ignore: "true"`. See [kubectl Plugin](../getting-started/kubectl-plugin.md#wake-a-workload).
+`wake` marks the workload active, which wakes it and restarts its idle clock, so it pauses again once it's had no activity for `idleAfter`. `--for 2h` keeps it awake for at least that long, as for a demo. To keep a workload running for good, remove the `idlePolicy` of a ManagedWorkload you wrote. One created from the `hybernate.io/managed` label always has an `idlePolicy`, rewritten from its annotations, so label the workload `hybernate.io/ignore: "true"` instead: Hybernate stops managing it, and wakes it first if it's paused. See [kubectl Plugin](../getting-started/kubectl-plugin.md#wake-a-workload).
 
 ## When Hybernate Lets Go
 
