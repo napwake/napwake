@@ -26,6 +26,7 @@ import (
 	"os"
 	"path"
 	"runtime/debug"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -176,6 +177,9 @@ func main() {
 		metricsServerOptions.KeyName = metricsCertKey
 	}
 
+	own := hybernateNamespaces(os.Getenv("POD_NAMESPACE"), doormanNamespace, doormanService)
+	protected = slices.Concat(protected, own)
+
 	cacheOpts := doormanCacheOptions(watched)
 	if !runDoorman {
 		routedNamespace := doormanNamespace
@@ -246,6 +250,7 @@ func main() {
 				Defaults:            optIn,
 				ProtectedNamespaces: protected,
 				WatchNamespaces:     watched,
+				HybernateNamespaces: own,
 			}).SetupWithManager(mgr); err != nil {
 				setupLog.Error(err, "unable to create controller", "controller", "OptIn", "kind", kind)
 				os.Exit(1)
@@ -287,6 +292,20 @@ func softMemoryLimit(gomemlimit, containerLimit string) (int64, bool) {
 		return 0, false
 	}
 	return limit / 10 * 9, true
+}
+
+// hybernateNamespaces are where the operator and, when waking on request is
+// on, the doorman run. They're protected like --protected-namespaces, so
+// labelling one managed can't have Hybernate pause itself.
+func hybernateNamespaces(podNamespace, doormanNamespace, doormanService string) []string {
+	var out []string
+	if podNamespace != "" {
+		out = append(out, podNamespace)
+	}
+	if doormanService != "" && doormanNamespace != "" && doormanNamespace != podNamespace {
+		out = append(out, doormanNamespace)
+	}
+	return out
 }
 
 func envOr(key, fallback string) string {

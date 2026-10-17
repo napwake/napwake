@@ -21,6 +21,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"fmt"
+	"slices"
 	"strings"
 	"time"
 
@@ -72,6 +73,10 @@ type OptInReconciler struct {
 	// WatchNamespaces are the namespaces Hybernate works in, or every
 	// namespace when empty.
 	WatchNamespaces []string
+	// HybernateNamespaces are where the operator and the doorman run. Their
+	// own Deployments there are never opted in, even in a namespace allowed
+	// to be managed: nothing would be left to wake them.
+	HybernateNamespaces []string
 }
 
 // +kubebuilder:rbac:groups="",resources=namespaces,verbs=get;list;watch
@@ -131,6 +136,20 @@ func (r *OptInReconciler) newWorkload() client.Object {
 	return &appsv1.Deployment{}
 }
 
+// labelComponent is the label the Helm chart and the kustomize manifests
+// put on the operator's and the doorman's Deployments, with the values
+// hybernateComponents names.
+const labelComponent = "control-plane"
+
+var hybernateComponents = map[string]string{"controller-manager": "operator", "doorman": "doorman"}
+
+// isHybernate says the workload is the operator's or the doorman's own
+// Deployment.
+func (r *OptInReconciler) isHybernate(obj client.Object) bool {
+	_, ok := hybernateComponents[obj.GetLabels()[labelComponent]]
+	return ok && slices.Contains(r.HybernateNamespaces, obj.GetNamespace())
+}
+
 // optedIn reports whether the workload is managed through the label: its
 // own, or its namespace's, unless it's marked to be ignored or its
 // namespace is protected. A label value
@@ -138,6 +157,13 @@ func (r *OptInReconciler) newWorkload() client.Object {
 // likely a setting meant for an annotation.
 func (r *OptInReconciler) optedIn(obj client.Object, ns *corev1.Namespace) bool {
 	if obj.GetLabels()[v1alpha1.LabelIgnore] == v1alpha1.True {
+		return false
+	}
+	if r.isHybernate(obj) {
+		if obj.GetLabels()[v1alpha1.LabelManaged] == v1alpha1.True || ns.Labels[v1alpha1.LabelManaged] == v1alpha1.True {
+			r.Recorder.Eventf(obj, nil, "Warning", ReasonLabelIgnored, actionOptIn,
+				"this is Hybernate's own %s, which it never manages", hybernateComponents[obj.GetLabels()[labelComponent]])
+		}
 		return false
 	}
 	if v1alpha1.Protected(ns.Name, ns.Labels, r.ProtectedNamespaces) {

@@ -16,7 +16,10 @@ limitations under the License.
 
 package v1alpha1
 
-import "path"
+import (
+	"path"
+	"strings"
+)
 
 // True is the value that turns a Hybernate label or boolean annotation on.
 // Any other value, "True" and "yes" included, leaves it off.
@@ -104,14 +107,23 @@ const (
 	FinalizerCleanup = "hybernate.io/cleanup"
 )
 
-// Protected says Hybernate must not manage the namespace: it's labelled
-// protected, or its name matches one of patterns (shell globs, such as
-// prod-*), and it isn't labelled to allow it anyway.
+// SystemNamespacePrefix starts the names of the namespaces Kubernetes itself
+// runs in, such as kube-system, which are always protected: pausing CoreDNS
+// or metrics-server would take down the cluster's DNS, or Hybernate's own
+// view of activity.
+const SystemNamespacePrefix = "kube-"
+
+// Protected says Hybernate must not manage the namespace: it's a system
+// namespace, it's labelled protected, or its name matches one of patterns
+// (shell globs, such as prod-*), and it isn't labelled to allow it anyway.
 func Protected(name string, labels map[string]string, patterns []string) bool {
 	if labels[LabelAllowProtected] == True {
 		return false
 	}
 	if labels[LabelProtected] == True {
+		return true
+	}
+	if strings.HasPrefix(name, SystemNamespacePrefix) {
 		return true
 	}
 	for _, pattern := range patterns {

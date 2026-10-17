@@ -124,6 +124,31 @@ func TestValidateOptInDefaults(t *testing.T) {
 	}
 }
 
+func TestHybernateNamespaces(t *testing.T) {
+	tests := []struct {
+		name                              string
+		pod, doormanNamespace, doormanSvc string
+		want                              []string
+	}{
+		{name: "operator and doorman together", pod: "hybernate-system", doormanNamespace: "hybernate-system",
+			doormanSvc: "hybernate-doorman", want: []string{"hybernate-system"}},
+		{name: "doorman elsewhere", pod: "platform", doormanNamespace: "edge", doormanSvc: "hybernate-doorman",
+			want: []string{"platform", "edge"}},
+		{name: "doorman disabled", pod: "platform", doormanNamespace: "edge", want: []string{"platform"}},
+		{name: "run outside the cluster", doormanNamespace: "hybernate-system", doormanSvc: "hybernate-doorman",
+			want: []string{"hybernate-system"}},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := hybernateNamespaces(tt.pod, tt.doormanNamespace, tt.doormanSvc)
+			assert.Equal(t, tt.want, got)
+			for _, ns := range got {
+				assert.True(t, v1alpha1.Protected(ns, nil, got), "%s is protected", ns)
+			}
+		})
+	}
+}
+
 func managedFields(t *testing.T) []metav1.ManagedFieldsEntry {
 	t.Helper()
 	at := func(minute int) *metav1.Time {

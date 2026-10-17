@@ -90,6 +90,13 @@ kubectl label namespace payments hybernate.io/protected=true
 
 To protect namespaces by name instead, such as every `prod-*`, set the Helm value `protectedNamespaces`. A protected namespace is managed again only when labelled `hybernate.io/allow-protected: "true"` on purpose; Hybernate never sets either label.
 
+Some namespaces are always protected, with no label or Helm value:
+
+- **Kubernetes' own**, `kube-system` and every other `kube-*` namespace, so labelling every namespace managed can't pause CoreDNS or metrics-server.
+- **Hybernate's own**, the namespace it's installed in, and the doorman's if it runs elsewhere, so Hybernate can't pause itself.
+
+Labelling one of them `hybernate.io/allow-protected: "true"` lets Hybernate manage it like any other, except that the operator's and the doorman's own Deployments are never managed: nothing would be left to wake them.
+
 To keep Hybernate out of namespaces altogether, not by its own rule but by Kubernetes RBAC, install it with `watchNamespaces`; see [Helm values](../reference/helm-values.md#namespaces).
 
 ## With GitOps

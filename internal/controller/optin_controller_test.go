@@ -271,6 +271,72 @@ func TestOptIn_ProtectedNamespace(t *testing.T) {
 	assert.Len(t, recorded(recorder, ReasonProtected), 1)
 }
 
+// kube-system and the other kube-* namespaces are protected without any
+// label, so labelling every namespace managed can't pause CoreDNS.
+func TestOptIn_SystemNamespacesAreProtected(t *testing.T) {
+	tests := []struct {
+		name   string
+		labels map[string]string
+		want   bool
+	}{
+		{name: "labelled managed", labels: managedLabel},
+		{name: "allowed on purpose", labels: map[string]string{v1alpha1.LabelManaged: "true",
+			v1alpha1.LabelAllowProtected: "true"}, want: true},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			ns := &corev1.Namespace{ObjectMeta: metav1.ObjectMeta{Name: "kube-system", Labels: tt.labels}}
+			coredns := &appsv1.Deployment{ObjectMeta: metav1.ObjectMeta{Name: "coredns", Namespace: "kube-system", UID: "uid-dns"}}
+			r, _ := optInReconciler(t, ns, coredns)
+
+			_, err := r.Reconcile(context.Background(), ctrl.Request{NamespacedName: client.ObjectKeyFromObject(coredns)})
+			require.NoError(t, err)
+
+			var list v1alpha1.ManagedWorkloadList
+			require.NoError(t, r.List(context.Background(), &list, client.InNamespace("kube-system")))
+			assert.Equal(t, tt.want, len(list.Items) == 1)
+		})
+	}
+}
+
+// The operator's and the doorman's own Deployments are never opted in, even
+// where their namespace is allowed to be managed, and one opted in before is
+// released. The same labels on a workload elsewhere mean nothing.
+func TestOptIn_HybernateItselfIsNeverManaged(t *testing.T) {
+	allowed := optInNamespace(map[string]string{v1alpha1.LabelManaged: "true", v1alpha1.LabelAllowProtected: "true"}, nil)
+	tests := []struct {
+		name       string
+		component  string
+		namespaces []string
+		want       bool
+	}{
+		{name: "the operator", component: "controller-manager", namespaces: []string{"dev"}},
+		{name: "the doorman", component: "doorman", namespaces: []string{"other", "dev"}},
+		{name: "another app in Hybernate's namespace", component: "", namespaces: []string{"dev"}, want: true},
+		{name: "the same labels outside Hybernate's namespace", component: "controller-manager",
+			namespaces: []string{"hybernate-system"}, want: true},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			d := optInDeployment("hybernate", map[string]string{labelComponent: tt.component}, nil)
+			stale := &v1alpha1.ManagedWorkload{ObjectMeta: metav1.ObjectMeta{Name: "hybernate", Namespace: "dev",
+				Labels: map[string]string{v1alpha1.LabelFromLabel: "true"}},
+				Spec: v1alpha1.ManagedWorkloadSpec{Target: v1alpha1.WorkloadRef{Kind: v1alpha1.TargetKindDeployment,
+					Name: "hybernate"}}}
+			r, recorder := optInReconciler(t, allowed, d, stale)
+			r.HybernateNamespaces = tt.namespaces
+
+			reconcileOptIn(t, r, "hybernate")
+
+			_, ok := managedWorkload(t, r, "hybernate")
+			assert.Equal(t, tt.want, ok)
+			if !tt.want {
+				assert.Len(t, recorded(recorder, "Hybernate's own"), 1)
+			}
+		})
+	}
+}
+
 func statefulSetReconciler(deployments *OptInReconciler) *OptInReconciler {
 	return &OptInReconciler{Client: deployments.Client, Scheme: deployments.Scheme,
 		Recorder: events.NewFakeRecorder(20), Kind: v1alpha1.TargetKindStatefulSet, Defaults: DefaultOptInDefaults}
