@@ -89,6 +89,10 @@ const (
 	// staleCacheRetry is how soon a slice write the cache was too stale for
 	// is repeated.
 	staleCacheRetry = time.Second
+
+	// sliceSettle is how long after a phase change a doorman slice written
+	// for the phase before may still be missing from the cache.
+	sliceSettle = time.Minute
 )
 
 // wakeOnRequest reports whether the workload's Services should route to the
@@ -246,12 +250,15 @@ func shortest(a, b time.Duration) time.Duration {
 // draining: a port another workload could be given while a slice still
 // sends traffic to it would deliver that traffic to the wrong workload.
 //
-// A workload being deleted is never reconciled again, so its slices are
-// listed from the API server: one written moments ago, which the cache may
-// not have yet, would otherwise be left sending traffic to the doorman.
+// A slice written moments ago may not be in the cache yet, and would be
+// left sending traffic to the doorman, so the slices are listed from the
+// API server whenever one may have been: while status names routes, just
+// after a phase change, and for a workload being deleted, which is never
+// reconciled again. Otherwise, as for every Running workload on every
+// reconcile, the cache is enough.
 func (r *Reconciler) removeDoorman(ctx context.Context, workload *v1alpha1.ManagedWorkload) error {
 	reader := client.Reader(r.Client)
-	if !workload.DeletionTimestamp.IsZero() {
+	if !workload.DeletionTimestamp.IsZero() || len(workload.Status.Doorman) > 0 || r.sinceTransition(workload) < sliceSettle {
 		reader = r.apiReader()
 	}
 	current, err := r.listDoormanSlices(ctx, reader, workload)

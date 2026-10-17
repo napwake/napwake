@@ -858,26 +858,14 @@ func TestReconcile_OrphaningDeleteRemovesDoormanSlices(t *testing.T) {
 // an orphaning delete would leave them sending traffic to the doorman.
 func TestReconcile_OrphaningDeleteRemovesSlicesTheCacheMissed(t *testing.T) {
 	r, _ := pausedRouted(t)
-	apiServer := r.Client.(client.WithWatch)
-	r.PodReader = apiServer
-	r.Client = interceptor.NewClient(apiServer, interceptor.Funcs{List: func(ctx context.Context, c client.WithWatch,
-		list client.ObjectList, opts ...client.ListOption) error {
-		if _, ok := list.(*discoveryv1.EndpointSliceList); ok {
-			var all client.ListOptions
-			all.ApplyOptions(opts)
-			if all.LabelSelector != nil && strings.Contains(all.LabelSelector.String(), doorman.ManagedBy) {
-				return nil
-			}
-		}
-		return c.List(ctx, list, opts...)
-	}})
+	missDoormanSlices(r)
 	require.NoError(t, r.Delete(context.Background(), fetch(t, r, "api"), client.PropagationPolicy(metav1.DeletePropagationOrphan)))
 
 	_, err := r.Reconcile(context.Background(), reconcileFor("api"))
 	require.NoError(t, err)
 
 	var left discoveryv1.EndpointSliceList
-	require.NoError(t, apiServer.List(context.Background(), &left, client.MatchingLabels{discoveryv1.LabelManagedBy: doorman.ManagedBy}))
+	require.NoError(t, r.PodReader.List(context.Background(), &left, client.MatchingLabels{discoveryv1.LabelManagedBy: doorman.ManagedBy}))
 	assert.Empty(t, left.Items)
 }
 
@@ -1203,4 +1191,59 @@ func TestReconcileDoorman_LoadingPortsDoesNotSerializeReconciles(t *testing.T) {
 	require.NoError(t, errs[0])
 	require.NoError(t, errs[1])
 	assert.NotEqual(t, first.Status.Doorman[0].DoormanPort, second.Status.Doorman[0].DoormanPort)
+}
+
+// missDoormanSlices makes r.Client's cache not have the doorman's slices
+// yet, as just after they're written; r.PodReader, the API server, has them.
+func missDoormanSlices(r *Reconciler) {
+	apiServer := r.Client.(client.WithWatch)
+	r.PodReader = apiServer
+	r.Client = interceptor.NewClient(apiServer, interceptor.Funcs{List: func(ctx context.Context, c client.WithWatch,
+		list client.ObjectList, opts ...client.ListOption) error {
+		if _, ok := list.(*discoveryv1.EndpointSliceList); ok {
+			var all client.ListOptions
+			all.ApplyOptions(opts)
+			if all.LabelSelector != nil && strings.Contains(all.LabelSelector.String(), doorman.ManagedBy) {
+				return nil
+			}
+		}
+		return c.List(ctx, list, opts...)
+	}})
+}
+
+// A workload leaving routing removes slices the cache doesn't have yet,
+// whenever one may have been written moments ago: while status names its
+// routes, or just after its phase changed, as when the status write that
+// would have named them failed.
+func TestReconcileDoorman_LeavingRemovesSlicesTheCacheMissed(t *testing.T) {
+	tests := []struct {
+		name         string
+		keepRoutes   bool
+		transitioned time.Duration
+	}{
+		{name: "status names its routes", keepRoutes: true, transitioned: time.Hour},
+		{name: "its phase just changed", transitioned: time.Second},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			workload := lifecycleWorkload("api", v1alpha1.PhasePaused)
+			r := doormanReconciler(t, workload, doormanEndpoints("10.0.0.7"),
+				service("api", map[string]string{"app": "api"}, corev1.ServicePort{Name: "http", Port: 80}))
+			ctx := context.Background()
+			require.NoError(t, doormanErr(ctx, r, workload, appTarget()))
+			require.Len(t, doormanSlices(t, r), 1)
+			missDoormanSlices(r)
+
+			if !tt.keepRoutes {
+				workload.Status.Doorman = nil
+			}
+			workload.Status.Phase = v1alpha1.PhaseRunning
+			workload.Status.LastTransitionTime = &metav1.Time{Time: fixedTime.Add(-tt.transitioned)}
+			require.NoError(t, doormanErr(ctx, r, workload, appTarget()))
+
+			var left discoveryv1.EndpointSliceList
+			require.NoError(t, r.PodReader.List(ctx, &left, client.MatchingLabels{discoveryv1.LabelManagedBy: doorman.ManagedBy}))
+			assert.Empty(t, left.Items)
+		})
+	}
 }
