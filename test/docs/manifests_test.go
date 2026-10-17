@@ -15,20 +15,24 @@ limitations under the License.
 */
 
 // Package docs_test proves that every ManagedWorkload the docs and samples
-// show is one the API server accepts, so a reader who copies one never meets
-// a validation error.
+// show, whole or in part, is one the API server accepts, and that every set
+// of Helm values the docs show is one the chart accepts, so a reader who
+// copies one never meets a validation error.
 package docs_test
 
 import (
 	"bufio"
 	"bytes"
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
 	"io/fs"
+	"maps"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"testing"
 	"time"
@@ -40,6 +44,9 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	utilyaml "k8s.io/apimachinery/pkg/util/yaml"
+	"k8s.io/kube-openapi/pkg/validation/spec"
+	"k8s.io/kube-openapi/pkg/validation/strfmt"
+	"k8s.io/kube-openapi/pkg/validation/validate"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/envtest"
 	"sigs.k8s.io/yaml"
@@ -48,18 +55,20 @@ import (
 const repoRoot = "../.."
 
 // snippetMarker, on the line before a fenced block, marks a deliberately
-// partial ManagedWorkload that isn't meant to be applied as it stands.
+// partial example that isn't meant to be applied as it stands.
 const snippetMarker = "<!-- snippet -->"
 
-// manifest is one YAML document, and where a reader would find it.
+// manifest is one YAML document, where a reader would find it, and the file
+// name the docs give its block, if any.
 type manifest struct {
 	source string
+	title  string
 	data   []byte
 }
 
 func TestDocsManifestsAreValid(t *testing.T) {
 	manifests := append(markdownManifests(t), sampleManifests(t)...)
-	workloads := managedWorkloads(t, manifests)
+	workloads := managedWorkloads(t, manifests, specFields(t))
 	require.NotEmpty(t, workloads, "the docs show at least one ManagedWorkload")
 
 	env := &envtest.Environment{
@@ -97,16 +106,21 @@ type workload struct {
 	object *unstructured.Unstructured
 }
 
-// managedWorkloads picks the ManagedWorkloads out of the manifests. A
-// document that doesn't parse fails the test only when it looks like a
+// managedWorkloads picks the ManagedWorkloads out of the manifests, along
+// with the partial ones the docs show, wrapped into whole ones. A document
+// that doesn't parse fails the test only when it looks like a
 // ManagedWorkload, since the docs also show Helm values and other YAML.
-func managedWorkloads(t *testing.T, manifests []manifest) []workload {
+func managedWorkloads(t *testing.T, manifests []manifest, fields map[string]bool) []workload {
 	t.Helper()
 	var out []workload
 	for _, m := range manifests {
 		var obj map[string]any
 		if err := yaml.Unmarshal(m.data, &obj); err != nil {
 			assert.NotContains(t, string(m.data), "kind: ManagedWorkload", "%s doesn't parse: %v", m.source, err)
+			continue
+		}
+		if fragment, ok := specFragment(m, obj, fields); ok {
+			out = append(out, workload{source: m.source, object: wrapSpec(fragment)})
 			continue
 		}
 		if obj["kind"] != "ManagedWorkload" {
@@ -119,6 +133,173 @@ func managedWorkloads(t *testing.T, manifests []manifest) []workload {
 		out = append(out, workload{source: m.source, object: u})
 	}
 	return out
+}
+
+// specFragment returns the ManagedWorkload spec a partial block shows: a
+// spec: block, or the spec's fields on their own, such as a dependsOn list.
+// It's one when any of its fields is a ManagedWorkload spec field, so that a
+// misspelt field beside a real one still fails. A block the docs title as
+// another file, such as an Argo CD Application's spec, is never one.
+func specFragment(m manifest, obj map[string]any, fields map[string]bool) (map[string]any, bool) {
+	if _, ok := obj["kind"]; ok {
+		return nil, false
+	}
+	if _, ok := obj["apiVersion"]; ok {
+		return nil, false
+	}
+	if m.title != "" && m.title != "managedworkload.yaml" {
+		return nil, false
+	}
+	candidate := obj
+	if s, ok := obj["spec"].(map[string]any); ok && len(obj) == 1 {
+		candidate = s
+	}
+	for key := range candidate {
+		if fields[key] {
+			return candidate, true
+		}
+	}
+	return nil, false
+}
+
+// wrapSpec makes a whole ManagedWorkload of a partial spec, filling in only
+// the fields the API server requires.
+func wrapSpec(fragment map[string]any) *unstructured.Unstructured {
+	s := maps.Clone(fragment)
+	if _, ok := s["target"]; !ok {
+		s["target"] = map[string]any{"kind": "Deployment", "name": "my-api"}
+	}
+	if _, ok := s["prediction"]; !ok {
+		s["prediction"] = map[string]any{}
+	}
+	return &unstructured.Unstructured{Object: map[string]any{
+		"apiVersion": "hybernate.io/v1alpha1",
+		"kind":       "ManagedWorkload",
+		"metadata":   map[string]any{"name": "docs-snippet"},
+		"spec":       s,
+	}}
+}
+
+// specFields returns the names of the ManagedWorkload spec's fields. They're
+// read from the CRD, so that a field added to the API is recognised in the
+// docs without changing this test.
+func specFields(t *testing.T) map[string]bool {
+	t.Helper()
+	data, err := os.ReadFile(filepath.Join(repoRoot, "config", "crd", "bases", "hybernate.io_managedworkloads.yaml"))
+	require.NoError(t, err)
+	var crd struct {
+		Spec struct {
+			Versions []struct {
+				Schema struct {
+					OpenAPIV3Schema struct {
+						Properties struct {
+							Spec struct {
+								Properties map[string]any `json:"properties"`
+							} `json:"spec"`
+						} `json:"properties"`
+					} `json:"openAPIV3Schema"`
+				} `json:"schema"`
+			} `json:"versions"`
+		} `json:"spec"`
+	}
+	require.NoError(t, yaml.Unmarshal(data, &crd))
+	require.NotEmpty(t, crd.Spec.Versions)
+	fields := map[string]bool{}
+	for name := range crd.Spec.Versions[0].Schema.OpenAPIV3Schema.Properties.Spec.Properties {
+		fields[name] = true
+	}
+	require.NotEmpty(t, fields, "the CRD's spec has fields")
+	return fields
+}
+
+// TestDocsHelmValuesAreValid checks the docs' Helm values against the
+// chart's values.schema.json, as helm install would, and also that each value
+// they set is one the chart has: the schema leaves unknown keys open, and
+// helm ignores a misspelt value without a word.
+func TestDocsHelmValuesAreValid(t *testing.T) {
+	chart := filepath.Join(repoRoot, "charts", "hybernate")
+
+	data, err := os.ReadFile(filepath.Join(chart, "values.schema.json"))
+	require.NoError(t, err)
+	var schema spec.Schema
+	require.NoError(t, json.Unmarshal(data, &schema))
+
+	data, err = os.ReadFile(filepath.Join(chart, "values.yaml"))
+	require.NoError(t, err)
+	var defaults map[string]any
+	require.NoError(t, yaml.Unmarshal(data, &defaults))
+
+	var checked int
+	for _, m := range markdownManifests(t) {
+		var values map[string]any
+		if yaml.Unmarshal(m.data, &values) != nil || !isChartValues(m, values, defaults, &schema) {
+			continue
+		}
+		checked++
+		t.Run(m.source, func(t *testing.T) {
+			assert.NoError(t, validate.AgainstSchema(&schema, values, strfmt.Default),
+				"%s: the chart's schema rejects these values", m.source)
+			assert.Empty(t, unknownValues("", values, defaults, &schema),
+				"%s: the chart has no such values", m.source)
+		})
+	}
+	require.NotZero(t, checked, "the docs show at least one set of Helm values")
+}
+
+var valuesFile = regexp.MustCompile(`^values(-[\w.-]+)?\.yaml$`)
+
+// isChartValues reports whether a block is Hybernate's Helm values: one the
+// docs title values.yaml or values-<something>.yaml, or an untitled one
+// whose every key is one of the chart's. Another chart's values, such as
+// the cluster autoscaler's, are titled differently.
+func isChartValues(m manifest, values, defaults map[string]any, schema *spec.Schema) bool {
+	if valuesFile.MatchString(m.title) {
+		return true
+	}
+	if m.title != "" || len(values) == 0 {
+		return false
+	}
+	for key := range values {
+		if _, ok := defaults[key]; ok {
+			continue
+		}
+		if _, ok := schema.Properties[key]; ok {
+			continue
+		}
+		return false
+	}
+	return true
+}
+
+// unknownValues returns the paths in values that neither the chart's
+// defaults nor its schema has. It doesn't look inside lists, or inside a map
+// whose contents the chart leaves to the user, such as nodeSelector.
+func unknownValues(path string, values, defaults map[string]any, schema *spec.Schema) []string {
+	var unknown []string
+	for key, value := range values {
+		at := path + key
+		def, inDefaults := defaults[key]
+		var sub *spec.Schema
+		if schema != nil {
+			if s, ok := schema.Properties[key]; ok {
+				sub = &s
+			}
+		}
+		if !inDefaults && sub == nil {
+			unknown = append(unknown, at)
+			continue
+		}
+		nested, ok := value.(map[string]any)
+		if !ok {
+			continue
+		}
+		nestedDefaults, _ := def.(map[string]any)
+		if len(nestedDefaults) == 0 && (sub == nil || len(sub.Properties) == 0) {
+			continue
+		}
+		unknown = append(unknown, unknownValues(at+".", nested, nestedDefaults, sub)...)
+	}
+	return unknown
 }
 
 func markdownManifests(t *testing.T) []manifest {
@@ -138,8 +319,12 @@ func markdownManifests(t *testing.T) []manifest {
 		require.NoError(t, err)
 		rel, err := filepath.Rel(repoRoot, file)
 		require.NoError(t, err)
-		for i, block := range yamlBlocks(string(data)) {
-			out = append(out, splitDocuments(t, fmt.Sprintf("%s block %d", rel, i+1), block)...)
+		for i, b := range yamlBlocks(string(data)) {
+			docs := splitDocuments(t, fmt.Sprintf("%s block %d", rel, i+1), b.body)
+			for j := range docs {
+				docs[j].title = b.title
+			}
+			out = append(out, docs...)
 		}
 	}
 	return out
@@ -162,14 +347,22 @@ func sampleManifests(t *testing.T) []manifest {
 	return out
 }
 
+type block struct {
+	title string
+	body  []byte
+}
+
+var fenceTitle = regexp.MustCompile(`title="([^"]*)"`)
+
 // yamlBlocks returns the fenced yaml blocks of a Markdown page, in order,
 // leaving out those marked as snippets. Fences may be indented, as they are
 // inside admonitions and tabs, so each block is dedented by its fence's
 // indentation.
-func yamlBlocks(page string) [][]byte {
+func yamlBlocks(page string) []block {
 	var (
-		blocks   [][]byte
+		blocks   []block
 		current  *bytes.Buffer
+		title    string
 		indent   string
 		skip     bool
 		previous string
@@ -181,11 +374,15 @@ func yamlBlocks(page string) [][]byte {
 		switch {
 		case current == nil && isYAMLFence(trimmed):
 			current = &bytes.Buffer{}
+			title = ""
+			if match := fenceTitle.FindStringSubmatch(trimmed); match != nil {
+				title = match[1]
+			}
 			indent = line[:len(line)-len(strings.TrimLeft(line, " \t"))]
 			skip = previous == snippetMarker
 		case current != nil && trimmed == "```":
 			if !skip {
-				blocks = append(blocks, current.Bytes())
+				blocks = append(blocks, block{title: title, body: current.Bytes()})
 			}
 			current = nil
 		case current != nil:
@@ -239,42 +436,85 @@ func TestYAMLBlocks(t *testing.T) {
 	tests := []struct {
 		name string
 		page string
-		want []string
+		want []block
 	}{
 		{
 			name: "a plain block",
 			page: "text\n```yaml\nkind: A\n```\n",
-			want: []string{"kind: A\n"},
+			want: []block{{body: []byte("kind: A\n")}},
 		},
 		{
 			name: "a block with a title",
 			page: "```yaml title=\"x.yaml\" linenums=\"1\"\nkind: A\n```\n",
-			want: []string{"kind: A\n"},
+			want: []block{{title: "x.yaml", body: []byte("kind: A\n")}},
 		},
 		{
 			name: "an indented block, inside a tab",
 			page: "=== \"Tab\"\n\n    ```yaml\n    kind: A\n    spec: {}\n    ```\n",
-			want: []string{"kind: A\nspec: {}\n"},
+			want: []block{{body: []byte("kind: A\nspec: {}\n")}},
 		},
 		{
 			name: "a block marked as a snippet",
 			page: snippetMarker + "\n\n```yaml\nkind: A\n```\n```yaml\nkind: B\n```\n",
-			want: []string{"kind: B\n"},
+			want: []block{{body: []byte("kind: B\n")}},
 		},
 		{
 			name: "other languages",
 			page: "```bash\nkubectl get managedworkloads\n```\n```\nplain\n```\n",
-			want: []string{},
 		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			blocks := yamlBlocks(tt.page)
-			got := make([]string, 0, len(blocks))
-			for _, b := range blocks {
-				got = append(got, string(b))
-			}
+			assert.Equal(t, tt.want, yamlBlocks(tt.page))
+		})
+	}
+}
+
+func TestSpecFragment(t *testing.T) {
+	fields := map[string]bool{"idlePolicy": true, "dependsOn": true}
+	tests := []struct {
+		name  string
+		title string
+		block string
+		want  bool
+	}{
+		{name: "a spec block", block: "spec:\n  idlePolicy: {}\n", want: true},
+		{
+			name:  "a spec block titled as a ManagedWorkload",
+			title: "managedworkload.yaml",
+			block: "spec:\n  idlePolicy: {}\n",
+			want:  true,
+		},
+		{name: "spec fields on their own", block: "dependsOn: []\n", want: true},
+		{name: "a misspelt field beside a real one", block: "spec:\n  idlePolicy: {}\n  idlePolcy: {}\n", want: true},
+		{name: "another resource's spec", title: "application.yaml", block: "spec:\n  idlePolicy: {}\n"},
+		{name: "a spec of another kind", block: "spec:\n  syncPolicy: {}\n"},
+		{name: "a whole object", block: "kind: ManagedWorkload\nspec:\n  idlePolicy: {}\n"},
+		{name: "a status block", block: "status:\n  cost: {}\n"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			var obj map[string]any
+			require.NoError(t, yaml.Unmarshal([]byte(tt.block), &obj))
+			_, got := specFragment(manifest{title: tt.title}, obj, fields)
 			assert.Equal(t, tt.want, got)
 		})
 	}
+}
+
+func TestUnknownValues(t *testing.T) {
+	defaults := map[string]any{
+		"doorman":      map[string]any{"enabled": true, "nodeSelector": map[string]any{}},
+		"replicaCount": 1,
+	}
+	schema := &spec.Schema{SchemaProps: spec.SchemaProps{Properties: map[string]spec.Schema{
+		"logLevel": {},
+	}}}
+	values := map[string]any{
+		"doorman":      map[string]any{"enabled": false, "enabeld": true, "nodeSelector": map[string]any{"pool": "spot"}},
+		"logLevel":     "debug",
+		"replicaCount": 2,
+		"replicas":     2,
+	}
+	assert.ElementsMatch(t, []string{"doorman.enabeld", "replicas"}, unknownValues("", values, defaults, schema))
 }
