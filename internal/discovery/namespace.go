@@ -153,8 +153,8 @@ func (s *Scanner) scanNamespace(ctx, historyCtx context.Context, namespace strin
 			w.LastDeployed = &last
 		}
 		spec := wl.template.Spec
-		ownCPU, ownMemory := metrics.Requests(metrics.WorkloadContainers(spec))
-		w.PodCPURequestMillis, w.PodMemoryRequestBytes = ownCPU, ownMemory
+		w.PodCPURequestMillis, w.PodMemoryRequestBytes = metrics.Requests(metrics.WorkloadContainers(spec))
+		ownCPU, _ := metrics.AppCPURequest(nil, spec)
 
 		var running []corev1.Pod
 		if n == 0 {
@@ -169,7 +169,9 @@ func (s *Scanner) scanNamespace(ctx, historyCtx context.Context, namespace strin
 				w.Unmeasured = "invalid selector"
 			} else {
 				running = pods.of(obj.GetUID(), sel)
-				w.PodCPURequestMillis, w.PodMemoryRequestBytes = metrics.PodRequests(running, spec)
+				replica := metrics.ReplicaPod(obj, running)
+				w.PodCPURequestMillis, w.PodMemoryRequestBytes = metrics.PodRequests(replica, spec)
+				ownCPU, _ = metrics.AppCPURequest(replica, spec)
 				measure(&w, usage.of(running, sel), unmeasured, spec, ownCPU)
 			}
 			if mw != nil && mw.Status.Activity != nil {
@@ -185,7 +187,7 @@ func (s *Scanner) scanNamespace(ctx, historyCtx context.Context, namespace strin
 		w.Measured = measured(mw, w.HourlyCost, now)
 		w.SavedThisMonth = SavedThisMonth(mw, now)
 		if history != nil && ownCPU > 0 && !w.ScaledByHand {
-			w.History = replayWorkload(w, spec, history, owners.podsOf(wl), scan.historySince, rollouts,
+			w.History = replayWorkload(w, spec, ownCPU, history, owners.podsOf(wl), scan.historySince, rollouts,
 				thresholdFor(mw, opts), idleAfterFor(mw, opts), opts)
 			if w.History == nil && w.State != StateUnknown && w.Platform == "" {
 				scan.noHistory = append(scan.noHistory, w.Namespace+"/"+w.Name)
@@ -223,7 +225,8 @@ func (s *Scanner) readHistoryOf(ctx, historyCtx context.Context, scan *namespace
 }
 
 // measure sets a workload's CPU use from its pods' metrics, as a share of
-// what the pods measured request, or says why it couldn't.
+// ownCPU, what one of its pods requests for its own containers, or says why
+// it couldn't.
 func measure(w *Workload, podMetrics []metricsv1beta1.PodMetrics, unmeasured string, spec corev1.PodSpec, ownCPU int64) {
 	switch {
 	case unmeasured != "":

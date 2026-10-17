@@ -232,6 +232,13 @@ func replicaPod(target client.Object, pods []corev1.Pod) (replica []corev1.Pod, 
 	return pods[chosen : chosen+1], settled
 }
 
+// ReplicaPod is the pod whose requests stand for one of target's replicas,
+// as a slice holding it, chosen as the operator chooses it.
+func ReplicaPod(target client.Object, pods []corev1.Pod) []corev1.Pod {
+	replica, _ := replicaPod(target, pods)
+	return replica
+}
+
 // startingPod is the newest pod that's neither finished nor being deleted,
 // for when none is running, such as while a Recreate rollout's pods are
 // Pending: admission has already set its requests, which a template
