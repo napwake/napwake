@@ -730,8 +730,10 @@ spec:
                     type: string
                   by:
                     description: |-
-                      By is the field manager that set the replicas, such as kubectl-scale
-                      or argocd-controller.
+                      By is the field manager that set the replicas, such as
+                      argocd-controller or kubectl-client-side-apply, or unknown when none
+                      is recorded, as for a scale through the scale subresource by kubectl
+                      scale, an HPA or KEDA.
                     type: string
                   gitOps:
                     description: |-
