@@ -1818,3 +1818,39 @@ func TestServer_ReadinessFollowsListenFailures(t *testing.T) {
 	assert.NoError(t, s.Ready(nil), "a port no longer routed doesn't count")
 	assert.Zero(t, testutil.ToFloat64(opmetrics.DoormanListenFailures))
 }
+
+// hangPatches makes every patch wait for release or its context, like an
+// API server that has stopped answering.
+func hangPatches(release <-chan struct{}) func(client.WithWatch) client.WithWatch {
+	return func(c client.WithWatch) client.WithWatch {
+		return interceptor.NewClient(c, interceptor.Funcs{Patch: func(ctx context.Context, cl client.WithWatch,
+			obj client.Object, patch client.Patch, opts ...client.PatchOption) error {
+			select {
+			case <-release:
+				return cl.Patch(ctx, obj, patch, opts...)
+			case <-ctx.Done():
+				return ctx.Err()
+			}
+		}})
+	}
+}
+
+// A stamp waiting on an API server that doesn't answer is cut short when
+// shutdown closes the connections, so the doorman stops within its grace
+// period rather than apiTimeout later.
+func TestServer_ShutdownDoesNotWaitOutAStamp(t *testing.T) {
+	port := freePort(t)
+	s, _ := newTestServer(t, hangPatches(nil), pausedWorkload("api", port, time.Minute))
+	stop := run(t, s)
+	conn := dial(t, port)
+	send(t, conn, "hello\n")
+	require.Eventually(t, func() bool {
+		s.mu.Lock()
+		defer s.mu.Unlock()
+		return len(s.wakeCalls) == 1
+	}, 5*time.Second, 10*time.Millisecond, "the stamp is under way")
+
+	start := time.Now()
+	stop()
+	assert.Less(t, time.Since(start), apiTimeout/2)
+}

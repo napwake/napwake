@@ -65,7 +65,12 @@ type stampRecord struct {
 // annotation unless a wake is already on its way. Connections for the same
 // workload share one stamp. A failed stamp is returned, for the caller to
 // retry while it holds the connection.
-func (s *Server) requestWake(ctx context.Context, rt route, from netip.Addr) error {
+//
+// The stamp is for every connection waiting on it, not only the one that
+// made it, so it's bound by ctx, the doorman's connections' context, which
+// ends only when shutdown closes them all. waitCtx bounds how long this
+// caller waits for another's stamp.
+func (s *Server) requestWake(ctx, waitCtx context.Context, rt route, from netip.Addr) error {
 	for {
 		s.mu.Lock()
 		call, inFlight := s.wakeCalls[rt.workload]
@@ -78,8 +83,8 @@ func (s *Server) requestWake(ctx context.Context, rt route, from netip.Addr) err
 		if inFlight {
 			select {
 			case <-call.done:
-			case <-ctx.Done():
-				return ctx.Err()
+			case <-waitCtx.Done():
+				return waitCtx.Err()
 			}
 			// Another source's allowance says nothing about this one's.
 			if errors.Is(call.err, errWakeLimited) && call.source != from {
@@ -106,9 +111,7 @@ func (s *Server) requestWake(ctx context.Context, rt route, from netip.Addr) err
 // differs from the one recorded when the pause began, which is what the
 // operator takes as a wake.
 func (s *Server) stamp(ctx context.Context, rt route, from netip.Addr) error {
-	// The stamp is for every connection waiting on it, not only the one
-	// that made it, so it isn't cut short when that one goes.
-	ctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), apiTimeout)
+	ctx, cancel := context.WithTimeout(ctx, apiTimeout)
 	defer cancel()
 
 	var w v1alpha1.ManagedWorkload
@@ -219,8 +222,10 @@ func (s *Server) warnUnserved(ctx context.Context, rt route, result string, wait
 	s.lastWarn[rt.workload] = now
 	s.mu.Unlock()
 
-	// The connection's context may be what ran out, so the lookup gets its own.
-	getCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), apiTimeout)
+	// ctx is the doorman's connections' context, not the connection's,
+	// which may be what ran out: shutdown cuts the lookup short only once
+	// it closes every connection.
+	getCtx, cancel := context.WithTimeout(ctx, apiTimeout)
 	defer cancel()
 	var w v1alpha1.ManagedWorkload
 	if err := s.client.Get(getCtx, rt.workload, &w); err != nil {

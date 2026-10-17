@@ -211,7 +211,7 @@ func (h *heldConn) hold(ctx context.Context) (net.Conn, string) {
 
 	// A wake over the limits is retried while the connection is held, and
 	// a browser still gets the page, which reloads and asks again.
-	wakeErr := h.requestWake(waitCtx, h.route, h.from)
+	wakeErr := h.requestWake(ctx, waitCtx, h.route, h.from)
 	if isHTTP && h.route.page && isPageLoad(req) {
 		h.servePage(waitCtx, req)
 		return nil, resultPage
@@ -242,7 +242,7 @@ func (h *heldConn) await(ctx, waitCtx context.Context, wakeErr error) (net.Conn,
 		}
 		if wakeErr != nil && !current.draining() && h.now().Sub(lastWake) >= wakeRetryInterval {
 			lastWake = h.now()
-			wakeErr = h.requestWake(waitCtx, h.route, h.from)
+			wakeErr = h.requestWake(ctx, waitCtx, h.route, h.from)
 		}
 
 		retry := time.NewTimer(dialRetryInterval)
