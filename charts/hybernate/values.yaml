@@ -107,7 +107,8 @@ defaults:
 doorman:
   enabled: true
   replicaCount: 2
-  # User-Agent prefixes of health checkers and scrapers whose GET and HEAD
+  # User-Agent prefixes of health checkers and scrapers, or names that
+  # follow "(compatible; " in a browser-style one, whose GET and HEAD
   # requests shouldn't wake a paused workload, besides the ones the doorman
   # knows: kube-probe, Prometheus, load balancers' checks, Blackbox
   # Exporter/, Datadog/Synthetics, Amazon-Route53-Health-Check-Service,
