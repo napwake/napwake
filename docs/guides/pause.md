@@ -48,7 +48,7 @@ The request runs the idle clock out now, and the workload is paused by the same 
 |--------------|---------------------|--------------------------|
 | `Running` or `Idle` | Pauses it, with a `PauseRequested` event, then `Paused` | `True`, `Pausing` |
 | A confident forecast expects demand within the hour | Leaves it running and says when the demand is expected, since a pause would likely be woken straight back. `kubectl hybernate pause` asks whether to pause it anyway; a request with `hybernate.io/pause-overrides-forecast: "true"`, which `--yes` sets, pauses it | `False`, `ForecastExpectsDemand` |
-| Within the hour Hybernate waits after Argo CD or Flux undid its last pause | Pauses it: you asked. If the tool undoes it again, that's a new [`GitOpsConflict`](gitops.md) | `True`, `Pausing` |
+| Within the hour Hybernate waits after a GitOps tool (Argo CD, Flux, Fleet, kapp or Kluctl) undid its last pause | Pauses it: you asked. If the tool undoes it again, that's a new [`GitOpsConflict`](gitops.md) | `True`, `Pausing` |
 | `Pausing` | Finishes the pause, then marks the request handled | `True`, `AlreadyPaused` |
 | `Paused` | Marks the request handled | `True`, `AlreadyPaused` |
 | `Resuming` | Lets the wake finish, then pauses it | `True`, `Pausing` |
@@ -56,7 +56,7 @@ The request runs the idle clock out now, and the workload is paused by the same 
 | Held awake by `hybernate.io/active-until` on it or its workload | Leaves it running, with a Warning event | `False`, `ActiveUntil` |
 | Depended on by awake workloads | Leaves it running, with a `HeldByDependents` event, as for an idle pause | `False`, `HeldByDependents` |
 | In a `dependsOn` cycle | Leaves it running, with a Warning event | `False`, `DependencyCycle` |
-| In a [protected namespace](opt-in.md#protected-namespaces) | Leaves it running, with a Warning event | `False`, `Protected` |
+| In a [protected namespace](opt-in.md#protected-namespaces), or Hybernate's own operator or doorman | Leaves it running, with a Warning event | `False`, `Protected` |
 | Scaled to zero outside Hybernate | Nothing to do: it's off already | `False`, `ScaledToZero` |
 | Its workload is missing, labelled `hybernate.io/ignore`, or managed by another ManagedWorkload | Nothing, with a Warning event | `False`, `TargetNotFound`, `TargetIgnored` or `DuplicateTarget` |
 
@@ -64,7 +64,7 @@ A request Hybernate won't act on is answered once, not retried: ask again once t
 
 ## Resume
 
-Resuming wakes the workload's [dependencies](../concepts/dependencies.md), scales it back to `status.pause.previousReplicas` (kept within its HPA's or ScaledObject's range if that changed), and moves it to `Running` once all those replicas are Ready, by a status its Deployment or StatefulSet controller wrote after seeing the scale-up. A workload that wasn't wholly Ready before its pause, such as one with a pod crash-looping, would never get there: once some of its replicas are Ready, the rest get 2 minutes, and with none Ready, Hybernate waits for the Deployment's `progressDeadlineSeconds` (10 minutes by default, and for a StatefulSet), then moves it to `Running` with what it has and sets the `ResumeIncomplete` condition. Once it's scaled back up, its replicas are left to its autoscaler, so an HPA scaling it down as it starts isn't undone. A KEDA ScaledObject is held at the restored count until then, and afterwards gets back the `paused-replicas` value it had before the pause, or none.
+Resuming wakes the workload's [dependencies](../concepts/dependencies.md), scales it back to `status.pause.previousReplicas` (kept within its HPA's or ScaledObject's range if that changed), and moves it to `Running` once all those replicas are Ready, by a status its Deployment or StatefulSet controller wrote after seeing the scale-up. A workload that wasn't wholly Ready before its pause, such as one with a pod crash-looping, would never get there, so Hybernate stops waiting 2 minutes after the first replica is Ready, or, while none is, once the Deployment's `progressDeadlineSeconds` has passed since the scale-up (10 minutes by default, and for a StatefulSet). It's then `Running` with the replicas that are Ready, and `ResumeIncomplete=True` until they all are. With none Ready, its doorman routes are removed all the same, so requests fail until a pod is Ready rather than wait at the doorman for a workload its own controller reports stuck. A StatefulSet with the default `OrderedReady` pod management starts its pods one at a time, so a slow-starting one may have only its first pods Ready when the 2 minutes are up: it runs with those, and the rest follow. Once it's scaled back up, its replicas are left to its autoscaler, so an HPA scaling it down as it starts isn't undone. A KEDA ScaledObject is held at the restored count until then, and afterwards gets back the `paused-replicas` value it had before the pause, or none.
 
 **Automatically:**
 

@@ -36,7 +36,7 @@ kubectl get managedworkload my-api -n staging \
 Without CPU data a busy workload looks idle, so Hybernate doesn't act. `MetricsAvailable=False` says why:
 
 - **`NoPodMetrics`**: the target has replicas, but the Metrics API reports no pods for it. Check that metrics-server is installed (`kubectl top pods -n staging`) and that the target's pods are running.
-- **`NoCPURequests`**: the target's containers set no CPU requests, so utilization can't be measured. Set CPU requests.
+- **`NoCPURequests`**: the target's containers request no CPU, in its running pods or, with none running, in its pod template, so utilization can't be measured. Set CPU requests on its containers, or a default in the namespace's LimitRange; a LimitRange default applies to pods created after it, so restart the workload's pods once it's set.
 - **`MetricsUnavailable`**: the Metrics API itself failed. The condition message has the error; a missing `metrics.k8s.io` API means metrics-server isn't installed.
 
 A target scaled to zero replicas is not an error: it's recorded as zero usage.
@@ -56,7 +56,7 @@ kubectl get managedworkload my-api -n staging \
 
 - Without an `idlePolicy`, nothing pauses it on its own; [`kubectl hybernate pause`](../guides/pause.md#pause-now) pauses it when you ask.
 - `PrometheusAvailable=False`: a Prometheus activity query fails, or the operator has no `--prometheus-url`.
-- `Protected=True`: its namespace is protected.
+- `Protected=True`: its namespace is protected (`ProtectedNamespace`), or it's Hybernate's own operator or doorman (`HybernateComponent`), which is never paused.
 - `GitOpsConflict=True`: a GitOps tool undid its last pause, and Hybernate waits an hour before pausing again.
 
 **Check 6: Is something depending on it?**
@@ -70,11 +70,11 @@ kubectl get managedworkload postgres -n staging \
 
 ### Workload stuck in Resuming
 
-`WaitingForDependencies=True` means a `waitForReady` dependency isn't Ready yet; the condition names it and how many replicas are ready. Check that dependency's pods. Otherwise, the workload's own pods aren't becoming Ready. Resume completes once every replica it was restored to is Ready; once some are, the rest get 2 minutes; with none Ready, it waits for the Deployment's `progressDeadlineSeconds` (10 minutes by default, and for a StatefulSet). The `HybernateWorkloadStuck` alert fires after 15 minutes, and `kubectl hybernate status` lists it under `Stuck` after 10.
+`WaitingForDependencies=True` means a `waitForReady` dependency isn't Ready yet; the condition names it and how many replicas are ready. Check that dependency's pods. A dependency that serves with some of its replicas Ready counts once its own resume has finished, or, if Hybernate doesn't manage it, after 2 minutes; one with none Ready is waited for. Otherwise, the workload's own pods aren't becoming Ready. Resume completes once every replica it was restored to is Ready. Short of that, Hybernate stops waiting 2 minutes after the first replica is Ready, or, while none is, once the Deployment's `progressDeadlineSeconds` has passed since the scale-up (10 minutes by default, and for a StatefulSet), and the workload is `Running` with the replicas that are Ready, possibly none, and `ResumeIncomplete=True`. A StatefulSet with the default `OrderedReady` pod management starts its pods one at a time, so a slow-starting one may have only its first pods Ready when the 2 minutes are up: it runs with those, and the rest follow. The `HybernateWorkloadStuck` alert fires after 15 minutes, and `kubectl hybernate status` lists it under `Stuck` after 10.
 
 ### Workload resumed with replicas not Ready
 
-`ResumeIncomplete=True`, with a `ResumeIncomplete` warning event, means the last resume stopped waiting with some replicas not Ready, as above: it's `Running` with those that are, its KEDA ScaledObject scales it again, and requests go to its Ready pods. This is common for a workload that wasn't wholly Ready before it was paused, such as one with a pod crash-looping or unschedulable; `kubectl describe` its pods to see why. Once every replica is Ready, later or at the next resume, it's set `False` with an `AllReplicasReady` event.
+`ResumeIncomplete=True`, with a `ResumeIncomplete` warning event, means the last resume stopped waiting with some replicas not Ready, as above: it's `Running` with those that are, its KEDA ScaledObject scales it again, and requests go to its Ready pods. With none Ready, the doorman no longer holds its requests either, so they fail until a pod is Ready. This is common for a workload that wasn't wholly Ready before it was paused, such as one with a pod crash-looping or unschedulable; `kubectl describe` its pods to see why. Once every replica is Ready, later or at the next resume, it's set `False` with an `AllReplicasReady` event.
 
 ### Waking a workload by hand
 
