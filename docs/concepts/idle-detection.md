@@ -51,7 +51,7 @@ From a terminal, [`kubectl hybernate wake`](../getting-started/kubectl-plugin.md
 
 - A `last-activity` time in the future is treated as now. Use `active-until` for a deliberate hold, since it says when the hold ends.
 - Annotations can only keep a workload awake or wake it. They never cause a pause.
-- Malformed values are ignored and logged.
+- A value that isn't an RFC 3339 time, such as epoch seconds or a space in place of the `T`, is ignored everywhere: it neither keeps an awake workload awake nor wakes a paused one. Each such value gets one `InvalidActivityAnnotation` warning event on the ManagedWorkload, naming the annotation and where it is.
 
 ## The decision
 
@@ -106,7 +106,7 @@ status:
 A paused workload wakes when:
 
 - A request reaches one of its Services. The request is held while the workload starts, then answered; see [Wake on Request](wake-on-request.md).
-- A `hybernate.io/last-activity`, `last-request` or `active-until` annotation on the ManagedWorkload or its target changes after the pause began, whatever time it states, so a clock that's behind the operator's can't lose a wake. Only a change counts: the pause records the annotations as they stood, so a value set before it, even one stating a later time, doesn't wake it. `kubectl hybernate wake` sets one, and this is how a "start environment" button in a developer portal works.
+- A `hybernate.io/last-activity`, `last-request` or `active-until` annotation on the ManagedWorkload or its target changes after the pause began to an RFC 3339 time, whatever time it states, so a clock that's behind the operator's can't lose a wake. Only a change counts: the pause records the annotations as they stood, so a value set before it, even one stating a later time, doesn't wake it. `kubectl hybernate wake` sets one, and this is how a "start environment" button in a developer portal works.
 - `autoResume: true` is set and a confident forecast (`dailyPhase: Active`) predicts utilization above `cpuThreshold` for the current hour, or for the next hour once it's 15 minutes away, so the workload is ready before people arrive.
 - Something other than Hybernate scales it up, such as `kubectl scale`.
 - Dry-run is turned on: dry-run never leaves a workload paused.

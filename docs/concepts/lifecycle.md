@@ -83,7 +83,7 @@ User-visible state changes emit Kubernetes events that show up in `kubectl descr
 - Scaled to zero outside Hybernate, and left off: `ScaledToZero`
 - What holds it awake: `IdleVetoed`, `HeldByDependents`, `DependencyCycle`
 - A GitOps tool undoing a pause, and the conflict ending: `GitOpsConflict`, `GitOpsConflictResolved`
-- Problems: `TargetNotFound`, `DuplicateTarget`, `NoPodMetrics`, `NoCPURequests`, `MetricsUnavailable`, `QueryFailed`, `EndpointNotConfigured`, `RoutingFailed`, `UnsupportedLoadBalancer`, `RequestNotServed`, `Protected`, `ResumeIncomplete` (a resume that stopped waiting for replicas not Ready, in place of `Resumed`; `AllReplicasReady` once they are)
+- Problems: `TargetNotFound`, `DuplicateTarget`, `NoPodMetrics`, `NoCPURequests`, `MetricsUnavailable`, `QueryFailed`, `EndpointNotConfigured`, `PrometheusQueryEmpty`, `InvalidActivityAnnotation`, `RoutingFailed`, `UnsupportedLoadBalancer`, `RequestNotServed`, `Protected`, `ResumeIncomplete` (a resume that stopped waiting for replicas not Ready, in place of `Resumed`; `AllReplicasReady` once they are)
 - The forecast: `PredictionFed` each hour it learns, `RegimeChange` when it's demoted, `ForecastReset` when its saved state can't be read
 - Learned dependencies: `DependenciesLearned`
 

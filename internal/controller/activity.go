@@ -60,6 +60,8 @@ const (
 
 	conditionPrometheusQueryEmpty = "PrometheusQueryEmpty"
 	ReasonPrometheusQueryEmpty    = "PrometheusQueryEmpty"
+
+	ReasonInvalidActivityAnnotation = "InvalidActivityAnnotation"
 )
 
 // activityMemo keeps each workload's latest clock between status writes.
@@ -182,6 +184,7 @@ func (r *Reconciler) observeActivity(ctx context.Context, workload *v1alpha1.Man
 		}
 	}
 
+	r.warnMalformedActivity(workload, target)
 	var obs activityObservation
 	for _, obj := range []client.Object{workload, target} {
 		if obj == nil {
@@ -286,6 +289,84 @@ func (r *Reconciler) activityAnnotations(ctx context.Context, obj client.Object,
 	return lastActivity, parse(v1alpha1.AnnotationActiveUntil)
 }
 
+// wellFormedActivityTime reports whether an activity annotation's value is
+// an RFC 3339 time, the only form that counts as activity.
+func wellFormedActivityTime(raw string) bool {
+	_, err := time.Parse(time.RFC3339, raw)
+	return err == nil
+}
+
+// annotationWarnings remembers, for each workload, the malformed activity
+// annotation values it has been warned about, so each is reported once
+// rather than on every check.
+type annotationWarnings struct {
+	mu     sync.Mutex
+	warned map[types.UID]map[string]string
+}
+
+// first reports whether value is new for key, recording it.
+func (w *annotationWarnings) first(uid types.UID, key, value string) bool {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	if w.warned == nil {
+		w.warned = make(map[types.UID]map[string]string)
+	}
+	if w.warned[uid] == nil {
+		w.warned[uid] = make(map[string]string)
+	}
+	if last, ok := w.warned[uid][key]; ok && last == value {
+		return false
+	}
+	w.warned[uid][key] = value
+	return true
+}
+
+func (w *annotationWarnings) clear(uid types.UID, key string) {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	delete(w.warned[uid], key)
+}
+
+func (w *annotationWarnings) forget(uid types.UID) {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	delete(w.warned, uid)
+}
+
+// warnMalformedActivity reports each activity annotation on the workload or
+// its target that isn't an RFC 3339 time, once per value. Such a value is
+// ignored everywhere: it neither keeps an awake workload awake nor wakes a
+// paused one. A tool stamping epoch seconds, say, would otherwise wake the
+// workload only to see it pause again an idleAfter later, with nothing to
+// say why.
+func (r *Reconciler) warnMalformedActivity(workload *v1alpha1.ManagedWorkload, target client.Object) {
+	sources := []struct {
+		what string
+		obj  client.Object
+	}{
+		{what: "ManagedWorkload " + workload.Name, obj: workload},
+		{what: string(workload.Spec.Target.Kind) + " " + workload.Spec.Target.Name, obj: target},
+	}
+	for _, s := range sources {
+		if s.obj == nil {
+			continue
+		}
+		for _, key := range activityAnnotations {
+			id := s.what + "/" + key
+			raw, ok := s.obj.GetAnnotations()[key]
+			if !ok || raw == "" || wellFormedActivityTime(raw) {
+				r.activityWarned.clear(workload.UID, id)
+				continue
+			}
+			if r.activityWarned.first(workload.UID, id, raw) {
+				r.emitEvent(workload, false, "Warning", ReasonInvalidActivityAnnotation, actionEvaluateIdle,
+					"%s on %s is %q, not an RFC 3339 time such as %s, so it's ignored: it neither keeps the workload "+
+						"awake nor wakes it", key, s.what, raw, r.now().UTC().Format(time.RFC3339))
+			}
+		}
+	}
+}
+
 // wakeSource is what to record as the activity that woke a paused workload:
 // a request the doorman stamped since the pause began, or any other wake. It
 // must be read before the resume completes, which clears the pause.
@@ -333,10 +414,10 @@ func activityAnnotationValues(obj client.Object) map[string]string {
 }
 
 // activityAnnotationChanged reports whether any of obj's activity
-// annotations was set to a value other than the one recorded.
+// annotations was set to a time other than the one recorded.
 func activityAnnotationChanged(obj client.Object, recorded map[string]string) bool {
 	for _, key := range activityAnnotations {
-		if v := obj.GetAnnotations()[key]; v != "" && v != recorded[key] {
+		if v := obj.GetAnnotations()[key]; v != "" && v != recorded[key] && wellFormedActivityTime(v) {
 			return true
 		}
 	}
@@ -634,6 +715,7 @@ func nextCheck(now, pauseAt, activeUntil time.Time) time.Duration {
 // set before a requested pause, which ran the clock out early, doesn't undo
 // it.
 func (r *Reconciler) wokenByActivity(workload *v1alpha1.ManagedWorkload, target client.Object) bool {
+	r.warnMalformedActivity(workload, target)
 	var recorded v1alpha1.WakeAnnotations
 	if pause := workload.Status.Pause; pause != nil && pause.WakeAnnotations != nil {
 		recorded = *pause.WakeAnnotations

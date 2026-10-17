@@ -139,6 +139,7 @@ The relaunch. The 0.1.x releases were early experiments, and 0.2.0 is a fresh st
 - CPU utilization is measured against the requests of the pods that report usage, not of every replica, so a workload with one pod serving and the others Pending or crash-looping, or just after a scale-up, no longer reads as idle
 - A slow or unreachable Prometheus can't hold up wakes: the operator keeps one client for it, gives each query 2 seconds and a workload's queries 5 together, and once Prometheus fails doesn't ask it again for a minute, failing every query at once instead
 - Likewise for metrics-server: a read of the Metrics API has 2 seconds, and once it fails it isn't read again for a minute
+- An activity annotation that isn't an RFC 3339 time, such as epoch seconds, is reported in an `InvalidActivityAnnotation` warning event, once per value, instead of only logged, and no longer wakes a paused workload either, as it never kept an awake one awake
 - Events are emitted once, when something changes: forecast vetoes, routing warnings, learned dependencies, and the `DependentsAwake` warning, which fires once a manual pause begins
 - Every series of a deleted workload is dropped from the metrics, and the operator reads only the target's own pods and claims, with deadlines on every call
 - A GitOps tool that set the replicas in the same second as another field manager is reported as the one that woke a paused workload, so the `GitOpsConflict` is never missed

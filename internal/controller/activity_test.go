@@ -22,6 +22,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"strconv"
 	"strings"
 	"sync/atomic"
 	"testing"
@@ -244,6 +245,33 @@ func TestActivityClock_MalformedAnnotationIsIgnored(t *testing.T) {
 	pauser := runClock(t, workload, target, clockOpts{metrics: idleCPU})
 
 	assert.Equal(t, 1, pauser.pauseCalls)
+}
+
+// A value that isn't an RFC 3339 time, such as epoch seconds from a portal,
+// never counts as activity, so the workload pauses while the tool thinks
+// it's keeping it awake. It's reported once per value, not every check.
+func TestActivityClock_MalformedAnnotationIsReportedOnce(t *testing.T) {
+	target := clockTarget("app:v1", nil)
+	workload := clockWorkload(fixedTime.Add(-30*time.Minute), target)
+	workload.Annotations = map[string]string{v1alpha1.AnnotationLastActivity: "1773489600"}
+	metrics := idleCPU
+	r := newAutomationReconciler(t, workload, &stubForecaster{}, automationOpts{metrics: &metrics})
+	check := func() {
+		t.Helper()
+		_, err := r.reconcileAutomation(context.Background(), workload, target)
+		require.NoError(t, err)
+	}
+
+	check()
+	check()
+	events := drainEvents(t, r)
+	assert.Equal(t, 1, strings.Count(events, ReasonInvalidActivityAnnotation), "reported once: %s", events)
+	assert.Contains(t, events, `"1773489600"`)
+	assert.Contains(t, events, "ManagedWorkload api")
+
+	workload.Annotations[v1alpha1.AnnotationLastActivity] = "2026-03-14 11:59:00"
+	check()
+	assert.Contains(t, drainEvents(t, r), ReasonInvalidActivityAnnotation, "and again for a new value")
 }
 
 func TestActivityClock_DoesNotActWithoutCPUData(t *testing.T) {
@@ -981,6 +1009,9 @@ func TestWokenByActivity(t *testing.T) {
 			recorded:    &v1alpha1.WakeAnnotations{Workload: map[string]string{v1alpha1.AnnotationLastActivity: old}},
 			annotations: map[string]string{v1alpha1.AnnotationLastActivity: old}},
 		{name: "no annotations", pausedAt: pausedAt, recorded: &v1alpha1.WakeAnnotations{}},
+		{name: "a value that isn't a time, as an awake workload ignores it", pausedAt: pausedAt,
+			recorded:    &v1alpha1.WakeAnnotations{},
+			annotations: map[string]string{v1alpha1.AnnotationLastActivity: strconv.FormatInt(fixedTime.Unix(), 10)}},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
