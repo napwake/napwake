@@ -57,6 +57,7 @@ import (
 	v1alpha1 "github.com/okedeji/hybernate/api/v1alpha1"
 	"github.com/okedeji/hybernate/internal/controller"
 	"github.com/okedeji/hybernate/internal/doorman"
+	"github.com/okedeji/hybernate/internal/guard"
 	// +kubebuilder:scaffold:imports
 )
 
@@ -84,6 +85,7 @@ func main() {
 	var enableHTTP2 bool
 	var maxConcurrentReconciles int
 	var timezone string
+	var guardOp string
 	var tlsOpts []func(*tls.Config)
 
 	flag.StringVar(&metricsAddr, "metrics-bind-address", "0",
@@ -110,6 +112,9 @@ func main() {
 		"How many ManagedWorkloads are reconciled at once, so one slow metrics or Prometheus query doesn't hold up wakes.")
 	flag.StringVar(&timezone, "timezone", "UTC",
 		"IANA time zone, such as Europe/London, whose hours and weekdays forecasts learn, so they follow daylight saving.")
+	flag.StringVar(&guardOp, "guard", "",
+		"Run as the Helm chart's uninstall or upgrade hook, which fails while that would leave ManagedWorkloads "+
+			"without an operator, instead of the operator: uninstall or upgrade.")
 	optIn := controller.DefaultOptInDefaults
 	flag.DurationVar(&optIn.IdleAfter, "default-idle-after", optIn.IdleAfter,
 		"idleAfter for workloads opted in with the hybernate.io/managed label, unless annotated otherwise.")
@@ -130,6 +135,10 @@ func main() {
 	flag.Parse()
 
 	ctrl.SetLogger(zap.New(zap.UseFlagOptions(&opts)))
+
+	if guardOp != "" {
+		os.Exit(runGuard(guardOp, watched))
+	}
 
 	if limit, ok := softMemoryLimit(os.Getenv("GOMEMLIMIT"), os.Getenv(envMemoryLimit)); ok {
 		debug.SetMemoryLimit(limit)
@@ -271,6 +280,37 @@ func main() {
 		setupLog.Error(err, "manager exited with error")
 		os.Exit(1)
 	}
+}
+
+// guardWait outlasts the minute a deleted ManagedWorkload waits for its
+// doorman ports to drain, so one deleted just before helm uninstall
+// doesn't fail it. The chart's hook Jobs allow for it, with room to start.
+const guardWait = 150 * time.Second
+
+// runGuard runs the chart's uninstall or upgrade hook, returning the exit
+// code: 1 when the operation would strand ManagedWorkloads, or the guard
+// can't tell.
+func runGuard(op string, watched []string) int {
+	operation := guard.Operation(op)
+	if operation != guard.Uninstall && operation != guard.Upgrade {
+		setupLog.Error(fmt.Errorf("must be %s or %s", guard.Uninstall, guard.Upgrade), "invalid --guard", "value", op)
+		return 1
+	}
+	c, err := client.New(ctrl.GetConfigOrDie(), client.Options{Scheme: scheme})
+	if err != nil {
+		setupLog.Error(err, "unable to create a client")
+		return 1
+	}
+	g := &guard.Guard{Reader: c, Out: os.Stdout, Watched: watched, Wait: guardWait, Poll: 2 * time.Second}
+	err = g.Check(ctrl.SetupSignalHandler(), operation)
+	if errors.Is(err, guard.ErrRefused) {
+		return 1
+	}
+	if err != nil {
+		setupLog.Error(err, "unable to check for ManagedWorkloads left without an operator", "operation", op)
+		return 1
+	}
+	return 0
 }
 
 // withLeaderElection has the operator elect a leader when enabled; every
