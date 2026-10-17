@@ -124,6 +124,9 @@ func (s *Server) handle(ctx context.Context, port int32, rt route, conn net.Conn
 }
 
 func (s *Server) record(rt route, result string, start time.Time) {
+	s.mu.Lock()
+	s.metered[rt.workload] = true
+	s.mu.Unlock()
 	opmetrics.DoormanWakes.WithLabelValues(rt.workload.Namespace, rt.workload.Name, result).Inc()
 	opmetrics.DoormanWaitSeconds.WithLabelValues(result).Observe(s.now().Sub(start).Seconds())
 }

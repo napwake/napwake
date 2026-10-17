@@ -1058,6 +1058,22 @@ func TestAdmission_HeldConnectionsAreCappedPerWorkload(t *testing.T) {
 	assert.True(t, a.hold(ingress, shop, now))
 }
 
+// A deleted workload's series go, as the operator drops its own, so a
+// doorman that outlives many workloads doesn't report every one forever.
+func TestServer_DropsADeletedWorkloadsSeries(t *testing.T) {
+	port := freePort(t)
+	w := pausedWorkload("gone", port, time.Minute)
+	_, c := startServer(t, w)
+	series := func() int { return testutil.CollectAndCount(opmetrics.DoormanWakes) }
+	before := series()
+
+	send(t, dial(t, port), "GET /healthz HTTP/1.1\r\nHost: gone\r\nUser-Agent: kube-probe/1.31\r\n\r\n")
+	require.Eventually(t, func() bool { return series() == before+1 }, 5*time.Second, 10*time.Millisecond)
+
+	require.NoError(t, c.Delete(context.Background(), w))
+	assert.Eventually(t, func() bool { return series() == before }, 3*routeSyncInterval, 20*time.Millisecond)
+}
+
 // A workload that never becomes Ready, called from many sources, can't take
 // the places other workloads need.
 func TestAdmission_OneWorkloadCannotTakeEveryPlace(t *testing.T) {

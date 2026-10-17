@@ -148,6 +148,7 @@ type Server struct {
 	wakeCalls map[types.NamespacedName]*wakeCall
 	stamped   map[types.NamespacedName]stampRecord
 	lastWarn  map[types.NamespacedName]time.Time
+	metered   map[types.NamespacedName]bool
 	closed    bool
 
 	accepting sync.WaitGroup
@@ -179,6 +180,7 @@ func NewServer(c client.Client, recorder events.EventRecorder, opts Options) *Se
 		wakeCalls:         map[types.NamespacedName]*wakeCall{},
 		stamped:           map[types.NamespacedName]stampRecord{},
 		lastWarn:          map[types.NamespacedName]time.Time{},
+		metered:           map[types.NamespacedName]bool{},
 	}
 }
 
@@ -351,7 +353,9 @@ func (s *Server) syncRoutes(ctx, connCtx context.Context) error {
 	s.lastSync.Store(now.UnixNano())
 
 	claims := map[int32][]route{}
+	existing := make(map[types.NamespacedName]bool, len(list.Items))
 	for _, w := range list.Items {
+		existing[types.NamespacedName{Namespace: w.Namespace, Name: w.Name}] = true
 		maxWait := defaultMaxWait
 		if w.Spec.Wake != nil && w.Spec.Wake.MaxWait != nil && w.Spec.Wake.MaxWait.Duration > 0 {
 			maxWait = min(w.Spec.Wake.MaxWait.Duration, longestMaxWait)
@@ -370,6 +374,7 @@ func (s *Server) syncRoutes(ctx, connCtx context.Context) error {
 
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	s.forgetDeleted(existing)
 	routes := map[int32]route{}
 	conflicts := map[int32][]route{}
 	for port, rs := range claims {
@@ -433,6 +438,28 @@ func (s *Server) syncRoutes(ctx, connCtx context.Context) error {
 		s.accepting.Go(func() { s.accept(connCtx, port, l) })
 	}
 	return errors.Join(errs...)
+}
+
+// forgetDeleted drops the series of workloads that no longer exist, as the
+// operator drops its own, and what this replica remembers about them. s.mu
+// must be held.
+func (s *Server) forgetDeleted(existing map[types.NamespacedName]bool) {
+	for w := range s.metered {
+		if !existing[w] {
+			opmetrics.DeleteWorkload(w.Namespace, w.Name)
+			delete(s.metered, w)
+		}
+	}
+	for w := range s.stamped {
+		if !existing[w] {
+			delete(s.stamped, w)
+		}
+	}
+	for w := range s.lastWarn {
+		if !existing[w] {
+			delete(s.lastWarn, w)
+		}
+	}
 }
 
 // reportConflicts logs each port newly claimed twice, once, and keeps the
