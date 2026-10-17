@@ -56,6 +56,8 @@ Leaving an annotation out means its default. A value that can't be read, such as
 hybernate.io/depends-on: "statefulset/postgres, messaging/statefulset/nats"
 ```
 
+On a namespace, `depends-on` reaches every workload in it except those it names, and those they depend on by their own `depends-on`: they're what the others depend on, and taking the list too would make them depend on each other, so none could pause.
+
 Settings that need more than one value aren't annotations: Prometheus activity queries, `waitForReady` on a dependency, and cost rates. For those, write a [ManagedWorkload](managed-workload.md) yourself.
 
 ### Which setting wins

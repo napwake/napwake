@@ -247,8 +247,8 @@ func TestOptInSpec_WorkloadValueShadowsNamespaceProblem(t *testing.T) {
 	assert.False(t, spec.DryRun)
 }
 
-// A namespace's depends-on reaches the dependency it names too, which
-// mustn't depend on itself.
+// A workload's depends-on naming the workload itself declares nothing for
+// it; another entry still applies.
 func TestOptInSpec_DependsOnNeverNamesItself(t *testing.T) {
 	postgres := v1alpha1.WorkloadRef{Kind: v1alpha1.TargetKindStatefulSet, Name: "postgres"}
 	tests := []struct {
@@ -266,8 +266,8 @@ func TestOptInSpec_DependsOnNeverNamesItself(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.value, func(t *testing.T) {
-			spec, problems := optInSpec("dev", postgres, nil,
-				map[string]string{v1alpha1.AnnotationDependsOn: tt.value}, DefaultOptInDefaults)
+			spec, problems := optInSpec("dev", postgres,
+				map[string]string{v1alpha1.AnnotationDependsOn: tt.value}, nil, DefaultOptInDefaults)
 
 			assert.Empty(t, problems)
 			assert.Equal(t, len(tt.want), len(spec.DependsOn))

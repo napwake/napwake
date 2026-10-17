@@ -173,19 +173,8 @@ func (s *settings) dependencies(key string) []v1alpha1.DependencyRef {
 	const invalid = `isn't "kind/name" or "namespace/kind/name", with kind deployment or statefulset`
 	var deps []v1alpha1.DependencyRef
 	s.resolve(key, invalid, func(v, on string) bool {
-		deps = nil
 		var bad []string
-		for entry := range strings.SplitSeq(v, ",") {
-			entry = strings.TrimSpace(entry)
-			if entry == "" {
-				continue
-			}
-			if dep, ok := parseDependency(entry); ok {
-				deps = append(deps, dep)
-			} else {
-				bad = append(bad, entry)
-			}
-		}
+		deps, bad = parseDependencies(v)
 		if len(deps) == 0 && len(bad) > 0 {
 			return false
 		}
@@ -196,6 +185,23 @@ func (s *settings) dependencies(key string) []v1alpha1.DependencyRef {
 		return true
 	})
 	return deps
+}
+
+// parseDependencies reads a depends-on value, returning the entries it
+// can't read apart.
+func parseDependencies(v string) (deps []v1alpha1.DependencyRef, bad []string) {
+	for entry := range strings.SplitSeq(v, ",") {
+		entry = strings.TrimSpace(entry)
+		if entry == "" {
+			continue
+		}
+		if dep, ok := parseDependency(entry); ok {
+			deps = append(deps, dep)
+		} else {
+			bad = append(bad, entry)
+		}
+	}
+	return deps, bad
 }
 
 func parseDependency(entry string) (v1alpha1.DependencyRef, bool) {
@@ -228,8 +234,10 @@ func parseDependency(entry string) (v1alpha1.DependencyRef, bool) {
 // and autoResume), which dependencies dependsOn lists, and wake. The rest
 // is the user's to set on the ManagedWorkload; see keepUserSettings.
 //
-// A namespace's depends-on, such as statefulset/postgres, also reaches the
-// dependency it names, which isn't given a dependency on itself.
+// A workload never depends on itself, whichever annotation names it. A
+// namespace's depends-on that must not reach this workload, because the
+// workload is one of the dependencies it names (see inheritsDependsOn), is
+// left out of nsAnnotations by the caller.
 func optInSpec(namespace string, target v1alpha1.WorkloadRef, workloadAnnotations, nsAnnotations map[string]string,
 	d OptInDefaults) (v1alpha1.ManagedWorkloadSpec, []settingProblem) {
 	s := &settings{workload: workloadAnnotations, namespace: nsAnnotations}
