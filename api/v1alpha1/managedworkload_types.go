@@ -564,6 +564,12 @@ type PauseStatus struct {
 	// +optional
 	Resources *ResourceSnapshot `json:"resources,omitempty"`
 
+	// ResumedAt is when the resume under way scaled the workload back up.
+	// Scaled to zero after it, by something other than Hybernate, the
+	// workload is left off rather than scaled up again.
+	// +optional
+	ResumedAt *metav1.Time `json:"resumedAt,omitempty"`
+
 	// FirstReadyAt is when the resume under way first saw one of the
 	// workload's replicas Ready. The rest are waited for 2 minutes from
 	// then, and the workload runs with those that are Ready by that time.

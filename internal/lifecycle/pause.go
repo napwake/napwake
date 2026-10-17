@@ -165,10 +165,12 @@ const ServingWait = 2 * time.Minute
 // Resumption is how far a resume has got: the replicas the target is
 // scaled back to, how many of them are Ready, and whether the resume is
 // over, with all of them Ready or with as many as became Ready in the time
-// they were given.
+// they were given. A resume is also over once something other than
+// Hybernate has scaled the target back to zero, which leaves it off.
 type Resumption struct {
 	Replicas, Ready int32
 	Settled         bool
+	ScaledToZero    bool
 }
 
 // Waited is how long a resume has waited for the workload's replicas:
@@ -183,8 +185,10 @@ type Waited struct {
 // the first Ready replica while some are Ready, and the target's progress
 // deadline from the scale-up while none are, by which its own controller
 // reports them stuck. Settled, the workload's KEDA ScaledObject is
-// released. The pause record is left for the caller to clear as it records
-// the workload Running, so a retry after that write fails can resume again.
+// released. ResumedAt records the scale-up, after which a target at zero
+// was scaled there by someone else, and is left there. The pause record is
+// left for the caller to clear as it records the workload Running, so a
+// retry after that write fails can resume again.
 func (p *Pauser) Resume(ctx context.Context, workload *v1alpha1.ManagedWorkload, waited Waited) (
 	Resumption, error) {
 	pause := workload.Status.Pause
@@ -203,6 +207,12 @@ func (p *Pauser) Resume(ctx context.Context, workload *v1alpha1.ManagedWorkload,
 	scale, err := p.scaler.GetScale(ctx, target)
 	if err != nil {
 		return Resumption{}, fmt.Errorf("getting current replicas: %w", err)
+	}
+	if scale.Spec.Replicas == 0 && pause.ResumedAt != nil {
+		if err := p.release(ctx, workload, target); err != nil {
+			return Resumption{}, err
+		}
+		return Resumption{Settled: true, ScaledToZero: true}, nil
 	}
 	// Once it's scaled up, its replicas are left to its autoscaler, or to
 	// whoever has set them since: scaling it back to the restored count on
@@ -225,6 +235,10 @@ func (p *Pauser) Resume(ctx context.Context, workload *v1alpha1.ManagedWorkload,
 		if _, err := scaleTo(ctx, p.scaler, target, replicas); err != nil {
 			return Resumption{}, fmt.Errorf("scaling to %d: %w", replicas, err)
 		}
+	}
+	if pause.ResumedAt == nil && replicas > 0 {
+		now := p.clock()
+		pause.ResumedAt = &now
 	}
 
 	ready, err := readyOf(ctx, p.client, target, replicas)

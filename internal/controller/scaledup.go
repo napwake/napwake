@@ -44,11 +44,13 @@ const conditionGitOpsConflict = "GitOpsConflict"
 const gitOpsRetryAfter = time.Hour
 
 // wakeOnScaleUp treats a paused workload scaled up outside Hybernate as
-// woken: whoever did it wants it running. A GitOps tool doing it means it
-// sets the replicas from Git and will undo every pause, which the workload
-// reports with the fix. A pause that holds clears that report.
+// woken: whoever did it wants it running. One still pausing counts once
+// Hybernate has scaled it to zero, rather than being scaled back down. A
+// GitOps tool doing it means it sets the replicas from Git and will undo
+// every pause, which the workload reports with the fix. A pause that holds
+// clears that report.
 func (r *Reconciler) wakeOnScaleUp(ctx context.Context, workload *v1alpha1.ManagedWorkload, target client.Object) error {
-	if workload.Status.Phase != v1alpha1.PhasePaused {
+	if !scaledDownByHybernate(workload) {
 		return nil
 	}
 	if replicasFromTarget(target) == 0 {
@@ -65,11 +67,11 @@ func (r *Reconciler) wakeOnScaleUp(ctx context.Context, workload *v1alpha1.Manag
 		return nil
 	}
 	// Hybernate's own resume scales it up too, and the cache can still hold
-	// the workload as Paused once that has begun. Releasing KEDA then would
-	// let it scale the workload back down while it starts.
+	// the workload as Paused, or Pausing, once that has begun. Releasing
+	// KEDA then would let it scale the workload back down while it starts.
 	if phase, err := r.livePhase(ctx, workload); err != nil {
 		return err
-	} else if phase != v1alpha1.PhasePaused {
+	} else if phase != workload.Status.Phase {
 		return nil
 	}
 
@@ -108,6 +110,20 @@ func (r *Reconciler) wakeOnScaleUp(ctx context.Context, workload *v1alpha1.Manag
 		r.emitEvent(workload, false, "Warning", ReasonGitOpsConflict, actionCheckReplicas, "%s", conflict)
 	}
 	return nil
+}
+
+// scaledDownByHybernate reports whether Hybernate has scaled the workload to
+// zero for a pause: it's Paused, or Pausing past the scale-down, so any
+// replicas it has were set by someone else.
+func scaledDownByHybernate(workload *v1alpha1.ManagedWorkload) bool {
+	switch workload.Status.Phase {
+	case v1alpha1.PhasePaused:
+		return true
+	case v1alpha1.PhasePausing:
+		return workload.Status.Pause != nil && workload.Status.Pause.PausedAt != nil
+	default:
+		return false
+	}
 }
 
 const (

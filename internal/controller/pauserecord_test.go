@@ -140,6 +140,9 @@ func TestPause_WaitsForThePodsToStop(t *testing.T) {
 	require.NotNil(t, got.Status.Pause.PausedAt, "written as it's scaled to zero")
 	assert.Equal(t, 5*time.Second, res.RequeueAfter)
 
+	scaledDown := targetDeploymentOf(t, r)
+	scaledDown.Spec.Replicas = ptr.To[int32](0)
+	require.NoError(t, r.Update(context.Background(), scaledDown))
 	pauser.pauseDone, pauser.podsRunning = true, 2
 	_, err = r.Reconcile(context.Background(), reconcileFor("api"))
 	require.NoError(t, err)
@@ -152,9 +155,6 @@ func TestPause_WaitsForThePodsToStop(t *testing.T) {
 	assert.Contains(t, c.Message, "2 pods still running")
 	assert.Contains(t, drainEvents(t, r), ReasonPauseIncomplete)
 
-	stopped := targetDeploymentOf(t, r)
-	stopped.Spec.Replicas = ptr.To[int32](0)
-	require.NoError(t, r.Update(context.Background(), stopped))
 	_, err = r.Reconcile(context.Background(), reconcileFor("api"))
 	require.NoError(t, err)
 	got = getWorkload(t, r, "api")

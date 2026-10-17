@@ -612,12 +612,23 @@ func (r *Reconciler) handleResume(ctx context.Context, workload *v1alpha1.Manage
 
 	source := wakeSource(workload)
 	waited := lifecycle.Waited{ScaledUp: r.sinceScaledUp(workload), Serving: r.sinceFirstReady(workload)}
+	scaledUp := workload.Status.Pause != nil && workload.Status.Pause.ResumedAt != nil
 	resumed, err := r.pauser.Resume(ctx, workload, waited)
 	if err != nil {
 		return nil, fmt.Errorf("resuming workload: %w", err)
 	}
+	if resumed.ScaledToZero {
+		// Left Running, where the next reconcile finds it scaled to zero
+		// outside Hybernate, says so, and leaves it off.
+		if err := r.transition(ctx, workload, v1alpha1.PhaseRunning, ReasonScaledToZero); err != nil {
+			return nil, err
+		}
+		log.FromContext(ctx).Info("resuming workload scaled to zero outside Hybernate, left off",
+			"workload", workload.Name, "namespace", workload.Namespace)
+		return &ctrl.Result{}, nil
+	}
 	if !resumed.Settled {
-		if err := r.recordFirstReady(ctx, workload, resumed); err != nil {
+		if err := r.recordResumeProgress(ctx, workload, resumed, scaledUp); err != nil {
 			return nil, err
 		}
 		return &ctrl.Result{RequeueAfter: resumeRecheck(waited.ScaledUp)}, nil
@@ -673,7 +684,7 @@ func (r *Reconciler) clearResumeIncomplete(workload *v1alpha1.ManagedWorkload, t
 }
 
 // sinceFirstReady is how long a resuming workload has had a replica Ready,
-// as recordFirstReady wrote when it first did, or zero.
+// as recordResumeProgress wrote when it first did, or zero.
 func (r *Reconciler) sinceFirstReady(workload *v1alpha1.ManagedWorkload) time.Duration {
 	if workload.Status.Pause == nil || workload.Status.Pause.FirstReadyAt == nil {
 		return 0
@@ -681,19 +692,28 @@ func (r *Reconciler) sinceFirstReady(workload *v1alpha1.ManagedWorkload) time.Du
 	return r.now().Sub(workload.Status.Pause.FirstReadyAt.Time)
 }
 
-// recordFirstReady writes when a resume first saw one of its replicas Ready,
-// from which the rest are given lifecycle.ServingWait. It's kept in the
-// pause record, so the time they're given survives an operator restart.
-func (r *Reconciler) recordFirstReady(ctx context.Context, workload *v1alpha1.ManagedWorkload,
-	resumed lifecycle.Resumption) error {
+// recordResumeProgress writes when a resume scaled the workload up, after
+// which one found at zero was scaled there by someone else, and when it
+// first saw one of its replicas Ready, from which the rest are given
+// lifecycle.ServingWait. They're kept in the pause record, so both survive
+// an operator restart. scaledUp is whether the scale-up was written before.
+func (r *Reconciler) recordResumeProgress(ctx context.Context, workload *v1alpha1.ManagedWorkload,
+	resumed lifecycle.Resumption, scaledUp bool) error {
 	pause := workload.Status.Pause
-	if resumed.Ready == 0 || pause == nil || pause.FirstReadyAt != nil {
+	if pause == nil {
 		return nil
 	}
-	now := r.clockTime()
-	pause.FirstReadyAt = &now
+	changed := !scaledUp && pause.ResumedAt != nil
+	if resumed.Ready > 0 && pause.FirstReadyAt == nil {
+		now := r.clockTime()
+		pause.FirstReadyAt = &now
+		changed = true
+	}
+	if !changed {
+		return nil
+	}
 	if err := r.Status().Update(ctx, workload); err != nil {
-		return fmt.Errorf("recording its first replica Ready: %w", err)
+		return fmt.Errorf("recording the resume's progress: %w", err)
 	}
 	return nil
 }

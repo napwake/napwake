@@ -443,3 +443,68 @@ func TestWakeOnScaleUp_StaleCacheDuringAResume(t *testing.T) {
 	assert.Equal(t, v1alpha1.PhaseResuming, got.Status.Phase)
 	assert.Nil(t, got.Status.LastScaledUp)
 }
+
+// Someone scaling a workload up once Hybernate has scaled it to zero, while
+// its pods are still stopping, wakes it as it would a paused one, rather
+// than having the pause scale it straight back down. Before that, the pause
+// hasn't scaled anything, so the replicas are still what it records.
+func TestWakeOnScaleUp_WhilePausing(t *testing.T) {
+	pausedAt := metav1.NewTime(fixedTime.Add(-10 * time.Second))
+	tests := []struct {
+		name     string
+		pausedAt *metav1.Time
+		woken    bool
+	}{
+		{name: "after the scale-down", pausedAt: &pausedAt, woken: true},
+		{name: "before the scale-down", pausedAt: nil},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			workload := pausedWorkload(v1alpha1.PhasePausing)
+			workload.Status.Pause.PausedAt = tt.pausedAt
+			r := lifecycleReconciler(t, workload, 2, interceptor.Funcs{})
+
+			_, err := r.Reconcile(context.Background(), reconcileFor("api"))
+			require.NoError(t, err)
+
+			got := getWorkload(t, r, "api")
+			if !tt.woken {
+				assert.Equal(t, v1alpha1.PhasePaused, got.Status.Phase)
+				assert.Zero(t, targetReplicas(t, r))
+				return
+			}
+			assert.Equal(t, v1alpha1.PhaseRunning, got.Status.Phase)
+			assert.Equal(t, int32(2), targetReplicas(t, r), "not scaled back down")
+			require.NotNil(t, got.Status.LastScaledUp)
+			assert.Equal(t, int32(2), got.Status.LastScaledUp.Replicas)
+		})
+	}
+}
+
+// Someone scaling a resuming workload back to zero after Hybernate has
+// scaled it up means it to be off: it's left there, as a running workload
+// scaled to zero outside Hybernate is, rather than scaled up again.
+func TestResume_ScaledToZeroWhileResumingIsLeftOff(t *testing.T) {
+	so := &unstructured.Unstructured{Object: map[string]any{"spec": map[string]any{
+		"scaleTargetRef": map[string]any{"name": "api"}}}}
+	so.SetGroupVersionKind(kedaScaledObject)
+	so.SetNamespace("default")
+	so.SetName("api-scaler")
+	so.SetAnnotations(map[string]string{autoscaler.PausedReplicasAnnotation: "3"})
+	workload := pausedWorkload(v1alpha1.PhaseResuming)
+	workload.Status.Pause.ScaledObject = "api-scaler"
+	workload.Status.Pause.ResumedAt = ptr.To(metav1.NewTime(fixedTime.Add(-30 * time.Second)))
+	r := lifecycleReconciler(t, workload, 0, interceptor.Funcs{}, so)
+
+	for range 2 {
+		_, err := r.Reconcile(context.Background(), reconcileFor("api"))
+		require.NoError(t, err)
+	}
+
+	got := getWorkload(t, r, "api")
+	assert.Equal(t, v1alpha1.PhaseRunning, got.Status.Phase)
+	assert.Zero(t, targetReplicas(t, r), "left off")
+	assert.True(t, meta.IsStatusConditionTrue(got.Status.Conditions, conditionScaledToZero))
+	_, held := pausedScaledObject(t, r)
+	assert.False(t, held, "KEDA is released")
+}
