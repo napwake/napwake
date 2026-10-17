@@ -314,6 +314,35 @@ func TestTransition_SettlesAtTheLastReadWhenReplicasCantBeRead(t *testing.T) {
 	assert.Zero(t, c.PausedCPUHours.AsApproximateFloat64())
 }
 
+// A pause resumed from Pausing without its record finds the target at zero
+// already. That's what the pause did, not what it frees, so the snapshot
+// keeps the replicas last seen running rather than pricing the pause at
+// nothing saved.
+func TestCaptureResourceSnapshot_PauseResumedAtZero(t *testing.T) {
+	tests := []struct {
+		name     string
+		previous int32
+		want     int32
+	}{
+		{name: "the pause's own record", previous: 4, want: 4},
+		{name: "a record taken at zero", previous: 0, want: 3},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			workload := costWorkload(v1alpha1.PhasePausing)
+			workload.Status.Pause = &v1alpha1.PauseStatus{PreviousReplicas: tt.previous}
+			workload.Status.Cost = &v1alpha1.CostStatus{Running: &v1alpha1.ResourceSnapshot{Replicas: 3, CPUMillis: 500}}
+			r := newTestReconcilerWithReplicas(t, workload, &stubPauser{}, 0)
+			r.metrics = &zeroReplicaMetrics{stubMetrics{cpuPerReplica: 500, memoryPerReplica: 512 << 20}}
+
+			snap := r.captureResourceSnapshot(context.Background(), workload)
+
+			require.NotNil(t, snap)
+			assert.Equal(t, tt.want, snap.Replicas)
+		})
+	}
+}
+
 type countingPricer struct {
 	stubPricer
 	calls int

@@ -298,9 +298,15 @@ func (r *Reconciler) captureResourceSnapshot(ctx context.Context, workload *v1al
 
 	// Savings are priced on requests, not live usage: requests are what a
 	// pod reserves on a node, and what discovery estimates are based on.
-	if replicas, err := r.metrics.Replicas(ctx, workload); err != nil {
+	// A pause records the replicas it will scale from. One resumed from
+	// Pausing without its record finds the target at zero already, which
+	// is what the pause did, not what it saves.
+	pause := workload.Status.Pause
+	if pause != nil && pause.PreviousReplicas > 0 {
+		snap.Replicas = pause.PreviousReplicas
+	} else if replicas, err := r.metrics.Replicas(ctx, workload); err != nil {
 		fellBack("replicas", err)
-	} else {
+	} else if replicas > 0 || pause == nil {
 		snap.Replicas = replicas
 	}
 
