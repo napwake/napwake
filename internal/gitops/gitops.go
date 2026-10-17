@@ -54,9 +54,10 @@ func (w Writer) FromGit() bool {
 }
 
 // ReplicasWriter is whoever last set spec.replicas, and false when no field
-// manager records it, such as on an object created before managed fields.
-// Writes through the scale subresource count: the API server records them
-// against spec.replicas too.
+// manager records it. A write through the scale subresource, as kubectl
+// scale, an HPA and KEDA make, takes the field from whoever owned it without
+// recording a new owner, so a scale-up that way has no writer. A GitOps tool
+// writes the workload itself, so it's always recorded.
 func ReplicasWriter(managedFields []metav1.ManagedFieldsEntry) (Writer, bool) {
 	return FieldWriter(managedFields, "spec", "replicas")
 }

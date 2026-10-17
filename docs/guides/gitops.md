@@ -6,7 +6,7 @@ Teams that already run an HPA or KEDA under Argo CD or Flux usually have it in p
 
 ## What Hybernate does
 
-Hybernate never fights Git. When a paused workload is scaled up by anything other than Hybernate, it counts as activity: the workload goes back to Running, and `status.lastScaledUp` records when, how many replicas, and what did it, by the field manager the API server recorded (`kubectl-scale`, `argocd-controller`, `kustomize-controller`, ...).
+Hybernate never fights Git. When a paused workload is scaled up by anything other than Hybernate, it counts as activity: the workload goes back to Running, and `status.lastScaledUp` records when, how many replicas, and what did it, by the field manager the API server recorded (`argocd-controller`, `kustomize-controller`, `kubectl-client-side-apply`, ...). A scale through the scale subresource, as `kubectl scale`, an HPA and KEDA do, records no field manager, so it shows as `unknown`.
 
 When that was Argo CD, Flux, Rancher Fleet, kapp or Kluctl, the workload also reports it, with the fix:
 

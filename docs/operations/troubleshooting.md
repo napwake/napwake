@@ -134,7 +134,7 @@ The doorman's logs name the workload and Service for each held connection: `kube
 
 Something keeps waking it. Check the events for `WokeByActivity` (an activity annotation newer than the pause, or a held request: `WokenByRequest` names the Service) or `AutoResume` (the forecast expected demand). A health check or monitor that calls the Service on a timer and sends a request wakes the workload each time. The doorman already ignores connections that close without sending anything, and HTTP requests from common probes and scrapers (see [Wake on Request](../concepts/wake-on-request.md#what-wakes-a-workload-and-what-doesnt)); for anything else, point it elsewhere, list its port in `hybernate.io/doorman-ignore-ports` on the Service, or opt the workload out with `wake.onRequest: false`. A tool that refreshes `hybernate.io/last-activity` on a timer, rather than on real use, will keep waking the workload.
 
-`ScaledUp` means something scaled it up outside Hybernate, named in the event and `status.lastScaledUp`. If it's Argo CD or Flux, the workload also reports `GitOpsConflict=True`: it sets the replicas from Git and will undo every pause until it's told to leave them; see [Argo CD and Flux](../guides/gitops.md).
+`ScaledUp` means something scaled it up outside Hybernate, named in the event and `status.lastScaledUp`. If it's a GitOps tool, the workload also reports `GitOpsConflict=True`: it sets the replicas from Git and will undo every pause until it's told to leave them; see [GitOps tools](../guides/gitops.md).
 
 ### Prediction confidence stays at 0
 

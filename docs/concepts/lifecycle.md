@@ -30,7 +30,7 @@ A workload already at zero replicas, scaled there by a person, a pipeline or KED
 - **Idle → Pausing**: Right away, unless the workload is in dry-run, or a GitOps tool undid its last pause within the hour
 - **Idle → Running**: Activity resumes (in dry-run, or while a GitOps tool's undoing holds the pause off; otherwise the pause has already started), or the workload is scaled to zero outside Hybernate
 - **Paused → Resuming**: A request to its Service, a change to an activity annotation since the pause, `autoResume` ahead of forecast demand, or dry-run being turned on
-- **Paused → Running**: Something other than Hybernate scales it up, see [Argo CD and Flux](../guides/gitops.md); or Hybernate lets go of it, see [When Hybernate Lets Go](../guides/pause.md#when-hybernate-lets-go)
+- **Paused → Running**: Something other than Hybernate scales it up, see [GitOps tools](../guides/gitops.md); or Hybernate lets go of it, see [When Hybernate Lets Go](../guides/pause.md#when-hybernate-lets-go)
 - **Resuming → Running**: Every replica it was restored to is Ready; or some are, and the rest have had 2 minutes; or none are, and the Deployment's `progressDeadlineSeconds` has passed (10 minutes by default, and for a StatefulSet). Stopping short sets `ResumeIncomplete`. The wait starts once its `waitForReady` dependencies are Ready
 
 ### On request
@@ -66,7 +66,7 @@ The operator sets standard Kubernetes conditions on the CR, each with `Reason`, 
 | `DuplicateTarget` | Another, older ManagedWorkload manages the same target, so this one does nothing | `DuplicateTarget`; `False`: `Resolved` |
 | `Protected` | Its namespace is protected, or it's Hybernate's own operator or doorman, so it's never paused | `ProtectedNamespace`, `HybernateComponent`; `False`: `NotProtected` |
 | `PauseRequest` | The last [pause request](../guides/pause.md#pause-now) paused the workload, or found it paused; `False` says why it didn't | `Pausing`, `AlreadyPaused`; `False`: `DryRun`, `ActiveUntil`, `HeldByDependents`, `DependencyCycle`, `Protected`, `ScaledToZero`, `TargetNotFound`, `TargetIgnored`, `DuplicateTarget` |
-| `GitOpsConflict` | A GitOps tool undid its last pause; removed once a pause holds. See [Argo CD and Flux](../guides/gitops.md) | `PauseUndone` |
+| `GitOpsConflict` | A GitOps tool undid its last pause; removed once a pause holds. See [GitOps tools](../guides/gitops.md) | `PauseUndone` |
 | `ResumeIncomplete` | The last resume stopped waiting with some replicas not Ready, and the workload runs with those that are; see [Workload resumed with replicas not Ready](../operations/troubleshooting.md#workload-resumed-with-replicas-not-ready) | `ReplicasNotReady`; `False`: `AllReplicasReady` |
 | `Autoscaled` | An HPA or KEDA ScaledObject scales it, and its range; see [HPA and KEDA](../guides/autoscalers.md) | `HPA`, `KEDA` |
 | `ScaledToZero` | It was scaled to zero outside Hybernate, so Hybernate leaves it off: it doesn't pause it, wake it, or route requests for it until its replicas are set above zero | `ScaledToZero`; `False`: `HasReplicas` |

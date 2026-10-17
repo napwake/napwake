@@ -8,7 +8,7 @@ What a security review of Hybernate needs: what it can do in a cluster, what it 
 - **It never reads Secrets.**
 - **It can be confined to namespaces.** With [`watchNamespaces`](helm-values.md#namespaces), the operator and doorman get a Role in each of those namespaces instead of a ClusterRole, so Kubernetes itself refuses them anything elsewhere. The operator keeps one ClusterRole, read-only, on Namespaces and Nodes, and a Role in its own namespace to read the doorman's EndpointSlices. With secure metrics (the default), both also keep a ClusterRoleBinding to `system:auth-delegator`, which only lets them check the tokens of whoever scrapes their metrics.
 - **It can be kept out of namespaces.** A namespace labelled `hybernate.io/protected=true`, or matching [`protectedNamespaces`](helm-values.md#namespaces), is never managed; see [Protected namespaces](../guides/opt-in.md#protected-namespaces).
-- **It doesn't fight people or tools.** A paused workload scaled up by anything else wakes; a GitOps tool undoing a pause is reported, not fought; see [Argo CD and Flux](../guides/gitops.md).
+- **It doesn't fight people or tools.** A paused workload scaled up by anything else wakes; a GitOps tool undoing a pause is reported, not fought; see [GitOps tools](../guides/gitops.md).
 
 Everything it reads, writes, and sends is listed in [Data and Access](data-and-access.md), and the exact RBAC in [Helm values](helm-values.md#rbac).
 

@@ -71,7 +71,7 @@ Resuming wakes the workload's [dependencies](../concepts/dependencies.md), scale
 - A request to the workload's Service, through [wake on request](../concepts/wake-on-request.md)
 - A change to `hybernate.io/last-activity`, `hybernate.io/last-request` or `hybernate.io/active-until` on the ManagedWorkload or its target since the pause began, whatever time the new value states; [`kubectl hybernate wake`](../getting-started/kubectl-plugin.md#wake-a-workload) sets one
 - With `autoResume: true`, 15 minutes ahead of the hour a confident forecast expects demand in
-- Something else scaling it up, such as `kubectl scale`: it's counted as activity and the workload goes straight to `Running`; see [Argo CD and Flux](gitops.md) for when that's a GitOps tool
+- Something else scaling it up, such as `kubectl scale`: it's counted as activity and the workload goes straight to `Running`; see [GitOps tools](gitops.md) for when that's a GitOps tool
 - Turning on [dry-run](dry-run.md), which never leaves a workload paused (`DryRunWake` event)
 
 A paused workload is looked at again at least every 5 minutes, 15 minutes before each hour and on the hour, as well as whenever it or its target changes.
