@@ -18,6 +18,7 @@ package controller
 
 import (
 	"context"
+	"fmt"
 	"path/filepath"
 	"sync"
 	"testing"
@@ -142,6 +143,30 @@ func TestDependencies_HoldWhileDependentsAwake(t *testing.T) {
 			},
 			wantPause: true,
 		},
+		{
+			name: "a duplicate, whose target another ManagedWorkload manages, doesn't hold it",
+			dependents: []*v1alpha1.ManagedWorkload{withCondition(
+				depWorkload("default", "api-copy", v1alpha1.TargetKindDeployment, "", postgresRef()),
+				conditionDuplicateTarget, metav1.ConditionTrue, conditionDuplicateTarget)},
+			wantPause: true,
+		},
+		{
+			name: "a dependent whose target is gone doesn't hold it",
+			dependents: []*v1alpha1.ManagedWorkload{withCondition(
+				depWorkload("default", "api", v1alpha1.TargetKindDeployment, v1alpha1.PhaseRunning, postgresRef()),
+				conditionTargetAvailable, metav1.ConditionFalse, ReasonTargetNotFound)},
+			wantPause: true,
+		},
+		{
+			name: "a dependent being deleted doesn't hold it",
+			dependents: []*v1alpha1.ManagedWorkload{func() *v1alpha1.ManagedWorkload {
+				w := depWorkload("default", "api", v1alpha1.TargetKindDeployment, v1alpha1.PhaseRunning, postgresRef())
+				w.Finalizers = []string{finalizerName}
+				w.DeletionTimestamp = &metav1.Time{Time: fixedTime}
+				return w
+			}()},
+			wantPause: true,
+		},
 	}
 
 	for _, tt := range tests {
@@ -169,6 +194,33 @@ func TestDependencies_HoldWhileDependentsAwake(t *testing.T) {
 			assert.Equal(t, tt.wantHeldBy, held.Message)
 		})
 	}
+}
+
+func withCondition(w *v1alpha1.ManagedWorkload, condType string, status metav1.ConditionStatus,
+	reason string) *v1alpha1.ManagedWorkload {
+	meta.SetStatusCondition(&w.Status.Conditions, metav1.Condition{Type: condType, Status: status, Reason: reason})
+	return w
+}
+
+// A condition's message over 32768 bytes fails the whole status write, so
+// a dependency with many dependents names only some.
+func TestDependencies_HoldersListIsBounded(t *testing.T) {
+	postgres := depWorkload("default", "postgres", v1alpha1.TargetKindStatefulSet, v1alpha1.PhaseRunning)
+	objs := []client.Object{postgres}
+	for i := range 2000 {
+		objs = append(objs, depWorkload("default", fmt.Sprintf("api-%04d", i), v1alpha1.TargetKindDeployment,
+			v1alpha1.PhaseRunning, postgresRef()))
+	}
+	r := depReconciler(t, &stubPauser{pauseDone: true}, objs...)
+
+	_, err := r.reconcileAutomation(context.Background(), postgres, postgresTarget(1, 1))
+	require.NoError(t, err)
+
+	held := meta.FindStatusCondition(postgres.Status.Conditions, conditionHeldByDependents)
+	require.NotNil(t, held)
+	assert.Equal(t, "kept awake for default/api-0000, default/api-0001, default/api-0002, default/api-0003, "+
+		"default/api-0004, default/api-0005, default/api-0006, default/api-0007, default/api-0008, default/api-0009 "+
+		"and 1990 more", held.Message)
 }
 
 func TestDependencies_HoldAppliesInDryRun(t *testing.T) {

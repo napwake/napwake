@@ -69,6 +69,8 @@ There's no timeout, because a slow start is exactly why you'd set it. If the wai
 | A cycle through learned dependencies, such as two services that call each other | Not a cycle: a learned dependent doesn't hold a workload it's itself a dependency of. Each pauses when idle, and waking either wakes the other |
 | `kubectl hybernate pause` on a dependency that's in use | It isn't paused: the request is answered with `PauseRequest=False`, reason `HeldByDependents`, and a `HeldByDependents` event naming the dependents, as for an idle pause. Pause the dependents first |
 | `dryRun: true` | The hold still applies and is reported; nothing is changed |
+| A dependent that manages nothing: one being deleted, a duplicate (`DuplicateTarget=True`), or one whose target is gone (`TargetAvailable=False`, reason `TargetNotFound`) | It doesn't hold its dependencies: it has no running workload to keep them up for |
+| Many dependents awake at once | `HeldByDependents` names the first 10, by namespace and name, and counts the rest |
 
 ## Across namespaces
 

@@ -245,7 +245,20 @@ func (h dependencyHolds) message() string {
 	if h.cycle {
 		return "dependsOn forms a cycle through this workload, so it won't pause until the cycle is removed"
 	}
-	return "kept awake for " + strings.Join(h.holders, ", ")
+	return "kept awake for " + listUpTo(h.holders, maxListed)
+}
+
+// maxListed bounds how many names a condition or event message lists: a
+// condition's message is at most 32768 bytes, and the API server rejects
+// the whole status write past that, and an event's note past 1024.
+const maxListed = 10
+
+// listUpTo joins names, listing at most limit and counting the rest.
+func listUpTo(names []string, limit int) string {
+	if len(names) <= limit {
+		return strings.Join(names, ", ")
+	}
+	return fmt.Sprintf("%s and %d more", strings.Join(names[:limit], ", "), len(names)-limit)
 }
 
 // heldByDependencies finds what keeps workload from pausing for the
@@ -263,12 +276,22 @@ func (r *Reconciler) heldByDependencies(ctx context.Context, workload *v1alpha1.
 	}
 	var h dependencyHolds
 	for _, d := range g.dependents(workload) {
-		if isAwake(d.Status.Phase) && g.holds(d, workload) {
+		if actsOnTarget(d) && isAwake(d.Status.Phase) && g.holds(d, workload) {
 			h.holders = append(h.holders, d.Namespace+"/"+d.Name)
 		}
 	}
 	slices.Sort(h.holders)
 	return h, nil
+}
+
+// actsOnTarget reports whether a ManagedWorkload manages a workload that's
+// there. One being deleted, one whose target another ManagedWorkload
+// manages, and one whose target is gone have no running workload of their
+// own to keep a dependency up for, and never pause to let it go.
+func actsOnTarget(w *v1alpha1.ManagedWorkload) bool {
+	return w.DeletionTimestamp.IsZero() &&
+		!meta.IsStatusConditionTrue(w.Status.Conditions, conditionDuplicateTarget) &&
+		!conditionFalseWith(w, conditionTargetAvailable, ReasonTargetNotFound)
 }
 
 // clearCondition flips a condition to False if it's present, so a resolved

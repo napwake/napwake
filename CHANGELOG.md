@@ -155,6 +155,8 @@ The relaunch. The 0.1.x releases were early experiments, and 0.2.0 is a fresh st
 - Status conditions now update their reason and message when the cause changes, even if the status stays the same
 - A change to a Deployment only re-queues ManagedWorkloads that target that Deployment, and likewise for StatefulSets. The target watch matched on name alone, so a Deployment and a StatefulSet with the same name re-queued each other's ManagedWorkloads
 - A namespace's `hybernate.io/depends-on` naming several workloads no longer makes them depend on each other, a cycle that kept every one of them from pausing. The workloads it names don't take it, and neither do those they depend on by their own `depends-on`
+- A dependent being deleted, a duplicate ManagedWorkload, or one whose target is gone no longer holds its dependencies awake forever
+- `HeldByDependents` names at most 10 dependents and counts the rest. A dependency with over a thousand awake dependents had a message past the condition's 32768-byte limit, which failed every status write
 - Opt-in annotation values are read without surrounding whitespace, so a YAML block scalar's trailing newline (`idle-after: |` giving `"2h\n"`) is no longer an `InvalidSetting`
 
 ## [0.1.7] - 2026-04-08
