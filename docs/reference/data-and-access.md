@@ -85,7 +85,7 @@ With leader election, a Role `hybernate-leader-election` in the release namespac
 
 **Admission policy**, with `doorman.admissionPolicy.enabled` (the default): a ValidatingAdmissionPolicy and binding `hybernate-doorman`, cluster-scoped, which refuse any change the doorman's ServiceAccount makes to a ManagedWorkload other than to its `hybernate.io/last-request` and `last-request-from` annotations.
 
-**Metrics**, with `metrics.secure` (the default): ClusterRoleBindings `hybernate-auth-delegator` and `hybernate-doorman-auth-delegator` to the built-in `system:auth-delegator` ClusterRole, so the operator and the doorman can check the tokens of whoever scrapes them; and, with `metrics.enabled`, a ClusterRole `hybernate-metrics-reader` allowing `get` on the `/metrics` URL, bound to `metrics.readerSubjects` by a ClusterRoleBinding of the same name.
+**Metrics**, with `metrics.enabled` and `metrics.secure` (the defaults): ClusterRoleBindings `hybernate-auth-delegator` and `hybernate-doorman-auth-delegator` to the built-in `system:auth-delegator` ClusterRole, so the operator and the doorman can check the tokens of whoever scrapes them; and a ClusterRole `hybernate-metrics-reader` allowing `get` on the `/metrics` URL, bound to `metrics.readerSubjects` by a ClusterRoleBinding of the same name.
 
 ## The plugin
 

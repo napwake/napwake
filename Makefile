@@ -221,6 +221,8 @@ check-chart: ## Lint the Helm chart, render it for each provider's Kubernetes ve
 		[ "$$(helm template hybernate charts/hybernate --set metrics.prometheusRule.enabled=true --set metrics.serviceMonitor.enabled=true | \
 			grep -c 'alert: Hybernate.*Down')" = 2 ] || { \
 		echo "HybernateDown and HybernateDoormanDown aren't created exactly with the ServiceMonitors whose jobs they match, so they fire forever"; exit 1; }
+	@! helm template hybernate charts/hybernate --set metrics.enabled=false | grep -q 'system:auth-delegator' || { \
+		echo "the chart lets the operator and the doorman review tokens with metrics disabled, when nothing checks one"; exit 1; }
 	@helm template hybernate charts/hybernate --set leaderElection.enabled=false --show-only templates/deployment.yaml | grep -q 'type: Recreate' && \
 		! helm template hybernate charts/hybernate --show-only templates/deployment.yaml | grep -q 'type: Recreate' || { \
 		echo "without leader election, a rolling update runs two operators at once"; exit 1; }

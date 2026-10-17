@@ -246,7 +246,7 @@ subjects:
     name: {{ include "hybernate.doormanName" $ }}
     namespace: {{ $.Release.Namespace }}
 {{- end }}
-{{- if .Values.metrics.secure }}
+{{- if and .Values.metrics.enabled .Values.metrics.secure }}
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRoleBinding
