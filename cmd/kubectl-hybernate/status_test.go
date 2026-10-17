@@ -505,6 +505,30 @@ func TestStatus_Namespaces(t *testing.T) {
 	assert.NotContains(t, out, "preview-42/api")
 }
 
+// A namespace named with -n that doesn't exist is an error, not one
+// Hybernate manages nothing in; one that exists, or can't be checked, isn't.
+func TestStatus_NamespaceThatDoesntExist(t *testing.T) {
+	empty := &corev1.Namespace{ObjectMeta: metav1.ObjectMeta{Name: "empty"}}
+	opts := statusOpts()
+
+	opts.namespaces = namespaceFlags{names: []string{"preview-7", "nope"}}
+	_, err := clusterStatus(context.Background(), newStatusClient(t, interceptor.Funcs{}, statusCluster()...),
+		"default", opts)
+	require.EqualError(t, err, "namespace nope doesn't exist; check the name")
+
+	opts.namespaces = namespaceFlags{names: []string{"empty"}}
+	_, err = clusterStatus(context.Background(), newStatusClient(t, interceptor.Funcs{}, empty), "default", opts)
+	require.NoError(t, err)
+
+	cantGet := interceptor.Funcs{Get: func(context.Context, client.WithWatch, client.ObjectKey, client.Object,
+		...client.GetOption) error {
+		return apierrors.NewForbidden(schema.GroupResource{Resource: "namespaces"}, "nope", nil)
+	}}
+	opts.namespaces = namespaceFlags{names: []string{"nope"}}
+	_, err = clusterStatus(context.Background(), newStatusClient(t, cantGet), "default", opts)
+	require.NoError(t, err)
+}
+
 func TestStatus_Since(t *testing.T) {
 	opts := statusOpts()
 	opts.since = time.Hour

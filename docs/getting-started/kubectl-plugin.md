@@ -266,7 +266,7 @@ kubectl hybernate status --since 1h -o json
 | `--since` | | `24h` | How far back to list pauses and wakes |
 | `--timeout` | | `1m` | How long to wait for the cluster before giving up |
 
-Your user needs `list` on `managedworkloads` and `events`, in every namespace or the ones passed with `-n`. Without access to events, it shows the rest and says so.
+Your user needs `list` on `managedworkloads` and `events`, in every namespace or the ones passed with `-n`. Without access to events, it shows the rest and says so. It also lists `deployments` and `statefulsets`, reading only their metadata, for a `hybernate.io/active-until` annotation on the workload itself, and goes without it when it can't. A namespace named with `-n` that doesn't exist is an error, which takes `get` on `namespaces` to tell; without it, the namespace shows as one Hybernate manages nothing in.
 
 ## Pause a Workload
 

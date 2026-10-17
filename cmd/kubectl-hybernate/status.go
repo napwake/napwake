@@ -301,12 +301,32 @@ func listManaged(ctx context.Context, c client.Client, ns namespaceFlags, home s
 		case err != nil:
 			return nil, scope, fmt.Errorf("listing ManagedWorkloads in %s: %w", n, err)
 		}
+		if len(list.Items) == 0 && n != metav1.NamespaceAll {
+			if err := checkNamespaceExists(ctx, c, n); err != nil {
+				return nil, scope, err
+			}
+		}
 		all = append(all, list.Items...)
 	}
 	slices.SortFunc(all, func(a, b v1alpha1.ManagedWorkload) int {
 		return cmp.Or(cmp.Compare(a.Namespace, b.Namespace), cmp.Compare(a.Name, b.Name))
 	})
 	return all, scope, nil
+}
+
+// checkNamespaceExists fails for a namespace that doesn't exist, which
+// would otherwise read as one Hybernate manages nothing in, as for a typo
+// in -n. Without access to namespaces, it can't tell, and lets it be.
+func checkNamespaceExists(ctx context.Context, c client.Client, name string) error {
+	var ns corev1.Namespace
+	err := c.Get(ctx, client.ObjectKey{Name: name}, &ns)
+	switch {
+	case apierrors.IsNotFound(err):
+		return fmt.Errorf("namespace %s doesn't exist; check the name", name)
+	case err != nil && !apierrors.IsForbidden(err):
+		return fmt.Errorf("getting namespace %s: %w", name, err)
+	}
+	return nil
 }
 
 func listEvents(ctx context.Context, c client.Client, namespaces []string) ([]corev1.Event, error) {
