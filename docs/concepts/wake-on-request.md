@@ -133,6 +133,8 @@ The source IP is the address the doorman sees, which for traffic through an ingr
 
 When a doorman pod shuts down, it reports itself not Ready at once, so the operator moves paused workloads' EndpointSlices to the other doorman pods. Only the operator can move them, and when it's being upgraded or restarted at the same time it takes a few seconds to take over, so the stopping pod goes on holding and passing through new connections for 15 seconds. Then it stops accepting them, and gives those it holds or passes through the rest of 25 seconds to finish. The chart gives the pod 40 seconds in all, after a 5-second sleep that lets kube-proxy and load balancers stop sending it new connections.
 
+When a workload stops being routed, the doorman goes on serving its port for 30 seconds, so a browser's last refresh of the waking-up page doesn't land on a closed port, and the operator gives that port to no other workload for a minute. The operator records the minute in the ManagedWorkload's status, so a newly elected leader honours it too, except for a ManagedWorkload that was deleted: its status goes with it. An operator that takes over leadership within that minute may then give the deleted workload's port to another, and the few connections still on their way to it would reach that workload. With 10,000 ports chosen at random, that's unlikely.
+
 ## Turning it off
 
 ```yaml
