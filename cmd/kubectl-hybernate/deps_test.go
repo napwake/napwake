@@ -138,6 +138,31 @@ func TestDeps_OneNamespace(t *testing.T) {
 		"in every namespace, so dependents elsewhere aren't shown.")
 }
 
+// A dependency in a namespace that couldn't be read may well be managed, so
+// it isn't called unmanaged; one in the namespace that was read can be.
+func TestDeps_DependencyInAnUnreadNamespace(t *testing.T) {
+	api := depsWorkload("preview-42", "api", v1alpha1.TargetKindDeployment, v1alpha1.PhaseRunning,
+		[]v1alpha1.DependencyRef{
+			{Kind: v1alpha1.TargetKindStatefulSet, Name: "nats", Namespace: "messaging"},
+			{Kind: v1alpha1.TargetKindDeployment, Name: "cache"},
+		})
+	nats := depsWorkload("messaging", "nats", v1alpha1.TargetKindStatefulSet, v1alpha1.PhasePaused, nil)
+	funcs := interceptor.Funcs{List: func(ctx context.Context, c client.WithWatch, list client.ObjectList,
+		opts ...client.ListOption) error {
+		if len(opts) == 0 {
+			return apierrors.NewForbidden(schema.GroupResource{Group: "hybernate.io", Resource: "managedworkloads"}, "", nil)
+		}
+		return c.List(ctx, list, opts...)
+	}}
+	var out bytes.Buffer
+
+	require.NoError(t, deps(context.Background(), newClient(t, funcs, api, nats),
+		client.ObjectKey{Namespace: "preview-42", Name: "api"}, &out))
+
+	assert.Regexp(t, `messaging/nats\s+declared in dependsOn\s+unknown \(can't read messaging\)\n`, out.String())
+	assert.Regexp(t, `preview-42/cache\s+declared in dependsOn\s+not managed\n`, out.String())
+}
+
 func TestDeps_LearnedFromAWake(t *testing.T) {
 	api := depsWorkload("preview-42", "api", v1alpha1.TargetKindDeployment, v1alpha1.PhaseRunning, nil,
 		v1alpha1.LearnedDependency{Namespace: "preview-42", Kind: v1alpha1.TargetKindStatefulSet, Name: "postgres",

@@ -57,10 +57,16 @@ type namespaceScan struct {
 	// services are its Services, with only what resolving a dependency
 	// needs.
 	services map[string]corev1.Service
+	// configMaps are the data of the ConfigMaps its workloads take
+	// variables from, by name.
+	configMaps map[string]map[string]string
 	// historySince is where its CPU history begins; zero without any.
 	historySince time.Time
 	// noHistory are its workloads Prometheus has no CPU for.
-	noHistory          []string
+	noHistory []string
+	// historyOutOfTime says the scan ran out of the time it gives history
+	// before it had read the namespace's.
+	historyOutOfTime   bool
 	metricsUnavailable bool
 	problems           []readProblem
 }
@@ -72,14 +78,17 @@ func (n *namespaceScan) problem(what reading, err error) {
 // scanNamespace scans one namespace's Deployments and StatefulSets. It makes
 // the same few reads however many workloads the namespace has, and matches
 // pods and their metrics to workloads in memory. What it can't read is
-// recorded as a problem, and the scan carries on without it.
-func (s *Scanner) scanNamespace(ctx context.Context, namespace string, pricing nodePricing,
+// recorded as a problem, and the scan carries on without it. History is read
+// within historyCtx, and a namespace Prometheus doesn't answer for by then
+// is judged from CPU right now.
+func (s *Scanner) scanNamespace(ctx, historyCtx context.Context, namespace string, pricing nodePricing,
 	opts ClusterOptions) namespaceScan {
 	scan := namespaceScan{namespace: namespace, sources: map[workloadKey]workloadSource{}}
-	protected, err := s.protectedNamespace(ctx, namespace)
+	namespaceLabels, err := s.namespaceLabels(ctx, namespace)
 	if err != nil {
 		scan.problem(readingNamespace, err)
 	}
+	protected := v1alpha1.Protected(namespace, namespaceLabels, nil)
 	workloads, err := s.listWorkloads(ctx, namespace)
 	if err != nil {
 		scan.problem(readingWorkloads, err)
@@ -88,11 +97,7 @@ func (s *Scanner) scanNamespace(ctx context.Context, namespace string, pricing n
 	if len(workloads) == 0 {
 		return scan
 	}
-	owners, err := s.readOwners(ctx, namespace)
-	if err != nil {
-		scan.problem(readingWorkloads, err)
-		return scan
-	}
+	owners := s.readOwners(ctx, &scan)
 
 	managed, err := s.managedInNamespace(ctx, namespace)
 	if err != nil {
@@ -113,14 +118,13 @@ func (s *Scanner) scanNamespace(ctx context.Context, namespace string, pricing n
 	if err != nil {
 		scan.problem(readingServices, err)
 	}
-	history, err := s.readHistory(ctx, namespace, opts)
+	scan.configMaps, err = s.readConfigMaps(ctx, namespace, workloads)
 	if err != nil {
-		scan.problem(readingHistory, err)
+		scan.problem(readingConfigMaps, err)
 	}
-	if first, ok := earliestSample(history); ok {
-		scan.historySince = time.Unix(first, 0).UTC()
-	}
+	history := s.readHistoryOf(ctx, historyCtx, &scan, opts)
 
+	platform := platformOf(namespace, namespaceLabels, workloads, managed)
 	now := opts.Now()
 	for _, wl := range workloads {
 		obj := wl.obj
@@ -139,6 +143,7 @@ func (s *Scanner) scanNamespace(ctx context.Context, namespace string, pricing n
 			Managed:   mw != nil,
 			DryRun:    mw != nil && mw.Spec.DryRun,
 			Protected: protected,
+			Platform:  platform[string(wl.kind)+"/"+obj.GetName()],
 		}
 		writer, _ := gitops.ReplicasWriter(obj.GetManagedFields())
 		w.ReplicasFromGit = string(writer.Tool)
@@ -178,17 +183,43 @@ func (s *Scanner) scanNamespace(ctx context.Context, namespace string, pricing n
 		w.HourlyCost = hourlyCost(w, w.rates)
 		w.MonthlyCost = w.HourlyCost * hoursPerMonth
 		w.Measured = measured(mw, w.HourlyCost, now)
-		w.SavedThisMonth = SavedThisMonth(mw)
+		w.SavedThisMonth = SavedThisMonth(mw, now)
 		if history != nil && ownCPU > 0 && !w.ScaledByHand {
 			w.History = replayWorkload(w, spec, history, owners.podsOf(wl), scan.historySince, rollouts,
 				thresholdFor(mw, opts), idleAfterFor(mw, opts), opts)
-			if w.History == nil && w.State != StateUnknown {
+			if w.History == nil && w.State != StateUnknown && w.Platform == "" {
 				scan.noHistory = append(scan.noHistory, w.Namespace+"/"+w.Name)
+			}
+			if w.History != nil && w.State == StateUnknown && mw == nil {
+				judgeFromHistory(&w, now)
 			}
 		}
 		scan.workloads = append(scan.workloads, w)
 	}
 	return scan
+}
+
+// readHistoryOf reads a namespace's history within historyCtx, telling the
+// scan running out of the time it gives history from Prometheus failing.
+// The time is shared with the namespace's reads from the API server, which
+// come first, so it isn't queried once that's spent.
+func (s *Scanner) readHistoryOf(ctx, historyCtx context.Context, scan *namespaceScan,
+	opts ClusterOptions) []containerCPU {
+	if opts.History != nil && historyCtx.Err() != nil && ctx.Err() == nil {
+		scan.historyOutOfTime = true
+		return nil
+	}
+	history, err := s.readHistory(historyCtx, scan.namespace, opts)
+	switch {
+	case err != nil && ctx.Err() == nil && isTimeout(err):
+		scan.historyOutOfTime = true
+	case err != nil:
+		scan.problem(readingHistory, err)
+	}
+	if first, ok := earliestSample(history); ok {
+		scan.historySince = time.Unix(first, 0).UTC()
+	}
+	return history
 }
 
 // measure sets a workload's CPU use from its pods' metrics, as a share of
@@ -244,17 +275,30 @@ type owners struct {
 	replicaSets map[types.UID][]string
 	// deploymentOf is the Deployment that owns each ReplicaSet, by its name.
 	deploymentOf map[string]types.UID
+	// ownerOf is whatever controls each ReplicaSet, by its name, or ""
+	// when nothing does.
+	ownerOf map[string]types.UID
+	// replicaSetsRead says the ReplicaSets were read, so a pod whose
+	// ReplicaSet isn't among them isn't a Deployment's.
+	replicaSetsRead bool
 }
 
-func (s *Scanner) readOwners(ctx context.Context, namespace string) (owners, error) {
+// readOwners reads what traces pods and rollouts to their workloads. What
+// it can't read is recorded as a problem, and the scan carries on without
+// it: without ReplicaSets, Deployments' rollouts aren't seen and their pods
+// are matched by their selectors.
+func (s *Scanner) readOwners(ctx context.Context, scan *namespaceScan) owners {
 	o := owners{rollouts: map[types.UID][]time.Time{}, replicaSets: map[types.UID][]string{},
-		deploymentOf: map[string]types.UID{}}
+		deploymentOf: map[string]types.UID{}, ownerOf: map[string]types.UID{}}
+	namespace := scan.namespace
 	err := listAll(ctx, s.client, func(list *appsv1.ReplicaSetList) {
 		for _, rs := range list.Items {
 			ref := controllerRef(rs.OwnerReferences)
 			if ref == nil {
+				o.ownerOf[rs.Name] = ""
 				continue
 			}
+			o.ownerOf[rs.Name] = ref.UID
 			o.rollouts[ref.UID] = append(o.rollouts[ref.UID], rs.CreationTimestamp.Time)
 			if ref.Kind == "Deployment" {
 				o.replicaSets[ref.UID] = append(o.replicaSets[ref.UID], rs.Name)
@@ -263,7 +307,9 @@ func (s *Scanner) readOwners(ctx context.Context, namespace string) (owners, err
 		}
 	}, client.InNamespace(namespace))
 	if err != nil {
-		return owners{}, err
+		scan.problem(readingReplicaSets, err)
+	} else {
+		o.replicaSetsRead = true
 	}
 	err = listAll(ctx, s.client, func(list *appsv1.ControllerRevisionList) {
 		for _, rev := range list.Items {
@@ -273,14 +319,15 @@ func (s *Scanner) readOwners(ctx context.Context, namespace string) (owners, err
 		}
 	}, client.InNamespace(namespace))
 	if err != nil && !isNotServed(err) {
-		return owners{}, err
+		scan.problem(readingControllerRevisions, err)
 	}
-	return o, nil
+	return o
 }
 
 // controllerOf is the workload a pod belongs to: the Deployment behind its
 // ReplicaSet, or the StatefulSet or other controller that owns it. A pod no
-// controller owns has none.
+// controller owns has none, and nor does one whose ReplicaSet couldn't be
+// read, so a selector can adopt either.
 func (o owners) controllerOf(pod *corev1.Pod) (types.UID, bool) {
 	ref := controllerRef(pod.OwnerReferences)
 	if ref == nil {
@@ -290,17 +337,36 @@ func (o owners) controllerOf(pod *corev1.Pod) (types.UID, bool) {
 		if uid, ok := o.deploymentOf[ref.Name]; ok {
 			return uid, true
 		}
+		if !o.replicaSetsRead {
+			return "", false
+		}
 	}
 	return ref.UID, true
 }
 
 // podsOf matches the names of a workload's pods in CPU history, which
-// records pods long gone, so by the names their controllers give them.
+// records pods long gone, so by the names their controllers give them. A
+// Deployment's are its ReplicaSets' pods, and those of ReplicaSets since
+// deleted, which only their names tell apart; a ReplicaSet that still
+// exists and isn't the Deployment's keeps its pods out.
 func (o owners) podsOf(wl workload) podNames {
+	name := wl.obj.GetName()
 	if wl.kind == v1alpha1.TargetKindStatefulSet {
-		return statefulSetPods(wl.obj.GetName())
+		return statefulSetPods(name)
 	}
-	return replicaSetPods(o.replicaSets[wl.obj.GetUID()])
+	uid := wl.obj.GetUID()
+	current := replicaSetPods(o.replicaSets[uid])
+	return func(pod string) bool {
+		if current(pod) {
+			return true
+		}
+		rs, ok := deploymentReplicaSet(name, pod)
+		if !ok {
+			return false
+		}
+		owner, exists := o.ownerOf[rs]
+		return !exists || owner == uid
+	}
 }
 
 func controllerRef(refs []metav1.OwnerReference) *metav1.OwnerReference {
@@ -316,7 +382,8 @@ func controllerRef(refs []metav1.OwnerReference) *metav1.OwnerReference {
 type podIndex struct {
 	byOwner map[types.UID][]corev1.Pod
 	// orphans are pods no controller owns, which a workload whose selector
-	// matches them would adopt.
+	// matches them would adopt, and pods whose ReplicaSet couldn't be read,
+	// matched the same way.
 	orphans []corev1.Pod
 	// names are every pod's name, so metrics can be matched to their pod.
 	names map[string]bool
@@ -439,13 +506,13 @@ func (s *Scanner) managedInNamespace(ctx context.Context, namespace string) (map
 	return out, nil
 }
 
-// protectedNamespace says the namespace is labelled protected. The
-// operator's own protected name patterns aren't visible to the scan, so
-// only the label counts here.
-func (s *Scanner) protectedNamespace(ctx context.Context, namespace string) (bool, error) {
+// namespaceLabels reads a namespace's labels, which say whether it's
+// protected. The operator's own protected name patterns aren't visible to
+// the scan, so only the label counts for that.
+func (s *Scanner) namespaceLabels(ctx context.Context, namespace string) (map[string]string, error) {
 	var ns corev1.Namespace
 	if err := s.client.Get(ctx, client.ObjectKey{Name: namespace}, &ns); err != nil {
-		return false, err
+		return nil, err
 	}
-	return v1alpha1.Protected(ns.Name, ns.Labels, nil), nil
+	return ns.Labels, nil
 }

@@ -52,9 +52,9 @@ func (p Phase) String() string {
 }
 
 const (
-	// maxDemand bounds an observation. No workload uses a million cores, so
-	// anything larger is a corrupt metric, and the bound keeps every sum the
-	// engine takes finite.
+	// maxDemand bounds an observation. No workload uses ten million times
+	// the CPU it requests, so anything larger is a corrupt metric, and the
+	// bound keeps every sum the engine takes finite.
 	maxDemand = 1e9
 
 	// demotionMargin is how far below the threshold confidence must fall to
@@ -163,9 +163,18 @@ func (e *Engine) hoursSinceLast(t time.Time) int {
 	return int(math.Round(float64(hourStart(t)-e.lastHour) / 3600))
 }
 
+// lastHourAhead reports whether the last observed hour is later than t's
+// hour allows. The hour a clock change repeats can put it one hour ahead;
+// any more came from a clock that was wrong, and trusting it would refuse
+// every observation until real time caught up.
+func (e *Engine) lastHourAhead(t time.Time) bool {
+	return e.lastHour > hourStart(t)+3600
+}
+
 // Observed reports whether the hour containing now has been observed.
 func (e *Engine) Observed(now time.Time) bool {
-	return e.lastHour != 0 && hourStart(e.local(now)) <= e.lastHour
+	t := e.local(now)
+	return e.lastHour != 0 && !e.lastHourAhead(t) && hourStart(t) <= e.lastHour
 }
 
 // Observe feeds the demand seen in the hour containing now and advances
@@ -189,6 +198,9 @@ func (e *Engine) Observe(actual float64, now time.Time) (float64, error) {
 		e.phaseBeforeAnomalies = e.Phase
 	}
 
+	if e.lastHourAhead(t) {
+		e.lastHour = 0
+	}
 	steps := e.hoursSinceLast(t)
 	forecast, fit := actual, actual
 	e.lastAnomaly = false
@@ -226,11 +238,9 @@ func (e *Engine) floor() float64 {
 }
 
 // Predict returns the demand forecast for the hour h hours after the one
-// containing now. It is 0 until the phase is DailyActive or beyond.
+// containing now. It is 0 until the forecast drives decisions.
 func (e *Engine) Predict(h int, now time.Time) float64 {
-	switch e.Phase {
-	case DailyActive, WeeklySuggesting, FullyActive:
-	default:
+	if !e.Active() {
 		return 0
 	}
 	t := e.local(now).Add(time.Duration(h) * time.Hour)
@@ -317,27 +327,48 @@ func (e *Engine) advancePhase() {
 	}
 }
 
-// handleRegimeChange demotes the engine one step from the phase it held
-// before the anomalies began, and discards the evidence its confidence
-// rested on, so that confidence is earned again on the new pattern.
+// handleRegimeChange leaves the engine at least one step below the phase it
+// held before the anomalies began, and discards the evidence its confidence
+// rested on, so that confidence is earned again on the new pattern. The
+// anomalies may already have cost it that step, or more, and it isn't
+// demoted again for them, nor promoted back on evidence just discarded.
 // Clearing the anomalies means one regime change demotes once, not once for
 // every hour the anomalies stay in the window.
 func (e *Engine) handleRegimeChange() {
 	e.lastRegimeChange = true
+	below := Observing
 	switch e.phaseBeforeAnomalies {
 	case FullyActive:
-		e.Phase = WeeklySuggesting
+		below = WeeklySuggesting
 	case WeeklySuggesting, DailyActive:
-		e.Phase = DailySuggesting
-	default:
-		e.Phase = Observing
+		below = DailySuggesting
 	}
+	e.Phase = min(e.Phase, below)
 	e.Scorer.Reset()
 	e.Anomaly.Reset()
 	e.coverage = weekSlots{}
 }
 
-func (e *Engine) GetPhase() Phase    { return e.Phase }
+// Active reports whether the forecast drives decisions: its phase is
+// DailyActive or beyond, and a full day of its forecasts has been scored
+// since it last discarded its evidence. A regime change can leave it in
+// WeeklySuggesting with nothing scored, and it earns its confidence again
+// before it acts.
+func (e *Engine) Active() bool {
+	return e.Phase >= DailyActive && e.Scorer.Ready(dailyWindow)
+}
+
+// GetPhase is the phase the forecast is acting in, which is what's
+// reported. Phase can be one that acts, WeeklySuggesting after a regime
+// change, while the forecast earns its confidence again and drives
+// nothing; until it's Active it's reported as DailySuggesting.
+func (e *Engine) GetPhase() Phase {
+	if e.Phase >= DailyActive && !e.Active() {
+		return DailySuggesting
+	}
+	return e.Phase
+}
+
 func (e *Engine) GetDataPoints() int { return e.Model.DataPoints() }
 
 // RegimeChanged reports whether the last observation broke the learned

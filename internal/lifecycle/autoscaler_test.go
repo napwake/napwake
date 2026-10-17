@@ -22,68 +22,14 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	appsv1 "k8s.io/api/apps/v1"
 	autoscalingv2 "k8s.io/api/autoscaling/v2"
-	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
-	"k8s.io/apimachinery/pkg/runtime/schema"
-	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/utils/ptr"
 	"sigs.k8s.io/controller-runtime/pkg/client"
-	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 	"sigs.k8s.io/controller-runtime/pkg/client/interceptor"
 
-	v1alpha1 "github.com/okedeji/hybernate/api/v1alpha1"
 	"github.com/okedeji/hybernate/internal/autoscaler"
 )
-
-var scaledObject = schema.GroupVersionKind{Group: "keda.sh", Version: "v1alpha1", Kind: "ScaledObject"}
-
-// readyDeployment is default/api at replicas, all of them Ready.
-func readyDeployment(replicas int32) *appsv1.Deployment {
-	return &appsv1.Deployment{
-		ObjectMeta: metav1.ObjectMeta{Name: "api", Namespace: "default"},
-		Spec:       appsv1.DeploymentSpec{Replicas: ptr.To(replicas)},
-		Status:     appsv1.DeploymentStatus{ReadyReplicas: 10},
-	}
-}
-
-func scaledObjectFor(minReplicas int64) *unstructured.Unstructured {
-	so := &unstructured.Unstructured{Object: map[string]any{"spec": map[string]any{
-		"scaleTargetRef": map[string]any{"name": "api"}, "minReplicaCount": minReplicas}}}
-	so.SetGroupVersionKind(scaledObject)
-	so.SetNamespace("default")
-	so.SetName("api-scaler")
-	return so
-}
-
-func kedaClient(t *testing.T, objs ...client.Object) client.Client {
-	t.Helper()
-	mapper := meta.NewDefaultRESTMapper(nil)
-	for _, gvk := range []schema.GroupVersionKind{appsv1.SchemeGroupVersion.WithKind("Deployment"),
-		autoscalingv2.SchemeGroupVersion.WithKind("HorizontalPodAutoscaler"), scaledObject,
-		v1alpha1.GroupVersion.WithKind("ManagedWorkload")} {
-		mapper.Add(gvk, meta.RESTScopeNamespace)
-	}
-	return fake.NewClientBuilder().WithScheme(testScheme(t)).WithRESTMapper(mapper).WithObjects(objs...).Build()
-}
-
-func pausedAnnotation(t *testing.T, c client.Client) (string, bool) {
-	t.Helper()
-	so := &unstructured.Unstructured{}
-	so.SetGroupVersionKind(scaledObject)
-	require.NoError(t, c.Get(context.Background(), types.NamespacedName{Namespace: "default", Name: "api-scaler"}, so))
-	v, ok := so.GetAnnotations()[autoscaler.PausedReplicasAnnotation]
-	return v, ok
-}
-
-func apiWorkload() *v1alpha1.ManagedWorkload {
-	return &v1alpha1.ManagedWorkload{
-		ObjectMeta: metav1.ObjectMeta{Name: "api", Namespace: "default"},
-		Spec:       v1alpha1.ManagedWorkloadSpec{Target: v1alpha1.WorkloadRef{Kind: v1alpha1.TargetKindDeployment, Name: "api"}},
-	}
-}
 
 // A workload KEDA scales is held at zero by KEDA while it's paused, so KEDA
 // doesn't scale it straight back up. Resuming, KEDA holds it at the restored
@@ -104,10 +50,8 @@ func TestPauseAndResume_KEDA(t *testing.T) {
 			if tt.previous != nil {
 				so.SetAnnotations(map[string]string{autoscaler.PausedReplicasAnnotation: *tt.previous})
 			}
-			dep := readyDeployment(3)
-			c := kedaClient(t, dep, so)
-			scaler := &fakeScaler{replicas: 3}
-			p := newTestPauser(c, scaler)
+			c := newClient(t, deployment(3, 3), so)
+			p := newTestPauser(c)
 			workload := apiWorkload()
 
 			require.NoError(t, p.Prepare(context.Background(), workload))
@@ -115,24 +59,22 @@ func TestPauseAndResume_KEDA(t *testing.T) {
 			require.NoError(t, err)
 			require.True(t, done)
 
-			assert.Equal(t, "api-scaler", workload.Status.Pause.ScaledObject)
+			assert.Equal(t, scaledObjectName, workload.Status.Pause.ScaledObject)
 			assert.Equal(t, tt.previous, workload.Status.Pause.ScaledObjectPausedReplicas)
 			v, held := pausedAnnotation(t, c)
 			assert.True(t, held)
 			assert.Equal(t, "0", v)
-			assert.Equal(t, int32(0), scaler.replicas)
+			assert.Equal(t, int32(0), replicas(t, c))
 
-			dep.Status.ReadyReplicas = 0
-			require.NoError(t, c.Status().Update(context.Background(), dep))
-			done, err = p.Resume(context.Background(), workload)
+			settle(t, c, 0)
+			done, err = resume(p, workload)
 			require.NoError(t, err)
 			require.False(t, done)
 			v, _ = pausedAnnotation(t, c)
 			assert.Equal(t, "3", v, "held at the restored replicas while they start")
 
-			dep.Status.ReadyReplicas = 3
-			require.NoError(t, c.Status().Update(context.Background(), dep))
-			done, err = p.Resume(context.Background(), workload)
+			settle(t, c, 3)
+			done, err = resume(p, workload)
 			require.NoError(t, err)
 			require.True(t, done)
 
@@ -141,7 +83,7 @@ func TestPauseAndResume_KEDA(t *testing.T) {
 			if tt.previous != nil {
 				assert.Equal(t, *tt.previous, v, "the user's own value is put back")
 			}
-			assert.Equal(t, int32(3), scaler.replicas)
+			assert.Equal(t, int32(3), replicas(t, c))
 		})
 	}
 }
@@ -170,16 +112,18 @@ func TestResume_WithinTheAutoscalersRange(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			c := kedaClient(t, append(tt.objs, readyDeployment(0))...)
-			scaler := &fakeScaler{}
-			workload := apiWorkload()
-			workload.Status.Pause = &v1alpha1.PauseStatus{PreviousReplicas: tt.previous}
+			c := newClient(t, append(tt.objs, deployment(0, 0))...)
+			p := newTestPauser(c)
+			workload := pausedWorkload(tt.previous)
 
-			done, err := newTestPauser(c, scaler).Resume(context.Background(), workload)
+			_, err := resume(p, workload)
+			require.NoError(t, err)
+			settle(t, c, tt.want)
+			done, err := resume(p, workload)
 
 			require.NoError(t, err)
 			assert.True(t, done)
-			assert.Equal(t, tt.want, scaler.replicas)
+			assert.Equal(t, tt.want, replicas(t, c))
 		})
 	}
 }
@@ -191,10 +135,10 @@ func TestPause_HPAIsntHeld(t *testing.T) {
 		Spec: autoscalingv2.HorizontalPodAutoscalerSpec{MaxReplicas: 4,
 			ScaleTargetRef: autoscalingv2.CrossVersionObjectReference{Kind: "Deployment", Name: "api"}},
 	}
-	c := kedaClient(t, readyDeployment(3), hpa)
+	c := newClient(t, deployment(3, 3), hpa)
 	workload := apiWorkload()
 
-	p := newTestPauser(c, &fakeScaler{replicas: 3})
+	p := newTestPauser(c)
 	require.NoError(t, p.Prepare(context.Background(), workload))
 	done, err := p.Pause(context.Background(), workload)
 
@@ -206,21 +150,19 @@ func TestPause_HPAIsntHeld(t *testing.T) {
 // A resume retried while its pods start doesn't annotate a ScaledObject
 // that already holds the replicas it's resuming to.
 func TestResume_HoldsKEDAOnce(t *testing.T) {
-	dep := readyDeployment(0)
-	dep.Status.ReadyReplicas = 0
 	patches := 0
-	c := interceptor.NewClient(kedaClient(t, dep, scaledObjectFor(0)).(client.WithWatch), interceptor.Funcs{
+	c := interceptor.NewClient(newClient(t, deployment(0, 0), scaledObjectFor(0)), interceptor.Funcs{
 		Patch: func(ctx context.Context, c client.WithWatch, obj client.Object, patch client.Patch,
 			opts ...client.PatchOption) error {
 			patches++
 			return c.Patch(ctx, obj, patch, opts...)
 		}})
-	workload := apiWorkload()
-	workload.Status.Pause = &v1alpha1.PauseStatus{PreviousReplicas: 3, ScaledObject: "api-scaler"}
-	p := newTestPauser(c, &fakeScaler{})
+	workload := pausedWorkload(3)
+	workload.Status.Pause.ScaledObject = scaledObjectName
+	p := newTestPauser(c)
 
 	for range 3 {
-		done, err := p.Resume(context.Background(), workload)
+		done, err := resume(p, workload)
 		require.NoError(t, err)
 		require.False(t, done)
 	}

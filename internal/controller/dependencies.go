@@ -59,8 +59,10 @@ type workloadID struct {
 	name      string
 }
 
+// String is namespace/kind/name, as hybernate.io/depends-on names it, since
+// a Deployment and a StatefulSet can share a name.
 func (id workloadID) String() string {
-	return id.namespace + "/" + id.name
+	return id.namespace + "/" + strings.ToLower(string(id.kind)) + "/" + id.name
 }
 
 func targetID(workload *v1alpha1.ManagedWorkload) workloadID {
@@ -127,7 +129,8 @@ func declaredRefs(w *v1alpha1.ManagedWorkload) []v1alpha1.DependencyRef {
 }
 
 // reaches reports whether following the edges from w leads to the workload
-// to.
+// to. A workload listed as its own dependency is no edge: it's awake
+// whenever it is.
 func (g *dependencyGraph) reaches(w *v1alpha1.ManagedWorkload, to workloadID,
 	edges func(*v1alpha1.ManagedWorkload) []v1alpha1.DependencyRef) bool {
 	visited := map[workloadID]bool{}
@@ -137,6 +140,9 @@ func (g *dependencyGraph) reaches(w *v1alpha1.ManagedWorkload, to workloadID,
 		queue = queue[1:]
 		for _, ref := range edges(next) {
 			id := dependencyID(next, ref)
+			if id == targetID(next) {
+				continue
+			}
 			if id == to {
 				return true
 			}
@@ -312,15 +318,16 @@ func (r *Reconciler) stampActivity(ctx context.Context, dep *v1alpha1.ManagedWor
 	return nil
 }
 
-// waitForDependencies holds a resume until every waitForReady dependency's
-// pods are Ready. It doesn't wait for one that won't become Ready by
-// waiting, which would leave this workload at zero for good: one that
-// doesn't exist or can't be seen (reported by checkDependenciesExist), or
-// one scaled to zero outside Hybernate. A managed one still paused is woken
-// again, in case the first wake was missed.
+// waitForDependencies holds a resume until every waitForReady dependency
+// serves, by servesDependents. It doesn't wait for one that won't become
+// Ready by waiting, which would leave this workload at zero for good: the
+// workload itself, listed as its own dependency; one that doesn't exist or
+// can't be seen (reported by checkDependenciesExist); or one scaled to zero
+// outside Hybernate. A managed one still paused is woken again, in case the
+// first wake was missed.
 func (r *Reconciler) waitForDependencies(ctx context.Context, workload *v1alpha1.ManagedWorkload) (*ctrl.Result, error) {
 	refs := slices.DeleteFunc(slices.Clone(workload.Spec.DependsOn), func(ref v1alpha1.DependencyRef) bool {
-		return !ref.WaitForReady
+		return !ref.WaitForReady || dependencyID(workload, ref) == targetID(workload)
 	})
 	if len(refs) == 0 {
 		r.clearCondition(workload, conditionWaitingForDependencies, "DependenciesReady")
@@ -340,10 +347,10 @@ func (r *Reconciler) waitForDependencies(ctx context.Context, workload *v1alpha1
 		if err != nil {
 			return nil, fmt.Errorf("checking dependency %s: %w", id, err)
 		}
-		if state != dependencyFound || lifecycle.IsReady(target) {
+		dep := g.byTarget[id]
+		if state != dependencyFound || servesDependents(dep, target, r.sinceTransition(workload)) {
 			continue
 		}
-		dep := g.byTarget[id]
 		if why := wontStart(dep, target); why != "" {
 			skipped = append(skipped, fmt.Sprintf("%s (%s)", id, why))
 			continue
@@ -377,6 +384,26 @@ func (r *Reconciler) waitForDependencies(ctx context.Context, workload *v1alpha1
 		}
 	}
 	return &ctrl.Result{RequeueAfter: dependencyReadyCheckInterval}, nil
+}
+
+// servesDependents reports whether a dependency is far enough up for a
+// dependent waiting on it to start: every replica Ready, or some Ready once
+// they're all they'll have for now. A managed dependency is there once its
+// own resume has settled, by the same rule as any resume, and an unmanaged
+// one once the dependent has waited the time a resume gives the rest of its
+// replicas. Waiting for every replica instead would hold the dependent at
+// zero for good behind a dependency with one crash-looping pod.
+func servesDependents(dep *v1alpha1.ManagedWorkload, target client.Object, waited time.Duration) bool {
+	if lifecycle.IsReady(target) {
+		return true
+	}
+	if lifecycle.ReadyReplicas(target) == 0 {
+		return false
+	}
+	if dep != nil {
+		return dep.Status.Phase == v1alpha1.PhaseRunning || dep.Status.Phase == v1alpha1.PhaseIdle
+	}
+	return waited >= lifecycle.ServingWait
 }
 
 // wontStart says why a dependency that isn't Ready won't become Ready by
@@ -423,7 +450,7 @@ func (r *Reconciler) checkDependenciesExist(ctx context.Context, workload *v1alp
 				"namespace", workload.Namespace, "dependency", id.String(), "error", err.Error())
 			continue
 		}
-		name := string(id.kind) + " " + id.String()
+		name := id.String()
 		switch state {
 		case dependencyMissing:
 			missing = append(missing, name)

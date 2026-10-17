@@ -75,6 +75,10 @@ type History struct {
 	// runs now, so Freed is always a share of Cost.
 	Cost        float64 `json:"cost"`
 	MonthlyCost float64 `json:"monthlyCost"`
+	// asleepAtEnd says the clock had run out when the history ended, and
+	// lastActive is when it last saw activity, if it ever did.
+	asleepAtEnd bool
+	lastActive  time.Time
 }
 
 // replay is one workload's recorded history, and the clock's settings to
@@ -122,7 +126,7 @@ func (r replay) run() History {
 				h.Wakes++
 				asleep = false
 			}
-			lastActive = t
+			lastActive, h.lastActive = t, t
 		case t.Sub(lastActive) >= r.idleAfter:
 			asleep = true
 		}
@@ -145,7 +149,25 @@ func (r replay) run() History {
 		h.MonthlyFreed = h.Freed / h.Hours * hoursPerMonth
 		h.MonthlyCost = h.Cost / h.Hours * hoursPerMonth
 	}
+	h.asleepAtEnd = asleep
 	return h
+}
+
+// judgeFromHistory judges a workload whose CPU couldn't be measured right
+// now, as without metrics-server, by where replaying its history left the
+// activity clock, so it's judged on the same evidence the replay counts.
+func judgeFromHistory(w *Workload, now time.Time) {
+	h := w.History
+	switch {
+	case h.asleepAtEnd && h.lastActive.IsZero():
+		w.State, w.Reason = StateIdle, "no activity in its CPU history"
+	case h.asleepAtEnd:
+		w.State, w.Reason = StateIdle, "last active in its CPU history "+ago(now.Sub(h.lastActive))
+	case h.lastActive.IsZero():
+		w.State, w.Reason = StateActive, "started too recently in its CPU history to be idle"
+	default:
+		w.State, w.Reason = StateActive, "active in its CPU history "+ago(now.Sub(h.lastActive))
+	}
 }
 
 func rolledOutBetween(sorted []time.Time, after, upTo time.Time) bool {
@@ -190,6 +212,47 @@ func replicaSetPods(replicaSets []string) podNames {
 		}
 		return false
 	}
+}
+
+// generatedRunes are what Kubernetes writes a generated name's suffix with:
+// no vowels, and no 0, 1 or 3.
+const generatedRunes = "bcdfghjklmnpqrstvwxz2456789"
+
+// templateHashRunes are what a pod-template-hash is written with. Kubernetes
+// writes the 32-bit hash's decimal digits through rand.SafeEncodeString,
+// which maps each digit's byte, '0' to '9', to generatedRunes[b%27].
+const templateHashRunes = "456789bcdf"
+
+// maxTemplateHashLength is the longest a pod-template-hash is written: the
+// ten digits of the largest 32-bit hash.
+const maxTemplateHashLength = 10
+
+// deploymentReplicaSet is the ReplicaSet a pod's name says it's from, when
+// it's named as a Deployment called deployment names its pods:
+// <deployment>-<pod-template-hash>-<suffix>. A hash is only
+// templateHashRunes, which a Job's name rarely is, and a CronJob's
+// timestamp, minutes since 1970 starting 2 or 3 until 2046, never is. A
+// name the API server cut short can't be read this way, so it isn't
+// matched.
+func deploymentReplicaSet(deployment, pod string) (string, bool) {
+	rest, ok := strings.CutPrefix(pod, deployment+"-")
+	if !ok {
+		return "", false
+	}
+	hash, suffix, ok := strings.Cut(rest, "-")
+	if !ok || len(suffix) != generatedSuffixLength || !generated(suffix) || hash == "" ||
+		len(hash) > maxTemplateHashLength || strings.Trim(hash, templateHashRunes) != "" {
+		return "", false
+	}
+	rs := deployment + "-" + hash
+	if len(rs)+1 > maxGeneratedNameBase {
+		return "", false
+	}
+	return rs, true
+}
+
+func generated(s string) bool {
+	return s != "" && strings.Trim(s, generatedRunes) == ""
 }
 
 // statefulSetPods matches a StatefulSet's pods, named after it with an
@@ -255,6 +318,23 @@ func earliestSample(history []containerCPU) (int64, bool) {
 		}
 	}
 	return first, found
+}
+
+// historyShare is how much of the time left to a scan its history reads may
+// take. A Thanos or Prometheus too slow for a big window would otherwise
+// spend the whole of --timeout, and the scan would have nothing to show;
+// this way it loses only the replay of the namespaces whose history wasn't
+// read in time, and has the rest of the time for the API server.
+const historyShare = 0.6
+
+// historyBudget is the context history is read within: historyShare of the
+// time ctx has left, or ctx's own lifetime when it has no deadline.
+func historyBudget(ctx context.Context) (context.Context, context.CancelFunc) {
+	deadline, ok := ctx.Deadline()
+	if !ok {
+		return context.WithCancel(ctx)
+	}
+	return context.WithTimeout(ctx, time.Duration(float64(time.Until(deadline))*historyShare))
 }
 
 // readHistory reads a namespace's CPU history over the window. It returns
@@ -330,7 +410,7 @@ func CouldSave(w Workload) float64 {
 		return 0
 	case w.Measured != nil:
 		return w.Measured.MonthlyFreed
-	case !w.Managed && !w.Protected && w.History != nil:
+	case !w.Managed && !w.Protected && w.History != nil && w.State != StateUnknown:
 		return w.History.MonthlyFreed
 	}
 	return 0

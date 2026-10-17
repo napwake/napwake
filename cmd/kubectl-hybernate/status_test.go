@@ -92,7 +92,7 @@ func statusCluster() []client.Object {
 	web := statusWorkloadObj("preview-7", "web", v1alpha1.TargetKindDeployment, v1alpha1.PhaseRunning, 2*time.Hour)
 	web.Spec.DryRun = true
 	web.Status.Activity = activity(v1alpha1.ActivitySourceRollout, 15*time.Minute, 45*time.Minute)
-	web.Status.Cost = &v1alpha1.CostStatus{SavedThisMonth: "$9.00"}
+	web.Status.Cost = &v1alpha1.CostStatus{SavedThisMonth: "$0.00"}
 
 	worker := statusWorkloadObj("preview-7", "worker", v1alpha1.TargetKindDeployment, v1alpha1.PhaseResuming,
 		25*time.Minute)
@@ -145,15 +145,15 @@ func TestStatus(t *testing.T) {
 	//nolint:lll // the expected screen is as wide as the command prints it
 	assert.Equal(t, `staging (EKS us-east-1): Hybernate manages 4 workloads.
   1 paused, 2 running, 1 resuming; 1 in dry-run, measured but never paused
-  Saved $42.45 this month.
+  Saved $42 this month.
 
 Needs attention:
   preview-7/worker   GitOpsConflict   Argo CD set the replicas from Git
   preview-7/worker   Stuck            resuming for 25m: waiting for preview-42/postgres
 
   NAMESPACE    WORKLOAD               STATE               FOR   LAST ACTIVITY      NEXT                             SAVED THIS MONTH
-  preview-42   deployment/api         paused              3h    request, 4h ago    wakes on a request or activity   $12.40
-  preview-42   statefulset/postgres   running             5h    cpu, 2h ago        held awake by its dependents     $30.05
+  preview-42   deployment/api         paused              3h    request, 4h ago    wakes on a request or activity   $12
+  preview-42   statefulset/postgres   running             5h    cpu, 2h ago        held awake by its dependents     $30
   preview-7    deployment/web         running (dry-run)   2h    rollout, 15m ago   would pause in 45m               -
   preview-7    deployment/worker      resuming            25m   -                  -                                -
 
@@ -225,6 +225,9 @@ func TestNextFor_WhatKeepsItUp(t *testing.T) {
 		{name: "a protected namespace",
 			mutate: withCondition(condition("Protected", metav1.ConditionTrue, "ProtectedNamespace", "")),
 			want:   "never pauses: namespace protected"},
+		{name: "Hybernate's own operator or doorman",
+			mutate: withCondition(condition("Protected", metav1.ConditionTrue, "HybernateComponent", "")),
+			want:   "never pauses: part of Hybernate"},
 		{name: "an ignored workload",
 			mutate: withCondition(condition("TargetAvailable", metav1.ConditionFalse, "TargetIgnored", "")),
 			want:   "nothing: labelled hybernate.io/ignore"},
@@ -505,6 +508,58 @@ func TestStatus_Namespaces(t *testing.T) {
 	assert.NotContains(t, out, "preview-42/api")
 }
 
+// A namespace named with -n that doesn't exist is an error, not one
+// Hybernate manages nothing in; one that exists, or can't be checked, isn't.
+func TestStatus_NamespaceThatDoesntExist(t *testing.T) {
+	empty := &corev1.Namespace{ObjectMeta: metav1.ObjectMeta{Name: "empty"}}
+	opts := statusOpts()
+
+	opts.namespaces = namespaceFlags{names: []string{"preview-7", "nope"}}
+	_, err := clusterStatus(context.Background(), newStatusClient(t, interceptor.Funcs{}, statusCluster()...),
+		"default", opts)
+	require.EqualError(t, err, "namespace nope doesn't exist; check the name")
+
+	opts.namespaces = namespaceFlags{names: []string{"empty"}}
+	_, err = clusterStatus(context.Background(), newStatusClient(t, interceptor.Funcs{}, empty), "default", opts)
+	require.NoError(t, err)
+
+	cantGet := interceptor.Funcs{Get: func(context.Context, client.WithWatch, client.ObjectKey, client.Object,
+		...client.GetOption) error {
+		return apierrors.NewForbidden(schema.GroupResource{Resource: "namespaces"}, "nope", nil)
+	}}
+	opts.namespaces = namespaceFlags{names: []string{"nope"}}
+	_, err = clusterStatus(context.Background(), newStatusClient(t, cantGet), "default", opts)
+	require.NoError(t, err)
+}
+
+// Savings read as scan shows them, in whole dollars with thousands
+// separators, and a saving under a dollar isn't $0.
+func TestStatus_SavedInDollars(t *testing.T) {
+	big := statusWorkloadObj("preview-42", "api", v1alpha1.TargetKindDeployment, v1alpha1.PhasePaused, time.Hour)
+	big.Status.Cost = &v1alpha1.CostStatus{SavedThisMonth: "$1234.56"}
+	small := statusWorkloadObj("preview-42", "web", v1alpha1.TargetKindDeployment, v1alpha1.PhasePaused, time.Hour)
+	small.Status.Cost = &v1alpha1.CostStatus{SavedThisMonth: "$0.20"}
+
+	out := runStatus(t, newStatusClient(t, interceptor.Funcs{}, big, small), statusOpts())
+
+	assert.Contains(t, out, "  Saved $1,235 this month.\n")
+	assert.Regexp(t, `deployment/api .* \$1,235\n`, out)
+	assert.Regexp(t, `deployment/web .* <\$1\n`, out)
+}
+
+// Dry-run never pauses, so what a workload in dry-run now has saved this
+// month is what its pauses saved before dry-run was turned on, and counts.
+func TestStatus_SavedBeforeDryRun(t *testing.T) {
+	w := statusWorkloadObj("preview-7", "web", v1alpha1.TargetKindDeployment, v1alpha1.PhaseRunning, time.Hour)
+	w.Spec.DryRun = true
+	w.Status.Cost = &v1alpha1.CostStatus{SavedThisMonth: "$9.00"}
+
+	out := runStatus(t, newStatusClient(t, interceptor.Funcs{}, w), statusOpts())
+
+	assert.Contains(t, out, "  Saved $9 this month.\n")
+	assert.Regexp(t, `deployment/web\s+running \(dry-run\) .* \$9\n`, out)
+}
+
 func TestStatus_Since(t *testing.T) {
 	opts := statusOpts()
 	opts.since = time.Hour
@@ -585,4 +640,29 @@ func TestStatus_NamedByTarget(t *testing.T) {
 	assert.Contains(t, out, "shop/api   MetricsAvailable   metrics-server isn't answering")
 	assert.Contains(t, out, "1m ago   shop/api   paused")
 	assert.NotContains(t, out, "deployment-api")
+}
+
+// A resume that stopped short needs attention; Hybernate leaving its own
+// operator and doorman alone doesn't.
+func TestStatus_WhatNeedsAttention(t *testing.T) {
+	tests := []struct {
+		name      string
+		condition metav1.Condition
+		want      bool
+	}{
+		{name: "a resume with replicas not Ready",
+			condition: condition("ResumeIncomplete", metav1.ConditionTrue, "ReplicasNotReady", "1 of 3 Ready"), want: true},
+		{name: "a resume that finished",
+			condition: condition("ResumeIncomplete", metav1.ConditionFalse, "AllReplicasReady", "")},
+		{name: "Hybernate's own workload",
+			condition: condition("Protected", metav1.ConditionTrue, "HybernateComponent", "")},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			w := statusWorkloadObj("shop", "api", v1alpha1.TargetKindDeployment, v1alpha1.PhaseRunning, time.Hour)
+			w.Status.Conditions = []metav1.Condition{tt.condition}
+
+			assert.Equal(t, tt.want, len(problemsOf(w, statusNow)) > 0)
+		})
+	}
 }

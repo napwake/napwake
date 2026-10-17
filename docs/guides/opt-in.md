@@ -33,7 +33,7 @@ metadata:
     hybernate.io/idle-after: "2h"
 ```
 
-This covers dev and preview namespaces, and third-party charts that don't let you add labels to their workloads. To leave one workload out of a managed namespace, label it `hybernate.io/ignore: "true"`.
+This covers dev and preview namespaces, and third-party charts that don't let you add labels to their workloads. To leave one workload out of a managed namespace, label it `hybernate.io/ignore: "true"`, or `hybernate.io/managed: "false"`.
 
 ## Settings
 
@@ -45,7 +45,7 @@ This covers dev and preview namespaces, and third-party charts that don't let yo
 | `hybernate.io/auto-resume` | `"true"`, `"false"` | `"false"` | Wake ahead of the demand a confident [forecast](../concepts/forecasting.md) predicts |
 | `hybernate.io/depends-on` | comma-separated `kind/name` or `namespace/kind/name` | none | Workloads this one needs; see [Dependencies](../concepts/dependencies.md) |
 | `hybernate.io/wake-on-request` | `"true"`, `"false"` | `"true"` | Wake when a request reaches the workload's Service; see [Wake on Request](../concepts/wake-on-request.md) |
-| `hybernate.io/wake-max-wait` | duration | `2m` | How long a request is held while the workload wakes |
+| `hybernate.io/wake-max-wait` | duration, at most `1h` | `2m` | How long a request is held while the workload wakes |
 | `hybernate.io/wake-page` | `"true"`, `"false"` | `"true"` | Show browsers a waking-up page |
 
 Leaving an annotation out means its default. A value that can't be read, such as `idle-after: "soon"` or `dry-run: "True"`, is reported in an `InvalidSetting` warning event on the workload and skipped, as if it weren't there: the setting comes from the next place in [Which setting wins](#which-setting-wins), and the others still apply. Booleans are exactly `"true"` or `"false"`; durations must be above zero. In `depends-on`, an entry that can't be read is skipped and the rest apply.
@@ -76,9 +76,9 @@ kubectl hybernate enable checkout-api -n preview-42
 kubectl hybernate enable --all -n preview-42     # every workload in the namespace
 ```
 
-`enable` sets the workload's own `hybernate.io/dry-run` annotation to `"false"`, which wins over its namespace's annotation and the cluster default, wherever the dry-run came from. `enable --all` sets the namespace's annotation to `"false"` instead, and drops the workloads' own.
+`enable` sets the workload's own `hybernate.io/dry-run` annotation to `"false"`, which wins over its namespace's annotation and the cluster default, wherever the dry-run came from. `enable --all` ends dry-run for everything in the namespace that's in it. When the namespace has its own `hybernate.io/dry-run`, or a workload takes its dry-run from the namespace or the cluster default, it sets the namespace's annotation to `"false"` and drops the workloads' own; otherwise it sets each workload's own to `"false"` and leaves the namespace alone. A ManagedWorkload you wrote has its `spec.dryRun` set to `false`.
 
-If Argo CD or Flux applies the workload or namespace, `enable` doesn't change the cluster, since the tool would put the annotation back. It names the tool, prints the change to make in Git, and exits non-zero; `--force` changes the cluster anyway.
+If a GitOps tool (Argo CD, Flux, Fleet, kapp or Kluctl) applies the `hybernate.io/dry-run` annotation on the workload or namespace from Git, `enable` doesn't change the cluster, since the tool would put the annotation back. It names the tool, prints the change to make in Git, and exits non-zero; `--force` changes the cluster anyway. One Helm set is changed, with a warning that the next `helm upgrade` puts the chart's value back.
 
 ## Protected namespaces
 
@@ -90,13 +90,20 @@ kubectl label namespace payments hybernate.io/protected=true
 
 To protect namespaces by name instead, such as every `prod-*`, set the Helm value `protectedNamespaces`. A protected namespace is managed again only when labelled `hybernate.io/allow-protected: "true"` on purpose; Hybernate never sets either label.
 
+Some namespaces are always protected, with no label or Helm value:
+
+- **Kubernetes' own**, `kube-system` and every other `kube-*` namespace, so labelling every namespace managed can't pause CoreDNS or metrics-server.
+- **Hybernate's own**, the namespace it's installed in, and the doorman's if it runs elsewhere, so Hybernate can't pause itself.
+
+Labelling one of them `hybernate.io/allow-protected: "true"` lets Hybernate manage it like any other, except that the operator's and the doorman's own Deployments are never managed: nothing would be left to wake them.
+
 To keep Hybernate out of namespaces altogether, not by its own rule but by Kubernetes RBAC, install it with `watchNamespaces`; see [Helm values](../reference/helm-values.md#namespaces).
 
 ## With GitOps
 
 The decision to manage a workload lives in Git, as the label. The ManagedWorkload Hybernate creates from it is owned by the workload, like the ReplicaSets a Deployment creates, so Argo CD and Flux leave it alone and Argo CD shows it under the workload. Hybernate never copies the workload's labels onto it, so a GitOps tool's tracking label can't make the tool claim and prune it.
 
-Argo CD and Flux do notice the replica count of a paused workload changing, and would scale it back up. Tell them to leave `spec.replicas` alone:
+GitOps tools do notice the replica count of a paused workload changing, and would scale it back up. Tell them to leave `spec.replicas` alone; for Fleet, kapp and Kluctl, see [GitOps tools](gitops.md):
 
 - **Argo CD:** ignore the field in the Application, and keep the ignored field out of syncs:
 

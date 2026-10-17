@@ -18,6 +18,14 @@ updates:
       actions:
         patterns: ["*"]
 
+  - package-ecosystem: pip
+    directory: /docs
+    schedule:
+      interval: weekly
+    groups:
+      docs:
+        patterns: ["*"]
+
   - package-ecosystem: docker
     directory: /
     schedule:

@@ -28,9 +28,10 @@ import (
 	"time"
 )
 
-// stateVersion 2 is the additive model. State of any other version is
-// rejected rather than migrated: an engine relearns in days.
-const stateVersion = 2
+// stateVersion 3 is the additive model learning utilization, as a
+// percentage of the CPU requested; 2 learned millicores. State of any other
+// version is rejected rather than migrated: an engine relearns in days.
+const stateVersion = 3
 
 // maxStateBytes bounds the decompressed state, so a hand-edited state
 // can't expand into gigabytes. A real one is a few kilobytes.

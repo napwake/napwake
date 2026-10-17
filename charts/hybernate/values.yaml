@@ -46,6 +46,17 @@ nodeSelector: {}
 tolerations: []
 affinity: {}
 
+# For the operator's pods, and the doorman's unless doorman sets its own.
+# podLabels can't replace the labels the chart selects pods by.
+podAnnotations: {}
+podLabels: {}
+priorityClassName: ""
+
+# Extra environment variables for the operator, as container env entries:
+#   - name: GOMAXPROCS
+#     value: "2"
+extraEnv: []
+
 serviceAccount:
   create: true
   name: "" # defaults to the release's full name
@@ -81,7 +92,8 @@ watchNamespaces: []
 
 # Name patterns, such as prod-*, of namespaces Hybernate never manages,
 # as if labelled hybernate.io/protected=true, unless a namespace is
-# labelled hybernate.io/allow-protected=true.
+# labelled hybernate.io/allow-protected=true. kube-*, and the operator's
+# and the doorman's namespace, are always protected, besides these.
 protectedNamespaces: []
 
 # Settings for workloads opted in with the hybernate.io/managed label, where
@@ -95,11 +107,20 @@ defaults:
 doorman:
   enabled: true
   replicaCount: 2
-  # User-Agent prefixes of health checkers and scrapers whose GET and HEAD
+  # User-Agent prefixes of health checkers and scrapers, or names that
+  # follow "(compatible; " in a browser-style one, whose GET and HEAD
   # requests shouldn't wake a paused workload, besides the ones the doorman
-  # knows (kube-probe, Prometheus, load balancers' checks and others), such
-  # as an in-house uptime monitor's: ["MyCorpMonitor/"].
+  # knows: kube-probe, Prometheus, load balancers' checks, Blackbox
+  # Exporter/, Datadog/Synthetics, Amazon-Route53-Health-Check-Service,
+  # GoogleStackdriverMonitoring-UptimeChecks, UptimeRobot, Pingdom.com_bot,
+  # NewRelicPinger/, Uptime-Kuma/, Gatus/ and others. For example, an
+  # in-house uptime monitor's: ["MyCorpMonitor/"].
   healthCheckUserAgents: []
+  # A ValidatingAdmissionPolicy that lets the doorman's ServiceAccount set
+  # only the two annotations recording a request on ManagedWorkloads,
+  # though its role may patch them.
+  admissionPolicy:
+    enabled: true
   # Keeps one doorman serving through node drains, when replicaCount > 1.
   podDisruptionBudget:
     enabled: true
@@ -107,6 +128,11 @@ doorman:
   nodeSelector: {}
   tolerations: []
   affinity: {}
+  podAnnotations: {}
+  podLabels: {}
+  priorityClassName: ""
+  # The doorman's own, not the operator's extraEnv.
+  extraEnv: []
   # Empty spreads the replicas across nodes, where it can.
   topologySpreadConstraints: []
   # The doorman caches ManagedWorkloads, and the Services' EndpointSlices
@@ -147,6 +173,26 @@ doorman:
 
 networkPolicy:
   enabled: false
+
+# Refuses helm uninstall while ManagedWorkloads remain, since without the
+# operator their workloads stay paused at 0 replicas. A pre-delete hook Job
+# lists them and fails, unless they're deleted within two and a half
+# minutes. Argo CD 3.3 and later runs it as a PreDelete hook, blocking the
+# Application's deletion; earlier versions, and helm uninstall --no-hooks,
+# skip it.
+uninstallGuard:
+  enabled: true
+  image:
+    repository: registry.k8s.io/kubectl
+    tag: v1.35.9
+    digest: sha256:436cbaa8a019152063d638f412cf9d73ec29e56061529d28cbc231c6ab1b37a4
+  resources:
+    limits:
+      cpu: 100m
+      memory: 256Mi
+    requests:
+      cpu: 10m
+      memory: 64Mi
 
 logLevel: info
 # json, or console for reading by eye.

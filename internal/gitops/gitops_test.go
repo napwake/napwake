@@ -61,6 +61,14 @@ func TestReplicasWriter(t *testing.T) {
 			want: Writer{Manager: "kustomize-controller", Tool: Flux, At: t0}, ok: true},
 		{name: "Flux Helm", fields: []metav1.ManagedFieldsEntry{entry("helm-controller", replicas, t0)},
 			want: Writer{Manager: "helm-controller", Tool: Flux, At: t0}, ok: true},
+		{name: "Rancher Fleet", fields: []metav1.ManagedFieldsEntry{entry("fleetagent", replicas, t0)},
+			want: Writer{Manager: "fleetagent", Tool: Fleet, At: t0}, ok: true},
+		{name: "kapp", fields: []metav1.ManagedFieldsEntry{entry("kapp", replicas, t0)},
+			want: Writer{Manager: "kapp", Tool: Kapp, At: t0}, ok: true},
+		{name: "Kluctl", fields: []metav1.ManagedFieldsEntry{entry("kluctl", replicas, t0)},
+			want: Writer{Manager: "kluctl", Tool: Kluctl, At: t0}, ok: true},
+		{name: "the Kluctl controller", fields: []metav1.ManagedFieldsEntry{entry("kluctl-controller", replicas, t0)},
+			want: Writer{Manager: "kluctl-controller", Tool: Kluctl, At: t0}, ok: true},
 		{name: "a person", fields: []metav1.ManagedFieldsEntry{entry("kubectl-scale", replicas, t0)},
 			want: Writer{Manager: "kubectl-scale", At: t0}, ok: true},
 		{name: "the latest of several", fields: []metav1.ManagedFieldsEntry{
@@ -99,8 +107,42 @@ func TestReplicasWriter(t *testing.T) {
 	}
 }
 
+func TestFieldWriter(t *testing.T) {
+	const (
+		dryRun = `{"f:metadata":{"f:annotations":{"f:hybernate.io/dry-run":{}}}}`
+		other  = `{"f:metadata":{"f:annotations":{"f:team":{}}}}`
+	)
+	path := []string{"metadata", "annotations", "hybernate.io/dry-run"}
+	tests := []struct {
+		name   string
+		fields []metav1.ManagedFieldsEntry
+		want   Writer
+		ok     bool
+	}{
+		{name: "set from Git", fields: []metav1.ManagedFieldsEntry{entry("kluctl", dryRun, t0)},
+			want: Writer{Manager: "kluctl", Tool: Kluctl, At: t0}, ok: true},
+		{name: "set by a person after Git", fields: []metav1.ManagedFieldsEntry{
+			entry("argocd-controller", dryRun, t0), entry("kubectl-annotate", dryRun, t0.Add(time.Minute))},
+			want: Writer{Manager: "kubectl-annotate", At: t0.Add(time.Minute)}, ok: true},
+		{name: "only another annotation from Git", fields: []metav1.ManagedFieldsEntry{
+			entry("argocd-controller", other, t0.Add(time.Hour)), entry("kubectl-annotate", dryRun, t0)},
+			want: Writer{Manager: "kubectl-annotate", At: t0}, ok: true},
+		{name: "nobody", fields: []metav1.ManagedFieldsEntry{entry("argocd-controller", other, t0)}},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, ok := FieldWriter(tt.fields, path...)
+
+			assert.Equal(t, tt.ok, ok)
+			assert.Equal(t, tt.want, got)
+		})
+	}
+}
+
 func TestFix(t *testing.T) {
 	assert.Contains(t, Fix(ArgoCD), "    jsonPointers: [/spec/replicas]")
-	assert.NotEmpty(t, Fix(Flux))
+	for _, tool := range []Tool{Flux, Fleet, Kapp, Kluctl} {
+		assert.NotEmpty(t, Fix(tool), "%s has a fix", tool)
+	}
 	assert.Empty(t, Fix(""))
 }

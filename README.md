@@ -31,7 +31,7 @@ flowchart TD
 ```
 
 1. You label a Deployment, StatefulSet, or namespace `hybernate.io/managed: "true"`
-2. The operator tracks when the workload was last active: CPU, deploys, and activity annotations
+2. The operator tracks when the workload was last active: CPU, deploys, activity annotations, and any Prometheus query you give it
 3. A per-workload forecast model learns when the workload is typically busy
 4. When nothing has been active for `idleAfter` (default 1 hour), the workload is paused
 5. Before the next busy period, the forecast triggers an automatic resume
@@ -97,7 +97,7 @@ kubectl hybernate enable my-api -n staging
 - **`kubectl hybernate wake`** wakes a paused workload from the terminal and waits until it's Running
 - **`kubectl hybernate enable`** ends dry-run once you trust what you've measured, and says what to change in Git when Argo CD or Flux applies the workload
 - **Cost tracking** per workload, for the current month: what it cost, what pausing saved, and a projection for the month, priced at the list price of the nodes it runs on
-- **Dry-run mode** to observe every decision the operator would make without it taking action
+- **Dry-run mode** to see every pause the operator would make, and what it would save, without it pausing anything
 
 ### Observability
 

@@ -62,6 +62,9 @@ type stubPauser struct {
 	pauseCalls   int
 	resumeCalls  int
 	restoreCalls int
+	// waited is how long the last resume said it had waited for its
+	// replicas since it scaled them up.
+	waited time.Duration
 }
 
 func (s *stubPauser) Prepare(_ context.Context, workload *v1alpha1.ManagedWorkload) error {
@@ -74,9 +77,13 @@ func (s *stubPauser) Pause(_ context.Context, _ *v1alpha1.ManagedWorkload) (bool
 	return s.pauseDone, s.pauseErr
 }
 
-func (s *stubPauser) Resume(_ context.Context, _ *v1alpha1.ManagedWorkload) (bool, error) {
+func (s *stubPauser) Resume(_ context.Context, _ *v1alpha1.ManagedWorkload, waited lifecycle.Waited) (lifecycle.Resumption, error) {
 	s.resumeCalls++
-	return s.resumeDone, s.resumeErr
+	s.waited = waited.ScaledUp
+	if !s.resumeDone {
+		return lifecycle.Resumption{Replicas: 1}, s.resumeErr
+	}
+	return lifecycle.Resumption{Replicas: 1, Ready: 1, Settled: true}, s.resumeErr
 }
 
 func (s *stubPauser) Restore(_ context.Context, w *v1alpha1.ManagedWorkload) (int32, error) {
@@ -787,6 +794,269 @@ func wokenByActivity(w *v1alpha1.ManagedWorkload) *v1alpha1.ManagedWorkload {
 	}
 	w.Annotations[v1alpha1.AnnotationLastActivity] = fixedTime.Format(time.RFC3339)
 	return w
+}
+
+// A resume that waited for its dependencies times the wait for its own
+// replicas from when they were Ready, so a long wait for a database doesn't
+// cut short the time its pods get to start.
+func TestResume_TimesItsReplicasFromItsDependenciesReady(t *testing.T) {
+	ref := postgresRef()
+	ref.WaitForReady = true
+	api := depWorkload("default", "api", v1alpha1.TargetKindDeployment, v1alpha1.PhaseResuming, ref)
+	began := metav1.NewTime(fixedTime.Add(-20 * time.Minute))
+	api.Status.LastTransitionTime = &began
+	api.Status.Pause = &v1alpha1.PauseStatus{PreviousReplicas: 1}
+	meta.SetStatusCondition(&api.Status.Conditions, metav1.Condition{Type: conditionWaitingForDependencies,
+		Status: metav1.ConditionTrue, Reason: "DependencyNotReady", LastTransitionTime: began})
+	pauser := &stubPauser{}
+	r := depReconciler(t, pauser, api, postgresTarget(1, 1))
+
+	_, err := r.handleResume(context.Background(), api, nil)
+	require.NoError(t, err)
+	assert.Zero(t, pauser.waited, "its dependencies are Ready only now")
+
+	r.clock = func() time.Time { return fixedTime.Add(time.Minute) }
+	_, err = r.handleResume(context.Background(), fetch(t, r, "api"), nil)
+	require.NoError(t, err)
+	assert.Equal(t, time.Minute, pauser.waited, "from what was written as they became Ready")
+}
+
+// A waitForReady dependency that won't start, and that it never waited for,
+// still starts the clock on its own replicas once, or a resume with a pod
+// that never becomes Ready would never stop waiting for it.
+func TestResume_TimesItsReplicasOnceWhenADependencyWontStart(t *testing.T) {
+	ref := postgresRef()
+	ref.WaitForReady = true
+	api := depWorkload("default", "api", v1alpha1.TargetKindDeployment, v1alpha1.PhaseResuming, ref)
+	began := metav1.NewTime(fixedTime.Add(-20 * time.Minute))
+	api.Status.LastTransitionTime = &began
+	api.Status.Pause = &v1alpha1.PauseStatus{PreviousReplicas: 3}
+	pauser := &stubPauser{}
+	r := depReconciler(t, pauser, api, postgresTarget(0, 0))
+
+	_, err := r.handleResume(context.Background(), fetch(t, r, "api"), nil)
+	require.NoError(t, err)
+	assert.Zero(t, pauser.waited, "it's scaled up only now")
+
+	r.clock = func() time.Time { return fixedTime.Add(5 * time.Minute) }
+	_, err = r.handleResume(context.Background(), fetch(t, r, "api"), nil)
+	require.NoError(t, err)
+	assert.Equal(t, 5*time.Minute, pauser.waited, "the wait for its own replicas started over")
+}
+
+// The rest of a resume's replicas are given their time from when the first
+// was Ready, as written then, not from the scale-up: one Ready just before
+// two minutes are up, while the rest wait for a new node, would otherwise
+// end the resume short as they're about to be Ready.
+func TestResume_TimesTheRestFromTheFirstReplicaReady(t *testing.T) {
+	workload := pausedWorkload(v1alpha1.PhaseResuming)
+	began := metav1.NewTime(fixedTime.Add(-110 * time.Second))
+	workload.Status.LastTransitionTime = &began
+	pauser := &servingPauser{resumption: lifecycle.Resumption{Replicas: 3, Ready: 1}}
+	r := newTestReconciler(t, workload, &stubPauser{})
+	r.pauser = pauser
+
+	_, err := r.handleResume(context.Background(), getWorkload(t, r, "api"), nil)
+	require.NoError(t, err)
+	assert.Zero(t, pauser.waited.Serving, "none was Ready before")
+	assert.Equal(t, 110*time.Second, pauser.waited.ScaledUp)
+
+	r.clock = func() time.Time { return fixedTime.Add(90 * time.Second) }
+	_, err = r.handleResume(context.Background(), getWorkload(t, r, "api"), nil)
+	require.NoError(t, err)
+	assert.Equal(t, 90*time.Second, pauser.waited.Serving, "from what was written as the first became Ready")
+}
+
+// The replicas a resume stopped waiting for that become Ready afterwards,
+// as pods on a node that came up late do, clear ResumeIncomplete, which
+// would otherwise list the workload as needing attention until its next
+// resume.
+func TestReconcile_ReplicasReadyAfterAShortResumeClearIt(t *testing.T) {
+	workload := lifecycleWorkload("api", v1alpha1.PhaseRunning)
+	meta.SetStatusCondition(&workload.Status.Conditions, metav1.Condition{Type: conditionResumeIncomplete,
+		Status: metav1.ConditionTrue, Reason: "ReplicasNotReady", LastTransitionTime: metav1.NewTime(fixedTime)})
+	r := newTestReconcilerWithReplicas(t, workload, &stubPauser{}, 3)
+	var d appsv1.Deployment
+	require.NoError(t, r.Get(context.Background(), client.ObjectKey{Namespace: "default", Name: "api"}, &d))
+	d.Status.ReadyReplicas = 2
+	require.NoError(t, r.Status().Update(context.Background(), &d))
+
+	_, err := r.Reconcile(context.Background(), reconcileFor("api"))
+	require.NoError(t, err)
+	require.True(t, meta.IsStatusConditionTrue(getWorkload(t, r, "api").Status.Conditions, conditionResumeIncomplete),
+		"one replica still isn't Ready")
+
+	d.Status.ReadyReplicas, d.Status.ObservedGeneration = 3, d.Generation
+	require.NoError(t, r.Status().Update(context.Background(), &d))
+	_, err = r.Reconcile(context.Background(), reconcileFor("api"))
+	require.NoError(t, err)
+
+	c := meta.FindStatusCondition(getWorkload(t, r, "api").Status.Conditions, conditionResumeIncomplete)
+	require.NotNil(t, c)
+	assert.Equal(t, metav1.ConditionFalse, c.Status)
+	assert.Equal(t, ReasonAllReplicasReady, c.Reason)
+	assert.Contains(t, drainEvents(t, r), "Normal "+ReasonAllReplicasReady)
+}
+
+// AllReplicasReady is announced once the condition is written: a write that
+// fails, retried on the next reconcile, doesn't announce it twice.
+func TestReconcile_AllReplicasReadyAnnouncedOnceWritten(t *testing.T) {
+	workload := lifecycleWorkload("api", v1alpha1.PhaseRunning)
+	meta.SetStatusCondition(&workload.Status.Conditions, metav1.Condition{Type: conditionResumeIncomplete,
+		Status: metav1.ConditionTrue, Reason: "ReplicasNotReady", LastTransitionTime: metav1.NewTime(fixedTime)})
+	r := newTestReconcilerWithReplicas(t, workload, &stubPauser{}, 3)
+	var d appsv1.Deployment
+	require.NoError(t, r.Get(context.Background(), client.ObjectKey{Namespace: "default", Name: "api"}, &d))
+	d.Status.ReadyReplicas = 2
+	require.NoError(t, r.Status().Update(context.Background(), &d))
+	_, err := r.Reconcile(context.Background(), reconcileFor("api"))
+	require.NoError(t, err)
+	d.Status.ReadyReplicas, d.Status.ObservedGeneration = 3, d.Generation
+	require.NoError(t, r.Status().Update(context.Background(), &d))
+	base := r.Client.(client.WithWatch)
+	r.Client = interceptor.NewClient(base, interceptor.Funcs{SubResourceUpdate: func(ctx context.Context,
+		c client.Client, sub string, obj client.Object, opts ...client.SubResourceUpdateOption) error {
+		if _, ok := obj.(*v1alpha1.ManagedWorkload); ok {
+			return apierrors.NewServiceUnavailable("the API server is restarting")
+		}
+		return c.SubResource(sub).Update(ctx, obj, opts...)
+	}, SubResourcePatch: func(ctx context.Context, c client.Client, sub string, obj client.Object, patch client.Patch,
+		opts ...client.SubResourcePatchOption) error {
+		if _, ok := obj.(*v1alpha1.ManagedWorkload); ok {
+			return apierrors.NewServiceUnavailable("the API server is restarting")
+		}
+		return c.SubResource(sub).Patch(ctx, obj, patch, opts...)
+	}})
+
+	_, err = r.Reconcile(context.Background(), reconcileFor("api"))
+	require.Error(t, err)
+	assert.NotContains(t, drainEvents(t, r), "Normal "+ReasonAllReplicasReady)
+
+	r.Client = base
+	_, err = r.Reconcile(context.Background(), reconcileFor("api"))
+	require.NoError(t, err)
+	assert.Equal(t, 1, strings.Count(drainEvents(t, r), ReasonAllReplicasReady))
+}
+
+// servingPauser resumes to a given outcome and keeps how long it was told
+// it had waited.
+type servingPauser struct {
+	stubPauser
+	resumption lifecycle.Resumption
+	waited     lifecycle.Waited
+}
+
+func (p *servingPauser) Resume(_ context.Context, _ *v1alpha1.ManagedWorkload, waited lifecycle.Waited) (
+	lifecycle.Resumption, error) {
+	p.waited = waited
+	return p.resumption, nil
+}
+
+// A resume that settles with some replicas not Ready says so, and a later
+// one with every replica Ready clears it.
+func TestResume_ReportsReplicasNotReady(t *testing.T) {
+	workload := pausedWorkload(v1alpha1.PhaseResuming)
+	began := metav1.NewTime(fixedTime.Add(-3 * time.Minute))
+	workload.Status.LastTransitionTime = &began
+	pauser := &resumingPauser{resumption: lifecycle.Resumption{Replicas: 3, Ready: 2, Settled: true}}
+	r := newTestReconciler(t, workload, &stubPauser{})
+	r.pauser = pauser
+
+	_, err := r.handleResume(context.Background(), getWorkload(t, r, "api"), nil)
+	require.NoError(t, err)
+
+	got := getWorkload(t, r, "api")
+	assert.Equal(t, v1alpha1.PhaseRunning, got.Status.Phase)
+	c := meta.FindStatusCondition(got.Status.Conditions, conditionResumeIncomplete)
+	require.NotNil(t, c)
+	assert.Equal(t, metav1.ConditionTrue, c.Status)
+	assert.Equal(t, "resumed with 2 of 3 replicas Ready: Hybernate stopped waiting for the rest after 3m", c.Message)
+	announced := drainEvents(t, r)
+	assert.Contains(t, announced, "Warning "+ReasonResumeIncomplete)
+	assert.NotContains(t, announced, "Normal "+ReasonResumed)
+
+	got.Status.Phase = v1alpha1.PhaseResuming
+	got.Status.Pause = &v1alpha1.PauseStatus{PreviousReplicas: 3}
+	require.NoError(t, r.Status().Update(context.Background(), got))
+	pauser.resumption.Ready = 3
+	_, err = r.handleResume(context.Background(), getWorkload(t, r, "api"), nil)
+	require.NoError(t, err)
+
+	c = meta.FindStatusCondition(getWorkload(t, r, "api").Status.Conditions, conditionResumeIncomplete)
+	require.NotNil(t, c)
+	assert.Equal(t, metav1.ConditionFalse, c.Status)
+	assert.Equal(t, "AllReplicasReady", c.Reason)
+}
+
+// A ManagedWorkload deleted without its finalizer running, such as after
+// someone removed it by hand, leaves no series behind.
+func TestReconcile_GoneWorkloadsSeriesAreDeleted(t *testing.T) {
+	metrics.WorkloadPhase.WithLabelValues("default", "gone", "Paused").Set(1)
+	r := newTestReconciler(t, nil, &stubPauser{})
+
+	for range 2 {
+		_, err := r.Reconcile(context.Background(), reconcileFor("gone"))
+		require.NoError(t, err)
+	}
+
+	assert.False(t, metrics.WorkloadPhase.DeleteLabelValues("default", "gone", "Paused"), "already deleted")
+}
+
+// A cache that hasn't yet seen a resume finish still holds the workload
+// Paused. Routing it from that would put back the doorman slices its
+// resume had just removed, sending requests to the doorman rather than to
+// the pods now serving them. Only a phase this operator has just written
+// can be stale, so only then is it read past the cache: every paused
+// workload is reconciled every few minutes, and reading each past the cache
+// each time would put a load on the API server that grows with them.
+func TestReconcile_AStalePausedPhaseDoesNotRouteToTheDoorman(t *testing.T) {
+	tests := []struct {
+		name       string
+		written    time.Duration
+		wantLive   bool
+		wantRouted bool
+	}{
+		{name: "phase just written", written: phaseWriteLag, wantLive: true},
+		{name: "phase written a while ago", written: phaseWriteLag + time.Second, wantRouted: true},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			r, _ := pausedRouted(t)
+			for _, s := range doormanSlices(t, r) {
+				require.NoError(t, r.Delete(context.Background(), &s))
+			}
+			live := 0
+			r.PodReader = interceptor.NewClient(r.Client.(client.WithWatch), interceptor.Funcs{
+				Get: func(ctx context.Context, c client.WithWatch, key client.ObjectKey, obj client.Object,
+					opts ...client.GetOption) error {
+					if err := c.Get(ctx, key, obj, opts...); err != nil {
+						return err
+					}
+					if w, ok := obj.(*v1alpha1.ManagedWorkload); ok {
+						live++
+						w.Status.Phase = v1alpha1.PhaseRunning
+					}
+					return nil
+				}})
+			r.phaseWrites.record(fetch(t, r, "api").UID, fixedTime.Add(-tt.written))
+
+			_, err := r.Reconcile(context.Background(), reconcileFor("api"))
+
+			require.NoError(t, err)
+			assert.Equal(t, tt.wantLive, live > 0, "read past the cache")
+			assert.Equal(t, tt.wantRouted, len(doormanSlices(t, r)) > 0)
+		})
+	}
+}
+
+// resumingPauser resumes to a given outcome.
+type resumingPauser struct {
+	stubPauser
+	resumption lifecycle.Resumption
+}
+
+func (p *resumingPauser) Resume(context.Context, *v1alpha1.ManagedWorkload, lifecycle.Waited) (lifecycle.Resumption, error) {
+	return p.resumption, nil
 }
 
 func TestReconcile_ResumesInterruptedTransition(t *testing.T) {

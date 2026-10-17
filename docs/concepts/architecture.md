@@ -30,16 +30,19 @@ flowchart TB
 The primary reconciler. Watches `ManagedWorkload` CRs and drives each workload through its lifecycle. On every reconcile it:
 
 1. Checks for another ManagedWorkload managing the same target
-2. Validates the target Deployment/StatefulSet exists and isn't ignored, and that its namespace isn't protected; if either changes, it lets go of the workload, scaling a paused one back up
-3. Wakes a paused workload scaled up outside Hybernate
-4. Learns the workload's dependencies from its environment
-5. Routes a paused workload's Services to the doorman, or stops routing them
-6. Finishes a pause or resume an earlier reconcile started
-7. Acts on a pause someone asked for with `kubectl hybernate pause`
-8. Runs the activity clock: records activity, and pauses once there has been none for `idleAfter`; for a paused workload, checks whether anything asks it to wake
-9. Accumulates cost data and writes status
+2. Checks that the target Deployment or StatefulSet exists and isn't labelled `hybernate.io/ignore`; an ignored one is let go of, scaled back up first if it's paused
+3. Lets go of a workload whose namespace is protected, or that is Hybernate's own operator or doorman, scaled back up first if it's paused
+4. Wakes a paused workload scaled up outside Hybernate
+5. Reports the HPA or KEDA ScaledObject that scales the workload
+6. Learns the workload's dependencies from its environment, and from the requests that woke it
+7. Routes a paused workload's Services to the doorman, or stops routing them
+8. Finishes a pause or resume an earlier reconcile started, and wakes a paused workload put in dry-run
+9. Leaves alone a target scaled to zero outside Hybernate
+10. Acts on a pause someone asked for with `kubectl hybernate pause`
+11. Runs the activity clock and the forecast: records activity, and pauses once there has been none for `idleAfter` and no demand is forecast; for a paused workload, checks whether anything, or `autoResume`, asks it to wake
+12. Adds up what dry-run held back, accumulates cost, and writes status
 
-Each ManagedWorkload gets its own forecast engine instance, serialized into the CR status so it survives operator restarts. Every reconcile is bounded by a timeout, and `--max-concurrent-reconciles` (4 by default) workloads are reconciled at once, so one slow metrics or Prometheus query doesn't hold up another workload's wake.
+Each ManagedWorkload gets its own forecast engine, kept in memory and saved to the ManagedWorkload's `status.prediction.state` as it learns each hour, so it survives operator restarts and leader changes. Every reconcile is bounded by a 2-minute timeout, and `--max-concurrent-reconciles` (4 by default) workloads are reconciled at once, so one slow metrics or Prometheus query doesn't hold up another workload's wake.
 
 ### Opt-In Reconcilers
 
@@ -53,7 +56,7 @@ One for Deployments and one for StatefulSets. Each watches its workloads, their 
 | `internal/forecast` | Holt-Winters model, phase lifecycle, confidence scoring, anomaly detection |
 | `internal/signal` | Prometheus PromQL activity queries |
 | `internal/autoscaler` | Finds a workload's HPA or KEDA ScaledObject, and holds a KEDA one at zero while it's paused |
-| `internal/gitops` | Tells from field managers whether Argo CD or Flux sets a workload's replicas, and how to tell it to leave them |
+| `internal/gitops` | Tells from field managers whether a GitOps tool (Argo CD, Flux, Fleet, kapp or Kluctl) sets a workload's replicas, and how to tell it to leave them |
 | `internal/lifecycle` | Pause and resume, through the scale subresource |
 | `internal/discovery` | The cluster scan behind `kubectl hybernate scan` |
 | `internal/doorman` | Holds requests to a paused workload's Service and wakes it |
@@ -64,7 +67,7 @@ One for Deployments and one for StatefulSets. Each watches its workloads, their 
 
 Hybernate reads from three external systems:
 
-- **Kubernetes API Server**: for managing Deployments, StatefulSets, PVCs, and CRs
+- **Kubernetes API Server**: for scaling Deployments and StatefulSets, routing Services' EndpointSlices to the doorman, and reading what pricing and dependencies need: pods, PVCs, nodes' labels, ConfigMaps, HPAs and KEDA ScaledObjects
 - **Metrics Server**: for pod CPU usage (required)
 - **Prometheus**: for PromQL activity queries (optional)
 

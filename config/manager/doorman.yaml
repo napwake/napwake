@@ -12,6 +12,9 @@ metadata:
     app.kubernetes.io/managed-by: kustomize
 spec:
   replicas: 2
+  # A rollout waits before stopping an old pod, so the operator has moved
+  # paused workloads' EndpointSlices to the new one first.
+  minReadySeconds: 5
   selector:
     matchLabels:
       control-plane: doorman
@@ -46,6 +49,14 @@ spec:
           capabilities:
             drop:
             - "ALL"
+        # Kube-proxies and load balancers keep sending new connections for a
+        # few seconds after the pod is marked terminating, until they see its
+        # endpoint go. The sleep keeps it listening through that, and needs
+        # no shell, which the image doesn't have.
+        lifecycle:
+          preStop:
+            sleep:
+              seconds: 5
         livenessProbe:
           httpGet:
             path: /healthz
@@ -66,7 +77,9 @@ spec:
             cpu: 10m
             memory: 64Mi
       serviceAccountName: doorman
-      terminationGracePeriodSeconds: 30
+      # The 5s preStop sleep, then up to 25s for held and proxied
+      # connections to finish, with room to exit before SIGKILL.
+      terminationGracePeriodSeconds: 40
       topologySpreadConstraints:
       - maxSkew: 1
         topologyKey: kubernetes.io/hostname

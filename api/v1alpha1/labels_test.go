@@ -33,6 +33,11 @@ func TestProtected(t *testing.T) {
 		{name: "allowed though labelled", namespace: "payments",
 			labels: map[string]string{LabelProtected: True, LabelAllowProtected: True}},
 		{name: "a label value other than true", namespace: "payments", labels: map[string]string{LabelProtected: "yes"}},
+		{name: "kube-system", namespace: "kube-system", want: true},
+		{name: "another system namespace", namespace: "kube-node-lease", want: true},
+		{name: "a system namespace allowed anyway", namespace: "kube-system",
+			labels: map[string]string{LabelAllowProtected: True}},
+		{name: "a name only like a system namespace", namespace: "kubeflow"},
 		{name: "neither", namespace: "preview-42"},
 		{name: "a pattern only at the start", namespace: "preview-prod-1"},
 	}

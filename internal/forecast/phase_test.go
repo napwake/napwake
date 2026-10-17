@@ -80,14 +80,14 @@ func TestEngine_RealisticTraces(t *testing.T) {
 		{
 			name: "office hours with 10% noise",
 			demand: func(_ int, at time.Time) float64 {
-				return officeHours(at)*(0.9+0.2*noise.Float64()) + 3*noise.Float64()
+				return officeHours(at)*(0.9+0.2*noise.Float64()) + 0.3*noise.Float64()
 			},
 			fullyBy:  5,
 			stableAt: 6,
 		},
 		{
 			name:     "always on",
-			demand:   func(int, time.Time) float64 { return 300 + 30*noise.NormFloat64() },
+			demand:   func(int, time.Time) float64 { return 30 + 3*noise.NormFloat64() },
 			fullyBy:  2,
 			stableAt: 2,
 		},
@@ -99,13 +99,13 @@ func TestEngine_RealisticTraces(t *testing.T) {
 		},
 		{
 			name:     "idle with a little noise",
-			demand:   func(int, time.Time) float64 { return 3 * noise.Float64() },
+			demand:   func(int, time.Time) float64 { return 0.3 * noise.Float64() },
 			fullyBy:  2,
 			stableAt: 2,
 		},
 		{
 			name:     "daily cycle",
-			demand:   func(i int, _ time.Time) float64 { return 200 + 100*math.Sin(2*math.Pi*float64(i%24)/24) },
+			demand:   func(i int, _ time.Time) float64 { return 20 + 10*math.Sin(2*math.Pi*float64(i%24)/24) },
 			fullyBy:  2,
 			stableAt: 2,
 		},
@@ -131,11 +131,11 @@ func TestEngine_OfficeHoursForecast(t *testing.T) {
 	run(t, e, 0, 8*WeeklySeason, office)
 
 	monday := hourAt(8 * WeeklySeason)
-	assert.InDelta(t, 500, e.Predict(10, monday), 50, "Monday 10am")
-	assert.Less(t, e.Predict(3, monday), 25.0, "Monday 3am")
-	assert.Less(t, e.Predict(24+20, monday), 25.0, "Tuesday 8pm")
+	assert.InDelta(t, 50, e.Predict(10, monday), 5, "Monday 10am")
+	assert.Less(t, e.Predict(3, monday), 2.5, "Monday 3am")
+	assert.Less(t, e.Predict(24+20, monday), 2.5, "Tuesday 8pm")
 	saturday := monday.Add(5 * 24 * time.Hour)
-	assert.Less(t, e.Predict(10, saturday), 25.0, "Saturday 10am")
+	assert.Less(t, e.Predict(10, saturday), 2.5, "Saturday 10am")
 }
 
 func TestEngine_AlwaysIdleForecastsNothing(t *testing.T) {
@@ -157,7 +157,7 @@ func TestEngine_ConfidenceIsNotFooledByZeros(t *testing.T) {
 		at := hourAt(i)
 		e.Scorer.Record(0, officeHours(at))
 	}
-	e.scale = 500 * 8.0 / 24
+	e.scale = 50 * 8.0 / 24
 
 	assert.Zero(t, e.DailyConfidence(), "forecasting nothing for a day of office hours")
 }
@@ -206,13 +206,13 @@ func TestEngine_SingleSpikeIsNotARegimeChange(t *testing.T) {
 	spikeAt := 4*WeeklySeason + 10
 	log := run(t, e, 0, 7*WeeklySeason, func(i int, _ time.Time) float64 {
 		if i == spikeAt {
-			return 2000
+			return 200
 		}
 		return 0
 	})
 
 	assert.Empty(t, log.regimeChanges)
-	assert.Less(t, e.Predict(10, hourAt(7*WeeklySeason)), 25.0,
+	assert.Less(t, e.Predict(10, hourAt(7*WeeklySeason)), 2.5,
 		"one spike isn't learned as a Monday 10am pattern")
 	assert.Equal(t, FullyActive, e.Phase, "confidence is regained once the spike leaves the window")
 }
@@ -226,19 +226,24 @@ func TestEngine_RegimeChangeDemotesOnce(t *testing.T) {
 	// daily season its confidence on their own, so what demotes is the
 	// regime change alone.
 	e := NewEngine(DefaultParams(), Settings{Threshold: 60})
-	steady := func(i int, _ time.Time) float64 { return 100 + float64(i%3) }
+	steady := func(i int, _ time.Time) float64 { return 10 + 0.1*float64(i%3) }
 	run(t, e, 0, 3*WeeklySeason, steady)
 	require.Equal(t, FullyActive, e.Phase)
 
 	start := 3 * WeeklySeason
-	log := run(t, e, start, 3, func(int, time.Time) float64 { return 450 })
+	log := run(t, e, start, 3, func(int, time.Time) float64 { return 45 })
 	require.Equal(t, []int{start + 2}, log.regimeChanges)
 	assert.Equal(t, WeeklySuggesting, e.Phase, "demoted one step")
 	assert.False(t, e.Scorer.Ready(dailyWindow), "confidence is earned again")
+	assert.False(t, e.Active(), "before the forecast drives decisions again")
+	assert.Zero(t, e.Predict(1, hourAt(start+3)))
+	assert.Equal(t, DailySuggesting, e.GetPhase(), "reported as not acting while it isn't")
 
 	log = run(t, e, start+3, DailySeason, steady)
 	assert.Empty(t, log.regimeChanges, "the regime change is reported once")
 	assert.Equal(t, WeeklySuggesting, e.Phase)
+	require.True(t, e.Active())
+	assert.Equal(t, WeeklySuggesting, e.GetPhase(), "acting again once a day is scored")
 
 	log = run(t, e, start+3+DailySeason, 2*WeeklySeason, steady)
 	assert.Empty(t, log.regimeChanges)
@@ -248,20 +253,55 @@ func TestEngine_RegimeChangeDemotesOnce(t *testing.T) {
 }
 
 // The anomalies leading up to a regime change can cost the engine its
-// confidence before they add up to one. The regime change demotes one level
-// from where the engine was before them, not one more from where they left
-// it.
+// confidence before they add up to one. The regime change doesn't demote it
+// again for them, and nor does it promote it back to one level below where
+// it was before them, on the evidence it has just discarded.
 func TestEngine_RegimeChangeDemotesOneLevelInAll(t *testing.T) {
 	e := newTestEngine()
 	run(t, e, 0, 6*WeeklySeason, office)
 	require.Equal(t, FullyActive, e.Phase)
 
 	evenings := func(_ int, at time.Time) float64 { return officeHours(at.Add(8 * time.Hour)) }
-	log := run(t, e, 6*WeeklySeason, DailySeason, evenings)
+	regimeChanges := 0
+	for i := 6 * WeeklySeason; i < 7*WeeklySeason; i++ {
+		before := e.Phase
+		_, err := e.Observe(evenings(i, hourAt(i)), hourAt(i))
+		require.NoError(t, err)
+		if !e.RegimeChanged() {
+			continue
+		}
+		regimeChanges++
+		assert.LessOrEqual(t, e.Phase, before, "a regime change never raises the phase")
+		assert.LessOrEqual(t, e.Phase, WeeklySuggesting, "at least one level below FullyActive")
+		assert.False(t, e.Active(), "nothing is scored once the evidence is discarded")
+	}
+	assert.Equal(t, 1, regimeChanges)
+}
 
-	require.Len(t, log.regimeChanges, 1)
-	assert.Equal(t, WeeklySuggesting, log.changes[log.regimeChanges[0]], "one level below FullyActive")
-	assert.Equal(t, WeeklySuggesting, e.Phase)
+// TestEngine_HolidayDoesNotWakeIntoTheHoliday: a weekday holiday costs the
+// daily season its confidence before its anomalies add up to a regime
+// change. The regime change must not switch the forecast back on, or a
+// paused workload would be woken for the busy hours the holiday doesn't
+// have.
+func TestEngine_HolidayDoesNotWakeIntoTheHoliday(t *testing.T) {
+	e := NewEngine(DefaultParams(), Settings{Threshold: 75})
+	run(t, e, 0, 6*WeeklySeason, office)
+	require.Equal(t, FullyActive, e.Phase)
+
+	holiday := 6*WeeklySeason + 2*DailySeason
+	run(t, e, 6*WeeklySeason, 2*DailySeason, office)
+	regimeChanged := false
+	acting := 0
+	for i := holiday; i < holiday+DailySeason; i++ {
+		_, err := e.Observe(0, hourAt(i))
+		require.NoError(t, err)
+		regimeChanged = regimeChanged || e.RegimeChanged()
+		if regimeChanged && e.Predict(1, hourAt(i)) > 0 {
+			acting++
+		}
+	}
+	require.True(t, regimeChanged)
+	assert.Zero(t, acting, "hours of the holiday after the regime change the forecast acts on")
 }
 
 // A large spike that recurs every week is a pattern, not an outlier. It is
@@ -270,7 +310,7 @@ func TestEngine_RegimeChangeDemotesOneLevelInAll(t *testing.T) {
 func TestEngine_RecurringWeeklySpikeIsLearned(t *testing.T) {
 	tuesdayBatch := func(_ int, at time.Time) float64 {
 		if at.Weekday() == time.Tuesday && at.Hour() >= 2 && at.Hour() < 4 {
-			return 5000
+			return 500
 		}
 		return officeHours(at)
 	}
@@ -284,8 +324,8 @@ func TestEngine_RecurringWeeklySpikeIsLearned(t *testing.T) {
 	}
 	assert.Empty(t, log.regimeChanges, "a weekly batch job is not a regime change")
 	monday := hourAt(10 * WeeklySeason)
-	assert.InDelta(t, 5000, e.Predict(24+2, monday), 250, "Tuesday 2am")
-	assert.Less(t, e.Predict(24+5, monday), 50.0, "Tuesday 5am")
+	assert.InDelta(t, 500, e.Predict(24+2, monday), 25, "Tuesday 2am")
+	assert.Less(t, e.Predict(24+5, monday), 5.0, "Tuesday 5am")
 }
 
 func TestEngine_PatternShiftIsRelearned(t *testing.T) {
@@ -299,14 +339,14 @@ func TestEngine_PatternShiftIsRelearned(t *testing.T) {
 	assert.Len(t, log.regimeChanges, 1)
 	assert.Equal(t, FullyActive, e.Phase)
 	monday := hourAt(12 * WeeklySeason)
-	assert.InDelta(t, 500, e.Predict(3, monday), 50, "Monday 3am is the new busy hour")
-	assert.Less(t, e.Predict(10, monday), 25.0, "Monday 10am is quiet now")
+	assert.InDelta(t, 50, e.Predict(3, monday), 5, "Monday 3am is the new busy hour")
+	assert.Less(t, e.Predict(10, monday), 2.5, "Monday 10am is quiet now")
 }
 
 func TestEngine_ThresholdGatesPromotion(t *testing.T) {
 	e := NewEngine(DefaultParams(), Settings{Threshold: 100})
 	noisy := rand.New(rand.NewSource(2))
-	demand := func(int, time.Time) float64 { return 300 + 30*noisy.NormFloat64() }
+	demand := func(int, time.Time) float64 { return 30 + 3*noisy.NormFloat64() }
 	run(t, e, 0, 2*WeeklySeason, demand)
 	require.Equal(t, DailySuggesting, e.Phase, "a noisy workload is never 100% predictable")
 
@@ -321,7 +361,7 @@ func TestEngine_PhasesNeedCalendarCoverage(t *testing.T) {
 	for day := range 14 {
 		for hour := 9; hour < 17; hour++ {
 			at := hourAt(day*24 + hour)
-			_, err := e.Observe(500, at)
+			_, err := e.Observe(50, at)
 			require.NoError(t, err)
 			nineToFive++
 		}
@@ -357,8 +397,8 @@ func TestEngine_GapsKeepSlotsAligned(t *testing.T) {
 	run(t, e, resumed, 2*WeeklySeason, office)
 
 	nextMonday := hourAt((resumed + 2*WeeklySeason + WeeklySeason - 1) / WeeklySeason * WeeklySeason)
-	assert.InDelta(t, 500, e.Model.forecast(nextMonday.Add(10*time.Hour), 1), 75, "Monday 10am")
-	assert.Less(t, e.Model.forecast(nextMonday.Add(7*time.Hour), 1), 50.0, "Monday 7am")
+	assert.InDelta(t, 50, e.Model.forecast(nextMonday.Add(10*time.Hour), 1), 7.5, "Monday 10am")
+	assert.Less(t, e.Model.forecast(nextMonday.Add(7*time.Hour), 1), 5.0, "Monday 7am")
 	assert.Equal(t, FullyActive, e.Phase)
 }
 
@@ -403,8 +443,38 @@ func TestEngine_SeasonsFollowLocalTimeThroughDST(t *testing.T) {
 	}
 
 	monday := end
-	assert.InDelta(t, 500, e.Predict(9, monday), 75, "local 9am stays busy after the clocks change")
-	assert.Less(t, e.Predict(8, monday), 50.0, "local 8am stays quiet")
-	assert.Less(t, e.Predict(17, monday), 50.0, "local 5pm stays quiet")
+	assert.InDelta(t, 50, e.Predict(9, monday), 7.5, "local 9am stays busy after the clocks change")
+	assert.Less(t, e.Predict(8, monday), 5.0, "local 8am stays quiet")
+	assert.Less(t, e.Predict(17, monday), 5.0, "local 5pm stays quiet")
 	assert.Equal(t, FullyActive, e.Phase)
+}
+
+// TestEngine_LastHourFromAFastClockDoesNotFreezeLearning: one observation
+// stamped by a clock a week ahead must not stop the engine learning until
+// real time catches up with it.
+func TestEngine_LastHourFromAFastClockDoesNotFreezeLearning(t *testing.T) {
+	e := newTestEngine()
+	run(t, e, 0, 48, func(int, time.Time) float64 { return 100 })
+	_, err := e.Observe(100, hourAt(48+WeeklySeason))
+	require.NoError(t, err)
+
+	for i := 48; i < 52; i++ {
+		require.False(t, e.Observed(hourAt(i)), "hour %d", i)
+		_, err := e.Observe(100, hourAt(i))
+		require.NoError(t, err, "hour %d", i)
+	}
+	assert.True(t, e.Observed(hourAt(51)))
+	assert.Equal(t, 48+1+4, e.GetDataPoints())
+}
+
+// The hour a clock change repeats is observed once, not twice.
+func TestEngine_RepeatedHourIsNotAFastClock(t *testing.T) {
+	ny, err := time.LoadLocation("America/New_York")
+	require.NoError(t, err)
+	e := NewEngine(DefaultParams(), Settings{Threshold: 85, Location: ny})
+	firstOneAM := time.Date(2026, 11, 1, 5, 30, 0, 0, time.UTC)
+	_, err = e.Observe(100, firstOneAM)
+	require.NoError(t, err)
+
+	assert.True(t, e.Observed(firstOneAM.Add(time.Hour)), "1am again, after the clocks went back")
 }

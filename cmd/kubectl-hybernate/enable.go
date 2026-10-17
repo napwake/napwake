@@ -18,6 +18,7 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -29,9 +30,11 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/meta"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	v1alpha1 "github.com/okedeji/hybernate/api/v1alpha1"
+	"github.com/okedeji/hybernate/internal/gitops"
 )
 
 // errManagedByGit means the change belongs in Git, where a GitOps tool would
@@ -65,9 +68,14 @@ dry-run, it sets the namespace's annotation to "false" and drops the
 workloads' own; otherwise it sets each workload's annotation to "false".
 ManagedWorkloads written by hand get spec.dryRun false.
 
-Anything whose manifest comes from Argo CD or Flux isn't changed: its
-annotations live in Git, where the tool would put the old value back. Enable
-says what to change there instead.
+It changes nothing, and fails, for a workload Hybernate won't manage: one in
+a protected namespace, one ignored or opted out by its own label, or one no
+ManagedWorkload manages yet.
+
+A setting a GitOps tool (Argo CD, Flux, Fleet, kapp or Kluctl) applies from
+Git, as the object's managed fields record, isn't changed: the tool would
+put the old value back. Enable says what to change there instead. One Helm
+set is changed, with a warning that the next helm upgrade puts it back.
 
 Examples:
   # Start pausing a Deployment
@@ -108,7 +116,8 @@ Examples:
 	cmd.Flags().StringVarP(&namespace, "namespace", "n", "",
 		"Namespace of the workload (defaults to the kubeconfig context's)")
 	cmd.Flags().BoolVar(&opts.all, "all", false, "Enable every workload in the namespace")
-	cmd.Flags().BoolVar(&opts.force, "force", false, "Change the cluster even when Argo CD or Flux manages the object")
+	cmd.Flags().BoolVar(&opts.force, "force", false,
+		"Change the cluster even when a GitOps tool applies the setting from Git")
 	addTimeoutFlag(cmd, &opts.timeout, "How long to wait for the cluster before giving up")
 	return cmd
 }
@@ -139,22 +148,32 @@ func getWorkload(ctx context.Context, c client.Client, namespace, arg string) (c
 		return nil, err
 	}
 	key := client.ObjectKey{Namespace: namespace, Name: name}
-	if kind != kindStatefulSet {
-		var d appsv1.Deployment
-		err := c.Get(ctx, key, &d)
-		if err == nil || kind == kindDeployment {
-			return &d, wrapNotFound(err, kindDeployment, key)
-		}
-		if !apierrors.IsNotFound(err) {
-			return nil, fmt.Errorf("getting deployment %s: %w", key, err)
-		}
-	}
+	var d appsv1.Deployment
 	var s appsv1.StatefulSet
-	err = c.Get(ctx, key, &s)
-	if kind == "" && apierrors.IsNotFound(err) {
-		return nil, fmt.Errorf("no Deployment or StatefulSet in %s is named %s: %w", namespace, name, err)
+	switch kind {
+	case kindDeployment:
+		return &d, wrapNotFound(c.Get(ctx, key, &d), kindDeployment, key)
+	case kindStatefulSet:
+		return &s, wrapNotFound(c.Get(ctx, key, &s), kindStatefulSet, key)
 	}
-	return &s, wrapNotFound(err, kindStatefulSet, key)
+	dErr := c.Get(ctx, key, &d)
+	if dErr != nil && !apierrors.IsNotFound(dErr) {
+		return nil, wrapNotFound(dErr, kindDeployment, key)
+	}
+	sErr := c.Get(ctx, key, &s)
+	if sErr != nil && !apierrors.IsNotFound(sErr) {
+		return nil, wrapNotFound(sErr, kindStatefulSet, key)
+	}
+	switch {
+	case dErr == nil && sErr == nil:
+		return nil, fmt.Errorf("%s in %s names both deployment/%s and statefulset/%s; name one by its kind, such as "+
+			"statefulset/%s", name, namespace, name, name, name)
+	case dErr == nil:
+		return &d, nil
+	case sErr == nil:
+		return &s, nil
+	}
+	return nil, fmt.Errorf("no Deployment or StatefulSet in %s is named %s: %w", namespace, name, sErr)
 }
 
 func wrapNotFound(err error, kind string, key client.ObjectKey) error {
@@ -175,24 +194,35 @@ func enableWorkload(
 	if err := c.Get(ctx, client.ObjectKey{Name: namespace}, &ns); err != nil {
 		return fmt.Errorf("getting namespace %s: %w", namespace, err)
 	}
+	if err := checkProtected(&ns); err != nil {
+		return err
+	}
 	managed, err := managedByTarget(ctx, c, namespace)
 	if err != nil {
 		return err
 	}
 	ref := fmt.Sprintf("%s/%s", kindOf(obj), obj.GetName())
-	mw := managed[workloadKey(obj)]
+	mw := managed.byTarget[workloadKey(obj)]
+	if why := wontPause(mw); why != "" {
+		return fmt.Errorf("%s isn't changed: Hybernate never pauses it, as %s", ref, why)
+	}
 	if mw != nil && mw.Labels[v1alpha1.LabelFromLabel] != v1alpha1.True {
 		return enableHandWritten(ctx, c, mw, ref, opts, out)
 	}
 	if err := checkOptedIn(obj, &ns, ref); err != nil {
 		return err
 	}
+	if managed.readable && mw == nil {
+		return notPickedUp(ref, namespace)
+	}
 	if !inDryRun(mw, obj, &ns) {
 		_, _ = fmt.Fprintf(out, "%s isn't in dry-run; Hybernate already pauses it while idle\n", ref)
 		return nil
 	}
-	if tool := gitOpsTool(obj); tool != "" && !opts.force {
-		_, _ = fmt.Fprintf(out, "%s is managed by %s, which would undo a change made here. In its manifest:\n", ref, tool)
+	applied := appliedBy(obj, dryRunAnnotationField)
+	if applied.gitOps != "" && !opts.force {
+		_, _ = fmt.Fprintf(out, "%s is managed by %s, which would undo a change made here. In its manifest:\n", ref,
+			applied.gitOps)
 		_, _ = fmt.Fprintf(out, "  set the annotation  %s: \"false\"\n", v1alpha1.AnnotationDryRun)
 		_, _ = fmt.Fprintln(out, "Or pass --force to change the cluster anyway.")
 		return errManagedByGit
@@ -200,8 +230,31 @@ func enableWorkload(
 	if err := setAnnotation(ctx, c, obj, v1alpha1.AnnotationDryRun, dryRunOff); err != nil {
 		return err
 	}
-	_, _ = fmt.Fprintf(out, "%s: dry-run ended, Hybernate will pause it while idle\n", ref)
+	if managed.readable {
+		_, _ = fmt.Fprintf(out, "%s: dry-run ended, Hybernate will pause it while idle\n", ref)
+	} else {
+		_, _ = fmt.Fprintf(out, "%s: dry-run annotation set to \"false\". %s\n", ref, unreadableNote(namespace))
+	}
+	if applied.helm {
+		_, _ = fmt.Fprintln(out, helmWarning(ref, v1alpha1.AnnotationDryRun+" annotation"))
+	}
 	return nil
+}
+
+// notPickedUp is an opted-in workload the operator hasn't made a
+// ManagedWorkload for, so ending its dry-run would change nothing.
+func notPickedUp(ref, namespace string) error {
+	return fmt.Errorf("%s is opted in, but Hybernate hasn't picked it up: no ManagedWorkload in %s manages it. "+
+		"The operator may not be running, may not watch %s (its watchNamespaces), or may protect it; if you "+
+		"labelled it just now, run this again in a few seconds", ref, namespace, namespace)
+}
+
+// unreadableNote says what enable couldn't check without reading
+// ManagedWorkloads.
+func unreadableNote(namespace string) string {
+	return fmt.Sprintf("Your access doesn't allow listing ManagedWorkloads in %s, so enable went by the "+
+		"annotations alone and couldn't check that Hybernate manages it; kubectl hybernate status shows "+
+		"whether it does.", namespace)
 }
 
 // enableHandWritten ends dry-run for a ManagedWorkload written by hand,
@@ -212,16 +265,20 @@ func enableHandWritten(ctx context.Context, c client.Client, mw *v1alpha1.Manage
 		_, _ = fmt.Fprintf(out, "%s isn't in dry-run; Hybernate already pauses it while idle\n", ref)
 		return nil
 	}
-	if tool := gitOpsTool(mw); tool != "" && !opts.force {
+	applied := appliedBy(mw, dryRunSpecField)
+	if applied.gitOps != "" && !opts.force {
 		_, _ = fmt.Fprintf(out, "%s's ManagedWorkload %s is managed by %s, which would undo a change made here. "+
 			"In its manifest:\n  set spec.dryRun: false\nOr pass --force to change the cluster anyway.\n",
-			ref, mw.Name, tool)
+			ref, mw.Name, applied.gitOps)
 		return errManagedByGit
 	}
 	if err := endHandWrittenDryRun(ctx, c, mw); err != nil {
 		return err
 	}
 	_, _ = fmt.Fprintf(out, "%s: dry-run ended, Hybernate will pause it while idle\n", ref)
+	if applied.helm {
+		_, _ = fmt.Fprintln(out, helmWarning("managedworkload/"+mw.Name, "spec.dryRun"))
+	}
 	return nil
 }
 
@@ -234,11 +291,56 @@ func endHandWrittenDryRun(ctx context.Context, c client.Client, mw *v1alpha1.Man
 	return nil
 }
 
+// wontPause says why the operator never pauses what the ManagedWorkload
+// manages, from the conditions it set, and "" when it may. Those cover what
+// enable can't see from here, such as protectedNamespaces patterns and
+// Hybernate's own namespace.
+func wontPause(mw *v1alpha1.ManagedWorkload) string {
+	if mw == nil {
+		return ""
+	}
+	conditions := mw.Status.Conditions
+	if c := meta.FindStatusCondition(conditions, "Protected"); c != nil && c.Status == metav1.ConditionTrue {
+		return "it's protected: " + c.Message
+	}
+	if c := meta.FindStatusCondition(conditions, "TargetAvailable"); c != nil && c.Reason == "TargetIgnored" {
+		return "it's labelled " + v1alpha1.LabelIgnore
+	}
+	if meta.IsStatusConditionTrue(conditions, "DuplicateTarget") {
+		return "another ManagedWorkload manages it: " + mw.Name + " is the duplicate"
+	}
+	return ""
+}
+
+// checkProtected refuses a namespace the operator never manages anything
+// in. The operator's own namespace and protectedNamespaces patterns aren't
+// known here; a workload they protect has no ManagedWorkload, which enable
+// reports instead.
+func checkProtected(ns *corev1.Namespace) error {
+	if !v1alpha1.Protected(ns.Name, ns.Labels, nil) {
+		return nil
+	}
+	return fmt.Errorf("namespace %s is protected, so Hybernate doesn't manage anything in it; label the namespace "+
+		"%s=true to let it", ns.Name, v1alpha1.LabelAllowProtected)
+}
+
+// checkOptedIn says why the operator doesn't opt the workload in through
+// the label, deciding as it does: the workload's own label, "true" or
+// anything else, wins over its namespace's, and hybernate.io/ignore over
+// both.
 func checkOptedIn(obj client.Object, ns *corev1.Namespace, ref string) error {
-	if obj.GetLabels()[v1alpha1.LabelIgnore] == v1alpha1.True {
+	labels := obj.GetLabels()
+	if labels[v1alpha1.LabelIgnore] == v1alpha1.True {
 		return fmt.Errorf("%s is labelled %s=true, so Hybernate doesn't manage it", ref, v1alpha1.LabelIgnore)
 	}
-	if obj.GetLabels()[v1alpha1.LabelManaged] != v1alpha1.True && ns.GetLabels()[v1alpha1.LabelManaged] != v1alpha1.True {
+	if own, ok := labels[v1alpha1.LabelManaged]; ok {
+		if own == v1alpha1.True {
+			return nil
+		}
+		return fmt.Errorf("%s is labelled %s=%q, which opts it out, so Hybernate doesn't manage it", ref,
+			v1alpha1.LabelManaged, own)
+	}
+	if ns.GetLabels()[v1alpha1.LabelManaged] != v1alpha1.True {
 		return fmt.Errorf("%s isn't opted in: label it %s=true first", ref, v1alpha1.LabelManaged)
 	}
 	return nil
@@ -246,9 +348,9 @@ func checkOptedIn(obj client.Object, ns *corev1.Namespace, ref string) error {
 
 // inDryRun says whether an opted-in workload is in dry-run. Its
 // ManagedWorkload says so for certain, having weighed the annotations with
-// the cluster's default, which the plugin can't read. Before the operator
-// has made one, the annotations are all there is; without either, the
-// cluster's default is unknown, so it may be.
+// the cluster's default, which the plugin can't read. For a user who may
+// not read ManagedWorkloads, the annotations are all there is; without
+// either, the cluster's default is unknown, so it may be.
 func inDryRun(mw *v1alpha1.ManagedWorkload, obj client.Object, ns *corev1.Namespace) bool {
 	if mw != nil {
 		return mw.Spec.DryRun
@@ -270,20 +372,53 @@ type dryRunSet struct {
 	// inherits is set when a labelled workload has no annotation of its
 	// own, so it takes the namespace's or the cluster's default.
 	inherits bool
+	// notPickedUp are labelled workloads the operator hasn't made a
+	// ManagedWorkload for, which changing their own annotation would do
+	// nothing for yet.
+	notPickedUp []client.Object
+	// wontPause are workloads the operator never pauses, with why.
+	wontPause []string
 }
 
-func dryRunIn(workloads []client.Object, managed map[targetKey]*v1alpha1.ManagedWorkload,
-	ns *corev1.Namespace) dryRunSet {
+// waitingFor are the refs of the workloads Hybernate hasn't picked up whose
+// dry-run nothing enable changed ends: all of them, unless it just set the
+// namespace's annotation to "false", which ends it for each one without an
+// annotation of its own once Hybernate picks it up.
+func (s dryRunSet) waitingFor(namespaceEnded bool) []string {
+	var refs []string
+	for _, obj := range s.notPickedUp {
+		if _, own := obj.GetAnnotations()[v1alpha1.AnnotationDryRun]; namespaceEnded && !own {
+			continue
+		}
+		refs = append(refs, fmt.Sprintf("%s/%s", kindOf(obj), obj.GetName()))
+	}
+	return refs
+}
+
+func dryRunIn(workloads []client.Object, managed managedWorkloads, ns *corev1.Namespace) dryRunSet {
 	var found dryRunSet
 	for _, obj := range workloads {
-		mw := managed[workloadKey(obj)]
+		mw := managed.byTarget[workloadKey(obj)]
+		if why := wontPause(mw); why != "" {
+			if mw.Spec.DryRun || mw.Labels[v1alpha1.LabelFromLabel] == v1alpha1.True && inDryRun(mw, obj, ns) {
+				found.wontPause = append(found.wontPause, fmt.Sprintf("%s/%s, as %s", kindOf(obj), obj.GetName(), why))
+			}
+			continue
+		}
 		if mw != nil && mw.Labels[v1alpha1.LabelFromLabel] != v1alpha1.True {
 			if mw.Spec.DryRun {
 				found.handWritten = append(found.handWritten, mw)
 			}
 			continue
 		}
-		if checkOptedIn(obj, ns, "") != nil || !inDryRun(mw, obj, ns) {
+		if checkOptedIn(obj, ns, "") != nil {
+			continue
+		}
+		if managed.readable && mw == nil {
+			found.notPickedUp = append(found.notPickedUp, obj)
+			continue
+		}
+		if !inDryRun(mw, obj, ns) {
 			continue
 		}
 		found.labelled = append(found.labelled, obj)
@@ -301,18 +436,22 @@ type inGit struct {
 }
 
 // namespaceEnabler ends dry-run across a namespace, keeping what it
-// changed and what it left for Git.
+// changed, what it left for Git, and what Helm will put back.
 type namespaceEnabler struct {
-	c       client.Client
-	opts    enableOptions
-	enabled int
-	git     []inGit
+	c        client.Client
+	opts     enableOptions
+	enabled  int
+	git      []inGit
+	warnings []string
 }
 
 func enableNamespace(ctx context.Context, c client.Client, namespace string, opts enableOptions, out io.Writer) error {
 	var ns corev1.Namespace
 	if err := c.Get(ctx, client.ObjectKey{Name: namespace}, &ns); err != nil {
 		return fmt.Errorf("getting namespace %s: %w", namespace, err)
+	}
+	if err := checkProtected(&ns); err != nil {
+		return err
 	}
 	workloads, err := listWorkloads(ctx, c, namespace)
 	if err != nil {
@@ -323,21 +462,26 @@ func enableNamespace(ctx context.Context, c client.Client, namespace string, opt
 		return err
 	}
 	found := dryRunIn(workloads, managed, &ns)
+	if !managed.readable {
+		_, _ = fmt.Fprintln(out, unreadableNote(namespace))
+	}
 	nsValue, nsSet := ns.GetAnnotations()[v1alpha1.AnnotationDryRun]
 	nsLive := nsSet && nsValue == dryRunOff
-	if len(found.labelled) == 0 && len(found.handWritten) == 0 && (!nsSet || nsLive) {
-		_, _ = fmt.Fprintf(out, "Nothing in %s is in dry-run; Hybernate already pauses its workloads while idle\n",
-			namespace)
-		return nil
+	reportWontPause(out, found.wontPause)
+	if done, err := nothingToEnd(out, namespace, found, nsSet && !nsLive); done {
+		return err
 	}
 
 	e := &namespaceEnabler{c: c, opts: opts}
+	namespaceEnded := false
 	if !nsLive && (nsSet || found.inherits) {
-		if nsLive, err = e.namespace(ctx, &ns); err != nil {
+		if namespaceEnded, err = e.namespace(ctx, &ns); err != nil {
 			return err
 		}
-		if nsLive {
-			_, _ = fmt.Fprintf(out, "namespace %s: dry-run ended\n", namespace)
+		nsLive = namespaceEnded
+		if namespaceEnded {
+			_, _ = fmt.Fprintf(out, "namespace %s: dry-run ended for the workloads that take its annotation, "+
+				"including ones Hybernate picks up later\n", namespace)
 		}
 	}
 	for _, obj := range found.labelled {
@@ -351,29 +495,87 @@ func enableNamespace(ctx context.Context, c client.Client, namespace string, opt
 		}
 	}
 
-	_, _ = fmt.Fprintf(out, "%s in %s: dry-run ended, Hybernate will pause %s while idle\n",
-		countOf(e.enabled, "workload"), namespace, pronounObject(e.enabled))
+	if e.enabled > 0 {
+		_, _ = fmt.Fprintf(out, "%s in %s: dry-run ended, Hybernate will pause %s while idle\n",
+			countOf(e.enabled, "workload"), namespace, pronounObject(e.enabled))
+	}
+	for _, w := range e.warnings {
+		_, _ = fmt.Fprintln(out, w)
+	}
+	var errs []error
 	if len(e.git) > 0 {
 		_, _ = fmt.Fprintln(out, "Not changed, because their manifests come from Git; change them there:")
 		for _, g := range e.git {
 			_, _ = fmt.Fprintf(out, "  %s (%s): %s\n", g.ref, g.tool, g.change)
 		}
-		return errManagedByGit
+		errs = append(errs, errManagedByGit)
 	}
-	return nil
+	if waiting := found.waitingFor(namespaceEnded); len(waiting) > 0 {
+		errs = append(errs, reportNotPickedUp(out, namespace, waiting))
+	}
+	return errors.Join(errs...)
+}
+
+// nothingToEnd reports a namespace where enable has nothing to change, and
+// true then: nothing in it is in dry-run, the namespace's own annotation
+// included, or only what Hybernate hasn't picked up or never pauses is.
+func nothingToEnd(out io.Writer, namespace string, found dryRunSet, nsInDryRun bool) (bool, error) {
+	if len(found.labelled) > 0 || len(found.handWritten) > 0 {
+		return false, nil
+	}
+	if len(found.notPickedUp) > 0 {
+		return true, reportNotPickedUp(out, namespace, found.waitingFor(false))
+	}
+	if nsInDryRun {
+		return false, nil
+	}
+	if len(found.wontPause) == 0 {
+		_, _ = fmt.Fprintf(out, "Nothing in %s is in dry-run; Hybernate already pauses its workloads while idle\n",
+			namespace)
+	}
+	return true, nil
+}
+
+// reportWontPause lists the workloads in dry-run that ending it would do
+// nothing for, since the operator never pauses them.
+func reportWontPause(out io.Writer, refs []string) {
+	if len(refs) == 0 {
+		return
+	}
+	_, _ = fmt.Fprintln(out, "Not changed, because Hybernate never pauses them:")
+	for _, ref := range refs {
+		_, _ = fmt.Fprintf(out, "  %s\n", ref)
+	}
+}
+
+// reportNotPickedUp lists the labelled workloads the operator hasn't made a
+// ManagedWorkload for, and fails: ending their dry-run changes nothing.
+func reportNotPickedUp(out io.Writer, namespace string, refs []string) error {
+	_, _ = fmt.Fprintf(out, "Not changed, because Hybernate hasn't picked them up: no ManagedWorkload manages them. "+
+		"The operator may not be running, may not watch %s (its watchNamespaces), or may protect it:\n", namespace)
+	for _, ref := range refs {
+		_, _ = fmt.Fprintf(out, "  %s\n", ref)
+	}
+	have := "have"
+	if len(refs) == 1 {
+		have = "has"
+	}
+	return fmt.Errorf("%s in %s %s no ManagedWorkload", countOf(len(refs), "opted-in workload"), namespace, have)
 }
 
 // namespace sets the namespace's dry-run annotation to "false", unless Git
 // owns it, and says whether the namespace is now live.
 func (e *namespaceEnabler) namespace(ctx context.Context, ns *corev1.Namespace) (bool, error) {
-	if tool := gitOpsTool(ns); tool != "" && !e.opts.force {
-		e.git = append(e.git, inGit{"namespace " + ns.Name, tool,
+	applied := appliedBy(ns, dryRunAnnotationField)
+	if applied.gitOps != "" && !e.opts.force {
+		e.git = append(e.git, inGit{"namespace " + ns.Name, applied.gitOps,
 			fmt.Sprintf(`set the annotation %s: "false"`, v1alpha1.AnnotationDryRun)})
 		return false, nil
 	}
 	if err := setAnnotation(ctx, e.c, ns, v1alpha1.AnnotationDryRun, dryRunOff); err != nil {
 		return false, err
 	}
+	e.warnIfHelm(applied, "namespace "+ns.Name, v1alpha1.AnnotationDryRun+" annotation")
 	return true, nil
 }
 
@@ -391,27 +593,39 @@ func (e *namespaceEnabler) labelled(ctx context.Context, obj client.Object, nsLi
 	if nsLive {
 		value, change = "", "remove the annotation "+v1alpha1.AnnotationDryRun
 	}
-	if tool := gitOpsTool(obj); tool != "" && !e.opts.force {
-		e.git = append(e.git, inGit{fmt.Sprintf("%s/%s", kindOf(obj), obj.GetName()), tool, change})
+	ref := fmt.Sprintf("%s/%s", kindOf(obj), obj.GetName())
+	applied := appliedBy(obj, dryRunAnnotationField)
+	if applied.gitOps != "" && !e.opts.force {
+		e.git = append(e.git, inGit{ref, applied.gitOps, change})
 		return nil
 	}
 	if err := setAnnotation(ctx, e.c, obj, v1alpha1.AnnotationDryRun, value); err != nil {
 		return err
 	}
+	e.warnIfHelm(applied, ref, v1alpha1.AnnotationDryRun+" annotation")
 	e.enabled++
 	return nil
 }
 
 func (e *namespaceEnabler) handWritten(ctx context.Context, mw *v1alpha1.ManagedWorkload) error {
-	if tool := gitOpsTool(mw); tool != "" && !e.opts.force {
-		e.git = append(e.git, inGit{"managedworkload/" + mw.Name, tool, "set spec.dryRun: false"})
+	ref := "managedworkload/" + mw.Name
+	applied := appliedBy(mw, dryRunSpecField)
+	if applied.gitOps != "" && !e.opts.force {
+		e.git = append(e.git, inGit{ref, applied.gitOps, "set spec.dryRun: false"})
 		return nil
 	}
 	if err := endHandWrittenDryRun(ctx, e.c, mw); err != nil {
 		return err
 	}
+	e.warnIfHelm(applied, ref, "spec.dryRun")
 	e.enabled++
 	return nil
+}
+
+func (e *namespaceEnabler) warnIfHelm(applied applier, ref, setting string) {
+	if applied.helm {
+		e.warnings = append(e.warnings, helmWarning(ref, setting))
+	}
 }
 
 func pronounObject(n int) string {
@@ -440,23 +654,39 @@ func listWorkloads(ctx context.Context, c client.Client, namespace string) ([]cl
 	return workloads, nil
 }
 
-// managedByTarget maps the namespace's workloads to their ManagedWorkloads.
-// Enable works from annotations alone when it can't read them, so it can
-// still end dry-run before the operator is installed, or for a user who may
-// only edit workloads.
-func managedByTarget(ctx context.Context, c client.Client, namespace string) (
-	map[targetKey]*v1alpha1.ManagedWorkload, error) {
+// managedWorkloads are a namespace's ManagedWorkloads by their target.
+// readable is false when the user may not list them, and byTarget is then
+// empty.
+type managedWorkloads struct {
+	byTarget map[targetKey]*v1alpha1.ManagedWorkload
+	readable bool
+}
+
+// managedByTarget reads the namespace's ManagedWorkloads. Enable works from
+// annotations alone for a user who may only edit workloads, but not without
+// the CRD: with nothing installed to pause the workload, ending its dry-run
+// would mean nothing.
+func managedByTarget(ctx context.Context, c client.Client, namespace string) (managedWorkloads, error) {
 	var list v1alpha1.ManagedWorkloadList
 	err := c.List(ctx, &list, client.InNamespace(namespace))
-	if meta.IsNoMatchError(err) || apierrors.IsForbidden(err) {
-		return nil, nil
+	switch {
+	case meta.IsNoMatchError(err):
+		return managedWorkloads{}, errNotInstalled
+	case apierrors.IsForbidden(err):
+		return managedWorkloads{}, nil
+	case err != nil:
+		return managedWorkloads{}, fmt.Errorf("listing ManagedWorkloads in %s: %w", namespace, err)
 	}
-	if err != nil {
-		return nil, fmt.Errorf("listing ManagedWorkloads in %s: %w", namespace, err)
-	}
-	out := make(map[targetKey]*v1alpha1.ManagedWorkload, len(list.Items))
+	out := managedWorkloads{byTarget: make(map[targetKey]*v1alpha1.ManagedWorkload, len(list.Items)), readable: true}
+	// Of two for one target, the operator manages it through the one it
+	// doesn't mark a duplicate.
 	for i := range list.Items {
-		out[targetOfManaged(&list.Items[i])] = &list.Items[i]
+		mw := &list.Items[i]
+		key := targetOfManaged(mw)
+		if have := out.byTarget[key]; have != nil && meta.IsStatusConditionTrue(mw.Status.Conditions, "DuplicateTarget") {
+			continue
+		}
+		out.byTarget[key] = mw
 	}
 	return out, nil
 }
@@ -488,9 +718,82 @@ func setAnnotation(ctx context.Context, c client.Client, obj client.Object, key,
 	return nil
 }
 
-// gitOpsTool names the GitOps tool that applies an object, from the
-// tracking metadata each one adds, or "" if none does.
-func gitOpsTool(obj client.Object) string {
+// The managed-fields paths of the settings enable changes.
+var (
+	dryRunAnnotationField = []string{"f:metadata", "f:annotations", "f:" + v1alpha1.AnnotationDryRun}
+	dryRunSpecField       = []string{"f:spec", "f:dryRun"}
+)
+
+// helmManager is the field manager Helm applies a chart's objects as.
+const helmManager = "helm"
+
+// applier is what sets a field from outside the cluster: a GitOps tool,
+// which puts back what enable changes on its next sync, or Helm, whose
+// next upgrade does.
+type applier struct {
+	// gitOps names the tool, and the application it applies the object
+	// for when its tracking metadata says.
+	gitOps string
+	helm   bool
+}
+
+// appliedBy finds who sets the field at path on obj from the field managers
+// the API server records owning it. A GitOps tool that applies the object
+// but not this field, such as an annotation Git doesn't have, leaves a
+// change to it alone. An object with no managed fields recorded, such as
+// one created before there were any, goes by the tracking metadata each tool
+// adds to what it applies.
+func appliedBy(obj client.Object, path []string) applier {
+	entries := obj.GetManagedFields()
+	if len(entries) == 0 {
+		return applier{gitOps: trackedBy(obj)}
+	}
+	var found applier
+	for _, entry := range entries {
+		if entry.FieldsV1 == nil || !ownsField(entry.FieldsV1.Raw, path) {
+			continue
+		}
+		if tool := gitops.ToolOf(entry.Manager); tool != "" {
+			return applier{gitOps: gitOpsName(tool, obj)}
+		}
+		found.helm = found.helm || entry.Manager == helmManager
+	}
+	return found
+}
+
+// gitOpsName is the tool that applies obj, with the application when its
+// tracking metadata names one. With the manager known to be Argo CD, the
+// app.kubernetes.io/instance label it tracks by default names the
+// application.
+func gitOpsName(tool gitops.Tool, obj client.Object) string {
+	if tracked := trackedBy(obj); tracked != "" {
+		return tracked
+	}
+	if app := obj.GetLabels()["app.kubernetes.io/instance"]; tool == gitops.ArgoCD && app != "" {
+		return "Argo CD application " + app
+	}
+	return string(tool)
+}
+
+func ownsField(raw []byte, path []string) bool {
+	for _, name := range path {
+		var fields map[string]json.RawMessage
+		if json.Unmarshal(raw, &fields) != nil {
+			return false
+		}
+		var ok bool
+		if raw, ok = fields[name]; !ok {
+			return false
+		}
+	}
+	return true
+}
+
+// trackedBy names the GitOps tool and application that apply an object,
+// from the tracking metadata each one adds, or "" if none does. Argo CD
+// tracks by the app.kubernetes.io/instance label by default, which Helm
+// charts set too, so that label alone doesn't say Argo CD applies it.
+func trackedBy(obj client.Object) string {
 	annotations, labels := obj.GetAnnotations(), obj.GetLabels()
 	switch {
 	case annotations["argocd.argoproj.io/tracking-id"] != "":
@@ -504,6 +807,12 @@ func gitOpsTool(obj client.Object) string {
 		return "Flux HelmRelease " + labels["helm.toolkit.fluxcd.io/name"]
 	}
 	return ""
+}
+
+// helmWarning says Helm will put back the setting enable just changed.
+func helmWarning(ref, setting string) string {
+	return fmt.Sprintf("Warning: Helm set %s's %s, so the next helm upgrade puts the chart's value back; "+
+		"set it to false in the chart too", ref, setting)
 }
 
 func kindOf(obj client.Object) string {

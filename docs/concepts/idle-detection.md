@@ -31,6 +31,8 @@ Memory isn't a source: it stays allocated whether or not anyone uses the workloa
 
 CPU is measured for the containers in the target's pod template, including native sidecars (init containers with `restartPolicy: Always`). Sidecars injected when the pod is created, such as an Istio or Linkerd proxy, aren't counted: their own background work isn't use of the workload, and they aren't in the template's requests. [Cost](cost-tracking.md) does count them, since they cost the same as any container and pausing frees them too.
 
+Usage is compared with what those containers request in a running pod, not in the template, so a request set when the pod was created counts: a LimitRange default, or a Vertical Pod Autoscaler's recommendation. The pod read is a running one of the target's current revision: a failed pod, such as one evicted, keeps the requests of whatever revision it ran until it's cleaned up, and isn't read. The request is read again every 5 minutes, at once when the target's spec changes, and on every check while it's unclear which revision a replica will have, as during a Deployment's rollout. With no pod running, the newest that's starting is read, such as a Pending one in a `Recreate` rollout, and only with none at all are the template's requests used, a container that sets only a CPU limit taken to request its limit, as Kubernetes does.
+
 ### Activity annotations
 
 Set either annotation on the ManagedWorkload or on its target Deployment or StatefulSet. Values are RFC 3339 times.
@@ -58,7 +60,7 @@ A workload at zero replicas that Hybernate didn't pause isn't checked at all: it
 1. CPU, or a configured Prometheus query, can't be read: stay awake (see [below](#when-a-source-cant-be-read)).
 2. `active-until` is in the future: stay awake.
 3. The last activity is less than `idleAfter` ago: stay awake.
-4. The [forecast](forecasting.md) is confident (`DailyActive` or later) and predicts demand above `cpuThreshold` in the hour under way or the next: stay awake. The `IdleVetoed` condition is `True`, with reason `ForecastExpectsDemand` and a message naming the hour, while this holds the pause back, and an `IdleVetoed` event marks the start of each veto.
+4. The [forecast](forecasting.md) is confident (shown as `DailyActive` or later, `dailyPhase: Active`) and predicts utilization above `cpuThreshold` in the hour under way or the next: stay awake. The `IdleVetoed` condition is `True`, with reason `ForecastExpectsDemand` and a message naming the hour, while this holds the pause back, and an `IdleVetoed` event marks the start of each veto.
 5. Another workload that [depends on](dependencies.md) this one is awake, or `dependsOn` forms a cycle: stay awake (`HeldByDependents` or `DependencyCycle`).
 6. Otherwise the clock has run out. The phase becomes `Idle`, with an `IdleDetected` event, and the workload is [paused](../guides/pause.md).
 
@@ -77,7 +79,7 @@ Hybernate never pauses a workload while one of its activity sources can't be rea
 | Reason | Meaning |
 |--------|---------|
 | `NoPodMetrics` | The target has replicas but the Metrics API reports no pods. Check that metrics-server is installed. |
-| `NoCPURequests` | The target's containers set no CPU requests, so utilization can't be measured. Set CPU requests. |
+| `NoCPURequests` | The target's running pods request no CPU for its containers, or, with none running, its pod template requests none, so utilization can't be measured. Set CPU requests, or a default in the namespace's LimitRange. |
 | `MetricsUnavailable` | The Metrics API itself failed. The condition message has the error. |
 
 A target scaled to zero isn't an error: it has no usage, which is real data.
@@ -105,7 +107,7 @@ A paused workload wakes when:
 
 - A request reaches one of its Services. The request is held while the workload starts, then answered; see [Wake on Request](wake-on-request.md).
 - A `hybernate.io/last-activity`, `last-request` or `active-until` annotation on the ManagedWorkload or its target changes after the pause began, whatever time it states, so a clock that's behind the operator's can't lose a wake. Only a change counts: the pause records the annotations as they stood, so a value set before it, even one stating a later time, doesn't wake it. `kubectl hybernate wake` sets one, and this is how a "start environment" button in a developer portal works.
-- `autoResume: true` is set and a confident forecast predicts demand above `cpuThreshold` for the current hour, or for the next hour once it's 15 minutes away, so the workload is ready before people arrive.
+- `autoResume: true` is set and a confident forecast (`dailyPhase: Active`) predicts utilization above `cpuThreshold` for the current hour, or for the next hour once it's 15 minutes away, so the workload is ready before people arrive.
 - Something other than Hybernate scales it up, such as `kubectl scale`.
 - Dry-run is turned on: dry-run never leaves a workload paused.
 

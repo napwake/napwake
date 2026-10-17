@@ -64,7 +64,7 @@ internal/forecast/             # Holt-Winters engine
 internal/signal/               # Prometheus activity queries
 internal/lifecycle/            # Pause and resume
 internal/autoscaler/           # HPA and KEDA
-internal/gitops/               # Argo CD and Flux detection
+internal/gitops/               # GitOps tool detection
 internal/discovery/            # Cluster scan for kubectl hybernate scan
 internal/doorman/              # Wake on request
 internal/cost/                 # Cost rates and node list prices
@@ -72,7 +72,8 @@ internal/metrics/              # Prometheus metrics, and the Metrics API reader
 charts/hybernate/              # Helm chart
 config/                        # CRD, RBAC, kustomize manifests
 test/e2e/                      # End-to-end tests, in Kind
-test/docs/                     # Validates the docs' ManagedWorkload YAML against the CRD
+test/docs/                     # Validates the docs' ManagedWorkloads against the CRD, and Helm values against the chart
+tests/prometheus/              # promtool tests for the alert rules
 docs/                          # This site (mkdocs)
 ```
 
@@ -123,7 +124,7 @@ CI also runs the end-to-end tests on Kubernetes 1.30 and 1.37, the Helm smoke te
 
 ## Documentation
 
-The docs are built with mkdocs: `pip install -r docs/requirements.txt`, then `mkdocs serve`. `make test` creates every ManagedWorkload shown in a `yaml` block in `README.md` and `docs/`, and in `config/samples/`, against the real CRD, so a doc example that doesn't validate fails the build. Put `<!-- snippet -->` on the line before a block that's deliberately partial. Links to `https://okedeji.io/hybernate` in the code must point at a page in `docs/`.
+The docs are built with mkdocs: `pip install -r docs/requirements.txt`, then `mkdocs serve`. `make test` creates every ManagedWorkload shown in a `yaml` block in `README.md` and `docs/`, and in `config/samples/`, against the real CRD, so a doc example that doesn't validate fails the build. A partial one, a `spec:` block or spec fields such as `dependsOn` on their own, is wrapped into a whole ManagedWorkload first; title it `managedworkload.yaml` or leave it untitled, since a block titled as another file, such as `application.yaml`, isn't read as one. Helm values blocks, titled `values.yaml` or `values-<name>.yaml` or untitled with only the chart's keys, are checked against `charts/hybernate/values.schema.json`, and every value they set must be one the chart has. Put `<!-- snippet -->` on the line before a block that's deliberately partial and shouldn't be checked. Links to `https://okedeji.io/hybernate` in the code must point at a page in `docs/`.
 
 ## Regenerating Generated Code
 

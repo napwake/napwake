@@ -46,11 +46,13 @@ dependsOn:
   - {kind: Deployment, name: cache}          # wakes at the same time
 ```
 
-The dependent then stays in `Resuming`, without scaling up, until every replica of that dependency is Ready:
+The dependent then stays in `Resuming`, without scaling up, until every replica of that dependency is Ready, or until it serves with as many as it will have for now:
 
 ```
-WaitingForDependencies=True   waiting for preview-42/postgres (0 ready)
+WaitingForDependencies=True   waiting for preview-42/statefulset/postgres (0 ready)
 ```
+
+A dependency that has some replicas Ready but not all, such as one with a pod crash-looping, serves with those that are, so the dependent doesn't wait for the rest for good. A managed dependency counts once its own [resume](lifecycle.md#automatic) has finished, even short of every replica (its `ResumeIncomplete=True`); one Hybernate doesn't manage counts once the dependent has waited 2 minutes, the time a resume gives the rest of its replicas. A dependency with no replica Ready is always waited for.
 
 There's no timeout, because a slow start is exactly why you'd set it. If the wait runs past 15 minutes, the `HybernateWorkloadStuck` alert fires. It doesn't wait for a dependency that can't start by waiting, which would leave the dependent at zero for good: one Hybernate doesn't manage that's scaled to zero. `WaitingForDependencies=False` then names it. A managed dependency that's still paused is woken again every few seconds while the dependent waits.
 
@@ -62,6 +64,7 @@ There's no timeout, because a slow start is exactly why you'd set it. If the wai
 | The dependency doesn't exist | `DependencyNotFound=True` on the dependent. Nothing is blocked, including a `waitForReady` resume |
 | The dependency is in a namespace outside `watchNamespaces`, or Hybernate isn't allowed to read it | `DependencyNotFound=True` with reason `DependencyNotVisible`, naming why. It isn't held or woken, and nothing is blocked |
 | A cycle in `dependsOn` (A depends on B, B depends on A) | Each would hold the other awake forever, so neither pauses and both report `DependencyCycle=True` until it's removed |
+| A workload listed as its own dependency | Ignored: it's neither a cycle nor something to wait for. A namespace's `hybernate.io/depends-on` leaves it out of the dependency it names, so annotating a namespace `statefulset/postgres` doesn't make postgres depend on itself |
 | A cycle through learned dependencies, such as two services that call each other | Not a cycle: a learned dependent doesn't hold a workload it's itself a dependency of. Each pauses when idle, and waking either wakes the other |
 | `kubectl hybernate pause` on a dependency that's in use | It isn't paused: the request is answered with `PauseRequest=False`, reason `HeldByDependents`, and a `HeldByDependents` event naming the dependents, as for an idle pause. Pause the dependents first |
 | `dryRun: true` | The hold still applies and is reported; nothing is changed |
@@ -85,7 +88,7 @@ learnedDependencies:
 
 with a `DependenciesLearned` event when the set changes. They're learned again when the pod template changes, and hourly for ConfigMaps changed since. Secrets are never read, so an address set only in a Secret isn't learned from the environment.
 
-**From wakes, too.** When a request wakes a paused workload, the [doorman](wake-on-request.md) records where it came from, and the operator finds the pod that sent it. If that pod belongs to a workload Hybernate manages, that workload depends on the one it woke, and the link is learned with `source: wake`. That covers addresses in Secrets, built in code, or read from files, the first time they're used. A request from a workload Hybernate doesn't manage, such as an ingress controller, or from a pod on the node's network, teaches nothing. Links learned from wakes are kept when the environment is read again.
+**From wakes, too.** When a request wakes a paused workload, the [doorman](wake-on-request.md) records where it came from, and the operator finds the pod that sent it. If that pod belongs to a workload Hybernate manages, that workload depends on the one it woke, and the link is learned with `source: wake`. That covers addresses in Secrets, built in code, or read from files, the first time they're used. A request from a workload Hybernate doesn't manage, such as an ingress controller, or from a pod on the node's network, teaches nothing. Links learned from wakes are kept when the environment is read again, for 14 days after the last request that woke the dependency: `lastSeen` records it, at most once a day. While a link is kept, the dependency is held awake with the workload and woken with it, so the workload's requests no longer reach the doorman and don't renew the link. A link in steady use is dropped too, 14 days after it was learned or last renewed, and learned again from the next request that wakes the dependency, at the cost of that request's cold start, about once a fortnight. A one-off call, such as someone's `curl` from a pod, is forgotten the same way, so it doesn't tie two workloads together for good.
 
 A learned link is safe to apply on its own: a wrong one can only keep a workload awake longer, or wake it, never pause it. To drop one, name it in `hybernate.io/ignore-dependencies` on the workload or its ManagedWorkload, comma-separated, as `namespace/name` or a name in its own namespace:
 

@@ -165,7 +165,7 @@ func (r *Reconciler) reconcileScaledToZero(ctx context.Context, workload *v1alph
 	r.clearIdleVeto(workload)
 	r.trackDryRun(workload)
 	if workload.Status.Phase == v1alpha1.PhaseIdle {
-		r.endWouldBePause(workload)
+		r.endWouldBePauseNow(workload)
 		if err := r.transition(ctx, workload, v1alpha1.PhaseRunning, "ScaledToZero"); err != nil {
 			return ctrl.Result{}, err
 		}
@@ -205,14 +205,14 @@ func (r *Reconciler) livePhase(ctx context.Context, workload *v1alpha1.ManagedWo
 	return live.Status.Phase, nil
 }
 
+// scaledUpBy is the external_scale_ups_total label for the GitOps tool that
+// scaled a workload up, its name in lower case and hyphenated, as argo-cd,
+// or other for anything else.
 func scaledUpBy(w gitops.Writer) string {
-	switch w.Tool {
-	case gitops.ArgoCD:
-		return "argo-cd"
-	case gitops.Flux:
-		return "flux"
+	if w.Tool == "" {
+		return "other"
 	}
-	return "other"
+	return strings.ReplaceAll(strings.ToLower(string(w.Tool)), " ", "-")
 }
 
 // gitOpsHold is when Hybernate may pause a workload whose last pause a

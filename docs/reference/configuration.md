@@ -13,12 +13,12 @@ These flags are passed to the binary (`/manager`), which runs as the operator, o
 | `--metrics-cert-key` | `tls.key` | Metrics key file name |
 | `--enable-http2` | `false` | Allow HTTP/2 for the metrics server |
 | `--health-probe-bind-address` | `:8081` | Address for the health and readiness probes |
-| `--leader-elect` | `false` | Elect a leader, so only one replica reconciles. Ignored by the doorman |
+| `--leader-elect` | `false` | Elect a leader, so only one replica reconciles. A leader that stops releases its lease, so the next replica, or the new one in a rollout, takes over at once. Ignored by the doorman |
 | `--max-concurrent-reconciles` | `4` | How many ManagedWorkloads are reconciled at once, so one slow metrics or Prometheus query doesn't hold up wakes. At least 1 |
 | `--timezone` | `UTC` | IANA time zone, such as `Europe/London`, whose hours and weekdays forecasts learn, so they follow daylight saving. The time zone database is built in |
 | `--prometheus-url` | | Base URL of the Prometheus API for Prometheus activity queries, such as `http://prometheus.monitoring.svc:9090`; `http` or `https` with a host. Required only if workloads set `idlePolicy.activity.prometheus` |
 | `--watch-namespaces` | every namespace | Comma-separated namespaces to work in, with a Role in each |
-| `--protected-namespaces` | | Comma-separated name patterns, such as `prod-*`, of namespaces Hybernate never manages, as if labelled `hybernate.io/protected=true`, unless labelled `hybernate.io/allow-protected=true` |
+| `--protected-namespaces` | | Comma-separated name patterns, such as `prod-*`, of namespaces Hybernate never manages, as if labelled `hybernate.io/protected=true`, unless labelled `hybernate.io/allow-protected=true`. The `kube-*` namespaces, `$POD_NAMESPACE`, and the doorman's namespace are always protected besides; see [Protected namespaces](../guides/opt-in.md#protected-namespaces) |
 | `--default-idle-after` | `1h` | Idle time before pausing, for workloads opted in with the label whose annotations and namespace don't set it. Must be above zero |
 | `--default-cpu-threshold` | `10` | CPU percentage of requests that counts as active, for opted-in workloads that don't set it. 1 to 100 |
 | `--default-dry-run` | `false` | Measure opted-in workloads without pausing, unless they or their namespace set `hybernate.io/dry-run` |
@@ -79,10 +79,11 @@ The operator and the doorman log JSON by default, through `logr` (controller-run
 
 | Field | Description |
 |-------|-------------|
-| `workload` | ManagedWorkload name |
-| `namespace` | Workload namespace |
-| `phase` | Current lifecycle phase |
-| `from` / `to` | Phase transition |
-| `reason` | Action reason |
+| `name`, `namespace` | The object a reconcile is for, such as the ManagedWorkload, added by controller-runtime to every entry it logs, with `controller` and `reconcileID` |
+| `workload` | The workload or ManagedWorkload an entry is about, on entries that name it themselves, with its `namespace` |
+| `from`, `to` | The phases of a `phase transition` entry |
+| `reason` | Why: what caused a phase transition |
+| `phase` | The phase after a reconcile, on `reconciled` entries at debug level (`--zap-log-level=debug`) |
+| `error` | What went wrong, on entries about a failure |
 
 For logs to read by eye, use `--zap-encoder=console` (the chart's `logEncoder: console`).

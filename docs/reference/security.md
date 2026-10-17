@@ -8,7 +8,7 @@ What a security review of Hybernate needs: what it can do in a cluster, what it 
 - **It never reads Secrets.**
 - **It can be confined to namespaces.** With [`watchNamespaces`](helm-values.md#namespaces), the operator and doorman get a Role in each of those namespaces instead of a ClusterRole, so Kubernetes itself refuses them anything elsewhere. The operator keeps one ClusterRole, read-only, on Namespaces and Nodes, and a Role in its own namespace to read the doorman's EndpointSlices. With secure metrics (the default), both also keep a ClusterRoleBinding to `system:auth-delegator`, which only lets them check the tokens of whoever scrapes their metrics.
 - **It can be kept out of namespaces.** A namespace labelled `hybernate.io/protected=true`, or matching [`protectedNamespaces`](helm-values.md#namespaces), is never managed; see [Protected namespaces](../guides/opt-in.md#protected-namespaces).
-- **It doesn't fight people or tools.** A paused workload scaled up by anything else wakes; a GitOps tool undoing a pause is reported, not fought; see [Argo CD and Flux](../guides/gitops.md).
+- **It doesn't fight people or tools.** A paused workload scaled up by anything else wakes; a GitOps tool undoing a pause is reported, not fought; see [GitOps tools](../guides/gitops.md).
 
 Everything it reads, writes, and sends is listed in [Data and Access](data-and-access.md), and the exact RBAC in [Helm values](helm-values.md#rbac).
 
@@ -22,17 +22,17 @@ Everything it reads, writes, and sends is listed in [Data and Access](data-and-a
 | Doorman | The woken workload's pods, in any routed namespace, on their Service ports | Passing the held connection through |
 | Prometheus | Operator and doorman metrics | Only with a token allowed to get `/metrics`, unless `metrics.secure` is off |
 
-Nothing leaves the cluster: no telemetry, no usage reporting, no update checks. The images run as a non-root user on a distroless base, with a read-only root filesystem.
+Nothing leaves the cluster: no telemetry, no usage reporting, no update checks. The images run as a non-root user on a distroless base, with a read-only root filesystem. So does the chart's uninstall guard, a pre-delete hook Job that runs only during `helm uninstall`, from the digest-pinned `registry.k8s.io/kubectl` image, with a ServiceAccount that may only read ManagedWorkloads.
 
 ### The doorman is a way in to paused workloads
 
-Any client that can reach a doorman pod can reach every routed, paused workload, in any namespace, on its Service ports, and a workload's own NetworkPolicy sees the doorman, not the client, as the source. The chart's NetworkPolicy (`networkPolicy.enabled`, off by default) leaves the doorman's routing ports open to every source unless you restrict them. Where that's too wide:
+Any client that can reach a doorman pod can reach every routed, paused workload, in any namespace, on its Service ports, and a workload's own NetworkPolicy sees the doorman, not the client, as the source. The doorman listens on all of its pod's interfaces: binding to the pod IP would only shut out containers in its own pod, so a NetworkPolicy on the doorman is the control that matters. The chart's NetworkPolicy (`networkPolicy.enabled`, off by default) leaves the doorman's routing ports open to every source unless you restrict them. On any cluster where untrusted pods share the network, enable `networkPolicy` and set `doorman.networkPolicy.ingressFrom`. Where the default is too wide:
 
 - Admit only the callers your paused workloads really have, such as your ingress controller's namespace and the namespaces whose apps call paused services, with `doorman.networkPolicy.ingressFrom`. See [Wake on Request](../concepts/wake-on-request.md#restricting-who-can-reach-the-doorman).
 - Give them an egress NetworkPolicy allowing only your pod CIDRs and the API server: set `doorman.networkPolicy.egress` (off by default; see [Helm values](helm-values.md#network-policy)). The doorman only dials Pod-backed IP endpoints of EndpointSlices the EndpointSlice controller manages, and refuses loopback, link-local, and cloud metadata addresses (AWS's `fd00:ec2::254` and Alibaba Cloud's `100.100.100.200` included), but anyone who can write EndpointSlices in a namespace can forge those labels, and the policy enforces the same bounds in the network.
-- Its rate limits (see [Limits](../concepts/wake-on-request.md#limits)) slow a port scan through the doorman; they don't stop one.
+- Its rate limits (see [Limits](../concepts/wake-on-request.md#limits)) slow a port scan through the doorman; they don't stop one. One workload can hold at most 256 of a doorman pod's 2048 places, so a workload that never becomes Ready can't stop other workloads' requests from being held.
 
-The doorman's ServiceAccount can patch ManagedWorkloads, to set `hybernate.io/last-request` and `hybernate.io/last-request-from`, the caller's IP address. A ValidatingAdmissionPolicy limiting that ServiceAccount's patches to those two annotations would narrow it further; the chart doesn't ship one.
+The doorman's ServiceAccount can patch ManagedWorkloads, to set `hybernate.io/last-request` and `hybernate.io/last-request-from`, the caller's IP address. The chart's `<fullname>-doorman` ValidatingAdmissionPolicy (`doorman.admissionPolicy.enabled`, on by default) holds it to those two annotations: the API server refuses a patch from it that changes a ManagedWorkload's spec, labels, finalizers, owners or any other annotation. The kustomize manifests include it too, naming the default install's ServiceAccount, `hybernate-system/hybernate-doorman`; change it in `config/rbac/doorman_admission_policy.yaml` if you change the namespace or name prefix.
 
 ## Verifying a release
 

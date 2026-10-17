@@ -37,6 +37,7 @@ import (
 
 	v1alpha1 "github.com/okedeji/hybernate/api/v1alpha1"
 	"github.com/okedeji/hybernate/internal/autoscaler"
+	"github.com/okedeji/hybernate/internal/gitops"
 )
 
 // scaledBy is the target as the API server returns it after manager last
@@ -127,6 +128,21 @@ func conflicted(scaledUp time.Time) *v1alpha1.ManagedWorkload {
 
 // After a GitOps tool undoes a pause, the idle clock waits before pausing
 // again, so it doesn't restart the workload in a loop with the tool.
+// Every GitOps tool Hybernate recognises gets its own label on
+// external_scale_ups_total, not only Argo CD and Flux.
+func TestScaledUpBy(t *testing.T) {
+	for tool, want := range map[gitops.Tool]string{
+		gitops.ArgoCD: "argo-cd",
+		gitops.Flux:   "flux",
+		"Fleet":       "fleet",
+		"kapp":        "kapp",
+		"Kluctl":      "kluctl",
+		"":            "other",
+	} {
+		assert.Equal(t, want, scaledUpBy(gitops.Writer{Tool: tool}), string(tool))
+	}
+}
+
 func TestIdleClock_WaitsAfterAGitOpsConflict(t *testing.T) {
 	tests := []struct {
 		name      string

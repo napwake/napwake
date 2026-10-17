@@ -19,6 +19,7 @@ package controller
 import (
 	"context"
 	"fmt"
+	"sync"
 	"time"
 
 	appsv1 "k8s.io/api/apps/v1"
@@ -94,6 +95,11 @@ type Reconciler struct {
 	// Hybernate doesn't manage unless they're labelled to allow it.
 	ProtectedNamespaces []string
 
+	// HybernateNamespaces are the namespaces Hybernate itself runs in. Its
+	// operator's and doorman's Deployments there are never paused, whatever
+	// a ManagedWorkload or a namespace label says.
+	HybernateNamespaces []string
+
 	// WatchNamespaces are the namespaces Hybernate works in, with a Role in
 	// each, or every namespace when empty.
 	WatchNamespaces []string
@@ -109,6 +115,7 @@ type Reconciler struct {
 	autoscalers     *autoscaler.Finder
 	engines         *engineRegistry
 	activityMemo    activityMemo
+	phaseWrites     phaseWrites
 	doormanPorts    portAllocator
 	doormanFailures failureBackoff
 	prometheusURL   string
@@ -118,7 +125,7 @@ type Reconciler struct {
 type lifecyclePauser interface {
 	Prepare(ctx context.Context, workload *v1alpha1.ManagedWorkload) error
 	Pause(ctx context.Context, workload *v1alpha1.ManagedWorkload) (bool, error)
-	Resume(ctx context.Context, workload *v1alpha1.ManagedWorkload) (bool, error)
+	Resume(ctx context.Context, workload *v1alpha1.ManagedWorkload, waited lifecycle.Waited) (lifecycle.Resumption, error)
 	Restore(ctx context.Context, workload *v1alpha1.ManagedWorkload) (int32, error)
 }
 
@@ -143,7 +150,6 @@ type lifecyclePauser interface {
 func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (res ctrl.Result, retErr error) {
 	ctx, cancel := context.WithTimeout(ctx, reconcileTimeout)
 	defer cancel()
-	logger := log.FromContext(ctx)
 
 	var doormanRetry time.Duration
 	defer func() {
@@ -159,11 +165,16 @@ func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (res ctrl.
 
 	var workload v1alpha1.ManagedWorkload
 	if err := r.Get(ctx, req.NamespacedName, &workload); err != nil {
+		// Deleted without its finalizer running, it would leave its series.
+		if apierrors.IsNotFound(err) {
+			metrics.DeleteWorkload(req.Namespace, req.Name)
+		}
 		return ctrl.Result{}, client.IgnoreNotFound(err)
 	}
 
 	if !workload.DeletionTimestamp.IsZero() {
-		return ctrl.Result{}, r.reconcileDelete(ctx, &workload)
+		wait, err := r.reconcileDelete(ctx, &workload)
+		return ctrl.Result{RequeueAfter: wait}, err
 	}
 
 	// Re-published every reconcile so the gauge is populated after an
@@ -198,15 +209,15 @@ func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (res ctrl.
 		return r.reconcileIgnored(ctx, &workload)
 	}
 	r.setCondition(&workload, conditionTargetAvailable, metav1.ConditionTrue, "TargetExists", "")
+	if p, err := r.protectionOf(ctx, &workload, target); err != nil {
+		return ctrl.Result{}, err
+	} else if p != nil {
+		return r.reconcileProtected(ctx, &workload, *p)
+	}
+	r.clearCondition(&workload, conditionProtected, "NotProtected")
 	if err := r.wakeOnScaleUp(ctx, &workload, target); err != nil {
 		return ctrl.Result{}, err
 	}
-	if protected, err := r.inProtectedNamespace(ctx, &workload); err != nil {
-		return ctrl.Result{}, err
-	} else if protected {
-		return r.reconcileProtected(ctx, &workload)
-	}
-	r.clearCondition(&workload, conditionProtected, "NotProtected")
 	if err := r.reportAutoscaler(ctx, &workload); err != nil {
 		return ctrl.Result{}, err
 	}
@@ -214,6 +225,11 @@ func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (res ctrl.
 		return ctrl.Result{}, err
 	}
 
+	if stale, err := r.staleForRouting(ctx, &workload); err != nil {
+		return ctrl.Result{}, err
+	} else if stale {
+		return ctrl.Result{RequeueAfter: staleRetry}, nil
+	}
 	doormanRetry = r.routeDoorman(ctx, &workload, target)
 
 	result, err := r.resumeTransition(ctx, &workload, target)
@@ -238,22 +254,55 @@ func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (res ctrl.
 		return *result, nil
 	}
 
-	result, err = r.reconcileAutomation(ctx, &workload, target)
+	return r.reconcileSettled(ctx, &workload, target, observed)
+}
+
+// reconcileSettled runs automation on a workload no pause or resume is
+// under way for, and writes its status if that changed it.
+func (r *Reconciler) reconcileSettled(ctx context.Context, workload *v1alpha1.ManagedWorkload, target client.Object,
+	observed *v1alpha1.ManagedWorkloadStatus) (ctrl.Result, error) {
+	allReady := r.clearResumeIncomplete(workload, target)
+	result, err := r.reconcileAutomation(ctx, workload, target)
 	if err != nil {
 		return ctrl.Result{}, err
 	}
 
-	r.trackDryRun(&workload)
-	r.accumulateCost(ctx, &workload)
-	if err := r.persistStatus(ctx, &workload, observed); err != nil {
+	r.trackDryRun(workload)
+	r.accumulateCost(ctx, workload)
+	if err := r.persistStatus(ctx, workload, observed); err != nil {
 		return ctrl.Result{}, err
 	}
+	// Announced once written, so a write that fails isn't announced twice.
+	if allReady {
+		r.emitEvent(workload, false, "Normal", ReasonAllReplicasReady, actionResume,
+			"all %d replicas are Ready, after the last resume stopped waiting for them", lifecycle.ReadyReplicas(target))
+	}
 
-	logger.V(1).Info("reconciled", "workload", workload.Name, "namespace", workload.Namespace, "phase", workload.Status.Phase)
+	log.FromContext(ctx).V(1).Info("reconciled", "workload", workload.Name, "namespace", workload.Namespace,
+		"phase", workload.Status.Phase)
 	if result != nil {
 		return *result, nil
 	}
 	return ctrl.Result{}, nil
+}
+
+// staleForRouting reports whether the workload's phase, as read from the
+// cache, is out of date for routing it to the doorman. A cache that hasn't
+// yet seen a resume finish still holds the workload Paused, and routing
+// that would put back the doorman slices the resume just removed. Only the
+// API server can tell, and only a workload that would be routed, and whose
+// phase this operator has just written, needs asking: the cache can only be
+// behind a write, and every paused workload is reconciled every few
+// minutes, which would otherwise read each one past the cache each time.
+func (r *Reconciler) staleForRouting(ctx context.Context, workload *v1alpha1.ManagedWorkload) (bool, error) {
+	if !doormanEligible(workload) || !r.phaseWrites.recent(workload.UID, r.now()) {
+		return false, nil
+	}
+	phase, err := r.livePhase(ctx, workload)
+	if err != nil {
+		return false, err
+	}
+	return phase != workload.Status.Phase, nil
 }
 
 // resumeTransition finishes a pause or resume that an earlier reconcile
@@ -396,23 +445,46 @@ func (r *Reconciler) handleResume(ctx context.Context, workload *v1alpha1.Manage
 		return nil, nil
 	}
 
+	before := meta.FindStatusCondition(workload.Status.Conditions, conditionWaitingForDependencies).DeepCopy()
 	if waiting, err := r.waitForDependencies(ctx, workload); waiting != nil || err != nil {
 		return waiting, err
 	}
+	// The wait for its own replicas is timed from when its dependencies
+	// were Ready, which only that condition's change records. Unwritten, the
+	// next reconcile would make it again, and the wait would start over.
+	after := meta.FindStatusCondition(workload.Status.Conditions, conditionWaitingForDependencies)
+	if conditionChanged(before, after) {
+		if err := r.Status().Update(ctx, workload); err != nil {
+			return nil, fmt.Errorf("recording its dependencies Ready: %w", err)
+		}
+	}
 
 	source := wakeSource(workload)
-	done, err := r.pauser.Resume(ctx, workload)
+	waited := lifecycle.Waited{ScaledUp: r.sinceScaledUp(workload), Serving: r.sinceFirstReady(workload)}
+	resumed, err := r.pauser.Resume(ctx, workload, waited)
 	if err != nil {
 		return nil, fmt.Errorf("resuming workload: %w", err)
 	}
-	if !done {
-		return &ctrl.Result{RequeueAfter: resumeRecheck(r.sinceTransition(workload))}, nil
+	if !resumed.Settled {
+		if err := r.recordFirstReady(ctx, workload, resumed); err != nil {
+			return nil, err
+		}
+		return &ctrl.Result{RequeueAfter: resumeRecheck(waited.ScaledUp)}, nil
 	}
 
 	r.stampLastActed(workload)
 	took := r.sinceTransition(workload)
 	r.resetActivity(workload, source)
 	tool, resolved := r.clearGitOpsConflict(workload)
+	short := resumed.Ready < resumed.Replicas
+	var shortfall string
+	if short {
+		shortfall = fmt.Sprintf("resumed with %d of %d replicas Ready: Hybernate stopped waiting for the rest after %s",
+			resumed.Ready, resumed.Replicas, roundedDuration(waited.ScaledUp))
+		r.setCondition(workload, conditionResumeIncomplete, metav1.ConditionTrue, "ReplicasNotReady", shortfall)
+	} else {
+		r.clearCondition(workload, conditionResumeIncomplete, ReasonAllReplicasReady)
+	}
 	if err := r.transition(ctx, workload, v1alpha1.PhaseRunning, "Resumed"); err != nil {
 		return nil, err
 	}
@@ -420,8 +492,71 @@ func (r *Reconciler) handleResume(ctx context.Context, workload *v1alpha1.Manage
 	if resolved {
 		r.announceGitOpsConflictResolved(workload, tool)
 	}
-	r.emitEvent(workload, false, "Normal", ReasonResumed, actionResume, "resumed")
+	if short {
+		r.emitEvent(workload, false, "Warning", ReasonResumeIncomplete, actionResume, "%s", shortfall)
+	} else {
+		r.emitEvent(workload, false, "Normal", ReasonResumed, actionResume, "resumed")
+	}
 	return &ctrl.Result{}, nil
+}
+
+// conditionResumeIncomplete says the workload's last resume ended with some
+// of its replicas not Ready, after waiting as long as Hybernate waits.
+const (
+	conditionResumeIncomplete = "ResumeIncomplete"
+
+	ReasonResumeIncomplete = "ResumeIncomplete"
+	ReasonAllReplicasReady = "AllReplicasReady"
+)
+
+// clearResumeIncomplete sets ResumeIncomplete False once the replicas its
+// last resume stopped waiting for are Ready after all, so it isn't reported
+// as needing attention until the next resume.
+func (r *Reconciler) clearResumeIncomplete(workload *v1alpha1.ManagedWorkload, target client.Object) bool {
+	if !meta.IsStatusConditionTrue(workload.Status.Conditions, conditionResumeIncomplete) ||
+		!lifecycle.IsReady(target) {
+		return false
+	}
+	r.setCondition(workload, conditionResumeIncomplete, metav1.ConditionFalse, ReasonAllReplicasReady, "")
+	return true
+}
+
+// sinceFirstReady is how long a resuming workload has had a replica Ready,
+// as recordFirstReady wrote when it first did, or zero.
+func (r *Reconciler) sinceFirstReady(workload *v1alpha1.ManagedWorkload) time.Duration {
+	if workload.Status.Pause == nil || workload.Status.Pause.FirstReadyAt == nil {
+		return 0
+	}
+	return r.now().Sub(workload.Status.Pause.FirstReadyAt.Time)
+}
+
+// recordFirstReady writes when a resume first saw one of its replicas Ready,
+// from which the rest are given lifecycle.ServingWait. It's kept in the
+// pause record, so the time they're given survives an operator restart.
+func (r *Reconciler) recordFirstReady(ctx context.Context, workload *v1alpha1.ManagedWorkload,
+	resumed lifecycle.Resumption) error {
+	pause := workload.Status.Pause
+	if resumed.Ready == 0 || pause == nil || pause.FirstReadyAt != nil {
+		return nil
+	}
+	now := r.clockTime()
+	pause.FirstReadyAt = &now
+	if err := r.Status().Update(ctx, workload); err != nil {
+		return fmt.Errorf("recording its first replica Ready: %w", err)
+	}
+	return nil
+}
+
+// sinceScaledUp is how long a resuming workload has waited for its own
+// replicas: since it began resuming, or since the dependencies it waits for
+// were Ready, if that was later.
+func (r *Reconciler) sinceScaledUp(workload *v1alpha1.ManagedWorkload) time.Duration {
+	waited := r.sinceTransition(workload)
+	c := meta.FindStatusCondition(workload.Status.Conditions, conditionWaitingForDependencies)
+	if c == nil || c.Status == metav1.ConditionTrue {
+		return waited
+	}
+	return min(waited, r.now().Sub(c.LastTransitionTime.Time))
 }
 
 // resumeRecheck is when a resume waiting for its pods to be Ready is looked
@@ -441,28 +576,50 @@ func (r *Reconciler) ensureFinalizer(ctx context.Context, workload *v1alpha1.Man
 	return r.Update(ctx, workload)
 }
 
-func (r *Reconciler) reconcileDelete(ctx context.Context, workload *v1alpha1.ManagedWorkload) error {
+// reconcileDelete hands the target back and lets the ManagedWorkload go. It
+// returns how long to wait first when a doorman port the workload used is
+// still draining: the drain is kept in its status until it ends, so a leader
+// that takes over meanwhile doesn't give the port to another workload while
+// clients may still send this one's traffic to it.
+func (r *Reconciler) reconcileDelete(ctx context.Context, workload *v1alpha1.ManagedWorkload) (time.Duration, error) {
 	if !controllerutil.ContainsFinalizer(workload, finalizerName) {
-		return nil
+		return 0, nil
 	}
 
 	released, replicas, err := r.releaseTarget(ctx, workload)
 	if err != nil {
-		return err
+		return 0, err
+	}
+	if wait := r.drainLeft(workload); wait > 0 {
+		if err := r.Status().Update(ctx, workload); err != nil {
+			return 0, fmt.Errorf("recording the doorman ports draining: %w", err)
+		}
+		return wait, nil
 	}
 
 	controllerutil.RemoveFinalizer(workload, finalizerName)
 	if err := r.Update(ctx, workload); err != nil {
-		return fmt.Errorf("removing finalizer: %w", err)
+		return 0, fmt.Errorf("removing finalizer: %w", err)
 	}
 	if released {
 		r.announceHandBack(workload, replicas, "no longer managed")
 	}
 	r.activityMemo.forget(workload.UID)
+	r.phaseWrites.forget(workload.UID)
 	r.doormanFailures.reset(workload.UID)
 	r.forgetForecast(workload)
 	metrics.DeleteWorkload(workload.Namespace, workload.Name)
-	return nil
+	return 0, nil
+}
+
+// drainLeft is how long until the last of the workload's doorman ports has
+// drained.
+func (r *Reconciler) drainLeft(workload *v1alpha1.ManagedWorkload) time.Duration {
+	var left time.Duration
+	for _, d := range workload.Status.DoormanDraining {
+		left = max(left, d.Until.Sub(r.now()))
+	}
+	return left
 }
 
 // releaseTarget is where Hybernate lets go of a target it stops managing: on
@@ -530,6 +687,7 @@ func (r *Reconciler) reconcileIgnored(ctx context.Context, workload *v1alpha1.Ma
 	}
 	switch {
 	case workload.Status.Phase != v1alpha1.PhaseRunning || released:
+		r.endWouldBePauseNow(workload)
 		if err := r.transition(ctx, workload, v1alpha1.PhaseRunning, "TargetIgnored"); err != nil {
 			return ctrl.Result{}, err
 		}
@@ -623,6 +781,15 @@ func (r *Reconciler) checkTarget(ctx context.Context, workload *v1alpha1.Managed
 func conditionFalseWith(workload *v1alpha1.ManagedWorkload, condType, reason string) bool {
 	c := meta.FindStatusCondition(workload.Status.Conditions, condType)
 	return c != nil && c.Status == metav1.ConditionFalse && c.Reason == reason
+}
+
+// conditionChanged reports whether a condition says something else after a
+// change than before it, including being set where there was none.
+func conditionChanged(before, after *metav1.Condition) bool {
+	if before == nil || after == nil {
+		return before != after
+	}
+	return before.Status != after.Status || before.Reason != after.Reason || before.Message != after.Message
 }
 
 func replicasFromTarget(obj client.Object) int32 {
@@ -850,11 +1017,57 @@ func (r *Reconciler) transition(ctx context.Context, workload *v1alpha1.ManagedW
 	if err := r.Status().Update(ctx, workload); err != nil {
 		return fmt.Errorf("updating phase to %s: %w", phase, err)
 	}
+	r.phaseWrites.record(workload.UID, now.Time)
 	metrics.WorkloadPhase.DeleteLabelValues(workload.Namespace, workload.Name, string(old))
 	recordPhase(workload)
 	metrics.LifecycleTransitions.WithLabelValues(string(old), string(phase)).Inc()
 	logger.Info("phase transition", "from", old, "to", phase, "reason", reason)
 	return nil
+}
+
+// phaseWriteLag is how long after this operator writes a workload's phase
+// its cache is taken to possibly still hold the one before. A watch event
+// normally arrives within a second; one later than this means the
+// operator's connection to the API server is in trouble.
+const phaseWriteLag = 30 * time.Second
+
+// phaseWrites remembers when this operator last wrote each workload's
+// phase, which is the only time its cache can show a stale phase: a newly
+// elected leader starts from a fresh list.
+type phaseWrites struct {
+	mu sync.Mutex
+	at map[types.UID]time.Time
+}
+
+func (w *phaseWrites) record(uid types.UID, at time.Time) {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	if w.at == nil {
+		w.at = make(map[types.UID]time.Time)
+	}
+	w.at[uid] = at
+}
+
+// recent reports whether the workload's phase was written within
+// phaseWriteLag of now, forgetting a write that's older.
+func (w *phaseWrites) recent(uid types.UID, now time.Time) bool {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	at, ok := w.at[uid]
+	if !ok {
+		return false
+	}
+	if now.Sub(at) > phaseWriteLag {
+		delete(w.at, uid)
+		return false
+	}
+	return true
+}
+
+func (w *phaseWrites) forget(uid types.UID) {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	delete(w.at, uid)
 }
 
 func (r *Reconciler) now() time.Time {

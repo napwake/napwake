@@ -18,6 +18,7 @@ package controller
 
 import (
 	"context"
+	"fmt"
 	"sync"
 	"testing"
 	"time"
@@ -307,12 +308,18 @@ func TestKEDAUninstalledWhileTheOperatorRuns(t *testing.T) {
 		return apierrors.IsNotFound(c.Get(ctx, client.ObjectKeyFromObject(crd), kedaCRD()))
 	}, 30*time.Second, 100*time.Millisecond, "KEDA's CRD is gone")
 
-	poke := client.RawPatch(types.MergePatchType, []byte(`{"metadata":{"annotations":{"poke":"after-keda"}}}`))
-	for _, name := range []string{"api", "web"} {
-		require.NoError(t, c.Patch(ctx, workload(name), poke))
-	}
-	assert.Eventually(t, func() bool { return !autoscaled("api") && !autoscaled("web") },
-		30*time.Second, 100*time.Millisecond, "every workload reconciles again, and no longer reports KEDA")
+	// The ScaledObjects listed before are reused for a few seconds, so the
+	// workloads are poked until a reconcile lists them again.
+	pokes := 0
+	assert.Eventually(t, func() bool {
+		pokes++
+		poke := client.RawPatch(types.MergePatchType,
+			fmt.Appendf(nil, `{"metadata":{"annotations":{"poke":"after-keda-%d"}}}`, pokes))
+		for _, name := range []string{"api", "web"} {
+			require.NoError(t, c.Patch(ctx, workload(name), poke))
+		}
+		return !autoscaled("api") && !autoscaled("web")
+	}, 45*time.Second, time.Second, "every workload reconciles again, and no longer reports KEDA")
 
 	require.NoError(t, c.Delete(ctx, workload("api")))
 	assert.Eventually(t, func() bool {
@@ -320,4 +327,55 @@ func TestKEDAUninstalledWhileTheOperatorRuns(t *testing.T) {
 		return apierrors.IsNotFound(err)
 	}, 30*time.Second, 100*time.Millisecond, "the paused workload's ManagedWorkload is deleted")
 	assert.Equal(t, int32(3), replicas("api"), "and its workload is handed back at the replicas it had")
+}
+
+// A KEDA-scaled workload with one of its three replicas never Ready, common
+// in a dev namespace with a pod crash-looping or unschedulable, is paused
+// and woken. Its wake finishes with the two that are Ready rather than
+// waiting for all three for good, which held it Resuming, and KEDA at 3,
+// so it never paused again. The shortfall is reported.
+func TestResume_OfADegradedWorkloadFinishes(t *testing.T) {
+	env := startFaultEnv(t)
+	key := env.create(t, "dev")
+	now := time.Now()
+	r := env.reconciler(t, env.admin)
+	r.clock = func() time.Time { return now }
+	twoInThreeReady := func() {
+		d := env.deployment(t, key)
+		d.Status.ObservedGeneration = d.Generation
+		d.Status.Replicas, d.Status.ReadyReplicas = *d.Spec.Replicas, *d.Spec.Replicas*2/3
+		require.NoError(t, env.admin.Status().Update(env.ctx, d))
+	}
+	reconcile := func() {
+		twoInThreeReady()
+		_, err := r.Reconcile(env.ctx, ctrl.Request{NamespacedName: key})
+		require.NoError(t, err)
+	}
+	for range 5 {
+		reconcile()
+	}
+	require.Equal(t, v1alpha1.PhasePaused, env.phase(key))
+
+	w := env.workload(t, key)
+	w.Annotations[v1alpha1.AnnotationLastActivity] = now.UTC().Format(time.RFC3339)
+	require.NoError(t, env.admin.Update(env.ctx, w))
+	reconcile()
+	require.Equal(t, v1alpha1.PhaseResuming, env.phase(key))
+	for env.phase(key) == v1alpha1.PhaseResuming && now.Before(time.Now().Add(time.Hour)) {
+		now = now.Add(30 * time.Second)
+		reconcile()
+	}
+
+	got := env.workload(t, key)
+	assert.Equal(t, v1alpha1.PhaseRunning, got.Status.Phase)
+	assert.Nil(t, got.Status.Pause)
+	assert.Equal(t, int32(3), *env.deployment(t, key).Spec.Replicas)
+	v, _ := env.pausedReplicasAnnotation(t, key)
+	assert.Equal(t, "7", v, "KEDA is released")
+	c := meta.FindStatusCondition(got.Status.Conditions, conditionResumeIncomplete)
+	require.NotNil(t, c)
+	assert.Equal(t, metav1.ConditionTrue, c.Status)
+	assert.Equal(t, "resumed with 2 of 3 replicas Ready: Hybernate stopped waiting for the rest after 3m", c.Message,
+		"2 minutes from the first reconcile that saw them Ready, 30s after the scale-up")
+	assert.Len(t, recorded(r.Recorder.(*events.FakeRecorder), "Warning "+ReasonResumeIncomplete), 1)
 }

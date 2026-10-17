@@ -18,14 +18,18 @@ package controller
 
 import (
 	"context"
+	"errors"
 	"testing"
 	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	appsv1 "k8s.io/api/apps/v1"
+	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/tools/events"
+	"k8s.io/utils/ptr"
 
 	v1alpha1 "github.com/okedeji/hybernate/api/v1alpha1"
 	"github.com/okedeji/hybernate/internal/cost"
@@ -147,6 +151,79 @@ func TestDryRun_ShortPausesOfSmallWorkloadsAddUp(t *testing.T) {
 	assert.InEpsilon(t, 0.01*24, d.FreedCPUHours.AsApproximateFloat64(), 0.001)
 	assert.InEpsilon(t, 0.0625*24, d.FreedMemoryHours.AsApproximateFloat64(), 0.001)
 	assert.Equal(t, cost.FormatDollars(cost.ComputeHourly(0.01, 0.0625, cost.DefaultRates)*24), d.EstimatedSavings)
+}
+
+// A dry-run workload made Idle by a pause request before its activity was
+// ever measured, such as without metrics-server, has no activity status.
+// Its target then scaled to zero ends the would-be pause without one.
+func TestDryRun_WouldBePauseEndsWithoutMeasuredActivity(t *testing.T) {
+	w := withPauseRequested(lifecycleWorkload("api", v1alpha1.PhaseRunning))
+	w.Spec.DryRun = true
+	w.Finalizers = []string{finalizerName}
+	r := newTestReconcilerWithReplicas(t, w, &stubPauser{}, 2)
+	r.metrics = &stubMetrics{err: errors.New("metrics-server unavailable")}
+	for range 2 {
+		_, err := r.Reconcile(context.Background(), reconcileFor("api"))
+		require.NoError(t, err)
+	}
+	idle := getWorkload(t, r, "api")
+	require.Equal(t, v1alpha1.PhaseIdle, idle.Status.Phase)
+	require.Nil(t, idle.Status.Activity, "activity was never measured")
+
+	var d appsv1.Deployment
+	require.NoError(t, r.Get(context.Background(), reconcileFor("api").NamespacedName, &d))
+	d.Spec.Replicas = ptr.To(int32(0))
+	require.NoError(t, r.Update(context.Background(), &d))
+
+	require.NotPanics(t, func() {
+		_, err := r.Reconcile(context.Background(), reconcileFor("api"))
+		require.NoError(t, err)
+	})
+	assert.Equal(t, v1alpha1.PhaseRunning, getWorkload(t, r, "api").Status.Phase)
+}
+
+// A would-be pause ends, and is counted, when Hybernate stops measuring it:
+// the target scaled to zero, labelled to be ignored, or in a namespace
+// protected since. It lasted until then, however long ago the last activity
+// was.
+func TestDryRun_WouldBePauseEndsWhenHybernateLetsGo(t *testing.T) {
+	running := func() *appsv1.Deployment { return targetDeploymentWithReplicas("api", "default", 2) }
+	ignored := running()
+	ignored.Labels = map[string]string{v1alpha1.LabelIgnore: v1alpha1.True}
+	tests := []struct {
+		name   string
+		ns     *corev1.Namespace
+		target *appsv1.Deployment
+	}{
+		{name: "scaled to zero", ns: defaultNamespace(nil), target: targetDeploymentWithReplicas("api", "default", 0)},
+		{name: "ignored", ns: defaultNamespace(nil), target: ignored},
+		{name: "protected", ns: defaultNamespace(protectedLabel), target: running()},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			workload := depWorkload("default", "api", v1alpha1.TargetKindDeployment, v1alpha1.PhaseIdle)
+			workload.Finalizers = []string{finalizerName}
+			workload.Spec.DryRun = true
+			idleSince := metav1.NewTime(fixedTime.Add(-3 * time.Hour))
+			workload.Status.LastTransitionTime = &idleSince
+			workload.Status.Activity.LastActivityTime = metav1.NewTime(fixedTime.Add(-4 * time.Hour))
+			workload.Status.DryRun = measuring(fixedTime.Add(-24 * time.Hour))
+			workload.Status.DryRun.Pauses = 1
+			workload.Status.DryRun.Resources = &v1alpha1.ResourceSnapshot{Replicas: 2, CPUMillis: 1000,
+				MemoryBytes: gibibyte}
+			r := depReconciler(t, &stubPauser{}, workload, tt.ns, tt.target)
+
+			_, err := r.Reconcile(context.Background(), reconcileFor("api"))
+			require.NoError(t, err)
+
+			got := fetch(t, r, "api")
+			assert.Equal(t, v1alpha1.PhaseRunning, got.Status.Phase)
+			require.NotNil(t, got.Status.DryRun)
+			assert.Equal(t, 3*time.Hour, got.Status.DryRun.Slept.Duration)
+			assert.Equal(t, "$0.21", got.Status.DryRun.EstimatedSavings, "3h of 2 vCPU and 2 GiB")
+			assert.Nil(t, got.Status.DryRun.Resources)
+		})
+	}
 }
 
 func TestTrackDryRun(t *testing.T) {

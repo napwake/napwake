@@ -49,7 +49,13 @@ func TestIsPageLoad(t *testing.T) {
 		{name: "a form submission", head: request("POST /checkout HTTP/1.1", "Host: shop", htmlAccept, "Sec-Fetch-Mode: navigate")},
 		{name: "a WebSocket", head: request("GET /ws HTTP/1.1", "Host: shop", "Upgrade: websocket", "Connection: Upgrade", "Sec-Fetch-Mode: websocket")},
 		{name: "an older client's WebSocket", head: request("GET /ws HTTP/1.1", "Host: shop", htmlAccept, "Upgrade: websocket", "Connection: Upgrade")},
+		{name: "a browser's lines ending in a bare LF", head: []byte("GET / HTTP/1.1\nHost: shop\nSec-Fetch-Mode: navigate\n\n"), want: true},
 		{name: "headers still arriving", head: []byte("GET / HTTP/1.1\r\nHost: shop\r\nSec-Fetch-Mode: navi")},
+		{name: "bare-LF headers still arriving", head: []byte("GET / HTTP/1.1\nHost: shop\nSec-Fetch-Mode: navi")},
+		{name: "a browser whose cookies run past the peek", want: true,
+			head: []byte("GET / HTTP/1.1\r\nHost: shop\r\nSec-Fetch-Mode: navigate\r\nCookie: sso=" + strings.Repeat("a", maxPeek))[:maxPeek]},
+		{name: "a request line alone", head: []byte("GET / HTTP/1.1\r\nCookie: sso=" + strings.Repeat("a", maxPeek))[:maxPeek]},
+		{name: "a request line cut short", head: []byte("GET /" + strings.Repeat("a", maxPeek))[:maxPeek]},
 		{name: "TLS", head: []byte{0x16, 0x03, 0x01, 0x02, 0x00, 0x01}},
 		{name: "HTTP/2", head: []byte("PRI * HTTP/2.0\r\n\r\nSM\r\n\r\n")},
 		{name: "nothing sent", head: nil},
@@ -76,6 +82,15 @@ func TestIsHealthCheck(t *testing.T) {
 		{method: "GET", agent: "OpenTelemetry Collector Contrib/0.104.0 (linux/amd64)", want: true},
 		{method: "GET", agent: "otelcol-contrib/0.110.0", want: true},
 		{method: "GET", agent: "Datadog Agent/7.55.0", want: true},
+		{method: "GET", agent: "Blackbox Exporter/0.25.0", want: true},
+		{method: "GET", agent: "Datadog/Synthetics", want: true},
+		{method: "GET", agent: "Amazon-Route53-Health-Check-Service (ref 7f0e2a3c; report http://amzn.to/1vsZADi)", want: true},
+		{method: "GET", agent: "GoogleStackdriverMonitoring-UptimeChecks(https://cloud.google.com/monitoring)", want: true},
+		{method: "HEAD", agent: "Mozilla/5.0+(compatible; UptimeRobot/2.0; http://www.uptimerobot.com/)", want: true},
+		{method: "GET", agent: "Pingdom.com_bot_version_1.4_(http://www.pingdom.com/)", want: true},
+		{method: "GET", agent: "NewRelicPinger/1.0 (269919)", want: true},
+		{method: "GET", agent: "Uptime-Kuma/1.23.13", want: true},
+		{method: "GET", agent: "Gatus/1.0", want: true},
 		{method: "GET", agent: "Mozilla/5.0 (Macintosh; Intel Mac OS X 14_5)"},
 		{method: "GET", agent: "curl/8.7.1"},
 		{method: "GET", agent: ""},
@@ -105,7 +120,12 @@ func TestHealthCheckAgents_AddToTheBuiltIn(t *testing.T) {
 	assert.True(t, probe("MyCorpMonitor/3.1"))
 	assert.True(t, probe("uptime-kuma/1.23"))
 	assert.True(t, probe("kube-probe/1.31"), "the built-in agents still count")
+	assert.True(t, probe("Mozilla/5.0 (compatible; MyCorpMonitor/3.1; +https://monitor.example.com)"),
+		"a monitor presenting itself as a browser")
 	assert.False(t, probe("Mozilla/5.0 (X11; Linux x86_64)"))
+	assert.False(t, probe("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/129.0.0.0 Safari/537.36"))
+	assert.False(t, probe("Mozilla/5.0 (compatible; Googlebot/2.1; +http://www.google.com/bot.html)"),
+		"only the agents listed")
 	assert.Len(t, agents, len(defaultHealthCheckAgents)+2)
 }
 

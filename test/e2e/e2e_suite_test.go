@@ -180,6 +180,12 @@ func deploy(image string) error {
 		return fmt.Errorf("creating the overlay directory: %w", err)
 	}
 	defer func() { _ = os.RemoveAll(overlay) }() // a leftover temp dir is harmless
+	// macOS's temporary directory is behind a symlink (/var to /private/var),
+	// which kustomize resolves before following the relative path, so the
+	// path is taken from where the directory really is.
+	if overlay, err = filepath.EvalSymlinks(overlay); err != nil {
+		return fmt.Errorf("resolving the overlay directory: %w", err)
+	}
 	// Kustomize refuses an absolute path to a base, but takes a relative one
 	// that leaves the overlay's directory.
 	base, err := filepath.Rel(overlay, filepath.Join(projectDir, "config", "default"))

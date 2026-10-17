@@ -473,6 +473,7 @@ func TestPauseRequest_AcrossARestart(t *testing.T) {
 		30*time.Second, 100*time.Millisecond, "a request through the doorman wakes it to the replicas it had")
 	var d appsv1.Deployment
 	require.NoError(t, c.Get(ctx, key, &d))
+	d.Status.ObservedGeneration = d.Generation
 	d.Status.Replicas, d.Status.ReadyReplicas = 3, 3
 	require.NoError(t, c.Status().Update(ctx, &d))
 	require.Eventually(t, func() bool { return get().Status.Phase == v1alpha1.PhaseRunning },

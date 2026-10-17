@@ -1,14 +1,14 @@
-# Argo CD and Flux
+# GitOps tools
 
-Hybernate pauses a workload by setting its replicas to zero. If Argo CD or Flux applies that workload from Git with `replicas` in its manifest, it sees the cluster no longer matches Git and sets them back, undoing the pause. Each tool has a one-time setting that leaves the replicas to Hybernate; this page gives it.
+Hybernate pauses a workload by setting its replicas to zero. If a GitOps tool such as Argo CD, Flux, Fleet, kapp or Kluctl applies that workload from Git with `replicas` in its manifest, it sees the cluster no longer matches Git and sets them back, undoing the pause. Each tool has a one-time setting that leaves the replicas to Hybernate; this page gives it.
 
 Teams that already run an HPA or KEDA under Argo CD or Flux usually have it in place, since an autoscaler changes replicas too.
 
 ## What Hybernate does
 
-Hybernate never fights Git. When a paused workload is scaled up by anything other than Hybernate, it counts as activity: the workload goes back to Running, and `status.lastScaledUp` records when, how many replicas, and what did it, by the field manager the API server recorded (`kubectl-scale`, `argocd-controller`, `kustomize-controller`, ...).
+Hybernate never fights Git. When a paused workload is scaled up by anything other than Hybernate, it counts as activity: the workload goes back to Running, and `status.lastScaledUp` records when, how many replicas, and what did it, by the field manager the API server recorded (`argocd-controller`, `kustomize-controller`, `kubectl-client-side-apply`, ...). A scale through the scale subresource, as `kubectl scale`, an HPA and KEDA do, records no field manager, so it shows as `unknown`.
 
-When that was Argo CD or Flux, the workload also reports it, with the fix:
+When that was Argo CD, Flux, Rancher Fleet, kapp or Kluctl, the workload also reports it, with the fix:
 
 ```
 GitOpsConflict=True   Argo CD set the replicas from Git, undoing the pause; Hybernate pauses it again from 14:20 UTC. ...
@@ -61,3 +61,33 @@ spec:
               - op: remove
                 path: /spec/replicas
 ```
+
+## Rancher Fleet
+
+Fleet applies what its bundle renders. Leave `replicas` out of the workload's manifest in Git and Fleet leaves them to Hybernate. For a Helm chart that always renders them, remove them with a kustomize patch in the bundle's `fleet.yaml`.
+
+## kapp
+
+Have kapp keep the replicas it finds in the cluster, as its docs give for an HPA, with a rebase rule in a kapp `Config`:
+
+```yaml title="kapp-config.yaml" linenums="1"
+apiVersion: kapp.k14s.io/v1alpha1
+kind: Config
+rebaseRules:
+  - path: [spec, replicas]
+    type: copy
+    sources: [existing, new]
+    resourceMatchers:
+      - apiVersionKindMatcher: {apiVersion: apps/v1, kind: Deployment}
+      - apiVersionKindMatcher: {apiVersion: apps/v1, kind: StatefulSet}
+```
+
+## Kluctl
+
+Kluctl overwrites replicas another manager set only when it force-applies. Annotate the workload in Git with `kluctl.io/ignore-conflicts-manager: hybernate` so it leaves them even then, or leave `replicas` out of its manifest.
+
+## Ending dry-run
+
+A workload's dry-run lives in its `hybernate.io/dry-run` annotation, its namespace's, or a ManagedWorkload's `spec.dryRun`. When Git has that setting, change it there: a change made in the cluster is put back on the tool's next sync. [`kubectl hybernate enable`](../getting-started/kubectl-plugin.md#enable-a-workload) knows this. It reads who owns the setting from the field managers the API server records, so it finds Argo CD whether it tracks apps by label (`app.kubernetes.io/instance`, its default) or by annotation, Flux whether it applies a Kustomization or a HelmRelease, and Fleet, kapp and Kluctl. For those it changes nothing, prints the change to make in Git, and exits non-zero; `--force` changes the cluster anyway. When the tool applies the workload but Git doesn't have the annotation, nothing would put it back, so `enable` sets it.
+
+A chart installed with plain `helm` is different: Helm only applies it when you run it, so `enable` sets the annotation and warns that the next `helm upgrade` restores the chart's value. Set it to `"false"` in the chart's values too.

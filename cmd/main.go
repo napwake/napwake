@@ -26,6 +26,7 @@ import (
 	"os"
 	"path"
 	"runtime/debug"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -176,6 +177,9 @@ func main() {
 		metricsServerOptions.KeyName = metricsCertKey
 	}
 
+	own := hybernateNamespaces(os.Getenv("POD_NAMESPACE"), doormanNamespace, doormanService)
+	protected = slices.Concat(protected, own)
+
 	cacheOpts := doormanCacheOptions(watched)
 	if !runDoorman {
 		routedNamespace := doormanNamespace
@@ -185,13 +189,10 @@ func main() {
 		cacheOpts = operatorCacheOptions(watched, routedNamespace)
 	}
 
-	mgr, err := ctrl.NewManager(ctrl.GetConfigOrDie(), ctrl.Options{
+	mgr, err := ctrl.NewManager(ctrl.GetConfigOrDie(), withLeaderElection(ctrl.Options{
 		Scheme:                 scheme,
 		Metrics:                metricsServerOptions,
 		HealthProbeBindAddress: probeAddr,
-		// Every doorman replica serves traffic, so only the operator elects a leader.
-		LeaderElection:   enableLeaderElection && !runDoorman,
-		LeaderElectionID: "479a98fc.hybernate.io",
 		Client: client.Options{
 			Cache: &client.CacheOptions{
 				// ConfigMaps are read one at a time, for the few a workload
@@ -200,7 +201,7 @@ func main() {
 			},
 		},
 		Cache: cacheOpts,
-	})
+	}, enableLeaderElection && !runDoorman))
 	if err != nil {
 		setupLog.Error(err, "unable to start manager")
 		os.Exit(1)
@@ -231,6 +232,7 @@ func main() {
 			PodReader:               mgr.GetAPIReader(),
 			ProtectedNamespaces:     protected,
 			WatchNamespaces:         watched,
+			HybernateNamespaces:     own,
 			MaxConcurrentReconciles: maxConcurrentReconciles,
 			Timezone:                location,
 		}).SetupWithManager(mgr); err != nil {
@@ -246,6 +248,7 @@ func main() {
 				Defaults:            optIn,
 				ProtectedNamespaces: protected,
 				WatchNamespaces:     watched,
+				HybernateNamespaces: own,
 			}).SetupWithManager(mgr); err != nil {
 				setupLog.Error(err, "unable to create controller", "controller", "OptIn", "kind", kind)
 				os.Exit(1)
@@ -270,6 +273,21 @@ func main() {
 	}
 }
 
+// withLeaderElection has the operator elect a leader when enabled; every
+// doorman replica serves traffic, so the doorman never does.
+//
+// The leader gives up its lease as it stops, rather than leaving it to
+// expire, so a new operator moves paused workloads' Services to the new
+// doorman pods at once when both are upgraded together. That's safe only
+// because main exits as soon as the manager stops: nothing reconciles once
+// the lease is released.
+func withLeaderElection(opts ctrl.Options, enabled bool) ctrl.Options {
+	opts.LeaderElection = enabled
+	opts.LeaderElectionID = "479a98fc.hybernate.io"
+	opts.LeaderElectionReleaseOnCancel = true
+	return opts
+}
+
 // envMemoryLimit is the container's memory limit in bytes, which the
 // manifests set from the pod's resources.
 const envMemoryLimit = "MEMORY_LIMIT"
@@ -287,6 +305,20 @@ func softMemoryLimit(gomemlimit, containerLimit string) (int64, bool) {
 		return 0, false
 	}
 	return limit / 10 * 9, true
+}
+
+// hybernateNamespaces are where the operator and, when waking on request is
+// on, the doorman run. They're protected like --protected-namespaces, so
+// labelling one managed can't have Hybernate pause itself.
+func hybernateNamespaces(podNamespace, doormanNamespace, doormanService string) []string {
+	var out []string
+	if podNamespace != "" {
+		out = append(out, podNamespace)
+	}
+	if doormanService != "" && doormanNamespace != "" && doormanNamespace != podNamespace {
+		out = append(out, doormanNamespace)
+	}
+	return out
 }
 
 func envOr(key, fallback string) string {

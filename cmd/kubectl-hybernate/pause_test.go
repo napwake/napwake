@@ -236,6 +236,19 @@ func TestPause_TimesOut(t *testing.T) {
 	assert.Less(t, time.Since(start), 5*time.Second)
 }
 
+// The wait running out during a poll's read is the workload not being
+// Paused yet, with the phase last seen, not the API server failing to
+// answer.
+func TestPause_TimesOutDuringARead(t *testing.T) {
+	c := newClient(t, slowReads(), managedWorkload(v1alpha1.PhaseRunning))
+
+	_, err := runCLI(t, c, "pause", "api", "--timeout", "100ms")
+
+	require.ErrorIs(t, err, errNotPausedYet)
+	assert.Contains(t, err.Error(), "preview-42/api isn't Paused yet: it's still Running")
+	assert.NotContains(t, err.Error(), "API server")
+}
+
 func TestPause_NotFound(t *testing.T) {
 	_, err := runCLI(t, newClient(t, interceptor.Funcs{}), "pause", "api")
 
@@ -365,10 +378,8 @@ func TestPause_AsksWhenTheForecastExpectsDemand(t *testing.T) {
 				}
 			}
 			var out bytes.Buffer
-			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-			defer cancel()
 
-			err := pause(ctx, c, client.ObjectKey{Namespace: "preview-42", Name: "api"}, opts, &out, io.Discard)
+			err := pause(stepsOn(c, 5*time.Second), apiKey, opts, &out, io.Discard)
 
 			if tt.wantErr != "" {
 				require.ErrorIs(t, err, errNotPaused)
@@ -383,6 +394,101 @@ func TestPause_AsksWhenTheForecastExpectsDemand(t *testing.T) {
 			got := annotations(t, c)[v1alpha1.AnnotationPauseOverridesForecast] == v1alpha1.True
 			assert.Equal(t, tt.wantOverride, got, "the forecast is overridden only when asked to")
 			assert.Equal(t, tt.wantPaused, strings.Contains(out.String(), "is Paused"))
+		})
+	}
+}
+
+// stepsOn runs each step against c, within timeout.
+func stepsOn(c client.Client, timeout time.Duration) clusterSteps {
+	return clusterSteps{parent: context.Background(), timeout: timeout,
+		connect: func(context.Context) (client.Client, error) { return c, nil }}
+}
+
+// failsOnceDone stands in for a real client, which fails every call made
+// with a context that's done.
+func failsOnceDone(funcs interceptor.Funcs) interceptor.Funcs {
+	get := funcs.Get
+	funcs.Get = func(ctx context.Context, c client.WithWatch, key client.ObjectKey, obj client.Object,
+		opts ...client.GetOption) error {
+		if err := ctx.Err(); err != nil {
+			return err
+		}
+		return get(ctx, c, key, obj, opts...)
+	}
+	return funcs
+}
+
+// The time taken to answer isn't the cluster's: an answer that comes after
+// --timeout has passed still pauses the workload, within a --timeout of its
+// own.
+func TestPause_AnswerAfterTheTimeout(t *testing.T) {
+	c := newClient(t, failsOnceDone(operator(expectsDemand)), managedWorkload(v1alpha1.PhaseRunning))
+	const timeout = 200 * time.Millisecond
+	opts := pauseOptions{wait: true, pollInterval: time.Millisecond, now: time.Now,
+		confirm: func(string) (bool, error) { time.Sleep(2 * timeout); return true, nil }}
+	var out bytes.Buffer
+
+	err := pause(stepsOn(c, timeout), apiKey, opts, &out, io.Discard)
+
+	require.NoError(t, err)
+	assert.Contains(t, out.String(), "preview-42/api is Paused after")
+}
+
+// An active-until hold on the ManagedWorkload, as wake --for sets, would
+// have Hybernate refuse the pause. pause asks whether to clear it, clears it
+// without asking with --clear-hold, and without anyone to ask says how. A
+// hold that has ended is no hold.
+func TestPause_HeldAwake(t *testing.T) {
+	until := time.Now().Add(time.Hour).UTC().Format(time.RFC3339)
+	tests := []struct {
+		name      string
+		until     string
+		args      []string
+		confirm   func(string) (bool, error)
+		wantErr   string
+		wantOut   string
+		wantHold  bool
+		wantPause bool
+	}{
+		{name: "no one to ask", until: until, wantHold: true,
+			wantErr: "preview-42/api wasn't paused: the hybernate.io/active-until annotation on its ManagedWorkload " +
+				"keeps it awake until " + until + "; pass --clear-hold to clear it and pause now"},
+		{name: "--clear-hold", until: until, args: []string{"--clear-hold"}, wantPause: true,
+			wantOut: "cleared the hybernate.io/active-until hold on preview-42/api\npausing preview-42/api...\n"},
+		{name: "answered yes", until: until, confirm: func(string) (bool, error) { return true, nil },
+			wantPause: true, wantOut: "cleared the hybernate.io/active-until hold on preview-42/api\n"},
+		{name: "answered no", until: until, confirm: func(string) (bool, error) { return false, nil },
+			wantHold: true, wantOut: "left preview-42/api running\n"},
+		{name: "a hold that has ended", until: "2026-01-01T00:00:00Z", wantHold: true, wantPause: true,
+			wantOut: "pausing preview-42/api...\n"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			w := managedWorkload(v1alpha1.PhaseRunning)
+			w.Annotations = map[string]string{v1alpha1.AnnotationActiveUntil: tt.until}
+			c := newClient(t, operator(pauses), w)
+			var out string
+			var err error
+			if tt.confirm != nil {
+				var buf bytes.Buffer
+				opts := pauseOptions{wait: true, pollInterval: time.Millisecond, now: time.Now, confirm: tt.confirm}
+				err = pause(stepsOn(c, 5*time.Second), apiKey, opts, &buf, io.Discard)
+				out = buf.String()
+			} else {
+				out, err = runCLI(t, c, append([]string{"pause", "api"}, tt.args...)...)
+			}
+
+			if tt.wantErr != "" {
+				require.ErrorIs(t, err, errNotPaused)
+				assert.EqualError(t, err, tt.wantErr)
+			} else {
+				require.NoError(t, err)
+				assert.Contains(t, out, tt.wantOut)
+			}
+			got := annotations(t, c)
+			_, held := got[v1alpha1.AnnotationActiveUntil]
+			assert.Equal(t, tt.wantHold, held)
+			assert.Equal(t, tt.wantPause, got[v1alpha1.AnnotationPauseRequested] != "")
 		})
 	}
 }

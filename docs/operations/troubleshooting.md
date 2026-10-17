@@ -36,7 +36,7 @@ kubectl get managedworkload my-api -n staging \
 Without CPU data a busy workload looks idle, so Hybernate doesn't act. `MetricsAvailable=False` says why:
 
 - **`NoPodMetrics`**: the target has replicas, but the Metrics API reports no pods for it. Check that metrics-server is installed (`kubectl top pods -n staging`) and that the target's pods are running.
-- **`NoCPURequests`**: the target's containers set no CPU requests, so utilization can't be measured. Set CPU requests.
+- **`NoCPURequests`**: the target's containers request no CPU, in its running pods or, with none running, in its pod template, so utilization can't be measured. Set CPU requests on its containers, or a default in the namespace's LimitRange; a LimitRange default applies to pods created after it, so restart the workload's pods once it's set.
 - **`MetricsUnavailable`**: the Metrics API itself failed. The condition message has the error; a missing `metrics.k8s.io` API means metrics-server isn't installed.
 
 A target scaled to zero replicas is not an error: it's recorded as zero usage.
@@ -56,7 +56,7 @@ kubectl get managedworkload my-api -n staging \
 
 - Without an `idlePolicy`, nothing pauses it on its own; [`kubectl hybernate pause`](../guides/pause.md#pause-now) pauses it when you ask.
 - `PrometheusAvailable=False`: a Prometheus activity query fails, or the operator has no `--prometheus-url`.
-- `Protected=True`: its namespace is protected.
+- `Protected=True`: its namespace is protected (`ProtectedNamespace`), or it's Hybernate's own operator or doorman (`HybernateComponent`), which is never paused.
 - `GitOpsConflict=True`: a GitOps tool undid its last pause, and Hybernate waits an hour before pausing again.
 
 **Check 6: Is something depending on it?**
@@ -70,7 +70,11 @@ kubectl get managedworkload postgres -n staging \
 
 ### Workload stuck in Resuming
 
-`WaitingForDependencies=True` means a `waitForReady` dependency isn't Ready yet; the condition names it and how many replicas are ready. Check that dependency's pods. Otherwise, the workload's own pods aren't becoming Ready: resume completes only when every replica it was restored to is Ready. The `HybernateWorkloadStuck` alert fires after 15 minutes, and `kubectl hybernate status` lists it under `Stuck` after 10.
+`WaitingForDependencies=True` means a `waitForReady` dependency isn't Ready yet; the condition names it and how many replicas are ready. Check that dependency's pods. A dependency that serves with some of its replicas Ready counts once its own resume has finished, or, if Hybernate doesn't manage it, after 2 minutes; one with none Ready is waited for. Otherwise, the workload's own pods aren't becoming Ready. Resume completes once every replica it was restored to is Ready. Short of that, Hybernate stops waiting 2 minutes after the first replica is Ready, or, while none is, once the Deployment's `progressDeadlineSeconds` has passed since the scale-up (10 minutes by default, and for a StatefulSet), and the workload is `Running` with the replicas that are Ready, possibly none, and `ResumeIncomplete=True`. A StatefulSet with the default `OrderedReady` pod management starts its pods one at a time, so a slow-starting one may have only its first pods Ready when the 2 minutes are up: it runs with those, and the rest follow. The `HybernateWorkloadStuck` alert fires after 15 minutes, and `kubectl hybernate status` lists it under `Stuck` after 10.
+
+### Workload resumed with replicas not Ready
+
+`ResumeIncomplete=True`, with a `ResumeIncomplete` warning event, means the last resume stopped waiting with some replicas not Ready, as above: it's `Running` with those that are, its KEDA ScaledObject scales it again, and requests go to its Ready pods. With none Ready, the doorman no longer holds its requests either, so they fail until a pod is Ready. This is common for a workload that wasn't wholly Ready before it was paused, such as one with a pod crash-looping or unschedulable; `kubectl describe` its pods to see why. Once every replica is Ready, later or at the next resume, it's set `False` with an `AllReplicasReady` event.
 
 ### Waking a workload by hand
 
@@ -106,6 +110,7 @@ kubectl get managedworkload my-api -n staging \
 - **`NoServices`**: no Service with a selector and a ClusterIP selects the workload's pods on a TCP port, or every such port is in `hybernate.io/doorman-ignore-ports`. Headless Services aren't routed; see [Wake on Request](../concepts/wake-on-request.md#when-a-workload-isnt-routed).
 - **`ServedByOtherPods`**: another workload's Ready pods are behind the same Service, so requests go to them. See [Services shared with other workloads](../concepts/wake-on-request.md#services-shared-with-other-workloads).
 - **`UnsupportedLoadBalancer`**, or a Service named in the message as not routed: the Service is behind GKE container-native load balancing, which can't use the doorman. See [Compatibility](../reference/compatibility.md#cloud-load-balancers).
+- **`NodeLocalTraffic`**: the workload's Services have `internalTrafficPolicy: Local`, which sends each caller only to endpoints on its own node, so they aren't routed. See [Wake on Request](../concepts/wake-on-request.md#when-a-workload-isnt-routed).
 - **`UnsupportedIPFamily`**: no doorman pod has an address in the Service's IP family, such as an IPv6-only Service in a cluster whose doorman pods have only IPv4 addresses.
 - **`DoormanUnavailable`**: no doorman pod is Ready. Check `kubectl get pods -A -l control-plane=doorman`.
 - **`NoFreePort`**: every doorman port (20000-29999) is in use.
@@ -129,7 +134,7 @@ The doorman's logs name the workload and Service for each held connection: `kube
 
 Something keeps waking it. Check the events for `WokeByActivity` (an activity annotation newer than the pause, or a held request: `WokenByRequest` names the Service) or `AutoResume` (the forecast expected demand). A health check or monitor that calls the Service on a timer and sends a request wakes the workload each time. The doorman already ignores connections that close without sending anything, and HTTP requests from common probes and scrapers (see [Wake on Request](../concepts/wake-on-request.md#what-wakes-a-workload-and-what-doesnt)); for anything else, point it elsewhere, list its port in `hybernate.io/doorman-ignore-ports` on the Service, or opt the workload out with `wake.onRequest: false`. A tool that refreshes `hybernate.io/last-activity` on a timer, rather than on real use, will keep waking the workload.
 
-`ScaledUp` means something scaled it up outside Hybernate, named in the event and `status.lastScaledUp`. If it's Argo CD or Flux, the workload also reports `GitOpsConflict=True`: it sets the replicas from Git and will undo every pause until it's told to leave them; see [Argo CD and Flux](../guides/gitops.md).
+`ScaledUp` means something scaled it up outside Hybernate, named in the event and `status.lastScaledUp`. If it's a GitOps tool, the workload also reports `GitOpsConflict=True`: it sets the replicas from Git and will undo every pause until it's told to leave them; see [GitOps tools](../guides/gitops.md).
 
 ### Prediction confidence stays at 0
 
@@ -169,6 +174,16 @@ kubectl get managedworkloads -n staging -o jsonpath='{range .items[*]}{.metadata
 - `projectedMonthlyCost` and `projectedMonthlySavings` show `pending` until 24 hours of the month have been tracked, including on the first day of every month.
 - `savedThisMonth` stays `$0.00` until Hybernate has paused the workload this month: dry-run workloads record what they would have freed in `status.dryRun` instead.
 - Totals start again from zero each calendar month, in UTC. See [Cost Tracking](../concepts/cost-tracking.md).
+
+### `helm uninstall` fails with `job hybernate-uninstall-guard failed`
+
+ManagedWorkloads are left, and uninstalling now would leave their workloads paused. Helm prints them above the error; with an older Helm that doesn't print a hook's output, `kubectl logs job/hybernate-uninstall-guard -n hybernate-system --all-containers` shows them. Remove the `hybernate.io/managed` label from those workloads and their namespaces, delete the ManagedWorkloads you wrote yourself, and uninstall again, as in [Uninstall](../getting-started/installation.md#uninstall).
+
+When it lists ManagedWorkloads that were being deleted, the operator didn't finish them within two and a half minutes, usually because it isn't running: uninstall with `--no-hooks` and restore the workloads by hand. When the error says the server doesn't have a resource type `managedworkloads`, the CRD is gone, as it can be with `crds.install: false`, so nothing is left to guard: uninstall with `--no-hooks`. With Argo CD 3.3 and later the same refusal blocks deleting the Application, with a `DeletionError` condition; set `uninstallGuard.enabled: false` in Git to delete it anyway.
+
+### Workloads stay at zero after the operator was removed
+
+The operator was removed, or its CRD deleted, while ManagedWorkloads were left, so nothing scales their workloads back up, their Services still send traffic to the doorman's deleted pods, and deleting the ManagedWorkloads or the CRD hangs in `Terminating` on the `hybernate.io/cleanup` finalizer. Reinstall the operator and stop managing the workloads, or restore them by hand: see [Restoring workloads after the operator is gone](../getting-started/installation.md#restoring-workloads-after-the-operator-is-gone).
 
 ## Debug Checklist
 

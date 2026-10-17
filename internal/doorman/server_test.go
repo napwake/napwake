@@ -156,7 +156,8 @@ func readySlice(port int32) *discoveryv1.EndpointSlice {
 }
 
 // newTestServer is a doorman over a fake client holding objs. Tests run
-// their backends on loopback, which the doorman otherwise never dials.
+// their backends on loopback, which the doorman otherwise never dials, and
+// stop without the drain a doorman pod gets, closing what they hold.
 func newTestServer(t *testing.T, wrap func(client.WithWatch) client.WithWatch, objs ...client.Object) (*Server, client.WithWatch) {
 	t.Helper()
 	var c client.WithWatch
@@ -166,6 +167,7 @@ func newTestServer(t *testing.T, wrap func(client.WithWatch) client.WithWatch, o
 	}
 	s := NewServer(c, nil, Options{Host: "127.0.0.1"})
 	s.backends.allowed = func(netip.Addr) bool { return true }
+	s.acceptFor, s.grace = 0, 100*time.Millisecond
 	return s, c
 }
 
@@ -483,6 +485,35 @@ func TestServer_ServesThePageToABrowser(t *testing.T) {
 		5*time.Second, 10*time.Millisecond, "counted as resultPage")
 }
 
+// Single sign-on cookies can take a browser's headers past what the doorman
+// reads to tell what a request is. It still gets the page.
+func TestServer_ServesThePageToABrowserWithLargeCookies(t *testing.T) {
+	port := freePort(t)
+	_, _ = startServer(t, pausedWorkload("api", port, time.Minute))
+
+	conn := dial(t, port)
+	send(t, conn, "GET /orders HTTP/1.1\r\nHost: shop.example.dev\r\nAccept: text/html\r\nSec-Fetch-Mode: navigate\r\n"+
+		"Cookie: _oauth2_proxy="+strings.Repeat("a", 2*maxPeek)+"\r\n\r\n")
+	resp, _ := readResponse(t, conn)
+
+	assert.Equal(t, http.StatusServiceUnavailable, resp.StatusCode)
+}
+
+// A request whose headers run past what the doorman reads to judge it is
+// held, and reaches the woken workload whole.
+func TestServer_HoldsARequestWithLargeHeadersIntact(t *testing.T) {
+	port := freePort(t)
+	_, c := startServer(t, pausedWorkload("api", port, time.Minute))
+	request := "GET /api HTTP/1.1\r\nHost: api\r\nAccept: */*\r\nCookie: sso=" + strings.Repeat("a", 2*maxPeek) + "\r\n\r\n"
+
+	conn := dial(t, port)
+	send(t, conn, request)
+	require.Eventually(t, func() bool { return lastRequest(t, c) != "" }, 5*time.Second, 20*time.Millisecond)
+	require.NoError(t, c.Create(context.Background(), readySlice(echoPort(t))))
+
+	echoed(t, conn, request)
+}
+
 // A workload that has a Ready pod is up, even if it isn't Running yet
 // because another replica can't be scheduled: a browser gets the app, not
 // the page, and nothing is woken.
@@ -539,8 +570,10 @@ func TestServer_ProbesAndScrapesDoNotWake(t *testing.T) {
 	}{
 		{name: "a TCP health check", closeNow: true},
 		{name: "a kubelet probe", request: "GET /healthz HTTP/1.1\r\nHost: 10.0.0.1\r\nUser-Agent: kube-probe/1.31\r\n\r\n", want503: true},
+		{name: "a probe ending lines in a bare LF", request: "GET /healthz HTTP/1.1\nHost: 10.0.0.1\nUser-Agent: kube-probe/1.31\n\n", want503: true},
 		{name: "a Prometheus scrape", request: "GET /metrics HTTP/1.1\r\nHost: 10.0.0.1\r\nUser-Agent: Prometheus/2.53.0\r\n\r\n", want503: true},
 		{name: "an ALB health check", request: "GET / HTTP/1.1\r\nHost: 10.0.0.1\r\nUser-Agent: ELB-HealthChecker/2.0\r\n\r\n", want503: true},
+		{name: "a blackbox exporter probe", request: "GET /health HTTP/1.1\r\nHost: api\r\nUser-Agent: Blackbox Exporter/0.25.0\r\n\r\n", want503: true},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -599,21 +632,32 @@ func TestServer_PassesAProbeThroughWhenAPodIsReady(t *testing.T) {
 // A scanner hunting for leaked secrets in hidden files gets a 404, and the
 // paused workload sleeps on; a real request after it still wakes it.
 func TestServer_HiddenFileRequestsDoNotWake(t *testing.T) {
-	port := freePort(t)
-	_, c := startServer(t, pausedWorkload("api", port, time.Minute))
-	before := wakes(resultIgnored)
+	tests := []struct {
+		name    string
+		request string
+	}{
+		{name: "lines ending in CRLF", request: "GET /.env HTTP/1.1\r\nHost: shop.example.dev\r\nUser-Agent: Mozilla/5.0\r\n\r\n"},
+		{name: "lines ending in a bare LF", request: "GET /.env HTTP/1.1\nHost: shop.example.dev\nUser-Agent: Mozilla/5.0\n\n"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			port := freePort(t)
+			_, c := startServer(t, pausedWorkload("api", port, time.Minute))
+			before := wakes(resultIgnored)
 
-	conn := dial(t, port)
-	send(t, conn, "GET /.env HTTP/1.1\r\nHost: shop.example.dev\r\nUser-Agent: Mozilla/5.0\r\n\r\n")
-	resp, _ := readResponse(t, conn)
+			conn := dial(t, port)
+			send(t, conn, tt.request)
+			resp, _ := readResponse(t, conn)
 
-	assert.Equal(t, http.StatusNotFound, resp.StatusCode)
-	require.Eventually(t, func() bool { return wakes(resultIgnored) == before+1 }, 5*time.Second, 10*time.Millisecond)
-	assert.Empty(t, lastRequest(t, c), "the workload stays paused")
+			assert.Equal(t, http.StatusNotFound, resp.StatusCode)
+			require.Eventually(t, func() bool { return wakes(resultIgnored) == before+1 }, 5*time.Second, 10*time.Millisecond)
+			assert.Empty(t, lastRequest(t, c), "the workload stays paused")
 
-	send(t, dial(t, port), "GET / HTTP/1.1\r\nHost: shop.example.dev\r\n\r\n")
-	require.Eventually(t, func() bool { return lastRequest(t, c) != "" }, 5*time.Second, 20*time.Millisecond,
-		"a real request still wakes it")
+			send(t, dial(t, port), "GET / HTTP/1.1\r\nHost: shop.example.dev\r\n\r\n")
+			require.Eventually(t, func() bool { return lastRequest(t, c) != "" }, 5*time.Second, 20*time.Millisecond,
+				"a real request still wakes it")
+		})
+	}
 }
 
 // A health checker the doorman doesn't know by default is recognised once
@@ -809,21 +853,48 @@ func TestServer_HeldConnectionsAreCapped(t *testing.T) {
 		5*time.Second, 10*time.Millisecond, "counted as resultLimited")
 }
 
-// A caller that goes away while held frees its place.
+// A caller that goes away while held frees its place, whatever its
+// protocol: closing a connection and shutting down its sending side are the
+// same FIN on the wire, and a database driver whose connect timed out, or an
+// ingress closing an HTTPS upstream, sends one when it gives up.
 func TestServer_ACallerLeavingFreesItsPlace(t *testing.T) {
-	port := freePort(t)
-	s, _ := startServer(t, pausedWorkload("api", port, time.Minute))
-	before := wakes(resultCanceled)
+	tests := []struct {
+		name  string
+		send  string
+		leave func(*net.TCPConn) error
+	}{
+		{name: "an HTTP client closing", send: "GET /api HTTP/1.1\r\nHost: api\r\n\r\n",
+			leave: func(c *net.TCPConn) error { return c.Close() }},
+		{name: "an HTTP client half-closing", send: "GET /api HTTP/1.1\r\nHost: api\r\n\r\n",
+			leave: func(c *net.TCPConn) error { return c.CloseWrite() }},
+		{name: "another protocol's client closing", send: "hello\n",
+			leave: func(c *net.TCPConn) error { return c.Close() }},
+		{name: "another protocol's client half-closing", send: "hello\n",
+			leave: func(c *net.TCPConn) error { return c.CloseWrite() }},
+		{name: "a reset", send: "hello\n", leave: func(c *net.TCPConn) error {
+			if err := c.SetLinger(0); err != nil {
+				return err
+			}
+			return c.Close()
+		}},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			port := freePort(t)
+			s, _ := startServer(t, pausedWorkload("api", port, time.Minute))
+			before := wakes(resultCanceled)
 
-	conn := dial(t, port)
-	send(t, conn, "hello\n")
-	require.Eventually(t, func() bool { return heldCount(s) == 1 }, 5*time.Second, 10*time.Millisecond)
-	require.NoError(t, conn.Close())
+			conn := dial(t, port)
+			send(t, conn, tt.send)
+			require.Eventually(t, func() bool { return heldCount(s) == 1 }, 5*time.Second, 10*time.Millisecond)
+			require.NoError(t, tt.leave(conn.(*net.TCPConn)))
 
-	require.Eventually(t, func() bool { return wakes(resultCanceled) == before+1 }, 5*time.Second, 10*time.Millisecond)
-	// The place is freed as the connection's handler returns, just after
-	// its result is counted.
-	assert.Eventually(t, func() bool { return heldCount(s) == 0 }, 5*time.Second, 10*time.Millisecond)
+			require.Eventually(t, func() bool { return wakes(resultCanceled) == before+1 }, 5*time.Second, 10*time.Millisecond)
+			// The place is freed as the connection's handler returns, just
+			// after its result is counted.
+			assert.Eventually(t, func() bool { return heldCount(s) == 0 }, 5*time.Second, 10*time.Millisecond)
+		})
+	}
 }
 
 // A caller that sent a request body before leaving frees its place too,
@@ -969,7 +1040,7 @@ func TestAdmission_AWakeRefusedOverallDoesNotSpendTheSources(t *testing.T) {
 // Behind an ingress, every user comes from one address. A burst of
 // connections to one workload can't take the places the others need.
 func TestAdmission_HeldConnectionsAreCappedPerWorkload(t *testing.T) {
-	a := newAdmission(limits{maxHeld: 100, maxHeldPerSource: 50, maxHeldPerSourceWorkload: 2})
+	a := newAdmission(limits{maxHeld: 100, maxHeldPerWorkload: 50, maxHeldPerSource: 50, maxHeldPerSourceWorkload: 2})
 	now := time.Now()
 	ingress := netip.MustParseAddr("10.0.0.1")
 	shop := types.NamespacedName{Namespace: "dev", Name: "shop"}
@@ -982,6 +1053,61 @@ func TestAdmission_HeldConnectionsAreCappedPerWorkload(t *testing.T) {
 
 	a.release(ingress, shop, now)
 	assert.True(t, a.hold(ingress, shop, now))
+}
+
+// A deleted workload's series go, as the operator drops its own, so a
+// doorman that outlives many workloads doesn't report every one forever.
+func TestServer_DropsADeletedWorkloadsSeries(t *testing.T) {
+	port := freePort(t)
+	w := pausedWorkload("gone", port, time.Minute)
+	_, c := startServer(t, w)
+	series := func() int { return testutil.CollectAndCount(opmetrics.DoormanWakes) }
+	before := series()
+
+	send(t, dial(t, port), "GET /healthz HTTP/1.1\r\nHost: gone\r\nUser-Agent: kube-probe/1.31\r\n\r\n")
+	require.Eventually(t, func() bool { return series() == before+1 }, 5*time.Second, 10*time.Millisecond)
+
+	require.NoError(t, c.Delete(context.Background(), w))
+	assert.Eventually(t, func() bool { return series() == before }, 3*routeSyncInterval, 20*time.Millisecond)
+}
+
+// A workload that never becomes Ready, called from many sources, can't take
+// the places other workloads need.
+func TestAdmission_OneWorkloadCannotTakeEveryPlace(t *testing.T) {
+	a := newAdmission(defaultLimits)
+	now := time.Now()
+	broken := types.NamespacedName{Namespace: "team-a", Name: "broken"}
+	other := types.NamespacedName{Namespace: "team-b", Name: "api"}
+
+	admitted := 0
+	for i := range defaultLimits.maxHeld {
+		if a.hold(netip.AddrFrom4([4]byte{10, 0, byte(i / 100), byte(i % 100)}), broken, now) {
+			admitted++
+		}
+	}
+	assert.Equal(t, defaultLimits.maxHeldPerWorkload, admitted)
+	assert.True(t, a.hold(netip.MustParseAddr("10.9.9.9"), other, now), "another workload still has room")
+
+	a.release(netip.AddrFrom4([4]byte{10, 0, 0, 0}), broken, now)
+	assert.True(t, a.hold(netip.MustParseAddr("10.9.9.8"), broken, now), "a released place can be taken again")
+}
+
+func TestServer_MaxWaitIsBounded(t *testing.T) {
+	w := pausedWorkload("api", freePort(t), 0)
+	w.Spec.Wake.MaxWait = &metav1.Duration{Duration: 10000 * time.Hour}
+	s, _ := newTestServer(t, nil, w)
+	ctx := context.Background()
+	require.NoError(t, s.syncRoutes(ctx, ctx))
+	t.Cleanup(func() {
+		for _, l := range s.listeners {
+			_ = l.Close()
+		}
+	})
+
+	require.Len(t, s.routes, 1)
+	for _, rt := range s.routes {
+		assert.Equal(t, v1alpha1.WakeMaxWaitLimit, rt.maxWait)
+	}
 }
 
 // Two routes claiming one port would send one workload's callers to the
@@ -1074,17 +1200,20 @@ func TestServer_RefusesPromptlyWhenADrainingRouteHasNothingReady(t *testing.T) {
 		5*time.Second, 10*time.Millisecond, "counted as resultRefused")
 }
 
-// On shutdown the doorman stops accepting, keeps the connections it carries
-// for the grace period, and only then closes them.
+// A stopping doorman leaves its Service at once, but goes on holding and
+// passing through new connections for a while, since only the operator can
+// send them elsewhere. Then it stops accepting, and closes what's left at
+// the end of the grace period.
 func TestServer_ShutdownDrainsConnections(t *testing.T) {
 	port := freePort(t)
-	s, _ := newTestServer(t, nil, pausedWorkload("api", port, time.Minute), readySlice(echoPort(t)))
-	s.grace = 500 * time.Millisecond
+	s, c := newTestServer(t, nil, pausedWorkload("api", port, time.Minute))
+	s.acceptFor = 500 * time.Millisecond
+	s.grace = time.Second
 	stop := run(t, s)
 
-	conn := dial(t, port)
-	send(t, conn, "before\n")
-	echoed(t, conn, "before\n")
+	before := dial(t, port)
+	send(t, before, "before\n")
+	require.Eventually(t, func() bool { return heldCount(s) == 1 }, 5*time.Second, 10*time.Millisecond)
 
 	stopped := make(chan struct{})
 	go func() {
@@ -1093,22 +1222,31 @@ func TestServer_ShutdownDrainsConnections(t *testing.T) {
 	}()
 	require.Eventually(t, func() bool { return s.Ready(nil) != nil }, time.Second, 10*time.Millisecond,
 		"a stopping doorman leaves its Service")
+
+	during := dial(t, port)
+	send(t, during, "during\n")
+	require.Eventually(t, func() bool { return heldCount(s) == 2 }, time.Second, 10*time.Millisecond,
+		"a connection arriving as the doorman stops is held")
+	require.NoError(t, c.Create(context.Background(), readySlice(echoPort(t))))
+	echoed(t, before, "before\n")
+	echoed(t, during, "during\n")
+
 	require.Eventually(t, func() bool {
-		c, err := net.DialTimeout("tcp", net.JoinHostPort("127.0.0.1", strconv.Itoa(int(port))), time.Second)
+		conn, err := net.DialTimeout("tcp", net.JoinHostPort("127.0.0.1", strconv.Itoa(int(port))), time.Second)
 		if err == nil {
-			_ = c.Close()
+			_ = conn.Close()
 		}
 		return err != nil
-	}, time.Second, 10*time.Millisecond, "no new connections")
-	send(t, conn, "during\n")
-	echoed(t, conn, "during\n")
+	}, 2*time.Second, 10*time.Millisecond, "no new connections once the accepting part of the drain is over")
+	send(t, during, "still\n")
+	echoed(t, during, "still\n")
 
 	select {
 	case <-stopped:
 	case <-time.After(5 * time.Second):
 		t.Fatal("shutdown didn't finish after the grace period")
 	}
-	closedWithin(t, conn)
+	closedWithin(t, during)
 }
 
 func TestServer_ReadinessFollowsRouteSync(t *testing.T) {
@@ -1156,6 +1294,7 @@ func TestServer_InformerWakesHeldConnections(t *testing.T) {
 	c := fake.NewClientBuilder().WithScheme(scheme).WithObjects(pausedWorkload("api", port, time.Minute)).Build()
 	s := NewServer(c, nil, Options{Host: "127.0.0.1", Informers: informers})
 	s.backends.allowed = func(netip.Addr) bool { return true }
+	s.acceptFor, s.grace = 0, 100*time.Millisecond
 	run(t, s)
 
 	conn := dial(t, port)
@@ -1194,6 +1333,13 @@ func TestNeedsWake(t *testing.T) {
 			workload: paused(before, map[string]string{v1alpha1.AnnotationLastRequest: before})},
 		{name: "stamped since the pause", workload: paused(after, map[string]string{v1alpha1.AnnotationLastRequest: before})},
 		{name: "stamped since a pause that recorded nothing", workload: paused(after, nil)},
+		{name: "removed since the pause, which recorded one", want: true,
+			workload: paused("", map[string]string{v1alpha1.AnnotationLastRequest: before})},
+		{name: "emptied since the pause, which recorded one", want: true, workload: func() *v1alpha1.ManagedWorkload {
+			w := paused("", map[string]string{v1alpha1.AnnotationLastRequest: before})
+			w.Annotations = map[string]string{v1alpha1.AnnotationLastRequest: ""}
+			return w
+		}()},
 		{name: "a pause with no record, stamped before it", want: true, workload: func() *v1alpha1.ManagedWorkload {
 			w := paused(before, nil)
 			w.Status.Pause.WakeAnnotations = nil
@@ -1254,6 +1400,35 @@ func TestServer_StampsANewValueInTheSameSecond(t *testing.T) {
 	parsed, err := time.Parse(time.RFC3339, stamped)
 	require.NoError(t, err, "still an RFC 3339 time")
 	assert.True(t, parsed.Equal(now))
+}
+
+// Someone removed the last-request annotation the pause recorded. A request
+// must still wake the workload, with a value the operator sees as new.
+func TestServer_WakesAfterTheRecordedStampWasRemoved(t *testing.T) {
+	tests := []struct {
+		name     string
+		recorded string
+	}{
+		{name: "recorded earlier", recorded: "2026-10-03T08:00:00Z"},
+		{name: "recorded in the same second", recorded: "2026-10-03T09:00:00Z"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			now := time.Date(2026, 10, 3, 9, 0, 0, 500, time.UTC)
+			w := pausedWorkload("api", freePort(t), time.Minute)
+			w.Status.Pause.WakeAnnotations = &v1alpha1.WakeAnnotations{
+				Workload: map[string]string{v1alpha1.AnnotationLastRequest: tt.recorded},
+			}
+			s, c := newTestServer(t, nil, w)
+			s.now = func() time.Time { return now }
+
+			require.NoError(t, s.stamp(context.Background(), route{workload: apiKey, service: "api"}, caller))
+
+			stamped := lastRequest(t, c)
+			assert.NotEmpty(t, stamped)
+			assert.NotEqual(t, tt.recorded, stamped, "the operator wakes only for a value other than the recorded one")
+		})
+	}
 }
 
 // A replica that sees another's stamp since the pause leaves it alone.

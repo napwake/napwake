@@ -1,12 +1,20 @@
 name: docs
 
-# The release workflow publishes these once a release succeeds, so the site
-# documents the version users can install, not unreleased work on main or a
-# tag whose release failed. Run manually, from a release's tag, to republish
-# its docs.
+# Publishes the docs of a release once it succeeds, so the site documents
+# the version users can install, not unreleased work on main or a tag whose
+# release failed. A workflow_run runs on main, which the github-pages
+# environment allows to deploy, while a run on the tag itself would be
+# refused. Run it manually from main, naming a release's tag, to republish
+# that release's docs.
 on:
-  workflow_call:
+  workflow_run:
+    workflows: [Release]
+    types: [completed]
   workflow_dispatch:
+    inputs:
+      tag:
+        description: The release tag whose docs to publish, such as v0.2.0
+        required: true
 
 permissions:
   contents: read
@@ -19,9 +27,16 @@ concurrency:
 
 jobs:
   build:
+    # A pre-release, such as v0.3.0-rc.1, isn't what releases/latest serves,
+    # so the site stays on the last release.
+    if: >-
+      github.event_name == 'workflow_dispatch' ||
+      (github.event.workflow_run.conclusion == 'success' && !contains(github.event.workflow_run.head_branch, '-'))
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          ref: ${{ inputs.tag || github.event.workflow_run.head_sha }}
       - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5.6.0
         with:
           python-version: "3.12"

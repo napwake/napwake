@@ -84,7 +84,8 @@ the cluster keeps events: an hour, unless its API server is set to keep more.
 
 It reads every namespace you can, or only the context's namespace when your
 access doesn't allow listing them all. It only reads ManagedWorkloads, their
-events, and their workloads' annotations.
+events, and their workloads' annotations, and checks that a namespace named
+with -n that has no ManagedWorkloads exists.
 
 Examples:
   kubectl hybernate status
@@ -187,13 +188,15 @@ var troubles = map[string]metav1.ConditionStatus{
 	"MetricsAvailable":    metav1.ConditionFalse,
 	"PrometheusAvailable": metav1.ConditionFalse,
 	"WakeOnRequest":       metav1.ConditionFalse,
+	"ResumeIncomplete":    metav1.ConditionTrue,
 }
 
 // chosen are the reasons a trouble condition carries when it reports what
 // the user set up on purpose, which needs nobody's attention.
 var chosen = map[string]bool{
-	"NoServices":    true,
-	"TargetIgnored": true,
+	"NoServices":         true,
+	"TargetIgnored":      true,
+	"HybernateComponent": true,
 }
 
 // wakeCauses are the event reasons that say what woke a workload. The
@@ -301,12 +304,32 @@ func listManaged(ctx context.Context, c client.Client, ns namespaceFlags, home s
 		case err != nil:
 			return nil, scope, fmt.Errorf("listing ManagedWorkloads in %s: %w", n, err)
 		}
+		if len(list.Items) == 0 && n != metav1.NamespaceAll {
+			if err := checkNamespaceExists(ctx, c, n); err != nil {
+				return nil, scope, err
+			}
+		}
 		all = append(all, list.Items...)
 	}
 	slices.SortFunc(all, func(a, b v1alpha1.ManagedWorkload) int {
 		return cmp.Or(cmp.Compare(a.Namespace, b.Namespace), cmp.Compare(a.Name, b.Name))
 	})
 	return all, scope, nil
+}
+
+// checkNamespaceExists fails for a namespace that doesn't exist, which
+// would otherwise read as one Hybernate manages nothing in, as for a typo
+// in -n. Without access to namespaces, it can't tell, and lets it be.
+func checkNamespaceExists(ctx context.Context, c client.Client, name string) error {
+	var ns corev1.Namespace
+	err := c.Get(ctx, client.ObjectKey{Name: name}, &ns)
+	switch {
+	case apierrors.IsNotFound(err):
+		return fmt.Errorf("namespace %s doesn't exist; check the name", name)
+	case err != nil && !apierrors.IsForbidden(err):
+		return fmt.Errorf("getting namespace %s: %w", name, err)
+	}
+	return nil
 }
 
 func listEvents(ctx context.Context, c client.Client, namespaces []string) ([]corev1.Event, error) {
@@ -384,7 +407,7 @@ func workloadStatus(w *v1alpha1.ManagedWorkload, targetActiveUntil, now time.Tim
 		Phase:          w.Status.Phase,
 		DryRun:         w.Spec.DryRun,
 		Next:           nextFor(w, targetActiveUntil, now),
-		SavedThisMonth: savedThisMonth(w, now),
+		SavedThisMonth: discovery.SavedThisMonth(w, now),
 		namedApart:     w.Name != w.Spec.Target.Name && w.Labels[v1alpha1.LabelFromLabel] != v1alpha1.True,
 	}
 	if t := w.Status.LastTransitionTime; t != nil {
@@ -397,19 +420,6 @@ func workloadStatus(w *v1alpha1.ManagedWorkload, targetActiveUntil, now time.Tim
 		row.ActivitySource = string(a.LastActivitySource)
 	}
 	return row
-}
-
-// savedThisMonth is what the workload has saved this calendar month. The
-// operator starts a new month's total at its first reconcile in that month,
-// so until then status holds last month's, which isn't this month's saving.
-func savedThisMonth(w *v1alpha1.ManagedWorkload, now time.Time) float64 {
-	if c := w.Status.Cost; c != nil && c.LastAccumulatedAt != nil {
-		last, now := c.LastAccumulatedAt.UTC(), now.UTC()
-		if last.Year() != now.Year() || last.Month() != now.Month() {
-			return 0
-		}
-	}
-	return discovery.SavedThisMonth(w)
 }
 
 // nextFor says what happens to a workload next, or what's stopping it.
@@ -425,6 +435,9 @@ func nextFor(w *v1alpha1.ManagedWorkload, targetActiveUntil, now time.Time) stri
 	case meta.IsStatusConditionTrue(conditions, "DuplicateTarget"):
 		return "nothing: another ManagedWorkload has it"
 	case meta.IsStatusConditionTrue(conditions, "Protected"):
+		if c := meta.FindStatusCondition(conditions, "Protected"); c.Reason == "HybernateComponent" {
+			return "never pauses: part of Hybernate"
+		}
 		return "never pauses: namespace protected"
 	}
 	switch w.Status.Phase {
@@ -650,7 +663,7 @@ func writeStatusTable(w io.Writer, result statusResult, now time.Time) error {
 	p.line("%s: Hybernate manages %s.", result.Cluster, countOf(len(result.Workloads), "workload"))
 	p.line("  %s", phaseCounts(result.Workloads))
 	if result.SavedThisMonth > 0 {
-		p.line("  Saved %s this month.", cents(result.SavedThisMonth))
+		p.line("  Saved %s this month.", savedMoney(result.SavedThisMonth))
 	}
 	if result.Note != "" {
 		p.line("  %s", result.Note)
@@ -753,10 +766,19 @@ func activityCell(wl statusWorkload, now time.Time) string {
 }
 
 func statusSavedCell(wl statusWorkload) string {
-	if wl.DryRun || wl.SavedThisMonth == 0 {
+	if wl.SavedThisMonth == 0 {
 		return "-"
 	}
-	return cents(wl.SavedThisMonth)
+	return savedMoney(wl.SavedThisMonth)
+}
+
+// savedMoney is a saving in whole dollars, as scan shows one. A saving
+// under half a dollar isn't nothing, so it isn't shown as $0.
+func savedMoney(amount float64) string {
+	if amount > 0 && amount < 0.5 {
+		return "<$1"
+	}
+	return dollars(amount)
 }
 
 func ago(t, now time.Time) string {

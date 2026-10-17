@@ -17,6 +17,8 @@ limitations under the License.
 package v1alpha1
 
 import (
+	"time"
+
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
@@ -81,17 +83,21 @@ type ManagedWorkloadSpec struct {
 
 	// Prediction configures the Holt-Winters forecasting engine that confirms
 	// idle detection and wakes paused workloads ahead of predicted demand.
-	// +required
-	Prediction PredictionSpec `json:"prediction"`
+	// +kubebuilder:default={}
+	// +optional
+	Prediction PredictionSpec `json:"prediction,omitzero"`
 
-	// CostTracking configures custom cost rates for this workload.
-	// Cost tracking is always enabled with AWS on-demand defaults.
-	// Set this field only to override pricing rates.
+	// CostTracking sets this workload's own cost rates. Cost is always
+	// tracked: without them, it's priced at the list price of the nodes the
+	// workload's pods run on (status.cost.listRates), or at Hybernate's
+	// default rates for nodes it has no price for.
 	// +optional
 	CostTracking *CostTrackingSpec `json:"costTracking,omitempty"`
 
-	// DryRun makes the operator evaluate all policies and emit events but
-	// take no action. Useful for validating configuration before going live.
+	// DryRun measures the workload without ever pausing it: the operator
+	// tracks activity, emits events, and records in status.dryRun the pauses
+	// it would have made. A workload already paused when dry-run is turned
+	// on is woken, so turning it on never leaves one off.
 	// +optional
 	DryRun bool `json:"dryRun,omitempty"`
 }
@@ -115,9 +121,10 @@ type WakeSpec struct {
 	OnRequest *bool `json:"onRequest,omitempty"`
 
 	// MaxWait is how long the doorman holds a connection while the workload
-	// wakes. After it, the connection is closed; the wake carries on.
+	// wakes, at most 1h. After it, the connection is closed; the wake
+	// carries on.
 	// +kubebuilder:default="2m"
-	// +kubebuilder:validation:Format=duration
+	// +kubebuilder:validation:XValidation:rule="duration(self) > duration('0s') && duration(self) <= duration('1h')",message="must be a duration above zero and at most 1h, such as 90s or 5m"
 	// +optional
 	MaxWait *metav1.Duration `json:"maxWait,omitempty"`
 
@@ -128,6 +135,12 @@ type WakeSpec struct {
 	// +optional
 	Page *bool `json:"page,omitempty"`
 }
+
+// WakeMaxWaitLimit is the longest wake.maxWait the CRD accepts. Each held
+// connection takes one of the doorman's limited places, so a connection
+// held for hours keeps other callers out long after its own caller has
+// given up.
+const WakeMaxWaitLimit = time.Hour
 
 // DependencyRef names a workload this one needs. It refers to the
 // dependency's Deployment or StatefulSet, not to its ManagedWorkload.
@@ -174,7 +187,8 @@ type PredictionSpec struct {
 	// +kubebuilder:validation:Minimum=50
 	// +kubebuilder:validation:Maximum=100
 	// +kubebuilder:default=75
-	Confidence int `json:"confidence"`
+	// +optional
+	Confidence int `json:"confidence,omitempty"`
 }
 
 // IdlePolicySpec configures automatic pausing. The operator tracks when the
@@ -184,7 +198,7 @@ type IdlePolicySpec struct {
 	// IdleAfter is how long the workload must go without any activity
 	// before the operator pauses it.
 	// +kubebuilder:default="1h"
-	// +kubebuilder:validation:Format=duration
+	// +kubebuilder:validation:XValidation:rule="duration(self) > duration('0s')",message="must be a duration above zero, such as 90m or 2h"
 	// +optional
 	IdleAfter *metav1.Duration `json:"idleAfter,omitempty"`
 
@@ -224,27 +238,27 @@ type PrometheusActivity struct {
 	PromQL string `json:"promQL"`
 }
 
-// CostTrackingSpec configures resource cost calculation for this workload.
-// Cost tracking is always enabled. This struct exists to allow custom rate overrides.
+// CostTrackingSpec configures how this workload's cost is priced.
 type CostTrackingSpec struct {
-	// Rates overrides the default cost rates. Omit to use AWS on-demand defaults.
+	// Rates are what you pay. Each one set is used in place of the list
+	// price of the workload's nodes and of Hybernate's default rates; one
+	// left out is priced as if Rates weren't set.
 	// +optional
 	Rates *CostRates `json:"rates,omitempty"`
 }
 
-// CostRates holds per-unit cost rates. Users set these to match their
-// cloud provider pricing. All values are in USD.
+// CostRates are per-unit cost rates, in USD.
 type CostRates struct {
-	// CPUPerHour is the cost per vCPU-hour (default: $0.031, AWS on-demand).
+	// CPUPerHour is the cost per vCPU-hour.
 	// +optional
 	CPUPerHour *resource.Quantity `json:"cpuPerHour,omitempty"`
 
-	// MemoryPerHour is the cost per GiB-hour (default: $0.004, AWS on-demand).
+	// MemoryPerHour is the cost per GiB-hour.
 	// +optional
 	MemoryPerHour *resource.Quantity `json:"memoryPerHour,omitempty"`
 
-	// StoragePerMonth is the cost per GiB-month for PVC storage
-	// (default: $0.08, AWS EBS gp3).
+	// StoragePerMonth is the cost per GiB-month of PersistentVolumeClaim
+	// storage.
 	// +optional
 	StoragePerMonth *resource.Quantity `json:"storagePerMonth,omitempty"`
 }
@@ -308,6 +322,15 @@ type ManagedWorkloadStatus struct {
 	// +optional
 	Doorman []DoormanRoute `json:"doorman,omitempty"`
 
+	// DoormanDraining lists doorman ports that routed this workload until
+	// recently. No other workload is given one until its drain ends, even by
+	// an operator that has just restarted or taken over leadership, since
+	// clients that haven't yet seen the Service move back to the workload's
+	// pods still send traffic to it.
+	// +listType=atomic
+	// +optional
+	DoormanDraining []DrainingPort `json:"doormanDraining,omitempty"`
+
 	// Activity tracks when the workload was last active, for idle detection.
 	// +optional
 	Activity *ActivityStatus `json:"activity,omitempty"`
@@ -346,6 +369,12 @@ type DoormanRoute struct {
 
 	// DoormanPort is the doorman's listening port for this Service port.
 	DoormanPort int32 `json:"doormanPort"`
+}
+
+// DrainingPort is a doorman port no other workload may have before Until.
+type DrainingPort struct {
+	Port  int32       `json:"port"`
+	Until metav1.Time `json:"until"`
 }
 
 // +kubebuilder:validation:Enum=created;woke;request;cpu;rollout;annotation;prometheus;unobserved;scaled-up
@@ -394,12 +423,20 @@ type LearnedDependency struct {
 	Source LearnedSource `json:"source"`
 
 	// Via is the environment variable that holds its address, and Address
-	// the address, with any password hidden, for one found in the
+	// the address, as scheme://host:port only, for one found in the
 	// environment.
 	// +optional
 	Via string `json:"via,omitempty"`
 	// +optional
 	Address string `json:"address,omitempty"`
+
+	// LastSeen is when a request that woke the dependency last confirmed one
+	// learned from a wake, written at most once a day. Held awake and woken
+	// with the dependent while it's kept, the dependency isn't woken by its
+	// requests, so one in steady use goes unconfirmed too: after 14 days it's
+	// forgotten, and learned again from the next request that wakes it.
+	// +optional
+	LastSeen *metav1.Time `json:"lastSeen,omitempty"`
 }
 
 // +kubebuilder:validation:Enum=environment;wake
@@ -413,8 +450,10 @@ const (
 // ScaledUp is a paused workload scaled up outside Hybernate.
 type ScaledUp struct {
 	At metav1.Time `json:"at"`
-	// By is the field manager that set the replicas, such as kubectl-scale
-	// or argocd-controller.
+	// By is the field manager that set the replicas, such as
+	// argocd-controller or kubectl-client-side-apply, or unknown when none
+	// is recorded, as for a scale through the scale subresource by kubectl
+	// scale, an HPA or KEDA.
 	By string `json:"by"`
 	// GitOps is the GitOps tool behind By, such as Argo CD or Flux, which
 	// will set the replicas again each time Hybernate pauses the workload
@@ -524,6 +563,12 @@ type PauseStatus struct {
 	// for cost savings calculation.
 	// +optional
 	Resources *ResourceSnapshot `json:"resources,omitempty"`
+
+	// FirstReadyAt is when the resume under way first saw one of the
+	// workload's replicas Ready. The rest are waited for 2 minutes from
+	// then, and the workload runs with those that are Ready by that time.
+	// +optional
+	FirstReadyAt *metav1.Time `json:"firstReadyAt,omitempty"`
 
 	// WakeAnnotations are the activity annotations as the pause began. One
 	// that has changed since wakes the workload whatever time it states, so

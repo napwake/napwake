@@ -19,6 +19,7 @@ package controller
 import (
 	"context"
 	"fmt"
+	"slices"
 	"time"
 
 	corev1 "k8s.io/api/core/v1"
@@ -51,17 +52,68 @@ func (r *Reconciler) inProtectedNamespace(ctx context.Context, workload *v1alpha
 	return v1alpha1.Protected(ns.Name, ns.Labels, r.ProtectedNamespaces), nil
 }
 
-// reconcileProtected keeps a workload in a protected namespace running:
-// Hybernate pauses nothing there, and hands back what it had paused, or was
-// pausing, before the namespace was protected, so protecting one never
-// leaves a workload off.
-func (r *Reconciler) reconcileProtected(ctx context.Context, workload *v1alpha1.ManagedWorkload) (ctrl.Result, error) {
+// protectionOf is why Hybernate mustn't pause the workload, or nil when it
+// may.
+func (r *Reconciler) protectionOf(ctx context.Context, workload *v1alpha1.ManagedWorkload,
+	target client.Object) (*protection, error) {
+	protected, err := r.inProtectedNamespace(ctx, workload)
+	switch {
+	case err != nil:
+		return nil, err
+	case protected:
+		p := namespaceProtection(workload.Namespace)
+		return &p, nil
+	case r.isHybernate(target):
+		p := hybernateProtection(workload)
+		return &p, nil
+	}
+	return nil, nil
+}
+
+// controlPlaneLabel marks the operator's and the doorman's Deployments.
+const controlPlaneLabel = "control-plane"
+
+// isHybernate reports whether target is the operator's or the doorman's own
+// Deployment, which Hybernate never pauses, however its namespace is
+// labelled: paused, there'd be nothing left to wake it, or anything else.
+func (r *Reconciler) isHybernate(target client.Object) bool {
+	if !slices.Contains(r.HybernateNamespaces, target.GetNamespace()) {
+		return false
+	}
+	switch target.GetLabels()[controlPlaneLabel] {
+	case "controller-manager", "doorman":
+		return true
+	}
+	return false
+}
+
+// protection is why a workload is protected: the condition's reason and
+// message, and what a refused pause request and the event say.
+type protection struct {
+	reason, message, why string
+}
+
+func namespaceProtection(namespace string) protection {
+	why := fmt.Sprintf("namespace %s is protected, so Hybernate doesn't pause workloads in it", namespace)
+	return protection{reason: "ProtectedNamespace", why: why,
+		message: fmt.Sprintf("%s; label it %s=%s to allow it", why, v1alpha1.LabelAllowProtected, v1alpha1.True)}
+}
+
+func hybernateProtection(workload *v1alpha1.ManagedWorkload) protection {
+	why := fmt.Sprintf("%s %s runs Hybernate itself, which never pauses its own components",
+		workload.Spec.Target.Kind, workload.Spec.Target.Name)
+	return protection{reason: "HybernateComponent", why: why, message: why}
+}
+
+// reconcileProtected keeps a protected workload running: Hybernate pauses
+// nothing in a protected namespace, nor its own components, and hands back
+// what it had paused, or was pausing, before it was protected, so
+// protecting one never leaves a workload off.
+func (r *Reconciler) reconcileProtected(ctx context.Context, workload *v1alpha1.ManagedWorkload,
+	p protection) (ctrl.Result, error) {
 	reported := meta.IsStatusConditionTrue(workload.Status.Conditions, conditionProtected)
-	r.setCondition(workload, conditionProtected, metav1.ConditionTrue, "ProtectedNamespace",
-		fmt.Sprintf("namespace %s is protected, so Hybernate doesn't pause workloads in it; label it %s=%s to allow it",
-			workload.Namespace, v1alpha1.LabelAllowProtected, v1alpha1.True))
-	if err := r.refusePauseRequest(ctx, workload, "Warning", ReasonProtected, fmt.Sprintf(
-		"namespace %s is protected, so Hybernate doesn't pause workloads in it", workload.Namespace)); err != nil {
+	r.setCondition(workload, conditionProtected, metav1.ConditionTrue, p.reason, p.message)
+	if err := r.refusePauseRequest(ctx, workload, "Warning", ReasonProtected, p.why); err != nil {
 		return ctrl.Result{}, err
 	}
 
@@ -72,6 +124,7 @@ func (r *Reconciler) reconcileProtected(ctx context.Context, workload *v1alpha1.
 	}
 	switch {
 	case workload.Status.Phase != v1alpha1.PhaseRunning || released:
+		r.endWouldBePauseNow(workload)
 		if err := r.transition(ctx, workload, v1alpha1.PhaseRunning, "Protected"); err != nil {
 			return ctrl.Result{}, err
 		}
@@ -81,11 +134,10 @@ func (r *Reconciler) reconcileProtected(ctx context.Context, workload *v1alpha1.
 		}
 	}
 	if !reported {
-		r.emitEvent(workload, false, "Warning", ReasonProtected, actionCheckNamespace,
-			"namespace %s is protected, so Hybernate doesn't pause workloads in it", workload.Namespace)
+		r.emitEvent(workload, false, "Warning", ReasonProtected, actionCheckNamespace, "%s", p.why)
 	}
 	if released {
-		r.announceHandBack(workload, replicas, fmt.Sprintf("namespace %s is protected", workload.Namespace))
+		r.announceHandBack(workload, replicas, p.why)
 	}
 	return ctrl.Result{RequeueAfter: protectedRecheckInterval}, nil
 }

@@ -86,11 +86,27 @@ func looksLikeHTTP(head []byte) bool {
 	return false
 }
 
+// headersEnded reports whether head holds a whole request's headers. Lines
+// may end in a bare LF, as net/http accepts and some probes and scripts
+// send.
+func headersEnded(head []byte) bool {
+	return bytes.Contains(head, []byte("\r\n\r\n")) || bytes.Contains(head, []byte("\n\n"))
+}
+
 // parseRequest parses head, the first bytes of a connection, as an HTTP
-// request, if it is one whose headers have all arrived.
+// request. Headers longer than maxPeek, as single sign-on cookies can make
+// them, are judged by the lines that fit: browsers send the ones the doorman
+// reads before their cookies.
 func parseRequest(head []byte) (*http.Request, bool) {
 	if !looksLikeHTTP(head) {
 		return nil, false
+	}
+	if !headersEnded(head) {
+		lastLine := bytes.LastIndexByte(head, '\n')
+		if lastLine < 0 {
+			return nil, false
+		}
+		head = append(head[:lastLine+1:lastLine+1], "\r\n"...)
 	}
 	req, err := http.ReadRequest(bufio.NewReader(bytes.NewReader(head)))
 	if err != nil {
@@ -100,43 +116,53 @@ func parseRequest(head []byte) (*http.Request, bool) {
 }
 
 // defaultHealthCheckAgents are the User-Agent prefixes of load balancer
-// health checks, kubelet probes and metrics scrapers. They reach a paused
-// workload's Service on a schedule, so a request from one never wakes it.
-// Options.HealthCheckAgents adds to them.
+// health checks, kubelet probes, metrics scrapers and uptime monitors. They
+// reach a paused workload's Service on a schedule, so a request from one
+// never wakes it. Options.HealthCheckAgents adds to them.
 var defaultHealthCheckAgents = []string{
 	"kube-probe/",
 	"Prometheus/",
+	"Blackbox Exporter/",
 	"vm_promscrape",
 	"GrafanaAgent/",
 	"Alloy/",
 	"OpenTelemetry Collector",
 	"otelcol",
 	"Datadog Agent/",
+	"Datadog/Synthetics",
 	"ELB-HealthChecker/",
+	"Amazon-Route53-Health-Check-Service",
 	"GoogleHC/",
+	"GoogleStackdriverMonitoring-UptimeChecks",
 	"Envoy/HC",
+	"Mozilla/5.0+(compatible; UptimeRobot/",
+	"Pingdom.com_bot",
+	"NewRelicPinger/",
+	"Uptime-Kuma/",
+	"Gatus/",
 }
 
 // isHealthCheck reports whether req comes from a health checker or scraper,
-// one whose User-Agent starts with one of agents. Only a GET or HEAD can be
-// one: the same agents also send real traffic, such as Prometheus remote
-// write and Alertmanager notifications, which are POSTs and must reach the
-// workload.
+// one whose User-Agent starts with one of agents, or names it as
+// "(compatible; agent", as monitors that present themselves as a browser
+// do. No browser still in use sends "compatible;", so that can't match a
+// person.
+// Only a GET or HEAD can be one: the same agents also send real traffic,
+// such as Prometheus remote write and Alertmanager notifications, which are
+// POSTs and must reach the workload.
 func isHealthCheck(req *http.Request, agents []string) bool {
 	if req.Method != http.MethodGet && req.Method != http.MethodHead {
 		return false
 	}
 	agent := req.UserAgent()
-	for _, prefix := range agents {
-		if strings.HasPrefix(agent, prefix) {
+	for _, name := range agents {
+		if strings.HasPrefix(agent, name) || strings.Contains(agent, "(compatible; "+name) {
 			return true
 		}
 	}
 	return false
 }
 
-// writeUnavailable answers a health check: the workload is paused, so it
-// isn't healthy, and it stays paused.
 // isHiddenFileRequest reports whether req asks for a hidden file, one with
 // a path segment that starts with a dot, such as /.env or /.git/config.
 // Scanners crawl the internet for these, hoping for leaked secrets; no app
@@ -164,6 +190,8 @@ func writeNotFound(w io.Writer) error {
 	return err
 }
 
+// writeUnavailable answers a health check: the workload is paused, so it
+// isn't healthy, and it stays paused.
 func writeUnavailable(w io.Writer) error {
 	_, err := io.WriteString(w, "HTTP/1.1 503 Service Unavailable\r\n"+
 		"Content-Length: 0\r\n"+

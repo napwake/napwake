@@ -8,7 +8,7 @@ Hybernate is a Kubernetes operator that predicts your workload demand using Holt
 
 ## Why Hybernate?
 
-Most Kubernetes clusters run workloads 24/7, even when no one is using them. Dev environments sit idle overnight. Staging clusters burn resources on weekends. Production services stay at peak capacity long after traffic drops.
+Most Kubernetes clusters run workloads 24/7, even when no one is using them. Dev environments sit idle overnight. Staging clusters burn resources on weekends.
 
 Hybernate fixes this by learning your workload patterns and acting on them:
 
@@ -20,7 +20,7 @@ Hybernate fixes this by learning your workload patterns and acting on them:
 A Holt-Winters double seasonal model learns daily and weekly traffic patterns for each workload. Once it has seen every hour of the day, it starts scoring its predictions, and acts on them only when they're accurate enough. If traffic patterns shift, a built-in anomaly detector notices the drift, demotes the model's confidence, and re-learns from the new baseline.
 
 ### Activity Clock
-Hybernate records the last time each workload was in use: CPU above a threshold, a deploy, or an activity annotation from your own tooling. Once nothing has been active for `idleAfter`, it pauses the workload. There's no learning period.
+Hybernate records the last time each workload was in use: CPU above a threshold, a deploy, an activity annotation from your own tooling, or a Prometheus query such as request rate. Once nothing has been active for `idleAfter`, it pauses the workload. There's no learning period.
 
 ### Safe by Default
 Hybernate never pauses a workload it can't measure, and a confident forecast can hold off a pause. Enable `dryRun` mode to see what Hybernate would do without it ever pausing anything. A paused workload scaled up by anyone else is treated as woken, and a GitOps tool undoing a pause is reported with the fix, not fought.

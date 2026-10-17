@@ -21,6 +21,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"fmt"
+	"slices"
 	"strings"
 	"time"
 
@@ -72,6 +73,10 @@ type OptInReconciler struct {
 	// WatchNamespaces are the namespaces Hybernate works in, or every
 	// namespace when empty.
 	WatchNamespaces []string
+	// HybernateNamespaces are where the operator and the doorman run. Their
+	// own Deployments there are never opted in, even in a namespace allowed
+	// to be managed: nothing would be left to wake them.
+	HybernateNamespaces []string
 }
 
 // +kubebuilder:rbac:groups="",resources=namespaces,verbs=get;list;watch
@@ -109,7 +114,7 @@ func (r *OptInReconciler) Reconcile(ctx context.Context, req ctrl.Request) (res 
 		return ctrl.Result{}, r.release(ctx, obj, existing.ours, existing.written)
 	}
 
-	spec, problems := optInSpec(target, obj.GetAnnotations(), ns.GetAnnotations(), r.Defaults)
+	spec, problems := optInSpec(req.Namespace, target, obj.GetAnnotations(), ns.GetAnnotations(), r.Defaults)
 	for _, p := range problems {
 		r.Recorder.Eventf(obj, nil, "Warning", ReasonInvalidSetting, actionOptIn, "%s", p)
 	}
@@ -131,13 +136,35 @@ func (r *OptInReconciler) newWorkload() client.Object {
 	return &appsv1.Deployment{}
 }
 
+// labelComponent is the label the Helm chart and the kustomize manifests
+// put on the operator's and the doorman's Deployments, with the values
+// hybernateComponents names.
+const labelComponent = "control-plane"
+
+var hybernateComponents = map[string]string{"controller-manager": "operator", "doorman": "doorman"}
+
+// isHybernate says the workload is the operator's or the doorman's own
+// Deployment.
+func (r *OptInReconciler) isHybernate(obj client.Object) bool {
+	_, ok := hybernateComponents[obj.GetLabels()[labelComponent]]
+	return ok && slices.Contains(r.HybernateNamespaces, obj.GetNamespace())
+}
+
 // optedIn reports whether the workload is managed through the label: its
-// own, or its namespace's, unless it's marked to be ignored or its
-// namespace is protected. A label value
-// other than "true" doesn't opt in, and is pointed out, since it's most
+// own, or its namespace's, unless it's marked to be ignored, it's
+// Hybernate's own, or its namespace is protected. The workload's own label
+// wins over its namespace's: "false" opts it out, like the ignore label. Any
+// other value doesn't opt in either, and is pointed out, since it's most
 // likely a setting meant for an annotation.
 func (r *OptInReconciler) optedIn(obj client.Object, ns *corev1.Namespace) bool {
 	if obj.GetLabels()[v1alpha1.LabelIgnore] == v1alpha1.True {
+		return false
+	}
+	if r.isHybernate(obj) {
+		if obj.GetLabels()[v1alpha1.LabelManaged] == v1alpha1.True || ns.Labels[v1alpha1.LabelManaged] == v1alpha1.True {
+			r.Recorder.Eventf(obj, nil, "Warning", ReasonLabelIgnored, actionOptIn,
+				"this is Hybernate's own %s, which it never manages", hybernateComponents[obj.GetLabels()[labelComponent]])
+		}
 		return false
 	}
 	if v1alpha1.Protected(ns.Name, ns.Labels, r.ProtectedNamespaces) {
@@ -148,8 +175,11 @@ func (r *OptInReconciler) optedIn(obj client.Object, ns *corev1.Namespace) bool 
 		return false
 	}
 	if v, ok := obj.GetLabels()[v1alpha1.LabelManaged]; ok {
-		if v == v1alpha1.True {
+		switch v {
+		case v1alpha1.True:
 			return true
+		case "false":
+			return false
 		}
 		r.Recorder.Eventf(obj, nil, "Warning", ReasonLabelIgnored, actionOptIn,
 			`%s=%q isn't "true", so it doesn't opt the workload in; settings such as dry-run are annotations`,

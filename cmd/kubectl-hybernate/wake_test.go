@@ -81,6 +81,7 @@ func TestWake_StampsActivity(t *testing.T) {
 		name            string
 		phase           v1alpha1.WorkloadPhase
 		keepAwake       time.Duration
+		held            string
 		wantActiveUntil string
 		wantOutput      string
 	}{
@@ -90,13 +91,27 @@ func TestWake_StampsActivity(t *testing.T) {
 			wantActiveUntil: "2026-10-03T11:00:00Z", wantOutput: "waking preview-42/api\n",
 		},
 		{
+			name: "held awake for less", phase: v1alpha1.PhasePaused, keepAwake: 2 * time.Hour,
+			held: "2026-10-03T10:00:00Z", wantActiveUntil: "2026-10-03T11:00:00Z", wantOutput: "waking preview-42/api\n",
+		},
+		{
+			name: "held awake for longer", phase: v1alpha1.PhasePaused, keepAwake: 2 * time.Hour,
+			held: "2026-10-03T13:00:00Z", wantActiveUntil: "2026-10-03T13:00:00Z",
+			wantOutput: "preview-42/api is already held awake until 2026-10-03T13:00:00Z, later than --for asks, so " +
+				"that stays\nwaking preview-42/api\n",
+		},
+		{
 			name: "a running workload", phase: v1alpha1.PhaseRunning,
 			wantOutput: "preview-42/api is already running; its idle clock restarts now\n",
 		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			c := newClient(t, interceptor.Funcs{}, managedWorkload(tt.phase))
+			w := managedWorkload(tt.phase)
+			if tt.held != "" {
+				w.Annotations = map[string]string{v1alpha1.AnnotationActiveUntil: tt.held}
+			}
+			c := newClient(t, interceptor.Funcs{}, w)
 			opts := testOptions()
 			opts.wait = false
 			opts.keepAwake = tt.keepAwake
@@ -145,6 +160,33 @@ func TestWake_TimesOut(t *testing.T) {
 	require.ErrorIs(t, err, context.DeadlineExceeded)
 	assert.Contains(t, err.Error(), "still Paused")
 	assert.Contains(t, err.Error(), "kubectl describe managedworkload api -n preview-42")
+}
+
+// slowReads stands in for an API server whose answers, after the first,
+// take until the command's deadline, as a real client then fails them.
+func slowReads() interceptor.Funcs {
+	reads := 0
+	return interceptor.Funcs{Get: func(ctx context.Context, c client.WithWatch, key client.ObjectKey,
+		obj client.Object, opts ...client.GetOption) error {
+		if reads++; reads > 1 {
+			<-ctx.Done()
+			return ctx.Err()
+		}
+		return c.Get(ctx, key, obj, opts...)
+	}}
+}
+
+// The wait running out during a poll's read is the workload not being
+// Running yet, with the phase last seen, not the API server failing to
+// answer.
+func TestWake_TimesOutDuringARead(t *testing.T) {
+	c := newClient(t, slowReads(), managedWorkload(v1alpha1.PhasePaused))
+
+	_, err := runCLI(t, c, "wake", "api", "--timeout", "100ms")
+
+	require.ErrorIs(t, err, errNotRunningYet)
+	assert.Contains(t, err.Error(), "preview-42/api isn't Running yet: it's still Paused")
+	assert.NotContains(t, err.Error(), "API server")
 }
 
 // A ManagedWorkload another one's target already belongs to isn't acted on,

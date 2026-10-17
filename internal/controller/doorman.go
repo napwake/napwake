@@ -101,7 +101,8 @@ func wakeOnRequest(workload *v1alpha1.ManagedWorkload) bool {
 // doormanEligible reports whether doorman routes should exist now. They're
 // added when a workload is paused and kept through Resuming, so connections
 // arriving mid-wake are held too; they're removed once it's Running, which
-// means its pods are Ready.
+// its resume reaches with some pods Ready, or, past its progress deadline,
+// with none, when holding requests would only fail them later.
 func doormanEligible(workload *v1alpha1.ManagedWorkload) bool {
 	switch workload.Status.Phase {
 	case v1alpha1.PhasePaused:
@@ -179,7 +180,7 @@ func (r *Reconciler) reconcileDoorman(ctx context.Context, workload *v1alpha1.Ma
 	if len(plan.skipped.served) > 0 {
 		recheck = servedRecheck
 	}
-	current, err := r.listDoormanSlices(ctx, workload)
+	current, err := r.listDoormanSlices(ctx, r.Client, workload)
 	if err != nil {
 		return 0, err
 	}
@@ -196,6 +197,7 @@ func (r *Reconciler) reconcileDoorman(ctx context.Context, workload *v1alpha1.Ma
 	// it would be without the doorman. A reconcile that fails before the
 	// write keeps the ports its slices already use, so they aren't moved
 	// on every retry.
+	r.recordDrains(workload, routes)
 	workload.Status.Doorman = routes
 
 	keep := map[string]bool{}
@@ -240,8 +242,16 @@ func shortest(a, b time.Duration) time.Duration {
 // would skip. Only once they're gone do its ports leave status and start
 // draining: a port another workload could be given while a slice still
 // sends traffic to it would deliver that traffic to the wrong workload.
+//
+// A workload being deleted is never reconciled again, so its slices are
+// listed from the API server: one written moments ago, which the cache may
+// not have yet, would otherwise be left sending traffic to the doorman.
 func (r *Reconciler) removeDoorman(ctx context.Context, workload *v1alpha1.ManagedWorkload) error {
-	current, err := r.listDoormanSlices(ctx, workload)
+	reader := client.Reader(r.Client)
+	if !workload.DeletionTimestamp.IsZero() {
+		reader = r.apiReader()
+	}
+	current, err := r.listDoormanSlices(ctx, reader, workload)
 	if err != nil {
 		return err
 	}
@@ -249,8 +259,36 @@ func (r *Reconciler) removeDoorman(ctx context.Context, workload *v1alpha1.Manag
 		return err
 	}
 	r.doormanPorts.release(workload.UID, r.now())
+	r.recordDrains(workload, nil)
 	workload.Status.Doorman = nil
 	return nil
+}
+
+// recordDrains notes in status the ports the workload's routes are about to
+// give up, which drain before anyone else may have them, and forgets drains
+// that are over or whose port the workload has taken back. The allocator
+// keeps the same in memory; status is what a leader that takes over reads.
+func (r *Reconciler) recordDrains(workload *v1alpha1.ManagedWorkload, routes []v1alpha1.DoormanRoute) {
+	now := r.now()
+	kept := map[int32]bool{}
+	for _, route := range routes {
+		kept[route.DoormanPort] = true
+	}
+	var draining []v1alpha1.DrainingPort
+	for _, d := range workload.Status.DoormanDraining {
+		if now.Before(d.Until.Time) && !kept[d.Port] {
+			draining = append(draining, d)
+		}
+	}
+	until := metav1.NewTime(now.Add(portDrain))
+	for _, route := range workload.Status.Doorman {
+		if !kept[route.DoormanPort] && !slices.ContainsFunc(draining, func(d v1alpha1.DrainingPort) bool {
+			return d.Port == route.DoormanPort
+		}) {
+			draining = append(draining, v1alpha1.DrainingPort{Port: route.DoormanPort, Until: until})
+		}
+	}
+	workload.Status.DoormanDraining = draining
 }
 
 // skippedServices are the Services that select the workload but aren't
@@ -258,6 +296,7 @@ func (r *Reconciler) removeDoorman(ctx context.Context, workload *v1alpha1.Manag
 type skippedServices struct {
 	unsupported []string
 	served      []string
+	nodeLocal   []string
 	family      []string
 }
 
@@ -265,6 +304,9 @@ func (s skippedServices) notes() string {
 	var notes []string
 	if len(s.served) > 0 {
 		notes = append(notes, "served by other Ready pods, so not routed: "+strings.Join(s.served, ", "))
+	}
+	if len(s.nodeLocal) > 0 {
+		notes = append(notes, "internalTrafficPolicy is Local, so not routed: "+strings.Join(s.nodeLocal, ", "))
 	}
 	if len(s.family) > 0 {
 		notes = append(notes, "no doorman pod has an address in the IP family of: "+strings.Join(s.family, ", "))
@@ -285,6 +327,9 @@ func (r *Reconciler) reportDoorman(ctx context.Context, workload *v1alpha1.Manag
 	case len(skipped.served) > 0:
 		status, reason, message = metav1.ConditionFalse, "ServedByOtherPods",
 			"every Service that selects the workload has other Ready pods, so requests go to them and don't wake it"
+	case len(skipped.nodeLocal) > 0:
+		status, reason, message = metav1.ConditionFalse, "NodeLocalTraffic",
+			"the workload's Services keep traffic on the caller's node, so only callers on a doorman pod's node could reach the doorman"
 	case len(skipped.family) > 0:
 		status, reason, message = metav1.ConditionFalse, "UnsupportedIPFamily",
 			"no doorman pod has an address in the IP family of the workload's Services"
@@ -362,7 +407,9 @@ type doormanPlan struct {
 //
 // Services without a selector manage their own endpoints, and headless and
 // ExternalName Services hand callers addresses directly, so none of those
-// is routed. A Service with other Ready pods, such as one shared by a
+// is routed. Nor is a Service with internalTrafficPolicy Local: kube-proxy
+// sends a caller only to endpoints on its own node, and the doorman's pods
+// are on one or two, so most callers would get nothing at all. A Service with other Ready pods, such as one shared by a
 // canary and a stable Deployment of which only one is paused, is left to
 // them: requests reach a running workload, and waking the paused one for
 // them would be no use. Once every workload behind it is paused, it's
@@ -391,6 +438,10 @@ func (r *Reconciler) planDoorman(ctx context.Context, workload *v1alpha1.Managed
 		if len(ports) == 0 {
 			continue
 		}
+		if svc.Spec.InternalTrafficPolicy != nil && *svc.Spec.InternalTrafficPolicy == corev1.ServiceInternalTrafficPolicyLocal {
+			plan.skipped.nodeLocal = append(plan.skipped.nodeLocal, svc.Name)
+			continue
+		}
 		served, err := r.servedByOthers(ctx, svc)
 		if err != nil {
 			return doormanPlan{}, err
@@ -414,6 +465,7 @@ func (r *Reconciler) planDoorman(ctx context.Context, workload *v1alpha1.Managed
 	slices.SortFunc(plan.services, func(a, b doormanService) int { return cmp.Compare(a.svc.Name, b.svc.Name) })
 	slices.Sort(plan.skipped.unsupported)
 	slices.Sort(plan.skipped.served)
+	slices.Sort(plan.skipped.nodeLocal)
 	slices.Sort(plan.skipped.family)
 	return plan, nil
 }
@@ -685,10 +737,18 @@ func (a *portAllocator) load(ctx context.Context, reader routeReader, now time.T
 		return fmt.Errorf("reading doorman ports in use: %w", err)
 	}
 	claims := map[int32]portClaim{}
+	if a.draining == nil {
+		a.draining = map[int32]portClaim{}
+	}
 	for _, w := range workloads {
 		for _, route := range w.Status.Doorman {
 			if _, taken := claims[route.DoormanPort]; !taken {
 				claims[route.DoormanPort] = portClaim{owner: w.UID, at: now}
+			}
+		}
+		for _, d := range w.Status.DoormanDraining {
+			if _, known := a.draining[d.Port]; !known && now.Before(d.Until.Time) {
+				a.draining[d.Port] = portClaim{owner: w.UID, at: d.Until.Time}
 			}
 		}
 	}
@@ -698,9 +758,6 @@ func (a *portAllocator) load(ctx context.Context, reader routeReader, now time.T
 		}
 	}
 	a.claims, a.loadedAt = claims, now
-	if a.draining == nil {
-		a.draining = map[int32]portClaim{}
-	}
 	return nil
 }
 
@@ -780,9 +837,12 @@ func (r *Reconciler) applyDoormanSlice(ctx context.Context, workload *v1alpha1.M
 }
 
 // listDoormanSlices lists the doorman slices the workload has written.
-func (r *Reconciler) listDoormanSlices(ctx context.Context, workload *v1alpha1.ManagedWorkload) ([]discoveryv1.EndpointSlice, error) {
+func (r *Reconciler) listDoormanSlices(ctx context.Context, reader client.Reader,
+	workload *v1alpha1.ManagedWorkload) ([]discoveryv1.EndpointSlice, error) {
+	ctx, cancel := context.WithTimeout(ctx, endpointsReadTimeout)
+	defer cancel()
 	var list discoveryv1.EndpointSliceList
-	if err := r.List(ctx, &list, client.InNamespace(workload.Namespace), client.MatchingLabels{
+	if err := reader.List(ctx, &list, client.InNamespace(workload.Namespace), client.MatchingLabels{
 		discoveryv1.LabelManagedBy:   doorman.ManagedBy,
 		doorman.LabelManagedWorkload: doorman.WorkloadLabel(workload.Name),
 	}); err != nil {

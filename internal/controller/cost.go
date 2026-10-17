@@ -267,36 +267,45 @@ func microQuantity(v float64) *resource.Quantity {
 	return resource.NewScaledQuantity(int64(math.Round(v*1e6)), resource.Micro)
 }
 
+// captureResourceSnapshot records what the workload reserves as it pauses,
+// which is what the pause is priced as saving. A read that fails takes what
+// cost tracking last read of the running workload instead: the snapshot is
+// taken once, and left empty the whole pause would be counted as saving
+// nothing.
 func (r *Reconciler) captureResourceSnapshot(ctx context.Context, workload *v1alpha1.ManagedWorkload) *v1alpha1.ResourceSnapshot {
 	if r.metrics == nil {
 		return nil
 	}
 	logger := log.FromContext(ctx)
 	snap := &v1alpha1.ResourceSnapshot{Replicas: 1}
+	var last v1alpha1.ResourceSnapshot
+	if c := workload.Status.Cost; c != nil && c.Running != nil {
+		last = *c.Running
+		snap.Replicas = max(snap.Replicas, last.Replicas)
+	}
+	fellBack := func(what string, err error) {
+		logger.Info("could not read "+what+" for the pause's resource snapshot, keeping the last read",
+			"workload", workload.Name, "namespace", workload.Namespace, "error", err.Error())
+	}
 
 	// Savings are priced on requests, not live usage: requests are what a
 	// pod reserves on a node, and what discovery estimates are based on.
-	replicas, err := r.metrics.Replicas(ctx, workload)
-	if err != nil {
-		logger.V(1).Info("could not capture replicas for resource snapshot", "workload", workload.Name,
-			"namespace", workload.Namespace, "error", err.Error())
+	if replicas, err := r.metrics.Replicas(ctx, workload); err != nil {
+		fellBack("replicas", err)
 	} else {
 		snap.Replicas = replicas
 	}
 
-	cpuMillis, memBytes, err := r.metrics.PodRequestsPerReplica(ctx, workload)
-	if err != nil {
-		logger.V(1).Info("could not capture requests for resource snapshot", "workload", workload.Name,
-			"namespace", workload.Namespace, "error", err.Error())
+	if cpuMillis, memBytes, err := r.metrics.PodRequestsPerReplica(ctx, workload); err != nil {
+		fellBack("requests", err)
+		snap.CPUMillis, snap.MemoryBytes = last.CPUMillis, last.MemoryBytes
 	} else {
-		snap.CPUMillis = int64(cpuMillis)
-		snap.MemoryBytes = int64(memBytes)
+		snap.CPUMillis, snap.MemoryBytes = int64(cpuMillis), int64(memBytes)
 	}
 
-	pvcBytes, err := r.metrics.TotalPVCBytes(ctx, workload)
-	if err != nil {
-		logger.V(1).Info("could not capture pvc for resource snapshot", "workload", workload.Name,
-			"namespace", workload.Namespace, "error", err.Error())
+	if pvcBytes, err := r.metrics.TotalPVCBytes(ctx, workload); err != nil {
+		fellBack("claims", err)
+		snap.StorageBytes = last.StorageBytes
 	} else {
 		snap.StorageBytes = int64(pvcBytes)
 	}

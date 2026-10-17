@@ -30,6 +30,11 @@ import (
 // past either stops being read until its connection is passed on, as it
 // would without the doorman, and its leaving goes unnoticed until then.
 //
+// A caller's EOF means it left, whatever its protocol: over TCP, closing a
+// connection and shutting down its sending side are the same FIN, and
+// nearly every caller that sends one has given up, such as a database
+// driver whose connect timed out.
+//
 // Once the connection is passed on, the stream is the proxy's reader, and
 // buffers no more than one read at a time.
 type clientStream struct {

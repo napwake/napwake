@@ -18,7 +18,7 @@ CPU from the workload's own pods counts as activity whatever the HPA does, so a 
 
 KEDA scales its workloads itself, and would scale a paused one straight back up to its `minReplicaCount`, or as soon as a trigger fired. So for a workload a ScaledObject scales, Hybernate pauses through KEDA: it sets `autoscaling.keda.sh/paused-replicas: "0"` on the ScaledObject, which has KEDA hold the workload at zero and stop scaling it, and records the ScaledObject in `status.pause.scaledObject`. If the ScaledObject already had a `paused-replicas` value of your own, it's recorded too, in `status.pause.scaledObjectPausedReplicas`.
 
-On a wake, Hybernate has KEDA hold the workload at the replicas it's restored to until they're all Ready, then puts back your own `paused-replicas` value, or removes the annotation if there was none, so KEDA carries on from there. Released any earlier, a ScaledObject with `minReplicaCount: 0` and no active trigger could take a starting workload straight back to zero, and a request the doorman held would wait for nothing.
+On a wake, Hybernate has KEDA hold the workload at the replicas it's restored to until they're all Ready, or Hybernate stops waiting for those that aren't (see [Resume](pause.md#resume)), then puts back your own `paused-replicas` value, or removes the annotation if there was none, so KEDA carries on from there. Released any earlier, a ScaledObject with `minReplicaCount: 0` and no active trigger could take a starting workload straight back to zero, and a request the doorman held would wait for nothing.
 
 When Hybernate lets go of a paused workload, because its ManagedWorkload is deleted, it's labelled `hybernate.io/ignore`, or its namespace is protected, the ScaledObject is released the same way. If the ScaledObject, or KEDA itself, is removed while the workload is paused, there's nothing to release, and the workload is woken as usual.
 
@@ -30,4 +30,4 @@ KEDA already scales a workload to zero when its triggers say there's no work, su
 
 ## Permissions
 
-The operator reads HPAs, and reads and annotates ScaledObjects. Without KEDA installed there are no ScaledObjects, and Hybernate looks for them again every 10 minutes in case it's installed later.
+The operator reads HPAs, and reads and annotates ScaledObjects. Without KEDA installed there are no ScaledObjects, and Hybernate looks for them again every 10 minutes in case it's installed later. The `Autoscaled` condition reflects a ScaledObject created or changed within 15 seconds; a pause or wake always reads them afresh.

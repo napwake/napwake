@@ -28,8 +28,8 @@ WakeOnRequest=True   DoormanRouted   requests are held and wake the workload
 | Sends bytes: an HTTP request, a TLS handshake, a database protocol's first message | Held, and the workload wakes |
 | Connects and sends nothing for 3 seconds | Held, and the workload wakes: it's taken for a protocol where the server speaks first, such as MySQL |
 | Connects and closes without sending anything, like a TCP health check | Closed; nothing wakes |
-| An HTTP `GET` or `HEAD` whose `User-Agent` starts with `kube-probe/`, `Prometheus/`, `vm_promscrape`, `GrafanaAgent/`, `Alloy/`, `OpenTelemetry Collector`, `otelcol`, `Datadog Agent/`, `ELB-HealthChecker/`, `GoogleHC/` or `Envoy/HC` | Answered `503 Service Unavailable` with `Connection: close` while no pod is Ready; nothing wakes. Probes and scrapers would otherwise keep a workload awake forever. Once a pod is Ready they're passed through like any other request |
-| An HTTP `GET` or `HEAD` whose `User-Agent` starts with one you added with the Helm value `doorman.healthCheckUserAgents`, such as an in-house uptime monitor's | Answered `503` as above; nothing wakes |
+| An HTTP `GET` or `HEAD` from a known probe, scraper or uptime monitor: one whose `User-Agent` starts with `kube-probe/`, `Prometheus/`, `Blackbox Exporter/`, `vm_promscrape`, `GrafanaAgent/`, `Alloy/`, `OpenTelemetry Collector`, `otelcol`, `Datadog Agent/`, `Datadog/Synthetics`, `ELB-HealthChecker/`, `Amazon-Route53-Health-Check-Service`, `GoogleHC/`, `GoogleStackdriverMonitoring-UptimeChecks`, `Envoy/HC`, `Mozilla/5.0+(compatible; UptimeRobot/`, `Pingdom.com_bot`, `NewRelicPinger/`, `Uptime-Kuma/` or `Gatus/` | Answered `503 Service Unavailable` with `Connection: close` while no pod is Ready; nothing wakes. Probes, scrapers and monitors would otherwise keep a workload awake forever. Once a pod is Ready they're passed through like any other request |
+| An HTTP `GET` or `HEAD` whose `User-Agent` starts with one you added with the Helm value `doorman.healthCheckUserAgents`, such as an in-house uptime monitor's. Any of these, built in or added, also matches when it follows `(compatible; `, as in `Mozilla/5.0 (compatible; MyCorpMonitor/3.1)` from a monitor that presents itself as a browser | Answered `503` as above; nothing wakes |
 | Any other method from those agents, such as a Prometheus remote write or an Alertmanager notification `POST` | Held, and the workload wakes: it's data for the workload, not a check on it |
 | An HTTP request for a hidden file: a path with a part that starts with a dot, such as `/.env`, `/.git/config` or `/.aws/credentials`, except under `/.well-known/` | Answered `404 Not Found`; nothing wakes. Scanners probe every address on the internet for these, hunting for leaked secrets, and no app serves them to its users |
 
@@ -37,7 +37,7 @@ Your own health checkers and scrapers are recognised once you add their `User-Ag
 
 ```yaml
 doorman:
-  healthCheckUserAgents: ["MyCorpMonitor/", "uptime-kuma"]
+  healthCheckUserAgents: ["MyCorpMonitor/", "status-checker"]
 ```
 
 To keep the doorman off a port altogether, such as a metrics port something else scrapes, list it on the Service. Ports are named in the Service's `ports`, and the annotation takes either the name or the number:
@@ -89,7 +89,7 @@ A browser opening a paused workload doesn't sit on a blank tab. The doorman answ
 
 ![The waking-up page](../assets/waking-page.png)
 
-The page is only for a browser loading a page: a `GET` or `HEAD` with `Sec-Fetch-Mode: navigate`, which browsers send when you open a URL, or, from older browsers, one that asks for HTML. Scripts' requests, API clients, form posts, WebSockets, TLS, and other protocols are held as usual. The doorman tells them apart from the first bytes the caller sends, then passes those bytes on unchanged when it holds the connection.
+The page is only for a browser loading a page: a `GET` or `HEAD` with `Sec-Fetch-Mode: navigate`, which browsers send when you open a URL, or, from older browsers, one that asks for HTML. Scripts' requests, API clients, form posts, WebSockets, TLS, and other protocols are held as usual. The doorman tells them apart from the first bytes the caller sends, then passes those bytes on unchanged when it holds the connection. It reads up to 16 KiB of a request's headers; longer ones, as large single sign-on cookies can make them, are judged by the headers in those first 16 KiB, which browsers send before their cookies.
 
 The page is sent as `503 Service Unavailable` with `Cache-Control: no-store`, `Retry-After: 3` and `X-Robots-Tag: noindex`, so caches, crawlers, and monitors don't mistake it for the app. Because it answers at once, a proxy's timeout doesn't matter for browsers, however long the workload takes to start.
 
@@ -105,7 +105,7 @@ spec:
 
 ## How long a connection is held
 
-The doorman holds each connection for up to `wake.maxWait`, 2 minutes by default. If no pod is Ready by then, it closes the connection. The wake carries on, so a retry a little later succeeds.
+The doorman holds each connection for up to `wake.maxWait`, 2 minutes by default and at most 1 hour, which is the most the ManagedWorkload accepts. If no pod is Ready by then, it closes the connection. The wake carries on, so a retry a little later succeeds.
 
 ```yaml
 spec:
@@ -125,13 +125,15 @@ metadata:
 
 So that a flood of connections can't exhaust the doorman, or wake workloads faster than the cluster can start them:
 
-- Each doorman pod holds at most 2048 connections: at most 1024 from one source IP, and at most 256 from one source IP for one workload. A connection over these caps is closed at once, with nothing sent.
+- Each doorman pod holds at most 2048 connections: at most 256 for one workload, at most 1024 from one source IP, and at most 128 from one source IP for one workload. A connection over these caps is closed at once, with nothing sent.
 - Wakes are rate-limited per source IP (a burst of 30, then one every 2 seconds) and overall (a burst of 200, then 10 a second). Only a request that would actually wake a paused workload counts, and one refused overall doesn't use up its source's allowance. A caller whose wake is over the limit isn't turned away: a browser gets the waking-up page, anything else is held, and the wake is retried every 2 seconds until the allowance lets it through or `maxWait` runs out.
-- While a connection is held, the doorman reads what the caller sends, so that a caller who gives up is let go at once: up to 1MiB per connection, and 32MiB across all of them. A larger request body waits in the network until the workload is up, and a caller who leaves partway through one is let go only at `maxWait`.
+- While a connection is held, the doorman reads what the caller sends, so that a caller who gives up is let go at once: up to 1MiB per connection, and 32MiB across all of them. A larger request body waits in the network until the workload is up, and a caller who leaves partway through one is let go only at `maxWait`. A caller that closes its connection has left, whatever its protocol, and is never passed to the workload: over TCP, closing and shutting down only the sending side look the same, and nearly every caller that does either has given up. So a client that sends its request and then shuts down its side to wait for the answer, as `nc -N` does, is dropped while the workload is asleep; leave the connection open instead.
 
-The source IP is the address the doorman sees, which for traffic through an ingress controller is the controller's pod. That's why the caps are per workload as well as per source: every user behind one ingress pod shares its address, and a burst to one environment mustn't crowd out the others.
+The source IP is the address the doorman sees, which for traffic through an ingress controller is the controller's pod. That's why the caps are per workload as well as per source: every user behind one ingress pod shares its address, and a burst to one environment mustn't crowd out the others. The cap on one workload, whatever the source, keeps one that never becomes Ready from taking every place.
 
-When a doorman pod shuts down, it stops accepting connections and gives those it holds or passes through up to 25 seconds to finish. The chart gives the pod 40 seconds in all, after a 5-second sleep that lets kube-proxy and load balancers stop sending it new connections.
+When a doorman pod shuts down, it reports itself not Ready at once, so the operator moves paused workloads' EndpointSlices to the other doorman pods. Only the operator can move them, and when it's being upgraded or restarted at the same time it takes a few seconds to take over, so the stopping pod goes on holding and passing through new connections for 15 seconds. Then it stops accepting them, and gives those it holds or passes through the rest of 25 seconds to finish. The chart gives the pod 40 seconds in all, after a 5-second sleep that lets kube-proxy and load balancers stop sending it new connections.
+
+When a workload stops being routed, the doorman goes on serving its port for 30 seconds, so a browser's last refresh of the waking-up page doesn't land on a closed port, and the operator gives that port to no other workload for a minute. The operator records the minute in the ManagedWorkload's status, so a newly elected leader honours it too, and a deleted ManagedWorkload stays until it's over, up to a minute after its routing is removed.
 
 ## Turning it off
 
@@ -152,6 +154,7 @@ Requests to the paused workload then fail, as they would without Hybernate. With
 | A Service without a selector, or an `ExternalName` Service | Not routed, since its endpoints aren't the workload's pods |
 | UDP or SCTP ports | Not routed; only TCP ports are |
 | A Service another workload's Ready pods serve | Not routed; reason `ServedByOtherPods` if no Service is. See [Services shared with other workloads](#services-shared-with-other-workloads) |
+| A Service with `internalTrafficPolicy: Local` | Not routed: kube-proxy sends each caller only to endpoints on its own node, and the doorman's pods are on one or two nodes, so most callers would reach nothing. Reason `NodeLocalTraffic` if no Service is routed; otherwise the condition's message names it. Wake the workload with an [activity annotation](idle-detection.md#activity-annotations), or give it a Service with the default policy (`Cluster`) |
 | A Service in an IP family no doorman pod has an address in | Not routed; reason `UnsupportedIPFamily` if no Service is |
 | A Service behind GKE container-native load balancing (`cloud.google.com/neg`) | Not routed, with a warning event. Reason `UnsupportedLoadBalancer` if no Service is routed; otherwise the condition stays `True` and its message names the Services left out. See [Compatibility](../reference/compatibility.md#cloud-load-balancers) |
 | The Deployment or StatefulSet is deleted | Routing is removed, since nothing would start the pods a held request waits for. `TargetAvailable=False`, reason `TargetNotFound`; requests fail as they would without Hybernate |

@@ -7,7 +7,7 @@ Everything the Hybernate operator and its doorman read, write, and send, for a s
 | Resource | Why | How |
 |---|---|---|
 | Deployments, StatefulSets | The workloads it manages: replicas, pod template, labels, and annotations | Watched |
-| Pods | What a workload's pods request, sidecars included, to price it; and which pod sent a request that woke a workload | Read when needed, not cached |
+| Pods | What a workload's running pods request: the app containers', at most every 5 minutes, to judge CPU activity against, and all containers', sidecars included, to price it; and which pod sent a request that woke a workload | Read when needed, not cached |
 | Pod metrics (`metrics.k8s.io`) | CPU use, the activity clock's main signal | Read when needed, not cached |
 | Services | Which Services to route a paused workload's requests through, and which workload an address in an environment names | Watched |
 | EndpointSlices | Its own, routing paused workloads to the doorman, and the doorman Service's, to find the doorman's pods. The doorman reads every slice in the watched namespaces, to find a woken workload's Ready pods | Watched |
@@ -81,8 +81,12 @@ With leader election, a Role `hybernate-leader-election` in the release namespac
 | `discovery.k8s.io` | `endpointslices` | `get`, `list`, `watch` |
 | `""`, `events.k8s.io` | `events` | `create`, `patch` |
 
+**Uninstall guard**, with `uninstallGuard.enabled` (the default): a ServiceAccount `hybernate-uninstall-guard`, and a ClusterRole and ClusterRoleBinding of the same name, or a Role and RoleBinding in each watched namespace, allowing `get`, `list` and `watch` on `hybernate.io` `managedworkloads`. They exist only while `helm uninstall` runs its pre-delete hook, which refuses the uninstall while ManagedWorkloads are left.
+
+**Admission policy**, with `doorman.admissionPolicy.enabled` (the default): a ValidatingAdmissionPolicy and binding `hybernate-doorman`, cluster-scoped, which refuse any change the doorman's ServiceAccount makes to a ManagedWorkload other than to its `hybernate.io/last-request` and `last-request-from` annotations.
+
 **Metrics**, with `metrics.secure` (the default): ClusterRoleBindings `hybernate-auth-delegator` and `hybernate-doorman-auth-delegator` to the built-in `system:auth-delegator` ClusterRole, so the operator and the doorman can check the tokens of whoever scrapes them; and, with `metrics.enabled`, a ClusterRole `hybernate-metrics-reader` allowing `get` on the `/metrics` URL, bound to `metrics.readerSubjects` by a ClusterRoleBinding of the same name.
 
 ## The plugin
 
-`kubectl hybernate` runs with your own kubeconfig and permissions, reads the same kinds of resources and their events, and changes nothing except for `wake` (activity annotations on a ManagedWorkload), `pause` (the `hybernate.io/pause-requested` annotation on a ManagedWorkload) and `enable` (the `hybernate.io/dry-run` annotation, on a workload or its namespace, or `spec.dryRun` on a ManagedWorkload you wrote). `scan` reads Prometheus through the API server's service proxy, or at `--prometheus-url`, and writes its report only to your machine, in a file only you can read.
+`kubectl hybernate` runs with your own kubeconfig and permissions, reads the same kinds of resources and their events, and changes nothing except for `wake` (activity annotations on a ManagedWorkload), `pause` (the `hybernate.io/pause-requested` annotation on a ManagedWorkload, with `hybernate.io/pause-overrides-forecast` when told to pause one the forecast expects demand for, and, with `--clear-hold`, removing its `hybernate.io/active-until`) and `enable` (the `hybernate.io/dry-run` annotation, on a workload or its namespace, or `spec.dryRun` on a ManagedWorkload you wrote). `scan` reads Prometheus through the API server's service proxy, or at `--prometheus-url`, and writes its report only to your machine, in a file only you can read.

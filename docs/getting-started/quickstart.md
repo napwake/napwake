@@ -4,6 +4,27 @@ This guide takes one workload from "idle and costing money" to "paused while idl
 
 It assumes Hybernate is [installed](installation.md) and you have the [kubectl plugin](kubectl-plugin.md).
 
+Hybernate reads CPU from metrics-server, and while it can't read a workload's CPU it doesn't pause it, since a busy workload would look idle. Most managed clusters have it; kind and a new minikube don't. Check that the Metrics API is there:
+
+```bash
+kubectl get apiservice v1beta1.metrics.k8s.io
+```
+
+If it's missing or not `Available`, install it. On minikube, run `minikube addons enable metrics-server`. Elsewhere:
+
+```bash
+kubectl apply -f https://github.com/kubernetes-sigs/metrics-server/releases/latest/download/components.yaml
+```
+
+On kind, the kubelets' certificates aren't signed for their addresses, so also tell metrics-server not to verify them. Do this only on a local test cluster:
+
+```bash
+kubectl patch deployment metrics-server -n kube-system --type=json \
+  -p '[{"op":"add","path":"/spec/template/spec/containers/0/args/-","value":"--kubelet-insecure-tls"}]'
+```
+
+`kubectl top pods -A` shows numbers within a minute or so once it's working. If a workload still doesn't pause, see [Troubleshooting](../operations/troubleshooting.md#workload-is-idle-but-not-being-paused).
+
 ## 1. A sample workload
 
 If you don't have one to try, create a Deployment:

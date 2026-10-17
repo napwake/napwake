@@ -64,7 +64,7 @@ vet: ## Run go vet against code.
 
 .PHONY: test
 test: manifests generate fmt vet setup-envtest ## Run tests.
-	KUBEBUILDER_ASSETS="$(shell "$(ENVTEST)" use $(ENVTEST_K8S_VERSION) --bin-dir "$(LOCALBIN)" -p path)" go test $$(go list ./... | grep -v /e2e) -coverprofile cover.out
+	KUBEBUILDER_ASSETS="$(shell "$(ENVTEST)" use $(ENVTEST_K8S_VERSION) --bin-dir "$(LOCALBIN)" -p path)" go test -race $$(go list ./... | grep -v /e2e) -coverprofile cover.out
 
 # The e2e setup assumes Kind is installed, and builds and loads the manager
 # image itself. KIND_NODE_IMAGE picks the Kubernetes version.
@@ -124,6 +124,13 @@ PROMETHEUS_IMAGE ?= prom/prometheus:v3.15.0@sha256:efd719c99d83b060d9daefdcf0036
 
 .PHONY: test-alerts
 test-alerts: ## Unit-test the chart's and config/prometheus's alert rules with promtool
+	@# The tests' series carry the workload's namespace, as a scrape keeps it
+	@# only when every ServiceMonitor endpoint honors the target's labels.
+	@test "$$(helm template hybernate charts/hybernate --set metrics.serviceMonitor.enabled=true \
+		--show-only templates/servicemonitor.yaml | grep -c 'honorLabels: true')" = 2 || { \
+		echo "the chart's ServiceMonitors don't both set honorLabels, so the workload's namespace label is overwritten"; exit 1; }
+	@test "$$(grep -c 'honorLabels: true' config/prometheus/monitor.yaml)" = 2 || { \
+		echo "config/prometheus's ServiceMonitors don't both set honorLabels, so the workload's namespace label is overwritten"; exit 1; }
 	@dir=$$(mktemp -d); trap 'rm -rf "$$dir"' EXIT; \
 	cp tests/prometheus/*_test.yaml "$$dir"; \
 	go run ./hack/promrules < config/prometheus/alerts.yaml > "$$dir/kustomize.rules.yaml"; \
@@ -157,6 +164,41 @@ check-chart: ## Lint the Helm chart, render it for each provider's Kubernetes ve
 		echo "the chart accepts doorman.networkPolicy.ingressFrom without networkPolicy.enabled, which leaves the doorman open"; exit 1; }
 	helm template hybernate charts/hybernate | go run ./hack/rbaccheck config/rbac/role.yaml
 	helm template hybernate charts/hybernate --set 'watchNamespaces={shop,blog}' | go run ./hack/rbaccheck config/rbac/role.yaml
+	@long=abcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabc; \
+	names=$$(helm template hybernate charts/hybernate --set fullnameOverride=$$long --set networkPolicy.enabled=true \
+		--set metrics.serviceMonitor.enabled=true --set metrics.prometheusRule.enabled=true | \
+		awk '/^kind:/ {k = $$2} /^[a-zA-Z]/ {m = ($$1 == "metadata:")} m && /^  name: / {print k, $$2}'); \
+	! awk 'length($$2) > 63 {print "too long: " $$0; bad = 1} END {exit !bad}' <<<"$$names" && \
+		[ -z "$$(sort <<<"$$names" | uniq -d)" ] || { \
+		echo "a 63-character fullnameOverride makes a name over 63 characters, or two resources the same name"; exit 1; }
+	@crd=$$(helm template hybernate charts/hybernate --show-only templates/crds/hybernate.io_managedworkloads.yaml); \
+	grep -q 'helm.sh/resource-policy: keep' <<<"$$crd" && grep -q 'argocd.argoproj.io/sync-options: Delete=false' <<<"$$crd" || { \
+		echo "the chart's CRD isn't kept on uninstall by both Helm and Argo CD, which would delete every ManagedWorkload"; exit 1; }
+	@for p in 8081 20000 29999; do \
+		! helm template hybernate charts/hybernate --set metrics.port=$$p >/dev/null 2>&1 || { \
+			echo "the chart accepts metrics.port=$$p, which the health probes or the doorman's routing ports use"; exit 1; }; \
+	done
+	@helm template hybernate charts/hybernate --set metrics.port=30000 >/dev/null
+	@out=$$(helm template hybernate charts/hybernate --set-string podLabels.team=checkout \
+		--set-string podLabels.control-plane=other --set priorityClassName=hybernate-critical \
+		--set 'doorman.extraEnv[0].name=GOMAXPROCS' --set-string 'doorman.extraEnv[0].value=2'); \
+	[ "$$(grep -c 'team: checkout' <<<"$$out")" = 2 ] && [ "$$(grep -c 'priorityClassName: hybernate-critical' <<<"$$out")" = 2 ] && \
+		grep -q 'name: GOMAXPROCS' <<<"$$out" && ! grep -q 'control-plane: other' <<<"$$out" || { \
+		echo "podLabels, priorityClassName or doorman.extraEnv don't reach both pods, or podLabels replaced a selector label"; exit 1; }
+	@for field in terminationGracePeriodSeconds: seconds: minReadySeconds:; do \
+		chart=$$(helm template hybernate charts/hybernate --show-only templates/doorman.yaml | awk -v f="$$field" '$$1 == f {print $$2}'); \
+		kustomize=$$(awk -v f="$$field" '$$1 == f {print $$2}' config/manager/doorman.yaml); \
+		[ -n "$$chart" ] && [ "$$chart" = "$$kustomize" ] || { \
+			echo "config/manager's doorman has $$field '$$kustomize', the chart's '$$chart', so one drops connections on shutdown"; exit 1; }; \
+	done
+
+.PHONY: test-doorman-policy
+test-doorman-policy: setup-envtest ## Check against envtest that the chart's admission policy holds the doorman to stamping requests
+	@dir=$$(mktemp -d); trap 'rm -rf "$$dir"' EXIT; \
+	helm template hybernate charts/hybernate --namespace hybernate-system > "$$dir/chart.yaml"; \
+	CHART_MANIFEST="$$dir/chart.yaml" \
+	KUBEBUILDER_ASSETS="$$("$(ENVTEST)" use $(ENVTEST_K8S_VERSION) --bin-dir "$(LOCALBIN)" -p path)" \
+		go test -count=1 ./hack/doormanpolicy
 
 .PHONY: verify-generated
 verify-generated: manifests generate ## Fail if generated code or manifests, or go.mod, aren't up to date
@@ -174,7 +216,7 @@ cleanup-test-e2e: ## Tear down the Kind cluster used for e2e tests
 lint: golangci-lint ## Run golangci-lint linter
 	"$(GOLANGCI_LINT)" run
 
-GOVULNCHECK_VERSION ?= v1.8.0
+GOVULNCHECK_VERSION ?= v1.9.0
 
 .PHONY: vulncheck
 vulncheck: ## Report vulnerabilities in Go dependencies that Hybernate's code reaches
@@ -216,8 +258,11 @@ verify-version: ## Fail unless the chart, the kustomize image, and the docs name
 
 .PHONY: release
 release: bump ## Bump version, commit, and tag. Usage: make release VERSION=0.1.2
+	@$(MAKE) --no-print-directory verify-version VERSION=$(VERSION)
 	@git add charts/hybernate/Chart.yaml config/manager/kustomization.yaml $(VERSIONED_DOCS)
-	@git commit -m "chore(release): bump version to v$(VERSION)"
+	@# Versions bumped in an earlier commit leave nothing to commit, and the
+	@# release is tagged as it stands.
+	@git diff --cached --quiet || git commit -m "chore(release): bump version to v$(VERSION)"
 	@git tag -a v$(VERSION) -m "v$(VERSION)"
 	@echo "Tagged v$(VERSION). Run 'git push origin main v$(VERSION)' to release."
 
@@ -255,13 +300,10 @@ docker-push: ## Push docker image with the manager.
 PLATFORMS ?= linux/arm64,linux/amd64,linux/s390x,linux/ppc64le
 .PHONY: docker-buildx
 docker-buildx: ## Build and push docker image for the manager for cross-platform support
-	# copy existing Dockerfile and insert --platform=${BUILDPLATFORM} into Dockerfile.cross, and preserve the original Dockerfile
-	sed -e '1 s/\(^FROM\)/FROM --platform=\$$\{BUILDPLATFORM\}/; t' -e ' 1,// s//FROM --platform=\$$\{BUILDPLATFORM\}/' Dockerfile > Dockerfile.cross
 	- $(CONTAINER_TOOL) buildx create --name hybernate-builder
 	$(CONTAINER_TOOL) buildx use hybernate-builder
-	- $(CONTAINER_TOOL) buildx build --push --platform=$(PLATFORMS) --tag ${IMG} -f Dockerfile.cross .
+	- $(CONTAINER_TOOL) buildx build --push --platform=$(PLATFORMS) --tag ${IMG} .
 	- $(CONTAINER_TOOL) buildx rm hybernate-builder
-	rm Dockerfile.cross
 
 .PHONY: build-installer
 build-installer: manifests generate kustomize ## Generate a consolidated YAML with CRDs and deployment.

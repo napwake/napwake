@@ -29,7 +29,7 @@ import (
 var apiTarget = v1alpha1.WorkloadRef{Kind: v1alpha1.TargetKindDeployment, Name: "api"}
 
 func TestOptInSpec_Defaults(t *testing.T) {
-	spec, problems := optInSpec(apiTarget, nil, nil, DefaultOptInDefaults)
+	spec, problems := optInSpec("dev", apiTarget, nil, nil, DefaultOptInDefaults)
 
 	require.Empty(t, problems)
 	assert.Equal(t, apiTarget, spec.Target)
@@ -49,7 +49,7 @@ func TestOptInSpec_Precedence(t *testing.T) {
 	namespace := map[string]string{v1alpha1.AnnotationIdleAfter: "2h", v1alpha1.AnnotationCPUThreshold: "15"}
 	workload := map[string]string{v1alpha1.AnnotationIdleAfter: "30m"}
 
-	spec, problems := optInSpec(apiTarget, workload, namespace, cluster)
+	spec, problems := optInSpec("dev", apiTarget, workload, namespace, cluster)
 
 	require.Empty(t, problems)
 	assert.Equal(t, 30*time.Minute, spec.IdlePolicy.IdleAfter.Duration, "the workload's own wins")
@@ -74,7 +74,7 @@ func TestOptInSpec_DryRun(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			spec, problems := optInSpec(apiTarget, tt.workload, tt.namespace, DefaultOptInDefaults)
+			spec, problems := optInSpec("dev", apiTarget, tt.workload, tt.namespace, DefaultOptInDefaults)
 			require.Empty(t, problems)
 			assert.Equal(t, tt.want, spec.DryRun)
 		})
@@ -97,6 +97,15 @@ func TestOptInSpec_InvalidValues(t *testing.T) {
 		{v1alpha1.AnnotationWakeMaxWait, "0", func(t *testing.T, s v1alpha1.ManagedWorkloadSpec) {
 			assert.Equal(t, 2*time.Minute, s.Wake.MaxWait.Duration)
 		}},
+		{v1alpha1.AnnotationWakeMaxWait, "2h", func(t *testing.T, s v1alpha1.ManagedWorkloadSpec) {
+			assert.Equal(t, 2*time.Minute, s.Wake.MaxWait.Duration)
+		}},
+		{v1alpha1.AnnotationWakeMaxWait, "1d", func(t *testing.T, s v1alpha1.ManagedWorkloadSpec) {
+			assert.Equal(t, 2*time.Minute, s.Wake.MaxWait.Duration)
+		}},
+		{v1alpha1.AnnotationIdleAfter, "1d", func(t *testing.T, s v1alpha1.ManagedWorkloadSpec) {
+			assert.Equal(t, time.Hour, s.IdlePolicy.IdleAfter.Duration)
+		}},
 		{v1alpha1.AnnotationWakeOnRequest, "yes", func(t *testing.T, s v1alpha1.ManagedWorkloadSpec) { assert.True(t, *s.Wake.OnRequest) }},
 		{v1alpha1.AnnotationIdleAfter, "soon", func(t *testing.T, s v1alpha1.ManagedWorkloadSpec) {
 			assert.Equal(t, time.Hour, s.IdlePolicy.IdleAfter.Duration)
@@ -116,7 +125,7 @@ func TestOptInSpec_InvalidValues(t *testing.T) {
 		t.Run(tt.annotation+"="+tt.value, func(t *testing.T) {
 			annotations := map[string]string{tt.annotation: tt.value, v1alpha1.AnnotationAutoResume: "true"}
 
-			spec, problems := optInSpec(apiTarget, annotations, nil, DefaultOptInDefaults)
+			spec, problems := optInSpec("dev", apiTarget, annotations, nil, DefaultOptInDefaults)
 
 			require.Len(t, problems, 1)
 			assert.Equal(t, tt.annotation, problems[0].annotation)
@@ -127,12 +136,21 @@ func TestOptInSpec_InvalidValues(t *testing.T) {
 	}
 }
 
+func TestOptInSpec_WakeMaxWaitUpToTheLimit(t *testing.T) {
+	annotations := map[string]string{v1alpha1.AnnotationWakeMaxWait: "1h"}
+
+	spec, problems := optInSpec("dev", apiTarget, annotations, nil, DefaultOptInDefaults)
+
+	require.Empty(t, problems)
+	assert.Equal(t, v1alpha1.WakeMaxWaitLimit, spec.Wake.MaxWait.Duration)
+}
+
 func TestOptInSpec_DependsOn(t *testing.T) {
 	annotations := map[string]string{
 		v1alpha1.AnnotationDependsOn: "statefulset/postgres, messaging/statefulset/nats ,Deployment/cache,cronjob/report,bad",
 	}
 
-	spec, problems := optInSpec(apiTarget, annotations, nil, DefaultOptInDefaults)
+	spec, problems := optInSpec("dev", apiTarget, annotations, nil, DefaultOptInDefaults)
 
 	assert.Equal(t, []v1alpha1.DependencyRef{
 		{Kind: v1alpha1.TargetKindStatefulSet, Name: "postgres"},
@@ -207,7 +225,7 @@ func TestOptInSpec_InvalidWorkloadValueFallsThrough(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			spec, problems := optInSpec(apiTarget, tt.workload, tt.namespace, DefaultOptInDefaults)
+			spec, problems := optInSpec("dev", apiTarget, tt.workload, tt.namespace, DefaultOptInDefaults)
 
 			tt.check(t, spec)
 			require.NotEmpty(t, problems)
@@ -221,7 +239,7 @@ func TestOptInSpec_InvalidWorkloadValueFallsThrough(t *testing.T) {
 // A namespace's value that can't be read doesn't matter, and isn't
 // reported, when the workload sets its own.
 func TestOptInSpec_WorkloadValueShadowsNamespaceProblem(t *testing.T) {
-	spec, problems := optInSpec(apiTarget,
+	spec, problems := optInSpec("dev", apiTarget,
 		map[string]string{v1alpha1.AnnotationDryRun: "false"},
 		map[string]string{v1alpha1.AnnotationDryRun: "maybe"}, DefaultOptInDefaults)
 
@@ -229,9 +247,40 @@ func TestOptInSpec_WorkloadValueShadowsNamespaceProblem(t *testing.T) {
 	assert.False(t, spec.DryRun)
 }
 
+// A namespace's depends-on reaches the dependency it names too, which
+// mustn't depend on itself.
+func TestOptInSpec_DependsOnNeverNamesItself(t *testing.T) {
+	postgres := v1alpha1.WorkloadRef{Kind: v1alpha1.TargetKindStatefulSet, Name: "postgres"}
+	tests := []struct {
+		value string
+		want  []v1alpha1.DependencyRef
+	}{
+		{value: "statefulset/postgres"},
+		{value: "dev/statefulset/postgres"},
+		{value: "statefulset/postgres, deployment/cache",
+			want: []v1alpha1.DependencyRef{{Kind: v1alpha1.TargetKindDeployment, Name: "cache"}}},
+		{value: "deployment/postgres",
+			want: []v1alpha1.DependencyRef{{Kind: v1alpha1.TargetKindDeployment, Name: "postgres"}}},
+		{value: "shared/statefulset/postgres",
+			want: []v1alpha1.DependencyRef{{Namespace: "shared", Kind: v1alpha1.TargetKindStatefulSet, Name: "postgres"}}},
+	}
+	for _, tt := range tests {
+		t.Run(tt.value, func(t *testing.T) {
+			spec, problems := optInSpec("dev", postgres, nil,
+				map[string]string{v1alpha1.AnnotationDependsOn: tt.value}, DefaultOptInDefaults)
+
+			assert.Empty(t, problems)
+			assert.Equal(t, len(tt.want), len(spec.DependsOn))
+			if len(tt.want) > 0 {
+				assert.Equal(t, tt.want, spec.DependsOn)
+			}
+		})
+	}
+}
+
 // An empty depends-on on a workload drops its namespace's.
 func TestOptInSpec_EmptyDependsOnDropsTheNamespaces(t *testing.T) {
-	spec, problems := optInSpec(apiTarget,
+	spec, problems := optInSpec("dev", apiTarget,
 		map[string]string{v1alpha1.AnnotationDependsOn: ""},
 		map[string]string{v1alpha1.AnnotationDependsOn: "statefulset/postgres"}, DefaultOptInDefaults)
 

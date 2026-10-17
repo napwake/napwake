@@ -6,6 +6,7 @@
 *.dylib
 bin/*
 main
+/kubectl-hybernate
 Dockerfile.cross
 
 # Test binary, built with `go test -c`

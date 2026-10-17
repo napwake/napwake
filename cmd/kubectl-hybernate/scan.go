@@ -164,6 +164,12 @@ Examples:
 			if opts.timeout <= 0 {
 				return errors.New("--timeout must be more than zero")
 			}
+			if err := checkPrice("cpu-price", opts.cpuPrice); err != nil {
+				return err
+			}
+			if err := checkPrice("memory-price", opts.memoryPrice); err != nil {
+				return err
+			}
 			prom, err := prometheusFrom(opts.prometheus)
 			if err != nil {
 				return err
@@ -193,7 +199,8 @@ Examples:
 	cmd.Flags().StringSliceVar(&opts.exclude, "exclude-namespaces", discovery.SystemNamespaces, "Namespaces to skip")
 	addOutputFlag(cmd, &opts.output)
 	cmd.Flags().IntVar(&opts.limit, "limit", 25,
-		"Workloads to list in the table, idle first, then by what pausing could save (0 for all)")
+		"Workloads to list in the table, idle first, then paused, then active, each by what pausing could save "+
+			"(0 for all)")
 	cmd.Flags().IntVar(&opts.cpuThreshold, "cpu-threshold", defaultCPUThreshold,
 		"CPU use, as a percentage of requests from 1 to 100, at which a workload counts as active; managed workloads "+
 			"use their own")
@@ -201,7 +208,7 @@ Examples:
 	cmd.Flags().Float64Var(&opts.memoryPrice, "memory-price", opts.memoryPrice,
 		"Your price per GiB-hour of memory, in dollars")
 	cmd.Flags().StringVar(&opts.window, "window", opts.window,
-		"How much Prometheus history to replay, such as 7d or 36h; 0 judges from CPU right now only")
+		"How much Prometheus history to replay, such as 7d or 36h, up to 366d; 0 judges from CPU right now only")
 	cmd.Flags().DurationVar(&opts.idleAfter, "idle-after", opts.idleAfter,
 		"How long without activity makes a workload idle, as Hybernate's idleAfter; managed workloads use their own")
 	cmd.Flags().DurationVar(&opts.timeout, "timeout", opts.timeout,
@@ -358,13 +365,22 @@ func incompleteError(result scanResult) error {
 	return fmt.Errorf("the scan of %s is incomplete: %s", result.Cluster, strings.Join(why, "; "))
 }
 
+// maxWindowDays bounds --window at a year, longer than any Prometheus
+// retention a replay is worth reading, and far short of the days that would
+// overflow a time.Duration.
+const maxWindowDays = 366
+
 // parseWindow reads a duration that may be in days, which
 // time.ParseDuration doesn't know.
 func parseWindow(s string) (time.Duration, error) {
+	tooLong := fmt.Errorf("--window %q is longer than %dd", s, maxWindowDays)
 	if days, ok := strings.CutSuffix(s, "d"); ok {
 		n, err := strconv.Atoi(days)
 		if err != nil || n < 0 {
 			return 0, fmt.Errorf("--window %q isn't a number of days, such as 7d", s)
+		}
+		if n > maxWindowDays {
+			return 0, tooLong
 		}
 		return time.Duration(n) * 24 * time.Hour, nil
 	}
@@ -372,7 +388,18 @@ func parseWindow(s string) (time.Duration, error) {
 	if err != nil || d < 0 {
 		return 0, fmt.Errorf("--window %q isn't a duration, such as 7d or 36h", s)
 	}
+	if d > maxWindowDays*24*time.Hour {
+		return 0, tooLong
+	}
 	return d, nil
+}
+
+// checkPrice rejects a price no cost can be worked out from.
+func checkPrice(flag string, price float64) error {
+	if !(price >= 0) || math.IsInf(price, 0) {
+		return fmt.Errorf("--%s must be a number of dollars, zero or more", flag)
+	}
+	return nil
 }
 
 func scanCluster(ctx context.Context, window time.Duration, prom prometheusSetup, opts scanOptions) (
@@ -568,9 +595,13 @@ func writeHeadline(p *printer, t discovery.Totals, replayed string) {
 		p.line("  Hybernate has %s paused right now, freeing %s an hour.",
 			countOf(t.Paused, "workload"), cents(t.PausedHourlyCost))
 	}
-	if t.Live > 0 {
+	switch {
+	case t.Live > 0:
 		p.line("  Hybernate has saved %s this month pausing %s.", dollars(t.SavedThisMonth),
 			countOf(t.Live, "live workload"))
+	case t.SavedThisMonth > 0:
+		p.line("  Hybernate has saved %s this month, pausing workloads since put back in dry-run.",
+			dollars(t.SavedThisMonth))
 	}
 	if t.DryRun > 0 {
 		p.line("  %s in dry-run: measured by Hybernate since starting, %s would have slept %s, freeing %s,",
@@ -767,19 +798,21 @@ func sleptCells(wl Workload) (slept, wakes, since string, sleptSort float64) {
 }
 
 // savingColumns says which money columns a table needs: what Hybernate has
-// saved, for live workloads, and what pausing could save, for those it
-// doesn't pause yet, when the scan knows either for any of them.
+// saved, for live workloads and any that saved this month before going back
+// to dry-run, and what pausing could save, for those it doesn't pause yet,
+// when the scan knows either for any of them.
 func savingColumns(workloads []Workload) (saving, couldSave bool) {
 	for _, wl := range workloads {
-		saving = saving || (wl.Managed && !wl.DryRun)
+		saving = saving || (wl.Managed && !wl.DryRun) || wl.SavedThisMonth > 0
 		couldSave = couldSave || wl.Measured != nil || (!wl.Managed && wl.History != nil)
 	}
 	return saving, couldSave
 }
 
-// savedCell is what Hybernate has saved this month pausing a live workload.
+// savedCell is what Hybernate has saved this month pausing a workload: a
+// live one, or one in dry-run that saved while it was live.
 func savedCell(wl Workload) string {
-	if !wl.Managed || wl.DryRun {
+	if !wl.Managed || (wl.DryRun && wl.SavedThisMonth == 0) {
 		return "-"
 	}
 	return dollars(wl.SavedThisMonth)
@@ -798,11 +831,14 @@ func couldSaveCell(wl Workload) string {
 // one Hybernate could manage, to measure, and the first already measuring
 // in dry-run, to go live. Workloads come sorted most savings first, so each
 // is the best example. Protected workloads are left out, as Hybernate won't
-// manage them.
+// manage them, and so are those whose replicas are set from Git, whose
+// GitOps tool would revert a label put on by hand and undo every pause; the
+// notes say how to bring those in. Nor is the cluster's own
+// infrastructure, which the report keeps apart from the workloads anyway.
 func nextStepTargets(workloads []Workload) (idle, measuring *Workload) {
 	for i := range workloads {
 		wl := &workloads[i]
-		if wl.Protected {
+		if wl.Protected || wl.ReplicasFromGit != "" || wl.Platform != "" {
 			continue
 		}
 		if idle == nil && wl.State == discovery.StateIdle && !wl.Managed {
@@ -840,7 +876,8 @@ func writeNextSteps(p *printer, result scanResult) {
 	if idle == nil && measuring == nil {
 		return
 	}
-	installed := slices.ContainsFunc(result.Workloads, func(wl Workload) bool { return wl.Managed })
+	installed := slices.ContainsFunc(result.Workloads, func(wl Workload) bool { return wl.Managed }) ||
+		slices.ContainsFunc(result.Platform, func(wl Workload) bool { return wl.Platform == discovery.PlatformHybernate })
 	measure, enable := nextStepCommands(idle, measuring)
 	p.line("Next steps:")
 	step := 0
@@ -849,8 +886,8 @@ func writeNextSteps(p *printer, result scanResult) {
 		p.line("  %d. %s", step, title)
 	}
 	if len(measure) > 0 {
-		// Managed workloads show Hybernate is installed; without any, it
-		// may or may not be, so the install step is shown.
+		// Managed workloads, or Hybernate's own, show it's installed;
+		// without them, it may or may not be, so the install step is shown.
 		if !installed {
 			next("Install Hybernate in the cluster:")
 			p.line("       helm install hybernate oci://ghcr.io/okedeji/charts/hybernate -n hybernate-system --create-namespace")

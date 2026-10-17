@@ -19,6 +19,8 @@ package discovery
 import (
 	"context"
 	"math"
+	"net/http"
+	"net/http/httptest"
 	"strings"
 	"testing"
 	"time"
@@ -26,11 +28,20 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	appsv1 "k8s.io/api/apps/v1"
+	corev1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/runtime/schema"
+	metricsv1beta1 "k8s.io/metrics/pkg/apis/metrics/v1beta1"
+	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
+	"sigs.k8s.io/controller-runtime/pkg/client/interceptor"
 
 	v1alpha1 "github.com/okedeji/hybernate/api/v1alpha1"
 )
+
+// longDeployment is a name long enough that the API server cuts its pods' names short.
+const longDeployment = "payments-reconciliation-worker-eu-west-primary-blue"
 
 var weekStart = time.Date(2026, 9, 28, 0, 0, 0, 0, time.UTC) // a Monday
 
@@ -168,7 +179,7 @@ func TestWorkloadSeries(t *testing.T) {
 }
 
 func TestReplicaSetPods(t *testing.T) {
-	long := "payments-reconciliation-worker-eu-west-primary-blue"
+	long := longDeployment
 	longRS := long + "-7d9f8c6b5"
 	tests := []struct {
 		name        string
@@ -405,10 +416,194 @@ func TestScanCluster_HistoryIsTheWorkloadsOwn(t *testing.T) {
 	assert.InDelta(t, 167, h.SleepHours, 1, "web was quiet all week; the migration Job and web-api aren't web")
 }
 
+// Without metrics-server, CPU right now can't be measured, but history can
+// still judge a workload, so the table lists the workloads the headline
+// counts.
+func TestScanCluster_JudgesFromHistoryWithoutMetrics(t *testing.T) {
+	quiet := func(time.Time) float64 { return 0.001 }
+	f := &fakePrometheus{from: scanTime.Add(-7 * 24 * time.Hour), byNamespace: map[string][]series{testNamespace: {
+		{pod: "idle-api-7d9f8c6b5-x7k2p", container: "main", cores: quiet},
+		{pod: "busy-api-7d9f8c6b5-x7k2p", container: "main", cores: func(time.Time) float64 { return 2 }},
+	}}}
+	objs := deploymentWithRollout("idle-api", testNamespace, 1, 30*24*time.Hour)
+	objs = append(objs, deploymentWithRollout("busy-api", testNamespace, 1, 30*24*time.Hour)...)
+	objs = append(objs, deploymentWithRollout("no-history", testNamespace, 1, 30*24*time.Hour)...)
+	opts := scanOptions(testNamespace)
+	opts.History, opts.Window, opts.IdleAfter = newFakePrometheus(t, f), 7*24*time.Hour, time.Hour
+	c := failingIn(objs, func(list client.ObjectList, _ string) error {
+		if _, ok := list.(*metricsv1beta1.PodMetricsList); ok {
+			return &meta.NoKindMatchError{GroupKind: schema.GroupKind{Group: "metrics.k8s.io", Kind: "PodMetrics"}}
+		}
+		return nil
+	})
+
+	report, err := NewScanner(c, c).ScanCluster(context.Background(), opts)
+
+	require.NoError(t, err)
+	got := byName(report)
+	assert.Equal(t, StateIdle, got["idle-api"].State)
+	assert.Equal(t, "no activity in its CPU history", got["idle-api"].Reason)
+	assert.Equal(t, StateActive, got["busy-api"].State)
+	assert.Equal(t, StateUnknown, got["no-history"].State, "nothing to judge it by")
+	assert.Equal(t, 2, report.Totals.Replayed.Workloads, "only the workloads the table lists")
+	assert.InDelta(t, got["idle-api"].History.MonthlyCost+got["busy-api"].History.MonthlyCost,
+		report.Totals.SavingsBasis, 0.001, "the one that couldn't be judged isn't in the share's basis")
+	assert.Zero(t, CouldSave(Workload{State: StateUnknown, History: &History{MonthlyFreed: 5}}))
+}
+
+// A Prometheus too slow to answer in the scan's time costs the replay of
+// the namespaces it didn't answer for, not the scan: they're judged from CPU
+// right now, the notes say Prometheus was slow, and there's time left for
+// the rest.
+func TestScanCluster_SlowPrometheus(t *testing.T) {
+	slow := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		<-r.Context().Done()
+	}))
+	t.Cleanup(slow.Close)
+	prom, err := NewPrometheusURL(slow.URL, slow.Client(), nil)
+	require.NoError(t, err)
+	objs := deploymentWithRollout("api", testNamespace, 1, 30*24*time.Hour)
+	objs = append(objs, makePodMetrics("api", testNamespace, "1m", "20Mi"))
+	opts := scanOptions(testNamespace)
+	opts.History, opts.Window, opts.IdleAfter = prom, 7*24*time.Hour, time.Hour
+	c := fake.NewClientBuilder().WithScheme(newScheme()).WithRuntimeObjects(objs...).Build()
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+	defer cancel()
+
+	report, err := NewScanner(c, c).ScanCluster(ctx, opts)
+
+	require.NoError(t, err)
+	require.NoError(t, ctx.Err(), "the scan finished within its own deadline")
+	w := byName(report)["api"]
+	assert.Equal(t, StateIdle, w.State, "judged from CPU right now")
+	assert.Nil(t, w.History)
+	assert.Contains(t, strings.Join(report.Notes, "\n"), "the scan ran out of the time it gives CPU history, "+
+		"shared by reading the API server and querying Prometheus, before it had read the history of 1 namespace, "+
+		"so workloads there are judged from CPU right now: "+testNamespace)
+	assert.Contains(t, strings.Join(report.Notes, "\n"), "--window 0")
+	assert.Nil(t, report.Incomplete, "everything the cluster holds was read")
+}
+
+// When reading the API server spends the time the scan gives history,
+// Prometheus isn't queried at all, so it's neither waited on nor blamed.
+func TestScanCluster_SlowAPIServerSpendsTheHistoryBudget(t *testing.T) {
+	f := &fakePrometheus{from: scanTime.Add(-7 * 24 * time.Hour)}
+	objs := deploymentWithRollout("api", testNamespace, 1, 30*24*time.Hour)
+	objs = append(objs, makePodMetrics("api", testNamespace, "1m", "20Mi"))
+	opts := scanOptions(testNamespace)
+	opts.History, opts.Window, opts.IdleAfter = newFakePrometheus(t, f), 7*24*time.Hour, time.Hour
+	c := fake.NewClientBuilder().WithScheme(newScheme()).WithRuntimeObjects(objs...).
+		WithInterceptorFuncs(interceptor.Funcs{
+			List: func(ctx context.Context, c client.WithWatch, list client.ObjectList, opts ...client.ListOption) error {
+				if _, ok := list.(*corev1.ServiceList); ok {
+					deadline, _ := ctx.Deadline()
+					time.Sleep(time.Until(deadline) - 300*time.Millisecond)
+				}
+				return c.List(ctx, list, opts...)
+			},
+		}).Build()
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+	defer cancel()
+
+	report, err := NewScanner(c, c).ScanCluster(ctx, opts)
+
+	require.NoError(t, err)
+	assert.Empty(t, f.queries, "history wasn't queried after its time was spent")
+	assert.Nil(t, byName(report)["api"].History)
+	notes := strings.Join(report.Notes, "\n")
+	assert.Contains(t, notes, "the scan ran out of the time it gives CPU history")
+	assert.NotContains(t, notes, "Prometheus didn't")
+}
+
+func TestJudgeFromHistory(t *testing.T) {
+	tests := []struct {
+		name    string
+		history History
+		want    State
+		wantWhy string
+	}{
+		{"idle since its last activity", History{asleepAtEnd: true, lastActive: scanTime.Add(-50 * time.Hour)},
+			StateIdle, "last active in its CPU history 2 days ago"},
+		{"never active", History{asleepAtEnd: true}, StateIdle, "no activity in its CPU history"},
+		{"active lately", History{lastActive: scanTime.Add(-20 * time.Minute)},
+			StateActive, "active in its CPU history 20m ago"},
+		{"too new to be idle", History{}, StateActive, "started too recently in its CPU history to be idle"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			w := Workload{State: StateUnknown, History: &tt.history}
+			judgeFromHistory(&w, scanTime)
+			assert.Equal(t, tt.want, w.State)
+			assert.Equal(t, tt.wantWhy, w.Reason)
+		})
+	}
+}
+
+// A Deployment's pods from a ReplicaSet since deleted, past its revision
+// history limit, are still its history; a bare ReplicaSet's that still
+// exists aren't.
+func TestScanCluster_HistoryOfDeletedReplicaSets(t *testing.T) {
+	busy := func(time.Time) float64 { return 2 }
+	quiet := func(time.Time) float64 { return 0.001 }
+	f := &fakePrometheus{from: scanTime.Add(-7 * 24 * time.Hour), byNamespace: map[string][]series{testNamespace: {
+		{pod: "web-7d9f8c6b5-x7k2p", container: "main", cores: quiet},
+		{pod: "web-5c6d7f8b9-q2w4r", container: "main", cores: func(t time.Time) float64 {
+			if t.Before(scanTime.Add(-3 * 24 * time.Hour)) {
+				return 2
+			}
+			return 0
+		}},
+		{pod: "web-6b8c9d4f5-z9x8c", container: "main", cores: busy},
+	}}}
+	bare := &appsv1.ReplicaSet{ObjectMeta: metav1.ObjectMeta{Name: "web-6b8c9d4f5", Namespace: testNamespace}}
+	objs := deploymentWithRollout("web", testNamespace, 1, 30*24*time.Hour)
+	objs = append(objs, bare, makePodMetrics("web", testNamespace, "1m", "20Mi"))
+	opts := scanOptions(testNamespace)
+	opts.History, opts.Window, opts.IdleAfter = newFakePrometheus(t, f), 7*24*time.Hour, time.Hour
+	c := fake.NewClientBuilder().WithScheme(newScheme()).WithRuntimeObjects(objs...).Build()
+
+	report, err := NewScanner(c, c).ScanCluster(context.Background(), opts)
+
+	require.NoError(t, err)
+	h := byName(report)["web"].History
+	require.NotNil(t, h)
+	assert.InDelta(t, 72-1, h.SleepHours, 1, "busy for its first four days, on a ReplicaSet since deleted")
+}
+
+func TestDeploymentReplicaSet(t *testing.T) {
+	long := longDeployment
+	tests := []struct {
+		name, deployment, pod, want string
+	}{
+		{"a Deployment's pod", "api", "api-7d9f8c6b5-x7k2p", "api-7d9f8c6b5"},
+		{"a short hash", "api", "api-65bd9-x2k4p", "api-65bd9"},
+		{"a hash of only digits", "api", "api-5967487594-x2k4p", "api-5967487594"},
+		{"a Job's pod in letters a hash has", "api", "api-bckp-x7k2p", ""},
+		{"a hash Kubernetes doesn't write", "api", "api-7d9f8c6z5-x7k2p", ""},
+		{"a longer-named Deployment's pod", "api", "api-gateway-7d9f8c6b5-x7k2p", ""},
+		{"a Job's pod", "api", "api-migrate-x7k2p", ""},
+		{"a CronJob's pod", "api", "api-29312345-x7k2p", ""},
+		{"a timestamp in generated digits", "api", "api-29245678-x7k2p", ""},
+		{"a DaemonSet's pod", "api", "api-x7k2p", ""},
+		{"a StatefulSet's pod", "api", "api-0", ""},
+		{"a suffix Kubernetes doesn't generate", "api", "api-7d9f8c6b5-abcde", ""},
+		{"a hash too long", "api", "api-7d9f8c6b5bcd-x7k2p", ""},
+		{"another Deployment's pod", "api", "web-7d9f8c6b5-x7k2p", ""},
+		{"a name cut short", long, (long + "-7d9f8c6b5-")[:58] + "x7k2p", ""},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			rs, ok := deploymentReplicaSet(tt.deployment, tt.pod)
+			assert.Equal(t, tt.want, rs)
+			assert.Equal(t, tt.want != "", ok)
+		})
+	}
+}
+
 // A Deployment's name long enough that the API server cuts its pods' names
 // short still has its history found.
 func TestScanCluster_HistoryOfALongName(t *testing.T) {
-	name := "payments-reconciliation-worker-eu-west-primary-blue"
+	name := longDeployment
 	pod := (name + "-7d9f8c6b5-")[:58] + "x7k2p"
 	f := &fakePrometheus{from: scanTime.Add(-7 * 24 * time.Hour), byNamespace: map[string][]series{testNamespace: {
 		{pod: pod, container: "main", cores: func(time.Time) float64 { return 0.001 }},

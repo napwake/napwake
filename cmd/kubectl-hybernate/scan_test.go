@@ -22,8 +22,12 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -464,6 +468,11 @@ func TestParseWindow(t *testing.T) {
 		{in: "1w", wantErr: true},
 		{in: "-2d", wantErr: true},
 		{in: "soon", wantErr: true},
+		{in: "366d", want: 366 * 24 * time.Hour},
+		{in: "367d", wantErr: true},
+		{in: "200000d", wantErr: true},
+		{in: "106752d", wantErr: true},
+		{in: "9000h", wantErr: true},
 	}
 	for _, tt := range tests {
 		t.Run(tt.in, func(t *testing.T) {
@@ -476,6 +485,32 @@ func TestParseWindow(t *testing.T) {
 			assert.Equal(t, tt.want, got)
 		})
 	}
+}
+
+// A price no cost can be worked out from is refused before anything is
+// read, rather than pricing every saving below zero.
+func TestCLI_ScanRejectsPrices(t *testing.T) {
+	for _, args := range [][]string{
+		{"--cpu-price", "-0.01"},
+		{"--memory-price", "-1"},
+		{"--cpu-price", "NaN"},
+		{"--memory-price", "+Inf"},
+	} {
+		t.Run(strings.Join(args, " "), func(t *testing.T) {
+			_, err := runCLI(t, newStatusClient(t, interceptor.Funcs{}), append([]string{"scan", "--window", "0",
+				"-o", "json"}, args...)...)
+
+			require.Error(t, err)
+			assert.Contains(t, err.Error(), "must be a number of dollars, zero or more")
+		})
+	}
+}
+
+// The help states the table's real order: idle, then paused, then active.
+func TestScanHelp_Limit(t *testing.T) {
+	limit := scanCmd(&kubeFlags{}).Flags().Lookup("limit")
+	require.NotNil(t, limit)
+	assert.Contains(t, limit.Usage, "idle first, then paused, then active")
 }
 
 func TestPricesFor(t *testing.T) {
@@ -542,6 +577,22 @@ func TestWriteScan_SavedThisMonth(t *testing.T) {
 		"a live workload's saving is in SAVED THIS MONTH, with nothing estimated")
 }
 
+// A workload put back in dry-run shows what it saved while live, and the
+// headline counts it, though nothing is live now.
+func TestWriteScan_SavedBeforeGoingBackToDryRun(t *testing.T) {
+	result := scanResult{Cluster: "staging", ClusterReport: &discovery.ClusterReport{Namespaces: 1,
+		Workloads: []Workload{{Namespace: "preview-3", Kind: "Deployment", Name: "web", State: discovery.StateIdle,
+			Managed: true, DryRun: true, SavedThisMonth: 7, Measured: &discovery.Measured{}}}}}
+	result.Totals = discovery.Totals{Workloads: 1, DryRun: 1, SavedThisMonth: 7}
+	var out bytes.Buffer
+
+	require.NoError(t, writeScan(&out, result, scanOptions{output: "table"}))
+
+	got := out.String()
+	assert.Contains(t, got, "Hybernate has saved $7 this month, pausing workloads since put back in dry-run.")
+	assert.Regexp(t, `preview-3\s+deployment/web\s+idle \(dry-run\)\s+measuring since Jan 1\s+\$0\s+\$0.00\s+\$7\s`, got)
+}
+
 func TestWriteScan_Protected(t *testing.T) {
 	result := historyResult()
 	for i := range result.Workloads {
@@ -602,6 +653,35 @@ func TestNextSteps_SkipProtected(t *testing.T) {
 			assert.NotContains(t, table.String(), "payments")
 		})
 	}
+}
+
+// A label put on by hand would be reverted by the GitOps tool that sets a
+// workload's replicas, so next steps suggest one Git doesn't own; with
+// Hybernate's own Deployment found, there's no install step.
+func TestNextSteps_SkipGitOpsAndKnowHybernateIsInstalled(t *testing.T) {
+	fromGit := Workload{Namespace: "dev", Kind: v1alpha1.TargetKindDeployment, Name: "synced",
+		State: discovery.StateIdle, ReplicasFromGit: "Argo CD"}
+	measuringFromGit := Workload{Namespace: "dev", Kind: v1alpha1.TargetKindDeployment, Name: "synced-dry",
+		Managed: true, DryRun: true, ReplicasFromGit: "Flux", Measured: &discovery.Measured{}}
+	open := Workload{Namespace: "dev", Kind: v1alpha1.TargetKindDeployment, Name: "preview", State: discovery.StateIdle}
+	hybernate := Workload{Namespace: "ops", Kind: v1alpha1.TargetKindDeployment, Name: "hybernate",
+		Platform: discovery.PlatformHybernate}
+
+	only := scanResult{Cluster: "c", ClusterReport: &discovery.ClusterReport{
+		Workloads: []Workload{fromGit, measuringFromGit}}}
+	var table bytes.Buffer
+	writeNextSteps(&printer{w: &table}, only)
+	assert.Empty(t, table.String())
+
+	mixed := scanResult{Cluster: "c", ClusterReport: &discovery.ClusterReport{
+		Workloads: []Workload{fromGit, measuringFromGit, open}, Platform: []Workload{hybernate}}}
+	table.Reset()
+	writeNextSteps(&printer{w: &table}, mixed)
+	got := table.String()
+	assert.Contains(t, got, "kubectl label deployment preview -n dev hybernate.io/managed=true")
+	assert.Contains(t, got, "kubectl hybernate enable deployment/preview -n dev")
+	assert.NotContains(t, got, "synced")
+	assert.NotContains(t, got, "helm install", "Hybernate's own Deployment shows it's installed")
 }
 
 func TestParseHeaders(t *testing.T) {
@@ -695,6 +775,38 @@ func TestCLI_ScanIncompleteAdvice(t *testing.T) {
 			assert.Equal(t, tt.want, err.Error())
 		})
 	}
+}
+
+// A Prometheus that answers its check but is too slow for the history,
+// as a big namespace on a slow Thanos is, costs the replay, not the scan:
+// it finishes from CPU right now, says it ran out of history's time, and
+// suggests --window 0, rather than failing on the API server.
+func TestCLI_ScanSlowPrometheus(t *testing.T) {
+	prom := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if strings.HasSuffix(r.URL.Path, "/api/v1/query") {
+			_, _ = io.WriteString(w, `{"status":"success","data":{"resultType":"vector","result":[]}}`)
+			return
+		}
+		<-r.Context().Done()
+	}))
+	t.Cleanup(prom.Close)
+	d := &appsv1.Deployment{ObjectMeta: metav1.ObjectMeta{Name: "api", Namespace: "preview-42"},
+		Spec: appsv1.DeploymentSpec{Replicas: ptr.To[int32](1),
+			Selector: &metav1.LabelSelector{MatchLabels: map[string]string{"app": "api"}},
+			Template: corev1.PodTemplateSpec{ObjectMeta: metav1.ObjectMeta{Labels: map[string]string{"app": "api"}},
+				Spec: corev1.PodSpec{Containers: []corev1.Container{{Name: "main"}}}}}}
+	ns := &corev1.Namespace{ObjectMeta: metav1.ObjectMeta{Name: "preview-42"}}
+
+	out, err := runCLI(t, newStatusClient(t, interceptor.Funcs{}, d, ns), "scan", "-n", "preview-42", "-o", "json",
+		"--timeout", "1s", "--prometheus-url", prom.URL)
+
+	require.NoError(t, err)
+	var result scanResult
+	require.NoError(t, json.Unmarshal([]byte(out), &result))
+	require.Len(t, result.Workloads, 1)
+	notes := strings.Join(result.Notes, "\n")
+	assert.Contains(t, notes, "the scan ran out of the time it gives CPU history")
+	assert.Contains(t, notes, "--window 0")
 }
 
 // An empty cluster says so, rather than pointing at notes it doesn't have.

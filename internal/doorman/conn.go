@@ -47,8 +47,15 @@ const (
 	// request's headers once the first bytes have arrived.
 	headTimeout = 500 * time.Millisecond
 
-	// maxPeek is enough for any browser's request line and headers.
+	// maxPeek is enough for nearly any request line and headers. Longer
+	// ones are judged by what fits (see parseRequest).
 	maxPeek = 16 << 10
+
+	// lingerTimeout and maxLinger bound how long, and how much, the doorman
+	// reads from a caller it has answered, so that closing doesn't reset
+	// the connection before the caller reads the answer.
+	lingerTimeout = time.Second
+	maxLinger     = 256 << 10
 
 	wakeRetryInterval = 2 * time.Second
 	dialRetryInterval = time.Second
@@ -117,6 +124,9 @@ func (s *Server) handle(ctx context.Context, port int32, rt route, conn net.Conn
 }
 
 func (s *Server) record(rt route, result string, start time.Time) {
+	s.mu.Lock()
+	s.metered[rt.workload] = true
+	s.mu.Unlock()
 	opmetrics.DoormanWakes.WithLabelValues(rt.workload.Namespace, rt.workload.Name, result).Inc()
 	opmetrics.DoormanWaitSeconds.WithLabelValues(result).Observe(s.now().Sub(start).Seconds())
 }
@@ -170,13 +180,11 @@ func (h *heldConn) hold(ctx context.Context) (net.Conn, string) {
 	req, isHTTP := parseRequest(head)
 
 	if isHTTP && isHealthCheck(req, h.healthCheckAgents) {
-		_ = h.conn.SetWriteDeadline(time.Now().Add(dialTimeout)) // a failure just means no deadline
-		_ = writeUnavailable(h.conn)                             // the caller may already have gone
+		_ = h.reply(writeUnavailable) // the caller may already have gone
 		return nil, resultIgnored
 	}
 	if isHTTP && isHiddenFileRequest(req) {
-		_ = h.conn.SetWriteDeadline(time.Now().Add(dialTimeout)) // a failure just means no deadline
-		_ = writeNotFound(h.conn)                                // the caller may already have gone
+		_ = h.reply(writeNotFound) // the caller may already have gone
 		return nil, resultIgnored
 	}
 
@@ -287,11 +295,23 @@ func (h *heldConn) servePage(ctx context.Context, req *http.Request) {
 		w.Status.Phase == v1alpha1.PhaseResuming && w.Status.LastTransitionTime != nil {
 		data.Elapsed = sinceLabel(h.now().Sub(w.Status.LastTransitionTime.Time))
 	}
-	_ = h.conn.SetWriteDeadline(time.Now().Add(dialTimeout)) // a failure just means no deadline
-	if err := writePage(h.conn, req, data); err != nil {
+	if err := h.reply(func(w io.Writer) error { return writePage(w, req, data) }); err != nil {
 		log.FromContext(ctx).V(1).Info("writing waking-up page", "error", err.Error(),
 			"workload", h.route.workload.Name, "namespace", h.route.workload.Namespace)
 	}
+}
+
+// reply answers the caller and closes the connection. What it sent and the
+// doorman didn't read, such as the rest of headers past maxPeek, is read and
+// dropped first: closing with it unread resets the connection, and a reset
+// can discard the answer before the caller reads it.
+func (h *heldConn) reply(write func(io.Writer) error) error {
+	_ = h.conn.SetWriteDeadline(time.Now().Add(dialTimeout)) // a failure just means no deadline
+	err := write(h.conn)
+	closeWrite(h.conn)
+	_ = h.conn.SetReadDeadline(time.Now().Add(lingerTimeout)) // a failure just means no deadline
+	_, _ = io.CopyN(io.Discard, h.conn, maxLinger)            // ends at the caller's close or the deadline
+	return err
 }
 
 // headState is how a caller began.
@@ -323,7 +343,7 @@ func readHead(conn net.Conn, silent time.Duration) ([]byte, headState) {
 		return head, headSent
 	}
 	_ = conn.SetReadDeadline(time.Now().Add(headTimeout)) // a failure just means no deadline
-	for len(head) < maxPeek && !bytes.Contains(head, []byte("\r\n\r\n")) {
+	for len(head) < maxPeek && !headersEnded(head) {
 		if len(head) == cap(head) {
 			head = append(head, make([]byte, 4<<10)...)[:len(head)]
 		}

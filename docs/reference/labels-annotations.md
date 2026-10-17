@@ -4,10 +4,10 @@
 
 | Label | Value | Applied To | Description |
 |-------|-------|-----------|-------------|
-| `hybernate.io/managed` | `"true"` | Deployments, StatefulSets, Namespaces | Opts the workload, or every Deployment and StatefulSet in the namespace, in. Hybernate creates a ManagedWorkload for it from its annotations. Any other value doesn't opt in, and is pointed out in an event. See [Opting In](../guides/opt-in.md). |
+| `hybernate.io/managed` | `"true"` | Deployments, StatefulSets, Namespaces | Opts the workload, or every Deployment and StatefulSet in the namespace, in. Hybernate creates a ManagedWorkload for it from its annotations. `"false"` on a workload leaves it out of a managed namespace, like `hybernate.io/ignore`. Any other value doesn't opt in, and is pointed out in an event. See [Opting In](../guides/opt-in.md). |
 | `hybernate.io/ignore` | `"true"` | Deployments, StatefulSets | Leaves the workload out, even in a managed namespace. A ManagedWorkload you wrote for it reports `TargetAvailable=False`, reason `TargetIgnored`, and does nothing; a workload Hybernate had paused is scaled back up first. |
-| `hybernate.io/protected` | `"true"` | Namespaces | Hybernate never manages anything in the namespace, whatever its workloads' labels, and wakes what it had paused there. See [Protected namespaces](../guides/opt-in.md#protected-namespaces). |
-| `hybernate.io/allow-protected` | `"true"` | Namespaces | Lets Hybernate manage a namespace that's labelled protected or matches `protectedNamespaces`. Set on purpose; Hybernate never sets it. |
+| `hybernate.io/protected` | `"true"` | Namespaces | Hybernate never manages anything in the namespace, whatever its workloads' labels, and wakes what it had paused there. `kube-*` namespaces and Hybernate's own are protected without it. See [Protected namespaces](../guides/opt-in.md#protected-namespaces). |
+| `hybernate.io/allow-protected` | `"true"` | Namespaces | Lets Hybernate manage a namespace that's labelled protected, matches `protectedNamespaces`, or is always protected, such as `kube-system` or Hybernate's own. The operator's and the doorman's own Deployments are never managed. Set on purpose; Hybernate never sets it. |
 | `hybernate.io/from-label` | `"true"` | ManagedWorkloads | Set on ManagedWorkloads Hybernate created from the `managed` label. Hybernate updates and deletes only these; ManagedWorkloads without it are yours. |
 | `hybernate.io/managed-workload` | ManagedWorkload name | EndpointSlices | Set on the EndpointSlices that route a paused workload's Services to the doorman, along with `endpointslice.kubernetes.io/managed-by: doorman.hybernate.io`. A name longer than 63 characters is shortened, with a hash. They're removed when the workload is Running. |
 
@@ -42,9 +42,9 @@ Set on an opted-in Deployment or StatefulSet, or on its Namespace to apply to ev
 | `hybernate.io/idle-after` | a Go duration above zero, such as `"90m"` or `"2h"` | `1h` | How long without activity before pausing |
 | `hybernate.io/cpu-threshold` | a whole number, `"1"` to `"100"` | `10` | CPU use, as a percentage of requests, above which the workload counts as active |
 | `hybernate.io/auto-resume` | exactly `"true"` or `"false"` | `"false"` | Wake ahead of forecast demand |
-| `hybernate.io/depends-on` | comma-separated `kind/name` or `namespace/kind/name`, kind `deployment` or `statefulset` | none | Workloads this one needs. An empty value declares none, so a workload can drop its namespace's |
+| `hybernate.io/depends-on` | comma-separated `kind/name` or `namespace/kind/name`, kind `deployment` or `statefulset` | none | Workloads this one needs. An empty value declares none, so a workload can drop its namespace's. On a namespace, it leaves out the workload it names, which doesn't depend on itself |
 | `hybernate.io/wake-on-request` | exactly `"true"` or `"false"` | `"true"` | Wake when a request reaches the workload's Service |
-| `hybernate.io/wake-max-wait` | a Go duration above zero | `2m` | How long a request is held while the workload wakes |
+| `hybernate.io/wake-max-wait` | a Go duration above zero, at most `1h` | `2m` | How long a request is held while the workload wakes |
 | `hybernate.io/wake-page` | exactly `"true"` or `"false"` | `"true"` | Show browsers a waking-up page |
 
 A value that can't be read, such as `"True"`, `"yes"`, `"soon"` or `"0"`, is reported in an `InvalidSetting` warning event on the workload and skipped: the setting comes from the next place in the order above, never from the default in place of a namespace's value, and the other settings still apply. Two exceptions:

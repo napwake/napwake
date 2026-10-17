@@ -257,3 +257,49 @@ func TestForecast_ExportFailureKeepsTheLastSavedState(t *testing.T) {
 	assert.Equal(t, "saved", workload.Status.Prediction.State)
 	assert.Equal(t, "Active", workload.Status.Prediction.DailyPhase)
 }
+
+// TestForecastState_IsEncodedOnlyOnceItChanges: encoding the state
+// compresses all of it, and a reconcile publishes it every minute while it
+// changes once an hour.
+func TestForecastState_IsEncodedOnlyOnceItChanges(t *testing.T) {
+	workload := automationWorkload(v1alpha1.PhaseRunning)
+	engine := &stubForecaster{phase: forecast.DailyActive, dataPoints: 10, state: "learned"}
+	r := newAutomationReconciler(t, workload, engine, automationOpts{})
+
+	for range 3 {
+		r.updatePredictionStatus(context.Background(), workload, engine)
+	}
+	assert.Equal(t, 1, engine.exportCalls)
+	assert.Equal(t, "learned", workload.Status.Prediction.State)
+
+	engine.dataPoints, engine.state = 11, "learned more"
+	r.updatePredictionStatus(context.Background(), workload, engine)
+	r.updatePredictionStatus(context.Background(), workload, engine)
+	assert.Equal(t, 2, engine.exportCalls, "encoded again once an hour is observed")
+	assert.Equal(t, "learned more", workload.Status.Prediction.State)
+
+	restarted := &stubForecaster{phase: forecast.Observing, dataPoints: 11, state: "afresh"}
+	r.updatePredictionStatus(context.Background(), workload, restarted)
+	assert.Equal(t, "afresh", workload.Status.Prediction.State, "a new engine is never mistaken for the old one")
+}
+
+// BenchmarkUpdatePredictionStatus is a reconcile's publishing of a trained
+// forecast: once a minute for every awake workload, though what it learned
+// changes once an hour.
+func BenchmarkUpdatePredictionStatus(b *testing.B) {
+	engine := forecast.NewEngine(forecast.DefaultParams(), forecast.Settings{Threshold: 75})
+	start := fixedTime.Truncate(time.Hour)
+	for i := range 4 * forecast.WeeklySeason {
+		at := start.Add(time.Duration(i) * time.Hour)
+		if _, err := engine.Observe(float64(i%24), at); err != nil {
+			b.Fatal(err)
+		}
+	}
+	r := &Reconciler{engines: realEngineRegistry()}
+	workload := forecastWorkload()
+	ctx := context.Background()
+	b.ReportAllocs()
+	for b.Loop() {
+		r.updatePredictionStatus(ctx, workload, engine)
+	}
+}

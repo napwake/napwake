@@ -298,6 +298,53 @@ func TestScanCluster_MetricsPerNamespace(t *testing.T) {
 	assert.Empty(t, report.Incomplete, "a denial is a limit of access, not a failed scan")
 }
 
+// A role that grants Deployments, pods and pod metrics but not ReplicaSets
+// still scans the namespace's workloads, matching pods by selector, and the
+// note names ReplicaSets, not workloads.
+func TestScanCluster_ReplicaSetsDenied(t *testing.T) {
+	labels := map[string]string{"app": "api"}
+	objs := running("api", "team-a", &metav1.LabelSelector{MatchLabels: labels}, labels, 2, "50m")
+	c := failingIn(objs, func(list client.ObjectList, _ string) error {
+		if _, ok := list.(*appsv1.ReplicaSetList); ok {
+			return forbidden("replicasets")
+		}
+		return nil
+	})
+
+	report, err := NewScanner(c, c).ScanCluster(context.Background(), scanOptions("team-a"))
+
+	require.NoError(t, err)
+	w, ok := byName(report)["api"]
+	require.True(t, ok, "the Deployment was readable; only its rollouts weren't")
+	require.NotNil(t, w.CPUPercent, "its pods are found by its selector")
+	assert.Equal(t, 50, *w.CPUPercent)
+	assert.Nil(t, w.LastDeployed)
+	require.Len(t, report.Notes, 1)
+	assert.Contains(t, report.Notes[0], "your access doesn't allow reading ReplicaSets in 1 namespace")
+	assert.Empty(t, report.Incomplete)
+}
+
+// A failed read of ControllerRevisions loses StatefulSets' rollouts only.
+func TestScanCluster_ControllerRevisionsFail(t *testing.T) {
+	labels := map[string]string{"app": "api"}
+	objs := running("api", "team-a", &metav1.LabelSelector{MatchLabels: labels}, labels, 1, "50m")
+	c := failingIn(objs, func(list client.ObjectList, _ string) error {
+		if _, ok := list.(*appsv1.ControllerRevisionList); ok {
+			return apierrors.NewInternalError(errors.New("etcd timeout"))
+		}
+		return nil
+	})
+
+	report, err := NewScanner(c, c).ScanCluster(context.Background(), scanOptions("team-a"))
+
+	require.NoError(t, err)
+	w := byName(report)["api"]
+	assert.NotNil(t, w.LastDeployed, "the Deployment's rollouts come from its ReplicaSets")
+	require.NotNil(t, report.Incomplete)
+	assert.Equal(t, []string{"team-a"}, report.Incomplete.Failed)
+	assert.Contains(t, report.Notes[0], "ControllerRevisions in team-a")
+}
+
 // Hundreds of namespaces the user can't read are one note, not hundreds.
 func TestScanCluster_DeniedNamespacesAreOneNote(t *testing.T) {
 	namespaces := make([]string, 0, 200)

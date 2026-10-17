@@ -19,6 +19,7 @@ package lifecycle
 import (
 	"context"
 	"fmt"
+	"time"
 
 	appsv1 "k8s.io/api/apps/v1"
 	autoscalingv1 "k8s.io/api/autoscaling/v1"
@@ -88,14 +89,35 @@ func scaleTo(ctx context.Context, scaler WorkloadScaler, target client.Object, n
 	return nil
 }
 
-// checkReady re-reads the target and reports whether at least desired
-// replicas are Ready. The scale subresource's status counts pods that exist,
-// which includes pods still starting, such as a database replaying its log.
-func checkReady(ctx context.Context, c client.Client, target client.Object, desired int32) (bool, error) {
+// readyOf re-reads the target and returns how many of the desired replicas
+// it's scaled to are Ready. The scale subresource's status counts pods that
+// exist, which includes pods still starting, such as a database replaying
+// its log. A read that doesn't yet show the target scaled to desired, or a
+// status its controller wrote before it saw that, counts none: what it
+// counts are the pods from before, those of a pause just made, which may
+// not have stopped yet.
+func readyOf(ctx context.Context, c client.Client, target client.Object, desired int32) (int32, error) {
 	if err := c.Get(ctx, client.ObjectKeyFromObject(target), target); err != nil {
-		return false, fmt.Errorf("getting %s: %w", target.GetName(), err)
+		return 0, fmt.Errorf("getting %s: %w", target.GetName(), err)
 	}
-	return ReadyReplicas(target) >= desired, nil
+	if specReplicas(target) != desired || !observed(target) {
+		return 0, nil
+	}
+	return min(ReadyReplicas(target), desired), nil
+}
+
+// defaultProgressDeadline is how long a Deployment's controller allows its
+// pods to become available when it doesn't say, and how long a
+// StatefulSet's, which can't say, is given.
+const defaultProgressDeadline = 10 * time.Minute
+
+// progressDeadline is how long the target's own controller gives its
+// replicas to start before it reports them stuck.
+func progressDeadline(target client.Object) time.Duration {
+	if d, ok := target.(*appsv1.Deployment); ok && d.Spec.ProgressDeadlineSeconds != nil {
+		return time.Duration(*d.Spec.ProgressDeadlineSeconds) * time.Second
+	}
+	return defaultProgressDeadline
 }
 
 // ReadyReplicas returns how many of the target's replicas are Ready.
@@ -111,18 +133,39 @@ func ReadyReplicas(target client.Object) int32 {
 }
 
 // IsReady reports whether every replica the target asks for is Ready, and
-// it asks for at least one.
+// it asks for at least one, by a status written for its current spec.
 func IsReady(target client.Object) bool {
-	desired := int32(1)
+	desired := specReplicas(target)
+	return desired > 0 && observed(target) && ReadyReplicas(target) >= desired
+}
+
+// specReplicas is the replicas the target asks for, one when unset as the
+// API server defaults it.
+func specReplicas(target client.Object) int32 {
+	var replicas *int32
 	switch t := target.(type) {
 	case *appsv1.Deployment:
-		if t.Spec.Replicas != nil {
-			desired = *t.Spec.Replicas
-		}
+		replicas = t.Spec.Replicas
 	case *appsv1.StatefulSet:
-		if t.Spec.Replicas != nil {
-			desired = *t.Spec.Replicas
-		}
+		replicas = t.Spec.Replicas
 	}
-	return desired > 0 && ReadyReplicas(target) >= desired
+	if replicas == nil {
+		return 1
+	}
+	return *replicas
+}
+
+// observed reports whether the target's status was written by its
+// controller after it saw the current spec. A StatefulSet's revisions
+// aren't compared: under the OnDelete strategy they never converge on
+// their own, and a rollout still under way has Ready pods that serve.
+func observed(target client.Object) bool {
+	switch t := target.(type) {
+	case *appsv1.Deployment:
+		return t.Status.ObservedGeneration >= t.Generation
+	case *appsv1.StatefulSet:
+		return t.Status.ObservedGeneration >= t.Generation
+	default:
+		return false
+	}
 }

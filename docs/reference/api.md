@@ -25,13 +25,15 @@
 | `dependsOn[].waitForReady` | bool | No | `false` | Hold this workload's resume until the dependency is Ready |
 | `wake` | `WakeSpec` | No | | Waking on request while paused |
 | `wake.onRequest` | bool | No | `true` | Route the workload's Services to the doorman while paused |
-| `wake.maxWait` | duration | No | `2m` | How long a request is held while the workload wakes |
+| `wake.maxWait` | duration (at most `1h`) | No | `2m` | How long a request is held while the workload wakes |
 | `wake.page` | bool | No | `true` | Answer a browser loading a page with a waking-up page instead of holding it |
-| `prediction` | `PredictionSpec` | Yes | | Forecast engine config; `{}` takes the defaults |
+| `prediction` | `PredictionSpec` | No | `{}` | Forecast engine config; left out or `{}`, it takes the defaults |
 | `prediction.confidence` | int (50-100) | No | `75` | Accuracy (1 − WAPE, %) a season's forecasts must reach before they drive decisions |
 | `costTracking` | `CostTrackingSpec` | No | | Custom cost rate overrides |
 | `costTracking.rates` | `CostRates` | No | node list prices, then AWS defaults | Custom cost rates |
-| `dryRun` | bool | No | `false` | Evaluate without pausing |
+| `dryRun` | bool | No | `false` | Measure without pausing; see [Dry Run](../guides/dry-run.md). A workload already paused when it's turned on is woken |
+
+A duration is a Go duration above zero, such as `45s`, `90m` or `1h30m`. Days and weeks (`1d`, `2w`) and spaces aren't durations: write `24h` or `168h`. The API server rejects any other value.
 
 ### CostRates
 
@@ -58,13 +60,15 @@
 | `pause` | `PauseStatus` | What a pause changed, from before the workload is scaled to zero until it's running again |
 | `pause.previousReplicas` | int32 | Replicas before the pause, restored on resume |
 | `pause.pausedAt` | time | When it was scaled to zero; unset while the pause is under way |
+| `pause.firstReadyAt` | time | When the resume under way first saw one of its replicas Ready; the rest get 2 minutes from then |
 | `pause.scaledObject` | string | The KEDA ScaledObject held at zero while paused; see [HPA and KEDA](../guides/autoscalers.md) |
 | `pause.scaledObjectPausedReplicas` | string | The ScaledObject's own `autoscaling.keda.sh/paused-replicas` from before the pause, put back after it |
 | `pause.resources` | `ResourceSnapshot` | What the workload ran when the pause began: `replicas`, and per replica `cpuMillis`, `memoryBytes`, and its claims' `storageBytes` |
 | `pause.wakeAnnotations` | object | The activity annotations on the ManagedWorkload (`workload`) and its target (`target`) as the pause began; one that changes since wakes it |
-| `learnedDependencies` | `LearnedDependencies` | Dependencies Hybernate found, held and woken like `dependsOn`: `from`, `at`, and `dependencies` (`namespace`, `kind`, `name`, `source`: `environment` or `wake`, and `via` and `address` for one found in the environment). See [Learned dependencies](../concepts/dependencies.md#learned-dependencies) |
-| `lastScaledUp` | `ScaledUp` | The last time the workload was scaled up outside Hybernate while paused, which wakes it: `at`, `replicas`, `by` (the field manager, such as `kubectl-scale`), and `gitOps` (`Argo CD` or `Flux`, when it was set from Git; see [Argo CD and Flux](../guides/gitops.md)) |
+| `learnedDependencies` | `LearnedDependencies` | Dependencies Hybernate found, held and woken like `dependsOn`: `from`, `at`, and `dependencies` (`namespace`, `kind`, `name`, `source`: `environment` or `wake`, `via` and `address` for one found in the environment, and `lastSeen` for one learned from a wake). See [Learned dependencies](../concepts/dependencies.md#learned-dependencies) |
+| `lastScaledUp` | `ScaledUp` | The last time the workload was scaled up outside Hybernate while paused, which wakes it: `at`, `replicas`, `by` (the field manager, such as `argocd-controller`, or `unknown` for a scale through the scale subresource, as `kubectl scale` makes, which records none), and `gitOps` (`Argo CD`, `Flux`, `Fleet`, `kapp` or `Kluctl`, when it was set from Git; see [GitOps tools](../guides/gitops.md)) |
 | `doorman[]` | `DoormanRoute` | Service ports routed to the doorman while paused: `service`, `portName`, `doormanPort` |
+| `doormanDraining[]` | `DrainingPort` | Doorman ports that routed the workload until it woke: `port`, and `until`, before which no other workload is given it, so a client still sending the workload's traffic there never reaches another. Kept in status so an operator that restarts or takes over leadership honours it |
 | `dryRun` | `DryRunStatus` | What dry-run has measured; only while `spec.dryRun` is true |
 | `dryRun.since` | time | When dry-run started measuring |
 | `dryRun.pauses` | int32 | Times the workload would have been paused, one under way included |

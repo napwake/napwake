@@ -347,7 +347,11 @@ func TestReconcileDoorman_ConcurrentPausesGetDistinctPorts(t *testing.T) {
 // Kube-proxy and load balancers keep sending to a released port for a
 // moment. It isn't handed to another workload until the doorman's drain is
 // over, or that workload would get the first one's traffic.
-func TestReconcileDoorman_DrainingPortsAreNotReused(t *testing.T) {
+// twoPausedWorkloads are api and billing, paused, each with a Service, and
+// a reconciler that gives out the lowest free port.
+func twoPausedWorkloads(t *testing.T) (*Reconciler, *v1alpha1.ManagedWorkload, *v1alpha1.ManagedWorkload,
+	*appsv1.Deployment) {
+	t.Helper()
 	first := lifecycleWorkload("api", v1alpha1.PhasePaused)
 	first.UID = "api-uid"
 	second := lifecycleWorkload("billing", v1alpha1.PhasePaused)
@@ -359,6 +363,11 @@ func TestReconcileDoorman_DrainingPortsAreNotReused(t *testing.T) {
 		service("api", map[string]string{"app": "api"}, corev1.ServicePort{Name: "http", Port: 80}),
 		service("billing", map[string]string{"app": "billing"}, corev1.ServicePort{Name: "http", Port: 80}))
 	r.doormanPorts.pick = lowestFreePort
+	return r, first, second, billing
+}
+
+func TestReconcileDoorman_DrainingPortsAreNotReused(t *testing.T) {
+	r, first, second, billing := twoPausedWorkloads(t)
 	now := fixedTime
 	r.clock = func() time.Time { return now }
 
@@ -376,6 +385,44 @@ func TestReconcileDoorman_DrainingPortsAreNotReused(t *testing.T) {
 	second.Status.Phase = v1alpha1.PhasePaused
 	require.NoError(t, doormanErr(context.Background(), r, second, billing))
 	assert.Equal(t, released, second.Status.Doorman[0].DoormanPort, "free again once drained")
+}
+
+// A port's drain outlasts the operator: a leader that has just taken over
+// reads it from status and doesn't hand the port to another workload while
+// clients may still send the first one's traffic to it.
+func TestReconcileDoorman_DrainingPortsSurviveALeaderChange(t *testing.T) {
+	r, first, second, billing := twoPausedWorkloads(t)
+	now := fixedTime
+	r.clock = func() time.Time { return now }
+	ctx := context.Background()
+
+	require.NoError(t, doormanErr(ctx, r, first, appTarget()))
+	released := first.Status.Doorman[0].DoormanPort
+	first.Status.Phase = v1alpha1.PhaseRunning
+	require.NoError(t, doormanErr(ctx, r, first, appTarget()))
+	require.NoError(t, r.Status().Update(ctx, first))
+	require.Len(t, first.Status.DoormanDraining, 1)
+
+	newLeader(r)
+	require.NoError(t, doormanErr(ctx, r, second, billing))
+	assert.NotEqual(t, released, second.Status.Doorman[0].DoormanPort)
+
+	now = now.Add(portDrain)
+	newLeader(r)
+	second.Status.Phase = v1alpha1.PhaseRunning
+	require.NoError(t, doormanErr(ctx, r, second, billing))
+	second.Status.Phase = v1alpha1.PhasePaused
+	require.NoError(t, doormanErr(ctx, r, second, billing))
+	assert.Equal(t, released, second.Status.Doorman[0].DoormanPort, "free again once drained")
+
+	require.NoError(t, doormanErr(ctx, r, first, appTarget()))
+	assert.Empty(t, first.Status.DoormanDraining, "a drain that's over is forgotten")
+}
+
+// newLeader forgets what the allocator knows, as an operator that has just
+// taken over has only status to go by.
+func newLeader(r *Reconciler) {
+	r.doormanPorts.claims, r.doormanPorts.draining = nil, nil
 }
 
 // The doorman's slices outlast any path that stops routing: turning the
@@ -504,6 +551,45 @@ func TestReconcileDoorman_IPFamilies(t *testing.T) {
 // Canary and stable behind one Service: each paused workload routes the
 // Service to the doorman under its own slice, and once either is running,
 // the Service sends traffic to it rather than waking the other.
+// With internalTrafficPolicy Local, kube-proxy sends a caller only to
+// endpoints on its own node, so a Service routed to the doorman's one or two
+// nodes would leave callers everywhere else with nothing, while reporting
+// DoormanRouted.
+func TestReconcileDoorman_SkipsNodeLocalServices(t *testing.T) {
+	local := service("api", map[string]string{"app": "api"}, corev1.ServicePort{Name: "http", Port: 80})
+	local.Spec.InternalTrafficPolicy = ptr.To(corev1.ServiceInternalTrafficPolicyLocal)
+	cluster := service("api-public", map[string]string{"app": "api"}, corev1.ServicePort{Name: "http", Port: 80})
+	cluster.Spec.InternalTrafficPolicy = ptr.To(corev1.ServiceInternalTrafficPolicyCluster)
+	ctx := context.Background()
+
+	t.Run("alone", func(t *testing.T) {
+		workload := lifecycleWorkload("api", v1alpha1.PhasePaused)
+		r := doormanReconciler(t, workload, doormanEndpoints("10.0.0.7"), local.DeepCopy())
+
+		require.NoError(t, doormanErr(ctx, r, workload, appTarget()))
+
+		assert.Empty(t, doormanSlices(t, r))
+		assert.Empty(t, workload.Status.Doorman)
+		cond := wakeCondition(t, workload)
+		assert.Equal(t, metav1.ConditionFalse, cond.Status)
+		assert.Equal(t, "NodeLocalTraffic", cond.Reason)
+		assert.Contains(t, cond.Message, "api")
+	})
+	t.Run("beside a routed Service", func(t *testing.T) {
+		workload := lifecycleWorkload("api", v1alpha1.PhasePaused)
+		r := doormanReconciler(t, workload, doormanEndpoints("10.0.0.7"), local.DeepCopy(), cluster.DeepCopy())
+
+		require.NoError(t, doormanErr(ctx, r, workload, appTarget()))
+
+		slices := doormanSlices(t, r)
+		require.Len(t, slices, 1)
+		assert.Equal(t, "api-public", slices[0].Labels[discoveryv1.LabelServiceName])
+		cond := wakeCondition(t, workload)
+		assert.Equal(t, "DoormanRouted", cond.Reason)
+		assert.Contains(t, cond.Message, "internalTrafficPolicy is Local, so not routed: api")
+	})
+}
+
 func TestReconcileDoorman_SharedService(t *testing.T) {
 	stable := lifecycleWorkload("stable", v1alpha1.PhasePaused)
 	stable.UID = "uid-stable"
@@ -725,6 +811,78 @@ func TestReconcile_OrphaningDeleteRemovesDoormanSlices(t *testing.T) {
 	assert.Positive(t, pauser.restoreCalls, "and the target is handed back")
 }
 
+// A workload deleted moments after it was routed may have slices the cache
+// hasn't caught up with. Nothing reconciles it after its finalizer goes, so
+// an orphaning delete would leave them sending traffic to the doorman.
+func TestReconcile_OrphaningDeleteRemovesSlicesTheCacheMissed(t *testing.T) {
+	r, _ := pausedRouted(t)
+	apiServer := r.Client.(client.WithWatch)
+	r.PodReader = apiServer
+	r.Client = interceptor.NewClient(apiServer, interceptor.Funcs{List: func(ctx context.Context, c client.WithWatch,
+		list client.ObjectList, opts ...client.ListOption) error {
+		if _, ok := list.(*discoveryv1.EndpointSliceList); ok {
+			var all client.ListOptions
+			all.ApplyOptions(opts)
+			if all.LabelSelector != nil && strings.Contains(all.LabelSelector.String(), doorman.ManagedBy) {
+				return nil
+			}
+		}
+		return c.List(ctx, list, opts...)
+	}})
+	require.NoError(t, r.Delete(context.Background(), fetch(t, r, "api"), client.PropagationPolicy(metav1.DeletePropagationOrphan)))
+
+	_, err := r.Reconcile(context.Background(), reconcileFor("api"))
+	require.NoError(t, err)
+
+	var left discoveryv1.EndpointSliceList
+	require.NoError(t, apiServer.List(context.Background(), &left, client.MatchingLabels{discoveryv1.LabelManagedBy: doorman.ManagedBy}))
+	assert.Empty(t, left.Items)
+}
+
+// A deleted workload's ManagedWorkload stays until its doorman ports have
+// drained, with the drain in its status, so a leader that takes over
+// meanwhile doesn't give a port away while clients may still send this
+// workload's traffic to it.
+func TestReconcile_DeletionWaitsForPortsToDrain(t *testing.T) {
+	r, _ := pausedRouted(t)
+	now := fixedTime
+	r.clock = func() time.Time { return now }
+	port := fetch(t, r, "api").Status.Doorman[0].DoormanPort
+	require.NoError(t, r.Delete(context.Background(), fetch(t, r, "api")))
+
+	result, err := r.Reconcile(context.Background(), reconcileFor("api"))
+	require.NoError(t, err)
+
+	assert.Equal(t, portDrain, result.RequeueAfter)
+	assert.Empty(t, doormanSlices(t, r), "routing stops at once")
+	draining := fetch(t, r, "api").Status.DoormanDraining
+	require.Len(t, draining, 1)
+	assert.Equal(t, port, draining[0].Port)
+
+	now = now.Add(portDrain)
+	result, err = r.Reconcile(context.Background(), reconcileFor("api"))
+	require.NoError(t, err)
+
+	assert.Zero(t, result.RequeueAfter)
+	var gone v1alpha1.ManagedWorkload
+	assert.True(t, apierrors.IsNotFound(r.Get(context.Background(), reconcileFor("api").NamespacedName, &gone)))
+}
+
+// The doorman stamps a workload whose recorded last-request was removed
+// with a value of its own. The operator must take that as a wake, or the
+// request that made it waits for a wake that never comes.
+func TestWokenByActivity_ADoormanStampAfterTheRecordedOneWasRemoved(t *testing.T) {
+	r := doormanReconciler(t)
+	workload := lifecycleWorkload("api", v1alpha1.PhasePaused)
+	workload.Status.Pause = &v1alpha1.PauseStatus{WakeAnnotations: &v1alpha1.WakeAnnotations{
+		Workload: map[string]string{v1alpha1.AnnotationLastRequest: "2026-10-03T08:00:00Z"},
+	}}
+
+	assert.False(t, r.wokenByActivity(workload, appTarget()), "removing the annotation wakes nothing")
+	workload.Annotations = map[string]string{v1alpha1.AnnotationLastRequest: "2026-10-03T09:00:00Z"}
+	assert.True(t, r.wokenByActivity(workload, appTarget()))
+}
+
 // A doorman problem, here the doorman's namespace missing from the cache of
 // a watchNamespaces install, never stops a paused workload from waking.
 func TestReconcile_DoormanFailureDoesNotBlockTheLifecycle(t *testing.T) {
@@ -882,17 +1040,7 @@ func TestReconcileDoorman_KeepsTheSlicesPortsWhenStatusWasNotWritten(t *testing.
 // that lasts, so it's never given to another workload while it still
 // receives the first one's traffic.
 func TestReconcileDoorman_KeepsAPortWhileItsSliceRemains(t *testing.T) {
-	first := lifecycleWorkload("api", v1alpha1.PhasePaused)
-	first.UID = "api-uid"
-	second := lifecycleWorkload("billing", v1alpha1.PhasePaused)
-	second.UID = "billing-uid"
-	billing := appTarget()
-	billing.Name = "billing"
-	billing.Spec.Template.Labels = map[string]string{"app": "billing"}
-	r := doormanReconciler(t, first, second, doormanEndpoints("10.0.0.7"),
-		service("api", map[string]string{"app": "api"}, corev1.ServicePort{Name: "http", Port: 80}),
-		service("billing", map[string]string{"app": "billing"}, corev1.ServicePort{Name: "http", Port: 80}))
-	r.doormanPorts.pick = lowestFreePort
+	r, first, second, billing := twoPausedWorkloads(t)
 	now := fixedTime
 	r.clock = func() time.Time { return now }
 	require.NoError(t, doormanErr(context.Background(), r, first, appTarget()))

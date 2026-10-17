@@ -6,6 +6,7 @@ metadata:
     {{- include "hybernate.labels" . | nindent 4 }}
   annotations:
     helm.sh/resource-policy: keep
+    argocd.argoproj.io/sync-options: Delete=false
     controller-gen.kubebuilder.io/version: v0.20.1
   name: managedworkloads.hybernate.io
 spec:
@@ -57,28 +58,29 @@ spec:
             properties:
               costTracking:
                 description: |-
-                  CostTracking configures custom cost rates for this workload.
-                  Cost tracking is always enabled with AWS on-demand defaults.
-                  Set this field only to override pricing rates.
+                  CostTracking sets this workload's own cost rates. Cost is always
+                  tracked: without them, it's priced at the list price of the nodes the
+                  workload's pods run on (status.cost.listRates), or at Hybernate's
+                  default rates for nodes it has no price for.
                 properties:
                   rates:
-                    description: Rates overrides the default cost rates. Omit to use
-                      AWS on-demand defaults.
+                    description: |-
+                      Rates are what you pay. Each one set is used in place of the list
+                      price of the workload's nodes and of Hybernate's default rates; one
+                      left out is priced as if Rates weren't set.
                     properties:
                       cpuPerHour:
                         anyOf:
                         - type: integer
                         - type: string
-                        description: 'CPUPerHour is the cost per vCPU-hour (default:
-                          $0.031, AWS on-demand).'
+                        description: CPUPerHour is the cost per vCPU-hour.
                         pattern: ^(\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))(([KMGTPE]i)|[numkMGTPE]|([eE](\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))))?$
                         x-kubernetes-int-or-string: true
                       memoryPerHour:
                         anyOf:
                         - type: integer
                         - type: string
-                        description: 'MemoryPerHour is the cost per GiB-hour (default:
-                          $0.004, AWS on-demand).'
+                        description: MemoryPerHour is the cost per GiB-hour.
                         pattern: ^(\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))(([KMGTPE]i)|[numkMGTPE]|([eE](\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))))?$
                         x-kubernetes-int-or-string: true
                       storagePerMonth:
@@ -86,8 +88,8 @@ spec:
                         - type: integer
                         - type: string
                         description: |-
-                          StoragePerMonth is the cost per GiB-month for PVC storage
-                          (default: $0.08, AWS EBS gp3).
+                          StoragePerMonth is the cost per GiB-month of PersistentVolumeClaim
+                          storage.
                         pattern: ^(\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))(([KMGTPE]i)|[numkMGTPE]|([eE](\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))))?$
                         x-kubernetes-int-or-string: true
                     type: object
@@ -129,8 +131,10 @@ spec:
                 x-kubernetes-list-type: atomic
               dryRun:
                 description: |-
-                  DryRun makes the operator evaluate all policies and emit events but
-                  take no action. Useful for validating configuration before going live.
+                  DryRun measures the workload without ever pausing it: the operator
+                  tracks activity, emits events, and records in status.dryRun the pauses
+                  it would have made. A workload already paused when dry-run is turned
+                  on is woken, so turning it on never leaves one off.
                 type: boolean
               idlePolicy:
                 description: |-
@@ -180,10 +184,13 @@ spec:
                     description: |-
                       IdleAfter is how long the workload must go without any activity
                       before the operator pauses it.
-                    format: duration
                     type: string
+                    x-kubernetes-validations:
+                    - message: must be a duration above zero, such as 90m or 2h
+                      rule: duration(self) > duration('0s')
                 type: object
               prediction:
+                default: {}
                 description: |-
                   Prediction configures the Holt-Winters forecasting engine that confirms
                   idle detection and wakes paused workloads ahead of predicted demand.
@@ -204,8 +211,6 @@ spec:
                     maximum: 100
                     minimum: 50
                     type: integer
-                required:
-                - confidence
                 type: object
               target:
                 description: |-
@@ -239,9 +244,13 @@ spec:
                     default: 2m
                     description: |-
                       MaxWait is how long the doorman holds a connection while the workload
-                      wakes. After it, the connection is closed; the wake carries on.
-                    format: duration
+                      wakes, at most 1h. After it, the connection is closed; the wake
+                      carries on.
                     type: string
+                    x-kubernetes-validations:
+                    - message: must be a duration above zero and at most 1h, such
+                        as 90s or 5m
+                      rule: duration(self) > duration('0s') && duration(self) <= duration('1h')
                   onRequest:
                     default: true
                     description: |-
@@ -257,7 +266,6 @@ spec:
                     type: boolean
                 type: object
             required:
-            - prediction
             - target
             type: object
           status:
@@ -420,16 +428,14 @@ spec:
                         anyOf:
                         - type: integer
                         - type: string
-                        description: 'CPUPerHour is the cost per vCPU-hour (default:
-                          $0.031, AWS on-demand).'
+                        description: CPUPerHour is the cost per vCPU-hour.
                         pattern: ^(\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))(([KMGTPE]i)|[numkMGTPE]|([eE](\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))))?$
                         x-kubernetes-int-or-string: true
                       memoryPerHour:
                         anyOf:
                         - type: integer
                         - type: string
-                        description: 'MemoryPerHour is the cost per GiB-hour (default:
-                          $0.004, AWS on-demand).'
+                        description: MemoryPerHour is the cost per GiB-hour.
                         pattern: ^(\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))(([KMGTPE]i)|[numkMGTPE]|([eE](\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))))?$
                         x-kubernetes-int-or-string: true
                       storagePerMonth:
@@ -437,8 +443,8 @@ spec:
                         - type: integer
                         - type: string
                         description: |-
-                          StoragePerMonth is the cost per GiB-month for PVC storage
-                          (default: $0.08, AWS EBS gp3).
+                          StoragePerMonth is the cost per GiB-month of PersistentVolumeClaim
+                          storage.
                         pattern: ^(\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))(([KMGTPE]i)|[numkMGTPE]|([eE](\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))))?$
                         x-kubernetes-int-or-string: true
                     type: object
@@ -596,6 +602,29 @@ spec:
                   type: object
                 type: array
                 x-kubernetes-list-type: atomic
+              doormanDraining:
+                description: |-
+                  DoormanDraining lists doorman ports that routed this workload until
+                  recently. No other workload is given one until its drain ends, even by
+                  an operator that has just restarted or taken over leadership, since
+                  clients that haven't yet seen the Service move back to the workload's
+                  pods still send traffic to it.
+                items:
+                  description: DrainingPort is a doorman port no other workload may
+                    have before Until.
+                  properties:
+                    port:
+                      format: int32
+                      type: integer
+                    until:
+                      format: date-time
+                      type: string
+                  required:
+                  - port
+                  - until
+                  type: object
+                type: array
+                x-kubernetes-list-type: atomic
               dryRun:
                 description: |-
                   DryRun is what dry-run has measured: what Hybernate would have done
@@ -701,8 +730,10 @@ spec:
                     type: string
                   by:
                     description: |-
-                      By is the field manager that set the replicas, such as kubectl-scale
-                      or argocd-controller.
+                      By is the field manager that set the replicas, such as
+                      argocd-controller or kubectl-client-side-apply, or unknown when none
+                      is recorded, as for a scale through the scale subresource by kubectl
+                      scale, an HPA or KEDA.
                     type: string
                   gitOps:
                     description: |-
@@ -749,6 +780,15 @@ spec:
                           - Deployment
                           - StatefulSet
                           type: string
+                        lastSeen:
+                          description: |-
+                            LastSeen is when a request that woke the dependency last confirmed one
+                            learned from a wake, written at most once a day. Held awake and woken
+                            with the dependent while it's kept, the dependency isn't woken by its
+                            requests, so one in steady use goes unconfirmed too: after 14 days it's
+                            forgotten, and learned again from the next request that wakes it.
+                          format: date-time
+                          type: string
                         name:
                           type: string
                         namespace:
@@ -764,7 +804,7 @@ spec:
                         via:
                           description: |-
                             Via is the environment variable that holds its address, and Address
-                            the address, with any password hidden, for one found in the
+                            the address, as scheme://host:port only, for one found in the
                             environment.
                           type: string
                       required:
@@ -789,6 +829,13 @@ spec:
                   Pause records what pausing changed, from before the workload is scaled
                   to zero until it's running again.
                 properties:
+                  firstReadyAt:
+                    description: |-
+                      FirstReadyAt is when the resume under way first saw one of the
+                      workload's replicas Ready. The rest are waited for 2 minutes from
+                      then, and the workload runs with those that are Ready by that time.
+                    format: date-time
+                    type: string
                   pausedAt:
                     description: |-
                       PausedAt is when the workload was scaled to zero. Unset while the

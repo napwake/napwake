@@ -20,8 +20,10 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -70,45 +72,60 @@ func TestAddresses(t *testing.T) {
 	}
 }
 
-// Whatever comes before the last @ can be a credential, whatever its form,
-// and so can a value whose key names a secret.
-func TestShown(t *testing.T) {
+// A user, a password, a path or a query string can each hold a credential,
+// so an address is shown as its scheme, host and port alone.
+func TestAddresses_ShowOnlySchemeHostAndPort(t *testing.T) {
 	tests := []struct {
-		raw, want string
+		value string
+		want  []string
 	}{
-		{"postgres://app:secret@postgres:5432/shop?password=x", "postgres://***@postgres:5432/shop"},
-		{"postgres://app@postgres:5432", "postgres://***@postgres:5432"},
-		{"admin:s3cr3t@redis:6379", "***@redis:6379"},
-		{"http://TOKEN@svc:8080", "http://***@svc:8080"},
-		{"https://user:p@ss:w0rd@api.internal/v1", "https://***@api.internal/v1"},
-		{"redis://:pa?ss@redis:6379", "redis://***@redis:6379"},
-		{"redis://:pa/ss@redis:6379/0", "redis://***@redis:6379/0"},
-		{"user:secret@[fd00::1]:5432", "***@[fd00::1]:5432"},
-		{"postgresql://u:p@[2001:db8::1]:5432/app", "postgresql://***@[2001:db8::1]:5432/app"},
-		{"mysql://root:hunter2@tcp(mysql:3306)/app", "mysql://***@tcp(mysql:3306)/app"},
-		{"amqp://guest:guest@rabbitmq:5672/vhost", "amqp://***@rabbitmq:5672/vhost"},
+		{"postgres://app:secret@postgres:5432/shop?password=x", []string{"postgres://postgres:5432"}},
+		{"postgres://app@postgres:5432", []string{"postgres://postgres:5432"}},
+		{"admin:s3cr3t@redis:6379", []string{"redis:6379"}},
+		{"http://TOKEN@svc:8080", []string{"http://svc:8080"}},
+		{"https://user:p@ss:w0rd@api.internal/v1", []string{"https://api.internal"}},
+		{"http://hooks:8080/services/T0001/B0001/xoxbSuperSecretPathToken", []string{"http://hooks:8080"}},
+		{"amqp://guest:guest@rabbitmq:5672/vhost", []string{"amqp://rabbitmq:5672"}},
 		{"mongodb://u:p@mongo-0.mongo:27017,mongo-1.mongo:27017/app?authSource=admin",
-			"mongodb://***@mongo-0.mongo:27017,mongo-1.mongo:27017/app"},
-		{"http://search:9200?api_key=abc123", "http://search:9200"},
-		{"search:9200/x;password=abc", "search:9200/x;password=***"},
-		{"host=db user=app password=hunter2 dbname=shop", "host=db user=app password=*** dbname=shop"},
-		{"Server=db;User Id=sa;Password=hunter2;", "Server=db;User Id=sa;Password=***;"},
-		{"jdbc:postgresql://db:5432/orders?user=app&password=hunter2", "jdbc:postgresql://db:5432/orders"},
-		{"redis:6379", "redis:6379"},
-		{"keycloak:8080", "keycloak:8080"},
+			[]string{"mongodb://mongo-0.mongo:27017", "mongo-1.mongo:27017"}},
+		{"http://search:9200?api_key=abc123", []string{"http://search:9200"}},
+		{"search:9200/x;password=abc", []string{"search:9200"}},
+		{"jdbc:postgresql://db:5432/orders?user=app&password=hunter2", []string{"jdbc:postgresql://db:5432"}},
+		{"token=hunter2://db:5432", []string{"db:5432"}},
+		{"Redis.Example.:6379", []string{"redis.example:6379"}},
+		{"keycloak:8080", []string{"keycloak:8080"}},
 	}
 	for _, tt := range tests {
-		t.Run(tt.raw, func(t *testing.T) {
-			got := shown(tt.raw)
-			assert.Equal(t, tt.want, got)
-			for _, secret := range []string{"secret", "s3cr3t", "TOKEN", "p@ss", "w0rd", "pa", "hunter2", "abc"} {
-				if !strings.Contains(tt.want, secret) {
-					assert.NotContains(t, got, secret)
-				}
+		t.Run(tt.value, func(t *testing.T) {
+			found := addresses(tt.value)
+			got := make([]string, 0, len(found))
+			for _, a := range found {
+				got = append(got, a.shown)
 			}
+			assert.Equal(t, tt.want, got)
 		})
 	}
-	assert.Len(t, shown("kafka:9092,"+strings.Repeat("broker:9092,", 20)), maxAddressShown)
+}
+
+// Whatever the value, what's shown is a scheme, a DNS name and a port:
+// nothing from a user, password, path or query string.
+func FuzzAddresses(f *testing.F) {
+	for _, s := range []string{"postgres://u:p@db:5432/x?password=y", "admin:s3cr3t@redis:6379", "a=b;token=c",
+		"http://hooks:8080/services/T/B/token", "jdbc:postgresql://db:5432/orders", "x://@:1@a.b"} {
+		f.Add(s)
+	}
+	f.Fuzz(func(t *testing.T, value string) {
+		for _, a := range addresses(value) {
+			rest := a.shown
+			if i := strings.Index(rest, "://"); i >= 0 {
+				require.Regexp(t, urlScheme, rest[:i+3])
+				rest = rest[i+3:]
+			}
+			host, port, _ := strings.Cut(rest, ":")
+			require.Equal(t, a.host, host, "shown %q", a.shown)
+			require.Empty(t, strings.Trim(port, "0123456789"), "shown %q", a.shown)
+		}
+	})
 }
 
 // What the scan reports is what the addresses it finds show, so a
@@ -120,6 +137,7 @@ func TestScanCluster_NeverShowsCredentials(t *testing.T) {
 		appWithEnv("cache-user", []corev1.EnvVar{
 			{Name: "REDIS", Value: "admin:s3cr3t@redis:6379"},
 			{Name: "REDIS_URL", Value: "http://TOKEN123@redis:8080"},
+			{Name: "WEBHOOK_URL", Value: "http://redis:8080/services/T0001/B0001/xoxbSuperSecretPathToken"},
 		}, nil),
 	}
 	c := fake.NewClientBuilder().WithScheme(newScheme()).WithRuntimeObjects(objs...).Build()
@@ -129,11 +147,12 @@ func TestScanCluster_NeverShowsCredentials(t *testing.T) {
 	require.NoError(t, err)
 	deps := byName(report)["cache-user"].Dependencies
 	require.Len(t, deps, 1)
-	assert.Equal(t, "***@redis:6379", deps[0].Address)
+	assert.Equal(t, "redis:6379", deps[0].Address)
 	out, err := json.Marshal(report)
 	require.NoError(t, err)
 	assert.NotContains(t, string(out), "s3cr3t")
 	assert.NotContains(t, string(out), "TOKEN123")
+	assert.NotContains(t, string(out), "xoxbSuperSecretPathToken")
 }
 
 func depService(namespace, name string, headless bool, selector map[string]string) *corev1.Service {
@@ -186,7 +205,7 @@ func TestResolve(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.host, func(t *testing.T) {
-			got := resolve(address{host: tt.host}, "dev", services, sources)
+			got := resolve(address{host: tt.host}, "dev", services, indexTargets(sources))
 			if tt.want == nil {
 				assert.Empty(t, got)
 				return
@@ -258,7 +277,7 @@ func TestScanCluster_FindsDependencies(t *testing.T) {
 	got := byName(report)
 	assert.Equal(t, []Dependency{
 		{Namespace: testNamespace, Kind: v1alpha1.TargetKindStatefulSet, Name: "postgres", Via: "DATABASE_URL",
-			Address: "postgres://***@postgres:5432/shop", Declared: true, Source: SourceEnvironment},
+			Address: "postgres://postgres:5432", Declared: true, Source: SourceEnvironment},
 		{Namespace: messaging, Kind: v1alpha1.TargetKindStatefulSet, Name: "nats", Via: "NATS_URL",
 			Address: "nats://nats.messaging:4222", Source: SourceEnvironment},
 	}, got["checkout-api"].Dependencies,
@@ -398,5 +417,77 @@ func TestScanCluster_DependencyReadsThatFail(t *testing.T) {
 			assert.Contains(t, strings.Join(report.Notes, "\n"), tt.wantNote)
 			assert.Equal(t, tt.wantIncomplete, report.Incomplete)
 		})
+	}
+}
+
+// manyPreviews is a cluster of namespaces, each with the same workloads,
+// each workload's environment naming three of its namespace's Services.
+func manyPreviews(namespaces, perNamespace int) ([]Workload, map[workloadKey]workloadSource,
+	map[string]map[string]corev1.Service) {
+	spec := corev1.PodSpec{Containers: []corev1.Container{{Name: "main", Env: []corev1.EnvVar{
+		{Name: "DB", Value: "postgres://svc-1:5432/app"},
+		{Name: "CACHE", Value: "redis://svc-2:6379"},
+		{Name: "API", Value: "http://svc-3:8080"},
+	}}}}
+	workloads := make([]Workload, 0, namespaces*perNamespace)
+	sources := make(map[workloadKey]workloadSource, namespaces*perNamespace)
+	services := make(map[string]map[string]corev1.Service, namespaces)
+	for n := range namespaces {
+		ns := fmt.Sprintf("preview-%d", n)
+		services[ns] = map[string]corev1.Service{}
+		for i := range perNamespace {
+			name := fmt.Sprintf("svc-%d", i)
+			workloads = append(workloads, Workload{Namespace: ns, Kind: v1alpha1.TargetKindDeployment, Name: name})
+			sources[workloadKey{ns, v1alpha1.TargetKindDeployment, name}] = workloadSource{template: corev1.PodTemplateSpec{
+				ObjectMeta: metav1.ObjectMeta{Labels: map[string]string{"app": name}}, Spec: spec}}
+			services[ns][name] = corev1.Service{ObjectMeta: metav1.ObjectMeta{Namespace: ns, Name: name},
+				Spec: corev1.ServiceSpec{Selector: map[string]string{"app": name}, ClusterIP: "10.0.0.1"}}
+		}
+	}
+	return workloads, sources, services
+}
+
+// Resolving an address looks only at its Service's namespace, so the pass
+// grows with the cluster, not with its square: 10,000 workloads took 32s of
+// CPU when every address was checked against every workload.
+func TestFindDependencies_GrowsWithTheCluster(t *testing.T) {
+	workloads, sources, services := manyPreviews(1000, 10)
+
+	start := time.Now()
+	findDependencies(context.Background(), workloads, sources, services, nil)
+	elapsed := time.Since(start)
+
+	found := 0
+	for _, w := range workloads {
+		found += len(w.Dependencies)
+	}
+	assert.Equal(t, 1000*(3*10-3), found, "three each, less the one that's itself, in each namespace")
+	assert.Less(t, elapsed, 5*time.Second)
+}
+
+// Stopped short, it says whose dependencies it didn't find, so an empty
+// list isn't read as having none.
+func TestFindDependencies_StopsWhenCancelled(t *testing.T) {
+	workloads, sources, services := manyPreviews(10, 10)
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+
+	notes := findDependencies(ctx, workloads, sources, services, nil)
+
+	for _, w := range workloads {
+		assert.Empty(t, w.Dependencies)
+	}
+	require.Len(t, notes, 1)
+	assert.Contains(t, notes[0], "the scan stopped before finding the dependencies of 100 workloads, "+
+		"so none are listed for them: ")
+}
+
+func BenchmarkFindDependencies(b *testing.B) {
+	workloads, sources, services := manyPreviews(1000, 10)
+	for b.Loop() {
+		for i := range workloads {
+			workloads[i].Dependencies = nil
+		}
+		findDependencies(context.Background(), workloads, sources, services, nil)
 	}
 }

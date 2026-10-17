@@ -29,11 +29,13 @@ import (
 // costs two goroutines and its first bytes, about 20KiB, so maxHeld keeps
 // held connections well inside the pod's memory.
 //
-// An ingress controller sends every user's traffic from one address, so a
-// source's held connections are capped per workload: a burst of requests to
-// one environment can't crowd out the others behind the same ingress. A
-// source's total is capped too, at half of maxHeld, so a single client
-// can't fill the doorman however many workloads it reaches.
+// A workload's held connections are capped, at an eighth of maxHeld, so
+// one that never becomes Ready can't take the places every other workload
+// needs, however many sources call it. An ingress controller sends every
+// user's traffic from one address, so a source's share of one workload is
+// capped too, at half of that, leaving room for its other callers. A
+// source's total is capped at half of maxHeld, so a single client can't
+// fill the doorman however many workloads it reaches.
 //
 // Wakes are limited per source, so a client scanning the doorman's ports
 // wakes only a few workloads at once, and overall. A caller over a limit
@@ -46,6 +48,7 @@ import (
 // bounds the memory a flood of large uploads can take.
 type limits struct {
 	maxHeld                  int
+	maxHeldPerWorkload       int
 	maxHeldPerSource         int
 	maxHeldPerSourceWorkload int
 
@@ -60,8 +63,9 @@ type limits struct {
 
 var defaultLimits = limits{
 	maxHeld:                  2048,
+	maxHeldPerWorkload:       256,
 	maxHeldPerSource:         1024,
-	maxHeldPerSourceWorkload: 256,
+	maxHeldPerSourceWorkload: 128,
 	maxBufferedPerConn:       1 << 20,
 	maxBuffered:              32 << 20,
 	sourceWakeEvery:          2 * time.Second,
@@ -85,18 +89,20 @@ type source struct {
 type admission struct {
 	limits limits
 
-	mu       sync.Mutex
-	held     int
-	buffered int
-	sources  map[netip.Addr]*source
-	wakes    *rate.Limiter
+	mu         sync.Mutex
+	held       int
+	byWorkload map[types.NamespacedName]int
+	buffered   int
+	sources    map[netip.Addr]*source
+	wakes      *rate.Limiter
 }
 
 func newAdmission(l limits) *admission {
 	return &admission{
-		limits:  l,
-		sources: map[netip.Addr]*source{},
-		wakes:   rate.NewLimiter(rate.Every(l.wakeEvery), l.wakeBurst),
+		limits:     l,
+		byWorkload: map[types.NamespacedName]int{},
+		sources:    map[netip.Addr]*source{},
+		wakes:      rate.NewLimiter(rate.Every(l.wakeEvery), l.wakeBurst),
 	}
 }
 
@@ -119,11 +125,12 @@ func (a *admission) hold(addr netip.Addr, workload types.NamespacedName, now tim
 	a.mu.Lock()
 	defer a.mu.Unlock()
 	s := a.source(addr, now)
-	if a.held >= a.limits.maxHeld || s.held >= a.limits.maxHeldPerSource ||
-		s.byWorkload[workload] >= a.limits.maxHeldPerSourceWorkload {
+	if a.held >= a.limits.maxHeld || a.byWorkload[workload] >= a.limits.maxHeldPerWorkload ||
+		s.held >= a.limits.maxHeldPerSource || s.byWorkload[workload] >= a.limits.maxHeldPerSourceWorkload {
 		return false
 	}
 	a.held++
+	a.byWorkload[workload]++
 	s.held++
 	s.byWorkload[workload]++
 	return true
@@ -134,6 +141,9 @@ func (a *admission) release(addr netip.Addr, workload types.NamespacedName, now 
 	a.mu.Lock()
 	defer a.mu.Unlock()
 	a.held--
+	if a.byWorkload[workload]--; a.byWorkload[workload] <= 0 {
+		delete(a.byWorkload, workload)
+	}
 	s := a.source(addr, now)
 	s.held--
 	if s.byWorkload[workload]--; s.byWorkload[workload] <= 0 {

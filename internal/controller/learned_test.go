@@ -19,6 +19,9 @@ package controller
 import (
 	"context"
 	"errors"
+	"fmt"
+	"maps"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -87,7 +90,7 @@ func TestLearnDependencies(t *testing.T) {
 		wantAddress string
 	}{
 		{name: "an address in a variable", target: apiWith(nil, databaseURL),
-			want: []string{"default/postgres DATABASE_URL"}, wantAddress: "postgres://***@postgres:5432/app"},
+			want: []string{"default/postgres DATABASE_URL"}, wantAddress: "postgres://postgres:5432"},
 		{name: "a headless address from a ConfigMap", target: func() *appsv1.Deployment {
 			d := apiWith(nil)
 			d.Spec.Template.Spec.Containers[0].EnvFrom = []corev1.EnvFromSource{
@@ -117,8 +120,57 @@ func TestLearnDependencies(t *testing.T) {
 			assert.Equal(t, tt.want, learnedNames(api))
 			if tt.wantAddress != "" {
 				assert.Equal(t, tt.wantAddress, api.Status.LearnedDependencies.Dependencies[0].Address,
-					"passwords hidden")
+					"only scheme, host and port shown")
 			}
+		})
+	}
+}
+
+// Learning lists Services and workloads only in the namespaces the
+// environment could address, not across the cluster, hourly, for every
+// workload. An environment naming more than it's worth listing one by one
+// has the cluster listed once.
+func TestLearnDependencies_ListsOnlyTheNamespacesNamed(t *testing.T) {
+	labels := map[string]string{"app": "pg"}
+	pg := &appsv1.StatefulSet{ObjectMeta: metav1.ObjectMeta{Name: "pg", Namespace: "data"},
+		Spec: appsv1.StatefulSetSpec{Template: corev1.PodTemplateSpec{ObjectMeta: metav1.ObjectMeta{Labels: labels}}}}
+	pgService := &corev1.Service{ObjectMeta: metav1.ObjectMeta{Name: "pg", Namespace: "data"},
+		Spec: corev1.ServiceSpec{Selector: labels}}
+	many := make([]string, 0, maxNamedNamespaces+1)
+	for i := range maxNamedNamespaces + 1 {
+		many = append(many, fmt.Sprintf("cache.team%d:6379", i))
+	}
+	tests := []struct {
+		name  string
+		value string
+		want  []string
+	}{
+		{name: "an address in another namespace", value: "postgres://app@pg.data.svc.cluster.local:5432/app",
+			want: []string{"data", "default"}},
+		{name: "words that aren't hosts", value: "pg.data:5432 MODE=api region us-east-1 jdbc:postgresql://pg.data/app",
+			want: []string{"data", "default"}},
+		{name: "too many words to list one by one", value: "pg.data:5432 " + strings.Join(many, " "),
+			want: []string{metav1.NamespaceAll}},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			target := apiWith(nil, corev1.EnvVar{Name: "DATABASE_URL", Value: tt.value})
+			api := depWorkload("default", "api", v1alpha1.TargetKindDeployment, v1alpha1.PhaseRunning)
+			r := depReconciler(t, &stubPauser{}, api, target, pg, pgService)
+			listed := map[string]bool{}
+			r.Client = interceptor.NewClient(r.Client.(client.WithWatch), interceptor.Funcs{
+				List: func(ctx context.Context, c client.WithWatch, list client.ObjectList, opts ...client.ListOption) error {
+					if _, ok := list.(*corev1.ServiceList); ok {
+						o := (&client.ListOptions{}).ApplyOptions(opts)
+						listed[o.Namespace] = true
+					}
+					return c.List(ctx, list, opts...)
+				}})
+
+			require.NoError(t, r.learnDependencies(context.Background(), api, target))
+
+			assert.Equal(t, []string{"data/pg DATABASE_URL"}, learnedNames(api))
+			assert.Equal(t, tt.want, slices.Sorted(maps.Keys(listed)), "namespaces whose Services were listed")
 		})
 	}
 }
@@ -345,6 +397,180 @@ func TestLearnDependencies_KeepsWhatWakesTaught(t *testing.T) {
 	require.NoError(t, r.learnDependencies(context.Background(), api, target))
 
 	assert.Equal(t, []string{"default/postgres DATABASE_URL", "default/redis "}, learnedNames(api))
+}
+
+// A dependency learned from a wake is forgotten once no request has
+// confirmed it for two weeks, so a one-off request doesn't tie two
+// workloads together for good.
+func TestLearnDependencies_ForgetsWhatWakesNoLongerConfirm(t *testing.T) {
+	tests := []struct {
+		name     string
+		lastSeen *metav1.Time
+		want     []string
+	}{
+		{name: "confirmed recently", lastSeen: &metav1.Time{Time: fixedTime.Add(-13 * 24 * time.Hour)},
+			want: []string{"default/redis "}},
+		{name: "unconfirmed for over two weeks", lastSeen: &metav1.Time{Time: fixedTime.Add(-15 * 24 * time.Hour)}},
+		{name: "learned before it was tracked", want: []string{"default/redis "}},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			target := apiWith(nil)
+			api := depWorkload("default", "api", v1alpha1.TargetKindDeployment, v1alpha1.PhaseRunning)
+			api.Status.LearnedDependencies = &v1alpha1.LearnedDependencies{Dependencies: []v1alpha1.LearnedDependency{
+				{Namespace: "default", Kind: v1alpha1.TargetKindStatefulSet, Name: "redis",
+					Source: v1alpha1.LearnedFromWake, LastSeen: tt.lastSeen}}}
+			r := depReconciler(t, &stubPauser{}, append(databases(), api, target)...)
+
+			require.NoError(t, r.learnDependencies(context.Background(), api, target))
+
+			got := fetch(t, r, "api")
+			assert.Equal(t, tt.want, learnedNames(got))
+			if tt.want != nil {
+				lastSeen := got.Status.LearnedDependencies.Dependencies[0].LastSeen
+				require.NotNil(t, lastSeen, "the time it was last confirmed is recorded")
+			}
+		})
+	}
+}
+
+// Each request that would teach a dependency already learned from a wake
+// confirms it, written at most once a day.
+func TestLearnFromWake_ConfirmsWhatItLearned(t *testing.T) {
+	tests := []struct {
+		name     string
+		lastSeen time.Time
+		want     time.Time
+	}{
+		{name: "confirmed days ago", lastSeen: fixedTime.Add(-3 * 24 * time.Hour), want: fixedTime},
+		{name: "confirmed within the day", lastSeen: fixedTime.Add(-time.Hour), want: fixedTime.Add(-time.Hour)},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			postgres := wokenPostgres()
+			api := depWorkload("default", "api", v1alpha1.TargetKindDeployment, v1alpha1.PhaseRunning)
+			api.Status.LearnedDependencies = &v1alpha1.LearnedDependencies{Dependencies: []v1alpha1.LearnedDependency{
+				{Namespace: "default", Kind: v1alpha1.TargetKindStatefulSet, Name: "postgres",
+					Source: v1alpha1.LearnedFromWake, LastSeen: &metav1.Time{Time: tt.lastSeen}}}}
+			r := wakeReconciler(t, podOf("api", false), selecting(v1alpha1.TargetKindDeployment, "api", nil), api,
+				postgres, selecting(v1alpha1.TargetKindStatefulSet, "postgres", nil))
+
+			require.NoError(t, r.learnFromWake(context.Background(), postgres))
+
+			got := fetch(t, r, "api").Status.LearnedDependencies.Dependencies
+			require.Len(t, got, 1)
+			assert.True(t, tt.want.Equal(got[0].LastSeen.Time), "last seen %s, want %s", got[0].LastSeen, tt.want)
+		})
+	}
+}
+
+// In a dual-stack cluster a request can come from a pod's second address,
+// its IPv6 one where pods are IPv4 first, which isn't its status.podIP.
+func TestLearnFromWake_DualStack(t *testing.T) {
+	const senderIPv6 = "fd00:10:244:1::7"
+	api := depWorkload("default", "api", v1alpha1.TargetKindDeployment, v1alpha1.PhaseRunning)
+	postgres := wokenPostgres()
+	postgres.Annotations[v1alpha1.AnnotationLastRequestFrom] = senderIPv6
+	sender := podOf("api", false)
+	sender.Status.PodIPs = []corev1.PodIP{{IP: senderIP}, {IP: senderIPv6}}
+	r := wakeReconciler(t, sender, selecting(v1alpha1.TargetKindDeployment, "api", nil), api, postgres,
+		selecting(v1alpha1.TargetKindStatefulSet, "postgres", nil))
+
+	require.NoError(t, r.learnFromWake(context.Background(), postgres))
+
+	assert.Equal(t, []string{"default/postgres "}, learnedNames(fetch(t, r, "api")))
+}
+
+// podReads counts the pod lists learning from a wake makes, and the pages
+// of a search by address among them, and notes the time it had left. With
+// more set, every page of the search goes on to another.
+type podReads struct {
+	lists, pages int
+	deadline     time.Duration
+	more         bool
+}
+
+func (p *podReads) reconciler(t *testing.T, objs ...client.Object) *Reconciler {
+	t.Helper()
+	r := wakeReconciler(t, objs...)
+	r.Client = interceptor.NewClient(r.Client.(client.WithWatch), interceptor.Funcs{
+		List: func(ctx context.Context, c client.WithWatch, list client.ObjectList, opts ...client.ListOption) error {
+			if _, ok := list.(*corev1.PodList); !ok {
+				return c.List(ctx, list, opts...)
+			}
+			p.lists++
+			if deadline, ok := ctx.Deadline(); ok {
+				p.deadline = time.Until(deadline)
+			}
+			var o client.ListOptions
+			o.ApplyOptions(opts)
+			if err := c.List(ctx, list, opts...); err != nil {
+				return err
+			}
+			if o.Limit == podPageSize {
+				p.pages++
+				if p.more {
+					list.(*corev1.PodList).Continue = "more"
+				}
+			}
+			return nil
+		},
+	})
+	return r
+}
+
+// Where pods' IPv6 addresses are their status.podIP, an IPv6-only cluster
+// or one whose pods are IPv6 first, an address no pod has as its
+// status.podIP is no pod's, such as a node's. Reading every pod in the
+// cluster to find it, on every wake, held the wake up and found nothing.
+func TestLearnFromWake_IPv6FromNoPod(t *testing.T) {
+	const nodeIPv6 = "fd00:10:0:1::1"
+	postgres := wokenPostgres()
+	postgres.Annotations[v1alpha1.AnnotationLastRequestFrom] = nodeIPv6
+	tests := []struct {
+		name      string
+		ips       []corev1.PodIP
+		wantPages bool
+	}{
+		{name: "IPv6 only", ips: []corev1.PodIP{{IP: "fd00:10:244:1::7"}}},
+		{name: "dual-stack, IPv6 first", ips: []corev1.PodIP{{IP: "fd00:10:244:1::7"}, {IP: senderIP}}},
+		{name: "dual-stack, IPv4 first", ips: []corev1.PodIP{{IP: senderIP}, {IP: "fd00:10:244:1::7"}}, wantPages: true},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			pod := podOf("api", false)
+			pod.Status.PodIP, pod.Status.PodIPs = tt.ips[0].IP, tt.ips
+			var reads podReads
+			r := reads.reconciler(t, pod, selecting(v1alpha1.TargetKindDeployment, "api", nil),
+				depWorkload("default", "api", v1alpha1.TargetKindDeployment, v1alpha1.PhaseRunning), postgres,
+				selecting(v1alpha1.TargetKindStatefulSet, "postgres", nil))
+
+			require.NoError(t, r.learnFromWake(context.Background(), postgres))
+
+			assert.Equal(t, tt.wantPages, reads.pages > 0, "pods read a page at a time")
+			assert.Empty(t, learnedNames(fetch(t, r, "api")))
+		})
+	}
+}
+
+// Learning runs as the workload wakes, with the request that woke it
+// waiting, so it's bounded: in time, and in how many pods a search by
+// address reads.
+func TestLearnFromWake_Bounded(t *testing.T) {
+	postgres := wokenPostgres()
+	postgres.Annotations[v1alpha1.AnnotationLastRequestFrom] = "fd00:10:244:9::9"
+	pod := podOf("api", false)
+	pod.Status.PodIPs = []corev1.PodIP{{IP: senderIP}, {IP: "fd00:10:244:1::7"}}
+	reads := podReads{more: true}
+	r := reads.reconciler(t, pod, selecting(v1alpha1.TargetKindDeployment, "api", nil),
+		depWorkload("default", "api", v1alpha1.TargetKindDeployment, v1alpha1.PhaseRunning), postgres,
+		selecting(v1alpha1.TargetKindStatefulSet, "postgres", nil))
+
+	err := r.learnFromWake(context.Background(), postgres)
+
+	require.ErrorContains(t, err, "not among the first 10000 pods")
+	assert.Equal(t, maxPodPages, reads.pages)
+	assert.LessOrEqual(t, reads.deadline, wakeLearnTimeout)
 }
 
 // Installed for some namespaces only, Hybernate can't list pods across the

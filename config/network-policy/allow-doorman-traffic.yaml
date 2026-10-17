@@ -1,0 +1,32 @@
+# Only pods in namespaces labelled metrics: enabled may scrape the doorman.
+# Its routing ports are open to every source, since every client of a
+# paused workload's Services is sent to them; to admit only the callers
+# paused workloads really have, add them as from peers on that rule.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  labels:
+    control-plane: doorman
+    app.kubernetes.io/name: hybernate
+    app.kubernetes.io/managed-by: kustomize
+  name: allow-doorman-traffic
+  namespace: system
+spec:
+  podSelector:
+    matchLabels:
+      control-plane: doorman
+      app.kubernetes.io/name: hybernate
+  policyTypes:
+    - Ingress
+  ingress:
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              metrics: enabled
+      ports:
+        - port: 8443
+          protocol: TCP
+    - ports:
+        - port: 20000
+          endPort: 29999
+          protocol: TCP

@@ -59,10 +59,18 @@ const (
 	// routes. Past it, it's serving routes that may be gone or wrong.
 	readyStaleness = 30 * time.Second
 
-	// shutdownGrace is how long connections are kept after the doorman
-	// stops accepting new ones. It fits in the manager's 30s graceful
-	// shutdown and the pod's termination grace period.
+	// shutdownGrace is how long a stopping doorman keeps its connections.
+	// It fits in the manager's 30s graceful shutdown and the pod's
+	// termination grace period.
 	shutdownGrace = 25 * time.Second
+
+	// shutdownAccept is how much of shutdownGrace a stopping doorman goes
+	// on accepting connections. Only the operator moves paused workloads'
+	// EndpointSlices to other doorman pods, and when both are upgraded
+	// together, the new operator takes a while to win the lease and catch
+	// up; until it has, connections still arrive here, and refusing them
+	// would fail requests the doorman exists to hold.
+	shutdownAccept = 15 * time.Second
 
 	acceptRetry = 100 * time.Millisecond
 )
@@ -118,6 +126,7 @@ type Server struct {
 	informers Informers
 	now       func() time.Time
 	grace     time.Duration
+	acceptFor time.Duration
 	pollEvery time.Duration
 	silent    time.Duration
 
@@ -134,6 +143,7 @@ type Server struct {
 	wakeCalls map[types.NamespacedName]*wakeCall
 	stamped   map[types.NamespacedName]stampRecord
 	lastWarn  map[types.NamespacedName]time.Time
+	metered   map[types.NamespacedName]bool
 	closed    bool
 
 	accepting sync.WaitGroup
@@ -151,6 +161,7 @@ func NewServer(c client.Client, recorder events.EventRecorder, opts Options) *Se
 		informers: opts.Informers,
 		now:       time.Now,
 		grace:     shutdownGrace,
+		acceptFor: shutdownAccept,
 		pollEvery: backendPollInterval,
 		silent:    silentWake,
 		backends:  newBackends(c),
@@ -164,6 +175,7 @@ func NewServer(c client.Client, recorder events.EventRecorder, opts Options) *Se
 		wakeCalls:         map[types.NamespacedName]*wakeCall{},
 		stamped:           map[types.NamespacedName]stampRecord{},
 		lastWarn:          map[types.NamespacedName]time.Time{},
+		metered:           map[types.NamespacedName]bool{},
 	}
 }
 
@@ -179,9 +191,11 @@ func healthCheckAgents(extra []string) []string {
 	return agents
 }
 
-// Start serves until ctx is done. Then it stops accepting connections,
-// gives those it has up to the grace period to finish, closes the rest, and
-// waits for their goroutines.
+// Start serves until ctx is done. Then it reports itself not Ready, so the
+// operator moves traffic to other doorman pods, and drains: it goes on
+// serving while traffic may still arrive, stops accepting connections, gives
+// those it has the rest of the grace period to finish, closes what's left,
+// and waits for their goroutines.
 func (s *Server) Start(ctx context.Context) error {
 	// Connections outlive ctx by the grace period, so they get their own.
 	connCtx, cancelConns := context.WithCancel(context.WithoutCancel(ctx))
@@ -202,14 +216,36 @@ func (s *Server) Start(ctx context.Context) error {
 	defer pollTicker.Stop()
 
 	s.sync(ctx, connCtx)
+	s.serve(ctx, connCtx, ctx.Done(), syncTicker.C, pollTicker.C)
+
+	s.stopping.Store(true)
+	grace := s.grace
+	if s.listening() {
+		drainCtx := context.WithoutCancel(ctx)
+		accepting, stopAccepting := context.WithTimeout(drainCtx, s.acceptFor)
+		defer stopAccepting()
+		s.serve(drainCtx, connCtx, accepting.Done(), syncTicker.C, pollTicker.C)
+		grace -= s.acceptFor
+	}
+	s.shutdown(cancelConns, grace)
+	return nil
+}
+
+func (s *Server) listening() bool {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return len(s.listeners) > 0
+}
+
+// serve keeps routes and backends current until stop.
+func (s *Server) serve(ctx, connCtx context.Context, stop <-chan struct{}, syncs, polls <-chan time.Time) {
 	for {
 		select {
-		case <-ctx.Done():
-			s.shutdown(cancelConns)
-			return nil
-		case <-pollTicker.C:
+		case <-stop:
+			return
+		case <-polls:
 			s.backends.changedAll()
-		case <-syncTicker.C:
+		case <-syncs:
 			s.sync(ctx, connCtx)
 		}
 	}
@@ -265,8 +301,9 @@ func (s *Server) Ready(_ *http.Request) error {
 	return nil
 }
 
-func (s *Server) shutdown(cancelConns context.CancelFunc) {
-	s.stopping.Store(true)
+// shutdown stops accepting connections, waits up to grace for those it has,
+// then closes the rest.
+func (s *Server) shutdown(cancelConns context.CancelFunc, grace time.Duration) {
 	s.mu.Lock()
 	for port, l := range s.listeners {
 		_ = l.Close() // ends its accept loop; nothing to do if it fails
@@ -280,7 +317,7 @@ func (s *Server) shutdown(cancelConns context.CancelFunc) {
 		s.handling.Wait()
 		close(done)
 	}()
-	timer := time.NewTimer(s.grace)
+	timer := time.NewTimer(max(grace, 0))
 	defer timer.Stop()
 	select {
 	case <-done:
@@ -311,10 +348,12 @@ func (s *Server) syncRoutes(ctx, connCtx context.Context) error {
 	s.lastSync.Store(now.UnixNano())
 
 	claims := map[int32][]route{}
+	existing := make(map[types.NamespacedName]bool, len(list.Items))
 	for _, w := range list.Items {
+		existing[types.NamespacedName{Namespace: w.Namespace, Name: w.Name}] = true
 		maxWait := defaultMaxWait
 		if w.Spec.Wake != nil && w.Spec.Wake.MaxWait != nil && w.Spec.Wake.MaxWait.Duration > 0 {
-			maxWait = w.Spec.Wake.MaxWait.Duration
+			maxWait = min(w.Spec.Wake.MaxWait.Duration, v1alpha1.WakeMaxWaitLimit)
 		}
 		page := w.Spec.Wake == nil || w.Spec.Wake.Page == nil || *w.Spec.Wake.Page
 		for _, r := range w.Status.Doorman {
@@ -330,6 +369,7 @@ func (s *Server) syncRoutes(ctx, connCtx context.Context) error {
 
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	s.forgetDeleted(existing)
 	routes := map[int32]route{}
 	conflicts := map[int32][]route{}
 	for port, rs := range claims {
@@ -393,6 +433,28 @@ func (s *Server) syncRoutes(ctx, connCtx context.Context) error {
 		s.accepting.Go(func() { s.accept(connCtx, port, l) })
 	}
 	return errors.Join(errs...)
+}
+
+// forgetDeleted drops the series of workloads that no longer exist, as the
+// operator drops its own, and what this replica remembers about them. s.mu
+// must be held.
+func (s *Server) forgetDeleted(existing map[types.NamespacedName]bool) {
+	for w := range s.metered {
+		if !existing[w] {
+			opmetrics.DeleteWorkload(w.Namespace, w.Name)
+			delete(s.metered, w)
+		}
+	}
+	for w := range s.stamped {
+		if !existing[w] {
+			delete(s.stamped, w)
+		}
+	}
+	for w := range s.lastWarn {
+		if !existing[w] {
+			delete(s.lastWarn, w)
+		}
+	}
 }
 
 // reportConflicts logs each port newly claimed twice, once, and keeps the

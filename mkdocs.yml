@@ -58,7 +58,7 @@ markdown_extensions:
 
 extra_javascript:
   - javascripts/mathjax.js
-  - https://unpkg.com/mathjax@3/es5/tex-mml-chtml.js
+  - https://unpkg.com/mathjax@3.2.2/es5/tex-mml-chtml.js
 
 nav:
   - Home: index.md
@@ -81,7 +81,7 @@ nav:
       - Cluster Autoscaler: guides/cluster-autoscaler.md
       - Dry Run: guides/dry-run.md
       - Prometheus Activity: guides/prometheus-signals.md
-      - Argo CD and Flux: guides/gitops.md
+      - GitOps tools: guides/gitops.md
       - HPA and KEDA: guides/autoscalers.md
   - Reference:
       - API: reference/api.md

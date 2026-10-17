@@ -78,6 +78,12 @@ type ClusterReport struct {
 	// Namespaces is how many namespaces were scanned.
 	Namespaces int        `json:"namespaces"`
 	Workloads  []Workload `json:"workloads"`
+	// Platform are the workloads that run the cluster itself: Kubernetes',
+	// Hybernate's, and well-known infrastructure such as ingress, GitOps and
+	// monitoring. They're left out of Workloads, Totals and next steps, as
+	// Hybernate never pauses Kubernetes' or its own, and the scan guesses
+	// nobody means to pause the rest.
+	Platform []Workload `json:"platform,omitempty"`
 	// NodePrices are the node types the workloads were priced at.
 	NodePrices Prices `json:"nodePrices"`
 	// Notes say what the scan couldn't see and how that limits it.
@@ -128,8 +134,9 @@ type Workload struct {
 	ScaledByHand bool `json:"scaledByHand,omitempty"`
 	// Measured is what dry-run has measured, for a workload in dry-run.
 	Measured *Measured `json:"measured,omitempty"`
-	// SavedThisMonth is what Hybernate has saved this month pausing a live
-	// workload, priced at the rates it uses for the workload.
+	// SavedThisMonth is what Hybernate has saved this month pausing the
+	// workload, priced at the rates it uses for the workload. One in dry-run
+	// keeps what it saved while it was live.
 	SavedThisMonth float64 `json:"savedThisMonth,omitempty"`
 	// Slept is how long Hybernate has had a live workload paused, and how
 	// many times it was woken, since Since: the start of the month, or when
@@ -139,6 +146,10 @@ type Workload struct {
 	// Protected means its namespace is labelled protected, so Hybernate
 	// won't manage it whatever its labels.
 	Protected bool `json:"protected,omitempty"`
+	// Platform is the part of the cluster's own infrastructure it runs, such
+	// as Kubernetes, Hybernate or cert-manager, for one the scan leaves out
+	// of what pausing could save.
+	Platform string `json:"platform,omitempty"`
 	// ReplicasFromGit is the GitOps tool that last set its replicas from
 	// Git, which would undo every pause until it's told to leave them.
 	ReplicasFromGit string `json:"replicasFromGit,omitempty"`
@@ -194,6 +205,8 @@ type Totals struct {
 	// basis their saving is estimated on: over the replayed history for
 	// those replayed, with the pods they ran then, and as they run now for
 	// the rest. What Replayed and Measured could save is a share of it.
+	// Workloads the scan couldn't judge aren't in it, nor in Replayed, as
+	// the table doesn't list them.
 	SavingsBasis float64 `json:"savingsBasis"`
 	// Paused and PausedHourlyCost are what Hybernate has paused right now
 	// and what that frees each hour.
@@ -210,7 +223,8 @@ type Totals struct {
 	IdleMonthlyCost float64 `json:"idleMonthlyCost"`
 	// Replayed sums the history of unmanaged workloads, Measured what
 	// Hybernate measured for those in dry-run, and SavedThisMonth what it
-	// has saved this month pausing live ones: each from its own source.
+	// has saved this month pausing managed ones, including what one now in
+	// dry-run saved while live: each from its own source.
 	Replayed       ReplayTotals `json:"replayed"`
 	Measured       Measured     `json:"measured"`
 	DryRun         int          `json:"dryRun"`
@@ -271,38 +285,50 @@ func (s *Scanner) ScanCluster(ctx context.Context, opts ClusterOptions) (*Cluste
 	pricing, nodePrices := s.readNodePrices(ctx)
 	report.NodePrices = nodePrices
 
+	historyCtx, cancel := historyBudget(ctx)
+	defer cancel()
 	scans := make([]namespaceScan, len(opts.Namespaces))
 	var g errgroup.Group
 	g.SetLimit(namespaceWorkers)
 	for i, namespace := range opts.Namespaces {
 		g.Go(func() error {
-			scans[i] = s.scanNamespace(ctx, namespace, pricing, opts)
+			scans[i] = s.scanNamespace(ctx, historyCtx, namespace, pricing, opts)
 			return nil
 		})
 	}
 	_ = g.Wait() // each namespace's problems are in its scan; none is returned
 
 	var since time.Time
+	var historyOutOfTime []string
 	noHistory := make([]string, 0, len(scans))
 	problems := make([]readProblem, 0, len(scans))
 	metricsUnavailable := false
 	sources := map[workloadKey]workloadSource{}
 	services := map[string]map[string]corev1.Service{}
+	configMaps := map[string]map[string]map[string]string{}
 	for _, scan := range scans {
 		report.Workloads = append(report.Workloads, scan.workloads...)
 		problems = append(problems, scan.problems...)
 		noHistory = append(noHistory, scan.noHistory...)
+		if scan.historyOutOfTime {
+			historyOutOfTime = append(historyOutOfTime, scan.namespace)
+		}
 		metricsUnavailable = metricsUnavailable || scan.metricsUnavailable
 		maps.Copy(sources, scan.sources)
 		if scan.services != nil {
 			services[scan.namespace] = scan.services
 		}
+		configMaps[scan.namespace] = scan.configMaps
 		if !scan.historySince.IsZero() && (since.IsZero() || scan.historySince.Before(since)) {
 			since = scan.historySince
 		}
 	}
-	dependencyNotes, dependencyProblems := s.findDependencies(ctx, report.Workloads, sources, services)
-	problems = append(problems, dependencyProblems...)
+	dependencyNotes := findDependencies(ctx, report.Workloads, sources, services, configMaps)
+	report.Workloads, report.Platform = splitPlatform(report.Workloads)
+	slices.SortFunc(report.Platform, func(a, b Workload) int {
+		return cmp.Or(strings.Compare(a.Namespace, b.Namespace), strings.Compare(a.Name, b.Name),
+			strings.Compare(string(a.Kind), string(b.Kind)))
+	})
 
 	if metricsUnavailable {
 		report.Notes = append(report.Notes,
@@ -311,6 +337,9 @@ func (s *Scanner) ScanCluster(ctx context.Context, opts ClusterOptions) (*Cluste
 	problemNotes, incomplete := problemNotes(problems, opts.NamedNamespaces)
 	report.Notes = append(report.Notes, problemNotes...)
 	report.Incomplete = incomplete
+	if len(report.Platform) > 0 {
+		report.Notes = append(report.Notes, platformNote(report.Platform))
+	}
 	if report.History != nil && !since.IsZero() {
 		report.History.Since = since
 		report.History.Hours = opts.Now().Sub(since).Hours()
@@ -320,6 +349,13 @@ func (s *Scanner) ScanCluster(ctx context.Context, opts ClusterOptions) (*Cluste
 			report.Notes = append(report.Notes, fmt.Sprintf("Prometheus keeps %s of history, so the replay covers that, not the %s asked for",
 				duration(covered), duration(opts.Window)))
 		}
+	}
+	if len(historyOutOfTime) > 0 {
+		report.Notes = append(report.Notes, fmt.Sprintf("the scan ran out of the time it gives CPU history, shared "+
+			"by reading the API server and querying Prometheus, before it had read the history of %s, so "+
+			"workloads there are judged from CPU right now: %s. A longer --timeout gives history more time; "+
+			"--window 0 skips it and judges every namespace from CPU right now",
+			plural(len(historyOutOfTime), "namespace", "namespaces"), listSome(historyOutOfTime)))
 	}
 	if opts.History != nil {
 		if note := opts.History.mixedSourcesNote(); note != "" {
@@ -408,13 +444,24 @@ func measured(mw *v1alpha1.ManagedWorkload, hourlyCost float64, now time.Time) *
 	return m
 }
 
-// SavedThisMonth reads what Hybernate records it has saved this month
-// pausing a live workload.
-func SavedThisMonth(mw *v1alpha1.ManagedWorkload) float64 {
-	if mw == nil || mw.Spec.DryRun || mw.Status.Cost == nil {
+// SavedThisMonth reads what Hybernate records it has saved this calendar
+// month pausing a workload. The operator starts a new month's total at its
+// first reconcile in that month, so until then the record is last month's,
+// which saved nothing this month. A workload put back in dry-run keeps what
+// it saved while live: dry-run never pauses, so it adds nothing to the
+// record.
+func SavedThisMonth(mw *v1alpha1.ManagedWorkload, now time.Time) float64 {
+	if mw == nil || mw.Status.Cost == nil {
 		return 0
 	}
-	saved, err := strconv.ParseFloat(strings.TrimPrefix(mw.Status.Cost.SavedThisMonth, "$"), 64)
+	c := mw.Status.Cost
+	if c.LastAccumulatedAt != nil {
+		last, now := c.LastAccumulatedAt.UTC(), now.UTC()
+		if last.Year() != now.Year() || last.Month() != now.Month() {
+			return 0
+		}
+	}
+	saved, err := strconv.ParseFloat(strings.TrimPrefix(c.SavedThisMonth, "$"), 64)
 	if err != nil {
 		return 0
 	}
@@ -579,6 +626,7 @@ func totals(workloads []Workload) Totals {
 	var t Totals
 	for _, w := range workloads {
 		t.Workloads++
+		t.SavedThisMonth += w.SavedThisMonth
 		switch {
 		case w.Measured != nil:
 			t.DryRun++
@@ -588,9 +636,9 @@ func totals(workloads []Workload) Totals {
 			t.Measured.MonthlyFreed += w.Measured.MonthlyFreed
 		case w.Managed && !w.DryRun:
 			t.Live++
-			t.SavedThisMonth += w.SavedThisMonth
 		}
-		replayed := w.History != nil && !w.Managed && !w.Protected
+		judged := w.State != StateUnknown
+		replayed := w.History != nil && !w.Managed && !w.Protected && judged
 		if h := w.History; replayed {
 			t.Replayed.Workloads++
 			if h.SleepHours > 0 {
@@ -611,9 +659,10 @@ func totals(workloads []Workload) Totals {
 			continue
 		}
 		t.MonthlyCost += w.MonthlyCost
-		if replayed {
+		switch {
+		case replayed:
 			t.SavingsBasis += w.History.MonthlyCost
-		} else {
+		case judged:
 			t.SavingsBasis += w.MonthlyCost
 		}
 		if w.State == StateIdle {

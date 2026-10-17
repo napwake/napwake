@@ -27,6 +27,7 @@ import (
 	"io"
 	"maps"
 	"math"
+	"net"
 	"net/http"
 	"net/url"
 	"os"
@@ -38,6 +39,7 @@ import (
 
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/rest"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 )
@@ -419,7 +421,7 @@ func (p *Prometheus) Check(ctx context.Context) error {
 	ctx, cancel := context.WithTimeout(ctx, prometheusTimeout)
 	defer cancel()
 	body, err := p.get(ctx, "api/v1/query", url.Values{"query": {"vector(1)"}})
-	if apierrors.IsForbidden(err) && p.proxied != nil {
+	if p.proxied != nil && proxyDenied(err) {
 		forbidden := *p.proxied
 		return &forbidden
 	}
@@ -431,6 +433,38 @@ func (p *Prometheus) Check(ctx context.Context) error {
 		return fmt.Errorf("%s didn't answer like a Prometheus API", p.Source)
 	}
 	return nil
+}
+
+// proxyDenied says the API server refused the user the service proxy, as
+// opposed to passing on a 403 from behind it, such as a kube-rbac-proxy in
+// front of Prometheus: the API server's own refusal is a Status it writes,
+// where a backend's body reaches the client as an unexpected response.
+func proxyDenied(err error) bool {
+	if !apierrors.IsForbidden(err) {
+		return false
+	}
+	var status apierrors.APIStatus
+	if !errors.As(err, &status) {
+		return false
+	}
+	if d := status.Status().Details; d != nil {
+		for _, cause := range d.Causes {
+			if cause.Type == metav1.CauseTypeUnexpectedServerResponse {
+				return false
+			}
+		}
+	}
+	return true
+}
+
+// isTimeout says a query ran out of time: its deadline passed, the HTTP
+// client gave up, or the API server's proxy timed out waiting on it.
+func isTimeout(err error) bool {
+	if errors.Is(err, context.DeadlineExceeded) || apierrors.IsTimeout(err) {
+		return true
+	}
+	netErr, ok := errors.AsType[net.Error](err)
+	return ok && netErr.Timeout()
 }
 
 // containerCPU is the CPU one container of one pod used at each step, in

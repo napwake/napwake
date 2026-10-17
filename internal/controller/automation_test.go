@@ -25,6 +25,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/prometheus/client_golang/prometheus/testutil"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"k8s.io/apimachinery/pkg/api/meta"
@@ -54,6 +55,7 @@ type stubForecaster struct {
 	anomalyDetected  bool
 	state            string
 	exportErr        error
+	exportCalls      int
 	settings         forecast.Settings
 }
 
@@ -75,7 +77,10 @@ func (f *stubForecaster) Predict(h int, _ time.Time) float64 {
 	}
 	return f.predictValue
 }
-func (f *stubForecaster) Export() (string, error)              { return f.state, f.exportErr }
+func (f *stubForecaster) Export() (string, error) {
+	f.exportCalls++
+	return f.state, f.exportErr
+}
 func (f *stubForecaster) Configure(settings forecast.Settings) { f.settings = settings }
 func (f *stubForecaster) GetPhase() forecast.Phase             { return f.phase }
 func (f *stubForecaster) DailyConfidence() int                 { return f.dailyConfidence }
@@ -87,6 +92,7 @@ func (f *stubForecaster) AnomalyDetected() bool                { return f.anomal
 type stubMetrics struct {
 	cpuMillis        float64
 	cpuPerReplica    float64
+	noCPURequests    bool
 	memoryPerReplica float64
 	replicas         int32
 	pvcBytes         float64
@@ -97,8 +103,16 @@ func (m *stubMetrics) WorkloadCPUMillis(_ context.Context, _ *v1alpha1.ManagedWo
 	return m.cpuMillis, m.err
 }
 
+// CPURequestPerReplica is 100m unless cpuPerReplica says otherwise, so that
+// with one replica a utilization reads as the millicores used.
 func (m *stubMetrics) CPURequestPerReplica(_ context.Context, _ *v1alpha1.ManagedWorkload) (float64, error) {
-	return m.cpuPerReplica, m.err
+	if m.noCPURequests {
+		return 0, m.err
+	}
+	if m.cpuPerReplica > 0 {
+		return m.cpuPerReplica, m.err
+	}
+	return 100, m.err
 }
 
 func (m *stubMetrics) PodRequestsPerReplica(_ context.Context, _ *v1alpha1.ManagedWorkload) (cpuMillis, memBytes float64, err error) {
@@ -334,6 +348,44 @@ func TestAutomation_WarmUpAfterAWakeIsNotDemand(t *testing.T) {
 	assert.Equal(t, []float64{5}, engine.observed)
 }
 
+// An awake workload seen in use counts as busy as a request waking it
+// would: at least twice the activity threshold. Its own clock restarts,
+// and anything seen while it starts up, don't.
+func TestAwakeDemand(t *testing.T) {
+	woke := fixedTime.Add(5 * time.Minute)
+	now := fixedTime.Add(30 * time.Minute)
+	tests := []struct {
+		name    string
+		percent float64
+		source  v1alpha1.ActivitySource
+		at      time.Time
+		want    float64
+	}{
+		{name: "light use, nothing else seen", percent: 3, source: v1alpha1.ActivitySourceWoke, at: woke, want: 3},
+		{name: "an activity annotation since warming up", percent: 3,
+			source: v1alpha1.ActivitySourceAnnotation, at: now.Add(-time.Minute), want: 20},
+		{name: "a Prometheus query since warming up", percent: 3,
+			source: v1alpha1.ActivitySourcePrometheus, at: now.Add(-time.Minute), want: 20},
+		{name: "CPU above the threshold", percent: 12, source: v1alpha1.ActivitySourceWoke, at: woke, want: 20},
+		{name: "busier than twice the threshold", percent: 45, source: v1alpha1.ActivitySourceCPU, at: now, want: 45},
+		{name: "activity while starting up", percent: 3,
+			source: v1alpha1.ActivitySourceCPU, at: woke.Add(time.Minute), want: 3},
+		{name: "activity in an earlier hour", percent: 3,
+			source: v1alpha1.ActivitySourceAnnotation, at: fixedTime.Add(-time.Minute), want: 3},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			workload := automationWorkload(v1alpha1.PhaseRunning)
+			workload.Status.LastActedAt = ptr.To(metav1.NewTime(woke))
+			workload.Status.Activity = &v1alpha1.ActivityStatus{LastActivityTime: metav1.NewTime(tt.at), LastActivitySource: tt.source}
+			r := newAutomationReconciler(t, workload, &stubForecaster{}, automationOpts{})
+			r.clock = func() time.Time { return now }
+
+			assert.InDelta(t, tt.want, r.awakeDemand(workload, tt.percent), 1e-9)
+		})
+	}
+}
+
 // An hour is fed only if it was seen from start to end. Partway through an
 // operator restart, its busiest minutes may have gone unseen, and the
 // forecast would learn a busy hour as a quiet one.
@@ -473,6 +525,26 @@ func TestAutomation_ZeroReplicasFeedsZeroDemand(t *testing.T) {
 	assert.Equal(t, metav1.ConditionTrue, cond.Status)
 }
 
+// Scaled to zero by something else, KEDA or kubectl scale, a target's pods
+// report usage for the seconds they take to terminate. That's an idle
+// target, not one whose containers request no CPU.
+func TestAutomation_ZeroReplicasStillTerminatingIsIdle(t *testing.T) {
+	workload := automationWorkload(v1alpha1.PhaseRunning)
+	engine := &stubForecaster{phase: forecast.Observing}
+	r := newAutomationReconciler(t, workload, engine, automationOpts{})
+	r.metrics = &zeroReplicaMetrics{stubMetrics{cpuMillis: 50}}
+
+	_, err := r.reconcileAutomation(context.Background(), workload, nil)
+	require.NoError(t, err)
+
+	cond := metricsCondition(workload)
+	require.NotNil(t, cond)
+	assert.Equal(t, metav1.ConditionTrue, cond.Status, cond.Message)
+	recorder, ok := r.Recorder.(*events.FakeRecorder)
+	require.True(t, ok)
+	assert.Empty(t, recorder.Events)
+}
+
 func TestAutomation_MetricsConditionRecovers(t *testing.T) {
 	workload := automationWorkload(v1alpha1.PhaseRunning)
 	engine := &stubForecaster{phase: forecast.Observing}
@@ -504,8 +576,28 @@ func pausedForecastWorkload() *v1alpha1.ManagedWorkload {
 
 // Behind the doorman a request would wake the workload, so an hour spent
 // paused is an hour nobody asked for it, and an hour a request woke it in
-// is busy, however little it went on to use: at least twice the activity
-// threshold of what it requested, 2 x 10% of 100m.
+// is busy, however little it went on to use: twice the activity threshold,
+// 2 x 10%, of the CPU requested.
+// A paused workload has gone without activity since before its pause, and
+// the gauge keeps counting, rather than standing at the value it had when
+// the workload paused.
+func TestPausedWorkload_IdleSecondsKeepCounting(t *testing.T) {
+	workload := pausedForecastWorkload()
+	workload.Name = "idle-gauge-app"
+	workload.Status.Activity = &v1alpha1.ActivityStatus{LastActivityTime: metav1.NewTime(fixedTime.Add(-2 * time.Hour))}
+	r := newAutomationReconciler(t, workload, &stubForecaster{}, automationOpts{})
+	t.Cleanup(func() { opmetrics.DeleteWorkload(workload.Namespace, workload.Name) })
+	gauge := opmetrics.IdleSeconds.WithLabelValues(workload.Namespace, workload.Name)
+
+	for _, now := range []time.Time{fixedTime, fixedTime.Add(5 * time.Minute)} {
+		r.clock = func() time.Time { return now }
+		_, err := r.reconcileAutomation(context.Background(), workload, nil)
+		require.NoError(t, err)
+
+		assert.InDelta(t, now.Sub(fixedTime.Add(-2*time.Hour)).Seconds(), testutil.ToFloat64(gauge), 0.001)
+	}
+}
+
 func TestPausedHour_DemandBehindTheDoorman(t *testing.T) {
 	tests := []struct {
 		name   string
@@ -547,7 +639,7 @@ func TestPausedHour_DemandBehindTheDoorman(t *testing.T) {
 // Pre-waking starts before a predicted busy hour, so the workload is Ready
 // when people arrive rather than starting as they do.
 func TestAutoResume_WakesAheadOfPredictedDemand(t *testing.T) {
-	busy, quiet := 50.0, 1.0 // millicores of the 100m requested: 50% and 1%
+	busy, quiet := 50.0, 1.0 // percent of the CPU requested
 	tests := []struct {
 		name       string
 		at         time.Time
@@ -624,20 +716,18 @@ type lifecycleEvent struct {
 	reason string
 }
 
-// TestAutoResume_LearnsToWakeBeforePeopleArrive runs a workload behind the
-// doorman through six weeks of office hours, reconciled as the operator
-// would: at the requeue each reconcile asks for, and when a request stamped
-// by the doorman wakes it. At first people wake it themselves at 09:10.
-// Once the forecast has learned the day, autoResume has it awake before
-// 09:00, and the veto doesn't keep it awake into the evening.
-func TestAutoResume_LearnsToWakeBeforePeopleArrive(t *testing.T) {
-	if testing.Short() {
-		t.Skip("simulates six weeks of reconciles")
-	}
+// doormanDays runs a workload behind the doorman for days from monday,
+// reconciled as the operator would: at the requeue each reconcile asks for,
+// and when a request stamped by the doorman wakes it. use sets what it's
+// doing at each reconcile, and reports whether people are using it, in
+// which case a request reaches it while it's paused. It returns the
+// workload's wakes and pauses.
+func doormanDays(t *testing.T, monday time.Time, days int, policy v1alpha1.IdlePolicySpec,
+	use func(now time.Time, workload *v1alpha1.ManagedWorkload, metrics *stubMetrics) bool) []lifecycleEvent {
+	t.Helper()
 	ctx := context.Background()
-	monday := time.Date(2026, 3, 16, 0, 0, 0, 0, time.UTC)
 	workload := forecastWorkload()
-	workload.Spec.IdlePolicy = &v1alpha1.IdlePolicySpec{AutoResume: true}
+	workload.Spec.IdlePolicy = &policy
 	workload.Status.Activity = nil
 	meta.SetStatusCondition(&workload.Status.Conditions, metav1.Condition{
 		Type: conditionWakeOnRequest, Status: metav1.ConditionTrue, Reason: "DoormanRouted"})
@@ -651,16 +741,13 @@ func TestAutoResume_LearnsToWakeBeforePeopleArrive(t *testing.T) {
 	target := clockTarget("app:v1", nil)
 
 	var history []lifecycleEvent
-	for end := monday.AddDate(0, 0, 42); fr.now.Before(end); {
+	for end := monday.AddDate(0, 0, days); fr.now.Before(end); {
 		require.NoError(t, fr.Get(ctx, client.ObjectKeyFromObject(workload), workload))
 		paused := workload.Status.Phase == v1alpha1.PhasePaused
 		metrics.cpuMillis = 5
-		if officeDay(fr.now) {
-			metrics.cpuMillis = 400
-			if paused {
-				workload.Annotations = map[string]string{v1alpha1.AnnotationLastRequest: fr.now.Format(time.RFC3339)}
-				require.NoError(t, fr.Update(ctx, workload))
-			}
+		if use(fr.now, workload, metrics) && paused {
+			workload.Annotations = map[string]string{v1alpha1.AnnotationLastRequest: fr.now.Format(time.RFC3339)}
+			require.NoError(t, fr.Update(ctx, workload))
 		}
 		if woke := workload.Status.LastActedAt; !paused && woke != nil && fr.now.Sub(woke.Time) < 3*time.Minute {
 			metrics.cpuMillis = 800
@@ -686,6 +773,37 @@ func TestAutoResume_LearnsToWakeBeforePeopleArrive(t *testing.T) {
 		}
 		fr.now = next
 	}
+	return history
+}
+
+func eventsOn(history []lifecycleEvent, day time.Time) []lifecycleEvent {
+	var got []lifecycleEvent
+	for _, e := range history {
+		if !e.at.Before(day) && e.at.Before(day.AddDate(0, 0, 1)) {
+			got = append(got, e)
+		}
+	}
+	return got
+}
+
+// TestAutoResume_LearnsToWakeBeforePeopleArrive runs a workload behind the
+// doorman through six weeks of office hours. At first people wake it
+// themselves at 09:10. Once the forecast has learned the day, autoResume
+// has it awake before 09:00, and the veto doesn't keep it awake into the
+// evening.
+func TestAutoResume_LearnsToWakeBeforePeopleArrive(t *testing.T) {
+	if testing.Short() {
+		t.Skip("simulates six weeks of reconciles")
+	}
+	monday := time.Date(2026, 3, 16, 0, 0, 0, 0, time.UTC)
+	history := doormanDays(t, monday, 42, v1alpha1.IdlePolicySpec{AutoResume: true},
+		func(now time.Time, _ *v1alpha1.ManagedWorkload, metrics *stubMetrics) bool {
+			if !officeDay(now) {
+				return false
+			}
+			metrics.cpuMillis = 400
+			return true
+		})
 
 	for _, e := range history {
 		if e.reason == ReasonAutoResume {
@@ -693,16 +811,7 @@ func TestAutoResume_LearnsToWakeBeforePeopleArrive(t *testing.T) {
 			break
 		}
 	}
-	day := func(d int) []lifecycleEvent {
-		from := monday.AddDate(0, 0, d)
-		var got []lifecycleEvent
-		for _, e := range history {
-			if !e.at.Before(from) && e.at.Before(from.AddDate(0, 0, 1)) {
-				got = append(got, e)
-			}
-		}
-		return got
-	}
+	day := func(d int) []lifecycleEvent { return eventsOn(history, monday.AddDate(0, 0, d)) }
 	at := func(d int, clock time.Duration) time.Time { return monday.AddDate(0, 0, d).Add(clock) }
 
 	assert.Equal(t, []lifecycleEvent{
@@ -722,4 +831,34 @@ func TestAutoResume_LearnsToWakeBeforePeopleArrive(t *testing.T) {
 	}
 	assert.Empty(t, day(40), "Saturday is left asleep")
 	assert.Empty(t, day(41), "and Sunday")
+}
+
+// A light-use workload, used at 3% of its request while people are on it,
+// is busy to the forecast whether a request wakes it or autoResume had it
+// ready and its use is seen another way, here an activity annotation its
+// portal stamps. Taught its own 3% when autoResume had it ready, and twice
+// the threshold when a request woke it, the forecast was confident only
+// every other day, and autoResume had it ready only every other morning.
+func TestAutoResume_LightUseIsReadyEveryMorning(t *testing.T) {
+	if testing.Short() {
+		t.Skip("simulates six weeks of reconciles")
+	}
+	monday := time.Date(2026, 3, 16, 0, 0, 0, 0, time.UTC)
+	history := doormanDays(t, monday, 42, v1alpha1.IdlePolicySpec{AutoResume: true},
+		func(now time.Time, workload *v1alpha1.ManagedWorkload, metrics *stubMetrics) bool {
+			if !officeDay(now) {
+				return false
+			}
+			metrics.cpuMillis = 30
+			if workload.Status.Phase != v1alpha1.PhasePaused {
+				workload.Annotations = map[string]string{v1alpha1.AnnotationLastActivity: now.Format(time.RFC3339)}
+			}
+			return true
+		})
+
+	for d := 35; d < 40; d++ {
+		got := eventsOn(history, monday.AddDate(0, 0, d))
+		require.NotEmpty(t, got, "day %d", d)
+		assert.Equal(t, ReasonAutoResume, got[0].reason, "%s: woken ahead of people, got %v", got[0].at.Weekday(), got)
+	}
 }

@@ -102,6 +102,54 @@ func TestReconcile_ProtectedNamespaceFinishesAnInterruptedTransition(t *testing.
 	}
 }
 
+// The operator's and the doorman's own Deployments are never paused, even
+// by a ManagedWorkload written by hand in a Hybernate namespace labelled to
+// allow it, and one paused already is handed back.
+func TestReconcile_HybernateItselfIsNeverPaused(t *testing.T) {
+	allowed := defaultNamespace(map[string]string{v1alpha1.LabelAllowProtected: v1alpha1.True})
+	tests := []struct {
+		name       string
+		label      string
+		namespaces []string
+		phase      v1alpha1.WorkloadPhase
+		protected  bool
+	}{
+		{name: "the operator, pause requested", label: "controller-manager", namespaces: []string{"default"},
+			phase: v1alpha1.PhaseRunning, protected: true},
+		{name: "the doorman, paused", label: "doorman", namespaces: []string{"default"},
+			phase: v1alpha1.PhasePaused, protected: true},
+		{name: "the label outside Hybernate's namespaces", label: "doorman", namespaces: []string{"hybernate-system"},
+			phase: v1alpha1.PhaseRunning},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			workload := withPauseRequested(depWorkload("default", "api", v1alpha1.TargetKindDeployment, tt.phase))
+			target := targetDeploymentWithReplicas("api", "default", 2)
+			if tt.phase == v1alpha1.PhasePaused {
+				workload.Status.Pause = &v1alpha1.PauseStatus{PreviousReplicas: 2}
+				target = targetDeploymentWithReplicas("api", "default", 0)
+			}
+			target.Labels = map[string]string{controlPlaneLabel: tt.label}
+			pauser := &stubPauser{pauseDone: true}
+			r := depReconciler(t, pauser, workload, allowed, target)
+			r.HybernateNamespaces = tt.namespaces
+
+			_, err := r.Reconcile(context.Background(), reconcileFor("api"))
+			require.NoError(t, err)
+
+			got := fetch(t, r, "api")
+			assert.Equal(t, tt.protected, meta.IsStatusConditionTrue(got.Status.Conditions, conditionProtected))
+			if !tt.protected {
+				return
+			}
+			assert.Zero(t, pauser.pauseCalls, "never paused")
+			assert.Equal(t, v1alpha1.PhaseRunning, got.Status.Phase)
+			assert.Nil(t, got.Status.Pause)
+			assert.Equal(t, "HybernateComponent", meta.FindStatusCondition(got.Status.Conditions, conditionProtected).Reason)
+		})
+	}
+}
+
 func TestReconcile_UnprotectedClearsTheCondition(t *testing.T) {
 	workload := depWorkload("default", "api", v1alpha1.TargetKindDeployment, v1alpha1.PhaseRunning)
 	meta.SetStatusCondition(&workload.Status.Conditions, metav1.Condition{Type: conditionProtected,

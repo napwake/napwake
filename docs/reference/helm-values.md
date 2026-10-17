@@ -22,7 +22,7 @@ The chart validates values against its schema (`values.schema.json`), so a misty
 | `nameOverride` | `""` | Replaces the chart name in resource names |
 | `fullnameOverride` | `""` | Replaces the full name the chart's resources are named after |
 
-The full name is the release name when it contains `hybernate`, and `<release>-hybernate` otherwise. For a release named `hybernate`, the operator Deployment and ServiceAccount are `hybernate`, and the doorman's are `hybernate-doorman`. The operator's pods are labelled `app.kubernetes.io/name: hybernate`, `app.kubernetes.io/instance: <release>` and `control-plane: controller-manager`; the doorman's the same, with `control-plane: doorman`.
+The full name is the release name when it contains `hybernate`, and `<release>-hybernate` otherwise, cut to 40 characters, so that every name built from it, the longest being `<fullname>-doorman-auth-delegator`, fits in 63. For a release named `hybernate`, the operator Deployment and ServiceAccount are `hybernate`, and the doorman's are `hybernate-doorman`. The operator's pods are labelled `app.kubernetes.io/name: hybernate`, `app.kubernetes.io/instance: <release>` and `control-plane: controller-manager`; the doorman's the same, with `control-plane: doorman`.
 
 ## Image
 
@@ -39,7 +39,7 @@ The full name is the release name when it contains `hybernate`, and `<release>-h
 |-------|---------|-------------|
 | `crds.install` | `true` | Install the ManagedWorkload CRD, and upgrade it with each `helm upgrade` |
 
-The CRD is a chart template with `helm.sh/resource-policy: keep`, so `helm uninstall` leaves it, and every ManagedWorkload, in place: deleting the CRD would delete them all. Set `crds.install: false` only if you manage the CRD yourself, for example from `config/crd` in the repository.
+The CRD is a chart template with `helm.sh/resource-policy: keep`, so `helm uninstall` leaves it, and every ManagedWorkload, in place: deleting the CRD would delete them all. Argo CD ignores that policy, so the CRD also carries `argocd.argoproj.io/sync-options: Delete=false`, and deleting or pruning the Application leaves it too. Set `crds.install: false` only if you manage the CRD yourself, for example from `config/crd` in the repository.
 
 ## Operator
 
@@ -68,7 +68,7 @@ The operator caches the cluster's Deployments, StatefulSets, Services, PVCs, HPA
 | Value | Default | Description |
 |-------|---------|-------------|
 | `watchNamespaces` | `[]` | Namespaces Hybernate works in. Empty means every namespace. Set, Hybernate gets a Role in each of them instead of a ClusterRole, so Kubernetes itself refuses it anything elsewhere; see [RBAC](#rbac). Passed as `--watch-namespaces`, to the doorman too |
-| `protectedNamespaces` | `[]` | Name patterns, such as `prod-*`, of namespaces Hybernate never manages, as if labelled `hybernate.io/protected=true`, unless one is labelled `hybernate.io/allow-protected=true`. See [Protected namespaces](../guides/opt-in.md#protected-namespaces). Passed as `--protected-namespaces` |
+| `protectedNamespaces` | `[]` | Name patterns, such as `prod-*`, of namespaces Hybernate never manages, as if labelled `hybernate.io/protected=true`, unless one is labelled `hybernate.io/allow-protected=true`. `kube-*`, and the operator's and the doorman's namespace, are always protected, besides these, with the same exception. See [Protected namespaces](../guides/opt-in.md#protected-namespaces). Passed as `--protected-namespaces` |
 
 ```yaml title="values.yaml"
 watchNamespaces: [preview-1, preview-2, staging]
@@ -98,7 +98,7 @@ Settings for workloads opted in with the `hybernate.io/managed` label, used when
 | Value | Default | Description |
 |-------|---------|-------------|
 | `metrics.enabled` | `true` | Expose Prometheus metrics, from the operator and the doorman |
-| `metrics.port` | `8443` | Metrics endpoint port |
+| `metrics.port` | `8443` | Metrics endpoint port, for the operator and the doorman. Not 8081, the health probes' port, nor 20000-29999, where the doorman listens for paused workloads' traffic |
 | `metrics.secure` | `true` | Serve metrics over HTTPS, only to callers allowed to `get` `/metrics`. `false` serves plain HTTP to anyone who can reach the port |
 | `metrics.readerSubjects` | `[]` | Subjects, such as your Prometheus's ServiceAccount, to bind to the `<fullname>-metrics-reader` ClusterRole, which may get `/metrics` |
 
@@ -120,14 +120,16 @@ It also creates ClusterRoleBindings to `system:auth-delegator` for the operator 
 |-------|---------|-------------|
 | `metrics.serviceMonitor.enabled` | `false` | Create Prometheus Operator ServiceMonitors for the operator and the doorman |
 | `metrics.serviceMonitor.interval` | `30s` | Scrape interval |
-| `metrics.serviceMonitor.additionalLabels` | `{}` | Extra labels on the ServiceMonitors |
+| `metrics.serviceMonitor.additionalLabels` | `{}` | Extra labels on the ServiceMonitors. Your Prometheus picks them up only if these match its `serviceMonitorSelector`: kube-prometheus-stack needs `release: <its release name>` |
+
+The ServiceMonitors set `honorLabels: true`, so the metrics keep the workload's `namespace` label. kube-prometheus-stack's Prometheus runs as the `<its release name>-kube-prometheus-prometheus` ServiceAccount, the subject for `metrics.readerSubjects`. See [Monitoring](../operations/monitoring.md#scraping).
 
 ### PrometheusRule
 
 | Value | Default | Description |
 |-------|---------|-------------|
 | `metrics.prometheusRule.enabled` | `false` | Create a PrometheusRule with the alerts in [Monitoring](../operations/monitoring.md#alerting-rules) |
-| `metrics.prometheusRule.additionalLabels` | `{}` | Extra labels on the PrometheusRule |
+| `metrics.prometheusRule.additionalLabels` | `{}` | Extra labels on the PrometheusRule. Your Prometheus loads it only if these match its `ruleSelector`: kube-prometheus-stack needs `release: <its release name>` |
 
 ## Doorman
 
@@ -137,18 +139,23 @@ The doorman holds requests to paused workloads and wakes them. See [Wake on Requ
 |-------|---------|-------------|
 | `doorman.enabled` | `true` | Deploy the doorman. When `false`, requests to paused workloads fail |
 | `doorman.replicaCount` | `2` | Doorman replicas. Every replica serves traffic |
-| `doorman.healthCheckUserAgents` | `[]` | `User-Agent` prefixes of health checkers and scrapers whose `GET` and `HEAD` requests don't wake a paused workload, besides the built-in ones, such as `["MyCorpMonitor/"]`. See [What wakes a workload](../concepts/wake-on-request.md#what-wakes-a-workload-and-what-doesnt) |
+| `doorman.healthCheckUserAgents` | `[]` | `User-Agent` prefixes, or names that follow `(compatible; ` in a browser-style one, of health checkers and scrapers whose `GET` and `HEAD` requests don't wake a paused workload, besides the built-in ones (`kube-probe`, Prometheus, load balancers' checks, `Blackbox Exporter/`, `Datadog/Synthetics`, `Amazon-Route53-Health-Check-Service`, `GoogleStackdriverMonitoring-UptimeChecks`, `UptimeRobot`, `Pingdom.com_bot`, `NewRelicPinger/`, `Uptime-Kuma/`, `Gatus/` and others), such as `["MyCorpMonitor/"]`. See [What wakes a workload](../concepts/wake-on-request.md#what-wakes-a-workload-and-what-doesnt) |
+| `doorman.admissionPolicy.enabled` | `true` | A ValidatingAdmissionPolicy that lets the doorman's ServiceAccount change only the `hybernate.io/last-request` and `hybernate.io/last-request-from` annotations on ManagedWorkloads, though its role may patch them. See [Security](security.md#the-doorman-is-a-way-in-to-paused-workloads) |
 | `doorman.podDisruptionBudget.enabled` | `true` | A PodDisruptionBudget keeping one doorman serving through node drains, when `replicaCount` is above 1 |
 | `doorman.nodeSelector` | `{}` | Node selector; empty uses the operator's `nodeSelector` |
 | `doorman.tolerations` | `[]` | Tolerations; empty uses the operator's `tolerations` |
 | `doorman.affinity` | `{}` | Affinity; empty uses the operator's `affinity` |
 | `doorman.topologySpreadConstraints` | `[]` | Topology spread; empty spreads the replicas across nodes and zones where it can |
+| `doorman.podAnnotations` | `{}` | Pod annotations; empty uses the operator's `podAnnotations` |
+| `doorman.podLabels` | `{}` | Pod labels; empty uses the operator's `podLabels` |
+| `doorman.priorityClassName` | `""` | PriorityClass; empty uses the operator's `priorityClassName` |
+| `doorman.extraEnv` | `[]` | Extra environment variables for the doorman. The operator's `extraEnv` doesn't apply to it |
 | `doorman.resources.requests.cpu` | `10m` | CPU request |
 | `doorman.resources.requests.memory` | `64Mi` | Memory request |
 | `doorman.resources.limits.cpu` | `500m` | CPU limit |
 | `doorman.resources.limits.memory` | `256Mi` | Memory limit |
 
-The doorman uses the operator image, the `metrics.*` settings, `logLevel` and `logEncoder`. It caches ManagedWorkloads and the EndpointSlices the EndpointSlice controller writes in the watched namespaces, cut down to what it reads: about 300 bytes per pod and 700 per Service. Held connections take up to 72Mi more under a flood. The default 256Mi limit covers a cluster of some 100,000 pods; raise it beyond that. On Kubernetes 1.30 and later it sleeps 5 seconds before shutting down, so kube-proxy and load balancers stop sending it new connections first.
+The doorman uses the operator image, the `metrics.*` settings, `logLevel` and `logEncoder`. It caches ManagedWorkloads and the EndpointSlices the EndpointSlice controller writes in the watched namespaces, cut down to what it reads: about 300 bytes per pod and 700 per Service. Held connections take up to 72Mi more under a flood. The default 256Mi limit covers a cluster of some 100,000 pods; raise it beyond that. On Kubernetes 1.30 and later it sleeps 5 seconds before shutting down, so kube-proxy and load balancers stop sending it new connections first. A rollout waits 5 seconds after a new doorman pod is Ready (`minReadySeconds`) before stopping an old one, so the operator has moved paused workloads' routes to it.
 
 ## Network Policy
 
@@ -165,6 +172,8 @@ When enabled, the operator's and the doorman's metrics port admits only namespac
 
 The doorman's egress policy is separate from `networkPolicy.enabled`, and needs a CNI that enforces egress policies. The doorman needs no DNS: it reaches the API server by address, and pods by their endpoint addresses. If a routed workload uses `hostNetwork`, add your node CIDRs to `podCIDRs`.
 
+On Cilium, a NetworkPolicy `ipBlock` may not match the API server, which Cilium identifies as the `kube-apiserver` entity rather than by address, so the egress policy can cut the doorman off from it: its pods then fail readiness and log API errors. Leave `doorman.networkPolicy.egress.enabled` off there, and write a CiliumNetworkPolicy instead that allows egress `toEntities: [kube-apiserver]` and `toCIDR` your pod CIDRs.
+
 ## Service Account
 
 | Value | Default | Description |
@@ -174,6 +183,18 @@ The doorman's egress policy is separate from `networkPolicy.enabled`, and needs 
 
 The doorman always gets its own ServiceAccount, `<fullname>-doorman`.
 
+## Uninstall Guard
+
+| Value | Default | Description |
+|-------|---------|-------------|
+| `uninstallGuard.enabled` | `true` | Refuse `helm uninstall` while ManagedWorkloads are left, through a pre-delete hook Job |
+| `uninstallGuard.image.repository` | `registry.k8s.io/kubectl` | The hook's image, which needs only `kubectl` |
+| `uninstallGuard.image.tag` | `v1.35.9` | Its tag |
+| `uninstallGuard.image.digest` | the tag's digest | Pins the image; empty pulls by tag |
+| `uninstallGuard.resources` | 10m/32Mi requests, 100m/64Mi limits | The hook containers' resources |
+
+Without the operator, a ManagedWorkload's finalizer never runs: its workload stays paused at 0 replicas, and its Services keep routing to the deleted doorman. The `<fullname>-uninstall-guard` Job lists the ManagedWorkloads left and fails, which stops `helm uninstall` before it removes anything, after waiting two and a half minutes for any being deleted. It runs as the `<fullname>-uninstall-guard` ServiceAccount, which may only read ManagedWorkloads, cluster-wide or, with `watchNamespaces`, in those namespaces, and uses the operator's `nodeSelector`, `tolerations`, `affinity` and `imagePullSecrets`. `helm uninstall --no-hooks` skips it. Argo CD 3.3 and later runs it as a PreDelete hook, so deleting the Application is blocked the same way; earlier versions skip it. Its pod has its own `control-plane: uninstall-guard` label, so the operator's Service and NetworkPolicy don't select it. See [Uninstall](../getting-started/installation.md#uninstall).
+
 ## Pod Scheduling
 
 | Value | Default | Description |
@@ -181,6 +202,10 @@ The doorman always gets its own ServiceAccount, `<fullname>-doorman`.
 | `nodeSelector` | `{}` | Node selector constraints, for the operator, and for the doorman unless `doorman.nodeSelector` is set |
 | `tolerations` | `[]` | Pod tolerations, likewise |
 | `affinity` | `{}` | Pod affinity/anti-affinity rules, likewise |
+| `podAnnotations` | `{}` | Pod annotations, likewise |
+| `podLabels` | `{}` | Pod labels, likewise. They can't replace the labels the chart selects pods by |
+| `priorityClassName` | `""` | PriorityClass, likewise. A paused workload's requests wait on the doorman and the operator, so on a cluster that preempts, give them a class above the workloads they wake |
+| `extraEnv` | `[]` | Extra environment variables for the operator, as container `env` entries, such as `GOMAXPROCS` |
 
 ## Security
 
@@ -224,7 +249,7 @@ By default the chart creates a ClusterRole, `<fullname>-manager`, with permissio
 - Create Events for user-facing status updates
 - Read Services, and manage the EndpointSlices that route paused workloads to the doorman
 
-The doorman has its own ServiceAccount and ClusterRole, `<fullname>-doorman`: it reads ManagedWorkloads and EndpointSlices, patches ManagedWorkloads to wake them, and creates Events.
+The doorman has its own ServiceAccount and ClusterRole, `<fullname>-doorman`: it reads ManagedWorkloads and EndpointSlices, patches ManagedWorkloads to wake them, and creates Events. With `doorman.admissionPolicy.enabled`, those patches may only set the two annotations that record a request.
 
 With `watchNamespaces` set, both get a Role and RoleBinding in each of those namespaces instead. The operator keeps one ClusterRole, to read Namespaces and Nodes, which only a ClusterRole can grant, and gets a `<fullname>-doorman-endpoints` Role in the release namespace to read the doorman's EndpointSlices. Workloads in other namespaces can't be read, scaled, or opted in, and dependencies on them aren't held or woken. With `metrics.secure`, both ServiceAccounts also keep their cluster-wide `system:auth-delegator` bindings, which let them check scrapers' tokens and nothing else.
 
