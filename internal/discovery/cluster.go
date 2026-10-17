@@ -81,7 +81,8 @@ type ClusterReport struct {
 	// Platform are the workloads that run the cluster itself: Kubernetes',
 	// Hybernate's, and well-known infrastructure such as ingress, GitOps and
 	// monitoring. They're left out of Workloads, Totals and next steps, as
-	// they aren't apps to pause.
+	// Hybernate never pauses Kubernetes' or its own, and the scan guesses
+	// nobody means to pause the rest.
 	Platform []Workload `json:"platform,omitempty"`
 	// NodePrices are the node types the workloads were priced at.
 	NodePrices Prices `json:"nodePrices"`

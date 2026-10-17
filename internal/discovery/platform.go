@@ -139,9 +139,16 @@ func chartName(label string) string {
 // and so is a workload someone already has Hybernate managing. The
 // operator's and the doorman's own Deployments are Hybernate's however their
 // namespace is labelled, as the operator never pauses its own components.
+//
+// Other infrastructure, found by its namespace's name or its labels, is left
+// out only as the scan's guess at what nobody means to pause: the operator
+// pauses it like any app once it's opted in. So it isn't guessed at in a
+// namespace labelled managed, which says its workloads are meant to pause,
+// such as a preview environment with its own Vault or Grafana.
 func platformOf(namespace string, namespaceLabels map[string]string, workloads []workload,
 	managed map[string]*v1alpha1.ManagedWorkload) map[string]string {
 	allowed := namespaceLabels[v1alpha1.LabelAllowProtected] == v1alpha1.True
+	optedIn := namespaceLabels[v1alpha1.LabelManaged] == v1alpha1.True
 	var whole string
 	if !allowed {
 		whole = namespacePlatform(namespace)
@@ -164,7 +171,7 @@ func platformOf(namespace string, namespaceLabels map[string]string, workloads [
 		case allowed:
 		case whole == PlatformKubernetes || whole == PlatformHybernate:
 			out[key] = whole
-		case managed[key] != nil:
+		case managed[key] != nil, optedIn:
 		case whole != "":
 			out[key] = whole
 		case app != "":
@@ -186,13 +193,18 @@ func hybernateComponent(wl workload) bool {
 }
 
 // splitPlatform separates the apps from the cluster's own infrastructure,
-// and drops apps' dependencies on it, which Hybernate never pauses.
+// and drops apps' dependencies on Kubernetes' and Hybernate's, which
+// Hybernate never pauses, so needn't wake. A dependency on other
+// infrastructure stays, as the operator pauses that once it's opted in.
 func splitPlatform(workloads []Workload) (apps, platform []Workload) {
-	isPlatform := map[workloadKey]bool{}
+	neverPaused := map[workloadKey]bool{}
 	for _, w := range workloads {
-		if w.Platform != "" {
-			isPlatform[workloadKey{w.Namespace, w.Kind, w.Name}] = true
-			platform = append(platform, w)
+		if w.Platform == "" {
+			continue
+		}
+		platform = append(platform, w)
+		if w.Platform == PlatformKubernetes || w.Platform == PlatformHybernate {
+			neverPaused[workloadKey{w.Namespace, w.Kind, w.Name}] = true
 		}
 	}
 	apps = make([]Workload, 0, len(workloads)-len(platform))
@@ -201,7 +213,7 @@ func splitPlatform(workloads []Workload) (apps, platform []Workload) {
 			continue
 		}
 		w.Dependencies = slices.DeleteFunc(w.Dependencies, func(d Dependency) bool {
-			return isPlatform[workloadKey{d.Namespace, d.Kind, d.Name}]
+			return neverPaused[workloadKey{d.Namespace, d.Kind, d.Name}]
 		})
 		apps = append(apps, w)
 	}
@@ -223,9 +235,10 @@ func platformNote(platform []Workload) string {
 		listed = append(listed, fmt.Sprintf("%s (%d)", ns, byNamespace[ns]))
 	}
 	return fmt.Sprintf("%s the cluster's own infrastructure, such as Kubernetes', Hybernate's, ingress or "+
-		"monitoring, so %s left out of the totals and next steps: %s",
+		"monitoring, so %s left out of the totals and next steps: %s. Hybernate never pauses Kubernetes' or its "+
+		"own, but pauses the rest like any app once opted in, so a namespace labelled %s=%s is counted in full",
 		plural(len(platform), "workload runs", "workloads run"), oneOrMany(len(platform), "it's", "they're"),
-		listSome(listed))
+		listSome(listed), v1alpha1.LabelManaged, v1alpha1.True)
 }
 
 func oneOrMany(n int, one, many string) string {
