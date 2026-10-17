@@ -98,7 +98,9 @@ not_empty() {
 
 gone() {
   local object=$1 ns=$2
-  [ -z "$(kubectl get "$object" -n "$ns" --ignore-not-found -o name)" ]
+  local found
+  found=$(kubectl get "$object" -n "$ns" --ignore-not-found -o name) || return 1
+  [ -z "$found" ]
 }
 
 # The EndpointSlices the operator writes to route the workload's Services
