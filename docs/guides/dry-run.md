@@ -80,7 +80,7 @@ The operator runs its full evaluation pipeline:
 
 ### What Dry Run Measured
 
-Hybernate keeps a running summary of the pauses it would have made. A would-be pause starts when the activity clock runs out, and ends at the next activity, which is when a paused workload would have been woken:
+Hybernate keeps a running summary of the pauses it would have made. A would-be pause starts when the activity clock runs out, and ends at the next activity, which is when a paused workload would have been woken. It also ends when Hybernate stops measuring it: the workload is scaled to zero outside Hybernate, labelled `hybernate.io/ignore`, or its namespace becomes protected; see [When Hybernate Lets Go](pause.md#when-hybernate-lets-go). It's counted up to that moment:
 
 ```bash
 kubectl get managedworkload my-api -n staging -o jsonpath='{.status.dryRun}'

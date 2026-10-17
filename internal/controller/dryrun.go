@@ -59,6 +59,16 @@ func (r *Reconciler) endWouldBePause(workload *v1alpha1.ManagedWorkload) (time.D
 	return r.endWouldBePauseAt(workload, lastActivity)
 }
 
+// endWouldBePauseNow ends an Idle workload's would-be pause now, as
+// Hybernate stops measuring it: it lets go of the workload, or the workload
+// was scaled to zero outside it. Its activity can be hours old, and the
+// pause lasted until now regardless.
+func (r *Reconciler) endWouldBePauseNow(workload *v1alpha1.ManagedWorkload) {
+	if workload.Status.Phase == v1alpha1.PhaseIdle {
+		r.endWouldBePauseAt(workload, r.now())
+	}
+}
+
 // endWouldBePauseAt is endWouldBePause for a would-be pause that ended at
 // end.
 func (r *Reconciler) endWouldBePauseAt(workload *v1alpha1.ManagedWorkload, end time.Time) (time.Duration, float64, bool) {

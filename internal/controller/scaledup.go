@@ -165,7 +165,7 @@ func (r *Reconciler) reconcileScaledToZero(ctx context.Context, workload *v1alph
 	r.clearIdleVeto(workload)
 	r.trackDryRun(workload)
 	if workload.Status.Phase == v1alpha1.PhaseIdle {
-		r.endWouldBePause(workload)
+		r.endWouldBePauseNow(workload)
 		if err := r.transition(ctx, workload, v1alpha1.PhaseRunning, "ScaledToZero"); err != nil {
 			return ctrl.Result{}, err
 		}

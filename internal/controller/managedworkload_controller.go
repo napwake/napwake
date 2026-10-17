@@ -530,6 +530,7 @@ func (r *Reconciler) reconcileIgnored(ctx context.Context, workload *v1alpha1.Ma
 	}
 	switch {
 	case workload.Status.Phase != v1alpha1.PhaseRunning || released:
+		r.endWouldBePauseNow(workload)
 		if err := r.transition(ctx, workload, v1alpha1.PhaseRunning, "TargetIgnored"); err != nil {
 			return ctrl.Result{}, err
 		}
