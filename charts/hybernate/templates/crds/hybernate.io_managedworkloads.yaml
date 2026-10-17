@@ -186,6 +186,7 @@ spec:
                       rule: duration(self) > duration('0s')
                 type: object
               prediction:
+                default: {}
                 description: |-
                   Prediction configures the Holt-Winters forecasting engine that confirms
                   idle detection and wakes paused workloads ahead of predicted demand.
@@ -206,8 +207,6 @@ spec:
                     maximum: 100
                     minimum: 50
                     type: integer
-                required:
-                - confidence
                 type: object
               target:
                 description: |-
@@ -263,7 +262,6 @@ spec:
                     type: boolean
                 type: object
             required:
-            - prediction
             - target
             type: object
           status:
