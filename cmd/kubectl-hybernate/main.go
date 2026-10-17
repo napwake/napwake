@@ -27,6 +27,7 @@ import (
 	"slices"
 	"strings"
 	"time"
+	"unicode"
 
 	"github.com/spf13/cobra"
 	"github.com/spf13/pflag"
@@ -311,8 +312,16 @@ func writeOutput(w io.Writer, output string, v any, table func() error) error {
 	return table()
 }
 
-// oneLine keeps a message from a condition or event on one table row: a
-// tab or newline in it would break the columns.
+// oneLine keeps a message from a condition, an event or another server on
+// one table row: a tab or newline in it would break the columns. What can't
+// be printed, such as a terminal escape sequence's ESC, is dropped, so the
+// message can't restyle or rewrite the terminal.
 func oneLine(s string) string {
-	return strings.Join(strings.Fields(s), " ")
+	printable := strings.Map(func(r rune) rune {
+		if unicode.IsPrint(r) || unicode.IsSpace(r) {
+			return r
+		}
+		return -1
+	}, s)
+	return strings.Join(strings.Fields(printable), " ")
 }

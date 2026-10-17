@@ -334,6 +334,14 @@ current-context: a
 	}
 }
 
+// A message from a server stays on one row, and can't restyle or rewrite
+// the terminal with escape sequences.
+func TestOneLine(t *testing.T) {
+	assert.Equal(t, "pod failed: [31mOOMKilled[0m [2K now",
+		oneLine("pod failed:\n\t\x1b[31mOOMKilled\x1b[0m\r\x1b[2K now"))
+	assert.Equal(t, "café ✓", oneLine("café ✓"))
+}
+
 // A request ends when the command's context does, and lets go of its hook
 // on that context once its response is read, or it fails, so they don't
 // pile up over a command's requests.

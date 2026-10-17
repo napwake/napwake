@@ -37,6 +37,7 @@ import (
 	"strings"
 	"sync"
 	"time"
+	"unicode"
 
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
@@ -234,7 +235,9 @@ func readLimited(r io.Reader) ([]byte, error) {
 }
 
 // errorExcerpt is what an error response says: a Prometheus API's own error
-// message, or the start of whatever else came back, on one line.
+// message, or the start of whatever else came back, on one line. What can't
+// be printed, such as a terminal escape sequence's ESC, is dropped, as the
+// excerpt is shown in the terminal.
 func errorExcerpt(body []byte) string {
 	var resp struct {
 		Error string `json:"error"`
@@ -243,9 +246,15 @@ func errorExcerpt(body []byte) string {
 	if json.Unmarshal(body, &resp) == nil && resp.Error != "" {
 		text = resp.Error
 	}
+	text = strings.Map(func(r rune) rune {
+		if unicode.IsPrint(r) || unicode.IsSpace(r) {
+			return r
+		}
+		return -1
+	}, text)
 	text = strings.Join(strings.Fields(text), " ")
-	if len(text) > maxErrorShown {
-		text = text[:maxErrorShown] + "..."
+	if runes := []rune(text); len(runes) > maxErrorShown {
+		text = string(runes[:maxErrorShown]) + "..."
 	}
 	if text == "" {
 		return "no body"

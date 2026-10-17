@@ -503,6 +503,14 @@ func TestPrometheusURL_HidesCredentials(t *testing.T) {
 
 // An error page says why, cut short; a response too large to hold is
 // refused rather than read.
+// An error page can't restyle or rewrite the terminal it's shown in.
+func TestErrorExcerpt_DropsWhatCantBePrinted(t *testing.T) {
+	got := errorExcerpt([]byte("\x1b[2J\x1b[31mno org id\x07\r\n\tfor you"))
+
+	assert.Equal(t, "[2J[31mno org id for you", got)
+	assert.Equal(t, `bad "query"[0m`, errorExcerpt([]byte(`{"error":"bad \"query\"\u001b[0m"}`)))
+}
+
 func TestPrometheusURL_ErrorBodiesAndLimits(t *testing.T) {
 	big := strings.Repeat("x", maxErrorShown*3)
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

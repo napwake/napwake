@@ -574,7 +574,7 @@ func writeTable(w io.Writer, result scanResult, limit int) error {
 	if len(notes) > 0 {
 		p.line("Notes:")
 		for _, n := range notes {
-			p.line("  - %s", n)
+			p.line("  - %s", oneLine(n))
 		}
 		p.line("")
 	}
