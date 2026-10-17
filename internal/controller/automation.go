@@ -407,11 +407,48 @@ const resumeWarmup = autoResumeLead
 // Counted, an autoResume wake would teach the forecast that the hour it
 // woke in is busy, and a week later it would wake an hour earlier, and
 // earlier again the week after. A wake by request shows its demand anyway.
+//
+// Once warmed up, a workload seen in use counts as at least twice the
+// activity threshold, as a request that wakes it does. A light-use
+// workload's use may show only in another activity source; taught its own
+// light utilization on the days autoResume had it ready, and a request's
+// twice the threshold on the days people woke it, the forecast would have
+// it ready only every other morning.
 func (r *Reconciler) awakeDemand(workload *v1alpha1.ManagedWorkload, percent float64) float64 {
-	if woke := workload.Status.LastActedAt; woke != nil && r.now().Sub(woke.Time) < resumeWarmup {
-		return 0
+	now := r.now()
+	since := r.hourStart(now)
+	if woke := workload.Status.LastActedAt; woke != nil {
+		warm := woke.Add(resumeWarmup)
+		if now.Before(warm) {
+			return 0
+		}
+		if warm.After(since) {
+			since = warm
+		}
+	}
+	threshold := float64(cpuThresholdFor(workload))
+	if percent > threshold || r.usedSince(workload, since) {
+		return max(percent, 2*threshold)
 	}
 	return percent
+}
+
+// usedSince reports whether the activity clock last saw the workload in use
+// at or after since. The clock's own restarts, on creation, a wake, a
+// rollout or a gap in watching, aren't use.
+func (r *Reconciler) usedSince(workload *v1alpha1.ManagedWorkload, since time.Time) bool {
+	clock, ok := r.activityMemo.get(workload.UID)
+	if !ok {
+		if workload.Status.Activity == nil {
+			return false
+		}
+		clock = *workload.Status.Activity
+	}
+	switch clock.LastActivitySource {
+	case v1alpha1.ActivitySourceCPU, v1alpha1.ActivitySourceAnnotation, v1alpha1.ActivitySourcePrometheus:
+		return !clock.LastActivityTime.Time.Before(since)
+	}
+	return false
 }
 
 // seeDemand adds a look at the workload's demand to the hour under way, and
