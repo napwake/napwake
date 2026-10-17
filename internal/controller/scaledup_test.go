@@ -84,6 +84,7 @@ func TestWakeOnScaleUp_ByAPerson(t *testing.T) {
 	assert.Nil(t, meta.FindStatusCondition(w.Status.Conditions, conditionGitOpsConflict))
 	assert.Equal(t, int32(5), targetReplicas(t, r), "left as they set it")
 	assert.Contains(t, drainEvents(t, r), "scaled up to 5 replicas by kubectl-scale outside Hybernate")
+	assert.Zero(t, r.awakeDemand(w, 80), "starting up after the scale-up isn't demand the forecast should learn")
 }
 
 // A GitOps tool undoing a pause is a setup problem: reported once with the
@@ -394,6 +395,7 @@ func TestScaledToZero_BackUpIsActivity(t *testing.T) {
 	assert.Equal(t, int32(2), targetReplicas(t, r))
 	assert.False(t, meta.IsStatusConditionTrue(got.Status.Conditions, conditionScaledToZero))
 	assert.Equal(t, v1alpha1.ActivitySourceScaledUp, got.Status.Activity.LastActivitySource)
+	assert.Zero(t, r.awakeDemand(got, 80), "starting up again isn't demand the forecast should learn")
 }
 
 // A pause recorded with zero replicas, as an earlier version made of a

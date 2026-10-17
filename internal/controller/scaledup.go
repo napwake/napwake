@@ -86,6 +86,7 @@ func (r *Reconciler) wakeOnScaleUp(ctx context.Context, workload *v1alpha1.Manag
 	now := r.clockTime()
 	workload.Status.LastScaledUp = &v1alpha1.ScaledUp{At: now, By: by, GitOps: string(writer.Tool), Replicas: replicas}
 	r.resetActivity(workload, v1alpha1.ActivitySourceScaledUp)
+	r.stampLastActed(workload)
 	var conflict string
 	if writer.FromGit() {
 		conflict = fmt.Sprintf("%s set the replicas from Git, undoing the pause; Hybernate pauses it again from %s. %s",
@@ -143,6 +144,7 @@ func (r *Reconciler) scaledToZero(ctx context.Context, workload *v1alpha1.Manage
 	if !atZero && meta.IsStatusConditionTrue(workload.Status.Conditions, conditionScaledToZero) {
 		r.setCondition(workload, conditionScaledToZero, metav1.ConditionFalse, "HasReplicas", "")
 		r.resetActivity(workload, v1alpha1.ActivitySourceScaledUp)
+		r.stampLastActed(workload)
 	}
 	return atZero, nil
 }

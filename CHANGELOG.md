@@ -140,6 +140,7 @@ The relaunch. The 0.1.x releases were early experiments, and 0.2.0 is a fresh st
 - A slow or unreachable Prometheus can't hold up wakes: the operator keeps one client for it, gives each query 2 seconds and a workload's queries 5 together, and once Prometheus fails doesn't ask it again for a minute, failing every query at once instead
 - Likewise for metrics-server: a read of the Metrics API has 2 seconds, and once it fails it isn't read again for a minute
 - An activity annotation that isn't an RFC 3339 time, such as epoch seconds, is reported in an `InvalidActivityAnnotation` warning event, once per value, instead of only logged, and no longer wakes a paused workload either, as it never kept an awake one awake
+- The forecast doesn't learn the startup after a workload is scaled up outside Hybernate, such as with `kubectl scale`, as demand: the 15-minute warm-up after a wake counts from that scale-up, not from the pause
 - Events are emitted once, when something changes: forecast vetoes, routing warnings, learned dependencies, and the `DependentsAwake` warning, which fires once a manual pause begins
 - Every series of a deleted workload is dropped from the metrics, and the operator reads only the target's own pods and claims, with deadlines on every call
 - A GitOps tool that set the replicas in the same second as another field manager is reported as the one that woke a paused workload, so the `GitOpsConflict` is never missed
