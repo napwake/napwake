@@ -41,7 +41,7 @@ const (
 // Writer is the field manager that last set a field, such as a workload's
 // replicas.
 type Writer struct {
-	// Manager is the field manager's name, such as kubectl-scale.
+	// Manager is the field manager's name, such as argocd-controller.
 	Manager string
 	// Tool is the GitOps tool the manager belongs to, if any.
 	Tool Tool

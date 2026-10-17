@@ -447,8 +447,10 @@ const (
 // ScaledUp is a paused workload scaled up outside Hybernate.
 type ScaledUp struct {
 	At metav1.Time `json:"at"`
-	// By is the field manager that set the replicas, such as kubectl-scale
-	// or argocd-controller.
+	// By is the field manager that set the replicas, such as
+	// argocd-controller or kubectl-client-side-apply, or unknown when none
+	// is recorded, as for a scale through the scale subresource by kubectl
+	// scale, an HPA or KEDA.
 	By string `json:"by"`
 	// GitOps is the GitOps tool behind By, such as Argo CD or Flux, which
 	// will set the replicas again each time Hybernate pauses the workload
