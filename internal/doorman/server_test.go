@@ -1200,8 +1200,6 @@ func TestServer_RefusesPromptlyWhenADrainingRouteHasNothingReady(t *testing.T) {
 		5*time.Second, 10*time.Millisecond, "counted as resultRefused")
 }
 
-// On shutdown the doorman stops accepting, keeps the connections it carries
-// for the grace period, and only then closes them.
 // A stopping doorman leaves its Service at once, but goes on holding and
 // passing through new connections for a while, since only the operator can
 // send them elsewhere. Then it stops accepting, and closes what's left at

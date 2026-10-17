@@ -160,8 +160,6 @@ func isHealthCheck(req *http.Request, agents []string) bool {
 	return false
 }
 
-// writeUnavailable answers a health check: the workload is paused, so it
-// isn't healthy, and it stays paused.
 // isHiddenFileRequest reports whether req asks for a hidden file, one with
 // a path segment that starts with a dot, such as /.env or /.git/config.
 // Scanners crawl the internet for these, hoping for leaked secrets; no app
@@ -189,6 +187,8 @@ func writeNotFound(w io.Writer) error {
 	return err
 }
 
+// writeUnavailable answers a health check: the workload is paused, so it
+// isn't healthy, and it stays paused.
 func writeUnavailable(w io.Writer) error {
 	_, err := io.WriteString(w, "HTTP/1.1 503 Service Unavailable\r\n"+
 		"Content-Length: 0\r\n"+
