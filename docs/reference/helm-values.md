@@ -68,7 +68,7 @@ The operator caches the cluster's Deployments, StatefulSets, Services, PVCs, HPA
 | Value | Default | Description |
 |-------|---------|-------------|
 | `watchNamespaces` | `[]` | Namespaces Hybernate works in. Empty means every namespace. Set, Hybernate gets a Role in each of them instead of a ClusterRole, so Kubernetes itself refuses it anything elsewhere; see [RBAC](#rbac). Passed as `--watch-namespaces`, to the doorman too |
-| `protectedNamespaces` | `[]` | Name patterns, such as `prod-*`, of namespaces Hybernate never manages, as if labelled `hybernate.io/protected=true`, unless one is labelled `hybernate.io/allow-protected=true`. See [Protected namespaces](../guides/opt-in.md#protected-namespaces). Passed as `--protected-namespaces` |
+| `protectedNamespaces` | `[]` | Name patterns, such as `prod-*`, of namespaces Hybernate never manages, as if labelled `hybernate.io/protected=true`, unless one is labelled `hybernate.io/allow-protected=true`. `kube-*`, and the operator's and the doorman's namespace, are always protected, besides these, with the same exception. See [Protected namespaces](../guides/opt-in.md#protected-namespaces). Passed as `--protected-namespaces` |
 
 ```yaml title="values.yaml"
 watchNamespaces: [preview-1, preview-2, staging]

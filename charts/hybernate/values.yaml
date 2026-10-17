@@ -92,7 +92,8 @@ watchNamespaces: []
 
 # Name patterns, such as prod-*, of namespaces Hybernate never manages,
 # as if labelled hybernate.io/protected=true, unless a namespace is
-# labelled hybernate.io/allow-protected=true.
+# labelled hybernate.io/allow-protected=true. kube-*, and the operator's
+# and the doorman's namespace, are always protected, besides these.
 protectedNamespaces: []
 
 # Settings for workloads opted in with the hybernate.io/managed label, where
