@@ -67,7 +67,7 @@ The operator sets standard Kubernetes conditions on the CR, each with `Reason`, 
 | `Protected` | Its namespace is protected, or it's Hybernate's own operator or doorman, so it's never paused | `ProtectedNamespace`, `HybernateComponent`; `False`: `NotProtected` |
 | `PauseRequest` | The last [pause request](../guides/pause.md#pause-now) paused the workload, or found it paused; `False` says why it didn't | `Pausing`, `AlreadyPaused`; `False`: `DryRun`, `ActiveUntil`, `HeldByDependents`, `DependencyCycle`, `Protected`, `ScaledToZero`, `TargetNotFound`, `TargetIgnored`, `DuplicateTarget` |
 | `GitOpsConflict` | A GitOps tool undid its last pause; removed once a pause holds. See [GitOps tools](../guides/gitops.md) | `PauseUndone` |
-| `ResumeIncomplete` | The last resume stopped waiting with some replicas not Ready, and the workload runs with those that are; see [Workload resumed with replicas not Ready](../operations/troubleshooting.md#workload-resumed-with-replicas-not-ready) | `ReplicasNotReady`; `False`: `AllReplicasReady` |
+| `ResumeIncomplete` | The last resume stopped waiting with some replicas not Ready, and the workload runs with those that are, until they all are; see [Workload resumed with replicas not Ready](../operations/troubleshooting.md#workload-resumed-with-replicas-not-ready) | `ReplicasNotReady`; `False`: `AllReplicasReady` |
 | `Autoscaled` | An HPA or KEDA ScaledObject scales it, and its range; see [HPA and KEDA](../guides/autoscalers.md) | `HPA`, `KEDA` |
 | `ScaledToZero` | It was scaled to zero outside Hybernate, so Hybernate leaves it off: it doesn't pause it, wake it, or route requests for it until its replicas are set above zero | `ScaledToZero`; `False`: `HasReplicas` |
 
@@ -81,7 +81,7 @@ User-visible state changes emit Kubernetes events that show up in `kubectl descr
 - Scaled to zero outside Hybernate, and left off: `ScaledToZero`
 - What holds it awake: `IdleVetoed`, `HeldByDependents`, `DependencyCycle`
 - A GitOps tool undoing a pause, and the conflict ending: `GitOpsConflict`, `GitOpsConflictResolved`
-- Problems: `TargetNotFound`, `DuplicateTarget`, `NoPodMetrics`, `NoCPURequests`, `MetricsUnavailable`, `QueryFailed`, `EndpointNotConfigured`, `RoutingFailed`, `UnsupportedLoadBalancer`, `RequestNotServed`, `Protected`, `ResumeIncomplete` (a resume that stopped waiting for replicas not Ready, in place of `Resumed`)
+- Problems: `TargetNotFound`, `DuplicateTarget`, `NoPodMetrics`, `NoCPURequests`, `MetricsUnavailable`, `QueryFailed`, `EndpointNotConfigured`, `RoutingFailed`, `UnsupportedLoadBalancer`, `RequestNotServed`, `Protected`, `ResumeIncomplete` (a resume that stopped waiting for replicas not Ready, in place of `Resumed`; `AllReplicasReady` once they are)
 - The forecast: `PredictionFed` each hour it learns, `RegimeChange` when it's demoted, `ForecastReset` when its saved state can't be read
 - Learned dependencies: `DependenciesLearned`
 

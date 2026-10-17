@@ -258,6 +258,7 @@ func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (res ctrl.
 // under way for, and writes its status if that changed it.
 func (r *Reconciler) reconcileSettled(ctx context.Context, workload *v1alpha1.ManagedWorkload, target client.Object,
 	observed *v1alpha1.ManagedWorkloadStatus) (ctrl.Result, error) {
+	r.clearResumeIncomplete(workload, target)
 	result, err := r.reconcileAutomation(ctx, workload, target)
 	if err != nil {
 		return ctrl.Result{}, err
@@ -472,7 +473,7 @@ func (r *Reconciler) handleResume(ctx context.Context, workload *v1alpha1.Manage
 			resumed.Ready, resumed.Replicas, roundedDuration(waited.ScaledUp))
 		r.setCondition(workload, conditionResumeIncomplete, metav1.ConditionTrue, "ReplicasNotReady", shortfall)
 	} else {
-		r.clearCondition(workload, conditionResumeIncomplete, "AllReplicasReady")
+		r.clearCondition(workload, conditionResumeIncomplete, ReasonAllReplicasReady)
 	}
 	if err := r.transition(ctx, workload, v1alpha1.PhaseRunning, "Resumed"); err != nil {
 		return nil, err
@@ -495,7 +496,21 @@ const (
 	conditionResumeIncomplete = "ResumeIncomplete"
 
 	ReasonResumeIncomplete = "ResumeIncomplete"
+	ReasonAllReplicasReady = "AllReplicasReady"
 )
+
+// clearResumeIncomplete sets ResumeIncomplete False once the replicas its
+// last resume stopped waiting for are Ready after all, so it isn't reported
+// as needing attention until the next resume.
+func (r *Reconciler) clearResumeIncomplete(workload *v1alpha1.ManagedWorkload, target client.Object) {
+	if !meta.IsStatusConditionTrue(workload.Status.Conditions, conditionResumeIncomplete) ||
+		!lifecycle.IsReady(target) {
+		return
+	}
+	r.setCondition(workload, conditionResumeIncomplete, metav1.ConditionFalse, ReasonAllReplicasReady, "")
+	r.emitEvent(workload, false, "Normal", ReasonAllReplicasReady, actionResume,
+		"all %d replicas are Ready, after the last resume stopped waiting for them", lifecycle.ReadyReplicas(target))
+}
 
 // sinceFirstReady is how long a resuming workload has had a replica Ready,
 // as recordFirstReady wrote when it first did, or zero.

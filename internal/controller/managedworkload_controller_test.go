@@ -867,6 +867,37 @@ func TestResume_TimesTheRestFromTheFirstReplicaReady(t *testing.T) {
 	assert.Equal(t, 90*time.Second, pauser.waited.Serving, "from what was written as the first became Ready")
 }
 
+// The replicas a resume stopped waiting for that become Ready afterwards,
+// as pods on a node that came up late do, clear ResumeIncomplete, which
+// would otherwise list the workload as needing attention until its next
+// resume.
+func TestReconcile_ReplicasReadyAfterAShortResumeClearIt(t *testing.T) {
+	workload := lifecycleWorkload("api", v1alpha1.PhaseRunning)
+	meta.SetStatusCondition(&workload.Status.Conditions, metav1.Condition{Type: conditionResumeIncomplete,
+		Status: metav1.ConditionTrue, Reason: "ReplicasNotReady", LastTransitionTime: metav1.NewTime(fixedTime)})
+	r := newTestReconcilerWithReplicas(t, workload, &stubPauser{}, 3)
+	var d appsv1.Deployment
+	require.NoError(t, r.Get(context.Background(), client.ObjectKey{Namespace: "default", Name: "api"}, &d))
+	d.Status.ReadyReplicas = 2
+	require.NoError(t, r.Status().Update(context.Background(), &d))
+
+	_, err := r.Reconcile(context.Background(), reconcileFor("api"))
+	require.NoError(t, err)
+	require.True(t, meta.IsStatusConditionTrue(getWorkload(t, r, "api").Status.Conditions, conditionResumeIncomplete),
+		"one replica still isn't Ready")
+
+	d.Status.ReadyReplicas, d.Status.ObservedGeneration = 3, d.Generation
+	require.NoError(t, r.Status().Update(context.Background(), &d))
+	_, err = r.Reconcile(context.Background(), reconcileFor("api"))
+	require.NoError(t, err)
+
+	c := meta.FindStatusCondition(getWorkload(t, r, "api").Status.Conditions, conditionResumeIncomplete)
+	require.NotNil(t, c)
+	assert.Equal(t, metav1.ConditionFalse, c.Status)
+	assert.Equal(t, ReasonAllReplicasReady, c.Reason)
+	assert.Contains(t, drainEvents(t, r), "Normal "+ReasonAllReplicasReady)
+}
+
 // servingPauser resumes to a given outcome and keeps how long it was told
 // it had waited.
 type servingPauser struct {
