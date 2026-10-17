@@ -700,6 +700,15 @@ func TestNextSteps_SkipDryRunScaledByHand(t *testing.T) {
 	assert.Equal(t, "preview", got.Name)
 }
 
+// Under an hour is shown in minutes, rounded first, so what rounds to an
+// hour says so.
+func TestHours(t *testing.T) {
+	for h, want := range map[float64]string{0: "0h", 0.004: "0m", 0.5: "30m", 0.99: "59m", 0.995: "1h", 1: "1h",
+		1.4: "1h", 1.5: "2h", 167.9: "168h"} {
+		assert.Equal(t, want, hours(h), "%v hours", h)
+	}
+}
+
 func TestParseHeaders(t *testing.T) {
 	got, err := parseHeaders([]string{"X-Scope-OrgID: team-a", "x-extra:  two words  "})
 	require.NoError(t, err)

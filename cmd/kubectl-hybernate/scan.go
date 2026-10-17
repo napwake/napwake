@@ -1043,8 +1043,8 @@ func dependencyRef(namespace string, d discovery.Dependency) string {
 // hours is a length of time to the nearest hour, or minute under one,
 // rounded as hoursTotal rounds so a row and its total agree.
 func hours(h float64) string {
-	if h > 0 && h < 1 {
-		return fmt.Sprintf("%dm", int(h*60+0.5))
+	if minutes := int(math.Round(h * 60)); h > 0 && minutes < 60 {
+		return fmt.Sprintf("%dm", minutes)
 	}
 	return fmt.Sprintf("%dh", int(h+0.5))
 }
