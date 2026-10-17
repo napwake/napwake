@@ -78,6 +78,8 @@
 
     `make deploy` installs the CRD, RBAC, the operator and the doorman, all running `IMG`. It writes `IMG` into `config/manager/kustomization.yaml`; `git checkout config/manager` puts it back.
 
+    `kubectl apply -k config/network-policy` adds the NetworkPolicies the chart's `networkPolicy.enabled` creates: only namespaces labelled `metrics: enabled` may scrape the operator and the doorman, and the doorman's routing ports (TCP 20000-29999) stay open to every caller of a paused workload's Services.
+
 ## Verify Installation
 
 ```bash

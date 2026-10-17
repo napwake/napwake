@@ -4,3 +4,4 @@ namespace: hybernate-system
 
 resources:
 - allow-metrics-traffic.yaml
+- allow-doorman-traffic.yaml
