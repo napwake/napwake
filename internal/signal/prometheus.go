@@ -36,6 +36,12 @@ import (
 // wakes queue behind, so a slow answer costs more than a missing one.
 const queryTimeout = 2 * time.Second
 
+// timeoutsToTrip is how many queries in a row must time out before the
+// endpoint is taken to be failing. One slow query is that query's: a tenant's
+// expensive PromQL mustn't hold off every workload's Prometheus source, and
+// the other workloads' answers in between reset the count.
+const timeoutsToTrip = 3
+
 // backoff is how long after Prometheus fails it isn't asked again. It's
 // about one activity check, so every workload's next check finds the
 // outage at once rather than each waiting out a timeout to learn of it.
@@ -73,8 +79,9 @@ type prometheusResponse struct {
 // sample, whether empty or all NaN, is no data, and no data doesn't confirm
 // activity, so the workload's other activity sources decide.
 //
-// When the endpoint fails, by not answering, not answering within
-// queryTimeout, or answering with a server error, it isn't asked again for
+// When the endpoint fails, by not answering, answering with a server error,
+// or timeoutsToTrip queries in a row not answering within queryTimeout, it
+// isn't asked again for
 // backoff: every query fails at once with ErrBackingOff. Then one query is
 // let through to see whether it's back, while the rest go on failing until
 // it answers. A query Prometheus rejects, such as one that doesn't parse,
@@ -89,6 +96,7 @@ type Prometheus struct {
 	mu       sync.Mutex
 	failedAt time.Time
 	failure  error
+	timeouts int
 }
 
 // NewPrometheus returns a client for the Prometheus HTTP API at endpoint,
@@ -108,10 +116,14 @@ func (p *Prometheus) Check(ctx context.Context, query string) (Result, error) {
 	}
 	res, err := p.query(ctx, query)
 	var failed endpointFailure
+	var slow queryTimedOut
 	switch {
 	case errors.As(err, &failed):
 		p.backOff(failed.err)
 		return Result{}, failed.err
+	case errors.As(err, &slow):
+		p.timedOut(slow.err)
+		return Result{}, slow.err
 	case ctx.Err() != nil:
 		// The caller gave up before the endpoint answered either way.
 	default:
@@ -127,13 +139,23 @@ type endpointFailure struct{ err error }
 func (e endpointFailure) Error() string { return e.err.Error() }
 func (e endpointFailure) Unwrap() error { return e.err }
 
-// unlessGivenUp is err as the endpoint's failure, unless the caller's own
-// context ended first.
-func unlessGivenUp(caller context.Context, err error) error {
-	if caller.Err() != nil {
+// queryTimedOut marks a query's error as its own timeout running out.
+type queryTimedOut struct{ err error }
+
+func (e queryTimedOut) Error() string { return e.err.Error() }
+func (e queryTimedOut) Unwrap() error { return e.err }
+
+// unlessGivenUp is err as the endpoint's failure, or as the query timing
+// out, unless the caller's own context ended first.
+func unlessGivenUp(caller, call context.Context, err error) error {
+	switch {
+	case caller.Err() != nil:
 		return err
+	case errors.Is(call.Err(), context.DeadlineExceeded):
+		return queryTimedOut{err}
+	default:
+		return endpointFailure{err}
 	}
-	return endpointFailure{err}
 }
 
 // admit fails fast while the endpoint is backing off. Once backoff is up,
@@ -159,10 +181,19 @@ func (p *Prometheus) backOff(err error) {
 	p.failedAt, p.failure = p.now(), err
 }
 
+func (p *Prometheus) timedOut(err error) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	p.timeouts++
+	if p.timeouts >= timeoutsToTrip {
+		p.failedAt, p.failure, p.timeouts = p.now(), err, 0
+	}
+}
+
 func (p *Prometheus) answered() {
 	p.mu.Lock()
 	defer p.mu.Unlock()
-	p.failure = nil
+	p.failure, p.timeouts = nil, 0
 }
 
 func (p *Prometheus) query(ctx context.Context, query string) (Result, error) {
@@ -184,13 +215,13 @@ func (p *Prometheus) query(ctx context.Context, query string) (Result, error) {
 
 	resp, err := p.client.Do(req)
 	if err != nil {
-		return Result{}, unlessGivenUp(ctx, fmt.Errorf("querying prometheus: %w", err))
+		return Result{}, unlessGivenUp(ctx, callCtx, fmt.Errorf("querying prometheus: %w", err))
 	}
 	defer func() { _ = resp.Body.Close() }()
 
 	data, err := io.ReadAll(io.LimitReader(resp.Body, maxResponseBytes+1))
 	if err != nil {
-		return Result{}, unlessGivenUp(ctx, fmt.Errorf("reading prometheus response: %w", err))
+		return Result{}, unlessGivenUp(ctx, callCtx, fmt.Errorf("reading prometheus response: %w", err))
 	}
 	if len(data) > maxResponseBytes {
 		return Result{}, fmt.Errorf("prometheus response for %q is larger than %d bytes", query, maxResponseBytes)

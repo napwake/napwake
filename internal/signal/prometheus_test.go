@@ -294,7 +294,7 @@ func TestPrometheus_BacksOffAFailingEndpoint(t *testing.T) {
 			w.WriteHeader(http.StatusTooManyRequests)
 		}},
 		{
-			name:    "too slow to answer",
+			name:    "too slow to answer, query after query",
 			handle:  func(_ http.ResponseWriter, r *http.Request) { <-r.Context().Done() },
 			timeout: 50 * time.Millisecond,
 		},
@@ -323,8 +323,15 @@ func TestPrometheus_BacksOffAFailingEndpoint(t *testing.T) {
 				return err
 			}
 
-			require.Error(t, check())
-			require.Equal(t, int32(1), calls.Load())
+			tripsAfter := int32(1)
+			if tt.timeout > 0 {
+				tripsAfter = timeoutsToTrip
+			}
+			for range tripsAfter {
+				require.Error(t, check())
+			}
+			require.Equal(t, tripsAfter, calls.Load())
+			calls.Store(1)
 
 			now = now.Add(backoff - time.Second)
 			require.ErrorIs(t, check(), ErrBackingOff)
@@ -344,6 +351,30 @@ func TestPrometheus_BacksOffAFailingEndpoint(t *testing.T) {
 			require.NoError(t, err, "answered, it's asked every time again")
 			assert.Equal(t, int32(4), calls.Load())
 		})
+	}
+}
+
+// One query too slow to answer is that query's problem while others are
+// answered: a tenant's expensive PromQL mustn't hold off everyone's.
+func TestPrometheus_DoesNotBackOffForOneSlowQuery(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Query().Get("query") == "slow" {
+			<-r.Context().Done()
+			return
+		}
+		_, _ = w.Write([]byte(vectorOf("1")))
+	}))
+	t.Cleanup(srv.Close)
+	p := NewPrometheus(srv.URL)
+	p.timeout = 50 * time.Millisecond
+
+	for range 2 * timeoutsToTrip {
+		_, err := p.Check(context.Background(), "slow")
+		require.Error(t, err)
+		require.NotErrorIs(t, err, ErrBackingOff)
+		res, err := p.Check(context.Background(), "up")
+		require.NoError(t, err, "other queries still go to Prometheus")
+		assert.True(t, res.Confirm)
 	}
 }
 
