@@ -64,7 +64,7 @@ internal/forecast/             # Holt-Winters engine
 internal/signal/               # Prometheus activity queries
 internal/lifecycle/            # Pause and resume
 internal/autoscaler/           # HPA and KEDA
-internal/gitops/               # Argo CD and Flux detection
+internal/gitops/               # GitOps tool detection
 internal/discovery/            # Cluster scan for kubectl hybernate scan
 internal/doorman/              # Wake on request
 internal/cost/                 # Cost rates and node list prices

@@ -123,7 +123,7 @@ Cost tracking is always on, priced at the list price of the nodes the workload r
 
 ### Scaled up outside Hybernate
 
-A paused workload scaled up by anything else, such as `kubectl scale` or a deploy, wakes: whoever did it wants it running. `status.lastScaledUp` records when and what did it. When that was Argo CD or Flux setting replicas from Git, see [Argo CD and Flux](gitops.md). While a workload is running, Hybernate doesn't manage its replica count, so changes by its team or an HPA are left alone.
+A paused workload scaled up by anything else, such as `kubectl scale` or a deploy, wakes: whoever did it wants it running. `status.lastScaledUp` records when and what did it. When that was a GitOps tool setting replicas from Git, see [GitOps tools](gitops.md). While a workload is running, Hybernate doesn't manage its replica count, so changes by its team or an HPA are left alone.
 
 ### `dryRun`
 

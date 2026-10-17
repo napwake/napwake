@@ -105,7 +105,7 @@ spec:
 
 ## How long a connection is held
 
-The doorman holds each connection for up to `wake.maxWait`, 2 minutes by default and at most 1 hour; a longer value is held for 1 hour. If no pod is Ready by then, it closes the connection. The wake carries on, so a retry a little later succeeds.
+The doorman holds each connection for up to `wake.maxWait`, 2 minutes by default and at most 1 hour, which is the most the ManagedWorkload accepts. If no pod is Ready by then, it closes the connection. The wake carries on, so a retry a little later succeeds.
 
 ```yaml
 spec:

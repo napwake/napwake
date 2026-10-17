@@ -90,7 +90,7 @@ Pass --cpu-price and --memory-price for yours.
 - **Workloads Hybernate manages:** the activity clock it keeps for them, which already combines every source configured, including Prometheus queries. Idle means no activity for `idleAfter`; the scan says when Hybernate is holding one awake, for example for its dependents.
 - **Other workloads:** what the scan can see without Hybernate. Any of these makes a workload active: CPU at or above `--cpu-threshold` (10% by default) of what it requests, a rollout within `--idle-after` (1h by default), a `hybernate.io/last-activity` annotation within it, or a `hybernate.io/active-until` in the future. Otherwise, with CPU measured, it's idle.
 - **Workloads it can't judge**, because they set no CPU requests or have no metrics yet, are listed in the notes rather than the table, and left out of the headline's totals. Without metrics-server, as on EKS by default, an unmanaged workload with CPU history is judged from it instead: its state is where replaying its history left the activity clock, and BECAUSE says so.
-- **Replicas set from Git:** a workload whose replicas Argo CD or Flux last set, from the field managers the API server records, is listed in the notes by tool: its tool would undo every pause until it's told to leave the replicas to Hybernate, a one-time setting given in [Argo CD and Flux](../guides/gitops.md). JSON gives it in each workload's `replicasFromGit`. The next steps never suggest one, since its tool would revert a label put on by hand too.
+- **Replicas set from Git:** a workload whose replicas a GitOps tool (Argo CD, Flux, Fleet, kapp or Kluctl) last set, from the field managers the API server records, is listed in the notes by tool: its tool would undo every pause until it's told to leave the replicas to Hybernate, a one-time setting given in [GitOps tools](../guides/gitops.md). JSON gives it in each workload's `replicasFromGit`. The next steps never suggest one, since its tool would revert a label put on by hand too.
 - **The cluster's own infrastructure** isn't an app to pause, so it's left out of the table, the totals and the next steps, and a note says how many workloads in which namespaces: Kubernetes' namespaces (`kube-*`, and `openshift-*`, `cattle-*`, `gke-*` and `gmp-*`), the namespace Hybernate runs in, found by its Deployment's `app.kubernetes.io/name: hybernate` label, and well-known infrastructure such as ingress controllers, cert-manager, Argo CD, Flux, service meshes, policy engines and monitoring, by their usual namespaces (`ingress-nginx`, `cert-manager`, `argocd`, `flux-system`, `istio-system`, `linkerd`, `gatekeeper-system`, `kyverno`, `monitoring` and others) or their `app.kubernetes.io/name`, `app.kubernetes.io/part-of`, `app` or `helm.sh/chart` labels wherever they run. A workload Hybernate already manages there is scanned as usual, and a namespace labelled `hybernate.io/allow-protected=true` is scanned like any other. JSON and YAML list them in `platform`, each with what it is.
 
 **History from Prometheus:** when the cluster has a Prometheus, the scan replays Hybernate's activity clock over the last week of each workload's CPU and rollouts, as if Hybernate had managed it with `--idle-after` and `--cpu-threshold`:
@@ -234,7 +234,7 @@ staging (EKS us-east-1): Hybernate manages 4 workloads.
 
 Needs attention:
   preview-7/worker   GitOpsConflict   Argo CD set the replicas from Git, undoing the pause; ...
-  preview-7/worker   Stuck            resuming for 25m: waiting for preview-42/postgres
+  preview-7/worker   Stuck            resuming for 25m: waiting for preview-42/statefulset/postgres
 
   NAMESPACE    WORKLOAD               STATE               FOR   LAST ACTIVITY      NEXT                             SAVED THIS MONTH
   preview-42   deployment/api         paused              3h    request, 4h ago    wakes on a request or activity   $12
@@ -327,7 +327,7 @@ Clear it and pause now? [y/N]
 
 Answering `y` removes the annotation and pauses it; anything else leaves it running, exiting 0. `--clear-hold` clears it without asking; with no terminal to ask on and without `--clear-hold`, `pause` exits 1 and says to pass it. `--yes` doesn't clear a hold, so a nightly script that pauses with `--yes` doesn't end one someone set for a demo.
 
-When Argo CD or Flux last set the workload's replicas, `pause` warns before asking, with the one-time fix: the tool sets them from Git again on its next sync, which undoes the pause. See [Argo CD and Flux](../guides/gitops.md).
+When a GitOps tool last set the workload's replicas, `pause` warns before asking, with the one-time fix: the tool sets them from Git again on its next sync, which undoes the pause. See [GitOps tools](../guides/gitops.md).
 
 If the workload isn't `Paused`, and Hybernate hasn't said why, within `--timeout`, `pause` exits 1 with its phase and the `kubectl describe` command that says why.
 
@@ -439,7 +439,7 @@ deployment/checkout-api is managed by Argo CD application shop, which would undo
 Or pass --force to change the cluster anyway.
 ```
 
-When Helm set it, `enable` changes it, since Helm only applies a chart when you run it, and warns that the next `helm upgrade` puts the chart's value back, so set it in the chart too. See [Argo CD and Flux](../guides/gitops.md#ending-dry-run).
+When Helm set it, `enable` changes it, since Helm only applies a chart when you run it, and warns that the next `helm upgrade` puts the chart's value back, so set it in the chart too. See [GitOps tools](../guides/gitops.md#ending-dry-run).
 
 A bare name is looked up as a Deployment and as a StatefulSet. When both have it, `enable` lists them and asks for the kind; prefix the name with `deployment/` or `statefulset/` to be exact.
 

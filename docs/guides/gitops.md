@@ -1,4 +1,4 @@
-# Argo CD and Flux
+# GitOps tools
 
 Hybernate pauses a workload by setting its replicas to zero. If Argo CD or Flux applies that workload from Git with `replicas` in its manifest, it sees the cluster no longer matches Git and sets them back, undoing the pause. Each tool has a one-time setting that leaves the replicas to Hybernate; this page gives it.
 
@@ -8,7 +8,7 @@ Teams that already run an HPA or KEDA under Argo CD or Flux usually have it in p
 
 Hybernate never fights Git. When a paused workload is scaled up by anything other than Hybernate, it counts as activity: the workload goes back to Running, and `status.lastScaledUp` records when, how many replicas, and what did it, by the field manager the API server recorded (`kubectl-scale`, `argocd-controller`, `kustomize-controller`, ...).
 
-When that was Argo CD or Flux, the workload also reports it, with the fix:
+When that was Argo CD, Flux, Rancher Fleet, kapp or Kluctl, the workload also reports it, with the fix:
 
 ```
 GitOpsConflict=True   Argo CD set the replicas from Git, undoing the pause; Hybernate pauses it again from 14:20 UTC. ...
@@ -61,6 +61,30 @@ spec:
               - op: remove
                 path: /spec/replicas
 ```
+
+## Rancher Fleet
+
+Fleet applies what its bundle renders. Leave `replicas` out of the workload's manifest in Git and Fleet leaves them to Hybernate. For a Helm chart that always renders them, remove them with a kustomize patch in the bundle's `fleet.yaml`.
+
+## kapp
+
+Have kapp keep the replicas it finds in the cluster, as its docs give for an HPA, with a rebase rule in a kapp `Config`:
+
+```yaml title="kapp-config.yaml" linenums="1"
+apiVersion: kapp.k14s.io/v1alpha1
+kind: Config
+rebaseRules:
+  - path: [spec, replicas]
+    type: copy
+    sources: [existing, new]
+    resourceMatchers:
+      - apiVersionKindMatcher: {apiVersion: apps/v1, kind: Deployment}
+      - apiVersionKindMatcher: {apiVersion: apps/v1, kind: StatefulSet}
+```
+
+## Kluctl
+
+Kluctl overwrites replicas another manager set only when it force-applies. Annotate the workload in Git with `kluctl.io/ignore-conflicts-manager: hybernate` so it leaves them even then, or leave `replicas` out of its manifest.
 
 ## Ending dry-run
 
