@@ -97,7 +97,8 @@ Examples:
 
 	cmd.Flags().StringVarP(&namespace, "namespace", "n", "",
 		"Namespace of the workload (defaults to the kubeconfig context's)")
-	cmd.Flags().DurationVar(&opts.keepAwake, "for", 0, "Also keep the workload awake for this long, e.g. 2h")
+	cmd.Flags().DurationVar(&opts.keepAwake, "for", 0,
+		"Also keep the workload awake for this long, e.g. 2h, unless it's held awake longer already")
 	cmd.Flags().BoolVar(&opts.wait, "wait", true, "Wait until the workload is Running")
 	addTimeoutFlag(cmd, &opts.timeout, "How long to wait")
 	return cmd
@@ -122,11 +123,17 @@ func wake(ctx context.Context, c client.Client, key client.ObjectKey, opts wakeO
 		w.Annotations = map[string]string{}
 	}
 	w.Annotations[v1alpha1.AnnotationLastActivity] = start.UTC().Format(time.RFC3339)
-	if opts.keepAwake > 0 {
-		w.Annotations[v1alpha1.AnnotationActiveUntil] = start.Add(opts.keepAwake).UTC().Format(time.RFC3339)
+	held := activeUntil(w.Annotations)
+	keepUntil := start.Add(opts.keepAwake)
+	if opts.keepAwake > 0 && !held.After(keepUntil) {
+		w.Annotations[v1alpha1.AnnotationActiveUntil] = keepUntil.UTC().Format(time.RFC3339)
 	}
 	if err := c.Patch(ctx, w, patch); err != nil {
 		return fmt.Errorf("marking %s active: %w", ref, err)
+	}
+	if opts.keepAwake > 0 && held.After(keepUntil) {
+		_, _ = fmt.Fprintf(out, "%s is already held awake until %s, later than --for asks, so that stays\n", ref,
+			held.UTC().Format(time.RFC3339))
 	}
 
 	switch phase := w.Status.Phase; {

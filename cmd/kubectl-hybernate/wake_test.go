@@ -81,6 +81,7 @@ func TestWake_StampsActivity(t *testing.T) {
 		name            string
 		phase           v1alpha1.WorkloadPhase
 		keepAwake       time.Duration
+		held            string
 		wantActiveUntil string
 		wantOutput      string
 	}{
@@ -90,13 +91,27 @@ func TestWake_StampsActivity(t *testing.T) {
 			wantActiveUntil: "2026-10-03T11:00:00Z", wantOutput: "waking preview-42/api\n",
 		},
 		{
+			name: "held awake for less", phase: v1alpha1.PhasePaused, keepAwake: 2 * time.Hour,
+			held: "2026-10-03T10:00:00Z", wantActiveUntil: "2026-10-03T11:00:00Z", wantOutput: "waking preview-42/api\n",
+		},
+		{
+			name: "held awake for longer", phase: v1alpha1.PhasePaused, keepAwake: 2 * time.Hour,
+			held: "2026-10-03T13:00:00Z", wantActiveUntil: "2026-10-03T13:00:00Z",
+			wantOutput: "preview-42/api is already held awake until 2026-10-03T13:00:00Z, later than --for asks, so " +
+				"that stays\nwaking preview-42/api\n",
+		},
+		{
 			name: "a running workload", phase: v1alpha1.PhaseRunning,
 			wantOutput: "preview-42/api is already running; its idle clock restarts now\n",
 		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			c := newClient(t, interceptor.Funcs{}, managedWorkload(tt.phase))
+			w := managedWorkload(tt.phase)
+			if tt.held != "" {
+				w.Annotations = map[string]string{v1alpha1.AnnotationActiveUntil: tt.held}
+			}
+			c := newClient(t, interceptor.Funcs{}, w)
 			opts := testOptions()
 			opts.wait = false
 			opts.keepAwake = tt.keepAwake

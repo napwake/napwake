@@ -367,7 +367,7 @@ If the workload isn't `Running` within `--timeout`, `wake` exits 1 with its phas
 | Flag | Short | Default | Description |
 |------|-------|---------|-------------|
 | `--namespace` | `-n` | kubeconfig context's | Namespace of the workload |
-| `--for` | | | Also keep the workload awake for this long, by setting `hybernate.io/active-until` |
+| `--for` | | | Also keep the workload awake for this long, by setting `hybernate.io/active-until` on its ManagedWorkload. A hold there that ends later stays, and `wake` says so |
 | `--wait` | | `true` | Wait until the workload is Running |
 | `--timeout` | | `5m` | How long to wait, cluster calls included |
 
