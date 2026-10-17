@@ -90,7 +90,7 @@ Hybernate hands a paused workload back, scaled to the replicas it had and releas
 
 - The ManagedWorkload is deleted, or the `hybernate.io/managed` label that created it is removed
 - The workload is labelled `hybernate.io/ignore: "true"`
-- Its namespace becomes [protected](opt-in.md#protected-namespaces)
+- Its namespace becomes [protected](opt-in.md#protected-namespaces), or it's Hybernate's own operator or doorman Deployment (labelled `control-plane: controller-manager` or `doorman` in Hybernate's namespace), which is never paused whatever its namespace allows
 
 Each of these emits a `Resumed` event saying why and how many replicas it has. No longer managing a workload never leaves it switched off.
 

@@ -94,6 +94,11 @@ type Reconciler struct {
 	// Hybernate doesn't manage unless they're labelled to allow it.
 	ProtectedNamespaces []string
 
+	// HybernateNamespaces are the namespaces Hybernate itself runs in. Its
+	// operator's and doorman's Deployments there are never paused, whatever
+	// a ManagedWorkload or a namespace label says.
+	HybernateNamespaces []string
+
 	// WatchNamespaces are the namespaces Hybernate works in, with a Role in
 	// each, or every namespace when empty.
 	WatchNamespaces []string
@@ -201,7 +206,10 @@ func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (res ctrl.
 	if protected, err := r.inProtectedNamespace(ctx, &workload); err != nil {
 		return ctrl.Result{}, err
 	} else if protected {
-		return r.reconcileProtected(ctx, &workload)
+		return r.reconcileProtected(ctx, &workload, namespaceProtection(workload.Namespace))
+	}
+	if r.isHybernate(target) {
+		return r.reconcileProtected(ctx, &workload, hybernateProtection(&workload))
 	}
 	r.clearCondition(&workload, conditionProtected, "NotProtected")
 	if err := r.wakeOnScaleUp(ctx, &workload, target); err != nil {

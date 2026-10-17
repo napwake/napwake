@@ -64,7 +64,7 @@ The operator sets standard Kubernetes conditions on the CR, each with `Reason`, 
 | `DependencyCycle` | `dependsOn` forms a cycle through it, so it won't pause | `DependencyCycle`; `False`: `NoCycle` |
 | `DependencyNotFound` | A `dependsOn` workload doesn't exist, or can't be seen | `DependencyNotFound`, or `DependencyNotVisible` when it's only outside `watchNamespaces` or not readable; `False`: `DependenciesFound`, `NoDependencies` |
 | `DuplicateTarget` | Another, older ManagedWorkload manages the same target, so this one does nothing | `DuplicateTarget`; `False`: `Resolved` |
-| `Protected` | Its namespace is protected, so it's never paused | `ProtectedNamespace`; `False`: `NotProtected` |
+| `Protected` | Its namespace is protected, or it's Hybernate's own operator or doorman, so it's never paused | `ProtectedNamespace`, `HybernateComponent`; `False`: `NotProtected` |
 | `PauseRequest` | The last [pause request](../guides/pause.md#pause-now) paused the workload, or found it paused; `False` says why it didn't | `Pausing`, `AlreadyPaused`; `False`: `DryRun`, `ActiveUntil`, `HeldByDependents`, `DependencyCycle`, `Protected`, `ScaledToZero`, `TargetNotFound`, `TargetIgnored`, `DuplicateTarget` |
 | `GitOpsConflict` | A GitOps tool undid its last pause; removed once a pause holds. See [Argo CD and Flux](../guides/gitops.md) | `PauseUndone` |
 | `ResumeIncomplete` | The last resume stopped waiting with some replicas not Ready, and the workload runs with those that are; see [Workload resumed with replicas not Ready](../operations/troubleshooting.md#workload-resumed-with-replicas-not-ready) | `ReplicasNotReady`; `False`: `AllReplicasReady` |
