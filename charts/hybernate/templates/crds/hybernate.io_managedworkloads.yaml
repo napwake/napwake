@@ -754,6 +754,12 @@ spec:
                           - Deployment
                           - StatefulSet
                           type: string
+                        lastSeen:
+                          description: |-
+                            LastSeen is when a request last confirmed one learned from a wake.
+                            One no request has confirmed for 14 days is forgotten.
+                          format: date-time
+                          type: string
                         name:
                           type: string
                         namespace:
@@ -769,7 +775,7 @@ spec:
                         via:
                           description: |-
                             Via is the environment variable that holds its address, and Address
-                            the address, with any password hidden, for one found in the
+                            the address, as scheme://host:port only, for one found in the
                             environment.
                           type: string
                       required:
