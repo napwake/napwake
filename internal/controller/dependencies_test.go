@@ -208,7 +208,8 @@ func withCondition(w *v1alpha1.ManagedWorkload, condType string, status metav1.C
 // a dependency with many dependents names only some.
 func TestDependencies_HoldersListIsBounded(t *testing.T) {
 	postgres := depWorkload("default", "postgres", v1alpha1.TargetKindStatefulSet, v1alpha1.PhaseRunning)
-	objs := []client.Object{postgres}
+	objs := make([]client.Object, 0, 2001)
+	objs = append(objs, postgres)
 	for i := range 2000 {
 		objs = append(objs, depWorkload("default", fmt.Sprintf("api-%04d", i), v1alpha1.TargetKindDeployment,
 			v1alpha1.PhaseRunning, postgresRef()))
