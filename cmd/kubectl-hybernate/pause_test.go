@@ -378,10 +378,8 @@ func TestPause_AsksWhenTheForecastExpectsDemand(t *testing.T) {
 				}
 			}
 			var out bytes.Buffer
-			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-			defer cancel()
 
-			err := pause(ctx, c, client.ObjectKey{Namespace: "preview-42", Name: "api"}, opts, &out, io.Discard)
+			err := pause(stepsOn(c, 5*time.Second), apiKey, opts, &out, io.Discard)
 
 			if tt.wantErr != "" {
 				require.ErrorIs(t, err, errNotPaused)
@@ -398,6 +396,42 @@ func TestPause_AsksWhenTheForecastExpectsDemand(t *testing.T) {
 			assert.Equal(t, tt.wantPaused, strings.Contains(out.String(), "is Paused"))
 		})
 	}
+}
+
+// stepsOn runs each step against c, within timeout.
+func stepsOn(c client.Client, timeout time.Duration) clusterSteps {
+	return clusterSteps{parent: context.Background(), timeout: timeout,
+		connect: func(context.Context) (client.Client, error) { return c, nil }}
+}
+
+// failsOnceDone stands in for a real client, which fails every call made
+// with a context that's done.
+func failsOnceDone(funcs interceptor.Funcs) interceptor.Funcs {
+	get := funcs.Get
+	funcs.Get = func(ctx context.Context, c client.WithWatch, key client.ObjectKey, obj client.Object,
+		opts ...client.GetOption) error {
+		if err := ctx.Err(); err != nil {
+			return err
+		}
+		return get(ctx, c, key, obj, opts...)
+	}
+	return funcs
+}
+
+// The time taken to answer isn't the cluster's: an answer that comes after
+// --timeout has passed still pauses the workload, within a --timeout of its
+// own.
+func TestPause_AnswerAfterTheTimeout(t *testing.T) {
+	c := newClient(t, failsOnceDone(operator(expectsDemand)), managedWorkload(v1alpha1.PhaseRunning))
+	const timeout = 200 * time.Millisecond
+	opts := pauseOptions{wait: true, pollInterval: time.Millisecond, now: time.Now,
+		confirm: func(string) (bool, error) { time.Sleep(2 * timeout); return true, nil }}
+	var out bytes.Buffer
+
+	err := pause(stepsOn(c, timeout), apiKey, opts, &out, io.Discard)
+
+	require.NoError(t, err)
+	assert.Contains(t, out.String(), "preview-42/api is Paused after")
 }
 
 // --yes overrides the forecast with the first request, without asking.
