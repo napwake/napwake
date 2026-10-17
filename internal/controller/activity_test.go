@@ -264,10 +264,10 @@ func TestActivityClock_MalformedAnnotationIsReportedOnce(t *testing.T) {
 
 	check()
 	check()
-	events := drainEvents(t, r)
-	assert.Equal(t, 1, strings.Count(events, ReasonInvalidActivityAnnotation), "reported once: %s", events)
-	assert.Contains(t, events, `"1773489600"`)
-	assert.Contains(t, events, "ManagedWorkload api")
+	emitted := drainEvents(t, r)
+	assert.Equal(t, 1, strings.Count(emitted, ReasonInvalidActivityAnnotation), "reported once: %s", emitted)
+	assert.Contains(t, emitted, `"1773489600"`)
+	assert.Contains(t, emitted, "ManagedWorkload api")
 
 	workload.Annotations[v1alpha1.AnnotationLastActivity] = "2026-03-14 11:59:00"
 	check()
@@ -772,7 +772,7 @@ func TestTemplateHashes(t *testing.T) {
 	assert.NotEqual(t, v1, hashes.of("workload-uid", target))
 
 	recreated := clockTarget("app:v3", nil)
-	recreated.UID, recreated.ResourceVersion = "other-uid", "2"
+	recreated.UID, recreated.ResourceVersion = "recreated-uid", "2"
 	assert.Equal(t, podTemplateHash(recreated), hashes.of("workload-uid", recreated), "and so is a new target")
 
 	unsaved := clockTarget("app:v4", nil)
@@ -988,8 +988,8 @@ func TestActivityClock_QueryThatNeverMatchesIsPointedOut(t *testing.T) {
 	assert.True(t, meta.IsStatusConditionTrue(workload.Status.Conditions, conditionPrometheusAvailable),
 		"the query was evaluated: it isn't a failure")
 	check()
-	events := drainEvents(t, r)
-	assert.Equal(t, 1, strings.Count(events, ReasonPrometheusQueryEmpty), "pointed out once: %s", events)
+	emitted := drainEvents(t, r)
+	assert.Equal(t, 1, strings.Count(emitted, ReasonPrometheusQueryEmpty), "pointed out once: %s", emitted)
 
 	matching.Store(true)
 	cond = check()
