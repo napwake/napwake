@@ -209,13 +209,19 @@ func (h *heldConn) hold(ctx context.Context) (net.Conn, string) {
 		return nil, resultIgnored
 	}
 
-	// A wake over the limits is retried while the connection is held, and
-	// a browser still gets the page, which reloads and asks again.
-	wakeErr := h.requestWake(ctx, waitCtx, h.route, h.from)
+	// A browser gets the page at once, while the wake goes on without it;
+	// one that fails, or is over the limits, is asked for again by the
+	// page's next reload. A held connection retries its own.
 	if isHTTP && h.route.page && isPageLoad(req) {
+		h.handling.Go(func() {
+			wakeCtx, cancel := context.WithTimeout(ctx, apiTimeout)
+			defer cancel()
+			_ = h.requestWake(ctx, wakeCtx, h.route, h.from) // logged by requestWake
+		})
 		h.servePage(waitCtx, req)
 		return nil, resultPage
 	}
+	wakeErr := h.requestWake(ctx, waitCtx, h.route, h.from)
 	h.streamClient()
 	return h.await(ctx, waitCtx, wakeErr)
 }

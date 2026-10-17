@@ -1854,3 +1854,24 @@ func TestServer_ShutdownDoesNotWaitOutAStamp(t *testing.T) {
 	stop()
 	assert.Less(t, time.Since(start), apiTimeout/2)
 }
+
+// A browser gets the waking-up page at once, however slow the API server
+// is to take the wake, which goes on without it.
+func TestServer_ServesThePageWithoutWaitingForTheWake(t *testing.T) {
+	port := freePort(t)
+	release := make(chan struct{})
+	s, c := newTestServer(t, hangPatches(release), pausedWorkload("api", port, time.Minute))
+	run(t, s)
+
+	conn := dial(t, port)
+	start := time.Now()
+	send(t, conn, browserGET)
+	resp, _ := readResponse(t, conn)
+	assert.Equal(t, http.StatusServiceUnavailable, resp.StatusCode)
+	assert.Less(t, time.Since(start), time.Second, "the page doesn't wait on the stamp")
+	assert.Empty(t, lastRequest(t, c))
+
+	close(release)
+	assert.Eventually(t, func() bool { return lastRequest(t, c) != "" }, 5*time.Second, 20*time.Millisecond,
+		"the wake lands once the API server answers")
+}
