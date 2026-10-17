@@ -543,6 +543,9 @@ func TestDeploymentReplicaSet(t *testing.T) {
 	}{
 		{"a Deployment's pod", "api", "api-7d9f8c6b5-x7k2p", "api-7d9f8c6b5"},
 		{"a short hash", "api", "api-65bd9-x2k4p", "api-65bd9"},
+		{"a hash of only digits", "api", "api-5967487594-x2k4p", "api-5967487594"},
+		{"a Job's pod in letters a hash has", "api", "api-bckp-x7k2p", ""},
+		{"a hash Kubernetes doesn't write", "api", "api-7d9f8c6z5-x7k2p", ""},
 		{"a longer-named Deployment's pod", "api", "api-gateway-7d9f8c6b5-x7k2p", ""},
 		{"a Job's pod", "api", "api-migrate-x7k2p", ""},
 		{"a CronJob's pod", "api", "api-29312345-x7k2p", ""},

@@ -214,28 +214,34 @@ func replicaSetPods(replicaSets []string) podNames {
 	}
 }
 
-// generatedRunes are what Kubernetes writes a ReplicaSet's pod-template-hash
-// and a generated name's suffix with: no vowels, and no 0, 1 or 3.
+// generatedRunes are what Kubernetes writes a generated name's suffix with:
+// no vowels, and no 0, 1 or 3.
 const generatedRunes = "bcdfghjklmnpqrstvwxz2456789"
 
-// maxTemplateHashLength is the longest a pod-template-hash is written: a
-// 32-bit hash in generatedRunes.
+// templateHashRunes are what a pod-template-hash is written with. Kubernetes
+// writes the 32-bit hash's decimal digits through rand.SafeEncodeString,
+// which maps each digit's byte, '0' to '9', to generatedRunes[b%27].
+const templateHashRunes = "456789bcdf"
+
+// maxTemplateHashLength is the longest a pod-template-hash is written: the
+// ten digits of the largest 32-bit hash.
 const maxTemplateHashLength = 10
 
 // deploymentReplicaSet is the ReplicaSet a pod's name says it's from, when
 // it's named as a Deployment called deployment names its pods:
-// <deployment>-<pod-template-hash>-<suffix>. A hash is a mix of letters and
-// digits, which tells it apart from a CronJob's timestamp, and only
-// generatedRunes, which a Job's name rarely is. A name the API server cut
-// short can't be read this way, so it isn't matched.
+// <deployment>-<pod-template-hash>-<suffix>. A hash is only
+// templateHashRunes, which a Job's name rarely is, and a CronJob's
+// timestamp, minutes since 1970 starting 2 or 3 until 2046, never is. A
+// name the API server cut short can't be read this way, so it isn't
+// matched.
 func deploymentReplicaSet(deployment, pod string) (string, bool) {
 	rest, ok := strings.CutPrefix(pod, deployment+"-")
 	if !ok {
 		return "", false
 	}
 	hash, suffix, ok := strings.Cut(rest, "-")
-	if !ok || len(suffix) != generatedSuffixLength || !generated(suffix) || len(hash) > maxTemplateHashLength ||
-		!generated(hash) || !strings.ContainsAny(hash, "bcdfghjklmnpqrstvwxz") {
+	if !ok || len(suffix) != generatedSuffixLength || !generated(suffix) || hash == "" ||
+		len(hash) > maxTemplateHashLength || strings.Trim(hash, templateHashRunes) != "" {
 		return "", false
 	}
 	rs := deployment + "-" + hash
