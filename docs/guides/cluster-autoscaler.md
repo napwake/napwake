@@ -21,26 +21,29 @@ autoDiscovery:
   clusterName: my-cluster
 
 extraArgs:
-  # How long after scale-down before another node can be removed.
-  # Keep this shorter than Hybernate's default reconcile interval (1m)
-  # so freed capacity is reclaimed promptly.
-  scale-down-delay-after-delete: 1m
-
-  # How long a node must be underutilized before it's eligible for removal.
-  # Nodes free up this long after Hybernate pauses their pods.
-  # Much longer than Hybernate's idleAfter, and nodes linger after pods are gone.
+  # How long a node must be unneeded before it's removed. The default is 10m.
+  # A paused workload's node keeps costing money for this long, so keep it
+  # short next to idleAfter.
   scale-down-unneeded-time: 5m
 
-  # CPU utilization threshold below which a node is considered underutilized.
-  # 0.5 means a node using less than 50% CPU is a candidate for removal.
+  # A node is unneeded when the CPU or memory its pods request, whichever is
+  # higher, is below this fraction of what it can allocate. 0.5 is the default.
+  # It counts requests, not usage: a node frees up once paused pods are gone,
+  # not when they go quiet.
   scale-down-utilization-threshold: "0.5"
 
-  # Prevents thrashing when Hybernate resumes workloads.
-  # After a scale-up, wait before considering scale-down again.
+  # How long after a scale-up before scale-down is considered again. The
+  # default is 10m. A wake can scale nodes up, so a shorter delay lets the
+  # next pause free them sooner; much shorter, and nodes churn.
   scale-down-delay-after-add: 5m
 
-  # How often the autoscaler evaluates the cluster.
-  # 10s is the default. No need to change for Hybernate.
+  # How long after removing a node before scale-down is considered again.
+  # The default, 0s, lets the nodes of several workloads paused together go
+  # one after another, so leave it.
+  scale-down-delay-after-delete: 0s
+
+  # How often the autoscaler evaluates the cluster. 10s is the default and
+  # needs no change for Hybernate.
   scan-interval: 10s
 ```
 
@@ -59,7 +62,7 @@ extraArgs:
 
 ## Karpenter
 
-[Karpenter](https://karpenter.sh) is a CNCF node autoscaler with native support on EKS and Azure (via AKS Node Autoprovision). Instead of managing node groups, it provisions individual nodes sized to fit pending pods and consolidates underutilized nodes proactively.
+[Karpenter](https://karpenter.sh) is an open-source node autoscaler, a Kubernetes SIG Autoscaling project, with providers for AWS, Azure (as AKS node auto-provisioning), and other clouds. Instead of managing node groups, it provisions individual nodes sized to fit pending pods and consolidates underutilized nodes proactively.
 
 ### Recommended Settings
 
@@ -140,7 +143,7 @@ Some managed Kubernetes offerings handle node scaling transparently:
 |---------|-------------|-----------------|
 | **GKE Autopilot** | Google manages nodes entirely. You pay per pod resource request. | Direct cost savings. Every pod Hybernate removes reduces the bill immediately. No autoscaler configuration needed. |
 | **EKS with Fargate** | AWS runs each pod on a dedicated microVM. No shared nodes. | Direct cost savings. Pausing a pod stops billing for that pod. No autoscaler configuration needed. |
-| **AKS Node Autoprovision** | Azure manages nodes using Karpenter under the hood. | Use the Karpenter settings above. Azure handles the rest. |
+| **AKS node auto-provisioning** | Azure manages nodes using Karpenter under the hood. | Use the Karpenter settings above. Azure handles the rest. |
 
 These are the simplest setups for Hybernate because the cost savings are 1:1 with pod scaling: no pods running means no cost.
 
