@@ -52,6 +52,24 @@ func (r *Reconciler) inProtectedNamespace(ctx context.Context, workload *v1alpha
 	return v1alpha1.Protected(ns.Name, ns.Labels, r.ProtectedNamespaces), nil
 }
 
+// protectionOf is why Hybernate mustn't pause the workload, or nil when it
+// may.
+func (r *Reconciler) protectionOf(ctx context.Context, workload *v1alpha1.ManagedWorkload,
+	target client.Object) (*protection, error) {
+	protected, err := r.inProtectedNamespace(ctx, workload)
+	switch {
+	case err != nil:
+		return nil, err
+	case protected:
+		p := namespaceProtection(workload.Namespace)
+		return &p, nil
+	case r.isHybernate(target):
+		p := hybernateProtection(workload)
+		return &p, nil
+	}
+	return nil, nil
+}
+
 // controlPlaneLabel marks the operator's and the doorman's Deployments.
 const controlPlaneLabel = "control-plane"
 

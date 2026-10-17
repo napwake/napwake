@@ -840,9 +840,9 @@ func TestResume_ReportsReplicasNotReady(t *testing.T) {
 	require.NotNil(t, c)
 	assert.Equal(t, metav1.ConditionTrue, c.Status)
 	assert.Equal(t, "resumed with 2 of 3 replicas Ready: Hybernate stopped waiting for the rest after 3m", c.Message)
-	events := drainEvents(t, r)
-	assert.Contains(t, events, "Warning "+ReasonResumeIncomplete)
-	assert.NotContains(t, events, "Normal "+ReasonResumed)
+	announced := drainEvents(t, r)
+	assert.Contains(t, announced, "Warning "+ReasonResumeIncomplete)
+	assert.NotContains(t, announced, "Normal "+ReasonResumed)
 
 	got.Status.Phase = v1alpha1.PhaseResuming
 	got.Status.Pause = &v1alpha1.PauseStatus{PreviousReplicas: 3}

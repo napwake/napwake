@@ -148,7 +148,6 @@ type lifecyclePauser interface {
 func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (res ctrl.Result, retErr error) {
 	ctx, cancel := context.WithTimeout(ctx, reconcileTimeout)
 	defer cancel()
-	logger := log.FromContext(ctx)
 
 	var doormanRetry time.Duration
 	defer func() {
@@ -207,13 +206,10 @@ func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (res ctrl.
 		return r.reconcileIgnored(ctx, &workload)
 	}
 	r.setCondition(&workload, conditionTargetAvailable, metav1.ConditionTrue, "TargetExists", "")
-	if protected, err := r.inProtectedNamespace(ctx, &workload); err != nil {
+	if p, err := r.protectionOf(ctx, &workload, target); err != nil {
 		return ctrl.Result{}, err
-	} else if protected {
-		return r.reconcileProtected(ctx, &workload, namespaceProtection(workload.Namespace))
-	}
-	if r.isHybernate(target) {
-		return r.reconcileProtected(ctx, &workload, hybernateProtection(&workload))
+	} else if p != nil {
+		return r.reconcileProtected(ctx, &workload, *p)
 	}
 	r.clearCondition(&workload, conditionProtected, "NotProtected")
 	if err := r.wakeOnScaleUp(ctx, &workload, target); err != nil {
@@ -226,16 +222,10 @@ func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (res ctrl.
 		return ctrl.Result{}, err
 	}
 
-	// A cache that hasn't yet seen a resume finish still holds the workload
-	// Paused, and routing that would put back the doorman slices the resume
-	// just removed. Only the API server can tell, and only a workload that
-	// would be routed needs asking.
-	if doormanEligible(&workload) {
-		if phase, err := r.livePhase(ctx, &workload); err != nil {
-			return ctrl.Result{}, err
-		} else if phase != workload.Status.Phase {
-			return ctrl.Result{RequeueAfter: staleRetry}, nil
-		}
+	if stale, err := r.staleForRouting(ctx, &workload); err != nil {
+		return ctrl.Result{}, err
+	} else if stale {
+		return ctrl.Result{RequeueAfter: staleRetry}, nil
 	}
 	doormanRetry = r.routeDoorman(ctx, &workload, target)
 
@@ -261,22 +251,47 @@ func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (res ctrl.
 		return *result, nil
 	}
 
-	result, err = r.reconcileAutomation(ctx, &workload, target)
+	return r.reconcileSettled(ctx, &workload, target, observed)
+}
+
+// reconcileSettled runs automation on a workload no pause or resume is
+// under way for, and writes its status if that changed it.
+func (r *Reconciler) reconcileSettled(ctx context.Context, workload *v1alpha1.ManagedWorkload, target client.Object,
+	observed *v1alpha1.ManagedWorkloadStatus) (ctrl.Result, error) {
+	result, err := r.reconcileAutomation(ctx, workload, target)
 	if err != nil {
 		return ctrl.Result{}, err
 	}
 
-	r.trackDryRun(&workload)
-	r.accumulateCost(ctx, &workload)
-	if err := r.persistStatus(ctx, &workload, observed); err != nil {
+	r.trackDryRun(workload)
+	r.accumulateCost(ctx, workload)
+	if err := r.persistStatus(ctx, workload, observed); err != nil {
 		return ctrl.Result{}, err
 	}
 
-	logger.V(1).Info("reconciled", "workload", workload.Name, "namespace", workload.Namespace, "phase", workload.Status.Phase)
+	log.FromContext(ctx).V(1).Info("reconciled", "workload", workload.Name, "namespace", workload.Namespace,
+		"phase", workload.Status.Phase)
 	if result != nil {
 		return *result, nil
 	}
 	return ctrl.Result{}, nil
+}
+
+// staleForRouting reports whether the workload's phase, as read from the
+// cache, is out of date for routing it to the doorman. A cache that hasn't
+// yet seen a resume finish still holds the workload Paused, and routing
+// that would put back the doorman slices the resume just removed. Only the
+// API server can tell, and only a workload that would be routed needs
+// asking.
+func (r *Reconciler) staleForRouting(ctx context.Context, workload *v1alpha1.ManagedWorkload) (bool, error) {
+	if !doormanEligible(workload) {
+		return false, nil
+	}
+	phase, err := r.livePhase(ctx, workload)
+	if err != nil {
+		return false, err
+	}
+	return phase != workload.Status.Phase, nil
 }
 
 // resumeTransition finishes a pause or resume that an earlier reconcile
