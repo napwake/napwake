@@ -81,7 +81,7 @@ With leader election, a Role `hybernate-leader-election` in the release namespac
 | `discovery.k8s.io` | `endpointslices` | `get`, `list`, `watch` |
 | `""`, `events.k8s.io` | `events` | `create`, `patch` |
 
-**Uninstall guard**, with `uninstallGuard.enabled` (the default): a ServiceAccount `hybernate-uninstall-guard`, and a ClusterRole and ClusterRoleBinding of the same name, or a Role and RoleBinding in each watched namespace, allowing `get`, `list` and `watch` on `hybernate.io` `managedworkloads`. They exist only while `helm uninstall` runs its pre-delete hook, which refuses the uninstall while ManagedWorkloads are left.
+**Guards**, with `guard.uninstall` and, with `watchNamespaces`, `guard.upgrade` (the defaults): a ServiceAccount `hybernate-uninstall-guard`, and a ClusterRole and ClusterRoleBinding of the same name, allowing `list` on `hybernate.io` `managedworkloads`, cluster-wide even with `watchNamespaces`; and the same named `hybernate-upgrade-guard`. They're Helm hooks, like the Jobs that use them: they exist only while `helm uninstall` runs its pre-delete hook, or `helm upgrade` or `helm rollback` its pre-upgrade or pre-rollback hook, which refuse to leave ManagedWorkloads without an operator.
 
 **Admission policy**, with `doorman.admissionPolicy.enabled` (the default): a ValidatingAdmissionPolicy and binding `hybernate-doorman`, cluster-scoped, which refuse any change the doorman's ServiceAccount makes to a ManagedWorkload other than to its `hybernate.io/last-request` and `last-request-from` annotations.
 

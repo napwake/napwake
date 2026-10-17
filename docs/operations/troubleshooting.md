@@ -177,9 +177,13 @@ kubectl get managedworkloads -n staging -o jsonpath='{range .items[*]}{.metadata
 
 ### `helm uninstall` fails with `job hybernate-uninstall-guard failed`
 
-ManagedWorkloads are left, and uninstalling now would leave their workloads paused. Helm prints them above the error; with an older Helm that doesn't print a hook's output, `kubectl logs job/hybernate-uninstall-guard -n hybernate-system --all-containers` shows them. Remove the `hybernate.io/managed` label from those workloads and their namespaces, delete the ManagedWorkloads you wrote yourself, and uninstall again, as in [Uninstall](../getting-started/installation.md#uninstall).
+ManagedWorkloads are left, and uninstalling now would leave their workloads paused. Helm prints them above the error; with an older Helm that doesn't print a hook's output, `kubectl logs job/hybernate-uninstall-guard -n hybernate-system` shows them. Remove the `hybernate.io/managed` label from those workloads and their namespaces, delete the ManagedWorkloads you wrote yourself, and uninstall again, as in [Uninstall](../getting-started/installation.md#uninstall).
 
-When it lists ManagedWorkloads that were being deleted, the operator didn't finish them within two and a half minutes, usually because it isn't running: uninstall with `--no-hooks` and restore the workloads by hand. When the error says the server doesn't have a resource type `managedworkloads`, the CRD is gone, as it can be with `crds.install: false`, so nothing is left to guard: uninstall with `--no-hooks`. With Argo CD 3.3 and later the same refusal blocks deleting the Application, with a `DeletionError` condition; set `uninstallGuard.enabled: false` in Git to delete it anyway.
+The hook waits two and a half minutes for ManagedWorkloads being deleted before it lists what's left, so one it still lists as being deleted is one the operator didn't finish in that time, usually because it isn't running: uninstall with `--no-hooks` and restore the workloads by hand. Without the CRD, as can happen with `crds.install: false`, nothing is left to guard, and the hook lets the uninstall go ahead. With Argo CD 3.3 and later the same refusal blocks deleting the Application, with a `DeletionError` condition; set `guard.uninstall: false` in Git to delete it anyway.
+
+### `helm upgrade` fails with `job hybernate-upgrade-guard failed`
+
+The upgrade sets `watchNamespaces` to leave out namespaces where the operator manages workloads, which would leave them paused with no operator. Helm prints them above the error, or `kubectl logs job/hybernate-upgrade-guard -n hybernate-system` shows them. Keep those namespaces in `watchNamespaces`, or stop managing the workloads there first, then upgrade again; see [Narrowing watchNamespaces](upgrading.md#narrowing-watchnamespaces). Under Argo CD the same refusal fails the sync, in its PreSync hook.
 
 ### Workloads stay at zero after the operator was removed
 

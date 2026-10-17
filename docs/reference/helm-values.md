@@ -77,6 +77,8 @@ protectedNamespaces: ["prod-*", production]
 
 Wake on request works with `watchNamespaces`: the operator always reads the doorman's own EndpointSlices in the release namespace, through a `<fullname>-doorman-endpoints` Role there. A `dependsOn` pointing into a namespace that isn't watched, and that allows the dependent's with `hybernate.io/dependents-from`, is reported on the dependent, as `DependencyNotFound=True` with reason `DependencyNotVisible`, and never blocks it.
 
+An upgrade or rollback to a `watchNamespaces` that leaves out a namespace where the operator manages workloads, or that sets it where it was empty, is refused while they're there, since they'd stay paused with no operator: see [Narrowing watchNamespaces](../operations/upgrading.md#narrowing-watchnamespaces).
+
 ## Opt-In Defaults
 
 Settings for workloads opted in with the `hybernate.io/managed` label, used when neither the workload nor its namespace sets the annotation. See [Opting In](../guides/opt-in.md#which-setting-wins).
@@ -183,17 +185,26 @@ On Cilium, a NetworkPolicy `ipBlock` may not match the API server, which Cilium 
 
 The doorman always gets its own ServiceAccount, `<fullname>-doorman`.
 
-## Uninstall Guard
+## Guards
 
 | Value | Default | Description |
 |-------|---------|-------------|
-| `uninstallGuard.enabled` | `true` | Refuse `helm uninstall` while ManagedWorkloads are left, through a pre-delete hook Job |
-| `uninstallGuard.image.repository` | `registry.k8s.io/kubectl` | The hook's image, which needs only `kubectl` |
-| `uninstallGuard.image.tag` | `v1.35.9` | Its tag |
-| `uninstallGuard.image.digest` | the tag's digest | Pins the image; empty pulls by tag |
-| `uninstallGuard.resources` | 10m/32Mi requests, 100m/64Mi limits | The hook containers' resources |
+| `guard.uninstall` | `true` | Refuse `helm uninstall` while ManagedWorkloads are left, through a pre-delete hook Job |
+| `guard.upgrade` | `true` | Refuse `helm upgrade` or `helm rollback` to a `watchNamespaces` that leaves out namespaces where the operator manages workloads, through a pre-upgrade and pre-rollback hook Job. Only with `watchNamespaces` set |
+| `guard.nodeSelector` | `{}` | The hooks' node selector; empty uses the operator's `nodeSelector` |
+| `guard.tolerations` | `[]` | Tolerations; empty uses the operator's `tolerations` |
+| `guard.affinity` | `{}` | Affinity; empty uses the operator's `affinity` |
+| `guard.priorityClassName` | `""` | PriorityClass; empty uses the operator's `priorityClassName` |
+| `guard.podAnnotations` | `{}` | The hooks' pod annotations, over `sidecar.istio.io/inject: "false"` and `linkerd.io/inject: disabled` |
+| `guard.podLabels` | `{}` | The hooks' pod labels, over `sidecar.istio.io/inject: "false"`. They can't replace the chart's own labels |
+| `guard.resources` | 10m/64Mi requests, 100m/128Mi limits | The hooks' resources |
 
-Without the operator, a ManagedWorkload's finalizer never runs: its workload stays paused at 0 replicas, and its Services keep routing to the deleted doorman. The `<fullname>-uninstall-guard` Job lists the ManagedWorkloads left and fails, which stops `helm uninstall` before it removes anything, after waiting two and a half minutes for any being deleted. It runs as the `<fullname>-uninstall-guard` ServiceAccount, which may only read ManagedWorkloads, cluster-wide or, with `watchNamespaces`, in those namespaces, and uses the operator's `nodeSelector`, `tolerations`, `affinity` and `imagePullSecrets`. `helm uninstall --no-hooks` skips it. Argo CD 3.3 and later runs it as a PreDelete hook, so deleting the Application is blocked the same way; earlier versions skip it. Its pod has its own `control-plane: uninstall-guard` label, so the operator's Service and NetworkPolicy don't select it. See [Uninstall](../getting-started/installation.md#uninstall).
+Without the operator, a ManagedWorkload's finalizer never runs: its workload stays paused at 0 replicas, and its Services keep routing to the doorman. The guards are hook Jobs that run the operator's image with `--guard`: each waits two and a half minutes for any ManagedWorkloads being deleted, then lists those it would leave without an operator, and fails, which stops Helm before it changes anything. Helm prints the list.
+
+- The `<fullname>-uninstall-guard` Job counts every ManagedWorkload in the watched namespaces, or in every namespace without `watchNamespaces`, and any elsewhere that the operator took on, with its `hybernate.io/cleanup` finalizer. See [Uninstall](../getting-started/installation.md#uninstall). Argo CD 3.3 and later runs it as a PreDelete hook, so deleting the Application is blocked the same way; earlier versions skip it.
+- The `<fullname>-upgrade-guard` Job counts those the operator took on in namespaces the new `watchNamespaces` leaves out. See [Narrowing watchNamespaces](../operations/upgrading.md#narrowing-watchnamespaces). Argo CD runs it as a PreSync hook, before every sync.
+
+Each runs as a ServiceAccount of its own name, through a ClusterRole that may only list ManagedWorkloads, which read their metadata cluster-wide, even with `watchNamespaces`, since those they look for may be outside it. The ServiceAccounts and RBAC are hooks too, deleted once the hook has run; a failed Job is kept for an hour, for `kubectl logs`. The hooks use `image`, `imagePullSecrets` and `logLevel`. Meshes' sidecars are kept out of their pods, since a sidecar that keeps running would keep the Job from finishing. Their pods have their own `control-plane: uninstall-guard` and `control-plane: upgrade-guard` labels, so the operator's Service and NetworkPolicy don't select them. `--no-hooks` skips both.
 
 ## Pod Scheduling
 
