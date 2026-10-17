@@ -161,6 +161,7 @@ Requests to the paused workload then fail, as they would without Hybernate. With
 | The Deployment or StatefulSet is deleted | Routing is removed, since nothing would start the pods a held request waits for. `TargetAvailable=False`, reason `TargetNotFound`; requests fail as they would without Hybernate |
 | No doorman pod is Ready | `WakeOnRequest=False`, reason `DoormanUnavailable`, and routing is removed. Requests fail until a doorman pod is back |
 | All doorman ports are in use | `WakeOnRequest=False`, reason `NoFreePort`. The doorman has 10,000 ports, one per paused Service port in the cluster |
+| The workload would hold more than 32 doorman ports, or its namespace more than 256 | `WakeOnRequest=False`, reason `TooManyPorts`, so one tenant can't use up the ports every namespace shares. Set the caps with the Helm values `doorman.portsPerWorkload` and `doorman.portsPerNamespace` |
 | Routing failed, such as an EndpointSlice write being refused, or an EndpointSlice that isn't the doorman's already having the name the doorman's would take (`<service>-o<hash>`), which it never overwrites | `WakeOnRequest=False`, reason `RoutingFailed`, with a warning event. It's retried with backoff, from 5 seconds up to 5 minutes. Routing problems never hold up a pause or a wake |
 
 ## Network policies

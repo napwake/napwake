@@ -87,6 +87,12 @@ type Reconciler struct {
 	DoormanService   string
 	DoormanNamespace string
 
+	// DoormanPortsPerWorkload and DoormanPortsPerNamespace cap the doorman
+	// ports one workload, and one namespace, may hold. Zero means
+	// DefaultDoormanPortsPerWorkload and DefaultDoormanPortsPerNamespace.
+	DoormanPortsPerWorkload  int
+	DoormanPortsPerNamespace int
+
 	// PodReader reads from the API server what the cache leaves out: pods,
 	// Services' own EndpointSlices, and every workload's doorman routes.
 	// Defaults to Client.

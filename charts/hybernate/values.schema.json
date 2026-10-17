@@ -160,6 +160,8 @@
           "type": "array",
           "items": {"type": "string", "minLength": 1, "pattern": "^[^,]+$"}
         },
+        "portsPerWorkload": {"type": "integer", "minimum": 1, "maximum": 10000},
+        "portsPerNamespace": {"type": "integer", "minimum": 1, "maximum": 10000},
         "admissionPolicy": {"$ref": "#/definitions/enabled"},
         "podDisruptionBudget": {"$ref": "#/definitions/enabled"},
         "nodeSelector": {"$ref": "#/definitions/stringMap"},

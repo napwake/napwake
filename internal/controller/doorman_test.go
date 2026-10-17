@@ -1247,3 +1247,35 @@ func TestReconcileDoorman_LeavingRemovesSlicesTheCacheMissed(t *testing.T) {
 		})
 	}
 }
+
+// Every routed Service port takes one of the doorman ports the whole
+// cluster shares, so a workload, or a namespace, over its cap isn't
+// routed, and says why.
+func TestReconcileDoorman_CapsPortsPerWorkloadAndNamespace(t *testing.T) {
+	tests := []struct {
+		name         string
+		perWorkload  int
+		perNamespace int
+		want         string
+	}{
+		{name: "per workload", perWorkload: 1, perNamespace: 10, want: "the workload would hold 2 doorman ports, more than its limit of 1"},
+		{name: "per namespace", perWorkload: 10, perNamespace: 2, want: "namespace default would hold 3 doorman ports, more than its limit of 2"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			r, first, second, billing := twoPausedWorkloads(t)
+			ctx := context.Background()
+			require.NoError(t, doormanErr(ctx, r, first, appTarget()))
+			require.NoError(t, r.Update(ctx, service("billing", map[string]string{"app": "billing"},
+				corev1.ServicePort{Name: "http", Port: 80}, corev1.ServicePort{Name: "grpc", Port: 9090})))
+			r.DoormanPortsPerWorkload, r.DoormanPortsPerNamespace = tt.perWorkload, tt.perNamespace
+
+			require.NoError(t, doormanErr(ctx, r, second, billing))
+
+			assert.Empty(t, second.Status.Doorman)
+			cond := wakeCondition(t, second)
+			assert.Equal(t, "TooManyPorts", cond.Reason)
+			assert.Contains(t, cond.Message, tt.want)
+		})
+	}
+}

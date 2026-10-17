@@ -113,6 +113,11 @@ func main() {
 	flag.StringVar(&doormanHealthCheckAgents, "doorman-health-check-user-agents", "",
 		"Comma-separated User-Agent prefixes of health checkers and scrapers whose GET and HEAD requests don't wake "+
 			"a paused workload, besides the built-in ones, such as MyCorpMonitor/.")
+	var doormanPortsPerWorkload, doormanPortsPerNamespace int
+	flag.IntVar(&doormanPortsPerWorkload, "doorman-ports-per-workload", controller.DefaultDoormanPortsPerWorkload,
+		"The most doorman ports one workload may hold; one with more Service ports isn't routed.")
+	flag.IntVar(&doormanPortsPerNamespace, "doorman-ports-per-namespace", controller.DefaultDoormanPortsPerNamespace,
+		"The most doorman ports the workloads of one namespace may hold together.")
 	flag.StringVar(&prometheusURL, "prometheus-url", "",
 		"Base URL of the Prometheus API used for activity queries, e.g. http://prometheus.monitoring.svc:9090.")
 	flag.IntVar(&maxConcurrentReconciles, "max-concurrent-reconciles", 4,
@@ -165,6 +170,12 @@ func main() {
 	if maxConcurrentReconciles < 1 {
 		setupLog.Error(errors.New("must be at least 1"), "invalid --max-concurrent-reconciles",
 			"value", maxConcurrentReconciles)
+		os.Exit(1)
+	}
+	if doormanPortsPerWorkload < 1 || doormanPortsPerNamespace < 1 {
+		setupLog.Error(errors.New("must be at least 1"),
+			"invalid --doorman-ports-per-workload or --doorman-ports-per-namespace",
+			"per_workload", doormanPortsPerWorkload, "per_namespace", doormanPortsPerNamespace)
 		os.Exit(1)
 	}
 	location, err := time.LoadLocation(timezone)
@@ -250,18 +261,20 @@ func main() {
 		readyz = server.Ready
 	} else {
 		if err := (&controller.Reconciler{
-			Client:                  c,
-			Scheme:                  mgr.GetScheme(),
-			Recorder:                mgr.GetEventRecorder("hybernate"),
-			PrometheusURL:           prometheusURL,
-			DoormanService:          doormanService,
-			DoormanNamespace:        doormanNamespace,
-			PodReader:               mgr.GetAPIReader(),
-			ProtectedNamespaces:     protected,
-			WatchNamespaces:         watched,
-			HybernateNamespaces:     own,
-			MaxConcurrentReconciles: maxConcurrentReconciles,
-			Timezone:                location,
+			Client:                   c,
+			Scheme:                   mgr.GetScheme(),
+			Recorder:                 mgr.GetEventRecorder("hybernate"),
+			PrometheusURL:            prometheusURL,
+			DoormanService:           doormanService,
+			DoormanNamespace:         doormanNamespace,
+			DoormanPortsPerWorkload:  doormanPortsPerWorkload,
+			DoormanPortsPerNamespace: doormanPortsPerNamespace,
+			PodReader:                mgr.GetAPIReader(),
+			ProtectedNamespaces:      protected,
+			WatchNamespaces:          watched,
+			HybernateNamespaces:      own,
+			MaxConcurrentReconciles:  maxConcurrentReconciles,
+			Timezone:                 location,
 		}).SetupWithManager(mgr); err != nil {
 			setupLog.Error(err, "unable to create controller", "controller", "ManagedWorkload")
 			os.Exit(1)

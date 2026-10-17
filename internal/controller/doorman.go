@@ -193,6 +193,12 @@ func (r *Reconciler) reconcileDoorman(ctx context.Context, workload *v1alpha1.Ma
 		r.setCondition(workload, conditionWakeOnRequest, metav1.ConditionFalse, "NoFreePort", err.Error())
 		return recheck, nil
 	}
+	var tooMany *tooManyPortsError
+	if errors.As(err, &tooMany) {
+		r.setCondition(workload, conditionWakeOnRequest, metav1.ConditionFalse, "TooManyPorts",
+			"requests don't wake the workload: "+err.Error())
+		return shortest(recheck, servedRecheck), nil
+	}
 	if err != nil {
 		return 0, err
 	}
@@ -604,7 +610,16 @@ func (r *Reconciler) allocateRoutes(ctx context.Context, workload *v1alpha1.Mana
 		existing[routeKey{service: route.Service, portName: route.PortName}] = route.DoormanPort
 	}
 	reader := routeReader{reader: r.apiReader(), namespaces: r.WatchNamespaces}
-	return r.doormanPorts.assign(ctx, reader, r.now(), workload.UID, existing, keys)
+	holder := portHolder{uid: workload.UID, namespace: workload.Namespace}
+	return r.doormanPorts.assign(ctx, reader, r.now(), holder, r.portLimits(), existing, keys)
+}
+
+// portLimits are the caps on doorman ports, the defaults where unset.
+func (r *Reconciler) portLimits() portLimits {
+	return portLimits{
+		perWorkload:  cmp.Or(r.DoormanPortsPerWorkload, DefaultDoormanPortsPerWorkload),
+		perNamespace: cmp.Or(r.DoormanPortsPerNamespace, DefaultDoormanPortsPerNamespace),
+	}
 }
 
 // apiReader reads from the API server what the cache leaves out, or may
@@ -665,8 +680,39 @@ type routeKey struct {
 	service, portName string
 }
 
+// The default caps on the doorman ports one workload, and one namespace,
+// may hold. Every port of every Service selecting a paused workload takes
+// one of the 10,000 the whole cluster shares, so without them one tenant
+// could leave none for the rest.
+const (
+	DefaultDoormanPortsPerWorkload  = 32
+	DefaultDoormanPortsPerNamespace = 256
+)
+
+type portLimits struct {
+	perWorkload, perNamespace int
+}
+
+// tooManyPortsError means routing a workload would take more doorman ports
+// than it, or its namespace, may hold.
+type tooManyPortsError struct {
+	holder      string
+	want, limit int
+}
+
+func (e *tooManyPortsError) Error() string {
+	return fmt.Sprintf("%s would hold %d doorman ports, more than its limit of %d", e.holder, e.want, e.limit)
+}
+
+// portHolder is the workload a port is claimed for.
+type portHolder struct {
+	uid       types.UID
+	namespace string
+}
+
 type portClaim struct {
-	owner types.UID
+	owner     types.UID
+	namespace string
 	// at is when the claim was last made, or for a draining port, when
 	// the drain ends.
 	at time.Time
@@ -692,10 +738,10 @@ type portAllocator struct {
 }
 
 // assign gives each key a port, keeping the existing ports where they're
-// still the owner's, and claims them for it. Ports it no longer needs start
-// draining.
-func (a *portAllocator) assign(ctx context.Context, reader routeReader, now time.Time,
-	owner types.UID, existing map[routeKey]int32, keys []routeKey) ([]v1alpha1.DoormanRoute, error) {
+// still the owner's, and claims them for it, unless that's more than limits
+// allow. Ports it no longer needs start draining.
+func (a *portAllocator) assign(ctx context.Context, reader routeReader, now time.Time, holder portHolder,
+	limits portLimits, existing map[routeKey]int32, keys []routeKey) ([]v1alpha1.DoormanRoute, error) {
 	if err := a.load(ctx, reader, now); err != nil {
 		return nil, err
 	}
@@ -706,6 +752,10 @@ func (a *portAllocator) assign(ctx context.Context, reader routeReader, now time
 			delete(a.draining, port)
 		}
 	}
+	if err := a.withinLimits(holder, limits, len(keys)); err != nil {
+		return nil, err
+	}
+	owner := holder.uid
 
 	chosen := map[int32]bool{}
 	used := func(port int32) bool { return chosen[port] || !a.free(port, owner) }
@@ -728,10 +778,27 @@ func (a *portAllocator) assign(ctx context.Context, reader routeReader, now time
 
 	a.releaseLocked(owner, now, chosen)
 	for port := range chosen {
-		a.claims[port] = portClaim{owner: owner, at: now}
+		a.claims[port] = portClaim{owner: owner, namespace: holder.namespace, at: now}
 		delete(a.draining, port)
 	}
 	return routes, nil
+}
+
+// withinLimits reports whether holder may hold n ports. a.mu must be held.
+func (a *portAllocator) withinLimits(holder portHolder, limits portLimits, n int) error {
+	if n > limits.perWorkload {
+		return &tooManyPortsError{holder: "the workload", want: n, limit: limits.perWorkload}
+	}
+	inNamespace := n
+	for _, c := range a.claims {
+		if c.namespace == holder.namespace && c.owner != holder.uid {
+			inNamespace++
+		}
+	}
+	if inNamespace > limits.perNamespace {
+		return &tooManyPortsError{holder: "namespace " + holder.namespace, want: inNamespace, limit: limits.perNamespace}
+	}
+	return nil
 }
 
 func (a *portAllocator) free(port int32, owner types.UID) bool {
@@ -799,7 +866,7 @@ func (a *portAllocator) merge(inUse portsInUse, now time.Time) {
 		a.draining = map[int32]portClaim{}
 	}
 	claims := map[int32]portClaim{}
-	claim := func(port int32, owner types.UID) {
+	claim := func(port int32, owner types.UID, namespace string) {
 		if _, taken := claims[port]; taken {
 			return
 		}
@@ -807,11 +874,11 @@ func (a *portAllocator) merge(inUse portsInUse, now time.Time) {
 		if d, ok := a.draining[port]; ok && d.owner == owner {
 			return
 		}
-		claims[port] = portClaim{owner: owner, at: now}
+		claims[port] = portClaim{owner: owner, namespace: namespace, at: now}
 	}
 	for _, w := range inUse.workloads {
 		for _, route := range w.Status.Doorman {
-			claim(route.DoormanPort, w.UID)
+			claim(route.DoormanPort, w.UID, w.Namespace)
 		}
 		for _, d := range w.Status.DoormanDraining {
 			if _, known := a.draining[d.Port]; !known && now.Before(d.Until.Time) {
@@ -826,7 +893,7 @@ func (a *portAllocator) merge(inUse portsInUse, now time.Time) {
 		}
 		for _, p := range slice.Ports {
 			if p.Port != nil {
-				claim(*p.Port, owner.UID)
+				claim(*p.Port, owner.UID, slice.Namespace)
 			}
 		}
 	}

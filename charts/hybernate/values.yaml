@@ -117,6 +117,13 @@ doorman:
   # NewRelicPinger/, Uptime-Kuma/, Gatus/ and others. For example, an
   # in-house uptime monitor's: ["MyCorpMonitor/"].
   healthCheckUserAgents: []
+  # The most doorman ports one workload, and one namespace, may hold. Each
+  # TCP port of each Service selecting a paused workload takes one of the
+  # 10,000 the cluster shares, so these keep one tenant from using them
+  # all. A workload over either is left unrouted, WakeOnRequest=False with
+  # reason TooManyPorts.
+  portsPerWorkload: 32
+  portsPerNamespace: 256
   # A ValidatingAdmissionPolicy that lets the doorman's ServiceAccount set
   # only the two annotations recording a request on ManagedWorkloads,
   # though its role may patch them.

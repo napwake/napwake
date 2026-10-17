@@ -24,6 +24,8 @@ These flags are passed to the binary (`/manager`), which runs as the operator, o
 | `--default-dry-run` | `false` | Measure opted-in workloads without pausing, unless they or their namespace set `hybernate.io/dry-run` |
 | `--doorman` | `false` | Run as the doorman instead of the operator. The doorman Deployment sets it |
 | `--doorman-service` | `hybernate-doorman` | Name of the doorman's Service, which the operator routes paused workloads to. Empty disables waking on request |
+| `--doorman-ports-per-workload` | `32` | The most doorman ports one workload may hold, one per routed Service port. A workload with more isn't routed (`WakeOnRequest=False`, reason `TooManyPorts`) |
+| `--doorman-ports-per-namespace` | `256` | The most doorman ports the workloads of one namespace may hold together |
 | `--doorman-namespace` | `$POD_NAMESPACE`, else `hybernate-system` | Namespace of the doorman's Service |
 | `--doorman-health-check-user-agents` | | Comma-separated `User-Agent` prefixes of health checkers and scrapers, besides the built-in ones, whose `GET` and `HEAD` requests don't wake a paused workload. Helm value `doorman.healthCheckUserAgents` |
 | `--kubeconfig` | in-cluster | Path to a kubeconfig, only when running outside the cluster |

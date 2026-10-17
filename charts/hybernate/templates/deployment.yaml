@@ -73,6 +73,8 @@ spec:
             - {{ printf "--default-cpu-threshold=%v" .Values.defaults.cpuThreshold | quote }}
             - {{ printf "--default-dry-run=%v" .Values.defaults.dryRun | quote }}
             - {{ printf "--doorman-service=%s" (ternary (include "hybernate.doormanName" .) "" .Values.doorman.enabled) | quote }}
+            - {{ printf "--doorman-ports-per-workload=%v" .Values.doorman.portsPerWorkload | quote }}
+            - {{ printf "--doorman-ports-per-namespace=%v" .Values.doorman.portsPerNamespace | quote }}
           env:
             - name: POD_NAMESPACE
               valueFrom:
