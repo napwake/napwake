@@ -46,11 +46,13 @@ dependsOn:
   - {kind: Deployment, name: cache}          # wakes at the same time
 ```
 
-The dependent then stays in `Resuming`, without scaling up, until every replica of that dependency is Ready:
+The dependent then stays in `Resuming`, without scaling up, until every replica of that dependency is Ready, or until it serves with as many as it will have for now:
 
 ```
 WaitingForDependencies=True   waiting for preview-42/statefulset/postgres (0 ready)
 ```
+
+A dependency that has some replicas Ready but not all, such as one with a pod crash-looping, serves with those that are, so the dependent doesn't wait for the rest for good. A managed dependency counts once its own [resume](lifecycle.md#automatic) has finished, even short of every replica (its `ResumeIncomplete=True`); one Hybernate doesn't manage counts once the dependent has waited 2 minutes, the time a resume gives the rest of its replicas. A dependency with no replica Ready is always waited for.
 
 There's no timeout, because a slow start is exactly why you'd set it. If the wait runs past 15 minutes, the `HybernateWorkloadStuck` alert fires. It doesn't wait for a dependency that can't start by waiting, which would leave the dependent at zero for good: one Hybernate doesn't manage that's scaled to zero. `WaitingForDependencies=False` then names it. A managed dependency that's still paused is woken again every few seconds while the dependent waits.
 

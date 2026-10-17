@@ -42,6 +42,7 @@ import (
 
 	v1alpha1 "github.com/okedeji/hybernate/api/v1alpha1"
 	"github.com/okedeji/hybernate/internal/forecast"
+	"github.com/okedeji/hybernate/internal/lifecycle"
 )
 
 // depWorkload is a ManagedWorkload for a target of the same name, idle for
@@ -312,6 +313,53 @@ func TestDependencies_WaitForReady(t *testing.T) {
 			}
 			assert.Equal(t, 1, pauser.resumeCalls, "a dependency that won't start never strands the dependent at zero")
 			assert.Equal(t, v1alpha1.PhaseRunning, api.Status.Phase)
+		})
+	}
+}
+
+// A waitForReady dependency whose own resume settled short, with a replica
+// that never became Ready, serves with the rest, and its dependents must
+// start once it does rather than wait at zero for the last one.
+func TestDependencies_WaitForAPartlyReadyDependency(t *testing.T) {
+	tests := []struct {
+		name     string
+		managed  v1alpha1.WorkloadPhase
+		ready    int32
+		resuming time.Duration
+		wantWait bool
+	}{
+		{name: "managed, its resume settled short", managed: v1alpha1.PhaseRunning, ready: 2},
+		{name: "managed and idle, its resume settled short", managed: v1alpha1.PhaseIdle, ready: 2},
+		{name: "managed, still resuming", managed: v1alpha1.PhaseResuming, ready: 2, resuming: time.Hour,
+			wantWait: true},
+		{name: "managed and running, none Ready", managed: v1alpha1.PhaseRunning, wantWait: true},
+		{name: "unmanaged, given as long as a resume gives", ready: 2, resuming: lifecycle.ServingWait},
+		{name: "unmanaged, not yet given as long", ready: 2, resuming: time.Minute, wantWait: true},
+		{name: "unmanaged, none Ready", resuming: time.Hour, wantWait: true},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			ref := postgresRef()
+			ref.WaitForReady = true
+			api := depWorkload("default", "api", v1alpha1.TargetKindDeployment, v1alpha1.PhaseResuming, ref)
+			began := metav1.NewTime(fixedTime.Add(-tt.resuming))
+			api.Status.LastTransitionTime = &began
+			api.Status.Pause = &v1alpha1.PauseStatus{PreviousReplicas: 1}
+			objs := []client.Object{api, postgresTarget(3, tt.ready)}
+			if tt.managed != "" {
+				objs = append(objs, depWorkload("default", "postgres", v1alpha1.TargetKindStatefulSet, tt.managed))
+			}
+			pauser := &stubPauser{resumeDone: true}
+			r := depReconciler(t, pauser, objs...)
+
+			_, err := r.handleResume(context.Background(), fetch(t, r, "api"), nil)
+			require.NoError(t, err)
+
+			if tt.wantWait {
+				assert.Zero(t, pauser.resumeCalls, "it started before its dependency served")
+				return
+			}
+			assert.Equal(t, 1, pauser.resumeCalls, "it waited on a dependency serving with %d of 3 Ready", tt.ready)
 		})
 	}
 }
