@@ -20,6 +20,7 @@ import (
 	"context"
 	"encoding/json"
 	"encoding/pem"
+	"errors"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -532,6 +533,29 @@ func TestPrometheusProxy_Forbidden(t *testing.T) {
 	require.ErrorAs(t, err, &forbidden)
 	assert.Equal(t, ProxyForbiddenError{Namespace: "monitoring", Service: "prometheus-operated", Port: "web", Scheme: "http"},
 		*forbidden)
+}
+
+// A 403 from behind the proxy, such as a kube-rbac-proxy in front of
+// Prometheus refusing the user, isn't the API server refusing the proxy, so
+// it isn't answered with a Role for services/proxy.
+func TestPrometheusProxy_ForbiddenBehindTheProxy(t *testing.T) {
+	restClient := &restfake.RESTClient{
+		NegotiatedSerializer: scheme.Codecs.WithoutConversion(),
+		Client: restfake.CreateHTTPClient(func(*http.Request) (*http.Response, error) {
+			return &http.Response{StatusCode: http.StatusForbidden, Header: http.Header{"Content-Type": {"text/plain"}},
+				Body: io.NopCloser(strings.NewReader(
+					"Forbidden (user=jane, verb=get, resource=, subresource=)"))}, nil
+		}),
+	}
+	p := NewPrometheusProxy(restClient, "openshift-monitoring", "prometheus-k8s", "https", "web")
+
+	err := p.Check(context.Background())
+
+	require.Error(t, err)
+	var forbidden *ProxyForbiddenError
+	assert.False(t, errors.As(err, &forbidden), "%v", err)
+	assert.Contains(t, err.Error(), "can't query openshift-monitoring/prometheus-k8s")
+	assert.Contains(t, err.Error(), "Forbidden (user=jane")
 }
 
 func TestPrometheusProxy_GoesThroughTheAPIServer(t *testing.T) {

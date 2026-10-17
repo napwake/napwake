@@ -219,6 +219,8 @@ To replay history, an admin can let you read Prometheus, and nothing else, with:
 Or pass --prometheus-url if Prometheus is reachable from your machine.
 ```
 
+That's only when the API server refuses you the proxy. A `403` from behind it, such as from a `kube-rbac-proxy` in front of Prometheus, is shown as Prometheus's own answer, since a Role for `services/proxy` wouldn't change it.
+
 ## See What Hybernate Is Doing
 
 ```bash
