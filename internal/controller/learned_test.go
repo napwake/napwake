@@ -87,7 +87,7 @@ func TestLearnDependencies(t *testing.T) {
 		wantAddress string
 	}{
 		{name: "an address in a variable", target: apiWith(nil, databaseURL),
-			want: []string{"default/postgres DATABASE_URL"}, wantAddress: "postgres://***@postgres:5432/app"},
+			want: []string{"default/postgres DATABASE_URL"}, wantAddress: "postgres://postgres:5432"},
 		{name: "a headless address from a ConfigMap", target: func() *appsv1.Deployment {
 			d := apiWith(nil)
 			d.Spec.Template.Spec.Containers[0].EnvFrom = []corev1.EnvFromSource{
@@ -117,7 +117,7 @@ func TestLearnDependencies(t *testing.T) {
 			assert.Equal(t, tt.want, learnedNames(api))
 			if tt.wantAddress != "" {
 				assert.Equal(t, tt.wantAddress, api.Status.LearnedDependencies.Dependencies[0].Address,
-					"passwords hidden")
+					"only scheme, host and port shown")
 			}
 		})
 	}
