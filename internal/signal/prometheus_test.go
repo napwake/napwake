@@ -91,6 +91,7 @@ func TestPrometheus_DeniesEmptyResult(t *testing.T) {
 	require.NoError(t, err)
 	assert.False(t, res.Confirm)
 	assert.Contains(t, res.Reason, "empty result")
+	assert.True(t, res.NoSeries)
 }
 
 func TestPrometheus_QueryError(t *testing.T) {
@@ -141,7 +142,7 @@ func TestPrometheus_PreservesEndpointPathPrefix(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	p := NewPrometheus(srv.URL+"/prometheus")
+	p := NewPrometheus(srv.URL + "/prometheus")
 	_, err := p.Check(context.Background(), `up`)
 
 	require.NoError(t, err)
@@ -202,6 +203,7 @@ func TestPrometheus_Results(t *testing.T) {
 			require.NoError(t, err)
 			assert.Equal(t, tt.wantConfirm, res.Confirm)
 			assert.Contains(t, res.Reason, tt.wantReason)
+			assert.False(t, res.NoSeries, "every case has a series or a scalar")
 		})
 	}
 }

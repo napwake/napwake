@@ -233,7 +233,7 @@ func evaluate(query string, samples []float64) Result {
 	}
 	switch {
 	case len(samples) == 0:
-		return Result{Reason: fmt.Sprintf("promql returned empty result for %q", query)}
+		return Result{NoSeries: true, Reason: fmt.Sprintf("promql returned empty result for %q", query)}
 	case usable == 0:
 		return Result{Reason: fmt.Sprintf("promql returned no usable value (NaN or Inf) for %q", query)}
 	case highest <= 0:

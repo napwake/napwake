@@ -84,7 +84,7 @@ Hybernate never pauses a workload while one of its activity sources can't be rea
 
 A target scaled to zero isn't an error: it has no usage, which is real data.
 
-For Prometheus queries, the `PrometheusAvailable` condition reports `EndpointNotConfigured` or `QueryFailed`.
+For Prometheus queries, the `PrometheusAvailable` condition reports `EndpointNotConfigured` or `QueryFailed`. A query that answers but has never matched a series, as one naming a metric or label that doesn't exist does, is reported by `PrometheusQueryEmpty=True` and a warning event, since it can never keep the workload awake; see the [Prometheus Activity Guide](../guides/prometheus-signals.md#when-a-query-cant-be-evaluated).
 
 ## Restarts and outages
 

@@ -57,6 +57,8 @@ kubectl get managedworkload my-api -n staging \
 
 The condition only appears on workloads that configure Prometheus queries.
 
+A query that answers but matches no series at all looks just like a quiet workload, and that's also what a misspelt metric or label name gives. Hybernate can't tell the two apart, so the workload pauses on its other sources as usual, but a query that has matched no series since it was first evaluated is pointed out: `PrometheusQueryEmpty=True`, reason `NoSeries`, with the queries in its message, and a `PrometheusQueryEmpty` warning event when it begins. It clears once the query matches a series, even one at zero. A counter that's only created on the first request, as many client libraries' labelled counters are, also matches nothing until then; once it exists the condition clears. What a query has matched is remembered in memory, so after an operator restart a query is checked again from its first evaluation.
+
 When Prometheus itself fails, by not answering, timing out, or answering with a server error or `429`, the operator doesn't ask it again for a minute: every workload's queries fail at once, as `QueryFailed` with `prometheus failed recently, not asked again yet` and the original error, so none waits out a timeout and holds up the wakes queued behind it. A query Prometheus rejects, such as one that doesn't parse, fails only for the workloads that use it. Time that a query can't be evaluated counts as activity (`lastActivitySource: unobserved`), so a workload is never paused because Prometheus was down. One slow query does hold off everyone's for that minute, so keep queries cheap: aggregate, and use recording rules for anything heavy.
 
 ## Example Queries

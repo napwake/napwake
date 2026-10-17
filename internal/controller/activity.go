@@ -23,6 +23,8 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"strconv"
+	"strings"
 	"sync"
 	"time"
 
@@ -55,6 +57,9 @@ const (
 	defaultCPUThreshold = 10
 
 	conditionIdleVetoed = "IdleVetoed"
+
+	conditionPrometheusQueryEmpty = "PrometheusQueryEmpty"
+	ReasonPrometheusQueryEmpty    = "PrometheusQueryEmpty"
 )
 
 // activityMemo keeps each workload's latest clock between status writes.
@@ -360,6 +365,7 @@ func (r *Reconciler) prometheusActive(ctx context.Context, workload *v1alpha1.Ma
 		if err != nil {
 			return false, fmt.Errorf("evaluating %q: %w", q.PromQL, err)
 		}
+		r.querySeries.saw(workload.UID, q.PromQL, !res.NoSeries)
 		if res.Confirm {
 			return true, nil
 		}
@@ -370,6 +376,80 @@ func (r *Reconciler) prometheusActive(ctx context.Context, workload *v1alpha1.Ma
 func hasPrometheusActivity(workload *v1alpha1.ManagedWorkload) bool {
 	p := workload.Spec.IdlePolicy
 	return p != nil && p.Activity != nil && len(p.Activity.Prometheus) > 0
+}
+
+// querySeries remembers, for each workload's Prometheus activity queries,
+// whether each has matched any series since the operator started or the
+// query was written. A query that never has most likely names a metric or
+// label that doesn't exist, and would never keep the workload awake. A
+// query not yet evaluated, because one before it showed activity, is
+// neither.
+type querySeries struct {
+	mu     sync.Mutex
+	series map[types.UID]map[string]bool
+}
+
+func (s *querySeries) saw(uid types.UID, query string, matched bool) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.series == nil {
+		s.series = make(map[types.UID]map[string]bool)
+	}
+	if s.series[uid] == nil {
+		s.series[uid] = make(map[string]bool)
+	}
+	s.series[uid][query] = s.series[uid][query] || matched
+}
+
+// neverMatched is which of queries have been evaluated and have never
+// matched a series.
+func (s *querySeries) neverMatched(uid types.UID, queries []v1alpha1.PrometheusActivity) []string {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	var empty []string
+	for _, q := range queries {
+		if matched, evaluated := s.series[uid][q.PromQL]; evaluated && !matched {
+			empty = append(empty, q.PromQL)
+		}
+	}
+	return empty
+}
+
+func (s *querySeries) forget(uid types.UID) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	delete(s.series, uid)
+}
+
+// reportEmptyQueries points out activity queries that have never matched a
+// series. It's informational: the other sources still decide, as an empty
+// result from a query that's right says no one is using the workload. The
+// event marks the condition beginning.
+func (r *Reconciler) reportEmptyQueries(workload *v1alpha1.ManagedWorkload) {
+	var empty []string
+	if hasPrometheusActivity(workload) {
+		empty = r.querySeries.neverMatched(workload.UID, workload.Spec.IdlePolicy.Activity.Prometheus)
+	}
+	if len(empty) == 0 {
+		r.clearCondition(workload, conditionPrometheusQueryEmpty, "QueriesMatchSeries")
+		return
+	}
+	began := !meta.IsStatusConditionTrue(workload.Status.Conditions, conditionPrometheusQueryEmpty)
+	msg := fmt.Sprintf("Prometheus activity queries have matched no series since they were first evaluated: %s; "+
+		"check their metric and label names in Prometheus, since until a query matches, it can't keep the workload awake",
+		strings.Join(quoted(empty), ", "))
+	r.setCondition(workload, conditionPrometheusQueryEmpty, metav1.ConditionTrue, "NoSeries", msg)
+	if began {
+		r.emitEvent(workload, false, "Warning", ReasonPrometheusQueryEmpty, actionEvaluateIdle, "%s", msg)
+	}
+}
+
+func quoted(values []string) []string {
+	out := make([]string, len(values))
+	for i, v := range values {
+		out[i] = strconv.Quote(v)
+	}
+	return out
 }
 
 // podTemplateHash fingerprints the target's pod template. Scaling changes
@@ -416,6 +496,7 @@ func (r *Reconciler) reconcileIdleClock(ctx context.Context, workload *v1alpha1.
 	if hasPrometheusActivity(workload) {
 		r.setCondition(workload, conditionPrometheusAvailable, metav1.ConditionTrue, "QueriesEvaluated", "")
 	}
+	r.reportEmptyQueries(workload)
 
 	if obs.activeUntil.After(now) || activeSinceClockRanOut(workload, now, pauseAt) {
 		if workload.Status.Phase == v1alpha1.PhaseIdle {

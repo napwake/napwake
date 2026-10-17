@@ -116,6 +116,7 @@ type Reconciler struct {
 	autoscalers     *autoscaler.Finder
 	engines         *engineRegistry
 	activityMemo    activityMemo
+	querySeries     querySeries
 	phaseWrites     phaseWrites
 	doormanPorts    portAllocator
 	doormanFailures failureBackoff
@@ -608,6 +609,7 @@ func (r *Reconciler) reconcileDelete(ctx context.Context, workload *v1alpha1.Man
 		r.announceHandBack(workload, replicas, "no longer managed")
 	}
 	r.activityMemo.forget(workload.UID)
+	r.querySeries.forget(workload.UID)
 	r.phaseWrites.forget(workload.UID)
 	r.doormanFailures.reset(workload.UID)
 	r.forgetForecast(workload)

@@ -188,6 +188,7 @@ var troubles = map[string]metav1.ConditionStatus{
 	"TargetAvailable":      metav1.ConditionFalse,
 	"MetricsAvailable":     metav1.ConditionFalse,
 	"PrometheusAvailable":  metav1.ConditionFalse,
+	"PrometheusQueryEmpty": metav1.ConditionTrue,
 	"WakeOnRequest":        metav1.ConditionFalse,
 	"ResumeIncomplete":     metav1.ConditionTrue,
 }

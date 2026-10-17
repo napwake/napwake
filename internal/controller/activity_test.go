@@ -902,6 +902,52 @@ func TestActivityClock_PrometheusQueriesShareABudget(t *testing.T) {
 	assert.Equal(t, metav1.ConditionFalse, cond.Status)
 }
 
+// A query that matches no series, such as one with a misspelt metric, looks
+// like a quiet workload, and would never keep it awake. It's pointed out
+// once, and the clock goes on as before.
+func TestActivityClock_QueryThatNeverMatchesIsPointedOut(t *testing.T) {
+	var matching atomic.Bool
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		if matching.Load() {
+			_, _ = w.Write([]byte(promValue("0")))
+			return
+		}
+		_, _ = w.Write([]byte(`{"status":"success","data":{"resultType":"vector","result":[]}}`))
+	}))
+	t.Cleanup(srv.Close)
+	target := clockTarget("app:v1", nil)
+	workload := clockWorkload(fixedTime.Add(-30*time.Minute), target)
+	query := `sum(rate(nginx_ingress_controller_requets[5m]))`
+	workload.Spec.IdlePolicy.Activity = &v1alpha1.ActivitySpec{Prometheus: []v1alpha1.PrometheusActivity{{PromQL: query}}}
+	metrics := idleCPU
+	r := newAutomationReconciler(t, workload, &stubForecaster{}, automationOpts{metrics: &metrics})
+	r.prometheus = signal.NewPrometheus(srv.URL)
+	check := func() *metav1.Condition {
+		t.Helper()
+		_, err := r.reconcileAutomation(context.Background(), workload, target)
+		require.NoError(t, err)
+		return meta.FindStatusCondition(workload.Status.Conditions, conditionPrometheusQueryEmpty)
+	}
+
+	cond := check()
+	require.NotNil(t, cond)
+	assert.Equal(t, metav1.ConditionTrue, cond.Status)
+	assert.Contains(t, cond.Message, query)
+	assert.True(t, meta.IsStatusConditionTrue(workload.Status.Conditions, conditionPrometheusAvailable),
+		"the query was evaluated: it isn't a failure")
+	check()
+	events := drainEvents(t, r)
+	assert.Equal(t, 1, strings.Count(events, ReasonPrometheusQueryEmpty), "pointed out once: %s", events)
+
+	matching.Store(true)
+	cond = check()
+	assert.Equal(t, metav1.ConditionFalse, cond.Status, "cleared once the query matches a series")
+	matching.Store(false)
+	cond = check()
+	assert.Equal(t, metav1.ConditionFalse, cond.Status, "a query that has matched may go quiet")
+	assert.Equal(t, v1alpha1.PhaseRunning, workload.Status.Phase)
+}
+
 func TestActivityClock_NoPrometheusConditionWithoutQueries(t *testing.T) {
 	target := clockTarget("app:v1", nil)
 	workload := clockWorkload(fixedTime.Add(-30*time.Minute), target)
