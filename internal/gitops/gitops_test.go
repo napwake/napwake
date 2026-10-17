@@ -107,6 +107,38 @@ func TestReplicasWriter(t *testing.T) {
 	}
 }
 
+func TestFieldWriter(t *testing.T) {
+	const (
+		dryRun = `{"f:metadata":{"f:annotations":{"f:hybernate.io/dry-run":{}}}}`
+		other  = `{"f:metadata":{"f:annotations":{"f:team":{}}}}`
+	)
+	path := []string{"metadata", "annotations", "hybernate.io/dry-run"}
+	tests := []struct {
+		name   string
+		fields []metav1.ManagedFieldsEntry
+		want   Writer
+		ok     bool
+	}{
+		{name: "set from Git", fields: []metav1.ManagedFieldsEntry{entry("kluctl", dryRun, t0)},
+			want: Writer{Manager: "kluctl", Tool: Kluctl, At: t0}, ok: true},
+		{name: "set by a person after Git", fields: []metav1.ManagedFieldsEntry{
+			entry("argocd-controller", dryRun, t0), entry("kubectl-annotate", dryRun, t0.Add(time.Minute))},
+			want: Writer{Manager: "kubectl-annotate", At: t0.Add(time.Minute)}, ok: true},
+		{name: "only another annotation from Git", fields: []metav1.ManagedFieldsEntry{
+			entry("argocd-controller", other, t0.Add(time.Hour)), entry("kubectl-annotate", dryRun, t0)},
+			want: Writer{Manager: "kubectl-annotate", At: t0}, ok: true},
+		{name: "nobody", fields: []metav1.ManagedFieldsEntry{entry("argocd-controller", other, t0)}},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, ok := FieldWriter(tt.fields, path...)
+
+			assert.Equal(t, tt.ok, ok)
+			assert.Equal(t, tt.want, got)
+		})
+	}
+}
+
 func TestFix(t *testing.T) {
 	assert.Contains(t, Fix(ArgoCD), "    jsonPointers: [/spec/replicas]")
 	for _, tool := range []Tool{Flux, Fleet, Kapp, Kluctl} {
