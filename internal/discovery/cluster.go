@@ -78,6 +78,11 @@ type ClusterReport struct {
 	// Namespaces is how many namespaces were scanned.
 	Namespaces int        `json:"namespaces"`
 	Workloads  []Workload `json:"workloads"`
+	// Platform are the workloads that run the cluster itself: Kubernetes',
+	// Hybernate's, and well-known infrastructure such as ingress, GitOps and
+	// monitoring. They're left out of Workloads, Totals and next steps, as
+	// they aren't apps to pause.
+	Platform []Workload `json:"platform,omitempty"`
 	// NodePrices are the node types the workloads were priced at.
 	NodePrices Prices `json:"nodePrices"`
 	// Notes say what the scan couldn't see and how that limits it.
@@ -140,6 +145,10 @@ type Workload struct {
 	// Protected means its namespace is labelled protected, so Hybernate
 	// won't manage it whatever its labels.
 	Protected bool `json:"protected,omitempty"`
+	// Platform is the part of the cluster's own infrastructure it runs, such
+	// as Kubernetes, Hybernate or cert-manager, for one the scan leaves out
+	// of what pausing could save.
+	Platform string `json:"platform,omitempty"`
 	// ReplicasFromGit is the GitOps tool that last set its replicas from
 	// Git, which would undo every pause until it's told to leave them.
 	ReplicasFromGit string `json:"replicasFromGit,omitempty"`
@@ -314,6 +323,11 @@ func (s *Scanner) ScanCluster(ctx context.Context, opts ClusterOptions) (*Cluste
 		}
 	}
 	dependencyNotes := findDependencies(ctx, report.Workloads, sources, services, configMaps)
+	report.Workloads, report.Platform = splitPlatform(report.Workloads)
+	slices.SortFunc(report.Platform, func(a, b Workload) int {
+		return cmp.Or(strings.Compare(a.Namespace, b.Namespace), strings.Compare(a.Name, b.Name),
+			strings.Compare(string(a.Kind), string(b.Kind)))
+	})
 
 	if metricsUnavailable {
 		report.Notes = append(report.Notes,
@@ -322,6 +336,9 @@ func (s *Scanner) ScanCluster(ctx context.Context, opts ClusterOptions) (*Cluste
 	problemNotes, incomplete := problemNotes(problems, opts.NamedNamespaces)
 	report.Notes = append(report.Notes, problemNotes...)
 	report.Incomplete = incomplete
+	if len(report.Platform) > 0 {
+		report.Notes = append(report.Notes, platformNote(report.Platform))
+	}
 	if report.History != nil && !since.IsZero() {
 		report.History.Since = since
 		report.History.Hours = opts.Now().Sub(since).Hours()

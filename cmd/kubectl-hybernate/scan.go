@@ -804,11 +804,14 @@ func couldSaveCell(wl Workload) string {
 // one Hybernate could manage, to measure, and the first already measuring
 // in dry-run, to go live. Workloads come sorted most savings first, so each
 // is the best example. Protected workloads are left out, as Hybernate won't
-// manage them.
+// manage them, and so are those whose replicas are set from Git, whose
+// GitOps tool would revert a label put on by hand and undo every pause; the
+// notes say how to bring those in. Nor is the cluster's own
+// infrastructure, which the report keeps apart from the workloads anyway.
 func nextStepTargets(workloads []Workload) (idle, measuring *Workload) {
 	for i := range workloads {
 		wl := &workloads[i]
-		if wl.Protected {
+		if wl.Protected || wl.ReplicasFromGit != "" || wl.Platform != "" {
 			continue
 		}
 		if idle == nil && wl.State == discovery.StateIdle && !wl.Managed {
@@ -846,7 +849,8 @@ func writeNextSteps(p *printer, result scanResult) {
 	if idle == nil && measuring == nil {
 		return
 	}
-	installed := slices.ContainsFunc(result.Workloads, func(wl Workload) bool { return wl.Managed })
+	installed := slices.ContainsFunc(result.Workloads, func(wl Workload) bool { return wl.Managed }) ||
+		slices.ContainsFunc(result.Platform, func(wl Workload) bool { return wl.Platform == discovery.PlatformHybernate })
 	measure, enable := nextStepCommands(idle, measuring)
 	p.line("Next steps:")
 	step := 0
@@ -855,8 +859,8 @@ func writeNextSteps(p *printer, result scanResult) {
 		p.line("  %d. %s", step, title)
 	}
 	if len(measure) > 0 {
-		// Managed workloads show Hybernate is installed; without any, it
-		// may or may not be, so the install step is shown.
+		// Managed workloads, or Hybernate's own, show it's installed;
+		// without them, it may or may not be, so the install step is shown.
 		if !installed {
 			next("Install Hybernate in the cluster:")
 			p.line("       helm install hybernate oci://ghcr.io/okedeji/charts/hybernate -n hybernate-system --create-namespace")

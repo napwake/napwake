@@ -84,10 +84,11 @@ func (n *namespaceScan) problem(what reading, err error) {
 func (s *Scanner) scanNamespace(ctx, historyCtx context.Context, namespace string, pricing nodePricing,
 	opts ClusterOptions) namespaceScan {
 	scan := namespaceScan{namespace: namespace, sources: map[workloadKey]workloadSource{}}
-	protected, err := s.protectedNamespace(ctx, namespace)
+	namespaceLabels, err := s.namespaceLabels(ctx, namespace)
 	if err != nil {
 		scan.problem(readingNamespace, err)
 	}
+	protected := v1alpha1.Protected(namespace, namespaceLabels, nil)
 	workloads, err := s.listWorkloads(ctx, namespace)
 	if err != nil {
 		scan.problem(readingWorkloads, err)
@@ -121,17 +122,9 @@ func (s *Scanner) scanNamespace(ctx, historyCtx context.Context, namespace strin
 	if err != nil {
 		scan.problem(readingConfigMaps, err)
 	}
-	history, err := s.readHistory(historyCtx, namespace, opts)
-	switch {
-	case err != nil && ctx.Err() == nil && isTimeout(err):
-		scan.historyTooSlow = true
-	case err != nil:
-		scan.problem(readingHistory, err)
-	}
-	if first, ok := earliestSample(history); ok {
-		scan.historySince = time.Unix(first, 0).UTC()
-	}
+	history := s.readHistoryOf(ctx, historyCtx, &scan, opts)
 
+	platform := platformOf(namespace, namespaceLabels, workloads, managed)
 	now := opts.Now()
 	for _, wl := range workloads {
 		obj := wl.obj
@@ -150,6 +143,7 @@ func (s *Scanner) scanNamespace(ctx, historyCtx context.Context, namespace strin
 			Managed:   mw != nil,
 			DryRun:    mw != nil && mw.Spec.DryRun,
 			Protected: protected,
+			Platform:  platform[string(wl.kind)+"/"+obj.GetName()],
 		}
 		writer, _ := gitops.ReplicasWriter(obj.GetManagedFields())
 		w.ReplicasFromGit = string(writer.Tool)
@@ -193,7 +187,7 @@ func (s *Scanner) scanNamespace(ctx, historyCtx context.Context, namespace strin
 		if history != nil && ownCPU > 0 && !w.ScaledByHand {
 			w.History = replayWorkload(w, spec, history, owners.podsOf(wl), scan.historySince, rollouts,
 				thresholdFor(mw, opts), idleAfterFor(mw, opts), opts)
-			if w.History == nil && w.State != StateUnknown {
+			if w.History == nil && w.State != StateUnknown && w.Platform == "" {
 				scan.noHistory = append(scan.noHistory, w.Namespace+"/"+w.Name)
 			}
 			if w.History != nil && w.State == StateUnknown && mw == nil {
@@ -203,6 +197,23 @@ func (s *Scanner) scanNamespace(ctx, historyCtx context.Context, namespace strin
 		scan.workloads = append(scan.workloads, w)
 	}
 	return scan
+}
+
+// readHistoryOf reads a namespace's history within historyCtx, telling a
+// Prometheus too slow for the time it's given from one that failed.
+func (s *Scanner) readHistoryOf(ctx, historyCtx context.Context, scan *namespaceScan,
+	opts ClusterOptions) []containerCPU {
+	history, err := s.readHistory(historyCtx, scan.namespace, opts)
+	switch {
+	case err != nil && ctx.Err() == nil && isTimeout(err):
+		scan.historyTooSlow = true
+	case err != nil:
+		scan.problem(readingHistory, err)
+	}
+	if first, ok := earliestSample(history); ok {
+		scan.historySince = time.Unix(first, 0).UTC()
+	}
+	return history
 }
 
 // measure sets a workload's CPU use from its pods' metrics, as a share of
@@ -489,13 +500,13 @@ func (s *Scanner) managedInNamespace(ctx context.Context, namespace string) (map
 	return out, nil
 }
 
-// protectedNamespace says the namespace is labelled protected. The
-// operator's own protected name patterns aren't visible to the scan, so
-// only the label counts here.
-func (s *Scanner) protectedNamespace(ctx context.Context, namespace string) (bool, error) {
+// namespaceLabels reads a namespace's labels, which say whether it's
+// protected. The operator's own protected name patterns aren't visible to
+// the scan, so only the label counts for that.
+func (s *Scanner) namespaceLabels(ctx context.Context, namespace string) (map[string]string, error) {
 	var ns corev1.Namespace
 	if err := s.client.Get(ctx, client.ObjectKey{Name: namespace}, &ns); err != nil {
-		return false, err
+		return nil, err
 	}
-	return v1alpha1.Protected(ns.Name, ns.Labels, nil), nil
+	return ns.Labels, nil
 }

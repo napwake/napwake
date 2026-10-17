@@ -624,6 +624,35 @@ func TestNextSteps_SkipProtected(t *testing.T) {
 	}
 }
 
+// A label put on by hand would be reverted by the GitOps tool that sets a
+// workload's replicas, so next steps suggest one Git doesn't own; with
+// Hybernate's own Deployment found, there's no install step.
+func TestNextSteps_SkipGitOpsAndKnowHybernateIsInstalled(t *testing.T) {
+	fromGit := Workload{Namespace: "dev", Kind: v1alpha1.TargetKindDeployment, Name: "synced",
+		State: discovery.StateIdle, ReplicasFromGit: "Argo CD"}
+	measuringFromGit := Workload{Namespace: "dev", Kind: v1alpha1.TargetKindDeployment, Name: "synced-dry",
+		Managed: true, DryRun: true, ReplicasFromGit: "Flux", Measured: &discovery.Measured{}}
+	open := Workload{Namespace: "dev", Kind: v1alpha1.TargetKindDeployment, Name: "preview", State: discovery.StateIdle}
+	hybernate := Workload{Namespace: "ops", Kind: v1alpha1.TargetKindDeployment, Name: "hybernate",
+		Platform: discovery.PlatformHybernate}
+
+	only := scanResult{Cluster: "c", ClusterReport: &discovery.ClusterReport{
+		Workloads: []Workload{fromGit, measuringFromGit}}}
+	var table bytes.Buffer
+	writeNextSteps(&printer{w: &table}, only)
+	assert.Empty(t, table.String())
+
+	mixed := scanResult{Cluster: "c", ClusterReport: &discovery.ClusterReport{
+		Workloads: []Workload{fromGit, measuringFromGit, open}, Platform: []Workload{hybernate}}}
+	table.Reset()
+	writeNextSteps(&printer{w: &table}, mixed)
+	got := table.String()
+	assert.Contains(t, got, "kubectl label deployment preview -n dev hybernate.io/managed=true")
+	assert.Contains(t, got, "kubectl hybernate enable deployment/preview -n dev")
+	assert.NotContains(t, got, "synced")
+	assert.NotContains(t, got, "helm install", "Hybernate's own Deployment shows it's installed")
+}
+
 func TestParseHeaders(t *testing.T) {
 	got, err := parseHeaders([]string{"X-Scope-OrgID: team-a", "x-extra:  two words  "})
 	require.NoError(t, err)
