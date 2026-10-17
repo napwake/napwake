@@ -1875,3 +1875,59 @@ func TestServer_ServesThePageWithoutWaitingForTheWake(t *testing.T) {
 	assert.Eventually(t, func() bool { return lastRequest(t, c) != "" }, 5*time.Second, 20*time.Millisecond,
 		"the wake lands once the API server answers")
 }
+
+// staleOnce answers the first Get with the workload as it was when made,
+// and every later one with the workload as it is.
+func staleOnce(t *testing.T, c client.Client) interceptor.Funcs {
+	t.Helper()
+	var snapshot v1alpha1.ManagedWorkload
+	require.NoError(t, c.Get(context.Background(), apiKey, &snapshot))
+	var served atomic.Bool
+	return interceptor.Funcs{Get: func(ctx context.Context, cl client.WithWatch, key client.ObjectKey, obj client.Object,
+		opts ...client.GetOption) error {
+		if served.CompareAndSwap(false, true) {
+			snapshot.DeepCopyInto(obj.(*v1alpha1.ManagedWorkload))
+			return nil
+		}
+		return cl.Get(ctx, key, obj, opts...)
+	}}
+}
+
+// A conflict from a change other than another replica's stamp, such as
+// the operator writing status, doesn't cost the wake its event.
+func TestServer_AnnouncesAWakeDespiteAConflictFromAnotherWriter(t *testing.T) {
+	c := fake.NewClientBuilder().WithScheme(testScheme(t)).WithObjects(pausedWorkload("api", freePort(t), time.Minute)).Build()
+	stale := interceptor.NewClient(c, staleOnce(t, c))
+	var w v1alpha1.ManagedWorkload
+	require.NoError(t, c.Get(context.Background(), apiKey, &w))
+	w.Labels = map[string]string{"team": "payments"}
+	require.NoError(t, c.Update(context.Background(), &w))
+
+	recorder := events.NewFakeRecorder(10)
+	s := NewServer(stale, recorder, Options{})
+	require.NoError(t, s.stamp(context.Background(), route{workload: apiKey, service: "api"}, caller))
+
+	assert.Equal(t, 1, eventCount(recorder, "WokenByRequest"))
+	assert.NotEmpty(t, lastRequest(t, c))
+}
+
+// A replica that loses the race to another's stamp leaves it be, and
+// doesn't announce the wake again.
+func TestServer_LeavesAnotherReplicasStamp(t *testing.T) {
+	c := fake.NewClientBuilder().WithScheme(testScheme(t)).WithObjects(pausedWorkload("api", freePort(t), time.Minute)).Build()
+	stale := interceptor.NewClient(c, staleOnce(t, c))
+	rt := route{workload: apiKey, service: "api"}
+
+	first := NewServer(c, nil, Options{})
+	first.now = func() time.Time { return time.Date(2026, 10, 3, 9, 0, 0, 0, time.UTC) }
+	require.NoError(t, first.stamp(context.Background(), rt, caller))
+	stamped := lastRequest(t, c)
+
+	recorder := events.NewFakeRecorder(10)
+	second := NewServer(stale, recorder, Options{})
+	second.now = func() time.Time { return time.Date(2026, 10, 3, 9, 0, 1, 0, time.UTC) }
+	require.NoError(t, second.stamp(context.Background(), rt, netip.MustParseAddr("10.244.0.18")))
+
+	assert.Equal(t, stamped, lastRequest(t, c))
+	assert.Zero(t, eventCount(recorder, "WokenByRequest"))
+}

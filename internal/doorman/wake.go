@@ -133,26 +133,7 @@ func (s *Server) stamp(ctx context.Context, rt route, from netip.Addr) error {
 		return errWakeLimited
 	}
 
-	original := w.DeepCopy()
-	if w.Annotations == nil {
-		w.Annotations = map[string]string{}
-	}
-	value := now.UTC().Format(time.RFC3339)
-	if value == w.Annotations[v1alpha1.AnnotationLastRequest] || value == recordedLastRequest(&w) {
-		value = now.UTC().Format(time.RFC3339Nano)
-	}
-	w.Annotations[v1alpha1.AnnotationLastRequest] = value
-	w.Annotations[v1alpha1.AnnotationLastRequestFrom] = from.Unmap().String()
-	// The stamp is locked to the version this replica read, so when two
-	// stamp at once, only the first to land reports the wake. A conflict
-	// means the workload changed a moment ago, most likely the other
-	// replica's stamp; the stamp is repeated unlocked so the wake is never
-	// lost, and the event is left to whoever won.
-	err := s.client.Patch(ctx, &w, client.MergeFromWithOptions(original, client.MergeFromWithOptimisticLock{}))
-	won := err == nil
-	if apierrors.IsConflict(err) {
-		err = s.client.Patch(ctx, &w, client.MergeFrom(original))
-	}
+	won, err := s.patchStamp(ctx, &w, from, now)
 	if err != nil {
 		return fmt.Errorf("stamping last request: %w", err)
 	}
@@ -165,6 +146,54 @@ func (s *Server) stamp(ctx context.Context, rt route, from netip.Addr) error {
 			"request on Service %s, waking", rt.service)
 	}
 	return nil
+}
+
+// stampAttempts is how many times patchStamp writes the stamp, the last of
+// them unlocked.
+const stampAttempts = 3
+
+// patchStamp writes the stamp to w, and reports whether it was this
+// replica's to announce.
+//
+// Each write is locked to the version last read, so when two replicas stamp
+// at once, only the first to land announces the wake. On a conflict, the
+// workload is read again: one another replica has stamped since needs
+// nothing more, and one changed otherwise, as the operator's status writes
+// change it, is stamped again. The last write is unlocked, so the wake is
+// never lost, and announces nothing, in case it was another replica's.
+func (s *Server) patchStamp(ctx context.Context, w *v1alpha1.ManagedWorkload, from netip.Addr, now time.Time) (bool, error) {
+	for attempt := 1; ; attempt++ {
+		original := w.DeepCopy()
+		setStamp(w, from, now)
+		if attempt == stampAttempts {
+			return false, s.client.Patch(ctx, w, client.MergeFrom(original))
+		}
+		err := s.client.Patch(ctx, w, client.MergeFromWithOptions(original, client.MergeFromWithOptimisticLock{}))
+		if !apierrors.IsConflict(err) {
+			return err == nil, err
+		}
+		var fresh v1alpha1.ManagedWorkload
+		if err := s.client.Get(ctx, client.ObjectKeyFromObject(w), &fresh); err != nil {
+			return false, fmt.Errorf("getting managed workload: %w", err)
+		}
+		*w = fresh
+		if !needsWake(w) {
+			return false, nil
+		}
+	}
+}
+
+// setStamp sets the last-request annotations on w.
+func setStamp(w *v1alpha1.ManagedWorkload, from netip.Addr, now time.Time) {
+	if w.Annotations == nil {
+		w.Annotations = map[string]string{}
+	}
+	value := now.UTC().Format(time.RFC3339)
+	if value == w.Annotations[v1alpha1.AnnotationLastRequest] || value == recordedLastRequest(w) {
+		value = now.UTC().Format(time.RFC3339Nano)
+	}
+	w.Annotations[v1alpha1.AnnotationLastRequest] = value
+	w.Annotations[v1alpha1.AnnotationLastRequestFrom] = from.Unmap().String()
 }
 
 // needsWake reports whether a paused workload has no wake pending. The
