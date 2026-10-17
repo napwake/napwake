@@ -33,6 +33,10 @@ const (
 	PlatformHybernate  = "Hybernate"
 )
 
+// hybernateApp is the name Hybernate's manifests and chart label its
+// workloads with, and the chart's own.
+const hybernateApp = "hybernate"
+
 // kubernetesNamespaces are Kubernetes' own namespaces, and the platform
 // namespaces distributions add, which Hybernate never pauses.
 var kubernetesNamespaces = []string{"kube-*", "openshift-*", "cattle-*", "gke-*", "gmp-*"}
@@ -60,7 +64,7 @@ var platformNamespaces = []string{
 // labelled with, in app.kubernetes.io/name, app.kubernetes.io/part-of, app
 // or k8s-app, or the Helm chart that installed it, wherever it runs.
 var platformApps = []string{
-	"hybernate",
+	hybernateApp,
 	"cert-manager", "external-dns", "external-secrets", "sealed-secrets", "vault",
 	"ingress-nginx", "traefik", "kong", "contour", "aws-load-balancer-controller",
 	"argocd", "argo-cd", "argo-rollouts", "flux",
@@ -108,7 +112,7 @@ func appPlatform(wl workload) string {
 }
 
 func platformName(app string) string {
-	if app == "hybernate" {
+	if app == hybernateApp {
 		return PlatformHybernate
 	}
 	return app
@@ -132,24 +136,32 @@ func chartName(label string) string {
 // namespace's workloads is, by kind and name. A namespace Hybernate runs in
 // is all Hybernate's, as the operator protects it. A namespace labelled
 // allow-protected is scanned like any other, as Hybernate manages it then,
-// and so is a workload someone already has Hybernate managing.
+// and so is a workload someone already has Hybernate managing. The
+// operator's and the doorman's own Deployments are Hybernate's however their
+// namespace is labelled, as the operator never pauses its own components.
 func platformOf(namespace string, namespaceLabels map[string]string, workloads []workload,
 	managed map[string]*v1alpha1.ManagedWorkload) map[string]string {
-	if namespaceLabels[v1alpha1.LabelAllowProtected] == v1alpha1.True {
-		return nil
+	allowed := namespaceLabels[v1alpha1.LabelAllowProtected] == v1alpha1.True
+	var whole string
+	if !allowed {
+		whole = namespacePlatform(namespace)
 	}
-	whole := namespacePlatform(namespace)
 	apps := make(map[string]string, len(workloads))
 	for _, wl := range workloads {
 		app := appPlatform(wl)
-		if app == PlatformHybernate {
+		if app == PlatformHybernate && !allowed {
 			whole = PlatformHybernate
 		}
 		apps[string(wl.kind)+"/"+wl.obj.GetName()] = app
 	}
 	out := make(map[string]string, len(workloads))
-	for key, app := range apps {
+	for _, wl := range workloads {
+		key := string(wl.kind) + "/" + wl.obj.GetName()
+		app := apps[key]
 		switch {
+		case hybernateComponent(wl):
+			out[key] = PlatformHybernate
+		case allowed:
 		case whole == PlatformKubernetes || whole == PlatformHybernate:
 			out[key] = whole
 		case managed[key] != nil:
@@ -160,6 +172,17 @@ func platformOf(namespace string, namespaceLabels map[string]string, workloads [
 		}
 	}
 	return out
+}
+
+// hybernateComponent says the workload is the operator or the doorman, by
+// the labels Hybernate's manifests and chart give their Deployments.
+func hybernateComponent(wl workload) bool {
+	labels := wl.obj.GetLabels()
+	switch labels["control-plane"] {
+	case "controller-manager", "doorman":
+		return labels["app.kubernetes.io/name"] == hybernateApp || chartName(labels["helm.sh/chart"]) == hybernateApp
+	}
+	return false
 }
 
 // splitPlatform separates the apps from the cluster's own infrastructure,

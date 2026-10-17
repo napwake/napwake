@@ -110,6 +110,42 @@ func TestScanCluster_PlatformExceptions(t *testing.T) {
 	assert.Empty(t, got["api"].Dependencies, "Hybernate never pauses the platform, so needn't wake it")
 }
 
+// The operator never pauses its own components, so in a namespace labelled
+// allow-protected that Hybernate shares with apps, its Deployments are still
+// Hybernate's while the apps beside them are scanned.
+func TestScanCluster_HybernateInAnAllowedNamespace(t *testing.T) {
+	objs := make([]runtime.Object, 0, 16)
+	objs = append(objs, idleIn("controller-manager", "shared", map[string]string{
+		"control-plane": "controller-manager", "app.kubernetes.io/name": "hybernate"})...)
+	objs = append(objs, idleIn("hybernate-doorman", "shared", map[string]string{
+		"control-plane": "doorman", "helm.sh/chart": "hybernate-0.4.0"})...)
+	objs = append(objs, idleIn("checkout", "shared", nil)...)
+	objs = append(objs, namespace("shared", map[string]string{v1alpha1.LabelAllowProtected: v1alpha1.True}))
+	c := fake.NewClientBuilder().WithScheme(newScheme()).WithRuntimeObjects(objs...).Build()
+
+	report, err := NewScanner(c, c).ScanCluster(context.Background(), scanOptions("shared"))
+
+	require.NoError(t, err)
+	assert.Equal(t, []string{"checkout"}, names(report.Workloads))
+	assert.Equal(t, 1, report.Totals.Workloads)
+	platform := map[string]string{}
+	for _, w := range report.Platform {
+		platform[w.Name] = w.Platform
+	}
+	assert.Equal(t, map[string]string{
+		"controller-manager": PlatformHybernate,
+		"hybernate-doorman":  PlatformHybernate,
+	}, platform)
+}
+
+func names(workloads []Workload) []string {
+	out := make([]string, 0, len(workloads))
+	for _, w := range workloads {
+		out = append(out, w.Name)
+	}
+	return out
+}
+
 func TestChartName(t *testing.T) {
 	for label, want := range map[string]string{
 		"ingress-nginx-4.10.0":     "ingress-nginx",
