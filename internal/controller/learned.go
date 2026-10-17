@@ -45,10 +45,14 @@ import (
 // at once; this catches a ConfigMap changed since.
 const relearnAfter = time.Hour
 
-// A dependency learned from a wake is forgotten once no request has
-// confirmed it for wakeLearnedFor, so a one-off call, such as someone's curl
-// from a pod, doesn't tie two workloads together for good. A confirmation
-// is written at most once per wakeConfirmEvery, not on every wake.
+// A dependency learned from a wake is forgotten once no request has woken
+// it for wakeLearnedFor, so a one-off call, such as someone's curl from a
+// pod, doesn't tie two workloads together for good. Held awake and woken
+// with its dependent meanwhile, a dependency in steady use isn't woken by
+// its requests either, and is forgotten too: relearning it costs one cold
+// start a fortnight, where not holding it would cost one each time it
+// paused on its own clock. A confirmation is written at most once per
+// wakeConfirmEvery, not on every wake.
 const (
 	wakeLearnedFor   = 14 * 24 * time.Hour
 	wakeConfirmEvery = 24 * time.Hour
