@@ -75,7 +75,7 @@ watchNamespaces: [preview-1, preview-2, staging]
 protectedNamespaces: ["prod-*", production]
 ```
 
-Wake on request works with `watchNamespaces`: the operator always reads the doorman's own EndpointSlices in the release namespace, through a `<fullname>-doorman-endpoints` Role there. A `dependsOn` pointing into a namespace that isn't watched is reported on the dependent, as `DependencyNotFound=True` with reason `DependencyNotVisible`, and never blocks it.
+Wake on request works with `watchNamespaces`: the operator always reads the doorman's own EndpointSlices in the release namespace, through a `<fullname>-doorman-endpoints` Role there. A `dependsOn` pointing into a namespace that isn't watched, and that allows the dependent's with `hybernate.io/dependents-from`, is reported on the dependent, as `DependencyNotFound=True` with reason `DependencyNotVisible`, and never blocks it.
 
 ## Opt-In Defaults
 

@@ -82,7 +82,19 @@ It doesn't wait at all for a dependency that can't start by waiting: one Hyberna
 
 ## Across namespaces
 
-Dependencies can point into other namespaces, so preview environments can share a database or broker that lives elsewhere. A dependency can only be kept awake or woken by its dependents, never paused, scaled down, or deleted, so the most a dependent in another namespace can do is keep it running. `HeldByDependents` always names the holders by namespace.
+Dependencies can point into other namespaces, so preview environments can share a database or broker that lives elsewhere. The namespace the dependency is in has to agree, with the `hybernate.io/dependents-from` annotation listing the namespaces whose workloads may depend on its own, or `"*"` for any:
+
+```bash
+kubectl annotate namespace shared hybernate.io/dependents-from="preview-42, preview-43"
+```
+
+Without it, anyone who can write a ManagedWorkload, or a workload's environment, in one namespace could keep another namespace's workloads awake. A dependency in a namespace that doesn't list the dependent's, declared or learned, isn't held, woken or waited for, and the dependent reports it, without saying whether it exists:
+
+```
+DependencyNotAllowed=True   not in a namespace that allows dependents from preview-42 with hybernate.io/dependents-from, so not held or woken: shared/statefulset/postgres
+```
+
+A dependency can only be kept awake or woken by its dependents, never paused, scaled down, or deleted, so the most a dependent in another namespace can do is keep it running. `HeldByDependents` always names the holders by namespace.
 
 ## Learned dependencies
 

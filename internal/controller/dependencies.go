@@ -24,6 +24,7 @@ import (
 	"time"
 
 	appsv1 "k8s.io/api/apps/v1"
+	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -41,6 +42,7 @@ const (
 	conditionWaitingForDependencies = "WaitingForDependencies"
 	conditionDependencyCycle        = "DependencyCycle"
 	conditionDependencyNotFound     = "DependencyNotFound"
+	conditionDependencyNotAllowed   = "DependencyNotAllowed"
 
 	// dependencyReadyCheckInterval is how often a resume waiting on a
 	// dependency re-checks, as a fallback to the watch on the dependency.
@@ -82,6 +84,9 @@ func dependencyID(dependent *v1alpha1.ManagedWorkload, ref v1alpha1.DependencyRe
 type dependencyGraph struct {
 	all      []v1alpha1.ManagedWorkload
 	byTarget map[workloadID]*v1alpha1.ManagedWorkload
+	// dependentsFrom is the hybernate.io/dependents-from of each namespace
+	// a dependency in another namespace is in, when it has one.
+	dependentsFrom map[string]string
 }
 
 func (r *Reconciler) loadDependencyGraph(ctx context.Context) (*dependencyGraph, error) {
@@ -89,10 +94,17 @@ func (r *Reconciler) loadDependencyGraph(ctx context.Context) (*dependencyGraph,
 	if err := r.List(ctx, &list); err != nil {
 		return nil, fmt.Errorf("listing managed workloads: %w", err)
 	}
-	g := &dependencyGraph{all: list.Items, byTarget: make(map[workloadID]*v1alpha1.ManagedWorkload, len(list.Items))}
+	g := &dependencyGraph{all: list.Items, byTarget: make(map[workloadID]*v1alpha1.ManagedWorkload, len(list.Items)),
+		dependentsFrom: map[string]string{}}
+	crossed := map[string]bool{}
 	for i := range g.all {
 		w := &g.all[i]
 		id := targetID(w)
+		for _, ref := range dependencyRefs(w) {
+			if ns := dependencyID(w, ref).namespace; ns != w.Namespace {
+				crossed[ns] = true
+			}
+		}
 		// When two ManagedWorkloads share a target, the duplicate check's
 		// owner is the one that acts on it.
 		if owner, ok := g.byTarget[id]; ok && claimsTargetFirst(owner, w) {
@@ -100,17 +112,59 @@ func (r *Reconciler) loadDependencyGraph(ctx context.Context) (*dependencyGraph,
 		}
 		g.byTarget[id] = w
 	}
+	for ns := range crossed {
+		value, err := r.dependentsFromOf(ctx, ns)
+		if err != nil {
+			return nil, err
+		}
+		if value != "" {
+			g.dependentsFrom[ns] = value
+		}
+	}
 	return g, nil
 }
 
+// dependentsFromOf is the namespace's hybernate.io/dependents-from, or ""
+// for none or no such namespace.
+func (r *Reconciler) dependentsFromOf(ctx context.Context, namespace string) (string, error) {
+	var ns corev1.Namespace
+	err := r.Get(ctx, client.ObjectKey{Name: namespace}, &ns)
+	if apierrors.IsNotFound(err) {
+		return "", nil
+	}
+	if err != nil {
+		return "", fmt.Errorf("reading namespace %s: %w", namespace, err)
+	}
+	return ns.Annotations[v1alpha1.AnnotationDependentsFrom], nil
+}
+
+// allowsDependentsFrom says a hybernate.io/dependents-from value lets
+// workloads in namespace depend on the workloads beside it.
+func allowsDependentsFrom(value, namespace string) bool {
+	for entry := range strings.SplitSeq(value, ",") {
+		if entry = strings.TrimSpace(entry); entry == "*" || entry == namespace {
+			return true
+		}
+	}
+	return false
+}
+
+// allows reports whether dependent may depend on the workload id: always
+// in its own namespace, and in another only when that namespace's
+// hybernate.io/dependents-from lets it. A dependency it doesn't allow is
+// no edge: never held, woken or waited for.
+func (g *dependencyGraph) allows(dependent *v1alpha1.ManagedWorkload, id workloadID) bool {
+	return id.namespace == dependent.Namespace || allowsDependentsFrom(g.dependentsFrom[id.namespace], dependent.Namespace)
+}
+
 // dependents returns the ManagedWorkloads that depend on workload's
-// target, declared or learned.
+// target, declared or learned, where it allows them.
 func (g *dependencyGraph) dependents(workload *v1alpha1.ManagedWorkload) []*v1alpha1.ManagedWorkload {
 	id := targetID(workload)
 	var out []*v1alpha1.ManagedWorkload
 	for i := range g.all {
 		w := &g.all[i]
-		if w.UID == workload.UID {
+		if w.UID == workload.UID || !g.allows(w, id) {
 			continue
 		}
 		for _, ref := range dependencyRefs(w) {
@@ -139,7 +193,7 @@ func (g *dependencyGraph) reaches(w *v1alpha1.ManagedWorkload, to workloadID,
 		queue = queue[1:]
 		for _, ref := range edges(next) {
 			id := dependencyID(next, ref)
-			if id == targetID(next) {
+			if id == targetID(next) || !g.allows(next, id) {
 				continue
 			}
 			if id == to {
@@ -325,8 +379,9 @@ func (r *Reconciler) wakeDependencies(ctx context.Context, workload *v1alpha1.Ma
 		return
 	}
 	for _, ref := range refs {
-		dep, ok := g.byTarget[dependencyID(workload, ref)]
-		if !ok || dep.UID == workload.UID {
+		id := dependencyID(workload, ref)
+		dep, ok := g.byTarget[id]
+		if !ok || dep.UID == workload.UID || !g.allows(workload, id) {
 			continue
 		}
 		if err := r.stampActivity(ctx, dep); err != nil {
@@ -389,6 +444,9 @@ func (r *Reconciler) waitForDependencies(ctx context.Context, workload *v1alpha1
 	reason := reasonDependencyWontStart
 	for _, ref := range refs {
 		id := dependencyID(workload, ref)
+		if !g.allows(workload, id) {
+			continue
+		}
 		target, state, err := r.getDependency(ctx, id)
 		if err != nil {
 			return nil, fmt.Errorf("checking dependency %s: %w", id, err)
@@ -505,14 +563,19 @@ func wontStart(dep *v1alpha1.ManagedWorkload, target client.Object) string {
 	return ""
 }
 
-// checkDependenciesExist reports dependencies whose workload doesn't exist
-// or can't be seen. Only unmanaged ones are checked: a managed dependency
-// reports a missing target through its own TargetAvailable condition. It
-// never stops the lifecycle: a dependency that can't be checked is left out
-// of the report.
+// checkDependenciesExist reports dependencies in a namespace that doesn't
+// allow this workload's, and declared dependencies whose workload doesn't
+// exist or can't be seen. Only unmanaged ones are checked for existence: a
+// managed dependency reports a missing target through its own
+// TargetAvailable condition. One not allowed is never looked for, and is
+// reported the same whether it exists or not, so dependsOn can't be used
+// to probe another namespace. It never stops the lifecycle: a dependency
+// that can't be checked is left out of the report.
 func (r *Reconciler) checkDependenciesExist(ctx context.Context, workload *v1alpha1.ManagedWorkload) error {
-	if len(workload.Spec.DependsOn) == 0 {
+	refs := dependencyRefs(workload)
+	if len(refs) == 0 {
 		r.clearCondition(workload, conditionDependencyNotFound, "NoDependencies")
+		r.clearCondition(workload, conditionDependencyNotAllowed, "NoDependencies")
 		return nil
 	}
 	ctx, cancel := context.WithTimeout(ctx, dependencyTimeout)
@@ -522,10 +585,24 @@ func (r *Reconciler) checkDependenciesExist(ctx context.Context, workload *v1alp
 	if err != nil {
 		return err
 	}
+	var notAllowed []string
+	for _, ref := range refs {
+		if id := dependencyID(workload, ref); !g.allows(workload, id) {
+			notAllowed = append(notAllowed, id.String())
+		}
+	}
+	if len(notAllowed) == 0 {
+		r.clearCondition(workload, conditionDependencyNotAllowed, "DependenciesAllowed")
+	} else {
+		r.setCondition(workload, conditionDependencyNotAllowed, metav1.ConditionTrue, conditionDependencyNotAllowed,
+			fmt.Sprintf("not in a namespace that allows dependents from %s with %s, so not held or woken: %s",
+				workload.Namespace, v1alpha1.AnnotationDependentsFrom, listUpTo(notAllowed, maxListed)))
+	}
+
 	var missing, hidden []string
 	for _, ref := range workload.Spec.DependsOn {
 		id := dependencyID(workload, ref)
-		if _, managed := g.byTarget[id]; managed {
+		if _, managed := g.byTarget[id]; managed || !g.allows(workload, id) {
 			continue
 		}
 		_, state, err := r.getDependency(ctx, id)

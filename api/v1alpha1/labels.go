@@ -102,6 +102,14 @@ const (
 	// its own namespace. Set on the workload or its ManagedWorkload.
 	AnnotationIgnoreDependencies = "hybernate.io/ignore-dependencies"
 
+	// AnnotationDependentsFrom, on a namespace, lists the other namespaces,
+	// comma-separated, whose workloads may depend on its workloads, or "*"
+	// for any. A dependency in another namespace, declared or learned, is
+	// only held awake and woken for its dependents when its namespace lists
+	// theirs: anyone who can write a ManagedWorkload in one namespace could
+	// otherwise keep another namespace's workloads awake.
+	AnnotationDependentsFrom = "hybernate.io/dependents-from"
+
 	// FinalizerCleanup is the finalizer added to ManagedWorkloads, so deleting
 	// one scales its paused workload back up first.
 	FinalizerCleanup = "hybernate.io/cleanup"

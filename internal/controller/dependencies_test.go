@@ -133,10 +133,10 @@ func TestDependencies_HoldWhileDependentsAwake(t *testing.T) {
 			wantHeldBy: "kept awake for default/worker",
 		},
 		{
-			name: "dependent in another namespace",
+			name: "dependent in another namespace, which postgres's doesn't allow",
 			dependents: []*v1alpha1.ManagedWorkload{depWorkload("preview-42", "api", v1alpha1.TargetKindDeployment, v1alpha1.PhaseRunning,
 				v1alpha1.DependencyRef{Namespace: "default", Kind: v1alpha1.TargetKindStatefulSet, Name: "postgres"})},
-			wantHeldBy: "kept awake for preview-42/api",
+			wantPause: true,
 		},
 		{
 			name: "same name in another namespace is a different dependency",
@@ -557,6 +557,96 @@ func TestDependencies_WaitForMissingDependencyDoesNotBlock(t *testing.T) {
 	assert.Equal(t, 1, pauser.resumeCalls)
 }
 
+// A dependency in another namespace is only held, woken and waited for
+// when its namespace allows dependents from the dependent's. Otherwise a
+// user of one namespace could keep another's workloads awake, or tell
+// from the conditions what's in it.
+func TestDependencies_CrossNamespaceNeedsTheNamespacesConsent(t *testing.T) {
+	shared := v1alpha1.DependencyRef{Namespace: "default", Kind: v1alpha1.TargetKindStatefulSet, Name: "postgres",
+		WaitForReady: true}
+	tests := []struct {
+		name           string
+		dependentsFrom *string
+		learn          bool
+		wantAllowed    bool
+	}{
+		{name: "no annotation"},
+		{name: "another namespace listed", dependentsFrom: ptr.To("preview-1, preview-2")},
+		{name: "listed", dependentsFrom: ptr.To("preview-1, preview-42"), wantAllowed: true},
+		{name: "any namespace", dependentsFrom: ptr.To("*"), wantAllowed: true},
+		{name: "learned, no annotation", learn: true},
+		{name: "learned, listed", dependentsFrom: ptr.To("preview-42"), learn: true, wantAllowed: true},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			ns := &corev1.Namespace{ObjectMeta: metav1.ObjectMeta{Name: "default"}}
+			if tt.dependentsFrom != nil {
+				ns.Annotations = map[string]string{v1alpha1.AnnotationDependentsFrom: *tt.dependentsFrom}
+			}
+			dependent := func(phase v1alpha1.WorkloadPhase) *v1alpha1.ManagedWorkload {
+				w := depWorkload("preview-42", "api", v1alpha1.TargetKindDeployment, phase)
+				if tt.learn {
+					w.Status.LearnedDependencies = &v1alpha1.LearnedDependencies{Dependencies: []v1alpha1.LearnedDependency{
+						{Namespace: "default", Kind: v1alpha1.TargetKindStatefulSet, Name: "postgres",
+							Source: v1alpha1.LearnedFromEnvironment, Via: "PGHOST"}}}
+				} else {
+					w.Spec.DependsOn = []v1alpha1.DependencyRef{shared}
+				}
+				return w
+			}
+
+			t.Run("held", func(t *testing.T) {
+				postgres := depWorkload("default", "postgres", v1alpha1.TargetKindStatefulSet, v1alpha1.PhaseRunning)
+				pauser := &stubPauser{pauseDone: true}
+				r := depReconciler(t, pauser, ns.DeepCopy(), postgres, dependent(v1alpha1.PhaseRunning))
+
+				_, err := r.reconcileAutomation(context.Background(), postgres, postgresTarget(1, 1))
+				require.NoError(t, err)
+
+				assert.Equal(t, tt.wantAllowed, pauser.pauseCalls == 0)
+			})
+			t.Run("woken and waited for", func(t *testing.T) {
+				pausedAt := metav1.NewTime(fixedTime.Add(-time.Hour))
+				api := dependent(v1alpha1.PhasePaused)
+				api.Status.Pause = &v1alpha1.PauseStatus{PreviousReplicas: 1, PausedAt: &pausedAt}
+				postgres := depWorkload("default", "postgres", v1alpha1.TargetKindStatefulSet, v1alpha1.PhasePaused)
+				target := postgresTarget(0, 0)
+				target.Namespace = "default"
+				pauser := &stubPauser{resumeDone: true}
+				r := depReconciler(t, pauser, ns.DeepCopy(), api, postgres, target)
+
+				_, err := r.handleResume(context.Background(), api, nil)
+				require.NoError(t, err)
+
+				woken := fetch(t, r, "postgres").Annotations[v1alpha1.AnnotationLastActivity] != ""
+				assert.Equal(t, tt.wantAllowed, woken)
+				if !tt.learn {
+					assert.Equal(t, !tt.wantAllowed, pauser.resumeCalls == 1, "only an allowed dependency is waited for")
+				}
+			})
+			t.Run("reported", func(t *testing.T) {
+				api := dependent(v1alpha1.PhaseRunning)
+				r := depReconciler(t, &stubPauser{}, ns.DeepCopy(), api)
+
+				require.NoError(t, r.checkDependenciesExist(context.Background(), api))
+
+				c := meta.FindStatusCondition(api.Status.Conditions, conditionDependencyNotAllowed)
+				if tt.wantAllowed {
+					assert.Nil(t, c)
+					assert.True(t, meta.IsStatusConditionTrue(api.Status.Conditions, conditionDependencyNotFound) == !tt.learn,
+						"an allowed one is looked for")
+					return
+				}
+				require.NotNil(t, c)
+				assert.Equal(t, "not in a namespace that allows dependents from preview-42 with hybernate.io/dependents-from, "+
+					"so not held or woken: default/statefulset/postgres", c.Message)
+				assert.Nil(t, meta.FindStatusCondition(api.Status.Conditions, conditionDependencyNotFound),
+					"one not allowed isn't looked for, so whether it exists isn't told")
+			})
+		})
+	}
+}
+
 func TestDependencies_NotFoundCondition(t *testing.T) {
 	tests := []struct {
 		name        string
@@ -781,7 +871,8 @@ func TestDependencies_UnwatchedNamespaceDoesNotBlock(t *testing.T) {
 	direct, err := client.New(cfg, client.Options{Scheme: scheme})
 	require.NoError(t, err)
 
-	require.NoError(t, direct.Create(ctx, &corev1.Namespace{ObjectMeta: metav1.ObjectMeta{Name: "shared"}}))
+	require.NoError(t, direct.Create(ctx, &corev1.Namespace{ObjectMeta: metav1.ObjectMeta{Name: "shared",
+		Annotations: map[string]string{v1alpha1.AnnotationDependentsFrom: "default"}}}))
 	require.NoError(t, direct.Create(ctx, postgresStatefulSet("shared")))
 	api := &v1alpha1.ManagedWorkload{
 		ObjectMeta: metav1.ObjectMeta{Name: "api", Namespace: "default"},
