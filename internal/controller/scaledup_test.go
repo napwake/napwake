@@ -71,19 +71,19 @@ func TestWakeOnScaleUp_ByAPerson(t *testing.T) {
 	r := newTestReconcilerWithReplicas(t, workload, &stubPauser{}, 5)
 	w := getWorkload(t, r, "api")
 
-	require.NoError(t, r.wakeOnScaleUp(context.Background(), w, scaledBy("kubectl-scale", 5)))
+	require.NoError(t, r.wakeOnScaleUp(context.Background(), w, scaledBy("kubectl-edit", 5)))
 
 	w = getWorkload(t, r, "api")
 	assert.Equal(t, v1alpha1.PhaseRunning, w.Status.Phase)
 	assert.Nil(t, w.Status.Pause)
 	require.NotNil(t, w.Status.LastScaledUp)
-	assert.Equal(t, "kubectl-scale", w.Status.LastScaledUp.By)
+	assert.Equal(t, "kubectl-edit", w.Status.LastScaledUp.By)
 	assert.Empty(t, w.Status.LastScaledUp.GitOps)
 	assert.Equal(t, int32(5), w.Status.LastScaledUp.Replicas)
 	assert.Equal(t, v1alpha1.ActivitySourceScaledUp, w.Status.Activity.LastActivitySource, "the idle clock starts again")
 	assert.Nil(t, meta.FindStatusCondition(w.Status.Conditions, conditionGitOpsConflict))
 	assert.Equal(t, int32(5), targetReplicas(t, r), "left as they set it")
-	assert.Contains(t, drainEvents(t, r), "scaled up to 5 replicas by kubectl-scale outside Hybernate")
+	assert.Contains(t, drainEvents(t, r), "scaled up to 5 replicas by kubectl-edit outside Hybernate")
 	assert.Zero(t, r.awakeDemand(w, 80), "starting up after the scale-up isn't demand the forecast should learn")
 }
 

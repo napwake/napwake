@@ -299,7 +299,7 @@ func TestPause_WarnsWhenGitOpsWillUndoIt(t *testing.T) {
 	}{
 		{manager: "argocd-controller", tool: "Argo CD", fix: "resource.customizations.ignoreDifferences.apps_Deployment"},
 		{manager: "kustomize-controller", tool: "Flux", fix: "Leave replicas out of the workload's manifest in Git"},
-		{manager: "kubectl-scale"},
+		{manager: "kubectl-edit"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.manager, func(t *testing.T) {

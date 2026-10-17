@@ -587,7 +587,7 @@ func TestScanCluster_ReplicasFromGit(t *testing.T) {
 
 	c := fake.NewClientBuilder().WithScheme(newScheme()).WithReturnManagedFields().WithRuntimeObjects(
 		fromGit("argo-app", "argocd-controller"), fromGit("argo-db", "argocd-controller"),
-		fromGit("flux-app", "kustomize-controller"), fromGit("scaled", "kubectl-scale")).Build()
+		fromGit("flux-app", "kustomize-controller"), fromGit("scaled", "kubectl-edit")).Build()
 	report, err := NewScanner(c, c).ScanCluster(context.Background(), scanOptions(testNamespace))
 	require.NoError(t, err)
 

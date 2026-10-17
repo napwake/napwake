@@ -801,7 +801,7 @@ func TestDependencies_ScaleUpWakesDependencies(t *testing.T) {
 	postgres := depWorkload("default", "postgres", v1alpha1.TargetKindStatefulSet, v1alpha1.PhasePaused)
 	r := depReconciler(t, &stubPauser{}, api, postgres, targetDeploymentWithReplicas("api", "default", 1))
 
-	require.NoError(t, r.wakeOnScaleUp(context.Background(), api, scaledBy("kubectl-scale", 1)))
+	require.NoError(t, r.wakeOnScaleUp(context.Background(), api, scaledBy("kubectl-edit", 1)))
 
 	assert.Equal(t, fixedTime.UTC().Format(time.RFC3339),
 		fetch(t, r, "postgres").Annotations[v1alpha1.AnnotationLastActivity])
