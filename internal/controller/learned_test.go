@@ -479,6 +479,98 @@ func TestLearnFromWake_DualStack(t *testing.T) {
 	assert.Equal(t, []string{"default/postgres "}, learnedNames(fetch(t, r, "api")))
 }
 
+// podReads counts the pod lists learning from a wake makes, and the pages
+// of a search by address among them, and notes the time it had left. With
+// more set, every page of the search goes on to another.
+type podReads struct {
+	lists, pages int
+	deadline     time.Duration
+	more         bool
+}
+
+func (p *podReads) reconciler(t *testing.T, objs ...client.Object) *Reconciler {
+	t.Helper()
+	r := wakeReconciler(t, objs...)
+	r.Client = interceptor.NewClient(r.Client.(client.WithWatch), interceptor.Funcs{
+		List: func(ctx context.Context, c client.WithWatch, list client.ObjectList, opts ...client.ListOption) error {
+			if _, ok := list.(*corev1.PodList); !ok {
+				return c.List(ctx, list, opts...)
+			}
+			p.lists++
+			if deadline, ok := ctx.Deadline(); ok {
+				p.deadline = time.Until(deadline)
+			}
+			var o client.ListOptions
+			o.ApplyOptions(opts)
+			if err := c.List(ctx, list, opts...); err != nil {
+				return err
+			}
+			if o.Limit == podPageSize {
+				p.pages++
+				if p.more {
+					list.(*corev1.PodList).Continue = "more"
+				}
+			}
+			return nil
+		},
+	})
+	return r
+}
+
+// Where pods' IPv6 addresses are their status.podIP, an IPv6-only cluster
+// or one whose pods are IPv6 first, an address no pod has as its
+// status.podIP is no pod's, such as a node's. Reading every pod in the
+// cluster to find it, on every wake, held the wake up and found nothing.
+func TestLearnFromWake_IPv6FromNoPod(t *testing.T) {
+	const nodeIPv6 = "fd00:10:0:1::1"
+	postgres := wokenPostgres()
+	postgres.Annotations[v1alpha1.AnnotationLastRequestFrom] = nodeIPv6
+	tests := []struct {
+		name      string
+		ips       []corev1.PodIP
+		wantPages bool
+	}{
+		{name: "IPv6 only", ips: []corev1.PodIP{{IP: "fd00:10:244:1::7"}}},
+		{name: "dual-stack, IPv6 first", ips: []corev1.PodIP{{IP: "fd00:10:244:1::7"}, {IP: senderIP}}},
+		{name: "dual-stack, IPv4 first", ips: []corev1.PodIP{{IP: senderIP}, {IP: "fd00:10:244:1::7"}}, wantPages: true},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			pod := podOf("api", false)
+			pod.Status.PodIP, pod.Status.PodIPs = tt.ips[0].IP, tt.ips
+			var reads podReads
+			r := reads.reconciler(t, pod, selecting(v1alpha1.TargetKindDeployment, "api", nil),
+				depWorkload("default", "api", v1alpha1.TargetKindDeployment, v1alpha1.PhaseRunning), postgres,
+				selecting(v1alpha1.TargetKindStatefulSet, "postgres", nil))
+
+			require.NoError(t, r.learnFromWake(context.Background(), postgres))
+
+			assert.Equal(t, tt.wantPages, reads.pages > 0, "pods read a page at a time")
+			assert.Empty(t, learnedNames(fetch(t, r, "api")))
+		})
+	}
+}
+
+// Learning runs as the workload wakes, with the request that woke it
+// waiting, so it's bounded: in time, and in how many pods a search by
+// address reads.
+func TestLearnFromWake_Bounded(t *testing.T) {
+	postgres := wokenPostgres()
+	postgres.Annotations[v1alpha1.AnnotationLastRequestFrom] = "fd00:10:244:9::9"
+	pod := podOf("api", false)
+	pod.Status.PodIPs = []corev1.PodIP{{IP: senderIP}, {IP: "fd00:10:244:1::7"}}
+	reads := podReads{more: true}
+	r := reads.reconciler(t, pod, selecting(v1alpha1.TargetKindDeployment, "api", nil),
+		depWorkload("default", "api", v1alpha1.TargetKindDeployment, v1alpha1.PhaseRunning), postgres,
+		selecting(v1alpha1.TargetKindStatefulSet, "postgres", nil))
+
+	err := r.learnFromWake(context.Background(), postgres)
+
+	require.ErrorContains(t, err, "not among the first 10000 pods")
+	assert.Equal(t, maxPodPages, reads.pages)
+	assert.LessOrEqual(t, reads.deadline, wakeLearnTimeout)
+}
+
 // Installed for some namespaces only, Hybernate can't list pods across the
 // cluster, so it looks for the sender in each namespace it watches.
 func TestLearnFromWake_WatchedNamespaces(t *testing.T) {

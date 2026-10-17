@@ -339,6 +339,11 @@ func dependencyRefs(workload *v1alpha1.ManagedWorkload) []v1alpha1.DependencyRef
 // podIPField finds pods by their IP, which the API server indexes.
 const podIPField = "status.podIP"
 
+// wakeLearnTimeout bounds learning from a wake, which runs as the workload
+// wakes, with the request that woke it waiting. A link not learned in time
+// is learned from a later wake.
+const wakeLearnTimeout = 2 * time.Second
+
 // learnFromWake learns that the workload whose request woke this one
 // depends on it. Only a workload Hybernate manages counts: a request through
 // an ingress controller comes from the controller's pod, which depends on
@@ -348,7 +353,7 @@ func (r *Reconciler) learnFromWake(ctx context.Context, workload *v1alpha1.Manag
 	if ip == "" || wakeSource(workload) != v1alpha1.ActivitySourceRequest {
 		return nil
 	}
-	ctx, cancel := context.WithTimeout(ctx, dependencyTimeout)
+	ctx, cancel := context.WithTimeout(ctx, wakeLearnTimeout)
 	defer cancel()
 
 	pod, found, err := r.podAt(ctx, ip)
@@ -439,9 +444,21 @@ func (r *Reconciler) podAt(ctx context.Context, ip string) (*corev1.Pod, bool, e
 	// A dual-stack pod's IPv6 address, in a cluster whose pods are IPv4
 	// first, isn't its status.podIP, and the API server matches
 	// status.podIPs only as the whole list. Such a pod is found by reading
-	// pods a page at a time.
+	// pods a page at a time. Anywhere else, an IPv6 address no pod has as
+	// its status.podIP is no pod's, such as a node's, and reading every pod
+	// on every wake would find nothing.
+	secondary, err := secondaryIPv6(ctx, reader, namespaces[0])
+	if err != nil || !secondary {
+		return nil, false, err
+	}
+	pages := 0
 	for _, ns := range namespaces {
 		for page := ""; ; {
+			if pages == maxPodPages {
+				return nil, false, fmt.Errorf("finding the pod at %s: not among the first %d pods",
+					ip, maxPodPages*podPageSize)
+			}
+			pages++
 			var pods corev1.PodList
 			if err := reader.List(ctx, &pods, client.InNamespace(ns), client.Limit(podPageSize),
 				client.Continue(page)); err != nil {
@@ -458,8 +475,39 @@ func (r *Reconciler) podAt(ctx context.Context, ip string) (*corev1.Pod, bool, e
 	return nil, false, nil
 }
 
-// podPageSize is how many pods a search by IPv6 address reads at once.
-const podPageSize = 500
+// A search by IPv6 address reads podPageSize pods at once, and at most
+// maxPodPages pages.
+const (
+	podPageSize = 500
+	maxPodPages = 20
+)
+
+// ipSamplePods is how many pods are read to tell how pods' addresses are
+// ordered.
+const ipSamplePods = 20
+
+// secondaryIPv6 reports whether pods in the namespace may have an IPv6
+// address second, as in a dual-stack cluster whose pods are IPv4 first,
+// judged from the first of a few pods that has addresses. With none that
+// has, they may.
+func secondaryIPv6(ctx context.Context, reader client.Reader, namespace string) (bool, error) {
+	var pods corev1.PodList
+	if err := reader.List(ctx, &pods, client.InNamespace(namespace), client.Limit(ipSamplePods)); err != nil {
+		return false, fmt.Errorf("reading how pods' addresses are ordered: %w", err)
+	}
+	for i := range pods.Items {
+		ips := pods.Items[i].Status.PodIPs
+		if len(ips) == 0 {
+			continue
+		}
+		first, err := netip.ParseAddr(ips[0].IP)
+		if err != nil {
+			continue
+		}
+		return first.Unmap().Is4() && len(ips) > 1, nil
+	}
+	return true, nil
+}
 
 // podWithIP is the pod in pods with the IP among its addresses that isn't
 // on its node's network or being deleted.
