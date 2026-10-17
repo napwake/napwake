@@ -86,6 +86,13 @@ func looksLikeHTTP(head []byte) bool {
 	return false
 }
 
+// headersEnded reports whether head holds a whole request's headers. Lines
+// may end in a bare LF, as net/http accepts and some probes and scripts
+// send.
+func headersEnded(head []byte) bool {
+	return bytes.Contains(head, []byte("\r\n\r\n")) || bytes.Contains(head, []byte("\n\n"))
+}
+
 // parseRequest parses head, the first bytes of a connection, as an HTTP
 // request. Headers longer than maxPeek, as single sign-on cookies can make
 // them, are judged by the lines that fit: browsers send the ones the doorman
@@ -94,13 +101,12 @@ func parseRequest(head []byte) (*http.Request, bool) {
 	if !looksLikeHTTP(head) {
 		return nil, false
 	}
-	end := []byte("\r\n\r\n")
-	if !bytes.Contains(head, end) {
-		lastLine := bytes.LastIndex(head, []byte("\r\n"))
+	if !headersEnded(head) {
+		lastLine := bytes.LastIndexByte(head, '\n')
 		if lastLine < 0 {
 			return nil, false
 		}
-		head = append(head[:lastLine:lastLine], end...)
+		head = append(head[:lastLine+1:lastLine+1], "\r\n"...)
 	}
 	req, err := http.ReadRequest(bufio.NewReader(bytes.NewReader(head)))
 	if err != nil {

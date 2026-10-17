@@ -570,6 +570,7 @@ func TestServer_ProbesAndScrapesDoNotWake(t *testing.T) {
 	}{
 		{name: "a TCP health check", closeNow: true},
 		{name: "a kubelet probe", request: "GET /healthz HTTP/1.1\r\nHost: 10.0.0.1\r\nUser-Agent: kube-probe/1.31\r\n\r\n", want503: true},
+		{name: "a probe ending lines in a bare LF", request: "GET /healthz HTTP/1.1\nHost: 10.0.0.1\nUser-Agent: kube-probe/1.31\n\n", want503: true},
 		{name: "a Prometheus scrape", request: "GET /metrics HTTP/1.1\r\nHost: 10.0.0.1\r\nUser-Agent: Prometheus/2.53.0\r\n\r\n", want503: true},
 		{name: "an ALB health check", request: "GET / HTTP/1.1\r\nHost: 10.0.0.1\r\nUser-Agent: ELB-HealthChecker/2.0\r\n\r\n", want503: true},
 		{name: "a blackbox exporter probe", request: "GET /health HTTP/1.1\r\nHost: api\r\nUser-Agent: Blackbox Exporter/0.25.0\r\n\r\n", want503: true},
@@ -631,21 +632,32 @@ func TestServer_PassesAProbeThroughWhenAPodIsReady(t *testing.T) {
 // A scanner hunting for leaked secrets in hidden files gets a 404, and the
 // paused workload sleeps on; a real request after it still wakes it.
 func TestServer_HiddenFileRequestsDoNotWake(t *testing.T) {
-	port := freePort(t)
-	_, c := startServer(t, pausedWorkload("api", port, time.Minute))
-	before := wakes(resultIgnored)
+	tests := []struct {
+		name    string
+		request string
+	}{
+		{name: "lines ending in CRLF", request: "GET /.env HTTP/1.1\r\nHost: shop.example.dev\r\nUser-Agent: Mozilla/5.0\r\n\r\n"},
+		{name: "lines ending in a bare LF", request: "GET /.env HTTP/1.1\nHost: shop.example.dev\nUser-Agent: Mozilla/5.0\n\n"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			port := freePort(t)
+			_, c := startServer(t, pausedWorkload("api", port, time.Minute))
+			before := wakes(resultIgnored)
 
-	conn := dial(t, port)
-	send(t, conn, "GET /.env HTTP/1.1\r\nHost: shop.example.dev\r\nUser-Agent: Mozilla/5.0\r\n\r\n")
-	resp, _ := readResponse(t, conn)
+			conn := dial(t, port)
+			send(t, conn, tt.request)
+			resp, _ := readResponse(t, conn)
 
-	assert.Equal(t, http.StatusNotFound, resp.StatusCode)
-	require.Eventually(t, func() bool { return wakes(resultIgnored) == before+1 }, 5*time.Second, 10*time.Millisecond)
-	assert.Empty(t, lastRequest(t, c), "the workload stays paused")
+			assert.Equal(t, http.StatusNotFound, resp.StatusCode)
+			require.Eventually(t, func() bool { return wakes(resultIgnored) == before+1 }, 5*time.Second, 10*time.Millisecond)
+			assert.Empty(t, lastRequest(t, c), "the workload stays paused")
 
-	send(t, dial(t, port), "GET / HTTP/1.1\r\nHost: shop.example.dev\r\n\r\n")
-	require.Eventually(t, func() bool { return lastRequest(t, c) != "" }, 5*time.Second, 20*time.Millisecond,
-		"a real request still wakes it")
+			send(t, dial(t, port), "GET / HTTP/1.1\r\nHost: shop.example.dev\r\n\r\n")
+			require.Eventually(t, func() bool { return lastRequest(t, c) != "" }, 5*time.Second, 20*time.Millisecond,
+				"a real request still wakes it")
+		})
+	}
 }
 
 // A health checker the doorman doesn't know by default is recognised once

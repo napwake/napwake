@@ -343,7 +343,7 @@ func readHead(conn net.Conn, silent time.Duration) ([]byte, headState) {
 		return head, headSent
 	}
 	_ = conn.SetReadDeadline(time.Now().Add(headTimeout)) // a failure just means no deadline
-	for len(head) < maxPeek && !bytes.Contains(head, []byte("\r\n\r\n")) {
+	for len(head) < maxPeek && !headersEnded(head) {
 		if len(head) == cap(head) {
 			head = append(head, make([]byte, 4<<10)...)[:len(head)]
 		}
