@@ -42,6 +42,7 @@ import (
 	v1alpha1 "github.com/okedeji/hybernate/api/v1alpha1"
 	"github.com/okedeji/hybernate/internal/forecast"
 	opmetrics "github.com/okedeji/hybernate/internal/metrics"
+	"github.com/okedeji/hybernate/internal/signal"
 )
 
 // idleCPU is usage well under the 10% default threshold: 5m of 1000m.
@@ -322,7 +323,7 @@ func TestActivityClock_AnOutageIsNotIdleTime(t *testing.T) {
 			metrics := idleCPU
 			pauser := &stubPauser{pauseDone: true}
 			r := newAutomationReconciler(t, workload, &stubForecaster{}, automationOpts{metrics: &metrics, pauser: pauser})
-			r.prometheusURL = srv.URL
+			r.prometheus = signal.NewPrometheus(srv.URL)
 			now := fixedTime
 			r.clock = func() time.Time { return now }
 			check := func() {
@@ -339,6 +340,9 @@ func TestActivityClock_AnOutageIsNotIdleTime(t *testing.T) {
 			assert.Equal(t, v1alpha1.ActivitySourceUnobserved, workload.Status.Activity.LastActivitySource)
 
 			tt.fixIt(&metrics, &promDown)
+			// The client backs off a failed endpoint by the wall clock, which
+			// this test's clock doesn't move.
+			r.prometheus = signal.NewPrometheus(srv.URL)
 			lastBlind := now.Add(-activityCheckInterval)
 			for ; now.Before(lastBlind.Add(time.Hour)); now = now.Add(activityCheckInterval) {
 				check()
@@ -806,7 +810,7 @@ func TestActivityClock_PrometheusSource(t *testing.T) {
 			metrics := idleCPU
 			pauser := &stubPauser{pauseDone: true}
 			r := newAutomationReconciler(t, workload, &stubForecaster{}, automationOpts{metrics: &metrics, pauser: pauser})
-			r.prometheusURL = tt.endpoint(t)
+			r.prometheus = signal.NewPrometheus(tt.endpoint(t))
 
 			_, err := r.reconcileAutomation(context.Background(), workload, target)
 			require.NoError(t, err)
@@ -825,6 +829,77 @@ func TestActivityClock_PrometheusSource(t *testing.T) {
 			assert.Equal(t, tt.wantReason, cond.Reason)
 		})
 	}
+}
+
+func promQueries(n int) []v1alpha1.PrometheusActivity {
+	queries := make([]v1alpha1.PrometheusActivity, n)
+	for i := range queries {
+		queries[i] = v1alpha1.PrometheusActivity{PromQL: fmt.Sprintf(`sum(rate(http_requests_total{route="%d"}[5m]))`, i)}
+	}
+	return queries
+}
+
+// Prometheus failing for one check isn't asked again by the next: each
+// would wait out a timeout to learn of the outage, holding a reconcile
+// worker that wakes queue behind.
+func TestActivityClock_PrometheusOutageFailsFast(t *testing.T) {
+	var calls atomic.Int32
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		calls.Add(1)
+		w.WriteHeader(http.StatusServiceUnavailable)
+	}))
+	t.Cleanup(srv.Close)
+	target := clockTarget("app:v1", nil)
+	workload := clockWorkload(fixedTime.Add(-61*time.Minute), target)
+	workload.Spec.IdlePolicy.Activity = &v1alpha1.ActivitySpec{Prometheus: promQueries(3)}
+	metrics := idleCPU
+	pauser := &stubPauser{pauseDone: true}
+	r := newAutomationReconciler(t, workload, &stubForecaster{}, automationOpts{metrics: &metrics, pauser: pauser})
+	r.prometheus = signal.NewPrometheus(srv.URL)
+
+	for range 3 {
+		_, err := r.reconcileAutomation(context.Background(), workload, target)
+		require.NoError(t, err)
+	}
+
+	assert.Equal(t, int32(1), calls.Load(), "asked once, then not again until it has had time to recover")
+	assert.Zero(t, pauser.pauseCalls)
+	cond := meta.FindStatusCondition(workload.Status.Conditions, conditionPrometheusAvailable)
+	require.NotNil(t, cond)
+	assert.Equal(t, metav1.ConditionFalse, cond.Status)
+}
+
+// A workload's queries share one time budget per check, so one with many
+// slow queries holds a reconcile worker for seconds, not a timeout each.
+func TestActivityClock_PrometheusQueriesShareABudget(t *testing.T) {
+	if testing.Short() {
+		t.Skip("waits out the budget")
+	}
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		select {
+		case <-time.After(1200 * time.Millisecond):
+			_, _ = w.Write([]byte(promValue("0")))
+		case <-r.Context().Done():
+		}
+	}))
+	t.Cleanup(srv.Close)
+	target := clockTarget("app:v1", nil)
+	workload := clockWorkload(fixedTime.Add(-61*time.Minute), target)
+	workload.Spec.IdlePolicy.Activity = &v1alpha1.ActivitySpec{Prometheus: promQueries(8)}
+	metrics := idleCPU
+	pauser := &stubPauser{pauseDone: true}
+	r := newAutomationReconciler(t, workload, &stubForecaster{}, automationOpts{metrics: &metrics, pauser: pauser})
+	r.prometheus = signal.NewPrometheus(srv.URL)
+
+	began := time.Now()
+	_, err := r.reconcileAutomation(context.Background(), workload, target)
+	require.NoError(t, err)
+
+	assert.Less(t, time.Since(began), prometheusBudget+time.Second, "8 queries of 1.2s each stopped at the budget")
+	assert.Zero(t, pauser.pauseCalls, "queries not evaluated leave the workload awake")
+	cond := meta.FindStatusCondition(workload.Status.Conditions, conditionPrometheusAvailable)
+	require.NotNil(t, cond)
+	assert.Equal(t, metav1.ConditionFalse, cond.Status)
 }
 
 func TestActivityClock_NoPrometheusConditionWithoutQueries(t *testing.T) {

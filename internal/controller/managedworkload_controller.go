@@ -47,6 +47,7 @@ import (
 	"github.com/okedeji/hybernate/internal/forecast"
 	"github.com/okedeji/hybernate/internal/lifecycle"
 	"github.com/okedeji/hybernate/internal/metrics"
+	"github.com/okedeji/hybernate/internal/signal"
 )
 
 const (
@@ -118,7 +119,7 @@ type Reconciler struct {
 	phaseWrites     phaseWrites
 	doormanPorts    portAllocator
 	doormanFailures failureBackoff
-	prometheusURL   string
+	prometheus      *signal.Prometheus
 	clock           func() time.Time
 }
 
@@ -1146,7 +1147,9 @@ func (r *Reconciler) initDefaults() {
 			return forecast.NewEngine(forecast.DefaultParams(), forecast.Settings{})
 		})
 	}
-	r.prometheusURL = r.PrometheusURL
+	if r.prometheus == nil {
+		r.prometheus = signal.NewPrometheus(r.PrometheusURL)
+	}
 }
 
 // SetupWithManager registers the reconciler with the controller manager.

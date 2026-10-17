@@ -338,15 +338,25 @@ func activityAnnotationChanged(obj client.Object, recorded map[string]string) bo
 	return false
 }
 
+// prometheusBudget bounds all of one workload's Prometheus queries in a
+// check together, so a workload with many slow queries can't hold a
+// reconcile worker for a timeout each.
+const prometheusBudget = 5 * time.Second
+
 // prometheusActive reports whether any configured Prometheus activity query
 // returns a value above zero.
 func (r *Reconciler) prometheusActive(ctx context.Context, workload *v1alpha1.ManagedWorkload) (bool, error) {
 	p := workload.Spec.IdlePolicy
-	if p == nil || p.Activity == nil {
+	if p == nil || p.Activity == nil || len(p.Activity.Prometheus) == 0 {
 		return false, nil
 	}
+	if r.prometheus == nil {
+		return false, signal.ErrEndpointNotConfigured
+	}
+	ctx, cancel := context.WithTimeout(ctx, prometheusBudget)
+	defer cancel()
 	for _, q := range p.Activity.Prometheus {
-		res, err := signal.NewPrometheus(r.prometheusURL, q.PromQL).Check(ctx)
+		res, err := r.prometheus.Check(ctx, q.PromQL)
 		if err != nil {
 			return false, fmt.Errorf("evaluating %q: %w", q.PromQL, err)
 		}

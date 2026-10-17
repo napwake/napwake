@@ -4,7 +4,7 @@ CPU tells Hybernate whether a workload is doing work. A Prometheus query tells i
 
 ## How It Works
 
-On every check (about once a minute while the workload is awake), Hybernate runs each query as an instant query against the Prometheus API (`/api/v1/query`), with a 5-second timeout.
+On every check (about once a minute while the workload is awake), Hybernate runs each query in turn as an instant query against the Prometheus API (`/api/v1/query`), stopping at the first that shows activity. Each query has 2 seconds to answer, and all of a workload's queries 5 seconds together.
 
 - **Any series above zero**: activity. The [activity clock](../concepts/idle-detection.md) resets. With a series per pod, one busy pod is enough.
 - **Zero, or an empty result**: no activity from this source. The clock keeps running.
@@ -48,7 +48,7 @@ If a query fails, Hybernate can't see that activity, so it doesn't pause the wor
 | Reason | Meaning |
 |--------|---------|
 | `EndpointNotConfigured` | Queries are configured but the operator has no `--prometheus-url` |
-| `QueryFailed` | Prometheus returned an error, couldn't be reached within 5 seconds, or returned a range vector or an oversized result. The condition message has the details |
+| `QueryFailed` | Prometheus returned an error, didn't answer a query within 2 seconds or all of the workload's within 5, or returned a range vector or an oversized result. The condition message has the details |
 
 ```bash
 kubectl get managedworkload my-api -n staging \
@@ -56,6 +56,8 @@ kubectl get managedworkload my-api -n staging \
 ```
 
 The condition only appears on workloads that configure Prometheus queries.
+
+When Prometheus itself fails, by not answering, timing out, or answering with a server error or `429`, the operator doesn't ask it again for a minute: every workload's queries fail at once, as `QueryFailed` with `prometheus failed recently, not asked again yet` and the original error, so none waits out a timeout and holds up the wakes queued behind it. A query Prometheus rejects, such as one that doesn't parse, fails only for the workloads that use it. Time that a query can't be evaluated counts as activity (`lastActivitySource: unobserved`), so a workload is never paused because Prometheus was down. One slow query does hold off everyone's for that minute, so keep queries cheap: aggregate, and use recording rules for anything heavy.
 
 ## Example Queries
 
