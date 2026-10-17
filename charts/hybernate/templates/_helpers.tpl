@@ -6,17 +6,19 @@ Chart name, truncated to 63 chars.
 {{- end }}
 
 {{/*
-Fully qualified app name, truncated to 63 chars.
+Fully qualified app name, cut to 40 characters so that the longest name
+built from it, the doorman's <fullname>-doorman-auth-delegator, fits the
+63 a Service or label allows, and the doorman's name never equals it.
 */}}
 {{- define "hybernate.fullname" -}}
 {{- if .Values.fullnameOverride }}
-{{- .Values.fullnameOverride | trunc 63 | trimSuffix "-" }}
+{{- .Values.fullnameOverride | trunc 40 | trimSuffix "-" }}
 {{- else }}
 {{- $name := default .Chart.Name .Values.nameOverride }}
 {{- if contains $name .Release.Name }}
-{{- .Release.Name | trunc 63 | trimSuffix "-" }}
+{{- .Release.Name | trunc 40 | trimSuffix "-" }}
 {{- else }}
-{{- printf "%s-%s" .Release.Name $name | trunc 63 | trimSuffix "-" }}
+{{- printf "%s-%s" .Release.Name $name | trunc 40 | trimSuffix "-" }}
 {{- end }}
 {{- end }}
 {{- end }}
@@ -52,7 +54,7 @@ Doorman name and labels. Distinct from the operator's, so the
 operator's Service and NetworkPolicy don't select doorman pods.
 */}}
 {{- define "hybernate.doormanName" -}}
-{{- printf "%s-doorman" (include "hybernate.fullname" .) | trunc 63 | trimSuffix "-" }}
+{{- printf "%s-doorman" (include "hybernate.fullname" .) }}
 {{- end }}
 
 {{- define "hybernate.doormanSelectorLabels" -}}

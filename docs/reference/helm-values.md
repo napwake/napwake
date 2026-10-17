@@ -22,7 +22,7 @@ The chart validates values against its schema (`values.schema.json`), so a misty
 | `nameOverride` | `""` | Replaces the chart name in resource names |
 | `fullnameOverride` | `""` | Replaces the full name the chart's resources are named after |
 
-The full name is the release name when it contains `hybernate`, and `<release>-hybernate` otherwise. For a release named `hybernate`, the operator Deployment and ServiceAccount are `hybernate`, and the doorman's are `hybernate-doorman`. The operator's pods are labelled `app.kubernetes.io/name: hybernate`, `app.kubernetes.io/instance: <release>` and `control-plane: controller-manager`; the doorman's the same, with `control-plane: doorman`.
+The full name is the release name when it contains `hybernate`, and `<release>-hybernate` otherwise, cut to 40 characters, so that every name built from it, the longest being `<fullname>-doorman-auth-delegator`, fits in 63. For a release named `hybernate`, the operator Deployment and ServiceAccount are `hybernate`, and the doorman's are `hybernate-doorman`. The operator's pods are labelled `app.kubernetes.io/name: hybernate`, `app.kubernetes.io/instance: <release>` and `control-plane: controller-manager`; the doorman's the same, with `control-plane: doorman`.
 
 ## Image
 

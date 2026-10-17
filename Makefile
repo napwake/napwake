@@ -164,6 +164,13 @@ check-chart: ## Lint the Helm chart, render it for each provider's Kubernetes ve
 		echo "the chart accepts doorman.networkPolicy.ingressFrom without networkPolicy.enabled, which leaves the doorman open"; exit 1; }
 	helm template hybernate charts/hybernate | go run ./hack/rbaccheck config/rbac/role.yaml
 	helm template hybernate charts/hybernate --set 'watchNamespaces={shop,blog}' | go run ./hack/rbaccheck config/rbac/role.yaml
+	@long=abcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabc; \
+	names=$$(helm template hybernate charts/hybernate --set fullnameOverride=$$long --set networkPolicy.enabled=true \
+		--set metrics.serviceMonitor.enabled=true --set metrics.prometheusRule.enabled=true | \
+		awk '/^kind:/ {k = $$2} /^[a-zA-Z]/ {m = ($$1 == "metadata:")} m && /^  name: / {print k, $$2}'); \
+	! awk 'length($$2) > 63 {print "too long: " $$0; bad = 1} END {exit !bad}' <<<"$$names" && \
+		[ -z "$$(sort <<<"$$names" | uniq -d)" ] || { \
+		echo "a 63-character fullnameOverride makes a name over 63 characters, or two resources the same name"; exit 1; }
 	@for p in 8081 20000 29999; do \
 		! helm template hybernate charts/hybernate --set metrics.port=$$p >/dev/null 2>&1 || { \
 			echo "the chart accepts metrics.port=$$p, which the health probes or the doorman's routing ports use"; exit 1; }; \
