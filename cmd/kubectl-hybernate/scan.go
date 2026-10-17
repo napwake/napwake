@@ -362,6 +362,11 @@ func incompleteError(result scanResult) error {
 		why = append(why, fmt.Sprintf("%s couldn't be read in full, as the notes say; run it again, scan fewer "+
 			"namespaces with -n, or pass a longer --timeout", plural(len(in.Failed), "namespace", "namespaces")))
 	}
+	if len(in.Unscanned) > 0 {
+		why = append(why, fmt.Sprintf("it ran out of --timeout before it had scanned %s, which the report leaves "+
+			"out; pass a longer --timeout, or scan fewer namespaces with -n",
+			plural(len(in.Unscanned), "namespace", "namespaces")))
+	}
 	return fmt.Errorf("the scan of %s is incomplete: %s", result.Cluster, strings.Join(why, "; "))
 }
 
@@ -460,6 +465,7 @@ func scanCluster(ctx context.Context, window time.Duration, prom prometheusSetup
 		Window:          window,
 		IdleAfter:       opts.idleAfter,
 		NamedNamespaces: len(opts.namespaces.list()) > 0,
+		AllNamespaces:   len(opts.namespaces.list()) == 0 && namespaceNote == "",
 	})
 	if err != nil {
 		return scanResult{}, fmt.Errorf("scanning %s: %w", scan.Cluster, err)
@@ -470,10 +476,9 @@ func scanCluster(ctx context.Context, window time.Duration, prom prometheusSetup
 	if namespaceNote != "" {
 		report.Notes = append([]string{namespaceNote}, report.Notes...)
 	}
-	// The scan carries on past calls that fail, noting what it couldn't
-	// read; once the deadline passes they all fail, and what it has isn't
-	// the cluster.
-	if err := ctx.Err(); err != nil {
+	// Past the deadline, the report has the namespaces scanned in time;
+	// with none of them, there's nothing to report but the timeout.
+	if err := ctx.Err(); err != nil && report.Namespaces == 0 && len(namespaces) > 0 {
 		return scanResult{}, err
 	}
 	scan.ClusterReport = report

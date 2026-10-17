@@ -757,6 +757,13 @@ func TestIncompleteError(t *testing.T) {
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "the scan of staging is incomplete: 2 namespaces couldn't be read in full")
 	assert.Contains(t, err.Error(), "pass a longer --timeout")
+
+	result.Incomplete = &discovery.Incomplete{Unscanned: []string{"team-z"}}
+	err = incompleteError(result)
+
+	require.Error(t, err)
+	assert.EqualError(t, err, "the scan of staging is incomplete: it ran out of --timeout before it had scanned "+
+		"1 namespace, which the report leaves out; pass a longer --timeout, or scan fewer namespaces with -n")
 }
 
 // A namespace named with -n that doesn't exist, or that the user can't

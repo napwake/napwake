@@ -135,14 +135,21 @@ func findDependencies(ctx context.Context, workloads []Workload, sources map[wor
 // readConfigMaps reads the ConfigMaps a namespace's pods take variables
 // from, by name. One that doesn't exist is left out, as the pod would leave
 // it out if optional. It stops at the first it isn't allowed to read, since
-// the rest won't be either.
-func (s *Scanner) readConfigMaps(ctx context.Context, namespace string, workloads []workload) (
+// the rest won't be either. Those listed across the cluster are taken from
+// there.
+func (s *Scanner) readConfigMaps(ctx context.Context, reads *clusterReads, namespace string, workloads []workload) (
 	map[string]map[string]string, error) {
+	out := map[string]map[string]string{}
+	if listed := reads.configMaps.byNamespace; listed != nil {
+		for _, cm := range listed[namespace] {
+			out[cm.Name] = cm.Data
+		}
+		return out, nil
+	}
 	names := make([]string, 0, len(workloads))
 	for _, wl := range workloads {
 		names = append(names, ConfigMapsReferenced(wl.template.Spec)...)
 	}
-	out := map[string]map[string]string{}
 	var failed error
 	for _, name := range uniqueSorted(names) {
 		var cm corev1.ConfigMap

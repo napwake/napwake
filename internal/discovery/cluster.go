@@ -104,6 +104,9 @@ type Incomplete struct {
 	Denied []string `json:"denied,omitempty"`
 	// Failed couldn't be read for another reason, such as a timeout.
 	Failed []string `json:"failed,omitempty"`
+	// Unscanned weren't scanned, or not to the end, before the scan ran
+	// out of time, so their workloads aren't in the report at all.
+	Unscanned []string `json:"unscanned,omitempty"`
 }
 
 // Workload is one Deployment or StatefulSet as a scan sees it.
@@ -268,6 +271,10 @@ type ClusterOptions struct {
 	// access doesn't let the scan read is a failure to scan what was asked,
 	// not a limit to note.
 	NamedNamespaces bool
+	// AllNamespaces says Namespaces are every namespace the user can see,
+	// so each kind of object is listed across the cluster at once, where
+	// the user's access allows, rather than in each namespace.
+	AllNamespaces bool
 }
 
 // ScanCluster scans every Deployment and StatefulSet in the namespaces and
@@ -275,7 +282,8 @@ type ClusterOptions struct {
 // With History, it also replays the activity clock over each workload's
 // recorded CPU. It only reads, and carries on past what it can't read,
 // saying so in the report's notes, and listing in Incomplete the namespaces
-// it should have been able to read but couldn't.
+// it should have been able to read but couldn't. Once ctx ends, it reports
+// the namespaces it had scanned, listing the rest as unscanned.
 func (s *Scanner) ScanCluster(ctx context.Context, opts ClusterOptions) (*ClusterReport, error) {
 	report := &ClusterReport{Mode: ModeSnapshot, Namespaces: len(opts.Namespaces), Workloads: []Workload{}}
 	if opts.History != nil {
@@ -285,18 +293,14 @@ func (s *Scanner) ScanCluster(ctx context.Context, opts ClusterOptions) (*Cluste
 	pricing, nodePrices := s.readNodePrices(ctx)
 	report.NodePrices = nodePrices
 
+	reads := &clusterReads{}
+	if opts.AllNamespaces {
+		reads = s.readAcross(ctx, opts.Namespaces)
+	}
 	historyCtx, cancel := historyBudget(ctx)
 	defer cancel()
-	scans := make([]namespaceScan, len(opts.Namespaces))
-	var g errgroup.Group
-	g.SetLimit(namespaceWorkers)
-	for i, namespace := range opts.Namespaces {
-		g.Go(func() error {
-			scans[i] = s.scanNamespace(ctx, historyCtx, namespace, pricing, opts)
-			return nil
-		})
-	}
-	_ = g.Wait() // each namespace's problems are in its scan; none is returned
+	scans, unscanned := s.scanNamespaces(ctx, historyCtx, reads, pricing, opts)
+	report.Namespaces -= len(unscanned)
 
 	var since time.Time
 	var historyOutOfTime, historyGaveUp []string
@@ -341,6 +345,15 @@ func (s *Scanner) ScanCluster(ctx context.Context, opts ClusterOptions) (*Cluste
 	}
 	problemNotes, incomplete := problemNotes(problems, opts.NamedNamespaces)
 	report.Notes = append(report.Notes, problemNotes...)
+	if len(unscanned) > 0 {
+		report.Notes = append(report.Notes, fmt.Sprintf("the scan ran out of time before it had scanned %s, so "+
+			"their workloads aren't in this report: %s", plural(len(unscanned), "namespace", "namespaces"),
+			listSome(unscanned)))
+		if incomplete == nil {
+			incomplete = &Incomplete{}
+		}
+		incomplete.Unscanned = unscanned
+	}
 	report.Incomplete = incomplete
 	if len(report.Platform) > 0 {
 		report.Notes = append(report.Notes, platformNote(report.Platform))
@@ -394,6 +407,36 @@ func (s *Scanner) ScanCluster(ctx context.Context, opts ClusterOptions) (*Cluste
 	})
 	report.Totals = totals(report.Workloads)
 	return report, nil
+}
+
+// scanNamespaces scans the namespaces a few at a time. Once ctx ends, those
+// not yet scanned, and those it cut short, are returned as unscanned rather
+// than with what little was read of them.
+func (s *Scanner) scanNamespaces(ctx, historyCtx context.Context, reads *clusterReads, pricing nodePricing,
+	opts ClusterOptions) (scanned []namespaceScan, unscanned []string) {
+	scans := make([]namespaceScan, len(opts.Namespaces))
+	var g errgroup.Group
+	g.SetLimit(namespaceWorkers)
+	for i, namespace := range opts.Namespaces {
+		g.Go(func() error {
+			scans[i] = namespaceScan{namespace: namespace, unscanned: true}
+			if ctx.Err() != nil {
+				return nil
+			}
+			scan := s.scanNamespace(ctx, historyCtx, namespace, reads, pricing, opts)
+			if ctx.Err() == nil || !scan.cutShort() {
+				scans[i] = scan
+			}
+			return nil
+		})
+	}
+	_ = g.Wait() // each namespace's problems are in its scan; none is returned
+	for _, scan := range scans {
+		if scan.unscanned {
+			unscanned = append(unscanned, scan.namespace)
+		}
+	}
+	return slices.DeleteFunc(scans, func(scan namespaceScan) bool { return scan.unscanned }), unscanned
 }
 
 // gitOpsNotes say which workloads have replicas set from Git, which their

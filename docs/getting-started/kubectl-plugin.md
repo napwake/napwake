@@ -208,7 +208,9 @@ The source is shown in the report with any password in its URL hidden.
 
 The scan exits 0 when it read everything your access allows. Namespaces or resources your access doesn't allow (a `403`) are explained in the notes, and don't change the exit status, unless you named the namespace with `-n`.
 
-It exits 1, after writing the report, when it couldn't read something it should have: a timeout, throttling, a server error, a failed Prometheus query, or a `403` or missing namespace among those you named with `-n`. The notes say what was missed, the error says what to do about it (check a namespace's name, ask for access, or try again with a longer `--timeout`), and JSON and YAML list the namespaces in `incomplete`, by why: `missing`, `denied`, or `failed`. JSON and YAML also give the number of namespaces read in `namespaces`, and `"workloads": []` for a cluster with none.
+It exits 1, after writing the report, when it couldn't read something it should have: a timeout, throttling, a server error, a failed Prometheus query, or a `403` or missing namespace among those you named with `-n`. The notes say what was missed, the error says what to do about it (check a namespace's name, ask for access, or try again with a longer `--timeout`), and JSON and YAML list the namespaces in `incomplete`, by why: `missing`, `denied`, `failed`, or `unscanned`. JSON and YAML also give the number of namespaces read in `namespaces`, and `"workloads": []` for a cluster with none.
+
+A scan that runs out of `--timeout` still reports the namespaces it scanned in time, and lists the rest as `unscanned`; only one that scanned none fails without a report. Scanning every namespace, the scan lists each kind of object across the cluster at once, a page at a time, rather than in each namespace, so a cluster of thousands of namespaces takes a few dozen requests. A kind your access only lets you list namespace by namespace is read that way.
 
 Workloads someone else already scaled to zero count toward nothing the scan says could be saved: they cost nothing now, and the headline counts them apart.
 
