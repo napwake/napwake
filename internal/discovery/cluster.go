@@ -290,6 +290,7 @@ func (s *Scanner) ScanCluster(ctx context.Context, opts ClusterOptions) (*Cluste
 	metricsUnavailable := false
 	sources := map[workloadKey]workloadSource{}
 	services := map[string]map[string]corev1.Service{}
+	configMaps := map[string]map[string]map[string]string{}
 	for _, scan := range scans {
 		report.Workloads = append(report.Workloads, scan.workloads...)
 		problems = append(problems, scan.problems...)
@@ -299,12 +300,12 @@ func (s *Scanner) ScanCluster(ctx context.Context, opts ClusterOptions) (*Cluste
 		if scan.services != nil {
 			services[scan.namespace] = scan.services
 		}
+		configMaps[scan.namespace] = scan.configMaps
 		if !scan.historySince.IsZero() && (since.IsZero() || scan.historySince.Before(since)) {
 			since = scan.historySince
 		}
 	}
-	dependencyNotes, dependencyProblems := s.findDependencies(ctx, report.Workloads, sources, services)
-	problems = append(problems, dependencyProblems...)
+	dependencyNotes := findDependencies(ctx, report.Workloads, sources, services, configMaps)
 
 	if metricsUnavailable {
 		report.Notes = append(report.Notes,

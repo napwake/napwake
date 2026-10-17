@@ -17,6 +17,7 @@ limitations under the License.
 package discovery
 
 import (
+	"cmp"
 	"context"
 	"fmt"
 	"regexp"
@@ -83,69 +84,54 @@ type variable struct {
 }
 
 // findDependencies fills in each workload's dependencies from the addresses
-// in its environment that name a Service in a scanned namespace. It reads a
-// namespace at a time, and only the ConfigMaps its workloads take variables
-// from. It returns notes on what it couldn't read; Secrets are never read.
-func (s *Scanner) findDependencies(ctx context.Context, workloads []Workload, sources map[workloadKey]workloadSource,
-	services map[string]map[string]corev1.Service) ([]string, []readProblem) {
-	byNamespace := map[string][]int{}
-	var namespaces []string
-	for i, w := range workloads {
-		if _, ok := sources[workloadKey{w.Namespace, w.Kind, w.Name}]; !ok {
+// in its environment that name a Service in a scanned namespace, with
+// configMaps the ConfigMaps each namespace's workloads take variables from,
+// by namespace. It only matches what was read, so it costs as much as the
+// workloads and Services in each namespace, not the cluster. It returns
+// notes on what it couldn't see; Secrets are never read.
+func findDependencies(ctx context.Context, workloads []Workload, sources map[workloadKey]workloadSource,
+	services map[string]map[string]corev1.Service, configMaps map[string]map[string]map[string]string) []string {
+	targets := indexTargets(sources)
+	var fromSecrets []string
+	for i := range workloads {
+		if ctx.Err() != nil {
+			break
+		}
+		w := &workloads[i]
+		self := workloadKey{w.Namespace, w.Kind, w.Name}
+		source, ok := sources[self]
+		if !ok {
 			continue
 		}
-		if _, seen := byNamespace[w.Namespace]; !seen {
-			namespaces = append(namespaces, w.Namespace)
+		deps, usesSecrets := dependenciesOf(self, source.template.Spec, configMaps[w.Namespace], services, targets)
+		if usesSecrets {
+			fromSecrets = append(fromSecrets, w.Namespace+"/"+w.Name)
 		}
-		byNamespace[w.Namespace] = append(byNamespace[w.Namespace], i)
-	}
-
-	var problems []readProblem
-	var fromSecrets []string
-	for _, namespace := range namespaces {
-		specs := make([]corev1.PodSpec, 0, len(byNamespace[namespace]))
-		for _, i := range byNamespace[namespace] {
-			w := workloads[i]
-			specs = append(specs, sources[workloadKey{w.Namespace, w.Kind, w.Name}].template.Spec)
+		for _, d := range deps {
+			target := workloadKey{d.Namespace, d.Kind, d.Name}
+			d.Declared = declares(source.managed, w.Namespace, target)
+			d.Connected = learned(source.managed, target)
+			w.Dependencies = append(w.Dependencies, d)
 		}
-		configMaps, err := s.readConfigMaps(ctx, namespace, specs)
-		if err != nil {
-			problems = append(problems, readProblem{namespace: namespace, what: readingConfigMaps, err: err})
-		}
-		for _, i := range byNamespace[namespace] {
-			w := &workloads[i]
-			self := workloadKey{w.Namespace, w.Kind, w.Name}
-			source := sources[self]
-			deps, usesSecrets := dependenciesOf(self, source.template.Spec, configMaps, services, sources)
-			if usesSecrets {
-				fromSecrets = append(fromSecrets, w.Namespace+"/"+w.Name)
-			}
-			for _, d := range deps {
-				target := workloadKey{d.Namespace, d.Kind, d.Name}
-				d.Declared = declares(source.managed, w.Namespace, target)
-				d.Connected = learned(source.managed, target)
-				w.Dependencies = append(w.Dependencies, d)
-			}
-			w.Dependencies = append(w.Dependencies, learnedFromWakes(source.managed, w.Dependencies)...)
-		}
+		w.Dependencies = append(w.Dependencies, learnedFromWakes(source.managed, w.Dependencies)...)
 	}
 	if len(fromSecrets) == 0 {
-		return nil, problems
+		return nil
 	}
 	return []string{fmt.Sprintf("%s environment variables from Secrets, which the scan doesn't read, "+
 		"so dependencies set there aren't found: %s",
-		plural(len(fromSecrets), "workload takes", "workloads take"), listSome(fromSecrets))}, problems
+		plural(len(fromSecrets), "workload takes", "workloads take"), listSome(fromSecrets))}
 }
 
 // readConfigMaps reads the ConfigMaps a namespace's pods take variables
 // from, by name. One that doesn't exist is left out, as the pod would leave
 // it out if optional. It stops at the first it isn't allowed to read, since
 // the rest won't be either.
-func (s *Scanner) readConfigMaps(ctx context.Context, namespace string, specs []corev1.PodSpec) (
+func (s *Scanner) readConfigMaps(ctx context.Context, namespace string, workloads []workload) (
 	map[string]map[string]string, error) {
-	names := make([]string, 0, len(specs))
-	for _, spec := range specs {
-		names = append(names, ConfigMapsReferenced(spec)...)
+	names := make([]string, 0, len(workloads))
+	for _, wl := range workloads {
+		names = append(names, ConfigMapsReferenced(wl.template.Spec)...)
 	}
 	out := map[string]map[string]string{}
 	var failed error
@@ -163,6 +149,29 @@ func (s *Scanner) readConfigMaps(ctx context.Context, namespace string, specs []
 		}
 	}
 	return out, failed
+}
+
+// targetIndex is the workloads a Service can select, by namespace, each
+// namespace's sorted by name, so resolving an address only looks at the
+// workloads in its Service's namespace.
+type targetIndex map[string][]indexedTarget
+
+type indexedTarget struct {
+	key    workloadKey
+	labels map[string]string
+}
+
+func indexTargets(sources map[workloadKey]workloadSource) targetIndex {
+	index := targetIndex{}
+	for key, source := range sources {
+		index[key.namespace] = append(index[key.namespace], indexedTarget{key: key, labels: source.template.Labels})
+	}
+	for _, targets := range index {
+		slices.SortFunc(targets, func(a, b indexedTarget) int {
+			return cmp.Or(strings.Compare(a.key.name, b.key.name), strings.Compare(string(a.key.kind), string(b.key.kind)))
+		})
+	}
+	return index
 }
 
 // Target is a workload a dependency can resolve to, by the labels on its
@@ -186,16 +195,16 @@ func DependenciesOf(namespace string, kind v1alpha1.TargetKind, name string, spe
 	for _, t := range targets {
 		sources[workloadKey{t.Namespace, t.Kind, t.Name}] = workloadSource{template: t.Template}
 	}
-	return dependenciesOf(workloadKey{namespace, kind, name}, spec, configMaps, services, sources)
+	return dependenciesOf(workloadKey{namespace, kind, name}, spec, configMaps, services, indexTargets(sources))
 }
 
 func dependenciesOf(self workloadKey, spec corev1.PodSpec, configMaps map[string]map[string]string,
-	services map[string]map[string]corev1.Service, sources map[workloadKey]workloadSource) ([]Dependency, bool) {
+	services map[string]map[string]corev1.Service, targets targetIndex) ([]Dependency, bool) {
 	vars, usesSecrets := environment(spec, configMaps)
 	var deps []Dependency
 	for _, v := range vars {
 		for _, addr := range addresses(v.value) {
-			for _, target := range resolve(addr, self.namespace, services, sources) {
+			for _, target := range resolve(addr, self.namespace, services, targets) {
 				if target.key == self {
 					continue
 				}
@@ -329,7 +338,7 @@ type resolved struct {
 // .svc and the cluster domain, and a headless Service's pod as
 // pod.service, with the same suffixes.
 func resolve(addr address, namespace string, services map[string]map[string]corev1.Service,
-	sources map[workloadKey]workloadSource) []resolved {
+	targets targetIndex) []resolved {
 	name := addr.host
 	if i := strings.Index(name+".", ".svc."); i >= 0 {
 		name = name[:i]
@@ -353,24 +362,23 @@ func resolve(addr address, namespace string, services map[string]map[string]core
 		if !ok || (c.pod && svc.Spec.ClusterIP != corev1.ClusterIPNone) {
 			continue
 		}
-		return behind(svc, c.pod || svc.Spec.ClusterIP == corev1.ClusterIPNone, sources)
+		return behind(svc, c.pod || svc.Spec.ClusterIP == corev1.ClusterIPNone, targets)
 	}
 	return nil
 }
 
-// behind returns the workloads whose pods a Service selects.
-func behind(svc corev1.Service, headless bool, sources map[workloadKey]workloadSource) []resolved {
+// behind returns the workloads whose pods a Service selects, by name.
+func behind(svc corev1.Service, headless bool, targets targetIndex) []resolved {
 	if len(svc.Spec.Selector) == 0 {
 		return nil
 	}
 	selector := labels.SelectorFromSet(svc.Spec.Selector)
 	var out []resolved
-	for key, source := range sources {
-		if key.namespace == svc.Namespace && selector.Matches(labels.Set(source.template.Labels)) {
-			out = append(out, resolved{key: key, headless: headless})
+	for _, t := range targets[svc.Namespace] {
+		if selector.Matches(labels.Set(t.labels)) {
+			out = append(out, resolved{key: t.key, headless: headless})
 		}
 	}
-	slices.SortFunc(out, func(a, b resolved) int { return strings.Compare(a.key.name, b.key.name) })
 	return out
 }
 

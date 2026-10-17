@@ -20,8 +20,10 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -203,7 +205,7 @@ func TestResolve(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.host, func(t *testing.T) {
-			got := resolve(address{host: tt.host}, "dev", services, sources)
+			got := resolve(address{host: tt.host}, "dev", services, indexTargets(sources))
 			if tt.want == nil {
 				assert.Empty(t, got)
 				return
@@ -415,5 +417,72 @@ func TestScanCluster_DependencyReadsThatFail(t *testing.T) {
 			assert.Contains(t, strings.Join(report.Notes, "\n"), tt.wantNote)
 			assert.Equal(t, tt.wantIncomplete, report.Incomplete)
 		})
+	}
+}
+
+// manyPreviews is a cluster of namespaces, each with the same workloads,
+// each workload's environment naming three of its namespace's Services.
+func manyPreviews(namespaces, perNamespace int) ([]Workload, map[workloadKey]workloadSource,
+	map[string]map[string]corev1.Service) {
+	spec := corev1.PodSpec{Containers: []corev1.Container{{Name: "main", Env: []corev1.EnvVar{
+		{Name: "DB", Value: "postgres://svc-1:5432/app"},
+		{Name: "CACHE", Value: "redis://svc-2:6379"},
+		{Name: "API", Value: "http://svc-3:8080"},
+	}}}}
+	workloads := make([]Workload, 0, namespaces*perNamespace)
+	sources := make(map[workloadKey]workloadSource, namespaces*perNamespace)
+	services := make(map[string]map[string]corev1.Service, namespaces)
+	for n := range namespaces {
+		ns := fmt.Sprintf("preview-%d", n)
+		services[ns] = map[string]corev1.Service{}
+		for i := range perNamespace {
+			name := fmt.Sprintf("svc-%d", i)
+			workloads = append(workloads, Workload{Namespace: ns, Kind: v1alpha1.TargetKindDeployment, Name: name})
+			sources[workloadKey{ns, v1alpha1.TargetKindDeployment, name}] = workloadSource{template: corev1.PodTemplateSpec{
+				ObjectMeta: metav1.ObjectMeta{Labels: map[string]string{"app": name}}, Spec: spec}}
+			services[ns][name] = corev1.Service{ObjectMeta: metav1.ObjectMeta{Namespace: ns, Name: name},
+				Spec: corev1.ServiceSpec{Selector: map[string]string{"app": name}, ClusterIP: "10.0.0.1"}}
+		}
+	}
+	return workloads, sources, services
+}
+
+// Resolving an address looks only at its Service's namespace, so the pass
+// grows with the cluster, not with its square: 10,000 workloads took 32s of
+// CPU when every address was checked against every workload.
+func TestFindDependencies_GrowsWithTheCluster(t *testing.T) {
+	workloads, sources, services := manyPreviews(1000, 10)
+
+	start := time.Now()
+	findDependencies(context.Background(), workloads, sources, services, nil)
+	elapsed := time.Since(start)
+
+	found := 0
+	for _, w := range workloads {
+		found += len(w.Dependencies)
+	}
+	assert.Equal(t, 1000*(3*10-3), found, "three each, less the one that's itself, in each namespace")
+	assert.Less(t, elapsed, 5*time.Second)
+}
+
+func TestFindDependencies_StopsWhenCancelled(t *testing.T) {
+	workloads, sources, services := manyPreviews(10, 10)
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+
+	findDependencies(ctx, workloads, sources, services, nil)
+
+	for _, w := range workloads {
+		assert.Empty(t, w.Dependencies)
+	}
+}
+
+func BenchmarkFindDependencies(b *testing.B) {
+	workloads, sources, services := manyPreviews(1000, 10)
+	for b.Loop() {
+		for i := range workloads {
+			workloads[i].Dependencies = nil
+		}
+		findDependencies(context.Background(), workloads, sources, services, nil)
 	}
 }

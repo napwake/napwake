@@ -57,6 +57,9 @@ type namespaceScan struct {
 	// services are its Services, with only what resolving a dependency
 	// needs.
 	services map[string]corev1.Service
+	// configMaps are the data of the ConfigMaps its workloads take
+	// variables from, by name.
+	configMaps map[string]map[string]string
 	// historySince is where its CPU history begins; zero without any.
 	historySince time.Time
 	// noHistory are its workloads Prometheus has no CPU for.
@@ -108,6 +111,10 @@ func (s *Scanner) scanNamespace(ctx context.Context, namespace string, pricing n
 	scan.services, err = s.readServices(ctx, namespace)
 	if err != nil {
 		scan.problem(readingServices, err)
+	}
+	scan.configMaps, err = s.readConfigMaps(ctx, namespace, workloads)
+	if err != nil {
+		scan.problem(readingConfigMaps, err)
 	}
 	history, err := s.readHistory(ctx, namespace, opts)
 	if err != nil {
