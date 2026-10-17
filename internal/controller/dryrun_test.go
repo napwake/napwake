@@ -18,14 +18,17 @@ package controller
 
 import (
 	"context"
+	"errors"
 	"testing"
 	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	appsv1 "k8s.io/api/apps/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/tools/events"
+	"k8s.io/utils/ptr"
 
 	v1alpha1 "github.com/okedeji/hybernate/api/v1alpha1"
 	"github.com/okedeji/hybernate/internal/cost"
@@ -147,6 +150,35 @@ func TestDryRun_ShortPausesOfSmallWorkloadsAddUp(t *testing.T) {
 	assert.InEpsilon(t, 0.01*24, d.FreedCPUHours.AsApproximateFloat64(), 0.001)
 	assert.InEpsilon(t, 0.0625*24, d.FreedMemoryHours.AsApproximateFloat64(), 0.001)
 	assert.Equal(t, cost.FormatDollars(cost.ComputeHourly(0.01, 0.0625, cost.DefaultRates)*24), d.EstimatedSavings)
+}
+
+// A dry-run workload made Idle by a pause request before its activity was
+// ever measured, such as without metrics-server, has no activity status.
+// Its target then scaled to zero ends the would-be pause without one.
+func TestDryRun_WouldBePauseEndsWithoutMeasuredActivity(t *testing.T) {
+	w := withPauseRequested(lifecycleWorkload("api", v1alpha1.PhaseRunning))
+	w.Spec.DryRun = true
+	w.Finalizers = []string{finalizerName}
+	r := newTestReconcilerWithReplicas(t, w, &stubPauser{}, 2)
+	r.metrics = &stubMetrics{err: errors.New("metrics-server unavailable")}
+	for range 2 {
+		_, err := r.Reconcile(context.Background(), reconcileFor("api"))
+		require.NoError(t, err)
+	}
+	idle := getWorkload(t, r, "api")
+	require.Equal(t, v1alpha1.PhaseIdle, idle.Status.Phase)
+	require.Nil(t, idle.Status.Activity, "activity was never measured")
+
+	var d appsv1.Deployment
+	require.NoError(t, r.Get(context.Background(), reconcileFor("api").NamespacedName, &d))
+	d.Spec.Replicas = ptr.To(int32(0))
+	require.NoError(t, r.Update(context.Background(), &d))
+
+	require.NotPanics(t, func() {
+		_, err := r.Reconcile(context.Background(), reconcileFor("api"))
+		require.NoError(t, err)
+	})
+	assert.Equal(t, v1alpha1.PhaseRunning, getWorkload(t, r, "api").Status.Phase)
 }
 
 func TestTrackDryRun(t *testing.T) {

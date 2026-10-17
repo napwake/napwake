@@ -52,11 +52,21 @@ func (r *Reconciler) beginWouldBePause(ctx context.Context, workload *v1alpha1.M
 // freed, and false when dry-run wasn't measuring as it began, such as for a
 // workload already Idle when the operator was upgraded.
 func (r *Reconciler) endWouldBePause(workload *v1alpha1.ManagedWorkload) (time.Duration, float64, bool) {
+	var lastActivity time.Time
+	if a := workload.Status.Activity; a != nil {
+		lastActivity = a.LastActivityTime.Time
+	}
+	return r.endWouldBePauseAt(workload, lastActivity)
+}
+
+// endWouldBePauseAt is endWouldBePause for a would-be pause that ended at
+// end.
+func (r *Reconciler) endWouldBePauseAt(workload *v1alpha1.ManagedWorkload, end time.Time) (time.Duration, float64, bool) {
 	d := workload.Status.DryRun
 	if !workload.Spec.DryRun || d == nil || d.Pauses == 0 || workload.Status.LastTransitionTime == nil {
 		return 0, 0, false
 	}
-	slept := max(workload.Status.Activity.LastActivityTime.Sub(workload.Status.LastTransitionTime.Time), 0)
+	slept := max(end.Sub(workload.Status.LastTransitionTime.Time), 0)
 	rates := resolveCostRates(workload)
 	var freed cost.Hours
 	if rs := d.Resources; rs != nil {
