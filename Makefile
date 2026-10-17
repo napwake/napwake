@@ -237,35 +237,58 @@ lint-config: golangci-lint ## Verify golangci-lint linter configuration
 # docs/operations/upgrading.md isn't one: its versions are history.
 VERSIONED_DOCS = README.md docs/getting-started/installation.md docs/reference/helm-values.md docs/reference/security.md
 
+# Versioning recipes read VERSION from the environment rather than having
+# make expand it into them, and check its form first, so a tag can't run as
+# shell. A pre-release, such as 0.2.0-rc.1, rehearses its version's release:
+# its notes are that version's changelog section, which needn't be dated yet.
+CHECK_VERSION = [[ "$$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.]+)?$$ ]] || { \
+	echo "VERSION must be a version without a v, such as 0.2.0 or 0.2.0-rc.1, not '$$VERSION'" >&2; exit 1; }
+
 .PHONY: bump
-bump: ## Bump the version in the chart, the kustomize image, and docs. Usage: make bump VERSION=0.1.2
-	@if [ -z "$(VERSION)" ]; then echo "VERSION is required. Usage: make bump VERSION=0.1.2"; exit 1; fi
-	@old=$$(awk '/^version:/ {print $$2}' charts/hybernate/Chart.yaml); \
-	OLD="$$old" NEW="$(VERSION)" perl -pi -e 's/(?<![\d.])\Q$$ENV{OLD}\E(?!\.?[\w-])/$$ENV{NEW}/g' $(VERSIONED_DOCS)
-	@perl -pi -e 's/^version:.*/version: $(VERSION)/' charts/hybernate/Chart.yaml
-	@perl -pi -e 's/^appVersion:.*/appVersion: "v$(VERSION)"/' charts/hybernate/Chart.yaml
-	@perl -pi -e 's/^  newTag:.*/  newTag: v$(VERSION)/' config/manager/kustomization.yaml
-	@echo "Bumped to $(VERSION)"
+bump: ## Bump the version in the chart, the kustomize image, and docs, and date a release's changelog. Usage: make bump VERSION=0.1.2
+	@$(CHECK_VERSION)
+	@OLD="$$(awk '/^version:/ {print $$2}' charts/hybernate/Chart.yaml)" \
+		perl -pi -e 's/(?<![\d.])\Q$$ENV{OLD}\E(?!\.?[\w-])/$$ENV{VERSION}/g' $(VERSIONED_DOCS)
+	@perl -pi -e 's/^version:.*/version: $$ENV{VERSION}/' charts/hybernate/Chart.yaml
+	@perl -pi -e 's/^appVersion:.*/appVersion: "v$$ENV{VERSION}"/' charts/hybernate/Chart.yaml
+	@perl -pi -e 's/^  newTag:.*/  newTag: v$$ENV{VERSION}/' config/manager/kustomization.yaml
+	@[[ "$$VERSION" == *-* ]] || TODAY="$$(date -u +%F)" \
+		perl -pi -e 's/^## \[\Q$$ENV{VERSION}\E\] - Unreleased$$/## [$$ENV{VERSION}] - $$ENV{TODAY}/' CHANGELOG.md
+	@echo "Bumped to $$VERSION"
 
 .PHONY: verify-version
-verify-version: ## Fail unless the chart, the kustomize image, and the docs name VERSION. Usage: make verify-version VERSION=0.1.2
-	@if [ -z "$(VERSION)" ]; then echo "VERSION is required. Usage: make verify-version VERSION=0.1.2"; exit 1; fi
-	@grep -qx 'version: $(VERSION)' charts/hybernate/Chart.yaml || { echo "Chart.yaml's version isn't $(VERSION)"; exit 1; }
-	@grep -qx 'appVersion: "v$(VERSION)"' charts/hybernate/Chart.yaml || { echo "Chart.yaml's appVersion isn't v$(VERSION)"; exit 1; }
-	@grep -qx '  newTag: v$(VERSION)' config/manager/kustomization.yaml || { echo "config/manager's image isn't v$(VERSION)"; exit 1; }
-	@for f in $(VERSIONED_DOCS); do \
-		grep -qF -- '$(VERSION)' "$$f" || { echo "$$f doesn't name $(VERSION); run make bump VERSION=$(VERSION)"; exit 1; }; \
+verify-version: ## Fail unless the chart, the kustomize image, the docs and the changelog name VERSION. Usage: make verify-version VERSION=0.1.2
+	@$(CHECK_VERSION)
+	@grep -qxF "version: $$VERSION" charts/hybernate/Chart.yaml || { echo "Chart.yaml's version isn't $$VERSION"; exit 1; }
+	@grep -qxF "appVersion: \"v$$VERSION\"" charts/hybernate/Chart.yaml || { echo "Chart.yaml's appVersion isn't v$$VERSION"; exit 1; }
+	@grep -qxF "  newTag: v$$VERSION" config/manager/kustomization.yaml || { echo "config/manager's image isn't v$$VERSION"; exit 1; }
+	@# The install and verify commands name the version whole: after
+	@# --version, or as the image's or the chart's tag.
+	@pattern="(--version |hybernate:v?)$${VERSION//./\\.}([^0-9A-Za-z.-]|$$)"; \
+	for f in $(VERSIONED_DOCS); do \
+		grep -qE -- "$$pattern" "$$f" || { echo "$$f doesn't name $$VERSION; run make bump VERSION=$$VERSION"; exit 1; }; \
 	done
+	@base="$${VERSION%%-*}"; heading="^## \[$${base//./\\.}\] - "; \
+	if [[ "$$VERSION" == *-* ]]; then \
+		grep -qE -- "$$heading" CHANGELOG.md || { echo "CHANGELOG.md has no section for $$base"; exit 1; }; \
+	else \
+		grep -qE -- "$$heading[0-9]{4}-[0-9]{2}-[0-9]{2}$$" CHANGELOG.md || { \
+			echo "CHANGELOG.md's section for $$base isn't dated; run make bump VERSION=$$VERSION"; exit 1; }; \
+	fi
 
 .PHONY: release
 release: bump ## Bump version, commit, and tag. Usage: make release VERSION=0.1.2
-	@$(MAKE) --no-print-directory verify-version VERSION=$(VERSION)
-	@git add charts/hybernate/Chart.yaml config/manager/kustomization.yaml $(VERSIONED_DOCS)
+	@$(MAKE) --no-print-directory verify-version
+	@git add charts/hybernate/Chart.yaml config/manager/kustomization.yaml CHANGELOG.md $(VERSIONED_DOCS)
 	@# Versions bumped in an earlier commit leave nothing to commit, and the
 	@# release is tagged as it stands.
-	@git diff --cached --quiet || git commit -m "chore(release): bump version to v$(VERSION)"
-	@git tag -a v$(VERSION) -m "v$(VERSION)"
-	@echo "Tagged v$(VERSION). Run 'git push origin main v$(VERSION)' to release."
+	@git diff --cached --quiet || git commit -m "chore(release): bump version to v$$VERSION"
+	@git tag -a "v$$VERSION" -m "v$$VERSION"
+	@if [[ "$$VERSION" == *-* ]]; then \
+		echo "Tagged v$$VERSION. Run 'git push origin v$$VERSION' to rehearse the release."; \
+	else \
+		echo "Tagged v$$VERSION. Run 'git push origin main v$$VERSION' to release."; \
+	fi
 
 ##@ Build
 
