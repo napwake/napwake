@@ -1512,3 +1512,105 @@ func TestServer_StampsDespiteAConflict(t *testing.T) {
 	assert.Equal(t, "10.244.0.17", w.Annotations[v1alpha1.AnnotationLastRequestFrom], "and where the request came from")
 	assert.Equal(t, "payments", w.Labels["team"], "the other change is kept")
 }
+
+func proxiedCount(s *Server) int {
+	s.admission.mu.Lock()
+	defer s.admission.mu.Unlock()
+	return s.admission.proxied
+}
+
+// Connections to an awake workload are capped apart from held ones, so a
+// caller opening them as fast as it can doesn't run the doorman out of
+// memory. One over the cap is held until a place frees.
+func TestServer_ProxiedConnectionsAreCapped(t *testing.T) {
+	port := freePort(t)
+	s, _ := startServerWith(t, func(s *Server) {
+		l := defaultLimits
+		l.maxProxied = 1
+		s.admission = newAdmission(l)
+	}, pausedWorkload("api", port, time.Minute), readySlice(echoPort(t)))
+
+	first := dial(t, port)
+	send(t, first, "first\n")
+	echoed(t, first, "first\n")
+	require.Equal(t, 1, proxiedCount(s))
+
+	second := dial(t, port)
+	send(t, second, "second\n")
+	require.Eventually(t, func() bool { return heldCount(s) == 1 }, 5*time.Second, 10*time.Millisecond,
+		"a connection over the cap is held")
+	require.NoError(t, second.SetReadDeadline(time.Now().Add(300*time.Millisecond)))
+	_, err := second.Read(make([]byte, 1))
+	require.Error(t, err, "nothing is passed through over the cap")
+
+	require.NoError(t, first.Close())
+	echoed(t, second, "second\n")
+	assert.Zero(t, heldCount(s))
+}
+
+func TestAdmission_ProxiedConnectionsAreCappedPerSource(t *testing.T) {
+	l := defaultLimits
+	l.maxProxied, l.maxProxiedPerSource = 3, 2
+	a := newAdmission(l)
+	now := time.Now()
+	other := netip.MustParseAddr("10.244.0.18")
+
+	require.True(t, a.proxy(caller, now))
+	require.True(t, a.proxy(caller, now))
+	assert.False(t, a.proxy(caller, now), "one source can't take every place")
+	require.True(t, a.proxy(other, now))
+	assert.False(t, a.proxy(other, now), "the overall cap holds")
+
+	a.unproxy(caller, now)
+	assert.True(t, a.proxy(other, now))
+}
+
+// A proxied connection that carries nothing either way for proxyIdle is
+// closed, so half-open ones don't pile up. One that carries something in
+// either direction stays open.
+func TestServer_ClosesIdleProxiedConnections(t *testing.T) {
+	port := freePort(t)
+	s, _ := startServerWith(t, func(s *Server) {
+		s.proxyIdle, s.proxyCheck = 400*time.Millisecond, 20*time.Millisecond
+	}, pausedWorkload("api", port, time.Minute), readySlice(echoPort(t)))
+
+	active := dial(t, port)
+	idle := dial(t, port)
+	send(t, idle, "hello\n")
+	echoed(t, idle, "hello\n")
+	for range 8 {
+		send(t, active, "ping\n")
+		echoed(t, active, "ping\n")
+		time.Sleep(100 * time.Millisecond)
+	}
+
+	closedWithin(t, idle)
+	send(t, active, "still\n")
+	echoed(t, active, "still\n")
+	assert.Eventually(t, func() bool { return proxiedCount(s) == 1 }, 5*time.Second, 10*time.Millisecond)
+}
+
+// Once the workload is awake and its route drains, the connections still
+// proxied through the doorman are closed after drainedLifetime, so callers
+// with long-lived connections reconnect to its pods directly.
+func TestServer_ClosesProxiedConnectionsOnceTheRouteDrains(t *testing.T) {
+	port := freePort(t)
+	s, c := startServerWith(t, func(s *Server) {
+		s.drainedLifetime, s.proxyCheck = 200*time.Millisecond, 20*time.Millisecond
+	}, pausedWorkload("api", port, time.Minute), readySlice(echoPort(t)))
+
+	conn := dial(t, port)
+	send(t, conn, "hello\n")
+	echoed(t, conn, "hello\n")
+	time.Sleep(300 * time.Millisecond)
+	send(t, conn, "routed\n")
+	echoed(t, conn, "routed\n")
+
+	removeRoute(t, s, c)
+	start := time.Now()
+	for time.Since(start) < 150*time.Millisecond {
+		send(t, conn, "ping\n")
+		echoed(t, conn, "ping\n")
+	}
+	closedWithin(t, conn)
+}

@@ -26,6 +26,7 @@ import (
 	"net/http"
 	"net/netip"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"sigs.k8s.io/controller-runtime/pkg/log"
@@ -63,6 +64,24 @@ const (
 	// clientBufferSize is what a held connection reads its caller with. It's
 	// small because thousands of connections can be held at once.
 	clientBufferSize = 8 << 10
+
+	// proxyBufferSize is what each direction of a proxied connection copies
+	// through, for the same reason.
+	proxyBufferSize = 8 << 10
+
+	// proxyIdleTimeout closes a proxied connection that has carried nothing
+	// either way for this long. One whose client or server pings, as
+	// websockets and database pools do, stays open; one whose caller
+	// vanished without closing it doesn't hold its place for ever.
+	proxyIdleTimeout = 10 * time.Minute
+
+	// drainedProxyLifetime is how long a proxied connection lasts once its
+	// route is draining. The workload is awake by then and its Service
+	// sends new connections to its pods directly, so closing it moves a
+	// long-lived caller there.
+	drainedProxyLifetime = 5 * time.Minute
+
+	proxyCheckInterval = 30 * time.Second
 )
 
 // The results a connection the doorman accepted ends with, as counted by
@@ -115,12 +134,13 @@ func (s *Server) handle(ctx context.Context, port int32, rt route, conn net.Conn
 		return
 	}
 
+	defer s.admission.unproxy(from, s.now())
 	unhold()
 	opmetrics.DoormanProxiedConnections.Inc()
 	defer opmetrics.DoormanProxiedConnections.Dec()
 	s.track(upstream)
 	defer s.forget(upstream)
-	proxy(conn, h.reader(), upstream)
+	s.proxy(port, rt, conn, h.reader(), upstream)
 }
 
 func (s *Server) record(rt route, result string, start time.Time) {
@@ -151,7 +171,8 @@ type heldConn struct {
 }
 
 // hold decides what becomes of the connection, and returns the connection
-// to the workload when it's to be passed through.
+// to the workload when it's to be passed through, with a proxied place
+// taken for it.
 func (h *heldConn) hold(ctx context.Context) (net.Conn, string) {
 	waitCtx, cancel := context.WithTimeout(ctx, h.route.maxWait)
 	defer cancel()
@@ -167,7 +188,7 @@ func (h *heldConn) hold(ctx context.Context) (net.Conn, string) {
 	// before reading anything, since a client of a protocol where the
 	// server speaks first, such as MySQL, sends nothing until it has.
 	if addrs, _, err := h.backends.get(waitCtx, key); err == nil && len(addrs) > 0 {
-		if upstream := dialAny(waitCtx, addrs); upstream != nil {
+		if upstream, _ := h.dial(waitCtx, addrs); upstream != nil {
 			return upstream, resultSuccess
 		}
 	}
@@ -205,15 +226,17 @@ func (h *heldConn) hold(ctx context.Context) (net.Conn, string) {
 func (h *heldConn) await(ctx, waitCtx context.Context, wakeErr error) (net.Conn, string) {
 	key := h.route.backendKey()
 	lastWake := h.now()
-	var dialFailed bool
+	var dialFailed, proxyLimited bool
 	for {
 		current := h.currentRoute(h.port, h.route)
 		addrs, changed, err := h.backends.get(waitCtx, key)
 		if len(addrs) > 0 {
-			if upstream := dialAny(waitCtx, addrs); upstream != nil {
+			upstream, limited := h.dial(waitCtx, addrs)
+			if upstream != nil {
 				return upstream, resultSuccess
 			}
-			dialFailed = true
+			proxyLimited = limited
+			dialFailed = !limited
 		} else if current.draining() && err == nil {
 			return nil, resultRefused
 		}
@@ -223,7 +246,7 @@ func (h *heldConn) await(ctx, waitCtx context.Context, wakeErr error) (net.Conn,
 		}
 
 		retry := time.NewTimer(dialRetryInterval)
-		if !dialFailed && wakeErr == nil && err == nil {
+		if !dialFailed && !proxyLimited && wakeErr == nil && err == nil {
 			retry.Stop()
 		}
 		select {
@@ -238,7 +261,7 @@ func (h *heldConn) await(ctx, waitCtx context.Context, wakeErr error) (net.Conn,
 			switch {
 			case ctx.Err() != nil:
 				return nil, resultCanceled
-			case errors.Is(wakeErr, errWakeLimited):
+			case errors.Is(wakeErr, errWakeLimited) || proxyLimited:
 				return nil, resultLimited
 			case dialFailed || wakeErr != nil:
 				return nil, resultError
@@ -258,10 +281,28 @@ func (h *heldConn) passThrough(ctx context.Context) (net.Conn, string) {
 	if err != nil || len(addrs) == 0 {
 		return nil, resultRefused
 	}
-	if upstream := dialAny(ctx, addrs); upstream != nil {
+	upstream, limited := h.dial(ctx, addrs)
+	switch {
+	case upstream != nil:
 		return upstream, resultSuccess
+	case limited:
+		return nil, resultLimited
+	default:
+		return nil, resultError
 	}
-	return nil, resultError
+}
+
+// dial connects to one of addrs, once a proxied place is free for the
+// connection. It reports whether none was.
+func (h *heldConn) dial(ctx context.Context, addrs []string) (net.Conn, bool) {
+	if !h.admission.proxy(h.from, h.now()) {
+		return nil, true
+	}
+	upstream := dialAny(ctx, addrs)
+	if upstream == nil {
+		h.admission.unproxy(h.from, h.now())
+	}
+	return upstream, false
 }
 
 // streamClient starts reading the caller in the background.
@@ -376,19 +417,80 @@ func remoteAddr(conn net.Conn) netip.Addr {
 	return netip.Addr{}
 }
 
-// proxy copies in both directions until both sides are done. Closing the
-// write half on EOF lets the other direction finish its response.
-func proxy(downstream net.Conn, fromDownstream io.Reader, upstream net.Conn) {
-	var wg sync.WaitGroup
-	wg.Go(func() {
-		_, _ = io.Copy(upstream, fromDownstream) // an error just ends this direction
+// proxy copies in both directions until both sides are done, or until
+// closeIdle ends the connection. Closing the write half on EOF lets the
+// other direction finish its response.
+func (s *Server) proxy(port int32, accepted route, downstream net.Conn, fromDownstream io.Reader, upstream net.Conn) {
+	var active atomic.Int64
+	active.Store(s.now().UnixNano())
+	var copies sync.WaitGroup
+	copies.Go(func() {
+		s.copyActive(upstream, fromDownstream, &active)
 		closeWrite(upstream)
 	})
-	wg.Go(func() {
-		_, _ = io.Copy(downstream, upstream) // an error just ends this direction
+	copies.Go(func() {
+		s.copyActive(downstream, upstream, &active)
 		closeWrite(downstream)
 	})
-	wg.Wait()
+
+	done := make(chan struct{})
+	var watch sync.WaitGroup
+	watch.Go(func() { s.closeIdle(done, port, accepted, &active, downstream, upstream) })
+	copies.Wait()
+	close(done)
+	watch.Wait()
+}
+
+// copyActive copies src to dst through a buffer of proxyBufferSize,
+// noting when bytes last moved. Hiding the connections' ReadFrom and
+// WriteTo keeps io from allocating its own, larger buffer.
+func (s *Server) copyActive(dst io.Writer, src io.Reader, active *atomic.Int64) {
+	w := activityWriter{w: dst, active: active, now: s.now}
+	_, _ = io.CopyBuffer(w, struct{ io.Reader }{src}, make([]byte, proxyBufferSize)) // an error just ends this direction
+}
+
+type activityWriter struct {
+	w      io.Writer
+	active *atomic.Int64
+	now    func() time.Time
+}
+
+func (a activityWriter) Write(p []byte) (int, error) {
+	n, err := a.w.Write(p)
+	if n > 0 {
+		a.active.Store(a.now().UnixNano())
+	}
+	return n, err
+}
+
+// closeIdle closes a proxied connection that has been idle for proxyIdle,
+// or has outlived its route's drain by drainedLifetime, until done.
+func (s *Server) closeIdle(done <-chan struct{}, port int32, accepted route, active *atomic.Int64, conns ...net.Conn) {
+	ticker := time.NewTicker(s.proxyCheck)
+	defer ticker.Stop()
+	var drainingSince time.Time
+	if accepted.draining() {
+		drainingSince = s.now()
+	}
+	for {
+		select {
+		case <-done:
+			return
+		case <-ticker.C:
+		}
+		now := s.now()
+		if drainingSince.IsZero() && s.currentRoute(port, accepted).draining() {
+			drainingSince = now
+		}
+		idle := now.Sub(time.Unix(0, active.Load())) >= s.proxyIdle
+		drained := !drainingSince.IsZero() && now.Sub(drainingSince) >= s.drainedLifetime
+		if idle || drained {
+			for _, c := range conns {
+				_ = c.Close() // ends both copies; the caller sees the connection drop
+			}
+			return
+		}
+	}
 }
 
 func closeWrite(conn net.Conn) {

@@ -130,6 +130,10 @@ type Server struct {
 	pollEvery time.Duration
 	silent    time.Duration
 
+	proxyIdle       time.Duration
+	drainedLifetime time.Duration
+	proxyCheck      time.Duration
+
 	healthCheckAgents []string
 
 	backends  *backends
@@ -165,6 +169,10 @@ func NewServer(c client.Client, recorder events.EventRecorder, opts Options) *Se
 		pollEvery: backendPollInterval,
 		silent:    silentWake,
 		backends:  newBackends(c),
+
+		proxyIdle:       proxyIdleTimeout,
+		drainedLifetime: drainedProxyLifetime,
+		proxyCheck:      proxyCheckInterval,
 
 		healthCheckAgents: healthCheckAgents(opts.HealthCheckAgents),
 		admission:         newAdmission(defaultLimits),
