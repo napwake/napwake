@@ -872,11 +872,28 @@ func (r *Reconciler) announceHandBack(workload *v1alpha1.ManagedWorkload, replic
 }
 
 // reconcileDuplicate leaves a target another ManagedWorkload manages to
-// that one, which the DuplicateTarget condition reports.
+// that one, which the DuplicateTarget condition reports. One that held the
+// target until the other took it over hands back what it had paused, and
+// its doorman routes, or nothing would ever wake the target.
 func (r *Reconciler) reconcileDuplicate(ctx context.Context, workload *v1alpha1.ManagedWorkload) (ctrl.Result, error) {
 	c := meta.FindStatusCondition(workload.Status.Conditions, conditionDuplicateTarget)
 	if err := r.refusePauseRequest(ctx, workload, "Warning", conditionDuplicateTarget, c.Message); err != nil {
 		return ctrl.Result{}, err
+	}
+	if workload.Status.Pause == nil && len(workload.Status.Doorman) == 0 {
+		return ctrl.Result{RequeueAfter: duplicateRecheckInterval}, nil
+	}
+
+	released, replicas, err := r.releaseTarget(ctx, workload)
+	if err != nil {
+		return ctrl.Result{}, err
+	}
+	r.clearCondition(workload, conditionWakeOnRequest, conditionDuplicateTarget)
+	if err := r.transition(ctx, workload, v1alpha1.PhaseRunning, conditionDuplicateTarget); err != nil {
+		return ctrl.Result{}, err
+	}
+	if released {
+		r.announceHandBack(workload, replicas, c.Message)
 	}
 	return ctrl.Result{RequeueAfter: duplicateRecheckInterval}, nil
 }

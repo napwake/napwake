@@ -35,6 +35,7 @@ import (
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/apimachinery/pkg/types"
@@ -590,6 +591,37 @@ func TestReconcile_DuplicateTargetBlocksNewer(t *testing.T) {
 	default:
 		t.Fatal("expected DuplicateTarget warning event")
 	}
+}
+
+// A ManagedWorkload that becomes the duplicate while it holds the target
+// paused, as when an older one for it appears, hands the target back, or
+// it would stay at zero with nothing to wake it.
+func TestReconcile_BecomingTheDuplicateHandsBackAPause(t *testing.T) {
+	older := lifecycleWorkload("owner", v1alpha1.PhaseRunning)
+	older.Spec.Target.Name = "api"
+	older.UID, older.CreationTimestamp = "aaa", metav1.NewTime(fixedTime.Add(-time.Hour))
+	paused := pausedWorkload(v1alpha1.PhasePaused)
+	paused.UID, paused.CreationTimestamp = "bbb", metav1.NewTime(fixedTime)
+	paused.Status.Pause.ScaledObject = "api-scaler"
+	so := &unstructured.Unstructured{Object: map[string]any{"spec": map[string]any{
+		"scaleTargetRef": map[string]any{"name": "api"}}}}
+	so.SetGroupVersionKind(kedaScaledObject)
+	so.SetNamespace("default")
+	so.SetName("api-scaler")
+	so.SetAnnotations(map[string]string{autoscaler.PausedReplicasAnnotation: "0"})
+	r := lifecycleReconciler(t, paused, 0, interceptor.Funcs{}, older, so)
+
+	_, err := r.Reconcile(context.Background(), reconcileFor("api"))
+	require.NoError(t, err)
+
+	got := getWorkload(t, r, "api")
+	assert.True(t, meta.IsStatusConditionTrue(got.Status.Conditions, conditionDuplicateTarget))
+	assert.Equal(t, v1alpha1.PhaseRunning, got.Status.Phase)
+	assert.Nil(t, got.Status.Pause)
+	assert.Equal(t, int32(3), targetReplicas(t, r), "handed back at the replicas it had")
+	_, held := pausedScaledObject(t, r)
+	assert.False(t, held, "KEDA is released")
+	assert.Contains(t, drainEvents(t, r), "restored to 3 replicas: Deployment/api is already managed by owner")
 }
 
 func TestReconcile_DuplicateTargetAllowsOlder(t *testing.T) {
