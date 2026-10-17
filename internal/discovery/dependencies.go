@@ -52,9 +52,9 @@ type Dependency struct {
 	// Source is how it was found: in the workload's environment, or, once
 	// Hybernate learns them, from a wake it saw the workload cause.
 	Source DependencySource `json:"source"`
-	// Connected means Hybernate has applied it, waking and holding the
-	// dependency with the workload. Hybernate doesn't apply the
-	// dependencies it finds yet, so this stays false until it does.
+	// Connected means Hybernate has learned it for the workload's
+	// ManagedWorkload, so it wakes and holds the dependency with the
+	// workload.
 	Connected bool `json:"connected,omitempty"`
 }
 
