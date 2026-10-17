@@ -465,16 +465,21 @@ func TestFindDependencies_GrowsWithTheCluster(t *testing.T) {
 	assert.Less(t, elapsed, 5*time.Second)
 }
 
+// Stopped short, it says whose dependencies it didn't find, so an empty
+// list isn't read as having none.
 func TestFindDependencies_StopsWhenCancelled(t *testing.T) {
 	workloads, sources, services := manyPreviews(10, 10)
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
 
-	findDependencies(ctx, workloads, sources, services, nil)
+	notes := findDependencies(ctx, workloads, sources, services, nil)
 
 	for _, w := range workloads {
 		assert.Empty(t, w.Dependencies)
 	}
+	require.Len(t, notes, 1)
+	assert.Contains(t, notes[0], "the scan stopped before finding the dependencies of 100 workloads, "+
+		"so none are listed for them: ")
 }
 
 func BenchmarkFindDependencies(b *testing.B) {

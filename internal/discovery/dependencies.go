@@ -92,9 +92,12 @@ type variable struct {
 func findDependencies(ctx context.Context, workloads []Workload, sources map[workloadKey]workloadSource,
 	services map[string]map[string]corev1.Service, configMaps map[string]map[string]map[string]string) []string {
 	targets := indexTargets(sources)
-	var fromSecrets []string
+	var fromSecrets, unresolved []string
 	for i := range workloads {
 		if ctx.Err() != nil {
+			for _, w := range workloads[i:] {
+				unresolved = append(unresolved, w.Namespace+"/"+w.Name)
+			}
 			break
 		}
 		w := &workloads[i]
@@ -115,12 +118,18 @@ func findDependencies(ctx context.Context, workloads []Workload, sources map[wor
 		}
 		w.Dependencies = append(w.Dependencies, learnedFromWakes(source.managed, w.Dependencies)...)
 	}
-	if len(fromSecrets) == 0 {
-		return nil
+	var notes []string
+	if len(fromSecrets) > 0 {
+		notes = append(notes, fmt.Sprintf("%s environment variables from Secrets, which the scan doesn't read, "+
+			"so dependencies set there aren't found: %s",
+			plural(len(fromSecrets), "workload takes", "workloads take"), listSome(fromSecrets)))
 	}
-	return []string{fmt.Sprintf("%s environment variables from Secrets, which the scan doesn't read, "+
-		"so dependencies set there aren't found: %s",
-		plural(len(fromSecrets), "workload takes", "workloads take"), listSome(fromSecrets))}
+	if len(unresolved) > 0 {
+		notes = append(notes, fmt.Sprintf("the scan stopped before finding the dependencies of %s, so "+
+			"none are listed for %s: %s", plural(len(unresolved), "workload", "workloads"),
+			oneOrMany(len(unresolved), "it", "them"), listSome(unresolved)))
+	}
+	return notes
 }
 
 // readConfigMaps reads the ConfigMaps a namespace's pods take variables
