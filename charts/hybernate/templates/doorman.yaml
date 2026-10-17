@@ -13,6 +13,11 @@ metadata:
     {{- include "hybernate.doormanLabels" . | nindent 4 }}
 spec:
   replicas: {{ .Values.doorman.replicaCount }}
+  {{- /*
+  A rollout waits before stopping an old pod, so the operator has moved
+  paused workloads' EndpointSlices to the new one first.
+  */}}
+  minReadySeconds: 5
   selector:
     matchLabels:
       {{- include "hybernate.doormanSelectorLabels" . | nindent 6 }}

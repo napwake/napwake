@@ -12,6 +12,9 @@ metadata:
     app.kubernetes.io/managed-by: kustomize
 spec:
   replicas: 2
+  # A rollout waits before stopping an old pod, so the operator has moved
+  # paused workloads' EndpointSlices to the new one first.
+  minReadySeconds: 5
   selector:
     matchLabels:
       control-plane: doorman
