@@ -71,8 +71,10 @@ type ManagedWorkloadSpec struct {
 
 	// DependsOn lists the workloads this one needs, such as a database or a
 	// message broker. A dependency isn't paused while anything that depends
-	// on it is awake, and waking this workload wakes its dependencies.
+	// on it is awake, and waking this workload wakes its dependencies. At
+	// most 20.
 	// +listType=atomic
+	// +kubebuilder:validation:MaxItems=20
 	// +optional
 	DependsOn []DependencyRef `json:"dependsOn,omitempty"`
 
@@ -136,6 +138,14 @@ type WakeSpec struct {
 	Page *bool `json:"page,omitempty"`
 }
 
+// MaxDependsOn is the most dependencies dependsOn may list.
+const MaxDependsOn = 20
+
+// MinIdleAfter is the shortest idlePolicy.idleAfter the CRD accepts. Any
+// shorter, a workload would be paused about as soon as each wake finished,
+// and spend its time restarting.
+const MinIdleAfter = time.Minute
+
 // WakeMaxWaitLimit is the longest wake.maxWait the CRD accepts. Each held
 // connection takes one of the doorman's limited places, so a connection
 // held for hours keeps other callers out long after its own caller has
@@ -196,9 +206,9 @@ type PredictionSpec struct {
 // IdleAfter. Any single activity source keeps the workload awake.
 type IdlePolicySpec struct {
 	// IdleAfter is how long the workload must go without any activity
-	// before the operator pauses it.
+	// before the operator pauses it, at least 1m.
 	// +kubebuilder:default="1h"
-	// +kubebuilder:validation:XValidation:rule="duration(self) > duration('0s')",message="must be a duration above zero, such as 90m or 2h"
+	// +kubebuilder:validation:XValidation:rule="duration(self) >= duration('1m')",message="must be a duration of at least 1m, such as 90m or 2h"
 	// +optional
 	IdleAfter *metav1.Duration `json:"idleAfter,omitempty"`
 
@@ -225,7 +235,8 @@ type ActivitySpec struct {
 
 	// Prometheus queries that measure activity, such as an ingress request
 	// rate. A result above zero counts as activity; an empty result or zero
-	// doesn't. Requires the operator's --prometheus-url.
+	// doesn't. Requires the operator's --prometheus-url. At most 10.
+	// +kubebuilder:validation:MaxItems=10
 	// +optional
 	Prometheus []PrometheusActivity `json:"prometheus,omitempty"`
 }
@@ -247,18 +258,21 @@ type CostTrackingSpec struct {
 	Rates *CostRates `json:"rates,omitempty"`
 }
 
-// CostRates are per-unit cost rates, in USD.
+// CostRates are per-unit cost rates, in USD, none of them negative.
 type CostRates struct {
 	// CPUPerHour is the cost per vCPU-hour.
+	// +kubebuilder:validation:XValidation:rule="!quantity(string(self)).isLessThan(quantity('0'))",message="must not be negative"
 	// +optional
 	CPUPerHour *resource.Quantity `json:"cpuPerHour,omitempty"`
 
 	// MemoryPerHour is the cost per GiB-hour.
+	// +kubebuilder:validation:XValidation:rule="!quantity(string(self)).isLessThan(quantity('0'))",message="must not be negative"
 	// +optional
 	MemoryPerHour *resource.Quantity `json:"memoryPerHour,omitempty"`
 
 	// StoragePerMonth is the cost per GiB-month of PersistentVolumeClaim
 	// storage.
+	// +kubebuilder:validation:XValidation:rule="!quantity(string(self)).isLessThan(quantity('0'))",message="must not be negative"
 	// +optional
 	StoragePerMonth *resource.Quantity `json:"storagePerMonth,omitempty"`
 }

@@ -17,6 +17,7 @@ limitations under the License.
 package controller
 
 import (
+	"strings"
 	"testing"
 	"time"
 
@@ -112,6 +113,12 @@ func TestOptInSpec_InvalidValues(t *testing.T) {
 		}},
 		{v1alpha1.AnnotationIdleAfter, "-5m", func(t *testing.T, s v1alpha1.ManagedWorkloadSpec) {
 			assert.Equal(t, time.Hour, s.IdlePolicy.IdleAfter.Duration)
+		}},
+		{v1alpha1.AnnotationIdleAfter, "30s", func(t *testing.T, s v1alpha1.ManagedWorkloadSpec) {
+			assert.Equal(t, time.Hour, s.IdlePolicy.IdleAfter.Duration, "under the CRD's minute")
+		}},
+		{v1alpha1.AnnotationDependsOn, strings.Repeat("deployment/db,", 21), func(t *testing.T, s v1alpha1.ManagedWorkloadSpec) {
+			assert.Len(t, s.DependsOn, v1alpha1.MaxDependsOn, "the first as many as the CRD takes")
 		}},
 		{v1alpha1.AnnotationCPUThreshold, "0", func(t *testing.T, s v1alpha1.ManagedWorkloadSpec) {
 			assert.Equal(t, 10, s.IdlePolicy.Activity.CPUThreshold)

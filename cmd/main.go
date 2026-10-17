@@ -129,7 +129,7 @@ func main() {
 			"without an operator, instead of the operator: uninstall or upgrade.")
 	optIn := controller.DefaultOptInDefaults
 	flag.DurationVar(&optIn.IdleAfter, "default-idle-after", optIn.IdleAfter,
-		"idleAfter for workloads opted in with the hybernate.io/managed label, unless annotated otherwise.")
+		"idleAfter, at least 1m, for workloads opted in with the hybernate.io/managed label, unless annotated otherwise.")
 	flag.IntVar(&optIn.CPUThreshold, "default-cpu-threshold", optIn.CPUThreshold,
 		"CPU threshold, as a percentage of requests, for workloads opted in with the label, unless annotated otherwise.")
 	flag.BoolVar(&optIn.DryRun, "default-dry-run", optIn.DryRun,
@@ -425,8 +425,8 @@ func validatePrometheusURL(raw string) error {
 // ManagedWorkload and fail its validation, or, for a CPU threshold of 0,
 // silently become the CRD's default of 10.
 func validateOptInDefaults(d controller.OptInDefaults) error {
-	if d.IdleAfter < time.Minute {
-		return fmt.Errorf("--default-idle-after %s must be at least 1m", d.IdleAfter)
+	if d.IdleAfter < v1alpha1.MinIdleAfter {
+		return fmt.Errorf("--default-idle-after %s must be at least %s", d.IdleAfter, v1alpha1.MinIdleAfter)
 	}
 	if d.CPUThreshold < 1 || d.CPUThreshold > 100 {
 		return fmt.Errorf("--default-cpu-threshold %d must be from 1 to 100", d.CPUThreshold)

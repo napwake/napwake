@@ -14,11 +14,11 @@
 | `target.kind` | `Deployment` \| `StatefulSet` | Yes | `Deployment` | Target kind |
 | `target.name` | string | Yes | | Target name (same namespace) |
 | `idlePolicy` | `IdlePolicySpec` | No | | Idle detection configuration. Without it, the workload is never paused automatically |
-| `idlePolicy.idleAfter` | duration | No | `1h` | Time without activity before pausing |
+| `idlePolicy.idleAfter` | duration (at least `1m`) | No | `1h` | Time without activity before pausing |
 | `idlePolicy.activity.cpuThreshold` | int | No | `10` | CPU utilization % of requests above which the workload is active (1-100) |
-| `idlePolicy.activity.prometheus[].promQL` | string | Yes (per entry) | | PromQL instant query; a result above zero is activity |
+| `idlePolicy.activity.prometheus[].promQL` | string | Yes (per entry) | | PromQL instant query; a result above zero is activity. At most 10 queries |
 | `idlePolicy.autoResume` | bool | No | `false` | Wake ahead of confident forecast demand |
-| `dependsOn[]` | `DependencyRef` | No | | Workloads this one needs |
+| `dependsOn[]` | `DependencyRef` | No | | Workloads this one needs, at most 20 |
 | `dependsOn[].namespace` | string | No | this namespace | Namespace of the dependency |
 | `dependsOn[].kind` | `Deployment` \| `StatefulSet` | Yes | | Kind of the dependency |
 | `dependsOn[].name` | string | Yes | | Name of the dependency's workload |
@@ -30,7 +30,7 @@
 | `prediction` | `PredictionSpec` | No | `{}` | Forecast engine config; left out or `{}`, it takes the defaults |
 | `prediction.confidence` | int (50-100) | No | `75` | Accuracy (1 − WAPE, %) a season's forecasts must reach before they drive decisions |
 | `costTracking` | `CostTrackingSpec` | No | | Custom cost rate overrides |
-| `costTracking.rates` | `CostRates` | No | node list prices, then AWS defaults | Custom cost rates |
+| `costTracking.rates` | `CostRates` | No | node list prices, then AWS defaults | Custom cost rates, none of them negative |
 | `dryRun` | bool | No | `false` | Measure without pausing; see [Dry Run](../guides/dry-run.md). A workload already paused when it's turned on is woken |
 
 A duration is a Go duration above zero, such as `45s`, `90m` or `1h30m`. Days and weeks (`1d`, `2w`) and spaces aren't durations: write `24h` or `168h`. The API server rejects any other value.

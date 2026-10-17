@@ -40,7 +40,7 @@ This covers dev and preview namespaces, and third-party charts that don't let yo
 | Annotation | Values | Default | Description |
 |------------|--------|---------|-------------|
 | `hybernate.io/dry-run` | `"true"`, `"false"` | `"false"` | Measure without pausing: the activity clock and savings run as normal, but the workload is never paused |
-| `hybernate.io/idle-after` | duration, e.g. `"90m"`, `"2h"` | `1h` | How long without activity before pausing |
+| `hybernate.io/idle-after` | duration of at least `1m`, e.g. `"90m"`, `"2h"` | `1h` | How long without activity before pausing |
 | `hybernate.io/cpu-threshold` | whole number, `"1"` to `"100"` | `10` | CPU use, as a percentage of requests, above which the workload counts as active |
 | `hybernate.io/auto-resume` | `"true"`, `"false"` | `"false"` | Wake ahead of the demand a confident [forecast](../concepts/forecasting.md) predicts |
 | `hybernate.io/depends-on` | comma-separated `kind/name` or `namespace/kind/name` | none | Workloads this one needs; see [Dependencies](../concepts/dependencies.md) |

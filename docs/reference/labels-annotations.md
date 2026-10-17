@@ -39,7 +39,7 @@ Set on an opted-in Deployment or StatefulSet, or on its Namespace to apply to ev
 | Annotation | Accepted values | Default | Description |
 |------------|-----------------|---------|-------------|
 | `hybernate.io/dry-run` | exactly `"true"` or `"false"` | `"false"` | Measure without pausing |
-| `hybernate.io/idle-after` | a Go duration above zero, such as `"90m"` or `"2h"` | `1h` | How long without activity before pausing |
+| `hybernate.io/idle-after` | a Go duration of at least `1m`, such as `"90m"` or `"2h"` | `1h` | How long without activity before pausing |
 | `hybernate.io/cpu-threshold` | a whole number, `"1"` to `"100"` | `10` | CPU use, as a percentage of requests, above which the workload counts as active |
 | `hybernate.io/auto-resume` | exactly `"true"` or `"false"` | `"false"` | Wake ahead of forecast demand |
 | `hybernate.io/depends-on` | comma-separated `kind/name` or `namespace/kind/name`, kind `deployment` or `statefulset` | none | Workloads this one needs. An empty value declares none, so a workload can drop its namespace's. On a namespace, it leaves out the workloads it names, and those they depend on by their own `depends-on`, which are dependencies rather than dependents. One in another namespace needs that namespace's `hybernate.io/dependents-from` |

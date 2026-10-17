@@ -112,6 +112,9 @@ func TestValidateOptInDefaults(t *testing.T) {
 		{name: "idleAfter under a minute, below the CRD's minimum",
 			mutate: func(d *controller.OptInDefaults) { d.IdleAfter = 59 * time.Second }, wantErr: true},
 		{name: "zero idleAfter", mutate: func(d *controller.OptInDefaults) { d.IdleAfter = 0 }, wantErr: true},
+		{name: "idleAfter of a minute", mutate: func(d *controller.OptInDefaults) { d.IdleAfter = time.Minute }},
+		{name: "idleAfter under the CRD's minute, which would pause and wake in a loop",
+			mutate: func(d *controller.OptInDefaults) { d.IdleAfter = 30 * time.Second }, wantErr: true},
 		{name: "negative idleAfter", mutate: func(d *controller.OptInDefaults) { d.IdleAfter = -time.Minute },
 			wantErr: true},
 	}
