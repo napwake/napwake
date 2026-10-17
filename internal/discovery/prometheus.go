@@ -521,17 +521,26 @@ func (s *sample) UnmarshalJSON(b []byte) error {
 	return nil
 }
 
+// scrapeLabels tell apart scrapes of the same container's CPU by the same
+// Prometheus, as when cAdvisor's counter is scraped from both the kubelet's
+// /metrics/cadvisor and /metrics/resource, or by two jobs. They're copies,
+// so only one of them counts.
+var scrapeLabels = []string{"job", "metrics_path", "service", "endpoint", "instance"}
+
 // namespaceCPU returns the CPU each container in the namespace used over
 // the window, from cAdvisor's counters, which every common Prometheus setup
-// scrapes. Steps are keyed by Unix time. The series are kept apart by the
-// labels that tell one Prometheus from another, so a store mixing several
-// is noticed, and then summed per container as before.
+// scrapes. Steps are keyed by Unix time. Copies of a container's CPU that
+// one Prometheus scraped twice count once, the highest at each step. The
+// series of different Prometheus are kept apart by the labels that tell
+// them apart, so a store mixing several is noticed, and then summed per
+// container.
 func (p *Prometheus) namespaceCPU(ctx context.Context, namespace string, start, end time.Time, step time.Duration) (
 	[]containerCPU, error) {
 	matchers := append([]string{"namespace=" + strconv.Quote(namespace), `container!=""`, `container!="POD"`},
 		p.Selector...)
 	query := fmt.Sprintf(`sum by (pod, container, %s) (rate(container_cpu_usage_seconds_total{%s}[%s]))`,
-		strings.Join(sourceLabels, ", "), strings.Join(matchers, ", "), promDuration(step))
+		strings.Join(slices.Concat(sourceLabels, scrapeLabels), ", "), strings.Join(matchers, ", "),
+		promDuration(step))
 	params := url.Values{
 		"query": {query},
 		"start": {strconv.FormatInt(start.Unix(), 10)},
@@ -551,29 +560,48 @@ func (p *Prometheus) namespaceCPU(ctx context.Context, namespace string, start, 
 	if resp.Status != "success" {
 		return nil, fmt.Errorf("%s: query failed: %s", p.Source, resp.Error)
 	}
-	type key struct{ pod, container string }
-	byContainer := map[key]*containerCPU{}
-	var order []key
+	type fromSource struct{ pod, container, source string }
+	scraped := map[fromSource]map[int64]float64{}
+	var order []fromSource
 	for _, series := range resp.Data.Result {
 		p.noteSource(series.Metric)
-		k := key{series.Metric["pod"], series.Metric["container"]}
-		c := byContainer[k]
-		if c == nil {
-			c = &containerCPU{pod: k.pod, container: k.container, samples: make(map[int64]float64, len(series.Values))}
-			byContainer[k] = c
+		k := fromSource{series.Metric["pod"], series.Metric["container"], sourceOf(series.Metric)}
+		samples := scraped[k]
+		if samples == nil {
+			samples = make(map[int64]float64, len(series.Values))
+			scraped[k] = samples
 			order = append(order, k)
 		}
 		for _, v := range series.Values {
-			if v.ok {
-				c.samples[v.at] += v.value
+			if have, seen := samples[v.at]; v.ok && (!seen || v.value > have) {
+				samples[v.at] = v.value
 			}
 		}
 	}
+	type key struct{ pod, container string }
+	index := map[key]int{}
 	out := make([]containerCPU, 0, len(order))
 	for _, k := range order {
-		out = append(out, *byContainer[k])
+		i, ok := index[key{k.pod, k.container}]
+		if !ok {
+			index[key{k.pod, k.container}] = len(out)
+			out = append(out, containerCPU{pod: k.pod, container: k.container, samples: scraped[k]})
+			continue
+		}
+		for at, cores := range scraped[k] {
+			out[i].samples[at] += cores
+		}
 	}
 	return out, nil
+}
+
+// sourceOf is which Prometheus a series came from, by its sourceLabels.
+func sourceOf(metric map[string]string) string {
+	values := make([]string, len(sourceLabels))
+	for i, label := range sourceLabels {
+		values[i] = metric[label]
+	}
+	return strings.Join(values, "\x00")
 }
 
 func (p *Prometheus) noteSource(metric map[string]string) {
