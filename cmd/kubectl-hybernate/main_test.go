@@ -39,7 +39,29 @@ import (
 	"sigs.k8s.io/yaml"
 
 	v1alpha1 "github.com/okedeji/hybernate/api/v1alpha1"
+	"github.com/okedeji/hybernate/internal/gitops"
 )
+
+// Help names every GitOps tool the plugin recognises, not just the first
+// two, and every place a learned dependency comes from.
+func TestCLI_HelpMatchesWhatItRecognises(t *testing.T) {
+	tools := []gitops.Tool{gitops.ArgoCD, gitops.Flux, gitops.Fleet, gitops.Kapp, gitops.Kluctl}
+	for _, command := range []string{"enable", "pause"} {
+		t.Run(command, func(t *testing.T) {
+			out, err := runCLI(t, nil, command, "--help")
+			require.NoError(t, err)
+			for _, tool := range tools {
+				assert.Contains(t, out, string(tool))
+			}
+			assert.NotContains(t, out, "Argo CD or Flux")
+		})
+	}
+	t.Run("deps", func(t *testing.T) {
+		out, err := runCLI(t, nil, "deps", "--help")
+		require.NoError(t, err)
+		assert.Contains(t, out, "environment or from a wake")
+	})
+}
 
 // runCLI runs the plugin as kubectl would, against c, with a kubeconfig
 // whose context's namespace is preview-42.

@@ -110,7 +110,8 @@ Hybernate pauses it as it would an idle workload, but sooner: it doesn't
 pause a workload that awake workloads depend on, one an active-until
 annotation holds awake, one in a protected namespace, or one in dry-run,
 where it counts a would-be pause instead. Asking overrides the hour
-Hybernate otherwise waits after Argo CD or Flux undid a pause.
+Hybernate otherwise waits after a GitOps tool (Argo CD, Flux, Fleet, kapp or
+Kluctl) undid a pause.
 
 When the forecast expects the workload to be busy within the hour, Hybernate
 says when, and pause asks whether to pause it anyway, since it would likely

@@ -41,8 +41,8 @@ func depsCmd(kube *kubeFlags) *cobra.Command {
 		Long: `Deps shows the dependencies Hybernate holds and wakes with a ManagedWorkload,
 in both directions: the workloads it depends on, and the ones that depend
 on it. Each says where the link comes from, a dependsOn or what Hybernate
-learned from the workload's environment, and what the other workload is
-doing now.
+learned from the workload's environment or from a wake, and what the other
+workload is doing now.
 
 NAME is the workload, as status shows it, such as api or statefulset/postgres,
 or its ManagedWorkload's name.

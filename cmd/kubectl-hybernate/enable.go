@@ -72,10 +72,10 @@ It changes nothing, and fails, for a workload Hybernate won't manage: one in
 a protected namespace, one ignored or opted out by its own label, or one no
 ManagedWorkload manages yet.
 
-A setting Argo CD or Flux applies from Git, as the object's managed fields
-record, isn't changed: the tool would put the old value back. Enable says
-what to change there instead. One Helm set is changed, with a warning that
-the next helm upgrade puts it back.
+A setting a GitOps tool (Argo CD, Flux, Fleet, kapp or Kluctl) applies from
+Git, as the object's managed fields record, isn't changed: the tool would
+put the old value back. Enable says what to change there instead. One Helm
+set is changed, with a warning that the next helm upgrade puts it back.
 
 Examples:
   # Start pausing a Deployment
@@ -116,7 +116,8 @@ Examples:
 	cmd.Flags().StringVarP(&namespace, "namespace", "n", "",
 		"Namespace of the workload (defaults to the kubeconfig context's)")
 	cmd.Flags().BoolVar(&opts.all, "all", false, "Enable every workload in the namespace")
-	cmd.Flags().BoolVar(&opts.force, "force", false, "Change the cluster even when Argo CD or Flux manages the object")
+	cmd.Flags().BoolVar(&opts.force, "force", false,
+		"Change the cluster even when a GitOps tool applies the setting from Git")
 	addTimeoutFlag(cmd, &opts.timeout, "How long to wait for the cluster before giving up")
 	return cmd
 }

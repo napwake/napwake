@@ -78,7 +78,7 @@ kubectl hybernate enable --all -n preview-42     # every workload in the namespa
 
 `enable` sets the workload's own `hybernate.io/dry-run` annotation to `"false"`, which wins over its namespace's annotation and the cluster default, wherever the dry-run came from. `enable --all` ends dry-run for everything in the namespace that's in it. When the namespace has its own `hybernate.io/dry-run`, or a workload takes its dry-run from the namespace or the cluster default, it sets the namespace's annotation to `"false"` and drops the workloads' own; otherwise it sets each workload's own to `"false"` and leaves the namespace alone. A ManagedWorkload you wrote has its `spec.dryRun` set to `false`.
 
-If Argo CD or Flux applies the workload or namespace, `enable` doesn't change the cluster, since the tool would put the annotation back. It names the tool, prints the change to make in Git, and exits non-zero; `--force` changes the cluster anyway.
+If a GitOps tool (Argo CD, Flux, Fleet, kapp or Kluctl) applies the `hybernate.io/dry-run` annotation on the workload or namespace from Git, `enable` doesn't change the cluster, since the tool would put the annotation back. It names the tool, prints the change to make in Git, and exits non-zero; `--force` changes the cluster anyway. One Helm set is changed, with a warning that the next `helm upgrade` puts the chart's value back.
 
 ## Protected namespaces
 
@@ -103,7 +103,7 @@ To keep Hybernate out of namespaces altogether, not by its own rule but by Kuber
 
 The decision to manage a workload lives in Git, as the label. The ManagedWorkload Hybernate creates from it is owned by the workload, like the ReplicaSets a Deployment creates, so Argo CD and Flux leave it alone and Argo CD shows it under the workload. Hybernate never copies the workload's labels onto it, so a GitOps tool's tracking label can't make the tool claim and prune it.
 
-Argo CD and Flux do notice the replica count of a paused workload changing, and would scale it back up. Tell them to leave `spec.replicas` alone:
+GitOps tools do notice the replica count of a paused workload changing, and would scale it back up. Tell them to leave `spec.replicas` alone; for Fleet, kapp and Kluctl, see [GitOps tools](gitops.md):
 
 - **Argo CD:** ignore the field in the Application, and keep the ignored field out of syncs:
 
