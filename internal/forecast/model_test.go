@@ -33,14 +33,14 @@ func hourAt(offset int) time.Time {
 	return testEpoch.Add(time.Duration(offset) * time.Hour)
 }
 
-// officeHours is 500m on weekdays from 9 to 17 in t's location, and nothing
-// otherwise: the workload Hybernate exists for.
+// officeHours is 50% of the CPU requested on weekdays from 9 to 17 in t's
+// location, and nothing otherwise: the workload Hybernate exists for.
 func officeHours(t time.Time) float64 {
 	if t.Weekday() == time.Saturday || t.Weekday() == time.Sunday {
 		return 0
 	}
 	if t.Hour() >= 9 && t.Hour() < 17 {
-		return 500
+		return 50
 	}
 	return 0
 }
@@ -82,7 +82,7 @@ func TestModel_SeasonalComponentsStayNormalised(t *testing.T) {
 		}
 		assert.InDelta(t, 0, weekly, 1e-6, "weekly components for hour %d sum to zero", hour)
 	}
-	assert.InDelta(t, 500*40.0/WeeklySeason, m.level, 15, "the level is the mean demand")
+	assert.InDelta(t, 50*40.0/WeeklySeason, m.level, 1.5, "the level is the mean demand")
 }
 
 // TestModel_OfficeHoursStaysBounded is the trace that drove the old
@@ -96,13 +96,13 @@ func TestModel_OfficeHoursStaysBounded(t *testing.T) {
 		require.GreaterOrEqual(t, m.level, 0.0, "hour %d", i)
 
 		next := hourAt(i + 1)
-		require.LessOrEqual(t, m.forecast(next, 1), 750.0, "hour %d forecasts beyond any demand seen", i)
+		require.LessOrEqual(t, m.forecast(next, 1), 75.0, "hour %d forecasts beyond any demand seen", i)
 	}
 
 	monday := hourAt(12 * WeeklySeason)
-	assert.InDelta(t, 500, m.forecast(monday.Add(10*time.Hour), 10), 50, "Monday 10am")
-	assert.Less(t, m.forecast(monday.Add(3*time.Hour), 3), 25.0, "Monday 3am")
-	assert.Less(t, m.forecast(monday.Add((5*24+10)*time.Hour), 24), 25.0, "Saturday 10am")
+	assert.InDelta(t, 50, m.forecast(monday.Add(10*time.Hour), 10), 5, "Monday 10am")
+	assert.Less(t, m.forecast(monday.Add(3*time.Hour), 3), 2.5, "Monday 3am")
+	assert.Less(t, m.forecast(monday.Add((5*24+10)*time.Hour), 24), 2.5, "Saturday 10am")
 }
 
 func TestModel_WallClockSlots(t *testing.T) {

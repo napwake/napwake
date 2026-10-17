@@ -51,11 +51,11 @@ type forecaster interface {
 	AnomalyDetected() bool
 }
 
-// metricsReader measures a workload two ways. Activity compares the usage
-// of the workload's own containers with their requests, so an injected
-// sidecar's background work doesn't keep it awake. Cost counts the whole
-// pod's requests, sidecars included, since that's what the workload
-// reserves and what pausing frees.
+// metricsReader measures a workload two ways. Activity, and the forecast,
+// compare the usage of the workload's own containers with their requests,
+// so an injected sidecar's background work doesn't keep it awake. Cost
+// counts the whole pod's requests, sidecars included, since that's what the
+// workload reserves and what pausing frees.
 type metricsReader interface {
 	WorkloadCPUMillis(ctx context.Context, workload *v1alpha1.ManagedWorkload) (float64, error)
 	CPURequestPerReplica(ctx context.Context, workload *v1alpha1.ManagedWorkload) (float64, error)
@@ -171,7 +171,8 @@ func (reg *engineRegistry) export(uid types.UID, engine forecaster) (string, err
 // the forecast's clock.
 type demandHour struct {
 	start time.Time
-	// peak is the most CPU, in millicores, any one look found.
+	// peak is the highest utilization, as a percentage of the CPU
+	// requested, any one look found.
 	peak        float64
 	first, last time.Time
 	// blind is set by a look that couldn't see demand: the workload was
@@ -227,15 +228,18 @@ func (r *Reconciler) reconcileAutomation(ctx context.Context, workload *v1alpha1
 	// The forecast learns whether or not automation acts on it, so every
 	// awake workload is looked at as often as the activity clock looks,
 	// for the forecast to see each hour's busiest minutes.
-	var usage float64
+	var load cpuLoad
 	if r.metrics != nil {
-		var err error
-		if usage, err = r.observedCPU(ctx, workload); err != nil {
+		usage, err := r.observedCPU(ctx, workload)
+		if err != nil {
 			r.clearIdleVeto(workload)
 			return r.reportMetricsUnavailable(ctx, workload, err)
 		}
-		r.setCondition(workload, conditionMetricsAvailable, metav1.ConditionTrue, "MetricsReported", "")
-		r.seeDemand(ctx, workload, engine, r.awakeDemand(workload, usage), true)
+		load.percent, load.err = r.utilization(ctx, workload, usage)
+		if load.err == nil {
+			r.setCondition(workload, conditionMetricsAvailable, metav1.ConditionTrue, "MetricsReported", "")
+		}
+		r.seeDemand(ctx, workload, engine, r.awakeDemand(workload, load.percent), load.err == nil)
 	}
 	r.updatePredictionStatus(ctx, workload, engine)
 
@@ -254,7 +258,37 @@ func (r *Reconciler) reconcileAutomation(ctx context.Context, workload *v1alpha1
 
 	logger.V(1).Info("automation tick", "workload", workload.Name, "namespace", workload.Namespace,
 		"engine_phase", engine.GetPhase(), "data_points", engine.GetDataPoints())
-	return r.reconcileIdleClock(ctx, workload, target, engine, usage)
+	return r.reconcileIdleClock(ctx, workload, target, engine, load)
+}
+
+// cpuLoad is what one look at an awake workload's CPU found: its
+// utilization, or why it couldn't be worked out.
+type cpuLoad struct {
+	percent float64
+	err     error
+}
+
+// utilization is CPU usage as a percentage of what the workload's own
+// containers request across its replicas. The activity threshold, the
+// forecast and every decision made on it share this one measure, so a
+// forecast that holds an idle workload awake would wake it once paused.
+func (r *Reconciler) utilization(ctx context.Context, workload *v1alpha1.ManagedWorkload, usage float64) (float64, error) {
+	if usage == 0 {
+		return 0, nil
+	}
+	perReplica, err := r.metrics.CPURequestPerReplica(ctx, workload)
+	if err != nil {
+		return 0, fmt.Errorf("%w: %w", errNoCPURequests, err)
+	}
+	replicas, err := r.metrics.Replicas(ctx, workload)
+	if err != nil {
+		return 0, fmt.Errorf("reading replicas: %w", err)
+	}
+	requested := perReplica * float64(replicas)
+	if requested <= 0 {
+		return 0, errNoCPURequests
+	}
+	return usage / requested * 100, nil
 }
 
 // reconcileWake resumes a paused workload when an activity annotation asks
@@ -283,10 +317,6 @@ func (r *Reconciler) reconcileWake(ctx context.Context, workload *v1alpha1.Manag
 		return recheck, nil
 	}
 
-	totalRequest := pausedRequest(workload)
-	if totalRequest <= 0 {
-		return recheck, nil
-	}
 	now := r.now()
 	predicted, when := engine.Predict(0, now), "this hour"
 	if r.untilNextHour(now) <= autoResumeLead {
@@ -294,14 +324,13 @@ func (r *Reconciler) reconcileWake(ctx context.Context, workload *v1alpha1.Manag
 			predicted, when = next, "next hour"
 		}
 	}
-	predictedPercent := predicted / totalRequest * 100
 	threshold := cpuThresholdFor(workload)
-	if predictedPercent < float64(threshold) {
+	if predicted < float64(threshold) {
 		return recheck, nil
 	}
 
 	return r.handleResume(ctx, workload, &phaseEvent{reason: ReasonAutoResume, message: fmt.Sprintf(
-		"forecast expects %.0f%% utilization %s (threshold %d%%), waking ahead of demand", predictedPercent, when, threshold)})
+		"forecast expects %.0f%% utilization %s (threshold %d%%), waking ahead of demand", predicted, when, threshold)})
 }
 
 // autoResumeLead is how far ahead of a predicted busy hour a paused workload
@@ -344,32 +373,20 @@ func (r *Reconciler) pausedRecheck() time.Duration {
 	return wait
 }
 
-// pausedRequest is the CPU the workload requested across its replicas
-// before it paused, from the snapshot taken then: scaled to zero, it has no
-// pods to read requests from.
-func pausedRequest(workload *v1alpha1.ManagedWorkload) float64 {
-	pause := workload.Status.Pause
-	if pause == nil || pause.Resources == nil {
-		return 0
-	}
-	return float64(pause.Resources.CPUMillis) * float64(pause.PreviousReplicas)
-}
-
 // seePausedDemand is a look at a paused workload's demand. Behind the
 // doorman, any request would have woken it, so a look that finds it still
 // paused found no demand, and one that finds a request waking it found
 // some. Without the doorman, demand can't be seen at all.
 //
-// The demand a wake shows is at least twice the activity threshold, of
-// what the workload requested: the forecast approaches a pattern it is
-// learning from below, so an hour seen at the threshold itself would never
-// quite be forecast to reach it. Once awake, the workload's own usage
-// counts if it's more.
+// The demand a wake shows is twice the activity threshold: the forecast
+// approaches a pattern it is learning from below, so an hour seen at the
+// threshold itself would never quite be forecast to reach it. Once awake,
+// the workload's own utilization counts if it's more.
 func (r *Reconciler) seePausedDemand(ctx context.Context, workload *v1alpha1.ManagedWorkload, engine forecaster, woken bool) {
 	routed := meta.IsStatusConditionTrue(workload.Status.Conditions, conditionWakeOnRequest)
 	var demand float64
 	if woken {
-		demand = 2 * pausedRequest(workload) * float64(cpuThresholdFor(workload)) / 100
+		demand = 2 * float64(cpuThresholdFor(workload))
 	}
 	r.seeDemand(ctx, workload, engine, demand, routed || woken)
 }
@@ -379,16 +396,16 @@ func (r *Reconciler) seePausedDemand(ctx context.Context, workload *v1alpha1.Man
 // the hour it's for, so that long covers what such a wake brings about.
 const resumeWarmup = autoResumeLead
 
-// awakeDemand is the demand an awake workload's usage shows. Starting up,
+// awakeDemand is the demand an awake workload's utilization shows. Starting up,
 // filling caches and compiling hot paths isn't anyone asking for it.
 // Counted, an autoResume wake would teach the forecast that the hour it
 // woke in is busy, and a week later it would wake an hour earlier, and
 // earlier again the week after. A wake by request shows its demand anyway.
-func (r *Reconciler) awakeDemand(workload *v1alpha1.ManagedWorkload, usage float64) float64 {
+func (r *Reconciler) awakeDemand(workload *v1alpha1.ManagedWorkload, percent float64) float64 {
 	if woke := workload.Status.LastActedAt; woke != nil && r.now().Sub(woke.Time) < resumeWarmup {
 		return 0
 	}
-	return usage
+	return percent
 }
 
 // seeDemand adds a look at the workload's demand to the hour under way, and
@@ -412,11 +429,11 @@ func (r *Reconciler) observeHour(ctx context.Context, workload *v1alpha1.Managed
 	prediction, err := engine.Observe(hour.peak, hour.start)
 	if err != nil {
 		log.FromContext(ctx).Error(err, "feeding the forecast",
-			"workload", workload.Name, "namespace", workload.Namespace, "cpu_millis", hour.peak)
+			"workload", workload.Name, "namespace", workload.Namespace, "cpu_percent", hour.peak)
 		return
 	}
 	r.emitEvent(workload, false, "Normal", ReasonPredictionFed, actionForecast,
-		"the hour from %s peaked at %.0fm CPU, forecast %.0fm, phase %s",
+		"the hour from %s peaked at %.0f%% of the CPU requested, forecast %.0f%%, phase %s",
 		hour.start.UTC().Format("15:04 UTC"), hour.peak, prediction, engine.GetPhase())
 
 	if engine.RegimeChanged() {

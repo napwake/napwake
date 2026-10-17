@@ -149,7 +149,7 @@ func (r *Reconciler) resetActivity(workload *v1alpha1.ManagedWorkload, source v1
 // observeActivity reads every activity source and advances the clock in
 // workload.Status.Activity. Any single source is enough to keep the workload
 // awake, so sources are combined by taking the latest time.
-func (r *Reconciler) observeActivity(ctx context.Context, workload *v1alpha1.ManagedWorkload, target client.Object, usage float64) activityObservation {
+func (r *Reconciler) observeActivity(ctx context.Context, workload *v1alpha1.ManagedWorkload, target client.Object, load cpuLoad) activityObservation {
 	now := r.now()
 	if workload.Status.Activity == nil {
 		r.resetActivity(workload, v1alpha1.ActivitySourceCreated)
@@ -191,14 +191,13 @@ func (r *Reconciler) observeActivity(ctx context.Context, workload *v1alpha1.Man
 		}
 	}
 
-	active, err := r.cpuActive(ctx, workload, usage)
-	if err != nil {
-		obs.cpuErr = err
-	} else if active {
+	if load.err != nil {
+		obs.cpuErr = load.err
+	} else if load.percent > float64(cpuThresholdFor(workload)) {
 		recordActivity(status, now, v1alpha1.ActivitySourceCPU)
 	}
 
-	active, err = r.prometheusActive(ctx, workload)
+	active, err := r.prometheusActive(ctx, workload)
 	if err != nil {
 		obs.prometheusErr = err
 	} else if active {
@@ -301,27 +300,6 @@ func activityAnnotationChanged(obj client.Object, recorded map[string]string) bo
 	return false
 }
 
-// cpuActive reports whether CPU usage is above the activity threshold, as a
-// percentage of the CPU requested across all replicas.
-func (r *Reconciler) cpuActive(ctx context.Context, workload *v1alpha1.ManagedWorkload, usage float64) (bool, error) {
-	if usage == 0 {
-		return false, nil
-	}
-	perReplica, err := r.metrics.CPURequestPerReplica(ctx, workload)
-	if err != nil {
-		return false, fmt.Errorf("%w: %w", errNoCPURequests, err)
-	}
-	replicas, err := r.metrics.Replicas(ctx, workload)
-	if err != nil {
-		return false, fmt.Errorf("reading replicas: %w", err)
-	}
-	requested := perReplica * float64(replicas)
-	if requested <= 0 {
-		return false, errNoCPURequests
-	}
-	return usage/requested*100 > float64(cpuThresholdFor(workload)), nil
-}
-
 // prometheusActive reports whether any configured Prometheus activity query
 // returns a value above zero.
 func (r *Reconciler) prometheusActive(ctx context.Context, workload *v1alpha1.ManagedWorkload) (bool, error) {
@@ -368,7 +346,7 @@ func podTemplateHash(target client.Object) string {
 // requested: in dry-run the workload stays Idle and reports the pause it
 // would make; otherwise it pauses.
 func (r *Reconciler) reconcileIdleClock(ctx context.Context, workload *v1alpha1.ManagedWorkload, target client.Object,
-	engine forecaster, usage float64) (*ctrl.Result, error) {
+	engine forecaster, load cpuLoad) (*ctrl.Result, error) {
 	now := r.now()
 	vetoed := false
 	defer func() {
@@ -376,7 +354,7 @@ func (r *Reconciler) reconcileIdleClock(ctx context.Context, workload *v1alpha1.
 			r.clearIdleVeto(workload)
 		}
 	}()
-	obs := r.observeActivity(ctx, workload, target, usage)
+	obs := r.observeActivity(ctx, workload, target, load)
 	pauseAt := workload.Status.Activity.PauseAt.Time
 
 	if obs.cpuErr != nil {
@@ -495,39 +473,17 @@ func (r *Reconciler) clearIdleVeto(workload *v1alpha1.ManagedWorkload) {
 // covers every hour autoResume would wake the workload for, so a workload
 // is never paused only to be woken straight back. It reports the busiest
 // of the two hours, and when it begins.
-func (r *Reconciler) forecastVeto(ctx context.Context, workload *v1alpha1.ManagedWorkload, engine forecaster) (vetoed bool, predicted float64, hour time.Time) {
+func (r *Reconciler) forecastVeto(_ context.Context, workload *v1alpha1.ManagedWorkload, engine forecaster) (vetoed bool, predicted float64, hour time.Time) {
 	if engine == nil || engine.GetPhase() < forecast.DailyActive {
-		return false, 0, time.Time{}
-	}
-	requested, err := r.requestedCPU(ctx, workload)
-	if err != nil {
-		log.FromContext(ctx).V(1).Info("not consulting the forecast before pausing: the CPU requested can't be read",
-			"workload", workload.Name, "namespace", workload.Namespace, "error", err.Error())
-		return false, 0, time.Time{}
-	}
-	if requested <= 0 {
 		return false, 0, time.Time{}
 	}
 	now := r.now()
 	hour = r.hourStart(now)
-	predicted = engine.Predict(0, now) / requested * 100
-	if next := engine.Predict(1, now) / requested * 100; next > predicted {
+	predicted = engine.Predict(0, now)
+	if next := engine.Predict(1, now); next > predicted {
 		predicted, hour = next, hour.Add(time.Hour)
 	}
 	return predicted >= float64(cpuThresholdFor(workload)), predicted, hour
-}
-
-// requestedCPU is the CPU the workload requests across its replicas.
-func (r *Reconciler) requestedCPU(ctx context.Context, workload *v1alpha1.ManagedWorkload) (float64, error) {
-	perReplica, err := r.metrics.CPURequestPerReplica(ctx, workload)
-	if err != nil {
-		return 0, fmt.Errorf("reading CPU requests: %w", err)
-	}
-	replicas, err := r.metrics.Replicas(ctx, workload)
-	if err != nil {
-		return 0, fmt.Errorf("reading replicas: %w", err)
-	}
-	return perReplica * float64(replicas), nil
 }
 
 // nextCheck is when the clock next needs evaluating: at the next CPU poll,

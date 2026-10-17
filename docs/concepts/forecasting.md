@@ -9,17 +9,19 @@ Most workloads follow predictable patterns:
 - **Daily**: Traffic peaks during business hours, drops overnight
 - **Weekly**: Weekdays are busier than weekends
 
-Hybernate learns these two patterns independently by feeding hourly CPU observations into a Holt-Winters model. Once it has enough data and confidence, it uses the learned patterns to:
+Hybernate learns these two patterns independently by feeding hourly CPU utilization into a Holt-Winters model. Once it has enough data and confidence, it uses the learned patterns to:
 
 - Hold off a pause when it's confident demand is coming in the hour under way or the next. It never causes a pause: the [activity clock](idle-detection.md) decides that
 - Wake paused workloads ahead of predicted demand, starting 15 minutes before an hour it expects to be busy
 
 ## What an Hour Records
 
-The forecast is fed each hour once it's over, as the busiest moment seen in it:
+The forecast learns CPU utilization: usage as a percentage of what the workload's own containers request across its replicas, the same measure `cpuThreshold` is set in (see [Idle Detection](idle-detection.md#what-counts-as-activity)). Holding back a pause and waking ahead of demand compare its forecast with `cpuThreshold` directly, so a forecast that keeps an idle workload awake would also wake it once paused.
 
-- While the workload is awake, its CPU is read every minute, and the hour records the highest reading. The peak, rather than the mean, is what the forecast's decisions need: the activity clock counts any minute above `cpuThreshold` as activity, so an hour busy only for its last ten minutes is an hour the workload has to be awake for. Usage in the first 15 minutes after a wake isn't counted: starting up isn't demand, and counted, a wake ahead of a busy hour would teach the forecast that the hour before it is busy too, so that it woke the workload earlier every week
-- While the workload is paused behind the [doorman](wake-on-request.md) (`WakeOnRequest=True`), a request would wake it, so a check that finds it still paused finds no demand. A request that wakes it counts as at least twice `cpuThreshold` of what it requested, however little it then uses, so the hour people arrive in is learned as busy
+It's fed each hour once it's over, as the busiest moment seen in it:
+
+- While the workload is awake, its CPU is read every minute, and the hour records the highest utilization. The peak, rather than the mean, is what the forecast's decisions need: the activity clock counts any minute above `cpuThreshold` as activity, so an hour busy only for its last ten minutes is an hour the workload has to be awake for. Usage in the first 15 minutes after a wake isn't counted: starting up isn't demand, and counted, a wake ahead of a busy hour would teach the forecast that the hour before it is busy too, so that it woke the workload earlier every week
+- While the workload is paused behind the [doorman](wake-on-request.md) (`WakeOnRequest=True`), a request would wake it, so a check that finds it still paused finds no demand. A request that wakes it counts as at least twice `cpuThreshold`, however little it then uses, so the hour people arrive in is learned as busy
 - While the workload is paused without the doorman, demand can't be seen, and the hour isn't recorded: demand it can't see isn't zero
 - An hour is recorded only if it was checked from its start to its end. The hour under way is kept in memory, so after an operator restart or a leader change, the hour it happened in is skipped, unless it was only minutes old, rather than recorded from the part seen after it
 
@@ -34,7 +36,7 @@ The model tracks four components:
 | **Daily components** | 24 offsets, one per hour of day: the shape of an average day | \( \gamma_1 = 0.1 \) |
 | **Weekly components** | 168 offsets, one per hour of week: how each weekday departs from that shape | \( \gamma_2 = 0.5 \) |
 
-Each hour, the model takes the hour's CPU observation \( Y(t) \), compares it to what it predicted (for confidence scoring), and updates all four components using exponential smoothing. The model is **additive**: idle workloads spend much of their time at zero demand, where a multiplicative model, which divides by the level and the seasonal factors, diverges.
+Each hour, the model takes the hour's utilization \( Y(t) \), compares it to what it predicted (for confidence scoring), and updates all four components using exponential smoothing. The model is **additive**: idle workloads spend much of their time at zero demand, where a multiplicative model, which divides by the level and the seasonal factors, diverges.
 
 \[
 \begin{aligned}
@@ -101,7 +103,7 @@ Confidence is \( 1 - \text{WAPE} \), the **weighted absolute percentage error**:
 C = 1 - \frac{\sum_{i} |F(i) - Y(i)|}{\max\bigl(\sum_{i} Y(i),\; n \cdot f\bigr)}
 \]
 
-A confidence of 75% means the forecast's total error over the window is 25% of the demand in it. Unlike an average of per-hour percentage errors, it is defined when demand is zero, and an hour of zero demand forecast as zero isn't counted as a perfect hour. The denominator is never less than \( n \cdot f \), where \( f \) is the workload's mean hourly demand over about a week, and at least 10 millicores: a quiet weekend day is judged against the demand of a typical day, and a workload that idles at a few millicores isn't judged on its noise.
+A confidence of 75% means the forecast's total error over the window is 25% of the demand in it. Unlike an average of per-hour percentage errors, it is defined when demand is zero, and an hour of zero demand forecast as zero isn't counted as a perfect hour. The denominator is never less than \( n \cdot f \), where \( f \) is the workload's mean hourly demand over about a week, and at least 1% of the CPU requested: a quiet weekend day is judged against the demand of a typical day, and a workload that idles at a sliver of its request isn't judged on its noise.
 
 - **Daily confidence** is scored over the last 24 observed hours
 - **Weekly confidence** is scored over the last 168 observed hours: a whole week of weekdays and weekend must be forecast well, not just the day just gone
@@ -145,7 +147,7 @@ The engine's learned state (the model's components, the scored errors, the anoma
 - No external database, persistent volume, or ConfigMap is needed
 - Each workload has its own independent engine
 
-State that can't be read, from an older version or a hand edit, is discarded with a `ForecastReset` warning event, and the engine starts learning again.
+State that can't be read, from an older version or a hand edit, is discarded with a `ForecastReset` warning event, and the engine starts learning again. State saved by a version of Hybernate that learned millicores rather than utilization is from an older version.
 
 ## Wall-Clock Alignment
 

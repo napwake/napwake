@@ -91,6 +91,7 @@ func (f *stubForecaster) AnomalyDetected() bool                { return f.anomal
 type stubMetrics struct {
 	cpuMillis        float64
 	cpuPerReplica    float64
+	noCPURequests    bool
 	memoryPerReplica float64
 	replicas         int32
 	pvcBytes         float64
@@ -101,8 +102,16 @@ func (m *stubMetrics) WorkloadCPUMillis(_ context.Context, _ *v1alpha1.ManagedWo
 	return m.cpuMillis, m.err
 }
 
+// CPURequestPerReplica is 100m unless cpuPerReplica says otherwise, so that
+// with one replica a utilization reads as the millicores used.
 func (m *stubMetrics) CPURequestPerReplica(_ context.Context, _ *v1alpha1.ManagedWorkload) (float64, error) {
-	return m.cpuPerReplica, m.err
+	if m.noCPURequests {
+		return 0, m.err
+	}
+	if m.cpuPerReplica > 0 {
+		return m.cpuPerReplica, m.err
+	}
+	return 100, m.err
 }
 
 func (m *stubMetrics) PodRequestsPerReplica(_ context.Context, _ *v1alpha1.ManagedWorkload) (cpuMillis, memBytes float64, err error) {
@@ -508,8 +517,8 @@ func pausedForecastWorkload() *v1alpha1.ManagedWorkload {
 
 // Behind the doorman a request would wake the workload, so an hour spent
 // paused is an hour nobody asked for it, and an hour a request woke it in
-// is busy, however little it went on to use: at least twice the activity
-// threshold of what it requested, 2 x 10% of 100m.
+// is busy, however little it went on to use: twice the activity threshold,
+// 2 x 10%, of the CPU requested.
 func TestPausedHour_DemandBehindTheDoorman(t *testing.T) {
 	tests := []struct {
 		name   string
@@ -551,7 +560,7 @@ func TestPausedHour_DemandBehindTheDoorman(t *testing.T) {
 // Pre-waking starts before a predicted busy hour, so the workload is Ready
 // when people arrive rather than starting as they do.
 func TestAutoResume_WakesAheadOfPredictedDemand(t *testing.T) {
-	busy, quiet := 50.0, 1.0 // millicores of the 100m requested: 50% and 1%
+	busy, quiet := 50.0, 1.0 // percent of the CPU requested
 	tests := []struct {
 		name       string
 		at         time.Time

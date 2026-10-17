@@ -22,13 +22,10 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
-	"slices"
 	"strings"
 	"testing"
 	"time"
 
-	"github.com/go-logr/logr"
-	"github.com/go-logr/logr/funcr"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	appsv1 "k8s.io/api/apps/v1"
@@ -246,7 +243,7 @@ func TestActivityClock_DoesNotActWithoutCPUData(t *testing.T) {
 		wantReason string
 	}{
 		{name: "metrics API down", metrics: stubMetrics{err: errors.New("metrics API unavailable")}, wantReason: "MetricsUnavailable"},
-		{name: "no CPU requests", metrics: stubMetrics{cpuMillis: 50, replicas: 1}, wantReason: "NoCPURequests"},
+		{name: "no CPU requests", metrics: stubMetrics{cpuMillis: 50, replicas: 1, noCPURequests: true}, wantReason: "NoCPURequests"},
 	}
 
 	for _, tt := range tests {
@@ -286,14 +283,14 @@ func TestActivityClock_ForecastVeto(t *testing.T) {
 		engine    *stubForecaster
 		wantPause bool
 	}{
-		{name: "confident forecast of demand defers the pause", engine: &stubForecaster{phase: forecast.DailyActive, predictValue: 300}},
-		{name: "confident forecast of no demand", engine: &stubForecaster{phase: forecast.DailyActive, predictValue: 20}, wantPause: true},
-		{name: "unconfident forecast is ignored", engine: &stubForecaster{phase: forecast.DailySuggesting, predictValue: 300}, wantPause: true},
+		{name: "confident forecast of demand defers the pause", engine: &stubForecaster{phase: forecast.DailyActive, predictValue: 30}},
+		{name: "confident forecast of no demand", engine: &stubForecaster{phase: forecast.DailyActive, predictValue: 2}, wantPause: true},
+		{name: "unconfident forecast is ignored", engine: &stubForecaster{phase: forecast.DailySuggesting, predictValue: 30}, wantPause: true},
 		// autoResume would wake it straight back for the rest of this hour.
 		{name: "demand forecast for the rest of this hour", engine: &stubForecaster{phase: forecast.DailyActive,
-			predictByHour: map[int]float64{0: 300, 1: 20}}},
+			predictByHour: map[int]float64{0: 30, 1: 2}}},
 		{name: "demand forecast for the next hour", engine: &stubForecaster{phase: forecast.DailyActive,
-			predictByHour: map[int]float64{0: 20, 1: 300}}},
+			predictByHour: map[int]float64{0: 2, 1: 30}}},
 	}
 
 	for _, tt := range tests {
@@ -324,7 +321,7 @@ func vetoEvents(recorder *events.FakeRecorder) int {
 func TestActivityClock_ForecastVetoIsACondition(t *testing.T) {
 	target := clockTarget("app:v1", nil)
 	workload := clockWorkload(fixedTime.Add(-61*time.Minute), target)
-	engine := &stubForecaster{phase: forecast.DailyActive, predictByHour: map[int]float64{0: 20, 1: 300}}
+	engine := &stubForecaster{phase: forecast.DailyActive, predictByHour: map[int]float64{0: 2, 1: 30}}
 	metrics := idleCPU
 	pauser := &stubPauser{pauseDone: true}
 	r := newAutomationReconciler(t, workload, engine, automationOpts{metrics: &metrics, pauser: pauser})
@@ -345,7 +342,7 @@ func TestActivityClock_ForecastVetoIsACondition(t *testing.T) {
 	written := getWorkload(t, r, "api")
 	assert.True(t, meta.IsStatusConditionTrue(written.Status.Conditions, conditionIdleVetoed), "and it's written")
 
-	engine.predictByHour[1] = 20
+	engine.predictByHour[1] = 2
 	_, err := r.reconcileAutomation(context.Background(), workload, target)
 	require.NoError(t, err)
 
@@ -401,43 +398,42 @@ func TestActivityClock_ForecastDoesNotVetoAPauseUnderWay(t *testing.T) {
 	assert.Zero(t, vetoEvents(r.Recorder.(*events.FakeRecorder)))
 }
 
-// The veto can't judge the forecast when the CPU the workload requests
-// can't be read, and the pause goes ahead. Why is logged, rather than the
-// forecast being silently ignored.
-func TestActivityClock_ForecastVetoSaysWhyItCantJudge(t *testing.T) {
+// meshMetrics is a workload with an injected sidecar: its pod requests
+// twice what its own containers do.
+type meshMetrics struct{ stubMetrics }
+
+func (m *meshMetrics) PodRequestsPerReplica(_ context.Context, _ *v1alpha1.ManagedWorkload) (float64, float64, error) {
+	return 2 * m.cpuPerReplica, m.memoryPerReplica, nil
+}
+
+// The veto and autoResume judge the forecast by one measure, so a forecast
+// that holds an idle workload awake wakes it once it's paused. Judged
+// against the whole pod's request, sidecars included, the same forecast was
+// half the utilization once paused, and never woke it.
+func TestActivityClock_VetoAndAutoResumeAgree(t *testing.T) {
 	target := clockTarget("app:v1", nil)
 	workload := clockWorkload(fixedTime.Add(-61*time.Minute), target)
-	engine := &stubForecaster{phase: forecast.DailyActive, predictValue: 300}
-	metrics := &failingRequestsMetrics{stubMetrics: idleCPU}
-	pauser := &stubPauser{pauseDone: true}
+	workload.Spec.IdlePolicy.AutoResume = true
+	engine := &stubForecaster{phase: forecast.DailyActive, predictValue: 15}
+	pauser := &stubPauser{pauseDone: true, resumeDone: true}
 	r := newAutomationReconciler(t, workload, engine, automationOpts{pauser: pauser})
-	r.metrics = metrics
-	var logged []string
-	logger := funcr.New(func(_, args string) { logged = append(logged, args) }, funcr.Options{Verbosity: 1})
+	r.metrics = &meshMetrics{stubMetrics{cpuMillis: 5, cpuPerReplica: 100, replicas: 1}}
 
-	_, err := r.reconcileAutomation(logr.NewContext(context.Background(), logger), workload, target)
+	_, err := r.reconcileAutomation(context.Background(), workload, target)
 	require.NoError(t, err)
+	require.True(t, meta.IsStatusConditionTrue(workload.Status.Conditions, conditionIdleVetoed),
+		"a forecast of 15%% holds it awake")
 
-	assert.Equal(t, 1, pauser.pauseCalls, "a forecast it can't judge doesn't hold back the pause")
-	assert.True(t, slices.ContainsFunc(logged, func(l string) bool {
-		return strings.Contains(l, "CPU requested can't be read") && strings.Contains(l, `"workload"="api"`)
-	}), "logged: %v", logged)
-}
+	engine.predictValue = 5
+	_, err = r.reconcileAutomation(context.Background(), workload, target)
+	require.NoError(t, err)
+	require.Equal(t, v1alpha1.PhasePaused, workload.Status.Phase)
 
-// failingRequestsMetrics reports usage, but not the requests it's judged
-// against, once the activity clock has read them: as when a pod template's
-// requests are removed between two reads.
-type failingRequestsMetrics struct {
-	stubMetrics
-	reads int
-}
-
-func (m *failingRequestsMetrics) CPURequestPerReplica(ctx context.Context, w *v1alpha1.ManagedWorkload) (float64, error) {
-	m.reads++
-	if m.reads > 1 {
-		return 0, errors.New("no pods")
-	}
-	return m.stubMetrics.CPURequestPerReplica(ctx, w)
+	engine.predictValue = 15
+	r.clock = func() time.Time { return fixedTime.Add(5 * time.Minute) }
+	_, err = r.reconcileAutomation(context.Background(), workload, target)
+	require.NoError(t, err)
+	assert.Equal(t, 1, pauser.resumeCalls, "the forecast that held it awake wakes it")
 }
 
 func TestHourStart(t *testing.T) {

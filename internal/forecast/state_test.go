@@ -45,7 +45,7 @@ func trainedEngine(t testing.TB) *Engine {
 	e := newTestEngine()
 	for i := range 5 * WeeklySeason {
 		at := hourAt(i)
-		_, err := e.Observe(officeHours(at)*0.9+float64(i%7), at)
+		_, err := e.Observe(officeHours(at)*0.9+0.1*float64(i%7), at)
 		require.NoError(t, err)
 	}
 	return e
@@ -139,7 +139,8 @@ func TestState_ImportRejectsMalformedText(t *testing.T) {
 		"not base64":       "%%%",
 		"not gzip":         base64.StdEncoding.EncodeToString([]byte("plain")),
 		"not json":         encodeState(t, []byte("not json")),
-		"bare version":     encodeState(t, []byte(`{"v":2}`)),
+		"bare version":     encodeState(t, []byte(`{"v":3}`)),
+		"version 2":        encodeState(t, []byte(`{"v":2}`)),
 		"version 1":        encodeState(t, []byte(`{"v":1}`)),
 		"empty slices":     encodeState(t, []byte(`{"v":1,"ds":{"w":24,"e":[]},"ws":{"w":24,"e":[]}}`)),
 		"decompresses big": bomb,
@@ -166,7 +167,7 @@ func exercise(t *testing.T, e *Engine) {
 	}
 	for i := range 30 {
 		at := start.Add(time.Duration(i) * time.Hour)
-		_, err := e.Observe(float64(i%5)*100, at)
+		_, err := e.Observe(float64(i%5)*10, at)
 		if err != nil {
 			require.ErrorIs(t, err, ErrInvalidObservation)
 		}

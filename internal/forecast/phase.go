@@ -52,9 +52,9 @@ func (p Phase) String() string {
 }
 
 const (
-	// maxDemand bounds an observation. No workload uses a million cores, so
-	// anything larger is a corrupt metric, and the bound keeps every sum the
-	// engine takes finite.
+	// maxDemand bounds an observation. No workload uses ten million times
+	// the CPU it requests, so anything larger is a corrupt metric, and the
+	// bound keeps every sum the engine takes finite.
 	maxDemand = 1e9
 
 	// demotionMargin is how far below the threshold confidence must fall to

@@ -88,13 +88,14 @@ type Params struct {
 
 	// Floor is the demand, in the unit observed, below which a difference
 	// doesn't matter. Accuracy and anomalies are judged against at least
-	// this much, so a workload idling at a few millicores isn't scored on
-	// its noise.
+	// this much, so a workload idling at a sliver of its request isn't
+	// scored on its noise.
 	Floor float64
 }
 
-// DefaultParams suit hourly CPU in millicores, and were chosen by
-// simulating office-hours, always-on, idle, and noisy traces. A weekly slot
+// DefaultParams suit each hour's peak CPU utilization, as a percentage of
+// the CPU requested, and were chosen by simulating office-hours,
+// always-on, idle, and noisy traces. A weekly slot
 // is updated once a week, so Gamma2 is high enough for a weekday/weekend
 // pattern to be learned in about three weeks. Alpha and Gamma1 are low so
 // that the level stays the mean demand and the daily components the
@@ -105,7 +106,7 @@ func DefaultParams() Params {
 		Beta:   0.001,
 		Gamma1: 0.1,
 		Gamma2: 0.5,
-		Floor:  10,
+		Floor:  1,
 	}
 }
 
