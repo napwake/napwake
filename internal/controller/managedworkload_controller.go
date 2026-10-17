@@ -164,6 +164,10 @@ func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (res ctrl.
 
 	var workload v1alpha1.ManagedWorkload
 	if err := r.Get(ctx, req.NamespacedName, &workload); err != nil {
+		// Deleted without its finalizer running, it would leave its series.
+		if apierrors.IsNotFound(err) {
+			metrics.DeleteWorkload(req.Namespace, req.Name)
+		}
 		return ctrl.Result{}, client.IgnoreNotFound(err)
 	}
 

@@ -857,6 +857,20 @@ func TestResume_ReportsReplicasNotReady(t *testing.T) {
 	assert.Equal(t, "AllReplicasReady", c.Reason)
 }
 
+// A ManagedWorkload deleted without its finalizer running, such as after
+// someone removed it by hand, leaves no series behind.
+func TestReconcile_GoneWorkloadsSeriesAreDeleted(t *testing.T) {
+	metrics.WorkloadPhase.WithLabelValues("default", "gone", "Paused").Set(1)
+	r := newTestReconciler(t, nil, &stubPauser{})
+
+	for range 2 {
+		_, err := r.Reconcile(context.Background(), reconcileFor("gone"))
+		require.NoError(t, err)
+	}
+
+	assert.False(t, metrics.WorkloadPhase.DeleteLabelValues("default", "gone", "Paused"), "already deleted")
+}
+
 // A cache that hasn't yet seen a resume finish still holds the workload
 // Paused. Routing it from that would put back the doorman slices its
 // resume had just removed, sending requests to the doorman rather than to
