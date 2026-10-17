@@ -50,10 +50,6 @@ type ManagedWorkloadList struct {
 	Items           []ManagedWorkload `json:"items"`
 }
 
-func init() {
-	SchemeBuilder.Register(&ManagedWorkload{}, &ManagedWorkloadList{})
-}
-
 // --- Spec ---
 
 // ManagedWorkloadSpec defines the desired lifecycle behavior for a workload.
