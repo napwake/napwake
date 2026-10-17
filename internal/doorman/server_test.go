@@ -156,7 +156,8 @@ func readySlice(port int32) *discoveryv1.EndpointSlice {
 }
 
 // newTestServer is a doorman over a fake client holding objs. Tests run
-// their backends on loopback, which the doorman otherwise never dials.
+// their backends on loopback, which the doorman otherwise never dials, and
+// stop without the drain a doorman pod gets.
 func newTestServer(t *testing.T, wrap func(client.WithWatch) client.WithWatch, objs ...client.Object) (*Server, client.WithWatch) {
 	t.Helper()
 	var c client.WithWatch
@@ -166,6 +167,7 @@ func newTestServer(t *testing.T, wrap func(client.WithWatch) client.WithWatch, o
 	}
 	s := NewServer(c, nil, Options{Host: "127.0.0.1"})
 	s.backends.allowed = func(netip.Addr) bool { return true }
+	s.acceptFor = 0
 	return s, c
 }
 
@@ -1115,15 +1117,20 @@ func TestServer_RefusesPromptlyWhenADrainingRouteHasNothingReady(t *testing.T) {
 
 // On shutdown the doorman stops accepting, keeps the connections it carries
 // for the grace period, and only then closes them.
+// A stopping doorman leaves its Service at once, but goes on holding and
+// passing through new connections for a while, since only the operator can
+// send them elsewhere. Then it stops accepting, and closes what's left at
+// the end of the grace period.
 func TestServer_ShutdownDrainsConnections(t *testing.T) {
 	port := freePort(t)
-	s, _ := newTestServer(t, nil, pausedWorkload("api", port, time.Minute), readySlice(echoPort(t)))
-	s.grace = 500 * time.Millisecond
+	s, c := newTestServer(t, nil, pausedWorkload("api", port, time.Minute))
+	s.acceptFor = 500 * time.Millisecond
+	s.grace = time.Second
 	stop := run(t, s)
 
-	conn := dial(t, port)
-	send(t, conn, "before\n")
-	echoed(t, conn, "before\n")
+	before := dial(t, port)
+	send(t, before, "before\n")
+	require.Eventually(t, func() bool { return heldCount(s) == 1 }, 5*time.Second, 10*time.Millisecond)
 
 	stopped := make(chan struct{})
 	go func() {
@@ -1132,22 +1139,31 @@ func TestServer_ShutdownDrainsConnections(t *testing.T) {
 	}()
 	require.Eventually(t, func() bool { return s.Ready(nil) != nil }, time.Second, 10*time.Millisecond,
 		"a stopping doorman leaves its Service")
+
+	during := dial(t, port)
+	send(t, during, "during\n")
+	require.Eventually(t, func() bool { return heldCount(s) == 2 }, time.Second, 10*time.Millisecond,
+		"a connection arriving as the doorman stops is held")
+	require.NoError(t, c.Create(context.Background(), readySlice(echoPort(t))))
+	echoed(t, before, "before\n")
+	echoed(t, during, "during\n")
+
 	require.Eventually(t, func() bool {
-		c, err := net.DialTimeout("tcp", net.JoinHostPort("127.0.0.1", strconv.Itoa(int(port))), time.Second)
+		conn, err := net.DialTimeout("tcp", net.JoinHostPort("127.0.0.1", strconv.Itoa(int(port))), time.Second)
 		if err == nil {
-			_ = c.Close()
+			_ = conn.Close()
 		}
 		return err != nil
-	}, time.Second, 10*time.Millisecond, "no new connections")
-	send(t, conn, "during\n")
-	echoed(t, conn, "during\n")
+	}, 2*time.Second, 10*time.Millisecond, "no new connections once the accepting part of the drain is over")
+	send(t, during, "still\n")
+	echoed(t, during, "still\n")
 
 	select {
 	case <-stopped:
 	case <-time.After(5 * time.Second):
 		t.Fatal("shutdown didn't finish after the grace period")
 	}
-	closedWithin(t, conn)
+	closedWithin(t, during)
 }
 
 func TestServer_ReadinessFollowsRouteSync(t *testing.T) {
@@ -1195,6 +1211,7 @@ func TestServer_InformerWakesHeldConnections(t *testing.T) {
 	c := fake.NewClientBuilder().WithScheme(scheme).WithObjects(pausedWorkload("api", port, time.Minute)).Build()
 	s := NewServer(c, nil, Options{Host: "127.0.0.1", Informers: informers})
 	s.backends.allowed = func(netip.Addr) bool { return true }
+	s.acceptFor = 0
 	run(t, s)
 
 	conn := dial(t, port)
