@@ -572,3 +572,25 @@ func TestScanCluster_ProtectedNamespace(t *testing.T) {
 	assert.Zero(t, CouldSave(w))
 	assert.Zero(t, report.Totals.Replayed.Workloads, "not counted")
 }
+
+// A workload put back in dry-run keeps what it saved this month while live;
+// its would-be pauses since are measured, never added to what was saved.
+func TestScanCluster_SavedBeforeGoingBackToDryRun(t *testing.T) {
+	back := managedFor("back", v1alpha1.ManagedWorkloadStatus{Phase: v1alpha1.PhaseRunning,
+		Cost: &v1alpha1.CostStatus{SavedThisMonth: "$5.00"},
+		DryRun: &v1alpha1.DryRunStatus{Since: metav1.NewTime(scanTime.Add(-10 * time.Hour)), Pauses: 1,
+			Slept: metav1.Duration{Duration: 4 * time.Hour}}})
+	back.Spec.DryRun = true
+	objs := append(deploymentWithRollout("back", testNamespace, 1, 30*24*time.Hour), back,
+		makePodMetrics("back", testNamespace, "1m", "10Mi"))
+
+	report := scanWorkloads(t, objs...)
+
+	w := byName(report)["back"]
+	assert.InDelta(t, 5.00, w.SavedThisMonth, 0.001)
+	assert.InDelta(t, 5.00, report.Totals.SavedThisMonth, 0.001)
+	assert.Zero(t, report.Totals.Live)
+	assert.Equal(t, 1, report.Totals.DryRun)
+	require.NotNil(t, w.Measured)
+	assert.InDelta(t, w.Measured.MonthlyFreed, CouldSave(w), 0.001, "what it would save is measured, not saved")
+}

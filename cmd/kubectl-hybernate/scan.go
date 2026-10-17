@@ -568,9 +568,13 @@ func writeHeadline(p *printer, t discovery.Totals, replayed string) {
 		p.line("  Hybernate has %s paused right now, freeing %s an hour.",
 			countOf(t.Paused, "workload"), cents(t.PausedHourlyCost))
 	}
-	if t.Live > 0 {
+	switch {
+	case t.Live > 0:
 		p.line("  Hybernate has saved %s this month pausing %s.", dollars(t.SavedThisMonth),
 			countOf(t.Live, "live workload"))
+	case t.SavedThisMonth > 0:
+		p.line("  Hybernate has saved %s this month, pausing workloads since put back in dry-run.",
+			dollars(t.SavedThisMonth))
 	}
 	if t.DryRun > 0 {
 		p.line("  %s in dry-run: measured by Hybernate since starting, %s would have slept %s, freeing %s,",
@@ -767,19 +771,21 @@ func sleptCells(wl Workload) (slept, wakes, since string, sleptSort float64) {
 }
 
 // savingColumns says which money columns a table needs: what Hybernate has
-// saved, for live workloads, and what pausing could save, for those it
-// doesn't pause yet, when the scan knows either for any of them.
+// saved, for live workloads and any that saved this month before going back
+// to dry-run, and what pausing could save, for those it doesn't pause yet,
+// when the scan knows either for any of them.
 func savingColumns(workloads []Workload) (saving, couldSave bool) {
 	for _, wl := range workloads {
-		saving = saving || (wl.Managed && !wl.DryRun)
+		saving = saving || (wl.Managed && !wl.DryRun) || wl.SavedThisMonth > 0
 		couldSave = couldSave || wl.Measured != nil || (!wl.Managed && wl.History != nil)
 	}
 	return saving, couldSave
 }
 
-// savedCell is what Hybernate has saved this month pausing a live workload.
+// savedCell is what Hybernate has saved this month pausing a workload: a
+// live one, or one in dry-run that saved while it was live.
 func savedCell(wl Workload) string {
-	if !wl.Managed || wl.DryRun {
+	if !wl.Managed || (wl.DryRun && wl.SavedThisMonth == 0) {
 		return "-"
 	}
 	return dollars(wl.SavedThisMonth)

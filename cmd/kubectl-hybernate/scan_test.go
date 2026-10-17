@@ -542,6 +542,22 @@ func TestWriteScan_SavedThisMonth(t *testing.T) {
 		"a live workload's saving is in SAVED THIS MONTH, with nothing estimated")
 }
 
+// A workload put back in dry-run shows what it saved while live, and the
+// headline counts it, though nothing is live now.
+func TestWriteScan_SavedBeforeGoingBackToDryRun(t *testing.T) {
+	result := scanResult{Cluster: "staging", ClusterReport: &discovery.ClusterReport{Namespaces: 1,
+		Workloads: []Workload{{Namespace: "preview-3", Kind: "Deployment", Name: "web", State: discovery.StateIdle,
+			Managed: true, DryRun: true, SavedThisMonth: 7, Measured: &discovery.Measured{}}}}}
+	result.Totals = discovery.Totals{Workloads: 1, DryRun: 1, SavedThisMonth: 7}
+	var out bytes.Buffer
+
+	require.NoError(t, writeScan(&out, result, scanOptions{output: "table"}))
+
+	got := out.String()
+	assert.Contains(t, got, "Hybernate has saved $7 this month, pausing workloads since put back in dry-run.")
+	assert.Regexp(t, `preview-3\s+deployment/web\s+idle \(dry-run\)\s+measuring since Jan 1\s+\$0\s+\$0.00\s+\$7\s`, got)
+}
+
 func TestWriteScan_Protected(t *testing.T) {
 	result := historyResult()
 	for i := range result.Workloads {

@@ -367,8 +367,11 @@ func basisSentence(result scanResult) string {
 func headlineFor(t discovery.Totals, over string) (headline, []fact) {
 	saved := figure{Value: dollars(t.SavedThisMonth), Label: "saved by Hybernate this month",
 		Detail: "nothing is live yet"}
-	if t.Live > 0 {
+	switch {
+	case t.Live > 0:
 		saved.Detail = "so far, pausing " + countOf(t.Live, "live workload")
+	case t.SavedThisMonth > 0:
+		saved.Detail = "so far, pausing workloads since put back in dry-run"
 	}
 	h := headline{Figures: []figure{saved}}
 

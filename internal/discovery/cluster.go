@@ -128,8 +128,9 @@ type Workload struct {
 	ScaledByHand bool `json:"scaledByHand,omitempty"`
 	// Measured is what dry-run has measured, for a workload in dry-run.
 	Measured *Measured `json:"measured,omitempty"`
-	// SavedThisMonth is what Hybernate has saved this month pausing a live
-	// workload, priced at the rates it uses for the workload.
+	// SavedThisMonth is what Hybernate has saved this month pausing the
+	// workload, priced at the rates it uses for the workload. One in dry-run
+	// keeps what it saved while it was live.
 	SavedThisMonth float64 `json:"savedThisMonth,omitempty"`
 	// Slept is how long Hybernate has had a live workload paused, and how
 	// many times it was woken, since Since: the start of the month, or when
@@ -210,7 +211,8 @@ type Totals struct {
 	IdleMonthlyCost float64 `json:"idleMonthlyCost"`
 	// Replayed sums the history of unmanaged workloads, Measured what
 	// Hybernate measured for those in dry-run, and SavedThisMonth what it
-	// has saved this month pausing live ones: each from its own source.
+	// has saved this month pausing managed ones, including what one now in
+	// dry-run saved while live: each from its own source.
 	Replayed       ReplayTotals `json:"replayed"`
 	Measured       Measured     `json:"measured"`
 	DryRun         int          `json:"dryRun"`
@@ -409,9 +411,10 @@ func measured(mw *v1alpha1.ManagedWorkload, hourlyCost float64, now time.Time) *
 }
 
 // SavedThisMonth reads what Hybernate records it has saved this month
-// pausing a live workload.
+// pausing a workload. A workload put back in dry-run keeps what it saved
+// while live: dry-run never pauses, so it adds nothing to the record.
 func SavedThisMonth(mw *v1alpha1.ManagedWorkload) float64 {
-	if mw == nil || mw.Spec.DryRun || mw.Status.Cost == nil {
+	if mw == nil || mw.Status.Cost == nil {
 		return 0
 	}
 	saved, err := strconv.ParseFloat(strings.TrimPrefix(mw.Status.Cost.SavedThisMonth, "$"), 64)
@@ -579,6 +582,7 @@ func totals(workloads []Workload) Totals {
 	var t Totals
 	for _, w := range workloads {
 		t.Workloads++
+		t.SavedThisMonth += w.SavedThisMonth
 		switch {
 		case w.Measured != nil:
 			t.DryRun++
@@ -588,7 +592,6 @@ func totals(workloads []Workload) Totals {
 			t.Measured.MonthlyFreed += w.Measured.MonthlyFreed
 		case w.Managed && !w.DryRun:
 			t.Live++
-			t.SavedThisMonth += w.SavedThisMonth
 		}
 		replayed := w.History != nil && !w.Managed && !w.Protected
 		if h := w.History; replayed {
