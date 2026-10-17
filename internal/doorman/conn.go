@@ -386,10 +386,17 @@ func readHead(conn net.Conn, silent time.Duration) ([]byte, headState) {
 		return nil, headClosed
 	}
 	head := buf[:n]
+	_ = conn.SetReadDeadline(time.Now().Add(headTimeout)) // a failure just means no deadline
+	for startsMethod(head) {
+		n, err := conn.Read(buf[len(head):])
+		head = buf[:len(head)+n]
+		if err != nil {
+			break
+		}
+	}
 	if !looksLikeHTTP(head) {
 		return head, headSent
 	}
-	_ = conn.SetReadDeadline(time.Now().Add(headTimeout)) // a failure just means no deadline
 	for len(head) < maxPeek && !headersEnded(head) {
 		if len(head) == cap(head) {
 			head = append(head, make([]byte, 4<<10)...)[:len(head)]

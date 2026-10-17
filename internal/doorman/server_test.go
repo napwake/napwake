@@ -1931,3 +1931,41 @@ func TestServer_LeavesAnotherReplicasStamp(t *testing.T) {
 	assert.Equal(t, stamped, lastRequest(t, c))
 	assert.Zero(t, eventCount(recorder, "WokenByRequest"))
 }
+
+func TestStartsMethod(t *testing.T) {
+	tests := []struct {
+		head string
+		want bool
+	}{
+		{head: "G", want: true},
+		{head: "GE", want: true},
+		{head: "GET", want: true},
+		{head: "OPTIO", want: true},
+		{head: "GET "},
+		{head: "GET /"},
+		{head: "GX"},
+		{head: "\x16\x03"},
+		{head: ""},
+	}
+	for _, tt := range tests {
+		t.Run(strconv.Quote(tt.head), func(t *testing.T) {
+			assert.Equal(t, tt.want, startsMethod([]byte(tt.head)))
+		})
+	}
+}
+
+// A request whose first segment stops short of its method's space, as a
+// proxy or a slow link can split it, is still read as HTTP, so a browser
+// gets the page rather than being held.
+func TestServer_ReadsARequestSplitInsideItsMethod(t *testing.T) {
+	port := freePort(t)
+	startServer(t, pausedWorkload("api", port, time.Minute))
+
+	conn := dial(t, port)
+	send(t, conn, browserGET[:2])
+	time.Sleep(100 * time.Millisecond)
+	send(t, conn, browserGET[2:])
+
+	resp, _ := readResponse(t, conn)
+	assert.Equal(t, http.StatusServiceUnavailable, resp.StatusCode)
+}
