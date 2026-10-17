@@ -56,17 +56,17 @@ spec:
             - --doorman
             - --health-probe-bind-address=:8081
             {{- with .Values.doorman.healthCheckUserAgents }}
-            - --doorman-health-check-user-agents={{ join "," . }}
+            - {{ printf "--doorman-health-check-user-agents=%s" (join "," .) | quote }}
             {{- end }}
             {{- with .Values.watchNamespaces }}
-            - --watch-namespaces={{ join "," . }}
+            - {{ printf "--watch-namespaces=%s" (join "," .) | quote }}
             {{- end }}
             {{- if .Values.metrics.enabled }}
-            - --metrics-bind-address=:{{ .Values.metrics.port }}
-            - --metrics-secure={{ .Values.metrics.secure }}
+            - {{ printf "--metrics-bind-address=:%v" .Values.metrics.port | quote }}
+            - {{ printf "--metrics-secure=%v" .Values.metrics.secure | quote }}
             {{- end }}
-            - --zap-log-level={{ .Values.logLevel }}
-            - --zap-encoder={{ .Values.logEncoder }}
+            - {{ printf "--zap-log-level=%v" .Values.logLevel | quote }}
+            - {{ printf "--zap-encoder=%v" .Values.logEncoder | quote }}
           env:
             - name: MEMORY_LIMIT
               valueFrom:
@@ -286,12 +286,12 @@ spec:
     - to:
         {{- range .podCIDRs }}
         - ipBlock:
-            cidr: {{ . }}
+            cidr: {{ . | quote }}
         {{- end }}
     - to:
         {{- range .apiServer }}
         - ipBlock:
-            cidr: {{ . }}
+            cidr: {{ . | quote }}
         {{- end }}
       ports:
         {{- range .apiServerPorts }}

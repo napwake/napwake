@@ -115,7 +115,7 @@ spec:
             {{- with $.Values.watchNamespaces }}
             - {{ printf "--watch-namespaces=%s" (join "," .) | quote }}
             {{- end }}
-            - --zap-log-level={{ $.Values.logLevel }}
+            - {{ printf "--zap-log-level=%v" $.Values.logLevel | quote }}
             - --zap-encoder=console
           securityContext:
             readOnlyRootFilesystem: true

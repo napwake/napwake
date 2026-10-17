@@ -193,6 +193,11 @@ check-chart: ## Lint the Helm chart, render it for each provider's Kubernetes ve
 	[ "$$(grep -c 'team: checkout' <<<"$$out")" = 2 ] && [ "$$(grep -c 'priorityClassName: hybernate-critical' <<<"$$out")" = 3 ] && \
 		grep -q 'name: GOMAXPROCS' <<<"$$out" && ! grep -q 'control-plane: other' <<<"$$out" || { \
 		echo "podLabels, priorityClassName or doorman.extraEnv don't reach the operator's, the doorman's and the guard's pods, or podLabels replaced a selector label"; exit 1; }
+	@out=$$(helm template hybernate charts/hybernate --set 'doorman.healthCheckUserAgents={Bot #1,Probe: v2}' \
+		--set 'protectedNamespaces={*-prod}' --set timezone=Europe/London); \
+	grep -qF -- '- "--doorman-health-check-user-agents=Bot #1,Probe: v2"' <<<"$$out" && \
+		grep -qF -- '- "--protected-namespaces=*-prod"' <<<"$$out" && grep -qF -- '- "--timezone=Europe/London"' <<<"$$out" || { \
+		echo "the chart doesn't quote a container argument, so a # starts a YAML comment, or a ': ' makes it a map"; exit 1; }
 	@! helm template hybernate charts/hybernate | grep -q -- '--guard=upgrade' && \
 		helm template hybernate charts/hybernate --set 'watchNamespaces={shop}' | grep -q -- '--guard=upgrade' || { \
 		echo "the upgrade guard doesn't run exactly when watchNamespaces is set, so narrowing it can strand paused workloads"; exit 1; }

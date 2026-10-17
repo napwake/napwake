@@ -41,26 +41,26 @@ spec:
             {{- end }}
             - --health-probe-bind-address=:8081
             {{- if .Values.metrics.enabled }}
-            - --metrics-bind-address=:{{ .Values.metrics.port }}
-            - --metrics-secure={{ .Values.metrics.secure }}
+            - {{ printf "--metrics-bind-address=:%v" .Values.metrics.port | quote }}
+            - {{ printf "--metrics-secure=%v" .Values.metrics.secure | quote }}
             {{- end }}
-            - --zap-log-level={{ .Values.logLevel }}
-            - --zap-encoder={{ .Values.logEncoder }}
-            - --max-concurrent-reconciles={{ .Values.maxConcurrentReconciles }}
-            - --timezone={{ .Values.timezone }}
+            - {{ printf "--zap-log-level=%v" .Values.logLevel | quote }}
+            - {{ printf "--zap-encoder=%v" .Values.logEncoder | quote }}
+            - {{ printf "--max-concurrent-reconciles=%v" .Values.maxConcurrentReconciles | quote }}
+            - {{ printf "--timezone=%v" .Values.timezone | quote }}
             {{- with .Values.watchNamespaces }}
-            - --watch-namespaces={{ join "," . }}
+            - {{ printf "--watch-namespaces=%s" (join "," .) | quote }}
             {{- end }}
             {{- with .Values.protectedNamespaces }}
-            - --protected-namespaces={{ join "," . }}
+            - {{ printf "--protected-namespaces=%s" (join "," .) | quote }}
             {{- end }}
             {{- with .Values.prometheus.url }}
-            - --prometheus-url={{ . }}
+            - {{ printf "--prometheus-url=%v" . | quote }}
             {{- end }}
-            - --default-idle-after={{ .Values.defaults.idleAfter }}
-            - --default-cpu-threshold={{ .Values.defaults.cpuThreshold }}
-            - --default-dry-run={{ .Values.defaults.dryRun }}
-            - --doorman-service={{ if .Values.doorman.enabled }}{{ include "hybernate.doormanName" . }}{{ end }}
+            - {{ printf "--default-idle-after=%v" .Values.defaults.idleAfter | quote }}
+            - {{ printf "--default-cpu-threshold=%v" .Values.defaults.cpuThreshold | quote }}
+            - {{ printf "--default-dry-run=%v" .Values.defaults.dryRun | quote }}
+            - {{ printf "--doorman-service=%s" (ternary (include "hybernate.doormanName" .) "" .Values.doorman.enabled) | quote }}
           env:
             - name: POD_NAMESPACE
               valueFrom:
