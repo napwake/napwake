@@ -345,9 +345,12 @@ func (r *Reconciler) stampActivity(ctx context.Context, dep *v1alpha1.ManagedWor
 // serves, by servesDependents. It doesn't wait for one that won't become
 // Ready by waiting, which would leave this workload at zero for good: the
 // workload itself, listed as its own dependency; one that doesn't exist or
-// can't be seen (reported by checkDependenciesExist); or one scaled to zero
-// outside Hybernate. A managed one still paused is woken again, in case the
-// first wake was missed.
+// can't be seen (reported by checkDependenciesExist); one scaled to zero
+// outside Hybernate; one that waits for this workload in turn, through
+// waitForReady, which would wait for each other forever; and one that
+// isn't Ready by its startDeadline, such as one crash-looping or whose
+// image can't be pulled. A managed one still paused is woken again, in
+// case the first wake was missed.
 func (r *Reconciler) waitForDependencies(ctx context.Context, workload *v1alpha1.ManagedWorkload) (*ctrl.Result, error) {
 	refs := slices.DeleteFunc(slices.Clone(workload.Spec.DependsOn), func(ref v1alpha1.DependencyRef) bool {
 		return !ref.WaitForReady || dependencyID(workload, ref) == targetID(workload)
@@ -363,7 +366,10 @@ func (r *Reconciler) waitForDependencies(ctx context.Context, workload *v1alpha1
 	if err != nil {
 		return nil, err
 	}
+	// The dependent waits from the moment it starts resuming.
+	waited := r.sinceTransition(workload)
 	var waiting, skipped []string
+	reason := reasonDependencyWontStart
 	for _, ref := range refs {
 		id := dependencyID(workload, ref)
 		target, state, err := r.getDependency(ctx, id)
@@ -371,11 +377,20 @@ func (r *Reconciler) waitForDependencies(ctx context.Context, workload *v1alpha1
 			return nil, fmt.Errorf("checking dependency %s: %w", id, err)
 		}
 		dep := g.byTarget[id]
-		if state != dependencyFound || servesDependents(dep, target, r.sinceTransition(workload)) {
+		if state != dependencyFound || servesDependents(dep, target, waited) {
 			continue
 		}
 		if why := wontStart(dep, target); why != "" {
 			skipped = append(skipped, fmt.Sprintf("%s (%s)", id, why))
+			continue
+		}
+		if dep != nil && g.reaches(dep, targetID(workload), waitForReadyRefs) {
+			skipped = append(skipped, fmt.Sprintf("%s (it waits for this workload to be Ready too)", id))
+			reason = conditionDependencyCycle
+			continue
+		}
+		if deadline := startDeadline(target); waited >= deadline {
+			skipped = append(skipped, fmt.Sprintf("%s (it isn't Ready after %s)", id, roundedDuration(deadline)))
 			continue
 		}
 		if dep != nil && dep.UID != workload.UID && !isAwake(dep.Status.Phase) {
@@ -388,7 +403,7 @@ func (r *Reconciler) waitForDependencies(ctx context.Context, workload *v1alpha1
 
 	if len(waiting) == 0 {
 		if len(skipped) > 0 {
-			r.setCondition(workload, conditionWaitingForDependencies, metav1.ConditionFalse, "DependencyWontStart",
+			r.setCondition(workload, conditionWaitingForDependencies, metav1.ConditionFalse, reason,
 				"not waiting for "+strings.Join(skipped, ", "))
 		} else {
 			r.clearCondition(workload, conditionWaitingForDependencies, "DependenciesReady")
@@ -427,6 +442,32 @@ func servesDependents(dep *v1alpha1.ManagedWorkload, target client.Object, waite
 		return dep.Status.Phase == v1alpha1.PhaseRunning || dep.Status.Phase == v1alpha1.PhaseIdle
 	}
 	return waited >= lifecycle.ServingWait
+}
+
+const (
+	reasonDependencyWontStart = "DependencyWontStart"
+
+	// statefulSetStartDeadline is how long a dependent waits for a
+	// StatefulSet to be Ready, which unlike a Deployment has no progress
+	// deadline of its own. It's the default progress deadline, since a
+	// database replaying its log can take minutes.
+	statefulSetStartDeadline = 10 * time.Minute
+)
+
+// startDeadline is how long a dependent waits for the dependency to be
+// Ready before starting without it: a Deployment's progress deadline, past
+// which Kubernetes itself reports it failed, or statefulSetStartDeadline.
+func startDeadline(target client.Object) time.Duration {
+	if d, ok := target.(*appsv1.Deployment); ok && d.Spec.ProgressDeadlineSeconds != nil {
+		return time.Duration(*d.Spec.ProgressDeadlineSeconds) * time.Second
+	}
+	return statefulSetStartDeadline
+}
+
+func waitForReadyRefs(w *v1alpha1.ManagedWorkload) []v1alpha1.DependencyRef {
+	return slices.DeleteFunc(slices.Clone(w.Spec.DependsOn), func(ref v1alpha1.DependencyRef) bool {
+		return !ref.WaitForReady
+	})
 }
 
 // wontStart says why a dependency that isn't Ready won't become Ready by

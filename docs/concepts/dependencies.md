@@ -54,7 +54,13 @@ WaitingForDependencies=True   waiting for preview-42/statefulset/postgres (0 rea
 
 A dependency that has some replicas Ready but not all, such as one with a pod crash-looping, serves with those that are, so the dependent doesn't wait for the rest for good. A managed dependency counts once its own [resume](lifecycle.md#automatic) has finished, even short of every replica (its `ResumeIncomplete=True`); one Hybernate doesn't manage counts once the dependent has waited 2 minutes, the time a resume gives the rest of its replicas. A dependency with no replica Ready is always waited for.
 
-There's no timeout, because a slow start is exactly why you'd set it. If the wait runs past 15 minutes, the `HybernateWorkloadStuck` alert fires. It doesn't wait for a dependency that can't start by waiting, which would leave the dependent at zero for good: one Hybernate doesn't manage that's scaled to zero. `WaitingForDependencies=False` then names it. A managed dependency that's still paused is woken again every few seconds while the dependent waits.
+The wait is long, because a slow start is exactly why you'd set it, but bounded: a dependency that's up but never Ready, such as one crash-looping or whose image can't be pulled, would otherwise leave the dependent at zero for good. The dependent waits, from when it began resuming, as long as the dependency's Deployment `progressDeadlineSeconds` (600 by default), past which Kubernetes itself reports the rollout failed, or 10 minutes for a StatefulSet, which has none. Then it starts anyway, with `WaitingForDependencies=False`, reason `DependencyWontStart`, and a Warning event naming the dependency:
+
+```
+WaitingForDependencies=False   not waiting for preview-42/statefulset/postgres (it isn't Ready after 10m)
+```
+
+It doesn't wait at all for a dependency that can't start by waiting: one Hybernate doesn't manage that's scaled to zero, reported the same way. Nor for one that in turn waits, through `waitForReady`, for the dependent, directly or through others: each would wait for the other to start first. That's reason `DependencyCycle`, and both start together. A managed dependency that's still paused is woken again every few seconds while the dependent waits.
 
 ## Edge cases
 

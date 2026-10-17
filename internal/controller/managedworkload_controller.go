@@ -457,6 +457,9 @@ func (r *Reconciler) handleResume(ctx context.Context, workload *v1alpha1.Manage
 		if err := r.Status().Update(ctx, workload); err != nil {
 			return nil, fmt.Errorf("recording its dependencies Ready: %w", err)
 		}
+		if after.Status == metav1.ConditionFalse && after.Reason != "DependenciesReady" {
+			r.emitEvent(workload, false, "Warning", after.Reason, actionResume, "%s", after.Message)
+		}
 	}
 
 	source := wakeSource(workload)

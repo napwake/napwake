@@ -382,12 +382,12 @@ func TestDependencies_WaitForAPartlyReadyDependency(t *testing.T) {
 	}{
 		{name: "managed, its resume settled short", managed: v1alpha1.PhaseRunning, ready: 2},
 		{name: "managed and idle, its resume settled short", managed: v1alpha1.PhaseIdle, ready: 2},
-		{name: "managed, still resuming", managed: v1alpha1.PhaseResuming, ready: 2, resuming: time.Hour,
+		{name: "managed, still resuming", managed: v1alpha1.PhaseResuming, ready: 2, resuming: 5 * time.Minute,
 			wantWait: true},
 		{name: "managed and running, none Ready", managed: v1alpha1.PhaseRunning, wantWait: true},
 		{name: "unmanaged, given as long as a resume gives", ready: 2, resuming: lifecycle.ServingWait},
 		{name: "unmanaged, not yet given as long", ready: 2, resuming: time.Minute, wantWait: true},
-		{name: "unmanaged, none Ready", resuming: time.Hour, wantWait: true},
+		{name: "unmanaged, none Ready", resuming: 5 * time.Minute, wantWait: true},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -413,6 +413,101 @@ func TestDependencies_WaitForAPartlyReadyDependency(t *testing.T) {
 			}
 			assert.Equal(t, 1, pauser.resumeCalls, "it waited on a dependency serving with %d of 3 Ready", tt.ready)
 		})
+	}
+}
+
+// A waitForReady dependency that's up but never Ready, crash-looping or
+// unable to pull its image, would hold the dependent at zero for good. It's
+// waited for until its progress deadline, then the dependent starts anyway
+// and says why.
+func TestDependencies_WaitIsBounded(t *testing.T) {
+	deployment := func(deadline *int32) client.Object {
+		return &appsv1.Deployment{
+			ObjectMeta: metav1.ObjectMeta{Name: "postgres", Namespace: "default"},
+			Spec:       appsv1.DeploymentSpec{Replicas: ptr.To[int32](1), ProgressDeadlineSeconds: deadline},
+		}
+	}
+	tests := []struct {
+		name     string
+		kind     v1alpha1.TargetKind
+		target   client.Object
+		managed  v1alpha1.WorkloadPhase
+		resuming time.Duration
+		wantWait bool
+		wantWhy  string
+	}{
+		{name: "a StatefulSet within its deadline", kind: v1alpha1.TargetKindStatefulSet,
+			target: postgresTarget(1, 0), resuming: 9 * time.Minute, wantWait: true},
+		{name: "a StatefulSet past its deadline", kind: v1alpha1.TargetKindStatefulSet,
+			target: postgresTarget(1, 0), resuming: 11 * time.Minute,
+			wantWhy: "not waiting for default/statefulset/postgres (it isn't Ready after 10m)"},
+		{name: "a managed dependency whose resume settled with none Ready", kind: v1alpha1.TargetKindStatefulSet,
+			target: postgresTarget(1, 0), managed: v1alpha1.PhaseRunning, resuming: 11 * time.Minute,
+			wantWhy: "not waiting for default/statefulset/postgres (it isn't Ready after 10m)"},
+		{name: "a Deployment within its progress deadline", kind: v1alpha1.TargetKindDeployment,
+			target: deployment(ptr.To[int32](120)), resuming: time.Minute, wantWait: true},
+		{name: "a Deployment past its progress deadline", kind: v1alpha1.TargetKindDeployment,
+			target: deployment(ptr.To[int32](120)), resuming: 3 * time.Minute,
+			wantWhy: "not waiting for default/deployment/postgres (it isn't Ready after 2m)"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			ref := v1alpha1.DependencyRef{Kind: tt.kind, Name: "postgres", WaitForReady: true}
+			api := depWorkload("default", "api", v1alpha1.TargetKindDeployment, v1alpha1.PhaseResuming, ref)
+			began := metav1.NewTime(fixedTime.Add(-tt.resuming))
+			api.Status.LastTransitionTime = &began
+			api.Status.Pause = &v1alpha1.PauseStatus{PreviousReplicas: 1}
+			objs := []client.Object{api, tt.target}
+			if tt.managed != "" {
+				objs = append(objs, depWorkload("default", "postgres", tt.kind, tt.managed))
+			}
+			pauser := &stubPauser{resumeDone: true}
+			r := depReconciler(t, pauser, objs...)
+
+			_, err := r.handleResume(context.Background(), fetch(t, r, "api"), nil)
+			require.NoError(t, err)
+
+			if tt.wantWait {
+				assert.Zero(t, pauser.resumeCalls)
+				return
+			}
+			assert.Equal(t, 1, pauser.resumeCalls, "the dependent starts without the dependency")
+			c := meta.FindStatusCondition(fetch(t, r, "api").Status.Conditions, conditionWaitingForDependencies)
+			require.NotNil(t, c)
+			assert.Equal(t, metav1.ConditionFalse, c.Status)
+			assert.Equal(t, reasonDependencyWontStart, c.Reason)
+			assert.Equal(t, tt.wantWhy, c.Message)
+			assert.Len(t, recorded(r.Recorder.(*events.FakeRecorder), reasonDependencyWontStart), 1,
+				"a Warning names the dependency")
+		})
+	}
+}
+
+// Two workloads that each waitForReady on the other would each wait for
+// the other to start first, forever.
+func TestDependencies_MutualWaitForReady(t *testing.T) {
+	a := depWorkload("default", "a", v1alpha1.TargetKindDeployment, v1alpha1.PhaseResuming,
+		v1alpha1.DependencyRef{Kind: v1alpha1.TargetKindDeployment, Name: "b", WaitForReady: true})
+	a.Status.Pause = &v1alpha1.PauseStatus{PreviousReplicas: 1}
+	b := depWorkload("default", "b", v1alpha1.TargetKindDeployment, v1alpha1.PhaseResuming,
+		v1alpha1.DependencyRef{Kind: v1alpha1.TargetKindDeployment, Name: "a", WaitForReady: true})
+	b.Status.Pause = &v1alpha1.PauseStatus{PreviousReplicas: 1}
+	zero := func(name string) *appsv1.Deployment {
+		return &appsv1.Deployment{ObjectMeta: metav1.ObjectMeta{Name: name, Namespace: "default"},
+			Spec: appsv1.DeploymentSpec{Replicas: ptr.To[int32](0)}}
+	}
+
+	for _, name := range []string{"a", "b"} {
+		pauser := &stubPauser{resumeDone: true}
+		r := depReconciler(t, pauser, a.DeepCopy(), b.DeepCopy(), zero("a"), zero("b"))
+
+		_, err := r.handleResume(context.Background(), fetch(t, r, name), nil)
+		require.NoError(t, err)
+
+		assert.Equal(t, 1, pauser.resumeCalls, "%s starts", name)
+		c := meta.FindStatusCondition(fetch(t, r, name).Status.Conditions, conditionWaitingForDependencies)
+		require.NotNil(t, c)
+		assert.Equal(t, conditionDependencyCycle, c.Reason)
 	}
 }
 
