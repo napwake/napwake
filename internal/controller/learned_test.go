@@ -397,6 +397,23 @@ func TestLearnDependencies_KeepsWhatWakesTaught(t *testing.T) {
 	assert.Equal(t, []string{"default/postgres DATABASE_URL", "default/redis "}, learnedNames(api))
 }
 
+// In a dual-stack cluster a request can come from a pod's second address,
+// its IPv6 one where pods are IPv4 first, which isn't its status.podIP.
+func TestLearnFromWake_DualStack(t *testing.T) {
+	const senderIPv6 = "fd00:10:244:1::7"
+	api := depWorkload("default", "api", v1alpha1.TargetKindDeployment, v1alpha1.PhaseRunning)
+	postgres := wokenPostgres()
+	postgres.Annotations[v1alpha1.AnnotationLastRequestFrom] = senderIPv6
+	sender := podOf("api", false)
+	sender.Status.PodIPs = []corev1.PodIP{{IP: senderIP}, {IP: senderIPv6}}
+	r := wakeReconciler(t, sender, selecting(v1alpha1.TargetKindDeployment, "api", nil), api, postgres,
+		selecting(v1alpha1.TargetKindStatefulSet, "postgres", nil))
+
+	require.NoError(t, r.learnFromWake(context.Background(), postgres))
+
+	assert.Equal(t, []string{"default/postgres "}, learnedNames(fetch(t, r, "api")))
+}
+
 // Installed for some namespaces only, Hybernate can't list pods across the
 // cluster, so it looks for the sender in each namespace it watches.
 func TestLearnFromWake_WatchedNamespaces(t *testing.T) {

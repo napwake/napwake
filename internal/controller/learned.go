@@ -22,6 +22,7 @@ import (
 	"encoding/hex"
 	"fmt"
 	"maps"
+	"net/netip"
 	"slices"
 	"strings"
 	"time"
@@ -381,14 +382,51 @@ func (r *Reconciler) podAt(ctx context.Context, ip string) (*corev1.Pod, bool, e
 		if err := reader.List(ctx, &pods, client.InNamespace(ns), client.MatchingFields{podIPField: ip}); err != nil {
 			return nil, false, fmt.Errorf("finding the pod at %s: %w", ip, err)
 		}
-		for i := range pods.Items {
-			p := &pods.Items[i]
-			if !p.Spec.HostNetwork && p.DeletionTimestamp == nil {
+		if p, ok := podWithIP(pods.Items, ip); ok {
+			return p, true, nil
+		}
+	}
+	if addr, err := netip.ParseAddr(ip); err != nil || addr.Unmap().Is4() {
+		return nil, false, nil
+	}
+	// A dual-stack pod's IPv6 address, in a cluster whose pods are IPv4
+	// first, isn't its status.podIP, and the API server matches
+	// status.podIPs only as the whole list. Such a pod is found by reading
+	// pods a page at a time.
+	for _, ns := range namespaces {
+		for page := ""; ; {
+			var pods corev1.PodList
+			if err := reader.List(ctx, &pods, client.InNamespace(ns), client.Limit(podPageSize),
+				client.Continue(page)); err != nil {
+				return nil, false, fmt.Errorf("finding the pod at %s: %w", ip, err)
+			}
+			if p, ok := podWithIP(pods.Items, ip); ok {
 				return p, true, nil
+			}
+			if page = pods.Continue; page == "" {
+				break
 			}
 		}
 	}
 	return nil, false, nil
+}
+
+// podPageSize is how many pods a search by IPv6 address reads at once.
+const podPageSize = 500
+
+// podWithIP is the pod in pods with the IP among its addresses that isn't
+// on its node's network or being deleted.
+func podWithIP(pods []corev1.Pod, ip string) (*corev1.Pod, bool) {
+	for i := range pods {
+		p := &pods[i]
+		if p.Spec.HostNetwork || p.DeletionTimestamp != nil {
+			continue
+		}
+		if p.Status.PodIP == ip || slices.ContainsFunc(p.Status.PodIPs, func(a corev1.PodIP) bool { return a.IP == ip }) {
+			return p, true
+		}
+	}
+	return nil, false
 }
 
 // managing is the ManagedWorkload whose target the pod belongs to, and the
