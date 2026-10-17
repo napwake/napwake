@@ -161,6 +161,7 @@ The relaunch. The 0.1.x releases were early experiments, and 0.2.0 is a fresh st
 - Events are emitted once, when something changes: forecast vetoes, routing warnings, learned dependencies, and the `DependentsAwake` warning, which fires once a manual pause begins
 - Every series of a deleted workload is dropped from the metrics, and the operator reads only the target's own pods and claims, with deadlines on every call
 - A GitOps tool that set the replicas in the same second as another field manager is reported as the one that woke a paused workload, so the `GitOpsConflict` is never missed
+- `hybernate_reconcile_errors_total` counts the label opt-in's failed reconciles too, as `controller="optin"`, so the `HybernateReconcileErrorsHigh` alert sees them
 - The plugin formats negative dollars and durations correctly
 - `kubectl hybernate scan` no longer hangs when the API server stops answering: each request gives up after 30 seconds, and the scan after `--timeout` (5m), with an error rather than a partial report
 - Deleting the ManagedWorkload of a paused workload scales the workload back to the replicas it had first, instead of leaving it at zero

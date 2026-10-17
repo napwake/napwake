@@ -45,6 +45,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 
 	v1alpha1 "github.com/okedeji/hybernate/api/v1alpha1"
+	"github.com/okedeji/hybernate/internal/metrics"
 )
 
 const (
@@ -92,7 +93,12 @@ type OptInReconciler struct {
 func (r *OptInReconciler) Reconcile(ctx context.Context, req ctrl.Request) (res ctrl.Result, retErr error) {
 	ctx, cancel := context.WithTimeout(ctx, optInTimeout)
 	defer cancel()
-	defer func() { res, retErr = retryIfStale(ctx, res, retErr) }()
+	defer func() {
+		res, retErr = retryIfStale(ctx, res, retErr)
+		if retErr != nil {
+			metrics.ReconcileErrors.WithLabelValues("optin").Inc()
+		}
+	}()
 
 	obj := r.newWorkload()
 	if err := r.Get(ctx, req.NamespacedName, obj); err != nil {

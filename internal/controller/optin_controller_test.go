@@ -23,6 +23,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/prometheus/client_golang/prometheus/testutil"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	appsv1 "k8s.io/api/apps/v1"
@@ -42,6 +43,7 @@ import (
 	metricsserver "sigs.k8s.io/controller-runtime/pkg/metrics/server"
 
 	v1alpha1 "github.com/okedeji/hybernate/api/v1alpha1"
+	"github.com/okedeji/hybernate/internal/metrics"
 )
 
 func optInNamespace(labels, annotations map[string]string) *corev1.Namespace {
@@ -129,6 +131,17 @@ func TestOptIn_Namespace(t *testing.T) {
 	assert.Equal(t, 20*time.Minute, worker.Spec.IdlePolicy.IdleAfter.Duration, "a workload's own setting wins")
 	_, ok = managedWorkload(t, r, "tools")
 	assert.False(t, ok, "ignore opts a workload out")
+}
+
+func TestOptIn_FailedReconcileIsCounted(t *testing.T) {
+	r, _ := optInReconciler(t, optInDeployment("api", managedLabel, nil))
+	failed := metrics.ReconcileErrors.WithLabelValues("optin")
+	before := testutil.ToFloat64(failed)
+
+	_, err := r.Reconcile(context.Background(), ctrl.Request{NamespacedName: types.NamespacedName{Namespace: "dev", Name: "api"}})
+
+	require.Error(t, err, "the workload's namespace can't be read")
+	assert.Equal(t, before+1, testutil.ToFloat64(failed))
 }
 
 func TestOptIn_NotOptedIn(t *testing.T) {
