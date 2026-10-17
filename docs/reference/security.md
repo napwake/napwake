@@ -4,7 +4,7 @@ What a security review of Hybernate needs: what it can do in a cluster, what it 
 
 ## What it can do
 
-- **It never deletes your resources.** Its one action is to scale a Deployment or StatefulSet to zero, through the scale subresource, and back. It can't change any other field of a workload, and the only things it deletes are its own ManagedWorkloads and EndpointSlices.
+- **It never deletes your resources.** Its one action is to scale a Deployment or StatefulSet to zero, through the scale subresource, and back. The only other change it makes to a workload is its own `hybernate.io/paused-from` annotation while the workload is paused, though its role may patch workloads, and the only things it deletes are its own ManagedWorkloads and EndpointSlices.
 - **It never reads Secrets.**
 - **It can write any EndpointSlice in the namespaces it works in.** It only ever creates, changes and deletes its own, labelled `endpointslice.kubernetes.io/managed-by: doorman.hybernate.io`, and never overwrites one without that label, but RBAC can't limit a role by label, so its ServiceAccount is allowed the rest too. Whoever holds its token could redirect any Service there.
 - **It can be confined to namespaces.** With [`watchNamespaces`](helm-values.md#namespaces), the operator and doorman get a Role in each of those namespaces instead of a ClusterRole, so Kubernetes itself refuses them anything elsewhere. The operator keeps one ClusterRole, read-only, on Namespaces and Nodes, and a Role in its own namespace to read the doorman's EndpointSlices. With secure metrics (the default), both also keep a ClusterRoleBinding to `system:auth-delegator`, which only lets them check the tokens of whoever scrapes their metrics.
@@ -24,7 +24,7 @@ Everything it reads, writes, and sends is listed in [Data and Access](data-and-a
 | Doorman | The woken workload's pods, in any routed namespace, on their Service ports | Passing the held connection through |
 | Prometheus | Operator and doorman metrics | Only with a token allowed to get `/metrics`, unless `metrics.secure` is off |
 
-Nothing leaves the cluster: no telemetry, no usage reporting, no update checks. The images run as a non-root user on a distroless base, with a read-only root filesystem. So does the chart's uninstall guard, a pre-delete hook Job that runs only during `helm uninstall`, from the digest-pinned `registry.k8s.io/kubectl` image, with a ServiceAccount that may only read ManagedWorkloads.
+Nothing leaves the cluster: no telemetry, no usage reporting, no update checks. The images run as a non-root user on a distroless base, with a read-only root filesystem. So do the chart's guards, hook Jobs that run only during `helm uninstall`, `helm upgrade` and `helm rollback`, from the operator's own image, each with a ServiceAccount that may only list ManagedWorkloads.
 
 ### The doorman is a way in to paused workloads
 

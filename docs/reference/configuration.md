@@ -28,6 +28,7 @@ These flags are passed to the binary (`/manager`), which runs as the operator, o
 | `--doorman-ports-per-namespace` | `256` | The most doorman ports the workloads of one namespace may hold together |
 | `--doorman-namespace` | `$POD_NAMESPACE`, else `hybernate-system` | Namespace of the doorman's Service |
 | `--doorman-health-check-user-agents` | | Comma-separated `User-Agent` prefixes of health checkers and scrapers, besides the built-in ones, whose `GET` and `HEAD` requests don't wake a paused workload. Helm value `doorman.healthCheckUserAgents` |
+| `--guard` | | Run as the chart's `uninstall` or `upgrade` hook instead of the operator. It waits up to two and a half minutes for ManagedWorkloads being deleted, then exits 1, listing those the operation would leave without an operator: for `uninstall`, every one in `--watch-namespaces` (every namespace when empty) or carrying the `hybernate.io/cleanup` finalizer; for `upgrade`, those carrying the finalizer outside the new `--watch-namespaces`. The chart's `guard.uninstall` and `guard.upgrade` hooks set it |
 | `--kubeconfig` | in-cluster | Path to a kubeconfig, only when running outside the cluster |
 | `--zap-log-level` | `info` | Log level: `debug`, `info`, `error`, `panic`, or a whole number above 0 for more verbose debug levels |
 | `--zap-encoder` | `json` | Log format: `json` or `console` |
@@ -35,7 +36,7 @@ These flags are passed to the binary (`/manager`), which runs as the operator, o
 | `--zap-stacktrace-level` | `error` | Level from which stack traces are logged: `info`, `error`, or `panic` |
 | `--zap-time-encoding` | RFC 3339 | Time format of log entries: `epoch`, `millis`, `nano`, `iso8601`, `rfc3339` or `rfc3339nano` |
 
-The operator checks its flags at startup and exits with an error naming the flag when one is invalid: a `--protected-namespaces` pattern that isn't a valid glob, a `--prometheus-url` that isn't `http` or `https` with a host, a `--default-idle-after` under `1m`, a `--default-cpu-threshold` outside 1 to 100, a `--max-concurrent-reconciles` below 1, or a `--timezone` that isn't a known IANA zone.
+The operator checks its flags at startup and exits with an error naming the flag when one is invalid: a `--protected-namespaces` pattern that isn't a valid glob, a `--prometheus-url` that isn't `http` or `https` with a host, a `--default-idle-after` under `1m`, a `--default-cpu-threshold` outside 1 to 100, a `--max-concurrent-reconciles`, `--doorman-ports-per-workload` or `--doorman-ports-per-namespace` below 1, or a `--timezone` that isn't a known IANA zone.
 
 ## Endpoints
 

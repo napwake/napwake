@@ -61,7 +61,7 @@ A value that can't be read, such as `"True"`, `"yes"`, `"soon"` or `"0"`, is rep
 | `hybernate.io/last-request` | RFC 3339 time | ManagedWorkloads | Set by the doorman when it holds a request for a paused workload. Wakes it like `last-activity`, and the clock records the wake as `request`. See [Wake on Request](../concepts/wake-on-request.md) |
 | `hybernate.io/last-request-from` | IP address | ManagedWorkloads | Set by the doorman with `last-request`: where the request that woke the workload came from, so the operator can [learn](../concepts/dependencies.md#learned-dependencies) which workload depends on it |
 
-A value that isn't an RFC 3339 time is ignored and logged.
+A value that isn't an RFC 3339 time, such as epoch seconds, is ignored: it neither keeps the workload awake nor wakes it, and an `InvalidActivityAnnotation` warning event on the ManagedWorkload says so, once per value.
 
 ## Other Annotations
 
@@ -81,4 +81,4 @@ A value that isn't an RFC 3339 time is ignored and logged.
 | `hybernate.io/cleanup` | ManagedWorkloads | Added automatically by the operator. Ensures a paused workload is scaled back up, and its Services stop routing to the doorman, before the ManagedWorkload can be deleted. The operator removes it once that's done. |
 
 !!! note
-    Do not remove the `hybernate.io/cleanup` finalizer by hand. A ManagedWorkload deleted without it leaves a paused workload at zero replicas, and its KEDA ScaledObject held there.
+    Do not remove the `hybernate.io/cleanup` finalizer by hand. A ManagedWorkload deleted without it leaves a paused workload at zero replicas, and its KEDA ScaledObject held there, until a ManagedWorkload for the workload is created again and takes the pause up from its `hybernate.io/paused-from` annotation.

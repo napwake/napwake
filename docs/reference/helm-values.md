@@ -85,7 +85,7 @@ Settings for workloads opted in with the `hybernate.io/managed` label, used when
 
 | Value | Default | Description |
 |-------|---------|-------------|
-| `defaults.idleAfter` | `1h` | How long without activity before pausing; a Go duration of at least `1m`, with whole minutes or hours, or at least 60 seconds, in it, such as `90s` or `1h30m`. Passed as `--default-idle-after` |
+| `defaults.idleAfter` | `1h` | How long without activity before pausing; a Go duration of at least `1m`, such as `90s` or `1h30m`. Passed as `--default-idle-after` |
 | `defaults.cpuThreshold` | `10` | CPU use, as a percentage of requests from 1 to 100, above which a workload counts as active. Passed as `--default-cpu-threshold` |
 | `defaults.dryRun` | `false` | Measure without pausing. Set `true` to roll Hybernate out across a cluster measuring first. Passed as `--default-dry-run` |
 
@@ -141,8 +141,8 @@ The doorman holds requests to paused workloads and wakes them. See [Wake on Requ
 |-------|---------|-------------|
 | `doorman.enabled` | `true` | Deploy the doorman. When `false`, requests to paused workloads fail |
 | `doorman.replicaCount` | `2` | Doorman replicas. Every replica serves traffic |
-| `doorman.portsPerWorkload` | `32` | The most doorman ports one workload may hold, one per routed Service port, so one tenant can't use up the 10,000 the cluster shares. A workload with more isn't routed: `WakeOnRequest=False`, reason `TooManyPorts`. Passed as `--doorman-ports-per-workload` |
-| `doorman.portsPerNamespace` | `256` | The most doorman ports the workloads of one namespace may hold together. Passed as `--doorman-ports-per-namespace` |
+| `doorman.portsPerWorkload` | `32` | The most doorman ports one workload may hold, one per routed Service port, so one tenant can't use up the 10,000 the cluster shares; 1 to 10000. A workload with more isn't routed: `WakeOnRequest=False`, reason `TooManyPorts`. Passed as `--doorman-ports-per-workload` |
+| `doorman.portsPerNamespace` | `256` | The most doorman ports the workloads of one namespace may hold together; 1 to 10000. Passed as `--doorman-ports-per-namespace` |
 | `doorman.healthCheckUserAgents` | `[]` | `User-Agent` prefixes, or names that follow `(compatible; ` in a browser-style one, of health checkers and scrapers whose `GET` and `HEAD` requests don't wake a paused workload, besides the built-in ones (`kube-probe`, Prometheus, load balancers' checks, `Blackbox Exporter/`, `Datadog/Synthetics`, `Amazon-Route53-Health-Check-Service`, `GoogleStackdriverMonitoring-UptimeChecks`, `UptimeRobot`, `Pingdom.com_bot`, `NewRelicPinger/`, `Uptime-Kuma/`, `Gatus/` and others), such as `["MyCorpMonitor/"]`. See [What wakes a workload](../concepts/wake-on-request.md#what-wakes-a-workload-and-what-doesnt) |
 | `doorman.admissionPolicy.enabled` | `true` | A ValidatingAdmissionPolicy that lets the doorman's ServiceAccount change only the `hybernate.io/last-request` and `hybernate.io/last-request-from` annotations on ManagedWorkloads, though its role may patch them. See [Security](security.md#the-doorman-is-a-way-in-to-paused-workloads) |
 | `doorman.podDisruptionBudget.enabled` | `true` | A PodDisruptionBudget keeping one doorman serving through node drains, when `replicaCount` is above 1 |
@@ -252,7 +252,7 @@ By default the chart creates a ClusterRole, `<fullname>-manager`, with permissio
 
 - Manage `ManagedWorkload` CRs, including creating them for labelled workloads
 - Read Namespaces, for the `hybernate.io/managed` label and settings annotations on them
-- Read Deployments and StatefulSets, and scale them through the scale subresource. Hybernate can't delete or otherwise change them
+- Read Deployments and StatefulSets, scale them through the scale subresource, and patch them to set and remove the `hybernate.io/paused-from` annotation while they're paused. Hybernate can't delete them, and changes nothing else on them
 - Read PersistentVolumeClaims, to price the storage a paused workload keeps
 - Read HorizontalPodAutoscalers, and read and annotate KEDA ScaledObjects, to pause a KEDA workload through KEDA
 - Read pod metrics from metrics-server

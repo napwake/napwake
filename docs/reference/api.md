@@ -11,7 +11,7 @@
 | Field | Type | Required | Default | Description |
 |-------|------|----------|---------|-------------|
 | `target` | `WorkloadRef` | Yes | | The workload to manage. Can't be changed once set |
-| `target.kind` | `Deployment` \| `StatefulSet` | Yes | `Deployment` | Target kind |
+| `target.kind` | `Deployment` \| `StatefulSet` | No | `Deployment` | Target kind |
 | `target.name` | string | Yes | | Target name (same namespace) |
 | `idlePolicy` | `IdlePolicySpec` | No | | Idle detection configuration. Without it, the workload is never paused automatically |
 | `idlePolicy.idleAfter` | duration (at least `1m`) | No | `1h` | Time without activity before pausing |
