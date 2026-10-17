@@ -621,15 +621,11 @@ func (r *Reconciler) pauseRecordOn(ctx context.Context, workload *v1alpha1.Manag
 	if _, ok := target.GetAnnotations()[v1alpha1.AnnotationPausedFrom]; !ok {
 		return nil, nil
 	}
-	reader := r.PodReader
-	if reader == nil {
-		reader = r.Client
-	}
 	live, ok := target.DeepCopyObject().(client.Object)
 	if !ok {
 		return nil, fmt.Errorf("copying %s %s", workload.Spec.Target.Kind, target.GetName())
 	}
-	if err := reader.Get(ctx, client.ObjectKeyFromObject(target), live); err != nil {
+	if err := r.apiReader().Get(ctx, client.ObjectKeyFromObject(target), live); err != nil {
 		return nil, fmt.Errorf("reading the target's pause record: %w", err)
 	}
 	pause, err := lifecycle.RecordOn(live)
