@@ -598,6 +598,29 @@ spec:
                   type: object
                 type: array
                 x-kubernetes-list-type: atomic
+              doormanDraining:
+                description: |-
+                  DoormanDraining lists doorman ports that routed this workload until
+                  recently. No other workload is given one until its drain ends, even by
+                  an operator that has just restarted or taken over leadership, since
+                  clients that haven't yet seen the Service move back to the workload's
+                  pods still send traffic to it.
+                items:
+                  description: DrainingPort is a doorman port no other workload may
+                    have before Until.
+                  properties:
+                    port:
+                      format: int32
+                      type: integer
+                    until:
+                      format: date-time
+                      type: string
+                  required:
+                  - port
+                  - until
+                  type: object
+                type: array
+                x-kubernetes-list-type: atomic
               dryRun:
                 description: |-
                   DryRun is what dry-run has measured: what Hybernate would have done
