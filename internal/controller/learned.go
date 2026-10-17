@@ -61,13 +61,17 @@ const (
 
 // learnDependencies finds the workloads this one's environment points at,
 // the same way the scan does, and records them, so they're held and woken
-// like dependsOn without anyone writing it.
+// like dependsOn without anyone writing it. A paused workload isn't
+// relearned until its pod template or ignore list changes: nothing it
+// runs reads a changed ConfigMap meanwhile, and it's learned again once
+// it wakes.
 func (r *Reconciler) learnDependencies(ctx context.Context, workload *v1alpha1.ManagedWorkload,
 	target client.Object) error {
 	ignored := ignoredDependencies(workload, target)
 	from := learnedFrom(target, ignored)
 	now := r.clockTime()
-	if l := workload.Status.LearnedDependencies; l != nil && l.From == from && now.Sub(l.At.Time) < relearnAfter {
+	if l := workload.Status.LearnedDependencies; l != nil && l.From == from &&
+		(workload.Status.Phase == v1alpha1.PhasePaused || now.Sub(l.At.Time) < relearnAfter) {
 		return nil
 	}
 	ctx, cancel := context.WithTimeout(ctx, dependencyTimeout)

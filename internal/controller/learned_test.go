@@ -33,6 +33,7 @@ import (
 	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/tools/events"
+	"k8s.io/utils/ptr"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 	"sigs.k8s.io/controller-runtime/pkg/client/interceptor"
@@ -195,9 +196,46 @@ func TestLearnDependencies_WhenToRelearn(t *testing.T) {
 	assert.Equal(t, []string{"default/redis DATABASE_URL"}, learnedNames(api), "the template changed")
 	relearnedAt := api.Status.LearnedDependencies.At
 
+	api.Status.Phase = v1alpha1.PhasePaused
 	r.clock = func() time.Time { return fixedTime.Add(2 * time.Hour) }
 	require.NoError(t, r.learnDependencies(context.Background(), api, changed))
+	assert.Equal(t, relearnedAt, api.Status.LearnedDependencies.At, "paused, nothing it runs reads the environment")
+
+	api.Status.Phase = v1alpha1.PhaseRunning
+	require.NoError(t, r.learnDependencies(context.Background(), api, changed))
 	assert.True(t, api.Status.LearnedDependencies.At.After(relearnedAt.Time), "an hour on")
+}
+
+// Learning dependencies reads ConfigMaps past the cache and lists Services
+// and workloads. However it fails, a paused workload a request woke still
+// wakes.
+func TestLearnDependencies_NeverHoldsUpAWake(t *testing.T) {
+	pausedAt := metav1.NewTime(fixedTime.Add(-time.Hour))
+	api := depWorkload("default", "api", v1alpha1.TargetKindDeployment, v1alpha1.PhasePaused)
+	api.Finalizers = []string{finalizerName}
+	api.Status.Pause = &v1alpha1.PauseStatus{PreviousReplicas: 1, PausedAt: &pausedAt,
+		WakeAnnotations: &v1alpha1.WakeAnnotations{}}
+	api.Annotations = map[string]string{v1alpha1.AnnotationLastActivity: fixedTime.UTC().Format(time.RFC3339)}
+	target := apiWith(nil)
+	target.Spec.Replicas = ptr.To[int32](0)
+	target.Spec.Template.Spec.Containers[0].EnvFrom = []corev1.EnvFromSource{
+		{ConfigMapRef: &corev1.ConfigMapEnvSource{LocalObjectReference: corev1.LocalObjectReference{Name: "config"}}}}
+	pauser := &stubPauser{resumeDone: true}
+	r := depReconciler(t, pauser, api, target)
+	r.Client = interceptor.NewClient(r.Client.(client.WithWatch), interceptor.Funcs{
+		Get: func(ctx context.Context, c client.WithWatch, key client.ObjectKey, obj client.Object, opts ...client.GetOption) error {
+			if _, ok := obj.(*corev1.ConfigMap); ok {
+				return errors.New("the API server is overloaded")
+			}
+			return c.Get(ctx, key, obj, opts...)
+		},
+	})
+
+	_, err := r.Reconcile(context.Background(), reconcileFor("api"))
+	require.NoError(t, err)
+
+	assert.Equal(t, 1, pauser.resumeCalls, "the wake went ahead")
+	assert.Equal(t, v1alpha1.PhaseRunning, fetch(t, r, "api").Status.Phase)
 }
 
 // What's learned is announced once it's recorded, so a write that fails

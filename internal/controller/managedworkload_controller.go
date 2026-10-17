@@ -221,9 +221,6 @@ func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (res ctrl.
 	if err := r.reportAutoscaler(ctx, &workload); err != nil {
 		return ctrl.Result{}, err
 	}
-	if err := r.learnDependencies(ctx, &workload, target); err != nil {
-		return ctrl.Result{}, err
-	}
 
 	if stale, err := r.staleForRouting(ctx, &workload); err != nil {
 		return ctrl.Result{}, err
@@ -265,6 +262,12 @@ func (r *Reconciler) reconcileSettled(ctx context.Context, workload *v1alpha1.Ma
 	result, err := r.reconcileAutomation(ctx, workload, target)
 	if err != nil {
 		return ctrl.Result{}, err
+	}
+	// Learned once the wake or pause is under way, so reading the
+	// environment never holds one up, and a failure to is only retried.
+	if err := r.learnDependencies(ctx, workload, target); err != nil {
+		log.FromContext(ctx).Info("couldn't learn the workload's dependencies", "workload", workload.Name,
+			"namespace", workload.Namespace, "error", err.Error())
 	}
 
 	r.trackDryRun(workload)
