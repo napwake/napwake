@@ -198,15 +198,15 @@ func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (res ctrl.
 		return r.reconcileIgnored(ctx, &workload)
 	}
 	r.setCondition(&workload, conditionTargetAvailable, metav1.ConditionTrue, "TargetExists", "")
-	if err := r.wakeOnScaleUp(ctx, &workload, target); err != nil {
-		return ctrl.Result{}, err
-	}
 	if protected, err := r.inProtectedNamespace(ctx, &workload); err != nil {
 		return ctrl.Result{}, err
 	} else if protected {
 		return r.reconcileProtected(ctx, &workload)
 	}
 	r.clearCondition(&workload, conditionProtected, "NotProtected")
+	if err := r.wakeOnScaleUp(ctx, &workload, target); err != nil {
+		return ctrl.Result{}, err
+	}
 	if err := r.reportAutoscaler(ctx, &workload); err != nil {
 		return ctrl.Result{}, err
 	}

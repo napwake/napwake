@@ -127,6 +127,7 @@ func (e *faultEnv) create(t *testing.T, ns string) client.ObjectKey {
 
 func (e *faultEnv) reconciler(t *testing.T, c client.Client) *Reconciler {
 	t.Helper()
+	c = client.WithFieldOwner(c, v1alpha1.FieldManager)
 	finder := autoscaler.NewFinder(c)
 	return &Reconciler{
 		Client: c, Scheme: testScheme(t), Recorder: events.NewFakeRecorder(1000),
@@ -244,7 +245,8 @@ func TestPauseAndWake_ConvergeAfterAnyFailedWrite(t *testing.T) {
 // ManagedWorkload deleted, the ignore label, its namespace protected, and a
 // scale-up outside Hybernate) has each of its writes failed in turn, before
 // and after it lands. Each converges on the target running, KEDA's own
-// paused-replicas put back, and no pause record left.
+// paused-replicas put back, and no pause record left. Hybernate's own
+// scale-up, retried, is never taken for one from outside.
 func TestHandBack_ConvergesAfterAnyFailedWrite(t *testing.T) {
 	env := startFaultEnv(t)
 
@@ -253,6 +255,7 @@ func TestHandBack_ConvergesAfterAnyFailedWrite(t *testing.T) {
 		do       func(t *testing.T, r *Reconciler, key client.ObjectKey)
 		want     v1alpha1.WorkloadPhase
 		replicas int32
+		outside  bool
 	}
 	handBacks := []handBack{
 		{name: "delete", want: "gone", replicas: 3, do: func(t *testing.T, _ *Reconciler, key client.ObjectKey) {
@@ -268,7 +271,7 @@ func TestHandBack_ConvergesAfterAnyFailedWrite(t *testing.T) {
 			do: func(_ *testing.T, r *Reconciler, key client.ObjectKey) {
 				r.ProtectedNamespaces = []string{key.Namespace}
 			}},
-		{name: "scaleup", want: v1alpha1.PhaseRunning, replicas: 5,
+		{name: "scaleup", want: v1alpha1.PhaseRunning, replicas: 5, outside: true,
 			do: func(t *testing.T, _ *Reconciler, key client.ObjectKey) {
 				d := env.deployment(t, key)
 				d.Spec.Replicas = ptr.To(int32(5))
@@ -291,7 +294,9 @@ func TestHandBack_ConvergesAfterAnyFailedWrite(t *testing.T) {
 		v, _ := env.pausedReplicasAnnotation(t, key)
 		require.Equal(t, "7", v, "the ScaledObject's own paused-replicas is put back")
 		if hb.want != "gone" {
-			require.Nil(t, env.workload(t, key).Status.Pause)
+			w := env.workload(t, key)
+			require.Nil(t, w.Status.Pause)
+			require.Equal(t, hb.outside, w.Status.LastScaledUp != nil, "scaled up outside Hybernate")
 		}
 	}
 
