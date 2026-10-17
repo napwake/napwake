@@ -17,6 +17,7 @@ limitations under the License.
 package discovery
 
 import (
+	"bytes"
 	"cmp"
 	"context"
 	"crypto/tls"
@@ -481,9 +482,43 @@ type rangeResponse struct {
 		ResultType string `json:"resultType"`
 		Result     []struct {
 			Metric map[string]string `json:"metric"`
-			Values [][2]any          `json:"values"`
+			Values []sample          `json:"values"`
 		} `json:"result"`
 	} `json:"data"`
+}
+
+// sample is one of a range query's [time, "value"] pairs. It's decoded into
+// fields rather than [2]any, which would box both halves of every sample of
+// a response, millions for a week of a large namespace, all at once.
+type sample struct {
+	at    int64
+	value float64
+	// ok is false for a value that isn't a finite number, which is skipped.
+	ok bool
+}
+
+func (s *sample) UnmarshalJSON(b []byte) error {
+	*s = sample{}
+	inner, isArray := bytes.CutPrefix(bytes.TrimSpace(b), []byte("["))
+	inner, closed := bytes.CutSuffix(inner, []byte("]"))
+	at, value, paired := bytes.Cut(inner, []byte(","))
+	if !isArray || !closed || !paired {
+		return nil
+	}
+	t, err := strconv.ParseFloat(string(bytes.TrimSpace(at)), 64)
+	if err != nil {
+		return nil
+	}
+	raw, err := strconv.Unquote(string(bytes.TrimSpace(value)))
+	if err != nil {
+		return nil
+	}
+	v, err := strconv.ParseFloat(raw, 64)
+	if err != nil || math.IsNaN(v) || math.IsInf(v, 0) {
+		return nil
+	}
+	*s = sample{at: int64(t), value: v, ok: true}
+	return nil
 }
 
 // namespaceCPU returns the CPU each container in the namespace used over
@@ -529,16 +564,9 @@ func (p *Prometheus) namespaceCPU(ctx context.Context, namespace string, start, 
 			order = append(order, k)
 		}
 		for _, v := range series.Values {
-			at, ok := v[0].(float64)
-			raw, isString := v[1].(string)
-			if !ok || !isString {
-				continue
+			if v.ok {
+				c.samples[v.at] += v.value
 			}
-			value, err := strconv.ParseFloat(raw, 64)
-			if err != nil || math.IsNaN(value) || math.IsInf(value, 0) {
-				continue
-			}
-			c.samples[int64(at)] += value
 		}
 	}
 	out := make([]containerCPU, 0, len(order))

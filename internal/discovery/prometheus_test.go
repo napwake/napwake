@@ -377,6 +377,29 @@ func TestPrometheus_MixedSources(t *testing.T) {
 	assert.Contains(t, note, `--prometheus-selector 'cluster="..."'`)
 }
 
+func TestSample_UnmarshalJSON(t *testing.T) {
+	tests := []struct {
+		raw  string
+		want sample
+	}{
+		{raw: `[1727740800, "0.25"]`, want: sample{at: 1727740800, value: 0.25, ok: true}},
+		{raw: `[1727740800.781,"1e-3"]`, want: sample{at: 1727740800, value: 0.001, ok: true}},
+		{raw: `[1727740800, "NaN"]`},
+		{raw: `[1727740800, "+Inf"]`},
+		{raw: `[1727740800, 0.25]`},
+		{raw: `[1727740800]`},
+		{raw: `null`},
+	}
+	for _, tt := range tests {
+		t.Run(tt.raw, func(t *testing.T) {
+			var got []sample
+			require.NoError(t, json.Unmarshal([]byte("["+tt.raw+"]"), &got), "a sample that isn't one is skipped")
+			require.Len(t, got, 1)
+			assert.Equal(t, tt.want, got[0])
+		})
+	}
+}
+
 func TestPrometheusURL_SendsHeaders(t *testing.T) {
 	var got http.Header
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
