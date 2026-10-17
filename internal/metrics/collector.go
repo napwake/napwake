@@ -24,6 +24,13 @@ import (
 // --- Tier 1: Cluster Health ---
 
 var (
+	// BuildInfo is 1, labelled with the running binary's release, so a
+	// dashboard can tell which version each operator and doorman pod runs.
+	BuildInfo = prometheus.NewGaugeVec(prometheus.GaugeOpts{
+		Name: "hybernate_build_info",
+		Help: "Always 1, labelled with the version of the running operator or doorman.",
+	}, []string{"version"})
+
 	// WorkloadPhase is 1 for each workload's current phase, in the style of
 	// kube-state-metrics, so alerts can see which workload is in which phase
 	// and for how long.
@@ -149,6 +156,7 @@ var (
 func init() {
 	ctrlmetrics.Registry.MustRegister(
 		// Tier 1
+		BuildInfo,
 		WorkloadPhase,
 		ReconcileErrors,
 		LifecycleTransitions,

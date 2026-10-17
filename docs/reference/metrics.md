@@ -8,6 +8,7 @@ These metrics show whether the operator is healthy and what phase each workload 
 
 | Metric | Type | Labels | Description |
 |--------|------|--------|-------------|
+| `hybernate_build_info` | Gauge | `version` | Always 1, labelled with the release the pod runs, such as `v0.2.0`. Served by the doorman too |
 | `hybernate_workload_phase` | Gauge | `namespace`, `workload`, `phase` | 1 for each workload's current lifecycle phase |
 | `hybernate_reconcile_errors_total` | Counter | `controller` | Reconciliation errors by controller |
 | `hybernate_lifecycle_transitions_total` | Counter | `from`, `to` | Phase transitions |

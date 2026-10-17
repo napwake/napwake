@@ -58,6 +58,7 @@ import (
 	"github.com/okedeji/hybernate/internal/controller"
 	"github.com/okedeji/hybernate/internal/doorman"
 	"github.com/okedeji/hybernate/internal/guard"
+	opmetrics "github.com/okedeji/hybernate/internal/metrics"
 	// +kubebuilder:scaffold:imports
 )
 
@@ -65,6 +66,10 @@ var (
 	scheme   = runtime.NewScheme()
 	setupLog = ctrl.Log.WithName("setup")
 )
+
+// version is the release, set at build time with
+// -ldflags "-X main.version=$VERSION".
+var version = "dev"
 
 func init() {
 	utilruntime.Must(clientgoscheme.AddToScheme(scheme))
@@ -275,7 +280,8 @@ func main() {
 		os.Exit(1)
 	}
 
-	setupLog.Info("starting manager")
+	opmetrics.BuildInfo.WithLabelValues(version).Set(1)
+	setupLog.Info("starting manager", "version", version)
 	if err := mgr.Start(ctrl.SetupSignalHandler()); err != nil {
 		setupLog.Error(err, "manager exited with error")
 		os.Exit(1)
