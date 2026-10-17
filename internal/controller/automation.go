@@ -233,6 +233,9 @@ func (r *Reconciler) reconcileAutomation(ctx context.Context, workload *v1alpha1
 		usage, err := r.observedCPU(ctx, workload)
 		if err != nil {
 			r.clearIdleVeto(workload)
+			if workload.Spec.IdlePolicy != nil {
+				r.observeActivity(ctx, workload, target, cpuLoad{err: err})
+			}
 			return r.reportMetricsUnavailable(ctx, workload, err)
 		}
 		load.percent, load.err = r.utilization(ctx, workload, usage)

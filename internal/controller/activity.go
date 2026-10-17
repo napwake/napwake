@@ -197,11 +197,22 @@ func (r *Reconciler) observeActivity(ctx context.Context, workload *v1alpha1.Man
 		recordActivity(status, now, v1alpha1.ActivitySourceCPU)
 	}
 
-	active, err := r.prometheusActive(ctx, workload)
-	if err != nil {
-		obs.prometheusErr = err
-	} else if active {
-		recordActivity(status, now, v1alpha1.ActivitySourcePrometheus)
+	// With CPU unreadable nothing is decided this check, so Prometheus
+	// isn't asked.
+	if obs.cpuErr == nil {
+		active, err := r.prometheusActive(ctx, workload)
+		if err != nil {
+			obs.prometheusErr = err
+		} else if active {
+			recordActivity(status, now, v1alpha1.ActivitySourcePrometheus)
+		}
+	}
+
+	// A source that couldn't be read may have seen use, so the moment isn't
+	// counted as idle: otherwise a source back from an outage that answers
+	// "nothing now" would find the whole outage idle and pause at once.
+	if obs.cpuErr != nil || obs.prometheusErr != nil {
+		recordActivity(status, now, v1alpha1.ActivitySourceUnobserved)
 	}
 
 	evaluated := metav1.NewTime(now)

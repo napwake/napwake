@@ -133,6 +133,7 @@ The relaunch. The 0.1.x releases were early experiments, and 0.2.0 is a fresh st
 - A forecast veto no longer holds back a pause already decided, and doorman routing problems never hold up a pause or a wake: they're retried with backoff from 5 seconds to 5 minutes
 - A dependency in a namespace outside `watchNamespaces`, or that can't be read, is reported (`DependencyNotFound`, reason `DependencyNotVisible`) and never blocks; `waitForReady` doesn't wait for a dependency that can't start (unmanaged at zero replicas); learned dependencies never form a cycle that holds both workloads awake; and a dependency learned from a wake gets a valid status
 - Activity is written to status promptly enough that a restart can't pause a workload early
+- Time an activity source couldn't be read no longer counts as idle time: each such check restarts the clock (`unobserved`), so a workload whose use shows only in a Prometheus query isn't paused the moment Prometheus comes back from an outage, and the same holds for CPU
 - Events are emitted once, when something changes: forecast vetoes, routing warnings, learned dependencies, and the `DependentsAwake` warning, which fires once a manual pause begins
 - Every series of a deleted workload is dropped from the metrics, and the operator reads only the target's own pods and claims, with deadlines on every call
 - A GitOps tool that set the replicas in the same second as another field manager is reported as the one that woke a paused workload, so the `GitOpsConflict` is never missed

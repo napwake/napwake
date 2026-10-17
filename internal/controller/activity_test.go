@@ -23,6 +23,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -258,6 +259,86 @@ func TestActivityClock_DoesNotActWithoutCPUData(t *testing.T) {
 			require.NotNil(t, cond)
 			assert.Equal(t, metav1.ConditionFalse, cond.Status)
 			assert.Equal(t, tt.wantReason, cond.Reason)
+		})
+	}
+}
+
+// A source that can't be read hides whatever use it would have shown, so
+// the time it's out isn't idle time: back, and seeing nothing, it doesn't
+// find the outage idle and pause at once, but only once it has seen
+// idleAfter of nothing.
+func TestActivityClock_AnOutageIsNotIdleTime(t *testing.T) {
+	const outage = 40 * time.Minute
+	tests := []struct {
+		name    string
+		promQL  bool
+		breakIt func(m *stubMetrics, promDown *atomic.Bool)
+		fixIt   func(m *stubMetrics, promDown *atomic.Bool)
+	}{
+		{
+			name:    "Prometheus down",
+			promQL:  true,
+			breakIt: func(_ *stubMetrics, promDown *atomic.Bool) { promDown.Store(true) },
+			fixIt:   func(_ *stubMetrics, promDown *atomic.Bool) { promDown.Store(false) },
+		},
+		{
+			name:    "metrics API down",
+			breakIt: func(m *stubMetrics, _ *atomic.Bool) { m.err = errors.New("metrics API unavailable") },
+			fixIt:   func(m *stubMetrics, _ *atomic.Bool) { m.err = nil },
+		},
+		{
+			name:    "CPU requests unreadable",
+			breakIt: func(m *stubMetrics, _ *atomic.Bool) { m.noCPURequests = true },
+			fixIt:   func(m *stubMetrics, _ *atomic.Bool) { m.noCPURequests = false },
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			var promDown atomic.Bool
+			srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+				if promDown.Load() {
+					w.WriteHeader(http.StatusServiceUnavailable)
+					return
+				}
+				_, _ = w.Write([]byte(`{"status":"success","data":{"resultType":"vector","result":[]}}`))
+			}))
+			t.Cleanup(srv.Close)
+
+			target := clockTarget("app:v1", nil)
+			workload := clockWorkload(fixedTime.Add(-50*time.Minute), target)
+			if tt.promQL {
+				workload.Spec.IdlePolicy.Activity = &v1alpha1.ActivitySpec{
+					Prometheus: []v1alpha1.PrometheusActivity{{PromQL: `sum(rate(http_requests_total[5m]))`}},
+				}
+			}
+			metrics := idleCPU
+			pauser := &stubPauser{pauseDone: true}
+			r := newAutomationReconciler(t, workload, &stubForecaster{}, automationOpts{metrics: &metrics, pauser: pauser})
+			r.prometheusURL = srv.URL
+			now := fixedTime
+			r.clock = func() time.Time { return now }
+			check := func() {
+				t.Helper()
+				_, err := r.reconcileAutomation(context.Background(), workload, target)
+				require.NoError(t, err)
+			}
+
+			tt.breakIt(&metrics, &promDown)
+			for ; now.Before(fixedTime.Add(outage)); now = now.Add(activityCheckInterval) {
+				check()
+			}
+			require.Zero(t, pauser.pauseCalls, "nothing is paused while a source is out")
+			assert.Equal(t, v1alpha1.ActivitySourceUnobserved, workload.Status.Activity.LastActivitySource)
+
+			tt.fixIt(&metrics, &promDown)
+			lastBlind := now.Add(-activityCheckInterval)
+			for ; now.Before(lastBlind.Add(time.Hour)); now = now.Add(activityCheckInterval) {
+				check()
+				require.Zero(t, pauser.pauseCalls, "paused at %s, within idleAfter of the outage ending",
+					now.Sub(fixedTime))
+			}
+			check()
+			assert.Equal(t, 1, pauser.pauseCalls, "paused once idleAfter has passed with every source seeing nothing")
 		})
 	}
 }
