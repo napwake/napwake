@@ -44,27 +44,31 @@ func TestCRD_DurationsAreThoseGoCanDecode(t *testing.T) {
 	defer cancel()
 	require.NoError(t, c.Create(ctx, &corev1.Namespace{ObjectMeta: metav1.ObjectMeta{Name: "dev"}}))
 
-	fields := map[string][]string{"idleAfter": {"idlePolicy", "idleAfter"}, "maxWait": {"wake", "maxWait"}}
+	idleAfter, maxWait := []string{"idlePolicy", "idleAfter"}, []string{"wake", "maxWait"}
 	tests := []struct {
+		paths [][]string
 		value string
 		valid bool
 	}{
-		{value: "90m", valid: true},
-		{value: "1h30m", valid: true},
-		{value: "45s", valid: true},
-		{value: "1.5m", valid: true},
-		{value: "1d"},
-		{value: "2w"},
-		{value: "1 h"},
-		{value: "1h "},
-		{value: "0s"},
-		{value: "-5m"},
-		{value: "soon"},
+		{paths: [][]string{idleAfter, maxWait}, value: "45m", valid: true},
+		{paths: [][]string{idleAfter, maxWait}, value: "1m30s", valid: true},
+		{paths: [][]string{idleAfter, maxWait}, value: "1.5m", valid: true},
+		{paths: [][]string{idleAfter, maxWait}, value: "1d"},
+		{paths: [][]string{idleAfter, maxWait}, value: "2w"},
+		{paths: [][]string{idleAfter, maxWait}, value: "1 h"},
+		{paths: [][]string{idleAfter, maxWait}, value: "1h "},
+		{paths: [][]string{idleAfter, maxWait}, value: "0s"},
+		{paths: [][]string{idleAfter, maxWait}, value: "-5m"},
+		{paths: [][]string{idleAfter, maxWait}, value: "soon"},
+		{paths: [][]string{idleAfter}, value: "168h", valid: true},
+		{paths: [][]string{maxWait}, value: "1h", valid: true},
+		{paths: [][]string{maxWait}, value: "61m"},
+		{paths: [][]string{maxWait}, value: "10000h"},
 	}
 	n := 0
-	for field, path := range fields {
-		for _, tt := range tests {
-			t.Run(field+"="+tt.value, func(t *testing.T) {
+	for _, tt := range tests {
+		for _, path := range tt.paths {
+			t.Run(path[1]+"="+tt.value, func(t *testing.T) {
 				n++
 				mw := &unstructured.Unstructured{Object: map[string]any{
 					"apiVersion": "hybernate.io/v1alpha1", "kind": "ManagedWorkload",

@@ -25,7 +25,7 @@
 | `dependsOn[].waitForReady` | bool | No | `false` | Hold this workload's resume until the dependency is Ready |
 | `wake` | `WakeSpec` | No | | Waking on request while paused |
 | `wake.onRequest` | bool | No | `true` | Route the workload's Services to the doorman while paused |
-| `wake.maxWait` | duration | No | `2m` | How long a request is held while the workload wakes |
+| `wake.maxWait` | duration (at most `1h`) | No | `2m` | How long a request is held while the workload wakes |
 | `wake.page` | bool | No | `true` | Answer a browser loading a page with a waking-up page instead of holding it |
 | `prediction` | `PredictionSpec` | Yes | | Forecast engine config; `{}` takes the defaults |
 | `prediction.confidence` | int (50-100) | No | `75` | Accuracy (1 − WAPE, %) a season's forecasts must reach before they drive decisions |

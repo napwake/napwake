@@ -44,7 +44,7 @@ Set on an opted-in Deployment or StatefulSet, or on its Namespace to apply to ev
 | `hybernate.io/auto-resume` | exactly `"true"` or `"false"` | `"false"` | Wake ahead of forecast demand |
 | `hybernate.io/depends-on` | comma-separated `kind/name` or `namespace/kind/name`, kind `deployment` or `statefulset` | none | Workloads this one needs. An empty value declares none, so a workload can drop its namespace's |
 | `hybernate.io/wake-on-request` | exactly `"true"` or `"false"` | `"true"` | Wake when a request reaches the workload's Service |
-| `hybernate.io/wake-max-wait` | a Go duration above zero | `2m` | How long a request is held while the workload wakes |
+| `hybernate.io/wake-max-wait` | a Go duration above zero, at most `1h` | `2m` | How long a request is held while the workload wakes |
 | `hybernate.io/wake-page` | exactly `"true"` or `"false"` | `"true"` | Show browsers a waking-up page |
 
 A value that can't be read, such as `"True"`, `"yes"`, `"soon"` or `"0"`, is reported in an `InvalidSetting` warning event on the workload and skipped: the setting comes from the next place in the order above, never from the default in place of a namespace's value, and the other settings still apply. Two exceptions:

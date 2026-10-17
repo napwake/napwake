@@ -45,7 +45,7 @@ This covers dev and preview namespaces, and third-party charts that don't let yo
 | `hybernate.io/auto-resume` | `"true"`, `"false"` | `"false"` | Wake ahead of the demand a confident [forecast](../concepts/forecasting.md) predicts |
 | `hybernate.io/depends-on` | comma-separated `kind/name` or `namespace/kind/name` | none | Workloads this one needs; see [Dependencies](../concepts/dependencies.md) |
 | `hybernate.io/wake-on-request` | `"true"`, `"false"` | `"true"` | Wake when a request reaches the workload's Service; see [Wake on Request](../concepts/wake-on-request.md) |
-| `hybernate.io/wake-max-wait` | duration | `2m` | How long a request is held while the workload wakes |
+| `hybernate.io/wake-max-wait` | duration, at most `1h` | `2m` | How long a request is held while the workload wakes |
 | `hybernate.io/wake-page` | `"true"`, `"false"` | `"true"` | Show browsers a waking-up page |
 
 Leaving an annotation out means its default. A value that can't be read, such as `idle-after: "soon"` or `dry-run: "True"`, is reported in an `InvalidSetting` warning event on the workload and skipped, as if it weren't there: the setting comes from the next place in [Which setting wins](#which-setting-wins), and the others still apply. Booleans are exactly `"true"` or `"false"`; durations must be above zero. In `depends-on`, an entry that can't be read is skipped and the rest apply.

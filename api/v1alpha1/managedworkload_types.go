@@ -17,6 +17,8 @@ limitations under the License.
 package v1alpha1
 
 import (
+	"time"
+
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
@@ -115,9 +117,10 @@ type WakeSpec struct {
 	OnRequest *bool `json:"onRequest,omitempty"`
 
 	// MaxWait is how long the doorman holds a connection while the workload
-	// wakes. After it, the connection is closed; the wake carries on.
+	// wakes, at most 1h. After it, the connection is closed; the wake
+	// carries on.
 	// +kubebuilder:default="2m"
-	// +kubebuilder:validation:XValidation:rule="duration(self) > duration('0s')",message="must be a duration above zero, such as 90s or 5m"
+	// +kubebuilder:validation:XValidation:rule="duration(self) > duration('0s') && duration(self) <= duration('1h')",message="must be a duration above zero and at most 1h, such as 90s or 5m"
 	// +optional
 	MaxWait *metav1.Duration `json:"maxWait,omitempty"`
 
@@ -128,6 +131,12 @@ type WakeSpec struct {
 	// +optional
 	Page *bool `json:"page,omitempty"`
 }
+
+// WakeMaxWaitLimit is the longest wake.maxWait the CRD accepts. Each held
+// connection takes one of the doorman's limited places, so a connection
+// held for hours keeps other callers out long after its own caller has
+// given up.
+const WakeMaxWaitLimit = time.Hour
 
 // DependencyRef names a workload this one needs. It refers to the
 // dependency's Deployment or StatefulSet, not to its ManagedWorkload.

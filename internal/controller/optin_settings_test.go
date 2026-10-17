@@ -97,6 +97,15 @@ func TestOptInSpec_InvalidValues(t *testing.T) {
 		{v1alpha1.AnnotationWakeMaxWait, "0", func(t *testing.T, s v1alpha1.ManagedWorkloadSpec) {
 			assert.Equal(t, 2*time.Minute, s.Wake.MaxWait.Duration)
 		}},
+		{v1alpha1.AnnotationWakeMaxWait, "2h", func(t *testing.T, s v1alpha1.ManagedWorkloadSpec) {
+			assert.Equal(t, 2*time.Minute, s.Wake.MaxWait.Duration)
+		}},
+		{v1alpha1.AnnotationWakeMaxWait, "1d", func(t *testing.T, s v1alpha1.ManagedWorkloadSpec) {
+			assert.Equal(t, 2*time.Minute, s.Wake.MaxWait.Duration)
+		}},
+		{v1alpha1.AnnotationIdleAfter, "1d", func(t *testing.T, s v1alpha1.ManagedWorkloadSpec) {
+			assert.Equal(t, time.Hour, s.IdlePolicy.IdleAfter.Duration)
+		}},
 		{v1alpha1.AnnotationWakeOnRequest, "yes", func(t *testing.T, s v1alpha1.ManagedWorkloadSpec) { assert.True(t, *s.Wake.OnRequest) }},
 		{v1alpha1.AnnotationIdleAfter, "soon", func(t *testing.T, s v1alpha1.ManagedWorkloadSpec) {
 			assert.Equal(t, time.Hour, s.IdlePolicy.IdleAfter.Duration)
@@ -125,6 +134,15 @@ func TestOptInSpec_InvalidValues(t *testing.T) {
 			assert.True(t, spec.IdlePolicy.AutoResume, "the other settings still apply")
 		})
 	}
+}
+
+func TestOptInSpec_WakeMaxWaitUpToTheLimit(t *testing.T) {
+	annotations := map[string]string{v1alpha1.AnnotationWakeMaxWait: "1h"}
+
+	spec, problems := optInSpec(apiTarget, annotations, nil, DefaultOptInDefaults)
+
+	require.Empty(t, problems)
+	assert.Equal(t, v1alpha1.WakeMaxWaitLimit, spec.Wake.MaxWait.Duration)
 }
 
 func TestOptInSpec_DependsOn(t *testing.T) {
