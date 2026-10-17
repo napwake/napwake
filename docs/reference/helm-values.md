@@ -98,7 +98,7 @@ Settings for workloads opted in with the `hybernate.io/managed` label, used when
 | Value | Default | Description |
 |-------|---------|-------------|
 | `metrics.enabled` | `true` | Expose Prometheus metrics, from the operator and the doorman |
-| `metrics.port` | `8443` | Metrics endpoint port |
+| `metrics.port` | `8443` | Metrics endpoint port, for the operator and the doorman. Not 8081, the health probes' port, nor 20000-29999, where the doorman listens for paused workloads' traffic |
 | `metrics.secure` | `true` | Serve metrics over HTTPS, only to callers allowed to `get` `/metrics`. `false` serves plain HTTP to anyone who can reach the port |
 | `metrics.readerSubjects` | `[]` | Subjects, such as your Prometheus's ServiceAccount, to bind to the `<fullname>-metrics-reader` ClusterRole, which may get `/metrics` |
 

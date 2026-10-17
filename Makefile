@@ -164,6 +164,11 @@ check-chart: ## Lint the Helm chart, render it for each provider's Kubernetes ve
 		echo "the chart accepts doorman.networkPolicy.ingressFrom without networkPolicy.enabled, which leaves the doorman open"; exit 1; }
 	helm template hybernate charts/hybernate | go run ./hack/rbaccheck config/rbac/role.yaml
 	helm template hybernate charts/hybernate --set 'watchNamespaces={shop,blog}' | go run ./hack/rbaccheck config/rbac/role.yaml
+	@for p in 8081 20000 29999; do \
+		! helm template hybernate charts/hybernate --set metrics.port=$$p >/dev/null 2>&1 || { \
+			echo "the chart accepts metrics.port=$$p, which the health probes or the doorman's routing ports use"; exit 1; }; \
+	done
+	@helm template hybernate charts/hybernate --set metrics.port=30000 >/dev/null
 	@out=$$(helm template hybernate charts/hybernate --set-string podLabels.team=checkout \
 		--set-string podLabels.control-plane=other --set priorityClassName=hybernate-critical \
 		--set 'doorman.extraEnv[0].name=GOMAXPROCS' --set-string 'doorman.extraEnv[0].value=2'); \
