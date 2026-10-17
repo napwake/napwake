@@ -857,6 +857,33 @@ func TestResume_ReportsReplicasNotReady(t *testing.T) {
 	assert.Equal(t, "AllReplicasReady", c.Reason)
 }
 
+// A cache that hasn't yet seen a resume finish still holds the workload
+// Paused. Routing it from that would put back the doorman slices its
+// resume had just removed, sending requests to the doorman rather than to
+// the pods now serving them.
+func TestReconcile_AStalePausedPhaseDoesNotRouteToTheDoorman(t *testing.T) {
+	r, _ := pausedRouted(t)
+	for _, s := range doormanSlices(t, r) {
+		require.NoError(t, r.Delete(context.Background(), &s))
+	}
+	r.PodReader = interceptor.NewClient(r.Client.(client.WithWatch), interceptor.Funcs{
+		Get: func(ctx context.Context, c client.WithWatch, key client.ObjectKey, obj client.Object,
+			opts ...client.GetOption) error {
+			if err := c.Get(ctx, key, obj, opts...); err != nil {
+				return err
+			}
+			if w, ok := obj.(*v1alpha1.ManagedWorkload); ok {
+				w.Status.Phase = v1alpha1.PhaseRunning
+			}
+			return nil
+		}})
+
+	_, err := r.Reconcile(context.Background(), reconcileFor("api"))
+
+	require.NoError(t, err)
+	assert.Empty(t, doormanSlices(t, r))
+}
+
 // resumingPauser resumes to a given outcome.
 type resumingPauser struct {
 	stubPauser

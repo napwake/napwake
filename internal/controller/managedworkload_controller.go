@@ -214,6 +214,17 @@ func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (res ctrl.
 		return ctrl.Result{}, err
 	}
 
+	// A cache that hasn't yet seen a resume finish still holds the workload
+	// Paused, and routing that would put back the doorman slices the resume
+	// just removed. Only the API server can tell, and only a workload that
+	// would be routed needs asking.
+	if doormanEligible(&workload) {
+		if phase, err := r.livePhase(ctx, &workload); err != nil {
+			return ctrl.Result{}, err
+		} else if phase != workload.Status.Phase {
+			return ctrl.Result{RequeueAfter: staleRetry}, nil
+		}
+	}
 	doormanRetry = r.routeDoorman(ctx, &workload, target)
 
 	result, err := r.resumeTransition(ctx, &workload, target)
