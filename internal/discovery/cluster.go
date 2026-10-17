@@ -195,6 +195,8 @@ type Totals struct {
 	// basis their saving is estimated on: over the replayed history for
 	// those replayed, with the pods they ran then, and as they run now for
 	// the rest. What Replayed and Measured could save is a share of it.
+	// Workloads the scan couldn't judge aren't in it, nor in Replayed, as
+	// the table doesn't list them.
 	SavingsBasis float64 `json:"savingsBasis"`
 	// Paused and PausedHourlyCost are what Hybernate has paused right now
 	// and what that frees each hour.
@@ -594,7 +596,8 @@ func totals(workloads []Workload) Totals {
 		case w.Managed && !w.DryRun:
 			t.Live++
 		}
-		replayed := w.History != nil && !w.Managed && !w.Protected
+		judged := w.State != StateUnknown
+		replayed := w.History != nil && !w.Managed && !w.Protected && judged
 		if h := w.History; replayed {
 			t.Replayed.Workloads++
 			if h.SleepHours > 0 {
@@ -615,9 +618,10 @@ func totals(workloads []Workload) Totals {
 			continue
 		}
 		t.MonthlyCost += w.MonthlyCost
-		if replayed {
+		switch {
+		case replayed:
 			t.SavingsBasis += w.History.MonthlyCost
-		} else {
+		case judged:
 			t.SavingsBasis += w.MonthlyCost
 		}
 		if w.State == StateIdle {

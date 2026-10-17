@@ -188,6 +188,9 @@ func (s *Scanner) scanNamespace(ctx context.Context, namespace string, pricing n
 			if w.History == nil && w.State != StateUnknown {
 				scan.noHistory = append(scan.noHistory, w.Namespace+"/"+w.Name)
 			}
+			if w.History != nil && w.State == StateUnknown && mw == nil {
+				judgeFromHistory(&w, now)
+			}
 		}
 		scan.workloads = append(scan.workloads, w)
 	}

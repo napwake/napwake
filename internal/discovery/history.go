@@ -75,6 +75,10 @@ type History struct {
 	// runs now, so Freed is always a share of Cost.
 	Cost        float64 `json:"cost"`
 	MonthlyCost float64 `json:"monthlyCost"`
+	// asleepAtEnd says the clock had run out when the history ended, and
+	// lastActive is when it last saw activity, if it ever did.
+	asleepAtEnd bool
+	lastActive  time.Time
 }
 
 // replay is one workload's recorded history, and the clock's settings to
@@ -122,7 +126,7 @@ func (r replay) run() History {
 				h.Wakes++
 				asleep = false
 			}
-			lastActive = t
+			lastActive, h.lastActive = t, t
 		case t.Sub(lastActive) >= r.idleAfter:
 			asleep = true
 		}
@@ -145,7 +149,25 @@ func (r replay) run() History {
 		h.MonthlyFreed = h.Freed / h.Hours * hoursPerMonth
 		h.MonthlyCost = h.Cost / h.Hours * hoursPerMonth
 	}
+	h.asleepAtEnd = asleep
 	return h
+}
+
+// judgeFromHistory judges a workload whose CPU couldn't be measured right
+// now, as without metrics-server, by where replaying its history left the
+// activity clock, so it's judged on the same evidence the replay counts.
+func judgeFromHistory(w *Workload, now time.Time) {
+	h := w.History
+	switch {
+	case h.asleepAtEnd && h.lastActive.IsZero():
+		w.State, w.Reason = StateIdle, "no activity in its CPU history"
+	case h.asleepAtEnd:
+		w.State, w.Reason = StateIdle, "last active in its CPU history "+ago(now.Sub(h.lastActive))
+	case h.lastActive.IsZero():
+		w.State, w.Reason = StateActive, "started too recently in its CPU history to be idle"
+	default:
+		w.State, w.Reason = StateActive, "active in its CPU history "+ago(now.Sub(h.lastActive))
+	}
 }
 
 func rolledOutBetween(sorted []time.Time, after, upTo time.Time) bool {
@@ -365,7 +387,7 @@ func CouldSave(w Workload) float64 {
 		return 0
 	case w.Measured != nil:
 		return w.Measured.MonthlyFreed
-	case !w.Managed && !w.Protected && w.History != nil:
+	case !w.Managed && !w.Protected && w.History != nil && w.State != StateUnknown:
 		return w.History.MonthlyFreed
 	}
 	return 0

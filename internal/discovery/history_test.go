@@ -26,7 +26,11 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	appsv1 "k8s.io/api/apps/v1"
+	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/runtime/schema"
+	metricsv1beta1 "k8s.io/metrics/pkg/apis/metrics/v1beta1"
+	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 
 	v1alpha1 "github.com/okedeji/hybernate/api/v1alpha1"
@@ -406,6 +410,65 @@ func TestScanCluster_HistoryIsTheWorkloadsOwn(t *testing.T) {
 	h := byName(report)["web"].History
 	require.NotNil(t, h)
 	assert.InDelta(t, 167, h.SleepHours, 1, "web was quiet all week; the migration Job and web-api aren't web")
+}
+
+// Without metrics-server, CPU right now can't be measured, but history can
+// still judge a workload, so the table lists the workloads the headline
+// counts.
+func TestScanCluster_JudgesFromHistoryWithoutMetrics(t *testing.T) {
+	quiet := func(time.Time) float64 { return 0.001 }
+	f := &fakePrometheus{from: scanTime.Add(-7 * 24 * time.Hour), byNamespace: map[string][]series{testNamespace: {
+		{pod: "idle-api-7d9f8c6b5-x7k2p", container: "main", cores: quiet},
+		{pod: "busy-api-7d9f8c6b5-x7k2p", container: "main", cores: func(time.Time) float64 { return 2 }},
+	}}}
+	objs := deploymentWithRollout("idle-api", testNamespace, 1, 30*24*time.Hour)
+	objs = append(objs, deploymentWithRollout("busy-api", testNamespace, 1, 30*24*time.Hour)...)
+	objs = append(objs, deploymentWithRollout("no-history", testNamespace, 1, 30*24*time.Hour)...)
+	opts := scanOptions(testNamespace)
+	opts.History, opts.Window, opts.IdleAfter = newFakePrometheus(t, f), 7*24*time.Hour, time.Hour
+	c := failingIn(objs, func(list client.ObjectList, _ string) error {
+		if _, ok := list.(*metricsv1beta1.PodMetricsList); ok {
+			return &meta.NoKindMatchError{GroupKind: schema.GroupKind{Group: "metrics.k8s.io", Kind: "PodMetrics"}}
+		}
+		return nil
+	})
+
+	report, err := NewScanner(c, c).ScanCluster(context.Background(), opts)
+
+	require.NoError(t, err)
+	got := byName(report)
+	assert.Equal(t, StateIdle, got["idle-api"].State)
+	assert.Equal(t, "no activity in its CPU history", got["idle-api"].Reason)
+	assert.Equal(t, StateActive, got["busy-api"].State)
+	assert.Equal(t, StateUnknown, got["no-history"].State, "nothing to judge it by")
+	assert.Equal(t, 2, report.Totals.Replayed.Workloads, "only the workloads the table lists")
+	assert.InDelta(t, got["idle-api"].History.MonthlyCost+got["busy-api"].History.MonthlyCost,
+		report.Totals.SavingsBasis, 0.001, "the one that couldn't be judged isn't in the share's basis")
+	assert.Zero(t, CouldSave(Workload{State: StateUnknown, History: &History{MonthlyFreed: 5}}))
+}
+
+func TestJudgeFromHistory(t *testing.T) {
+	tests := []struct {
+		name    string
+		history History
+		want    State
+		wantWhy string
+	}{
+		{"idle since its last activity", History{asleepAtEnd: true, lastActive: scanTime.Add(-50 * time.Hour)},
+			StateIdle, "last active in its CPU history 2 days ago"},
+		{"never active", History{asleepAtEnd: true}, StateIdle, "no activity in its CPU history"},
+		{"active lately", History{lastActive: scanTime.Add(-20 * time.Minute)},
+			StateActive, "active in its CPU history 20m ago"},
+		{"too new to be idle", History{}, StateActive, "started too recently in its CPU history to be idle"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			w := Workload{State: StateUnknown, History: &tt.history}
+			judgeFromHistory(&w, scanTime)
+			assert.Equal(t, tt.want, w.State)
+			assert.Equal(t, tt.wantWhy, w.Reason)
+		})
+	}
 }
 
 // A Deployment's pods from a ReplicaSet since deleted, past its revision
