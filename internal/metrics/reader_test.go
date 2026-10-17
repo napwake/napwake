@@ -546,6 +546,8 @@ func TestReader_RequestsOfTheCurrentRevision(t *testing.T) {
 				runningPod("web-9zzzz-new00", "9zzzz", "100m", start.Add(time.Hour)),
 				runningPod("web-1aaaa-old01", "1aaaa", "1", start)}, want: 100},
 		{name: "only failed pods, the template", pods: []client.Object{evicted}, want: 300},
+		{name: "none running yet, as in a Recreate rollout, the newest starting pod",
+			pods: []client.Object{evicted, pending}, want: 2000},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

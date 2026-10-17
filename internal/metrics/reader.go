@@ -197,8 +197,7 @@ func (r *Reader) PodRequestsPerReplica(ctx context.Context, workload *v1alpha1.M
 }
 
 // replicaPod returns the pod whose requests stand for a replica's, as a
-// slice of pods holding it, or none when no pod is running. Only a running
-// pod is read: a failed or completed one, such as an evicted pod, stays
+// slice of pods holding it. A running pod is read when there is one: a failed or completed one, such as an evicted pod, stays
 // listed until it's collected, with whatever its revision requested. When
 // the running pods are of more than one revision, as during a rollout, the
 // current one's pod is read: for a StatefulSet the update revision, and
@@ -227,10 +226,30 @@ func replicaPod(target client.Object, pods []corev1.Pod) (replica []corev1.Pod, 
 		}
 	}
 	if chosen < 0 {
-		return nil, false
+		return startingPod(pods), false
 	}
 	settled = !mixed || (current != "" && pods[chosen].Labels[label] == current)
 	return pods[chosen : chosen+1], settled
+}
+
+// startingPod is the newest pod that's neither finished nor being deleted,
+// for when none is running, such as while a Recreate rollout's pods are
+// Pending: admission has already set its requests, which a template
+// relying on a LimitRange default doesn't have.
+func startingPod(pods []corev1.Pod) []corev1.Pod {
+	chosen := -1
+	for i := range pods {
+		if !live(&pods[i]) {
+			continue
+		}
+		if chosen < 0 || pods[chosen].CreationTimestamp.Before(&pods[i].CreationTimestamp) {
+			chosen = i
+		}
+	}
+	if chosen < 0 {
+		return nil
+	}
+	return pods[chosen : chosen+1]
 }
 
 // revisionOf returns the label a target's pods carry their revision in,
