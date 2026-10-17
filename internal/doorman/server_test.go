@@ -157,7 +157,7 @@ func readySlice(port int32) *discoveryv1.EndpointSlice {
 
 // newTestServer is a doorman over a fake client holding objs. Tests run
 // their backends on loopback, which the doorman otherwise never dials, and
-// stop without the drain a doorman pod gets.
+// stop without the drain a doorman pod gets, closing what they hold.
 func newTestServer(t *testing.T, wrap func(client.WithWatch) client.WithWatch, objs ...client.Object) (*Server, client.WithWatch) {
 	t.Helper()
 	var c client.WithWatch
@@ -167,7 +167,7 @@ func newTestServer(t *testing.T, wrap func(client.WithWatch) client.WithWatch, o
 	}
 	s := NewServer(c, nil, Options{Host: "127.0.0.1"})
 	s.backends.allowed = func(netip.Addr) bool { return true }
-	s.acceptFor = 0
+	s.acceptFor, s.grace = 0, 100*time.Millisecond
 	return s, c
 }
 
@@ -840,21 +840,63 @@ func TestServer_HeldConnectionsAreCapped(t *testing.T) {
 		5*time.Second, 10*time.Millisecond, "counted as resultLimited")
 }
 
-// A caller that goes away while held frees its place.
+// A caller that goes away while held frees its place: an HTTP client that
+// closes its connection, as HTTP servers take it, or any client whose
+// connection is reset.
 func TestServer_ACallerLeavingFreesItsPlace(t *testing.T) {
+	tests := []struct {
+		name  string
+		send  string
+		leave func(*net.TCPConn) error
+	}{
+		{name: "an HTTP client closing", send: "GET /api HTTP/1.1\r\nHost: api\r\n\r\n",
+			leave: func(c *net.TCPConn) error { return c.Close() }},
+		{name: "an HTTP client half-closing", send: "GET /api HTTP/1.1\r\nHost: api\r\n\r\n",
+			leave: func(c *net.TCPConn) error { return c.CloseWrite() }},
+		{name: "a reset", send: "hello\n", leave: func(c *net.TCPConn) error {
+			if err := c.SetLinger(0); err != nil {
+				return err
+			}
+			return c.Close()
+		}},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			port := freePort(t)
+			s, _ := startServer(t, pausedWorkload("api", port, time.Minute))
+			before := wakes(resultCanceled)
+
+			conn := dial(t, port)
+			send(t, conn, tt.send)
+			require.Eventually(t, func() bool { return heldCount(s) == 1 }, 5*time.Second, 10*time.Millisecond)
+			require.NoError(t, tt.leave(conn.(*net.TCPConn)))
+
+			require.Eventually(t, func() bool { return wakes(resultCanceled) == before+1 }, 5*time.Second, 10*time.Millisecond)
+			// The place is freed as the connection's handler returns, just
+			// after its result is counted.
+			assert.Eventually(t, func() bool { return heldCount(s) == 0 }, 5*time.Second, 10*time.Millisecond)
+		})
+	}
+}
+
+// A client of a protocol other than HTTP may send what it has and close its
+// side, as nc -N and many scripts do, and still wait for the answer. It's
+// held, and what it sent reaches the workload, followed by its EOF.
+func TestServer_HoldsAHalfClosedCaller(t *testing.T) {
 	port := freePort(t)
-	s, _ := startServer(t, pausedWorkload("api", port, time.Minute))
-	before := wakes(resultCanceled)
+	s, c := startServer(t, pausedWorkload("api", port, time.Minute))
 
 	conn := dial(t, port)
 	send(t, conn, "hello\n")
-	require.Eventually(t, func() bool { return heldCount(s) == 1 }, 5*time.Second, 10*time.Millisecond)
-	require.NoError(t, conn.Close())
+	require.NoError(t, conn.(*net.TCPConn).CloseWrite())
+	require.Eventually(t, func() bool { return lastRequest(t, c) != "" }, 5*time.Second, 20*time.Millisecond)
+	assert.Equal(t, 1, heldCount(s), "still held")
+	require.NoError(t, c.Create(context.Background(), readySlice(echoPort(t))))
 
-	require.Eventually(t, func() bool { return wakes(resultCanceled) == before+1 }, 5*time.Second, 10*time.Millisecond)
-	// The place is freed as the connection's handler returns, just after
-	// its result is counted.
-	assert.Eventually(t, func() bool { return heldCount(s) == 0 }, 5*time.Second, 10*time.Millisecond)
+	echoed(t, conn, "hello\n")
+	n, err := conn.Read(make([]byte, 1))
+	assert.Zero(t, n)
+	assert.ErrorIs(t, err, io.EOF, "the workload saw the caller's EOF and closed its side")
 }
 
 // A caller that sent a request body before leaving frees its place too,
@@ -1240,7 +1282,7 @@ func TestServer_InformerWakesHeldConnections(t *testing.T) {
 	c := fake.NewClientBuilder().WithScheme(scheme).WithObjects(pausedWorkload("api", port, time.Minute)).Build()
 	s := NewServer(c, nil, Options{Host: "127.0.0.1", Informers: informers})
 	s.backends.allowed = func(netip.Addr) bool { return true }
-	s.acceptFor = 0
+	s.acceptFor, s.grace = 0, 100*time.Millisecond
 	run(t, s)
 
 	conn := dial(t, port)

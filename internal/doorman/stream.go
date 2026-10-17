@@ -17,6 +17,7 @@ limitations under the License.
 package doorman
 
 import (
+	"errors"
 	"io"
 	"net"
 	"sync"
@@ -30,11 +31,16 @@ import (
 // past either stops being read until its connection is passed on, as it
 // would without the doorman, and its leaving goes unnoticed until then.
 //
+// A caller's EOF means it left, unless halfClose says it may only be done
+// sending: then it's held as before, and the EOF is passed on after what it
+// sent.
+//
 // Once the connection is passed on, the stream is the proxy's reader, and
 // buffers no more than one read at a time.
 type clientStream struct {
 	conn      net.Conn
 	admission *admission
+	halfClose bool
 
 	mu      sync.Mutex
 	changed *sync.Cond
@@ -44,24 +50,23 @@ type clientStream struct {
 	counted int
 	closed  bool
 
-	// gone is closed when reading the caller ends: it left, or its
-	// connection failed.
+	// gone is closed when the caller left, or its connection failed.
 	gone chan struct{}
 }
 
-func newClientStream(conn net.Conn, a *admission) *clientStream {
-	s := &clientStream{conn: conn, admission: a, held: true, gone: make(chan struct{})}
+func newClientStream(conn net.Conn, a *admission, halfClose bool) *clientStream {
+	s := &clientStream{conn: conn, admission: a, halfClose: halfClose, held: true, gone: make(chan struct{})}
 	s.changed = sync.NewCond(&s.mu)
 	return s
 }
 
 // run reads the caller until it ends or the stream is closed.
 func (s *clientStream) run() {
-	defer close(s.gone)
 	chunk := make([]byte, clientBufferSize)
 	for {
 		reserved, ok := s.awaitRoom()
 		if !ok {
+			close(s.gone)
 			return
 		}
 		n, err := s.conn.Read(chunk)
@@ -82,6 +87,9 @@ func (s *clientStream) run() {
 		s.changed.Broadcast()
 		s.mu.Unlock()
 		if err != nil {
+			if !s.halfClose || !errors.Is(err, io.EOF) {
+				close(s.gone)
+			}
 			return
 		}
 	}
