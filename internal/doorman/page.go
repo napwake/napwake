@@ -143,17 +143,20 @@ var defaultHealthCheckAgents = []string{
 }
 
 // isHealthCheck reports whether req comes from a health checker or scraper,
-// one whose User-Agent starts with one of agents. Only a GET or HEAD can be
-// one: the same agents also send real traffic, such as Prometheus remote
-// write and Alertmanager notifications, which are POSTs and must reach the
-// workload.
+// one whose User-Agent starts with one of agents, or names it as
+// "(compatible; agent", as monitors that present themselves as a browser
+// do. No browser still in use sends "compatible;", so that can't match a
+// person.
+// Only a GET or HEAD can be one: the same agents also send real traffic,
+// such as Prometheus remote write and Alertmanager notifications, which are
+// POSTs and must reach the workload.
 func isHealthCheck(req *http.Request, agents []string) bool {
 	if req.Method != http.MethodGet && req.Method != http.MethodHead {
 		return false
 	}
 	agent := req.UserAgent()
-	for _, prefix := range agents {
-		if strings.HasPrefix(agent, prefix) {
+	for _, name := range agents {
+		if strings.HasPrefix(agent, name) || strings.Contains(agent, "(compatible; "+name) {
 			return true
 		}
 	}

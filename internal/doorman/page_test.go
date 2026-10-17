@@ -120,7 +120,12 @@ func TestHealthCheckAgents_AddToTheBuiltIn(t *testing.T) {
 	assert.True(t, probe("MyCorpMonitor/3.1"))
 	assert.True(t, probe("uptime-kuma/1.23"))
 	assert.True(t, probe("kube-probe/1.31"), "the built-in agents still count")
+	assert.True(t, probe("Mozilla/5.0 (compatible; MyCorpMonitor/3.1; +https://monitor.example.com)"),
+		"a monitor presenting itself as a browser")
 	assert.False(t, probe("Mozilla/5.0 (X11; Linux x86_64)"))
+	assert.False(t, probe("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/129.0.0.0 Safari/537.36"))
+	assert.False(t, probe("Mozilla/5.0 (compatible; Googlebot/2.1; +http://www.google.com/bot.html)"),
+		"only the agents listed")
 	assert.Len(t, agents, len(defaultHealthCheckAgents)+2)
 }
 
