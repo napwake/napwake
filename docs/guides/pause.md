@@ -118,4 +118,4 @@ A paused workload costs only its storage. To remove one for good, delete it the 
 
 ## Finalizer
 
-The `hybernate.io/cleanup` finalizer is added to every ManagedWorkload, so that deleting one while its workload is paused scales the workload back to the replicas it had first.
+The `hybernate.io/cleanup` finalizer is added to every ManagedWorkload, so that deleting one while its workload is paused scales the workload back to the replicas it had first. A hand-back that fails is retried, except when the namespace itself is being deleted: there the workload goes with it, so after 5 minutes of failures, such as a KEDA webhook that's down rejecting the release of its ScaledObject, the ManagedWorkload lets go with a `HandBackAbandoned` Warning event rather than hold the namespace's deletion forever.

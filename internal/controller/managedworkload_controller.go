@@ -429,11 +429,7 @@ func (r *Reconciler) handleResume(ctx context.Context, workload *v1alpha1.Manage
 			log.FromContext(ctx).Info("couldn't learn what sent the request that woke the workload",
 				"workload", workload.Name, "namespace", workload.Namespace, "error", err.Error())
 		}
-		// Woken before the phase changes, so a failure here is retried
-		// from Paused rather than skipped by a retry that finds Resuming.
-		if err := r.wakeDependencies(ctx, workload); err != nil {
-			return nil, err
-		}
+		r.wakeDependencies(ctx, workload)
 		if err := r.transition(ctx, workload, v1alpha1.PhaseResuming, "ResumeRequested"); err != nil {
 			return nil, err
 		}
@@ -590,7 +586,7 @@ func (r *Reconciler) reconcileDelete(ctx context.Context, workload *v1alpha1.Man
 	}
 
 	released, replicas, err := r.releaseTarget(ctx, workload)
-	if err != nil {
+	if err != nil && !r.abandonHandBack(ctx, workload, err) {
 		return 0, err
 	}
 	if wait := r.drainLeft(workload); wait > 0 {
@@ -613,6 +609,40 @@ func (r *Reconciler) reconcileDelete(ctx context.Context, workload *v1alpha1.Man
 	r.forgetForecast(workload)
 	metrics.DeleteWorkload(workload.Namespace, workload.Name)
 	return 0, nil
+}
+
+const (
+	// handBackGiveUpAfter is how long a ManagedWorkload in a namespace being
+	// deleted keeps retrying a hand-back that fails before it goes without
+	// it. Its target goes with the namespace, so there's nothing left to hand
+	// back to, and a hand-back that can't succeed, such as one a KEDA
+	// webhook that's down rejects, would otherwise hold the namespace's
+	// deletion forever.
+	handBackGiveUpAfter = 5 * time.Minute
+
+	ReasonHandBackAbandoned = "HandBackAbandoned"
+)
+
+// abandonHandBack reports whether a deletion whose hand-back failed should
+// let the ManagedWorkload go anyway: only once its namespace is being
+// deleted, and it has kept failing for handBackGiveUpAfter.
+func (r *Reconciler) abandonHandBack(ctx context.Context, workload *v1alpha1.ManagedWorkload, failure error) bool {
+	if r.now().Sub(workload.DeletionTimestamp.Time) < handBackGiveUpAfter {
+		return false
+	}
+	var ns corev1.Namespace
+	if err := r.Get(ctx, client.ObjectKey{Name: workload.Namespace}, &ns); err != nil {
+		return false
+	}
+	if ns.DeletionTimestamp.IsZero() && ns.Status.Phase != corev1.NamespaceTerminating {
+		return false
+	}
+	log.FromContext(ctx).Info("namespace is being deleted, letting the workload go without handing it back",
+		"workload", workload.Name, "namespace", workload.Namespace, "error", failure.Error())
+	r.emitEvent(workload, false, "Warning", ReasonHandBackAbandoned, actionResume,
+		"namespace %s is being deleted and handing the target back has failed for %s, so Hybernate lets it go: %v",
+		workload.Namespace, roundedDuration(handBackGiveUpAfter), failure)
+	return true
 }
 
 // drainLeft is how long until the last of the workload's doorman ports has
@@ -641,9 +671,7 @@ func (r *Reconciler) releaseTarget(ctx context.Context, workload *v1alpha1.Manag
 		if replicas, err = r.pauser.Restore(ctx, workload); err != nil {
 			return false, 0, fmt.Errorf("restoring the paused target: %w", err)
 		}
-		if err := r.wakeDependencies(ctx, workload); err != nil {
-			return false, 0, err
-		}
+		r.wakeDependencies(ctx, workload)
 	}
 	if err := r.removeDoorman(ctx, workload); err != nil {
 		return false, 0, fmt.Errorf("removing doorman routes: %w", err)

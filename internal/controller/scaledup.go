@@ -93,9 +93,7 @@ func (r *Reconciler) wakeOnScaleUp(ctx context.Context, workload *v1alpha1.Manag
 		r.setCondition(workload, conditionGitOpsConflict, metav1.ConditionTrue, "PauseUndone", conflict)
 	}
 
-	if err := r.wakeDependencies(ctx, workload); err != nil {
-		return err
-	}
+	r.wakeDependencies(ctx, workload)
 	if err := r.transition(ctx, workload, v1alpha1.PhaseRunning, "ScaledUp"); err != nil {
 		return err
 	}

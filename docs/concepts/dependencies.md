@@ -36,6 +36,8 @@ Its clock keeps running. Once the last dependent has paused, the dependency paus
 
 By default, everything wakes at once, so a chain of dependencies doesn't add up to sequential cold starts.
 
+Waking a dependency never holds up its dependent. One that can't be woken, such as one whose ManagedWorkload a policy engine won't let Hybernate annotate, gets a `DependencyWakeFailed` Warning event on the dependent, which wakes, or is handed back or deleted, all the same.
+
 ## Waiting for a dependency to be ready
 
 Some workloads fail if they start before a dependency can serve: an API that gives up after a few connection retries while its database replays its write-ahead log. Set `waitForReady` on that dependency:

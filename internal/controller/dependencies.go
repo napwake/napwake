@@ -18,7 +18,6 @@ package controller
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"slices"
 	"strings"
@@ -305,28 +304,46 @@ func (r *Reconciler) clearCondition(workload *v1alpha1.ManagedWorkload, condType
 // wakeDependencies stamps an activity annotation on each dependency that
 // Hybernate manages, which wakes it through the annotation wake path. A
 // dependency that's already awake gets its clock reset, since this workload
-// is about to use it. Every dependency is tried even when one fails.
-func (r *Reconciler) wakeDependencies(ctx context.Context, workload *v1alpha1.ManagedWorkload) error {
+// is about to use it.
+//
+// Waking them is best-effort: a dependency that can't be woken, such as
+// one whose ManagedWorkload a policy won't let Hybernate annotate, must
+// never keep this workload from waking, being handed back, or being
+// deleted. Each failure is reported in a Warning event on this workload,
+// and every dependency is tried.
+func (r *Reconciler) wakeDependencies(ctx context.Context, workload *v1alpha1.ManagedWorkload) {
 	refs := dependencyRefs(workload)
 	if len(refs) == 0 {
-		return nil
+		return
 	}
 	ctx, cancel := context.WithTimeout(ctx, dependencyTimeout)
 	defer cancel()
 
 	g, err := r.loadDependencyGraph(ctx)
 	if err != nil {
-		return err
+		r.reportWakeFailure(ctx, workload, "its dependencies", err)
+		return
 	}
-	var errs []error
 	for _, ref := range refs {
 		dep, ok := g.byTarget[dependencyID(workload, ref)]
 		if !ok || dep.UID == workload.UID {
 			continue
 		}
-		errs = append(errs, r.stampActivity(ctx, dep))
+		if err := r.stampActivity(ctx, dep); err != nil {
+			r.reportWakeFailure(ctx, workload, dep.Namespace+"/"+dep.Name, err)
+		}
 	}
-	return errors.Join(errs...)
+}
+
+// ReasonDependencyWakeFailed reports a dependency Hybernate couldn't wake
+// along with its dependent.
+const ReasonDependencyWakeFailed = "DependencyWakeFailed"
+
+func (r *Reconciler) reportWakeFailure(ctx context.Context, workload *v1alpha1.ManagedWorkload, what string, err error) {
+	log.FromContext(ctx).Info("couldn't wake a dependency", "workload", workload.Name,
+		"namespace", workload.Namespace, "dependency", what, "error", err.Error())
+	r.emitEvent(workload, false, "Warning", ReasonDependencyWakeFailed, actionResume,
+		"couldn't wake %s, so it may still be paused: %v", what, err)
 }
 
 func (r *Reconciler) stampActivity(ctx context.Context, dep *v1alpha1.ManagedWorkload) error {
@@ -394,8 +411,11 @@ func (r *Reconciler) waitForDependencies(ctx context.Context, workload *v1alpha1
 			continue
 		}
 		if dep != nil && dep.UID != workload.UID && !isAwake(dep.Status.Phase) {
+			// Retried every check while it waits, so it isn't announced:
+			// the wake that failed first was.
 			if err := r.stampActivity(ctx, dep); err != nil {
-				return nil, err
+				log.FromContext(ctx).Info("couldn't wake a dependency again", "workload", workload.Name,
+					"namespace", workload.Namespace, "dependency", id.String(), "error", err.Error())
 			}
 		}
 		waiting = append(waiting, fmt.Sprintf("%s (%d ready)", id, lifecycle.ReadyReplicas(target)))

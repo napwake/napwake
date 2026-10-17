@@ -18,6 +18,7 @@ package controller
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"path/filepath"
 	"sync"
@@ -38,6 +39,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/cache"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
+	"sigs.k8s.io/controller-runtime/pkg/client/interceptor"
 	"sigs.k8s.io/controller-runtime/pkg/envtest"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 
@@ -601,6 +603,103 @@ func TestFindRelatedWorkloads_Dependencies(t *testing.T) {
 		{NamespacedName: types.NamespacedName{Namespace: "preview-42", Name: "api"}},
 	}, r.findWorkloadsForTarget(context.Background(), postgresTarget(1, 1)),
 		"a dependency's readiness changing re-checks dependents waiting for it")
+}
+
+// rejectingPatches makes every patch of the ManagedWorkload named fail, as
+// a policy engine rejecting Hybernate's writes there would.
+func rejectingPatches(r *Reconciler, name string) {
+	r.Client = interceptor.NewClient(r.Client.(client.WithWatch), interceptor.Funcs{
+		Patch: func(ctx context.Context, c client.WithWatch, obj client.Object, patch client.Patch,
+			opts ...client.PatchOption) error {
+			if _, ok := obj.(*v1alpha1.ManagedWorkload); ok && obj.GetName() == name {
+				return apierrors.NewForbidden(v1alpha1.GroupVersion.WithResource("managedworkloads").GroupResource(),
+					name, errors.New("denied by policy"))
+			}
+			return c.Patch(ctx, obj, patch, opts...)
+		},
+	})
+}
+
+// A dependency that can't be woken, such as one in a namespace whose
+// policies reject Hybernate's writes, never keeps its dependent from
+// waking or being handed back.
+func TestDependencies_WakeIsBestEffort(t *testing.T) {
+	paused := func() *v1alpha1.ManagedWorkload {
+		pausedAt := metav1.NewTime(fixedTime.Add(-time.Hour))
+		api := depWorkload("default", "api", v1alpha1.TargetKindDeployment, v1alpha1.PhasePaused, postgresRef())
+		api.Status.Pause = &v1alpha1.PauseStatus{PreviousReplicas: 1, PausedAt: &pausedAt}
+		return api
+	}
+	postgres := depWorkload("default", "postgres", v1alpha1.TargetKindStatefulSet, v1alpha1.PhasePaused)
+
+	t.Run("waking", func(t *testing.T) {
+		pauser := &stubPauser{resumeDone: true}
+		r := depReconciler(t, pauser, paused(), postgres.DeepCopy(), postgresTarget(1, 1))
+		rejectingPatches(r, "postgres")
+		api := fetch(t, r, "api")
+
+		_, err := r.handleResume(context.Background(), api, nil)
+		require.NoError(t, err)
+
+		assert.Equal(t, v1alpha1.PhaseRunning, api.Status.Phase)
+		assert.Equal(t, 1, pauser.resumeCalls)
+		assert.Len(t, recorded(r.Recorder.(*events.FakeRecorder), ReasonDependencyWakeFailed), 1)
+	})
+	t.Run("handed back", func(t *testing.T) {
+		pauser := &stubPauser{}
+		r := depReconciler(t, pauser, paused(), postgres.DeepCopy())
+		rejectingPatches(r, "postgres")
+
+		released, replicas, err := r.releaseTarget(context.Background(), fetch(t, r, "api"))
+		require.NoError(t, err)
+
+		assert.True(t, released)
+		assert.Equal(t, int32(1), replicas)
+		assert.Len(t, recorded(r.Recorder.(*events.FakeRecorder), ReasonDependencyWakeFailed), 1)
+	})
+}
+
+// A ManagedWorkload in a namespace being deleted lets go of a target it
+// can't hand back, once it has tried for a while, so it can't hold the
+// namespace's deletion forever.
+func TestReconcileDelete_GivesUpInATerminatingNamespace(t *testing.T) {
+	tests := []struct {
+		name        string
+		terminating bool
+		deletedAgo  time.Duration
+		wantGone    bool
+	}{
+		{name: "terminating, tried for long enough", terminating: true, deletedAgo: 6 * time.Minute, wantGone: true},
+		{name: "terminating, only just deleted", terminating: true, deletedAgo: time.Minute},
+		{name: "namespace staying", deletedAgo: time.Hour},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			ns := &corev1.Namespace{ObjectMeta: metav1.ObjectMeta{Name: "default"}}
+			if tt.terminating {
+				ns.Status.Phase = corev1.NamespaceTerminating
+			}
+			api := depWorkload("default", "api", v1alpha1.TargetKindDeployment, v1alpha1.PhasePaused)
+			api.Status.Pause = &v1alpha1.PauseStatus{PreviousReplicas: 1}
+			api.Finalizers = []string{finalizerName}
+			api.DeletionTimestamp = &metav1.Time{Time: fixedTime.Add(-tt.deletedAgo)}
+			r := depReconciler(t, &stubPauser{restoreErr: errors.New("admission webhook keda is unavailable")}, ns, api)
+
+			_, err := r.reconcileDelete(context.Background(), fetch(t, r, "api"))
+
+			var w v1alpha1.ManagedWorkload
+			gone := apierrors.IsNotFound(r.Get(context.Background(), client.ObjectKeyFromObject(api), &w))
+			assert.Equal(t, tt.wantGone, gone)
+			abandoned := recorded(r.Recorder.(*events.FakeRecorder), ReasonHandBackAbandoned)
+			if tt.wantGone {
+				require.NoError(t, err)
+				assert.Len(t, abandoned, 1)
+				return
+			}
+			require.Error(t, err, "the hand-back is retried")
+			assert.Empty(t, abandoned)
+		})
+	}
 }
 
 // A workload woken by a scale-up wakes its dependencies, as any wake does.

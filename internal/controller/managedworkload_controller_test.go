@@ -62,6 +62,7 @@ type stubPauser struct {
 	pauseCalls   int
 	resumeCalls  int
 	restoreCalls int
+	restoreErr   error
 	// waited is how long the last resume said it had waited for its
 	// replicas since it scaled them up.
 	waited time.Duration
@@ -88,6 +89,9 @@ func (s *stubPauser) Resume(_ context.Context, _ *v1alpha1.ManagedWorkload, wait
 
 func (s *stubPauser) Restore(_ context.Context, w *v1alpha1.ManagedWorkload) (int32, error) {
 	s.restoreCalls++
+	if s.restoreErr != nil {
+		return 0, s.restoreErr
+	}
 	return w.Status.Pause.PreviousReplicas, nil
 }
 
