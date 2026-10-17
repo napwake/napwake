@@ -74,7 +74,7 @@ The forecast never blocks a pause until it's confident, so a workload with no hi
 
 ## When a source can't be read
 
-Hybernate never pauses a workload while one of its activity sources can't be read: without that data a busy workload looks idle. Nor does it count that time as idle: each check a source can't be read restarts the clock (`lastActivitySource: unobserved`), so once the source is back, the workload pauses only after a full `idleAfter` in which every source saw nothing. A Prometheus query that answers "no requests in the last 5 minutes" as it comes back doesn't make the hour before it look idle. For CPU, the `MetricsAvailable` condition says why:
+Hybernate never pauses a workload while one of its activity sources can't be read: without that data a busy workload looks idle. Nor does it count that time as idle: a check where a source can't be read doesn't count as watching, so a source out for longer than the gap allowed below restarts the clock (`lastActivitySource: unobserved`), and once the source is back, the workload pauses only after a full `idleAfter` in which every source saw nothing. A shorter blind spot, such as the minute before a woken workload's new pods have metrics, leaves its last activity as it was. A Prometheus query that answers "no requests in the last 5 minutes" as it comes back doesn't make the hour before it look idle. For CPU, the `MetricsAvailable` condition says why:
 
 | Reason | Meaning |
 |--------|---------|

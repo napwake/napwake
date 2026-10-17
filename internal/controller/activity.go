@@ -216,15 +216,17 @@ func (r *Reconciler) observeActivity(ctx context.Context, workload *v1alpha1.Man
 		}
 	}
 
-	// A source that couldn't be read may have seen use, so the moment isn't
-	// counted as idle: otherwise a source back from an outage that answers
-	// "nothing now" would find the whole outage idle and pause at once.
-	if obs.cpuErr != nil || obs.prometheusErr != nil {
-		recordActivity(status, now, v1alpha1.ActivitySourceUnobserved)
+	// A check where a source couldn't be read isn't an evaluation: the time
+	// since the last one keeps growing, and once it's longer than
+	// unobservedAfter the clock restarts as unobserved. Otherwise a source
+	// back from an outage that answers "nothing now" would find the whole
+	// outage idle and pause at once. A short blind spot, such as the minute
+	// before a woken workload's new pods have metrics, leaves what woke it
+	// as its last activity.
+	if obs.cpuErr == nil && obs.prometheusErr == nil {
+		evaluated := metav1.NewTime(now)
+		status.LastEvaluatedTime = &evaluated
 	}
-
-	evaluated := metav1.NewTime(now)
-	status.LastEvaluatedTime = &evaluated
 	pauseAt := metav1.NewTime(status.LastActivityTime.Add(idleAfterFor(workload)))
 	status.PauseAt = &pauseAt
 	r.activityMemo.put(workload.UID, *status.DeepCopy())

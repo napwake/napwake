@@ -371,8 +371,10 @@ func TestActivityClock_AnOutageIsNotIdleTime(t *testing.T) {
 			// The client backs off a failed endpoint by the wall clock, which
 			// this test's clock doesn't move.
 			r.prometheus = signal.NewPrometheus(srv.URL)
-			lastBlind := now.Add(-activityCheckInterval)
-			for ; now.Before(lastBlind.Add(time.Hour)); now = now.Add(activityCheckInterval) {
+			// The first check that reads every source finds nothing evaluated
+			// since the outage began, so the clock starts over from it.
+			recovered := now
+			for ; now.Before(recovered.Add(time.Hour)); now = now.Add(activityCheckInterval) {
 				check()
 				require.Zero(t, pauser.pauseCalls, "paused at %s, within idleAfter of the outage ending",
 					now.Sub(fixedTime))
@@ -381,6 +383,31 @@ func TestActivityClock_AnOutageIsNotIdleTime(t *testing.T) {
 			assert.Equal(t, 1, pauser.pauseCalls, "paused once idleAfter has passed with every source seeing nothing")
 		})
 	}
+}
+
+// A woken workload's new pods have no metrics for the first scrape or so.
+// That blind minute mustn't replace what woke it as its last activity: the
+// wake by request is what status should show.
+func TestActivityClock_AShortBlindSpotKeepsWhatWokeIt(t *testing.T) {
+	target := clockTarget("app:v1", nil)
+	workload := clockWorkload(fixedTime, target)
+	workload.Status.Activity.LastActivitySource = v1alpha1.ActivitySourceRequest
+	evaluated := metav1.NewTime(fixedTime)
+	workload.Status.Activity.LastEvaluatedTime = &evaluated
+	metrics := idleCPU
+	metrics.err = errors.New("no pod metrics yet")
+	r := newAutomationReconciler(t, workload, &stubForecaster{}, automationOpts{metrics: &metrics, pauser: &stubPauser{}})
+	now := fixedTime
+	r.clock = func() time.Time { return now }
+
+	for range 2 {
+		now = now.Add(activityCheckInterval / 2)
+		_, err := r.reconcileAutomation(context.Background(), workload, target)
+		require.NoError(t, err)
+	}
+
+	assert.Equal(t, v1alpha1.ActivitySourceRequest, workload.Status.Activity.LastActivitySource)
+	assert.Equal(t, fixedTime, workload.Status.Activity.LastActivityTime.UTC())
 }
 
 // A gap in watching is never counted as idle time once it could bring the
