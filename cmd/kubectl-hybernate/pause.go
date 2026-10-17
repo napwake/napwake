@@ -166,7 +166,7 @@ func pause(ctx context.Context, c client.Client, key client.ObjectKey, opts paus
 		if !opts.wait {
 			return nil
 		}
-		return waitForPause(ctx, c, key, ref, "", start, opts, out)
+		return waitForPause(ctx, c, key, ref, "", w.Status.Phase, start, opts, out)
 	}
 
 	warnIfGitOpsUndoes(ctx, c, w, ref, errOut)
@@ -178,7 +178,7 @@ func pause(ctx context.Context, c client.Client, key client.ObjectKey, opts paus
 	if !opts.wait {
 		return nil
 	}
-	err = waitForPause(ctx, c, key, ref, token, start, opts, out)
+	err = waitForPause(ctx, c, key, ref, token, w.Status.Phase, start, opts, out)
 
 	var declined demandExpected
 	if !errors.As(err, &declined) {
@@ -202,7 +202,7 @@ func pause(ctx context.Context, c client.Client, key client.ObjectKey, opts paus
 		return err
 	}
 	_, _ = fmt.Fprintf(out, "%s\n", pauseMessage(ref, w, true))
-	return waitForPause(ctx, c, key, ref, token, start, opts, out)
+	return waitForPause(ctx, c, key, ref, token, w.Status.Phase, start, opts, out)
 }
 
 // requestPause asks Hybernate to pause the workload with a fresh
@@ -253,16 +253,27 @@ func ellipsis(wait bool) string {
 
 // waitForPause waits until Hybernate has answered the request token, and
 // the workload is Paused, or Hybernate has said why it won't be. An empty
-// token waits for a pause already under way.
-func waitForPause(ctx context.Context, c client.Client, key client.ObjectKey, ref, token string, start time.Time,
-	opts pauseOptions, out io.Writer) error {
+// token waits for a pause already under way. phase is the workload's when
+// the wait starts.
+func waitForPause(ctx context.Context, c client.Client, key client.ObjectKey, ref, token string,
+	phase v1alpha1.WorkloadPhase, start time.Time, opts pauseOptions, out io.Writer) error {
 	ticker := time.NewTicker(opts.pollInterval)
 	defer ticker.Stop()
+	notYet := func() error {
+		return fmt.Errorf("%s %w: it's still %s (%w); kubectl describe managedworkload %s -n %s shows why",
+			ref, errNotPausedYet, phase, ctx.Err(), key.Name, key.Namespace)
+	}
 	var w v1alpha1.ManagedWorkload
 	for {
 		if err := c.Get(ctx, key, &w); err != nil {
+			// The wait ran out during the read, not because the API
+			// server stopped answering.
+			if ctx.Err() != nil {
+				return notYet()
+			}
 			return fmt.Errorf("waiting for %s: %w", ref, err)
 		}
+		phase = w.Status.Phase
 		if token == "" || w.Status.LastPauseRequest == token {
 			done, err := pauseAnswered(&w, ref, token != "", out)
 			if done || err != nil {
@@ -276,8 +287,7 @@ func waitForPause(ctx context.Context, c client.Client, key client.ObjectKey, re
 		}
 		select {
 		case <-ctx.Done():
-			return fmt.Errorf("%s %w: it's still %s (%w); kubectl describe managedworkload %s -n %s shows why",
-				ref, errNotPausedYet, w.Status.Phase, ctx.Err(), key.Name, key.Namespace)
+			return notYet()
 		case <-ticker.C:
 		}
 	}

@@ -236,6 +236,19 @@ func TestPause_TimesOut(t *testing.T) {
 	assert.Less(t, time.Since(start), 5*time.Second)
 }
 
+// The wait running out during a poll's read is the workload not being
+// Paused yet, with the phase last seen, not the API server failing to
+// answer.
+func TestPause_TimesOutDuringARead(t *testing.T) {
+	c := newClient(t, slowReads(), managedWorkload(v1alpha1.PhaseRunning))
+
+	_, err := runCLI(t, c, "pause", "api", "--timeout", "100ms")
+
+	require.ErrorIs(t, err, errNotPausedYet)
+	assert.Contains(t, err.Error(), "preview-42/api isn't Paused yet: it's still Running")
+	assert.NotContains(t, err.Error(), "API server")
+}
+
 func TestPause_NotFound(t *testing.T) {
 	_, err := runCLI(t, newClient(t, interceptor.Funcs{}), "pause", "api")
 

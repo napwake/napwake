@@ -147,6 +147,33 @@ func TestWake_TimesOut(t *testing.T) {
 	assert.Contains(t, err.Error(), "kubectl describe managedworkload api -n preview-42")
 }
 
+// slowReads stands in for an API server whose answers, after the first,
+// take until the command's deadline, as a real client then fails them.
+func slowReads() interceptor.Funcs {
+	reads := 0
+	return interceptor.Funcs{Get: func(ctx context.Context, c client.WithWatch, key client.ObjectKey,
+		obj client.Object, opts ...client.GetOption) error {
+		if reads++; reads > 1 {
+			<-ctx.Done()
+			return ctx.Err()
+		}
+		return c.Get(ctx, key, obj, opts...)
+	}}
+}
+
+// The wait running out during a poll's read is the workload not being
+// Running yet, with the phase last seen, not the API server failing to
+// answer.
+func TestWake_TimesOutDuringARead(t *testing.T) {
+	c := newClient(t, slowReads(), managedWorkload(v1alpha1.PhasePaused))
+
+	_, err := runCLI(t, c, "wake", "api", "--timeout", "100ms")
+
+	require.ErrorIs(t, err, errNotRunningYet)
+	assert.Contains(t, err.Error(), "preview-42/api isn't Running yet: it's still Paused")
+	assert.NotContains(t, err.Error(), "API server")
+}
+
 // A ManagedWorkload another one's target already belongs to isn't acted on,
 // so a wake through it would only wait out the timeout.
 func TestWake_RefusesADuplicate(t *testing.T) {

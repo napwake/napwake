@@ -144,18 +144,28 @@ func wake(ctx context.Context, c client.Client, key client.ObjectKey, opts wakeO
 
 	ticker := time.NewTicker(opts.pollInterval)
 	defer ticker.Stop()
+	phase := w.Status.Phase
+	notYet := func() error {
+		return fmt.Errorf("%s %w: it's still %s (%w); kubectl describe managedworkload %s -n %s shows why",
+			ref, errNotRunningYet, phase, ctx.Err(), key.Name, key.Namespace)
+	}
 	for {
 		if err := c.Get(ctx, key, w); err != nil {
+			// The wait ran out during the read, not because the API
+			// server stopped answering.
+			if ctx.Err() != nil {
+				return notYet()
+			}
 			return fmt.Errorf("waiting for %s: %w", ref, err)
 		}
-		if w.Status.Phase == v1alpha1.PhaseRunning {
+		phase = w.Status.Phase
+		if phase == v1alpha1.PhaseRunning {
 			_, _ = fmt.Fprintf(out, "%s is Running after %s\n", ref, opts.now().Sub(start).Round(time.Second))
 			return nil
 		}
 		select {
 		case <-ctx.Done():
-			return fmt.Errorf("%s %w: it's still %s (%w); kubectl describe managedworkload %s -n %s shows why",
-				ref, errNotRunningYet, w.Status.Phase, ctx.Err(), key.Name, key.Namespace)
+			return notYet()
 		case <-ticker.C:
 		}
 	}
