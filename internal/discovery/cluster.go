@@ -299,7 +299,8 @@ func (s *Scanner) ScanCluster(ctx context.Context, opts ClusterOptions) (*Cluste
 	_ = g.Wait() // each namespace's problems are in its scan; none is returned
 
 	var since time.Time
-	var historyOutOfTime []string
+	var historyOutOfTime, historyGaveUp []string
+	var gaveUpAfter time.Duration
 	noHistory := make([]string, 0, len(scans))
 	problems := make([]readProblem, 0, len(scans))
 	metricsUnavailable := false
@@ -312,6 +313,10 @@ func (s *Scanner) ScanCluster(ctx context.Context, opts ClusterOptions) (*Cluste
 		noHistory = append(noHistory, scan.noHistory...)
 		if scan.historyOutOfTime {
 			historyOutOfTime = append(historyOutOfTime, scan.namespace)
+		}
+		if scan.historyGaveUp > 0 {
+			historyGaveUp = append(historyGaveUp, scan.namespace)
+			gaveUpAfter = max(gaveUpAfter, scan.historyGaveUp)
 		}
 		metricsUnavailable = metricsUnavailable || scan.metricsUnavailable
 		maps.Copy(sources, scan.sources)
@@ -356,6 +361,12 @@ func (s *Scanner) ScanCluster(ctx context.Context, opts ClusterOptions) (*Cluste
 			"workloads there are judged from CPU right now: %s. A longer --timeout gives history more time; "+
 			"--window 0 skips it and judges every namespace from CPU right now",
 			plural(len(historyOutOfTime), "namespace", "namespaces"), listSome(historyOutOfTime)))
+	}
+	if len(historyGaveUp) > 0 {
+		report.Notes = append(report.Notes, fmt.Sprintf("Prometheus, or the API server's proxy in front of it, gave "+
+			"up on the CPU history of %s after up to %s, with time left, so workloads there are judged from CPU "+
+			"right now: %s. A shorter --window asks it for less",
+			plural(len(historyGaveUp), "namespace", "namespaces"), gaveUpAfter.Round(time.Second), listSome(historyGaveUp)))
 	}
 	if opts.History != nil {
 		if note := opts.History.mixedSourcesNote(); note != "" {

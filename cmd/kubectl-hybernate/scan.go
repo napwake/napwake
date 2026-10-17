@@ -495,7 +495,12 @@ func historySource(ctx context.Context, c client.Client, config *rest.Config, na
 		}
 		prom = p
 	} else {
-		clientset, err := kubernetes.NewForConfig(config)
+		// A history query through the service proxy is bounded by the time
+		// the scan gives history, which --request-timeout, meant for the
+		// scan's many small requests, would otherwise cut short.
+		proxyConfig := rest.CopyConfig(config)
+		proxyConfig.Timeout = 0
+		clientset, err := kubernetes.NewForConfig(proxyConfig)
 		if err != nil {
 			return nil, fmt.Errorf("can't look for Prometheus: %w", err)
 		}

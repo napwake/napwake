@@ -722,7 +722,6 @@ func TestPrometheusFrom(t *testing.T) {
 	assert.Equal(t, "Bearer s3cret", setup.header.Get("Authorization"))
 	assert.Equal(t, "team-a", setup.header.Get("X-Scope-OrgID"))
 	require.NotNil(t, setup.client)
-	assert.NotZero(t, setup.client.Timeout)
 
 	tests := []struct {
 		name string

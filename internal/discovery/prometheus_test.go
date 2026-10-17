@@ -552,7 +552,7 @@ func TestNewHTTPClient(t *testing.T) {
 	check := func(o HTTPOptions) error {
 		c, err := NewHTTPClient(o)
 		require.NoError(t, err)
-		assert.Equal(t, prometheusTimeout, c.Timeout, "a Prometheus that stops answering is given up on")
+		assert.Zero(t, c.Timeout, "each query's context bounds it, history's by the time the scan gives it")
 		p, err := NewPrometheusURL(server.URL, c, nil)
 		require.NoError(t, err)
 		return p.Check(context.Background())

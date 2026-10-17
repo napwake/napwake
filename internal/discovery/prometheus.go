@@ -45,9 +45,11 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 )
 
-// prometheusTimeout bounds each query. A week of one namespace's CPU at
-// five-minute steps is a large but routine range query; one that takes
-// longer than this is better reported than waited on.
+// prometheusTimeout bounds a query made without a deadline of its own, such
+// as the check that a Prometheus answers. A history query gets what's left
+// of the time the scan gives history instead: a week of a large namespace
+// can take a slow Thanos longer than this, and a fixed limit would never
+// let it finish, however long --timeout is.
 const prometheusTimeout = 30 * time.Second
 
 // maxResponseBytes bounds what one query may return. A week of a namespace
@@ -121,8 +123,9 @@ type HTTPOptions struct {
 	InsecureSkipVerify bool
 }
 
-// NewHTTPClient returns a client for a Prometheus outside the cluster, which
-// gives up on one that stops answering.
+// NewHTTPClient returns a client for a Prometheus outside the cluster. It
+// sets no timeout of its own: every query is bounded by its context, which
+// for history is the time the scan gives it.
 func NewHTTPClient(o HTTPOptions) (*http.Client, error) {
 	tlsConfig := &tls.Config{MinVersion: tls.VersionTLS12}
 	if o.CAFile != "" {
@@ -142,8 +145,7 @@ func NewHTTPClient(o HTTPOptions) (*http.Client, error) {
 	tlsConfig.InsecureSkipVerify = o.InsecureSkipVerify //nolint:gosec // only when the user asks for it by flag
 	transport := http.DefaultTransport.(*http.Transport).Clone()
 	transport.TLSClientConfig = tlsConfig
-	transport.ResponseHeaderTimeout = prometheusTimeout
-	return &http.Client{Transport: transport, Timeout: prometheusTimeout}, nil
+	return &http.Client{Transport: transport}, nil
 }
 
 // NewPrometheusURL reads from a Prometheus API at baseURL, such as Thanos,
@@ -547,8 +549,11 @@ func (p *Prometheus) namespaceCPU(ctx context.Context, namespace string, start, 
 		"end":   {strconv.FormatInt(end.Unix(), 10)},
 		"step":  {strconv.FormatInt(int64(step.Seconds()), 10)},
 	}
-	ctx, cancel := context.WithTimeout(ctx, prometheusTimeout)
-	defer cancel()
+	if _, bounded := ctx.Deadline(); !bounded {
+		var cancel context.CancelFunc
+		ctx, cancel = context.WithTimeout(ctx, prometheusTimeout)
+		defer cancel()
+	}
 	body, err := p.get(ctx, "api/v1/query_range", params)
 	if err != nil {
 		return nil, fmt.Errorf("querying %s: %w", p.Source, err)

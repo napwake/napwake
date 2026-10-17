@@ -66,7 +66,11 @@ type namespaceScan struct {
 	noHistory []string
 	// historyOutOfTime says the scan ran out of the time it gives history
 	// before it had read the namespace's.
-	historyOutOfTime   bool
+	historyOutOfTime bool
+	// historyGaveUp is how long Prometheus, or the API server's proxy in
+	// front of it, took to give up on the namespace's history on its own,
+	// with time left; zero when it didn't.
+	historyGaveUp      time.Duration
 	metricsUnavailable bool
 	problems           []readProblem
 }
@@ -202,19 +206,23 @@ func (s *Scanner) scanNamespace(ctx, historyCtx context.Context, namespace strin
 }
 
 // readHistoryOf reads a namespace's history within historyCtx, telling the
-// scan running out of the time it gives history from Prometheus failing.
-// The time is shared with the namespace's reads from the API server, which
-// come first, so it isn't queried once that's spent.
+// scan running out of the time it gives history from Prometheus timing out
+// on its own, and both from Prometheus failing. The time is shared with the
+// namespace's reads from the API server, which come first, so it isn't
+// queried once that's spent.
 func (s *Scanner) readHistoryOf(ctx, historyCtx context.Context, scan *namespaceScan,
 	opts ClusterOptions) []containerCPU {
 	if opts.History != nil && historyCtx.Err() != nil && ctx.Err() == nil {
 		scan.historyOutOfTime = true
 		return nil
 	}
+	start := time.Now()
 	history, err := s.readHistory(historyCtx, scan.namespace, opts)
 	switch {
-	case err != nil && ctx.Err() == nil && isTimeout(err):
+	case err != nil && ctx.Err() == nil && historyCtx.Err() != nil && isTimeout(err):
 		scan.historyOutOfTime = true
+	case err != nil && historyCtx.Err() == nil && isTimeout(err):
+		scan.historyGaveUp = time.Since(start)
 	case err != nil:
 		scan.problem(readingHistory, err)
 	}
