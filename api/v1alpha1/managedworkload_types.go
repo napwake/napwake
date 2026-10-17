@@ -117,7 +117,7 @@ type WakeSpec struct {
 	// MaxWait is how long the doorman holds a connection while the workload
 	// wakes. After it, the connection is closed; the wake carries on.
 	// +kubebuilder:default="2m"
-	// +kubebuilder:validation:Format=duration
+	// +kubebuilder:validation:XValidation:rule="duration(self) > duration('0s')",message="must be a duration above zero, such as 90s or 5m"
 	// +optional
 	MaxWait *metav1.Duration `json:"maxWait,omitempty"`
 
@@ -184,7 +184,7 @@ type IdlePolicySpec struct {
 	// IdleAfter is how long the workload must go without any activity
 	// before the operator pauses it.
 	// +kubebuilder:default="1h"
-	// +kubebuilder:validation:Format=duration
+	// +kubebuilder:validation:XValidation:rule="duration(self) > duration('0s')",message="must be a duration above zero, such as 90m or 2h"
 	// +optional
 	IdleAfter *metav1.Duration `json:"idleAfter,omitempty"`
 

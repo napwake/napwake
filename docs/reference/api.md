@@ -33,6 +33,8 @@
 | `costTracking.rates` | `CostRates` | No | node list prices, then AWS defaults | Custom cost rates |
 | `dryRun` | bool | No | `false` | Evaluate without pausing |
 
+A duration is a Go duration above zero, such as `45s`, `90m` or `1h30m`. Days and weeks (`1d`, `2w`) and spaces aren't durations: write `24h` or `168h`. The API server rejects any other value.
+
 ### CostRates
 
 | Field | Type | Default | Description |
