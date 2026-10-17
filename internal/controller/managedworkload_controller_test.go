@@ -62,6 +62,9 @@ type stubPauser struct {
 	pauseCalls   int
 	resumeCalls  int
 	restoreCalls int
+	// waited is how long the last resume said it had waited for its
+	// replicas.
+	waited time.Duration
 }
 
 func (s *stubPauser) Prepare(_ context.Context, workload *v1alpha1.ManagedWorkload) error {
@@ -74,9 +77,13 @@ func (s *stubPauser) Pause(_ context.Context, _ *v1alpha1.ManagedWorkload) (bool
 	return s.pauseDone, s.pauseErr
 }
 
-func (s *stubPauser) Resume(_ context.Context, _ *v1alpha1.ManagedWorkload) (bool, error) {
+func (s *stubPauser) Resume(_ context.Context, _ *v1alpha1.ManagedWorkload, waited time.Duration) (lifecycle.Resumption, error) {
 	s.resumeCalls++
-	return s.resumeDone, s.resumeErr
+	s.waited = waited
+	if !s.resumeDone {
+		return lifecycle.Resumption{Replicas: 1}, s.resumeErr
+	}
+	return lifecycle.Resumption{Replicas: 1, Ready: 1, Settled: true}, s.resumeErr
 }
 
 func (s *stubPauser) Restore(_ context.Context, w *v1alpha1.ManagedWorkload) (int32, error) {
@@ -787,6 +794,77 @@ func wokenByActivity(w *v1alpha1.ManagedWorkload) *v1alpha1.ManagedWorkload {
 	}
 	w.Annotations[v1alpha1.AnnotationLastActivity] = fixedTime.Format(time.RFC3339)
 	return w
+}
+
+// A resume that waited for its dependencies times the wait for its own
+// replicas from when they were Ready, so a long wait for a database doesn't
+// cut short the time its pods get to start.
+func TestResume_TimesItsReplicasFromItsDependenciesReady(t *testing.T) {
+	ref := postgresRef()
+	ref.WaitForReady = true
+	api := depWorkload("default", "api", v1alpha1.TargetKindDeployment, v1alpha1.PhaseResuming, ref)
+	began := metav1.NewTime(fixedTime.Add(-20 * time.Minute))
+	api.Status.LastTransitionTime = &began
+	api.Status.Pause = &v1alpha1.PauseStatus{PreviousReplicas: 1}
+	meta.SetStatusCondition(&api.Status.Conditions, metav1.Condition{Type: conditionWaitingForDependencies,
+		Status: metav1.ConditionTrue, Reason: "DependencyNotReady", LastTransitionTime: began})
+	pauser := &stubPauser{}
+	r := depReconciler(t, pauser, api, postgresTarget(1, 1))
+
+	_, err := r.handleResume(context.Background(), api, nil)
+	require.NoError(t, err)
+	assert.Zero(t, pauser.waited, "its dependencies are Ready only now")
+
+	r.clock = func() time.Time { return fixedTime.Add(time.Minute) }
+	_, err = r.handleResume(context.Background(), fetch(t, r, "api"), nil)
+	require.NoError(t, err)
+	assert.Equal(t, time.Minute, pauser.waited, "from what was written as they became Ready")
+}
+
+// A resume that settles with some replicas not Ready says so, and a later
+// one with every replica Ready clears it.
+func TestResume_ReportsReplicasNotReady(t *testing.T) {
+	workload := pausedWorkload(v1alpha1.PhaseResuming)
+	began := metav1.NewTime(fixedTime.Add(-3 * time.Minute))
+	workload.Status.LastTransitionTime = &began
+	pauser := &resumingPauser{resumption: lifecycle.Resumption{Replicas: 3, Ready: 2, Settled: true}}
+	r := newTestReconciler(t, workload, &stubPauser{})
+	r.pauser = pauser
+
+	_, err := r.handleResume(context.Background(), getWorkload(t, r, "api"), nil)
+	require.NoError(t, err)
+
+	got := getWorkload(t, r, "api")
+	assert.Equal(t, v1alpha1.PhaseRunning, got.Status.Phase)
+	c := meta.FindStatusCondition(got.Status.Conditions, conditionResumeIncomplete)
+	require.NotNil(t, c)
+	assert.Equal(t, metav1.ConditionTrue, c.Status)
+	assert.Equal(t, "resumed with 2 of 3 replicas Ready: Hybernate stopped waiting for the rest after 3m", c.Message)
+	events := drainEvents(t, r)
+	assert.Contains(t, events, "Warning "+ReasonResumeIncomplete)
+	assert.NotContains(t, events, "Normal "+ReasonResumed)
+
+	got.Status.Phase = v1alpha1.PhaseResuming
+	got.Status.Pause = &v1alpha1.PauseStatus{PreviousReplicas: 3}
+	require.NoError(t, r.Status().Update(context.Background(), got))
+	pauser.resumption.Ready = 3
+	_, err = r.handleResume(context.Background(), getWorkload(t, r, "api"), nil)
+	require.NoError(t, err)
+
+	c = meta.FindStatusCondition(getWorkload(t, r, "api").Status.Conditions, conditionResumeIncomplete)
+	require.NotNil(t, c)
+	assert.Equal(t, metav1.ConditionFalse, c.Status)
+	assert.Equal(t, "AllReplicasReady", c.Reason)
+}
+
+// resumingPauser resumes to a given outcome.
+type resumingPauser struct {
+	stubPauser
+	resumption lifecycle.Resumption
+}
+
+func (p *resumingPauser) Resume(context.Context, *v1alpha1.ManagedWorkload, time.Duration) (lifecycle.Resumption, error) {
+	return p.resumption, nil
 }
 
 func TestReconcile_ResumesInterruptedTransition(t *testing.T) {

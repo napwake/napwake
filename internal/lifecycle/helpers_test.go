@@ -74,6 +74,13 @@ func newTestPauser(c client.Client) *Pauser {
 	}
 }
 
+// resume resumes w as a resume that has only just scaled it up, and
+// reports whether it's settled.
+func resume(p *Pauser, w *v1alpha1.ManagedWorkload) (bool, error) {
+	r, err := p.Resume(context.Background(), w, 0)
+	return r.Settled, err
+}
+
 // deployment is default/api at replicas, ready of them Ready, by a status
 // its controller wrote for its current spec.
 func deployment(replicas, ready int32) *appsv1.Deployment {

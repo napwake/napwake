@@ -20,6 +20,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"time"
 
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -107,23 +108,53 @@ func (p *Pauser) Pause(ctx context.Context, workload *v1alpha1.ManagedWorkload) 
 	return true, nil
 }
 
-// Resume scales a paused workload back up and returns true once its pods are
-// Ready. The pause record is left for the caller to clear as it records the
-// workload Running, so a retry after that write fails can resume again.
-func (p *Pauser) Resume(ctx context.Context, workload *v1alpha1.ManagedWorkload) (bool, error) {
+// ServingWait is how long a resume with some of its replicas Ready waits
+// for the rest. They serve, and one that's crash-looping, or was never
+// Ready before the pause, would otherwise hold the resume, and KEDA, for
+// good.
+const ServingWait = 2 * time.Minute
+
+// Resumption is how far a resume has got: the replicas the target is
+// scaled back to, how many of them are Ready, and whether the resume is
+// over, with all of them Ready or with as many as became Ready in the time
+// they were given.
+type Resumption struct {
+	Replicas, Ready int32
+	Settled         bool
+}
+
+// Resume scales a paused workload back up, and settles once its replicas
+// are Ready, or once it has waited for them long enough: ServingWait when
+// some are Ready, and the target's progress deadline when none are, by
+// which its own controller reports them stuck. waited is how long it has
+// waited since it scaled the workload up. Settled, the workload's KEDA
+// ScaledObject is released. The pause record is left for the caller to
+// clear as it records the workload Running, so a retry after that write
+// fails can resume again.
+func (p *Pauser) Resume(ctx context.Context, workload *v1alpha1.ManagedWorkload, waited time.Duration) (
+	Resumption, error) {
 	pause := workload.Status.Pause
 	if pause == nil {
-		return true, nil
+		return Resumption{Settled: true}, nil
 	}
 
 	target, err := getTarget(ctx, p.client, workload)
 	if err != nil {
-		return false, fmt.Errorf("getting target workload: %w", err)
+		return Resumption{}, fmt.Errorf("getting target workload: %w", err)
 	}
-
 	replicas, a, err := p.resumeReplicas(ctx, workload)
 	if err != nil {
-		return false, err
+		return Resumption{}, err
+	}
+	scale, err := p.scaler.GetScale(ctx, target)
+	if err != nil {
+		return Resumption{}, fmt.Errorf("getting current replicas: %w", err)
+	}
+	// Once it's scaled up, its replicas are left to its autoscaler, or to
+	// whoever has set them since: scaling it back to the restored count on
+	// each retry would fight an HPA scaling it down as it starts.
+	if scale.Spec.Replicas > 0 {
+		replicas = scale.Spec.Replicas
 	}
 
 	// KEDA holds the workload at the restored replicas until they're Ready.
@@ -133,25 +164,33 @@ func (p *Pauser) Resume(ctx context.Context, workload *v1alpha1.ManagedWorkload)
 	held := a.Kind == autoscaler.KEDA && a.Name == pause.ScaledObject && a.HeldAt(replicas)
 	if so := pause.ScaledObject; so != "" && !held {
 		if err := autoscaler.HoldKEDA(ctx, p.client, workload.Namespace, so, replicas); err != nil {
-			return false, err
+			return Resumption{}, err
 		}
 	}
-	if err := scaleTo(ctx, p.scaler, target, replicas); err != nil {
-		return false, fmt.Errorf("scaling to %d: %w", replicas, err)
+	if scale.Spec.Replicas != replicas {
+		if err := scaleTo(ctx, p.scaler, target, replicas); err != nil {
+			return Resumption{}, fmt.Errorf("scaling to %d: %w", replicas, err)
+		}
 	}
 
-	ready, err := checkReady(ctx, p.client, target, replicas)
+	ready, err := readyOf(ctx, p.client, target, replicas)
 	if err != nil {
-		return false, fmt.Errorf("checking readiness: %w", err)
+		return Resumption{}, fmt.Errorf("checking readiness: %w", err)
 	}
-	if !ready {
-		return false, nil
+	r := Resumption{Replicas: replicas, Ready: ready}
+	switch {
+	case ready >= replicas:
+	case ready > 0 && waited >= ServingWait:
+	case waited >= progressDeadline(target):
+	default:
+		return r, nil
 	}
 
 	if err := p.releaseKEDA(ctx, workload); err != nil {
-		return false, err
+		return Resumption{}, err
 	}
-	return true, nil
+	r.Settled = true
+	return r, nil
 }
 
 // Restore hands a paused workload back without waiting for it: scaled back

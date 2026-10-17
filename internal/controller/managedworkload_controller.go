@@ -118,7 +118,7 @@ type Reconciler struct {
 type lifecyclePauser interface {
 	Prepare(ctx context.Context, workload *v1alpha1.ManagedWorkload) error
 	Pause(ctx context.Context, workload *v1alpha1.ManagedWorkload) (bool, error)
-	Resume(ctx context.Context, workload *v1alpha1.ManagedWorkload) (bool, error)
+	Resume(ctx context.Context, workload *v1alpha1.ManagedWorkload, waited time.Duration) (lifecycle.Resumption, error)
 	Restore(ctx context.Context, workload *v1alpha1.ManagedWorkload) (int32, error)
 }
 
@@ -396,23 +396,41 @@ func (r *Reconciler) handleResume(ctx context.Context, workload *v1alpha1.Manage
 		return nil, nil
 	}
 
+	waitedOnDependencies := meta.IsStatusConditionTrue(workload.Status.Conditions, conditionWaitingForDependencies)
 	if waiting, err := r.waitForDependencies(ctx, workload); waiting != nil || err != nil {
 		return waiting, err
 	}
+	// The wait for its own replicas is timed from when its dependencies
+	// were Ready, which only that condition's change records.
+	if waitedOnDependencies {
+		if err := r.Status().Update(ctx, workload); err != nil {
+			return nil, fmt.Errorf("recording its dependencies Ready: %w", err)
+		}
+	}
 
 	source := wakeSource(workload)
-	done, err := r.pauser.Resume(ctx, workload)
+	waited := r.sinceScaledUp(workload)
+	resumed, err := r.pauser.Resume(ctx, workload, waited)
 	if err != nil {
 		return nil, fmt.Errorf("resuming workload: %w", err)
 	}
-	if !done {
-		return &ctrl.Result{RequeueAfter: resumeRecheck(r.sinceTransition(workload))}, nil
+	if !resumed.Settled {
+		return &ctrl.Result{RequeueAfter: resumeRecheck(waited)}, nil
 	}
 
 	r.stampLastActed(workload)
 	took := r.sinceTransition(workload)
 	r.resetActivity(workload, source)
 	tool, resolved := r.clearGitOpsConflict(workload)
+	short := resumed.Ready < resumed.Replicas
+	var shortfall string
+	if short {
+		shortfall = fmt.Sprintf("resumed with %d of %d replicas Ready: Hybernate stopped waiting for the rest after %s",
+			resumed.Ready, resumed.Replicas, roundedDuration(waited))
+		r.setCondition(workload, conditionResumeIncomplete, metav1.ConditionTrue, "ReplicasNotReady", shortfall)
+	} else {
+		r.clearCondition(workload, conditionResumeIncomplete, "AllReplicasReady")
+	}
 	if err := r.transition(ctx, workload, v1alpha1.PhaseRunning, "Resumed"); err != nil {
 		return nil, err
 	}
@@ -420,8 +438,32 @@ func (r *Reconciler) handleResume(ctx context.Context, workload *v1alpha1.Manage
 	if resolved {
 		r.announceGitOpsConflictResolved(workload, tool)
 	}
-	r.emitEvent(workload, false, "Normal", ReasonResumed, actionResume, "resumed")
+	if short {
+		r.emitEvent(workload, false, "Warning", ReasonResumeIncomplete, actionResume, "%s", shortfall)
+	} else {
+		r.emitEvent(workload, false, "Normal", ReasonResumed, actionResume, "resumed")
+	}
 	return &ctrl.Result{}, nil
+}
+
+// conditionResumeIncomplete says the workload's last resume ended with some
+// of its replicas not Ready, after waiting as long as Hybernate waits.
+const (
+	conditionResumeIncomplete = "ResumeIncomplete"
+
+	ReasonResumeIncomplete = "ResumeIncomplete"
+)
+
+// sinceScaledUp is how long a resuming workload has waited for its own
+// replicas: since it began resuming, or since the dependencies it waits for
+// were Ready, if that was later.
+func (r *Reconciler) sinceScaledUp(workload *v1alpha1.ManagedWorkload) time.Duration {
+	waited := r.sinceTransition(workload)
+	c := meta.FindStatusCondition(workload.Status.Conditions, conditionWaitingForDependencies)
+	if c == nil || c.Status == metav1.ConditionTrue {
+		return waited
+	}
+	return min(waited, r.now().Sub(c.LastTransitionTime.Time))
 }
 
 // resumeRecheck is when a resume waiting for its pods to be Ready is looked

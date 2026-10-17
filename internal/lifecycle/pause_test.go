@@ -25,6 +25,7 @@ import (
 	"github.com/stretchr/testify/require"
 	appsv1 "k8s.io/api/apps/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/utils/ptr"
 
 	"github.com/okedeji/hybernate/internal/autoscaler"
 )
@@ -93,13 +94,13 @@ func TestResume_ScalesBackUp(t *testing.T) {
 	p := newTestPauser(c)
 	workload := pausedWorkload(3)
 
-	done, err := p.Resume(context.Background(), workload)
+	done, err := resume(p, workload)
 	require.NoError(t, err)
 	assert.False(t, done, "its pods aren't Ready yet")
 	assert.Equal(t, int32(3), replicas(t, c))
 
 	settle(t, c, 3)
-	done, err = p.Resume(context.Background(), workload)
+	done, err = resume(p, workload)
 	require.NoError(t, err)
 	assert.True(t, done)
 	assert.Equal(t, int32(3), replicas(t, c))
@@ -112,7 +113,7 @@ func TestResume_WaitsForReadyNotJustExisting(t *testing.T) {
 	dep.Status.Replicas = 3
 	c := newClient(t, dep)
 
-	done, err := newTestPauser(c).Resume(context.Background(), pausedWorkload(3))
+	done, err := resume(newTestPauser(c), pausedWorkload(3))
 
 	require.NoError(t, err)
 	assert.False(t, done)
@@ -137,15 +138,80 @@ func TestResume_WaitsForAStatusOfTheScaleUp(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			stale := tt.target()
-			ready, err := checkReady(context.Background(), newClient(t, stale), stale.DeepCopy(), 3)
+			ready, err := readyOf(context.Background(), newClient(t, stale), stale.DeepCopy(), 3)
 			require.NoError(t, err)
-			assert.False(t, ready)
+			assert.Zero(t, ready)
 		})
 	}
 }
 
+// A workload that wasn't wholly Ready before its pause, such as one with a
+// pod crash-looping, never has every replica Ready again. Its resume
+// settles with those that are once they've had ServingWait, and with none
+// once its controller's progress deadline has passed, releasing KEDA
+// either way, rather than holding the workload Resuming, and KEDA, for
+// good.
+func TestResume_SettlesWithTheReplicasThatBecomeReady(t *testing.T) {
+	tests := []struct {
+		name     string
+		ready    int32
+		deadline *int32
+		waited   time.Duration
+		settled  bool
+	}{
+		{name: "some Ready, not waited long", ready: 2, waited: ServingWait - time.Second},
+		{name: "some Ready, waited long enough", ready: 2, waited: ServingWait, settled: true},
+		{name: "none Ready, within the default deadline", waited: 9 * time.Minute},
+		{name: "none Ready, past the default deadline", waited: 10 * time.Minute, settled: true},
+		{name: "none Ready, past its own deadline", deadline: ptr.To[int32](60), waited: time.Minute, settled: true},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			dep := deployment(0, 0)
+			dep.Spec.ProgressDeadlineSeconds = tt.deadline
+			c := newClient(t, dep, scaledObjectFor(0))
+			p := newTestPauser(c)
+			workload := pausedWorkload(3)
+			workload.Status.Pause.ScaledObject = "api-scaler"
+			_, err := resume(p, workload)
+			require.NoError(t, err)
+			settle(t, c, tt.ready)
+
+			r, err := p.Resume(context.Background(), workload, tt.waited)
+
+			require.NoError(t, err)
+			assert.Equal(t, Resumption{Replicas: 3, Ready: tt.ready, Settled: tt.settled}, r)
+			_, held := pausedAnnotation(t, c)
+			assert.Equal(t, !tt.settled, held, "KEDA is released once it's settled")
+		})
+	}
+}
+
+// An HPA scaling a resuming workload below the count it was restored to,
+// as it starts with little load, isn't scaled back up on each retry, and
+// the resume waits for the replicas the HPA asks for.
+func TestResume_LeavesTheReplicasToTheAutoscalerOnceScaledUp(t *testing.T) {
+	c := newClient(t, deployment(0, 0))
+	p := newTestPauser(c)
+	workload := pausedWorkload(3)
+	_, err := resume(p, workload)
+	require.NoError(t, err)
+
+	var d appsv1.Deployment
+	require.NoError(t, c.Get(context.Background(), apiKey, &d))
+	d.Spec.Replicas = ptr.To[int32](2)
+	require.NoError(t, c.Update(context.Background(), &d))
+	settle(t, c, 2)
+
+	r, err := p.Resume(context.Background(), workload, 0)
+
+	require.NoError(t, err)
+	assert.Equal(t, Resumption{Replicas: 2, Ready: 2, Settled: true}, r)
+	assert.Equal(t, int32(2), replicas(t, c))
+}
+
 func TestResume_NoPauseStatusIsNoOp(t *testing.T) {
-	done, err := newTestPauser(newClient(t)).Resume(context.Background(), apiWorkload())
+	done, err := resume(newTestPauser(newClient(t)), apiWorkload())
 
 	require.NoError(t, err)
 	assert.True(t, done)

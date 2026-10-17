@@ -67,14 +67,14 @@ func TestPauseAndResume_KEDA(t *testing.T) {
 			assert.Equal(t, int32(0), replicas(t, c))
 
 			settle(t, c, 0)
-			done, err = p.Resume(context.Background(), workload)
+			done, err = resume(p, workload)
 			require.NoError(t, err)
 			require.False(t, done)
 			v, _ = pausedAnnotation(t, c)
 			assert.Equal(t, "3", v, "held at the restored replicas while they start")
 
 			settle(t, c, 3)
-			done, err = p.Resume(context.Background(), workload)
+			done, err = resume(p, workload)
 			require.NoError(t, err)
 			require.True(t, done)
 
@@ -116,10 +116,10 @@ func TestResume_WithinTheAutoscalersRange(t *testing.T) {
 			p := newTestPauser(c)
 			workload := pausedWorkload(tt.previous)
 
-			_, err := p.Resume(context.Background(), workload)
+			_, err := resume(p, workload)
 			require.NoError(t, err)
 			settle(t, c, tt.want)
-			done, err := p.Resume(context.Background(), workload)
+			done, err := resume(p, workload)
 
 			require.NoError(t, err)
 			assert.True(t, done)
@@ -162,7 +162,7 @@ func TestResume_HoldsKEDAOnce(t *testing.T) {
 	p := newTestPauser(c)
 
 	for range 3 {
-		done, err := p.Resume(context.Background(), workload)
+		done, err := resume(p, workload)
 		require.NoError(t, err)
 		require.False(t, done)
 	}

@@ -70,7 +70,11 @@ kubectl get managedworkload postgres -n staging \
 
 ### Workload stuck in Resuming
 
-`WaitingForDependencies=True` means a `waitForReady` dependency isn't Ready yet; the condition names it and how many replicas are ready. Check that dependency's pods. Otherwise, the workload's own pods aren't becoming Ready: resume completes only when every replica it was restored to is Ready. The `HybernateWorkloadStuck` alert fires after 15 minutes, and `kubectl hybernate status` lists it under `Stuck` after 10.
+`WaitingForDependencies=True` means a `waitForReady` dependency isn't Ready yet; the condition names it and how many replicas are ready. Check that dependency's pods. Otherwise, the workload's own pods aren't becoming Ready. Resume completes once every replica it was restored to is Ready; once some are, the rest get 2 minutes; with none Ready, it waits for the Deployment's `progressDeadlineSeconds` (10 minutes by default, and for a StatefulSet). The `HybernateWorkloadStuck` alert fires after 15 minutes, and `kubectl hybernate status` lists it under `Stuck` after 10.
+
+### Workload resumed with replicas not Ready
+
+`ResumeIncomplete=True`, with a `ResumeIncomplete` warning event, means the last resume stopped waiting with some replicas not Ready, as above: it's `Running` with those that are, its KEDA ScaledObject scales it again, and requests go to its Ready pods. This is common for a workload that wasn't wholly Ready before it was paused, such as one with a pod crash-looping or unschedulable; `kubectl describe` its pods to see why. The next resume with every replica Ready sets it `False`.
 
 ### Waking a workload by hand
 

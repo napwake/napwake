@@ -64,7 +64,7 @@ A request Hybernate won't act on is answered once, not retried: ask again once t
 
 ## Resume
 
-Resuming wakes the workload's [dependencies](../concepts/dependencies.md), scales it back to `status.pause.previousReplicas` (kept within its HPA's or ScaledObject's range if that changed), and moves it to `Running` once all those replicas are Ready, by a status its Deployment or StatefulSet controller wrote after seeing the scale-up. A KEDA ScaledObject is held at the restored count until then, and afterwards gets back the `paused-replicas` value it had before the pause, or none.
+Resuming wakes the workload's [dependencies](../concepts/dependencies.md), scales it back to `status.pause.previousReplicas` (kept within its HPA's or ScaledObject's range if that changed), and moves it to `Running` once all those replicas are Ready, by a status its Deployment or StatefulSet controller wrote after seeing the scale-up. A workload that wasn't wholly Ready before its pause, such as one with a pod crash-looping, would never get there: once some of its replicas are Ready, the rest get 2 minutes, and with none Ready, Hybernate waits for the Deployment's `progressDeadlineSeconds` (10 minutes by default, and for a StatefulSet), then moves it to `Running` with what it has and sets the `ResumeIncomplete` condition. Once it's scaled back up, its replicas are left to its autoscaler, so an HPA scaling it down as it starts isn't undone. A KEDA ScaledObject is held at the restored count until then, and afterwards gets back the `paused-replicas` value it had before the pause, or none.
 
 **Automatically:**
 

@@ -18,7 +18,7 @@ Every ManagedWorkload moves through a defined set of phases. The operator drives
 | **Idle** | No activity for `idleAfter`, or a pause was requested. The operator pauses it, or in dry-run reports the pause it would make. |
 | **Pausing** | What the pause will change is recorded, and the workload is being scaled to zero. |
 | **Paused** | Workload is at zero replicas. |
-| **Resuming** | Previous replica count is being restored. Transitions to Running when the pods are Ready. |
+| **Resuming** | Previous replica count is being restored. Transitions to Running when the pods are Ready, or when Hybernate stops waiting for those that aren't. |
 
 A workload already at zero replicas, scaled there by a person, a pipeline or KEDA, stays `Running` with the `ScaledToZero` condition: Hybernate only pauses what's running, and only wakes what it paused. See [Workloads Already at Zero](../guides/pause.md#workloads-already-at-zero).
 
@@ -31,7 +31,7 @@ A workload already at zero replicas, scaled there by a person, a pipeline or KED
 - **Idle → Running**: Activity resumes (in dry-run, or while a GitOps tool's undoing holds the pause off; otherwise the pause has already started), or the workload is scaled to zero outside Hybernate
 - **Paused → Resuming**: A request to its Service, a change to an activity annotation since the pause, `autoResume` ahead of forecast demand, or dry-run being turned on
 - **Paused → Running**: Something other than Hybernate scales it up, see [Argo CD and Flux](../guides/gitops.md); or Hybernate lets go of it, see [When Hybernate Lets Go](../guides/pause.md#when-hybernate-lets-go)
-- **Resuming → Running**: Every replica it was restored to is Ready
+- **Resuming → Running**: Every replica it was restored to is Ready; or some are, and the rest have had 2 minutes; or none are, and the Deployment's `progressDeadlineSeconds` has passed (10 minutes by default, and for a StatefulSet). Stopping short sets `ResumeIncomplete`. The wait starts once its `waitForReady` dependencies are Ready
 
 ### On request
 
@@ -67,6 +67,7 @@ The operator sets standard Kubernetes conditions on the CR, each with `Reason`, 
 | `Protected` | Its namespace is protected, so it's never paused | `ProtectedNamespace`; `False`: `NotProtected` |
 | `PauseRequest` | The last [pause request](../guides/pause.md#pause-now) paused the workload, or found it paused; `False` says why it didn't | `Pausing`, `AlreadyPaused`; `False`: `DryRun`, `ActiveUntil`, `HeldByDependents`, `DependencyCycle`, `Protected`, `ScaledToZero`, `TargetNotFound`, `TargetIgnored`, `DuplicateTarget` |
 | `GitOpsConflict` | A GitOps tool undid its last pause; removed once a pause holds. See [Argo CD and Flux](../guides/gitops.md) | `PauseUndone` |
+| `ResumeIncomplete` | The last resume stopped waiting with some replicas not Ready, and the workload runs with those that are; see [Workload resumed with replicas not Ready](../operations/troubleshooting.md#workload-resumed-with-replicas-not-ready) | `ReplicasNotReady`; `False`: `AllReplicasReady` |
 | `Autoscaled` | An HPA or KEDA ScaledObject scales it, and its range; see [HPA and KEDA](../guides/autoscalers.md) | `HPA`, `KEDA` |
 | `ScaledToZero` | It was scaled to zero outside Hybernate, so Hybernate leaves it off: it doesn't pause it, wake it, or route requests for it until its replicas are set above zero | `ScaledToZero`; `False`: `HasReplicas` |
 
@@ -80,7 +81,7 @@ User-visible state changes emit Kubernetes events that show up in `kubectl descr
 - Scaled to zero outside Hybernate, and left off: `ScaledToZero`
 - What holds it awake: `IdleVetoed`, `HeldByDependents`, `DependencyCycle`
 - A GitOps tool undoing a pause, and the conflict ending: `GitOpsConflict`, `GitOpsConflictResolved`
-- Problems: `TargetNotFound`, `DuplicateTarget`, `NoPodMetrics`, `NoCPURequests`, `MetricsUnavailable`, `QueryFailed`, `EndpointNotConfigured`, `RoutingFailed`, `UnsupportedLoadBalancer`, `RequestNotServed`, `Protected`
+- Problems: `TargetNotFound`, `DuplicateTarget`, `NoPodMetrics`, `NoCPURequests`, `MetricsUnavailable`, `QueryFailed`, `EndpointNotConfigured`, `RoutingFailed`, `UnsupportedLoadBalancer`, `RequestNotServed`, `Protected`, `ResumeIncomplete` (a resume that stopped waiting for replicas not Ready, in place of `Resumed`)
 - The forecast: `PredictionFed` each hour it learns, `RegimeChange` when it's demoted, `ForecastReset` when its saved state can't be read
 - Learned dependencies: `DependenciesLearned`
 

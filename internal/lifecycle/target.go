@@ -19,6 +19,7 @@ package lifecycle
 import (
 	"context"
 	"fmt"
+	"time"
 
 	appsv1 "k8s.io/api/apps/v1"
 	autoscalingv1 "k8s.io/api/autoscaling/v1"
@@ -88,17 +89,35 @@ func scaleTo(ctx context.Context, scaler WorkloadScaler, target client.Object, n
 	return nil
 }
 
-// checkReady re-reads the target and reports whether at least desired
-// replicas are Ready. The scale subresource's status counts pods that exist,
-// which includes pods still starting, such as a database replaying its log.
-// A read that doesn't yet show the target scaled to desired, or a status
-// its controller wrote before it saw that, still counts the pods from
-// before: those of a pause just made, which may not have stopped yet.
-func checkReady(ctx context.Context, c client.Client, target client.Object, desired int32) (bool, error) {
+// readyOf re-reads the target and returns how many of the desired replicas
+// it's scaled to are Ready. The scale subresource's status counts pods that
+// exist, which includes pods still starting, such as a database replaying
+// its log. A read that doesn't yet show the target scaled to desired, or a
+// status its controller wrote before it saw that, counts none: what it
+// counts are the pods from before, those of a pause just made, which may
+// not have stopped yet.
+func readyOf(ctx context.Context, c client.Client, target client.Object, desired int32) (int32, error) {
 	if err := c.Get(ctx, client.ObjectKeyFromObject(target), target); err != nil {
-		return false, fmt.Errorf("getting %s: %w", target.GetName(), err)
+		return 0, fmt.Errorf("getting %s: %w", target.GetName(), err)
 	}
-	return specReplicas(target) == desired && observed(target) && ReadyReplicas(target) >= desired, nil
+	if specReplicas(target) != desired || !observed(target) {
+		return 0, nil
+	}
+	return min(ReadyReplicas(target), desired), nil
+}
+
+// defaultProgressDeadline is how long a Deployment's controller allows its
+// pods to become available when it doesn't say, and how long a
+// StatefulSet's, which can't say, is given.
+const defaultProgressDeadline = 10 * time.Minute
+
+// progressDeadline is how long the target's own controller gives its
+// replicas to start before it reports them stuck.
+func progressDeadline(target client.Object) time.Duration {
+	if d, ok := target.(*appsv1.Deployment); ok && d.Spec.ProgressDeadlineSeconds != nil {
+		return time.Duration(*d.Spec.ProgressDeadlineSeconds) * time.Second
+	}
+	return defaultProgressDeadline
 }
 
 // ReadyReplicas returns how many of the target's replicas are Ready.
