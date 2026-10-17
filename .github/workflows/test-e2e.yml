@@ -11,6 +11,7 @@ jobs:
   test-e2e:
     name: E2E (Kubernetes ${{ matrix.kubernetes }})
     runs-on: ubuntu-latest
+    timeout-minutes: 75
     strategy:
       fail-fast: false
       matrix:
@@ -53,6 +54,7 @@ jobs:
     needs: [test-e2e]
     if: always()
     runs-on: ubuntu-latest
+    timeout-minutes: 5
     steps:
       - env:
           RESULT: ${{ needs.test-e2e.result }}
