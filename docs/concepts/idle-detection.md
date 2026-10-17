@@ -80,7 +80,7 @@ Hybernate never pauses a workload while one of its activity sources can't be rea
 |--------|---------|
 | `NoPodMetrics` | The target has replicas but the Metrics API reports no pods. Check that metrics-server is installed. |
 | `NoCPURequests` | The target's running pods request no CPU for its containers, or, with none running, its pod template requests none, so utilization can't be measured. Set CPU requests, or a default in the namespace's LimitRange. |
-| `MetricsUnavailable` | The Metrics API itself failed. The condition message has the error. |
+| `MetricsUnavailable` | The Metrics API itself failed, or didn't answer within 2 seconds. The condition message has the error. Once it fails, it isn't read again for a minute, so every workload's check fails at once rather than waiting out a timeout. |
 
 A target scaled to zero isn't an error: it has no usage, which is real data.
 

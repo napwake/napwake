@@ -137,6 +137,7 @@ The relaunch. The 0.1.x releases were early experiments, and 0.2.0 is a fresh st
 - The gap in watching the activity clock allows before it restarts scales with `idleAfter` (half of it, between 2 and 7 minutes), and after a restart or a change of leader any gap over 2 minutes restarts it, so an operator outage can't pause a workload with a short `idleAfter` the moment it's back
 - CPU utilization is measured against the requests of the pods that report usage, not of every replica, so a workload with one pod serving and the others Pending or crash-looping, or just after a scale-up, no longer reads as idle
 - A slow or unreachable Prometheus can't hold up wakes: the operator keeps one client for it, gives each query 2 seconds and a workload's queries 5 together, and once Prometheus fails doesn't ask it again for a minute, failing every query at once instead
+- Likewise for metrics-server: a read of the Metrics API has 2 seconds, and once it fails it isn't read again for a minute
 - Events are emitted once, when something changes: forecast vetoes, routing warnings, learned dependencies, and the `DependentsAwake` warning, which fires once a manual pause begins
 - Every series of a deleted workload is dropped from the metrics, and the operator reads only the target's own pods and claims, with deadlines on every call
 - A GitOps tool that set the replicas in the same second as another field manager is reported as the one that woke a paused workload, so the `GitOpsConflict` is never missed

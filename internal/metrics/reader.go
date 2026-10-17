@@ -50,6 +50,21 @@ var ErrNoScheduledPods = errors.New("no pods on a node")
 // and every wake queued behind it, for as long as the connection lasts.
 const callTimeout = 5 * time.Second
 
+// metricsAPITimeout bounds a read of the Metrics API, which every awake
+// workload makes each minute. metrics-server answers from memory in
+// milliseconds; one slower than this is in trouble, and waiting on it
+// holds a reconcile worker that wakes queue behind.
+const metricsAPITimeout = 2 * time.Second
+
+// metricsAPIBackoff is how long after the Metrics API fails it isn't read
+// again. It's about one activity check, so every workload's next check
+// finds the outage at once rather than each waiting out a timeout.
+const metricsAPIBackoff = time.Minute
+
+// ErrMetricsAPIBackingOff is returned, wrapping the failure, while the
+// Metrics API isn't read again after failing.
+var ErrMetricsAPIBackingOff = errors.New("the Metrics API failed recently, not read again yet")
+
 // requestTTL is how long the CPU a replica requests, read from a running
 // pod, is kept before it's read again. Activity is judged against it every
 // minute, and pods aren't cached, so reading them each time would double
@@ -69,6 +84,10 @@ type Reader struct {
 	mu       sync.Mutex
 	requests map[types.UID]podRequest
 	sweptAt  time.Time
+
+	apiMu       sync.Mutex
+	apiFailedAt time.Time
+	apiFailure  error
 }
 
 // podRequest is the CPU one replica's own containers request, as a running
@@ -103,9 +122,8 @@ func (r *Reader) WorkloadCPUMillis(ctx context.Context, workload *v1alpha1.Manag
 	if err != nil {
 		return 0, 0, err
 	}
-	var list metricsv1beta1.PodMetricsList
-	if err := r.client.List(ctx, &list, client.InNamespace(workload.Namespace),
-		client.MatchingLabelsSelector{Selector: selector}); err != nil {
+	list, err := r.podMetrics(ctx, workload.Namespace, selector)
+	if err != nil {
 		return 0, 0, fmt.Errorf("listing pod metrics for %s/%s: %w", workload.Namespace, workload.Spec.Target.Name, err)
 	}
 	measured := make([]metricsv1beta1.PodMetrics, 0, len(list.Items))
@@ -119,6 +137,45 @@ func (r *Reader) WorkloadCPUMillis(ctx context.Context, workload *v1alpha1.Manag
 	}
 	used, _ := Usage(measured, podSpecFromTarget(target))
 	return float64(used), len(measured), nil
+}
+
+// podMetrics lists the Metrics API's pods in namespace matching selector.
+// Once a list fails, the API isn't asked again for metricsAPIBackoff; then
+// one list is let through to see whether it's back, while the rest go on
+// failing until it answers. A caller's own context ending isn't the API
+// failing.
+func (r *Reader) podMetrics(ctx context.Context, namespace string, selector labels.Selector) (*metricsv1beta1.PodMetricsList, error) {
+	if err := r.admitMetricsAPI(); err != nil {
+		return nil, err
+	}
+	callCtx, cancel := context.WithTimeout(ctx, metricsAPITimeout)
+	defer cancel()
+	var list metricsv1beta1.PodMetricsList
+	err := r.client.List(callCtx, &list, client.InNamespace(namespace), client.MatchingLabelsSelector{Selector: selector})
+
+	r.apiMu.Lock()
+	defer r.apiMu.Unlock()
+	switch {
+	case err == nil:
+		r.apiFailure = nil
+	case ctx.Err() == nil:
+		r.apiFailedAt, r.apiFailure = r.now(), err
+	}
+	return &list, err
+}
+
+func (r *Reader) admitMetricsAPI() error {
+	r.apiMu.Lock()
+	defer r.apiMu.Unlock()
+	if r.apiFailure == nil {
+		return nil
+	}
+	now := r.now()
+	if now.Before(r.apiFailedAt.Add(metricsAPIBackoff)) {
+		return fmt.Errorf("%w: %w", ErrMetricsAPIBackingOff, r.apiFailure)
+	}
+	r.apiFailedAt = now
+	return nil
 }
 
 // CPURequestPerReplica returns the CPU request in millicores of one replica's
