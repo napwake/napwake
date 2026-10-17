@@ -348,11 +348,7 @@ type resolved struct {
 // pod.service, with the same suffixes.
 func resolve(addr address, namespace string, services map[string]map[string]corev1.Service,
 	targets targetIndex) []resolved {
-	name := addr.host
-	if i := strings.Index(name+".", ".svc."); i >= 0 {
-		name = name[:i]
-	}
-	parts := strings.Split(name, ".")
+	parts := inCluster(strings.Split(addr.host, "."))
 	type candidate struct {
 		namespace, service string
 		pod                bool
@@ -374,6 +370,19 @@ func resolve(addr address, namespace string, services map[string]map[string]core
 		return behind(svc, c.pod || svc.Spec.ClusterIP == corev1.ClusterIPNone, targets)
 	}
 	return nil
+}
+
+// inCluster cuts .svc and the cluster domain, whatever it is, off a host's
+// labels, when the labels before .svc are service.namespace or
+// pod.service.namespace, as only those are cluster DNS names. Any other
+// host, such as api.svc.example.com, is left whole, and names no Service.
+func inCluster(host []string) []string {
+	for _, n := range []int{2, 3} {
+		if len(host) > n && host[n] == "svc" {
+			return host[:n]
+		}
+	}
+	return host
 }
 
 // behind returns the workloads whose pods a Service selects, by name.
