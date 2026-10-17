@@ -408,12 +408,17 @@ type LearnedDependency struct {
 	Source LearnedSource `json:"source"`
 
 	// Via is the environment variable that holds its address, and Address
-	// the address, with any password hidden, for one found in the
+	// the address, as scheme://host:port only, for one found in the
 	// environment.
 	// +optional
 	Via string `json:"via,omitempty"`
 	// +optional
 	Address string `json:"address,omitempty"`
+
+	// LastSeen is when a request last confirmed one learned from a wake.
+	// One no request has confirmed for 14 days is forgotten.
+	// +optional
+	LastSeen *metav1.Time `json:"lastSeen,omitempty"`
 }
 
 // +kubebuilder:validation:Enum=environment;wake

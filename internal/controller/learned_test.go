@@ -397,6 +397,71 @@ func TestLearnDependencies_KeepsWhatWakesTaught(t *testing.T) {
 	assert.Equal(t, []string{"default/postgres DATABASE_URL", "default/redis "}, learnedNames(api))
 }
 
+// A dependency learned from a wake is forgotten once no request has
+// confirmed it for two weeks, so a one-off request doesn't tie two
+// workloads together for good.
+func TestLearnDependencies_ForgetsWhatWakesNoLongerConfirm(t *testing.T) {
+	tests := []struct {
+		name     string
+		lastSeen *metav1.Time
+		want     []string
+	}{
+		{name: "confirmed recently", lastSeen: &metav1.Time{Time: fixedTime.Add(-13 * 24 * time.Hour)},
+			want: []string{"default/redis "}},
+		{name: "unconfirmed for over two weeks", lastSeen: &metav1.Time{Time: fixedTime.Add(-15 * 24 * time.Hour)}},
+		{name: "learned before it was tracked", want: []string{"default/redis "}},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			target := apiWith(nil)
+			api := depWorkload("default", "api", v1alpha1.TargetKindDeployment, v1alpha1.PhaseRunning)
+			api.Status.LearnedDependencies = &v1alpha1.LearnedDependencies{Dependencies: []v1alpha1.LearnedDependency{
+				{Namespace: "default", Kind: v1alpha1.TargetKindStatefulSet, Name: "redis",
+					Source: v1alpha1.LearnedFromWake, LastSeen: tt.lastSeen}}}
+			r := depReconciler(t, &stubPauser{}, append(databases(), api, target)...)
+
+			require.NoError(t, r.learnDependencies(context.Background(), api, target))
+
+			got := fetch(t, r, "api")
+			assert.Equal(t, tt.want, learnedNames(got))
+			if tt.want != nil {
+				lastSeen := got.Status.LearnedDependencies.Dependencies[0].LastSeen
+				require.NotNil(t, lastSeen, "the time it was last confirmed is recorded")
+			}
+		})
+	}
+}
+
+// Each request that would teach a dependency already learned from a wake
+// confirms it, written at most once a day.
+func TestLearnFromWake_ConfirmsWhatItLearned(t *testing.T) {
+	tests := []struct {
+		name     string
+		lastSeen time.Time
+		want     time.Time
+	}{
+		{name: "confirmed days ago", lastSeen: fixedTime.Add(-3 * 24 * time.Hour), want: fixedTime},
+		{name: "confirmed within the day", lastSeen: fixedTime.Add(-time.Hour), want: fixedTime.Add(-time.Hour)},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			postgres := wokenPostgres()
+			api := depWorkload("default", "api", v1alpha1.TargetKindDeployment, v1alpha1.PhaseRunning)
+			api.Status.LearnedDependencies = &v1alpha1.LearnedDependencies{Dependencies: []v1alpha1.LearnedDependency{
+				{Namespace: "default", Kind: v1alpha1.TargetKindStatefulSet, Name: "postgres",
+					Source: v1alpha1.LearnedFromWake, LastSeen: &metav1.Time{Time: tt.lastSeen}}}}
+			r := wakeReconciler(t, podOf("api", false), selecting(v1alpha1.TargetKindDeployment, "api", nil), api,
+				postgres, selecting(v1alpha1.TargetKindStatefulSet, "postgres", nil))
+
+			require.NoError(t, r.learnFromWake(context.Background(), postgres))
+
+			got := fetch(t, r, "api").Status.LearnedDependencies.Dependencies
+			require.Len(t, got, 1)
+			assert.True(t, tt.want.Equal(got[0].LastSeen.Time), "last seen %s, want %s", got[0].LastSeen, tt.want)
+		})
+	}
+}
+
 // In a dual-stack cluster a request can come from a pod's second address,
 // its IPv6 one where pods are IPv4 first, which isn't its status.podIP.
 func TestLearnFromWake_DualStack(t *testing.T) {

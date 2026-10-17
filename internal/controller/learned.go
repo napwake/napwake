@@ -45,6 +45,15 @@ import (
 // at once; this catches a ConfigMap changed since.
 const relearnAfter = time.Hour
 
+// A dependency learned from a wake is forgotten once no request has
+// confirmed it for wakeLearnedFor, so a one-off call, such as someone's curl
+// from a pod, doesn't tie two workloads together for good. A confirmation
+// is written at most once per wakeConfirmEvery, not on every wake.
+const (
+	wakeLearnedFor   = 14 * 24 * time.Hour
+	wakeConfirmEvery = 24 * time.Hour
+)
+
 // learnDependencies finds the workloads this one's environment points at,
 // the same way the scan does, and records them, so they're held and woken
 // like dependsOn without anyone writing it.
@@ -92,24 +101,37 @@ func (r *Reconciler) learnDependencies(ctx context.Context, workload *v1alpha1.M
 			Source: v1alpha1.LearnedFromEnvironment, Via: d.Via, Address: d.Address})
 	}
 	before := workload.Status.LearnedDependencies
-	// What wakes taught stays: the environment can't confirm or deny it.
+	// What wakes taught stays until it goes unconfirmed: the environment
+	// can't confirm or deny it.
+	stamped := false
 	if before != nil {
 		for _, d := range before.Dependencies {
-			if d.Source == v1alpha1.LearnedFromWake && !ignored[d.Namespace+"/"+d.Name] &&
-				!slices.ContainsFunc(learned, sameTarget(d)) {
-				learned = append(learned, d)
+			if d.Source != v1alpha1.LearnedFromWake || ignored[d.Namespace+"/"+d.Name] ||
+				slices.ContainsFunc(learned, sameTarget(d)) {
+				continue
 			}
+			if d.LastSeen == nil {
+				d.LastSeen = &now
+				stamped = true
+			} else if now.Sub(d.LastSeen.Time) > wakeLearnedFor {
+				continue
+			}
+			learned = append(learned, d)
 		}
 	}
 
 	workload.Status.LearnedDependencies = &v1alpha1.LearnedDependencies{From: from, At: now, Dependencies: learned}
-	if before != nil && sameDependencies(before.Dependencies, learned) {
+	changed := before == nil || !sameDependencies(before.Dependencies, learned)
+	if !changed && !stamped {
 		return nil
 	}
 	// Written before it's announced: a write that fails is learned again,
 	// and would otherwise be announced again.
 	if err := r.Status().Update(ctx, workload); err != nil {
 		return fmt.Errorf("recording learned dependencies: %w", err)
+	}
+	if !changed {
+		return nil
 	}
 	r.emitEvent(workload, false, "Normal", ReasonDependenciesLearned, actionLearnDependencies,
 		"%s", learnedMessage(learned))
@@ -337,19 +359,20 @@ func (r *Reconciler) learnFromWake(ctx context.Context, workload *v1alpha1.Manag
 	if err != nil || !found || dependent.UID == workload.UID {
 		return err
 	}
+	now := r.clockTime()
 	learned := v1alpha1.LearnedDependency{Namespace: workload.Namespace, Kind: workload.Spec.Target.Kind,
-		Name: workload.Spec.Target.Name, Source: v1alpha1.LearnedFromWake}
+		Name: workload.Spec.Target.Name, Source: v1alpha1.LearnedFromWake, LastSeen: &now}
 	if ignoredDependencies(dependent, target)[learned.Namespace+"/"+learned.Name] {
 		return nil
 	}
 	l := dependent.Status.LearnedDependencies
-	if l != nil && slices.ContainsFunc(l.Dependencies, sameTarget(learned)) {
-		return nil
+	if i := slices.IndexFunc(learnedList(l), sameTarget(learned)); i >= 0 {
+		return r.confirmLearnedFromWake(ctx, dependent, i, now)
 	}
 	if l == nil {
 		// No From matches a pod template, so the dependent still learns
 		// from its environment on its next reconcile, keeping this.
-		l = &v1alpha1.LearnedDependencies{At: r.clockTime()}
+		l = &v1alpha1.LearnedDependencies{At: now}
 		dependent.Status.LearnedDependencies = l
 	}
 	l.Dependencies = append(l.Dependencies, learned)
@@ -361,6 +384,30 @@ func (r *Reconciler) learnFromWake(ctx context.Context, workload *v1alpha1.Manag
 		"depends on %s/%s, learned from a request it sent that woke it; held and woken with it",
 		learned.Namespace, learned.Name)
 	return nil
+}
+
+// confirmLearnedFromWake records that a request confirmed the dependent's
+// i-th learned dependency again, which keeps one learned from a wake from
+// being forgotten. One learned from the environment needs no confirming.
+func (r *Reconciler) confirmLearnedFromWake(ctx context.Context, dependent *v1alpha1.ManagedWorkload, i int,
+	now metav1.Time) error {
+	d := &dependent.Status.LearnedDependencies.Dependencies[i]
+	if d.Source != v1alpha1.LearnedFromWake || d.LastSeen != nil && now.Sub(d.LastSeen.Time) < wakeConfirmEvery {
+		return nil
+	}
+	d.LastSeen = &now
+	if err := r.Status().Update(ctx, dependent); err != nil {
+		return fmt.Errorf("confirming that %s/%s depends on %s/%s: %w", dependent.Namespace, dependent.Name,
+			d.Namespace, d.Name, err)
+	}
+	return nil
+}
+
+func learnedList(l *v1alpha1.LearnedDependencies) []v1alpha1.LearnedDependency {
+	if l == nil {
+		return nil
+	}
+	return l.Dependencies
 }
 
 // podAt is the pod with the IP, and false for none, or for pods on the
