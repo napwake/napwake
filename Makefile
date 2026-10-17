@@ -216,8 +216,11 @@ verify-version: ## Fail unless the chart, the kustomize image, and the docs name
 
 .PHONY: release
 release: bump ## Bump version, commit, and tag. Usage: make release VERSION=0.1.2
+	@$(MAKE) --no-print-directory verify-version VERSION=$(VERSION)
 	@git add charts/hybernate/Chart.yaml config/manager/kustomization.yaml $(VERSIONED_DOCS)
-	@git commit -m "chore(release): bump version to v$(VERSION)"
+	@# Versions bumped in an earlier commit leave nothing to commit, and the
+	@# release is tagged as it stands.
+	@git diff --cached --quiet || git commit -m "chore(release): bump version to v$(VERSION)"
 	@git tag -a v$(VERSION) -m "v$(VERSION)"
 	@echo "Tagged v$(VERSION). Run 'git push origin main v$(VERSION)' to release."
 
