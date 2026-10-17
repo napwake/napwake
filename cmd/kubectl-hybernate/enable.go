@@ -767,7 +767,7 @@ func appliedBy(obj client.Object, path []string) applier {
 	}
 	var found applier
 	for _, entry := range entries {
-		if entry.FieldsV1 == nil || !ownsField(entry.FieldsV1.Raw, path) {
+		if !ownsField(entry.FieldsV1.GetRawBytes(), path) {
 			continue
 		}
 		if tool := gitops.ToolOf(entry.Manager); tool != "" {

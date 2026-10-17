@@ -377,8 +377,8 @@ func wokenPostgres() *v1alpha1.ManagedWorkload {
 func stampedBy(manager string) metav1.ManagedFieldsEntry {
 	return metav1.ManagedFieldsEntry{Manager: manager, Operation: metav1.ManagedFieldsOperationUpdate,
 		APIVersion: v1alpha1.GroupVersion.String(), Time: &metav1.Time{Time: fixedTime}, FieldsType: "FieldsV1",
-		FieldsV1: &metav1.FieldsV1{Raw: []byte(`{"f:metadata":{"f:annotations":{` +
-			`"f:hybernate.io/last-request":{},"f:hybernate.io/last-request-from":{}}}}`)}}
+		FieldsV1: metav1.NewFieldsV1(`{"f:metadata":{"f:annotations":{` +
+			`"f:hybernate.io/last-request":{},"f:hybernate.io/last-request-from":{}}}}`)}
 }
 
 func TestLearnFromWake(t *testing.T) {

@@ -480,7 +480,7 @@ func namespaceCaches(namespaces []string) map[string]cache.Config {
 
 // replicasOnly is all of a managed fields entry that gitops.ReplicasWriter
 // reads: that it set spec.replicas.
-var replicasOnly = &metav1.FieldsV1{Raw: []byte(`{"f:spec":{"f:replicas":{}}}`)}
+var replicasOnly = metav1.NewFieldsV1(`{"f:spec":{"f:replicas":{}}}`)
 
 // trimForCache drops what the operator never reads from cached objects,
 // which on a large cluster is most of their size: managed fields, and
@@ -511,7 +511,7 @@ func trimForCache(in any) (any, error) {
 func replicasWriters(entries []metav1.ManagedFieldsEntry) []metav1.ManagedFieldsEntry {
 	var out []metav1.ManagedFieldsEntry
 	for _, entry := range entries {
-		if entry.FieldsV1 == nil || !setsSpecReplicas(entry.FieldsV1.Raw) {
+		if !setsSpecReplicas(entry.FieldsV1.GetRawBytes()) {
 			continue
 		}
 		out = append(out, metav1.ManagedFieldsEntry{

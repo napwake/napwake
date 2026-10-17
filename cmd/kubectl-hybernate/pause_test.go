@@ -311,7 +311,7 @@ func TestPause_WarnsWhenGitOpsWillUndoIt(t *testing.T) {
 				if d, ok := obj.(*appsv1.Deployment); ok {
 					d.ManagedFields = []metav1.ManagedFieldsEntry{{Manager: tt.manager,
 						Operation: metav1.ManagedFieldsOperationApply, FieldsType: "FieldsV1",
-						FieldsV1: &metav1.FieldsV1{Raw: []byte(`{"f:spec":{"f:replicas":{}}}`)}}}
+						FieldsV1: metav1.NewFieldsV1(`{"f:spec":{"f:replicas":{}}}`)}}
 				}
 				return nil
 			}}

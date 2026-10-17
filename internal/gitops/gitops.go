@@ -73,7 +73,7 @@ func FieldWriter(managedFields []metav1.ManagedFieldsEntry, path ...string) (Wri
 	var found Writer
 	ok := false
 	for _, entry := range managedFields {
-		if entry.FieldsV1 == nil || !sets(entry.FieldsV1.Raw, path) {
+		if !sets(entry.FieldsV1.GetRawBytes(), path) {
 			continue
 		}
 		w := Writer{Manager: entry.Manager, Tool: ToolOf(entry.Manager)}

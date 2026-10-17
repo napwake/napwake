@@ -487,7 +487,7 @@ func TestEnable_GitOpsManaged(t *testing.T) {
 func appliedAs(manager, fields string) interceptor.Funcs {
 	set := func(d *appsv1.Deployment) {
 		d.ManagedFields = []metav1.ManagedFieldsEntry{{Manager: manager, Operation: metav1.ManagedFieldsOperationApply,
-			FieldsType: "FieldsV1", FieldsV1: &metav1.FieldsV1{Raw: []byte(fields)}}}
+			FieldsType: "FieldsV1", FieldsV1: metav1.NewFieldsV1(fields)}}
 	}
 	return interceptor.Funcs{
 		Get: func(ctx context.Context, c client.WithWatch, key client.ObjectKey, obj client.Object,

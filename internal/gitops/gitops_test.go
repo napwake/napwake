@@ -28,7 +28,7 @@ var t0 = time.Date(2026, 10, 4, 9, 0, 0, 0, time.UTC)
 
 func entry(manager, fields string, at time.Time) metav1.ManagedFieldsEntry {
 	return metav1.ManagedFieldsEntry{Manager: manager, Time: &metav1.Time{Time: at},
-		FieldsV1: &metav1.FieldsV1{Raw: []byte(fields)}}
+		FieldsV1: metav1.NewFieldsV1(fields)}
 }
 
 const (

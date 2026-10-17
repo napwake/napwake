@@ -46,7 +46,7 @@ func scaledBy(manager string, replicas int32) *appsv1.Deployment {
 	d := targetDeploymentWithReplicas("api", "default", replicas)
 	d.ManagedFields = []metav1.ManagedFieldsEntry{{Manager: manager, Operation: metav1.ManagedFieldsOperationUpdate,
 		Time: &metav1.Time{Time: fixedTime.Add(-time.Minute)}, FieldsType: "FieldsV1",
-		FieldsV1: &metav1.FieldsV1{Raw: []byte(`{"f:spec":{"f:replicas":{}}}`)}}}
+		FieldsV1: metav1.NewFieldsV1(`{"f:spec":{"f:replicas":{}}}`)}}
 	return d
 }
 

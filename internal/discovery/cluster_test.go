@@ -581,7 +581,7 @@ func TestScanCluster_ReplicasFromGit(t *testing.T) {
 		d := makeDeployment(name, testNamespace, 1, "100m", "128Mi", nil)
 		d.ManagedFields = []metav1.ManagedFieldsEntry{{Manager: manager, Operation: metav1.ManagedFieldsOperationApply, APIVersion: "apps/v1",
 			Time: &metav1.Time{Time: scanTime}, FieldsType: "FieldsV1",
-			FieldsV1: &metav1.FieldsV1{Raw: []byte(`{"f:spec":{"f:replicas":{}}}`)}}}
+			FieldsV1: metav1.NewFieldsV1(`{"f:spec":{"f:replicas":{}}}`)}}
 		return d
 	}
 

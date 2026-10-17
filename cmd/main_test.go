@@ -165,13 +165,11 @@ func managedFields(t *testing.T) []metav1.ManagedFieldsEntry {
 	}
 	return []metav1.ManagedFieldsEntry{
 		{Manager: "argocd-controller", Operation: metav1.ManagedFieldsOperationApply, Time: at(1),
-			FieldsV1: &metav1.FieldsV1{
-				Raw: []byte(`{"f:metadata":{"f:labels":{}},"f:spec":{"f:replicas":{},"f:template":{}}}`),
-			}},
+			FieldsV1: metav1.NewFieldsV1(`{"f:metadata":{"f:labels":{}},"f:spec":{"f:replicas":{},"f:template":{}}}`)},
 		{Manager: "kube-controller-manager", Operation: metav1.ManagedFieldsOperationUpdate, Time: at(5),
-			FieldsV1: &metav1.FieldsV1{Raw: []byte(`{"f:status":{"f:replicas":{},"f:readyReplicas":{}}}`)}},
+			FieldsV1: metav1.NewFieldsV1(`{"f:status":{"f:replicas":{},"f:readyReplicas":{}}}`)},
 		{Manager: "kubectl-edit", Operation: metav1.ManagedFieldsOperationUpdate, Time: at(3),
-			FieldsV1: &metav1.FieldsV1{Raw: []byte(`{"f:spec":{"f:template":{"f:spec":{}}}}`)}},
+			FieldsV1: metav1.NewFieldsV1(`{"f:spec":{"f:template":{"f:spec":{}}}}`)},
 	}
 }
 
