@@ -1109,7 +1109,7 @@ func TestServer_MaxWaitIsBounded(t *testing.T) {
 
 	require.Len(t, s.routes, 1)
 	for _, rt := range s.routes {
-		assert.Equal(t, longestMaxWait, rt.maxWait)
+		assert.Equal(t, v1alpha1.WakeMaxWaitLimit, rt.maxWait)
 	}
 }
 

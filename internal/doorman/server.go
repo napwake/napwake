@@ -44,11 +44,6 @@ import (
 const (
 	defaultMaxWait = 2 * time.Minute
 
-	// longestMaxWait bounds wake.maxWait. A held connection keeps one of
-	// the doorman's places, and nothing that starts in more than an hour is
-	// waited for by its caller.
-	longestMaxWait = time.Hour
-
 	// routeSyncInterval is how often listeners are matched to the routes in
 	// ManagedWorkload status. A connection to a newly paused workload in the
 	// gap is refused, as it would be without the doorman.
@@ -358,7 +353,7 @@ func (s *Server) syncRoutes(ctx, connCtx context.Context) error {
 		existing[types.NamespacedName{Namespace: w.Namespace, Name: w.Name}] = true
 		maxWait := defaultMaxWait
 		if w.Spec.Wake != nil && w.Spec.Wake.MaxWait != nil && w.Spec.Wake.MaxWait.Duration > 0 {
-			maxWait = min(w.Spec.Wake.MaxWait.Duration, longestMaxWait)
+			maxWait = min(w.Spec.Wake.MaxWait.Duration, v1alpha1.WakeMaxWaitLimit)
 		}
 		page := w.Spec.Wake == nil || w.Spec.Wake.Page == nil || *w.Spec.Wake.Page
 		for _, r := range w.Status.Doorman {
