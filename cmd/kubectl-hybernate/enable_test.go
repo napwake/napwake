@@ -571,11 +571,66 @@ func TestEnable_Namespace(t *testing.T) {
 	assert.False(t, set, "the namespace's annotation ends it for a workload without its own")
 	value, _ = dryRunOf(t, c, "api")
 	assert.Equal(t, "true", value)
-	assert.Equal(t, `namespace dev: dry-run ended
-2 workloads in dev: dry-run ended, Hybernate will pause them while idle
+	assert.Equal(t, "namespace dev: dry-run ended for the workloads that take its annotation, including ones "+
+		"Hybernate picks up later\n"+`2 workloads in dev: dry-run ended, Hybernate will pause them while idle
 Not changed, because their manifests come from Git; change them there:
   deployment/api (Flux Kustomization previews): remove the annotation hybernate.io/dry-run
 `, out.String())
+}
+
+// The namespace's "false" ends dry-run for a workload Hybernate hasn't
+// picked up yet, once it does, so --all doesn't call that one unchanged or
+// fail on it; one whose own annotation keeps it in dry-run still fails.
+func TestEnable_NamespaceCoversWorkloadsNotPickedUp(t *testing.T) {
+	t.Run("without their own annotation", func(t *testing.T) {
+		c := fake.NewClientBuilder().WithScheme(scheme).WithObjects(
+			enableNamespaceObj(optedIn, map[string]string{v1alpha1.AnnotationDryRun: "true"}),
+			enableDeployment("web", nil, measuring(nil)), labelManaged("web", true),
+			enableDeployment("api", nil, nil),
+		).Build()
+		var out bytes.Buffer
+
+		require.NoError(t, enableNamespace(context.Background(), c, "dev", enableOptions{all: true}, &out))
+
+		value, _ := namespaceDryRun(t, c)
+		assert.Equal(t, "false", value)
+		assert.Equal(t, "namespace dev: dry-run ended for the workloads that take its annotation, including ones "+
+			"Hybernate picks up later\n1 workload in dev: dry-run ended, Hybernate will pause it while idle\n",
+			out.String())
+	})
+
+	t.Run("with their own annotation", func(t *testing.T) {
+		c := fake.NewClientBuilder().WithScheme(scheme).WithObjects(
+			enableNamespaceObj(optedIn, map[string]string{v1alpha1.AnnotationDryRun: "true"}),
+			enableDeployment("web", nil, measuring(nil)), labelManaged("web", true),
+			enableDeployment("api", nil, measuring(nil)),
+		).Build()
+		var out bytes.Buffer
+
+		err := enableNamespace(context.Background(), c, "dev", enableOptions{all: true}, &out)
+
+		assert.EqualError(t, err, "1 opted-in workload in dev has no ManagedWorkload")
+		assert.Contains(t, out.String(), "  deployment/api\n")
+	})
+}
+
+// When the namespace's annotation is all that keeps anything in dry-run,
+// enable says it changed the namespace, not that it ended dry-run for no
+// workloads.
+func TestEnable_NamespaceAnnotationOnly(t *testing.T) {
+	c := fake.NewClientBuilder().WithScheme(scheme).WithObjects(
+		enableNamespaceObj(optedIn, map[string]string{v1alpha1.AnnotationDryRun: "true"}),
+		enableDeployment("web", nil, map[string]string{v1alpha1.AnnotationDryRun: "false"}),
+		labelManaged("web", false),
+	).Build()
+	var out bytes.Buffer
+
+	require.NoError(t, enableNamespace(context.Background(), c, "dev", enableOptions{all: true}, &out))
+
+	value, _ := namespaceDryRun(t, c)
+	assert.Equal(t, "false", value)
+	assert.Equal(t, "namespace dev: dry-run ended for the workloads that take its annotation, including ones "+
+		"Hybernate picks up later\n", out.String())
 }
 
 // When every workload in dry-run is there by its own annotation, the

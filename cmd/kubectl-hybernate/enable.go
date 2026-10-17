@@ -372,10 +372,26 @@ type dryRunSet struct {
 	// own, so it takes the namespace's or the cluster's default.
 	inherits bool
 	// notPickedUp are labelled workloads the operator hasn't made a
-	// ManagedWorkload for, which ending dry-run would do nothing for.
-	notPickedUp []string
+	// ManagedWorkload for, which changing their own annotation would do
+	// nothing for yet.
+	notPickedUp []client.Object
 	// wontPause are workloads the operator never pauses, with why.
 	wontPause []string
+}
+
+// waitingFor are the refs of the workloads Hybernate hasn't picked up whose
+// dry-run nothing enable changed ends: all of them, unless it just set the
+// namespace's annotation to "false", which ends it for each one without an
+// annotation of its own once Hybernate picks it up.
+func (s dryRunSet) waitingFor(namespaceEnded bool) []string {
+	var refs []string
+	for _, obj := range s.notPickedUp {
+		if _, own := obj.GetAnnotations()[v1alpha1.AnnotationDryRun]; namespaceEnded && !own {
+			continue
+		}
+		refs = append(refs, fmt.Sprintf("%s/%s", kindOf(obj), obj.GetName()))
+	}
+	return refs
 }
 
 func dryRunIn(workloads []client.Object, managed managedWorkloads, ns *corev1.Namespace) dryRunSet {
@@ -398,7 +414,7 @@ func dryRunIn(workloads []client.Object, managed managedWorkloads, ns *corev1.Na
 			continue
 		}
 		if managed.readable && mw == nil {
-			found.notPickedUp = append(found.notPickedUp, fmt.Sprintf("%s/%s", kindOf(obj), obj.GetName()))
+			found.notPickedUp = append(found.notPickedUp, obj)
 			continue
 		}
 		if !inDryRun(mw, obj, ns) {
@@ -456,12 +472,15 @@ func enableNamespace(ctx context.Context, c client.Client, namespace string, opt
 	}
 
 	e := &namespaceEnabler{c: c, opts: opts}
+	namespaceEnded := false
 	if !nsLive && (nsSet || found.inherits) {
-		if nsLive, err = e.namespace(ctx, &ns); err != nil {
+		if namespaceEnded, err = e.namespace(ctx, &ns); err != nil {
 			return err
 		}
-		if nsLive {
-			_, _ = fmt.Fprintf(out, "namespace %s: dry-run ended\n", namespace)
+		nsLive = namespaceEnded
+		if namespaceEnded {
+			_, _ = fmt.Fprintf(out, "namespace %s: dry-run ended for the workloads that take its annotation, "+
+				"including ones Hybernate picks up later\n", namespace)
 		}
 	}
 	for _, obj := range found.labelled {
@@ -475,7 +494,7 @@ func enableNamespace(ctx context.Context, c client.Client, namespace string, opt
 		}
 	}
 
-	if e.enabled > 0 || len(e.git) == 0 && len(found.notPickedUp) == 0 {
+	if e.enabled > 0 {
 		_, _ = fmt.Fprintf(out, "%s in %s: dry-run ended, Hybernate will pause %s while idle\n",
 			countOf(e.enabled, "workload"), namespace, pronounObject(e.enabled))
 	}
@@ -490,8 +509,8 @@ func enableNamespace(ctx context.Context, c client.Client, namespace string, opt
 		}
 		errs = append(errs, errManagedByGit)
 	}
-	if len(found.notPickedUp) > 0 {
-		errs = append(errs, reportNotPickedUp(out, namespace, found.notPickedUp))
+	if waiting := found.waitingFor(namespaceEnded); len(waiting) > 0 {
+		errs = append(errs, reportNotPickedUp(out, namespace, waiting))
 	}
 	return errors.Join(errs...)
 }
@@ -504,7 +523,7 @@ func nothingToEnd(out io.Writer, namespace string, found dryRunSet, nsInDryRun b
 		return false, nil
 	}
 	if len(found.notPickedUp) > 0 {
-		return true, reportNotPickedUp(out, namespace, found.notPickedUp)
+		return true, reportNotPickedUp(out, namespace, found.waitingFor(false))
 	}
 	if nsInDryRun {
 		return false, nil
