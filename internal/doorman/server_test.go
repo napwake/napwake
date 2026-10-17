@@ -1695,3 +1695,54 @@ func TestServer_ARouteTakenBackStopsDraining(t *testing.T) {
 	assert.False(t, s.routes[port].draining())
 	assert.Empty(t, s.drains)
 }
+
+// Callers who leave are noticed even once large bodies have spent the
+// shared buffer budget: one that sent less than a chunk is read to its EOF
+// without the budget, and one blocked on it is read again once it frees.
+func TestServer_CallersLeavingAreNoticedWhenTheBufferBudgetIsSpent(t *testing.T) {
+	port := freePort(t)
+	s, _ := startServerWith(t, func(s *Server) {
+		l := defaultLimits
+		l.maxBuffered = 4 * clientBufferSize
+		s.admission = newAdmission(l)
+	}, pausedWorkload("api", port, time.Minute))
+	upload := "POST /upload HTTP/1.1\r\nHost: shop\r\nContent-Length: 36864\r\n\r\n" + strings.Repeat("x", 36<<10)
+	before := wakes(resultCanceled)
+
+	large := dial(t, port)
+	var writes sync.WaitGroup
+	writes.Go(func() { _, _ = large.Write([]byte(upload)) }) // ends when the doorman closes the connection
+	require.Eventually(t, func() bool { return bufferedBytes(s) == 4*clientBufferSize }, 5*time.Second, 10*time.Millisecond,
+		"the budget is spent")
+	blocked := dial(t, port)
+	writes.Go(func() { _, _ = blocked.Write([]byte(upload)) }) // ends when the doorman closes the connection
+
+	small := dial(t, port)
+	send(t, small, "GET /api HTTP/1.1\r\nHost: api\r\n\r\n")
+	require.Eventually(t, func() bool { return heldCount(s) == 3 }, 5*time.Second, 10*time.Millisecond)
+	require.NoError(t, small.Close())
+	require.Eventually(t, func() bool { return wakes(resultCanceled) == before+1 }, 5*time.Second, 10*time.Millisecond,
+		"a caller that sent less than a chunk is noticed leaving")
+
+	require.NoError(t, large.Close())
+	require.Eventually(t, func() bool { return wakes(resultCanceled) == before+2 }, 5*time.Second, 10*time.Millisecond)
+	require.NoError(t, blocked.Close())
+	require.Eventually(t, func() bool { return wakes(resultCanceled) == before+3 }, 5*time.Second, 10*time.Millisecond,
+		"a caller waiting on the budget is read again once it frees")
+	assert.Eventually(t, func() bool { return heldCount(s) == 0 && bufferedBytes(s) == 0 }, 5*time.Second, 10*time.Millisecond)
+	writes.Wait()
+}
+
+// The buffer budget counts the memory a held connection keeps, in whole
+// chunks, not just the bytes in them.
+func TestServer_TheBufferBudgetCountsWholeChunks(t *testing.T) {
+	port := freePort(t)
+	s, _ := startServer(t, pausedWorkload("api", port, time.Minute))
+
+	conn := dial(t, port)
+	send(t, conn, "POST /upload HTTP/1.1\r\nHost: shop\r\nContent-Length: 12288\r\n\r\n"+strings.Repeat("x", 12288))
+	require.Eventually(t, func() bool { return heldCount(s) == 1 }, 5*time.Second, 10*time.Millisecond)
+
+	assert.Eventually(t, func() bool { return bufferedBytes(s) == clientBufferSize }, 5*time.Second, 10*time.Millisecond,
+		"a second chunk, though barely used, counts in full")
+}
