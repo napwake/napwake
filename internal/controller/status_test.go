@@ -105,19 +105,6 @@ func TestReconcile_UnwrittenActivityIsRemembered(t *testing.T) {
 		"last activity %s, want the unwritten busy check at %s", activity.LastActivityTime, busySince)
 }
 
-// Status is written every statusFlushInterval, so after a restart the last
-// written evaluation is normally a few minutes old. That's not an outage.
-func TestActivityClock_FlushLagIsNotAnOutage(t *testing.T) {
-	target := clockTarget("app:v1", nil)
-	workload := clockWorkload(fixedTime.Add(-59*time.Minute), target)
-	evaluated := metav1.NewTime(fixedTime.Add(-statusFlushInterval))
-	workload.Status.Activity.LastEvaluatedTime = &evaluated
-
-	runClock(t, workload, target, clockOpts{metrics: idleCPU})
-
-	assert.NotEqual(t, v1alpha1.ActivitySourceUnobserved, workload.Status.Activity.LastActivitySource)
-}
-
 func TestWithoutVolatile(t *testing.T) {
 	evaluated := metav1.NewTime(fixedTime)
 	status := &v1alpha1.ManagedWorkloadStatus{

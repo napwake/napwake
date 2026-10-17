@@ -90,7 +90,7 @@ For Prometheus queries, the `PrometheusAvailable` condition reports `EndpointNot
 
 The clock is stored in `status.activity`, so it survives operator restarts. While a workload is awake it's checked about once a minute; the clock's timestamps are written to status at most every 5 minutes, along with cost, and immediately whenever the phase or a condition changes, or when new activity is more than a tenth of `idleAfter` (at most 5 minutes) ahead of what's written. Activity seen between writes is held in memory, so it still counts, and what's written is never far enough behind for a restart to pause a workload early.
 
-If the operator wasn't running for more than about 7 minutes (two missed checks beyond the write interval), it can't know whether there was activity in the meantime, so the clock restarts from the time it resumes watching (`lastActivitySource: unobserved`). An outage can delay a pause, but never cause one.
+If the operator stops watching a workload for a while, it can't know whether there was activity in the meantime, so the clock restarts from the time it resumes watching (`lastActivitySource: unobserved`). How long a gap it allows depends on `idleAfter`: half of it, but at least 2 minutes (two missed checks) and at most 7. After a restart or a change of leader, the operator only has what was written, which can be up to 5 minutes behind its last check, so any gap over 2 minutes restarts the clock: a restart can delay pauses by up to `idleAfter`. An outage can delay a pause, but never cause one.
 
 ```yaml
 status:

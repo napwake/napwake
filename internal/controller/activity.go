@@ -46,10 +46,9 @@ const (
 	// a workload is awake.
 	activityCheckInterval = 1 * time.Minute
 
-	// unobservedGap is how stale the last evaluation may be before the clock
-	// restarts. Evaluations are only written every statusFlushInterval, so a
-	// gap beyond that plus two missed checks means the operator wasn't
-	// watching, and it can't claim the workload was idle in the meantime.
+	// unobservedGap is the most a gap between evaluations may last before
+	// the clock restarts, since the operator wasn't watching and can't claim
+	// the workload was idle in the meantime. See unobservedAfter.
 	unobservedGap = 2*activityCheckInterval + statusFlushInterval
 
 	defaultIdleAfter    = 1 * time.Hour
@@ -155,7 +154,8 @@ func (r *Reconciler) observeActivity(ctx context.Context, workload *v1alpha1.Man
 		r.resetActivity(workload, v1alpha1.ActivitySourceCreated)
 	}
 	status := workload.Status.Activity
-	if remembered, ok := r.activityMemo.get(workload.UID); ok {
+	remembered, inMemory := r.activityMemo.get(workload.UID)
+	if inMemory {
 		recordActivity(status, remembered.LastActivityTime.Time, remembered.LastActivitySource)
 		if remembered.LastEvaluatedTime != nil &&
 			(status.LastEvaluatedTime == nil || remembered.LastEvaluatedTime.After(status.LastEvaluatedTime.Time)) {
@@ -163,7 +163,7 @@ func (r *Reconciler) observeActivity(ctx context.Context, workload *v1alpha1.Man
 		}
 	}
 
-	if last := status.LastEvaluatedTime; last != nil && now.Sub(last.Time) > unobservedGap {
+	if last := status.LastEvaluatedTime; last != nil && now.Sub(last.Time) > unobservedAfter(workload, inMemory) {
 		status.LastActivityTime = metav1.NewTime(now)
 		status.LastActivitySource = v1alpha1.ActivitySourceUnobserved
 	}
@@ -222,6 +222,22 @@ func (r *Reconciler) observeActivity(ctx context.Context, workload *v1alpha1.Man
 	r.activityMemo.put(workload.UID, *status.DeepCopy())
 	recordIdleSeconds(workload, now)
 	return obs
+}
+
+// unobservedAfter is how long since the last evaluation the operator is
+// taken not to have been watching. Counted as idle, a gap could bring a
+// pause forward by its whole length, so a short idleAfter tolerates a gap
+// of at most half of it, though never less than two missed checks, which a
+// busy operator's queue can delay. With no clock in memory, as after a
+// restart or a change of leader, what's written can be a flush interval
+// behind the last check, so the gap's start is unknown: anything beyond two
+// checks restarts the clock, which can delay a pause but never bring one
+// forward.
+func unobservedAfter(workload *v1alpha1.ManagedWorkload, inMemory bool) time.Duration {
+	if !inMemory {
+		return 2 * activityCheckInterval
+	}
+	return min(unobservedGap, max(2*activityCheckInterval, idleAfterFor(workload)/2))
 }
 
 // recordIdleSeconds publishes how long the workload has gone without

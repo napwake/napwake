@@ -343,6 +343,54 @@ func TestActivityClock_AnOutageIsNotIdleTime(t *testing.T) {
 	}
 }
 
+// A gap in watching is never counted as idle time once it could bring the
+// pause forward by much: a short idleAfter tolerates less of one, and after
+// a restart, when the gap's start is unknown, little at all.
+func TestActivityClock_AGapInWatchingRestartsTheClock(t *testing.T) {
+	tests := []struct {
+		name      string
+		idleAfter time.Duration
+		idleFor   time.Duration
+		gap       time.Duration
+		inMemory  bool
+		wantPause bool
+	}{
+		{name: "an outage longer than half a short idleAfter", idleAfter: 5 * time.Minute, idleFor: 6 * time.Minute,
+			gap: 3 * time.Minute, inMemory: true},
+		{name: "a delayed check within a long idleAfter", idleAfter: time.Hour, idleFor: 61 * time.Minute,
+			gap: 3 * time.Minute, inMemory: true, wantPause: true},
+		{name: "an outage beyond the cap on a long idleAfter", idleAfter: 2 * time.Hour, idleFor: 121 * time.Minute,
+			gap: unobservedGap + time.Minute, inMemory: true},
+		{name: "a restart with the written evaluation minutes old", idleAfter: time.Hour, idleFor: 61 * time.Minute,
+			gap: 3 * time.Minute},
+		{name: "a restart with the written evaluation moments old", idleAfter: time.Hour, idleFor: 61 * time.Minute,
+			gap: 30 * time.Second, wantPause: true},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			target := clockTarget("app:v1", nil)
+			workload := clockWorkload(fixedTime.Add(-tt.idleFor), target)
+			workload.Spec.IdlePolicy.IdleAfter = &metav1.Duration{Duration: tt.idleAfter}
+			evaluated := metav1.NewTime(fixedTime.Add(-tt.gap))
+			workload.Status.Activity.LastEvaluatedTime = &evaluated
+			metrics := idleCPU
+			pauser := &stubPauser{pauseDone: true}
+			r := newAutomationReconciler(t, workload, &stubForecaster{}, automationOpts{metrics: &metrics, pauser: pauser})
+			if tt.inMemory {
+				r.activityMemo.put(workload.UID, *workload.Status.Activity.DeepCopy())
+			}
+
+			_, err := r.reconcileAutomation(context.Background(), workload, target)
+			require.NoError(t, err)
+
+			assert.Equal(t, tt.wantPause, pauser.pauseCalls == 1)
+			if !tt.wantPause {
+				assert.Equal(t, v1alpha1.ActivitySourceUnobserved, workload.Status.Activity.LastActivitySource)
+			}
+		})
+	}
+}
+
 func TestActivityClock_ZeroReplicasIsIdleNotMissingData(t *testing.T) {
 	target := clockTarget("app:v1", nil)
 	workload := clockWorkload(fixedTime.Add(-61*time.Minute), target)
