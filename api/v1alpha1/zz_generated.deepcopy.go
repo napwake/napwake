@@ -490,6 +490,10 @@ func (in *PauseStatus) DeepCopyInto(out *PauseStatus) {
 		*out = new(ResourceSnapshot)
 		**out = **in
 	}
+	if in.FirstReadyAt != nil {
+		in, out := &in.FirstReadyAt, &out.FirstReadyAt
+		*out = (*in).DeepCopy()
+	}
 	if in.WakeAnnotations != nil {
 		in, out := &in.WakeAnnotations, &out.WakeAnnotations
 		*out = new(WakeAnnotations)
