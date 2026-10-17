@@ -761,9 +761,16 @@ func (r *Reconciler) reconcileDelete(ctx context.Context, workload *v1alpha1.Man
 	if err != nil && !r.abandonHandBack(ctx, workload, err) {
 		return 0, err
 	}
+	// Written with the drain, so the reconciles while it lasts don't hand
+	// the target back again: scaling up one someone has since scaled to
+	// zero, putting KEDA's value back, and waking its dependencies.
+	workload.Status.Pause = nil
 	if wait := r.drainLeft(workload); wait > 0 {
 		if err := r.Status().Update(ctx, workload); err != nil {
 			return 0, fmt.Errorf("recording the doorman ports draining: %w", err)
+		}
+		if released {
+			r.announceHandBack(workload, replicas, "no longer managed")
 		}
 		return wait, nil
 	}
@@ -836,8 +843,8 @@ func (r *Reconciler) drainLeft(workload *v1alpha1.ManagedWorkload) time.Duration
 // released from KEDA without waiting for it to be Ready, and the dependencies
 // it needs are woken. Its Services stop routing to the doorman. It reports
 // whether there was a pause to undo, and the replicas the target is left
-// with. The record is cleared by the caller's transition to Running, which
-// settles the paused time's cost from it first.
+// with. The record is cleared by the caller: by its transition to Running,
+// which settles the paused time's cost from it first, or on deletion.
 func (r *Reconciler) releaseTarget(ctx context.Context, workload *v1alpha1.ManagedWorkload) (bool, int32, error) {
 	paused := workload.Status.Pause != nil
 	var replicas int32

@@ -394,6 +394,36 @@ func TestReconcileDelete_RestoresAPausedWorkload(t *testing.T) {
 	}
 }
 
+// A deleted paused workload is handed back once, though its ManagedWorkload
+// stays while its doorman ports drain: the reconciles meanwhile don't scale
+// it up again, over someone who has since scaled it to zero, re-annotate
+// KEDA, or wake its dependencies again.
+func TestReconcileDelete_HandsBackOnceWhileItsPortsDrain(t *testing.T) {
+	r, pauser := pausedRouted(t)
+	now := fixedTime
+	r.clock = func() time.Time { return now }
+	require.NoError(t, r.Delete(context.Background(), fetch(t, r, "api")))
+
+	for range 3 {
+		result, err := r.Reconcile(context.Background(), reconcileFor("api"))
+		require.NoError(t, err)
+		require.Positive(t, result.RequeueAfter, "still draining")
+		now = now.Add(portDrain / 4)
+	}
+
+	assert.Equal(t, 1, pauser.restoreCalls)
+	assert.Nil(t, fetch(t, r, "api").Status.Pause, "handed back")
+	assert.Equal(t, 1, strings.Count(drainEvents(t, r), "restored to 2 replicas: no longer managed"),
+		"announced once, when it's handed back")
+
+	now = now.Add(portDrain)
+	_, err := r.Reconcile(context.Background(), reconcileFor("api"))
+	require.NoError(t, err)
+	var gone v1alpha1.ManagedWorkload
+	assert.True(t, apierrors.IsNotFound(r.Get(context.Background(), reconcileFor("api").NamespacedName, &gone)))
+	assert.Equal(t, 1, pauser.restoreCalls)
+}
+
 func TestReconcile_TargetNotFoundSetsConditionAndRequeues(t *testing.T) {
 	workload := &v1alpha1.ManagedWorkload{
 		ObjectMeta: metav1.ObjectMeta{Name: "api", Namespace: "default"},
