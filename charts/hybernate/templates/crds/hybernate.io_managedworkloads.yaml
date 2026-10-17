@@ -7,7 +7,7 @@ metadata:
   annotations:
     helm.sh/resource-policy: keep
     argocd.argoproj.io/sync-options: Delete=false
-    controller-gen.kubebuilder.io/version: v0.20.1
+    controller-gen.kubebuilder.io/version: v0.22.0
   name: managedworkloads.hybernate.io
 spec:
   group: hybernate.io
@@ -985,7 +985,6 @@ spec:
                 type: object
             type: object
         required:
-        - metadata
         - spec
         type: object
     served: true
