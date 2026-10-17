@@ -61,6 +61,14 @@ func TestReplicasWriter(t *testing.T) {
 			want: Writer{Manager: "kustomize-controller", Tool: Flux, At: t0}, ok: true},
 		{name: "Flux Helm", fields: []metav1.ManagedFieldsEntry{entry("helm-controller", replicas, t0)},
 			want: Writer{Manager: "helm-controller", Tool: Flux, At: t0}, ok: true},
+		{name: "Rancher Fleet", fields: []metav1.ManagedFieldsEntry{entry("fleetagent", replicas, t0)},
+			want: Writer{Manager: "fleetagent", Tool: Fleet, At: t0}, ok: true},
+		{name: "kapp", fields: []metav1.ManagedFieldsEntry{entry("kapp", replicas, t0)},
+			want: Writer{Manager: "kapp", Tool: Kapp, At: t0}, ok: true},
+		{name: "Kluctl", fields: []metav1.ManagedFieldsEntry{entry("kluctl", replicas, t0)},
+			want: Writer{Manager: "kluctl", Tool: Kluctl, At: t0}, ok: true},
+		{name: "the Kluctl controller", fields: []metav1.ManagedFieldsEntry{entry("kluctl-controller", replicas, t0)},
+			want: Writer{Manager: "kluctl-controller", Tool: Kluctl, At: t0}, ok: true},
 		{name: "a person", fields: []metav1.ManagedFieldsEntry{entry("kubectl-scale", replicas, t0)},
 			want: Writer{Manager: "kubectl-scale", At: t0}, ok: true},
 		{name: "the latest of several", fields: []metav1.ManagedFieldsEntry{
@@ -101,6 +109,8 @@ func TestReplicasWriter(t *testing.T) {
 
 func TestFix(t *testing.T) {
 	assert.Contains(t, Fix(ArgoCD), "    jsonPointers: [/spec/replicas]")
-	assert.NotEmpty(t, Fix(Flux))
+	for _, tool := range []Tool{Flux, Fleet, Kapp, Kluctl} {
+		assert.NotEmpty(t, Fix(tool), "%s has a fix", tool)
+	}
 	assert.Empty(t, Fix(""))
 }

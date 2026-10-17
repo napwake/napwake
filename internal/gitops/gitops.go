@@ -33,6 +33,9 @@ type Tool string
 const (
 	ArgoCD Tool = "Argo CD"
 	Flux   Tool = "Flux"
+	Fleet  Tool = "Fleet"
+	Kapp   Tool = "kapp"
+	Kluctl Tool = "Kluctl"
 )
 
 // Writer is the field manager that last set a workload's replicas.
@@ -88,14 +91,22 @@ func setsReplicas(raw []byte) bool {
 }
 
 // toolOf names the GitOps tool behind a field manager. Argo CD applies as
-// argocd-controller, older releases as argocd-application-controller; Flux
-// as kustomize-controller or helm-controller.
+// argocd-controller, client-side and server-side, older releases as
+// argocd-application-controller; Flux as kustomize-controller or
+// helm-controller; Rancher Fleet as fleetagent, its agent's binary; kapp,
+// and kapp-controller through it, as kapp; Kluctl as kluctl or kluctl-*.
 func toolOf(manager string) Tool {
 	switch {
 	case strings.HasPrefix(manager, "argocd"):
 		return ArgoCD
 	case manager == "kustomize-controller", manager == "helm-controller":
 		return Flux
+	case manager == "fleetagent", manager == "fleet-agent":
+		return Fleet
+	case manager == "kapp":
+		return Kapp
+	case manager == "kluctl", strings.HasPrefix(manager, "kluctl-"):
+		return Kluctl
 	}
 	return ""
 }
@@ -117,6 +128,28 @@ func Fix(t Tool) []string {
 		return []string{
 			"Leave replicas out of the workload's manifest in Git, so Flux doesn't set them;",
 			"for a Helm chart that always sets them, remove them with a postRenderers kustomize patch in the HelmRelease.",
+		}
+	case Fleet:
+		return []string{
+			"Leave replicas out of the workload's manifest in Git, so Fleet doesn't set them;",
+			"for a Helm chart that always sets them, remove them with a kustomize patch in the bundle's fleet.yaml.",
+		}
+	case Kapp:
+		return []string{
+			"Have kapp keep the replicas it finds, as for an HPA, with a rebase rule in a kapp Config:",
+			"  rebaseRules:",
+			"  - path: [spec, replicas]",
+			"    type: copy",
+			"    sources: [existing, new]",
+			"    resourceMatchers:",
+			"    - apiVersionKindMatcher: {apiVersion: apps/v1, kind: Deployment}",
+			"    - apiVersionKindMatcher: {apiVersion: apps/v1, kind: StatefulSet}",
+		}
+	case Kluctl:
+		return []string{
+			"Kluctl only overwrites replicas Hybernate set when it force-applies; annotate the workload",
+			"kluctl.io/ignore-conflicts-manager: hybernate in Git so it leaves them even then,",
+			"or leave replicas out of the workload's manifest.",
 		}
 	}
 	return nil
