@@ -171,6 +171,9 @@ check-chart: ## Lint the Helm chart, render it for each provider's Kubernetes ve
 	! awk 'length($$2) > 63 {print "too long: " $$0; bad = 1} END {exit !bad}' <<<"$$names" && \
 		[ -z "$$(sort <<<"$$names" | uniq -d)" ] || { \
 		echo "a 63-character fullnameOverride makes a name over 63 characters, or two resources the same name"; exit 1; }
+	@crd=$$(helm template hybernate charts/hybernate --show-only templates/crds/hybernate.io_managedworkloads.yaml); \
+	grep -q 'helm.sh/resource-policy: keep' <<<"$$crd" && grep -q 'argocd.argoproj.io/sync-options: Delete=false' <<<"$$crd" || { \
+		echo "the chart's CRD isn't kept on uninstall by both Helm and Argo CD, which would delete every ManagedWorkload"; exit 1; }
 	@for p in 8081 20000 29999; do \
 		! helm template hybernate charts/hybernate --set metrics.port=$$p >/dev/null 2>&1 || { \
 			echo "the chart accepts metrics.port=$$p, which the health probes or the doorman's routing ports use"; exit 1; }; \
