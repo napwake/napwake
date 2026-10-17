@@ -764,6 +764,34 @@ func TestReconcile_OrphaningDeleteRemovesDoormanSlices(t *testing.T) {
 	assert.Positive(t, pauser.restoreCalls, "and the target is handed back")
 }
 
+// A workload deleted moments after it was routed may have slices the cache
+// hasn't caught up with. Nothing reconciles it after its finalizer goes, so
+// an orphaning delete would leave them sending traffic to the doorman.
+func TestReconcile_OrphaningDeleteRemovesSlicesTheCacheMissed(t *testing.T) {
+	r, _ := pausedRouted(t)
+	apiServer := r.Client.(client.WithWatch)
+	r.PodReader = apiServer
+	r.Client = interceptor.NewClient(apiServer, interceptor.Funcs{List: func(ctx context.Context, c client.WithWatch,
+		list client.ObjectList, opts ...client.ListOption) error {
+		if _, ok := list.(*discoveryv1.EndpointSliceList); ok {
+			var all client.ListOptions
+			all.ApplyOptions(opts)
+			if all.LabelSelector != nil && strings.Contains(all.LabelSelector.String(), doorman.ManagedBy) {
+				return nil
+			}
+		}
+		return c.List(ctx, list, opts...)
+	}})
+	require.NoError(t, r.Delete(context.Background(), fetch(t, r, "api"), client.PropagationPolicy(metav1.DeletePropagationOrphan)))
+
+	_, err := r.Reconcile(context.Background(), reconcileFor("api"))
+	require.NoError(t, err)
+
+	var left discoveryv1.EndpointSliceList
+	require.NoError(t, apiServer.List(context.Background(), &left, client.MatchingLabels{discoveryv1.LabelManagedBy: doorman.ManagedBy}))
+	assert.Empty(t, left.Items)
+}
+
 // A doorman problem, here the doorman's namespace missing from the cache of
 // a watchNamespaces install, never stops a paused workload from waking.
 func TestReconcile_DoormanFailureDoesNotBlockTheLifecycle(t *testing.T) {

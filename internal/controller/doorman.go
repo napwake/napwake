@@ -179,7 +179,7 @@ func (r *Reconciler) reconcileDoorman(ctx context.Context, workload *v1alpha1.Ma
 	if len(plan.skipped.served) > 0 {
 		recheck = servedRecheck
 	}
-	current, err := r.listDoormanSlices(ctx, workload)
+	current, err := r.listDoormanSlices(ctx, r.Client, workload)
 	if err != nil {
 		return 0, err
 	}
@@ -240,8 +240,16 @@ func shortest(a, b time.Duration) time.Duration {
 // would skip. Only once they're gone do its ports leave status and start
 // draining: a port another workload could be given while a slice still
 // sends traffic to it would deliver that traffic to the wrong workload.
+//
+// A workload being deleted is never reconciled again, so its slices are
+// listed from the API server: one written moments ago, which the cache may
+// not have yet, would otherwise be left sending traffic to the doorman.
 func (r *Reconciler) removeDoorman(ctx context.Context, workload *v1alpha1.ManagedWorkload) error {
-	current, err := r.listDoormanSlices(ctx, workload)
+	reader := client.Reader(r.Client)
+	if !workload.DeletionTimestamp.IsZero() {
+		reader = r.apiReader()
+	}
+	current, err := r.listDoormanSlices(ctx, reader, workload)
 	if err != nil {
 		return err
 	}
@@ -794,9 +802,12 @@ func (r *Reconciler) applyDoormanSlice(ctx context.Context, workload *v1alpha1.M
 }
 
 // listDoormanSlices lists the doorman slices the workload has written.
-func (r *Reconciler) listDoormanSlices(ctx context.Context, workload *v1alpha1.ManagedWorkload) ([]discoveryv1.EndpointSlice, error) {
+func (r *Reconciler) listDoormanSlices(ctx context.Context, reader client.Reader,
+	workload *v1alpha1.ManagedWorkload) ([]discoveryv1.EndpointSlice, error) {
+	ctx, cancel := context.WithTimeout(ctx, endpointsReadTimeout)
+	defer cancel()
 	var list discoveryv1.EndpointSliceList
-	if err := r.List(ctx, &list, client.InNamespace(workload.Namespace), client.MatchingLabels{
+	if err := reader.List(ctx, &list, client.InNamespace(workload.Namespace), client.MatchingLabels{
 		discoveryv1.LabelManagedBy:   doorman.ManagedBy,
 		doorman.LabelManagedWorkload: doorman.WorkloadLabel(workload.Name),
 	}); err != nil {
