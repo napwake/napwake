@@ -213,6 +213,9 @@ check-chart: ## Lint the Helm chart, render it for each provider's Kubernetes ve
 		[ -n "$$chart" ] && [ "$$chart" = "$$kustomize" ] || { \
 			echo "config/manager's doorman has $$field '$$kustomize', the chart's '$$chart', so one drops connections on shutdown"; exit 1; }; \
 	done
+	@helm template hybernate charts/hybernate --set leaderElection.enabled=false --show-only templates/deployment.yaml | grep -q 'type: Recreate' && \
+		! helm template hybernate charts/hybernate --show-only templates/deployment.yaml | grep -q 'type: Recreate' || { \
+		echo "without leader election, a rolling update runs two operators at once"; exit 1; }
 
 .PHONY: test-doorman-policy
 test-doorman-policy: setup-envtest ## Check against envtest that the chart's admission policy holds the doorman to stamping requests

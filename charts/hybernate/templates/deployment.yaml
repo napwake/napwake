@@ -7,6 +7,14 @@ metadata:
     {{- include "hybernate.labels" . | nindent 4 }}
 spec:
   replicas: {{ .Values.replicaCount }}
+  {{- if not .Values.leaderElection.enabled }}
+  {{- /*
+  Without a lease, a rolling update's surge pod would act alongside the
+  old one.
+  */}}
+  strategy:
+    type: Recreate
+  {{- end }}
   selector:
     matchLabels:
       {{- include "hybernate.selectorLabels" . | nindent 6 }}

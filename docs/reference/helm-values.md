@@ -46,7 +46,7 @@ The CRD is a chart template with `helm.sh/resource-policy: keep`, so `helm unins
 | Value | Default | Description |
 |-------|---------|-------------|
 | `replicaCount` | `1` | Operator replicas. More than one needs `leaderElection.enabled`, so that only one acts at a time; the schema refuses more otherwise |
-| `leaderElection.enabled` | `true` | Elect a leader through a Lease, so only one replica reconciles |
+| `leaderElection.enabled` | `true` | Elect a leader through a Lease, so only one replica reconciles. Without it, an upgrade stops the old operator before starting the new one (`strategy: Recreate`), so two never act at once |
 | `maxConcurrentReconciles` | `4` | How many ManagedWorkloads the operator reconciles at once, so one slow metrics or Prometheus query doesn't hold up waking another workload. Passed as `--max-concurrent-reconciles` |
 | `timezone` | `UTC` | IANA time zone, such as `Europe/London`, whose hours and weekdays the [forecast](../concepts/forecasting.md#wall-clock-alignment) learns. Use your users' zone, so forecasts follow daylight saving. Passed as `--timezone` |
 | `logLevel` | `info` | `debug`, `info`, `error`, `panic`, or a whole number above 0 for more verbose debug levels. For the operator and the doorman |
