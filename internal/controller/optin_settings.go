@@ -68,7 +68,9 @@ type settings struct {
 
 // resolve offers each value of key, in order of precedence, to read until
 // read accepts one, and reports each one it rejects along with where the
-// setting came from instead. read is told where the value is.
+// setting came from instead. read is told where the value is. Values are
+// offered without surrounding whitespace, which a YAML block scalar leaves
+// as a trailing newline.
 func (s *settings) resolve(key, invalid string, read func(value, on string) bool) {
 	start := len(s.problems)
 	outcome := "the default is used"
@@ -80,6 +82,7 @@ func (s *settings) resolve(key, invalid string, read func(value, on string) bool
 		if !ok {
 			continue
 		}
+		v = strings.TrimSpace(v)
 		if read(v, level.on) {
 			outcome = "the " + level.on + "'s value is used"
 			break

@@ -287,3 +287,24 @@ func TestOptInSpec_EmptyDependsOnDropsTheNamespaces(t *testing.T) {
 	assert.Empty(t, problems)
 	assert.Empty(t, spec.DependsOn)
 }
+
+// A YAML block scalar, as in `idle-after: |`, leaves a trailing newline in
+// the value.
+func TestOptInSpec_TrimsWhitespace(t *testing.T) {
+	workload := map[string]string{
+		v1alpha1.AnnotationIdleAfter:    "2h\n",
+		v1alpha1.AnnotationCPUThreshold: " 15 ",
+		v1alpha1.AnnotationDryRun:       "true\n",
+		v1alpha1.AnnotationWakeMaxWait:  "\t90s\n",
+		v1alpha1.AnnotationAutoResume:   "true\n",
+	}
+
+	spec, problems := optInSpec("dev", apiTarget, workload, nil, DefaultOptInDefaults)
+
+	require.Empty(t, problems)
+	assert.Equal(t, 2*time.Hour, spec.IdlePolicy.IdleAfter.Duration)
+	assert.Equal(t, 15, spec.IdlePolicy.Activity.CPUThreshold)
+	assert.True(t, spec.DryRun)
+	assert.Equal(t, 90*time.Second, spec.Wake.MaxWait.Duration)
+	assert.True(t, spec.IdlePolicy.AutoResume)
+}
