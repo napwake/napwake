@@ -490,6 +490,10 @@ func (in *PauseStatus) DeepCopyInto(out *PauseStatus) {
 		*out = new(ResourceSnapshot)
 		**out = **in
 	}
+	if in.ResumedAt != nil {
+		in, out := &in.ResumedAt, &out.ResumedAt
+		*out = (*in).DeepCopy()
+	}
 	if in.FirstReadyAt != nil {
 		in, out := &in.FirstReadyAt, &out.FirstReadyAt
 		*out = (*in).DeepCopy()
