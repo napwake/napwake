@@ -84,7 +84,8 @@ the cluster keeps events: an hour, unless its API server is set to keep more.
 
 It reads every namespace you can, or only the context's namespace when your
 access doesn't allow listing them all. It only reads ManagedWorkloads, their
-events, and their workloads' annotations.
+events, and their workloads' annotations, and checks that a namespace named
+with -n that has no ManagedWorkloads exists.
 
 Examples:
   kubectl hybernate status
