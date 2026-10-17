@@ -204,19 +204,32 @@ func TestGitOpsConflict_ClearsWhenAPauseHolds(t *testing.T) {
 
 		assert.NotNil(t, meta.FindStatusCondition(getWorkload(t, r, "api").Status.Conditions, conditionGitOpsConflict))
 	})
-	t.Run("until Hybernate woke it", func(t *testing.T) {
-		workload := conflicted(fixedTime.Add(-3 * time.Hour))
-		workload.Status.Phase = v1alpha1.PhasePaused
-		workload.Status.Pause = &v1alpha1.PauseStatus{PreviousReplicas: 3,
-			PausedAt: &metav1.Time{Time: fixedTime.Add(-10 * time.Minute)}}
-		r := newTestReconcilerWithReplicas(t, workload, &stubPauser{resumeDone: true}, 0)
-		w := getWorkload(t, r, "api")
+	// A tool that syncs less often than Hybernate wakes the workload could
+	// still undo the next pause, so a wake only shows a pause held if it
+	// held for the hour.
+	for name, tt := range map[string]struct {
+		paused  time.Duration
+		cleared bool
+	}{
+		"woken by Hybernate within the hour": {paused: 10 * time.Minute},
+		"woken by Hybernate after it":        {paused: 61 * time.Minute, cleared: true},
+	} {
+		t.Run(name, func(t *testing.T) {
+			workload := conflicted(fixedTime.Add(-3 * time.Hour))
+			workload.Status.Phase = v1alpha1.PhasePaused
+			workload.Status.Pause = &v1alpha1.PauseStatus{PreviousReplicas: 3,
+				PausedAt: &metav1.Time{Time: fixedTime.Add(-tt.paused)}}
+			r := newTestReconcilerWithReplicas(t, workload, &stubPauser{resumeDone: true}, 0)
+			w := getWorkload(t, r, "api")
 
-		_, err := r.handleResume(context.Background(), w, nil)
-		require.NoError(t, err)
+			_, err := r.handleResume(context.Background(), w, nil)
+			require.NoError(t, err)
 
-		assert.Nil(t, meta.FindStatusCondition(getWorkload(t, r, "api").Status.Conditions, conditionGitOpsConflict))
-	})
+			got := getWorkload(t, r, "api")
+			require.Equal(t, v1alpha1.PhaseRunning, got.Status.Phase)
+			assert.Equal(t, !tt.cleared, meta.IsStatusConditionTrue(got.Status.Conditions, conditionGitOpsConflict))
+		})
+	}
 }
 
 // A workload an autoscaler scales says so, and how Hybernate pauses it

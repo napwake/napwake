@@ -246,10 +246,6 @@ func gitOpsHold(workload *v1alpha1.ManagedWorkload, now time.Time) (time.Time, b
 // has held for as long as Hybernate waits to retry: the tool now leaves the
 // replicas alone.
 func (r *Reconciler) clearGitOpsConflictIfHeld(ctx context.Context, workload *v1alpha1.ManagedWorkload) error {
-	pause := workload.Status.Pause
-	if pause == nil || pause.PausedAt == nil || r.now().Sub(pause.PausedAt.Time) < gitOpsRetryAfter {
-		return nil
-	}
 	tool, cleared := r.clearGitOpsConflict(workload)
 	if !cleared {
 		return nil
@@ -261,12 +257,17 @@ func (r *Reconciler) clearGitOpsConflictIfHeld(ctx context.Context, workload *v1
 	return nil
 }
 
-// clearGitOpsConflict removes the conflict, which a pause holding shows is
-// over, and returns the GitOps tool it was with, or false if there was none.
-// Scaling up clears the pause, so any pause since began after the conflict.
+// clearGitOpsConflict removes the conflict once the workload's pause has
+// held for as long as Hybernate waits to retry, which shows it's over, and
+// returns the GitOps tool it was with, or false if it's not cleared. Scaling
+// up clears the pause, so any pause since began after the conflict.
 func (r *Reconciler) clearGitOpsConflict(workload *v1alpha1.ManagedWorkload) (string, bool) {
 	s := workload.Status.LastScaledUp
 	if s == nil || !meta.IsStatusConditionTrue(workload.Status.Conditions, conditionGitOpsConflict) {
+		return "", false
+	}
+	pause := workload.Status.Pause
+	if pause == nil || pause.PausedAt == nil || r.now().Sub(pause.PausedAt.Time) < gitOpsRetryAfter {
 		return "", false
 	}
 	meta.RemoveStatusCondition(&workload.Status.Conditions, conditionGitOpsConflict)
