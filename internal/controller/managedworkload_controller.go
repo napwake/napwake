@@ -173,7 +173,8 @@ func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (res ctrl.
 	}
 
 	if !workload.DeletionTimestamp.IsZero() {
-		return ctrl.Result{}, r.reconcileDelete(ctx, &workload)
+		wait, err := r.reconcileDelete(ctx, &workload)
+		return ctrl.Result{RequeueAfter: wait}, err
 	}
 
 	// Re-published every reconcile so the gauge is populated after an
@@ -571,19 +572,30 @@ func (r *Reconciler) ensureFinalizer(ctx context.Context, workload *v1alpha1.Man
 	return r.Update(ctx, workload)
 }
 
-func (r *Reconciler) reconcileDelete(ctx context.Context, workload *v1alpha1.ManagedWorkload) error {
+// reconcileDelete hands the target back and lets the ManagedWorkload go. It
+// returns how long to wait first when a doorman port the workload used is
+// still draining: the drain is kept in its status until it ends, so a leader
+// that takes over meanwhile doesn't give the port to another workload while
+// clients may still send this one's traffic to it.
+func (r *Reconciler) reconcileDelete(ctx context.Context, workload *v1alpha1.ManagedWorkload) (time.Duration, error) {
 	if !controllerutil.ContainsFinalizer(workload, finalizerName) {
-		return nil
+		return 0, nil
 	}
 
 	released, replicas, err := r.releaseTarget(ctx, workload)
 	if err != nil {
-		return err
+		return 0, err
+	}
+	if wait := r.drainLeft(workload); wait > 0 {
+		if err := r.Status().Update(ctx, workload); err != nil {
+			return 0, fmt.Errorf("recording the doorman ports draining: %w", err)
+		}
+		return wait, nil
 	}
 
 	controllerutil.RemoveFinalizer(workload, finalizerName)
 	if err := r.Update(ctx, workload); err != nil {
-		return fmt.Errorf("removing finalizer: %w", err)
+		return 0, fmt.Errorf("removing finalizer: %w", err)
 	}
 	if released {
 		r.announceHandBack(workload, replicas, "no longer managed")
@@ -593,7 +605,17 @@ func (r *Reconciler) reconcileDelete(ctx context.Context, workload *v1alpha1.Man
 	r.doormanFailures.reset(workload.UID)
 	r.forgetForecast(workload)
 	metrics.DeleteWorkload(workload.Namespace, workload.Name)
-	return nil
+	return 0, nil
+}
+
+// drainLeft is how long until the last of the workload's doorman ports has
+// drained.
+func (r *Reconciler) drainLeft(workload *v1alpha1.ManagedWorkload) time.Duration {
+	var left time.Duration
+	for _, d := range workload.Status.DoormanDraining {
+		left = max(left, d.Until.Sub(r.now()))
+	}
+	return left
 }
 
 // releaseTarget is where Hybernate lets go of a target it stops managing: on

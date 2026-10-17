@@ -839,6 +839,35 @@ func TestReconcile_OrphaningDeleteRemovesSlicesTheCacheMissed(t *testing.T) {
 	assert.Empty(t, left.Items)
 }
 
+// A deleted workload's ManagedWorkload stays until its doorman ports have
+// drained, with the drain in its status, so a leader that takes over
+// meanwhile doesn't give a port away while clients may still send this
+// workload's traffic to it.
+func TestReconcile_DeletionWaitsForPortsToDrain(t *testing.T) {
+	r, _ := pausedRouted(t)
+	now := fixedTime
+	r.clock = func() time.Time { return now }
+	port := fetch(t, r, "api").Status.Doorman[0].DoormanPort
+	require.NoError(t, r.Delete(context.Background(), fetch(t, r, "api")))
+
+	result, err := r.Reconcile(context.Background(), reconcileFor("api"))
+	require.NoError(t, err)
+
+	assert.Equal(t, portDrain, result.RequeueAfter)
+	assert.Empty(t, doormanSlices(t, r), "routing stops at once")
+	draining := fetch(t, r, "api").Status.DoormanDraining
+	require.Len(t, draining, 1)
+	assert.Equal(t, port, draining[0].Port)
+
+	now = now.Add(portDrain)
+	result, err = r.Reconcile(context.Background(), reconcileFor("api"))
+	require.NoError(t, err)
+
+	assert.Zero(t, result.RequeueAfter)
+	var gone v1alpha1.ManagedWorkload
+	assert.True(t, apierrors.IsNotFound(r.Get(context.Background(), reconcileFor("api").NamespacedName, &gone)))
+}
+
 // The doorman stamps a workload whose recorded last-request was removed
 // with a value of its own. The operator must take that as a wake, or the
 // request that made it waits for a wake that never comes.
