@@ -22,7 +22,7 @@ Everything it reads, writes, and sends is listed in [Data and Access](data-and-a
 | Doorman | The woken workload's pods, in any routed namespace, on their Service ports | Passing the held connection through |
 | Prometheus | Operator and doorman metrics | Only with a token allowed to get `/metrics`, unless `metrics.secure` is off |
 
-Nothing leaves the cluster: no telemetry, no usage reporting, no update checks. The images run as a non-root user on a distroless base, with a read-only root filesystem.
+Nothing leaves the cluster: no telemetry, no usage reporting, no update checks. The images run as a non-root user on a distroless base, with a read-only root filesystem. So does the chart's uninstall guard, a pre-delete hook Job that runs only during `helm uninstall`, from the digest-pinned `registry.k8s.io/kubectl` image, with a ServiceAccount that may only read ManagedWorkloads.
 
 ### The doorman is a way in to paused workloads
 

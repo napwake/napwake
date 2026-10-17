@@ -176,6 +176,18 @@ The doorman's egress policy is separate from `networkPolicy.enabled`, and needs 
 
 The doorman always gets its own ServiceAccount, `<fullname>-doorman`.
 
+## Uninstall Guard
+
+| Value | Default | Description |
+|-------|---------|-------------|
+| `uninstallGuard.enabled` | `true` | Refuse `helm uninstall` while ManagedWorkloads are left, through a pre-delete hook Job |
+| `uninstallGuard.image.repository` | `registry.k8s.io/kubectl` | The hook's image, which needs only `kubectl` |
+| `uninstallGuard.image.tag` | `v1.35.9` | Its tag |
+| `uninstallGuard.image.digest` | the tag's digest | Pins the image; empty pulls by tag |
+| `uninstallGuard.resources` | 10m/32Mi requests, 100m/64Mi limits | The hook containers' resources |
+
+Without the operator, a ManagedWorkload's finalizer never runs: its workload stays paused at 0 replicas, and its Services keep routing to the deleted doorman. The `<fullname>-uninstall-guard` Job lists the ManagedWorkloads left and fails, which stops `helm uninstall` before it removes anything, after waiting a minute for any being deleted. It runs as the `<fullname>-uninstall-guard` ServiceAccount, which may only read ManagedWorkloads, cluster-wide or, with `watchNamespaces`, in those namespaces, and uses the operator's `nodeSelector`, `tolerations`, `affinity` and `imagePullSecrets`. `helm uninstall --no-hooks` skips it, and Argo CD doesn't run it. See [Uninstall](../getting-started/installation.md#uninstall).
+
 ## Pod Scheduling
 
 | Value | Default | Description |

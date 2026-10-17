@@ -68,6 +68,16 @@ app.kubernetes.io/version: {{ .Chart.AppVersion | quote }}
 app.kubernetes.io/managed-by: {{ .Release.Service }}
 {{- end }}
 
+{{- define "hybernate.uninstallGuardName" -}}
+{{- printf "%s-uninstall-guard" (include "hybernate.fullname" .) }}
+{{- end }}
+
+{{- define "hybernate.uninstallGuardImage" -}}
+{{- with .Values.uninstallGuard.image }}
+{{- .repository }}:{{ .tag }}{{ with .digest }}@{{ . }}{{ end }}
+{{- end }}
+{{- end }}
+
 {{/*
 Service account name.
 */}}

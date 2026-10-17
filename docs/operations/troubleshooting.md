@@ -171,6 +171,14 @@ kubectl get managedworkloads -n staging -o jsonpath='{range .items[*]}{.metadata
 - `savedThisMonth` stays `$0.00` until Hybernate has paused the workload this month: dry-run workloads record what they would have freed in `status.dryRun` instead.
 - Totals start again from zero each calendar month, in UTC. See [Cost Tracking](../concepts/cost-tracking.md).
 
+### `helm uninstall` fails with `job hybernate-uninstall-guard failed`
+
+ManagedWorkloads are left, and uninstalling now would leave their workloads paused. Helm prints them above the error. Remove the `hybernate.io/managed` label from those workloads and their namespaces, delete the ManagedWorkloads you wrote yourself, and uninstall again, as in [Uninstall](../getting-started/installation.md#uninstall).
+
+### Workloads stay at zero after the operator was removed
+
+The operator was removed, or its CRD deleted, while ManagedWorkloads were left, so nothing scales their workloads back up, their Services still send traffic to the doorman's deleted pods, and deleting the ManagedWorkloads or the CRD hangs in `Terminating` on the `hybernate.io/cleanup` finalizer. Reinstall the operator and stop managing the workloads, or restore them by hand: see [Restoring workloads after the operator is gone](../getting-started/installation.md#restoring-workloads-after-the-operator-is-gone).
+
 ## Debug Checklist
 
 1. **Operator running?** `kubectl get pods -n hybernate-system` (or the namespace you installed into)

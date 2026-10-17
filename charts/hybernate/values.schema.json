@@ -123,6 +123,21 @@
         "enabled": {"type": "boolean"}
       }
     },
+    "uninstallGuard": {
+      "type": "object",
+      "properties": {
+        "enabled": {"type": "boolean"},
+        "image": {
+          "type": "object",
+          "properties": {
+            "repository": {"type": "string", "minLength": 1},
+            "tag": {"type": "string", "minLength": 1},
+            "digest": {"type": "string", "pattern": "^(sha256:[0-9a-f]{64})?$"}
+          }
+        },
+        "resources": {"type": "object"}
+      }
+    },
     "logLevel": {
       "anyOf": [
         {"enum": ["debug", "info", "error", "panic"]},

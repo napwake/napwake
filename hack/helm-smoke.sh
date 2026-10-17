@@ -4,7 +4,9 @@
 # Deployment opted in by label pauses once its idle clock runs out, its
 # Service is routed to the doorman, and a request to the Service wakes it,
 # restores its replicas and is answered. One in an unwatched namespace is
-# left alone, and neither the operator nor the doorman logs an error. The
+# left alone, and neither the operator nor the doorman logs an error. Last,
+# helm uninstall is refused while a ManagedWorkload is left, and goes ahead
+# once the workload is no longer opted in. The
 # e2e suite installs through kustomize, with a ClusterRole, so this is what
 # tests the chart.
 #
@@ -87,6 +89,11 @@ is() {
 not_empty() {
   local object=$1 ns=$2 path=$3
   [ -n "$(kubectl get "$object" -n "$ns" -o "jsonpath=$path")" ]
+}
+
+gone() {
+  local object=$1 ns=$2
+  ! kubectl get "$object" -n "$ns"
 }
 
 # The EndpointSlices the operator writes to route the workload's Services
@@ -206,4 +213,22 @@ if [ -n "$errors" ]; then
   echo "the operator or the doorman logged errors" >&2
   exit 1
 fi
+
+echo "checking helm uninstall is refused while a ManagedWorkload is left"
+if refusal=$(helm uninstall hybernate --namespace "$RELEASE_NAMESPACE" --wait --timeout 3m 2>&1); then
+  echo "$refusal" >&2
+  echo "helm uninstall went ahead, leaving $WATCHED/$APP's ManagedWorkload with no operator" >&2
+  exit 1
+fi
+if ! grep -q 'Hybernate refuses to uninstall' <<<"$refusal" || ! grep -qF "$WATCHED/$APP" <<<"$refusal"; then
+  echo "$refusal" >&2
+  echo "the refused uninstall didn't say why, or name the ManagedWorkload left" >&2
+  exit 1
+fi
+is deployment/hybernate "$RELEASE_NAMESPACE" '{.status.readyReplicas}' 1
+
+echo "stopping managing the workload, then uninstalling"
+kubectl label deployment "$APP" -n "$WATCHED" hybernate.io/managed-
+eventually 60 "the ManagedWorkload to be deleted" gone managedworkload/$APP "$WATCHED"
+helm uninstall hybernate --namespace "$RELEASE_NAMESPACE" --wait --timeout 3m
 echo "ok"

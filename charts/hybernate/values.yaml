@@ -148,6 +148,24 @@ doorman:
 networkPolicy:
   enabled: false
 
+# Refuses helm uninstall while ManagedWorkloads remain, since without the
+# operator their workloads stay paused at 0 replicas. A pre-delete hook Job
+# lists them and fails, unless they're deleted within a minute. Argo CD
+# and helm uninstall --no-hooks skip it.
+uninstallGuard:
+  enabled: true
+  image:
+    repository: registry.k8s.io/kubectl
+    tag: v1.35.9
+    digest: sha256:436cbaa8a019152063d638f412cf9d73ec29e56061529d28cbc231c6ab1b37a4
+  resources:
+    limits:
+      cpu: 100m
+      memory: 64Mi
+    requests:
+      cpu: 10m
+      memory: 32Mi
+
 logLevel: info
 # json, or console for reading by eye.
 logEncoder: json
