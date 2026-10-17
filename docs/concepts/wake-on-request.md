@@ -1,6 +1,6 @@
 # Wake on Request
 
-A paused workload has no pods, so nothing answers its Service. With wake on request, the first request wakes it instead: the connection is held while the workload starts, then passed to one of its Ready pods. The caller sees one slow response, not an error.
+A paused workload has no pods, so nothing answers its Service. With wake on request, the first request wakes it instead: the connection is held while the workload starts, then passed to one of its Ready pods. The caller usually sees one slow response, not an error; [What the caller sees](#what-the-caller-sees) lists when it doesn't.
 
 It's on by default for every workload Hybernate pauses on its own. There's nothing to configure.
 
@@ -208,6 +208,8 @@ doorman:
 
 Each entry is a NetworkPolicy peer, so `podSelector` and `ipBlock` work too. Everyone else is refused before reaching the doorman. The chart's policy also keeps the doorman's metrics port open to namespaces labelled `metrics: enabled`. Setting `ingressFrom` without `networkPolicy.enabled` is refused at install, since it would create no policy and leave the doorman open. Don't add a policy of your own beside the chart's: NetworkPolicies add up, so the chart's open routing ports would still admit everyone.
 
+Traffic from outside the cluster through a NodePort or LoadBalancer Service usually arrives with a node's address, since kube-proxy rewrites the source of connections it forwards to another node. A namespace or pod selector doesn't match a node, so with `ingressFrom` set those callers are refused: add your nodes' CIDRs as an `ipBlock` entry, or the load balancer's addresses if it preserves the client's. A routed Service with `externalTrafficPolicy: Local` keeps the client's address, but kube-proxy then sends it only to endpoints on the node it arrived at, so external callers reach the doorman only through nodes that run a doorman pod.
+
 With kustomize, write the policy yourself:
 
 ```yaml
@@ -252,12 +254,12 @@ doorman:
 
 List every IP family your cluster uses, and the node CIDRs too if a routed workload uses `hostNetwork`. `apiServer` is the API server's endpoint addresses, not the `kubernetes` Service's ClusterIP, since policies apply after the Service is resolved.
 
-The doorman's ServiceAccount can patch ManagedWorkloads, to set `hybernate.io/last-request`. A ValidatingAdmissionPolicy that lets that ServiceAccount change only the `hybernate.io/last-request` and `hybernate.io/last-request-from` annotations would narrow that further; the chart doesn't ship one.
+The doorman's ServiceAccount can patch ManagedWorkloads, to set `hybernate.io/last-request`. The chart's ValidatingAdmissionPolicy (`doorman.admissionPolicy.enabled`, on by default, and in the kustomize manifests too) narrows that: it lets the ServiceAccount change only the `hybernate.io/last-request` and `hybernate.io/last-request-from` annotations. See [Security](../reference/security.md#the-doorman-is-a-way-in-to-paused-workloads).
 
 ## What the caller sees
 
 - **A browser**: the waking-up page at once, then the app on the first reload after one of its pods is Ready.
-- **Anything else, from a pod in the cluster or through an Ingress**: one slow response while the workload starts, then a normal one.
+- **Anything else, from a pod in the cluster or through an Ingress**: usually one slow response while the workload starts, then a normal one. Not when something between the caller and the workload gives up first: behind ingress-nginx, a workload that takes longer than its 60-second default `proxy-read-timeout` gets the caller a 504 (see [How long a connection is held](#how-long-a-connection-is-held)); with Istio's STRICT mTLS, the woken pod's sidecar refuses the doorman and the caller gets a 503 (see [Compatibility](../reference/compatibility.md#service-meshes)). The cases below are the others.
 - **The client's source IP**: the woken pod sees the doorman's IP for held connections, not the caller's. Only the connections that arrive while the workload is paused or waking go through the doorman. The doorman records the caller's address on the ManagedWorkload as `hybernate.io/last-request-from`, so Hybernate can [learn](dependencies.md#learned-dependencies) which workload sent it.
 - **Right after the pause**: for a few seconds, until kube-proxy, ingress controllers and the doorman itself pick up the new route, a request can be refused or get a 502 from an ingress, as after any scale-down. A retry is held.
 - **A connection held past `maxWait`, or one whose woken pods can't be reached**: it's closed with no response, which most clients report as an empty reply or a connection reset. A `RequestNotServed` warning event on the ManagedWorkload names the Service, how long the request waited and why; each doorman pod emits it at most once a minute per workload.

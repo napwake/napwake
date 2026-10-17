@@ -11,7 +11,8 @@ Hybernate supports Kubernetes 1.30 and later, and is tested in CI on 1.30 and 1.
 | Proxy | Status | Notes |
 |-------|--------|-------|
 | kube-proxy, kind's default mode | Tested | ClusterIP Services, called from pods in the cluster and through ingress-nginx |
-| kube-proxy, other modes (ipvs, nftables), and NodePort and LoadBalancer Services | Not tested yet | kube-proxy programs these from the same EndpointSlices as ClusterIP, but no test runs them |
+| kube-proxy, other modes (ipvs, nftables), and NodePort and LoadBalancer Services | Not tested yet | kube-proxy programs these from the same EndpointSlices as ClusterIP, but no test runs them. Their traffic usually reaches the doorman from a node's address, which `doorman.networkPolicy.ingressFrom` must admit as an `ipBlock`; see [Restricting who can reach the doorman](../concepts/wake-on-request.md#restricting-who-can-reach-the-doorman) |
+| NodePort and LoadBalancer Services with `externalTrafficPolicy: Local` | **Partial** | Routed, but kube-proxy sends external traffic only to endpoints on the node it arrives at, so it reaches the doorman only through nodes that run a doorman pod; through any other node it's dropped, and the workload doesn't wake |
 | Cilium kube-proxy replacement (v1.20) | Checked against source | |
 
 ## Ingress controllers and Gateway API
