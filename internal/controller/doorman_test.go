@@ -347,7 +347,11 @@ func TestReconcileDoorman_ConcurrentPausesGetDistinctPorts(t *testing.T) {
 // Kube-proxy and load balancers keep sending to a released port for a
 // moment. It isn't handed to another workload until the doorman's drain is
 // over, or that workload would get the first one's traffic.
-func TestReconcileDoorman_DrainingPortsAreNotReused(t *testing.T) {
+// twoPausedWorkloads are api and billing, paused, each with a Service, and
+// a reconciler that gives out the lowest free port.
+func twoPausedWorkloads(t *testing.T) (*Reconciler, *v1alpha1.ManagedWorkload, *v1alpha1.ManagedWorkload,
+	*appsv1.Deployment) {
+	t.Helper()
 	first := lifecycleWorkload("api", v1alpha1.PhasePaused)
 	first.UID = "api-uid"
 	second := lifecycleWorkload("billing", v1alpha1.PhasePaused)
@@ -359,6 +363,11 @@ func TestReconcileDoorman_DrainingPortsAreNotReused(t *testing.T) {
 		service("api", map[string]string{"app": "api"}, corev1.ServicePort{Name: "http", Port: 80}),
 		service("billing", map[string]string{"app": "billing"}, corev1.ServicePort{Name: "http", Port: 80}))
 	r.doormanPorts.pick = lowestFreePort
+	return r, first, second, billing
+}
+
+func TestReconcileDoorman_DrainingPortsAreNotReused(t *testing.T) {
+	r, first, second, billing := twoPausedWorkloads(t)
 	now := fixedTime
 	r.clock = func() time.Time { return now }
 
@@ -382,17 +391,7 @@ func TestReconcileDoorman_DrainingPortsAreNotReused(t *testing.T) {
 // reads it from status and doesn't hand the port to another workload while
 // clients may still send the first one's traffic to it.
 func TestReconcileDoorman_DrainingPortsSurviveALeaderChange(t *testing.T) {
-	first := lifecycleWorkload("api", v1alpha1.PhasePaused)
-	first.UID = "api-uid"
-	second := lifecycleWorkload("billing", v1alpha1.PhasePaused)
-	second.UID = "billing-uid"
-	billing := appTarget()
-	billing.Name = "billing"
-	billing.Spec.Template.Labels = map[string]string{"app": "billing"}
-	r := doormanReconciler(t, first, second, doormanEndpoints("10.0.0.7"),
-		service("api", map[string]string{"app": "api"}, corev1.ServicePort{Name: "http", Port: 80}),
-		service("billing", map[string]string{"app": "billing"}, corev1.ServicePort{Name: "http", Port: 80}))
-	r.doormanPorts.pick = lowestFreePort
+	r, first, second, billing := twoPausedWorkloads(t)
 	now := fixedTime
 	r.clock = func() time.Time { return now }
 	ctx := context.Background()
@@ -1012,17 +1011,7 @@ func TestReconcileDoorman_KeepsTheSlicesPortsWhenStatusWasNotWritten(t *testing.
 // that lasts, so it's never given to another workload while it still
 // receives the first one's traffic.
 func TestReconcileDoorman_KeepsAPortWhileItsSliceRemains(t *testing.T) {
-	first := lifecycleWorkload("api", v1alpha1.PhasePaused)
-	first.UID = "api-uid"
-	second := lifecycleWorkload("billing", v1alpha1.PhasePaused)
-	second.UID = "billing-uid"
-	billing := appTarget()
-	billing.Name = "billing"
-	billing.Spec.Template.Labels = map[string]string{"app": "billing"}
-	r := doormanReconciler(t, first, second, doormanEndpoints("10.0.0.7"),
-		service("api", map[string]string{"app": "api"}, corev1.ServicePort{Name: "http", Port: 80}),
-		service("billing", map[string]string{"app": "billing"}, corev1.ServicePort{Name: "http", Port: 80}))
-	r.doormanPorts.pick = lowestFreePort
+	r, first, second, billing := twoPausedWorkloads(t)
 	now := fixedTime
 	r.clock = func() time.Time { return now }
 	require.NoError(t, doormanErr(context.Background(), r, first, appTarget()))

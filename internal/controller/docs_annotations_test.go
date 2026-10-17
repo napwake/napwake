@@ -47,7 +47,7 @@ func TestDocsAnnotationsAreReadable(t *testing.T) {
 		checked++
 		target := v1alpha1.WorkloadRef{Kind: v1alpha1.TargetKind(obj.Kind), Name: obj.Metadata.Name}
 		workload, namespace := annotations, map[string]string(nil)
-		if obj.Kind == "Namespace" {
+		if obj.Kind == kindNamespace {
 			target = v1alpha1.WorkloadRef{Kind: v1alpha1.TargetKindDeployment, Name: "app"}
 			workload, namespace = nil, annotations
 		}
@@ -56,6 +56,8 @@ func TestDocsAnnotationsAreReadable(t *testing.T) {
 	}
 	assert.NotZero(t, checked, "the docs have annotated workloads to check")
 }
+
+const kindNamespace = "Namespace"
 
 type docsObject struct {
 	source   string
@@ -96,7 +98,7 @@ func docsObjects(t *testing.T) []docsObject {
 					continue
 				}
 				switch obj.Kind {
-				case "Deployment", "StatefulSet", "Namespace":
+				case string(v1alpha1.TargetKindDeployment), string(v1alpha1.TargetKindStatefulSet), kindNamespace:
 					obj.source = path
 					objs = append(objs, obj)
 				}
