@@ -179,7 +179,7 @@ kubectl get managedworkloads -n staging -o jsonpath='{range .items[*]}{.metadata
 
 ManagedWorkloads are left, and uninstalling now would leave their workloads paused. Helm prints them above the error. Remove the `hybernate.io/managed` label from those workloads and their namespaces, delete the ManagedWorkloads you wrote yourself, and uninstall again, as in [Uninstall](../getting-started/installation.md#uninstall).
 
-When it lists ManagedWorkloads that are being deleted, the operator isn't finishing them, usually because it isn't running: uninstall with `--no-hooks` and restore the workloads by hand. When the error says the server doesn't have a resource type `managedworkloads`, the CRD is gone, as it can be with `crds.install: false`, so nothing is left to guard: uninstall with `--no-hooks`. With Argo CD 3.3 and later the same refusal blocks deleting the Application, with a `DeletionError` condition; set `uninstallGuard.enabled: false` in Git to delete it anyway.
+When it lists ManagedWorkloads that were being deleted, the operator didn't finish them within two and a half minutes, usually because it isn't running: uninstall with `--no-hooks` and restore the workloads by hand. When the error says the server doesn't have a resource type `managedworkloads`, the CRD is gone, as it can be with `crds.install: false`, so nothing is left to guard: uninstall with `--no-hooks`. With Argo CD 3.3 and later the same refusal blocks deleting the Application, with a `DeletionError` condition; set `uninstallGuard.enabled: false` in Git to delete it anyway.
 
 ### Workloads stay at zero after the operator was removed
 

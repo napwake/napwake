@@ -176,9 +176,10 @@ networkPolicy:
 
 # Refuses helm uninstall while ManagedWorkloads remain, since without the
 # operator their workloads stay paused at 0 replicas. A pre-delete hook Job
-# lists them and fails, unless they're deleted within a minute. Argo CD
-# 3.3 and later runs it as a PreDelete hook, blocking the Application's
-# deletion; earlier versions, and helm uninstall --no-hooks, skip it.
+# lists them and fails, unless they're deleted within two and a half
+# minutes. Argo CD 3.3 and later runs it as a PreDelete hook, blocking the
+# Application's deletion; earlier versions, and helm uninstall --no-hooks,
+# skip it.
 uninstallGuard:
   enabled: true
   image:

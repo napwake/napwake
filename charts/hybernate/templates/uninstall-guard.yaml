@@ -90,7 +90,7 @@ metadata:
     helm.sh/hook-output-log-policy: hook-failed
 spec:
   backoffLimit: 0
-  activeDeadlineSeconds: 180
+  activeDeadlineSeconds: 240
   # A refused uninstall leaves the Job for kubectl logs, until then.
   ttlSecondsAfterFinished: 3600
   template:
@@ -128,9 +128,10 @@ spec:
               go-template={{ `{{- $left := false -}}{{- $stuck := false -}}
               {{- range .items -}}{{- if .metadata.deletionTimestamp -}}{{- $stuck = true -}}{{- else -}}{{- $left = true -}}{{- end -}}{{- end -}}
               {{- if $stuck -}}
-              These ManagedWorkloads are being deleted, but the operator hasn't finished letting go of
-              their workloads. If it isn't running, nothing will: uninstall with --no-hooks and restore
-              the workloads by hand, as https://okedeji.io/hybernate/getting-started/installation/#uninstall says:
+              These ManagedWorkloads were being deleted, and the operator still hadn't let go of their
+              workloads after two and a half minutes. If it isn't running, nothing will: uninstall with
+              --no-hooks and restore the workloads by hand, as
+              https://okedeji.io/hybernate/getting-started/installation/#uninstall says:
               {{ range .items }}{{ if .metadata.deletionTimestamp }}  {{ .metadata.namespace }}/{{ .metadata.name }}
               {{ end }}{{ end }}
               {{ end -}}
@@ -172,7 +173,10 @@ spec:
             {{- range $scope }}
             - {{ . | quote }}
             {{- end }}
-            - --timeout=60s
+            # Longer than a deleted ManagedWorkload waits for its doorman
+            # ports to drain, a minute, so one deleted just before the
+            # uninstall doesn't fail it.
+            - --timeout=150s
           env:
             - name: HOME
               value: /home/kubectl
