@@ -1087,7 +1087,7 @@ func (r *Reconciler) setCondition(workload *v1alpha1.ManagedWorkload, condType s
 		Type:               condType,
 		Status:             status,
 		Reason:             reason,
-		Message:            message,
+		Message:            truncated(message, maxConditionMessage),
 		LastTransitionTime: r.clockTime(),
 	})
 }
