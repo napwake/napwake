@@ -14,11 +14,9 @@ spec:
   target:
     kind: Deployment
     name: my-api
-  prediction:
-    confidence: 75
 ```
 
-This is the absolute minimum: `target` and `prediction` are required, and `prediction: {}` takes the default confidence. The operator will watch the Deployment, track its cost and learn its forecast, but won't pause it on its own until you add an idle policy; [`kubectl hybernate pause`](pause.md#pause-now) pauses it when you ask.
+This is the absolute minimum: only `target` is required, and everything else takes its default. The operator will watch the Deployment, track its cost and learn its forecast, but won't pause it on its own until you add an idle policy; [`kubectl hybernate pause`](pause.md#pause-now) pauses it when you ask.
 
 For most workloads you don't need to write one: the `hybernate.io/managed` label creates one from annotations; see [Opting In](opt-in.md). Write one yourself for settings annotations don't cover, such as Prometheus queries, `waitForReady`, or cost rates. A ManagedWorkload you write for a workload wins over the label.
 
@@ -111,7 +109,7 @@ While the workload is paused, a request to any of its Services wakes it and is a
 |-------|------|---------|-------------|
 | `confidence` | int (50-100) | `75` | Accuracy, as 1 − WAPE, a season's forecasts must reach before they drive decisions. See [Forecasting](../concepts/forecasting.md) |
 
-`prediction` itself is required; `prediction: {}` takes the default.
+Leave `prediction` out, or write `prediction: {}`, for the default.
 
 ### `costTracking`
 

@@ -28,6 +28,8 @@ import (
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
+	"k8s.io/client-go/tools/events"
+	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	v1alpha1 "github.com/okedeji/hybernate/api/v1alpha1"
@@ -92,4 +94,66 @@ func TestCRD_DurationsAreThoseGoCanDecode(t *testing.T) {
 
 	var list v1alpha1.ManagedWorkloadList
 	assert.NoError(t, c.List(ctx, &list, client.InNamespace("dev")), "every stored ManagedWorkload decodes")
+}
+
+// The spec the opt-in controller writes is the one the API server stores,
+// defaults and all, so reconciling again writes nothing.
+func TestOptIn_SecondPassAgainstTheAPIServerWritesNothing(t *testing.T) {
+	cfg := startEnvtest(t)
+	scheme := testScheme(t)
+	c, err := client.New(cfg, client.Options{Scheme: scheme})
+	require.NoError(t, err)
+	ctx, cancel := context.WithTimeout(context.Background(), time.Minute)
+	defer cancel()
+	require.NoError(t, c.Create(ctx, &corev1.Namespace{ObjectMeta: metav1.ObjectMeta{Name: "dev",
+		Annotations: map[string]string{v1alpha1.AnnotationDependsOn: "deployment/api"}}}))
+	d := envtestDeployment("dev", 1)
+	d.Labels = map[string]string{v1alpha1.LabelManaged: v1alpha1.True}
+	d.Annotations = map[string]string{
+		v1alpha1.AnnotationIdleAfter:   "90m",
+		v1alpha1.AnnotationWakeMaxWait: "30s",
+	}
+	require.NoError(t, c.Create(ctx, d))
+	r := &OptInReconciler{Client: c, Scheme: scheme, Recorder: events.NewFakeRecorder(100),
+		Kind: v1alpha1.TargetKindDeployment, Defaults: DefaultOptInDefaults}
+	req := ctrl.Request{NamespacedName: client.ObjectKeyFromObject(d)}
+
+	_, err = r.Reconcile(ctx, req)
+	require.NoError(t, err)
+	var mw v1alpha1.ManagedWorkload
+	require.NoError(t, c.Get(ctx, client.ObjectKey{Namespace: "dev", Name: "api"}, &mw))
+	written := mw.ResourceVersion
+
+	_, err = r.Reconcile(ctx, req)
+	require.NoError(t, err)
+	require.NoError(t, c.Get(ctx, client.ObjectKey{Namespace: "dev", Name: "api"}, &mw))
+	assert.Equal(t, written, mw.ResourceVersion)
+	assert.Empty(t, mw.Spec.DependsOn)
+}
+
+// Everything in prediction has a default, so a ManagedWorkload needs no more
+// than its target, whether written as YAML or with the Go types.
+func TestCRD_TargetIsAllAManagedWorkloadNeeds(t *testing.T) {
+	cfg := startEnvtest(t)
+	c, err := client.New(cfg, client.Options{Scheme: testScheme(t)})
+	require.NoError(t, err)
+	ctx, cancel := context.WithTimeout(context.Background(), time.Minute)
+	defer cancel()
+	require.NoError(t, c.Create(ctx, &corev1.Namespace{ObjectMeta: metav1.ObjectMeta{Name: "dev"}}))
+
+	yaml := &unstructured.Unstructured{Object: map[string]any{
+		"apiVersion": "hybernate.io/v1alpha1", "kind": "ManagedWorkload",
+		"metadata": map[string]any{"name": "api", "namespace": "dev"},
+		"spec":     map[string]any{"target": map[string]any{"name": "api"}},
+	}}
+	require.NoError(t, c.Create(ctx, yaml))
+	typed := &v1alpha1.ManagedWorkload{ObjectMeta: metav1.ObjectMeta{Name: "worker", Namespace: "dev"},
+		Spec: v1alpha1.ManagedWorkloadSpec{Target: v1alpha1.WorkloadRef{Kind: v1alpha1.TargetKindDeployment, Name: "worker"}}}
+	require.NoError(t, c.Create(ctx, typed))
+
+	for _, name := range []string{"api", "worker"} {
+		var mw v1alpha1.ManagedWorkload
+		require.NoError(t, c.Get(ctx, client.ObjectKey{Namespace: "dev", Name: name}, &mw))
+		assert.Equal(t, 75, mw.Spec.Prediction.Confidence, "%s takes the default confidence", name)
+	}
 }

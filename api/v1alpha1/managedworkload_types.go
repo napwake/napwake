@@ -83,8 +83,9 @@ type ManagedWorkloadSpec struct {
 
 	// Prediction configures the Holt-Winters forecasting engine that confirms
 	// idle detection and wakes paused workloads ahead of predicted demand.
-	// +required
-	Prediction PredictionSpec `json:"prediction"`
+	// +kubebuilder:default={}
+	// +optional
+	Prediction PredictionSpec `json:"prediction,omitzero"`
 
 	// CostTracking configures custom cost rates for this workload.
 	// Cost tracking is always enabled with AWS on-demand defaults.
@@ -183,7 +184,8 @@ type PredictionSpec struct {
 	// +kubebuilder:validation:Minimum=50
 	// +kubebuilder:validation:Maximum=100
 	// +kubebuilder:default=75
-	Confidence int `json:"confidence"`
+	// +optional
+	Confidence int `json:"confidence,omitempty"`
 }
 
 // IdlePolicySpec configures automatic pausing. The operator tracks when the
