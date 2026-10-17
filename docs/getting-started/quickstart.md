@@ -48,11 +48,11 @@ The scan shows each workload, whether it's idle right now and why, and what it c
 ## 3. Opt it in, measuring first
 
 ```bash
-kubectl label deployment my-api -n dev hybernate.io/managed=true
 kubectl annotate deployment my-api -n dev hybernate.io/dry-run=true hybernate.io/idle-after=5m
+kubectl label deployment my-api -n dev hybernate.io/managed=true
 ```
 
-The label opts the workload in; the annotations are its settings. Here, dry-run means it's measured and never paused, and `idle-after: 5m` makes the example quick (the default is an hour). In real use, these usually go in the workload's manifest or Helm values, or on its namespace to cover everything in it. See [Opting In](../guides/opt-in.md).
+The annotations are the workload's settings, set first so it starts in dry-run; the label opts it in. Here, dry-run means it's measured and never paused, and `idle-after: 5m` makes the example quick (the default is an hour). In real use, these usually go in the workload's manifest or Helm values, or on its namespace to cover everything in it. See [Opting In](../guides/opt-in.md).
 
 Hybernate creates a ManagedWorkload for it:
 

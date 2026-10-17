@@ -864,13 +864,16 @@ func nextStepTargets(workloads []Workload) (idle, measuring *Workload) {
 }
 
 // nextStepCommands are the commands that measure the idle workload and then
-// take a workload live, which both the table and the report show.
+// take a workload live, which both the table and the report show. The
+// dry-run annotation comes before the label, which opts the workload in:
+// the chart's default is live, so the label alone would have it paused once
+// idle.
 func nextStepCommands(idle, measuring *Workload) (measure []string, enable string) {
 	if idle != nil {
 		kind := strings.ToLower(string(idle.Kind))
 		measure = []string{
-			fmt.Sprintf("kubectl label %s %s -n %s hybernate.io/managed=true", kind, idle.Name, idle.Namespace),
 			fmt.Sprintf("kubectl annotate %s %s -n %s hybernate.io/dry-run=true", kind, idle.Name, idle.Namespace),
+			fmt.Sprintf("kubectl label %s %s -n %s hybernate.io/managed=true", kind, idle.Name, idle.Namespace),
 		}
 	}
 	if measuring == nil {

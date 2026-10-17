@@ -84,9 +84,10 @@ func TestWriteTable(t *testing.T) {
 	assert.Contains(t, got, "last deployed 23 days ago")
 	assert.Contains(t, got, "statefulset/postgres")
 	assert.Contains(t, got, "  - skipped namespace locked: forbidden")
-	assert.Contains(t, got, "kubectl label deployment checkout-api -n preview-42 hybernate.io/managed=true",
-		"next steps name a real idle workload")
-	assert.Contains(t, got, "kubectl annotate deployment checkout-api -n preview-42 hybernate.io/dry-run=true")
+	assert.Contains(t, got, "kubectl annotate deployment checkout-api -n preview-42 hybernate.io/dry-run=true\n"+
+		"       kubectl label deployment checkout-api -n preview-42 hybernate.io/managed=true\n",
+		"next steps name a real idle workload, putting it in dry-run before opting it in, which alone would "+
+			"have it paused")
 	assert.NotContains(t, got, "Hybernate Hub", "it has no page to send anyone to yet")
 }
 
