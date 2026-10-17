@@ -358,7 +358,17 @@ func (e *Engine) Active() bool {
 	return e.Phase >= DailyActive && e.Scorer.Ready(dailyWindow)
 }
 
-func (e *Engine) GetPhase() Phase    { return e.Phase }
+// GetPhase is the phase the forecast is acting in, which is what's
+// reported. Phase can be one that acts, WeeklySuggesting after a regime
+// change, while the forecast earns its confidence again and drives
+// nothing; until it's Active it's reported as DailySuggesting.
+func (e *Engine) GetPhase() Phase {
+	if e.Phase >= DailyActive && !e.Active() {
+		return DailySuggesting
+	}
+	return e.Phase
+}
+
 func (e *Engine) GetDataPoints() int { return e.Model.DataPoints() }
 
 // RegimeChanged reports whether the last observation broke the learned

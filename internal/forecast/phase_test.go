@@ -237,10 +237,13 @@ func TestEngine_RegimeChangeDemotesOnce(t *testing.T) {
 	assert.False(t, e.Scorer.Ready(dailyWindow), "confidence is earned again")
 	assert.False(t, e.Active(), "before the forecast drives decisions again")
 	assert.Zero(t, e.Predict(1, hourAt(start+3)))
+	assert.Equal(t, DailySuggesting, e.GetPhase(), "reported as not acting while it isn't")
 
 	log = run(t, e, start+3, DailySeason, steady)
 	assert.Empty(t, log.regimeChanges, "the regime change is reported once")
 	assert.Equal(t, WeeklySuggesting, e.Phase)
+	require.True(t, e.Active())
+	assert.Equal(t, WeeklySuggesting, e.GetPhase(), "acting again once a day is scored")
 
 	log = run(t, e, start+3+DailySeason, 2*WeeklySeason, steady)
 	assert.Empty(t, log.regimeChanges)

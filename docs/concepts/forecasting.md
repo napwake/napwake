@@ -77,7 +77,7 @@ The gates count hours of the calendar, not data points: a workload that is only 
 
 That has a consequence for workloads paused without the [doorman](wake-on-request.md): an hour paused without it isn't observed (see [What an Hour Records](#what-an-hour-records)), so a workload paused every night that way never has its nights observed, and its forecast never reaches `DailySuggesting`. Keep wake on request on if you want `autoResume` and the forecast's veto.
 
-The ManagedWorkload shows the phase per season, in `status.prediction`: `dailyPhase` and `weeklyPhase` are each `Observing`, `Suggesting` or `Active`, next to `dailyConfidence` and `weeklyConfidence`. `DailyActive`, for example, is `dailyPhase: Active` with `weeklyPhase: Observing`.
+The ManagedWorkload shows the phase per season, in `status.prediction`: `dailyPhase` and `weeklyPhase` are each `Observing`, `Suggesting` or `Active`, next to `dailyConfidence` and `weeklyConfidence`. `DailyActive`, for example, is `dailyPhase: Active` with `weeklyPhase: Observing`. The phase shown, there and in `hybernate_prediction_phase`, is the one the forecast is acting in: after a [regime change](#anomaly-detection) leaves it at `WeeklySuggesting` with nothing scored, it's shown as `DailySuggesting` until a day of its forecasts has been scored and it drives decisions again.
 
 The confidence threshold is configurable per workload via `spec.prediction.confidence` (default 75%, minimum 50%), and a change applies at the next reconcile. A phase is earned at the threshold and lost 5 points below it, so confidence hovering at the threshold doesn't switch the forecast on and off every hour.
 
