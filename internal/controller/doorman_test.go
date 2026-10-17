@@ -504,6 +504,45 @@ func TestReconcileDoorman_IPFamilies(t *testing.T) {
 // Canary and stable behind one Service: each paused workload routes the
 // Service to the doorman under its own slice, and once either is running,
 // the Service sends traffic to it rather than waking the other.
+// With internalTrafficPolicy Local, kube-proxy sends a caller only to
+// endpoints on its own node, so a Service routed to the doorman's one or two
+// nodes would leave callers everywhere else with nothing, while reporting
+// DoormanRouted.
+func TestReconcileDoorman_SkipsNodeLocalServices(t *testing.T) {
+	local := service("api", map[string]string{"app": "api"}, corev1.ServicePort{Name: "http", Port: 80})
+	local.Spec.InternalTrafficPolicy = ptr.To(corev1.ServiceInternalTrafficPolicyLocal)
+	cluster := service("api-public", map[string]string{"app": "api"}, corev1.ServicePort{Name: "http", Port: 80})
+	cluster.Spec.InternalTrafficPolicy = ptr.To(corev1.ServiceInternalTrafficPolicyCluster)
+	ctx := context.Background()
+
+	t.Run("alone", func(t *testing.T) {
+		workload := lifecycleWorkload("api", v1alpha1.PhasePaused)
+		r := doormanReconciler(t, workload, doormanEndpoints("10.0.0.7"), local.DeepCopy())
+
+		require.NoError(t, doormanErr(ctx, r, workload, appTarget()))
+
+		assert.Empty(t, doormanSlices(t, r))
+		assert.Empty(t, workload.Status.Doorman)
+		cond := wakeCondition(t, workload)
+		assert.Equal(t, metav1.ConditionFalse, cond.Status)
+		assert.Equal(t, "NodeLocalTraffic", cond.Reason)
+		assert.Contains(t, cond.Message, "api")
+	})
+	t.Run("beside a routed Service", func(t *testing.T) {
+		workload := lifecycleWorkload("api", v1alpha1.PhasePaused)
+		r := doormanReconciler(t, workload, doormanEndpoints("10.0.0.7"), local.DeepCopy(), cluster.DeepCopy())
+
+		require.NoError(t, doormanErr(ctx, r, workload, appTarget()))
+
+		slices := doormanSlices(t, r)
+		require.Len(t, slices, 1)
+		assert.Equal(t, "api-public", slices[0].Labels[discoveryv1.LabelServiceName])
+		cond := wakeCondition(t, workload)
+		assert.Equal(t, "DoormanRouted", cond.Reason)
+		assert.Contains(t, cond.Message, "internalTrafficPolicy is Local, so not routed: api")
+	})
+}
+
 func TestReconcileDoorman_SharedService(t *testing.T) {
 	stable := lifecycleWorkload("stable", v1alpha1.PhasePaused)
 	stable.UID = "uid-stable"

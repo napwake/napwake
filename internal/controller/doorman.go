@@ -258,6 +258,7 @@ func (r *Reconciler) removeDoorman(ctx context.Context, workload *v1alpha1.Manag
 type skippedServices struct {
 	unsupported []string
 	served      []string
+	nodeLocal   []string
 	family      []string
 }
 
@@ -265,6 +266,9 @@ func (s skippedServices) notes() string {
 	var notes []string
 	if len(s.served) > 0 {
 		notes = append(notes, "served by other Ready pods, so not routed: "+strings.Join(s.served, ", "))
+	}
+	if len(s.nodeLocal) > 0 {
+		notes = append(notes, "internalTrafficPolicy is Local, so not routed: "+strings.Join(s.nodeLocal, ", "))
 	}
 	if len(s.family) > 0 {
 		notes = append(notes, "no doorman pod has an address in the IP family of: "+strings.Join(s.family, ", "))
@@ -285,6 +289,9 @@ func (r *Reconciler) reportDoorman(ctx context.Context, workload *v1alpha1.Manag
 	case len(skipped.served) > 0:
 		status, reason, message = metav1.ConditionFalse, "ServedByOtherPods",
 			"every Service that selects the workload has other Ready pods, so requests go to them and don't wake it"
+	case len(skipped.nodeLocal) > 0:
+		status, reason, message = metav1.ConditionFalse, "NodeLocalTraffic",
+			"the workload's Services keep traffic on the caller's node, so only callers on a doorman pod's node could reach the doorman"
 	case len(skipped.family) > 0:
 		status, reason, message = metav1.ConditionFalse, "UnsupportedIPFamily",
 			"no doorman pod has an address in the IP family of the workload's Services"
@@ -362,7 +369,9 @@ type doormanPlan struct {
 //
 // Services without a selector manage their own endpoints, and headless and
 // ExternalName Services hand callers addresses directly, so none of those
-// is routed. A Service with other Ready pods, such as one shared by a
+// is routed. Nor is a Service with internalTrafficPolicy Local: kube-proxy
+// sends a caller only to endpoints on its own node, and the doorman's pods
+// are on one or two, so most callers would get nothing at all. A Service with other Ready pods, such as one shared by a
 // canary and a stable Deployment of which only one is paused, is left to
 // them: requests reach a running workload, and waking the paused one for
 // them would be no use. Once every workload behind it is paused, it's
@@ -391,6 +400,10 @@ func (r *Reconciler) planDoorman(ctx context.Context, workload *v1alpha1.Managed
 		if len(ports) == 0 {
 			continue
 		}
+		if svc.Spec.InternalTrafficPolicy != nil && *svc.Spec.InternalTrafficPolicy == corev1.ServiceInternalTrafficPolicyLocal {
+			plan.skipped.nodeLocal = append(plan.skipped.nodeLocal, svc.Name)
+			continue
+		}
 		served, err := r.servedByOthers(ctx, svc)
 		if err != nil {
 			return doormanPlan{}, err
@@ -414,6 +427,7 @@ func (r *Reconciler) planDoorman(ctx context.Context, workload *v1alpha1.Managed
 	slices.SortFunc(plan.services, func(a, b doormanService) int { return cmp.Compare(a.svc.Name, b.svc.Name) })
 	slices.Sort(plan.skipped.unsupported)
 	slices.Sort(plan.skipped.served)
+	slices.Sort(plan.skipped.nodeLocal)
 	slices.Sort(plan.skipped.family)
 	return plan, nil
 }

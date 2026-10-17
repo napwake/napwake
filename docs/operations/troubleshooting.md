@@ -106,6 +106,7 @@ kubectl get managedworkload my-api -n staging \
 - **`NoServices`**: no Service with a selector and a ClusterIP selects the workload's pods on a TCP port, or every such port is in `hybernate.io/doorman-ignore-ports`. Headless Services aren't routed; see [Wake on Request](../concepts/wake-on-request.md#when-a-workload-isnt-routed).
 - **`ServedByOtherPods`**: another workload's Ready pods are behind the same Service, so requests go to them. See [Services shared with other workloads](../concepts/wake-on-request.md#services-shared-with-other-workloads).
 - **`UnsupportedLoadBalancer`**, or a Service named in the message as not routed: the Service is behind GKE container-native load balancing, which can't use the doorman. See [Compatibility](../reference/compatibility.md#cloud-load-balancers).
+- **`NodeLocalTraffic`**: the workload's Services have `internalTrafficPolicy: Local`, which sends each caller only to endpoints on its own node, so they aren't routed. See [Wake on Request](../concepts/wake-on-request.md#when-a-workload-isnt-routed).
 - **`UnsupportedIPFamily`**: no doorman pod has an address in the Service's IP family, such as an IPv6-only Service in a cluster whose doorman pods have only IPv4 addresses.
 - **`DoormanUnavailable`**: no doorman pod is Ready. Check `kubectl get pods -A -l control-plane=doorman`.
 - **`NoFreePort`**: every doorman port (20000-29999) is in use.
