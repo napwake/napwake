@@ -114,7 +114,7 @@ func (r *OptInReconciler) Reconcile(ctx context.Context, req ctrl.Request) (res 
 		return ctrl.Result{}, r.release(ctx, obj, existing.ours, existing.written)
 	}
 
-	spec, problems := optInSpec(target, obj.GetAnnotations(), ns.GetAnnotations(), r.Defaults)
+	spec, problems := optInSpec(req.Namespace, target, obj.GetAnnotations(), ns.GetAnnotations(), r.Defaults)
 	for _, p := range problems {
 		r.Recorder.Eventf(obj, nil, "Warning", ReasonInvalidSetting, actionOptIn, "%s", p)
 	}

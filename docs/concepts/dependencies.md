@@ -62,6 +62,7 @@ There's no timeout, because a slow start is exactly why you'd set it. If the wai
 | The dependency doesn't exist | `DependencyNotFound=True` on the dependent. Nothing is blocked, including a `waitForReady` resume |
 | The dependency is in a namespace outside `watchNamespaces`, or Hybernate isn't allowed to read it | `DependencyNotFound=True` with reason `DependencyNotVisible`, naming why. It isn't held or woken, and nothing is blocked |
 | A cycle in `dependsOn` (A depends on B, B depends on A) | Each would hold the other awake forever, so neither pauses and both report `DependencyCycle=True` until it's removed |
+| A workload listed as its own dependency | Ignored: it's neither a cycle nor something to wait for. A namespace's `hybernate.io/depends-on` leaves it out of the dependency it names, so annotating a namespace `statefulset/postgres` doesn't make postgres depend on itself |
 | A cycle through learned dependencies, such as two services that call each other | Not a cycle: a learned dependent doesn't hold a workload it's itself a dependency of. Each pauses when idle, and waking either wakes the other |
 | `kubectl hybernate pause` on a dependency that's in use | It isn't paused: the request is answered with `PauseRequest=False`, reason `HeldByDependents`, and a `HeldByDependents` event naming the dependents, as for an idle pause. Pause the dependents first |
 | `dryRun: true` | The hold still applies and is reported; nothing is changed |

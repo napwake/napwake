@@ -127,7 +127,8 @@ func declaredRefs(w *v1alpha1.ManagedWorkload) []v1alpha1.DependencyRef {
 }
 
 // reaches reports whether following the edges from w leads to the workload
-// to.
+// to. A workload listed as its own dependency is no edge: it's awake
+// whenever it is.
 func (g *dependencyGraph) reaches(w *v1alpha1.ManagedWorkload, to workloadID,
 	edges func(*v1alpha1.ManagedWorkload) []v1alpha1.DependencyRef) bool {
 	visited := map[workloadID]bool{}
@@ -137,6 +138,9 @@ func (g *dependencyGraph) reaches(w *v1alpha1.ManagedWorkload, to workloadID,
 		queue = queue[1:]
 		for _, ref := range edges(next) {
 			id := dependencyID(next, ref)
+			if id == targetID(next) {
+				continue
+			}
 			if id == to {
 				return true
 			}
@@ -314,13 +318,14 @@ func (r *Reconciler) stampActivity(ctx context.Context, dep *v1alpha1.ManagedWor
 
 // waitForDependencies holds a resume until every waitForReady dependency's
 // pods are Ready. It doesn't wait for one that won't become Ready by
-// waiting, which would leave this workload at zero for good: one that
-// doesn't exist or can't be seen (reported by checkDependenciesExist), or
-// one scaled to zero outside Hybernate. A managed one still paused is woken
-// again, in case the first wake was missed.
+// waiting, which would leave this workload at zero for good: the workload
+// itself, listed as its own dependency; one that doesn't exist or can't be
+// seen (reported by checkDependenciesExist); or one scaled to zero outside
+// Hybernate. A managed one still paused is woken again, in case the first
+// wake was missed.
 func (r *Reconciler) waitForDependencies(ctx context.Context, workload *v1alpha1.ManagedWorkload) (*ctrl.Result, error) {
 	refs := slices.DeleteFunc(slices.Clone(workload.Spec.DependsOn), func(ref v1alpha1.DependencyRef) bool {
-		return !ref.WaitForReady
+		return !ref.WaitForReady || dependencyID(workload, ref) == targetID(workload)
 	})
 	if len(refs) == 0 {
 		r.clearCondition(workload, conditionWaitingForDependencies, "DependenciesReady")

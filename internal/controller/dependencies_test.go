@@ -312,6 +312,36 @@ func TestDependencies_WaitForReady(t *testing.T) {
 	}
 }
 
+// A workload listed as its own dependency, as a namespace's depends-on
+// makes of the dependency it names, is no cycle and nothing to wait for.
+func TestDependencies_SelfReferenceIsIgnored(t *testing.T) {
+	self := postgresRef()
+	self.WaitForReady = true
+
+	t.Run("it still pauses", func(t *testing.T) {
+		postgres := depWorkload("default", "postgres", v1alpha1.TargetKindStatefulSet, v1alpha1.PhaseRunning, self)
+		pauser := &stubPauser{pauseDone: true}
+		r := depReconciler(t, pauser, postgres)
+
+		_, err := r.reconcileAutomation(context.Background(), postgres, postgresTarget(1, 1))
+		require.NoError(t, err)
+
+		assert.Equal(t, 1, pauser.pauseCalls)
+		assert.False(t, meta.IsStatusConditionTrue(postgres.Status.Conditions, conditionDependencyCycle))
+	})
+	t.Run("it still wakes", func(t *testing.T) {
+		postgres := depWorkload("default", "postgres", v1alpha1.TargetKindStatefulSet, v1alpha1.PhaseResuming, self)
+		postgres.Status.Pause = &v1alpha1.PauseStatus{PreviousReplicas: 1}
+		pauser := &stubPauser{resumeDone: true}
+		r := depReconciler(t, pauser, postgres, postgresTarget(0, 0))
+
+		_, err := r.handleResume(context.Background(), postgres, nil)
+		require.NoError(t, err)
+
+		assert.Equal(t, 1, pauser.resumeCalls, "waiting for its own pods would leave it at zero")
+	})
+}
+
 func TestDependencies_WaitForMissingDependencyDoesNotBlock(t *testing.T) {
 	ref := postgresRef()
 	ref.WaitForReady = true

@@ -19,6 +19,7 @@ package controller
 import (
 	"fmt"
 	"math"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -223,9 +224,15 @@ func parseDependency(entry string) (v1alpha1.DependencyRef, bool) {
 // The annotations control dryRun, idlePolicy (idleAfter, the CPU threshold
 // and autoResume), which dependencies dependsOn lists, and wake. The rest
 // is the user's to set on the ManagedWorkload; see keepUserSettings.
-func optInSpec(target v1alpha1.WorkloadRef, workload, namespace map[string]string, d OptInDefaults) (
-	v1alpha1.ManagedWorkloadSpec, []settingProblem) {
-	s := &settings{workload: workload, namespace: namespace}
+//
+// A namespace's depends-on, such as statefulset/postgres, also reaches the
+// dependency it names, which isn't given a dependency on itself.
+func optInSpec(namespace string, target v1alpha1.WorkloadRef, workloadAnnotations, nsAnnotations map[string]string,
+	d OptInDefaults) (v1alpha1.ManagedWorkloadSpec, []settingProblem) {
+	s := &settings{workload: workloadAnnotations, namespace: nsAnnotations}
+	dependsOn := slices.DeleteFunc(s.dependencies(v1alpha1.AnnotationDependsOn), func(dep v1alpha1.DependencyRef) bool {
+		return (dep.Namespace == "" || dep.Namespace == namespace) && dep.Kind == target.Kind && dep.Name == target.Name
+	})
 	spec := v1alpha1.ManagedWorkloadSpec{
 		Target: target,
 		DryRun: s.dryRun(d.DryRun),
@@ -234,7 +241,7 @@ func optInSpec(target v1alpha1.WorkloadRef, workload, namespace map[string]strin
 			Activity:   &v1alpha1.ActivitySpec{CPUThreshold: s.percent(v1alpha1.AnnotationCPUThreshold, d.CPUThreshold)},
 			AutoResume: s.boolean(v1alpha1.AnnotationAutoResume, false),
 		},
-		DependsOn: s.dependencies(v1alpha1.AnnotationDependsOn),
+		DependsOn: dependsOn,
 		Wake: &v1alpha1.WakeSpec{
 			OnRequest: ptr.To(s.boolean(v1alpha1.AnnotationWakeOnRequest, true)),
 			MaxWait: &metav1.Duration{Duration: s.durationUpTo(v1alpha1.AnnotationWakeMaxWait, 2*time.Minute,
