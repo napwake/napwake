@@ -23,6 +23,7 @@ import (
 	"fmt"
 	"io"
 	"slices"
+	"strconv"
 	"strings"
 	"text/tabwriter"
 	"time"
@@ -37,7 +38,6 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	v1alpha1 "github.com/okedeji/hybernate/api/v1alpha1"
-	"github.com/okedeji/hybernate/internal/discovery"
 )
 
 // stuckAfter is how long a pause or wake may take before status reports it.
@@ -422,14 +422,24 @@ func workloadStatus(w *v1alpha1.ManagedWorkload, targetActiveUntil, now time.Tim
 // savedThisMonth is what the workload has saved this calendar month. The
 // operator starts a new month's total at its first reconcile in that month,
 // so until then status holds last month's, which isn't this month's saving.
+// Dry-run never pauses, so a workload in dry-run now keeps what its pauses
+// saved earlier in the month, before dry-run was turned on.
 func savedThisMonth(w *v1alpha1.ManagedWorkload, now time.Time) float64 {
-	if c := w.Status.Cost; c != nil && c.LastAccumulatedAt != nil {
+	c := w.Status.Cost
+	if c == nil {
+		return 0
+	}
+	if c.LastAccumulatedAt != nil {
 		last, now := c.LastAccumulatedAt.UTC(), now.UTC()
 		if last.Year() != now.Year() || last.Month() != now.Month() {
 			return 0
 		}
 	}
-	return discovery.SavedThisMonth(w)
+	saved, err := strconv.ParseFloat(strings.TrimPrefix(c.SavedThisMonth, "$"), 64)
+	if err != nil {
+		return 0
+	}
+	return saved
 }
 
 // nextFor says what happens to a workload next, or what's stopping it.
@@ -773,7 +783,7 @@ func activityCell(wl statusWorkload, now time.Time) string {
 }
 
 func statusSavedCell(wl statusWorkload) string {
-	if wl.DryRun || wl.SavedThisMonth == 0 {
+	if wl.SavedThisMonth == 0 {
 		return "-"
 	}
 	return savedMoney(wl.SavedThisMonth)

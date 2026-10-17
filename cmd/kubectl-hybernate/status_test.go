@@ -92,7 +92,7 @@ func statusCluster() []client.Object {
 	web := statusWorkloadObj("preview-7", "web", v1alpha1.TargetKindDeployment, v1alpha1.PhaseRunning, 2*time.Hour)
 	web.Spec.DryRun = true
 	web.Status.Activity = activity(v1alpha1.ActivitySourceRollout, 15*time.Minute, 45*time.Minute)
-	web.Status.Cost = &v1alpha1.CostStatus{SavedThisMonth: "$9.00"}
+	web.Status.Cost = &v1alpha1.CostStatus{SavedThisMonth: "$0.00"}
 
 	worker := statusWorkloadObj("preview-7", "worker", v1alpha1.TargetKindDeployment, v1alpha1.PhaseResuming,
 		25*time.Minute)
@@ -542,6 +542,19 @@ func TestStatus_SavedInDollars(t *testing.T) {
 	assert.Contains(t, out, "  Saved $1,235 this month.\n")
 	assert.Regexp(t, `deployment/api .* \$1,235\n`, out)
 	assert.Regexp(t, `deployment/web .* <\$1\n`, out)
+}
+
+// Dry-run never pauses, so what a workload in dry-run now has saved this
+// month is what its pauses saved before dry-run was turned on, and counts.
+func TestStatus_SavedBeforeDryRun(t *testing.T) {
+	w := statusWorkloadObj("preview-7", "web", v1alpha1.TargetKindDeployment, v1alpha1.PhaseRunning, time.Hour)
+	w.Spec.DryRun = true
+	w.Status.Cost = &v1alpha1.CostStatus{SavedThisMonth: "$9.00"}
+
+	out := runStatus(t, newStatusClient(t, interceptor.Funcs{}, w), statusOpts())
+
+	assert.Contains(t, out, "  Saved $9 this month.\n")
+	assert.Regexp(t, `deployment/web\s+running \(dry-run\) .* \$9\n`, out)
 }
 
 func TestStatus_Since(t *testing.T) {
