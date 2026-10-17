@@ -82,7 +82,9 @@ func (p *Pauser) Prepare(ctx context.Context, workload *v1alpha1.ManagedWorkload
 }
 
 // Pause scales a prepared workload to zero, holding its KEDA ScaledObject
-// there, and returns true when it's done. Its PVCs stay only while its
+// there, and returns true when it's done. Before anything is scaled, the
+// record is copied onto the target, where RecordOn finds it should the
+// ManagedWorkload's status be lost. Its PVCs stay only while its
 // controller keeps them: a StatefulSet whose
 // persistentVolumeClaimRetentionPolicy.whenScaled is Delete deletes them as
 // it scales down, so the caller must never pause one.
@@ -94,6 +96,9 @@ func (p *Pauser) Pause(ctx context.Context, workload *v1alpha1.ManagedWorkload) 
 	target, err := getTarget(ctx, p.client, workload)
 	if err != nil {
 		return false, fmt.Errorf("getting target workload: %w", err)
+	}
+	if err := copyRecord(ctx, p.client, target, pause); err != nil {
+		return false, err
 	}
 	if so := pause.ScaledObject; so != "" {
 		if err := autoscaler.HoldKEDA(ctx, p.client, workload.Namespace, so, 0); err != nil {
@@ -196,7 +201,7 @@ func (p *Pauser) Resume(ctx context.Context, workload *v1alpha1.ManagedWorkload,
 		return r, nil
 	}
 
-	if err := p.releaseKEDA(ctx, workload); err != nil {
+	if err := p.release(ctx, workload, target); err != nil {
 		return Resumption{}, err
 	}
 	r.Settled = true
@@ -214,18 +219,18 @@ func (p *Pauser) Restore(ctx context.Context, workload *v1alpha1.ManagedWorkload
 	if workload.Status.Pause == nil {
 		return 0, nil
 	}
-	var replicas int32
 	target, err := getTarget(ctx, p.client, workload)
 	switch {
 	case apierrors.IsNotFound(err):
+		return 0, p.release(ctx, workload, nil)
 	case err != nil:
 		return 0, fmt.Errorf("getting target workload: %w", err)
-	default:
-		if replicas, err = p.scaleUpFromZero(ctx, workload, target); err != nil {
-			return 0, err
-		}
 	}
-	return replicas, p.releaseKEDA(ctx, workload)
+	replicas, err := p.scaleUpFromZero(ctx, workload, target)
+	if err != nil {
+		return 0, err
+	}
+	return replicas, p.release(ctx, workload, target)
 }
 
 func (p *Pauser) scaleUpFromZero(ctx context.Context, workload *v1alpha1.ManagedWorkload, target client.Object) (int32, error) {
@@ -254,12 +259,19 @@ func (p *Pauser) scaleUpFromZero(ctx context.Context, workload *v1alpha1.Managed
 	return replicas, nil
 }
 
-func (p *Pauser) releaseKEDA(ctx context.Context, workload *v1alpha1.ManagedWorkload) error {
-	pause := workload.Status.Pause
-	if pause.ScaledObject == "" {
+// release ends a pause that's been undone: KEDA scales the target again,
+// and the target, unless it's gone, no longer carries the pause record.
+func (p *Pauser) release(ctx context.Context, workload *v1alpha1.ManagedWorkload, target client.Object) error {
+	if pause := workload.Status.Pause; pause.ScaledObject != "" {
+		if err := autoscaler.ReleaseKEDA(ctx, p.client, workload.Namespace, pause.ScaledObject,
+			pause.ScaledObjectPausedReplicas); err != nil {
+			return err
+		}
+	}
+	if target == nil {
 		return nil
 	}
-	return autoscaler.ReleaseKEDA(ctx, p.client, workload.Namespace, pause.ScaledObject, pause.ScaledObjectPausedReplicas)
+	return dropRecord(ctx, p.client, target)
 }
 
 // resumeReplicas is what a paused workload is scaled back to, with the

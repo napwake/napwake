@@ -97,6 +97,14 @@ const (
 	AnnotationWakeMaxWait   = "hybernate.io/wake-max-wait"
 	AnnotationWakePage      = "hybernate.io/wake-page"
 
+	// AnnotationPausedFrom is set by Hybernate on a Deployment or
+	// StatefulSet it has paused, before scaling it to zero, and removed when
+	// it hands it back: a JSON copy of what the pause changed (the replicas,
+	// and the KEDA ScaledObject with its own paused-replicas value), so the
+	// pause is undone exactly even if the ManagedWorkload's status is lost,
+	// as to a backup restored without it. Don't set or edit it.
+	AnnotationPausedFrom = "hybernate.io/paused-from"
+
 	// AnnotationIgnoreDependencies lists dependencies Hybernate shouldn't
 	// learn for a workload, comma-separated, as namespace/name or a name in
 	// its own namespace. Set on the workload or its ManagedWorkload.

@@ -135,7 +135,7 @@ watchNamespaces, a Role's in each of them.
   verbs: [get, list, watch]
 - apiGroups: [apps]
   resources: [deployments, statefulsets]
-  verbs: [get, list, watch]
+  verbs: [get, list, patch, watch]
 - apiGroups: [apps]
   resources: [deployments/scale, statefulsets/scale]
   verbs: [get, update]

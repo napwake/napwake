@@ -7,9 +7,10 @@ Hybernate's one action is to **pause**: scale a workload to zero replicas. The D
 ### What Happens When a Workload Is Paused
 
 1. What the pause will change is recorded in `status.pause`, in the same status write that moves the phase to `Pausing`, before anything is scaled: the replica count (`previousReplicas`), the KEDA ScaledObject and its own `autoscaling.keda.sh/paused-replicas` value if it has one, what each replica requests (for [cost tracking](../concepts/cost-tracking.md)), and the activity annotations as they stand
-2. A KEDA ScaledObject, if the workload has one, is held at zero with `autoscaling.keda.sh/paused-replicas: "0"`
-3. The workload is scaled to 0 through its scale subresource. The API server records no field manager for a write that way, so the replicas show as no one's rather than Hybernate's
-4. `status.pause.pausedAt` is set and the phase moves to `Paused`, with a `Paused` event
+2. A copy of what undoing the pause needs, the replica count and the KEDA ScaledObject with its own `paused-replicas` value, is written to the workload's `hybernate.io/paused-from` annotation, where it stays until the workload is handed back. Should the ManagedWorkload lose its status while the workload is paused, such as to a Velero restore without status, or being deleted without its finalizer and created again, Hybernate takes the pause up again from it, with a `PauseRecovered` event, and the workload wakes as it would have
+3. A KEDA ScaledObject, if the workload has one, is held at zero with `autoscaling.keda.sh/paused-replicas: "0"`
+4. The workload is scaled to 0 through its scale subresource. The API server records no field manager for a write that way, so the replicas show as no one's rather than Hybernate's
+5. `status.pause.pausedAt` is set and the phase moves to `Paused`, with a `Paused` event
 
 Because the record is written first, a pause interrupted at any point, by an operator restart or a conflicting write, is finished or undone from the record, and a resume always goes back to the replica count the workload had.
 

@@ -45,6 +45,7 @@ Every lifecycle operation is idempotent. What a pause changes is recorded in `st
 - A pause interrupted at any point, by a restart or a conflicting write, is finished or undone from the record
 - Resuming restores the recorded replica count, not a hardcoded value
 - Re-pausing an already-paused workload is a no-op
+- Before the workload is scaled, the record is also copied to its `hybernate.io/paused-from` annotation, until it's handed back. A ManagedWorkload that loses its status while paused, to a restore without status or by being created again, takes the pause up from that copy (`PauseRecovered`): back to `Paused` if the workload is still at zero, or released if it has been scaled up since. One left `Pausing`, `Paused` or `Resuming` with neither had nothing scaled, and is `Running` again (`PauseRecordLost`)
 
 This means the operator can crash and restart at any point without leaving workloads in an inconsistent state. `spec.target` can't be changed once set, so a paused target is never left behind at zero: create another ManagedWorkload to manage another workload.
 
@@ -78,6 +79,7 @@ The operator sets standard Kubernetes conditions on the CR, each with `Reason`, 
 User-visible state changes emit Kubernetes events that show up in `kubectl describe`, each once, when the change happens:
 
 - Lifecycle: `IdleDetected`, `PauseRequested`, `Paused`, `Resumed`, `ActivityResumed` (in dry-run, with what the would-be pause would have freed)
+- A pause record lost from status: `PauseRecovered` (taken up again from the target's `hybernate.io/paused-from`), `PauseRecordLost` (a warning: nothing to finish it from)
 - A pause request Hybernate didn't act on: an event whose reason says why, the same as the `PauseRequest` condition's
 - What woke it: `WokeByActivity`, `WokenByRequest` (from the doorman), `AutoResume`, `ScaledUp`, `DryRunWake`
 - Scaled to zero outside Hybernate, and left off: `ScaledToZero`

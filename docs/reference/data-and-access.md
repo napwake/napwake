@@ -24,7 +24,7 @@ Everything the Hybernate operator and its doorman read, write, and send, for a s
 
 | Resource | What |
 |---|---|
-| Deployments, StatefulSets | Their replica count, through the scale subresource, and nothing else: no other field, and never a delete |
+| Deployments, StatefulSets | Their replica count, through the scale subresource, and, while one is paused, the `hybernate.io/paused-from` annotation: a copy of what the pause changed, removed when it's handed back. No other field, and never a delete |
 | KEDA ScaledObjects | The `autoscaling.keda.sh/paused-replicas` annotation, while their workload is paused or resuming; afterwards the value it had before, or none |
 | EndpointSlices | Its own, routing a paused workload's Services to the doorman; deleted when the workload wakes |
 | ManagedWorkloads | Its own status, including each workload's forecast state; the ones it creates for labelled workloads; the `hybernate.io/cleanup` finalizer, added to each so that deleting it restores its workload first, and removed once it has; `hybernate.io/last-activity` on a dependency it wakes; and, from the doorman, `hybernate.io/last-request` and `hybernate.io/last-request-from` (the caller's IP address) on one a request wakes |
@@ -60,7 +60,7 @@ What the Helm chart grants, for a release named `hybernate`; resource names star
 | `""` | `pods` | `get`, `list` | namespaced |
 | `""` | `persistentvolumeclaims` | `get`, `list`, `watch` | namespaced |
 | `discovery.k8s.io` | `endpointslices` | `get`, `list`, `watch`, `create`, `update`, `patch`, `delete` | namespaced |
-| `apps` | `deployments`, `statefulsets` | `get`, `list`, `watch` | namespaced |
+| `apps` | `deployments`, `statefulsets` | `get`, `list`, `watch`, `patch` | namespaced |
 | `apps` | `deployments/scale`, `statefulsets/scale` | `get`, `update` | namespaced |
 | `autoscaling` | `horizontalpodautoscalers` | `get`, `list`, `watch` | namespaced |
 | `keda.sh` | `scaledobjects` | `get`, `list`, `watch`, `patch` | namespaced |

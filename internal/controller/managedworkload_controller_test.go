@@ -235,7 +235,7 @@ func TestReconcile_PauseNotDoneRequeues(t *testing.T) {
 }
 
 func TestReconcile_AlreadyPausedIsNoOp(t *testing.T) {
-	workload := withPauseRequested(lifecycleWorkload("api", v1alpha1.PhasePaused))
+	workload := withPauseRequested(pausedWorkload(v1alpha1.PhasePaused))
 
 	pauser := &stubPauser{}
 	r := newTestReconciler(t, workload, pauser)
@@ -246,7 +246,7 @@ func TestReconcile_AlreadyPausedIsNoOp(t *testing.T) {
 }
 
 func TestReconcile_ResumeTransitions(t *testing.T) {
-	workload := wokenByActivity(lifecycleWorkload("api", v1alpha1.PhasePaused))
+	workload := wokenByActivity(pausedWorkload(v1alpha1.PhasePaused))
 
 	pauser := &stubPauser{resumeDone: true}
 	r := newTestReconciler(t, workload, pauser)
@@ -260,7 +260,7 @@ func TestReconcile_ResumeTransitions(t *testing.T) {
 }
 
 func TestReconcile_ResumeNotReadyRequeues(t *testing.T) {
-	workload := wokenByActivity(lifecycleWorkload("api", v1alpha1.PhasePaused))
+	workload := wokenByActivity(pausedWorkload(v1alpha1.PhasePaused))
 
 	pauser := &stubPauser{resumeDone: false}
 	r := newTestReconciler(t, workload, pauser)
@@ -1076,6 +1076,7 @@ func TestReconcile_ResumesInterruptedTransition(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			workload := lifecycleWorkload("stuck-app", tt.phase)
+			workload.Status.Pause = &v1alpha1.PauseStatus{PreviousReplicas: 1}
 			pauser := &stubPauser{pauseDone: true, resumeDone: true}
 			r := newTestReconciler(t, workload, pauser)
 
@@ -1335,6 +1336,7 @@ func TestLifecycle_InterruptedTransitionsComplete(t *testing.T) {
 		pause        *v1alpha1.PauseStatus
 		requested    bool
 		woken        bool
+		copied       bool
 		dryRun       bool
 		idlePolicy   *v1alpha1.IdlePolicySpec
 		replicas     int32
@@ -1344,16 +1346,20 @@ func TestLifecycle_InterruptedTransitionsComplete(t *testing.T) {
 		{name: "pausing, to pause", phase: v1alpha1.PhasePausing, pause: recorded(), wantPhase: v1alpha1.PhasePaused},
 		{name: "pausing on idle, to pause", phase: v1alpha1.PhasePausing, pause: recorded(), idlePolicy: idlePolicy,
 			wantPhase: v1alpha1.PhasePaused},
-		{name: "pausing, record from an earlier version missing", phase: v1alpha1.PhasePausing, replicas: 3,
-			wantPhase: v1alpha1.PhasePaused},
+		{name: "pausing, record lost before anything was scaled", phase: v1alpha1.PhasePausing, replicas: 3,
+			wantPhase: v1alpha1.PhaseRunning, wantReplicas: 3},
 		{name: "pausing, but now in dry-run", phase: v1alpha1.PhasePausing, pause: recorded(), dryRun: true,
 			idlePolicy: idlePolicy, wantPhase: v1alpha1.PhaseRunning, wantReplicas: 3},
 		{name: "paused, then dry-run switched on", phase: v1alpha1.PhasePaused, pause: recorded(), dryRun: true,
 			idlePolicy: idlePolicy, wantPhase: v1alpha1.PhaseRunning, wantReplicas: 3},
 		{name: "paused, woken", phase: v1alpha1.PhasePaused, pause: recorded(), woken: true,
 			wantPhase: v1alpha1.PhaseRunning, wantReplicas: 3},
-		{name: "paused, record from an earlier version missing, woken", phase: v1alpha1.PhasePaused, woken: true,
-			wantPhase: v1alpha1.PhaseRunning, wantReplicas: 1},
+		{name: "paused, record lost, its copy on the target", phase: v1alpha1.PhasePaused, copied: true,
+			wantPhase: v1alpha1.PhasePaused},
+		{name: "paused, record lost, no copy on the target", phase: v1alpha1.PhasePaused,
+			wantPhase: v1alpha1.PhaseRunning},
+		{name: "resuming, record lost, scaled up, its copy on the target", phase: v1alpha1.PhaseResuming,
+			replicas: 3, copied: true, wantPhase: v1alpha1.PhaseRunning, wantReplicas: 3},
 		{name: "resuming", phase: v1alpha1.PhaseResuming, pause: recorded(), wantPhase: v1alpha1.PhaseRunning, wantReplicas: 3},
 		{name: "resumed, but Running wasn't recorded", phase: v1alpha1.PhaseResuming, replicas: 3,
 			wantPhase: v1alpha1.PhaseRunning, wantReplicas: 3},
@@ -1401,12 +1407,17 @@ func TestLifecycle_InterruptedTransitionsComplete(t *testing.T) {
 					}
 				}
 				r := lifecycleReconciler(t, workload, tt.replicas, funcs)
+				if tt.copied {
+					copyPauseRecord(t, r, `{"replicas":3}`)
+				}
 
 				reconcileUntilSettled(t, r)
 
 				got := getWorkload(t, r, "api")
 				assert.Equal(t, tt.wantPhase, got.Status.Phase)
 				assert.Equal(t, tt.wantReplicas, targetReplicas(t, r))
+				_, copied := targetDeploymentOf(t, r).Annotations[v1alpha1.AnnotationPausedFrom]
+				assert.Equal(t, tt.wantPhase == v1alpha1.PhasePaused, copied, "the target carries a copy while paused")
 				if tt.wantPhase == v1alpha1.PhasePaused {
 					require.NotNil(t, got.Status.Pause)
 					assert.Equal(t, int32(3), got.Status.Pause.PreviousReplicas, "what it resumes to")

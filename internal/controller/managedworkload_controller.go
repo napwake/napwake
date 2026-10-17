@@ -19,6 +19,7 @@ package controller
 import (
 	"context"
 	"fmt"
+	"strings"
 	"sync"
 	"time"
 
@@ -143,7 +144,7 @@ type lifecyclePauser interface {
 // +kubebuilder:rbac:groups=hybernate.io,resources=managedworkloads,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups=hybernate.io,resources=managedworkloads/status,verbs=get;update;patch
 // +kubebuilder:rbac:groups=hybernate.io,resources=managedworkloads/finalizers,verbs=update
-// +kubebuilder:rbac:groups=apps,resources=deployments;statefulsets,verbs=get;list;watch
+// +kubebuilder:rbac:groups=apps,resources=deployments;statefulsets,verbs=get;list;watch;patch
 // +kubebuilder:rbac:groups=apps,resources=deployments/scale;statefulsets/scale,verbs=get;update
 // +kubebuilder:rbac:groups="",resources=persistentvolumeclaims,verbs=get;list;watch
 // +kubebuilder:rbac:groups="",resources=configmaps,verbs=get
@@ -215,6 +216,11 @@ func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (res ctrl.
 	}
 	if target == nil {
 		return r.reconcileTargetMissing(ctx, &workload)
+	}
+	if result, err := r.recoverPause(ctx, &workload, target); err != nil {
+		return ctrl.Result{}, err
+	} else if result != nil {
+		return *result, nil
 	}
 	if target.GetLabels()[v1alpha1.LabelIgnore] == v1alpha1.True {
 		return r.reconcileIgnored(ctx, &workload)
@@ -367,14 +373,6 @@ func (r *Reconciler) handlePause(ctx context.Context, workload *v1alpha1.Managed
 			r.emitEvent(workload, false, "Normal", why.reason, actionPause, "%s", why.message)
 		}
 	case v1alpha1.PhasePausing:
-		if workload.Status.Pause == nil {
-			if err := r.preparePause(ctx, workload, target); err != nil {
-				return nil, err
-			}
-			if err := r.Status().Update(ctx, workload); err != nil {
-				return nil, fmt.Errorf("recording the pause: %w", err)
-			}
-		}
 	default:
 		return nil, nil
 	}
@@ -411,6 +409,110 @@ func (r *Reconciler) preparePause(ctx context.Context, workload *v1alpha1.Manage
 	return nil
 }
 
+const (
+	ReasonPauseRecovered  = "PauseRecovered"
+	ReasonPauseRecordLost = "PauseRecordLost"
+)
+
+// recoverPause takes up a pause whose record the workload's status has
+// lost, as to a backup restored without status or a ManagedWorkload created
+// afresh, from the copy its target carries. Without it, a target Hybernate
+// paused would be taken for one scaled to zero by someone else and left off
+// for good, with KEDA holding it there. A target still at zero is Paused
+// again, to wake like any other; one scaled up since is released. With no
+// copy on the target either, nothing was scaled, since the copy is written
+// first, so a workload left pausing, paused or resuming is Running again.
+func (r *Reconciler) recoverPause(ctx context.Context, workload *v1alpha1.ManagedWorkload,
+	target client.Object) (*ctrl.Result, error) {
+	if workload.Status.Pause != nil {
+		return nil, nil
+	}
+	pause, err := r.pauseRecordOn(ctx, workload, target)
+	if err != nil {
+		return nil, err
+	}
+	if pause == nil {
+		return r.forgetLostPause(ctx, workload, "nothing was scaled, so there's nothing to restore")
+	}
+
+	replicas, err := r.liveReplicas(ctx, target)
+	if err != nil {
+		return nil, err
+	}
+	if replicas > 0 {
+		workload.Status.Pause = pause
+		if _, err := r.pauser.Restore(ctx, workload); err != nil {
+			return nil, fmt.Errorf("releasing a target scaled up since its pause record was lost: %w", err)
+		}
+		workload.Status.Pause = nil
+		return r.forgetLostPause(ctx, workload, fmt.Sprintf("it has %d replicas again, so it's released", replicas))
+	}
+
+	now := r.clockTime()
+	pause.PausedAt = &now
+	if snap := r.captureResourceSnapshot(ctx, workload); snap != nil {
+		snap.Replicas = pause.PreviousReplicas
+		pause.Resources = snap
+	}
+	pause.WakeAnnotations = &v1alpha1.WakeAnnotations{
+		Workload: activityAnnotationValues(workload),
+		Target:   activityAnnotationValues(target),
+	}
+	workload.Status.Pause = pause
+	if err := r.transition(ctx, workload, v1alpha1.PhasePaused, ReasonPauseRecovered); err != nil {
+		return nil, err
+	}
+	r.emitEvent(workload, false, "Normal", ReasonPauseRecovered, actionPause,
+		"its pause record was lost, so it's taken up again from the %s annotation: paused, to wake to %d replicas",
+		v1alpha1.AnnotationPausedFrom, pause.PreviousReplicas)
+	return &ctrl.Result{RequeueAfter: r.pausedRecheck()}, nil
+}
+
+// pauseRecordOn is the copy of a pause record the target carries, read past
+// the cache, which can still show a copy a resume has just removed. A copy
+// that can't be read is reported and treated as none.
+func (r *Reconciler) pauseRecordOn(ctx context.Context, workload *v1alpha1.ManagedWorkload,
+	target client.Object) (*v1alpha1.PauseStatus, error) {
+	if _, ok := target.GetAnnotations()[v1alpha1.AnnotationPausedFrom]; !ok {
+		return nil, nil
+	}
+	reader := r.PodReader
+	if reader == nil {
+		reader = r.Client
+	}
+	live, ok := target.DeepCopyObject().(client.Object)
+	if !ok {
+		return nil, fmt.Errorf("copying %s %s", workload.Spec.Target.Kind, target.GetName())
+	}
+	if err := reader.Get(ctx, client.ObjectKeyFromObject(target), live); err != nil {
+		return nil, fmt.Errorf("reading the target's pause record: %w", err)
+	}
+	pause, err := lifecycle.RecordOn(live)
+	if err != nil {
+		r.emitEvent(workload, false, "Warning", ReasonPauseRecordLost, actionPause, "%v", err)
+		return nil, nil
+	}
+	return pause, nil
+}
+
+// forgetLostPause sets Running a workload left pausing, paused or resuming
+// without a pause record to finish it from, saying why.
+func (r *Reconciler) forgetLostPause(ctx context.Context, workload *v1alpha1.ManagedWorkload,
+	outcome string) (*ctrl.Result, error) {
+	switch workload.Status.Phase {
+	case v1alpha1.PhasePausing, v1alpha1.PhasePaused, v1alpha1.PhaseResuming:
+	default:
+		return nil, nil
+	}
+	was := workload.Status.Phase
+	if err := r.transition(ctx, workload, v1alpha1.PhaseRunning, ReasonPauseRecordLost); err != nil {
+		return nil, err
+	}
+	r.emitEvent(workload, false, "Warning", ReasonPauseRecordLost, actionResume,
+		"%s without a pause record to finish from: %s", strings.ToLower(string(was)), outcome)
+	return &ctrl.Result{}, nil
+}
+
 // phaseEvent says why a workload pauses or wakes. It's emitted once the
 // workload is Pausing or Resuming, so a retried pause or wake doesn't
 // announce itself twice.
@@ -429,15 +531,6 @@ func (r *Reconciler) handleResume(ctx context.Context, workload *v1alpha1.Manage
 		}
 		return &ctrl.Result{}, nil
 	case v1alpha1.PhasePausing, v1alpha1.PhasePaused:
-		if workload.Status.Pause == nil {
-			if err := r.pauser.Prepare(ctx, workload); err != nil {
-				return nil, fmt.Errorf("recording what to restore: %w", err)
-			}
-			// A pause without its record was written by hand or by an older
-			// version. Hybernate scaled it to zero, so zero isn't what it
-			// had, and one is the least that runs it.
-			workload.Status.Pause.PreviousReplicas = max(workload.Status.Pause.PreviousReplicas, 1)
-		}
 		// Learning never holds up a wake.
 		if err := r.learnFromWake(ctx, workload); err != nil {
 			log.FromContext(ctx).Info("couldn't learn what sent the request that woke the workload",
