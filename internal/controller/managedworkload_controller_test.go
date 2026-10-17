@@ -965,28 +965,48 @@ func TestReconcile_GoneWorkloadsSeriesAreDeleted(t *testing.T) {
 // A cache that hasn't yet seen a resume finish still holds the workload
 // Paused. Routing it from that would put back the doorman slices its
 // resume had just removed, sending requests to the doorman rather than to
-// the pods now serving them.
+// the pods now serving them. Only a phase this operator has just written
+// can be stale, so only then is it read past the cache: every paused
+// workload is reconciled every few minutes, and reading each past the cache
+// each time would put a load on the API server that grows with them.
 func TestReconcile_AStalePausedPhaseDoesNotRouteToTheDoorman(t *testing.T) {
-	r, _ := pausedRouted(t)
-	for _, s := range doormanSlices(t, r) {
-		require.NoError(t, r.Delete(context.Background(), &s))
+	tests := []struct {
+		name       string
+		written    time.Duration
+		wantLive   bool
+		wantRouted bool
+	}{
+		{name: "phase just written", written: phaseWriteLag, wantLive: true},
+		{name: "phase written a while ago", written: phaseWriteLag + time.Second, wantRouted: true},
 	}
-	r.PodReader = interceptor.NewClient(r.Client.(client.WithWatch), interceptor.Funcs{
-		Get: func(ctx context.Context, c client.WithWatch, key client.ObjectKey, obj client.Object,
-			opts ...client.GetOption) error {
-			if err := c.Get(ctx, key, obj, opts...); err != nil {
-				return err
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			r, _ := pausedRouted(t)
+			for _, s := range doormanSlices(t, r) {
+				require.NoError(t, r.Delete(context.Background(), &s))
 			}
-			if w, ok := obj.(*v1alpha1.ManagedWorkload); ok {
-				w.Status.Phase = v1alpha1.PhaseRunning
-			}
-			return nil
-		}})
+			live := 0
+			r.PodReader = interceptor.NewClient(r.Client.(client.WithWatch), interceptor.Funcs{
+				Get: func(ctx context.Context, c client.WithWatch, key client.ObjectKey, obj client.Object,
+					opts ...client.GetOption) error {
+					if err := c.Get(ctx, key, obj, opts...); err != nil {
+						return err
+					}
+					if w, ok := obj.(*v1alpha1.ManagedWorkload); ok {
+						live++
+						w.Status.Phase = v1alpha1.PhaseRunning
+					}
+					return nil
+				}})
+			r.phaseWrites.record(fetch(t, r, "api").UID, fixedTime.Add(-tt.written))
 
-	_, err := r.Reconcile(context.Background(), reconcileFor("api"))
+			_, err := r.Reconcile(context.Background(), reconcileFor("api"))
 
-	require.NoError(t, err)
-	assert.Empty(t, doormanSlices(t, r))
+			require.NoError(t, err)
+			assert.Equal(t, tt.wantLive, live > 0, "read past the cache")
+			assert.Equal(t, tt.wantRouted, len(doormanSlices(t, r)) > 0)
+		})
+	}
 }
 
 // resumingPauser resumes to a given outcome.

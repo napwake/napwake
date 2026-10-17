@@ -19,6 +19,7 @@ package controller
 import (
 	"context"
 	"fmt"
+	"sync"
 	"time"
 
 	appsv1 "k8s.io/api/apps/v1"
@@ -114,6 +115,7 @@ type Reconciler struct {
 	autoscalers     *autoscaler.Finder
 	engines         *engineRegistry
 	activityMemo    activityMemo
+	phaseWrites     phaseWrites
 	doormanPorts    portAllocator
 	doormanFailures failureBackoff
 	prometheusURL   string
@@ -282,10 +284,12 @@ func (r *Reconciler) reconcileSettled(ctx context.Context, workload *v1alpha1.Ma
 // cache, is out of date for routing it to the doorman. A cache that hasn't
 // yet seen a resume finish still holds the workload Paused, and routing
 // that would put back the doorman slices the resume just removed. Only the
-// API server can tell, and only a workload that would be routed needs
-// asking.
+// API server can tell, and only a workload that would be routed, and whose
+// phase this operator has just written, needs asking: the cache can only be
+// behind a write, and every paused workload is reconciled every few
+// minutes, which would otherwise read each one past the cache each time.
 func (r *Reconciler) staleForRouting(ctx context.Context, workload *v1alpha1.ManagedWorkload) (bool, error) {
-	if !doormanEligible(workload) {
+	if !doormanEligible(workload) || !r.phaseWrites.recent(workload.UID, r.now()) {
 		return false, nil
 	}
 	phase, err := r.livePhase(ctx, workload)
@@ -585,6 +589,7 @@ func (r *Reconciler) reconcileDelete(ctx context.Context, workload *v1alpha1.Man
 		r.announceHandBack(workload, replicas, "no longer managed")
 	}
 	r.activityMemo.forget(workload.UID)
+	r.phaseWrites.forget(workload.UID)
 	r.doormanFailures.reset(workload.UID)
 	r.forgetForecast(workload)
 	metrics.DeleteWorkload(workload.Namespace, workload.Name)
@@ -986,11 +991,57 @@ func (r *Reconciler) transition(ctx context.Context, workload *v1alpha1.ManagedW
 	if err := r.Status().Update(ctx, workload); err != nil {
 		return fmt.Errorf("updating phase to %s: %w", phase, err)
 	}
+	r.phaseWrites.record(workload.UID, now.Time)
 	metrics.WorkloadPhase.DeleteLabelValues(workload.Namespace, workload.Name, string(old))
 	recordPhase(workload)
 	metrics.LifecycleTransitions.WithLabelValues(string(old), string(phase)).Inc()
 	logger.Info("phase transition", "from", old, "to", phase, "reason", reason)
 	return nil
+}
+
+// phaseWriteLag is how long after this operator writes a workload's phase
+// its cache is taken to possibly still hold the one before. A watch event
+// normally arrives within a second; one later than this means the
+// operator's connection to the API server is in trouble.
+const phaseWriteLag = 30 * time.Second
+
+// phaseWrites remembers when this operator last wrote each workload's
+// phase, which is the only time its cache can show a stale phase: a newly
+// elected leader starts from a fresh list.
+type phaseWrites struct {
+	mu sync.Mutex
+	at map[types.UID]time.Time
+}
+
+func (w *phaseWrites) record(uid types.UID, at time.Time) {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	if w.at == nil {
+		w.at = make(map[types.UID]time.Time)
+	}
+	w.at[uid] = at
+}
+
+// recent reports whether the workload's phase was written within
+// phaseWriteLag of now, forgetting a write that's older.
+func (w *phaseWrites) recent(uid types.UID, now time.Time) bool {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	at, ok := w.at[uid]
+	if !ok {
+		return false
+	}
+	if now.Sub(at) > phaseWriteLag {
+		delete(w.at, uid)
+		return false
+	}
+	return true
+}
+
+func (w *phaseWrites) forget(uid types.UID) {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	delete(w.at, uid)
 }
 
 func (r *Reconciler) now() time.Time {
