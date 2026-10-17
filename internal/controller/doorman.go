@@ -598,30 +598,49 @@ func (r *Reconciler) apiReader() client.Reader {
 	return r.Client
 }
 
-// routeReader lists the ManagedWorkloads the operator can see: in each
-// watched namespace, which is all its Roles allow, or in every namespace.
+// routeReader lists the ManagedWorkloads and doorman EndpointSlices the
+// operator can see: in each watched namespace, which is all its Roles
+// allow, or in every namespace.
 type routeReader struct {
 	reader     client.Reader
 	namespaces []string
 }
 
-func (rr routeReader) list(ctx context.Context) ([]v1alpha1.ManagedWorkload, error) {
-	if len(rr.namespaces) == 0 {
-		var list v1alpha1.ManagedWorkloadList
-		if err := rr.reader.List(ctx, &list); err != nil {
-			return nil, fmt.Errorf("listing managed workloads: %w", err)
-		}
-		return list.Items, nil
+// portsInUse is every workload's routes and drains, and every doorman
+// slice, which may hold a port its workload's status doesn't: one written
+// by a reconcile whose status write failed.
+type portsInUse struct {
+	workloads []v1alpha1.ManagedWorkload
+	slices    []discoveryv1.EndpointSlice
+}
+
+func (rr routeReader) list(ctx context.Context) (portsInUse, error) {
+	namespaces := rr.namespaces
+	if len(namespaces) == 0 {
+		namespaces = []string{metav1.NamespaceAll}
 	}
-	var all []v1alpha1.ManagedWorkload
-	for _, ns := range rr.namespaces {
-		var list v1alpha1.ManagedWorkloadList
-		if err := rr.reader.List(ctx, &list, client.InNamespace(ns)); err != nil {
-			return nil, fmt.Errorf("listing managed workloads in %s: %w", ns, err)
+	var inUse portsInUse
+	for _, ns := range namespaces {
+		var workloads v1alpha1.ManagedWorkloadList
+		if err := rr.reader.List(ctx, &workloads, client.InNamespace(ns)); err != nil {
+			return portsInUse{}, fmt.Errorf("listing managed workloads%s: %w", inNamespace(ns), err)
 		}
-		all = append(all, list.Items...)
+		var slices discoveryv1.EndpointSliceList
+		if err := rr.reader.List(ctx, &slices, client.InNamespace(ns),
+			client.MatchingLabels{discoveryv1.LabelManagedBy: doorman.ManagedBy}); err != nil {
+			return portsInUse{}, fmt.Errorf("listing doorman slices%s: %w", inNamespace(ns), err)
+		}
+		inUse.workloads = append(inUse.workloads, workloads.Items...)
+		inUse.slices = append(inUse.slices, slices.Items...)
 	}
-	return all, nil
+	return inUse, nil
+}
+
+func inNamespace(ns string) string {
+	if ns == metav1.NamespaceAll {
+		return ""
+	}
+	return " in " + ns
 }
 
 type routeKey struct {
@@ -641,7 +660,9 @@ type portClaim struct {
 // not be in the cache yet, so ports aren't chosen from the cache: the
 // allocator, which only the leader runs, remembers every claim it makes,
 // starting from, and every so often reconciling with, a read of every
-// workload's routes from the API server.
+// workload's routes and doorman slices from the API server. That read
+// spans the cluster, so it's made without holding mu, which would hold up
+// every routing reconcile behind it.
 type portAllocator struct {
 	mu       sync.Mutex
 	claims   map[int32]portClaim
@@ -657,11 +678,11 @@ type portAllocator struct {
 // draining.
 func (a *portAllocator) assign(ctx context.Context, reader routeReader, now time.Time,
 	owner types.UID, existing map[routeKey]int32, keys []routeKey) ([]v1alpha1.DoormanRoute, error) {
-	a.mu.Lock()
-	defer a.mu.Unlock()
 	if err := a.load(ctx, reader, now); err != nil {
 		return nil, err
 	}
+	a.mu.Lock()
+	defer a.mu.Unlock()
 	for port, d := range a.draining {
 		if !now.Before(d.at) {
 			delete(a.draining, port)
@@ -725,30 +746,69 @@ func (a *portAllocator) releaseLocked(owner types.UID, now time.Time, keep map[i
 	}
 }
 
-// load reads every workload's routes from the API server, the first time
-// and every portsReload after. Claims made since the last load are kept,
-// since their status may not be written yet.
+func (a *portAllocator) loadDue(now time.Time) bool {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	return a.claims == nil || now.Sub(a.loadedAt) >= portsReload
+}
+
+// load reads every workload's routes and doorman slices from the API
+// server, the first time and every portsReload after, and merges them into
+// the claims. Claims made since the last load are kept, since their status
+// may not be written yet.
 func (a *portAllocator) load(ctx context.Context, reader routeReader, now time.Time) error {
-	if a.claims != nil && now.Sub(a.loadedAt) < portsReload {
+	if !a.loadDue(now) {
 		return nil
 	}
-	workloads, err := reader.list(ctx)
+	inUse, err := reader.list(ctx)
 	if err != nil {
 		return fmt.Errorf("reading doorman ports in use: %w", err)
 	}
-	claims := map[int32]portClaim{}
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	if a.claims != nil && now.Sub(a.loadedAt) < portsReload {
+		return nil
+	}
+	a.merge(inUse, now)
+	return nil
+}
+
+// merge replaces the claims with those in inUse, read at now, and the
+// claims made since the last load. A port a slice holds is its owner's,
+// unless a status claims it first. a.mu must be held.
+func (a *portAllocator) merge(inUse portsInUse, now time.Time) {
 	if a.draining == nil {
 		a.draining = map[int32]portClaim{}
 	}
-	for _, w := range workloads {
+	claims := map[int32]portClaim{}
+	claim := func(port int32, owner types.UID) {
+		if _, taken := claims[port]; taken {
+			return
+		}
+		// Given up while the read was under way: it's draining now.
+		if d, ok := a.draining[port]; ok && d.owner == owner {
+			return
+		}
+		claims[port] = portClaim{owner: owner, at: now}
+	}
+	for _, w := range inUse.workloads {
 		for _, route := range w.Status.Doorman {
-			if _, taken := claims[route.DoormanPort]; !taken {
-				claims[route.DoormanPort] = portClaim{owner: w.UID, at: now}
-			}
+			claim(route.DoormanPort, w.UID)
 		}
 		for _, d := range w.Status.DoormanDraining {
 			if _, known := a.draining[d.Port]; !known && now.Before(d.Until.Time) {
 				a.draining[d.Port] = portClaim{owner: w.UID, at: d.Until.Time}
+			}
+		}
+	}
+	for _, slice := range inUse.slices {
+		owner := metav1.GetControllerOf(&slice)
+		if owner == nil {
+			continue
+		}
+		for _, p := range slice.Ports {
+			if p.Port != nil {
+				claim(*p.Port, owner.UID)
 			}
 		}
 	}
@@ -758,7 +818,6 @@ func (a *portAllocator) load(ctx context.Context, reader routeReader, now time.T
 		}
 	}
 	a.claims, a.loadedAt = claims, now
-	return nil
 }
 
 // failureBackoff counts each workload's doorman failures in a row.

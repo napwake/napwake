@@ -22,6 +22,7 @@ import (
 	"fmt"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -1102,4 +1103,63 @@ func TestReconcileDoorman_AllocatesWithOnlyNamespacedAccess(t *testing.T) {
 	require.NoError(t, doormanErr(context.Background(), r, workload, appTarget()))
 
 	assert.Len(t, workload.Status.Doorman, 1)
+}
+
+// A port in a slice whose workload's status write failed is still in use.
+// A leader that takes over learns of it from the slice, and gives it to no
+// other workload.
+func TestReconcileDoorman_ANewLeaderHonoursPortsOnlyInASlice(t *testing.T) {
+	r, first, second, billing := twoPausedWorkloads(t)
+	ctx := context.Background()
+	require.NoError(t, doormanErr(ctx, r, first, appTarget()))
+	port := first.Status.Doorman[0].DoormanPort
+	require.Empty(t, fetch(t, r, "api").Status.Doorman, "the status write failed")
+
+	newLeader(r)
+	require.NoError(t, doormanErr(ctx, r, second, billing))
+
+	assert.NotEqual(t, port, second.Status.Doorman[0].DoormanPort)
+}
+
+// Reading every workload's routes spans the cluster, so it doesn't hold up
+// other workloads' routing while it's under way.
+func TestReconcileDoorman_LoadingPortsDoesNotSerializeReconciles(t *testing.T) {
+	r, first, second, billing := twoPausedWorkloads(t)
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	var listing atomic.Int32
+	bothListing := make(chan struct{})
+	r.PodReader = interceptor.NewClient(r.Client.(client.WithWatch), interceptor.Funcs{
+		List: func(listCtx context.Context, c client.WithWatch, list client.ObjectList, opts ...client.ListOption) error {
+			if _, ok := list.(*v1alpha1.ManagedWorkloadList); ok {
+				if listing.Add(1) == 2 {
+					close(bothListing)
+				}
+				select {
+				case <-bothListing:
+				case <-ctx.Done():
+					return ctx.Err()
+				}
+			}
+			return c.List(listCtx, list, opts...)
+		}})
+
+	var reconciles sync.WaitGroup
+	errs := make([]error, 2)
+	reconciles.Go(func() { errs[0] = doormanErr(ctx, r, first, appTarget()) })
+	reconciles.Go(func() { errs[1] = doormanErr(ctx, r, second, billing) })
+	done := make(chan struct{})
+	go func() {
+		reconciles.Wait()
+		close(done)
+	}()
+	select {
+	case <-done:
+	case <-ctx.Done():
+		t.Fatal("one reconcile's read of the ports in use held up the other's")
+	}
+
+	require.NoError(t, errs[0])
+	require.NoError(t, errs[1])
+	assert.NotEqual(t, first.Status.Doorman[0].DoormanPort, second.Status.Doorman[0].DoormanPort)
 }
