@@ -101,7 +101,8 @@ func wakeOnRequest(workload *v1alpha1.ManagedWorkload) bool {
 // doormanEligible reports whether doorman routes should exist now. They're
 // added when a workload is paused and kept through Resuming, so connections
 // arriving mid-wake are held too; they're removed once it's Running, which
-// means its pods are Ready.
+// its resume reaches with some pods Ready, or, past its progress deadline,
+// with none, when holding requests would only fail them later.
 func doormanEligible(workload *v1alpha1.ManagedWorkload) bool {
 	switch workload.Status.Phase {
 	case v1alpha1.PhasePaused:
