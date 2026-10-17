@@ -72,7 +72,8 @@ internal/metrics/              # Prometheus metrics, and the Metrics API reader
 charts/hybernate/              # Helm chart
 config/                        # CRD, RBAC, kustomize manifests
 test/e2e/                      # End-to-end tests, in Kind
-test/docs/                     # Validates the docs' ManagedWorkload YAML against the CRD
+test/docs/                     # Validates the docs' ManagedWorkloads against the CRD, and Helm values against the chart
+tests/prometheus/              # promtool tests for the alert rules
 docs/                          # This site (mkdocs)
 ```
 
