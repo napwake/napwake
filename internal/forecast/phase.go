@@ -238,11 +238,9 @@ func (e *Engine) floor() float64 {
 }
 
 // Predict returns the demand forecast for the hour h hours after the one
-// containing now. It is 0 until the phase is DailyActive or beyond.
+// containing now. It is 0 until the forecast drives decisions.
 func (e *Engine) Predict(h int, now time.Time) float64 {
-	switch e.Phase {
-	case DailyActive, WeeklySuggesting, FullyActive:
-	default:
+	if !e.Active() {
 		return 0
 	}
 	t := e.local(now).Add(time.Duration(h) * time.Hour)
@@ -329,24 +327,35 @@ func (e *Engine) advancePhase() {
 	}
 }
 
-// handleRegimeChange demotes the engine one step from the phase it held
-// before the anomalies began, and discards the evidence its confidence
-// rested on, so that confidence is earned again on the new pattern.
+// handleRegimeChange leaves the engine at least one step below the phase it
+// held before the anomalies began, and discards the evidence its confidence
+// rested on, so that confidence is earned again on the new pattern. The
+// anomalies may already have cost it that step, or more, and it isn't
+// demoted again for them, nor promoted back on evidence just discarded.
 // Clearing the anomalies means one regime change demotes once, not once for
 // every hour the anomalies stay in the window.
 func (e *Engine) handleRegimeChange() {
 	e.lastRegimeChange = true
+	below := Observing
 	switch e.phaseBeforeAnomalies {
 	case FullyActive:
-		e.Phase = WeeklySuggesting
+		below = WeeklySuggesting
 	case WeeklySuggesting, DailyActive:
-		e.Phase = DailySuggesting
-	default:
-		e.Phase = Observing
+		below = DailySuggesting
 	}
+	e.Phase = min(e.Phase, below)
 	e.Scorer.Reset()
 	e.Anomaly.Reset()
 	e.coverage = weekSlots{}
+}
+
+// Active reports whether the forecast drives decisions: its phase is
+// DailyActive or beyond, and a full day of its forecasts has been scored
+// since it last discarded its evidence. A regime change can leave it in
+// WeeklySuggesting with nothing scored, and it earns its confidence again
+// before it acts.
+func (e *Engine) Active() bool {
+	return e.Phase >= DailyActive && e.Scorer.Ready(dailyWindow)
 }
 
 func (e *Engine) GetPhase() Phase    { return e.Phase }

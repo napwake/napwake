@@ -124,13 +124,17 @@ Hybernate detects these **regime changes** using z-score anomaly detection:
 2. If \( z(t) > 3.0 \), the observation is flagged as an anomaly. The model learns from it only up to 3 standard deviations, so a single spike isn't learned as a pattern. An error that large in the same direction as the last one in the same hour of the week isn't an anomaly, though: it's a weekly pattern, such as a Tuesday night batch job, and the model learns it in full
 3. If 3 or more anomalies occur within 24 observed hours, the engine declares a **regime change**
 
-On a regime change, the engine demotes its phase one level from the phase it held before the anomalies began, even if they've already cost it confidence:
+On a regime change, the engine ends up at least one level below the phase it held before the anomalies began:
 
 - `FullyActive` → `WeeklySuggesting`
 - `WeeklySuggesting` or `DailyActive` → `DailySuggesting`
 - `DailySuggesting` → `Observing`
 
-It then discards the evidence its confidence rested on: the scored errors, the anomaly statistics, and which hours of the week have been observed. Confidence has to be earned again on the new pattern, over a full window, before the forecast drives decisions again. A `RegimeChange` warning event is emitted once.
+If the anomalies have already cost it that level or more, by lowering its confidence, it stays where they left it: one regime change is never a second demotion, and never a promotion.
+
+It then discards the evidence its confidence rested on: the scored errors, the anomaly statistics, and which hours of the week have been observed. Confidence has to be earned again on the new pattern before the forecast drives decisions again: whatever its phase, it neither holds back a pause nor wakes a workload until a full day of its forecasts has been scored again. A `RegimeChange` warning event is emitted once.
+
+A weekday holiday looks like this: its first quiet office hours are anomalies, the daily confidence drops, and a regime change follows a few hours in. The forecast is off from then until a day has been scored, about 30 hours, and back on during the next working day. Idle detection and wake on request carry on throughout, so the cost is that the first request of that morning wakes the workload, instead of `autoResume` having it ready. A single deviant day can't be told from the start of a new pattern until later days show which it was, so the forecast doesn't guess.
 
 ## Persistence
 

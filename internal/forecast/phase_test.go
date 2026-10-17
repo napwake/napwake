@@ -235,6 +235,8 @@ func TestEngine_RegimeChangeDemotesOnce(t *testing.T) {
 	require.Equal(t, []int{start + 2}, log.regimeChanges)
 	assert.Equal(t, WeeklySuggesting, e.Phase, "demoted one step")
 	assert.False(t, e.Scorer.Ready(dailyWindow), "confidence is earned again")
+	assert.False(t, e.Active(), "before the forecast drives decisions again")
+	assert.Zero(t, e.Predict(1, hourAt(start+3)))
 
 	log = run(t, e, start+3, DailySeason, steady)
 	assert.Empty(t, log.regimeChanges, "the regime change is reported once")
@@ -248,20 +250,55 @@ func TestEngine_RegimeChangeDemotesOnce(t *testing.T) {
 }
 
 // The anomalies leading up to a regime change can cost the engine its
-// confidence before they add up to one. The regime change demotes one level
-// from where the engine was before them, not one more from where they left
-// it.
+// confidence before they add up to one. The regime change doesn't demote it
+// again for them, and nor does it promote it back to one level below where
+// it was before them, on the evidence it has just discarded.
 func TestEngine_RegimeChangeDemotesOneLevelInAll(t *testing.T) {
 	e := newTestEngine()
 	run(t, e, 0, 6*WeeklySeason, office)
 	require.Equal(t, FullyActive, e.Phase)
 
 	evenings := func(_ int, at time.Time) float64 { return officeHours(at.Add(8 * time.Hour)) }
-	log := run(t, e, 6*WeeklySeason, DailySeason, evenings)
+	regimeChanges := 0
+	for i := 6 * WeeklySeason; i < 7*WeeklySeason; i++ {
+		before := e.Phase
+		_, err := e.Observe(evenings(i, hourAt(i)), hourAt(i))
+		require.NoError(t, err)
+		if !e.RegimeChanged() {
+			continue
+		}
+		regimeChanges++
+		assert.LessOrEqual(t, e.Phase, before, "a regime change never raises the phase")
+		assert.LessOrEqual(t, e.Phase, WeeklySuggesting, "at least one level below FullyActive")
+		assert.False(t, e.Active(), "nothing is scored once the evidence is discarded")
+	}
+	assert.Equal(t, 1, regimeChanges)
+}
 
-	require.Len(t, log.regimeChanges, 1)
-	assert.Equal(t, WeeklySuggesting, log.changes[log.regimeChanges[0]], "one level below FullyActive")
-	assert.Equal(t, WeeklySuggesting, e.Phase)
+// TestEngine_HolidayDoesNotWakeIntoTheHoliday: a weekday holiday costs the
+// daily season its confidence before its anomalies add up to a regime
+// change. The regime change must not switch the forecast back on, or a
+// paused workload would be woken for the busy hours the holiday doesn't
+// have.
+func TestEngine_HolidayDoesNotWakeIntoTheHoliday(t *testing.T) {
+	e := NewEngine(DefaultParams(), Settings{Threshold: 75})
+	run(t, e, 0, 6*WeeklySeason, office)
+	require.Equal(t, FullyActive, e.Phase)
+
+	holiday := 6*WeeklySeason + 2*DailySeason
+	run(t, e, 6*WeeklySeason, 2*DailySeason, office)
+	regimeChanged := false
+	acting := 0
+	for i := holiday; i < holiday+DailySeason; i++ {
+		_, err := e.Observe(0, hourAt(i))
+		require.NoError(t, err)
+		regimeChanged = regimeChanged || e.RegimeChanged()
+		if regimeChanged && e.Predict(1, hourAt(i)) > 0 {
+			acting++
+		}
+	}
+	require.True(t, regimeChanged)
+	assert.Zero(t, acting, "hours of the holiday after the regime change the forecast acts on")
 }
 
 // A large spike that recurs every week is a pattern, not an outlier. It is
