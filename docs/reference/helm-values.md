@@ -39,7 +39,7 @@ The full name is the release name when it contains `hybernate`, and `<release>-h
 |-------|---------|-------------|
 | `crds.install` | `true` | Install the ManagedWorkload CRD, and upgrade it with each `helm upgrade` |
 
-The CRD is a chart template with `helm.sh/resource-policy: keep`, so `helm uninstall` leaves it, and every ManagedWorkload, in place: deleting the CRD would delete them all. Set `crds.install: false` only if you manage the CRD yourself, for example from `config/crd` in the repository.
+The CRD is a chart template with `helm.sh/resource-policy: keep`, so `helm uninstall` leaves it, and every ManagedWorkload, in place: deleting the CRD would delete them all. Argo CD ignores that policy, so the CRD also carries `argocd.argoproj.io/sync-options: Delete=false`, and deleting or pruning the Application leaves it too. Set `crds.install: false` only if you manage the CRD yourself, for example from `config/crd` in the repository.
 
 ## Operator
 

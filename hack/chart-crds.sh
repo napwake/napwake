@@ -6,6 +6,8 @@
 # schema in place and the API server would prune every new field. As
 # templates they're upgraded with the release, guarded by crds.install, and
 # kept on uninstall, since deleting a CRD deletes every ManagedWorkload.
+# Argo CD renders the chart with helm template and prunes what it rendered,
+# ignoring Helm's resource policy, so the CRD tells it not to delete it too.
 set -euo pipefail
 
 src=${1:-config/crd/bases}
@@ -35,6 +37,7 @@ for crd in "$src"/*.yaml; do
       }
       /^  annotations:$/ && !annotated {
         print "    helm.sh/resource-policy: keep"
+        print "    argocd.argoproj.io/sync-options: Delete=false"
         annotated = 1
       }
     ' "$crd"
