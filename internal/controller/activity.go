@@ -397,7 +397,7 @@ func (r *Reconciler) reconcileIdleClock(ctx context.Context, workload *v1alpha1.
 	if workload.Status.Phase == v1alpha1.PhaseRunning {
 		var predicted float64
 		var hour time.Time
-		if vetoed, predicted, hour = r.forecastVeto(ctx, workload, engine); vetoed {
+		if vetoed, predicted, hour = r.forecastVeto(workload, engine); vetoed {
 			return r.reportIdleVetoed(ctx, workload, predicted, hour)
 		}
 	}
@@ -484,7 +484,7 @@ func (r *Reconciler) clearIdleVeto(workload *v1alpha1.ManagedWorkload) {
 // covers every hour autoResume would wake the workload for, so a workload
 // is never paused only to be woken straight back. It reports the busiest
 // of the two hours, and when it begins.
-func (r *Reconciler) forecastVeto(_ context.Context, workload *v1alpha1.ManagedWorkload, engine forecaster) (vetoed bool, predicted float64, hour time.Time) {
+func (r *Reconciler) forecastVeto(workload *v1alpha1.ManagedWorkload, engine forecaster) (vetoed bool, predicted float64, hour time.Time) {
 	if engine == nil || engine.GetPhase() < forecast.DailyActive {
 		return false, 0, time.Time{}
 	}
