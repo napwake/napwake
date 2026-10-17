@@ -30,6 +30,7 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/meta"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	v1alpha1 "github.com/okedeji/hybernate/api/v1alpha1"
@@ -201,6 +202,9 @@ func enableWorkload(
 	}
 	ref := fmt.Sprintf("%s/%s", kindOf(obj), obj.GetName())
 	mw := managed.byTarget[workloadKey(obj)]
+	if why := wontPause(mw); why != "" {
+		return fmt.Errorf("%s isn't changed: Hybernate never pauses it, as %s", ref, why)
+	}
 	if mw != nil && mw.Labels[v1alpha1.LabelFromLabel] != v1alpha1.True {
 		return enableHandWritten(ctx, c, mw, ref, opts, out)
 	}
@@ -286,6 +290,27 @@ func endHandWrittenDryRun(ctx context.Context, c client.Client, mw *v1alpha1.Man
 	return nil
 }
 
+// wontPause says why the operator never pauses what the ManagedWorkload
+// manages, from the conditions it set, and "" when it may. Those cover what
+// enable can't see from here, such as protectedNamespaces patterns and
+// Hybernate's own namespace.
+func wontPause(mw *v1alpha1.ManagedWorkload) string {
+	if mw == nil {
+		return ""
+	}
+	conditions := mw.Status.Conditions
+	if c := meta.FindStatusCondition(conditions, "Protected"); c != nil && c.Status == metav1.ConditionTrue {
+		return "it's protected: " + c.Message
+	}
+	if c := meta.FindStatusCondition(conditions, "TargetAvailable"); c != nil && c.Reason == "TargetIgnored" {
+		return "it's labelled " + v1alpha1.LabelIgnore
+	}
+	if meta.IsStatusConditionTrue(conditions, "DuplicateTarget") {
+		return "another ManagedWorkload manages it: " + mw.Name + " is the duplicate"
+	}
+	return ""
+}
+
 // checkProtected refuses a namespace the operator never manages anything
 // in. The operator's own namespace and protectedNamespaces patterns aren't
 // known here; a workload they protect has no ManagedWorkload, which enable
@@ -349,12 +374,20 @@ type dryRunSet struct {
 	// notPickedUp are labelled workloads the operator hasn't made a
 	// ManagedWorkload for, which ending dry-run would do nothing for.
 	notPickedUp []string
+	// wontPause are workloads the operator never pauses, with why.
+	wontPause []string
 }
 
 func dryRunIn(workloads []client.Object, managed managedWorkloads, ns *corev1.Namespace) dryRunSet {
 	var found dryRunSet
 	for _, obj := range workloads {
 		mw := managed.byTarget[workloadKey(obj)]
+		if why := wontPause(mw); why != "" {
+			if mw.Spec.DryRun || mw.Labels[v1alpha1.LabelFromLabel] == v1alpha1.True && inDryRun(mw, obj, ns) {
+				found.wontPause = append(found.wontPause, fmt.Sprintf("%s/%s, as %s", kindOf(obj), obj.GetName(), why))
+			}
+			continue
+		}
 		if mw != nil && mw.Labels[v1alpha1.LabelFromLabel] != v1alpha1.True {
 			if mw.Spec.DryRun {
 				found.handWritten = append(found.handWritten, mw)
@@ -417,13 +450,9 @@ func enableNamespace(ctx context.Context, c client.Client, namespace string, opt
 	}
 	nsValue, nsSet := ns.GetAnnotations()[v1alpha1.AnnotationDryRun]
 	nsLive := nsSet && nsValue == dryRunOff
-	if len(found.labelled) == 0 && len(found.handWritten) == 0 && len(found.notPickedUp) > 0 {
-		return reportNotPickedUp(out, namespace, found.notPickedUp)
-	}
-	if len(found.labelled) == 0 && len(found.handWritten) == 0 && (!nsSet || nsLive) {
-		_, _ = fmt.Fprintf(out, "Nothing in %s is in dry-run; Hybernate already pauses its workloads while idle\n",
-			namespace)
-		return nil
+	reportWontPause(out, found.wontPause)
+	if done, err := nothingToEnd(out, namespace, found, nsSet && !nsLive); done {
+		return err
 	}
 
 	e := &namespaceEnabler{c: c, opts: opts}
@@ -465,6 +494,38 @@ func enableNamespace(ctx context.Context, c client.Client, namespace string, opt
 		errs = append(errs, reportNotPickedUp(out, namespace, found.notPickedUp))
 	}
 	return errors.Join(errs...)
+}
+
+// nothingToEnd reports a namespace where enable has nothing to change, and
+// true then: nothing in it is in dry-run, the namespace's own annotation
+// included, or only what Hybernate hasn't picked up or never pauses is.
+func nothingToEnd(out io.Writer, namespace string, found dryRunSet, nsInDryRun bool) (bool, error) {
+	if len(found.labelled) > 0 || len(found.handWritten) > 0 {
+		return false, nil
+	}
+	if len(found.notPickedUp) > 0 {
+		return true, reportNotPickedUp(out, namespace, found.notPickedUp)
+	}
+	if nsInDryRun {
+		return false, nil
+	}
+	if len(found.wontPause) == 0 {
+		_, _ = fmt.Fprintf(out, "Nothing in %s is in dry-run; Hybernate already pauses its workloads while idle\n",
+			namespace)
+	}
+	return true, nil
+}
+
+// reportWontPause lists the workloads in dry-run that ending it would do
+// nothing for, since the operator never pauses them.
+func reportWontPause(out io.Writer, refs []string) {
+	if len(refs) == 0 {
+		return
+	}
+	_, _ = fmt.Fprintln(out, "Not changed, because Hybernate never pauses them:")
+	for _, ref := range refs {
+		_, _ = fmt.Fprintf(out, "  %s\n", ref)
+	}
 }
 
 // reportNotPickedUp lists the labelled workloads the operator hasn't made a

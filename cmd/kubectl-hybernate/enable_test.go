@@ -164,6 +164,75 @@ func TestEnable_HandWritten(t *testing.T) {
 	assert.Equal(t, "deployment/api: dry-run ended, Hybernate will pause it while idle\n", out.String())
 }
 
+// A ManagedWorkload the operator never pauses, by what it reports, is left
+// alone, whether written by hand or made from the label: its protection
+// may come from protectedNamespaces patterns enable can't see.
+func TestEnable_WontPause(t *testing.T) {
+	tests := []struct {
+		name      string
+		condition metav1.Condition
+		fromLabel bool
+		wantErr   string
+	}{
+		{name: "protected by a pattern", wantErr: "it's protected: namespace dev matches prod-*",
+			condition: metav1.Condition{Type: "Protected", Status: metav1.ConditionTrue, Reason: "ProtectedNamespace",
+				Message: "namespace dev matches prod-*"}},
+		{name: "an ignored target", wantErr: "labelled hybernate.io/ignore",
+			condition: metav1.Condition{Type: "TargetAvailable", Status: metav1.ConditionFalse, Reason: "TargetIgnored"}},
+		{name: "a duplicate", wantErr: "another ManagedWorkload manages it",
+			condition: metav1.Condition{Type: "DuplicateTarget", Status: metav1.ConditionTrue, Reason: "DuplicateTarget"}},
+		{name: "made from the label", fromLabel: true, wantErr: "it's protected",
+			condition: metav1.Condition{Type: "Protected", Status: metav1.ConditionTrue, Reason: "HybernateComponent"}},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			mw := &v1alpha1.ManagedWorkload{
+				ObjectMeta: metav1.ObjectMeta{Name: "api-mw", Namespace: "dev"},
+				Spec: v1alpha1.ManagedWorkloadSpec{
+					Target: v1alpha1.WorkloadRef{Kind: v1alpha1.TargetKindDeployment, Name: "api"}, DryRun: true},
+				Status: v1alpha1.ManagedWorkloadStatus{Conditions: []metav1.Condition{tt.condition}},
+			}
+			labels := map[string]string(nil)
+			if tt.fromLabel {
+				mw.Labels = map[string]string{v1alpha1.LabelFromLabel: v1alpha1.True}
+				labels = map[string]string{v1alpha1.LabelManaged: "true"}
+			}
+			c := fake.NewClientBuilder().WithScheme(scheme).
+				WithObjects(enableNamespaceObj(nil, nil), enableDeployment("api", labels, measuring(nil)), mw).Build()
+
+			err := enableWorkload(context.Background(), c, "dev", "api", enableOptions{}, &bytes.Buffer{})
+
+			assert.ErrorContains(t, err, tt.wantErr)
+			var got v1alpha1.ManagedWorkload
+			require.NoError(t, c.Get(context.Background(), client.ObjectKeyFromObject(mw), &got))
+			assert.True(t, got.Spec.DryRun, "nothing changed")
+		})
+	}
+}
+
+// enable --all leaves out, and lists, what the operator never pauses.
+func TestEnable_AllLeavesOutWhatWontPause(t *testing.T) {
+	mw := &v1alpha1.ManagedWorkload{
+		ObjectMeta: metav1.ObjectMeta{Name: "api-mw", Namespace: "dev"},
+		Spec: v1alpha1.ManagedWorkloadSpec{
+			Target: v1alpha1.WorkloadRef{Kind: v1alpha1.TargetKindDeployment, Name: "api"}, DryRun: true},
+		Status: v1alpha1.ManagedWorkloadStatus{Conditions: []metav1.Condition{{Type: "Protected",
+			Status: metav1.ConditionTrue, Reason: "ProtectedNamespace", Message: "namespace dev matches dev*"}}},
+	}
+	c := fake.NewClientBuilder().WithScheme(scheme).
+		WithObjects(enableNamespaceObj(nil, nil), enableDeployment("api", nil, nil), mw).Build()
+	var out bytes.Buffer
+
+	require.NoError(t, enableNamespace(context.Background(), c, "dev", enableOptions{}, &out))
+
+	var got v1alpha1.ManagedWorkload
+	require.NoError(t, c.Get(context.Background(), client.ObjectKeyFromObject(mw), &got))
+	assert.True(t, got.Spec.DryRun)
+	assert.NotContains(t, out.String(), "Nothing in dev is in dry-run")
+	assert.Contains(t, out.String(), "Not changed, because Hybernate never pauses them:\n"+
+		"  deployment/api, as it's protected: namespace dev matches dev*\n")
+}
+
 func TestEnable_NotOptedIn(t *testing.T) {
 	tests := []struct {
 		name    string
