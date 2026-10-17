@@ -50,6 +50,21 @@ type demandExpected struct{ msg string }
 func (e demandExpected) Error() string { return e.msg }
 func (e demandExpected) Unwrap() error { return errNotPaused }
 
+// heldAwake is a pause Hybernate would refuse, since the active-until
+// annotation on the ManagedWorkload, as wake --for sets, holds the workload
+// awake. The person asking can clear it.
+type heldAwake struct {
+	ref   string
+	until time.Time
+}
+
+func (e heldAwake) Error() string {
+	return fmt.Sprintf("%s %s: the %s annotation on its ManagedWorkload keeps it awake until %s",
+		e.ref, errNotPaused, v1alpha1.AnnotationActiveUntil, e.until.UTC().Format(time.RFC3339))
+}
+
+func (e heldAwake) Unwrap() error { return errNotPaused }
+
 const gitOpsGuide = "https://okedeji.io/hybernate/guides/gitops/"
 
 // What the operator's PauseRequest condition says came of a request.
@@ -70,6 +85,9 @@ type pauseOptions struct {
 	// overrideForecast pauses even when the forecast expects demand
 	// within the hour, without asking.
 	overrideForecast bool
+	// clearHold removes an active-until hold on the ManagedWorkload, as
+	// wake --for sets, without asking.
+	clearHold bool
 	// confirm asks the person running the command a yes-or-no question,
 	// or is nil when there's no one to ask.
 	confirm func(question string) (bool, error)
@@ -98,6 +116,10 @@ When the forecast expects the workload to be busy within the hour, Hybernate
 says when, and pause asks whether to pause it anyway, since it would likely
 be woken straight back. --yes pauses it without asking, as a script needs.
 
+When an active-until annotation on its ManagedWorkload holds it awake, as
+wake --for sets, pause asks whether to clear it and pause now; --clear-hold
+clears it without asking.
+
 NAME is the workload, as status shows it, such as api or statefulset/postgres,
 or its ManagedWorkload's name.
 
@@ -107,6 +129,9 @@ Examples:
 
   # Pause it even if the forecast expects it to be busy soon
   kubectl hybernate pause api -n preview-42 --yes
+
+  # Pause it now, ending a hold kubectl hybernate wake --for set
+  kubectl hybernate pause api -n preview-42 --clear-hold
 
   # Return as soon as the pause is requested
   kubectl hybernate pause api -n preview-42 --wait=false`,
@@ -140,6 +165,8 @@ Examples:
 	cmd.Flags().BoolVar(&opts.wait, "wait", true, "Wait until the workload is Paused, or Hybernate says why it isn't")
 	cmd.Flags().BoolVarP(&opts.overrideForecast, "yes", "y", false,
 		"Pause it even if the forecast expects it to be busy within the hour, without asking")
+	cmd.Flags().BoolVar(&opts.clearHold, "clear-hold", false,
+		"Clear an active-until hold on its ManagedWorkload, as wake --for sets, without asking")
 	addTimeoutFlag(cmd, &opts.timeout, "How long to wait; it starts again after you answer a question")
 	return cmd
 }
@@ -193,9 +220,18 @@ func pause(s clusterSteps, key client.ObjectKey, opts pauseOptions, out, errOut 
 			return waitForPause(ctx, c, key, ref, "", w.Status.Phase, opts.now(), opts, out)
 		}
 		warnIfGitOpsUndoes(ctx, c, w, ref, errOut)
-		return requestAndWait(ctx, c, w, ref, opts.overrideForecast, opts, out)
+		held := activeUntil(w.Annotations).After(opts.now())
+		if held && !opts.clearHold {
+			return heldAwake{ref: ref, until: activeUntil(w.Annotations)}
+		}
+		return requestAndWait(ctx, c, w, ref,
+			pauseRequest{overrideForecast: opts.overrideForecast, clearHold: held}, opts, out)
 	})
 
+	var held heldAwake
+	if errors.As(err, &held) {
+		err = clearHoldAndPause(s, key, held, opts, out)
+	}
 	var declined demandExpected
 	if !errors.As(err, &declined) {
 		return err
@@ -216,18 +252,51 @@ func pause(s clusterSteps, key client.ObjectKey, opts pauseOptions, out, errOut 
 		if err := c.Get(ctx, key, &w); err != nil {
 			return fmt.Errorf("getting ManagedWorkload %s: %w", key, err)
 		}
-		return requestAndWait(ctx, c, &w, ref, true, opts, out)
+		return requestAndWait(ctx, c, &w, ref, pauseRequest{overrideForecast: true}, opts, out)
 	})
+}
+
+// clearHoldAndPause asks whether to clear the hold and pause now, and does
+// if the answer is yes. A no isn't a failure.
+func clearHoldAndPause(s clusterSteps, key client.ObjectKey, held heldAwake, opts pauseOptions, out io.Writer) error {
+	if opts.confirm == nil {
+		return fmt.Errorf("%w; pass --clear-hold to clear it and pause now", held)
+	}
+	yes, err := opts.confirm(held.Error() + "\nClear it and pause now? [y/N] ")
+	if err != nil {
+		return fmt.Errorf("asking whether to clear the hold: %w", err)
+	}
+	if !yes {
+		_, _ = fmt.Fprintf(out, "left %s running\n", held.ref)
+		return nil
+	}
+	return s.run(func(ctx context.Context, c client.Client) error {
+		var w v1alpha1.ManagedWorkload
+		if err := c.Get(ctx, key, &w); err != nil {
+			return fmt.Errorf("getting ManagedWorkload %s: %w", key, err)
+		}
+		return requestAndWait(ctx, c, &w, held.ref,
+			pauseRequest{overrideForecast: opts.overrideForecast, clearHold: true}, opts, out)
+	})
+}
+
+// pauseRequest is what a request to pause asks besides the pause.
+type pauseRequest struct {
+	overrideForecast bool
+	clearHold        bool
 }
 
 // requestAndWait asks Hybernate to pause the workload, says what that does
 // from the state it's in, and, if asked, waits for its answer.
 func requestAndWait(ctx context.Context, c client.Client, w *v1alpha1.ManagedWorkload, ref string,
-	overrideForecast bool, opts pauseOptions, out io.Writer) error {
+	req pauseRequest, opts pauseOptions, out io.Writer) error {
 	start := opts.now()
-	token, err := requestPause(ctx, c, w, ref, overrideForecast, opts.now)
+	token, err := requestPause(ctx, c, w, ref, req, opts.now)
 	if err != nil {
 		return err
+	}
+	if req.clearHold {
+		_, _ = fmt.Fprintf(out, "cleared the %s hold on %s\n", v1alpha1.AnnotationActiveUntil, ref)
 	}
 	_, _ = fmt.Fprintf(out, "%s\n", pauseMessage(ref, w, opts.wait))
 	if !opts.wait {
@@ -241,17 +310,20 @@ func requestAndWait(ctx context.Context, c client.Client, w *v1alpha1.ManagedWor
 // whether it overrides the forecast, so an override doesn't outlive the
 // request it was asked with.
 func requestPause(ctx context.Context, c client.Client, w *v1alpha1.ManagedWorkload, ref string,
-	overrideForecast bool, now func() time.Time) (string, error) {
+	req pauseRequest, now func() time.Time) (string, error) {
 	token := now().UTC().Format(time.RFC3339Nano)
 	patch := client.MergeFrom(w.DeepCopy())
 	if w.Annotations == nil {
 		w.Annotations = map[string]string{}
 	}
 	w.Annotations[v1alpha1.AnnotationPauseRequested] = token
-	if overrideForecast {
+	if req.overrideForecast {
 		w.Annotations[v1alpha1.AnnotationPauseOverridesForecast] = v1alpha1.True
 	} else {
 		delete(w.Annotations, v1alpha1.AnnotationPauseOverridesForecast)
+	}
+	if req.clearHold {
+		delete(w.Annotations, v1alpha1.AnnotationActiveUntil)
 	}
 	if err := c.Patch(ctx, w, patch); err != nil {
 		return "", fmt.Errorf("requesting a pause of %s: %w", ref, err)

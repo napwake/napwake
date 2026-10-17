@@ -302,7 +302,7 @@ What it says depends on the phase:
 | `Paused` | Already paused; `pause` returns at once |
 | dry-run | Never paused: Hybernate counts a would-be pause, and `pause` says so |
 
-Hybernate pauses it by the same rules as an idle pause, so `pause` exits 1 with Hybernate's reason when it won't: workloads that are awake depend on it, a `hybernate.io/active-until` annotation holds it awake, a `dependsOn` cycle runs through it, its namespace is protected, or the workload doesn't exist, is labelled `hybernate.io/ignore` or is managed by another ManagedWorkload. A workload scaled to zero outside Hybernate is off already, which `pause` says, exiting 0. Asking does override the hour Hybernate waits after a GitOps tool undid its last pause.
+Hybernate pauses it by the same rules as an idle pause, so `pause` exits 1 with Hybernate's reason when it won't: workloads that are awake depend on it, a `hybernate.io/active-until` annotation on the workload holds it awake, a `dependsOn` cycle runs through it, its namespace is protected, or the workload doesn't exist, is labelled `hybernate.io/ignore` or is managed by another ManagedWorkload. A workload scaled to zero outside Hybernate is off already, which `pause` says, exiting 0. Asking does override the hour Hybernate waits after a GitOps tool undid its last pause.
 
 When a confident forecast expects the workload to be busy within the hour, Hybernate declines the pause and says when, since it would likely be woken straight back, and `pause` asks:
 
@@ -313,6 +313,15 @@ Pause it anyway? [y/N]
 
 Answering `y` asks again overriding the forecast, and it pauses; anything else leaves it running, exiting 0. The question waits for you as long as you take: `--timeout` counts only the time spent on the cluster, and starts again after your answer. `--yes` overrides the forecast from the start, without asking. With no terminal to ask on, such as in a script, `pause` exits 1 with the reason and says to pass `--yes`.
 
+When a `hybernate.io/active-until` annotation on the ManagedWorkload holds it awake, as `wake --for` sets, Hybernate would refuse the pause, so `pause` asks first:
+
+```
+preview-42/api wasn't paused: the hybernate.io/active-until annotation on its ManagedWorkload keeps it awake until 2026-10-17T20:00:00Z
+Clear it and pause now? [y/N]
+```
+
+Answering `y` removes the annotation and pauses it; anything else leaves it running, exiting 0. `--clear-hold` clears it without asking; with no terminal to ask on and without `--clear-hold`, `pause` exits 1 and says to pass it. `--yes` doesn't clear a hold, so a nightly script that pauses with `--yes` doesn't end one someone set for a demo.
+
 When Argo CD or Flux last set the workload's replicas, `pause` warns before asking, with the one-time fix: the tool sets them from Git again on its next sync, which undoes the pause. See [Argo CD and Flux](../guides/gitops.md).
 
 If the workload isn't `Paused`, and Hybernate hasn't said why, within `--timeout`, `pause` exits 1 with its phase and the `kubectl describe` command that says why.
@@ -322,6 +331,7 @@ If the workload isn't `Paused`, and Hybernate hasn't said why, within `--timeout
 | `--namespace` | `-n` | kubeconfig context's | Namespace of the workload |
 | `--wait` | | `true` | Wait until the workload is Paused, or Hybernate says why it isn't |
 | `--yes` | `-y` | `false` | Pause it even if the forecast expects it to be busy within the hour, without asking |
+| `--clear-hold` | | `false` | Clear a `hybernate.io/active-until` hold on its ManagedWorkload, as `wake --for` sets, without asking |
 | `--timeout` | | `5m` | How long to wait, cluster calls included; it starts again after you answer a question |
 
 Your user needs `get`, `list` and `patch` on `managedworkloads` in the namespace, and `get` on the workload for the GitOps warning, which is left out without it.
