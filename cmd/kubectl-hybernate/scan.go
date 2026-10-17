@@ -164,6 +164,12 @@ Examples:
 			if opts.timeout <= 0 {
 				return errors.New("--timeout must be more than zero")
 			}
+			if err := checkPrice("cpu-price", opts.cpuPrice); err != nil {
+				return err
+			}
+			if err := checkPrice("memory-price", opts.memoryPrice); err != nil {
+				return err
+			}
 			prom, err := prometheusFrom(opts.prometheus)
 			if err != nil {
 				return err
@@ -193,7 +199,8 @@ Examples:
 	cmd.Flags().StringSliceVar(&opts.exclude, "exclude-namespaces", discovery.SystemNamespaces, "Namespaces to skip")
 	addOutputFlag(cmd, &opts.output)
 	cmd.Flags().IntVar(&opts.limit, "limit", 25,
-		"Workloads to list in the table, idle first, then by what pausing could save (0 for all)")
+		"Workloads to list in the table, idle first, then paused, then active, each by what pausing could save "+
+			"(0 for all)")
 	cmd.Flags().IntVar(&opts.cpuThreshold, "cpu-threshold", defaultCPUThreshold,
 		"CPU use, as a percentage of requests from 1 to 100, at which a workload counts as active; managed workloads "+
 			"use their own")
@@ -201,7 +208,7 @@ Examples:
 	cmd.Flags().Float64Var(&opts.memoryPrice, "memory-price", opts.memoryPrice,
 		"Your price per GiB-hour of memory, in dollars")
 	cmd.Flags().StringVar(&opts.window, "window", opts.window,
-		"How much Prometheus history to replay, such as 7d or 36h; 0 judges from CPU right now only")
+		"How much Prometheus history to replay, such as 7d or 36h, up to 366d; 0 judges from CPU right now only")
 	cmd.Flags().DurationVar(&opts.idleAfter, "idle-after", opts.idleAfter,
 		"How long without activity makes a workload idle, as Hybernate's idleAfter; managed workloads use their own")
 	cmd.Flags().DurationVar(&opts.timeout, "timeout", opts.timeout,
@@ -358,13 +365,22 @@ func incompleteError(result scanResult) error {
 	return fmt.Errorf("the scan of %s is incomplete: %s", result.Cluster, strings.Join(why, "; "))
 }
 
+// maxWindowDays bounds --window at a year, longer than any Prometheus
+// retention a replay is worth reading, and far short of the days that would
+// overflow a time.Duration.
+const maxWindowDays = 366
+
 // parseWindow reads a duration that may be in days, which
 // time.ParseDuration doesn't know.
 func parseWindow(s string) (time.Duration, error) {
+	tooLong := fmt.Errorf("--window %q is longer than %dd", s, maxWindowDays)
 	if days, ok := strings.CutSuffix(s, "d"); ok {
 		n, err := strconv.Atoi(days)
 		if err != nil || n < 0 {
 			return 0, fmt.Errorf("--window %q isn't a number of days, such as 7d", s)
+		}
+		if n > maxWindowDays {
+			return 0, tooLong
 		}
 		return time.Duration(n) * 24 * time.Hour, nil
 	}
@@ -372,7 +388,18 @@ func parseWindow(s string) (time.Duration, error) {
 	if err != nil || d < 0 {
 		return 0, fmt.Errorf("--window %q isn't a duration, such as 7d or 36h", s)
 	}
+	if d > maxWindowDays*24*time.Hour {
+		return 0, tooLong
+	}
 	return d, nil
+}
+
+// checkPrice rejects a price no cost can be worked out from.
+func checkPrice(flag string, price float64) error {
+	if !(price >= 0) || math.IsInf(price, 0) {
+		return fmt.Errorf("--%s must be a number of dollars, zero or more", flag)
+	}
+	return nil
 }
 
 func scanCluster(ctx context.Context, window time.Duration, prom prometheusSetup, opts scanOptions) (

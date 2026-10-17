@@ -176,9 +176,9 @@ kubectl hybernate scan --open=false
 | `--output` | `-o` | `table` | `table`, `json`, or `yaml` |
 | `--limit` | | `25` | Workloads listed in the table, idle first, then paused, then active, each by what pausing could save; `0` for all. Also caps the dependency list. JSON and YAML list everything |
 | `--cpu-threshold` | | `10` | CPU use, as a percentage of requests from 1 to 100, at which a workload counts as active, now and in the replay. Workloads Hybernate manages use their own setting |
-| `--cpu-price` | | `0.031` | Your price per vCPU-hour, in dollars |
-| `--memory-price` | | `0.004` | Your price per GiB-hour of memory, in dollars |
-| `--window` | | `7d` | How much Prometheus history to replay, such as `7d` or `36h`; `0` judges from CPU right now only |
+| `--cpu-price` | | `0.031` | Your price per vCPU-hour, in dollars, zero or more |
+| `--memory-price` | | `0.004` | Your price per GiB-hour of memory, in dollars, zero or more |
+| `--window` | | `7d` | How much Prometheus history to replay, such as `7d` or `36h`, up to `366d`; `0` judges from CPU right now only |
 | `--idle-after` | | `1h` | How long without activity makes a workload idle, now and in the replay, as Hybernate's `idleAfter`. Workloads Hybernate manages use their own setting |
 | `--prometheus-url` | | found in the cluster | Prometheus API to read history from, such as Thanos or Mimir |
 | `--prometheus-selector` | | | Label matchers added to every history query, such as `'cluster="prod"'`, for a Prometheus that holds more than one cluster. Values are double-quoted, as in PromQL |

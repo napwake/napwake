@@ -468,6 +468,11 @@ func TestParseWindow(t *testing.T) {
 		{in: "1w", wantErr: true},
 		{in: "-2d", wantErr: true},
 		{in: "soon", wantErr: true},
+		{in: "366d", want: 366 * 24 * time.Hour},
+		{in: "367d", wantErr: true},
+		{in: "200000d", wantErr: true},
+		{in: "106752d", wantErr: true},
+		{in: "9000h", wantErr: true},
 	}
 	for _, tt := range tests {
 		t.Run(tt.in, func(t *testing.T) {
@@ -480,6 +485,32 @@ func TestParseWindow(t *testing.T) {
 			assert.Equal(t, tt.want, got)
 		})
 	}
+}
+
+// A price no cost can be worked out from is refused before anything is
+// read, rather than pricing every saving below zero.
+func TestCLI_ScanRejectsPrices(t *testing.T) {
+	for _, args := range [][]string{
+		{"--cpu-price", "-0.01"},
+		{"--memory-price", "-1"},
+		{"--cpu-price", "NaN"},
+		{"--memory-price", "+Inf"},
+	} {
+		t.Run(strings.Join(args, " "), func(t *testing.T) {
+			_, err := runCLI(t, newStatusClient(t, interceptor.Funcs{}), append([]string{"scan", "--window", "0",
+				"-o", "json"}, args...)...)
+
+			require.Error(t, err)
+			assert.Contains(t, err.Error(), "must be a number of dollars, zero or more")
+		})
+	}
+}
+
+// The help states the table's real order: idle, then paused, then active.
+func TestScanHelp_Limit(t *testing.T) {
+	limit := scanCmd(&kubeFlags{}).Flags().Lookup("limit")
+	require.NotNil(t, limit)
+	assert.Contains(t, limit.Usage, "idle first, then paused, then active")
 }
 
 func TestPricesFor(t *testing.T) {
