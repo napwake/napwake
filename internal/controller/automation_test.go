@@ -25,6 +25,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/prometheus/client_golang/prometheus/testutil"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"k8s.io/apimachinery/pkg/api/meta"
@@ -519,6 +520,26 @@ func pausedForecastWorkload() *v1alpha1.ManagedWorkload {
 // paused is an hour nobody asked for it, and an hour a request woke it in
 // is busy, however little it went on to use: twice the activity threshold,
 // 2 x 10%, of the CPU requested.
+// A paused workload has gone without activity since before its pause, and
+// the gauge keeps counting, rather than standing at the value it had when
+// the workload paused.
+func TestPausedWorkload_IdleSecondsKeepCounting(t *testing.T) {
+	workload := pausedForecastWorkload()
+	workload.Name = "idle-gauge-app"
+	workload.Status.Activity = &v1alpha1.ActivityStatus{LastActivityTime: metav1.NewTime(fixedTime.Add(-2 * time.Hour))}
+	r := newAutomationReconciler(t, workload, &stubForecaster{}, automationOpts{})
+	t.Cleanup(func() { opmetrics.DeleteWorkload(workload.Namespace, workload.Name) })
+	gauge := opmetrics.IdleSeconds.WithLabelValues(workload.Namespace, workload.Name)
+
+	for _, now := range []time.Time{fixedTime, fixedTime.Add(5 * time.Minute)} {
+		r.clock = func() time.Time { return now }
+		_, err := r.reconcileAutomation(context.Background(), workload, nil)
+		require.NoError(t, err)
+
+		assert.InDelta(t, now.Sub(fixedTime.Add(-2*time.Hour)).Seconds(), testutil.ToFloat64(gauge), 0.001)
+	}
+}
+
 func TestPausedHour_DemandBehindTheDoorman(t *testing.T) {
 	tests := []struct {
 		name   string

@@ -209,9 +209,20 @@ func (r *Reconciler) observeActivity(ctx context.Context, workload *v1alpha1.Man
 	pauseAt := metav1.NewTime(status.LastActivityTime.Add(idleAfterFor(workload)))
 	status.PauseAt = &pauseAt
 	r.activityMemo.put(workload.UID, *status.DeepCopy())
-	opmetrics.IdleSeconds.WithLabelValues(workload.Namespace, workload.Name).
-		Set(now.Sub(status.LastActivityTime.Time).Seconds())
+	recordIdleSeconds(workload, now)
 	return obs
+}
+
+// recordIdleSeconds publishes how long the workload has gone without
+// activity. A paused workload's clock stands still at its last activity, so
+// the time keeps growing while it's paused, as the gauge says it does.
+func recordIdleSeconds(workload *v1alpha1.ManagedWorkload, now time.Time) {
+	a := workload.Status.Activity
+	if a == nil {
+		return
+	}
+	opmetrics.IdleSeconds.WithLabelValues(workload.Namespace, workload.Name).
+		Set(now.Sub(a.LastActivityTime.Time).Seconds())
 }
 
 // activityAnnotations parses the activity annotations on obj. A last-activity

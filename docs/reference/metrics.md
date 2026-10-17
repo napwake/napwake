@@ -32,7 +32,7 @@ These metrics help troubleshoot specific workload behavior.
 
 | Metric | Type | Labels | Description |
 |--------|------|--------|-------------|
-| `hybernate_idle_seconds` | Gauge | `namespace`, `workload` | Seconds since the workload's last activity |
+| `hybernate_idle_seconds` | Gauge | `namespace`, `workload` | Seconds since the workload's last activity. It keeps growing while the workload is paused, updated each time Hybernate checks it: every minute awake, every few minutes paused |
 | `hybernate_prediction_regime_changes_total` | Counter | `namespace`, `workload` | Regime changes detected |
 | `hybernate_dryrun_actions_total` | Counter | `action` | Actions that would have been taken in dry-run; `action` is `idle_pause`, or `requested_pause` for a pause asked for with `kubectl hybernate pause` |
 | `hybernate_target_unavailable_total` | Counter | `namespace`, `workload` | Target workload not found |
@@ -79,7 +79,7 @@ The `hybernate_prediction_phase` gauge uses numeric values:
 hybernate_prediction_confidence_percent{season="daily"} < 70
 
 # Workloads that will pause within 10 minutes (with the default 1h idleAfter)
-hybernate_idle_seconds > 3000
+hybernate_idle_seconds > 3000 and on (namespace, workload) hybernate_workload_phase{phase="Running"} == 1
 
 # How long a request to a paused workload waits for it to wake (p95)
 histogram_quantile(0.95, sum by (le) (rate(hybernate_doorman_wait_seconds_bucket{result="success"}[1h])))

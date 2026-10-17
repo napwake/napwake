@@ -297,6 +297,7 @@ func (r *Reconciler) utilization(ctx context.Context, workload *v1alpha1.Managed
 func (r *Reconciler) reconcileWake(ctx context.Context, workload *v1alpha1.ManagedWorkload, target client.Object) (*ctrl.Result, error) {
 	recheck := &ctrl.Result{RequeueAfter: r.pausedRecheck()}
 	r.clearIdleVeto(workload)
+	recordIdleSeconds(workload, r.now())
 	engine := r.forecastEngine(workload)
 	woken := r.wokenByActivity(workload, target)
 	r.seePausedDemand(ctx, workload, engine, woken)
