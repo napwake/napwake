@@ -28,7 +28,7 @@ WakeOnRequest=True   DoormanRouted   requests are held and wake the workload
 | Sends bytes: an HTTP request, a TLS handshake, a database protocol's first message | Held, and the workload wakes |
 | Connects and sends nothing for 3 seconds | Held, and the workload wakes: it's taken for a protocol where the server speaks first, such as MySQL |
 | Connects and closes without sending anything, like a TCP health check | Closed; nothing wakes |
-| An HTTP `GET` or `HEAD` whose `User-Agent` starts with `kube-probe/`, `Prometheus/`, `vm_promscrape`, `GrafanaAgent/`, `Alloy/`, `OpenTelemetry Collector`, `otelcol`, `Datadog Agent/`, `ELB-HealthChecker/`, `GoogleHC/` or `Envoy/HC` | Answered `503 Service Unavailable` with `Connection: close` while no pod is Ready; nothing wakes. Probes and scrapers would otherwise keep a workload awake forever. Once a pod is Ready they're passed through like any other request |
+| An HTTP `GET` or `HEAD` from a known probe, scraper or uptime monitor: one whose `User-Agent` starts with `kube-probe/`, `Prometheus/`, `Blackbox Exporter/`, `vm_promscrape`, `GrafanaAgent/`, `Alloy/`, `OpenTelemetry Collector`, `otelcol`, `Datadog Agent/`, `Datadog/Synthetics`, `ELB-HealthChecker/`, `Amazon-Route53-Health-Check-Service`, `GoogleHC/`, `GoogleStackdriverMonitoring-UptimeChecks`, `Envoy/HC`, `Mozilla/5.0+(compatible; UptimeRobot/`, `Pingdom.com_bot`, `NewRelicPinger/`, `Uptime-Kuma/` or `Gatus/` | Answered `503 Service Unavailable` with `Connection: close` while no pod is Ready; nothing wakes. Probes, scrapers and monitors would otherwise keep a workload awake forever. Once a pod is Ready they're passed through like any other request |
 | An HTTP `GET` or `HEAD` whose `User-Agent` starts with one you added with the Helm value `doorman.healthCheckUserAgents`, such as an in-house uptime monitor's | Answered `503` as above; nothing wakes |
 | Any other method from those agents, such as a Prometheus remote write or an Alertmanager notification `POST` | Held, and the workload wakes: it's data for the workload, not a check on it |
 | An HTTP request for a hidden file: a path with a part that starts with a dot, such as `/.env`, `/.git/config` or `/.aws/credentials`, except under `/.well-known/` | Answered `404 Not Found`; nothing wakes. Scanners probe every address on the internet for these, hunting for leaked secrets, and no app serves them to its users |
@@ -37,7 +37,7 @@ Your own health checkers and scrapers are recognised once you add their `User-Ag
 
 ```yaml
 doorman:
-  healthCheckUserAgents: ["MyCorpMonitor/", "uptime-kuma"]
+  healthCheckUserAgents: ["MyCorpMonitor/", "status-checker"]
 ```
 
 To keep the doorman off a port altogether, such as a metrics port something else scrapes, list it on the Service. Ports are named in the Service's `ports`, and the annotation takes either the name or the number:

@@ -110,21 +110,30 @@ func parseRequest(head []byte) (*http.Request, bool) {
 }
 
 // defaultHealthCheckAgents are the User-Agent prefixes of load balancer
-// health checks, kubelet probes and metrics scrapers. They reach a paused
-// workload's Service on a schedule, so a request from one never wakes it.
-// Options.HealthCheckAgents adds to them.
+// health checks, kubelet probes, metrics scrapers and uptime monitors. They
+// reach a paused workload's Service on a schedule, so a request from one
+// never wakes it. Options.HealthCheckAgents adds to them.
 var defaultHealthCheckAgents = []string{
 	"kube-probe/",
 	"Prometheus/",
+	"Blackbox Exporter/",
 	"vm_promscrape",
 	"GrafanaAgent/",
 	"Alloy/",
 	"OpenTelemetry Collector",
 	"otelcol",
 	"Datadog Agent/",
+	"Datadog/Synthetics",
 	"ELB-HealthChecker/",
+	"Amazon-Route53-Health-Check-Service",
 	"GoogleHC/",
+	"GoogleStackdriverMonitoring-UptimeChecks",
 	"Envoy/HC",
+	"Mozilla/5.0+(compatible; UptimeRobot/",
+	"Pingdom.com_bot",
+	"NewRelicPinger/",
+	"Uptime-Kuma/",
+	"Gatus/",
 }
 
 // isHealthCheck reports whether req comes from a health checker or scraper,

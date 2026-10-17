@@ -572,6 +572,7 @@ func TestServer_ProbesAndScrapesDoNotWake(t *testing.T) {
 		{name: "a kubelet probe", request: "GET /healthz HTTP/1.1\r\nHost: 10.0.0.1\r\nUser-Agent: kube-probe/1.31\r\n\r\n", want503: true},
 		{name: "a Prometheus scrape", request: "GET /metrics HTTP/1.1\r\nHost: 10.0.0.1\r\nUser-Agent: Prometheus/2.53.0\r\n\r\n", want503: true},
 		{name: "an ALB health check", request: "GET / HTTP/1.1\r\nHost: 10.0.0.1\r\nUser-Agent: ELB-HealthChecker/2.0\r\n\r\n", want503: true},
+		{name: "a blackbox exporter probe", request: "GET /health HTTP/1.1\r\nHost: api\r\nUser-Agent: Blackbox Exporter/0.25.0\r\n\r\n", want503: true},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
