@@ -178,11 +178,11 @@ type Server struct {
 	// failed to get one.
 	listenFailed map[int32]time.Time
 	conns        map[net.Conn]struct{}
-	wakeCalls map[types.NamespacedName]*wakeCall
-	stamped   map[types.NamespacedName]stampRecord
-	lastWarn  map[types.NamespacedName]time.Time
-	metered   map[types.NamespacedName]bool
-	closed    bool
+	wakeCalls    map[types.NamespacedName]*wakeCall
+	stamped      map[types.NamespacedName]stampRecord
+	lastWarn     map[types.NamespacedName]time.Time
+	metered      map[types.NamespacedName]bool
+	closed       bool
 
 	accepting sync.WaitGroup
 	handling  sync.WaitGroup
@@ -467,6 +467,22 @@ func (s *Server) syncRoutes(ctx, connCtx context.Context) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.forgetDeleted(existing)
+	routes, conflicts := s.resolve(claims, now)
+	s.reportConflicts(ctx, conflicts)
+	s.routes = routes
+
+	keep := map[serviceRef]bool{}
+	for _, rt := range routes {
+		keep[rt.backendKey().service] = true
+	}
+	s.backends.retain(keep)
+	return s.syncListeners(connCtx, now)
+}
+
+// resolve drains the routes claims no longer has, and returns the route to
+// serve on each port and the ports claimed more than once. s.mu must be
+// held.
+func (s *Server) resolve(claims map[int32][]route, now time.Time) (map[int32]route, map[int32][]route) {
 	for port, old := range s.routes {
 		if old.draining() {
 			continue
@@ -502,15 +518,12 @@ func (s *Server) syncRoutes(ctx, connCtx context.Context) error {
 			routes[port] = d
 		}
 	}
-	s.reportConflicts(ctx, conflicts)
-	s.routes = routes
+	return routes, conflicts
+}
 
-	keep := map[serviceRef]bool{}
-	for _, rt := range routes {
-		keep[rt.backendKey().service] = true
-	}
-	s.backends.retain(keep)
-
+// syncListeners matches the listeners to s.routes. s.mu must be held.
+func (s *Server) syncListeners(connCtx context.Context, now time.Time) error {
+	routes := s.routes
 	for port, l := range s.listeners {
 		if _, ok := routes[port]; !ok {
 			_ = l.Close() // stops accepting; held connections continue

@@ -1497,7 +1497,7 @@ func TestServer_LeavesAPendingWakeAlone(t *testing.T) {
 	require.NoError(t, s.stamp(context.Background(), route{workload: apiKey, service: "api"}, caller))
 
 	assert.Equal(t, pending, lastRequest(t, c))
-	assert.Equal(t, 0, eventCount(recorder, "WokenByRequest"))
+	assert.Equal(t, 0, wokenEvents(recorder))
 }
 
 // staleReads makes Get return a copy of the workload as it was when the
@@ -1513,10 +1513,10 @@ func staleReads(t *testing.T, c client.Client) interceptor.Funcs {
 	}}
 }
 
-func eventCount(r *events.FakeRecorder, reason string) int {
+func wokenEvents(r *events.FakeRecorder) int {
 	var n int
 	for len(r.Events) > 0 {
-		if strings.Contains(<-r.Events, reason) {
+		if strings.Contains(<-r.Events, "WokenByRequest") {
 			n++
 		}
 	}
@@ -1542,8 +1542,8 @@ func TestServer_ReplicasReportOneWake(t *testing.T) {
 		require.NoError(t, s.stamp(context.Background(), rt, caller))
 	}
 
-	assert.Equal(t, 1, eventCount(first, "WokenByRequest"))
-	assert.Equal(t, 0, eventCount(second, "WokenByRequest"))
+	assert.Equal(t, 1, wokenEvents(first))
+	assert.Equal(t, 0, wokenEvents(second))
 }
 
 // A conflict from some other change must not lose the wake.
@@ -1959,7 +1959,7 @@ func TestServer_AnnouncesAWakeDespiteAConflictFromAnotherWriter(t *testing.T) {
 	s := NewServer(stale, recorder, Options{})
 	require.NoError(t, s.stamp(context.Background(), route{workload: apiKey, service: "api"}, caller))
 
-	assert.Equal(t, 1, eventCount(recorder, "WokenByRequest"))
+	assert.Equal(t, 1, wokenEvents(recorder))
 	assert.NotEmpty(t, lastRequest(t, c))
 }
 
@@ -1981,7 +1981,7 @@ func TestServer_LeavesAnotherReplicasStamp(t *testing.T) {
 	require.NoError(t, second.stamp(context.Background(), rt, netip.MustParseAddr("10.244.0.18")))
 
 	assert.Equal(t, stamped, lastRequest(t, c))
-	assert.Zero(t, eventCount(recorder, "WokenByRequest"))
+	assert.Zero(t, wokenEvents(recorder))
 }
 
 func TestStartsMethod(t *testing.T) {

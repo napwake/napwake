@@ -36,10 +36,10 @@ import (
 // ServesTraffic reports whether any of a Service's EndpointSlices has a
 // Ready pod the doorman would pass a connection to. While one does, the
 // Service has somewhere to send traffic, so it isn't routed to the doorman.
-func ServesTraffic(slices []discoveryv1.EndpointSlice) bool {
-	for i := range slices {
-		if trusted(&slices[i]) {
-			for _, ep := range slices[i].Endpoints {
+func ServesTraffic(endpointSlices []discoveryv1.EndpointSlice) bool {
+	for i := range endpointSlices {
+		if trusted(&endpointSlices[i]) {
+			for _, ep := range endpointSlices[i].Endpoints {
 				if _, ok := readyAddress(ep); ok {
 					return true
 				}

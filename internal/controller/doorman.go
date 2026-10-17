@@ -643,13 +643,13 @@ func (rr routeReader) list(ctx context.Context) (portsInUse, error) {
 		if err := rr.reader.List(ctx, &workloads, client.InNamespace(ns)); err != nil {
 			return portsInUse{}, fmt.Errorf("listing managed workloads%s: %w", inNamespace(ns), err)
 		}
-		var slices discoveryv1.EndpointSliceList
-		if err := rr.reader.List(ctx, &slices, client.InNamespace(ns),
+		var sliceList discoveryv1.EndpointSliceList
+		if err := rr.reader.List(ctx, &sliceList, client.InNamespace(ns),
 			client.MatchingLabels{discoveryv1.LabelManagedBy: doorman.ManagedBy}); err != nil {
 			return portsInUse{}, fmt.Errorf("listing doorman slices%s: %w", inNamespace(ns), err)
 		}
 		inUse.workloads = append(inUse.workloads, workloads.Items...)
-		inUse.slices = append(inUse.slices, slices.Items...)
+		inUse.slices = append(inUse.slices, sliceList.Items...)
 	}
 	return inUse, nil
 }
