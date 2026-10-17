@@ -139,6 +139,12 @@ If the operator was removed while ManagedWorkloads were left, with `helm uninsta
 
     A workload scaled by KEDA was held at zero through its ScaledObject, named in the ManagedWorkload's `status.pause.scaledObject`. Remove that ScaledObject's `autoscaling.keda.sh/paused-replicas` annotation, or set it back to `status.pause.scaledObjectPausedReplicas` if that's set.
 
+    Each paused workload also carries the same record in its `hybernate.io/paused-from` annotation, which you can read when its ManagedWorkload is gone. Remove the annotation once the workload is restored:
+
+    ```bash
+    kubectl annotate deployments,statefulsets --all -A hybernate.io/paused-from-
+    ```
+
 2. Delete the EndpointSlices that route paused workloads' Services to the doorman, so the Services use their own pods again:
 
     ```bash
