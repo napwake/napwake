@@ -272,17 +272,22 @@ type cpuLoad struct {
 // containers request across its replicas. The activity threshold, the
 // forecast and every decision made on it share this one measure, so a
 // forecast that holds an idle workload awake would wake it once paused.
+// A target scaled to zero by something else is idle, though its pods may
+// report usage for the seconds they take to terminate.
 func (r *Reconciler) utilization(ctx context.Context, workload *v1alpha1.ManagedWorkload, usage float64) (float64, error) {
 	if usage == 0 {
+		return 0, nil
+	}
+	replicas, err := r.metrics.Replicas(ctx, workload)
+	if err != nil {
+		return 0, fmt.Errorf("reading replicas: %w", err)
+	}
+	if replicas == 0 {
 		return 0, nil
 	}
 	perReplica, err := r.metrics.CPURequestPerReplica(ctx, workload)
 	if err != nil {
 		return 0, fmt.Errorf("%w: %w", errNoCPURequests, err)
-	}
-	replicas, err := r.metrics.Replicas(ctx, workload)
-	if err != nil {
-		return 0, fmt.Errorf("reading replicas: %w", err)
 	}
 	requested := perReplica * float64(replicas)
 	if requested <= 0 {

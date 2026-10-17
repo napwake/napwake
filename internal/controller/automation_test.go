@@ -487,6 +487,26 @@ func TestAutomation_ZeroReplicasFeedsZeroDemand(t *testing.T) {
 	assert.Equal(t, metav1.ConditionTrue, cond.Status)
 }
 
+// Scaled to zero by something else, KEDA or kubectl scale, a target's pods
+// report usage for the seconds they take to terminate. That's an idle
+// target, not one whose containers request no CPU.
+func TestAutomation_ZeroReplicasStillTerminatingIsIdle(t *testing.T) {
+	workload := automationWorkload(v1alpha1.PhaseRunning)
+	engine := &stubForecaster{phase: forecast.Observing}
+	r := newAutomationReconciler(t, workload, engine, automationOpts{})
+	r.metrics = &zeroReplicaMetrics{stubMetrics{cpuMillis: 50}}
+
+	_, err := r.reconcileAutomation(context.Background(), workload, nil)
+	require.NoError(t, err)
+
+	cond := metricsCondition(workload)
+	require.NotNil(t, cond)
+	assert.Equal(t, metav1.ConditionTrue, cond.Status, cond.Message)
+	recorder, ok := r.Recorder.(*events.FakeRecorder)
+	require.True(t, ok)
+	assert.Empty(t, recorder.Events)
+}
+
 func TestAutomation_MetricsConditionRecovers(t *testing.T) {
 	workload := automationWorkload(v1alpha1.PhaseRunning)
 	engine := &stubForecaster{phase: forecast.Observing}
