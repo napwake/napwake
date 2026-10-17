@@ -304,10 +304,10 @@ func TestEnable_NamespaceNotManaged(t *testing.T) {
 		assert.Equal(t, "false", value)
 		value, _ = dryRunOf(t, c, "api")
 		assert.Equal(t, "true", value, "a workload Hybernate hasn't picked up isn't changed")
-		assert.Equal(t, `1 workload in dev: dry-run ended, Hybernate will pause it while idle
-Not changed, because Hybernate hasn't picked them up: no ManagedWorkload manages them. The operator may not be running, may not watch dev (its watchNamespaces), or may protect it:
-  deployment/api
-`, out.String())
+		assert.Equal(t, "1 workload in dev: dry-run ended, Hybernate will pause it while idle\n"+
+			"Not changed, because Hybernate hasn't picked them up: no ManagedWorkload manages them. The operator may "+
+			"not be running, may not watch dev (its watchNamespaces), or may protect it:\n"+
+			"  deployment/api\n", out.String())
 	})
 }
 
