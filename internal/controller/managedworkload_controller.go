@@ -434,13 +434,15 @@ func (r *Reconciler) handleResume(ctx context.Context, workload *v1alpha1.Manage
 		return nil, nil
 	}
 
-	waitedOnDependencies := meta.IsStatusConditionTrue(workload.Status.Conditions, conditionWaitingForDependencies)
+	before := meta.FindStatusCondition(workload.Status.Conditions, conditionWaitingForDependencies).DeepCopy()
 	if waiting, err := r.waitForDependencies(ctx, workload); waiting != nil || err != nil {
 		return waiting, err
 	}
 	// The wait for its own replicas is timed from when its dependencies
-	// were Ready, which only that condition's change records.
-	if waitedOnDependencies {
+	// were Ready, which only that condition's change records. Unwritten, the
+	// next reconcile would make it again, and the wait would start over.
+	after := meta.FindStatusCondition(workload.Status.Conditions, conditionWaitingForDependencies)
+	if conditionChanged(before, after) {
 		if err := r.Status().Update(ctx, workload); err != nil {
 			return nil, fmt.Errorf("recording its dependencies Ready: %w", err)
 		}
@@ -704,6 +706,15 @@ func (r *Reconciler) checkTarget(ctx context.Context, workload *v1alpha1.Managed
 func conditionFalseWith(workload *v1alpha1.ManagedWorkload, condType, reason string) bool {
 	c := meta.FindStatusCondition(workload.Status.Conditions, condType)
 	return c != nil && c.Status == metav1.ConditionFalse && c.Reason == reason
+}
+
+// conditionChanged reports whether a condition says something else after a
+// change than before it, including being set where there was none.
+func conditionChanged(before, after *metav1.Condition) bool {
+	if before == nil || after == nil {
+		return before != after
+	}
+	return before.Status != after.Status || before.Reason != after.Reason || before.Message != after.Message
 }
 
 func replicasFromTarget(obj client.Object) int32 {

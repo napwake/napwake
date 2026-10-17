@@ -821,6 +821,29 @@ func TestResume_TimesItsReplicasFromItsDependenciesReady(t *testing.T) {
 	assert.Equal(t, time.Minute, pauser.waited, "from what was written as they became Ready")
 }
 
+// A waitForReady dependency that won't start, and that it never waited for,
+// still starts the clock on its own replicas once, or a resume with a pod
+// that never becomes Ready would never stop waiting for it.
+func TestResume_TimesItsReplicasOnceWhenADependencyWontStart(t *testing.T) {
+	ref := postgresRef()
+	ref.WaitForReady = true
+	api := depWorkload("default", "api", v1alpha1.TargetKindDeployment, v1alpha1.PhaseResuming, ref)
+	began := metav1.NewTime(fixedTime.Add(-20 * time.Minute))
+	api.Status.LastTransitionTime = &began
+	api.Status.Pause = &v1alpha1.PauseStatus{PreviousReplicas: 3}
+	pauser := &stubPauser{}
+	r := depReconciler(t, pauser, api, postgresTarget(0, 0))
+
+	_, err := r.handleResume(context.Background(), fetch(t, r, "api"), nil)
+	require.NoError(t, err)
+	assert.Zero(t, pauser.waited, "it's scaled up only now")
+
+	r.clock = func() time.Time { return fixedTime.Add(5 * time.Minute) }
+	_, err = r.handleResume(context.Background(), fetch(t, r, "api"), nil)
+	require.NoError(t, err)
+	assert.Equal(t, 5*time.Minute, pauser.waited, "the wait for its own replicas started over")
+}
+
 // A resume that settles with some replicas not Ready says so, and a later
 // one with every replica Ready clears it.
 func TestResume_ReportsReplicasNotReady(t *testing.T) {
