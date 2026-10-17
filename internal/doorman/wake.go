@@ -135,7 +135,7 @@ func (s *Server) stamp(ctx context.Context, rt route, from netip.Addr) error {
 		w.Annotations = map[string]string{}
 	}
 	value := now.UTC().Format(time.RFC3339)
-	if value == w.Annotations[v1alpha1.AnnotationLastRequest] {
+	if value == w.Annotations[v1alpha1.AnnotationLastRequest] || value == recordedLastRequest(&w) {
 		value = now.UTC().Format(time.RFC3339Nano)
 	}
 	w.Annotations[v1alpha1.AnnotationLastRequest] = value
@@ -164,27 +164,36 @@ func (s *Server) stamp(ctx context.Context, rt route, from netip.Addr) error {
 	return nil
 }
 
-// needsWake reports whether a paused workload has no wake pending: its
-// last-request annotation is as it was when the pause began. A workload
-// that isn't Paused is awake, or already waking.
+// needsWake reports whether a paused workload has no wake pending. The
+// operator takes a last-request value as a wake when it's set and differs
+// from the one recorded when the pause began, so one that's empty, or
+// removed since, is no wake. A workload that isn't Paused is awake, or
+// already waking.
 func needsWake(w *v1alpha1.ManagedWorkload) bool {
 	if w.Status.Phase != v1alpha1.PhasePaused {
 		return false
 	}
-	current, set := w.Annotations[v1alpha1.AnnotationLastRequest]
+	current := w.Annotations[v1alpha1.AnnotationLastRequest]
+	if current == "" {
+		return true
+	}
 	pause := w.Status.Pause
 	if pause != nil && pause.WakeAnnotations != nil {
-		recorded, wasSet := pause.WakeAnnotations.Workload[v1alpha1.AnnotationLastRequest]
-		return set == wasSet && current == recorded
-	}
-	if !set {
-		return true
+		return current == recordedLastRequest(w)
 	}
 	stamped, err := time.Parse(time.RFC3339, current)
 	if err != nil || pause == nil || pause.PausedAt == nil {
 		return true
 	}
 	return stamped.Before(pause.PausedAt.Time)
+}
+
+// recordedLastRequest is the last-request value the pause recorded.
+func recordedLastRequest(w *v1alpha1.ManagedWorkload) string {
+	if p := w.Status.Pause; p != nil && p.WakeAnnotations != nil {
+		return p.WakeAnnotations.Workload[v1alpha1.AnnotationLastRequest]
+	}
+	return ""
 }
 
 func pausedAt(w *v1alpha1.ManagedWorkload) time.Time {

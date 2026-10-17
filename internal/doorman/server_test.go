@@ -1322,6 +1322,13 @@ func TestNeedsWake(t *testing.T) {
 			workload: paused(before, map[string]string{v1alpha1.AnnotationLastRequest: before})},
 		{name: "stamped since the pause", workload: paused(after, map[string]string{v1alpha1.AnnotationLastRequest: before})},
 		{name: "stamped since a pause that recorded nothing", workload: paused(after, nil)},
+		{name: "removed since the pause, which recorded one", want: true,
+			workload: paused("", map[string]string{v1alpha1.AnnotationLastRequest: before})},
+		{name: "emptied since the pause, which recorded one", want: true, workload: func() *v1alpha1.ManagedWorkload {
+			w := paused("", map[string]string{v1alpha1.AnnotationLastRequest: before})
+			w.Annotations = map[string]string{v1alpha1.AnnotationLastRequest: ""}
+			return w
+		}()},
 		{name: "a pause with no record, stamped before it", want: true, workload: func() *v1alpha1.ManagedWorkload {
 			w := paused(before, nil)
 			w.Status.Pause.WakeAnnotations = nil
@@ -1382,6 +1389,35 @@ func TestServer_StampsANewValueInTheSameSecond(t *testing.T) {
 	parsed, err := time.Parse(time.RFC3339, stamped)
 	require.NoError(t, err, "still an RFC 3339 time")
 	assert.True(t, parsed.Equal(now))
+}
+
+// Someone removed the last-request annotation the pause recorded. A request
+// must still wake the workload, with a value the operator sees as new.
+func TestServer_WakesAfterTheRecordedStampWasRemoved(t *testing.T) {
+	tests := []struct {
+		name     string
+		recorded string
+	}{
+		{name: "recorded earlier", recorded: "2026-10-03T08:00:00Z"},
+		{name: "recorded in the same second", recorded: "2026-10-03T09:00:00Z"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			now := time.Date(2026, 10, 3, 9, 0, 0, 500, time.UTC)
+			w := pausedWorkload("api", freePort(t), time.Minute)
+			w.Status.Pause.WakeAnnotations = &v1alpha1.WakeAnnotations{
+				Workload: map[string]string{v1alpha1.AnnotationLastRequest: tt.recorded},
+			}
+			s, c := newTestServer(t, nil, w)
+			s.now = func() time.Time { return now }
+
+			require.NoError(t, s.stamp(context.Background(), route{workload: apiKey, service: "api"}, caller))
+
+			stamped := lastRequest(t, c)
+			assert.NotEmpty(t, stamped)
+			assert.NotEqual(t, tt.recorded, stamped, "the operator wakes only for a value other than the recorded one")
+		})
+	}
 }
 
 // A replica that sees another's stamp since the pause leaves it alone.

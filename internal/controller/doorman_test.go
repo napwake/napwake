@@ -792,6 +792,21 @@ func TestReconcile_OrphaningDeleteRemovesSlicesTheCacheMissed(t *testing.T) {
 	assert.Empty(t, left.Items)
 }
 
+// The doorman stamps a workload whose recorded last-request was removed
+// with a value of its own. The operator must take that as a wake, or the
+// request that made it waits for a wake that never comes.
+func TestWokenByActivity_ADoormanStampAfterTheRecordedOneWasRemoved(t *testing.T) {
+	r := doormanReconciler(t)
+	workload := lifecycleWorkload("api", v1alpha1.PhasePaused)
+	workload.Status.Pause = &v1alpha1.PauseStatus{WakeAnnotations: &v1alpha1.WakeAnnotations{
+		Workload: map[string]string{v1alpha1.AnnotationLastRequest: "2026-10-03T08:00:00Z"},
+	}}
+
+	assert.False(t, r.wokenByActivity(workload, appTarget()), "removing the annotation wakes nothing")
+	workload.Annotations = map[string]string{v1alpha1.AnnotationLastRequest: "2026-10-03T09:00:00Z"}
+	assert.True(t, r.wokenByActivity(workload, appTarget()))
+}
+
 // A doorman problem, here the doorman's namespace missing from the cache of
 // a watchNamespaces install, never stops a paused workload from waking.
 func TestReconcile_DoormanFailureDoesNotBlockTheLifecycle(t *testing.T) {
