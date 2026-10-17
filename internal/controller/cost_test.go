@@ -374,6 +374,33 @@ func TestCaptureResourceSnapshot_ZeroReplicas(t *testing.T) {
 	assert.Equal(t, int64(512<<20), snap.MemoryBytes)
 }
 
+type unreadablePodMetrics struct{ stubMetrics }
+
+func (*unreadablePodMetrics) PodRequestsPerReplica(_ context.Context, _ *v1alpha1.ManagedWorkload) (float64, float64, error) {
+	return 0, 0, errors.New("the API server timed out")
+}
+
+func (*unreadablePodMetrics) TotalPVCBytes(_ context.Context, _ *v1alpha1.ManagedWorkload) (float64, error) {
+	return 0, errors.New("the API server timed out")
+}
+
+// The snapshot is taken once, as the workload pauses, and the whole pause is
+// priced from it. A read that fails then falls back to what cost tracking
+// last read of the running workload, rather than pricing the pause at
+// nothing saved.
+func TestCaptureResourceSnapshot_KeepsTheLastReadWhenPodsCantBeRead(t *testing.T) {
+	workload := costWorkload(v1alpha1.PhaseRunning)
+	workload.Status.Cost = &v1alpha1.CostStatus{Running: &v1alpha1.ResourceSnapshot{
+		Replicas: 2, CPUMillis: 300, MemoryBytes: 256 << 20, StorageBytes: 1 << 30}}
+	r := newTestReconciler(t, workload, &stubPauser{})
+	r.metrics = &unreadablePodMetrics{stubMetrics{replicas: 3}}
+
+	snap := r.captureResourceSnapshot(context.Background(), workload)
+
+	require.NotNil(t, snap)
+	assert.Equal(t, v1alpha1.ResourceSnapshot{Replicas: 3, CPUMillis: 300, MemoryBytes: 256 << 20, StorageBytes: 1 << 30}, *snap)
+}
+
 func TestCaptureResourceSnapshot_MissingTargetEmitsNoEvent(t *testing.T) {
 	workload := costWorkload(v1alpha1.PhaseRunning)
 	r := newTestReconcilerWithTarget(t, workload, &stubPauser{}, false)
