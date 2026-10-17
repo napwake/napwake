@@ -4,11 +4,13 @@
 # Deployment opted in by label pauses once its idle clock runs out, its
 # Service is routed to the doorman, and a request to the Service wakes it,
 # restores its replicas and is answered. One in an unwatched namespace is
-# left alone, and neither the operator nor the doorman logs an error. Last,
-# helm uninstall is refused while a ManagedWorkload is left, and goes ahead
-# once the workload is no longer opted in. The
-# e2e suite installs through kustomize, with a ClusterRole, so this is what
-# tests the chart.
+# left alone. A StatefulSet opted in with dry-run, as the README's
+# quickstart does, is measured but not paused until kubectl hybernate
+# enable ends dry-run. Neither the operator nor the doorman logs an error.
+# Last, helm uninstall is refused while ManagedWorkloads are left, and goes
+# ahead once the workloads are no longer opted in, which restores the
+# paused StatefulSet. The e2e suite installs through kustomize, with a
+# ClusterRole, so this is what tests the chart.
 #
 # KIND_CLUSTER names the cluster, which is created and deleted here, so it
 # must not already exist. KEEP_CLUSTER=true keeps it for debugging.
@@ -22,6 +24,7 @@ WATCHED=smoke-watched
 UNWATCHED=smoke-unwatched
 APP=web
 REPLICAS=2
+DB=db
 WEB_IMAGE=registry.k8s.io/e2e-test-images/agnhost:2.52
 CURL_IMAGE=curlimages/curl:8.7.1
 METRICS_SERVER_IMAGE=registry.k8s.io/metrics-server/metrics-server:v0.7.2
@@ -36,6 +39,7 @@ fi
 # current one in the caller's kubeconfig.
 KUBECONFIG=$(mktemp)
 export KUBECONFIG
+PLUGIN_DIR=$(mktemp -d)
 
 diagnose() {
   echo "--- ManagedWorkloads"
@@ -61,6 +65,7 @@ cleanup() {
   else
     "$KIND" delete cluster --name "$CLUSTER" >/dev/null 2>&1 || true
     rm -f "$KUBECONFIG"
+    rm -rf "$PLUGIN_DIR"
   fi
   exit "$status"
 }
@@ -114,6 +119,8 @@ unrouted() {
 make docker-build IMG="$IMG"
 make load-test-e2e-images KIND_CLUSTER="$CLUSTER" E2E_IMAGES="$WEB_IMAGE $CURL_IMAGE $METRICS_SERVER_IMAGE"
 "$KIND" load docker-image "$IMG" --name "$CLUSTER"
+PLUGIN="$PLUGIN_DIR/kubectl-hybernate"
+go build -o "$PLUGIN" ./cmd/kubectl-hybernate
 
 echo "installing metrics-server, which the idle clock reads CPU from"
 kubectl apply -f "$METRICS_SERVER_MANIFEST"
@@ -162,7 +169,43 @@ spec:
   ports: [{name: http, port: 80, targetPort: http}]
 YAML
 done
+
+# The README's quickstart: a StatefulSet opted in to be measured first.
+kubectl apply -f - <<YAML
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: $DB
+  namespace: $WATCHED
+  labels: {hybernate.io/managed: "true"}
+  annotations: {hybernate.io/dry-run: "true", hybernate.io/idle-after: 1m}
+spec:
+  serviceName: $DB
+  replicas: 1
+  selector: {matchLabels: {app: $DB}}
+  template:
+    metadata: {labels: {app: $DB}}
+    spec:
+      containers:
+        - name: db
+          image: $WEB_IMAGE
+          imagePullPolicy: IfNotPresent
+          args: [netexec, --http-port=8080]
+          ports: [{name: http, containerPort: 8080}]
+          readinessProbe:
+            httpGet: {path: /healthz, port: http}
+            periodSeconds: 2
+          resources: {requests: {cpu: 100m, memory: 16Mi}}
+---
+apiVersion: v1
+kind: Service
+metadata: {name: $DB, namespace: $WATCHED}
+spec:
+  selector: {app: $DB}
+  ports: [{name: http, port: 8080, targetPort: http}]
+YAML
 kubectl rollout status "deployment/$APP" -n "$WATCHED" --timeout=2m
+kubectl rollout status "statefulset/$DB" -n "$WATCHED" --timeout=2m
 
 echo "waiting for the label to create a ManagedWorkload, and its idle clock to pause it"
 eventually 60 "a ManagedWorkload from the label" is managedworkload/$APP "$WATCHED" '{.metadata.name}' "$APP"
@@ -202,6 +245,24 @@ if kubectl get managedworkload "$APP" -n "$UNWATCHED" >/dev/null 2>&1; then
 fi
 is deployment/$APP "$UNWATCHED" '{.spec.replicas}' "$REPLICAS"
 
+echo "checking the dry-run StatefulSet was measured, not paused"
+would_pause() {
+  local pauses
+  pauses=$(kubectl get managedworkload "$DB" -n "$WATCHED" -o 'jsonpath={.status.dryRun.pauses}')
+  [ "${pauses:-0}" -ge 1 ]
+}
+is managedworkload/$DB "$WATCHED" '{.spec.target.kind}' StatefulSet
+is managedworkload/$DB "$WATCHED" '{.spec.dryRun}' true
+eventually 120 "dry-run to count a pause it would have made" would_pause
+is statefulset/$DB "$WATCHED" '{.spec.replicas}' 1
+
+echo "ending dry-run with kubectl hybernate enable"
+"$PLUGIN" enable "statefulset/$DB" -n "$WATCHED"
+is statefulset/$DB "$WATCHED" '{.metadata.annotations.hybernate\.io/dry-run}' false
+eventually 60 "the ManagedWorkload to leave dry-run" is managedworkload/$DB "$WATCHED" '{.spec.dryRun}' ''
+eventually 180 "the StatefulSet to pause" is managedworkload/$DB "$WATCHED" '{.status.phase}' Paused
+eventually 60 "the StatefulSet to scale to 0" is statefulset/$DB "$WATCHED" '{.spec.replicas}' 0
+
 echo "checking the operator and the doorman logged no errors"
 # Every pod of both, not one per Deployment. A conflict is an optimistic
 # write that lost a race; controller-runtime retries it at once.
@@ -214,21 +275,25 @@ if [ -n "$errors" ]; then
   exit 1
 fi
 
-echo "checking helm uninstall is refused while a ManagedWorkload is left"
+echo "checking helm uninstall is refused while ManagedWorkloads are left"
 if refusal=$(helm uninstall hybernate --namespace "$RELEASE_NAMESPACE" --wait --timeout 3m 2>&1); then
   echo "$refusal" >&2
-  echo "helm uninstall went ahead, leaving $WATCHED/$APP's ManagedWorkload with no operator" >&2
+  echo "helm uninstall went ahead, leaving ManagedWorkloads with no operator" >&2
   exit 1
 fi
-if ! grep -q 'Hybernate refuses to uninstall' <<<"$refusal" || ! grep -qF "$WATCHED/$APP" <<<"$refusal"; then
+if ! grep -q 'Hybernate refuses to uninstall' <<<"$refusal" || ! grep -qF "$WATCHED/$APP" <<<"$refusal" ||
+  ! grep -qF "$WATCHED/$DB" <<<"$refusal"; then
   echo "$refusal" >&2
-  echo "the refused uninstall didn't say why, or name the ManagedWorkload left" >&2
+  echo "the refused uninstall didn't say why, or name the ManagedWorkloads left" >&2
   exit 1
 fi
 is deployment/hybernate "$RELEASE_NAMESPACE" '{.status.readyReplicas}' 1
 
-echo "stopping managing the workload, then uninstalling"
+echo "stopping managing the workloads, which restores the paused StatefulSet, then uninstalling"
 kubectl label deployment "$APP" -n "$WATCHED" hybernate.io/managed-
-eventually 60 "the ManagedWorkload to be deleted" gone managedworkload/$APP "$WATCHED"
+kubectl label statefulset "$DB" -n "$WATCHED" hybernate.io/managed-
+eventually 60 "the Deployment's ManagedWorkload to be deleted" gone managedworkload/$APP "$WATCHED"
+eventually 120 "the StatefulSet's ManagedWorkload to be deleted" gone managedworkload/$DB "$WATCHED"
+is statefulset/$DB "$WATCHED" '{.spec.replicas}' 1
 helm uninstall hybernate --namespace "$RELEASE_NAMESPACE" --wait --timeout 3m
 echo "ok"
