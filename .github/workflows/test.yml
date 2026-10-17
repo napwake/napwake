@@ -50,6 +50,7 @@ jobs:
       # With Helm 3, while helm-smoke installs with Helm 4, so the chart is
       # proven on both.
       - run: make check-chart
+      - run: make test-doorman-policy
 
   alerts:
     name: Alert rules

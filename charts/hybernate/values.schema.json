@@ -112,6 +112,12 @@
           "type": "array",
           "items": {"type": "string", "minLength": 1, "pattern": "^[^,]+$"}
         },
+        "admissionPolicy": {
+          "type": "object",
+          "properties": {
+            "enabled": {"type": "boolean"}
+          }
+        },
         "podDisruptionBudget": {
           "type": "object",
           "properties": {

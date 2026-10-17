@@ -189,6 +189,14 @@ check-chart: ## Lint the Helm chart, render it for each provider's Kubernetes ve
 			echo "config/manager's doorman has $$field '$$kustomize', the chart's '$$chart', so one drops connections on shutdown"; exit 1; }; \
 	done
 
+.PHONY: test-doorman-policy
+test-doorman-policy: setup-envtest ## Check against envtest that the chart's admission policy holds the doorman to stamping requests
+	@dir=$$(mktemp -d); trap 'rm -rf "$$dir"' EXIT; \
+	helm template hybernate charts/hybernate --namespace hybernate-system > "$$dir/chart.yaml"; \
+	CHART_MANIFEST="$$dir/chart.yaml" \
+	KUBEBUILDER_ASSETS="$$("$(ENVTEST)" use $(ENVTEST_K8S_VERSION) --bin-dir "$(LOCALBIN)" -p path)" \
+		go test -count=1 ./hack/doormanpolicy
+
 .PHONY: verify-generated
 verify-generated: manifests generate ## Fail if generated code or manifests, or go.mod, aren't up to date
 	@git diff --exit-code -- api config charts || { \

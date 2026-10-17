@@ -115,6 +115,11 @@ doorman:
   # NewRelicPinger/, Uptime-Kuma/, Gatus/ and others. For example, an
   # in-house uptime monitor's: ["MyCorpMonitor/"].
   healthCheckUserAgents: []
+  # A ValidatingAdmissionPolicy that lets the doorman's ServiceAccount set
+  # only the two annotations recording a request on ManagedWorkloads,
+  # though its role may patch them.
+  admissionPolicy:
+    enabled: true
   # Keeps one doorman serving through node drains, when replicaCount > 1.
   podDisruptionBudget:
     enabled: true

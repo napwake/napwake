@@ -140,6 +140,7 @@ The doorman holds requests to paused workloads and wakes them. See [Wake on Requ
 | `doorman.enabled` | `true` | Deploy the doorman. When `false`, requests to paused workloads fail |
 | `doorman.replicaCount` | `2` | Doorman replicas. Every replica serves traffic |
 | `doorman.healthCheckUserAgents` | `[]` | `User-Agent` prefixes of health checkers and scrapers whose `GET` and `HEAD` requests don't wake a paused workload, besides the built-in ones (`kube-probe`, Prometheus, load balancers' checks, `Blackbox Exporter/`, `Datadog/Synthetics`, `Amazon-Route53-Health-Check-Service`, `GoogleStackdriverMonitoring-UptimeChecks`, `UptimeRobot`, `Pingdom.com_bot`, `NewRelicPinger/`, `Uptime-Kuma/`, `Gatus/` and others), such as `["MyCorpMonitor/"]`. See [What wakes a workload](../concepts/wake-on-request.md#what-wakes-a-workload-and-what-doesnt) |
+| `doorman.admissionPolicy.enabled` | `true` | A ValidatingAdmissionPolicy that lets the doorman's ServiceAccount change only the `hybernate.io/last-request` and `hybernate.io/last-request-from` annotations on ManagedWorkloads, though its role may patch them. See [Security](security.md#the-doorman-is-a-way-in-to-paused-workloads) |
 | `doorman.podDisruptionBudget.enabled` | `true` | A PodDisruptionBudget keeping one doorman serving through node drains, when `replicaCount` is above 1 |
 | `doorman.nodeSelector` | `{}` | Node selector; empty uses the operator's `nodeSelector` |
 | `doorman.tolerations` | `[]` | Tolerations; empty uses the operator's `tolerations` |
@@ -246,7 +247,7 @@ By default the chart creates a ClusterRole, `<fullname>-manager`, with permissio
 - Create Events for user-facing status updates
 - Read Services, and manage the EndpointSlices that route paused workloads to the doorman
 
-The doorman has its own ServiceAccount and ClusterRole, `<fullname>-doorman`: it reads ManagedWorkloads and EndpointSlices, patches ManagedWorkloads to wake them, and creates Events.
+The doorman has its own ServiceAccount and ClusterRole, `<fullname>-doorman`: it reads ManagedWorkloads and EndpointSlices, patches ManagedWorkloads to wake them, and creates Events. With `doorman.admissionPolicy.enabled`, those patches may only set the two annotations that record a request.
 
 With `watchNamespaces` set, both get a Role and RoleBinding in each of those namespaces instead. The operator keeps one ClusterRole, to read Namespaces and Nodes, which only a ClusterRole can grant, and gets a `<fullname>-doorman-endpoints` Role in the release namespace to read the doorman's EndpointSlices. Workloads in other namespaces can't be read, scaled, or opted in, and dependencies on them aren't held or woken. With `metrics.secure`, both ServiceAccounts also keep their cluster-wide `system:auth-delegator` bindings, which let them check scrapers' tokens and nothing else.
 

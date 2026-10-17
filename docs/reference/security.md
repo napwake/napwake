@@ -32,7 +32,7 @@ Any client that can reach a doorman pod can reach every routed, paused workload,
 - Give them an egress NetworkPolicy allowing only your pod CIDRs and the API server: set `doorman.networkPolicy.egress` (off by default; see [Helm values](helm-values.md#network-policy)). The doorman only dials Pod-backed IP endpoints of EndpointSlices the EndpointSlice controller manages, and refuses loopback, link-local, and cloud metadata addresses (AWS's `fd00:ec2::254` and Alibaba Cloud's `100.100.100.200` included), but anyone who can write EndpointSlices in a namespace can forge those labels, and the policy enforces the same bounds in the network.
 - Its rate limits (see [Limits](../concepts/wake-on-request.md#limits)) slow a port scan through the doorman; they don't stop one. One workload can hold at most 256 of a doorman pod's 2048 places, so a workload that never becomes Ready can't stop other workloads' requests from being held.
 
-The doorman's ServiceAccount can patch ManagedWorkloads, to set `hybernate.io/last-request` and `hybernate.io/last-request-from`, the caller's IP address. A ValidatingAdmissionPolicy limiting that ServiceAccount's patches to those two annotations would narrow it further; the chart doesn't ship one.
+The doorman's ServiceAccount can patch ManagedWorkloads, to set `hybernate.io/last-request` and `hybernate.io/last-request-from`, the caller's IP address. The chart's `<fullname>-doorman` ValidatingAdmissionPolicy (`doorman.admissionPolicy.enabled`, on by default) holds it to those two annotations: the API server refuses a patch from it that changes a ManagedWorkload's spec, labels, finalizers, owners or any other annotation. The kustomize manifests don't include it.
 
 ## Verifying a release
 
