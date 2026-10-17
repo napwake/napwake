@@ -216,7 +216,9 @@ func TestCLI_ContextNamespace(t *testing.T) {
 		ns := &corev1.Namespace{ObjectMeta: metav1.ObjectMeta{Name: "preview-42"}}
 		api := enableDeployment("api", optedIn, measuring(nil))
 		api.Namespace = "preview-42"
-		c := newClient(t, interceptor.Funcs{}, ns, api)
+		mw := labelManaged("api", true)
+		mw.Namespace = "preview-42"
+		c := newClient(t, interceptor.Funcs{}, ns, api, mw)
 
 		out, err := runCLI(t, c, "enable", "api")
 

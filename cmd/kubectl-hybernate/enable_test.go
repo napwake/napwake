@@ -27,9 +27,12 @@ import (
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
+	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/runtime/schema"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
+	"sigs.k8s.io/controller-runtime/pkg/client/interceptor"
 
 	v1alpha1 "github.com/okedeji/hybernate/api/v1alpha1"
 )
@@ -93,8 +96,8 @@ func TestEnable_Workload(t *testing.T) {
 			workload: enableDeployment("api", optedIn, measuring(nil)), managed: labelManaged("api", true),
 			wantValue: "false", wantSet: true, wantOut: "dry-run ended"},
 		{name: "a measuring namespace is overridden on the workload",
-			ns:        enableNamespaceObj(optedIn, map[string]string{v1alpha1.AnnotationDryRun: "true"}),
-			workload:  enableDeployment("api", nil, nil),
+			ns:       enableNamespaceObj(optedIn, map[string]string{v1alpha1.AnnotationDryRun: "true"}),
+			workload: enableDeployment("api", nil, nil), managed: labelManaged("api", true),
 			wantValue: "false", wantSet: true, wantOut: "dry-run ended"},
 		{name: "the cluster's default is overridden on the workload", ns: enableNamespaceObj(nil, nil),
 			workload: enableDeployment("api", optedIn, nil), managed: labelManaged("api", true),
@@ -103,15 +106,21 @@ func TestEnable_Workload(t *testing.T) {
 			workload: enableDeployment("api", optedIn, map[string]string{v1alpha1.AnnotationDryRun: "yes"}),
 			managed:  labelManaged("api", true), wantValue: "false", wantSet: true, wantOut: "dry-run ended"},
 		{name: "a namespace annotation that isn't true or false is overridden on the workload",
-			ns:        enableNamespaceObj(optedIn, map[string]string{v1alpha1.AnnotationDryRun: "maybe"}),
-			workload:  enableDeployment("api", nil, nil),
+			ns:       enableNamespaceObj(optedIn, map[string]string{v1alpha1.AnnotationDryRun: "maybe"}),
+			workload: enableDeployment("api", nil, nil), managed: labelManaged("api", true),
 			wantValue: "false", wantSet: true, wantOut: "dry-run ended"},
 		{name: "already pausing", ns: enableNamespaceObj(nil, nil),
 			workload: enableDeployment("api", optedIn, nil), managed: labelManaged("api", false),
 			wantOut: "isn't in dry-run"},
-		{name: "already pausing, before the operator has seen it", ns: enableNamespaceObj(nil, nil),
-			workload:  enableDeployment("api", optedIn, map[string]string{v1alpha1.AnnotationDryRun: "false"}),
-			wantValue: "false", wantSet: true, wantOut: "isn't in dry-run"},
+		{name: "opted in by its own label in an opted-out namespace",
+			ns:       enableNamespaceObj(map[string]string{v1alpha1.LabelManaged: "false"}, nil),
+			workload: enableDeployment("api", optedIn, nil), managed: labelManaged("api", true),
+			wantValue: "false", wantSet: true, wantOut: "dry-run ended"},
+		{name: "a protected namespace allowed anyway",
+			ns: enableNamespaceObj(map[string]string{v1alpha1.LabelProtected: "true",
+				v1alpha1.LabelAllowProtected: "true"}, nil),
+			workload: enableDeployment("api", optedIn, nil), managed: labelManaged("api", true),
+			wantValue: "false", wantSet: true, wantOut: "dry-run ended"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -176,6 +185,131 @@ func TestEnable_NotOptedIn(t *testing.T) {
 	}
 }
 
+// enable refuses, changing nothing, a workload Hybernate won't manage: one
+// in a protected namespace, one its own label opts out, and one opted in
+// that no ManagedWorkload manages, such as outside watchNamespaces.
+func TestEnable_NotManaged(t *testing.T) {
+	protected := map[string]string{v1alpha1.LabelManaged: "true", v1alpha1.LabelProtected: "true"}
+	tests := []struct {
+		name     string
+		ns       *corev1.Namespace
+		workload *appsv1.Deployment
+		wantErr  string
+	}{
+		{name: "labelled protected", ns: enableNamespaceObj(protected, nil),
+			workload: enableDeployment("api", nil, measuring(nil)),
+			wantErr:  "namespace dev is protected, so Hybernate doesn't manage anything in it"},
+		{name: "kube-system", ns: &corev1.Namespace{ObjectMeta: metav1.ObjectMeta{Name: "kube-system"}},
+			workload: &appsv1.Deployment{ObjectMeta: metav1.ObjectMeta{Name: "api", Namespace: "kube-system",
+				Labels: optedIn, Annotations: measuring(nil)}},
+			wantErr: "namespace kube-system is protected"},
+		{name: "opted out in a managed namespace", ns: enableNamespaceObj(optedIn, nil),
+			workload: enableDeployment("api", map[string]string{v1alpha1.LabelManaged: "false"}, measuring(nil)),
+			wantErr:  `deployment/api is labelled hybernate.io/managed="false", which opts it out`},
+		{name: "opted in, but not picked up", ns: enableNamespaceObj(optedIn, nil),
+			workload: enableDeployment("api", nil, measuring(nil)),
+			wantErr:  "deployment/api is opted in, but Hybernate hasn't picked it up: no ManagedWorkload in dev manages it"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			c := fake.NewClientBuilder().WithScheme(scheme).WithObjects(tt.ns, tt.workload).Build()
+			var out bytes.Buffer
+
+			err := enableWorkload(context.Background(), c, tt.ns.Name, "api", enableOptions{}, &out)
+
+			assert.ErrorContains(t, err, tt.wantErr)
+			assert.NotContains(t, out.String(), "will pause")
+			var d appsv1.Deployment
+			require.NoError(t, c.Get(context.Background(), client.ObjectKeyFromObject(tt.workload), &d))
+			assert.Equal(t, "true", d.Annotations[v1alpha1.AnnotationDryRun], "nothing is changed")
+		})
+	}
+}
+
+// Without the CRD, nothing is installed to pause the workload, so enable
+// says so rather than that Hybernate will pause it.
+func TestEnable_NotInstalled(t *testing.T) {
+	noCRD := interceptor.Funcs{List: func(ctx context.Context, c client.WithWatch, list client.ObjectList,
+		opts ...client.ListOption) error {
+		if _, ok := list.(*v1alpha1.ManagedWorkloadList); ok {
+			return &meta.NoKindMatchError{GroupKind: schema.GroupKind{Group: "hybernate.io", Kind: "ManagedWorkload"}}
+		}
+		return c.List(ctx, list, opts...)
+	}}
+	c := newClient(t, noCRD, enableNamespaceObj(optedIn, nil), enableDeployment("api", nil, measuring(nil)))
+
+	t.Run("one workload", func(t *testing.T) {
+		err := enableWorkload(context.Background(), c, "dev", "api", enableOptions{}, &bytes.Buffer{})
+		assert.ErrorIs(t, err, errNotInstalled)
+	})
+	t.Run("--all", func(t *testing.T) {
+		err := enableNamespace(context.Background(), c, "dev", enableOptions{all: true}, &bytes.Buffer{})
+		assert.ErrorIs(t, err, errNotInstalled)
+	})
+	value, _ := dryRunOf(t, c, "api")
+	assert.Equal(t, "true", value, "nothing is changed")
+}
+
+// A user who may edit workloads but not read ManagedWorkloads still ends
+// dry-run by the annotations, and is told that's all enable went by.
+func TestEnable_CannotReadManagedWorkloads(t *testing.T) {
+	forbidden := interceptor.Funcs{List: func(ctx context.Context, c client.WithWatch, list client.ObjectList,
+		opts ...client.ListOption) error {
+		if _, ok := list.(*v1alpha1.ManagedWorkloadList); ok {
+			return apierrors.NewForbidden(schema.GroupResource{Group: "hybernate.io", Resource: "managedworkloads"},
+				"", nil)
+		}
+		return c.List(ctx, list, opts...)
+	}}
+	c := newClient(t, forbidden, enableNamespaceObj(optedIn, nil), enableDeployment("api", nil, measuring(nil)))
+	var out bytes.Buffer
+
+	require.NoError(t, enableWorkload(context.Background(), c, "dev", "api", enableOptions{}, &out))
+
+	value, _ := dryRunOf(t, c, "api")
+	assert.Equal(t, "false", value)
+	assert.Contains(t, out.String(), `deployment/api: dry-run annotation set to "false". Your access doesn't allow `+
+		"listing ManagedWorkloads in dev, so enable went by the annotations alone")
+	assert.NotContains(t, out.String(), "will pause")
+}
+
+// --all refuses a protected namespace, and leaves alone, and fails on, the
+// workloads no ManagedWorkload manages.
+func TestEnable_NamespaceNotManaged(t *testing.T) {
+	t.Run("protected", func(t *testing.T) {
+		ns := enableNamespaceObj(map[string]string{v1alpha1.LabelManaged: "true", v1alpha1.LabelProtected: "true"},
+			map[string]string{v1alpha1.AnnotationDryRun: "true"})
+		c := fake.NewClientBuilder().WithScheme(scheme).WithObjects(ns, enableDeployment("api", nil, nil)).Build()
+		var out bytes.Buffer
+
+		err := enableNamespace(context.Background(), c, "dev", enableOptions{all: true}, &out)
+
+		assert.ErrorContains(t, err, "namespace dev is protected")
+		value, _ := namespaceDryRun(t, c)
+		assert.Equal(t, "true", value, "the namespace isn't changed")
+	})
+
+	t.Run("some not picked up", func(t *testing.T) {
+		c := fake.NewClientBuilder().WithScheme(scheme).WithObjects(enableNamespaceObj(optedIn, nil),
+			enableDeployment("web", nil, measuring(nil)), labelManaged("web", true),
+			enableDeployment("api", nil, measuring(nil)),
+		).Build()
+		var out bytes.Buffer
+
+		err := enableNamespace(context.Background(), c, "dev", enableOptions{all: true}, &out)
+
+		assert.EqualError(t, err, "1 opted-in workload in dev has no ManagedWorkload")
+		value, _ := dryRunOf(t, c, "web")
+		assert.Equal(t, "false", value)
+		value, _ = dryRunOf(t, c, "api")
+		assert.Equal(t, "true", value, "a workload Hybernate hasn't picked up isn't changed")
+		assert.Equal(t, `1 workload in dev: dry-run ended, Hybernate will pause it while idle
+Not changed, because Hybernate hasn't picked them up: no ManagedWorkload manages them. The operator may not be running, may not watch dev (its watchNamespaces), or may protect it:
+  deployment/api
+`, out.String())
+	})
+}
+
 // A bare name that's neither kind says so, rather than that no StatefulSet
 // has it, which reads as though a Deployment would have been found.
 func TestEnable_NotFound(t *testing.T) {
@@ -206,7 +340,7 @@ func TestEnable_GitOpsManaged(t *testing.T) {
 
 	t.Run("prints the change for Git", func(t *testing.T) {
 		c := fake.NewClientBuilder().WithScheme(scheme).
-			WithObjects(enableNamespaceObj(nil, nil), enableDeployment("api", optedIn, argo)).Build()
+			WithObjects(enableNamespaceObj(nil, nil), enableDeployment("api", optedIn, argo), labelManaged("api", true)).Build()
 		var out bytes.Buffer
 
 		err := enableWorkload(context.Background(), c, "dev", "api", enableOptions{}, &out)
@@ -220,7 +354,7 @@ func TestEnable_GitOpsManaged(t *testing.T) {
 
 	t.Run("--force changes it anyway", func(t *testing.T) {
 		c := fake.NewClientBuilder().WithScheme(scheme).
-			WithObjects(enableNamespaceObj(nil, nil), enableDeployment("api", optedIn, argo)).Build()
+			WithObjects(enableNamespaceObj(nil, nil), enableDeployment("api", optedIn, argo), labelManaged("api", true)).Build()
 
 		err := enableWorkload(context.Background(), c, "dev", "api", enableOptions{force: true}, &bytes.Buffer{})
 		require.NoError(t, err)
@@ -234,9 +368,9 @@ func TestEnable_Namespace(t *testing.T) {
 	flux := map[string]string{v1alpha1.LabelManaged: "true", "kustomize.toolkit.fluxcd.io/name": "previews"}
 	c := fake.NewClientBuilder().WithScheme(scheme).WithObjects(
 		enableNamespaceObj(optedIn, map[string]string{v1alpha1.AnnotationDryRun: "true"}),
-		enableDeployment("web", nil, measuring(nil)),
-		enableDeployment("worker", nil, nil),
-		enableDeployment("api", flux, measuring(nil)),
+		enableDeployment("web", nil, measuring(nil)), labelManaged("web", true),
+		enableDeployment("worker", nil, nil), labelManaged("worker", true),
+		enableDeployment("api", flux, measuring(nil)), labelManaged("api", true),
 	).Build()
 	var out bytes.Buffer
 
@@ -263,8 +397,8 @@ Not changed, because their manifests come from Git; change them there:
 func TestEnable_NamespaceOnlyOwnAnnotations(t *testing.T) {
 	c := fake.NewClientBuilder().WithScheme(scheme).WithObjects(
 		enableNamespaceObj(optedIn, nil),
-		enableDeployment("web", nil, measuring(nil)),
-		enableDeployment("api", nil, measuring(nil)),
+		enableDeployment("web", nil, measuring(nil)), labelManaged("web", true),
+		enableDeployment("api", nil, measuring(nil)), labelManaged("api", true),
 	).Build()
 	var out bytes.Buffer
 
@@ -315,8 +449,8 @@ func TestEnable_NamespaceFromGit(t *testing.T) {
 	ns := enableNamespaceObj(map[string]string{v1alpha1.LabelManaged: "true", "argocd.argoproj.io/instance": "platform"},
 		map[string]string{v1alpha1.AnnotationDryRun: "true"})
 	c := fake.NewClientBuilder().WithScheme(scheme).WithObjects(ns,
-		enableDeployment("web", nil, measuring(nil)),
-		enableDeployment("worker", nil, nil),
+		enableDeployment("web", nil, measuring(nil)), labelManaged("web", true),
+		enableDeployment("worker", nil, nil), labelManaged("worker", true),
 	).Build()
 	var out bytes.Buffer
 

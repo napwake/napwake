@@ -65,6 +65,10 @@ dry-run, it sets the namespace's annotation to "false" and drops the
 workloads' own; otherwise it sets each workload's annotation to "false".
 ManagedWorkloads written by hand get spec.dryRun false.
 
+It changes nothing, and fails, for a workload Hybernate won't manage: one in
+a protected namespace, one ignored or opted out by its own label, or one no
+ManagedWorkload manages yet.
+
 Anything whose manifest comes from Argo CD or Flux isn't changed: its
 annotations live in Git, where the tool would put the old value back. Enable
 says what to change there instead.
@@ -175,17 +179,23 @@ func enableWorkload(
 	if err := c.Get(ctx, client.ObjectKey{Name: namespace}, &ns); err != nil {
 		return fmt.Errorf("getting namespace %s: %w", namespace, err)
 	}
+	if err := checkProtected(&ns); err != nil {
+		return err
+	}
 	managed, err := managedByTarget(ctx, c, namespace)
 	if err != nil {
 		return err
 	}
 	ref := fmt.Sprintf("%s/%s", kindOf(obj), obj.GetName())
-	mw := managed[workloadKey(obj)]
+	mw := managed.byTarget[workloadKey(obj)]
 	if mw != nil && mw.Labels[v1alpha1.LabelFromLabel] != v1alpha1.True {
 		return enableHandWritten(ctx, c, mw, ref, opts, out)
 	}
 	if err := checkOptedIn(obj, &ns, ref); err != nil {
 		return err
+	}
+	if managed.readable && mw == nil {
+		return notPickedUp(ref, namespace)
 	}
 	if !inDryRun(mw, obj, &ns) {
 		_, _ = fmt.Fprintf(out, "%s isn't in dry-run; Hybernate already pauses it while idle\n", ref)
@@ -200,8 +210,28 @@ func enableWorkload(
 	if err := setAnnotation(ctx, c, obj, v1alpha1.AnnotationDryRun, dryRunOff); err != nil {
 		return err
 	}
+	if !managed.readable {
+		_, _ = fmt.Fprintf(out, "%s: dry-run annotation set to \"false\". %s\n", ref, unreadableNote(namespace))
+		return nil
+	}
 	_, _ = fmt.Fprintf(out, "%s: dry-run ended, Hybernate will pause it while idle\n", ref)
 	return nil
+}
+
+// notPickedUp is an opted-in workload the operator hasn't made a
+// ManagedWorkload for, so ending its dry-run would change nothing.
+func notPickedUp(ref, namespace string) error {
+	return fmt.Errorf("%s is opted in, but Hybernate hasn't picked it up: no ManagedWorkload in %s manages it. "+
+		"The operator may not be running, may not watch %s (its watchNamespaces), or may protect it; if you "+
+		"labelled it just now, run this again in a few seconds", ref, namespace, namespace)
+}
+
+// unreadableNote says what enable couldn't check without reading
+// ManagedWorkloads.
+func unreadableNote(namespace string) string {
+	return fmt.Sprintf("Your access doesn't allow listing ManagedWorkloads in %s, so enable went by the "+
+		"annotations alone and couldn't check that Hybernate manages it; kubectl hybernate status shows "+
+		"whether it does.", namespace)
 }
 
 // enableHandWritten ends dry-run for a ManagedWorkload written by hand,
@@ -234,11 +264,40 @@ func endHandWrittenDryRun(ctx context.Context, c client.Client, mw *v1alpha1.Man
 	return nil
 }
 
+// alwaysProtected are the namespaces the operator protects whatever it's
+// configured with: Kubernetes' own, where pausing CoreDNS or metrics-server
+// takes the cluster down with it.
+var alwaysProtected = []string{"kube-*"}
+
+// checkProtected refuses a namespace the operator never manages anything
+// in. The operator's own namespace and protectedNamespaces patterns aren't
+// known here; a workload they protect has no ManagedWorkload, which enable
+// reports instead.
+func checkProtected(ns *corev1.Namespace) error {
+	if !v1alpha1.Protected(ns.Name, ns.Labels, alwaysProtected) {
+		return nil
+	}
+	return fmt.Errorf("namespace %s is protected, so Hybernate doesn't manage anything in it; label the namespace "+
+		"%s=true to let it", ns.Name, v1alpha1.LabelAllowProtected)
+}
+
+// checkOptedIn says why the operator doesn't opt the workload in through
+// the label, deciding as it does: the workload's own label, "true" or
+// anything else, wins over its namespace's, and hybernate.io/ignore over
+// both.
 func checkOptedIn(obj client.Object, ns *corev1.Namespace, ref string) error {
-	if obj.GetLabels()[v1alpha1.LabelIgnore] == v1alpha1.True {
+	labels := obj.GetLabels()
+	if labels[v1alpha1.LabelIgnore] == v1alpha1.True {
 		return fmt.Errorf("%s is labelled %s=true, so Hybernate doesn't manage it", ref, v1alpha1.LabelIgnore)
 	}
-	if obj.GetLabels()[v1alpha1.LabelManaged] != v1alpha1.True && ns.GetLabels()[v1alpha1.LabelManaged] != v1alpha1.True {
+	if own, ok := labels[v1alpha1.LabelManaged]; ok {
+		if own == v1alpha1.True {
+			return nil
+		}
+		return fmt.Errorf("%s is labelled %s=%q, which opts it out, so Hybernate doesn't manage it", ref,
+			v1alpha1.LabelManaged, own)
+	}
+	if ns.GetLabels()[v1alpha1.LabelManaged] != v1alpha1.True {
 		return fmt.Errorf("%s isn't opted in: label it %s=true first", ref, v1alpha1.LabelManaged)
 	}
 	return nil
@@ -270,20 +329,29 @@ type dryRunSet struct {
 	// inherits is set when a labelled workload has no annotation of its
 	// own, so it takes the namespace's or the cluster's default.
 	inherits bool
+	// notPickedUp are labelled workloads the operator hasn't made a
+	// ManagedWorkload for, which ending dry-run would do nothing for.
+	notPickedUp []string
 }
 
-func dryRunIn(workloads []client.Object, managed map[targetKey]*v1alpha1.ManagedWorkload,
-	ns *corev1.Namespace) dryRunSet {
+func dryRunIn(workloads []client.Object, managed managedWorkloads, ns *corev1.Namespace) dryRunSet {
 	var found dryRunSet
 	for _, obj := range workloads {
-		mw := managed[workloadKey(obj)]
+		mw := managed.byTarget[workloadKey(obj)]
 		if mw != nil && mw.Labels[v1alpha1.LabelFromLabel] != v1alpha1.True {
 			if mw.Spec.DryRun {
 				found.handWritten = append(found.handWritten, mw)
 			}
 			continue
 		}
-		if checkOptedIn(obj, ns, "") != nil || !inDryRun(mw, obj, ns) {
+		if checkOptedIn(obj, ns, "") != nil {
+			continue
+		}
+		if managed.readable && mw == nil {
+			found.notPickedUp = append(found.notPickedUp, fmt.Sprintf("%s/%s", kindOf(obj), obj.GetName()))
+			continue
+		}
+		if !inDryRun(mw, obj, ns) {
 			continue
 		}
 		found.labelled = append(found.labelled, obj)
@@ -314,6 +382,9 @@ func enableNamespace(ctx context.Context, c client.Client, namespace string, opt
 	if err := c.Get(ctx, client.ObjectKey{Name: namespace}, &ns); err != nil {
 		return fmt.Errorf("getting namespace %s: %w", namespace, err)
 	}
+	if err := checkProtected(&ns); err != nil {
+		return err
+	}
 	workloads, err := listWorkloads(ctx, c, namespace)
 	if err != nil {
 		return err
@@ -323,8 +394,14 @@ func enableNamespace(ctx context.Context, c client.Client, namespace string, opt
 		return err
 	}
 	found := dryRunIn(workloads, managed, &ns)
+	if !managed.readable {
+		_, _ = fmt.Fprintln(out, unreadableNote(namespace))
+	}
 	nsValue, nsSet := ns.GetAnnotations()[v1alpha1.AnnotationDryRun]
 	nsLive := nsSet && nsValue == dryRunOff
+	if len(found.labelled) == 0 && len(found.handWritten) == 0 && len(found.notPickedUp) > 0 {
+		return reportNotPickedUp(out, namespace, found.notPickedUp)
+	}
 	if len(found.labelled) == 0 && len(found.handWritten) == 0 && (!nsSet || nsLive) {
 		_, _ = fmt.Fprintf(out, "Nothing in %s is in dry-run; Hybernate already pauses its workloads while idle\n",
 			namespace)
@@ -351,16 +428,37 @@ func enableNamespace(ctx context.Context, c client.Client, namespace string, opt
 		}
 	}
 
-	_, _ = fmt.Fprintf(out, "%s in %s: dry-run ended, Hybernate will pause %s while idle\n",
-		countOf(e.enabled, "workload"), namespace, pronounObject(e.enabled))
+	if e.enabled > 0 || len(e.git) == 0 && len(found.notPickedUp) == 0 {
+		_, _ = fmt.Fprintf(out, "%s in %s: dry-run ended, Hybernate will pause %s while idle\n",
+			countOf(e.enabled, "workload"), namespace, pronounObject(e.enabled))
+	}
+	var errs []error
 	if len(e.git) > 0 {
 		_, _ = fmt.Fprintln(out, "Not changed, because their manifests come from Git; change them there:")
 		for _, g := range e.git {
 			_, _ = fmt.Fprintf(out, "  %s (%s): %s\n", g.ref, g.tool, g.change)
 		}
-		return errManagedByGit
+		errs = append(errs, errManagedByGit)
 	}
-	return nil
+	if len(found.notPickedUp) > 0 {
+		errs = append(errs, reportNotPickedUp(out, namespace, found.notPickedUp))
+	}
+	return errors.Join(errs...)
+}
+
+// reportNotPickedUp lists the labelled workloads the operator hasn't made a
+// ManagedWorkload for, and fails: ending their dry-run changes nothing.
+func reportNotPickedUp(out io.Writer, namespace string, refs []string) error {
+	_, _ = fmt.Fprintf(out, "Not changed, because Hybernate hasn't picked them up: no ManagedWorkload manages them. "+
+		"The operator may not be running, may not watch %s (its watchNamespaces), or may protect it:\n", namespace)
+	for _, ref := range refs {
+		_, _ = fmt.Fprintf(out, "  %s\n", ref)
+	}
+	have := "have"
+	if len(refs) == 1 {
+		have = "has"
+	}
+	return fmt.Errorf("%s in %s %s no ManagedWorkload", countOf(len(refs), "opted-in workload"), namespace, have)
 }
 
 // namespace sets the namespace's dry-run annotation to "false", unless Git
@@ -440,23 +538,32 @@ func listWorkloads(ctx context.Context, c client.Client, namespace string) ([]cl
 	return workloads, nil
 }
 
-// managedByTarget maps the namespace's workloads to their ManagedWorkloads.
-// Enable works from annotations alone when it can't read them, so it can
-// still end dry-run before the operator is installed, or for a user who may
-// only edit workloads.
-func managedByTarget(ctx context.Context, c client.Client, namespace string) (
-	map[targetKey]*v1alpha1.ManagedWorkload, error) {
+// managedWorkloads are a namespace's ManagedWorkloads by their target.
+// readable is false when the user may not list them, and byTarget is then
+// empty.
+type managedWorkloads struct {
+	byTarget map[targetKey]*v1alpha1.ManagedWorkload
+	readable bool
+}
+
+// managedByTarget reads the namespace's ManagedWorkloads. Enable works from
+// annotations alone for a user who may only edit workloads, but not without
+// the CRD: with nothing installed to pause the workload, ending its dry-run
+// would mean nothing.
+func managedByTarget(ctx context.Context, c client.Client, namespace string) (managedWorkloads, error) {
 	var list v1alpha1.ManagedWorkloadList
 	err := c.List(ctx, &list, client.InNamespace(namespace))
-	if meta.IsNoMatchError(err) || apierrors.IsForbidden(err) {
-		return nil, nil
+	switch {
+	case meta.IsNoMatchError(err):
+		return managedWorkloads{}, errNotInstalled
+	case apierrors.IsForbidden(err):
+		return managedWorkloads{}, nil
+	case err != nil:
+		return managedWorkloads{}, fmt.Errorf("listing ManagedWorkloads in %s: %w", namespace, err)
 	}
-	if err != nil {
-		return nil, fmt.Errorf("listing ManagedWorkloads in %s: %w", namespace, err)
-	}
-	out := make(map[targetKey]*v1alpha1.ManagedWorkload, len(list.Items))
+	out := managedWorkloads{byTarget: make(map[targetKey]*v1alpha1.ManagedWorkload, len(list.Items)), readable: true}
 	for i := range list.Items {
-		out[targetOfManaged(&list.Items[i])] = &list.Items[i]
+		out.byTarget[targetOfManaged(&list.Items[i])] = &list.Items[i]
 	}
 	return out, nil
 }
