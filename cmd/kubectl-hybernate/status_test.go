@@ -225,6 +225,9 @@ func TestNextFor_WhatKeepsItUp(t *testing.T) {
 		{name: "a protected namespace",
 			mutate: withCondition(condition("Protected", metav1.ConditionTrue, "ProtectedNamespace", "")),
 			want:   "never pauses: namespace protected"},
+		{name: "Hybernate's own operator or doorman",
+			mutate: withCondition(condition("Protected", metav1.ConditionTrue, "HybernateComponent", "")),
+			want:   "never pauses: part of Hybernate"},
 		{name: "an ignored workload",
 			mutate: withCondition(condition("TargetAvailable", metav1.ConditionFalse, "TargetIgnored", "")),
 			want:   "nothing: labelled hybernate.io/ignore"},
@@ -637,4 +640,29 @@ func TestStatus_NamedByTarget(t *testing.T) {
 	assert.Contains(t, out, "shop/api   MetricsAvailable   metrics-server isn't answering")
 	assert.Contains(t, out, "1m ago   shop/api   paused")
 	assert.NotContains(t, out, "deployment-api")
+}
+
+// A resume that stopped short needs attention; Hybernate leaving its own
+// operator and doorman alone doesn't.
+func TestStatus_WhatNeedsAttention(t *testing.T) {
+	tests := []struct {
+		name      string
+		condition metav1.Condition
+		want      bool
+	}{
+		{name: "a resume with replicas not Ready",
+			condition: condition("ResumeIncomplete", metav1.ConditionTrue, "ReplicasNotReady", "1 of 3 Ready"), want: true},
+		{name: "a resume that finished",
+			condition: condition("ResumeIncomplete", metav1.ConditionFalse, "AllReplicasReady", "")},
+		{name: "Hybernate's own workload",
+			condition: condition("Protected", metav1.ConditionTrue, "HybernateComponent", "")},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			w := statusWorkloadObj("shop", "api", v1alpha1.TargetKindDeployment, v1alpha1.PhaseRunning, time.Hour)
+			w.Status.Conditions = []metav1.Condition{tt.condition}
+
+			assert.Equal(t, tt.want, len(problemsOf(w, statusNow)) > 0)
+		})
+	}
 }

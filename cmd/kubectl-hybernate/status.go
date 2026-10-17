@@ -188,13 +188,15 @@ var troubles = map[string]metav1.ConditionStatus{
 	"MetricsAvailable":    metav1.ConditionFalse,
 	"PrometheusAvailable": metav1.ConditionFalse,
 	"WakeOnRequest":       metav1.ConditionFalse,
+	"ResumeIncomplete":    metav1.ConditionTrue,
 }
 
 // chosen are the reasons a trouble condition carries when it reports what
 // the user set up on purpose, which needs nobody's attention.
 var chosen = map[string]bool{
-	"NoServices":    true,
-	"TargetIgnored": true,
+	"NoServices":         true,
+	"TargetIgnored":      true,
+	"HybernateComponent": true,
 }
 
 // wakeCauses are the event reasons that say what woke a workload. The
@@ -433,6 +435,9 @@ func nextFor(w *v1alpha1.ManagedWorkload, targetActiveUntil, now time.Time) stri
 	case meta.IsStatusConditionTrue(conditions, "DuplicateTarget"):
 		return "nothing: another ManagedWorkload has it"
 	case meta.IsStatusConditionTrue(conditions, "Protected"):
+		if c := meta.FindStatusCondition(conditions, "Protected"); c.Reason == "HybernateComponent" {
+			return "never pauses: part of Hybernate"
+		}
 		return "never pauses: namespace protected"
 	}
 	switch w.Status.Phase {
