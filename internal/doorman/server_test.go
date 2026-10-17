@@ -485,6 +485,35 @@ func TestServer_ServesThePageToABrowser(t *testing.T) {
 		5*time.Second, 10*time.Millisecond, "counted as resultPage")
 }
 
+// Single sign-on cookies can take a browser's headers past what the doorman
+// reads to tell what a request is. It still gets the page.
+func TestServer_ServesThePageToABrowserWithLargeCookies(t *testing.T) {
+	port := freePort(t)
+	_, _ = startServer(t, pausedWorkload("api", port, time.Minute))
+
+	conn := dial(t, port)
+	send(t, conn, "GET /orders HTTP/1.1\r\nHost: shop.example.dev\r\nAccept: text/html\r\nSec-Fetch-Mode: navigate\r\n"+
+		"Cookie: _oauth2_proxy="+strings.Repeat("a", 2*maxPeek)+"\r\n\r\n")
+	resp, _ := readResponse(t, conn)
+
+	assert.Equal(t, http.StatusServiceUnavailable, resp.StatusCode)
+}
+
+// A request whose headers run past what the doorman reads to judge it is
+// held, and reaches the woken workload whole.
+func TestServer_HoldsARequestWithLargeHeadersIntact(t *testing.T) {
+	port := freePort(t)
+	_, c := startServer(t, pausedWorkload("api", port, time.Minute))
+	request := "GET /api HTTP/1.1\r\nHost: api\r\nAccept: */*\r\nCookie: sso=" + strings.Repeat("a", 2*maxPeek) + "\r\n\r\n"
+
+	conn := dial(t, port)
+	send(t, conn, request)
+	require.Eventually(t, func() bool { return lastRequest(t, c) != "" }, 5*time.Second, 20*time.Millisecond)
+	require.NoError(t, c.Create(context.Background(), readySlice(echoPort(t))))
+
+	echoed(t, conn, request)
+}
+
 // A workload that has a Ready pod is up, even if it isn't Running yet
 // because another replica can't be scheduled: a browser gets the app, not
 // the page, and nothing is woken.

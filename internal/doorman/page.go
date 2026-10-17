@@ -87,10 +87,20 @@ func looksLikeHTTP(head []byte) bool {
 }
 
 // parseRequest parses head, the first bytes of a connection, as an HTTP
-// request, if it is one whose headers have all arrived.
+// request. Headers longer than maxPeek, as single sign-on cookies can make
+// them, are judged by the lines that fit: browsers send the ones the doorman
+// reads before their cookies.
 func parseRequest(head []byte) (*http.Request, bool) {
 	if !looksLikeHTTP(head) {
 		return nil, false
+	}
+	end := []byte("\r\n\r\n")
+	if !bytes.Contains(head, end) {
+		lastLine := bytes.LastIndex(head, []byte("\r\n"))
+		if lastLine < 0 {
+			return nil, false
+		}
+		head = append(head[:lastLine:lastLine], end...)
 	}
 	req, err := http.ReadRequest(bufio.NewReader(bytes.NewReader(head)))
 	if err != nil {
