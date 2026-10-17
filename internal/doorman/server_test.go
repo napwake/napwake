@@ -60,7 +60,17 @@ func testScheme(t *testing.T) *runtime.Scheme {
 	scheme := runtime.NewScheme()
 	require.NoError(t, v1alpha1.AddToScheme(scheme))
 	require.NoError(t, discoveryv1.AddToScheme(scheme))
+	require.NoError(t, corev1.AddToScheme(scheme))
 	return scheme
+}
+
+// apiPod is the pod readySlice names, with addrs.
+func apiPod(addrs ...string) *corev1.Pod {
+	pod := &corev1.Pod{ObjectMeta: metav1.ObjectMeta{Name: "api-0", Namespace: "dev"}}
+	for _, addr := range addrs {
+		pod.Status.PodIPs = append(pod.Status.PodIPs, corev1.PodIP{IP: addr})
+	}
+	return pod
 }
 
 // freePort returns a port nothing is listening on, for the doorman to claim.
@@ -155,13 +165,14 @@ func readySlice(port int32) *discoveryv1.EndpointSlice {
 	}
 }
 
-// newTestServer is a doorman over a fake client holding objs. Tests run
-// their backends on loopback, which the doorman otherwise never dials, and
-// stop without the drain a doorman pod gets, closing what they hold.
+// newTestServer is a doorman over a fake client holding objs, and the pod
+// readySlice names. Tests run their backends on loopback, which the doorman
+// otherwise never dials, and stop without the drain a doorman pod gets,
+// closing what they hold.
 func newTestServer(t *testing.T, wrap func(client.WithWatch) client.WithWatch, objs ...client.Object) (*Server, client.WithWatch) {
 	t.Helper()
 	var c client.WithWatch
-	c = fake.NewClientBuilder().WithScheme(testScheme(t)).WithObjects(objs...).Build()
+	c = fake.NewClientBuilder().WithScheme(testScheme(t)).WithObjects(append(objs, apiPod("127.0.0.1"))...).Build()
 	if wrap != nil {
 		c = wrap(c)
 	}
@@ -325,14 +336,27 @@ func TestBackends_TrustOnlyTheServicesPods(t *testing.T) {
 			s.Endpoints[0].Conditions.Ready = nil
 			s.Endpoints[0].Conditions.Terminating = ptr.To(true)
 		}},
+		{name: "an address the pod doesn't have", slice: func(s *discoveryv1.EndpointSlice) {
+			s.Endpoints[0].Addresses = []string{"10.0.0.10"}
+		}},
+		{name: "a pod in another namespace", slice: func(s *discoveryv1.EndpointSlice) {
+			s.Endpoints[0].Addresses = []string{"10.0.0.9"}
+			s.Endpoints[0].TargetRef.Namespace = "prod"
+		}},
+		{name: "a pod that doesn't exist", slice: func(s *discoveryv1.EndpointSlice) {
+			s.Endpoints[0].Addresses = []string{"10.0.0.9"}
+			s.Endpoints[0].TargetRef.Name = "gone"
+		}},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			slice := readySlice(8080)
 			tt.slice(slice)
-			c := fake.NewClientBuilder().WithScheme(testScheme(t)).WithObjects(slice).Build()
+			elsewhere := apiPod("10.0.0.9")
+			elsewhere.Namespace = "prod"
+			c := fake.NewClientBuilder().WithScheme(testScheme(t)).WithObjects(slice, apiPod("10.0.0.9"), elsewhere).Build()
 
-			addrs, _, err := newBackends(c).get(context.Background(), backendKey{
+			addrs, _, err := newBackends(c, c).get(context.Background(), backendKey{
 				service: serviceRef{namespace: "dev", name: "api"}, portName: "http",
 			})
 
@@ -365,8 +389,8 @@ func TestTrimEndpointSlice_KeepsWhatBackendsRead(t *testing.T) {
 	require.NoError(t, err)
 	key := backendKey{service: serviceRef{namespace: "dev", name: "api"}, portName: "http"}
 	backendsOf := func(slice *discoveryv1.EndpointSlice) []string {
-		c := fake.NewClientBuilder().WithScheme(testScheme(t)).WithObjects(slice).Build()
-		b := newBackends(c)
+		c := fake.NewClientBuilder().WithScheme(testScheme(t)).WithObjects(slice, apiPod("10.244.1.9")).Build()
+		b := newBackends(c, c)
 		b.allowed = func(netip.Addr) bool { return true }
 		addrs, _, err := b.get(context.Background(), key)
 		require.NoError(t, err)
@@ -405,14 +429,42 @@ func TestBackends_IPv6(t *testing.T) {
 	slice := readySlice(8080)
 	slice.AddressType = discoveryv1.AddressTypeIPv6
 	slice.Endpoints[0].Addresses = []string{"fd00:10:244::7"}
-	c := fake.NewClientBuilder().WithScheme(testScheme(t)).WithObjects(slice).Build()
+	c := fake.NewClientBuilder().WithScheme(testScheme(t)).WithObjects(slice, apiPod("10.244.0.7", "fd00:10:244::7")).Build()
 
-	addrs, _, err := newBackends(c).get(context.Background(), backendKey{
+	addrs, _, err := newBackends(c, c).get(context.Background(), backendKey{
 		service: serviceRef{namespace: "dev", name: "api"}, portName: "http",
 	})
 
 	require.NoError(t, err)
 	assert.Equal(t, []string{"[fd00:10:244::7]:8080"}, addrs)
+}
+
+// A StatefulSet's pod recreated under the same name has a new address,
+// which is checked at once rather than when the old one's TTL runs out.
+func TestBackends_ReadsAPodAgainWhenItsAddressChanges(t *testing.T) {
+	slice := readySlice(8080)
+	slice.Endpoints[0].Addresses = []string{"10.0.0.9"}
+	c := fake.NewClientBuilder().WithScheme(testScheme(t)).WithObjects(slice, apiPod("10.0.0.9")).Build()
+	clock := &testClock{now: time.Now()}
+	b := newBackends(c, c)
+	b.now = clock.Now
+	key := backendKey{service: serviceRef{namespace: "dev", name: "api"}, portName: "http"}
+	ctx := context.Background()
+
+	addrs, _, err := b.get(ctx, key)
+	require.NoError(t, err)
+	require.Equal(t, []string{"10.0.0.9:8080"}, addrs)
+
+	require.NoError(t, c.Delete(ctx, apiPod()))
+	require.NoError(t, c.Create(ctx, apiPod("10.0.0.10")))
+	slice.Endpoints[0].Addresses = []string{"10.0.0.10"}
+	require.NoError(t, c.Update(ctx, slice))
+	clock.Advance(podRecheck)
+	b.changedAll()
+
+	addrs, _, err = b.get(ctx, key)
+	require.NoError(t, err)
+	assert.Equal(t, []string{"10.0.0.10:8080"}, addrs)
 }
 
 func TestServer_ClosesAfterMaxWait(t *testing.T) {
@@ -1291,7 +1343,7 @@ func TestServer_InformerWakesHeldConnections(t *testing.T) {
 	informers := &informertest.FakeInformers{Scheme: scheme}
 	informer, err := informers.FakeInformerFor(context.Background(), &discoveryv1.EndpointSlice{})
 	require.NoError(t, err)
-	c := fake.NewClientBuilder().WithScheme(scheme).WithObjects(pausedWorkload("api", port, time.Minute)).Build()
+	c := fake.NewClientBuilder().WithScheme(scheme).WithObjects(pausedWorkload("api", port, time.Minute), apiPod("127.0.0.1")).Build()
 	s := NewServer(c, nil, Options{Host: "127.0.0.1", Informers: informers})
 	s.backends.allowed = func(netip.Addr) bool { return true }
 	s.acceptFor, s.grace = 0, 100*time.Millisecond

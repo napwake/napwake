@@ -7,7 +7,7 @@ Everything the Hybernate operator and its doorman read, write, and send, for a s
 | Resource | Why | How |
 |---|---|---|
 | Deployments, StatefulSets | The workloads it manages: replicas, pod template, labels, and annotations | Watched |
-| Pods | What a workload's running pods request: the app containers', at most every 5 minutes, to judge CPU activity against, and all containers', sidecars included, to price it; and which pod sent a request that woke a workload | Read when needed, not cached |
+| Pods | What a workload's running pods request: the app containers', at most every 5 minutes, to judge CPU activity against, and all containers', sidecars included, to price it; and which pod sent a request that woke a workload. The doorman reads the pod each of a woken workload's endpoints names, to check the endpoint's address is that pod's | Read when needed, not cached; the doorman keeps a pod's addresses for 30 seconds |
 | Pod metrics (`metrics.k8s.io`) | CPU use, the activity clock's main signal | Read when needed, not cached |
 | Services | Which Services to route a paused workload's requests through, and which workload an address in an environment names | Watched |
 | EndpointSlices | Its own, routing paused workloads to the doorman, and the doorman Service's, to find the doorman's pods. The doorman reads every slice in the watched namespaces, to find a woken workload's Ready pods | Watched |
@@ -79,6 +79,7 @@ With leader election, a Role `hybernate-leader-election` in the release namespac
 |---|---|---|
 | `hybernate.io` | `managedworkloads` | `get`, `list`, `watch`, `patch` |
 | `discovery.k8s.io` | `endpointslices` | `get`, `list`, `watch` |
+| `""` | `pods` | `get` |
 | `""`, `events.k8s.io` | `events` | `create`, `patch` |
 
 **Guards**, with `guard.uninstall` and, with `watchNamespaces`, `guard.upgrade` (the defaults): a ServiceAccount `hybernate-uninstall-guard`, and a ClusterRole and ClusterRoleBinding of the same name, allowing `list` on `hybernate.io` `managedworkloads`, cluster-wide even with `watchNamespaces`; and the same named `hybernate-upgrade-guard`. They're Helm hooks, like the Jobs that use them: they exist only while `helm uninstall` runs its pre-delete hook, or `helm upgrade` or `helm rollback` its pre-upgrade or pre-rollback hook, which refuse to leave ManagedWorkloads without an operator.

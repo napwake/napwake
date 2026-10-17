@@ -102,6 +102,11 @@ type Options struct {
 	// workload's endpoints change instead of at the next poll.
 	Informers Informers
 
+	// APIReader reads what the doorman doesn't cache: the pods its
+	// endpoints name, to check each is the pod it says. Defaults to the
+	// client.
+	APIReader client.Reader
+
 	// HealthCheckAgents are User-Agent prefixes of health checkers and
 	// scrapers to recognise besides the built-in ones, such as an in-house
 	// uptime monitor's, so their requests don't wake workloads.
@@ -188,6 +193,10 @@ type Server struct {
 
 // NewServer returns a doorman that reads and writes through c.
 func NewServer(c client.Client, recorder events.EventRecorder, opts Options) *Server {
+	pods := opts.APIReader
+	if pods == nil {
+		pods = c
+	}
 	return &Server{
 		client:    c,
 		recorder:  recorder,
@@ -198,7 +207,7 @@ func NewServer(c client.Client, recorder events.EventRecorder, opts Options) *Se
 		acceptFor: shutdownAccept,
 		pollEvery: backendPollInterval,
 		silent:    silentWake,
-		backends:  newBackends(c),
+		backends:  newBackends(c, pods),
 
 		proxyIdle:       proxyIdleTimeout,
 		drainedLifetime: drainedProxyLifetime,

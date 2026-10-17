@@ -235,6 +235,7 @@ func main() {
 		}
 		server := doorman.NewServer(c, mgr.GetEventRecorder("hybernate-doorman"), doorman.Options{
 			Informers:         mgr.GetCache(),
+			APIReader:         mgr.GetAPIReader(),
 			HealthCheckAgents: strings.Split(doormanHealthCheckAgents, ","),
 			// Every authenticated client may read /readyz, so this needs
 			// no RBAC, whichever namespaces the doorman is limited to.
