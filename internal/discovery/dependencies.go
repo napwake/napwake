@@ -32,10 +32,6 @@ import (
 	v1alpha1 "github.com/okedeji/hybernate/api/v1alpha1"
 )
 
-// maxAddressShown keeps a long value, such as a list of brokers, from
-// filling the report.
-const maxAddressShown = 80
-
 // Dependency is a workload another one's environment points at, through a
 // Service in front of it.
 type Dependency struct {
@@ -43,7 +39,7 @@ type Dependency struct {
 	Kind      v1alpha1.TargetKind `json:"kind"`
 	Name      string              `json:"name"`
 	// Via is the environment variable, and Address the address found in
-	// it, with any password hidden.
+	// it as scheme://host:port only, so no credential in it is shown.
 	Via     string `json:"via"`
 	Address string `json:"address"`
 	// Headless means the address is a headless Service, or one of its
@@ -205,7 +201,7 @@ func dependenciesOf(self workloadKey, spec corev1.PodSpec, configMaps map[string
 				}
 				deps = addDependency(deps, Dependency{
 					Namespace: target.key.namespace, Kind: target.key.kind, Name: target.key.name,
-					Via: v.name, Address: shown(addr.raw), Headless: target.headless, Source: SourceEnvironment,
+					Via: v.name, Address: addr.shown, Headless: target.headless, Source: SourceEnvironment,
 				})
 			}
 		}
@@ -271,10 +267,11 @@ func environment(spec corev1.PodSpec, configMaps map[string]map[string]string) (
 	return vars, usesSecrets
 }
 
-// address is a host found in a variable's value, with the text it was
-// found in.
+// address is a host found in a variable's value, and the address as the
+// report shows it: only its scheme, host and port, since a user, password,
+// path or query string can each hold a credential.
 type address struct {
-	host, raw string
+	host, shown string
 }
 
 // addresses finds the hosts in a value: in URLs (jdbc: and lists of hosts
@@ -285,9 +282,9 @@ func addresses(value string) []address {
 	for _, token := range strings.FieldsFunc(value, func(r rune) bool {
 		return r == ',' || r == ';' || r == ' ' || r == '\t' || r == '\n' || r == '"' || r == '\''
 	}) {
-		rest, shaped := token, false
+		rest, scheme, shaped := token, "", false
 		if i := strings.Index(rest, "://"); i >= 0 {
-			rest, shaped = rest[i+3:], true
+			scheme, rest, shaped = rest[:i+3], rest[i+3:], true
 		}
 		if i := strings.IndexAny(rest, "/?#"); i >= 0 {
 			rest = rest[:i]
@@ -295,12 +292,12 @@ func addresses(value string) []address {
 		if i := strings.LastIndex(rest, "@"); i >= 0 {
 			rest = rest[i+1:]
 		}
-		host := rest
-		if h, port, ok := strings.Cut(rest, ":"); ok {
-			if port == "" || strings.Trim(port, "0123456789") != "" {
+		host, port := rest, ""
+		if h, p, ok := strings.Cut(rest, ":"); ok {
+			if p == "" || strings.Trim(p, "0123456789") != "" {
 				continue
 			}
-			host, shaped = h, true
+			host, port, shaped = h, ":"+p, true
 		}
 		host = strings.TrimSuffix(strings.ToLower(host), ".")
 		if host == "" || len(validation.IsDNS1123Subdomain(host)) > 0 {
@@ -309,10 +306,18 @@ func addresses(value string) []address {
 		if !shaped && !strings.Contains(host, ".") {
 			continue
 		}
-		out = append(out, address{host: host, raw: token})
+		if !urlScheme.MatchString(scheme) {
+			scheme = ""
+		}
+		out = append(out, address{host: host, shown: scheme + host + port})
 	}
 	return out
 }
+
+// urlScheme matches a URL's scheme with its "://", including compound ones
+// such as jdbc:postgresql://. Anything else before the "://" is left out of
+// what's shown, as it could be a key=value pair holding a secret.
+var urlScheme = regexp.MustCompile(`^[a-zA-Z][a-zA-Z0-9+.-]*(:[a-zA-Z][a-zA-Z0-9+.-]*)*://$`)
 
 type resolved struct {
 	key      workloadKey
@@ -432,32 +437,3 @@ func declares(mw *v1alpha1.ManagedWorkload, namespace string, target workloadKey
 	}
 	return false
 }
-
-// shown is an address as the report shows it: anything that can be a
-// credential hidden, and long ones cut. Everything before the last @ is a
-// user, a password, or a token, whatever its form, so it's replaced whole;
-// a query string or a key=value pair naming a secret has its value
-// replaced. The query string is then dropped, being no part of the address.
-func shown(raw string) string {
-	scheme := ""
-	if i := strings.Index(raw, "://"); i >= 0 {
-		scheme, raw = raw[:i+3], raw[i+3:]
-	}
-	if at := strings.LastIndex(raw, "@"); at >= 0 {
-		raw = "***" + raw[at:]
-	}
-	raw = secretValue.ReplaceAllString(raw, "${1}***")
-	if i := strings.IndexAny(raw, "?#"); i >= 0 {
-		raw = raw[:i]
-	}
-	raw = scheme + raw
-	if len(raw) > maxAddressShown {
-		raw = raw[:maxAddressShown-3] + "..."
-	}
-	return raw
-}
-
-// secretValue matches a key that names a credential, with its value, in a
-// query string or a list of key=value pairs.
-var secretValue = regexp.MustCompile(
-	`(?i)((?:^|[^a-z0-9])[a-z0-9_.-]*(?:pass|pwd|secret|token|key|auth|credential|signature)[a-z0-9_.-]*=)[^&;,\s]*`)
