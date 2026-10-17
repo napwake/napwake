@@ -594,3 +594,18 @@ func TestScanCluster_SavedBeforeGoingBackToDryRun(t *testing.T) {
 	require.NotNil(t, w.Measured)
 	assert.InDelta(t, w.Measured.MonthlyFreed, CouldSave(w), 0.001, "what it would save is measured, not saved")
 }
+
+// Until the operator's first reconcile in a new month, a workload's record
+// is last month's, which saved nothing this month.
+func TestScanCluster_LastMonthsSavingsArentThisMonths(t *testing.T) {
+	lastMonth := metav1.NewTime(scanTime.AddDate(0, -1, 0))
+	stale := managedFor("stale", v1alpha1.ManagedWorkloadStatus{Phase: v1alpha1.PhaseRunning,
+		Cost: &v1alpha1.CostStatus{SavedThisMonth: "$80.00", LastAccumulatedAt: &lastMonth}})
+	objs := append(deploymentWithRollout("stale", testNamespace, 1, 30*24*time.Hour), stale,
+		makePodMetrics("stale", testNamespace, "1m", "10Mi"))
+
+	report := scanWorkloads(t, objs...)
+
+	assert.Zero(t, byName(report)["stale"].SavedThisMonth)
+	assert.Zero(t, report.Totals.SavedThisMonth)
+}

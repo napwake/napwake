@@ -442,14 +442,24 @@ func measured(mw *v1alpha1.ManagedWorkload, hourlyCost float64, now time.Time) *
 	return m
 }
 
-// SavedThisMonth reads what Hybernate records it has saved this month
-// pausing a workload. A workload put back in dry-run keeps what it saved
-// while live: dry-run never pauses, so it adds nothing to the record.
-func SavedThisMonth(mw *v1alpha1.ManagedWorkload) float64 {
+// SavedThisMonth reads what Hybernate records it has saved this calendar
+// month pausing a workload. The operator starts a new month's total at its
+// first reconcile in that month, so until then the record is last month's,
+// which saved nothing this month. A workload put back in dry-run keeps what
+// it saved while live: dry-run never pauses, so it adds nothing to the
+// record.
+func SavedThisMonth(mw *v1alpha1.ManagedWorkload, now time.Time) float64 {
 	if mw == nil || mw.Status.Cost == nil {
 		return 0
 	}
-	saved, err := strconv.ParseFloat(strings.TrimPrefix(mw.Status.Cost.SavedThisMonth, "$"), 64)
+	c := mw.Status.Cost
+	if c.LastAccumulatedAt != nil {
+		last, now := c.LastAccumulatedAt.UTC(), now.UTC()
+		if last.Year() != now.Year() || last.Month() != now.Month() {
+			return 0
+		}
+	}
+	saved, err := strconv.ParseFloat(strings.TrimPrefix(c.SavedThisMonth, "$"), 64)
 	if err != nil {
 		return 0
 	}
