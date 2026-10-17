@@ -123,6 +123,7 @@ type Reconciler struct {
 	doormanPorts    portAllocator
 	doormanFailures failureBackoff
 	prometheus      *signal.Prometheus
+	doormanFamilies doormanFamilies
 	clock           func() time.Time
 }
 
@@ -1161,6 +1162,9 @@ func (r *Reconciler) initDefaults() {
 // SetupWithManager registers the reconciler with the controller manager.
 func (r *Reconciler) SetupWithManager(mgr ctrl.Manager) error {
 	r.initDefaults()
+	if err := r.setupDoormanSliceSync(mgr); err != nil {
+		return err
+	}
 	targetHandler := handler.EnqueueRequestsFromMapFunc(r.findWorkloadsForTarget)
 	return ctrl.NewControllerManagedBy(mgr).
 		For(&v1alpha1.ManagedWorkload{}).

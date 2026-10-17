@@ -362,15 +362,22 @@ func (r *Reconciler) reportDoorman(ctx context.Context, workload *v1alpha1.Manag
 	}
 }
 
-// doormanEndpoints returns an endpoint for each Ready doorman pod, by
-// address family, from the doorman Service's own EndpointSlices. Each keeps
-// its pod's node, zone, and pod reference: load balancers that register pods
-// directly skip endpoints without a pod, and traffic policies of Local skip
-// those without a node.
 func (r *Reconciler) doormanEndpoints(ctx context.Context) (map[discoveryv1.AddressType][]discoveryv1.Endpoint, error) {
+	return readDoormanEndpoints(ctx, r.Client, r.DoormanNamespace, r.DoormanService)
+}
+
+// readDoormanEndpoints returns an endpoint for each Ready doorman pod, by
+// address family, from the doorman Service's own EndpointSlices. A pod
+// that's terminating is left out at once, whatever its readiness says, since
+// it stops accepting connections within seconds. Each keeps its pod's node,
+// zone, and pod reference: load balancers that register pods directly skip
+// endpoints without a pod, and traffic policies of Local skip those without
+// a node.
+func readDoormanEndpoints(ctx context.Context, reader client.Reader, namespace, service string) (
+	map[discoveryv1.AddressType][]discoveryv1.Endpoint, error) {
 	var list discoveryv1.EndpointSliceList
-	if err := r.List(ctx, &list, client.InNamespace(r.DoormanNamespace),
-		client.MatchingLabels{discoveryv1.LabelServiceName: r.DoormanService}); err != nil {
+	if err := reader.List(ctx, &list, client.InNamespace(namespace),
+		client.MatchingLabels{discoveryv1.LabelServiceName: service}); err != nil {
 		return nil, fmt.Errorf("listing doorman endpoints: %w", err)
 	}
 	out := map[discoveryv1.AddressType][]discoveryv1.Endpoint{}
@@ -379,7 +386,8 @@ func (r *Reconciler) doormanEndpoints(ctx context.Context) (map[discoveryv1.Addr
 			continue
 		}
 		for _, ep := range slice.Endpoints {
-			if len(ep.Addresses) == 0 || (ep.Conditions.Ready != nil && !*ep.Conditions.Ready) {
+			if len(ep.Addresses) == 0 || (ep.Conditions.Ready != nil && !*ep.Conditions.Ready) ||
+				(ep.Conditions.Terminating != nil && *ep.Conditions.Terminating) {
 				continue
 			}
 			out[slice.AddressType] = append(out[slice.AddressType], discoveryv1.Endpoint{
@@ -988,9 +996,17 @@ func (r *Reconciler) isDoormanEndpoints(obj client.Object) bool {
 }
 
 // findWorkloadsForDoorman re-queues every paused or resuming workload when
-// the doorman's own endpoints change, so their slices follow the doorman
-// pods as they come and go.
+// the IP families the doorman has Ready pods in change: one that has none
+// left stops being routed, and one that has some again is routed anew. A
+// change of pods within them, as in a rolling update, is the
+// doormanSliceSync's, which moves every slice without a full reconcile.
 func (r *Reconciler) findWorkloadsForDoorman(ctx context.Context, _ client.Object) []reconcile.Request {
+	endpoints, err := r.doormanEndpoints(ctx)
+	if err != nil {
+		log.FromContext(ctx).Error(err, "reading doorman endpoints for doorman change")
+	} else if !r.doormanFamilies.changed(endpoints) {
+		return nil
+	}
 	var list v1alpha1.ManagedWorkloadList
 	if err := r.List(ctx, &list); err != nil {
 		log.FromContext(ctx).Error(err, "listing managed workloads for doorman change")
