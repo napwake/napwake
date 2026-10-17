@@ -143,6 +143,7 @@ The relaunch. The 0.1.x releases were early experiments, and 0.2.0 is a fresh st
 - The forecast doesn't learn the startup after a workload is scaled up outside Hybernate, such as with `kubectl scale`, as demand: the 15-minute warm-up after a wake counts from that scale-up, not from the pause
 - Cost counts the time before a phase change in the phase it was spent in even when the replicas can't be read then, at what was last read, instead of leaving up to 5 minutes awake to be counted as paused savings
 - A pause finished after an interruption, with the target already at zero, is priced at the replicas it paused, not as saving nothing
+- Azure constrained vCPU sizes, such as `Standard_E4-2s_v5`, are priced at their base size's list price spread over their vCPUs, instead of at the default rates
 - Events are emitted once, when something changes: forecast vetoes, routing warnings, learned dependencies, and the `DependentsAwake` warning, which fires once a manual pause begins
 - Every series of a deleted workload is dropped from the metrics, and the operator reads only the target's own pods and claims, with deadlines on every call
 - A GitOps tool that set the replicas in the same second as another field manager is reported as the one that woke a paused workload, so the `GitOpsConflict` is never missed
