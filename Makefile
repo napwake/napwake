@@ -143,7 +143,7 @@ test-alerts: ## Unit-test the chart's and config/prometheus's alert rules with p
 .PHONY: check-chart
 check-chart: ## Lint the Helm chart, render it for each provider's Kubernetes versions, and check its RBAC matches config/rbac
 	helm lint charts/hybernate --strict
-	@for v in v1.30.0 v1.30.2-eks-1552ad0 v1.31.1-gke.1678000 v1.32.5 v1.34.1; do \
+	@for v in v1.30.0 v1.30.2-eks-1552ad0 v1.31.1-gke.1678000 v1.32.5 v1.34.1 v1.37.0; do \
 		echo "rendering for Kubernetes $$v"; \
 		helm template hybernate charts/hybernate --kube-version $$v >/dev/null || exit 1; \
 	done
