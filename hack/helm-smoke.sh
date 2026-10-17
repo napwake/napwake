@@ -98,7 +98,7 @@ not_empty() {
 
 gone() {
   local object=$1 ns=$2
-  ! kubectl get "$object" -n "$ns"
+  [ -z "$(kubectl get "$object" -n "$ns" --ignore-not-found -o name)" ]
 }
 
 # The EndpointSlices the operator writes to route the workload's Services
