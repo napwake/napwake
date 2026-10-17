@@ -628,6 +628,8 @@ func totals(workloads []Workload) Totals {
 		t.Workloads++
 		t.SavedThisMonth += w.SavedThisMonth
 		switch {
+		case w.Measured != nil && w.ScaledByHand:
+			t.DryRun++
 		case w.Measured != nil:
 			t.DryRun++
 			t.Measured.Pauses += w.Measured.Pauses

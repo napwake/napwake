@@ -465,6 +465,26 @@ func TestScanCluster_SavingsBySource(t *testing.T) {
 	assert.InDelta(t, got["dry"].Measured.MonthlyFreed, report.Totals.Measured.MonthlyFreed, 0.001)
 }
 
+// A workload in dry-run that someone scaled to zero can't sleep any more
+// than it does, so what dry-run measured before isn't in the totals, though
+// it's still one of the workloads in dry-run.
+func TestScanCluster_DryRunScaledByHandIsntMeasured(t *testing.T) {
+	dry := managedFor("dry", v1alpha1.ManagedWorkloadStatus{Phase: v1alpha1.PhaseRunning,
+		DryRun: &v1alpha1.DryRunStatus{Since: metav1.NewTime(scanTime.Add(-73 * time.Hour)), Pauses: 2,
+			Slept: metav1.Duration{Duration: 10 * time.Hour}}})
+	dry.Spec.DryRun = true
+	objs := append(deploymentWithRollout("dry", testNamespace, 0, 30*24*time.Hour), dry)
+
+	report := scanWorkloads(t, objs...)
+
+	w := byName(report)["dry"]
+	require.True(t, w.ScaledByHand)
+	require.NotNil(t, w.Measured)
+	assert.Zero(t, CouldSave(w))
+	assert.Equal(t, 1, report.Totals.DryRun)
+	assert.Equal(t, Measured{}, report.Totals.Measured)
+}
+
 // A report's times are in UTC whatever the machine's zone, which the API
 // client reads times into, so reports from different machines compare.
 func TestScanCluster_TimesInUTC(t *testing.T) {

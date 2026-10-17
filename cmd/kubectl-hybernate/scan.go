@@ -834,7 +834,9 @@ func couldSaveCell(wl Workload) string {
 // manage them, and so are those whose replicas are set from Git, whose
 // GitOps tool would revert a label put on by hand and undo every pause; the
 // notes say how to bring those in. Nor is the cluster's own
-// infrastructure, which the report keeps apart from the workloads anyway.
+// infrastructure, which the report keeps apart from the workloads anyway,
+// or a workload in dry-run someone scaled to zero, which going live frees
+// nothing more of.
 func nextStepTargets(workloads []Workload) (idle, measuring *Workload) {
 	for i := range workloads {
 		wl := &workloads[i]
@@ -844,7 +846,7 @@ func nextStepTargets(workloads []Workload) (idle, measuring *Workload) {
 		if idle == nil && wl.State == discovery.StateIdle && !wl.Managed {
 			idle = wl
 		}
-		if measuring == nil && wl.Measured != nil {
+		if measuring == nil && wl.Measured != nil && !wl.ScaledByHand {
 			measuring = wl
 		}
 	}

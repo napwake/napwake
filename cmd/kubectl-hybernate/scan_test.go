@@ -684,6 +684,21 @@ func TestNextSteps_SkipGitOpsAndKnowHybernateIsInstalled(t *testing.T) {
 	assert.NotContains(t, got, "helm install", "Hybernate's own Deployment shows it's installed")
 }
 
+// A workload in dry-run that someone scaled to zero has nothing for going
+// live to free, so next steps take the next one measuring instead.
+func TestNextSteps_SkipDryRunScaledByHand(t *testing.T) {
+	scaled := Workload{Namespace: "dev", Kind: v1alpha1.TargetKindDeployment, Name: "parked", State: discovery.StatePaused,
+		Managed: true, DryRun: true, ScaledByHand: true, Measured: &discovery.Measured{MonthlyFreed: 40}}
+	measuring := Workload{Namespace: "dev", Kind: v1alpha1.TargetKindDeployment, Name: "preview",
+		State: discovery.StateIdle, Managed: true, DryRun: true, Measured: &discovery.Measured{MonthlyFreed: 10}}
+
+	idle, got := nextStepTargets([]Workload{scaled, measuring})
+
+	assert.Nil(t, idle)
+	require.NotNil(t, got)
+	assert.Equal(t, "preview", got.Name)
+}
+
 func TestParseHeaders(t *testing.T) {
 	got, err := parseHeaders([]string{"X-Scope-OrgID: team-a", "x-extra:  two words  "})
 	require.NoError(t, err)
