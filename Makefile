@@ -135,7 +135,7 @@ test-alerts: ## Unit-test the chart's and config/prometheus's alert rules with p
 	@dir=$$(mktemp -d); trap 'rm -rf "$$dir"' EXIT; \
 	cp tests/prometheus/*_test.yaml "$$dir"; \
 	go run ./hack/promrules < config/prometheus/alerts.yaml > "$$dir/kustomize.rules.yaml"; \
-	helm template hybernate charts/hybernate --set metrics.prometheusRule.enabled=true \
+	helm template hybernate charts/hybernate --set metrics.prometheusRule.enabled=true --set metrics.serviceMonitor.enabled=true \
 		--show-only templates/prometheusrule.yaml | go run ./hack/promrules > "$$dir/chart.rules.yaml"; \
 	$(CONTAINER_TOOL) run --rm --user "$$(id -u):$$(id -g)" -v "$$dir:/rules" -w /rules --entrypoint promtool $(PROMETHEUS_IMAGE) \
 		test rules $$(cd "$$dir" && ls *_test.yaml)
@@ -217,6 +217,10 @@ check-chart: ## Lint the Helm chart, render it for each provider's Kubernetes ve
 	kustomize=$$(awk '$$1 == "terminationGracePeriodSeconds:" {print $$2}' config/manager/manager.yaml); \
 	[ "$$chart" -gt 30 ] && [ "$$chart" = "$$kustomize" ] || { \
 		echo "the operator's grace period, the chart's '$$chart' and config/manager's '$$kustomize', isn't over the 30s its reconciles get to finish"; exit 1; }
+	@! helm template hybernate charts/hybernate --set metrics.prometheusRule.enabled=true | grep -q 'alert: Hybernate.*Down' && \
+		[ "$$(helm template hybernate charts/hybernate --set metrics.prometheusRule.enabled=true --set metrics.serviceMonitor.enabled=true | \
+			grep -c 'alert: Hybernate.*Down')" = 2 ] || { \
+		echo "HybernateDown and HybernateDoormanDown aren't created exactly with the ServiceMonitors whose jobs they match, so they fire forever"; exit 1; }
 	@helm template hybernate charts/hybernate --set leaderElection.enabled=false --show-only templates/deployment.yaml | grep -q 'type: Recreate' && \
 		! helm template hybernate charts/hybernate --show-only templates/deployment.yaml | grep -q 'type: Recreate' || { \
 		echo "without leader election, a rolling update runs two operators at once"; exit 1; }

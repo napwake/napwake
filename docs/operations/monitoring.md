@@ -99,7 +99,7 @@ The Helm chart creates these rules when `metrics.prometheusRule.enabled` is `tru
 | `HybernateTargetUnavailable` | A ManagedWorkload's target goes missing more than 3 times in an hour | warning |
 | `HybernateDoormanWakesFailing` | More than 3 requests to one paused workload timed out or failed (`result` `timeout` or `error`) in 15 minutes, for 5 minutes | warning |
 
-`HybernateDown` and `HybernateDoormanDown` match the scrape job of the operator's and the doorman's metrics Service, so they need the ServiceMonitors above.
+`HybernateDown` and `HybernateDoormanDown` match the scrape job of the operator's and the doorman's metrics Service that the ServiceMonitors above make, so the chart creates them only with `metrics.serviceMonitor.enabled`: with no such job, they'd fire forever. If you scrape Hybernate some other way, write them on your own job's `up` series.
 
 ## Health Checks
 

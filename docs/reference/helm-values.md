@@ -130,7 +130,7 @@ The ServiceMonitors set `honorLabels: true`, so the metrics keep the workload's 
 
 | Value | Default | Description |
 |-------|---------|-------------|
-| `metrics.prometheusRule.enabled` | `false` | Create a PrometheusRule with the alerts in [Monitoring](../operations/monitoring.md#alerting-rules) |
+| `metrics.prometheusRule.enabled` | `false` | Create a PrometheusRule with the alerts in [Monitoring](../operations/monitoring.md#alerting-rules). `HybernateDown` and `HybernateDoormanDown`, which match the ServiceMonitors' scrape jobs, only with `metrics.serviceMonitor.enabled` |
 | `metrics.prometheusRule.additionalLabels` | `{}` | Extra labels on the PrometheusRule. Your Prometheus loads it only if these match its `ruleSelector`: kube-prometheus-stack needs `release: <its release name>` |
 
 ## Doorman
