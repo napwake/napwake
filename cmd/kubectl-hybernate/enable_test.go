@@ -438,6 +438,7 @@ func TestEnable_WhoAppliesTheAnnotation(t *testing.T) {
 		{name: "Argo CD, without tracking metadata", manager: "argocd-application-controller", fields: ownsDryRun,
 			wantGit: "Argo CD"},
 		{name: "Flux", manager: "kustomize-controller", fields: ownsDryRun, wantGit: "Flux"},
+		{name: "Rancher Fleet", manager: "fleetagent", fields: ownsDryRun, wantGit: "Fleet"},
 		{name: "Helm", manager: "helm", fields: ownsDryRun, wantWarning: true},
 		{name: "Argo CD, applying other fields", manager: "argocd-controller",
 			fields: `{"f:spec":{"f:replicas":{}}}`, labels: map[string]string{"app.kubernetes.io/instance": "shop"}},

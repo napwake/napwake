@@ -286,17 +286,12 @@ func endHandWrittenDryRun(ctx context.Context, c client.Client, mw *v1alpha1.Man
 	return nil
 }
 
-// alwaysProtected are the namespaces the operator protects whatever it's
-// configured with: Kubernetes' own, where pausing CoreDNS or metrics-server
-// takes the cluster down with it.
-var alwaysProtected = []string{"kube-*"}
-
 // checkProtected refuses a namespace the operator never manages anything
 // in. The operator's own namespace and protectedNamespaces patterns aren't
 // known here; a workload they protect has no ManagedWorkload, which enable
 // reports instead.
 func checkProtected(ns *corev1.Namespace) error {
-	if !v1alpha1.Protected(ns.Name, ns.Labels, alwaysProtected) {
+	if !v1alpha1.Protected(ns.Name, ns.Labels, nil) {
 		return nil
 	}
 	return fmt.Errorf("namespace %s is protected, so Hybernate doesn't manage anything in it; label the namespace "+
@@ -670,7 +665,7 @@ func appliedBy(obj client.Object, path []string) applier {
 		if entry.FieldsV1 == nil || !ownsField(entry.FieldsV1.Raw, path) {
 			continue
 		}
-		if tool := gitOpsManager(entry.Manager); tool != "" {
+		if tool := gitops.ToolOf(entry.Manager); tool != "" {
 			return applier{gitOps: gitOpsName(tool, obj)}
 		}
 		found.helm = found.helm || entry.Manager == helmManager
@@ -678,32 +673,18 @@ func appliedBy(obj client.Object, path []string) applier {
 	return found
 }
 
-// gitOpsManager names the GitOps tool behind a field manager, as
-// gitops.ReplicasWriter does: Argo CD applies as argocd-controller, older
-// releases as argocd-application-controller; Flux as kustomize-controller or
-// helm-controller.
-func gitOpsManager(manager string) string {
-	switch {
-	case strings.HasPrefix(manager, "argocd"):
-		return string(gitops.ArgoCD)
-	case manager == "kustomize-controller", manager == "helm-controller":
-		return string(gitops.Flux)
-	}
-	return ""
-}
-
 // gitOpsName is the tool that applies obj, with the application when its
 // tracking metadata names one. With the manager known to be Argo CD, the
 // app.kubernetes.io/instance label it tracks by default names the
 // application.
-func gitOpsName(tool string, obj client.Object) string {
+func gitOpsName(tool gitops.Tool, obj client.Object) string {
 	if tracked := trackedBy(obj); tracked != "" {
 		return tracked
 	}
-	if app := obj.GetLabels()["app.kubernetes.io/instance"]; tool == string(gitops.ArgoCD) && app != "" {
+	if app := obj.GetLabels()["app.kubernetes.io/instance"]; tool == gitops.ArgoCD && app != "" {
 		return "Argo CD application " + app
 	}
-	return tool
+	return string(tool)
 }
 
 func ownsField(raw []byte, path []string) bool {
