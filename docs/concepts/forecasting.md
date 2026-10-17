@@ -137,6 +137,7 @@ It then discards the evidence its confidence rested on: the scored errors, the a
 The engine's learned state (the model's components, the scored errors, the anomaly statistics, and the last hour observed) is stored in the ManagedWorkload's status, in `status.prediction.state`: gzipped JSON, base64-encoded, about 2.5 KB. It is written with each hourly observation. This means:
 
 - The engine survives operator restarts and leader changes, and an hour observed before a restart isn't observed twice. The hour under way when the operator restarts is skipped
+- A last observed hour more than an hour ahead of the operator's clock, recorded by a clock that was wrong, isn't trusted: the next hour is observed as usual rather than refused until real time catches up
 - No external database, persistent volume, or ConfigMap is needed
 - Each workload has its own independent engine
 

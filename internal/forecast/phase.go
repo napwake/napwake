@@ -163,9 +163,18 @@ func (e *Engine) hoursSinceLast(t time.Time) int {
 	return int(math.Round(float64(hourStart(t)-e.lastHour) / 3600))
 }
 
+// lastHourAhead reports whether the last observed hour is later than t's
+// hour allows. The hour a clock change repeats can put it one hour ahead;
+// any more came from a clock that was wrong, and trusting it would refuse
+// every observation until real time caught up.
+func (e *Engine) lastHourAhead(t time.Time) bool {
+	return e.lastHour > hourStart(t)+3600
+}
+
 // Observed reports whether the hour containing now has been observed.
 func (e *Engine) Observed(now time.Time) bool {
-	return e.lastHour != 0 && hourStart(e.local(now)) <= e.lastHour
+	t := e.local(now)
+	return e.lastHour != 0 && !e.lastHourAhead(t) && hourStart(t) <= e.lastHour
 }
 
 // Observe feeds the demand seen in the hour containing now and advances
@@ -189,6 +198,9 @@ func (e *Engine) Observe(actual float64, now time.Time) (float64, error) {
 		e.phaseBeforeAnomalies = e.Phase
 	}
 
+	if e.lastHourAhead(t) {
+		e.lastHour = 0
+	}
 	steps := e.hoursSinceLast(t)
 	forecast, fit := actual, actual
 	e.lastAnomaly = false

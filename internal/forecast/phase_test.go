@@ -408,3 +408,33 @@ func TestEngine_SeasonsFollowLocalTimeThroughDST(t *testing.T) {
 	assert.Less(t, e.Predict(17, monday), 50.0, "local 5pm stays quiet")
 	assert.Equal(t, FullyActive, e.Phase)
 }
+
+// TestEngine_LastHourFromAFastClockDoesNotFreezeLearning: one observation
+// stamped by a clock a week ahead must not stop the engine learning until
+// real time catches up with it.
+func TestEngine_LastHourFromAFastClockDoesNotFreezeLearning(t *testing.T) {
+	e := newTestEngine()
+	run(t, e, 0, 48, func(int, time.Time) float64 { return 100 })
+	_, err := e.Observe(100, hourAt(48+WeeklySeason))
+	require.NoError(t, err)
+
+	for i := 48; i < 52; i++ {
+		require.False(t, e.Observed(hourAt(i)), "hour %d", i)
+		_, err := e.Observe(100, hourAt(i))
+		require.NoError(t, err, "hour %d", i)
+	}
+	assert.True(t, e.Observed(hourAt(51)))
+	assert.Equal(t, 48+1+4, e.GetDataPoints())
+}
+
+// The hour a clock change repeats is observed once, not twice.
+func TestEngine_RepeatedHourIsNotAFastClock(t *testing.T) {
+	ny, err := time.LoadLocation("America/New_York")
+	require.NoError(t, err)
+	e := NewEngine(DefaultParams(), Settings{Threshold: 85, Location: ny})
+	firstOneAM := time.Date(2026, 11, 1, 5, 30, 0, 0, time.UTC)
+	_, err = e.Observe(100, firstOneAM)
+	require.NoError(t, err)
+
+	assert.True(t, e.Observed(firstOneAM.Add(time.Hour)), "1am again, after the clocks went back")
+}
