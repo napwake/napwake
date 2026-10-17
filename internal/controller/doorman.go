@@ -196,6 +196,7 @@ func (r *Reconciler) reconcileDoorman(ctx context.Context, workload *v1alpha1.Ma
 	// it would be without the doorman. A reconcile that fails before the
 	// write keeps the ports its slices already use, so they aren't moved
 	// on every retry.
+	r.recordDrains(workload, routes)
 	workload.Status.Doorman = routes
 
 	keep := map[string]bool{}
@@ -257,8 +258,36 @@ func (r *Reconciler) removeDoorman(ctx context.Context, workload *v1alpha1.Manag
 		return err
 	}
 	r.doormanPorts.release(workload.UID, r.now())
+	r.recordDrains(workload, nil)
 	workload.Status.Doorman = nil
 	return nil
+}
+
+// recordDrains notes in status the ports the workload's routes are about to
+// give up, which drain before anyone else may have them, and forgets drains
+// that are over or whose port the workload has taken back. The allocator
+// keeps the same in memory; status is what a leader that takes over reads.
+func (r *Reconciler) recordDrains(workload *v1alpha1.ManagedWorkload, routes []v1alpha1.DoormanRoute) {
+	now := r.now()
+	kept := map[int32]bool{}
+	for _, route := range routes {
+		kept[route.DoormanPort] = true
+	}
+	var draining []v1alpha1.DrainingPort
+	for _, d := range workload.Status.DoormanDraining {
+		if now.Before(d.Until.Time) && !kept[d.Port] {
+			draining = append(draining, d)
+		}
+	}
+	until := metav1.NewTime(now.Add(portDrain))
+	for _, route := range workload.Status.Doorman {
+		if !kept[route.DoormanPort] && !slices.ContainsFunc(draining, func(d v1alpha1.DrainingPort) bool {
+			return d.Port == route.DoormanPort
+		}) {
+			draining = append(draining, v1alpha1.DrainingPort{Port: route.DoormanPort, Until: until})
+		}
+	}
+	workload.Status.DoormanDraining = draining
 }
 
 // skippedServices are the Services that select the workload but aren't
@@ -707,10 +736,18 @@ func (a *portAllocator) load(ctx context.Context, reader routeReader, now time.T
 		return fmt.Errorf("reading doorman ports in use: %w", err)
 	}
 	claims := map[int32]portClaim{}
+	if a.draining == nil {
+		a.draining = map[int32]portClaim{}
+	}
 	for _, w := range workloads {
 		for _, route := range w.Status.Doorman {
 			if _, taken := claims[route.DoormanPort]; !taken {
 				claims[route.DoormanPort] = portClaim{owner: w.UID, at: now}
+			}
+		}
+		for _, d := range w.Status.DoormanDraining {
+			if _, known := a.draining[d.Port]; !known && now.Before(d.Until.Time) {
+				a.draining[d.Port] = portClaim{owner: w.UID, at: d.Until.Time}
 			}
 		}
 	}
@@ -720,9 +757,6 @@ func (a *portAllocator) load(ctx context.Context, reader routeReader, now time.T
 		}
 	}
 	a.claims, a.loadedAt = claims, now
-	if a.draining == nil {
-		a.draining = map[int32]portClaim{}
-	}
 	return nil
 }
 

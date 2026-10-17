@@ -67,6 +67,7 @@ A duration is a Go duration above zero, such as `45s`, `90m` or `1h30m`. Days an
 | `learnedDependencies` | `LearnedDependencies` | Dependencies Hybernate found, held and woken like `dependsOn`: `from`, `at`, and `dependencies` (`namespace`, `kind`, `name`, `source`: `environment` or `wake`, `via` and `address` for one found in the environment, and `lastSeen` for one learned from a wake). See [Learned dependencies](../concepts/dependencies.md#learned-dependencies) |
 | `lastScaledUp` | `ScaledUp` | The last time the workload was scaled up outside Hybernate while paused, which wakes it: `at`, `replicas`, `by` (the field manager, such as `kubectl-scale`), and `gitOps` (`Argo CD` or `Flux`, when it was set from Git; see [Argo CD and Flux](../guides/gitops.md)) |
 | `doorman[]` | `DoormanRoute` | Service ports routed to the doorman while paused: `service`, `portName`, `doormanPort` |
+| `doormanDraining[]` | `DrainingPort` | Doorman ports that routed the workload until it woke: `port`, and `until`, before which no other workload is given it, so a client still sending the workload's traffic there never reaches another. Kept in status so an operator that restarts or takes over leadership honours it |
 | `dryRun` | `DryRunStatus` | What dry-run has measured; only while `spec.dryRun` is true |
 | `dryRun.since` | time | When dry-run started measuring |
 | `dryRun.pauses` | int32 | Times the workload would have been paused, one under way included |

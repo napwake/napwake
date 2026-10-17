@@ -322,6 +322,15 @@ type ManagedWorkloadStatus struct {
 	// +optional
 	Doorman []DoormanRoute `json:"doorman,omitempty"`
 
+	// DoormanDraining lists doorman ports that routed this workload until
+	// recently. No other workload is given one until its drain ends, even by
+	// an operator that has just restarted or taken over leadership, since
+	// clients that haven't yet seen the Service move back to the workload's
+	// pods still send traffic to it.
+	// +listType=atomic
+	// +optional
+	DoormanDraining []DrainingPort `json:"doormanDraining,omitempty"`
+
 	// Activity tracks when the workload was last active, for idle detection.
 	// +optional
 	Activity *ActivityStatus `json:"activity,omitempty"`
@@ -360,6 +369,12 @@ type DoormanRoute struct {
 
 	// DoormanPort is the doorman's listening port for this Service port.
 	DoormanPort int32 `json:"doormanPort"`
+}
+
+// DrainingPort is a doorman port no other workload may have before Until.
+type DrainingPort struct {
+	Port  int32       `json:"port"`
+	Until metav1.Time `json:"until"`
 }
 
 // +kubebuilder:validation:Enum=created;woke;request;cpu;rollout;annotation;prometheus;unobserved;scaled-up

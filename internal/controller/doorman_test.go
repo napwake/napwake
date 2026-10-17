@@ -378,6 +378,54 @@ func TestReconcileDoorman_DrainingPortsAreNotReused(t *testing.T) {
 	assert.Equal(t, released, second.Status.Doorman[0].DoormanPort, "free again once drained")
 }
 
+// A port's drain outlasts the operator: a leader that has just taken over
+// reads it from status and doesn't hand the port to another workload while
+// clients may still send the first one's traffic to it.
+func TestReconcileDoorman_DrainingPortsSurviveALeaderChange(t *testing.T) {
+	first := lifecycleWorkload("api", v1alpha1.PhasePaused)
+	first.UID = "api-uid"
+	second := lifecycleWorkload("billing", v1alpha1.PhasePaused)
+	second.UID = "billing-uid"
+	billing := appTarget()
+	billing.Name = "billing"
+	billing.Spec.Template.Labels = map[string]string{"app": "billing"}
+	r := doormanReconciler(t, first, second, doormanEndpoints("10.0.0.7"),
+		service("api", map[string]string{"app": "api"}, corev1.ServicePort{Name: "http", Port: 80}),
+		service("billing", map[string]string{"app": "billing"}, corev1.ServicePort{Name: "http", Port: 80}))
+	r.doormanPorts.pick = lowestFreePort
+	now := fixedTime
+	r.clock = func() time.Time { return now }
+	ctx := context.Background()
+
+	require.NoError(t, doormanErr(ctx, r, first, appTarget()))
+	released := first.Status.Doorman[0].DoormanPort
+	first.Status.Phase = v1alpha1.PhaseRunning
+	require.NoError(t, doormanErr(ctx, r, first, appTarget()))
+	require.NoError(t, r.Status().Update(ctx, first))
+	require.Len(t, first.Status.DoormanDraining, 1)
+
+	newLeader(r)
+	require.NoError(t, doormanErr(ctx, r, second, billing))
+	assert.NotEqual(t, released, second.Status.Doorman[0].DoormanPort)
+
+	now = now.Add(portDrain)
+	newLeader(r)
+	second.Status.Phase = v1alpha1.PhaseRunning
+	require.NoError(t, doormanErr(ctx, r, second, billing))
+	second.Status.Phase = v1alpha1.PhasePaused
+	require.NoError(t, doormanErr(ctx, r, second, billing))
+	assert.Equal(t, released, second.Status.Doorman[0].DoormanPort, "free again once drained")
+
+	require.NoError(t, doormanErr(ctx, r, first, appTarget()))
+	assert.Empty(t, first.Status.DoormanDraining, "a drain that's over is forgotten")
+}
+
+// newLeader forgets what the allocator knows, as an operator that has just
+// taken over has only status to go by.
+func newLeader(r *Reconciler) {
+	r.doormanPorts.claims, r.doormanPorts.draining = nil, nil
+}
+
 // The doorman's slices outlast any path that stops routing: turning the
 // doorman off removes every one of the workload's.
 func TestReconcileDoorman_DisablingRemovesSlices(t *testing.T) {
