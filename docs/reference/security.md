@@ -36,9 +36,9 @@ The doorman's ServiceAccount can patch ManagedWorkloads, to set `hybernate.io/la
 
 ## Verifying a release
 
-Every release is built by the [release workflow](https://github.com/okedeji/hybernate/blob/main/.github/workflows/release.yml) from a tag, and signed keylessly with [Sigstore](https://www.sigstore.dev/): the signature is bound to that workflow and tag, so there's no key to steal. Each command below fails unless the artifact came from that workflow.
+Every release is built by the [release workflow](https://github.com/okedeji/hybernate/blob/main/.github/workflows/release.yml) from a tag, and signed keylessly with [Sigstore](https://www.sigstore.dev/): the signature is bound to that workflow and tag, so there's no key to steal. Each command below fails unless the artifact came from that workflow. The signatures are made with cosign 3, so verify them with cosign 3 or later.
 
-**The image**, its signature, SBOM, and build provenance:
+**The image**, its signature, an SBOM for each platform, and build provenance:
 
 ```bash
 IMAGE=ghcr.io/okedeji/hybernate:v0.2.0
@@ -72,7 +72,8 @@ gh attestation verify kubectl-hybernate-linux-amd64.tar.gz --repo okedeji/hybern
 ## Vulnerabilities
 
 - **Every pull request** runs [govulncheck](https://go.dev/doc/security/vuln/) on the Go code, which fails on any known vulnerability the code can reach, and [Trivy](https://trivy.dev/) on the built image, which fails on critical and high vulnerabilities that have a fix. A vulnerability with no fix yet is reported, not blocking.
-- **Every release** runs both again before anything is pushed, and attaches Trivy's full report to the GitHub release as `vulnerabilities.txt`, alongside the SBOM.
+- **Every release** runs both again before anything is published, and attaches Trivy's full report for each platform to the GitHub release as `vulnerabilities-linux-amd64.txt` and `vulnerabilities-linux-arm64.txt`, alongside the SBOMs, `sbom-linux-amd64.spdx.json` and `sbom-linux-arm64.spdx.json`.
+- **Every day**, both run against `main`, and Trivy against the released image, `ghcr.io/okedeji/hybernate:latest`, for both platforms, so a vulnerability disclosed after a release is reported then rather than at the next pull request.
 - **Dependencies** (Go modules, GitHub Actions, base images) are kept current by Dependabot, weekly. Every Action is pinned to a commit, and the base images to a digest.
 
 To report a vulnerability, see [SECURITY.md](https://github.com/okedeji/hybernate/blob/main/SECURITY.md): privately, through a GitHub security advisory.
