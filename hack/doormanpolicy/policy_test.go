@@ -81,11 +81,11 @@ func TestDoormanMayOnlyStampRequests(t *testing.T) {
 	doorman, err := client.New(doormanCfg, client.Options{Scheme: scheme})
 	require.NoError(t, err)
 
-	key := types.NamespacedName{Namespace: workloadNS, Name: "web"}
-	patch := func(p string) error {
-		return doorman.Patch(ctx, &v1alpha1.ManagedWorkload{ObjectMeta: metav1.ObjectMeta{Name: key.Name, Namespace: key.Namespace}},
-			client.RawPatch(types.MergePatchType, []byte(p)))
+	patchAs := func(c client.Client, p string) error {
+		web := &v1alpha1.ManagedWorkload{ObjectMeta: metav1.ObjectMeta{Name: workload.Name, Namespace: workloadNS}}
+		return c.Patch(ctx, web, client.RawPatch(types.MergePatchType, []byte(p)))
 	}
+	patch := func(p string) error { return patchAs(doorman, p) }
 
 	// The policy is enforced once the API server has loaded it, a moment
 	// after it's created.
@@ -98,7 +98,8 @@ func TestDoormanMayOnlyStampRequests(t *testing.T) {
 		patch   string
 		allowed bool
 	}{
-		{"stamps a request", `{"metadata":{"annotations":{"hybernate.io/last-request":"2026-10-17T00:00:00Z","hybernate.io/last-request-from":"10.0.0.1"}}}`, true},
+		{"stamps a request", `{"metadata":{"annotations":{` +
+			`"hybernate.io/last-request":"2026-10-17T00:00:00Z","hybernate.io/last-request-from":"10.0.0.1"}}}`, true},
 		{"removes its own stamp", `{"metadata":{"annotations":{"hybernate.io/last-request-from":null}}}`, true},
 		{"changes the spec", `{"spec":{"dryRun":true}}`, false},
 		{"adds a settings annotation", `{"metadata":{"annotations":{"hybernate.io/idle-after":"1m"}}}`, false},
@@ -119,8 +120,7 @@ func TestDoormanMayOnlyStampRequests(t *testing.T) {
 	}
 
 	t.Run("the operator isn't restricted", func(t *testing.T) {
-		assert.NoError(t, admin.Patch(ctx, &v1alpha1.ManagedWorkload{ObjectMeta: metav1.ObjectMeta{Name: key.Name, Namespace: key.Namespace}},
-			client.RawPatch(types.MergePatchType, []byte(`{"spec":{"dryRun":true}}`))))
+		assert.NoError(t, patchAs(admin, `{"spec":{"dryRun":false}}`))
 	})
 }
 
