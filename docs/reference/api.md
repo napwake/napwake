@@ -31,7 +31,7 @@
 | `prediction.confidence` | int (50-100) | No | `75` | Accuracy (1 − WAPE, %) a season's forecasts must reach before they drive decisions |
 | `costTracking` | `CostTrackingSpec` | No | | Custom cost rate overrides |
 | `costTracking.rates` | `CostRates` | No | node list prices, then AWS defaults | Custom cost rates |
-| `dryRun` | bool | No | `false` | Evaluate without pausing |
+| `dryRun` | bool | No | `false` | Measure without pausing; see [Dry Run](../guides/dry-run.md). A workload already paused when it's turned on is woken |
 
 A duration is a Go duration above zero, such as `45s`, `90m` or `1h30m`. Days and weeks (`1d`, `2w`) and spaces aren't durations: write `24h` or `168h`. The API server rejects any other value.
 

@@ -87,14 +87,17 @@ type ManagedWorkloadSpec struct {
 	// +optional
 	Prediction PredictionSpec `json:"prediction,omitzero"`
 
-	// CostTracking configures custom cost rates for this workload.
-	// Cost tracking is always enabled with AWS on-demand defaults.
-	// Set this field only to override pricing rates.
+	// CostTracking sets this workload's own cost rates. Cost is always
+	// tracked: without them, it's priced at the list price of the nodes the
+	// workload's pods run on (status.cost.listRates), or at Hybernate's
+	// default rates for nodes it has no price for.
 	// +optional
 	CostTracking *CostTrackingSpec `json:"costTracking,omitempty"`
 
-	// DryRun makes the operator evaluate all policies and emit events but
-	// take no action. Useful for validating configuration before going live.
+	// DryRun measures the workload without ever pausing it: the operator
+	// tracks activity, emits events, and records in status.dryRun the pauses
+	// it would have made. A workload already paused when dry-run is turned
+	// on is woken, so turning it on never leaves one off.
 	// +optional
 	DryRun bool `json:"dryRun,omitempty"`
 }
@@ -235,27 +238,27 @@ type PrometheusActivity struct {
 	PromQL string `json:"promQL"`
 }
 
-// CostTrackingSpec configures resource cost calculation for this workload.
-// Cost tracking is always enabled. This struct exists to allow custom rate overrides.
+// CostTrackingSpec configures how this workload's cost is priced.
 type CostTrackingSpec struct {
-	// Rates overrides the default cost rates. Omit to use AWS on-demand defaults.
+	// Rates are what you pay. Each one set is used in place of the list
+	// price of the workload's nodes and of Hybernate's default rates; one
+	// left out is priced as if Rates weren't set.
 	// +optional
 	Rates *CostRates `json:"rates,omitempty"`
 }
 
-// CostRates holds per-unit cost rates. Users set these to match their
-// cloud provider pricing. All values are in USD.
+// CostRates are per-unit cost rates, in USD.
 type CostRates struct {
-	// CPUPerHour is the cost per vCPU-hour (default: $0.031, AWS on-demand).
+	// CPUPerHour is the cost per vCPU-hour.
 	// +optional
 	CPUPerHour *resource.Quantity `json:"cpuPerHour,omitempty"`
 
-	// MemoryPerHour is the cost per GiB-hour (default: $0.004, AWS on-demand).
+	// MemoryPerHour is the cost per GiB-hour.
 	// +optional
 	MemoryPerHour *resource.Quantity `json:"memoryPerHour,omitempty"`
 
-	// StoragePerMonth is the cost per GiB-month for PVC storage
-	// (default: $0.08, AWS EBS gp3).
+	// StoragePerMonth is the cost per GiB-month of PersistentVolumeClaim
+	// storage.
 	// +optional
 	StoragePerMonth *resource.Quantity `json:"storagePerMonth,omitempty"`
 }
