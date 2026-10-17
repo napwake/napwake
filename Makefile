@@ -213,6 +213,10 @@ check-chart: ## Lint the Helm chart, render it for each provider's Kubernetes ve
 		[ -n "$$chart" ] && [ "$$chart" = "$$kustomize" ] || { \
 			echo "config/manager's doorman has $$field '$$kustomize', the chart's '$$chart', so one drops connections on shutdown"; exit 1; }; \
 	done
+	@chart=$$(helm template hybernate charts/hybernate --show-only templates/deployment.yaml | awk '$$1 == "terminationGracePeriodSeconds:" {print $$2}'); \
+	kustomize=$$(awk '$$1 == "terminationGracePeriodSeconds:" {print $$2}' config/manager/manager.yaml); \
+	[ "$$chart" -gt 30 ] && [ "$$chart" = "$$kustomize" ] || { \
+		echo "the operator's grace period, the chart's '$$chart' and config/manager's '$$kustomize', isn't over the 30s its reconciles get to finish"; exit 1; }
 	@helm template hybernate charts/hybernate --set leaderElection.enabled=false --show-only templates/deployment.yaml | grep -q 'type: Recreate' && \
 		! helm template hybernate charts/hybernate --show-only templates/deployment.yaml | grep -q 'type: Recreate' || { \
 		echo "without leader election, a rolling update runs two operators at once"; exit 1; }

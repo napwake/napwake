@@ -81,4 +81,6 @@ spec:
             cpu: 10m
             memory: 128Mi
       serviceAccountName: controller-manager
-      terminationGracePeriodSeconds: 10
+      # The manager's 30s for running reconciles to finish, which then
+      # releases the lease, with room to exit before SIGKILL.
+      terminationGracePeriodSeconds: 40

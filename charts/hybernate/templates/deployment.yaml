@@ -33,7 +33,11 @@ spec:
       {{- with .Values.priorityClassName }}
       priorityClassName: {{ . }}
       {{- end }}
-      terminationGracePeriodSeconds: 10
+      {{- /*
+      The manager's 30s for running reconciles to finish, which then
+      releases the lease, with room to exit before SIGKILL.
+      */}}
+      terminationGracePeriodSeconds: 40
       securityContext:
         runAsNonRoot: true
         seccompProfile:
