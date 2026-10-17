@@ -369,10 +369,12 @@ docker-push: ## Push docker image with the manager.
 PLATFORMS ?= linux/arm64,linux/amd64,linux/s390x,linux/ppc64le
 .PHONY: docker-buildx
 docker-buildx: ## Build and push docker image for the manager for cross-platform support
-	- $(CONTAINER_TOOL) buildx create --name hybernate-builder
-	$(CONTAINER_TOOL) buildx use hybernate-builder
-	- $(CONTAINER_TOOL) buildx build --push --platform=$(PLATFORMS) --build-arg VERSION=$(if $(VERSION),v$(VERSION),dev) --tag ${IMG} .
-	- $(CONTAINER_TOOL) buildx rm hybernate-builder
+	@# A builder left by an interrupted run would make create fail.
+	@$(CONTAINER_TOOL) buildx rm hybernate-builder >/dev/null 2>&1 || true
+	$(CONTAINER_TOOL) buildx create --name hybernate-builder --use
+	$(CONTAINER_TOOL) buildx build --push --platform=$(PLATFORMS) --build-arg VERSION=$(if $(VERSION),v$(VERSION),dev) --tag ${IMG} . || { \
+		$(CONTAINER_TOOL) buildx rm hybernate-builder; exit 1; }
+	$(CONTAINER_TOOL) buildx rm hybernate-builder
 
 .PHONY: build-installer
 build-installer: manifests generate kustomize ## Generate a consolidated YAML with CRDs and deployment.
