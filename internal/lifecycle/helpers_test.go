@@ -41,6 +41,9 @@ import (
 
 var scaledObject = schema.GroupVersionKind{Group: "keda.sh", Version: "v1alpha1", Kind: "ScaledObject"}
 
+// scaledObjectName is default/api's ScaledObject.
+const scaledObjectName = "api-scaler"
+
 func testScheme(t *testing.T) *runtime.Scheme {
 	t.Helper()
 	s := runtime.NewScheme()
@@ -99,13 +102,13 @@ func deployment(replicas, ready int32) *appsv1.Deployment {
 	}
 }
 
-// statefulSet is default/api, as deployment is.
-func statefulSet(replicas, ready int32) *appsv1.StatefulSet {
+// statefulSet is default/api at 2 replicas, as deployment is.
+func statefulSet(ready int32) *appsv1.StatefulSet {
 	labels := map[string]string{"app": "api"}
 	return &appsv1.StatefulSet{
 		ObjectMeta: metav1.ObjectMeta{Name: "api", Namespace: "default", Generation: 1},
 		Spec: appsv1.StatefulSetSpec{
-			Replicas: ptr.To(replicas),
+			Replicas: ptr.To[int32](2),
 			Selector: &metav1.LabelSelector{MatchLabels: labels},
 			Template: corev1.PodTemplateSpec{
 				ObjectMeta: metav1.ObjectMeta{Labels: labels},
@@ -155,7 +158,7 @@ func scaledObjectFor(minReplicas int64) *unstructured.Unstructured {
 		"scaleTargetRef": map[string]any{"name": "api"}, "minReplicaCount": minReplicas}}}
 	so.SetGroupVersionKind(scaledObject)
 	so.SetNamespace("default")
-	so.SetName("api-scaler")
+	so.SetName(scaledObjectName)
 	return so
 }
 
@@ -163,7 +166,7 @@ func pausedAnnotation(t *testing.T, c client.Client) (string, bool) {
 	t.Helper()
 	so := &unstructured.Unstructured{}
 	so.SetGroupVersionKind(scaledObject)
-	require.NoError(t, c.Get(context.Background(), types.NamespacedName{Namespace: "default", Name: "api-scaler"}, so))
+	require.NoError(t, c.Get(context.Background(), types.NamespacedName{Namespace: "default", Name: scaledObjectName}, so))
 	v, ok := so.GetAnnotations()[autoscaler.PausedReplicasAnnotation]
 	return v, ok
 }

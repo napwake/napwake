@@ -59,7 +59,7 @@ func TestPauseAndResume_KEDA(t *testing.T) {
 			require.NoError(t, err)
 			require.True(t, done)
 
-			assert.Equal(t, "api-scaler", workload.Status.Pause.ScaledObject)
+			assert.Equal(t, scaledObjectName, workload.Status.Pause.ScaledObject)
 			assert.Equal(t, tt.previous, workload.Status.Pause.ScaledObjectPausedReplicas)
 			v, held := pausedAnnotation(t, c)
 			assert.True(t, held)
@@ -158,7 +158,7 @@ func TestResume_HoldsKEDAOnce(t *testing.T) {
 			return c.Patch(ctx, obj, patch, opts...)
 		}})
 	workload := pausedWorkload(3)
-	workload.Status.Pause.ScaledObject = "api-scaler"
+	workload.Status.Pause.ScaledObject = scaledObjectName
 	p := newTestPauser(c)
 
 	for range 3 {

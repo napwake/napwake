@@ -36,7 +36,7 @@ var errAPIServer = errors.New("the API server is unavailable")
 // A StatefulSet, such as a database, is paused and resumed as a Deployment
 // is, and its resume waits for its own status to show the replicas Ready.
 func TestPauseAndResume_StatefulSet(t *testing.T) {
-	c := newClient(t, statefulSet(2, 2))
+	c := newClient(t, statefulSet(2))
 	p := newTestPauser(c)
 	workload := apiWorkload()
 	workload.Spec.Target.Kind = v1alpha1.TargetKindStatefulSet
@@ -79,9 +79,9 @@ func TestIsReady(t *testing.T) {
 		{name: "a Deployment, one not Ready", target: deployment(3, 2)},
 		{name: "a Deployment at zero", target: deployment(0, 0)},
 		{name: "a Deployment's status from before its spec", target: stale(deployment(3, 3))},
-		{name: "a StatefulSet, every replica Ready", target: statefulSet(2, 2), want: true},
-		{name: "a StatefulSet, one not Ready", target: statefulSet(2, 1)},
-		{name: "a StatefulSet's status from before its spec", target: stale(statefulSet(2, 2))},
+		{name: "a StatefulSet, every replica Ready", target: statefulSet(2), want: true},
+		{name: "a StatefulSet, one not Ready", target: statefulSet(1)},
+		{name: "a StatefulSet's status from before its spec", target: stale(statefulSet(2))},
 		{name: "neither", target: &appsv1.DaemonSet{}},
 	}
 	for _, tt := range tests {
@@ -108,7 +108,7 @@ func TestKEDAHoldFailures(t *testing.T) {
 	t.Run("pausing", func(t *testing.T) {
 		c := newClient(t, deployment(3, 3), scaledObjectFor(0))
 		workload := pausedWorkload(3)
-		workload.Status.Pause.ScaledObject = "api-scaler"
+		workload.Status.Pause.ScaledObject = scaledObjectName
 
 		_, err := newTestPauser(failingPatches(c)).Pause(context.Background(), workload)
 
@@ -118,7 +118,7 @@ func TestKEDAHoldFailures(t *testing.T) {
 	t.Run("holding a resume", func(t *testing.T) {
 		c := newClient(t, deployment(0, 0), scaledObjectFor(0))
 		workload := pausedWorkload(3)
-		workload.Status.Pause.ScaledObject = "api-scaler"
+		workload.Status.Pause.ScaledObject = scaledObjectName
 
 		_, err := newTestPauser(failingPatches(c)).Resume(context.Background(), workload, 0)
 
@@ -128,7 +128,7 @@ func TestKEDAHoldFailures(t *testing.T) {
 	t.Run("releasing a resume", func(t *testing.T) {
 		c := newClient(t, deployment(0, 0), scaledObjectFor(0))
 		workload := pausedWorkload(3)
-		workload.Status.Pause.ScaledObject = "api-scaler"
+		workload.Status.Pause.ScaledObject = scaledObjectName
 		_, err := resume(newTestPauser(c), workload)
 		require.NoError(t, err)
 		settle(t, c, 3)
@@ -144,7 +144,7 @@ func TestKEDAHoldFailures(t *testing.T) {
 	t.Run("restoring", func(t *testing.T) {
 		c := newClient(t, deployment(0, 0), scaledObjectFor(0))
 		workload := pausedWorkload(3)
-		workload.Status.Pause.ScaledObject = "api-scaler"
+		workload.Status.Pause.ScaledObject = scaledObjectName
 
 		_, err := newTestPauser(failingPatches(c)).Restore(context.Background(), workload)
 
@@ -157,7 +157,7 @@ func TestKEDAHoldFailures(t *testing.T) {
 func TestResume_ScaledObjectGone(t *testing.T) {
 	c := newClient(t, deployment(0, 0), scaledObjectFor(0))
 	workload := pausedWorkload(3)
-	workload.Status.Pause.ScaledObject = "api-scaler"
+	workload.Status.Pause.ScaledObject = scaledObjectName
 	require.NoError(t, c.Delete(context.Background(), scaledObjectFor(0)))
 	p := newTestPauser(c)
 

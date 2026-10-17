@@ -172,7 +172,7 @@ func TestResume_SettlesWithTheReplicasThatBecomeReady(t *testing.T) {
 			c := newClient(t, dep, scaledObjectFor(0))
 			p := newTestPauser(c)
 			workload := pausedWorkload(3)
-			workload.Status.Pause.ScaledObject = "api-scaler"
+			workload.Status.Pause.ScaledObject = scaledObjectName
 			_, err := resume(p, workload)
 			require.NoError(t, err)
 			settle(t, c, tt.ready)
@@ -235,8 +235,8 @@ func TestRestore(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			c := newClient(t, deployment(tt.current, 0), scaledObjectFor(1))
 			workload := pausedWorkload(tt.previous)
-			workload.Status.Pause.ScaledObject = "api-scaler"
-			require.NoError(t, autoscaler.HoldKEDA(context.Background(), c, "default", "api-scaler", 0))
+			workload.Status.Pause.ScaledObject = scaledObjectName
+			require.NoError(t, autoscaler.HoldKEDA(context.Background(), c, "default", scaledObjectName, 0))
 
 			got, err := newTestPauser(c).Restore(context.Background(), workload)
 
@@ -252,8 +252,8 @@ func TestRestore(t *testing.T) {
 func TestRestore_TargetGoneStillReleasesKEDA(t *testing.T) {
 	c := newClient(t, scaledObjectFor(1))
 	workload := pausedWorkload(3)
-	workload.Status.Pause.ScaledObject = "api-scaler"
-	require.NoError(t, autoscaler.HoldKEDA(context.Background(), c, "default", "api-scaler", 0))
+	workload.Status.Pause.ScaledObject = scaledObjectName
+	require.NoError(t, autoscaler.HoldKEDA(context.Background(), c, "default", scaledObjectName, 0))
 
 	got, err := newTestPauser(c).Restore(context.Background(), workload)
 	require.NoError(t, err)
