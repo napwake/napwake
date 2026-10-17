@@ -149,15 +149,18 @@ check-chart: ## Lint the Helm chart, render it for each provider's Kubernetes ve
 	done
 	@! helm template hybernate charts/hybernate --kube-version v1.29.9 >/dev/null 2>&1 || { \
 		echo "the chart installs on Kubernetes 1.29, below the 1.30 it supports"; exit 1; }
-	@for d in 0s 0.0m 0h0m0s; do \
+	@for d in 0s 0.0m 0h0m0s 59s 0.5m 500ms; do \
 		! helm template hybernate charts/hybernate --set defaults.idleAfter=$$d >/dev/null 2>&1 || { \
-			echo "the chart accepts defaults.idleAfter=$$d, which the operator refuses to start with"; exit 1; }; \
+			echo "the chart accepts defaults.idleAfter=$$d, under a minute, which the operator refuses to start with"; exit 1; }; \
 	done
+	@! helm template hybernate charts/hybernate --set 'metrics.readerSubjects[0].kind=ServiceAccount' \
+		--set 'metrics.readerSubjects[0].name=prometheus' >/dev/null 2>&1 || { \
+		echo "the chart accepts a ServiceAccount in metrics.readerSubjects without its namespace, which the API server refuses"; exit 1; }
 	@for v in 'watchNamespace={staging}' doorman.enabeld=false metrics.serviceMonitor.enable=true; do \
 		! helm template hybernate charts/hybernate --set "$$v" >/dev/null 2>&1 || { \
 			echo "the chart accepts $$v, a value it doesn't have, and would ignore it"; exit 1; }; \
 	done
-	@for d in 1h30m 0.5s 0h5m; do \
+	@for d in 1h30m 1m 90s 0h5m 1.5h; do \
 		helm template hybernate charts/hybernate --set defaults.idleAfter=$$d >/dev/null || exit 1; \
 	done
 	@helm template hybernate charts/hybernate --set networkPolicy.enabled=true \

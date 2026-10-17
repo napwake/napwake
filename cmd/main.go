@@ -393,8 +393,8 @@ func validatePrometheusURL(raw string) error {
 // ManagedWorkload and fail its validation, or, for a CPU threshold of 0,
 // silently become the CRD's default of 10.
 func validateOptInDefaults(d controller.OptInDefaults) error {
-	if d.IdleAfter <= 0 {
-		return fmt.Errorf("--default-idle-after %s must be positive", d.IdleAfter)
+	if d.IdleAfter < time.Minute {
+		return fmt.Errorf("--default-idle-after %s must be at least 1m", d.IdleAfter)
 	}
 	if d.CPUThreshold < 1 || d.CPUThreshold > 100 {
 		return fmt.Errorf("--default-cpu-threshold %d must be from 1 to 100", d.CPUThreshold)

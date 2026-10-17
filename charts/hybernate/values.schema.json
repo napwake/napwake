@@ -87,6 +87,8 @@
           "items": {
             "type": "object",
             "required": ["kind", "name"],
+            "if": {"properties": {"kind": {"const": "ServiceAccount"}}},
+            "then": {"required": ["namespace"], "properties": {"namespace": {"minLength": 1}}},
             "additionalProperties": false,
             "properties": {
               "kind": {"enum": ["ServiceAccount", "User", "Group"]},
@@ -138,7 +140,11 @@
         "idleAfter": {
           "type": "string",
           "pattern": "^([0-9]+(\\.[0-9]+)?(ns|us|µs|ms|s|m|h))+$",
-          "not": {"pattern": "^([0.]+(ns|us|µs|ms|s|m|h))+$"}
+          "anyOf": [
+            {"pattern": "(^|[a-zµ])0*[1-9][0-9]*(\\.[0-9]+)?h"},
+            {"pattern": "(^|[a-zµ])0*[1-9][0-9]*(\\.[0-9]+)?m([0-9]|$)"},
+            {"pattern": "(^|[a-zµ])0*([6-9][0-9]|[1-9][0-9]{2,})(\\.[0-9]+)?s([0-9]|$)"}
+          ]
         },
         "cpuThreshold": {"type": "integer", "minimum": 1, "maximum": 100},
         "dryRun": {"type": "boolean"}

@@ -13,7 +13,7 @@ The chart is published only as an OCI artifact; there's no `helm repo` to add. I
 helm show values oci://ghcr.io/okedeji/charts/hybernate --version 0.2.0
 ```
 
-The chart validates values against its schema (`values.schema.json`), so a mistyped value, such as `logLevel: warn` or `defaults.cpuThreshold: 0`, fails the install or upgrade rather than the operator, and so does a value the chart doesn't have, such as `watchNamespace` for `watchNamespaces`, which Helm would otherwise ignore. Only what's passed through to Kubernetes as it is, such as `resources`, `affinity`, `tolerations`, `nodeSelector` and pod annotations and labels, is left for Kubernetes to check.
+The chart validates values against its schema (`values.schema.json`), so a mistyped value, such as `logLevel: warn` or `defaults.cpuThreshold: 0`, fails the install or upgrade rather than the operator, and so does a value the chart doesn't have, such as `watchNamespace` for `watchNamespaces`, which Helm would otherwise ignore. Only what's passed through to Kubernetes as it is, such as `resources`, `affinity`, `tolerations`, `nodeSelector` and pod annotations and labels, is left for Kubernetes to check. `timezone` is the exception: the schema can't list every IANA zone, so an unknown one is caught when the operator starts, which then exits with `invalid --timezone` and `unknown time zone` in its log, and the rollout doesn't finish.
 
 ## Names
 
@@ -85,7 +85,7 @@ Settings for workloads opted in with the `hybernate.io/managed` label, used when
 
 | Value | Default | Description |
 |-------|---------|-------------|
-| `defaults.idleAfter` | `1h` | How long without activity before pausing; a Go duration above zero. Passed as `--default-idle-after` |
+| `defaults.idleAfter` | `1h` | How long without activity before pausing; a Go duration of at least `1m`, with whole minutes or hours, or at least 60 seconds, in it, such as `90s` or `1h30m`. Passed as `--default-idle-after` |
 | `defaults.cpuThreshold` | `10` | CPU use, as a percentage of requests from 1 to 100, above which a workload counts as active. Passed as `--default-cpu-threshold` |
 | `defaults.dryRun` | `false` | Measure without pausing. Set `true` to roll Hybernate out across a cluster measuring first. Passed as `--default-dry-run` |
 

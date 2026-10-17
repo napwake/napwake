@@ -19,7 +19,7 @@ These flags are passed to the binary (`/manager`), which runs as the operator, o
 | `--prometheus-url` | | Base URL of the Prometheus API for Prometheus activity queries, such as `http://prometheus.monitoring.svc:9090`; `http` or `https` with a host. Required only if workloads set `idlePolicy.activity.prometheus` |
 | `--watch-namespaces` | every namespace | Comma-separated namespaces to work in, with a Role in each |
 | `--protected-namespaces` | | Comma-separated name patterns, such as `prod-*`, of namespaces Hybernate never manages, as if labelled `hybernate.io/protected=true`, unless labelled `hybernate.io/allow-protected=true`. The `kube-*` namespaces, `$POD_NAMESPACE`, and the doorman's namespace are always protected besides; see [Protected namespaces](../guides/opt-in.md#protected-namespaces) |
-| `--default-idle-after` | `1h` | Idle time before pausing, for workloads opted in with the label whose annotations and namespace don't set it. Must be above zero |
+| `--default-idle-after` | `1h` | Idle time before pausing, for workloads opted in with the label whose annotations and namespace don't set it. At least `1m` |
 | `--default-cpu-threshold` | `10` | CPU percentage of requests that counts as active, for opted-in workloads that don't set it. 1 to 100 |
 | `--default-dry-run` | `false` | Measure opted-in workloads without pausing, unless they or their namespace set `hybernate.io/dry-run` |
 | `--doorman` | `false` | Run as the doorman instead of the operator. The doorman Deployment sets it |
@@ -33,7 +33,7 @@ These flags are passed to the binary (`/manager`), which runs as the operator, o
 | `--zap-stacktrace-level` | `error` | Level from which stack traces are logged: `info`, `error`, or `panic` |
 | `--zap-time-encoding` | RFC 3339 | Time format of log entries: `epoch`, `millis`, `nano`, `iso8601`, `rfc3339` or `rfc3339nano` |
 
-The operator checks its flags at startup and exits with an error naming the flag when one is invalid: a `--protected-namespaces` pattern that isn't a valid glob, a `--prometheus-url` that isn't `http` or `https` with a host, a `--default-idle-after` that isn't above zero, a `--default-cpu-threshold` outside 1 to 100, a `--max-concurrent-reconciles` below 1, or a `--timezone` that isn't a known IANA zone.
+The operator checks its flags at startup and exits with an error naming the flag when one is invalid: a `--protected-namespaces` pattern that isn't a valid glob, a `--prometheus-url` that isn't `http` or `https` with a host, a `--default-idle-after` under `1m`, a `--default-cpu-threshold` outside 1 to 100, a `--max-concurrent-reconciles` below 1, or a `--timezone` that isn't a known IANA zone.
 
 ## Endpoints
 
