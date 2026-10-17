@@ -54,6 +54,7 @@ type stubForecaster struct {
 	anomalyDetected  bool
 	state            string
 	exportErr        error
+	exportCalls      int
 	settings         forecast.Settings
 }
 
@@ -75,7 +76,10 @@ func (f *stubForecaster) Predict(h int, _ time.Time) float64 {
 	}
 	return f.predictValue
 }
-func (f *stubForecaster) Export() (string, error)              { return f.state, f.exportErr }
+func (f *stubForecaster) Export() (string, error) {
+	f.exportCalls++
+	return f.state, f.exportErr
+}
 func (f *stubForecaster) Configure(settings forecast.Settings) { f.settings = settings }
 func (f *stubForecaster) GetPhase() forecast.Phase             { return f.phase }
 func (f *stubForecaster) DailyConfidence() int                 { return f.dailyConfidence }

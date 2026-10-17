@@ -79,14 +79,25 @@ type engineRegistry struct {
 	mu        sync.Mutex
 	engines   map[types.UID]forecaster
 	hours     map[types.UID]demandHour
+	exports   map[types.UID]exportedState
 	newEngine func() forecaster
 	restore   func(state string) (forecaster, error)
+}
+
+// exportedState is the state an engine last exported, and the data points
+// it had then. Only an observation changes what an engine has learned, and
+// each adds a data point, so the state stands until the count moves.
+type exportedState struct {
+	engine     forecaster
+	dataPoints int
+	state      string
 }
 
 func newEngineRegistry(newEngine func() forecaster) *engineRegistry {
 	return &engineRegistry{
 		engines:   make(map[types.UID]forecaster),
 		hours:     make(map[types.UID]demandHour),
+		exports:   make(map[types.UID]exportedState),
 		newEngine: newEngine,
 		restore: func(state string) (forecaster, error) {
 			e, err := forecast.ImportEngine(state, forecast.Settings{})
@@ -131,7 +142,29 @@ func (reg *engineRegistry) forget(uid types.UID) {
 	reg.mu.Lock()
 	delete(reg.engines, uid)
 	delete(reg.hours, uid)
+	delete(reg.exports, uid)
 	reg.mu.Unlock()
+}
+
+// export is what the workload's engine has learned, encoded for its status.
+// Encoding compresses the whole state, so it's done again only once the
+// engine has observed another hour.
+func (reg *engineRegistry) export(uid types.UID, engine forecaster) (string, error) {
+	points := engine.GetDataPoints()
+	reg.mu.Lock()
+	last, ok := reg.exports[uid]
+	reg.mu.Unlock()
+	if ok && last.engine == engine && last.dataPoints == points {
+		return last.state, nil
+	}
+	state, err := engine.Export()
+	if err != nil {
+		return "", err
+	}
+	reg.mu.Lock()
+	reg.exports[uid] = exportedState{engine: engine, dataPoints: points, state: state}
+	reg.mu.Unlock()
+	return state, nil
 }
 
 // demandHour is what has been seen of a workload's demand in one hour of

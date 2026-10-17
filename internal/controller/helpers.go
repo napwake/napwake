@@ -115,7 +115,7 @@ func (r *Reconciler) updatePredictionStatus(ctx context.Context, workload *v1alp
 		WeeklyPhase:      weeklyPhase,
 		WeeklyConfidence: engine.WeeklyConfidence(),
 	}
-	state, err := engine.Export()
+	state, err := r.engines.export(workload.UID, engine)
 	if err != nil {
 		logf.FromContext(ctx).Error(err, "saving forecast state, keeping the state last saved",
 			"workload", workload.Name, "namespace", workload.Namespace)
