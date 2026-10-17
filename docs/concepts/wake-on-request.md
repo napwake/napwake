@@ -105,7 +105,7 @@ spec:
 
 ## How long a connection is held
 
-The doorman holds each connection for up to `wake.maxWait`, 2 minutes by default. If no pod is Ready by then, it closes the connection. The wake carries on, so a retry a little later succeeds.
+The doorman holds each connection for up to `wake.maxWait`, 2 minutes by default and at most 1 hour; a longer value is held for 1 hour. If no pod is Ready by then, it closes the connection. The wake carries on, so a retry a little later succeeds.
 
 ```yaml
 spec:
@@ -125,11 +125,11 @@ metadata:
 
 So that a flood of connections can't exhaust the doorman, or wake workloads faster than the cluster can start them:
 
-- Each doorman pod holds at most 2048 connections: at most 1024 from one source IP, and at most 256 from one source IP for one workload. A connection over these caps is closed at once, with nothing sent.
+- Each doorman pod holds at most 2048 connections: at most 256 for one workload, at most 1024 from one source IP, and at most 128 from one source IP for one workload. A connection over these caps is closed at once, with nothing sent.
 - Wakes are rate-limited per source IP (a burst of 30, then one every 2 seconds) and overall (a burst of 200, then 10 a second). Only a request that would actually wake a paused workload counts, and one refused overall doesn't use up its source's allowance. A caller whose wake is over the limit isn't turned away: a browser gets the waking-up page, anything else is held, and the wake is retried every 2 seconds until the allowance lets it through or `maxWait` runs out.
 - While a connection is held, the doorman reads what the caller sends, so that a caller who gives up is let go at once: up to 1MiB per connection, and 32MiB across all of them. A larger request body waits in the network until the workload is up, and a caller who leaves partway through one is let go only at `maxWait`.
 
-The source IP is the address the doorman sees, which for traffic through an ingress controller is the controller's pod. That's why the caps are per workload as well as per source: every user behind one ingress pod shares its address, and a burst to one environment mustn't crowd out the others.
+The source IP is the address the doorman sees, which for traffic through an ingress controller is the controller's pod. That's why the caps are per workload as well as per source: every user behind one ingress pod shares its address, and a burst to one environment mustn't crowd out the others. The cap on one workload, whatever the source, keeps one that never becomes Ready from taking every place.
 
 When a doorman pod shuts down, it stops accepting connections and gives those it holds or passes through up to 25 seconds to finish. The chart gives the pod 40 seconds in all, after a 5-second sleep that lets kube-proxy and load balancers stop sending it new connections.
 

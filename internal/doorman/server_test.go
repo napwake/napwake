@@ -969,7 +969,7 @@ func TestAdmission_AWakeRefusedOverallDoesNotSpendTheSources(t *testing.T) {
 // Behind an ingress, every user comes from one address. A burst of
 // connections to one workload can't take the places the others need.
 func TestAdmission_HeldConnectionsAreCappedPerWorkload(t *testing.T) {
-	a := newAdmission(limits{maxHeld: 100, maxHeldPerSource: 50, maxHeldPerSourceWorkload: 2})
+	a := newAdmission(limits{maxHeld: 100, maxHeldPerWorkload: 50, maxHeldPerSource: 50, maxHeldPerSourceWorkload: 2})
 	now := time.Now()
 	ingress := netip.MustParseAddr("10.0.0.1")
 	shop := types.NamespacedName{Namespace: "dev", Name: "shop"}
@@ -982,6 +982,45 @@ func TestAdmission_HeldConnectionsAreCappedPerWorkload(t *testing.T) {
 
 	a.release(ingress, shop, now)
 	assert.True(t, a.hold(ingress, shop, now))
+}
+
+// A workload that never becomes Ready, called from many sources, can't take
+// the places other workloads need.
+func TestAdmission_OneWorkloadCannotTakeEveryPlace(t *testing.T) {
+	a := newAdmission(defaultLimits)
+	now := time.Now()
+	broken := types.NamespacedName{Namespace: "team-a", Name: "broken"}
+	other := types.NamespacedName{Namespace: "team-b", Name: "api"}
+
+	admitted := 0
+	for i := range defaultLimits.maxHeld {
+		if a.hold(netip.AddrFrom4([4]byte{10, 0, byte(i / 100), byte(i % 100)}), broken, now) {
+			admitted++
+		}
+	}
+	assert.Equal(t, defaultLimits.maxHeldPerWorkload, admitted)
+	assert.True(t, a.hold(netip.MustParseAddr("10.9.9.9"), other, now), "another workload still has room")
+
+	a.release(netip.AddrFrom4([4]byte{10, 0, 0, 0}), broken, now)
+	assert.True(t, a.hold(netip.MustParseAddr("10.9.9.8"), broken, now), "a released place can be taken again")
+}
+
+func TestServer_MaxWaitIsBounded(t *testing.T) {
+	w := pausedWorkload("api", freePort(t), 0)
+	w.Spec.Wake.MaxWait = &metav1.Duration{Duration: 10000 * time.Hour}
+	s, _ := newTestServer(t, nil, w)
+	ctx := context.Background()
+	require.NoError(t, s.syncRoutes(ctx, ctx))
+	t.Cleanup(func() {
+		for _, l := range s.listeners {
+			_ = l.Close()
+		}
+	})
+
+	require.Len(t, s.routes, 1)
+	for _, rt := range s.routes {
+		assert.Equal(t, longestMaxWait, rt.maxWait)
+	}
 }
 
 // Two routes claiming one port would send one workload's callers to the
