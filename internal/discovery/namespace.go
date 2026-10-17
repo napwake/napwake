@@ -88,11 +88,7 @@ func (s *Scanner) scanNamespace(ctx context.Context, namespace string, pricing n
 	if len(workloads) == 0 {
 		return scan
 	}
-	owners, err := s.readOwners(ctx, namespace)
-	if err != nil {
-		scan.problem(readingWorkloads, err)
-		return scan
-	}
+	owners := s.readOwners(ctx, &scan)
 
 	managed, err := s.managedInNamespace(ctx, namespace)
 	if err != nil {
@@ -244,11 +240,19 @@ type owners struct {
 	replicaSets map[types.UID][]string
 	// deploymentOf is the Deployment that owns each ReplicaSet, by its name.
 	deploymentOf map[string]types.UID
+	// replicaSetsRead says the ReplicaSets were read, so a pod whose
+	// ReplicaSet isn't among them isn't a Deployment's.
+	replicaSetsRead bool
 }
 
-func (s *Scanner) readOwners(ctx context.Context, namespace string) (owners, error) {
+// readOwners reads what traces pods and rollouts to their workloads. What
+// it can't read is recorded as a problem, and the scan carries on without
+// it: without ReplicaSets, Deployments' rollouts aren't seen and their pods
+// are matched by their selectors.
+func (s *Scanner) readOwners(ctx context.Context, scan *namespaceScan) owners {
 	o := owners{rollouts: map[types.UID][]time.Time{}, replicaSets: map[types.UID][]string{},
 		deploymentOf: map[string]types.UID{}}
+	namespace := scan.namespace
 	err := listAll(ctx, s.client, func(list *appsv1.ReplicaSetList) {
 		for _, rs := range list.Items {
 			ref := controllerRef(rs.OwnerReferences)
@@ -263,7 +267,9 @@ func (s *Scanner) readOwners(ctx context.Context, namespace string) (owners, err
 		}
 	}, client.InNamespace(namespace))
 	if err != nil {
-		return owners{}, err
+		scan.problem(readingReplicaSets, err)
+	} else {
+		o.replicaSetsRead = true
 	}
 	err = listAll(ctx, s.client, func(list *appsv1.ControllerRevisionList) {
 		for _, rev := range list.Items {
@@ -273,14 +279,15 @@ func (s *Scanner) readOwners(ctx context.Context, namespace string) (owners, err
 		}
 	}, client.InNamespace(namespace))
 	if err != nil && !isNotServed(err) {
-		return owners{}, err
+		scan.problem(readingControllerRevisions, err)
 	}
-	return o, nil
+	return o
 }
 
 // controllerOf is the workload a pod belongs to: the Deployment behind its
 // ReplicaSet, or the StatefulSet or other controller that owns it. A pod no
-// controller owns has none.
+// controller owns has none, and nor does one whose ReplicaSet couldn't be
+// read, so a selector can adopt either.
 func (o owners) controllerOf(pod *corev1.Pod) (types.UID, bool) {
 	ref := controllerRef(pod.OwnerReferences)
 	if ref == nil {
@@ -289,6 +296,9 @@ func (o owners) controllerOf(pod *corev1.Pod) (types.UID, bool) {
 	if ref.Kind == "ReplicaSet" {
 		if uid, ok := o.deploymentOf[ref.Name]; ok {
 			return uid, true
+		}
+		if !o.replicaSetsRead {
+			return "", false
 		}
 	}
 	return ref.UID, true
@@ -316,7 +326,8 @@ func controllerRef(refs []metav1.OwnerReference) *metav1.OwnerReference {
 type podIndex struct {
 	byOwner map[types.UID][]corev1.Pod
 	// orphans are pods no controller owns, which a workload whose selector
-	// matches them would adopt.
+	// matches them would adopt, and pods whose ReplicaSet couldn't be read,
+	// matched the same way.
 	orphans []corev1.Pod
 	// names are every pod's name, so metrics can be matched to their pod.
 	names map[string]bool

@@ -72,20 +72,25 @@ type readProblem struct {
 type reading string
 
 const (
-	readingWorkloads  reading = "workloads"
-	readingPods       reading = "pods"
-	readingMetrics    reading = "pod metrics"
-	readingManaged    reading = "ManagedWorkloads"
-	readingNamespace  reading = "namespace labels"
-	readingServices   reading = "Services"
-	readingConfigMaps reading = "ConfigMaps"
-	readingHistory    reading = "CPU history"
+	readingWorkloads           reading = "workloads"
+	readingReplicaSets         reading = "ReplicaSets"
+	readingControllerRevisions reading = "ControllerRevisions"
+	readingPods                reading = "pods"
+	readingMetrics             reading = "pod metrics"
+	readingManaged             reading = "ManagedWorkloads"
+	readingNamespace           reading = "namespace labels"
+	readingServices            reading = "Services"
+	readingConfigMaps          reading = "ConfigMaps"
+	readingHistory             reading = "CPU history"
 )
 
 // deniedConsequence says what the scan loses when the user's access doesn't
 // let it read each thing.
 var deniedConsequence = map[reading]string{
 	readingWorkloads: "so they weren't scanned",
+	readingReplicaSets: "so Deployments' rollouts there aren't seen, their pods are matched to them by labels " +
+		"alone, and their CPU history isn't found",
+	readingControllerRevisions: "so StatefulSets' rollouts there aren't seen",
 	readingPods: "so sidecars added at pod creation aren't priced, and pods are matched to workloads by " +
 		"labels alone",
 	readingMetrics:    "so CPU there couldn't be measured",
@@ -97,8 +102,8 @@ var deniedConsequence = map[reading]string{
 
 // readingOrder is the order notes about each are given in, most limiting
 // first.
-var readingOrder = []reading{readingWorkloads, readingPods, readingMetrics, readingManaged, readingNamespace,
-	readingServices, readingConfigMaps, readingHistory}
+var readingOrder = []reading{readingWorkloads, readingPods, readingMetrics, readingReplicaSets,
+	readingControllerRevisions, readingManaged, readingNamespace, readingServices, readingConfigMaps, readingHistory}
 
 // problemNotes sums up what couldn't be read: one line for each thing the
 // user's access denies, however many namespaces it's denied in, and one for
