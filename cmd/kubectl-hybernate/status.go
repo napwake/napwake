@@ -179,16 +179,17 @@ type happening struct {
 // raised as True, and the ones that report something working are a
 // problem when False.
 var troubles = map[string]metav1.ConditionStatus{
-	"GitOpsConflict":      metav1.ConditionTrue,
-	"DependencyCycle":     metav1.ConditionTrue,
-	"DependencyNotFound":  metav1.ConditionTrue,
-	"DuplicateTarget":     metav1.ConditionTrue,
-	"Protected":           metav1.ConditionTrue,
-	"TargetAvailable":     metav1.ConditionFalse,
-	"MetricsAvailable":    metav1.ConditionFalse,
-	"PrometheusAvailable": metav1.ConditionFalse,
-	"WakeOnRequest":       metav1.ConditionFalse,
-	"ResumeIncomplete":    metav1.ConditionTrue,
+	"GitOpsConflict":       metav1.ConditionTrue,
+	"DependencyCycle":      metav1.ConditionTrue,
+	"DependencyNotFound":   metav1.ConditionTrue,
+	"DependencyNotAllowed": metav1.ConditionTrue,
+	"DuplicateTarget":      metav1.ConditionTrue,
+	"Protected":            metav1.ConditionTrue,
+	"TargetAvailable":      metav1.ConditionFalse,
+	"MetricsAvailable":     metav1.ConditionFalse,
+	"PrometheusAvailable":  metav1.ConditionFalse,
+	"WakeOnRequest":        metav1.ConditionFalse,
+	"ResumeIncomplete":     metav1.ConditionTrue,
 }
 
 // chosen are the reasons a trouble condition carries when it reports what
