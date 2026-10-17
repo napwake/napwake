@@ -416,13 +416,15 @@ For a workload opted in with the `hybernate.io/managed` label, it sets the workl
 
 `--all` ends dry-run for every workload in the namespace. When the namespace's own `hybernate.io/dry-run` annotation, or the cluster default, keeps any of them in dry-run, it sets the namespace's annotation to `"false"` and drops the workloads' own annotations, so the namespace decides for all of them. When each is in dry-run by its own annotation, it leaves the namespace alone and sets each workload's annotation to `"false"`. Either way, it sets `spec.dryRun: false` on ManagedWorkloads written by hand in the namespace. When Git owns the namespace, its annotation is left for you to change there, which also ends dry-run for the workloads that take it, and workloads with their own annotation get `"false"`. Labelled workloads no ManagedWorkload manages are left alone and listed, and `enable` exits non-zero.
 
-When Argo CD or Flux applies the workload, its namespace, or the ManagedWorkload, `enable` changes nothing there, because the tool would put the old value straight back. It names the tool, prints the change to make in Git, and exits non-zero:
+When Argo CD or Flux applies the setting `enable` would change, the `hybernate.io/dry-run` annotation on the workload or its namespace, or a ManagedWorkload's `spec.dryRun`, `enable` changes nothing there, because the tool would put the old value straight back. It tells by the field managers the API server records as owning that setting, as `pause` does for replicas, so it doesn't matter how the tool tracks what it applies; for an object with no managed fields recorded, it goes by the tracking label or annotation each tool adds. A tool that applies the workload but not the annotation, such as when Git doesn't have it, leaves a change to it alone. It names the tool, prints the change to make in Git, and exits non-zero:
 
 ```
 deployment/checkout-api is managed by Argo CD application shop, which would undo a change made here. In its manifest:
   set the annotation  hybernate.io/dry-run: "false"
 Or pass --force to change the cluster anyway.
 ```
+
+When Helm set it, `enable` changes it, since Helm only applies a chart when you run it, and warns that the next `helm upgrade` puts the chart's value back, so set it in the chart too. See [Argo CD and Flux](../guides/gitops.md#ending-dry-run).
 
 A bare name is looked up as a Deployment first, then a StatefulSet; prefix it with `deployment/` or `statefulset/` to be exact.
 

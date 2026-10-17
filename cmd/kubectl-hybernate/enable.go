@@ -18,6 +18,7 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -32,6 +33,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	v1alpha1 "github.com/okedeji/hybernate/api/v1alpha1"
+	"github.com/okedeji/hybernate/internal/gitops"
 )
 
 // errManagedByGit means the change belongs in Git, where a GitOps tool would
@@ -69,9 +71,10 @@ It changes nothing, and fails, for a workload Hybernate won't manage: one in
 a protected namespace, one ignored or opted out by its own label, or one no
 ManagedWorkload manages yet.
 
-Anything whose manifest comes from Argo CD or Flux isn't changed: its
-annotations live in Git, where the tool would put the old value back. Enable
-says what to change there instead.
+A setting Argo CD or Flux applies from Git, as the object's managed fields
+record, isn't changed: the tool would put the old value back. Enable says
+what to change there instead. One Helm set is changed, with a warning that
+the next helm upgrade puts it back.
 
 Examples:
   # Start pausing a Deployment
@@ -201,8 +204,10 @@ func enableWorkload(
 		_, _ = fmt.Fprintf(out, "%s isn't in dry-run; Hybernate already pauses it while idle\n", ref)
 		return nil
 	}
-	if tool := gitOpsTool(obj); tool != "" && !opts.force {
-		_, _ = fmt.Fprintf(out, "%s is managed by %s, which would undo a change made here. In its manifest:\n", ref, tool)
+	applied := appliedBy(obj, dryRunAnnotationField)
+	if applied.gitOps != "" && !opts.force {
+		_, _ = fmt.Fprintf(out, "%s is managed by %s, which would undo a change made here. In its manifest:\n", ref,
+			applied.gitOps)
 		_, _ = fmt.Fprintf(out, "  set the annotation  %s: \"false\"\n", v1alpha1.AnnotationDryRun)
 		_, _ = fmt.Fprintln(out, "Or pass --force to change the cluster anyway.")
 		return errManagedByGit
@@ -210,11 +215,14 @@ func enableWorkload(
 	if err := setAnnotation(ctx, c, obj, v1alpha1.AnnotationDryRun, dryRunOff); err != nil {
 		return err
 	}
-	if !managed.readable {
+	if managed.readable {
+		_, _ = fmt.Fprintf(out, "%s: dry-run ended, Hybernate will pause it while idle\n", ref)
+	} else {
 		_, _ = fmt.Fprintf(out, "%s: dry-run annotation set to \"false\". %s\n", ref, unreadableNote(namespace))
-		return nil
 	}
-	_, _ = fmt.Fprintf(out, "%s: dry-run ended, Hybernate will pause it while idle\n", ref)
+	if applied.helm {
+		_, _ = fmt.Fprintln(out, helmWarning(ref, v1alpha1.AnnotationDryRun+" annotation"))
+	}
 	return nil
 }
 
@@ -242,16 +250,20 @@ func enableHandWritten(ctx context.Context, c client.Client, mw *v1alpha1.Manage
 		_, _ = fmt.Fprintf(out, "%s isn't in dry-run; Hybernate already pauses it while idle\n", ref)
 		return nil
 	}
-	if tool := gitOpsTool(mw); tool != "" && !opts.force {
+	applied := appliedBy(mw, dryRunSpecField)
+	if applied.gitOps != "" && !opts.force {
 		_, _ = fmt.Fprintf(out, "%s's ManagedWorkload %s is managed by %s, which would undo a change made here. "+
 			"In its manifest:\n  set spec.dryRun: false\nOr pass --force to change the cluster anyway.\n",
-			ref, mw.Name, tool)
+			ref, mw.Name, applied.gitOps)
 		return errManagedByGit
 	}
 	if err := endHandWrittenDryRun(ctx, c, mw); err != nil {
 		return err
 	}
 	_, _ = fmt.Fprintf(out, "%s: dry-run ended, Hybernate will pause it while idle\n", ref)
+	if applied.helm {
+		_, _ = fmt.Fprintln(out, helmWarning("managedworkload/"+mw.Name, "spec.dryRun"))
+	}
 	return nil
 }
 
@@ -369,12 +381,13 @@ type inGit struct {
 }
 
 // namespaceEnabler ends dry-run across a namespace, keeping what it
-// changed and what it left for Git.
+// changed, what it left for Git, and what Helm will put back.
 type namespaceEnabler struct {
-	c       client.Client
-	opts    enableOptions
-	enabled int
-	git     []inGit
+	c        client.Client
+	opts     enableOptions
+	enabled  int
+	git      []inGit
+	warnings []string
 }
 
 func enableNamespace(ctx context.Context, c client.Client, namespace string, opts enableOptions, out io.Writer) error {
@@ -432,6 +445,9 @@ func enableNamespace(ctx context.Context, c client.Client, namespace string, opt
 		_, _ = fmt.Fprintf(out, "%s in %s: dry-run ended, Hybernate will pause %s while idle\n",
 			countOf(e.enabled, "workload"), namespace, pronounObject(e.enabled))
 	}
+	for _, w := range e.warnings {
+		_, _ = fmt.Fprintln(out, w)
+	}
 	var errs []error
 	if len(e.git) > 0 {
 		_, _ = fmt.Fprintln(out, "Not changed, because their manifests come from Git; change them there:")
@@ -464,14 +480,16 @@ func reportNotPickedUp(out io.Writer, namespace string, refs []string) error {
 // namespace sets the namespace's dry-run annotation to "false", unless Git
 // owns it, and says whether the namespace is now live.
 func (e *namespaceEnabler) namespace(ctx context.Context, ns *corev1.Namespace) (bool, error) {
-	if tool := gitOpsTool(ns); tool != "" && !e.opts.force {
-		e.git = append(e.git, inGit{"namespace " + ns.Name, tool,
+	applied := appliedBy(ns, dryRunAnnotationField)
+	if applied.gitOps != "" && !e.opts.force {
+		e.git = append(e.git, inGit{"namespace " + ns.Name, applied.gitOps,
 			fmt.Sprintf(`set the annotation %s: "false"`, v1alpha1.AnnotationDryRun)})
 		return false, nil
 	}
 	if err := setAnnotation(ctx, e.c, ns, v1alpha1.AnnotationDryRun, dryRunOff); err != nil {
 		return false, err
 	}
+	e.warnIfHelm(applied, "namespace "+ns.Name, v1alpha1.AnnotationDryRun+" annotation")
 	return true, nil
 }
 
@@ -489,27 +507,39 @@ func (e *namespaceEnabler) labelled(ctx context.Context, obj client.Object, nsLi
 	if nsLive {
 		value, change = "", "remove the annotation "+v1alpha1.AnnotationDryRun
 	}
-	if tool := gitOpsTool(obj); tool != "" && !e.opts.force {
-		e.git = append(e.git, inGit{fmt.Sprintf("%s/%s", kindOf(obj), obj.GetName()), tool, change})
+	ref := fmt.Sprintf("%s/%s", kindOf(obj), obj.GetName())
+	applied := appliedBy(obj, dryRunAnnotationField)
+	if applied.gitOps != "" && !e.opts.force {
+		e.git = append(e.git, inGit{ref, applied.gitOps, change})
 		return nil
 	}
 	if err := setAnnotation(ctx, e.c, obj, v1alpha1.AnnotationDryRun, value); err != nil {
 		return err
 	}
+	e.warnIfHelm(applied, ref, v1alpha1.AnnotationDryRun+" annotation")
 	e.enabled++
 	return nil
 }
 
 func (e *namespaceEnabler) handWritten(ctx context.Context, mw *v1alpha1.ManagedWorkload) error {
-	if tool := gitOpsTool(mw); tool != "" && !e.opts.force {
-		e.git = append(e.git, inGit{"managedworkload/" + mw.Name, tool, "set spec.dryRun: false"})
+	ref := "managedworkload/" + mw.Name
+	applied := appliedBy(mw, dryRunSpecField)
+	if applied.gitOps != "" && !e.opts.force {
+		e.git = append(e.git, inGit{ref, applied.gitOps, "set spec.dryRun: false"})
 		return nil
 	}
 	if err := endHandWrittenDryRun(ctx, e.c, mw); err != nil {
 		return err
 	}
+	e.warnIfHelm(applied, ref, "spec.dryRun")
 	e.enabled++
 	return nil
+}
+
+func (e *namespaceEnabler) warnIfHelm(applied applier, ref, setting string) {
+	if applied.helm {
+		e.warnings = append(e.warnings, helmWarning(ref, setting))
+	}
 }
 
 func pronounObject(n int) string {
@@ -595,9 +625,96 @@ func setAnnotation(ctx context.Context, c client.Client, obj client.Object, key,
 	return nil
 }
 
-// gitOpsTool names the GitOps tool that applies an object, from the
-// tracking metadata each one adds, or "" if none does.
-func gitOpsTool(obj client.Object) string {
+// The managed-fields paths of the settings enable changes.
+var (
+	dryRunAnnotationField = []string{"f:metadata", "f:annotations", "f:" + v1alpha1.AnnotationDryRun}
+	dryRunSpecField       = []string{"f:spec", "f:dryRun"}
+)
+
+// helmManager is the field manager Helm applies a chart's objects as.
+const helmManager = "helm"
+
+// applier is what sets a field from outside the cluster: a GitOps tool,
+// which puts back what enable changes on its next sync, or Helm, whose
+// next upgrade does.
+type applier struct {
+	// gitOps names the tool, and the application it applies the object
+	// for when its tracking metadata says.
+	gitOps string
+	helm   bool
+}
+
+// appliedBy finds who sets the field at path on obj from the field managers
+// the API server records owning it. A GitOps tool that applies the object
+// but not this field, such as an annotation Git doesn't have, leaves a
+// change to it alone. An object with no managed fields recorded, such as
+// one created before there were any, goes by the tracking metadata each tool
+// adds to what it applies.
+func appliedBy(obj client.Object, path []string) applier {
+	entries := obj.GetManagedFields()
+	if len(entries) == 0 {
+		return applier{gitOps: trackedBy(obj)}
+	}
+	var found applier
+	for _, entry := range entries {
+		if entry.FieldsV1 == nil || !ownsField(entry.FieldsV1.Raw, path) {
+			continue
+		}
+		if tool := gitOpsManager(entry.Manager); tool != "" {
+			return applier{gitOps: gitOpsName(tool, obj)}
+		}
+		found.helm = found.helm || entry.Manager == helmManager
+	}
+	return found
+}
+
+// gitOpsManager names the GitOps tool behind a field manager, as
+// gitops.ReplicasWriter does: Argo CD applies as argocd-controller, older
+// releases as argocd-application-controller; Flux as kustomize-controller or
+// helm-controller.
+func gitOpsManager(manager string) string {
+	switch {
+	case strings.HasPrefix(manager, "argocd"):
+		return string(gitops.ArgoCD)
+	case manager == "kustomize-controller", manager == "helm-controller":
+		return string(gitops.Flux)
+	}
+	return ""
+}
+
+// gitOpsName is the tool that applies obj, with the application when its
+// tracking metadata names one. With the manager known to be Argo CD, the
+// app.kubernetes.io/instance label it tracks by default names the
+// application.
+func gitOpsName(tool string, obj client.Object) string {
+	if tracked := trackedBy(obj); tracked != "" {
+		return tracked
+	}
+	if app := obj.GetLabels()["app.kubernetes.io/instance"]; tool == string(gitops.ArgoCD) && app != "" {
+		return "Argo CD application " + app
+	}
+	return tool
+}
+
+func ownsField(raw []byte, path []string) bool {
+	for _, name := range path {
+		var fields map[string]json.RawMessage
+		if json.Unmarshal(raw, &fields) != nil {
+			return false
+		}
+		var ok bool
+		if raw, ok = fields[name]; !ok {
+			return false
+		}
+	}
+	return true
+}
+
+// trackedBy names the GitOps tool and application that apply an object,
+// from the tracking metadata each one adds, or "" if none does. Argo CD
+// tracks by the app.kubernetes.io/instance label by default, which Helm
+// charts set too, so that label alone doesn't say Argo CD applies it.
+func trackedBy(obj client.Object) string {
 	annotations, labels := obj.GetAnnotations(), obj.GetLabels()
 	switch {
 	case annotations["argocd.argoproj.io/tracking-id"] != "":
@@ -611,6 +728,12 @@ func gitOpsTool(obj client.Object) string {
 		return "Flux HelmRelease " + labels["helm.toolkit.fluxcd.io/name"]
 	}
 	return ""
+}
+
+// helmWarning says Helm will put back the setting enable just changed.
+func helmWarning(ref, setting string) string {
+	return fmt.Sprintf("Warning: Helm set %s's %s, so the next helm upgrade puts the chart's value back; "+
+		"set it to false in the chart too", ref, setting)
 }
 
 func kindOf(obj client.Object) string {

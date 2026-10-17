@@ -20,6 +20,7 @@ import (
 	"bytes"
 	"context"
 	"maps"
+	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -361,6 +362,100 @@ func TestEnable_GitOpsManaged(t *testing.T) {
 
 		value, _ := dryRunOf(t, c, "api")
 		assert.Equal(t, "false", value)
+	})
+}
+
+// appliedAs has the API server record manager as owning fields of every
+// Deployment read, as it does for whatever applied them. The fake client
+// doesn't keep managed fields.
+func appliedAs(manager, fields string) interceptor.Funcs {
+	set := func(d *appsv1.Deployment) {
+		d.ManagedFields = []metav1.ManagedFieldsEntry{{Manager: manager, Operation: metav1.ManagedFieldsOperationApply,
+			FieldsType: "FieldsV1", FieldsV1: &metav1.FieldsV1{Raw: []byte(fields)}}}
+	}
+	return interceptor.Funcs{
+		Get: func(ctx context.Context, c client.WithWatch, key client.ObjectKey, obj client.Object,
+			opts ...client.GetOption) error {
+			if err := c.Get(ctx, key, obj, opts...); err != nil {
+				return err
+			}
+			if d, ok := obj.(*appsv1.Deployment); ok {
+				set(d)
+			}
+			return nil
+		},
+		List: func(ctx context.Context, c client.WithWatch, list client.ObjectList, opts ...client.ListOption) error {
+			if err := c.List(ctx, list, opts...); err != nil {
+				return err
+			}
+			if l, ok := list.(*appsv1.DeploymentList); ok {
+				for i := range l.Items {
+					set(&l.Items[i])
+				}
+			}
+			return nil
+		},
+	}
+}
+
+const ownsDryRun = `{"f:metadata":{"f:annotations":{".":{},"f:hybernate.io/dry-run":{}}}}`
+
+// Who applies the dry-run annotation decides, by the field managers the API
+// server records: Argo CD or Flux would put it back, so enable leaves it for
+// Git, whatever tracking metadata the workload carries; Helm would on its
+// next upgrade, so enable changes it and warns; a tool that applies the
+// workload but not the annotation leaves a change to it alone.
+func TestEnable_WhoAppliesTheAnnotation(t *testing.T) {
+	tests := []struct {
+		name, manager, fields string
+		labels                map[string]string
+		wantGit               string
+		wantWarning           bool
+	}{
+		{name: "Argo CD, tracking by its default label", manager: "argocd-controller", fields: ownsDryRun,
+			labels: map[string]string{"app.kubernetes.io/instance": "shop"}, wantGit: "Argo CD application shop"},
+		{name: "Argo CD, without tracking metadata", manager: "argocd-application-controller", fields: ownsDryRun,
+			wantGit: "Argo CD"},
+		{name: "Flux", manager: "kustomize-controller", fields: ownsDryRun, wantGit: "Flux"},
+		{name: "Helm", manager: "helm", fields: ownsDryRun, wantWarning: true},
+		{name: "Argo CD, applying other fields", manager: "argocd-controller",
+			fields: `{"f:spec":{"f:replicas":{}}}`, labels: map[string]string{"app.kubernetes.io/instance": "shop"}},
+		{name: "kubectl", manager: "kubectl-client-side-apply", fields: ownsDryRun},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			labels := map[string]string{v1alpha1.LabelManaged: "true"}
+			maps.Copy(labels, tt.labels)
+			c := newClient(t, appliedAs(tt.manager, tt.fields), enableNamespaceObj(nil, nil),
+				enableDeployment("api", labels, measuring(nil)), labelManaged("api", true))
+			var out bytes.Buffer
+
+			err := enableWorkload(context.Background(), c, "dev", "api", enableOptions{}, &out)
+
+			value, _ := dryRunOf(t, c, "api")
+			if tt.wantGit != "" {
+				assert.ErrorIs(t, err, errManagedByGit)
+				assert.Contains(t, out.String(), "deployment/api is managed by "+tt.wantGit+", which would undo")
+				assert.Equal(t, "true", value, "the cluster isn't changed")
+				return
+			}
+			require.NoError(t, err)
+			assert.Equal(t, "false", value)
+			assert.Equal(t, tt.wantWarning, strings.Contains(out.String(),
+				"Warning: Helm set deployment/api's hybernate.io/dry-run annotation, so the next helm upgrade puts "+
+					"the chart's value back"), out.String())
+		})
+	}
+
+	t.Run("--all", func(t *testing.T) {
+		c := newClient(t, appliedAs("argocd-controller", ownsDryRun), enableNamespaceObj(optedIn, nil),
+			enableDeployment("api", nil, measuring(nil)), labelManaged("api", true))
+		var out bytes.Buffer
+
+		err := enableNamespace(context.Background(), c, "dev", enableOptions{all: true}, &out)
+
+		assert.ErrorIs(t, err, errManagedByGit)
+		assert.Contains(t, out.String(), `deployment/api (Argo CD): set the annotation hybernate.io/dry-run: "false"`)
 	})
 }
 
