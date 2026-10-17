@@ -31,8 +31,8 @@ The primary reconciler. Watches `ManagedWorkload` CRs and drives each workload t
 
 1. Checks for another ManagedWorkload managing the same target
 2. Checks that the target Deployment or StatefulSet exists and isn't labelled `hybernate.io/ignore`; an ignored one is let go of, scaled back up first if it's paused
-3. Wakes a paused workload scaled up outside Hybernate
-4. Lets go of a workload whose namespace is protected, likewise
+3. Lets go of a workload whose namespace is protected, or that is Hybernate's own operator or doorman, scaled back up first if it's paused
+4. Wakes a paused workload scaled up outside Hybernate
 5. Reports the HPA or KEDA ScaledObject that scales the workload
 6. Learns the workload's dependencies from its environment, and from the requests that woke it
 7. Routes a paused workload's Services to the doorman, or stops routing them
@@ -56,7 +56,7 @@ One for Deployments and one for StatefulSets. Each watches its workloads, their 
 | `internal/forecast` | Holt-Winters model, phase lifecycle, confidence scoring, anomaly detection |
 | `internal/signal` | Prometheus PromQL activity queries |
 | `internal/autoscaler` | Finds a workload's HPA or KEDA ScaledObject, and holds a KEDA one at zero while it's paused |
-| `internal/gitops` | Tells from field managers whether Argo CD or Flux sets a workload's replicas, and how to tell it to leave them |
+| `internal/gitops` | Tells from field managers whether a GitOps tool (Argo CD, Flux, Fleet, kapp or Kluctl) sets a workload's replicas, and how to tell it to leave them |
 | `internal/lifecycle` | Pause and resume, through the scale subresource |
 | `internal/discovery` | The cluster scan behind `kubectl hybernate scan` |
 | `internal/doorman` | Holds requests to a paused workload's Service and wakes it |
