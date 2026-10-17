@@ -118,12 +118,20 @@ var _ = Describe("Manager", func() {
 
 		It("should ensure the metrics endpoint is serving metrics", func() {
 			By("creating a ClusterRoleBinding for the service account to allow access to metrics")
+			// A retried spec finds the binding its failed attempt made.
+			_, err := utils.Run(exec.Command("kubectl", "delete", "clusterrolebinding", metricsRoleBindingName,
+				"--ignore-not-found"))
+			Expect(err).NotTo(HaveOccurred())
 			cmd := exec.Command("kubectl", "create", "clusterrolebinding", metricsRoleBindingName,
 				"--clusterrole=hybernate-metrics-reader",
 				fmt.Sprintf("--serviceaccount=%s:%s", namespace, serviceAccountName),
 			)
-			_, err := utils.Run(cmd)
+			_, err = utils.Run(cmd)
 			Expect(err).NotTo(HaveOccurred(), "Failed to create ClusterRoleBinding")
+			DeferCleanup(func() {
+				_, _ = utils.Run(exec.Command("kubectl", "delete", "clusterrolebinding", metricsRoleBindingName,
+					"--ignore-not-found"))
+			})
 
 			By("validating that the metrics service is available")
 			cmd = exec.Command("kubectl", "get", "service", metricsServiceName, "-n", namespace)
@@ -356,7 +364,9 @@ spec:
 		})
 	})
 
-	Context("Scan", Ordered, func() {
+	// Serial, since it relabels every node, which the specs running beside
+	// it would otherwise see appear and vanish.
+	Context("Scan", Ordered, Serial, func() {
 		const scanNamespace = "hybernate-e2e-scan"
 
 		BeforeAll(func() {
@@ -783,8 +793,8 @@ spec:
 			Expect(err).NotTo(HaveOccurred())
 
 			Eventually(func(g Gomega) {
-				_, err := jsonpath("managedworkload", optInName, optInNamespace, "{.metadata.name}")
-				g.Expect(err).To(HaveOccurred(), "the ManagedWorkload must be deleted")
+				g.Expect(exists("managedworkload", optInName, optInNamespace)).To(BeFalse(),
+					"the ManagedWorkload must be deleted")
 				g.Expect(jsonpath("deployment", optInName, optInNamespace, "{.spec.replicas}")).To(Equal("2"))
 			}, 2*time.Minute, 5*time.Second).Should(Succeed())
 		})
@@ -1063,10 +1073,9 @@ spec:
 			_, err = utils.Run(exec.Command("kubectl", "label", "deployment", "e2e-labelled", "-n", protectedNamespace,
 				"hybernate.io/managed=true"))
 			Expect(err).NotTo(HaveOccurred())
-			Consistently(func() error {
-				_, err := jsonpath("managedworkload", "e2e-labelled", protectedNamespace, "{.metadata.name}")
-				return err
-			}, 30*time.Second, 5*time.Second).Should(HaveOccurred(), "no ManagedWorkload is created")
+			Consistently(func() (bool, error) {
+				return exists("managedworkload", "e2e-labelled", protectedNamespace)
+			}, 30*time.Second, 5*time.Second).Should(BeFalse(), "no ManagedWorkload is created")
 		})
 	})
 })
@@ -1247,6 +1256,13 @@ func kubectlApply(manifest string) error {
 // jsonpath reads a single field from a namespaced object.
 func jsonpath(resource, name, ns, path string) (string, error) {
 	return utils.Output(exec.Command("kubectl", "get", resource, name, "-n", ns, "-o", "jsonpath="+path))
+}
+
+// exists reports whether an object is there. Any error but its absence is
+// returned, so a failing kubectl or API server isn't taken for a deletion.
+func exists(resource, name, ns string) (bool, error) {
+	out, err := utils.Output(exec.Command("kubectl", "get", resource, name, "-n", ns, "--ignore-not-found", "-o", "name"))
+	return strings.TrimSpace(out) != "", err
 }
 
 // serviceAccountToken returns a token for the controller-manager's service
