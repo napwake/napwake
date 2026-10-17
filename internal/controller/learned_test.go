@@ -138,7 +138,7 @@ func TestLearnDependencies_ListsOnlyTheNamespacesNamed(t *testing.T) {
 		Spec: corev1.ServiceSpec{Selector: labels}}
 	many := make([]string, 0, maxNamedNamespaces+1)
 	for i := range maxNamedNamespaces + 1 {
-		many = append(many, fmt.Sprintf("word%d", i))
+		many = append(many, fmt.Sprintf("cache.team%d:6379", i))
 	}
 	tests := []struct {
 		name  string
@@ -146,7 +146,9 @@ func TestLearnDependencies_ListsOnlyTheNamespacesNamed(t *testing.T) {
 		want  []string
 	}{
 		{name: "an address in another namespace", value: "postgres://app@pg.data.svc.cluster.local:5432/app",
-			want: []string{"5432", "app", "cluster", "data", "default", "local", "pg", "postgres", "svc"}},
+			want: []string{"data", "default"}},
+		{name: "words that aren't hosts", value: "pg.data:5432 MODE=api region us-east-1 jdbc:postgresql://pg.data/app",
+			want: []string{"data", "default"}},
 		{name: "too many words to list one by one", value: "pg.data:5432 " + strings.Join(many, " "),
 			want: []string{metav1.NamespaceAll}},
 	}

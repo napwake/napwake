@@ -168,31 +168,28 @@ func (r *Reconciler) configMapsFor(ctx context.Context, namespace string, spec c
 const maxNamedNamespaces = 32
 
 // namespacesNamed are the namespaces the pod's environment could address a
-// Service in: its own, which a bare name resolves in, and every word of its
-// values that could be a namespace, since an address names one as a label
-// of its host, as in postgres.data or postgres.data.svc.cluster.local. That
-// is more than the addresses name, and never fewer. Nil means every
-// namespace. In a namespaced install, only the namespaces it watches can be
-// read.
+// Service in: its own, which a bare name resolves in, and each one a host in
+// its values names, as in postgres.data or postgres.data.svc.cluster.local.
+// That is more than the addresses name, since a host needn't be a Service's,
+// and never fewer. Nil means every namespace. In a namespaced install, only
+// the namespaces it watches can be read.
 func (r *Reconciler) namespacesNamed(own string, spec corev1.PodSpec, configMaps map[string]map[string]string) []string {
 	named := map[string]bool{own: true}
-	addWords := func(value string) {
-		for word := range strings.FieldsFuncSeq(strings.ToLower(value), func(c rune) bool {
-			return (c < 'a' || c > 'z') && (c < '0' || c > '9') && c != '-'
-		}) {
-			if len(validation.IsDNS1123Label(word)) == 0 {
-				named[word] = true
+	addHosts := func(value string) {
+		for _, token := range strings.FieldsFunc(value, isAddressSeparator) {
+			if ns, ok := namespaceOf(token); ok {
+				named[ns] = true
 			}
 		}
 	}
 	for _, c := range append(slices.Clone(spec.InitContainers), spec.Containers...) {
 		for _, env := range c.Env {
-			addWords(env.Value)
+			addHosts(env.Value)
 		}
 	}
 	for _, data := range configMaps {
 		for _, value := range data {
-			addWords(value)
+			addHosts(value)
 		}
 	}
 	if len(r.WatchNamespaces) > 0 {
@@ -205,6 +202,39 @@ func (r *Reconciler) namespacesNamed(own string, spec corev1.PodSpec, configMaps
 		return []string{metav1.NamespaceAll}
 	}
 	return slices.Sorted(maps.Keys(named))
+}
+
+// isAddressSeparator splits a value into the tokens an address can be, as
+// the scan does: hosts are listed with commas, semicolons or spaces, and
+// quoted in config files.
+func isAddressSeparator(r rune) bool {
+	return r == ',' || r == ';' || r == ' ' || r == '\t' || r == '\n' || r == '"' || r == '\''
+}
+
+// namespaceOf is the namespace a host in token names, as cluster DNS reads
+// one: service.namespace, or pod.service.namespace for a headless
+// Service's pod, either followed by .svc and the cluster domain. The URL's
+// scheme, credentials, port and path are left out.
+func namespaceOf(token string) (string, bool) {
+	if _, rest, ok := strings.Cut(token, "://"); ok {
+		token = rest
+	}
+	if i := strings.IndexAny(token, "/?#"); i >= 0 {
+		token = token[:i]
+	}
+	if i := strings.LastIndex(token, "@"); i >= 0 {
+		token = token[i+1:]
+	}
+	host, _, _ := strings.Cut(token, ":")
+	host = strings.TrimSuffix(strings.ToLower(host), ".")
+	if i := strings.Index(host+".", ".svc."); i >= 0 {
+		host = host[:i]
+	}
+	if n := strings.Count(host, "."); n < 1 || n > 2 {
+		return "", false
+	}
+	ns := host[strings.LastIndex(host, ".")+1:]
+	return ns, len(validation.IsDNS1123Label(ns)) == 0
 }
 
 // addServices adds the Services in a namespace to byNamespace, and reports
