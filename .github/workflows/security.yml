@@ -53,7 +53,7 @@ jobs:
   # The image the last release published, which runs the operator and the
   # doorman both.
   released:
-    name: Released image vulnerabilities (${{ matrix.platform }})
+    name: Released image vulnerabilities
     if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-24.04
     timeout-minutes: 30
