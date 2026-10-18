@@ -45,7 +45,7 @@ Every release is built by the [release workflow](https://github.com/okedeji/hybe
 **The image**, its signature, an SBOM for each platform, and build provenance:
 
 ```bash
-IMAGE=ghcr.io/okedeji/hybernate:v0.2.0
+IMAGE=ghcr.io/okedeji/hybernate:v0.2.0-rc.2
 cosign verify $IMAGE \
   --certificate-identity-regexp '^https://github.com/okedeji/hybernate/.github/workflows/release.yml@refs/tags/v' \
   --certificate-oidc-issuer https://token.actions.githubusercontent.com
@@ -58,7 +58,7 @@ gh attestation verify oci://$IMAGE --repo okedeji/hybernate
 **The Helm chart:**
 
 ```bash
-cosign verify ghcr.io/okedeji/charts/hybernate:0.2.0 \
+cosign verify ghcr.io/okedeji/charts/hybernate:0.2.0-rc.2 \
   --certificate-identity-regexp '^https://github.com/okedeji/hybernate/.github/workflows/release.yml@refs/tags/v' \
   --certificate-oidc-issuer https://token.actions.githubusercontent.com
 ```

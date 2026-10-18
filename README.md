@@ -50,7 +50,7 @@ kubectl hybernate scan
 
 ```bash
 helm install hybernate oci://ghcr.io/okedeji/charts/hybernate \
-  --version 0.2.0 \
+  --version 0.2.0-rc.2 \
   --namespace hybernate-system \
   --create-namespace
 ```
