@@ -69,6 +69,7 @@ const (
 	actionCheckDuplicate    = "CheckDuplicate"
 	actionAutoManage        = "AutoManage"
 	actionScan              = "Scan"
+	actionCheckInstall      = "CheckInstall"
 )
 
 // The API server's limits on what an event's note and a condition's

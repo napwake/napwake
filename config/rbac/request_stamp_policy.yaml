@@ -1,0 +1,55 @@
+# Lets only the doorman's ServiceAccount set the two annotations that
+# record a request on ManagedWorkloads, as the Helm chart's
+# doorman.admissionPolicy does: the operator learns dependencies from the
+# address in hybernate.io/last-request-from. Like the doorman's policy, it
+# takes the doorman's ServiceAccount as its parameter, so it follows any
+# namespace and name prefix.
+apiVersion: admissionregistration.k8s.io/v1
+kind: ValidatingAdmissionPolicy
+metadata:
+  name: request-stamps
+  labels:
+    app.kubernetes.io/name: hybernate
+    app.kubernetes.io/managed-by: kustomize
+spec:
+  failurePolicy: Fail
+  paramKind:
+    apiVersion: v1
+    kind: ServiceAccount
+  matchConstraints:
+    resourceRules:
+      - apiGroups: [hybernate.io]
+        apiVersions: ["*"]
+        operations: [CREATE, UPDATE]
+        resources: [managedworkloads]
+  matchConditions:
+    - name: sets-a-stamp
+      expression: >-
+        ['hybernate.io/last-request', 'hybernate.io/last-request-from'].exists(k,
+          has(object.metadata.annotations) && k in object.metadata.annotations
+          && !(oldObject != null && has(oldObject.metadata.annotations) && k in oldObject.metadata.annotations
+            && oldObject.metadata.annotations[k] == object.metadata.annotations[k]))
+  validations:
+    - expression: request.userInfo.username == "system:serviceaccount:" + params.metadata.namespace + ":" + params.metadata.name
+      message: >-
+        Only Hybernate's doorman may set the hybernate.io/last-request and hybernate.io/last-request-from
+        annotations; set hybernate.io/last-activity to wake a workload.
+---
+apiVersion: admissionregistration.k8s.io/v1
+kind: ValidatingAdmissionPolicyBinding
+metadata:
+  name: request-stamps
+  labels:
+    app.kubernetes.io/name: hybernate
+    app.kubernetes.io/managed-by: kustomize
+spec:
+  policyName: request-stamps
+  # The API server looks the ServiceAccount up before it evaluates the
+  # matchConditions, so Deny would refuse every create and update of every
+  # ManagedWorkload while it's missing, the operator's too. Without it the
+  # operator still trusts only an address its own field manager wrote.
+  paramRef:
+    name: doorman
+    namespace: system
+    parameterNotFoundAction: Allow
+  validationActions: [Deny]

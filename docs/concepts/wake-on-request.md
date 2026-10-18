@@ -258,7 +258,7 @@ doorman:
 
 List every IP family your cluster uses, and the node CIDRs too if a routed workload uses `hostNetwork`. `apiServer` is the API server's endpoint addresses, not the `kubernetes` Service's ClusterIP, since policies apply after the Service is resolved.
 
-The doorman's ServiceAccount can patch ManagedWorkloads, to set `hybernate.io/last-request`. The chart's ValidatingAdmissionPolicy (`doorman.admissionPolicy.enabled`, on by default, and in the kustomize manifests too) narrows that: it lets the ServiceAccount change only the `hybernate.io/last-request` and `hybernate.io/last-request-from` annotations. See [Security](../reference/security.md#the-doorman-is-a-way-in-to-paused-workloads).
+The doorman's ServiceAccount can patch ManagedWorkloads, to set `hybernate.io/last-request`. The chart's ValidatingAdmissionPolicy (`doorman.admissionPolicy.enabled`, on by default, and in the kustomize manifests too) narrows that: it lets the ServiceAccount change only the `hybernate.io/last-request` and `hybernate.io/last-request-from` annotations. A second policy lets no one else set those two, so only the doorman can say a request woke a workload, or where it came from. See [Security](../reference/security.md#the-doorman-is-a-way-in-to-paused-workloads).
 
 ## What the caller sees
 

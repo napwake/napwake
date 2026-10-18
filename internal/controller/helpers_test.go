@@ -22,6 +22,7 @@ import (
 	"context"
 	"encoding/base64"
 	"errors"
+	"slices"
 	"testing"
 	"time"
 
@@ -29,6 +30,8 @@ import (
 	"github.com/stretchr/testify/require"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/fields"
+	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/client-go/tools/events"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
@@ -36,6 +39,45 @@ import (
 	v1alpha1 "github.com/okedeji/hybernate/api/v1alpha1"
 	"github.com/okedeji/hybernate/internal/forecast"
 )
+
+// fakeClientBuilder is a fake API server with the field indexes
+// SetupWithManager gives the manager's cache, so every test's lookups by
+// index behave as the operator's do.
+func fakeClientBuilder(scheme *runtime.Scheme) *fake.ClientBuilder {
+	b := fake.NewClientBuilder().WithScheme(scheme)
+	for field, index := range workloadIndexes() {
+		b = b.WithIndex(&v1alpha1.ManagedWorkload{}, field, index)
+	}
+	return b
+}
+
+// indexedClient answers ManagedWorkload lists by the field indexes
+// SetupWithManager gives the cache, for a client that reads the API server
+// directly, which serves none of them.
+type indexedClient struct {
+	client.Client
+}
+
+func (c indexedClient) List(ctx context.Context, list client.ObjectList, opts ...client.ListOption) error {
+	var o client.ListOptions
+	o.ApplyOptions(opts)
+	workloads, ok := list.(*v1alpha1.ManagedWorkloadList)
+	if !ok || o.FieldSelector == nil {
+		return c.Client.List(ctx, list, opts...)
+	}
+	requirements := o.FieldSelector.Requirements()
+	o.FieldSelector = nil
+	if err := c.Client.List(ctx, workloads, &o); err != nil {
+		return err
+	}
+	indexes := workloadIndexes()
+	workloads.Items = slices.DeleteFunc(workloads.Items, func(w v1alpha1.ManagedWorkload) bool {
+		return slices.ContainsFunc(requirements, func(req fields.Requirement) bool {
+			return !slices.Contains(indexes[req.Field](&w), req.Value)
+		})
+	})
+	return nil
+}
 
 func realEngineRegistry() *engineRegistry {
 	return newEngineRegistry(func() forecaster {
@@ -54,7 +96,7 @@ func newForecastReconciler(t *testing.T, workload *v1alpha1.ManagedWorkload, c c
 	t.Helper()
 	fr := &forecastReconciler{now: fixedTime}
 	if c == nil {
-		c = fake.NewClientBuilder().WithScheme(testScheme(t)).
+		c = fakeClientBuilder(testScheme(t)).
 			WithStatusSubresource(&v1alpha1.ManagedWorkload{}).WithObjects(workload).Build()
 	}
 	fr.Reconciler = &Reconciler{

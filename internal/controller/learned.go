@@ -464,11 +464,13 @@ func learnedList(l *v1alpha1.LearnedDependencies) []v1alpha1.LearnedDependency {
 }
 
 // stampedByDoorman is the workload's last-request-from when the doorman set
-// it, or "". Anyone who can patch a ManagedWorkload can set the annotation
-// too, and a forged address would have Hybernate write a dependency into
-// the ManagedWorkload of whatever pod has it. The doorman writes under
-// Hybernate's field manager, which the API server records; the cache drops
-// managed fields, so the workload is read past it.
+// it, or "". A forged address would have Hybernate write a dependency into
+// the ManagedWorkload of whatever pod has it. The request-stamps admission
+// policy lets only the doorman set it, but it can be turned off, and
+// without it anyone who can patch a ManagedWorkload can. The doorman writes
+// under Hybernate's field manager, which the API server records, so that's
+// checked too; the cache drops managed fields, so the workload is read past
+// it.
 func (r *Reconciler) stampedByDoorman(ctx context.Context, workload *v1alpha1.ManagedWorkload) (string, error) {
 	reader := r.PodReader
 	if reader == nil {
@@ -624,7 +626,9 @@ func podWithIP(pods []corev1.Pod, ip string) (*corev1.Pod, bool) {
 func (r *Reconciler) managing(ctx context.Context, pod *corev1.Pod) (*v1alpha1.ManagedWorkload, client.Object,
 	bool, error) {
 	var list v1alpha1.ManagedWorkloadList
-	if err := r.List(ctx, &list, client.InNamespace(pod.Namespace)); err != nil {
+	// Listed without copies: only the match is handed back, as a copy,
+	// since the caller writes to it.
+	if err := r.List(ctx, &list, client.InNamespace(pod.Namespace), client.UnsafeDisableDeepCopy); err != nil {
 		return nil, nil, false, fmt.Errorf("listing managed workloads in %s: %w", pod.Namespace, err)
 	}
 	for i := range list.Items {
@@ -637,7 +641,7 @@ func (r *Reconciler) managing(ctx context.Context, pod *corev1.Pod) (*v1alpha1.M
 			return nil, nil, false, fmt.Errorf("getting the target of %s/%s: %w", mw.Namespace, mw.Name, err)
 		}
 		if selects(target, pod) {
-			return mw, target, true, nil
+			return mw.DeepCopy(), target, true, nil
 		}
 	}
 	return nil, nil, false, nil

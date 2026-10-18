@@ -10,6 +10,7 @@
 | `hybernate.io/allow-protected` | `"true"` | Namespaces | Lets Hybernate manage a namespace that's labelled protected, matches `protectedNamespaces`, or is always protected, such as `kube-system` or Hybernate's own. The operator's and the doorman's own Deployments are never managed. Set on purpose; Hybernate never sets it. |
 | `hybernate.io/from-label` | `"true"` | ManagedWorkloads | Set on ManagedWorkloads Hybernate created from the `managed` label. Hybernate updates and deletes only these; ManagedWorkloads without it are yours. |
 | `hybernate.io/managed-workload` | ManagedWorkload name | EndpointSlices | Set on the EndpointSlices that route a paused workload's Services to the doorman, along with `endpointslice.kubernetes.io/managed-by: doorman.hybernate.io`. A name longer than 63 characters is shortened, with a hash. They're removed when the workload is Running. |
+| `hybernate.io/operator` | namespace | EndpointSlices | Set on the doorman EndpointSlices an operator writes: the namespace of its install. Another install doesn't move them to its own doorman. See [More than one install](../getting-started/installation.md#more-than-one-install) |
 
 ### Usage
 
@@ -58,8 +59,8 @@ A value that can't be read, such as `"True"`, `"yes"`, `"soon"` or `"0"`, is rep
 |------------|-------|-----------|-------------|
 | `hybernate.io/last-activity` | RFC 3339 time | ManagedWorkloads, Deployments, StatefulSets | Activity seen by another tool, such as a developer portal. A time in the future counts as now. A change while the workload is paused wakes it. See [Activity annotations](../concepts/idle-detection.md#activity-annotations) |
 | `hybernate.io/active-until` | RFC 3339 time | ManagedWorkloads, Deployments, StatefulSets | Keeps the workload awake until that time, and wakes it if paused |
-| `hybernate.io/last-request` | RFC 3339 time | ManagedWorkloads | Set by the doorman when it holds a request for a paused workload. Wakes it like `last-activity`, and the clock records the wake as `request`. See [Wake on Request](../concepts/wake-on-request.md) |
-| `hybernate.io/last-request-from` | IP address | ManagedWorkloads | Set by the doorman with `last-request`: where the request that woke the workload came from, so the operator can [learn](../concepts/dependencies.md#learned-dependencies) which workload depends on it |
+| `hybernate.io/last-request` | RFC 3339 time | ManagedWorkloads | Set by the doorman when it holds a request for a paused workload, and, with `doorman.admissionPolicy.enabled`, by no one else; set `last-activity` to wake a workload yourself. Wakes it like `last-activity`, and the clock records the wake as `request`. See [Wake on Request](../concepts/wake-on-request.md) |
+| `hybernate.io/last-request-from` | IP address | ManagedWorkloads | Set by the doorman with `last-request`, and by no one else, like it: where the request that woke the workload came from, so the operator can [learn](../concepts/dependencies.md#learned-dependencies) which workload depends on it |
 
 A value that isn't an RFC 3339 time, such as epoch seconds, is ignored: it neither keeps the workload awake nor wakes it, and an `InvalidActivityAnnotation` warning event on the ManagedWorkload says so, once per value.
 
@@ -72,6 +73,7 @@ A value that isn't an RFC 3339 time, such as epoch seconds, is ignored: it neith
 | `hybernate.io/dependents-from` | comma-separated namespace names, or `"*"` for any | Namespaces | Lets workloads in those namespaces depend on this namespace's workloads. A dependency in another namespace, declared or learned, is only held awake, woken and waited for when its namespace lists the dependent's; otherwise the dependent reports `DependencyNotAllowed=True`. See [Across namespaces](../concepts/dependencies.md#across-namespaces) |
 | `hybernate.io/paused-from` | JSON, set by Hybernate | Deployments, StatefulSets | Written by Hybernate on a workload it pauses, before scaling it to zero, and removed when it's handed back: a copy of what the pause changed (the replicas, and the KEDA ScaledObject with its own `paused-replicas` value). If the ManagedWorkload's status is lost while the workload is paused, such as to a backup restored without status, Hybernate takes the pause up again from it, so the workload still wakes to the replicas it had. Don't set or edit it |
 | `hybernate.io/ignore-dependencies` | comma-separated `namespace/name`, or a name in the workload's own namespace | Deployments, StatefulSets, ManagedWorkloads | Dependencies Hybernate shouldn't learn for this workload. See [Learned dependencies](../concepts/dependencies.md#learned-dependencies) |
+| `hybernate.io/operator` | namespace, set by Hybernate | ManagedWorkloads | Written by the operator with its `hybernate.io/cleanup` finalizer: the namespace of the install that took the ManagedWorkload on. Another install leaves it alone, and doesn't count it in its uninstall and upgrade guards. See [More than one install](../getting-started/installation.md#more-than-one-install) |
 | `hybernate.io/doorman-ignore-ports` | comma-separated port names or numbers | Services | Ports the doorman never routes, such as a metrics port something else scrapes. They fail while the workload is paused. See [Wake on Request](../concepts/wake-on-request.md#what-wakes-a-workload-and-what-doesnt) |
 
 ## Finalizers

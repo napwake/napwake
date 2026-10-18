@@ -37,7 +37,6 @@ import (
 	"k8s.io/utils/ptr"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
-	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 	"sigs.k8s.io/controller-runtime/pkg/config"
 	"sigs.k8s.io/controller-runtime/pkg/event"
 	metricsserver "sigs.k8s.io/controller-runtime/pkg/metrics/server"
@@ -59,7 +58,7 @@ func optInDeployment(name string, labels, annotations map[string]string) *appsv1
 func optInReconciler(t *testing.T, objs ...client.Object) (*OptInReconciler, *events.FakeRecorder) {
 	t.Helper()
 	recorder := events.NewFakeRecorder(20)
-	c := fake.NewClientBuilder().WithScheme(testScheme(t)).WithObjects(objs...).Build()
+	c := fakeClientBuilder(testScheme(t)).WithObjects(objs...).Build()
 	return &OptInReconciler{Client: c, Scheme: testScheme(t), Recorder: recorder,
 		Kind: v1alpha1.TargetKindDeployment, Defaults: DefaultOptInDefaults}, recorder
 }
@@ -492,6 +491,26 @@ func TestOptIn_UserSettingsSurvive(t *testing.T) {
 	assert.True(t, mw.Spec.DependsOn[0].WaitForReady)
 	assert.Equal(t, 3*time.Hour, mw.Spec.IdlePolicy.IdleAfter.Duration, "the annotations still apply")
 	assert.False(t, mw.Spec.DryRun, "dry-run is the annotations' to set")
+}
+
+// A label-created ManagedWorkload another install took on is left to it,
+// so two installs watching one namespace don't fight over its spec.
+func TestOptIn_LeavesAnotherInstallsManagedWorkloadAlone(t *testing.T) {
+	d := optInDeployment("api", managedLabel, map[string]string{v1alpha1.AnnotationIdleAfter: "3h"})
+	r, _ := optInReconciler(t, optInNamespace(nil, nil), d)
+	reconcileOptIn(t, r, "api")
+	mw, _ := managedWorkload(t, r, "api")
+	mw.Annotations = map[string]string{v1alpha1.AnnotationOperator: "team-b-system"}
+	require.NoError(t, r.Update(context.Background(), mw))
+
+	r.OperatorNamespace = thisInstall
+	require.NoError(t, r.Get(context.Background(), client.ObjectKeyFromObject(d), d))
+	d.Annotations[v1alpha1.AnnotationIdleAfter] = "5h"
+	require.NoError(t, r.Update(context.Background(), d))
+	reconcileOptIn(t, r, "api")
+
+	mw, _ = managedWorkload(t, r, "api")
+	assert.Equal(t, 3*time.Hour, mw.Spec.IdlePolicy.IdleAfter.Duration)
 }
 
 // Opting in again while the old ManagedWorkload is still restoring the

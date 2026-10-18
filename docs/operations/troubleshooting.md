@@ -203,6 +203,10 @@ Only one ManagedWorkload can manage a given workload: the oldest wins, and the o
 kubectl get managedworkloads -n staging -o jsonpath='{range .items[*]}{.metadata.name}: {.spec.target.name}{"\n"}{end}'
 ```
 
+### A `ManagedByAnotherInstall` warning
+
+Another Hybernate install, in the namespace the event names, took this ManagedWorkload on first, and this one leaves it alone: two installs watch its namespace. Give each install its own `watchNamespaces`, as in [More than one install](../getting-started/installation.md#more-than-one-install). If the install it names is gone, `kubectl annotate managedworkload <name> -n <namespace> hybernate.io/operator-` hands it over.
+
 ### Cost data shows $0.00
 
 - Cost is priced on what the workload's pods request, read from its pods. A workload whose containers set no requests costs nothing.
@@ -212,13 +216,17 @@ kubectl get managedworkloads -n staging -o jsonpath='{range .items[*]}{.metadata
 
 ### `helm uninstall` fails with `job hybernate-uninstall-guard failed`
 
-ManagedWorkloads are left, and uninstalling now would leave their workloads paused. Helm prints them above the error; with an older Helm that doesn't print a hook's output, `kubectl logs job/hybernate-uninstall-guard -n hybernate-system` shows them. Remove the `hybernate.io/managed` label from those workloads and their namespaces, delete the ManagedWorkloads you wrote yourself, and uninstall again, as in [Uninstall](../getting-started/installation.md#uninstall).
+Helm 4 reports it as `resource Job/hybernate-system/hybernate-uninstall-guard not ready`. ManagedWorkloads are left, and uninstalling now would leave their workloads paused. Helm 3.18 and later print them above the error, in a message that starts `Hybernate refuses to uninstall:` and names them; when Helm prints only the error, as Helm before 3.18 does, and any Helm after a `helm rollback` with one, `kubectl logs job/hybernate-uninstall-guard -n hybernate-system` shows them. Remove the `hybernate.io/managed` label from those workloads and their namespaces, delete the ManagedWorkloads you wrote yourself, and uninstall again, as in [Uninstall](../getting-started/installation.md#uninstall).
+
+The refused uninstall leaves the release marked `uninstalling`, which `helm list` hides without `-a`, though the operator and the doorman keep running. If you decide to keep Hybernate instead, `helm upgrade` fails with `has no deployed releases` until `helm rollback hybernate -n hybernate-system` marks the release deployed again.
 
 The hook waits two and a half minutes for ManagedWorkloads being deleted before it lists what's left, so one it still lists as being deleted is one the operator didn't finish in that time, usually because it isn't running: uninstall with `--no-hooks` and restore the workloads by hand. Without the CRD, as can happen with `crds.install: false`, nothing is left to guard, and the hook lets the uninstall go ahead. With Argo CD 3.3 and later the same refusal blocks deleting the Application, with a `DeletionError` condition; set `guard.uninstall: false` in Git to delete it anyway.
 
 ### `helm upgrade` fails with `job hybernate-upgrade-guard failed`
 
-The upgrade sets `watchNamespaces` to leave out namespaces where the operator manages workloads, which would leave them paused with no operator. Helm prints them above the error, or `kubectl logs job/hybernate-upgrade-guard -n hybernate-system` shows them. Keep those namespaces in `watchNamespaces`, or stop managing the workloads there first, then upgrade again; see [Narrowing watchNamespaces](upgrading.md#narrowing-watchnamespaces). Under Argo CD the same refusal fails the sync, in its PreSync hook.
+The upgrade sets `watchNamespaces` to leave out namespaces where the operator manages workloads, which would leave them paused with no operator; Helm 4 reports it as `resource Job/hybernate-system/hybernate-upgrade-guard not ready`. Helm 3.18 and later print them above the error, in a message that starts `Hybernate refuses this upgrade:` and names them, or `kubectl logs job/hybernate-upgrade-guard -n hybernate-system` shows them. Keep those namespaces in `watchNamespaces`, or stop managing the workloads there first, then upgrade again; see [Narrowing watchNamespaces](upgrading.md#narrowing-watchnamespaces). Under Argo CD the same refusal fails the sync, in its PreSync hook.
+
+`helm rollback` to a revision with a narrower `watchNamespaces` is refused the same way, by the pre-rollback hook, but Helm still records the attempt as a new revision and leaves it `pending-rollback` in `helm history hybernate`, while the operator keeps running as it was. Until another revision replaces it, `helm upgrade` fails with `another operation (install/upgrade/rollback) is in progress`. `helm rollback hybernate -n hybernate-system`, with no revision, rolls back to the one before it, the release as it runs, and marks that deployed again.
 
 ### Workloads stay at zero after the operator was removed
 

@@ -154,7 +154,7 @@ var _ = ginkgo.Describe("A pause interrupted by a conflict", func() {
 		})
 		finder := autoscaler.NewFinder(c)
 		r = &Reconciler{
-			Client:      c,
+			Client:      indexedClient{c},
 			Scheme:      scheme.Scheme,
 			Recorder:    events.NewFakeRecorder(100),
 			pauser:      lifecycle.NewPauser(c, finder),

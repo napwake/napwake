@@ -1,0 +1,8 @@
+# An install on top of config/default under another namespace and name
+# prefix, as a user's overlay would make it: make test-doorman-policy
+# checks the doorman's admission policy follows them.
+namespace: staging-system
+namePrefix: staging-
+
+resources:
+- ../../../config/default

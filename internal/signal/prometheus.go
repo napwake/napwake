@@ -56,9 +56,16 @@ const maxResponseBytes = 4 << 20
 // but the operator was started without a Prometheus URL.
 var ErrEndpointNotConfigured = errors.New("prometheus endpoint not configured, set --prometheus-url on the operator")
 
-// ErrBackingOff is returned, wrapping the failure, while Prometheus isn't
-// asked again after failing.
+// ErrBackingOff matches the error returned while Prometheus isn't asked
+// again after failing. That error reads as the failure itself, so what a
+// workload reports stays the same for the whole outage whether or not its
+// own query was the one let through.
 var ErrBackingOff = errors.New("prometheus failed recently, not asked again yet")
+
+type backingOff struct{ failure error }
+
+func (e backingOff) Error() string   { return e.failure.Error() }
+func (e backingOff) Unwrap() []error { return []error{ErrBackingOff, e.failure} }
 
 type prometheusResponse struct {
 	Status    string `json:"status"`
@@ -158,6 +165,17 @@ func unlessGivenUp(caller, call context.Context, err error) error {
 	}
 }
 
+// withoutURL drops the request URL from a transport error. The URL carries
+// the query, and an endpoint failure is returned for every workload's
+// queries while backing off, not only for the one that met it.
+func withoutURL(err error) error {
+	var urlErr *url.Error
+	if errors.As(err, &urlErr) {
+		return urlErr.Err
+	}
+	return err
+}
+
 // admit fails fast while the endpoint is backing off. Once backoff is up,
 // the caller is let through and the backoff restarted, so the others wait
 // on its answer rather than all asking at once.
@@ -169,7 +187,7 @@ func (p *Prometheus) admit() error {
 	}
 	now := p.now()
 	if now.Before(p.failedAt.Add(backoff)) {
-		return fmt.Errorf("%w: %w", ErrBackingOff, p.failure)
+		return backingOff{p.failure}
 	}
 	p.failedAt = now
 	return nil
@@ -215,7 +233,7 @@ func (p *Prometheus) query(ctx context.Context, query string) (Result, error) {
 
 	resp, err := p.client.Do(req)
 	if err != nil {
-		return Result{}, unlessGivenUp(ctx, callCtx, fmt.Errorf("querying prometheus: %w", err))
+		return Result{}, unlessGivenUp(ctx, callCtx, fmt.Errorf("querying prometheus: %w", withoutURL(err)))
 	}
 	defer func() { _ = resp.Body.Close() }()
 

@@ -27,7 +27,7 @@ Everything the Hybernate operator and its doorman read, write, and send, for a s
 | Deployments, StatefulSets | Their replica count, through the scale subresource, and, while one is paused, the `hybernate.io/paused-from` annotation: a copy of what the pause changed, removed when it's handed back. No other field, and never a delete |
 | KEDA ScaledObjects | The `autoscaling.keda.sh/paused-replicas` annotation, while their workload is paused or resuming; afterwards the value it had before, or none |
 | EndpointSlices | Its own, routing a paused workload's Services to the doorman; deleted when the workload wakes |
-| ManagedWorkloads | Its own status, including each workload's forecast state; the ones it creates for labelled workloads; the `hybernate.io/cleanup` finalizer, added to each so that deleting it restores its workload first, and removed once it has; `hybernate.io/last-activity` on a dependency it wakes; and, from the doorman, `hybernate.io/last-request` and `hybernate.io/last-request-from` (the caller's IP address) on one a request wakes |
+| ManagedWorkloads | Its own status, including each workload's forecast state; the ones it creates for labelled workloads; the `hybernate.io/cleanup` finalizer, added to each so that deleting it restores its workload first, and removed once it has, with `hybernate.io/operator`, the operator's namespace; `hybernate.io/last-activity` on a dependency it wakes; and, from the doorman, `hybernate.io/last-request` and `hybernate.io/last-request-from` (the caller's IP address) on one a request wakes |
 | Events | On ManagedWorkloads and workloads, to say what it did and why |
 | Leases | Leader election, in its own namespace |
 
@@ -86,7 +86,7 @@ With leader election, a Role `hybernate-leader-election` in the release namespac
 
 **People**: ClusterRoles `hybernate-view` and `hybernate-edit`, which grant nothing to Hybernate itself. They're aggregated into Kubernetes' built-in roles: `view`, `edit` and `admin` gain `get`, `list` and `watch` on `hybernate.io` `managedworkloads`, and `get` on their status; `edit` and `admin` gain `create`, `update`, `patch` and `delete`.
 
-**Admission policy**, with `doorman.admissionPolicy.enabled` (the default): a ValidatingAdmissionPolicy and binding `hybernate-doorman`, cluster-scoped, which refuse any change the doorman's ServiceAccount makes to a ManagedWorkload other than to its `hybernate.io/last-request` and `last-request-from` annotations.
+**Admission policy**, with `doorman.admissionPolicy.enabled` (the default): a ValidatingAdmissionPolicy and binding `hybernate-doorman`, cluster-scoped, which refuse any change the doorman's ServiceAccount makes to a ManagedWorkload other than to its `hybernate.io/last-request` and `last-request-from` annotations; and a ValidatingAdmissionPolicy and binding `hybernate-request-stamps`, cluster-scoped, which refuse anyone else setting those two annotations, limited to `watchNamespaces` when set.
 
 **Metrics**, with `metrics.enabled` and `metrics.secure` (the defaults): ClusterRoleBindings `hybernate-auth-delegator` and `hybernate-doorman-auth-delegator` to the built-in `system:auth-delegator` ClusterRole, so the operator and the doorman can check the tokens of whoever scrapes them; and a ClusterRole `hybernate-metrics-reader` allowing `get` on the `/metrics` URL, bound to `metrics.readerSubjects` by a ClusterRoleBinding of the same name.
 

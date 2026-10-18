@@ -124,9 +124,10 @@ doorman:
   # reason TooManyPorts.
   portsPerWorkload: 32
   portsPerNamespace: 256
-  # A ValidatingAdmissionPolicy that lets the doorman's ServiceAccount set
-  # only the two annotations recording a request on ManagedWorkloads,
-  # though its role may patch them.
+  # Two ValidatingAdmissionPolicies: one lets the doorman's ServiceAccount
+  # set only the two annotations recording a request on ManagedWorkloads,
+  # though its role may patch them; the other lets no one else set them,
+  # since the operator learns dependencies from them.
   admissionPolicy:
     enabled: true
   # Keeps one doorman serving through node drains, when replicaCount > 1.

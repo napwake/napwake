@@ -26,7 +26,6 @@ import (
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/client-go/util/workqueue"
 	"k8s.io/utils/ptr"
-	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 	"sigs.k8s.io/controller-runtime/pkg/controller/priorityqueue"
 	"sigs.k8s.io/controller-runtime/pkg/event"
 	"sigs.k8s.io/controller-runtime/pkg/handler"
@@ -34,15 +33,6 @@ import (
 
 	v1alpha1 "github.com/okedeji/hybernate/api/v1alpha1"
 )
-
-// withWorkloadIndexes gives a fake API server the indexes the watches look
-// ManagedWorkloads up by, as SetupWithManager gives the cache.
-func withWorkloadIndexes(b *fake.ClientBuilder) *fake.ClientBuilder {
-	for field, index := range workloadIndexes() {
-		b = b.WithIndex(&v1alpha1.ManagedWorkload{}, field, index)
-	}
-	return b
-}
 
 func drainQueue(q workqueue.TypedRateLimitingInterface[reconcile.Request]) []reconcile.Request {
 	var got []reconcile.Request
@@ -64,6 +54,7 @@ func TestRelatedHandler_EnqueuesDependenciesBeforeAndAfter(t *testing.T) {
 		v1alpha1.DependencyRef{Kind: v1alpha1.TargetKindStatefulSet, Name: "redis"})
 	after := before.DeepCopy()
 	after.Spec.DependsOn = []v1alpha1.DependencyRef{postgresRef()}
+	after.Generation++
 	r := depReconciler(t, &stubPauser{}, after, postgres, redis)
 	q := workqueue.NewTypedRateLimitingQueue(workqueue.DefaultTypedControllerRateLimiter[reconcile.Request]())
 	defer q.ShutDown()
@@ -100,7 +91,7 @@ func TestRelationsChanged(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			changed := base.DeepCopy()
 			tt.change(changed)
-			assert.Equal(t, tt.passes, relationsChanged().Update(event.UpdateEvent{ObjectOld: base, ObjectNew: changed}))
+			assert.Equal(t, tt.passes, relationsChanged(base, changed))
 		})
 	}
 }

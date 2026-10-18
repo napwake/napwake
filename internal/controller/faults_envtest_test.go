@@ -127,7 +127,7 @@ func (e *faultEnv) create(t *testing.T, ns string) client.ObjectKey {
 
 func (e *faultEnv) reconciler(t *testing.T, c client.Client) *Reconciler {
 	t.Helper()
-	c = client.WithFieldOwner(c, v1alpha1.FieldManager)
+	c = client.WithFieldOwner(indexedClient{c}, v1alpha1.FieldManager)
 	finder := autoscaler.NewFinder(c)
 	return &Reconciler{
 		Client: c, Scheme: testScheme(t), Recorder: events.NewFakeRecorder(1000),

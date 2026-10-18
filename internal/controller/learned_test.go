@@ -35,7 +35,6 @@ import (
 	"k8s.io/client-go/tools/events"
 	"k8s.io/utils/ptr"
 	"sigs.k8s.io/controller-runtime/pkg/client"
-	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 	"sigs.k8s.io/controller-runtime/pkg/client/interceptor"
 
 	v1alpha1 "github.com/okedeji/hybernate/api/v1alpha1"
@@ -330,7 +329,7 @@ func TestLearnedDependencies_HoldAndWake(t *testing.T) {
 func wakeReconciler(t *testing.T, objs ...client.Object) *Reconciler {
 	t.Helper()
 	r := depReconciler(t, &stubPauser{})
-	r.Client = fake.NewClientBuilder().WithScheme(testScheme(t)).
+	r.Client = fakeClientBuilder(testScheme(t)).
 		WithStatusSubresource(&v1alpha1.ManagedWorkload{}).WithObjects(objs...).WithReturnManagedFields().
 		WithIndex(&corev1.Pod{}, podIPField, func(o client.Object) []string {
 			return []string{o.(*corev1.Pod).Status.PodIP}

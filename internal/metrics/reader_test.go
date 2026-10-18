@@ -19,6 +19,7 @@ package metrics
 import (
 	"context"
 	"errors"
+	"net/url"
 	"strings"
 	"testing"
 	"time"
@@ -688,4 +689,59 @@ func TestReader_RequestReadMidRolloutIsntKept(t *testing.T) {
 	require.NoError(t, err)
 	_, cached = r.cachedRequest(webDeployment(container("web", "100m")))
 	assert.True(t, cached, "the rollout done")
+}
+
+// While the Metrics API is down, a read that's let through and one that's
+// backed off fail the same way, and neither names another workload's
+// namespace: what a workload reports mustn't flip for the whole outage,
+// each flip a status write.
+func TestReader_AnOutageFailsEveryReadTheSameWay(t *testing.T) {
+	deployment := func(namespace string) *appsv1.Deployment {
+		return &appsv1.Deployment{
+			ObjectMeta: metav1.ObjectMeta{Name: "web", Namespace: namespace},
+			Spec: appsv1.DeploymentSpec{
+				Selector: &metav1.LabelSelector{MatchLabels: map[string]string{"app": "web"}},
+				Template: corev1.PodTemplateSpec{
+					ObjectMeta: metav1.ObjectMeta{Labels: map[string]string{"app": "web"}},
+					Spec:       corev1.PodSpec{Containers: []corev1.Container{container("web", "100m")}},
+				},
+			},
+		}
+	}
+	c := fake.NewClientBuilder().WithScheme(readerScheme(t)).WithObjects(deployment("shop"), deployment("blog")).
+		WithInterceptorFuncs(interceptor.Funcs{
+			List: func(ctx context.Context, c client.WithWatch, list client.ObjectList, opts ...client.ListOption) error {
+				if _, ok := list.(*metricsv1beta1.PodMetricsList); !ok {
+					return c.List(ctx, list, opts...)
+				}
+				listOpts := (&client.ListOptions{}).ApplyOptions(opts)
+				return &url.Error{
+					Op:  "Get",
+					URL: "https://10.96.0.1/apis/metrics.k8s.io/v1beta1/namespaces/" + listOpts.Namespace + "/pods",
+					Err: context.DeadlineExceeded,
+				}
+			},
+		}).Build()
+	r := NewReader(c, c)
+	now := time.Date(2026, 3, 14, 12, 0, 0, 0, time.UTC)
+	r.now = func() time.Time { return now }
+	read := func(namespace string) error {
+		workload := &v1alpha1.ManagedWorkload{
+			ObjectMeta: metav1.ObjectMeta{Name: "web", Namespace: namespace},
+			Spec:       v1alpha1.ManagedWorkloadSpec{Target: v1alpha1.WorkloadRef{Kind: v1alpha1.TargetKindDeployment, Name: "web"}},
+		}
+		_, _, err := r.WorkloadCPUMillis(context.Background(), workload)
+		return err
+	}
+
+	attempted := read("shop")
+	require.Error(t, attempted)
+	require.NotErrorIs(t, attempted, ErrMetricsAPIBackingOff)
+	backedOff := read("shop")
+	require.ErrorIs(t, backedOff, ErrMetricsAPIBackingOff)
+	assert.Equal(t, attempted.Error(), backedOff.Error())
+
+	other := read("blog")
+	require.ErrorIs(t, other, ErrMetricsAPIBackingOff)
+	assert.NotContains(t, other.Error(), "shop")
 }

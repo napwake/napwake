@@ -32,7 +32,6 @@ import (
 	"k8s.io/client-go/tools/events"
 	"k8s.io/utils/ptr"
 	"sigs.k8s.io/controller-runtime/pkg/client"
-	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 	"sigs.k8s.io/controller-runtime/pkg/client/interceptor"
 
 	v1alpha1 "github.com/okedeji/hybernate/api/v1alpha1"
@@ -251,7 +250,7 @@ func TestReportAutoscaler(t *testing.T) {
 		{name: "nothing"},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
-			c := fake.NewClientBuilder().WithScheme(scheme).WithObjects(tt.objs...).Build()
+			c := fakeClientBuilder(scheme).WithObjects(tt.objs...).Build()
 			r := &Reconciler{Client: c, autoscalers: autoscaler.NewFinder(c)}
 			w := pausedWorkload(v1alpha1.PhaseRunning)
 			meta.SetStatusCondition(&w.Status.Conditions, metav1.Condition{Type: conditionAutoscaled,

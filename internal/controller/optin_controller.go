@@ -81,6 +81,9 @@ type OptInReconciler struct {
 	// own Deployments there are never opted in, even in a namespace allowed
 	// to be managed: nothing would be left to wake them.
 	HybernateNamespaces []string
+	// OperatorNamespace is where this install's operator runs. A
+	// label-created ManagedWorkload another install took on is left to it.
+	OperatorNamespace string
 }
 
 // +kubebuilder:rbac:groups="",resources=namespaces,verbs=get;list;watch
@@ -118,6 +121,9 @@ func (r *OptInReconciler) Reconcile(ctx context.Context, req ctrl.Request) (res 
 	existing, err := r.managedWorkloadsFor(ctx, req.Namespace, target)
 	if err != nil {
 		return ctrl.Result{}, err
+	}
+	if existing.ours != nil && otherInstall(existing.ours, r.OperatorNamespace) != "" {
+		return ctrl.Result{}, nil
 	}
 	if existing.written != nil || !r.optedIn(obj, &ns) {
 		return ctrl.Result{}, r.release(ctx, obj, existing.ours, existing.written)
@@ -273,7 +279,8 @@ type existingWorkloads struct {
 func (r *OptInReconciler) managedWorkloadsFor(ctx context.Context, namespace string, target v1alpha1.WorkloadRef) (
 	existingWorkloads, error) {
 	var list v1alpha1.ManagedWorkloadList
-	if err := r.List(ctx, &list, client.InNamespace(namespace)); err != nil {
+	// Listed without copies: only the two it keeps are copied.
+	if err := r.List(ctx, &list, client.InNamespace(namespace), client.UnsafeDisableDeepCopy); err != nil {
 		return existingWorkloads{}, fmt.Errorf("listing managed workloads: %w", err)
 	}
 	found := existingWorkloads{names: make(map[string]bool, len(list.Items))}
@@ -288,9 +295,9 @@ func (r *OptInReconciler) managedWorkloadsFor(ctx context.Context, namespace str
 		case !mw.DeletionTimestamp.IsZero():
 			found.leaving = found.leaving || fromLabel
 		case fromLabel:
-			found.ours = mw
+			found.ours = mw.DeepCopy()
 		default:
-			found.written = mw
+			found.written = mw.DeepCopy()
 		}
 	}
 	return found, nil

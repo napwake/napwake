@@ -1,9 +1,10 @@
 # Holds the doorman's ServiceAccount to the two annotations that record a
 # request on ManagedWorkloads, though its role may patch them, as the Helm
-# chart's doorman.admissionPolicy does. config/default writes the
-# ServiceAccount's namespace and name into the matchCondition, each its own
-# quoted string, and the binding names the policy through kustomizeconfig,
-# so both follow the namespace and name prefix.
+# chart's doorman.admissionPolicy does. A username is a string no
+# transformer rewrites, so the policy takes the doorman's ServiceAccount as
+# its parameter and the binding names it, through kustomizeconfig, as it
+# names the policy: both follow any namespace and name prefix, set here in
+# config/default or in an overlay on top of it.
 apiVersion: admissionregistration.k8s.io/v1
 kind: ValidatingAdmissionPolicy
 metadata:
@@ -14,6 +15,9 @@ metadata:
     control-plane: doorman
 spec:
   failurePolicy: Fail
+  paramKind:
+    apiVersion: v1
+    kind: ServiceAccount
   matchConstraints:
     resourceRules:
       - apiGroups: [hybernate.io]
@@ -22,7 +26,7 @@ spec:
         resources: [managedworkloads]
   matchConditions:
     - name: doorman
-      expression: request.userInfo.username == "system:serviceaccount:" + "system" + ":" + "doorman"
+      expression: request.userInfo.username == "system:serviceaccount:" + params.metadata.namespace + ":" + params.metadata.name
   variables:
     - name: allowed
       expression: "['hybernate.io/last-request', 'hybernate.io/last-request-from']"
@@ -61,4 +65,10 @@ metadata:
     control-plane: doorman
 spec:
   policyName: doorman
+  # Without its ServiceAccount there's no doorman to hold back, and Deny
+  # would refuse every update to every ManagedWorkload, the operator's too.
+  paramRef:
+    name: doorman
+    namespace: system
+    parameterNotFoundAction: Allow
   validationActions: [Deny]

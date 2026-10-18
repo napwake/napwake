@@ -258,13 +258,11 @@ func shortest(a, b time.Duration) time.Duration {
 //
 // A slice written moments ago may not be in the cache yet, and would be
 // left sending traffic to the doorman, so the slices are listed from the
-// API server whenever one may have been: while status names routes, just
-// after a phase change, and for a workload being deleted, which is never
-// reconciled again. Otherwise, as for every Running workload on every
-// reconcile, the cache is enough.
+// API server whenever one may have been: see mayMissSlices. Otherwise, as
+// for every Running workload on every reconcile, the cache is enough.
 func (r *Reconciler) removeDoorman(ctx context.Context, workload *v1alpha1.ManagedWorkload) error {
 	reader := client.Reader(r.Client)
-	if !workload.DeletionTimestamp.IsZero() || len(workload.Status.Doorman) > 0 || r.sinceTransition(workload) < sliceSettle {
+	if r.mayMissSlices(workload) {
 		reader = r.apiReader()
 	}
 	current, err := r.listDoormanSlices(ctx, reader, workload)
@@ -278,6 +276,27 @@ func (r *Reconciler) removeDoorman(ctx context.Context, workload *v1alpha1.Manag
 	r.recordDrains(workload, nil)
 	workload.Status.Doorman = nil
 	return nil
+}
+
+// mayMissSlices reports whether the cache may not have a doorman slice of
+// the workload's yet: while status names routes; just after a phase change,
+// since a reconcile whose status write failed leaves slices status doesn't
+// name; and for a workload being deleted, which is never reconciled again
+// once its finalizer goes, until its slices have been listed from the API
+// server and removed since the deletion began. A drain that started after
+// the deletion records that, and nothing writes slices for a workload being
+// deleted, so the reconciles while its ports drain read the cache. A
+// restart in between starts the cache afresh, with every slice in it.
+func (r *Reconciler) mayMissSlices(workload *v1alpha1.ManagedWorkload) bool {
+	if len(workload.Status.Doorman) > 0 {
+		return true
+	}
+	if !workload.DeletionTimestamp.IsZero() {
+		return !slices.ContainsFunc(workload.Status.DoormanDraining, func(d v1alpha1.DrainingPort) bool {
+			return !d.Until.Add(-portDrain).Before(workload.DeletionTimestamp.Time)
+		})
+	}
+	return r.sinceTransition(workload) < sliceSettle
 }
 
 // recordDrains notes in status the ports the workload's routes are about to
@@ -992,6 +1011,9 @@ func (r *Reconciler) applyDoormanSlice(ctx context.Context, workload *v1alpha1.M
 		if proxy, ok := svc.Labels[labelServiceProxyName]; ok {
 			slice.Labels[labelServiceProxyName] = proxy
 		}
+		if r.OperatorNamespace != "" {
+			slice.Labels[v1alpha1.LabelOperator] = r.OperatorNamespace
+		}
 		slice.AddressType = family
 		slice.Endpoints = endpoints
 		slice.Ports = make([]discoveryv1.EndpointPort, 0, len(routes))
@@ -1105,14 +1127,14 @@ func (r *Reconciler) findWorkloadsForDoorman(ctx context.Context, _ client.Objec
 		return nil
 	}
 	var list v1alpha1.ManagedWorkloadList
-	if err := r.List(ctx, &list); err != nil {
+	if err := r.List(ctx, &list, client.UnsafeDisableDeepCopy); err != nil {
 		log.FromContext(ctx).Error(err, "listing managed workloads for doorman change")
 		return nil
 	}
 	var requests []reconcile.Request
-	for _, w := range list.Items {
-		if w.Status.Phase == v1alpha1.PhasePaused || w.Status.Phase == v1alpha1.PhaseResuming {
-			requests = append(requests, reconcile.Request{NamespacedName: client.ObjectKeyFromObject(&w)})
+	for i := range list.Items {
+		if w := &list.Items[i]; w.Status.Phase == v1alpha1.PhasePaused || w.Status.Phase == v1alpha1.PhaseResuming {
+			requests = append(requests, reconcile.Request{NamespacedName: client.ObjectKeyFromObject(w)})
 		}
 	}
 	return requests
@@ -1122,14 +1144,14 @@ func (r *Reconciler) findWorkloadsForDoorman(ctx context.Context, _ client.Objec
 // in their namespace changes, since it may now select their pods.
 func (r *Reconciler) findPausedWorkloadsInNamespace(ctx context.Context, obj client.Object) []reconcile.Request {
 	var list v1alpha1.ManagedWorkloadList
-	if err := r.List(ctx, &list, client.InNamespace(obj.GetNamespace())); err != nil {
+	if err := r.List(ctx, &list, client.InNamespace(obj.GetNamespace()), client.UnsafeDisableDeepCopy); err != nil {
 		log.FromContext(ctx).Error(err, "listing managed workloads for service change", "namespace", obj.GetNamespace())
 		return nil
 	}
 	var requests []reconcile.Request
-	for _, w := range list.Items {
-		if w.Status.Phase == v1alpha1.PhasePaused {
-			requests = append(requests, reconcile.Request{NamespacedName: client.ObjectKeyFromObject(&w)})
+	for i := range list.Items {
+		if w := &list.Items[i]; w.Status.Phase == v1alpha1.PhasePaused {
+			requests = append(requests, reconcile.Request{NamespacedName: client.ObjectKeyFromObject(w)})
 		}
 	}
 	return requests
@@ -1139,13 +1161,13 @@ func (r *Reconciler) findPausedWorkloadsInNamespace(ctx context.Context, obj cli
 // whose labels changed, such as being protected.
 func (r *Reconciler) findWorkloadsInNamespace(ctx context.Context, obj client.Object) []reconcile.Request {
 	var list v1alpha1.ManagedWorkloadList
-	if err := r.List(ctx, &list, client.InNamespace(obj.GetName())); err != nil {
+	if err := r.List(ctx, &list, client.InNamespace(obj.GetName()), client.UnsafeDisableDeepCopy); err != nil {
 		log.FromContext(ctx).Error(err, "listing managed workloads for namespace change", "namespace", obj.GetName())
 		return nil
 	}
 	requests := make([]reconcile.Request, 0, len(list.Items))
-	for _, w := range list.Items {
-		requests = append(requests, reconcile.Request{NamespacedName: client.ObjectKeyFromObject(&w)})
+	for i := range list.Items {
+		requests = append(requests, reconcile.Request{NamespacedName: client.ObjectKeyFromObject(&list.Items[i])})
 	}
 	return requests
 }

@@ -9,3 +9,11 @@ nameReference:
   - kind: ValidatingAdmissionPolicyBinding
     group: admissionregistration.k8s.io
     path: spec/policyName
+# The binding names the doorman's ServiceAccount, the policy's parameter,
+# by name and namespace, so both follow the ServiceAccount's.
+- kind: ServiceAccount
+  version: v1
+  fieldSpecs:
+  - kind: ValidatingAdmissionPolicyBinding
+    group: admissionregistration.k8s.io
+    path: spec/paramRef

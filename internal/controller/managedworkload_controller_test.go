@@ -42,7 +42,6 @@ import (
 	"k8s.io/utils/ptr"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
-	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 	"sigs.k8s.io/controller-runtime/pkg/client/interceptor"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 
@@ -102,7 +101,7 @@ func (s *stubPauser) Restore(_ context.Context, w *v1alpha1.ManagedWorkload) (in
 	return w.Status.Pause.PreviousReplicas, nil
 }
 
-func testScheme(t *testing.T) *runtime.Scheme {
+func testScheme(t testing.TB) *runtime.Scheme {
 	t.Helper()
 	s := runtime.NewScheme()
 	require.NoError(t, v1alpha1.AddToScheme(s))
@@ -130,7 +129,7 @@ func newTestReconcilerWithReplicas(t *testing.T, workload *v1alpha1.ManagedWorkl
 	t.Helper()
 	scheme := testScheme(t)
 
-	builder := fake.NewClientBuilder().WithScheme(scheme).WithStatusSubresource(&v1alpha1.ManagedWorkload{})
+	builder := fakeClientBuilder(scheme).WithStatusSubresource(&v1alpha1.ManagedWorkload{})
 	if workload != nil {
 		builder = builder.WithObjects(workload)
 		builder = builder.WithObjects(targetDeploymentWithReplicas(workload.Spec.Target.Name, workload.Namespace, replicas))
@@ -155,7 +154,7 @@ func newTestReconcilerWithTarget(t *testing.T, workload *v1alpha1.ManagedWorkloa
 	t.Helper()
 	scheme := testScheme(t)
 
-	builder := fake.NewClientBuilder().WithScheme(scheme).WithStatusSubresource(&v1alpha1.ManagedWorkload{})
+	builder := fakeClientBuilder(scheme).WithStatusSubresource(&v1alpha1.ManagedWorkload{})
 	if workload != nil {
 		builder = builder.WithObjects(workload)
 		if createTarget {
@@ -348,6 +347,86 @@ func TestReconcile_FinalizerAddedOnFirstReconcile(t *testing.T) {
 	assert.Contains(t, w.Finalizers, finalizerName)
 }
 
+// thisInstall is the namespace of the install under test's operator.
+const thisInstall = "hybernate-system"
+
+func TestReconcile_FinalizerStampsTheInstall(t *testing.T) {
+	tests := []struct {
+		name        string
+		finalizers  []string
+		annotations map[string]string
+	}{
+		{name: "a new ManagedWorkload"},
+		{name: "one taken on before the stamp", finalizers: []string{finalizerName}},
+		{name: "one already stamped", finalizers: []string{finalizerName},
+			annotations: map[string]string{v1alpha1.AnnotationOperator: thisInstall}},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			workload := &v1alpha1.ManagedWorkload{
+				ObjectMeta: metav1.ObjectMeta{Name: "api", Namespace: "default", Finalizers: tt.finalizers,
+					Annotations: tt.annotations},
+				Spec: v1alpha1.ManagedWorkloadSpec{
+					Target: v1alpha1.WorkloadRef{Kind: v1alpha1.TargetKindDeployment, Name: "api"},
+				},
+			}
+			r := newTestReconciler(t, workload, &stubPauser{})
+			r.OperatorNamespace = thisInstall
+
+			_, err := r.Reconcile(context.Background(), reconcileFor("api"))
+			require.NoError(t, err)
+
+			w := getWorkload(t, r, "api")
+			assert.Equal(t, []string{finalizerName}, w.Finalizers)
+			assert.Equal(t, thisInstall, w.Annotations[v1alpha1.AnnotationOperator])
+		})
+	}
+}
+
+// Two installs watching one namespace would both pause, wake and restore
+// its workloads; the one that didn't take a ManagedWorkload on leaves it
+// alone, even as it's deleted, and says why.
+func TestReconcile_LeavesAnotherInstallsManagedWorkloadAlone(t *testing.T) {
+	tests := []struct {
+		name     string
+		deleting bool
+	}{
+		{name: "running"},
+		{name: "being deleted", deleting: true},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			workload := &v1alpha1.ManagedWorkload{
+				ObjectMeta: metav1.ObjectMeta{Name: "api", Namespace: "default", Finalizers: []string{finalizerName},
+					Annotations: map[string]string{v1alpha1.AnnotationOperator: "team-b-system"}},
+				Spec: v1alpha1.ManagedWorkloadSpec{
+					Target: v1alpha1.WorkloadRef{Kind: v1alpha1.TargetKindDeployment, Name: "api"},
+				},
+				Status: v1alpha1.ManagedWorkloadStatus{Phase: v1alpha1.PhasePaused,
+					Pause: &v1alpha1.PauseStatus{PreviousReplicas: 3}},
+			}
+			if tt.deleting {
+				workload.DeletionTimestamp = &metav1.Time{Time: fixedTime}
+			}
+			pauser := &stubPauser{}
+			r := newTestReconciler(t, workload, pauser)
+			r.OperatorNamespace = thisInstall
+
+			_, err := r.Reconcile(context.Background(), reconcileFor("api"))
+			require.NoError(t, err)
+
+			w := getWorkload(t, r, "api")
+			assert.Equal(t, "team-b-system", w.Annotations[v1alpha1.AnnotationOperator])
+			assert.Equal(t, []string{finalizerName}, w.Finalizers)
+			assert.Equal(t, v1alpha1.PhasePaused, w.Status.Phase)
+			assert.Zero(t, pauser.resumeCalls)
+			event := <-r.Recorder.(*events.FakeRecorder).Events
+			assert.Contains(t, event, ReasonManagedByAnotherInstall)
+			assert.Contains(t, event, "team-b-system")
+		})
+	}
+}
+
 func TestReconcile_DeletionRemovesFinalizer(t *testing.T) {
 	now := metav1.Now()
 	workload := &v1alpha1.ManagedWorkload{
@@ -398,7 +477,7 @@ func TestReconcileDelete_RestoresAPausedWorkload(t *testing.T) {
 				Spec:   v1alpha1.ManagedWorkloadSpec{Target: v1alpha1.WorkloadRef{Kind: v1alpha1.TargetKindDeployment, Name: "api"}},
 				Status: v1alpha1.ManagedWorkloadStatus{Phase: tt.phase, Pause: tt.pause},
 			}
-			builder := fake.NewClientBuilder().WithScheme(testScheme(t)).WithObjects(workload)
+			builder := fakeClientBuilder(testScheme(t)).WithObjects(workload)
 			if tt.withTarget {
 				builder = builder.WithObjects(targetDeploymentWithReplicas("api", "default", 0))
 			}
@@ -579,8 +658,7 @@ func TestReconcile_DuplicateTargetBlocksNewer(t *testing.T) {
 
 	scheme := testScheme(t)
 	recorder := events.NewFakeRecorder(10)
-	k := fake.NewClientBuilder().
-		WithScheme(scheme).
+	k := fakeClientBuilder(scheme).
 		WithStatusSubresource(&v1alpha1.ManagedWorkload{}).
 		WithObjects(older, newer, targetDeployment("idle-app", "default")).
 		Build()
@@ -676,8 +754,7 @@ func TestReconcile_DuplicateTargetAllowsOlder(t *testing.T) {
 	}
 
 	scheme := testScheme(t)
-	k := fake.NewClientBuilder().
-		WithScheme(scheme).
+	k := fakeClientBuilder(scheme).
 		WithStatusSubresource(&v1alpha1.ManagedWorkload{}).
 		WithObjects(older, newer, targetDeployment("idle-app", "default")).
 		Build()
@@ -730,8 +807,7 @@ func TestReconcile_DuplicateTargetClearsWhenResolved(t *testing.T) {
 	}
 
 	scheme := testScheme(t)
-	k := fake.NewClientBuilder().
-		WithScheme(scheme).
+	k := fakeClientBuilder(scheme).
 		WithStatusSubresource(&v1alpha1.ManagedWorkload{}).
 		WithObjects(workload, targetDeployment("idle-app", "default")).
 		Build()
@@ -777,7 +853,7 @@ func newSharedTargetReconciler(t *testing.T, objs ...client.Object) (*Reconciler
 	t.Helper()
 	scheme := testScheme(t)
 	recorder := events.NewFakeRecorder(10)
-	k := withWorkloadIndexes(fake.NewClientBuilder().WithScheme(scheme)).
+	k := fakeClientBuilder(scheme).
 		WithStatusSubresource(&v1alpha1.ManagedWorkload{}).
 		WithObjects(append(objs, targetDeployment("idle-app", "default"))...).
 		Build()
@@ -827,6 +903,49 @@ func TestReconcile_DuplicateTargetExactlyOneOwner(t *testing.T) {
 			assert.NotEqual(t, isDuplicate(t, r, "older"), isDuplicate(t, r, "newer"),
 				"exactly one workload must own the target")
 			assert.False(t, isDuplicate(t, r, tt.wantOwner), "%s should own the target", tt.wantOwner)
+		})
+	}
+}
+
+// Only a ManagedWorkload for the same kind and name in the same namespace
+// is a duplicate, and finding one reads only those: a namespace of
+// hundreds isn't listed, and copied, on each of their reconciles.
+func TestCheckDuplicate_ReadsOnlyThoseSharingTheTarget(t *testing.T) {
+	sameName := func(name, namespace string, kind v1alpha1.TargetKind) *v1alpha1.ManagedWorkload {
+		w := sharedTargetWorkload(name, types.UID(name), fixedTime.Add(-time.Hour))
+		w.Namespace, w.Spec.Target.Kind = namespace, kind
+		return w
+	}
+	tests := []struct {
+		name  string
+		other *v1alpha1.ManagedWorkload
+		want  bool
+	}{
+		{name: "same kind and name", other: sameName("older", "default", v1alpha1.TargetKindDeployment), want: true},
+		{name: "a StatefulSet of the same name", other: sameName("older", "default", v1alpha1.TargetKindStatefulSet)},
+		{name: "in another namespace", other: sameName("older", "staging", v1alpha1.TargetKindDeployment)},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			r, _ := newSharedTargetReconciler(t, tt.other, sharedTargetWorkload("newer", "newer", fixedTime))
+			var unindexed int
+			r.Client = interceptor.NewClient(r.Client.(client.WithWatch), interceptor.Funcs{
+				List: func(ctx context.Context, c client.WithWatch, list client.ObjectList, opts ...client.ListOption) error {
+					var o client.ListOptions
+					o.ApplyOptions(opts)
+					if _, ok := list.(*v1alpha1.ManagedWorkloadList); ok && o.FieldSelector == nil {
+						unindexed++
+					}
+					return c.List(ctx, list, opts...)
+				},
+			})
+			newer := getWorkload(t, r, "newer")
+
+			duplicate, err := r.checkDuplicate(context.Background(), newer)
+			require.NoError(t, err)
+
+			assert.Equal(t, tt.want, duplicate)
+			assert.Zero(t, unindexed, "ManagedWorkloads are looked up by target")
 		})
 	}
 }
@@ -1282,7 +1401,7 @@ func lifecycleReconciler(t *testing.T, workload *v1alpha1.ManagedWorkload, repli
 	mapper.Add(kedaScaledObject, meta.RESTScopeNamespace)
 	target := targetDeploymentWithReplicas(workload.Spec.Target.Name, workload.Namespace, replicas)
 	target.Status.ReadyReplicas = 10
-	c := fake.NewClientBuilder().WithScheme(scheme).WithRESTMapper(mapper).
+	c := fakeClientBuilder(scheme).WithRESTMapper(mapper).
 		WithStatusSubresource(&v1alpha1.ManagedWorkload{}).
 		WithObjects(append([]client.Object{workload, target}, objs...)...).
 		WithInterceptorFuncs(funcs).Build()

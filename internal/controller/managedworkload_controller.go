@@ -117,6 +117,10 @@ type Reconciler struct {
 	// each, or every namespace when empty.
 	WatchNamespaces []string
 
+	// OperatorNamespace is where this install's operator runs, which it
+	// stamps on each ManagedWorkload it takes on. Empty stamps nothing.
+	OperatorNamespace string
+
 	// Timezone is where the forecast counts hours of the day and days of
 	// the week, so that business hours stay in their slots through daylight
 	// saving changes. Nil means UTC.
@@ -137,6 +141,7 @@ type Reconciler struct {
 	prometheus      *signal.Prometheus
 	doormanFamilies doormanFamilies
 	uids            workloadUIDs
+	graph           *workloadGraph
 	clock           func() time.Time
 }
 
@@ -348,10 +353,11 @@ func (r *Reconciler) observeTarget(ctx context.Context, workload *v1alpha1.Manag
 	return r.reportAutoscaler(ctx, workload)
 }
 
-// readWorkload reads the workload, and reports whether it exists. One
-// deleted without its finalizer running would otherwise leave its metric
-// series and what's kept in memory for it, and one created again under the
-// same name what was kept for the one before.
+// readWorkload reads the workload, and reports whether it exists and is
+// this install's to reconcile. One deleted without its finalizer running
+// would otherwise leave its metric series and what's kept in memory for it,
+// and one created again under the same name what was kept for the one
+// before.
 func (r *Reconciler) readWorkload(ctx context.Context, name types.NamespacedName,
 	workload *v1alpha1.ManagedWorkload) (bool, error) {
 	err := r.Get(ctx, name, workload)
@@ -367,6 +373,13 @@ func (r *Reconciler) readWorkload(ctx context.Context, name types.NamespacedName
 	}
 	if replaced, ok := r.uids.see(name, workload.UID); ok {
 		r.forgetWorkload(replaced)
+	}
+	if owner := otherInstall(workload, r.OperatorNamespace); owner != "" {
+		r.emitEvent(workload, false, "Warning", ReasonManagedByAnotherInstall, actionCheckInstall,
+			"the Hybernate installed in %s manages this ManagedWorkload, so the one in %s leaves it alone; "+
+				"installs must watch different namespaces. If the one in %s is gone, remove the %s annotation",
+			owner, r.OperatorNamespace, owner, v1alpha1.AnnotationOperator)
+		return false, nil
 	}
 	return true, nil
 }
@@ -835,12 +848,33 @@ func resumeRecheck(waited time.Duration) time.Duration {
 	return min(max(waited, 5*time.Second), time.Minute)
 }
 
+// ensureFinalizer adds the cleanup finalizer, and stamps the ManagedWorkload
+// with this install's namespace, so another install's operator leaves it
+// alone and its guards don't count it.
 func (r *Reconciler) ensureFinalizer(ctx context.Context, workload *v1alpha1.ManagedWorkload) error {
-	if controllerutil.ContainsFinalizer(workload, finalizerName) {
+	stamped := r.OperatorNamespace == "" || workload.Annotations[v1alpha1.AnnotationOperator] == r.OperatorNamespace
+	if controllerutil.ContainsFinalizer(workload, finalizerName) && stamped {
 		return nil
 	}
 	controllerutil.AddFinalizer(workload, finalizerName)
+	if !stamped {
+		metav1.SetMetaDataAnnotation(&workload.ObjectMeta, v1alpha1.AnnotationOperator, r.OperatorNamespace)
+	}
 	return r.Update(ctx, workload)
+}
+
+// ReasonManagedByAnotherInstall marks a ManagedWorkload this install leaves
+// to the one that took it on.
+const ReasonManagedByAnotherInstall = "ManagedByAnotherInstall"
+
+// otherInstall is the namespace of the install that took the ManagedWorkload
+// on, when that's not the one in own, or "".
+func otherInstall(workload *v1alpha1.ManagedWorkload, own string) string {
+	owner := workload.Annotations[v1alpha1.AnnotationOperator]
+	if own == "" || owner == "" || owner == own {
+		return ""
+	}
+	return owner
 }
 
 // reconcileDelete hands the target back and lets the ManagedWorkload go. It
@@ -1182,19 +1216,19 @@ func (r *Reconciler) setCondition(workload *v1alpha1.ManagedWorkload, condType s
 
 // checkDuplicate returns true if another ManagedWorkload in the same namespace
 // already targets the same workload. The older resource (by creation time) wins;
-// the newer one gets a DuplicateTarget condition and is skipped.
+// the newer one gets a DuplicateTarget condition and is skipped. Only those
+// sharing its target are looked at, through the index, and only read, so
+// the cache's own objects are listed rather than copies.
 func (r *Reconciler) checkDuplicate(ctx context.Context, workload *v1alpha1.ManagedWorkload) (bool, error) {
 	var list v1alpha1.ManagedWorkloadList
-	if err := r.List(ctx, &list, client.InNamespace(workload.Namespace)); err != nil {
-		return false, fmt.Errorf("listing managed workloads: %w", err)
+	if err := r.List(ctx, &list, client.InNamespace(workload.Namespace), client.UnsafeDisableDeepCopy,
+		client.MatchingFields{targetField: targetKey(workload.Spec.Target.Kind, workload.Spec.Target.Name)}); err != nil {
+		return false, fmt.Errorf("listing managed workloads with the same target: %w", err)
 	}
 
 	for i := range list.Items {
 		other := &list.Items[i]
-		if other.UID == workload.UID || !other.DeletionTimestamp.IsZero() {
-			continue
-		}
-		if other.Spec.Target != workload.Spec.Target || !claimsTargetFirst(other, workload) {
+		if other.UID == workload.UID || !other.DeletionTimestamp.IsZero() || !claimsTargetFirst(other, workload) {
 			continue
 		}
 
@@ -1235,10 +1269,14 @@ func (r *Reconciler) checkDuplicate(ctx context.Context, workload *v1alpha1.Mana
 // oldest ManagedWorkload wins. Creation timestamps have one-second precision,
 // so UID breaks ties between objects created in the same second.
 func claimsTargetFirst(a, b *v1alpha1.ManagedWorkload) bool {
-	if !a.CreationTimestamp.Equal(&b.CreationTimestamp) {
-		return a.CreationTimestamp.Before(&b.CreationTimestamp)
+	return claimedBefore(a.CreationTimestamp, a.UID, b.CreationTimestamp, b.UID)
+}
+
+func claimedBefore(aCreated metav1.Time, aUID types.UID, bCreated metav1.Time, bUID types.UID) bool {
+	if !aCreated.Equal(&bCreated) {
+		return aCreated.Before(&bCreated)
 	}
-	return a.UID < b.UID
+	return aUID < bUID
 }
 
 // Field indexes on ManagedWorkloads, so a watch event finds the few a change
@@ -1325,9 +1363,11 @@ func (r *Reconciler) findRelatedWorkloads(ctx context.Context, obj client.Object
 		client.MatchingFields{dependencyField: dependencyKey(targetID(changed))})...)
 }
 
-// relatedHandler enqueues what findRelatedWorkloads finds for a
-// ManagedWorkload both before and after a change, so a dependency it no
-// longer has re-checks the hold it took part in.
+// relatedHandler keeps the dependency graph up to date with each
+// ManagedWorkload, and enqueues what findRelatedWorkloads finds for one
+// both before and after a change, so a dependency it no longer has
+// re-checks the hold it took part in. The graph is updated first, so a
+// workload re-checking for a change to another sees that change.
 func (r *Reconciler) relatedHandler() handler.EventHandler {
 	enqueue := func(q workqueue.TypedRateLimitingInterface[reconcile.Request], requests []reconcile.Request) {
 		for _, req := range requests {
@@ -1336,36 +1376,46 @@ func (r *Reconciler) relatedHandler() handler.EventHandler {
 	}
 	return handler.Funcs{
 		CreateFunc: func(ctx context.Context, e event.CreateEvent, q workqueue.TypedRateLimitingInterface[reconcile.Request]) {
-			enqueue(q, r.findRelatedWorkloads(ctx, e.Object))
+			w, ok := e.Object.(*v1alpha1.ManagedWorkload)
+			if !ok {
+				return
+			}
+			r.graph.set(w)
+			enqueue(q, r.findRelatedWorkloads(ctx, w))
 		},
 		UpdateFunc: func(ctx context.Context, e event.UpdateEvent, q workqueue.TypedRateLimitingInterface[reconcile.Request]) {
-			enqueue(q, r.findRelatedWorkloads(ctx, e.ObjectOld))
-			enqueue(q, r.findRelatedWorkloads(ctx, e.ObjectNew))
+			old, okOld := e.ObjectOld.(*v1alpha1.ManagedWorkload)
+			cur, okNew := e.ObjectNew.(*v1alpha1.ManagedWorkload)
+			if !okOld || !okNew {
+				return
+			}
+			r.graph.set(cur)
+			if !relationsChanged(old, cur) {
+				return
+			}
+			enqueue(q, r.findRelatedWorkloads(ctx, old))
+			enqueue(q, r.findRelatedWorkloads(ctx, cur))
 		},
 		DeleteFunc: func(ctx context.Context, e event.DeleteEvent, q workqueue.TypedRateLimitingInterface[reconcile.Request]) {
-			enqueue(q, r.findRelatedWorkloads(ctx, e.Object))
+			w, ok := e.Object.(*v1alpha1.ManagedWorkload)
+			if !ok {
+				return
+			}
+			r.graph.remove(w.UID)
+			enqueue(q, r.findRelatedWorkloads(ctx, w))
 		},
 	}
 }
 
-// relationsChanged passes a ManagedWorkload's updates that its related
-// workloads act on: its phase, which holds its dependencies awake and lets
-// its dependents' resumes go on, its spec, its dependencies, and its
-// deletion. Its own status writes otherwise, such as cost and activity
+// relationsChanged reports whether a ManagedWorkload's update is one its
+// related workloads act on: its phase, which holds its dependencies awake
+// and lets its dependents' resumes go on, its spec, its dependencies, and
+// its deletion. Its own status writes otherwise, such as cost and activity
 // flushes, concern no other workload.
-func relationsChanged() predicate.Predicate {
-	return predicate.Funcs{
-		UpdateFunc: func(e event.UpdateEvent) bool {
-			old, okOld := e.ObjectOld.(*v1alpha1.ManagedWorkload)
-			cur, okNew := e.ObjectNew.(*v1alpha1.ManagedWorkload)
-			if !okOld || !okNew {
-				return true
-			}
-			return old.Status.Phase != cur.Status.Phase || old.Generation != cur.Generation ||
-				!old.DeletionTimestamp.Equal(cur.DeletionTimestamp) ||
-				!equality.Semantic.DeepEqual(old.Status.LearnedDependencies, cur.Status.LearnedDependencies)
-		},
-	}
+func relationsChanged(old, cur *v1alpha1.ManagedWorkload) bool {
+	return old.Status.Phase != cur.Status.Phase || old.Generation != cur.Generation ||
+		!old.DeletionTimestamp.Equal(cur.DeletionTimestamp) ||
+		!equality.Semantic.DeepEqual(old.Status.LearnedDependencies, cur.Status.LearnedDependencies)
 }
 
 // findRoutedNeighbours enqueues the paused workloads in a namespace whose
@@ -1374,7 +1424,7 @@ func relationsChanged() predicate.Predicate {
 // so they stop routing it at once rather than at their next recheck.
 func (r *Reconciler) findRoutedNeighbours(ctx context.Context, obj client.Object) []reconcile.Request {
 	var list v1alpha1.ManagedWorkloadList
-	if err := r.List(ctx, &list, client.InNamespace(obj.GetNamespace())); err != nil {
+	if err := r.List(ctx, &list, client.InNamespace(obj.GetNamespace()), client.UnsafeDisableDeepCopy); err != nil {
 		log.FromContext(ctx).Error(err, "listing workloads sharing a namespace",
 			"workload", obj.GetName(), "namespace", obj.GetNamespace())
 		return nil
@@ -1557,11 +1607,15 @@ func (r *Reconciler) SetupWithManager(mgr ctrl.Manager) error {
 			return fmt.Errorf("indexing managed workloads by %s: %w", field, err)
 		}
 	}
+	// The graph is fed by a watch of this controller, which starts its
+	// workers only once every watch has been handed every ManagedWorkload,
+	// so no reconcile reads it before it's complete.
+	r.graph = newWorkloadGraph()
 	targetHandler := handler.EnqueueRequestsFromMapFunc(r.findWorkloadsForTarget)
 	return ctrl.NewControllerManagedBy(mgr).
 		For(&v1alpha1.ManagedWorkload{}).
 		Watches(&v1alpha1.ManagedWorkload{}, wakeHandler()).
-		Watches(&v1alpha1.ManagedWorkload{}, r.relatedHandler(), builder.WithPredicates(relationsChanged())).
+		Watches(&v1alpha1.ManagedWorkload{}, r.relatedHandler()).
 		Watches(&v1alpha1.ManagedWorkload{}, handler.EnqueueRequestsFromMapFunc(r.findRoutedNeighbours),
 			builder.WithPredicates(phaseChanged())).
 		Watches(&appsv1.Deployment{}, targetHandler).

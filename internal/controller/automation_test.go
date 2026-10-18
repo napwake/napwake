@@ -33,7 +33,6 @@ import (
 	"k8s.io/client-go/tools/events"
 	"k8s.io/utils/ptr"
 	"sigs.k8s.io/controller-runtime/pkg/client"
-	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 
 	v1alpha1 "github.com/okedeji/hybernate/api/v1alpha1"
 	"github.com/okedeji/hybernate/internal/forecast"
@@ -140,7 +139,7 @@ func newAutomationReconciler(t *testing.T, workload *v1alpha1.ManagedWorkload, e
 	t.Helper()
 	scheme := testScheme(t)
 
-	builder := fake.NewClientBuilder().WithScheme(scheme).WithStatusSubresource(&v1alpha1.ManagedWorkload{})
+	builder := fakeClientBuilder(scheme).WithStatusSubresource(&v1alpha1.ManagedWorkload{})
 	if workload != nil {
 		builder = builder.WithObjects(workload)
 	}

@@ -80,6 +80,17 @@
 
     `kubectl apply -k config/network-policy` adds the NetworkPolicies the chart's `networkPolicy.enabled` creates: only namespaces labelled `metrics: enabled` may scrape the operator and the doorman, and the doorman's routing ports (TCP 20000-29999) stay open to every caller of a paused workload's Services.
 
+## More than one install
+
+One install per cluster is the usual setup. Several can share a cluster, such as one per team, as long as each:
+
+- runs in a namespace of its own, with a release name of its own, since the chart names its ClusterRoles and admission policies after the release, and
+- sets `watchNamespaces`, with no namespace in two installs' lists.
+
+All but one set `crds.install: false`: they share the ManagedWorkload CRD, which belongs to the release that installed it and is upgraded with it, so make that one the newest Hybernate.
+
+Each operator stamps the ManagedWorkloads it takes on, and labels the doorman EndpointSlices it writes, with `hybernate.io/operator`, its namespace. Another install leaves a ManagedWorkload stamped by a different one alone, with a `ManagedByAnotherInstall` warning event, and doesn't move that one's EndpointSlices to its own doorman, so two installs watching the same namespace by mistake don't both pause and wake its workloads: the first to take each one on keeps it. The uninstall and upgrade guards don't count the ManagedWorkloads another install took on. The kustomize manifests are a single install, in `hybernate-system`, watching every namespace.
+
 ## Verify Installation
 
 ```bash
@@ -117,9 +128,17 @@ Stop managing workloads while the operator is still running, so it can scale any
 
     `make undeploy`, and `kubectl delete -f install.yaml`, delete the CRD along with the operator.
 
-`helm uninstall` refuses to go ahead while any ManagedWorkload is left. A pre-delete hook, the `<fullname>-uninstall-guard` Job, first waits up to two and a half minutes for ManagedWorkloads being deleted, so the operator can restore them and drain their doorman ports, which takes up to a minute; then, if any are left, it lists them and fails, so the uninstall stops with `job hybernate-uninstall-guard failed` before removing anything. A ManagedWorkload deleted just before you uninstall doesn't hold it up. Above that error, Helm prints the ManagedWorkloads left, as they are after the wait, and the steps above; older Helm releases, such as 3.16, don't print a hook's output, and `kubectl logs job/hybernate-uninstall-guard -n hybernate-system` shows it, for an hour. With `watchNamespaces`, it counts those in the watched namespaces, and any elsewhere that the operator took on, with its `hybernate.io/cleanup` finalizer. The hook runs the operator's own image. Pass `--no-hooks` to skip it, or set `guard.uninstall: false` to drop it.
+`helm uninstall` refuses to go ahead while any ManagedWorkload is left. A pre-delete hook, the `<fullname>-uninstall-guard` Job, first waits up to two and a half minutes for ManagedWorkloads being deleted, so the operator can restore them and drain their doorman ports, which takes up to a minute; then, if any are left, it lists them and fails, so the uninstall stops before removing anything, with `job hybernate-uninstall-guard failed` from Helm 3 and `resource Job/hybernate-system/hybernate-uninstall-guard not ready` from Helm 4. A ManagedWorkload deleted just before you uninstall doesn't hold it up. Above that error, Helm 3.18 and later print the hook's output, which starts with a sentence naming the ManagedWorkloads left, as they are after the wait, what to do, and a link here. Helm 4 prints it as one log message, its line breaks escaped:
 
-A refused uninstall leaves the release marked `uninstalling`, though everything still runs. Uninstalling again, once the ManagedWorkloads are gone, finishes it. Until then `helm upgrade` fails with `has no deployed releases`; `helm rollback hybernate <revision>`, with the last revision `helm history hybernate` lists, marks it deployed again. Argo CD 3.3 and later runs the guard as a PreDelete hook: deleting the Application while ManagedWorkloads are left is blocked, with a `DeletionError` condition, and Argo CD retries the hook until they're gone. To delete it anyway, set `guard.uninstall: false` in Git and sync first. Earlier versions of Argo CD don't run Helm's pre-delete hooks, so deleting the Application isn't guarded: stop managing the workloads before deleting it.
+```text
+level=INFO msg="Hybernate refuses to uninstall: these ManagedWorkloads' workloads would stay paused with no operator: staging/web. Remove the hybernate.io/managed label from them and their namespaces, and delete ManagedWorkloads you created, then uninstall again; see https://okedeji.io/hybernate/getting-started/installation/#uninstall\n\n..."
+```
+
+The rest, after the first `\n`, lists each one and the steps above. Helm before 3.18, such as 3.16, doesn't print a hook's output. Nor does any Helm for a release revision such a Helm wrote, as with a `helm rollback` after a refused uninstall: it drops the hook's `helm.sh/hook-output-log-policy` from the revision, until a newer Helm upgrades the release. Whenever Helm prints only the error, `kubectl logs job/hybernate-uninstall-guard -n hybernate-system` shows the output, with its line breaks, for an hour.
+
+With `watchNamespaces`, the hook counts those in the watched namespaces, and any elsewhere that the operator took on, with its `hybernate.io/cleanup` finalizer. It never counts those [another install](#more-than-one-install) took on. The hook runs the operator's own image. Pass `--no-hooks` to skip it, or set `guard.uninstall: false` to drop it.
+
+A refused uninstall leaves the release marked `uninstalling`, which `helm list` shows only with `-a`, though everything still runs. Uninstalling again, once the ManagedWorkloads are gone, finishes it. Until then `helm upgrade` fails with `has no deployed releases`; `helm rollback hybernate <revision>`, with the last revision `helm history hybernate` lists, marks it deployed again. Argo CD 3.3 and later runs the guard as a PreDelete hook: deleting the Application while ManagedWorkloads are left is blocked, with a `DeletionError` condition, and Argo CD retries the hook until they're gone. To delete it anyway, set `guard.uninstall: false` in Git and sync first. Earlier versions of Argo CD don't run Helm's pre-delete hooks, so deleting the Application isn't guarded: stop managing the workloads before deleting it.
 
 !!! warning
     Removing the operator or the CRD first skips step 2's restore: workloads that were paused stay at zero replicas, and their Services still send traffic to the doorman's deleted pods. Restore them by hand, as below.

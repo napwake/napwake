@@ -20,6 +20,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"net/url"
 	"strconv"
 	"strings"
 	"sync"
@@ -61,9 +62,16 @@ const metricsAPITimeout = 2 * time.Second
 // finds the outage at once rather than each waiting out a timeout.
 const metricsAPIBackoff = time.Minute
 
-// ErrMetricsAPIBackingOff is returned, wrapping the failure, while the
-// Metrics API isn't read again after failing.
+// ErrMetricsAPIBackingOff matches the error returned while the Metrics API
+// isn't read again after failing. That error reads as the failure itself,
+// so what a workload reports stays the same for the whole outage whether
+// or not its own read was the one let through.
 var ErrMetricsAPIBackingOff = errors.New("the Metrics API failed recently, not read again yet")
+
+type metricsAPIBackingOff struct{ failure error }
+
+func (e metricsAPIBackingOff) Error() string   { return e.failure.Error() }
+func (e metricsAPIBackingOff) Unwrap() []error { return []error{ErrMetricsAPIBackingOff, e.failure} }
 
 // requestTTL is how long the CPU a replica requests, read from a running
 // pod, is kept before it's read again. Activity is judged against it every
@@ -151,7 +159,7 @@ func (r *Reader) podMetrics(ctx context.Context, namespace string, selector labe
 	callCtx, cancel := context.WithTimeout(ctx, metricsAPITimeout)
 	defer cancel()
 	var list metricsv1beta1.PodMetricsList
-	err := r.client.List(callCtx, &list, client.InNamespace(namespace), client.MatchingLabelsSelector{Selector: selector})
+	err := withoutURL(r.client.List(callCtx, &list, client.InNamespace(namespace), client.MatchingLabelsSelector{Selector: selector}))
 
 	r.apiMu.Lock()
 	defer r.apiMu.Unlock()
@@ -164,6 +172,17 @@ func (r *Reader) podMetrics(ctx context.Context, namespace string, selector labe
 	return &list, err
 }
 
+// withoutURL drops the request URL from a transport error. The URL names
+// the namespace and selector listed, and a failure is returned for every
+// workload's reads while backing off, not only for the one that met it.
+func withoutURL(err error) error {
+	var urlErr *url.Error
+	if errors.As(err, &urlErr) {
+		return urlErr.Err
+	}
+	return err
+}
+
 func (r *Reader) admitMetricsAPI() error {
 	r.apiMu.Lock()
 	defer r.apiMu.Unlock()
@@ -172,7 +191,7 @@ func (r *Reader) admitMetricsAPI() error {
 	}
 	now := r.now()
 	if now.Before(r.apiFailedAt.Add(metricsAPIBackoff)) {
-		return fmt.Errorf("%w: %w", ErrMetricsAPIBackingOff, r.apiFailure)
+		return metricsAPIBackingOff{r.apiFailure}
 	}
 	r.apiFailedAt = now
 	return nil

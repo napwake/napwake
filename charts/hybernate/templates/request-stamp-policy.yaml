@@ -1,0 +1,55 @@
+{{- if .Values.doorman.admissionPolicy.enabled }}
+{{- /*
+The operator learns which workload depends on which from the address in
+hybernate.io/last-request-from, so a forged one would have it write a
+dependency into whatever workload's pod has that address. Only the
+doorman sets the two request annotations; this holds everyone else to
+that. The operator still checks that its own field manager set the
+address, for clusters without this policy. It's scoped to the watched
+namespaces, so another install's doorman isn't refused in its own.
+*/}}
+apiVersion: admissionregistration.k8s.io/v1
+kind: ValidatingAdmissionPolicy
+metadata:
+  name: {{ include "hybernate.fullname" . }}-request-stamps
+  labels:
+    {{- include "hybernate.labels" . | nindent 4 }}
+spec:
+  failurePolicy: Fail
+  matchConstraints:
+    resourceRules:
+      - apiGroups: [hybernate.io]
+        apiVersions: ["*"]
+        operations: [CREATE, UPDATE]
+        resources: [managedworkloads]
+    {{- with .Values.watchNamespaces }}
+    namespaceSelector:
+      matchExpressions:
+        - key: kubernetes.io/metadata.name
+          operator: In
+          values:
+            {{- toYaml . | nindent 12 }}
+    {{- end }}
+  matchConditions:
+    - name: sets-a-stamp
+      expression: >-
+        ['hybernate.io/last-request', 'hybernate.io/last-request-from'].exists(k,
+          has(object.metadata.annotations) && k in object.metadata.annotations
+          && !(oldObject != null && has(oldObject.metadata.annotations) && k in oldObject.metadata.annotations
+            && oldObject.metadata.annotations[k] == object.metadata.annotations[k]))
+  validations:
+    - expression: request.userInfo.username == "system:serviceaccount:{{ .Release.Namespace }}:{{ include "hybernate.doormanName" . }}"
+      message: >-
+        Only Hybernate's doorman may set the hybernate.io/last-request and hybernate.io/last-request-from
+        annotations; set hybernate.io/last-activity to wake a workload.
+---
+apiVersion: admissionregistration.k8s.io/v1
+kind: ValidatingAdmissionPolicyBinding
+metadata:
+  name: {{ include "hybernate.fullname" . }}-request-stamps
+  labels:
+    {{- include "hybernate.labels" . | nindent 4 }}
+spec:
+  policyName: {{ include "hybernate.fullname" . }}-request-stamps
+  validationActions: [Deny]
+{{- end }}

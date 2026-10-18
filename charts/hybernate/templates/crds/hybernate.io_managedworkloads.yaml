@@ -731,8 +731,9 @@ spec:
                 type: object
               lastActedAt:
                 description: |-
-                  LastActedAt is when the operator last mutated the target workload
-                  (pause or resume).
+                  LastActedAt is when the target was last paused or woken: by
+                  Hybernate, or scaled up from zero outside it, such as with kubectl
+                  scale or by a GitOps tool.
                 format: date-time
                 type: string
               lastPauseRequest:
