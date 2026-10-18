@@ -35,10 +35,18 @@ import (
 	v1alpha1 "github.com/okedeji/hybernate/api/v1alpha1"
 )
 
+const install = "hybernate-system"
+
 func managed(namespace, name string, finalizers ...string) *v1alpha1.ManagedWorkload {
 	return &v1alpha1.ManagedWorkload{ObjectMeta: metav1.ObjectMeta{
 		Namespace: namespace, Name: name, Finalizers: finalizers,
 	}}
+}
+
+func takenOnBy(install, namespace, name string) *v1alpha1.ManagedWorkload {
+	mw := managed(namespace, name, v1alpha1.FinalizerCleanup)
+	mw.Annotations = map[string]string{v1alpha1.AnnotationOperator: install}
+	return mw
 }
 
 func beingDeleted(namespace, name string) *v1alpha1.ManagedWorkload {
@@ -129,12 +137,43 @@ func TestCheck(t *testing.T) {
 			op:   Upgrade,
 			objs: []client.Object{managed("blog", "web", v1alpha1.FinalizerCleanup)},
 		},
+		{
+			name:    "uninstall ignores ManagedWorkloads another install took on",
+			op:      Uninstall,
+			watched: []string{"shop"},
+			objs:    []client.Object{takenOnBy("team-b-system", "blog", "web")},
+		},
+		{
+			name:    "uninstall ignores another install's ManagedWorkloads even where it watches",
+			op:      Uninstall,
+			watched: []string{"shop"},
+			objs:    []client.Object{takenOnBy("team-b-system", "shop", "api")},
+		},
+		{
+			name:    "uninstall refused for one it took on, outside the namespaces it watches",
+			op:      Uninstall,
+			watched: []string{"shop"},
+			objs: []client.Object{
+				takenOnBy(install, "blog", "web"),
+				takenOnBy("team-b-system", "other", "x"),
+			},
+			refused: true,
+			names:   []string{"blog/web"},
+			absent:  []string{"other/x"},
+		},
+		{
+			name:    "upgrade ignores ManagedWorkloads another install took on",
+			op:      Upgrade,
+			watched: []string{"shop"},
+			objs:    []client.Object{takenOnBy("team-b-system", "blog", "web")},
+		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			c := fake.NewClientBuilder().WithScheme(newScheme(t)).WithObjects(tt.objs...).Build()
 			var out strings.Builder
-			g := &Guard{Reader: c, Out: &out, Watched: tt.watched, Wait: 20 * time.Millisecond, Poll: 5 * time.Millisecond}
+			g := &Guard{Reader: c, Out: &out, Install: install, Watched: tt.watched,
+				Wait: 20 * time.Millisecond, Poll: 5 * time.Millisecond}
 
 			err := g.Check(context.Background(), tt.op)
 

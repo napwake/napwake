@@ -493,6 +493,26 @@ func TestOptIn_UserSettingsSurvive(t *testing.T) {
 	assert.False(t, mw.Spec.DryRun, "dry-run is the annotations' to set")
 }
 
+// A label-created ManagedWorkload another install took on is left to it,
+// so two installs watching one namespace don't fight over its spec.
+func TestOptIn_LeavesAnotherInstallsManagedWorkloadAlone(t *testing.T) {
+	d := optInDeployment("api", managedLabel, map[string]string{v1alpha1.AnnotationIdleAfter: "3h"})
+	r, _ := optInReconciler(t, optInNamespace(nil, nil), d)
+	reconcileOptIn(t, r, "api")
+	mw, _ := managedWorkload(t, r, "api")
+	mw.Annotations = map[string]string{v1alpha1.AnnotationOperator: "team-b-system"}
+	require.NoError(t, r.Update(context.Background(), mw))
+
+	r.OperatorNamespace = thisInstall
+	require.NoError(t, r.Get(context.Background(), client.ObjectKeyFromObject(d), d))
+	d.Annotations[v1alpha1.AnnotationIdleAfter] = "5h"
+	require.NoError(t, r.Update(context.Background(), d))
+	reconcileOptIn(t, r, "api")
+
+	mw, _ = managedWorkload(t, r, "api")
+	assert.Equal(t, 3*time.Hour, mw.Spec.IdlePolicy.IdleAfter.Duration)
+}
+
 // Opting in again while the old ManagedWorkload is still restoring the
 // workload waits for it to go, rather than making a second one.
 func TestOptIn_WaitsForTheOldManagedWorkloadToGo(t *testing.T) {

@@ -117,6 +117,10 @@ type Reconciler struct {
 	// each, or every namespace when empty.
 	WatchNamespaces []string
 
+	// OperatorNamespace is where this install's operator runs, which it
+	// stamps on each ManagedWorkload it takes on. Empty stamps nothing.
+	OperatorNamespace string
+
 	// Timezone is where the forecast counts hours of the day and days of
 	// the week, so that business hours stay in their slots through daylight
 	// saving changes. Nil means UTC.
@@ -349,10 +353,11 @@ func (r *Reconciler) observeTarget(ctx context.Context, workload *v1alpha1.Manag
 	return r.reportAutoscaler(ctx, workload)
 }
 
-// readWorkload reads the workload, and reports whether it exists. One
-// deleted without its finalizer running would otherwise leave its metric
-// series and what's kept in memory for it, and one created again under the
-// same name what was kept for the one before.
+// readWorkload reads the workload, and reports whether it exists and is
+// this install's to reconcile. One deleted without its finalizer running
+// would otherwise leave its metric series and what's kept in memory for it,
+// and one created again under the same name what was kept for the one
+// before.
 func (r *Reconciler) readWorkload(ctx context.Context, name types.NamespacedName,
 	workload *v1alpha1.ManagedWorkload) (bool, error) {
 	err := r.Get(ctx, name, workload)
@@ -368,6 +373,13 @@ func (r *Reconciler) readWorkload(ctx context.Context, name types.NamespacedName
 	}
 	if replaced, ok := r.uids.see(name, workload.UID); ok {
 		r.forgetWorkload(replaced)
+	}
+	if owner := otherInstall(workload, r.OperatorNamespace); owner != "" {
+		r.emitEvent(workload, false, "Warning", ReasonManagedByAnotherInstall, actionCheckInstall,
+			"the Hybernate installed in %s manages this ManagedWorkload, so the one in %s leaves it alone; "+
+				"installs must watch different namespaces. If the one in %s is gone, remove the %s annotation",
+			owner, r.OperatorNamespace, owner, v1alpha1.AnnotationOperator)
+		return false, nil
 	}
 	return true, nil
 }
@@ -836,12 +848,33 @@ func resumeRecheck(waited time.Duration) time.Duration {
 	return min(max(waited, 5*time.Second), time.Minute)
 }
 
+// ensureFinalizer adds the cleanup finalizer, and stamps the ManagedWorkload
+// with this install's namespace, so another install's operator leaves it
+// alone and its guards don't count it.
 func (r *Reconciler) ensureFinalizer(ctx context.Context, workload *v1alpha1.ManagedWorkload) error {
-	if controllerutil.ContainsFinalizer(workload, finalizerName) {
+	stamped := r.OperatorNamespace == "" || workload.Annotations[v1alpha1.AnnotationOperator] == r.OperatorNamespace
+	if controllerutil.ContainsFinalizer(workload, finalizerName) && stamped {
 		return nil
 	}
 	controllerutil.AddFinalizer(workload, finalizerName)
+	if !stamped {
+		metav1.SetMetaDataAnnotation(&workload.ObjectMeta, v1alpha1.AnnotationOperator, r.OperatorNamespace)
+	}
 	return r.Update(ctx, workload)
+}
+
+// ReasonManagedByAnotherInstall marks a ManagedWorkload this install leaves
+// to the one that took it on.
+const ReasonManagedByAnotherInstall = "ManagedByAnotherInstall"
+
+// otherInstall is the namespace of the install that took the ManagedWorkload
+// on, when that's not the one in own, or "".
+func otherInstall(workload *v1alpha1.ManagedWorkload, own string) string {
+	owner := workload.Annotations[v1alpha1.AnnotationOperator]
+	if own == "" || owner == "" || owner == own {
+		return ""
+	}
+	return owner
 }
 
 // reconcileDelete hands the target back and lets the ManagedWorkload go. It

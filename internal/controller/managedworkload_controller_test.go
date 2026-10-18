@@ -347,6 +347,86 @@ func TestReconcile_FinalizerAddedOnFirstReconcile(t *testing.T) {
 	assert.Contains(t, w.Finalizers, finalizerName)
 }
 
+// thisInstall is the namespace of the install under test's operator.
+const thisInstall = "hybernate-system"
+
+func TestReconcile_FinalizerStampsTheInstall(t *testing.T) {
+	tests := []struct {
+		name        string
+		finalizers  []string
+		annotations map[string]string
+	}{
+		{name: "a new ManagedWorkload"},
+		{name: "one taken on before the stamp", finalizers: []string{finalizerName}},
+		{name: "one already stamped", finalizers: []string{finalizerName},
+			annotations: map[string]string{v1alpha1.AnnotationOperator: thisInstall}},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			workload := &v1alpha1.ManagedWorkload{
+				ObjectMeta: metav1.ObjectMeta{Name: "api", Namespace: "default", Finalizers: tt.finalizers,
+					Annotations: tt.annotations},
+				Spec: v1alpha1.ManagedWorkloadSpec{
+					Target: v1alpha1.WorkloadRef{Kind: v1alpha1.TargetKindDeployment, Name: "api"},
+				},
+			}
+			r := newTestReconciler(t, workload, &stubPauser{})
+			r.OperatorNamespace = thisInstall
+
+			_, err := r.Reconcile(context.Background(), reconcileFor("api"))
+			require.NoError(t, err)
+
+			w := getWorkload(t, r, "api")
+			assert.Equal(t, []string{finalizerName}, w.Finalizers)
+			assert.Equal(t, thisInstall, w.Annotations[v1alpha1.AnnotationOperator])
+		})
+	}
+}
+
+// Two installs watching one namespace would both pause, wake and restore
+// its workloads; the one that didn't take a ManagedWorkload on leaves it
+// alone, even as it's deleted, and says why.
+func TestReconcile_LeavesAnotherInstallsManagedWorkloadAlone(t *testing.T) {
+	tests := []struct {
+		name     string
+		deleting bool
+	}{
+		{name: "running"},
+		{name: "being deleted", deleting: true},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			workload := &v1alpha1.ManagedWorkload{
+				ObjectMeta: metav1.ObjectMeta{Name: "api", Namespace: "default", Finalizers: []string{finalizerName},
+					Annotations: map[string]string{v1alpha1.AnnotationOperator: "team-b-system"}},
+				Spec: v1alpha1.ManagedWorkloadSpec{
+					Target: v1alpha1.WorkloadRef{Kind: v1alpha1.TargetKindDeployment, Name: "api"},
+				},
+				Status: v1alpha1.ManagedWorkloadStatus{Phase: v1alpha1.PhasePaused,
+					Pause: &v1alpha1.PauseStatus{PreviousReplicas: 3}},
+			}
+			if tt.deleting {
+				workload.DeletionTimestamp = &metav1.Time{Time: fixedTime}
+			}
+			pauser := &stubPauser{}
+			r := newTestReconciler(t, workload, pauser)
+			r.OperatorNamespace = thisInstall
+
+			_, err := r.Reconcile(context.Background(), reconcileFor("api"))
+			require.NoError(t, err)
+
+			w := getWorkload(t, r, "api")
+			assert.Equal(t, "team-b-system", w.Annotations[v1alpha1.AnnotationOperator])
+			assert.Equal(t, []string{finalizerName}, w.Finalizers)
+			assert.Equal(t, v1alpha1.PhasePaused, w.Status.Phase)
+			assert.Zero(t, pauser.resumeCalls)
+			event := <-r.Recorder.(*events.FakeRecorder).Events
+			assert.Contains(t, event, ReasonManagedByAnotherInstall)
+			assert.Contains(t, event, "team-b-system")
+		})
+	}
+}
+
 func TestReconcile_DeletionRemovesFinalizer(t *testing.T) {
 	now := metav1.Now()
 	workload := &v1alpha1.ManagedWorkload{

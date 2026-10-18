@@ -27,7 +27,7 @@ Everything the Hybernate operator and its doorman read, write, and send, for a s
 | Deployments, StatefulSets | Their replica count, through the scale subresource, and, while one is paused, the `hybernate.io/paused-from` annotation: a copy of what the pause changed, removed when it's handed back. No other field, and never a delete |
 | KEDA ScaledObjects | The `autoscaling.keda.sh/paused-replicas` annotation, while their workload is paused or resuming; afterwards the value it had before, or none |
 | EndpointSlices | Its own, routing a paused workload's Services to the doorman; deleted when the workload wakes |
-| ManagedWorkloads | Its own status, including each workload's forecast state; the ones it creates for labelled workloads; the `hybernate.io/cleanup` finalizer, added to each so that deleting it restores its workload first, and removed once it has; `hybernate.io/last-activity` on a dependency it wakes; and, from the doorman, `hybernate.io/last-request` and `hybernate.io/last-request-from` (the caller's IP address) on one a request wakes |
+| ManagedWorkloads | Its own status, including each workload's forecast state; the ones it creates for labelled workloads; the `hybernate.io/cleanup` finalizer, added to each so that deleting it restores its workload first, and removed once it has, with `hybernate.io/operator`, the operator's namespace; `hybernate.io/last-activity` on a dependency it wakes; and, from the doorman, `hybernate.io/last-request` and `hybernate.io/last-request-from` (the caller's IP address) on one a request wakes |
 | Events | On ManagedWorkloads and workloads, to say what it did and why |
 | Leases | Leader election, in its own namespace |
 

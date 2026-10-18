@@ -81,6 +81,9 @@ type OptInReconciler struct {
 	// own Deployments there are never opted in, even in a namespace allowed
 	// to be managed: nothing would be left to wake them.
 	HybernateNamespaces []string
+	// OperatorNamespace is where this install's operator runs. A
+	// label-created ManagedWorkload another install took on is left to it.
+	OperatorNamespace string
 }
 
 // +kubebuilder:rbac:groups="",resources=namespaces,verbs=get;list;watch
@@ -118,6 +121,9 @@ func (r *OptInReconciler) Reconcile(ctx context.Context, req ctrl.Request) (res 
 	existing, err := r.managedWorkloadsFor(ctx, req.Namespace, target)
 	if err != nil {
 		return ctrl.Result{}, err
+	}
+	if existing.ours != nil && otherInstall(existing.ours, r.OperatorNamespace) != "" {
+		return ctrl.Result{}, nil
 	}
 	if existing.written != nil || !r.optedIn(obj, &ns) {
 		return ctrl.Result{}, r.release(ctx, obj, existing.ours, existing.written)

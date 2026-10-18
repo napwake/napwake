@@ -273,6 +273,7 @@ func main() {
 			ProtectedNamespaces:      protected,
 			WatchNamespaces:          watched,
 			HybernateNamespaces:      own,
+			OperatorNamespace:        os.Getenv("POD_NAMESPACE"),
 			MaxConcurrentReconciles:  maxConcurrentReconciles,
 			Timezone:                 location,
 		}).SetupWithManager(mgr); err != nil {
@@ -289,6 +290,7 @@ func main() {
 				ProtectedNamespaces: protected,
 				WatchNamespaces:     watched,
 				HybernateNamespaces: own,
+				OperatorNamespace:   os.Getenv("POD_NAMESPACE"),
 			}).SetupWithManager(mgr); err != nil {
 				setupLog.Error(err, "unable to create controller", "controller", "OptIn", "kind", kind)
 				os.Exit(1)
@@ -333,7 +335,8 @@ func runGuard(op string, watched []string) int {
 		setupLog.Error(err, "unable to create a client")
 		return 1
 	}
-	g := &guard.Guard{Reader: c, Out: os.Stdout, Watched: watched, Wait: guardWait, Poll: 2 * time.Second}
+	g := &guard.Guard{Reader: c, Out: os.Stdout, Install: os.Getenv("POD_NAMESPACE"), Watched: watched,
+		Wait: guardWait, Poll: 2 * time.Second}
 	err = g.Check(ctrl.SetupSignalHandler(), operation)
 	if errors.Is(err, guard.ErrRefused) {
 		return 1

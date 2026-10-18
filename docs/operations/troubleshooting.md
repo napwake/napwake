@@ -203,6 +203,10 @@ Only one ManagedWorkload can manage a given workload: the oldest wins, and the o
 kubectl get managedworkloads -n staging -o jsonpath='{range .items[*]}{.metadata.name}: {.spec.target.name}{"\n"}{end}'
 ```
 
+### A `ManagedByAnotherInstall` warning
+
+Another Hybernate install, in the namespace the event names, took this ManagedWorkload on first, and this one leaves it alone: two installs watch its namespace. Give each install its own `watchNamespaces`, as in [More than one install](../getting-started/installation.md#more-than-one-install). If the install it names is gone, `kubectl annotate managedworkload <name> -n <namespace> hybernate.io/operator-` hands it over.
+
 ### Cost data shows $0.00
 
 - Cost is priced on what the workload's pods request, read from its pods. A workload whose containers set no requests costs nothing.

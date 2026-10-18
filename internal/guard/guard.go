@@ -61,6 +61,10 @@ const (
 type Guard struct {
 	Reader client.Reader
 	Out    io.Writer
+	// Install is the namespace the operator runs in, which it stamps on
+	// each ManagedWorkload it takes on. Those another install stamped are
+	// that install's to guard.
+	Install string
 	// Watched are the namespaces the operator works in once the operation
 	// is done, or, for an uninstall, until then. Empty means every one.
 	Watched []string
@@ -112,7 +116,8 @@ func (g *Guard) Check(ctx context.Context, op Operation) error {
 // outside the namespaces it will watch. An uninstall strands every one
 // with the finalizer, wherever it is, since Helm guards with the last
 // revision's values, which may be a refused upgrade's, and every one it
-// watches, which may only be waiting for the operator.
+// watches, which may only be waiting for the operator. Neither counts one
+// another install took on.
 func (g *Guard) stranded(ctx context.Context, op Operation) ([]metav1.PartialObjectMetadata, error) {
 	items, err := g.list(ctx)
 	if err != nil {
@@ -120,6 +125,9 @@ func (g *Guard) stranded(ctx context.Context, op Operation) ([]metav1.PartialObj
 	}
 	var out []metav1.PartialObjectMetadata
 	for _, mw := range items {
+		if owner := mw.Annotations[v1alpha1.AnnotationOperator]; owner != "" && g.Install != "" && owner != g.Install {
+			continue
+		}
 		watched := len(g.Watched) == 0 || slices.Contains(g.Watched, mw.Namespace)
 		held := controllerutil.ContainsFinalizer(&mw, v1alpha1.FinalizerCleanup)
 		if (op == Uninstall && (watched || held)) || (op == Upgrade && !watched && held) {

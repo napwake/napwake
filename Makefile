@@ -170,6 +170,13 @@ check-chart: ## Lint the Helm chart, render it for each provider's Kubernetes ve
 	@! helm template hybernate charts/hybernate \
 		--set 'doorman.networkPolicy.ingressFrom[0].namespaceSelector.matchLabels.team=checkout' >/dev/null 2>&1 || { \
 		echo "the chart accepts doorman.networkPolicy.ingressFrom without networkPolicy.enabled, which leaves the doorman open"; exit 1; }
+	@clashes=$$({ helm template hybernate charts/hybernate --namespace hybernate-system --set 'watchNamespaces={shop}'; \
+		helm template team-b charts/hybernate --namespace team-b-system --set 'watchNamespaces={blog}' \
+			--set crds.install=false; } | \
+		awk '/^---/ {kind = ""; named = 0} /^kind:/ {kind = $$2} \
+			/^  name:/ && !named {named = 1; if (kind ~ /^(Cluster|ValidatingAdmission|CustomResource)/) print kind "/" $$2}' | \
+		sort | uniq -d); [ -z "$$clashes" ] || { \
+		echo "two releases in different namespaces would both create these cluster-scoped objects: $$clashes"; exit 1; }
 	helm template hybernate charts/hybernate | go run ./hack/rbaccheck config/rbac/role.yaml
 	helm template hybernate charts/hybernate --set 'watchNamespaces={shop,blog}' | go run ./hack/rbaccheck config/rbac/role.yaml
 	@long=abcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabc; \
