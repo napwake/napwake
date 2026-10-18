@@ -9,6 +9,7 @@ resources:
 - doorman_role.yaml
 - doorman_role_binding.yaml
 - doorman_admission_policy.yaml
+- request_stamp_policy.yaml
 - role.yaml
 - role_binding.yaml
 - leader_election_role.yaml

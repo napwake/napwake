@@ -58,8 +58,8 @@ A value that can't be read, such as `"True"`, `"yes"`, `"soon"` or `"0"`, is rep
 |------------|-------|-----------|-------------|
 | `hybernate.io/last-activity` | RFC 3339 time | ManagedWorkloads, Deployments, StatefulSets | Activity seen by another tool, such as a developer portal. A time in the future counts as now. A change while the workload is paused wakes it. See [Activity annotations](../concepts/idle-detection.md#activity-annotations) |
 | `hybernate.io/active-until` | RFC 3339 time | ManagedWorkloads, Deployments, StatefulSets | Keeps the workload awake until that time, and wakes it if paused |
-| `hybernate.io/last-request` | RFC 3339 time | ManagedWorkloads | Set by the doorman when it holds a request for a paused workload. Wakes it like `last-activity`, and the clock records the wake as `request`. See [Wake on Request](../concepts/wake-on-request.md) |
-| `hybernate.io/last-request-from` | IP address | ManagedWorkloads | Set by the doorman with `last-request`: where the request that woke the workload came from, so the operator can [learn](../concepts/dependencies.md#learned-dependencies) which workload depends on it |
+| `hybernate.io/last-request` | RFC 3339 time | ManagedWorkloads | Set by the doorman when it holds a request for a paused workload, and, with `doorman.admissionPolicy.enabled`, by no one else; set `last-activity` to wake a workload yourself. Wakes it like `last-activity`, and the clock records the wake as `request`. See [Wake on Request](../concepts/wake-on-request.md) |
+| `hybernate.io/last-request-from` | IP address | ManagedWorkloads | Set by the doorman with `last-request`, and by no one else, like it: where the request that woke the workload came from, so the operator can [learn](../concepts/dependencies.md#learned-dependencies) which workload depends on it |
 
 A value that isn't an RFC 3339 time, such as epoch seconds, is ignored: it neither keeps the workload awake nor wakes it, and an `InvalidActivityAnnotation` warning event on the ManagedWorkload says so, once per value.
 

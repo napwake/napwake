@@ -464,11 +464,13 @@ func learnedList(l *v1alpha1.LearnedDependencies) []v1alpha1.LearnedDependency {
 }
 
 // stampedByDoorman is the workload's last-request-from when the doorman set
-// it, or "". Anyone who can patch a ManagedWorkload can set the annotation
-// too, and a forged address would have Hybernate write a dependency into
-// the ManagedWorkload of whatever pod has it. The doorman writes under
-// Hybernate's field manager, which the API server records; the cache drops
-// managed fields, so the workload is read past it.
+// it, or "". A forged address would have Hybernate write a dependency into
+// the ManagedWorkload of whatever pod has it. The request-stamps admission
+// policy lets only the doorman set it, but it can be turned off, and
+// without it anyone who can patch a ManagedWorkload can. The doorman writes
+// under Hybernate's field manager, which the API server records, so that's
+// checked too; the cache drops managed fields, so the workload is read past
+// it.
 func (r *Reconciler) stampedByDoorman(ctx context.Context, workload *v1alpha1.ManagedWorkload) (string, error) {
 	reader := r.PodReader
 	if reader == nil {

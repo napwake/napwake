@@ -232,7 +232,7 @@ check-chart: ## Lint the Helm chart, render it for each provider's Kubernetes ve
 		echo "without leader election, a rolling update runs two operators at once"; exit 1; }
 
 .PHONY: test-doorman-policy
-test-doorman-policy: setup-envtest kustomize ## Check against envtest that the chart's and kustomize's admission policies, and an overlay's, hold the doorman to stamping requests
+test-doorman-policy: setup-envtest kustomize ## Check against envtest that the chart's and kustomize's admission policies, and an overlay's, hold the doorman to stamping requests, and keep the stamps to it
 	@dir=$$(mktemp -d); trap 'rm -rf "$$dir"' EXIT; \
 	helm template hybernate charts/hybernate --namespace hybernate-system > "$$dir/chart.yaml"; \
 	"$(KUSTOMIZE)" build config/default > "$$dir/kustomize.yaml"; \
