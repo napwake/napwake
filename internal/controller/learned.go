@@ -624,7 +624,9 @@ func podWithIP(pods []corev1.Pod, ip string) (*corev1.Pod, bool) {
 func (r *Reconciler) managing(ctx context.Context, pod *corev1.Pod) (*v1alpha1.ManagedWorkload, client.Object,
 	bool, error) {
 	var list v1alpha1.ManagedWorkloadList
-	if err := r.List(ctx, &list, client.InNamespace(pod.Namespace)); err != nil {
+	// Listed without copies: only the match is handed back, as a copy,
+	// since the caller writes to it.
+	if err := r.List(ctx, &list, client.InNamespace(pod.Namespace), client.UnsafeDisableDeepCopy); err != nil {
 		return nil, nil, false, fmt.Errorf("listing managed workloads in %s: %w", pod.Namespace, err)
 	}
 	for i := range list.Items {
@@ -637,7 +639,7 @@ func (r *Reconciler) managing(ctx context.Context, pod *corev1.Pod) (*v1alpha1.M
 			return nil, nil, false, fmt.Errorf("getting the target of %s/%s: %w", mw.Namespace, mw.Name, err)
 		}
 		if selects(target, pod) {
-			return mw, target, true, nil
+			return mw.DeepCopy(), target, true, nil
 		}
 	}
 	return nil, nil, false, nil

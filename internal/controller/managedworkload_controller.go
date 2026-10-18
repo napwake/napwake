@@ -1391,7 +1391,7 @@ func relationsChanged(old, cur *v1alpha1.ManagedWorkload) bool {
 // so they stop routing it at once rather than at their next recheck.
 func (r *Reconciler) findRoutedNeighbours(ctx context.Context, obj client.Object) []reconcile.Request {
 	var list v1alpha1.ManagedWorkloadList
-	if err := r.List(ctx, &list, client.InNamespace(obj.GetNamespace())); err != nil {
+	if err := r.List(ctx, &list, client.InNamespace(obj.GetNamespace()), client.UnsafeDisableDeepCopy); err != nil {
 		log.FromContext(ctx).Error(err, "listing workloads sharing a namespace",
 			"workload", obj.GetName(), "namespace", obj.GetNamespace())
 		return nil

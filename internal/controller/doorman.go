@@ -1124,14 +1124,14 @@ func (r *Reconciler) findWorkloadsForDoorman(ctx context.Context, _ client.Objec
 		return nil
 	}
 	var list v1alpha1.ManagedWorkloadList
-	if err := r.List(ctx, &list); err != nil {
+	if err := r.List(ctx, &list, client.UnsafeDisableDeepCopy); err != nil {
 		log.FromContext(ctx).Error(err, "listing managed workloads for doorman change")
 		return nil
 	}
 	var requests []reconcile.Request
-	for _, w := range list.Items {
-		if w.Status.Phase == v1alpha1.PhasePaused || w.Status.Phase == v1alpha1.PhaseResuming {
-			requests = append(requests, reconcile.Request{NamespacedName: client.ObjectKeyFromObject(&w)})
+	for i := range list.Items {
+		if w := &list.Items[i]; w.Status.Phase == v1alpha1.PhasePaused || w.Status.Phase == v1alpha1.PhaseResuming {
+			requests = append(requests, reconcile.Request{NamespacedName: client.ObjectKeyFromObject(w)})
 		}
 	}
 	return requests
@@ -1141,14 +1141,14 @@ func (r *Reconciler) findWorkloadsForDoorman(ctx context.Context, _ client.Objec
 // in their namespace changes, since it may now select their pods.
 func (r *Reconciler) findPausedWorkloadsInNamespace(ctx context.Context, obj client.Object) []reconcile.Request {
 	var list v1alpha1.ManagedWorkloadList
-	if err := r.List(ctx, &list, client.InNamespace(obj.GetNamespace())); err != nil {
+	if err := r.List(ctx, &list, client.InNamespace(obj.GetNamespace()), client.UnsafeDisableDeepCopy); err != nil {
 		log.FromContext(ctx).Error(err, "listing managed workloads for service change", "namespace", obj.GetNamespace())
 		return nil
 	}
 	var requests []reconcile.Request
-	for _, w := range list.Items {
-		if w.Status.Phase == v1alpha1.PhasePaused {
-			requests = append(requests, reconcile.Request{NamespacedName: client.ObjectKeyFromObject(&w)})
+	for i := range list.Items {
+		if w := &list.Items[i]; w.Status.Phase == v1alpha1.PhasePaused {
+			requests = append(requests, reconcile.Request{NamespacedName: client.ObjectKeyFromObject(w)})
 		}
 	}
 	return requests
@@ -1158,13 +1158,13 @@ func (r *Reconciler) findPausedWorkloadsInNamespace(ctx context.Context, obj cli
 // whose labels changed, such as being protected.
 func (r *Reconciler) findWorkloadsInNamespace(ctx context.Context, obj client.Object) []reconcile.Request {
 	var list v1alpha1.ManagedWorkloadList
-	if err := r.List(ctx, &list, client.InNamespace(obj.GetName())); err != nil {
+	if err := r.List(ctx, &list, client.InNamespace(obj.GetName()), client.UnsafeDisableDeepCopy); err != nil {
 		log.FromContext(ctx).Error(err, "listing managed workloads for namespace change", "namespace", obj.GetName())
 		return nil
 	}
 	requests := make([]reconcile.Request, 0, len(list.Items))
-	for _, w := range list.Items {
-		requests = append(requests, reconcile.Request{NamespacedName: client.ObjectKeyFromObject(&w)})
+	for i := range list.Items {
+		requests = append(requests, reconcile.Request{NamespacedName: client.ObjectKeyFromObject(&list.Items[i])})
 	}
 	return requests
 }

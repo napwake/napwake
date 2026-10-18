@@ -273,7 +273,8 @@ type existingWorkloads struct {
 func (r *OptInReconciler) managedWorkloadsFor(ctx context.Context, namespace string, target v1alpha1.WorkloadRef) (
 	existingWorkloads, error) {
 	var list v1alpha1.ManagedWorkloadList
-	if err := r.List(ctx, &list, client.InNamespace(namespace)); err != nil {
+	// Listed without copies: only the two it keeps are copied.
+	if err := r.List(ctx, &list, client.InNamespace(namespace), client.UnsafeDisableDeepCopy); err != nil {
 		return existingWorkloads{}, fmt.Errorf("listing managed workloads: %w", err)
 	}
 	found := existingWorkloads{names: make(map[string]bool, len(list.Items))}
@@ -288,9 +289,9 @@ func (r *OptInReconciler) managedWorkloadsFor(ctx context.Context, namespace str
 		case !mw.DeletionTimestamp.IsZero():
 			found.leaving = found.leaving || fromLabel
 		case fromLabel:
-			found.ours = mw
+			found.ours = mw.DeepCopy()
 		default:
-			found.written = mw
+			found.written = mw.DeepCopy()
 		}
 	}
 	return found, nil
