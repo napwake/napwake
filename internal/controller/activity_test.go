@@ -385,6 +385,42 @@ func TestActivityClock_AnOutageIsNotIdleTime(t *testing.T) {
 	}
 }
 
+// An activity annotation is stamped to the second, so one stamped in the
+// second a workload went Idle ends the would-be pause: it can't be told from
+// one just before, and keeping the workload awake is the safe mistake. The
+// operator's own times are exact, so activity it saw before a pause request
+// in the same second doesn't undo the request.
+func TestActiveSinceClockRanOut_CountsTheSecondItRanOut(t *testing.T) {
+	wentIdle := fixedTime.Add(400 * time.Millisecond)
+	tests := []struct {
+		name     string
+		source   v1alpha1.ActivitySource
+		activity time.Time
+		want     bool
+	}{
+		{name: "an annotation before the second it went Idle", source: v1alpha1.ActivitySourceAnnotation,
+			activity: fixedTime.Add(-time.Second)},
+		{name: "an annotation stamped in that second", source: v1alpha1.ActivitySourceAnnotation,
+			activity: fixedTime, want: true},
+		{name: "an annotation after it", source: v1alpha1.ActivitySourceAnnotation,
+			activity: fixedTime.Add(2 * time.Second), want: true},
+		{name: "CPU just before it, in the same second", source: v1alpha1.ActivitySourceCPU,
+			activity: fixedTime.Add(100 * time.Millisecond)},
+		{name: "CPU after it", source: v1alpha1.ActivitySourceCPU, activity: wentIdle.Add(time.Second), want: true},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			workload := clockWorkload(tt.activity, clockTarget("app:v1", nil))
+			workload.Status.Activity.LastActivitySource = tt.source
+			workload.Status.Phase = v1alpha1.PhaseIdle
+			began := metav1.NewTime(wentIdle)
+			workload.Status.LastTransitionTime = &began
+
+			assert.Equal(t, tt.want, activeSinceClockRanOut(workload, wentIdle.Add(time.Minute), wentIdle))
+		})
+	}
+}
+
 // A woken workload's new pods have no metrics for the first scrape or so.
 // That blind minute mustn't replace what woke it as its last activity: the
 // wake by request is what status should show.

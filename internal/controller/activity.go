@@ -682,10 +682,16 @@ func (r *Reconciler) reconcileIdleClock(ctx context.Context, workload *v1alpha1.
 // pause it's in, or would be in under dry-run, began at the move to Idle,
 // and only activity after that ends it, as only that wakes a paused
 // workload: a pause request runs the clock out early, with the activity seen
-// before it still within idleAfter.
+// before it still within idleAfter. An activity annotation is stamped to
+// the second, so one in the second the clock ran out counts: it can't be
+// told from one just before, and counting it only keeps the workload awake.
 func activeSinceClockRanOut(workload *v1alpha1.ManagedWorkload, now, pauseAt time.Time) bool {
 	if began := workload.Status.LastTransitionTime; workload.Status.Phase == v1alpha1.PhaseIdle && began != nil {
-		return workload.Status.Activity.LastActivityTime.After(began.Time)
+		activity := workload.Status.Activity
+		if activity.LastActivitySource == v1alpha1.ActivitySourceAnnotation {
+			return !activity.LastActivityTime.Time.Before(began.Truncate(time.Second))
+		}
+		return activity.LastActivityTime.After(began.Time)
 	}
 	return now.Before(pauseAt)
 }
