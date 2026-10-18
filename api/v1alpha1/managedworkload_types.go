@@ -357,8 +357,9 @@ type ManagedWorkloadStatus struct {
 	// +optional
 	LastPauseRequest string `json:"lastPauseRequest,omitempty"`
 
-	// LastActedAt is when the operator last mutated the target workload
-	// (pause or resume).
+	// LastActedAt is when the target was last paused or woken: by
+	// Hybernate, or scaled up from zero outside it, such as with kubectl
+	// scale or by a GitOps tool.
 	// +optional
 	LastActedAt *metav1.Time `json:"lastActedAt,omitempty"`
 

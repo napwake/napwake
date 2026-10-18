@@ -49,7 +49,7 @@ A duration is a Go duration above zero, such as `45s`, `90m` or `1h30m`. Days an
 |-------|------|-------------|
 | `phase` | `WorkloadPhase` | Current lifecycle phase |
 | `conditions[]` | `Condition` | Standard Kubernetes conditions; see [Lifecycle](../concepts/lifecycle.md#status-conditions) |
-| `lastActedAt` | time | When the operator last paused or resumed the target |
+| `lastActedAt` | time | When the target was last paused or woken: by Hybernate, or scaled up from zero outside it, such as with `kubectl scale` or by a GitOps tool |
 | `lastPauseRequest` | string | The last `hybernate.io/pause-requested` value acted on, so each request is acted on once; the `PauseRequest` condition says what came of it. See [Pause Now](../guides/pause.md#pause-now) |
 | `lastTransitionTime` | time | Last phase change |
 | `activity.lastActivityTime` | time | Most recent activity from any source |
