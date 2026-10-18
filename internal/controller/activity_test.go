@@ -972,16 +972,20 @@ func TestActivityClock_PrometheusOutageFailsFast(t *testing.T) {
 	r := newAutomationReconciler(t, workload, &stubForecaster{}, automationOpts{metrics: &metrics, pauser: pauser})
 	r.prometheus = signal.NewPrometheus(srv.URL)
 
+	messages := make([]string, 0, 3)
 	for range 3 {
 		_, err := r.reconcileAutomation(context.Background(), workload, target)
 		require.NoError(t, err)
+		cond := meta.FindStatusCondition(workload.Status.Conditions, conditionPrometheusAvailable)
+		require.NotNil(t, cond)
+		assert.Equal(t, metav1.ConditionFalse, cond.Status)
+		messages = append(messages, cond.Message)
 	}
 
 	assert.Equal(t, int32(1), calls.Load(), "asked once, then not again until it has had time to recover")
 	assert.Zero(t, pauser.pauseCalls)
-	cond := meta.FindStatusCondition(workload.Status.Conditions, conditionPrometheusAvailable)
-	require.NotNil(t, cond)
-	assert.Equal(t, metav1.ConditionFalse, cond.Status)
+	assert.Equal(t, []string{messages[0], messages[0], messages[0]}, messages,
+		"the same outage reads the same whether Prometheus was asked or not, so it isn't a status write each check")
 }
 
 // A workload's queries share one time budget per check, so one with many

@@ -397,3 +397,25 @@ func TestPrometheus_DoesNotBackOffForABadQuery(t *testing.T) {
 	}
 	assert.Equal(t, int32(3), calls.Load())
 }
+
+// While Prometheus is down, a query that's let through and one that's
+// backed off fail the same way, and neither names another workload's
+// query: what a workload reports mustn't flip for the whole outage, each
+// flip a status write.
+func TestPrometheus_AnOutageFailsEveryQueryTheSameWay(t *testing.T) {
+	srv := httptest.NewServer(http.NotFoundHandler())
+	endpoint := srv.URL
+	srv.Close()
+	now := time.Date(2026, 3, 14, 12, 0, 0, 0, time.UTC)
+	p := NewPrometheus(endpoint)
+	p.now = func() time.Time { return now }
+
+	_, attempted := p.Check(context.Background(), `sum(rate(tenant_a_requests[5m]))`)
+	require.Error(t, attempted)
+	require.NotErrorIs(t, attempted, ErrBackingOff)
+	_, backedOff := p.Check(context.Background(), `sum(rate(tenant_b_requests[5m]))`)
+	require.ErrorIs(t, backedOff, ErrBackingOff)
+
+	assert.Equal(t, attempted.Error(), backedOff.Error())
+	assert.NotContains(t, backedOff.Error(), "tenant_a")
+}
