@@ -68,9 +68,10 @@ type doormanSliceSync struct {
 	reader client.Reader
 	// writer has a rate limit of its own, so a rollout's burst of writes
 	// isn't queued behind the operator's other calls.
-	writer    client.Client
-	namespace string
-	service   string
+	writer            client.Client
+	namespace         string
+	service           string
+	operatorNamespace string
 }
 
 func (s *doormanSliceSync) Reconcile(ctx context.Context, _ reconcile.Request) (reconcile.Result, error) {
@@ -93,7 +94,7 @@ func (s *doormanSliceSync) Reconcile(ctx context.Context, _ reconcile.Request) (
 	for i := range list.Items {
 		slice := &list.Items[i]
 		want := endpoints[slice.AddressType]
-		if len(want) == 0 || equality.Semantic.DeepEqual(slice.Endpoints, want) {
+		if len(want) == 0 || equality.Semantic.DeepEqual(slice.Endpoints, want) || s.anotherInstalls(slice) {
 			continue
 		}
 		moved++
@@ -119,6 +120,13 @@ func (s *doormanSliceSync) Reconcile(ctx context.Context, _ reconcile.Request) (
 	return reconcile.Result{}, nil
 }
 
+// anotherInstalls reports whether another install's operator wrote the
+// slice, for its own doorman.
+func (s *doormanSliceSync) anotherInstalls(slice *discoveryv1.EndpointSlice) bool {
+	owner := slice.Labels[v1alpha1.LabelOperator]
+	return s.operatorNamespace != "" && owner != "" && owner != s.operatorNamespace
+}
+
 // setupDoormanSliceSync registers the doormanSliceSync, unless the doorman
 // is disabled.
 func (r *Reconciler) setupDoormanSliceSync(mgr ctrl.Manager) error {
@@ -132,10 +140,11 @@ func (r *Reconciler) setupDoormanSliceSync(mgr ctrl.Manager) error {
 		return fmt.Errorf("creating the doorman slices' client: %w", err)
 	}
 	syncer := &doormanSliceSync{
-		reader:    mgr.GetClient(),
-		writer:    client.WithFieldOwner(writer, v1alpha1.FieldManager),
-		namespace: r.DoormanNamespace,
-		service:   r.DoormanService,
+		reader:            mgr.GetClient(),
+		writer:            client.WithFieldOwner(writer, v1alpha1.FieldManager),
+		namespace:         r.DoormanNamespace,
+		service:           r.DoormanService,
+		operatorNamespace: r.OperatorNamespace,
 	}
 	return ctrl.NewControllerManagedBy(mgr).
 		Named("doormanslices").

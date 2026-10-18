@@ -53,6 +53,11 @@ const (
 	// and is rewritten from them.
 	LabelFromLabel = "hybernate.io/from-label"
 
+	// LabelOperator, on the doorman EndpointSlices an operator writes, is
+	// the namespace of its install, like AnnotationOperator on the
+	// ManagedWorkloads it takes on. Another install leaves them alone.
+	LabelOperator = "hybernate.io/operator"
+
 	// AnnotationLastActivity records activity seen by another tool, such as a
 	// developer portal or CI pipeline, as an RFC 3339 time. Set on the ManagedWorkload
 	// or its target. A newer value wakes a paused workload.

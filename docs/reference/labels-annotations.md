@@ -10,6 +10,7 @@
 | `hybernate.io/allow-protected` | `"true"` | Namespaces | Lets Hybernate manage a namespace that's labelled protected, matches `protectedNamespaces`, or is always protected, such as `kube-system` or Hybernate's own. The operator's and the doorman's own Deployments are never managed. Set on purpose; Hybernate never sets it. |
 | `hybernate.io/from-label` | `"true"` | ManagedWorkloads | Set on ManagedWorkloads Hybernate created from the `managed` label. Hybernate updates and deletes only these; ManagedWorkloads without it are yours. |
 | `hybernate.io/managed-workload` | ManagedWorkload name | EndpointSlices | Set on the EndpointSlices that route a paused workload's Services to the doorman, along with `endpointslice.kubernetes.io/managed-by: doorman.hybernate.io`. A name longer than 63 characters is shortened, with a hash. They're removed when the workload is Running. |
+| `hybernate.io/operator` | namespace | EndpointSlices | Set on the doorman EndpointSlices an operator writes: the namespace of its install. Another install doesn't move them to its own doorman. See [More than one install](../getting-started/installation.md#more-than-one-install) |
 
 ### Usage
 

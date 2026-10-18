@@ -136,6 +136,47 @@ func TestFindWorkloadsForDoorman_OnlyWhenFamiliesChange(t *testing.T) {
 	assert.Len(t, r.findWorkloadsForDoorman(ctx, nil), 2, "a Ready doorman pod again: routed anew")
 }
 
+// Two installs watching one namespace by mistake mustn't move each other's
+// slices to their own doorman, back and forth.
+func TestDoormanSliceSync_LeavesAnotherInstallsSlices(t *testing.T) {
+	r := pausedRoutedMany(t, 2)
+	ctx := context.Background()
+	slices := doormanSlices(t, r)
+	theirs := &slices[0]
+	theirs.Labels[v1alpha1.LabelOperator] = "team-b-system"
+	require.NoError(t, r.Update(ctx, theirs))
+	ours := &slices[1]
+	ours.Labels[v1alpha1.LabelOperator] = thisInstall
+	require.NoError(t, r.Update(ctx, ours))
+	sync := &doormanSliceSync{reader: r.Client, writer: r.Client, namespace: r.DoormanNamespace,
+		service: r.DoormanService, operatorNamespace: thisInstall}
+
+	replaceDoormanPods(t, r, "10.0.0.8")
+	_, err := sync.Reconcile(ctx, reconcile.Request{})
+	require.NoError(t, err)
+
+	for _, slice := range doormanSlices(t, r) {
+		want := "10.0.0.8"
+		if slice.Name == theirs.Name {
+			want = "10.0.0.7"
+		}
+		assert.Equal(t, []string{want}, slice.Endpoints[0].Addresses, slice.Name)
+	}
+}
+
+func TestDoormanSlice_NamesTheInstall(t *testing.T) {
+	w := lifecycleWorkload("api", v1alpha1.PhasePaused)
+	r := doormanReconciler(t, doormanEndpoints("10.0.0.7"), w,
+		service("api", map[string]string{"app": "api"}, corev1.ServicePort{Name: "http", Port: 80}))
+	r.OperatorNamespace = thisInstall
+
+	require.NoError(t, doormanErr(context.Background(), r, w, appTarget()))
+
+	slices := doormanSlices(t, r)
+	require.Len(t, slices, 1)
+	assert.Equal(t, thisInstall, slices[0].Labels[v1alpha1.LabelOperator])
+}
+
 func TestDoormanSliceSync_IgnoresOtherSlices(t *testing.T) {
 	r := pausedRoutedMany(t, 1)
 	ctx := context.Background()

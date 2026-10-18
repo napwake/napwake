@@ -1011,6 +1011,9 @@ func (r *Reconciler) applyDoormanSlice(ctx context.Context, workload *v1alpha1.M
 		if proxy, ok := svc.Labels[labelServiceProxyName]; ok {
 			slice.Labels[labelServiceProxyName] = proxy
 		}
+		if r.OperatorNamespace != "" {
+			slice.Labels[v1alpha1.LabelOperator] = r.OperatorNamespace
+		}
 		slice.AddressType = family
 		slice.Endpoints = endpoints
 		slice.Ports = make([]discoveryv1.EndpointPort, 0, len(routes))

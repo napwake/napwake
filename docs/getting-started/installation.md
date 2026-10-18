@@ -89,7 +89,7 @@ One install per cluster is the usual setup. Several can share a cluster, such as
 
 All but one set `crds.install: false`: they share the ManagedWorkload CRD, which belongs to the release that installed it and is upgraded with it, so make that one the newest Hybernate.
 
-Each operator stamps the ManagedWorkloads it takes on with `hybernate.io/operator`, its namespace. Another install leaves a ManagedWorkload stamped by a different one alone, with a `ManagedByAnotherInstall` warning event, so two installs watching the same namespace by mistake don't both pause and wake its workloads: the first to take each one on keeps it. The uninstall and upgrade guards don't count the ManagedWorkloads another install took on. The kustomize manifests are a single install, in `hybernate-system`, watching every namespace.
+Each operator stamps the ManagedWorkloads it takes on, and labels the doorman EndpointSlices it writes, with `hybernate.io/operator`, its namespace. Another install leaves a ManagedWorkload stamped by a different one alone, with a `ManagedByAnotherInstall` warning event, and doesn't move that one's EndpointSlices to its own doorman, so two installs watching the same namespace by mistake don't both pause and wake its workloads: the first to take each one on keeps it. The uninstall and upgrade guards don't count the ManagedWorkloads another install took on. The kustomize manifests are a single install, in `hybernate-system`, watching every namespace.
 
 ## Verify Installation
 
