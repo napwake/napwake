@@ -37,7 +37,6 @@ import (
 	"k8s.io/utils/ptr"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
-	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 	"sigs.k8s.io/controller-runtime/pkg/config"
 	"sigs.k8s.io/controller-runtime/pkg/event"
 	metricsserver "sigs.k8s.io/controller-runtime/pkg/metrics/server"
@@ -59,7 +58,7 @@ func optInDeployment(name string, labels, annotations map[string]string) *appsv1
 func optInReconciler(t *testing.T, objs ...client.Object) (*OptInReconciler, *events.FakeRecorder) {
 	t.Helper()
 	recorder := events.NewFakeRecorder(20)
-	c := fake.NewClientBuilder().WithScheme(testScheme(t)).WithObjects(objs...).Build()
+	c := fakeClientBuilder(testScheme(t)).WithObjects(objs...).Build()
 	return &OptInReconciler{Client: c, Scheme: testScheme(t), Recorder: recorder,
 		Kind: v1alpha1.TargetKindDeployment, Defaults: DefaultOptInDefaults}, recorder
 }

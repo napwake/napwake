@@ -30,7 +30,6 @@ import (
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/apimachinery/pkg/types"
 	ctrl "sigs.k8s.io/controller-runtime"
-	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 	"sigs.k8s.io/controller-runtime/pkg/event"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 
@@ -56,7 +55,7 @@ func neighbour(namespace, name string, phase v1alpha1.WorkloadPhase, routed bool
 // to the woken pods instead of at their next recheck.
 func TestFindRoutedNeighbours(t *testing.T) {
 	woken := neighbour("shop", "stable", v1alpha1.PhaseRunning, false)
-	c := fake.NewClientBuilder().WithScheme(testScheme(t)).WithObjects(
+	c := fakeClientBuilder(testScheme(t)).WithObjects(
 		woken,
 		neighbour("shop", "canary", v1alpha1.PhasePaused, true),
 		neighbour("shop", "unrouted", v1alpha1.PhasePaused, false),

@@ -26,7 +26,6 @@ import (
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/client-go/util/workqueue"
 	"k8s.io/utils/ptr"
-	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 	"sigs.k8s.io/controller-runtime/pkg/controller/priorityqueue"
 	"sigs.k8s.io/controller-runtime/pkg/event"
 	"sigs.k8s.io/controller-runtime/pkg/handler"
@@ -34,15 +33,6 @@ import (
 
 	v1alpha1 "github.com/okedeji/hybernate/api/v1alpha1"
 )
-
-// withWorkloadIndexes gives a fake API server the indexes the watches look
-// ManagedWorkloads up by, as SetupWithManager gives the cache.
-func withWorkloadIndexes(b *fake.ClientBuilder) *fake.ClientBuilder {
-	for field, index := range workloadIndexes() {
-		b = b.WithIndex(&v1alpha1.ManagedWorkload{}, field, index)
-	}
-	return b
-}
 
 func drainQueue(q workqueue.TypedRateLimitingInterface[reconcile.Request]) []reconcile.Request {
 	var got []reconcile.Request

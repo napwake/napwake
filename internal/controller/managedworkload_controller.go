@@ -1182,19 +1182,19 @@ func (r *Reconciler) setCondition(workload *v1alpha1.ManagedWorkload, condType s
 
 // checkDuplicate returns true if another ManagedWorkload in the same namespace
 // already targets the same workload. The older resource (by creation time) wins;
-// the newer one gets a DuplicateTarget condition and is skipped.
+// the newer one gets a DuplicateTarget condition and is skipped. Only those
+// sharing its target are looked at, through the index, and only read, so
+// the cache's own objects are listed rather than copies.
 func (r *Reconciler) checkDuplicate(ctx context.Context, workload *v1alpha1.ManagedWorkload) (bool, error) {
 	var list v1alpha1.ManagedWorkloadList
-	if err := r.List(ctx, &list, client.InNamespace(workload.Namespace)); err != nil {
-		return false, fmt.Errorf("listing managed workloads: %w", err)
+	if err := r.List(ctx, &list, client.InNamespace(workload.Namespace), client.UnsafeDisableDeepCopy,
+		client.MatchingFields{targetField: targetKey(workload.Spec.Target.Kind, workload.Spec.Target.Name)}); err != nil {
+		return false, fmt.Errorf("listing managed workloads with the same target: %w", err)
 	}
 
 	for i := range list.Items {
 		other := &list.Items[i]
-		if other.UID == workload.UID || !other.DeletionTimestamp.IsZero() {
-			continue
-		}
-		if other.Spec.Target != workload.Spec.Target || !claimsTargetFirst(other, workload) {
+		if other.UID == workload.UID || !other.DeletionTimestamp.IsZero() || !claimsTargetFirst(other, workload) {
 			continue
 		}
 

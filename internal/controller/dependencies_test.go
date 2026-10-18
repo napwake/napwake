@@ -38,7 +38,6 @@ import (
 	"k8s.io/utils/ptr"
 	"sigs.k8s.io/controller-runtime/pkg/cache"
 	"sigs.k8s.io/controller-runtime/pkg/client"
-	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 	"sigs.k8s.io/controller-runtime/pkg/client/interceptor"
 	"sigs.k8s.io/controller-runtime/pkg/envtest"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
@@ -85,7 +84,7 @@ func depReconciler(t *testing.T, pauser *stubPauser, objs ...client.Object) *Rec
 	scheme := testScheme(t)
 	metrics := idleCPU
 	return &Reconciler{
-		Client: withWorkloadIndexes(fake.NewClientBuilder().WithScheme(scheme)).
+		Client: fakeClientBuilder(scheme).
 			WithStatusSubresource(&v1alpha1.ManagedWorkload{}).WithObjects(objs...).Build(),
 		Scheme:   scheme,
 		Recorder: events.NewFakeRecorder(20),
