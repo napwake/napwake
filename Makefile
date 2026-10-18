@@ -284,7 +284,12 @@ lint-fix: golangci-lint ## Run golangci-lint linter and perform fixes
 
 .PHONY: lint-config
 lint-config: golangci-lint ## Verify golangci-lint linter configuration
-	"$(GOLANGCI_LINT)" config verify
+	@# config verify fetches its schema from golangci-lint.run, whose
+	@# occasional timeouts would otherwise fail a release.
+	@for attempt in 1 2 3; do \
+		"$(GOLANGCI_LINT)" config verify && exit 0; \
+		echo "config verify failed (attempt $$attempt of 3)"; sleep 10; \
+	done; exit 1
 
 ##@ Versioning
 
