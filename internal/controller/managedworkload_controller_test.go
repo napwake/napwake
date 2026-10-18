@@ -101,7 +101,7 @@ func (s *stubPauser) Restore(_ context.Context, w *v1alpha1.ManagedWorkload) (in
 	return w.Status.Pause.PreviousReplicas, nil
 }
 
-func testScheme(t *testing.T) *runtime.Scheme {
+func testScheme(t testing.TB) *runtime.Scheme {
 	t.Helper()
 	s := runtime.NewScheme()
 	require.NoError(t, v1alpha1.AddToScheme(s))
