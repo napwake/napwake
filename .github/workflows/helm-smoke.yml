@@ -10,7 +10,7 @@ permissions:
 jobs:
   helm-smoke:
     name: Helm (watchNamespaces)
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 75
     steps:
       - name: Clone the code
