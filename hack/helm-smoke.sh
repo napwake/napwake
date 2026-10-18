@@ -322,6 +322,14 @@ if ! grep -q 'Hybernate refuses to uninstall' <<<"$refusal" || ! grep -qF "$WATC
 fi
 is deployment/hybernate "$RELEASE_NAMESPACE" '{.status.readyReplicas}' 1
 
+echo "checking helm rollback recovers the release a refused uninstall left uninstalling, as the docs say"
+helm rollback hybernate --namespace "$RELEASE_NAMESPACE" --wait --timeout 5m
+status=$(helm status hybernate --namespace "$RELEASE_NAMESPACE" | awk '/^STATUS:/ {print $2}')
+if [ "$status" != deployed ]; then
+  echo "after helm rollback the release is $status, not deployed" >&2
+  exit 1
+fi
+
 echo "stopping managing the workloads, which restores the paused StatefulSet, then uninstalling"
 kubectl label deployment "$APP" -n "$WATCHED" hybernate.io/managed-
 kubectl label statefulset "$DB" -n "$WATCHED" hybernate.io/managed-
