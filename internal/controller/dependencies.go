@@ -18,6 +18,7 @@ package controller
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"slices"
 	"strings"
@@ -48,8 +49,8 @@ const (
 	// dependency re-checks, as a fallback to the watch on the dependency.
 	dependencyReadyCheckInterval = 10 * time.Second
 
-	// dependencyTimeout bounds each dependency step of a reconcile: a
-	// ManagedWorkload list and a read or write per dependency.
+	// dependencyTimeout bounds each dependency step of a reconcile: the
+	// namespaces it reads and a read or write per dependency.
 	dependencyTimeout = 15 * time.Second
 )
 
@@ -79,40 +80,27 @@ func dependencyID(dependent *v1alpha1.ManagedWorkload, ref v1alpha1.DependencyRe
 	return workloadID{namespace: namespace, kind: ref.Kind, name: ref.Name}
 }
 
-// dependencyGraph is a snapshot of every ManagedWorkload Hybernate can see,
-// indexed by the workload each one manages.
+// dependencyGraph is the workload graph as one reconcile reads it, with
+// the hybernate.io/dependents-from of each namespace a dependency in
+// another namespace is in, when it has one.
 type dependencyGraph struct {
-	all      []v1alpha1.ManagedWorkload
-	byTarget map[workloadID]*v1alpha1.ManagedWorkload
-	// dependentsFrom is the hybernate.io/dependents-from of each namespace
-	// a dependency in another namespace is in, when it has one.
+	*workloadGraph
 	dependentsFrom map[string]string
 }
 
+// loadDependencyGraph reads the graph SetupWithManager keeps, or, for a
+// Reconciler not set up with a manager, builds one from a list.
 func (r *Reconciler) loadDependencyGraph(ctx context.Context) (*dependencyGraph, error) {
-	var list v1alpha1.ManagedWorkloadList
-	if err := r.List(ctx, &list); err != nil {
-		return nil, fmt.Errorf("listing managed workloads: %w", err)
-	}
-	g := &dependencyGraph{all: list.Items, byTarget: make(map[workloadID]*v1alpha1.ManagedWorkload, len(list.Items)),
-		dependentsFrom: map[string]string{}}
-	crossed := map[string]bool{}
-	for i := range g.all {
-		w := &g.all[i]
-		id := targetID(w)
-		for _, ref := range dependencyRefs(w) {
-			if ns := dependencyID(w, ref).namespace; ns != w.Namespace {
-				crossed[ns] = true
-			}
+	graph := r.graph
+	if graph == nil {
+		var list v1alpha1.ManagedWorkloadList
+		if err := r.List(ctx, &list, client.UnsafeDisableDeepCopy); err != nil {
+			return nil, fmt.Errorf("listing managed workloads: %w", err)
 		}
-		// When two ManagedWorkloads share a target, the duplicate check's
-		// owner is the one that acts on it.
-		if owner, ok := g.byTarget[id]; ok && claimsTargetFirst(owner, w) {
-			continue
-		}
-		g.byTarget[id] = w
+		graph = workloadGraphOf(list.Items)
 	}
-	for ns := range crossed {
+	g := &dependencyGraph{workloadGraph: graph, dependentsFrom: map[string]string{}}
+	for _, ns := range graph.crossedNamespaces() {
 		value, err := r.dependentsFromOf(ctx, ns)
 		if err != nil {
 			return nil, err
@@ -149,51 +137,33 @@ func allowsDependentsFrom(value, namespace string) bool {
 	return false
 }
 
-// allows reports whether dependent may depend on the workload id: always
-// in its own namespace, and in another only when that namespace's
-// hybernate.io/dependents-from lets it. A dependency it doesn't allow is
-// no edge: never held, woken or waited for.
-func (g *dependencyGraph) allows(dependent *v1alpha1.ManagedWorkload, id workloadID) bool {
-	return id.namespace == dependent.Namespace || allowsDependentsFrom(g.dependentsFrom[id.namespace], dependent.Namespace)
+// allows reports whether a workload in namespace may depend on the
+// workload id: always in its own namespace, and in another only when that
+// namespace's hybernate.io/dependents-from lets it. A dependency it doesn't
+// allow is no edge: never held, woken or waited for.
+func (g *dependencyGraph) allows(namespace string, id workloadID) bool {
+	return id.namespace == namespace || allowsDependentsFrom(g.dependentsFrom[id.namespace], namespace)
 }
 
-// dependents returns the ManagedWorkloads that depend on workload's
-// target, declared or learned, where it allows them.
-func (g *dependencyGraph) dependents(workload *v1alpha1.ManagedWorkload) []*v1alpha1.ManagedWorkload {
-	id := targetID(workload)
-	var out []*v1alpha1.ManagedWorkload
-	for i := range g.all {
-		w := &g.all[i]
-		if w.UID == workload.UID || !g.allows(w, id) {
-			continue
-		}
-		for _, ref := range dependencyRefs(w) {
-			if dependencyID(w, ref) == id {
-				out = append(out, w)
-				break
-			}
-		}
-	}
-	return out
+// owner is the node that acts on the workload id, or nil when no
+// ManagedWorkload manages it.
+func (g *dependencyGraph) owner(id workloadID) *workloadNode {
+	g.mu.RLock()
+	defer g.mu.RUnlock()
+	return g.ownerOf(id)
 }
 
-func declaredRefs(w *v1alpha1.ManagedWorkload) []v1alpha1.DependencyRef {
-	return w.Spec.DependsOn
-}
-
-// reaches reports whether following the edges from w leads to the workload
+// reaches reports whether following the edges from n leads to the workload
 // to. A workload listed as its own dependency is no edge: it's awake
-// whenever it is.
-func (g *dependencyGraph) reaches(w *v1alpha1.ManagedWorkload, to workloadID,
-	edges func(*v1alpha1.ManagedWorkload) []v1alpha1.DependencyRef) bool {
+// whenever it is. The caller holds the lock.
+func (g *dependencyGraph) reaches(n *workloadNode, to workloadID, edges func(*workloadNode) []workloadID) bool {
 	visited := map[workloadID]bool{}
-	queue := []*v1alpha1.ManagedWorkload{w}
+	queue := []*workloadNode{n}
 	for len(queue) > 0 {
 		next := queue[0]
 		queue = queue[1:]
-		for _, ref := range edges(next) {
-			id := dependencyID(next, ref)
-			if id == targetID(next) || !g.allows(next, id) {
+		for _, id := range edges(next) {
+			if id == next.target || !g.allows(next.key.Namespace, id) {
 				continue
 			}
 			if id == to {
@@ -203,7 +173,7 @@ func (g *dependencyGraph) reaches(w *v1alpha1.ManagedWorkload, to workloadID,
 				continue
 			}
 			visited[id] = true
-			if managed, ok := g.byTarget[id]; ok {
+			if managed := g.ownerOf(id); managed != nil {
 				queue = append(queue, managed)
 			}
 		}
@@ -211,11 +181,12 @@ func (g *dependencyGraph) reaches(w *v1alpha1.ManagedWorkload, to workloadID,
 	return false
 }
 
-// inCycle reports whether following dependsOn from workload leads back to
-// it. In a cycle, each workload holds the other awake, so neither could
-// pause. Learned dependencies don't count: see holds.
-func (g *dependencyGraph) inCycle(workload *v1alpha1.ManagedWorkload) bool {
-	return g.reaches(workload, targetID(workload), declaredRefs)
+// waitsOn reports whether n waits, through waitForReady, for the workload
+// id, directly or through others.
+func (g *dependencyGraph) waitsOn(n *workloadNode, id workloadID) bool {
+	g.mu.RLock()
+	defer g.mu.RUnlock()
+	return g.reaches(n, id, waitForReadyEdges)
 }
 
 // holds reports whether dependent, while awake, keeps workload from
@@ -223,15 +194,37 @@ func (g *dependencyGraph) inCycle(workload *v1alpha1.ManagedWorkload) bool {
 // doesn't when workload in turn depends on dependent, directly or through
 // others: two services that call each other would otherwise learn a cycle
 // and keep each other awake forever. Each pauses when idle instead, and
-// waking either wakes the other.
-func (g *dependencyGraph) holds(dependent, workload *v1alpha1.ManagedWorkload) bool {
-	id := targetID(workload)
-	if slices.ContainsFunc(dependent.Spec.DependsOn, func(ref v1alpha1.DependencyRef) bool {
-		return dependencyID(dependent, ref) == id
-	}) {
+// waking either wakes the other. The caller holds the lock.
+func (g *dependencyGraph) holds(dependent, workload *workloadNode) bool {
+	if slices.Contains(dependent.dependsOn, workload.target) {
 		return true
 	}
-	return !g.reaches(workload, targetID(dependent), dependencyRefs)
+	return !g.reaches(workload, dependent.target, allEdges)
+}
+
+// holdsOf finds what keeps workload from pausing for the workloads around
+// it. Following dependsOn from it back to it is a cycle, in which each
+// holds the other awake so neither could pause; learned dependencies don't
+// count, as for holds. Otherwise it's held by its awake dependents,
+// declared or learned, where it allows them.
+func (g *dependencyGraph) holdsOf(workload *v1alpha1.ManagedWorkload) dependencyHolds {
+	self := newWorkloadNode(workload)
+	g.mu.RLock()
+	defer g.mu.RUnlock()
+	if g.reaches(self, self.target, declaredEdges) {
+		return dependencyHolds{cycle: true}
+	}
+	var h dependencyHolds
+	for _, d := range g.dependents[self.target] {
+		if d.uid == self.uid || !g.allows(d.key.Namespace, self.target) {
+			continue
+		}
+		if d.acts && isAwake(d.phase) && g.holds(d, self) {
+			h.holders = append(h.holders, d.key.String())
+		}
+	}
+	slices.Sort(h.holders)
+	return h
 }
 
 // isAwake reports whether a workload is, or is about to be, running. Pausing
@@ -324,17 +317,7 @@ func (r *Reconciler) heldByDependencies(ctx context.Context, workload *v1alpha1.
 	if err != nil {
 		return dependencyHolds{}, err
 	}
-	if g.inCycle(workload) {
-		return dependencyHolds{cycle: true}, nil
-	}
-	var h dependencyHolds
-	for _, d := range g.dependents(workload) {
-		if actsOnTarget(d) && isAwake(d.Status.Phase) && g.holds(d, workload) {
-			h.holders = append(h.holders, d.Namespace+"/"+d.Name)
-		}
-	}
-	slices.Sort(h.holders)
-	return h, nil
+	return g.holdsOf(workload), nil
 }
 
 // actsOnTarget reports whether a ManagedWorkload manages a workload that's
@@ -380,12 +363,12 @@ func (r *Reconciler) wakeDependencies(ctx context.Context, workload *v1alpha1.Ma
 	}
 	for _, ref := range refs {
 		id := dependencyID(workload, ref)
-		dep, ok := g.byTarget[id]
-		if !ok || dep.UID == workload.UID || !g.allows(workload, id) {
+		dep := g.owner(id)
+		if dep == nil || dep.uid == workload.UID || !g.allows(workload.Namespace, id) {
 			continue
 		}
-		if err := r.stampActivity(ctx, dep); err != nil {
-			r.reportWakeFailure(ctx, workload, dep.Namespace+"/"+dep.Name, err)
+		if err := r.stampActivity(ctx, dep.key); err != nil {
+			r.reportWakeFailure(ctx, workload, dep.key.String(), err)
 		}
 	}
 }
@@ -401,14 +384,16 @@ func (r *Reconciler) reportWakeFailure(ctx context.Context, workload *v1alpha1.M
 		"couldn't wake %s, so it may still be paused: %v", what, err)
 }
 
-func (r *Reconciler) stampActivity(ctx context.Context, dep *v1alpha1.ManagedWorkload) error {
-	patch := client.MergeFrom(dep.DeepCopy())
-	if dep.Annotations == nil {
-		dep.Annotations = map[string]string{}
+func (r *Reconciler) stampActivity(ctx context.Context, dep types.NamespacedName) error {
+	patch, err := json.Marshal(map[string]any{"metadata": map[string]any{"annotations": map[string]string{
+		v1alpha1.AnnotationLastActivity: r.now().UTC().Format(time.RFC3339),
+	}}})
+	if err != nil {
+		return fmt.Errorf("encoding the wake of dependency %s: %w", dep, err)
 	}
-	dep.Annotations[v1alpha1.AnnotationLastActivity] = r.now().UTC().Format(time.RFC3339)
-	if err := r.Patch(ctx, dep, patch); err != nil {
-		return fmt.Errorf("waking dependency %s/%s: %w", dep.Namespace, dep.Name, err)
+	obj := &v1alpha1.ManagedWorkload{ObjectMeta: metav1.ObjectMeta{Namespace: dep.Namespace, Name: dep.Name}}
+	if err := r.Patch(ctx, obj, client.RawPatch(types.MergePatchType, patch)); err != nil {
+		return fmt.Errorf("waking dependency %s: %w", dep, err)
 	}
 	return nil
 }
@@ -444,14 +429,14 @@ func (r *Reconciler) waitForDependencies(ctx context.Context, workload *v1alpha1
 	reason := reasonDependencyWontStart
 	for _, ref := range refs {
 		id := dependencyID(workload, ref)
-		if !g.allows(workload, id) {
+		if !g.allows(workload.Namespace, id) {
 			continue
 		}
 		target, state, err := r.getDependency(ctx, id)
 		if err != nil {
 			return nil, fmt.Errorf("checking dependency %s: %w", id, err)
 		}
-		dep := g.byTarget[id]
+		dep := g.owner(id)
 		if state != dependencyFound || servesDependents(dep, target, waited) {
 			continue
 		}
@@ -459,7 +444,7 @@ func (r *Reconciler) waitForDependencies(ctx context.Context, workload *v1alpha1
 			skipped = append(skipped, fmt.Sprintf("%s (%s)", id, why))
 			continue
 		}
-		if dep != nil && g.reaches(dep, targetID(workload), waitForReadyRefs) {
+		if dep != nil && g.waitsOn(dep, targetID(workload)) {
 			skipped = append(skipped, fmt.Sprintf("%s (it waits for this workload to be Ready too)", id))
 			reason = conditionDependencyCycle
 			continue
@@ -468,10 +453,10 @@ func (r *Reconciler) waitForDependencies(ctx context.Context, workload *v1alpha1
 			skipped = append(skipped, fmt.Sprintf("%s (it isn't Ready after %s)", id, roundedDuration(deadline)))
 			continue
 		}
-		if dep != nil && dep.UID != workload.UID && !isAwake(dep.Status.Phase) {
+		if dep != nil && dep.uid != workload.UID && !isAwake(dep.phase) {
 			// Retried every check while it waits, so it isn't announced:
 			// the wake that failed first was.
-			if err := r.stampActivity(ctx, dep); err != nil {
+			if err := r.stampActivity(ctx, dep.key); err != nil {
 				log.FromContext(ctx).Info("couldn't wake a dependency again", "workload", workload.Name,
 					"namespace", workload.Namespace, "dependency", id.String(), "error", err.Error())
 			}
@@ -509,7 +494,7 @@ func (r *Reconciler) waitForDependencies(ctx context.Context, workload *v1alpha1
 // one once the dependent has waited the time a resume gives the rest of its
 // replicas. Waiting for every replica instead would hold the dependent at
 // zero for good behind a dependency with one crash-looping pod.
-func servesDependents(dep *v1alpha1.ManagedWorkload, target client.Object, waited time.Duration) bool {
+func servesDependents(dep *workloadNode, target client.Object, waited time.Duration) bool {
 	if lifecycle.IsReady(target) {
 		return true
 	}
@@ -517,7 +502,7 @@ func servesDependents(dep *v1alpha1.ManagedWorkload, target client.Object, waite
 		return false
 	}
 	if dep != nil {
-		return dep.Status.Phase == v1alpha1.PhaseRunning || dep.Status.Phase == v1alpha1.PhaseIdle
+		return dep.phase == v1alpha1.PhaseRunning || dep.phase == v1alpha1.PhaseIdle
 	}
 	return waited >= lifecycle.ServingWait
 }
@@ -542,17 +527,11 @@ func startDeadline(target client.Object) time.Duration {
 	return statefulSetStartDeadline
 }
 
-func waitForReadyRefs(w *v1alpha1.ManagedWorkload) []v1alpha1.DependencyRef {
-	return slices.DeleteFunc(slices.Clone(w.Spec.DependsOn), func(ref v1alpha1.DependencyRef) bool {
-		return !ref.WaitForReady
-	})
-}
-
 // wontStart says why a dependency that isn't Ready won't become Ready by
 // waiting, or "" when it may. dep is its ManagedWorkload, if it has one.
-func wontStart(dep *v1alpha1.ManagedWorkload, target client.Object) string {
+func wontStart(dep *workloadNode, target client.Object) string {
 	if dep != nil {
-		switch dep.Status.Phase {
+		switch dep.phase {
 		case v1alpha1.PhasePaused, v1alpha1.PhasePausing, v1alpha1.PhaseResuming:
 			return ""
 		}
@@ -587,7 +566,7 @@ func (r *Reconciler) checkDependenciesExist(ctx context.Context, workload *v1alp
 	}
 	var notAllowed []string
 	for _, ref := range refs {
-		if id := dependencyID(workload, ref); !g.allows(workload, id) {
+		if id := dependencyID(workload, ref); !g.allows(workload.Namespace, id) {
 			notAllowed = append(notAllowed, id.String())
 		}
 	}
@@ -602,7 +581,7 @@ func (r *Reconciler) checkDependenciesExist(ctx context.Context, workload *v1alp
 	var missing, hidden []string
 	for _, ref := range workload.Spec.DependsOn {
 		id := dependencyID(workload, ref)
-		if _, managed := g.byTarget[id]; managed || !g.allows(workload, id) {
+		if g.owner(id) != nil || !g.allows(workload.Namespace, id) {
 			continue
 		}
 		_, state, err := r.getDependency(ctx, id)

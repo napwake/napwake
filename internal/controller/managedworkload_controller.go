@@ -137,6 +137,7 @@ type Reconciler struct {
 	prometheus      *signal.Prometheus
 	doormanFamilies doormanFamilies
 	uids            workloadUIDs
+	graph           *workloadGraph
 	clock           func() time.Time
 }
 
@@ -1235,10 +1236,14 @@ func (r *Reconciler) checkDuplicate(ctx context.Context, workload *v1alpha1.Mana
 // oldest ManagedWorkload wins. Creation timestamps have one-second precision,
 // so UID breaks ties between objects created in the same second.
 func claimsTargetFirst(a, b *v1alpha1.ManagedWorkload) bool {
-	if !a.CreationTimestamp.Equal(&b.CreationTimestamp) {
-		return a.CreationTimestamp.Before(&b.CreationTimestamp)
+	return claimedBefore(a.CreationTimestamp, a.UID, b.CreationTimestamp, b.UID)
+}
+
+func claimedBefore(aCreated metav1.Time, aUID types.UID, bCreated metav1.Time, bUID types.UID) bool {
+	if !aCreated.Equal(&bCreated) {
+		return aCreated.Before(&bCreated)
 	}
-	return a.UID < b.UID
+	return aUID < bUID
 }
 
 // Field indexes on ManagedWorkloads, so a watch event finds the few a change
@@ -1325,9 +1330,11 @@ func (r *Reconciler) findRelatedWorkloads(ctx context.Context, obj client.Object
 		client.MatchingFields{dependencyField: dependencyKey(targetID(changed))})...)
 }
 
-// relatedHandler enqueues what findRelatedWorkloads finds for a
-// ManagedWorkload both before and after a change, so a dependency it no
-// longer has re-checks the hold it took part in.
+// relatedHandler keeps the dependency graph up to date with each
+// ManagedWorkload, and enqueues what findRelatedWorkloads finds for one
+// both before and after a change, so a dependency it no longer has
+// re-checks the hold it took part in. The graph is updated first, so a
+// workload re-checking for a change to another sees that change.
 func (r *Reconciler) relatedHandler() handler.EventHandler {
 	enqueue := func(q workqueue.TypedRateLimitingInterface[reconcile.Request], requests []reconcile.Request) {
 		for _, req := range requests {
@@ -1336,36 +1343,46 @@ func (r *Reconciler) relatedHandler() handler.EventHandler {
 	}
 	return handler.Funcs{
 		CreateFunc: func(ctx context.Context, e event.CreateEvent, q workqueue.TypedRateLimitingInterface[reconcile.Request]) {
-			enqueue(q, r.findRelatedWorkloads(ctx, e.Object))
+			w, ok := e.Object.(*v1alpha1.ManagedWorkload)
+			if !ok {
+				return
+			}
+			r.graph.set(w)
+			enqueue(q, r.findRelatedWorkloads(ctx, w))
 		},
 		UpdateFunc: func(ctx context.Context, e event.UpdateEvent, q workqueue.TypedRateLimitingInterface[reconcile.Request]) {
-			enqueue(q, r.findRelatedWorkloads(ctx, e.ObjectOld))
-			enqueue(q, r.findRelatedWorkloads(ctx, e.ObjectNew))
+			old, okOld := e.ObjectOld.(*v1alpha1.ManagedWorkload)
+			cur, okNew := e.ObjectNew.(*v1alpha1.ManagedWorkload)
+			if !okOld || !okNew {
+				return
+			}
+			r.graph.set(cur)
+			if !relationsChanged(old, cur) {
+				return
+			}
+			enqueue(q, r.findRelatedWorkloads(ctx, old))
+			enqueue(q, r.findRelatedWorkloads(ctx, cur))
 		},
 		DeleteFunc: func(ctx context.Context, e event.DeleteEvent, q workqueue.TypedRateLimitingInterface[reconcile.Request]) {
-			enqueue(q, r.findRelatedWorkloads(ctx, e.Object))
+			w, ok := e.Object.(*v1alpha1.ManagedWorkload)
+			if !ok {
+				return
+			}
+			r.graph.remove(w.UID)
+			enqueue(q, r.findRelatedWorkloads(ctx, w))
 		},
 	}
 }
 
-// relationsChanged passes a ManagedWorkload's updates that its related
-// workloads act on: its phase, which holds its dependencies awake and lets
-// its dependents' resumes go on, its spec, its dependencies, and its
-// deletion. Its own status writes otherwise, such as cost and activity
+// relationsChanged reports whether a ManagedWorkload's update is one its
+// related workloads act on: its phase, which holds its dependencies awake
+// and lets its dependents' resumes go on, its spec, its dependencies, and
+// its deletion. Its own status writes otherwise, such as cost and activity
 // flushes, concern no other workload.
-func relationsChanged() predicate.Predicate {
-	return predicate.Funcs{
-		UpdateFunc: func(e event.UpdateEvent) bool {
-			old, okOld := e.ObjectOld.(*v1alpha1.ManagedWorkload)
-			cur, okNew := e.ObjectNew.(*v1alpha1.ManagedWorkload)
-			if !okOld || !okNew {
-				return true
-			}
-			return old.Status.Phase != cur.Status.Phase || old.Generation != cur.Generation ||
-				!old.DeletionTimestamp.Equal(cur.DeletionTimestamp) ||
-				!equality.Semantic.DeepEqual(old.Status.LearnedDependencies, cur.Status.LearnedDependencies)
-		},
-	}
+func relationsChanged(old, cur *v1alpha1.ManagedWorkload) bool {
+	return old.Status.Phase != cur.Status.Phase || old.Generation != cur.Generation ||
+		!old.DeletionTimestamp.Equal(cur.DeletionTimestamp) ||
+		!equality.Semantic.DeepEqual(old.Status.LearnedDependencies, cur.Status.LearnedDependencies)
 }
 
 // findRoutedNeighbours enqueues the paused workloads in a namespace whose
@@ -1557,11 +1574,15 @@ func (r *Reconciler) SetupWithManager(mgr ctrl.Manager) error {
 			return fmt.Errorf("indexing managed workloads by %s: %w", field, err)
 		}
 	}
+	// The graph is fed by a watch of this controller, which starts its
+	// workers only once every watch has been handed every ManagedWorkload,
+	// so no reconcile reads it before it's complete.
+	r.graph = newWorkloadGraph()
 	targetHandler := handler.EnqueueRequestsFromMapFunc(r.findWorkloadsForTarget)
 	return ctrl.NewControllerManagedBy(mgr).
 		For(&v1alpha1.ManagedWorkload{}).
 		Watches(&v1alpha1.ManagedWorkload{}, wakeHandler()).
-		Watches(&v1alpha1.ManagedWorkload{}, r.relatedHandler(), builder.WithPredicates(relationsChanged())).
+		Watches(&v1alpha1.ManagedWorkload{}, r.relatedHandler()).
 		Watches(&v1alpha1.ManagedWorkload{}, handler.EnqueueRequestsFromMapFunc(r.findRoutedNeighbours),
 			builder.WithPredicates(phaseChanged())).
 		Watches(&appsv1.Deployment{}, targetHandler).

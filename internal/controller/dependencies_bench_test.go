@@ -26,8 +26,6 @@ import (
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/tools/events"
-	"sigs.k8s.io/controller-runtime/pkg/client"
-	"sigs.k8s.io/controller-runtime/pkg/client/interceptor"
 
 	v1alpha1 "github.com/okedeji/hybernate/api/v1alpha1"
 )
@@ -44,11 +42,11 @@ func benchWorkloads(n int) []v1alpha1.ManagedWorkload {
 		var deps []v1alpha1.DependencyRef
 		var learned *v1alpha1.LearnedDependencies
 		if i%10 == 0 {
-			name, kind = "postgres", v1alpha1.TargetKindStatefulSet
+			name, kind = postgresRef().Name, v1alpha1.TargetKindStatefulSet
 		} else {
 			deps = []v1alpha1.DependencyRef{postgresRef()}
 			learned = &v1alpha1.LearnedDependencies{From: "environment", Dependencies: []v1alpha1.LearnedDependency{
-				{Namespace: ns, Kind: v1alpha1.TargetKindStatefulSet, Name: "postgres",
+				{Namespace: ns, Kind: v1alpha1.TargetKindStatefulSet, Name: postgresRef().Name,
 					Source: v1alpha1.LearnedFromEnvironment, Via: "env DATABASE_URL"},
 				{Namespace: ns, Kind: v1alpha1.TargetKindDeployment, Name: "api-1",
 					Source: v1alpha1.LearnedFromEnvironment, Via: "env API_URL"},
@@ -71,33 +69,17 @@ func benchWorkloads(n int) []v1alpha1.ManagedWorkload {
 	return out
 }
 
-// cachedLists answers ManagedWorkload lists as the manager's cache does:
-// with a deep copy of every object it holds.
-func cachedLists(workloads []v1alpha1.ManagedWorkload) interceptor.Funcs {
-	return interceptor.Funcs{List: func(ctx context.Context, c client.WithWatch, list client.ObjectList,
-		opts ...client.ListOption) error {
-		l, ok := list.(*v1alpha1.ManagedWorkloadList)
-		if !ok {
-			return c.List(ctx, list, opts...)
-		}
-		l.Items = make([]v1alpha1.ManagedWorkload, len(workloads))
-		for i := range workloads {
-			l.Items[i] = *workloads[i].DeepCopy()
-		}
-		return nil
-	}}
-}
-
 // BenchmarkLoadDependencyGraph is the dependency check of one reconcile,
 // whether one namespace's postgres may pause, in a cluster of n
-// ManagedWorkloads.
+// ManagedWorkloads, read from the graph the watch keeps.
 func BenchmarkLoadDependencyGraph(b *testing.B) {
 	for _, n := range []int{1000, 5000} {
 		b.Run(fmt.Sprint(n), func(b *testing.B) {
 			workloads := benchWorkloads(n)
 			r := &Reconciler{
-				Client:   interceptor.NewClient(fakeClientBuilder(testScheme(b)).Build(), cachedLists(workloads)),
+				Client:   fakeClientBuilder(testScheme(b)).Build(),
 				Recorder: events.NewFakeRecorder(1),
+				graph:    workloadGraphOf(workloads),
 			}
 			postgres := workloads[0].DeepCopy()
 			ctx := context.Background()
@@ -106,6 +88,22 @@ func BenchmarkLoadDependencyGraph(b *testing.B) {
 				h, err := r.heldByDependencies(ctx, postgres)
 				require.NoError(b, err)
 				require.Len(b, h.holders, 9)
+			}
+		})
+	}
+}
+
+// BenchmarkWorkloadGraphUpdate is what the watch spends keeping the graph
+// up to date: one ManagedWorkload's update, in a cluster of n.
+func BenchmarkWorkloadGraphUpdate(b *testing.B) {
+	for _, n := range []int{1000, 5000} {
+		b.Run(fmt.Sprint(n), func(b *testing.B) {
+			workloads := benchWorkloads(n)
+			g := workloadGraphOf(workloads)
+			api := &workloads[1]
+			b.ReportAllocs()
+			for b.Loop() {
+				g.set(api)
 			}
 		})
 	}
