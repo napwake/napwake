@@ -294,9 +294,13 @@ if refusal=$(helm upgrade hybernate charts/hybernate --namespace "$RELEASE_NAMES
   echo "helm upgrade stopped watching $WATCHED, leaving its ManagedWorkloads with no operator" >&2
   exit 1
 fi
-if ! grep -q 'Hybernate refuses this upgrade' <<<"$refusal" || ! grep -qF "$WATCHED/$APP" <<<"$refusal"; then
+# Helm 4 prints the hook's output as one log message with its line breaks
+# escaped, so the refusal's first line, up to the first break, must name
+# what's left and link the docs on its own.
+lead=$(grep -o 'Hybernate refuses this upgrade: [^\\]*' <<<"$refusal" || true)
+if ! grep -qF "$WATCHED/$APP" <<<"$lead" || ! grep -qF 'upgrading/#narrowing-watchnamespaces' <<<"$lead"; then
   echo "$refusal" >&2
-  echo "the refused upgrade didn't say why, or name the ManagedWorkloads it would leave" >&2
+  echo "the refused upgrade didn't lead with a line naming the ManagedWorkloads it would leave, and the docs" >&2
   exit 1
 fi
 kubectl get deployment hybernate -n "$RELEASE_NAMESPACE" -o 'jsonpath={.spec.template.spec.containers[0].args}' |
@@ -314,10 +318,11 @@ if refusal=$(helm uninstall hybernate --namespace "$RELEASE_NAMESPACE" --wait --
   echo "helm uninstall went ahead, leaving ManagedWorkloads with no operator" >&2
   exit 1
 fi
-if ! grep -q 'Hybernate refuses to uninstall' <<<"$refusal" || ! grep -qF "$WATCHED/$APP" <<<"$refusal" ||
-  ! grep -qF "$WATCHED/$DB" <<<"$refusal"; then
+lead=$(grep -o 'Hybernate refuses to uninstall: [^\\]*' <<<"$refusal" || true)
+if ! grep -qF "$WATCHED/$APP" <<<"$lead" || ! grep -qF "$WATCHED/$DB" <<<"$lead" ||
+  ! grep -qF 'installation/#uninstall' <<<"$lead"; then
   echo "$refusal" >&2
-  echo "the refused uninstall didn't say why, or name the ManagedWorkloads left" >&2
+  echo "the refused uninstall didn't lead with a line naming the ManagedWorkloads left, and the docs" >&2
   exit 1
 fi
 is deployment/hybernate "$RELEASE_NAMESPACE" '{.status.readyReplicas}' 1

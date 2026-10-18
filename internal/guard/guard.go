@@ -166,39 +166,64 @@ func deleting(mw metav1.PartialObjectMetadata) bool {
 	return mw.DeletionTimestamp != nil
 }
 
+// report writes what the operation would leave, if anything. Each kind of
+// refusal leads with one line that says it all, what's left and what to do,
+// since Helm 4 prints a hook's output as one log message, its line breaks
+// escaped; the details follow.
 func (g *Guard) report(op Operation, left []metav1.PartialObjectMetadata) error {
 	if len(left) == 0 {
 		_, err := fmt.Fprintf(g.Out, "No ManagedWorkload would be left without an operator, so the %s can go ahead.\n", op)
 		return err
 	}
-	stuck := slices.DeleteFunc(slices.Clone(left), func(mw metav1.PartialObjectMetadata) bool { return !deleting(mw) })
-	kept := slices.DeleteFunc(slices.Clone(left), deleting)
+	stuck := sortedNames(slices.DeleteFunc(slices.Clone(left), func(mw metav1.PartialObjectMetadata) bool {
+		return !deleting(mw)
+	}))
+	kept := sortedNames(slices.DeleteFunc(slices.Clone(left), deleting))
 
-	var b strings.Builder
-	if len(stuck) > 0 {
-		fmt.Fprintf(&b, stuckText, g.Wait, help[op])
-		writeNames(&b, stuck)
-	}
+	var summary, details strings.Builder
 	if len(kept) > 0 {
-		if b.Len() > 0 {
-			b.WriteString("\n")
-		}
-		b.WriteString(leftText[op])
-		writeNames(&b, kept)
-		fmt.Fprintf(&b, stopText[op], help[op])
+		fmt.Fprintf(&summary, keptSummary[op], inline(kept), help[op])
+		details.WriteString(leftText[op])
+		writeNames(&details, kept)
+		fmt.Fprintf(&details, stopText[op], help[op])
 	}
-	if _, err := io.WriteString(g.Out, b.String()); err != nil {
+	if len(stuck) > 0 {
+		fmt.Fprintf(&summary, stuckSummary, refusal[op], g.Wait, inline(stuck), help[op])
+		if details.Len() > 0 {
+			details.WriteString("\n")
+		}
+		fmt.Fprintf(&details, stuckText, g.Wait, help[op])
+		writeNames(&details, stuck)
+	}
+	if _, err := io.WriteString(g.Out, summary.String()+"\n"+details.String()); err != nil {
 		return fmt.Errorf("writing the refusal: %w", err)
 	}
 	return ErrRefused
 }
 
-func writeNames(b *strings.Builder, items []metav1.PartialObjectMetadata) {
-	slices.SortFunc(items, func(a, c metav1.PartialObjectMetadata) int {
-		return strings.Compare(a.Namespace+"/"+a.Name, c.Namespace+"/"+c.Name)
-	})
+func sortedNames(items []metav1.PartialObjectMetadata) []string {
+	names := make([]string, 0, len(items))
 	for _, mw := range items {
-		fmt.Fprintf(b, "  %s/%s\n", mw.Namespace, mw.Name)
+		names = append(names, mw.Namespace+"/"+mw.Name)
+	}
+	slices.Sort(names)
+	return names
+}
+
+// inlineNames is how many ManagedWorkloads a summary names, so that a
+// refusal leaving hundreds still leads with a line that can be read.
+const inlineNames = 10
+
+func inline(names []string) string {
+	if len(names) <= inlineNames {
+		return strings.Join(names, ", ")
+	}
+	return fmt.Sprintf("%s and %d more", strings.Join(names[:inlineNames], ", "), len(names)-inlineNames)
+}
+
+func writeNames(b *strings.Builder, names []string) {
+	for _, name := range names {
+		fmt.Fprintf(b, "  %s\n", name)
 	}
 }
 
@@ -207,19 +232,35 @@ var help = map[Operation]string{
 	Upgrade:   "https://okedeji.io/hybernate/operations/upgrading/#narrowing-watchnamespaces",
 }
 
+var refusal = map[Operation]string{
+	Uninstall: "Hybernate refuses to uninstall",
+	Upgrade:   "Hybernate refuses this upgrade",
+}
+
+var keptSummary = map[Operation]string{
+	Uninstall: "Hybernate refuses to uninstall: these ManagedWorkloads' workloads would stay paused with no " +
+		"operator: %s. Remove the hybernate.io/managed label from them and their namespaces, and delete " +
+		"ManagedWorkloads you created, then uninstall again; see %s\n",
+	Upgrade: "Hybernate refuses this upgrade: it stops watching namespaces where these ManagedWorkloads' " +
+		"workloads would stay paused with no operator: %s. Keep their namespaces in watchNamespaces, or remove " +
+		"the hybernate.io/managed label from them and their namespaces, and delete ManagedWorkloads you created " +
+		"there, then upgrade again; see %s\n",
+}
+
+const stuckSummary = "%s: these ManagedWorkloads were still being deleted after %s, so the operator may not be " +
+	"running: %s. If it isn't, skip this check with --no-hooks and restore their workloads by hand; see %s\n"
+
 const stuckText = `These ManagedWorkloads were being deleted, and the operator still hadn't let go of their
 workloads after %s. If it isn't running, nothing will: skip this check with --no-hooks and
 restore the workloads by hand, as %s says:
 `
 
 var leftText = map[Operation]string{
-	Uninstall: `Hybernate refuses to uninstall while it manages workloads. Without the operator, these
-ManagedWorkloads' workloads would stay paused at 0 replicas, with their Services still
-routed to the doorman being deleted:
+	Uninstall: `Without the operator, these ManagedWorkloads' workloads would stay paused at 0 replicas,
+with their Services still routed to the doorman being deleted:
 `,
-	Upgrade: `Hybernate refuses this upgrade, which stops it watching namespaces where it manages
-workloads. Without the operator there, these ManagedWorkloads' workloads would stay paused
-at 0 replicas, with their Services still routed to the doorman:
+	Upgrade: `Without the operator watching their namespaces, these ManagedWorkloads' workloads would
+stay paused at 0 replicas, with their Services still routed to the doorman:
 `,
 }
 

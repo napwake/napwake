@@ -19,6 +19,7 @@ package guard
 import (
 	"context"
 	"errors"
+	"fmt"
 	"strings"
 	"testing"
 	"time"
@@ -111,8 +112,8 @@ func TestCheck(t *testing.T) {
 			op:      Uninstall,
 			objs:    []client.Object{beingDeleted("shop", "api")},
 			refused: true,
-			names:   []string{"were being deleted", "shop/api"},
-			absent:  []string{"refuses to uninstall"},
+			names:   []string{"were being deleted", "shop/api", "--no-hooks"},
+			absent:  []string{"would stay paused"},
 		},
 		{
 			name:    "upgrade refused when it stops watching a namespace the operator manages workloads in",
@@ -187,6 +188,79 @@ func TestCheck(t *testing.T) {
 			}
 			for _, s := range tt.absent {
 				assert.NotContains(t, out.String(), s)
+			}
+		})
+	}
+}
+
+// Helm 4 prints a hook's output as one log message, with its line breaks
+// escaped, so a refusal's first line must say on its own what's left, what
+// to do, and where the docs are.
+func TestRefusalLeadsWithOneLine(t *testing.T) {
+	many := make([]client.Object, 0, 12)
+	for i := range 12 {
+		many = append(many, managed("shop", fmt.Sprintf("app-%02d", i), v1alpha1.FinalizerCleanup))
+	}
+	tests := []struct {
+		name    string
+		op      Operation
+		watched []string
+		objs    []client.Object
+		want    string
+	}{
+		{
+			name: "uninstall",
+			op:   Uninstall,
+			objs: []client.Object{managed("rc-demo", "web", v1alpha1.FinalizerCleanup), managed("blog", "api")},
+			want: "Hybernate refuses to uninstall: these ManagedWorkloads' workloads would stay paused with no " +
+				"operator: blog/api, rc-demo/web. Remove the hybernate.io/managed label from them and their " +
+				"namespaces, and delete ManagedWorkloads you created, then uninstall again; " +
+				"see https://okedeji.io/hybernate/getting-started/installation/#uninstall",
+		},
+		{
+			name:    "upgrade",
+			op:      Upgrade,
+			watched: []string{"shop"},
+			objs:    []client.Object{managed("blog", "web", v1alpha1.FinalizerCleanup)},
+			want: "Hybernate refuses this upgrade: it stops watching namespaces where these ManagedWorkloads' " +
+				"workloads would stay paused with no operator: blog/web. Keep their namespaces in " +
+				"watchNamespaces, or remove the hybernate.io/managed label from them and their namespaces, " +
+				"and delete ManagedWorkloads you created there, then upgrade again; " +
+				"see https://okedeji.io/hybernate/operations/upgrading/#narrowing-watchnamespaces",
+		},
+		{
+			name: "stuck being deleted",
+			op:   Uninstall,
+			objs: []client.Object{beingDeleted("shop", "api")},
+			want: "Hybernate refuses to uninstall: these ManagedWorkloads were still being deleted after 20ms, " +
+				"so the operator may not be running: shop/api. If it isn't, skip this check with --no-hooks " +
+				"and restore their workloads by hand; " +
+				"see https://okedeji.io/hybernate/getting-started/installation/#uninstall",
+		},
+		{
+			name: "many left",
+			op:   Uninstall,
+			objs: many,
+			want: "Hybernate refuses to uninstall: these ManagedWorkloads' workloads would stay paused with no " +
+				"operator: shop/app-00, shop/app-01, shop/app-02, shop/app-03, shop/app-04, shop/app-05, " +
+				"shop/app-06, shop/app-07, shop/app-08, shop/app-09 and 2 more. Remove the hybernate.io/managed " +
+				"label from them and their namespaces, and delete ManagedWorkloads you created, then uninstall " +
+				"again; see https://okedeji.io/hybernate/getting-started/installation/#uninstall",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			c := fake.NewClientBuilder().WithScheme(newScheme(t)).WithObjects(tt.objs...).Build()
+			var out strings.Builder
+			g := &Guard{Reader: c, Out: &out, Install: install, Watched: tt.watched,
+				Wait: 20 * time.Millisecond, Poll: 5 * time.Millisecond}
+
+			require.ErrorIs(t, g.Check(context.Background(), tt.op), ErrRefused)
+
+			first, rest, _ := strings.Cut(out.String(), "\n")
+			assert.Equal(t, tt.want, first)
+			for _, obj := range tt.objs {
+				assert.Contains(t, rest, "  "+obj.GetNamespace()+"/"+obj.GetName()+"\n", "the details list every one")
 			}
 		})
 	}

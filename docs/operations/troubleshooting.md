@@ -216,7 +216,7 @@ Another Hybernate install, in the namespace the event names, took this ManagedWo
 
 ### `helm uninstall` fails with `job hybernate-uninstall-guard failed`
 
-ManagedWorkloads are left, and uninstalling now would leave their workloads paused. Helm prints them above the error; with an older Helm that doesn't print a hook's output, `kubectl logs job/hybernate-uninstall-guard -n hybernate-system` shows them. Remove the `hybernate.io/managed` label from those workloads and their namespaces, delete the ManagedWorkloads you wrote yourself, and uninstall again, as in [Uninstall](../getting-started/installation.md#uninstall).
+Helm 4 reports it as `resource Job/hybernate-system/hybernate-uninstall-guard not ready`. ManagedWorkloads are left, and uninstalling now would leave their workloads paused. Helm 4 prints them above the error, in a message that starts `Hybernate refuses to uninstall:` and names them; when Helm prints only the error, as Helm 3 does, `kubectl logs job/hybernate-uninstall-guard -n hybernate-system` shows them. Remove the `hybernate.io/managed` label from those workloads and their namespaces, delete the ManagedWorkloads you wrote yourself, and uninstall again, as in [Uninstall](../getting-started/installation.md#uninstall).
 
 The refused uninstall leaves the release marked `uninstalling`, which `helm list` hides without `-a`, though the operator and the doorman keep running. If you decide to keep Hybernate instead, `helm upgrade` fails with `has no deployed releases` until `helm rollback hybernate -n hybernate-system` marks the release deployed again.
 
@@ -224,7 +224,7 @@ The hook waits two and a half minutes for ManagedWorkloads being deleted before 
 
 ### `helm upgrade` fails with `job hybernate-upgrade-guard failed`
 
-The upgrade sets `watchNamespaces` to leave out namespaces where the operator manages workloads, which would leave them paused with no operator. Helm prints them above the error, or `kubectl logs job/hybernate-upgrade-guard -n hybernate-system` shows them. Keep those namespaces in `watchNamespaces`, or stop managing the workloads there first, then upgrade again; see [Narrowing watchNamespaces](upgrading.md#narrowing-watchnamespaces). Under Argo CD the same refusal fails the sync, in its PreSync hook.
+The upgrade sets `watchNamespaces` to leave out namespaces where the operator manages workloads, which would leave them paused with no operator; Helm 4 reports it as `resource Job/hybernate-system/hybernate-upgrade-guard not ready`. Helm 4 prints them above the error, in a message that starts `Hybernate refuses this upgrade:` and names them, or `kubectl logs job/hybernate-upgrade-guard -n hybernate-system` shows them. Keep those namespaces in `watchNamespaces`, or stop managing the workloads there first, then upgrade again; see [Narrowing watchNamespaces](upgrading.md#narrowing-watchnamespaces). Under Argo CD the same refusal fails the sync, in its PreSync hook.
 
 ### Workloads stay at zero after the operator was removed
 
