@@ -232,16 +232,14 @@ check-chart: ## Lint the Helm chart, render it for each provider's Kubernetes ve
 		echo "without leader election, a rolling update runs two operators at once"; exit 1; }
 
 .PHONY: test-doorman-policy
-test-doorman-policy: setup-envtest kustomize ## Check against envtest that the chart's and kustomize's admission policies hold the doorman to stamping requests
+test-doorman-policy: setup-envtest kustomize ## Check against envtest that the chart's and kustomize's admission policies, and an overlay's, hold the doorman to stamping requests
 	@dir=$$(mktemp -d); trap 'rm -rf "$$dir"' EXIT; \
 	helm template hybernate charts/hybernate --namespace hybernate-system > "$$dir/chart.yaml"; \
-	cp -R config "$$dir/config"; \
-	sed -e 's/^namespace: hybernate-system$$/namespace: staging-system/' -e 's/^namePrefix: hybernate-$$/namePrefix: staging-/' \
-		config/default/kustomization.yaml > "$$dir/config/default/kustomization.yaml"; \
-	"$(KUSTOMIZE)" build "$$dir/config/default" > "$$dir/kustomize.yaml"; \
-	grep -q 'namePrefix: staging-' "$$dir/config/default/kustomization.yaml" || { \
+	"$(KUSTOMIZE)" build config/default > "$$dir/kustomize.yaml"; \
+	"$(KUSTOMIZE)" build hack/doormanpolicy/overlay > "$$dir/overlay.yaml"; \
+	grep -q 'name: staging-hybernate-doorman$$' "$$dir/overlay.yaml" || { \
 		echo "couldn't rename the kustomize install to check its admission policy follows"; exit 1; }; \
-	CHART_MANIFEST="$$dir/chart.yaml" KUSTOMIZE_MANIFEST="$$dir/kustomize.yaml" \
+	CHART_MANIFEST="$$dir/chart.yaml" KUSTOMIZE_MANIFEST="$$dir/kustomize.yaml" KUSTOMIZE_OVERLAY_MANIFEST="$$dir/overlay.yaml" \
 	KUBEBUILDER_ASSETS="$$("$(ENVTEST)" use $(ENVTEST_K8S_VERSION) --bin-dir "$(LOCALBIN)" -p path)" \
 		go test -count=1 ./hack/doormanpolicy
 

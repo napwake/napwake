@@ -1,7 +1,8 @@
 // Package doormanpolicy tests the doorman's ValidatingAdmissionPolicy, as
-// the chart and the kustomize manifests install it, against a real API
-// server. make test-doorman-policy renders both and runs it; with neither
-// CHART_MANIFEST nor KUSTOMIZE_MANIFEST set it's skipped.
+// the chart, the kustomize manifests, and an overlay on them that renames
+// them install it, against a real API server. make test-doorman-policy
+// renders them and runs it; with none of CHART_MANIFEST,
+// KUSTOMIZE_MANIFEST and KUSTOMIZE_OVERLAY_MANIFEST set it's skipped.
 package doormanpolicy
 
 import (
@@ -44,6 +45,7 @@ func TestDoormanMayOnlyStampRequests(t *testing.T) {
 	manifests := []struct{ name, env string }{
 		{name: "chart", env: "CHART_MANIFEST"},
 		{name: "kustomize", env: "KUSTOMIZE_MANIFEST"},
+		{name: "kustomize overlay", env: "KUSTOMIZE_OVERLAY_MANIFEST"},
 	}
 	ran := false
 	for _, m := range manifests {
@@ -55,7 +57,7 @@ func TestDoormanMayOnlyStampRequests(t *testing.T) {
 		t.Run(m.name, func(t *testing.T) { testPolicy(t, path) })
 	}
 	if !ran {
-		t.Skip("neither CHART_MANIFEST nor KUSTOMIZE_MANIFEST is set; run make test-doorman-policy")
+		t.Skip("no manifest is set; run make test-doorman-policy")
 	}
 }
 
@@ -134,6 +136,18 @@ func testPolicy(t *testing.T, manifest string) {
 	t.Run("the operator isn't restricted", func(t *testing.T) {
 		assert.NoError(t, patchAs(admin, `{"spec":{"dryRun":false}}`))
 	})
+
+	t.Run("a ServiceAccount named like the doorman elsewhere isn't restricted", func(t *testing.T) {
+		name := doormanUser[strings.LastIndex(doormanUser, ":")+1:]
+		otherCfg := rest.CopyConfig(cfg)
+		otherCfg.Impersonate = rest.ImpersonationConfig{
+			UserName: "system:serviceaccount:" + workloadNS + ":" + name,
+			Groups:   []string{"system:masters"},
+		}
+		other, err := client.New(otherCfg, client.Options{Scheme: scheme})
+		require.NoError(t, err)
+		assert.NoError(t, patchAs(other, `{"spec":{"dryRun":true}}`))
+	})
 }
 
 func clientScheme(t *testing.T) *runtime.Scheme {
@@ -145,8 +159,9 @@ func clientScheme(t *testing.T) *runtime.Scheme {
 }
 
 // apply creates the manifest's cluster-wide RBAC and admission policy, and
-// returns the username of the doorman's ServiceAccount, wherever and
-// whatever the manifest named it.
+// the doorman's ServiceAccount, which the kustomize policy takes as its
+// parameter, and returns its username, wherever and whatever the manifest
+// named it.
 func apply(ctx context.Context, t *testing.T, c client.Client, path string) string {
 	t.Helper()
 	raw, err := os.ReadFile(path)
@@ -163,6 +178,12 @@ func apply(ctx context.Context, t *testing.T, c client.Client, path string) stri
 		require.NoError(t, err)
 		if obj.GetKind() == "ServiceAccount" && strings.HasSuffix(obj.GetName(), "doorman") {
 			doormanUser = "system:serviceaccount:" + obj.GetNamespace() + ":" + obj.GetName()
+			ns := &corev1.Namespace{ObjectMeta: metav1.ObjectMeta{Name: obj.GetNamespace()}}
+			if err := c.Create(ctx, ns); !apierrors.IsAlreadyExists(err) {
+				require.NoError(t, err, "creating namespace %s", ns.Name)
+			}
+			require.NoError(t, c.Create(ctx, &obj), "creating ServiceAccount %s", obj.GetName())
+			continue
 		}
 		if !appliedKinds[obj.GetKind()] {
 			continue
