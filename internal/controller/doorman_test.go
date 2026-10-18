@@ -907,6 +907,72 @@ func TestReconcile_DeletionWaitsForPortsToDrain(t *testing.T) {
 	assert.True(t, apierrors.IsNotFound(r.Get(context.Background(), reconcileFor("api").NamespacedName, &gone)))
 }
 
+// countSliceLists counts r.PodReader's lists of doorman slices: those
+// made from the API server rather than the cache.
+func countSliceLists(r *Reconciler) *int {
+	var lists int
+	r.PodReader = interceptor.NewClient(r.apiReader().(client.WithWatch), interceptor.Funcs{
+		List: func(ctx context.Context, c client.WithWatch, list client.ObjectList, opts ...client.ListOption) error {
+			if _, ok := list.(*discoveryv1.EndpointSliceList); ok {
+				lists++
+			}
+			return c.List(ctx, list, opts...)
+		},
+	})
+	return &lists
+}
+
+// A deleted workload's slices are listed from the API server once, when
+// they're removed. The reconciles while its ports drain read the cache:
+// nothing writes a slice for a workload being deleted.
+func TestReconcile_DrainAfterDeletionReadsTheCache(t *testing.T) {
+	r, _ := pausedRouted(t)
+	now := time.Now()
+	r.clock = func() time.Time { return now }
+	lists := countSliceLists(r)
+	require.NoError(t, r.Delete(context.Background(), fetch(t, r, "api")))
+
+	_, err := r.Reconcile(context.Background(), reconcileFor("api"))
+	require.NoError(t, err)
+	require.Equal(t, 1, *lists)
+	require.Empty(t, doormanSlices(t, r))
+
+	for _, after := range []time.Duration{time.Second, portDrain / 2, portDrain} {
+		now = now.Add(after)
+		_, err = r.Reconcile(context.Background(), reconcileFor("api"))
+		require.NoError(t, err)
+	}
+
+	assert.Equal(t, 1, *lists, "the drain's reconciles don't list from the API server")
+	var gone v1alpha1.ManagedWorkload
+	assert.True(t, apierrors.IsNotFound(r.Get(context.Background(), reconcileFor("api").NamespacedName, &gone)))
+}
+
+// A slice written by a reconcile whose status write was lost is named
+// nowhere in status, and may not be in the cache yet. Deleting the
+// workload while an earlier drain of its ports goes on still removes it.
+func TestReconcile_DeletionRemovesASliceStatusLost(t *testing.T) {
+	r, _ := pausedRouted(t)
+	now := time.Now()
+	r.clock = func() time.Time { return now }
+	lost := fetch(t, r, "api")
+	lost.Status.DoormanDraining = []v1alpha1.DrainingPort{{Port: lost.Status.Doorman[0].DoormanPort + 1,
+		Until: metav1.NewTime(now.Add(portDrain / 2))}}
+	lost.Status.Doorman = nil
+	require.NoError(t, r.Status().Update(context.Background(), lost))
+	missDoormanSlices(r)
+	require.NoError(t, r.Delete(context.Background(), fetch(t, r, "api")))
+
+	for range 2 {
+		_, err := r.Reconcile(context.Background(), reconcileFor("api"))
+		require.NoError(t, err)
+	}
+
+	var left discoveryv1.EndpointSliceList
+	require.NoError(t, r.PodReader.List(context.Background(), &left, client.MatchingLabels{discoveryv1.LabelManagedBy: doorman.ManagedBy}))
+	assert.Empty(t, left.Items)
+}
+
 // The doorman stamps a workload whose recorded last-request was removed
 // with a value of its own. The operator must take that as a wake, or the
 // request that made it waits for a wake that never comes.
