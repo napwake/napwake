@@ -531,7 +531,10 @@ func TestServer_ServesThePageToABrowser(t *testing.T) {
 	assert.Equal(t, http.StatusServiceUnavailable, resp.StatusCode, "answered at once, with no pod Ready yet")
 	assert.Contains(t, body, "<title>Waking up shop.example.dev</title>")
 	assert.NotContains(t, body, "dev/api", "the page names nothing inside the cluster")
-	assert.NotEmpty(t, lastRequest(t, c), "the page still wakes the workload")
+	// The page goes out before the wake lands, so a browser isn't kept
+	// waiting on the API server.
+	assert.Eventually(t, func() bool { return lastRequest(t, c) != "" },
+		5*time.Second, 10*time.Millisecond, "the page still wakes the workload")
 	// The result is counted once the connection is done with, just after
 	// the caller has its answer.
 	assert.Eventually(t, func() bool { return wakes(resultPage) == before+1 },
