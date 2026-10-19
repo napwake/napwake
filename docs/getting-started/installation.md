@@ -15,12 +15,12 @@
 
     ```bash
     helm install hybernate oci://ghcr.io/okedeji/charts/hybernate \
-      --version 0.2.0 \
+      --version 0.2.0-rc.3 \
       --namespace hybernate-system \
       --create-namespace
     ```
 
-    The chart's version has no `v`; the image it runs is tagged with one, such as `v0.2.0`. The chart installs the ManagedWorkload CRD too, and upgrades it with each `helm upgrade`.
+    The chart's version has no `v`; the image it runs is tagged with one, such as `v0.2.0-rc.3`. The chart installs the ManagedWorkload CRD too, and upgrades it with each `helm upgrade`.
 
     ??? tip "Helm Values"
 
