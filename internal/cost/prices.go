@@ -64,6 +64,27 @@ func NodeTypeOf(labels map[string]string) NodeType {
 	return t
 }
 
+// poolLabels name the node pool a node belongs to, by provisioner, first
+// found first. An instance type isn't a pool: nodes of one type can come
+// from pools that schedule different pods.
+var poolLabels = []string{
+	"karpenter.sh/nodepool",
+	"cloud.google.com/gke-nodepool",
+	"eks.amazonaws.com/nodegroup",
+	"kubernetes.azure.com/agentpool",
+}
+
+// NodePoolOf names the node pool a node belongs to from its labels, or ""
+// for a node with none of the pool labels; such nodes make up one pool.
+func NodePoolOf(labels map[string]string) string {
+	for _, key := range poolLabels {
+		if pool, ok := labels[key]; ok {
+			return pool
+		}
+	}
+	return ""
+}
+
 // ListPrice is a node type's on-demand list price, as rates.
 type ListPrice struct {
 	Provider string
