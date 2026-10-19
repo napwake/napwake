@@ -110,7 +110,7 @@ The ManagedWorkload stays `Running`, with the `ScaledToZero` condition and one `
 
 Hybernate never scales up a workload it didn't scale down. Handing back a pause recorded at zero replicas, Hybernate releases it at zero, with a `Resumed` event that says so.
 
-## Cost Savings While Paused
+## Cost While Paused
 
 Cost tracking is always on. While a workload is paused, what its paused replicas requested in CPU and memory accrues as freed, and the part of that its nodes' spare capacity couldn't hold accrues as saved; its PVCs still cost, since they stay. See [Cost Tracking](../concepts/cost-tracking.md).
 

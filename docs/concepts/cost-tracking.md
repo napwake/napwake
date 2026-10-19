@@ -9,7 +9,7 @@ Hybernate reports two numbers for a pause, because they answer different questio
 - **Freed** (`freedThisMonth`) is what the paused replicas requested, priced at their nodes' list price, for as long as they were paused: what pausing released on its nodes.
 - **Saved** (`savedThisMonth`) is the part of that which provably came off your bill.
 
-Hybernate works at the **workload layer**: pausing removes pods, which frees the CPU and memory they requested on their nodes. Your cloud bill is for **nodes**. Freed capacity becomes money only once nodes go, which takes a cluster autoscaler (Cluster Autoscaler, Karpenter, or a managed equivalent) able to remove them. With no autoscaler, or with scale-down blocked, a pause frees capacity and saves nothing, and `savedThisMonth` says so. See the [Cluster Autoscaler Guide](../guides/cluster-autoscaler.md) for settings that let freed capacity go.
+Hybernate works at the **workload layer**: pausing removes pods, which frees the CPU and memory they requested on their nodes. Your cloud bill is for **nodes**. Freed capacity becomes money only once nodes go, which takes a cluster autoscaler (Cluster Autoscaler, Karpenter, or a managed equivalent) able to remove them. With no autoscaler, or with scale-down blocked, a pause frees capacity and saves nothing, and `savedThisMonth` says so. See the [Cluster Autoscaler Guide](../guides/cluster-autoscaler.md) for settings that let freed capacity go, and [Node Pools for Real Savings](../guides/node-pools.md) for giving non-prod workloads nodes that pausing empties.
 
 ### How saved is measured
 
@@ -182,6 +182,6 @@ COST:.status.cost.costThisMonth,FREED:.status.cost.freedThisMonth,\
 SAVED:.status.cost.savedThisMonth,PROJECTED:.status.cost.projectedMonthlyCost
 ```
 
-[`kubectl hybernate status`](../getting-started/kubectl-plugin.md#see-what-hybernate-is-doing) sums savings across the cluster.
+[`kubectl hybernate status`](../getting-started/kubectl-plugin.md#see-what-hybernate-is-doing) sums what pausing freed, and what of it was saved, across the cluster, and [`kubectl hybernate nodes`](../getting-started/kubectl-plugin.md#see-why-nodes-dont-scale-down) shows what keeps nodes from going.
 
 Per-workload cost isn't exported as Prometheus metrics; each node pool's paused and spare capacity, and what its shortfall saves an hour, are. See the [Metrics Reference](../reference/metrics.md#savings).
