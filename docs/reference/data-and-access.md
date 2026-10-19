@@ -11,11 +11,13 @@ Everything the Hybernate operator and its doorman read, write, and send, for a s
 | Pod metrics (`metrics.k8s.io`) | CPU use, the activity clock's main signal | Read when needed, not cached |
 | Services | Which Services to route a paused workload's requests through, and which workload an address in an environment names | Watched |
 | EndpointSlices | Its own, routing paused workloads to the doorman, and the doorman Service's, to find the doorman's pods. The doorman reads every slice in the watched namespaces, to find a woken workload's Ready pods | Watched |
-| ConfigMaps | Only the ones a managed workload takes environment variables from, to learn its dependencies | Read one by one with `get`, not cached; never listed or written |
+| ConfigMaps | The ones a managed workload takes environment variables from, to learn its dependencies; and `kube-system/cluster-autoscaler-status`, whose existence shows Cluster Autoscaler runs | Read one by one with `get`, not cached; never listed or written. Of `cluster-autoscaler-status`, only its metadata, every 10 minutes |
 | PersistentVolumeClaims | Their size, to price the storage a paused workload keeps | Watched |
 | HorizontalPodAutoscalers, KEDA ScaledObjects | What scales a workload, and its range | Watched |
 | Namespaces | Their labels: opt-in, settings, and protection | Watched |
-| Nodes | Their names and labels only (instance type, region, spot), to price workloads | Metadata watched |
+| Nodes | Their labels (instance type, region, spot, node pool), to price workloads and group them into pools; and their allocatable CPU and memory, whether they're schedulable and Ready, to measure each pool's spare capacity | Watched, keeping only those fields; their image lists and the rest are dropped. Their metadata is also listed every 10 minutes, to tell which node autoscaler runs |
+| Karpenter NodePools (`karpenter.sh/v1`) | Their names and `spec.disruption`, to report which node autoscaler runs | Listed every 10 minutes, not cached. Without Karpenter installed, nothing is read |
+| Deployments in `kube-system` | Their names, to find a Cluster Autoscaler that hasn't written its status ConfigMap | Metadata listed every 10 minutes, only while that ConfigMap is missing |
 | ManagedWorkloads | Its own configuration | Watched |
 
 **Never read:** Secrets, of any kind, anywhere. An address set in a Secret is learned only from the request it's used for.
@@ -53,11 +55,12 @@ What the Helm chart grants, for a release named `hybernate`; resource names star
 | API group | Resources | Verbs | |
 |---|---|---|---|
 | `""` | `namespaces`, `nodes` | `get`, `list`, `watch` | always cluster-wide |
+| `karpenter.sh` | `nodepools` | `list` | always cluster-wide |
 | `""` | `configmaps` | `get` | namespaced |
 | `""` | `events` | `create`, `patch` | namespaced |
 | `events.k8s.io` | `events` | `create`, `patch` | namespaced |
 | `""` | `services` | `get`, `list`, `watch` | namespaced |
-| `""` | `pods` | `get`, `list` | namespaced |
+| `""` | `pods` | `get`, `list`, `watch` | namespaced |
 | `""` | `persistentvolumeclaims` | `get`, `list`, `watch` | namespaced |
 | `discovery.k8s.io` | `endpointslices` | `get`, `list`, `watch`, `create`, `update`, `patch`, `delete` | namespaced |
 | `apps` | `deployments`, `statefulsets` | `get`, `list`, `watch`, `patch` | namespaced |

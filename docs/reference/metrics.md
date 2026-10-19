@@ -49,7 +49,7 @@ Each node pool's figures from the operator's [measure of what pausing saved](../
 | `hybernate_capacity_spare_cpu_cores` | Gauge | `pool` | Allocatable vCPUs on the pool's schedulable, Ready nodes that no bound, unfinished pod requests |
 | `hybernate_capacity_spare_memory_bytes` | Gauge | `pool` | Allocatable memory on those nodes that no pod requests |
 | `hybernate_savings_realised_dollars_per_hour` | Gauge | `pool` | What the paused requests the spare capacity can't hold would cost an hour at the pool's nodes' list rates, averaged over them (the defaults for nodes with no list price): what pausing takes off the bill each hour, at least |
-| `hybernate_node_autoscaler` | Gauge | `kind` | 1 for each node autoscaler the operator found (`Karpenter`, `Cluster Autoscaler`, `EKS Auto Mode`, `GKE Autopilot`), or for `none` when it read everywhere it looks and found none, or `unknown` when it wasn't allowed to look, as in a `watchNamespaces` install. Looked at every 10 minutes. With `none`, what pausing frees doesn't come off the bill |
+| `hybernate_node_autoscaler` | Gauge | `kind` | 1 for each node autoscaler the operator found (`Karpenter`, `Cluster Autoscaler`, `EKS Auto Mode`, `GKE Autopilot`), or for `none` when it read everywhere it looks and found none, or `unknown` when it wasn't allowed to look, as in a `watchNamespaces` install. Looked at every 10 minutes. With `none`, what pausing frees doesn't come off the bill; see the [Cluster Autoscaler Guide](../guides/cluster-autoscaler.md#what-hybernate-detects) |
 
 ## Doorman
 
@@ -103,5 +103,5 @@ histogram_quantile(0.95, sum by (le) (rate(hybernate_doorman_wait_seconds_bucket
 sum(hybernate_savings_realised_dollars_per_hour)
 
 # Pools where paused CPU still fits in spare capacity: freed, but not saved
-hybernate_capacity_spare_cpu_cores >= on (pool) hybernate_capacity_paused_cpu_cores > 0
+(hybernate_capacity_paused_cpu_cores > 0) <= on (pool) hybernate_capacity_spare_cpu_cores
 ```

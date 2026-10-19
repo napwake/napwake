@@ -258,13 +258,14 @@ By default the chart creates a ClusterRole, `<fullname>-manager`, with permissio
 - Read pod metrics from metrics-server
 - Read pods, to price what pausing a workload frees, sidecars included, and watch them, to measure the spare node capacity that what pausing [saved](../concepts/cost-tracking.md#how-saved-is-measured) is worked out from. Only pods bound to a node and not finished are cached, as their node, phase and requests
 - Read Nodes, to price workloads at the list price of the instance types they run on, and to measure their spare capacity. They're cached without their image lists
+- List Karpenter's NodePools, and get Cluster Autoscaler's `cluster-autoscaler-status` ConfigMap and list Deployments in `kube-system`, to report which node autoscaler runs (`hybernate_node_autoscaler`). It reads NodePools' names and consolidation settings, and only the metadata of the rest
 - Get ConfigMaps, one at a time and uncached, to [learn dependencies](../concepts/dependencies.md#learned-dependencies) from the ones a workload's environment references. It can't list or change them
 - Create Events for user-facing status updates
 - Read Services, and manage the EndpointSlices that route paused workloads to the doorman
 
 The doorman has its own ServiceAccount and ClusterRole, `<fullname>-doorman`: it reads ManagedWorkloads and EndpointSlices, gets the pods a woken workload's endpoints name, to check each endpoint's address is its pod's, patches ManagedWorkloads to wake them, and creates Events. With `doorman.admissionPolicy.enabled`, those patches may only set the two annotations that record a request.
 
-With `watchNamespaces` set, both get a Role and RoleBinding in each of those namespaces instead. The operator keeps one ClusterRole, to read Namespaces and Nodes, which only a ClusterRole can grant, and gets a `<fullname>-doorman-endpoints` Role in the release namespace to read the doorman's EndpointSlices. Workloads in other namespaces can't be read, scaled, or opted in, and dependencies on them aren't held or woken. With `metrics.enabled` and `metrics.secure`, both ServiceAccounts also keep their cluster-wide `system:auth-delegator` bindings, which let them check scrapers' tokens and nothing else.
+With `watchNamespaces` set, both get a Role and RoleBinding in each of those namespaces instead. The operator keeps one ClusterRole, to read Namespaces and Nodes and list Karpenter's NodePools, which only a ClusterRole can grant, and gets a `<fullname>-doorman-endpoints` Role in the release namespace to read the doorman's EndpointSlices. Workloads in other namespaces can't be read, scaled, or opted in, and dependencies on them aren't held or woken. With `metrics.enabled` and `metrics.secure`, both ServiceAccounts also keep their cluster-wide `system:auth-delegator` bindings, which let them check scrapers' tokens and nothing else.
 
 If leader election is enabled, a `<fullname>-leader-election` Role in the release namespace grants Leases (`get`, `create`, `update`) and Events.
 
