@@ -212,8 +212,41 @@ Another Hybernate install, in the namespace the event names, took this ManagedWo
 - Cost is priced on what the workload's pods request, read from its pods. A workload whose containers set no requests costs nothing.
 - `projectedMonthlyCost`, `projectedMonthlyFreed` and `projectedMonthlySavings` show `pending` until 24 hours of the month have been tracked, including on the first day of every month.
 - `freedThisMonth` stays `$0.00` until Hybernate has paused the workload this month: dry-run workloads record what they would have freed in `status.dryRun` instead.
-- `savedThisMonth` stays `$0.00` while the cluster's nodes have room for everything Hybernate holds paused: nothing has come off the bill until nodes go. Check that a cluster autoscaler can remove them; the [Cluster Autoscaler Guide](../guides/cluster-autoscaler.md) covers what blocks scale-down, and `hybernate_capacity_spare_cpu_cores` shows each node pool's room. It reads `unknown`, with why in `savingsUnknown`, for an operator limited by `watchNamespaces`.
+- `savedThisMonth` stays `$0.00` while the cluster's nodes have room for everything Hybernate holds paused: nothing has come off the bill until nodes go. See [Freed but not saved](#freed-but-not-saved). It reads `unknown`, with why in `savingsUnknown`, for an operator limited by `watchNamespaces`; see [Saved reads `unknown`](#saved-reads-unknown).
 - Totals start again from zero each calendar month, in UTC. See [Cost Tracking](../concepts/cost-tracking.md).
+
+### Freed but not saved
+
+`kubectl hybernate status` shows FREED THIS MONTH well above SAVED, and may say under Needs attention that nodes aren't scaling down. Pausing freed capacity on the nodes, but the nodes are still there, so little of it came off the bill. Saved is measured from the spare capacity left on each node pool: while a pool's nodes could hold everything Hybernate holds paused there, nothing is credited (see [How saved is measured](../concepts/cost-tracking.md#how-saved-is-measured)).
+
+**Is anything scaling the nodes?** The first lines of `kubectl hybernate status` and `kubectl hybernate nodes` name the node autoscaler, as does the operator's `hybernate_node_autoscaler` metric. With `none found`, nothing removes nodes, and what pausing frees never comes off the bill: enable Cluster Autoscaler on the node groups, or install Karpenter. See the [Cluster Autoscaler Guide](../guides/cluster-autoscaler.md).
+
+**What's keeping the nodes?** `kubectl hybernate nodes` lists, for each node, what keeps the autoscaler from removing it, in BLOCKED BY, with how to clear each below the table:
+
+- **`not autoscaled`**: no autoscaler found scales the node, such as a node group Cluster Autoscaler doesn't manage
+- **`NodePool never consolidates`** and **`NodePool consolidates only empty nodes`**: a Karpenter NodePool with `consolidateAfter: Never`, or with `consolidationPolicy: WhenEmpty` on a node that runs anything but DaemonSets
+- **`scale-down disabled`** and **`do-not-disrupt on the node`**: the node is annotated `cluster-autoscaler.kubernetes.io/scale-down-disabled: "true"` or `karpenter.sh/do-not-disrupt: "true"`
+- **`PDB allows no disruption`**: a pod's PodDisruptionBudget allows no disruptions, so it can't be moved
+- **`safe-to-evict=false`** and **`do-not-disrupt`**: a pod annotated `cluster-autoscaler.kubernetes.io/safe-to-evict: "false"` or `karpenter.sh/do-not-disrupt: "true"`
+- **`local storage`**: a pod with an `emptyDir` or `hostPath` volume, which Cluster Autoscaler won't move while `--skip-nodes-with-local-storage` is on
+- **`bare pod`**: a pod no controller would recreate elsewhere
+- **`kube-system pod without PDB`**: which Cluster Autoscaler won't move while `--skip-nodes-with-system-pods` is on
+
+**Are paused workloads sharing nodes with busy ones?** A node is removed only once everything on it can go. A paused workload on a node that also runs busy pods frees room on it, but the node stays, and a cluster where every node is a little busy can keep all of them. The UTILISATION column of `kubectl hybernate nodes` shows it: low, with nothing in BLOCKED BY, and the node is waiting for the autoscaler's threshold or delay; middling, and it's still in use. Putting non-prod workloads on a [node pool of their own](../guides/node-pools.md) lets pausing them empty whole nodes.
+
+**Is the autoscaler keeping spare capacity?** Some settings keep nodes around on purpose: a node group's minimum size above what's in use, a long `scale-down-unneeded-time` or `scale-down-delay-after-add`, a `scale-down-utilization-threshold` lower than the nodes' use, a long `consolidateAfter`, Karpenter disruption `budgets` that allow few nodes at once, or over-provisioning placeholder pods kept for fast scale-up. Saved catches up only as those nodes go. See [Node Pools for Real Savings](../guides/node-pools.md) for settings that let a non-prod pool empty.
+
+`hybernate_capacity_spare_cpu_cores` and `hybernate_capacity_paused_cpu_cores`, by `pool`, show which pools still have room for what's paused there; see the [Metrics Reference](../reference/metrics.md#savings).
+
+### Saved reads `unknown`
+
+`savedThisMonth` and `projectedMonthlySavings` read `unknown`, and `kubectl hybernate status` shows `unknown` in SAVED and says why above the table. `status.cost.savingsUnknown` has the reason:
+
+```bash
+kubectl get managedworkload my-api -n staging -o jsonpath='{.status.cost.savingsUnknown}'
+```
+
+An operator limited to some namespaces with `watchNamespaces` can't see the pods in other namespaces, so it can't tell how much of each node they request, nor what's left over for the paused replicas. Saved can't be measured there, and the operator exports no `hybernate_capacity_*` or `hybernate_savings_realised_dollars_per_hour` series. Freed is still measured. To measure saved, install the operator without `watchNamespaces`; it then watches pods cluster-wide, caching only what each pod bound to a node requests (see [Data and Access](../reference/data-and-access.md)).
 
 ### `helm uninstall` fails with `job hybernate-uninstall-guard failed`
 
