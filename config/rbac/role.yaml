@@ -95,6 +95,12 @@ rules:
   - patch
   - update
 - apiGroups:
+  - karpenter.sh
+  resources:
+  - nodepools
+  verbs:
+  - list
+- apiGroups:
   - keda.sh
   resources:
   - scaledobjects
