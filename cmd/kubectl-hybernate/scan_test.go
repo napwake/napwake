@@ -46,6 +46,7 @@ import (
 
 	v1alpha1 "github.com/okedeji/hybernate/api/v1alpha1"
 	"github.com/okedeji/hybernate/internal/discovery"
+	"github.com/okedeji/hybernate/internal/nodescale"
 )
 
 func sampleCluster() scanResult {
@@ -253,7 +254,7 @@ func TestWriteTable_MeasuredInDryRun(t *testing.T) {
 		`97h\s+4\s+.*\$81`, got, "what Hybernate measured is in its columns, with the period")
 	assert.Contains(t, got, "1 workload is in dry-run: measured by Hybernate since starting, it would have slept "+
 		"97 hours, freeing $12.48,\n  about $81 a month.")
-	assert.Contains(t, got, "COULD SAVE/MO")
+	assert.Contains(t, got, "COULD FREE/MO")
 	assert.NotContains(t, got, "Measured in dry-run:", "no separate section")
 	assert.Contains(t, got, "start pausing:\n       kubectl hybernate enable deployment/api -n preview-7",
 		"enable names the workload dry-run measured")
@@ -297,7 +298,7 @@ func TestWriteTable_History(t *testing.T) {
 	assert.Contains(t, got,
 		"Replaying the last 7 days, Hybernate would have paused 1 of 2 unmanaged workloads for 1,204 hours in all,")
 	assert.Contains(t, got, "and freed $204: about $888/month.")
-	assert.Regexp(t, `STATE\s+BECAUSE\s+COST/MO\s+COULD SLEEP\s+WAKES\s+COULD SAVE/MO`, got)
+	assert.Regexp(t, `STATE\s+BECAUSE\s+COST/MO\s+COULD SLEEP\s+WAKES\s+COULD FREE/MO`, got)
 	assert.NotContains(t, got, "REPLICAS", "what the state's reason and the cost already say")
 	assert.Regexp(t,
 		`deployment/checkout-api\s+idle \(unmanaged\)\s+CPU 2% of its request; last deployed 23 days ago\s+`+
@@ -567,31 +568,63 @@ func TestDependencyStatus(t *testing.T) {
 	}
 }
 
-func TestWriteScan_SavedThisMonth(t *testing.T) {
+func TestWriteScan_FreedAndSavedThisMonth(t *testing.T) {
 	var out bytes.Buffer
 
 	require.NoError(t, writeScan(&out, historyResult(), scanOptions{output: "table"}))
 
 	got := out.String()
-	assert.Contains(t, got, "Hybernate has saved $4 this month pausing 1 live workload.")
-	assert.Regexp(t, `preview-3\s+deployment/web\s+paused \(live\)\s+paused 3h ago\s+\$48\s+\$4\s+-\s+-\s+-`, got,
-		"a live workload's saving is in SAVED THIS MONTH, with nothing estimated")
+	assert.Contains(t, got, "Hybernate has freed $4 this month pausing 1 live workload, and saved $1 of it.")
+	assert.Regexp(t, `FREED THIS MONTH\s+SAVED\s+COULD SLEEP`, got)
+	assert.Regexp(t, `preview-3\s+deployment/web\s+paused \(live\)\s+paused 3h ago\s+\$48\s+\$4\s+\$1\s+-\s+-\s+-`,
+		got, "a live workload's freed and saved are in their columns, with nothing estimated")
+	assert.NotContains(t, got, "COULD SAVE", "the scan can't know what pausing would save, only free")
 }
 
-// A workload put back in dry-run shows what it saved while live, and the
+// A workload put back in dry-run shows what it freed while live, and the
 // headline counts it, though nothing is live now.
-func TestWriteScan_SavedBeforeGoingBackToDryRun(t *testing.T) {
+func TestWriteScan_FreedBeforeGoingBackToDryRun(t *testing.T) {
 	result := scanResult{Cluster: "staging", ClusterReport: &discovery.ClusterReport{Namespaces: 1,
 		Workloads: []Workload{{Namespace: "preview-3", Kind: "Deployment", Name: "web", State: discovery.StateIdle,
-			Managed: true, DryRun: true, SavedThisMonth: 7, Measured: &discovery.Measured{}}}}}
-	result.Totals = discovery.Totals{Workloads: 1, DryRun: 1, SavedThisMonth: 7}
+			Managed: true, DryRun: true, FreedThisMonth: 7, SavedThisMonth: 2, Measured: &discovery.Measured{}}}}}
+	result.Totals = discovery.Totals{Workloads: 1, DryRun: 1, FreedThisMonth: 7, SavedThisMonth: 2}
 	var out bytes.Buffer
 
 	require.NoError(t, writeScan(&out, result, scanOptions{output: "table"}))
 
 	got := out.String()
-	assert.Contains(t, got, "Hybernate has saved $7 this month, pausing workloads since put back in dry-run.")
-	assert.Regexp(t, `preview-3\s+deployment/web\s+idle \(dry-run\)\s+measuring since Jan 1\s+\$0\s+\$0.00\s+\$7\s`, got)
+	assert.Contains(t, got, "Hybernate has freed $7 this month, and saved $2 of it, pausing workloads since put back "+
+		"in dry-run.")
+	assert.Regexp(t, `preview-3\s+deployment/web\s+idle \(dry-run\)\s+measuring since Jan 1\s+\$0\s+\$0.00\s+\$7\s+\$2\s`,
+		got)
+}
+
+// The node autoscaler decides whether what pausing frees is ever saved, so
+// the scan names it, and says so.
+func TestWriteScan_NodeAutoscaler(t *testing.T) {
+	tests := []struct {
+		name string
+		a    nodescale.Autoscaler
+		want string
+	}{
+		{name: "found", a: nodescale.Autoscaler{Scalers: []nodescale.Scaler{{Kind: nodescale.ClusterAutoscaler,
+			Provider: "AKS"}}},
+			want: "staging: 1 workload in 1 namespace\nNode autoscaler: Cluster Autoscaler on AKS\n" +
+				"What pausing frees comes off the bill only as nodes scale down.\n\n"},
+		{name: "none", want: "staging: 1 workload in 1 namespace\nNode autoscaler: none found — freed capacity " +
+			"won't lower the bill until nodes scale down; see https://okedeji.io/hybernate/guides/cluster-autoscaler/\n\n"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result := scanResult{Cluster: "staging", NodeAutoscaler: tt.a, ClusterReport: &discovery.ClusterReport{
+				Namespaces: 1, Totals: discovery.Totals{Workloads: 1}}}
+			var out bytes.Buffer
+
+			require.NoError(t, writeScan(&out, result, scanOptions{output: "table"}))
+
+			assert.True(t, strings.HasPrefix(out.String(), tt.want), out.String())
+		})
+	}
 }
 
 func TestWriteScan_Protected(t *testing.T) {
@@ -712,7 +745,7 @@ func TestNextSteps_SkipWhatWontPause(t *testing.T) {
 
 	require.NotNil(t, idle)
 	assert.Equal(t, "api", idle.Name)
-	assert.Equal(t, "-", couldSaveCell(postgres))
+	assert.Equal(t, "-", couldFreeCell(postgres))
 }
 
 // Under an hour is shown in minutes, rounded first, so what rounds to an
@@ -853,6 +886,36 @@ func TestCLI_ScanSlowPrometheus(t *testing.T) {
 	notes := strings.Join(result.Notes, "\n")
 	assert.Contains(t, notes, "the scan ran out of the time it gives CPU history")
 	assert.Contains(t, notes, "--window 0")
+}
+
+// The scan names the node autoscaler in its JSON, and one RBAC hides is
+// unknown, not absent.
+func TestCLI_ScanNodeAutoscaler(t *testing.T) {
+	ns := &corev1.Namespace{ObjectMeta: metav1.ObjectMeta{Name: "preview-42"}}
+	status := &corev1.ConfigMap{ObjectMeta: metav1.ObjectMeta{Name: "cluster-autoscaler-status",
+		Namespace: "kube-system"}}
+	tests := []struct {
+		name   string
+		funcs  interceptor.Funcs
+		kinds  []string
+		unread []string
+	}{
+		{name: "found", kinds: []string{string(nodescale.ClusterAutoscaler)}},
+		{name: "hidden", funcs: forbidReads("NodeList", "ConfigMap"), kinds: []string{},
+			unread: []string{"nodes", "the cluster-autoscaler-status ConfigMap in kube-system"}},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			out, err := runCLI(t, newStatusClient(t, tt.funcs, ns, status), "scan", "-n", "preview-42", "-o", "json",
+				"--window", "0")
+
+			require.NoError(t, err)
+			var result scanResult
+			require.NoError(t, json.Unmarshal([]byte(out), &result))
+			assert.Equal(t, tt.kinds, scalerKinds(result.NodeAutoscaler))
+			assert.Equal(t, tt.unread, result.NodeAutoscaler.Unread)
+		})
+	}
 }
 
 // An empty cluster says so, rather than pointing at notes it doesn't have.

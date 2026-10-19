@@ -26,7 +26,7 @@ Hybernate records the last time each workload was in use: CPU above a threshold,
 Hybernate never pauses a workload it can't measure, and a confident forecast can hold off a pause. Enable `dryRun` mode to see what Hybernate would do without it ever pausing anything. A paused workload scaled up by anyone else is treated as woken, and a GitOps tool undoing a pause is reported with the fix, not fought.
 
 ### Cost Tracking
-Track per-workload resource consumption and savings. See exactly how much you're saving from paused workloads.
+Track what each workload costs, what pausing it frees, and how much of that came off the bill as nodes scaled down, measured from the spare capacity left on each node pool. Freed capacity becomes money only once a node autoscaler removes nodes; `kubectl hybernate nodes` shows what keeps them, and [Node Pools for Real Savings](guides/node-pools.md) how to let them go.
 
 ### Label Opt-In
 Label a workload or namespace `hybernate.io/managed: "true"` and Hybernate manages it, with its settings as annotations. Both live in the manifests or Helm values you already keep in Git, so Argo CD and Flux work as they do today.

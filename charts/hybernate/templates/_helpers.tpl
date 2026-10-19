@@ -126,7 +126,7 @@ watchNamespaces, a Role's in each of them.
   verbs: [get, list, watch]
 - apiGroups: [""]
   resources: [pods]
-  verbs: [get, list]
+  verbs: [get, list, watch]
 - apiGroups: [discovery.k8s.io]
   resources: [endpointslices]
   verbs: [create, delete, get, list, patch, update, watch]
@@ -161,13 +161,16 @@ watchNamespaces, a Role's in each of them.
 
 {{/*
 The operator's rules on cluster-scoped resources, which only a ClusterRole
-can grant: reading namespaces, for their labels, and nodes, for their
-instance types.
+can grant: reading namespaces, for their labels, nodes, for their
+instance types, and Karpenter's NodePools, to say how they consolidate.
 */}}
 {{- define "hybernate.managerClusterRules" -}}
 - apiGroups: [""]
   resources: [namespaces, nodes]
   verbs: [get, list, watch]
+- apiGroups: [karpenter.sh]
+  resources: [nodepools]
+  verbs: [list]
 {{- end }}
 
 {{/*

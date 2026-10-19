@@ -308,8 +308,8 @@ func TestScanCluster_SavingsAreAShareOfTheirOwnCost(t *testing.T) {
 	assert.InDelta(t, 4*w.HourlyCost*168, w.History.Cost, 0.01, "four pods all week, at today's prices")
 	assert.Greater(t, w.History.MonthlyFreed, w.MonthlyCost, "four pods freed is more than one costs")
 	totals := report.Totals
-	assert.InDelta(t, w.History.MonthlyCost, totals.SavingsBasis, 0.001)
-	share := totals.Replayed.MonthlyFreed / totals.SavingsBasis
+	assert.InDelta(t, w.History.MonthlyCost, totals.FreeableBasis, 0.001)
+	share := totals.Replayed.MonthlyFreed / totals.FreeableBasis
 	assert.InDelta(t, (168-1)/168.0, share, 0.001, "asleep all but its first hour, of the pods it ran")
 }
 
@@ -449,8 +449,8 @@ func TestScanCluster_JudgesFromHistoryWithoutMetrics(t *testing.T) {
 	assert.Equal(t, StateUnknown, got["no-history"].State, "nothing to judge it by")
 	assert.Equal(t, 2, report.Totals.Replayed.Workloads, "only the workloads the table lists")
 	assert.InDelta(t, got["idle-api"].History.MonthlyCost+got["busy-api"].History.MonthlyCost,
-		report.Totals.SavingsBasis, 0.001, "the one that couldn't be judged isn't in the share's basis")
-	assert.Zero(t, CouldSave(Workload{State: StateUnknown, History: &History{MonthlyFreed: 5}}))
+		report.Totals.FreeableBasis, 0.001, "the one that couldn't be judged isn't in the share's basis")
+	assert.Zero(t, CouldFree(Workload{State: StateUnknown, History: &History{MonthlyFreed: 5}}))
 }
 
 // A Prometheus too slow to answer in the scan's time costs the replay of
@@ -670,7 +670,7 @@ func TestScanCluster_HistoryOfALongName(t *testing.T) {
 
 // A workload already at zero by hand frees nothing more when paused, so it
 // isn't replayed or counted toward what pausing could save.
-func TestScanCluster_ScaledByHandCouldSaveNothing(t *testing.T) {
+func TestScanCluster_ScaledByHandCouldFreeNothing(t *testing.T) {
 	quiet := func(time.Time) float64 { return 0.001 }
 	f := &fakePrometheus{from: scanTime.Add(-7 * 24 * time.Hour), byNamespace: map[string][]series{testNamespace: {
 		{pod: "old-api-7d9f8c6b5-abcde", container: "main", cores: quiet},
@@ -686,12 +686,12 @@ func TestScanCluster_ScaledByHandCouldSaveNothing(t *testing.T) {
 	w := byName(report)["old-api"]
 	assert.True(t, w.ScaledByHand)
 	assert.Nil(t, w.History, "not replayed")
-	assert.Zero(t, CouldSave(w))
+	assert.Zero(t, CouldFree(w))
 	assert.Zero(t, report.Totals.Replayed.Workloads)
 	assert.Zero(t, report.Totals.Replayed.MonthlyFreed)
 	assert.Equal(t, 1, report.Totals.ScaledToZero)
 	assert.NotContains(t, strings.Join(report.Notes, "\n"), "no CPU history")
-	assert.Zero(t, CouldSave(Workload{ScaledByHand: true, History: &History{MonthlyFreed: 50}}))
+	assert.Zero(t, CouldFree(Workload{ScaledByHand: true, History: &History{MonthlyFreed: 50}}))
 }
 
 // A workload created partway through the window is replayed from when it

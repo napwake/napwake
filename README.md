@@ -17,7 +17,7 @@ Hybernate fixes this by:
 - **Detecting idle workloads** with a per-workload activity clock: CPU, deploys, Prometheus queries, and activity annotations from your own tooling, with no learning period
 - **Learning demand patterns** via a per-workload Holt-Winters forecasting model that tracks daily and weekly seasonality
 - **Acting automatically** by pausing idle workloads, waking them on the first request, and, with `autoResume`, resuming them before users arrive
-- **Tracking savings** with per-workload cost accounting on what pods request, the resources each pause frees, and a cluster-wide total in `kubectl hybernate status`
+- **Tracking cost** per workload on what pods request: what each pause frees, and what of that measurably came off the bill as nodes scaled down, from the spare capacity left on each node pool, with cluster-wide totals in `kubectl hybernate status`. Freed capacity becomes money only once a node autoscaler removes nodes
 
 ## How It Works
 
@@ -72,7 +72,7 @@ metadata:
     hybernate.io/idle-after: "2h"
 ```
 
-The label opts it in; the annotations are its settings. Label a namespace instead to cover every workload in it. In dry-run, Hybernate tracks the workload's activity and what pausing would save, without pausing it. When you're confident:
+The label opts it in; the annotations are its settings. Label a namespace instead to cover every workload in it. In dry-run, Hybernate tracks the workload's activity and what pausing would free, without pausing it. When you're confident:
 
 ```bash
 kubectl hybernate enable my-api -n staging
@@ -92,12 +92,13 @@ kubectl hybernate enable my-api -n staging
 
 - **Label opt-in**: `hybernate.io/managed: "true"` on a workload or namespace, with settings as annotations, all in the manifests you already keep in Git
 - **`kubectl hybernate scan`** finds idle workloads in a cluster and what they cost, with nothing installed, and with Prometheus replays the last week to show how long each would have slept and what that frees, in a report that opens in your browser to share
-- **`kubectl hybernate status`** shows what Hybernate is doing in a cluster on one screen: each workload's state, when it pauses next or what holds it awake, what needs attention, what it has saved, and the latest pauses and wakes with what caused them
+- **`kubectl hybernate status`** shows what Hybernate is doing in a cluster on one screen: each workload's state, when it pauses next or what holds it awake, what needs attention, what pausing has freed and what of that it saved, and the latest pauses and wakes with what caused them
 - **`kubectl hybernate pause`** pauses a workload now, such as a preview environment at the end of the day, to wake on its next request
 - **`kubectl hybernate wake`** wakes a paused workload from the terminal and waits until it's Running
+- **`kubectl hybernate nodes`** names the node autoscaler and shows, for each node, what keeps it from being removed, so what pausing frees can come off the bill
 - **`kubectl hybernate enable`** ends dry-run once you trust what you've measured, and says what to change in Git when a GitOps tool applies the workload
-- **Cost tracking** per workload, for the current month: what it cost, what pausing saved, and a projection for the month, priced at the list price of the nodes it runs on
-- **Dry-run mode** to see every pause the operator would make, and what it would save, without it pausing anything
+- **Cost tracking** per workload, for the current month: what it cost, what pausing freed, what that saved once nodes went, and a projection for the month, priced at the list price of the nodes it runs on
+- **Dry-run mode** to see every pause the operator would make, and what it would free, without it pausing anything
 
 ### Observability
 
@@ -141,7 +142,8 @@ Full docs at **[okedeji.io/hybernate](https://okedeji.io/hybernate)**
 - [Opting In](https://okedeji.io/hybernate/guides/opt-in/): the label, every setting, and GitOps
 - [Idle Detection](https://okedeji.io/hybernate/concepts/idle-detection/): how the activity clock decides when to pause
 - [Forecasting](https://okedeji.io/hybernate/concepts/forecasting/): the Holt-Winters prediction engine
-- [Cost Tracking](https://okedeji.io/hybernate/concepts/cost-tracking/): what a workload costs, and what pausing saves
+- [Cost Tracking](https://okedeji.io/hybernate/concepts/cost-tracking/): what a workload costs, what pausing frees, and what that saves
+- [Node Pools for Real Savings](https://okedeji.io/hybernate/guides/node-pools/): turning what pausing frees into nodes off the bill
 - [API Reference](https://okedeji.io/hybernate/reference/api/): complete CRD field reference
 - [Metrics Reference](https://okedeji.io/hybernate/reference/metrics/): all Prometheus metrics
 

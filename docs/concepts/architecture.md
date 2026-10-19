@@ -71,11 +71,11 @@ Hybernate reads from three external systems:
 - **Metrics Server**: for pod CPU usage (required)
 - **Prometheus**: for PromQL activity queries (optional)
 
-## Node-Level Cost Savings
+## Freed and Saved
 
-Hybernate operates at the workload layer. It does not manage nodes directly. When Hybernate pauses or scales down a workload, it frees CPU and memory on the node. A cluster autoscaler (Cluster Autoscaler, Karpenter, or a managed equivalent) is responsible for detecting underutilized nodes and removing them to realize actual infrastructure cost savings.
+Hybernate operates at the workload layer. It does not manage nodes directly. When Hybernate pauses or scales down a workload, it frees CPU and memory on the node. A cluster autoscaler (Cluster Autoscaler, Karpenter, or a managed equivalent) is responsible for detecting underutilized nodes and removing them, and only then does what pausing freed come off the bill. Hybernate measures how much of what it freed has, as [saved](cost-tracking.md#how-saved-is-measured): every 5 minutes, the leader sets what it holds paused in each node pool against the spare capacity of the pool's nodes, read from cached nodes and pods. Every 10 minutes it also looks for which node autoscaler runs, and exports it as `hybernate_node_autoscaler`.
 
-See the [Cluster Autoscaler Guide](../guides/cluster-autoscaler.md) for recommended configurations.
+See the [Cluster Autoscaler Guide](../guides/cluster-autoscaler.md) for recommended configurations, and [Node Pools for Real Savings](../guides/node-pools.md) for putting non-prod workloads on nodes that pausing empties.
 
 ## Leader Election
 

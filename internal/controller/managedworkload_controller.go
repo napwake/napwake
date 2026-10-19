@@ -121,6 +121,11 @@ type Reconciler struct {
 	// stamps on each ManagedWorkload it takes on. Empty stamps nothing.
 	OperatorNamespace string
 
+	// Savings measures what pausing takes off the bill, drained into each
+	// workload's saved hours as its cost is brought up to date. Nil
+	// measures nothing.
+	Savings savingsMeter
+
 	// Timezone is where the forecast counts hours of the day and days of
 	// the week, so that business hours stay in their slots through daylight
 	// saving changes. Nil means UTC.
@@ -129,6 +134,7 @@ type Reconciler struct {
 	pauser          lifecyclePauser
 	metrics         metricsReader
 	prices          listPricer
+	pools           nodePooler
 	autoscalers     *autoscaler.Finder
 	engines         *engineRegistry
 	activityMemo    activityMemo
@@ -152,6 +158,7 @@ type lifecyclePauser interface {
 	Restore(ctx context.Context, workload *v1alpha1.ManagedWorkload) (int32, error)
 }
 
+// +kubebuilder:rbac:groups=karpenter.sh,resources=nodepools,verbs=list
 // +kubebuilder:rbac:groups=hybernate.io,resources=managedworkloads,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups=hybernate.io,resources=managedworkloads/status,verbs=get;update;patch
 // +kubebuilder:rbac:groups=hybernate.io,resources=managedworkloads/finalizers,verbs=update
@@ -161,7 +168,7 @@ type lifecyclePauser interface {
 // +kubebuilder:rbac:groups="",resources=configmaps,verbs=get
 // +kubebuilder:rbac:groups="",resources=events,verbs=create;patch
 // +kubebuilder:rbac:groups="",resources=services,verbs=get;list;watch
-// +kubebuilder:rbac:groups="",resources=pods,verbs=get;list
+// +kubebuilder:rbac:groups="",resources=pods,verbs=get;list;watch
 // +kubebuilder:rbac:groups="",resources=nodes,verbs=get;list;watch
 // +kubebuilder:rbac:groups=autoscaling,resources=horizontalpodautoscalers,verbs=get;list;watch
 // +kubebuilder:rbac:groups=keda.sh,resources=scaledobjects,verbs=get;list;watch;patch
@@ -1584,6 +1591,9 @@ func (r *Reconciler) initDefaults() {
 		r.metrics = reader
 		if r.prices == nil {
 			r.prices = reader
+		}
+		if r.pools == nil {
+			r.pools = reader
 		}
 	}
 	if r.engines == nil {

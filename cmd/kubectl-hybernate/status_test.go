@@ -21,6 +21,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"testing"
 	"time"
 
@@ -79,7 +80,7 @@ func statusCluster() []client.Object {
 	api := statusWorkloadObj("preview-42", "api", v1alpha1.TargetKindDeployment, v1alpha1.PhasePaused, 3*time.Hour)
 	api.Status.Doorman = []v1alpha1.DoormanRoute{{Service: "api", DoormanPort: 20000}}
 	api.Status.Activity = activity(v1alpha1.ActivitySourceRequest, 4*time.Hour, -3*time.Hour)
-	api.Status.Cost = &v1alpha1.CostStatus{SavedThisMonth: "$12.40"}
+	api.Status.Cost = &v1alpha1.CostStatus{FreedThisMonth: "$12.40", SavedThisMonth: "$10.00"}
 
 	postgres := statusWorkloadObj("preview-42", "postgres", v1alpha1.TargetKindStatefulSet, v1alpha1.PhaseRunning,
 		5*time.Hour)
@@ -87,12 +88,12 @@ func statusCluster() []client.Object {
 	postgres.Status.Conditions = []metav1.Condition{
 		condition("HeldByDependents", metav1.ConditionTrue, "DependentsAwake", "held awake for preview-42/worker"),
 	}
-	postgres.Status.Cost = &v1alpha1.CostStatus{SavedThisMonth: "$30.05"}
+	postgres.Status.Cost = &v1alpha1.CostStatus{FreedThisMonth: "$30.05", SavedThisMonth: "$25.00"}
 
 	web := statusWorkloadObj("preview-7", "web", v1alpha1.TargetKindDeployment, v1alpha1.PhaseRunning, 2*time.Hour)
 	web.Spec.DryRun = true
 	web.Status.Activity = activity(v1alpha1.ActivitySourceRollout, 15*time.Minute, 45*time.Minute)
-	web.Status.Cost = &v1alpha1.CostStatus{SavedThisMonth: "$0.00"}
+	web.Status.Cost = &v1alpha1.CostStatus{FreedThisMonth: "$0.00", SavedThisMonth: "$0.00"}
 
 	worker := statusWorkloadObj("preview-7", "worker", v1alpha1.TargetKindDeployment, v1alpha1.PhaseResuming,
 		25*time.Minute)
@@ -119,10 +120,29 @@ func statusCluster() []client.Object {
 
 func newStatusClient(t *testing.T, funcs interceptor.Funcs, objs ...client.Object) client.Client {
 	t.Helper()
+	return withoutKarpenter(newClusterClient(t, funcs, objs...))
+}
+
+// newClusterClient is a cluster with Karpenter's CRD, as far as the fake
+// client goes: it lists any kind it's asked for.
+func newClusterClient(t *testing.T, funcs interceptor.Funcs, objs ...client.Object) client.WithWatch {
+	t.Helper()
 	return fake.NewClientBuilder().WithScheme(scheme).WithObjects(objs...).WithInterceptorFuncs(funcs).
 		WithIndex(&corev1.Event{}, "involvedObject.kind", func(o client.Object) []string {
 			return []string{o.(*corev1.Event).InvolvedObject.Kind}
 		}).Build()
+}
+
+// withoutKarpenter answers for Karpenter's kinds as an API server without
+// its CRD does.
+func withoutKarpenter(c client.WithWatch) client.Client {
+	return interceptor.NewClient(c, interceptor.Funcs{List: func(ctx context.Context, c client.WithWatch,
+		list client.ObjectList, opts ...client.ListOption) error {
+		if gk := list.GetObjectKind().GroupVersionKind().GroupKind(); gk.Group == "karpenter.sh" {
+			return &meta.NoKindMatchError{GroupKind: gk}
+		}
+		return c.List(ctx, list, opts...)
+	}})
 }
 
 func statusOpts() statusOptions {
@@ -145,17 +165,18 @@ func TestStatus(t *testing.T) {
 	//nolint:lll // the expected screen is as wide as the command prints it
 	assert.Equal(t, `staging (EKS us-east-1): Hybernate manages 4 workloads.
   1 paused, 2 running, 1 resuming; 1 in dry-run, measured but never paused
-  Saved $42 this month.
+  Node autoscaler: none found — freed capacity won't lower the bill until nodes scale down; see https://okedeji.io/hybernate/guides/cluster-autoscaler/
+  Freed $42 this month, and saved $35 of it.
 
 Needs attention:
   preview-7/worker   GitOpsConflict   Argo CD set the replicas from Git
   preview-7/worker   Stuck            resuming for 25m: waiting for preview-42/postgres
 
-  NAMESPACE    WORKLOAD               STATE               FOR   LAST ACTIVITY      NEXT                             SAVED THIS MONTH
-  preview-42   deployment/api         paused              3h    request, 4h ago    wakes on a request or activity   $12
-  preview-42   statefulset/postgres   running             5h    cpu, 2h ago        held awake by its dependents     $30
-  preview-7    deployment/web         running (dry-run)   2h    rollout, 15m ago   would pause in 45m               -
-  preview-7    deployment/worker      resuming            25m   -                  -                                -
+  NAMESPACE    WORKLOAD               STATE               FOR   LAST ACTIVITY      NEXT                             FREED THIS MONTH   SAVED
+  preview-42   deployment/api         paused              3h    request, 4h ago    wakes on a request or activity   $12                $10
+  preview-42   statefulset/postgres   running             5h    cpu, 2h ago        held awake by its dependents     $30                $25
+  preview-7    deployment/web         running (dry-run)   2h    rollout, 15m ago   would pause in 45m               -                  -
+  preview-7    deployment/worker      resuming            25m   -                  -                                -                  -
 
 Recent pauses and wakes:
   30m ago   preview-7/worker   scaled up to 2 replicas by argocd-controller outside Hybernate; counted as activity
@@ -497,6 +518,8 @@ func TestStatus_NothingManaged(t *testing.T) {
 	out := runStatus(t, newStatusClient(t, interceptor.Funcs{}), statusOpts())
 
 	assert.Equal(t, "staging (EKS us-east-1): Hybernate manages no workloads here.\n"+
+		"Node autoscaler: none found — freed capacity won't lower the bill until nodes scale down; see "+
+		"https://okedeji.io/hybernate/guides/cluster-autoscaler/\n"+
 		"kubectl hybernate scan finds idle ones; label one hybernate.io/managed=true for Hybernate to manage it.\n", out)
 }
 
@@ -535,32 +558,105 @@ func TestStatus_NamespaceThatDoesntExist(t *testing.T) {
 	require.NoError(t, err)
 }
 
-// Savings read as scan shows them, in whole dollars with thousands
-// separators, and a saving under a dollar isn't $0.
-func TestStatus_SavedInDollars(t *testing.T) {
+// Money reads as scan shows it, in whole dollars with thousands
+// separators, and an amount under a dollar isn't $0.
+func TestStatus_FreedAndSavedInDollars(t *testing.T) {
 	big := statusWorkloadObj("preview-42", "api", v1alpha1.TargetKindDeployment, v1alpha1.PhasePaused, time.Hour)
-	big.Status.Cost = &v1alpha1.CostStatus{SavedThisMonth: "$1234.56"}
+	big.Status.Cost = &v1alpha1.CostStatus{FreedThisMonth: "$1234.56", SavedThisMonth: "$1000.10"}
 	small := statusWorkloadObj("preview-42", "web", v1alpha1.TargetKindDeployment, v1alpha1.PhasePaused, time.Hour)
-	small.Status.Cost = &v1alpha1.CostStatus{SavedThisMonth: "$0.20"}
+	small.Status.Cost = &v1alpha1.CostStatus{FreedThisMonth: "$0.20", SavedThisMonth: "$0.20"}
 
 	out := runStatus(t, newStatusClient(t, interceptor.Funcs{}, big, small), statusOpts())
 
-	assert.Contains(t, out, "  Saved $1,235 this month.\n")
-	assert.Regexp(t, `deployment/api .* \$1,235\n`, out)
-	assert.Regexp(t, `deployment/web .* <\$1\n`, out)
+	assert.Contains(t, out, "  Freed $1,235 this month, and saved $1,000 of it.\n")
+	assert.Regexp(t, `deployment/api .* \$1,235\s+\$1,000\n`, out)
+	assert.Regexp(t, `deployment/web .* <\$1\s+<\$1\n`, out)
 }
 
-// Dry-run never pauses, so what a workload in dry-run now has saved this
-// month is what its pauses saved before dry-run was turned on, and counts.
-func TestStatus_SavedBeforeDryRun(t *testing.T) {
+// Dry-run never pauses, so what a workload in dry-run now has freed this
+// month is what its pauses freed before dry-run was turned on, and counts.
+func TestStatus_FreedBeforeDryRun(t *testing.T) {
 	w := statusWorkloadObj("preview-7", "web", v1alpha1.TargetKindDeployment, v1alpha1.PhaseRunning, time.Hour)
 	w.Spec.DryRun = true
-	w.Status.Cost = &v1alpha1.CostStatus{SavedThisMonth: "$9.00"}
+	w.Status.Cost = &v1alpha1.CostStatus{FreedThisMonth: "$9.00", SavedThisMonth: "$9.00"}
 
 	out := runStatus(t, newStatusClient(t, interceptor.Funcs{}, w), statusOpts())
 
-	assert.Contains(t, out, "  Saved $9 this month.\n")
-	assert.Regexp(t, `deployment/web\s+running \(dry-run\) .* \$9\n`, out)
+	assert.Contains(t, out, "  Freed $9 this month, and saved $9 of it.\n")
+	assert.Regexp(t, `deployment/web\s+running \(dry-run\) .* \$9\s+\$9\n`, out)
+}
+
+// Freed well above saved means nodes aren't scaling down, which status
+// raises, pointing at nodes; a workload whose savings can't be measured
+// says why, and isn't counted as not saving.
+func TestStatus_FreedWellAboveSaved(t *testing.T) {
+	tests := []struct {
+		name      string
+		costs     []*v1alpha1.CostStatus
+		attention bool
+	}{
+		{name: "most of it saved", costs: []*v1alpha1.CostStatus{{FreedThisMonth: "$40.00", SavedThisMonth: "$30.00"}}},
+		{name: "little of it saved", attention: true,
+			costs: []*v1alpha1.CostStatus{{FreedThisMonth: "$40.00", SavedThisMonth: "$5.00"}}},
+		{name: "too little freed to matter",
+			costs: []*v1alpha1.CostStatus{{FreedThisMonth: "$0.60", SavedThisMonth: "$0.00"}}},
+		{name: "unmeasured savings aren't missing savings",
+			costs: []*v1alpha1.CostStatus{{FreedThisMonth: "$40.00", SavingsUnknown: "nodes can't be read"},
+				{FreedThisMonth: "$10.00", SavedThisMonth: "$9.00"}}},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			objs := make([]client.Object, 0, len(tt.costs))
+			for i, cost := range tt.costs {
+				w := statusWorkloadObj("shop", fmt.Sprintf("w%d", i), v1alpha1.TargetKindDeployment,
+					v1alpha1.PhasePaused, time.Hour)
+				w.Status.Cost = cost
+				objs = append(objs, w)
+			}
+
+			result, err := clusterStatus(context.Background(), newStatusClient(t, interceptor.Funcs{}, objs...),
+				"shop", statusOpts())
+			require.NoError(t, err)
+			var out bytes.Buffer
+			require.NoError(t, writeStatus(&out, result, "table", statusNow))
+
+			assert.Equal(t, tt.attention, result.NodesNotScalingDown)
+			if tt.attention {
+				assert.Contains(t, out.String(), "Needs attention:\n  Pausing freed $40 this month, but only $5 of "+
+					"it came off the bill: nodes aren't scaling down.\n  kubectl hybernate nodes shows why.\n")
+			} else {
+				assert.NotContains(t, out.String(), "kubectl hybernate nodes")
+			}
+		})
+	}
+}
+
+func TestStatus_SavingsUnknown(t *testing.T) {
+	a := statusWorkloadObj("shop", "a", v1alpha1.TargetKindDeployment, v1alpha1.PhasePaused, time.Hour)
+	a.Status.Cost = &v1alpha1.CostStatus{FreedThisMonth: "$4.00", SavingsUnknown: "the operator can't list nodes"}
+	b := statusWorkloadObj("shop", "b", v1alpha1.TargetKindDeployment, v1alpha1.PhasePaused, time.Hour)
+	b.Status.Cost = &v1alpha1.CostStatus{FreedThisMonth: "$2.00", SavingsUnknown: "the operator can't list nodes"}
+
+	result, err := clusterStatus(context.Background(), newStatusClient(t, interceptor.Funcs{}, a, b), "shop",
+		statusOpts())
+	require.NoError(t, err)
+	var out bytes.Buffer
+	require.NoError(t, writeStatus(&out, result, "table", statusNow))
+
+	assert.Equal(t, []string{"the operator can't list nodes"}, result.SavingsUnknown)
+	assert.Contains(t, out.String(),
+		"  What's saved can't be measured for some workloads: the operator can't list nodes\n")
+	assert.Regexp(t, `deployment/a .* \$4\s+unknown\n`, out.String())
+}
+
+// The node autoscaler line comes from what status can see of the cluster.
+func TestStatus_NodeAutoscaler(t *testing.T) {
+	ca := &corev1.ConfigMap{ObjectMeta: metav1.ObjectMeta{Name: "cluster-autoscaler-status", Namespace: "kube-system"}}
+	objs := append(statusCluster(), ca)
+
+	out := runStatus(t, newStatusClient(t, interceptor.Funcs{}, objs...), statusOpts())
+
+	assert.Contains(t, out, "  Node autoscaler: Cluster Autoscaler\n")
 }
 
 func TestStatus_Since(t *testing.T) {
@@ -599,7 +695,9 @@ func TestStatus_JSON(t *testing.T) {
 	assert.Len(t, got.Workloads, 4)
 	assert.Len(t, got.Problems, 2)
 	assert.Len(t, got.Recent, 3)
-	assert.InDelta(t, 42.45, got.SavedThisMonth, 0.001)
+	assert.InDelta(t, 42.45, got.FreedThisMonth, 0.001)
+	assert.InDelta(t, 35.0, got.SavedThisMonth, 0.001)
+	assert.Empty(t, got.NodeAutoscaler.Scalers)
 }
 
 // inZone runs the rest of a test with the machine's time zone set to an

@@ -114,6 +114,66 @@ var (
 	}, []string{"namespace", "workload"})
 )
 
+// --- Savings ---
+
+// These are labelled by node pool, the first of a node's
+// karpenter.sh/nodepool, cloud.google.com/gke-nodepool,
+// eks.amazonaws.com/nodegroup and kubernetes.azure.com/agentpool labels, ""
+// for nodes with none, and "*" for paused replicas whose pool wasn't
+// recorded, which are set against what every pool has left over.
+var (
+	CapacityPausedCPUCores = prometheus.NewGaugeVec(prometheus.GaugeOpts{
+		Name: "hybernate_capacity_paused_cpu_cores",
+		Help: "vCPUs the replicas Hybernate holds paused requested, by the node pool they ran in.",
+	}, []string{"pool"})
+
+	CapacityPausedMemoryBytes = prometheus.NewGaugeVec(prometheus.GaugeOpts{
+		Name: "hybernate_capacity_paused_memory_bytes",
+		Help: "Memory the replicas Hybernate holds paused requested, by the node pool they ran in.",
+	}, []string{"pool"})
+
+	CapacitySpareCPUCores = prometheus.NewGaugeVec(prometheus.GaugeOpts{
+		Name: "hybernate_capacity_spare_cpu_cores",
+		Help: "Allocatable vCPUs no pod requests on each node pool's schedulable, Ready nodes.",
+	}, []string{"pool"})
+
+	CapacitySpareMemoryBytes = prometheus.NewGaugeVec(prometheus.GaugeOpts{
+		Name: "hybernate_capacity_spare_memory_bytes",
+		Help: "Allocatable memory no pod requests on each node pool's schedulable, Ready nodes.",
+	}, []string{"pool"})
+
+	SavingsRealisedDollarsPerHour = prometheus.NewGaugeVec(prometheus.GaugeOpts{
+		Name: "hybernate_savings_realised_dollars_per_hour",
+		Help: "What the paused replicas a node pool's spare capacity can't hold would cost, at its nodes' " +
+			"list rates: what pausing takes off the bill each hour, at least.",
+	}, []string{"pool"})
+)
+
+// NodeAutoscaler is 1 for each node autoscaler the operator found, by kind:
+// "none" when it could read everywhere it looks and found none, "unknown"
+// when it couldn't. Freed capacity reaches the bill only as nodes scale down.
+var NodeAutoscaler = prometheus.NewGaugeVec(prometheus.GaugeOpts{
+	Name: "hybernate_node_autoscaler",
+	Help: "1 for each node autoscaler found, by kind; none or unknown when there's none or it couldn't tell.",
+}, []string{"kind"})
+
+// perPool are the vectors labelled by node pool.
+var perPool = []*prometheus.GaugeVec{
+	CapacityPausedCPUCores,
+	CapacityPausedMemoryBytes,
+	CapacitySpareCPUCores,
+	CapacitySpareMemoryBytes,
+	SavingsRealisedDollarsPerHour,
+}
+
+// DeletePool drops a node pool's series, once it has no Ready nodes and
+// nothing paused.
+func DeletePool(pool string) {
+	for _, v := range perPool {
+		v.DeleteLabelValues(pool)
+	}
+}
+
 // --- Doorman ---
 
 var (
@@ -180,6 +240,14 @@ func init() {
 		PredictionRegimeChanges,
 		DryrunActions,
 		TargetUnavailable,
+
+		// Savings
+		CapacityPausedCPUCores,
+		CapacityPausedMemoryBytes,
+		CapacitySpareCPUCores,
+		CapacitySpareMemoryBytes,
+		SavingsRealisedDollarsPerHour,
+		NodeAutoscaler,
 
 		// Doorman
 		DoormanWakes,

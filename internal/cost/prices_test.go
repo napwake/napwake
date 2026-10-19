@@ -179,6 +179,29 @@ func TestMean(t *testing.T) {
 	assert.Equal(t, Rates{}, Mean(nil))
 }
 
+func TestNodePoolOf(t *testing.T) {
+	tests := []struct {
+		name   string
+		labels map[string]string
+		want   string
+	}{
+		{name: "Karpenter", labels: map[string]string{"karpenter.sh/nodepool": "general"}, want: "general"},
+		{name: "GKE", labels: map[string]string{"cloud.google.com/gke-nodepool": "default-pool"}, want: "default-pool"},
+		{name: "EKS managed node group", labels: map[string]string{"eks.amazonaws.com/nodegroup": "ng-1"}, want: "ng-1"},
+		{name: "AKS", labels: map[string]string{"kubernetes.azure.com/agentpool": "nodepool1"}, want: "nodepool1"},
+		{name: "Karpenter on EKS wins over the node group",
+			labels: map[string]string{"eks.amazonaws.com/nodegroup": "ng-1", "karpenter.sh/nodepool": "general"},
+			want:   "general"},
+		{name: "an instance type isn't a pool", labels: nodeLabels("m6i.large", "us-east-1"), want: ""},
+		{name: "no labels", want: ""},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			assert.Equal(t, tt.want, NodePoolOf(tt.labels))
+		})
+	}
+}
+
 func nodeLabels(instanceType, region string) map[string]string {
 	return map[string]string{
 		"node.kubernetes.io/instance-type": instanceType,

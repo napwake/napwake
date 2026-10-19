@@ -122,6 +122,7 @@ ul.plain { margin: 0; padding: 0 0 0 18px; color: var(--muted); font-size: 14px;
   <h1>Workload scan</h1>
   <p class="lede">{{.Basis}}</p>
   <p class="prices">{{.Prices}}</p>
+  <p class="prices">{{.NodeAutoscaler}}</p>
 
   <section class="headline">
     <div class="figures">
@@ -149,8 +150,8 @@ ul.plain { margin: 0; padding: 0 0 0 18px; color: var(--muted); font-size: 14px;
         <th class="n"><button type="button">Workloads</button></th>
         <th class="n"><button type="button">Idle now</button></th>
         <th class="n"><button type="button">Cost / month</button></th>
-        {{if .Saving}}<th class="n"><button type="button" class="tip" title="{{.Tips.Saved}}">Saved this month</button></th>{{end}}
-        {{if .CouldSave}}<th class="n"><button type="button" class="tip" title="{{.Tips.CouldSave}}">Could save / month</button></th>{{end}}
+        {{if .Freeing}}<th class="n"><button type="button" class="tip" title="{{.Tips.Freed}}">Freed this month</button></th>{{end}}
+        {{if .CouldFree}}<th class="n"><button type="button" class="tip" title="{{.Tips.CouldFree}}">Could free / month</button></th>{{end}}
       </tr></thead>
       <tbody>
         {{range .Namespaces}}<tr>
@@ -158,8 +159,8 @@ ul.plain { margin: 0; padding: 0 0 0 18px; color: var(--muted); font-size: 14px;
           <td class="n" data-v="{{.Workloads}}">{{.Workloads}}</td>
           <td class="n" data-v="{{.Idle}}">{{.Idle}}</td>
           <td class="n" data-v="{{.CostSort}}">{{.Cost}}</td>
-          {{if $.Saving}}<td class="n" data-v="{{.SavedSort}}">{{.Saved}}</td>{{end}}
-          {{if $.CouldSave}}<td class="n" data-v="{{.CouldSaveSort}}">{{.CouldSave}}</td>{{end}}
+          {{if $.Freeing}}<td class="n" data-v="{{.FreedSort}}">{{.Freed}}{{if ne .Freed "$0"}}<span class="sub">{{.Saved}} saved</span>{{end}}</td>{{end}}
+          {{if $.CouldFree}}<td class="n" data-v="{{.CouldFreeSort}}">{{.CouldFree}}</td>{{end}}
         </tr>{{end}}
       </tbody>
     </table>
@@ -167,7 +168,7 @@ ul.plain { margin: 0; padding: 0 0 0 18px; color: var(--muted); font-size: 14px;
   {{end}}
 
   <h2>Workloads</h2>
-  <p>Every Deployment and StatefulSet scanned{{if .Unjudged}}, except {{.Unjudged}} it couldn't judge, which the notes list{{end}}: what each is doing right now, what Hybernate saves pausing the live ones, and what pausing the rest could save.</p>
+  <p>Every Deployment and StatefulSet scanned{{if .Unjudged}}, except {{.Unjudged}} it couldn't judge, which the notes list{{end}}: what each is doing right now, what pausing the live ones has freed and saved, and what pausing the rest could free.</p>
   {{if .Workloads}}
   <div class="tools">
     <p class="count" data-count="workloads">{{len .Workloads}} {{if eq (len .Workloads) 1}}workload{{else}}workloads{{end}}; select a column to sort</p>
@@ -180,9 +181,9 @@ ul.plain { margin: 0; padding: 0 0 0 18px; color: var(--muted); font-size: 14px;
         <th><button type="button">State</button></th>
         <th class="n"><button type="button">Cost / month</button></th>
         {{if .Slept}}<th class="n"><button type="button" class="tip" title="{{.Tips.Slept}}">Slept this month</button></th>{{end}}
-        {{if .Saving}}<th class="n"><button type="button" class="tip" title="{{.Tips.Saved}}">Saved this month</button></th>{{end}}
+        {{if .Freeing}}<th class="n"><button type="button" class="tip" title="{{.Tips.Freed}}">Freed this month</button></th>{{end}}
         {{if .Sleep}}<th class="n"><button type="button" class="tip" title="{{.Tips.CouldSleep}}">Could sleep</button></th>{{end}}
-        {{if .CouldSave}}<th class="n"><button type="button" class="tip" title="{{.Tips.CouldSave}}">Could save / month</button></th>{{end}}
+        {{if .CouldFree}}<th class="n"><button type="button" class="tip" title="{{.Tips.CouldFree}}">Could free / month</button></th>{{end}}
       </tr></thead>
       <tbody>
         {{range .Workloads}}<tr>
@@ -190,9 +191,9 @@ ul.plain { margin: 0; padding: 0 0 0 18px; color: var(--muted); font-size: 14px;
           <td><span class="state {{.StateClass}}"><span class="dot"></span>{{.State}}</span>{{if .Because}}<span class="because">{{.Because}}</span>{{end}}</td>
           <td class="n" data-v="{{.CostSort}}">{{.Cost}}</td>
           {{if $.Slept}}<td class="n" data-v="{{.SleptSort}}">{{.Slept}}{{if ne .SleptWakes "-"}}<span class="sub">{{.SleptWakes}} {{if eq .SleptWakes "1"}}wake{{else}}wakes{{end}}<br>{{.SleptSince}}</span>{{end}}</td>{{end}}
-          {{if $.Saving}}<td class="n" data-v="{{.SavedSort}}">{{.Saved}}</td>{{end}}
+          {{if $.Freeing}}<td class="n" data-v="{{.FreedSort}}">{{.Freed}}{{if ne .Freed "-"}}<span class="sub">{{.Saved}} saved</span>{{end}}</td>{{end}}
           {{if $.Sleep}}<td class="n" data-v="{{.CouldSleepSort}}">{{.CouldSleep}}{{if ne .Wakes "-"}}<span class="sub">{{.Wakes}} {{if eq .Wakes "1"}}wake{{else}}wakes{{end}}{{if .Since}}<br>{{.Since}}{{end}}</span>{{end}}</td>{{end}}
-          {{if $.CouldSave}}<td class="n" data-v="{{.CouldSaveSort}}">{{.CouldSave}}</td>{{end}}
+          {{if $.CouldFree}}<td class="n" data-v="{{.CouldFreeSort}}">{{.CouldFree}}</td>{{end}}
         </tr>{{end}}
       </tbody>
     </table>

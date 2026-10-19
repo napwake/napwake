@@ -458,8 +458,8 @@ func TestScanCluster_SavingsBySource(t *testing.T) {
 	require.NotNil(t, got["dry"].Measured)
 	assert.InDelta(t, got["dry"].Measured.Freed/73*hoursPerMonth, got["dry"].Measured.MonthlyFreed, 0.001,
 		"a month at the rate measured since dry-run started")
-	assert.InDelta(t, got["dry"].Measured.MonthlyFreed, CouldSave(got["dry"]), 0.001)
-	assert.Zero(t, CouldSave(got["live"]), "a live workload's saving is already happening")
+	assert.InDelta(t, got["dry"].Measured.MonthlyFreed, CouldFree(got["dry"]), 0.001)
+	assert.Zero(t, CouldFree(got["live"]), "a live workload's saving is already happening")
 	assert.Equal(t, 1, report.Totals.Live)
 	assert.InDelta(t, 12.40, report.Totals.SavedThisMonth, 0.001)
 	assert.Equal(t, 1, report.Totals.DryRun)
@@ -481,7 +481,7 @@ func TestScanCluster_DryRunScaledByHandIsntMeasured(t *testing.T) {
 	w := byName(report)["dry"]
 	require.True(t, w.ScaledByHand)
 	require.NotNil(t, w.Measured)
-	assert.Zero(t, CouldSave(w))
+	assert.Zero(t, CouldFree(w))
 	assert.Equal(t, 1, report.Totals.DryRun)
 	assert.Equal(t, Measured{}, report.Totals.Measured)
 }
@@ -514,7 +514,7 @@ func TestScanCluster_WontPauseAStatefulSetThatDeletesItsClaims(t *testing.T) {
 	assert.Equal(t, StateIdle, got["postgres"].State)
 	assert.Equal(t, "PVCs deleted on scale-down", got["postgres"].WontPause)
 	assert.Contains(t, got["postgres"].Clues, "won't pause: PVCs deleted on scale-down")
-	assert.Zero(t, CouldSave(Workload{WontPause: "PVCs deleted on scale-down", History: &History{MonthlyFreed: 50},
+	assert.Zero(t, CouldFree(Workload{WontPause: "PVCs deleted on scale-down", History: &History{MonthlyFreed: 50},
 		State: StateIdle}))
 	assert.Empty(t, got["redis"].WontPause, "PVCs kept on scale-down")
 }
@@ -623,7 +623,7 @@ func TestScanCluster_ProtectedNamespace(t *testing.T) {
 	w := byName(report)["idle-api"]
 	assert.True(t, w.Protected)
 	require.NotNil(t, w.History, "replayed, to show what it does")
-	assert.Zero(t, CouldSave(w))
+	assert.Zero(t, CouldFree(w))
 	assert.Zero(t, report.Totals.Replayed.Workloads, "not counted")
 }
 
@@ -631,7 +631,7 @@ func TestScanCluster_ProtectedNamespace(t *testing.T) {
 // its would-be pauses since are measured, never added to what was saved.
 func TestScanCluster_SavedBeforeGoingBackToDryRun(t *testing.T) {
 	back := managedFor("back", v1alpha1.ManagedWorkloadStatus{Phase: v1alpha1.PhaseRunning,
-		Cost: &v1alpha1.CostStatus{SavedThisMonth: "$5.00"},
+		Cost: &v1alpha1.CostStatus{FreedThisMonth: "$8.00", SavedThisMonth: "$5.00"},
 		DryRun: &v1alpha1.DryRunStatus{Since: metav1.NewTime(scanTime.Add(-10 * time.Hour)), Pauses: 1,
 			Slept: metav1.Duration{Duration: 4 * time.Hour}}})
 	back.Spec.DryRun = true
@@ -641,12 +641,42 @@ func TestScanCluster_SavedBeforeGoingBackToDryRun(t *testing.T) {
 	report := scanWorkloads(t, objs...)
 
 	w := byName(report)["back"]
+	assert.InDelta(t, 8.00, w.FreedThisMonth, 0.001)
+	assert.InDelta(t, 8.00, report.Totals.FreedThisMonth, 0.001)
 	assert.InDelta(t, 5.00, w.SavedThisMonth, 0.001)
 	assert.InDelta(t, 5.00, report.Totals.SavedThisMonth, 0.001)
 	assert.Zero(t, report.Totals.Live)
 	assert.Equal(t, 1, report.Totals.DryRun)
 	require.NotNil(t, w.Measured)
-	assert.InDelta(t, w.Measured.MonthlyFreed, CouldSave(w), 0.001, "what it would save is measured, not saved")
+	assert.InDelta(t, w.Measured.MonthlyFreed, CouldFree(w), 0.001, "what it would free is measured, not saved")
+}
+
+// Freed and saved are read apart: what pausing freed at list price, and
+// the part of it that came off the bill. Last month's record counts for
+// neither.
+func TestFreedAndSavedThisMonth(t *testing.T) {
+	thisMonth := metav1.NewTime(scanTime.Add(-time.Hour))
+	lastMonth := metav1.NewTime(scanTime.AddDate(0, -1, 0))
+	tests := []struct {
+		name         string
+		cost         *v1alpha1.CostStatus
+		freed, saved float64
+	}{
+		{name: "no cost yet"},
+		{name: "freed, some of it saved", freed: 40, saved: 12.5,
+			cost: &v1alpha1.CostStatus{FreedThisMonth: "$40.00", SavedThisMonth: "$12.50", LastAccumulatedAt: &thisMonth}},
+		{name: "last month's",
+			cost: &v1alpha1.CostStatus{FreedThisMonth: "$40.00", SavedThisMonth: "$12.50", LastAccumulatedAt: &lastMonth}},
+		{name: "unreadable", cost: &v1alpha1.CostStatus{FreedThisMonth: "pending", SavedThisMonth: ""}},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			mw := &v1alpha1.ManagedWorkload{Status: v1alpha1.ManagedWorkloadStatus{Cost: tt.cost}}
+
+			assert.InDelta(t, tt.freed, FreedThisMonth(mw, scanTime), 0.001)
+			assert.InDelta(t, tt.saved, SavedThisMonth(mw, scanTime), 0.001)
+		})
+	}
 }
 
 // Until the operator's first reconcile in a new month, a workload's record

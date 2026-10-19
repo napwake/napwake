@@ -42,7 +42,7 @@ const gibibyte = 1 << 30
 var twoReplicas = stubMetrics{cpuPerReplica: 1000, memoryPerReplica: gibibyte, replicas: 2}
 
 func measuring(since time.Time) *v1alpha1.DryRunStatus {
-	return &v1alpha1.DryRunStatus{Since: metav1.NewTime(since), EstimatedSavings: "$0.00"}
+	return &v1alpha1.DryRunStatus{Since: metav1.NewTime(since), EstimatedFreed: "$0.00"}
 }
 
 func runDryRunClock(t *testing.T, workload *v1alpha1.ManagedWorkload, metrics stubMetrics) []string {
@@ -86,7 +86,7 @@ func TestDryRun_ActivityEndsAWouldBePause(t *testing.T) {
 		Slept:            metav1.Duration{Duration: time.Hour},
 		FreedCPUHours:    resource.MustParse("2"),
 		FreedMemoryHours: resource.MustParse("2"),
-		EstimatedSavings: "$0.07",
+		EstimatedFreed:   "$0.07",
 		Resources:        &v1alpha1.ResourceSnapshot{Replicas: 2, CPUMillis: 1000, MemoryBytes: gibibyte},
 	}
 	metrics := twoReplicas
@@ -98,7 +98,7 @@ func TestDryRun_ActivityEndsAWouldBePause(t *testing.T) {
 	d := workload.Status.DryRun
 	assert.Equal(t, int32(2), d.Pauses)
 	assert.Equal(t, 4*time.Hour, d.Slept.Duration, "asleep from going Idle until the activity that would have woken it")
-	assert.Equal(t, "$0.28", d.EstimatedSavings, "3h of 2 vCPU and 2 GiB added to $0.07")
+	assert.Equal(t, "$0.28", d.EstimatedFreed, "3h of 2 vCPU and 2 GiB added to $0.07")
 	assert.Nil(t, d.Resources)
 	require.Len(t, resumed, 1)
 	assert.Contains(t, resumed[0], "[dry-run]")
@@ -150,7 +150,7 @@ func TestDryRun_ShortPausesOfSmallWorkloadsAddUp(t *testing.T) {
 	assert.Equal(t, 24*time.Hour, d.Slept.Duration)
 	assert.InEpsilon(t, 0.01*24, d.FreedCPUHours.AsApproximateFloat64(), 0.001)
 	assert.InEpsilon(t, 0.0625*24, d.FreedMemoryHours.AsApproximateFloat64(), 0.001)
-	assert.Equal(t, cost.FormatDollars(cost.ComputeHourly(0.01, 0.0625, cost.DefaultRates)*24), d.EstimatedSavings)
+	assert.Equal(t, cost.FormatDollars(cost.ComputeHourly(0.01, 0.0625, cost.DefaultRates)*24), d.EstimatedFreed)
 }
 
 // A dry-run workload made Idle by a pause request before its activity was
@@ -220,7 +220,7 @@ func TestDryRun_WouldBePauseEndsWhenHybernateLetsGo(t *testing.T) {
 			assert.Equal(t, v1alpha1.PhaseRunning, got.Status.Phase)
 			require.NotNil(t, got.Status.DryRun)
 			assert.Equal(t, 3*time.Hour, got.Status.DryRun.Slept.Duration)
-			assert.Equal(t, "$0.21", got.Status.DryRun.EstimatedSavings, "3h of 2 vCPU and 2 GiB")
+			assert.Equal(t, "$0.21", got.Status.DryRun.EstimatedFreed, "3h of 2 vCPU and 2 GiB")
 			assert.Nil(t, got.Status.DryRun.Resources)
 		})
 	}

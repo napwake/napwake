@@ -38,6 +38,7 @@ import (
 
 	"github.com/okedeji/hybernate/internal/cost"
 	"github.com/okedeji/hybernate/internal/discovery"
+	"github.com/okedeji/hybernate/internal/nodescale"
 )
 
 // defaultCPUThreshold matches the activity clock's default, so the scan
@@ -84,6 +85,9 @@ type scanResult struct {
 	Cluster  string   `json:"cluster"`
 	Settings settings `json:"settings"`
 	Prices   prices   `json:"prices"`
+	// NodeAutoscaler is what would turn the capacity pausing frees into
+	// savings, by removing nodes.
+	NodeAutoscaler nodescale.Autoscaler `json:"nodeAutoscaler"`
 	*discovery.ClusterReport
 	// HistoryAccess is what an admin can run to let the user read the
 	// cluster's Prometheus, when the scan found one it wasn't allowed to.
@@ -112,8 +116,10 @@ func scanCmd(kube *kubeFlags) *cobra.Command {
 		Use:   "scan",
 		Short: "Find idle workloads and what they cost",
 		Long: `Scan reads a cluster and shows which Deployments and StatefulSets look idle,
-what they reserve, and what pausing them could save. It only reads, with
-your own kubeconfig, and needs nothing installed in the cluster.
+what they reserve, and what pausing them could free. Freed capacity becomes
+savings only as a node autoscaler removes nodes, so the scan names the one it
+finds. It only reads, with your own kubeconfig, and needs nothing installed
+in the cluster.
 
 With a Prometheus in the cluster, found automatically and queried through
 the API server, it replays Hybernate's activity clock over the last week of
@@ -199,7 +205,7 @@ Examples:
 	cmd.Flags().StringSliceVar(&opts.exclude, "exclude-namespaces", discovery.SystemNamespaces, "Namespaces to skip")
 	addOutputFlag(cmd, &opts.output)
 	cmd.Flags().IntVar(&opts.limit, "limit", 25,
-		"Workloads to list in the table, idle first, then paused, then active, each by what pausing could save "+
+		"Workloads to list in the table, idle first, then paused, then active, each by what pausing could free "+
 			"(0 for all)")
 	cmd.Flags().IntVar(&opts.cpuThreshold, "cpu-threshold", defaultCPUThreshold,
 		"CPU use, as a percentage of requests from 1 to 100, at which a workload counts as active; managed workloads "+
@@ -452,6 +458,10 @@ func scanCluster(ctx context.Context, window time.Duration, prom prometheusSetup
 			historyNote = err.Error() + "; judging from CPU right now"
 		}
 	}
+	scan.NodeAutoscaler, err = nodescale.Detect(ctx, c)
+	if err != nil {
+		return scanResult{}, fmt.Errorf("finding the node autoscaler in %s: %w", scan.Cluster, err)
+	}
 	scanner := discovery.NewScanner(c, c)
 	report, err := scanner.ScanCluster(ctx, discovery.ClusterOptions{
 		Namespaces:   namespaces,
@@ -558,6 +568,10 @@ func writeTable(w io.Writer, result scanResult, limit int) error {
 	p := &printer{w: w}
 	p.line("%s: %s in %s", result.Cluster, countOf(result.Totals.Workloads, "workload"),
 		countOf(result.Namespaces, "namespace"))
+	p.line("%s", nodeAutoscalerLine(result.NodeAutoscaler))
+	if s := freedBecomesSaved(result.NodeAutoscaler); s != "" {
+		p.line("%s", s)
+	}
 	p.line("")
 	if result.Totals.Workloads == 0 {
 		p.line("  %s", emptySentence(result))
@@ -592,7 +606,7 @@ func writeTable(w io.Writer, result scanResult, limit int) error {
 		p.line("")
 	}
 	if result.Totals.Idle > 0 && result.Totals.Replayed.Workloads == 0 {
-		p.line("What pausing would save depends on how often they'd be woken, which one moment can't show.")
+		p.line("What pausing would free depends on how often they'd be woken, which one moment can't show.")
 		p.line("Labelling them dry-run measures it, below; scanning with Prometheus history estimates it.")
 		p.line("")
 	}
@@ -607,11 +621,11 @@ func writeHeadline(p *printer, t discovery.Totals, replayed string) {
 	}
 	switch {
 	case t.Live > 0:
-		p.line("  Hybernate has saved %s this month pausing %s.", dollars(t.SavedThisMonth),
-			countOf(t.Live, "live workload"))
-	case t.SavedThisMonth > 0:
-		p.line("  Hybernate has saved %s this month, pausing workloads since put back in dry-run.",
-			dollars(t.SavedThisMonth))
+		p.line("  Hybernate has freed %s this month pausing %s, and saved %s of it.", dollars(t.FreedThisMonth),
+			countOf(t.Live, "live workload"), dollars(t.SavedThisMonth))
+	case t.FreedThisMonth > 0:
+		p.line("  Hybernate has freed %s this month, and saved %s of it, pausing workloads since put back in dry-run.",
+			dollars(t.FreedThisMonth), dollars(t.SavedThisMonth))
 	}
 	if t.DryRun > 0 {
 		p.line("  %s in dry-run: measured by Hybernate since starting, %s would have slept %s, freeing %s,",
@@ -733,7 +747,7 @@ func writeWorkloads(p *printer, workloads []Workload, limit int, history bool) {
 	if limit > 0 && len(shown) > limit {
 		shown = shown[:limit]
 	}
-	saving, couldSave := savingColumns(workloads)
+	freed, couldFree := moneyColumns(workloads)
 	sleep, slept := sleepColumns(history, workloads), sleptColumn(workloads)
 	header := []string{"NAMESPACE", "WORKLOAD", "STATE", "BECAUSE", "COST/MO"}
 	if !history {
@@ -742,14 +756,14 @@ func writeWorkloads(p *printer, workloads []Workload, limit int, history bool) {
 	if slept {
 		header = append(header, "SLEPT THIS MONTH")
 	}
-	if saving {
-		header = append(header, "SAVED THIS MONTH")
+	if freed {
+		header = append(header, "FREED THIS MONTH", "SAVED")
 	}
 	if sleep {
 		header = append(header, "COULD SLEEP", "WAKES")
 	}
-	if couldSave {
-		header = append(header, "COULD SAVE/MO")
+	if couldFree {
+		header = append(header, "COULD FREE/MO")
 	}
 	tw := tabwriter.NewWriter(p, 0, 0, 3, ' ', 0)
 	_, _ = fmt.Fprintln(tw, "  "+strings.Join(header, "\t"))
@@ -768,14 +782,14 @@ func writeWorkloads(p *printer, workloads []Workload, limit int, history bool) {
 			hoursSlept, _, _, _ := sleptCells(wl)
 			row = append(row, hoursSlept)
 		}
-		if saving {
-			row = append(row, savedCell(wl))
+		if freed {
+			row = append(row, freedCell(wl), scanSavedCell(wl))
 		}
 		if sleep {
 			row = append(row, couldSleep, wakes)
 		}
-		if couldSave {
-			row = append(row, couldSaveCell(wl))
+		if couldFree {
+			row = append(row, couldFreeCell(wl))
 		}
 		_, _ = fmt.Fprintln(tw, "  "+strings.Join(row, "\t"))
 	}
@@ -807,40 +821,62 @@ func sleptCells(wl Workload) (slept, wakes, since string, sleptSort float64) {
 	return hours(s.Hours), strconv.Itoa(s.Wakes), "since " + s.Since.Format("Jan 2"), s.Hours
 }
 
-// savingColumns says which money columns a table needs: what Hybernate has
-// saved, for live workloads and any that saved this month before going back
-// to dry-run, and what pausing could save, for those it doesn't pause yet,
-// when the scan knows either for any of them.
-func savingColumns(workloads []Workload) (saving, couldSave bool) {
+// moneyColumns says which money columns a table needs: what Hybernate has
+// freed and saved, for live workloads and any that freed something this
+// month before going back to dry-run, and what pausing could free, for
+// those it doesn't pause yet, when the scan knows either for any of them.
+func moneyColumns(workloads []Workload) (freed, couldFree bool) {
 	for _, wl := range workloads {
-		saving = saving || (wl.Managed && !wl.DryRun) || wl.SavedThisMonth > 0
-		couldSave = couldSave || wl.Measured != nil || (!wl.Managed && wl.History != nil)
+		freed = freed || (wl.Managed && !wl.DryRun) || wl.FreedThisMonth > 0 || wl.SavedThisMonth > 0
+		couldFree = couldFree || wl.Measured != nil || (!wl.Managed && wl.History != nil)
 	}
-	return saving, couldSave
+	return freed, couldFree
 }
 
-// savedCell is what Hybernate has saved this month pausing a workload: a
-// live one, or one in dry-run that saved while it was live.
-func savedCell(wl Workload) string {
-	if !wl.Managed || (wl.DryRun && wl.SavedThisMonth == 0) {
+// freedCell is what Hybernate has freed this month pausing a workload: a
+// live one, or one in dry-run that freed something while it was live.
+func freedCell(wl Workload) string {
+	if !hasPaused(wl) {
+		return "-"
+	}
+	return dollars(wl.FreedThisMonth)
+}
+
+// scanSavedCell is the part of what pausing a workload freed this month
+// that came off the bill.
+func scanSavedCell(wl Workload) string {
+	if !hasPaused(wl) {
 		return "-"
 	}
 	return dollars(wl.SavedThisMonth)
 }
 
-// couldSaveCell is what pausing a workload Hybernate doesn't pause yet
+func hasPaused(wl Workload) bool {
+	return wl.Managed && (!wl.DryRun || wl.FreedThisMonth > 0 || wl.SavedThisMonth > 0)
+}
+
+// freedBecomesSaved says what turns freed capacity into savings, once a
+// node autoscaler has been found; without one, the autoscaler line says so.
+func freedBecomesSaved(a nodescale.Autoscaler) string {
+	if len(a.Scalers) == 0 {
+		return ""
+	}
+	return "What pausing frees comes off the bill only as nodes scale down."
+}
+
+// couldFreeCell is what pausing a workload Hybernate doesn't pause yet
 // would free a month, from what dry-run measured or history shows.
-func couldSaveCell(wl Workload) string {
+func couldFreeCell(wl Workload) string {
 	if wl.ScaledByHand || wl.WontPause != "" ||
 		(wl.Measured == nil && (wl.Managed || wl.Protected || wl.History == nil)) {
 		return "-"
 	}
-	return dollars(discovery.CouldSave(wl))
+	return dollars(discovery.CouldFree(wl))
 }
 
 // nextStepTargets are the workloads next steps are about: the first idle
 // one Hybernate could manage, to measure, and the first already measuring
-// in dry-run, to go live. Workloads come sorted most savings first, so each
+// in dry-run, to go live. Workloads come sorted by what they could free, most first, so each
 // is the best example. Protected workloads are left out, as Hybernate won't
 // manage them, and those it refuses to pause, and so are those whose
 // replicas are set from Git, whose GitOps tool would revert a label put on

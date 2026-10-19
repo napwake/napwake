@@ -26,7 +26,8 @@ import (
 // +kubebuilder:object:root=true
 // +kubebuilder:subresource:status
 // +kubebuilder:printcolumn:name="Phase",type=string,JSONPath=`.status.phase`
-// +kubebuilder:printcolumn:name="Saved",type=string,JSONPath=`.status.cost.savedThisMonth`,description="Saved by pausing this month (UTC)"
+// +kubebuilder:printcolumn:name="Saved",type=string,JSONPath=`.status.cost.savedThisMonth`,description="What pausing took off the node bill this month (UTC), at least"
+// +kubebuilder:printcolumn:name="Freed",type=string,JSONPath=`.status.cost.freedThisMonth`,description="What pausing freed this month (UTC), at list price"
 // +kubebuilder:printcolumn:name="Age",type=date,JSONPath=`.metadata.creationTimestamp`
 
 // ManagedWorkload declares a workload whose lifecycle is managed by Hybernate.
@@ -520,9 +521,9 @@ type DryRunStatus struct {
 	FreedCPUHours    resource.Quantity `json:"freedCPUHours"`
 	FreedMemoryHours resource.Quantity `json:"freedMemoryHours"`
 
-	// EstimatedSavings is the freed hours priced at the workload's cost
+	// EstimatedFreed is the freed hours priced at the workload's cost
 	// rates, to the cent. It's for display: the hours are the record.
-	EstimatedSavings string `json:"estimatedSavings"`
+	EstimatedFreed string `json:"estimatedFreed"`
 
 	// Resources is what the workload ran when the current would-be pause
 	// began, which is what pausing it would free.
@@ -544,6 +545,24 @@ type ResourceSnapshot struct {
 	// StorageBytes is the capacity of the PersistentVolumeClaims the
 	// workload's pods mount, in all.
 	StorageBytes int64 `json:"storageBytes"`
+
+	// NodePools are the node pools the workload's pods ran in, and how
+	// many ran in each, which what it saves is measured against. Unset
+	// when no pod was on a node.
+	// +optional
+	// +listType=atomic
+	NodePools []NodePoolPods `json:"nodePools,omitempty"`
+}
+
+// NodePoolPods is how many of a workload's pods ran in one node pool.
+type NodePoolPods struct {
+	// Name is the pool's name, from the first of its nodes' labels
+	// karpenter.sh/nodepool, cloud.google.com/gke-nodepool,
+	// eks.amazonaws.com/nodegroup and kubernetes.azure.com/agentpool, or
+	// empty for nodes with none of them, which make up one pool.
+	Name string `json:"name"`
+
+	Pods int32 `json:"pods"`
 }
 
 // PauseStatus records what a pause changed, so it can be undone exactly. It's
@@ -570,8 +589,9 @@ type PauseStatus struct {
 	// +optional
 	ScaledObjectPausedReplicas *string `json:"scaledObjectPausedReplicas,omitempty"`
 
-	// Resources captures the workload's resource profile at pause time
-	// for cost savings calculation.
+	// Resources is what the workload ran as it paused, which is what the
+	// pause frees, and the node pools that's measured against for what it
+	// saves.
 	// +optional
 	Resources *ResourceSnapshot `json:"resources,omitempty"`
 
@@ -630,8 +650,8 @@ type PredictionStatus struct {
 	State string `json:"state,omitempty"`
 }
 
-// CostStatus is what the workload has cost, and what pausing it has saved,
-// this calendar month in UTC.
+// CostStatus is what the workload has cost, what pausing it has freed, and
+// what that has saved, this calendar month in UTC.
 //
 // Everything is priced on what the workload's pods request, sidecars
 // injected when they were created included, rather than on what they use:
@@ -639,10 +659,15 @@ type PredictionStatus struct {
 // costs in capacity, and what a cluster autoscaler can remove once it's
 // paused.
 //
+// Freed is what pausing released on its nodes; saved is the share of that
+// which provably came off the bill: what the cluster's nodes couldn't
+// hold if the paused replicas came back now, which would take nodes that
+// aren't there.
+//
 // The resource-hours are the record, kept to a billionth of an hour. The
 // dollar figures are derived from them at the workload's current rates
 // whenever they're brought up to date, and are rounded to the cent for
-// display, so CostThisMonth plus SavedThisMonth is
+// display, so CostThisMonth plus FreedThisMonth is
 // CostWithoutHybernateThisMonth to within a cent.
 type CostStatus struct {
 	// Tracked is how much of the month the totals cover. It's less than
@@ -674,23 +699,44 @@ type CostStatus struct {
 	PausedCPUHours    resource.Quantity `json:"pausedCPUHours"`
 	PausedMemoryHours resource.Quantity `json:"pausedMemoryHours"`
 
+	// SavedCPUHours and SavedMemoryHours are the workload's share of the
+	// vCPU-hours and GiB-hours the cluster's nodes were short of holding
+	// every replica Hybernate paused in their node pools, measured every
+	// 5 minutes: capacity that would have to be added for them, so a lower
+	// bound on what came off the bill. At most the paused hours.
+	SavedCPUHours    resource.Quantity `json:"savedCPUHours"`
+	SavedMemoryHours resource.Quantity `json:"savedMemoryHours"`
+
 	// CostThisMonth is the awake hours and the storage hours, priced.
 	CostThisMonth string `json:"costThisMonth"`
 
-	// SavedThisMonth is the paused hours, priced. It becomes money only
-	// once a cluster autoscaler removes the capacity a pause frees.
+	// FreedThisMonth is the paused hours, priced: what pausing freed on
+	// its nodes, which is money only once nodes go.
+	FreedThisMonth string `json:"freedThisMonth"`
+
+	// SavedThisMonth is the saved hours, priced: what pausing took off
+	// the bill, at least. "unknown" while SavingsUnknown says why it
+	// can't be measured.
 	SavedThisMonth string `json:"savedThisMonth"`
+
+	// SavingsUnknown is why the saved hours can't be measured, such as
+	// the operator not seeing the pods of every namespace; empty when
+	// they're measured.
+	// +optional
+	SavingsUnknown string `json:"savingsUnknown,omitempty"`
 
 	// CostWithoutHybernateThisMonth is what the workload would have cost
 	// this month had it never been paused: CostThisMonth plus
-	// SavedThisMonth.
+	// FreedThisMonth.
 	CostWithoutHybernateThisMonth string `json:"costWithoutHybernateThisMonth"`
 
-	// ProjectedMonthlyCost and ProjectedMonthlySavings are CostThisMonth
-	// and SavedThisMonth carried from Tracked to the whole month at the
-	// same rate. They're "pending" until a day has been tracked, since a
+	// ProjectedMonthlyCost, ProjectedMonthlyFreed and
+	// ProjectedMonthlySavings are CostThisMonth, FreedThisMonth and
+	// SavedThisMonth carried from Tracked to the whole month at the same
+	// rate. They're "pending" until a day has been tracked, since a
 	// workload's pattern is daily.
 	ProjectedMonthlyCost    string `json:"projectedMonthlyCost"`
+	ProjectedMonthlyFreed   string `json:"projectedMonthlyFreed"`
 	ProjectedMonthlySavings string `json:"projectedMonthlySavings"`
 
 	// Running is what the workload ran when the totals were last brought
@@ -711,16 +757,16 @@ type CostStatus struct {
 	PricedTemplateHash string `json:"pricedTemplateHash,omitempty"`
 
 	// ListRates are the on-demand list rates of the nodes the workload's
-	// pods last ran on, from their instance type and region, which its cost
-	// and savings are priced at unless costTracking.rates sets its own.
-	// Kept while it's paused, so savings are priced at where it ran. Unset
+	// pods last ran on, from their instance type and region, which its cost,
+	// what it frees and what it saves are priced at unless
+	// costTracking.rates sets its own. Kept while it's paused, so a pause
+	// is priced at where it ran. Unset
 	// when its nodes aren't in Hybernate's price table, and the default
 	// rates apply.
 	// +optional
 	ListRates *CostRates `json:"listRates,omitempty"`
 
-	// ResourceReduction is what the current pause freed. Unlike the dollar
-	// figures, it doesn't depend on a cluster autoscaler removing nodes.
+	// ResourceReduction is what the current pause freed on its nodes.
 	// +optional
 	ResourceReduction *ResourceReduction `json:"resourceReduction,omitempty"`
 }
