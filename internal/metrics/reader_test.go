@@ -253,6 +253,41 @@ func TestReader_ListRates(t *testing.T) {
 	}
 }
 
+func inPool(n *corev1.Node, pool string) *corev1.Node {
+	n.Labels["karpenter.sh/nodepool"] = pool
+	return n
+}
+
+// A pause records how many of the workload's pods ran in each node pool.
+func TestReader_NodePools(t *testing.T) {
+	scheme := readerScheme(t)
+	labels := map[string]string{"app": "web"}
+	deploy := &appsv1.Deployment{
+		ObjectMeta: metav1.ObjectMeta{Name: "web", Namespace: "shop"},
+		Spec: appsv1.DeploymentSpec{
+			Selector: &metav1.LabelSelector{MatchLabels: labels},
+			Template: corev1.PodTemplateSpec{ObjectMeta: metav1.ObjectMeta{Labels: labels}},
+		},
+	}
+	workload := &v1alpha1.ManagedWorkload{
+		ObjectMeta: metav1.ObjectMeta{Name: "web", Namespace: "shop"},
+		Spec:       v1alpha1.ManagedWorkloadSpec{Target: v1alpha1.WorkloadRef{Kind: v1alpha1.TargetKindDeployment, Name: "web"}},
+	}
+	c := fake.NewClientBuilder().WithScheme(scheme).WithObjects(deploy,
+		inPool(pricedNode("a", "m6i.large", "us-east-1"), "general"),
+		inPool(pricedNode("b", "m6i.large", "us-east-1"), "spot"),
+		pricedNode("c", "m6i.large", "eu-west-1"),
+		webPod("1", "a"), webPod("2", "a"), webPod("3", "b"), webPod("4", "c"), webPod("5", ""),
+		deleting(webPod("6", "b")),
+	).Build()
+
+	got, err := NewReader(c, c).NodePools(context.Background(), workload)
+
+	require.NoError(t, err)
+	assert.Equal(t, []v1alpha1.NodePoolPods{{Name: "", Pods: 1}, {Name: "general", Pods: 2}, {Name: "spot", Pods: 1}}, got,
+		"by pool name, nodes without a pool label as one, and pods not on a node or being deleted left out")
+}
+
 func readerScheme(t *testing.T) *runtime.Scheme {
 	t.Helper()
 	scheme := runtime.NewScheme()

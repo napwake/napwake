@@ -34,7 +34,7 @@ func (r *Reconciler) trackDryRun(workload *v1alpha1.ManagedWorkload) {
 		return
 	}
 	if workload.Status.DryRun == nil {
-		workload.Status.DryRun = &v1alpha1.DryRunStatus{Since: r.clockTime(), EstimatedSavings: cost.FormatDollars(0)}
+		workload.Status.DryRun = &v1alpha1.DryRunStatus{Since: r.clockTime(), EstimatedFreed: cost.FormatDollars(0)}
 	}
 }
 
@@ -85,7 +85,7 @@ func (r *Reconciler) endWouldBePauseAt(workload *v1alpha1.ManagedWorkload, end t
 		freed.Memory = addHours(&d.FreedMemoryHours, gib, slept)
 	}
 	d.Slept.Duration += slept
-	d.EstimatedSavings = cost.FormatDollars(cost.Hours{
+	d.EstimatedFreed = cost.FormatDollars(cost.Hours{
 		CPU:    d.FreedCPUHours.AsApproximateFloat64(),
 		Memory: d.FreedMemoryHours.AsApproximateFloat64(),
 	}.Price(rates))
@@ -100,7 +100,7 @@ func dryRunSummary(d *v1alpha1.DryRunStatus) string {
 		times = "time"
 	}
 	return fmt.Sprintf("since %s: would have paused %d %s, slept %s, freeing %s",
-		d.Since.Format("Jan 2"), d.Pauses, times, roundedDuration(d.Slept.Duration), d.EstimatedSavings)
+		d.Since.Format("Jan 2"), d.Pauses, times, roundedDuration(d.Slept.Duration), d.EstimatedFreed)
 }
 
 // roundedDuration is d to the minute, without the zero units Duration's

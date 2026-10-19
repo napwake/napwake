@@ -64,6 +64,11 @@ type metricsReader interface {
 	TotalPVCBytes(ctx context.Context, workload *v1alpha1.ManagedWorkload) (float64, error)
 }
 
+// nodePooler reads the node pools a workload's pods run in.
+type nodePooler interface {
+	NodePools(ctx context.Context, workload *v1alpha1.ManagedWorkload) ([]v1alpha1.NodePoolPods, error)
+}
+
 // listPricer prices a workload at the nodes it runs on.
 type listPricer interface {
 	ListRates(ctx context.Context, workload *v1alpha1.ManagedWorkload) (cost.Rates, bool, error)

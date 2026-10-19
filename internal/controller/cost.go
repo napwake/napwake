@@ -25,6 +25,7 @@ import (
 
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/types"
 	"sigs.k8s.io/controller-runtime/pkg/log"
 
 	v1alpha1 "github.com/okedeji/hybernate/api/v1alpha1"
@@ -80,6 +81,7 @@ func (r *Reconciler) settleCost(ctx context.Context, workload *v1alpha1.ManagedW
 		return
 	}
 
+	r.drainSavings(c, workload.UID)
 	c.Tracked.Duration += elapsed
 	c.LastAccumulatedAt = &metav1.Time{Time: now}
 	priceCost(c, resolveCostRates(workload), now)
@@ -118,7 +120,7 @@ func startMonth(c *v1alpha1.CostStatus, now time.Time) {
 }
 
 // accruePaused counts a paused interval: what the paused replicas requested
-// is saved, and their claims still cost.
+// is freed, and their claims still cost.
 func accruePaused(c *v1alpha1.CostStatus, pause *v1alpha1.PauseStatus, elapsed time.Duration) {
 	if pause == nil || pause.Resources == nil {
 		return
@@ -135,7 +137,7 @@ func accruePaused(c *v1alpha1.CostStatus, pause *v1alpha1.PauseStatus, elapsed t
 // the replicas unreadable, it's counted at what was last read. A transition
 // settles the interval before the phase changes, and an interval left
 // unsettled would be counted in the next phase: up to a flush interval of
-// running priced as saved.
+// running priced as freed.
 func (r *Reconciler) accrueAwake(ctx context.Context, workload *v1alpha1.ManagedWorkload, elapsed time.Duration, now time.Time) error {
 	logger := log.FromContext(ctx)
 	c := workload.Status.Cost
@@ -200,6 +202,30 @@ func templateHashOf(workload *v1alpha1.ManagedWorkload) string {
 	return ""
 }
 
+// savingsMeter credits paused workloads with what pausing them took off
+// the bill, as saved resource-hours held until they're drained.
+type savingsMeter interface {
+	Drain(uid types.UID) (cpuHours, memoryHours float64)
+	Unmeasurable() string
+}
+
+// drainSavings adds to the month's saved hours what's been credited to the
+// workload since its cost was last brought up to date.
+func (r *Reconciler) drainSavings(c *v1alpha1.CostStatus, uid types.UID) {
+	c.SavingsUnknown = ""
+	if r.Savings == nil {
+		return
+	}
+	c.SavingsUnknown = r.Savings.Unmeasurable()
+	cpuHours, memoryHours := r.Savings.Drain(uid)
+	addHours(&c.SavedCPUHours, cpuHours, time.Hour)
+	addHours(&c.SavedMemoryHours, memoryHours, time.Hour)
+}
+
+// savingsUnknown is what the saved figures read while they can't be
+// measured: $0.00 would claim nothing came off the bill.
+const savingsUnknown = "unknown"
+
 // priceCost derives the dollar figures from the month's hours at rates.
 func priceCost(c *v1alpha1.CostStatus, rates cost.Rates, now time.Time) {
 	spent := cost.Hours{
@@ -207,15 +233,25 @@ func priceCost(c *v1alpha1.CostStatus, rates cost.Rates, now time.Time) {
 		Memory:  c.AwakeMemoryHours.AsApproximateFloat64(),
 		Storage: c.StorageHours.AsApproximateFloat64(),
 	}.Price(rates)
-	saved := cost.Hours{
+	freed := cost.Hours{
 		CPU:    c.PausedCPUHours.AsApproximateFloat64(),
 		Memory: c.PausedMemoryHours.AsApproximateFloat64(),
 	}.Price(rates)
+	saved := cost.Hours{
+		CPU:    c.SavedCPUHours.AsApproximateFloat64(),
+		Memory: c.SavedMemoryHours.AsApproximateFloat64(),
+	}.Price(rates)
 
 	c.CostThisMonth = cost.FormatDollars(spent)
-	c.SavedThisMonth = cost.FormatDollars(saved)
-	c.CostWithoutHybernateThisMonth = cost.FormatDollars(spent + saved)
+	c.FreedThisMonth = cost.FormatDollars(freed)
+	c.CostWithoutHybernateThisMonth = cost.FormatDollars(spent + freed)
 	c.ProjectedMonthlyCost = projected(spent, c.Tracked.Duration, now)
+	c.ProjectedMonthlyFreed = projected(freed, c.Tracked.Duration, now)
+	if c.SavingsUnknown != "" {
+		c.SavedThisMonth, c.ProjectedMonthlySavings = savingsUnknown, savingsUnknown
+		return
+	}
+	c.SavedThisMonth = cost.FormatDollars(saved)
 	c.ProjectedMonthlySavings = projected(saved, c.Tracked.Duration, now)
 }
 
@@ -276,10 +312,11 @@ func microQuantity(v float64) *resource.Quantity {
 }
 
 // captureResourceSnapshot records what the workload reserves as it pauses,
-// which is what the pause is priced as saving. A read that fails takes what
-// cost tracking last read of the running workload instead: the snapshot is
-// taken once, and left empty the whole pause would be counted as saving
-// nothing.
+// which is what the pause is priced as freeing, and the node pools its pods
+// ran in, which what it saves is measured against. A read that fails takes
+// what cost tracking last read of the running workload instead: the
+// snapshot is taken once, and left empty the whole pause would be counted
+// as freeing nothing.
 func (r *Reconciler) captureResourceSnapshot(ctx context.Context, workload *v1alpha1.ManagedWorkload) *v1alpha1.ResourceSnapshot {
 	if r.metrics == nil {
 		return nil
@@ -296,7 +333,7 @@ func (r *Reconciler) captureResourceSnapshot(ctx context.Context, workload *v1al
 			"workload", workload.Name, "namespace", workload.Namespace, "error", err.Error())
 	}
 
-	// Savings are priced on requests, not live usage: requests are what a
+	// A pause is priced on requests, not live usage: requests are what a
 	// pod reserves on a node, and what discovery estimates are based on.
 	// A pause records the replicas it will scale from. One resumed from
 	// Pausing without its record finds the target at zero already, which
@@ -322,6 +359,16 @@ func (r *Reconciler) captureResourceSnapshot(ctx context.Context, workload *v1al
 		snap.StorageBytes = last.StorageBytes
 	} else {
 		snap.StorageBytes = int64(pvcBytes)
+	}
+
+	if r.pools != nil {
+		if pools, err := r.pools.NodePools(ctx, workload); err != nil {
+			logger.Info("could not read the node pools the workload runs in, so its savings are measured "+
+				"against the whole cluster", "workload", workload.Name, "namespace", workload.Namespace,
+				"error", err.Error())
+		} else {
+			snap.NodePools = pools
+		}
 	}
 
 	return snap

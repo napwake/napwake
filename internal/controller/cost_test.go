@@ -28,6 +28,7 @@ import (
 	"github.com/stretchr/testify/require"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/client-go/tools/events"
 
 	v1alpha1 "github.com/okedeji/hybernate/api/v1alpha1"
@@ -124,7 +125,7 @@ func TestAccumulateCost_AwakeIsPricedOnRequests(t *testing.T) {
 		StorageBytes: 10 * bytesPerGiB}, *c.Running)
 }
 
-func TestAccumulateCost_PausedSavesComputeButNotStorage(t *testing.T) {
+func TestAccumulateCost_PausedFreesComputeButNotStorage(t *testing.T) {
 	w := costWorkload(v1alpha1.PhasePaused)
 	w.Status.Cost = accumulatedAt(fixedTime.Add(-time.Hour))
 	pausedWith(w, v1alpha1.ResourceSnapshot{Replicas: 3, CPUMillis: 500, MemoryBytes: 2 * bytesPerGiB,
@@ -137,7 +138,7 @@ func TestAccumulateCost_PausedSavesComputeButNotStorage(t *testing.T) {
 	assert.InDelta(t, 1.5, c.PausedCPUHours.AsApproximateFloat64(), 1e-9)
 	assert.InDelta(t, 6, c.PausedMemoryHours.AsApproximateFloat64(), 1e-9)
 	assert.InDelta(t, 20, c.StorageHours.AsApproximateFloat64(), 1e-9, "its claims still cost while it's paused")
-	assert.Equal(t, cost.FormatDollars(1.5*0.031+6*0.004), c.SavedThisMonth)
+	assert.Equal(t, cost.FormatDollars(1.5*0.031+6*0.004), c.FreedThisMonth)
 	require.NotNil(t, c.ResourceReduction)
 	assert.Equal(t, int64(1500), c.ResourceReduction.CPUMillis)
 }
@@ -179,15 +180,16 @@ func TestAccumulateCost_FullPrecisionOverADayOfFlushes(t *testing.T) {
 			assert.Equal(t, 24*time.Hour, c.Tracked.Duration)
 			if tt.phase == v1alpha1.PhasePaused {
 				want := cost.ComputeHourly(float64(tt.cpuMillis)/1000, float64(tt.memBytes)/bytesPerGiB, cost.DefaultRates) * 24
-				assert.Equal(t, cost.FormatDollars(want), c.SavedThisMonth)
+				assert.Equal(t, cost.FormatDollars(want), c.FreedThisMonth)
 			}
 		})
 	}
 }
 
-// Cost and savings are on the same basis, requests, over the same time, so
-// they add up to what the workload would have cost without Hybernate.
-func TestAccumulateCost_CostAndSavingsAddUp(t *testing.T) {
+// Cost and what pausing freed are on the same basis, requests, over the
+// same time, so they add up to what the workload would have cost without
+// Hybernate.
+func TestAccumulateCost_CostAndFreedAddUp(t *testing.T) {
 	w := costWorkload(v1alpha1.PhaseRunning)
 	w.Status.Cost = accumulatedAt(fixedTime)
 	snapshot := v1alpha1.ResourceSnapshot{Replicas: 2, CPUMillis: 1000, MemoryBytes: 4 * bytesPerGiB}
@@ -201,9 +203,9 @@ func TestAccumulateCost_CostAndSavingsAddUp(t *testing.T) {
 	c := w.Status.Cost
 	hourly := cost.ComputeHourly(2, 8, cost.DefaultRates)
 	assert.Equal(t, cost.FormatDollars(8*hourly), c.CostThisMonth)
-	assert.Equal(t, cost.FormatDollars(16*hourly), c.SavedThisMonth)
+	assert.Equal(t, cost.FormatDollars(16*hourly), c.FreedThisMonth)
 	assert.Equal(t, cost.FormatDollars(24*hourly), c.CostWithoutHybernateThisMonth)
-	assert.InDelta(t, dollars(t, c.CostThisMonth)+dollars(t, c.SavedThisMonth),
+	assert.InDelta(t, dollars(t, c.CostThisMonth)+dollars(t, c.FreedThisMonth),
 		dollars(t, c.CostWithoutHybernateThisMonth), 0.01)
 }
 
@@ -220,7 +222,7 @@ func TestAccumulateCost_ProjectsFromTheTimeTracked(t *testing.T) {
 
 	flushFor(r, now, w, time.Hour)
 	assert.Equal(t, cost.FormatDollars(0.031*24*31), w.Status.Cost.ProjectedMonthlyCost, "a vCPU for all of March")
-	assert.Equal(t, "$0.00", w.Status.Cost.ProjectedMonthlySavings)
+	assert.Equal(t, "$0.00", w.Status.Cost.ProjectedMonthlyFreed)
 }
 
 // The interval that spans the start of a month counts toward the new
@@ -296,7 +298,7 @@ func TestTransition_SettlesCostInThePhaseItWasSpentIn(t *testing.T) {
 
 // A transition settles the time before it in the phase it was spent in,
 // even when the replicas can't be read then: left unsettled, the minutes
-// awake before a pause would be counted as paused, saved rather than
+// awake before a pause would be counted as paused, freed rather than
 // spent.
 func TestTransition_SettlesAtTheLastReadWhenReplicasCantBeRead(t *testing.T) {
 	w := costWorkload(v1alpha1.PhaseRunning)
@@ -317,7 +319,7 @@ func TestTransition_SettlesAtTheLastReadWhenReplicasCantBeRead(t *testing.T) {
 // A pause resumed from Pausing without its record finds the target at zero
 // already. That's what the pause did, not what it frees, so the snapshot
 // keeps the replicas last seen running rather than pricing the pause at
-// nothing saved.
+// nothing freed.
 func TestCaptureResourceSnapshot_PauseResumedAtZero(t *testing.T) {
 	tests := []struct {
 		name     string
@@ -436,7 +438,7 @@ func (*unreadablePodMetrics) TotalPVCBytes(_ context.Context, _ *v1alpha1.Manage
 // The snapshot is taken once, as the workload pauses, and the whole pause is
 // priced from it. A read that fails then falls back to what cost tracking
 // last read of the running workload, rather than pricing the pause at
-// nothing saved.
+// nothing freed.
 func TestCaptureResourceSnapshot_KeepsTheLastReadWhenPodsCantBeRead(t *testing.T) {
 	workload := costWorkload(v1alpha1.PhaseRunning)
 	workload.Status.Cost = &v1alpha1.CostStatus{Running: &v1alpha1.ResourceSnapshot{
@@ -526,19 +528,19 @@ func TestAccumulateCost_RecordsListRates(t *testing.T) {
 	}
 }
 
-// A paused workload's savings are priced at the nodes it ran on.
-func TestAccumulateCost_PausedSavingsAtListRates(t *testing.T) {
-	saved := func(rates *v1alpha1.CostRates) string {
+// What a paused workload frees is priced at the nodes it ran on.
+func TestAccumulateCost_PausedFreedAtListRates(t *testing.T) {
+	freed := func(rates *v1alpha1.CostRates) string {
 		w := costWorkload(v1alpha1.PhasePaused)
 		w.Status.Cost = accumulatedAt(fixedTime.Add(-time.Hour))
 		w.Status.Cost.ListRates = rates
 		pausedWith(w, v1alpha1.ResourceSnapshot{Replicas: 1, CPUMillis: 2000, MemoryBytes: 8 * bytesPerGiB})
 		costReconciler(fixedTime, &stubMetrics{}).accumulateCost(context.Background(), w)
-		return w.Status.Cost.SavedThisMonth
+		return w.Status.Cost.FreedThisMonth
 	}
 
-	assert.Equal(t, cost.FormatDollars(2*0.031+8*0.004), saved(nil), "default rates without list rates")
-	assert.Equal(t, cost.FormatDollars(2*0.05+8*0.006), saved(recordedRates()), "the nodes' list rates")
+	assert.Equal(t, cost.FormatDollars(2*0.031+8*0.004), freed(nil), "default rates without list rates")
+	assert.Equal(t, cost.FormatDollars(2*0.05+8*0.006), freed(recordedRates()), "the nodes' list rates")
 }
 
 // Rates a workload sets win over its nodes' list rates, part by part.
@@ -553,4 +555,145 @@ func TestResolveCostRates(t *testing.T) {
 	assert.InDelta(t, 0.1, got.CPUPerHour, 1e-9, "its own CPU rate")
 	assert.InDelta(t, 0.006, got.MemoryPerHour, 1e-9, "its nodes' memory rate")
 	assert.InDelta(t, cost.DefaultRates.StoragePerMonth, got.StoragePerMonth, 1e-9, "the default storage rate")
+}
+
+// stubSavings credits saved hours the way the capacity sampler does, until
+// they're drained.
+type stubSavings struct {
+	credited     map[types.UID]cost.Hours
+	unmeasurable string
+}
+
+func (s *stubSavings) credit(uid types.UID, cpuHours, memoryHours float64) {
+	if s.credited == nil {
+		s.credited = map[types.UID]cost.Hours{}
+	}
+	h := s.credited[uid]
+	h.CPU += cpuHours
+	h.Memory += memoryHours
+	s.credited[uid] = h
+}
+
+func (s *stubSavings) Drain(uid types.UID) (float64, float64) {
+	h := s.credited[uid]
+	delete(s.credited, uid)
+	return h.CPU, h.Memory
+}
+
+func (s *stubSavings) Unmeasurable() string { return s.unmeasurable }
+
+// What's credited as saved is drained into the month's saved hours when
+// cost is brought up to date, and priced like the rest; freed is still the
+// whole of what the pause released.
+func TestAccumulateCost_DrainsSavedHours(t *testing.T) {
+	w := costWorkload(v1alpha1.PhasePaused)
+	w.UID = "drained-uid"
+	w.Status.Cost = accumulatedAt(fixedTime.Add(-time.Hour))
+	w.Status.Cost.Tracked.Duration = 24 * time.Hour
+	pausedWith(w, v1alpha1.ResourceSnapshot{Replicas: 2, CPUMillis: 1000, MemoryBytes: 4 * bytesPerGiB})
+	savings := &stubSavings{}
+	savings.credit(w.UID, 0.5, 2)
+	savings.credit("another-uid", 9, 9)
+	r, now := costClock(fixedTime, &stubMetrics{})
+	r.Savings = savings
+
+	r.accumulateCost(context.Background(), w)
+
+	c := w.Status.Cost
+	assert.InDelta(t, 0.5, c.SavedCPUHours.AsApproximateFloat64(), 1e-9)
+	assert.InDelta(t, 2, c.SavedMemoryHours.AsApproximateFloat64(), 1e-9)
+	assert.Equal(t, cost.FormatDollars(0.5*0.031+2*0.004), c.SavedThisMonth)
+	assert.Equal(t, cost.FormatDollars(2*0.031+8*0.004), c.FreedThisMonth, "freed is what the pause released")
+	assert.NotEqual(t, "pending", c.ProjectedMonthlySavings)
+	assert.Empty(t, c.SavingsUnknown)
+
+	flushFor(r, now, w, statusFlushInterval)
+	assert.InDelta(t, 0.5, c.SavedCPUHours.AsApproximateFloat64(), 1e-9, "drained once")
+	assert.Contains(t, savings.credited, types.UID("another-uid"), "another workload's credit is its own")
+}
+
+// Where spare capacity can't be seen, saved reads unknown, with why,
+// rather than a figure that would be wrong.
+func TestAccumulateCost_SavingsUnknown(t *testing.T) {
+	w := costWorkload(v1alpha1.PhasePaused)
+	w.Status.Cost = accumulatedAt(fixedTime.Add(-time.Hour))
+	pausedWith(w, v1alpha1.ResourceSnapshot{Replicas: 1, CPUMillis: 1000})
+	r := costReconciler(fixedTime, &stubMetrics{})
+	r.Savings = &stubSavings{unmeasurable: "pods outside watchNamespaces aren't visible"}
+
+	r.accumulateCost(context.Background(), w)
+
+	c := w.Status.Cost
+	assert.Equal(t, "pods outside watchNamespaces aren't visible", c.SavingsUnknown)
+	assert.Equal(t, "unknown", c.SavedThisMonth)
+	assert.Equal(t, "unknown", c.ProjectedMonthlySavings)
+	assert.Equal(t, cost.FormatDollars(0.031), c.FreedThisMonth, "freed is still measured")
+}
+
+// Saved hours reach the workload's status through the reconciler's
+// periodic cost flush, not a write of their own, and only once due.
+func TestReconcile_PersistsSavedHoursWithTheCostFlush(t *testing.T) {
+	workload := pausedWorkload(v1alpha1.PhasePaused)
+	workload.UID = "flushed-uid"
+	workload.Status.Pause.Resources = &v1alpha1.ResourceSnapshot{Replicas: 3, CPUMillis: 1000, MemoryBytes: bytesPerGiB}
+	workload.Status.Cost = accumulatedAt(fixedTime.Add(-time.Minute))
+	r := newTestReconcilerWithReplicas(t, workload, &stubPauser{}, 0)
+	now := fixedTime
+	r.clock = func() time.Time { return now }
+	r.metrics = &stubMetrics{}
+	savings := &stubSavings{}
+	r.Savings = savings
+	ctx := context.Background()
+
+	savings.credit(workload.UID, 0.25, 0.25)
+	_, err := r.Reconcile(ctx, reconcileFor("api"))
+	require.NoError(t, err)
+	assert.True(t, getWorkload(t, r, "api").Status.Cost.SavedCPUHours.IsZero(), "not yet due a flush")
+	assert.Contains(t, savings.credited, workload.UID, "so it's still held")
+
+	now = now.Add(statusFlushInterval)
+	_, err = r.Reconcile(ctx, reconcileFor("api"))
+	require.NoError(t, err)
+
+	c := getWorkload(t, r, "api").Status.Cost
+	assert.InDelta(t, 0.25, c.SavedCPUHours.AsApproximateFloat64(), 1e-9)
+	assert.InDelta(t, 0.25, c.SavedMemoryHours.AsApproximateFloat64(), 1e-9)
+	assert.Equal(t, cost.FormatDollars(0.25*0.031+0.25*0.004), c.SavedThisMonth)
+}
+
+type stubPools struct {
+	pools []v1alpha1.NodePoolPods
+	err   error
+}
+
+func (p stubPools) NodePools(_ context.Context, _ *v1alpha1.ManagedWorkload) ([]v1alpha1.NodePoolPods, error) {
+	return p.pools, p.err
+}
+
+// A pause records the node pools its pods ran in, which what it saves is
+// measured against; unreadable, none are recorded, and it's measured
+// against the whole cluster.
+func TestCaptureResourceSnapshot_RecordsNodePools(t *testing.T) {
+	general := []v1alpha1.NodePoolPods{{Name: "general", Pods: 2}, {Name: "spot", Pods: 1}}
+	tests := []struct {
+		name  string
+		pools stubPools
+		want  []v1alpha1.NodePoolPods
+	}{
+		{name: "read", pools: stubPools{pools: general}, want: general},
+		{name: "unreadable", pools: stubPools{err: errors.New("the API server timed out")}},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			workload := costWorkload(v1alpha1.PhaseRunning)
+			r := newTestReconciler(t, workload, &stubPauser{})
+			r.metrics = &stubMetrics{cpuPerReplica: 500, replicas: 3}
+			r.pools = tt.pools
+
+			snap := r.captureResourceSnapshot(context.Background(), workload)
+
+			require.NotNil(t, snap)
+			assert.Equal(t, tt.want, snap.NodePools)
+		})
+	}
 }

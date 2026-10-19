@@ -121,6 +121,11 @@ type Reconciler struct {
 	// stamps on each ManagedWorkload it takes on. Empty stamps nothing.
 	OperatorNamespace string
 
+	// Savings measures what pausing takes off the bill, drained into each
+	// workload's saved hours as its cost is brought up to date. Nil
+	// measures nothing.
+	Savings savingsMeter
+
 	// Timezone is where the forecast counts hours of the day and days of
 	// the week, so that business hours stay in their slots through daylight
 	// saving changes. Nil means UTC.
@@ -129,6 +134,7 @@ type Reconciler struct {
 	pauser          lifecyclePauser
 	metrics         metricsReader
 	prices          listPricer
+	pools           nodePooler
 	autoscalers     *autoscaler.Finder
 	engines         *engineRegistry
 	activityMemo    activityMemo
@@ -1584,6 +1590,9 @@ func (r *Reconciler) initDefaults() {
 		r.metrics = reader
 		if r.prices == nil {
 			r.prices = reader
+		}
+		if r.pools == nil {
+			r.pools = reader
 		}
 	}
 	if r.engines == nil {

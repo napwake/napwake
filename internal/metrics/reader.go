@@ -20,7 +20,9 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"maps"
 	"net/url"
+	"slices"
 	"strconv"
 	"strings"
 	"sync"
@@ -359,30 +361,20 @@ func newerRevision(pod, than *corev1.Pod, label, current string) bool {
 // ListRates is what the nodes the workload's pods run on cost per vCPU and
 // GiB at on-demand list prices, averaged over its pods, and false when none
 // runs on a node the price table has. ErrNoScheduledPods means it has no pod
-// on a node. Nodes are read as metadata only: their labels are all pricing
-// needs.
+// on a node.
 func (r *Reader) ListRates(ctx context.Context, workload *v1alpha1.ManagedWorkload) (cost.Rates, bool, error) {
 	ctx, cancel := context.WithTimeout(ctx, callTimeout)
 	defer cancel()
-	_, pods, err := r.targetPods(ctx, workload)
-	if err != nil {
-		return cost.Rates{}, false, err
-	}
 	var rates []cost.Rates
 	scheduled := 0
-	for _, pod := range pods {
-		if !live(&pod) || pod.Spec.NodeName == "" {
-			continue
-		}
+	err := r.eachNode(ctx, workload, func(nodeLabels map[string]string) {
 		scheduled++
-		node := &metav1.PartialObjectMetadata{}
-		node.SetGroupVersionKind(corev1.SchemeGroupVersion.WithKind("Node"))
-		if err := r.client.Get(ctx, types.NamespacedName{Name: pod.Spec.NodeName}, node); err != nil {
-			return cost.Rates{}, false, fmt.Errorf("reading node %s: %w", pod.Spec.NodeName, err)
-		}
-		if p, ok := cost.ListPriceOf(cost.NodeTypeOf(node.Labels)); ok {
+		if p, ok := cost.ListPriceOf(cost.NodeTypeOf(nodeLabels)); ok {
 			rates = append(rates, p.Rates)
 		}
+	})
+	if err != nil {
+		return cost.Rates{}, false, err
 	}
 	if scheduled == 0 {
 		return cost.Rates{}, false, ErrNoScheduledPods
@@ -391,6 +383,44 @@ func (r *Reader) ListRates(ctx context.Context, workload *v1alpha1.ManagedWorklo
 		return cost.Rates{}, false, nil
 	}
 	return cost.Mean(rates), true, nil
+}
+
+// NodePools is how many of the workload's pods run in each node pool, by
+// pool name, and none when no pod is on a node.
+func (r *Reader) NodePools(ctx context.Context, workload *v1alpha1.ManagedWorkload) ([]v1alpha1.NodePoolPods, error) {
+	ctx, cancel := context.WithTimeout(ctx, callTimeout)
+	defer cancel()
+	counts := map[string]int32{}
+	if err := r.eachNode(ctx, workload, func(nodeLabels map[string]string) {
+		counts[cost.NodePoolOf(nodeLabels)]++
+	}); err != nil {
+		return nil, err
+	}
+	var pools []v1alpha1.NodePoolPods
+	for _, name := range slices.Sorted(maps.Keys(counts)) {
+		pools = append(pools, v1alpha1.NodePoolPods{Name: name, Pods: counts[name]})
+	}
+	return pools, nil
+}
+
+// eachNode calls fn with the labels of the node each of the workload's
+// running or starting pods is on.
+func (r *Reader) eachNode(ctx context.Context, workload *v1alpha1.ManagedWorkload, fn func(nodeLabels map[string]string)) error {
+	_, pods, err := r.targetPods(ctx, workload)
+	if err != nil {
+		return err
+	}
+	for _, pod := range pods {
+		if !live(&pod) || pod.Spec.NodeName == "" {
+			continue
+		}
+		var node corev1.Node
+		if err := r.client.Get(ctx, types.NamespacedName{Name: pod.Spec.NodeName}, &node); err != nil {
+			return fmt.Errorf("reading node %s: %w", pod.Spec.NodeName, err)
+		}
+		fn(node.Labels)
+	}
+	return nil
 }
 
 // targetPods returns the target and the pods it runs.
