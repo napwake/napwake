@@ -36,9 +36,25 @@ import (
 	"github.com/okedeji/hybernate/internal/nodescale"
 )
 
+// poolLabel names a node pool in the paused requests' breakdown.
+func poolLabel(pool string) string {
+	switch pool {
+	case "":
+		return "in nodes of no named pool"
+	case unrecordedPool:
+		return "where their pods ran wasn't recorded"
+	default:
+		return "in pool " + pool
+	}
+}
+
 // nodeScalingGuide is the docs page on making node autoscalers remove the
 // capacity pausing frees.
 const nodeScalingGuide = "https://okedeji.io/hybernate/guides/cluster-autoscaler/"
+
+// nodePoolsGuide is the docs page on giving non-production workloads a node
+// pool of their own, so pausing them empties whole nodes.
+const nodePoolsGuide = "https://okedeji.io/hybernate/guides/node-pools/"
 
 // poolLabels name the node pool a node belongs to, on each autoscaler and
 // cloud, in the order they're read.
@@ -115,8 +131,7 @@ type nodesResult struct {
 	Autoscaler nodescale.Autoscaler `json:"autoscaler"`
 	Nodes      []nodeRow            `json:"nodes"`
 	// Paused is what the workloads Hybernate has paused would request if
-	// they were awake. Where their pods ran isn't recorded, so it's for
-	// the whole cluster rather than by node.
+	// they were awake, in all and by the node pool their pods ran in.
 	Paused *pausedRequests `json:"paused,omitempty"`
 	Notes  []string        `json:"notes,omitempty"`
 }
@@ -140,6 +155,51 @@ type pausedRequests struct {
 	Workloads   int   `json:"workloads"`
 	CPUMillis   int64 `json:"cpuMillis"`
 	MemoryBytes int64 `json:"memoryBytes"`
+	// ByPool splits it by the node pool each workload's pods ran in, as
+	// its pause recorded, shared by how many pods ran in each. A pause
+	// that recorded no pool is under Pool "*".
+	ByPool []poolRequests `json:"byPool,omitempty"`
+}
+
+type poolRequests struct {
+	Pool        string `json:"pool"`
+	CPUMillis   int64  `json:"cpuMillis"`
+	MemoryBytes int64  `json:"memoryBytes"`
+}
+
+// unrecordedPool holds what pauses that recorded no node pool would
+// request. It can't be a pool's name, which comes from a label value.
+const unrecordedPool = "*"
+
+func (p *pausedRequests) add(w *v1alpha1.ManagedWorkload, cpu, memory int64) {
+	p.Workloads++
+	p.CPUMillis += cpu
+	p.MemoryBytes += memory
+	var pools []v1alpha1.NodePoolPods
+	if r := w.Status.Pause.Resources; r != nil {
+		pools = r.NodePools
+	}
+	var pods int64
+	for _, pool := range pools {
+		pods += int64(pool.Pods)
+	}
+	if pods == 0 {
+		p.addToPool(unrecordedPool, cpu, memory)
+		return
+	}
+	for _, pool := range pools {
+		p.addToPool(pool.Name, cpu*int64(pool.Pods)/pods, memory*int64(pool.Pods)/pods)
+	}
+}
+
+func (p *pausedRequests) addToPool(pool string, cpu, memory int64) {
+	i := slices.IndexFunc(p.ByPool, func(r poolRequests) bool { return r.Pool == pool })
+	if i < 0 {
+		p.ByPool = append(p.ByPool, poolRequests{Pool: pool})
+		i = len(p.ByPool) - 1
+	}
+	p.ByPool[i].CPUMillis += cpu
+	p.ByPool[i].MemoryBytes += memory
 }
 
 func clusterNodes(ctx context.Context, c client.Client) (nodesResult, error) {
@@ -241,10 +301,9 @@ func pausedWorkloadRequests(ctx context.Context, c client.Client) (*pausedReques
 		if !ok {
 			continue
 		}
-		paused.Workloads++
-		paused.CPUMillis += cpu
-		paused.MemoryBytes += memory
+		paused.add(&list.Items[i], cpu, memory)
 	}
+	slices.SortFunc(paused.ByPool, func(a, b poolRequests) int { return cmp.Compare(a.Pool, b.Pool) })
 	return paused, "", nil
 }
 
@@ -272,7 +331,11 @@ func writeNodesTable(w io.Writer, result nodesResult) error {
 	if pr := result.Paused; pr != nil && pr.Workloads > 0 {
 		p.line("Hybernate's %s would request %s and %s of memory if awake.", countOf(pr.Workloads, "paused workload"),
 			vcpu(pr.CPUMillis), gib(pr.MemoryBytes))
-		p.line("Where their pods ran isn't recorded, so that's for the whole cluster rather than by node.")
+		if len(pr.ByPool) > 1 || len(pr.ByPool) == 1 && pr.ByPool[0].Pool != "" && pr.ByPool[0].Pool != unrecordedPool {
+			for _, r := range pr.ByPool {
+				p.line("  %s: %s and %s", poolLabel(r.Pool), vcpu(r.CPUMillis), gib(r.MemoryBytes))
+			}
+		}
 	}
 	p.line("")
 
@@ -390,6 +453,8 @@ func writeNodeNextSteps(p *printer, nodes []nodeRow) {
 		p.line("     For example: %s", oneLine(strings.TrimPrefix(r.Pod+": "+r.Detail, ": ")))
 	}
 	p.line("  See %s", nodeScalingGuide)
+	p.line("  To have pausing empty whole nodes, put non-production workloads on a node pool of their own: %s",
+		nodePoolsGuide)
 	p.line("")
 }
 

@@ -299,7 +299,8 @@ kubectl hybernate nodes
 staging (EKS us-east-1): 3 nodes
 Node autoscaler: Karpenter (NodePool batch consolidates only empty nodes after 1m; NodePool default consolidates when underutilized after 1m)
 Hybernate's 2 paused workloads would request 2.0 vCPU and 4.0 GiB of memory if awake.
-Where their pods ran isn't recorded, so that's for the whole cluster rather than by node.
+  in pool batch: 0.5 vCPU and 1.0 GiB
+  in pool default: 1.5 vCPU and 3.0 GiB
 
   NODE      POOL      INSTANCE TYPE   CPU REQUESTED     MEMORY REQUESTED   UTILISATION   BLOCKED BY
   batch-1   batch     c5.large        0.1 of 1.9 vCPU   0.3 of 3.0 GiB     10%           NodePool consolidates only empty nodes
@@ -312,6 +313,7 @@ Next steps:
   2. A PodDisruptionBudget allows no disruptions, so its pods can't be moved. Raise maxUnavailable, lower minAvailable, or run more replicas than it requires.
      For example: shop/db: PodDisruptionBudget db allows no disruptions
   See https://okedeji.io/hybernate/guides/cluster-autoscaler/
+  To have pausing empty whole nodes, put non-production workloads on a node pool of their own: https://okedeji.io/hybernate/guides/node-pools/
 ```
 
 - **Node autoscaler:** what scales the cluster's nodes, which `status` and `scan` show too:
@@ -323,11 +325,11 @@ Next steps:
     - `unknown`, when your access didn't allow reading what would tell, which it names. It never says none when it couldn't look
 - **The table:** each node, least used first, with its pool (Karpenter NodePool, EKS node group, GKE node pool or AKS agent pool), its instance type, what its running pods request of what it can allocate, and its utilisation: the larger of the two, as Cluster Autoscaler measures it against its scale-down threshold. DaemonSet pods count towards what's requested, as they do for the autoscaler.
 - **BLOCKED BY:** why the autoscaler won't remove the node, however little of it is used, the first two in the table and every one in `-o json`. On a node a Karpenter NodePool owns, Karpenter's reasons: the node or a pod annotated `karpenter.sh/do-not-disrupt: "true"`, a pod whose PodDisruptionBudget allows no disruptions (`status.disruptionsAllowed` is 0), a NodePool with `consolidationPolicy: WhenEmpty` and anything but DaemonSet pods on the node, or `consolidateAfter: Never`. On any other node, Cluster Autoscaler's: the node annotated `cluster-autoscaler.kubernetes.io/scale-down-disabled: "true"`, a pod annotated `cluster-autoscaler.kubernetes.io/safe-to-evict: "false"`, a pod with an `emptyDir` not in memory or a `hostPath` volume it doesn't name in `cluster-autoscaler.kubernetes.io/safe-to-evict-local-volumes`, a pod no controller owns, a `kube-system` pod without a PodDisruptionBudget, and the PodDisruptionBudget rule. DaemonSet and static pods never block, and a pod annotated `safe-to-evict: "true"` blocks only by its PodDisruptionBudget, as with Cluster Autoscaler. Local storage and `kube-system` pods block only while Cluster Autoscaler's `--skip-nodes-with-local-storage` and `--skip-nodes-with-system-pods` are on, as they are by default upstream; AKS turns the first off. While the autoscaler is unknown, nodes Karpenter doesn't own are judged by Cluster Autoscaler's rules. A node no autoscaler found scales is `not autoscaled`.
-- **Next steps:** how to clear each kind of reason the table shows, with one example of it, and the [node autoscaler guide](../guides/cluster-autoscaler.md).
+- **Next steps:** how to clear each kind of reason the table shows, with one example of it, the [node autoscaler guide](../guides/cluster-autoscaler.md), and the [node pools guide](../guides/node-pools.md).
 
 A node with nothing in BLOCKED BY that stays is still in use: paused workloads share it with busy ones. [Node Pools for Real Savings](../guides/node-pools.md) shows how to give non-prod workloads nodes that pausing them empties.
 
-What paused workloads would request is what Hybernate recorded their pause freed. Hybernate doesn't record which nodes their pods ran on, so it's shown for the whole cluster.
+What paused workloads would request is what Hybernate recorded their pause freed, in all and by the node pool their pods ran in, as each pause recorded it: the pools that would need room for them if they woke. A workload whose pods ran in several pools is shared between them by how many ran in each. Pauses that recorded no pool are counted in all but not by pool.
 
 ```bash
 kubectl hybernate nodes --context staging -o json

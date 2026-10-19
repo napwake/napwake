@@ -123,7 +123,6 @@ func TestNodes_Table(t *testing.T) {
 	assert.Equal(t, `staging (EKS us-east-1): 3 nodes
 Node autoscaler: Karpenter (NodePool batch consolidates only empty nodes after 1m; NodePool default consolidates when underutilized after 1m)
 Hybernate's 2 paused workloads would request 2.0 vCPU and 4.0 GiB of memory if awake.
-Where their pods ran isn't recorded, so that's for the whole cluster rather than by node.
 
   NODE      POOL      INSTANCE TYPE   CPU REQUESTED     MEMORY REQUESTED   UTILISATION   BLOCKED BY
   batch-1   batch     c5.large        0.1 of 1.9 vCPU   0.3 of 3.0 GiB     10%           NodePool consolidates only empty nodes
@@ -136,8 +135,34 @@ Next steps:
   2. A PodDisruptionBudget allows no disruptions, so its pods can't be moved. Raise maxUnavailable, lower minAvailable, or run more replicas than it requires.
      For example: shop/db: PodDisruptionBudget db allows no disruptions
   See https://okedeji.io/hybernate/guides/cluster-autoscaler/
+  To have pausing empty whole nodes, put non-production workloads on a node pool of their own: https://okedeji.io/hybernate/guides/node-pools/
 
 `, out)
+}
+
+// A pause records the node pools its pods ran in, so what it would request
+// awake is shown against the pools it would need room in, shared by how
+// many pods ran in each.
+func TestNodes_SplitsPausedByPool(t *testing.T) {
+	split := pausedWorkload("shop", "api", 3000, 3<<30)
+	split.Status.Pause.Resources = &v1alpha1.ResourceSnapshot{NodePools: []v1alpha1.NodePoolPods{
+		{Name: "batch", Pods: 2}, {Name: "web", Pods: 1}}}
+	webOnly := pausedWorkload("shop", "cart", 1000, 1<<30)
+	webOnly.Status.Pause.Resources = &v1alpha1.ResourceSnapshot{NodePools: []v1alpha1.NodePoolPods{
+		{Name: "web", Pods: 2}}}
+	c := newClusterClient(t, interceptor.Funcs{}, split, webOnly)
+
+	paused, note, err := pausedWorkloadRequests(context.Background(), c)
+	require.NoError(t, err)
+	require.Empty(t, note)
+
+	assert.Equal(t, []poolRequests{
+		{Pool: "batch", CPUMillis: 2000, MemoryBytes: 2 << 30},
+		{Pool: "web", CPUMillis: 2000, MemoryBytes: 2 << 30},
+	}, paused.ByPool)
+	var out bytes.Buffer
+	require.NoError(t, writeNodesTable(&out, nodesResult{Cluster: "staging", Paused: paused}))
+	assert.Contains(t, out.String(), "  in pool batch: 2.0 vCPU and 2.0 GiB\n  in pool web: 2.0 vCPU and 2.0 GiB\n")
 }
 
 func TestNodes_JSONHasEveryReason(t *testing.T) {
@@ -151,7 +176,8 @@ func TestNodes_JSONHasEveryReason(t *testing.T) {
 	assert.Equal(t, []nodescale.Reason{{Code: nodescale.CodePDB, Pod: "shop/db",
 		Detail: "PodDisruptionBudget db allows no disruptions"}}, got.Nodes[1].BlockedBy)
 	assert.Equal(t, []nodescale.Reason{}, got.Nodes[2].BlockedBy)
-	assert.Equal(t, &pausedRequests{Workloads: 2, CPUMillis: 2000, MemoryBytes: 4 << 30}, got.Paused)
+	assert.Equal(t, &pausedRequests{Workloads: 2, CPUMillis: 2000, MemoryBytes: 4 << 30,
+		ByPool: []poolRequests{{Pool: unrecordedPool, CPUMillis: 2000, MemoryBytes: 4 << 30}}}, got.Paused)
 	assert.Equal(t, []string{"Karpenter"}, scalerKinds(got.Autoscaler))
 }
 
