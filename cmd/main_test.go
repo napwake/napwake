@@ -29,6 +29,7 @@ import (
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	discoveryv1 "k8s.io/api/discovery/v1"
+	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/rest"
 	"k8s.io/utils/ptr"
@@ -429,4 +430,93 @@ func TestOperatorCacheSeesOnlyDoormanSlices(t *testing.T) {
 				"the operator finds the doorman's pods through these")
 		})
 	}
+}
+
+func requests(cpu, memory string) corev1.ResourceRequirements {
+	return corev1.ResourceRequirements{Requests: corev1.ResourceList{
+		corev1.ResourceCPU: resource.MustParse(cpu), corev1.ResourceMemory: resource.MustParse(memory)}}
+}
+
+// The operator caches pods only to measure spare node capacity, so it holds
+// only those bound to a node and not finished, as what they request, and
+// nodes without their image lists. The cache is configured exactly as the
+// operator's, against an API server that applies its field selector.
+func TestOperatorCacheHoldsPodsAsWhatTheyRequest(t *testing.T) {
+	cfg := startEnvtest(t)
+	ctx, cancel := context.WithTimeout(context.Background(), time.Minute)
+	defer cancel()
+
+	direct, err := client.New(cfg, client.Options{Scheme: scheme})
+	require.NoError(t, err)
+	require.NoError(t, direct.Create(ctx, &corev1.Namespace{ObjectMeta: metav1.ObjectMeta{Name: "shop"}}))
+	node := &corev1.Node{ObjectMeta: metav1.ObjectMeta{Name: "node-a",
+		Labels: map[string]string{"karpenter.sh/nodepool": "general"}}}
+	require.NoError(t, direct.Create(ctx, node))
+	node.Status = corev1.NodeStatus{
+		Allocatable: corev1.ResourceList{corev1.ResourceCPU: resource.MustParse("4"),
+			corev1.ResourceMemory: resource.MustParse("16Gi"), corev1.ResourcePods: resource.MustParse("110")},
+		Conditions: []corev1.NodeCondition{{Type: corev1.NodeReady, Status: corev1.ConditionTrue,
+			Reason: "KubeletReady", Message: "kubelet is posting ready status"}},
+		Images: []corev1.ContainerImage{{Names: []string{"registry.example/api:v1"}, SizeBytes: 1 << 30}},
+	}
+	require.NoError(t, direct.Status().Update(ctx, node))
+
+	pod := func(name, nodeName string) *corev1.Pod {
+		return &corev1.Pod{
+			ObjectMeta: metav1.ObjectMeta{Name: name, Namespace: "shop", Labels: map[string]string{"app": "api"}},
+			Spec: corev1.PodSpec{
+				NodeName:   nodeName,
+				Containers: []corev1.Container{{Name: "app", Image: "api:v1", Resources: requests("500m", "1Gi")}},
+				InitContainers: []corev1.Container{{Name: "proxy", Image: "proxy:v1", Resources: requests("100m", "64Mi"),
+					RestartPolicy: ptr.To(corev1.ContainerRestartPolicyAlways)}},
+			},
+		}
+	}
+	running, pending, finished := pod("running", "node-a"), pod("pending", ""), pod("finished", "node-a")
+	for _, p := range []*corev1.Pod{running, pending, finished} {
+		require.NoError(t, direct.Create(ctx, p))
+	}
+	finished.Status.Phase = corev1.PodSucceeded
+	require.NoError(t, direct.Status().Update(ctx, finished))
+
+	opts := operatorCacheOptions(nil, "hybernate-system")
+	opts.Scheme = scheme
+	c, err := cache.New(cfg, opts)
+	require.NoError(t, err)
+	cacheCtx, stop := context.WithCancel(ctx)
+	done := make(chan error, 1)
+	go func() { done <- c.Start(cacheCtx) }()
+	defer func() {
+		stop()
+		assert.NoError(t, <-done)
+	}()
+
+	var pods corev1.PodList
+	require.Eventually(t, func() bool {
+		return c.List(ctx, &pods) == nil && len(pods.Items) > 0
+	}, 30*time.Second, 100*time.Millisecond)
+	require.Len(t, pods.Items, 1, "only the pod bound to a node and not finished")
+	got := pods.Items[0]
+	assert.Equal(t, "running", got.Name)
+	assert.Equal(t, "node-a", got.Spec.NodeName)
+	assert.Empty(t, got.Labels)
+	require.Len(t, got.Spec.Containers, 1, "collapsed into one container")
+	assert.Empty(t, got.Spec.Containers[0].Image)
+	assert.Empty(t, got.Spec.InitContainers)
+	assert.Equal(t, "600m", got.Spec.Containers[0].Resources.Requests.Cpu().String(), "the app and its sidecar")
+	assert.Equal(t, "1088Mi", got.Spec.Containers[0].Resources.Requests.Memory().String())
+
+	running.Status.Phase = corev1.PodFailed
+	require.NoError(t, direct.Status().Update(ctx, running))
+	require.Eventually(t, func() bool {
+		return c.List(ctx, &pods) == nil && len(pods.Items) == 0
+	}, 30*time.Second, 100*time.Millisecond, "a pod that finishes leaves the cache")
+
+	var cached corev1.Node
+	require.NoError(t, c.Get(ctx, client.ObjectKey{Name: "node-a"}, &cached))
+	assert.Equal(t, "general", cached.Labels["karpenter.sh/nodepool"])
+	assert.Empty(t, cached.Status.Images)
+	assert.Equal(t, "4", cached.Status.Allocatable.Cpu().String())
+	assert.Equal(t, []corev1.NodeCondition{{Type: corev1.NodeReady, Status: corev1.ConditionTrue}},
+		cached.Status.Conditions)
 }

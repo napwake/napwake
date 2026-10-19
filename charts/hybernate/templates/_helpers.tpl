@@ -126,7 +126,7 @@ watchNamespaces, a Role's in each of them.
   verbs: [get, list, watch]
 - apiGroups: [""]
   resources: [pods]
-  verbs: [get, list]
+  verbs: [get, list, watch]
 - apiGroups: [discovery.k8s.io]
   resources: [endpointslices]
   verbs: [create, delete, get, list, patch, update, watch]

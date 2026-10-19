@@ -57,6 +57,7 @@ import (
 	metricsserver "sigs.k8s.io/controller-runtime/pkg/metrics/server"
 
 	v1alpha1 "github.com/okedeji/hybernate/api/v1alpha1"
+	"github.com/okedeji/hybernate/internal/capacity"
 	"github.com/okedeji/hybernate/internal/controller"
 	"github.com/okedeji/hybernate/internal/doorman"
 	"github.com/okedeji/hybernate/internal/guard"
@@ -260,6 +261,14 @@ func main() {
 		}
 		readyz = server.Ready
 	} else {
+		savings := capacity.NewSampler(mgr.GetClient(), capacity.Options{
+			WatchNamespaces:   watched,
+			OperatorNamespace: os.Getenv("POD_NAMESPACE"),
+		})
+		if err := mgr.Add(savings); err != nil {
+			setupLog.Error(err, "unable to add the savings sampler")
+			os.Exit(1)
+		}
 		if err := (&controller.Reconciler{
 			Client:                   c,
 			Scheme:                   mgr.GetScheme(),
@@ -275,6 +284,7 @@ func main() {
 			HybernateNamespaces:      own,
 			OperatorNamespace:        os.Getenv("POD_NAMESPACE"),
 			MaxConcurrentReconciles:  maxConcurrentReconciles,
+			Savings:                  savings,
 			Timezone:                 location,
 		}).SetupWithManager(mgr); err != nil {
 			setupLog.Error(err, "unable to create controller", "controller", "ManagedWorkload")
@@ -448,12 +458,15 @@ func cacheOptions(watched []string) cache.Options {
 }
 
 // operatorCacheOptions adds to cacheOptions the operator's view of
-// EndpointSlices (see controller.EndpointSliceCache). Empty
+// EndpointSlices (see controller.EndpointSliceCache), and of the pods and
+// nodes spare capacity is measured from (see capacity.PodCache). Empty
 // doormanNamespace means the doorman is disabled.
 func operatorCacheOptions(watched []string, doormanNamespace string) cache.Options {
 	opts := cacheOptions(watched)
 	opts.ByObject = map[client.Object]cache.ByObject{
 		&discoveryv1.EndpointSlice{}: controller.EndpointSliceCache(watched, doormanNamespace),
+		&corev1.Pod{}:                capacity.PodCache(),
+		&corev1.Node{}:               capacity.NodeCache(),
 	}
 	return opts
 }
