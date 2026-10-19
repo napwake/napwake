@@ -22,9 +22,13 @@ spec:
     - jsonPath: .status.phase
       name: Phase
       type: string
-    - description: Saved by pausing this month (UTC)
+    - description: What pausing took off the node bill this month (UTC), at least
       jsonPath: .status.cost.savedThisMonth
       name: Saved
+      type: string
+    - description: What pausing freed this month (UTC), at list price
+      jsonPath: .status.cost.freedThisMonth
+      name: Freed
       type: string
     - jsonPath: .metadata.creationTimestamp
       name: Age
@@ -416,7 +420,12 @@ spec:
                     description: |-
                       CostWithoutHybernateThisMonth is what the workload would have cost
                       this month had it never been paused: CostThisMonth plus
-                      SavedThisMonth.
+                      FreedThisMonth.
+                    type: string
+                  freedThisMonth:
+                    description: |-
+                      FreedThisMonth is the paused hours, priced: what pausing freed on
+                      its nodes, which is money only once nodes go.
                     type: string
                   lastAccumulatedAt:
                     description: |-
@@ -430,9 +439,10 @@ spec:
                   listRates:
                     description: |-
                       ListRates are the on-demand list rates of the nodes the workload's
-                      pods last ran on, from their instance type and region, which its cost
-                      and savings are priced at unless costTracking.rates sets its own.
-                      Kept while it's paused, so savings are priced at where it ran. Unset
+                      pods last ran on, from their instance type and region, which its cost,
+                      what it frees and what it saves are priced at unless
+                      costTracking.rates sets its own. Kept while it's paused, so a pause
+                      is priced at where it ran. Unset
                       when its nodes aren't in Hybernate's price table, and the default
                       rates apply.
                     properties:
@@ -498,17 +508,19 @@ spec:
                     type: string
                   projectedMonthlyCost:
                     description: |-
-                      ProjectedMonthlyCost and ProjectedMonthlySavings are CostThisMonth
-                      and SavedThisMonth carried from Tracked to the whole month at the
-                      same rate. They're "pending" until a day has been tracked, since a
+                      ProjectedMonthlyCost, ProjectedMonthlyFreed and
+                      ProjectedMonthlySavings are CostThisMonth, FreedThisMonth and
+                      SavedThisMonth carried from Tracked to the whole month at the same
+                      rate. They're "pending" until a day has been tracked, since a
                       workload's pattern is daily.
+                    type: string
+                  projectedMonthlyFreed:
                     type: string
                   projectedMonthlySavings:
                     type: string
                   resourceReduction:
-                    description: |-
-                      ResourceReduction is what the current pause freed. Unlike the dollar
-                      figures, it doesn't depend on a cluster autoscaler removing nodes.
+                    description: ResourceReduction is what the current pause freed
+                      on its nodes.
                     properties:
                       cpuMillis:
                         description: CPUMillis is the total CPU millicores freed by
@@ -545,6 +557,31 @@ spec:
                       memoryBytes:
                         format: int64
                         type: integer
+                      nodePools:
+                        description: |-
+                          NodePools are the node pools the workload's pods ran in, and how
+                          many ran in each, which what it saves is measured against. Unset
+                          when no pod was on a node.
+                        items:
+                          description: NodePoolPods is how many of a workload's pods
+                            ran in one node pool.
+                          properties:
+                            name:
+                              description: |-
+                                Name is the pool's name, from the first of its nodes' labels
+                                karpenter.sh/nodepool, cloud.google.com/gke-nodepool,
+                                eks.amazonaws.com/nodegroup and kubernetes.azure.com/agentpool, or
+                                empty for nodes with none of them, which make up one pool.
+                              type: string
+                            pods:
+                              format: int32
+                              type: integer
+                          required:
+                          - name
+                          - pods
+                          type: object
+                        type: array
+                        x-kubernetes-list-type: atomic
                       replicas:
                         description: Replicas is the replica count at the time of
                           the snapshot.
@@ -562,10 +599,35 @@ spec:
                     - replicas
                     - storageBytes
                     type: object
+                  savedCPUHours:
+                    anyOf:
+                    - type: integer
+                    - type: string
+                    description: |-
+                      SavedCPUHours and SavedMemoryHours are the workload's share of the
+                      vCPU-hours and GiB-hours the cluster's nodes were short of holding
+                      every replica Hybernate paused in their node pools, measured every
+                      5 minutes: capacity that would have to be added for them, so a lower
+                      bound on what came off the bill. At most the paused hours.
+                    pattern: ^(\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))(([KMGTPE]i)|[numkMGTPE]|([eE](\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))))?$
+                    x-kubernetes-int-or-string: true
+                  savedMemoryHours:
+                    anyOf:
+                    - type: integer
+                    - type: string
+                    pattern: ^(\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))(([KMGTPE]i)|[numkMGTPE]|([eE](\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))))?$
+                    x-kubernetes-int-or-string: true
                   savedThisMonth:
                     description: |-
-                      SavedThisMonth is the paused hours, priced. It becomes money only
-                      once a cluster autoscaler removes the capacity a pause frees.
+                      SavedThisMonth is the saved hours, priced: what pausing took off
+                      the bill, at least. "unknown" while SavingsUnknown says why it
+                      can't be measured.
+                    type: string
+                  savingsUnknown:
+                    description: |-
+                      SavingsUnknown is why the saved hours can't be measured, such as
+                      the operator not seeing the pods of every namespace; empty when
+                      they're measured.
                     type: string
                   storageHours:
                     anyOf:
@@ -587,10 +649,14 @@ spec:
                 - awakeMemoryHours
                 - costThisMonth
                 - costWithoutHybernateThisMonth
+                - freedThisMonth
                 - pausedCPUHours
                 - pausedMemoryHours
                 - projectedMonthlyCost
+                - projectedMonthlyFreed
                 - projectedMonthlySavings
+                - savedCPUHours
+                - savedMemoryHours
                 - savedThisMonth
                 - storageHours
                 - tracked
@@ -652,9 +718,9 @@ spec:
                   had it been allowed to pause the workload. Set only while spec.dryRun
                   is true.
                 properties:
-                  estimatedSavings:
+                  estimatedFreed:
                     description: |-
-                      EstimatedSavings is the freed hours priced at the workload's cost
+                      EstimatedFreed is the freed hours priced at the workload's cost
                       rates, to the cent. It's for display: the hours are the record.
                     type: string
                   freedCPUHours:
@@ -694,6 +760,31 @@ spec:
                       memoryBytes:
                         format: int64
                         type: integer
+                      nodePools:
+                        description: |-
+                          NodePools are the node pools the workload's pods ran in, and how
+                          many ran in each, which what it saves is measured against. Unset
+                          when no pod was on a node.
+                        items:
+                          description: NodePoolPods is how many of a workload's pods
+                            ran in one node pool.
+                          properties:
+                            name:
+                              description: |-
+                                Name is the pool's name, from the first of its nodes' labels
+                                karpenter.sh/nodepool, cloud.google.com/gke-nodepool,
+                                eks.amazonaws.com/nodegroup and kubernetes.azure.com/agentpool, or
+                                empty for nodes with none of them, which make up one pool.
+                              type: string
+                            pods:
+                              format: int32
+                              type: integer
+                          required:
+                          - name
+                          - pods
+                          type: object
+                        type: array
+                        x-kubernetes-list-type: atomic
                       replicas:
                         description: Replicas is the replica count at the time of
                           the snapshot.
@@ -722,7 +813,7 @@ spec:
                       is Idle, is added when it ends.
                     type: string
                 required:
-                - estimatedSavings
+                - estimatedFreed
                 - freedCPUHours
                 - freedMemoryHours
                 - pauses
@@ -872,8 +963,9 @@ spec:
                     type: integer
                   resources:
                     description: |-
-                      Resources captures the workload's resource profile at pause time
-                      for cost savings calculation.
+                      Resources is what the workload ran as it paused, which is what the
+                      pause frees, and the node pools that's measured against for what it
+                      saves.
                     properties:
                       cpuMillis:
                         description: |-
@@ -884,6 +976,31 @@ spec:
                       memoryBytes:
                         format: int64
                         type: integer
+                      nodePools:
+                        description: |-
+                          NodePools are the node pools the workload's pods ran in, and how
+                          many ran in each, which what it saves is measured against. Unset
+                          when no pod was on a node.
+                        items:
+                          description: NodePoolPods is how many of a workload's pods
+                            ran in one node pool.
+                          properties:
+                            name:
+                              description: |-
+                                Name is the pool's name, from the first of its nodes' labels
+                                karpenter.sh/nodepool, cloud.google.com/gke-nodepool,
+                                eks.amazonaws.com/nodegroup and kubernetes.azure.com/agentpool, or
+                                empty for nodes with none of them, which make up one pool.
+                              type: string
+                            pods:
+                              format: int32
+                              type: integer
+                          required:
+                          - name
+                          - pods
+                          type: object
+                        type: array
+                        x-kubernetes-list-type: atomic
                       replicas:
                         description: Replicas is the replica count at the time of
                           the snapshot.

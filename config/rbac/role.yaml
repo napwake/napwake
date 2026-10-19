@@ -16,6 +16,7 @@ rules:
   - namespaces
   - nodes
   - persistentvolumeclaims
+  - pods
   - services
   verbs:
   - get
@@ -29,14 +30,6 @@ rules:
   verbs:
   - create
   - patch
-- apiGroups:
-  - ""
-  - metrics.k8s.io
-  resources:
-  - pods
-  verbs:
-  - get
-  - list
 - apiGroups:
   - apps
   resources:
@@ -110,3 +103,10 @@ rules:
   - list
   - patch
   - watch
+- apiGroups:
+  - metrics.k8s.io
+  resources:
+  - pods
+  verbs:
+  - get
+  - list
