@@ -137,9 +137,11 @@ type Workload struct {
 	ScaledByHand bool `json:"scaledByHand,omitempty"`
 	// Measured is what dry-run has measured, for a workload in dry-run.
 	Measured *Measured `json:"measured,omitempty"`
-	// SavedThisMonth is what Hybernate has saved this month pausing the
-	// workload, priced at the rates it uses for the workload. One in dry-run
-	// keeps what it saved while it was live.
+	// FreedThisMonth is what Hybernate has freed this month pausing the
+	// workload, priced at the rates it uses for the workload, and
+	// SavedThisMonth the part of it that came off the bill as nodes scaled
+	// down. One in dry-run keeps what it freed and saved while it was live.
+	FreedThisMonth float64 `json:"freedThisMonth,omitempty"`
 	SavedThisMonth float64 `json:"savedThisMonth,omitempty"`
 	// Slept is how long Hybernate has had a live workload paused, and how
 	// many times it was woken, since Since: the start of the month, or when
@@ -151,11 +153,11 @@ type Workload struct {
 	Protected bool `json:"protected,omitempty"`
 	// WontPause says why Hybernate refuses to pause it however idle it is,
 	// as for a StatefulSet that deletes its PVCs when scaled down, so it's
-	// left out of what pausing could save.
+	// left out of what pausing could free.
 	WontPause string `json:"wontPause,omitempty"`
 	// Platform is the part of the cluster's own infrastructure it runs, such
 	// as Kubernetes, Hybernate or cert-manager, for one the scan leaves out
-	// of what pausing could save.
+	// of what pausing could free.
 	Platform string `json:"platform,omitempty"`
 	// ReplicasFromGit is the GitOps tool that last set its replicas from
 	// Git, which would undo every pause until it's told to leave them.
@@ -208,13 +210,14 @@ type Slept struct {
 type Totals struct {
 	Workloads   int     `json:"workloads"`
 	MonthlyCost float64 `json:"monthlyCost"`
-	// SavingsBasis is what the workloads in MonthlyCost cost a month on the
-	// basis their saving is estimated on: over the replayed history for
-	// those replayed, with the pods they ran then, and as they run now for
-	// the rest. What Replayed and Measured could save is a share of it.
+	// FreeableBasis is what the workloads in MonthlyCost cost a month on the
+	// basis what pausing could free is estimated on: over the replayed
+	// history for those replayed, with the pods they ran then, and as they
+	// run now for the rest. What Replayed and Measured could free is a
+	// share of it.
 	// Workloads the scan couldn't judge aren't in it, nor in Replayed, as
 	// the table doesn't list them.
-	SavingsBasis float64 `json:"savingsBasis"`
+	FreeableBasis float64 `json:"freeableBasis"`
 	// Paused and PausedHourlyCost are what Hybernate has paused right now
 	// and what that frees each hour.
 	Paused           int     `json:"paused"`
@@ -229,12 +232,14 @@ type Totals struct {
 	IdleHourlyCost  float64 `json:"idleHourlyCost"`
 	IdleMonthlyCost float64 `json:"idleMonthlyCost"`
 	// Replayed sums the history of unmanaged workloads, Measured what
-	// Hybernate measured for those in dry-run, and SavedThisMonth what it
-	// has saved this month pausing managed ones, including what one now in
-	// dry-run saved while live: each from its own source.
+	// Hybernate measured for those in dry-run, and FreedThisMonth and
+	// SavedThisMonth what it has freed and saved this month pausing managed
+	// ones, including what one now in dry-run freed while live: each from
+	// its own source.
 	Replayed       ReplayTotals `json:"replayed"`
 	Measured       Measured     `json:"measured"`
 	DryRun         int          `json:"dryRun"`
+	FreedThisMonth float64      `json:"freedThisMonth"`
 	SavedThisMonth float64      `json:"savedThisMonth"`
 	Live           int          `json:"live"`
 }
@@ -401,7 +406,7 @@ func (s *Scanner) ScanCluster(ctx context.Context, opts ClusterOptions) (*Cluste
 		if c := cmp.Compare(stateOrder[a.State], stateOrder[b.State]); c != 0 {
 			return c
 		}
-		if c := cmp.Compare(CouldSave(b), CouldSave(a)); c != 0 {
+		if c := cmp.Compare(CouldFree(b), CouldFree(a)); c != 0 {
 			return c
 		}
 		if c := cmp.Compare(b.MonthlyCost, a.MonthlyCost); c != 0 {
@@ -699,6 +704,7 @@ func totals(workloads []Workload) Totals {
 	var t Totals
 	for _, w := range workloads {
 		t.Workloads++
+		t.FreedThisMonth += w.FreedThisMonth
 		t.SavedThisMonth += w.SavedThisMonth
 		switch {
 		case w.Measured != nil && (w.ScaledByHand || w.WontPause != ""):
@@ -736,9 +742,9 @@ func totals(workloads []Workload) Totals {
 		t.MonthlyCost += w.MonthlyCost
 		switch {
 		case replayed:
-			t.SavingsBasis += w.History.MonthlyCost
+			t.FreeableBasis += w.History.MonthlyCost
 		case judged:
-			t.SavingsBasis += w.MonthlyCost
+			t.FreeableBasis += w.MonthlyCost
 		}
 		if w.State == StateIdle {
 			t.Idle++

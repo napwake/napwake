@@ -203,6 +203,7 @@ func (s *Scanner) scanNamespace(ctx, historyCtx context.Context, namespace strin
 		w.HourlyCost = hourlyCost(w, w.rates)
 		w.MonthlyCost = w.HourlyCost * hoursPerMonth
 		w.Measured = measured(mw, w.HourlyCost, now)
+		w.FreedThisMonth = FreedThisMonth(mw, now)
 		w.SavedThisMonth = SavedThisMonth(mw, now)
 		if history != nil && ownCPU > 0 && !w.ScaledByHand {
 			w.History = replayWorkload(w, spec, ownCPU, history, owners.podsOf(wl), scan.historySince, rollouts,

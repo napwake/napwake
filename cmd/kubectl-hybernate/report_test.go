@@ -68,7 +68,7 @@ func historyResult() scanResult {
 					}},
 				{Namespace: "preview-3", Kind: v1alpha1.TargetKindDeployment, Name: "web", Replicas: 2,
 					State: discovery.StatePaused, Reason: "paused 3h ago", Managed: true, MonthlyCost: 48, HourlyCost: 0.07,
-					SavedThisMonth: 3.5},
+					FreedThisMonth: 3.5, SavedThisMonth: 1.2},
 				{Namespace: "payments", Kind: v1alpha1.TargetKindDeployment, Name: "ledger", Replicas: 3,
 					State: discovery.StateActive, CPUPercent: ptr.To(64), Reason: "CPU 64% of its request",
 					MonthlyCost: 210, HourlyCost: 0.29,
@@ -77,12 +77,12 @@ func historyResult() scanResult {
 					Unmeasured: "no CPU requests"},
 			},
 			Notes: []string{"the history replay sees CPU and rollouts only"},
-			Totals: discovery.Totals{Workloads: 5, MonthlyCost: 446, SavingsBasis: 446, Paused: 1, PausedHourlyCost: 0.07,
+			Totals: discovery.Totals{Workloads: 5, MonthlyCost: 446, FreeableBasis: 446, Paused: 1, PausedHourlyCost: 0.07,
 				Idle: 2, IdleCPUMillis: 2500,
 				IdleMemoryBytes: 6 << 30, IdleHourlyCost: 0.32, IdleMonthlyCost: 236,
 				Replayed: discovery.ReplayTotals{Workloads: 2, Sleepers: 1, SleepHours: 167, Freed: 32, MonthlyFreed: 139},
 				Measured: discovery.Measured{Pauses: 4, SleptHours: 41, Freed: 5.33, MonthlyFreed: 40}, DryRun: 1,
-				SavedThisMonth: 3.5, Live: 1},
+				FreedThisMonth: 3.5, SavedThisMonth: 1.2, Live: 1},
 		},
 	}
 }
@@ -101,9 +101,11 @@ func TestWriteHTML_History(t *testing.T) {
 	assert.Contains(t, got, "3 October 2026, 09:00 UTC")
 	assert.Contains(t, got, "Based on the last 7 days of Prometheus history, and CPU at the time of the scan.")
 	assert.Contains(t, got, "Assumed list prices: $0.031 per vCPU-hour and $0.004 per GiB-hour of memory")
-	assert.Contains(t, got, `<div class="figure"><b>$4</b><span>saved by Hybernate this month</span>`+
-		`<small>so far, pausing 1 live workload</small></div>`)
-	assert.Contains(t, got, `<div class="figure"><b>$179</b><span>could be saved a month</span>`+
+	assert.Contains(t, got, `<div class="figure"><b>$4</b><span>freed by Hybernate this month</span>`+
+		`<small>so far, pausing 1 live workload; $1 of it saved as nodes scaled down</small></div>`)
+	assert.Contains(t, got, `<p class="prices">Node autoscaler: none found — freed capacity won&#39;t lower the `+
+		`bill until nodes scale down; see https://okedeji.io/hybernate/guides/cluster-autoscaler/</p>`)
+	assert.Contains(t, got, `<div class="figure"><b>$179</b><span>could be freed a month</span>`+
 		`<small>40% of what these workloads cost over the same time</small></div>`,
 		"what history shows for unmanaged workloads, plus what dry-run measured, against what they cost")
 	assert.NotContains(t, got, "Had Hybernate been pausing them", "the figures and facts say it")
@@ -126,8 +128,10 @@ func TestWriteHTML_History(t *testing.T) {
 	assert.NotContains(t, got, ">Replicas<")
 	assert.NotContains(t, got, ">CPU<")
 	assert.Contains(t, got, `<table data-sortable id="namespaces">`)
-	assert.Contains(t, got, "Saved this month")
-	assert.Contains(t, got, "Could save / month")
+	assert.Contains(t, got, "Freed this month")
+	assert.Contains(t, got, `$4<span class="sub">$1 saved</span>`, "what came off the bill under what was freed")
+	assert.Contains(t, got, "Could free / month")
+	assert.NotContains(t, got, "Could save", "the scan can't know what pausing would save, only free")
 	assert.Contains(t, got, `<span class="state active"><span class="dot"></span>active (unmanaged)</span>`+
 		`<span class="because">CPU 64% of its request</span>`, "the evidence sits under the state it explains")
 	assert.NotContains(t, got, "deployment/agent", "workloads that couldn't be judged go in the notes")
@@ -147,8 +151,8 @@ func TestWriteHTML_History(t *testing.T) {
 	assert.NotContains(t, got, "nats://", "addresses stay out of a report that gets forwarded")
 	assert.Contains(t, got, "after its idle-after with no activity (1h, or a managed workload&#39;s own)")
 	assert.Contains(t, got, "<p>Every Deployment and StatefulSet scanned, except 1 it couldn't judge, which the "+
-		"notes list: what each is doing right now, what Hybernate saves pausing the live ones, and what pausing the "+
-		"rest could save.</p>", "the table leaves out what the scan couldn't judge, and -n limits it")
+		"notes list: what each is doing right now, what pausing the live ones has freed and saved, and what pausing "+
+		"the rest could free.</p>", "the table leaves out what the scan couldn't judge, and -n limits it")
 	assert.Contains(t, got, "with their own CPU threshold and idle-after", "the details are in the method section")
 	assert.Contains(t, got, `<span class="line"><span class="sh-cmd">kubectl</span> label statefulset postgres `+
 		`<span class="sh-flag">-n</span> preview-42 <span class="sh-key">hybernate.io/managed</span>=`+
@@ -159,11 +163,11 @@ func TestWriteHTML_History(t *testing.T) {
 	assert.NotContains(t, got, "<link", "nothing loads from elsewhere")
 }
 
-// A workload that ran four pods all week and runs one now could save more
+// A workload that ran four pods all week and runs one now could free more
 // a month than it costs now. The share is of what it cost over the same
 // history, so it's never over 100%.
-func TestHeadlineFor_SavingsShareIsOfTheirOwnCost(t *testing.T) {
-	totals := discovery.Totals{Workloads: 1, MonthlyCost: 36.5, SavingsBasis: 146,
+func TestHeadlineFor_FreeableShareIsOfTheirOwnCost(t *testing.T) {
+	totals := discovery.Totals{Workloads: 1, MonthlyCost: 36.5, FreeableBasis: 146,
 		Replayed: discovery.ReplayTotals{Workloads: 1, Sleepers: 1, MonthlyFreed: 145}}
 
 	h, _ := headlineFor(totals, "the last 7 days")
@@ -178,13 +182,13 @@ func TestWriteHTML_ByNamespace(t *testing.T) {
 
 	require.NotEmpty(t, page.Namespaces)
 	assert.Equal(t, "preview-42", page.Namespaces[0].Namespace, "most freed first")
-	assert.Equal(t, "$139", page.Namespaces[0].CouldSave)
+	assert.Equal(t, "$139", page.Namespaces[0].CouldFree)
 	for _, ns := range page.Namespaces {
 		if ns.Namespace == "preview-3" {
 			assert.Equal(t, "$0", ns.Cost, "a paused workload isn't costing anything")
 		}
 		if ns.Namespace == "preview-7" {
-			assert.Equal(t, "$40", ns.CouldSave, "dry-run's could-save is what Hybernate measured")
+			assert.Equal(t, "$40", ns.CouldFree, "dry-run's could-free is what Hybernate measured")
 		}
 	}
 }
@@ -201,13 +205,13 @@ func TestWriteHTML_ByNamespaceLeavesOutManaged(t *testing.T) {
 
 	for _, ns := range page.Namespaces {
 		if ns.Namespace == "preview-3" {
-			assert.Equal(t, "$0", ns.CouldSave)
+			assert.Equal(t, "$0", ns.CouldFree)
 		}
 	}
 }
 
-// Each money cell has one source: what Hybernate saved, for a live
-// workload; what dry-run measured, for one in dry-run; what history shows,
+// Each money cell has one source: what Hybernate freed and saved, for a
+// live workload; what dry-run measured, for one in dry-run; what history shows,
 // for an unmanaged one.
 func TestWriteHTML_OneSourcePerCell(t *testing.T) {
 	page := buildReport(historyResult(), time.Hour)
@@ -217,12 +221,12 @@ func TestWriteHTML_OneSourcePerCell(t *testing.T) {
 		byName[row.Workload] = row
 	}
 	postgres, api, web := byName["statefulset/postgres"], byName["deployment/api"], byName["deployment/web"]
-	assert.Equal(t, []string{"167h", "0", "-", "$139"}, []string{postgres.CouldSleep, postgres.Wakes, postgres.Saved,
-		postgres.CouldSave}, "unmanaged: history")
-	assert.Equal(t, []string{"41h", "4", "-", "$40"}, []string{api.CouldSleep, api.Wakes, api.Saved, api.CouldSave},
+	assert.Equal(t, []string{"167h", "0", "-", "$139"}, []string{postgres.CouldSleep, postgres.Wakes, postgres.Freed,
+		postgres.CouldFree}, "unmanaged: history")
+	assert.Equal(t, []string{"41h", "4", "-", "$40"}, []string{api.CouldSleep, api.Wakes, api.Freed, api.CouldFree},
 		"dry-run: measured, not history")
-	assert.Equal(t, []string{"-", "-", "$4", "-"}, []string{web.CouldSleep, web.Wakes, web.Saved, web.CouldSave},
-		"live: what it saved")
+	assert.Equal(t, []string{"-", "-", "$4", "$1", "-"}, []string{web.CouldSleep, web.Wakes, web.Freed, web.Saved,
+		web.CouldFree}, "live: what it freed, and saved")
 	assert.Less(t, web.CouldSleepSort, byName["deployment/ledger"].CouldSleepSort, "a dash sorts below 0h")
 }
 
@@ -236,15 +240,16 @@ func TestWriteHTML_Snapshot(t *testing.T) {
 
 	assert.Contains(t, got, "A snapshot of CPU at the time of the scan, without history.")
 	assert.Contains(t, got, "Your prices: $0.045 per vCPU-hour and $0.006 per GiB-hour of memory.")
-	assert.Contains(t, got, `<div class="figure"><b>$0</b><span>saved by Hybernate this month</span>`+
+	assert.Contains(t, got, `<div class="figure"><b>$0</b><span>freed by Hybernate this month</span>`+
 		`<small>nothing is live yet</small></div>`)
 	assert.Contains(t, got,
 		`<div class="figure"><b>$1,240</b><span>a month, what idle workloads cost while running</span>`)
 	assert.Contains(t, got, "<div>$1.70<span>an hour, what idle workloads cost while running</span></div>",
 		"no history, so no wakes: the hourly cost of idle in its place")
-	assert.Contains(t, got, "this report doesn&#39;t estimate a saving", "one moment can't show a saving")
-	assert.NotContains(t, got, "Could save / month", "no history, no dry-run: nothing to say it could save")
-	assert.NotContains(t, got, "Saved this month", "nothing live")
+	assert.Contains(t, got, "this report doesn&#39;t estimate what pausing would free",
+		"one moment can't show what pausing would free")
+	assert.NotContains(t, got, "Could free / month", "no history, no dry-run: nothing to say it could free")
+	assert.NotContains(t, got, "Freed this month", "nothing live")
 }
 
 func TestWriteHTMLFile(t *testing.T) {

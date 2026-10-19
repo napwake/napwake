@@ -399,12 +399,12 @@ func replayWorkload(w Workload, spec corev1.PodSpec, ownCPU int64, history []con
 	return &h
 }
 
-// CouldSave is what pausing a workload Hybernate doesn't pause yet would
+// CouldFree is what pausing a workload Hybernate doesn't pause yet would
 // free a month: measured, for one in dry-run, or estimated from history,
 // for one Hybernate doesn't manage. It's 0 for a live workload, whose
-// saving is already happening, for one already scaled to zero, which
+// freeing is already happening, for one already scaled to zero, which
 // pausing can't free any more of, and for one Hybernate refuses to pause.
-func CouldSave(w Workload) float64 {
+func CouldFree(w Workload) float64 {
 	switch {
 	case w.ScaledByHand || w.WontPause != "":
 		return 0

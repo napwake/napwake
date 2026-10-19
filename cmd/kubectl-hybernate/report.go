@@ -32,6 +32,7 @@ import (
 
 	"github.com/okedeji/hybernate/internal/discovery"
 	"github.com/okedeji/hybernate/internal/doorman"
+	"github.com/okedeji/hybernate/internal/nodescale"
 )
 
 //go:embed report.html
@@ -48,28 +49,30 @@ type reportPage struct {
 	Cluster   string
 	ScannedAt string
 	// Empty says why there are no workloads, when there are none.
-	Empty        string
-	Basis        string
-	Prices       string
-	Headline     headline
-	Facts        []fact
-	History      bool
-	Sleep        bool
-	Slept        bool
-	Saving       bool
-	CouldSave    bool
-	Namespaces   []namespaceRow
-	Workloads    []workloadRow
-	Dependencies []dependencyRow
-	Notes        []string
-	Method       []string
-	NextSteps    []template.HTML
-	Threshold    int
-	IdleAfter    string
-	Over         string
-	Tips         tips
-	Terms        []term
-	Mark         string
+	Empty  string
+	Basis  string
+	Prices string
+	// NodeAutoscaler names what would turn freed capacity into savings.
+	NodeAutoscaler string
+	Headline       headline
+	Facts          []fact
+	History        bool
+	Sleep          bool
+	Slept          bool
+	Freeing        bool
+	CouldFree      bool
+	Namespaces     []namespaceRow
+	Workloads      []workloadRow
+	Dependencies   []dependencyRow
+	Notes          []string
+	Method         []string
+	NextSteps      []template.HTML
+	Threshold      int
+	IdleAfter      string
+	Over           string
+	Tips           tips
+	Terms          []term
+	Mark           string
 	// Unjudged is how many workloads the notes list instead of Workloads.
 	Unjudged int
 }
@@ -81,7 +84,7 @@ type headline struct {
 // tips explain the money and sleep columns, on their headers and in the
 // method section, where printing keeps them.
 type tips struct {
-	CouldSleep, Slept, Saved, CouldSave string
+	CouldSleep, Slept, Freed, CouldFree string
 }
 
 type term struct {
@@ -97,9 +100,9 @@ func tipsFor(history bool, over string) tips {
 		CouldSleep: couldSleep + ". Under it, how many times activity would have woken it, each a wait for someone.",
 		Slept: "For live workloads: hours Hybernate has had it paused this month, and how many times activity " +
 			"woke it.",
-		Saved: "For live workloads: what Hybernate has freed pausing it this month, priced at the rates it uses " +
-			"for the workload.",
-		CouldSave: "What pausing would free a month: measured by Hybernate for a dry-run workload, estimated from " +
+		Freed: "For live workloads: what Hybernate has freed pausing it this month, priced at the rates it uses " +
+			"for the workload. Under it, how much of that came off the bill as nodes scaled down.",
+		CouldFree: "What pausing would free a month: measured by Hybernate for a dry-run workload, estimated from " +
 			"history for an unmanaged one.",
 	}
 }
@@ -110,14 +113,14 @@ func termsFor(page reportPage) []term {
 	if page.Slept {
 		terms = append(terms, term{"Slept", page.Tips.Slept})
 	}
-	if page.Saving {
-		terms = append(terms, term{"Saved", page.Tips.Saved})
+	if page.Freeing {
+		terms = append(terms, term{"Freed", page.Tips.Freed})
 	}
 	if page.Sleep {
 		terms = append(terms, term{"Could sleep", page.Tips.CouldSleep})
 	}
-	if page.CouldSave {
-		terms = append(terms, term{"Could save", page.Tips.CouldSave})
+	if page.CouldFree {
+		terms = append(terms, term{"Could free", page.Tips.CouldFree})
 	}
 	return terms
 }
@@ -133,20 +136,22 @@ type fact struct {
 type namespaceRow struct {
 	Namespace                          string
 	Workloads, Idle                    int
-	Cost, Saved, CouldSave             string
-	CostSort, SavedSort, CouldSaveSort float64
+	Cost, Freed, Saved, CouldFree      string
+	CostSort, FreedSort, CouldFreeSort float64
+	savedSort                          float64
 }
 
 type workloadRow struct {
-	Namespace, Workload                        string
-	State, StateClass                          string
-	Cost                                       string
-	CostSort                                   float64
-	CouldSleep, Wakes, Since, Saved, CouldSave string
-	Slept, SleptWakes, SleptSince              string
-	SleptSort                                  float64
-	CouldSleepSort, SavedSort, CouldSaveSort   float64
-	Because                                    string
+	Namespace, Workload                      string
+	State, StateClass                        string
+	Cost                                     string
+	CostSort                                 float64
+	CouldSleep, Wakes, Since, CouldFree      string
+	Freed, Saved                             string
+	Slept, SleptWakes, SleptSince            string
+	SleptSort                                float64
+	CouldSleepSort, FreedSort, CouldFreeSort float64
+	Because                                  string
 }
 
 type dependencyRow struct {
@@ -288,21 +293,22 @@ func writeHTML(w io.Writer, result scanResult, idleAfter time.Duration) error {
 func buildReport(result scanResult, idleAfter time.Duration) reportPage {
 	history := result.Mode == discovery.ModeHistory
 	page := reportPage{
-		Cluster:   result.Cluster,
-		ScannedAt: result.ScannedAt.Format("2 January 2006, 15:04 MST"),
-		Basis:     basisSentence(result),
-		Prices:    result.pricesSentence(),
-		History:   history,
-		Threshold: result.Settings.CPUThreshold,
-		IdleAfter: roundedDuration(idleAfter),
-		Over:      replayedOver(result.History),
-		Mark:      doorman.Mark,
+		Cluster:        result.Cluster,
+		ScannedAt:      result.ScannedAt.Format("2 January 2006, 15:04 MST"),
+		Basis:          basisSentence(result),
+		Prices:         result.pricesSentence(),
+		NodeAutoscaler: reportAutoscaler(result.NodeAutoscaler),
+		History:        history,
+		Threshold:      result.Settings.CPUThreshold,
+		IdleAfter:      roundedDuration(idleAfter),
+		Over:           replayedOver(result.History),
+		Mark:           doorman.Mark,
 	}
 	if result.Totals.Workloads == 0 {
 		page.Empty = emptySentence(result)
 	}
 	page.Headline, page.Facts = headlineFor(result.Totals, replayedOver(result.History))
-	page.Saving, page.CouldSave = savingColumns(result.Workloads)
+	page.Freeing, page.CouldFree = moneyColumns(result.Workloads)
 	page.Sleep = sleepColumns(history, result.Workloads)
 	page.Slept = sleptColumn(result.Workloads)
 	page.Tips = tipsFor(history, page.Over)
@@ -325,15 +331,17 @@ func buildReport(result scanResult, idleAfter time.Duration) reportPage {
 		if wl.State != discovery.StatePaused {
 			ns.CostSort += wl.MonthlyCost
 		}
-		ns.SavedSort += wl.SavedThisMonth
-		ns.CouldSaveSort += discovery.CouldSave(wl)
+		ns.FreedSort += wl.FreedThisMonth
+		ns.savedSort += wl.SavedThisMonth
+		ns.CouldFreeSort += discovery.CouldFree(wl)
 	}
 	for _, ns := range byNamespace {
-		ns.Cost, ns.Saved, ns.CouldSave = dollars(ns.CostSort), dollars(ns.SavedSort), dollars(ns.CouldSaveSort)
+		ns.Cost, ns.Freed, ns.Saved = dollars(ns.CostSort), dollars(ns.FreedSort), dollars(ns.savedSort)
+		ns.CouldFree = dollars(ns.CouldFreeSort)
 		page.Namespaces = append(page.Namespaces, *ns)
 	}
 	slices.SortFunc(page.Namespaces, func(a, b namespaceRow) int {
-		if c := cmp.Compare(b.CouldSaveSort, a.CouldSaveSort); c != 0 {
+		if c := cmp.Compare(b.CouldFreeSort, a.CouldFreeSort); c != 0 {
 			return c
 		}
 		if c := cmp.Compare(b.CostSort, a.CostSort); c != 0 {
@@ -365,6 +373,14 @@ func buildReport(result scanResult, idleAfter time.Duration) reportPage {
 	return page
 }
 
+func reportAutoscaler(a nodescale.Autoscaler) string {
+	line := nodeAutoscalerLine(a)
+	if s := freedBecomesSaved(a); s != "" {
+		line += ". " + s
+	}
+	return line
+}
+
 func workloadRef(wl Workload) string {
 	return fmt.Sprintf("%s/%s/%s", wl.Namespace, strings.ToLower(string(wl.Kind)), wl.Name)
 }
@@ -376,37 +392,40 @@ func basisSentence(result scanResult) string {
 	return "A snapshot of CPU at the time of the scan, without history."
 }
 
-// headlineFor leads with two figures: what Hybernate has saved this month,
-// and what pausing could save a month, measured for dry-run workloads and
-// estimated from history for unmanaged ones. Without either, the second is
-// what idle workloads cost while running, since one moment can't show a
-// saving. Four facts follow: the scale, the waste right now, how many
-// workloads there are to act on, and how far Hybernate's rollout has got.
+// headlineFor leads with two figures: what Hybernate has freed this month,
+// with how much of it was saved, and what pausing could free a month,
+// measured for dry-run workloads and estimated from history for unmanaged
+// ones. Without either, the second is what idle workloads cost while
+// running, since one moment can't show what pausing would free. Four facts
+// follow: the scale, the waste right now, how many workloads there are to
+// act on, and how far Hybernate's rollout has got.
 func headlineFor(t discovery.Totals, over string) (headline, []fact) {
-	saved := figure{Value: dollars(t.SavedThisMonth), Label: "saved by Hybernate this month",
+	freed := figure{Value: dollars(t.FreedThisMonth), Label: "freed by Hybernate this month",
 		Detail: "nothing is live yet"}
 	switch {
 	case t.Live > 0:
-		saved.Detail = "so far, pausing " + countOf(t.Live, "live workload")
-	case t.SavedThisMonth > 0:
-		saved.Detail = "so far, pausing workloads since put back in dry-run"
+		freed.Detail = fmt.Sprintf("so far, pausing %s; %s of it saved as nodes scaled down",
+			countOf(t.Live, "live workload"), dollars(t.SavedThisMonth))
+	case t.FreedThisMonth > 0:
+		freed.Detail = fmt.Sprintf("so far, pausing workloads since put back in dry-run; %s of it saved",
+			dollars(t.SavedThisMonth))
 	}
-	h := headline{Figures: []figure{saved}}
+	h := headline{Figures: []figure{freed}}
 
 	r := t.Replayed
 	switch {
 	case r.Sleepers > 0 || t.DryRun > 0:
 		could := r.MonthlyFreed + t.Measured.MonthlyFreed
-		f := figure{Value: dollars(could), Label: "could be saved a month"}
-		// The share is of what the workloads cost on the saving's own basis.
-		// A workload that ran more pods in its history than it runs now
-		// would otherwise be shown saving more than it costs.
-		if t.SavingsBasis > 0 {
+		f := figure{Value: dollars(could), Label: "could be freed a month"}
+		// The share is of what the workloads cost on the estimate's own
+		// basis. A workload that ran more pods in its history than it runs
+		// now would otherwise be shown freeing more than it costs.
+		if t.FreeableBasis > 0 {
 			of := "what these workloads cost"
 			if r.Workloads > 0 {
 				of += " over the same time"
 			}
-			f.Detail = fmt.Sprintf("%d%% of %s", int(could/t.SavingsBasis*100+0.5), of)
+			f.Detail = fmt.Sprintf("%d%% of %s", int(could/t.FreeableBasis*100+0.5), of)
 		}
 		h.Figures = append(h.Figures, f)
 	case t.Idle > 0:
@@ -442,18 +461,18 @@ func workloadRowFor(wl Workload) workloadRow {
 		StateClass: string(wl.State),
 		Cost:       dollars(wl.MonthlyCost),
 		CostSort:   wl.MonthlyCost,
-		Saved:      savedCell(wl), SavedSort: -1,
-		CouldSave: couldSaveCell(wl), CouldSaveSort: -1,
+		Freed:      freedCell(wl), FreedSort: -1, Saved: scanSavedCell(wl),
+		CouldFree: couldFreeCell(wl), CouldFreeSort: -1,
 		Because: because(wl),
 	}
 	row.State += " (" + management(wl) + ")"
 	row.CouldSleep, row.Wakes, row.Since, row.CouldSleepSort = sleepCells(wl)
 	row.Slept, row.SleptWakes, row.SleptSince, row.SleptSort = sleptCells(wl)
-	if row.Saved != "-" {
-		row.SavedSort = wl.SavedThisMonth
+	if row.Freed != "-" {
+		row.FreedSort = wl.FreedThisMonth
 	}
-	if row.CouldSave != "-" {
-		row.CouldSaveSort = discovery.CouldSave(wl)
+	if row.CouldFree != "-" {
+		row.CouldFreeSort = discovery.CouldFree(wl)
 	}
 	return row
 }
@@ -462,8 +481,8 @@ func methodFor(result scanResult, history, dependencies bool, idleAfter time.Dur
 	method := []string{
 		"Costs are what each workload's pods request, sidecars included, at the prices above. They're list " +
 			"prices for the capacity reserved, not your bill.",
-		"An hour asleep frees that capacity. It becomes money when your cluster autoscaler removes the nodes " +
-			"it no longer needs.",
+		"An hour asleep frees that capacity. It becomes money only when a node autoscaler removes the nodes " +
+			"it no longer needs, so the scan reports what pausing could free, not what it would save.",
 		fmt.Sprintf("A workload is active when its CPU is at least %d%% of what it requests (the scan's "+
 			"--cpu-threshold), it was deployed, or an activity annotation says so. It's idle once it has had no "+
 			"activity for %s (the scan's --idle-after), which is when Hybernate would pause it. Workloads Hybernate "+
@@ -480,7 +499,7 @@ func methodFor(result scanResult, history, dependencies bool, idleAfter time.Dur
 			"only workloads Hybernate doesn't pause yet.", roundedDuration(idleAfter)))
 	} else {
 		method = append(method, "Without history, the scan sees CPU at one moment, which can't show how often a "+
-			"workload would be woken, so this report doesn't estimate a saving. Scanning a cluster with "+
+			"workload would be woken, so this report doesn't estimate what pausing would free. Scanning a cluster with "+
 			"Prometheus, or measuring with dry-run, does.")
 	}
 	if dependencies {

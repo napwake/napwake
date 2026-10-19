@@ -55,9 +55,11 @@ kubectl hybernate scan
 
 ```
 staging (EKS us-east-1): 214 workloads in 38 namespaces
+Node autoscaler: Karpenter (consolidates when underutilized after 1m)
+What pausing frees comes off the bill only as nodes scale down.
 
   Hybernate has 12 workloads paused right now, freeing $1.84 an hour.
-  Hybernate has saved $96 this month pausing 14 live workloads.
+  Hybernate has freed $96 this month pausing 14 live workloads, and saved $71 of it.
   3 workloads are in dry-run: measured by Hybernate since starting, they would have slept 312 hours, freeing $41,
   about $140 a month.
   4 workloads are scaled to zero by hand; Hybernate can pause them while idle and wake them on the
@@ -67,12 +69,12 @@ staging (EKS us-east-1): 214 workloads in 38 namespaces
   Replaying the last 7 days, Hybernate would have paused 58 of 190 unmanaged workloads for 6,120 hours in all,
   and freed $1,240: about $5,380/month.
 
-  NAMESPACE    WORKLOAD               STATE                BECAUSE                                                  COST/MO   SAVED THIS MONTH   COULD SLEEP   WAKES   COULD SAVE/MO
-  preview-42   statefulset/postgres   idle (unmanaged)     CPU under 1% of its request; last deployed 23 days ago   $140      -                  167h          0       $139
-  preview-7    deployment/api         idle (dry-run)       no activity for 5h; measuring since Oct 1                $96       -                  41h           4       $40
-  preview-3    deployment/web         paused (live)        paused 3h ago                                            $48       $12                -             -       -
-  preview-9    deployment/demo        paused (unmanaged)   scaled to zero, not by Hybernate                         $0        -                  -             -       -
-  payments     deployment/ledger      active (unmanaged)   CPU 64% of its request                                   $210      -                  0h            0       $0
+  NAMESPACE    WORKLOAD               STATE                BECAUSE                                                  COST/MO   FREED THIS MONTH   SAVED   COULD SLEEP   WAKES   COULD FREE/MO
+  preview-42   statefulset/postgres   idle (unmanaged)     CPU under 1% of its request; last deployed 23 days ago   $140      -                  -       167h          0       $139
+  preview-7    deployment/api         idle (dry-run)       no activity for 5h; measuring since Oct 1                $96       -                  -       41h           4       $40
+  preview-3    deployment/web         paused (live)        paused 3h ago                                            $48       $12                $9      -             -       -
+  preview-9    deployment/demo        paused (unmanaged)   scaled to zero, not by Hybernate                         $0        -                  -       -             -       -
+  payments     deployment/ledger      active (unmanaged)   CPU 64% of its request                                   $210      -                  -       0h            0       $0
   ...
 
 Notes:
@@ -104,9 +106,10 @@ Pass --cpu-price and --memory-price for yours.
 - A step counts as active when the workload's own CPU is at or above the threshold of what its running pods request, or it rolled out. After `--idle-after` with none, it would be asleep until the next, which is one wake.
 - **STATE** is right now: idle means no activity for `--idle-after`, so Hybernate would pause it now. Each money and history cell has one source:
     - **COULD SLEEP** and **WAKES** are what Hybernate measured for a workload in dry-run, since dry-run started (BECAUSE says when), and for an unmanaged workload come from the replay: had Hybernate been managing it, the running hours it would have been paused, after waiting `--idle-after` from each activity, and how many times activity would have arrived while it was asleep, each starting it again and making whoever caused it wait.
-    - **SAVED THIS MONTH**, for live workloads, is what Hybernate has freed pausing it since the 1st, from the ManagedWorkload's `status.cost`, priced at the rates Hybernate uses for the workload. A workload put back in dry-run keeps what it saved while live; dry-run's would-be pauses never add to it.
-    - **COULD SAVE/MO**, for workloads Hybernate doesn't pause yet, is what pausing would free a month: what Hybernate measured for one in dry-run, the same figure its BECAUSE line gives, or what the replay estimates for an unmanaged one.
-- A live workload isn't replayed: while it's paused, there are no pods for Prometheus to record. Its pauses are what SAVED THIS MONTH counts.
+    - **FREED THIS MONTH**, for live workloads, is what Hybernate has freed pausing it since the 1st, from the ManagedWorkload's `status.cost.freedThisMonth`, priced at the rates Hybernate uses for the workload, and **SAVED** the part of it that came off the bill as nodes scaled down (`savedThisMonth`). A workload put back in dry-run keeps what it freed and saved while live; dry-run's would-be pauses never add to them.
+    - **COULD FREE/MO**, for workloads Hybernate doesn't pause yet, is what pausing would free a month: what Hybernate measured for one in dry-run, the same figure its BECAUSE line gives, or what the replay estimates for an unmanaged one. The scan can't know what of it would be saved before Hybernate runs, so it never calls it a saving.
+- A live workload isn't replayed: while it's paused, there are no pods for Prometheus to record. Its pauses are what FREED THIS MONTH counts.
+- **Node autoscaler,** under the first line, is what would turn what pausing frees into savings by removing nodes, found as [`nodes`](#see-why-nodes-dont-scale-down) finds it (JSON `nodeAutoscaler`): Karpenter, Cluster Autoscaler, EKS Auto Mode or GKE Autopilot; `none found`, when nothing in the cluster will remove nodes, so nothing pausing frees comes off the bill; or `unknown`, when your access doesn't allow reading what would tell.
 - A Deployment's history is its pods' CPU, including pods of ReplicaSets since deleted, which are known by the names Kubernetes gives them, `<deployment>-<hash>-<suffix>`. A Deployment whose name is long enough for Kubernetes to cut its pods' names short has only its current ReplicaSets' pods replayed.
 - Requests and activity annotations aren't recorded in Prometheus, so the replay only knows CPU and rollouts, and a workload used with little CPU can look like it would sleep more than it would. Requests and prices are today's.
 - History gets the first 60% of `--timeout`, so a Prometheus or Thanos too slow for the window can't use up the whole scan. Each namespace's reads from the API server come before its history query and share that time, and a namespace reached once it's spent isn't queried at all. A namespace's query may take whatever is left of that time, however long, and isn't cut short by `--request-timeout`. Namespaces whose history isn't read in that time are judged from CPU right now, and the notes name them and say a longer `--timeout` gives history more time, or `--window 0` skips it. When Prometheus, or the API server's proxy in front of it, gives up on a query by itself with time left, a longer `--timeout` wouldn't help: the notes name those namespaces and suggest a shorter `--window`.
@@ -132,14 +135,15 @@ Pass --cpu-price and --memory-price for yours.
 - Costs are what the workloads' requests cost while running, sidecars included, at the on-demand list price of the nodes each one's pods run on, from their instance type and region; see [Prices](../concepts/cost-tracking.md#prices). A workload with no pod on a node is priced where Hybernate last saw it run, or at the cluster's most common node type. Nodes Hybernate has no list price for, and every workload when your access doesn't allow listing nodes, use assumed prices from AWS on-demand in us-east-1, and the report says which.
 - `--cpu-price` and `--memory-price` set your own prices, which price every workload in place of list prices: use them for discounts, savings plans, or negotiated rates.
 - Spot nodes are priced at on-demand, and the report says how many workloads run on them, since they cost less than shown.
-- Without history, the scan shows what idle workloads cost and what each hour asleep frees, not a monthly saving: from one moment it can't tell how often a workload would be woken. To measure savings once Hybernate is installed, label workloads `hybernate.io/managed=true` and annotate them `hybernate.io/dry-run=true`: Hybernate measures how often it would have paused them, for how long, and what that would have freed, without ever pausing them. The scan then shows it in each one's COULD SLEEP, WAKES, and COULD SAVE/MO, with BECAUSE saying since when, a total in the headline, and the `kubectl hybernate enable` command to start pausing. It's from Hybernate's own activity clock, which sees more than the history replay, so it's what to judge going live by.
-- An hour asleep frees capacity; it becomes money when your cluster autoscaler removes it.
+- Without history, the scan shows what idle workloads cost and what each hour asleep frees, not what pausing would free a month: from one moment it can't tell how often a workload would be woken. To measure it once Hybernate is installed, label workloads `hybernate.io/managed=true` and annotate them `hybernate.io/dry-run=true`: Hybernate measures how often it would have paused them, for how long, and what that would have freed, without ever pausing them. The scan then shows it in each one's COULD SLEEP, WAKES, and COULD FREE/MO, with BECAUSE saying since when, a total in the headline, and the `kubectl hybernate enable` command to start pausing. It's from Hybernate's own activity clock, which sees more than the history replay, so it's what to judge going live by.
+- An hour asleep frees capacity; it becomes money only when a node autoscaler removes it. `kubectl hybernate nodes` shows what keeps nodes from scaling down.
 - BECAUSE gives the evidence for the state, then facts such as when a workload was last deployed, if a week or more ago.
-- A StatefulSet whose `persistentVolumeClaimRetentionPolicy.whenScaled` is `Delete` would lose its data to a pause, so Hybernate refuses to pause it: BECAUSE says `won't pause: PVCs deleted on scale-down` (JSON `wontPause`), and it's left out of what pausing could save and of next steps.
+- A StatefulSet whose `persistentVolumeClaimRetentionPolicy.whenScaled` is `Delete` would lose its data to a pause, so Hybernate refuses to pause it: BECAUSE says `won't pause: PVCs deleted on scale-down` (JSON `wontPause`), and it's left out of what pausing could free and of next steps.
 
 **The HTML report:** run in a terminal, the scan also writes the same report as a web page and opens it in your browser. It's one self-contained file, with no scripts, fonts, or images loaded from anywhere (its sorting and filtering are built in), so it can be emailed or attached, and it prints cleanly to PDF. It's written for whoever you send it to:
 
-- two headline figures: what Hybernate has saved this month, and what pausing could save a month (measured for dry-run workloads, estimated from history for unmanaged ones), as a share of what those workloads cost, "over the same time" when history was replayed, since a replayed workload is measured against what it cost over the history, with the pods it ran then; without either, what idle workloads cost while running
+- the node autoscaler, under the prices
+- two headline figures: what Hybernate has freed this month, with what of it was saved, and what pausing could free a month (measured for dry-run workloads, estimated from history for unmanaged ones), as a share of what those workloads cost, "over the same time" when history was replayed, since a replayed workload is measured against what it cost over the history, with the pods it ran then; without either, what idle workloads cost while running
 - four facts: what the workloads cost, what's idle right now, how long unmanaged workloads would have slept (with history) or what idle workloads cost an hour (without), and how many Hybernate manages
 - a table by namespace (with a filter), every workload scanned that the scan could judge, with the same columns as the terminal (sortable, with a filter), and the dependencies found
 - what the numbers mean, in plain words, and the next steps
@@ -150,7 +154,7 @@ The file goes to your temporary directory unless you pass `--html FILE`. It open
 
 **Cluster names:** EKS and GKE contexts are shortened to the cluster with its provider and region, such as `staging (EKS us-east-1)` for `arn:aws:eks:us-east-1:123456789012:cluster/staging`. Any other context is shown as named. JSON and YAML keep the full context name.
 
-**STATE** is what the workload is doing right now, and the bracket how Hybernate is involved: **unmanaged**, not at all; **dry-run**, it measures but never pauses; **live**, it pauses the workload while idle; **protected**, its namespace is labelled `hybernate.io/protected`, so Hybernate won't manage it, and it's left out of what pausing could save and of the next steps. The operator's `protectedNamespaces` patterns aren't visible to the scan, which only sees the label. A workload someone scaled to zero shows as `paused (unmanaged)`: it costs nothing now, but nothing will wake it on a request, and the headline counts it apart from what Hybernate has paused. Workloads labelled `hybernate.io/ignore=true` aren't listed.
+**STATE** is what the workload is doing right now, and the bracket how Hybernate is involved: **unmanaged**, not at all; **dry-run**, it measures but never pauses; **live**, it pauses the workload while idle; **protected**, its namespace is labelled `hybernate.io/protected`, so Hybernate won't manage it, and it's left out of what pausing could free and of the next steps. The operator's `protectedNamespaces` patterns aren't visible to the scan, which only sees the label. A workload someone scaled to zero shows as `paused (unmanaged)`: it costs nothing now, but nothing will wake it on a request, and the headline counts it apart from what Hybernate has paused. Workloads labelled `hybernate.io/ignore=true` aren't listed.
 
 ```bash
 # Another cluster in your kubeconfig
@@ -179,7 +183,7 @@ kubectl hybernate scan --open=false
 | `--all-namespaces` | `-A` | | Read every namespace, and fail rather than fall back when your access doesn't allow that. Can't be combined with `-n` |
 | `--exclude-namespaces` | | `kube-system`, `kube-public`, `kube-node-lease` | Namespaces to skip |
 | `--output` | `-o` | `table` | `table`, `json`, or `yaml` |
-| `--limit` | | `25` | Workloads listed in the table, idle first, then paused, then active, each by what pausing could save; `0` for all. Also caps the dependency list. JSON and YAML list everything |
+| `--limit` | | `25` | Workloads listed in the table, idle first, then paused, then active, each by what pausing could free; `0` for all. Also caps the dependency list. JSON and YAML list everything |
 | `--cpu-threshold` | | `10` | CPU use, as a percentage of requests from 1 to 100, at which a workload counts as active, now and in the replay. Workloads Hybernate manages use their own setting |
 | `--cpu-price` | | `0.031` | Your price per vCPU-hour, in dollars, zero or more |
 | `--memory-price` | | `0.004` | Your price per GiB-hour of memory, in dollars, zero or more |
@@ -213,11 +217,11 @@ It exits 1, after writing the report, when it couldn't read something it should 
 
 A scan that runs out of `--timeout` still reports the namespaces it scanned in time, and lists the rest as `unscanned`; only one that scanned none fails without a report. Scanning every namespace, the scan lists each kind of object across the cluster at once, a page at a time, rather than in each namespace, so a cluster of thousands of namespaces takes a few dozen requests. A kind your access only lets you list namespace by namespace is read that way.
 
-Workloads someone else already scaled to zero count toward nothing the scan says could be saved: they cost nothing now, and the headline counts them apart.
+Workloads someone else already scaled to zero count toward nothing the scan says could be freed: they cost nothing now, and the headline counts them apart.
 
 ### Permissions
 
-Your user needs to list Deployments, StatefulSets, ReplicaSets, ControllerRevisions, Pods, pod metrics, Services and ManagedWorkloads in the namespaces scanned, and to read the namespaces and the ConfigMaps workloads take variables from; to list namespaces unless you name them with `-n`; and to list nodes, to price workloads at their nodes. The standard `view` role covers the namespaced reads, ManagedWorkloads too, which Hybernate's chart and manifests add to `view`; it doesn't cover nodes, which are cluster-wide. Without one of these the scan carries on, and the notes say what it couldn't see. Reading history through the service proxy also needs `get` on `services/proxy` for the Prometheus Service, which `view` doesn't include. Without it, the scan judges from CPU right now and prints what an admin can run to let you, for that one Service and nothing else:
+Your user needs to list Deployments, StatefulSets, ReplicaSets, ControllerRevisions, Pods, pod metrics, Services and ManagedWorkloads in the namespaces scanned, and to read the namespaces and the ConfigMaps workloads take variables from; to list namespaces unless you name them with `-n`; and to list nodes, to price workloads at their nodes. Naming the node autoscaler reads what [`nodes`](#see-why-nodes-dont-scale-down) does for that. The standard `view` role covers the namespaced reads, ManagedWorkloads too, which Hybernate's chart and manifests add to `view`; it doesn't cover nodes, which are cluster-wide. Without one of these the scan carries on, and the notes say what it couldn't see. Reading history through the service proxy also needs `get` on `services/proxy` for the Prometheus Service, which `view` doesn't include. Without it, the scan judges from CPU right now and prints what an admin can run to let you, for that one Service and nothing else:
 
 ```
 To replay history, an admin can let you read Prometheus, and nothing else, with:
