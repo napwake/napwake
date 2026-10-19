@@ -502,13 +502,25 @@ func measured(mw *v1alpha1.ManagedWorkload, hourlyCost float64, now time.Time) *
 	return m
 }
 
-// SavedThisMonth reads what Hybernate records it has saved this calendar
-// month pausing a workload. The operator starts a new month's total at its
-// first reconcile in that month, so until then the record is last month's,
-// which saved nothing this month. A workload put back in dry-run keeps what
-// it saved while live: dry-run never pauses, so it adds nothing to the
-// record.
+// FreedThisMonth reads what Hybernate records pausing a workload has freed
+// this calendar month, at list price: money only as nodes scale down.
+func FreedThisMonth(mw *v1alpha1.ManagedWorkload, now time.Time) float64 {
+	return thisMonth(mw, now, func(c *v1alpha1.CostStatus) string { return c.FreedThisMonth })
+}
+
+// SavedThisMonth reads what Hybernate records pausing a workload has taken
+// off the bill this calendar month: the part of what it freed whose nodes
+// were removed.
 func SavedThisMonth(mw *v1alpha1.ManagedWorkload, now time.Time) float64 {
+	return thisMonth(mw, now, func(c *v1alpha1.CostStatus) string { return c.SavedThisMonth })
+}
+
+// thisMonth reads one of a workload's monthly cost figures. The operator
+// starts a new month's totals at its first reconcile in that month, so
+// until then the record is last month's, which counts for nothing this
+// month. A workload put back in dry-run keeps what it freed and saved while
+// live: dry-run never pauses, so it adds nothing to the record.
+func thisMonth(mw *v1alpha1.ManagedWorkload, now time.Time, figure func(*v1alpha1.CostStatus) string) float64 {
 	if mw == nil || mw.Status.Cost == nil {
 		return 0
 	}
@@ -519,11 +531,11 @@ func SavedThisMonth(mw *v1alpha1.ManagedWorkload, now time.Time) float64 {
 			return 0
 		}
 	}
-	saved, err := strconv.ParseFloat(strings.TrimPrefix(c.SavedThisMonth, "$"), 64)
+	amount, err := strconv.ParseFloat(strings.TrimPrefix(figure(c), "$"), 64)
 	if err != nil {
 		return 0
 	}
-	return saved
+	return amount
 }
 
 // judgePaused describes a workload Hybernate has paused, priced on what it

@@ -92,7 +92,8 @@ func TestCLI_StatusYAML(t *testing.T) {
 	assert.Len(t, got.Workloads, 4)
 	require.NotEmpty(t, got.Problems)
 	assert.Equal(t, "GitOpsConflict", got.Problems[0].Type)
-	assert.InDelta(t, 42.45, got.SavedThisMonth, 0.001)
+	assert.InDelta(t, 42.45, got.FreedThisMonth, 0.001)
+	assert.InDelta(t, 35.0, got.SavedThisMonth, 0.001)
 }
 
 func TestCLI_StatusListsTenRecent(t *testing.T) {

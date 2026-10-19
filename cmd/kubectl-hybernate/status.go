@@ -38,6 +38,7 @@ import (
 
 	v1alpha1 "github.com/okedeji/hybernate/api/v1alpha1"
 	"github.com/okedeji/hybernate/internal/discovery"
+	"github.com/okedeji/hybernate/internal/nodescale"
 )
 
 // stuckAfter is how long a pause or wake may take before status reports it.
@@ -59,6 +60,11 @@ var errNotInstalled = errors.New("no ManagedWorkload CRD, so Hybernate isn't ins
 // ManagedWorkload's target.
 var errAmbiguous = errors.New("matches more than one ManagedWorkload")
 
+// savedShareExpected is the share of what pausing frees that status expects
+// to come off the bill once nodes scale down. Less than this, over at
+// least a dollar, and it asks why nodes aren't scaling down.
+const savedShareExpected = 0.5
+
 // recentLimit caps the pauses and wakes listed, so a busy cluster still fits
 // one screen; -o json has them all.
 const recentLimit = 10
@@ -77,15 +83,19 @@ func statusCmd(kube *kubeFlags) *cobra.Command {
 		Use:   "status",
 		Short: "Show what Hybernate is doing in a cluster right now",
 		Long: `Status shows every workload Hybernate manages on one screen: what each is
-doing, its last activity, when it pauses next or what holds it awake, and what
-Hybernate has saved this month. Above the table it lists what needs attention,
-and below it recent pauses and wakes, with what caused each, as far back as
-the cluster keeps events: an hour, unless its API server is set to keep more.
+doing, its last activity, when it pauses next or what holds it awake, what
+pausing it has freed this month, and how much of that has come off the bill.
+Freed capacity becomes savings only as a node autoscaler removes nodes, so
+status names the one it found. Above the table it lists what needs
+attention, and below it recent pauses and wakes, with what caused each, as
+far back as the cluster keeps events: an hour, unless its API server is set
+to keep more.
 
 It reads every namespace you can, or only the context's namespace when your
 access doesn't allow listing them all. It only reads ManagedWorkloads, their
-events, and their workloads' annotations, and checks that a namespace named
-with -n that has no ManagedWorkloads exists.
+events, their workloads' annotations, and what tells which node autoscaler
+runs, and checks that a namespace named with -n that has no ManagedWorkloads
+exists. kubectl hybernate nodes shows why nodes aren't scaling down.
 
 Examples:
   kubectl hybernate status
@@ -125,12 +135,20 @@ Examples:
 }
 
 type statusResult struct {
-	Context        string           `json:"context"`
-	Cluster        string           `json:"cluster"`
-	SavedThisMonth float64          `json:"savedThisMonth"`
-	Workloads      []statusWorkload `json:"workloads"`
-	Problems       []problem        `json:"problems"`
-	Recent         []happening      `json:"recent"`
+	Context        string               `json:"context"`
+	Cluster        string               `json:"cluster"`
+	NodeAutoscaler nodescale.Autoscaler `json:"nodeAutoscaler"`
+	FreedThisMonth float64              `json:"freedThisMonth"`
+	SavedThisMonth float64              `json:"savedThisMonth"`
+	// SavingsUnknown are why what pausing saved can't be measured, for
+	// the workloads it can't, each once.
+	SavingsUnknown []string `json:"savingsUnknown,omitempty"`
+	// NodesNotScalingDown is set when pausing freed far more than came off
+	// the bill this month, for the workloads whose savings are measured.
+	NodesNotScalingDown bool             `json:"nodesNotScalingDown,omitempty"`
+	Workloads           []statusWorkload `json:"workloads"`
+	Problems            []problem        `json:"problems"`
+	Recent              []happening      `json:"recent"`
 	// Note says when fewer namespaces were read than were asked for.
 	Note string `json:"note,omitempty"`
 	// EventsHidden is set when the user can't read events, so Recent is
@@ -148,7 +166,9 @@ type statusWorkload struct {
 	LastActivity   *time.Time             `json:"lastActivity,omitempty"`
 	ActivitySource string                 `json:"activitySource,omitempty"`
 	Next           string                 `json:"next"`
+	FreedThisMonth float64                `json:"freedThisMonth"`
 	SavedThisMonth float64                `json:"savedThisMonth"`
+	SavingsUnknown string                 `json:"savingsUnknown,omitempty"`
 	// namedApart is set for a ManagedWorkload written by hand under a name
 	// other than its target's, which the table then shows beside it.
 	namedApart bool
@@ -255,6 +275,10 @@ func clusterStatus(ctx context.Context, c client.Client, home string, opts statu
 	if err != nil {
 		return statusResult{}, err
 	}
+	result.NodeAutoscaler, err = nodescale.Detect(ctx, c)
+	if err != nil {
+		return statusResult{}, fmt.Errorf("finding the node autoscaler: %w", err)
+	}
 
 	targets := map[client.ObjectKey]string{}
 	for i := range workloads {
@@ -262,11 +286,31 @@ func clusterStatus(ctx context.Context, c client.Client, home string, opts statu
 		targets[client.ObjectKeyFromObject(w)] = w.Spec.Target.Name
 		row := workloadStatus(w, activeUntil[targetOfManaged(w)], now)
 		result.Workloads = append(result.Workloads, row)
-		result.SavedThisMonth += row.SavedThisMonth
 		result.Problems = append(result.Problems, problemsOf(w, now)...)
 	}
+	sumFreedAndSaved(&result)
 	result.Recent = append(result.Recent, recentHappenings(events, targets, now.Add(-opts.since))...)
 	return result, nil
+}
+
+// sumFreedAndSaved totals what the workloads freed and saved this month,
+// and judges whether nodes are scaling down from those whose savings are
+// measured.
+func sumFreedAndSaved(result *statusResult) {
+	var measuredFreed, measuredSaved float64
+	for _, row := range result.Workloads {
+		result.FreedThisMonth += row.FreedThisMonth
+		result.SavedThisMonth += row.SavedThisMonth
+		if row.SavingsUnknown != "" {
+			if !slices.Contains(result.SavingsUnknown, row.SavingsUnknown) {
+				result.SavingsUnknown = append(result.SavingsUnknown, row.SavingsUnknown)
+			}
+			continue
+		}
+		measuredFreed += row.FreedThisMonth
+		measuredSaved += row.SavedThisMonth
+	}
+	result.NodesNotScalingDown = measuredFreed >= 1 && measuredSaved < measuredFreed*savedShareExpected
 }
 
 // managedScope is the namespaces status read, and why they're fewer than
@@ -410,8 +454,12 @@ func workloadStatus(w *v1alpha1.ManagedWorkload, targetActiveUntil, now time.Tim
 		Phase:          w.Status.Phase,
 		DryRun:         w.Spec.DryRun,
 		Next:           nextFor(w, targetActiveUntil, now),
+		FreedThisMonth: discovery.FreedThisMonth(w, now),
 		SavedThisMonth: discovery.SavedThisMonth(w, now),
 		namedApart:     w.Name != w.Spec.Target.Name && w.Labels[v1alpha1.LabelFromLabel] != v1alpha1.True,
+	}
+	if c := w.Status.Cost; c != nil {
+		row.SavingsUnknown = c.SavingsUnknown
 	}
 	if t := w.Status.LastTransitionTime; t != nil {
 		since := t.UTC()
@@ -660,6 +708,7 @@ func writeStatusTable(w io.Writer, result statusResult, now time.Time) error {
 	p := &printer{w: w}
 	if len(result.Workloads) == 0 {
 		p.line("%s: Hybernate manages no workloads here.", result.Cluster)
+		p.line("%s", nodeAutoscalerLine(result.NodeAutoscaler))
 		if result.Note != "" {
 			p.line("%s", result.Note)
 		}
@@ -668,16 +717,26 @@ func writeStatusTable(w io.Writer, result statusResult, now time.Time) error {
 	}
 	p.line("%s: Hybernate manages %s.", result.Cluster, countOf(len(result.Workloads), "workload"))
 	p.line("  %s", phaseCounts(result.Workloads))
-	if result.SavedThisMonth > 0 {
-		p.line("  Saved %s this month.", savedMoney(result.SavedThisMonth))
+	p.line("  %s", nodeAutoscalerLine(result.NodeAutoscaler))
+	if result.FreedThisMonth > 0 || result.SavedThisMonth > 0 {
+		p.line("  Freed %s this month, and saved %s of it.", savedMoney(result.FreedThisMonth),
+			savedMoney(result.SavedThisMonth))
+	}
+	for _, why := range result.SavingsUnknown {
+		p.line("  What's saved can't be measured for some workloads: %s", oneLine(why))
 	}
 	if result.Note != "" {
 		p.line("  %s", result.Note)
 	}
 
-	if len(result.Problems) > 0 {
+	if len(result.Problems) > 0 || result.NodesNotScalingDown {
 		p.line("")
 		p.line("Needs attention:")
+		if result.NodesNotScalingDown {
+			p.line("  Pausing freed %s this month, but only %s of it came off the bill: nodes aren't scaling down.",
+				savedMoney(result.FreedThisMonth), savedMoney(result.SavedThisMonth))
+			p.line("  kubectl hybernate nodes shows why.")
+		}
 		tw := tabwriter.NewWriter(p, 0, 0, 3, ' ', 0)
 		for _, pr := range result.Problems {
 			_, _ = fmt.Fprintf(tw, "  %s/%s\t%s\t%s\n", pr.Namespace, pr.Workload, pr.Type, oneLine(pr.Message))
@@ -687,10 +746,10 @@ func writeStatusTable(w io.Writer, result statusResult, now time.Time) error {
 
 	p.line("")
 	tw := tabwriter.NewWriter(p, 0, 0, 3, ' ', 0)
-	_, _ = fmt.Fprintln(tw, "  NAMESPACE\tWORKLOAD\tSTATE\tFOR\tLAST ACTIVITY\tNEXT\tSAVED THIS MONTH")
+	_, _ = fmt.Fprintln(tw, "  NAMESPACE\tWORKLOAD\tSTATE\tFOR\tLAST ACTIVITY\tNEXT\tFREED THIS MONTH\tSAVED")
 	for _, wl := range result.Workloads {
-		_, _ = fmt.Fprintf(tw, "  %s\t%s\t%s\t%s\t%s\t%s\t%s\n", wl.Namespace, workloadCell(wl), stateCell(wl),
-			sinceCell(wl.Since, now), activityCell(wl, now), wl.Next, statusSavedCell(wl))
+		_, _ = fmt.Fprintf(tw, "  %s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n", wl.Namespace, workloadCell(wl), stateCell(wl),
+			sinceCell(wl.Since, now), activityCell(wl, now), wl.Next, moneyCell(wl.FreedThisMonth), statusSavedCell(wl))
 	}
 	_ = tw.Flush() // writes through p, which keeps the first error
 
@@ -771,14 +830,23 @@ func activityCell(wl statusWorkload, now time.Time) string {
 	return wl.ActivitySource + ", " + ago(*wl.LastActivity, now)
 }
 
+// statusSavedCell is what pausing a workload took off the bill this month,
+// or "unknown" when the operator can't measure it.
 func statusSavedCell(wl statusWorkload) string {
-	if wl.SavedThisMonth == 0 {
-		return "-"
+	if wl.SavingsUnknown != "" && wl.SavedThisMonth == 0 {
+		return "unknown"
 	}
-	return savedMoney(wl.SavedThisMonth)
+	return moneyCell(wl.SavedThisMonth)
 }
 
-// savedMoney is a saving in whole dollars, as scan shows one. A saving
+func moneyCell(amount float64) string {
+	if amount == 0 {
+		return "-"
+	}
+	return savedMoney(amount)
+}
+
+// savedMoney is an amount in whole dollars, as scan shows one. An amount
 // under half a dollar isn't nothing, so it isn't shown as $0.
 func savedMoney(amount float64) string {
 	if amount > 0 && amount < 0.5 {

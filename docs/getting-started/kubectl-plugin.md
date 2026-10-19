@@ -237,17 +237,20 @@ kubectl hybernate status
 ```
 staging (EKS us-east-1): Hybernate manages 4 workloads.
   1 paused, 2 running, 1 resuming; 1 in dry-run, measured but never paused
-  Saved $42 this month.
+  Node autoscaler: Karpenter (consolidates when underutilized after 1m)
+  Freed $42 this month, and saved $9 of it.
 
 Needs attention:
+  Pausing freed $42 this month, but only $9 of it came off the bill: nodes aren't scaling down.
+  kubectl hybernate nodes shows why.
   preview-7/worker   GitOpsConflict   Argo CD set the replicas from Git, undoing the pause; ...
   preview-7/worker   Stuck            resuming for 25m: waiting for preview-42/statefulset/postgres
 
-  NAMESPACE    WORKLOAD               STATE               FOR   LAST ACTIVITY      NEXT                             SAVED THIS MONTH
-  preview-42   deployment/api         paused              3h    request, 4h ago    wakes on a request or activity   $12
-  preview-42   statefulset/postgres   running             5h    cpu, 2h ago        held awake by its dependents     $30
-  preview-7    deployment/web         running (dry-run)   2h    rollout, 15m ago   would pause in 45m               -
-  preview-7    deployment/worker      resuming            25m   -                  -                                -
+  NAMESPACE    WORKLOAD               STATE               FOR   LAST ACTIVITY      NEXT                             FREED THIS MONTH   SAVED
+  preview-42   deployment/api         paused              3h    request, 4h ago    wakes on a request or activity   $12                $9
+  preview-42   statefulset/postgres   running             5h    cpu, 2h ago        held awake by its dependents     $30                -
+  preview-7    deployment/web         running (dry-run)   2h    rollout, 15m ago   would pause in 45m               -                  -
+  preview-7    deployment/worker      resuming            25m   -                  -                                -                  -
 
 Recent pauses and wakes:
   30m ago   preview-7/worker   scaled up to 2 replicas by argocd-controller outside Hybernate; counted as activity
@@ -257,9 +260,9 @@ Recent pauses and wakes:
 
 `status` is one screen of every workload Hybernate manages, read from their ManagedWorkloads and events:
 
-- **The summary:** how many workloads are in each phase, how many are in dry-run, and what Hybernate has saved this month pausing live ones, in whole dollars as `scan` shows it, or `<$1` for a saving under 50¢.
-- **Needs attention:** what keeps Hybernate from doing its job, from each workload's conditions: a GitOps tool undoing pauses (`GitOpsConflict`), a dependency that's missing, in a cycle, or in a namespace that doesn't allow it (`DependencyNotAllowed`), two ManagedWorkloads for one target, a protected namespace, a target that's gone, metrics or Prometheus that can't be read, a Prometheus query that has never matched a series (`PrometheusQueryEmpty`), a paused workload whose requests can't wake it (`WakeOnRequest`), a resume that stopped with replicas not Ready (`ResumeIncomplete`), a pause that stopped waiting with pods still running (`PauseIncomplete`), and a pause or wake taking over 10 minutes (`Stuck`), with what it waits for. `kubectl describe managedworkload` has the rest.
-- **The table:** each workload as `kind/name`, with its ManagedWorkload's name in brackets when you wrote one under another name; its state and for how long; its last activity and where it came from; what it has saved this month, in whole dollars or `<$1` under 50¢, where a saving last brought up to date in an earlier month counts as none, and one in dry-run now keeps what its pauses saved before dry-run was turned on; and **NEXT**:
+- **The summary:** how many workloads are in each phase, and how many are in dry-run; the node autoscaler, found as [`nodes`](#see-why-nodes-dont-scale-down) finds it, or `none found`, or `unknown` when your access doesn't allow reading what would tell; and what pausing live workloads has freed this month, its requests at list price, and how much of that has been saved, come off the bill as nodes scaled down, in whole dollars as `scan` shows them, or `<$1` under 50¢. Freed capacity is only money once a node autoscaler removes the nodes it was on. When the operator can't measure what's saved for some workloads, the summary says why, once for each reason.
+- **Needs attention:** when pausing freed at least a dollar this month and less than half of it was saved, counting only workloads whose savings are measured, a line saying nodes aren't scaling down, pointing at `kubectl hybernate nodes`. Then what keeps Hybernate from doing its job, from each workload's conditions: a GitOps tool undoing pauses (`GitOpsConflict`), a dependency that's missing, in a cycle, or in a namespace that doesn't allow it (`DependencyNotAllowed`), two ManagedWorkloads for one target, a protected namespace, a target that's gone, metrics or Prometheus that can't be read, a Prometheus query that has never matched a series (`PrometheusQueryEmpty`), a paused workload whose requests can't wake it (`WakeOnRequest`), a resume that stopped with replicas not Ready (`ResumeIncomplete`), a pause that stopped waiting with pods still running (`PauseIncomplete`), and a pause or wake taking over 10 minutes (`Stuck`), with what it waits for. `kubectl describe managedworkload` has the rest.
+- **The table:** each workload as `kind/name`, with its ManagedWorkload's name in brackets when you wrote one under another name; its state and for how long; its last activity and where it came from; what pausing it has freed this month and what of that it has saved, in whole dollars or `<$1` under 50¢, or `unknown` when what's saved can't be measured, where totals last brought up to date in an earlier month count as none, and one in dry-run now keeps what its pauses freed and saved before dry-run was turned on; and **NEXT**:
     - when it pauses: `pauses in 45m`, `pauses now` once it's `Idle`, and `would pause …` in dry-run. Status is written every few minutes, so for up to 7 minutes after the time it showed, a workload still running reads `pauses soon`; after that, `overdue to pause`, which means something the table can't see holds it, and `kubectl describe managedworkload` says what
     - why it won't pause: `never pauses: no idlePolicy`, `never pauses: namespace protected`, `never pauses: part of Hybernate` (the operator's or the doorman's own Deployment), `never pauses: PVCs deleted on scale-down` (a StatefulSet whose `persistentVolumeClaimRetentionPolicy.whenScaled` is `Delete`), `nothing: labelled hybernate.io/ignore`, `nothing: workload not found`, `nothing: another ManagedWorkload has it`, `held awake by its dependents`, `held awake for 2h` (`hybernate.io/active-until` on the ManagedWorkload or the workload), `held awake by the forecast`, `won't pause: dependsOn cycle`, `won't pause: no CPU metrics`, or `won't pause: Prometheus failing`
     - for a paused one, what wakes it: `wakes on a request or activity`, or `wakes on activity` without the doorman
@@ -278,7 +281,7 @@ kubectl hybernate status --since 1h -o json
 | `--since` | | `24h` | How far back to list pauses and wakes |
 | `--timeout` | | `1m` | How long to wait for the cluster before giving up |
 
-Your user needs `list` on `managedworkloads` and `events`, in every namespace or the ones passed with `-n`. Without access to events, it shows the rest and says so. It also lists `deployments` and `statefulsets`, reading only their metadata, for a `hybernate.io/active-until` annotation on the workload itself, and goes without it when it can't. A namespace named with `-n` that doesn't exist is an error, which takes `get` on `namespaces` to tell; without it, the namespace shows as one Hybernate manages nothing in.
+Your user needs `list` on `managedworkloads` and `events`, in every namespace or the ones passed with `-n`. Without access to events, it shows the rest and says so. To name the node autoscaler, it reads what [`nodes`](#see-why-nodes-dont-scale-down) does for that: Karpenter's NodePools, nodes' metadata, the `cluster-autoscaler-status` ConfigMap and Deployments' metadata in `kube-system`; without enough of them to tell, it says the autoscaler is unknown. It also lists `deployments` and `statefulsets`, reading only their metadata, for a `hybernate.io/active-until` annotation on the workload itself, and goes without it when it can't. A namespace named with `-n` that doesn't exist is an error, which takes `get` on `namespaces` to tell; without it, the namespace shows as one Hybernate manages nothing in.
 
 ## See Why Nodes Don't Scale Down
 

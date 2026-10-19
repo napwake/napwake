@@ -649,6 +649,34 @@ func TestScanCluster_SavedBeforeGoingBackToDryRun(t *testing.T) {
 	assert.InDelta(t, w.Measured.MonthlyFreed, CouldSave(w), 0.001, "what it would save is measured, not saved")
 }
 
+// Freed and saved are read apart: what pausing freed at list price, and
+// the part of it that came off the bill. Last month's record counts for
+// neither.
+func TestFreedAndSavedThisMonth(t *testing.T) {
+	thisMonth := metav1.NewTime(scanTime.Add(-time.Hour))
+	lastMonth := metav1.NewTime(scanTime.AddDate(0, -1, 0))
+	tests := []struct {
+		name         string
+		cost         *v1alpha1.CostStatus
+		freed, saved float64
+	}{
+		{name: "no cost yet"},
+		{name: "freed, some of it saved", freed: 40, saved: 12.5,
+			cost: &v1alpha1.CostStatus{FreedThisMonth: "$40.00", SavedThisMonth: "$12.50", LastAccumulatedAt: &thisMonth}},
+		{name: "last month's",
+			cost: &v1alpha1.CostStatus{FreedThisMonth: "$40.00", SavedThisMonth: "$12.50", LastAccumulatedAt: &lastMonth}},
+		{name: "unreadable", cost: &v1alpha1.CostStatus{FreedThisMonth: "pending", SavedThisMonth: ""}},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			mw := &v1alpha1.ManagedWorkload{Status: v1alpha1.ManagedWorkloadStatus{Cost: tt.cost}}
+
+			assert.InDelta(t, tt.freed, FreedThisMonth(mw, scanTime), 0.001)
+			assert.InDelta(t, tt.saved, SavedThisMonth(mw, scanTime), 0.001)
+		})
+	}
+}
+
 // Until the operator's first reconcile in a new month, a workload's record
 // is last month's, which saved nothing this month.
 func TestScanCluster_LastMonthsSavingsArentThisMonths(t *testing.T) {
