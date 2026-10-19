@@ -73,7 +73,7 @@ Hybernate reads from three external systems:
 
 ## Node-Level Cost Savings
 
-Hybernate operates at the workload layer. It does not manage nodes directly. When Hybernate pauses or scales down a workload, it frees CPU and memory on the node. A cluster autoscaler (Cluster Autoscaler, Karpenter, or a managed equivalent) is responsible for detecting underutilized nodes and removing them to realize actual infrastructure cost savings.
+Hybernate operates at the workload layer. It does not manage nodes directly. When Hybernate pauses or scales down a workload, it frees CPU and memory on the node. A cluster autoscaler (Cluster Autoscaler, Karpenter, or a managed equivalent) is responsible for detecting underutilized nodes and removing them to realize actual infrastructure cost savings. Hybernate measures how much of what it freed that has [saved](cost-tracking.md#how-saved-is-measured): every 5 minutes, the leader sets what it holds paused in each node pool against the spare capacity of the pool's nodes, read from cached nodes and pods.
 
 See the [Cluster Autoscaler Guide](../guides/cluster-autoscaler.md) for recommended configurations.
 

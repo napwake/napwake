@@ -17,7 +17,7 @@ Hybernate fixes this by:
 - **Detecting idle workloads** with a per-workload activity clock: CPU, deploys, Prometheus queries, and activity annotations from your own tooling, with no learning period
 - **Learning demand patterns** via a per-workload Holt-Winters forecasting model that tracks daily and weekly seasonality
 - **Acting automatically** by pausing idle workloads, waking them on the first request, and, with `autoResume`, resuming them before users arrive
-- **Tracking savings** with per-workload cost accounting on what pods request, the resources each pause frees, and a cluster-wide total in `kubectl hybernate status`
+- **Tracking savings** with per-workload cost accounting on what pods request: what each pause frees, and what it measurably took off the bill, from the spare capacity left on each node pool, with a cluster-wide total in `kubectl hybernate status`
 
 ## How It Works
 
@@ -96,7 +96,7 @@ kubectl hybernate enable my-api -n staging
 - **`kubectl hybernate pause`** pauses a workload now, such as a preview environment at the end of the day, to wake on its next request
 - **`kubectl hybernate wake`** wakes a paused workload from the terminal and waits until it's Running
 - **`kubectl hybernate enable`** ends dry-run once you trust what you've measured, and says what to change in Git when a GitOps tool applies the workload
-- **Cost tracking** per workload, for the current month: what it cost, what pausing saved, and a projection for the month, priced at the list price of the nodes it runs on
+- **Cost tracking** per workload, for the current month: what it cost, what pausing freed, what that saved once nodes went, and a projection for the month, priced at the list price of the nodes it runs on
 - **Dry-run mode** to see every pause the operator would make, and what it would save, without it pausing anything
 
 ### Observability

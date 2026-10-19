@@ -61,7 +61,7 @@ The CRD is a chart template with `helm.sh/resource-policy: keep`, so `helm unins
 | `resources.limits.cpu` | `500m` | CPU limit |
 | `resources.limits.memory` | `512Mi` | Memory limit |
 
-The operator caches the cluster's ManagedWorkloads, Deployments, StatefulSets, Services, PVCs, HPAs, Nodes and Namespaces, or only the watched namespaces' with `watchNamespaces`, and the EndpointSlices it writes and the doorman Service's, so its memory grows with the cluster. Nodes are cached as names and labels only, and other EndpointSlices, ConfigMaps, pods and KEDA ScaledObjects are read when needed, not cached. Raise the limit on clusters with many thousands of workloads. Go's garbage collector is given a soft limit of 90% of the memory limit, for the operator and the doorman alike, leaving the rest for memory outside its heap, so it works harder near the limit rather than letting either be OOM-killed. Setting `GOMEMLIMIT` in the pod overrides it.
+The operator caches the cluster's ManagedWorkloads, Deployments, StatefulSets, Services, PVCs, HPAs, Nodes and Namespaces, or only the watched namespaces' with `watchNamespaces`, and the EndpointSlices it writes and the doorman Service's, so its memory grows with the cluster. Nodes are cached without their image lists, and pods only as what spare node capacity needs: those bound to a node and not finished, as their node, phase and requests, about 2.6 KB a pod. Other EndpointSlices, ConfigMaps and KEDA ScaledObjects are read when needed, not cached. Raise the limit on clusters with many thousands of workloads. Go's garbage collector is given a soft limit of 90% of the memory limit, for the operator and the doorman alike, leaving the rest for memory outside its heap, so it works harder near the limit rather than letting either be OOM-killed. Setting `GOMEMLIMIT` in the pod overrides it.
 
 ## Namespaces
 
@@ -256,8 +256,8 @@ By default the chart creates a ClusterRole, `<fullname>-manager`, with permissio
 - Read PersistentVolumeClaims, to price the storage a paused workload keeps
 - Read HorizontalPodAutoscalers, and read and annotate KEDA ScaledObjects, to pause a KEDA workload through KEDA
 - Read pod metrics from metrics-server
-- Read pods, to price what pausing a workload frees, sidecars included. Pods are read when needed rather than watched, so they aren't cached
-- Read Nodes' metadata, to price workloads at the list price of the instance types they run on. Only names and labels are cached
+- Read pods, to price what pausing a workload frees, sidecars included, and watch them, to measure the spare node capacity that what pausing [saved](../concepts/cost-tracking.md#how-saved-is-measured) is worked out from. Only pods bound to a node and not finished are cached, as their node, phase and requests
+- Read Nodes, to price workloads at the list price of the instance types they run on, and to measure their spare capacity. They're cached without their image lists
 - Get ConfigMaps, one at a time and uncached, to [learn dependencies](../concepts/dependencies.md#learned-dependencies) from the ones a workload's environment references. It can't list or change them
 - Create Events for user-facing status updates
 - Read Services, and manage the EndpointSlices that route paused workloads to the doorman

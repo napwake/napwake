@@ -112,7 +112,7 @@ Hybernate never scales up a workload it didn't scale down. Handing back a pause 
 
 ## Cost Savings While Paused
 
-Cost tracking is always on. While a workload is paused, what its paused replicas requested in CPU and memory accrues as savings; its PVCs still cost, since they stay. See [Cost Tracking](../concepts/cost-tracking.md).
+Cost tracking is always on. While a workload is paused, what its paused replicas requested in CPU and memory accrues as freed, and the part of that its nodes' spare capacity couldn't hold accrues as saved; its PVCs still cost, since they stay. See [Cost Tracking](../concepts/cost-tracking.md).
 
 ## Workloads Nobody Comes Back To
 

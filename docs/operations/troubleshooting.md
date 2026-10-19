@@ -210,8 +210,9 @@ Another Hybernate install, in the namespace the event names, took this ManagedWo
 ### Cost data shows $0.00
 
 - Cost is priced on what the workload's pods request, read from its pods. A workload whose containers set no requests costs nothing.
-- `projectedMonthlyCost` and `projectedMonthlySavings` show `pending` until 24 hours of the month have been tracked, including on the first day of every month.
-- `savedThisMonth` stays `$0.00` until Hybernate has paused the workload this month: dry-run workloads record what they would have freed in `status.dryRun` instead.
+- `projectedMonthlyCost`, `projectedMonthlyFreed` and `projectedMonthlySavings` show `pending` until 24 hours of the month have been tracked, including on the first day of every month.
+- `freedThisMonth` stays `$0.00` until Hybernate has paused the workload this month: dry-run workloads record what they would have freed in `status.dryRun` instead.
+- `savedThisMonth` stays `$0.00` while the cluster's nodes have room for everything Hybernate holds paused: nothing has come off the bill until nodes go. Check that a cluster autoscaler can remove them; the [Cluster Autoscaler Guide](../guides/cluster-autoscaler.md) covers what blocks scale-down, and `hybernate_capacity_spare_cpu_cores` shows each node pool's room. It reads `unknown`, with why in `savingsUnknown`, for an operator limited by `watchNamespaces`.
 - Totals start again from zero each calendar month, in UTC. See [Cost Tracking](../concepts/cost-tracking.md).
 
 ### `helm uninstall` fails with `job hybernate-uninstall-guard failed`

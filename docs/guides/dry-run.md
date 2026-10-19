@@ -92,10 +92,10 @@ pauses: 4
 slept: 96h12m0s
 freedCPUHours: "192400m"
 freedMemoryHours: "384800m"
-estimatedSavings: $7.50
+estimatedFreed: $7.50
 ```
 
-`freedCPUHours` and `freedMemoryHours` are the vCPU-hours and GiB-hours the workload's replicas requested during `slept`: what the would-be pauses would have freed, kept to a billionth of an hour. `estimatedSavings` is those hours priced at the workload's [cost rates](../concepts/cost-tracking.md#prices), for display; the hours are the record. Like all savings, it becomes money only if your cluster autoscaler removes the capacity freed.
+`freedCPUHours` and `freedMemoryHours` are the vCPU-hours and GiB-hours the workload's replicas requested during `slept`: what the would-be pauses would have freed, kept to a billionth of an hour. `estimatedFreed` is those hours priced at the workload's [cost rates](../concepts/cost-tracking.md#prices), for display; the hours are the record. It's what pausing would free, not what it would save: freed capacity becomes money only once nodes go, which Hybernate [measures](../concepts/cost-tracking.md#how-saved-is-measured) for real pauses.
 
 `slept` counts finished would-be pauses. While the phase is `Idle`, the one under way, which began at `status.lastTransitionTime`, is added when it ends; `resources` is what the workload ran when it began.
 

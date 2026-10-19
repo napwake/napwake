@@ -4,7 +4,7 @@
 
 **Group:** `hybernate.io` | **Version:** `v1alpha1` | **Kind:** `ManagedWorkload` | **Scope:** Namespaced
 
-`kubectl get managedworkloads` shows each one's `Phase`, what it has `Saved` this month, and its `Age`.
+`kubectl get managedworkloads` shows each one's `Phase`, what it has `Saved` and `Freed` this month, and its `Age`.
 
 ### Spec (`ManagedWorkloadSpec`)
 
@@ -64,7 +64,7 @@ A duration is a Go duration above zero, such as `45s`, `90m` or `1h30m`. Days an
 | `pause.firstReadyAt` | time | When the resume under way first saw one of its replicas Ready; the rest get 2 minutes from then |
 | `pause.scaledObject` | string | The KEDA ScaledObject held at zero while paused; see [HPA and KEDA](../guides/autoscalers.md) |
 | `pause.scaledObjectPausedReplicas` | string | The ScaledObject's own `autoscaling.keda.sh/paused-replicas` from before the pause, put back after it |
-| `pause.resources` | `ResourceSnapshot` | What the workload ran when the pause began: `replicas`, and per replica `cpuMillis`, `memoryBytes`, and its claims' `storageBytes` |
+| `pause.resources` | `ResourceSnapshot` | What the workload ran when the pause began: `replicas`, and per replica `cpuMillis`, `memoryBytes`, and its claims' `storageBytes`; and `nodePools`, the node pools its pods ran in (`name`, `""` for nodes without a pool label) and how many `pods` in each, which what it saves is measured against |
 | `pause.wakeAnnotations` | object | The activity annotations on the ManagedWorkload (`workload`) and its target (`target`) as the pause began; one that changes since wakes it |
 | `learnedDependencies` | `LearnedDependencies` | Dependencies Hybernate found, held and woken like `dependsOn`: `from`, `at`, and `dependencies` (`namespace`, `kind`, `name`, `source`: `environment` or `wake`, `via` and `address` for one found in the environment, and `lastSeen` for one learned from a wake). See [Learned dependencies](../concepts/dependencies.md#learned-dependencies) |
 | `lastScaledUp` | `ScaledUp` | The last time the workload was scaled up outside Hybernate while paused, which wakes it: `at`, `replicas`, `by` (the field manager, such as `argocd-controller`, or `unknown` for a scale through the scale subresource, as `kubectl scale` makes, which records none), and `gitOps` (`Argo CD`, `Flux`, `Fleet`, `kapp` or `Kluctl`, when it was set from Git; see [GitOps tools](../guides/gitops.md)) |
@@ -75,7 +75,7 @@ A duration is a Go duration above zero, such as `45s`, `90m` or `1h30m`. Days an
 | `dryRun.pauses` | int32 | Times the workload would have been paused, one under way included |
 | `dryRun.slept` | duration | How long finished would-be pauses lasted in all |
 | `dryRun.freedCPUHours`, `dryRun.freedMemoryHours` | quantity | vCPU-hours and GiB-hours the replicas requested during `slept` |
-| `dryRun.estimatedSavings` | string | Those hours priced, for display |
+| `dryRun.estimatedFreed` | string | Those hours priced, for display: what pausing would have freed |
 | `dryRun.resources` | `ResourceSnapshot` | What the workload ran when the current would-be pause began |
 | `prediction.dailyPhase`, `prediction.weeklyPhase` | string | Each season's phase: `Observing`, `Suggesting`, or `Active` |
 | `prediction.dailyConfidence`, `prediction.weeklyConfidence` | int | Accuracy % over the last 24 and 168 observed hours |
@@ -85,11 +85,14 @@ A duration is a Go duration above zero, such as `45s`, `90m` or `1h30m`. Days an
 | `cost.lastAccumulatedAt` | time | When the totals were last brought up to date |
 | `cost.awakeCPUHours`, `cost.awakeMemoryHours` | quantity | vCPU-hours and GiB-hours requested while awake |
 | `cost.storageHours` | quantity | GiB-hours of the claims its pods mount, in every phase |
-| `cost.pausedCPUHours`, `cost.pausedMemoryHours` | quantity | vCPU-hours and GiB-hours the paused replicas had requested, while paused |
+| `cost.pausedCPUHours`, `cost.pausedMemoryHours` | quantity | vCPU-hours and GiB-hours the paused replicas had requested, while paused: what pausing freed |
+| `cost.savedCPUHours`, `cost.savedMemoryHours` | quantity | The workload's share of what its node pools' spare capacity couldn't hold of the paused replicas, measured every 5 minutes: what pausing saved, at least. See [How saved is measured](../concepts/cost-tracking.md#how-saved-is-measured) |
 | `cost.costThisMonth` | string | Awake and storage hours, priced |
-| `cost.savedThisMonth` | string | Paused hours, priced |
-| `cost.costWithoutHybernateThisMonth` | string | `costThisMonth` plus `savedThisMonth` |
-| `cost.projectedMonthlyCost`, `cost.projectedMonthlySavings` | string | The month so far carried to the whole month; `pending` until a day is tracked |
+| `cost.freedThisMonth` | string | Paused hours, priced |
+| `cost.savedThisMonth` | string | Saved hours, priced; `unknown` while `savingsUnknown` is set |
+| `cost.savingsUnknown` | string | Why saved can't be measured, such as pods outside `watchNamespaces` not being visible; unset when it's measured |
+| `cost.costWithoutHybernateThisMonth` | string | `costThisMonth` plus `freedThisMonth` |
+| `cost.projectedMonthlyCost`, `cost.projectedMonthlyFreed`, `cost.projectedMonthlySavings` | string | The month so far carried to the whole month; `pending` until a day is tracked |
 | `cost.running` | `ResourceSnapshot` | What the workload ran when last brought up to date while awake |
 | `cost.pricedAt`, `cost.pricedTemplateHash` | time, string | When requests and list rates were last read, and the pod template then |
 | `cost.listRates` | `CostRates` | On-demand list rates of the nodes its pods last ran on. Unset when its nodes have no list price |
