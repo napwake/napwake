@@ -1,14 +1,27 @@
 # Cluster Autoscaler Configuration
 
-Hybernate manages workloads at the pod layer: it pauses idle Deployments and StatefulSets, scaling them to zero. But pods run on nodes, and nodes cost money. For Hybernate's cost savings to materialize, your cluster needs an autoscaler that removes underutilized nodes after Hybernate frees up capacity.
+Hybernate manages workloads at the pod layer: it pauses idle Deployments and StatefulSets, scaling them to zero. But pods run on nodes, and your bill is for nodes. What a pause **frees**, the CPU and memory its pods requested, comes off the bill only once a node autoscaler removes the nodes it freed it on:
 
 ```
-Hybernate scales down pods → Nodes become underutilized → Autoscaler removes empty nodes → Cost savings
+Hybernate pauses pods → capacity freed on their nodes → autoscaler removes nodes → saved
 ```
 
-Without an autoscaler, scaling pods to zero still leaves the underlying node running at full price.
+Without a node autoscaler, or with scale-down blocked, pausing frees capacity and saves nothing. Hybernate reports the two apart: `freedThisMonth` is what pausing released, and `savedThisMonth` is what it measurably took off the bill, worked out every 5 minutes from the spare capacity left on each node pool. See [Freed and Saved](../concepts/cost-tracking.md#freed-and-saved).
 
-This guide covers recommended autoscaler settings for the two most common options.
+This guide covers the autoscaler settings that let freed capacity go. Freed becomes saved fastest when non-prod workloads have nodes of their own, so that pausing them empties whole nodes; [Node Pools for Real Savings](node-pools.md) shows how.
+
+## What Hybernate Detects
+
+The operator looks every 10 minutes for what scales the cluster's nodes, logs what it finds when that changes, and exports it as [`hybernate_node_autoscaler`](../reference/metrics.md#savings):
+
+- **Karpenter**, from its `nodepools.karpenter.sh` NodePools (`karpenter.sh/v1`) or nodes labelled `karpenter.sh/nodepool`, which covers AKS node auto-provisioning
+- **EKS Auto Mode**, from nodes labelled `eks.amazonaws.com/compute-type: auto`
+- **Cluster Autoscaler**, self-managed or the one GKE Standard and AKS run for you, from the `cluster-autoscaler-status` ConfigMap it writes in `kube-system`
+- **GKE Autopilot**, from that ConfigMap and nodes named `gk3-`
+- `none`, when it looked everywhere and found nothing: the operator logs that what pausing frees won't come off the bill until something scales nodes down
+- `unknown`, when it found nothing and wasn't allowed to look everywhere, as in a `watchNamespaces` install, which can't read Cluster Autoscaler's ConfigMap in `kube-system`
+
+`kubectl hybernate status` and `kubectl hybernate scan` name it at the top. `kubectl hybernate nodes` goes further: for each node, what keeps the autoscaler from removing it. See [See Why Nodes Don't Scale Down](../getting-started/kubectl-plugin.md#see-why-nodes-dont-scale-down).
 
 ## Cluster Autoscaler
 
@@ -47,105 +60,96 @@ extraArgs:
   scan-interval: 10s
 ```
 
+GKE doesn't let you set these flags: its `optimize-utilization` autoscaling profile scales down sooner than the default `balanced`. AKS sets them cluster-wide in its cluster autoscaler profile (`az aks update --cluster-autoscaler-profile`). See [Node Pools for Real Savings](node-pools.md#cluster-autoscaler-gke-aks-and-eks-managed-node-groups).
+
 ### Key Interactions
 
 | Hybernate Action | Autoscaler Response |
 |-----------------|-------------------|
-| Pause (scale to 0) | Pods removed, node becomes underutilized, removed after `scale-down-unneeded-time` |
+| Pause (scale to 0) | Pods removed; a node whose remaining pods request less than the threshold is removed after `scale-down-unneeded-time`, if nothing on it blocks that |
 | Resume (scale back up) | Autoscaler provisions new nodes if no capacity exists |
 
-### Things to Watch
+### What Keeps a Node
 
-- **`scale-down-unneeded-time`**: Nodes sit empty for this long after Hybernate pauses their pods. Keep it short relative to `idleAfter`, or a paused workload's node lingers for most of the time it's asleep.
-- **Pod Disruption Budgets**: The autoscaler must evict pods before removing a node, and PDBs can block eviction. Hybernate bypasses this because it scales replica counts directly, not through eviction. However, non-managed pods with PDBs on the same node can still prevent the autoscaler from removing it.
-- **DaemonSets**: Nodes running only DaemonSet pods are still considered underutilized and can be removed. This is usually the desired behavior.
+Cluster Autoscaler won't remove a node, however little of it is used, when it runs:
+
+- a pod annotated `cluster-autoscaler.kubernetes.io/safe-to-evict: "false"`
+- a pod whose PodDisruptionBudget allows no disruptions
+- a pod with an `emptyDir` not in memory or a `hostPath` volume, while `--skip-nodes-with-local-storage` is on, as it is by default upstream (AKS turns it off; GKE 1.22 and later ignores local storage)
+- a pod no controller would recreate elsewhere
+- a `kube-system` pod without a PodDisruptionBudget, while `--skip-nodes-with-system-pods` is on, its default
+
+or when the node is annotated `cluster-autoscaler.kubernetes.io/scale-down-disabled: "true"`. DaemonSet and static pods never keep a node. Hybernate scales replica counts directly, so its own pauses never go through eviction or PodDisruptionBudgets; it's what's left on the node that can hold it. `kubectl hybernate nodes` lists each of these per node, with how to clear it.
 
 ## Karpenter
 
-[Karpenter](https://karpenter.sh) is an open-source node autoscaler, a Kubernetes SIG Autoscaling project, with providers for AWS, Azure (as AKS node auto-provisioning), and other clouds. Instead of managing node groups, it provisions individual nodes sized to fit pending pods and consolidates underutilized nodes proactively.
+[Karpenter](https://karpenter.sh) is an open-source node autoscaler, a Kubernetes SIG Autoscaling project, with providers for AWS, Azure (as AKS node auto-provisioning), and other clouds. Instead of managing node groups, it provisions individual nodes sized to fit pending pods and consolidates underutilized nodes proactively. Hybernate reads `karpenter.sh/v1` NodePools.
 
 ### Recommended Settings
 
-=== "v1 (Karpenter 1.x)"
-
-    ```yaml title="nodepool.yaml" linenums="1"
-    apiVersion: karpenter.sh/v1
-    kind: NodePool
-    metadata:
-      name: default
+```yaml title="nodepool.yaml" linenums="1"
+apiVersion: karpenter.sh/v1
+kind: NodePool
+metadata:
+  name: default
+spec:
+  template:
     spec:
-      disruption:
-        # Karpenter will consolidate underutilized nodes by moving pods
-        # and terminating the emptied node. This is the key setting for
-        # Hybernate: when pods are paused/removed, Karpenter consolidates.
-        consolidationPolicy: WhenEmptyOrUnderutilized
+      nodeClassRef:
+        group: karpenter.k8s.aws
+        kind: EC2NodeClass
+        name: default
+      requirements:
+        - key: karpenter.sh/capacity-type
+          operator: In
+          values: ["on-demand", "spot"]
+        - key: kubernetes.io/arch
+          operator: In
+          values: ["amd64"]
+      # Maximum time a node can live, regardless of utilization, so nodes
+      # pick up new images. In v1 it's here, not under disruption.
+      expireAfter: 720h
+  disruption:
+    # Removes empty nodes, and moves pods off underutilized ones to remove
+    # those too. WhenEmpty never touches a node that runs anything but
+    # DaemonSets, so pausing one workload on a shared node saves nothing.
+    consolidationPolicy: WhenEmptyOrUnderutilized
 
-        # How long a node must be empty or underutilized before consolidation.
-        # 30s is aggressive but works well with Hybernate since the scale-down
-        # is intentional, not transient.
-        consolidateAfter: 30s
+    # How long after a pod was last added to or removed from a node before
+    # it's considered. A pause is deliberate, not transient, so there's no
+    # need to wait long. Never turns consolidation off.
+    consolidateAfter: 1m
+```
 
-        # Maximum time a node can live, regardless of utilization.
-        # Useful for picking up new AMIs and preventing drift.
-        expireAfter: 720h  # 30 days
-
-      template:
-        spec:
-          requirements:
-            - key: karpenter.sh/capacity-type
-              operator: In
-              values: ["on-demand", "spot"]
-            - key: kubernetes.io/arch
-              operator: In
-              values: ["amd64"]
-    ```
-
-=== "v1beta1 (Karpenter 0.x)"
-
-    ```yaml title="nodepool.yaml" linenums="1"
-    apiVersion: karpenter.sh/v1beta1
-    kind: NodePool
-    metadata:
-      name: default
-    spec:
-      disruption:
-        consolidationPolicy: WhenUnderutilized
-
-        # v1beta1 uses expireAfter at this level
-        expireAfter: 720h
-
-      template:
-        spec:
-          requirements:
-            - key: karpenter.sh/capacity-type
-              operator: In
-              values: ["on-demand", "spot"]
-    ```
+`nodeClassRef` names your provider's node class: `EC2NodeClass` in `karpenter.k8s.aws` on AWS, or `NodeClass` in `eks.amazonaws.com` on EKS Auto Mode.
 
 ### Key Interactions
 
 | Hybernate Action | Karpenter Response |
 |-----------------|-------------------|
-| Pause (scale to 0) | Node becomes empty, consolidated after `consolidateAfter` |
+| Pause (scale to 0) | Node becomes empty or underutilized, consolidated after `consolidateAfter` |
 | Resume (scale back up) | Karpenter provisions a right-sized node for the pending pods |
+
+Karpenter won't consolidate a node that's annotated `karpenter.sh/do-not-disrupt: "true"`, or that runs a pod so annotated, or a pod whose PodDisruptionBudget allows no disruptions. Without `budgets`, it disrupts at most 10% of a NodePool's nodes at once. `kubectl hybernate nodes` shows each NodePool's consolidation settings and what holds each node.
 
 ### Why Karpenter Works Well With Hybernate
 
 - **Right-sizing on resume**: When Hybernate resumes a workload, Karpenter provisions a node sized to fit the exact pod requirements rather than falling back to a fixed node group size. This avoids over-provisioning on resume.
-- **Fast consolidation**: Karpenter's consolidation is faster than Cluster Autoscaler's scale-down, so cost savings from Hybernate's actions are realized sooner.
-- **Spot instances**: Karpenter's native spot support pairs well with Hybernate's forecast-driven scheduling. Non-critical workloads that Hybernate manages are good candidates for spot capacity.
+- **Consolidation**: Karpenter repacks underutilized nodes as well as removing empty ones, so more of what pausing frees on shared nodes becomes saved, and sooner.
+- **Spot instances**: Non-critical workloads that Hybernate manages are good candidates for spot capacity. Hybernate prices spot nodes at on-demand, so set `costTracking.rates` for what you pay.
 
 ## Autopilot and Serverless Modes
 
-Some managed Kubernetes offerings handle node scaling transparently:
+Some managed Kubernetes offerings handle node scaling for you, and bill for what pods request rather than for nodes:
 
-| Service | How It Works | Hybernate Value |
+| Service | How It Works | With Hybernate |
 |---------|-------------|-----------------|
-| **GKE Autopilot** | Google manages nodes entirely. You pay per pod resource request. | Direct cost savings. Every pod Hybernate removes reduces the bill immediately. No autoscaler configuration needed. |
-| **EKS with Fargate** | AWS runs each pod on a dedicated microVM. No shared nodes. | Direct cost savings. Pausing a pod stops billing for that pod. No autoscaler configuration needed. |
-| **AKS node auto-provisioning** | Azure manages nodes using Karpenter under the hood. | Use the Karpenter settings above. Azure handles the rest. |
+| **GKE Autopilot** | Google manages nodes entirely. You pay per pod resource request. | What pausing frees stops being billed with the pods. No autoscaler configuration needed. |
+| **EKS with Fargate** | AWS runs each pod on a dedicated microVM. No shared nodes. | Pausing a pod stops billing for that pod. No autoscaler configuration needed. |
+| **AKS node auto-provisioning** | Azure manages nodes using Karpenter under the hood. | Use the Karpenter settings above. |
+| **EKS Auto Mode** | AWS runs Karpenter for you; you pay for the nodes it provisions. | Use the Karpenter settings above in your own NodePools. |
 
-These are the simplest setups for Hybernate because the cost savings are 1:1 with pod scaling: no pods running means no cost.
+On GKE Autopilot and Fargate what pausing frees is what you stop paying for. Hybernate's saved still measures the spare capacity left on nodes, so there it can read lower than what's taken off your bill, never higher. Set `costTracking.rates` to the provider's per-pod prices to price freed at what you pay.
 
 ## Verifying It Works
 
@@ -165,9 +169,15 @@ After configuring your autoscaler, verify the end-to-end flow:
     kubectl get nodes -w
     ```
 
-3. **Confirm a node is removed** after the autoscaler's configured delay.
+3. **Confirm a node is removed** after the autoscaler's configured delay. If none is, `kubectl hybernate nodes` shows what keeps each node.
 
-4. **Wake the workload,** with a request to its Service or:
+4. **Watch SAVED grow with FREED:** the node's going is measured within 5 minutes, and written to the workload's status within another 5:
+
+    ```bash
+    kubectl hybernate status -n staging
+    ```
+
+5. **Wake the workload,** with a request to its Service or:
 
     ```bash
     kubectl hybernate wake my-api -n staging
@@ -175,11 +185,13 @@ After configuring your autoscaler, verify the end-to-end flow:
 
     It returns once the workload is `Running`, all its replicas Ready. Its idle clock starts again, so it pauses on its own once it's idle.
 
-5. **Confirm a node is provisioned** and the workload pods become ready.
+6. **Confirm a node is provisioned** and the workload pods become ready. A wake that has to wait for a node may need a longer `wake.maxWait`; see [What waking costs](node-pools.md#what-waking-costs).
 
-If nodes are not being removed after pause, check:
+If nodes are not being removed after pause, run `kubectl hybernate nodes`, and check:
 
 - Autoscaler logs for why scale-down was skipped
-- Whether non-managed pods on the same node prevent removal
-- Whether PDBs are blocking eviction
+- Whether non-managed pods on the same node prevent removal; a [node pool of their own](node-pools.md) for non-prod workloads avoids this
+- Whether PodDisruptionBudgets allow no disruptions
 - Whether the utilization threshold is set too low
+
+See [Freed but not saved](../operations/troubleshooting.md#freed-but-not-saved).
