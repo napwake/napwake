@@ -158,6 +158,7 @@ type lifecyclePauser interface {
 	Restore(ctx context.Context, workload *v1alpha1.ManagedWorkload) (int32, error)
 }
 
+// +kubebuilder:rbac:groups=karpenter.sh,resources=nodepools,verbs=list
 // +kubebuilder:rbac:groups=hybernate.io,resources=managedworkloads,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups=hybernate.io,resources=managedworkloads/status,verbs=get;update;patch
 // +kubebuilder:rbac:groups=hybernate.io,resources=managedworkloads/finalizers,verbs=update

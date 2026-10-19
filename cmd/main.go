@@ -62,6 +62,7 @@ import (
 	"github.com/okedeji/hybernate/internal/doorman"
 	"github.com/okedeji/hybernate/internal/guard"
 	opmetrics "github.com/okedeji/hybernate/internal/metrics"
+	"github.com/okedeji/hybernate/internal/nodescale"
 	// +kubebuilder:scaffold:imports
 )
 
@@ -267,6 +268,16 @@ func main() {
 		})
 		if err := mgr.Add(savings); err != nil {
 			setupLog.Error(err, "unable to add the savings sampler")
+			os.Exit(1)
+		}
+		autoscaler := nodescale.NewReporter(mgr.GetAPIReader(), func(kinds []string) {
+			opmetrics.NodeAutoscaler.Reset()
+			for _, k := range kinds {
+				opmetrics.NodeAutoscaler.WithLabelValues(k).Set(1)
+			}
+		})
+		if err := mgr.Add(autoscaler); err != nil {
+			setupLog.Error(err, "unable to add the node autoscaler report")
 			os.Exit(1)
 		}
 		if err := (&controller.Reconciler{

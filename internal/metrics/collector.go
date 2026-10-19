@@ -149,6 +149,14 @@ var (
 	}, []string{"pool"})
 )
 
+// NodeAutoscaler is 1 for each node autoscaler the operator found, by kind:
+// "none" when it could read everywhere it looks and found none, "unknown"
+// when it couldn't. Freed capacity reaches the bill only as nodes scale down.
+var NodeAutoscaler = prometheus.NewGaugeVec(prometheus.GaugeOpts{
+	Name: "hybernate_node_autoscaler",
+	Help: "1 for each node autoscaler found, by kind; none or unknown when there's none or it couldn't tell.",
+}, []string{"kind"})
+
 // perPool are the vectors labelled by node pool.
 var perPool = []*prometheus.GaugeVec{
 	CapacityPausedCPUCores,
@@ -239,6 +247,7 @@ func init() {
 		CapacitySpareCPUCores,
 		CapacitySpareMemoryBytes,
 		SavingsRealisedDollarsPerHour,
+		NodeAutoscaler,
 
 		// Doorman
 		DoormanWakes,
