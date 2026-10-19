@@ -119,10 +119,29 @@ func statusCluster() []client.Object {
 
 func newStatusClient(t *testing.T, funcs interceptor.Funcs, objs ...client.Object) client.Client {
 	t.Helper()
+	return withoutKarpenter(newClusterClient(t, funcs, objs...))
+}
+
+// newClusterClient is a cluster with Karpenter's CRD, as far as the fake
+// client goes: it lists any kind it's asked for.
+func newClusterClient(t *testing.T, funcs interceptor.Funcs, objs ...client.Object) client.WithWatch {
+	t.Helper()
 	return fake.NewClientBuilder().WithScheme(scheme).WithObjects(objs...).WithInterceptorFuncs(funcs).
 		WithIndex(&corev1.Event{}, "involvedObject.kind", func(o client.Object) []string {
 			return []string{o.(*corev1.Event).InvolvedObject.Kind}
 		}).Build()
+}
+
+// withoutKarpenter answers for Karpenter's kinds as an API server without
+// its CRD does.
+func withoutKarpenter(c client.WithWatch) client.Client {
+	return interceptor.NewClient(c, interceptor.Funcs{List: func(ctx context.Context, c client.WithWatch,
+		list client.ObjectList, opts ...client.ListOption) error {
+		if gk := list.GetObjectKind().GroupVersionKind().GroupKind(); gk.Group == "karpenter.sh" {
+			return &meta.NoKindMatchError{GroupKind: gk}
+		}
+		return c.List(ctx, list, opts...)
+	}})
 }
 
 func statusOpts() statusOptions {

@@ -1,6 +1,6 @@
 # kubectl Plugin
 
-The `kubectl hybernate` plugin scans a cluster for idle workloads, shows what Hybernate is doing in it, ends dry-run for workloads you've opted in, pauses workloads on demand, and wakes paused ones.
+The `kubectl hybernate` plugin scans a cluster for idle workloads, shows what Hybernate is doing in it and why its nodes aren't scaling down, ends dry-run for workloads you've opted in, pauses workloads on demand, and wakes paused ones.
 
 `scan` and `status` read every namespace you can, and fall back to your kubeconfig context's namespace, with a note, when your access doesn't allow listing them all; `-n` names namespaces instead, and `-A` (`--all-namespaces`) insists on every one, failing rather than falling back. `pause`, `wake`, `deps` and `enable` work in one namespace: `-n`, or your context's, as kubectl does.
 
@@ -279,6 +279,57 @@ kubectl hybernate status --since 1h -o json
 | `--timeout` | | `1m` | How long to wait for the cluster before giving up |
 
 Your user needs `list` on `managedworkloads` and `events`, in every namespace or the ones passed with `-n`. Without access to events, it shows the rest and says so. It also lists `deployments` and `statefulsets`, reading only their metadata, for a `hybernate.io/active-until` annotation on the workload itself, and goes without it when it can't. A namespace named with `-n` that doesn't exist is an error, which takes `get` on `namespaces` to tell; without it, the namespace shows as one Hybernate manages nothing in.
+
+## See Why Nodes Don't Scale Down
+
+Pausing a workload frees what its pods requested, but that comes off the bill only once a node autoscaler removes the node they ran on. `nodes` shows what's in the way:
+
+```bash
+kubectl hybernate nodes
+```
+
+```
+staging (EKS us-east-1): 3 nodes
+Node autoscaler: Karpenter (NodePool batch consolidates only empty nodes after 1m; NodePool default consolidates when underutilized after 1m)
+Hybernate's 2 paused workloads would request 2.0 vCPU and 4.0 GiB of memory if awake.
+Where their pods ran isn't recorded, so that's for the whole cluster rather than by node.
+
+  NODE      POOL      INSTANCE TYPE   CPU REQUESTED     MEMORY REQUESTED   UTILISATION   BLOCKED BY
+  batch-1   batch     c5.large        0.1 of 1.9 vCPU   0.3 of 3.0 GiB     10%           NodePool consolidates only empty nodes
+  quiet-1   default   m5.large        0.2 of 1.9 vCPU   1.0 of 7.0 GiB     14%           PDB allows no disruption (shop/db)
+  busy-1    default   m5.xlarge       3.0 of 3.9 vCPU   8.0 of 14.0 GiB    77%           -
+
+Next steps:
+  1. A NodePool consolidates only empty nodes, which a node running anything never is. Set spec.disruption.consolidationPolicy: WhenEmptyOrUnderutilized.
+     For example: NodePool batch consolidates only empty nodes, and this one runs 1 pod
+  2. A PodDisruptionBudget allows no disruptions, so its pods can't be moved. Raise maxUnavailable, lower minAvailable, or run more replicas than it requires.
+     For example: shop/db: PodDisruptionBudget db allows no disruptions
+  See https://okedeji.io/hybernate/guides/cluster-autoscaler/
+```
+
+- **Node autoscaler:** what scales the cluster's nodes, which `status` and `scan` show too:
+    - **Karpenter**, from the `nodepools.karpenter.sh` CRD or nodes labelled `karpenter.sh/nodepool`, with each NodePool's `spec.disruption.consolidationPolicy` and `consolidateAfter`
+    - **EKS Auto Mode**, from nodes labelled `eks.amazonaws.com/compute-type: auto`; its NodePools are Karpenter's, and read the same way
+    - **Cluster Autoscaler**, self-managed or the one GKE Standard and AKS run for you, from the `cluster-autoscaler-status` ConfigMap it writes in `kube-system`, with the cloud its nodes are on. Without the ConfigMap, a Deployment in `kube-system` whose name ends in `cluster-autoscaler` is named as a hint that it may not be running
+    - **GKE Autopilot**, from that ConfigMap and nodes all named `gk3-`, as Autopilot names them; it scales nodes itself
+    - `none found`, when every place was read and none of them showed one: freed capacity won't come off the bill until something removes nodes
+    - `unknown`, when your access didn't allow reading what would tell, which it names. It never says none when it couldn't look
+- **The table:** each node, least used first, with its pool (Karpenter NodePool, EKS node group, GKE node pool or AKS agent pool), its instance type, what its running pods request of what it can allocate, and its utilisation: the larger of the two, as Cluster Autoscaler measures it against its scale-down threshold. DaemonSet pods count towards what's requested, as they do for the autoscaler.
+- **BLOCKED BY:** why the autoscaler won't remove the node, however little of it is used, the first two in the table and every one in `-o json`. On a node a Karpenter NodePool owns, Karpenter's reasons: the node or a pod annotated `karpenter.sh/do-not-disrupt: "true"`, a pod whose PodDisruptionBudget allows no disruptions (`status.disruptionsAllowed` is 0), a NodePool with `consolidationPolicy: WhenEmpty` and anything but DaemonSet pods on the node, or `consolidateAfter: Never`. On any other node, Cluster Autoscaler's: the node annotated `cluster-autoscaler.kubernetes.io/scale-down-disabled: "true"`, a pod annotated `cluster-autoscaler.kubernetes.io/safe-to-evict: "false"`, a pod with an `emptyDir` not in memory or a `hostPath` volume it doesn't name in `cluster-autoscaler.kubernetes.io/safe-to-evict-local-volumes`, a pod no controller owns, a `kube-system` pod without a PodDisruptionBudget, and the PodDisruptionBudget rule. DaemonSet and static pods never block, and a pod annotated `safe-to-evict: "true"` blocks only by its PodDisruptionBudget, as with Cluster Autoscaler. Local storage and `kube-system` pods block only while Cluster Autoscaler's `--skip-nodes-with-local-storage` and `--skip-nodes-with-system-pods` are on, as they are by default upstream; AKS turns the first off. While the autoscaler is unknown, nodes Karpenter doesn't own are judged by Cluster Autoscaler's rules. A node no autoscaler found scales is `not autoscaled`.
+- **Next steps:** how to clear each kind of reason the table shows, with one example of it, and the [node autoscaler guide](../guides/cluster-autoscaler.md).
+
+What paused workloads would request is what Hybernate recorded their pause freed. Hybernate doesn't record which nodes their pods ran on, so it's shown for the whole cluster.
+
+```bash
+kubectl hybernate nodes --context staging -o json
+```
+
+| Flag | Short | Default | Description |
+|------|-------|---------|-------------|
+| `--output` | `-o` | `table` | `table`, `json`, or `yaml` |
+| `--timeout` | | `1m` | How long to wait for the cluster before giving up |
+
+Your user needs `list` on `nodes`, and on `pods` and `poddisruptionbudgets` in every namespace; `list` on `nodepools.karpenter.sh`; `get` on the `cluster-autoscaler-status` ConfigMap and `list` on `deployments` in `kube-system`; and `list` on `managedworkloads`. It reads what it can, and the notes say what it couldn't: without pods, what each node runs and the reasons that come from its pods are left out; without nodes, there's no table.
 
 ## Pause a Workload
 
