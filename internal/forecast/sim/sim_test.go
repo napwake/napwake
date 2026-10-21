@@ -343,7 +343,8 @@ func TestWarmStart(t *testing.T) {
 }
 
 // What the outlook projects in the first week, before the forecast acts, is
-// when it does start acting, to within the day.
+// when it does start acting, to within the day, and to within the hour once
+// it has seen a weekend.
 func TestOutlookProjectsTheStart(t *testing.T) {
 	acted := simulate(t, Scenario{Duration: 3 * week, Traffic: OfficeHours(time.UTC)})
 	acts, ok := acted.Reached(forecast.DailyActive)
@@ -356,6 +357,9 @@ func TestOutlookProjectsTheStart(t *testing.T) {
 		o := e.Outlook()
 		require.False(t, o.Acting, "day %d", d)
 		assert.WithinDuration(t, monday.Add(acts), o.StartsActing, day, "projected on day %d", d)
+		if d >= 6 {
+			assert.WithinDuration(t, monday.Add(acts), o.StartsActing, time.Hour, "projected on day %d", d)
+		}
 	}
 }
 

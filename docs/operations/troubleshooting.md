@@ -173,7 +173,7 @@ A `HandBackAbandoned` warning event means the ManagedWorkload's namespace is bei
 
 ### Prediction confidence stays at 0
 
-The confidence scorer needs a full 24-hour window of observed hours before reporting daily confidence, and 168 for weekly. An hour isn't observed while the operator is down, while CPU can't be read, or while the workload is paused without the doorman, so a workload paused every night without wake on request never gets a full day. See [Forecasting](../concepts/forecasting.md#phase-lifecycle).
+The confidence scorer needs a full 24-hour window of observed hours before reporting daily confidence, and 168 for weekly. An hour isn't observed while the operator is down, while CPU can't be read, or while the workload is paused without the doorman, so a workload paused every night without wake on request never gets a full day. `status.prediction.reason` and `message` say what the forecast waits for, and `startsActing` when it's expected to act; see [When It Acts](../concepts/forecasting.md#when-it-acts). With a Prometheus URL, a new workload starts from its history instead: `status.prediction.history` says what came of reading it.
 
 Also check that metrics-server is running and returning data:
 

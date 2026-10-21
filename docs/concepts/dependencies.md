@@ -15,7 +15,7 @@ spec:
     - {namespace: messaging, kind: StatefulSet, name: nats}       # another namespace
   idlePolicy:
     idleAfter: 1h
-  prediction: {}                                                  # default confidence
+  prediction: {}                                                  # the default, balanced
 ```
 
 With the label instead, set `hybernate.io/depends-on: "statefulset/postgres, messaging/statefulset/nats"` on the workload; see [Opting In](../guides/opt-in.md#settings).
