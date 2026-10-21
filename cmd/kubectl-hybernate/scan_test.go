@@ -325,6 +325,31 @@ func TestWriteTable_HistoryWithNothingToSleep(t *testing.T) {
 		"Replaying the last 30 hours, no unmanaged workload would have slept.")
 }
 
+// The window is the history actually replayed, said as people say it.
+func TestReplayedOver(t *testing.T) {
+	tests := map[float64]string{0: "", 0.01: "the last minute", 0.5: "the last 30 minutes", 1: "the last hour",
+		5: "the last 5 hours", 30: "the last 30 hours", 168: "the last 7 days", 720: "the last 30 days"}
+	for hours, want := range tests {
+		assert.Equal(t, want, replayedOver(&discovery.HistorySource{Hours: hours}), hours)
+	}
+	assert.Empty(t, replayedOver(nil))
+}
+
+// With half an hour of history the headline says half an hour, not "1
+// hours".
+func TestWriteTable_HistoryOfMinutes(t *testing.T) {
+	cluster := sampleCluster()
+	cluster.Mode = discovery.ModeHistory
+	cluster.History = &discovery.HistorySource{Hours: 0.5}
+	cluster.Totals.Replayed = discovery.ReplayTotals{Workloads: 2}
+	var out bytes.Buffer
+
+	require.NoError(t, writeScan(&out, cluster, scanOptions{output: "table"}))
+
+	assert.Contains(t, out.String(), "Replaying the last 30 minutes, ")
+	assert.NotContains(t, out.String(), "1 hours")
+}
+
 func TestHistoryAccess(t *testing.T) {
 	forbidden := &discovery.ProxyForbiddenError{Namespace: "monitoring", Service: "prometheus-operated", Port: "web"}
 	tests := []struct {

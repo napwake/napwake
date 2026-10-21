@@ -163,6 +163,20 @@ func TestWriteHTML_History(t *testing.T) {
 	assert.NotContains(t, got, "<link", "nothing loads from elsewhere")
 }
 
+// Every place the report names the window says what was replayed, in the
+// same words: the subtitle, the summary, and the glossary.
+func TestWriteHTML_WindowReplayed(t *testing.T) {
+	result := historyResult()
+	result.History.Hours = 0.5
+
+	got := renderHTML(t, result)
+
+	assert.Contains(t, got, "Based on the last 30 minutes of Prometheus history")
+	assert.Contains(t, got, "would have slept over the last 30 minutes")
+	assert.Contains(t, got, "or from history over the last 30 minutes for an unmanaged one")
+	assert.NotContains(t, got, "1 hours")
+}
+
 // A workload that ran four pods all week and runs one now could free more
 // a month than it costs now. The share is of what it cost over the same
 // history, so it's never over 100%.

@@ -44,8 +44,29 @@ type HistorySource struct {
 	Prometheus string    `json:"prometheus"`
 	Since      time.Time `json:"since,omitzero"`
 	// Hours is how much history the replay covered, which is less than the
-	// window asked for when Prometheus keeps less.
+	// window asked for when Prometheus has less.
 	Hours float64 `json:"hours"`
+}
+
+// Span is how much history the replay covered, as people say it: "30
+// minutes", "5 hours", "7 days"; "" when it covered none.
+func (h *HistorySource) Span() string {
+	if h == nil || h.Hours <= 0 {
+		return ""
+	}
+	return spelled(time.Duration(h.Hours * float64(time.Hour)))
+}
+
+// spelled says how long d is in the largest unit that reads naturally, to
+// the nearest one: minutes under an hour, hours under two days, then days.
+func spelled(d time.Duration) string {
+	if minutes := int(d.Round(time.Minute) / time.Minute); minutes < 60 {
+		return plural(max(minutes, 1), "minute", "minutes")
+	}
+	if hours := int(d.Round(time.Hour) / time.Hour); hours < 48 {
+		return plural(hours, "hour", "hours")
+	}
+	return plural(int(d.Round(24*time.Hour)/(24*time.Hour)), "day", "days")
 }
 
 // History is what replaying the activity clock over a workload's recorded

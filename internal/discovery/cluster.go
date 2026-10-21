@@ -375,8 +375,8 @@ func (s *Scanner) ScanCluster(ctx context.Context, opts ClusterOptions) (*Cluste
 		report.Notes = append(report.Notes, "the history replay sees CPU and rollouts only; requests and activity "+
 			"annotations aren't in Prometheus, so a workload used with little CPU can look like it would sleep more than it would")
 		if covered := opts.Now().Sub(since); covered < opts.Window-historyStep(opts.Window) {
-			report.Notes = append(report.Notes, fmt.Sprintf("Prometheus keeps %s of history, so the replay covers that, not the %s asked for",
-				duration(covered), duration(opts.Window)))
+			report.Notes = append(report.Notes, fmt.Sprintf("the replay covers %s, not the %s asked for: that's "+
+				"all the CPU history Prometheus has of the namespaces scanned", spelled(covered), spelled(opts.Window)))
 		}
 	}
 	if len(historyOutOfTime) > 0 {

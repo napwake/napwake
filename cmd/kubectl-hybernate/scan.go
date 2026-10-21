@@ -667,16 +667,14 @@ func writeHeadline(p *printer, t discovery.Totals, replayed string) {
 	p.line("")
 }
 
-// replayedOver says what a cluster's history replay covered, or "" when
-// it had none.
+// replayedOver says what a cluster's history replay covered, such as "the
+// last 7 days" or "the last hour", or "" when it had none.
 func replayedOver(h *discovery.HistorySource) string {
-	if h == nil || h.Hours == 0 {
+	span := h.Span()
+	if span == "" {
 		return ""
 	}
-	if h.Hours >= 48 {
-		return fmt.Sprintf("the last %d days", int(h.Hours/24+0.5))
-	}
-	return fmt.Sprintf("the last %d hours", int(h.Hours+0.5))
+	return "the last " + strings.TrimPrefix(span, "1 ")
 }
 
 // hoursTotal writes a number of hours with thousands separated.
