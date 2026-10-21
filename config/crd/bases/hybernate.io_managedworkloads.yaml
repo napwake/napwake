@@ -309,6 +309,21 @@ spec:
                 description: Activity tracks when the workload was last active, for
                   idle detection.
                 properties:
+                  forecastBusyFrom:
+                    description: |-
+                      ForecastBusyFrom is the start of the hour the forecast expects demand
+                      in, while it keeps the workload from pausing, as the IdleVetoed
+                      condition says.
+                    format: date-time
+                    type: string
+                  heldByDependents:
+                    description: |-
+                      HeldByDependents are the awake workloads that use this one, as
+                      namespace/name, while they keep it from pausing, as the
+                      HeldByDependents condition says: at most 10, the first by name.
+                    items:
+                      type: string
+                    type: array
                   lastActivitySource:
                     description: LastActivitySource is what produced LastActivityTime.
                     enum:
