@@ -27,6 +27,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	v1alpha1 "github.com/okedeji/hybernate/api/v1alpha1"
+	"github.com/okedeji/hybernate/internal/gitops"
 )
 
 // listed is one kind of object listed across the cluster at once, by
@@ -54,6 +55,9 @@ type clusterReads struct {
 	services     listed[corev1.Service]
 	// configMaps are only those the workloads take variables from.
 	configMaps listed[corev1.ConfigMap]
+	// gitOps tells whether the GitOps tools that set workloads' replicas
+	// are told to leave them, reading each tool's settings once.
+	gitOps *gitops.Checker
 }
 
 // readAcross lists each kind the scan reads across the cluster, keeping

@@ -23,6 +23,7 @@ import (
 	"path"
 	"slices"
 	"strings"
+	"sync"
 	"time"
 
 	appsv1 "k8s.io/api/apps/v1"
@@ -91,8 +92,10 @@ var applicationList = schema.GroupVersionKind{Group: "argoproj.io", Version: "v1
 // replicas from Git. For Argo CD, which owns them even once it's told to
 // ignore them, its Application and argocd-cm say whether it is. Each is read
 // once, however many workloads are checked, with the reader's own access:
-// one it may not read leaves the answer MayUndo.
+// one it may not read leaves the answer MayUndo. It's safe for concurrent
+// use.
 type Checker struct {
+	mu      sync.Mutex
 	r       client.Reader
 	listed  bool
 	apps    []unstructured.Unstructured
@@ -119,6 +122,8 @@ func NewChecker(r client.Reader) *Checker {
 // Replicas says who sets the workload's replicas, and whether they'll undo
 // a pause.
 func (c *Checker) Replicas(ctx context.Context, workload client.Object) Replicas {
+	c.mu.Lock()
+	defer c.mu.Unlock()
 	writer, found := ReplicasWriter(workload.GetManagedFields())
 	if !found || !writer.FromGit() {
 		return Replicas{Writer: writer, Undo: Leaves}

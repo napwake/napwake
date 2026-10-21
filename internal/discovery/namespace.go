@@ -162,8 +162,10 @@ func (s *Scanner) scanNamespace(ctx, historyCtx context.Context, namespace strin
 			Protected: protected,
 			Platform:  platform[string(wl.kind)+"/"+obj.GetName()],
 		}
-		writer, _ := gitops.ReplicasWriter(obj.GetManagedFields())
-		w.ReplicasFromGit = string(writer.Tool)
+		if r := reads.gitOps.Replicas(ctx, obj); r.Writer.FromGit() {
+			w.ReplicasFromGit, w.GitOpsUnchecked = string(r.Writer.Tool), r.Unread
+			w.GitOpsLeavesReplicas = r.Undo == gitops.Leaves
+		}
 		rollouts := owners.rollouts[obj.GetUID()]
 		if len(rollouts) > 0 {
 			last := slices.MaxFunc(rollouts, func(a, b time.Time) int { return a.Compare(b) }).UTC()

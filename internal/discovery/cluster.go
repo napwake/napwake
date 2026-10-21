@@ -33,6 +33,7 @@ import (
 
 	v1alpha1 "github.com/okedeji/hybernate/api/v1alpha1"
 	"github.com/okedeji/hybernate/internal/cost"
+	"github.com/okedeji/hybernate/internal/gitops"
 )
 
 // State is how a scan judges a workload's use.
@@ -162,6 +163,12 @@ type Workload struct {
 	// ReplicasFromGit is the GitOps tool that last set its replicas from
 	// Git, which would undo every pause until it's told to leave them.
 	ReplicasFromGit string `json:"replicasFromGit,omitempty"`
+	// GitOpsLeavesReplicas is set when that tool is told to leave the
+	// replicas to Hybernate, so it won't undo a pause.
+	GitOpsLeavesReplicas bool `json:"gitOpsLeavesReplicas,omitempty"`
+	// GitOpsUnchecked says why whether that tool is told to leave the
+	// replicas couldn't be checked, when it couldn't.
+	GitOpsUnchecked string `json:"gitOpsUnchecked,omitempty"`
 	// OnSpot means a pod of it is on a spot node priced at its type's spot
 	// price, or, with none on a node, Hybernate last priced it at spot.
 	// SpotAtOnDemand means one is on a spot node of a type without a spot
@@ -314,6 +321,7 @@ func (s *Scanner) ScanCluster(ctx context.Context, opts ClusterOptions) (*Cluste
 	if opts.AllNamespaces {
 		reads = s.readAcross(ctx, opts.Namespaces)
 	}
+	reads.gitOps = gitops.NewChecker(s.client)
 	historyCtx, cancel := historyBudget(ctx)
 	defer cancel()
 	scans, unscanned := s.scanNamespaces(ctx, historyCtx, reads, pricing, opts)
@@ -458,21 +466,33 @@ func (s *Scanner) scanNamespaces(ctx, historyCtx context.Context, reads *cluster
 }
 
 // gitOpsNotes say which workloads have replicas set from Git, which their
-// GitOps tool would set again after each pause, and where the fix is.
+// GitOps tool would set again after each pause, and where the fix is: one
+// note for each tool, and for each reason it couldn't be checked whether
+// the tool is told to leave them.
 func gitOpsNotes(workloads []Workload) []string {
-	byTool := map[string][]string{}
+	type by struct{ tool, unchecked string }
+	names := map[by][]string{}
 	for _, w := range workloads {
-		if w.ReplicasFromGit != "" {
-			byTool[w.ReplicasFromGit] = append(byTool[w.ReplicasFromGit], w.Namespace+"/"+w.Name)
+		if w.ReplicasFromGit != "" && !w.GitOpsLeavesReplicas {
+			key := by{w.ReplicasFromGit, w.GitOpsUnchecked}
+			names[key] = append(names[key], w.Namespace+"/"+w.Name)
 		}
 	}
-	tools := slices.Sorted(maps.Keys(byTool))
-	notes := make([]string, 0, len(tools))
-	for _, tool := range tools {
-		names := byTool[tool]
-		notes = append(notes, fmt.Sprintf("%s set from Git by %s, which would undo every pause: %s. "+
-			"Have %s leave the replicas to Hybernate first: %s", plural(len(names), "workload has its replicas",
-			"workloads have their replicas"), tool, listSome(names), tool, gitOpsGuide))
+	keys := slices.SortedFunc(maps.Keys(names), func(a, b by) int {
+		return cmp.Or(cmp.Compare(a.tool, b.tool), cmp.Compare(a.unchecked, b.unchecked))
+	})
+	notes := make([]string, 0, len(keys))
+	for _, key := range keys {
+		subject := plural(len(names[key]), "workload has its replicas", "workloads have their replicas")
+		if key.unchecked == "" {
+			notes = append(notes, fmt.Sprintf("%s set from Git by %s, which would undo every pause: %s. "+
+				"Have %s leave the replicas to Hybernate first: %s", subject, key.tool, listSome(names[key]),
+				key.tool, gitOpsGuide))
+			continue
+		}
+		notes = append(notes, fmt.Sprintf("%s set from Git by %s, and whether it's told to leave them to "+
+			"Hybernate couldn't be checked: %s. If it isn't, it would undo every pause: %s. See %s", subject,
+			key.tool, key.unchecked, listSome(names[key]), gitOpsGuide))
 	}
 	return notes
 }
