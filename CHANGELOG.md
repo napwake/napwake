@@ -114,6 +114,7 @@ The relaunch. The 0.1.x releases were early experiments, and 0.2.0 is a fresh st
 - A paused workload scaled up outside Hybernate wakes: whoever did it wants it running, so it goes back to Running and its idle clock starts again (`lastActivitySource: scaled-up`). `status.lastScaledUp` records when, how many replicas, and the field manager that did it, or `unknown` for a scale through the scale subresource, which records none. Hybernate doesn't manage the replica count of a running workload, so changes by its team or an autoscaler are left alone. `hybernate_external_scale_ups_total{by}` counts them, by the GitOps tool or `other`
 - Events are emitted through the `events.k8s.io/v1` API (`events.EventRecorder`) instead of the deprecated `record.EventRecorder`. Each event now carries an action (e.g. `Pause`, `EvaluateIdle`, `CheckReplicas`). The operator's ClusterRole gains `create`/`patch` on `events.k8s.io` events; the Helm chart and kustomize RBAC include it
 - Events and condition messages from the operator and the doorman give durations as people say them, such as `90 seconds`, `5 minutes`, `1 hour 30 minutes` or `4 days`, instead of Go's `5m0s` and `96h12m`
+- The `IdleDetected` event says in words what the workload has been idle since, and in dry-run that it would have paused rather than that it pauses: `[dry-run] api: idle for 1 hour, since its last rollout; would have paused`
 
 ### Fixed
 

@@ -665,8 +665,12 @@ func (r *Reconciler) reconcileIdleClock(ctx context.Context, workload *v1alpha1.
 		if workload.Spec.DryRun {
 			opmetrics.DryrunActions.WithLabelValues("idle_pause").Inc()
 		}
+		outcome := "pausing"
+		if workload.Spec.DryRun {
+			outcome = "would have paused"
+		}
 		r.emitEvent(workload, workload.Spec.DryRun, "Normal", ReasonIdleDetected, actionEvaluateIdle,
-			"no activity for %s, last seen from %s; pause", human.Duration(idleFor), workload.Status.Activity.LastActivitySource)
+			"idle for %s, %s; %s", human.Duration(idleFor), sinceActivity(workload.Status.Activity.LastActivitySource), outcome)
 	}
 
 	if workload.Spec.DryRun {
@@ -676,6 +680,33 @@ func (r *Reconciler) reconcileIdleClock(ctx context.Context, workload *v1alpha1.
 		return &ctrl.Result{RequeueAfter: until.Sub(now)}, nil
 	}
 	return r.handlePause(ctx, workload, target, nil)
+}
+
+// sinceActivity says what a workload has been idle since, from what last
+// restarted its clock.
+func sinceActivity(source v1alpha1.ActivitySource) string {
+	switch source {
+	case v1alpha1.ActivitySourceCreated:
+		return "since Hybernate started managing it"
+	case v1alpha1.ActivitySourceWoke:
+		return "since it woke"
+	case v1alpha1.ActivitySourceRequest:
+		return "since a request woke it"
+	case v1alpha1.ActivitySourceCPU:
+		return "since its CPU use was last above the activity threshold"
+	case v1alpha1.ActivitySourceRollout:
+		return "since its last rollout"
+	case v1alpha1.ActivitySourceAnnotation:
+		return "since its last activity annotation"
+	case v1alpha1.ActivitySourcePrometheus:
+		return "since a Prometheus activity query last found activity"
+	case v1alpha1.ActivitySourceUnobserved:
+		return "since Hybernate could last watch it"
+	case v1alpha1.ActivitySourceScaledUp:
+		return "since it was scaled up outside Hybernate"
+	default:
+		return fmt.Sprintf("since its last activity (%s)", source)
+	}
 }
 
 // activeSinceClockRanOut reports whether there has been activity since the

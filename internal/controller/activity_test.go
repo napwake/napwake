@@ -124,6 +124,41 @@ func TestActivityClock_PausesAfterIdleAfter(t *testing.T) {
 	assert.Equal(t, v1alpha1.PhasePaused, workload.Status.Phase)
 }
 
+// The IdleDetected event says, in words, how long the workload has been
+// idle, since what, and what Hybernate does about it: in dry-run, only what
+// it would have done.
+func TestActivityClock_IdleDetectedSaysWhatHappens(t *testing.T) {
+	tests := []struct {
+		name   string
+		dryRun bool
+		source v1alpha1.ActivitySource
+		want   string
+	}{
+		{name: "dry-run", dryRun: true, source: v1alpha1.ActivitySourceCreated,
+			want: "[dry-run] api: idle for 2 hours, since Hybernate started managing it; would have paused"},
+		{name: "pausing", source: v1alpha1.ActivitySourceRequest,
+			want: "api: idle for 2 hours, since a request woke it; pausing"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			target := clockTarget("app:v1", nil)
+			workload := clockWorkload(fixedTime.Add(-2*time.Hour), target)
+			workload.Spec.DryRun = tt.dryRun
+			workload.Status.Activity.LastActivitySource = tt.source
+			metrics := idleCPU
+			r := newAutomationReconciler(t, workload, &stubForecaster{phase: forecast.Observing},
+				automationOpts{metrics: &metrics, pauser: &stubPauser{pauseDone: true}})
+
+			_, err := r.reconcileAutomation(context.Background(), workload, target)
+			require.NoError(t, err)
+
+			idle := recorded(r.Recorder.(*events.FakeRecorder), ReasonIdleDetected)
+			require.Len(t, idle, 1)
+			assert.True(t, strings.HasSuffix(idle[0], tt.want), "got %q", idle[0])
+		})
+	}
+}
+
 func TestActivityClock_StaysAwake(t *testing.T) {
 	stale := fixedTime.Add(-61 * time.Minute)
 

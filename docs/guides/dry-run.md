@@ -122,7 +122,7 @@ kubectl describe managedworkload my-api -n staging
 When the clock runs out, and when activity ends the would-be pause:
 
 ```
-[dry-run] my-api: no activity for 1 hour, last seen from cpu; pause
+[dry-run] my-api: idle for 1 hour, since its CPU use was last above the activity threshold; would have paused
 [dry-run] my-api: activity resumed (cpu): would have slept 3 hours 12 minutes, freeing $0.25; since Oct 1: would have paused 4 times, slept 4 days, freeing $7.50
 ```
 
