@@ -109,7 +109,13 @@ learnedDependencies:
     - {namespace: preview-42, kind: StatefulSet, name: redis, source: wake}
 ```
 
-with a `DependenciesLearned` event when the set changes. They're learned again when the pod template changes, and hourly for ConfigMaps changed since. Secrets are never read, so an address set only in a Secret isn't learned from the environment.
+with a `DependenciesLearned` event when the set changes. The event says of each whether it's woken with the workload, which only a dependency Hybernate manages is, in a namespace that [allows it](#across-namespaces). Opt the dependency in too to have them paused and woken together:
+
+```
+api: depends on preview-42/postgres (PGHOST), which Hybernate doesn't manage, so isn't woken with api: opt it in to have them paused and woken together
+```
+
+They're learned again when the pod template changes, and hourly for ConfigMaps changed since. Secrets are never read, so an address set only in a Secret isn't learned from the environment.
 
 **From wakes, too.** When a request wakes a paused workload, the [doorman](wake-on-request.md) records where it came from, and the operator finds the pod that sent it. If that pod belongs to a workload Hybernate manages, that workload depends on the one it woke, and the link is learned with `source: wake`. That covers addresses in Secrets, built in code, or read from files, the first time they're used. A request from a workload Hybernate doesn't manage, such as an ingress controller, or from a pod on the node's network, teaches nothing. Only an address the doorman wrote counts: the operator checks, from the field managers the API server records, that `hybernate.io/last-request-from` was set under Hybernate's own, so one set by hand teaches nothing, and the chart's admission policy refuses anyone but the doorman setting it at all. The sender is only looked for in the woken workload's namespace and those its [`hybernate.io/dependents-from`](#across-namespaces) allows. Links learned from wakes are kept when the environment is read again, for 14 days after the last request that woke the dependency: `lastSeen` records it, at most once a day. While a link is kept, the dependency is held awake with the workload and woken with it, so the workload's requests no longer reach the doorman and don't renew the link. A link in steady use is dropped too, 14 days after it was learned or last renewed, and learned again from the next request that wakes the dependency, at the cost of that request's cold start, about once a fortnight. A one-off call, such as someone's `curl` from a pod, is forgotten the same way, so it doesn't tie two workloads together for good.
 
