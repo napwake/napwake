@@ -162,9 +162,11 @@ type Workload struct {
 	// ReplicasFromGit is the GitOps tool that last set its replicas from
 	// Git, which would undo every pause until it's told to leave them.
 	ReplicasFromGit string `json:"replicasFromGit,omitempty"`
-	// OnSpot means a pod of it is on a spot node, priced at on-demand, so it
-	// costs less than shown.
-	OnSpot bool `json:"onSpot,omitempty"`
+	// OnSpot means a pod of it is on a spot node priced at its type's spot
+	// price, and SpotAtOnDemand that one is on a spot node of a type without
+	// a spot price, priced on-demand, so it costs less than shown.
+	OnSpot         bool `json:"onSpot,omitempty"`
+	SpotAtOnDemand bool `json:"spotAtOnDemand,omitempty"`
 	// rates are what it's priced at.
 	rates cost.Rates
 	// History is what replaying the activity clock over its recorded CPU

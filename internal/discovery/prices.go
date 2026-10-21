@@ -41,13 +41,18 @@ type Prices struct {
 	NodesUnread string `json:"nodesUnread,omitempty"`
 }
 
-// NodeTypePrice is one node type in the cluster and its list price.
+// NodeTypePrice is one node type in the cluster, on-demand or spot, and its
+// list price.
 type NodeTypePrice struct {
-	Provider      string  `json:"provider,omitempty"`
-	InstanceType  string  `json:"instanceType"`
-	Region        string  `json:"region"`
+	Provider     string `json:"provider,omitempty"`
+	InstanceType string `json:"instanceType"`
+	Region       string `json:"region"`
+	// Spot says these nodes are spot or preemptible capacity, and AtSpot
+	// that they're priced at their type's spot price. Spot nodes of a type
+	// without one are priced on-demand.
+	Spot          bool    `json:"spot,omitempty"`
+	AtSpot        bool    `json:"atSpot,omitempty"`
 	Nodes         int     `json:"nodes"`
-	SpotNodes     int     `json:"spotNodes,omitempty"`
 	Listed        bool    `json:"listed"`
 	CPUPerHour    float64 `json:"cpuPerHour,omitempty"`
 	MemoryPerHour float64 `json:"memoryPerHour,omitempty"`
@@ -64,7 +69,9 @@ type nodePricing struct {
 type nodePrice struct {
 	rates  cost.Rates
 	listed bool
-	spot   bool
+	// spot says the node is spot capacity, and atSpot that it's priced at
+	// its type's spot price.
+	spot, atSpot bool
 }
 
 // readNodePrices prices the cluster's nodes from their labels. The nodes
@@ -84,19 +91,16 @@ func (s *Scanner) readNodePrices(ctx context.Context) (nodePricing, Prices) {
 	for _, node := range nodes {
 		t := cost.NodeTypeOf(node.Labels)
 		p, listed := cost.ListPriceOf(t)
-		pricing.byNode[node.Name] = nodePrice{rates: p.Rates, listed: listed, spot: t.Spot}
+		pricing.byNode[node.Name] = nodePrice{rates: p.Rates, listed: listed, spot: t.Spot, atSpot: p.Spot}
 
-		key := cost.NodeType{InstanceType: t.InstanceType, Region: t.Region}
-		entry, ok := byType[key]
+		entry, ok := byType[t]
 		if !ok {
-			entry = &NodeTypePrice{InstanceType: t.InstanceType, Region: t.Region, Listed: listed,
-				Provider: p.Provider, CPUPerHour: p.Rates.CPUPerHour, MemoryPerHour: p.Rates.MemoryPerHour}
-			byType[key] = entry
+			entry = &NodeTypePrice{InstanceType: t.InstanceType, Region: t.Region, Spot: t.Spot, AtSpot: p.Spot,
+				Listed: listed, Provider: p.Provider, CPUPerHour: p.Rates.CPUPerHour,
+				MemoryPerHour: p.Rates.MemoryPerHour}
+			byType[t] = entry
 		}
 		entry.Nodes++
-		if t.Spot {
-			entry.SpotNodes++
-		}
 	}
 
 	var prices Prices
@@ -104,10 +108,9 @@ func (s *Scanner) readNodePrices(ctx context.Context) (nodePricing, Prices) {
 		prices.NodeTypes = append(prices.NodeTypes, *entry)
 	}
 	slices.SortFunc(prices.NodeTypes, func(a, b NodeTypePrice) int {
-		if c := cmp.Compare(b.Nodes, a.Nodes); c != 0 {
-			return c
-		}
-		return cmp.Compare(a.InstanceType+" "+a.Region, b.InstanceType+" "+b.Region)
+		return cmp.Or(cmp.Compare(b.Nodes, a.Nodes),
+			cmp.Compare(a.InstanceType+" "+a.Region, b.InstanceType+" "+b.Region),
+			cmp.Compare(boolRank(a.Spot), boolRank(b.Spot)))
 	})
 	for _, t := range prices.NodeTypes {
 		if t.Listed {
@@ -141,16 +144,25 @@ func (s *Scanner) listNodes(ctx context.Context) ([]metav1.PartialObjectMetadata
 	}
 }
 
+func boolRank(b bool) int {
+	if b {
+		return 1
+	}
+	return 0
+}
+
 // ratesFor is what a workload is priced at: the listed nodes its pods are
-// on. With no pod on a node, such as one Hybernate paused, it's what
-// Hybernate recorded of the nodes it last ran on, or else the cluster's
-// most common node type. Pods only on nodes the table doesn't have, and
-// everything else, get the scan's rates. Prices the user gave override
-// each part. It also says whether any of its pods is on a spot node.
+// on, spot ones at their spot price. With no pod on a node, such as one
+// Hybernate paused, it's what Hybernate recorded of the nodes it last ran
+// on, or else the cluster's most common node type. Pods only on nodes the
+// table doesn't have, and everything else, get the scan's rates. Prices the
+// user gave override each part. It also says whether any of its pods is on
+// a spot node priced at spot, and any on a spot node of a type without a
+// spot price, priced on-demand.
 func (p nodePricing) ratesFor(pods []corev1.Pod, mw *v1alpha1.ManagedWorkload, opts ClusterOptions) (
-	cost.Rates, bool) {
+	rates cost.Rates, atSpot, spotAtOnDemand bool) {
 	var listed []cost.Rates
-	spot, scheduled := false, false
+	scheduled := false
 	for _, pod := range pods {
 		if pod.DeletionTimestamp != nil {
 			continue
@@ -160,13 +172,14 @@ func (p nodePricing) ratesFor(pods []corev1.Pod, mw *v1alpha1.ManagedWorkload, o
 			continue
 		}
 		scheduled = true
-		spot = spot || n.spot
+		atSpot = atSpot || n.atSpot
+		spotAtOnDemand = spotAtOnDemand || (n.spot && !n.atSpot)
 		if n.listed {
 			listed = append(listed, n.rates)
 		}
 	}
 
-	rates := opts.Rates
+	rates = opts.Rates
 	switch {
 	case len(listed) > 0:
 		rates = cost.Mean(listed)
@@ -177,6 +190,8 @@ func (p nodePricing) ratesFor(pods []corev1.Pod, mw *v1alpha1.ManagedWorkload, o
 		if r.CPUPerHour != nil && r.MemoryPerHour != nil {
 			rates.CPUPerHour = r.CPUPerHour.AsApproximateFloat64()
 			rates.MemoryPerHour = r.MemoryPerHour.AsApproximateFloat64()
+			atSpot = mw.Status.Cost.ListPrice == v1alpha1.ListPriceSpot ||
+				mw.Status.Cost.ListPrice == v1alpha1.ListPriceSpotAndOnDemand
 		}
 	case p.typical != nil:
 		rates = *p.typical
@@ -187,5 +202,5 @@ func (p nodePricing) ratesFor(pods []corev1.Pod, mw *v1alpha1.ManagedWorkload, o
 	if opts.OwnMemoryPrice {
 		rates.MemoryPerHour = opts.Rates.MemoryPerHour
 	}
-	return rates, spot
+	return rates, atSpot, spotAtOnDemand
 }

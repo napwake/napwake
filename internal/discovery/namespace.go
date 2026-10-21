@@ -199,7 +199,7 @@ func (s *Scanner) scanNamespace(ctx, historyCtx context.Context, namespace strin
 		}
 		w.WontPause = wontPause(obj)
 		w.Clues = clues(w, now)
-		w.rates, w.OnSpot = pricing.ratesFor(running, mw, opts)
+		w.rates, w.OnSpot, w.SpotAtOnDemand = pricing.ratesFor(running, mw, opts)
 		w.HourlyCost = hourlyCost(w, w.rates)
 		w.MonthlyCost = w.HourlyCost * hoursPerMonth
 		w.Measured = measured(mw, w.HourlyCost, now)

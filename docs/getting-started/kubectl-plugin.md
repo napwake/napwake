@@ -81,7 +81,7 @@ Notes:
   - the history replay sees CPU and rollouts only; requests and activity annotations aren't in Prometheus, so a workload used with little CPU can look like it would sleep more than it would
   - 2 workloads set no CPU requests, so their use can't be measured: kube-tools/agent, ops/exporter
 
-Costs use the on-demand list prices of the cluster's 4 node types (m6i.xlarge, m6i.2xlarge, r6i.xlarge and 1 more, AWS us-east-1). 6 workloads run on spot nodes, priced at on-demand, so they cost less than shown.
+Costs use the on-demand and spot list prices of the cluster's 4 node types (m6i.xlarge, m6i.2xlarge, r6i.xlarge and 1 more, AWS us-east-1). 6 workloads run on spot nodes, priced at spot.
 Pass --cpu-price and --memory-price for yours.
 ```
 
@@ -132,9 +132,9 @@ Pass --cpu-price and --memory-price for yours.
 
 **What the numbers mean:**
 
-- Costs are what the workloads' requests cost while running, sidecars included, at the on-demand list price of the nodes each one's pods run on, from their instance type and region; see [Prices](../concepts/cost-tracking.md#prices). A workload with no pod on a node is priced where Hybernate last saw it run, or at the cluster's most common node type. Nodes Hybernate has no list price for, and every workload when your access doesn't allow listing nodes, use assumed prices from AWS on-demand in us-east-1, and the report says which.
+- Costs are what the workloads' requests cost while running, sidecars included, at the list price of the nodes each one's pods run on, from their instance type and region, spot nodes at their spot price; see [Prices](../concepts/cost-tracking.md#prices). A workload with no pod on a node is priced where Hybernate last saw it run, or at the cluster's most common node type. Nodes Hybernate has no list price for, and every workload when your access doesn't allow listing nodes, use assumed prices from AWS on-demand in us-east-1, and the report says which.
 - `--cpu-price` and `--memory-price` set your own prices, which price every workload in place of list prices: use them for discounts, savings plans, or negotiated rates.
-- Spot nodes are priced at on-demand, and the report says how many workloads run on them, since they cost less than shown.
+- Spot and preemptible nodes are priced at their type's spot price, and the report says how many workloads run on them. A spot node of a type its provider doesn't sell as spot is priced at on-demand, and the report names those workloads' node types and says they cost less than shown. JSON gives each workload's `onSpot` and `spotAtOnDemand`, and each node type in `nodePrices` its `spot` and `atSpot`; see [Spot nodes](../concepts/cost-tracking.md#spot-nodes).
 - Without history, the scan shows what idle workloads cost and what each hour asleep frees, not what pausing would free a month: from one moment it can't tell how often a workload would be woken. To measure it once Hybernate is installed, label workloads `hybernate.io/managed=true` and annotate them `hybernate.io/dry-run=true`: Hybernate measures how often it would have paused them, for how long, and what that would have freed, without ever pausing them. The scan then shows it in each one's COULD SLEEP, WAKES, and COULD FREE/MO, with BECAUSE saying since when, a total in the headline, and the `kubectl hybernate enable` command to start pausing. It's from Hybernate's own activity clock, which sees more than the history replay, so it's what to judge going live by.
 - An hour asleep frees capacity; it becomes money only when a node autoscaler removes it. `kubectl hybernate nodes` shows what keeps nodes from scaling down.
 - BECAUSE gives the evidence for the state, then facts such as when a workload was last deployed, if a week or more ago.

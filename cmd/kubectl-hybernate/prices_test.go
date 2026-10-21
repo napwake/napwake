@@ -31,6 +31,12 @@ func TestPricesSentence_NodePrices(t *testing.T) {
 		Listed: true}
 	n2 := discovery.NodeTypePrice{Provider: "gcp", InstanceType: "n2-standard-4", Region: "us-central1", Nodes: 1,
 		Listed: true}
+	m6iSpot := discovery.NodeTypePrice{Provider: "aws", InstanceType: "m6i.large", Region: "us-east-1", Nodes: 2,
+		Listed: true, Spot: true, AtSpot: true}
+	e2Spot := discovery.NodeTypePrice{Provider: "gcp", InstanceType: "e2-standard-2", Region: "europe-west1",
+		Nodes: 3, Listed: true, Spot: true, AtSpot: true}
+	hugeSpot := discovery.NodeTypePrice{Provider: "aws", InstanceType: "u7in-32tb.224xlarge", Region: "us-east-1",
+		Nodes: 1, Listed: true, Spot: true}
 	metal := discovery.NodeTypePrice{InstanceType: "custom.metal", Region: "us-east-1", Nodes: 2}
 	unlabelled := discovery.NodeTypePrice{Nodes: 1}
 	tests := []struct {
@@ -74,10 +80,25 @@ func TestPricesSentence_NodePrices(t *testing.T) {
 		{name: "your prices win", prices: prices{CPUPerHour: 0.05, MemoryPerHour: 0.006},
 			nodes: discovery.Prices{NodeTypes: []discovery.NodeTypePrice{m6i}},
 			want:  "Your prices: $0.050 per vCPU-hour and $0.006 per GiB-hour of memory."},
-		{name: "spot", prices: assumed, nodes: discovery.Prices{NodeTypes: []discovery.NodeTypePrice{m6i}},
+		{name: "spot and on-demand", prices: assumed,
+			nodes:     discovery.Prices{NodeTypes: []discovery.NodeTypePrice{m6i, m6iSpot}},
 			workloads: []discovery.Workload{{OnSpot: true}, {}},
-			want: "The on-demand list price of the cluster's nodes (m6i.large, AWS us-east-1). 1 workload runs on spot " +
-				"nodes, priced at on-demand, so it costs less than shown."},
+			want: "The on-demand and spot list prices of the cluster's nodes (m6i.large, AWS us-east-1). 1 workload " +
+				"runs on spot nodes, priced at spot."},
+		{name: "all spot", prices: assumed, nodes: discovery.Prices{NodeTypes: []discovery.NodeTypePrice{e2Spot}},
+			workloads: []discovery.Workload{{OnSpot: true}, {OnSpot: true}},
+			want: "The spot list price of the cluster's nodes (e2-standard-2, Google Cloud europe-west1). 2 workloads " +
+				"run on spot nodes, priced at spot."},
+		{name: "spot without a spot price", prices: assumed,
+			nodes:     discovery.Prices{NodeTypes: []discovery.NodeTypePrice{m6i, hugeSpot}},
+			workloads: []discovery.Workload{{SpotAtOnDemand: true}, {}},
+			want: "The on-demand list prices of the cluster's 2 node types (m6i.large and u7in-32tb.224xlarge, AWS " +
+				"us-east-1). 1 workload runs on spot nodes of a type without a spot price (u7in-32tb.224xlarge), " +
+				"priced at on-demand, so it costs less than shown."},
+		{name: "your prices, spot or not", prices: prices{CPUPerHour: 0.05, MemoryPerHour: 0.006},
+			nodes:     discovery.Prices{NodeTypes: []discovery.NodeTypePrice{m6iSpot}},
+			workloads: []discovery.Workload{{OnSpot: true}},
+			want:      "Your prices: $0.050 per vCPU-hour and $0.006 per GiB-hour of memory."},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -95,6 +116,7 @@ func TestNodeTypesPhrase_Many(t *testing.T) {
 		types = append(types, discovery.NodeTypePrice{Provider: "aws", InstanceType: name, Region: "eu-west-1"})
 	}
 	assert.Equal(t,
-		"list prices of the cluster's 5 node types (m6i.large, m6i.xlarge, r6i.large and 2 more, AWS eu-west-1)",
+		"on-demand list prices of the cluster's 5 node types (m6i.large, m6i.xlarge, r6i.large and 2 more, "+
+			"AWS eu-west-1)",
 		nodeTypesPhrase(types))
 }

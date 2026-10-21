@@ -756,20 +756,36 @@ type CostStatus struct {
 	// +optional
 	PricedTemplateHash string `json:"pricedTemplateHash,omitempty"`
 
-	// ListRates are the on-demand list rates of the nodes the workload's
-	// pods last ran on, from their instance type and region, which its cost,
-	// what it frees and what it saves are priced at unless
-	// costTracking.rates sets its own. Kept while it's paused, so a pause
-	// is priced at where it ran. Unset
-	// when its nodes aren't in Hybernate's price table, and the default
-	// rates apply.
+	// ListRates are the list rates of the nodes the workload's pods last
+	// ran on, from their instance type and region, on-demand or spot as
+	// ListPrice says, which its cost, what it frees and what it saves are
+	// priced at unless costTracking.rates sets its own. Kept while it's
+	// paused, so a pause is priced at where it ran. Unset when its nodes
+	// aren't in Hybernate's price table, and the default rates apply.
 	// +optional
 	ListRates *CostRates `json:"listRates,omitempty"`
+
+	// ListPrice is which list prices ListRates are: OnDemand; Spot, for
+	// pods on spot or preemptible nodes, priced at their type's spot
+	// price; or SpotAndOnDemand, for pods on both. A spot node of a type
+	// without a spot price is priced on-demand. Unset with ListRates.
+	// +optional
+	ListPrice ListPrice `json:"listPrice,omitempty"`
 
 	// ResourceReduction is what the current pause freed on its nodes.
 	// +optional
 	ResourceReduction *ResourceReduction `json:"resourceReduction,omitempty"`
 }
+
+// ListPrice is which list prices a workload's nodes were priced at.
+// +kubebuilder:validation:Enum=OnDemand;Spot;SpotAndOnDemand
+type ListPrice string
+
+const (
+	ListPriceOnDemand        ListPrice = "OnDemand"
+	ListPriceSpot            ListPrice = "Spot"
+	ListPriceSpotAndOnDemand ListPrice = "SpotAndOnDemand"
+)
 
 // ResourceReduction tracks the workload-level resources freed by Hybernate
 // pauses. These resources are released on the

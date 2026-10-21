@@ -113,6 +113,7 @@ func startMonth(c *v1alpha1.CostStatus, now time.Time) {
 		PricedAt:           c.PricedAt,
 		PricedTemplateHash: c.PricedTemplateHash,
 		ListRates:          c.ListRates,
+		ListPrice:          c.ListPrice,
 	}
 	if last.Time.Before(month) {
 		c.LastAccumulatedAt = &metav1.Time{Time: month}
@@ -279,14 +280,15 @@ func addHours(q *resource.Quantity, perHour float64, elapsed time.Duration) floa
 	return float64(n) / 1e9
 }
 
-// recordListRates notes what the nodes the workload runs on cost, which it's
-// priced at from then on, including while it's paused. Without a pod on a
-// node there's nothing new to price, so the last rates are kept.
+// recordListRates notes what the nodes the workload runs on cost, spot
+// nodes at spot, and which prices those are, which it's priced at from then
+// on, including while it's paused. Without a pod on a node there's nothing
+// new to price, so the last rates are kept.
 func (r *Reconciler) recordListRates(ctx context.Context, workload *v1alpha1.ManagedWorkload) {
 	if r.prices == nil {
 		return
 	}
-	rates, listed, err := r.prices.ListRates(ctx, workload)
+	rates, price, err := r.prices.ListRates(ctx, workload)
 	if errors.Is(err, metrics.ErrNoScheduledPods) {
 		return
 	}
@@ -295,14 +297,16 @@ func (r *Reconciler) recordListRates(ctx context.Context, workload *v1alpha1.Man
 			"namespace", workload.Namespace, "error", err.Error())
 		return
 	}
-	if !listed {
-		workload.Status.Cost.ListRates = nil
+	c := workload.Status.Cost
+	if price == "" {
+		c.ListRates, c.ListPrice = nil, ""
 		return
 	}
-	workload.Status.Cost.ListRates = &v1alpha1.CostRates{
+	c.ListRates = &v1alpha1.CostRates{
 		CPUPerHour:    microQuantity(rates.CPUPerHour),
 		MemoryPerHour: microQuantity(rates.MemoryPerHour),
 	}
+	c.ListPrice = price
 }
 
 // microQuantity keeps a rate to a millionth of a dollar: a GiB-hour costs

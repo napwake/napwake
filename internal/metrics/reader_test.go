@@ -194,7 +194,8 @@ func deleting(pod *corev1.Pod) *corev1.Pod {
 	return pod
 }
 
-// A workload is priced at the nodes its pods are on, averaged over them.
+// A workload is priced at the nodes its pods are on, spot ones at spot,
+// averaged over them.
 func TestReader_ListRates(t *testing.T) {
 	scheme := runtime.NewScheme()
 	require.NoError(t, appsv1.AddToScheme(scheme))
@@ -213,24 +214,33 @@ func TestReader_ListRates(t *testing.T) {
 	}
 	small, _ := cost.ListPriceOf(cost.NodeType{InstanceType: "m6i.large", Region: "us-east-1"})
 	large, _ := cost.ListPriceOf(cost.NodeType{InstanceType: "r6i.4xlarge", Region: "us-east-1"})
+	spot, _ := cost.ListPriceOf(cost.NodeType{InstanceType: "m6i.large", Region: "us-east-1", Spot: true})
+	require.True(t, spot.Spot)
+	spotNode := pricedNode("spot", "m6i.large", "us-east-1")
+	spotNode.Labels["karpenter.sh/capacity-type"] = "spot"
 	nodes := []client.Object{pricedNode("small", "m6i.large", "us-east-1"),
-		pricedNode("large", "r6i.4xlarge", "us-east-1"), pricedNode("metal", "custom.metal", "us-east-1")}
+		pricedNode("large", "r6i.4xlarge", "us-east-1"), pricedNode("metal", "custom.metal", "us-east-1"),
+		spotNode}
 
 	tests := []struct {
 		name    string
 		pods    []client.Object
 		want    cost.Rates
-		listed  bool
+		price   v1alpha1.ListPrice
 		wantErr error
 	}{
 		{name: "one node type", pods: []client.Object{webPod("a", "small"), webPod("b", "small")},
-			want: small.Rates, listed: true},
+			want: small.Rates, price: v1alpha1.ListPriceOnDemand},
 		{name: "averaged over its pods", pods: []client.Object{webPod("a", "small"), webPod("b", "large")},
-			want: cost.Mean([]cost.Rates{small.Rates, large.Rates}), listed: true},
+			want: cost.Mean([]cost.Rates{small.Rates, large.Rates}), price: v1alpha1.ListPriceOnDemand},
 		{name: "unlisted nodes are left out", pods: []client.Object{webPod("a", "small"), webPod("b", "metal")},
-			want: small.Rates, listed: true},
+			want: small.Rates, price: v1alpha1.ListPriceOnDemand},
 		{name: "a pod being deleted is left out", pods: []client.Object{webPod("a", "small"), deleting(webPod("b", "large"))},
-			want: small.Rates, listed: true},
+			want: small.Rates, price: v1alpha1.ListPriceOnDemand},
+		{name: "spot at spot", pods: []client.Object{webPod("a", "spot"), webPod("b", "spot")},
+			want: spot.Rates, price: v1alpha1.ListPriceSpot},
+		{name: "spot and on-demand", pods: []client.Object{webPod("a", "spot"), webPod("b", "small")},
+			want: cost.Mean([]cost.Rates{spot.Rates, small.Rates}), price: v1alpha1.ListPriceSpotAndOnDemand},
 		{name: "only unlisted nodes", pods: []client.Object{webPod("a", "metal")}},
 		{name: "not scheduled yet", pods: []client.Object{webPod("a", "")}, wantErr: ErrNoScheduledPods},
 	}
@@ -239,14 +249,14 @@ func TestReader_ListRates(t *testing.T) {
 			objs := append(append([]client.Object{deploy}, nodes...), tt.pods...)
 			c := fake.NewClientBuilder().WithScheme(scheme).WithObjects(objs...).Build()
 
-			got, listed, err := NewReader(c, c).ListRates(context.Background(), workload)
+			got, price, err := NewReader(c, c).ListRates(context.Background(), workload)
 
 			if tt.wantErr != nil {
 				assert.ErrorIs(t, err, tt.wantErr)
 				return
 			}
 			require.NoError(t, err)
-			assert.Equal(t, tt.listed, listed)
+			assert.Equal(t, tt.price, price)
 			assert.InDelta(t, tt.want.CPUPerHour, got.CPUPerHour, 1e-9)
 			assert.InDelta(t, tt.want.MemoryPerHour, got.MemoryPerHour, 1e-9)
 		})

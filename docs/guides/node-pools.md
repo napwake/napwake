@@ -114,7 +114,7 @@ spec:
 - **`expireAfter`** is under `spec.template.spec` in v1, not under `disruption`.
 - **`limits`** caps what the pool can grow to, so a runaway preview environment can't.
 
-**Spot capacity** suits non-prod: it's interrupted now and then, which a staging environment can live with, and Karpenter picks spot when the requirements allow it. Karpenter deletes spot nodes it can empty by default, but replacing one spot node with a cheaper spot node needs its `SpotToSpotConsolidation` feature gate. Hybernate prices spot nodes at their on-demand list price, so set [`costTracking.rates`](../concepts/cost-tracking.md#custom-rates) if you want freed and saved in what you actually pay.
+**Spot capacity** suits non-prod: it's interrupted now and then, which a staging environment can live with, and Karpenter picks spot when the requirements allow it. Karpenter deletes spot nodes it can empty by default, but replacing one spot node with a cheaper spot node needs its `SpotToSpotConsolidation` feature gate. Hybernate prices spot nodes at their spot list price, so freed and saved are close to what you pay; AWS's spot price moves through the day, which [Spot nodes](../concepts/cost-tracking.md#spot-nodes) explains.
 
 Karpenter also won't consolidate a node whose pods are annotated `karpenter.sh/do-not-disrupt: "true"`, or whose pods' PodDisruptionBudgets allow no disruption. `kubectl hybernate nodes` lists both.
 
