@@ -38,6 +38,12 @@ const (
 	Kluctl Tool = "Kluctl"
 )
 
+// RetryAfter is how long Hybernate waits to pause a workload again after a
+// GitOps tool undid a pause. Pausing is also how it finds out the tool has
+// been told to leave the replicas, so it keeps trying, at the cost of one
+// restart each time until then.
+const RetryAfter = time.Hour
+
 // Writer is the field manager that last set a field, such as a workload's
 // replicas.
 type Writer struct {

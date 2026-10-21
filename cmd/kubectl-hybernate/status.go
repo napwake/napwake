@@ -22,6 +22,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"regexp"
 	"slices"
 	"strings"
 	"text/tabwriter"
@@ -38,6 +39,7 @@ import (
 
 	v1alpha1 "github.com/okedeji/hybernate/api/v1alpha1"
 	"github.com/okedeji/hybernate/internal/discovery"
+	"github.com/okedeji/hybernate/internal/gitops"
 	"github.com/okedeji/hybernate/internal/nodescale"
 )
 
@@ -510,11 +512,11 @@ func nextFor(w *v1alpha1.ManagedWorkload, targetActiveUntil, now time.Time) stri
 	if w.Spec.IdlePolicy == nil {
 		return "never pauses: no idlePolicy"
 	}
-	if meta.IsStatusConditionTrue(conditions, "HeldByDependents") {
-		return "held awake by its dependents"
+	if c := meta.FindStatusCondition(conditions, "HeldByDependents"); c != nil && c.Status == metav1.ConditionTrue {
+		return heldByDependents(c.Message)
 	}
 	if until := later(activeUntil(w.Annotations), targetActiveUntil); until.After(now) {
-		return "held awake for " + span(until.Sub(now))
+		return "held awake for " + span(until.Sub(now)) + " (active-until)"
 	}
 	switch {
 	case meta.IsStatusConditionTrue(conditions, "DependencyCycle"):
@@ -533,17 +535,70 @@ func nextFor(w *v1alpha1.ManagedWorkload, targetActiveUntil, now time.Time) stri
 		verb = "would pause"
 	}
 	pauseAt := a.PauseAt.Time
+	retryAt, heldByGitOps := gitOpsHold(w, now)
+	afterGitOps := "pauses at " + clockTime(retryAt) + " (after GitOps conflict)"
 	switch {
+	case pauseAt.After(now) && heldByGitOps && retryAt.After(pauseAt):
+		return afterGitOps
 	case pauseAt.After(now):
 		return verb + " in " + span(pauseAt.Sub(now))
 	case meta.IsStatusConditionTrue(conditions, "IdleVetoed"):
-		return "held awake by the forecast"
+		return heldByForecast(meta.FindStatusCondition(conditions, "IdleVetoed").Message)
+	case heldByGitOps:
+		return afterGitOps
 	case w.Status.Phase == v1alpha1.PhaseIdle:
 		return verb + " now"
 	case now.Sub(pauseAt) < clockLag:
 		return verb + " soon"
 	}
 	return "overdue to pause"
+}
+
+// gitOpsHold is when the operator pauses a workload again whose last pause
+// a GitOps tool undid, and true until then. Dry-run never pauses, so it
+// has none.
+func gitOpsHold(w *v1alpha1.ManagedWorkload, now time.Time) (time.Time, bool) {
+	s := w.Status.LastScaledUp
+	if w.Spec.DryRun || s == nil || !meta.IsStatusConditionTrue(w.Status.Conditions, "GitOpsConflict") {
+		return time.Time{}, false
+	}
+	until := s.At.Add(gitops.RetryAfter)
+	return until, now.Before(until)
+}
+
+// dependentsAwake starts a HeldByDependents message, before the dependents
+// it names.
+const dependentsAwake = "kept awake for "
+
+// heldByDependents names the dependents that hold a workload awake, until
+// they pause, from its HeldByDependents message, which lists them.
+func heldByDependents(message string) string {
+	names, ok := strings.CutPrefix(oneLine(message), dependentsAwake)
+	switch {
+	case !ok || names == "":
+		return "held awake by its dependents"
+	case strings.Contains(names, ", ") || strings.HasSuffix(names, " more"):
+		return "held awake while " + names + " use it"
+	}
+	return "held awake while " + names + " uses it"
+}
+
+// forecastHour is the hour the forecast expects demand in, in an IdleVetoed
+// message.
+var forecastHour = regexp.MustCompile(`in the hour from (\d{2}:\d{2} UTC)`)
+
+// heldByForecast says when the forecast expects the demand that holds a
+// workload awake, from its IdleVetoed message.
+func heldByForecast(message string) string {
+	if m := forecastHour.FindStringSubmatch(message); m != nil {
+		return "held awake by the forecast: busy from " + m[1]
+	}
+	return "held awake by the forecast"
+}
+
+// clockTime is a time of day in UTC, as the operator's messages give one.
+func clockTime(t time.Time) string {
+	return t.UTC().Format("15:04 UTC")
 }
 
 func later(a, b time.Time) time.Time {
