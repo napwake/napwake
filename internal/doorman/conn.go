@@ -200,11 +200,7 @@ func (h *heldConn) hold(ctx context.Context) (net.Conn, string) {
 	h.head = head
 	req, isHTTP := parseRequest(head)
 
-	// Behind container-native load balancing, the endpoint the load
-	// balancer checks is the forwarder, which is up. Told it isn't, Google's
-	// load balancer sends nothing at all, and nothing would wake the
-	// workload.
-	if isHTTP && h.route.forwarded && isHealthCheck(req, forwarderCheckAgents) {
+	if isHTTP && isHealthCheck(req, failClosedCheckAgents) {
 		_ = h.reply(writeHealthy) // the caller may already have gone
 		return nil, resultIgnored
 	}

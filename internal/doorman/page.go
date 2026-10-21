@@ -154,10 +154,12 @@ var defaultHealthCheckAgents = []string{
 	"Gatus/",
 }
 
-// forwarderCheckAgents are the load balancer health checks a route reached
-// through a forwarder answers as healthy: Google Cloud's, whose container-
-// native load balancing is the only reason for a forwarder.
-var forwarderCheckAgents = []string{"GoogleHC/"}
+// failClosedCheckAgents are the health checks of load balancers that send
+// nothing to a backend failing them: Google Cloud's. Told a paused workload
+// is down, they'd drop every request, so nothing would wake it; they're
+// told it's up, and the doorman holds what they send. Others, such as
+// AWS's, send to every target once all fail, so they hear the truth.
+var failClosedCheckAgents = []string{"GoogleHC/"}
 
 // isHealthCheck reports whether req comes from a health checker or scraper,
 // one whose User-Agent starts with one of agents, or names it as

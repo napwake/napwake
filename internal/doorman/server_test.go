@@ -654,11 +654,11 @@ func TestServer_ProbesAndScrapesDoNotWake(t *testing.T) {
 	}
 }
 
-// Behind GKE container-native load balancing, the load balancer checks the
-// forwarder, which is up. Told otherwise, it sends nothing, and nothing
-// would wake the workload. Every other checker still hears the workload is
-// down, as does Google's checking a Service routed to the doorman directly.
-func TestServer_TellsGooglesLoadBalancerAForwarderIsUp(t *testing.T) {
+// Google's load balancers send nothing to a backend failing their health
+// check, so told a paused workload is down, nothing would wake it: through
+// a forwarder, behind NEGs, or through a node port, behind instance groups.
+// Every other checker still hears the workload is down.
+func TestServer_TellsGooglesLoadBalancerItIsUp(t *testing.T) {
 	googleCheck := "GET /healthz HTTP/1.1\r\nHost: 10.0.0.1\r\nUser-Agent: GoogleHC/1.0\r\n\r\n"
 	kubeProbe := "GET /healthz HTTP/1.1\r\nHost: 10.0.0.1\r\nUser-Agent: kube-probe/1.31\r\n\r\n"
 	tests := []struct {
@@ -669,7 +669,8 @@ func TestServer_TellsGooglesLoadBalancerAForwarderIsUp(t *testing.T) {
 	}{
 		{name: "Google's check of a forwarder", forwarded: true, request: googleCheck, want: http.StatusOK},
 		{name: "another checker through a forwarder", forwarded: true, request: kubeProbe, want: http.StatusServiceUnavailable},
-		{name: "Google's check without a forwarder", request: googleCheck, want: http.StatusServiceUnavailable},
+		{name: "Google's check without a forwarder", request: googleCheck, want: http.StatusOK},
+		{name: "another checker", request: kubeProbe, want: http.StatusServiceUnavailable},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
