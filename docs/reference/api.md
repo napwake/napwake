@@ -4,7 +4,7 @@
 
 **Group:** `hybernate.io` | **Version:** `v1alpha1` | **Kind:** `ManagedWorkload` | **Scope:** Namespaced
 
-`kubectl get managedworkloads` shows each one's `Phase`, what it has `Saved` and `Freed` this month, and its `Age`.
+`kubectl get managedworkloads` shows each one's `Phase`, what pausing it has `Freed` this month and what of that it `Saved`, what dry-run measured it `Would Free`, blank for one that isn't in dry-run, and its `Age`.
 
 ### Spec (`ManagedWorkloadSpec`)
 
@@ -75,10 +75,11 @@ A duration is a Go duration above zero, such as `45s`, `90m` or `1h30m`. Days an
 | `dryRun.pauses` | int32 | Times the workload would have been paused, one under way included |
 | `dryRun.slept` | duration | How long finished would-be pauses lasted in all |
 | `dryRun.freedCPUHours`, `dryRun.freedMemoryHours` | quantity | vCPU-hours and GiB-hours the replicas requested during `slept` |
-| `dryRun.estimatedFreed` | string | Those hours priced, for display: what pausing would have freed |
+| `dryRun.estimatedFreed` | string | Those hours priced, for display, with the would-be pause under way counted up to the last status write: what pausing would have freed. Also the `Would Free` column of `kubectl get managedworkloads` |
 | `dryRun.resources` | `ResourceSnapshot` | What the workload ran when the current would-be pause began |
 | `prediction.dailyPhase`, `prediction.weeklyPhase` | string | Each season's phase: `Observing`, `Suggesting`, or `Active` |
 | `prediction.dailyConfidence`, `prediction.weeklyConfidence` | int | Accuracy % over the last 24 and 168 observed hours |
+| `prediction.timeZone` | string | The IANA time zone the forecast counts hours and weekdays in, the operator's `--timezone` (Helm value `timezone`), such as `Europe/London` |
 | `prediction.state` | string | The engine's learned state, gzipped and base64-encoded |
 | `cost` | `CostStatus` | Cost for the current calendar month, in UTC; see [Cost Tracking](../concepts/cost-tracking.md#status-fields) |
 | `cost.tracked` | duration | How much of the month the totals cover |

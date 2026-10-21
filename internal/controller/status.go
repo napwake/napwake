@@ -52,6 +52,9 @@ func (r *Reconciler) persistStatus(ctx context.Context, workload *v1alpha1.Manag
 func withoutVolatile(status *v1alpha1.ManagedWorkloadStatus) *v1alpha1.ManagedWorkloadStatus {
 	s := status.DeepCopy()
 	s.Cost = nil
+	if s.DryRun != nil {
+		s.DryRun.EstimatedFreed = ""
+	}
 	if s.Activity != nil {
 		s.Activity = &v1alpha1.ActivityStatus{TemplateHash: s.Activity.TemplateHash}
 	}

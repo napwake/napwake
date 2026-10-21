@@ -151,7 +151,7 @@ State that can't be read, from an older version or a hand edit, is discarded wit
 
 ## Wall-Clock Alignment
 
-Seasonal slots are keyed to wall-clock time, not to a running counter. The hour of day and day of week are counted in the operator's timezone (`--timezone`, UTC by default), so business hours stay in their slots when the clocks change for daylight saving. This means:
+Seasonal slots are keyed to wall-clock time, not to a running counter. The hour of day and day of week are counted in the operator's timezone (`--timezone`, the Helm value `timezone`, UTC by default), so business hours stay in their slots when the clocks change for daylight saving. Each workload records it in `status.prediction.timeZone`, and [`kubectl hybernate status`](../getting-started/kubectl-plugin.md#see-what-hybernate-is-doing) shows it. This means:
 
 - If a workload is paused for 6 hours without the doorman, the model doesn't lose alignment. The next observation goes into the correct hour-of-day slot
 - An hour paused behind the doorman is recorded as no demand: that's how the model learns that nights and weekends are quiet

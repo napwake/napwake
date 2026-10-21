@@ -14,9 +14,17 @@ When that was Argo CD, Flux, Rancher Fleet, kapp or Kluctl, the workload also re
 GitOpsConflict=True   Argo CD set the replicas from Git, undoing the pause; Hybernate pauses it again from 14:20 UTC. ...
 ```
 
-along with a `GitOpsConflict` warning event. Hybernate waits an hour before pausing again, so it doesn't restart the workload in a loop with the tool. Pausing again is also how it finds out the fix is in: once a pause holds for an hour, the condition clears with a `GitOpsConflictResolved` event. A pause Hybernate wakes sooner doesn't show the tool has stopped, so the condition stays until a later pause holds for the hour.
+along with a `GitOpsConflict` warning event. Hybernate waits an hour before pausing again, so it doesn't restart the workload in a loop with the tool; [`kubectl hybernate status`](../getting-started/kubectl-plugin.md#see-what-hybernate-is-doing) shows when, as `pauses at 14:20 UTC (after GitOps conflict)`. Pausing again is also how it finds out the fix is in: once a pause holds for an hour, the condition clears with a `GitOpsConflictResolved` event. A pause Hybernate wakes sooner doesn't show the tool has stopped, so the condition stays until a later pause holds for the hour.
 
 Before you opt anything in, [`kubectl hybernate scan`](../getting-started/kubectl-plugin.md#scan-a-cluster) lists the workloads whose replicas are set from Git, by tool.
+
+### Checking the fix is in
+
+[`kubectl hybernate enable`](../getting-started/kubectl-plugin.md#enable-a-workload) and [`pause`](../getting-started/kubectl-plugin.md#pause-a-workload) warn when a GitOps tool will undo pauses, and say nothing once it's told not to:
+
+- **Argo CD** keeps owning the replicas it applied even once it ignores them, so they read the workload's Application, found by its `argocd.argoproj.io/tracking-id` annotation, or the `argocd.argoproj.io/instance` or `app.kubernetes.io/instance` label it tracks by, in the namespace an `<namespace>_<name>` value gives, or in any namespace, or `argocd`. Argo CD leaves the replicas when the Application has `RespectIgnoreDifferences=true` in its sync options and ignores `/spec/replicas` (or `.spec.replicas`, or all of `spec`) for the workload's kind, in its own `spec.ignoreDifferences` or in `argocd-cm`, beside the Application or in `argocd`: a `resource.customizations.ignoreDifferences.apps_Deployment` (or `apps_StatefulSet`, or `all`) key, or the older `resource.customizations` block. The warning gives only the step that's missing. When the Application or `argocd-cm` can't be read, such as without access to Argo CD's namespace, or with Argo CD running in another cluster, it says why, and to make the fix if you haven't already.
+- **Flux, Fleet and Kluctl** set only the fields their manifests have, so they set the replicas exactly when the API server records them as owning `spec.replicas`.
+- **kapp** keeps the replicas a rebase rule tells it to as its own, and the rule isn't on the workload, so the warning says it can't tell.
 
 ## Argo CD
 

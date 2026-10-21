@@ -183,16 +183,22 @@ func writeReport(stdout, stderr io.Writer, result scanResult, opts scanOptions) 
 	if err != nil {
 		return err
 	}
+	showPage(stderr, "Report", path, open)
+	return nil
+}
+
+// showPage says on stderr where a page was written, as label, and opens it
+// in the browser first if asked to.
+func showPage(stderr io.Writer, label, path string, open bool) {
 	if !open {
-		_, _ = fmt.Fprintf(stderr, "Report: %s\n", path)
-		return nil
+		_, _ = fmt.Fprintf(stderr, "%s: %s\n", label, path)
+		return
 	}
 	if err := browse(path); err != nil {
-		_, _ = fmt.Fprintf(stderr, "Report: %s (couldn't open a browser: %v)\n", path, err)
-		return nil
+		_, _ = fmt.Fprintf(stderr, "%s: %s (couldn't open a browser: %v)\n", label, path, err)
+		return
 	}
-	_, _ = fmt.Fprintf(stderr, "Report: %s (opened in your browser; --open=false to skip)\n", path)
-	return nil
+	_, _ = fmt.Fprintf(stderr, "%s: %s (opened in your browser; --open=false to skip)\n", label, path)
 }
 
 // isTerminal reports whether stream, such as stdout or stdin, is a terminal.
@@ -264,20 +270,27 @@ func startOpener(cmd *exec.Cmd, wait time.Duration) error {
 }
 
 // writeHTMLFile writes the report to path, or, without one, to a new
-// temporary file only the user can read, since the report names the
-// cluster's workloads. It returns where it wrote.
+// temporary file. It returns where it wrote.
 func writeHTMLFile(path string, result scanResult, idleAfter time.Duration) (string, error) {
+	return writePage(path, "hybernate-scan-*.html", func(w io.Writer) error { return writeHTML(w, result, idleAfter) })
+}
+
+// writePage writes a page to path, or, without one, to a new temporary file
+// named after pattern, as os.CreateTemp takes it. Either is readable only by
+// the user, since a page names the cluster's workloads. It returns where it
+// wrote.
+func writePage(path, pattern string, write func(io.Writer) error) (string, error) {
 	var f *os.File
 	var err error
 	if path == "" {
-		f, err = os.CreateTemp("", "hybernate-scan-*.html")
+		f, err = os.CreateTemp("", pattern)
 	} else {
 		f, err = os.OpenFile(path, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0o600)
 	}
 	if err != nil {
-		return "", fmt.Errorf("creating the report: %w", err)
+		return "", fmt.Errorf("creating the page: %w", err)
 	}
-	if err := writeHTML(f, result, idleAfter); err != nil {
+	if err := write(f); err != nil {
 		_ = f.Close() // the write error is the one to report
 		return "", err
 	}

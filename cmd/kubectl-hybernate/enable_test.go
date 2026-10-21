@@ -803,3 +803,110 @@ func TestWorkloadArg(t *testing.T) {
 		assert.Equal(t, tt.name, name, tt.arg)
 	}
 }
+
+const (
+	ownsReplicas         = `{"f:spec":{"f:replicas":{}}}`
+	ownsReplicasAndDryRn = `{"f:metadata":{"f:annotations":{".":{},"f:hybernate.io/dry-run":{}}},` +
+		`"f:spec":{"f:replicas":{}}}`
+)
+
+// Ending dry-run lets Hybernate pause the workload, which a GitOps tool that
+// sets its replicas from Git would undo on its next sync, so enable warns,
+// as pause does, with the fix, unless the tool is told to leave them. It
+// says so whatever it did: ended dry-run, found it ended already, or left
+// the change to Git.
+func TestEnable_WarnsWhenGitOpsWillUndoPauses(t *testing.T) {
+	const ended = "deployment/api: dry-run ended, Hybernate will pause it while idle\n"
+	argoWarning := "Warning: Argo CD application argocd/shop sets deployment/api's replicas from Git, as " +
+		"argocd-controller, so its next sync will likely scale it back up, undoing each pause. To have Argo CD " +
+		"leave replicas to Hybernate, once:\n"
+	tests := []struct {
+		name     string
+		manager  string
+		fields   string
+		managed  *v1alpha1.ManagedWorkload
+		objs     []client.Object
+		wantErr  error
+		wantOut  string
+		wantWarn string
+	}{
+		{name: "Argo CD not told to leave replicas", manager: "argocd-controller", fields: ownsReplicas,
+			objs: []client.Object{argoApplication(map[string]any{})}, wantOut: ended, wantWarn: argoWarning},
+		{name: "Argo CD told to, as the guide says", manager: "argocd-controller", fields: ownsReplicas,
+			objs: argoFixed(), wantOut: ended},
+		{name: "Flux", manager: "kustomize-controller", fields: ownsReplicas, wantOut: ended,
+			wantWarn: "Warning: Flux sets deployment/api's replicas from Git, as kustomize-controller, so its next " +
+				"sync will likely scale it back up, undoing each pause."},
+		{name: "a person", manager: "kubectl-edit", fields: ownsReplicas, wantOut: ended},
+		{name: "already pausing", manager: "argocd-controller", fields: ownsReplicas, managed: labelManaged("api", false),
+			objs:    []client.Object{argoApplication(map[string]any{})},
+			wantOut: "deployment/api isn't in dry-run; Hybernate already pauses it while idle\n", wantWarn: argoWarning},
+		{name: "its dry-run left for Git to end", manager: "argocd-controller", fields: ownsReplicasAndDryRn,
+			objs: []client.Object{argoApplication(map[string]any{})}, wantErr: errManagedByGit,
+			wantOut: "deployment/api is managed by Argo CD application shop", wantWarn: argoWarning},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			managed := tt.managed
+			if managed == nil {
+				managed = labelManaged("api", true)
+			}
+			objs := append([]client.Object{enableNamespaceObj(nil, nil), managed,
+				trackedByArgoCD(enableDeployment("api", optedIn, measuring(nil)))}, tt.objs...)
+			c := newClient(t, appliedAs(tt.manager, tt.fields), objs...)
+			var out bytes.Buffer
+
+			err := enableWorkload(context.Background(), c, "dev", "api", enableOptions{}, &out)
+
+			if tt.wantErr != nil {
+				require.ErrorIs(t, err, tt.wantErr)
+			} else {
+				require.NoError(t, err)
+			}
+			if tt.wantWarn == "" {
+				assert.Equal(t, tt.wantOut, out.String())
+				return
+			}
+			assert.True(t, strings.HasPrefix(out.String(), tt.wantOut), out.String())
+			assert.Contains(t, out.String(), tt.wantWarn)
+		})
+	}
+}
+
+// A ManagedWorkload written by hand is warned about by its workload, whose
+// replicas a GitOps tool sets.
+func TestEnable_HandWrittenWarnsWhenGitOpsWillUndoPauses(t *testing.T) {
+	mw := &v1alpha1.ManagedWorkload{
+		ObjectMeta: metav1.ObjectMeta{Name: "api-mw", Namespace: "dev"},
+		Spec: v1alpha1.ManagedWorkloadSpec{Target: v1alpha1.WorkloadRef{Kind: v1alpha1.TargetKindDeployment, Name: "api"},
+			DryRun: true},
+	}
+	c := newClient(t, appliedAs("helm-controller", ownsReplicas), enableNamespaceObj(nil, nil),
+		enableDeployment("api", nil, nil), mw)
+	var out bytes.Buffer
+
+	require.NoError(t, enableWorkload(context.Background(), c, "dev", "api", enableOptions{}, &out))
+
+	assert.Contains(t, out.String(), "deployment/api: dry-run ended, Hybernate will pause it while idle\n"+
+		"Warning: Flux sets deployment/api's replicas from Git, as helm-controller, so its next sync will likely "+
+		"scale it back up, undoing each pause.")
+}
+
+// enable --all warns once for the workloads a tool treats alike, such as
+// those of one Argo CD application, rather than once for each.
+func TestEnable_AllWarnsOnceForWorkloadsAlike(t *testing.T) {
+	workload := func(name string) client.Object {
+		return trackedByArgoCD(enableDeployment(name, optedIn, measuring(nil)))
+	}
+	c := newClient(t, appliedAs("argocd-controller", ownsReplicas), enableNamespaceObj(nil, nil),
+		workload("api"), workload("web"), labelManaged("api", true), labelManaged("web", true),
+		argoApplication(map[string]any{}))
+	var out bytes.Buffer
+
+	require.NoError(t, enableNamespace(context.Background(), c, "dev", enableOptions{all: true}, &out))
+
+	assert.Equal(t, 1, strings.Count(out.String(), "Warning:"), out.String())
+	assert.Contains(t, out.String(), "2 workloads in dev: dry-run ended, Hybernate will pause them while idle\n"+
+		"Warning: Argo CD application argocd/shop sets the replicas of deployment/api, deployment/web from Git, as "+
+		"argocd-controller, so its next sync will likely scale them back up, undoing each pause.")
+}

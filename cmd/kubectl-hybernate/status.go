@@ -22,7 +22,9 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"regexp"
 	"slices"
+	"strconv"
 	"strings"
 	"text/tabwriter"
 	"time"
@@ -38,6 +40,7 @@ import (
 
 	v1alpha1 "github.com/okedeji/hybernate/api/v1alpha1"
 	"github.com/okedeji/hybernate/internal/discovery"
+	"github.com/okedeji/hybernate/internal/gitops"
 	"github.com/okedeji/hybernate/internal/nodescale"
 )
 
@@ -75,10 +78,14 @@ type statusOptions struct {
 	since      time.Duration
 	timeout    time.Duration
 	now        func() time.Time
+	// html is where to write the status page, statusPagePattern for a new
+	// temporary file, or "" for none.
+	html string
+	open bool
 }
 
 func statusCmd(kube *kubeFlags) *cobra.Command {
-	opts := statusOptions{since: 24 * time.Hour, timeout: time.Minute, now: time.Now}
+	opts := statusOptions{since: 24 * time.Hour, timeout: time.Minute, now: time.Now, open: true}
 	cmd := &cobra.Command{
 		Use:   "status",
 		Short: "Show what Hybernate is doing in a cluster right now",
@@ -91,6 +98,9 @@ attention, and below it recent pauses and wakes, with what caused each, as
 far back as the cluster keeps events: an hour, unless its API server is set
 to keep more.
 
+With --html, it also writes all of it as a web page, to share with a team or
+a manager, and opens it in the browser when run in a terminal.
+
 It reads every namespace you can, or only the context's namespace when your
 access doesn't allow listing them all. It only reads ManagedWorkloads, their
 events, their workloads' annotations, and what tells which node autoscaler
@@ -100,8 +110,20 @@ exists. kubectl hybernate nodes shows why nodes aren't scaling down.
 Examples:
   kubectl hybernate status
   kubectl hybernate status --context staging -n preview-42
-  kubectl hybernate status --since 1h -o json`,
-		Args: cobra.NoArgs,
+  kubectl hybernate status --since 1h -o json
+
+  # Open it as a web page, or save one to send around
+  kubectl hybernate status --html
+  kubectl hybernate status --html status.html`,
+		Args: func(cmd *cobra.Command, args []string) error {
+			// pflag takes an optional flag's value only after "=", so the file
+			// in "--html status.html" arrives as an argument.
+			if len(args) == 1 && opts.html == statusPagePattern {
+				opts.html = args[0]
+				return nil
+			}
+			return cobra.NoArgs(cmd, args)
+		},
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			if err := checkOutput(opts.output); err != nil {
 				return err
@@ -124,13 +146,26 @@ Examples:
 			}
 			result.Context = at.context
 			result.Cluster = clusterName(at.context)
-			return writeStatus(cmd.OutOrStdout(), result, opts.output, opts.now())
+			now := opts.now()
+			if err := writeStatus(cmd.OutOrStdout(), result, opts.output, now); err != nil {
+				return err
+			}
+			if opts.html == "" {
+				return nil
+			}
+			return writeStatusPage(cmd.ErrOrStderr(), opts.html, result, opts.since, now,
+				opts.open && interactive(cmd.OutOrStdout()))
 		},
 	}
 	addNamespaceFlags(cmd, &opts.namespaces, "Namespace to show; repeat for several (defaults to all you can read)")
 	addOutputFlag(cmd, &opts.output)
 	cmd.Flags().DurationVar(&opts.since, "since", opts.since, "How far back to list pauses and wakes")
 	addTimeoutFlag(cmd, &opts.timeout, "How long to wait for the cluster before giving up")
+	cmd.Flags().StringVar(&opts.html, "html", "",
+		"Also write the status as a web page to this `file`, to share; given without one, to a temporary file")
+	cmd.Flags().Lookup("html").NoOptDefVal = statusPagePattern
+	cmd.Flags().BoolVar(&opts.open, "open", opts.open,
+		"Open the --html page in your browser, when run in a terminal")
 	return cmd
 }
 
@@ -140,9 +175,15 @@ type statusResult struct {
 	NodeAutoscaler nodescale.Autoscaler `json:"nodeAutoscaler"`
 	FreedThisMonth float64              `json:"freedThisMonth"`
 	SavedThisMonth float64              `json:"savedThisMonth"`
+	// WouldFree is what the workloads in dry-run would have freed, had
+	// Hybernate paused them, since each started measuring.
+	WouldFree float64 `json:"wouldFree"`
 	// SavingsUnknown are why what pausing saved can't be measured, for
 	// the workloads it can't, each once.
 	SavingsUnknown []string `json:"savingsUnknown,omitempty"`
+	// ForecastTimeZones are the time zones forecasts count hours in, by
+	// what the operator recorded: one, unless two installs differ.
+	ForecastTimeZones []string `json:"forecastTimeZones,omitempty"`
 	// NodesNotScalingDown is set when pausing freed far more than came off
 	// the bill this month, for the workloads whose savings are measured.
 	NodesNotScalingDown bool             `json:"nodesNotScalingDown,omitempty"`
@@ -169,6 +210,10 @@ type statusWorkload struct {
 	FreedThisMonth float64                `json:"freedThisMonth"`
 	SavedThisMonth float64                `json:"savedThisMonth"`
 	SavingsUnknown string                 `json:"savingsUnknown,omitempty"`
+	// WouldFree and DryRunSince are what a workload in dry-run would have
+	// freed, and since when it has been measured. Unset for one that isn't.
+	WouldFree   *float64   `json:"wouldFree,omitempty"`
+	DryRunSince *time.Time `json:"dryRunSince,omitempty"`
 	// namedApart is set for a ManagedWorkload written by hand under a name
 	// other than its target's, which the table then shows beside it.
 	namedApart bool
@@ -214,12 +259,15 @@ var troubles = map[string]metav1.ConditionStatus{
 	"PauseIncomplete":      metav1.ConditionTrue,
 }
 
-// chosen are the reasons a trouble condition carries when it reports what
-// the user set up on purpose, which needs nobody's attention.
-var chosen = map[string]bool{
+// untroubled are the reasons a trouble condition carries when it needs
+// nobody's attention: it reports what the user set up on purpose, or the
+// normal state of a workload that's awake.
+var untroubled = map[string]bool{
 	"NoServices":         true,
 	"TargetIgnored":      true,
 	"HybernateComponent": true,
+	"DoormanDisabled":    true,
+	"NotPaused":          true,
 }
 
 // wakeCauses are the event reasons that say what woke a workload. The
@@ -287,20 +335,27 @@ func clusterStatus(ctx context.Context, c client.Client, home string, opts statu
 		row := workloadStatus(w, activeUntil[targetOfManaged(w)], now)
 		result.Workloads = append(result.Workloads, row)
 		result.Problems = append(result.Problems, problemsOf(w, now)...)
+		if p := w.Status.Prediction; p != nil && p.TimeZone != "" && !slices.Contains(result.ForecastTimeZones, p.TimeZone) {
+			result.ForecastTimeZones = append(result.ForecastTimeZones, p.TimeZone)
+		}
 	}
+	slices.Sort(result.ForecastTimeZones)
 	sumFreedAndSaved(&result)
 	result.Recent = append(result.Recent, recentHappenings(events, targets, now.Add(-opts.since))...)
 	return result, nil
 }
 
 // sumFreedAndSaved totals what the workloads freed and saved this month,
-// and judges whether nodes are scaling down from those whose savings are
-// measured.
+// and what those in dry-run would have freed, and judges whether nodes are
+// scaling down from those whose savings are measured.
 func sumFreedAndSaved(result *statusResult) {
 	var measuredFreed, measuredSaved float64
 	for _, row := range result.Workloads {
 		result.FreedThisMonth += row.FreedThisMonth
 		result.SavedThisMonth += row.SavedThisMonth
+		if row.WouldFree != nil {
+			result.WouldFree += *row.WouldFree
+		}
 		if row.SavingsUnknown != "" {
 			if !slices.Contains(result.SavingsUnknown, row.SavingsUnknown) {
 				result.SavingsUnknown = append(result.SavingsUnknown, row.SavingsUnknown)
@@ -461,6 +516,11 @@ func workloadStatus(w *v1alpha1.ManagedWorkload, targetActiveUntil, now time.Tim
 	if c := w.Status.Cost; c != nil {
 		row.SavingsUnknown = c.SavingsUnknown
 	}
+	if d := w.Status.DryRun; w.Spec.DryRun && d != nil {
+		wouldFree := dollarsIn(d.EstimatedFreed)
+		since := d.Since.UTC()
+		row.WouldFree, row.DryRunSince = &wouldFree, &since
+	}
 	if t := w.Status.LastTransitionTime; t != nil {
 		since := t.UTC()
 		row.Since = &since
@@ -507,11 +567,11 @@ func nextFor(w *v1alpha1.ManagedWorkload, targetActiveUntil, now time.Time) stri
 	if w.Spec.IdlePolicy == nil {
 		return "never pauses: no idlePolicy"
 	}
-	if meta.IsStatusConditionTrue(conditions, "HeldByDependents") {
-		return "held awake by its dependents"
+	if c := meta.FindStatusCondition(conditions, "HeldByDependents"); c != nil && c.Status == metav1.ConditionTrue {
+		return heldByDependents(c.Message)
 	}
 	if until := later(activeUntil(w.Annotations), targetActiveUntil); until.After(now) {
-		return "held awake for " + span(until.Sub(now))
+		return "held awake for " + span(until.Sub(now)) + " (active-until)"
 	}
 	switch {
 	case meta.IsStatusConditionTrue(conditions, "DependencyCycle"):
@@ -530,17 +590,80 @@ func nextFor(w *v1alpha1.ManagedWorkload, targetActiveUntil, now time.Time) stri
 		verb = "would pause"
 	}
 	pauseAt := a.PauseAt.Time
+	retryAt, heldByGitOps := gitOpsHold(w, now)
+	afterGitOps := "pauses at " + clockTime(retryAt) + " (after GitOps conflict)"
 	switch {
+	case pauseAt.After(now) && heldByGitOps && retryAt.After(pauseAt):
+		return afterGitOps
 	case pauseAt.After(now):
 		return verb + " in " + span(pauseAt.Sub(now))
 	case meta.IsStatusConditionTrue(conditions, "IdleVetoed"):
-		return "held awake by the forecast"
+		return heldByForecast(meta.FindStatusCondition(conditions, "IdleVetoed").Message)
+	case heldByGitOps:
+		return afterGitOps
 	case w.Status.Phase == v1alpha1.PhaseIdle:
 		return verb + " now"
 	case now.Sub(pauseAt) < clockLag:
 		return verb + " soon"
 	}
 	return "overdue to pause"
+}
+
+// gitOpsHold is when the operator pauses a workload again whose last pause
+// a GitOps tool undid, and true until then. Dry-run never pauses, so it
+// has none.
+func gitOpsHold(w *v1alpha1.ManagedWorkload, now time.Time) (time.Time, bool) {
+	s := w.Status.LastScaledUp
+	if w.Spec.DryRun || s == nil || !meta.IsStatusConditionTrue(w.Status.Conditions, "GitOpsConflict") {
+		return time.Time{}, false
+	}
+	until := s.At.Add(gitops.RetryAfter)
+	return until, now.Before(until)
+}
+
+// dependentsAwake starts a HeldByDependents message, before the dependents
+// it names.
+const dependentsAwake = "kept awake for "
+
+// heldByDependents names the dependents that hold a workload awake, until
+// they pause, from its HeldByDependents message, which lists them.
+func heldByDependents(message string) string {
+	names, ok := strings.CutPrefix(oneLine(message), dependentsAwake)
+	switch {
+	case !ok || names == "":
+		return "held awake by its dependents"
+	case strings.Contains(names, ", ") || strings.HasSuffix(names, " more"):
+		return "held awake while " + names + " use it"
+	}
+	return "held awake while " + names + " uses it"
+}
+
+// forecastHour is the hour the forecast expects demand in, in an IdleVetoed
+// message.
+var forecastHour = regexp.MustCompile(`in the hour from (\d{2}:\d{2} UTC)`)
+
+// heldByForecast says when the forecast expects the demand that holds a
+// workload awake, from its IdleVetoed message.
+func heldByForecast(message string) string {
+	if m := forecastHour.FindStringSubmatch(message); m != nil {
+		return "held awake by the forecast: busy from " + m[1]
+	}
+	return "held awake by the forecast"
+}
+
+// clockTime is a time of day in UTC, as the operator's messages give one.
+func clockTime(t time.Time) string {
+	return t.UTC().Format("15:04 UTC")
+}
+
+// dollarsIn reads an amount the operator wrote, such as "$12.40", as zero
+// when it can't.
+func dollarsIn(s string) float64 {
+	amount, err := strconv.ParseFloat(strings.TrimPrefix(s, "$"), 64)
+	if err != nil {
+		return 0
+	}
+	return amount
 }
 
 func later(a, b time.Time) time.Time {
@@ -554,7 +677,7 @@ func problemsOf(w *v1alpha1.ManagedWorkload, now time.Time) []problem {
 	var out []problem
 	for _, c := range w.Status.Conditions {
 		bad, ok := troubles[c.Type]
-		if !ok || c.Status != bad || chosen[c.Reason] {
+		if !ok || c.Status != bad || untroubled[c.Reason] {
 			continue
 		}
 		out = append(out, problem{Namespace: w.Namespace, Workload: w.Spec.Target.Name, ManagedWorkload: w.Name,
@@ -718,6 +841,9 @@ func writeStatusTable(w io.Writer, result statusResult, now time.Time) error {
 	p.line("%s: Hybernate manages %s.", result.Cluster, countOf(len(result.Workloads), "workload"))
 	p.line("  %s", phaseCounts(result.Workloads))
 	p.line("  %s", nodeAutoscalerLine(result.NodeAutoscaler))
+	if zone := timeZoneLine(result.ForecastTimeZones); zone != "" {
+		p.line("  %s", zone)
+	}
 	if result.FreedThisMonth > 0 || result.SavedThisMonth > 0 {
 		p.line("  Freed %s this month, and saved %s of it.", savedMoney(result.FreedThisMonth),
 			savedMoney(result.SavedThisMonth))
@@ -745,11 +871,20 @@ func writeStatusTable(w io.Writer, result statusResult, now time.Time) error {
 	}
 
 	p.line("")
+	dryRun := slices.ContainsFunc(result.Workloads, func(wl statusWorkload) bool { return wl.DryRun })
 	tw := tabwriter.NewWriter(p, 0, 0, 3, ' ', 0)
-	_, _ = fmt.Fprintln(tw, "  NAMESPACE\tWORKLOAD\tSTATE\tFOR\tLAST ACTIVITY\tNEXT\tFREED THIS MONTH\tSAVED")
+	header := "  NAMESPACE\tWORKLOAD\tSTATE\tFOR\tLAST ACTIVITY\tNEXT\tFREED THIS MONTH\tSAVED"
+	if dryRun {
+		header += "\tWOULD FREE"
+	}
+	_, _ = fmt.Fprintln(tw, header)
 	for _, wl := range result.Workloads {
-		_, _ = fmt.Fprintf(tw, "  %s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n", wl.Namespace, workloadCell(wl), stateCell(wl),
+		_, _ = fmt.Fprintf(tw, "  %s\t%s\t%s\t%s\t%s\t%s\t%s\t%s", wl.Namespace, workloadCell(wl), stateCell(wl),
 			sinceCell(wl.Since, now), activityCell(wl, now), wl.Next, moneyCell(wl.FreedThisMonth), statusSavedCell(wl))
+		if dryRun {
+			_, _ = fmt.Fprintf(tw, "\t%s", wouldFreeCell(wl))
+		}
+		_, _ = fmt.Fprintln(tw)
 	}
 	_ = tw.Flush() // writes through p, which keeps the first error
 
@@ -803,9 +938,60 @@ func phaseCounts(workloads []statusWorkload) string {
 	}
 	s := strings.Join(parts, ", ")
 	if dryRun > 0 {
-		s += fmt.Sprintf("; %d in dry-run, measured but never paused", dryRun)
+		s += "; " + dryRunSummary(workloads)
 	}
 	return s
+}
+
+// dryRunSummary is how many workloads are in dry-run, and what pausing them
+// would have freed since the first started measuring.
+func dryRunSummary(workloads []statusWorkload) string {
+	n, since := dryRunMeasured(workloads)
+	var wouldFree float64
+	for _, wl := range workloads {
+		if wl.WouldFree != nil {
+			wouldFree += *wl.WouldFree
+		}
+	}
+	s := fmt.Sprintf("%d in dry-run, never paused", n)
+	if since != nil {
+		s += fmt.Sprintf(": pausing %s would have freed %s since %s", pronounObject(n), savedMoney(wouldFree),
+			since.Format("Jan 2"))
+	}
+	return s
+}
+
+// dryRunMeasured is how many workloads are in dry-run, and when the first
+// of them started measuring, or nil before any has.
+func dryRunMeasured(workloads []statusWorkload) (int, *time.Time) {
+	n := 0
+	var since *time.Time
+	for _, wl := range workloads {
+		if !wl.DryRun {
+			continue
+		}
+		n++
+		if wl.DryRunSince != nil && (since == nil || wl.DryRunSince.Before(*since)) {
+			since = wl.DryRunSince
+		}
+	}
+	return n, since
+}
+
+// timeZoneLine says which time zone forecasts count hours in, by what the
+// operator recorded, and how to change it from the default, which is
+// rarely where people are.
+func timeZoneLine(zones []string) string {
+	switch {
+	case len(zones) == 0:
+		return ""
+	case len(zones) > 1:
+		return "Forecast time zones: " + strings.Join(zones, ", ") + ", as the installs differ"
+	case zones[0] == "UTC":
+		return "Forecast time zone: UTC, the default; if your users are elsewhere, set the Helm value timezone " +
+			"to theirs, such as Europe/London, so wakes follow their clock"
+	}
+	return "Forecast time zone: " + zones[0]
 }
 
 func stateCell(wl statusWorkload) string {
@@ -837,6 +1023,16 @@ func statusSavedCell(wl statusWorkload) string {
 		return "unknown"
 	}
 	return moneyCell(wl.SavedThisMonth)
+}
+
+// wouldFreeCell is what dry-run measured a workload would have freed, or
+// "-" for one that isn't in dry-run. Nothing measured yet is $0, which says
+// it's measuring.
+func wouldFreeCell(wl statusWorkload) string {
+	if wl.WouldFree == nil {
+		return "-"
+	}
+	return savedMoney(*wl.WouldFree)
 }
 
 func moneyCell(amount float64) string {

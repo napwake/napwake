@@ -63,8 +63,8 @@ kubectl get managedworkloads -n dev
 ```
 
 ```
-NAME     PHASE     SAVED   FREED   AGE
-my-api   Running   $0.00   $0.00   10s
+NAME     PHASE     FREED   SAVED   WOULD FREE   AGE
+my-api   Running   $0.00   $0.00   $0.00        10s
 ```
 
 ## 4. Watch it measure

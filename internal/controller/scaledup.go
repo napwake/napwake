@@ -37,11 +37,9 @@ import (
 
 const conditionGitOpsConflict = "GitOpsConflict"
 
-// gitOpsRetryAfter is how long Hybernate waits to pause again after a
-// GitOps tool undid a pause. Pausing is also how it finds out the tool has
-// been told to leave the replicas, so it keeps trying, at the cost of one
-// restart each time until then.
-const gitOpsRetryAfter = time.Hour
+// gitOpsRetryAfter is shared with kubectl hybernate status, which shows when
+// the wait ends.
+const gitOpsRetryAfter = gitops.RetryAfter
 
 // wakeOnScaleUp treats a paused workload scaled up outside Hybernate as
 // woken: whoever did it wants it running. One still pausing counts once

@@ -179,7 +179,7 @@ A workload in [dry-run](../guides/dry-run.md) is never paused, so all its time i
 
 ## Viewing Costs Across Workloads
 
-`kubectl get managedworkloads -A` shows what each workload has `Saved` and `Freed` this month. For more:
+`kubectl get managedworkloads -A` shows what pausing each workload has `Freed` this month, what of that it `Saved`, and, for one in dry-run, what it `Would Free`. For more:
 
 ```bash
 kubectl get managedworkloads -A -o custom-columns=\

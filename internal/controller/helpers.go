@@ -132,11 +132,16 @@ func (r *Reconciler) updatePredictionStatus(ctx context.Context, workload *v1alp
 	phase := engine.GetPhase()
 	dailyPhase, weeklyPhase := seasonPhases(phase)
 
+	zone := time.UTC
+	if r.Timezone != nil {
+		zone = r.Timezone
+	}
 	status := &v1alpha1.PredictionStatus{
 		DailyPhase:       dailyPhase,
 		DailyConfidence:  engine.DailyConfidence(),
 		WeeklyPhase:      weeklyPhase,
 		WeeklyConfidence: engine.WeeklyConfidence(),
+		TimeZone:         zone.String(),
 	}
 	state, err := r.engines.export(workload.UID, engine)
 	if err != nil {

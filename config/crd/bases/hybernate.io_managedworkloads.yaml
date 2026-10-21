@@ -18,13 +18,18 @@ spec:
     - jsonPath: .status.phase
       name: Phase
       type: string
+    - description: What pausing freed this month (UTC), at list price
+      jsonPath: .status.cost.freedThisMonth
+      name: Freed
+      type: string
     - description: What pausing took off the node bill this month (UTC), at least
       jsonPath: .status.cost.savedThisMonth
       name: Saved
       type: string
-    - description: What pausing freed this month (UTC), at list price
-      jsonPath: .status.cost.freedThisMonth
-      name: Freed
+    - description: 'In dry-run: what the pauses Hybernate would have made would have
+        freed since dry-run began'
+      jsonPath: .status.dryRun.estimatedFreed
+      name: Would Free
       type: string
     - jsonPath: .metadata.creationTimestamp
       name: Age
@@ -727,7 +732,9 @@ spec:
                   estimatedFreed:
                     description: |-
                       EstimatedFreed is the freed hours priced at the workload's cost
-                      rates, to the cent. It's for display: the hours are the record.
+                      rates, to the cent, with the would-be pause under way counted up to
+                      the last status write, at most 5 minutes ago. It's for display: the
+                      hours are the record.
                     type: string
                   freedCPUHours:
                     anyOf:
@@ -1090,6 +1097,12 @@ spec:
                       encoded, so that it survives an operator restart. It is written with
                       each hourly observation. State that can't be read is discarded, with a
                       warning event, and the engine starts learning again.
+                    type: string
+                  timeZone:
+                    description: |-
+                      TimeZone is the IANA time zone the forecast counts hours of the day
+                      and days of the week in, such as Europe/London: the operator's
+                      --timezone.
                     type: string
                   weeklyConfidence:
                     description: |-

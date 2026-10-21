@@ -270,8 +270,9 @@ kubectl hybernate status
 
 ```
 staging (EKS us-east-1): Hybernate manages 4 workloads.
-  1 paused, 2 running, 1 resuming; 1 in dry-run, measured but never paused
+  1 paused, 2 running, 1 resuming; 1 in dry-run, never paused: pausing it would have freed $7 since Oct 1
   Node autoscaler: Karpenter (consolidates when underutilized after 1m)
+  Forecast time zone: Europe/London
   Freed $42 this month, and saved $9 of it.
 
 Needs attention:
@@ -280,11 +281,11 @@ Needs attention:
   preview-7/worker   GitOpsConflict   Argo CD set the replicas from Git, undoing the pause; ...
   preview-7/worker   Stuck            resuming for 25m: waiting for preview-42/statefulset/postgres
 
-  NAMESPACE    WORKLOAD               STATE               FOR   LAST ACTIVITY      NEXT                             FREED THIS MONTH   SAVED
-  preview-42   deployment/api         paused              3h    request, 4h ago    wakes on a request or activity   $12                $9
-  preview-42   statefulset/postgres   running             5h    cpu, 2h ago        held awake by its dependents     $30                -
-  preview-7    deployment/web         running (dry-run)   2h    rollout, 15m ago   would pause in 45m               -                  -
-  preview-7    deployment/worker      resuming            25m   -                  -                                -                  -
+  NAMESPACE    WORKLOAD               STATE               FOR   LAST ACTIVITY      NEXT                                        FREED THIS MONTH   SAVED   WOULD FREE
+  preview-42   deployment/api         paused              3h    request, 4h ago    wakes on a request or activity              $12                $9      -
+  preview-42   statefulset/postgres   running             5h    cpu, 2h ago        held awake while preview-7/worker uses it   $30                -       -
+  preview-7    deployment/web         running (dry-run)   2h    rollout, 15m ago   would pause in 45m                          -                  -       $7
+  preview-7    deployment/worker      resuming            25m   -                  -                                           -                  -       -
 
 Recent pauses and wakes:
   30m ago   preview-7/worker   scaled up to 2 replicas by argocd-controller outside Hybernate; counted as activity
@@ -294,11 +295,12 @@ Recent pauses and wakes:
 
 `status` is one screen of every workload Hybernate manages, read from their ManagedWorkloads and events:
 
-- **The summary:** how many workloads are in each phase, and how many are in dry-run; the node autoscaler, found as [`nodes`](#see-why-nodes-dont-scale-down) finds it, or `none found`, or `unknown` when your access doesn't allow reading what would tell; and what pausing live workloads has freed this month, its requests at list price, and how much of that has been saved, come off the bill as nodes scaled down, in whole dollars as `scan` shows them, or `<$1` under 50¢. Freed capacity is only money once a node autoscaler removes the nodes it was on. When the operator can't measure what's saved for some workloads, the summary says why, once for each reason.
-- **Needs attention:** when pausing freed at least a dollar this month and less than half of it was saved, counting only workloads whose savings are measured, a line saying nodes aren't scaling down, pointing at `kubectl hybernate nodes`. Then what keeps Hybernate from doing its job, from each workload's conditions: a GitOps tool undoing pauses (`GitOpsConflict`), a dependency that's missing, in a cycle, or in a namespace that doesn't allow it (`DependencyNotAllowed`), two ManagedWorkloads for one target, a protected namespace, a target that's gone, metrics or Prometheus that can't be read, a Prometheus query that has never matched a series (`PrometheusQueryEmpty`), a paused workload whose requests can't wake it (`WakeOnRequest`), a resume that stopped with replicas not Ready (`ResumeIncomplete`), a pause that stopped waiting with pods still running (`PauseIncomplete`), and a pause or wake taking over 10 minutes (`Stuck`), with what it waits for. `kubectl describe managedworkload` has the rest.
-- **The table:** each workload as `kind/name`, with its ManagedWorkload's name in brackets when you wrote one under another name; its state and for how long; its last activity and where it came from; what pausing it has freed this month and what of that it has saved, in whole dollars or `<$1` under 50¢, or `unknown` when what's saved can't be measured, where totals last brought up to date in an earlier month count as none, and one in dry-run now keeps what its pauses freed and saved before dry-run was turned on; and **NEXT**:
-    - when it pauses: `pauses in 45m`, `pauses now` once it's `Idle`, and `would pause …` in dry-run. Status is written every few minutes, so for up to 7 minutes after the time it showed, a workload still running reads `pauses soon`; after that, `overdue to pause`, which means something the table can't see holds it, and `kubectl describe managedworkload` says what
-    - why it won't pause: `never pauses: no idlePolicy`, `never pauses: namespace protected`, `never pauses: part of Hybernate` (the operator's or the doorman's own Deployment), `never pauses: PVCs deleted on scale-down` (a StatefulSet whose `persistentVolumeClaimRetentionPolicy.whenScaled` is `Delete`), `nothing: labelled hybernate.io/ignore`, `nothing: workload not found`, `nothing: another ManagedWorkload has it`, `held awake by its dependents`, `held awake for 2h` (`hybernate.io/active-until` on the ManagedWorkload or the workload), `held awake by the forecast`, `won't pause: dependsOn cycle`, `won't pause: no CPU metrics`, or `won't pause: Prometheus failing`
+- **The summary:** how many workloads are in each phase, and how many are in dry-run, with what pausing them would have freed since the first started measuring, by what dry-run measured (`status.dryRun.estimatedFreed`, the would-be pause under way included); the node autoscaler, found as [`nodes`](#see-why-nodes-dont-scale-down) finds it, or `none found`, or `unknown` when your access doesn't allow reading what would tell; and what pausing live workloads has freed this month, its requests at list price, and how much of that has been saved, come off the bill as nodes scaled down, in whole dollars as `scan` shows them, or `<$1` under 50¢. Freed capacity is only money once a node autoscaler removes the nodes it was on. When the operator can't measure what's saved for some workloads, the summary says why, once for each reason. It also says which time zone the [forecast](../concepts/forecasting.md#wall-clock-alignment) counts hours in, the operator's `timezone` as each workload's `status.prediction.timeZone` records it, and, when that's UTC, the default, how to set it to your users' zone, so `autoResume` follows their clock through daylight saving.
+- **Needs attention:** when pausing freed at least a dollar this month and less than half of it was saved, counting only workloads whose savings are measured, a line saying nodes aren't scaling down, pointing at `kubectl hybernate nodes`. Then what keeps Hybernate from doing its job, from each workload's conditions: a GitOps tool undoing pauses (`GitOpsConflict`), a dependency that's missing, in a cycle, or in a namespace that doesn't allow it (`DependencyNotAllowed`), two ManagedWorkloads for one target, a protected namespace, a target that's gone, metrics or Prometheus that can't be read, a Prometheus query that has never matched a series (`PrometheusQueryEmpty`), a workload whose requests can't wake it while it's paused (`WakeOnRequest`), which for one that's awake now is what its last pause found with its Services, to fix before the next, but not its being awake (`NotPaused`) or the doorman being turned off, a resume that stopped with replicas not Ready (`ResumeIncomplete`), a pause that stopped waiting with pods still running (`PauseIncomplete`), and a pause or wake taking over 10 minutes (`Stuck`), with what it waits for. `kubectl describe managedworkload` has the rest.
+- **The table:** each workload as `kind/name`, with its ManagedWorkload's name in brackets when you wrote one under another name; its state and for how long; its last activity and where it came from; what pausing it has freed this month and what of that it has saved, in whole dollars or `<$1` under 50¢, or `unknown` when what's saved can't be measured, where totals last brought up to date in an earlier month count as none, and one in dry-run now keeps what its pauses freed and saved before dry-run was turned on; when any workload is in dry-run, **WOULD FREE**, what pausing it would have freed since dry-run started measuring it, `$0` until a would-be pause has, and `-` for one that isn't in dry-run; and **NEXT**:
+    - when it pauses: `pauses in 45m`, `pauses now` once it's `Idle`, and `would pause …` in dry-run. After a GitOps tool undid its last pause, Hybernate waits an hour before pausing it again, which reads `pauses at 14:20 UTC (after GitOps conflict)`; see [GitOps tools](../guides/gitops.md#what-hybernate-does). Status is written every few minutes, so for up to 7 minutes after the time it showed, a workload still running reads `pauses soon`; after that, `overdue to pause`, which means something the table can't see holds it, and `kubectl describe managedworkload` says what
+    - why it won't pause yet, and until when: `held awake while preview-7/worker uses it` (its dependents, until they pause), `held awake for 2h (active-until)` (`hybernate.io/active-until` on the ManagedWorkload or the workload, as `wake --for` sets), or `held awake by the forecast: busy from 13:00 UTC` (the hour the forecast expects demand in)
+    - why it won't pause at all: `never pauses: no idlePolicy`, `never pauses: namespace protected`, `never pauses: part of Hybernate` (the operator's or the doorman's own Deployment), `never pauses: PVCs deleted on scale-down` (a StatefulSet whose `persistentVolumeClaimRetentionPolicy.whenScaled` is `Delete`), `nothing: labelled hybernate.io/ignore`, `nothing: workload not found`, `nothing: another ManagedWorkload has it`, `won't pause: dependsOn cycle`, `won't pause: no CPU metrics`, or `won't pause: Prometheus failing`
     - for a paused one, what wakes it: `wakes on a request or activity`, or `wakes on activity` without the doorman
 - **Recent pauses and wakes,** newest first, as far back as the cluster keeps events, or `--since`: each pause, and each wake with its cause, a request on a Service, an activity annotation (including `kubectl hybernate wake` and a dependent waking), the forecast, or a scale-up from outside Hybernate. Requests the doorman closed without reaching the workload are listed too, and a wake whose cause wasn't recorded, such as a hand-back when a namespace becomes protected, is listed by its `resumed` event alone. The table shows the latest 10; `-o json` has every one. The API server keeps events for an hour unless its `--event-ttl` says otherwise, so on most clusters that's what `status` can show.
 
@@ -307,12 +309,23 @@ kubectl hybernate status --context staging -n preview-42
 kubectl hybernate status --since 1h -o json
 ```
 
+### Share it as a web page
+
+```bash
+kubectl hybernate status --html              # opens it in your browser
+kubectl hybernate status --html status.html  # saves it, to send around
+```
+
+`--html` writes the same status as a web page, for a team or a manager: the summary, with the node autoscaler and the forecast's time zone; what pausing freed this month, what of that was saved, and what dry-run measured pausing would have freed; what needs attention; every workload, with its state and for how long, its last activity, what happens to it next, and what it freed or would free, in a table you can sort and filter; and every pause and wake since `--since`, with what caused it, at its time in UTC. Given a file, it writes it there; given none, to a new temporary file. Either is readable only by you, since it names the cluster's workloads. In a terminal, it opens the page in your browser, as [`scan`](#scan-a-cluster) does with its report, unless `--open=false`; otherwise it prints where the page is. The terminal table, or `-o json`, is printed as well. The page loads nothing from elsewhere, so it works offline and attached to an email.
+
 | Flag | Short | Default | Description |
 |------|-------|---------|-------------|
 | `--namespace` | `-n` | all you can read | Namespace to show; repeat for several |
 | `--all-namespaces` | `-A` | | Read every namespace, and fail rather than fall back when your access doesn't allow that. Can't be combined with `-n` |
 | `--output` | `-o` | `table` | `table`, `json`, or `yaml` |
 | `--since` | | `24h` | How far back to list pauses and wakes |
+| `--html` | | | Also write the status as a web page to this file; given without one, to a temporary file |
+| `--open` | | `true` | Open the `--html` page in your browser, when run in a terminal |
 | `--timeout` | | `1m` | How long to wait for the cluster before giving up |
 
 Your user needs `list` on `managedworkloads` and `events`, in every namespace or the ones passed with `-n`. Without access to events, it shows the rest and says so. To name the node autoscaler, it reads what [`nodes`](#see-why-nodes-dont-scale-down) does for that: Karpenter's NodePools, nodes' metadata, the `cluster-autoscaler-status` ConfigMap and Deployments' metadata in `kube-system`; without enough of them to tell, it says the autoscaler is unknown. It also lists `deployments` and `statefulsets`, reading only their metadata, for a `hybernate.io/active-until` annotation on the workload itself, and goes without it when it can't. A namespace named with `-n` that doesn't exist is an error, which takes `get` on `namespaces` to tell; without it, the namespace shows as one Hybernate manages nothing in.
@@ -426,7 +439,15 @@ Clear it and pause now? [y/N]
 
 Answering `y` removes the annotation, from both when both hold it, and pauses it; anything else leaves it running, exiting 0. `--clear-hold` clears it without asking; with no terminal to ask on and without `--clear-hold`, `pause` exits 1 and says to pass it. `--yes` doesn't clear a hold, so a nightly script that pauses with `--yes` doesn't end one someone set for a demo.
 
-When a GitOps tool last set the workload's replicas, `pause` warns before asking, with the one-time fix: the tool sets them from Git again on its next sync, which undoes the pause. See [GitOps tools](../guides/gitops.md).
+When a GitOps tool sets the workload's replicas from Git and isn't told to leave them to Hybernate, `pause` warns before asking, with the one-time fix: the tool sets them again on its next sync, which undoes the pause. See [GitOps tools](../guides/gitops.md#checking-the-fix-is-in) for how it tells:
+
+```
+Warning: Argo CD application argocd/shop sets preview-42/api's replicas from Git, as argocd-controller, so its next sync will likely scale it back up, undoing this pause. To have Argo CD leave replicas to Hybernate, once:
+  Add RespectIgnoreDifferences=true to the syncPolicy.syncOptions of Argo CD application argocd/shop, so syncs leave the replicas it ignores.
+See https://okedeji.io/hybernate/guides/gitops/#argo-cd
+```
+
+When it can't tell, such as without access to Argo CD's namespace, the warning says why, and to make the fix if you haven't already.
 
 If the workload isn't `Paused`, and Hybernate hasn't said why, within `--timeout`, `pause` exits 1 with its phase and the `kubectl describe` command that says why.
 
@@ -438,7 +459,7 @@ If the workload isn't `Paused`, and Hybernate hasn't said why, within `--timeout
 | `--clear-hold` | | `false` | Clear a `hybernate.io/active-until` hold on its ManagedWorkload, as `wake --for` sets, or on the workload, without asking |
 | `--timeout` | | `5m` | How long to wait, cluster calls included; it starts again after you answer a question |
 
-Your user needs `get`, `list` and `patch` on `managedworkloads` in the namespace, and `get` on the workload for the GitOps warning and its own hold, which are left out without it. Clearing a hold on the workload takes `patch` on it.
+Your user needs `get`, `list` and `patch` on `managedworkloads` in the namespace, and `get` on the workload for the GitOps warning and its own hold, which are left out without it. Clearing a hold on the workload takes `patch` on it. For a workload Argo CD applies, telling whether Argo CD leaves its replicas takes `list` on `applications.argoproj.io` in every namespace, or `get` in `argocd`, and `get` on the `argocd-cm` ConfigMap; without them, the warning says it couldn't check.
 
 ## Wake a Workload
 
@@ -540,6 +561,8 @@ Or pass --force to change the cluster anyway.
 
 When Helm set it, `enable` changes it, since Helm only applies a chart when you run it, and warns that the next `helm upgrade` puts the chart's value back, so set it in the chart too. See [GitOps tools](../guides/gitops.md#ending-dry-run).
 
+Ending dry-run lets Hybernate pause the workload, and a GitOps tool that sets its replicas from Git scales it back up on its next sync after each pause. So whatever `enable` does, ends dry-run, finds it ended already, or leaves the change to Git, it warns as [`pause`](#pause-a-workload) does, with the one-time fix, unless the tool is told to leave the replicas to Hybernate. With `--all`, workloads a tool treats alike, such as those of one Argo CD application, get one warning between them.
+
 A bare name is looked up as a Deployment and as a StatefulSet. When both have it, `enable` lists them and asks for the kind; prefix the name with `deployment/` or `statefulset/` to be exact.
 
 | Flag | Short | Default | Description |
@@ -549,4 +572,4 @@ A bare name is looked up as a Deployment and as a StatefulSet. When both have it
 | `--force` | | `false` | Change the cluster even when a GitOps tool applies the setting from Git |
 | `--timeout` | | `1m` | How long to wait for the cluster before giving up |
 
-Your user needs `get` and `patch` on the workload, `get` on its namespace, and `list` on `managedworkloads` in it. Without `list` on ManagedWorkloads, `enable` goes by the annotations alone, so it can't check that Hybernate manages the workload or see a dry-run from the cluster default, and it says so. With `--all`, it also needs `list` on Deployments and StatefulSets, and `patch` on the namespace to end its dry-run there; without it, each workload gets its own annotation instead. See [Opting In](../guides/opt-in.md) for the label and every setting.
+Your user needs `get` and `patch` on the workload, `get` on its namespace, and `list` on `managedworkloads` in it. Without `list` on ManagedWorkloads, `enable` goes by the annotations alone, so it can't check that Hybernate manages the workload or see a dry-run from the cluster default, and it says so. With `--all`, it also needs `list` on Deployments and StatefulSets, and `patch` on the namespace to end its dry-run there; without it, each workload gets its own annotation instead. The GitOps warning reads Argo CD as `pause`'s does. See [Opting In](../guides/opt-in.md) for the label and every setting.

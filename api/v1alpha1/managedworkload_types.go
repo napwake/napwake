@@ -26,8 +26,9 @@ import (
 // +kubebuilder:object:root=true
 // +kubebuilder:subresource:status
 // +kubebuilder:printcolumn:name="Phase",type=string,JSONPath=`.status.phase`
-// +kubebuilder:printcolumn:name="Saved",type=string,JSONPath=`.status.cost.savedThisMonth`,description="What pausing took off the node bill this month (UTC), at least"
 // +kubebuilder:printcolumn:name="Freed",type=string,JSONPath=`.status.cost.freedThisMonth`,description="What pausing freed this month (UTC), at list price"
+// +kubebuilder:printcolumn:name="Saved",type=string,JSONPath=`.status.cost.savedThisMonth`,description="What pausing took off the node bill this month (UTC), at least"
+// +kubebuilder:printcolumn:name="Would Free",type=string,JSONPath=`.status.dryRun.estimatedFreed`,description="In dry-run: what the pauses Hybernate would have made would have freed since dry-run began"
 // +kubebuilder:printcolumn:name="Age",type=date,JSONPath=`.metadata.creationTimestamp`
 
 // ManagedWorkload declares a workload whose lifecycle is managed by Hybernate.
@@ -522,7 +523,9 @@ type DryRunStatus struct {
 	FreedMemoryHours resource.Quantity `json:"freedMemoryHours"`
 
 	// EstimatedFreed is the freed hours priced at the workload's cost
-	// rates, to the cent. It's for display: the hours are the record.
+	// rates, to the cent, with the would-be pause under way counted up to
+	// the last status write, at most 5 minutes ago. It's for display: the
+	// hours are the record.
 	EstimatedFreed string `json:"estimatedFreed"`
 
 	// Resources is what the workload ran when the current would-be pause
@@ -641,6 +644,12 @@ type PredictionStatus struct {
 	// WeeklyConfidence is the forecast's accuracy over the last 168
 	// observed hours, a whole week of weekdays and weekend, as a percentage.
 	WeeklyConfidence int `json:"weeklyConfidence"`
+
+	// TimeZone is the IANA time zone the forecast counts hours of the day
+	// and days of the week in, such as Europe/London: the operator's
+	// --timezone.
+	// +optional
+	TimeZone string `json:"timeZone,omitempty"`
 
 	// State is what the forecasting engine has learned, compressed and
 	// encoded, so that it survives an operator restart. It is written with
