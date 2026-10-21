@@ -416,8 +416,12 @@ func (s *Scanner) ScanCluster(ctx context.Context, opts ClusterOptions) (*Cluste
 		report.Notes = append(report.Notes, fmt.Sprintf("%s no CPU history in Prometheus, so only their CPU right now is known: %s",
 			plural(len(noHistory), "workload has", "workloads have"), listSome(noHistory)))
 	}
-	report.Notes = append(report.Notes, dependencyNotes...)
-	report.Notes = append(report.Notes, gitOpsNotes(report.Workloads)...)
+	if opts.Forecast == nil {
+		// A forecast replay is about when each workload is used; what
+		// depends on what, and what GitOps would undo, are the scan's.
+		report.Notes = append(report.Notes, dependencyNotes...)
+		report.Notes = append(report.Notes, gitOpsNotes(report.Workloads)...)
+	}
 
 	slices.SortFunc(report.Workloads, func(a, b Workload) int {
 		if c := cmp.Compare(stateOrder[a.State], stateOrder[b.State]); c != 0 {

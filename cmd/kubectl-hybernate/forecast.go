@@ -17,10 +17,13 @@ limitations under the License.
 package main
 
 import (
+	"cmp"
 	"context"
 	"errors"
 	"fmt"
 	"io"
+	"maps"
+	"slices"
 	"strings"
 	"text/tabwriter"
 	"time"
@@ -58,10 +61,11 @@ type forecastResult struct {
 	Cluster    string `json:"cluster"`
 	Prometheus string `json:"prometheus,omitempty"`
 	// HistoryHours is how much history Prometheus had, which is less than
-	// the window asked for when it keeps less.
-	HistoryHours float64 `json:"historyHours"`
-	Window       string  `json:"window"`
-	Timezone     string  `json:"timezone"`
+	// the window asked for when it keeps less, from HistorySince.
+	HistoryHours float64   `json:"historyHours"`
+	HistorySince time.Time `json:"historySince,omitzero"`
+	Window       string    `json:"window"`
+	Timezone     string    `json:"timezone"`
 	// Setting is what workloads Hybernate doesn't manage were replayed
 	// with; managed ones use their own.
 	Setting   string             `json:"setting"`
@@ -147,6 +151,13 @@ Examples:
 			}
 			ctx, cancel := context.WithTimeout(cmd.Context(), opts.timeout)
 			defer cancel()
+			if !cmd.Flags().Changed("timezone") {
+				if zone := operatorTimeZone(ctx, opts.kube); zone != "" {
+					if loc, err = time.LoadLocation(zone); err != nil {
+						return fmt.Errorf("the operator's time zone, %s: %w", zone, err)
+					}
+				}
+			}
 			result, err := replayCluster(ctx, window, prom, mode, loc, opts)
 			if err != nil {
 				return scanFailed(ctx, err, opts.timeout)
@@ -173,7 +184,8 @@ Examples:
 		"How soon the forecast acts, eager, balanced or cautious, for workloads Hybernate doesn't manage; "+
 			"managed workloads use their own")
 	cmd.Flags().StringVar(&opts.timezone, "timezone", opts.timezone,
-		"The operator's --timezone, whose hours and weekdays the forecast learns and times are shown in")
+		"The time zone whose hours and weekdays the forecast learns and times are shown in; by default the "+
+			"operator's, as its ManagedWorkloads record it, or UTC")
 	cmd.Flags().IntVar(&opts.cpuThreshold, "cpu-threshold", opts.cpuThreshold,
 		"CPU use, as a percentage of requests from 1 to 100, above which a workload is in use; managed workloads "+
 			"use their own")
@@ -217,7 +229,7 @@ func replayCluster(ctx context.Context, window time.Duration, prom prometheusSet
 			"the forecast is replayed over CPU history, and there's none to read"}, scan.Notes...), "; "))}
 	}
 	result := forecastResult{Context: scan.Context, Cluster: scan.Cluster, Prometheus: scan.History.Prometheus,
-		HistoryHours: scan.History.Hours, Window: opts.window, Timezone: loc.String(), Setting: string(mode),
+		HistoryHours: scan.History.Hours, HistorySince: scan.History.Since, Window: opts.window, Timezone: loc.String(), Setting: string(mode),
 		Workloads: []forecastWorkload{}}
 	for _, w := range scan.Workloads {
 		if w.Forecast == nil {
@@ -228,6 +240,33 @@ func replayCluster(ctx context.Context, window time.Duration, prom prometheusSet
 	}
 	result.Notes = scan.Notes
 	return result, nil
+}
+
+// operatorTimeZone is the time zone the operator's forecasts count hours
+// in, as most of the ManagedWorkloads the user can read record it, or ""
+// when none can be read.
+func operatorTimeZone(ctx context.Context, kube *kubeFlags) string {
+	ctx, cancel := context.WithTimeout(ctx, 10*time.Second)
+	defer cancel()
+	c, _, err := kube.client(ctx)
+	if err != nil || c == nil {
+		return ""
+	}
+	var list v1alpha1.ManagedWorkloadList
+	if err := c.List(ctx, &list); err != nil {
+		return ""
+	}
+	counts := map[string]int{}
+	for _, w := range list.Items {
+		if p := w.Status.Prediction; p != nil && p.TimeZone != "" {
+			counts[p.TimeZone]++
+		}
+	}
+	zones := slices.Sorted(maps.Keys(counts))
+	if len(zones) == 0 {
+		return ""
+	}
+	return slices.MaxFunc(zones, func(a, b string) int { return cmp.Compare(counts[a], counts[b]) })
 }
 
 // pickWorkload is the one workload NAME names, as name or kind/name.
@@ -260,7 +299,15 @@ func writeForecast(w io.Writer, result forecastResult, detail bool, loc *time.Lo
 	p.line("%s: the forecast replayed over %s of CPU history from %s, times in %s", result.Cluster,
 		spanOf(result.HistoryHours), result.Prometheus, result.Timezone)
 	p.line("")
-	if len(result.Workloads) == 0 {
+	least := discovery.MinForecastHistory
+	if len(result.Workloads) == 0 && result.HistoryHours < least.Hours() {
+		p.line("  %s of CPU history is too little to replay the forecast over: it needs at least %s.",
+			spanOf(result.HistoryHours), spanOf(least.Hours()))
+		if !result.HistorySince.IsZero() {
+			p.line("  Run it again after %s.", result.HistorySince.Add(least).In(loc).Format("Mon 2 Jan 15:04 MST"))
+		}
+		p.line("")
+	} else if len(result.Workloads) == 0 {
 		p.line("  No workload has CPU history to replay the forecast over.")
 	} else if detail {
 		writeForecastDetail(p, result.Workloads[0], loc)

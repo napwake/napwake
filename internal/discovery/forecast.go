@@ -36,9 +36,9 @@ type ForecastOptions struct {
 	Location *time.Location
 }
 
-// minForecastHistory is the least history worth replaying the forecast
+// MinForecastHistory is the least history worth replaying the forecast
 // over: a day to learn from and a day to replay.
-const minForecastHistory = 2 * 24 * time.Hour
+const MinForecastHistory = 2 * 24 * time.Hour
 
 // ForecastReplay is what Hybernate's forecast would make of a workload's
 // history: whether it would act were the workload opted in now, and how it
@@ -130,7 +130,7 @@ func (r replay) recording() sim.Recorded {
 // threshold its confidence threshold and mw its ManagedWorkload, if
 // Hybernate manages it.
 func replayForecast(r replay, threshold int, mw *v1alpha1.ManagedWorkload, opts ForecastOptions) *ForecastReplay {
-	if r.end.Sub(r.start) < minForecastHistory || r.step > sim.LookGap || time.Hour%r.step != 0 {
+	if r.end.Sub(r.start) < MinForecastHistory || r.step > sim.LookGap || time.Hour%r.step != 0 {
 		return nil
 	}
 	loc := opts.Location

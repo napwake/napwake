@@ -288,7 +288,7 @@ A workload counts as used whenever its CPU is above `--cpu-threshold`, as the ac
 kubectl hybernate forecast api -n preview-42 --timezone Europe/London
 ```
 
-It reads Prometheus as [scan](#scan-a-cluster) does, found in the cluster or at `--prometheus-url`, with the same [flags](#a-prometheus-elsewhere) and [permissions](#permissions), and fails when there's no history to read. It only reads.
+It reads Prometheus as [scan](#scan-a-cluster) does, found in the cluster or at `--prometheus-url`, with the same [flags](#a-prometheus-elsewhere) and [permissions](#permissions), and fails when there's no history to read. With less than two days of it, a day to learn from and a day to replay, it says so and when there will be enough. Its notes are only those about the history it read; `scan` has the rest. It only reads.
 
 | Flag | Short | Default | Description |
 |------|-------|---------|-------------|
@@ -297,7 +297,7 @@ It reads Prometheus as [scan](#scan-a-cluster) does, found in the cluster or at 
 | `--exclude-namespaces` | | system namespaces | Namespaces to skip |
 | `--window` | | `28d` | How much history to read, from `2d` to `34d`; the operator learns up to four weeks |
 | `--forecast` | | `balanced` | How soon the forecast acts, `eager`, `balanced` or `cautious`, for workloads Hybernate doesn't manage; see [Forecast setting](../concepts/forecasting.md#forecast-setting) |
-| `--timezone` | | `UTC` | The operator's `--timezone`, whose hours and weekdays the forecast learns, and that times are shown in |
+| `--timezone` | | the operator's | The time zone whose hours and weekdays the forecast learns, and that times are shown in: by default the operator's `timezone`, as its ManagedWorkloads record it in `status.prediction.timeZone`, or `UTC` when you can read none |
 | `--cpu-threshold` | | `10` | CPU use, as a percentage of requests, above which a workload is in use; managed workloads use their own |
 | `--idle-after` | | `1h` | How long without use before a pause; managed workloads use their own |
 | `--output` | `-o` | `table` | `table`, `json`, or `yaml`; JSON and YAML give every workload's days |

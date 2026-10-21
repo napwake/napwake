@@ -135,6 +135,44 @@ func TestCLI_ForecastOneWorkload(t *testing.T) {
 	require.ErrorContains(t, err, "no workload web with CPU history")
 }
 
+// The forecast counts hours in the operator's time zone, which its
+// ManagedWorkloads record, so the replay uses it unless told otherwise.
+func TestCLI_ForecastInTheOperatorsTimeZone(t *testing.T) {
+	prom := officePrometheus(t)
+	managed := &v1alpha1.ManagedWorkload{ObjectMeta: metav1.ObjectMeta{Name: "web", Namespace: "preview-42"},
+		Spec:   v1alpha1.ManagedWorkloadSpec{Target: v1alpha1.WorkloadRef{Kind: v1alpha1.TargetKindDeployment, Name: "web"}},
+		Status: v1alpha1.ManagedWorkloadStatus{Prediction: &v1alpha1.PredictionStatus{TimeZone: "Africa/Lagos"}}}
+	objs := append(forecastCluster(), managed)
+
+	out, err := runCLI(t, newStatusClient(t, interceptor.Funcs{}, objs...), "forecast", "-n", "preview-42",
+		"-o", "json", "--prometheus-url", prom.URL)
+	require.NoError(t, err, out)
+	var result forecastResult
+	require.NoError(t, json.Unmarshal([]byte(out), &result))
+	assert.Equal(t, "Africa/Lagos", result.Timezone)
+
+	out, err = runCLI(t, newStatusClient(t, interceptor.Funcs{}, objs...), "forecast", "-n", "preview-42",
+		"-o", "json", "--prometheus-url", prom.URL, "--timezone", "Europe/London")
+	require.NoError(t, err, out)
+	require.NoError(t, json.Unmarshal([]byte(out), &result))
+	assert.Equal(t, "Europe/London", result.Timezone, "the flag wins")
+}
+
+// A cluster a few hours old has too little history to replay, which is
+// said as such, with when there will be enough, rather than as no workload
+// having any.
+func TestWriteForecast_TooLittleHistory(t *testing.T) {
+	since := time.Date(2026, 10, 21, 2, 0, 0, 0, time.UTC)
+	var out strings.Builder
+
+	require.NoError(t, writeForecast(&out, forecastResult{Cluster: "prelaunch", Prometheus: "monitoring/prometheus",
+		HistoryHours: 4, HistorySince: since, Timezone: "UTC"}, false, time.UTC))
+
+	assert.Contains(t, out.String(), "4 hours of CPU history is too little to replay the forecast over: it needs "+
+		"at least 2 days.\n  Run it again after Fri 23 Oct 02:00 UTC.")
+	assert.NotContains(t, out.String(), "No workload has CPU history")
+}
+
 func TestCLI_ForecastNeedsHistory(t *testing.T) {
 	_, err := runCLI(t, newStatusClient(t, interceptor.Funcs{}, forecastCluster()...), "forecast", "-n", "preview-42")
 	require.ErrorContains(t, err, "the forecast is replayed over CPU history, and there's none to read")
