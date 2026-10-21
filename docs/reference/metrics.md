@@ -1,6 +1,6 @@
 # Metrics Reference
 
-All metrics are prefixed with `hybernate_` and registered with the controller-runtime metrics registry. They are served on the metrics endpoint, which the chart and the kustomize manifests serve on `:8443` over HTTPS; a scraper needs a token allowed to `get` `/metrics` (see [Monitoring](../operations/monitoring.md#prometheus)). The operator drops a workload's series when its ManagedWorkload is deleted; the doorman drops its `hybernate_doorman_wakes_total` series then too, on its next sync of routes, not when the workload merely stops being routed.
+All metrics are prefixed with `hybernate_` and registered with the controller-runtime metrics registry. They are served on the metrics endpoint, which the chart and the Kustomize manifests serve on `:8443` over HTTPS; a scraper needs a token allowed to `get` `/metrics` (see [Monitoring](../operations/monitoring.md#prometheus)). The operator drops a workload's series when its ManagedWorkload is deleted; the doorman drops its `hybernate_doorman_wakes_total` series then too, on its next sync of routes, not when the workload merely stops being routed.
 
 ## Tier 1: Cluster Health
 

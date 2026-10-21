@@ -214,7 +214,7 @@ Each entry is a NetworkPolicy peer, so `podSelector` and `ipBlock` work too. Eve
 
 Traffic from outside the cluster through a NodePort or LoadBalancer Service usually arrives with a node's address, since kube-proxy rewrites the source of connections it forwards to another node. A namespace or pod selector doesn't match a node, so with `ingressFrom` set those callers are refused: add your nodes' CIDRs as an `ipBlock` entry, or the load balancer's addresses if it preserves the client's. A routed Service with `externalTrafficPolicy: Local` keeps the client's address, but kube-proxy then sends it only to endpoints on the node it arrived at, so external callers reach the doorman only through nodes that run a doorman pod.
 
-With kustomize, write the policy yourself:
+With `install.yaml` or the Kustomize manifests, write the policy yourself:
 
 ```yaml
 apiVersion: networking.k8s.io/v1
@@ -258,7 +258,7 @@ doorman:
 
 List every IP family your cluster uses, and the node CIDRs too if a routed workload uses `hostNetwork`. `apiServer` is the API server's endpoint addresses, not the `kubernetes` Service's ClusterIP, since policies apply after the Service is resolved.
 
-The doorman's ServiceAccount can patch ManagedWorkloads, to set `hybernate.io/last-request`. The chart's ValidatingAdmissionPolicy (`doorman.admissionPolicy.enabled`, on by default, and in the kustomize manifests too) narrows that: it lets the ServiceAccount change only the `hybernate.io/last-request` and `hybernate.io/last-request-from` annotations. A second policy lets no one else set those two, so only the doorman can say a request woke a workload, or where it came from. See [Security](../reference/security.md#the-doorman-is-a-way-in-to-paused-workloads).
+The doorman's ServiceAccount can patch ManagedWorkloads, to set `hybernate.io/last-request`. The chart's ValidatingAdmissionPolicy (`doorman.admissionPolicy.enabled`, on by default, and in the Kustomize manifests too) narrows that: it lets the ServiceAccount change only the `hybernate.io/last-request` and `hybernate.io/last-request-from` annotations. A second policy lets no one else set those two, so only the doorman can say a request woke a workload, or where it came from. See [Security](../reference/security.md#the-doorman-is-a-way-in-to-paused-workloads).
 
 ## What the caller sees
 

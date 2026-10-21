@@ -6,7 +6,7 @@ These flags are passed to the binary (`/manager`), which runs as the operator, o
 
 | Flag | Default | Description |
 |------|---------|-------------|
-| `--metrics-bind-address` | `0` (disabled) | Address for the metrics endpoint. Use `:8443` for HTTPS or `:8080` for HTTP. The chart and the kustomize manifests use `:8443` |
+| `--metrics-bind-address` | `0` (disabled) | Address for the metrics endpoint. Use `:8443` for HTTPS or `:8080` for HTTP. The chart and the Kustomize manifests use `:8443` |
 | `--metrics-secure` | `true` | Serve metrics over HTTPS, only to callers allowed to `get` `/metrics`, checked with a TokenReview and a SubjectAccessReview. `false` serves plain HTTP |
 | `--metrics-cert-path` | | Directory containing the metrics server's TLS certificate. Without it, a self-signed certificate is generated |
 | `--metrics-cert-name` | `tls.crt` | Metrics certificate file name |

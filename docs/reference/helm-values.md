@@ -269,7 +269,7 @@ With `watchNamespaces` set, both get a Role and RoleBinding in each of those nam
 
 If leader election is enabled, a `<fullname>-leader-election` Role in the release namespace grants Leases (`get`, `create`, `update`) and Events.
 
-For people, the chart adds ManagedWorkloads to Kubernetes' built-in roles, through two aggregated ClusterRoles: `<fullname>-view`, in `view`, `edit` and `admin`, lets whoever can view a namespace `get`, `list` and `watch` its ManagedWorkloads, as `kubectl hybernate status` and `scan` do; `<fullname>-edit`, in `edit` and `admin`, lets whoever can edit it `create`, `update`, `patch` and `delete` them, as `pause`, `wake` and `enable` do. The kustomize manifests' `managedworkload-viewer-role` and `managedworkload-editor-role` are aggregated the same way.
+For people, the chart adds ManagedWorkloads to Kubernetes' built-in roles, through two aggregated ClusterRoles: `<fullname>-view`, in `view`, `edit` and `admin`, lets whoever can view a namespace `get`, `list` and `watch` its ManagedWorkloads, as `kubectl hybernate status` and `scan` do; `<fullname>-edit`, in `edit` and `admin`, lets whoever can edit it `create`, `update`, `patch` and `delete` them, as `pause`, `wake` and `enable` do. The Kustomize manifests' `managedworkload-viewer-role` and `managedworkload-editor-role` are aggregated the same way.
 
 What all of this reads, writes, and sends is listed in [Data and Access](data-and-access.md).
 

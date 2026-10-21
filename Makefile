@@ -310,7 +310,7 @@ lint-config: golangci-lint ## Verify golangci-lint linter configuration
 # The docs that name the current release, for installing or verifying it.
 # docs/operations/upgrading.md isn't one: its versions are history.
 VERSIONED_DOCS = README.md docs/getting-started/installation.md docs/getting-started/kubectl-plugin.md \
-	docs/reference/helm-values.md docs/reference/security.md
+	docs/operations/monitoring.md docs/reference/helm-values.md docs/reference/security.md
 
 # Versioning recipes read VERSION from the environment rather than having
 # make expand it into them, and check its form first, so a tag can't run as
