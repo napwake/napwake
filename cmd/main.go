@@ -195,13 +195,9 @@ func main() {
 		setupLog.Error(err, "invalid --protected-namespaces")
 		os.Exit(1)
 	}
-	if err := validatePrometheusURL(prometheusURL); err != nil {
-		setupLog.Error(err, "invalid --prometheus-url")
-		os.Exit(1)
-	}
-	selector, err := parsePrometheusSelector(prometheusSelector, prometheusURL)
+	selector, err := prometheusFlags(prometheusURL, prometheusSelector)
 	if err != nil {
-		setupLog.Error(err, "invalid --prometheus-selector")
+		setupLog.Error(err, "invalid Prometheus flag")
 		os.Exit(1)
 	}
 	if err := validateOptInDefaults(optIn); err != nil {
@@ -613,6 +609,19 @@ func validatePrometheusURL(raw string) error {
 		return fmt.Errorf("%q has no host", raw)
 	}
 	return nil
+}
+
+// prometheusFlags checks --prometheus-url and reads --prometheus-selector,
+// with errors that name the flag.
+func prometheusFlags(prometheusURL, rawSelector string) (scan.Selector, error) {
+	if err := validatePrometheusURL(prometheusURL); err != nil {
+		return nil, fmt.Errorf("--prometheus-url: %w", err)
+	}
+	selector, err := parsePrometheusSelector(rawSelector, prometheusURL)
+	if err != nil {
+		return nil, fmt.Errorf("--prometheus-selector: %w", err)
+	}
+	return selector, nil
 }
 
 // parsePrometheusSelector reads --prometheus-selector as the scan's

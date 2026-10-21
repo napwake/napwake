@@ -243,10 +243,10 @@ func TestForecastState_OlderVersionLearnsAgain(t *testing.T) {
 
 	fr.reconcile(t, workload)
 
-	events := drainEvents(t, fr.Reconciler)
-	assert.Contains(t, events, "Normal "+ReasonForecastReset)
-	assert.NotContains(t, events, "Warning "+ReasonForecastReset)
-	assert.Contains(t, events, "from an older version of Hybernate, so it learns again, from its CPU history in Prometheus")
+	got := drainEvents(t, fr.Reconciler)
+	assert.Contains(t, got, "Normal "+ReasonForecastReset)
+	assert.NotContains(t, got, "Warning "+ReasonForecastReset)
+	assert.Contains(t, got, "from an older version of Hybernate, so it learns again, from its CPU history in Prometheus")
 	if h := workload.Status.Prediction.History; h != nil {
 		assert.NotEqual(t, HistoryLearned, h.Reason, "the old history record is gone, to be read again")
 	}
