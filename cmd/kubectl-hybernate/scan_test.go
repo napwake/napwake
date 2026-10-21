@@ -311,6 +311,21 @@ func TestWriteTable_OnlyMeasuring(t *testing.T) {
 	assert.NotContains(t, got, "kubectl label", "nothing unmanaged is idle")
 }
 
+// A replay of a few hours frees cents, which say "<$1" rather than a $0
+// that reads as nothing beside the month it projects.
+func TestWriteTable_HistoryFreedUnderADollar(t *testing.T) {
+	cluster := sampleCluster()
+	cluster.Mode = discovery.ModeHistory
+	cluster.History = &discovery.HistorySource{Prometheus: "monitoring/prometheus-operated", Hours: 4}
+	cluster.Totals.Replayed = discovery.ReplayTotals{Workloads: 12, Sleepers: 12, SleepHours: 36, Freed: 0.03,
+		MonthlyFreed: 11.2}
+	var out bytes.Buffer
+
+	require.NoError(t, writeScan(&out, cluster, scanOptions{output: "table"}))
+
+	assert.Contains(t, out.String(), "and freed <$1: about $11/month.")
+}
+
 func TestWriteTable_History(t *testing.T) {
 	cluster := sampleCluster()
 	cluster.Mode = discovery.ModeHistory

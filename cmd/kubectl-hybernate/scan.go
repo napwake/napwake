@@ -728,7 +728,7 @@ func writeHeadline(p *printer, result scanResult) {
 		} else {
 			p.line("  Replaying %s, Hybernate would have paused %d of %s for %s in all,",
 				replayed, r.Sleepers, countOf(r.Workloads, "unmanaged workload"), hoursTotal(r.SleepHours))
-			p.line("  and freed %s: about %s/month.", dollars(r.Freed), dollars(r.MonthlyFreed))
+			p.line("  and freed %s: about %s/month.", savedMoney(r.Freed), dollars(r.MonthlyFreed))
 		}
 		switch {
 		case tooLittleHistory(result.History) && r.Sleepers == 0:
