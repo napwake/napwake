@@ -199,6 +199,7 @@ The relaunch. The 0.1.x releases were early experiments, and 0.2.0 is a fresh st
 - `kubectl hybernate scan` names the history it replayed as people say it, the same in the terminal's headline and the report's subtitle, summary and glossary: "the last 30 minutes" rather than "the last 1 hours", and its note says only why that's shorter than `--window`
 - `kubectl hybernate scan`'s first line counts the namespaces the workloads it lists are in, "14 workloads in 3 namespaces", rather than every namespace it read, infrastructure-only ones included; a scan that finds only infrastructure says so
 - `kubectl hybernate scan`'s note on the cluster's infrastructure says apart what it leaves out of the totals and what Hybernate would pause: never Kubernetes' own workloads or itself, and anything else, infrastructure included, only once you opt it in
+- `kubectl hybernate scan` says what Hybernate does with each dependency it lists, knowing whether it manages the dependency too: "woken with it once both are managed", "not managed, so never paused", "woken and held with it", rather than "connected once Hybernate manages it". Before anything is managed, when every dependency would say the same, it's said once above the list, without the column
 
 ## [0.1.7] - 2026-04-08
 

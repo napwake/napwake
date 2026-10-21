@@ -204,7 +204,7 @@ ul.plain { margin: 0; padding: 0 0 0 18px; color: var(--muted); font-size: 14px;
 
   {{if .Dependencies}}
   <h2>Dependencies</h2>
-  <p>What each workload connects to. Hybernate wakes a dependency with the workloads that need it, and keeps it up while they are.</p>
+  <p>What each workload connects to. {{if .DependenciesLead}}{{.DependenciesLead}}{{else}}Hybernate wakes a dependency it manages with the workloads it manages that need it, and keeps it up while they are; the status says which it does for each.{{end}}</p>
   <p class="count">{{len .Dependencies}} found; select a column to sort</p>
   <div class="scroll">
     <table data-sortable>
@@ -212,13 +212,13 @@ ul.plain { margin: 0; padding: 0 0 0 18px; color: var(--muted); font-size: 14px;
         <th><button type="button">Workload</button></th>
         <th><button type="button">Depends on</button></th>
         <th><button type="button">Found</button></th>
-        <th><button type="button">Status</button></th>
+        {{if .DependencyStatus}}<th><button type="button">Status</button></th>{{end}}
       </tr></thead>
       <tbody>{{range .Dependencies}}<tr>
         <td class="ref">{{.Workload}}</td>
         <td class="ref">{{.Target}}</td>
         <td>{{.Found}}</td>
-        <td>{{.Status}}</td>
+        {{if $.DependencyStatus}}<td>{{.Status}}</td>{{end}}
       </tr>{{end}}</tbody>
     </table>
   </div>

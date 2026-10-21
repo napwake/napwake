@@ -143,8 +143,9 @@ func TestWriteHTML_History(t *testing.T) {
 		"the line under a dry-run workload's state explains the state again")
 	assert.NotContains(t, got, "Measured in dry-run", "no separate section")
 	assert.Contains(t, got, "2 found; select a column to sort")
-	assert.Contains(t, got, "<td>PGHOST</td>\n        <td>not connected yet</td>",
-		"a dry-run workload's dependency, until Hybernate applies the dependencies it finds")
+	assert.Contains(t, got, "<td>PGHOST</td>\n        <td>not managed, so never paused</td>",
+		"a dry-run workload's dependency Hybernate doesn't manage")
+	assert.Contains(t, got, "<th><button type=\"button\">Status</button></th>", "a managed workload's need a status")
 	assert.NotContains(t, got, "hybernate.io/depends-on=", "Hybernate connects dependencies itself")
 	assert.NotContains(t, got, "headless")
 	assert.Contains(t, got, "messaging/statefulset/nats")
@@ -176,6 +177,21 @@ func TestWriteHTML_WindowReplayed(t *testing.T) {
 	assert.Contains(t, got, "would have slept over the last 30 minutes")
 	assert.Contains(t, got, "or from history over the last 30 minutes for an unmanaged one")
 	assert.NotContains(t, got, "1 hours")
+}
+
+// While Hybernate manages none of the workloads, every dependency would say
+// the same, so the report says it once, without a status column.
+func TestWriteHTML_DependenciesBeforeAnythingIsManaged(t *testing.T) {
+	result := sampleCluster()
+	result.Workloads[0].Dependencies = []discovery.Dependency{{Namespace: "preview-42",
+		Kind: v1alpha1.TargetKindStatefulSet, Name: "postgres", Via: "PGHOST"}}
+
+	got := renderHTML(t, result)
+
+	assert.Contains(t, got, "What each workload connects to. Once Hybernate manages both ends of one, it wakes the "+
+		"dependency with the workload that needs it, and keeps it up while that workload runs.")
+	assert.NotContains(t, got, ">Status</button>")
+	assert.NotContains(t, got, "connected once")
 }
 
 // A workload that ran four pods all week and runs one now could free more

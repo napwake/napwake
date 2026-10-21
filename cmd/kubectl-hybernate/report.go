@@ -64,15 +64,19 @@ type reportPage struct {
 	Namespaces     []namespaceRow
 	Workloads      []workloadRow
 	Dependencies   []dependencyRow
-	Notes          []string
-	Method         []string
-	NextSteps      []template.HTML
-	Threshold      int
-	IdleAfter      string
-	Over           string
-	Tips           tips
-	Terms          []term
-	Mark           string
+	// DependencyStatus says each dependency shows its status; without it,
+	// DependenciesLead says what they'd all say.
+	DependencyStatus bool
+	DependenciesLead string
+	Notes            []string
+	Method           []string
+	NextSteps        []template.HTML
+	Threshold        int
+	IdleAfter        string
+	Over             string
+	Tips             tips
+	Terms            []term
+	Mark             string
 	// Unjudged is how many workloads the notes list instead of Workloads.
 	Unjudged int
 }
@@ -350,9 +354,14 @@ func buildReport(result scanResult, idleAfter time.Duration) reportPage {
 		return strings.Compare(a.Namespace, b.Namespace)
 	})
 
-	for _, l := range dependencyLines(result.Workloads) {
+	lines := dependencyLines(result.Workloads, result.Platform)
+	for _, l := range lines {
 		page.Dependencies = append(page.Dependencies, dependencyRow{Workload: workloadRef(l.wl),
 			Target: dependencyRef(l.wl.Namespace, l.d), Found: foundVia(l.d), Status: dependencyStatus(l)})
+	}
+	page.DependencyStatus = statusColumn(lines)
+	if !page.DependencyStatus {
+		page.DependenciesLead = dependenciesLead + "."
 	}
 
 	_, unjudged := splitJudged(result.Workloads)

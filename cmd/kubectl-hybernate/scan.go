@@ -651,7 +651,7 @@ func writeTable(w io.Writer, result scanResult, limit int) error {
 	if len(judged) > 0 {
 		writeWorkloads(p, judged, limit, result.Mode == discovery.ModeHistory)
 	}
-	writeDependencies(p, result.Workloads, limit)
+	writeDependencies(p, dependencyLines(result.Workloads, result.Platform), limit)
 	notes := append(unjudgedNotes(unjudged), result.Notes...)
 	if len(notes) > 0 {
 		p.line("Notes:")
@@ -1104,41 +1104,64 @@ func sleepColumns(history bool, workloads []Workload) bool {
 	return history
 }
 
-// dependencyLine is one dependency a workload was found to have.
+// dependencyLine is one dependency a workload was found to have, and
+// whether Hybernate manages the dependency.
 type dependencyLine struct {
-	wl Workload
-	d  discovery.Dependency
+	wl      Workload
+	d       discovery.Dependency
+	managed bool
 }
 
-// dependencyLines are the dependencies found, by workload.
-func dependencyLines(workloads []Workload) []dependencyLine {
+// dependencyLines are the dependencies found, by workload. A dependency can
+// be the cluster's own infrastructure, which platform lists.
+func dependencyLines(workloads, platform []Workload) []dependencyLine {
+	type key struct {
+		namespace, kind, name string
+	}
+	managed := map[key]bool{}
 	n := 0
-	for _, wl := range workloads {
+	for _, wl := range slices.Concat(workloads, platform) {
+		managed[key{wl.Namespace, string(wl.Kind), wl.Name}] = wl.Managed
 		n += len(wl.Dependencies)
 	}
 	lines := make([]dependencyLine, 0, n)
 	for _, wl := range workloads {
 		for _, d := range wl.Dependencies {
-			lines = append(lines, dependencyLine{wl: wl, d: d})
+			lines = append(lines, dependencyLine{wl: wl, d: d, managed: managed[key{d.Namespace, string(d.Kind), d.Name}]})
 		}
 	}
 	return lines
 }
 
-// dependencyStatus says whether Hybernate wakes and holds a dependency with
-// the workload that needs it.
+// dependencyStatus says what Hybernate does with a dependency for the
+// workload that needs it. It wakes and holds one only when it manages both:
+// one it doesn't manage it never pauses, so has nothing to wake.
 func dependencyStatus(l dependencyLine) string {
 	switch {
-	case l.d.Declared:
-		return "declared"
-	case l.d.Connected:
-		return "connected by Hybernate"
 	case !l.wl.Managed:
-		return "connected once Hybernate manages it"
+		return "woken with it once both are managed"
+	case !l.managed:
+		return "not managed, so never paused"
+	case l.d.Declared:
+		return "declared; woken and held with it"
+	case l.d.Connected:
+		return "woken and held with it"
 	default:
-		return "not connected yet"
+		return "not learned yet"
 	}
 }
+
+// statusColumn says whether each dependency needs its status shown. While
+// Hybernate manages none of the workloads that need them, they'd all say
+// the same, which dependenciesLead says once instead.
+func statusColumn(lines []dependencyLine) bool {
+	return slices.ContainsFunc(lines, func(l dependencyLine) bool { return l.wl.Managed })
+}
+
+// dependenciesLead is what Hybernate does with dependencies, said once,
+// when no line needs a status of its own.
+const dependenciesLead = "Once Hybernate manages both ends of one, it wakes the dependency with the workload that " +
+	"needs it, and keeps it up while that workload runs"
 
 // foundVia says where a dependency was found.
 func foundVia(d discovery.Dependency) string {
@@ -1148,23 +1171,31 @@ func foundVia(d discovery.Dependency) string {
 	return d.Via
 }
 
-// writeDependencies lists the dependencies found, and whether Hybernate
-// wakes and holds each with the workload that needs it.
-func writeDependencies(p *printer, workloads []Workload, limit int) {
-	lines := dependencyLines(workloads)
+// writeDependencies lists the dependencies found, and what Hybernate does
+// with each for the workload that needs it.
+func writeDependencies(p *printer, lines []dependencyLine, limit int) {
 	if len(lines) == 0 {
 		return
 	}
-	p.line("  Dependencies Hybernate wakes and holds with the workloads that need them: %s",
-		plural(len(lines), "dependency", "dependencies"))
+	found := plural(len(lines), "dependency", "dependencies") + " found"
+	status := statusColumn(lines)
+	if status {
+		p.line("  %s, and what Hybernate does with each:", found)
+	} else {
+		p.line("  %s. %s:", found, dependenciesLead)
+	}
 	shown := lines
 	if limit > 0 && len(shown) > limit {
 		shown = shown[:limit]
 	}
 	tw := tabwriter.NewWriter(p, 0, 0, 3, ' ', 0)
 	for _, l := range shown {
-		_, _ = fmt.Fprintf(tw, "  %s\t%s/%s\t->\t%s\t%s\t%s\n", l.wl.Namespace, strings.ToLower(string(l.wl.Kind)),
-			l.wl.Name, dependencyRef(l.wl.Namespace, l.d), foundVia(l.d), dependencyStatus(l))
+		row := fmt.Sprintf("  %s\t%s/%s\t->\t%s\t%s", l.wl.Namespace, strings.ToLower(string(l.wl.Kind)), l.wl.Name,
+			dependencyRef(l.wl.Namespace, l.d), foundVia(l.d))
+		if status {
+			row += "\t" + dependencyStatus(l)
+		}
+		_, _ = fmt.Fprintln(tw, row)
 	}
 	_ = tw.Flush()
 	if len(shown) < len(lines) {

@@ -121,16 +121,16 @@ Pass --cpu-price and --memory-price for yours.
 **Dependencies:** the scan reads each workload's environment variables, from literal values and ConfigMaps, and lists the workloads they point at:
 
 ```
-  Dependencies Hybernate wakes and holds with the workloads that need them: 3 dependencies
-  preview-42   deployment/checkout-api   ->   statefulset/postgres         DATABASE_URL   declared
-  preview-42   deployment/checkout-api   ->   messaging/statefulset/nats   NATS_URL       connected once Hybernate manages it
-  preview-42   deployment/worker         ->   statefulset/postgres         PGHOST         connected once Hybernate manages it
+  3 dependencies found, and what Hybernate does with each:
+  preview-42   deployment/checkout-api   ->   statefulset/postgres         DATABASE_URL   declared; woken and held with it
+  preview-42   deployment/checkout-api   ->   messaging/statefulset/nats   NATS_URL       not managed, so never paused
+  preview-42   deployment/worker         ->   statefulset/postgres         PGHOST         woken with it once both are managed
 ```
 
 - An address counts when it names a Service in a scanned namespace, in any form cluster DNS gives it (`postgres`, `postgres.preview-42`, `postgres.preview-42.svc.cluster.local`, or a headless Service's pod, `postgres-0.postgres-hl`), inside a URL, a `host:port`, or a list of either. The workload is the one the Service's selector picks. A bare word on its own, such as `MODE=postgres`, isn't taken for an address.
 - Variable names don't matter, and Service names come from the cluster, not a list the scan keeps.
 - An address is shown as its scheme, host and port alone, such as `postgres://postgres:5432`: a user, a password, a path and a query string can each hold a credential, so none of them is. The terminal shows the variable each dependency was found in; only JSON and YAML carry the address itself.
-- Hybernate wakes a dependency with the workload that needs it, so the first request doesn't wait for it too, and keeps it up while that workload is; see [Dependencies](../concepts/dependencies.md). The status says whether that's in place: **declared** with `hybernate.io/depends-on`, **connected** by Hybernate, **connected once Hybernate manages** the workload, or **not connected yet**, for one Hybernate manages but hasn't applied it to.
+- Hybernate wakes a dependency with the workload that needs it, so the first request doesn't wait for it too, and keeps it up while that workload is, when it manages both; see [Dependencies](../concepts/dependencies.md). The last column says what it does with each: **woken with it once both are managed**, for a workload it doesn't manage yet; **not managed, so never paused**, for a dependency it doesn't manage, which stays up anyway; **woken and held with it**, learned from the workload's environment or a wake; **declared; woken and held with it**, with `hybernate.io/depends-on`; or **not learned yet**, for one Hybernate manages but hasn't learned. Before Hybernate manages any of the workloads that need them, every dependency would say the first, so the scan and the report say it once above the list and leave the column out.
 - Secrets are never read, so addresses set there, and ones built in code or read from files, aren't found. The notes say which workloads take variables from Secrets.
 
 **What the numbers mean:**

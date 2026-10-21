@@ -459,13 +459,36 @@ func TestWriteTable_Dependencies(t *testing.T) {
 		scanOptions{output: "table"}))
 
 	got := out.String()
-	assert.Contains(t, got, "Dependencies Hybernate wakes and holds with the workloads that need them: 4 dependencies")
-	assert.Regexp(t, `deployment/checkout-api\s+->\s+statefulset/postgres\s+PGHOST\s+connected once Hybernate manages it`,
-		got, "an unmanaged workload's")
-	assert.Regexp(t, `->\s+messaging/statefulset/nats\s+NATS_URL\s+connected once`, got,
-		"another namespace's is named with it")
-	assert.Regexp(t, `statefulset/backup\s+BACKUP\s+declared`, got)
+	assert.Contains(t, got, "  4 dependencies found. Once Hybernate manages both ends of one, it wakes the "+
+		"dependency with the workload that needs it, and keeps it up while that workload runs:\n",
+		"with nothing managed, what every status would say is said once")
+	assert.Regexp(t, `deployment/checkout-api\s+->\s+statefulset/postgres\s+PGHOST\n`, got, "no status column")
+	assert.Regexp(t, `->\s+messaging/statefulset/nats\s+NATS_URL\n`, got, "another namespace's is named with it")
+	assert.NotContains(t, got, "connected once", "no jargon")
 	assert.NotContains(t, got, "hybernate.io/depends-on=", "Hybernate connects dependencies itself")
+}
+
+// Once Hybernate manages a workload, each of its dependencies says what
+// Hybernate does with it.
+func TestWriteTable_DependenciesOfManagedWorkloads(t *testing.T) {
+	cluster := sampleCluster()
+	cluster.Workloads[0].Managed = true
+	cluster.Workloads[0].Dependencies = []discovery.Dependency{
+		{Namespace: "preview-42", Kind: v1alpha1.TargetKindStatefulSet, Name: "postgres", Via: "PGHOST",
+			Connected: true},
+		{Namespace: "preview-42", Kind: v1alpha1.TargetKindDeployment, Name: "cache", Via: "CACHE"},
+	}
+	cluster.Workloads[1].Managed = true
+	cluster.Workloads = append(cluster.Workloads, discovery.Workload{Namespace: "preview-42", Name: "cache",
+		Kind: v1alpha1.TargetKindDeployment, State: discovery.StateActive})
+	var out bytes.Buffer
+
+	require.NoError(t, writeScan(&out, cluster, scanOptions{output: "table"}))
+
+	got := out.String()
+	assert.Contains(t, got, "  2 dependencies found, and what Hybernate does with each:\n")
+	assert.Regexp(t, `statefulset/postgres\s+PGHOST\s+woken and held with it\n`, got)
+	assert.Regexp(t, `deployment/cache\s+CACHE\s+not managed, so never paused\n`, got)
 }
 
 // Many dependencies are summed up, listed most useful first, and cut at
@@ -602,25 +625,53 @@ func TestPricesFor(t *testing.T) {
 	}
 }
 
+// A dependency is woken and held with the workload that needs it only when
+// Hybernate manages both, and each status says what it does.
 func TestDependencyStatus(t *testing.T) {
 	tests := []struct {
-		name    string
-		managed bool
-		d       discovery.Dependency
-		want    string
+		name                string
+		managed, depManaged bool
+		d                   discovery.Dependency
+		want                string
 	}{
-		{name: "declared wins", managed: true, d: discovery.Dependency{Declared: true, Connected: true}, want: "declared"},
-		{name: "connected by Hybernate", managed: true, d: discovery.Dependency{Connected: true},
-			want: "connected by Hybernate"},
-		{name: "unmanaged", want: "connected once Hybernate manages it"},
-		{name: "managed, not yet applied", managed: true, want: "not connected yet"},
+		{name: "neither managed", want: "woken with it once both are managed"},
+		{name: "only the dependency managed", depManaged: true, d: discovery.Dependency{Declared: true},
+			want: "woken with it once both are managed"},
+		{name: "the dependency not managed", managed: true, d: discovery.Dependency{Connected: true},
+			want: "not managed, so never paused"},
+		{name: "declared", managed: true, depManaged: true, d: discovery.Dependency{Declared: true, Connected: true},
+			want: "declared; woken and held with it"},
+		{name: "learned", managed: true, depManaged: true, d: discovery.Dependency{Connected: true},
+			want: "woken and held with it"},
+		{name: "not learned yet", managed: true, depManaged: true, want: "not learned yet"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			l := dependencyLine{wl: Workload{Managed: tt.managed}, d: tt.d}
+			l := dependencyLine{wl: Workload{Managed: tt.managed}, d: tt.d, managed: tt.depManaged}
 			assert.Equal(t, tt.want, dependencyStatus(l))
 		})
 	}
+}
+
+// Whether a dependency is managed is read from the workloads scanned, the
+// cluster's infrastructure included.
+func TestDependencyLines_KnowWhatsManaged(t *testing.T) {
+	db := discovery.Workload{Namespace: "dev", Kind: v1alpha1.TargetKindStatefulSet, Name: "db", Managed: true}
+	queue := discovery.Workload{Namespace: "infra", Kind: v1alpha1.TargetKindStatefulSet, Name: "queue",
+		Managed: true, Platform: "rabbitmq"}
+	api := discovery.Workload{Namespace: "dev", Kind: v1alpha1.TargetKindDeployment, Name: "api", Managed: true,
+		Dependencies: []discovery.Dependency{
+			{Namespace: "dev", Kind: v1alpha1.TargetKindStatefulSet, Name: "db"},
+			{Namespace: "infra", Kind: v1alpha1.TargetKindStatefulSet, Name: "queue"},
+			{Namespace: "dev", Kind: v1alpha1.TargetKindStatefulSet, Name: "cache"},
+		}}
+
+	lines := dependencyLines([]Workload{api, db}, []Workload{queue})
+
+	require.Len(t, lines, 3)
+	assert.True(t, lines[0].managed)
+	assert.True(t, lines[1].managed, "infrastructure Hybernate manages")
+	assert.False(t, lines[2].managed, "one not scanned isn't known to be managed")
 }
 
 func TestWriteScan_FreedAndSavedThisMonth(t *testing.T) {
