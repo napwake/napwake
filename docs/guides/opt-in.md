@@ -15,7 +15,7 @@ metadata:
     hybernate.io/idle-after: "2h"
 ```
 
-The label is usually one line in your Helm values or manifests, in a file you already keep in Git. Hybernate then creates a [ManagedWorkload](managed-workload.md) for the workload and keeps it in step with the annotations.
+The label is usually one line in your Helm values or manifests, in a file you already keep in Git. It goes on the Deployment or StatefulSet itself: a chart's `podLabels` and `podAnnotations` put it on the pods, where Hybernate doesn't look. With Kustomize, don't use `commonLabels`, which changes the workload's selector; see [With Kustomize](#with-kustomize). Hybernate then creates a [ManagedWorkload](managed-workload.md) for the workload and keeps it in step with the annotations.
 
 ## A whole namespace
 
@@ -34,6 +34,51 @@ metadata:
 ```
 
 This covers dev and preview namespaces, and third-party charts that don't let you add labels to their workloads. To leave one workload out of a managed namespace, label it `hybernate.io/ignore: "true"`, or `hybernate.io/managed: "false"`.
+
+## With Kustomize
+
+Don't use `commonLabels` for the label. Kustomize puts it in each Deployment's and StatefulSet's `spec.selector` too, and in a StatefulSet's `volumeClaimTemplates`, neither of which Kubernetes lets change. Applied to a workload that already exists, it fails with `field is immutable`, while the workload's Service, applied with it, can take the new selector, which none of the running pods has, so it stops sending them traffic. A tool set to recreate what it can't change, such as Flux with `force: true`, deletes and recreates the workloads instead. On a new workload it applies, but the label is then part of the selector, so removing it to stop managing the workload fails the same way. `labels` with `includeSelectors: true`, which is what `kustomize edit fix` turns `commonLabels` into, does the same.
+
+These leave the selectors alone:
+
+- **A whole namespace:** when the kustomization has the Namespace, label and annotate it there, as in [A whole namespace](#a-whole-namespace). Nothing on the workloads changes.
+- **Everything the kustomization applies:** `labels` with `includeSelectors: false`, which labels each resource's own metadata and nothing else:
+
+    ```yaml title="kustomization.yaml"
+    resources:
+      - ../../base
+    labels:
+      - pairs:
+          hybernate.io/managed: "true"
+        includeSelectors: false
+    ```
+
+    Leave `includeTemplates` out: it labels the pods too, which restarts them for nothing, since Hybernate doesn't read pods' labels, and a StatefulSet's `volumeClaimTemplates`, which fails as the selector does. Services and ConfigMaps get the label as well, and Hybernate ignores it there, but a Namespace in the kustomization gets it too, which opts in the whole namespace.
+
+- **Chosen workloads, with their settings:** a patch, which changes only the workload's own labels and annotations:
+
+    ```yaml title="kustomization.yaml"
+    resources:
+      - ../../base
+    patches:
+      - target:
+          kind: Deployment
+          name: checkout-api
+        patch: |
+          apiVersion: apps/v1
+          kind: Deployment
+          metadata:
+            name: checkout-api
+            labels:
+              hybernate.io/managed: "true"
+            annotations:
+              hybernate.io/dry-run: "true"
+              hybernate.io/idle-after: "2h"
+    ```
+
+    Keep the `target`: without one, the patch has to give the workload's namespace too when its manifest has one, or the build fails with `no resource matches strategic merge patch`. To patch every Deployment and StatefulSet, target `kind: Deployment|StatefulSet` with no name; the patch still needs a `name`, which is then ignored.
+
+`commonAnnotations` can carry the settings, but it puts them on the pod templates too, so adding or changing one, such as `dry-run` to `"false"` to start pausing, restarts the pods of every workload in the kustomization, and Hybernate counts each restart as a [deploy](../concepts/idle-detection.md#what-counts-as-activity), which is activity. Set them on the Namespace or in a patch instead.
 
 ## Settings
 

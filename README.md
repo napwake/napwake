@@ -72,7 +72,7 @@ metadata:
     hybernate.io/idle-after: "2h"
 ```
 
-The label opts it in; the annotations are its settings. Label a namespace instead to cover every workload in it. In dry-run, Hybernate tracks the workload's activity and what pausing would free, without pausing it. When you're confident:
+The label opts it in; the annotations are its settings. Label a namespace instead to cover every workload in it. In dry-run, Hybernate tracks the workload's activity and what pausing would free, without pausing it. If Argo CD or Flux applies the workload, first have it [leave the replicas to Hybernate](https://okedeji.io/hybernate/guides/gitops/), or it undoes every pause. When you're confident:
 
 ```bash
 kubectl hybernate enable my-api -n staging
