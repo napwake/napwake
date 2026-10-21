@@ -102,7 +102,9 @@ jobs:
           fi
           echo "chart=${TAG#v}" >> "$GITHUB_OUTPUT"
 
-      # A pre-release's notes are those of the version it rehearses.
+      # A pre-release's notes are those of the version it rehearses. The
+      # notes link the release's docs: its minor's, or next's for a
+      # pre-release.
       - name: Extract the changelog for the release
         run: |
           base="${TAG#v}"
@@ -113,6 +115,11 @@ jobs:
             echo "CHANGELOG.md's section for ${base} is empty or missing" >&2
             exit 1
           fi
+          docs="${base%.*}"
+          if [[ "$TAG" == *-* ]]; then
+            docs=next
+          fi
+          printf '\n**Docs for this release:** https://okedeji.io/hybernate/%s/\n' "$docs" >> release-notes.md
 
       # Static, so the Linux binaries run on Alpine and Amazon Linux as well
       # as glibc distributions. krew-index requires the LICENSE in each, and

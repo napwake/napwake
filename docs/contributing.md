@@ -134,7 +134,7 @@ The docs are built with mkdocs: `pip install --require-hashes -r docs/requiremen
 A release is a tag on `main`, `vX.Y.Z`. `make release VERSION=X.Y.Z` bumps the chart's version and appVersion, the kustomize image, and the install and verify commands and download links in the docs (the pages in the Makefile's `VERSIONED_DOCS`), dates the version's section of `CHANGELOG.md`, commits that, and tags it. Pushing the tag starts the release workflow:
 
 1. Checks the chart, the kustomize image, the docs and the dated changelog name the tag's version, and that no page's install link is to `releases/latest` or another release (`make verify-version`), then runs every check a pull request does, including Trivy on the image.
-2. Builds the plugin archives, the krew manifest, `install.yaml` and the chart; pushes the image by digest, untagged, and signs it and attaches its SBOMs and provenance; and drafts the GitHub release with every file, its signed checksums, and the changelog section as its notes.
+2. Builds the plugin archives, the krew manifest, `install.yaml` and the chart; pushes the image by digest, untagged, and signs it and attaches its SBOMs and provenance; and drafts the GitHub release with every file, its signed checksums, and the changelog section, with a link to the release's docs, as its notes.
 3. Tags the image, pushes and signs the chart, tags the image `latest`, and publishes the GitHub release, which moves `releases/latest`.
 4. For a release, not a release candidate, writes the Homebrew formula from the published archives and pushes it to [the tap](#the-homebrew-tap).
 
