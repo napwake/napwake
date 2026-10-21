@@ -54,7 +54,7 @@ kubectl annotate deployment my-api -n dev hybernate.io/dry-run=true hybernate.io
 kubectl label deployment my-api -n dev hybernate.io/managed=true
 ```
 
-The annotations are the workload's settings, set first so it starts in dry-run; the label opts it in. Here, dry-run means it's measured and never paused, and `idle-after: 5m` makes the example quick (the default is an hour). In real use, these usually go in the workload's manifest or Helm values, or on its namespace to cover everything in it. See [Opting In](../guides/opt-in.md).
+The annotations are the workload's settings, set first so it starts in dry-run; the label opts it in. Here, dry-run means it's measured and never paused, and `idle-after: 5m` makes the example quick (the default is an hour). In real use, these usually go in the workload's manifest or Helm values, or on its namespace to cover everything in it; see [Opting In](../guides/opt-in.md). With Kustomize, don't use `commonLabels`, which changes the workload's selector: [With Kustomize](../guides/opt-in.md#with-kustomize) gives the ways that work.
 
 Hybernate creates a ManagedWorkload for it:
 
@@ -139,7 +139,7 @@ Removing the label removes the ManagedWorkload. If the workload is paused, it's 
 
 ## What's next?
 
-- [Opting In](../guides/opt-in.md): every setting, namespaces, and GitOps
+- [Opting In](../guides/opt-in.md): every setting, namespaces, Kustomize, and GitOps
 - [Idle Detection](../concepts/idle-detection.md): how the activity clock decides
 - [Wake on Request](../concepts/wake-on-request.md): how requests wake a paused workload
 - [ManagedWorkload Guide](../guides/managed-workload.md): writing a ManagedWorkload yourself, for settings annotations don't cover
