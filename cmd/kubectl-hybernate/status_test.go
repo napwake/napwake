@@ -31,6 +31,7 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/meta"
+	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -724,6 +725,51 @@ func TestStatus_ForecastTimeZone(t *testing.T) {
 
 			if tt.want == "" {
 				assert.NotContains(t, out, "Forecast time zone")
+				return
+			}
+			assert.Contains(t, out, tt.want)
+		})
+	}
+}
+
+// Status says when its money figures are at spot prices, as the operator
+// priced them, so they aren't read against on-demand prices; a workload's
+// own rates win over its nodes', so it isn't counted.
+func TestStatus_PricedAtSpot(t *testing.T) {
+	cpu, memory := resource.MustParse("30m"), resource.MustParse("4m")
+	tests := []struct {
+		name  string
+		price []v1alpha1.ListPrice
+		rates *v1alpha1.CostRates
+		want  string
+	}{
+		{name: "on-demand", price: []v1alpha1.ListPrice{v1alpha1.ListPriceOnDemand}},
+		{name: "one on spot", price: []v1alpha1.ListPrice{v1alpha1.ListPriceSpot, v1alpha1.ListPriceOnDemand},
+			want: "  1 workload runs on spot nodes, priced at spot.\n"},
+		{name: "partly on spot", price: []v1alpha1.ListPrice{v1alpha1.ListPriceSpot,
+			v1alpha1.ListPriceSpotAndOnDemand}, want: "  2 workloads run on spot nodes, priced at spot.\n"},
+		{name: "own rates win", price: []v1alpha1.ListPrice{v1alpha1.ListPriceSpot},
+			rates: &v1alpha1.CostRates{CPUPerHour: &cpu, MemoryPerHour: &memory}},
+		{name: "own CPU rate only", price: []v1alpha1.ListPrice{v1alpha1.ListPriceSpot},
+			rates: &v1alpha1.CostRates{CPUPerHour: &cpu}, want: "  1 workload runs on spot nodes, priced at spot.\n"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			objs := make([]client.Object, 0, len(tt.price))
+			for i, price := range tt.price {
+				w := statusWorkloadObj("shop", fmt.Sprintf("w%d", i), v1alpha1.TargetKindDeployment,
+					v1alpha1.PhaseRunning, time.Hour)
+				w.Status.Cost = &v1alpha1.CostStatus{ListPrice: price}
+				if tt.rates != nil {
+					w.Spec.CostTracking = &v1alpha1.CostTrackingSpec{Rates: tt.rates}
+				}
+				objs = append(objs, w)
+			}
+
+			out := runStatus(t, newStatusClient(t, interceptor.Funcs{}, objs...), statusOpts())
+
+			if tt.want == "" {
+				assert.NotContains(t, out, "spot")
 				return
 			}
 			assert.Contains(t, out, tt.want)

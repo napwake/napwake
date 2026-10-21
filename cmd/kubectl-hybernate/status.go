@@ -214,6 +214,9 @@ type statusWorkload struct {
 	// freed, and since when it has been measured. Unset for one that isn't.
 	WouldFree   *float64   `json:"wouldFree,omitempty"`
 	DryRunSince *time.Time `json:"dryRunSince,omitempty"`
+	// AtSpot is set when its money figures are at spot prices, from the
+	// spot nodes it runs on, rather than on-demand.
+	AtSpot bool `json:"atSpot,omitempty"`
 	// namedApart is set for a ManagedWorkload written by hand under a name
 	// other than its target's, which the table then shows beside it.
 	namedApart bool
@@ -516,6 +519,7 @@ func workloadStatus(w *v1alpha1.ManagedWorkload, targetActiveUntil, now time.Tim
 	if c := w.Status.Cost; c != nil {
 		row.SavingsUnknown = c.SavingsUnknown
 	}
+	row.AtSpot = pricedAtSpot(w)
 	if d := w.Status.DryRun; w.Spec.DryRun && d != nil {
 		wouldFree := dollarsIn(d.EstimatedFreed)
 		since := d.Since.UTC()
@@ -531,6 +535,20 @@ func workloadStatus(w *v1alpha1.ManagedWorkload, targetActiveUntil, now time.Tim
 		row.ActivitySource = string(a.LastActivitySource)
 	}
 	return row
+}
+
+// pricedAtSpot is whether the operator priced the workload at the spot
+// price of its nodes: their list price is spot, and the workload doesn't
+// set its own CPU and memory rates, which win over it.
+func pricedAtSpot(w *v1alpha1.ManagedWorkload) bool {
+	c := w.Status.Cost
+	if c == nil || (c.ListPrice != v1alpha1.ListPriceSpot && c.ListPrice != v1alpha1.ListPriceSpotAndOnDemand) {
+		return false
+	}
+	if ct := w.Spec.CostTracking; ct != nil && ct.Rates != nil {
+		return ct.Rates.CPUPerHour == nil || ct.Rates.MemoryPerHour == nil
+	}
+	return true
 }
 
 // nextFor says what happens to a workload next, or what's stopping it.
@@ -844,6 +862,9 @@ func writeStatusTable(w io.Writer, result statusResult, now time.Time) error {
 	if zone := timeZoneLine(result.ForecastTimeZones); zone != "" {
 		p.line("  %s", zone)
 	}
+	if spot := spotLine(result.Workloads); spot != "" {
+		p.line("  %s", spot)
+	}
 	if result.FreedThisMonth > 0 || result.SavedThisMonth > 0 {
 		p.line("  Freed %s this month, and saved %s of it.", savedMoney(result.FreedThisMonth),
 			savedMoney(result.SavedThisMonth))
@@ -976,6 +997,21 @@ func dryRunMeasured(workloads []statusWorkload) (int, *time.Time) {
 		}
 	}
 	return n, since
+}
+
+// spotLine says how many workloads' money figures are at spot prices, so
+// they aren't read against on-demand prices; nothing when none are.
+func spotLine(workloads []statusWorkload) string {
+	n := 0
+	for _, wl := range workloads {
+		if wl.AtSpot {
+			n++
+		}
+	}
+	if n == 0 {
+		return ""
+	}
+	return plural(n, "workload runs", "workloads run") + " on spot nodes, priced at spot."
 }
 
 // timeZoneLine says which time zone forecasts count hours in, by what the

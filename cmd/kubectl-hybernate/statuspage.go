@@ -44,6 +44,7 @@ type statusPage struct {
 	Summary        string
 	NodeAutoscaler string
 	TimeZone       string
+	Spot           string
 	Figures        []figure
 	Notes          []string
 	Attention      []attentionRow
@@ -104,6 +105,7 @@ func buildStatusPage(result statusResult, since time.Duration, now time.Time) st
 		At:             now.UTC().Format("2 January 2006, 15:04 MST"),
 		NodeAutoscaler: reportAutoscaler(result.NodeAutoscaler),
 		TimeZone:       timeZoneLine(result.ForecastTimeZones),
+		Spot:           spotLine(result.Workloads),
 		Since:          span(since),
 		Mark:           doorman.Mark,
 		Figures:        statusFigures(result),
