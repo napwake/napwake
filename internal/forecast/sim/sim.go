@@ -368,7 +368,7 @@ func (s *run) lookAwake(t time.Time, use Use) error {
 	if err := s.see(t, demand, true); err != nil {
 		return err
 	}
-	if percent > float64(set.CPUThreshold) || use.Seen {
+	if forecast.Busy(percent, set.CPUThreshold) || use.Seen {
 		s.lastActivity, s.lastWasUse = t, true
 	}
 

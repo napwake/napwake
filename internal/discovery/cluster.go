@@ -33,6 +33,7 @@ import (
 
 	v1alpha1 "github.com/okedeji/hybernate/api/v1alpha1"
 	"github.com/okedeji/hybernate/internal/cost"
+	"github.com/okedeji/hybernate/internal/forecast"
 )
 
 // State is how a scan judges a workload's use.
@@ -121,6 +122,9 @@ type Workload struct {
 	// Nil and zero when it couldn't be measured.
 	CPUPercent    *int  `json:"cpuPercent,omitempty"`
 	CPUMillisUsed int64 `json:"cpuMillisUsed,omitempty"`
+	// cpuShare is CPUPercent before it's rounded down: what the activity
+	// threshold is compared with, as the operator compares it.
+	cpuShare float64
 	// PodCPURequestMillis and PodMemoryRequestBytes are what one replica's
 	// pod reserves, sidecars included: what pausing a replica frees.
 	PodCPURequestMillis   int64      `json:"podCPURequestMillis"`
@@ -576,7 +580,7 @@ func judgeManaged(w *Workload, mw *v1alpha1.ManagedWorkload, now time.Time, thre
 		w.State, w.Reason = StateActive, "waking"
 	case since < idleAfter:
 		w.State, w.Reason = StateActive, fmt.Sprintf("active %s (%s)", ago(since), a.LastActivitySource)
-	case w.CPUPercent != nil && *w.CPUPercent >= threshold:
+	case w.CPUPercent != nil && forecast.Busy(w.cpuShare, threshold):
 		w.State, w.Reason = StateActive, cpuReason(*w)
 	default:
 		w.State, w.Reason = StateIdle, "no activity for "+duration(since)
@@ -620,7 +624,7 @@ func thresholdFor(mw *v1alpha1.ManagedWorkload, opts ClusterOptions) int {
 // judgeUnmanaged applies the activity clock's sources a scan can see
 // without Hybernate: activity annotations, a recent rollout, and CPU.
 func judgeUnmanaged(w *Workload, obj client.Object, now time.Time, threshold int, idleAfter time.Duration) {
-	if w.CPUPercent != nil && *w.CPUPercent >= threshold {
+	if w.CPUPercent != nil && forecast.Busy(w.cpuShare, threshold) {
 		w.State, w.Reason = StateActive, cpuReason(*w)
 		return
 	}

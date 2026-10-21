@@ -123,11 +123,19 @@ func AwakeDemand(now, wokeAt time.Time, loc *time.Location, percent float64, thr
 	return Demand(percent, threshold, usedSince(since))
 }
 
+// Busy reports whether a workload at utilization percent of its CPU
+// requests is in use by its CPU: above threshold, the activity threshold.
+// The activity clock, the forecast and the scan's replay of the clock all
+// count use this way, so the scan predicts what the operator does.
+func Busy(percent float64, threshold int) bool {
+	return percent > float64(threshold)
+}
+
 // Demand is the demand a workload at utilization percent shows: at least
-// RequestDemand once percent is above threshold, or once inUse says another
-// activity source saw it in use, and percent otherwise.
+// RequestDemand once it's Busy, or once inUse says another activity source
+// saw it in use, and percent otherwise.
 func Demand(percent float64, threshold int, inUse bool) float64 {
-	if percent > float64(threshold) || inUse {
+	if Busy(percent, threshold) || inUse {
 		return max(percent, RequestDemand(threshold))
 	}
 	return percent

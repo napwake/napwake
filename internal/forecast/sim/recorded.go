@@ -103,7 +103,7 @@ func (r Recorded) Traffic(cpuThreshold int) Traffic {
 		if !running {
 			return Use{}
 		}
-		return Use{Active: percent > float64(cpuThreshold), Percent: percent}
+		return Use{Active: forecast.Busy(percent, cpuThreshold), Percent: percent}
 	}
 }
 

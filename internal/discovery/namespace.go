@@ -281,8 +281,9 @@ func measure(w *Workload, podMetrics []metricsv1beta1.PodMetrics, unmeasured str
 		w.Unmeasured = "no metrics yet"
 	default:
 		used, _ := metrics.Usage(podMetrics, spec)
-		percent := int(float64(used) / float64(ownCPU*int64(len(podMetrics))) * 100)
-		w.CPUPercent, w.CPUMillisUsed = &percent, used
+		share := float64(used) / float64(ownCPU*int64(len(podMetrics))) * 100
+		percent := int(share)
+		w.CPUPercent, w.CPUMillisUsed, w.cpuShare = &percent, used, share
 	}
 }
 
