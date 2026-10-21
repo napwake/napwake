@@ -286,6 +286,13 @@ func writePage(path, pattern string, write func(io.Writer) error) (string, error
 		f, err = os.CreateTemp("", pattern)
 	} else {
 		f, err = os.OpenFile(path, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0o600)
+		// The mode applies only to a file it creates: one written over keeps
+		// its own, which may let others read it.
+		if err == nil {
+			if err = f.Chmod(0o600); err != nil {
+				_ = f.Close() // the chmod error is the one to report
+			}
+		}
 	}
 	if err != nil {
 		return "", fmt.Errorf("creating the page: %w", err)

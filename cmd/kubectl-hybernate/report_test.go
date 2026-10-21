@@ -23,6 +23,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"testing"
 	"time"
 
@@ -426,6 +427,23 @@ func TestWriteHTMLFile_Temporary(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, os.FileMode(0o600), info.Mode().Perm())
 	assert.Regexp(t, `^hybernate-scan-\d+\.html$`, filepath.Base(first))
+}
+
+// A page written over a file the user can share is made theirs alone, as a
+// new one is: it names the cluster's workloads.
+func TestWriteHTMLFile_OverAnExistingFile(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("Windows files have no mode bits for others")
+	}
+	path := filepath.Join(t.TempDir(), "report.html")
+	require.NoError(t, os.WriteFile(path, []byte("old"), 0o644))
+
+	_, err := writeHTMLFile(path, historyResult(), time.Hour)
+
+	require.NoError(t, err)
+	info, err := os.Stat(path)
+	require.NoError(t, err)
+	assert.Equal(t, os.FileMode(0o600), info.Mode().Perm())
 }
 
 // The report opens where the user sits: not on a Mac or Windows machine
