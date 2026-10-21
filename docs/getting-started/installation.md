@@ -124,6 +124,78 @@ With `install.yaml` or the Kustomize manifests, two more bases, pinned to the sa
 | `https://github.com/okedeji/hybernate//config/prometheus?ref=v0.2.0` | ServiceMonitors for the operator and the doorman, and the [alerting rules](../operations/monitoring.md#alerting-rules). Needs the Prometheus Operator's CRDs, and your Prometheus [allowed to read the metrics](../operations/monitoring.md#scraping) | `metrics.serviceMonitor.enabled`, `metrics.prometheusRule.enabled` |
 | `https://github.com/okedeji/hybernate//config/network-policy?ref=v0.2.0` | NetworkPolicies: only namespaces labelled `metrics: enabled` may scrape the operator and the doorman, and the doorman's routing ports (TCP 20000-29999) stay open to every caller of a paused workload's Services | `networkPolicy.enabled` |
 
+### With Argo CD or Flux
+
+The chart is published only to an OCI registry, which Argo CD and Flux each name their own way. Commit one of these to the repository your GitOps tool syncs from, with your users' [time zone](#time-zone):
+
+=== "Argo CD"
+
+    ```yaml title="application.yaml"
+    apiVersion: argoproj.io/v1alpha1
+    kind: Application
+    metadata:
+      name: hybernate
+      namespace: argocd
+    spec:
+      project: default
+      source:
+        repoURL: ghcr.io/okedeji/charts
+        chart: hybernate
+        targetRevision: 0.2.0
+        helm:
+          valuesObject:
+            timezone: Europe/London
+      destination:
+        server: https://kubernetes.default.svc
+        namespace: hybernate-system
+      syncPolicy:
+        automated: {}
+        syncOptions:
+          - CreateNamespace=true
+    ```
+
+    `repoURL` is the registry and path without `oci://`, which is how Argo CD knows the chart is in an OCI registry, and `chart` is the chart's name. The registry is public, so Argo CD needs no credentials for it. Argo CD 3.3 and later runs the chart's uninstall guard when the Application is deleted; see [Uninstall](#uninstall). To install the Kustomize manifests instead, point an Application's `path` at your kustomization.
+
+=== "Flux"
+
+    ```yaml title="hybernate.yaml"
+    apiVersion: source.toolkit.fluxcd.io/v1
+    kind: OCIRepository
+    metadata:
+      name: hybernate
+      namespace: flux-system
+    spec:
+      interval: 1h
+      url: oci://ghcr.io/okedeji/charts/hybernate
+      ref:
+        tag: 0.2.0
+      layerSelector:
+        mediaType: application/vnd.cncf.helm.chart.content.v1.tar+gzip
+        operation: copy
+    ---
+    apiVersion: helm.toolkit.fluxcd.io/v2
+    kind: HelmRelease
+    metadata:
+      name: hybernate
+      namespace: flux-system
+    spec:
+      interval: 1h
+      chartRef:
+        kind: OCIRepository
+        name: hybernate
+      releaseName: hybernate
+      targetNamespace: hybernate-system
+      storageNamespace: hybernate-system
+      install:
+        createNamespace: true
+      values:
+        timezone: Europe/London
+    ```
+
+    This takes Flux 2.6 or later, where `OCIRepository` is `v1`. `releaseName` keeps the release `hybernate`, as these docs call it, rather than Flux's default of `hybernate-system-hybernate`, and `storageNamespace` keeps its Helm history beside it, where `helm list -n hybernate-system` shows it. To install the Kustomize manifests instead, point a Flux `Kustomization` at your kustomization.
+
+To upgrade, change the version, `targetRevision` or `tag`, to the new release's.
+
 ## Time zone
 
 The [forecast](../concepts/forecasting.md) learns when each workload is busy by hour of day and day of week, counted in the operator's time zone, holds off pausing ahead of those hours and, with `autoResume`, wakes workloads before them. Set it to your users' IANA time zone, such as `Europe/London`, `America/New_York` or `Asia/Kolkata`: Helm's `timezone` value, or the operator's `--timezone` flag. Left at the default, UTC, a team whose clocks change for daylight saving finds its workloads woken an hour early or late for half the year. For teams in different zones, pick the zone most of them work in, or give each team an install of its own, as below. The chart's install notes say which zone the forecast uses, and [Wall-Clock Alignment](../concepts/forecasting.md#wall-clock-alignment) has the details.

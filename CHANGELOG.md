@@ -84,6 +84,7 @@ The relaunch. The 0.1.x releases were early experiments, and 0.2.0 is a fresh st
 - Setting the time zone is part of installing: the install commands set `timezone`, the installation guide says why, and the chart's NOTES name the zone the forecast counts hours and weekdays in, asking for the users' while it's UTC
 - The chart's NOTES tell teams whose workloads Argo CD or Flux applies to have it leave replicas to Hybernate before `enable`, with a link to the GitOps guide, since otherwise it scales each workload back up after every pause
 - Installing with Kustomize: the installation guide uses the Kustomize manifests as a remote base pinned to the release, `https://github.com/okedeji/hybernate//config/default?ref=v0.2.0`, setting the operator's time zone in your kustomization, with `config/prometheus` and `config/network-policy` for what the chart's values turn on. The docs call `config/default`, and `install.yaml`, which is built from it, the Kustomize manifests throughout, and give each base as a pinned link rather than a path in a clone of the repository
+- Installing with Argo CD or Flux: the installation guide has an Argo CD `Application` for the OCI chart (`repoURL: ghcr.io/okedeji/charts`, `chart: hybernate`, no `oci://`), and a Flux `OCIRepository` and `HelmRelease` that keep the release named `hybernate` in `hybernate-system`
 
 ### Changed
 
