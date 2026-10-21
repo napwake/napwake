@@ -136,7 +136,7 @@ A release is a tag on `main`, `vX.Y.Z`. `make release VERSION=X.Y.Z` bumps the c
 1. Checks the chart, the kustomize image, the docs and the dated changelog name the tag's version, and that no page's install link is to `releases/latest` or another release (`make verify-version`), then runs every check a pull request does, including Trivy on the image.
 2. Builds the plugin archives, the krew manifest, `install.yaml` and the chart; pushes the image by digest, untagged, and signs it and attaches its SBOMs and provenance; and drafts the GitHub release with every file, its signed checksums, and the changelog section, with a link to the release's docs, as its notes.
 3. Tags the image, pushes and signs the chart, tags the image `latest`, and publishes the GitHub release, which moves `releases/latest`.
-4. For a release, not a release candidate, writes the Homebrew formula from the published archives and pushes it to [the tap](#the-homebrew-tap).
+4. Writes the Homebrew formula from the published archives and pushes it to [the tap](#the-homebrew-tap): for a release, and for a release candidate until the first stable release.
 
 Once the workflow succeeds, the docs workflow publishes the tag's docs, as [the docs site](#the-docs-site) describes.
 
@@ -160,7 +160,7 @@ git push origin main v0.2.0
 
 ### The Homebrew tap
 
-`brew install okedeji/tap/kubectl-hybernate` installs the plugin from [okedeji/homebrew-tap](https://github.com/okedeji/homebrew-tap). For each release, the release workflow's last job writes the tap's `Formula/kubectl-hybernate.rb` with [`hack/brewformula`](https://github.com/okedeji/hybernate/tree/main/hack/brewformula), from the published macOS and Linux archives, and commits it as `kubectl-hybernate X.Y.Z`. Release candidates aren't brewed, since `brew install` takes the newest formula.
+`brew install okedeji/tap/kubectl-hybernate` installs the plugin from [okedeji/homebrew-tap](https://github.com/okedeji/homebrew-tap). For each release, the release workflow's last job writes the tap's `Formula/kubectl-hybernate.rb` with [`hack/brewformula`](https://github.com/okedeji/hybernate/tree/main/hack/brewformula), from the published macOS and Linux archives, and commits it as `kubectl-hybernate X.Y.Z`. A release candidate is brewed only while the tap has no stable release, so people trying it before 0.2.0 can install it with Homebrew; once a stable release is there, a release candidate never replaces it, since `brew install` and `brew upgrade` take whatever the formula is.
 
 It pushes with the `HOMEBREW_TAP_TOKEN` secret: a fine-grained personal access token whose only permission is Contents read and write on `okedeji/homebrew-tap`. Without the secret, or if the push fails, the job warns and the tap stays on the last release, while the release, and its docs, go ahead; once the token is fixed, re-run the job. Fine-grained tokens expire, so renew it before its expiry date.
 

@@ -307,7 +307,6 @@ jobs:
   homebrew:
     name: Homebrew formula
     needs: [release]
-    if: ${{ !contains(github.ref_name, '-') }}
     runs-on: ubuntu-24.04
     timeout-minutes: 10
     continue-on-error: true
@@ -356,9 +355,17 @@ jobs:
         if: steps.token.outputs.present == 'true'
         working-directory: tap
         run: |
+          # Until the first stable release, release candidates are brewed, so
+          # those trying them can install with Homebrew; after it, a release
+          # candidate never replaces the stable release people install.
+          formula=Formula/kubectl-hybernate.rb
+          if [[ "$TAG" == *-* ]] && [ -f "$formula" ] && ! grep -Eq '^ *version "[^"]+-' "$formula"; then
+            echo "The tap has a stable release, which ${TAG#v}, a release candidate, doesn't replace"
+            exit 0
+          fi
           mkdir -p Formula
-          cp ../kubectl-hybernate.rb Formula/kubectl-hybernate.rb
-          git add Formula/kubectl-hybernate.rb
+          cp ../kubectl-hybernate.rb "$formula"
+          git add "$formula"
           if git diff --cached --quiet; then
             echo "The tap already has kubectl-hybernate ${TAG#v}"
             exit 0
