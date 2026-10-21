@@ -93,6 +93,35 @@ func TestWriteTable(t *testing.T) {
 	assert.NotContains(t, got, "Hybernate Hub", "it has no page to send anyone to yet")
 }
 
+// The first line counts the namespaces the workloads listed are in, not
+// those holding only infrastructure, which the notes count apart.
+func TestWriteTable_CountsTheWorkloadsNamespaces(t *testing.T) {
+	cluster := sampleCluster()
+	cluster.Namespaces = 15
+	cluster.Workloads = append(cluster.Workloads, discovery.Workload{Namespace: "orders", Name: "api",
+		Kind: v1alpha1.TargetKindDeployment, State: discovery.StateActive})
+	cluster.Totals.Workloads = 3
+	cluster.Platform = []discovery.Workload{{Namespace: "argocd", Name: "argocd-server", Platform: "argocd"}}
+	var out bytes.Buffer
+
+	require.NoError(t, writeScan(&out, cluster, scanOptions{output: "table"}))
+
+	assert.Contains(t, out.String(), "staging: 3 workloads in 2 namespaces\n")
+}
+
+func TestWriteTable_OnlyInfrastructure(t *testing.T) {
+	report := &discovery.ClusterReport{Mode: discovery.ModeSnapshot, Namespaces: 2, Workloads: []discovery.Workload{},
+		Platform: []discovery.Workload{{Namespace: "argocd", Name: "argocd-server", Platform: "argocd"}},
+		Notes:    []string{"1 infrastructure workload is left out of the totals and next steps: argocd (1)"}}
+	var out bytes.Buffer
+
+	require.NoError(t, writeScan(&out, scanResult{Cluster: "staging", ClusterReport: report},
+		scanOptions{output: "table"}))
+
+	assert.Contains(t, out.String(), "staging: 2 namespaces scanned\n")
+	assert.Contains(t, out.String(), "Only the cluster's own infrastructure was found")
+}
+
 func TestWriteTable_Limit(t *testing.T) {
 	result := sampleCluster()
 	var out bytes.Buffer
@@ -643,7 +672,8 @@ func TestWriteScan_NodeAutoscaler(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			result := scanResult{Cluster: "staging", NodeAutoscaler: tt.a, ClusterReport: &discovery.ClusterReport{
-				Namespaces: 1, Totals: discovery.Totals{Workloads: 1}}}
+				Namespaces: 1, Workloads: []discovery.Workload{{Namespace: "preview-42", Name: "api",
+					State: discovery.StateActive}}, Totals: discovery.Totals{Workloads: 1}}}
 			var out bytes.Buffer
 
 			require.NoError(t, writeScan(&out, result, scanOptions{output: "table"}))
@@ -1085,7 +1115,7 @@ func TestEmptyCluster(t *testing.T) {
 
 	require.NoError(t, writeScan(&out, result, scanOptions{output: "table"}))
 
-	assert.Contains(t, out.String(), "c: 0 workloads in 3 namespaces")
+	assert.Contains(t, out.String(), "c: 3 namespaces scanned\n")
 	assert.Contains(t, out.String(), "No Deployments or StatefulSets were found.")
 	assert.NotContains(t, out.String(), "No running workloads are idle")
 	page := renderHTML(t, result)

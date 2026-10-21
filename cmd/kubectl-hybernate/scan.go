@@ -632,8 +632,7 @@ func writeScan(w io.Writer, result scanResult, opts scanOptions) error {
 
 func writeTable(w io.Writer, result scanResult, limit int) error {
 	p := &printer{w: w}
-	p.line("%s: %s in %s", result.Cluster, countOf(result.Totals.Workloads, "workload"),
-		countOf(result.Namespaces, "namespace"))
+	p.line("%s: %s", result.Cluster, workloadsIn(result))
 	p.line("%s", nodeAutoscalerLine(result.NodeAutoscaler))
 	if s := freedBecomesSaved(result.NodeAutoscaler); s != "" {
 		p.line("%s", s)
@@ -787,10 +786,27 @@ func splitJudged(workloads []Workload) (judged, unjudged []Workload) {
 	return judged, unjudged
 }
 
+// workloadsIn says how many workloads the scan reports and how many
+// namespaces they're in. Namespaces that hold only the cluster's own
+// infrastructure, which the notes count apart, or nothing, aren't counted.
+func workloadsIn(result scanResult) string {
+	if result.Totals.Workloads == 0 {
+		return countOf(result.Namespaces, "namespace") + " scanned"
+	}
+	namespaces := map[string]bool{}
+	for _, wl := range result.Workloads {
+		namespaces[wl.Namespace] = true
+	}
+	return countOf(result.Totals.Workloads, "workload") + " in " + countOf(len(namespaces), "namespace")
+}
+
 // emptySentence says why a scan found no workloads.
 func emptySentence(result scanResult) string {
 	if result.Namespaces == 0 {
 		return "There were no namespaces to scan."
+	}
+	if len(result.Platform) > 0 {
+		return "Only the cluster's own infrastructure was found, which the scan leaves out; the notes say what."
 	}
 	if len(result.Notes) > 0 {
 		return "No Deployments or StatefulSets were found that the scan could read; the notes say what it couldn't."
