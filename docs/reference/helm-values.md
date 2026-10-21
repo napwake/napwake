@@ -158,6 +158,11 @@ The doorman holds requests to paused workloads and wakes them. See [Wake on Requ
 | `doorman.resources.requests.memory` | `64Mi` | Memory request |
 | `doorman.resources.limits.cpu` | `500m` | CPU limit |
 | `doorman.resources.limits.memory` | `256Mi` | Memory limit |
+| `doorman.negForwarder.enabled` | `false` | Optional, for GKE: route paused workloads' Services that sit behind container-native load balancing (NEGs), as a GKE Ingress's or Gateway's do, through a forwarder Deployment the operator runs in each workload's namespace while it's paused, so requests through the load balancer wake them. Grants the operator `create` and `delete` on Deployments, in a ClusterRole `<fullname>-forwarder` or a Role in each watched namespace, and adds a headless Service `<fullname>-doorman-pods`. Needs `doorman.enabled`. See [GKE container-native load balancing](../concepts/wake-on-request.md#gke-container-native-load-balancing-negs) |
+| `doorman.negForwarder.replicas` | `2` | Pods per forwarder, spread across nodes, so one stays while a node drains |
+| `doorman.negForwarder.resources.requests.cpu` | `10m` | Each forwarder pod's CPU request |
+| `doorman.negForwarder.resources.requests.memory` | `32Mi` | Each forwarder pod's memory request |
+| `doorman.negForwarder.resources.limits.memory` | `64Mi` | Each forwarder pod's memory limit |
 
 The doorman uses the operator image, the `metrics.*` settings, `logLevel` and `logEncoder`. It caches ManagedWorkloads and the EndpointSlices the EndpointSlice controller writes in the watched namespaces, cut down to what it reads: about 300 bytes per pod and 700 per Service. Held connections take up to 72Mi more under a flood. The default 256Mi limit covers a cluster of some 100,000 pods; raise it beyond that. On Kubernetes 1.30 and later it sleeps 5 seconds before shutting down, so kube-proxy and load balancers stop sending it new connections first. A rollout waits 5 seconds after a new doorman pod is Ready (`minReadySeconds`) before stopping an old one, so the operator has moved paused workloads' routes to it.
 
@@ -172,7 +177,7 @@ The doorman uses the operator image, the `metrics.*` settings, `logLevel` and `l
 | `doorman.networkPolicy.egress.apiServer` | `[]` | CIDRs of the API server's endpoints (`kubectl get endpointslices -n default -l kubernetes.io/service-name=kubernetes`), not the `kubernetes` Service's ClusterIP. Required when enabled |
 | `doorman.networkPolicy.egress.apiServerPorts` | `[443, 6443]` | The API server endpoints' ports |
 
-When enabled, the operator's and the doorman's metrics port admits only namespaces labelled `metrics: enabled`, and the doorman's routing ports (TCP 20000-29999) admit every source, since every client of a paused workload's Services is sent to them. To narrow who can reach the doorman, see [Restricting who can reach the doorman](../concepts/wake-on-request.md#restricting-who-can-reach-the-doorman).
+When enabled, the operator's and the doorman's metrics port admits only namespaces labelled `metrics: enabled`, and the doorman's routing ports (TCP 20000-29999) admit every source, since every client of a paused workload's Services is sent to them. With `ingressFrom` and `doorman.negForwarder.enabled`, they also admit the forwarders, from any namespace. To narrow who can reach the doorman, see [Restricting who can reach the doorman](../concepts/wake-on-request.md#restricting-who-can-reach-the-doorman).
 
 The doorman's egress policy is separate from `networkPolicy.enabled`, and needs a CNI that enforces egress policies. The doorman needs no DNS: it reaches the API server by address, and pods by their endpoint addresses. If a routed workload uses `hostNetwork`, add your node CIDRs to `podCIDRs`.
 
@@ -268,6 +273,8 @@ The doorman has its own ServiceAccount and ClusterRole, `<fullname>-doorman`: it
 With `watchNamespaces` set, both get a Role and RoleBinding in each of those namespaces instead. The operator keeps one ClusterRole, to read Namespaces and Nodes and list Karpenter's NodePools, which only a ClusterRole can grant, and gets a `<fullname>-doorman-endpoints` Role in the release namespace to read the doorman's EndpointSlices. Workloads in other namespaces can't be read, scaled, or opted in, and dependencies on them aren't held or woken. With `metrics.enabled` and `metrics.secure`, both ServiceAccounts also keep their cluster-wide `system:auth-delegator` bindings, which let them check scrapers' tokens and nothing else.
 
 If leader election is enabled, a `<fullname>-leader-election` Role in the release namespace grants Leases (`get`, `create`, `update`) and Events.
+
+With `doorman.negForwarder.enabled`, a ClusterRole `<fullname>-forwarder`, or with `watchNamespaces` a Role of that name in each watched namespace, lets the operator `create` and `delete` Deployments, for the [forwarders](../concepts/wake-on-request.md#gke-container-native-load-balancing-negs) it runs beside paused workloads behind GKE NEGs. It only ever deletes its own, owned by a ManagedWorkload. The forwarders run as their namespace's `default` ServiceAccount, without its token, and have no access to the API server.
 
 For people, the chart adds ManagedWorkloads to Kubernetes' built-in roles, through two aggregated ClusterRoles: `<fullname>-view`, in `view`, `edit` and `admin`, lets whoever can view a namespace `get`, `list` and `watch` its ManagedWorkloads, as `kubectl hybernate status` and `scan` do; `<fullname>-edit`, in `edit` and `admin`, lets whoever can edit it `create`, `update`, `patch` and `delete` them, as `pause`, `wake` and `enable` do. The kustomize manifests' `managedworkload-viewer-role` and `managedworkload-editor-role` are aggregated the same way.
 
