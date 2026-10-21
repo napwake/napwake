@@ -45,7 +45,7 @@ brew install okedeji/tap/kubectl-hybernate
 kubectl hybernate scan
 ```
 
-Homebrew installs the newest release, or the newest release candidate until 0.2.0 is out. Without Homebrew, or for exactly this version, install the plugin with [krew](https://krew.sigs.k8s.io/docs/user-guide/setup/install/):
+Homebrew installs the newest release, or the newest release candidate until the first stable release. Without Homebrew, or for exactly this version, install the plugin with [krew](https://krew.sigs.k8s.io/docs/user-guide/setup/install/):
 
 ```bash
 kubectl krew install --manifest-url \
