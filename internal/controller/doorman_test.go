@@ -886,6 +886,25 @@ func TestReconcileDoorman_WarnsWhenPodsHaveNoReadinessProbe(t *testing.T) {
 	}
 }
 
+// A workload paused before has a WakeOnRequest condition already, from
+// its last wake, and the warning that its pods have no readiness probe is
+// made on each pause all the same, not only the first.
+func TestReconcileDoorman_WarnsOfNoReadinessProbeAfterAWake(t *testing.T) {
+	workload := lifecycleWorkload("api", v1alpha1.PhasePaused)
+	meta.SetStatusCondition(&workload.Status.Conditions, metav1.Condition{Type: conditionWakeOnRequest,
+		Status: metav1.ConditionFalse, Reason: "NotPaused"})
+	target := appTarget()
+	target.Spec.Template.Spec.Containers[0].ReadinessProbe = nil
+	r := doormanReconciler(t, workload, doormanEndpoints("10.0.0.7"),
+		service("api", map[string]string{"app": "api"}, corev1.ServicePort{Name: "http", Port: 80}))
+
+	for range 2 {
+		require.NoError(t, doormanErr(context.Background(), r, workload, target))
+	}
+
+	assert.Len(t, recorded(r.Recorder.(*events.FakeRecorder), "Warning NoReadinessProbe"), 1)
+}
+
 // Requests through a skipped Service fail while the workload is paused, so
 // that's surfaced as a warning, once rather than on every reconcile.
 func TestReconcileDoorman_WarnsOnceAboutASkippedService(t *testing.T) {

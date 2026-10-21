@@ -467,7 +467,7 @@ func (r *Reconciler) reportDoorman(ctx context.Context, workload *v1alpha1.Manag
 	if unready {
 		message += "; " + noReadinessNote
 	}
-	previous := meta.FindStatusCondition(workload.Status.Conditions, conditionWakeOnRequest)
+	previous := meta.FindStatusCondition(workload.Status.Conditions, conditionWakeOnRequest).DeepCopy()
 	r.setCondition(workload, conditionWakeOnRequest, status, reason, message)
 	if len(skipped.unsupported) > 0 && (previous == nil || previous.Message != message) {
 		r.announceRouting(ctx, workload, "UnsupportedLoadBalancer",
