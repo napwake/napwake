@@ -80,7 +80,20 @@ The operator runs its full evaluation pipeline:
 
 ### What Dry Run Measured
 
-Hybernate keeps a running summary of the pauses it would have made. A would-be pause starts when the activity clock runs out, and ends at the next activity, which is when a paused workload would have been woken. It also ends when Hybernate stops measuring it: the workload is scaled to zero outside Hybernate, labelled `hybernate.io/ignore`, or its namespace becomes protected; see [When Hybernate Lets Go](pause.md#when-hybernate-lets-go). It's counted up to that moment:
+Hybernate keeps a running summary of the pauses it would have made. A would-be pause starts when the activity clock runs out, and ends at the next activity, which is when a paused workload would have been woken. It also ends when Hybernate stops measuring it: the workload is scaled to zero outside Hybernate, labelled `hybernate.io/ignore`, or its namespace becomes protected; see [When Hybernate Lets Go](pause.md#when-hybernate-lets-go). It's counted up to that moment.
+
+What it would have freed is in the list of ManagedWorkloads:
+
+```bash
+kubectl get managedworkloads -n staging
+```
+
+```
+NAME     PHASE   FREED   SAVED   WOULD FREE   AGE
+my-api   Idle    $0.00   $0.00   $7.50        4d
+```
+
+[`kubectl hybernate status`](../getting-started/kubectl-plugin.md#see-what-hybernate-is-doing) leads with it too, in its summary and its `WOULD FREE` column. The whole summary is in `status.dryRun`:
 
 ```bash
 kubectl get managedworkload my-api -n staging -o jsonpath='{.status.dryRun}'

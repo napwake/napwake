@@ -4,7 +4,7 @@
 
 **Group:** `hybernate.io` | **Version:** `v1alpha1` | **Kind:** `ManagedWorkload` | **Scope:** Namespaced
 
-`kubectl get managedworkloads` shows each one's `Phase`, what it has `Saved` and `Freed` this month, and its `Age`.
+`kubectl get managedworkloads` shows each one's `Phase`, what pausing it has `Freed` this month and what of that it `Saved`, what dry-run measured it `Would Free`, blank for one that isn't in dry-run, and its `Age`.
 
 ### Spec (`ManagedWorkloadSpec`)
 
