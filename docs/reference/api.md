@@ -58,6 +58,8 @@ A duration is a Go duration above zero, such as `45s`, `90m` or `1h30m`. Days an
 | `activity.pauseAt` | time | When the workload pauses if no further activity is seen |
 | `activity.lastEvaluatedTime` | time | When activity was last checked |
 | `activity.templateHash` | string | Fingerprint of the target's pod template, used to detect deploys |
+| `activity.heldByDependents` | []string | The awake workloads that use this one, as `namespace/name`, while they keep it from pausing (`HeldByDependents`): at most 10, the first by name |
+| `activity.forecastBusyFrom` | time | The start of the hour the forecast expects demand in, while it keeps the workload from pausing (`IdleVetoed`) |
 | `pause` | `PauseStatus` | What a pause changed, from before the workload is scaled to zero until it's running again |
 | `pause.previousReplicas` | int32 | Replicas before the pause, restored on resume |
 | `pause.pausedAt` | time | When it was scaled to zero; unset until then. The pause is `Paused` once its pods have stopped |

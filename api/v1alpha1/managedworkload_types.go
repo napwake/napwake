@@ -521,6 +521,18 @@ type ActivityStatus struct {
 	// configuration change counts as activity while replica changes don't.
 	// +optional
 	TemplateHash string `json:"templateHash,omitempty"`
+
+	// HeldByDependents are the awake workloads that use this one, as
+	// namespace/name, while they keep it from pausing, as the
+	// HeldByDependents condition says: at most 10, the first by name.
+	// +optional
+	HeldByDependents []string `json:"heldByDependents,omitempty"`
+
+	// ForecastBusyFrom is the start of the hour the forecast expects demand
+	// in, while it keeps the workload from pausing, as the IdleVetoed
+	// condition says.
+	// +optional
+	ForecastBusyFrom *metav1.Time `json:"forecastBusyFrom,omitempty"`
 }
 
 // DryRunStatus sums up the pauses Hybernate would have made in dry-run. A
