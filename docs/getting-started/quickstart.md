@@ -123,7 +123,7 @@ Send it a request. The [doorman](../concepts/wake-on-request.md) holds the reque
 kubectl run curl --rm -it --image=curlimages/curl:8.7.1 -n dev --restart=Never -- curl -s http://my-api
 ```
 
-A browser opening it gets a waking-up page instead, which loads the app once it's up. You can also wake it from the terminal:
+A browser that reaches it through an Ingress or a Gateway gets a waking-up page instead, which loads the app once it's up. `kubectl port-forward` doesn't go through the Service but straight to a pod, so it can't reach a paused workload; wake it first:
 
 ```bash
 kubectl hybernate wake my-api -n dev
