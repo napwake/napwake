@@ -761,6 +761,13 @@ func TestStatus_WhatNeedsAttention(t *testing.T) {
 			condition: condition("PauseIncomplete", metav1.ConditionFalse, "PodsStopped", "")},
 		{name: "Hybernate's own workload",
 			condition: condition("Protected", metav1.ConditionTrue, "HybernateComponent", "")},
+		{name: "an awake workload, which isn't routed to the doorman",
+			condition: condition("WakeOnRequest", metav1.ConditionFalse, "NotPaused", "")},
+		{name: "the doorman turned off for the cluster",
+			condition: condition("WakeOnRequest", metav1.ConditionFalse, "DoormanDisabled", "")},
+		{name: "a routing problem its last pause found, while it runs", want: true,
+			condition: condition("WakeOnRequest", metav1.ConditionFalse, "UnsupportedLoadBalancer",
+				"at its last pause: no Service can be routed through the doorman")},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

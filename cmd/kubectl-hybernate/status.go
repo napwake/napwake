@@ -214,12 +214,15 @@ var troubles = map[string]metav1.ConditionStatus{
 	"PauseIncomplete":      metav1.ConditionTrue,
 }
 
-// chosen are the reasons a trouble condition carries when it reports what
-// the user set up on purpose, which needs nobody's attention.
-var chosen = map[string]bool{
+// untroubled are the reasons a trouble condition carries when it needs
+// nobody's attention: it reports what the user set up on purpose, or the
+// normal state of a workload that's awake.
+var untroubled = map[string]bool{
 	"NoServices":         true,
 	"TargetIgnored":      true,
 	"HybernateComponent": true,
+	"DoormanDisabled":    true,
+	"NotPaused":          true,
 }
 
 // wakeCauses are the event reasons that say what woke a workload. The
@@ -554,7 +557,7 @@ func problemsOf(w *v1alpha1.ManagedWorkload, now time.Time) []problem {
 	var out []problem
 	for _, c := range w.Status.Conditions {
 		bad, ok := troubles[c.Type]
-		if !ok || c.Status != bad || chosen[c.Reason] {
+		if !ok || c.Status != bad || untroubled[c.Reason] {
 			continue
 		}
 		out = append(out, problem{Namespace: w.Namespace, Workload: w.Spec.Target.Name, ManagedWorkload: w.Name,
