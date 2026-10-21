@@ -87,7 +87,7 @@ The doorman can only tell a health check from a real caller by reading it. Two k
 `hybernate.io/doorman-ignore-ports` can't help when the checked port is the traffic port, since ignoring it would stop requests waking the workload too. Instead, either:
 
 - **Check over plain HTTP.** The AWS and Google Cloud health checkers send a `User-Agent` the doorman recognises, so it answers them without waking anything: AWS's `503`, Google's `200`, as below.
-- **Check a port of its own,** one the workload serves only for health checks, and list it in `hybernate.io/doorman-ignore-ports`.
+- **Check a port of its own,** one the workload serves only for health checks, and list it in `hybernate.io/doorman-ignore-ports`. Not behind a GKE Ingress or Gateway: nothing answers an ignored port while the workload is paused, so Google's load balancer sees no healthy backend and sends nothing on; keep its check on the traffic port, over plain HTTP.
 
 Either way, most load balancers see the workload as unhealthy while it's paused, as they would without Hybernate, and still send requests when every target is unhealthy: AWS's Application and Network Load Balancers fail open, so the first request reaches the doorman and wakes the workload. Google Cloud's Application Load Balancers, behind a GKE Ingress or Gateway, don't: until a backend passes its health check they answer `502` and send nothing on. So the doorman answers Google's health check, `GoogleHC/`, with `200 OK` while the workload is paused, without waking it, and holds the request that follows. Check any other load balancer before relying on wake on request behind it.
 
@@ -197,7 +197,7 @@ GKE adds `cloud.google.com/neg: '{"ingress": true}'` to every new Service of a V
 
 A Service that really is in NEGs isn't routed, unless the optional [forwarder](#gke-container-native-load-balancing-negs) is on, with reason `UnsupportedLoadBalancer`: GKE's NEG controller refuses endpoints whose pods are in another namespace, as the doorman's are, and can stop syncing the load balancer altogether. That's a Service:
 
-- that a GKE Ingress uses, one with `kubernetes.io/ingress.class` `gce`, `gce-internal` or `gce-regional-external`, or with no class at all, while the Service has `{"ingress": true}`. GKE reads only the annotation: an Ingress that sets `ingressClassName` isn't GKE's
+- that a GKE Ingress uses, one with `kubernetes.io/ingress.class` `gce`, `gce-internal`, `gce-regional-external` or `gce-multi-cluster`, or with no class at all, while the Service has `{"ingress": true}`. GKE reads only the annotation: an Ingress that sets `ingressClassName` isn't GKE's
 - with standalone NEGs, `exposed_ports` in its `cloud.google.com/neg`, as GKE Gateway sets on the Services its routes use
 - that GKE's NEG controller lists NEGs of pods for in `cloud.google.com/neg-status`
 
@@ -230,7 +230,7 @@ Turning NEGs off on the Ingress's own Service, with `cloud.google.com/neg: '{"in
 
 ## GKE container-native load balancing (NEGs)
 
-GKE's NEG controller only accepts endpoints whose pods are in the Service's own namespace, so a Service in NEGs can't be pointed at the doorman's pods, and by default isn't routed (see [On GKE](#on-gke)). So **a request through a GKE Ingress whose Service is in NEGs, or through a GKE Gateway, wakes a paused workload only with the forwarder on**, an optional mode, off by default, for teams whose paused environments are reached that way. GKE uses NEGs for an Ingress's Services by default on VPC-native clusters, and always for a Gateway's. Requests from inside the cluster, and through other ingress controllers and load balancers, wake workloads without it.
+GKE's NEG controller only accepts endpoints whose pods are in the Service's own namespace, so a Service in NEGs can't be pointed at the doorman's pods, and by default isn't routed (see [On GKE](#on-gke)). So **a request through a GKE Ingress whose Service is in NEGs, or through a GKE Gateway, wakes a paused workload only with the forwarder on**, an optional mode, off by default, for teams whose paused environments are reached that way. GKE uses NEGs for an Ingress's Services by default on VPC-native clusters, and always for a Gateway's. Requests to Services no GKE Ingress or Gateway uses, from inside the cluster or through other ingress controllers and load balancers, wake workloads without it.
 
 ```yaml
 doorman:
@@ -258,7 +258,7 @@ The route of a Service sent through the forwarder shows `forwarded: true` in the
 
 ### Health checks behind NEGs
 
-The endpoint Google's load balancer checks is now the forwarder, which passes the check to the doorman, and the doorman answers Google's health check (`User-Agent: GoogleHC/`) with `200 OK`, as on every route, without waking anything; every other checker still gets `503`. As anywhere, an HTTPS or HTTP/2 health check can't be read, and wakes the workload every time it runs: keep the backend service's health check on plain HTTP, as a GKE Ingress sets up for an HTTP backend, or give it a port of its own (see [Health checks the doorman can't recognise](#health-checks-the-doorman-cant-recognise)).
+The endpoint Google's load balancer checks is now the forwarder, which passes the check to the doorman, and the doorman answers Google's health check (`User-Agent: GoogleHC/`) with `200 OK`, as on every route, without waking anything; every other checker still gets `503`. As anywhere, an HTTPS or HTTP/2 health check can't be read, and wakes the workload every time it runs: keep the backend service's health check on the traffic port, over plain HTTP, as a GKE Ingress sets up for an HTTP backend. A port of its own doesn't work here: the forwarder listens only on the ports it routes, so a check on another fails, and Google's load balancer then sends nothing on (see [Health checks the doorman can't recognise](#health-checks-the-doorman-cant-recognise)).
 
 ### Timeouts behind NEGs
 
@@ -313,11 +313,11 @@ Add your in-cluster callers to `ingress.from` if apps in the cluster call the Se
 
 ### Limits behind NEGs
 
-- **Right after a pause**: GKE takes a while, typically under a minute, to register the forwarder's pods in the NEG and see them pass health checks. Until it has, requests through the load balancer can get a `502`, as after any scale-down. After a wake, the Service goes back to the workload's own pods as soon as one is Ready; the forwarder goes on passing what still reaches it to the doorman, which passes it to the workload for the 30 seconds its route drains, and is deleted a minute after the wake.
+- **Right after a pause**: GKE takes a while, typically under a minute, to register the forwarder's pods in the NEG and see them pass health checks. Until it has, requests through the load balancer can get a `502`, as after any scale-down, and the Service can show a `SyncNetworkEndpointGroupFailed` warning event from GKE, `endpoint count from endpointPodMap cannot be zero`, for the moment between the workload's pods going and the forwarder's arriving; GKE retries it within seconds. After a wake, the Service goes back to the workload's own pods as soon as one is Ready; the forwarder goes on passing what still reaches it to the doorman, which passes it to the workload for the 30 seconds its route drains, and is deleted a minute after the wake.
 - **The caller's address**: the doorman sees the forwarder's, not the caller's, so dependencies aren't [learned](dependencies.md#learned-dependencies) from requests that come through it, and the doorman's per-source [limits](#limits) count each forwarder pod as one source. Through a load balancer, the caller is one of Google's proxies anyway.
 - **Images from a private registry**: the forwarder pulls the operator's image in the workload's namespace, as its `default` ServiceAccount, so a mirror that needs a pull secret needs it there too. GKE nodes pull from Artifact Registry in their own project without one.
 - **Turning it off** leaves running forwarders in place, since the operator no longer may delete them: `kubectl delete deployments -A -l app.kubernetes.io/name=hybernate-forwarder`.
-- **With kustomize**, set it up by hand: run the operator with `--neg-forwarder`, `--neg-forwarder-image` naming its own image, and `--neg-forwarder-doorman-service`, grant it `create` and `delete` on Deployments, and add a headless Service selecting the doorman's pods. See [Configuration](../reference/configuration.md#operator-flags).
+- **With the Kustomize manifests**, set it up by hand: run the operator with `--neg-forwarder`, `--neg-forwarder-image` naming its own image, and `--neg-forwarder-doorman-service`, grant it `create` and `delete` on Deployments, and add a headless Service selecting the doorman's pods. See [Configuration](../reference/configuration.md#operator-flags).
 
 ## Network policies
 

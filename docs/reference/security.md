@@ -20,7 +20,7 @@ Everything it reads, writes, and sends is listed in [Data and Access](data-and-a
 | From | To | Why |
 |---|---|---|
 | Operator, doorman | The Kubernetes API server | Everything it does |
-| Operator | Prometheus, at `prometheus.url` | Only with Prometheus activity queries configured |
+| Operator | Prometheus, at `prometheus.url` | Only with `prometheus.url` set: the Prometheus activity queries workloads configure, and, once for each new ManagedWorkload, one range query for up to four weeks of its containers' CPU, to start its forecast from |
 | Any client of a paused workload's Service: a pod, an ingress controller, or a load balancer through a NodePort | Doorman | The doorman holds the connection, wakes the workload, and forwards it |
 | Doorman | The woken workload's pods, in any routed namespace, on their Service ports | Passing the held connection through |
 | Google's load balancers, and any other client of a paused workload's Service behind GKE NEGs | Forwarder, in the workload's namespace, with `doorman.negForwarder.enabled` | The forwarder stands in for the workload's pods |

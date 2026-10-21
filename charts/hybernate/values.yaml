@@ -29,7 +29,7 @@ maxConcurrentReconciles: 8
 timezone: UTC
 
 # The operator caches the cluster's ManagedWorkloads, Deployments,
-# StatefulSets, Services, PVCs, HPAs, nodes and namespaces, or only the
+# StatefulSets, Services, Ingresses, PVCs, HPAs, nodes and namespaces, or only the
 # watched namespaces', the EndpointSlices it writes and the doorman's, and,
 # watching every namespace, what each pod bound to a node requests, about
 # 2.6 KB a pod, so its memory grows with the cluster. Raise the limit on

@@ -43,7 +43,7 @@ These flags are passed to the binary (`/manager`), which runs as the operator, a
 | `--zap-stacktrace-level` | `error` | Level from which stack traces are logged: `info`, `error`, or `panic` |
 | `--zap-time-encoding` | RFC 3339 | Time format of log entries: `epoch`, `millis`, `nano`, `iso8601`, `rfc3339` or `rfc3339nano` |
 
-The operator checks its flags at startup and exits with an error naming the flag when one is invalid: a `--protected-namespaces` pattern that isn't a valid glob, a `--prometheus-url` that isn't `http` or `https` with a host, a `--default-idle-after` under `1m`, a `--default-cpu-threshold` outside 1 to 100, a `--max-concurrent-reconciles`, `--doorman-ports-per-workload` or `--doorman-ports-per-namespace` below 1, a `--timezone` that isn't a known IANA zone, or `--neg-forwarder` without `--neg-forwarder-image` or the doorman, with a `--neg-forwarder-replicas` below 1, or with `--neg-forwarder-resources` that aren't JSON requests and limits.
+The operator checks its flags at startup and exits with an error naming the flag when one is invalid: a `--protected-namespaces` pattern that isn't a valid glob, a `--prometheus-url` that isn't `http` or `https` with a host, a `--default-idle-after` under `1m`, a `--default-cpu-threshold` outside 1 to 100, a `--default-forecast` that isn't `eager`, `balanced` or `cautious`, a `--max-concurrent-reconciles`, `--doorman-ports-per-workload` or `--doorman-ports-per-namespace` below 1, a `--timezone` that isn't a known IANA zone, or `--neg-forwarder` without `--neg-forwarder-image` or the doorman, with a `--neg-forwarder-replicas` below 1, or with `--neg-forwarder-resources` that aren't JSON requests and limits.
 
 ## Endpoints
 
