@@ -18,6 +18,8 @@ package main
 
 import (
 	"context"
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"sync"
@@ -42,6 +44,7 @@ import (
 	v1alpha1 "github.com/okedeji/hybernate/api/v1alpha1"
 	"github.com/okedeji/hybernate/internal/controller"
 	"github.com/okedeji/hybernate/internal/doorman"
+	"github.com/okedeji/hybernate/internal/forwarder"
 	"github.com/okedeji/hybernate/internal/gitops"
 )
 
@@ -519,4 +522,24 @@ func TestOperatorCacheHoldsPodsAsWhatTheyRequest(t *testing.T) {
 	assert.Equal(t, "4", cached.Status.Allocatable.Cpu().String())
 	assert.Equal(t, []corev1.NodeCondition{{Type: corev1.NodeReady, Status: corev1.ConditionTrue}},
 		cached.Status.Conditions)
+}
+
+// The forwarder's pod is Ready only once it reaches the doorman, so the
+// operator doesn't point a Service at a forwarder that would drop its
+// connections.
+func TestForwarderProbes(t *testing.T) {
+	f := forwarder.New(forwarder.Options{
+		Routes:  map[int32]int32{8080: 23456},
+		Doorman: "hybernate-doorman-pods.hybernate-system.svc",
+	})
+	probes := forwarderProbes(f)
+
+	live := httptest.NewRecorder()
+	probes.ServeHTTP(live, httptest.NewRequest(http.MethodGet, "/healthz", nil))
+	ready := httptest.NewRecorder()
+	probes.ServeHTTP(ready, httptest.NewRequest(http.MethodGet, "/readyz", nil))
+
+	assert.Equal(t, http.StatusOK, live.Code)
+	assert.Equal(t, http.StatusServiceUnavailable, ready.Code, "Ready before it has reached the doorman")
+	assert.Contains(t, ready.Body.String(), "doorman", "the probe says why it isn't Ready")
 }

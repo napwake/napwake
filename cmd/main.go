@@ -23,6 +23,8 @@ import (
 	"errors"
 	"flag"
 	"fmt"
+	"net"
+	"net/http"
 	"net/url"
 	"os"
 	"path"
@@ -60,6 +62,7 @@ import (
 	"github.com/okedeji/hybernate/internal/capacity"
 	"github.com/okedeji/hybernate/internal/controller"
 	"github.com/okedeji/hybernate/internal/doorman"
+	"github.com/okedeji/hybernate/internal/forwarder"
 	"github.com/okedeji/hybernate/internal/guard"
 	opmetrics "github.com/okedeji/hybernate/internal/metrics"
 	"github.com/okedeji/hybernate/internal/nodescale"
@@ -129,6 +132,15 @@ func main() {
 	flag.StringVar(&guardOp, "guard", "",
 		"Run as the Helm chart's uninstall or upgrade hook, which fails while that would leave ManagedWorkloads "+
 			"without an operator, instead of the operator: uninstall or upgrade.")
+	var forwarderMode bool
+	var forwardRoutes, forwarderDoorman string
+	flag.BoolVar(&forwarderMode, "forwarder", false,
+		"Run as a forwarder, which passes connections from a paused workload's namespace to the doorman, instead of "+
+			"the operator. The forwarder Deployments the operator runs with --neg-forwarder set it.")
+	flag.StringVar(&forwardRoutes, "forward", "",
+		"The forwarder's routes: comma-separated listen=doorman port pairs, such as 8080=23456.")
+	flag.StringVar(&forwarderDoorman, "forwarder-doorman", "",
+		"The DNS name that resolves to the doorman's Ready pods, which the forwarder passes connections to.")
 	optIn := controller.DefaultOptInDefaults
 	flag.DurationVar(&optIn.IdleAfter, "default-idle-after", optIn.IdleAfter,
 		"idleAfter, at least 1m, for workloads opted in with the hybernate.io/managed label, unless annotated otherwise.")
@@ -156,6 +168,9 @@ func main() {
 
 	if limit, ok := softMemoryLimit(os.Getenv("GOMEMLIMIT"), os.Getenv(envMemoryLimit)); ok {
 		debug.SetMemoryLimit(limit)
+	}
+	if forwarderMode {
+		os.Exit(runForwarder(forwardRoutes, forwarderDoorman, probeAddr))
 	}
 	if err := validatePatterns(protected); err != nil {
 		setupLog.Error(err, "invalid --protected-namespaces")
@@ -367,6 +382,67 @@ func runGuard(op string, watched []string) int {
 		return 1
 	}
 	return 0
+}
+
+// probeShutdown bounds how long the forwarder's probe server takes to stop
+// once the forwarder has.
+const probeShutdown = 5 * time.Second
+
+// runForwarder runs a forwarder until it's signalled to stop and has
+// drained, returning the exit code.
+func runForwarder(routesFlag, doormanHost, probeAddr string) int {
+	routes, err := forwarder.ParseRoutes(routesFlag)
+	if err != nil {
+		setupLog.Error(err, "invalid --forward")
+		return 1
+	}
+	if doormanHost == "" {
+		setupLog.Error(errors.New("must be set"), "invalid --forwarder-doorman")
+		return 1
+	}
+	f := forwarder.New(forwarder.Options{Routes: routes, Doorman: doormanHost})
+
+	probes, err := net.Listen("tcp", probeAddr)
+	if err != nil {
+		setupLog.Error(err, "unable to listen for health probes", "address", probeAddr)
+		return 1
+	}
+	server := &http.Server{Handler: forwarderProbes(f), ReadHeaderTimeout: 5 * time.Second}
+	serving := make(chan error, 1)
+	go func() { serving <- server.Serve(probes) }()
+
+	setupLog.Info("starting forwarder", "version", version, "routes", routesFlag, "doorman", doormanHost)
+	err = f.Start(ctrl.SetupSignalHandler())
+	ctx, cancel := context.WithTimeout(context.Background(), probeShutdown)
+	defer cancel()
+	if shutdownErr := server.Shutdown(ctx); shutdownErr != nil {
+		setupLog.Error(shutdownErr, "stopping the forwarder's health probes")
+	}
+	if serveErr := <-serving; !errors.Is(serveErr, http.ErrServerClosed) {
+		setupLog.Error(serveErr, "serving the forwarder's health probes")
+	}
+	if err != nil {
+		setupLog.Error(err, "forwarder exited with error")
+		return 1
+	}
+	return 0
+}
+
+// forwarderProbes serves the forwarder's liveness and readiness. It's Ready
+// only while it reaches the doorman on every port it forwards to.
+func forwarderProbes(f *forwarder.Forwarder) http.Handler {
+	mux := http.NewServeMux()
+	mux.HandleFunc("/healthz", func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	})
+	mux.HandleFunc("/readyz", func(w http.ResponseWriter, r *http.Request) {
+		if err := f.Ready(r); err != nil {
+			http.Error(w, err.Error(), http.StatusServiceUnavailable)
+			return
+		}
+		w.WriteHeader(http.StatusOK)
+	})
+	return mux
 }
 
 // withLeaderElection has the operator elect a leader when enabled; every
