@@ -576,11 +576,11 @@ func TestStatus_HandWrittenNamedApart(t *testing.T) {
 	assert.Contains(t, out, "  shop        deployment/api (api-mw)   running")
 }
 
-func forbidClusterWide(resource string) interceptor.Funcs {
+func forbidClusterWide(plural string) interceptor.Funcs {
 	return interceptor.Funcs{List: func(ctx context.Context, c client.WithWatch, list client.ObjectList,
 		opts ...client.ListOption) error {
 		if _, ok := list.(*v1alpha1.ManagedWorkloadList); ok && listNamespace(opts) == "" {
-			return apierrors.NewForbidden(schema.GroupResource{Group: "hybernate.io", Resource: resource}, "", nil)
+			return apierrors.NewForbidden(schema.GroupResource{Group: "hybernate.io", Resource: plural}, "", nil)
 		}
 		return c.List(ctx, list, opts...)
 	}}

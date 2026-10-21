@@ -229,7 +229,8 @@ func replayCluster(ctx context.Context, window time.Duration, prom prometheusSet
 			"none to read")}
 	}
 	result := forecastResult{Context: scan.Context, Cluster: scan.Cluster, Prometheus: scan.History.Prometheus,
-		HistoryHours: scan.History.Hours, HistorySince: scan.History.Since, Window: opts.window, Timezone: loc.String(), Setting: string(mode),
+		HistoryHours: scan.History.Hours, HistorySince: scan.History.Since, Window: opts.window,
+		Timezone: loc.String(), Setting: string(mode),
 		Workloads: []forecastWorkload{}}
 	for _, w := range scan.Workloads {
 		if w.Forecast == nil {
@@ -385,9 +386,9 @@ func writeForecastDetail(p *printer, w forecastWorkload, loc *time.Location) {
 		if d.WokeAt != nil {
 			woke = d.WokeAt.In(loc).Format("15:04")
 		}
-		acting := "learning"
+		acting := forecastLearning
 		if d.Acting {
-			acting = "acting"
+			acting = forecastActing
 		}
 		wasted := "-"
 		if d.WastedWakes > 0 {
@@ -432,7 +433,7 @@ func forecastNow(w forecastWorkload, loc *time.Location) string {
 	if l := w.Forecast.Live; l != nil {
 		o = *l
 		if o.Acting {
-			return "acting"
+			return forecastActing
 		}
 	} else if o.Acting {
 		return "acts from day one"
@@ -444,7 +445,7 @@ func forecastNow(w forecastWorkload, loc *time.Location) string {
 		return "acts from " + o.StartsActing.In(loc).Format("Mon 2 Jan")
 	}
 	if o.Waiting == string(forecast.WaitingForDay) || o.Waiting == "Observing" {
-		return "learning"
+		return forecastLearning
 	}
 	return "not within 4 weeks"
 }

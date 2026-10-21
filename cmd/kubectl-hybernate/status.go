@@ -1045,6 +1045,12 @@ func dryRunMeasured(workloads []statusWorkload) (int, *time.Time) {
 	return n, since
 }
 
+// What a forecast is doing, as status and forecast show it.
+const (
+	forecastActing   = "acting"
+	forecastLearning = "learning"
+)
+
 // forecastCell says whether a workload's forecast acts, and when it's
 // expected to start if it doesn't yet.
 func forecastCell(wl statusWorkload) string {
@@ -1053,13 +1059,13 @@ func forecastCell(wl statusWorkload) string {
 	case "":
 		return "-"
 	case v1alpha1.ForecastActing:
-		return "acting"
+		return forecastActing
 	case v1alpha1.ForecastNotLearning:
 		return "not learning"
 	case v1alpha1.ForecastRelearning:
 		cell = "relearning"
 	default:
-		cell = "learning"
+		cell = forecastLearning
 	}
 	if wl.ForecastStartsActing != nil {
 		cell += ", acts from " + wl.ForecastStartsActing.Format("Jan 2")

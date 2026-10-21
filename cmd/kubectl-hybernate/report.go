@@ -228,8 +228,10 @@ func canBrowseOn(goos string, getenv func(string) string) bool {
 	if getenv("SSH_CONNECTION") != "" || getenv("SSH_TTY") != "" {
 		return false
 	}
-	return goos == "darwin" || goos == "windows"
+	return goos == "darwin" || goos == goosWindows
 }
+
+const goosWindows = "windows"
 
 // openerWait is how long the opener has to say it failed. Most hand the
 // file to the browser and exit at once, but xdg-open without a desktop
@@ -241,7 +243,7 @@ func openInBrowser(path string) error {
 	switch runtime.GOOS {
 	case "darwin":
 		cmd = exec.Command("open", path)
-	case "windows":
+	case goosWindows:
 		cmd = exec.Command("rundll32", "url.dll,FileProtocolHandler", path)
 	default:
 		cmd = exec.Command("xdg-open", path)

@@ -469,6 +469,16 @@ func (s *Scanner) scanNamespaces(ctx, historyCtx context.Context, reads *cluster
 	return slices.DeleteFunc(scans, func(scan namespaceScan) bool { return scan.unscanned }), unscanned
 }
 
+// recordGitOps notes the GitOps tool that sets the workload's replicas from
+// Git, if one does, and whether it's told to leave them to Hybernate.
+func (w *Workload) recordGitOps(r gitops.Replicas) {
+	if !r.Writer.FromGit() {
+		return
+	}
+	w.ReplicasFromGit, w.GitOpsUnchecked = string(r.Writer.Tool), r.Unread
+	w.GitOpsLeavesReplicas = r.Undo == gitops.Leaves
+}
+
 // gitOpsNotes say which workloads have replicas set from Git, which their
 // GitOps tool would set again after each pause, and where the fix is: one
 // note for each tool, and for each reason it couldn't be checked whether

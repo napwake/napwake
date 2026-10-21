@@ -31,7 +31,6 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	v1alpha1 "github.com/okedeji/hybernate/api/v1alpha1"
-	"github.com/okedeji/hybernate/internal/gitops"
 	"github.com/okedeji/hybernate/internal/metrics"
 )
 
@@ -162,10 +161,7 @@ func (s *Scanner) scanNamespace(ctx, historyCtx context.Context, namespace strin
 			Protected: protected,
 			Platform:  platform[string(wl.kind)+"/"+obj.GetName()],
 		}
-		if r := reads.gitOps.Replicas(ctx, obj); r.Writer.FromGit() {
-			w.ReplicasFromGit, w.GitOpsUnchecked = string(r.Writer.Tool), r.Unread
-			w.GitOpsLeavesReplicas = r.Undo == gitops.Leaves
-		}
+		w.recordGitOps(reads.gitOps.Replicas(ctx, obj))
 		rollouts := owners.rollouts[obj.GetUID()]
 		if len(rollouts) > 0 {
 			last := slices.MaxFunc(rollouts, func(a, b time.Time) int { return a.Compare(b) }).UTC()

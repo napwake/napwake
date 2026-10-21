@@ -432,7 +432,7 @@ func TestWriteHTMLFile_Temporary(t *testing.T) {
 // A page written over a file the user can share is made theirs alone, as a
 // new one is: it names the cluster's workloads.
 func TestWriteHTMLFile_OverAnExistingFile(t *testing.T) {
-	if runtime.GOOS == "windows" {
+	if runtime.GOOS == goosWindows {
 		t.Skip("Windows files have no mode bits for others")
 	}
 	path := filepath.Join(t.TempDir(), "report.html")
