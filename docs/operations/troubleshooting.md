@@ -124,7 +124,8 @@ kubectl get managedworkload my-api -n staging \
   -o jsonpath='{.status.conditions[?(@.type=="WakeOnRequest")]}'
 ```
 
-- **No condition, or `NotPaused`**: the workload isn't routed. A workload with `wake.onRequest: false`, or `hybernate.io/wake-on-request: "false"` when it's opted in with the label, doesn't wake on request.
+- **`TurnedOff`**: its `wake.onRequest` is `false`, or `hybernate.io/wake-on-request: "false"` when it's opted in with the label, so it doesn't wake on request.
+- **No condition, or `NotPaused`**: the workload isn't paused, so nothing is routed yet.
 - **A message starting `at its last pause:`**: the workload is awake now, and what follows is what its last pause found with its Services. The next pause meets it again unless it's fixed, so fix it now, by the reason below.
 - **`NoServices`**: no Service with a selector and a ClusterIP selects the workload's pods on a TCP port, or every such port is in `hybernate.io/doorman-ignore-ports`. Headless Services aren't routed; see [Wake on Request](../concepts/wake-on-request.md#when-a-workload-isnt-routed).
 - **`ServedByOtherPods`**: another workload's Ready pods are behind the same Service, so requests go to them. See [Services shared with other workloads](../concepts/wake-on-request.md#services-shared-with-other-workloads).

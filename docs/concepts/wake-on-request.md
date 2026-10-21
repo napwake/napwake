@@ -168,7 +168,7 @@ spec:
     onRequest: false
 ```
 
-Requests to the paused workload then fail, as they would without Hybernate. With the label, set `hybernate.io/wake-on-request: "false"`. To turn it off for the whole cluster, set the Helm value `doorman.enabled: false`, or run the operator with `--doorman-service=""`; workloads then report `WakeOnRequest=False` with reason `DoormanDisabled`.
+Requests to the paused workload then fail, as they would without Hybernate, and it reports `WakeOnRequest=False` with reason `TurnedOff`. With the label, set `hybernate.io/wake-on-request: "false"`. To turn it off for the whole cluster, set the Helm value `doorman.enabled: false`, or run the operator with `--doorman-service=""`; workloads then report `WakeOnRequest=False` with reason `DoormanDisabled`.
 
 ## When a workload isn't routed
 

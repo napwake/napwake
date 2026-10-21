@@ -277,13 +277,19 @@ var lastingRoutingProblems = map[string]bool{
 
 const foundAtLastPause = "at its last pause: "
 
-// keepRoutingProblem clears WakeOnRequest once the workload isn't paused,
-// except for a problem its last pause found with its Services, which stays,
-// so it can be fixed before the next pause rather than found by someone
-// whose request doesn't wake it.
+// keepRoutingProblem sets WakeOnRequest for a workload the doorman doesn't
+// route: TurnedOff while its wake.onRequest is false, paused or not, and
+// otherwise cleared once it isn't paused, except for a problem its last
+// pause found with its Services, which stays, so it can be fixed before the
+// next pause rather than found by someone whose request doesn't wake it.
 func (r *Reconciler) keepRoutingProblem(workload *v1alpha1.ManagedWorkload) {
+	if !wakeOnRequest(workload) {
+		r.setCondition(workload, conditionWakeOnRequest, metav1.ConditionFalse, reasonTurnedOff,
+			"wake.onRequest is false, so requests to the workload don't wake it while it's paused")
+		return
+	}
 	c := meta.FindStatusCondition(workload.Status.Conditions, conditionWakeOnRequest)
-	if c == nil || c.Status != metav1.ConditionFalse || !lastingRoutingProblems[c.Reason] || !wakeOnRequest(workload) {
+	if c == nil || c.Status != metav1.ConditionFalse || !lastingRoutingProblems[c.Reason] {
 		r.clearCondition(workload, conditionWakeOnRequest, "NotPaused")
 		return
 	}
@@ -410,6 +416,9 @@ func (s skippedServices) notes() string {
 
 const (
 	reasonNoReadinessProbe = "NoReadinessProbe"
+	// reasonTurnedOff is WakeOnRequest's reason for a workload whose
+	// wake.onRequest is false.
+	reasonTurnedOff = "TurnedOff"
 
 	// noReadinessNote is what the WakeOnRequest condition adds for a routed
 	// workload whose pods have no readiness probe.

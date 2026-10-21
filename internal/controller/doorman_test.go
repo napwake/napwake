@@ -789,11 +789,12 @@ func TestReconcileDoorman_KeepsALastingProblemOnceAwake(t *testing.T) {
 	routable := service("api", map[string]string{"app": "api"}, corev1.ServicePort{Name: "http", Port: 80})
 	ctx := context.Background()
 	tests := []struct {
-		name       string
-		objs       []client.Object
-		onRequest  *bool
-		wantReason string
-		wantPrefix bool
+		name        string
+		objs        []client.Object
+		onRequest   *bool
+		wantReason  string
+		wantPrefix  bool
+		wantMessage string
 	}{
 		{name: "a node-local Service", objs: []client.Object{doormanEndpoints("10.0.0.7"), local.DeepCopy()},
 			wantReason: "NodeLocalTraffic", wantPrefix: true},
@@ -801,7 +802,7 @@ func TestReconcileDoorman_KeepsALastingProblemOnceAwake(t *testing.T) {
 		{name: "routed", objs: []client.Object{doormanEndpoints("10.0.0.7"), routable.DeepCopy()},
 			wantReason: "NotPaused"},
 		{name: "wake.onRequest turned off since", objs: []client.Object{doormanEndpoints("10.0.0.7"), local.DeepCopy()},
-			onRequest: ptr.To(false), wantReason: "NotPaused"},
+			onRequest: ptr.To(false), wantReason: "TurnedOff", wantMessage: "wake.onRequest is false"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -820,7 +821,10 @@ func TestReconcileDoorman_KeepsALastingProblemOnceAwake(t *testing.T) {
 			awake := wakeCondition(t, workload)
 			assert.Equal(t, tt.wantReason, awake.Reason)
 			if !tt.wantPrefix {
-				assert.Empty(t, awake.Message)
+				if tt.wantMessage == "" {
+					assert.Empty(t, awake.Message)
+				}
+				assert.Contains(t, awake.Message, tt.wantMessage)
 				return
 			}
 			assert.Equal(t, metav1.ConditionFalse, awake.Status)
@@ -884,6 +888,22 @@ func TestReconcileDoorman_WarnsWhenPodsHaveNoReadinessProbe(t *testing.T) {
 			assert.Contains(t, warnings[0], "https://okedeji.io/hybernate/concepts/wake-on-request/#readiness-probes")
 		})
 	}
+}
+
+// A paused workload with wake on request turned off isn't routed, and
+// says so: not NotPaused, which it is.
+func TestReconcileDoorman_TurnedOffWhilePaused(t *testing.T) {
+	workload := lifecycleWorkload("api", v1alpha1.PhasePaused)
+	workload.Spec.Wake = &v1alpha1.WakeSpec{OnRequest: ptr.To(false)}
+	r := doormanReconciler(t, workload, doormanEndpoints("10.0.0.7"),
+		service("api", map[string]string{"app": "api"}, corev1.ServicePort{Name: "http", Port: 80}))
+
+	require.NoError(t, doormanErr(context.Background(), r, workload, appTarget()))
+
+	assert.Empty(t, doormanSlices(t, r))
+	cond := wakeCondition(t, workload)
+	assert.Equal(t, metav1.ConditionFalse, cond.Status)
+	assert.Equal(t, "TurnedOff", cond.Reason)
 }
 
 // A workload paused before has a WakeOnRequest condition already, from

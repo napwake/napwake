@@ -269,6 +269,7 @@ var untroubled = map[string]bool{
 	"TargetIgnored":      true,
 	"HybernateComponent": true,
 	"DoormanDisabled":    true,
+	"TurnedOff":          true,
 	"NotPaused":          true,
 }
 
