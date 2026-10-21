@@ -676,41 +676,69 @@ func TestReconcileDoorman_SharedService(t *testing.T) {
 	assert.Contains(t, cond.Message, "shop")
 }
 
+// GKE annotates every Service of a VPC-native cluster for NEGs, but only a
+// Service a GKE Ingress uses, or one with standalone NEGs, is in any, and
+// only those are left off the doorman.
 func TestReconcileDoorman_SkipsGKENEGServices(t *testing.T) {
-	neg := func(name, value string) *corev1.Service {
+	neg := func(name string, annotations map[string]string) *corev1.Service {
 		svc := service(name, map[string]string{"app": "api"}, corev1.ServicePort{Name: "http", Port: 80})
-		svc.Annotations = map[string]string{annotationGKENEG: value}
+		svc.Annotations = annotations
 		return svc
 	}
+	auto := map[string]string{annotationGKENEG: gkeAutoNEG}
+	synced := map[string]string{annotationGKENEG: gkeAutoNEG,
+		annotationGKENEGStatus: `{"network_endpoint_groups":{"80":"k8s1-abc-default-api-80-1"}}`}
+	gce := gceIngressTo("api")
+	nginx := ingressTo("api", nil, ptr.To("nginx"))
 
 	tests := []struct {
 		name       string
-		services   []client.Object
+		objects    []client.Object
 		wantRouted []string
 		wantStatus metav1.ConditionStatus
 		wantReason string
 	}{
 		{
-			name:       "every Service uses NEGs",
-			services:   []client.Object{neg("api", `{"ingress":true}`)},
+			name:       "GKE's own annotation, with no GKE Ingress",
+			objects:    []client.Object{neg("api", auto)},
+			wantRouted: []string{"api"},
+			wantStatus: metav1.ConditionTrue,
+			wantReason: "DoormanRouted",
+		},
+		{
+			name:       "GKE's own annotation, behind an nginx Ingress",
+			objects:    []client.Object{neg("api", auto), &nginx},
+			wantRouted: []string{"api"},
+			wantStatus: metav1.ConditionTrue,
+			wantReason: "DoormanRouted",
+		},
+		{
+			name:       "a GKE Ingress uses it",
+			objects:    []client.Object{neg("api", auto), &gce},
+			wantStatus: metav1.ConditionFalse,
+			wantReason: "UnsupportedLoadBalancer",
+		},
+		{
+			name:       "the NEG controller keeps NEGs for it",
+			objects:    []client.Object{neg("api", synced)},
 			wantStatus: metav1.ConditionFalse,
 			wantReason: "UnsupportedLoadBalancer",
 		},
 		{
 			name:       "exposed NEG ports",
-			services:   []client.Object{neg("api", `{"exposed_ports":{"80":{}}}`)},
+			objects:    []client.Object{neg("api", map[string]string{annotationGKENEG: `{"exposed_ports":{"80":{}}}`})},
 			wantStatus: metav1.ConditionFalse,
 			wantReason: "UnsupportedLoadBalancer",
 		},
 		{
 			name:       "an unparseable annotation counts as NEG",
-			services:   []client.Object{neg("api", `ingress`)},
+			objects:    []client.Object{neg("api", map[string]string{annotationGKENEG: `ingress`})},
 			wantStatus: metav1.ConditionFalse,
 			wantReason: "UnsupportedLoadBalancer",
 		},
 		{
 			name: "only the NEG Service is skipped",
-			services: []client.Object{neg("api-gclb", `{"ingress":true}`),
+			objects: []client.Object{neg("api-gclb", synced),
 				service("api", map[string]string{"app": "api"}, corev1.ServicePort{Name: "http", Port: 80})},
 			wantRouted: []string{"api"},
 			wantStatus: metav1.ConditionTrue,
@@ -718,7 +746,7 @@ func TestReconcileDoorman_SkipsGKENEGServices(t *testing.T) {
 		},
 		{
 			name:       "NEGs turned off",
-			services:   []client.Object{neg("api", `{"ingress":false}`)},
+			objects:    []client.Object{neg("api", map[string]string{annotationGKENEG: `{"ingress":false}`}), &gce},
 			wantRouted: []string{"api"},
 			wantStatus: metav1.ConditionTrue,
 			wantReason: "DoormanRouted",
@@ -728,7 +756,7 @@ func TestReconcileDoorman_SkipsGKENEGServices(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			workload := lifecycleWorkload("api", v1alpha1.PhasePaused)
-			r := doormanReconciler(t, append([]client.Object{workload, doormanEndpoints("10.0.0.7")}, tt.services...)...)
+			r := doormanReconciler(t, append([]client.Object{workload, doormanEndpoints("10.0.0.7")}, tt.objects...)...)
 
 			require.NoError(t, doormanErr(context.Background(), r, workload, appTarget()))
 
@@ -750,7 +778,7 @@ func TestReconcileDoorman_SkipsGKENEGServices(t *testing.T) {
 func TestReconcileDoorman_WarnsOnceAboutASkippedService(t *testing.T) {
 	workload := lifecycleWorkload("api", v1alpha1.PhasePaused)
 	svc := service("api", map[string]string{"app": "api"}, corev1.ServicePort{Name: "http", Port: 80})
-	svc.Annotations = map[string]string{annotationGKENEG: `{"ingress":true}`}
+	svc.Annotations = map[string]string{annotationGKENEG: `{"exposed_ports":{"80":{}}}`}
 	r := doormanReconciler(t, workload, doormanEndpoints("10.0.0.7"), svc)
 
 	require.NoError(t, doormanErr(context.Background(), r, workload, appTarget()))

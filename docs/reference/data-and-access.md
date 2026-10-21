@@ -10,6 +10,7 @@ Everything the Hybernate operator and its doorman read, write, and send, for a s
 | Pods | What a workload's running pods request: the app containers', at most every 5 minutes, to judge CPU activity against, and all containers', sidecars included, to price it; and which pod sent a request that woke a workload. What every pod bound to a node requests, to measure the spare capacity on each node pool that [saved](../concepts/cost-tracking.md#how-saved-is-measured) is worked out from. The doorman reads the pod each of a woken workload's endpoints names, to check the endpoint's address is that pod's | Watched, with only bound, unfinished pods cached, and of each only its name, node, phase and requests; read from the API server for the rest. Not watched by an operator limited by `watchNamespaces`. The doorman keeps a pod's addresses for 30 seconds |
 | Pod metrics (`metrics.k8s.io`) | CPU use, the activity clock's main signal | Read when needed, not cached |
 | Services | Which Services to route a paused workload's requests through, and which workload an address in an environment names | Watched |
+| Ingresses | Their class and the Services they send traffic to, to tell which Services a GKE Ingress puts behind container-native load balancing, which can't be routed to the doorman | Watched |
 | EndpointSlices | Its own, routing paused workloads to the doorman, and the doorman Service's, to find the doorman's pods. The doorman reads every slice in the watched namespaces, to find a woken workload's Ready pods | Watched |
 | ConfigMaps | The ones a managed workload takes environment variables from, to learn its dependencies; and `kube-system/cluster-autoscaler-status`, whose existence shows Cluster Autoscaler runs | Read one by one with `get`, not cached; never listed or written. Of `cluster-autoscaler-status`, only its metadata, every 10 minutes |
 | PersistentVolumeClaims | Their size, to price the storage a paused workload keeps | Watched |
@@ -60,6 +61,7 @@ What the Helm chart grants, for a release named `hybernate`; resource names star
 | `""` | `events` | `create`, `patch` | namespaced |
 | `events.k8s.io` | `events` | `create`, `patch` | namespaced |
 | `""` | `services` | `get`, `list`, `watch` | namespaced |
+| `networking.k8s.io` | `ingresses` | `get`, `list`, `watch` | namespaced |
 | `""` | `pods` | `get`, `list`, `watch` | namespaced |
 | `""` | `persistentvolumeclaims` | `get`, `list`, `watch` | namespaced |
 | `discovery.k8s.io` | `endpointslices` | `get`, `list`, `watch`, `create`, `update`, `patch`, `delete` | namespaced |

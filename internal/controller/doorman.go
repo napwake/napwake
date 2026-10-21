@@ -19,7 +19,6 @@ package controller
 import (
 	"cmp"
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"net/netip"
@@ -32,6 +31,7 @@ import (
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	discoveryv1 "k8s.io/api/discovery/v1"
+	networkingv1 "k8s.io/api/networking/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -52,10 +52,6 @@ const (
 	conditionWakeOnRequest = "WakeOnRequest"
 	actionRouteDoorman     = "RouteDoorman"
 	reasonRoutingFailed    = "RoutingFailed"
-
-	// annotationGKENEG puts a Service behind GKE's container-native load
-	// balancing. GKE adds it to Services used by an Ingress by default.
-	annotationGKENEG = "cloud.google.com/neg"
 
 	labelServiceProxyName = "service.kubernetes.io/service-proxy-name"
 
@@ -464,6 +460,10 @@ func (r *Reconciler) planDoorman(ctx context.Context, workload *v1alpha1.Managed
 	if err := r.List(ctx, &list, client.InNamespace(workload.Namespace)); err != nil {
 		return doormanPlan{}, fmt.Errorf("listing services: %w", err)
 	}
+	var ingresses networkingv1.IngressList
+	if err := r.List(ctx, &ingresses, client.InNamespace(workload.Namespace), client.UnsafeDisableDeepCopy); err != nil {
+		return doormanPlan{}, fmt.Errorf("listing ingresses: %w", err)
+	}
 	var plan doormanPlan
 	for _, svc := range list.Items {
 		if len(svc.Spec.Selector) == 0 || svc.Spec.ClusterIP == corev1.ClusterIPNone ||
@@ -473,7 +473,7 @@ func (r *Reconciler) planDoorman(ctx context.Context, workload *v1alpha1.Managed
 		if !labels.SelectorFromSet(svc.Spec.Selector).Matches(podLabels) {
 			continue
 		}
-		if usesGKENEG(svc) {
+		if usesGKENEG(svc, ingresses.Items) {
 			plan.skipped.unsupported = append(plan.skipped.unsupported, svc.Name)
 			continue
 		}
@@ -603,27 +603,6 @@ func serviceFamilies(svc corev1.Service) []discoveryv1.AddressType {
 		}
 	}
 	return out
-}
-
-// usesGKENEG reports whether a Service is behind GKE container-native load
-// balancing. The NEG controller can fail a Service's whole sync on one
-// endpoint it rejects, and it checks each endpoint's pod against the Service
-// in the pod's own namespace, which for the doorman is the wrong one. Routing
-// such a Service risks freezing its load balancer until the workload wakes.
-// An annotation that can't be parsed counts as NEG, to stay safe.
-func usesGKENEG(svc corev1.Service) bool {
-	value, ok := svc.Annotations[annotationGKENEG]
-	if !ok {
-		return false
-	}
-	var neg struct {
-		Ingress      bool                       `json:"ingress"`
-		ExposedPorts map[string]json.RawMessage `json:"exposed_ports"`
-	}
-	if err := json.Unmarshal([]byte(value), &neg); err != nil {
-		return true
-	}
-	return neg.Ingress || len(neg.ExposedPorts) > 0
 }
 
 func podTemplateLabels(target client.Object) map[string]string {
@@ -1141,7 +1120,9 @@ func (r *Reconciler) findWorkloadsForDoorman(ctx context.Context, _ client.Objec
 }
 
 // findPausedWorkloadsInNamespace re-queues paused workloads when a Service
-// in their namespace changes, since it may now select their pods.
+// in their namespace changes, since it may now select their pods or be
+// behind GKE's NEGs, or an Ingress there does, which may put one of their
+// Services behind NEGs or take it out.
 func (r *Reconciler) findPausedWorkloadsInNamespace(ctx context.Context, obj client.Object) []reconcile.Request {
 	var list v1alpha1.ManagedWorkloadList
 	if err := r.List(ctx, &list, client.InNamespace(obj.GetNamespace()), client.UnsafeDisableDeepCopy); err != nil {

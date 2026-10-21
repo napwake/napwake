@@ -27,6 +27,7 @@ import (
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	discoveryv1 "k8s.io/api/discovery/v1"
+	networkingv1 "k8s.io/api/networking/v1"
 	"k8s.io/apimachinery/pkg/api/equality"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/meta"
@@ -168,6 +169,7 @@ type lifecyclePauser interface {
 // +kubebuilder:rbac:groups="",resources=configmaps,verbs=get
 // +kubebuilder:rbac:groups="",resources=events,verbs=create;patch
 // +kubebuilder:rbac:groups="",resources=services,verbs=get;list;watch
+// +kubebuilder:rbac:groups=networking.k8s.io,resources=ingresses,verbs=get;list;watch
 // +kubebuilder:rbac:groups="",resources=pods,verbs=get;list;watch
 // +kubebuilder:rbac:groups="",resources=nodes,verbs=get;list;watch
 // +kubebuilder:rbac:groups=autoscaling,resources=horizontalpodautoscalers,verbs=get;list;watch
@@ -1460,6 +1462,22 @@ func phaseChanged() predicate.Predicate {
 	}
 }
 
+// ingressBackendsChanged passes the changes to an Ingress that can put a
+// Service behind GKE's NEGs or take it out: its creation and deletion, its
+// class, and its backends. GKE's ingress controller keeps rewriting its
+// own annotations and status, which change neither.
+func ingressBackendsChanged() predicate.Predicate {
+	return predicate.Funcs{
+		UpdateFunc: func(e event.UpdateEvent) bool {
+			old, okOld := e.ObjectOld.(*networkingv1.Ingress)
+			cur, okNew := e.ObjectNew.(*networkingv1.Ingress)
+			return !okOld || !okNew ||
+				old.Annotations[annotationIngressClass] != cur.Annotations[annotationIngressClass] ||
+				!equality.Semantic.DeepEqual(old.Spec, cur.Spec)
+		},
+	}
+}
+
 // targetRefFor identifies a watched object as a ManagedWorkload target.
 // Typed objects from the cache carry no GVK, so the kind comes from the Go
 // type rather than obj.GetObjectKind().
@@ -1635,6 +1653,8 @@ func (r *Reconciler) SetupWithManager(mgr ctrl.Manager) error {
 		Watches(&discoveryv1.EndpointSlice{}, handler.EnqueueRequestsFromMapFunc(r.findWorkloadsForDoorman),
 			builder.WithPredicates(predicate.NewPredicateFuncs(r.isDoormanEndpoints))).
 		Watches(&corev1.Service{}, handler.EnqueueRequestsFromMapFunc(r.findPausedWorkloadsInNamespace)).
+		Watches(&networkingv1.Ingress{}, handler.EnqueueRequestsFromMapFunc(r.findPausedWorkloadsInNamespace),
+			builder.WithPredicates(ingressBackendsChanged())).
 		Watches(&corev1.Namespace{}, handler.EnqueueRequestsFromMapFunc(r.findWorkloadsInNamespace),
 			builder.WithPredicates(inWatchedNamespaces(r.WatchNamespaces))).
 		Named("managedworkload").

@@ -32,6 +32,7 @@ import (
 	autoscalingv2 "k8s.io/api/autoscaling/v2"
 	corev1 "k8s.io/api/core/v1"
 	discoveryv1 "k8s.io/api/discovery/v1"
+	networkingv1 "k8s.io/api/networking/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -109,6 +110,7 @@ func testScheme(t testing.TB) *runtime.Scheme {
 	require.NoError(t, autoscalingv2.AddToScheme(s))
 	require.NoError(t, corev1.AddToScheme(s))
 	require.NoError(t, discoveryv1.AddToScheme(s))
+	require.NoError(t, networkingv1.AddToScheme(s))
 	return s
 }
 
