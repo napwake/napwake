@@ -80,7 +80,7 @@ func TestState_RoundTrip(t *testing.T) {
 }
 
 // What a quiet morning leaves pending, the weekly changes held for the next
-// day, survives a restart.
+// day and the doubt it casts on the hour after, survives a restart.
 func TestState_RoundTripKeepsWhatIsHeld(t *testing.T) {
 	e := trainedEngine(t)
 	for i := range 10 {
@@ -88,6 +88,7 @@ func TestState_RoundTripKeepsWhatIsHeld(t *testing.T) {
 		_, err := e.Observe(0, at)
 		require.NoError(t, err)
 	}
+	require.True(t, e.doubting)
 	require.NotZero(t, e.held[9])
 
 	state, err := e.Export()
@@ -95,6 +96,7 @@ func TestState_RoundTripKeepsWhatIsHeld(t *testing.T) {
 	restored, err := ImportEngine(state, Settings{Threshold: 85})
 	require.NoError(t, err)
 
+	assert.True(t, restored.doubting)
 	for slot := range WeeklySeason {
 		assert.InDelta(t, e.held[slot], restored.held[slot], 1e-4, "hour of the week %d", slot)
 	}

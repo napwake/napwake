@@ -131,6 +131,13 @@ type Engine struct {
 	// weekday a week later forecast quieter than it is.
 	held [WeeklySeason]float64
 
+	// doubting says the last hour observed was far quieter than forecast,
+	// an anomaly, so the day may be a holiday: the forecast's expectations
+	// aren't acted on until an hour goes as forecast or a regime change
+	// discards them. Held to them, it kept a workload awake through a
+	// holiday's morning, and woke it again once paused.
+	doubting bool
+
 	// phaseBeforeAnomalies is the highest phase held since the oldest
 	// anomaly still in the anomaly window: what a regime change demotes
 	// from, so that the anomalies leading up to it, which may already have
@@ -243,6 +250,7 @@ func (e *Engine) Observe(actual float64, now time.Time) (float64, error) {
 	if how == fitHoldWeekly {
 		e.held[slot] = change
 	}
+	e.doubting = e.lastAnomaly && actual < forecast
 	e.lastHour = hourStart(t)
 	e.updateScale(actual)
 	e.coverage.set(slot, true)
@@ -289,10 +297,11 @@ func (e *Engine) floor() float64 {
 }
 
 // Predict returns the demand forecast for the hour h hours after the one
-// containing now. It is 0 until the forecast drives decisions, and for an
-// hour of the week it hasn't seen.
+// containing now. It is 0 until the forecast drives decisions, while it
+// doubts them after an hour far quieter than forecast, and for an hour of
+// the week it hasn't seen.
 func (e *Engine) Predict(h int, now time.Time) float64 {
-	if !e.Active() {
+	if !e.Active() || e.doubting {
 		return 0
 	}
 	t := e.local(now).Add(time.Duration(h) * time.Hour)

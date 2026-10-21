@@ -181,9 +181,9 @@ func TestAlwaysIdle(t *testing.T) {
 	assert.True(t, ok)
 }
 
-// A weekday holiday costs one wake for nothing, kept awake while the
-// forecast still expects the day, until the regime change the holiday's
-// anomalies set off lets the activity clock pause it. The morning after,
+// A weekday holiday costs one wake for nothing, an hour or so: the forecast
+// doubts what it expects once the holiday's first hour is far quieter than
+// forecast, and the activity clock pauses the workload. The morning after,
 // the first request wakes it, since the regime change the holiday's
 // anomalies set off has the forecast earning its confidence again. The
 // weekly pattern doesn't learn the holiday, because the day after it is
@@ -198,7 +198,7 @@ func TestHoliday(t *testing.T) {
 	next := r.Summarize(holiday.Add(day))
 	assert.Equal(t, 1, h.WastedWakes-next.WastedWakes, "woken for the holiday")
 	assert.Equal(t, 1, h.IdleDayWakes-next.IdleDayWakes)
-	assert.LessOrEqual(t, h.WastedHours-next.WastedHours, 3.5, "hours awake for the holiday")
+	assert.LessOrEqual(t, h.WastedHours-next.WastedHours, 1.5, "hours awake for the holiday")
 	var cold []time.Time
 	for _, d := range r.Days {
 		if d.Outcome == Cold && d.Date.After(holiday) {
@@ -252,7 +252,7 @@ func TestRetiredWorkload(t *testing.T) {
 	assert.WithinDuration(t, retired, r.RegimeChanges[0], day, "noticed within the first day")
 	s := r.Summarize(retired)
 	assert.LessOrEqual(t, s.WastedWakes, 2, "wakes for the old hours")
-	assert.LessOrEqual(t, s.WastedHours, 3.5)
+	assert.LessOrEqual(t, s.WastedHours, 3.0)
 	for _, w := range r.Wakes {
 		assert.False(t, w.At.After(retired.Add(8*day)), "woken %s", w.At.Format("Mon 02 Jan 15:04"))
 	}
@@ -396,7 +396,7 @@ func TestNoisyOfficeHours(t *testing.T) {
 	}
 	assert.Greater(t, float64(ready)/float64(used), 0.7, "%d of %d mornings ready", ready, used)
 	assert.LessOrEqual(t, float64(wasted)/10, 2.0, "wasted wakes a month")
-	assert.LessOrEqual(t, wastedHours/float64(max(wasted, 1)), 3.0, "hours each kept it awake")
+	assert.LessOrEqual(t, wastedHours/float64(max(wasted, 1)), 2.0, "hours each kept it awake")
 }
 
 // A forecast learned from four weeks of history, as from Prometheus when a

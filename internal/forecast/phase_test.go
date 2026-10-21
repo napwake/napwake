@@ -350,6 +350,30 @@ func TestEngine_LastingChangeIsLearnedIntoTheWeek(t *testing.T) {
 		"one quiet Monday, then a busy Tuesday: next Monday is expected busier")
 }
 
+// The hour after one far quieter than forecast, the forecast doesn't act on
+// what it expects: the day may be a holiday. An hour that goes as forecast
+// restores it; one far busier doesn't cast doubt, since the workload is in
+// use then anyway.
+func TestEngine_DoubtsAfterAQuietSurprise(t *testing.T) {
+	e := NewEngine(DefaultParams(), Settings{Threshold: 75})
+	run(t, e, 0, 6*WeeklySeason, office)
+	monday := 6 * WeeklySeason
+	run(t, e, monday, 9, office)
+	require.Greater(t, e.Predict(1, hourAt(monday+9)), 40.0, "10am is expected busy")
+
+	run(t, e, monday+9, 1, func(int, time.Time) float64 { return 0 })
+	require.True(t, e.AnomalyDetected())
+	assert.Zero(t, e.Predict(0, hourAt(monday+10)), "after a quiet 9am, 10am isn't acted on")
+
+	run(t, e, monday+10, 1, office)
+	assert.Greater(t, e.Predict(1, hourAt(monday+11)), 40.0, "a busy 10am restores it")
+
+	run(t, e, monday+11, 9, office)
+	run(t, e, monday+20, 1, func(int, time.Time) float64 { return 100 })
+	require.True(t, e.AnomalyDetected())
+	assert.False(t, e.doubting, "a busy 8pm")
+}
+
 // A held change whose next day's hour isn't observed can't be settled, and
 // is dropped rather than settled a week later.
 func TestEngine_HeldChangeLapsesOverAGap(t *testing.T) {

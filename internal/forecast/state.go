@@ -75,6 +75,7 @@ type engineState struct {
 	Recent   [WeeklySeason]float32 `json:"r"`
 	Seen     weekSlots             `json:"rs"`
 	Held     [WeeklySeason]float32 `json:"hw"`
+	Doubting bool                  `json:"dq,omitempty"`
 }
 
 // Export encodes what the engine has learned as compact text: gzipped JSON
@@ -98,6 +99,7 @@ func (e *Engine) Export() (string, error) {
 		PrePhase: int(e.phaseBeforeAnomalies),
 		Recent:   e.recent,
 		Seen:     e.recentSeen,
+		Doubting: e.doubting,
 	}
 	for i, v := range e.Model.daily {
 		st.Daily[i] = float32(v)
@@ -186,6 +188,7 @@ func decodeEngine(data []byte, settings Settings) (*Engine, error) {
 	e.phaseBeforeAnomalies = Phase(st.PrePhase)
 	e.recent = st.Recent
 	e.recentSeen = st.Seen
+	e.doubting = st.Doubting
 	return e, nil
 }
 
