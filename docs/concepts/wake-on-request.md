@@ -168,6 +168,8 @@ Requests to the paused workload then fail, as they would without Hybernate. With
 | The workload would hold more than 32 doorman ports, or its namespace more than 256 | `WakeOnRequest=False`, reason `TooManyPorts`, so one tenant can't use up the ports every namespace shares. Set the caps with the Helm values `doorman.portsPerWorkload` and `doorman.portsPerNamespace` |
 | Routing failed, such as an EndpointSlice write being refused, or an EndpointSlice that isn't the doorman's already having the name the doorman's would take (`<service>-o<hash>`), which it never overwrites | `WakeOnRequest=False`, reason `RoutingFailed`, with a warning event. It's retried with backoff, from 5 seconds up to 5 minutes. Routing problems never hold up a pause or a wake |
 
+Once the workload is awake, `WakeOnRequest` goes to `False`, reason `NotPaused`, unless the last pause found a problem with its Services: `ServedByOtherPods`, `NodeLocalTraffic`, `UnsupportedIPFamily`, `UnsupportedLoadBalancer` or `TooManyPorts`. That stays, its message starting `at its last pause:`, since the next pause meets it again unless it's fixed, and [`kubectl hybernate status`](../getting-started/kubectl-plugin.md#see-what-hybernate-is-doing) lists it under Needs attention while the workload runs. Every pause works routing out afresh.
+
 ## Network policies
 
 The doorman connects to woken pods directly, from the Hybernate namespace. If a workload's namespace has a default-deny NetworkPolicy, allow ingress from the doorman:

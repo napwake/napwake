@@ -162,7 +162,7 @@ func (r *Reconciler) reconcileDoorman(ctx context.Context, workload *v1alpha1.Ma
 		return 0, r.removeDoorman(ctx, workload)
 	}
 	if !doormanEligible(workload) || target == nil {
-		r.clearCondition(workload, conditionWakeOnRequest, "NotPaused")
+		r.keepRoutingProblem(workload)
 		return 0, r.removeDoorman(ctx, workload)
 	}
 
@@ -240,6 +240,34 @@ func (r *Reconciler) reconcileDoorman(ctx context.Context, workload *v1alpha1.Ma
 	}
 	r.reportDoorman(ctx, workload, routes, plan.skipped)
 	return recheck, nil
+}
+
+// lastingRoutingProblems are the WakeOnRequest reasons that come from how the
+// workload's Services are set up, which the next pause meets again unless
+// someone changes them.
+var lastingRoutingProblems = map[string]bool{
+	"UnsupportedLoadBalancer": true,
+	"ServedByOtherPods":       true,
+	"NodeLocalTraffic":        true,
+	"UnsupportedIPFamily":     true,
+	"TooManyPorts":            true,
+}
+
+const foundAtLastPause = "at its last pause: "
+
+// keepRoutingProblem clears WakeOnRequest once the workload isn't paused,
+// except for a problem its last pause found with its Services, which stays,
+// so it can be fixed before the next pause rather than found by someone
+// whose request doesn't wake it.
+func (r *Reconciler) keepRoutingProblem(workload *v1alpha1.ManagedWorkload) {
+	c := meta.FindStatusCondition(workload.Status.Conditions, conditionWakeOnRequest)
+	if c == nil || c.Status != metav1.ConditionFalse || !lastingRoutingProblems[c.Reason] || !wakeOnRequest(workload) {
+		r.clearCondition(workload, conditionWakeOnRequest, "NotPaused")
+		return
+	}
+	if !strings.HasPrefix(c.Message, foundAtLastPause) {
+		r.setCondition(workload, conditionWakeOnRequest, metav1.ConditionFalse, c.Reason, foundAtLastPause+c.Message)
+	}
 }
 
 // shortest is the sooner of two requeue delays, where zero means none.
