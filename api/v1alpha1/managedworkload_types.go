@@ -26,8 +26,9 @@ import (
 // +kubebuilder:object:root=true
 // +kubebuilder:subresource:status
 // +kubebuilder:printcolumn:name="Phase",type=string,JSONPath=`.status.phase`
-// +kubebuilder:printcolumn:name="Saved",type=string,JSONPath=`.status.cost.savedThisMonth`,description="What pausing took off the node bill this month (UTC), at least"
 // +kubebuilder:printcolumn:name="Freed",type=string,JSONPath=`.status.cost.freedThisMonth`,description="What pausing freed this month (UTC), at list price"
+// +kubebuilder:printcolumn:name="Saved",type=string,JSONPath=`.status.cost.savedThisMonth`,description="What pausing took off the node bill this month (UTC), at least"
+// +kubebuilder:printcolumn:name="Would Free",type=string,JSONPath=`.status.dryRun.estimatedFreed`,description="In dry-run: what the pauses Hybernate would have made would have freed since dry-run began"
 // +kubebuilder:printcolumn:name="Age",type=date,JSONPath=`.metadata.creationTimestamp`
 
 // ManagedWorkload declares a workload whose lifecycle is managed by Hybernate.
