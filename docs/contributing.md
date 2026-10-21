@@ -179,6 +179,25 @@ brew uninstall hybernate/local/kubectl-hybernate
 brew untap hybernate/local
 ```
 
+### Krew
+
+Each release carries a krew manifest, `krew-hybernate.yaml`, which the release workflow writes with `hack/krew-manifest.sh` and checks with krew's `validate-krew-manifest`. Until the plugin is in [krew-index](https://github.com/kubernetes-sigs/krew-index), the docs install it from that manifest's URL.
+
+**Once 0.2.0 is released, submit the plugin to krew-index,** a pull request to that repository:
+
+1. Check the release's manifest installs on every platform. This needs [krew](https://krew.sigs.k8s.io/docs/user-guide/setup/install/) installed:
+
+    ```bash
+    gh release download v0.2.0 -R okedeji/hybernate -p krew-hybernate.yaml
+    go install sigs.k8s.io/krew/cmd/validate-krew-manifest@v0.5.0
+    validate-krew-manifest -manifest krew-hybernate.yaml
+    ```
+
+2. Fork [kubernetes-sigs/krew-index](https://github.com/kubernetes-sigs/krew-index), add the manifest as `plugins/hybernate.yaml`, and open a pull request. Krew's maintainers review a new plugin by hand, against their [naming guide](https://krew.sigs.k8s.io/docs/developer-guide/develop/naming-guide/) and [best practices](https://krew.sigs.k8s.io/docs/developer-guide/develop/best-practices/).
+3. Once it's merged, change the README's and the [plugin page's](getting-started/kubectl-plugin.md#installation) Krew instructions to `kubectl krew install hybernate`, without a manifest URL.
+
+**For each later release,** open a pull request to krew-index that sets `plugins/hybernate.yaml`'s `version`, `uri`s and `sha256`s to those in the release's `krew-hybernate.yaml`. One that changes only those is tested and merged automatically. [krew-release-bot](https://github.com/rajatjindal/krew-release-bot) can open it from the release workflow.
+
 ### The docs site
 
 The site keeps a version of the docs for each minor release, `0.2`, `0.3` and so on, each built from its newest patch's tag, so the install commands on every page name the release that page documents. The docs workflow publishes them once the release workflow succeeds, with [mike](https://github.com/jimporter/mike), to the `gh-pages` branch, which GitHub Pages serves:

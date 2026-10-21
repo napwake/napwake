@@ -87,6 +87,7 @@ The relaunch. The 0.1.x releases were early experiments, and 0.2.0 is a fresh st
 - Installing with Argo CD or Flux: the installation guide has an Argo CD `Application` for the OCI chart (`repoURL: ghcr.io/okedeji/charts`, `chart: hybernate`, no `oci://`), and a Flux `OCIRepository` and `HelmRelease` that keep the release named `hybernate` in `hybernate-system`
 - `brew install okedeji/tap/kubectl-hybernate` installs the plugin on macOS and Linux, with no krew needed. The release workflow writes the formula from each release's published archives and pushes it to the [okedeji/homebrew-tap](https://github.com/okedeji/homebrew-tap) repository. The README and the plugin's page install it with Homebrew first, then with krew, linking krew's own setup, then by a download for any platform
 - The plugin's usage and help name it as it's run, `kubectl hybernate`, as krew asks of plugins, rather than by its binary's name
+- The krew manifest is ready for krew-index: it describes every command, `nodes` included, and its caveats say which need the operator. The contributing guide gives the submission, after 0.2.0, and the update each later release needs
 
 ### Changed
 
