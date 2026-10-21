@@ -181,12 +181,13 @@ func (p *printer) printf(format string, args ...any) {
 func writeTable(out io.Writer, reports []sim.Report, days bool) error {
 	tw := tabwriter.NewWriter(out, 0, 0, 2, ' ', 0)
 	p := &printer{w: tw}
-	p.printf("SCENARIO\tACTS AFTER\tFULLY ACTIVE\tREADY\tAWAKE\tCOLD\tMISSED\tWASTED WAKES\tHOURS WASTED\tVETOES\n")
+	p.printf("SCENARIO\tACTS AFTER\tFULLY ACTIVE\tREADY\tAWAKE\tCOLD\tMISSED\tWASTED WAKES\tON IDLE DAYS\t" +
+		"HOURS WASTED\tVETOES\n")
 	for _, r := range reports {
 		s := r.Summarize(r.Start)
-		p.printf("%s\t%s\t%s\t%d/%d\t%d\t%d\t%d\t%d\t%.1f\t%d\n", r.Name, reached(r, forecast.DailyActive),
+		p.printf("%s\t%s\t%s\t%d/%d\t%d\t%d\t%d\t%d\t%d\t%.1f\t%d\n", r.Name, reached(r, forecast.DailyActive),
 			reached(r, forecast.FullyActive), s.Ready, s.UsedDays, s.Awake, s.Cold, s.Missed, s.WastedWakes,
-			s.WastedHours, s.Vetoes)
+			s.IdleDayWakes, s.WastedHours, s.Vetoes)
 	}
 	if !days {
 		return errors.Join(p.err, tw.Flush())
@@ -346,6 +347,9 @@ func scenarios(name string, loc *time.Location, length time.Duration) ([]sim.Sce
 			Down: 2 * time.Minute})
 	}
 	office := sim.OfficeHours(loc)
+	saturday := monday.AddDate(0, 0, 40)
+	atWork := sim.Working(loc, func(day time.Time) bool { return day.Equal(saturday) }, 9*time.Hour+10*time.Minute,
+		17*time.Hour+30*time.Minute, 40)
 	all := []sim.Scenario{
 		{Name: "office", Traffic: office},
 		{Name: "every-day", Traffic: sim.Working(loc, sim.EveryDay, 9*time.Hour+10*time.Minute,
@@ -357,6 +361,13 @@ func scenarios(name string, loc *time.Location, length time.Duration) ([]sim.Sce
 		{Name: "holiday", Traffic: sim.Except(office, loc, monday.AddDate(0, 0, 44))},
 		{Name: "new-hours", Traffic: sim.Switch(monday.AddDate(0, 0, 42), office,
 			sim.Working(loc, sim.Weekdays, 13*time.Hour, 21*time.Hour, 40))},
+		{Name: "retired", Traffic: sim.Switch(monday.AddDate(0, 0, 42), office, sim.Always(false, 0))},
+		{Name: "weekend-work", Traffic: func(t time.Time) sim.Use {
+			if u := atWork(t); u.Active {
+				return u
+			}
+			return office(t)
+		}},
 		{Name: "light-use", Traffic: sim.SeenElsewhere(sim.Working(loc, sim.Weekdays, 9*time.Hour+10*time.Minute,
 			17*time.Hour+30*time.Minute, 3))},
 		{Name: "restarts", Traffic: office, Restarts: restarts},
@@ -383,4 +394,4 @@ func scenarios(name string, loc *time.Location, length time.Duration) ([]sim.Sce
 // new-york-users scenario's people keep New York's hours, through its
 // clock change, so it shows what -timezone does.
 var scenarioNames = []string{"office", "every-day", "always-busy", "always-idle", "noisy", "irregular", "holiday",
-	"new-hours", "light-use", "restarts", "new-york-users"}
+	"new-hours", "retired", "weekend-work", "light-use", "restarts", "new-york-users"}
