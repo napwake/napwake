@@ -441,7 +441,7 @@ func (p *Prometheus) Check(ctx context.Context) error {
 		return fmt.Errorf("can't query %s: %w", p.Source, err)
 	}
 	var resp rangeResponse
-	if err := json.Unmarshal(body, &resp); err != nil || resp.Status != "success" {
+	if err := json.Unmarshal(body, &resp); err != nil || resp.Status != statusSuccess {
 		return fmt.Errorf("%s didn't answer like a Prometheus API", p.Source)
 	}
 	return nil
@@ -485,6 +485,9 @@ type containerCPU struct {
 	pod, container string
 	samples        map[int64]float64
 }
+
+// statusSuccess is the status of a Prometheus API response that answered.
+const statusSuccess = "success"
 
 type rangeResponse struct {
 	Status string `json:"status"`
@@ -571,7 +574,7 @@ func (p *Prometheus) namespaceCPU(ctx context.Context, namespace string, start, 
 	if err := json.Unmarshal(body, &resp); err != nil {
 		return nil, fmt.Errorf("reading %s's response: %w", p.Source, err)
 	}
-	if resp.Status != "success" {
+	if resp.Status != statusSuccess {
 		return nil, fmt.Errorf("%s: query failed: %s", p.Source, resp.Error)
 	}
 	type fromSource struct{ pod, container, source string }
