@@ -1,12 +1,14 @@
 name: docs
 
-# Publishes the docs of a release once it succeeds, so the site documents
-# the version users can install, not unreleased work on main or a tag whose
-# release failed. A workflow_run runs on main, which the github-pages
-# environment allows to deploy, while a run on the tag itself would be
-# refused. Run it manually from main, naming a release's tag, to republish
-# that release's docs. A pull request only builds them, so a broken link or
-# page fails it rather than the next release's docs.
+# Publishes each release's docs as a version of the site, built from the
+# tag, so its install commands name that release: a release to its minor,
+# such as 0.2, and to latest, where the site's root goes, when it's the
+# newest; a release candidate to next, with a banner saying so (see
+# hack/docsite). mike commits them to the gh-pages branch, which GitHub
+# Pages serves. It runs once the Release workflow succeeds, so a tag whose
+# release failed publishes nothing. Run it manually, naming a release's
+# tag, to republish that release's docs. A pull request only builds them,
+# so a broken link or page fails it rather than the next release's docs.
 on:
   pull_request:
   workflow_run:
@@ -15,29 +17,24 @@ on:
   workflow_dispatch:
     inputs:
       tag:
-        description: The release tag whose docs to publish, such as v0.2.0
+        description: The release tag whose docs to publish, such as v0.2.0 or v0.2.0-rc.1
         required: true
 
 permissions:
   contents: read
 
 concurrency:
-  group: ${{ github.event_name == 'pull_request' && format('docs-{0}', github.ref) || 'pages' }}
+  group: ${{ github.event_name == 'pull_request' && format('docs-{0}', github.ref) || 'gh-pages' }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
+  # A required check on main, by this job's name.
   build:
-    # A pre-release, such as v0.3.0-rc.1, isn't what releases/latest serves,
-    # so the site stays on the last release.
-    if: >-
-      github.event_name != 'workflow_run' ||
-      (github.event.workflow_run.conclusion == 'success' && !contains(github.event.workflow_run.head_branch, '-'))
+    if: github.event_name == 'pull_request'
     runs-on: ubuntu-24.04
     timeout-minutes: 30
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          ref: ${{ inputs.tag || github.event.workflow_run.head_sha || github.sha }}
       - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:
           python-version: "3.12"
@@ -46,22 +43,42 @@ jobs:
 
       - run: mkdocs build --strict
 
-      - if: github.event_name != 'pull_request'
-        uses: actions/upload-pages-artifact@fc324d3547104276b827a68afc52ff2a11cc49c9 # v5.0.0
-        with:
-          path: site
-
-  deploy:
-    needs: build
-    if: github.event_name != 'pull_request'
+  publish:
+    if: >-
+      github.event_name == 'workflow_dispatch' ||
+      (github.event_name == 'workflow_run' && github.event.workflow_run.conclusion == 'success')
     runs-on: ubuntu-24.04
     timeout-minutes: 30
     permissions:
-      pages: write
-      id-token: write
-    environment:
-      name: github-pages
-      url: ${{ steps.deployment.outputs.page_url }}
+      contents: write # the gh-pages branch
+    env:
+      # The Release workflow runs on tags only, so its run's branch is the tag.
+      TAG: ${{ inputs.tag || github.event.workflow_run.head_branch }}
     steps:
-      - id: deployment
-        uses: actions/deploy-pages@368f82528645a54fb793d4d04e342629a3f51346 # v5.0.1
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ inputs.tag || github.event.workflow_run.head_sha }}
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: "3.12"
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: go.mod
+
+      - run: pip install --require-hashes -r docs/requirements.txt
+
+      - run: mkdocs build --strict
+
+      # mike commits on top of the published site, which doesn't exist
+      # before the first publish.
+      - name: Fetch the published site
+        run: |
+          if git ls-remote --exit-code --heads origin gh-pages >/dev/null; then
+            git fetch --depth=1 origin gh-pages:refs/remotes/origin/gh-pages
+          fi
+
+      - name: Publish the release's docs
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          go run ./hack/docsite -tag "$TAG" -push

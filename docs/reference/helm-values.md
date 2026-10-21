@@ -4,10 +4,11 @@ Complete reference for the Hybernate Helm chart. Install with:
 
 ```bash
 helm install hybernate oci://ghcr.io/okedeji/charts/hybernate --version 0.2.0 \
-  --namespace hybernate-system --create-namespace
+  --namespace hybernate-system --create-namespace \
+  --set timezone=Europe/London
 ```
 
-The chart is published only as an OCI artifact; there's no `helm repo` to add. Its version has no `v` (`0.2.0`); the image tags do (`v0.2.0`). To see all defaults:
+Set `timezone` to your users' [time zone](../getting-started/installation.md#time-zone). The chart is published only as an OCI artifact; there's no `helm repo` to add. Its version has no `v` (`0.2.0`); the image tags do (`v0.2.0`). To see all defaults:
 
 ```bash
 helm show values oci://ghcr.io/okedeji/charts/hybernate --version 0.2.0
@@ -269,7 +270,7 @@ With `watchNamespaces` set, both get a Role and RoleBinding in each of those nam
 
 If leader election is enabled, a `<fullname>-leader-election` Role in the release namespace grants Leases (`get`, `create`, `update`) and Events.
 
-For people, the chart adds ManagedWorkloads to Kubernetes' built-in roles, through two aggregated ClusterRoles: `<fullname>-view`, in `view`, `edit` and `admin`, lets whoever can view a namespace `get`, `list` and `watch` its ManagedWorkloads, as `kubectl hybernate status` and `scan` do; `<fullname>-edit`, in `edit` and `admin`, lets whoever can edit it `create`, `update`, `patch` and `delete` them, as `pause`, `wake` and `enable` do. The kustomize manifests' `managedworkload-viewer-role` and `managedworkload-editor-role` are aggregated the same way.
+For people, the chart adds ManagedWorkloads to Kubernetes' built-in roles, through two aggregated ClusterRoles: `<fullname>-view`, in `view`, `edit` and `admin`, lets whoever can view a namespace `get`, `list` and `watch` its ManagedWorkloads, as `kubectl hybernate status` and `scan` do; `<fullname>-edit`, in `edit` and `admin`, lets whoever can edit it `create`, `update`, `patch` and `delete` them, as `pause`, `wake` and `enable` do. The Kustomize manifests' `managedworkload-viewer-role` and `managedworkload-editor-role` are aggregated the same way.
 
 What all of this reads, writes, and sends is listed in [Data and Access](data-and-access.md).
 

@@ -271,7 +271,7 @@ The operator was removed, or its CRD deleted, while ManagedWorkloads were left, 
 1. **Operator running?** `kubectl get pods -n hybernate-system` (or the namespace you installed into)
 2. **CRDs installed?** `kubectl get crd managedworkloads.hybernate.io`
 3. **Metrics server running?** `kubectl top nodes`
-4. **RBAC correct?** `kubectl auth can-i get pods --as=system:serviceaccount:hybernate-system:hybernate` (the ServiceAccount is `hybernate` for a Helm release named `hybernate`, and `hybernate-controller-manager` with kustomize)
+4. **RBAC correct?** `kubectl auth can-i get pods --as=system:serviceaccount:hybernate-system:hybernate` (the ServiceAccount is `hybernate` for a Helm release named `hybernate`, and `hybernate-controller-manager` with `install.yaml` or the Kustomize manifests)
 5. **Events?** `kubectl describe managedworkload <name> -n <ns>`
 6. **Logs?** `kubectl logs -n hybernate-system -l control-plane=controller-manager`
 7. **Status?** `kubectl get managedworkload <name> -n <ns> -o yaml`

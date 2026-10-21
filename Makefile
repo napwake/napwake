@@ -234,6 +234,15 @@ check-chart: ## Lint the Helm chart, render it for each provider's Kubernetes ve
 		grep -q 'aggregate-to-view: "true"' config/rbac/managedworkload_viewer_role.yaml && \
 		grep -q 'aggregate-to-edit: "true"' config/rbac/managedworkload_editor_role.yaml || { \
 		echo "ManagedWorkloads aren't in the built-in view and edit roles, so namespace users can't see or pause them"; exit 1; }
+	@hack/chart-notes.sh 0.3.1 | grep -qxF 'Docs for this version: https://okedeji.io/hybernate/0.3/' && \
+		hack/chart-notes.sh 0.3.0-rc.2 | grep -qxF 'Docs for this version: https://okedeji.io/hybernate/next/' || { \
+		echo "the chart's NOTES don't link to the docs of its version: its minor's, or next's for a release candidate"; exit 1; }
+	@hack/chart-notes.sh 0.3.1 | grep -qF 'weekdays in UTC. Set timezone to your users' && \
+		hack/chart-notes.sh 0.3.1 --set timezone=America/New_York | grep -qxF 'weekdays in America/New_York.' || { \
+		echo "the chart's NOTES don't name the time zone the forecast counts hours in, or ask for the users' when it's UTC"; exit 1; }
+	@hack/chart-notes.sh 0.3.1 | awk '/okedeji.io\/hybernate\/0.3\/guides\/gitops\// {gitops = NR} /kubectl hybernate enable/ {enable = NR} \
+		END {exit !(gitops && gitops < enable)}' && test -f docs/guides/gitops.md || { \
+		echo "the chart's NOTES don't send Argo CD and Flux users to the GitOps guide before enable"; exit 1; }
 	@helm template hybernate charts/hybernate --set leaderElection.enabled=false --show-only templates/deployment.yaml | grep -q 'type: Recreate' && \
 		! helm template hybernate charts/hybernate --show-only templates/deployment.yaml | grep -q 'type: Recreate' || { \
 		echo "without leader election, a rolling update runs two operators at once"; exit 1; }
@@ -300,7 +309,8 @@ lint-config: golangci-lint ## Verify golangci-lint linter configuration
 
 # The docs that name the current release, for installing or verifying it.
 # docs/operations/upgrading.md isn't one: its versions are history.
-VERSIONED_DOCS = README.md docs/getting-started/installation.md docs/reference/helm-values.md docs/reference/security.md
+VERSIONED_DOCS = README.md docs/getting-started/installation.md docs/getting-started/kubectl-plugin.md \
+	docs/operations/monitoring.md docs/reference/helm-values.md docs/reference/security.md
 
 # Versioning recipes read VERSION from the environment rather than having
 # make expand it into them, and check its form first, so a tag can't run as
@@ -328,11 +338,19 @@ verify-version: ## Fail unless the chart, the kustomize image, the docs and the 
 	@grep -qxF "appVersion: \"v$$VERSION\"" charts/hybernate/Chart.yaml || { echo "Chart.yaml's appVersion isn't v$$VERSION"; exit 1; }
 	@grep -qxF "  newTag: v$$VERSION" config/manager/kustomization.yaml || { echo "config/manager's image isn't v$$VERSION"; exit 1; }
 	@# The install and verify commands name the version whole: after
-	@# --version, or as the image's or the chart's tag.
-	@pattern="(--version |hybernate:v?)$${VERSION//./\\.}([^0-9A-Za-z.-]|$$)"; \
+	@# --version, as the image's or the chart's tag, or in a release
+	@# download's or a Kustomize base's link.
+	@pattern="(--version |hybernate:v?|/releases/download/v|\?ref=v)$${VERSION//./\\.}([^0-9A-Za-z.-]|$$)"; \
 	for f in $(VERSIONED_DOCS); do \
 		grep -qE -- "$$pattern" "$$f" || { echo "$$f doesn't name $$VERSION; run make bump VERSION=$$VERSION"; exit 1; }; \
 	done
+	@# Every page's install links name the release the page documents:
+	@# releases/latest installs whatever was released last.
+	@unpinned=$$(grep -rnF 'okedeji/hybernate/releases/latest' README.md docs || true); [ -z "$$unpinned" ] || { \
+		echo "$$unpinned"; echo "install links must name the release, as releases/download/v$$VERSION/ does"; exit 1; }
+	@stale=$$(grep -rnoE 'okedeji/hybernate(/releases/(download|tag)/|//config/[a-z-]+\?ref=)v[0-9][0-9A-Za-z.-]*' README.md docs | \
+		grep -vE -- "v$${VERSION//./\\.}$$" || true); [ -z "$$stale" ] || { \
+		echo "$$stale"; echo "these install links don't name v$$VERSION; add their pages to VERSIONED_DOCS and run make bump VERSION=$$VERSION"; exit 1; }
 	@base="$${VERSION%%-*}"; heading="^## \[$${base//./\\.}\] - "; \
 	if [[ "$$VERSION" == *-* ]]; then \
 		grep -qE -- "$$heading" CHANGELOG.md || { echo "CHANGELOG.md has no section for $$base"; exit 1; }; \

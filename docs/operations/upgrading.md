@@ -22,6 +22,18 @@
         kubectl apply -f https://github.com/okedeji/hybernate/releases/download/vX.Y.Z/install.yaml
         ```
 
+    === "Kustomize"
+
+        Change each Hybernate base's `ref` in your kustomization to `vX.Y.Z`, then:
+
+        ```bash
+        kubectl apply -k .
+        ```
+
+    === "Argo CD or Flux"
+
+        Change the Application's `targetRevision`, or the `OCIRepository`'s `tag`, to `X.Y.Z` in Git, and let it sync.
+
 3. **Verify the upgrade:**
 
     ```bash
@@ -88,6 +100,10 @@ If something goes wrong:
     ```bash
     kubectl apply -f https://github.com/okedeji/hybernate/releases/download/vPREVIOUS/install.yaml
     ```
+
+=== "Kustomize, Argo CD or Flux"
+
+    Put the previous release's `ref`, `targetRevision` or `tag` back, and apply or sync it.
 
 Paused workloads remain paused during rollback. The previous operator version resumes managing them. Rolling back across a breaking API change isn't supported.
 

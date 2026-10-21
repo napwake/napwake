@@ -9,6 +9,8 @@
 
 ## Install
 
+Hybernate is packaged two ways: a Helm chart, and the Kustomize manifests, the repository's `config/default`, which `install.yaml` is built from. Both install the same operator and doorman. Use Helm unless your cluster's config is kept as Kustomize.
+
 === "Helm"
 
     Install directly from the OCI registry; there's no `helm repo` to add:
@@ -17,10 +19,11 @@
     helm install hybernate oci://ghcr.io/okedeji/charts/hybernate \
       --version 0.2.0 \
       --namespace hybernate-system \
-      --create-namespace
+      --create-namespace \
+      --set timezone=Europe/London
     ```
 
-    The chart's version has no `v`; the image it runs is tagged with one, such as `v0.2.0`. The chart installs the ManagedWorkload CRD too, and upgrades it with each `helm upgrade`.
+    Set `timezone` to your users' [time zone](#time-zone), such as `America/New_York`. The chart's version has no `v`; the image it runs is tagged with one, such as `v0.2.0`. The chart installs the ManagedWorkload CRD too, and upgrades it with each `helm upgrade`.
 
     ??? tip "Helm Values"
 
@@ -44,13 +47,47 @@
 
 === "kubectl"
 
-    Apply the all-in-one installer manifest directly:
+    Apply `install.yaml`, the Kustomize manifests built into one file:
 
     ```bash
-    kubectl apply -f https://github.com/okedeji/hybernate/releases/latest/download/install.yaml
+    kubectl apply -f https://github.com/okedeji/hybernate/releases/download/v0.2.0/install.yaml
     ```
 
     This installs the CRD, RBAC, the operator Deployment, and the doorman Deployment, Service and PodDisruptionBudget into the `hybernate-system` namespace. The operator is `deployment/hybernate-controller-manager`.
+
+    Then set your users' [time zone](#time-zone), such as `America/New_York`, on the operator:
+
+    ```bash
+    kubectl patch deployment hybernate-controller-manager -n hybernate-system --type=json \
+      -p '[{"op":"add","path":"/spec/template/spec/containers/0/args/-","value":"--timezone=Europe/London"}]'
+    ```
+
+    An `install.yaml` that changes the operator's arguments replaces them, so after upgrading, check `--timezone` is still there, or install with Kustomize, which keeps it in your kustomization. For Prometheus and NetworkPolicies, see [below](#prometheus-and-networkpolicies-without-helm).
+
+=== "Kustomize"
+
+    Use the Kustomize manifests as a remote base, pinned to the release, in a kustomization of your own, here with your users' [time zone](#time-zone) set on the operator:
+
+    ```yaml title="kustomization.yaml"
+    apiVersion: kustomize.config.k8s.io/v1beta1
+    kind: Kustomization
+    resources:
+      - https://github.com/okedeji/hybernate//config/default?ref=v0.2.0
+    patches:
+      - target:
+          kind: Deployment
+          name: hybernate-controller-manager
+        patch: |-
+          - op: add
+            path: /spec/template/spec/containers/0/args/-
+            value: --timezone=Europe/London
+    ```
+
+    ```bash
+    kubectl apply -k .
+    ```
+
+    It installs what `install.yaml` does, into `hybernate-system`, and the operator's other [flags](../reference/configuration.md) are set the same way. To upgrade, change `ref` to the new release. Kustomize fetches each base with git, so whatever runs it, `kubectl` or a GitOps tool, needs to reach github.com. For Prometheus and NetworkPolicies, see [below](#prometheus-and-networkpolicies-without-helm).
 
 === "Source"
 
@@ -76,9 +113,92 @@
     make deploy IMG=<registry>/hybernate:dev
     ```
 
-    `make deploy` installs the CRD, RBAC, the operator and the doorman, all running `IMG`. It writes `IMG` into `config/manager/kustomization.yaml`; `git checkout config/manager` puts it back.
+    `make deploy` installs the Kustomize manifests, `config/default`, with the operator and the doorman running `IMG`. It writes `IMG` into `config/manager/kustomization.yaml`; `git checkout config/manager` puts it back. From the clone, `kubectl apply -k config/prometheus` and `kubectl apply -k config/network-policy` add the bases [below](#prometheus-and-networkpolicies-without-helm).
 
-    `kubectl apply -k config/network-policy` adds the NetworkPolicies the chart's `networkPolicy.enabled` creates: only namespaces labelled `metrics: enabled` may scrape the operator and the doorman, and the doorman's routing ports (TCP 20000-29999) stay open to every caller of a paused workload's Services.
+### Prometheus and NetworkPolicies without Helm
+
+With `install.yaml` or the Kustomize manifests, two more bases, pinned to the same release, add what these chart values turn on in a Helm install. Add them to your kustomization's `resources`, or apply one on its own, such as `kubectl apply -k "https://github.com/okedeji/hybernate//config/prometheus?ref=v0.2.0"`.
+
+| Base | Adds | Chart values |
+|------|------|--------------|
+| `https://github.com/okedeji/hybernate//config/prometheus?ref=v0.2.0` | ServiceMonitors for the operator and the doorman, and the [alerting rules](../operations/monitoring.md#alerting-rules). Needs the Prometheus Operator's CRDs, and your Prometheus [allowed to read the metrics](../operations/monitoring.md#scraping) | `metrics.serviceMonitor.enabled`, `metrics.prometheusRule.enabled` |
+| `https://github.com/okedeji/hybernate//config/network-policy?ref=v0.2.0` | NetworkPolicies: only namespaces labelled `metrics: enabled` may scrape the operator and the doorman, and the doorman's routing ports (TCP 20000-29999) stay open to every caller of a paused workload's Services | `networkPolicy.enabled` |
+
+### With Argo CD or Flux
+
+The chart is published only to an OCI registry, which Argo CD and Flux each name their own way. Commit one of these to the repository your GitOps tool syncs from, with your users' [time zone](#time-zone):
+
+=== "Argo CD"
+
+    ```yaml title="application.yaml"
+    apiVersion: argoproj.io/v1alpha1
+    kind: Application
+    metadata:
+      name: hybernate
+      namespace: argocd
+    spec:
+      project: default
+      source:
+        repoURL: ghcr.io/okedeji/charts
+        chart: hybernate
+        targetRevision: 0.2.0
+        helm:
+          valuesObject:
+            timezone: Europe/London
+      destination:
+        server: https://kubernetes.default.svc
+        namespace: hybernate-system
+      syncPolicy:
+        automated: {}
+        syncOptions:
+          - CreateNamespace=true
+    ```
+
+    `repoURL` is the registry and path without `oci://`, which is how Argo CD knows the chart is in an OCI registry, and `chart` is the chart's name. The registry is public, so Argo CD needs no credentials for it. Argo CD 3.3 and later runs the chart's uninstall guard when the Application is deleted; see [Uninstall](#uninstall). To install the Kustomize manifests instead, point an Application's `path` at your kustomization.
+
+=== "Flux"
+
+    ```yaml title="hybernate.yaml"
+    apiVersion: source.toolkit.fluxcd.io/v1
+    kind: OCIRepository
+    metadata:
+      name: hybernate
+      namespace: flux-system
+    spec:
+      interval: 1h
+      url: oci://ghcr.io/okedeji/charts/hybernate
+      ref:
+        tag: 0.2.0
+      layerSelector:
+        mediaType: application/vnd.cncf.helm.chart.content.v1.tar+gzip
+        operation: copy
+    ---
+    apiVersion: helm.toolkit.fluxcd.io/v2
+    kind: HelmRelease
+    metadata:
+      name: hybernate
+      namespace: flux-system
+    spec:
+      interval: 1h
+      chartRef:
+        kind: OCIRepository
+        name: hybernate
+      releaseName: hybernate
+      targetNamespace: hybernate-system
+      storageNamespace: hybernate-system
+      install:
+        createNamespace: true
+      values:
+        timezone: Europe/London
+    ```
+
+    This takes Flux 2.6 or later, where `OCIRepository` is `v1`. `releaseName` keeps the release `hybernate`, as these docs call it, rather than Flux's default of `hybernate-system-hybernate`, and `storageNamespace` keeps its Helm history beside it, where `helm list -n hybernate-system` shows it. To install the Kustomize manifests instead, point a Flux `Kustomization` at your kustomization.
+
+To upgrade, change the version, `targetRevision` or `tag`, to the new release's.
+
+## Time zone
+
+The [forecast](../concepts/forecasting.md) learns when each workload is busy by hour of day and day of week, counted in the operator's time zone, holds off pausing ahead of those hours and, with `autoResume`, wakes workloads before them. Set it to your users' IANA time zone, such as `Europe/London`, `America/New_York` or `Asia/Kolkata`: Helm's `timezone` value, or the operator's `--timezone` flag. Left at the default, UTC, a team whose clocks change for daylight saving finds its workloads woken an hour early or late for half the year. For teams in different zones, pick the zone most of them work in, or give each team an install of its own, as below. The chart's install notes say which zone the forecast uses, and [Wall-Clock Alignment](../concepts/forecasting.md#wall-clock-alignment) has the details.
 
 ## More than one install
 
@@ -89,7 +209,7 @@ One install per cluster is the usual setup. Several can share a cluster, such as
 
 All but one set `crds.install: false`: they share the ManagedWorkload CRD, which belongs to the release that installed it and is upgraded with it, so make that one the newest Hybernate.
 
-Each operator stamps the ManagedWorkloads it takes on, and labels the doorman EndpointSlices it writes, with `hybernate.io/operator`, its namespace. Another install leaves a ManagedWorkload stamped by a different one alone, with a `ManagedByAnotherInstall` warning event, and doesn't move that one's EndpointSlices to its own doorman, so two installs watching the same namespace by mistake don't both pause and wake its workloads: the first to take each one on keeps it. The uninstall and upgrade guards don't count the ManagedWorkloads another install took on. The kustomize manifests are a single install, in `hybernate-system`, watching every namespace.
+Each operator stamps the ManagedWorkloads it takes on, and labels the doorman EndpointSlices it writes, with `hybernate.io/operator`, its namespace. Another install leaves a ManagedWorkload stamped by a different one alone, with a `ManagedByAnotherInstall` warning event, and doesn't move that one's EndpointSlices to its own doorman, so two installs watching the same namespace by mistake don't both pause and wake its workloads: the first to take each one on keeps it. The uninstall and upgrade guards don't count the ManagedWorkloads another install took on. The Kustomize manifests, and so `install.yaml`, are a single install, in `hybernate-system`, watching every namespace.
 
 ## Verify Installation
 
@@ -117,7 +237,7 @@ Stop managing workloads while the operator is still running, so it can scale any
 3. Remove the operator:
 
     ```bash
-    helm uninstall hybernate -n hybernate-system   # or: make undeploy
+    helm uninstall hybernate -n hybernate-system
     ```
 
     `helm uninstall` keeps the CRD, since deleting it deletes every ManagedWorkload. Once none is left, delete it yourself:
@@ -126,7 +246,7 @@ Stop managing workloads while the operator is still running, so it can scale any
     kubectl delete crd managedworkloads.hybernate.io
     ```
 
-    `make undeploy`, and `kubectl delete -f install.yaml`, delete the CRD along with the operator.
+    Installed from `install.yaml` or the Kustomize manifests, delete what you applied, the same way: `kubectl delete -f` with the `install.yaml` URL, `kubectl delete -k .` in your kustomization, or `make undeploy` from a clone. These delete the CRD along with the operator, with no guard like `helm uninstall`'s below, so first check `kubectl get managedworkloads -A` lists none.
 
 `helm uninstall` refuses to go ahead while any ManagedWorkload is left. A pre-delete hook, the `<fullname>-uninstall-guard` Job, first waits up to two and a half minutes for ManagedWorkloads being deleted, so the operator can restore them and drain their doorman ports, which takes up to a minute; then, if any are left, it lists them and fails, so the uninstall stops before removing anything, with `job hybernate-uninstall-guard failed` from Helm 3 and `resource Job/hybernate-system/hybernate-uninstall-guard not ready` from Helm 4. A ManagedWorkload deleted just before you uninstall doesn't hold it up. Above that error, Helm 3.18 and later print the hook's output, which starts with a sentence naming the ManagedWorkloads left, as they are after the wait, what to do, and a link here. Helm 4 prints it as one log message, its line breaks escaped:
 
