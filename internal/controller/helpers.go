@@ -18,6 +18,7 @@ package controller
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"slices"
 	"time"
@@ -119,7 +120,18 @@ func (r *Reconciler) forecastEngine(workload *v1alpha1.ManagedWorkload) forecast
 	}
 	settings := forecast.Settings{Threshold: confidenceFor(workload), Location: r.Timezone}
 	engine, err := r.engines.getOrCreate(workload.UID, settings, state)
-	if err != nil {
+	switch {
+	case errors.Is(err, forecast.ErrOlderState):
+		// An upgrade needn't lose what history can teach again: with its
+		// record gone, the workload's history is read as for a new one.
+		again := ""
+		if p := workload.Status.Prediction; p != nil && r.PrometheusURL != "" {
+			p.History = nil
+			again = ", from its CPU history in Prometheus"
+		}
+		r.emitEvent(workload, false, "Normal", ReasonForecastReset, actionForecast,
+			"the forecast's saved state is from an older version of Hybernate, so it learns again%s", again)
+	case err != nil:
 		r.emitEvent(workload, false, "Warning", ReasonForecastReset, actionForecast,
 			"the forecast's saved state can't be read, so it starts learning again: %v", err)
 	}

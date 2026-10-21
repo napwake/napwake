@@ -83,7 +83,8 @@ The CRD is kept when the chart is uninstalled, so uninstalling and reinstalling 
 The forecast engine state is serialized in each ManagedWorkload's status, in `status.prediction.state`. On upgrade:
 
 - Compatible state versions are imported automatically
-- State that can't be read, from an incompatible version or a hand edit, is discarded, with a `ForecastReset` event, and the engine learns again: from the workload's [CPU history](../concepts/forecasting.md#learning-from-history) when `prometheus.url` is set, otherwise from scratch
+- State an older version saved is discarded, with a `ForecastReset` event, and the engine learns again: from the workload's [CPU history](../concepts/forecasting.md#learning-from-history), read again, when `prometheus.url` is set, otherwise from scratch
+- State that can't be read otherwise, such as after a hand edit, is discarded the same way, with a `ForecastReset` warning
 
 ### The forecast setting, from before 0.2.0
 

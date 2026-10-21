@@ -208,9 +208,9 @@ func TestForecastState_UnreadableStateStartsAfreshWithAWarning(t *testing.T) {
 	}
 	for name, state := range map[string]string{
 		"garbage":                        "not state",
-		"an older version":               gzipped(`{"v":1}`),
-		"a hand edit out of range":       gzipped(`{"v":2,"p":7}`),
-		"a hand edit with broken arrays": gzipped(`{"v":2,"n":3,"lh":1,"ae":[1,2],"ay":[1]}`),
+		"a newer version":                gzipped(`{"v":99}`),
+		"a hand edit out of range":       gzipped(`{"v":5,"p":7}`),
+		"a hand edit with broken arrays": gzipped(`{"v":5,"n":3,"lh":1,"ae":[1,2],"ay":[1]}`),
 	} {
 		t.Run(name, func(t *testing.T) {
 			workload := forecastWorkload()
@@ -224,6 +224,31 @@ func TestForecastState_UnreadableStateStartsAfreshWithAWarning(t *testing.T) {
 			assert.Zero(t, restored.GetDataPoints(), "the engine started afresh")
 			assert.Contains(t, drainEvents(t, fr.Reconciler), "Warning "+ReasonForecastReset)
 		})
+	}
+}
+
+// An upgrade leaves state an older version saved, which isn't a problem to
+// warn of: the forecast learns again, from history when there's a
+// Prometheus to read it from.
+func TestForecastState_OlderVersionLearnsAgain(t *testing.T) {
+	var buf bytes.Buffer
+	zw := gzip.NewWriter(&buf)
+	_, _ = zw.Write([]byte(`{"v":1}`))
+	_ = zw.Close()
+	workload := forecastWorkload()
+	workload.Status.Prediction = &v1alpha1.PredictionStatus{State: base64.StdEncoding.EncodeToString(buf.Bytes()),
+		History: &v1alpha1.PredictionHistory{Reason: HistoryLearned, Hours: 4}}
+	fr := newForecastReconciler(t, workload, nil)
+	fr.PrometheusURL = "http://prometheus.monitoring.svc:9090"
+
+	fr.reconcile(t, workload)
+
+	events := drainEvents(t, fr.Reconciler)
+	assert.Contains(t, events, "Normal "+ReasonForecastReset)
+	assert.NotContains(t, events, "Warning "+ReasonForecastReset)
+	assert.Contains(t, events, "from an older version of Hybernate, so it learns again, from its CPU history in Prometheus")
+	if h := workload.Status.Prediction.History; h != nil {
+		assert.NotEqual(t, HistoryLearned, h.Reason, "the old history record is gone, to be read again")
 	}
 }
 

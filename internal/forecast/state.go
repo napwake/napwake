@@ -49,6 +49,10 @@ var maxLastHour = time.Date(4000, 1, 1, 0, 0, 0, 0, time.UTC).Unix()
 // ErrInvalidState is returned for persisted state that can't be restored.
 var ErrInvalidState = errors.New("invalid forecast state")
 
+// ErrOlderState is returned, with ErrInvalidState, for state an older
+// version of the engine saved, as an upgrade leaves behind.
+var ErrOlderState = errors.New("saved by an older version of the forecast")
+
 // engineState is what is persisted of an engine, in the ManagedWorkload's
 // status. Keys are short and the seasonal components and errors are single
 // precision, since the state is written with every hourly observation.
@@ -194,6 +198,8 @@ func decodeEngine(data []byte, settings Settings) (*Engine, error) {
 
 func (st *engineState) validate() error {
 	switch {
+	case st.Version < stateVersion:
+		return fmt.Errorf("%w, version %d (now %d)", ErrOlderState, st.Version, stateVersion)
 	case st.Version != stateVersion:
 		return fmt.Errorf("unsupported version %d (expected %d)", st.Version, stateVersion)
 	case st.Phase < int(Observing) || st.Phase > int(FullyActive):
