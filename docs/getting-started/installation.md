@@ -9,7 +9,7 @@
 
 ## Install
 
-Hybernate comes two ways: a Helm chart, and the Kustomize manifests, the repository's `config/default`, which `install.yaml` is built from. Both install the same operator and doorman. Use Helm unless your cluster's config is kept as Kustomize.
+Hybernate is packaged two ways: a Helm chart, and the Kustomize manifests, the repository's `config/default`, which `install.yaml` is built from. Both install the same operator and doorman. Use Helm unless your cluster's config is kept as Kustomize.
 
 === "Helm"
 
@@ -117,7 +117,7 @@ Hybernate comes two ways: a Helm chart, and the Kustomize manifests, the reposit
 
 ### Prometheus and NetworkPolicies without Helm
 
-With `install.yaml` or the Kustomize manifests, two more bases, pinned to the same release, add what the chart's values below turn on. Add them to your kustomization's `resources`, or apply one on its own, such as `kubectl apply -k "https://github.com/okedeji/hybernate//config/prometheus?ref=v0.2.0"`.
+With `install.yaml` or the Kustomize manifests, two more bases, pinned to the same release, add what these chart values turn on in a Helm install. Add them to your kustomization's `resources`, or apply one on its own, such as `kubectl apply -k "https://github.com/okedeji/hybernate//config/prometheus?ref=v0.2.0"`.
 
 | Base | Adds | Chart values |
 |------|------|--------------|

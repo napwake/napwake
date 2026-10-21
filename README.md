@@ -38,7 +38,7 @@ flowchart TD
 
 ## Quick Start
 
-**See what's idle across your cluster, before installing anything:**
+**See what's idle across your cluster, with nothing installed in it:**
 
 ```bash
 brew install okedeji/tap/kubectl-hybernate
