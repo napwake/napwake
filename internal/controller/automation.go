@@ -83,7 +83,7 @@ type listPricer interface {
 type engineRegistry struct {
 	mu        sync.Mutex
 	engines   map[types.UID]forecaster
-	hours     map[types.UID]demandHour
+	hours     map[types.UID]forecast.Hour
 	exports   map[types.UID]exportedState
 	newEngine func() forecaster
 	restore   func(state string) (forecaster, error)
@@ -101,7 +101,7 @@ type exportedState struct {
 func newEngineRegistry(newEngine func() forecaster) *engineRegistry {
 	return &engineRegistry{
 		engines:   make(map[types.UID]forecaster),
-		hours:     make(map[types.UID]demandHour),
+		hours:     make(map[types.UID]forecast.Hour),
 		exports:   make(map[types.UID]exportedState),
 		newEngine: newEngine,
 		restore: func(state string) (forecaster, error) {
@@ -172,46 +172,17 @@ func (reg *engineRegistry) export(uid types.UID, engine forecaster) (string, err
 	return state, nil
 }
 
-// demandHour is what has been seen of a workload's demand in one hour of
-// the forecast's clock.
-type demandHour struct {
-	start time.Time
-	// peak is the highest utilization, as a percentage of the CPU
-	// requested, any one look found.
-	peak        float64
-	first, last time.Time
-	// blind is set by a look that couldn't see demand: the workload was
-	// paused where a request wouldn't wake it.
-	blind bool
-}
-
-// whole reports whether the hour was seen from its start to its end, with
-// no look that was blind to demand. An operator that started partway
-// through the hour, or stopped looking before it ended, may have missed its
-// busiest minutes, and the forecast would learn a busy hour as a quiet one.
-// A gap within the hour isn't held against it: a slow wake or pause leaves
-// one, and the looks either side of it show the demand around it.
-func (h demandHour) whole() bool {
-	return !h.blind && h.first.Sub(h.start) <= unobservedGap && h.start.Add(time.Hour).Sub(h.last) <= unobservedGap
-}
-
 // see adds a look at a workload's demand, made at now in the hour that
 // began at start. When the look is the first since an hour ended, that
 // hour is returned, if it was seen whole.
-func (reg *engineRegistry) see(uid types.UID, start, now time.Time, demand float64, visible bool) (demandHour, bool) {
+func (reg *engineRegistry) see(uid types.UID, start, now time.Time, demand float64, visible bool) (forecast.Hour, bool) {
 	reg.mu.Lock()
 	defer reg.mu.Unlock()
 
-	prev, ok := reg.hours[uid]
-	h := prev
-	if !ok || !prev.start.Equal(start) {
-		h = demandHour{start: start, first: now}
-	}
-	h.last = now
-	h.peak = max(h.peak, demand)
-	h.blind = h.blind || !visible
+	h := reg.hours[uid]
+	ended, over := h.Look(start, now, demand, visible)
 	reg.hours[uid] = h
-	return prev, ok && prev.start.Before(start) && prev.whole()
+	return ended, over && ended.Whole(unobservedGap)
 }
 
 func (r *Reconciler) reconcileAutomation(ctx context.Context, workload *v1alpha1.ManagedWorkload, target client.Object) (*ctrl.Result, error) {
@@ -330,59 +301,32 @@ func (r *Reconciler) reconcileWake(ctx context.Context, workload *v1alpha1.Manag
 	if workload.Spec.IdlePolicy == nil || !workload.Spec.IdlePolicy.AutoResume {
 		return recheck, nil
 	}
-	if engine.GetPhase() < forecast.DailyActive {
-		return recheck, nil
-	}
-
-	now := r.now()
-	predicted, when := engine.Predict(0, now), "this hour"
-	if r.untilNextHour(now) <= autoResumeLead {
-		if next := engine.Predict(1, now); next > predicted {
-			predicted, when = next, "next hour"
-		}
-	}
 	threshold := cpuThresholdFor(workload)
-	if predicted < float64(threshold) {
+	wake, predicted, nextHour := forecast.WakeAhead(engine, r.now(), r.Timezone, threshold)
+	if !wake {
 		return recheck, nil
+	}
+	when := "this hour"
+	if nextHour {
+		when = "next hour"
 	}
 
 	return r.handleResume(ctx, workload, &phaseEvent{reason: ReasonAutoResume, message: fmt.Sprintf(
 		"forecast expects %.0f%% utilization %s (threshold %d%%), waking ahead of demand", predicted, when, threshold)})
 }
 
-// autoResumeLead is how far ahead of a predicted busy hour a paused workload
-// wakes, so it's Ready when people arrive rather than starting as they do.
-const autoResumeLead = 15 * time.Minute
-
-// hourStart is when the forecast's hour containing t began. The forecast
-// counts hours in r.Timezone, where an hour may begin at half or quarter
-// past the hour in UTC. Stepping back to the local hour's start, rather
-// than building it with time.Date, stays exact in the hour a clock change
-// repeats.
-func (r *Reconciler) hourStart(t time.Time) time.Time {
-	loc := r.Timezone
-	if loc == nil {
-		loc = time.UTC
-	}
-	local := t.In(loc)
-	into := time.Duration(local.Minute())*time.Minute +
-		time.Duration(local.Second())*time.Second +
-		time.Duration(local.Nanosecond())
-	return t.Add(-into)
-}
-
 func (r *Reconciler) untilNextHour(now time.Time) time.Duration {
-	return r.hourStart(now).Add(time.Hour).Sub(now)
+	return forecast.HourStart(now, r.Timezone).Add(time.Hour).Sub(now)
 }
 
 // pausedRecheck is when a paused workload is next looked at: when autoResume
-// could next decide differently, autoResumeLead before the hour and on it,
-// and at least every statusFlushInterval, so the forecast learns each quiet
-// hour and savings accrue steadily.
+// could next decide differently, forecast.AutoResumeLead before the hour and
+// on it, and at least every statusFlushInterval, so the forecast learns each
+// quiet hour and savings accrue steadily.
 func (r *Reconciler) pausedRecheck() time.Duration {
 	wait := statusFlushInterval
 	next := r.untilNextHour(r.now())
-	for _, d := range []time.Duration{next - autoResumeLead, next} {
+	for _, d := range []time.Duration{next - forecast.AutoResumeLead, next} {
 		if d > 0 && d < wait {
 			wait = d
 		}
@@ -394,54 +338,24 @@ func (r *Reconciler) pausedRecheck() time.Duration {
 // doorman, any request would have woken it, so a look that finds it still
 // paused found no demand, and one that finds a request waking it found
 // some. Without the doorman, demand can't be seen at all.
-//
-// The demand a wake shows is twice the activity threshold: the forecast
-// approaches a pattern it is learning from below, so an hour seen at the
-// threshold itself would never quite be forecast to reach it. Once awake,
-// the workload's own utilization counts if it's more.
 func (r *Reconciler) seePausedDemand(ctx context.Context, workload *v1alpha1.ManagedWorkload, engine forecaster, woken bool) {
 	routed := meta.IsStatusConditionTrue(workload.Status.Conditions, conditionWakeOnRequest)
 	var demand float64
 	if woken {
-		demand = 2 * float64(cpuThresholdFor(workload))
+		demand = forecast.RequestDemand(cpuThresholdFor(workload))
 	}
 	r.seeDemand(ctx, workload, engine, demand, routed || woken)
 }
 
-// resumeWarmup is how long after a wake an awake workload's usage isn't
-// counted as demand. An autoResume wake lands at most autoResumeLead before
-// the hour it's for, so that long covers what such a wake brings about.
-const resumeWarmup = autoResumeLead
-
-// awakeDemand is the demand an awake workload's utilization shows. Starting up,
-// filling caches and compiling hot paths isn't anyone asking for it.
-// Counted, an autoResume wake would teach the forecast that the hour it
-// woke in is busy, and a week later it would wake an hour earlier, and
-// earlier again the week after. A wake by request shows its demand anyway.
-//
-// Once warmed up, a workload seen in use counts as at least twice the
-// activity threshold, as a request that wakes it does. A light-use
-// workload's use may show only in another activity source; taught its own
-// light utilization on the days autoResume had it ready, and a request's
-// twice the threshold on the days people woke it, the forecast would have
-// it ready only every other morning.
+// awakeDemand is the demand an awake workload's utilization shows, counting
+// its warm-up from its last wake.
 func (r *Reconciler) awakeDemand(workload *v1alpha1.ManagedWorkload, percent float64) float64 {
-	now := r.now()
-	since := r.hourStart(now)
-	if woke := workload.Status.LastActedAt; woke != nil {
-		warm := woke.Add(resumeWarmup)
-		if now.Before(warm) {
-			return 0
-		}
-		if warm.After(since) {
-			since = warm
-		}
+	var woke time.Time
+	if w := workload.Status.LastActedAt; w != nil {
+		woke = w.Time
 	}
-	threshold := float64(cpuThresholdFor(workload))
-	if percent > threshold || r.usedSince(workload, since) {
-		return max(percent, 2*threshold)
-	}
-	return percent
+	return forecast.AwakeDemand(r.now(), woke, r.Timezone, percent, cpuThresholdFor(workload),
+		func(since time.Time) bool { return r.usedSince(workload, since) })
 }
 
 // usedSince reports whether the activity clock last saw the workload in use
@@ -463,14 +377,11 @@ func (r *Reconciler) usedSince(workload *v1alpha1.ManagedWorkload, since time.Ti
 }
 
 // seeDemand adds a look at the workload's demand to the hour under way, and
-// once an hour is over, feeds the forecast the peak seen in it. The peak,
-// not the mean, is what the forecast's decisions need: the activity clock
-// counts a workload as active for any minute above the threshold, so an
-// hour busy for its last ten minutes is an hour it must be awake for.
+// once an hour is over, feeds the forecast the peak seen in it.
 func (r *Reconciler) seeDemand(ctx context.Context, workload *v1alpha1.ManagedWorkload, engine forecaster, demand float64, visible bool) {
 	now := r.now()
-	hour, ended := r.engines.see(workload.UID, r.hourStart(now), now, demand, visible)
-	if !ended || engine.Observed(hour.start) {
+	hour, ended := r.engines.see(workload.UID, forecast.HourStart(now, r.Timezone), now, demand, visible)
+	if !ended || engine.Observed(hour.Start) {
 		return
 	}
 	r.observeHour(ctx, workload, engine, hour)
@@ -479,16 +390,16 @@ func (r *Reconciler) seeDemand(ctx context.Context, workload *v1alpha1.ManagedWo
 // observeHour feeds the forecast an hour that has ended. A rejected
 // observation means a bad metric: it's logged, and the hour is skipped
 // rather than holding up the workload's automation.
-func (r *Reconciler) observeHour(ctx context.Context, workload *v1alpha1.ManagedWorkload, engine forecaster, hour demandHour) {
-	prediction, err := engine.Observe(hour.peak, hour.start)
+func (r *Reconciler) observeHour(ctx context.Context, workload *v1alpha1.ManagedWorkload, engine forecaster, hour forecast.Hour) {
+	prediction, err := engine.Observe(hour.Peak, hour.Start)
 	if err != nil {
 		log.FromContext(ctx).Error(err, "feeding the forecast",
-			"workload", workload.Name, "namespace", workload.Namespace, "cpu_percent", hour.peak)
+			"workload", workload.Name, "namespace", workload.Namespace, "cpu_percent", hour.Peak)
 		return
 	}
 	r.emitEvent(workload, false, "Normal", ReasonPredictionFed, actionForecast,
 		"the hour from %s peaked at %.0f%% of the CPU requested, forecast %.0f%%, phase %s",
-		hour.start.UTC().Format("15:04 UTC"), hour.peak, prediction, engine.GetPhase())
+		hour.Start.UTC().Format("15:04 UTC"), hour.Peak, prediction, engine.GetPhase())
 
 	if engine.RegimeChanged() {
 		opmetrics.PredictionRegimeChanges.WithLabelValues(workload.Namespace, workload.Name).Inc()
