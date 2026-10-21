@@ -104,6 +104,10 @@ defaults:
   idleAfter: 1h
   cpuThreshold: 10
   dryRun: false
+  # How soon the forecast acts on what it has learned: eager, balanced or
+  # cautious. Eager acts sooner and wakes workloads for nothing more often;
+  # cautious, for workloads costly to keep awake, acts later.
+  forecast: balanced
 
 # The doorman wakes paused workloads when a request reaches them.
 doorman:

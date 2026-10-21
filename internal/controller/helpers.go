@@ -24,6 +24,7 @@ import (
 	"unicode/utf8"
 
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	ctrl "sigs.k8s.io/controller-runtime"
 
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -115,7 +116,7 @@ func (r *Reconciler) forecastEngine(workload *v1alpha1.ManagedWorkload) forecast
 	if p := workload.Status.Prediction; p != nil {
 		state = p.State
 	}
-	settings := forecast.Settings{Threshold: workload.Spec.Prediction.Confidence, Location: r.Timezone}
+	settings := forecast.Settings{Threshold: confidenceFor(workload), Location: r.Timezone}
 	engine, err := r.engines.getOrCreate(workload.UID, settings, state)
 	if err != nil {
 		r.emitEvent(workload, false, "Warning", ReasonForecastReset, actionForecast,
@@ -124,19 +125,40 @@ func (r *Reconciler) forecastEngine(workload *v1alpha1.ManagedWorkload) forecast
 	return engine
 }
 
-// updatePredictionStatus publishes the engine's phase and confidence, and
-// the state it has learned. The state only changes when an hour is
-// observed, so it is written once an hour; a write that fails is made again
-// from the engine on the next reconcile.
+// confidenceFor is the confidence threshold the workload's forecast acts
+// at: the one its spec sets, or its mode's.
+func confidenceFor(workload *v1alpha1.ManagedWorkload) int {
+	if c := workload.Spec.Prediction.Confidence; c > 0 {
+		return c
+	}
+	return forecast.Mode(workload.Spec.Prediction.Mode).Threshold()
+}
+
+// updatePredictionStatus publishes the engine's phase and confidence,
+// whether it's acting and what it waits for, and the state it has learned.
+// The state only changes when an hour is observed, so it is written once an
+// hour; a write that fails is made again from the engine on the next
+// reconcile.
 func (r *Reconciler) updatePredictionStatus(ctx context.Context, workload *v1alpha1.ManagedWorkload, engine forecaster) {
 	phase := engine.GetPhase()
 	dailyPhase, weeklyPhase := seasonPhases(phase)
+	threshold := confidenceFor(workload)
+	outlook := r.engines.outlook(workload.UID, engine, threshold)
 
 	status := &v1alpha1.PredictionStatus{
 		DailyPhase:       dailyPhase,
 		DailyConfidence:  engine.DailyConfidence(),
 		WeeklyPhase:      weeklyPhase,
 		WeeklyConfidence: engine.WeeklyConfidence(),
+		Threshold:        threshold,
+		Acting:           outlook.Acting,
+	}
+	status.Reason, status.Message = forecastOutlook(workload, outlook)
+	if !outlook.StartsActing.IsZero() {
+		status.StartsActing = &metav1.Time{Time: outlook.StartsActing.UTC()}
+	}
+	if last := workload.Status.Prediction; last != nil {
+		status.History = last.History
 	}
 	state, err := r.engines.export(workload.UID, engine)
 	if err != nil {

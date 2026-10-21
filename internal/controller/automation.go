@@ -49,6 +49,7 @@ type forecaster interface {
 	GetDataPoints() int
 	RegimeChanged() bool
 	AnomalyDetected() bool
+	Outlook() forecast.Outlook
 }
 
 // metricsReader measures a workload two ways. Activity, and the forecast,
@@ -85,6 +86,7 @@ type engineRegistry struct {
 	engines   map[types.UID]forecaster
 	hours     map[types.UID]forecast.Hour
 	exports   map[types.UID]exportedState
+	outlooks  map[types.UID]projectedOutlook
 	newEngine func() forecaster
 	restore   func(state string) (forecaster, error)
 }
@@ -103,6 +105,7 @@ func newEngineRegistry(newEngine func() forecaster) *engineRegistry {
 		engines:   make(map[types.UID]forecaster),
 		hours:     make(map[types.UID]forecast.Hour),
 		exports:   make(map[types.UID]exportedState),
+		outlooks:  make(map[types.UID]projectedOutlook),
 		newEngine: newEngine,
 		restore: func(state string) (forecaster, error) {
 			e, err := forecast.ImportEngine(state, forecast.Settings{})
@@ -148,7 +151,35 @@ func (reg *engineRegistry) forget(uid types.UID) {
 	delete(reg.engines, uid)
 	delete(reg.hours, uid)
 	delete(reg.exports, uid)
+	delete(reg.outlooks, uid)
 	reg.mu.Unlock()
+}
+
+// projectedOutlook is the outlook an engine last gave, with the data points
+// and threshold it had then: projecting it runs the engine on for weeks,
+// so it's done again only once either changes.
+type projectedOutlook struct {
+	engine     forecaster
+	dataPoints int
+	threshold  int
+	outlook    forecast.Outlook
+}
+
+// outlook is the workload's engine's outlook, at the threshold its
+// settings give it.
+func (reg *engineRegistry) outlook(uid types.UID, engine forecaster, threshold int) forecast.Outlook {
+	points := engine.GetDataPoints()
+	reg.mu.Lock()
+	last, ok := reg.outlooks[uid]
+	reg.mu.Unlock()
+	if ok && last.engine == engine && last.dataPoints == points && last.threshold == threshold {
+		return last.outlook
+	}
+	o := engine.Outlook()
+	reg.mu.Lock()
+	reg.outlooks[uid] = projectedOutlook{engine: engine, dataPoints: points, threshold: threshold, outlook: o}
+	reg.mu.Unlock()
+	return o
 }
 
 // export is what the workload's engine has learned, encoded for its status.

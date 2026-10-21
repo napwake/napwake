@@ -29,6 +29,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	corev1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/fields"
 	"k8s.io/apimachinery/pkg/runtime"
@@ -255,6 +256,165 @@ func TestReconciler_AppliesTimezoneToTheForecast(t *testing.T) {
 
 	assert.Equal(t, tokyo, engine.settings.Location)
 	assert.Equal(t, 85, engine.settings.Threshold)
+}
+
+func TestConfidenceFor(t *testing.T) {
+	tests := []struct {
+		name string
+		spec v1alpha1.PredictionSpec
+		want int
+	}{
+		{name: "the default", want: 75},
+		{name: "eager", spec: v1alpha1.PredictionSpec{Mode: v1alpha1.PredictionEager}, want: 60},
+		{name: "balanced", spec: v1alpha1.PredictionSpec{Mode: v1alpha1.PredictionBalanced}, want: 75},
+		{name: "cautious", spec: v1alpha1.PredictionSpec{Mode: v1alpha1.PredictionCautious}, want: 85},
+		{name: "a confidence overrides the mode",
+			spec: v1alpha1.PredictionSpec{Mode: v1alpha1.PredictionEager, Confidence: 90}, want: 90},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			workload := forecastWorkload()
+			workload.Spec.Prediction = tt.spec
+			assert.Equal(t, tt.want, confidenceFor(workload))
+		})
+	}
+}
+
+func TestReconciler_AppliesTheModeToTheForecast(t *testing.T) {
+	workload := forecastWorkload()
+	workload.Spec.Prediction = v1alpha1.PredictionSpec{Mode: v1alpha1.PredictionEager}
+	engine := &stubForecaster{phase: forecast.Observing}
+	r := newAutomationReconciler(t, workload, engine, automationOpts{})
+	r.engines.engines[workload.UID] = engine
+
+	_, err := r.reconcileAutomation(context.Background(), workload, nil)
+	require.NoError(t, err)
+
+	assert.Equal(t, 60, engine.settings.Threshold)
+	assert.Equal(t, 60, workload.Status.Prediction.Threshold)
+}
+
+// What the forecast waits for is in status, with when it's expected to
+// start acting.
+func TestPredictionStatus_Outlook(t *testing.T) {
+	starts := fixedTime.Add(50 * time.Hour)
+	workload := forecastWorkload()
+	engine := &stubForecaster{phase: forecast.DailySuggesting, dataPoints: 40, outlook: forecast.Outlook{
+		Waiting: forecast.WaitingForConfidence, HoursOfDaySeen: 24, Confidence: 62, Threshold: 85,
+		StartsActing: starts}}
+	r := newAutomationReconciler(t, workload, engine, automationOpts{})
+
+	r.updatePredictionStatus(context.Background(), workload, engine)
+
+	p := workload.Status.Prediction
+	assert.False(t, p.Acting)
+	assert.Equal(t, 85, p.Threshold)
+	assert.Equal(t, ForecastEarningConfidence, p.Reason)
+	assert.Equal(t, "learning: its forecasts of the last day were 62% right, and it acts from 85%; it hasn't seen "+
+		"a whole week yet; expected to start acting around Mon 16 Mar 14:00 UTC, if the coming days repeat the last "+
+		"week", p.Message)
+	require.NotNil(t, p.StartsActing)
+	assert.True(t, starts.Equal(p.StartsActing.Time))
+}
+
+// Projecting the outlook runs the engine on for up to four weeks, so it's
+// done again only once the engine learns another hour or its threshold
+// changes.
+func TestPredictionStatus_OutlookIsProjectedOnceAnHour(t *testing.T) {
+	workload := forecastWorkload()
+	engine := &countingOutlook{stubForecaster: stubForecaster{phase: forecast.DailySuggesting, dataPoints: 40}}
+	r := newAutomationReconciler(t, workload, &engine.stubForecaster, automationOpts{})
+
+	for range 3 {
+		r.updatePredictionStatus(context.Background(), workload, engine)
+	}
+	assert.Equal(t, 1, engine.outlooks)
+	engine.dataPoints++
+	r.updatePredictionStatus(context.Background(), workload, engine)
+	workload.Spec.Prediction.Confidence = 60
+	r.updatePredictionStatus(context.Background(), workload, engine)
+	assert.Equal(t, 3, engine.outlooks)
+}
+
+type countingOutlook struct {
+	stubForecaster
+	outlooks int
+}
+
+func (c *countingOutlook) Outlook() forecast.Outlook {
+	c.outlooks++
+	return c.stubForecaster.Outlook()
+}
+
+func TestForecastOutlook(t *testing.T) {
+	paused := func(w *v1alpha1.ManagedWorkload) { w.Status.Phase = v1alpha1.PhasePaused }
+	routed := func(w *v1alpha1.ManagedWorkload) {
+		paused(w)
+		meta.SetStatusCondition(&w.Status.Conditions, metav1.Condition{Type: conditionWakeOnRequest,
+			Status: metav1.ConditionTrue, Reason: "DoormanRouted"})
+	}
+	autoResume := func(w *v1alpha1.ManagedWorkload) {
+		w.Spec.IdlePolicy = &v1alpha1.IdlePolicySpec{AutoResume: true}
+	}
+	starts := time.Date(2026, 3, 30, 16, 0, 0, 0, time.UTC)
+	tests := []struct {
+		name        string
+		outlook     forecast.Outlook
+		workload    func(*v1alpha1.ManagedWorkload)
+		wantReason  string
+		wantMessage string
+	}{
+		{name: "acting with autoResume", outlook: forecast.Outlook{Acting: true, Confidence: 82, Threshold: 75},
+			workload: autoResume, wantReason: ForecastActing,
+			wantMessage: "acting: its forecasts of the last day were 82% right, and it acts from 75%, so it holds " +
+				"off pauses before hours it expects to be busy and wakes the workload 15 minutes ahead of them"},
+		{name: "acting without autoResume", outlook: forecast.Outlook{Acting: true, Confidence: 82, Threshold: 75},
+			wantReason: ForecastActing,
+			wantMessage: "acting: its forecasts of the last day were 82% right, and it acts from 75%, so it holds " +
+				"off pauses before hours it expects to be busy; turn on autoResume to have it wake the workload " +
+				"ahead of them too"},
+		{name: "a new forecast", outlook: forecast.Outlook{Waiting: forecast.WaitingForDay, HoursOfDaySeen: 14},
+			wantReason: ForecastObserving,
+			wantMessage: "learning: it has seen 14 of the 24 hours of the day, and starts scoring its forecasts once " +
+				"it has seen them all"},
+		{name: "needs another weekend", outlook: forecast.Outlook{Waiting: forecast.WaitingForConfidence,
+			WeekSeen: true, Confidence: 40, Threshold: 75, StartsActing: starts},
+			wantReason: ForecastEarningConfidence,
+			wantMessage: "learning: its forecasts of the last day were 40% right, and it acts from 75%; expected to " +
+				"start acting around Mon 30 Mar 16:00 UTC, if the coming days repeat the last week"},
+		{name: "too irregular to act", outlook: forecast.Outlook{Waiting: forecast.WaitingForConfidence,
+			WeekSeen: true, Confidence: 30, Threshold: 85},
+			wantReason: ForecastEarningConfidence,
+			wantMessage: "learning: its forecasts of the last day were 30% right, and it acts from 85%; not expected " +
+				"to start within four weeks if the coming days repeat the last week"},
+		{name: "relearning", outlook: forecast.Outlook{Waiting: forecast.WaitingToRelearn, Confidence: 0,
+			Threshold: 75, StartsActing: starts},
+			wantReason: ForecastRelearning,
+			wantMessage: "relearning: demand stopped matching what it had learned, so it's earning its confidence " +
+				"again; its forecasts of the last day were 0% right, and it acts from 75%; expected to start acting " +
+				"around Mon 30 Mar 16:00 UTC, if the coming days repeat the last week"},
+		{name: "paused without the doorman", outlook: forecast.Outlook{Waiting: forecast.WaitingForDay},
+			workload: paused, wantReason: ForecastNotLearning,
+			wantMessage: "not learning: the workload is paused without wake on request, so a request can't wake it " +
+				"and its demand can't be seen; the forecast learns while it's awake, and from every hour with wake " +
+				"on request"},
+		{name: "paused behind the doorman learns", outlook: forecast.Outlook{Waiting: forecast.WaitingForDay,
+			HoursOfDaySeen: 20}, workload: routed, wantReason: ForecastObserving,
+			wantMessage: "learning: it has seen 20 of the 24 hours of the day, and starts scoring its forecasts once " +
+				"it has seen them all"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			workload := forecastWorkload()
+			workload.Spec.IdlePolicy = nil
+			if tt.workload != nil {
+				tt.workload(workload)
+			}
+			reason, message := forecastOutlook(workload, tt.outlook)
+			assert.Equal(t, tt.wantReason, reason)
+			assert.Equal(t, tt.wantMessage, message)
+		})
+	}
 }
 
 func TestEngineRegistry_ForgetsADeletedWorkload(t *testing.T) {

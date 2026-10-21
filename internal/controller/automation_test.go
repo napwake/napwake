@@ -56,6 +56,7 @@ type stubForecaster struct {
 	exportErr        error
 	exportCalls      int
 	settings         forecast.Settings
+	outlook          forecast.Outlook
 }
 
 func (f *stubForecaster) Observe(actual float64, hour time.Time) (float64, error) {
@@ -87,6 +88,11 @@ func (f *stubForecaster) WeeklyConfidence() int                { return f.weekly
 func (f *stubForecaster) GetDataPoints() int                   { return f.dataPoints }
 func (f *stubForecaster) RegimeChanged() bool                  { return f.regimeChanged }
 func (f *stubForecaster) AnomalyDetected() bool                { return f.anomalyDetected }
+func (f *stubForecaster) Outlook() forecast.Outlook {
+	o := f.outlook
+	o.Acting = o.Acting || f.phase >= forecast.DailyActive
+	return o
+}
 
 type stubMetrics struct {
 	cpuMillis        float64

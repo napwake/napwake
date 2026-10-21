@@ -147,7 +147,8 @@
           ]
         },
         "cpuThreshold": {"type": "integer", "minimum": 1, "maximum": 100},
-        "dryRun": {"type": "boolean"}
+        "dryRun": {"type": "boolean"},
+        "forecast": {"enum": ["eager", "balanced", "cautious"]}
       }
     },
     "doorman": {
