@@ -309,7 +309,7 @@ func TestPredictionStatus_Outlook(t *testing.T) {
 	p := workload.Status.Prediction
 	assert.False(t, p.Acting)
 	assert.Equal(t, 85, p.Threshold)
-	assert.Equal(t, ForecastEarningConfidence, p.Reason)
+	assert.Equal(t, v1alpha1.ForecastEarningConfidence, p.Reason)
 	assert.Equal(t, "learning: its forecasts of the last day were 62% right, and it acts from 85%; it hasn't seen "+
 		"a whole week yet; expected to start acting around Mon 16 Mar 14:00 UTC, if the coming days repeat the last "+
 		"week", p.Message)
@@ -365,41 +365,41 @@ func TestForecastOutlook(t *testing.T) {
 		wantMessage string
 	}{
 		{name: "acting with autoResume", outlook: forecast.Outlook{Acting: true, Confidence: 82, Threshold: 75},
-			workload: autoResume, wantReason: ForecastActing,
+			workload: autoResume, wantReason: v1alpha1.ForecastActing,
 			wantMessage: "acting: its forecasts of the last day were 82% right, and it acts from 75%, so it holds " +
 				"off pauses before hours it expects to be busy and wakes the workload 15 minutes ahead of them"},
 		{name: "acting without autoResume", outlook: forecast.Outlook{Acting: true, Confidence: 82, Threshold: 75},
-			wantReason: ForecastActing,
+			wantReason: v1alpha1.ForecastActing,
 			wantMessage: "acting: its forecasts of the last day were 82% right, and it acts from 75%, so it holds " +
 				"off pauses before hours it expects to be busy; turn on autoResume to have it wake the workload " +
 				"ahead of them too"},
 		{name: "a new forecast", outlook: forecast.Outlook{Waiting: forecast.WaitingForDay, HoursOfDaySeen: 14},
-			wantReason: ForecastObserving,
+			wantReason: v1alpha1.ForecastObserving,
 			wantMessage: "learning: it has seen 14 of the 24 hours of the day, and starts scoring its forecasts once " +
 				"it has seen them all"},
 		{name: "needs another weekend", outlook: forecast.Outlook{Waiting: forecast.WaitingForConfidence,
 			WeekSeen: true, Confidence: 40, Threshold: 75, StartsActing: starts},
-			wantReason: ForecastEarningConfidence,
+			wantReason: v1alpha1.ForecastEarningConfidence,
 			wantMessage: "learning: its forecasts of the last day were 40% right, and it acts from 75%; expected to " +
 				"start acting around Mon 30 Mar 16:00 UTC, if the coming days repeat the last week"},
 		{name: "too irregular to act", outlook: forecast.Outlook{Waiting: forecast.WaitingForConfidence,
 			WeekSeen: true, Confidence: 30, Threshold: 85},
-			wantReason: ForecastEarningConfidence,
+			wantReason: v1alpha1.ForecastEarningConfidence,
 			wantMessage: "learning: its forecasts of the last day were 30% right, and it acts from 85%; not expected " +
 				"to start within four weeks if the coming days repeat the last week"},
 		{name: "relearning", outlook: forecast.Outlook{Waiting: forecast.WaitingToRelearn, Confidence: 0,
 			Threshold: 75, StartsActing: starts},
-			wantReason: ForecastRelearning,
+			wantReason: v1alpha1.ForecastRelearning,
 			wantMessage: "relearning: demand stopped matching what it had learned, so it's earning its confidence " +
 				"again; its forecasts of the last day were 0% right, and it acts from 75%; expected to start acting " +
 				"around Mon 30 Mar 16:00 UTC, if the coming days repeat the last week"},
 		{name: "paused without the doorman", outlook: forecast.Outlook{Waiting: forecast.WaitingForDay},
-			workload: paused, wantReason: ForecastNotLearning,
+			workload: paused, wantReason: v1alpha1.ForecastNotLearning,
 			wantMessage: "not learning: the workload is paused without wake on request, so a request can't wake it " +
 				"and its demand can't be seen; the forecast learns while it's awake, and from every hour with wake " +
 				"on request"},
 		{name: "paused behind the doorman learns", outlook: forecast.Outlook{Waiting: forecast.WaitingForDay,
-			HoursOfDaySeen: 20}, workload: routed, wantReason: ForecastObserving,
+			HoursOfDaySeen: 20}, workload: routed, wantReason: v1alpha1.ForecastObserving,
 			wantMessage: "learning: it has seen 20 of the 24 hours of the day, and starts scoring its forecasts once " +
 				"it has seen them all"},
 	}

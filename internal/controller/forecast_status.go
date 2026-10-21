@@ -26,22 +26,13 @@ import (
 	"github.com/okedeji/hybernate/internal/forecast"
 )
 
-// Why the forecast is or isn't acting, in status.prediction.reason.
-const (
-	ForecastActing            = "Acting"
-	ForecastObserving         = "Observing"
-	ForecastEarningConfidence = "EarningConfidence"
-	ForecastRelearning        = "Relearning"
-	ForecastNotLearning       = "NotLearning"
-)
-
 // forecastOutlook says why the workload's forecast is or isn't acting, and
 // what it waits for, as status.prediction's reason and message.
 func forecastOutlook(workload *v1alpha1.ManagedWorkload, o forecast.Outlook) (reason, message string) {
 	var b strings.Builder
 	switch {
 	case o.Acting:
-		reason = ForecastActing
+		reason = v1alpha1.ForecastActing
 		b.WriteString("acting")
 		if p := workload.Status.Prediction; p != nil && p.History != nil && p.History.Reason == HistoryLearned {
 			fmt.Fprintf(&b, ", on %s of CPU history and what it has seen since", historySpan(p.History.Hours))
@@ -55,19 +46,19 @@ func forecastOutlook(workload *v1alpha1.ManagedWorkload, o forecast.Outlook) (re
 		}
 		return reason, b.String()
 	case pausedUnseen(workload):
-		return ForecastNotLearning, "not learning: the workload is paused without wake on request, so a request " +
+		return v1alpha1.ForecastNotLearning, "not learning: the workload is paused without wake on request, so a request " +
 			"can't wake it and its demand can't be seen; the forecast learns while it's awake, and from every hour " +
 			"with wake on request"
 	case o.Waiting == forecast.WaitingToRelearn:
-		reason = ForecastRelearning
+		reason = v1alpha1.ForecastRelearning
 		fmt.Fprintf(&b, "relearning: demand stopped matching what it had learned, so it's earning its confidence "+
 			"again; its forecasts of the last day were %d%% right, and it acts from %d%%", o.Confidence, o.Threshold)
 	case o.Waiting == forecast.WaitingForDay:
-		reason = ForecastObserving
+		reason = v1alpha1.ForecastObserving
 		fmt.Fprintf(&b, "learning: it has seen %d of the 24 hours of the day, and starts scoring its forecasts "+
 			"once it has seen them all", o.HoursOfDaySeen)
 	default:
-		reason = ForecastEarningConfidence
+		reason = v1alpha1.ForecastEarningConfidence
 		fmt.Fprintf(&b, "learning: its forecasts of the last day were %d%% right, and it acts from %d%%",
 			o.Confidence, o.Threshold)
 		if !o.WeekSeen {
@@ -78,7 +69,7 @@ func forecastOutlook(workload *v1alpha1.ManagedWorkload, o forecast.Outlook) (re
 	case !o.StartsActing.IsZero():
 		fmt.Fprintf(&b, "; expected to start acting around %s, if the coming days repeat the last week",
 			o.StartsActing.UTC().Format("Mon 2 Jan 15:04 UTC"))
-	case reason != ForecastObserving:
+	case reason != v1alpha1.ForecastObserving:
 		b.WriteString("; not expected to start within four weeks if the coming days repeat the last week")
 	}
 	return reason, b.String()

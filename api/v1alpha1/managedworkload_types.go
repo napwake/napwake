@@ -876,6 +876,15 @@ type CostStatus struct {
 	ResourceReduction *ResourceReduction `json:"resourceReduction,omitempty"`
 }
 
+// Why the forecast is or isn't acting, in PredictionStatus.Reason.
+const (
+	ForecastActing            = "Acting"
+	ForecastObserving         = "Observing"
+	ForecastEarningConfidence = "EarningConfidence"
+	ForecastRelearning        = "Relearning"
+	ForecastNotLearning       = "NotLearning"
+)
+
 // ListPrice is which list prices a workload's nodes were priced at.
 // +kubebuilder:validation:Enum=OnDemand;Spot;SpotAndOnDemand
 type ListPrice string

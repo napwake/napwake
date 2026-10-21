@@ -209,7 +209,7 @@ func TestTakeUpHistory(t *testing.T) {
 	require.NotNil(t, p.History)
 	assert.Equal(t, HistoryLearned, p.History.Reason)
 	assert.True(t, p.Acting)
-	assert.Equal(t, ForecastActing, p.Reason)
+	assert.Equal(t, v1alpha1.ForecastActing, p.Reason)
 	assert.Contains(t, p.Message, "acting, on 4 weeks of CPU history and what it has seen since")
 	restored, err := forecast.ImportEngine(p.State, forecast.Settings{})
 	require.NoError(t, err)
