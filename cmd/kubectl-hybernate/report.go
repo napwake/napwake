@@ -296,7 +296,7 @@ func buildReport(result scanResult, idleAfter time.Duration) reportPage {
 		Cluster:        result.Cluster,
 		ScannedAt:      result.ScannedAt.Format("2 January 2006, 15:04 MST"),
 		Basis:          basisSentence(result),
-		Prices:         result.pricesSentence(),
+		Prices:         result.costsSentence(),
 		NodeAutoscaler: reportAutoscaler(result.NodeAutoscaler),
 		History:        history,
 		Threshold:      result.Settings.CPUThreshold,

@@ -100,7 +100,7 @@ func TestWriteHTML_History(t *testing.T) {
 	assert.Contains(t, got, "<title>Workload scan: staging (EKS us-east-1)</title>")
 	assert.Contains(t, got, "3 October 2026, 09:00 UTC")
 	assert.Contains(t, got, "Based on the last 7 days of Prometheus history, and CPU at the time of the scan.")
-	assert.Contains(t, got, "Assumed list prices: $0.031 per vCPU-hour and $0.004 per GiB-hour of memory")
+	assert.Contains(t, got, "Costs use assumed list prices: $0.031 per vCPU-hour and $0.004 per GiB-hour of memory")
 	assert.Contains(t, got, `<div class="figure"><b>$4</b><span>freed by Hybernate this month</span>`+
 		`<small>so far, pausing 1 live workload; $1 of it saved as nodes scaled down</small></div>`)
 	assert.Contains(t, got, `<p class="prices">Node autoscaler: none found — freed capacity won&#39;t lower the `+
@@ -239,7 +239,7 @@ func TestWriteHTML_Snapshot(t *testing.T) {
 	got := renderHTML(t, result)
 
 	assert.Contains(t, got, "A snapshot of CPU at the time of the scan, without history.")
-	assert.Contains(t, got, "Your prices: $0.045 per vCPU-hour and $0.006 per GiB-hour of memory.")
+	assert.Contains(t, got, "Costs use your prices: $0.045 per vCPU-hour and $0.006 per GiB-hour of memory.")
 	assert.Contains(t, got, `<div class="figure"><b>$0</b><span>freed by Hybernate this month</span>`+
 		`<small>nothing is live yet</small></div>`)
 	assert.Contains(t, got,

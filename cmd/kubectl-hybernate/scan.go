@@ -601,7 +601,7 @@ func writeTable(w io.Writer, result scanResult, limit int) error {
 		p.line("")
 	}
 	if result.Prices.CPUAssumed || result.Prices.MemoryAssumed {
-		p.line("Costs use %s", lowerFirst(result.pricesSentence()))
+		p.line("%s", result.costsSentence())
 		p.line("Pass --cpu-price and --memory-price for yours.")
 		p.line("")
 	}

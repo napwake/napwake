@@ -41,24 +41,24 @@ func TestPricesSentence_NodePrices(t *testing.T) {
 		want      string
 	}{
 		{name: "one node type", prices: assumed, nodes: discovery.Prices{NodeTypes: []discovery.NodeTypePrice{m6i}},
-			want: "On-demand list prices for its node type, m6i.large, in AWS us-east-1."},
+			want: "The on-demand list price of the cluster's nodes (m6i.large, AWS us-east-1)."},
 		{name: "several", prices: assumed, nodes: discovery.Prices{NodeTypes: []discovery.NodeTypePrice{m6i, r6i}},
-			want: "On-demand list prices for its 2 node types, m6i.large and r6i.xlarge, in AWS us-east-1."},
+			want: "The on-demand list prices of the cluster's 2 node types (m6i.large and r6i.xlarge, AWS us-east-1)."},
 		{name: "two clouds", prices: assumed, nodes: discovery.Prices{NodeTypes: []discovery.NodeTypePrice{m6i, n2}},
-			want: "On-demand list prices for its 2 node types, m6i.large and n2-standard-4, " +
-				"in AWS us-east-1 and Google Cloud us-central1."},
+			want: "The on-demand list prices of the cluster's 2 node types (m6i.large and n2-standard-4, " +
+				"AWS us-east-1 and Google Cloud us-central1)."},
 		{name: "some without a list price", prices: assumed,
 			nodes: discovery.Prices{NodeTypes: []discovery.NodeTypePrice{m6i, metal}},
-			want: "On-demand list prices for its node type, m6i.large, in AWS us-east-1. 2 nodes of a type without a " +
+			want: "The on-demand list price of the cluster's nodes (m6i.large, AWS us-east-1). 2 nodes of a type without a " +
 				"list price (custom.metal) use the assumed $0.031 per vCPU-hour and $0.004 per GiB-hour of memory " +
 				"(AWS on-demand, us-east-1)."},
 		{name: "nodes without an instance type", prices: assumed,
 			nodes: discovery.Prices{NodeTypes: []discovery.NodeTypePrice{m6i, unlabelled}},
-			want: "On-demand list prices for its node type, m6i.large, in AWS us-east-1. 1 node without an instance " +
+			want: "The on-demand list price of the cluster's nodes (m6i.large, AWS us-east-1). 1 node without an instance " +
 				"type uses the assumed $0.031 per vCPU-hour and $0.004 per GiB-hour of memory (AWS on-demand, us-east-1)."},
 		{name: "your CPU price", prices: prices{CPUPerHour: 0.05, MemoryPerHour: 0.004, MemoryAssumed: true},
 			nodes: discovery.Prices{NodeTypes: []discovery.NodeTypePrice{m6i}},
-			want: "On-demand list prices for its node type, m6i.large, in AWS us-east-1. CPU at your price, " +
+			want: "The on-demand list price of the cluster's nodes (m6i.large, AWS us-east-1). CPU at your price, " +
 				"$0.050 per vCPU-hour."},
 		{name: "none listed", prices: assumed, nodes: discovery.Prices{NodeTypes: []discovery.NodeTypePrice{unlabelled}},
 			want: "Assumed list prices: $0.031 per vCPU-hour and $0.004 per GiB-hour of memory, from AWS on-demand in " +
@@ -76,7 +76,7 @@ func TestPricesSentence_NodePrices(t *testing.T) {
 			want:  "Your prices: $0.050 per vCPU-hour and $0.006 per GiB-hour of memory."},
 		{name: "spot", prices: assumed, nodes: discovery.Prices{NodeTypes: []discovery.NodeTypePrice{m6i}},
 			workloads: []discovery.Workload{{OnSpot: true}, {}},
-			want: "On-demand list prices for its node type, m6i.large, in AWS us-east-1. 1 workload runs on spot " +
+			want: "The on-demand list price of the cluster's nodes (m6i.large, AWS us-east-1). 1 workload runs on spot " +
 				"nodes, priced at on-demand, so it costs less than shown."},
 	}
 	for _, tt := range tests {
@@ -94,6 +94,7 @@ func TestNodeTypesPhrase_Many(t *testing.T) {
 	for _, name := range names {
 		types = append(types, discovery.NodeTypePrice{Provider: "aws", InstanceType: name, Region: "eu-west-1"})
 	}
-	assert.Equal(t, "its 5 node types, m6i.large, m6i.xlarge, r6i.large and 2 more, in AWS eu-west-1",
+	assert.Equal(t,
+		"list prices of the cluster's 5 node types (m6i.large, m6i.xlarge, r6i.large and 2 more, AWS eu-west-1)",
 		nodeTypesPhrase(types))
 }

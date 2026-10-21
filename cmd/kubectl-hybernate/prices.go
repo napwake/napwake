@@ -110,7 +110,7 @@ func (r scanResult) pricesSentence() string {
 			s += " None of the nodes has a list price: " + unlistedPhrase(unlisted) + "."
 		}
 	default:
-		s = "On-demand list prices for " + nodeTypesPhrase(listed) + "."
+		s = "The on-demand " + nodeTypesPhrase(listed) + "."
 		if !p.CPUAssumed {
 			s += " CPU at your price, " + p.cpu() + "."
 		}
@@ -148,7 +148,14 @@ func (p prices) unlistedRates() string {
 	}
 }
 
-// nodeTypesPhrase names the node types costs were priced at, and where.
+// costsSentence says what the scan's costs were priced at, as the
+// terminal and the report both put it.
+func (r scanResult) costsSentence() string {
+	return "Costs use " + lowerFirst(r.pricesSentence())
+}
+
+// nodeTypesPhrase names the cluster's node types costs were priced at,
+// and where they are.
 func nodeTypesPhrase(types []discovery.NodeTypePrice) string {
 	names := make([]string, 0, len(types))
 	var places []string
@@ -160,16 +167,16 @@ func nodeTypesPhrase(types []discovery.NodeTypePrice) string {
 		}
 	}
 	slices.Sort(places)
-	where := " in " + joinAnd(places)
+	where := ", " + joinAnd(places)
 	if len(types) == 1 {
-		return "its node type, " + names[0] + "," + where
+		return "list price of the cluster's nodes (" + names[0] + where + ")"
 	}
 	const shown = 3
 	listed := joinAnd(names)
 	if len(names) > shown {
 		listed = fmt.Sprintf("%s and %d more", strings.Join(names[:shown], ", "), len(names)-shown)
 	}
-	return fmt.Sprintf("its %d node types, %s,%s", len(types), listed, where)
+	return fmt.Sprintf("list prices of the cluster's %d node types (%s%s)", len(types), listed, where)
 }
 
 // unlistedPhrase names the nodes without a list price, by why: no instance

@@ -81,7 +81,7 @@ Notes:
   - the history replay sees CPU and rollouts only; requests and activity annotations aren't in Prometheus, so a workload used with little CPU can look like it would sleep more than it would
   - 2 workloads set no CPU requests, so their use can't be measured: kube-tools/agent, ops/exporter
 
-Costs use on-demand list prices for its 4 node types, m6i.xlarge, m6i.2xlarge, r6i.xlarge and 1 more, in AWS us-east-1. 6 workloads run on spot nodes, priced at on-demand, so they cost less than shown.
+Costs use the on-demand list prices of the cluster's 4 node types (m6i.xlarge, m6i.2xlarge, r6i.xlarge and 1 more, AWS us-east-1). 6 workloads run on spot nodes, priced at on-demand, so they cost less than shown.
 Pass --cpu-price and --memory-price for yours.
 ```
 
