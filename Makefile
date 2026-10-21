@@ -181,7 +181,8 @@ check-chart: ## Lint the Helm chart, render it for each provider's Kubernetes ve
 	helm template hybernate charts/hybernate --set 'watchNamespaces={shop,blog}' | go run ./hack/rbaccheck config/rbac/role.yaml
 	@long=abcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabc; \
 	names=$$(helm template hybernate charts/hybernate --set fullnameOverride=$$long --set networkPolicy.enabled=true \
-		--set metrics.serviceMonitor.enabled=true --set metrics.prometheusRule.enabled=true | \
+		--set metrics.serviceMonitor.enabled=true --set metrics.prometheusRule.enabled=true \
+		--set doorman.negForwarder.enabled=true | \
 		awk '/^kind:/ {k = $$2} /^[a-zA-Z]/ {m = ($$1 == "metadata:")} m && /^  name: / {print k, $$2}'); \
 	! awk 'length($$2) > 63 {print "too long: " $$0; bad = 1} END {exit !bad}' <<<"$$names" && \
 		[ -z "$$(sort <<<"$$names" | uniq -d)" ] || { \
@@ -234,6 +235,18 @@ check-chart: ## Lint the Helm chart, render it for each provider's Kubernetes ve
 		grep -q 'aggregate-to-view: "true"' config/rbac/managedworkload_viewer_role.yaml && \
 		grep -q 'aggregate-to-edit: "true"' config/rbac/managedworkload_editor_role.yaml || { \
 		echo "ManagedWorkloads aren't in the built-in view and edit roles, so namespace users can't see or pause them"; exit 1; }
+	@! helm template hybernate charts/hybernate | grep -qE -- '--neg-forwarder|doorman-pods|verbs: \[create, delete\]' || { \
+		echo "the chart runs NEG forwarders, or lets the operator create Deployments, without doorman.negForwarder.enabled"; exit 1; }
+	@for ns in '' "--set watchNamespaces={shop}"; do \
+		out=$$(helm template hybernate charts/hybernate --namespace hybernate-system --set doorman.negForwarder.enabled=true \
+			--set networkPolicy.enabled=true --set 'doorman.networkPolicy.ingressFrom[0].podSelector.matchLabels.app=ingress' $$ns); \
+		grep -q -- '- --neg-forwarder$$' <<<"$$out" && grep -qF -- '"--neg-forwarder-resources={\"limits\"' <<<"$$out" && \
+			grep -q 'name: hybernate-doorman-pods$$' <<<"$$out" && grep -q 'verbs: \[create, delete\]' <<<"$$out" && \
+			grep -q 'app.kubernetes.io/name: hybernate-forwarder' <<<"$$out" || { \
+			echo "doorman.negForwarder.enabled $$ns doesn't turn on the forwarders, the doorman's headless Service, their RBAC, or the doorman NetworkPolicy's way in for them"; exit 1; }; \
+	done
+	@! helm template hybernate charts/hybernate --set doorman.negForwarder.enabled=true --set doorman.enabled=false >/dev/null 2>&1 || { \
+		echo "the chart accepts doorman.negForwarder.enabled without the doorman forwarders pass connections to"; exit 1; }
 	@helm template hybernate charts/hybernate --set leaderElection.enabled=false --show-only templates/deployment.yaml | grep -q 'type: Recreate' && \
 		! helm template hybernate charts/hybernate --show-only templates/deployment.yaml | grep -q 'type: Recreate' || { \
 		echo "without leader election, a rolling update runs two operators at once"; exit 1; }

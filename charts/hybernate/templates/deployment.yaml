@@ -75,6 +75,15 @@ spec:
             - {{ printf "--doorman-service=%s" (ternary (include "hybernate.doormanName" .) "" .Values.doorman.enabled) | quote }}
             - {{ printf "--doorman-ports-per-workload=%v" .Values.doorman.portsPerWorkload | quote }}
             - {{ printf "--doorman-ports-per-namespace=%v" .Values.doorman.portsPerNamespace | quote }}
+            {{- with .Values.doorman.negForwarder }}
+            {{- if .enabled }}
+            - --neg-forwarder
+            - {{ printf "--neg-forwarder-image=%s" (include "hybernate.image" $) | quote }}
+            - {{ printf "--neg-forwarder-replicas=%v" .replicas | quote }}
+            - {{ printf "--neg-forwarder-resources=%s" (toJson .resources) | quote }}
+            - {{ printf "--neg-forwarder-doorman-service=%s" (include "hybernate.doormanPodsName" $) | quote }}
+            {{- end }}
+            {{- end }}
           env:
             - name: POD_NAMESPACE
               valueFrom:

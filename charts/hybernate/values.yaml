@@ -156,6 +156,25 @@ doorman:
     requests:
       cpu: 10m
       memory: 64Mi
+  # Optional, for GKE clusters whose Services sit behind container-native
+  # load balancing (NEGs), as a GKE Ingress's or Gateway's do: GKE accepts
+  # only endpoints in the Service's own namespace, so those Services are
+  # otherwise left unrouted. While such a workload is paused, the operator
+  # runs a small forwarder Deployment beside it, which passes connections
+  # to the doorman, and deletes it once the workload is awake. It grants
+  # the operator create and delete on Deployments. See
+  # https://okedeji.io/hybernate/concepts/wake-on-request/#gke-container-native-load-balancing-negs
+  negForwarder:
+    enabled: false
+    # Pods per forwarder. Two keep a paused workload reachable while a node
+    # it runs on drains.
+    replicas: 2
+    resources:
+      limits:
+        memory: 64Mi
+      requests:
+        cpu: 10m
+        memory: 32Mi
   networkPolicy:
     # Who may reach paused workloads through the doorman, as NetworkPolicy
     # peers, such as your ingress controller's namespace and the namespaces
