@@ -94,6 +94,7 @@ func statusCluster() []client.Object {
 	web.Spec.DryRun = true
 	web.Status.Activity = activity(v1alpha1.ActivitySourceRollout, 15*time.Minute, 45*time.Minute)
 	web.Status.Cost = &v1alpha1.CostStatus{FreedThisMonth: "$0.00", SavedThisMonth: "$0.00"}
+	web.Status.DryRun = &v1alpha1.DryRunStatus{Since: *before(99 * time.Hour), Pauses: 4, EstimatedFreed: "$7.40"}
 	for _, w := range []*v1alpha1.ManagedWorkload{api, postgres, web} {
 		w.Status.Prediction = &v1alpha1.PredictionStatus{TimeZone: "Europe/London"}
 	}
@@ -167,7 +168,7 @@ func TestStatus(t *testing.T) {
 
 	//nolint:lll // the expected screen is as wide as the command prints it
 	assert.Equal(t, `staging (EKS us-east-1): Hybernate manages 4 workloads.
-  1 paused, 2 running, 1 resuming; 1 in dry-run, measured but never paused
+  1 paused, 2 running, 1 resuming; 1 in dry-run, never paused: pausing it would have freed $7 since Oct 1
   Node autoscaler: none found — freed capacity won't lower the bill until nodes scale down; see https://okedeji.io/hybernate/guides/cluster-autoscaler/
   Forecast time zone: Europe/London
   Freed $42 this month, and saved $35 of it.
@@ -176,11 +177,11 @@ Needs attention:
   preview-7/worker   GitOpsConflict   Argo CD set the replicas from Git
   preview-7/worker   Stuck            resuming for 25m: waiting for preview-42/postgres
 
-  NAMESPACE    WORKLOAD               STATE               FOR   LAST ACTIVITY      NEXT                                        FREED THIS MONTH   SAVED
-  preview-42   deployment/api         paused              3h    request, 4h ago    wakes on a request or activity              $12                $10
-  preview-42   statefulset/postgres   running             5h    cpu, 2h ago        held awake while preview-7/worker uses it   $30                $25
-  preview-7    deployment/web         running (dry-run)   2h    rollout, 15m ago   would pause in 45m                          -                  -
-  preview-7    deployment/worker      resuming            25m   -                  -                                           -                  -
+  NAMESPACE    WORKLOAD               STATE               FOR   LAST ACTIVITY      NEXT                                        FREED THIS MONTH   SAVED   WOULD FREE
+  preview-42   deployment/api         paused              3h    request, 4h ago    wakes on a request or activity              $12                $10     -
+  preview-42   statefulset/postgres   running             5h    cpu, 2h ago        held awake while preview-7/worker uses it   $30                $25     -
+  preview-7    deployment/web         running (dry-run)   2h    rollout, 15m ago   would pause in 45m                          -                  -       $7
+  preview-7    deployment/worker      resuming            25m   -                  -                                           -                  -       -
 
 Recent pauses and wakes:
   30m ago   preview-7/worker   scaled up to 2 replicas by argocd-controller outside Hybernate; counted as activity
@@ -640,11 +641,51 @@ func TestStatus_FreedBeforeDryRun(t *testing.T) {
 	w := statusWorkloadObj("preview-7", "web", v1alpha1.TargetKindDeployment, v1alpha1.PhaseRunning, time.Hour)
 	w.Spec.DryRun = true
 	w.Status.Cost = &v1alpha1.CostStatus{FreedThisMonth: "$9.00", SavedThisMonth: "$9.00"}
+	w.Status.DryRun = &v1alpha1.DryRunStatus{Since: *before(time.Hour), EstimatedFreed: "$0.00"}
 
 	out := runStatus(t, newStatusClient(t, interceptor.Funcs{}, w), statusOpts())
 
 	assert.Contains(t, out, "  Freed $9 this month, and saved $9 of it.\n")
-	assert.Regexp(t, `deployment/web\s+running \(dry-run\) .* \$9\s+\$9\n`, out)
+	assert.Regexp(t, `deployment/web\s+running \(dry-run\) .* \$9\s+\$9\s+\$0\n`, out)
+}
+
+// Dry-run is how people come to trust Hybernate, so status leads with what
+// it measured: in the summary, and in a column of its own, which only
+// workloads in dry-run fill. One measuring that hasn't found a pause yet
+// shows $0, not the dash of one that isn't measuring.
+func TestStatus_DryRunLeadsWithWhatItWouldFree(t *testing.T) {
+	web := statusWorkloadObj("preview-7", "web", v1alpha1.TargetKindDeployment, v1alpha1.PhaseIdle, time.Hour)
+	web.Spec.DryRun = true
+	web.Status.DryRun = &v1alpha1.DryRunStatus{Since: *before(50 * time.Hour), Pauses: 3, EstimatedFreed: "$12.60"}
+	api := statusWorkloadObj("preview-7", "api", v1alpha1.TargetKindDeployment, v1alpha1.PhaseRunning, time.Hour)
+	api.Spec.DryRun = true
+	api.Status.DryRun = &v1alpha1.DryRunStatus{Since: *before(2 * time.Hour), EstimatedFreed: "$0.00"}
+	live := statusWorkloadObj("preview-7", "worker", v1alpha1.TargetKindDeployment, v1alpha1.PhasePaused, time.Hour)
+	c := newStatusClient(t, interceptor.Funcs{}, web, api, live)
+
+	result, err := clusterStatus(context.Background(), c, "preview-7", statusOpts())
+	require.NoError(t, err)
+	var out bytes.Buffer
+	require.NoError(t, writeStatus(&out, result, "table", statusNow))
+
+	assert.Contains(t, out.String(), "  1 paused, 1 running, 1 idle; 2 in dry-run, never paused: pausing them "+
+		"would have freed $13 since Oct 3\n")
+	assert.Regexp(t, `FREED THIS MONTH\s+SAVED\s+WOULD FREE\n`, out.String())
+	assert.Regexp(t, `deployment/api\s+running \(dry-run\) .*-\s+-\s+\$0\n`, out.String())
+	assert.Regexp(t, `deployment/web\s+idle \(dry-run\) .*-\s+-\s+\$13\n`, out.String())
+	assert.Regexp(t, `deployment/worker\s+paused .*-\s+-\s+-\n`, out.String())
+	assert.InDelta(t, 12.6, result.WouldFree, 0.001)
+	require.NotNil(t, result.Workloads[1].WouldFree)
+	assert.InDelta(t, 12.6, *result.Workloads[1].WouldFree, 0.001)
+	assert.Nil(t, result.Workloads[2].WouldFree, "a live workload has nothing in dry-run to show")
+
+	out.Reset()
+	live.Spec.DryRun = false
+	result, err = clusterStatus(context.Background(), newStatusClient(t, interceptor.Funcs{}, live), "preview-7",
+		statusOpts())
+	require.NoError(t, err)
+	require.NoError(t, writeStatus(&out, result, "table", statusNow))
+	assert.NotContains(t, out.String(), "WOULD FREE", "no column without a workload in dry-run")
 }
 
 // Status says which zone the forecast counts hours in, as the operator
