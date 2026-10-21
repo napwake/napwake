@@ -87,6 +87,7 @@ type engineRegistry struct {
 	hours     map[types.UID]forecast.Hour
 	exports   map[types.UID]exportedState
 	outlooks  map[types.UID]projectedOutlook
+	seeds     map[types.UID]historySeed
 	newEngine func() forecaster
 	restore   func(state string) (forecaster, error)
 }
@@ -106,6 +107,7 @@ func newEngineRegistry(newEngine func() forecaster) *engineRegistry {
 		hours:     make(map[types.UID]forecast.Hour),
 		exports:   make(map[types.UID]exportedState),
 		outlooks:  make(map[types.UID]projectedOutlook),
+		seeds:     make(map[types.UID]historySeed),
 		newEngine: newEngine,
 		restore: func(state string) (forecaster, error) {
 			e, err := forecast.ImportEngine(state, forecast.Settings{})
@@ -152,6 +154,7 @@ func (reg *engineRegistry) forget(uid types.UID) {
 	delete(reg.hours, uid)
 	delete(reg.exports, uid)
 	delete(reg.outlooks, uid)
+	delete(reg.seeds, uid)
 	reg.mu.Unlock()
 }
 

@@ -43,6 +43,9 @@ func forecastOutlook(workload *v1alpha1.ManagedWorkload, o forecast.Outlook) (re
 	case o.Acting:
 		reason = ForecastActing
 		b.WriteString("acting")
+		if p := workload.Status.Prediction; p != nil && p.History != nil && p.History.Reason == HistoryLearned {
+			fmt.Fprintf(&b, ", on %s of CPU history and what it has seen since", historySpan(p.History.Hours))
+		}
 		fmt.Fprintf(&b, ": its forecasts of the last day were %d%% right, and it acts from %d%%, "+
 			"so it holds off pauses before hours it expects to be busy", o.Confidence, o.Threshold)
 		if autoResumes(workload) {

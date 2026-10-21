@@ -110,7 +110,8 @@ func dryRunPrefix(dryRun bool) string {
 // forecastEngine is the workload's forecast engine, with the settings it
 // asks for applied. The first time, it is restored from the state in the
 // workload's status; state that can't be restored is discarded, and the
-// engine starts learning again.
+// engine starts learning again. A new workload's engine is the one that
+// learned its history, once that has been read.
 func (r *Reconciler) forecastEngine(workload *v1alpha1.ManagedWorkload) forecaster {
 	var state string
 	if p := workload.Status.Prediction; p != nil {
@@ -122,7 +123,7 @@ func (r *Reconciler) forecastEngine(workload *v1alpha1.ManagedWorkload) forecast
 		r.emitEvent(workload, false, "Warning", ReasonForecastReset, actionForecast,
 			"the forecast's saved state can't be read, so it starts learning again: %v", err)
 	}
-	return engine
+	return r.takeUpHistory(workload, engine, settings)
 }
 
 // confidenceFor is the confidence threshold the workload's forecast acts

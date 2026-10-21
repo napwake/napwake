@@ -94,7 +94,7 @@ Settings for workloads opted in with the `hybernate.io/managed` label, used when
 
 | Value | Default | Description |
 |-------|---------|-------------|
-| `prometheus.url` | `""` | Base URL of the Prometheus API used for Prometheus activity queries, such as `http://prometheus.monitoring.svc:9090`. Passed to the operator as `--prometheus-url`. Leave empty if no workload sets `idlePolicy.activity.prometheus` |
+| `prometheus.url` | `""` | Base URL of the Prometheus API, such as `http://prometheus.monitoring.svc:9090`, for Prometheus activity queries and to start each new workload's forecast from up to four weeks of its CPU history (see [Learning from history](../concepts/forecasting.md#learning-from-history)). Passed to the operator as `--prometheus-url` |
 
 ## Metrics
 
