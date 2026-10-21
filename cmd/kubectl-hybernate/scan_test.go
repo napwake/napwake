@@ -988,7 +988,6 @@ func TestPrometheusFrom_Service(t *testing.T) {
 	setup, err := prometheusFrom(prometheusOptions{service: "monitoring/prometheus-operated:web"})
 	require.NoError(t, err)
 	assert.Equal(t, &serviceRef{namespace: "monitoring", name: "prometheus-operated", port: "web"}, setup.service)
-	assert.True(t, setup.explicit())
 
 	setup, err = prometheusFrom(prometheusOptions{service: "monitoring/prometheus-operated"})
 	require.NoError(t, err)
@@ -996,7 +995,7 @@ func TestPrometheusFrom_Service(t *testing.T) {
 
 	setup, err = prometheusFrom(prometheusOptions{})
 	require.NoError(t, err)
-	assert.False(t, setup.explicit(), "found in the cluster")
+	assert.Nil(t, setup.service, "found in the cluster")
 }
 
 // The terminal names the Prometheus the history is from, how much it

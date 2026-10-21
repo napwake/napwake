@@ -107,10 +107,16 @@ func (s *Scanner) readNodePrices(ctx context.Context) (nodePricing, Prices) {
 	for _, entry := range byType {
 		prices.NodeTypes = append(prices.NodeTypes, *entry)
 	}
+	spotLast := func(t NodeTypePrice) int {
+		if t.Spot {
+			return 1
+		}
+		return 0
+	}
 	slices.SortFunc(prices.NodeTypes, func(a, b NodeTypePrice) int {
 		return cmp.Or(cmp.Compare(b.Nodes, a.Nodes),
 			cmp.Compare(a.InstanceType+" "+a.Region, b.InstanceType+" "+b.Region),
-			cmp.Compare(boolRank(a.Spot), boolRank(b.Spot)))
+			cmp.Compare(spotLast(a), spotLast(b)))
 	})
 	for _, t := range prices.NodeTypes {
 		if t.Listed {
@@ -142,13 +148,6 @@ func (s *Scanner) listNodes(ctx context.Context) ([]metav1.PartialObjectMetadata
 			return out, nil
 		}
 	}
-}
-
-func boolRank(b bool) int {
-	if b {
-		return 1
-	}
-	return 0
 }
 
 // ratesFor is what a workload is priced at: the listed nodes its pods are

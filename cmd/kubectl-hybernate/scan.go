@@ -275,12 +275,6 @@ func (s *serviceRef) String() string {
 	return s.namespace + "/" + s.name
 }
 
-// explicit says the user named the Prometheus, so failing to read it fails
-// the scan rather than leaving it to judge from CPU right now.
-func (s prometheusSetup) explicit() bool {
-	return s.url != "" || s.service != nil
-}
-
 func prometheusFrom(o prometheusOptions) (prometheusSetup, error) {
 	selector, err := discovery.ParseSelector(o.selector)
 	if err != nil {
@@ -332,7 +326,7 @@ func parseServiceRef(s string) (*serviceRef, error) {
 	ref, port, _ := strings.Cut(s, ":")
 	namespace, name, ok := strings.Cut(ref, "/")
 	if !ok || len(validation.IsDNS1123Label(namespace)) > 0 || len(validation.IsDNS1035Label(name)) > 0 ||
-		strings.Contains(s, ":") && port == "" {
+		(strings.Contains(s, ":") && port == "") {
 		return nil, fmt.Errorf("--prometheus-service %q isn't namespace/name or namespace/name:port, such as "+
 			"monitoring/prometheus-operated", s)
 	}
@@ -796,8 +790,9 @@ func historyLine(result scanResult) string {
 		return ""
 	}
 	h := result.History
-	line := "History: " + replayedOver(h) + ", from " + h.Prometheus
-	if replayedOver(h) == "" {
+	over := replayedOver(h)
+	line := "History: " + over + ", from " + h.Prometheus
+	if over == "" {
 		line = "History: " + h.Prometheus + " has no CPU history of the namespaces scanned"
 	}
 	if len(h.Others) > 0 {

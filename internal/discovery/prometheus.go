@@ -353,9 +353,10 @@ func FindPrometheus(ctx context.Context, c client.Client, restClient rest.Interf
 	return nil, first
 }
 
-// cpuHistory says how much of the CPU history a replay from since reads the
-// Prometheus has: cAdvisor's container CPU from since on, some of it, or
-// none. A query that fails counts as none, so it's only a preference.
+// cpuHistory says how much of the history a replay from since needs the
+// Prometheus has of cAdvisor's container CPU: all of it, from since on;
+// some; or none. A query that fails counts as none, as this only picks
+// between Prometheus that answer.
 func (p *Prometheus) cpuHistory(ctx context.Context, since time.Time) int {
 	switch {
 	case p.hasCPU(ctx, since):
