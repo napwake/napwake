@@ -3,15 +3,15 @@
 Complete reference for the Hybernate Helm chart. Install with:
 
 ```bash
-helm install hybernate oci://ghcr.io/okedeji/charts/hybernate --version 0.2.0 \
+helm install hybernate oci://ghcr.io/okedeji/charts/hybernate --version 0.2.0-rc.4 \
   --namespace hybernate-system --create-namespace \
   --set timezone=Europe/London
 ```
 
-Set `timezone` to your users' [time zone](../getting-started/installation.md#time-zone). The chart is published only as an OCI artifact; there's no `helm repo` to add. Its version has no `v` (`0.2.0`); the image tags do (`v0.2.0`). To see all defaults:
+Set `timezone` to your users' [time zone](../getting-started/installation.md#time-zone). The chart is published only as an OCI artifact; there's no `helm repo` to add. Its version has no `v` (`0.2.0-rc.4`); the image tags do (`v0.2.0-rc.4`). To see all defaults:
 
 ```bash
-helm show values oci://ghcr.io/okedeji/charts/hybernate --version 0.2.0
+helm show values oci://ghcr.io/okedeji/charts/hybernate --version 0.2.0-rc.4
 ```
 
 The chart validates values against its schema (`values.schema.json`), so a mistyped value, such as `logLevel: warn` or `defaults.cpuThreshold: 0`, fails the install or upgrade rather than the operator, and so does a value the chart doesn't have, such as `watchNamespace` for `watchNamespaces`, which Helm would otherwise ignore. Only what's passed through to Kubernetes as it is, such as `resources`, `affinity`, `tolerations`, `nodeSelector` and pod annotations and labels, is left for Kubernetes to check. `timezone` is the exception: the schema can't list every IANA zone, so an unknown one is caught when the operator starts, which then exits with `invalid --timezone` and `unknown time zone` in its log, and the rollout doesn't finish.
@@ -30,7 +30,7 @@ The full name is the release name when it contains `hybernate`, and `<release>-h
 | Value | Default | Description |
 |-------|---------|-------------|
 | `image.repository` | `ghcr.io/okedeji/hybernate` | Container image repository |
-| `image.tag` | `""`, the chart's `appVersion`, such as `v0.2.0` | Image tag, for the operator and the doorman |
+| `image.tag` | `""`, the chart's `appVersion`, such as `v0.2.0-rc.4` | Image tag, for the operator and the doorman |
 | `image.pullPolicy` | `IfNotPresent` | Image pull policy |
 | `imagePullSecrets` | `[]` | Private registry credentials |
 
@@ -332,7 +332,7 @@ affinity:
 
 ```bash
 helm install hybernate oci://ghcr.io/okedeji/charts/hybernate \
-  --version 0.2.0 \
+  --version 0.2.0-rc.4 \
   -f values-production.yaml \
   -n hybernate-system --create-namespace
 ```

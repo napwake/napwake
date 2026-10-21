@@ -49,7 +49,7 @@ Homebrew installs the newest release, or the newest release candidate until the 
 
 ```bash
 kubectl krew install --manifest-url \
-  https://github.com/okedeji/hybernate/releases/download/v0.2.0/krew-hybernate.yaml
+  https://github.com/okedeji/hybernate/releases/download/v0.2.0-rc.4/krew-hybernate.yaml
 ```
 
 or [download it](https://okedeji.io/hybernate/getting-started/kubectl-plugin/#installation) for Linux, macOS or Windows.
@@ -58,7 +58,7 @@ or [download it](https://okedeji.io/hybernate/getting-started/kubectl-plugin/#in
 
 ```bash
 helm install hybernate oci://ghcr.io/okedeji/charts/hybernate \
-  --version 0.2.0 \
+  --version 0.2.0-rc.4 \
   --namespace hybernate-system \
   --create-namespace \
   --set timezone=Europe/London

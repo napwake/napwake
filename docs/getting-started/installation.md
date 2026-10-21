@@ -17,13 +17,13 @@ Hybernate is packaged two ways: a Helm chart, and the Kustomize manifests, the r
 
     ```bash
     helm install hybernate oci://ghcr.io/okedeji/charts/hybernate \
-      --version 0.2.0 \
+      --version 0.2.0-rc.4 \
       --namespace hybernate-system \
       --create-namespace \
       --set timezone=Europe/London
     ```
 
-    Set `timezone` to your users' [time zone](#time-zone), such as `America/New_York`. The chart's version has no `v`; the image it runs is tagged with one, such as `v0.2.0`. The chart installs the ManagedWorkload CRD too, and upgrades it with each `helm upgrade`.
+    Set `timezone` to your users' [time zone](#time-zone), such as `America/New_York`. The chart's version has no `v`; the image it runs is tagged with one, such as `v0.2.0-rc.4`. The chart installs the ManagedWorkload CRD too, and upgrades it with each `helm upgrade`.
 
     ??? tip "Helm Values"
 
@@ -51,7 +51,7 @@ Hybernate is packaged two ways: a Helm chart, and the Kustomize manifests, the r
     Apply `install.yaml`, the Kustomize manifests built into one file:
 
     ```bash
-    kubectl apply -f https://github.com/okedeji/hybernate/releases/download/v0.2.0/install.yaml
+    kubectl apply -f https://github.com/okedeji/hybernate/releases/download/v0.2.0-rc.4/install.yaml
     ```
 
     This installs the CRD, RBAC, the operator Deployment, and the doorman Deployment, Service and PodDisruptionBudget into the `hybernate-system` namespace. The operator is `deployment/hybernate-controller-manager`.
@@ -73,7 +73,7 @@ Hybernate is packaged two ways: a Helm chart, and the Kustomize manifests, the r
     apiVersion: kustomize.config.k8s.io/v1beta1
     kind: Kustomization
     resources:
-      - https://github.com/okedeji/hybernate//config/default?ref=v0.2.0
+      - https://github.com/okedeji/hybernate//config/default?ref=v0.2.0-rc.4
     patches:
       - target:
           kind: Deployment
@@ -118,12 +118,12 @@ Hybernate is packaged two ways: a Helm chart, and the Kustomize manifests, the r
 
 ### Prometheus and NetworkPolicies without Helm
 
-With `install.yaml` or the Kustomize manifests, two more bases, pinned to the same release, add what these chart values turn on in a Helm install. Add them to your kustomization's `resources`, or apply one on its own, such as `kubectl apply -k "https://github.com/okedeji/hybernate//config/prometheus?ref=v0.2.0"`.
+With `install.yaml` or the Kustomize manifests, two more bases, pinned to the same release, add what these chart values turn on in a Helm install. Add them to your kustomization's `resources`, or apply one on its own, such as `kubectl apply -k "https://github.com/okedeji/hybernate//config/prometheus?ref=v0.2.0-rc.4"`.
 
 | Base | Adds | Chart values |
 |------|------|--------------|
-| `https://github.com/okedeji/hybernate//config/prometheus?ref=v0.2.0` | ServiceMonitors for the operator and the doorman, and the [alerting rules](../operations/monitoring.md#alerting-rules). Needs the Prometheus Operator's CRDs, and your Prometheus [allowed to read the metrics](../operations/monitoring.md#scraping) | `metrics.serviceMonitor.enabled`, `metrics.prometheusRule.enabled` |
-| `https://github.com/okedeji/hybernate//config/network-policy?ref=v0.2.0` | NetworkPolicies: only namespaces labelled `metrics: enabled` may scrape the operator and the doorman, and the doorman's routing ports (TCP 20000-29999) stay open to every caller of a paused workload's Services | `networkPolicy.enabled` |
+| `https://github.com/okedeji/hybernate//config/prometheus?ref=v0.2.0-rc.4` | ServiceMonitors for the operator and the doorman, and the [alerting rules](../operations/monitoring.md#alerting-rules). Needs the Prometheus Operator's CRDs, and your Prometheus [allowed to read the metrics](../operations/monitoring.md#scraping) | `metrics.serviceMonitor.enabled`, `metrics.prometheusRule.enabled` |
+| `https://github.com/okedeji/hybernate//config/network-policy?ref=v0.2.0-rc.4` | NetworkPolicies: only namespaces labelled `metrics: enabled` may scrape the operator and the doorman, and the doorman's routing ports (TCP 20000-29999) stay open to every caller of a paused workload's Services | `networkPolicy.enabled` |
 
 ### With Argo CD or Flux
 
@@ -142,7 +142,7 @@ The chart is published only to an OCI registry, which Argo CD and Flux each name
       source:
         repoURL: ghcr.io/okedeji/charts
         chart: hybernate
-        targetRevision: 0.2.0
+        targetRevision: 0.2.0-rc.4
         helm:
           valuesObject:
             timezone: Europe/London
@@ -169,7 +169,7 @@ The chart is published only to an OCI registry, which Argo CD and Flux each name
       interval: 1h
       url: oci://ghcr.io/okedeji/charts/hybernate
       ref:
-        tag: 0.2.0
+        tag: 0.2.0-rc.4
       layerSelector:
         mediaType: application/vnd.cncf.helm.chart.content.v1.tar+gzip
         operation: copy
