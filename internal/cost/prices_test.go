@@ -149,7 +149,7 @@ func TestPriceTableParses(t *testing.T) {
 	require.NoError(t, err)
 	sc := bufio.NewScanner(gz)
 	sc.Buffer(make([]byte, 0, 64*1024), 1024*1024)
-	providers := map[string]int{}
+	providers, spot := map[string]int{}, map[string]int{}
 	for line := 1; sc.Scan(); line++ {
 		if strings.HasPrefix(sc.Text(), "#") {
 			continue
@@ -157,18 +157,84 @@ func TestPriceTableParses(t *testing.T) {
 		fields := strings.Split(sc.Text(), ",")
 		require.GreaterOrEqual(t, len(fields), 5, "line %d", line)
 		for _, field := range fields[4:] {
-			_, price, ok := strings.Cut(field, "=")
+			_, prices, ok := strings.Cut(field, "=")
 			require.True(t, ok, "line %d: %q", line, field)
-			p, err := parseListing(fields, price, line, 0)
+			l, err := parseListing(fields, prices, line, 0)
 			require.NoError(t, err)
-			require.Positive(t, p.Rates.CPUPerHour, "line %d", line)
+			require.Positive(t, l.onDemand.CPUPerHour, "line %d", line)
+			if l.spot != nil {
+				require.Positive(t, l.spot.CPUPerHour, "line %d", line)
+				require.LessOrEqual(t, l.spot.CPUPerHour, l.onDemand.CPUPerHour, "line %d: spot over on-demand", line)
+				spot[fields[0]]++
+			}
 		}
 		providers[fields[0]]++
 	}
 	require.NoError(t, sc.Err())
 	for _, provider := range []string{"aws", "azure", "gcp"} {
 		assert.Greater(t, providers[provider], 100, "%s instance types", provider)
+		assert.Positive(t, spot[provider], "%s spot prices", provider)
 	}
+}
+
+// A spot node is priced at its type's spot price, which each provider
+// publishes for the common types, and says so.
+func TestListPriceOf_Spot(t *testing.T) {
+	tests := map[string]map[string]string{
+		"EKS":       withLabel(nodeLabels("m6i.large", "us-east-1"), "eks.amazonaws.com/capacityType", "SPOT"),
+		"Karpenter": withLabel(nodeLabels("m6i.large", "us-east-1"), "karpenter.sh/capacity-type", "spot"),
+		"GKE":       withLabel(nodeLabels("e2-standard-2", "europe-west1"), "cloud.google.com/gke-spot", "true"),
+		"AKS": withLabel(nodeLabels("Standard_D4s_v5", "eastus"), "kubernetes.azure.com/scalesetpriority",
+			"spot"),
+	}
+	for name, labels := range tests {
+		t.Run(name, func(t *testing.T) {
+			onDemand, ok := ListPriceOf(NodeType{InstanceType: labels["node.kubernetes.io/instance-type"],
+				Region: labels["topology.kubernetes.io/region"]})
+			require.True(t, ok)
+			spot, ok := ListPriceOf(NodeTypeOf(labels))
+			require.True(t, ok)
+
+			assert.True(t, spot.Spot)
+			assert.False(t, onDemand.Spot)
+			assert.Equal(t, onDemand.Provider, spot.Provider)
+			assert.Less(t, spot.Rates.CPUPerHour, onDemand.Rates.CPUPerHour)
+			assert.Less(t, spot.Rates.MemoryPerHour, onDemand.Rates.MemoryPerHour)
+		})
+	}
+}
+
+// A spot node of a type without a spot price falls back to on-demand, and
+// says it did. Google Cloud's M2 machines aren't sold as spot.
+func TestListPriceOf_SpotWithoutASpotPrice(t *testing.T) {
+	onDemand, ok := ListPriceOf(NodeType{InstanceType: "m2-ultramem-208", Region: "us-central1"})
+	require.True(t, ok)
+
+	p, ok := ListPriceOf(NodeType{InstanceType: "m2-ultramem-208", Region: "us-central1", Spot: true})
+
+	require.True(t, ok)
+	assert.False(t, p.Spot, "priced on-demand")
+	assert.Equal(t, onDemand.Rates, p.Rates)
+}
+
+func TestParseListing_WithoutSpot(t *testing.T) {
+	l, err := parseListing([]string{"aws", "x9.large", "2", "8"}, "0.1", 1, 0)
+
+	require.NoError(t, err)
+	assert.Nil(t, l.spot)
+	assert.InDelta(t, 0.1, ComputeHourly(2, 8, l.onDemand), 1e-9)
+}
+
+func TestParseListing_Spot(t *testing.T) {
+	l, err := parseListing([]string{"gcp", "e2-standard-2", "2", "8"}, "0.08/0.02", 1, 0)
+
+	require.NoError(t, err)
+	require.NotNil(t, l.spot)
+	assert.InDelta(t, 0.08, ComputeHourly(2, 8, l.onDemand), 1e-9)
+	assert.InDelta(t, 0.02, ComputeHourly(2, 8, *l.spot), 1e-9)
+
+	_, err = parseListing([]string{"gcp", "e2-standard-2", "2", "8"}, "0.08/x", 7, 0)
+	assert.ErrorContains(t, err, "price table line 7: spot price")
 }
 
 func TestMean(t *testing.T) {
@@ -207,4 +273,9 @@ func nodeLabels(instanceType, region string) map[string]string {
 		"node.kubernetes.io/instance-type": instanceType,
 		"topology.kubernetes.io/region":    region,
 	}
+}
+
+func withLabel(labels map[string]string, key, value string) map[string]string {
+	labels[key] = value
+	return labels
 }
