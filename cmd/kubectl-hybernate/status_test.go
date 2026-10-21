@@ -92,6 +92,7 @@ func statusCluster() []client.Object {
 	postgres.Status.Conditions = []metav1.Condition{
 		condition("HeldByDependents", metav1.ConditionTrue, "DependentsAwake", "kept awake for preview-7/worker"),
 	}
+	postgres.Status.Activity.HeldByDependents = []string{"preview-7/worker"}
 	postgres.Status.Cost = &v1alpha1.CostStatus{FreedThisMonth: "$30.05", SavedThisMonth: "$25.00"}
 
 	web := statusWorkloadObj("preview-7", "web", v1alpha1.TargetKindDeployment, v1alpha1.PhaseRunning, 2*time.Hour)
@@ -242,6 +243,13 @@ func TestNextFor_WhatKeepsItUp(t *testing.T) {
 			w.Status.Conditions = []metav1.Condition{c}
 		}
 	}
+	vetoed := condition("IdleVetoed", metav1.ConditionTrue, "ForecastExpectsDemand", "")
+	heldBy := func(names ...string) func(*v1alpha1.ManagedWorkload) {
+		return func(w *v1alpha1.ManagedWorkload) {
+			withCondition(condition("HeldByDependents", metav1.ConditionTrue, "DependentsAwake", ""))(w)
+			w.Status.Activity.HeldByDependents = names
+		}
+	}
 	tests := []struct {
 		name              string
 		mutate            func(*v1alpha1.ManagedWorkload)
@@ -279,24 +287,18 @@ func TestNextFor_WhatKeepsItUp(t *testing.T) {
 		{name: "a dependsOn cycle",
 			mutate: withCondition(condition("DependencyCycle", metav1.ConditionTrue, "DependencyCycle", "")),
 			want:   "won't pause: dependsOn cycle"},
-		{name: "vetoed by the forecast, saying when it expects demand",
-			mutate: withCondition(condition("IdleVetoed", metav1.ConditionTrue, "ForecastExpectsDemand",
-				"idle, but the forecast expects demand at 40% of requests in the hour from 13:00 UTC; not pausing yet")),
-			want: "held awake by the forecast: busy from 13:00 UTC"},
-		{name: "vetoed by the forecast, without saying when",
-			mutate: withCondition(condition("IdleVetoed", metav1.ConditionTrue, "ForecastExpectsDemand", "")),
-			want:   "held awake by the forecast"},
-		{name: "held by a dependent",
-			mutate: withCondition(condition("HeldByDependents", metav1.ConditionTrue, "DependentsAwake",
-				"kept awake for shop/web")),
-			want: "held awake while shop/web uses it"},
-		{name: "held by dependents",
-			mutate: withCondition(condition("HeldByDependents", metav1.ConditionTrue, "DependentsAwake",
-				"kept awake for shop/web, shop/worker and 3 more")),
-			want: "held awake while shop/web, shop/worker and 3 more use it"},
-		{name: "held by dependents it doesn't name",
-			mutate: withCondition(condition("HeldByDependents", metav1.ConditionTrue, "DependentsAwake", "")),
-			want:   "held awake by its dependents"},
+		{name: "vetoed by the forecast, saying when it expects demand", mutate: func(w *v1alpha1.ManagedWorkload) {
+			withCondition(vetoed)(w)
+			w.Status.Activity.ForecastBusyFrom = &metav1.Time{Time: time.Date(2026, 10, 5, 13, 0, 0, 0, time.UTC)}
+		}, want: "held awake by the forecast: busy from 13:00 UTC"},
+		{name: "vetoed by the forecast, without saying when", mutate: withCondition(vetoed),
+			want: "held awake by the forecast"},
+		{name: "held by a dependent", mutate: heldBy("shop/web"), want: "held awake while shop/web uses it"},
+		{name: "held by two dependents", mutate: heldBy("shop/web", "shop/worker"),
+			want: "held awake while shop/web and shop/worker use it"},
+		{name: "held by dependents", mutate: heldBy("shop/web", "shop/worker", "shop/cron"),
+			want: "held awake while shop/web and 2 others use it"},
+		{name: "held by dependents it doesn't name", mutate: heldBy(), want: "held awake by its dependents"},
 		{name: "idle, after a GitOps tool undid its last pause", mutate: func(w *v1alpha1.ManagedWorkload) {
 			undoneBy(w, "Argo CD", 10*time.Minute)
 			w.Status.Phase = v1alpha1.PhaseIdle
@@ -408,6 +410,7 @@ func TestStatus_ForecastVeto(t *testing.T) {
 	w.Status.Activity = activity(v1alpha1.ActivitySourceCPU, 2*time.Hour, -time.Hour)
 	w.Status.Conditions = []metav1.Condition{condition("IdleVetoed", metav1.ConditionTrue, "ForecastExpectsDemand",
 		"idle, but the forecast expects demand at 40% of requests in the hour from 13:00 UTC; not pausing yet")}
+	w.Status.Activity.ForecastBusyFrom = &metav1.Time{Time: time.Date(2026, 10, 5, 13, 0, 0, 0, time.UTC)}
 	forbidEvents := interceptor.Funcs{
 		List: func(ctx context.Context, c client.WithWatch, list client.ObjectList, opts ...client.ListOption) error {
 			if _, ok := list.(*corev1.EventList); ok {

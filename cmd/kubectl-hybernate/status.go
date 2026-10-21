@@ -22,7 +22,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"regexp"
 	"slices"
 	"strconv"
 	"strings"
@@ -586,7 +585,7 @@ func nextFor(w *v1alpha1.ManagedWorkload, targetActiveUntil, now time.Time) stri
 		return "never pauses: no idlePolicy"
 	}
 	if c := meta.FindStatusCondition(conditions, "HeldByDependents"); c != nil && c.Status == metav1.ConditionTrue {
-		return heldByDependents(c.Message)
+		return heldByDependents(w.Status.Activity)
 	}
 	if until := later(activeUntil(w.Annotations), targetActiveUntil); until.After(now) {
 		return "held awake for " + span(until.Sub(now)) + " (active-until)"
@@ -616,7 +615,7 @@ func nextFor(w *v1alpha1.ManagedWorkload, targetActiveUntil, now time.Time) stri
 	case pauseAt.After(now):
 		return verb + " in " + span(pauseAt.Sub(now))
 	case meta.IsStatusConditionTrue(conditions, "IdleVetoed"):
-		return heldByForecast(meta.FindStatusCondition(conditions, "IdleVetoed").Message)
+		return heldByForecast(w.Status.Activity)
 	case heldByGitOps:
 		return afterGitOps
 	case w.Status.Phase == v1alpha1.PhaseIdle:
@@ -639,34 +638,31 @@ func gitOpsHold(w *v1alpha1.ManagedWorkload, now time.Time) (time.Time, bool) {
 	return until, now.Before(until)
 }
 
-// dependentsAwake starts a HeldByDependents message, before the dependents
-// it names.
-const dependentsAwake = "kept awake for "
-
 // heldByDependents names the dependents that hold a workload awake, until
-// they pause, from its HeldByDependents message, which lists them.
-func heldByDependents(message string) string {
-	names, ok := strings.CutPrefix(oneLine(message), dependentsAwake)
-	switch {
-	case !ok || names == "":
-		return "held awake by its dependents"
-	case strings.Contains(names, ", ") || strings.HasSuffix(names, " more"):
-		return "held awake while " + names + " use it"
+// they pause, as the operator recorded them.
+func heldByDependents(a *v1alpha1.ActivityStatus) string {
+	var names []string
+	if a != nil {
+		names = a.HeldByDependents
 	}
-	return "held awake while " + names + " uses it"
+	switch len(names) {
+	case 0:
+		return "held awake by its dependents"
+	case 1:
+		return "held awake while " + names[0] + " uses it"
+	case 2:
+		return "held awake while " + names[0] + " and " + names[1] + " use it"
+	}
+	return fmt.Sprintf("held awake while %s and %d others use it", names[0], len(names)-1)
 }
 
-// forecastHour is the hour the forecast expects demand in, in an IdleVetoed
-// message.
-var forecastHour = regexp.MustCompile(`in the hour from (\d{2}:\d{2} UTC)`)
-
 // heldByForecast says when the forecast expects the demand that holds a
-// workload awake, from its IdleVetoed message.
-func heldByForecast(message string) string {
-	if m := forecastHour.FindStringSubmatch(message); m != nil {
-		return "held awake by the forecast: busy from " + m[1]
+// workload awake, as the operator recorded it.
+func heldByForecast(a *v1alpha1.ActivityStatus) string {
+	if a == nil || a.ForecastBusyFrom == nil {
+		return "held awake by the forecast"
 	}
-	return "held awake by the forecast"
+	return "held awake by the forecast: busy from " + clockTime(a.ForecastBusyFrom.Time)
 }
 
 // clockTime is a time of day in UTC, as the operator's messages give one.
