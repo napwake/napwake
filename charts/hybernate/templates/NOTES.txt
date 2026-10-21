@@ -1,3 +1,7 @@
+{{- /* The docs site keeps a version per minor release, and a release candidate's under next. */ -}}
+{{- $chart := semver .Chart.Version -}}
+{{- $docs := printf "https://okedeji.io/hybernate/%d.%d/" $chart.Major $chart.Minor -}}
+{{- if $chart.Prerelease }}{{ $docs = "https://okedeji.io/hybernate/next/" }}{{ end -}}
 Hybernate is installed in namespace {{ .Release.Namespace }}.
 
 1. Check the operator and the doorman are running:
@@ -33,4 +37,4 @@ Hybernate is installed in namespace {{ .Release.Namespace }}.
 {{- end }}
 {{- end }}
 
-Docs: https://okedeji.io/hybernate
+Docs for this version: {{ $docs }}

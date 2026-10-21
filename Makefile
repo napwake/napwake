@@ -234,6 +234,9 @@ check-chart: ## Lint the Helm chart, render it for each provider's Kubernetes ve
 		grep -q 'aggregate-to-view: "true"' config/rbac/managedworkload_viewer_role.yaml && \
 		grep -q 'aggregate-to-edit: "true"' config/rbac/managedworkload_editor_role.yaml || { \
 		echo "ManagedWorkloads aren't in the built-in view and edit roles, so namespace users can't see or pause them"; exit 1; }
+	@hack/chart-notes.sh 0.3.1 | grep -qxF 'Docs for this version: https://okedeji.io/hybernate/0.3/' && \
+		hack/chart-notes.sh 0.3.0-rc.2 | grep -qxF 'Docs for this version: https://okedeji.io/hybernate/next/' || { \
+		echo "the chart's NOTES don't link to the docs of its version: its minor's, or next's for a release candidate"; exit 1; }
 	@helm template hybernate charts/hybernate --set leaderElection.enabled=false --show-only templates/deployment.yaml | grep -q 'type: Recreate' && \
 		! helm template hybernate charts/hybernate --show-only templates/deployment.yaml | grep -q 'type: Recreate' || { \
 		echo "without leader election, a rolling update runs two operators at once"; exit 1; }
