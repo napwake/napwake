@@ -289,3 +289,74 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: gh release edit "$TAG" --draft=false
+
+  # brew install okedeji/tap/kubectl-hybernate installs the newest release,
+  # so release candidates aren't brewed. The formula is written from the
+  # published archives, the files brew downloads, and pushed to the tap with
+  # a fine-grained token that can write only to it. The release is out by
+  # now, so a missing token or a failure here leaves the tap on the last
+  # release with a warning, and doesn't fail the run, whose success
+  # publishes the docs.
+  homebrew:
+    name: Homebrew formula
+    needs: [release]
+    if: ${{ !contains(github.ref_name, '-') }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    continue-on-error: true
+    permissions:
+      contents: read
+    env:
+      TAG: ${{ github.ref_name }}
+    steps:
+      - name: Check for the tap's token
+        id: token
+        env:
+          TAP_TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN }}
+        run: |
+          if [ -z "$TAP_TOKEN" ]; then
+            echo "::warning title=Homebrew tap not updated::The HOMEBREW_TAP_TOKEN secret isn't set, so okedeji/homebrew-tap stays on the last release. Add a fine-grained token with Contents read and write on that repository only, then re-run this job."
+            echo "present=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "present=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - if: steps.token.outputs.present == 'true'
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - if: steps.token.outputs.present == 'true'
+        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: go.mod
+
+      - name: Write the formula from the release's archives
+        if: steps.token.outputs.present == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPOSITORY: ${{ github.repository }}
+        run: |
+          gh release download "$TAG" --dir release \
+            --pattern 'kubectl-hybernate-darwin-*.tar.gz' --pattern 'kubectl-hybernate-linux-*.tar.gz'
+          go run ./hack/brewformula -tag "$TAG" -repo "$REPOSITORY" -dir release > kubectl-hybernate.rb
+
+      - if: steps.token.outputs.present == 'true'
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: ${{ github.repository_owner }}/homebrew-tap
+          token: ${{ secrets.HOMEBREW_TAP_TOKEN }}
+          path: tap
+
+      - name: Push the formula to the tap
+        if: steps.token.outputs.present == 'true'
+        working-directory: tap
+        run: |
+          mkdir -p Formula
+          cp ../kubectl-hybernate.rb Formula/kubectl-hybernate.rb
+          git add Formula/kubectl-hybernate.rb
+          if git diff --cached --quiet; then
+            echo "The tap already has kubectl-hybernate ${TAG#v}"
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git commit -m "kubectl-hybernate ${TAG#v}"
+          git push
