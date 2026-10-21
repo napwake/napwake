@@ -17,6 +17,7 @@ limitations under the License.
 package sim
 
 import (
+	"cmp"
 	"math"
 	"os"
 	"path/filepath"
@@ -97,22 +98,6 @@ func readDocsTable(t *testing.T, heading, header string) docsTable {
 	return table
 }
 
-// daysToAct is how many days a workload's forecast takes to act and to be
-// fully active, at threshold: the median over seeds when its traffic is
-// drawn from one.
-func daysToAct(t *testing.T, traffic func(seed uint64) Traffic, seeds int, threshold int) (acts, full float64) {
-	t.Helper()
-	var actsDays, fullDays []float64
-	for seed := uint64(1); seed <= uint64(seeds); seed++ {
-		set := DefaultSettings()
-		set.Confidence = threshold
-		r := simulate(t, Scenario{Duration: 10 * week, Traffic: traffic(seed), Settings: set})
-		actsDays, fullDays = append(actsDays, reachedDays(r, forecast.DailyActive)),
-			append(fullDays, reachedDays(r, forecast.FullyActive))
-	}
-	return median(actsDays), median(fullDays)
-}
-
 // reachedDays is how many days the forecast took to reach phase, or
 // infinitely many if it didn't within the run, which a median over seeds
 // that mostly do reach it tolerates.
@@ -133,8 +118,10 @@ func median(vs []float64) float64 {
 }
 
 // The forecasting page's "How Long It Takes" table is what the simulator
-// measures: each cell, days to act and days to be fully active, rounded.
+// measures: each cell, days to act and days to be fully active, rounded,
+// the median over seeds for traffic drawn from one.
 func TestDocs_HowLongItTakes(t *testing.T) {
+	t.Parallel()
 	office := func(uint64) Traffic { return OfficeHours(time.UTC) }
 	scenarios := []struct {
 		label   string
@@ -162,7 +149,18 @@ func TestDocs_HowLongItTakes(t *testing.T) {
 		}
 		require.Len(t, row, len(table.thresholds), "the page has a row starting %q", sc.label)
 		for i, th := range table.thresholds {
-			acts, full := daysToAct(t, sc.traffic, sc.seeds, th)
+			var runs []Scenario
+			for seed := uint64(1); seed <= uint64(sc.seeds); seed++ {
+				set := DefaultSettings()
+				set.Confidence = th
+				runs = append(runs, Scenario{Duration: 10 * week, Traffic: sc.traffic(seed), Settings: set})
+			}
+			actsDays, fullDays := make([]float64, 0, sc.seeds), make([]float64, 0, sc.seeds)
+			for _, r := range simulateAll(t, runs) {
+				actsDays = append(actsDays, reachedDays(r, forecast.DailyActive))
+				fullDays = append(fullDays, reachedDays(r, forecast.FullyActive))
+			}
+			acts, full := median(actsDays), median(fullDays)
 			require.Len(t, row[i], 2, "%s at %d: days to act and to be fully active", sc.label, th)
 			assert.InDelta(t, acts, row[i][0], 0.75, "%s at %d: acts after %.1f days", sc.label, th, acts)
 			assert.InDelta(t, full, row[i][1], 0.75, "%s at %d: fully active after %.1f days", sc.label, th, full)
@@ -172,31 +170,41 @@ func TestDocs_HowLongItTakes(t *testing.T) {
 
 // The forecasting page's table of what each setting trades is what the
 // simulator measures on loosely kept office hours, averaged over twenty
-// seeds.
+// seeds: a more eager setting has the workload ready on more mornings, and
+// wakes it for nothing for longer.
 func TestDocs_WhatEachSettingTrades(t *testing.T) {
+	t.Parallel()
 	table := readDocsTable(t, "## Forecast Setting", "Mornings ready")
-	thresholds := map[string]int{"`eager`": forecast.Eager.Threshold(), "`balanced`": forecast.Balanced.Threshold(),
-		"`cautious`": forecast.Cautious.Threshold()}
-	require.Len(t, table.rows, len(thresholds))
-	for label, th := range thresholds {
+	require.Len(t, table.rows, len(forecast.Modes))
+	const seeds = 20
+	ready, wasted := make([]float64, 0, len(forecast.Modes)), make([]float64, 0, len(forecast.Modes))
+	for _, mode := range forecast.Modes {
+		label := "`" + string(mode) + "`"
 		row, ok := table.rows[label]
 		require.True(t, ok, "a row for %s", label)
-		var ready, wasted, used float64
-		const seeds = 20
+		var runs []Scenario
 		for seed := uint64(1); seed <= seeds; seed++ {
 			set := DefaultSettings()
-			set.Confidence = th
-			r := simulate(t, Scenario{Duration: 8 * week, Traffic: Noisy(time.UTC, seed, 60*time.Minute, 4),
+			set.Confidence = mode.Threshold()
+			runs = append(runs, Scenario{Duration: 8 * week, Traffic: Noisy(time.UTC, seed, 60*time.Minute, 4),
 				Settings: set})
-			s := r.Summarize(monday)
-			ready += float64(s.Ready)
-			wasted += s.WastedHours
+		}
+		var r, w, used float64
+		for _, report := range simulateAll(t, runs) {
+			s := report.Summarize(monday)
+			r += float64(s.Ready)
+			w += s.WastedHours
 			used += float64(s.UsedDays)
 		}
 		require.Len(t, row, 2)
 		require.Len(t, row[0], 1)
-		assert.InDelta(t, ready/seeds, row[0][0], 0.75, "%s: mornings ready", label)
-		assert.InDelta(t, wasted/seeds, row[1][0], 0.75, "%s: hours woken for nothing", label)
+		assert.InDelta(t, r/seeds, row[0][0], 0.75, "%s: mornings ready", label)
+		assert.InDelta(t, w/seeds, row[1][0], 0.75, "%s: hours woken for nothing", label)
 		assert.InDelta(t, 30, used/seeds, 0.75, "mornings someone came, as the header says")
+		ready, wasted = append(ready, r), append(wasted, w)
 	}
+	assert.True(t, slices.IsSortedFunc(ready, func(a, b float64) int { return cmp.Compare(b, a) }),
+		"ready mornings, eager to cautious: %v", ready)
+	assert.True(t, slices.IsSortedFunc(wasted, func(a, b float64) int { return cmp.Compare(b, a) }),
+		"hours woken for nothing, eager to cautious: %v", wasted)
 }

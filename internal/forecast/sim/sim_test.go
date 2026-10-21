@@ -17,6 +17,8 @@ limitations under the License.
 package sim
 
 import (
+	"errors"
+	"sync"
 	"testing"
 	"time"
 
@@ -40,6 +42,12 @@ var startup = Startup{Percent: 80, For: 3 * time.Minute}
 
 func simulate(t *testing.T, sc Scenario) Report {
 	t.Helper()
+	r, err := Run(withDefaults(sc))
+	require.NoError(t, err)
+	return r
+}
+
+func withDefaults(sc Scenario) Scenario {
 	if sc.Start.IsZero() {
 		sc.Start = monday
 	}
@@ -49,9 +57,23 @@ func simulate(t *testing.T, sc Scenario) Report {
 	if sc.Startup == (Startup{}) {
 		sc.Startup = startup
 	}
-	r, err := Run(sc)
-	require.NoError(t, err)
-	return r
+	return sc
+}
+
+// simulateAll runs the scenarios at once, a goroutine each: they share
+// nothing, and the measurements over many seeds take dozens of them.
+func simulateAll(t *testing.T, scs []Scenario) []Report {
+	t.Helper()
+	reports := make([]Report, len(scs))
+	errs := make([]error, len(scs))
+	var wg sync.WaitGroup
+	for i := range scs {
+		sc := withDefaults(scs[i])
+		wg.Go(func() { reports[i], errs[i] = Run(sc) })
+	}
+	wg.Wait()
+	require.NoError(t, errors.Join(errs...))
+	return reports
 }
 
 func local(t *testing.T, name string) *time.Location {
@@ -282,10 +304,14 @@ func TestLightUseSeenElsewhere(t *testing.T) {
 // most mornings once it's learned, and it's woken for nothing about once a
 // fortnight, never for long.
 func TestNoisyOfficeHours(t *testing.T) {
+	t.Parallel()
 	var ready, used, wasted int
 	var wastedHours float64
+	scs := make([]Scenario, 0, 10)
 	for seed := uint64(1); seed <= 10; seed++ {
-		r := simulate(t, Scenario{Duration: 8 * week, Traffic: Noisy(time.UTC, seed, 20*time.Minute, 10)})
+		scs = append(scs, Scenario{Duration: 8 * week, Traffic: Noisy(time.UTC, seed, 20*time.Minute, 10)})
+	}
+	for _, r := range simulateAll(t, scs) {
 		s := r.Summarize(monday.Add(4 * week))
 		ready += s.Ready
 		used += s.UsedDays
@@ -295,34 +321,6 @@ func TestNoisyOfficeHours(t *testing.T) {
 	assert.Greater(t, float64(ready)/float64(used), 0.7, "%d of %d mornings ready", ready, used)
 	assert.LessOrEqual(t, float64(wasted)/10, 2.0, "wasted wakes a month")
 	assert.LessOrEqual(t, wastedHours/float64(max(wasted, 1)), 3.0, "hours each kept it awake")
-}
-
-// What the settings trade, on loosely kept office hours: a lower
-// confidence threshold has the workload ready on more mornings and wakes
-// it for nothing more often.
-func TestThresholdsTradeReadyMorningsForWastedWakes(t *testing.T) {
-	type outcome struct{ ready, wastedHours float64 }
-	measure := func(threshold int) outcome {
-		var o outcome
-		for seed := uint64(1); seed <= 10; seed++ {
-			set := DefaultSettings()
-			set.Confidence = threshold
-			r := simulate(t, Scenario{Duration: 8 * week, Traffic: Noisy(time.UTC, seed, 60*time.Minute, 4),
-				Settings: set})
-			s := r.Summarize(monday)
-			o.ready += float64(s.Ready)
-			o.wastedHours += s.WastedHours
-		}
-		return o
-	}
-	eager, balanced, cautious := measure(forecast.Eager.Threshold()), measure(forecast.Balanced.Threshold()),
-		measure(forecast.Cautious.Threshold())
-	t.Logf("ready mornings and hours woken for nothing over 8 weeks, 10 seeds: eager %+v, balanced %+v, cautious %+v",
-		eager, balanced, cautious)
-	assert.Greater(t, eager.ready, balanced.ready)
-	assert.Greater(t, balanced.ready, cautious.ready)
-	assert.Greater(t, eager.wastedHours, balanced.wastedHours)
-	assert.Greater(t, balanced.wastedHours, cautious.wastedHours)
 }
 
 // A forecast learned from four weeks of history, as from Prometheus when a
