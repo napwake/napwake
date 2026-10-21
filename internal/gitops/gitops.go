@@ -15,12 +15,13 @@ limitations under the License.
 */
 
 // Package gitops tells who sets a workload's replica count, from the field
-// managers the API server records, and how to have a GitOps tool leave it
-// to Hybernate.
+// managers the API server records, whether a GitOps tool has been told to
+// leave it to Hybernate, and how to tell it.
 package gitops
 
 import (
 	"encoding/json"
+	"slices"
 	"strings"
 	"time"
 
@@ -131,19 +132,23 @@ func ToolOf(manager string) Tool {
 	return ""
 }
 
+// argoIgnoreFix is the first step of Argo CD's fix, which has it ignore
+// replicas in its diff.
+var argoIgnoreFix = []string{
+	"Have Argo CD ignore replicas, as for an HPA, once for every app, in the argocd-cm ConfigMap:",
+	"  resource.customizations.ignoreDifferences.apps_Deployment: |",
+	"    jsonPointers: [/spec/replicas]",
+	"  resource.customizations.ignoreDifferences.apps_StatefulSet: |",
+	"    jsonPointers: [/spec/replicas]",
+}
+
 // Fix is what to change so the tool stops setting replicas Hybernate has
 // paused, one line per step.
 func Fix(t Tool) []string {
 	switch t {
 	case ArgoCD:
-		return []string{
-			"Have Argo CD ignore replicas, as for an HPA, once for every app, in the argocd-cm ConfigMap:",
-			"  resource.customizations.ignoreDifferences.apps_Deployment: |",
-			"    jsonPointers: [/spec/replicas]",
-			"  resource.customizations.ignoreDifferences.apps_StatefulSet: |",
-			"    jsonPointers: [/spec/replicas]",
-			"and add RespectIgnoreDifferences=true to each app's syncPolicy.syncOptions, so syncs leave them too.",
-		}
+		return append(slices.Clone(argoIgnoreFix),
+			"and add "+respectIgnoreDifferences+" to each app's syncPolicy.syncOptions, so syncs leave them too.")
 	case Flux:
 		return []string{
 			"Leave replicas out of the workload's manifest in Git, so Flux doesn't set them;",
