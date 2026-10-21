@@ -59,6 +59,17 @@ spec:
       {{- with .Values.doorman.networkPolicy.ingressFrom }}
       from:
         {{- toYaml . | nindent 8 }}
+        {{- if $.Values.doorman.negForwarder.enabled }}
+        {{- /*
+        Forwarders pass on the callers of paused workloads behind GKE NEGs,
+        from the workloads' own namespaces.
+        */}}
+        - namespaceSelector: {}
+          podSelector:
+            matchLabels:
+              app.kubernetes.io/name: hybernate-forwarder
+              hybernate.io/operator: {{ $.Release.Namespace }}
+        {{- end }}
       {{- end }}
 {{- end }}
 {{- end }}

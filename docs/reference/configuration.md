@@ -2,7 +2,7 @@
 
 ## Operator Flags
 
-These flags are passed to the binary (`/manager`), which runs as the operator, or as the doorman with `--doorman`. The Helm chart sets them from its [values](helm-values.md); you only need them for your own manifests.
+These flags are passed to the binary (`/manager`), which runs as the operator, as the doorman with `--doorman`, or as a [forwarder](../concepts/wake-on-request.md#gke-container-native-load-balancing-negs) with `--forwarder`. The Helm chart sets them from its [values](helm-values.md); you only need them for your own manifests.
 
 | Flag | Default | Description |
 |------|---------|-------------|
@@ -29,6 +29,12 @@ These flags are passed to the binary (`/manager`), which runs as the operator, o
 | `--doorman-ports-per-namespace` | `256` | The most doorman ports the workloads of one namespace may hold together |
 | `--doorman-namespace` | `$POD_NAMESPACE`, else `hybernate-system` | Namespace of the doorman's Service |
 | `--doorman-health-check-user-agents` | | Comma-separated `User-Agent` prefixes of health checkers and scrapers, besides the built-in ones, whose `GET` and `HEAD` requests don't wake a paused workload. Helm value `doorman.healthCheckUserAgents` |
+| `--neg-forwarder` | `false` | Route paused workloads' Services that sit behind GKE container-native load balancing (NEGs) through a forwarder Deployment the operator runs in each workload's namespace, instead of leaving them unrouted. Needs `create` and `delete` on Deployments. Helm value `doorman.negForwarder.enabled`; see [GKE container-native load balancing](../concepts/wake-on-request.md#gke-container-native-load-balancing-negs) |
+| `--neg-forwarder-image` | | The image forwarders run: the operator's own. Required with `--neg-forwarder` |
+| `--neg-forwarder-replicas` | `2` | Pods per forwarder. At least 1 |
+| `--neg-forwarder-resources` | `{"requests":{"cpu":"10m","memory":"32Mi"},"limits":{"memory":"64Mi"}}` | Each forwarder pod's resources, as JSON |
+| `--neg-forwarder-doorman-service` | `hybernate-doorman-pods` | Headless Service in `--doorman-namespace` selecting the doorman's pods, whose DNS name forwarders resolve to reach them |
+| `--forwarder` | `false` | Run as a forwarder instead of the operator. The operator's forwarder Deployments set it, with `--forward`, the routes as comma-separated `listen=doorman` port pairs, and `--forwarder-doorman`, the DNS name of the doorman's pods |
 | `--guard` | | Run as the chart's `uninstall` or `upgrade` hook instead of the operator. It waits up to two and a half minutes for ManagedWorkloads being deleted, then exits 1, listing those the operation would leave without an operator: for `uninstall`, every one in `--watch-namespaces` (every namespace when empty) or carrying the `hybernate.io/cleanup` finalizer; for `upgrade`, those carrying the finalizer outside the new `--watch-namespaces`. The chart's `guard.uninstall` and `guard.upgrade` hooks set it |
 | `--kubeconfig` | in-cluster | Path to a kubeconfig, only when running outside the cluster |
 | `--zap-log-level` | `info` | Log level: `debug`, `info`, `error`, `panic`, or a whole number above 0 for more verbose debug levels |
@@ -37,14 +43,14 @@ These flags are passed to the binary (`/manager`), which runs as the operator, o
 | `--zap-stacktrace-level` | `error` | Level from which stack traces are logged: `info`, `error`, or `panic` |
 | `--zap-time-encoding` | RFC 3339 | Time format of log entries: `epoch`, `millis`, `nano`, `iso8601`, `rfc3339` or `rfc3339nano` |
 
-The operator checks its flags at startup and exits with an error naming the flag when one is invalid: a `--protected-namespaces` pattern that isn't a valid glob, a `--prometheus-url` that isn't `http` or `https` with a host, a `--default-idle-after` under `1m`, a `--default-cpu-threshold` outside 1 to 100, a `--max-concurrent-reconciles`, `--doorman-ports-per-workload` or `--doorman-ports-per-namespace` below 1, or a `--timezone` that isn't a known IANA zone.
+The operator checks its flags at startup and exits with an error naming the flag when one is invalid: a `--protected-namespaces` pattern that isn't a valid glob, a `--prometheus-url` that isn't `http` or `https` with a host, a `--default-idle-after` under `1m`, a `--default-cpu-threshold` outside 1 to 100, a `--max-concurrent-reconciles`, `--doorman-ports-per-workload` or `--doorman-ports-per-namespace` below 1, a `--timezone` that isn't a known IANA zone, or `--neg-forwarder` without `--neg-forwarder-image` or the doorman, with a `--neg-forwarder-replicas` below 1, or with `--neg-forwarder-resources` that aren't JSON requests and limits.
 
 ## Endpoints
 
 | Endpoint | Port | Description |
 |----------|------|-------------|
 | `/healthz` | 8081 | Liveness probe. Returns 200 while the process is running |
-| `/readyz` | 8081 | Readiness probe. For the doorman, 200 once it has loaded its routes and reached the API server in the last 30 seconds; failing while it can't listen on a routed port for more than 30 seconds, and while it shuts down |
+| `/readyz` | 8081 | Readiness probe. For the doorman, 200 once it has loaded its routes and reached the API server in the last 30 seconds; failing while it can't listen on a routed port for more than 30 seconds, and while it shuts down. For a forwarder, 200 while it reaches the doorman on every port it passes connections to, and failing from the moment it starts shutting down; its probes are on 8081, or the next port the workload doesn't serve |
 | `/metrics` | 8443 in the chart | Prometheus metrics, HTTPS by default; see [Metrics](metrics.md) |
 
 ## Leader Election

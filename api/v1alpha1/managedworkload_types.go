@@ -400,6 +400,12 @@ type DoormanRoute struct {
 
 	// DoormanPort is the doorman's listening port for this Service port.
 	DoormanPort int32 `json:"doormanPort"`
+
+	// Forwarded is true when the Service sits behind GKE container-native
+	// load balancing, so its traffic reaches the doorman through a
+	// forwarder in the workload's namespace rather than directly.
+	// +optional
+	Forwarded bool `json:"forwarded,omitempty"`
 }
 
 // DrainingPort is a doorman port no other workload may have before Until.

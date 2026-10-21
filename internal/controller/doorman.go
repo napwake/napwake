@@ -159,7 +159,10 @@ func (r *Reconciler) reconcileDoorman(ctx context.Context, workload *v1alpha1.Ma
 	}
 	if !doormanEligible(workload) || target == nil {
 		r.keepRoutingProblem(workload)
-		return 0, r.removeDoorman(ctx, workload)
+		if err := r.removeDoorman(ctx, workload); err != nil {
+			return 0, err
+		}
+		return r.forwarderRecheck(workload), nil
 	}
 
 	endpoints, err := r.doormanEndpoints(ctx)
@@ -205,15 +208,32 @@ func (r *Reconciler) reconcileDoorman(ctx context.Context, workload *v1alpha1.Ma
 	// on every retry.
 	r.recordDrains(workload, routes)
 	workload.Status.Doorman = routes
+	fwd, fwdErr := r.reconcileForwarder(ctx, workload, target, plan.services, routes)
+	recheck = shortest(recheck, fwd.recheck)
 
 	keep := map[string]bool{}
+	routed := map[string]bool{}
 	var errs []error
+	if fwdErr != nil {
+		errs = append(errs, fwdErr)
+	}
 	for _, s := range plan.services {
 		svcRoutes := routesFor(routes, s.svc.Name)
+		want := doormanSlice{ports: slicePorts(svcRoutes, nil), endpoints: endpoints}
+		if s.forwarded {
+			want = doormanSlice{ports: slicePorts(svcRoutes, fwd.ports), endpoints: fwd.endpoints, forwarded: true}
+			if want.doormanPorts, err = doormanPortsAnnotation(svcRoutes); err != nil {
+				return 0, err
+			}
+		}
 		for _, family := range s.families {
+			if len(want.endpoints[family]) == 0 || len(want.ports) == 0 {
+				continue
+			}
 			name := doorman.SliceName(s.svc.Name, workload.Name, family)
 			keep[name] = true
-			err := r.applyDoormanSlice(ctx, workload, s.svc, name, family, svcRoutes, endpoints[family])
+			routed[s.svc.Name] = true
+			err := r.applyDoormanSlice(ctx, workload, s.svc, name, family, want)
 			if apierrors.IsAlreadyExists(err) {
 				err = r.claimedSlice(ctx, workload.Namespace, name, err)
 			}
@@ -227,6 +247,10 @@ func (r *Reconciler) reconcileDoorman(ctx context.Context, workload *v1alpha1.Ma
 				errs = append(errs, err)
 			}
 		}
+		if s.forwarded && !routed[s.svc.Name] {
+			plan.skipped.forwarding = append(plan.skipped.forwarding, s.svc.Name)
+			recheck = shortest(recheck, forwarderRecheckInterval)
+		}
 	}
 	if err := r.deleteDoormanSlices(ctx, current, keep); err != nil {
 		errs = append(errs, err)
@@ -234,7 +258,9 @@ func (r *Reconciler) reconcileDoorman(ctx context.Context, workload *v1alpha1.Ma
 	if len(errs) > 0 {
 		return 0, errors.Join(errs...)
 	}
-	r.reportDoorman(ctx, workload, target, routes, plan.skipped)
+	plan.skipped.forwarder = fwd.unready
+	live := slices.DeleteFunc(slices.Clone(routes), func(rt v1alpha1.DoormanRoute) bool { return !routed[rt.Service] })
+	r.reportDoorman(ctx, workload, target, live, plan.skipped)
 	return recheck, nil
 }
 
@@ -299,7 +325,7 @@ func (r *Reconciler) removeDoorman(ctx context.Context, workload *v1alpha1.Manag
 	r.doormanPorts.release(workload.UID, r.now())
 	r.recordDrains(workload, nil)
 	workload.Status.Doorman = nil
-	return nil
+	return r.retireForwarder(ctx, workload)
 }
 
 // mayMissSlices reports whether the cache may not have a doorman slice of
@@ -357,10 +383,19 @@ type skippedServices struct {
 	served      []string
 	nodeLocal   []string
 	family      []string
+
+	// forwarding are those behind GKE container-native load balancing
+	// whose forwarder has no Ready pod yet, and forwarder says why.
+	forwarding []string
+	forwarder  string
 }
 
 func (s skippedServices) notes() string {
 	var notes []string
+	if len(s.forwarding) > 0 {
+		notes = append(notes, fmt.Sprintf("not routed until the forwarder is Ready (%s): %s",
+			s.forwarder, strings.Join(s.forwarding, ", ")))
+	}
 	if len(s.served) > 0 {
 		notes = append(notes, "served by other Ready pods, so not routed: "+strings.Join(s.served, ", "))
 	}
@@ -404,6 +439,9 @@ func (r *Reconciler) reportDoorman(ctx context.Context, workload *v1alpha1.Manag
 	status, reason, message := metav1.ConditionTrue, "DoormanRouted", "requests are held and wake the workload"
 	switch {
 	case len(routes) > 0:
+	case len(skipped.forwarding) > 0:
+		status, reason, message = metav1.ConditionFalse, reasonForwarderNotReady,
+			"requests through GKE's load balancer reach the doorman through a forwarder beside the workload, which isn't Ready yet"
 	case len(skipped.unsupported) > 0:
 		status, reason, message = metav1.ConditionFalse, "UnsupportedLoadBalancer", "no Service can be routed through the doorman"
 	case len(skipped.served) > 0:
@@ -491,11 +529,14 @@ func readDoormanEndpoints(ctx context.Context, reader client.Reader, namespace, 
 }
 
 // doormanService is a Service to route through the doorman: the address
-// families to route it for, and the ports.
+// families to route it for, and the ports. A forwarded one is behind GKE
+// container-native load balancing, and routed through the workload's
+// forwarder (see reconcileForwarder).
 type doormanService struct {
-	svc      corev1.Service
-	families []discoveryv1.AddressType
-	ports    []corev1.ServicePort
+	svc       corev1.Service
+	families  []discoveryv1.AddressType
+	ports     []corev1.ServicePort
+	forwarded bool
 }
 
 type doormanPlan struct {
@@ -536,7 +577,8 @@ func (r *Reconciler) planDoorman(ctx context.Context, workload *v1alpha1.Managed
 		if !labels.SelectorFromSet(svc.Spec.Selector).Matches(podLabels) {
 			continue
 		}
-		if usesGKENEG(svc, ingresses.Items) {
+		forwarded := usesGKENEG(svc, ingresses.Items)
+		if forwarded && r.NEGForwarder == nil {
 			plan.skipped.unsupported = append(plan.skipped.unsupported, svc.Name)
 			continue
 		}
@@ -565,7 +607,7 @@ func (r *Reconciler) planDoorman(ctx context.Context, workload *v1alpha1.Managed
 			}
 		}
 		if len(families) > 0 {
-			plan.services = append(plan.services, doormanService{svc: svc, families: families, ports: ports})
+			plan.services = append(plan.services, doormanService{svc: svc, families: families, ports: ports, forwarded: forwarded})
 		}
 	}
 	slices.SortFunc(plan.services, func(a, b doormanService) int { return cmp.Compare(a.svc.Name, b.svc.Name) })
@@ -690,14 +732,12 @@ func (r *Reconciler) allocateRoutes(ctx context.Context, workload *v1alpha1.Mana
 		}
 	}
 	existing := map[routeKey]int32{}
-	for _, slice := range current {
-		for _, p := range slice.Ports {
-			if p.Name != nil && p.Port != nil {
-				existing[routeKey{service: slice.Labels[discoveryv1.LabelServiceName], portName: *p.Name}] = *p.Port
-			}
+	for i := range current {
+		for name, port := range doormanPortsOf(&current[i]) {
+			existing[routeKey{service: current[i].Labels[discoveryv1.LabelServiceName], portName: name}] = port
 		}
 	}
-	for _, route := range workload.Status.Doorman {
+	for _, route := range append(r.forwarderRoutes(ctx, workload), workload.Status.Doorman...) {
 		existing[routeKey{service: route.Service, portName: route.PortName}] = route.DoormanPort
 	}
 	reader := routeReader{reader: r.apiReader(), namespaces: r.WatchNamespaces}
@@ -982,10 +1022,8 @@ func (a *portAllocator) merge(inUse portsInUse, now time.Time) {
 		if owner == nil {
 			continue
 		}
-		for _, p := range slice.Ports {
-			if p.Port != nil {
-				claim(*p.Port, owner.UID, slice.Namespace)
-			}
+		for _, port := range doormanPortsOf(&slice) {
+			claim(port, owner.UID, slice.Namespace)
 		}
 	}
 	for port, c := range a.claims {
@@ -1030,12 +1068,25 @@ func routesFor(routes []v1alpha1.DoormanRoute, service string) []v1alpha1.Doorma
 	return out
 }
 
+// doormanSlice is what a Service's doorman slices say, in each address
+// family.
+type doormanSlice struct {
+	ports     []discoveryv1.EndpointPort
+	endpoints map[discoveryv1.AddressType][]discoveryv1.Endpoint
+
+	// forwarded points the Service at the workload's forwarder, with
+	// doormanPorts recording the doorman's ports (see
+	// annotationDoormanPorts).
+	forwarded    bool
+	doormanPorts string
+}
+
 // applyDoormanSlice creates or updates the EndpointSlice that points one
 // address family of a Service at the doorman. Each port keeps its Service
 // port name, which is how kube-proxy matches a slice port to a Service port,
 // so traffic to the Service port reaches the doorman port allocated for it.
 func (r *Reconciler) applyDoormanSlice(ctx context.Context, workload *v1alpha1.ManagedWorkload, svc corev1.Service,
-	name string, family discoveryv1.AddressType, routes []v1alpha1.DoormanRoute, endpoints []discoveryv1.Endpoint) error {
+	name string, family discoveryv1.AddressType, want doormanSlice) error {
 	slice := &discoveryv1.EndpointSlice{
 		ObjectMeta: metav1.ObjectMeta{Name: name, Namespace: workload.Namespace},
 	}
@@ -1056,16 +1107,14 @@ func (r *Reconciler) applyDoormanSlice(ctx context.Context, workload *v1alpha1.M
 		if r.OperatorNamespace != "" {
 			slice.Labels[v1alpha1.LabelOperator] = r.OperatorNamespace
 		}
-		slice.AddressType = family
-		slice.Endpoints = endpoints
-		slice.Ports = make([]discoveryv1.EndpointPort, 0, len(routes))
-		for _, route := range routes {
-			slice.Ports = append(slice.Ports, discoveryv1.EndpointPort{
-				Name:     ptr.To(route.PortName),
-				Port:     ptr.To(route.DoormanPort),
-				Protocol: ptr.To(corev1.ProtocolTCP),
-			})
+		delete(slice.Annotations, annotationDoormanPorts)
+		if want.forwarded {
+			slice.Labels[labelForwarded] = v1alpha1.True
+			metav1.SetMetaDataAnnotation(&slice.ObjectMeta, annotationDoormanPorts, want.doormanPorts)
 		}
+		slice.AddressType = family
+		slice.Endpoints = want.endpoints[family]
+		slice.Ports = want.ports
 		return controllerutil.SetControllerReference(workload, slice, r.Scheme)
 	})
 	if err != nil {

@@ -102,6 +102,11 @@ type Reconciler struct {
 	DoormanPortsPerWorkload  int
 	DoormanPortsPerNamespace int
 
+	// NEGForwarder, when set, routes a paused workload's Services that sit
+	// behind GKE container-native load balancing through a forwarder in
+	// its namespace. Nil leaves them unrouted.
+	NEGForwarder *ForwarderOptions
+
 	// PodReader reads from the API server what the cache leaves out: pods,
 	// Services' own EndpointSlices, and every workload's doorman routes.
 	// Defaults to Client.
@@ -1675,7 +1680,13 @@ func (r *Reconciler) SetupWithManager(mgr ctrl.Manager) error {
 	// so no reconcile reads it before it's complete.
 	r.graph = newWorkloadGraph()
 	targetHandler := handler.EnqueueRequestsFromMapFunc(r.findWorkloadsForTarget)
-	return ctrl.NewControllerManagedBy(mgr).
+	b := ctrl.NewControllerManagedBy(mgr)
+	if r.NEGForwarder != nil {
+		// A forwarder's pods coming and going show in its status, and its
+		// workload's slices follow them.
+		b = b.Owns(&appsv1.Deployment{})
+	}
+	return b.
 		For(&v1alpha1.ManagedWorkload{}).
 		Watches(&v1alpha1.ManagedWorkload{}, wakeHandler()).
 		Watches(&v1alpha1.ManagedWorkload{}, r.relatedHandler()).

@@ -702,6 +702,12 @@ spec:
                         this Service port.
                       format: int32
                       type: integer
+                    forwarded:
+                      description: |-
+                        Forwarded is true when the Service sits behind GKE container-native
+                        load balancing, so its traffic reaches the doorman through a
+                        forwarder in the workload's namespace rather than directly.
+                      type: boolean
                     portName:
                       description: PortName is the Service port's name; empty for
                         an unnamed single port.
