@@ -292,6 +292,11 @@ func TestHeadlineFor_NothingToFree(t *testing.T) {
 
 	h, _ := headlineFor(replayed)
 	assert.Equal(t, "no unmanaged workload would have slept over the last 7 days", h.Figures[0].Detail)
+	replayed.Totals.Idle, replayed.Totals.IdleMonthlyCost = 1, 120
+	h, _ = headlineFor(replayed)
+	assert.Equal(t, figure{Value: "$0", Label: "could be freed a month",
+		Detail: "no unmanaged workload would have slept over the last 7 days"}, h.Figures[0],
+		"a week of history says more than what's idle this moment")
 	h, _ = headlineFor(snapshot)
 	assert.Equal(t, "$0", h.Figures[0].Value)
 	assert.Contains(t, h.Figures[0].Detail, "nothing is idle right now")

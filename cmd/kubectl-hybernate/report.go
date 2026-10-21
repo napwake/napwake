@@ -512,7 +512,9 @@ func couldFree(result scanResult, live bool) (figure, bool) {
 			f.Detail = steadier
 		}
 		return f, true
-	case t.Idle > 0:
+	case t.Idle > 0 && (r.Workloads == 0 || short):
+		// A whole window replayed in which nothing would have slept says
+		// more than one moment's idleness, so this is only for without one.
 		costs := "cost"
 		if t.Idle == 1 {
 			costs = "costs"
