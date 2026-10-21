@@ -106,6 +106,80 @@ func TestDryRun_ActivityEndsAWouldBePause(t *testing.T) {
 	assert.Contains(t, resumed[0], "since Mar 10: would have paused 2 times, slept 4h, freeing $0.28")
 }
 
+// The estimate counts the would-be pause under way, so a workload idle for
+// days shows what it would have freed before its next activity ends the
+// pause. The hours, the record, wait for the pause to end.
+func TestDryRun_EstimateCountsThePauseUnderWay(t *testing.T) {
+	workload := clockWorkload(fixedTime.Add(-4*time.Hour), clockTarget("app:v1", nil))
+	workload.Spec.DryRun = true
+	workload.Status.Phase = v1alpha1.PhaseIdle
+	idleSince := metav1.NewTime(fixedTime.Add(-3 * time.Hour))
+	workload.Status.LastTransitionTime = &idleSince
+	workload.Status.DryRun = &v1alpha1.DryRunStatus{
+		Since:            metav1.NewTime(time.Date(2026, 3, 10, 9, 0, 0, 0, time.UTC)),
+		Pauses:           2,
+		Slept:            metav1.Duration{Duration: time.Hour},
+		FreedCPUHours:    resource.MustParse("2"),
+		FreedMemoryHours: resource.MustParse("2"),
+		EstimatedFreed:   "$0.07",
+		Resources:        &v1alpha1.ResourceSnapshot{Replicas: 2, CPUMillis: 1000, MemoryBytes: gibibyte},
+	}
+	r := &Reconciler{clock: func() time.Time { return fixedTime }}
+
+	r.trackDryRun(workload)
+
+	d := workload.Status.DryRun
+	assert.Equal(t, "$0.28", d.EstimatedFreed, "3h under way of 2 vCPU and 2 GiB added to $0.07")
+	assert.Equal(t, time.Hour, d.Slept.Duration, "the pause under way is added to the record when it ends")
+	assert.Equal(t, "2", d.FreedCPUHours.String())
+	require.NotNil(t, d.Resources)
+
+	workload.Status.Phase = v1alpha1.PhaseRunning
+	d.Resources = nil
+	r.trackDryRun(workload)
+
+	assert.Equal(t, "$0.07", d.EstimatedFreed, "a running workload has no pause under way")
+}
+
+// kubectl get shows the estimate as status has it, so it grows while the
+// workload stays idle. It moves on every check, so, as cost does, it's
+// written with the flush rather than on every check.
+func TestReconcile_DryRunEstimateGrowsWhileIdle(t *testing.T) {
+	workload := lifecycleWorkload("idle-app", v1alpha1.PhaseIdle)
+	workload.Spec.DryRun = true
+	workload.Spec.IdlePolicy = &v1alpha1.IdlePolicySpec{IdleAfter: &metav1.Duration{Duration: time.Hour}}
+	idleSince := metav1.NewTime(fixedTime.Add(-time.Hour))
+	workload.Status.LastTransitionTime = &idleSince
+	evaluated := metav1.NewTime(fixedTime)
+	workload.Status.Activity = &v1alpha1.ActivityStatus{LastActivityTime: metav1.NewTime(fixedTime.Add(-2 * time.Hour)),
+		LastActivitySource: v1alpha1.ActivitySourceCPU, PauseAt: &idleSince, LastEvaluatedTime: &evaluated,
+		TemplateHash: podTemplateHash(targetDeployment("idle-app", "default"))}
+	workload.Status.DryRun = &v1alpha1.DryRunStatus{Since: metav1.NewTime(fixedTime.Add(-24 * time.Hour)),
+		Pauses: 1, EstimatedFreed: "$0.00",
+		Resources: &v1alpha1.ResourceSnapshot{Replicas: 2, CPUMillis: 1000, MemoryBytes: gibibyte}}
+	r := newTestReconciler(t, workload, &stubPauser{})
+	r.metrics = &stubMetrics{cpuMillis: 5, cpuPerReplica: 1000, memoryPerReplica: gibibyte, replicas: 2}
+	now := fixedTime
+	r.clock = func() time.Time { return now }
+	written := func() *v1alpha1.ManagedWorkload {
+		_, err := r.Reconcile(context.Background(), reconcileFor("idle-app"))
+		require.NoError(t, err)
+		return getWorkload(t, r, "idle-app")
+	}
+
+	first := written()
+	require.Equal(t, v1alpha1.PhaseIdle, first.Status.Phase)
+	assert.Equal(t, "$0.07", first.Status.DryRun.EstimatedFreed, "an hour of 2 vCPU and 2 GiB so far")
+
+	now = now.Add(time.Minute)
+	assert.Equal(t, first.ResourceVersion, written().ResourceVersion, "a moving estimate alone isn't written")
+
+	now = now.Add(statusFlushInterval)
+	flushed := written()
+	assert.Equal(t, "$0.08", flushed.Status.DryRun.EstimatedFreed, "1h6m so far")
+	assert.Zero(t, flushed.Status.DryRun.Slept.Duration, "the record waits for the pause to end")
+}
+
 // A workload already Idle when measuring started, such as across an operator
 // upgrade, didn't have its would-be pause counted as it began, so its end
 // isn't counted either.

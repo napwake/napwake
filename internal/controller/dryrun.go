@@ -36,6 +36,24 @@ func (r *Reconciler) trackDryRun(workload *v1alpha1.ManagedWorkload) {
 	if workload.Status.DryRun == nil {
 		workload.Status.DryRun = &v1alpha1.DryRunStatus{Since: r.clockTime(), EstimatedFreed: cost.FormatDollars(0)}
 	}
+	r.estimateDryRun(workload)
+}
+
+// estimateDryRun prices what the would-be pauses would have freed: the
+// finished ones' hours, and the one under way up to now. A workload idle
+// for days would otherwise show nothing measured until its next activity.
+// The hours, which are the record, still count finished pauses only.
+func (r *Reconciler) estimateDryRun(workload *v1alpha1.ManagedWorkload) {
+	d := workload.Status.DryRun
+	hours := cost.Hours{CPU: d.FreedCPUHours.AsApproximateFloat64(), Memory: d.FreedMemoryHours.AsApproximateFloat64()}
+	if began := workload.Status.LastTransitionTime; workload.Status.Phase == v1alpha1.PhaseIdle &&
+		d.Resources != nil && began != nil {
+		cores, gib := requested(d.Resources)
+		underWay := max(r.now().Sub(began.Time), 0).Hours()
+		hours.CPU += cores * underWay
+		hours.Memory += gib * underWay
+	}
+	d.EstimatedFreed = cost.FormatDollars(hours.Price(resolveCostRates(workload)))
 }
 
 // beginWouldBePause counts a pause dry-run held back, and records what the
@@ -85,11 +103,8 @@ func (r *Reconciler) endWouldBePauseAt(workload *v1alpha1.ManagedWorkload, end t
 		freed.Memory = addHours(&d.FreedMemoryHours, gib, slept)
 	}
 	d.Slept.Duration += slept
-	d.EstimatedFreed = cost.FormatDollars(cost.Hours{
-		CPU:    d.FreedCPUHours.AsApproximateFloat64(),
-		Memory: d.FreedMemoryHours.AsApproximateFloat64(),
-	}.Price(rates))
 	d.Resources = nil
+	r.estimateDryRun(workload)
 	return slept, freed.Price(rates), true
 }
 

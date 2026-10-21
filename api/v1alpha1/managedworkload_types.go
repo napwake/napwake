@@ -523,7 +523,9 @@ type DryRunStatus struct {
 	FreedMemoryHours resource.Quantity `json:"freedMemoryHours"`
 
 	// EstimatedFreed is the freed hours priced at the workload's cost
-	// rates, to the cent. It's for display: the hours are the record.
+	// rates, to the cent, with the would-be pause under way counted up to
+	// the last status write, at most 5 minutes ago. It's for display: the
+	// hours are the record.
 	EstimatedFreed string `json:"estimatedFreed"`
 
 	// Resources is what the workload ran when the current would-be pause

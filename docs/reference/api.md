@@ -75,7 +75,7 @@ A duration is a Go duration above zero, such as `45s`, `90m` or `1h30m`. Days an
 | `dryRun.pauses` | int32 | Times the workload would have been paused, one under way included |
 | `dryRun.slept` | duration | How long finished would-be pauses lasted in all |
 | `dryRun.freedCPUHours`, `dryRun.freedMemoryHours` | quantity | vCPU-hours and GiB-hours the replicas requested during `slept` |
-| `dryRun.estimatedFreed` | string | Those hours priced, for display: what pausing would have freed |
+| `dryRun.estimatedFreed` | string | Those hours priced, for display, with the would-be pause under way counted up to the last status write: what pausing would have freed. Also the `Would Free` column of `kubectl get managedworkloads` |
 | `dryRun.resources` | `ResourceSnapshot` | What the workload ran when the current would-be pause began |
 | `prediction.dailyPhase`, `prediction.weeklyPhase` | string | Each season's phase: `Observing`, `Suggesting`, or `Active` |
 | `prediction.dailyConfidence`, `prediction.weeklyConfidence` | int | Accuracy % over the last 24 and 168 observed hours |
