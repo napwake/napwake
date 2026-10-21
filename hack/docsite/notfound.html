@@ -15,8 +15,9 @@
 <script>
   // A link without a version, such as /hybernate/guides/gitops/, predates
   // versioned docs or comes from the operator or the plugin: send it to the
-  // same page in the root version. A missing page inside a version is a
-  // real 404.
+  // same page in the root version. So does one into a version that isn't
+  // published, such as next once its release is out, or latest before the
+  // first release. A missing page inside a version is a real 404.
   (function () {
     var base = "{{js .Base}}";
     var root = "{{js .Root}}";
@@ -31,7 +32,11 @@
         var versioned = versions.some(function (v) {
           return v.version === first || (v.aliases || []).indexOf(first) !== -1;
         });
-        if (!versioned) location.replace(base + root + "/" + rest + location.search + location.hash);
+        if (versioned) return;
+        if (first === "next" || first === "latest" || /^\d+\.\d+$/.test(first)) {
+          rest = rest.slice(first.length + 1);
+        }
+        location.replace(base + root + "/" + rest + location.search + location.hash);
       });
   })();
 </script>
