@@ -442,15 +442,15 @@ func TestDependencies_WaitIsBounded(t *testing.T) {
 			target: postgresTarget(1, 0), resuming: 9 * time.Minute, wantWait: true},
 		{name: "a StatefulSet past its deadline", kind: v1alpha1.TargetKindStatefulSet,
 			target: postgresTarget(1, 0), resuming: 11 * time.Minute,
-			wantWhy: "not waiting for default/statefulset/postgres (it isn't Ready after 10m)"},
+			wantWhy: "not waiting for default/statefulset/postgres (it isn't Ready after 10 minutes)"},
 		{name: "a managed dependency whose resume settled with none Ready", kind: v1alpha1.TargetKindStatefulSet,
 			target: postgresTarget(1, 0), managed: v1alpha1.PhaseRunning, resuming: 11 * time.Minute,
-			wantWhy: "not waiting for default/statefulset/postgres (it isn't Ready after 10m)"},
+			wantWhy: "not waiting for default/statefulset/postgres (it isn't Ready after 10 minutes)"},
 		{name: "a Deployment within its progress deadline", kind: v1alpha1.TargetKindDeployment,
 			target: deployment(ptr.To[int32](120)), resuming: time.Minute, wantWait: true},
 		{name: "a Deployment past its progress deadline", kind: v1alpha1.TargetKindDeployment,
 			target: deployment(ptr.To[int32](120)), resuming: 3 * time.Minute,
-			wantWhy: "not waiting for default/deployment/postgres (it isn't Ready after 2m)"},
+			wantWhy: "not waiting for default/deployment/postgres (it isn't Ready after 2 minutes)"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

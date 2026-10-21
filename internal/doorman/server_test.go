@@ -503,7 +503,7 @@ func TestServer_WarnsOnceWhenRequestsAreNotServed(t *testing.T) {
 		}
 	}
 	require.Len(t, warnings, 1)
-	assert.Contains(t, warnings[0], "Service api")
+	assert.Contains(t, warnings[0], "Service api was closed after under a second")
 	assert.Contains(t, warnings[0], "maxWait")
 }
 

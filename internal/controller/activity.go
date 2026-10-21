@@ -39,6 +39,7 @@ import (
 	v1alpha1 "github.com/okedeji/hybernate/api/v1alpha1"
 	"github.com/okedeji/hybernate/internal/cost"
 	"github.com/okedeji/hybernate/internal/forecast"
+	"github.com/okedeji/hybernate/internal/human"
 	opmetrics "github.com/okedeji/hybernate/internal/metrics"
 	"github.com/okedeji/hybernate/internal/signal"
 )
@@ -651,7 +652,7 @@ func (r *Reconciler) reconcileIdleClock(ctx context.Context, workload *v1alpha1.
 		return held, err
 	}
 
-	idleFor := now.Sub(workload.Status.Activity.LastActivityTime.Time).Round(time.Minute)
+	idleFor := now.Sub(workload.Status.Activity.LastActivityTime.Time)
 
 	if workload.Status.Phase != v1alpha1.PhaseIdle {
 		if workload.Spec.DryRun {
@@ -665,7 +666,7 @@ func (r *Reconciler) reconcileIdleClock(ctx context.Context, workload *v1alpha1.
 			opmetrics.DryrunActions.WithLabelValues("idle_pause").Inc()
 		}
 		r.emitEvent(workload, workload.Spec.DryRun, "Normal", ReasonIdleDetected, actionEvaluateIdle,
-			"no activity for %s, last seen from %s; pause", idleFor, workload.Status.Activity.LastActivitySource)
+			"no activity for %s, last seen from %s; pause", human.Duration(idleFor), workload.Status.Activity.LastActivitySource)
 	}
 
 	if workload.Spec.DryRun {
@@ -705,7 +706,7 @@ func (r *Reconciler) reportActivityResumed(workload *v1alpha1.ManagedWorkload, s
 	}
 	r.emitEvent(workload, true, "Normal", ReasonActivityResumed, actionEvaluateIdle,
 		"activity resumed (%s): would have slept %s, freeing %s; %s",
-		source, roundedDuration(slept), cost.FormatDollars(freed), dryRunSummary(workload.Status.DryRun))
+		source, human.Duration(slept), cost.FormatDollars(freed), dryRunSummary(workload.Status.DryRun))
 }
 
 // reportIdleVetoed holds back a pause because the forecast expects demand

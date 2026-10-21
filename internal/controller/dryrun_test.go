@@ -102,8 +102,8 @@ func TestDryRun_ActivityEndsAWouldBePause(t *testing.T) {
 	assert.Nil(t, d.Resources)
 	require.Len(t, resumed, 1)
 	assert.Contains(t, resumed[0], "[dry-run]")
-	assert.Contains(t, resumed[0], "would have slept 3h, freeing $0.21")
-	assert.Contains(t, resumed[0], "since Mar 10: would have paused 2 times, slept 4h, freeing $0.28")
+	assert.Contains(t, resumed[0], "would have slept 3 hours, freeing $0.21")
+	assert.Contains(t, resumed[0], "since Mar 10: would have paused 2 times, slept 4 hours, freeing $0.28")
 }
 
 // A workload already Idle when measuring started, such as across an operator
@@ -242,22 +242,4 @@ func TestTrackDryRun(t *testing.T) {
 	workload.Spec.DryRun = false
 	r.trackDryRun(workload)
 	assert.Nil(t, workload.Status.DryRun, "and is dropped when dry-run ends")
-}
-
-func TestRoundedDuration(t *testing.T) {
-	tests := []struct {
-		in   time.Duration
-		want string
-	}{
-		{10 * time.Second, "under a minute"},
-		{30 * time.Second, "under a minute"},
-		{90 * time.Second, "2m"},
-		{45 * time.Minute, "45m"},
-		{3*time.Hour + 12*time.Minute, "3h12m"},
-		{3*time.Hour + 10*time.Minute, "3h10m"},
-		{96 * time.Hour, "96h"},
-	}
-	for _, tt := range tests {
-		assert.Equal(t, tt.want, roundedDuration(tt.in), tt.in.String())
-	}
 }

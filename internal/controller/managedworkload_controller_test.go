@@ -1185,7 +1185,7 @@ func TestResume_ReportsReplicasNotReady(t *testing.T) {
 	c := meta.FindStatusCondition(got.Status.Conditions, conditionResumeIncomplete)
 	require.NotNil(t, c)
 	assert.Equal(t, metav1.ConditionTrue, c.Status)
-	assert.Equal(t, "resumed with 2 of 3 replicas Ready: Hybernate stopped waiting for the rest after 3m", c.Message)
+	assert.Equal(t, "resumed with 2 of 3 replicas Ready: Hybernate stopped waiting for the rest after 3 minutes", c.Message)
 	announced := drainEvents(t, r)
 	assert.Contains(t, announced, "Warning "+ReasonResumeIncomplete)
 	assert.NotContains(t, announced, "Normal "+ReasonResumed)

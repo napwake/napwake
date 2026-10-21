@@ -28,6 +28,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/log"
 
 	v1alpha1 "github.com/okedeji/hybernate/api/v1alpha1"
+	"github.com/okedeji/hybernate/internal/human"
 )
 
 const (
@@ -267,5 +268,5 @@ func (s *Server) warnUnserved(ctx context.Context, rt route, result string, wait
 		reason = "the workload couldn't be reached"
 	}
 	s.recorder.Eventf(&w, nil, "Warning", "RequestNotServed", "Wake",
-		"a request on Service %s was closed after %s: %s", rt.service, waited.Round(time.Second), reason)
+		"a request on Service %s was closed after %s: %s", rt.service, human.Duration(waited), reason)
 }

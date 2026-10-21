@@ -35,6 +35,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/log"
 
 	v1alpha1 "github.com/okedeji/hybernate/api/v1alpha1"
+	"github.com/okedeji/hybernate/internal/human"
 	"github.com/okedeji/hybernate/internal/lifecycle"
 )
 
@@ -450,7 +451,7 @@ func (r *Reconciler) waitForDependencies(ctx context.Context, workload *v1alpha1
 			continue
 		}
 		if deadline := startDeadline(target); waited >= deadline {
-			skipped = append(skipped, fmt.Sprintf("%s (it isn't Ready after %s)", id, roundedDuration(deadline)))
+			skipped = append(skipped, fmt.Sprintf("%s (it isn't Ready after %s)", id, human.Duration(deadline)))
 			continue
 		}
 		if dep != nil && dep.uid != workload.UID && !isAwake(dep.phase) {

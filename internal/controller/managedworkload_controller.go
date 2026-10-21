@@ -52,6 +52,7 @@ import (
 	v1alpha1 "github.com/okedeji/hybernate/api/v1alpha1"
 	"github.com/okedeji/hybernate/internal/autoscaler"
 	"github.com/okedeji/hybernate/internal/forecast"
+	"github.com/okedeji/hybernate/internal/human"
 	"github.com/okedeji/hybernate/internal/lifecycle"
 	"github.com/okedeji/hybernate/internal/metrics"
 	"github.com/okedeji/hybernate/internal/signal"
@@ -522,7 +523,7 @@ func (r *Reconciler) handlePause(ctx context.Context, workload *v1alpha1.Managed
 	if paused.Running > 0 {
 		stillRunning = fmt.Sprintf("paused with %d pods still running %s after it was scaled to zero: they may be "+
 			"stuck terminating, or a StatefulSet with OrderedReady pod management may be waiting on one that isn't "+
-			"Ready", paused.Running, roundedDuration(r.now().Sub(workload.Status.Pause.PausedAt.Time)))
+			"Ready", paused.Running, human.Duration(r.now().Sub(workload.Status.Pause.PausedAt.Time)))
 		r.setCondition(workload, conditionPauseIncomplete, metav1.ConditionTrue, "PodsStillRunning", stillRunning)
 	} else if meta.IsStatusConditionTrue(workload.Status.Conditions, conditionPauseIncomplete) {
 		r.setCondition(workload, conditionPauseIncomplete, metav1.ConditionFalse, reasonPodsStopped, "")
@@ -760,7 +761,7 @@ func (r *Reconciler) handleResume(ctx context.Context, workload *v1alpha1.Manage
 	var shortfall string
 	if short {
 		shortfall = fmt.Sprintf("resumed with %d of %d replicas Ready: Hybernate stopped waiting for the rest after %s",
-			resumed.Ready, resumed.Replicas, roundedDuration(waited.ScaledUp))
+			resumed.Ready, resumed.Replicas, human.Duration(waited.ScaledUp))
 		r.setCondition(workload, conditionResumeIncomplete, metav1.ConditionTrue, "ReplicasNotReady", shortfall)
 	} else {
 		r.clearCondition(workload, conditionResumeIncomplete, ReasonAllReplicasReady)
@@ -957,7 +958,7 @@ func (r *Reconciler) abandonHandBack(ctx context.Context, workload *v1alpha1.Man
 		"workload", workload.Name, "namespace", workload.Namespace, "error", failure.Error())
 	r.emitEvent(workload, false, "Warning", ReasonHandBackAbandoned, actionResume,
 		"namespace %s is being deleted and handing the target back has failed for %s, so Hybernate lets it go: %v",
-		workload.Namespace, roundedDuration(handBackGiveUpAfter), failure)
+		workload.Namespace, human.Duration(handBackGiveUpAfter), failure)
 	return true
 }
 
