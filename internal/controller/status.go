@@ -48,15 +48,19 @@ func (r *Reconciler) persistStatus(ctx context.Context, workload *v1alpha1.Manag
 
 // withoutVolatile returns a copy of status without the values that change on
 // every check, leaving what a reader needs to see promptly: phase,
-// conditions, lifecycle records, and the forecast.
+// conditions, lifecycle records, the forecast, and what holds off a pause.
 func withoutVolatile(status *v1alpha1.ManagedWorkloadStatus) *v1alpha1.ManagedWorkloadStatus {
 	s := status.DeepCopy()
 	s.Cost = nil
 	if s.DryRun != nil {
 		s.DryRun.EstimatedFreed = ""
 	}
-	if s.Activity != nil {
-		s.Activity = &v1alpha1.ActivityStatus{TemplateHash: s.Activity.TemplateHash}
+	if a := s.Activity; a != nil {
+		s.Activity = &v1alpha1.ActivityStatus{
+			TemplateHash:     a.TemplateHash,
+			HeldByDependents: a.HeldByDependents,
+			ForecastBusyFrom: a.ForecastBusyFrom,
+		}
 	}
 	return s
 }

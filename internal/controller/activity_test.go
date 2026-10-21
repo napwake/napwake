@@ -608,12 +608,15 @@ func TestActivityClock_ForecastVetoIsACondition(t *testing.T) {
 	assert.Zero(t, pauser.pauseCalls)
 	written := getWorkload(t, r, "api")
 	assert.True(t, meta.IsStatusConditionTrue(written.Status.Conditions, conditionIdleVetoed), "and it's written")
+	require.NotNil(t, written.Status.Activity.ForecastBusyFrom, "with the hour, for tools to show")
+	assert.Equal(t, "13:00", written.Status.Activity.ForecastBusyFrom.UTC().Format("15:04"))
 
 	engine.predictByHour[1] = 2
 	_, err := r.reconcileAutomation(context.Background(), workload, target)
 	require.NoError(t, err)
 
 	assert.True(t, meta.IsStatusConditionFalse(workload.Status.Conditions, conditionIdleVetoed), "the veto is over")
+	assert.Nil(t, workload.Status.Activity.ForecastBusyFrom)
 	assert.Equal(t, 1, pauser.pauseCalls)
 }
 

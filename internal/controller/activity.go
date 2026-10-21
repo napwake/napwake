@@ -749,6 +749,9 @@ func (r *Reconciler) reportIdleVetoed(ctx context.Context, workload *v1alpha1.Ma
 	msg := fmt.Sprintf("idle, but the forecast expects demand at %.0f%% of requests in the hour from %s; not pausing yet",
 		predicted, hour.UTC().Format("15:04 UTC"))
 	r.setCondition(workload, conditionIdleVetoed, metav1.ConditionTrue, "ForecastExpectsDemand", msg)
+	if a := workload.Status.Activity; a != nil {
+		a.ForecastBusyFrom = &metav1.Time{Time: hour.UTC()}
+	}
 	if began {
 		if err := r.Status().Update(ctx, workload); err != nil {
 			return nil, fmt.Errorf("recording the forecast's veto: %w", err)
@@ -760,6 +763,9 @@ func (r *Reconciler) reportIdleVetoed(ctx context.Context, workload *v1alpha1.Ma
 
 func (r *Reconciler) clearIdleVeto(workload *v1alpha1.ManagedWorkload) {
 	r.clearCondition(workload, conditionIdleVetoed, "NotVetoed")
+	if a := workload.Status.Activity; a != nil {
+		a.ForecastBusyFrom = nil
+	}
 }
 
 // forecastVeto defers a pause while a confident forecast expects demand

@@ -253,9 +253,11 @@ func (r *Reconciler) dependencyHold(ctx context.Context, workload *v1alpha1.Mana
 				h.message())
 		}
 		r.setCondition(workload, conditionDependencyCycle, metav1.ConditionTrue, conditionDependencyCycle, h.message())
+		recordHolders(workload, nil)
 		return &ctrl.Result{RequeueAfter: activityCheckInterval}, nil
 	}
 	r.clearCondition(workload, conditionDependencyCycle, "NoCycle")
+	recordHolders(workload, h.holders)
 
 	if len(h.holders) == 0 {
 		r.clearCondition(workload, conditionHeldByDependents, "NoAwakeDependents")
@@ -267,6 +269,20 @@ func (r *Reconciler) dependencyHold(ctx context.Context, workload *v1alpha1.Mana
 	}
 	r.setCondition(workload, conditionHeldByDependents, metav1.ConditionTrue, "DependentsAwake", h.message())
 	return &ctrl.Result{RequeueAfter: activityCheckInterval}, nil
+}
+
+// recordHolders keeps the dependents holding the workload awake in its
+// activity status, for tools to show without reading the condition's
+// message: the first maxListed, as the message names.
+func recordHolders(workload *v1alpha1.ManagedWorkload, holders []string) {
+	a := workload.Status.Activity
+	if a == nil {
+		return
+	}
+	a.HeldByDependents = slices.Clone(holders[:min(len(holders), maxListed)])
+	if len(a.HeldByDependents) == 0 {
+		a.HeldByDependents = nil
+	}
 }
 
 // dependencyHolds is what keeps a workload from pausing for the workloads
