@@ -148,7 +148,7 @@ In dry-run the phase goes `Running` → `Idle` when the clock runs out, or a pau
 ## Recommended Workflow
 
 1. **Opt in with `hybernate.io/dry-run: "true"`**. Let it measure for a few days, across a weekend if the workload is used on weekdays.
-2. **Review what it measured**. `status.dryRun` or `kubectl hybernate scan` says how often it would have paused, for how long, and what that would have freed; the events say when.
+2. **Review what it measured**. `kubectl hybernate status` leads with what it would have freed, and `kubectl hybernate scan` adds how often it would have paused and for how long; the events say when.
 3. **End dry run**:
 
     ```bash
