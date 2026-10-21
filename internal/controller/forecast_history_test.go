@@ -154,15 +154,28 @@ func TestHistoryLearner_WithoutHistory(t *testing.T) {
 	}
 }
 
-// A Prometheus that fails is asked again a couple of times, minutes apart,
-// before the forecast settles for learning live.
+// A Prometheus that fails is asked again a couple of times, two minutes
+// apart, before the forecast settles for learning live. The updates a new
+// workload gets in its first minutes reconcile it at once, and don't bring
+// the next attempt forward.
 func TestHistoryLearner_RetriesAFailingPrometheus(t *testing.T) {
 	history := &stubHistory{err: errors.New("connection refused")}
 	l, workload := newHistoryLearner(t, history, &stubMetrics{}, historyTarget())
+	now := fixedTime.Add(20 * time.Minute)
+	l.clock = func() time.Time { return now }
 
-	for range historyAttempts - 1 {
+	for attempt := 1; attempt < historyAttempts; attempt++ {
 		assert.Equal(t, historyRetry, learnHistory(t, l, workload).RequeueAfter)
+		require.Len(t, history.asked, attempt)
 		assert.False(t, l.engines.seeded(workload.UID))
+
+		now = now.Add(30 * time.Second)
+		assert.Equal(t, historyRetry-30*time.Second, learnHistory(t, l, workload).RequeueAfter,
+			"an update half a minute later waits out the rest")
+		now = now.Add(historyRetry - 30*time.Second - time.Second)
+		assert.Equal(t, time.Second, learnHistory(t, l, workload).RequeueAfter)
+		assert.Len(t, history.asked, attempt, "not asked again early")
+		now = now.Add(time.Second)
 	}
 	assert.Zero(t, learnHistory(t, l, workload).RequeueAfter)
 	seed, _, ok := l.engines.adoptSeed(workload.UID, forecast.Settings{})

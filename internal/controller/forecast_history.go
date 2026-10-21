@@ -209,7 +209,14 @@ type historyLearner struct {
 	clock    func() time.Time
 
 	mu       sync.Mutex
-	failures map[types.UID]int
+	failures map[types.UID]failedReads
+}
+
+// failedReads are a workload's failed attempts at reading its history, and
+// when the last was made.
+type failedReads struct {
+	count int
+	last  time.Time
 }
 
 // errReadingTarget is a failure to read the workload's target or what it
@@ -224,6 +231,11 @@ func (l *historyLearner) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.
 	}
 	if !needsHistory(&workload) || l.engines.seeded(workload.UID) {
 		return ctrl.Result{}, nil
+	}
+	// A new workload is updated several times in its first minute, and
+	// each update reconciles it at once, whatever RequeueAfter asked for.
+	if wait := l.untilRetry(workload.UID); wait > 0 {
+		return ctrl.Result{RequeueAfter: wait}, nil
 	}
 	seed, ready, err := l.learn(ctx, &workload)
 	if errors.Is(err, errReadingTarget) {
@@ -246,14 +258,31 @@ func (l *historyLearner) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.
 	return ctrl.Result{}, nil
 }
 
+// failed records a failed attempt at reading the workload's history, and
+// returns how many there have been.
 func (l *historyLearner) failed(uid types.UID) int {
 	l.mu.Lock()
 	defer l.mu.Unlock()
 	if l.failures == nil {
-		l.failures = map[types.UID]int{}
+		l.failures = map[types.UID]failedReads{}
 	}
-	l.failures[uid]++
-	return l.failures[uid]
+	f := l.failures[uid]
+	f.count++
+	f.last = l.clock()
+	l.failures[uid] = f
+	return f.count
+}
+
+// untilRetry is how long until the workload's history may be read again:
+// historyRetry after the last failed attempt, or zero.
+func (l *historyLearner) untilRetry(uid types.UID) time.Duration {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	f, ok := l.failures[uid]
+	if !ok {
+		return 0
+	}
+	return max(0, f.last.Add(historyRetry).Sub(l.clock()))
 }
 
 func (l *historyLearner) forget(uid types.UID) {
