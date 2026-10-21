@@ -80,6 +80,7 @@ The relaunch. The 0.1.x releases were early experiments, and 0.2.0 is a fresh st
 - `MetricsAvailable` reason `NoCPURequests`: idle detection doesn't act on a workload whose CPU utilization can't be measured
 - `hybernate_idle_seconds{namespace, workload}`: time since the workload's last activity
 - `hybernate_workload_phase{namespace, workload, phase}`: 1 for each workload's current phase, and a `HybernateWorkloadStuck` alert for workloads left in `Pausing` or `Resuming` for 15 minutes
+- Versioned docs: [okedeji.io/hybernate](https://okedeji.io/hybernate) keeps the docs of each minor release, such as `/hybernate/0.2/`, built from its tag so their install commands name that release, with a version selector. `latest`, where the site's root goes, is the newest release's, and `next` the newest release candidate's, with a banner saying so. A link without a version lands on the same page in `latest`
 
 ### Changed
 

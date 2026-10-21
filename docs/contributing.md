@@ -75,6 +75,8 @@ test/e2e/                      # End-to-end tests, in Kind
 test/docs/                     # Validates the docs' ManagedWorkloads against the CRD, and Helm values against the chart
 tests/prometheus/              # promtool tests for the alert rules
 docs/                          # This site (mkdocs)
+overrides/                     # The site's theme overrides: the banner on every version but the latest
+hack/docsite/                  # Publishes a release's docs as a version of the site
 ```
 
 ## Code Standards
@@ -124,7 +126,7 @@ CI also runs the end-to-end tests on Kubernetes 1.30 and 1.37, the Helm smoke te
 
 ## Documentation
 
-The docs are built with mkdocs: `pip install -r docs/requirements.txt`, then `mkdocs serve`. `make test` creates every ManagedWorkload shown in a `yaml` block in `README.md` and `docs/`, and in `config/samples/`, against the real CRD, so a doc example that doesn't validate fails the build. A partial one, a `spec:` block or spec fields such as `dependsOn` on their own, is wrapped into a whole ManagedWorkload first; title it `managedworkload.yaml` or leave it untitled, since a block titled as another file, such as `application.yaml`, isn't read as one. Helm values blocks, titled `values.yaml` or `values-<name>.yaml` or untitled with only the chart's keys, are checked against `charts/hybernate/values.schema.json`, and every value they set must be one the chart has. Put `<!-- snippet -->` on the line before a block that's deliberately partial and shouldn't be checked. Links to `https://okedeji.io/hybernate` in the code must point at a page in `docs/`.
+The docs are built with mkdocs: `pip install --require-hashes -r docs/requirements.txt`, then `mkdocs serve`. `make test` creates every ManagedWorkload shown in a `yaml` block in `README.md` and `docs/`, and in `config/samples/`, against the real CRD, so a doc example that doesn't validate fails the build. A partial one, a `spec:` block or spec fields such as `dependsOn` on their own, is wrapped into a whole ManagedWorkload first; title it `managedworkload.yaml` or leave it untitled, since a block titled as another file, such as `application.yaml`, isn't read as one. Helm values blocks, titled `values.yaml` or `values-<name>.yaml` or untitled with only the chart's keys, are checked against `charts/hybernate/values.schema.json`, and every value they set must be one the chart has. Put `<!-- snippet -->` on the line before a block that's deliberately partial and shouldn't be checked. Links to `https://okedeji.io/hybernate` in the code must point at a page in `docs/`.
 
 ## Releasing
 
@@ -132,11 +134,13 @@ A release is a tag on `main`, `vX.Y.Z`. `make release VERSION=X.Y.Z` bumps the c
 
 1. Checks the chart, the kustomize image, the docs and the dated changelog name the tag's version (`make verify-version`), then runs every check a pull request does, including Trivy on the image.
 2. Builds the plugin archives, the krew manifest, `install.yaml` and the chart; pushes the image by digest, untagged, and signs it and attaches its SBOMs and provenance; and drafts the GitHub release with every file, its signed checksums, and the changelog section as its notes.
-3. Tags the image, pushes and signs the chart, tags the image `latest`, and publishes the GitHub release, which moves `releases/latest` and then the docs site.
+3. Tags the image, pushes and signs the chart, tags the image `latest`, and publishes the GitHub release, which moves `releases/latest`.
+
+Once the workflow succeeds, the docs workflow publishes the tag's docs, as [the docs site](#the-docs-site) describes.
 
 Until step 3 nothing users install has changed, so a run that fails earlier can be run again: it replaces its draft. One that fails in step 3 can be too.
 
-**Rehearse a release with a release candidate first.** A tag with a hyphen, such as `v0.2.0-rc.1`, runs the whole workflow as a pre-release: everything is published but `latest`, so the image, the chart and the GitHub release exist only for those who ask for that version, krew and the install docs' `releases/latest` links stay on the last release, and the docs site isn't rebuilt. Its notes are its version's changelog section, which needn't be dated yet. From a throwaway branch, so `main` keeps the release's version:
+**Rehearse a release with a release candidate first.** A tag with a hyphen, such as `v0.2.0-rc.1`, runs the whole workflow as a pre-release: everything is published but `latest`, so the image, the chart and the GitHub release exist only for those who ask for that version, krew and the install docs' `releases/latest` links stay on the last release, and its docs are published under `next`, with a banner saying it's a release candidate. Its notes are its version's changelog section, which needn't be dated yet. From a throwaway branch, so `main` keeps the release's version:
 
 ```bash
 git switch -c rehearse-v0.2.0-rc.1 main
@@ -151,6 +155,31 @@ git switch main
 make release VERSION=0.2.0
 git push origin main v0.2.0
 ```
+
+### The docs site
+
+The site keeps a version of the docs for each minor release, `0.2`, `0.3` and so on, each built from its newest patch's tag, so the install commands on every page name the release that page documents. The docs workflow publishes them once the release workflow succeeds, with [mike](https://github.com/jimporter/mike), to the `gh-pages` branch, which GitHub Pages serves:
+
+- A release's docs go to its minor version, and to `latest` when it's the newest release. The site's root sends readers to `latest`.
+- A release candidate's docs go to `next`, with a banner saying they're for a release candidate. The release it rehearses removes `next`.
+- A link without a version, such as `https://okedeji.io/hybernate/guides/gitops/`, which the operator and the plugin print, goes to the same page in `latest`, through the `404.html` at the branch's root.
+
+[`hack/docsite`](https://github.com/okedeji/hybernate/tree/main/hack/docsite) decides what a tag publishes, and never replaces a version's docs with an older release's. To republish a release's docs, run the docs workflow by hand with its tag. To see what a tag would publish, run it with `-dry-run` from a checkout with the docs requirements installed and the `gh-pages` branch fetched from `origin`:
+
+```bash
+go run ./hack/docsite -tag v0.2.0 -dry-run
+```
+
+`mkdocs serve` previews the docs you're editing, without versions; `mike serve` serves the versions on your local `gh-pages`.
+
+The site has no domain of its own: `okedeji.io` belongs to the owner's user site, `okedeji/okedeji.github.io`, and GitHub serves this repository's Pages under it, at `/hybernate/`. So `gh-pages` has no `CNAME` file, and mustn't get one: it would claim `okedeji.io` for this repository.
+
+Moving the site from the old Actions deployment to `gh-pages` takes two settings, once the docs workflow has published the first release or release candidate since versioning, which creates the branch:
+
+1. **Settings, Environments, `github-pages`:** add `gh-pages` to the deployment branches. Only `main` is allowed today, and GitHub's own Pages workflow deploys from the branch it serves.
+2. **Settings, Pages, Build and deployment:** set the source to *Deploy from a branch*, branch `gh-pages`, folder `/ (root)`.
+
+Until then the old site stays as it is. Tags from before versioning can't be published this way: their docs have no mike configuration.
 
 ## Regenerating Generated Code
 
