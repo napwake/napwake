@@ -160,7 +160,7 @@ Examples:
 			}
 			result, err := replayCluster(ctx, window, prom, mode, loc, opts)
 			if err != nil {
-				return scanFailed(ctx, err, opts.timeout)
+				return forecastFailed(ctx, err, opts.timeout)
 			}
 			name := ""
 			if len(args) == 1 {
@@ -225,8 +225,8 @@ func replayCluster(ctx context.Context, window time.Duration, prom prometheusSet
 		return forecastResult{}, err
 	}
 	if scan.History == nil {
-		return forecastResult{}, &historyError{errors.New(strings.Join(append([]string{
-			"the forecast is replayed over CPU history, and there's none to read"}, scan.Notes...), "; "))}
+		return forecastResult{}, &historyError{errors.New("the forecast is replayed over CPU history, and there's " +
+			"none to read")}
 	}
 	result := forecastResult{Context: scan.Context, Cluster: scan.Cluster, Prometheus: scan.History.Prometheus,
 		HistoryHours: scan.History.Hours, HistorySince: scan.History.Since, Window: opts.window, Timezone: loc.String(), Setting: string(mode),
@@ -267,6 +267,17 @@ func operatorTimeZone(ctx context.Context, kube *kubeFlags) string {
 		return ""
 	}
 	return slices.MaxFunc(zones, func(a, b string) int { return cmp.Compare(counts[a], counts[b]) })
+}
+
+// forecastFailed is scanFailed for a replay, which can't do without history
+// as the scan can.
+func forecastFailed(ctx context.Context, err error, timeout time.Duration) error {
+	var history *historyError
+	if errors.Is(ctx.Err(), context.DeadlineExceeded) && errors.As(err, &history) {
+		return fmt.Errorf("the replay didn't finish within --timeout %s: Prometheus answered too slowly; pass a "+
+			"longer --timeout, or a shorter --window", timeout)
+	}
+	return scanFailed(ctx, err, timeout)
 }
 
 // pickWorkload is the one workload NAME names, as name or kind/name.
@@ -425,6 +436,9 @@ func forecastNow(w forecastWorkload, loc *time.Location) string {
 		}
 	} else if o.Acting {
 		return "acts from day one"
+	}
+	if o.Waiting == v1alpha1.ForecastNotLearning {
+		return "not learning: paused without wake on request"
 	}
 	if o.StartsActing != nil {
 		return "acts from " + o.StartsActing.In(loc).Format("Mon 2 Jan")

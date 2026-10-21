@@ -236,6 +236,9 @@ func TestForecastNow(t *testing.T) {
 		{"managed and learning the day", forecastWorkload{Managed: true, Forecast: &discovery.ForecastReplay{
 			IfOptedIn: discovery.ForecastOutlook{Acting: true}, Live: &discovery.ForecastOutlook{Waiting: "Observing"}}},
 			"learning"},
+		{"managed, paused without wake on request", forecastWorkload{Managed: true, Forecast: &discovery.ForecastReplay{
+			Live: &discovery.ForecastOutlook{Waiting: v1alpha1.ForecastNotLearning}}},
+			"not learning: paused without wake on request"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

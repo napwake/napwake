@@ -506,6 +506,13 @@ func scanCluster(ctx context.Context, window time.Duration, prom prometheusSetup
 		if ctxErr := ctx.Err(); ctxErr != nil {
 			return scanResult{}, &historyError{fmt.Errorf("looking for Prometheus: %w", ctxErr)}
 		}
+		if err != nil && opts.forecast != nil {
+			why := "the forecast is replayed over CPU history, and there's none to read: " + err.Error()
+			if len(scan.HistoryAccess) > 0 {
+				why += "; an admin can let you read it with: " + strings.Join(scan.HistoryAccess, " && ")
+			}
+			return scanResult{}, &historyError{errors.New(why)}
+		}
 		if err != nil {
 			historyNote = err.Error() + "; judging from CPU right now"
 		}
