@@ -4,6 +4,13 @@
 {{- if $chart.Prerelease }}{{ $docs = "https://okedeji.io/hybernate/next/" }}{{ end -}}
 Hybernate is installed in namespace {{ .Release.Namespace }}.
 
+The forecast, which learns when each workload is busy, counts hours and
+weekdays in {{ .Values.timezone }}.
+{{- if eq .Values.timezone "UTC" }} Set timezone to your users' zone, such as
+--set timezone=Europe/London, so workloads wake for their mornings all year,
+through daylight saving.
+{{- end }}
+
 1. Check the operator and the doorman are running:
 
    kubectl get pods -n {{ .Release.Namespace }}

@@ -17,10 +17,11 @@
     helm install hybernate oci://ghcr.io/okedeji/charts/hybernate \
       --version 0.2.0 \
       --namespace hybernate-system \
-      --create-namespace
+      --create-namespace \
+      --set timezone=Europe/London
     ```
 
-    The chart's version has no `v`; the image it runs is tagged with one, such as `v0.2.0`. The chart installs the ManagedWorkload CRD too, and upgrades it with each `helm upgrade`.
+    Set `timezone` to your users' [time zone](#time-zone), such as `America/New_York`. The chart's version has no `v`; the image it runs is tagged with one, such as `v0.2.0`. The chart installs the ManagedWorkload CRD too, and upgrades it with each `helm upgrade`.
 
     ??? tip "Helm Values"
 
@@ -52,6 +53,15 @@
 
     This installs the CRD, RBAC, the operator Deployment, and the doorman Deployment, Service and PodDisruptionBudget into the `hybernate-system` namespace. The operator is `deployment/hybernate-controller-manager`.
 
+    Then set your users' [time zone](#time-zone), such as `America/New_York`, on the operator:
+
+    ```bash
+    kubectl patch deployment hybernate-controller-manager -n hybernate-system --type=json \
+      -p '[{"op":"add","path":"/spec/template/spec/containers/0/args/-","value":"--timezone=Europe/London"}]'
+    ```
+
+    An `install.yaml` that changes the operator's arguments replaces them, so after upgrading, check `--timezone` is still there.
+
 === "Source"
 
     Clone the repo and build the image:
@@ -79,6 +89,10 @@
     `make deploy` installs the CRD, RBAC, the operator and the doorman, all running `IMG`. It writes `IMG` into `config/manager/kustomization.yaml`; `git checkout config/manager` puts it back.
 
     `kubectl apply -k config/network-policy` adds the NetworkPolicies the chart's `networkPolicy.enabled` creates: only namespaces labelled `metrics: enabled` may scrape the operator and the doorman, and the doorman's routing ports (TCP 20000-29999) stay open to every caller of a paused workload's Services.
+
+## Time zone
+
+The [forecast](../concepts/forecasting.md) learns when each workload is busy by hour of day and day of week, counted in the operator's time zone, holds off pausing ahead of those hours and, with `autoResume`, wakes workloads before them. Set it to your users' IANA time zone, such as `Europe/London`, `America/New_York` or `Asia/Kolkata`: Helm's `timezone` value, or the operator's `--timezone` flag. Left at the default, UTC, a team whose clocks change for daylight saving finds its workloads woken an hour early or late for half the year. For teams in different zones, pick the zone most of them work in, or give each team an install of its own, as below. The chart's install notes say which zone the forecast uses, and [Wall-Clock Alignment](../concepts/forecasting.md#wall-clock-alignment) has the details.
 
 ## More than one install
 

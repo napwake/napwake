@@ -52,8 +52,11 @@ kubectl hybernate scan
 helm install hybernate oci://ghcr.io/okedeji/charts/hybernate \
   --version 0.2.0 \
   --namespace hybernate-system \
-  --create-namespace
+  --create-namespace \
+  --set timezone=Europe/London
 ```
+
+Set `timezone` to your users' time zone: the forecast learns their busy hours in it, so it wakes workloads for their mornings all year, through daylight saving.
 
 Hybernate supports Kubernetes 1.30 and later, and is tested in CI on 1.30 and 1.37. The chart installs the operator, the doorman that wakes paused workloads on request, and the ManagedWorkload CRD.
 
