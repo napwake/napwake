@@ -614,7 +614,7 @@ func (r *Reconciler) reconcileIdleClock(ctx context.Context, workload *v1alpha1.
 	pauseAt := workload.Status.Activity.PauseAt.Time
 
 	if obs.cpuErr != nil {
-		return r.reportMetricsUnavailable(ctx, workload, obs.cpuErr)
+		return r.reportMetricsUnavailable(ctx, workload, target, obs.cpuErr)
 	}
 	r.setCondition(workload, conditionMetricsAvailable, metav1.ConditionTrue, "MetricsReported", "")
 

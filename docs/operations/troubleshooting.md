@@ -35,11 +35,11 @@ kubectl get managedworkload my-api -n staging \
 
 Without CPU data a busy workload looks idle, so Hybernate doesn't act. `MetricsAvailable=False` says why:
 
-- **`NoPodMetrics`**: the target has replicas, but the Metrics API reports no pods for it. Check that metrics-server is installed (`kubectl top pods -n staging`) and that the target's pods are running.
+- **`NoPodMetrics`**: the target's Ready pods have had no metrics for over 3 minutes. Check that metrics-server is installed and reports them: `kubectl top pods -n staging`.
 - **`NoCPURequests`**: the target's containers request no CPU, in its running pods or, with none running, in its pod template, so utilization can't be measured. Set CPU requests on its containers, or a default in the namespace's LimitRange; a LimitRange default applies to pods created after it, so restart the workload's pods once it's set.
 - **`MetricsUnavailable`**: the Metrics API itself failed. The condition message has the error; a missing `metrics.k8s.io` API means metrics-server isn't installed.
 
-A target scaled to zero replicas is not an error: it's recorded as zero usage.
+A target scaled to zero replicas is not an error: it's recorded as zero usage. Nor is `MetricsAvailable=Unknown` just after a wake or a rollout: new pods have no metrics until they're running and metrics-server has scraped them, so it's `NoReadyPods` while none is Ready, then `AwaitingPodMetrics` for up to 3 minutes, without a warning.
 
 **Check 4: Is the forecast holding it awake?**
 

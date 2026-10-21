@@ -56,7 +56,7 @@ The operator sets standard Kubernetes conditions on the CR, each with `Reason`, 
 | Type | `True` means | Reasons |
 |------|--------------|---------|
 | `TargetAvailable` | The Deployment or StatefulSet exists and Hybernate manages it | `TargetExists`; `False`: `TargetNotFound`, `TargetIgnored` (labelled `hybernate.io/ignore`) |
-| `MetricsAvailable` | CPU can be measured, so the activity clock and the forecast can run | `MetricsReported`; `False`: `NoPodMetrics`, `NoCPURequests`, `MetricsUnavailable` |
+| `MetricsAvailable` | CPU can be measured, so the activity clock and the forecast can run | `MetricsReported`; `Unknown`, while new pods have no metrics yet: `NoReadyPods`, `AwaitingPodMetrics`; `False`: `NoPodMetrics`, `NoCPURequests`, `MetricsUnavailable` |
 | `PrometheusAvailable` | The Prometheus activity queries answer; only set when there are some | `QueriesEvaluated`; `False`: `QueryFailed`, `EndpointNotConfigured` |
 | `PrometheusQueryEmpty` | A Prometheus activity query has matched no series since it was first evaluated, which usually means a misspelt metric or label; informational, it doesn't stop a pause | `NoSeries`; `False`: `QueriesMatchSeries` |
 | `IdleVetoed` | It's idle, but a confident forecast expects demand in the coming hour, so the pause waits; the message names the hour | `ForecastExpectsDemand`; `False`: `NotVetoed` |

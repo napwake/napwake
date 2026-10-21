@@ -28,6 +28,7 @@ import (
 	"github.com/prometheus/client_golang/prometheus/testutil"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	appsv1 "k8s.io/api/apps/v1"
 	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/tools/events"
@@ -475,39 +476,97 @@ func metricsCondition(workload *v1alpha1.ManagedWorkload) *metav1.Condition {
 }
 
 func TestAutomation_MissingMetricsSurfacesCondition(t *testing.T) {
-	tests := []struct {
-		name       string
-		err        error
-		wantReason string
-	}{
-		{name: "no pod metrics", err: fmt.Errorf("%w for default/api", opmetrics.ErrNoPodMetrics), wantReason: "NoPodMetrics"},
-		{name: "metrics API down", err: errors.New("the server could not find the requested resource"), wantReason: "MetricsUnavailable"},
+	workload := automationWorkload(v1alpha1.PhaseRunning)
+	engine := &stubForecaster{phase: forecast.Observing}
+	r := newAutomationReconciler(t, workload, engine, automationOpts{
+		metrics: &stubMetrics{err: errors.New("the server could not find the requested resource"), replicas: 2},
+	})
+
+	for range 2 {
+		result, err := r.reconcileAutomation(context.Background(), workload, readyTarget())
+		require.NoError(t, err)
+		require.NotNil(t, result)
+		assert.Equal(t, 1*time.Minute, result.RequeueAfter)
 	}
 
+	assert.Equal(t, 0, engine.observeCalls)
+	cond := metricsCondition(workload)
+	require.NotNil(t, cond, "the user must be able to see why the forecast isn't learning")
+	assert.Equal(t, metav1.ConditionFalse, cond.Status)
+	assert.Equal(t, "MetricsUnavailable", cond.Reason)
+
+	recorder, ok := r.Recorder.(*events.FakeRecorder)
+	require.True(t, ok)
+	assert.Len(t, recorder.Events, 1, "the warning fires once, not on every retry")
+}
+
+// readyTarget is default/api with both its replicas Ready.
+func readyTarget() *appsv1.Deployment {
+	return &appsv1.Deployment{
+		ObjectMeta: metav1.ObjectMeta{Name: "api", Namespace: "default"},
+		Spec:       appsv1.DeploymentSpec{Replicas: ptr.To(int32(2))},
+		Status:     appsv1.DeploymentStatus{Replicas: 2, ReadyReplicas: 2},
+	}
+}
+
+// New pods have no metrics until they run and metrics-server has scraped
+// them a time or two, which after a wake or a rollout is no fault of
+// metrics-server's. It's warned about only once Ready pods go on without
+// them, and once.
+func TestAutomation_NoPodMetricsWaitsForNewPods(t *testing.T) {
+	type look struct {
+		at          time.Duration
+		ready       int32
+		wantStatus  metav1.ConditionStatus
+		wantReason  string
+		wantRequeue time.Duration
+	}
+	tests := []struct {
+		name         string
+		looks        []look
+		wantWarnings int
+	}{
+		{name: "Ready pods that never report", wantWarnings: 1, looks: []look{
+			{at: 0, ready: 2, wantStatus: metav1.ConditionUnknown, wantReason: "AwaitingPodMetrics", wantRequeue: time.Minute},
+			{at: 2 * time.Minute, ready: 2, wantStatus: metav1.ConditionUnknown, wantReason: "AwaitingPodMetrics", wantRequeue: time.Minute},
+			{at: 2*time.Minute + 30*time.Second, ready: 2, wantStatus: metav1.ConditionUnknown, wantReason: "AwaitingPodMetrics", wantRequeue: 30 * time.Second},
+			{at: 3 * time.Minute, ready: 2, wantStatus: metav1.ConditionFalse, wantReason: "NoPodMetrics", wantRequeue: time.Minute},
+			{at: 4 * time.Minute, ready: 2, wantStatus: metav1.ConditionFalse, wantReason: "NoPodMetrics", wantRequeue: time.Minute},
+		}},
+		{name: "pods slow to start after a wake", looks: []look{
+			{at: 0, ready: 0, wantStatus: metav1.ConditionUnknown, wantReason: "NoReadyPods", wantRequeue: time.Minute},
+			{at: 10 * time.Minute, ready: 0, wantStatus: metav1.ConditionUnknown, wantReason: "NoReadyPods", wantRequeue: time.Minute},
+			{at: 11 * time.Minute, ready: 1, wantStatus: metav1.ConditionUnknown, wantReason: "AwaitingPodMetrics", wantRequeue: time.Minute},
+			{at: 13 * time.Minute, ready: 2, wantStatus: metav1.ConditionUnknown, wantReason: "AwaitingPodMetrics", wantRequeue: time.Minute},
+		}},
+	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			workload := automationWorkload(v1alpha1.PhaseRunning)
-			engine := &stubForecaster{phase: forecast.Observing}
-			r := newAutomationReconciler(t, workload, engine, automationOpts{
-				metrics: &stubMetrics{err: tt.err, replicas: 2},
+			r := newAutomationReconciler(t, workload, &stubForecaster{phase: forecast.Observing}, automationOpts{
+				metrics: &stubMetrics{err: fmt.Errorf("%w for default/api", opmetrics.ErrNoPodMetrics), replicas: 2},
 			})
 
-			for range 2 {
-				result, err := r.reconcileAutomation(context.Background(), workload, nil)
+			for _, l := range tt.looks {
+				r.clock = func() time.Time { return fixedTime.Add(l.at) }
+				target := readyTarget()
+				target.Status.ReadyReplicas = l.ready
+
+				result, err := r.reconcileAutomation(context.Background(), workload, target)
+
 				require.NoError(t, err)
-				require.NotNil(t, result)
-				assert.Equal(t, 1*time.Minute, result.RequeueAfter)
+				cond := metricsCondition(workload)
+				require.NotNil(t, cond)
+				assert.Equal(t, l.wantStatus, cond.Status, "at %s", l.at)
+				assert.Equal(t, l.wantReason, cond.Reason, "at %s", l.at)
+				assert.Equal(t, l.wantRequeue, result.RequeueAfter, "at %s", l.at)
 			}
-
-			assert.Equal(t, 0, engine.observeCalls)
-			cond := metricsCondition(workload)
-			require.NotNil(t, cond, "the user must be able to see why the forecast isn't learning")
-			assert.Equal(t, metav1.ConditionFalse, cond.Status)
-			assert.Equal(t, tt.wantReason, cond.Reason)
-
-			recorder, ok := r.Recorder.(*events.FakeRecorder)
-			require.True(t, ok)
-			assert.Len(t, recorder.Events, 1, "the warning fires once, not on every retry")
+			warnings := recorded(r.Recorder.(*events.FakeRecorder), "Warning NoPodMetrics")
+			assert.Len(t, warnings, tt.wantWarnings)
+			for _, w := range warnings {
+				assert.Contains(t, w, "no metrics for over 3 minutes")
+				assert.Contains(t, w, "kubectl top pods -n default")
+			}
 		})
 	}
 }
@@ -556,13 +615,16 @@ func TestAutomation_MetricsConditionRecovers(t *testing.T) {
 	metrics := &stubMetrics{err: fmt.Errorf("%w for default/api", opmetrics.ErrNoPodMetrics), replicas: 2}
 	r := newAutomationReconciler(t, workload, engine, automationOpts{metrics: metrics})
 
-	_, err := r.reconcileAutomation(context.Background(), workload, nil)
-	require.NoError(t, err)
+	for _, at := range []time.Duration{0, podMetricsGrace} {
+		r.clock = func() time.Time { return fixedTime.Add(at) }
+		_, err := r.reconcileAutomation(context.Background(), workload, readyTarget())
+		require.NoError(t, err)
+	}
 	require.Equal(t, metav1.ConditionFalse, metricsCondition(workload).Status)
 
 	metrics.err = nil
 	metrics.cpuMillis = 120
-	_, err = r.reconcileAutomation(context.Background(), workload, nil)
+	_, err := r.reconcileAutomation(context.Background(), workload, readyTarget())
 	require.NoError(t, err)
 
 	assert.Equal(t, metav1.ConditionTrue, metricsCondition(workload).Status)

@@ -78,11 +78,11 @@ Hybernate never pauses a workload while one of its activity sources can't be rea
 
 | Reason | Meaning |
 |--------|---------|
-| `NoPodMetrics` | The target has replicas but the Metrics API reports no pods. Check that metrics-server is installed. |
+| `NoPodMetrics` | The target's Ready pods have had no metrics for over 3 minutes. Check that metrics-server is installed and reports them (`kubectl top pods`). A warning event says so once |
 | `NoCPURequests` | The target's running pods request no CPU for its containers, or, with none running, its pod template requests none, so utilization can't be measured. Set CPU requests, or a default in the namespace's LimitRange. |
 | `MetricsUnavailable` | The Metrics API itself failed, or didn't answer within 2 seconds. The condition message has the error. Once it fails, it isn't read again for a minute, so every workload's check fails at once rather than waiting out a timeout. |
 
-A target scaled to zero isn't an error: it has no usage, which is real data.
+A target scaled to zero isn't an error: it has no usage, which is real data. Nor are new pods: a pod has no metrics until it runs, and for a scrape or two of metrics-server's after, so after a wake or a rollout `MetricsAvailable` is `Unknown`, with no warning, until they arrive: reason `NoReadyPods` while none of the target's pods is Ready, then `AwaitingPodMetrics` for up to 3 minutes. Only Ready pods that go on without metrics after that are `NoPodMetrics`.
 
 For Prometheus queries, the `PrometheusAvailable` condition reports `EndpointNotConfigured` or `QueryFailed`. A query that answers but has never matched a series, as one naming a metric or label that doesn't exist does, is reported by `PrometheusQueryEmpty=True` and a warning event, since it can never keep the workload awake; see the [Prometheus Activity Guide](../guides/prometheus-signals.md#when-a-query-cant-be-evaluated).
 
