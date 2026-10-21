@@ -70,25 +70,26 @@ my-api   Running   $0.00   $0.00   10s
 ## 4. Watch it measure
 
 ```bash
-kubectl get managedworkload my-api -n dev -o jsonpath='{.status.activity}'
+kubectl hybernate status -n dev
 ```
 
-`status.activity` is the activity clock: when the workload was last active, from what, and when it would pause. Once there's been no activity for `idle-after`, the phase becomes `Idle` and an event says it would have paused. Nothing is scaled down in dry-run:
+`status` is one screen of what Hybernate is doing with every workload it manages. For `my-api`, STATE reads `running (dry-run)`, LAST ACTIVITY says when it was last active and from what (`created`, until something else is seen), and NEXT when it would pause. Once there's been no activity for `idle-after`, STATE becomes `idle (dry-run)` and an event says it would have paused. Nothing is scaled down in dry-run:
 
 ```bash
 kubectl describe managedworkload my-api -n dev
 ```
 
-Each would-be pause is added up in `status.dryRun`: how many times it would have paused, how long it would have slept, and what that would have freed. Mark it active to end one, as a developer portal or your own tooling would:
+Each would-be pause is added up: how many times it would have paused, how long it would have slept, and what that would have freed. Mark it active to end one, as a developer portal or your own tooling would, then look again:
 
 ```bash
 kubectl annotate deployment my-api -n dev --overwrite hybernate.io/last-activity=$(date -u +%Y-%m-%dT%H:%M:%SZ)
-kubectl get managedworkload my-api -n dev -o jsonpath='{.status.dryRun}'
+kubectl hybernate status -n dev
+kubectl get managedworkloads -n dev
 ```
 
-`kubectl hybernate scan -n dev` shows the same summary.
+`status` leads with what dry-run has measured, and `kubectl get managedworkloads` shows in WOULD FREE what the would-be pauses would have freed. A few minutes of a sample this small free less than a cent, so expect `$0.00` here; left in dry-run for a few days, across a weekend if it's used on weekdays, a real workload's figure is what to judge going live by. `kubectl hybernate scan -n dev` shows the same, with how long it would have slept and how often it would have been woken. For scripts, `kubectl get managedworkload my-api -n dev -o jsonpath='{.status.dryRun}'` gives the summary as data, its hours as Kubernetes quantities; see [Dry Run](../guides/dry-run.md#what-dry-run-measured).
 
-Requests to a running workload don't count as activity by themselves: Hybernate sees its CPU, deploys and activity annotations, and requests only through a [Prometheus query](../guides/prometheus-signals.md) you give it, or once it's paused, through the doorman. An nginx serving the odd request uses almost no CPU, so it would pause.
+Requests to a running workload don't count as activity by themselves: Hybernate sees its CPU, deploys and activity annotations, and requests only through a [Prometheus query](../guides/prometheus-signals.md) you give it, or once it's paused, through the doorman. An nginx serving the odd request uses almost no CPU, so it would pause. On a workload of your own that doesn't turn idle, LAST ACTIVITY in `status` says what keeps it active, such as `cpu`, and NEXT says why it won't pause when something holds it.
 
 ## 5. Applied by Argo CD or Flux? Leave the replicas to Hybernate
 
@@ -107,7 +108,7 @@ When you're happy with what you see:
 kubectl hybernate enable my-api -n dev
 ```
 
-This sets the workload's `hybernate.io/dry-run` annotation to `"false"`. Once the workload has had no activity for `idle-after`, Hybernate scales it to zero, remembering it had 2 replicas:
+This sets the workload's `hybernate.io/dry-run` annotation to `"false"`. Once the workload has had no activity for `idle-after`, which NEXT in `kubectl hybernate status -n dev` counts down, Hybernate scales it to zero, remembering it had 2 replicas:
 
 ```bash
 kubectl get deployment my-api -n dev
