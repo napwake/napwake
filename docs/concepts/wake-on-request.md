@@ -10,7 +10,7 @@ Hybernate runs a small proxy, the **doorman**, as its own Deployment (two replic
 
 1. When a workload pauses, the operator finds every Service that selects its pods and adds an extra EndpointSlice to each, one per IP family, pointing at the doorman's pods on a port of their own (20000-29999). The Service, its ClusterIP, and its DNS name don't change, so callers and Ingresses need no changes. IPv4, IPv6 and dual-stack Services are all supported.
 2. A connection to the Service reaches the doorman. If one of the Service's pods is already Ready, because the workload is waking or another workload's pods serve the Service, the connection goes straight to it. Otherwise, once the caller has sent something, the doorman holds the connection and sets `hybernate.io/last-request` on the ManagedWorkload, which wakes it the same way as an [activity annotation](idle-detection.md#activity-annotations). A `WokenByRequest` event names the Service, and once the workload is Running, its clock shows `lastActivitySource: request`.
-3. The doorman watches the Service's own EndpointSlices. As soon as a pod is Ready, it connects to one of the Ready pods and passes the held connection through, including any bytes the caller already sent.
+3. The doorman watches the Service's own EndpointSlices. As soon as a pod is Ready, it connects to one of the Ready pods and passes the held connection through, including any bytes the caller already sent. Ready is what the pod's readiness probe says, so the app needs one that passes only once it can serve; see [Readiness probes](#readiness-probes).
 4. Once the workload is `Running`, the operator removes the doorman's EndpointSlices and traffic goes straight to the pods again. For 30 seconds after that, the doorman still passes connections that reach it to the Ready pods, without waking anything, while kube-proxy and load balancers catch up.
 
 The doorman works on TCP connections, not HTTP requests, so it handles any TCP protocol: HTTP, gRPC, Postgres, Redis. Waking a workload also wakes its [dependencies](dependencies.md).
@@ -20,6 +20,25 @@ Ingress controllers, Gateway API implementations, and cloud load balancers that 
 ```
 WakeOnRequest=True   DoormanRouted   requests are held and wake the workload
 ```
+
+### Readiness probes
+
+The doorman passes a held request on as soon as one of the workload's pods is Ready, and Kubernetes decides Ready from the pod's readiness probe. A pod without one is Ready as soon as its containers start, which is often before the app inside can answer: while it loads its configuration or schema, connects to its database, or warms a cache. The request that woke it then gets whatever the app answers while it starts, such as a `503`, instead of waiting for it. An app that isn't listening yet is fine: the doorman tries again every second until `maxWait`. Wake on request relies on a readiness probe that passes only once the app can serve:
+
+```yaml title="deployment.yaml"
+spec:
+  template:
+    spec:
+      containers:
+        - name: api
+          readinessProbe:
+            httpGet:
+              path: /ready   # answers 200 only once the app can serve requests
+              port: 8080
+            periodSeconds: 2
+```
+
+A short `periodSeconds` passes held requests on sooner once the app is ready. A `startupProbe` gates readiness too, and a `tcpSocket` probe on the app's port is enough for an app that only listens once it's ready. Hybernate reads the workload's pod template when it routes a paused workload: when none of its containers has a readiness or startup probe, and the pod has no readiness gates, the `WakeOnRequest` condition says so, and a `NoReadinessProbe` warning event points here, once each pause.
 
 ### What wakes a workload, and what doesn't
 
@@ -69,7 +88,7 @@ The doorman can only tell a health check from a real caller by reading it. Two k
 - **Check over plain HTTP.** The AWS and Google Cloud health checkers send a `User-Agent` the doorman recognises, so it answers them `503` without waking anything.
 - **Check a port of its own,** one the workload serves only for health checks, and list it in `hybernate.io/doorman-ignore-ports`.
 
-Either way, the load balancer sees the workload as unhealthy while it's paused, as it would without Hybernate. That's what lets it pause, and it's what makes the first request after a pause slow rather than instant. Most load balancers still send requests when every target is unhealthy (AWS's Application and Network Load Balancers fail open), so the first request still reaches the doorman and wakes the workload. Some answer with an error instead until a target is healthy again; check yours before relying on wake on request behind it.
+Either way, the load balancer sees the workload as unhealthy while it's paused, as it would without Hybernate. That's what lets it pause, and it's what makes the first request after a pause slow rather than instant. Most load balancers still send requests when every target is unhealthy (AWS's Application and Network Load Balancers fail open), so the first request still reaches the doorman and wakes the workload. Some answer with an error instead until a target is healthy again, as Google Cloud's Application Load Balancers do behind a GKE Ingress or Gateway (see [On GKE](#on-gke)); check yours before relying on wake on request behind it.
 
 ### Environments on the public internet
 
@@ -161,7 +180,7 @@ Requests to the paused workload then fail, as they would without Hybernate. With
 | A Service another workload's Ready pods serve | Not routed; reason `ServedByOtherPods` if no Service is. See [Services shared with other workloads](#services-shared-with-other-workloads) |
 | A Service with `internalTrafficPolicy: Local` | Not routed: kube-proxy sends each caller only to endpoints on its own node, and the doorman's pods are on one or two nodes, so most callers would reach nothing. Reason `NodeLocalTraffic` if no Service is routed; otherwise the condition's message names it. Wake the workload with an [activity annotation](idle-detection.md#activity-annotations), or give it a Service with the default policy (`Cluster`) |
 | A Service in an IP family no doorman pod has an address in | Not routed; reason `UnsupportedIPFamily` if no Service is |
-| A Service behind GKE container-native load balancing (`cloud.google.com/neg`) | Not routed, with a warning event. Reason `UnsupportedLoadBalancer` if no Service is routed; otherwise the condition stays `True` and its message names the Services left out. See [Compatibility](../reference/compatibility.md#cloud-load-balancers) |
+| A Service behind GKE container-native load balancing: one a GKE Ingress uses, one with standalone NEGs, or one `cloud.google.com/neg-status` lists NEGs for | Not routed, with a warning event. Reason `UnsupportedLoadBalancer` if no Service is routed; otherwise the condition stays `True` and its message names the Services left out. GKE's own `cloud.google.com/neg: '{"ingress": true}'` on every Service doesn't count by itself; see [On GKE](#on-gke) |
 | The Deployment or StatefulSet is deleted | Routing is removed, since nothing would start the pods a held request waits for. `TargetAvailable=False`, reason `TargetNotFound`; requests fail as they would without Hybernate |
 | No doorman pod is Ready | `WakeOnRequest=False`, reason `DoormanUnavailable`, and routing is removed. Requests fail until a doorman pod is back |
 | All doorman ports are in use | `WakeOnRequest=False`, reason `NoFreePort`. The doorman has 10,000 ports, one per paused Service port in the cluster |
@@ -169,6 +188,43 @@ Requests to the paused workload then fail, as they would without Hybernate. With
 | Routing failed, such as an EndpointSlice write being refused, or an EndpointSlice that isn't the doorman's already having the name the doorman's would take (`<service>-o<hash>`), which it never overwrites | `WakeOnRequest=False`, reason `RoutingFailed`, with a warning event. It's retried with backoff, from 5 seconds up to 5 minutes. Routing problems never hold up a pause or a wake |
 
 Once the workload is awake, `WakeOnRequest` goes to `False`, reason `NotPaused`, unless the last pause found a problem with its Services: `ServedByOtherPods`, `NodeLocalTraffic`, `UnsupportedIPFamily`, `UnsupportedLoadBalancer` or `TooManyPorts`. That stays, its message starting `at its last pause:`, since the next pause meets it again unless it's fixed, and [`kubectl hybernate status`](../getting-started/kubectl-plugin.md#see-what-hybernate-is-doing) lists it under Needs attention while the workload runs. Every pause works routing out afresh.
+
+### On GKE
+
+GKE adds `cloud.google.com/neg: '{"ingress": true}'` to every new Service of a VPC-native cluster, which is the default. It asks GKE to use container-native load balancing, network endpoint groups (NEGs) of the Service's pods, only should a GKE Ingress use the Service, so Hybernate routes a Service with it like any other: callers in the cluster, and ingress controllers that read EndpointSlices, such as ingress-nginx, wake the workload.
+
+A Service that really is in NEGs isn't routed, with reason `UnsupportedLoadBalancer`: GKE's NEG controller refuses endpoints whose pods are in another namespace, as the doorman's are, and can stop syncing the load balancer altogether. That's a Service:
+
+- that a GKE Ingress uses, one with `kubernetes.io/ingress.class` `gce`, `gce-internal` or `gce-regional-external`, or with no class at all, while the Service has `{"ingress": true}`. GKE reads only the annotation: an Ingress that sets `ingressClassName` isn't GKE's
+- with standalone NEGs, `exposed_ports` in its `cloud.google.com/neg`, as GKE Gateway sets on the Services its routes use
+- that GKE's NEG controller lists NEGs of pods for in `cloud.google.com/neg-status`
+
+Hybernate looks again whenever an Ingress or a Service in the namespace changes, so a Service is taken off the doorman as soon as a GKE Ingress starts using it, and routed again once none does. To see what GKE has set on a Service:
+
+```bash
+kubectl get service api -n preview-42 -o jsonpath='{.metadata.annotations}'
+```
+
+Requests through a GKE Ingress or GKE Gateway don't wake a paused workload either way: Google Cloud's Application Load Balancers send requests only to backends that pass their health checks, and answer `502` while none do, which is the whole time the workload is paused. Wake it another way, such as `kubectl hybernate wake`, an [activity annotation](idle-detection.md#activity-annotations) from your developer portal, or the forecast's `autoResume`. Or reach it through an ingress controller that reads EndpointSlices, such as ingress-nginx, in place of the GKE Ingress or behind it: the GKE Ingress then uses the ingress controller's Service, which never pauses, and the controller sends requests on to the workload's Service, which is routed.
+
+For callers in the cluster to wake a workload whose Service a GKE Ingress uses, give them a Service of their own, which no GKE Ingress uses, so it's routed:
+
+```yaml
+apiVersion: v1
+kind: Service
+metadata:
+  name: api-internal
+  namespace: preview-42
+spec:
+  selector:
+    app: api
+  ports:
+    - name: http
+      port: 80
+      targetPort: 8080
+```
+
+Turning NEGs off on the Ingress's own Service, with `cloud.google.com/neg: '{"ingress": false}'`, gets it routed too, but moves a `gce` Ingress onto instance groups, which needs the Service to be `type: NodePort`, and a `gce-internal` Ingress can't do without NEGs. GKE warns against changing the annotation on a Service a load balancer uses, since the change replaces the load balancer's backends.
 
 ## Network policies
 
@@ -267,6 +323,7 @@ The doorman's ServiceAccount can patch ManagedWorkloads, to set `hybernate.io/la
 - **A browser**: the waking-up page at once, then the app on the first reload after one of its pods is Ready.
 - **Anything else, from a pod in the cluster or through an Ingress**: usually one slow response while the workload starts, then a normal one. Not when something between the caller and the workload gives up first: behind ingress-nginx, a workload that takes longer than its 60-second default `proxy-read-timeout` gets the caller a 504 (see [How long a connection is held](#how-long-a-connection-is-held)); with Istio's STRICT mTLS, the woken pod's sidecar refuses the doorman and the caller gets a 503 (see [Compatibility](../reference/compatibility.md#service-meshes)). The cases below are the others.
 - **The client's source IP**: the woken pod sees the doorman's IP for held connections, not the caller's. Only the connections that arrive while the workload is paused or waking go through the doorman. The doorman records the caller's address on the ManagedWorkload as `hybernate.io/last-request-from`, so Hybernate can [learn](dependencies.md#learned-dependencies) which workload sent it.
+- **Right after a wake, an error from the app itself**, such as a `503`: the workload's pods were Ready before the app could answer, because they have no readiness probe, or one that passes too soon. See [Readiness probes](#readiness-probes).
 - **Right after the pause**: for a few seconds, until kube-proxy, ingress controllers and the doorman itself pick up the new route, a request can be refused or get a 502 from an ingress, as after any scale-down. A retry is held.
 - **A connection held past `maxWait`, or one whose woken pods can't be reached**: it's closed with no response, which most clients report as an empty reply or a connection reset. A `RequestNotServed` warning event on the ManagedWorkload names the Service, how long the request waited and why; each doorman pod emits it at most once a minute per workload.
 - **A connection over a [limit](#limits)**: over the held-connection caps, closed at once with nothing sent; over the wake rate limits, held, or shown the waking-up page, while the wake is retried.

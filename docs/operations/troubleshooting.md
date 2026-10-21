@@ -35,11 +35,11 @@ kubectl get managedworkload my-api -n staging \
 
 Without CPU data a busy workload looks idle, so Hybernate doesn't act. `MetricsAvailable=False` says why:
 
-- **`NoPodMetrics`**: the target has replicas, but the Metrics API reports no pods for it. Check that metrics-server is installed (`kubectl top pods -n staging`) and that the target's pods are running.
+- **`NoPodMetrics`**: the target's Ready pods have had no metrics for over 3 minutes. Check that metrics-server is installed and reports them: `kubectl top pods -n staging`.
 - **`NoCPURequests`**: the target's containers request no CPU, in its running pods or, with none running, in its pod template, so utilization can't be measured. Set CPU requests on its containers, or a default in the namespace's LimitRange; a LimitRange default applies to pods created after it, so restart the workload's pods once it's set.
 - **`MetricsUnavailable`**: the Metrics API itself failed. The condition message has the error; a missing `metrics.k8s.io` API means metrics-server isn't installed.
 
-A target scaled to zero replicas is not an error: it's recorded as zero usage.
+A target scaled to zero replicas is not an error: it's recorded as zero usage. Nor is `MetricsAvailable=Unknown` just after a wake or a rollout: new pods have no metrics until they're running and metrics-server has scraped them, so it's `NoReadyPods` while none is Ready, then `AwaitingPodMetrics` for up to 3 minutes, without a warning.
 
 **Check 4: Is the forecast holding it awake?**
 
@@ -114,7 +114,7 @@ kubectl get managedworkload my-api -n staging \
 - **A message starting `at its last pause:`**: the workload is awake now, and what follows is what its last pause found with its Services. The next pause meets it again unless it's fixed, so fix it now, by the reason below.
 - **`NoServices`**: no Service with a selector and a ClusterIP selects the workload's pods on a TCP port, or every such port is in `hybernate.io/doorman-ignore-ports`. Headless Services aren't routed; see [Wake on Request](../concepts/wake-on-request.md#when-a-workload-isnt-routed).
 - **`ServedByOtherPods`**: another workload's Ready pods are behind the same Service, so requests go to them. See [Services shared with other workloads](../concepts/wake-on-request.md#services-shared-with-other-workloads).
-- **`UnsupportedLoadBalancer`**, or a Service named in the message as not routed: the Service is behind GKE container-native load balancing, which can't use the doorman. See [Compatibility](../reference/compatibility.md#cloud-load-balancers).
+- **`UnsupportedLoadBalancer`**, or a Service named in the message as not routed: the Service is behind GKE container-native load balancing, which can't use the doorman: a GKE Ingress uses it, it has standalone NEGs, or `cloud.google.com/neg-status` lists NEGs for it. GKE's own `cloud.google.com/neg: '{"ingress": true}'`, on every Service, doesn't count by itself. See [On GKE](../concepts/wake-on-request.md#on-gke).
 - **`NodeLocalTraffic`**: the workload's Services have `internalTrafficPolicy: Local`, which sends each caller only to endpoints on its own node, so they aren't routed. See [Wake on Request](../concepts/wake-on-request.md#when-a-workload-isnt-routed).
 - **`UnsupportedIPFamily`**: no doorman pod has an address in the Service's IP family, such as an IPv6-only Service in a cluster whose doorman pods have only IPv4 addresses.
 - **`DoormanUnavailable`**: no doorman pod is Ready. Check `kubectl get pods -A -l control-plane=doorman`.
@@ -128,8 +128,10 @@ If the condition is `DoormanRouted` but requests still fail:
 
 - **The request is closed after a while with no response**: the workload didn't become Ready within `wake.maxWait`, or its pods couldn't be reached. A `RequestNotServed` warning event says which, and `hybernate_doorman_wakes_total{result=~"timeout|error"}` counts these. Raise `maxWait`, or check why the pods are slow to become Ready.
 - **The connection is closed at once, with nothing sent**: a [limit](../concepts/wake-on-request.md#limits) on held connections or wakes was hit; `hybernate_doorman_wakes_total{result="limited"}` counts these.
+- **An error from the app itself, such as a `503` with the app's own body, on the first requests after a wake**: its pods were Ready before it could answer, as a pod with no readiness probe is as soon as its containers start. A `NoReadinessProbe` warning event, and the `WakeOnRequest` message, say when that's so. Give the app a readiness probe that passes only once it can serve; see [Readiness probes](../concepts/wake-on-request.md#readiness-probes).
 - **A `503` with no body**: the caller's `User-Agent` looks like a health check or scraper, such as `kube-probe/` or `Prometheus/`, which the doorman never lets wake a workload. It answers them this way only while none of the workload's pods is Ready.
 - **A 502 from ingress-nginx right after the workload paused**: nginx hadn't picked up the change yet and sent the request to the removed pod. A retry a second later is held and wakes the workload.
+- **A 502 from a GKE Ingress or GKE Gateway**: Google Cloud's load balancers send requests only to backends that pass their health checks, so requests through them never reach a paused workload. See [On GKE](../concepts/wake-on-request.md#on-gke).
 - **A 504 from an Ingress after 60 seconds**: the ingress controller gave up first. Raise its upstream timeout, for ingress-nginx `nginx.ingress.kubernetes.io/proxy-read-timeout`.
 - **The request is refused right after the workload paused**: the Service's backends hadn't switched to the doorman yet, which takes a second or two. A retry is held and wakes the workload.
 - **The request is refused or times out right away, every time**: a NetworkPolicy may block traffic to the doorman (ports 20000-29999) or from it to the workload's pods. See [Network policies](../concepts/wake-on-request.md#network-policies).

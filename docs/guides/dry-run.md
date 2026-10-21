@@ -135,8 +135,8 @@ kubectl describe managedworkload my-api -n staging
 When the clock runs out, and when activity ends the would-be pause:
 
 ```
-[dry-run] my-api: no activity for 1h0m0s, last seen from cpu; pause
-[dry-run] my-api: activity resumed (cpu): would have slept 3h12m, freeing $0.25; since Oct 1: would have paused 4 times, slept 96h12m, freeing $7.50
+[dry-run] my-api: idle for 1 hour, since its CPU use was last above the activity threshold; would have paused
+[dry-run] my-api: activity resumed (cpu): would have slept 3 hours 12 minutes, freeing $0.25; since Oct 1: would have paused 4 times, slept 4 days, freeing $7.50
 ```
 
 The `[dry-run]` prefix marks the decisions dry-run holds back: `IdleDetected`, `ActivityResumed`, `IdleVetoed`, `HeldByDependents`, `DependencyCycle`, and the `PauseRequested` event for a pause request it doesn't act on. Events about what really happens, such as a wake, a forecast update, or a metrics problem, have no prefix.

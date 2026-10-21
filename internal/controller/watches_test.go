@@ -23,6 +23,7 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	networkingv1 "k8s.io/api/networking/v1"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/client-go/util/workqueue"
 	"k8s.io/utils/ptr"
@@ -188,4 +189,34 @@ func TestRequeuePriority(t *testing.T) {
 		require.Positive(t, res.RequeueAfter)
 		assert.Equal(t, ptr.To(handler.LowPriority), res.Priority)
 	})
+}
+
+// GKE's ingress controller keeps writing its own annotations and the load
+// balancer's address on an Ingress; only a change to which Services it uses,
+// or which controller serves it, can move one in or out of NEGs.
+func TestIngressBackendsChanged(t *testing.T) {
+	base := gceIngressTo("api")
+	tests := []struct {
+		name   string
+		change func(ing *networkingv1.Ingress)
+		passes bool
+	}{
+		{name: "GKE's annotations and status", change: func(ing *networkingv1.Ingress) {
+			ing.Annotations["ingress.kubernetes.io/backends"] = `{"k8s1-abc-default-api-80-1":"HEALTHY"}`
+			ing.Status.LoadBalancer.Ingress = []networkingv1.IngressLoadBalancerIngress{{IP: "34.0.0.1"}}
+		}},
+		{name: "its class", passes: true, change: func(ing *networkingv1.Ingress) {
+			ing.Annotations[annotationIngressClass] = "nginx"
+		}},
+		{name: "its backends", passes: true, change: func(ing *networkingv1.Ingress) {
+			ing.Spec.Rules[0].HTTP.Paths[0].Backend.Service.Name = "web"
+		}},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			cur := base.DeepCopy()
+			tt.change(cur)
+			assert.Equal(t, tt.passes, ingressBackendsChanged().Update(event.UpdateEvent{ObjectOld: &base, ObjectNew: cur}))
+		})
+	}
 }

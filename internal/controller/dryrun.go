@@ -19,11 +19,11 @@ package controller
 import (
 	"context"
 	"fmt"
-	"strings"
 	"time"
 
 	v1alpha1 "github.com/okedeji/hybernate/api/v1alpha1"
 	"github.com/okedeji/hybernate/internal/cost"
+	"github.com/okedeji/hybernate/internal/human"
 )
 
 // trackDryRun starts the dry-run summary when a workload enters dry-run and
@@ -115,18 +115,5 @@ func dryRunSummary(d *v1alpha1.DryRunStatus) string {
 		times = "time"
 	}
 	return fmt.Sprintf("since %s: would have paused %d %s, slept %s, freeing %s",
-		d.Since.Format("Jan 2"), d.Pauses, times, roundedDuration(d.Slept.Duration), d.EstimatedFreed)
-}
-
-// roundedDuration is d to the minute, without the zero units Duration's
-// String adds: "3h12m", "96h", "45m".
-func roundedDuration(d time.Duration) string {
-	if d < time.Minute {
-		return "under a minute"
-	}
-	s := strings.TrimSuffix(d.Round(time.Minute).String(), "0s")
-	if strings.HasSuffix(s, "h0m") {
-		s = strings.TrimSuffix(s, "0m")
-	}
-	return s
+		d.Since.Format("Jan 2"), d.Pauses, times, human.Duration(d.Slept.Duration), d.EstimatedFreed)
 }

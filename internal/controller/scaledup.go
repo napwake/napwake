@@ -89,8 +89,8 @@ func (r *Reconciler) wakeOnScaleUp(ctx context.Context, workload *v1alpha1.Manag
 	r.stampLastActed(workload)
 	var conflict string
 	if writer.FromGit() {
-		conflict = fmt.Sprintf("%s set the replicas from Git, undoing the pause; Hybernate pauses it again from %s. %s",
-			writer.Tool, now.Add(gitOpsRetryAfter).UTC().Format("15:04 UTC"), strings.Join(gitops.Fix(writer.Tool), " "))
+		conflict = fmt.Sprintf("%s set the replicas from Git, undoing the pause; Hybernate pauses it again from %s. "+
+			"To stop it, %s", writer.Tool, now.Add(gitOpsRetryAfter).UTC().Format("15:04 UTC"), gitOpsFix(writer.Tool))
 		r.setCondition(workload, conditionGitOpsConflict, metav1.ConditionTrue, "PauseUndone", conflict)
 	}
 
@@ -108,6 +108,28 @@ func (r *Reconciler) wakeOnScaleUp(ctx context.Context, workload *v1alpha1.Manag
 		r.emitEvent(workload, false, "Warning", ReasonGitOpsConflict, actionCheckReplicas, "%s", conflict)
 	}
 	return nil
+}
+
+const gitOpsGuide = "https://okedeji.io/hybernate/guides/gitops/"
+
+// gitOpsFix says in a line what has a GitOps tool leave the replicas to
+// Hybernate, and where the guide gives the setting to copy. The setting
+// itself is YAML, which kubectl describe flattens onto one line.
+func gitOpsFix(tool gitops.Tool) string {
+	switch tool {
+	case gitops.ArgoCD:
+		return "have Argo CD ignore replicas, as for an HPA: " + gitOpsGuide + "#argo-cd"
+	case gitops.Flux:
+		return "leave replicas out of what Flux applies: " + gitOpsGuide + "#flux"
+	case gitops.Fleet:
+		return "leave replicas out of what Fleet applies: " + gitOpsGuide + "#rancher-fleet"
+	case gitops.Kapp:
+		return "have kapp keep the replicas it finds: " + gitOpsGuide + "#kapp"
+	case gitops.Kluctl:
+		return "leave replicas out of what Kluctl applies: " + gitOpsGuide + "#kluctl"
+	default:
+		return "have it leave the replicas to Hybernate: " + gitOpsGuide
+	}
 }
 
 // scaledDownByHybernate reports whether Hybernate has scaled the workload to

@@ -134,16 +134,22 @@ func (r *Reconciler) learnDependencies(ctx context.Context, workload *v1alpha1.M
 	if !changed && !stamped {
 		return nil
 	}
+	var announcement string
+	if changed {
+		g, err := r.loadDependencyGraph(ctx)
+		if err != nil {
+			return err
+		}
+		announcement = learnedMessage(workload, learned, g)
+	}
 	// Written before it's announced: a write that fails is learned again,
 	// and would otherwise be announced again.
 	if err := r.Status().Update(ctx, workload); err != nil {
 		return fmt.Errorf("recording learned dependencies: %w", err)
 	}
-	if !changed {
-		return nil
+	if changed {
+		r.emitEvent(workload, false, "Normal", ReasonDependenciesLearned, actionLearnDependencies, "%s", announcement)
 	}
-	r.emitEvent(workload, false, "Normal", ReasonDependenciesLearned, actionLearnDependencies,
-		"%s", learnedMessage(learned))
 	return nil
 }
 
@@ -341,19 +347,60 @@ func sameDependencies(a, b []v1alpha1.LearnedDependency) bool {
 	})
 }
 
-func learnedMessage(learned []v1alpha1.LearnedDependency) string {
+// learnedMessage says what the workload was learned to depend on, and what
+// that does for each dependency: only one Hybernate manages, in a namespace
+// that allows the workload's, is woken with it and held awake while it is.
+// The phrases are the scan's, so both say the same of a dependency.
+func learnedMessage(workload *v1alpha1.ManagedWorkload, learned []v1alpha1.LearnedDependency, g *dependencyGraph) string {
 	if len(learned) == 0 {
 		return "no dependencies found in its environment"
 	}
-	parts := make([]string, 0, len(learned))
+	var together, unmanaged, notAllowed []string
 	for _, d := range learned {
 		how := d.Via
 		if d.Source == v1alpha1.LearnedFromWake {
 			how = "a request that woke it"
 		}
-		parts = append(parts, fmt.Sprintf("%s/%s (%s)", d.Namespace, d.Name, how))
+		named := fmt.Sprintf("%s/%s (%s)", d.Namespace, d.Name, how)
+		id := workloadID{namespace: d.Namespace, kind: d.Kind, name: d.Name}
+		switch {
+		case !g.allows(workload.Namespace, id):
+			notAllowed = append(notAllowed, named)
+		case g.owner(id) == nil:
+			unmanaged = append(unmanaged, named)
+		default:
+			together = append(together, named)
+		}
 	}
-	return "depends on " + strings.Join(parts, ", ") + "; held and woken with it"
+	self := workload.Spec.Target.Name
+	var parts []string
+	if len(together) > 0 {
+		parts = append(parts, listNames(together)+", "+wokenAndHeld)
+	}
+	if len(unmanaged) > 0 {
+		isnt, subject, object := agreeing(len(unmanaged))
+		parts = append(parts, fmt.Sprintf("%s, which %s managed by Hybernate, so %s %s woken with %s: "+
+			"opt %s in to have them paused and woken together", listNames(unmanaged), isnt, subject, isnt, self, object))
+	}
+	if len(notAllowed) > 0 {
+		isnt, subject, _ := agreeing(len(notAllowed))
+		parts = append(parts, fmt.Sprintf("%s, in a namespace whose %s doesn't allow dependents from %s, "+
+			"so %s %s woken or held with %s", listNames(notAllowed),
+			v1alpha1.AnnotationDependentsFrom, workload.Namespace, subject, isnt, self))
+	}
+	return "depends on " + strings.Join(parts, "; and on ")
+}
+
+// wokenAndHeld is what Hybernate does for a dependency it manages: it wakes
+// it with the dependent, and holds it awake while the dependent is.
+const wokenAndHeld = "woken and held with it"
+
+// agreeing is the verb and pronouns that agree with n dependencies.
+func agreeing(n int) (isnt, subject, object string) {
+	if n > 1 {
+		return "aren't", "they", "them"
+	}
+	return "isn't", "it", "it"
 }
 
 // dependencyRefs are the workloads a ManagedWorkload depends on: those its
@@ -434,8 +481,8 @@ func (r *Reconciler) learnFromWake(ctx context.Context, workload *v1alpha1.Manag
 			learned.Namespace, learned.Name, err)
 	}
 	r.emitEvent(dependent, false, "Normal", ReasonDependenciesLearned, actionLearnDependencies,
-		"depends on %s/%s, learned from a request it sent that woke it; held and woken with it",
-		learned.Namespace, learned.Name)
+		"depends on %s/%s, learned from a request it sent that woke it; %s",
+		learned.Namespace, learned.Name, wokenAndHeld)
 	return nil
 }
 

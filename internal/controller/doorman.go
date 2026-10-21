@@ -19,7 +19,6 @@ package controller
 import (
 	"cmp"
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"net/netip"
@@ -32,6 +31,7 @@ import (
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	discoveryv1 "k8s.io/api/discovery/v1"
+	networkingv1 "k8s.io/api/networking/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -52,10 +52,6 @@ const (
 	conditionWakeOnRequest = "WakeOnRequest"
 	actionRouteDoorman     = "RouteDoorman"
 	reasonRoutingFailed    = "RoutingFailed"
-
-	// annotationGKENEG puts a Service behind GKE's container-native load
-	// balancing. GKE adds it to Services used by an Ingress by default.
-	annotationGKENEG = "cloud.google.com/neg"
 
 	labelServiceProxyName = "service.kubernetes.io/service-proxy-name"
 
@@ -238,7 +234,7 @@ func (r *Reconciler) reconcileDoorman(ctx context.Context, workload *v1alpha1.Ma
 	if len(errs) > 0 {
 		return 0, errors.Join(errs...)
 	}
-	r.reportDoorman(ctx, workload, routes, plan.skipped)
+	r.reportDoorman(ctx, workload, target, routes, plan.skipped)
 	return recheck, nil
 }
 
@@ -377,10 +373,33 @@ func (s skippedServices) notes() string {
 	return strings.Join(notes, "; ")
 }
 
+const (
+	reasonNoReadinessProbe = "NoReadinessProbe"
+
+	// noReadinessNote is what the WakeOnRequest condition adds for a routed
+	// workload whose pods have no readiness probe.
+	noReadinessNote = "its pods have no readiness probe, so held requests reach them as soon as they start, " +
+		"which may be before the app can answer them"
+)
+
+// hasReadinessCheck reports whether a pod template tells Kubernetes when
+// its app can serve: a readiness or startup probe on one of its containers,
+// or a readiness gate. Without one, a pod is Ready as soon as its
+// containers start, and the doorman passes held requests to it then.
+// Injected sidecars aren't in the template, and their probes say nothing of
+// the app's.
+func hasReadinessCheck(spec corev1.PodSpec) bool {
+	return len(spec.ReadinessGates) > 0 || slices.ContainsFunc(spec.Containers, func(c corev1.Container) bool {
+		return c.ReadinessProbe != nil || c.StartupProbe != nil
+	})
+}
+
 // reportDoorman sets the WakeOnRequest condition. Requests through a Service
 // left unrouted because of its load balancer fail while the workload is
-// paused, so a warning event says so whenever that list changes.
-func (r *Reconciler) reportDoorman(ctx context.Context, workload *v1alpha1.ManagedWorkload,
+// paused, so a warning event says so whenever that list changes, as one
+// does when a routed workload's pods have no readiness probe, which the
+// requests that wake it may reach before its app can answer them.
+func (r *Reconciler) reportDoorman(ctx context.Context, workload *v1alpha1.ManagedWorkload, target client.Object,
 	routes []v1alpha1.DoormanRoute, skipped skippedServices) {
 	status, reason, message := metav1.ConditionTrue, "DoormanRouted", "requests are held and wake the workload"
 	switch {
@@ -406,6 +425,10 @@ func (r *Reconciler) reportDoorman(ctx context.Context, workload *v1alpha1.Manag
 	if notes := skipped.notes(); notes != "" {
 		message += "; " + notes
 	}
+	unready := len(routes) > 0 && !hasReadinessCheck(podTemplateOf(target).Spec)
+	if unready {
+		message += "; " + noReadinessNote
+	}
 	previous := meta.FindStatusCondition(workload.Status.Conditions, conditionWakeOnRequest)
 	r.setCondition(workload, conditionWakeOnRequest, status, reason, message)
 	if len(skipped.unsupported) > 0 && (previous == nil || previous.Message != message) {
@@ -413,7 +436,15 @@ func (r *Reconciler) reportDoorman(ctx context.Context, workload *v1alpha1.Manag
 			"requests to Services %s won't wake the workload: GKE container-native load balancing (NEGs) can't use the doorman",
 			strings.Join(skipped.unsupported, ", "))
 	}
+	if unready && (previous == nil || !strings.Contains(previous.Message, noReadinessNote)) {
+		r.announceRouting(ctx, workload, reasonNoReadinessProbe,
+			"its pods have no readiness probe, so a request that wakes it reaches them as soon as they start, "+
+				"which may be before the app can answer it; give it a readiness probe that passes once it can serve: %s",
+			readinessProbesGuide)
+	}
 }
+
+const readinessProbesGuide = "https://okedeji.io/hybernate/concepts/wake-on-request/#readiness-probes"
 
 func (r *Reconciler) doormanEndpoints(ctx context.Context) (map[discoveryv1.AddressType][]discoveryv1.Endpoint, error) {
 	return readDoormanEndpoints(ctx, r.Client, r.DoormanNamespace, r.DoormanService)
@@ -492,6 +523,10 @@ func (r *Reconciler) planDoorman(ctx context.Context, workload *v1alpha1.Managed
 	if err := r.List(ctx, &list, client.InNamespace(workload.Namespace)); err != nil {
 		return doormanPlan{}, fmt.Errorf("listing services: %w", err)
 	}
+	var ingresses networkingv1.IngressList
+	if err := r.List(ctx, &ingresses, client.InNamespace(workload.Namespace), client.UnsafeDisableDeepCopy); err != nil {
+		return doormanPlan{}, fmt.Errorf("listing ingresses: %w", err)
+	}
 	var plan doormanPlan
 	for _, svc := range list.Items {
 		if len(svc.Spec.Selector) == 0 || svc.Spec.ClusterIP == corev1.ClusterIPNone ||
@@ -501,7 +536,7 @@ func (r *Reconciler) planDoorman(ctx context.Context, workload *v1alpha1.Managed
 		if !labels.SelectorFromSet(svc.Spec.Selector).Matches(podLabels) {
 			continue
 		}
-		if usesGKENEG(svc) {
+		if usesGKENEG(svc, ingresses.Items) {
 			plan.skipped.unsupported = append(plan.skipped.unsupported, svc.Name)
 			continue
 		}
@@ -631,27 +666,6 @@ func serviceFamilies(svc corev1.Service) []discoveryv1.AddressType {
 		}
 	}
 	return out
-}
-
-// usesGKENEG reports whether a Service is behind GKE container-native load
-// balancing. The NEG controller can fail a Service's whole sync on one
-// endpoint it rejects, and it checks each endpoint's pod against the Service
-// in the pod's own namespace, which for the doorman is the wrong one. Routing
-// such a Service risks freezing its load balancer until the workload wakes.
-// An annotation that can't be parsed counts as NEG, to stay safe.
-func usesGKENEG(svc corev1.Service) bool {
-	value, ok := svc.Annotations[annotationGKENEG]
-	if !ok {
-		return false
-	}
-	var neg struct {
-		Ingress      bool                       `json:"ingress"`
-		ExposedPorts map[string]json.RawMessage `json:"exposed_ports"`
-	}
-	if err := json.Unmarshal([]byte(value), &neg); err != nil {
-		return true
-	}
-	return neg.Ingress || len(neg.ExposedPorts) > 0
 }
 
 func podTemplateLabels(target client.Object) map[string]string {
@@ -1169,7 +1183,9 @@ func (r *Reconciler) findWorkloadsForDoorman(ctx context.Context, _ client.Objec
 }
 
 // findPausedWorkloadsInNamespace re-queues paused workloads when a Service
-// in their namespace changes, since it may now select their pods.
+// in their namespace changes, since it may now select their pods or be
+// behind GKE's NEGs, or an Ingress there does, which may put one of their
+// Services behind NEGs or take it out.
 func (r *Reconciler) findPausedWorkloadsInNamespace(ctx context.Context, obj client.Object) []reconcile.Request {
 	var list v1alpha1.ManagedWorkloadList
 	if err := r.List(ctx, &list, client.InNamespace(obj.GetNamespace()), client.UnsafeDisableDeepCopy); err != nil {

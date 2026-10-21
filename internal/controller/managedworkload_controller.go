@@ -27,6 +27,7 @@ import (
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	discoveryv1 "k8s.io/api/discovery/v1"
+	networkingv1 "k8s.io/api/networking/v1"
 	"k8s.io/apimachinery/pkg/api/equality"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/meta"
@@ -51,6 +52,7 @@ import (
 	v1alpha1 "github.com/okedeji/hybernate/api/v1alpha1"
 	"github.com/okedeji/hybernate/internal/autoscaler"
 	"github.com/okedeji/hybernate/internal/forecast"
+	"github.com/okedeji/hybernate/internal/human"
 	"github.com/okedeji/hybernate/internal/lifecycle"
 	"github.com/okedeji/hybernate/internal/metrics"
 	"github.com/okedeji/hybernate/internal/signal"
@@ -168,6 +170,7 @@ type lifecyclePauser interface {
 // +kubebuilder:rbac:groups="",resources=configmaps,verbs=get
 // +kubebuilder:rbac:groups="",resources=events,verbs=create;patch
 // +kubebuilder:rbac:groups="",resources=services,verbs=get;list;watch
+// +kubebuilder:rbac:groups=networking.k8s.io,resources=ingresses,verbs=get;list;watch
 // +kubebuilder:rbac:groups="",resources=pods,verbs=get;list;watch
 // +kubebuilder:rbac:groups="",resources=nodes,verbs=get;list;watch
 // +kubebuilder:rbac:groups=autoscaling,resources=horizontalpodautoscalers,verbs=get;list;watch
@@ -520,7 +523,7 @@ func (r *Reconciler) handlePause(ctx context.Context, workload *v1alpha1.Managed
 	if paused.Running > 0 {
 		stillRunning = fmt.Sprintf("paused with %d pods still running %s after it was scaled to zero: they may be "+
 			"stuck terminating, or a StatefulSet with OrderedReady pod management may be waiting on one that isn't "+
-			"Ready", paused.Running, roundedDuration(r.now().Sub(workload.Status.Pause.PausedAt.Time)))
+			"Ready", paused.Running, human.Duration(r.now().Sub(workload.Status.Pause.PausedAt.Time)))
 		r.setCondition(workload, conditionPauseIncomplete, metav1.ConditionTrue, "PodsStillRunning", stillRunning)
 	} else if meta.IsStatusConditionTrue(workload.Status.Conditions, conditionPauseIncomplete) {
 		r.setCondition(workload, conditionPauseIncomplete, metav1.ConditionFalse, reasonPodsStopped, "")
@@ -758,7 +761,7 @@ func (r *Reconciler) handleResume(ctx context.Context, workload *v1alpha1.Manage
 	var shortfall string
 	if short {
 		shortfall = fmt.Sprintf("resumed with %d of %d replicas Ready: Hybernate stopped waiting for the rest after %s",
-			resumed.Ready, resumed.Replicas, roundedDuration(waited.ScaledUp))
+			resumed.Ready, resumed.Replicas, human.Duration(waited.ScaledUp))
 		r.setCondition(workload, conditionResumeIncomplete, metav1.ConditionTrue, "ReplicasNotReady", shortfall)
 	} else {
 		r.clearCondition(workload, conditionResumeIncomplete, ReasonAllReplicasReady)
@@ -955,7 +958,7 @@ func (r *Reconciler) abandonHandBack(ctx context.Context, workload *v1alpha1.Man
 		"workload", workload.Name, "namespace", workload.Namespace, "error", failure.Error())
 	r.emitEvent(workload, false, "Warning", ReasonHandBackAbandoned, actionResume,
 		"namespace %s is being deleted and handing the target back has failed for %s, so Hybernate lets it go: %v",
-		workload.Namespace, roundedDuration(handBackGiveUpAfter), failure)
+		workload.Namespace, human.Duration(handBackGiveUpAfter), failure)
 	return true
 }
 
@@ -1460,6 +1463,22 @@ func phaseChanged() predicate.Predicate {
 	}
 }
 
+// ingressBackendsChanged passes the changes to an Ingress that can put a
+// Service behind GKE's NEGs or take it out: its creation and deletion, its
+// class, and its backends. GKE's ingress controller keeps rewriting its
+// own annotations and status, which change neither.
+func ingressBackendsChanged() predicate.Predicate {
+	return predicate.Funcs{
+		UpdateFunc: func(e event.UpdateEvent) bool {
+			old, okOld := e.ObjectOld.(*networkingv1.Ingress)
+			cur, okNew := e.ObjectNew.(*networkingv1.Ingress)
+			return !okOld || !okNew ||
+				old.Annotations[annotationIngressClass] != cur.Annotations[annotationIngressClass] ||
+				!equality.Semantic.DeepEqual(old.Spec, cur.Spec)
+		},
+	}
+}
+
 // targetRefFor identifies a watched object as a ManagedWorkload target.
 // Typed objects from the cache carry no GVK, so the kind comes from the Go
 // type rather than obj.GetObjectKind().
@@ -1635,6 +1654,8 @@ func (r *Reconciler) SetupWithManager(mgr ctrl.Manager) error {
 		Watches(&discoveryv1.EndpointSlice{}, handler.EnqueueRequestsFromMapFunc(r.findWorkloadsForDoorman),
 			builder.WithPredicates(predicate.NewPredicateFuncs(r.isDoormanEndpoints))).
 		Watches(&corev1.Service{}, handler.EnqueueRequestsFromMapFunc(r.findPausedWorkloadsInNamespace)).
+		Watches(&networkingv1.Ingress{}, handler.EnqueueRequestsFromMapFunc(r.findPausedWorkloadsInNamespace),
+			builder.WithPredicates(ingressBackendsChanged())).
 		Watches(&corev1.Namespace{}, handler.EnqueueRequestsFromMapFunc(r.findWorkloadsInNamespace),
 			builder.WithPredicates(inWatchedNamespaces(r.WatchNamespaces))).
 		Named("managedworkload").

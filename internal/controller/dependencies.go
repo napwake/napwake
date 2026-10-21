@@ -35,6 +35,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/log"
 
 	v1alpha1 "github.com/okedeji/hybernate/api/v1alpha1"
+	"github.com/okedeji/hybernate/internal/human"
 	"github.com/okedeji/hybernate/internal/lifecycle"
 )
 
@@ -291,7 +292,7 @@ func (h dependencyHolds) message() string {
 	if h.cycle {
 		return "dependsOn forms a cycle through this workload, so it won't pause until the cycle is removed"
 	}
-	return "kept awake for " + listUpTo(h.holders, maxListed)
+	return "kept awake for " + listNames(h.holders)
 }
 
 // maxListed bounds how many names a condition or event message lists: a
@@ -299,12 +300,12 @@ func (h dependencyHolds) message() string {
 // the whole status write past that, and an event's note past 1024.
 const maxListed = 10
 
-// listUpTo joins names, listing at most limit and counting the rest.
-func listUpTo(names []string, limit int) string {
-	if len(names) <= limit {
+// listNames joins names, listing at most maxListed and counting the rest.
+func listNames(names []string) string {
+	if len(names) <= maxListed {
 		return strings.Join(names, ", ")
 	}
-	return fmt.Sprintf("%s and %d more", strings.Join(names[:limit], ", "), len(names)-limit)
+	return fmt.Sprintf("%s and %d more", strings.Join(names[:maxListed], ", "), len(names)-maxListed)
 }
 
 // heldByDependencies finds what keeps workload from pausing for the
@@ -450,7 +451,7 @@ func (r *Reconciler) waitForDependencies(ctx context.Context, workload *v1alpha1
 			continue
 		}
 		if deadline := startDeadline(target); waited >= deadline {
-			skipped = append(skipped, fmt.Sprintf("%s (it isn't Ready after %s)", id, roundedDuration(deadline)))
+			skipped = append(skipped, fmt.Sprintf("%s (it isn't Ready after %s)", id, human.Duration(deadline)))
 			continue
 		}
 		if dep != nil && dep.uid != workload.UID && !isAwake(dep.phase) {
@@ -575,7 +576,7 @@ func (r *Reconciler) checkDependenciesExist(ctx context.Context, workload *v1alp
 	} else {
 		r.setCondition(workload, conditionDependencyNotAllowed, metav1.ConditionTrue, conditionDependencyNotAllowed,
 			fmt.Sprintf("not in a namespace that allows dependents from %s with %s, so not held or woken: %s",
-				workload.Namespace, v1alpha1.AnnotationDependentsFrom, listUpTo(notAllowed, maxListed)))
+				workload.Namespace, v1alpha1.AnnotationDependentsFrom, listNames(notAllowed)))
 	}
 
 	var missing, hidden []string

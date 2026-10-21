@@ -375,7 +375,7 @@ func TestResume_OfADegradedWorkloadFinishes(t *testing.T) {
 	c := meta.FindStatusCondition(got.Status.Conditions, conditionResumeIncomplete)
 	require.NotNil(t, c)
 	assert.Equal(t, metav1.ConditionTrue, c.Status)
-	assert.Equal(t, "resumed with 2 of 3 replicas Ready: Hybernate stopped waiting for the rest after 3m", c.Message,
+	assert.Equal(t, "resumed with 2 of 3 replicas Ready: Hybernate stopped waiting for the rest after 3 minutes", c.Message,
 		"2 minutes from the first reconcile that saw them Ready, 30s after the scale-up")
 	assert.Len(t, recorded(r.Recorder.(*events.FakeRecorder), "Warning "+ReasonResumeIncomplete), 1)
 }

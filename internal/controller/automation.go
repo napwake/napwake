@@ -32,6 +32,8 @@ import (
 	v1alpha1 "github.com/okedeji/hybernate/api/v1alpha1"
 	"github.com/okedeji/hybernate/internal/cost"
 	"github.com/okedeji/hybernate/internal/forecast"
+	"github.com/okedeji/hybernate/internal/human"
+	"github.com/okedeji/hybernate/internal/lifecycle"
 	opmetrics "github.com/okedeji/hybernate/internal/metrics"
 
 	ctrl "sigs.k8s.io/controller-runtime"
@@ -241,7 +243,7 @@ func (r *Reconciler) reconcileAutomation(ctx context.Context, workload *v1alpha1
 			if workload.Spec.IdlePolicy != nil {
 				r.observeActivity(ctx, workload, target, cpuLoad{err: err})
 			}
-			return r.reportMetricsUnavailable(ctx, workload, err)
+			return r.reportMetricsUnavailable(ctx, workload, target, err)
 		}
 		load.percent, load.err = r.utilization(ctx, workload, usage, pods)
 		if load.err == nil {
@@ -514,16 +516,37 @@ func (r *Reconciler) observedCPU(ctx context.Context, workload *v1alpha1.Managed
 	return 0, 0, err
 }
 
+const (
+	reasonNoPodMetrics = "NoPodMetrics"
+
+	// podMetricsGrace is how long a workload's Ready pods may go without
+	// metrics before that's reported as a problem. metrics-server reports
+	// a new pod's CPU once it has scraped it twice, which at its slowest
+	// default resolution, a minute, takes two, and the kubelet's own
+	// collection adds a little more.
+	podMetricsGrace = 3 * time.Minute
+
+	metricsRecheck = time.Minute
+)
+
 // reportMetricsUnavailable surfaces why CPU can't be read. Both idle
 // detection and the forecast depend on it, so without this the workload would
 // sit awake indefinitely with nothing to say why.
-func (r *Reconciler) reportMetricsUnavailable(ctx context.Context, workload *v1alpha1.ManagedWorkload, err error) (*ctrl.Result, error) {
+func (r *Reconciler) reportMetricsUnavailable(ctx context.Context, workload *v1alpha1.ManagedWorkload,
+	target client.Object, err error) (*ctrl.Result, error) {
 	reason := "MetricsUnavailable"
 	msg := fmt.Sprintf("cannot read CPU usage, so idle detection and the forecast are paused: %v", err)
 	switch {
 	case errors.Is(err, opmetrics.ErrNoPodMetrics):
-		reason = "NoPodMetrics"
-		msg = "target has replicas but no pod metrics, so idle detection and the forecast are paused; check that metrics-server is installed and reporting"
+		if wait, awaiting := r.awaitPodMetrics(workload, target); awaiting {
+			log.FromContext(ctx).V(1).Info("waiting for new pods' metrics",
+				"workload", workload.Name, "namespace", workload.Namespace, "error", err.Error())
+			return &ctrl.Result{RequeueAfter: wait}, nil
+		}
+		reason = reasonNoPodMetrics
+		msg = fmt.Sprintf("the target's Ready pods have had no metrics for over %s, so idle detection and the "+
+			"forecast are paused; check that metrics-server is installed and reporting them: kubectl top pods -n %s",
+			human.Duration(podMetricsGrace), workload.Namespace)
 	case errors.Is(err, errNoCPURequests):
 		reason = "NoCPURequests"
 		msg = "the target's containers request no CPU, in its running pods or, with none running, in its pod template, " +
@@ -539,5 +562,44 @@ func (r *Reconciler) reportMetricsUnavailable(ctx context.Context, workload *v1a
 	log.FromContext(ctx).V(1).Info("CPU usage unavailable",
 		"workload", workload.Name, "namespace", workload.Namespace, "reason", reason, "error", err.Error())
 
-	return &ctrl.Result{RequeueAfter: 1 * time.Minute}, nil
+	return &ctrl.Result{RequeueAfter: metricsRecheck}, nil
+}
+
+// awaitPodMetrics reports whether the target's pods may yet report the
+// metrics they don't have, and says so on MetricsAvailable, Unknown, with
+// no warning, returning when to look again. A pod has none until it runs,
+// and for a scrape or two after, so for the minutes a wake or a rollout
+// takes, missing metrics are no fault of metrics-server's. Ready pods that
+// go on without them past podMetricsGrace are, and so is a problem already
+// reported, until metrics are read again.
+func (r *Reconciler) awaitPodMetrics(workload *v1alpha1.ManagedWorkload, target client.Object) (time.Duration, bool) {
+	if conditionFalseWith(workload, conditionMetricsAvailable, reasonNoPodMetrics) {
+		return 0, false
+	}
+	if lifecycle.ReadyReplicas(target) == 0 {
+		r.restartCondition(workload, conditionMetricsAvailable, metav1.ConditionUnknown, "NoReadyPods",
+			"none of the target's pods is Ready yet, so there's no CPU to measure; idle detection and the forecast "+
+				"wait for them")
+		return metricsRecheck, true
+	}
+	r.restartCondition(workload, conditionMetricsAvailable, metav1.ConditionUnknown, "AwaitingPodMetrics",
+		"the target's pods have no metrics yet, which metrics-server reports a scrape or two after a pod starts; "+
+			"idle detection and the forecast wait for them")
+	since := meta.FindStatusCondition(workload.Status.Conditions, conditionMetricsAvailable).LastTransitionTime
+	left := podMetricsGrace - r.now().Sub(since.Time)
+	if left <= 0 {
+		return 0, false
+	}
+	return min(metricsRecheck, left), true
+}
+
+// restartCondition sets a condition whose LastTransitionTime says how long
+// it has held for its reason, not only its status: one that changes reason
+// is set afresh.
+func (r *Reconciler) restartCondition(workload *v1alpha1.ManagedWorkload, condType string,
+	status metav1.ConditionStatus, reason, message string) {
+	if c := meta.FindStatusCondition(workload.Status.Conditions, condType); c != nil && c.Reason != reason {
+		meta.RemoveStatusCondition(&workload.Status.Conditions, condType)
+	}
+	r.setCondition(workload, condType, status, reason, message)
 }
