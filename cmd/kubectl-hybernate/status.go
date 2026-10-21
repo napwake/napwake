@@ -145,6 +145,9 @@ type statusResult struct {
 	// SavingsUnknown are why what pausing saved can't be measured, for
 	// the workloads it can't, each once.
 	SavingsUnknown []string `json:"savingsUnknown,omitempty"`
+	// ForecastTimeZones are the time zones forecasts count hours in, by
+	// what the operator recorded: one, unless two installs differ.
+	ForecastTimeZones []string `json:"forecastTimeZones,omitempty"`
 	// NodesNotScalingDown is set when pausing freed far more than came off
 	// the bill this month, for the workloads whose savings are measured.
 	NodesNotScalingDown bool             `json:"nodesNotScalingDown,omitempty"`
@@ -292,7 +295,11 @@ func clusterStatus(ctx context.Context, c client.Client, home string, opts statu
 		row := workloadStatus(w, activeUntil[targetOfManaged(w)], now)
 		result.Workloads = append(result.Workloads, row)
 		result.Problems = append(result.Problems, problemsOf(w, now)...)
+		if p := w.Status.Prediction; p != nil && p.TimeZone != "" && !slices.Contains(result.ForecastTimeZones, p.TimeZone) {
+			result.ForecastTimeZones = append(result.ForecastTimeZones, p.TimeZone)
+		}
 	}
+	slices.Sort(result.ForecastTimeZones)
 	sumFreedAndSaved(&result)
 	result.Recent = append(result.Recent, recentHappenings(events, targets, now.Add(-opts.since))...)
 	return result, nil
@@ -776,6 +783,9 @@ func writeStatusTable(w io.Writer, result statusResult, now time.Time) error {
 	p.line("%s: Hybernate manages %s.", result.Cluster, countOf(len(result.Workloads), "workload"))
 	p.line("  %s", phaseCounts(result.Workloads))
 	p.line("  %s", nodeAutoscalerLine(result.NodeAutoscaler))
+	if zone := timeZoneLine(result.ForecastTimeZones); zone != "" {
+		p.line("  %s", zone)
+	}
 	if result.FreedThisMonth > 0 || result.SavedThisMonth > 0 {
 		p.line("  Freed %s this month, and saved %s of it.", savedMoney(result.FreedThisMonth),
 			savedMoney(result.SavedThisMonth))
@@ -864,6 +874,22 @@ func phaseCounts(workloads []statusWorkload) string {
 		s += fmt.Sprintf("; %d in dry-run, measured but never paused", dryRun)
 	}
 	return s
+}
+
+// timeZoneLine says which time zone forecasts count hours in, by what the
+// operator recorded, and how to change it from the default, which is
+// rarely where people are.
+func timeZoneLine(zones []string) string {
+	switch {
+	case len(zones) == 0:
+		return ""
+	case len(zones) > 1:
+		return "Forecast time zones: " + strings.Join(zones, ", ") + ", as the installs differ"
+	case zones[0] == "UTC":
+		return "Forecast time zone: UTC, the default; if your users are elsewhere, set the Helm value timezone " +
+			"to theirs, such as Europe/London, so wakes follow their clock"
+	}
+	return "Forecast time zone: " + zones[0]
 }
 
 func stateCell(wl statusWorkload) string {

@@ -94,6 +94,9 @@ func statusCluster() []client.Object {
 	web.Spec.DryRun = true
 	web.Status.Activity = activity(v1alpha1.ActivitySourceRollout, 15*time.Minute, 45*time.Minute)
 	web.Status.Cost = &v1alpha1.CostStatus{FreedThisMonth: "$0.00", SavedThisMonth: "$0.00"}
+	for _, w := range []*v1alpha1.ManagedWorkload{api, postgres, web} {
+		w.Status.Prediction = &v1alpha1.PredictionStatus{TimeZone: "Europe/London"}
+	}
 
 	worker := statusWorkloadObj("preview-7", "worker", v1alpha1.TargetKindDeployment, v1alpha1.PhaseResuming,
 		25*time.Minute)
@@ -166,6 +169,7 @@ func TestStatus(t *testing.T) {
 	assert.Equal(t, `staging (EKS us-east-1): Hybernate manages 4 workloads.
   1 paused, 2 running, 1 resuming; 1 in dry-run, measured but never paused
   Node autoscaler: none found — freed capacity won't lower the bill until nodes scale down; see https://okedeji.io/hybernate/guides/cluster-autoscaler/
+  Forecast time zone: Europe/London
   Freed $42 this month, and saved $35 of it.
 
 Needs attention:
@@ -641,6 +645,46 @@ func TestStatus_FreedBeforeDryRun(t *testing.T) {
 
 	assert.Contains(t, out, "  Freed $9 this month, and saved $9 of it.\n")
 	assert.Regexp(t, `deployment/web\s+running \(dry-run\) .* \$9\s+\$9\n`, out)
+}
+
+// Status says which zone the forecast counts hours in, as the operator
+// recorded it, and how to change the default, which is rarely where people
+// are.
+func TestStatus_ForecastTimeZone(t *testing.T) {
+	tests := []struct {
+		name  string
+		zones []string
+		want  string
+	}{
+		{name: "set", zones: []string{"Europe/London"}, want: "  Forecast time zone: Europe/London\n"},
+		{name: "the default", zones: []string{"UTC", ""},
+			want: "  Forecast time zone: UTC, the default; if your users are elsewhere, set the Helm value timezone " +
+				"to theirs, such as Europe/London, so wakes follow their clock\n"},
+		{name: "two installs", zones: []string{"UTC", "America/New_York", "UTC"},
+			want: "  Forecast time zones: America/New_York, UTC, as the installs differ\n"},
+		{name: "not recorded yet", zones: []string{""}},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			objs := make([]client.Object, 0, len(tt.zones))
+			for i, zone := range tt.zones {
+				w := statusWorkloadObj("shop", fmt.Sprintf("w%d", i), v1alpha1.TargetKindDeployment,
+					v1alpha1.PhaseRunning, time.Hour)
+				if zone != "" {
+					w.Status.Prediction = &v1alpha1.PredictionStatus{TimeZone: zone}
+				}
+				objs = append(objs, w)
+			}
+
+			out := runStatus(t, newStatusClient(t, interceptor.Funcs{}, objs...), statusOpts())
+
+			if tt.want == "" {
+				assert.NotContains(t, out, "Forecast time zone")
+				return
+			}
+			assert.Contains(t, out, tt.want)
+		})
+	}
 }
 
 // Freed well above saved means nodes aren't scaling down, which status
