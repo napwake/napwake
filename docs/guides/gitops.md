@@ -32,6 +32,19 @@ data:
       - /spec/replicas
 ```
 
+When Argo CD was installed with its Helm chart, the chart writes `argocd-cm` from its values, so set the same keys under `configs.cm` there, with the rest of Argo CD's settings:
+
+```yaml title="argo-cd-values.yaml" linenums="1"
+configs:
+  cm:
+    resource.customizations.ignoreDifferences.apps_Deployment: |
+      jsonPointers:
+        - /spec/replicas
+    resource.customizations.ignoreDifferences.apps_StatefulSet: |
+      jsonPointers:
+        - /spec/replicas
+```
+
 Then add `RespectIgnoreDifferences=true` to each app's sync options, so a sync leaves them too and not only the diff:
 
 ```yaml title="application.yaml" linenums="1"
