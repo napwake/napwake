@@ -71,7 +71,7 @@ type nodePooler interface {
 
 // listPricer prices a workload at the nodes it runs on.
 type listPricer interface {
-	ListRates(ctx context.Context, workload *v1alpha1.ManagedWorkload) (cost.Rates, bool, error)
+	ListRates(ctx context.Context, workload *v1alpha1.ManagedWorkload) (cost.Rates, v1alpha1.ListPrice, error)
 }
 
 // engineRegistry holds each workload's forecast engine between reconciles,

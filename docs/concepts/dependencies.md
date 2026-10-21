@@ -131,4 +131,4 @@ A request through a normal Service wakes a paused workload by itself, through [w
 - **Addresses Hybernate hasn't seen used yet**: set in Secrets, built in code, or read from files, before a request to a paused dependency teaches it.
 - **A dependency on a workload behind no Service**, which no address names.
 
-[`kubectl hybernate scan`](../getting-started/kubectl-plugin.md#scan-a-cluster) lists the dependencies it finds in each workload's environment, and whether each is declared, connected by Hybernate, or will be once Hybernate manages the workload.
+[`kubectl hybernate scan`](../getting-started/kubectl-plugin.md#scan-a-cluster) lists the dependencies it finds in each workload's environment, and what Hybernate does with each: woken and held with the workload that needs it, declared or learned, once Hybernate manages both; never paused, for a dependency it doesn't manage.

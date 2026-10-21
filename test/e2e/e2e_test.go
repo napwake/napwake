@@ -663,8 +663,8 @@ data:
 
 			table, err := utils.Run(exec.Command(pluginBinary, "scan", "-n", depsScanNamespace, "--window", "0"))
 			Expect(err).NotTo(HaveOccurred())
-			Expect(table).To(MatchRegexp(
-				`deployment/e2e-app\s+->\s+statefulset/e2e-db\s+PGHOST\s+connected once Hybernate manages it`))
+			Expect(table).To(ContainSubstring("Once Hybernate manages both ends of one, it wakes the dependency"))
+			Expect(table).To(MatchRegexp(`deployment/e2e-app\s+->\s+statefulset/e2e-db\s+PGHOST\n`))
 		})
 
 		It("writes the HTML report, without dependency addresses", func() {
@@ -713,7 +713,7 @@ spec:
 
 			table, err := utils.Run(exec.Command(pluginBinary, "scan", "-n", depsScanNamespace, "--window", "0"))
 			Expect(err).NotTo(HaveOccurred())
-			Expect(table).To(MatchRegexp(`deployment/e2e-app\s+->\s+statefulset/e2e-db\s+PGHOST\s+connected by Hybernate`))
+			Expect(table).To(MatchRegexp(`deployment/e2e-app\s+->\s+statefulset/e2e-db\s+PGHOST\s+woken and held with it`))
 
 			out, err := utils.Run(exec.Command(pluginBinary, "deps", "e2e-db", "-n", depsScanNamespace))
 			Expect(err).NotTo(HaveOccurred())

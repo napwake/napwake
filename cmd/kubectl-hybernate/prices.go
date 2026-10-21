@@ -70,21 +70,25 @@ func (p prices) sentence() string {
 }
 
 // pricesSentence says what the scan's costs were priced at: the list
-// prices of the cluster's node types where it has them, the user's own
-// prices, or assumed ones, and which workloads cost less than shown
-// because they run on spot nodes.
+// prices of the cluster's node types where it has them, on-demand or spot,
+// the user's own prices, or assumed ones; which workloads run on spot nodes
+// priced at spot; and which cost less than shown, as they're on spot nodes
+// of a type without a spot price, priced on-demand.
 func (r scanResult) pricesSentence() string {
 	p := r.Prices
 	if !p.CPUAssumed && !p.MemoryAssumed {
 		return p.sentence()
 	}
 	var nodes discovery.Prices
-	var onSpot int
+	var atSpot, spotAtOnDemand int
 	if r.ClusterReport != nil {
 		nodes = r.NodePrices
 		for _, wl := range r.Workloads {
 			if wl.OnSpot {
-				onSpot++
+				atSpot++
+			}
+			if wl.SpotAtOnDemand {
+				spotAtOnDemand++
 			}
 		}
 	}
@@ -110,7 +114,7 @@ func (r scanResult) pricesSentence() string {
 			s += " None of the nodes has a list price: " + unlistedPhrase(unlisted) + "."
 		}
 	default:
-		s = "On-demand list prices for " + nodeTypesPhrase(listed) + "."
+		s = "The " + nodeTypesPhrase(listed) + "."
 		if !p.CPUAssumed {
 			s += " CPU at your price, " + p.cpu() + "."
 		}
@@ -125,15 +129,34 @@ func (r scanResult) pricesSentence() string {
 			s += " " + unlistedPhrase(unlisted) + " " + use + " " + p.unlistedRates() + "."
 		}
 	}
-	if onSpot > 0 {
+	if atSpot > 0 {
+		s += fmt.Sprintf(" %s on spot nodes, priced at spot.", plural(atSpot, "workload runs", "workloads run"))
+	}
+	if spotAtOnDemand > 0 {
 		costs := "they cost"
-		if onSpot == 1 {
+		if spotAtOnDemand == 1 {
 			costs = "it costs"
 		}
-		s += fmt.Sprintf(" %s on spot nodes, priced at on-demand, so %s less than shown.",
-			plural(onSpot, "workload runs", "workloads run"), costs)
+		s += fmt.Sprintf(" %s on spot nodes of a type without a spot price%s, priced at on-demand, so %s less "+
+			"than shown.", plural(spotAtOnDemand, "workload runs", "workloads run"), spotUnpriced(nodes.NodeTypes),
+			costs)
 	}
 	return s
+}
+
+// spotUnpriced names, in brackets, the spot nodes' types that have no spot
+// price.
+func spotUnpriced(types []discovery.NodeTypePrice) string {
+	var names []string
+	for _, t := range types {
+		if t.Spot && !t.AtSpot && t.InstanceType != "" && !slices.Contains(names, t.InstanceType) {
+			names = append(names, t.InstanceType)
+		}
+	}
+	if len(names) == 0 {
+		return ""
+	}
+	return " (" + joinAnd(names) + ")"
 }
 
 // unlistedRates names the rates pods on nodes without a list price use.
@@ -148,28 +171,50 @@ func (p prices) unlistedRates() string {
 	}
 }
 
-// nodeTypesPhrase names the node types costs were priced at, and where.
+// costsSentence says what the scan's costs were priced at, as the
+// terminal and the report both put it.
+func (r scanResult) costsSentence() string {
+	return "Costs use " + lowerFirst(r.pricesSentence())
+}
+
+// nodeTypesPhrase names the list prices the cluster's node types were
+// priced at, on-demand, spot or both, and where they are.
 func nodeTypesPhrase(types []discovery.NodeTypePrice) string {
-	names := make([]string, 0, len(types))
-	var places []string
+	var names, places []string
+	onDemand, spot := false, false
 	for _, t := range types {
-		names = append(names, t.InstanceType)
+		if !slices.Contains(names, t.InstanceType) {
+			names = append(names, t.InstanceType)
+		}
 		place := providerName(t.Provider) + " " + t.Region
 		if !slices.Contains(places, place) {
 			places = append(places, place)
 		}
+		spot = spot || t.AtSpot
+		onDemand = onDemand || !t.AtSpot
 	}
 	slices.Sort(places)
-	where := " in " + joinAnd(places)
-	if len(types) == 1 {
-		return "its node type, " + names[0] + "," + where
+	kinds := "on-demand"
+	switch {
+	case spot && onDemand:
+		kinds = "on-demand and spot"
+	case spot:
+		kinds = "spot"
+	}
+	where := ", " + joinAnd(places)
+	if len(names) == 1 {
+		price := "list price"
+		if spot && onDemand {
+			price = "list prices"
+		}
+		return fmt.Sprintf("%s %s of the cluster's nodes (%s%s)", kinds, price, names[0], where)
 	}
 	const shown = 3
 	listed := joinAnd(names)
 	if len(names) > shown {
 		listed = fmt.Sprintf("%s and %d more", strings.Join(names[:shown], ", "), len(names)-shown)
 	}
-	return fmt.Sprintf("its %d node types, %s,%s", len(types), listed, where)
+	return fmt.Sprintf("%s list prices of the cluster's %d node types (%s%s)", kinds, len(names), listed, where)
 }
 
 // unlistedPhrase names the nodes without a list price, by why: no instance

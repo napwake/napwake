@@ -231,7 +231,7 @@ func TestAccumulateCost_MonthRolloverKeepsTheNewMonthsShare(t *testing.T) {
 	w := costWorkload(v1alpha1.PhasePaused)
 	w.Status.Cost = accumulatedAt(time.Date(2026, 2, 28, 23, 50, 0, 0, time.UTC))
 	w.Status.Cost.PausedCPUHours = resource.MustParse("500")
-	w.Status.Cost.ListRates = recordedRates()
+	w.Status.Cost.ListRates, w.Status.Cost.ListPrice = recordedRates(), v1alpha1.ListPriceSpot
 	pausedWith(w, v1alpha1.ResourceSnapshot{Replicas: 1, CPUMillis: 1000})
 
 	costReconciler(time.Date(2026, 3, 1, 0, 5, 0, 0, time.UTC), &stubMetrics{}).accumulateCost(context.Background(), w)
@@ -240,6 +240,7 @@ func TestAccumulateCost_MonthRolloverKeepsTheNewMonthsShare(t *testing.T) {
 	assert.InDelta(t, 5.0/60, c.PausedCPUHours.AsApproximateFloat64(), 1e-9, "last month's totals reset, the 5 minutes of March kept")
 	assert.Equal(t, 5*time.Minute, c.Tracked.Duration)
 	assert.NotNil(t, c.ListRates, "where it ran carries over")
+	assert.Equal(t, v1alpha1.ListPriceSpot, c.ListPrice, "and at which prices")
 }
 
 // A gap longer than cost.MaxInterval, such as operator downtime, counts as
@@ -350,7 +351,8 @@ type countingPricer struct {
 	calls int
 }
 
-func (p *countingPricer) ListRates(ctx context.Context, w *v1alpha1.ManagedWorkload) (cost.Rates, bool, error) {
+func (p *countingPricer) ListRates(ctx context.Context, w *v1alpha1.ManagedWorkload) (
+	cost.Rates, v1alpha1.ListPrice, error) {
 	p.calls++
 	return p.stubPricer.ListRates(ctx, w)
 }
@@ -361,7 +363,7 @@ func TestAccumulateCost_ReadsPodsHourlyOrAfterADeploy(t *testing.T) {
 	w := costWorkload(v1alpha1.PhaseRunning)
 	w.Status.Activity = &v1alpha1.ActivityStatus{TemplateHash: "v1"}
 	r, now := costClock(fixedTime, &stubMetrics{cpuPerReplica: 1000})
-	pricer := &countingPricer{stubPricer: stubPricer{rates: nodeRates, listed: true}}
+	pricer := &countingPricer{stubPricer: stubPricer{rates: nodeRates, price: v1alpha1.ListPriceOnDemand}}
 	r.prices = pricer
 
 	r.accumulateCost(context.Background(), w)
@@ -465,13 +467,14 @@ func TestCaptureResourceSnapshot_MissingTargetEmitsNoEvent(t *testing.T) {
 }
 
 type stubPricer struct {
-	rates  cost.Rates
-	listed bool
-	err    error
+	rates cost.Rates
+	price v1alpha1.ListPrice
+	err   error
 }
 
-func (p stubPricer) ListRates(_ context.Context, _ *v1alpha1.ManagedWorkload) (cost.Rates, bool, error) {
-	return p.rates, p.listed, p.err
+func (p stubPricer) ListRates(_ context.Context, _ *v1alpha1.ManagedWorkload) (
+	cost.Rates, v1alpha1.ListPrice, error) {
+	return p.rates, p.price, p.err
 }
 
 var nodeRates = cost.Rates{CPUPerHour: 0.05, MemoryPerHour: 0.006}
@@ -486,35 +489,44 @@ func recordedRates() *v1alpha1.CostRates {
 // kept when there's nothing new to price it at.
 func TestAccumulateCost_RecordsListRates(t *testing.T) {
 	tests := []struct {
-		name   string
-		phase  v1alpha1.WorkloadPhase
-		pricer stubPricer
-		before *v1alpha1.CostRates
-		want   *v1alpha1.CostRates
+		name      string
+		phase     v1alpha1.WorkloadPhase
+		pricer    stubPricer
+		before    *v1alpha1.CostRates
+		want      *v1alpha1.CostRates
+		wantPrice v1alpha1.ListPrice
 	}{
 		{name: "running on listed nodes", phase: v1alpha1.PhaseRunning,
-			pricer: stubPricer{rates: nodeRates, listed: true}, want: recordedRates()},
+			pricer: stubPricer{rates: nodeRates, price: v1alpha1.ListPriceOnDemand}, want: recordedRates(),
+			wantPrice: v1alpha1.ListPriceOnDemand},
+		{name: "running on spot nodes", phase: v1alpha1.PhaseRunning,
+			pricer: stubPricer{rates: nodeRates, price: v1alpha1.ListPriceSpot}, before: recordedRates(),
+			want: recordedRates(), wantPrice: v1alpha1.ListPriceSpot},
 		{name: "moved to nodes not in the table", phase: v1alpha1.PhaseRunning,
 			pricer: stubPricer{}, before: recordedRates()},
 		{name: "no pod on a node yet", phase: v1alpha1.PhaseRunning,
 			pricer: stubPricer{err: metrics.ErrNoScheduledPods}, before: recordedRates(),
-			want: recordedRates()},
+			want: recordedRates(), wantPrice: v1alpha1.ListPriceSpot},
 		{name: "nodes can't be read", phase: v1alpha1.PhaseIdle,
 			pricer: stubPricer{err: errors.New("forbidden")}, before: recordedRates(),
-			want: recordedRates()},
+			want: recordedRates(), wantPrice: v1alpha1.ListPriceSpot},
 		{name: "paused: priced where it ran", phase: v1alpha1.PhasePaused,
-			pricer: stubPricer{rates: cost.Rates{CPUPerHour: 1}, listed: true}, before: recordedRates(),
-			want: recordedRates()},
+			pricer: stubPricer{rates: cost.Rates{CPUPerHour: 1}, price: v1alpha1.ListPriceOnDemand},
+			before: recordedRates(), want: recordedRates(), wantPrice: v1alpha1.ListPriceSpot},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			w := costWorkload(tt.phase)
 			w.Status.Cost = &v1alpha1.CostStatus{ListRates: tt.before}
+			if tt.before != nil {
+				w.Status.Cost.ListPrice = v1alpha1.ListPriceSpot
+			}
 			r := costReconciler(fixedTime, &stubMetrics{cpuPerReplica: 1000})
 			r.prices = tt.pricer
 
 			r.accumulateCost(context.Background(), w)
 
+			assert.Equal(t, tt.wantPrice, w.Status.Cost.ListPrice)
 			if tt.want == nil {
 				assert.Nil(t, w.Status.Cost.ListRates)
 				return

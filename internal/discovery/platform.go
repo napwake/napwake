@@ -221,7 +221,9 @@ func splitPlatform(workloads []Workload) (apps, platform []Workload) {
 }
 
 // platformNote says which workloads were left out as the cluster's own
-// infrastructure, by namespace, most first.
+// infrastructure, by namespace, most first, and then, apart, which of it
+// Hybernate would pause: what's left out of a scan's totals isn't what the
+// operator protects.
 func platformNote(platform []Workload) string {
 	byNamespace := map[string]int{}
 	for _, w := range platform {
@@ -234,11 +236,9 @@ func platformNote(platform []Workload) string {
 	for _, ns := range namespaces {
 		listed = append(listed, fmt.Sprintf("%s (%d)", ns, byNamespace[ns]))
 	}
-	return fmt.Sprintf("%s the cluster's own infrastructure, such as Kubernetes', Hybernate's, ingress or "+
-		"monitoring, so %s left out of the totals and next steps: %s. Hybernate never pauses Kubernetes' or its "+
-		"own, but pauses the rest like any app once opted in, so a namespace labelled %s=%s is counted in full",
-		plural(len(platform), "workload runs", "workloads run"), oneOrMany(len(platform), "it's", "they're"),
-		listSome(listed), v1alpha1.LabelManaged, v1alpha1.True)
+	return fmt.Sprintf("%s left out of the totals and next steps: %s. Hybernate never pauses Kubernetes' own "+
+		"workloads or itself; anything else, infrastructure included, pauses only if you opt it in",
+		plural(len(platform), "infrastructure workload is", "infrastructure workloads are"), listSome(listed))
 }
 
 func oneOrMany(n int, one, many string) string {

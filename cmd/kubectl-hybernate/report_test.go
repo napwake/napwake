@@ -99,8 +99,9 @@ func TestWriteHTML_History(t *testing.T) {
 
 	assert.Contains(t, got, "<title>Workload scan: staging (EKS us-east-1)</title>")
 	assert.Contains(t, got, "3 October 2026, 09:00 UTC")
-	assert.Contains(t, got, "Based on the last 7 days of Prometheus history, and CPU at the time of the scan.")
-	assert.Contains(t, got, "Assumed list prices: $0.031 per vCPU-hour and $0.004 per GiB-hour of memory")
+	assert.Contains(t, got, "Based on the last 7 days of Prometheus history, from monitoring/prometheus-operated, "+
+		"and CPU at the time of the scan.", "which Prometheus the history is from")
+	assert.Contains(t, got, "Costs use assumed list prices: $0.031 per vCPU-hour and $0.004 per GiB-hour of memory")
 	assert.Contains(t, got, `<div class="figure"><b>$4</b><span>freed by Hybernate this month</span>`+
 		`<small>so far, pausing 1 live workload; $1 of it saved as nodes scaled down</small></div>`)
 	assert.Contains(t, got, `<p class="prices">Node autoscaler: none found — freed capacity won&#39;t lower the `+
@@ -142,8 +143,9 @@ func TestWriteHTML_History(t *testing.T) {
 		"the line under a dry-run workload's state explains the state again")
 	assert.NotContains(t, got, "Measured in dry-run", "no separate section")
 	assert.Contains(t, got, "2 found; select a column to sort")
-	assert.Contains(t, got, "<td>PGHOST</td>\n        <td>not connected yet</td>",
-		"a dry-run workload's dependency, until Hybernate applies the dependencies it finds")
+	assert.Contains(t, got, "<td>PGHOST</td>\n        <td>not managed, so never paused</td>",
+		"a dry-run workload's dependency Hybernate doesn't manage")
+	assert.Contains(t, got, "<th><button type=\"button\">Status</button></th>", "a managed workload's need a status")
 	assert.NotContains(t, got, "hybernate.io/depends-on=", "Hybernate connects dependencies itself")
 	assert.NotContains(t, got, "headless")
 	assert.Contains(t, got, "messaging/statefulset/nats")
@@ -163,6 +165,48 @@ func TestWriteHTML_History(t *testing.T) {
 	assert.NotContains(t, got, "<link", "nothing loads from elsewhere")
 }
 
+// The summary's replay count says what it doesn't count, so it adds up to
+// the workloads listed.
+func TestWriteHTML_SaysWhatTheReplayDoesntCount(t *testing.T) {
+	result := historyResult()
+	result.Workloads = append(result.Workloads, discovery.Workload{Namespace: "reports", Name: "reports",
+		Kind: v1alpha1.TargetKindStatefulSet, State: discovery.StateActive, WontPause: "PVCs deleted on scale-down"})
+
+	got := renderHTML(t, result)
+
+	assert.Contains(t, got, "<div>1 of 2<span>unmanaged workloads would have slept over the last 7 days; not "+
+		"counted: 1 that won&#39;t pause (PVCs deleted on scale-down)</span></div>")
+}
+
+// Every place the report names the window says what was replayed, in the
+// same words: the subtitle, the summary, and the glossary.
+func TestWriteHTML_WindowReplayed(t *testing.T) {
+	result := historyResult()
+	result.History.Hours = 0.5
+
+	got := renderHTML(t, result)
+
+	assert.Contains(t, got, "Based on the last 30 minutes of Prometheus history")
+	assert.Contains(t, got, "would have slept over the last 30 minutes")
+	assert.Contains(t, got, "or from history over the last 30 minutes for an unmanaged one")
+	assert.NotContains(t, got, "1 hours")
+}
+
+// While Hybernate manages none of the workloads, every dependency would say
+// the same, so the report says it once, without a status column.
+func TestWriteHTML_DependenciesBeforeAnythingIsManaged(t *testing.T) {
+	result := sampleCluster()
+	result.Workloads[0].Dependencies = []discovery.Dependency{{Namespace: "preview-42",
+		Kind: v1alpha1.TargetKindStatefulSet, Name: "postgres", Via: "PGHOST"}}
+
+	got := renderHTML(t, result)
+
+	assert.Contains(t, got, "What each workload connects to. Once Hybernate manages both ends of one, it wakes the "+
+		"dependency with the workload that needs it, and keeps it up while that workload runs.")
+	assert.NotContains(t, got, ">Status</button>")
+	assert.NotContains(t, got, "connected once")
+}
+
 // A workload that ran four pods all week and runs one now could free more
 // a month than it costs now. The share is of what it cost over the same
 // history, so it's never over 100%.
@@ -170,11 +214,100 @@ func TestHeadlineFor_FreeableShareIsOfTheirOwnCost(t *testing.T) {
 	totals := discovery.Totals{Workloads: 1, MonthlyCost: 36.5, FreeableBasis: 146,
 		Replayed: discovery.ReplayTotals{Workloads: 1, Sleepers: 1, MonthlyFreed: 145}}
 
-	h, _ := headlineFor(totals, "the last 7 days")
+	h, _ := headlineFor(scanResult{ClusterReport: &discovery.ClusterReport{Mode: discovery.ModeHistory,
+		History: &discovery.HistorySource{Hours: 168}, Totals: totals}})
 
 	require.Len(t, h.Figures, 2)
-	assert.Equal(t, "$145", h.Figures[1].Value)
-	assert.Equal(t, "99% of what these workloads cost over the same time", h.Figures[1].Detail)
+	assert.Equal(t, "$145", h.Figures[0].Value)
+	assert.Equal(t, "99% of what these workloads cost over the same time", h.Figures[0].Detail)
+}
+
+// Before Hybernate has paused anything, the headline is the opportunity and
+// the cost it comes from, not a zero for something nobody has done yet.
+func TestHeadlineFor_BeforeAnythingIsLive(t *testing.T) {
+	result := historyResult()
+	result.Workloads = result.Workloads[:2]
+	result.Workloads[1].Managed, result.Workloads[1].DryRun = false, false
+	result.Totals.Live, result.Totals.FreedThisMonth, result.Totals.SavedThisMonth = 0, 0, 0
+	result.Totals.Workloads = 2
+
+	h, facts := headlineFor(result)
+
+	require.Len(t, h.Figures, 2)
+	assert.Equal(t, figure{Value: "$179", Label: "could be freed a month",
+		Detail: "40% of what these workloads cost over the same time"}, h.Figures[0], "the opportunity first")
+	assert.Equal(t, figure{Value: "$446", Label: "a month, what these workloads cost while running"}, h.Figures[1],
+		"the cost it comes from beside it")
+	assert.Equal(t, fact{Value: "2", Label: "workloads in 2 namespaces"}, facts[0],
+		"the cost moves to the headline; the scale stays")
+	for _, f := range h.Figures {
+		assert.NotEqual(t, "freed by Hybernate this month", f.Label)
+	}
+}
+
+// With too little history, could-free is zero because of it, and says so
+// rather than being a bare $0; with what's idle now, that's the most
+// pausing could free.
+func TestHeadlineFor_TooLittleHistory(t *testing.T) {
+	short := &discovery.HistorySource{Prometheus: "monitoring/prometheus-operated", Hours: 0.5, Partial: true}
+	tests := []struct {
+		name   string
+		totals discovery.Totals
+		want   figure
+	}{
+		{name: "nothing idle", totals: discovery.Totals{Workloads: 14, MonthlyCost: 30,
+			Replayed: discovery.ReplayTotals{Workloads: 13}},
+			want: figure{Value: "$0", Label: "could be freed a month", Detail: "too little history yet: Prometheus " +
+				"has only 30 minutes of it; run the scan again after a few days"}},
+		{name: "something idle now", totals: discovery.Totals{Workloads: 14, MonthlyCost: 30, Idle: 2,
+			IdleMonthlyCost: 8, IdleHourlyCost: 0.011, Replayed: discovery.ReplayTotals{Workloads: 13}},
+			want: figure{Value: "$8", Label: "could be freed a month, at most", Detail: "what the 2 workloads idle " +
+				"right now cost while running, $0.01 an hour; too little history yet: Prometheus has only 30 " +
+				"minutes of it; run the scan again after a few days"}},
+		{name: "some would have slept", totals: discovery.Totals{Workloads: 14, MonthlyCost: 30, FreeableBasis: 30,
+			Replayed: discovery.ReplayTotals{Workloads: 13, Sleepers: 1, MonthlyFreed: 3}},
+			want: figure{Value: "$3", Label: "could be freed a month", Detail: "10% of what these workloads cost " +
+				"over the same time; from only 30 minutes of history, so run the scan again after a few days for a " +
+				"steadier figure"}},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			h, _ := headlineFor(scanResult{ClusterReport: &discovery.ClusterReport{Mode: discovery.ModeHistory,
+				History: short, Totals: tt.totals}})
+
+			require.NotEmpty(t, h.Figures)
+			assert.Equal(t, tt.want, h.Figures[0])
+		})
+	}
+}
+
+// A whole window in which nothing would have slept is a real zero, and the
+// headline says what it's from; so is one moment with nothing idle.
+func TestHeadlineFor_NothingToFree(t *testing.T) {
+	replayed := scanResult{ClusterReport: &discovery.ClusterReport{Mode: discovery.ModeHistory,
+		History: &discovery.HistorySource{Hours: 168}, Totals: discovery.Totals{Workloads: 3, MonthlyCost: 30,
+			Replayed: discovery.ReplayTotals{Workloads: 3}}}}
+	snapshot := scanResult{ClusterReport: &discovery.ClusterReport{Mode: discovery.ModeSnapshot,
+		Totals: discovery.Totals{Workloads: 3, MonthlyCost: 30}}}
+
+	h, _ := headlineFor(replayed)
+	assert.Equal(t, "no unmanaged workload would have slept over the last 7 days", h.Figures[0].Detail)
+	h, _ = headlineFor(snapshot)
+	assert.Equal(t, "$0", h.Figures[0].Value)
+	assert.Contains(t, h.Figures[0].Detail, "nothing is idle right now")
+}
+
+// Once Hybernate has paused something, what it freed leads, and the
+// opportunity follows only when there's one.
+func TestHeadlineFor_Live(t *testing.T) {
+	result := scanResult{ClusterReport: &discovery.ClusterReport{Mode: discovery.ModeSnapshot,
+		Totals: discovery.Totals{Workloads: 3, MonthlyCost: 30, Live: 1, FreedThisMonth: 12, SavedThisMonth: 5}}}
+
+	h, facts := headlineFor(result)
+
+	require.Len(t, h.Figures, 1, "no zero opportunity beside what was freed")
+	assert.Equal(t, "freed by Hybernate this month", h.Figures[0].Label)
+	assert.Equal(t, "a month, what these workloads cost while running", facts[0].Label)
 }
 
 func TestWriteHTML_ByNamespace(t *testing.T) {
@@ -239,11 +372,12 @@ func TestWriteHTML_Snapshot(t *testing.T) {
 	got := renderHTML(t, result)
 
 	assert.Contains(t, got, "A snapshot of CPU at the time of the scan, without history.")
-	assert.Contains(t, got, "Your prices: $0.045 per vCPU-hour and $0.006 per GiB-hour of memory.")
-	assert.Contains(t, got, `<div class="figure"><b>$0</b><span>freed by Hybernate this month</span>`+
-		`<small>nothing is live yet</small></div>`)
-	assert.Contains(t, got,
-		`<div class="figure"><b>$1,240</b><span>a month, what idle workloads cost while running</span>`)
+	assert.Contains(t, got, "Costs use your prices: $0.045 per vCPU-hour and $0.006 per GiB-hour of memory.")
+	assert.NotContains(t, got, "freed by Hybernate this month", "nothing is live, so no zero leads")
+	assert.Contains(t, got, `<div class="figure"><b>$1,240</b><span>could be freed a month, at most</span>`+
+		`<small>what the 1 workload idle right now costs while running, $1.70 an hour</small></div>`)
+	assert.Contains(t, got, `<div class="figure"><b>$1,336</b><span>a month, what these workloads cost while `+
+		`running</span></div>`, "beside the cost it comes from")
 	assert.Contains(t, got, "<div>$1.70<span>an hour, what idle workloads cost while running</span></div>",
 		"no history, so no wakes: the hourly cost of idle in its place")
 	assert.Contains(t, got, "this report doesn&#39;t estimate what pausing would free",

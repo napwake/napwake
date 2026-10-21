@@ -359,30 +359,40 @@ func newerRevision(pod, than *corev1.Pod, label, current string) bool {
 }
 
 // ListRates is what the nodes the workload's pods run on cost per vCPU and
-// GiB at on-demand list prices, averaged over its pods, and false when none
-// runs on a node the price table has. ErrNoScheduledPods means it has no pod
-// on a node.
-func (r *Reader) ListRates(ctx context.Context, workload *v1alpha1.ManagedWorkload) (cost.Rates, bool, error) {
+// GiB at their list prices, a spot node's at its type's spot price where
+// there is one, averaged over its pods, and which prices those are; none
+// when no pod runs on a node the price table has. ErrNoScheduledPods means
+// it has no pod on a node.
+func (r *Reader) ListRates(ctx context.Context, workload *v1alpha1.ManagedWorkload) (
+	cost.Rates, v1alpha1.ListPrice, error) {
 	ctx, cancel := context.WithTimeout(ctx, callTimeout)
 	defer cancel()
 	var rates []cost.Rates
-	scheduled := 0
+	scheduled, spot := 0, 0
 	err := r.eachNode(ctx, workload, func(nodeLabels map[string]string) {
 		scheduled++
 		if p, ok := cost.ListPriceOf(cost.NodeTypeOf(nodeLabels)); ok {
 			rates = append(rates, p.Rates)
+			if p.Spot {
+				spot++
+			}
 		}
 	})
 	if err != nil {
-		return cost.Rates{}, false, err
+		return cost.Rates{}, "", err
 	}
 	if scheduled == 0 {
-		return cost.Rates{}, false, ErrNoScheduledPods
+		return cost.Rates{}, "", ErrNoScheduledPods
 	}
-	if len(rates) == 0 {
-		return cost.Rates{}, false, nil
+	switch {
+	case len(rates) == 0:
+		return cost.Rates{}, "", nil
+	case spot == len(rates):
+		return cost.Mean(rates), v1alpha1.ListPriceSpot, nil
+	case spot > 0:
+		return cost.Mean(rates), v1alpha1.ListPriceSpotAndOnDemand, nil
 	}
-	return cost.Mean(rates), true, nil
+	return cost.Mean(rates), v1alpha1.ListPriceOnDemand, nil
 }
 
 // NodePools is how many of the workload's pods run in each node pool, by

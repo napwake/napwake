@@ -39,8 +39,8 @@ type NodeType struct {
 	Spot         bool   `json:"spot,omitempty"`
 }
 
-// spotLabels mark a node as spot or preemptible capacity, whose price
-// changes by the hour; it's priced at on-demand.
+// spotLabels mark a node as spot or preemptible capacity, priced at its
+// type's spot price where the table has one.
 var spotLabels = map[string]string{
 	"karpenter.sh/capacity-type":            "spot",
 	"eks.amazonaws.com/capacityType":        "SPOT",
@@ -85,39 +85,54 @@ func NodePoolOf(labels map[string]string) string {
 	return ""
 }
 
-// ListPrice is a node type's on-demand list price, as rates.
+// ListPrice is a node's list price, as rates.
 type ListPrice struct {
 	Provider string
 	Rates    Rates
+	// Spot says Rates are its type's spot price, for a spot node. A spot
+	// node of a type the table has no spot price for is priced on-demand.
+	Spot bool
+}
+
+// listing is what the table has for a node type in one region: its
+// on-demand price, and its spot price where the provider publishes one.
+type listing struct {
+	provider string
+	onDemand Rates
+	spot     *Rates
 }
 
 var listed = struct {
 	sync.Mutex
-	prices map[NodeType]*ListPrice
-}{prices: map[NodeType]*ListPrice{}}
+	prices map[NodeType]*listing
+}{prices: map[NodeType]*listing{}}
 
-// ListPriceOf is a node type's on-demand list price, and false when the
-// table doesn't have it. A cluster has few node types, so each is looked up
-// in the table once, rather than the table kept in memory.
+// ListPriceOf is a node's list price: its type's spot price for a spot
+// node, where the table has one, and on-demand otherwise. It's false when
+// the table doesn't have the type. A cluster has few node types, so each is
+// looked up in the table once, rather than the table kept in memory.
 func ListPriceOf(t NodeType) (ListPrice, bool) {
 	key := NodeType{InstanceType: t.InstanceType, Region: t.Region}
 	listed.Lock()
 	defer listed.Unlock()
-	p, seen := listed.prices[key]
+	l, seen := listed.prices[key]
 	if !seen {
 		found, ok, err := lookUp(t.InstanceType, t.Region)
 		if err != nil {
 			return ListPrice{}, false
 		}
 		if ok {
-			p = &found
+			l = &found
 		}
-		listed.prices[key] = p
+		listed.prices[key] = l
 	}
-	if p == nil {
+	if l == nil {
 		return ListPrice{}, false
 	}
-	return *p, true
+	if t.Spot && l.spot != nil {
+		return ListPrice{Provider: l.provider, Rates: *l.spot, Spot: true}, true
+	}
+	return ListPrice{Provider: l.provider, Rates: l.onDemand}, true
 }
 
 // cpuToMemory is what a vCPU costs against a GiB of memory, from the
@@ -173,16 +188,16 @@ func constrainedBase(size string) (base string, vcpus float64) {
 
 func isDigit(c byte) bool { return '0' <= c && c <= '9' }
 
-// lookUp finds an instance type's price in a region in the table.
-func lookUp(instanceType, region string) (ListPrice, bool, error) {
+// lookUp finds an instance type's prices in a region in the table.
+func lookUp(instanceType, region string) (listing, bool, error) {
 	if instanceType == "" || region == "" {
-		return ListPrice{}, false, nil
+		return listing{}, false, nil
 	}
 	name, vcpus := tableName(instanceType)
 	region = strings.ToLower(region)
 	gz, err := gzip.NewReader(bytes.NewReader(pricesFile))
 	if err != nil {
-		return ListPrice{}, false, fmt.Errorf("reading the price table: %w", err)
+		return listing{}, false, fmt.Errorf("reading the price table: %w", err)
 	}
 	sc := bufio.NewScanner(gz)
 	sc.Buffer(make([]byte, 0, 64*1024), 1024*1024)
@@ -192,40 +207,51 @@ func lookUp(instanceType, region string) (ListPrice, bool, error) {
 			continue
 		}
 		for _, field := range fields[4:] {
-			r, price, _ := strings.Cut(field, "=")
+			r, prices, _ := strings.Cut(field, "=")
 			if r != region {
 				continue
 			}
-			p, err := parseListing(fields, price, line, vcpus)
-			return p, err == nil, err
+			l, err := parseListing(fields, prices, line, vcpus)
+			return l, err == nil, err
 		}
-		return ListPrice{}, false, nil
+		return listing{}, false, nil
 	}
 	if err := sc.Err(); err != nil {
-		return ListPrice{}, false, fmt.Errorf("reading the price table: %w", err)
+		return listing{}, false, fmt.Errorf("reading the price table: %w", err)
 	}
-	return ListPrice{}, false, nil
+	return listing{}, false, nil
 }
 
-// parseListing reads a table line's price in one region, spread over enabled
+// parseListing reads a table line's prices in one region, on-demand and
+// then, after a slash, spot where there is one, each spread over enabled
 // vCPUs when they're fewer than the instance type's.
-func parseListing(fields []string, price string, line int, enabled float64) (ListPrice, error) {
+func parseListing(fields []string, prices string, line int, enabled float64) (listing, error) {
 	vcpu, err := strconv.ParseFloat(fields[2], 64)
 	if err != nil {
-		return ListPrice{}, fmt.Errorf("price table line %d: vCPUs: %w", line, err)
+		return listing{}, fmt.Errorf("price table line %d: vCPUs: %w", line, err)
 	}
 	memory, err := strconv.ParseFloat(fields[3], 64)
 	if err != nil {
-		return ListPrice{}, fmt.Errorf("price table line %d: memory: %w", line, err)
-	}
-	hourly, err := strconv.ParseFloat(price, 64)
-	if err != nil {
-		return ListPrice{}, fmt.Errorf("price table line %d: price: %w", line, err)
+		return listing{}, fmt.Errorf("price table line %d: memory: %w", line, err)
 	}
 	if enabled > 0 && enabled < vcpu {
 		vcpu = enabled
 	}
-	return ListPrice{Provider: fields[0], Rates: splitHourly(hourly, vcpu, memory)}, nil
+	onDemand, spot, hasSpot := strings.Cut(prices, "/")
+	hourly, err := strconv.ParseFloat(onDemand, 64)
+	if err != nil {
+		return listing{}, fmt.Errorf("price table line %d: on-demand price: %w", line, err)
+	}
+	l := listing{provider: fields[0], onDemand: splitHourly(hourly, vcpu, memory)}
+	if hasSpot {
+		hourly, err := strconv.ParseFloat(spot, 64)
+		if err != nil {
+			return listing{}, fmt.Errorf("price table line %d: spot price: %w", line, err)
+		}
+		rates := splitHourly(hourly, vcpu, memory)
+		l.spot = &rates
+	}
+	return l, nil
 }
 
 // Mean averages the rates of a workload's pods, which request the same, so

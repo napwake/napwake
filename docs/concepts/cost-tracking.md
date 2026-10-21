@@ -71,7 +71,7 @@ The hours are kept to a billionth of an hour, as Kubernetes quantities, so the s
 Resource-hours are turned into dollars at a rate per vCPU-hour, per GiB-hour of memory, and per GiB-month of storage. For each of the three, the first of these that sets it applies:
 
 1. **Your own rates**, in `spec.costTracking.rates`.
-2. **The list price of its nodes**, in `status.cost.listRates`. Hybernate reads each pod's node's instance type and region from its labels (`node.kubernetes.io/instance-type`, `topology.kubernetes.io/region`), looks up its on-demand list price, and averages over the workload's pods. These are read again hourly while the workload is awake, and kept while it's paused, so what a pause frees and saves is priced at the nodes it last ran on. They set CPU and memory only.
+2. **The list price of its nodes**, in `status.cost.listRates`. Hybernate reads each pod's node's instance type and region from its labels (`node.kubernetes.io/instance-type`, `topology.kubernetes.io/region`), looks up its list price, on-demand or, for a [spot node](#spot-nodes), spot, and averages over the workload's pods. `status.cost.listPrice` says which: `OnDemand`, `Spot`, or `SpotAndOnDemand` for pods on both. These are read again hourly while the workload is awake, and kept while it's paused, so what a pause frees and saves is priced at the nodes it last ran on. They set CPU and memory only.
 3. **The defaults**, for nodes Hybernate has no list price for, such as on-premises, custom, or kind nodes:
 
 | Resource | Default Rate | Source |
@@ -84,11 +84,15 @@ The rates are applied to the whole month's hours each time the dollar figures ar
 
 **How a node's price becomes rates.** A cloud provider prices an instance as a whole, so Hybernate splits its hourly price between its vCPUs and its memory in the defaults' proportion: a vCPU costs as much as 7.75 GiB of memory. An `m6i.large` (2 vCPU, 8 GiB, $0.096 an hour) comes out at $0.0317 per vCPU-hour and $0.0041 per GiB-hour. A memory-optimized instance's memory and a compute-optimized one's CPU come out at what they cost there, and a pod pays for the share of the node it requests.
 
-**Where the prices come from.** Hybernate ships with the on-demand Linux list price of every AWS, Google Cloud, and Azure instance type, in every region it's sold, taken from the providers' public price lists through [instances.vantage.sh](https://instances.vantage.sh) and refreshed each release. Nothing is looked up at runtime, so it works offline and air-gapped. An Azure constrained vCPU size, such as `Standard_E4-2s_v5`, is billed as its base size, `Standard_E4s_v5`, so it's priced at the base size's price spread over the vCPUs it has. Instances on GPU nodes are priced the same way, so a pod on a GPU node pays its share of the GPU too.
+**Where the prices come from.** Hybernate ships with the on-demand Linux list price of every AWS, Google Cloud, and Azure instance type, in every region it's sold, and its spot price wherever it's sold as spot, taken from the providers' public price lists through [instances.vantage.sh](https://instances.vantage.sh) and refreshed each release. Nothing is looked up at runtime, so it works offline and air-gapped. An Azure constrained vCPU size, such as `Standard_E4-2s_v5`, is billed as its base size, `Standard_E4s_v5`, so it's priced at the base size's price spread over the vCPUs it has. Instances on GPU nodes are priced the same way, so a pod on a GPU node pays its share of the GPU too.
 
-**What list prices leave out.** Spot and preemptible nodes are priced at on-demand, so their workloads cost less than shown. Savings plans, reserved instances, committed-use discounts, and negotiated rates aren't known to Hybernate; set `costTracking.rates` for those.
+**What list prices leave out.** Savings plans, reserved instances, committed-use discounts, and negotiated rates aren't known to Hybernate, nor is the hour-by-hour price of AWS spot; set `costTracking.rates` for those.
 
 Hybernate reads Nodes' labels to do this.
+
+#### Spot nodes
+
+A node labelled as spot or preemptible capacity is priced at its type's spot price in its region: `karpenter.sh/capacity-type: spot` (Karpenter, on any cloud), `eks.amazonaws.com/capacityType: SPOT` (EKS managed node groups), `cloud.google.com/gke-spot: "true"` or `cloud.google.com/gke-preemptible: "true"` (GKE), and `kubernetes.azure.com/scalesetpriority: spot` (AKS). Google Cloud and Azure publish one spot price per region; AWS's moves with demand, so Hybernate uses the average across the region's zones when its price table was generated, which is close but not what any one hour cost. A spot node of a type with no spot price, one its provider doesn't sell as spot, is priced at on-demand, and `kubectl hybernate scan` says which workloads that leaves costing less than shown.
 
 ### Custom Rates
 
@@ -134,6 +138,7 @@ status:
     listRates:
       cpuPerHour: 31660u      # $0.031660 per vCPU-hour
       memoryPerHour: 4085u    # $0.004085 per GiB-hour
+    listPrice: OnDemand
 ```
 
 | Field | Description |
@@ -149,7 +154,8 @@ status:
 | `projectedMonthlyCost`, `projectedMonthlyFreed`, `projectedMonthlySavings` | `costThisMonth`, `freedThisMonth` and `savedThisMonth` carried to the whole month at the same rate: the amount ÷ `tracked` × the hours in the month. `pending` until a day has been tracked, including on the first day of each month, since a workload's pattern is daily |
 | `running` | What the workload ran when the totals were last brought up to date while it was awake |
 | `pricedAt`, `pricedTemplateHash` | When what a replica requests, and `listRates`, were last read, and the pod template's hash then |
-| `listRates` | The on-demand list rates of the nodes the workload's pods last ran on. Unset when its nodes aren't in Hybernate's price table, and the defaults apply |
+| `listRates` | The list rates of the nodes the workload's pods last ran on, spot nodes at spot. Unset when its nodes aren't in Hybernate's price table, and the defaults apply |
+| `listPrice` | Which list prices `listRates` are: `OnDemand`, `Spot`, or `SpotAndOnDemand` for pods on both. Unset with `listRates` |
 | `resourceReduction` | What the current pause freed; only while the workload is paused |
 
 The dollar figures are rounded to the cent for display; the hours are the record.

@@ -95,7 +95,8 @@ A duration is a Go duration above zero, such as `45s`, `90m` or `1h30m`. Days an
 | `cost.projectedMonthlyCost`, `cost.projectedMonthlyFreed`, `cost.projectedMonthlySavings` | string | The month so far carried to the whole month; `pending` until a day is tracked |
 | `cost.running` | `ResourceSnapshot` | What the workload ran when last brought up to date while awake |
 | `cost.pricedAt`, `cost.pricedTemplateHash` | time, string | When requests and list rates were last read, and the pod template then |
-| `cost.listRates` | `CostRates` | On-demand list rates of the nodes its pods last ran on. Unset when its nodes have no list price |
+| `cost.listRates` | `CostRates` | List rates of the nodes its pods last ran on, spot nodes at spot. Unset when its nodes have no list price |
+| `cost.listPrice` | string | Which list prices `listRates` are: `OnDemand`, `Spot`, or `SpotAndOnDemand`. Unset with `listRates` |
 | `cost.resourceReduction` | `ResourceReduction` | What the current pause freed: `cpuMillis`, `memoryBytes`, `replicas`. Only while paused |
 
 ### WorkloadPhase Values

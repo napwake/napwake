@@ -174,19 +174,42 @@ func service(namespace, name string, labels map[string]string, ports ...corev1.S
 
 // proxyAnswers is an API server's service proxy, answering each Service,
 // by the name the proxy path gives it, with a status; 200 answers like a
-// Prometheus API.
+// Prometheus API with no CPU history. It records the Services checked.
 func proxyAnswers(answers map[string]int) (*restfake.RESTClient, *[]string) {
+	return proxyWithHistory(answers, nil)
+}
+
+// How much CPU history a fake Prometheus behind the proxy has.
+const (
+	noHistory = iota
+	recentHistory
+	wholeHistory
+)
+
+// proxyWithHistory is proxyAnswers with CPU history: each Service that
+// answers 200 has container CPU now with recentHistory, and at any time
+// asked with wholeHistory.
+func proxyWithHistory(answers, history map[string]int) (*restfake.RESTClient, *[]string) {
 	var asked []string
 	return &restfake.RESTClient{
 		NegotiatedSerializer: scheme.Codecs.WithoutConversion(),
 		Client: restfake.CreateHTTPClient(func(req *http.Request) (*http.Response, error) {
 			parts := strings.Split(req.URL.Path, "/")
 			name := parts[4] + "/" + parts[6]
-			asked = append(asked, name)
+			query := req.URL.Query()
+			if query.Get("query") == "vector(1)" {
+				asked = append(asked, name)
+			}
 			switch status := answers[name]; status {
 			case http.StatusOK:
+				result := "[]"
+				has := history[name] == wholeHistory || history[name] == recentHistory && query.Get("time") == ""
+				if strings.HasPrefix(query.Get("query"), "count(container_cpu_usage_seconds_total") && has {
+					result = `[{"metric":{},"value":[1760000000,"42"]}]`
+				}
 				return &http.Response{StatusCode: http.StatusOK, Header: http.Header{},
-					Body: io.NopCloser(strings.NewReader(`{"status":"success","data":{"resultType":"vector","result":[]}}`))}, nil
+					Body: io.NopCloser(strings.NewReader(
+						`{"status":"success","data":{"resultType":"vector","result":` + result + `}}`))}, nil
 			case http.StatusForbidden:
 				return &http.Response{StatusCode: http.StatusForbidden, Header: http.Header{"Content-Type": {"application/json"}},
 					Body: io.NopCloser(strings.NewReader(
@@ -257,7 +280,8 @@ func TestFindPrometheus(t *testing.T) {
 			}
 			restClient, asked := proxyAnswers(tt.answers)
 
-			p, err := FindPrometheus(context.Background(), builder.Build(), restClient, []string{"dev"})
+			p, err := FindPrometheus(context.Background(), builder.Build(), restClient, []string{"dev"},
+				scanTime.Add(-7*24*time.Hour), nil)
 
 			if tt.wantErr != nil {
 				assert.ErrorIs(t, err, tt.wantErr)
@@ -279,11 +303,141 @@ func TestFindPrometheus_AllForbidden(t *testing.T) {
 		corev1.ServicePort{Name: "web", Port: 9090})
 	restClient, _ := proxyAnswers(map[string]int{"monitoring/prometheus-operated:web": http.StatusForbidden})
 
-	_, err := FindPrometheus(context.Background(), fake.NewClientBuilder().WithObjects(operated).Build(), restClient, nil)
+	_, err := FindPrometheus(context.Background(), fake.NewClientBuilder().WithObjects(operated).Build(), restClient,
+		nil, scanTime.Add(-7*24*time.Hour), nil)
 
 	var forbidden *ProxyForbiddenError
 	require.ErrorAs(t, err, &forbidden)
 	assert.Equal(t, "prometheus-operated:web", forbidden.ResourceName())
+}
+
+// Of several Prometheus Services, the one with the CPU history the replay
+// reads wins: all of the window, then some of it, then none, each in the
+// usual order, and the rest are named so the user can pick another.
+func TestFindPrometheus_PrefersTheMostHistory(t *testing.T) {
+	operated := service("monitoring", "prometheus-operated", map[string]string{"operated-prometheus": "true"},
+		corev1.ServicePort{Name: "web", Port: 9090})
+	community := service("prom", "prometheus-server",
+		map[string]string{"app.kubernetes.io/name": "prometheus", "app.kubernetes.io/component": "server"},
+		corev1.ServicePort{Port: 80})
+	answers := map[string]int{"monitoring/prometheus-operated:web": 200, "prom/prometheus-server:80": 200}
+	tests := []struct {
+		name       string
+		history    map[string]int
+		wantSource string
+		wantAsk    []string
+	}{
+		{name: "the whole window wins over some of it",
+			history: map[string]int{"monitoring/prometheus-operated:web": recentHistory,
+				"prom/prometheus-server:80": wholeHistory},
+			wantSource: "prom/prometheus-server",
+			wantAsk:    []string{"monitoring/prometheus-operated:web", "prom/prometheus-server:80"}},
+		{name: "some wins over none",
+			history:    map[string]int{"prom/prometheus-server:80": recentHistory},
+			wantSource: "prom/prometheus-server"},
+		{name: "the usual order among equals",
+			history: map[string]int{"monitoring/prometheus-operated:web": recentHistory,
+				"prom/prometheus-server:80": recentHistory},
+			wantSource: "monitoring/prometheus-operated"},
+		{name: "the first with the whole window, asking no further",
+			history: map[string]int{"monitoring/prometheus-operated:web": wholeHistory,
+				"prom/prometheus-server:80": wholeHistory},
+			wantSource: "monitoring/prometheus-operated",
+			wantAsk:    []string{"monitoring/prometheus-operated:web"}},
+		{name: "the first that answers, without any",
+			wantSource: "monitoring/prometheus-operated"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			restClient, asked := proxyWithHistory(answers, tt.history)
+			c := fake.NewClientBuilder().WithObjects(operated, community).Build()
+
+			p, err := FindPrometheus(context.Background(), c, restClient, nil, scanTime.Add(-7*24*time.Hour), nil)
+
+			require.NoError(t, err)
+			assert.Equal(t, tt.wantSource, p.Source)
+			assert.Len(t, p.Others, 1)
+			assert.NotContains(t, p.Others, p.Source, "the others are the ones not picked")
+			if tt.wantAsk != nil {
+				assert.Equal(t, tt.wantAsk, *asked)
+			}
+		})
+	}
+}
+
+// What history a Prometheus has is asked of the cluster's own series, when
+// a selector names them.
+func TestFindPrometheus_AsksWithTheSelector(t *testing.T) {
+	operated := service("monitoring", "prometheus-operated", map[string]string{"operated-prometheus": "true"},
+		corev1.ServicePort{Name: "web", Port: 9090})
+	var queries []string
+	restClient := &restfake.RESTClient{
+		NegotiatedSerializer: scheme.Codecs.WithoutConversion(),
+		Client: restfake.CreateHTTPClient(func(req *http.Request) (*http.Response, error) {
+			queries = append(queries, req.URL.Query().Get("query"))
+			return &http.Response{StatusCode: http.StatusOK, Header: http.Header{},
+				Body: io.NopCloser(strings.NewReader(`{"status":"success","data":{"resultType":"vector","result":[]}}`))}, nil
+		}),
+	}
+	selector, err := ParseSelector(`cluster="staging"`)
+	require.NoError(t, err)
+
+	p, err := FindPrometheus(context.Background(), fake.NewClientBuilder().WithObjects(operated).Build(), restClient,
+		nil, scanTime.Add(-7*24*time.Hour), selector)
+
+	require.NoError(t, err)
+	assert.Equal(t, selector, p.Selector)
+	assert.Contains(t, queries, `count(container_cpu_usage_seconds_total{container!="", cluster="staging"})`)
+}
+
+// A Prometheus Service the user names is read on its own port, or the one
+// named or numbered.
+func TestPrometheusService(t *testing.T) {
+	operated := service("monitoring", "prometheus-operated", nil,
+		corev1.ServicePort{Name: "grpc", Port: 10901}, corev1.ServicePort{Name: "web", Port: 9090})
+	tlsOnly := service("secure", "prometheus", nil, corev1.ServicePort{Name: "metrics", Port: 8443})
+	c := fake.NewClientBuilder().WithObjects(operated, tlsOnly).Build()
+	tests := []struct {
+		name, namespace, service, port string
+		wantPath                       string
+		wantErr                        string
+	}{
+		{name: "its API port", namespace: "monitoring", service: "prometheus-operated",
+			wantPath: "/api/v1/namespaces/monitoring/services/prometheus-operated:web/proxy/api/v1/query"},
+		{name: "a port by number", namespace: "monitoring", service: "prometheus-operated", port: "9090",
+			wantPath: "/api/v1/namespaces/monitoring/services/prometheus-operated:web/proxy/api/v1/query"},
+		{name: "over TLS", namespace: "secure", service: "prometheus", port: "metrics",
+			wantPath: "/api/v1/namespaces/secure/services/https:prometheus:metrics/proxy/api/v1/query"},
+		{name: "no such port", namespace: "monitoring", service: "prometheus-operated", port: "http",
+			wantErr: "there's no port http on Service monitoring/prometheus-operated"},
+		{name: "no such Service", namespace: "monitoring", service: "thanos",
+			wantErr: "there's no Service monitoring/thanos"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			var gotPath string
+			restClient := &restfake.RESTClient{
+				NegotiatedSerializer: scheme.Codecs.WithoutConversion(),
+				Client: restfake.CreateHTTPClient(func(req *http.Request) (*http.Response, error) {
+					gotPath = req.URL.Path
+					return &http.Response{StatusCode: http.StatusOK, Header: http.Header{},
+						Body: io.NopCloser(strings.NewReader(
+							`{"status":"success","data":{"resultType":"vector","result":[]}}`))}, nil
+				}),
+			}
+
+			p, err := PrometheusService(context.Background(), c, restClient, tt.namespace, tt.service, tt.port)
+
+			if tt.wantErr != "" {
+				assert.EqualError(t, err, tt.wantErr)
+				return
+			}
+			require.NoError(t, err)
+			require.NoError(t, p.Check(context.Background()))
+			assert.Equal(t, tt.wantPath, gotPath)
+			assert.Equal(t, tt.namespace+"/"+tt.service, p.Source)
+		})
+	}
 }
 
 func TestProxyForbiddenError_ResourceName(t *testing.T) {

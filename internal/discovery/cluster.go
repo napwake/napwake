@@ -162,9 +162,12 @@ type Workload struct {
 	// ReplicasFromGit is the GitOps tool that last set its replicas from
 	// Git, which would undo every pause until it's told to leave them.
 	ReplicasFromGit string `json:"replicasFromGit,omitempty"`
-	// OnSpot means a pod of it is on a spot node, priced at on-demand, so it
-	// costs less than shown.
-	OnSpot bool `json:"onSpot,omitempty"`
+	// OnSpot means a pod of it is on a spot node priced at its type's spot
+	// price, or, with none on a node, Hybernate last priced it at spot.
+	// SpotAtOnDemand means one is on a spot node of a type without a spot
+	// price, priced on-demand, so it costs less than shown.
+	OnSpot         bool `json:"onSpot,omitempty"`
+	SpotAtOnDemand bool `json:"spotAtOnDemand,omitempty"`
 	// rates are what it's priced at.
 	rates cost.Rates
 	// History is what replaying the activity clock over its recorded CPU
@@ -297,7 +300,7 @@ func (s *Scanner) ScanCluster(ctx context.Context, opts ClusterOptions) (*Cluste
 	report := &ClusterReport{Mode: ModeSnapshot, Namespaces: len(opts.Namespaces), Workloads: []Workload{}}
 	if opts.History != nil {
 		report.Mode = ModeHistory
-		report.History = &HistorySource{Prometheus: opts.History.Source}
+		report.History = &HistorySource{Prometheus: opts.History.Source, Others: opts.History.Others}
 	}
 	pricing, nodePrices := s.readNodePrices(ctx)
 	report.NodePrices = nodePrices
@@ -373,8 +376,9 @@ func (s *Scanner) ScanCluster(ctx context.Context, opts ClusterOptions) (*Cluste
 		report.Notes = append(report.Notes, "the history replay sees CPU and rollouts only; requests and activity "+
 			"annotations aren't in Prometheus, so a workload used with little CPU can look like it would sleep more than it would")
 		if covered := opts.Now().Sub(since); covered < opts.Window-historyStep(opts.Window) {
-			report.Notes = append(report.Notes, fmt.Sprintf("Prometheus keeps %s of history, so the replay covers that, not the %s asked for",
-				duration(covered), duration(opts.Window)))
+			report.History.Partial = true
+			report.Notes = append(report.Notes, fmt.Sprintf("the replay covers %s, not the %s asked for: that's "+
+				"all the CPU history Prometheus has of the namespaces scanned", spelled(covered), spelled(opts.Window)))
 		}
 	}
 	if len(historyOutOfTime) > 0 {

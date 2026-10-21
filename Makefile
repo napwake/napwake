@@ -47,7 +47,7 @@ manifests: controller-gen ## Generate WebhookConfiguration, ClusterRole and Cust
 	./hack/chart-crds.sh config/crd/bases charts/hybernate/templates/crds
 
 .PHONY: prices
-prices: ## Regenerate the on-demand list prices nodes are priced at, before each release
+prices: ## Regenerate the on-demand and spot list prices nodes are priced at, before each release
 	go run ./hack/prices internal/cost/prices.csv.gz
 
 .PHONY: generate

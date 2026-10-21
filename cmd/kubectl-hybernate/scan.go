@@ -32,6 +32,7 @@ import (
 
 	"github.com/spf13/cobra"
 	authenticationv1 "k8s.io/api/authentication/v1"
+	"k8s.io/apimachinery/pkg/util/validation"
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/rest"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -69,6 +70,7 @@ type scanOptions struct {
 // prometheusOptions say where to read history from and how to reach it.
 type prometheusOptions struct {
 	url                string
+	service            string
 	selector           string
 	headers            []string
 	bearerTokenFile    string
@@ -124,7 +126,9 @@ in the cluster.
 With a Prometheus in the cluster, found automatically and queried through
 the API server, it replays Hybernate's activity clock over the last week of
 CPU and rollouts: how long each workload would have slept, how often it
-would have been woken, and what that would have freed. Without one, it
+would have been woken, and what that would have freed. It says which
+Prometheus it read; with several, it picks the one with the most of the
+week's CPU history, and --prometheus-service picks another. Without one, it
 judges from CPU right now.
 
 Run in a terminal, it also opens the report as a web page, to share.
@@ -138,6 +142,9 @@ Examples:
 
   # One namespace, as JSON
   kubectl hybernate scan -n preview-42 -o json
+
+  # History from a Prometheus Service of your choosing
+  kubectl hybernate scan --prometheus-service monitoring/prometheus-operated
 
   # A month of history from a Thanos that holds many clusters
   kubectl hybernate scan --window 30d --prometheus-url https://thanos.example.com \
@@ -229,9 +236,12 @@ Examples:
 
 func addPrometheusFlags(cmd *cobra.Command, o *prometheusOptions) {
 	cmd.Flags().StringVar(&o.url, "prometheus-url", "",
-		"Prometheus API to read history from, such as Thanos or Mimir (defaults to one found in the cluster). "+
-			"Amazon and Google Managed Prometheus need requests signed with SigV4 or OAuth, which the scan "+
-			"doesn't do; point this at a signing proxy in front of them")
+		"Prometheus API to read history from, such as Thanos, Mimir, or Google Cloud Managed Prometheus with "+
+			"an access token (defaults to the one found in the cluster with the most history). Amazon Managed "+
+			"Prometheus needs requests signed with SigV4, which the scan doesn't do; point this at a signing proxy")
+	cmd.Flags().StringVar(&o.service, "prometheus-service", "",
+		"Prometheus Service in the cluster to read history from, as namespace/name or namespace/name:port, "+
+			"reached through the API server (defaults to the one found with the most history)")
 	cmd.Flags().StringVar(&o.selector, "prometheus-selector", "",
 		`Label matchers added to every history query, such as 'cluster="prod"', for a Prometheus that holds `+
 			`more than one cluster`)
@@ -249,9 +259,20 @@ func addPrometheusFlags(cmd *cobra.Command, o *prometheusOptions) {
 // scan starts so a mistyped flag fails at once.
 type prometheusSetup struct {
 	url      string
+	service  *serviceRef
 	selector discovery.Selector
 	client   *http.Client
 	header   http.Header
+}
+
+// serviceRef is a Service named with --prometheus-service, and the port to
+// reach it on, if one was given.
+type serviceRef struct {
+	namespace, name, port string
+}
+
+func (s *serviceRef) String() string {
+	return s.namespace + "/" + s.name
 }
 
 func prometheusFrom(o prometheusOptions) (prometheusSetup, error) {
@@ -260,11 +281,20 @@ func prometheusFrom(o prometheusOptions) (prometheusSetup, error) {
 		return prometheusSetup{}, fmt.Errorf("--prometheus-selector: %w", err)
 	}
 	setup := prometheusSetup{url: o.url, selector: selector}
+	if o.url != "" && o.service != "" {
+		return prometheusSetup{}, errors.New("--prometheus-url and --prometheus-service each name the Prometheus " +
+			"to read history from; pass one")
+	}
+	if o.service != "" {
+		if setup.service, err = parseServiceRef(o.service); err != nil {
+			return prometheusSetup{}, err
+		}
+	}
 	if o.url == "" {
 		if len(o.headers) > 0 || o.bearerTokenFile != "" || o.caFile != "" || o.insecureSkipVerify {
 			return prometheusSetup{}, errors.New("--prometheus-header, --prometheus-bearer-token-file, " +
 				"--prometheus-ca-file and --prometheus-insecure-skip-verify are for --prometheus-url; a Prometheus " +
-				"found in the cluster is reached through the API server with your kubeconfig")
+				"in the cluster is reached through the API server with your kubeconfig")
 		}
 		return setup, nil
 	}
@@ -289,6 +319,18 @@ func prometheusFrom(o prometheusOptions) (prometheusSetup, error) {
 		return prometheusSetup{}, fmt.Errorf("--prometheus-ca-file: %w", err)
 	}
 	return setup, nil
+}
+
+// parseServiceRef reads namespace/name or namespace/name:port.
+func parseServiceRef(s string) (*serviceRef, error) {
+	ref, port, _ := strings.Cut(s, ":")
+	namespace, name, ok := strings.Cut(ref, "/")
+	if !ok || len(validation.IsDNS1123Label(namespace)) > 0 || len(validation.IsDNS1035Label(name)) > 0 ||
+		(strings.Contains(s, ":") && port == "") {
+		return nil, fmt.Errorf("--prometheus-service %q isn't namespace/name or namespace/name:port, such as "+
+			"monitoring/prometheus-operated", s)
+	}
+	return &serviceRef{namespace: namespace, name: name, port: port}, nil
 }
 
 // parseHeaders reads "Name: value" headers.
@@ -443,16 +485,24 @@ func scanCluster(ctx context.Context, window time.Duration, prom prometheusSetup
 	var historyNote string
 	if window > 0 {
 		var err error
-		history, err = historySource(ctx, c, config, namespaces, prom)
-		if prom.url != "" && err != nil {
-			return scanResult{}, &historyError{fmt.Errorf("reading history from --prometheus-url: %w", err)}
-		}
-		if ctxErr := ctx.Err(); ctxErr != nil {
-			return scanResult{}, &historyError{fmt.Errorf("looking for Prometheus: %w", ctxErr)}
-		}
+		history, err = historySource(ctx, c, config, namespaces, time.Now().Add(-window), prom)
 		var forbidden *discovery.ProxyForbiddenError
 		if errors.As(err, &forbidden) {
 			scan.HistoryAccess = historyAccess(ctx, c, forbidden)
+		}
+		switch {
+		case prom.url != "" && err != nil:
+			return scanResult{}, &historyError{fmt.Errorf("reading history from --prometheus-url: %w", err)}
+		case prom.service != nil && forbidden != nil:
+			return scanResult{}, &historyError{fmt.Errorf("reading history from --prometheus-service %s: %w; an "+
+				"admin can let you, for that Service and nothing else, with: %s", prom.service, err,
+				strings.Join(scan.HistoryAccess, " && "))}
+		case prom.service != nil && err != nil:
+			return scanResult{}, &historyError{fmt.Errorf("reading history from --prometheus-service %s: %w",
+				prom.service, err)}
+		}
+		if ctxErr := ctx.Err(); ctxErr != nil {
+			return scanResult{}, &historyError{fmt.Errorf("looking for Prometheus: %w", ctxErr)}
 		}
 		if err != nil {
 			historyNote = err.Error() + "; judging from CPU right now"
@@ -495,11 +545,11 @@ func scanCluster(ctx context.Context, window time.Duration, prom prometheusSetup
 	return scan, nil
 }
 
-// historySource finds the Prometheus to replay history from, or says why
-// there's none to use.
+// historySource finds the Prometheus to replay history from since, or says
+// why there's none to use: the one the user named, or the one found in the
+// cluster with the most of that history.
 func historySource(ctx context.Context, c client.Client, config *rest.Config, namespaces []string,
-	setup prometheusSetup) (*discovery.Prometheus, error) {
-	var prom *discovery.Prometheus
+	since time.Time, setup prometheusSetup) (*discovery.Prometheus, error) {
 	if setup.url != "" {
 		p, err := discovery.NewPrometheusURL(setup.url, setup.client, setup.header)
 		if err != nil {
@@ -508,29 +558,39 @@ func historySource(ctx context.Context, c client.Client, config *rest.Config, na
 		if err := p.Check(ctx); err != nil {
 			return nil, err
 		}
-		prom = p
-	} else {
-		// A history query through the service proxy is bounded by the time
-		// the scan gives history, which --request-timeout, meant for the
-		// scan's many small requests, would otherwise cut short.
-		proxyConfig := rest.CopyConfig(config)
-		proxyConfig.Timeout = 0
-		clientset, err := kubernetes.NewForConfig(proxyConfig)
-		if err != nil {
-			return nil, fmt.Errorf("can't look for Prometheus: %w", err)
-		}
-		p, err := discovery.FindPrometheus(ctx, c, clientset.CoreV1().RESTClient(), namespaces)
-		if errors.Is(err, discovery.ErrNoPrometheus) {
-			return nil, errors.New("no Prometheus found in the cluster, so there's no history to replay; " +
-				"pass --prometheus-url for one elsewhere")
-		}
+		p.Selector = setup.selector
+		return p, nil
+	}
+	// A history query through the service proxy is bounded by the time the
+	// scan gives history, which --request-timeout, meant for the scan's many
+	// small requests, would otherwise cut short.
+	proxyConfig := rest.CopyConfig(config)
+	proxyConfig.Timeout = 0
+	clientset, err := kubernetes.NewForConfig(proxyConfig)
+	if err != nil {
+		return nil, fmt.Errorf("can't look for Prometheus: %w", err)
+	}
+	proxy := clientset.CoreV1().RESTClient()
+	if s := setup.service; s != nil {
+		p, err := discovery.PrometheusService(ctx, c, proxy, s.namespace, s.name, s.port)
 		if err != nil {
 			return nil, err
 		}
-		prom = p
+		if err := p.Check(ctx); err != nil {
+			return nil, err
+		}
+		p.Selector = setup.selector
+		return p, nil
 	}
-	prom.Selector = setup.selector
-	return prom, nil
+	p, err := discovery.FindPrometheus(ctx, c, proxy, namespaces, since, setup.selector)
+	if errors.Is(err, discovery.ErrNoPrometheus) {
+		return nil, errors.New("no Prometheus found in the cluster, so there's no history to replay; pass " +
+			"--prometheus-service for one the scan doesn't recognise, or --prometheus-url for one elsewhere")
+	}
+	if err != nil {
+		return nil, err
+	}
+	return p, nil
 }
 
 // historyAccess is what an admin can run to let the user read Prometheus
@@ -566,10 +626,12 @@ func writeScan(w io.Writer, result scanResult, opts scanOptions) error {
 
 func writeTable(w io.Writer, result scanResult, limit int) error {
 	p := &printer{w: w}
-	p.line("%s: %s in %s", result.Cluster, countOf(result.Totals.Workloads, "workload"),
-		countOf(result.Namespaces, "namespace"))
+	p.line("%s: %s", result.Cluster, workloadsIn(result))
 	p.line("%s", nodeAutoscalerLine(result.NodeAutoscaler))
 	if s := freedBecomesSaved(result.NodeAutoscaler); s != "" {
+		p.line("%s", s)
+	}
+	if s := historyLine(result); s != "" {
 		p.line("%s", s)
 	}
 	p.line("")
@@ -577,13 +639,13 @@ func writeTable(w io.Writer, result scanResult, limit int) error {
 		p.line("  %s", emptySentence(result))
 		p.line("")
 	} else {
-		writeHeadline(p, result.Totals, replayedOver(result.History))
+		writeHeadline(p, result)
 	}
 	judged, unjudged := splitJudged(result.Workloads)
 	if len(judged) > 0 {
 		writeWorkloads(p, judged, limit, result.Mode == discovery.ModeHistory)
 	}
-	writeDependencies(p, result.Workloads, limit)
+	writeDependencies(p, dependencyLines(result.Workloads, result.Platform), limit)
 	notes := append(unjudgedNotes(unjudged), result.Notes...)
 	if len(notes) > 0 {
 		p.line("Notes:")
@@ -601,7 +663,7 @@ func writeTable(w io.Writer, result scanResult, limit int) error {
 		p.line("")
 	}
 	if result.Prices.CPUAssumed || result.Prices.MemoryAssumed {
-		p.line("Costs use %s", lowerFirst(result.pricesSentence()))
+		p.line("%s", result.costsSentence())
 		p.line("Pass --cpu-price and --memory-price for yours.")
 		p.line("")
 	}
@@ -614,7 +676,9 @@ func writeTable(w io.Writer, result scanResult, limit int) error {
 	return p.err
 }
 
-func writeHeadline(p *printer, t discovery.Totals, replayed string) {
+func writeHeadline(p *printer, result scanResult) {
+	t := result.Totals
+	replayed, notCounted := replayedOver(result.History), notReplayed(result.Workloads)
 	if t.Paused > 0 {
 		p.line("  Hybernate has %s paused right now, freeing %s an hour.",
 			countOf(t.Paused, "workload"), cents(t.PausedHourlyCost))
@@ -657,26 +721,99 @@ func writeHeadline(p *printer, t discovery.Totals, replayed string) {
 	}
 	if r := t.Replayed; r.Workloads > 0 && replayed != "" {
 		if r.Sleepers == 0 {
-			p.line("  Replaying %s, no unmanaged workload would have slept.", replayed)
+			p.line("  Replaying %s, 0 of %s would have slept.", replayed, countOf(r.Workloads, "unmanaged workload"))
 		} else {
 			p.line("  Replaying %s, Hybernate would have paused %d of %s for %s in all,",
 				replayed, r.Sleepers, countOf(r.Workloads, "unmanaged workload"), hoursTotal(r.SleepHours))
 			p.line("  and freed %s: about %s/month.", dollars(r.Freed), dollars(r.MonthlyFreed))
 		}
+		switch {
+		case tooLittleHistory(result.History) && r.Sleepers == 0:
+			p.line("  That's too little history to show a day's pattern; run the scan again after a few days.")
+		case tooLittleHistory(result.History):
+			p.line("  That's from only %s of history; run the scan again after a few days for a steadier estimate.",
+				result.History.Span())
+		}
+		if notCounted != "" {
+			p.line("  Not counted: %s.", notCounted)
+		}
 	}
 	p.line("")
 }
 
-// replayedOver says what a cluster's history replay covered, or "" when
-// it had none.
-func replayedOver(h *discovery.HistorySource) string {
-	if h == nil || h.Hours == 0 {
+// notReplayed says which unmanaged workloads the table lists that the
+// replay's totals leave out, and why, such as "1 that won't pause (PVCs
+// deleted on scale-down)", so its count adds up to the table's.
+func notReplayed(workloads []Workload) string {
+	wontPause := map[string]int{}
+	var reasons []string
+	protected, scaledByHand, noHistory := 0, 0, 0
+	for _, wl := range workloads {
+		if wl.Managed || wl.State == discovery.StateUnknown {
+			continue
+		}
+		switch {
+		case wl.WontPause != "":
+			if wontPause[wl.WontPause] == 0 {
+				reasons = append(reasons, wl.WontPause)
+			}
+			wontPause[wl.WontPause]++
+		case wl.Protected:
+			protected++
+		case wl.ScaledByHand:
+			scaledByHand++
+		case wl.History == nil:
+			noHistory++
+		}
+	}
+	var parts []string
+	for _, reason := range reasons {
+		parts = append(parts, fmt.Sprintf("%d that won't pause (%s)", wontPause[reason], reason))
+	}
+	if protected > 0 {
+		parts = append(parts, fmt.Sprintf("%d in protected namespaces", protected))
+	}
+	if scaledByHand > 0 {
+		parts = append(parts, fmt.Sprintf("%d scaled to zero by hand", scaledByHand))
+	}
+	if noHistory > 0 {
+		parts = append(parts, fmt.Sprintf("%d without CPU history to replay", noHistory))
+	}
+	return joinAnd(parts)
+}
+
+// historyLine says which Prometheus the history was read from, how much
+// of it was replayed, and the others found in the cluster, which
+// --prometheus-service picks instead.
+func historyLine(result scanResult) string {
+	if result.ClusterReport == nil || result.Mode != discovery.ModeHistory || result.History == nil {
 		return ""
 	}
-	if h.Hours >= 48 {
-		return fmt.Sprintf("the last %d days", int(h.Hours/24+0.5))
+	h := result.History
+	over := replayedOver(h)
+	line := "History: " + over + ", from " + h.Prometheus
+	if over == "" {
+		line = "History: " + h.Prometheus + " has no CPU history of the namespaces scanned"
 	}
-	return fmt.Sprintf("the last %d hours", int(h.Hours+0.5))
+	if len(h.Others) > 0 {
+		const shown = 3
+		others := joinAnd(h.Others)
+		if len(h.Others) > shown {
+			others = fmt.Sprintf("%s and %d more", strings.Join(h.Others[:shown], ", "), len(h.Others)-shown)
+		}
+		line += "; also found " + others + ", which --prometheus-service reads instead"
+	}
+	return line
+}
+
+// replayedOver says what a cluster's history replay covered, such as "the
+// last 7 days" or "the last hour", or "" when it had none.
+func replayedOver(h *discovery.HistorySource) string {
+	span := h.Span()
+	if span == "" {
+		return ""
+	}
+	return "the last " + strings.TrimPrefix(span, "1 ")
 }
 
 // hoursTotal writes a number of hours with thousands separated.
@@ -697,10 +834,32 @@ func splitJudged(workloads []Workload) (judged, unjudged []Workload) {
 	return judged, unjudged
 }
 
+// workloadsIn says how many workloads the scan reports and how many
+// namespaces they're in. Namespaces that hold only the cluster's own
+// infrastructure, which the notes count apart, or nothing, aren't counted.
+func workloadsIn(result scanResult) string {
+	if result.Totals.Workloads == 0 {
+		return countOf(result.Namespaces, "namespace") + " scanned"
+	}
+	return countOf(result.Totals.Workloads, "workload") + " in " + countOf(namespacesOf(result.Workloads), "namespace")
+}
+
+// namespacesOf is how many namespaces the workloads are in.
+func namespacesOf(workloads []Workload) int {
+	namespaces := map[string]bool{}
+	for _, wl := range workloads {
+		namespaces[wl.Namespace] = true
+	}
+	return len(namespaces)
+}
+
 // emptySentence says why a scan found no workloads.
 func emptySentence(result scanResult) string {
 	if result.Namespaces == 0 {
 		return "There were no namespaces to scan."
+	}
+	if len(result.Platform) > 0 {
+		return "Only the cluster's own infrastructure was found, which the scan leaves out; the notes say what."
 	}
 	if len(result.Notes) > 0 {
 		return "No Deployments or StatefulSets were found that the scan could read; the notes say what it couldn't."
@@ -998,41 +1157,64 @@ func sleepColumns(history bool, workloads []Workload) bool {
 	return history
 }
 
-// dependencyLine is one dependency a workload was found to have.
+// dependencyLine is one dependency a workload was found to have, and
+// whether Hybernate manages the dependency.
 type dependencyLine struct {
-	wl Workload
-	d  discovery.Dependency
+	wl      Workload
+	d       discovery.Dependency
+	managed bool
 }
 
-// dependencyLines are the dependencies found, by workload.
-func dependencyLines(workloads []Workload) []dependencyLine {
+// dependencyLines are the dependencies found, by workload. A dependency can
+// be the cluster's own infrastructure, which platform lists.
+func dependencyLines(workloads, platform []Workload) []dependencyLine {
+	type key struct {
+		namespace, kind, name string
+	}
+	managed := map[key]bool{}
 	n := 0
-	for _, wl := range workloads {
+	for _, wl := range slices.Concat(workloads, platform) {
+		managed[key{wl.Namespace, string(wl.Kind), wl.Name}] = wl.Managed
 		n += len(wl.Dependencies)
 	}
 	lines := make([]dependencyLine, 0, n)
 	for _, wl := range workloads {
 		for _, d := range wl.Dependencies {
-			lines = append(lines, dependencyLine{wl: wl, d: d})
+			lines = append(lines, dependencyLine{wl: wl, d: d, managed: managed[key{d.Namespace, string(d.Kind), d.Name}]})
 		}
 	}
 	return lines
 }
 
-// dependencyStatus says whether Hybernate wakes and holds a dependency with
-// the workload that needs it.
+// dependencyStatus says what Hybernate does with a dependency for the
+// workload that needs it. It wakes and holds one only when it manages both:
+// one it doesn't manage it never pauses, so has nothing to wake.
 func dependencyStatus(l dependencyLine) string {
 	switch {
-	case l.d.Declared:
-		return "declared"
-	case l.d.Connected:
-		return "connected by Hybernate"
 	case !l.wl.Managed:
-		return "connected once Hybernate manages it"
+		return "woken with it once both are managed"
+	case !l.managed:
+		return "not managed, so never paused"
+	case l.d.Declared:
+		return "declared; woken and held with it"
+	case l.d.Connected:
+		return "woken and held with it"
 	default:
-		return "not connected yet"
+		return "not learned yet"
 	}
 }
+
+// statusColumn says whether each dependency needs its status shown. While
+// Hybernate manages none of the workloads that need them, they'd all say
+// the same, which dependenciesLead says once instead.
+func statusColumn(lines []dependencyLine) bool {
+	return slices.ContainsFunc(lines, func(l dependencyLine) bool { return l.wl.Managed })
+}
+
+// dependenciesLead is what Hybernate does with dependencies, said once,
+// when no line needs a status of its own.
+const dependenciesLead = "Once Hybernate manages both ends of one, it wakes the dependency with the workload that " +
+	"needs it, and keeps it up while that workload runs"
 
 // foundVia says where a dependency was found.
 func foundVia(d discovery.Dependency) string {
@@ -1042,23 +1224,31 @@ func foundVia(d discovery.Dependency) string {
 	return d.Via
 }
 
-// writeDependencies lists the dependencies found, and whether Hybernate
-// wakes and holds each with the workload that needs it.
-func writeDependencies(p *printer, workloads []Workload, limit int) {
-	lines := dependencyLines(workloads)
+// writeDependencies lists the dependencies found, and what Hybernate does
+// with each for the workload that needs it.
+func writeDependencies(p *printer, lines []dependencyLine, limit int) {
 	if len(lines) == 0 {
 		return
 	}
-	p.line("  Dependencies Hybernate wakes and holds with the workloads that need them: %s",
-		plural(len(lines), "dependency", "dependencies"))
+	found := plural(len(lines), "dependency", "dependencies") + " found"
+	status := statusColumn(lines)
+	if status {
+		p.line("  %s, and what Hybernate does with each:", found)
+	} else {
+		p.line("  %s. %s:", found, dependenciesLead)
+	}
 	shown := lines
 	if limit > 0 && len(shown) > limit {
 		shown = shown[:limit]
 	}
 	tw := tabwriter.NewWriter(p, 0, 0, 3, ' ', 0)
 	for _, l := range shown {
-		_, _ = fmt.Fprintf(tw, "  %s\t%s/%s\t->\t%s\t%s\t%s\n", l.wl.Namespace, strings.ToLower(string(l.wl.Kind)),
-			l.wl.Name, dependencyRef(l.wl.Namespace, l.d), foundVia(l.d), dependencyStatus(l))
+		row := fmt.Sprintf("  %s\t%s/%s\t->\t%s\t%s", l.wl.Namespace, strings.ToLower(string(l.wl.Kind)), l.wl.Name,
+			dependencyRef(l.wl.Namespace, l.d), foundVia(l.d))
+		if status {
+			row += "\t" + dependencyStatus(l)
+		}
+		_, _ = fmt.Fprintln(tw, row)
 	}
 	_ = tw.Flush()
 	if len(shown) < len(lines) {
