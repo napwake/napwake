@@ -4,10 +4,11 @@ Complete reference for the Hybernate Helm chart. Install with:
 
 ```bash
 helm install hybernate oci://ghcr.io/okedeji/charts/hybernate --version 0.2.0 \
-  --namespace hybernate-system --create-namespace
+  --namespace hybernate-system --create-namespace \
+  --set timezone=Europe/London
 ```
 
-The chart is published only as an OCI artifact; there's no `helm repo` to add. Its version has no `v` (`0.2.0`); the image tags do (`v0.2.0`). To see all defaults:
+Set `timezone` to your users' [time zone](../getting-started/installation.md#time-zone). The chart is published only as an OCI artifact; there's no `helm repo` to add. Its version has no `v` (`0.2.0`); the image tags do (`v0.2.0`). To see all defaults:
 
 ```bash
 helm show values oci://ghcr.io/okedeji/charts/hybernate --version 0.2.0
