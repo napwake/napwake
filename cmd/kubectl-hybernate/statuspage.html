@@ -142,6 +142,7 @@ ul.plain { margin: 0; padding: 0 0 0 18px; color: var(--muted); font-size: 14px;
         <th><button type="button">State</button></th>
         <th><button type="button">Last activity</button></th>
         <th><button type="button">Next</button></th>
+        <th><button type="button">Forecast</button></th>
         <th class="n"><button type="button">Freed this month</button></th>
         {{if .DryRun}}<th class="n"><button type="button">Would free</button></th>{{end}}
       </tr></thead>
@@ -151,6 +152,7 @@ ul.plain { margin: 0; padding: 0 0 0 18px; color: var(--muted); font-size: 14px;
           <td data-v="{{.ForSort}}"><span class="state {{.StateClass}}"><span class="dot"></span>{{.State}}</span><span class="sub">for {{.For}}</span></td>
           <td>{{.LastActivity}}</td>
           <td>{{.Next}}</td>
+          <td>{{.Forecast}}</td>
           <td class="n" data-v="{{.FreedSort}}">{{.Freed}}{{if .SavedNote}}<span class="sub">{{.SavedNote}}</span>{{end}}</td>
           {{if $.DryRun}}<td class="n" data-v="{{.WouldFreeSort}}">{{.WouldFree}}</td>{{end}}
         </tr>{{end}}

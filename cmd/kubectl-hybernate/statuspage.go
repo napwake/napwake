@@ -64,7 +64,7 @@ type attentionRow struct {
 type statusPageRow struct {
 	Workload, Namespace, ManagedWorkload string
 	State, StateClass, For               string
-	LastActivity, Next                   string
+	LastActivity, Next, Forecast         string
 	Freed, SavedNote, WouldFree          string
 	ForSort, FreedSort, WouldFreeSort    float64
 }
@@ -144,6 +144,7 @@ func buildStatusPage(result statusResult, since time.Duration, now time.Time) st
 			For:           sinceCell(wl.Since, now),
 			LastActivity:  activityCell(wl, now),
 			Next:          wl.Next,
+			Forecast:      forecastCell(wl),
 			Freed:         moneyCell(wl.FreedThisMonth),
 			FreedSort:     wl.FreedThisMonth,
 			SavedNote:     savedNote(wl),

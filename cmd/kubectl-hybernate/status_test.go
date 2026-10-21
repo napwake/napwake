@@ -105,6 +105,9 @@ func statusCluster() []client.Object {
 	for _, w := range []*v1alpha1.ManagedWorkload{api, postgres, web} {
 		w.Status.Prediction = &v1alpha1.PredictionStatus{TimeZone: "Europe/London"}
 	}
+	api.Status.Prediction.Reason = v1alpha1.ForecastActing
+	web.Status.Prediction.Reason = v1alpha1.ForecastEarningConfidence
+	web.Status.Prediction.StartsActing = &metav1.Time{Time: statusNow.Add(72 * time.Hour)}
 
 	worker := statusWorkloadObj("preview-7", "worker", v1alpha1.TargetKindDeployment, v1alpha1.PhaseResuming,
 		25*time.Minute)
@@ -184,11 +187,11 @@ Needs attention:
   preview-7/worker   GitOpsConflict   Argo CD set the replicas from Git
   preview-7/worker   Stuck            resuming for 25m: waiting for preview-42/postgres
 
-  NAMESPACE    WORKLOAD               STATE               FOR   LAST ACTIVITY      NEXT                                        FREED THIS MONTH   SAVED   WOULD FREE
-  preview-42   deployment/api         paused              3h    request, 4h ago    wakes on a request or activity              $12                $10     -
-  preview-42   statefulset/postgres   running             5h    cpu, 2h ago        held awake while preview-7/worker uses it   $30                $25     -
-  preview-7    deployment/web         running (dry-run)   2h    rollout, 15m ago   would pause in 45m                          -                  -       $7
-  preview-7    deployment/worker      resuming            25m   -                  -                                           -                  -       -
+  NAMESPACE    WORKLOAD               STATE               FOR   LAST ACTIVITY      NEXT                                        FORECAST                    FREED THIS MONTH   SAVED   WOULD FREE
+  preview-42   deployment/api         paused              3h    request, 4h ago    wakes on a request or activity              acting                      $12                $10     -
+  preview-42   statefulset/postgres   running             5h    cpu, 2h ago        held awake while preview-7/worker uses it   -                           $30                $25     -
+  preview-7    deployment/web         running (dry-run)   2h    rollout, 15m ago   would pause in 45m                          learning, acts from Oct 8   -                  -       $7
+  preview-7    deployment/worker      resuming            25m   -                  -                                           -                           -                  -       -
 
 Recent pauses and wakes:
   30m ago   preview-7/worker   scaled up to 2 replicas by argocd-controller outside Hybernate; counted as activity

@@ -216,6 +216,10 @@ type statusWorkload struct {
 	// AtSpot is set when its money figures are at spot prices, from the
 	// spot nodes it runs on, rather than on-demand.
 	AtSpot bool `json:"atSpot,omitempty"`
+	// Forecast is why its forecast is or isn't acting, as the operator
+	// recorded it, and ForecastStartsActing when it's expected to start.
+	Forecast             string     `json:"forecast,omitempty"`
+	ForecastStartsActing *time.Time `json:"forecastStartsActing,omitempty"`
 	// namedApart is set for a ManagedWorkload written by hand under a name
 	// other than its target's, which the table then shows beside it.
 	namedApart bool
@@ -522,6 +526,13 @@ func workloadStatus(w *v1alpha1.ManagedWorkload, targetActiveUntil, now time.Tim
 		row.SavingsUnknown = c.SavingsUnknown
 	}
 	row.AtSpot = pricedAtSpot(w)
+	if p := w.Status.Prediction; p != nil {
+		row.Forecast = p.Reason
+		if p.StartsActing != nil {
+			starts := p.StartsActing.UTC()
+			row.ForecastStartsActing = &starts
+		}
+	}
 	if d := w.Status.DryRun; w.Spec.DryRun && d != nil {
 		wouldFree := dollarsIn(d.EstimatedFreed)
 		since := d.Since.UTC()
@@ -928,14 +939,15 @@ func writeStatusTable(w io.Writer, result statusResult, now time.Time) error {
 	p.line("")
 	dryRun := slices.ContainsFunc(result.Workloads, func(wl statusWorkload) bool { return wl.DryRun })
 	tw := tabwriter.NewWriter(p, 0, 0, 3, ' ', 0)
-	header := "  NAMESPACE\tWORKLOAD\tSTATE\tFOR\tLAST ACTIVITY\tNEXT\tFREED THIS MONTH\tSAVED"
+	header := "  NAMESPACE\tWORKLOAD\tSTATE\tFOR\tLAST ACTIVITY\tNEXT\tFORECAST\tFREED THIS MONTH\tSAVED"
 	if dryRun {
 		header += "\tWOULD FREE"
 	}
 	_, _ = fmt.Fprintln(tw, header)
 	for _, wl := range result.Workloads {
-		_, _ = fmt.Fprintf(tw, "  %s\t%s\t%s\t%s\t%s\t%s\t%s\t%s", wl.Namespace, workloadCell(wl), stateCell(wl),
-			sinceCell(wl.Since, now), activityCell(wl, now), wl.Next, moneyCell(wl.FreedThisMonth), statusSavedCell(wl))
+		_, _ = fmt.Fprintf(tw, "  %s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s", wl.Namespace, workloadCell(wl),
+			stateCell(wl), sinceCell(wl.Since, now), activityCell(wl, now), wl.Next, forecastCell(wl),
+			moneyCell(wl.FreedThisMonth), statusSavedCell(wl))
 		if dryRun {
 			_, _ = fmt.Fprintf(tw, "\t%s", wouldFreeCell(wl))
 		}
@@ -1031,6 +1043,28 @@ func dryRunMeasured(workloads []statusWorkload) (int, *time.Time) {
 		}
 	}
 	return n, since
+}
+
+// forecastCell says whether a workload's forecast acts, and when it's
+// expected to start if it doesn't yet.
+func forecastCell(wl statusWorkload) string {
+	var cell string
+	switch wl.Forecast {
+	case "":
+		return "-"
+	case v1alpha1.ForecastActing:
+		return "acting"
+	case v1alpha1.ForecastNotLearning:
+		return "not learning"
+	case v1alpha1.ForecastRelearning:
+		cell = "relearning"
+	default:
+		cell = "learning"
+	}
+	if wl.ForecastStartsActing != nil {
+		cell += ", acts from " + wl.ForecastStartsActing.Format("Jan 2")
+	}
+	return cell
 }
 
 // spotLine says how many workloads' money figures are at spot prices, so
