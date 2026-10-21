@@ -28,11 +28,11 @@ import (
 	"time"
 )
 
-// stateVersion 4 is the additive model learning utilization, as a
+// stateVersion 5 is the additive model learning utilization, as a
 // percentage of the CPU requested, with the demand last seen in each hour
-// of the week. State of any other version is rejected rather than
-// migrated: an engine relearns in days.
-const stateVersion = 4
+// of the week and the weekly changes held for a day. State of any other
+// version is rejected rather than migrated: an engine relearns in days.
+const stateVersion = 5
 
 // maxStateBytes bounds the decompressed state, so a hand-edited state
 // can't expand into gigabytes. A real one is a few kilobytes.
@@ -74,6 +74,8 @@ type engineState struct {
 	PrePhase int                   `json:"pp"`
 	Recent   [WeeklySeason]float32 `json:"r"`
 	Seen     weekSlots             `json:"rs"`
+	Held     [WeeklySeason]float32 `json:"hw"`
+	Doubting bool                  `json:"dq,omitempty"`
 }
 
 // Export encodes what the engine has learned as compact text: gzipped JSON
@@ -97,12 +99,16 @@ func (e *Engine) Export() (string, error) {
 		PrePhase: int(e.phaseBeforeAnomalies),
 		Recent:   e.recent,
 		Seen:     e.recentSeen,
+		Doubting: e.doubting,
 	}
 	for i, v := range e.Model.daily {
 		st.Daily[i] = float32(v)
 	}
 	for i, v := range e.Model.weekly {
 		st.Weekly[i] = float32(v)
+	}
+	for i, v := range e.held {
+		st.Held[i] = float32(v)
 	}
 	absErr, actual := e.Scorer.ordered()
 	st.AbsErr, st.Actual = toFloat32s(absErr), toFloat32s(actual)
@@ -167,6 +173,9 @@ func decodeEngine(data []byte, settings Settings) (*Engine, error) {
 	for i, v := range st.Weekly {
 		e.Model.weekly[i] = float64(v)
 	}
+	for i, v := range st.Held {
+		e.held[i] = float64(v)
+	}
 	for i := range st.AbsErr {
 		e.Scorer.push(float64(st.AbsErr[i]), float64(st.Actual[i]))
 	}
@@ -179,6 +188,7 @@ func decodeEngine(data []byte, settings Settings) (*Engine, error) {
 	e.phaseBeforeAnomalies = Phase(st.PrePhase)
 	e.recent = st.Recent
 	e.recentSeen = st.Seen
+	e.doubting = st.Doubting
 	return e, nil
 }
 
@@ -225,6 +235,11 @@ func (st *engineState) validateMagnitudes() error {
 	for _, v := range st.Weekly {
 		if !bounded(float64(v)) {
 			return errors.New("weekly component out of range")
+		}
+	}
+	for _, v := range st.Held {
+		if !bounded(float64(v)) {
+			return errors.New("held weekly change out of range")
 		}
 	}
 	for i := range st.AbsErr {

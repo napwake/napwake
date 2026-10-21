@@ -61,8 +61,7 @@ func forecastScan(t *testing.T, objs ...client.Object) Workload {
 
 // Four weeks of office hours: opted in now, the forecast acts at once, and
 // over the last two weeks, having learned the first two, it would have had
-// the workload up ahead of people every weekday morning but Monday's, as a
-// forecast only two weeks old still lets the weekend knock its confidence.
+// the workload up ahead of people every weekday morning.
 func TestScanCluster_ReplaysTheForecast(t *testing.T) {
 	w := forecastScan(t)
 
@@ -73,14 +72,9 @@ func TestScanCluster_ReplaysTheForecast(t *testing.T) {
 	assert.Nil(t, f.Live)
 	require.NotNil(t, f.Replay)
 	assert.Equal(t, 10, f.Replay.UsedDays)
-	assert.Equal(t, 8, f.Replay.Ready, "%+v", f.Replay)
+	assert.Equal(t, 10, f.Replay.Ready, "%+v", f.Replay)
 	assert.Zero(t, f.Replay.Missed, "the forecast acting never sleeps through a morning")
 	assert.Zero(t, f.Replay.WastedWakes)
-	for _, d := range f.Replay.Days {
-		if d.Found == "cold" {
-			assert.Equal(t, time.Monday, d.Date.Weekday())
-		}
-	}
 	assert.Equal(t, 25*time.Minute, f.Replay.MedianLead, "woken at 08:45, people at 09:10")
 	for _, d := range f.Replay.Days {
 		if d.WokeAt != nil {

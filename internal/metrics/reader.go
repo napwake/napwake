@@ -44,6 +44,11 @@ import (
 // workload: it has no running pods, or metrics-server isn't reporting them.
 var ErrNoPodMetrics = errors.New("no pod metrics found")
 
+// ErrNoCPURequests is returned when a workload's own containers request no
+// CPU, so its use can't be measured against what it requests. Any other
+// error reading its requests is a failure to read them, not this.
+var ErrNoCPURequests = errors.New("no CPU requests")
+
 // ErrNoScheduledPods is returned when none of a workload's pods is on a
 // node, so there's nothing to price it at.
 var ErrNoScheduledPods = errors.New("no pods on a node")
@@ -222,11 +227,11 @@ func (r *Reader) CPURequestPerReplica(ctx context.Context, workload *v1alpha1.Ma
 	cpuMillis, fromPod := AppCPURequest(replica, podSpecFromTarget(target))
 	switch {
 	case cpuMillis == 0 && fromPod:
-		return 0, fmt.Errorf("the running pods of %s %s request no CPU for their containers",
-			workload.Spec.Target.Kind, workload.Spec.Target.Name)
+		return 0, fmt.Errorf("%w: the running pods of %s %s request no CPU for their containers",
+			ErrNoCPURequests, workload.Spec.Target.Kind, workload.Spec.Target.Name)
 	case cpuMillis == 0:
-		return 0, fmt.Errorf("no pod of %s %s is running, and its pod template requests no CPU",
-			workload.Spec.Target.Kind, workload.Spec.Target.Name)
+		return 0, fmt.Errorf("%w: no pod of %s %s is running, and its pod template requests no CPU",
+			ErrNoCPURequests, workload.Spec.Target.Kind, workload.Spec.Target.Name)
 	case fromPod && settled:
 		r.cacheRequest(target, cpuMillis)
 	}

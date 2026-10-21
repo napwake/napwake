@@ -96,6 +96,7 @@ Settings for workloads opted in with the `hybernate.io/managed` label, used when
 | Value | Default | Description |
 |-------|---------|-------------|
 | `prometheus.url` | `""` | Base URL of the Prometheus API, such as `http://prometheus.monitoring.svc:9090`, for Prometheus activity queries and to start each new workload's forecast from up to four weeks of its CPU history (see [Learning from history](../concepts/forecasting.md#learning-from-history)). Passed to the operator as `--prometheus-url` |
+| `prometheus.selector` | `""` | Label matchers added to the history query the operator makes, such as `cluster="staging"`, for a Prometheus that holds more than one cluster's series, as Thanos, Mimir or a shared Prometheus may; written as inside PromQL's braces, as `kubectl hybernate scan --prometheus-selector` takes them. Activity queries run as written. Needs `prometheus.url`. Passed to the operator as `--prometheus-selector` |
 
 ## Metrics
 

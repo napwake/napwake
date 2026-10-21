@@ -20,6 +20,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"strconv"
@@ -38,6 +39,7 @@ import (
 	v1alpha1 "github.com/okedeji/hybernate/api/v1alpha1"
 	"github.com/okedeji/hybernate/internal/discovery"
 	"github.com/okedeji/hybernate/internal/forecast"
+	opmetrics "github.com/okedeji/hybernate/internal/metrics"
 )
 
 // officePeaks are four weeks of an office-hours workload's hourly peaks,
@@ -136,6 +138,9 @@ func TestHistoryLearner_WithoutHistory(t *testing.T) {
 			wantReason: HistoryNone},
 		{name: "no CPU requests to measure it against", history: &stubHistory{peaks: officePeaks(fixedTime)},
 			metrics: &stubMetrics{noCPURequests: true}, wantReason: HistoryNoCPURequests},
+		{name: "pods that request no CPU", history: &stubHistory{peaks: officePeaks(fixedTime)},
+			metrics: &stubMetrics{requestsErr: fmt.Errorf("%w: the running pods request no CPU",
+				opmetrics.ErrNoCPURequests)}, wantReason: HistoryNoCPURequests},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -149,15 +154,28 @@ func TestHistoryLearner_WithoutHistory(t *testing.T) {
 	}
 }
 
-// A Prometheus that fails is asked again a couple of times, minutes apart,
-// before the forecast settles for learning live.
+// A Prometheus that fails is asked again a couple of times, two minutes
+// apart, before the forecast settles for learning live. The updates a new
+// workload gets in its first minutes reconcile it at once, and don't bring
+// the next attempt forward.
 func TestHistoryLearner_RetriesAFailingPrometheus(t *testing.T) {
 	history := &stubHistory{err: errors.New("connection refused")}
 	l, workload := newHistoryLearner(t, history, &stubMetrics{}, historyTarget())
+	now := fixedTime.Add(20 * time.Minute)
+	l.clock = func() time.Time { return now }
 
-	for range historyAttempts - 1 {
+	for attempt := 1; attempt < historyAttempts; attempt++ {
 		assert.Equal(t, historyRetry, learnHistory(t, l, workload).RequeueAfter)
+		require.Len(t, history.asked, attempt)
 		assert.False(t, l.engines.seeded(workload.UID))
+
+		now = now.Add(30 * time.Second)
+		assert.Equal(t, historyRetry-30*time.Second, learnHistory(t, l, workload).RequeueAfter,
+			"an update half a minute later waits out the rest")
+		now = now.Add(historyRetry - 30*time.Second - time.Second)
+		assert.Equal(t, time.Second, learnHistory(t, l, workload).RequeueAfter)
+		assert.Len(t, history.asked, attempt, "not asked again early")
+		now = now.Add(time.Second)
 	}
 	assert.Zero(t, learnHistory(t, l, workload).RequeueAfter)
 	seed, _, ok := l.engines.adoptSeed(workload.UID, forecast.Settings{})
@@ -165,6 +183,30 @@ func TestHistoryLearner_RetriesAFailingPrometheus(t *testing.T) {
 	assert.Equal(t, HistoryQueryFailed, seed.history.Reason)
 	assert.Contains(t, seed.history.Message, "connection refused")
 	assert.Len(t, history.asked, historyAttempts)
+}
+
+// The target or its requests failing to be read from the API server isn't
+// the workload requesting no CPU: the read is retried, with the
+// controller's backoff, and neither recorded nor counted against
+// Prometheus.
+func TestHistoryLearner_RetriesReadingTheTarget(t *testing.T) {
+	history := &stubHistory{peaks: officePeaks(fixedTime)}
+	metrics := &stubMetrics{requestsErr: errors.New("listing pods: etcdserver: request timed out")}
+	l, workload := newHistoryLearner(t, history, metrics, historyTarget())
+	req := ctrl.Request{NamespacedName: client.ObjectKeyFromObject(workload)}
+
+	for range historyAttempts + 1 {
+		_, err := l.Reconcile(context.Background(), req)
+		require.ErrorContains(t, err, "request timed out")
+	}
+	assert.False(t, l.engines.seeded(workload.UID))
+	assert.Empty(t, history.asked)
+
+	metrics.requestsErr = nil
+	learnHistory(t, l, workload)
+	seed, _, ok := l.engines.adoptSeed(workload.UID, forecast.Settings{})
+	require.True(t, ok)
+	assert.Equal(t, HistoryLearned, seed.history.Reason)
 }
 
 // A workload whose target doesn't exist yet is read once it does; one whose
@@ -259,12 +301,15 @@ func countEvents(recorder *events.FakeRecorder, reason string) int {
 }
 
 // End to end against a Prometheus API: the history learner's query, as the
-// operator makes it with --prometheus-url, is read and learned, and the new
-// workload's forecast acts from its first reconcile.
+// operator makes it with --prometheus-url and --prometheus-selector, is read
+// and learned, and the new workload's forecast acts from its first
+// reconcile. The query reads only the selected cluster's series.
 func TestWarmStart_FromAPrometheusAPI(t *testing.T) {
 	peaks := officePeaks(fixedTime)
+	var queries []string
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		q := r.URL.Query()
+		queries = append(queries, q.Get("query"))
 		start, _ := strconv.ParseInt(q.Get("start"), 10, 64)
 		end, _ := strconv.ParseInt(q.Get("end"), 10, 64)
 		var values [][2]any
@@ -277,7 +322,7 @@ func TestWarmStart_FromAPrometheusAPI(t *testing.T) {
 			"resultType": "matrix", "result": []any{map[string]any{"metric": map[string]string{}, "values": values}}}})
 	}))
 	t.Cleanup(server.Close)
-	prom, err := discovery.NewPrometheusURL(server.URL, server.Client(), nil)
+	prom, err := newHistoryReader(server.URL, discovery.Selector{`cluster="prelaunch"`})
 	require.NoError(t, err)
 
 	workload := forecastWorkload()
@@ -297,6 +342,11 @@ func TestWarmStart_FromAPrometheusAPI(t *testing.T) {
 	assert.Equal(t, HistoryLearned, p.History.Reason)
 	assert.Equal(t, 672, p.History.Hours)
 	assert.True(t, p.Acting, "%s", p.Message)
+	require.NotEmpty(t, queries)
+	for _, q := range queries {
+		assert.Contains(t, q, `container_cpu_usage_seconds_total{namespace=`, "%s", q)
+		assert.Contains(t, q, `, cluster="prelaunch"}`, "%s", q)
+	}
 }
 
 func TestHistoryHours(t *testing.T) {

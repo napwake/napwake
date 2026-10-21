@@ -44,7 +44,7 @@ Nothing leaves the cluster, unless configured to:
 | Destination | When |
 |---|---|
 | The Kubernetes API server | Always: everything above |
-| Prometheus, at `prometheus.url` | Only with `prometheus.url` set: the Prometheus activity queries workloads configure, and, once for each new ManagedWorkload, one range query for up to four weeks of its own containers' CPU (`container_cpu_usage_seconds_total`), an hour a point, to start its forecast from |
+| Prometheus, at `prometheus.url` | Only with `prometheus.url` set: the Prometheus activity queries workloads configure, and, once for each new ManagedWorkload, one range query for up to four weeks of its own containers' CPU (`container_cpu_usage_seconds_total`), an hour a point, to start its forecast from, narrowed by `prometheus.selector` when it's set |
 
 No telemetry, no usage reporting, no update checks. The doorman answers requests to paused workloads and forwards them to the woken pod; it doesn't store or log their contents. Nor does a forwarder, which reads nothing from the API server and only passes connections on to the doorman.
 

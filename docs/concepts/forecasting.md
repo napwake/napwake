@@ -59,6 +59,8 @@ F(t+h) = \max\Bigl(0,\; L(t) + h \cdot T(t) + D(t+h) + W(t+h)\Bigr)
 
 A gap in the observations, from the operator being down or a workload paused without the doorman, is skipped rather than filled in: there is no honest value to fill it with, and since slots are wall-clock hours (below), skipping an hour doesn't shift what was learned. The trend is carried across a gap of at most a day.
 
+The first week initialises the model, as the first season does in classical Holt-Winters. The first time an hour of the week is seen, its weekly component is set so the forecast for that hour is what was seen, and the level, trend and daily components learn only from hours seen again. So after one week of office hours, the forecast for the next week is the week it saw, weekends quiet. The forecast isn't scored on an hour of the week it's seeing for the first time, since it had nothing to forecast it from, and doesn't act on one it hasn't seen.
+
 ## Phase Lifecycle
 
 The engine doesn't start making decisions immediately. It progresses through phases as it collects data and builds confidence:
@@ -67,8 +69,8 @@ The engine doesn't start making decisions immediately. It progresses through pha
 
 | Phase | Requires | Behavior |
 |-------|----------|----------|
-| **Observing** | Not every hour of the day observed yet | Collecting data. No predictions yet. |
-| **DailySuggesting** | Every hour of the day observed at least once | Daily confidence is being scored; predictions aren't acted on yet. |
+| **Observing** | No day of forecasts scored yet | Collecting data, its first week: an hour of the week is scored from the second time it's seen. No predictions yet. |
+| **DailySuggesting** | Every hour of the day observed, and a day of forecasts scored | Daily confidence is being scored; predictions aren't acted on yet. |
 | **DailyActive** | Daily confidence >= threshold | Predictions drive decisions. Weekly patterns still learning. |
 | **WeeklySuggesting** | Every hour of the week observed at least once | Weekly confidence still being earned. |
 | **FullyActive** | Weekly confidence >= threshold | Both daily and weekly patterns drive decisions. |
@@ -96,37 +98,38 @@ metadata:
 
 | Setting | Acts at a confidence of | What it trades |
 |---------|------------------------|----------------|
-| `eager` | 60% | Acts as soon as the forecast can on a regular pattern, and on less regular ones `balanced` waits out; wakes a workload for nothing more often |
-| `balanced` | 75% | The default: acts on a weekday pattern after about a week, and wakes a steadily used one for nothing almost never |
-| `cautious` | 85% | Acts only on patterns it forecasts well, a week later on a weekday pattern; for workloads that are costly to keep awake for nothing, such as one on GPUs |
+| `eager` | 60% | Acts on less regular patterns `balanced` waits out; wakes a workload for nothing more often |
+| `balanced` | 75% | The default: acts on a weekday pattern after 8 days, and wakes a steadily used one for nothing almost never |
+| `cautious` | 85% | Acts only on patterns it forecasts well; for workloads that are costly to keep awake for nothing, such as one on GPUs |
 
 A wrong forecast costs a little money, never availability: it only wakes a workload early or keeps it up a while longer, and a request still wakes a paused workload through the doorman whatever the forecast says. So the choice is between mornings ready and hours awake for nothing. Over eight weeks of office hours kept loosely, people arriving up to an hour either side of 09:10 and away one weekday in four, twenty simulated workloads averaged:
 
 | Setting | Mornings ready, of 30 | Hours woken for nothing |
 |---------|-----------------------|-------------------------|
-| `eager` | 10 | 17 |
-| `balanced` | 6 | 7 |
-| `cautious` | 3 | 3 |
+| `eager` | 10 | 14 |
+| `balanced` | 8 | 8 |
+| `cautious` | 4 | 5 |
 
-On office hours kept steadily, `eager` starts no sooner than `balanced`, since neither can act before the forecast has seen a week, but in its second week wakes the workload once on a weekend. Below 60, a threshold gains a morning or two on the most irregular patterns for half as many hours woken for nothing again, and on steady office hours doubles them for no morning gained; above 85, it loses more mornings for little saved.
+On office hours kept steadily, every setting acts after 8 days and has every morning after ready, and none wakes the workload on a weekend: the settings differ only on patterns the forecast can't get right every day. Below 60, a threshold gains a morning or so on the most irregular patterns for two more hours woken for nothing; above 85, it loses mornings about as fast as it saves hours.
 
 `spec.prediction.confidence` on the ManagedWorkload, from 50 to 100, overrides the setting's threshold with your own; a label-created ManagedWorkload keeps it when its annotations are applied again.
 
 ### How Long It Takes
 
-Learning live from a fresh start, behind the doorman with `autoResume` on, the simulator measures how many days the forecast takes to act (`DailyActive`) and to be fully active (`FullyActive`), for a workload at 40% of its CPU request while in use and 1% otherwise:
+Learning live from a fresh start, behind the doorman with `autoResume` on, the simulator measures how many days the forecast takes to act (`DailyActive`) and to be fully active (`FullyActive`), for a workload at 40% of its CPU request while in use and 1% otherwise, over ten weeks (never: not within them):
 
 | Workload | `eager` (60) | `balanced` (75) | `cautious` (85) |
 |----------|--------------|-----------------|-----------------|
-| Busy on weekdays from 09:10 to 17:30, quiet nights and weekends | 8 / 15 | 8 / 19 | 15 / 25 |
-| The same, with people arriving and leaving up to 20 minutes either side and away one weekday in ten (the median of 20) | 8 / 18 | 8 / 25 | 15 / 37 |
-| The same hours every day, weekends included | 8 / 11 | 8 / 13 | 9 / 17 |
-| Always busy | 1 / 7 | 1 / 7 | 1 / 7 |
-| Always idle | 3 / 7 | 4 / 8 | 7 / 10 |
+| Busy on weekdays from 09:10 to 17:30, quiet nights and weekends | 8 / 14 | 8 / 14 | 8 / 14 |
+| The same, with people arriving and leaving up to 20 minutes either side and away one weekday in ten (the median of 20) | 8 / 14 | 8 / 14 | 8 / 14 |
+| The same, with people arriving and leaving up to an hour either side and away one weekday in four (the median of 20) | 8 / 29 | 9 / never | 10 / never |
+| The same hours every day, weekends included | 8 / 14 | 8 / 14 | 8 / 14 |
+| Always busy | 8 / 14 | 8 / 14 | 8 / 14 |
+| Always idle | 8 / 14 | 8 / 14 | 8 / 14 |
 
 A test in the repo runs these and fails if they drift from this table.
 
-A weekday pattern takes longest: until the forecast has seen a few weekends, it predicts weekday demand on a Saturday that never comes, and its daily confidence dips each weekend. In its first weeks it stops acting over a weekend and starts again on Monday afternoon, so on the first few Mondays the first request of the morning wakes the workload; on office hours at `balanced`, that's the Mondays of the second, third and fourth weeks, and every weekday morning after is ready. A higher threshold waits for more evidence. An always-idle workload takes a few days because its first hours, awake before the activity clock pauses it, show its idle CPU, and the forecast unlearns it slowly; acting or not, its forecast of no demand never wakes it or holds off a pause.
+Every pattern the forecast can get right takes the same time, at every setting: its first week is learned, not scored, since the first time it sees an hour of the week it has nothing to forecast it from, and once it has scored a day of the second week, it acts. On office hours that's the Tuesday of the second week, so the Monday before it is the only morning after the first week that the first request wakes the workload: every morning after is ready, Mondays included, and weekends are left asleep, since the first weekend taught the forecast they're quiet. A setting's threshold matters on patterns the forecast can't get right every day, such as the third row's, where a higher threshold waits for more evidence. An always-busy workload is never paused, and an always-idle one never woken or held awake by its forecast of no demand, so for them, acting changes nothing.
 
 None of this delays idle detection or wake on request, which work from the first hour: until the forecast acts, the first request of the morning wakes the workload, instead of `autoResume` having it ready. And with a Prometheus, a new workload doesn't wait at all: it [learns from its history](#learning-from-history) first, and a workload with a few weeks of a steady pattern acts from the first day.
 
@@ -138,8 +141,8 @@ None of this delays idle detection or wake on request, which work from the first
 |-------|--------------|
 | `acting` | Whether the forecast drives decisions: it holds off pauses before hours it expects to be busy and, with `autoResume`, wakes the workload 15 minutes ahead of them |
 | `threshold` | The confidence it acts at: the setting's, or `spec.prediction.confidence` |
-| `reason` | `Acting`; `Observing`, it hasn't seen every hour of the day yet; `EarningConfidence`, its forecasts of the last day aren't yet right enough; `Relearning`, demand broke from what it had learned, after a [regime change](#anomaly-detection); `NotLearning`, the workload is paused without wake on request, so its demand can't be seen |
-| `message` | The same in a sentence, with its confidence and threshold, such as `learning: its forecasts of the last day were 62% right, and it acts from 75%; it hasn't seen a whole week yet; expected to start acting around Tue 24 Mar 08:00 UTC, if the coming days repeat the last week` |
+| `reason` | `Acting`; `Observing`, it hasn't scored a day of its forecasts yet, as in its first week, or hasn't seen every hour of the day; `EarningConfidence`, its forecasts of the last day aren't yet right enough; `Relearning`, demand broke from what it had learned, after a [regime change](#anomaly-detection); `NotLearning`, the workload is paused without wake on request, so its demand can't be seen |
+| `message` | The same in a sentence, with its confidence and threshold once it has them, such as `learning: it has seen 100 of the 168 hours of the week, and scores its forecast of an hour from the second time it sees it; expected to start acting around Tue 24 Mar 00:00 UTC, if the coming days repeat the last week` |
 | `startsActing` | When it's expected to start acting |
 | `history` | What it learned from Prometheus when Hybernate began managing the workload; see [Learning from History](#learning-from-history) |
 
@@ -151,7 +154,7 @@ None of this delays idle detection or wake on request, which work from the first
 
 With a Prometheus URL (`prometheus.url`, `--prometheus-url`), a new ManagedWorkload's forecast starts from the workload's history rather than from nothing: the operator reads up to the last four weeks of its CPU and learns them in one go, as it would have learned them live, then carries on live. A workload with a steady pattern acts from the first day, and one whose history is irregular or short goes on learning, as it would have, through the same phase gates and confidence.
 
-Each hour of history is measured as a live hour is: the workload's own containers' usage, sidecars injected into its pods left out, against what they request, at its busiest moment in the hour, as at least twice `cpuThreshold` once above it. Its pods are found by the names a Deployment or StatefulSet gives them, so old revisions' pods are part of its history too. It's one range query per workload, a point an hour, of the busiest five-minute rate of `container_cpu_usage_seconds_total` in each hour, so Prometheus works it out and answers with at most 672 points; the operator asks for one workload at a time, waits up to 30 seconds for an answer, and tries a query that fails twice more, two minutes apart, before the forecast learns live only. Reading history never holds up a reconcile: the forecast learns live meanwhile, and takes up what was learned once it's ready.
+Each hour of history is measured as a live hour is: the workload's own containers' usage, sidecars injected into its pods left out, against what they request, at its busiest moment in the hour, as at least twice `cpuThreshold` once above it. Its pods are found by the names a Deployment or StatefulSet gives them, so old revisions' pods are part of its history too. With a Prometheus that holds more than one cluster's series, such as Thanos, Mimir or a shared Prometheus, set `prometheus.selector` (`--prometheus-selector`), such as `cluster="staging"`: its matchers are added to the query, so a same-named workload in another cluster isn't read as this one. It's one range query per workload, a point an hour, of the busiest five-minute rate of `container_cpu_usage_seconds_total` in each hour, so Prometheus works it out and answers with at most 672 points; the operator asks for one workload at a time, waits up to 30 seconds for an answer, and tries a query that fails twice more, two minutes apart, before the forecast learns live only. Reading history never holds up a reconcile: the forecast learns live meanwhile, and takes up what was learned once it's ready.
 
 What history can't tell, it assumes:
 
@@ -184,9 +187,10 @@ C = 1 - \frac{\sum_{i} |F(i) - Y(i)|}{\max\bigl(\sum_{i} Y(i),\; n \cdot f\bigr)
 
 A confidence of 75% means the forecast's total error over the window is 25% of the demand in it. Unlike an average of per-hour percentage errors, it is defined when demand is zero, and an hour of zero demand forecast as zero isn't counted as a perfect hour. The denominator is never less than \( n \cdot f \), where \( f \) is the workload's mean hourly demand over about a week, and at least 1% of the CPU requested: a quiet weekend day is judged against the demand of a typical day, and a workload that idles at a sliver of its request isn't judged on its noise.
 
-- **Daily confidence** is scored over the last 24 observed hours
-- **Weekly confidence** is scored over the last 168 observed hours: a whole week of weekdays and weekend must be forecast well, not just the day just gone
+- **Daily confidence** is scored over the last 24 scored hours
+- **Weekly confidence** is scored over the last 168 scored hours: a whole week of weekdays and weekend must be forecast well, not just the day just gone
 - Each needs its full window before it reports a score
+- An hour of the week seen for the first time isn't scored, or judged an anomaly: there was nothing to forecast it from
 
 ## Anomaly Detection
 
@@ -205,6 +209,10 @@ Hybernate detects these **regime changes** using z-score anomaly detection:
 2. If \( z(t) > 3.0 \), the observation is flagged as an anomaly. The model learns from it only up to 3 standard deviations, so a single spike isn't learned as a pattern. An error that large in the same direction as the last one in the same hour of the week isn't an anomaly, though: it's a weekly pattern, such as a Tuesday night batch job, and the model learns it in full
 3. If 3 or more anomalies occur within 24 observed hours, the engine declares a **regime change**
 
+What breaks from the learned pattern, an anomaly or any hour in the day after a regime change, isn't learned into the weekly components at once: the change it would make to its hour of the week is held until the same hour the next day. If that hour breaks from its forecast the same way, the change lasted and is made; if it goes as forecast, the day was a one-off, such as a holiday, and the change is dropped. The level and daily components learn it as usual. Learned at once, a weekday holiday had the same weekday a week later forecast quieter than it is.
+
+The hour after one far quieter than forecast, an anomaly, the forecast doubts what it expects: it neither holds off a pause nor wakes the workload until an hour goes as forecast, or a regime change has it relearn. One far busier than forecast casts no doubt, since the workload is in use then anyway.
+
 On a regime change, the engine ends up at least one level below the phase it held before the anomalies began:
 
 - `FullyActive` → `WeeklySuggesting`
@@ -215,13 +223,13 @@ If the anomalies have already cost it that level or more, by lowering its confid
 
 It then discards the evidence its confidence rested on: the scored errors, the anomaly statistics, and which hours of the week have been observed. Confidence has to be earned again on the new pattern before the forecast drives decisions again: whatever its phase, it neither holds back a pause nor wakes a workload until a full day of its forecasts has been scored again. A `RegimeChange` warning event is emitted once.
 
-A weekday holiday looks like this: `autoResume` wakes the workload for the hours the forecast still expects, and its first quiet office hours are anomalies; the daily confidence drops, and a regime change follows a few hours in, which lets the workload pause, a couple of hours awake for nothing in all. The forecast is off from then until a day has been scored, about 30 hours, so the first request of the next morning wakes the workload, and it's back on during that day. The holiday's afternoon, learned in full after the regime change, has the same weekday a week later forecast quieter than it is, which costs the morning after that too; from the second week, every morning is ready again. Idle detection and wake on request carry on throughout. A single deviant day can't be told from the start of a new pattern until later days show which it was, so the forecast doesn't guess.
+A weekday holiday looks like this: `autoResume` wakes the workload for the hours the forecast expects, and its first quiet office hour is an anomaly, so the forecast doubts the rest and the activity clock pauses the workload, an hour and a quarter awake for nothing. A regime change follows once three hours have been quiet. The forecast is off from then until a day has been scored, about 30 hours, so the first request of the next morning wakes the workload, and it's back on during that day. That day is busy again, so the holiday isn't learned into the week: the same weekday a week later, and every morning from the second after the holiday, is ready. Idle detection and wake on request carry on throughout. A single deviant day can't be told from the start of a new pattern until the next day shows which it was, so the forecast doesn't guess; it costs the next morning, and nothing after. A Saturday people come in on is the same: the Saturday after isn't woken, and the Monday after is the morning it costs.
 
-A permanent change, such as a team moving its hours from 09:00 to 13:00, is noticed within the day as a regime change. For about a week people wake the workload themselves and the forecast wakes it a few times for the old hours; within two weeks every afternoon is ready.
+A lasting change, such as a team moving its hours from 09:00 to 13:00, is noticed within the day as a regime change, and learned into the week from its second day. For about a week people wake the workload themselves; at `balanced`, from the second Tuesday every afternoon is ready, and within two weeks the forecast stops waking it for nothing, which until then it does a few times, for the old hours and, on weekends, for the new ones. A workload nobody uses any more is woken for its old hours twice, on its first quiet morning and the same weekday a week later, and then left asleep.
 
 ## Persistence
 
-The engine's learned state (the model's components, the scored errors, the anomaly statistics, the last hour observed, and the demand last seen in each hour of the week, which [`startsActing`](#when-it-acts) is projected from) is stored in the ManagedWorkload's status, in `status.prediction.state`: gzipped JSON, base64-encoded, about 2.5 KB. It is written with each hourly observation. This means:
+The engine's learned state (the model's components, the scored errors, the anomaly statistics, the weekly changes held for the next day and whether it doubts the hour under way, the last hour observed, and the demand last seen in each hour of the week, which [`startsActing`](#when-it-acts) is projected from) is stored in the ManagedWorkload's status, in `status.prediction.state`: gzipped JSON, base64-encoded, about 2.5 KB. It is written with each hourly observation. This means:
 
 - The engine survives operator restarts and leader changes, and an hour observed before a restart isn't observed twice. The hour under way when the operator restarts is skipped. Restarted every day, at a different hour each day, the operator loses those hours and nothing else: the forecast starts acting within hours of when it would have without the restarts
 - A last observed hour more than an hour ahead of the operator's clock, recorded by a clock that was wrong, isn't trusted: the next hour is observed as usual rather than refused until real time catches up
@@ -251,7 +259,7 @@ The [forecast setting](#forecast-setting), or `spec.prediction.confidence` in it
 | \( \gamma_1 \) | 0.1 | Daily pattern adapts faster |
 | \( \gamma_2 \) | 0.5 | Weekly pattern adapts faster |
 
-Lower values give more stable, smoother forecasts; higher ones a more reactive but noisier model. A weekly component is updated once a week, so \( \gamma_2 \) is high enough for a weekday/weekend pattern to be learned in about three weeks. The values were chosen by simulating office-hours, always-on, idle, and noisy workloads.
+Lower values give more stable, smoother forecasts; higher ones a more reactive but noisier model. A weekly component is updated once a week, so \( \gamma_2 \) is high enough for a lasting change in a weekday's hours to be half learned the week after it; the first week sets each one outright (see [How It Works](#how-it-works)). The values were chosen by simulating office-hours, always-on, idle, and noisy workloads.
 
 ## Proving It
 
@@ -259,10 +267,10 @@ A forecasting mistake, such as a wrong slot, a late wake or a weekend false wake
 
 The tests run in CI on every change, and check, besides [How Long It Takes](#how-long-it-takes):
 
-- **Office hours**: once learned, the workload is up at 08:45 every weekday, 25 minutes before people arrive at 09:10, paused an hour after they leave, and left asleep at weekends; the forecast never sleeps through a morning it acts on
+- **Office hours**: once learned, the workload is up at 08:45 every weekday, 25 minutes before people arrive at 09:10, paused an hour after they leave, and left asleep at weekends; at every setting, every morning from the day the forecast acts is ready, Mondays included, and it never sleeps through a morning it acts on
 - **Every day, always busy, always idle, light use** seen only through an activity annotation: each acts as above, and the light-use workload is ready every morning
-- **Loosely kept hours**: ready on most mornings once learned, woken for nothing about twice a month, for a couple of hours each time; and the settings trade ready mornings for hours woken for nothing as [Forecast Setting](#forecast-setting) says
-- **A holiday, a permanent change of hours, daylight saving** in New York and London, with and without `--timezone`, **daily operator restarts**, and **pauses without the doorman**, which never let the forecast act: as described above
+- **Loosely kept hours**: ready on most mornings once learned, woken for nothing about twice a month, for an hour or two each time; and the settings trade ready mornings for hours woken for nothing as [Forecast Setting](#forecast-setting) says
+- **A holiday, a Saturday at work, a permanent change of hours, a workload nobody uses any more, daylight saving** in New York and London, with and without `--timezone`, **daily operator restarts**, and **pauses without the doorman**, which never let the forecast act: as described above
 - **Learning from history**: a forecast that learned four weeks of office hours has the workload ready from the first morning, and the [projection](#when-it-acts) made in the first week is within a day of when the forecast starts acting
 
 `go run ./hack/forecastsim` runs every scenario at every setting and prints what it measured; `-scenario holiday -setting eager -days` shows one day by day. `-history` replays a workload's recorded CPU instead, as a percentage of its requests: a Prometheus range query's JSON, or CSV of `time,percent` rows, a step of at most seven minutes apart.

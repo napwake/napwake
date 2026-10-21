@@ -202,7 +202,7 @@ func (r *Reconciler) observeActivity(ctx context.Context, workload *v1alpha1.Man
 
 	if load.err != nil {
 		obs.cpuErr = load.err
-	} else if load.percent > float64(cpuThresholdFor(workload)) {
+	} else if forecast.Busy(load.percent, cpuThresholdFor(workload)) {
 		recordActivity(status, now, v1alpha1.ActivitySourceCPU)
 	}
 

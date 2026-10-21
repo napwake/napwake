@@ -18,6 +18,7 @@ package controller
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"slices"
 	"sync"
@@ -74,6 +75,21 @@ const (
 // historyReader reads a workload's hourly CPU peaks from Prometheus.
 type historyReader interface {
 	HourlyPeaks(ctx context.Context, w discovery.WorkloadCPU, start, end time.Time) (map[int64]float64, error)
+}
+
+// newHistoryReader is the Prometheus at url that new workloads' history is
+// read from, with selector's matchers added to the query.
+func newHistoryReader(url string, selector discovery.Selector) (*discovery.Prometheus, error) {
+	httpClient, err := discovery.NewHTTPClient(discovery.HTTPOptions{})
+	if err != nil {
+		return nil, fmt.Errorf("creating the Prometheus history client: %w", err)
+	}
+	p, err := discovery.NewPrometheusURL(url, httpClient, nil)
+	if err != nil {
+		return nil, fmt.Errorf("reading --prometheus-url for history: %w", err)
+	}
+	p.Selector = selector
+	return p, nil
 }
 
 // historySeed is what reading a workload's history came to: a forecast that
@@ -193,8 +209,20 @@ type historyLearner struct {
 	clock    func() time.Time
 
 	mu       sync.Mutex
-	failures map[types.UID]int
+	failures map[types.UID]failedReads
 }
+
+// failedReads are a workload's failed attempts at reading its history, and
+// when the last was made.
+type failedReads struct {
+	count int
+	last  time.Time
+}
+
+// errReadingTarget is a failure to read the workload's target or what it
+// requests from the API server, which is retried until it succeeds rather
+// than counted against Prometheus.
+var errReadingTarget = errors.New("reading the target")
 
 func (l *historyLearner) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
 	var workload v1alpha1.ManagedWorkload
@@ -204,7 +232,15 @@ func (l *historyLearner) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.
 	if !needsHistory(&workload) || l.engines.seeded(workload.UID) {
 		return ctrl.Result{}, nil
 	}
+	// A new workload is updated several times in its first minute, and
+	// each update reconciles it at once, whatever RequeueAfter asked for.
+	if wait := l.untilRetry(workload.UID); wait > 0 {
+		return ctrl.Result{RequeueAfter: wait}, nil
+	}
 	seed, ready, err := l.learn(ctx, &workload)
+	if errors.Is(err, errReadingTarget) {
+		return ctrl.Result{}, err
+	}
 	if err != nil {
 		if l.failed(workload.UID) < historyAttempts {
 			log.FromContext(ctx).Info("Could not read CPU history from Prometheus, trying again",
@@ -222,14 +258,31 @@ func (l *historyLearner) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.
 	return ctrl.Result{}, nil
 }
 
+// failed records a failed attempt at reading the workload's history, and
+// returns how many there have been.
 func (l *historyLearner) failed(uid types.UID) int {
 	l.mu.Lock()
 	defer l.mu.Unlock()
 	if l.failures == nil {
-		l.failures = map[types.UID]int{}
+		l.failures = map[types.UID]failedReads{}
 	}
-	l.failures[uid]++
-	return l.failures[uid]
+	f := l.failures[uid]
+	f.count++
+	f.last = l.clock()
+	l.failures[uid] = f
+	return f.count
+}
+
+// untilRetry is how long until the workload's history may be read again:
+// historyRetry after the last failed attempt, or zero.
+func (l *historyLearner) untilRetry(uid types.UID) time.Duration {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	f, ok := l.failures[uid]
+	if !ok {
+		return 0
+	}
+	return max(0, f.last.Add(historyRetry).Sub(l.clock()))
 }
 
 func (l *historyLearner) forget(uid types.UID) {
@@ -247,13 +300,16 @@ func (l *historyLearner) learn(ctx context.Context, workload *v1alpha1.ManagedWo
 		return historySeed{}, false, nil
 	}
 	if err != nil {
-		return historySeed{}, false, fmt.Errorf("reading the target: %w", err)
+		return historySeed{}, false, fmt.Errorf("%w: %w", errReadingTarget, err)
 	}
 	requested, err := l.metrics.CPURequestPerReplica(ctx, workload)
-	if err != nil || requested <= 0 {
+	switch {
+	case errors.Is(err, metrics.ErrNoCPURequests), err == nil && requested <= 0:
 		return historySeed{history: v1alpha1.PredictionHistory{Reason: HistoryNoCPURequests,
 			Message: "the target's containers request no CPU, so its CPU history can't be measured against " +
 				"them, and the forecast learns from now"}}, true, nil
+	case err != nil:
+		return historySeed{}, false, fmt.Errorf("%w's CPU requests: %w", errReadingTarget, err)
 	}
 	containers := make([]string, 0, len(podTemplateOf(target).Spec.Containers))
 	for _, c := range metrics.WorkloadContainers(podTemplateOf(target).Spec) {

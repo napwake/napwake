@@ -53,10 +53,14 @@ func forecastOutlook(workload *v1alpha1.ManagedWorkload, o forecast.Outlook) (re
 		reason = v1alpha1.ForecastRelearning
 		fmt.Fprintf(&b, "relearning: demand stopped matching what it had learned, so it's earning its confidence "+
 			"again; its forecasts of the last day were %d%% right, and it acts from %d%%", o.Confidence, o.Threshold)
+	case o.Waiting == forecast.WaitingForDay && o.HoursOfDaySeen < forecast.DailySeason:
+		reason = v1alpha1.ForecastObserving
+		fmt.Fprintf(&b, "learning: it has seen %d of the 24 hours of the day, and can't act until it has seen "+
+			"them all", o.HoursOfDaySeen)
 	case o.Waiting == forecast.WaitingForDay:
 		reason = v1alpha1.ForecastObserving
-		fmt.Fprintf(&b, "learning: it has seen %d of the 24 hours of the day, and starts scoring its forecasts "+
-			"once it has seen them all", o.HoursOfDaySeen)
+		fmt.Fprintf(&b, "learning: it has seen %d of the 168 hours of the week, and scores its forecast of an hour "+
+			"from the second time it sees it", o.HoursOfWeekSeen)
 	default:
 		reason = v1alpha1.ForecastEarningConfidence
 		fmt.Fprintf(&b, "learning: its forecasts of the last day were %d%% right, and it acts from %d%%",

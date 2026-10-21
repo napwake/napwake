@@ -47,7 +47,7 @@ func officeHours(t time.Time) float64 {
 
 func TestModel_FirstObservationSetsLevel(t *testing.T) {
 	m := NewModel(DefaultParams())
-	m.update(100, testEpoch, 1)
+	m.update(100, testEpoch, 1, fitAll)
 
 	assert.Equal(t, 100.0, m.level)
 	assert.Equal(t, 1, m.DataPoints())
@@ -56,7 +56,7 @@ func TestModel_FirstObservationSetsLevel(t *testing.T) {
 func TestModel_LevelTracksConstantInput(t *testing.T) {
 	m := NewModel(DefaultParams())
 	for i := range 48 {
-		m.update(50, hourAt(i), 1)
+		m.update(50, hourAt(i), 1, fitAll)
 	}
 
 	assert.InDelta(t, 50, m.level, 1.0)
@@ -67,7 +67,7 @@ func TestModel_LevelTracksConstantInput(t *testing.T) {
 func TestModel_SeasonalComponentsStayNormalised(t *testing.T) {
 	m := NewModel(DefaultParams())
 	for i := range 6 * WeeklySeason {
-		m.update(officeHours(hourAt(i)), hourAt(i), 1)
+		m.update(officeHours(hourAt(i)), hourAt(i), 1, fitAll)
 	}
 
 	var daily float64
@@ -92,7 +92,7 @@ func TestModel_OfficeHoursStaysBounded(t *testing.T) {
 	m := NewModel(DefaultParams())
 	for i := range 12 * WeeklySeason {
 		at := hourAt(i)
-		m.update(officeHours(at), at, 1)
+		m.update(officeHours(at), at, 1, fitAll)
 		require.GreaterOrEqual(t, m.level, 0.0, "hour %d", i)
 
 		next := hourAt(i + 1)
@@ -103,6 +103,47 @@ func TestModel_OfficeHoursStaysBounded(t *testing.T) {
 	assert.InDelta(t, 50, m.forecast(monday.Add(10*time.Hour), 10), 5, "Monday 10am")
 	assert.Less(t, m.forecast(monday.Add(3*time.Hour), 3), 2.5, "Monday 3am")
 	assert.Less(t, m.forecast(monday.Add((5*24+10)*time.Hour), 24), 2.5, "Saturday 10am")
+}
+
+// The first week sets each hour of the week to what it showed, and leaves
+// every other hour's forecast as it was: after one week of office hours, the
+// next week is forecast as the first was, weekends quiet.
+func TestModel_FirstWeekInitialises(t *testing.T) {
+	m := NewModel(DefaultParams())
+	m.update(officeHours(hourAt(0)), hourAt(0), 1, fitAll)
+	for i := 1; i < WeeklySeason; i++ {
+		at := hourAt(i)
+		before := m.forecast(hourAt(i+1), 1)
+		m.update(officeHours(at), at, 1, fitFirst)
+		require.InDelta(t, officeHours(at), m.forecast(at, 0), 1e-9, "hour %d forecast as it was seen", i)
+		require.InDelta(t, before, m.forecast(hourAt(i+1), 1), 1e-9, "hour %d left the next hour's forecast alone", i)
+	}
+	for i := range WeeklySeason {
+		at := hourAt(WeeklySeason + i)
+		assert.InDelta(t, officeHours(at), m.forecast(at, 1), 1e-9, "%s", at.Format("Mon 15:04"))
+	}
+}
+
+// An update held from the weekly component changes the level and daily
+// components only; made later, it has the effect it would have had.
+func TestModel_HeldWeeklyChange(t *testing.T) {
+	learn := func() *Model {
+		m := NewModel(DefaultParams())
+		for i := range 3 * WeeklySeason {
+			m.update(officeHours(hourAt(i)), hourAt(i), 1, fitAll)
+		}
+		return m
+	}
+	at := hourAt(3*WeeklySeason + 10)
+	direct, held := learn(), learn()
+	direct.update(0, at, 1, fitAll)
+	change := held.update(0, at, 1, fitHoldWeekly)
+
+	assert.Negative(t, change, "a quiet weekday morning pulls its weekly component down")
+	assert.Greater(t, held.forecast(at.Add(7*24*time.Hour), 1), direct.forecast(at.Add(7*24*time.Hour), 1),
+		"held, the same hour next week is still expected busier")
+	held.shiftWeekly(weeklyIndex(at), change)
+	assert.InDelta(t, direct.forecast(at.Add(7*24*time.Hour), 1), held.forecast(at.Add(7*24*time.Hour), 1), 1e-9)
 }
 
 func TestModel_WallClockSlots(t *testing.T) {
@@ -147,7 +188,7 @@ func TestModel_Invariants(t *testing.T) {
 						steps = 1 + r.Intn(48)
 					}
 					at = at.Add(time.Duration(steps) * time.Hour)
-					m.update(trace(r, i), at, steps)
+					m.update(trace(r, i), at, steps, fitAll)
 
 					require.True(t, m.finite(), "seed %d hour %d", seed, i)
 					require.GreaterOrEqual(t, m.level, 0.0, "seed %d hour %d", seed, i)

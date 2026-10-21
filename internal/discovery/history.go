@@ -26,6 +26,7 @@ import (
 	corev1 "k8s.io/api/core/v1"
 
 	"github.com/okedeji/hybernate/internal/cost"
+	"github.com/okedeji/hybernate/internal/forecast"
 	"github.com/okedeji/hybernate/internal/metrics"
 )
 
@@ -125,7 +126,7 @@ type replay struct {
 }
 
 // run walks the history a step at a time under the activity clock's rules:
-// CPU at or above the threshold, or a rollout, is activity, and once there
+// CPU above the threshold, or a rollout, is activity, and once there
 // has been none for idleAfter the workload would be paused until the next.
 // The clock starts at the beginning of the history, as it does for a new
 // ManagedWorkload.
@@ -143,7 +144,7 @@ func (r replay) run() History {
 		active := rolledOutBetween(rollouts, t.Add(-r.step), t)
 		if pods > 0 && r.requestCores > 0 {
 			percent := r.usedCores[at] / (float64(pods) * r.requestCores) * 100
-			active = active || percent >= float64(r.threshold)
+			active = active || forecast.Busy(percent, r.threshold)
 		}
 		switch {
 		case active:

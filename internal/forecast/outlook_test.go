@@ -46,8 +46,9 @@ func TestOutlook_ProjectsWhenItStartsActing(t *testing.T) {
 	run(t, e, 0, 3*DailySeason, everyDay)
 	o := e.Outlook()
 	require.False(t, o.Acting)
-	assert.Equal(t, WaitingForConfidence, o.Waiting)
+	assert.Equal(t, WaitingForDay, o.Waiting, "it scores an hour of the week from the second time it sees it")
 	assert.Equal(t, DailySeason, o.HoursOfDaySeen)
+	assert.Equal(t, 3*DailySeason, o.HoursOfWeekSeen)
 	require.False(t, o.StartsActing.IsZero(), "a steady pattern starts acting within the horizon")
 
 	acted := -1

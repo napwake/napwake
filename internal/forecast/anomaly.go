@@ -132,6 +132,10 @@ func (w *weekSlots) set(slot int, on bool) {
 	}
 }
 
+func (w weekSlots) count() int {
+	return bits.OnesCount64(w[0]) + bits.OnesCount64(w[1]) + bits.OnesCount64(w[2])
+}
+
 // valid reports whether every slot is an hour of the week.
 func (w weekSlots) valid() bool {
 	return w[2]>>(WeeklySeason-128) == 0

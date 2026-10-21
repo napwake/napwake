@@ -117,6 +117,22 @@ func TestWakeAhead(t *testing.T) {
 	}
 }
 
+// CPU counts as use above the activity threshold, not at it.
+func TestBusy(t *testing.T) {
+	tests := []struct {
+		percent float64
+		want    bool
+	}{
+		{percent: 9.99, want: false},
+		{percent: 10, want: false},
+		{percent: 10.01, want: true},
+		{percent: 64, want: true},
+	}
+	for _, tt := range tests {
+		assert.Equal(t, tt.want, Busy(tt.percent, 10), "%g%% against a threshold of 10%%", tt.percent)
+	}
+}
+
 func TestAwakeDemand(t *testing.T) {
 	never := func(time.Time) bool { return false }
 	tests := []struct {

@@ -42,7 +42,8 @@ type docsTable struct {
 	rows       map[string][][]float64
 }
 
-var number = regexp.MustCompile(`\d+(\.\d+)?`)
+// number is a number in a cell, or "never", which is infinitely many days.
+var number = regexp.MustCompile(`\d+(\.\d+)?|never`)
 
 // readDocsTable reads the table after heading on the forecasting page whose
 // header row has header in it.
@@ -87,6 +88,10 @@ func readDocsTable(t *testing.T, heading, header string) docsTable {
 			found := number.FindAllString(cell, -1)
 			nums := make([]float64, 0, len(found))
 			for _, s := range found {
+				if s == "never" {
+					nums = append(nums, math.Inf(1))
+					continue
+				}
 				v, err := strconv.ParseFloat(s, 64)
 				require.NoError(t, err)
 				nums = append(nums, v)
@@ -129,8 +134,11 @@ func TestDocs_HowLongItTakes(t *testing.T) {
 		seeds   int
 	}{
 		{"Busy on weekdays", office, 1},
-		{"The same, with people arriving", func(seed uint64) Traffic {
+		{"The same, with people arriving and leaving up to 20 minutes", func(seed uint64) Traffic {
 			return Noisy(time.UTC, seed, 20*time.Minute, 10)
+		}, 20},
+		{"The same, with people arriving and leaving up to an hour", func(seed uint64) Traffic {
+			return Noisy(time.UTC, seed, 60*time.Minute, 4)
 		}, 20},
 		{"The same hours every day", func(uint64) Traffic {
 			return Working(time.UTC, EveryDay, 9*time.Hour+10*time.Minute, 17*time.Hour+30*time.Minute, 40)
@@ -162,10 +170,21 @@ func TestDocs_HowLongItTakes(t *testing.T) {
 			}
 			acts, full := median(actsDays), median(fullDays)
 			require.Len(t, row[i], 2, "%s at %d: days to act and to be fully active", sc.label, th)
-			assert.InDelta(t, acts, row[i][0], 0.75, "%s at %d: acts after %.1f days", sc.label, th, acts)
-			assert.InDelta(t, full, row[i][1], 0.75, "%s at %d: fully active after %.1f days", sc.label, th, full)
+			assertDays(t, acts, row[i][0], "%s at %d: acts after %.1f days", sc.label, th, acts)
+			assertDays(t, full, row[i][1], "%s at %d: fully active after %.1f days", sc.label, th, full)
 		}
 	}
+}
+
+// assertDays checks a number of days measured against the page's, rounded,
+// where "never" is a run that didn't get there.
+func assertDays(t *testing.T, measured, page float64, msgAndArgs ...any) {
+	t.Helper()
+	if math.IsInf(page, 1) || math.IsInf(measured, 1) {
+		assert.Equal(t, math.IsInf(page, 1), math.IsInf(measured, 1), msgAndArgs...)
+		return
+	}
+	assert.InDelta(t, measured, page, 0.75, msgAndArgs...)
 }
 
 // The forecasting page's table of what each setting trades is what the

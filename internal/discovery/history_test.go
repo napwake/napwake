@@ -119,6 +119,35 @@ func TestReplay(t *testing.T) {
 	}
 }
 
+// CPU exactly at the threshold isn't activity, as the operator's activity
+// clock counts it: the replay sleeps through a week of it.
+func TestReplay_CPUAtTheThresholdIsNotActivity(t *testing.T) {
+	atThreshold := week(func(time.Time) float64 { return 0.2 }) // 10% of two pods' requests
+	h := atThreshold.run()
+	assert.InDelta(t, 168-1, h.SleepHours, 0.01)
+	assert.Zero(t, h.Wakes)
+
+	above := week(func(time.Time) float64 { return 0.21 })
+	assert.Zero(t, above.run().SleepHours)
+}
+
+// The scan judges current CPU as the operator does, by the share before
+// it's rounded to a whole percent for the report.
+func TestJudgeUnmanaged_CPUAtTheThreshold(t *testing.T) {
+	ten := 10
+	for _, tt := range []struct {
+		share float64
+		want  State
+	}{
+		{share: 10, want: StateIdle},
+		{share: 10.4, want: StateActive},
+	} {
+		w := &Workload{CPUPercent: &ten, CPUMillisUsed: 100, cpuShare: tt.share}
+		judgeUnmanaged(w, &appsv1.Deployment{}, weekStart, 10, time.Hour)
+		assert.Equal(t, tt.want, w.State, "CPU at %g%% of its requests", tt.share)
+	}
+}
+
 func TestReplay_RolloutIsActivity(t *testing.T) {
 	r := week(func(time.Time) float64 { return 0 })
 	r.rollouts = []time.Time{weekStart.Add(72*time.Hour + 2*time.Minute)}

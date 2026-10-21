@@ -121,7 +121,8 @@
       "type": "object",
       "additionalProperties": false,
       "properties": {
-        "url": {"type": "string", "pattern": "^(https?://.+)?$"}
+        "url": {"type": "string", "pattern": "^(https?://.+)?$"},
+        "selector": {"type": "string"}
       }
     },
     "watchNamespaces": {

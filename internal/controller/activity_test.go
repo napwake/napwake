@@ -317,6 +317,11 @@ func TestActivityClock_DoesNotActWithoutCPUData(t *testing.T) {
 	}{
 		{name: "metrics API down", metrics: stubMetrics{err: errors.New("metrics API unavailable")}, wantReason: "MetricsUnavailable"},
 		{name: "no CPU requests", metrics: stubMetrics{cpuMillis: 50, replicas: 1, noCPURequests: true}, wantReason: "NoCPURequests"},
+		{name: "requests that say none", metrics: stubMetrics{cpuMillis: 50, replicas: 1,
+			requestsErr: fmt.Errorf("%w: the running pods request no CPU", opmetrics.ErrNoCPURequests)},
+			wantReason: "NoCPURequests"},
+		{name: "requests that can't be read", metrics: stubMetrics{cpuMillis: 50, replicas: 1,
+			requestsErr: errors.New("listing pods: etcdserver: request timed out")}, wantReason: "MetricsUnavailable"},
 	}
 
 	for _, tt := range tests {
