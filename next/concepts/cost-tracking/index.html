@@ -1,0 +1,2328 @@
+
+<!doctype html>
+<html lang="en" class="no-js">
+  <head>
+    
+      <meta charset="utf-8">
+      <meta name="viewport" content="width=device-width,initial-scale=1">
+      
+        <meta name="description" content="Intelligent Kubernetes workload lifecycle management">
+      
+      
+      
+        <link rel="canonical" href="https://okedeji.io/hybernate/latest/concepts/cost-tracking/">
+      
+      
+        <link rel="prev" href="../wake-on-request/">
+      
+      
+        <link rel="next" href="../../guides/opt-in/">
+      
+      
+        
+      
+      
+      <link rel="icon" href="../../assets/favicon.svg">
+      <meta name="generator" content="mkdocs-1.6.1, mkdocs-material-9.7.7">
+    
+    
+      
+        <title>Cost Tracking - Hybernate</title>
+      
+    
+    
+      <link rel="stylesheet" href="../../assets/stylesheets/main.ec1eaa64.min.css">
+      
+        
+        <link rel="stylesheet" href="../../assets/stylesheets/palette.ab4e12ef.min.css">
+      
+      
+
+
+    
+    
+      
+    
+    
+      
+        
+        
+        <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+        <link rel="stylesheet" href="https://fonts.googleapis.com/css?family=Roboto:300,300i,400,400i,700,700i%7CRoboto+Mono:400,400i,700,700i&display=fallback">
+        <style>:root{--md-text-font:"Roboto";--md-code-font:"Roboto Mono"}</style>
+      
+    
+    
+      <link rel="stylesheet" href="../../stylesheets/custom.css">
+    
+    <script>__md_scope=new URL("../..",location),__md_hash=e=>[...e].reduce(((e,_)=>(e<<5)-e+_.charCodeAt(0)),0),__md_get=(e,_=localStorage,t=__md_scope)=>JSON.parse(_.getItem(t.pathname+"."+e)),__md_set=(e,_,t=localStorage,a=__md_scope)=>{try{t.setItem(a.pathname+"."+e,JSON.stringify(_))}catch(e){}}</script>
+    
+      
+
+    
+    
+  </head>
+  
+  
+    
+    
+    
+    
+    
+    <body dir="ltr" data-md-color-scheme="default" data-md-color-primary="white" data-md-color-accent="black">
+  
+    
+    <input class="md-toggle" data-md-toggle="drawer" type="checkbox" id="__drawer" autocomplete="off">
+    <input class="md-toggle" data-md-toggle="search" type="checkbox" id="__search" autocomplete="off">
+    <label class="md-overlay" for="__drawer"></label>
+    <div data-md-component="skip">
+      
+        
+        <a href="#cost-tracking" class="md-skip">
+          Skip to content
+        </a>
+      
+    </div>
+    <div data-md-component="announce">
+      
+    </div>
+    
+      <div data-md-color-scheme="default" data-md-component="outdated" hidden>
+        
+          <aside class="md-banner md-banner--warning">
+            <div class="md-banner__inner md-grid md-typeset">
+              
+  
+    These docs are for Hybernate 0.2.0-rc.4, a release candidate, and may change before it's released.
+  
+  <a href="../../.."><strong>Read the docs for the latest release.</strong></a>
+
+            </div>
+            <script>var el=document.querySelector("[data-md-component=outdated]"),base=new URL("../.."),outdated=__md_get("__outdated",sessionStorage,base);!0===outdated&&el&&(el.hidden=!1)</script>
+          </aside>
+        
+      </div>
+    
+    
+      
+
+<header class="md-header" data-md-component="header">
+  <nav class="md-header__inner md-grid" aria-label="Header">
+    <a href="../.." title="Hybernate" class="md-header__button md-logo" aria-label="Hybernate" data-md-component="logo">
+      
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="m20.79 13.95-2.33.62-2-1.13v-2.88l2-1.13 2.33.62.52-1.93-1.77-.47.46-1.77-1.93-.52-.62 2.33-2 1.13L13 7.38V5.12l1.71-1.71L13.29 2 12 3.29 10.71 2 9.29 3.41 11 5.12v2.26L8.5 8.82l-2-1.13-.58-2.33L4 5.88l.47 1.77-1.77.47.52 1.93 2.33-.62 2 1.13v2.89l-2 1.13-2.33-.62-.52 1.93 1.77.47L4 18.12l1.93.52.62-2.33 2-1.13L11 16.62v2.26l-1.71 1.71L10.71 22 12 20.71 13.29 22l1.41-1.41-1.7-1.71v-2.26l2.5-1.45 2 1.13.62 2.33 1.88-.51-.47-1.77 1.77-.47zM9.5 10.56 12 9.11l2.5 1.45v2.88L12 14.89l-2.5-1.45z"/></svg>
+
+    </a>
+    <label class="md-header__button md-icon" for="__drawer">
+      
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M3 6h18v2H3zm0 5h18v2H3zm0 5h18v2H3z"/></svg>
+    </label>
+    <div class="md-header__title" data-md-component="header-title">
+      <div class="md-header__ellipsis">
+        <div class="md-header__topic">
+          <span class="md-ellipsis">
+            Hybernate
+          </span>
+        </div>
+        <div class="md-header__topic" data-md-component="header-topic">
+          <span class="md-ellipsis">
+            
+              Cost Tracking
+            
+          </span>
+        </div>
+      </div>
+    </div>
+    
+      
+    
+    
+    
+    
+      
+      
+        <label class="md-header__button md-icon" for="__search">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+        </label>
+        <div class="md-search" data-md-component="search" role="dialog">
+  <label class="md-search__overlay" for="__search"></label>
+  <div class="md-search__inner" role="search">
+    <form class="md-search__form" name="search">
+      <input type="text" class="md-search__input" name="query" aria-label="Search" placeholder="Search" autocapitalize="off" autocorrect="off" autocomplete="off" spellcheck="false" data-md-component="search-query" required>
+      <label class="md-search__icon md-icon" for="__search">
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M20 11v2H8l5.5 5.5-1.42 1.42L4.16 12l7.92-7.92L13.5 5.5 8 11z"/></svg>
+      </label>
+      <nav class="md-search__options" aria-label="Search">
+        
+        <button type="reset" class="md-search__icon md-icon" title="Clear" aria-label="Clear" tabindex="-1">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M19 6.41 17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/></svg>
+        </button>
+      </nav>
+      
+        <div class="md-search__suggest" data-md-component="search-suggest"></div>
+      
+    </form>
+    <div class="md-search__output">
+      <div class="md-search__scrollwrap" tabindex="0" data-md-scrollfix>
+        <div class="md-search-result" data-md-component="search-result">
+          <div class="md-search-result__meta">
+            Initializing search
+          </div>
+          <ol class="md-search-result__list" role="presentation"></ol>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+      
+    
+    
+      <div class="md-header__source">
+        <a href="https://github.com/okedeji/hybernate" title="Go to repository" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M173.9 397.4c0 2-2.3 3.6-5.2 3.6-3.3.3-5.6-1.3-5.6-3.6 0-2 2.3-3.6 5.2-3.6 3-.3 5.6 1.3 5.6 3.6m-31.1-4.5c-.7 2 1.3 4.3 4.3 4.9 2.6 1 5.6 0 6.2-2s-1.3-4.3-4.3-5.2c-2.6-.7-5.5.3-6.2 2.3m44.2-1.7c-2.9.7-4.9 2.6-4.6 4.9.3 2 2.9 3.3 5.9 2.6 2.9-.7 4.9-2.6 4.6-4.6-.3-1.9-3-3.2-5.9-2.9M252.8 8C114.1 8 8 113.3 8 252c0 110.9 69.8 205.8 169.5 239.2 12.8 2.3 17.3-5.6 17.3-12.1 0-6.2-.3-40.4-.3-61.4 0 0-70 15-84.7-29.8 0 0-11.4-29.1-27.8-36.6 0 0-22.9-15.7 1.6-15.4 0 0 24.9 2 38.6 25.8 21.9 38.6 58.6 27.5 72.9 20.9 2.3-16 8.8-27.1 16-33.7-55.9-6.2-112.3-14.3-112.3-110.5 0-27.5 7.6-41.3 23.6-58.9-2.6-6.5-11.1-33.3 2.6-67.9 20.9-6.5 69 27 69 27 20-5.6 41.5-8.5 62.8-8.5s42.8 2.9 62.8 8.5c0 0 48.1-33.6 69-27 13.7 34.7 5.2 61.4 2.6 67.9 16 17.7 25.8 31.5 25.8 58.9 0 96.5-58.9 104.2-114.8 110.5 9.2 7.9 17 22.9 17 46.4 0 33.7-.3 75.4-.3 83.6 0 6.5 4.6 14.4 17.3 12.1C436.2 457.8 504 362.9 504 252 504 113.3 391.5 8 252.8 8M105.2 352.9c-1.3 1-1 3.3.7 5.2 1.6 1.6 3.9 2.3 5.2 1 1.3-1 1-3.3-.7-5.2-1.6-1.6-3.9-2.3-5.2-1m-10.8-8.1c-.7 1.3.3 2.9 2.3 3.9 1.6 1 3.6.7 4.3-.7.7-1.3-.3-2.9-2.3-3.9-2-.6-3.6-.3-4.3.7m32.4 35.6c-1.6 1.3-1 4.3 1.3 6.2 2.3 2.3 5.2 2.6 6.5 1 1.3-1.3.7-4.3-1.3-6.2-2.2-2.3-5.2-2.6-6.5-1m-11.4-14.7c-1.6 1-1.6 3.6 0 5.9s4.3 3.3 5.6 2.3c1.6-1.3 1.6-3.9 0-6.2-1.4-2.3-4-3.3-5.6-2"/></svg>
+  </div>
+  <div class="md-source__repository">
+    okedeji/hybernate
+  </div>
+</a>
+      </div>
+    
+  </nav>
+  
+</header>
+    
+    <div class="md-container" data-md-component="container">
+      
+      
+        
+          
+            
+<nav class="md-tabs" aria-label="Tabs" data-md-component="tabs">
+  <div class="md-grid">
+    <ul class="md-tabs__list">
+      
+        
+  
+  
+  
+  
+    <li class="md-tabs__item">
+      <a href="../.." class="md-tabs__link">
+        
+  
+  
+    
+  
+  Home
+
+      </a>
+    </li>
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../getting-started/installation/" class="md-tabs__link">
+          
+  
+  
+  Getting Started
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+    
+  
+  
+    
+    
+      <li class="md-tabs__item md-tabs__item--active">
+        <a href="../architecture/" class="md-tabs__link">
+          
+  
+  
+  Concepts
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../guides/opt-in/" class="md-tabs__link">
+          
+  
+  
+  Guides
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../reference/api/" class="md-tabs__link">
+          
+  
+  
+  Reference
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../operations/monitoring/" class="md-tabs__link">
+          
+  
+  
+  Operations
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    <li class="md-tabs__item">
+      <a href="../../contributing/" class="md-tabs__link">
+        
+  
+  
+    
+  
+  Contributing
+
+      </a>
+    </li>
+  
+
+      
+    </ul>
+  </div>
+</nav>
+          
+        
+      
+      <main class="md-main" data-md-component="main">
+        <div class="md-main__inner md-grid">
+          
+            
+              
+              <div class="md-sidebar md-sidebar--primary" data-md-component="sidebar" data-md-type="navigation" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+
+  
+
+
+<nav class="md-nav md-nav--primary md-nav--lifted" aria-label="Navigation" data-md-level="0">
+  <label class="md-nav__title" for="__drawer">
+    <a href="../.." title="Hybernate" class="md-nav__button md-logo" aria-label="Hybernate" data-md-component="logo">
+      
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="m20.79 13.95-2.33.62-2-1.13v-2.88l2-1.13 2.33.62.52-1.93-1.77-.47.46-1.77-1.93-.52-.62 2.33-2 1.13L13 7.38V5.12l1.71-1.71L13.29 2 12 3.29 10.71 2 9.29 3.41 11 5.12v2.26L8.5 8.82l-2-1.13-.58-2.33L4 5.88l.47 1.77-1.77.47.52 1.93 2.33-.62 2 1.13v2.89l-2 1.13-2.33-.62-.52 1.93 1.77.47L4 18.12l1.93.52.62-2.33 2-1.13L11 16.62v2.26l-1.71 1.71L10.71 22 12 20.71 13.29 22l1.41-1.41-1.7-1.71v-2.26l2.5-1.45 2 1.13.62 2.33 1.88-.51-.47-1.77 1.77-.47zM9.5 10.56 12 9.11l2.5 1.45v2.88L12 14.89l-2.5-1.45z"/></svg>
+
+    </a>
+    Hybernate
+  </label>
+  
+    <div class="md-nav__source">
+      <a href="https://github.com/okedeji/hybernate" title="Go to repository" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M173.9 397.4c0 2-2.3 3.6-5.2 3.6-3.3.3-5.6-1.3-5.6-3.6 0-2 2.3-3.6 5.2-3.6 3-.3 5.6 1.3 5.6 3.6m-31.1-4.5c-.7 2 1.3 4.3 4.3 4.9 2.6 1 5.6 0 6.2-2s-1.3-4.3-4.3-5.2c-2.6-.7-5.5.3-6.2 2.3m44.2-1.7c-2.9.7-4.9 2.6-4.6 4.9.3 2 2.9 3.3 5.9 2.6 2.9-.7 4.9-2.6 4.6-4.6-.3-1.9-3-3.2-5.9-2.9M252.8 8C114.1 8 8 113.3 8 252c0 110.9 69.8 205.8 169.5 239.2 12.8 2.3 17.3-5.6 17.3-12.1 0-6.2-.3-40.4-.3-61.4 0 0-70 15-84.7-29.8 0 0-11.4-29.1-27.8-36.6 0 0-22.9-15.7 1.6-15.4 0 0 24.9 2 38.6 25.8 21.9 38.6 58.6 27.5 72.9 20.9 2.3-16 8.8-27.1 16-33.7-55.9-6.2-112.3-14.3-112.3-110.5 0-27.5 7.6-41.3 23.6-58.9-2.6-6.5-11.1-33.3 2.6-67.9 20.9-6.5 69 27 69 27 20-5.6 41.5-8.5 62.8-8.5s42.8 2.9 62.8 8.5c0 0 48.1-33.6 69-27 13.7 34.7 5.2 61.4 2.6 67.9 16 17.7 25.8 31.5 25.8 58.9 0 96.5-58.9 104.2-114.8 110.5 9.2 7.9 17 22.9 17 46.4 0 33.7-.3 75.4-.3 83.6 0 6.5 4.6 14.4 17.3 12.1C436.2 457.8 504 362.9 504 252 504 113.3 391.5 8 252.8 8M105.2 352.9c-1.3 1-1 3.3.7 5.2 1.6 1.6 3.9 2.3 5.2 1 1.3-1 1-3.3-.7-5.2-1.6-1.6-3.9-2.3-5.2-1m-10.8-8.1c-.7 1.3.3 2.9 2.3 3.9 1.6 1 3.6.7 4.3-.7.7-1.3-.3-2.9-2.3-3.9-2-.6-3.6-.3-4.3.7m32.4 35.6c-1.6 1.3-1 4.3 1.3 6.2 2.3 2.3 5.2 2.6 6.5 1 1.3-1.3.7-4.3-1.3-6.2-2.2-2.3-5.2-2.6-6.5-1m-11.4-14.7c-1.6 1-1.6 3.6 0 5.9s4.3 3.3 5.6 2.3c1.6-1.3 1.6-3.9 0-6.2-1.4-2.3-4-3.3-5.6-2"/></svg>
+  </div>
+  <div class="md-source__repository">
+    okedeji/hybernate
+  </div>
+</a>
+    </div>
+  
+  <ul class="md-nav__list" data-md-scrollfix>
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../.." class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Home
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_2" >
+        
+          
+          <label class="md-nav__link" for="__nav_2" id="__nav_2_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Getting Started
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_2_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_2">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Getting Started
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../getting-started/installation/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Installation
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../getting-started/quickstart/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Quickstart
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../getting-started/kubectl-plugin/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    kubectl Plugin
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+    
+  
+  
+  
+    
+    
+    
+    
+      
+        
+        
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--active md-nav__item--section md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_3" checked>
+        
+          
+          <label class="md-nav__link" for="__nav_3" id="__nav_3_label" tabindex="">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Concepts
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_3_label" aria-expanded="true">
+          <label class="md-nav__title" for="__nav_3">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Concepts
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../architecture/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Architecture
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../lifecycle/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Lifecycle
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../forecasting/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Forecasting
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../idle-detection/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Idle Detection
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../dependencies/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Dependencies
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../wake-on-request/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Wake on Request
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+    
+  
+  
+  
+    <li class="md-nav__item md-nav__item--active">
+      
+      <input class="md-nav__toggle md-toggle" type="checkbox" id="__toc">
+      
+      
+        
+      
+      
+        <label class="md-nav__link md-nav__link--active" for="__toc">
+          
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Cost Tracking
+  
+
+    
+  </span>
+  
+  
+
+          <span class="md-nav__icon md-icon"></span>
+        </label>
+      
+      <a href="./" class="md-nav__link md-nav__link--active">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Cost Tracking
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+      
+        
+
+<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#freed-and-saved" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Freed and Saved
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Freed and Saved">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#how-saved-is-measured" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        How saved is measured
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#how-costs-are-calculated" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        How Costs Are Calculated
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="How Costs Are Calculated">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#resource-hours" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Resource Hours
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#prices" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Prices
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Prices">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#spot-nodes" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Spot nodes
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#custom-rates" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Custom Rates
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#status-fields" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Status Fields
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#resource-reduction" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Resource Reduction
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#in-dry-run" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        In Dry-Run
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#viewing-costs-across-workloads" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Viewing Costs Across Workloads
+      
+    </span>
+  </a>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+      
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_4" >
+        
+          
+          <label class="md-nav__link" for="__nav_4" id="__nav_4_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Guides
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_4_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_4">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Guides
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../guides/opt-in/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Opting In
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../guides/managed-workload/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    ManagedWorkload
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../guides/pause/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Pause and Resume
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../guides/cluster-autoscaler/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Cluster Autoscaler
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../guides/node-pools/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Node Pools for Real Savings
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../guides/dry-run/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Dry Run
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../guides/prometheus-signals/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Prometheus Activity
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../guides/gitops/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    GitOps tools
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../guides/autoscalers/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    HPA and KEDA
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_5" >
+        
+          
+          <label class="md-nav__link" for="__nav_5" id="__nav_5_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Reference
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_5_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_5">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Reference
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../reference/api/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    API
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../reference/helm-values/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Helm Values
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../reference/metrics/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Metrics
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../reference/labels-annotations/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Labels & Annotations
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../reference/data-and-access/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Data and Access
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../reference/security/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Security
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../reference/configuration/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Configuration
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../reference/compatibility/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Compatibility
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_6" >
+        
+          
+          <label class="md-nav__link" for="__nav_6" id="__nav_6_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Operations
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_6_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_6">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Operations
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../operations/monitoring/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Monitoring
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../operations/troubleshooting/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Troubleshooting
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../operations/upgrading/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Upgrading
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../contributing/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Contributing
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+  </ul>
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+            
+              
+              <div class="md-sidebar md-sidebar--secondary" data-md-component="sidebar" data-md-type="toc" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#freed-and-saved" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Freed and Saved
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Freed and Saved">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#how-saved-is-measured" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        How saved is measured
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#how-costs-are-calculated" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        How Costs Are Calculated
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="How Costs Are Calculated">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#resource-hours" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Resource Hours
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#prices" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Prices
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Prices">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#spot-nodes" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Spot nodes
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#custom-rates" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Custom Rates
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#status-fields" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Status Fields
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#resource-reduction" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Resource Reduction
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#in-dry-run" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        In Dry-Run
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#viewing-costs-across-workloads" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Viewing Costs Across Workloads
+      
+    </span>
+  </a>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+          
+          
+            <div class="md-content" data-md-component="content">
+              
+              <article class="md-content__inner md-typeset">
+                
+                  
+
+
+  
+    <a href="https://github.com/okedeji/hybernate/edit/main/docs/concepts/cost-tracking.md" title="Edit this page" class="md-content__button md-icon" rel="edit">
+      
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M10 20H6V4h7v5h5v3.1l2-2V8l-6-6H6c-1.1 0-2 .9-2 2v16c0 1.1.9 2 2 2h4zm10.2-7c.1 0 .3.1.4.2l1.3 1.3c.2.2.2.6 0 .8l-1 1-2.1-2.1 1-1c.1-.1.2-.2.4-.2m0 3.9L14.1 23H12v-2.1l6.1-6.1z"/></svg>
+    </a>
+  
+  
+
+
+<h1 id="cost-tracking">Cost Tracking<a class="headerlink" href="#cost-tracking" title="Permanent link">&para;</a></h1>
+<p>Hybernate tracks what each workload costs, what pausing it frees, and what that has saved, in its ManagedWorkload's <code>status.cost</code>. The figures cover the current calendar month in UTC.</p>
+<h2 id="freed-and-saved">Freed and Saved<a class="headerlink" href="#freed-and-saved" title="Permanent link">&para;</a></h2>
+<p>Hybernate reports two numbers for a pause, because they answer different questions:</p>
+<ul>
+<li><strong>Freed</strong> (<code>freedThisMonth</code>) is what the paused replicas requested, priced at their nodes' list price, for as long as they were paused: what pausing released on its nodes.</li>
+<li><strong>Saved</strong> (<code>savedThisMonth</code>) is the part of that which provably came off your bill.</li>
+</ul>
+<p>Hybernate works at the <strong>workload layer</strong>: pausing removes pods, which frees the CPU and memory they requested on their nodes. Your cloud bill is for <strong>nodes</strong>. Freed capacity becomes money only once nodes go, which takes a cluster autoscaler (Cluster Autoscaler, Karpenter, or a managed equivalent) able to remove them. With no autoscaler, or with scale-down blocked, a pause frees capacity and saves nothing, and <code>savedThisMonth</code> says so. See the <a href="../../guides/cluster-autoscaler/">Cluster Autoscaler Guide</a> for settings that let freed capacity go, and <a href="../../guides/node-pools/">Node Pools for Real Savings</a> for giving non-prod workloads nodes that pausing empties.</p>
+<h3 id="how-saved-is-measured">How saved is measured<a class="headerlink" href="#how-saved-is-measured" title="Permanent link">&para;</a></h3>
+<p>Every 5 minutes, the operator's leader looks at each <strong>node pool</strong>, and asks how much of what Hybernate holds paused there its nodes could hold if it came back now:</p>
+<ul>
+<li><strong>Paused</strong> is what the replicas Hybernate holds paused in the pool requested, in CPU and memory. A pause records which pools its pods ran in, and how many in each, in <code>status.pause.resources.nodePools</code>.</li>
+<li><strong>Spare</strong> is what the pool's schedulable, Ready nodes have left: their allocatable CPU and memory, less what the pods bound to them request, finished pods aside.</li>
+<li><strong>Shortfall</strong> is how much of the paused requests the spare capacity can't hold, in each of CPU and memory: <code>max(0, paused − spare)</code>.</li>
+</ul>
+<p>The shortfall is capacity that would have to be added to bring the paused replicas back, so it costs at least what that much CPU and memory costs. Over each 5 minutes it's credited to the paused workloads in the pool, shared in proportion to what each holds paused there, in CPU and in memory, as <code>savedCPUHours</code> and <code>savedMemoryHours</code>. <code>savedThisMonth</code> is those hours priced at the workload's rates, like the rest of its cost, so <code>costTracking.rates</code> applies to saved as it does to freed.</p>
+<p>Each dimension is compared on its own, and a pool's spare capacity is summed across its nodes, as if paused pods could be split between nodes. Real scheduling only ever needs more, so saved is a <strong>lower bound</strong>: it never credits capacity that's still there, and can undercount, never overcount.</p>
+<p><strong>Why this needs no attribution.</strong> It never asks why a node went away. If other workloads scale down, they leave more spare capacity, and Hybernate's credit falls, since the paused replicas would fit in what they left. If nodes are removed for any reason, by an autoscaler after a pause, by consolidation, or by hand, and the paused replicas would need them back, that counts, because it's the capacity those replicas would need that's missing. What's credited is what Hybernate's pauses are actually holding off the bill right now, whoever made the nodes go.</p>
+<p><strong>Node pools.</strong> A node's pool is the first of its <code>karpenter.sh/nodepool</code>, <code>cloud.google.com/gke-nodepool</code>, <code>eks.amazonaws.com/nodegroup</code> and <code>kubernetes.azure.com/agentpool</code> labels. Nodes with none of them are one pool. A pool's spare capacity isn't lent to another: pods that ran on GPU nodes can't come back on general-purpose ones. The instance type isn't a pool: one pool can run several. A pause whose pools weren't recorded, because none of its pods was on a node as it paused, is compared with what every pool has left once its own paused replicas are held.</p>
+<p><strong>Worked example.</strong> A pool of three <code>m6i.xlarge</code> nodes in us-east-1, 4 vCPU and 16 GiB each, holds pods requesting 11 vCPU and 34 GiB, leaving 1 vCPU and 14 GiB spare. Hybernate holds paused <code>api</code>, 4 replicas of 500m and 1 GiB, and <code>worker</code>, 2 replicas of 1 vCPU and 4 GiB: 4 vCPU and 12 GiB in all.</p>
+<table>
+<thead>
+<tr>
+<th></th>
+<th>CPU</th>
+<th>Memory</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Paused</td>
+<td>4 vCPU</td>
+<td>12 GiB</td>
+</tr>
+<tr>
+<td>Spare</td>
+<td>1 vCPU</td>
+<td>14 GiB</td>
+</tr>
+<tr>
+<td>Shortfall</td>
+<td>3 vCPU</td>
+<td>0</td>
+</tr>
+</tbody>
+</table>
+<p>The memory would fit, so it saves nothing; 3 vCPU wouldn't, so that much came off the bill. <code>api</code> and <code>worker</code> hold 2 vCPU each, so each is credited 1.5 vCPU, 0.125 vCPU-hours every 5 minutes. At an <code>m6i.xlarge</code>'s $0.0317 per vCPU-hour, <code>api</code> frees $0.080 an hour (2 vCPU and 4 GiB) and saves $0.048 an hour. If the autoscaler then removes a node, spare capacity falls and saved rises towards freed; if another team scales up into the spare vCPU, saved rises too, since the paused replicas now couldn't come back without a node.</p>
+<p><strong>What isn't credited.</strong> Time the operator wasn't sampling, such as across a restart or a change of leader, and an interval in which a sample failed: each sample credits at most the 5 minutes before it. What's credited is held in memory until the workload's cost is next brought up to date, at most 5 minutes later; a restart in between loses it. Each is a few minutes of a lower bound.</p>
+<p><strong>Where it can't be measured.</strong> An operator limited to some namespaces with <code>watchNamespaces</code> can't see what other namespaces' pods request of the nodes, so it can't know their spare capacity. There, <code>savedThisMonth</code> and <code>projectedMonthlySavings</code> read <code>unknown</code>, and <code>savingsUnknown</code> says why; freed is still measured.</p>
+<p>To see pools' figures over time, the operator exports them as <a href="../../reference/metrics/#savings">metrics</a>.</p>
+<p>To measure spare capacity, the operator caches nodes, without their image lists, and the pods bound to them, keeping of each only its node, its phase, and what it requests: about 2.6 KB a pod, so 26 MB for 10,000 pods.</p>
+<h2 id="how-costs-are-calculated">How Costs Are Calculated<a class="headerlink" href="#how-costs-are-calculated" title="Permanent link">&para;</a></h2>
+<p>Cost tracking is always on. Everything is priced on what the workload's pods <strong>request</strong>, not on what they use: requests are what a pod reserves on a node, so they're what the workload costs in capacity, and what a pause frees. That includes sidecars injected when the pods were created, such as a service mesh proxy, which the Deployment's own template doesn't list but which pausing frees too.</p>
+<h3 id="resource-hours">Resource Hours<a class="headerlink" href="#resource-hours" title="Permanent link">&para;</a></h3>
+<p>Hybernate keeps the month's totals as resource-hours, brought up to date at every phase change, so time counts in the phase it was spent in, and at least every 5 minutes in between:</p>
+<table>
+<thead>
+<tr>
+<th>Field</th>
+<th>What it counts</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>awakeCPUHours</code>, <code>awakeMemoryHours</code></td>
+<td>vCPU-hours and GiB-hours the workload's replicas requested while it was awake: in any phase but <code>Paused</code></td>
+</tr>
+<tr>
+<td><code>storageHours</code></td>
+<td>GiB-hours of the PersistentVolumeClaims its pods mount, in every phase: a pause doesn't free storage</td>
+</tr>
+<tr>
+<td><code>pausedCPUHours</code>, <code>pausedMemoryHours</code></td>
+<td>vCPU-hours and GiB-hours the replicas Hybernate paused had requested, for as long as they were paused: what pausing freed</td>
+</tr>
+<tr>
+<td><code>savedCPUHours</code>, <code>savedMemoryHours</code></td>
+<td>The workload's share of the vCPU-hours and GiB-hours its node pools were short of holding the paused replicas: what pausing saved, at most the paused hours. See <a href="#how-saved-is-measured">How saved is measured</a></td>
+</tr>
+</tbody>
+</table>
+<p>While the workload is awake, its replicas are read from the target each time, or, if they can't be read, taken as last read, so the time before a phase change is still counted in the phase it was spent in; what one replica requests is read from its pods hourly and whenever its pod template changes. While it's paused, the paused hours are priced on what it ran when the pause began (<code>status.pause.resources</code>), and the saved hours are added as they're measured. If its pods can't be read as it pauses, that snapshot keeps what was last read of it awake, as it does the replicas of a pause finished after an interruption, which finds the target at zero already.</p>
+<p>A gap between updates longer than 2 hours, such as while the operator wasn't running, counts as 2 hours, since what the workload did meanwhile isn't known. <code>tracked</code> is how much of the month the totals cover: less than the time since the month began when the workload was created during the month, or after such a gap.</p>
+<p>The hours are kept to a billionth of an hour, as Kubernetes quantities, so the short pauses of small workloads still add up: <code>83333333n</code> is 0.083 vCPU-hours. When a new month begins, the totals start again from zero; last month's aren't kept.</p>
+<h3 id="prices">Prices<a class="headerlink" href="#prices" title="Permanent link">&para;</a></h3>
+<p>Resource-hours are turned into dollars at a rate per vCPU-hour, per GiB-hour of memory, and per GiB-month of storage. For each of the three, the first of these that sets it applies:</p>
+<ol>
+<li><strong>Your own rates</strong>, in <code>spec.costTracking.rates</code>.</li>
+<li><strong>The list price of its nodes</strong>, in <code>status.cost.listRates</code>. Hybernate reads each pod's node's instance type and region from its labels (<code>node.kubernetes.io/instance-type</code>, <code>topology.kubernetes.io/region</code>), looks up its list price, on-demand or, for a <a href="#spot-nodes">spot node</a>, spot, and averages over the workload's pods. <code>status.cost.listPrice</code> says which: <code>OnDemand</code>, <code>Spot</code>, or <code>SpotAndOnDemand</code> for pods on both. These are read again hourly while the workload is awake, and kept while it's paused, so what a pause frees and saves is priced at the nodes it last ran on. They set CPU and memory only.</li>
+<li><strong>The defaults</strong>, for nodes Hybernate has no list price for, such as on-premises, custom, or kind nodes:</li>
+</ol>
+<table>
+<thead>
+<tr>
+<th>Resource</th>
+<th>Default Rate</th>
+<th>Source</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>CPU</td>
+<td>$0.031/vCPU-hour</td>
+<td>AWS on-demand (m6i.large, us-east-1, 2026)</td>
+</tr>
+<tr>
+<td>Memory</td>
+<td>$0.004/GiB-hour</td>
+<td>AWS on-demand (m6i.large, us-east-1, 2026)</td>
+</tr>
+<tr>
+<td>Storage</td>
+<td>$0.08/GiB-month (priced at 730 hours a month)</td>
+<td>AWS EBS gp3, us-east-1</td>
+</tr>
+</tbody>
+</table>
+<p>The rates are applied to the whole month's hours each time the dollar figures are worked out, so changing <code>costTracking.rates</code> reprices the month so far, not only what comes after.</p>
+<p><strong>How a node's price becomes rates.</strong> A cloud provider prices an instance as a whole, so Hybernate splits its hourly price between its vCPUs and its memory in the defaults' proportion: a vCPU costs as much as 7.75 GiB of memory. An <code>m6i.large</code> (2 vCPU, 8 GiB, $0.096 an hour) comes out at $0.0317 per vCPU-hour and $0.0041 per GiB-hour. A memory-optimized instance's memory and a compute-optimized one's CPU come out at what they cost there, and a pod pays for the share of the node it requests.</p>
+<p><strong>Where the prices come from.</strong> Hybernate ships with the on-demand Linux list price of every AWS, Google Cloud, and Azure instance type, in every region it's sold, and its spot price wherever it's sold as spot, taken from the providers' public price lists through <a href="https://instances.vantage.sh">instances.vantage.sh</a> and refreshed each release. Nothing is looked up at runtime, so it works offline and air-gapped. An Azure constrained vCPU size, such as <code>Standard_E4-2s_v5</code>, is billed as its base size, <code>Standard_E4s_v5</code>, so it's priced at the base size's price spread over the vCPUs it has. Instances on GPU nodes are priced the same way, so a pod on a GPU node pays its share of the GPU too.</p>
+<p><strong>What list prices leave out.</strong> Savings plans, reserved instances, committed-use discounts, and negotiated rates aren't known to Hybernate, nor is the hour-by-hour price of AWS spot; set <code>costTracking.rates</code> for those.</p>
+<p>Hybernate reads Nodes' labels to do this.</p>
+<h4 id="spot-nodes">Spot nodes<a class="headerlink" href="#spot-nodes" title="Permanent link">&para;</a></h4>
+<p>A node labelled as spot or preemptible capacity is priced at its type's spot price in its region: <code>karpenter.sh/capacity-type: spot</code> (Karpenter, on any cloud), <code>eks.amazonaws.com/capacityType: SPOT</code> (EKS managed node groups), <code>cloud.google.com/gke-spot: "true"</code> or <code>cloud.google.com/gke-preemptible: "true"</code> (GKE), and <code>kubernetes.azure.com/scalesetpriority: spot</code> (AKS). Google Cloud and Azure publish one spot price per region; AWS's moves with demand, so Hybernate uses the average across the region's zones when its price table was generated, which is close but not what any one hour cost. A spot node of a type with no spot price, one its provider doesn't sell as spot, is priced at on-demand, and <code>kubectl hybernate scan</code> says which workloads that leaves costing less than shown.</p>
+<h3 id="custom-rates">Custom Rates<a class="headerlink" href="#custom-rates" title="Permanent link">&para;</a></h3>
+<p>Set your own rates to match what you pay:</p>
+<div class="language-yaml highlight"><table class="highlighttable"><tr><th colspan="2" class="filename"><span class="filename">managedworkload.yaml</span></th></tr><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal"><a href="#__codelineno-0-1">1</a></span>
+<span class="normal"><a href="#__codelineno-0-2">2</a></span>
+<span class="normal"><a href="#__codelineno-0-3">3</a></span>
+<span class="normal"><a href="#__codelineno-0-4">4</a></span>
+<span class="normal"><a href="#__codelineno-0-5">5</a></span>
+<span class="normal"><a href="#__codelineno-0-6">6</a></span></pre></div></td><td class="code"><div><pre><span></span><code><span id="__span-0-1"><a id="__codelineno-0-1" name="__codelineno-0-1"></a><span class="nt">spec</span><span class="p">:</span>
+</span><span id="__span-0-2"><a id="__codelineno-0-2" name="__codelineno-0-2"></a><span class="w">  </span><span class="nt">costTracking</span><span class="p">:</span>
+</span><span id="__span-0-3"><a id="__codelineno-0-3" name="__codelineno-0-3"></a><span class="w">    </span><span class="nt">rates</span><span class="p">:</span>
+</span><span id="__span-0-4"><a id="__codelineno-0-4" name="__codelineno-0-4"></a><span class="w">      </span><span class="nt">cpuPerHour</span><span class="p">:</span><span class="w"> </span><span class="s">"0.045"</span><span class="w">      </span><span class="c1"># GKE Autopilot pricing</span>
+</span><span id="__span-0-5"><a id="__codelineno-0-5" name="__codelineno-0-5"></a><span class="w">      </span><span class="nt">memoryPerHour</span><span class="p">:</span><span class="w"> </span><span class="s">"0.005"</span><span class="w">    </span><span class="c1"># GKE Autopilot pricing</span>
+</span><span id="__span-0-6"><a id="__codelineno-0-6" name="__codelineno-0-6"></a><span class="w">      </span><span class="nt">storagePerMonth</span><span class="p">:</span><span class="w"> </span><span class="s">"0.10"</span><span class="w">   </span><span class="c1"># Premium SSD</span>
+</span></code></pre></div></td></tr></table></div>
+<h2 id="status-fields">Status Fields<a class="headerlink" href="#status-fields" title="Permanent link">&para;</a></h2>
+<div class="language-yaml highlight"><table class="highlighttable"><tr><th colspan="2" class="filename"><span class="filename">status.cost</span></th></tr><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal"><a href="#__codelineno-1-1"> 1</a></span>
+<span class="normal"><a href="#__codelineno-1-2"> 2</a></span>
+<span class="normal"><a href="#__codelineno-1-3"> 3</a></span>
+<span class="normal"><a href="#__codelineno-1-4"> 4</a></span>
+<span class="normal"><a href="#__codelineno-1-5"> 5</a></span>
+<span class="normal"><a href="#__codelineno-1-6"> 6</a></span>
+<span class="normal"><a href="#__codelineno-1-7"> 7</a></span>
+<span class="normal"><a href="#__codelineno-1-8"> 8</a></span>
+<span class="normal"><a href="#__codelineno-1-9"> 9</a></span>
+<span class="normal"><a href="#__codelineno-1-10">10</a></span>
+<span class="normal"><a href="#__codelineno-1-11">11</a></span>
+<span class="normal"><a href="#__codelineno-1-12">12</a></span>
+<span class="normal"><a href="#__codelineno-1-13">13</a></span>
+<span class="normal"><a href="#__codelineno-1-14">14</a></span>
+<span class="normal"><a href="#__codelineno-1-15">15</a></span>
+<span class="normal"><a href="#__codelineno-1-16">16</a></span>
+<span class="normal"><a href="#__codelineno-1-17">17</a></span>
+<span class="normal"><a href="#__codelineno-1-18">18</a></span>
+<span class="normal"><a href="#__codelineno-1-19">19</a></span>
+<span class="normal"><a href="#__codelineno-1-20">20</a></span>
+<span class="normal"><a href="#__codelineno-1-21">21</a></span>
+<span class="normal"><a href="#__codelineno-1-22">22</a></span>
+<span class="normal"><a href="#__codelineno-1-23">23</a></span>
+<span class="normal"><a href="#__codelineno-1-24">24</a></span>
+<span class="normal"><a href="#__codelineno-1-25">25</a></span>
+<span class="normal"><a href="#__codelineno-1-26">26</a></span>
+<span class="normal"><a href="#__codelineno-1-27">27</a></span>
+<span class="normal"><a href="#__codelineno-1-28">28</a></span>
+<span class="normal"><a href="#__codelineno-1-29">29</a></span></pre></div></td><td class="code"><div><pre><span></span><code><span id="__span-1-1"><a id="__codelineno-1-1" name="__codelineno-1-1"></a><span class="nt">status</span><span class="p">:</span>
+</span><span id="__span-1-2"><a id="__codelineno-1-2" name="__codelineno-1-2"></a><span class="w">  </span><span class="nt">cost</span><span class="p">:</span>
+</span><span id="__span-1-3"><a id="__codelineno-1-3" name="__codelineno-1-3"></a><span class="w">    </span><span class="nt">tracked</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">412h30m0s</span>
+</span><span id="__span-1-4"><a id="__codelineno-1-4" name="__codelineno-1-4"></a><span class="w">    </span><span class="nt">lastAccumulatedAt</span><span class="p">:</span><span class="w"> </span><span class="s">"2026-10-18T14:30:00Z"</span>
+</span><span id="__span-1-5"><a id="__codelineno-1-5" name="__codelineno-1-5"></a><span class="w">    </span><span class="nt">awakeCPUHours</span><span class="p">:</span><span class="w"> </span><span class="s">"160500m"</span>
+</span><span id="__span-1-6"><a id="__codelineno-1-6" name="__codelineno-1-6"></a><span class="w">    </span><span class="nt">awakeMemoryHours</span><span class="p">:</span><span class="w"> </span><span class="s">"321"</span>
+</span><span id="__span-1-7"><a id="__codelineno-1-7" name="__codelineno-1-7"></a><span class="w">    </span><span class="nt">storageHours</span><span class="p">:</span><span class="w"> </span><span class="s">"4125"</span>
+</span><span id="__span-1-8"><a id="__codelineno-1-8" name="__codelineno-1-8"></a><span class="w">    </span><span class="nt">pausedCPUHours</span><span class="p">:</span><span class="w"> </span><span class="s">"664500m"</span>
+</span><span id="__span-1-9"><a id="__codelineno-1-9" name="__codelineno-1-9"></a><span class="w">    </span><span class="nt">pausedMemoryHours</span><span class="p">:</span><span class="w"> </span><span class="s">"1329"</span>
+</span><span id="__span-1-10"><a id="__codelineno-1-10" name="__codelineno-1-10"></a><span class="w">    </span><span class="nt">savedCPUHours</span><span class="p">:</span><span class="w"> </span><span class="s">"398700m"</span>
+</span><span id="__span-1-11"><a id="__codelineno-1-11" name="__codelineno-1-11"></a><span class="w">    </span><span class="nt">savedMemoryHours</span><span class="p">:</span><span class="w"> </span><span class="s">"0"</span>
+</span><span id="__span-1-12"><a id="__codelineno-1-12" name="__codelineno-1-12"></a><span class="w">    </span><span class="nt">costThisMonth</span><span class="p">:</span><span class="w"> </span><span class="s">"$6.84"</span>
+</span><span id="__span-1-13"><a id="__codelineno-1-13" name="__codelineno-1-13"></a><span class="w">    </span><span class="nt">freedThisMonth</span><span class="p">:</span><span class="w"> </span><span class="s">"$26.47"</span>
+</span><span id="__span-1-14"><a id="__codelineno-1-14" name="__codelineno-1-14"></a><span class="w">    </span><span class="nt">savedThisMonth</span><span class="p">:</span><span class="w"> </span><span class="s">"$12.62"</span>
+</span><span id="__span-1-15"><a id="__codelineno-1-15" name="__codelineno-1-15"></a><span class="w">    </span><span class="nt">costWithoutHybernateThisMonth</span><span class="p">:</span><span class="w"> </span><span class="s">"$33.31"</span>
+</span><span id="__span-1-16"><a id="__codelineno-1-16" name="__codelineno-1-16"></a><span class="w">    </span><span class="nt">projectedMonthlyCost</span><span class="p">:</span><span class="w"> </span><span class="s">"$12.35"</span>
+</span><span id="__span-1-17"><a id="__codelineno-1-17" name="__codelineno-1-17"></a><span class="w">    </span><span class="nt">projectedMonthlyFreed</span><span class="p">:</span><span class="w"> </span><span class="s">"$47.74"</span>
+</span><span id="__span-1-18"><a id="__codelineno-1-18" name="__codelineno-1-18"></a><span class="w">    </span><span class="nt">projectedMonthlySavings</span><span class="p">:</span><span class="w"> </span><span class="s">"$22.76"</span>
+</span><span id="__span-1-19"><a id="__codelineno-1-19" name="__codelineno-1-19"></a><span class="w">    </span><span class="nt">running</span><span class="p">:</span>
+</span><span id="__span-1-20"><a id="__codelineno-1-20" name="__codelineno-1-20"></a><span class="w">      </span><span class="nt">replicas</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">2</span>
+</span><span id="__span-1-21"><a id="__codelineno-1-21" name="__codelineno-1-21"></a><span class="w">      </span><span class="nt">cpuMillis</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">1000</span>
+</span><span id="__span-1-22"><a id="__codelineno-1-22" name="__codelineno-1-22"></a><span class="w">      </span><span class="nt">memoryBytes</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">2147483648</span>
+</span><span id="__span-1-23"><a id="__codelineno-1-23" name="__codelineno-1-23"></a><span class="w">      </span><span class="nt">storageBytes</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">10737418240</span>
+</span><span id="__span-1-24"><a id="__codelineno-1-24" name="__codelineno-1-24"></a><span class="w">    </span><span class="nt">pricedAt</span><span class="p">:</span><span class="w"> </span><span class="s">"2026-10-18T14:00:00Z"</span>
+</span><span id="__span-1-25"><a id="__codelineno-1-25" name="__codelineno-1-25"></a><span class="w">    </span><span class="nt">pricedTemplateHash</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">3f9c2a71d0e4b815</span>
+</span><span id="__span-1-26"><a id="__codelineno-1-26" name="__codelineno-1-26"></a><span class="w">    </span><span class="nt">listRates</span><span class="p">:</span>
+</span><span id="__span-1-27"><a id="__codelineno-1-27" name="__codelineno-1-27"></a><span class="w">      </span><span class="nt">cpuPerHour</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">31660u</span><span class="w">      </span><span class="c1"># $0.031660 per vCPU-hour</span>
+</span><span id="__span-1-28"><a id="__codelineno-1-28" name="__codelineno-1-28"></a><span class="w">      </span><span class="nt">memoryPerHour</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">4085u</span><span class="w">    </span><span class="c1"># $0.004085 per GiB-hour</span>
+</span><span id="__span-1-29"><a id="__codelineno-1-29" name="__codelineno-1-29"></a><span class="w">    </span><span class="nt">listPrice</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">OnDemand</span>
+</span></code></pre></div></td></tr></table></div>
+<table>
+<thead>
+<tr>
+<th>Field</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>tracked</code></td>
+<td>How much of the month the totals cover</td>
+</tr>
+<tr>
+<td><code>lastAccumulatedAt</code></td>
+<td>When the totals were last brought up to date</td>
+</tr>
+<tr>
+<td><code>awakeCPUHours</code>, <code>awakeMemoryHours</code>, <code>storageHours</code>, <code>pausedCPUHours</code>, <code>pausedMemoryHours</code>, <code>savedCPUHours</code>, <code>savedMemoryHours</code></td>
+<td>The resource-hours above: the record the dollar figures are worked out from</td>
+</tr>
+<tr>
+<td><code>costThisMonth</code></td>
+<td>The awake hours and the storage hours, priced</td>
+</tr>
+<tr>
+<td><code>freedThisMonth</code></td>
+<td>The paused hours, priced: what pausing freed. Money only once nodes go. Also the <code>Freed</code> column of <code>kubectl get managedworkloads</code></td>
+</tr>
+<tr>
+<td><code>savedThisMonth</code></td>
+<td>The saved hours, priced: what pausing took off the bill, at least. Also the <code>Saved</code> column of <code>kubectl get managedworkloads</code>. <code>unknown</code> while <code>savingsUnknown</code> is set</td>
+</tr>
+<tr>
+<td><code>savingsUnknown</code></td>
+<td>Why saved can't be measured, such as an operator limited by <code>watchNamespaces</code>; unset when it's measured</td>
+</tr>
+<tr>
+<td><code>costWithoutHybernateThisMonth</code></td>
+<td>What the workload would have cost this month had it never been paused: <code>costThisMonth</code> plus <code>freedThisMonth</code>, to within a cent</td>
+</tr>
+<tr>
+<td><code>projectedMonthlyCost</code>, <code>projectedMonthlyFreed</code>, <code>projectedMonthlySavings</code></td>
+<td><code>costThisMonth</code>, <code>freedThisMonth</code> and <code>savedThisMonth</code> carried to the whole month at the same rate: the amount ÷ <code>tracked</code> × the hours in the month. <code>pending</code> until a day has been tracked, including on the first day of each month, since a workload's pattern is daily</td>
+</tr>
+<tr>
+<td><code>running</code></td>
+<td>What the workload ran when the totals were last brought up to date while it was awake</td>
+</tr>
+<tr>
+<td><code>pricedAt</code>, <code>pricedTemplateHash</code></td>
+<td>When what a replica requests, and <code>listRates</code>, were last read, and the pod template's hash then</td>
+</tr>
+<tr>
+<td><code>listRates</code></td>
+<td>The list rates of the nodes the workload's pods last ran on, spot nodes at spot. Unset when its nodes aren't in Hybernate's price table, and the defaults apply</td>
+</tr>
+<tr>
+<td><code>listPrice</code></td>
+<td>Which list prices <code>listRates</code> are: <code>OnDemand</code>, <code>Spot</code>, or <code>SpotAndOnDemand</code> for pods on both. Unset with <code>listRates</code></td>
+</tr>
+<tr>
+<td><code>resourceReduction</code></td>
+<td>What the current pause freed; only while the workload is paused</td>
+</tr>
+</tbody>
+</table>
+<p>The dollar figures are rounded to the cent for display; the hours are the record.</p>
+<h2 id="resource-reduction">Resource Reduction<a class="headerlink" href="#resource-reduction" title="Permanent link">&para;</a></h2>
+<p>While a workload is paused, <code>resourceReduction</code> says what the pause freed on its nodes:</p>
+<div class="language-yaml highlight"><table class="highlighttable"><tr><th colspan="2" class="filename"><span class="filename">status.cost.resourceReduction</span></th></tr><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal"><a href="#__codelineno-2-1">1</a></span>
+<span class="normal"><a href="#__codelineno-2-2">2</a></span>
+<span class="normal"><a href="#__codelineno-2-3">3</a></span>
+<span class="normal"><a href="#__codelineno-2-4">4</a></span></pre></div></td><td class="code"><div><pre><span></span><code><span id="__span-2-1"><a id="__codelineno-2-1" name="__codelineno-2-1"></a><span class="nt">resourceReduction</span><span class="p">:</span>
+</span><span id="__span-2-2"><a id="__codelineno-2-2" name="__codelineno-2-2"></a><span class="w">  </span><span class="nt">cpuMillis</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">3000</span><span class="w">            </span><span class="c1"># 3 vCPUs freed</span>
+</span><span id="__span-2-3"><a id="__codelineno-2-3" name="__codelineno-2-3"></a><span class="w">  </span><span class="nt">memoryBytes</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">6442450944</span><span class="w">    </span><span class="c1"># 6 GiB freed</span>
+</span><span id="__span-2-4"><a id="__codelineno-2-4" name="__codelineno-2-4"></a><span class="w">  </span><span class="nt">replicas</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">3</span><span class="w">                </span><span class="c1"># 3 pod replicas removed</span>
+</span></code></pre></div></td></tr></table></div>
+<p>How much of that has come off the bill is what <code>savedCPUHours</code> and <code>savedMemoryHours</code> measure.</p>
+<h2 id="in-dry-run">In Dry-Run<a class="headerlink" href="#in-dry-run" title="Permanent link">&para;</a></h2>
+<p>A workload in <a href="../../guides/dry-run/">dry-run</a> is never paused, so all its time is awake time. What pausing would have freed is kept apart, in <code>status.dryRun</code>: <code>freedCPUHours</code>, <code>freedMemoryHours</code>, and <code>estimatedFreed</code>, those hours priced at the same rates. Dry-run measures what pausing would free, never what it would save: that depends on whether the cluster's nodes would have gone, which they can't while the workload runs.</p>
+<h2 id="viewing-costs-across-workloads">Viewing Costs Across Workloads<a class="headerlink" href="#viewing-costs-across-workloads" title="Permanent link">&para;</a></h2>
+<p><code>kubectl get managedworkloads -A</code> shows what pausing each workload has <code>Freed</code> this month, what of that it <code>Saved</code>, and, for one in dry-run, what it <code>Would Free</code>. For more:</p>
+<div class="language-bash highlight"><pre><span></span><code><span id="__span-3-1"><a id="__codelineno-3-1" name="__codelineno-3-1" href="#__codelineno-3-1"></a>kubectl<span class="w"> </span>get<span class="w"> </span>managedworkloads<span class="w"> </span>-A<span class="w"> </span>-o<span class="w"> </span>custom-columns<span class="o">=</span><span class="se">\</span>
+</span><span id="__span-3-2"><a id="__codelineno-3-2" name="__codelineno-3-2" href="#__codelineno-3-2"></a>NAMESPACE:.metadata.namespace,NAME:.metadata.name,PHASE:.status.phase,<span class="se">\</span>
+</span><span id="__span-3-3"><a id="__codelineno-3-3" name="__codelineno-3-3" href="#__codelineno-3-3"></a>COST:.status.cost.costThisMonth,FREED:.status.cost.freedThisMonth,<span class="se">\</span>
+</span><span id="__span-3-4"><a id="__codelineno-3-4" name="__codelineno-3-4" href="#__codelineno-3-4"></a>SAVED:.status.cost.savedThisMonth,PROJECTED:.status.cost.projectedMonthlyCost
+</span></code></pre></div>
+<p><a href="../../getting-started/kubectl-plugin/#see-what-hybernate-is-doing"><code>kubectl hybernate status</code></a> sums what pausing freed, and what of it was saved, across the cluster, and <a href="../../getting-started/kubectl-plugin/#see-why-nodes-dont-scale-down"><code>kubectl hybernate nodes</code></a> shows what keeps nodes from going.</p>
+<p>Per-workload cost isn't exported as Prometheus metrics; each node pool's paused and spare capacity, and what its shortfall saves an hour, are. See the <a href="../../reference/metrics/#savings">Metrics Reference</a>.</p>
+
+
+
+
+
+
+
+
+
+
+
+
+                
+              </article>
+            </div>
+          
+          
+<script>var target=document.getElementById(location.hash.slice(1));target&&target.name&&(target.checked=target.name.startsWith("__tabbed_"))</script>
+        </div>
+        
+          <button type="button" class="md-top md-icon" data-md-component="top" hidden>
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M13 20h-2V8l-5.5 5.5-1.42-1.42L12 4.16l7.92 7.92-1.42 1.42L13 8z"/></svg>
+  Back to top
+</button>
+        
+      </main>
+      
+        <footer class="md-footer">
+  
+  <div class="md-footer-meta md-typeset">
+    <div class="md-footer-meta__inner md-grid">
+      <div class="md-copyright">
+  
+  
+    Made with
+    <a href="https://squidfunk.github.io/mkdocs-material/" target="_blank" rel="noopener">
+      Material for MkDocs
+    </a>
+  
+</div>
+      
+    </div>
+  </div>
+</footer>
+      
+    </div>
+    <div class="md-dialog" data-md-component="dialog">
+      <div class="md-dialog__inner md-typeset"></div>
+    </div>
+    
+    
+    
+      
+      
+      <script id="__config" type="application/json">{"annotate": null, "base": "../..", "features": ["navigation.tabs", "navigation.sections", "navigation.expand", "navigation.top", "search.suggest", "search.highlight", "content.code.copy", "content.code.annotate", "content.code.select", "content.action.edit"], "search": "../../assets/javascripts/workers/search.2c215733.min.js", "tags": null, "translations": {"clipboard.copied": "Copied to clipboard", "clipboard.copy": "Copy to clipboard", "search.result.more.one": "1 more on this page", "search.result.more.other": "# more on this page", "search.result.none": "No matching documents", "search.result.one": "1 matching document", "search.result.other": "# matching documents", "search.result.placeholder": "Type to start searching", "search.result.term.missing": "Missing", "select.version": "Select version"}, "version": {"alias": true, "default": "latest", "provider": "mike"}}</script>
+    
+    
+      <script src="../../assets/javascripts/bundle.d7400e89.min.js"></script>
+      
+        <script src="../../javascripts/mathjax.js"></script>
+      
+        <script src="https://unpkg.com/mathjax@3.2.2/es5/tex-mml-chtml.js"></script>
+      
+    
+  </body>
+</html>

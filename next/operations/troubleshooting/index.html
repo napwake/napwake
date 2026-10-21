@@ -1,0 +1,2580 @@
+
+<!doctype html>
+<html lang="en" class="no-js">
+  <head>
+    
+      <meta charset="utf-8">
+      <meta name="viewport" content="width=device-width,initial-scale=1">
+      
+        <meta name="description" content="Intelligent Kubernetes workload lifecycle management">
+      
+      
+      
+        <link rel="canonical" href="https://okedeji.io/hybernate/latest/operations/troubleshooting/">
+      
+      
+        <link rel="prev" href="../monitoring/">
+      
+      
+        <link rel="next" href="../upgrading/">
+      
+      
+        
+      
+      
+      <link rel="icon" href="../../assets/favicon.svg">
+      <meta name="generator" content="mkdocs-1.6.1, mkdocs-material-9.7.7">
+    
+    
+      
+        <title>Troubleshooting - Hybernate</title>
+      
+    
+    
+      <link rel="stylesheet" href="../../assets/stylesheets/main.ec1eaa64.min.css">
+      
+        
+        <link rel="stylesheet" href="../../assets/stylesheets/palette.ab4e12ef.min.css">
+      
+      
+
+
+    
+    
+      
+    
+    
+      
+        
+        
+        <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+        <link rel="stylesheet" href="https://fonts.googleapis.com/css?family=Roboto:300,300i,400,400i,700,700i%7CRoboto+Mono:400,400i,700,700i&display=fallback">
+        <style>:root{--md-text-font:"Roboto";--md-code-font:"Roboto Mono"}</style>
+      
+    
+    
+      <link rel="stylesheet" href="../../stylesheets/custom.css">
+    
+    <script>__md_scope=new URL("../..",location),__md_hash=e=>[...e].reduce(((e,_)=>(e<<5)-e+_.charCodeAt(0)),0),__md_get=(e,_=localStorage,t=__md_scope)=>JSON.parse(_.getItem(t.pathname+"."+e)),__md_set=(e,_,t=localStorage,a=__md_scope)=>{try{t.setItem(a.pathname+"."+e,JSON.stringify(_))}catch(e){}}</script>
+    
+      
+
+    
+    
+  </head>
+  
+  
+    
+    
+    
+    
+    
+    <body dir="ltr" data-md-color-scheme="default" data-md-color-primary="white" data-md-color-accent="black">
+  
+    
+    <input class="md-toggle" data-md-toggle="drawer" type="checkbox" id="__drawer" autocomplete="off">
+    <input class="md-toggle" data-md-toggle="search" type="checkbox" id="__search" autocomplete="off">
+    <label class="md-overlay" for="__drawer"></label>
+    <div data-md-component="skip">
+      
+        
+        <a href="#troubleshooting" class="md-skip">
+          Skip to content
+        </a>
+      
+    </div>
+    <div data-md-component="announce">
+      
+    </div>
+    
+      <div data-md-color-scheme="default" data-md-component="outdated" hidden>
+        
+          <aside class="md-banner md-banner--warning">
+            <div class="md-banner__inner md-grid md-typeset">
+              
+  
+    These docs are for Hybernate 0.2.0-rc.4, a release candidate, and may change before it's released.
+  
+  <a href="../../.."><strong>Read the docs for the latest release.</strong></a>
+
+            </div>
+            <script>var el=document.querySelector("[data-md-component=outdated]"),base=new URL("../.."),outdated=__md_get("__outdated",sessionStorage,base);!0===outdated&&el&&(el.hidden=!1)</script>
+          </aside>
+        
+      </div>
+    
+    
+      
+
+<header class="md-header" data-md-component="header">
+  <nav class="md-header__inner md-grid" aria-label="Header">
+    <a href="../.." title="Hybernate" class="md-header__button md-logo" aria-label="Hybernate" data-md-component="logo">
+      
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="m20.79 13.95-2.33.62-2-1.13v-2.88l2-1.13 2.33.62.52-1.93-1.77-.47.46-1.77-1.93-.52-.62 2.33-2 1.13L13 7.38V5.12l1.71-1.71L13.29 2 12 3.29 10.71 2 9.29 3.41 11 5.12v2.26L8.5 8.82l-2-1.13-.58-2.33L4 5.88l.47 1.77-1.77.47.52 1.93 2.33-.62 2 1.13v2.89l-2 1.13-2.33-.62-.52 1.93 1.77.47L4 18.12l1.93.52.62-2.33 2-1.13L11 16.62v2.26l-1.71 1.71L10.71 22 12 20.71 13.29 22l1.41-1.41-1.7-1.71v-2.26l2.5-1.45 2 1.13.62 2.33 1.88-.51-.47-1.77 1.77-.47zM9.5 10.56 12 9.11l2.5 1.45v2.88L12 14.89l-2.5-1.45z"/></svg>
+
+    </a>
+    <label class="md-header__button md-icon" for="__drawer">
+      
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M3 6h18v2H3zm0 5h18v2H3zm0 5h18v2H3z"/></svg>
+    </label>
+    <div class="md-header__title" data-md-component="header-title">
+      <div class="md-header__ellipsis">
+        <div class="md-header__topic">
+          <span class="md-ellipsis">
+            Hybernate
+          </span>
+        </div>
+        <div class="md-header__topic" data-md-component="header-topic">
+          <span class="md-ellipsis">
+            
+              Troubleshooting
+            
+          </span>
+        </div>
+      </div>
+    </div>
+    
+      
+    
+    
+    
+    
+      
+      
+        <label class="md-header__button md-icon" for="__search">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+        </label>
+        <div class="md-search" data-md-component="search" role="dialog">
+  <label class="md-search__overlay" for="__search"></label>
+  <div class="md-search__inner" role="search">
+    <form class="md-search__form" name="search">
+      <input type="text" class="md-search__input" name="query" aria-label="Search" placeholder="Search" autocapitalize="off" autocorrect="off" autocomplete="off" spellcheck="false" data-md-component="search-query" required>
+      <label class="md-search__icon md-icon" for="__search">
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M20 11v2H8l5.5 5.5-1.42 1.42L4.16 12l7.92-7.92L13.5 5.5 8 11z"/></svg>
+      </label>
+      <nav class="md-search__options" aria-label="Search">
+        
+        <button type="reset" class="md-search__icon md-icon" title="Clear" aria-label="Clear" tabindex="-1">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M19 6.41 17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/></svg>
+        </button>
+      </nav>
+      
+        <div class="md-search__suggest" data-md-component="search-suggest"></div>
+      
+    </form>
+    <div class="md-search__output">
+      <div class="md-search__scrollwrap" tabindex="0" data-md-scrollfix>
+        <div class="md-search-result" data-md-component="search-result">
+          <div class="md-search-result__meta">
+            Initializing search
+          </div>
+          <ol class="md-search-result__list" role="presentation"></ol>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+      
+    
+    
+      <div class="md-header__source">
+        <a href="https://github.com/okedeji/hybernate" title="Go to repository" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M173.9 397.4c0 2-2.3 3.6-5.2 3.6-3.3.3-5.6-1.3-5.6-3.6 0-2 2.3-3.6 5.2-3.6 3-.3 5.6 1.3 5.6 3.6m-31.1-4.5c-.7 2 1.3 4.3 4.3 4.9 2.6 1 5.6 0 6.2-2s-1.3-4.3-4.3-5.2c-2.6-.7-5.5.3-6.2 2.3m44.2-1.7c-2.9.7-4.9 2.6-4.6 4.9.3 2 2.9 3.3 5.9 2.6 2.9-.7 4.9-2.6 4.6-4.6-.3-1.9-3-3.2-5.9-2.9M252.8 8C114.1 8 8 113.3 8 252c0 110.9 69.8 205.8 169.5 239.2 12.8 2.3 17.3-5.6 17.3-12.1 0-6.2-.3-40.4-.3-61.4 0 0-70 15-84.7-29.8 0 0-11.4-29.1-27.8-36.6 0 0-22.9-15.7 1.6-15.4 0 0 24.9 2 38.6 25.8 21.9 38.6 58.6 27.5 72.9 20.9 2.3-16 8.8-27.1 16-33.7-55.9-6.2-112.3-14.3-112.3-110.5 0-27.5 7.6-41.3 23.6-58.9-2.6-6.5-11.1-33.3 2.6-67.9 20.9-6.5 69 27 69 27 20-5.6 41.5-8.5 62.8-8.5s42.8 2.9 62.8 8.5c0 0 48.1-33.6 69-27 13.7 34.7 5.2 61.4 2.6 67.9 16 17.7 25.8 31.5 25.8 58.9 0 96.5-58.9 104.2-114.8 110.5 9.2 7.9 17 22.9 17 46.4 0 33.7-.3 75.4-.3 83.6 0 6.5 4.6 14.4 17.3 12.1C436.2 457.8 504 362.9 504 252 504 113.3 391.5 8 252.8 8M105.2 352.9c-1.3 1-1 3.3.7 5.2 1.6 1.6 3.9 2.3 5.2 1 1.3-1 1-3.3-.7-5.2-1.6-1.6-3.9-2.3-5.2-1m-10.8-8.1c-.7 1.3.3 2.9 2.3 3.9 1.6 1 3.6.7 4.3-.7.7-1.3-.3-2.9-2.3-3.9-2-.6-3.6-.3-4.3.7m32.4 35.6c-1.6 1.3-1 4.3 1.3 6.2 2.3 2.3 5.2 2.6 6.5 1 1.3-1.3.7-4.3-1.3-6.2-2.2-2.3-5.2-2.6-6.5-1m-11.4-14.7c-1.6 1-1.6 3.6 0 5.9s4.3 3.3 5.6 2.3c1.6-1.3 1.6-3.9 0-6.2-1.4-2.3-4-3.3-5.6-2"/></svg>
+  </div>
+  <div class="md-source__repository">
+    okedeji/hybernate
+  </div>
+</a>
+      </div>
+    
+  </nav>
+  
+</header>
+    
+    <div class="md-container" data-md-component="container">
+      
+      
+        
+          
+            
+<nav class="md-tabs" aria-label="Tabs" data-md-component="tabs">
+  <div class="md-grid">
+    <ul class="md-tabs__list">
+      
+        
+  
+  
+  
+  
+    <li class="md-tabs__item">
+      <a href="../.." class="md-tabs__link">
+        
+  
+  
+    
+  
+  Home
+
+      </a>
+    </li>
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../getting-started/installation/" class="md-tabs__link">
+          
+  
+  
+  Getting Started
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../concepts/architecture/" class="md-tabs__link">
+          
+  
+  
+  Concepts
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../guides/opt-in/" class="md-tabs__link">
+          
+  
+  
+  Guides
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../reference/api/" class="md-tabs__link">
+          
+  
+  
+  Reference
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+    
+  
+  
+    
+    
+      <li class="md-tabs__item md-tabs__item--active">
+        <a href="../monitoring/" class="md-tabs__link">
+          
+  
+  
+  Operations
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    <li class="md-tabs__item">
+      <a href="../../contributing/" class="md-tabs__link">
+        
+  
+  
+    
+  
+  Contributing
+
+      </a>
+    </li>
+  
+
+      
+    </ul>
+  </div>
+</nav>
+          
+        
+      
+      <main class="md-main" data-md-component="main">
+        <div class="md-main__inner md-grid">
+          
+            
+              
+              <div class="md-sidebar md-sidebar--primary" data-md-component="sidebar" data-md-type="navigation" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+
+  
+
+
+<nav class="md-nav md-nav--primary md-nav--lifted" aria-label="Navigation" data-md-level="0">
+  <label class="md-nav__title" for="__drawer">
+    <a href="../.." title="Hybernate" class="md-nav__button md-logo" aria-label="Hybernate" data-md-component="logo">
+      
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="m20.79 13.95-2.33.62-2-1.13v-2.88l2-1.13 2.33.62.52-1.93-1.77-.47.46-1.77-1.93-.52-.62 2.33-2 1.13L13 7.38V5.12l1.71-1.71L13.29 2 12 3.29 10.71 2 9.29 3.41 11 5.12v2.26L8.5 8.82l-2-1.13-.58-2.33L4 5.88l.47 1.77-1.77.47.52 1.93 2.33-.62 2 1.13v2.89l-2 1.13-2.33-.62-.52 1.93 1.77.47L4 18.12l1.93.52.62-2.33 2-1.13L11 16.62v2.26l-1.71 1.71L10.71 22 12 20.71 13.29 22l1.41-1.41-1.7-1.71v-2.26l2.5-1.45 2 1.13.62 2.33 1.88-.51-.47-1.77 1.77-.47zM9.5 10.56 12 9.11l2.5 1.45v2.88L12 14.89l-2.5-1.45z"/></svg>
+
+    </a>
+    Hybernate
+  </label>
+  
+    <div class="md-nav__source">
+      <a href="https://github.com/okedeji/hybernate" title="Go to repository" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M173.9 397.4c0 2-2.3 3.6-5.2 3.6-3.3.3-5.6-1.3-5.6-3.6 0-2 2.3-3.6 5.2-3.6 3-.3 5.6 1.3 5.6 3.6m-31.1-4.5c-.7 2 1.3 4.3 4.3 4.9 2.6 1 5.6 0 6.2-2s-1.3-4.3-4.3-5.2c-2.6-.7-5.5.3-6.2 2.3m44.2-1.7c-2.9.7-4.9 2.6-4.6 4.9.3 2 2.9 3.3 5.9 2.6 2.9-.7 4.9-2.6 4.6-4.6-.3-1.9-3-3.2-5.9-2.9M252.8 8C114.1 8 8 113.3 8 252c0 110.9 69.8 205.8 169.5 239.2 12.8 2.3 17.3-5.6 17.3-12.1 0-6.2-.3-40.4-.3-61.4 0 0-70 15-84.7-29.8 0 0-11.4-29.1-27.8-36.6 0 0-22.9-15.7 1.6-15.4 0 0 24.9 2 38.6 25.8 21.9 38.6 58.6 27.5 72.9 20.9 2.3-16 8.8-27.1 16-33.7-55.9-6.2-112.3-14.3-112.3-110.5 0-27.5 7.6-41.3 23.6-58.9-2.6-6.5-11.1-33.3 2.6-67.9 20.9-6.5 69 27 69 27 20-5.6 41.5-8.5 62.8-8.5s42.8 2.9 62.8 8.5c0 0 48.1-33.6 69-27 13.7 34.7 5.2 61.4 2.6 67.9 16 17.7 25.8 31.5 25.8 58.9 0 96.5-58.9 104.2-114.8 110.5 9.2 7.9 17 22.9 17 46.4 0 33.7-.3 75.4-.3 83.6 0 6.5 4.6 14.4 17.3 12.1C436.2 457.8 504 362.9 504 252 504 113.3 391.5 8 252.8 8M105.2 352.9c-1.3 1-1 3.3.7 5.2 1.6 1.6 3.9 2.3 5.2 1 1.3-1 1-3.3-.7-5.2-1.6-1.6-3.9-2.3-5.2-1m-10.8-8.1c-.7 1.3.3 2.9 2.3 3.9 1.6 1 3.6.7 4.3-.7.7-1.3-.3-2.9-2.3-3.9-2-.6-3.6-.3-4.3.7m32.4 35.6c-1.6 1.3-1 4.3 1.3 6.2 2.3 2.3 5.2 2.6 6.5 1 1.3-1.3.7-4.3-1.3-6.2-2.2-2.3-5.2-2.6-6.5-1m-11.4-14.7c-1.6 1-1.6 3.6 0 5.9s4.3 3.3 5.6 2.3c1.6-1.3 1.6-3.9 0-6.2-1.4-2.3-4-3.3-5.6-2"/></svg>
+  </div>
+  <div class="md-source__repository">
+    okedeji/hybernate
+  </div>
+</a>
+    </div>
+  
+  <ul class="md-nav__list" data-md-scrollfix>
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../.." class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Home
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_2" >
+        
+          
+          <label class="md-nav__link" for="__nav_2" id="__nav_2_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Getting Started
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_2_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_2">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Getting Started
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../getting-started/installation/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Installation
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../getting-started/quickstart/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Quickstart
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../getting-started/kubectl-plugin/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    kubectl Plugin
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_3" >
+        
+          
+          <label class="md-nav__link" for="__nav_3" id="__nav_3_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Concepts
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_3_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_3">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Concepts
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../concepts/architecture/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Architecture
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../concepts/lifecycle/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Lifecycle
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../concepts/forecasting/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Forecasting
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../concepts/idle-detection/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Idle Detection
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../concepts/dependencies/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Dependencies
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../concepts/wake-on-request/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Wake on Request
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../concepts/cost-tracking/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Cost Tracking
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_4" >
+        
+          
+          <label class="md-nav__link" for="__nav_4" id="__nav_4_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Guides
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_4_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_4">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Guides
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../guides/opt-in/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Opting In
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../guides/managed-workload/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    ManagedWorkload
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../guides/pause/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Pause and Resume
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../guides/cluster-autoscaler/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Cluster Autoscaler
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../guides/node-pools/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Node Pools for Real Savings
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../guides/dry-run/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Dry Run
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../guides/prometheus-signals/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Prometheus Activity
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../guides/gitops/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    GitOps tools
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../guides/autoscalers/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    HPA and KEDA
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_5" >
+        
+          
+          <label class="md-nav__link" for="__nav_5" id="__nav_5_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Reference
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_5_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_5">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Reference
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../reference/api/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    API
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../reference/helm-values/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Helm Values
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../reference/metrics/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Metrics
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../reference/labels-annotations/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Labels & Annotations
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../reference/data-and-access/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Data and Access
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../reference/security/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Security
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../reference/configuration/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Configuration
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../reference/compatibility/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Compatibility
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+    
+  
+  
+  
+    
+    
+    
+    
+      
+        
+        
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--active md-nav__item--section md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_6" checked>
+        
+          
+          <label class="md-nav__link" for="__nav_6" id="__nav_6_label" tabindex="">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Operations
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_6_label" aria-expanded="true">
+          <label class="md-nav__title" for="__nav_6">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Operations
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../monitoring/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Monitoring
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+    
+  
+  
+  
+    <li class="md-nav__item md-nav__item--active">
+      
+      <input class="md-nav__toggle md-toggle" type="checkbox" id="__toc">
+      
+      
+        
+      
+      
+        <label class="md-nav__link md-nav__link--active" for="__toc">
+          
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Troubleshooting
+  
+
+    
+  </span>
+  
+  
+
+          <span class="md-nav__icon md-icon"></span>
+        </label>
+      
+      <a href="./" class="md-nav__link md-nav__link--active">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Troubleshooting
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+      
+        
+
+<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#common-issues" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Common Issues
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Common Issues">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#a-labelled-workload-has-no-managedworkload" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        A labelled workload has no ManagedWorkload
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#workload-is-idle-but-not-being-paused" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Workload is idle but not being paused
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#workload-stuck-in-resuming" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Workload stuck in Resuming
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#workload-paused-with-pods-still-running" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Workload paused with pods still running
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#workload-resumed-with-replicas-not-ready" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Workload resumed with replicas not Ready
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#waking-a-workload-by-hand" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Waking a workload by hand
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#pausing-a-workload-by-hand" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Pausing a workload by hand
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#requests-to-a-paused-workload-fail-instead-of-waking-it" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Requests to a paused workload fail instead of waking it
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#workload-keeps-cycling-between-paused-and-running" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Workload keeps cycling between paused and running
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#a-dependency-isnt-held-awake-woken-or-waited-for" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        A dependency isn't held awake, woken or waited for
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#a-prometheus-query-never-matches" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        A Prometheus query never matches
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#an-activity-annotation-is-ignored" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        An activity annotation is ignored
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#a-paused-workloads-managedworkload-lost-its-status" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        A paused workload's ManagedWorkload lost its status
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#a-managedworkload-let-go-of-its-workload-without-handing-it-back" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        A ManagedWorkload let go of its workload without handing it back
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#prediction-confidence-stays-at-0" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Prediction confidence stays at 0
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#target-not-found" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Target not found
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#duplicate-target-error" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Duplicate target error
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#a-managedbyanotherinstall-warning" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        A ManagedByAnotherInstall warning
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#cost-data-shows-000" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Cost data shows $0.00
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#freed-but-not-saved" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Freed but not saved
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#saved-reads-unknown" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Saved reads unknown
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#helm-uninstall-fails-with-job-hybernate-uninstall-guard-failed" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        helm uninstall fails with job hybernate-uninstall-guard failed
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#helm-upgrade-fails-with-job-hybernate-upgrade-guard-failed" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        helm upgrade fails with job hybernate-upgrade-guard failed
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#workloads-stay-at-zero-after-the-operator-was-removed" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Workloads stay at zero after the operator was removed
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#debug-checklist" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Debug Checklist
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#getting-help" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Getting Help
+      
+    </span>
+  </a>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+      
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../upgrading/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Upgrading
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../contributing/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Contributing
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+  </ul>
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+            
+              
+              <div class="md-sidebar md-sidebar--secondary" data-md-component="sidebar" data-md-type="toc" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#common-issues" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Common Issues
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Common Issues">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#a-labelled-workload-has-no-managedworkload" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        A labelled workload has no ManagedWorkload
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#workload-is-idle-but-not-being-paused" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Workload is idle but not being paused
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#workload-stuck-in-resuming" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Workload stuck in Resuming
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#workload-paused-with-pods-still-running" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Workload paused with pods still running
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#workload-resumed-with-replicas-not-ready" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Workload resumed with replicas not Ready
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#waking-a-workload-by-hand" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Waking a workload by hand
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#pausing-a-workload-by-hand" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Pausing a workload by hand
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#requests-to-a-paused-workload-fail-instead-of-waking-it" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Requests to a paused workload fail instead of waking it
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#workload-keeps-cycling-between-paused-and-running" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Workload keeps cycling between paused and running
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#a-dependency-isnt-held-awake-woken-or-waited-for" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        A dependency isn't held awake, woken or waited for
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#a-prometheus-query-never-matches" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        A Prometheus query never matches
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#an-activity-annotation-is-ignored" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        An activity annotation is ignored
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#a-paused-workloads-managedworkload-lost-its-status" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        A paused workload's ManagedWorkload lost its status
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#a-managedworkload-let-go-of-its-workload-without-handing-it-back" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        A ManagedWorkload let go of its workload without handing it back
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#prediction-confidence-stays-at-0" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Prediction confidence stays at 0
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#target-not-found" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Target not found
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#duplicate-target-error" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Duplicate target error
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#a-managedbyanotherinstall-warning" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        A ManagedByAnotherInstall warning
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#cost-data-shows-000" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Cost data shows $0.00
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#freed-but-not-saved" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Freed but not saved
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#saved-reads-unknown" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Saved reads unknown
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#helm-uninstall-fails-with-job-hybernate-uninstall-guard-failed" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        helm uninstall fails with job hybernate-uninstall-guard failed
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#helm-upgrade-fails-with-job-hybernate-upgrade-guard-failed" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        helm upgrade fails with job hybernate-upgrade-guard failed
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#workloads-stay-at-zero-after-the-operator-was-removed" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Workloads stay at zero after the operator was removed
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#debug-checklist" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Debug Checklist
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#getting-help" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Getting Help
+      
+    </span>
+  </a>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+          
+          
+            <div class="md-content" data-md-component="content">
+              
+              <article class="md-content__inner md-typeset">
+                
+                  
+
+
+  
+    <a href="https://github.com/okedeji/hybernate/edit/main/docs/operations/troubleshooting.md" title="Edit this page" class="md-content__button md-icon" rel="edit">
+      
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M10 20H6V4h7v5h5v3.1l2-2V8l-6-6H6c-1.1 0-2 .9-2 2v16c0 1.1.9 2 2 2h4zm10.2-7c.1 0 .3.1.4.2l1.3 1.3c.2.2.2.6 0 .8l-1 1-2.1-2.1 1-1c.1-.1.2-.2.4-.2m0 3.9L14.1 23H12v-2.1l6.1-6.1z"/></svg>
+    </a>
+  
+  
+
+
+<h1 id="troubleshooting">Troubleshooting<a class="headerlink" href="#troubleshooting" title="Permanent link">&para;</a></h1>
+<h2 id="common-issues">Common Issues<a class="headerlink" href="#common-issues" title="Permanent link">&para;</a></h2>
+<h3 id="a-labelled-workload-has-no-managedworkload">A labelled workload has no ManagedWorkload<a class="headerlink" href="#a-labelled-workload-has-no-managedworkload" title="Permanent link">&para;</a></h3>
+<p><code>kubectl get managedworkloads -n &lt;namespace&gt;</code> doesn't list it. The opt-in controller says why in events on the Deployment or StatefulSet itself:</p>
+<div class="language-bash highlight"><pre><span></span><code><span id="__span-0-1"><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a>kubectl<span class="w"> </span>describe<span class="w"> </span>deployment<span class="w"> </span>&lt;name&gt;<span class="w"> </span>-n<span class="w"> </span>&lt;namespace&gt;
+</span></code></pre></div>
+<ul>
+<li><strong><code>LabelIgnored</code>, the label is on the pod template</strong>: it was put on the pods, as a chart's <code>podLabels</code> does, where Hybernate doesn't look. Put it on the Deployment or StatefulSet itself, or on its namespace; see <a href="../../guides/opt-in/">Opting In</a>.</li>
+<li><strong><code>LabelIgnored</code>, a value that isn't <code>"true"</code></strong>: <code>hybernate.io/managed</code> opts in only with <code>"true"</code>; settings such as <code>dry-run</code> are annotations.</li>
+<li><strong><code>Protected</code></strong>: its namespace is protected, such as <code>kube-system</code>; see <a href="../../guides/opt-in/#protected-namespaces">Protected namespaces</a>.</li>
+<li><strong><code>LabelIgnored</code>, Hybernate's own</strong>: the operator's and the doorman's Deployments are never managed.</li>
+<li><strong>No event</strong>: it's labelled <code>hybernate.io/ignore: "true"</code>, or someone wrote a ManagedWorkload for it, which wins over the label. With Kustomize, check the label reached the workload at all: <code>commonLabels</code> fails to apply to an existing workload (see <a href="../../guides/opt-in/#with-kustomize">With Kustomize</a>).</li>
+</ul>
+<h3 id="workload-is-idle-but-not-being-paused">Workload is idle but not being paused<a class="headerlink" href="#workload-is-idle-but-not-being-paused" title="Permanent link">&para;</a></h3>
+<p><strong>Check 1: Is dry run enabled?</strong></p>
+<div class="language-bash highlight"><pre><span></span><code><span id="__span-1-1"><a id="__codelineno-1-1" name="__codelineno-1-1" href="#__codelineno-1-1"></a>kubectl<span class="w"> </span>get<span class="w"> </span>managedworkload<span class="w"> </span>my-api<span class="w"> </span>-n<span class="w"> </span>staging<span class="w"> </span>-o<span class="w"> </span><span class="nv">jsonpath</span><span class="o">=</span><span class="s1">'{.spec.dryRun}'</span>
+</span></code></pre></div>
+<p>If <code>true</code>, the operator evaluates but doesn't act. To end it, run <code>kubectl hybernate enable my-api -n staging</code>, which does the right thing however the workload was set up. On a ManagedWorkload created from the <code>hybernate.io/managed</code> label, <code>spec.dryRun</code> follows the <code>hybernate.io/dry-run</code> annotation on the workload, its namespace, or the cluster default (<code>defaults.dryRun</code>), so setting it on the ManagedWorkload is overwritten: set the annotation to <code>"false"</code> instead. A value that can't be read, such as <code>"False"</code>, counts as dry-run, with an <code>InvalidSetting</code> event on the workload. Only on a ManagedWorkload you wrote yourself do you set <code>spec.dryRun: false</code>.</p>
+<p><strong>Check 2: When was it last active?</strong></p>
+<div class="language-bash highlight"><pre><span></span><code><span id="__span-2-1"><a id="__codelineno-2-1" name="__codelineno-2-1" href="#__codelineno-2-1"></a>kubectl<span class="w"> </span>get<span class="w"> </span>managedworkload<span class="w"> </span>my-api<span class="w"> </span>-n<span class="w"> </span>staging<span class="w"> </span>-o<span class="w"> </span><span class="nv">jsonpath</span><span class="o">=</span><span class="s1">'{.status.activity}'</span>
+</span></code></pre></div>
+<p><code>lastActivitySource</code> says what last kept it awake, and <code>pauseAt</code> is when it will pause if nothing else happens. If <code>pauseAt</code> keeps moving forward, something is still counting as activity:</p>
+<ul>
+<li><strong><code>cpu</code></strong>: usage is above <code>activity.cpuThreshold</code>% of requests. Background work (polling, cron loops) can keep a workload busy; raise the threshold if that's expected.</li>
+<li><strong><code>annotation</code></strong>: a <code>hybernate.io/last-activity</code> annotation is being refreshed, or <code>hybernate.io/active-until</code> is in the future. Check both the ManagedWorkload and its target.</li>
+<li><strong><code>rollout</code></strong>: the pod template changed recently.</li>
+<li><strong><code>prometheus</code></strong>: one of <code>activity.prometheus</code> returns a value above zero.</li>
+<li><strong><code>unobserved</code></strong>: the operator wasn't watching for a while, such as during a restart, or CPU or a Prometheus query couldn't be read for longer than a couple of checks, so the clock restarted then. If it keeps moving, check the <code>MetricsAvailable</code> and <code>PrometheusAvailable</code> conditions.</li>
+</ul>
+<p><strong>Check 3: Can Hybernate read CPU?</strong></p>
+<div class="language-bash highlight"><pre><span></span><code><span id="__span-3-1"><a id="__codelineno-3-1" name="__codelineno-3-1" href="#__codelineno-3-1"></a>kubectl<span class="w"> </span>get<span class="w"> </span>managedworkload<span class="w"> </span>my-api<span class="w"> </span>-n<span class="w"> </span>staging<span class="w"> </span><span class="se">\</span>
+</span><span id="__span-3-2"><a id="__codelineno-3-2" name="__codelineno-3-2" href="#__codelineno-3-2"></a><span class="w">  </span>-o<span class="w"> </span><span class="nv">jsonpath</span><span class="o">=</span><span class="s1">'{.status.conditions[?(@.type=="MetricsAvailable")]}'</span>
+</span></code></pre></div>
+<p>Without CPU data a busy workload looks idle, so Hybernate doesn't act. <code>MetricsAvailable=False</code> says why:</p>
+<ul>
+<li><strong><code>NoPodMetrics</code></strong>: the target's Ready pods have had no metrics for over 3 minutes. Check that metrics-server is installed and reports them: <code>kubectl top pods -n staging</code>.</li>
+<li><strong><code>NoCPURequests</code></strong>: the target's containers request no CPU, in its running pods or, with none running, in its pod template, so utilization can't be measured. Set CPU requests on its containers, or a default in the namespace's LimitRange; a LimitRange default applies to pods created after it, so restart the workload's pods once it's set.</li>
+<li><strong><code>MetricsUnavailable</code></strong>: the Metrics API itself failed. The condition message has the error; a missing <code>metrics.k8s.io</code> API means metrics-server isn't installed.</li>
+</ul>
+<p>A target scaled to zero replicas is not an error: it's recorded as zero usage. Nor is <code>MetricsAvailable=Unknown</code> just after a wake or a rollout: new pods have no metrics until they're running and metrics-server has scraped them, so it's <code>NoReadyPods</code> while none is Ready, then <code>AwaitingPodMetrics</code> for up to 3 minutes, without a warning.</p>
+<p><strong>Check 4: Is the forecast holding it awake?</strong></p>
+<p>A confident forecast that expects demand in the hour under way or the next defers the pause. While it does, the <code>IdleVetoed</code> condition is <code>True</code>, and its message says when the forecast expects demand; an <code>IdleVetoed</code> event marks when the veto began.</p>
+<div class="language-bash highlight"><pre><span></span><code><span id="__span-4-1"><a id="__codelineno-4-1" name="__codelineno-4-1" href="#__codelineno-4-1"></a>kubectl<span class="w"> </span>get<span class="w"> </span>managedworkload<span class="w"> </span>my-api<span class="w"> </span>-n<span class="w"> </span>staging<span class="w"> </span><span class="se">\</span>
+</span><span id="__span-4-2"><a id="__codelineno-4-2" name="__codelineno-4-2" href="#__codelineno-4-2"></a><span class="w">  </span>-o<span class="w"> </span><span class="nv">jsonpath</span><span class="o">=</span><span class="s1">'{.status.conditions[?(@.type=="IdleVetoed")]}'</span>
+</span></code></pre></div>
+<p><strong>Check 5: Is anything else holding it?</strong></p>
+<p><code>kubectl hybernate status</code> gives the reason in its NEXT column. Otherwise:</p>
+<ul>
+<li>Without an <code>idlePolicy</code>, nothing pauses it on its own; <a href="../../guides/pause/#pause-now"><code>kubectl hybernate pause</code></a> pauses it when you ask.</li>
+<li><code>PrometheusAvailable=False</code>: a Prometheus activity query fails, or the operator has no <code>--prometheus-url</code>.</li>
+<li><code>Protected=True</code>: its namespace is protected (<code>ProtectedNamespace</code>), it's Hybernate's own operator or doorman (<code>HybernateComponent</code>), which is never paused, or it's a StatefulSet whose <code>persistentVolumeClaimRetentionPolicy.whenScaled</code> is <code>Delete</code> (<code>PVCsDeletedOnScaleDown</code>), which would lose its PVCs to a pause: set <code>whenScaled: Retain</code> to let Hybernate pause it.</li>
+<li><code>GitOpsConflict=True</code>: a GitOps tool undid its last pause, and Hybernate waits an hour before pausing again.</li>
+</ul>
+<p><strong>Check 6: Is something depending on it?</strong></p>
+<div class="language-bash highlight"><pre><span></span><code><span id="__span-5-1"><a id="__codelineno-5-1" name="__codelineno-5-1" href="#__codelineno-5-1"></a>kubectl<span class="w"> </span>get<span class="w"> </span>managedworkload<span class="w"> </span>postgres<span class="w"> </span>-n<span class="w"> </span>staging<span class="w"> </span><span class="se">\</span>
+</span><span id="__span-5-2"><a id="__codelineno-5-2" name="__codelineno-5-2" href="#__codelineno-5-2"></a><span class="w">  </span>-o<span class="w"> </span><span class="nv">jsonpath</span><span class="o">=</span><span class="s1">'{.status.conditions[?(@.type=="HeldByDependents")]}'</span>
+</span></code></pre></div>
+<p><code>HeldByDependents=True</code> names the awake workloads that depend on this one, declared in <code>dependsOn</code> or <a href="../../concepts/dependencies/#learned-dependencies">learned</a>. It pauses once they have; <code>kubectl hybernate deps postgres -n staging</code> shows each link and where it came from. <code>DependencyCycle=True</code> means two workloads depend on each other; remove the cycle. See <a href="../../concepts/dependencies/">Dependencies</a>.</p>
+<h3 id="workload-stuck-in-resuming">Workload stuck in Resuming<a class="headerlink" href="#workload-stuck-in-resuming" title="Permanent link">&para;</a></h3>
+<p><code>WaitingForDependencies=True</code> means a <code>waitForReady</code> dependency isn't Ready yet; the condition names it and how many replicas are ready. Check that dependency's pods. A dependency that serves with some of its replicas Ready counts once its own resume has finished, or, if Hybernate doesn't manage it, after 2 minutes; one with none Ready is waited for until the dependency's Deployment <code>progressDeadlineSeconds</code>, or 10 minutes for a StatefulSet, has passed since the resume began, and then the workload starts without it, with <code>WaitingForDependencies=False</code>, reason <code>DependencyWontStart</code>. Otherwise, the workload's own pods aren't becoming Ready. Resume completes once every replica it was restored to is Ready. Short of that, Hybernate stops waiting 2 minutes after the first replica is Ready, or, while none is, once the Deployment's <code>progressDeadlineSeconds</code> has passed since the scale-up (10 minutes by default, and for a StatefulSet), and the workload is <code>Running</code> with the replicas that are Ready, possibly none, and <code>ResumeIncomplete=True</code>. A StatefulSet with the default <code>OrderedReady</code> pod management starts its pods one at a time, so a slow-starting one may have only its first pods Ready when the 2 minutes are up: it runs with those, and the rest follow. The <code>HybernateWorkloadStuck</code> alert fires after 15 minutes, and <code>kubectl hybernate status</code> lists it under <code>Stuck</code> after 10.</p>
+<h3 id="workload-paused-with-pods-still-running">Workload paused with pods still running<a class="headerlink" href="#workload-paused-with-pods-still-running" title="Permanent link">&para;</a></h3>
+<p>A pause is <code>Paused</code> once the workload's pods have stopped. <code>PauseIncomplete=True</code>, with a <code>PauseIncomplete</code> warning event in place of <code>Paused</code>, means some were still running after their termination grace period and a minute more (one pod after another for a StatefulSet), and Hybernate stopped waiting so the workload isn't stuck <code>Pausing</code>: it's <code>Paused</code>, and wakes as usual. A StatefulSet with the default <code>OrderedReady</code> pod management stops its pods one at a time and won't stop the rest while one isn't Ready; a pod stuck terminating, such as on a finalizer or an unreachable node, holds a Deployment's. <code>kubectl describe</code> the pods to see why. It's set <code>False</code> once they've gone, or when the workload wakes.</p>
+<h3 id="workload-resumed-with-replicas-not-ready">Workload resumed with replicas not Ready<a class="headerlink" href="#workload-resumed-with-replicas-not-ready" title="Permanent link">&para;</a></h3>
+<p><code>ResumeIncomplete=True</code>, with a <code>ResumeIncomplete</code> warning event, means the last resume stopped waiting with some replicas not Ready, as above: it's <code>Running</code> with those that are, its KEDA ScaledObject scales it again, and requests go to its Ready pods. With none Ready, the doorman no longer holds its requests either, so they fail until a pod is Ready. This is common for a workload that wasn't wholly Ready before it was paused, such as one with a pod crash-looping or unschedulable; <code>kubectl describe</code> its pods to see why. Once every replica is Ready, later or at the next resume, it's set <code>False</code> with an <code>AllReplicasReady</code> event.</p>
+<h3 id="waking-a-workload-by-hand">Waking a workload by hand<a class="headerlink" href="#waking-a-workload-by-hand" title="Permanent link">&para;</a></h3>
+<div class="language-bash highlight"><pre><span></span><code><span id="__span-6-1"><a id="__codelineno-6-1" name="__codelineno-6-1" href="#__codelineno-6-1"></a>kubectl<span class="w"> </span>hybernate<span class="w"> </span>wake<span class="w"> </span>my-api<span class="w"> </span>-n<span class="w"> </span>staging
+</span></code></pre></div>
+<p>It waits until the workload is Running, or tells you why it can't wake it. See the <a href="../../getting-started/kubectl-plugin/#wake-a-workload">kubectl plugin</a>.</p>
+<h3 id="pausing-a-workload-by-hand">Pausing a workload by hand<a class="headerlink" href="#pausing-a-workload-by-hand" title="Permanent link">&para;</a></h3>
+<div class="language-bash highlight"><pre><span></span><code><span id="__span-7-1"><a id="__codelineno-7-1" name="__codelineno-7-1" href="#__codelineno-7-1"></a>kubectl<span class="w"> </span>hybernate<span class="w"> </span>pause<span class="w"> </span>my-api<span class="w"> </span>-n<span class="w"> </span>staging
+</span></code></pre></div>
+<p>It waits until the workload is Paused, or prints why Hybernate didn't pause it. The answer stays in the <code>PauseRequest</code> condition:</p>
+<div class="language-bash highlight"><pre><span></span><code><span id="__span-8-1"><a id="__codelineno-8-1" name="__codelineno-8-1" href="#__codelineno-8-1"></a>kubectl<span class="w"> </span>get<span class="w"> </span>managedworkload<span class="w"> </span>my-api<span class="w"> </span>-n<span class="w"> </span>staging<span class="w"> </span><span class="se">\</span>
+</span><span id="__span-8-2"><a id="__codelineno-8-2" name="__codelineno-8-2" href="#__codelineno-8-2"></a><span class="w">  </span>-o<span class="w"> </span><span class="nv">jsonpath</span><span class="o">=</span><span class="s1">'{.status.conditions[?(@.type=="PauseRequest")]}'</span>
+</span></code></pre></div>
+<p><code>False</code> gives the reason: a confident forecast expects demand within the hour (<code>ForecastExpectsDemand</code>; <code>kubectl hybernate pause --yes</code> pauses it anyway), workloads that depend on it are awake (<code>HeldByDependents</code>) or it's in a <code>dependsOn</code> cycle (<code>DependencyCycle</code>), a <code>hybernate.io/active-until</code> annotation holds it (<code>ActiveUntil</code>), it's in dry-run (<code>DryRun</code>) or protected (<code>Protected</code>), it's scaled to zero already (<code>ScaledToZero</code>), or its target is missing, ignored or managed by another ManagedWorkload (<code>TargetNotFound</code>, <code>TargetIgnored</code>, <code>DuplicateTarget</code>). Each request is answered once: fix the reason, then run <code>pause</code> again. See <a href="../../guides/pause/#pause-now">Pause Now</a>.</p>
+<h3 id="requests-to-a-paused-workload-fail-instead-of-waking-it">Requests to a paused workload fail instead of waking it<a class="headerlink" href="#requests-to-a-paused-workload-fail-instead-of-waking-it" title="Permanent link">&para;</a></h3>
+<div class="language-bash highlight"><pre><span></span><code><span id="__span-9-1"><a id="__codelineno-9-1" name="__codelineno-9-1" href="#__codelineno-9-1"></a>kubectl<span class="w"> </span>get<span class="w"> </span>managedworkload<span class="w"> </span>my-api<span class="w"> </span>-n<span class="w"> </span>staging<span class="w"> </span><span class="se">\</span>
+</span><span id="__span-9-2"><a id="__codelineno-9-2" name="__codelineno-9-2" href="#__codelineno-9-2"></a><span class="w">  </span>-o<span class="w"> </span><span class="nv">jsonpath</span><span class="o">=</span><span class="s1">'{.status.conditions[?(@.type=="WakeOnRequest")]}'</span>
+</span></code></pre></div>
+<ul>
+<li><strong><code>TurnedOff</code></strong>: its <code>wake.onRequest</code> is <code>false</code>, or <code>hybernate.io/wake-on-request: "false"</code> when it's opted in with the label, so it doesn't wake on request.</li>
+<li><strong>No condition, or <code>NotPaused</code></strong>: the workload isn't paused, so nothing is routed yet.</li>
+<li><strong>A message starting <code>at its last pause:</code></strong>: the workload is awake now, and what follows is what its last pause found with its Services. The next pause meets it again unless it's fixed, so fix it now, by the reason below.</li>
+<li><strong><code>NoServices</code></strong>: no Service with a selector and a ClusterIP selects the workload's pods on a TCP port, or every such port is in <code>hybernate.io/doorman-ignore-ports</code>. Headless Services aren't routed; see <a href="../../concepts/wake-on-request/#when-a-workload-isnt-routed">Wake on Request</a>.</li>
+<li><strong><code>ServedByOtherPods</code></strong>: another workload's Ready pods are behind the same Service, so requests go to them. See <a href="../../concepts/wake-on-request/#services-shared-with-other-workloads">Services shared with other workloads</a>.</li>
+<li><strong><code>UnsupportedLoadBalancer</code></strong>, or a Service named in the message as not routed: the Service is behind GKE container-native load balancing, which can't use the doorman: a GKE Ingress uses it, it has standalone NEGs, or <code>cloud.google.com/neg-status</code> lists NEGs for it. GKE's own <code>cloud.google.com/neg: '{"ingress": true}'</code>, on every Service, doesn't count by itself. The optional <a href="../../concepts/wake-on-request/#gke-container-native-load-balancing-negs">forwarder</a> routes it. See <a href="../../concepts/wake-on-request/#on-gke">On GKE</a>.</li>
+<li><strong><code>ForwarderNotReady</code></strong>: the Service is behind GKE container-native load balancing, and the <a href="../../concepts/wake-on-request/#gke-container-native-load-balancing-negs">forwarder</a> that stands in for the workload's pods has no Ready pod yet; the message says why. For a few seconds after a pause that's expected. Otherwise, look at its pods with <code>kubectl describe pods -n staging -l app.kubernetes.io/name=hybernate-forwarder</code>: an image that can't be pulled needs the operator's image reachable from the workload's namespace, a quota or LimitRange there may refuse its pods (<code>doorman.negForwarder.resources</code>), and a pod that runs but isn't Ready can't reach the doorman, usually because of a NetworkPolicy; see <a href="../../concepts/wake-on-request/#network-policies-behind-negs">Network policies behind NEGs</a>.</li>
+<li><strong><code>NodeLocalTraffic</code></strong>: the workload's Services have <code>internalTrafficPolicy: Local</code>, which sends each caller only to endpoints on its own node, so they aren't routed. See <a href="../../concepts/wake-on-request/#when-a-workload-isnt-routed">Wake on Request</a>.</li>
+<li><strong><code>UnsupportedIPFamily</code></strong>: no doorman pod has an address in the Service's IP family, such as an IPv6-only Service in a cluster whose doorman pods have only IPv4 addresses.</li>
+<li><strong><code>DoormanUnavailable</code></strong>: no doorman pod is Ready. Check <code>kubectl get pods -A -l control-plane=doorman</code>.</li>
+<li><strong><code>NoFreePort</code></strong>: every doorman port (20000-29999) is in use.</li>
+<li><strong><code>TooManyPorts</code></strong>: the workload would hold more than <code>doorman.portsPerWorkload</code> doorman ports (32 by default), one per Service port, or its namespace more than <code>doorman.portsPerNamespace</code> (256); the message says which. Raise the cap, or list ports that needn't wake it in <code>hybernate.io/doorman-ignore-ports</code>.</li>
+<li><strong><code>RoutingFailed</code></strong>: writing the doorman's EndpointSlices failed; the message has the error, and it's retried with backoff. Check the operator's RBAC and logs.</li>
+<li><strong><code>DoormanDisabled</code></strong>: the doorman isn't installed (<code>doorman.enabled: false</code>).</li>
+<li><strong><code>TargetNotFound</code></strong>: the Deployment or StatefulSet is gone, so there's nothing to wake.</li>
+</ul>
+<p>If the condition is <code>DoormanRouted</code> but requests still fail:</p>
+<ul>
+<li><strong>The request is closed after a while with no response</strong>: the workload didn't become Ready within <code>wake.maxWait</code>, or its pods couldn't be reached. A <code>RequestNotServed</code> warning event says which, and <code>hybernate_doorman_wakes_total{result=~"timeout|error"}</code> counts these. Raise <code>maxWait</code>, or check why the pods are slow to become Ready.</li>
+<li><strong>The connection is closed at once, with nothing sent</strong>: a <a href="../../concepts/wake-on-request/#limits">limit</a> on held connections or wakes was hit; <code>hybernate_doorman_wakes_total{result="limited"}</code> counts these.</li>
+<li><strong>An error from the app itself, such as a <code>503</code> with the app's own body, on the first requests after a wake</strong>: its pods were Ready before it could answer, as a pod with no readiness probe is as soon as its containers start. A <code>NoReadinessProbe</code> warning event, and the <code>WakeOnRequest</code> message, say when that's so. Give the app a readiness probe that passes only once it can serve; see <a href="../../concepts/wake-on-request/#readiness-probes">Readiness probes</a>.</li>
+<li><strong>A <code>503</code> with no body</strong>: the caller's <code>User-Agent</code> looks like a health check or scraper, such as <code>kube-probe/</code> or <code>Prometheus/</code>, which the doorman never lets wake a workload. It answers them this way only while none of the workload's pods is Ready.</li>
+<li><strong>A 502 from ingress-nginx right after the workload paused</strong>: nginx hadn't picked up the change yet and sent the request to the removed pod. A retry a second later is held and wakes the workload.</li>
+<li><strong>A 502 from a GKE Ingress or GKE Gateway while the workload is paused</strong>: its Service is in NEGs and the optional forwarder isn't on, so the Service isn't routed and Google's load balancer has no healthy backend; see <a href="../../concepts/wake-on-request/#on-gke">On GKE</a>. Right after a pause, GKE also takes up to a minute to see the doorman, or the forwarder, pass its health checks.</li>
+<li><strong>A 504 from an Ingress after 60 seconds</strong>: the ingress controller gave up first. Raise its upstream timeout, for ingress-nginx <code>nginx.ingress.kubernetes.io/proxy-read-timeout</code>.</li>
+<li><strong>The request is refused right after the workload paused</strong>: the Service's backends hadn't switched to the doorman yet, which takes a second or two. A retry is held and wakes the workload.</li>
+<li><strong>The request is refused or times out right away, every time</strong>: a NetworkPolicy may block traffic to the doorman (ports 20000-29999) or from it to the workload's pods. See <a href="../../concepts/wake-on-request/#network-policies">Network policies</a>.</li>
+</ul>
+<p>The doorman's logs name the workload and Service for each held connection: <code>kubectl logs -n hybernate-system -l control-plane=doorman</code> (use the namespace you installed into).</p>
+<h3 id="workload-keeps-cycling-between-paused-and-running">Workload keeps cycling between paused and running<a class="headerlink" href="#workload-keeps-cycling-between-paused-and-running" title="Permanent link">&para;</a></h3>
+<p>Something keeps waking it. Check the events for <code>WokeByActivity</code> (an activity annotation changed since the pause, or a held request: <code>WokenByRequest</code> names the Service) or <code>AutoResume</code> (the forecast expected demand). A health check or monitor that calls the Service on a timer and sends a request wakes the workload each time. The doorman already ignores connections that close without sending anything, and HTTP requests from common probes and scrapers (see <a href="../../concepts/wake-on-request/#what-wakes-a-workload-and-what-doesnt">Wake on Request</a>); for anything else, point it elsewhere, list its port in <code>hybernate.io/doorman-ignore-ports</code> on the Service, or opt the workload out with <code>wake.onRequest: false</code> (<code>hybernate.io/wake-on-request: "false"</code>). A tool that refreshes <code>hybernate.io/last-activity</code> on a timer, rather than on real use, will keep waking the workload.</p>
+<p><code>ScaledUp</code> means something scaled it up outside Hybernate, named in the event and <code>status.lastScaledUp</code>. If it's a GitOps tool, the workload also reports <code>GitOpsConflict=True</code>: it sets the replicas from Git and will undo every pause until it's told to leave them; see <a href="../../guides/gitops/">GitOps tools</a>.</p>
+<h3 id="a-dependency-isnt-held-awake-woken-or-waited-for">A dependency isn't held awake, woken or waited for<a class="headerlink" href="#a-dependency-isnt-held-awake-woken-or-waited-for" title="Permanent link">&para;</a></h3>
+<div class="language-bash highlight"><pre><span></span><code><span id="__span-10-1"><a id="__codelineno-10-1" name="__codelineno-10-1" href="#__codelineno-10-1"></a>kubectl<span class="w"> </span>hybernate<span class="w"> </span>deps<span class="w"> </span>my-api<span class="w"> </span>-n<span class="w"> </span>preview-42
+</span></code></pre></div>
+<p><code>deps</code> lists the workload's dependencies and where each came from. The ManagedWorkload's conditions say why one is left out:</p>
+<ul>
+<li><strong><code>DependencyNotAllowed=True</code></strong>: the dependency is in another namespace, and that namespace's <code>hybernate.io/dependents-from</code> annotation doesn't list this one, so it isn't held, woken or waited for. Annotate the dependency's namespace; see <a href="../../concepts/dependencies/#across-namespaces">Across namespaces</a>.</li>
+<li><strong><code>DependencyNotFound=True</code></strong>: a <code>dependsOn</code> workload doesn't exist (reason <code>DependencyNotFound</code>), or is outside <code>watchNamespaces</code> or can't be read by the operator (reason <code>DependencyNotVisible</code>). Neither blocks the workload.</li>
+<li><strong>A <code>DependencyWakeFailed</code> warning event</strong>: Hybernate couldn't set the activity annotation that wakes a dependency, such as when a policy engine refuses the write; the message has the error. The workload wakes anyway, and the dependency may still be paused.</li>
+</ul>
+<h3 id="a-prometheus-query-never-matches">A Prometheus query never matches<a class="headerlink" href="#a-prometheus-query-never-matches" title="Permanent link">&para;</a></h3>
+<p><code>PrometheusQueryEmpty=True</code>, reason <code>NoSeries</code>, with a warning event, means one of the workload's Prometheus activity queries has matched no series since Hybernate first evaluated it, which usually means a misspelt metric or label. Such a query can never keep the workload awake. It doesn't stop a pause either: the other sources decide. Run the query in Prometheus to check it; see <a href="../../guides/prometheus-signals/#test-the-query-directly">Test the query directly</a>.</p>
+<h3 id="an-activity-annotation-is-ignored">An activity annotation is ignored<a class="headerlink" href="#an-activity-annotation-is-ignored" title="Permanent link">&para;</a></h3>
+<p>An <code>InvalidActivityAnnotation</code> warning event means a <code>hybernate.io/last-activity</code>, <code>last-request</code> or <code>active-until</code> value isn't an RFC 3339 time, such as epoch seconds or a date without a time. It neither keeps the workload awake nor wakes it. Write the time as <code>date -u +%Y-%m-%dT%H:%M:%SZ</code> gives it; see <a href="../../concepts/idle-detection/#activity-annotations">Activity annotations</a>.</p>
+<h3 id="a-paused-workloads-managedworkload-lost-its-status">A paused workload's ManagedWorkload lost its status<a class="headerlink" href="#a-paused-workloads-managedworkload-lost-its-status" title="Permanent link">&para;</a></h3>
+<p>A ManagedWorkload restored from a backup without its status, or deleted without its finalizer and created again, no longer has the record of its pause. Hybernate takes the pause up again from the copy on the workload's <code>hybernate.io/paused-from</code> annotation, with a <code>PauseRecovered</code> event: the workload is <code>Paused</code> again if it's still at zero, and wakes as usual. Leave the annotation alone; Hybernate removes it when it hands the workload back.</p>
+<p>A <code>PauseRecordLost</code> warning event means there was no record to finish from, or the annotation couldn't be read; the message says which. A workload left <code>Pausing</code>, <code>Paused</code> or <code>Resuming</code> with no record anywhere was never scaled, since the copy is written first, and is <code>Running</code> again. If its replicas are at zero all the same, Hybernate takes it for a workload scaled to zero outside it and leaves it off: scale it back up yourself.</p>
+<h3 id="a-managedworkload-let-go-of-its-workload-without-handing-it-back">A ManagedWorkload let go of its workload without handing it back<a class="headerlink" href="#a-managedworkload-let-go-of-its-workload-without-handing-it-back" title="Permanent link">&para;</a></h3>
+<p>A <code>HandBackAbandoned</code> warning event means the ManagedWorkload's namespace is being deleted, and handing its paused workload back failed for 5 minutes, such as when a KEDA webhook that's down refuses the release of its ScaledObject. The ManagedWorkload lets go rather than hold up the namespace's deletion; the workload is deleted with the namespace. The message has the error.</p>
+<h3 id="prediction-confidence-stays-at-0">Prediction confidence stays at 0<a class="headerlink" href="#prediction-confidence-stays-at-0" title="Permanent link">&para;</a></h3>
+<p>The confidence scorer needs a full 24-hour window of observed hours before reporting daily confidence, and 168 for weekly. An hour isn't observed while the operator is down, while CPU can't be read, or while the workload is paused without the doorman, so a workload paused every night without wake on request never gets a full day. <code>status.prediction.reason</code> and <code>message</code> say what the forecast waits for, and <code>startsActing</code> when it's expected to act; see <a href="../../concepts/forecasting/#when-it-acts">When It Acts</a>. With a Prometheus URL, a new workload starts from its history instead: <code>status.prediction.history</code> says what came of reading it.</p>
+<p>Also check that metrics-server is running and returning data:</p>
+<div class="language-bash highlight"><pre><span></span><code><span id="__span-11-1"><a id="__codelineno-11-1" name="__codelineno-11-1" href="#__codelineno-11-1"></a>kubectl<span class="w"> </span>top<span class="w"> </span>pods<span class="w"> </span>-n<span class="w"> </span>staging
+</span></code></pre></div>
+<h3 id="target-not-found">Target not found<a class="headerlink" href="#target-not-found" title="Permanent link">&para;</a></h3>
+<div class="language-bash highlight"><pre><span></span><code><span id="__span-12-1"><a id="__codelineno-12-1" name="__codelineno-12-1" href="#__codelineno-12-1"></a>kubectl<span class="w"> </span>get<span class="w"> </span>managedworkload<span class="w"> </span>my-api<span class="w"> </span>-n<span class="w"> </span>staging<span class="w"> </span>-o<span class="w"> </span><span class="nv">jsonpath</span><span class="o">=</span><span class="s1">'{.status.conditions}'</span>
+</span></code></pre></div>
+<p>If <code>TargetAvailable</code> is <code>False</code> with reason <code>TargetNotFound</code> (a <code>TargetNotFound</code> warning event says so too):</p>
+<ul>
+<li>Verify the target exists: <code>kubectl get deployment my-api -n staging</code></li>
+<li>Check that <code>target.kind</code> matches (Deployment vs StatefulSet)</li>
+<li>Ensure the ManagedWorkload is in the same namespace as the target</li>
+</ul>
+<p><code>spec.target</code> can't be changed. To manage another workload, create another ManagedWorkload. Reason <code>TargetIgnored</code> means the target is labelled <code>hybernate.io/ignore</code>.</p>
+<h3 id="duplicate-target-error">Duplicate target error<a class="headerlink" href="#duplicate-target-error" title="Permanent link">&para;</a></h3>
+<p>Only one ManagedWorkload can manage a given workload: the oldest wins, and the others report <code>DuplicateTarget=True</code> naming it, and do nothing. Check for duplicates:</p>
+<div class="language-bash highlight"><pre><span></span><code><span id="__span-13-1"><a id="__codelineno-13-1" name="__codelineno-13-1" href="#__codelineno-13-1"></a>kubectl<span class="w"> </span>get<span class="w"> </span>managedworkloads<span class="w"> </span>-n<span class="w"> </span>staging<span class="w"> </span>-o<span class="w"> </span><span class="nv">jsonpath</span><span class="o">=</span><span class="s1">'{range .items[*]}{.metadata.name}: {.spec.target.name}{"\n"}{end}'</span>
+</span></code></pre></div>
+<h3 id="a-managedbyanotherinstall-warning">A <code>ManagedByAnotherInstall</code> warning<a class="headerlink" href="#a-managedbyanotherinstall-warning" title="Permanent link">&para;</a></h3>
+<p>Another Hybernate install, in the namespace the event names, took this ManagedWorkload on first, and this one leaves it alone: two installs watch its namespace. Give each install its own <code>watchNamespaces</code>, as in <a href="../../getting-started/installation/#more-than-one-install">More than one install</a>. If the install it names is gone, <code>kubectl annotate managedworkload &lt;name&gt; -n &lt;namespace&gt; hybernate.io/operator-</code> hands it over.</p>
+<h3 id="cost-data-shows-000">Cost data shows $0.00<a class="headerlink" href="#cost-data-shows-000" title="Permanent link">&para;</a></h3>
+<ul>
+<li>Cost is priced on what the workload's pods request, read from its pods. A workload whose containers set no requests costs nothing.</li>
+<li><code>projectedMonthlyCost</code>, <code>projectedMonthlyFreed</code> and <code>projectedMonthlySavings</code> show <code>pending</code> until 24 hours of the month have been tracked, including on the first day of every month.</li>
+<li><code>freedThisMonth</code> stays <code>$0.00</code> until Hybernate has paused the workload this month: dry-run workloads record what they would have freed in <code>status.dryRun</code> instead.</li>
+<li><code>savedThisMonth</code> stays <code>$0.00</code> while the cluster's nodes have room for everything Hybernate holds paused: nothing has come off the bill until nodes go. See <a href="#freed-but-not-saved">Freed but not saved</a>. It reads <code>unknown</code>, with why in <code>savingsUnknown</code>, for an operator limited by <code>watchNamespaces</code>; see <a href="#saved-reads-unknown">Saved reads <code>unknown</code></a>.</li>
+<li>Totals start again from zero each calendar month, in UTC. See <a href="../../concepts/cost-tracking/">Cost Tracking</a>.</li>
+</ul>
+<h3 id="freed-but-not-saved">Freed but not saved<a class="headerlink" href="#freed-but-not-saved" title="Permanent link">&para;</a></h3>
+<p><code>kubectl hybernate status</code> shows FREED THIS MONTH well above SAVED, and may say under Needs attention that nodes aren't scaling down. Pausing freed capacity on the nodes, but the nodes are still there, so little of it came off the bill. Saved is measured from the spare capacity left on each node pool: while a pool's nodes could hold everything Hybernate holds paused there, nothing is credited (see <a href="../../concepts/cost-tracking/#how-saved-is-measured">How saved is measured</a>).</p>
+<p><strong>Is anything scaling the nodes?</strong> The first lines of <code>kubectl hybernate status</code> and <code>kubectl hybernate nodes</code> name the node autoscaler, as does the operator's <code>hybernate_node_autoscaler</code> metric. With <code>none found</code>, nothing removes nodes, and what pausing frees never comes off the bill: enable Cluster Autoscaler on the node groups, or install Karpenter. See the <a href="../../guides/cluster-autoscaler/">Cluster Autoscaler Guide</a>.</p>
+<p><strong>What's keeping the nodes?</strong> <code>kubectl hybernate nodes</code> lists, for each node, what keeps the autoscaler from removing it, in BLOCKED BY, with how to clear each below the table:</p>
+<ul>
+<li><strong><code>not autoscaled</code></strong>: no autoscaler found scales the node, such as a node group Cluster Autoscaler doesn't manage</li>
+<li><strong><code>NodePool never consolidates</code></strong> and <strong><code>NodePool consolidates only empty nodes</code></strong>: a Karpenter NodePool with <code>consolidateAfter: Never</code>, or with <code>consolidationPolicy: WhenEmpty</code> on a node that runs anything but DaemonSets</li>
+<li><strong><code>scale-down disabled</code></strong> and <strong><code>do-not-disrupt on the node</code></strong>: the node is annotated <code>cluster-autoscaler.kubernetes.io/scale-down-disabled: "true"</code> or <code>karpenter.sh/do-not-disrupt: "true"</code></li>
+<li><strong><code>PDB allows no disruption</code></strong>: a pod's PodDisruptionBudget allows no disruptions, so it can't be moved</li>
+<li><strong><code>safe-to-evict=false</code></strong> and <strong><code>do-not-disrupt</code></strong>: a pod annotated <code>cluster-autoscaler.kubernetes.io/safe-to-evict: "false"</code> or <code>karpenter.sh/do-not-disrupt: "true"</code></li>
+<li><strong><code>local storage</code></strong>: a pod with an <code>emptyDir</code> or <code>hostPath</code> volume, which Cluster Autoscaler won't move while <code>--skip-nodes-with-local-storage</code> is on</li>
+<li><strong><code>bare pod</code></strong>: a pod no controller would recreate elsewhere</li>
+<li><strong><code>kube-system pod without PDB</code></strong>: which Cluster Autoscaler won't move while <code>--skip-nodes-with-system-pods</code> is on</li>
+</ul>
+<p><strong>Are paused workloads sharing nodes with busy ones?</strong> A node is removed only once everything on it can go. A paused workload on a node that also runs busy pods frees room on it, but the node stays, and a cluster where every node is a little busy can keep all of them. The UTILISATION column of <code>kubectl hybernate nodes</code> shows it: low, with nothing in BLOCKED BY, and the node is waiting for the autoscaler's threshold or delay; middling, and it's still in use. Putting non-prod workloads on a <a href="../../guides/node-pools/">node pool of their own</a> lets pausing them empty whole nodes.</p>
+<p><strong>Is the autoscaler keeping spare capacity?</strong> Some settings keep nodes around on purpose: a node group's minimum size above what's in use, a long <code>scale-down-unneeded-time</code> or <code>scale-down-delay-after-add</code>, a <code>scale-down-utilization-threshold</code> lower than the nodes' use, a long <code>consolidateAfter</code>, Karpenter disruption <code>budgets</code> that allow few nodes at once, or over-provisioning placeholder pods kept for fast scale-up. Saved catches up only as those nodes go. See <a href="../../guides/node-pools/">Node Pools for Real Savings</a> for settings that let a non-prod pool empty.</p>
+<p><code>hybernate_capacity_spare_cpu_cores</code> and <code>hybernate_capacity_paused_cpu_cores</code>, by <code>pool</code>, show which pools still have room for what's paused there; see the <a href="../../reference/metrics/#savings">Metrics Reference</a>.</p>
+<h3 id="saved-reads-unknown">Saved reads <code>unknown</code><a class="headerlink" href="#saved-reads-unknown" title="Permanent link">&para;</a></h3>
+<p><code>savedThisMonth</code> and <code>projectedMonthlySavings</code> read <code>unknown</code>, and <code>kubectl hybernate status</code> shows <code>unknown</code> in SAVED and says why above the table. <code>status.cost.savingsUnknown</code> has the reason:</p>
+<div class="language-bash highlight"><pre><span></span><code><span id="__span-14-1"><a id="__codelineno-14-1" name="__codelineno-14-1" href="#__codelineno-14-1"></a>kubectl<span class="w"> </span>get<span class="w"> </span>managedworkload<span class="w"> </span>my-api<span class="w"> </span>-n<span class="w"> </span>staging<span class="w"> </span>-o<span class="w"> </span><span class="nv">jsonpath</span><span class="o">=</span><span class="s1">'{.status.cost.savingsUnknown}'</span>
+</span></code></pre></div>
+<p>An operator limited to some namespaces with <code>watchNamespaces</code> can't see the pods in other namespaces, so it can't tell how much of each node they request, nor what's left over for the paused replicas. Saved can't be measured there, and the operator exports no <code>hybernate_capacity_*</code> or <code>hybernate_savings_realised_dollars_per_hour</code> series. Freed is still measured. To measure saved, install the operator without <code>watchNamespaces</code>; it then watches pods cluster-wide, caching only what each pod bound to a node requests (see <a href="../../reference/data-and-access/">Data and Access</a>).</p>
+<h3 id="helm-uninstall-fails-with-job-hybernate-uninstall-guard-failed"><code>helm uninstall</code> fails with <code>job hybernate-uninstall-guard failed</code><a class="headerlink" href="#helm-uninstall-fails-with-job-hybernate-uninstall-guard-failed" title="Permanent link">&para;</a></h3>
+<p>Helm 4 reports it as <code>resource Job/hybernate-system/hybernate-uninstall-guard not ready</code>. ManagedWorkloads are left, and uninstalling now would leave their workloads paused. Helm 3.18 and later print them above the error, in a message that starts <code>Hybernate refuses to uninstall:</code> and names them; when Helm prints only the error, as Helm before 3.18 does, and any Helm after a <code>helm rollback</code> with one, <code>kubectl logs job/hybernate-uninstall-guard -n hybernate-system</code> shows them. Remove the <code>hybernate.io/managed</code> label from those workloads and their namespaces, delete the ManagedWorkloads you wrote yourself, and uninstall again, as in <a href="../../getting-started/installation/#uninstall">Uninstall</a>.</p>
+<p>The refused uninstall leaves the release marked <code>uninstalling</code>, which <code>helm list</code> hides without <code>-a</code>, though the operator and the doorman keep running. If you decide to keep Hybernate instead, <code>helm upgrade</code> fails with <code>has no deployed releases</code> until <code>helm rollback hybernate -n hybernate-system</code> marks the release deployed again.</p>
+<p>The hook waits two and a half minutes for ManagedWorkloads being deleted before it lists what's left, so one it still lists as being deleted is one the operator didn't finish in that time, usually because it isn't running: uninstall with <code>--no-hooks</code> and restore the workloads by hand. Without the CRD, as can happen with <code>crds.install: false</code>, nothing is left to guard, and the hook lets the uninstall go ahead. With Argo CD 3.3 and later the same refusal blocks deleting the Application, with a <code>DeletionError</code> condition; set <code>guard.uninstall: false</code> in Git to delete it anyway.</p>
+<h3 id="helm-upgrade-fails-with-job-hybernate-upgrade-guard-failed"><code>helm upgrade</code> fails with <code>job hybernate-upgrade-guard failed</code><a class="headerlink" href="#helm-upgrade-fails-with-job-hybernate-upgrade-guard-failed" title="Permanent link">&para;</a></h3>
+<p>The upgrade sets <code>watchNamespaces</code> to leave out namespaces where the operator manages workloads, which would leave them paused with no operator; Helm 4 reports it as <code>resource Job/hybernate-system/hybernate-upgrade-guard not ready</code>. Helm 3.18 and later print them above the error, in a message that starts <code>Hybernate refuses this upgrade:</code> and names them, or <code>kubectl logs job/hybernate-upgrade-guard -n hybernate-system</code> shows them. Keep those namespaces in <code>watchNamespaces</code>, or stop managing the workloads there first, then upgrade again; see <a href="../upgrading/#narrowing-watchnamespaces">Narrowing watchNamespaces</a>. Under Argo CD the same refusal fails the sync, in its PreSync hook.</p>
+<p><code>helm rollback</code> to a revision with a narrower <code>watchNamespaces</code> is refused the same way, by the pre-rollback hook, but Helm still records the attempt as a new revision and leaves it <code>pending-rollback</code> in <code>helm history hybernate</code>, while the operator keeps running as it was. Until another revision replaces it, <code>helm upgrade</code> fails with <code>another operation (install/upgrade/rollback) is in progress</code>. <code>helm rollback hybernate -n hybernate-system</code>, with no revision, rolls back to the one before it, the release as it runs, and marks that deployed again.</p>
+<h3 id="workloads-stay-at-zero-after-the-operator-was-removed">Workloads stay at zero after the operator was removed<a class="headerlink" href="#workloads-stay-at-zero-after-the-operator-was-removed" title="Permanent link">&para;</a></h3>
+<p>The operator was removed, or its CRD deleted, while ManagedWorkloads were left, so nothing scales their workloads back up, their Services still send traffic to the doorman's deleted pods, and deleting the ManagedWorkloads or the CRD hangs in <code>Terminating</code> on the <code>hybernate.io/cleanup</code> finalizer. Reinstall the operator and stop managing the workloads, or restore them by hand: see <a href="../../getting-started/installation/#restoring-workloads-after-the-operator-is-gone">Restoring workloads after the operator is gone</a>.</p>
+<h2 id="debug-checklist">Debug Checklist<a class="headerlink" href="#debug-checklist" title="Permanent link">&para;</a></h2>
+<ol>
+<li><strong>Operator running?</strong> <code>kubectl get pods -n hybernate-system</code> (or the namespace you installed into)</li>
+<li><strong>CRDs installed?</strong> <code>kubectl get crd managedworkloads.hybernate.io</code></li>
+<li><strong>Metrics server running?</strong> <code>kubectl top nodes</code></li>
+<li><strong>RBAC correct?</strong> <code>kubectl auth can-i get pods --as=system:serviceaccount:hybernate-system:hybernate</code> (the ServiceAccount is <code>hybernate</code> for a Helm release named <code>hybernate</code>, and <code>hybernate-controller-manager</code> with <code>install.yaml</code> or the Kustomize manifests)</li>
+<li><strong>Events?</strong> <code>kubectl describe managedworkload &lt;name&gt; -n &lt;ns&gt;</code></li>
+<li><strong>Logs?</strong> <code>kubectl logs -n hybernate-system -l control-plane=controller-manager</code></li>
+<li><strong>Status?</strong> <code>kubectl get managedworkload &lt;name&gt; -n &lt;ns&gt; -o yaml</code></li>
+</ol>
+<h2 id="getting-help">Getting Help<a class="headerlink" href="#getting-help" title="Permanent link">&para;</a></h2>
+<p>If you've gone through this checklist and still have issues:</p>
+<ol>
+<li>Check the <a href="https://github.com/okedeji/hybernate/issues">GitHub Issues</a> for known problems</li>
+<li>Open a new issue with:</li>
+<li>Operator version (<code>kubectl get deploy -n hybernate-system -o wide</code> shows the image), plugin version (<code>kubectl hybernate version</code>), and Kubernetes version</li>
+<li>ManagedWorkload YAML (sanitized)</li>
+<li>Relevant operator logs</li>
+<li>Output of <code>kubectl describe managedworkload</code></li>
+</ol>
+
+
+
+
+
+
+
+
+
+
+
+
+                
+              </article>
+            </div>
+          
+          
+<script>var target=document.getElementById(location.hash.slice(1));target&&target.name&&(target.checked=target.name.startsWith("__tabbed_"))</script>
+        </div>
+        
+          <button type="button" class="md-top md-icon" data-md-component="top" hidden>
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M13 20h-2V8l-5.5 5.5-1.42-1.42L12 4.16l7.92 7.92-1.42 1.42L13 8z"/></svg>
+  Back to top
+</button>
+        
+      </main>
+      
+        <footer class="md-footer">
+  
+  <div class="md-footer-meta md-typeset">
+    <div class="md-footer-meta__inner md-grid">
+      <div class="md-copyright">
+  
+  
+    Made with
+    <a href="https://squidfunk.github.io/mkdocs-material/" target="_blank" rel="noopener">
+      Material for MkDocs
+    </a>
+  
+</div>
+      
+    </div>
+  </div>
+</footer>
+      
+    </div>
+    <div class="md-dialog" data-md-component="dialog">
+      <div class="md-dialog__inner md-typeset"></div>
+    </div>
+    
+    
+    
+      
+      
+      <script id="__config" type="application/json">{"annotate": null, "base": "../..", "features": ["navigation.tabs", "navigation.sections", "navigation.expand", "navigation.top", "search.suggest", "search.highlight", "content.code.copy", "content.code.annotate", "content.code.select", "content.action.edit"], "search": "../../assets/javascripts/workers/search.2c215733.min.js", "tags": null, "translations": {"clipboard.copied": "Copied to clipboard", "clipboard.copy": "Copy to clipboard", "search.result.more.one": "1 more on this page", "search.result.more.other": "# more on this page", "search.result.none": "No matching documents", "search.result.one": "1 matching document", "search.result.other": "# matching documents", "search.result.placeholder": "Type to start searching", "search.result.term.missing": "Missing", "select.version": "Select version"}, "version": {"alias": true, "default": "latest", "provider": "mike"}}</script>
+    
+    
+      <script src="../../assets/javascripts/bundle.d7400e89.min.js"></script>
+      
+        <script src="../../javascripts/mathjax.js"></script>
+      
+        <script src="https://unpkg.com/mathjax@3.2.2/es5/tex-mml-chtml.js"></script>
+      
+    
+  </body>
+</html>

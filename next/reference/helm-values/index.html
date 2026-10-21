@@ -1,0 +1,3027 @@
+
+<!doctype html>
+<html lang="en" class="no-js">
+  <head>
+    
+      <meta charset="utf-8">
+      <meta name="viewport" content="width=device-width,initial-scale=1">
+      
+        <meta name="description" content="Intelligent Kubernetes workload lifecycle management">
+      
+      
+      
+        <link rel="canonical" href="https://okedeji.io/hybernate/latest/reference/helm-values/">
+      
+      
+        <link rel="prev" href="../api/">
+      
+      
+        <link rel="next" href="../metrics/">
+      
+      
+        
+      
+      
+      <link rel="icon" href="../../assets/favicon.svg">
+      <meta name="generator" content="mkdocs-1.6.1, mkdocs-material-9.7.7">
+    
+    
+      
+        <title>Helm Values - Hybernate</title>
+      
+    
+    
+      <link rel="stylesheet" href="../../assets/stylesheets/main.ec1eaa64.min.css">
+      
+        
+        <link rel="stylesheet" href="../../assets/stylesheets/palette.ab4e12ef.min.css">
+      
+      
+
+
+    
+    
+      
+    
+    
+      
+        
+        
+        <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+        <link rel="stylesheet" href="https://fonts.googleapis.com/css?family=Roboto:300,300i,400,400i,700,700i%7CRoboto+Mono:400,400i,700,700i&display=fallback">
+        <style>:root{--md-text-font:"Roboto";--md-code-font:"Roboto Mono"}</style>
+      
+    
+    
+      <link rel="stylesheet" href="../../stylesheets/custom.css">
+    
+    <script>__md_scope=new URL("../..",location),__md_hash=e=>[...e].reduce(((e,_)=>(e<<5)-e+_.charCodeAt(0)),0),__md_get=(e,_=localStorage,t=__md_scope)=>JSON.parse(_.getItem(t.pathname+"."+e)),__md_set=(e,_,t=localStorage,a=__md_scope)=>{try{t.setItem(a.pathname+"."+e,JSON.stringify(_))}catch(e){}}</script>
+    
+      
+
+    
+    
+  </head>
+  
+  
+    
+    
+    
+    
+    
+    <body dir="ltr" data-md-color-scheme="default" data-md-color-primary="white" data-md-color-accent="black">
+  
+    
+    <input class="md-toggle" data-md-toggle="drawer" type="checkbox" id="__drawer" autocomplete="off">
+    <input class="md-toggle" data-md-toggle="search" type="checkbox" id="__search" autocomplete="off">
+    <label class="md-overlay" for="__drawer"></label>
+    <div data-md-component="skip">
+      
+        
+        <a href="#helm-values-reference" class="md-skip">
+          Skip to content
+        </a>
+      
+    </div>
+    <div data-md-component="announce">
+      
+    </div>
+    
+      <div data-md-color-scheme="default" data-md-component="outdated" hidden>
+        
+          <aside class="md-banner md-banner--warning">
+            <div class="md-banner__inner md-grid md-typeset">
+              
+  
+    These docs are for Hybernate 0.2.0-rc.4, a release candidate, and may change before it's released.
+  
+  <a href="../../.."><strong>Read the docs for the latest release.</strong></a>
+
+            </div>
+            <script>var el=document.querySelector("[data-md-component=outdated]"),base=new URL("../.."),outdated=__md_get("__outdated",sessionStorage,base);!0===outdated&&el&&(el.hidden=!1)</script>
+          </aside>
+        
+      </div>
+    
+    
+      
+
+<header class="md-header" data-md-component="header">
+  <nav class="md-header__inner md-grid" aria-label="Header">
+    <a href="../.." title="Hybernate" class="md-header__button md-logo" aria-label="Hybernate" data-md-component="logo">
+      
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="m20.79 13.95-2.33.62-2-1.13v-2.88l2-1.13 2.33.62.52-1.93-1.77-.47.46-1.77-1.93-.52-.62 2.33-2 1.13L13 7.38V5.12l1.71-1.71L13.29 2 12 3.29 10.71 2 9.29 3.41 11 5.12v2.26L8.5 8.82l-2-1.13-.58-2.33L4 5.88l.47 1.77-1.77.47.52 1.93 2.33-.62 2 1.13v2.89l-2 1.13-2.33-.62-.52 1.93 1.77.47L4 18.12l1.93.52.62-2.33 2-1.13L11 16.62v2.26l-1.71 1.71L10.71 22 12 20.71 13.29 22l1.41-1.41-1.7-1.71v-2.26l2.5-1.45 2 1.13.62 2.33 1.88-.51-.47-1.77 1.77-.47zM9.5 10.56 12 9.11l2.5 1.45v2.88L12 14.89l-2.5-1.45z"/></svg>
+
+    </a>
+    <label class="md-header__button md-icon" for="__drawer">
+      
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M3 6h18v2H3zm0 5h18v2H3zm0 5h18v2H3z"/></svg>
+    </label>
+    <div class="md-header__title" data-md-component="header-title">
+      <div class="md-header__ellipsis">
+        <div class="md-header__topic">
+          <span class="md-ellipsis">
+            Hybernate
+          </span>
+        </div>
+        <div class="md-header__topic" data-md-component="header-topic">
+          <span class="md-ellipsis">
+            
+              Helm Values
+            
+          </span>
+        </div>
+      </div>
+    </div>
+    
+      
+    
+    
+    
+    
+      
+      
+        <label class="md-header__button md-icon" for="__search">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+        </label>
+        <div class="md-search" data-md-component="search" role="dialog">
+  <label class="md-search__overlay" for="__search"></label>
+  <div class="md-search__inner" role="search">
+    <form class="md-search__form" name="search">
+      <input type="text" class="md-search__input" name="query" aria-label="Search" placeholder="Search" autocapitalize="off" autocorrect="off" autocomplete="off" spellcheck="false" data-md-component="search-query" required>
+      <label class="md-search__icon md-icon" for="__search">
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M20 11v2H8l5.5 5.5-1.42 1.42L4.16 12l7.92-7.92L13.5 5.5 8 11z"/></svg>
+      </label>
+      <nav class="md-search__options" aria-label="Search">
+        
+        <button type="reset" class="md-search__icon md-icon" title="Clear" aria-label="Clear" tabindex="-1">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M19 6.41 17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/></svg>
+        </button>
+      </nav>
+      
+        <div class="md-search__suggest" data-md-component="search-suggest"></div>
+      
+    </form>
+    <div class="md-search__output">
+      <div class="md-search__scrollwrap" tabindex="0" data-md-scrollfix>
+        <div class="md-search-result" data-md-component="search-result">
+          <div class="md-search-result__meta">
+            Initializing search
+          </div>
+          <ol class="md-search-result__list" role="presentation"></ol>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+      
+    
+    
+      <div class="md-header__source">
+        <a href="https://github.com/okedeji/hybernate" title="Go to repository" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M173.9 397.4c0 2-2.3 3.6-5.2 3.6-3.3.3-5.6-1.3-5.6-3.6 0-2 2.3-3.6 5.2-3.6 3-.3 5.6 1.3 5.6 3.6m-31.1-4.5c-.7 2 1.3 4.3 4.3 4.9 2.6 1 5.6 0 6.2-2s-1.3-4.3-4.3-5.2c-2.6-.7-5.5.3-6.2 2.3m44.2-1.7c-2.9.7-4.9 2.6-4.6 4.9.3 2 2.9 3.3 5.9 2.6 2.9-.7 4.9-2.6 4.6-4.6-.3-1.9-3-3.2-5.9-2.9M252.8 8C114.1 8 8 113.3 8 252c0 110.9 69.8 205.8 169.5 239.2 12.8 2.3 17.3-5.6 17.3-12.1 0-6.2-.3-40.4-.3-61.4 0 0-70 15-84.7-29.8 0 0-11.4-29.1-27.8-36.6 0 0-22.9-15.7 1.6-15.4 0 0 24.9 2 38.6 25.8 21.9 38.6 58.6 27.5 72.9 20.9 2.3-16 8.8-27.1 16-33.7-55.9-6.2-112.3-14.3-112.3-110.5 0-27.5 7.6-41.3 23.6-58.9-2.6-6.5-11.1-33.3 2.6-67.9 20.9-6.5 69 27 69 27 20-5.6 41.5-8.5 62.8-8.5s42.8 2.9 62.8 8.5c0 0 48.1-33.6 69-27 13.7 34.7 5.2 61.4 2.6 67.9 16 17.7 25.8 31.5 25.8 58.9 0 96.5-58.9 104.2-114.8 110.5 9.2 7.9 17 22.9 17 46.4 0 33.7-.3 75.4-.3 83.6 0 6.5 4.6 14.4 17.3 12.1C436.2 457.8 504 362.9 504 252 504 113.3 391.5 8 252.8 8M105.2 352.9c-1.3 1-1 3.3.7 5.2 1.6 1.6 3.9 2.3 5.2 1 1.3-1 1-3.3-.7-5.2-1.6-1.6-3.9-2.3-5.2-1m-10.8-8.1c-.7 1.3.3 2.9 2.3 3.9 1.6 1 3.6.7 4.3-.7.7-1.3-.3-2.9-2.3-3.9-2-.6-3.6-.3-4.3.7m32.4 35.6c-1.6 1.3-1 4.3 1.3 6.2 2.3 2.3 5.2 2.6 6.5 1 1.3-1.3.7-4.3-1.3-6.2-2.2-2.3-5.2-2.6-6.5-1m-11.4-14.7c-1.6 1-1.6 3.6 0 5.9s4.3 3.3 5.6 2.3c1.6-1.3 1.6-3.9 0-6.2-1.4-2.3-4-3.3-5.6-2"/></svg>
+  </div>
+  <div class="md-source__repository">
+    okedeji/hybernate
+  </div>
+</a>
+      </div>
+    
+  </nav>
+  
+</header>
+    
+    <div class="md-container" data-md-component="container">
+      
+      
+        
+          
+            
+<nav class="md-tabs" aria-label="Tabs" data-md-component="tabs">
+  <div class="md-grid">
+    <ul class="md-tabs__list">
+      
+        
+  
+  
+  
+  
+    <li class="md-tabs__item">
+      <a href="../.." class="md-tabs__link">
+        
+  
+  
+    
+  
+  Home
+
+      </a>
+    </li>
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../getting-started/installation/" class="md-tabs__link">
+          
+  
+  
+  Getting Started
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../concepts/architecture/" class="md-tabs__link">
+          
+  
+  
+  Concepts
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../guides/opt-in/" class="md-tabs__link">
+          
+  
+  
+  Guides
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+    
+  
+  
+    
+    
+      <li class="md-tabs__item md-tabs__item--active">
+        <a href="../api/" class="md-tabs__link">
+          
+  
+  
+  Reference
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../operations/monitoring/" class="md-tabs__link">
+          
+  
+  
+  Operations
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    <li class="md-tabs__item">
+      <a href="../../contributing/" class="md-tabs__link">
+        
+  
+  
+    
+  
+  Contributing
+
+      </a>
+    </li>
+  
+
+      
+    </ul>
+  </div>
+</nav>
+          
+        
+      
+      <main class="md-main" data-md-component="main">
+        <div class="md-main__inner md-grid">
+          
+            
+              
+              <div class="md-sidebar md-sidebar--primary" data-md-component="sidebar" data-md-type="navigation" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+
+  
+
+
+<nav class="md-nav md-nav--primary md-nav--lifted" aria-label="Navigation" data-md-level="0">
+  <label class="md-nav__title" for="__drawer">
+    <a href="../.." title="Hybernate" class="md-nav__button md-logo" aria-label="Hybernate" data-md-component="logo">
+      
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="m20.79 13.95-2.33.62-2-1.13v-2.88l2-1.13 2.33.62.52-1.93-1.77-.47.46-1.77-1.93-.52-.62 2.33-2 1.13L13 7.38V5.12l1.71-1.71L13.29 2 12 3.29 10.71 2 9.29 3.41 11 5.12v2.26L8.5 8.82l-2-1.13-.58-2.33L4 5.88l.47 1.77-1.77.47.52 1.93 2.33-.62 2 1.13v2.89l-2 1.13-2.33-.62-.52 1.93 1.77.47L4 18.12l1.93.52.62-2.33 2-1.13L11 16.62v2.26l-1.71 1.71L10.71 22 12 20.71 13.29 22l1.41-1.41-1.7-1.71v-2.26l2.5-1.45 2 1.13.62 2.33 1.88-.51-.47-1.77 1.77-.47zM9.5 10.56 12 9.11l2.5 1.45v2.88L12 14.89l-2.5-1.45z"/></svg>
+
+    </a>
+    Hybernate
+  </label>
+  
+    <div class="md-nav__source">
+      <a href="https://github.com/okedeji/hybernate" title="Go to repository" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M173.9 397.4c0 2-2.3 3.6-5.2 3.6-3.3.3-5.6-1.3-5.6-3.6 0-2 2.3-3.6 5.2-3.6 3-.3 5.6 1.3 5.6 3.6m-31.1-4.5c-.7 2 1.3 4.3 4.3 4.9 2.6 1 5.6 0 6.2-2s-1.3-4.3-4.3-5.2c-2.6-.7-5.5.3-6.2 2.3m44.2-1.7c-2.9.7-4.9 2.6-4.6 4.9.3 2 2.9 3.3 5.9 2.6 2.9-.7 4.9-2.6 4.6-4.6-.3-1.9-3-3.2-5.9-2.9M252.8 8C114.1 8 8 113.3 8 252c0 110.9 69.8 205.8 169.5 239.2 12.8 2.3 17.3-5.6 17.3-12.1 0-6.2-.3-40.4-.3-61.4 0 0-70 15-84.7-29.8 0 0-11.4-29.1-27.8-36.6 0 0-22.9-15.7 1.6-15.4 0 0 24.9 2 38.6 25.8 21.9 38.6 58.6 27.5 72.9 20.9 2.3-16 8.8-27.1 16-33.7-55.9-6.2-112.3-14.3-112.3-110.5 0-27.5 7.6-41.3 23.6-58.9-2.6-6.5-11.1-33.3 2.6-67.9 20.9-6.5 69 27 69 27 20-5.6 41.5-8.5 62.8-8.5s42.8 2.9 62.8 8.5c0 0 48.1-33.6 69-27 13.7 34.7 5.2 61.4 2.6 67.9 16 17.7 25.8 31.5 25.8 58.9 0 96.5-58.9 104.2-114.8 110.5 9.2 7.9 17 22.9 17 46.4 0 33.7-.3 75.4-.3 83.6 0 6.5 4.6 14.4 17.3 12.1C436.2 457.8 504 362.9 504 252 504 113.3 391.5 8 252.8 8M105.2 352.9c-1.3 1-1 3.3.7 5.2 1.6 1.6 3.9 2.3 5.2 1 1.3-1 1-3.3-.7-5.2-1.6-1.6-3.9-2.3-5.2-1m-10.8-8.1c-.7 1.3.3 2.9 2.3 3.9 1.6 1 3.6.7 4.3-.7.7-1.3-.3-2.9-2.3-3.9-2-.6-3.6-.3-4.3.7m32.4 35.6c-1.6 1.3-1 4.3 1.3 6.2 2.3 2.3 5.2 2.6 6.5 1 1.3-1.3.7-4.3-1.3-6.2-2.2-2.3-5.2-2.6-6.5-1m-11.4-14.7c-1.6 1-1.6 3.6 0 5.9s4.3 3.3 5.6 2.3c1.6-1.3 1.6-3.9 0-6.2-1.4-2.3-4-3.3-5.6-2"/></svg>
+  </div>
+  <div class="md-source__repository">
+    okedeji/hybernate
+  </div>
+</a>
+    </div>
+  
+  <ul class="md-nav__list" data-md-scrollfix>
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../.." class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Home
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_2" >
+        
+          
+          <label class="md-nav__link" for="__nav_2" id="__nav_2_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Getting Started
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_2_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_2">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Getting Started
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../getting-started/installation/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Installation
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../getting-started/quickstart/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Quickstart
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../getting-started/kubectl-plugin/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    kubectl Plugin
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_3" >
+        
+          
+          <label class="md-nav__link" for="__nav_3" id="__nav_3_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Concepts
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_3_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_3">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Concepts
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../concepts/architecture/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Architecture
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../concepts/lifecycle/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Lifecycle
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../concepts/forecasting/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Forecasting
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../concepts/idle-detection/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Idle Detection
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../concepts/dependencies/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Dependencies
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../concepts/wake-on-request/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Wake on Request
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../concepts/cost-tracking/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Cost Tracking
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_4" >
+        
+          
+          <label class="md-nav__link" for="__nav_4" id="__nav_4_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Guides
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_4_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_4">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Guides
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../guides/opt-in/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Opting In
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../guides/managed-workload/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    ManagedWorkload
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../guides/pause/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Pause and Resume
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../guides/cluster-autoscaler/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Cluster Autoscaler
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../guides/node-pools/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Node Pools for Real Savings
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../guides/dry-run/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Dry Run
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../guides/prometheus-signals/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Prometheus Activity
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../guides/gitops/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    GitOps tools
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../guides/autoscalers/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    HPA and KEDA
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+    
+  
+  
+  
+    
+    
+    
+    
+      
+        
+        
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--active md-nav__item--section md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_5" checked>
+        
+          
+          <label class="md-nav__link" for="__nav_5" id="__nav_5_label" tabindex="">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Reference
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_5_label" aria-expanded="true">
+          <label class="md-nav__title" for="__nav_5">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Reference
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../api/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    API
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+    
+  
+  
+  
+    <li class="md-nav__item md-nav__item--active">
+      
+      <input class="md-nav__toggle md-toggle" type="checkbox" id="__toc">
+      
+      
+        
+      
+      
+        <label class="md-nav__link md-nav__link--active" for="__toc">
+          
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Helm Values
+  
+
+    
+  </span>
+  
+  
+
+          <span class="md-nav__icon md-icon"></span>
+        </label>
+      
+      <a href="./" class="md-nav__link md-nav__link--active">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Helm Values
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+      
+        
+
+<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#names" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Names
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#image" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Image
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#crd" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        CRD
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#operator" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Operator
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#resources" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Resources
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#namespaces" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Namespaces
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#opt-in-defaults" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Opt-In Defaults
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#prometheus-activity" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Prometheus Activity
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#metrics" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Metrics
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Metrics">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#servicemonitor" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        ServiceMonitor
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#prometheusrule" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        PrometheusRule
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#doorman" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Doorman
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#network-policy" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Network Policy
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#service-account" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Service Account
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#guards" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Guards
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#pod-scheduling" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Pod Scheduling
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#security" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Security
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#health-probes" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Health Probes
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#rbac" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        RBAC
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#example-production-configuration" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Example: Production Configuration
+      
+    </span>
+  </a>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+      
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../metrics/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Metrics
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../labels-annotations/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Labels & Annotations
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../data-and-access/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Data and Access
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../security/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Security
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../configuration/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Configuration
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../compatibility/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Compatibility
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_6" >
+        
+          
+          <label class="md-nav__link" for="__nav_6" id="__nav_6_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Operations
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_6_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_6">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Operations
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../operations/monitoring/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Monitoring
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../operations/troubleshooting/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Troubleshooting
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../operations/upgrading/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Upgrading
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../contributing/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Contributing
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+  </ul>
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+            
+              
+              <div class="md-sidebar md-sidebar--secondary" data-md-component="sidebar" data-md-type="toc" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#names" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Names
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#image" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Image
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#crd" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        CRD
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#operator" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Operator
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#resources" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Resources
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#namespaces" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Namespaces
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#opt-in-defaults" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Opt-In Defaults
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#prometheus-activity" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Prometheus Activity
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#metrics" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Metrics
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Metrics">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#servicemonitor" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        ServiceMonitor
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#prometheusrule" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        PrometheusRule
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#doorman" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Doorman
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#network-policy" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Network Policy
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#service-account" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Service Account
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#guards" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Guards
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#pod-scheduling" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Pod Scheduling
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#security" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Security
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#health-probes" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Health Probes
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#rbac" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        RBAC
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#example-production-configuration" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Example: Production Configuration
+      
+    </span>
+  </a>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+          
+          
+            <div class="md-content" data-md-component="content">
+              
+              <article class="md-content__inner md-typeset">
+                
+                  
+
+
+  
+    <a href="https://github.com/okedeji/hybernate/edit/main/docs/reference/helm-values.md" title="Edit this page" class="md-content__button md-icon" rel="edit">
+      
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M10 20H6V4h7v5h5v3.1l2-2V8l-6-6H6c-1.1 0-2 .9-2 2v16c0 1.1.9 2 2 2h4zm10.2-7c.1 0 .3.1.4.2l1.3 1.3c.2.2.2.6 0 .8l-1 1-2.1-2.1 1-1c.1-.1.2-.2.4-.2m0 3.9L14.1 23H12v-2.1l6.1-6.1z"/></svg>
+    </a>
+  
+  
+
+
+<h1 id="helm-values-reference">Helm Values Reference<a class="headerlink" href="#helm-values-reference" title="Permanent link">&para;</a></h1>
+<p>Complete reference for the Hybernate Helm chart. Install with:</p>
+<div class="language-bash highlight"><pre><span></span><code><span id="__span-0-1"><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a>helm<span class="w"> </span>install<span class="w"> </span>hybernate<span class="w"> </span>oci://ghcr.io/okedeji/charts/hybernate<span class="w"> </span>--version<span class="w"> </span><span class="m">0</span>.2.0-rc.4<span class="w"> </span><span class="se">\</span>
+</span><span id="__span-0-2"><a id="__codelineno-0-2" name="__codelineno-0-2" href="#__codelineno-0-2"></a><span class="w">  </span>--namespace<span class="w"> </span>hybernate-system<span class="w"> </span>--create-namespace<span class="w"> </span><span class="se">\</span>
+</span><span id="__span-0-3"><a id="__codelineno-0-3" name="__codelineno-0-3" href="#__codelineno-0-3"></a><span class="w">  </span>--set<span class="w"> </span><span class="nv">timezone</span><span class="o">=</span>Europe/London
+</span></code></pre></div>
+<p>Set <code>timezone</code> to your users' <a href="../../getting-started/installation/#time-zone">time zone</a>. The chart is published only as an OCI artifact; there's no <code>helm repo</code> to add. Its version has no <code>v</code> (<code>0.2.0-rc.4</code>); the image tags do (<code>v0.2.0-rc.4</code>). To see all defaults:</p>
+<div class="language-bash highlight"><pre><span></span><code><span id="__span-1-1"><a id="__codelineno-1-1" name="__codelineno-1-1" href="#__codelineno-1-1"></a>helm<span class="w"> </span>show<span class="w"> </span>values<span class="w"> </span>oci://ghcr.io/okedeji/charts/hybernate<span class="w"> </span>--version<span class="w"> </span><span class="m">0</span>.2.0-rc.4
+</span></code></pre></div>
+<p>The chart validates values against its schema (<code>values.schema.json</code>), so a mistyped value, such as <code>logLevel: warn</code> or <code>defaults.cpuThreshold: 0</code>, fails the install or upgrade rather than the operator, and so does a value the chart doesn't have, such as <code>watchNamespace</code> for <code>watchNamespaces</code>, which Helm would otherwise ignore. Only what's passed through to Kubernetes as it is, such as <code>resources</code>, <code>affinity</code>, <code>tolerations</code>, <code>nodeSelector</code> and pod annotations and labels, is left for Kubernetes to check. <code>timezone</code> is the exception: the schema can't list every IANA zone, so an unknown one is caught when the operator starts, which then exits with <code>invalid --timezone</code> and <code>unknown time zone</code> in its log, and the rollout doesn't finish.</p>
+<h2 id="names">Names<a class="headerlink" href="#names" title="Permanent link">&para;</a></h2>
+<table>
+<thead>
+<tr>
+<th>Value</th>
+<th>Default</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>nameOverride</code></td>
+<td><code>""</code></td>
+<td>Replaces the chart name in resource names</td>
+</tr>
+<tr>
+<td><code>fullnameOverride</code></td>
+<td><code>""</code></td>
+<td>Replaces the full name the chart's resources are named after</td>
+</tr>
+</tbody>
+</table>
+<p>The full name is the release name when it contains <code>hybernate</code>, and <code>&lt;release&gt;-hybernate</code> otherwise, cut to 40 characters, so that every name built from it, the longest being <code>&lt;fullname&gt;-doorman-auth-delegator</code>, fits in 63. For a release named <code>hybernate</code>, the operator Deployment and ServiceAccount are <code>hybernate</code>, and the doorman's are <code>hybernate-doorman</code>. The operator's pods are labelled <code>app.kubernetes.io/name: hybernate</code>, <code>app.kubernetes.io/instance: &lt;release&gt;</code> and <code>control-plane: controller-manager</code>; the doorman's the same, with <code>control-plane: doorman</code>.</p>
+<h2 id="image">Image<a class="headerlink" href="#image" title="Permanent link">&para;</a></h2>
+<table>
+<thead>
+<tr>
+<th>Value</th>
+<th>Default</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>image.repository</code></td>
+<td><code>ghcr.io/okedeji/hybernate</code></td>
+<td>Container image repository</td>
+</tr>
+<tr>
+<td><code>image.tag</code></td>
+<td><code>""</code>, the chart's <code>appVersion</code>, such as <code>v0.2.0-rc.4</code></td>
+<td>Image tag, for the operator and the doorman</td>
+</tr>
+<tr>
+<td><code>image.pullPolicy</code></td>
+<td><code>IfNotPresent</code></td>
+<td>Image pull policy</td>
+</tr>
+<tr>
+<td><code>imagePullSecrets</code></td>
+<td><code>[]</code></td>
+<td>Private registry credentials</td>
+</tr>
+</tbody>
+</table>
+<h2 id="crd">CRD<a class="headerlink" href="#crd" title="Permanent link">&para;</a></h2>
+<table>
+<thead>
+<tr>
+<th>Value</th>
+<th>Default</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>crds.install</code></td>
+<td><code>true</code></td>
+<td>Install the ManagedWorkload CRD, and upgrade it with each <code>helm upgrade</code></td>
+</tr>
+</tbody>
+</table>
+<p>The CRD is a chart template with <code>helm.sh/resource-policy: keep</code>, so <code>helm uninstall</code> leaves it, and every ManagedWorkload, in place: deleting the CRD would delete them all. Argo CD ignores that policy, so the CRD also carries <code>argocd.argoproj.io/sync-options: Delete=false</code>, and deleting or pruning the Application leaves it too. Set <code>crds.install: false</code> only if you manage the CRD yourself, for example from <code>config/crd</code> in the repository.</p>
+<h2 id="operator">Operator<a class="headerlink" href="#operator" title="Permanent link">&para;</a></h2>
+<table>
+<thead>
+<tr>
+<th>Value</th>
+<th>Default</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>replicaCount</code></td>
+<td><code>1</code></td>
+<td>Operator replicas. More than one needs <code>leaderElection.enabled</code>, so that only one acts at a time; the schema refuses more otherwise</td>
+</tr>
+<tr>
+<td><code>leaderElection.enabled</code></td>
+<td><code>true</code></td>
+<td>Elect a leader through a Lease, so only one replica reconciles. Without it, an upgrade stops the old operator before starting the new one (<code>strategy: Recreate</code>), so two never act at once</td>
+</tr>
+<tr>
+<td><code>maxConcurrentReconciles</code></td>
+<td><code>8</code></td>
+<td>How many ManagedWorkloads the operator reconciles at once, so one slow metrics or Prometheus query doesn't hold up waking another workload. Passed as <code>--max-concurrent-reconciles</code></td>
+</tr>
+<tr>
+<td><code>timezone</code></td>
+<td><code>UTC</code></td>
+<td>IANA time zone, such as <code>Europe/London</code>, whose hours and weekdays the <a href="../../concepts/forecasting/#wall-clock-alignment">forecast</a> learns. Use your users' zone, so forecasts follow daylight saving. Passed as <code>--timezone</code></td>
+</tr>
+<tr>
+<td><code>logLevel</code></td>
+<td><code>info</code></td>
+<td><code>debug</code>, <code>info</code>, <code>error</code>, <code>panic</code>, or a whole number above 0 for more verbose debug levels. For the operator and the doorman</td>
+</tr>
+<tr>
+<td><code>logEncoder</code></td>
+<td><code>json</code></td>
+<td><code>json</code>, or <code>console</code> for reading by eye. For the operator and the doorman</td>
+</tr>
+</tbody>
+</table>
+<h2 id="resources">Resources<a class="headerlink" href="#resources" title="Permanent link">&para;</a></h2>
+<table>
+<thead>
+<tr>
+<th>Value</th>
+<th>Default</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>resources.requests.cpu</code></td>
+<td><code>10m</code></td>
+<td>CPU request</td>
+</tr>
+<tr>
+<td><code>resources.requests.memory</code></td>
+<td><code>128Mi</code></td>
+<td>Memory request</td>
+</tr>
+<tr>
+<td><code>resources.limits.cpu</code></td>
+<td><code>500m</code></td>
+<td>CPU limit</td>
+</tr>
+<tr>
+<td><code>resources.limits.memory</code></td>
+<td><code>512Mi</code></td>
+<td>Memory limit</td>
+</tr>
+</tbody>
+</table>
+<p>The operator caches the cluster's ManagedWorkloads, Deployments, StatefulSets, Services, Ingresses, PVCs, HPAs, Nodes and Namespaces, or only the watched namespaces' with <code>watchNamespaces</code>, and the EndpointSlices it writes and the doorman Service's, so its memory grows with the cluster. Nodes are cached without their image lists, and pods only as what spare node capacity needs: those bound to a node and not finished, as their node, phase and requests, about 2.6 KB a pod. Other EndpointSlices, ConfigMaps and KEDA ScaledObjects are read when needed, not cached. Raise the limit on clusters with many thousands of workloads. Go's garbage collector is given a soft limit of 90% of the memory limit, for the operator and the doorman alike, leaving the rest for memory outside its heap, so it works harder near the limit rather than letting either be OOM-killed. Setting <code>GOMEMLIMIT</code> in the pod overrides it.</p>
+<h2 id="namespaces">Namespaces<a class="headerlink" href="#namespaces" title="Permanent link">&para;</a></h2>
+<table>
+<thead>
+<tr>
+<th>Value</th>
+<th>Default</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>watchNamespaces</code></td>
+<td><code>[]</code></td>
+<td>Namespaces Hybernate works in. Empty means every namespace. Set, Hybernate gets a Role in each of them instead of a ClusterRole, so Kubernetes itself refuses it anything elsewhere; see <a href="#rbac">RBAC</a>. Passed as <code>--watch-namespaces</code>, to the doorman too. Each of several installs in one cluster needs its own; see <a href="../../getting-started/installation/#more-than-one-install">More than one install</a></td>
+</tr>
+<tr>
+<td><code>protectedNamespaces</code></td>
+<td><code>[]</code></td>
+<td>Name patterns, such as <code>prod-*</code>, of namespaces Hybernate never manages, as if labelled <code>hybernate.io/protected=true</code>, unless one is labelled <code>hybernate.io/allow-protected=true</code>. <code>kube-*</code>, and the operator's and the doorman's namespace, are always protected, besides these, with the same exception. See <a href="../../guides/opt-in/#protected-namespaces">Protected namespaces</a>. Passed as <code>--protected-namespaces</code></td>
+</tr>
+</tbody>
+</table>
+<div class="language-yaml highlight"><span class="filename">values.yaml</span><pre><span></span><code><span id="__span-2-1"><a id="__codelineno-2-1" name="__codelineno-2-1" href="#__codelineno-2-1"></a><span class="nt">watchNamespaces</span><span class="p">:</span><span class="w"> </span><span class="p p-Indicator">[</span><span class="nv">preview-1</span><span class="p p-Indicator">,</span><span class="w"> </span><span class="nv">preview-2</span><span class="p p-Indicator">,</span><span class="w"> </span><span class="nv">staging</span><span class="p p-Indicator">]</span>
+</span><span id="__span-2-2"><a id="__codelineno-2-2" name="__codelineno-2-2" href="#__codelineno-2-2"></a><span class="nt">protectedNamespaces</span><span class="p">:</span><span class="w"> </span><span class="p p-Indicator">[</span><span class="s">"prod-*"</span><span class="p p-Indicator">,</span><span class="w"> </span><span class="nv">production</span><span class="p p-Indicator">]</span>
+</span></code></pre></div>
+<p>Wake on request works with <code>watchNamespaces</code>: the operator always reads the doorman's own EndpointSlices in the release namespace, through a <code>&lt;fullname&gt;-doorman-endpoints</code> Role there. A <code>dependsOn</code> pointing into a namespace that isn't watched, and that allows the dependent's with <code>hybernate.io/dependents-from</code>, is reported on the dependent, as <code>DependencyNotFound=True</code> with reason <code>DependencyNotVisible</code>, and never blocks it.</p>
+<p>An upgrade or rollback to a <code>watchNamespaces</code> that leaves out a namespace where the operator manages workloads, or that sets it where it was empty, is refused while they're there, since they'd stay paused with no operator: see <a href="../../operations/upgrading/#narrowing-watchnamespaces">Narrowing watchNamespaces</a>.</p>
+<h2 id="opt-in-defaults">Opt-In Defaults<a class="headerlink" href="#opt-in-defaults" title="Permanent link">&para;</a></h2>
+<p>Settings for workloads opted in with the <code>hybernate.io/managed</code> label, used when neither the workload nor its namespace sets the annotation. See <a href="../../guides/opt-in/#which-setting-wins">Opting In</a>.</p>
+<table>
+<thead>
+<tr>
+<th>Value</th>
+<th>Default</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>defaults.idleAfter</code></td>
+<td><code>1h</code></td>
+<td>How long without activity before pausing; a Go duration of at least <code>1m</code>, such as <code>90s</code> or <code>1h30m</code>. Passed as <code>--default-idle-after</code></td>
+</tr>
+<tr>
+<td><code>defaults.cpuThreshold</code></td>
+<td><code>10</code></td>
+<td>CPU use, as a percentage of requests from 1 to 100, above which a workload counts as active. Passed as <code>--default-cpu-threshold</code></td>
+</tr>
+<tr>
+<td><code>defaults.dryRun</code></td>
+<td><code>false</code></td>
+<td>Measure without pausing. Set <code>true</code> to roll Hybernate out across a cluster measuring first. Passed as <code>--default-dry-run</code></td>
+</tr>
+<tr>
+<td><code>defaults.forecast</code></td>
+<td><code>balanced</code></td>
+<td>How soon the forecast acts: <code>eager</code>, <code>balanced</code> or <code>cautious</code>. See <a href="../../concepts/forecasting/#forecast-setting">Forecast setting</a>. Passed as <code>--default-forecast</code></td>
+</tr>
+</tbody>
+</table>
+<h2 id="prometheus-activity">Prometheus Activity<a class="headerlink" href="#prometheus-activity" title="Permanent link">&para;</a></h2>
+<table>
+<thead>
+<tr>
+<th>Value</th>
+<th>Default</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>prometheus.url</code></td>
+<td><code>""</code></td>
+<td>Base URL of the Prometheus API, such as <code>http://prometheus.monitoring.svc:9090</code>, for Prometheus activity queries and to start each new workload's forecast from up to four weeks of its CPU history (see <a href="../../concepts/forecasting/#learning-from-history">Learning from history</a>). Passed to the operator as <code>--prometheus-url</code></td>
+</tr>
+<tr>
+<td><code>prometheus.selector</code></td>
+<td><code>""</code></td>
+<td>Label matchers added to the history query the operator makes, such as <code>cluster="staging"</code>, for a Prometheus that holds more than one cluster's series, as Thanos, Mimir or a shared Prometheus may; written as inside PromQL's braces, as <code>kubectl hybernate scan --prometheus-selector</code> takes them. Activity queries run as written. Needs <code>prometheus.url</code>. Passed to the operator as <code>--prometheus-selector</code></td>
+</tr>
+</tbody>
+</table>
+<h2 id="metrics">Metrics<a class="headerlink" href="#metrics" title="Permanent link">&para;</a></h2>
+<table>
+<thead>
+<tr>
+<th>Value</th>
+<th>Default</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>metrics.enabled</code></td>
+<td><code>true</code></td>
+<td>Expose Prometheus metrics, from the operator and the doorman</td>
+</tr>
+<tr>
+<td><code>metrics.port</code></td>
+<td><code>8443</code></td>
+<td>Metrics endpoint port, for the operator and the doorman. Not 8081, the health probes' port, nor 20000-29999, where the doorman listens for paused workloads' traffic</td>
+</tr>
+<tr>
+<td><code>metrics.secure</code></td>
+<td><code>true</code></td>
+<td>Serve metrics over HTTPS, only to callers allowed to <code>get</code> <code>/metrics</code>. <code>false</code> serves plain HTTP to anyone who can reach the port</td>
+</tr>
+<tr>
+<td><code>metrics.readerSubjects</code></td>
+<td><code>[]</code></td>
+<td>Subjects, such as your Prometheus's ServiceAccount, to bind to the <code>&lt;fullname&gt;-metrics-reader</code> ClusterRole, which may get <code>/metrics</code></td>
+</tr>
+</tbody>
+</table>
+<p>With <code>metrics.secure</code>, a scraper must authenticate with a token that's allowed to get <code>/metrics</code>. The chart creates the <code>&lt;fullname&gt;-metrics-reader</code> ClusterRole for that; bind your Prometheus to it with <code>readerSubjects</code>, or with a binding of your own:</p>
+<div class="language-yaml highlight"><span class="filename">values.yaml</span><pre><span></span><code><span id="__span-3-1"><a id="__codelineno-3-1" name="__codelineno-3-1" href="#__codelineno-3-1"></a><span class="nt">metrics</span><span class="p">:</span>
+</span><span id="__span-3-2"><a id="__codelineno-3-2" name="__codelineno-3-2" href="#__codelineno-3-2"></a><span class="w">  </span><span class="nt">readerSubjects</span><span class="p">:</span>
+</span><span id="__span-3-3"><a id="__codelineno-3-3" name="__codelineno-3-3" href="#__codelineno-3-3"></a><span class="w">    </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">kind</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">ServiceAccount</span>
+</span><span id="__span-3-4"><a id="__codelineno-3-4" name="__codelineno-3-4" href="#__codelineno-3-4"></a><span class="w">      </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">prometheus-k8s</span>
+</span><span id="__span-3-5"><a id="__codelineno-3-5" name="__codelineno-3-5" href="#__codelineno-3-5"></a><span class="w">      </span><span class="nt">namespace</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">monitoring</span>
+</span></code></pre></div>
+<p>With <code>metrics.enabled</code>, it also creates ClusterRoleBindings to <code>system:auth-delegator</code> for the operator and the doorman (<code>&lt;fullname&gt;-auth-delegator</code>, <code>&lt;fullname&gt;-doorman-auth-delegator</code>), which they need to check those tokens.</p>
+<h3 id="servicemonitor">ServiceMonitor<a class="headerlink" href="#servicemonitor" title="Permanent link">&para;</a></h3>
+<table>
+<thead>
+<tr>
+<th>Value</th>
+<th>Default</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>metrics.serviceMonitor.enabled</code></td>
+<td><code>false</code></td>
+<td>Create Prometheus Operator ServiceMonitors for the operator and the doorman</td>
+</tr>
+<tr>
+<td><code>metrics.serviceMonitor.interval</code></td>
+<td><code>30s</code></td>
+<td>Scrape interval</td>
+</tr>
+<tr>
+<td><code>metrics.serviceMonitor.additionalLabels</code></td>
+<td><code>{}</code></td>
+<td>Extra labels on the ServiceMonitors. Your Prometheus picks them up only if these match its <code>serviceMonitorSelector</code>: kube-prometheus-stack needs <code>release: &lt;its release name&gt;</code></td>
+</tr>
+</tbody>
+</table>
+<p>The ServiceMonitors set <code>honorLabels: true</code>, so the metrics keep the workload's <code>namespace</code> label. kube-prometheus-stack's Prometheus runs as the <code>&lt;its release name&gt;-kube-prometheus-prometheus</code> ServiceAccount, the subject for <code>metrics.readerSubjects</code>. See <a href="../../operations/monitoring/#scraping">Monitoring</a>.</p>
+<h3 id="prometheusrule">PrometheusRule<a class="headerlink" href="#prometheusrule" title="Permanent link">&para;</a></h3>
+<table>
+<thead>
+<tr>
+<th>Value</th>
+<th>Default</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>metrics.prometheusRule.enabled</code></td>
+<td><code>false</code></td>
+<td>Create a PrometheusRule with the alerts in <a href="../../operations/monitoring/#alerting-rules">Monitoring</a>. <code>HybernateDown</code> and <code>HybernateDoormanDown</code>, which match the ServiceMonitors' scrape jobs, only with <code>metrics.serviceMonitor.enabled</code></td>
+</tr>
+<tr>
+<td><code>metrics.prometheusRule.additionalLabels</code></td>
+<td><code>{}</code></td>
+<td>Extra labels on the PrometheusRule. Your Prometheus loads it only if these match its <code>ruleSelector</code>: kube-prometheus-stack needs <code>release: &lt;its release name&gt;</code></td>
+</tr>
+</tbody>
+</table>
+<h2 id="doorman">Doorman<a class="headerlink" href="#doorman" title="Permanent link">&para;</a></h2>
+<p>The doorman holds requests to paused workloads and wakes them. See <a href="../../concepts/wake-on-request/">Wake on Request</a>.</p>
+<table>
+<thead>
+<tr>
+<th>Value</th>
+<th>Default</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>doorman.enabled</code></td>
+<td><code>true</code></td>
+<td>Deploy the doorman. When <code>false</code>, requests to paused workloads fail</td>
+</tr>
+<tr>
+<td><code>doorman.replicaCount</code></td>
+<td><code>2</code></td>
+<td>Doorman replicas. Every replica serves traffic</td>
+</tr>
+<tr>
+<td><code>doorman.portsPerWorkload</code></td>
+<td><code>32</code></td>
+<td>The most doorman ports one workload may hold, one per routed Service port, so one tenant can't use up the 10,000 the cluster shares; 1 to 10000. A workload with more isn't routed: <code>WakeOnRequest=False</code>, reason <code>TooManyPorts</code>. Passed as <code>--doorman-ports-per-workload</code></td>
+</tr>
+<tr>
+<td><code>doorman.portsPerNamespace</code></td>
+<td><code>256</code></td>
+<td>The most doorman ports the workloads of one namespace may hold together; 1 to 10000. Passed as <code>--doorman-ports-per-namespace</code></td>
+</tr>
+<tr>
+<td><code>doorman.healthCheckUserAgents</code></td>
+<td><code>[]</code></td>
+<td><code>User-Agent</code> prefixes, or names that follow <code>(compatible;</code> in a browser-style one, of health checkers and scrapers whose <code>GET</code> and <code>HEAD</code> requests don't wake a paused workload, besides the built-in ones (<code>kube-probe</code>, Prometheus, load balancers' checks, <code>Blackbox Exporter/</code>, <code>Datadog/Synthetics</code>, <code>Amazon-Route53-Health-Check-Service</code>, <code>GoogleStackdriverMonitoring-UptimeChecks</code>, <code>UptimeRobot</code>, <code>Pingdom.com_bot</code>, <code>NewRelicPinger/</code>, <code>Uptime-Kuma/</code>, <code>Gatus/</code> and others), such as <code>["MyCorpMonitor/"]</code>. See <a href="../../concepts/wake-on-request/#what-wakes-a-workload-and-what-doesnt">What wakes a workload</a></td>
+</tr>
+<tr>
+<td><code>doorman.admissionPolicy.enabled</code></td>
+<td><code>true</code></td>
+<td>Two ValidatingAdmissionPolicies: one that lets the doorman's ServiceAccount change only the <code>hybernate.io/last-request</code> and <code>hybernate.io/last-request-from</code> annotations on ManagedWorkloads, though its role may patch them, and one that lets no one else set those two, so a forged <code>last-request-from</code> can't have the operator learn a dependency. See <a href="../security/#the-doorman-is-a-way-in-to-paused-workloads">Security</a></td>
+</tr>
+<tr>
+<td><code>doorman.podDisruptionBudget.enabled</code></td>
+<td><code>true</code></td>
+<td>A PodDisruptionBudget keeping one doorman serving through node drains, when <code>replicaCount</code> is above 1</td>
+</tr>
+<tr>
+<td><code>doorman.nodeSelector</code></td>
+<td><code>{}</code></td>
+<td>Node selector; empty uses the operator's <code>nodeSelector</code></td>
+</tr>
+<tr>
+<td><code>doorman.tolerations</code></td>
+<td><code>[]</code></td>
+<td>Tolerations; empty uses the operator's <code>tolerations</code></td>
+</tr>
+<tr>
+<td><code>doorman.affinity</code></td>
+<td><code>{}</code></td>
+<td>Affinity; empty uses the operator's <code>affinity</code></td>
+</tr>
+<tr>
+<td><code>doorman.topologySpreadConstraints</code></td>
+<td><code>[]</code></td>
+<td>Topology spread; empty spreads the replicas across nodes and zones where it can</td>
+</tr>
+<tr>
+<td><code>doorman.podAnnotations</code></td>
+<td><code>{}</code></td>
+<td>Pod annotations; empty uses the operator's <code>podAnnotations</code></td>
+</tr>
+<tr>
+<td><code>doorman.podLabels</code></td>
+<td><code>{}</code></td>
+<td>Pod labels; empty uses the operator's <code>podLabels</code></td>
+</tr>
+<tr>
+<td><code>doorman.priorityClassName</code></td>
+<td><code>""</code></td>
+<td>PriorityClass; empty uses the operator's <code>priorityClassName</code></td>
+</tr>
+<tr>
+<td><code>doorman.extraEnv</code></td>
+<td><code>[]</code></td>
+<td>Extra environment variables for the doorman. The operator's <code>extraEnv</code> doesn't apply to it</td>
+</tr>
+<tr>
+<td><code>doorman.resources.requests.cpu</code></td>
+<td><code>10m</code></td>
+<td>CPU request</td>
+</tr>
+<tr>
+<td><code>doorman.resources.requests.memory</code></td>
+<td><code>64Mi</code></td>
+<td>Memory request</td>
+</tr>
+<tr>
+<td><code>doorman.resources.limits.cpu</code></td>
+<td><code>500m</code></td>
+<td>CPU limit</td>
+</tr>
+<tr>
+<td><code>doorman.resources.limits.memory</code></td>
+<td><code>256Mi</code></td>
+<td>Memory limit</td>
+</tr>
+<tr>
+<td><code>doorman.negForwarder.enabled</code></td>
+<td><code>false</code></td>
+<td>Optional, for GKE: route paused workloads' Services that sit behind container-native load balancing (NEGs), as a GKE Ingress's or Gateway's do, through a forwarder Deployment the operator runs in each workload's namespace while it's paused, so requests through the load balancer wake them. Grants the operator <code>create</code> and <code>delete</code> on Deployments, in a ClusterRole <code>&lt;fullname&gt;-forwarder</code> or a Role in each watched namespace, and adds a headless Service <code>&lt;fullname&gt;-doorman-pods</code>. Needs <code>doorman.enabled</code>. See <a href="../../concepts/wake-on-request/#gke-container-native-load-balancing-negs">GKE container-native load balancing</a></td>
+</tr>
+<tr>
+<td><code>doorman.negForwarder.replicas</code></td>
+<td><code>2</code></td>
+<td>Pods per forwarder, spread across nodes, so one stays while a node drains</td>
+</tr>
+<tr>
+<td><code>doorman.negForwarder.resources.requests.cpu</code></td>
+<td><code>10m</code></td>
+<td>Each forwarder pod's CPU request</td>
+</tr>
+<tr>
+<td><code>doorman.negForwarder.resources.requests.memory</code></td>
+<td><code>32Mi</code></td>
+<td>Each forwarder pod's memory request</td>
+</tr>
+<tr>
+<td><code>doorman.negForwarder.resources.limits.memory</code></td>
+<td><code>64Mi</code></td>
+<td>Each forwarder pod's memory limit</td>
+</tr>
+</tbody>
+</table>
+<p>The doorman uses the operator image, the <code>metrics.*</code> settings, <code>logLevel</code> and <code>logEncoder</code>. It caches ManagedWorkloads and the EndpointSlices the EndpointSlice controller writes in the watched namespaces, cut down to what it reads: about 300 bytes per pod and 700 per Service. Held connections take up to 72Mi more under a flood. The default 256Mi limit covers a cluster of some 100,000 pods; raise it beyond that. On Kubernetes 1.30 and later it sleeps 5 seconds before shutting down, so kube-proxy and load balancers stop sending it new connections first. A rollout waits 5 seconds after a new doorman pod is Ready (<code>minReadySeconds</code>) before stopping an old one, so the operator has moved paused workloads' routes to it.</p>
+<h2 id="network-policy">Network Policy<a class="headerlink" href="#network-policy" title="Permanent link">&para;</a></h2>
+<table>
+<thead>
+<tr>
+<th>Value</th>
+<th>Default</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>networkPolicy.enabled</code></td>
+<td><code>false</code></td>
+<td>Create NetworkPolicies for the operator and the doorman</td>
+</tr>
+<tr>
+<td><code>doorman.networkPolicy.ingressFrom</code></td>
+<td><code>[]</code></td>
+<td>NetworkPolicy peers allowed to reach paused workloads through the doorman, such as your ingress controller's namespace. Empty leaves the doorman open to every caller. Needs <code>networkPolicy.enabled</code></td>
+</tr>
+<tr>
+<td><code>doorman.networkPolicy.egress.enabled</code></td>
+<td><code>false</code></td>
+<td>Create an egress NetworkPolicy allowing the doorman to connect only to <code>podCIDRs</code> and the API server</td>
+</tr>
+<tr>
+<td><code>doorman.networkPolicy.egress.podCIDRs</code></td>
+<td><code>[]</code></td>
+<td>The cluster's pod CIDRs, in every IP family it uses. Required when enabled</td>
+</tr>
+<tr>
+<td><code>doorman.networkPolicy.egress.apiServer</code></td>
+<td><code>[]</code></td>
+<td>CIDRs of the API server's endpoints (<code>kubectl get endpointslices -n default -l kubernetes.io/service-name=kubernetes</code>), not the <code>kubernetes</code> Service's ClusterIP. Required when enabled</td>
+</tr>
+<tr>
+<td><code>doorman.networkPolicy.egress.apiServerPorts</code></td>
+<td><code>[443, 6443]</code></td>
+<td>The API server endpoints' ports</td>
+</tr>
+</tbody>
+</table>
+<p>When enabled, the operator's and the doorman's metrics port admits only namespaces labelled <code>metrics: enabled</code>, and the doorman's routing ports (TCP 20000-29999) admit every source, since every client of a paused workload's Services is sent to them. With <code>ingressFrom</code> and <code>doorman.negForwarder.enabled</code>, they also admit the forwarders, from any namespace. To narrow who can reach the doorman, see <a href="../../concepts/wake-on-request/#restricting-who-can-reach-the-doorman">Restricting who can reach the doorman</a>.</p>
+<p>The doorman's egress policy is separate from <code>networkPolicy.enabled</code>, and needs a CNI that enforces egress policies. The doorman needs no DNS: it reaches the API server by address, and pods by their endpoint addresses. If a routed workload uses <code>hostNetwork</code>, add your node CIDRs to <code>podCIDRs</code>.</p>
+<p>On Cilium, a NetworkPolicy <code>ipBlock</code> may not match the API server, which Cilium identifies as the <code>kube-apiserver</code> entity rather than by address, so the egress policy can cut the doorman off from it: its pods then fail readiness and log API errors. Leave <code>doorman.networkPolicy.egress.enabled</code> off there, and write a CiliumNetworkPolicy instead that allows egress <code>toEntities: [kube-apiserver]</code> and <code>toCIDR</code> your pod CIDRs.</p>
+<h2 id="service-account">Service Account<a class="headerlink" href="#service-account" title="Permanent link">&para;</a></h2>
+<table>
+<thead>
+<tr>
+<th>Value</th>
+<th>Default</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>serviceAccount.create</code></td>
+<td><code>true</code></td>
+<td>Create the operator's ServiceAccount</td>
+</tr>
+<tr>
+<td><code>serviceAccount.name</code></td>
+<td><code>""</code></td>
+<td>Name override (defaults to the full name)</td>
+</tr>
+</tbody>
+</table>
+<p>The doorman always gets its own ServiceAccount, <code>&lt;fullname&gt;-doorman</code>.</p>
+<h2 id="guards">Guards<a class="headerlink" href="#guards" title="Permanent link">&para;</a></h2>
+<table>
+<thead>
+<tr>
+<th>Value</th>
+<th>Default</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>guard.uninstall</code></td>
+<td><code>true</code></td>
+<td>Refuse <code>helm uninstall</code> while ManagedWorkloads are left, through a pre-delete hook Job</td>
+</tr>
+<tr>
+<td><code>guard.upgrade</code></td>
+<td><code>true</code></td>
+<td>Refuse <code>helm upgrade</code> or <code>helm rollback</code> to a <code>watchNamespaces</code> that leaves out namespaces where the operator manages workloads, through a pre-upgrade and pre-rollback hook Job. Only with <code>watchNamespaces</code> set</td>
+</tr>
+<tr>
+<td><code>guard.nodeSelector</code></td>
+<td><code>{}</code></td>
+<td>The hooks' node selector; empty uses the operator's <code>nodeSelector</code></td>
+</tr>
+<tr>
+<td><code>guard.tolerations</code></td>
+<td><code>[]</code></td>
+<td>Tolerations; empty uses the operator's <code>tolerations</code></td>
+</tr>
+<tr>
+<td><code>guard.affinity</code></td>
+<td><code>{}</code></td>
+<td>Affinity; empty uses the operator's <code>affinity</code></td>
+</tr>
+<tr>
+<td><code>guard.priorityClassName</code></td>
+<td><code>""</code></td>
+<td>PriorityClass; empty uses the operator's <code>priorityClassName</code></td>
+</tr>
+<tr>
+<td><code>guard.podAnnotations</code></td>
+<td><code>{}</code></td>
+<td>The hooks' pod annotations, over <code>sidecar.istio.io/inject: "false"</code> and <code>linkerd.io/inject: disabled</code></td>
+</tr>
+<tr>
+<td><code>guard.podLabels</code></td>
+<td><code>{}</code></td>
+<td>The hooks' pod labels, over <code>sidecar.istio.io/inject: "false"</code>. They can't replace the chart's own labels</td>
+</tr>
+<tr>
+<td><code>guard.resources</code></td>
+<td>10m/64Mi requests, 100m/128Mi limits</td>
+<td>The hooks' resources</td>
+</tr>
+</tbody>
+</table>
+<p>Without the operator, a ManagedWorkload's finalizer never runs: its workload stays paused at 0 replicas, and its Services keep routing to the doorman. The guards are hook Jobs that run the operator's image with <code>--guard</code>: each waits two and a half minutes for any ManagedWorkloads being deleted, then lists those it would leave without an operator, and fails, which stops Helm before it changes anything. Helm prints the list.</p>
+<ul>
+<li>The <code>&lt;fullname&gt;-uninstall-guard</code> Job counts every ManagedWorkload in the watched namespaces, or in every namespace without <code>watchNamespaces</code>, and any elsewhere that the operator took on, with its <code>hybernate.io/cleanup</code> finalizer, but none another install took on, stamped with its namespace in <code>hybernate.io/operator</code>. See <a href="../../getting-started/installation/#uninstall">Uninstall</a>. Argo CD 3.3 and later runs it as a PreDelete hook, so deleting the Application is blocked the same way; earlier versions skip it.</li>
+<li>The <code>&lt;fullname&gt;-upgrade-guard</code> Job counts those the operator took on in namespaces the new <code>watchNamespaces</code> leaves out. See <a href="../../operations/upgrading/#narrowing-watchnamespaces">Narrowing watchNamespaces</a>. Argo CD runs it as a PreSync hook, before every sync.</li>
+</ul>
+<p>Each runs as a ServiceAccount of its own name, through a ClusterRole that may only list ManagedWorkloads, which read their metadata cluster-wide, even with <code>watchNamespaces</code>, since those they look for may be outside it. The ServiceAccounts and RBAC are hooks too, deleted once the hook has run; a failed Job is kept for an hour, for <code>kubectl logs</code>. The hooks use <code>image</code>, <code>imagePullSecrets</code> and <code>logLevel</code>. Meshes' sidecars are kept out of their pods, since a sidecar that keeps running would keep the Job from finishing. Their pods have their own <code>control-plane: uninstall-guard</code> and <code>control-plane: upgrade-guard</code> labels, so the operator's Service and NetworkPolicy don't select them. <code>--no-hooks</code> skips both.</p>
+<h2 id="pod-scheduling">Pod Scheduling<a class="headerlink" href="#pod-scheduling" title="Permanent link">&para;</a></h2>
+<table>
+<thead>
+<tr>
+<th>Value</th>
+<th>Default</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>nodeSelector</code></td>
+<td><code>{}</code></td>
+<td>Node selector constraints, for the operator, and for the doorman unless <code>doorman.nodeSelector</code> is set</td>
+</tr>
+<tr>
+<td><code>tolerations</code></td>
+<td><code>[]</code></td>
+<td>Pod tolerations, likewise</td>
+</tr>
+<tr>
+<td><code>affinity</code></td>
+<td><code>{}</code></td>
+<td>Pod affinity/anti-affinity rules, likewise</td>
+</tr>
+<tr>
+<td><code>podAnnotations</code></td>
+<td><code>{}</code></td>
+<td>Pod annotations, likewise</td>
+</tr>
+<tr>
+<td><code>podLabels</code></td>
+<td><code>{}</code></td>
+<td>Pod labels, likewise. They can't replace the labels the chart selects pods by</td>
+</tr>
+<tr>
+<td><code>priorityClassName</code></td>
+<td><code>""</code></td>
+<td>PriorityClass, likewise. A paused workload's requests wait on the doorman and the operator, so on a cluster that preempts, give them a class above the workloads they wake</td>
+</tr>
+<tr>
+<td><code>extraEnv</code></td>
+<td><code>[]</code></td>
+<td>Extra environment variables for the operator, as container <code>env</code> entries, such as <code>GOMAXPROCS</code></td>
+</tr>
+</tbody>
+</table>
+<h2 id="security">Security<a class="headerlink" href="#security" title="Permanent link">&para;</a></h2>
+<p>The chart enforces a strict security posture by default:</p>
+<p><strong>Pod level:</strong></p>
+<ul>
+<li><code>runAsNonRoot: true</code></li>
+<li><code>seccompProfile.type: RuntimeDefault</code></li>
+</ul>
+<p><strong>Container level:</strong></p>
+<ul>
+<li><code>readOnlyRootFilesystem: true</code></li>
+<li><code>allowPrivilegeEscalation: false</code></li>
+<li><code>capabilities.drop: ["ALL"]</code></li>
+</ul>
+<p>These are not configurable via values. To override, use Helm post-rendering or Kustomize overlays.</p>
+<h2 id="health-probes">Health Probes<a class="headerlink" href="#health-probes" title="Permanent link">&para;</a></h2>
+<table>
+<thead>
+<tr>
+<th>Pod</th>
+<th>Probe</th>
+<th>Path</th>
+<th>Port</th>
+<th>Initial Delay</th>
+<th>Period</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Operator</td>
+<td>Liveness</td>
+<td><code>/healthz</code></td>
+<td>8081</td>
+<td>15s</td>
+<td>20s</td>
+</tr>
+<tr>
+<td>Operator</td>
+<td>Readiness</td>
+<td><code>/readyz</code></td>
+<td>8081</td>
+<td>5s</td>
+<td>10s</td>
+</tr>
+<tr>
+<td>Doorman</td>
+<td>Liveness</td>
+<td><code>/healthz</code></td>
+<td>8081</td>
+<td>15s</td>
+<td>20s</td>
+</tr>
+<tr>
+<td>Doorman</td>
+<td>Readiness</td>
+<td><code>/readyz</code></td>
+<td>8081</td>
+<td>2s</td>
+<td>5s</td>
+</tr>
+</tbody>
+</table>
+<h2 id="rbac">RBAC<a class="headerlink" href="#rbac" title="Permanent link">&para;</a></h2>
+<p>By default the chart creates a ClusterRole, <code>&lt;fullname&gt;-manager</code>, with permissions to:</p>
+<ul>
+<li>Manage <code>ManagedWorkload</code> CRs, including creating them for labelled workloads</li>
+<li>Read Namespaces, for the <code>hybernate.io/managed</code> label and settings annotations on them</li>
+<li>Read Deployments and StatefulSets, scale them through the scale subresource, and patch them to set and remove the <code>hybernate.io/paused-from</code> annotation while they're paused. Hybernate can't delete them, and changes nothing else on them</li>
+<li>Read PersistentVolumeClaims, to price the storage a paused workload keeps</li>
+<li>Read HorizontalPodAutoscalers, and read and annotate KEDA ScaledObjects, to pause a KEDA workload through KEDA</li>
+<li>Read pod metrics from metrics-server</li>
+<li>Read pods, to price what pausing a workload frees, sidecars included, and watch them, to measure the spare node capacity that what pausing <a href="../../concepts/cost-tracking/#how-saved-is-measured">saved</a> is worked out from. Only pods bound to a node and not finished are cached, as their node, phase and requests</li>
+<li>Read Nodes, to price workloads at the list price of the instance types they run on, and to measure their spare capacity. They're cached without their image lists</li>
+<li>List Karpenter's NodePools, and get Cluster Autoscaler's <code>cluster-autoscaler-status</code> ConfigMap and list Deployments in <code>kube-system</code>, to report which node autoscaler runs (<code>hybernate_node_autoscaler</code>). It reads NodePools' names and consolidation settings, and only the metadata of the rest</li>
+<li>Get ConfigMaps, one at a time and uncached, to <a href="../../concepts/dependencies/#learned-dependencies">learn dependencies</a> from the ones a workload's environment references. It can't list or change them</li>
+<li>Create Events for user-facing status updates</li>
+<li>Read Services, and manage the EndpointSlices that route paused workloads to the doorman</li>
+</ul>
+<p>The doorman has its own ServiceAccount and ClusterRole, <code>&lt;fullname&gt;-doorman</code>: it reads ManagedWorkloads and EndpointSlices, gets the pods a woken workload's endpoints name, to check each endpoint's address is its pod's, patches ManagedWorkloads to wake them, and creates Events. With <code>doorman.admissionPolicy.enabled</code>, those patches may only set the two annotations that record a request.</p>
+<p>With <code>watchNamespaces</code> set, both get a Role and RoleBinding in each of those namespaces instead. The operator keeps one ClusterRole, to read Namespaces and Nodes and list Karpenter's NodePools, which only a ClusterRole can grant, and gets a <code>&lt;fullname&gt;-doorman-endpoints</code> Role in the release namespace to read the doorman's EndpointSlices. Workloads in other namespaces can't be read, scaled, or opted in, and dependencies on them aren't held or woken. With <code>metrics.enabled</code> and <code>metrics.secure</code>, both ServiceAccounts also keep their cluster-wide <code>system:auth-delegator</code> bindings, which let them check scrapers' tokens and nothing else.</p>
+<p>If leader election is enabled, a <code>&lt;fullname&gt;-leader-election</code> Role in the release namespace grants Leases (<code>get</code>, <code>create</code>, <code>update</code>) and Events.</p>
+<p>With <code>doorman.negForwarder.enabled</code>, a ClusterRole <code>&lt;fullname&gt;-forwarder</code>, or with <code>watchNamespaces</code> a Role of that name in each watched namespace, lets the operator <code>create</code> and <code>delete</code> Deployments, for the <a href="../../concepts/wake-on-request/#gke-container-native-load-balancing-negs">forwarders</a> it runs beside paused workloads behind GKE NEGs. It only ever deletes its own, owned by a ManagedWorkload. The forwarders run as their namespace's <code>default</code> ServiceAccount, without its token, and have no access to the API server.</p>
+<p>For people, the chart adds ManagedWorkloads to Kubernetes' built-in roles, through two aggregated ClusterRoles: <code>&lt;fullname&gt;-view</code>, in <code>view</code>, <code>edit</code> and <code>admin</code>, lets whoever can view a namespace <code>get</code>, <code>list</code> and <code>watch</code> its ManagedWorkloads, as <code>kubectl hybernate status</code> and <code>scan</code> do; <code>&lt;fullname&gt;-edit</code>, in <code>edit</code> and <code>admin</code>, lets whoever can edit it <code>create</code>, <code>update</code>, <code>patch</code> and <code>delete</code> them, as <code>pause</code>, <code>wake</code> and <code>enable</code> do. The Kustomize manifests' <code>managedworkload-viewer-role</code> and <code>managedworkload-editor-role</code> are aggregated the same way.</p>
+<p>What all of this reads, writes, and sends is listed in <a href="../data-and-access/">Data and Access</a>.</p>
+<h2 id="example-production-configuration">Example: Production Configuration<a class="headerlink" href="#example-production-configuration" title="Permanent link">&para;</a></h2>
+<div class="language-yaml highlight"><table class="highlighttable"><tr><th colspan="2" class="filename"><span class="filename">values-production.yaml</span></th></tr><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal"><a href="#__codelineno-4-1"> 1</a></span>
+<span class="normal"><a href="#__codelineno-4-2"> 2</a></span>
+<span class="normal"><a href="#__codelineno-4-3"> 3</a></span>
+<span class="normal"><a href="#__codelineno-4-4"> 4</a></span>
+<span class="normal"><a href="#__codelineno-4-5"> 5</a></span>
+<span class="normal"><a href="#__codelineno-4-6"> 6</a></span>
+<span class="normal"><a href="#__codelineno-4-7"> 7</a></span>
+<span class="normal"><a href="#__codelineno-4-8"> 8</a></span>
+<span class="normal"><a href="#__codelineno-4-9"> 9</a></span>
+<span class="normal"><a href="#__codelineno-4-10">10</a></span>
+<span class="normal"><a href="#__codelineno-4-11">11</a></span>
+<span class="normal"><a href="#__codelineno-4-12">12</a></span>
+<span class="normal"><a href="#__codelineno-4-13">13</a></span>
+<span class="normal"><a href="#__codelineno-4-14">14</a></span>
+<span class="normal"><a href="#__codelineno-4-15">15</a></span>
+<span class="normal"><a href="#__codelineno-4-16">16</a></span>
+<span class="normal"><a href="#__codelineno-4-17">17</a></span>
+<span class="normal"><a href="#__codelineno-4-18">18</a></span>
+<span class="normal"><a href="#__codelineno-4-19">19</a></span>
+<span class="normal"><a href="#__codelineno-4-20">20</a></span>
+<span class="normal"><a href="#__codelineno-4-21">21</a></span>
+<span class="normal"><a href="#__codelineno-4-22">22</a></span>
+<span class="normal"><a href="#__codelineno-4-23">23</a></span>
+<span class="normal"><a href="#__codelineno-4-24">24</a></span>
+<span class="normal"><a href="#__codelineno-4-25">25</a></span>
+<span class="normal"><a href="#__codelineno-4-26">26</a></span>
+<span class="normal"><a href="#__codelineno-4-27">27</a></span>
+<span class="normal"><a href="#__codelineno-4-28">28</a></span>
+<span class="normal"><a href="#__codelineno-4-29">29</a></span>
+<span class="normal"><a href="#__codelineno-4-30">30</a></span>
+<span class="normal"><a href="#__codelineno-4-31">31</a></span>
+<span class="normal"><a href="#__codelineno-4-32">32</a></span>
+<span class="normal"><a href="#__codelineno-4-33">33</a></span>
+<span class="normal"><a href="#__codelineno-4-34">34</a></span>
+<span class="normal"><a href="#__codelineno-4-35">35</a></span>
+<span class="normal"><a href="#__codelineno-4-36">36</a></span>
+<span class="normal"><a href="#__codelineno-4-37">37</a></span>
+<span class="normal"><a href="#__codelineno-4-38">38</a></span>
+<span class="normal"><a href="#__codelineno-4-39">39</a></span>
+<span class="normal"><a href="#__codelineno-4-40">40</a></span></pre></div></td><td class="code"><div><pre><span></span><code><span id="__span-4-1"><a id="__codelineno-4-1" name="__codelineno-4-1"></a><span class="nt">replicaCount</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">2</span>
+</span><span id="__span-4-2"><a id="__codelineno-4-2" name="__codelineno-4-2"></a>
+</span><span id="__span-4-3"><a id="__codelineno-4-3" name="__codelineno-4-3"></a><span class="nt">leaderElection</span><span class="p">:</span>
+</span><span id="__span-4-4"><a id="__codelineno-4-4" name="__codelineno-4-4"></a><span class="w">  </span><span class="nt">enabled</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">true</span>
+</span><span id="__span-4-5"><a id="__codelineno-4-5" name="__codelineno-4-5"></a>
+</span><span id="__span-4-6"><a id="__codelineno-4-6" name="__codelineno-4-6"></a><span class="nt">timezone</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">Europe/London</span>
+</span><span id="__span-4-7"><a id="__codelineno-4-7" name="__codelineno-4-7"></a>
+</span><span id="__span-4-8"><a id="__codelineno-4-8" name="__codelineno-4-8"></a><span class="nt">resources</span><span class="p">:</span>
+</span><span id="__span-4-9"><a id="__codelineno-4-9" name="__codelineno-4-9"></a><span class="w">  </span><span class="nt">requests</span><span class="p">:</span>
+</span><span id="__span-4-10"><a id="__codelineno-4-10" name="__codelineno-4-10"></a><span class="w">    </span><span class="nt">cpu</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">100m</span>
+</span><span id="__span-4-11"><a id="__codelineno-4-11" name="__codelineno-4-11"></a><span class="w">    </span><span class="nt">memory</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">256Mi</span>
+</span><span id="__span-4-12"><a id="__codelineno-4-12" name="__codelineno-4-12"></a><span class="w">  </span><span class="nt">limits</span><span class="p">:</span>
+</span><span id="__span-4-13"><a id="__codelineno-4-13" name="__codelineno-4-13"></a><span class="w">    </span><span class="nt">cpu</span><span class="p">:</span><span class="w"> </span><span class="s">"1"</span>
+</span><span id="__span-4-14"><a id="__codelineno-4-14" name="__codelineno-4-14"></a><span class="w">    </span><span class="nt">memory</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">1Gi</span>
+</span><span id="__span-4-15"><a id="__codelineno-4-15" name="__codelineno-4-15"></a>
+</span><span id="__span-4-16"><a id="__codelineno-4-16" name="__codelineno-4-16"></a><span class="nt">metrics</span><span class="p">:</span>
+</span><span id="__span-4-17"><a id="__codelineno-4-17" name="__codelineno-4-17"></a><span class="w">  </span><span class="nt">enabled</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">true</span>
+</span><span id="__span-4-18"><a id="__codelineno-4-18" name="__codelineno-4-18"></a><span class="w">  </span><span class="nt">secure</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">true</span>
+</span><span id="__span-4-19"><a id="__codelineno-4-19" name="__codelineno-4-19"></a><span class="w">  </span><span class="nt">readerSubjects</span><span class="p">:</span>
+</span><span id="__span-4-20"><a id="__codelineno-4-20" name="__codelineno-4-20"></a><span class="w">    </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">kind</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">ServiceAccount</span>
+</span><span id="__span-4-21"><a id="__codelineno-4-21" name="__codelineno-4-21"></a><span class="w">      </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">prometheus-k8s</span>
+</span><span id="__span-4-22"><a id="__codelineno-4-22" name="__codelineno-4-22"></a><span class="w">      </span><span class="nt">namespace</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">monitoring</span>
+</span><span id="__span-4-23"><a id="__codelineno-4-23" name="__codelineno-4-23"></a><span class="w">  </span><span class="nt">serviceMonitor</span><span class="p">:</span>
+</span><span id="__span-4-24"><a id="__codelineno-4-24" name="__codelineno-4-24"></a><span class="w">    </span><span class="nt">enabled</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">true</span>
+</span><span id="__span-4-25"><a id="__codelineno-4-25" name="__codelineno-4-25"></a><span class="w">    </span><span class="nt">interval</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">15s</span>
+</span><span id="__span-4-26"><a id="__codelineno-4-26" name="__codelineno-4-26"></a><span class="w">  </span><span class="nt">prometheusRule</span><span class="p">:</span>
+</span><span id="__span-4-27"><a id="__codelineno-4-27" name="__codelineno-4-27"></a><span class="w">    </span><span class="nt">enabled</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">true</span>
+</span><span id="__span-4-28"><a id="__codelineno-4-28" name="__codelineno-4-28"></a>
+</span><span id="__span-4-29"><a id="__codelineno-4-29" name="__codelineno-4-29"></a><span class="nt">protectedNamespaces</span><span class="p">:</span><span class="w"> </span><span class="p p-Indicator">[</span><span class="s">"prod-*"</span><span class="p p-Indicator">]</span>
+</span><span id="__span-4-30"><a id="__codelineno-4-30" name="__codelineno-4-30"></a>
+</span><span id="__span-4-31"><a id="__codelineno-4-31" name="__codelineno-4-31"></a><span class="nt">affinity</span><span class="p">:</span>
+</span><span id="__span-4-32"><a id="__codelineno-4-32" name="__codelineno-4-32"></a><span class="w">  </span><span class="nt">podAntiAffinity</span><span class="p">:</span>
+</span><span id="__span-4-33"><a id="__codelineno-4-33" name="__codelineno-4-33"></a><span class="w">    </span><span class="nt">preferredDuringSchedulingIgnoredDuringExecution</span><span class="p">:</span>
+</span><span id="__span-4-34"><a id="__codelineno-4-34" name="__codelineno-4-34"></a><span class="w">      </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">weight</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">100</span>
+</span><span id="__span-4-35"><a id="__codelineno-4-35" name="__codelineno-4-35"></a><span class="w">        </span><span class="nt">podAffinityTerm</span><span class="p">:</span>
+</span><span id="__span-4-36"><a id="__codelineno-4-36" name="__codelineno-4-36"></a><span class="w">          </span><span class="nt">labelSelector</span><span class="p">:</span>
+</span><span id="__span-4-37"><a id="__codelineno-4-37" name="__codelineno-4-37"></a><span class="w">            </span><span class="nt">matchLabels</span><span class="p">:</span>
+</span><span id="__span-4-38"><a id="__codelineno-4-38" name="__codelineno-4-38"></a><span class="w">              </span><span class="nt">app.kubernetes.io/name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">hybernate</span>
+</span><span id="__span-4-39"><a id="__codelineno-4-39" name="__codelineno-4-39"></a><span class="w">              </span><span class="nt">control-plane</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">controller-manager</span>
+</span><span id="__span-4-40"><a id="__codelineno-4-40" name="__codelineno-4-40"></a><span class="w">          </span><span class="nt">topologyKey</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">kubernetes.io/hostname</span>
+</span></code></pre></div></td></tr></table></div>
+<p><code>affinity</code> applies to the doorman too unless <code>doorman.affinity</code> is set; the doorman's replicas are spread across nodes by default.</p>
+<div class="language-bash highlight"><pre><span></span><code><span id="__span-5-1"><a id="__codelineno-5-1" name="__codelineno-5-1" href="#__codelineno-5-1"></a>helm<span class="w"> </span>install<span class="w"> </span>hybernate<span class="w"> </span>oci://ghcr.io/okedeji/charts/hybernate<span class="w"> </span><span class="se">\</span>
+</span><span id="__span-5-2"><a id="__codelineno-5-2" name="__codelineno-5-2" href="#__codelineno-5-2"></a><span class="w">  </span>--version<span class="w"> </span><span class="m">0</span>.2.0-rc.4<span class="w"> </span><span class="se">\</span>
+</span><span id="__span-5-3"><a id="__codelineno-5-3" name="__codelineno-5-3" href="#__codelineno-5-3"></a><span class="w">  </span>-f<span class="w"> </span>values-production.yaml<span class="w"> </span><span class="se">\</span>
+</span><span id="__span-5-4"><a id="__codelineno-5-4" name="__codelineno-5-4" href="#__codelineno-5-4"></a><span class="w">  </span>-n<span class="w"> </span>hybernate-system<span class="w"> </span>--create-namespace
+</span></code></pre></div>
+
+
+
+
+
+
+
+
+
+
+
+
+                
+              </article>
+            </div>
+          
+          
+<script>var target=document.getElementById(location.hash.slice(1));target&&target.name&&(target.checked=target.name.startsWith("__tabbed_"))</script>
+        </div>
+        
+          <button type="button" class="md-top md-icon" data-md-component="top" hidden>
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M13 20h-2V8l-5.5 5.5-1.42-1.42L12 4.16l7.92 7.92-1.42 1.42L13 8z"/></svg>
+  Back to top
+</button>
+        
+      </main>
+      
+        <footer class="md-footer">
+  
+  <div class="md-footer-meta md-typeset">
+    <div class="md-footer-meta__inner md-grid">
+      <div class="md-copyright">
+  
+  
+    Made with
+    <a href="https://squidfunk.github.io/mkdocs-material/" target="_blank" rel="noopener">
+      Material for MkDocs
+    </a>
+  
+</div>
+      
+    </div>
+  </div>
+</footer>
+      
+    </div>
+    <div class="md-dialog" data-md-component="dialog">
+      <div class="md-dialog__inner md-typeset"></div>
+    </div>
+    
+    
+    
+      
+      
+      <script id="__config" type="application/json">{"annotate": null, "base": "../..", "features": ["navigation.tabs", "navigation.sections", "navigation.expand", "navigation.top", "search.suggest", "search.highlight", "content.code.copy", "content.code.annotate", "content.code.select", "content.action.edit"], "search": "../../assets/javascripts/workers/search.2c215733.min.js", "tags": null, "translations": {"clipboard.copied": "Copied to clipboard", "clipboard.copy": "Copy to clipboard", "search.result.more.one": "1 more on this page", "search.result.more.other": "# more on this page", "search.result.none": "No matching documents", "search.result.one": "1 matching document", "search.result.other": "# matching documents", "search.result.placeholder": "Type to start searching", "search.result.term.missing": "Missing", "select.version": "Select version"}, "version": {"alias": true, "default": "latest", "provider": "mike"}}</script>
+    
+    
+      <script src="../../assets/javascripts/bundle.d7400e89.min.js"></script>
+      
+        <script src="../../javascripts/mathjax.js"></script>
+      
+        <script src="https://unpkg.com/mathjax@3.2.2/es5/tex-mml-chtml.js"></script>
+      
+    
+  </body>
+</html>

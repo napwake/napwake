@@ -1,0 +1,2405 @@
+
+<!doctype html>
+<html lang="en" class="no-js">
+  <head>
+    
+      <meta charset="utf-8">
+      <meta name="viewport" content="width=device-width,initial-scale=1">
+      
+        <meta name="description" content="Intelligent Kubernetes workload lifecycle management">
+      
+      
+      
+        <link rel="canonical" href="https://okedeji.io/hybernate/latest/reference/api/">
+      
+      
+        <link rel="prev" href="../../guides/autoscalers/">
+      
+      
+        <link rel="next" href="../helm-values/">
+      
+      
+        
+      
+      
+      <link rel="icon" href="../../assets/favicon.svg">
+      <meta name="generator" content="mkdocs-1.6.1, mkdocs-material-9.7.7">
+    
+    
+      
+        <title>API - Hybernate</title>
+      
+    
+    
+      <link rel="stylesheet" href="../../assets/stylesheets/main.ec1eaa64.min.css">
+      
+        
+        <link rel="stylesheet" href="../../assets/stylesheets/palette.ab4e12ef.min.css">
+      
+      
+
+
+    
+    
+      
+    
+    
+      
+        
+        
+        <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+        <link rel="stylesheet" href="https://fonts.googleapis.com/css?family=Roboto:300,300i,400,400i,700,700i%7CRoboto+Mono:400,400i,700,700i&display=fallback">
+        <style>:root{--md-text-font:"Roboto";--md-code-font:"Roboto Mono"}</style>
+      
+    
+    
+      <link rel="stylesheet" href="../../stylesheets/custom.css">
+    
+    <script>__md_scope=new URL("../..",location),__md_hash=e=>[...e].reduce(((e,_)=>(e<<5)-e+_.charCodeAt(0)),0),__md_get=(e,_=localStorage,t=__md_scope)=>JSON.parse(_.getItem(t.pathname+"."+e)),__md_set=(e,_,t=localStorage,a=__md_scope)=>{try{t.setItem(a.pathname+"."+e,JSON.stringify(_))}catch(e){}}</script>
+    
+      
+
+    
+    
+  </head>
+  
+  
+    
+    
+    
+    
+    
+    <body dir="ltr" data-md-color-scheme="default" data-md-color-primary="white" data-md-color-accent="black">
+  
+    
+    <input class="md-toggle" data-md-toggle="drawer" type="checkbox" id="__drawer" autocomplete="off">
+    <input class="md-toggle" data-md-toggle="search" type="checkbox" id="__search" autocomplete="off">
+    <label class="md-overlay" for="__drawer"></label>
+    <div data-md-component="skip">
+      
+        
+        <a href="#api-reference" class="md-skip">
+          Skip to content
+        </a>
+      
+    </div>
+    <div data-md-component="announce">
+      
+    </div>
+    
+      <div data-md-color-scheme="default" data-md-component="outdated" hidden>
+        
+          <aside class="md-banner md-banner--warning">
+            <div class="md-banner__inner md-grid md-typeset">
+              
+  
+    These docs are for Hybernate 0.2.0-rc.4, a release candidate, and may change before it's released.
+  
+  <a href="../../.."><strong>Read the docs for the latest release.</strong></a>
+
+            </div>
+            <script>var el=document.querySelector("[data-md-component=outdated]"),base=new URL("../.."),outdated=__md_get("__outdated",sessionStorage,base);!0===outdated&&el&&(el.hidden=!1)</script>
+          </aside>
+        
+      </div>
+    
+    
+      
+
+<header class="md-header" data-md-component="header">
+  <nav class="md-header__inner md-grid" aria-label="Header">
+    <a href="../.." title="Hybernate" class="md-header__button md-logo" aria-label="Hybernate" data-md-component="logo">
+      
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="m20.79 13.95-2.33.62-2-1.13v-2.88l2-1.13 2.33.62.52-1.93-1.77-.47.46-1.77-1.93-.52-.62 2.33-2 1.13L13 7.38V5.12l1.71-1.71L13.29 2 12 3.29 10.71 2 9.29 3.41 11 5.12v2.26L8.5 8.82l-2-1.13-.58-2.33L4 5.88l.47 1.77-1.77.47.52 1.93 2.33-.62 2 1.13v2.89l-2 1.13-2.33-.62-.52 1.93 1.77.47L4 18.12l1.93.52.62-2.33 2-1.13L11 16.62v2.26l-1.71 1.71L10.71 22 12 20.71 13.29 22l1.41-1.41-1.7-1.71v-2.26l2.5-1.45 2 1.13.62 2.33 1.88-.51-.47-1.77 1.77-.47zM9.5 10.56 12 9.11l2.5 1.45v2.88L12 14.89l-2.5-1.45z"/></svg>
+
+    </a>
+    <label class="md-header__button md-icon" for="__drawer">
+      
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M3 6h18v2H3zm0 5h18v2H3zm0 5h18v2H3z"/></svg>
+    </label>
+    <div class="md-header__title" data-md-component="header-title">
+      <div class="md-header__ellipsis">
+        <div class="md-header__topic">
+          <span class="md-ellipsis">
+            Hybernate
+          </span>
+        </div>
+        <div class="md-header__topic" data-md-component="header-topic">
+          <span class="md-ellipsis">
+            
+              API
+            
+          </span>
+        </div>
+      </div>
+    </div>
+    
+      
+    
+    
+    
+    
+      
+      
+        <label class="md-header__button md-icon" for="__search">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+        </label>
+        <div class="md-search" data-md-component="search" role="dialog">
+  <label class="md-search__overlay" for="__search"></label>
+  <div class="md-search__inner" role="search">
+    <form class="md-search__form" name="search">
+      <input type="text" class="md-search__input" name="query" aria-label="Search" placeholder="Search" autocapitalize="off" autocorrect="off" autocomplete="off" spellcheck="false" data-md-component="search-query" required>
+      <label class="md-search__icon md-icon" for="__search">
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M20 11v2H8l5.5 5.5-1.42 1.42L4.16 12l7.92-7.92L13.5 5.5 8 11z"/></svg>
+      </label>
+      <nav class="md-search__options" aria-label="Search">
+        
+        <button type="reset" class="md-search__icon md-icon" title="Clear" aria-label="Clear" tabindex="-1">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M19 6.41 17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/></svg>
+        </button>
+      </nav>
+      
+        <div class="md-search__suggest" data-md-component="search-suggest"></div>
+      
+    </form>
+    <div class="md-search__output">
+      <div class="md-search__scrollwrap" tabindex="0" data-md-scrollfix>
+        <div class="md-search-result" data-md-component="search-result">
+          <div class="md-search-result__meta">
+            Initializing search
+          </div>
+          <ol class="md-search-result__list" role="presentation"></ol>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+      
+    
+    
+      <div class="md-header__source">
+        <a href="https://github.com/okedeji/hybernate" title="Go to repository" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M173.9 397.4c0 2-2.3 3.6-5.2 3.6-3.3.3-5.6-1.3-5.6-3.6 0-2 2.3-3.6 5.2-3.6 3-.3 5.6 1.3 5.6 3.6m-31.1-4.5c-.7 2 1.3 4.3 4.3 4.9 2.6 1 5.6 0 6.2-2s-1.3-4.3-4.3-5.2c-2.6-.7-5.5.3-6.2 2.3m44.2-1.7c-2.9.7-4.9 2.6-4.6 4.9.3 2 2.9 3.3 5.9 2.6 2.9-.7 4.9-2.6 4.6-4.6-.3-1.9-3-3.2-5.9-2.9M252.8 8C114.1 8 8 113.3 8 252c0 110.9 69.8 205.8 169.5 239.2 12.8 2.3 17.3-5.6 17.3-12.1 0-6.2-.3-40.4-.3-61.4 0 0-70 15-84.7-29.8 0 0-11.4-29.1-27.8-36.6 0 0-22.9-15.7 1.6-15.4 0 0 24.9 2 38.6 25.8 21.9 38.6 58.6 27.5 72.9 20.9 2.3-16 8.8-27.1 16-33.7-55.9-6.2-112.3-14.3-112.3-110.5 0-27.5 7.6-41.3 23.6-58.9-2.6-6.5-11.1-33.3 2.6-67.9 20.9-6.5 69 27 69 27 20-5.6 41.5-8.5 62.8-8.5s42.8 2.9 62.8 8.5c0 0 48.1-33.6 69-27 13.7 34.7 5.2 61.4 2.6 67.9 16 17.7 25.8 31.5 25.8 58.9 0 96.5-58.9 104.2-114.8 110.5 9.2 7.9 17 22.9 17 46.4 0 33.7-.3 75.4-.3 83.6 0 6.5 4.6 14.4 17.3 12.1C436.2 457.8 504 362.9 504 252 504 113.3 391.5 8 252.8 8M105.2 352.9c-1.3 1-1 3.3.7 5.2 1.6 1.6 3.9 2.3 5.2 1 1.3-1 1-3.3-.7-5.2-1.6-1.6-3.9-2.3-5.2-1m-10.8-8.1c-.7 1.3.3 2.9 2.3 3.9 1.6 1 3.6.7 4.3-.7.7-1.3-.3-2.9-2.3-3.9-2-.6-3.6-.3-4.3.7m32.4 35.6c-1.6 1.3-1 4.3 1.3 6.2 2.3 2.3 5.2 2.6 6.5 1 1.3-1.3.7-4.3-1.3-6.2-2.2-2.3-5.2-2.6-6.5-1m-11.4-14.7c-1.6 1-1.6 3.6 0 5.9s4.3 3.3 5.6 2.3c1.6-1.3 1.6-3.9 0-6.2-1.4-2.3-4-3.3-5.6-2"/></svg>
+  </div>
+  <div class="md-source__repository">
+    okedeji/hybernate
+  </div>
+</a>
+      </div>
+    
+  </nav>
+  
+</header>
+    
+    <div class="md-container" data-md-component="container">
+      
+      
+        
+          
+            
+<nav class="md-tabs" aria-label="Tabs" data-md-component="tabs">
+  <div class="md-grid">
+    <ul class="md-tabs__list">
+      
+        
+  
+  
+  
+  
+    <li class="md-tabs__item">
+      <a href="../.." class="md-tabs__link">
+        
+  
+  
+    
+  
+  Home
+
+      </a>
+    </li>
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../getting-started/installation/" class="md-tabs__link">
+          
+  
+  
+  Getting Started
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../concepts/architecture/" class="md-tabs__link">
+          
+  
+  
+  Concepts
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../guides/opt-in/" class="md-tabs__link">
+          
+  
+  
+  Guides
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+    
+  
+  
+    
+    
+      <li class="md-tabs__item md-tabs__item--active">
+        <a href="./" class="md-tabs__link">
+          
+  
+  
+  Reference
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../operations/monitoring/" class="md-tabs__link">
+          
+  
+  
+  Operations
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    <li class="md-tabs__item">
+      <a href="../../contributing/" class="md-tabs__link">
+        
+  
+  
+    
+  
+  Contributing
+
+      </a>
+    </li>
+  
+
+      
+    </ul>
+  </div>
+</nav>
+          
+        
+      
+      <main class="md-main" data-md-component="main">
+        <div class="md-main__inner md-grid">
+          
+            
+              
+              <div class="md-sidebar md-sidebar--primary" data-md-component="sidebar" data-md-type="navigation" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+
+  
+
+
+<nav class="md-nav md-nav--primary md-nav--lifted" aria-label="Navigation" data-md-level="0">
+  <label class="md-nav__title" for="__drawer">
+    <a href="../.." title="Hybernate" class="md-nav__button md-logo" aria-label="Hybernate" data-md-component="logo">
+      
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="m20.79 13.95-2.33.62-2-1.13v-2.88l2-1.13 2.33.62.52-1.93-1.77-.47.46-1.77-1.93-.52-.62 2.33-2 1.13L13 7.38V5.12l1.71-1.71L13.29 2 12 3.29 10.71 2 9.29 3.41 11 5.12v2.26L8.5 8.82l-2-1.13-.58-2.33L4 5.88l.47 1.77-1.77.47.52 1.93 2.33-.62 2 1.13v2.89l-2 1.13-2.33-.62-.52 1.93 1.77.47L4 18.12l1.93.52.62-2.33 2-1.13L11 16.62v2.26l-1.71 1.71L10.71 22 12 20.71 13.29 22l1.41-1.41-1.7-1.71v-2.26l2.5-1.45 2 1.13.62 2.33 1.88-.51-.47-1.77 1.77-.47zM9.5 10.56 12 9.11l2.5 1.45v2.88L12 14.89l-2.5-1.45z"/></svg>
+
+    </a>
+    Hybernate
+  </label>
+  
+    <div class="md-nav__source">
+      <a href="https://github.com/okedeji/hybernate" title="Go to repository" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M173.9 397.4c0 2-2.3 3.6-5.2 3.6-3.3.3-5.6-1.3-5.6-3.6 0-2 2.3-3.6 5.2-3.6 3-.3 5.6 1.3 5.6 3.6m-31.1-4.5c-.7 2 1.3 4.3 4.3 4.9 2.6 1 5.6 0 6.2-2s-1.3-4.3-4.3-5.2c-2.6-.7-5.5.3-6.2 2.3m44.2-1.7c-2.9.7-4.9 2.6-4.6 4.9.3 2 2.9 3.3 5.9 2.6 2.9-.7 4.9-2.6 4.6-4.6-.3-1.9-3-3.2-5.9-2.9M252.8 8C114.1 8 8 113.3 8 252c0 110.9 69.8 205.8 169.5 239.2 12.8 2.3 17.3-5.6 17.3-12.1 0-6.2-.3-40.4-.3-61.4 0 0-70 15-84.7-29.8 0 0-11.4-29.1-27.8-36.6 0 0-22.9-15.7 1.6-15.4 0 0 24.9 2 38.6 25.8 21.9 38.6 58.6 27.5 72.9 20.9 2.3-16 8.8-27.1 16-33.7-55.9-6.2-112.3-14.3-112.3-110.5 0-27.5 7.6-41.3 23.6-58.9-2.6-6.5-11.1-33.3 2.6-67.9 20.9-6.5 69 27 69 27 20-5.6 41.5-8.5 62.8-8.5s42.8 2.9 62.8 8.5c0 0 48.1-33.6 69-27 13.7 34.7 5.2 61.4 2.6 67.9 16 17.7 25.8 31.5 25.8 58.9 0 96.5-58.9 104.2-114.8 110.5 9.2 7.9 17 22.9 17 46.4 0 33.7-.3 75.4-.3 83.6 0 6.5 4.6 14.4 17.3 12.1C436.2 457.8 504 362.9 504 252 504 113.3 391.5 8 252.8 8M105.2 352.9c-1.3 1-1 3.3.7 5.2 1.6 1.6 3.9 2.3 5.2 1 1.3-1 1-3.3-.7-5.2-1.6-1.6-3.9-2.3-5.2-1m-10.8-8.1c-.7 1.3.3 2.9 2.3 3.9 1.6 1 3.6.7 4.3-.7.7-1.3-.3-2.9-2.3-3.9-2-.6-3.6-.3-4.3.7m32.4 35.6c-1.6 1.3-1 4.3 1.3 6.2 2.3 2.3 5.2 2.6 6.5 1 1.3-1.3.7-4.3-1.3-6.2-2.2-2.3-5.2-2.6-6.5-1m-11.4-14.7c-1.6 1-1.6 3.6 0 5.9s4.3 3.3 5.6 2.3c1.6-1.3 1.6-3.9 0-6.2-1.4-2.3-4-3.3-5.6-2"/></svg>
+  </div>
+  <div class="md-source__repository">
+    okedeji/hybernate
+  </div>
+</a>
+    </div>
+  
+  <ul class="md-nav__list" data-md-scrollfix>
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../.." class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Home
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_2" >
+        
+          
+          <label class="md-nav__link" for="__nav_2" id="__nav_2_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Getting Started
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_2_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_2">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Getting Started
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../getting-started/installation/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Installation
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../getting-started/quickstart/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Quickstart
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../getting-started/kubectl-plugin/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    kubectl Plugin
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_3" >
+        
+          
+          <label class="md-nav__link" for="__nav_3" id="__nav_3_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Concepts
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_3_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_3">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Concepts
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../concepts/architecture/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Architecture
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../concepts/lifecycle/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Lifecycle
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../concepts/forecasting/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Forecasting
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../concepts/idle-detection/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Idle Detection
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../concepts/dependencies/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Dependencies
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../concepts/wake-on-request/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Wake on Request
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../concepts/cost-tracking/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Cost Tracking
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_4" >
+        
+          
+          <label class="md-nav__link" for="__nav_4" id="__nav_4_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Guides
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_4_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_4">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Guides
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../guides/opt-in/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Opting In
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../guides/managed-workload/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    ManagedWorkload
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../guides/pause/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Pause and Resume
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../guides/cluster-autoscaler/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Cluster Autoscaler
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../guides/node-pools/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Node Pools for Real Savings
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../guides/dry-run/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Dry Run
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../guides/prometheus-signals/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Prometheus Activity
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../guides/gitops/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    GitOps tools
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../guides/autoscalers/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    HPA and KEDA
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+    
+  
+  
+  
+    
+    
+    
+    
+      
+        
+        
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--active md-nav__item--section md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_5" checked>
+        
+          
+          <label class="md-nav__link" for="__nav_5" id="__nav_5_label" tabindex="">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Reference
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_5_label" aria-expanded="true">
+          <label class="md-nav__title" for="__nav_5">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Reference
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+    
+  
+  
+  
+    <li class="md-nav__item md-nav__item--active">
+      
+      <input class="md-nav__toggle md-toggle" type="checkbox" id="__toc">
+      
+      
+        
+      
+      
+        <label class="md-nav__link md-nav__link--active" for="__toc">
+          
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    API
+  
+
+    
+  </span>
+  
+  
+
+          <span class="md-nav__icon md-icon"></span>
+        </label>
+      
+      <a href="./" class="md-nav__link md-nav__link--active">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    API
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+      
+        
+
+<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#managedworkload" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        ManagedWorkload
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="ManagedWorkload">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#spec-managedworkloadspec" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Spec (ManagedWorkloadSpec)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#costrates" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        CostRates
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#status-managedworkloadstatus" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Status (ManagedWorkloadStatus)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#workloadphase-values" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        WorkloadPhase Values
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+      
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../helm-values/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Helm Values
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../metrics/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Metrics
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../labels-annotations/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Labels & Annotations
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../data-and-access/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Data and Access
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../security/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Security
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../configuration/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Configuration
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../compatibility/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Compatibility
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_6" >
+        
+          
+          <label class="md-nav__link" for="__nav_6" id="__nav_6_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Operations
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_6_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_6">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Operations
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../operations/monitoring/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Monitoring
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../operations/troubleshooting/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Troubleshooting
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../operations/upgrading/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Upgrading
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../contributing/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Contributing
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+  </ul>
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+            
+              
+              <div class="md-sidebar md-sidebar--secondary" data-md-component="sidebar" data-md-type="toc" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#managedworkload" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        ManagedWorkload
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="ManagedWorkload">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#spec-managedworkloadspec" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Spec (ManagedWorkloadSpec)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#costrates" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        CostRates
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#status-managedworkloadstatus" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Status (ManagedWorkloadStatus)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#workloadphase-values" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        WorkloadPhase Values
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+          
+          
+            <div class="md-content" data-md-component="content">
+              
+              <article class="md-content__inner md-typeset">
+                
+                  
+
+
+  
+    <a href="https://github.com/okedeji/hybernate/edit/main/docs/reference/api.md" title="Edit this page" class="md-content__button md-icon" rel="edit">
+      
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M10 20H6V4h7v5h5v3.1l2-2V8l-6-6H6c-1.1 0-2 .9-2 2v16c0 1.1.9 2 2 2h4zm10.2-7c.1 0 .3.1.4.2l1.3 1.3c.2.2.2.6 0 .8l-1 1-2.1-2.1 1-1c.1-.1.2-.2.4-.2m0 3.9L14.1 23H12v-2.1l6.1-6.1z"/></svg>
+    </a>
+  
+  
+
+
+<h1 id="api-reference">API Reference<a class="headerlink" href="#api-reference" title="Permanent link">&para;</a></h1>
+<h2 id="managedworkload">ManagedWorkload<a class="headerlink" href="#managedworkload" title="Permanent link">&para;</a></h2>
+<p><strong>Group:</strong> <code>hybernate.io</code> | <strong>Version:</strong> <code>v1alpha1</code> | <strong>Kind:</strong> <code>ManagedWorkload</code> | <strong>Scope:</strong> Namespaced</p>
+<p><code>kubectl get managedworkloads</code> shows each one's <code>Phase</code>, what pausing it has <code>Freed</code> this month and what of that it <code>Saved</code>, what dry-run measured it <code>Would Free</code>, blank for one that isn't in dry-run, and its <code>Age</code>.</p>
+<h3 id="spec-managedworkloadspec">Spec (<code>ManagedWorkloadSpec</code>)<a class="headerlink" href="#spec-managedworkloadspec" title="Permanent link">&para;</a></h3>
+<table>
+<thead>
+<tr>
+<th>Field</th>
+<th>Type</th>
+<th>Required</th>
+<th>Default</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>target</code></td>
+<td><code>WorkloadRef</code></td>
+<td>Yes</td>
+<td></td>
+<td>The workload to manage. Can't be changed once set</td>
+</tr>
+<tr>
+<td><code>target.kind</code></td>
+<td><code>Deployment</code> | <code>StatefulSet</code></td>
+<td>No</td>
+<td><code>Deployment</code></td>
+<td>Target kind</td>
+</tr>
+<tr>
+<td><code>target.name</code></td>
+<td>string</td>
+<td>Yes</td>
+<td></td>
+<td>Target name (same namespace)</td>
+</tr>
+<tr>
+<td><code>idlePolicy</code></td>
+<td><code>IdlePolicySpec</code></td>
+<td>No</td>
+<td></td>
+<td>Idle detection configuration. Without it, the workload is never paused automatically</td>
+</tr>
+<tr>
+<td><code>idlePolicy.idleAfter</code></td>
+<td>duration (at least <code>1m</code>)</td>
+<td>No</td>
+<td><code>1h</code></td>
+<td>Time without activity before pausing</td>
+</tr>
+<tr>
+<td><code>idlePolicy.activity.cpuThreshold</code></td>
+<td>int</td>
+<td>No</td>
+<td><code>10</code></td>
+<td>CPU utilization % of requests above which the workload is active (1-100)</td>
+</tr>
+<tr>
+<td><code>idlePolicy.activity.prometheus[].promQL</code></td>
+<td>string</td>
+<td>Yes (per entry)</td>
+<td></td>
+<td>PromQL instant query; a result above zero is activity. At most 10 queries</td>
+</tr>
+<tr>
+<td><code>idlePolicy.autoResume</code></td>
+<td>bool</td>
+<td>No</td>
+<td><code>false</code></td>
+<td>Wake ahead of confident forecast demand</td>
+</tr>
+<tr>
+<td><code>dependsOn[]</code></td>
+<td><code>DependencyRef</code></td>
+<td>No</td>
+<td></td>
+<td>Workloads this one needs, at most 20</td>
+</tr>
+<tr>
+<td><code>dependsOn[].namespace</code></td>
+<td>string</td>
+<td>No</td>
+<td>this namespace</td>
+<td>Namespace of the dependency</td>
+</tr>
+<tr>
+<td><code>dependsOn[].kind</code></td>
+<td><code>Deployment</code> | <code>StatefulSet</code></td>
+<td>Yes</td>
+<td></td>
+<td>Kind of the dependency</td>
+</tr>
+<tr>
+<td><code>dependsOn[].name</code></td>
+<td>string</td>
+<td>Yes</td>
+<td></td>
+<td>Name of the dependency's workload</td>
+</tr>
+<tr>
+<td><code>dependsOn[].waitForReady</code></td>
+<td>bool</td>
+<td>No</td>
+<td><code>false</code></td>
+<td>Hold this workload's resume until the dependency is Ready</td>
+</tr>
+<tr>
+<td><code>wake</code></td>
+<td><code>WakeSpec</code></td>
+<td>No</td>
+<td></td>
+<td>Waking on request while paused</td>
+</tr>
+<tr>
+<td><code>wake.onRequest</code></td>
+<td>bool</td>
+<td>No</td>
+<td><code>true</code></td>
+<td>Route the workload's Services to the doorman while paused</td>
+</tr>
+<tr>
+<td><code>wake.maxWait</code></td>
+<td>duration (at most <code>1h</code>)</td>
+<td>No</td>
+<td><code>2m</code></td>
+<td>How long a request is held while the workload wakes</td>
+</tr>
+<tr>
+<td><code>wake.page</code></td>
+<td>bool</td>
+<td>No</td>
+<td><code>true</code></td>
+<td>Answer a browser loading a page with a waking-up page instead of holding it</td>
+</tr>
+<tr>
+<td><code>prediction</code></td>
+<td><code>PredictionSpec</code></td>
+<td>No</td>
+<td><code>{}</code></td>
+<td>Forecast engine config; left out or <code>{}</code>, it takes the defaults</td>
+</tr>
+<tr>
+<td><code>prediction.mode</code></td>
+<td><code>eager</code> | <code>balanced</code> | <code>cautious</code></td>
+<td>No</td>
+<td><code>balanced</code></td>
+<td>How soon the forecast acts on what it has learned: at a confidence of 60, 75 or 85. See <a href="../../concepts/forecasting/#forecast-setting">Forecast setting</a></td>
+</tr>
+<tr>
+<td><code>prediction.confidence</code></td>
+<td>int (50-100)</td>
+<td>No</td>
+<td>the mode's</td>
+<td>Accuracy (1 − WAPE, %) a season's forecasts must reach before they drive decisions, in place of the mode's</td>
+</tr>
+<tr>
+<td><code>costTracking</code></td>
+<td><code>CostTrackingSpec</code></td>
+<td>No</td>
+<td></td>
+<td>Custom cost rate overrides</td>
+</tr>
+<tr>
+<td><code>costTracking.rates</code></td>
+<td><code>CostRates</code></td>
+<td>No</td>
+<td>node list prices, then AWS defaults</td>
+<td>Custom cost rates, none of them negative</td>
+</tr>
+<tr>
+<td><code>dryRun</code></td>
+<td>bool</td>
+<td>No</td>
+<td><code>false</code></td>
+<td>Measure without pausing; see <a href="../../guides/dry-run/">Dry Run</a>. A workload already paused when it's turned on is woken</td>
+</tr>
+</tbody>
+</table>
+<p>A duration is a Go duration above zero, such as <code>45s</code>, <code>90m</code> or <code>1h30m</code>. Days and weeks (<code>1d</code>, <code>2w</code>) and spaces aren't durations: write <code>24h</code> or <code>168h</code>. The API server rejects any other value.</p>
+<h3 id="costrates">CostRates<a class="headerlink" href="#costrates" title="Permanent link">&para;</a></h3>
+<table>
+<thead>
+<tr>
+<th>Field</th>
+<th>Type</th>
+<th>Default</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>cpuPerHour</code></td>
+<td>quantity</td>
+<td><code>0.031</code></td>
+<td>USD per vCPU-hour</td>
+</tr>
+<tr>
+<td><code>memoryPerHour</code></td>
+<td>quantity</td>
+<td><code>0.004</code></td>
+<td>USD per GiB-hour</td>
+</tr>
+<tr>
+<td><code>storagePerMonth</code></td>
+<td>quantity</td>
+<td><code>0.08</code></td>
+<td>USD per GiB-month</td>
+</tr>
+</tbody>
+</table>
+<h3 id="status-managedworkloadstatus">Status (<code>ManagedWorkloadStatus</code>)<a class="headerlink" href="#status-managedworkloadstatus" title="Permanent link">&para;</a></h3>
+<table>
+<thead>
+<tr>
+<th>Field</th>
+<th>Type</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>phase</code></td>
+<td><code>WorkloadPhase</code></td>
+<td>Current lifecycle phase</td>
+</tr>
+<tr>
+<td><code>conditions[]</code></td>
+<td><code>Condition</code></td>
+<td>Standard Kubernetes conditions; see <a href="../../concepts/lifecycle/#status-conditions">Lifecycle</a></td>
+</tr>
+<tr>
+<td><code>lastActedAt</code></td>
+<td>time</td>
+<td>When the target was last paused or woken: by Hybernate, or scaled up from zero outside it, such as with <code>kubectl scale</code> or by a GitOps tool</td>
+</tr>
+<tr>
+<td><code>lastPauseRequest</code></td>
+<td>string</td>
+<td>The last <code>hybernate.io/pause-requested</code> value acted on, so each request is acted on once; the <code>PauseRequest</code> condition says what came of it. See <a href="../../guides/pause/#pause-now">Pause Now</a></td>
+</tr>
+<tr>
+<td><code>lastTransitionTime</code></td>
+<td>time</td>
+<td>Last phase change</td>
+</tr>
+<tr>
+<td><code>activity.lastActivityTime</code></td>
+<td>time</td>
+<td>Most recent activity from any source</td>
+</tr>
+<tr>
+<td><code>activity.lastActivitySource</code></td>
+<td>string</td>
+<td><code>created</code>, <code>woke</code>, <code>request</code>, <code>cpu</code>, <code>rollout</code>, <code>annotation</code>, <code>prometheus</code>, <code>unobserved</code>, or <code>scaled-up</code></td>
+</tr>
+<tr>
+<td><code>activity.pauseAt</code></td>
+<td>time</td>
+<td>When the workload pauses if no further activity is seen</td>
+</tr>
+<tr>
+<td><code>activity.lastEvaluatedTime</code></td>
+<td>time</td>
+<td>When activity was last checked</td>
+</tr>
+<tr>
+<td><code>activity.templateHash</code></td>
+<td>string</td>
+<td>Fingerprint of the target's pod template, used to detect deploys</td>
+</tr>
+<tr>
+<td><code>activity.heldByDependents</code></td>
+<td>[]string</td>
+<td>The awake workloads that use this one, as <code>namespace/name</code>, while they keep it from pausing (<code>HeldByDependents</code>): at most 10, the first by name</td>
+</tr>
+<tr>
+<td><code>activity.forecastBusyFrom</code></td>
+<td>time</td>
+<td>The start of the hour the forecast expects demand in, while it keeps the workload from pausing (<code>IdleVetoed</code>)</td>
+</tr>
+<tr>
+<td><code>pause</code></td>
+<td><code>PauseStatus</code></td>
+<td>What a pause changed, from before the workload is scaled to zero until it's running again</td>
+</tr>
+<tr>
+<td><code>pause.previousReplicas</code></td>
+<td>int32</td>
+<td>Replicas before the pause, restored on resume</td>
+</tr>
+<tr>
+<td><code>pause.pausedAt</code></td>
+<td>time</td>
+<td>When it was scaled to zero; unset until then. The pause is <code>Paused</code> once its pods have stopped</td>
+</tr>
+<tr>
+<td><code>pause.resumedAt</code></td>
+<td>time</td>
+<td>When the resume under way scaled it back up; scaled to zero after that by something other than Hybernate, it's left off</td>
+</tr>
+<tr>
+<td><code>pause.firstReadyAt</code></td>
+<td>time</td>
+<td>When the resume under way first saw one of its replicas Ready; the rest get 2 minutes from then</td>
+</tr>
+<tr>
+<td><code>pause.scaledObject</code></td>
+<td>string</td>
+<td>The KEDA ScaledObject held at zero while paused; see <a href="../../guides/autoscalers/">HPA and KEDA</a></td>
+</tr>
+<tr>
+<td><code>pause.scaledObjectPausedReplicas</code></td>
+<td>string</td>
+<td>The ScaledObject's own <code>autoscaling.keda.sh/paused-replicas</code> from before the pause, put back after it</td>
+</tr>
+<tr>
+<td><code>pause.resources</code></td>
+<td><code>ResourceSnapshot</code></td>
+<td>What the workload ran when the pause began: <code>replicas</code>, and per replica <code>cpuMillis</code>, <code>memoryBytes</code>, and its claims' <code>storageBytes</code>; and <code>nodePools</code>, the node pools its pods ran in (<code>name</code>, <code>""</code> for nodes without a pool label) and how many <code>pods</code> in each, which what it saves is measured against</td>
+</tr>
+<tr>
+<td><code>pause.wakeAnnotations</code></td>
+<td>object</td>
+<td>The activity annotations on the ManagedWorkload (<code>workload</code>) and its target (<code>target</code>) as the pause began; one that changes since wakes it</td>
+</tr>
+<tr>
+<td><code>learnedDependencies</code></td>
+<td><code>LearnedDependencies</code></td>
+<td>Dependencies Hybernate found, held and woken like <code>dependsOn</code>: <code>from</code>, <code>at</code>, and <code>dependencies</code> (<code>namespace</code>, <code>kind</code>, <code>name</code>, <code>source</code>: <code>environment</code> or <code>wake</code>, <code>via</code> and <code>address</code> for one found in the environment, and <code>lastSeen</code> for one learned from a wake). See <a href="../../concepts/dependencies/#learned-dependencies">Learned dependencies</a></td>
+</tr>
+<tr>
+<td><code>lastScaledUp</code></td>
+<td><code>ScaledUp</code></td>
+<td>The last time the workload was scaled up outside Hybernate while paused, which wakes it: <code>at</code>, <code>replicas</code>, <code>by</code> (the field manager, such as <code>argocd-controller</code>, or <code>unknown</code> for a scale through the scale subresource, as <code>kubectl scale</code> makes, which records none), and <code>gitOps</code> (<code>Argo CD</code>, <code>Flux</code>, <code>Fleet</code>, <code>kapp</code> or <code>Kluctl</code>, when it was set from Git; see <a href="../../guides/gitops/">GitOps tools</a>)</td>
+</tr>
+<tr>
+<td><code>doorman[]</code></td>
+<td><code>DoormanRoute</code></td>
+<td>Service ports routed to the doorman while paused: <code>service</code>, <code>portName</code>, <code>doormanPort</code>, and <code>forwarded</code>, set for a Service behind GKE NEGs routed through the <a href="../../concepts/wake-on-request/#gke-container-native-load-balancing-negs">forwarder</a></td>
+</tr>
+<tr>
+<td><code>doormanDraining[]</code></td>
+<td><code>DrainingPort</code></td>
+<td>Doorman ports that routed the workload until it woke: <code>port</code>, and <code>until</code>, before which no other workload is given it, so a client still sending the workload's traffic there never reaches another. Kept in status so an operator that restarts or takes over leadership honours it</td>
+</tr>
+<tr>
+<td><code>dryRun</code></td>
+<td><code>DryRunStatus</code></td>
+<td>What dry-run has measured; only while <code>spec.dryRun</code> is true</td>
+</tr>
+<tr>
+<td><code>dryRun.since</code></td>
+<td>time</td>
+<td>When dry-run started measuring</td>
+</tr>
+<tr>
+<td><code>dryRun.pauses</code></td>
+<td>int32</td>
+<td>Times the workload would have been paused, one under way included</td>
+</tr>
+<tr>
+<td><code>dryRun.slept</code></td>
+<td>duration</td>
+<td>How long finished would-be pauses lasted in all</td>
+</tr>
+<tr>
+<td><code>dryRun.freedCPUHours</code>, <code>dryRun.freedMemoryHours</code></td>
+<td>quantity</td>
+<td>vCPU-hours and GiB-hours the replicas requested during <code>slept</code></td>
+</tr>
+<tr>
+<td><code>dryRun.estimatedFreed</code></td>
+<td>string</td>
+<td>Those hours priced, for display, with the would-be pause under way counted up to the last status write: what pausing would have freed. Also the <code>Would Free</code> column of <code>kubectl get managedworkloads</code></td>
+</tr>
+<tr>
+<td><code>dryRun.resources</code></td>
+<td><code>ResourceSnapshot</code></td>
+<td>What the workload ran when the current would-be pause began</td>
+</tr>
+<tr>
+<td><code>prediction.dailyPhase</code>, <code>prediction.weeklyPhase</code></td>
+<td>string</td>
+<td>Each season's phase: <code>Observing</code>, <code>Suggesting</code>, or <code>Active</code></td>
+</tr>
+<tr>
+<td><code>prediction.dailyConfidence</code>, <code>prediction.weeklyConfidence</code></td>
+<td>int</td>
+<td>Accuracy % over the last 24 and 168 observed hours</td>
+</tr>
+<tr>
+<td><code>prediction.timeZone</code></td>
+<td>string</td>
+<td>The IANA time zone the forecast counts hours and weekdays in, the operator's <code>--timezone</code> (Helm value <code>timezone</code>), such as <code>Europe/London</code></td>
+</tr>
+<tr>
+<td><code>prediction.threshold</code></td>
+<td>int</td>
+<td>The confidence the forecast acts at: <code>spec.prediction.confidence</code>, or the mode's</td>
+</tr>
+<tr>
+<td><code>prediction.acting</code></td>
+<td>bool</td>
+<td>Whether the forecast drives decisions: holds off pauses and, with <code>autoResume</code>, wakes the workload ahead of demand</td>
+</tr>
+<tr>
+<td><code>prediction.startsActing</code></td>
+<td>time</td>
+<td>When the forecast is expected to start acting, if the coming days repeat the last week it saw; unset while it's acting or when it isn't expected to within four weeks</td>
+</tr>
+<tr>
+<td><code>prediction.reason</code>, <code>prediction.message</code></td>
+<td>string</td>
+<td>Why the forecast is or isn't acting: <code>Acting</code>, <code>Observing</code>, <code>EarningConfidence</code>, <code>Relearning</code> or <code>NotLearning</code>, and in a sentence. See <a href="../../concepts/forecasting/#when-it-acts">When it acts</a></td>
+</tr>
+<tr>
+<td><code>prediction.history</code></td>
+<td><code>PredictionHistory</code></td>
+<td>What the forecast learned from Prometheus history when Hybernate began managing the workload: <code>reason</code> (<code>Learned</code>, <code>NoPrometheusURL</code>, <code>NoHistory</code>, <code>NoCPURequests</code>, <code>QueryFailed</code>), <code>hours</code>, <code>from</code>, <code>to</code>, <code>message</code>. See <a href="../../concepts/forecasting/#learning-from-history">Learning from history</a></td>
+</tr>
+<tr>
+<td><code>prediction.state</code></td>
+<td>string</td>
+<td>The engine's learned state, gzipped and base64-encoded</td>
+</tr>
+<tr>
+<td><code>cost</code></td>
+<td><code>CostStatus</code></td>
+<td>Cost for the current calendar month, in UTC; see <a href="../../concepts/cost-tracking/#status-fields">Cost Tracking</a></td>
+</tr>
+<tr>
+<td><code>cost.tracked</code></td>
+<td>duration</td>
+<td>How much of the month the totals cover</td>
+</tr>
+<tr>
+<td><code>cost.lastAccumulatedAt</code></td>
+<td>time</td>
+<td>When the totals were last brought up to date</td>
+</tr>
+<tr>
+<td><code>cost.awakeCPUHours</code>, <code>cost.awakeMemoryHours</code></td>
+<td>quantity</td>
+<td>vCPU-hours and GiB-hours requested while awake</td>
+</tr>
+<tr>
+<td><code>cost.storageHours</code></td>
+<td>quantity</td>
+<td>GiB-hours of the claims its pods mount, in every phase</td>
+</tr>
+<tr>
+<td><code>cost.pausedCPUHours</code>, <code>cost.pausedMemoryHours</code></td>
+<td>quantity</td>
+<td>vCPU-hours and GiB-hours the paused replicas had requested, while paused: what pausing freed</td>
+</tr>
+<tr>
+<td><code>cost.savedCPUHours</code>, <code>cost.savedMemoryHours</code></td>
+<td>quantity</td>
+<td>The workload's share of what its node pools' spare capacity couldn't hold of the paused replicas, measured every 5 minutes: what pausing saved, at least. See <a href="../../concepts/cost-tracking/#how-saved-is-measured">How saved is measured</a></td>
+</tr>
+<tr>
+<td><code>cost.costThisMonth</code></td>
+<td>string</td>
+<td>Awake and storage hours, priced</td>
+</tr>
+<tr>
+<td><code>cost.freedThisMonth</code></td>
+<td>string</td>
+<td>Paused hours, priced</td>
+</tr>
+<tr>
+<td><code>cost.savedThisMonth</code></td>
+<td>string</td>
+<td>Saved hours, priced; <code>unknown</code> while <code>savingsUnknown</code> is set</td>
+</tr>
+<tr>
+<td><code>cost.savingsUnknown</code></td>
+<td>string</td>
+<td>Why saved can't be measured, such as pods outside <code>watchNamespaces</code> not being visible; unset when it's measured</td>
+</tr>
+<tr>
+<td><code>cost.costWithoutHybernateThisMonth</code></td>
+<td>string</td>
+<td><code>costThisMonth</code> plus <code>freedThisMonth</code></td>
+</tr>
+<tr>
+<td><code>cost.projectedMonthlyCost</code>, <code>cost.projectedMonthlyFreed</code>, <code>cost.projectedMonthlySavings</code></td>
+<td>string</td>
+<td>The month so far carried to the whole month; <code>pending</code> until a day is tracked</td>
+</tr>
+<tr>
+<td><code>cost.running</code></td>
+<td><code>ResourceSnapshot</code></td>
+<td>What the workload ran when last brought up to date while awake</td>
+</tr>
+<tr>
+<td><code>cost.pricedAt</code>, <code>cost.pricedTemplateHash</code></td>
+<td>time, string</td>
+<td>When requests and list rates were last read, and the pod template then</td>
+</tr>
+<tr>
+<td><code>cost.listRates</code></td>
+<td><code>CostRates</code></td>
+<td>List rates of the nodes its pods last ran on, spot nodes at spot. Unset when its nodes have no list price</td>
+</tr>
+<tr>
+<td><code>cost.listPrice</code></td>
+<td>string</td>
+<td>Which list prices <code>listRates</code> are: <code>OnDemand</code>, <code>Spot</code>, or <code>SpotAndOnDemand</code>. Unset with <code>listRates</code></td>
+</tr>
+<tr>
+<td><code>cost.resourceReduction</code></td>
+<td><code>ResourceReduction</code></td>
+<td>What the current pause freed: <code>cpuMillis</code>, <code>memoryBytes</code>, <code>replicas</code>. Only while paused</td>
+</tr>
+</tbody>
+</table>
+<h3 id="workloadphase-values">WorkloadPhase Values<a class="headerlink" href="#workloadphase-values" title="Permanent link">&para;</a></h3>
+<p><code>Running</code>, <code>Idle</code>, <code>Pausing</code>, <code>Paused</code>, <code>Resuming</code>. A ManagedWorkload has no phase until its first reconcile. <code>Creating</code> is accepted by the schema but never set.</p>
+
+
+
+
+
+
+
+
+
+
+
+
+                
+              </article>
+            </div>
+          
+          
+<script>var target=document.getElementById(location.hash.slice(1));target&&target.name&&(target.checked=target.name.startsWith("__tabbed_"))</script>
+        </div>
+        
+          <button type="button" class="md-top md-icon" data-md-component="top" hidden>
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M13 20h-2V8l-5.5 5.5-1.42-1.42L12 4.16l7.92 7.92-1.42 1.42L13 8z"/></svg>
+  Back to top
+</button>
+        
+      </main>
+      
+        <footer class="md-footer">
+  
+  <div class="md-footer-meta md-typeset">
+    <div class="md-footer-meta__inner md-grid">
+      <div class="md-copyright">
+  
+  
+    Made with
+    <a href="https://squidfunk.github.io/mkdocs-material/" target="_blank" rel="noopener">
+      Material for MkDocs
+    </a>
+  
+</div>
+      
+    </div>
+  </div>
+</footer>
+      
+    </div>
+    <div class="md-dialog" data-md-component="dialog">
+      <div class="md-dialog__inner md-typeset"></div>
+    </div>
+    
+    
+    
+      
+      
+      <script id="__config" type="application/json">{"annotate": null, "base": "../..", "features": ["navigation.tabs", "navigation.sections", "navigation.expand", "navigation.top", "search.suggest", "search.highlight", "content.code.copy", "content.code.annotate", "content.code.select", "content.action.edit"], "search": "../../assets/javascripts/workers/search.2c215733.min.js", "tags": null, "translations": {"clipboard.copied": "Copied to clipboard", "clipboard.copy": "Copy to clipboard", "search.result.more.one": "1 more on this page", "search.result.more.other": "# more on this page", "search.result.none": "No matching documents", "search.result.one": "1 matching document", "search.result.other": "# matching documents", "search.result.placeholder": "Type to start searching", "search.result.term.missing": "Missing", "select.version": "Select version"}, "version": {"alias": true, "default": "latest", "provider": "mike"}}</script>
+    
+    
+      <script src="../../assets/javascripts/bundle.d7400e89.min.js"></script>
+      
+        <script src="../../javascripts/mathjax.js"></script>
+      
+        <script src="https://unpkg.com/mathjax@3.2.2/es5/tex-mml-chtml.js"></script>
+      
+    
+  </body>
+</html>

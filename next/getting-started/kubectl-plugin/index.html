@@ -1,0 +1,2965 @@
+
+<!doctype html>
+<html lang="en" class="no-js">
+  <head>
+    
+      <meta charset="utf-8">
+      <meta name="viewport" content="width=device-width,initial-scale=1">
+      
+        <meta name="description" content="Intelligent Kubernetes workload lifecycle management">
+      
+      
+      
+        <link rel="canonical" href="https://okedeji.io/hybernate/latest/getting-started/kubectl-plugin/">
+      
+      
+        <link rel="prev" href="../quickstart/">
+      
+      
+        <link rel="next" href="../../concepts/architecture/">
+      
+      
+        
+      
+      
+      <link rel="icon" href="../../assets/favicon.svg">
+      <meta name="generator" content="mkdocs-1.6.1, mkdocs-material-9.7.7">
+    
+    
+      
+        <title>kubectl Plugin - Hybernate</title>
+      
+    
+    
+      <link rel="stylesheet" href="../../assets/stylesheets/main.ec1eaa64.min.css">
+      
+        
+        <link rel="stylesheet" href="../../assets/stylesheets/palette.ab4e12ef.min.css">
+      
+      
+
+
+    
+    
+      
+    
+    
+      
+        
+        
+        <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+        <link rel="stylesheet" href="https://fonts.googleapis.com/css?family=Roboto:300,300i,400,400i,700,700i%7CRoboto+Mono:400,400i,700,700i&display=fallback">
+        <style>:root{--md-text-font:"Roboto";--md-code-font:"Roboto Mono"}</style>
+      
+    
+    
+      <link rel="stylesheet" href="../../stylesheets/custom.css">
+    
+    <script>__md_scope=new URL("../..",location),__md_hash=e=>[...e].reduce(((e,_)=>(e<<5)-e+_.charCodeAt(0)),0),__md_get=(e,_=localStorage,t=__md_scope)=>JSON.parse(_.getItem(t.pathname+"."+e)),__md_set=(e,_,t=localStorage,a=__md_scope)=>{try{t.setItem(a.pathname+"."+e,JSON.stringify(_))}catch(e){}}</script>
+    
+      
+
+    
+    
+  </head>
+  
+  
+    
+    
+    
+    
+    
+    <body dir="ltr" data-md-color-scheme="default" data-md-color-primary="white" data-md-color-accent="black">
+  
+    
+    <input class="md-toggle" data-md-toggle="drawer" type="checkbox" id="__drawer" autocomplete="off">
+    <input class="md-toggle" data-md-toggle="search" type="checkbox" id="__search" autocomplete="off">
+    <label class="md-overlay" for="__drawer"></label>
+    <div data-md-component="skip">
+      
+        
+        <a href="#kubectl-plugin" class="md-skip">
+          Skip to content
+        </a>
+      
+    </div>
+    <div data-md-component="announce">
+      
+    </div>
+    
+      <div data-md-color-scheme="default" data-md-component="outdated" hidden>
+        
+          <aside class="md-banner md-banner--warning">
+            <div class="md-banner__inner md-grid md-typeset">
+              
+  
+    These docs are for Hybernate 0.2.0-rc.4, a release candidate, and may change before it's released.
+  
+  <a href="../../.."><strong>Read the docs for the latest release.</strong></a>
+
+            </div>
+            <script>var el=document.querySelector("[data-md-component=outdated]"),base=new URL("../.."),outdated=__md_get("__outdated",sessionStorage,base);!0===outdated&&el&&(el.hidden=!1)</script>
+          </aside>
+        
+      </div>
+    
+    
+      
+
+<header class="md-header" data-md-component="header">
+  <nav class="md-header__inner md-grid" aria-label="Header">
+    <a href="../.." title="Hybernate" class="md-header__button md-logo" aria-label="Hybernate" data-md-component="logo">
+      
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="m20.79 13.95-2.33.62-2-1.13v-2.88l2-1.13 2.33.62.52-1.93-1.77-.47.46-1.77-1.93-.52-.62 2.33-2 1.13L13 7.38V5.12l1.71-1.71L13.29 2 12 3.29 10.71 2 9.29 3.41 11 5.12v2.26L8.5 8.82l-2-1.13-.58-2.33L4 5.88l.47 1.77-1.77.47.52 1.93 2.33-.62 2 1.13v2.89l-2 1.13-2.33-.62-.52 1.93 1.77.47L4 18.12l1.93.52.62-2.33 2-1.13L11 16.62v2.26l-1.71 1.71L10.71 22 12 20.71 13.29 22l1.41-1.41-1.7-1.71v-2.26l2.5-1.45 2 1.13.62 2.33 1.88-.51-.47-1.77 1.77-.47zM9.5 10.56 12 9.11l2.5 1.45v2.88L12 14.89l-2.5-1.45z"/></svg>
+
+    </a>
+    <label class="md-header__button md-icon" for="__drawer">
+      
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M3 6h18v2H3zm0 5h18v2H3zm0 5h18v2H3z"/></svg>
+    </label>
+    <div class="md-header__title" data-md-component="header-title">
+      <div class="md-header__ellipsis">
+        <div class="md-header__topic">
+          <span class="md-ellipsis">
+            Hybernate
+          </span>
+        </div>
+        <div class="md-header__topic" data-md-component="header-topic">
+          <span class="md-ellipsis">
+            
+              kubectl Plugin
+            
+          </span>
+        </div>
+      </div>
+    </div>
+    
+      
+    
+    
+    
+    
+      
+      
+        <label class="md-header__button md-icon" for="__search">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+        </label>
+        <div class="md-search" data-md-component="search" role="dialog">
+  <label class="md-search__overlay" for="__search"></label>
+  <div class="md-search__inner" role="search">
+    <form class="md-search__form" name="search">
+      <input type="text" class="md-search__input" name="query" aria-label="Search" placeholder="Search" autocapitalize="off" autocorrect="off" autocomplete="off" spellcheck="false" data-md-component="search-query" required>
+      <label class="md-search__icon md-icon" for="__search">
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M20 11v2H8l5.5 5.5-1.42 1.42L4.16 12l7.92-7.92L13.5 5.5 8 11z"/></svg>
+      </label>
+      <nav class="md-search__options" aria-label="Search">
+        
+        <button type="reset" class="md-search__icon md-icon" title="Clear" aria-label="Clear" tabindex="-1">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M19 6.41 17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/></svg>
+        </button>
+      </nav>
+      
+        <div class="md-search__suggest" data-md-component="search-suggest"></div>
+      
+    </form>
+    <div class="md-search__output">
+      <div class="md-search__scrollwrap" tabindex="0" data-md-scrollfix>
+        <div class="md-search-result" data-md-component="search-result">
+          <div class="md-search-result__meta">
+            Initializing search
+          </div>
+          <ol class="md-search-result__list" role="presentation"></ol>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+      
+    
+    
+      <div class="md-header__source">
+        <a href="https://github.com/okedeji/hybernate" title="Go to repository" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M173.9 397.4c0 2-2.3 3.6-5.2 3.6-3.3.3-5.6-1.3-5.6-3.6 0-2 2.3-3.6 5.2-3.6 3-.3 5.6 1.3 5.6 3.6m-31.1-4.5c-.7 2 1.3 4.3 4.3 4.9 2.6 1 5.6 0 6.2-2s-1.3-4.3-4.3-5.2c-2.6-.7-5.5.3-6.2 2.3m44.2-1.7c-2.9.7-4.9 2.6-4.6 4.9.3 2 2.9 3.3 5.9 2.6 2.9-.7 4.9-2.6 4.6-4.6-.3-1.9-3-3.2-5.9-2.9M252.8 8C114.1 8 8 113.3 8 252c0 110.9 69.8 205.8 169.5 239.2 12.8 2.3 17.3-5.6 17.3-12.1 0-6.2-.3-40.4-.3-61.4 0 0-70 15-84.7-29.8 0 0-11.4-29.1-27.8-36.6 0 0-22.9-15.7 1.6-15.4 0 0 24.9 2 38.6 25.8 21.9 38.6 58.6 27.5 72.9 20.9 2.3-16 8.8-27.1 16-33.7-55.9-6.2-112.3-14.3-112.3-110.5 0-27.5 7.6-41.3 23.6-58.9-2.6-6.5-11.1-33.3 2.6-67.9 20.9-6.5 69 27 69 27 20-5.6 41.5-8.5 62.8-8.5s42.8 2.9 62.8 8.5c0 0 48.1-33.6 69-27 13.7 34.7 5.2 61.4 2.6 67.9 16 17.7 25.8 31.5 25.8 58.9 0 96.5-58.9 104.2-114.8 110.5 9.2 7.9 17 22.9 17 46.4 0 33.7-.3 75.4-.3 83.6 0 6.5 4.6 14.4 17.3 12.1C436.2 457.8 504 362.9 504 252 504 113.3 391.5 8 252.8 8M105.2 352.9c-1.3 1-1 3.3.7 5.2 1.6 1.6 3.9 2.3 5.2 1 1.3-1 1-3.3-.7-5.2-1.6-1.6-3.9-2.3-5.2-1m-10.8-8.1c-.7 1.3.3 2.9 2.3 3.9 1.6 1 3.6.7 4.3-.7.7-1.3-.3-2.9-2.3-3.9-2-.6-3.6-.3-4.3.7m32.4 35.6c-1.6 1.3-1 4.3 1.3 6.2 2.3 2.3 5.2 2.6 6.5 1 1.3-1.3.7-4.3-1.3-6.2-2.2-2.3-5.2-2.6-6.5-1m-11.4-14.7c-1.6 1-1.6 3.6 0 5.9s4.3 3.3 5.6 2.3c1.6-1.3 1.6-3.9 0-6.2-1.4-2.3-4-3.3-5.6-2"/></svg>
+  </div>
+  <div class="md-source__repository">
+    okedeji/hybernate
+  </div>
+</a>
+      </div>
+    
+  </nav>
+  
+</header>
+    
+    <div class="md-container" data-md-component="container">
+      
+      
+        
+          
+            
+<nav class="md-tabs" aria-label="Tabs" data-md-component="tabs">
+  <div class="md-grid">
+    <ul class="md-tabs__list">
+      
+        
+  
+  
+  
+  
+    <li class="md-tabs__item">
+      <a href="../.." class="md-tabs__link">
+        
+  
+  
+    
+  
+  Home
+
+      </a>
+    </li>
+  
+
+      
+        
+  
+  
+  
+    
+  
+  
+    
+    
+      <li class="md-tabs__item md-tabs__item--active">
+        <a href="../installation/" class="md-tabs__link">
+          
+  
+  
+  Getting Started
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../concepts/architecture/" class="md-tabs__link">
+          
+  
+  
+  Concepts
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../guides/opt-in/" class="md-tabs__link">
+          
+  
+  
+  Guides
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../reference/api/" class="md-tabs__link">
+          
+  
+  
+  Reference
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../operations/monitoring/" class="md-tabs__link">
+          
+  
+  
+  Operations
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    <li class="md-tabs__item">
+      <a href="../../contributing/" class="md-tabs__link">
+        
+  
+  
+    
+  
+  Contributing
+
+      </a>
+    </li>
+  
+
+      
+    </ul>
+  </div>
+</nav>
+          
+        
+      
+      <main class="md-main" data-md-component="main">
+        <div class="md-main__inner md-grid">
+          
+            
+              
+              <div class="md-sidebar md-sidebar--primary" data-md-component="sidebar" data-md-type="navigation" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+
+  
+
+
+<nav class="md-nav md-nav--primary md-nav--lifted" aria-label="Navigation" data-md-level="0">
+  <label class="md-nav__title" for="__drawer">
+    <a href="../.." title="Hybernate" class="md-nav__button md-logo" aria-label="Hybernate" data-md-component="logo">
+      
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="m20.79 13.95-2.33.62-2-1.13v-2.88l2-1.13 2.33.62.52-1.93-1.77-.47.46-1.77-1.93-.52-.62 2.33-2 1.13L13 7.38V5.12l1.71-1.71L13.29 2 12 3.29 10.71 2 9.29 3.41 11 5.12v2.26L8.5 8.82l-2-1.13-.58-2.33L4 5.88l.47 1.77-1.77.47.52 1.93 2.33-.62 2 1.13v2.89l-2 1.13-2.33-.62-.52 1.93 1.77.47L4 18.12l1.93.52.62-2.33 2-1.13L11 16.62v2.26l-1.71 1.71L10.71 22 12 20.71 13.29 22l1.41-1.41-1.7-1.71v-2.26l2.5-1.45 2 1.13.62 2.33 1.88-.51-.47-1.77 1.77-.47zM9.5 10.56 12 9.11l2.5 1.45v2.88L12 14.89l-2.5-1.45z"/></svg>
+
+    </a>
+    Hybernate
+  </label>
+  
+    <div class="md-nav__source">
+      <a href="https://github.com/okedeji/hybernate" title="Go to repository" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M173.9 397.4c0 2-2.3 3.6-5.2 3.6-3.3.3-5.6-1.3-5.6-3.6 0-2 2.3-3.6 5.2-3.6 3-.3 5.6 1.3 5.6 3.6m-31.1-4.5c-.7 2 1.3 4.3 4.3 4.9 2.6 1 5.6 0 6.2-2s-1.3-4.3-4.3-5.2c-2.6-.7-5.5.3-6.2 2.3m44.2-1.7c-2.9.7-4.9 2.6-4.6 4.9.3 2 2.9 3.3 5.9 2.6 2.9-.7 4.9-2.6 4.6-4.6-.3-1.9-3-3.2-5.9-2.9M252.8 8C114.1 8 8 113.3 8 252c0 110.9 69.8 205.8 169.5 239.2 12.8 2.3 17.3-5.6 17.3-12.1 0-6.2-.3-40.4-.3-61.4 0 0-70 15-84.7-29.8 0 0-11.4-29.1-27.8-36.6 0 0-22.9-15.7 1.6-15.4 0 0 24.9 2 38.6 25.8 21.9 38.6 58.6 27.5 72.9 20.9 2.3-16 8.8-27.1 16-33.7-55.9-6.2-112.3-14.3-112.3-110.5 0-27.5 7.6-41.3 23.6-58.9-2.6-6.5-11.1-33.3 2.6-67.9 20.9-6.5 69 27 69 27 20-5.6 41.5-8.5 62.8-8.5s42.8 2.9 62.8 8.5c0 0 48.1-33.6 69-27 13.7 34.7 5.2 61.4 2.6 67.9 16 17.7 25.8 31.5 25.8 58.9 0 96.5-58.9 104.2-114.8 110.5 9.2 7.9 17 22.9 17 46.4 0 33.7-.3 75.4-.3 83.6 0 6.5 4.6 14.4 17.3 12.1C436.2 457.8 504 362.9 504 252 504 113.3 391.5 8 252.8 8M105.2 352.9c-1.3 1-1 3.3.7 5.2 1.6 1.6 3.9 2.3 5.2 1 1.3-1 1-3.3-.7-5.2-1.6-1.6-3.9-2.3-5.2-1m-10.8-8.1c-.7 1.3.3 2.9 2.3 3.9 1.6 1 3.6.7 4.3-.7.7-1.3-.3-2.9-2.3-3.9-2-.6-3.6-.3-4.3.7m32.4 35.6c-1.6 1.3-1 4.3 1.3 6.2 2.3 2.3 5.2 2.6 6.5 1 1.3-1.3.7-4.3-1.3-6.2-2.2-2.3-5.2-2.6-6.5-1m-11.4-14.7c-1.6 1-1.6 3.6 0 5.9s4.3 3.3 5.6 2.3c1.6-1.3 1.6-3.9 0-6.2-1.4-2.3-4-3.3-5.6-2"/></svg>
+  </div>
+  <div class="md-source__repository">
+    okedeji/hybernate
+  </div>
+</a>
+    </div>
+  
+  <ul class="md-nav__list" data-md-scrollfix>
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../.." class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Home
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+    
+  
+  
+  
+    
+    
+    
+    
+      
+        
+        
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--active md-nav__item--section md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_2" checked>
+        
+          
+          <label class="md-nav__link" for="__nav_2" id="__nav_2_label" tabindex="">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Getting Started
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_2_label" aria-expanded="true">
+          <label class="md-nav__title" for="__nav_2">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Getting Started
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../installation/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Installation
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../quickstart/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Quickstart
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+    
+  
+  
+  
+    <li class="md-nav__item md-nav__item--active">
+      
+      <input class="md-nav__toggle md-toggle" type="checkbox" id="__toc">
+      
+      
+        
+      
+      
+        <label class="md-nav__link md-nav__link--active" for="__toc">
+          
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    kubectl Plugin
+  
+
+    
+  </span>
+  
+  
+
+          <span class="md-nav__icon md-icon"></span>
+        </label>
+      
+      <a href="./" class="md-nav__link md-nav__link--active">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    kubectl Plugin
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+      
+        
+
+<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#installation" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Installation
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#scan-a-cluster" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Scan a Cluster
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Scan a Cluster">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#a-prometheus-elsewhere" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        A Prometheus elsewhere
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#exit-status" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Exit status
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#permissions" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Permissions
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#replay-the-forecast" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Replay the Forecast
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#see-what-hybernate-is-doing" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        See What Hybernate Is Doing
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="See What Hybernate Is Doing">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#share-it-as-a-web-page" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Share it as a web page
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#see-why-nodes-dont-scale-down" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        See Why Nodes Don't Scale Down
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#pause-a-workload" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Pause a Workload
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#wake-a-workload" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Wake a Workload
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#show-a-workloads-dependencies" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Show a Workload's Dependencies
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#enable-a-workload" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Enable a Workload
+      
+    </span>
+  </a>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+      
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_3" >
+        
+          
+          <label class="md-nav__link" for="__nav_3" id="__nav_3_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Concepts
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_3_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_3">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Concepts
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../concepts/architecture/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Architecture
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../concepts/lifecycle/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Lifecycle
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../concepts/forecasting/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Forecasting
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../concepts/idle-detection/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Idle Detection
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../concepts/dependencies/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Dependencies
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../concepts/wake-on-request/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Wake on Request
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../concepts/cost-tracking/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Cost Tracking
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_4" >
+        
+          
+          <label class="md-nav__link" for="__nav_4" id="__nav_4_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Guides
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_4_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_4">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Guides
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../guides/opt-in/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Opting In
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../guides/managed-workload/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    ManagedWorkload
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../guides/pause/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Pause and Resume
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../guides/cluster-autoscaler/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Cluster Autoscaler
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../guides/node-pools/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Node Pools for Real Savings
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../guides/dry-run/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Dry Run
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../guides/prometheus-signals/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Prometheus Activity
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../guides/gitops/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    GitOps tools
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../guides/autoscalers/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    HPA and KEDA
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_5" >
+        
+          
+          <label class="md-nav__link" for="__nav_5" id="__nav_5_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Reference
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_5_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_5">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Reference
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../reference/api/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    API
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../reference/helm-values/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Helm Values
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../reference/metrics/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Metrics
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../reference/labels-annotations/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Labels & Annotations
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../reference/data-and-access/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Data and Access
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../reference/security/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Security
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../reference/configuration/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Configuration
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../reference/compatibility/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Compatibility
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_6" >
+        
+          
+          <label class="md-nav__link" for="__nav_6" id="__nav_6_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Operations
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_6_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_6">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Operations
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../operations/monitoring/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Monitoring
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../operations/troubleshooting/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Troubleshooting
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../operations/upgrading/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Upgrading
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../contributing/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Contributing
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+  </ul>
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+            
+              
+              <div class="md-sidebar md-sidebar--secondary" data-md-component="sidebar" data-md-type="toc" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#installation" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Installation
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#scan-a-cluster" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Scan a Cluster
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Scan a Cluster">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#a-prometheus-elsewhere" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        A Prometheus elsewhere
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#exit-status" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Exit status
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#permissions" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Permissions
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#replay-the-forecast" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Replay the Forecast
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#see-what-hybernate-is-doing" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        See What Hybernate Is Doing
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="See What Hybernate Is Doing">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#share-it-as-a-web-page" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Share it as a web page
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#see-why-nodes-dont-scale-down" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        See Why Nodes Don't Scale Down
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#pause-a-workload" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Pause a Workload
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#wake-a-workload" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Wake a Workload
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#show-a-workloads-dependencies" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Show a Workload's Dependencies
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#enable-a-workload" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Enable a Workload
+      
+    </span>
+  </a>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+          
+          
+            <div class="md-content" data-md-component="content">
+              
+              <article class="md-content__inner md-typeset">
+                
+                  
+
+
+  
+    <a href="https://github.com/okedeji/hybernate/edit/main/docs/getting-started/kubectl-plugin.md" title="Edit this page" class="md-content__button md-icon" rel="edit">
+      
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M10 20H6V4h7v5h5v3.1l2-2V8l-6-6H6c-1.1 0-2 .9-2 2v16c0 1.1.9 2 2 2h4zm10.2-7c.1 0 .3.1.4.2l1.3 1.3c.2.2.2.6 0 .8l-1 1-2.1-2.1 1-1c.1-.1.2-.2.4-.2m0 3.9L14.1 23H12v-2.1l6.1-6.1z"/></svg>
+    </a>
+  
+  
+
+
+<h1 id="kubectl-plugin">kubectl Plugin<a class="headerlink" href="#kubectl-plugin" title="Permanent link">&para;</a></h1>
+<p>The <code>kubectl hybernate</code> plugin scans a cluster for idle workloads, replays Hybernate's forecast over their history, shows what Hybernate is doing in it and why its nodes aren't scaling down, ends dry-run for workloads you've opted in, pauses workloads on demand, and wakes paused ones.</p>
+<p><code>scan</code>, <code>forecast</code> and <code>status</code> read every namespace you can, and fall back to your kubeconfig context's namespace, with a note, when your access doesn't allow listing them all; <code>-n</code> names namespaces instead, and <code>-A</code> (<code>--all-namespaces</code>) insists on every one, failing rather than falling back. <code>pause</code>, <code>wake</code>, <code>deps</code> and <code>enable</code> work in one namespace: <code>-n</code>, or your context's, as kubectl does.</p>
+<p>Every command takes kubectl's connection flags: <code>--kubeconfig</code>, <code>--context</code>, <code>--cluster</code>, <code>--user</code>, <code>--as</code>, <code>--as-group</code>, <code>--as-uid</code>, <code>--token</code>, <code>--server</code>, <code>--certificate-authority</code>, <code>--client-certificate</code>, <code>--client-key</code>, <code>--insecure-skip-tls-verify</code>, <code>--tls-server-name</code>, <code>--proxy-url</code>, <code>--username</code>, <code>--password</code>, <code>--disable-compression</code> and <code>--request-timeout</code>. Each request to the API server gives up after 30 seconds unless <code>--request-timeout</code> sets otherwise (<code>0</code> keeps the 30 seconds, unlike kubectl, where it means no limit), so a cluster that stops answering ends a command with an error, not a hang. <code>kubectl hybernate version</code> prints the plugin's version.</p>
+<h2 id="installation">Installation<a class="headerlink" href="#installation" title="Permanent link">&para;</a></h2>
+<div class="tabbed-set tabbed-alternate" data-tabs="1:4"><input checked="checked" id="__tabbed_1_1" name="__tabbed_1" type="radio" /><input id="__tabbed_1_2" name="__tabbed_1" type="radio" /><input id="__tabbed_1_3" name="__tabbed_1" type="radio" /><input id="__tabbed_1_4" name="__tabbed_1" type="radio" /><div class="tabbed-labels"><label for="__tabbed_1_1">Homebrew</label><label for="__tabbed_1_2">Krew</label><label for="__tabbed_1_3">Download</label><label for="__tabbed_1_4">Source</label></div>
+<div class="tabbed-content">
+<div class="tabbed-block">
+<p>On macOS and Linux:</p>
+<div class="language-bash highlight"><pre><span></span><code><span id="__span-0-1"><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a>brew<span class="w"> </span>install<span class="w"> </span>okedeji/tap/kubectl-hybernate
+</span><span id="__span-0-2"><a id="__codelineno-0-2" name="__codelineno-0-2" href="#__codelineno-0-2"></a>kubectl<span class="w"> </span>hybernate<span class="w"> </span>version
+</span></code></pre></div>
+<p>Homebrew installs the newest release, or, until the first stable release, the newest release candidate, and <code>brew upgrade</code> keeps it current. For this version of the docs exactly, use Krew or a download.</p>
+</div>
+<div class="tabbed-block">
+<p>With <a href="https://krew.sigs.k8s.io/docs/user-guide/setup/install/">krew</a>, kubectl's plugin manager, installed:</p>
+<div class="language-bash highlight"><pre><span></span><code><span id="__span-1-1"><a id="__codelineno-1-1" name="__codelineno-1-1" href="#__codelineno-1-1"></a>kubectl<span class="w"> </span>krew<span class="w"> </span>install<span class="w"> </span>--manifest-url<span class="w"> </span><span class="se">\</span>
+</span><span id="__span-1-2"><a id="__codelineno-1-2" name="__codelineno-1-2" href="#__codelineno-1-2"></a><span class="w">  </span>https://github.com/okedeji/hybernate/releases/download/v0.2.0-rc.4/krew-hybernate.yaml
+</span><span id="__span-1-3"><a id="__codelineno-1-3" name="__codelineno-1-3" href="#__codelineno-1-3"></a>kubectl<span class="w"> </span>hybernate<span class="w"> </span>version
+</span></code></pre></div>
+<p>Krew installs the plugin on Linux and macOS (amd64 and arm64) and on Windows (amd64). <code>kubectl krew upgrade</code> doesn't upgrade a plugin installed from a manifest URL: to move to a later release, run <code>kubectl krew uninstall hybernate</code>, then install that release's manifest.</p>
+<div class="admonition note">
+<p class="admonition-title">Note</p>
+<p>Once the plugin is accepted into the <a href="https://github.com/kubernetes-sigs/krew-index">krew-index</a>, you'll be able to install it with just <code>kubectl krew install hybernate</code>, and upgrade it with <code>kubectl krew upgrade</code>.</p>
+</div>
+</div>
+<div class="tabbed-block">
+<p>Download the archive for your platform from the release, and put the binary on your <code>PATH</code> as <code>kubectl-hybernate</code>. On macOS and Linux:</p>
+<div class="language-bash highlight"><pre><span></span><code><span id="__span-2-1"><a id="__codelineno-2-1" name="__codelineno-2-1" href="#__codelineno-2-1"></a><span class="nv">os</span><span class="o">=</span><span class="k">$(</span>uname<span class="w"> </span>-s<span class="w"> </span><span class="p">|</span><span class="w"> </span>tr<span class="w"> </span><span class="s1">'[:upper:]'</span><span class="w"> </span><span class="s1">'[:lower:]'</span><span class="k">)</span>
+</span><span id="__span-2-2"><a id="__codelineno-2-2" name="__codelineno-2-2" href="#__codelineno-2-2"></a><span class="nv">arch</span><span class="o">=</span><span class="k">$(</span>uname<span class="w"> </span>-m<span class="w"> </span><span class="p">|</span><span class="w"> </span>sed<span class="w"> </span>-e<span class="w"> </span><span class="s1">'s/x86_64/amd64/'</span><span class="w"> </span>-e<span class="w"> </span><span class="s1">'s/aarch64/arm64/'</span><span class="k">)</span>
+</span><span id="__span-2-3"><a id="__codelineno-2-3" name="__codelineno-2-3" href="#__codelineno-2-3"></a>curl<span class="w"> </span>-fLO<span class="w"> </span><span class="s2">"https://github.com/okedeji/hybernate/releases/download/v0.2.0-rc.4/kubectl-hybernate-</span><span class="si">${</span><span class="nv">os</span><span class="si">}</span><span class="s2">-</span><span class="si">${</span><span class="nv">arch</span><span class="si">}</span><span class="s2">.tar.gz"</span>
+</span><span id="__span-2-4"><a id="__codelineno-2-4" name="__codelineno-2-4" href="#__codelineno-2-4"></a>tar<span class="w"> </span>xzf<span class="w"> </span><span class="s2">"kubectl-hybernate-</span><span class="si">${</span><span class="nv">os</span><span class="si">}</span><span class="s2">-</span><span class="si">${</span><span class="nv">arch</span><span class="si">}</span><span class="s2">.tar.gz"</span>
+</span><span id="__span-2-5"><a id="__codelineno-2-5" name="__codelineno-2-5" href="#__codelineno-2-5"></a>sudo<span class="w"> </span>install<span class="w"> </span><span class="s2">"kubectl-hybernate-</span><span class="si">${</span><span class="nv">os</span><span class="si">}</span><span class="s2">-</span><span class="si">${</span><span class="nv">arch</span><span class="si">}</span><span class="s2">"</span><span class="w"> </span>/usr/local/bin/kubectl-hybernate
+</span><span id="__span-2-6"><a id="__codelineno-2-6" name="__codelineno-2-6" href="#__codelineno-2-6"></a>kubectl<span class="w"> </span>hybernate<span class="w"> </span>version
+</span></code></pre></div>
+<p>On Windows, download <code>kubectl-hybernate-windows-amd64.tar.gz</code> from the <a href="https://github.com/okedeji/hybernate/releases/tag/v0.2.0-rc.4">release</a>, extract it with <code>tar xzf</code>, and rename <code>kubectl-hybernate-windows-amd64.exe</code> to <code>kubectl-hybernate.exe</code> in a folder on your <code>PATH</code>. To check that an archive came from the release workflow, see <a href="../../reference/security/#verifying-a-release">Verifying a release</a>.</p>
+</div>
+<div class="tabbed-block">
+<div class="language-bash highlight"><pre><span></span><code><span id="__span-3-1"><a id="__codelineno-3-1" name="__codelineno-3-1" href="#__codelineno-3-1"></a>git<span class="w"> </span>clone<span class="w"> </span>https://github.com/okedeji/hybernate.git
+</span><span id="__span-3-2"><a id="__codelineno-3-2" name="__codelineno-3-2" href="#__codelineno-3-2"></a><span class="nb">cd</span><span class="w"> </span>hybernate
+</span><span id="__span-3-3"><a id="__codelineno-3-3" name="__codelineno-3-3" href="#__codelineno-3-3"></a>make<span class="w"> </span>build-plugin
+</span><span id="__span-3-4"><a id="__codelineno-3-4" name="__codelineno-3-4" href="#__codelineno-3-4"></a><span class="c1"># Binary is at bin/kubectl-hybernate</span>
+</span></code></pre></div>
+</div>
+</div>
+</div>
+<h2 id="scan-a-cluster">Scan a Cluster<a class="headerlink" href="#scan-a-cluster" title="Permanent link">&para;</a></h2>
+<div class="language-bash highlight"><pre><span></span><code><span id="__span-4-1"><a id="__codelineno-4-1" name="__codelineno-4-1" href="#__codelineno-4-1"></a>kubectl<span class="w"> </span>hybernate<span class="w"> </span>scan
+</span></code></pre></div>
+<div class="language-text highlight"><pre><span></span><code><span id="__span-5-1"><a id="__codelineno-5-1" name="__codelineno-5-1" href="#__codelineno-5-1"></a>staging (EKS us-east-1): 214 workloads in 38 namespaces
+</span><span id="__span-5-2"><a id="__codelineno-5-2" name="__codelineno-5-2" href="#__codelineno-5-2"></a>Node autoscaler: Karpenter (consolidates when underutilized after 1m)
+</span><span id="__span-5-3"><a id="__codelineno-5-3" name="__codelineno-5-3" href="#__codelineno-5-3"></a>What pausing frees comes off the bill only as nodes scale down.
+</span><span id="__span-5-4"><a id="__codelineno-5-4" name="__codelineno-5-4" href="#__codelineno-5-4"></a>History: the last 7 days, from monitoring/prometheus-operated
+</span><span id="__span-5-5"><a id="__codelineno-5-5" name="__codelineno-5-5" href="#__codelineno-5-5"></a>
+</span><span id="__span-5-6"><a id="__codelineno-5-6" name="__codelineno-5-6" href="#__codelineno-5-6"></a>  Hybernate has 12 workloads paused right now, freeing $1.84 an hour.
+</span><span id="__span-5-7"><a id="__codelineno-5-7" name="__codelineno-5-7" href="#__codelineno-5-7"></a>  Hybernate has freed $96 this month pausing 14 live workloads, and saved $71 of it.
+</span><span id="__span-5-8"><a id="__codelineno-5-8" name="__codelineno-5-8" href="#__codelineno-5-8"></a>  3 workloads are in dry-run: measured by Hybernate since starting, they would have slept 312 hours, freeing $41,
+</span><span id="__span-5-9"><a id="__codelineno-5-9" name="__codelineno-5-9" href="#__codelineno-5-9"></a>  about $140 a month.
+</span><span id="__span-5-10"><a id="__codelineno-5-10" name="__codelineno-5-10" href="#__codelineno-5-10"></a>  4 workloads are scaled to zero by hand; Hybernate can pause them while idle and wake them on the
+</span><span id="__span-5-11"><a id="__codelineno-5-11" name="__codelineno-5-11" href="#__codelineno-5-11"></a>  next request instead.
+</span><span id="__span-5-12"><a id="__codelineno-5-12" name="__codelineno-5-12" href="#__codelineno-5-12"></a>  61 workloads are idle right now, reserving 48.0 vCPU and 190.0 GiB of memory.
+</span><span id="__span-5-13"><a id="__codelineno-5-13" name="__codelineno-5-13" href="#__codelineno-5-13"></a>  They cost $3,180/month while running, $4.36 an hour: each hour asleep frees that.
+</span><span id="__span-5-14"><a id="__codelineno-5-14" name="__codelineno-5-14" href="#__codelineno-5-14"></a>  Replaying the last 7 days, Hybernate would have paused 58 of 190 unmanaged workloads for 6,120 hours in all,
+</span><span id="__span-5-15"><a id="__codelineno-5-15" name="__codelineno-5-15" href="#__codelineno-5-15"></a>  and freed $1,240: about $5,380/month.
+</span><span id="__span-5-16"><a id="__codelineno-5-16" name="__codelineno-5-16" href="#__codelineno-5-16"></a>  Not counted: 4 scaled to zero by hand and 1 without CPU history to replay.
+</span><span id="__span-5-17"><a id="__codelineno-5-17" name="__codelineno-5-17" href="#__codelineno-5-17"></a>
+</span><span id="__span-5-18"><a id="__codelineno-5-18" name="__codelineno-5-18" href="#__codelineno-5-18"></a>  NAMESPACE    WORKLOAD               STATE                BECAUSE                                                  COST/MO   FREED THIS MONTH   SAVED   COULD SLEEP   WAKES   COULD FREE/MO
+</span><span id="__span-5-19"><a id="__codelineno-5-19" name="__codelineno-5-19" href="#__codelineno-5-19"></a>  preview-42   statefulset/postgres   idle (unmanaged)     CPU under 1% of its request; last deployed 23 days ago   $140      -                  -       167h          0       $139
+</span><span id="__span-5-20"><a id="__codelineno-5-20" name="__codelineno-5-20" href="#__codelineno-5-20"></a>  preview-7    deployment/api         idle (dry-run)       no activity for 5h; measuring since Oct 1                $96       -                  -       41h           4       $40
+</span><span id="__span-5-21"><a id="__codelineno-5-21" name="__codelineno-5-21" href="#__codelineno-5-21"></a>  preview-3    deployment/web         paused (live)        paused 3h ago                                            $48       $12                $9      -             -       -
+</span><span id="__span-5-22"><a id="__codelineno-5-22" name="__codelineno-5-22" href="#__codelineno-5-22"></a>  preview-9    deployment/demo        paused (unmanaged)   scaled to zero, not by Hybernate                         $0        -                  -       -             -       -
+</span><span id="__span-5-23"><a id="__codelineno-5-23" name="__codelineno-5-23" href="#__codelineno-5-23"></a>  payments     deployment/ledger      active (unmanaged)   CPU 64% of its request                                   $210      -                  -       0h            0       $0
+</span><span id="__span-5-24"><a id="__codelineno-5-24" name="__codelineno-5-24" href="#__codelineno-5-24"></a>  ...
+</span><span id="__span-5-25"><a id="__codelineno-5-25" name="__codelineno-5-25" href="#__codelineno-5-25"></a>
+</span><span id="__span-5-26"><a id="__codelineno-5-26" name="__codelineno-5-26" href="#__codelineno-5-26"></a>Notes:
+</span><span id="__span-5-27"><a id="__codelineno-5-27" name="__codelineno-5-27" href="#__codelineno-5-27"></a>  - 2 workloads set no CPU requests, so their use can't be measured: kube-tools/agent, ops/exporter
+</span><span id="__span-5-28"><a id="__codelineno-5-28" name="__codelineno-5-28" href="#__codelineno-5-28"></a>  - 23 infrastructure workloads are left out of the totals and next steps: monitoring (9), argocd (7), ingress-nginx (3) and 2 more. Hybernate never pauses Kubernetes' own workloads or itself; anything else, infrastructure included, pauses only if you opt it in
+</span><span id="__span-5-29"><a id="__codelineno-5-29" name="__codelineno-5-29" href="#__codelineno-5-29"></a>  - the history replay sees CPU and rollouts only; requests and activity annotations aren't in Prometheus, so a workload used with little CPU can look like it would sleep more than it would
+</span><span id="__span-5-30"><a id="__codelineno-5-30" name="__codelineno-5-30" href="#__codelineno-5-30"></a>
+</span><span id="__span-5-31"><a id="__codelineno-5-31" name="__codelineno-5-31" href="#__codelineno-5-31"></a>Costs use the on-demand and spot list prices of the cluster's 4 node types (m6i.xlarge, m6i.2xlarge, r6i.xlarge and 1 more, AWS us-east-1). 6 workloads run on spot nodes, priced at spot.
+</span><span id="__span-5-32"><a id="__codelineno-5-32" name="__codelineno-5-32" href="#__codelineno-5-32"></a>Pass --cpu-price and --memory-price for yours.
+</span></code></pre></div>
+<p><code>scan</code> only reads, with your own kubeconfig, and needs nothing installed in the cluster. It works before you install Hybernate, and after: once Hybernate manages a workload, the scan shows what it has paused and reads its activity clock.</p>
+<p><strong>How it decides a workload is idle</strong>, using the same signals Hybernate uses to pause:</p>
+<ul>
+<li><strong>Workloads Hybernate manages:</strong> the activity clock it keeps for them, which already combines every source configured, including Prometheus queries. Idle means no activity for <code>idleAfter</code>; the scan says when Hybernate is holding one awake, for example for its dependents.</li>
+<li><strong>Other workloads:</strong> what the scan can see without Hybernate. Any of these makes a workload active: CPU above <code>--cpu-threshold</code> (10% by default) of what it requests, a rollout within <code>--idle-after</code> (1h by default), a <code>hybernate.io/last-activity</code> annotation within it, or a <code>hybernate.io/active-until</code> in the future. Otherwise, with CPU measured, it's idle.</li>
+<li><strong>Workloads it can't judge</strong>, because they set no CPU requests or have no metrics yet, are listed in the notes rather than the table, and left out of the headline's totals. Without metrics-server, as on EKS by default, an unmanaged workload with CPU history is judged from it instead: its state is where replaying its history left the activity clock, and BECAUSE says so.</li>
+<li><strong>Replicas set from Git:</strong> a workload whose replicas a GitOps tool (Argo CD, Flux, Fleet, kapp or Kluctl) last set, from the field managers the API server records, is listed in the notes by tool: its tool would undo every pause until it's told to leave the replicas to Hybernate, a one-time setting given in <a href="../../guides/gitops/">GitOps tools</a>. Once it's told, the workload isn't listed: for Argo CD, the scan reads that from the workload's Application and <code>argocd-cm</code>, as <a href="#enable-a-workload"><code>enable</code></a> does, and when your access doesn't allow reading them, the note says so and lists the workload as one to check. JSON gives the tool in each workload's <code>replicasFromGit</code>, with <code>gitOpsLeavesReplicas</code> once it's told, and <code>gitOpsUnchecked</code> saying why that couldn't be read. The next steps never suggest one, since its tool would revert a label put on by hand too.</li>
+<li>
+<p><strong>The cluster's own infrastructure</strong> is left out of the table, the totals and the next steps, and a note says how many workloads in which namespaces. The first line counts only the namespaces the listed workloads are in, so a cluster with 15 namespaces, 12 of them infrastructure, reads <code>14 workloads in 3 namespaces</code>; JSON's <code>namespaces</code> is every namespace read. JSON and YAML list the infrastructure in <code>platform</code>, each with what it is. Two kinds are left out, for different reasons:</p>
+<ul>
+<li><strong>What Hybernate never pauses:</strong> Kubernetes' namespaces (<code>kube-*</code>, and <code>openshift-*</code>, <code>cattle-*</code>, <code>gke-*</code> and <code>gmp-*</code>), the namespace Hybernate runs in, found by its Deployment's <code>app.kubernetes.io/name: hybernate</code> label, and, in any namespace, the operator's and the doorman's own Deployments, found by their <code>control-plane: controller-manager</code> or <code>control-plane: doorman</code> label with <code>app.kubernetes.io/name: hybernate</code> or a <code>hybernate</code> <code>helm.sh/chart</code> label. Apps' dependencies on these aren't listed, as Hybernate never needs to wake them.</li>
+<li><strong>What the scan guesses nobody means to pause:</strong> well-known infrastructure such as ingress controllers, cert-manager, Vault, Argo CD, Flux, service meshes, policy engines and monitoring, by their usual namespaces (<code>ingress-nginx</code>, <code>cert-manager</code>, <code>vault</code>, <code>argocd</code>, <code>flux-system</code>, <code>istio-system</code>, <code>linkerd</code>, <code>gatekeeper-system</code>, <code>kyverno</code>, <code>monitoring</code> and others) or their <code>app.kubernetes.io/name</code>, <code>app.kubernetes.io/part-of</code>, <code>app</code>, <code>k8s-app</code> or <code>helm.sh/chart</code> labels. This is only the estimate's exclusion, not an operator rule: opted in, Hybernate pauses these like any app, so apps' dependencies on them are still listed, and none is guessed at in a namespace labelled <code>hybernate.io/managed=true</code>, such as a preview environment with its own Vault, or for a workload Hybernate already manages.</li>
+</ul>
+<p>A namespace labelled <code>hybernate.io/allow-protected=true</code> is scanned like any other, apart from Hybernate's own Deployments.</p>
+</li>
+</ul>
+<p><strong>History from Prometheus:</strong> when the cluster has a Prometheus, the scan replays Hybernate's activity clock over the last week of each workload's CPU and rollouts, as if Hybernate had managed it with <code>--idle-after</code> and <code>--cpu-threshold</code>:</p>
+<ul>
+<li>It finds Prometheus by the Services the Prometheus Operator (and so kube-prometheus-stack) and the community Helm chart create, and queries it through the API server's service proxy, so there's no port-forward or URL to give. The <code>History:</code> line under the node autoscaler, and the report's subtitle, name the one it read and how much history it replayed (JSON <code>history.prometheus</code> and <code>history.hours</code>).</li>
+<li><strong>With several Prometheus</strong>, it reads the one with the most of the window's CPU history: one with cAdvisor's container CPU from the start of the window, then one with any, then any that answers. Among equals, it prefers one in a monitoring namespace (<code>monitoring</code>, <code>prometheus</code>, <code>observability</code>, <code>kube-prometheus-stack</code>, <code>cattle-monitoring-system</code>, <code>openshift-monitoring</code>, in that order), then one with a usual name (<code>prometheus-operated</code>, <code>kube-prometheus-stack-prometheus</code>, <code>prometheus-server</code>, <code>prometheus</code>, <code>prometheus-k8s</code>), then the Prometheus Operator's Service over the community chart's, then the first by namespace and name, and it tries five at most. The <code>History:</code> line lists the others it found (JSON <code>history.others</code>).</li>
+<li><strong>To choose another</strong>, <code>--prometheus-service namespace/name</code> reads that Service through the API server the same way, whether the scan found it or not, on its API port or the one you add, as in <code>monitoring/thanos-query:http</code>. <code>--prometheus-url</code> reads one outside the cluster, such as Thanos or Mimir; see <a href="#a-prometheus-elsewhere">A Prometheus elsewhere</a>. Either fails the scan if it can't be read, rather than carrying on without history.</li>
+<li>It reads CPU per container from cAdvisor's <code>container_cpu_usage_seconds_total</code>, which every common setup scrapes, at five-minute steps (coarser for windows over about 34 days), and matches pods to their workload by name. Sidecars added at pod creation are left out of activity, as for the activity clock.</li>
+<li>A step counts as active when the workload's own CPU is above the threshold of what its running pods request, as the operator counts it, or it rolled out. After <code>--idle-after</code> with none, it would be asleep until the next, which is one wake.</li>
+<li><strong>STATE</strong> is right now: idle means no activity for <code>--idle-after</code>, so Hybernate would pause it now. Each money and history cell has one source:<ul>
+<li><strong>COULD SLEEP</strong> and <strong>WAKES</strong> are what Hybernate measured for a workload in dry-run, since dry-run started (BECAUSE says when), and for an unmanaged workload come from the replay: had Hybernate been managing it, the running hours it would have been paused, after waiting <code>--idle-after</code> from each activity, and how many times activity would have arrived while it was asleep, each starting it again and making whoever caused it wait.</li>
+<li><strong>FREED THIS MONTH</strong>, for live workloads, is what Hybernate has freed pausing it since the 1st, from the ManagedWorkload's <code>status.cost.freedThisMonth</code>, priced at the rates Hybernate uses for the workload, and <strong>SAVED</strong> the part of it that came off the bill as nodes scaled down (<code>savedThisMonth</code>). A workload put back in dry-run keeps what it freed and saved while live; dry-run's would-be pauses never add to them.</li>
+<li><strong>COULD FREE/MO</strong>, for workloads Hybernate doesn't pause yet, is what pausing would free a month: what Hybernate measured for one in dry-run, the same figure its BECAUSE line gives, or what the replay estimates for an unmanaged one. The scan can't know what of it would be saved before Hybernate runs, so it never calls it a saving.</li>
+</ul>
+</li>
+<li>A live workload isn't replayed: while it's paused, there are no pods for Prometheus to record. Its pauses are what FREED THIS MONTH counts.</li>
+<li>The headline's replay count, such as <code>0 of 13 unmanaged workloads would have slept</code>, is of the unmanaged workloads replayed. When the table lists others it doesn't count, a <code>Not counted:</code> line says which and why, as the report's summary does: ones that won't pause (<code>1 that won't pause (PVCs deleted on scale-down)</code>), in protected namespaces, scaled to zero by hand, or without CPU history to replay.</li>
+<li><strong>Node autoscaler,</strong> under the first line, is what would turn what pausing frees into savings by removing nodes, found as <a href="#see-why-nodes-dont-scale-down"><code>nodes</code></a> finds it (JSON <code>nodeAutoscaler</code>): Karpenter, Cluster Autoscaler, EKS Auto Mode or GKE Autopilot; <code>none found</code>, when nothing in the cluster will remove nodes, so nothing pausing frees comes off the bill; or <code>unknown</code>, when your access doesn't allow reading what would tell.</li>
+<li>A Deployment's history is its pods' CPU, including pods of ReplicaSets since deleted, which are known by the names Kubernetes gives them, <code>&lt;deployment&gt;-&lt;hash&gt;-&lt;suffix&gt;</code>. A Deployment whose name is long enough for Kubernetes to cut its pods' names short has only its current ReplicaSets' pods replayed.</li>
+<li>Requests and activity annotations aren't recorded in Prometheus, so the replay only knows CPU and rollouts, and a workload used with little CPU can look like it would sleep more than it would. Requests and prices are today's.</li>
+<li>History gets the first 60% of <code>--timeout</code>, so a Prometheus or Thanos too slow for the window can't use up the whole scan. Each namespace's reads from the API server come before its history query and share that time, and a namespace reached once it's spent isn't queried at all. A namespace's query may take whatever is left of that time, however long, and isn't cut short by <code>--request-timeout</code>. Namespaces whose history isn't read in that time are judged from CPU right now, and the notes name them and say a longer <code>--timeout</code> gives history more time, or <code>--window 0</code> skips it. When Prometheus, or the API server's proxy in front of it, gives up on a query by itself with time left, a longer <code>--timeout</code> wouldn't help: the notes name those namespaces and suggest a shorter <code>--window</code>.</li>
+<li>If Prometheus has less history than the window, the replay covers what it has, and says how much wherever it names the window, such as "Replaying the last 30 minutes", with a note that it's shorter than asked. Under a day of it can't show a day's pattern, so the headline says so and to run the scan again after a few days, in the terminal and the report. Without Prometheus, or without permission to reach it, the scan judges from CPU right now, and says why.</li>
+</ul>
+<p><strong>Dependencies:</strong> the scan reads each workload's environment variables, from literal values and ConfigMaps, and lists the workloads they point at:</p>
+<div class="language-text highlight"><pre><span></span><code><span id="__span-6-1"><a id="__codelineno-6-1" name="__codelineno-6-1" href="#__codelineno-6-1"></a>  3 dependencies found, and what Hybernate does with each:
+</span><span id="__span-6-2"><a id="__codelineno-6-2" name="__codelineno-6-2" href="#__codelineno-6-2"></a>  preview-42   deployment/checkout-api   -&gt;   statefulset/postgres         DATABASE_URL   declared; woken and held with it
+</span><span id="__span-6-3"><a id="__codelineno-6-3" name="__codelineno-6-3" href="#__codelineno-6-3"></a>  preview-42   deployment/checkout-api   -&gt;   messaging/statefulset/nats   NATS_URL       not managed, so never paused
+</span><span id="__span-6-4"><a id="__codelineno-6-4" name="__codelineno-6-4" href="#__codelineno-6-4"></a>  preview-42   deployment/worker         -&gt;   statefulset/postgres         PGHOST         woken with it once both are managed
+</span></code></pre></div>
+<ul>
+<li>An address counts when it names a Service in a scanned namespace, in any form cluster DNS gives it (<code>postgres</code>, <code>postgres.preview-42</code>, <code>postgres.preview-42.svc.cluster.local</code>, or a headless Service's pod, <code>postgres-0.postgres-hl</code>), inside a URL, a <code>host:port</code>, or a list of either. The workload is the one the Service's selector picks. A bare word on its own, such as <code>MODE=postgres</code>, isn't taken for an address.</li>
+<li>Variable names don't matter, and Service names come from the cluster, not a list the scan keeps.</li>
+<li>An address is shown as its scheme, host and port alone, such as <code>postgres://postgres:5432</code>: a user, a password, a path and a query string can each hold a credential, so none of them is. The terminal shows the variable each dependency was found in; only JSON and YAML carry the address itself.</li>
+<li>Hybernate wakes a dependency with the workload that needs it, so the first request doesn't wait for it too, and keeps it up while that workload is, when it manages both; see <a href="../../concepts/dependencies/">Dependencies</a>. The last column says what it does with each: <strong>woken with it once both are managed</strong>, for a workload it doesn't manage yet; <strong>not managed, so never paused</strong>, for a dependency it doesn't manage, which stays up anyway; <strong>woken and held with it</strong>, learned from the workload's environment or a wake; <strong>declared; woken and held with it</strong>, with <code>hybernate.io/depends-on</code>; or <strong>not learned yet</strong>, for one Hybernate manages but hasn't learned. Before Hybernate manages any of the workloads that need them, every dependency would say the first, so the scan and the report say it once above the list and leave the column out.</li>
+<li>Secrets are never read, so addresses set there, and ones built in code or read from files, aren't found. The notes say which workloads take variables from Secrets.</li>
+</ul>
+<p><strong>What the numbers mean:</strong></p>
+<ul>
+<li>Costs are what the workloads' requests cost while running, sidecars included, at the list price of the nodes each one's pods run on, from their instance type and region, spot nodes at their spot price; see <a href="../../concepts/cost-tracking/#prices">Prices</a>. A workload with no pod on a node is priced where Hybernate last saw it run, or at the cluster's most common node type. Nodes Hybernate has no list price for, and every workload when your access doesn't allow listing nodes, use assumed prices from AWS on-demand in us-east-1, and the report says which.</li>
+<li><code>--cpu-price</code> and <code>--memory-price</code> set your own prices, which price every workload in place of list prices: use them for discounts, savings plans, or negotiated rates.</li>
+<li>Spot and preemptible nodes are priced at their type's spot price, and the report says how many workloads run on them. A spot node of a type its provider doesn't sell as spot is priced at on-demand, and the report names those workloads' node types and says they cost less than shown. JSON gives each workload's <code>onSpot</code> and <code>spotAtOnDemand</code>, and each node type in <code>nodePrices</code> its <code>spot</code> and <code>atSpot</code>; see <a href="../../concepts/cost-tracking/#spot-nodes">Spot nodes</a>.</li>
+<li>Without history, the scan shows what idle workloads cost and what each hour asleep frees, not what pausing would free a month: from one moment it can't tell how often a workload would be woken. To measure it once Hybernate is installed, label workloads <code>hybernate.io/managed=true</code> and annotate them <code>hybernate.io/dry-run=true</code>: Hybernate measures how often it would have paused them, for how long, and what that would have freed, without ever pausing them. The scan then shows it in each one's COULD SLEEP, WAKES, and COULD FREE/MO, with BECAUSE saying since when, a total in the headline, and the <code>kubectl hybernate enable</code> command to start pausing. It's from Hybernate's own activity clock, which sees more than the history replay, so it's what to judge going live by.</li>
+<li>An hour asleep frees capacity; it becomes money only when a node autoscaler removes it. <code>kubectl hybernate nodes</code> shows what keeps nodes from scaling down.</li>
+<li>BECAUSE gives the evidence for the state, then facts such as when a workload was last deployed, if a week or more ago.</li>
+<li>A StatefulSet whose <code>persistentVolumeClaimRetentionPolicy.whenScaled</code> is <code>Delete</code> would lose its data to a pause, so Hybernate refuses to pause it: BECAUSE says <code>won't pause: PVCs deleted on scale-down</code> (JSON <code>wontPause</code>), and it's left out of what pausing could free and of next steps.</li>
+</ul>
+<p><strong>The HTML report:</strong> run in a terminal, the scan also writes the same report as a web page and opens it in your browser. It's one self-contained file, with no scripts, fonts, or images loaded from anywhere (its sorting and filtering are built in), so it can be emailed or attached, and it prints cleanly to PDF. It's written for whoever you send it to:</p>
+<ul>
+<li>the node autoscaler, under the prices</li>
+<li>two headline figures. Until Hybernate has paused anything, they're the opportunity: what pausing could free a month (measured for dry-run workloads, estimated from history for unmanaged ones), as a share of what those workloads cost, "over the same time" when history was replayed, since a replayed workload is measured against what it cost over the history, with the pods it ran then, or, without either, what's idle right now costs while running, the most pausing it could free; and beside it, what the workloads cost a month. A zero says why: with under a day of history, short of the window, that it's too little history yet, so run the scan again after a few days. Once Hybernate has paused workloads, the first is what it has freed this month, with what of it was saved, and the second what pausing could free, while there's something to</li>
+<li>four facts: how many workloads in how many namespaces (what they cost, once that's left the headline), what's idle right now, how many unmanaged workloads would have slept and which listed ones the replay doesn't count (with history) or what idle workloads cost an hour (without), and how many Hybernate manages</li>
+<li>a table by namespace (with a filter), every workload scanned that the scan could judge, with the same columns as the terminal (sortable, with a filter), and the dependencies found</li>
+<li>what the numbers mean, in plain words, and the next steps</li>
+</ul>
+<p>Dependency addresses are left out of the page, since it's meant to be passed around; JSON and YAML keep them. The report file is created readable only by you. A scan covers one cluster, the current kubeconfig context or the one you name with <code>--context</code>.</p>
+<p>The file goes to your temporary directory unless you pass <code>--html FILE</code>. It opens only when the table is shown in a terminal on a machine with a desktop; piped output, <code>-o json</code>, CI, and SSH sessions (unless X forwarding gives a Linux one a display) get no report unless you ask for one with <code>--html</code>. <code>--open=false</code> keeps it from opening.</p>
+<p><strong>Cluster names:</strong> EKS and GKE contexts are shortened to the cluster with its provider and region, such as <code>staging (EKS us-east-1)</code> for <code>arn:aws:eks:us-east-1:123456789012:cluster/staging</code>. Any other context is shown as named. JSON and YAML keep the full context name.</p>
+<p><strong>STATE</strong> is what the workload is doing right now, and the bracket how Hybernate is involved: <strong>unmanaged</strong>, not at all; <strong>dry-run</strong>, it measures but never pauses; <strong>live</strong>, it pauses the workload while idle; <strong>protected</strong>, its namespace is labelled <code>hybernate.io/protected</code>, so Hybernate won't manage it, and it's left out of what pausing could free and of the next steps. The operator's <code>protectedNamespaces</code> patterns aren't visible to the scan, which only sees the label. A workload someone scaled to zero shows as <code>paused (unmanaged)</code>: it costs nothing now, but nothing will wake it on a request, and the headline counts it apart from what Hybernate has paused. Workloads labelled <code>hybernate.io/ignore=true</code> aren't listed.</p>
+<div class="language-bash highlight"><pre><span></span><code><span id="__span-7-1"><a id="__codelineno-7-1" name="__codelineno-7-1" href="#__codelineno-7-1"></a><span class="c1"># Another cluster in your kubeconfig</span>
+</span><span id="__span-7-2"><a id="__codelineno-7-2" name="__codelineno-7-2" href="#__codelineno-7-2"></a>kubectl<span class="w"> </span>hybernate<span class="w"> </span>scan<span class="w"> </span>--context<span class="w"> </span>staging
+</span><span id="__span-7-3"><a id="__codelineno-7-3" name="__codelineno-7-3" href="#__codelineno-7-3"></a>
+</span><span id="__span-7-4"><a id="__codelineno-7-4" name="__codelineno-7-4" href="#__codelineno-7-4"></a><span class="c1"># Some namespaces, as JSON or YAML, at your own prices</span>
+</span><span id="__span-7-5"><a id="__codelineno-7-5" name="__codelineno-7-5" href="#__codelineno-7-5"></a>kubectl<span class="w"> </span>hybernate<span class="w"> </span>scan<span class="w"> </span>-n<span class="w"> </span>preview-42<span class="w"> </span>-n<span class="w"> </span>preview-918<span class="w"> </span>-o<span class="w"> </span>json<span class="w"> </span>--cpu-price<span class="w"> </span><span class="m">0</span>.045<span class="w"> </span>--memory-price<span class="w"> </span><span class="m">0</span>.006
+</span><span id="__span-7-6"><a id="__codelineno-7-6" name="__codelineno-7-6" href="#__codelineno-7-6"></a>
+</span><span id="__span-7-7"><a id="__codelineno-7-7" name="__codelineno-7-7" href="#__codelineno-7-7"></a><span class="c1"># A month of history from a Thanos that holds many clusters, with a 2h idleAfter</span>
+</span><span id="__span-7-8"><a id="__codelineno-7-8" name="__codelineno-7-8" href="#__codelineno-7-8"></a>kubectl<span class="w"> </span>hybernate<span class="w"> </span>scan<span class="w"> </span>--window<span class="w"> </span>30d<span class="w"> </span>--idle-after<span class="w"> </span>2h<span class="w"> </span>--prometheus-url<span class="w"> </span>https://thanos.example.com<span class="w"> </span><span class="se">\</span>
+</span><span id="__span-7-9"><a id="__codelineno-7-9" name="__codelineno-7-9" href="#__codelineno-7-9"></a><span class="w">  </span>--prometheus-selector<span class="w"> </span><span class="s1">'cluster="staging"'</span>
+</span><span id="__span-7-10"><a id="__codelineno-7-10" name="__codelineno-7-10" href="#__codelineno-7-10"></a>
+</span><span id="__span-7-11"><a id="__codelineno-7-11" name="__codelineno-7-11" href="#__codelineno-7-11"></a><span class="c1"># CPU right now only</span>
+</span><span id="__span-7-12"><a id="__codelineno-7-12" name="__codelineno-7-12" href="#__codelineno-7-12"></a>kubectl<span class="w"> </span>hybernate<span class="w"> </span>scan<span class="w"> </span>--window<span class="w"> </span><span class="m">0</span>
+</span><span id="__span-7-13"><a id="__codelineno-7-13" name="__codelineno-7-13" href="#__codelineno-7-13"></a>
+</span><span id="__span-7-14"><a id="__codelineno-7-14" name="__codelineno-7-14" href="#__codelineno-7-14"></a><span class="c1"># Save the report to send around</span>
+</span><span id="__span-7-15"><a id="__codelineno-7-15" name="__codelineno-7-15" href="#__codelineno-7-15"></a>kubectl<span class="w"> </span>hybernate<span class="w"> </span>scan<span class="w"> </span>--html<span class="w"> </span>workload-scan.html
+</span><span id="__span-7-16"><a id="__codelineno-7-16" name="__codelineno-7-16" href="#__codelineno-7-16"></a>
+</span><span id="__span-7-17"><a id="__codelineno-7-17" name="__codelineno-7-17" href="#__codelineno-7-17"></a><span class="c1"># The terminal only</span>
+</span><span id="__span-7-18"><a id="__codelineno-7-18" name="__codelineno-7-18" href="#__codelineno-7-18"></a>kubectl<span class="w"> </span>hybernate<span class="w"> </span>scan<span class="w"> </span>--open<span class="o">=</span><span class="nb">false</span>
+</span></code></pre></div>
+<table>
+<thead>
+<tr>
+<th>Flag</th>
+<th>Short</th>
+<th>Default</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>--namespace</code></td>
+<td><code>-n</code></td>
+<td>all you can read</td>
+<td>Namespace to scan; repeat for several</td>
+</tr>
+<tr>
+<td><code>--all-namespaces</code></td>
+<td><code>-A</code></td>
+<td></td>
+<td>Read every namespace, and fail rather than fall back when your access doesn't allow that. Can't be combined with <code>-n</code></td>
+</tr>
+<tr>
+<td><code>--exclude-namespaces</code></td>
+<td></td>
+<td><code>kube-system</code>, <code>kube-public</code>, <code>kube-node-lease</code></td>
+<td>Namespaces to skip</td>
+</tr>
+<tr>
+<td><code>--output</code></td>
+<td><code>-o</code></td>
+<td><code>table</code></td>
+<td><code>table</code>, <code>json</code>, or <code>yaml</code></td>
+</tr>
+<tr>
+<td><code>--limit</code></td>
+<td></td>
+<td><code>25</code></td>
+<td>Workloads listed in the table, idle first, then paused, then active, each by what pausing could free; <code>0</code> for all. Also caps the dependency list. JSON and YAML list everything</td>
+</tr>
+<tr>
+<td><code>--cpu-threshold</code></td>
+<td></td>
+<td><code>10</code></td>
+<td>CPU use, as a percentage of requests from 1 to 100, above which a workload counts as active, now and in the replay. Workloads Hybernate manages use their own setting</td>
+</tr>
+<tr>
+<td><code>--cpu-price</code></td>
+<td></td>
+<td><code>0.031</code></td>
+<td>Your price per vCPU-hour, in dollars, zero or more</td>
+</tr>
+<tr>
+<td><code>--memory-price</code></td>
+<td></td>
+<td><code>0.004</code></td>
+<td>Your price per GiB-hour of memory, in dollars, zero or more</td>
+</tr>
+<tr>
+<td><code>--window</code></td>
+<td></td>
+<td><code>7d</code></td>
+<td>How much Prometheus history to replay, such as <code>7d</code> or <code>36h</code>, up to <code>366d</code>; <code>0</code> judges from CPU right now only</td>
+</tr>
+<tr>
+<td><code>--idle-after</code></td>
+<td></td>
+<td><code>1h</code></td>
+<td>How long without activity makes a workload idle, now and in the replay, as Hybernate's <code>idleAfter</code>. Workloads Hybernate manages use their own setting</td>
+</tr>
+<tr>
+<td><code>--prometheus-service</code></td>
+<td></td>
+<td>the one found in the cluster with the most history</td>
+<td>Prometheus Service in the cluster to read history from, as <code>namespace/name</code> or <code>namespace/name:port</code>, through the API server</td>
+</tr>
+<tr>
+<td><code>--prometheus-url</code></td>
+<td></td>
+<td>the one found in the cluster with the most history</td>
+<td>Prometheus API to read history from, such as Thanos, Mimir, or Google Cloud Managed Service for Prometheus</td>
+</tr>
+<tr>
+<td><code>--prometheus-selector</code></td>
+<td></td>
+<td></td>
+<td>Label matchers added to every history query, such as <code>'cluster="prod"'</code>, for a Prometheus that holds more than one cluster. Values are double-quoted, as in PromQL</td>
+</tr>
+<tr>
+<td><code>--prometheus-header</code></td>
+<td></td>
+<td></td>
+<td>Header to send to <code>--prometheus-url</code>, as <code>"Name: value"</code>, such as <code>"X-Scope-OrgID: tenant"</code> for Mimir; repeat for several</td>
+</tr>
+<tr>
+<td><code>--prometheus-bearer-token-file</code></td>
+<td></td>
+<td></td>
+<td>File holding a bearer token to send to <code>--prometheus-url</code></td>
+</tr>
+<tr>
+<td><code>--prometheus-ca-file</code></td>
+<td></td>
+<td></td>
+<td>PEM file of CA certificates to trust for <code>--prometheus-url</code>, besides the system's</td>
+</tr>
+<tr>
+<td><code>--prometheus-insecure-skip-verify</code></td>
+<td></td>
+<td><code>false</code></td>
+<td>Don't verify <code>--prometheus-url</code>'s certificate</td>
+</tr>
+<tr>
+<td><code>--timeout</code></td>
+<td></td>
+<td><code>5m</code></td>
+<td>How long the scan may take before it gives up</td>
+</tr>
+<tr>
+<td><code>--html</code></td>
+<td></td>
+<td>a temporary file</td>
+<td>Save the HTML report to this file, to share</td>
+</tr>
+<tr>
+<td><code>--open</code></td>
+<td></td>
+<td><code>true</code></td>
+<td>Open the HTML report in your browser, when the table is shown in a terminal</td>
+</tr>
+</tbody>
+</table>
+<h3 id="a-prometheus-elsewhere">A Prometheus elsewhere<a class="headerlink" href="#a-prometheus-elsewhere" title="Permanent link">&para;</a></h3>
+<p><code>--prometheus-url</code> reads history from a Prometheus API your machine can reach, rather than one found in the cluster, and needs no cluster permission at all. If it doesn't answer like a Prometheus API, the scan fails rather than carrying on without history.</p>
+<ul>
+<li><strong>Several clusters in one store</strong>, such as Thanos or Mimir: pass <code>--prometheus-selector</code> with the label that tells them apart, so the scan reads only this cluster's series. When it finds series from more than one source, the notes suggest it.</li>
+<li><strong>Authentication</strong>: <code>--prometheus-header</code> (for example <code>X-Scope-OrgID</code> for a Mimir tenant, or an <code>Authorization</code> header), or <code>--prometheus-bearer-token-file</code>, but not both for the same header. <code>--prometheus-ca-file</code> and <code>--prometheus-insecure-skip-verify</code> are for its certificate. These flags only apply with <code>--prometheus-url</code>: a Prometheus found in the cluster is reached through the API server with your kubeconfig.</li>
+<li>
+<p><strong>Google Cloud Managed Service for Prometheus</strong>, GKE's managed Prometheus, keeps its data in Cloud Monitoring rather than in the cluster: <code>gmp-system</code> runs its collectors, which have nothing to query, so the scan doesn't find it there and reads another Prometheus if the cluster has one. To read it instead, give it an access token and name your project and cluster, as the store holds every cluster in the project:</p>
+<div class="language-bash highlight"><pre><span></span><code><span id="__span-8-1"><a id="__codelineno-8-1" name="__codelineno-8-1" href="#__codelineno-8-1"></a>kubectl<span class="w"> </span>hybernate<span class="w"> </span>scan<span class="w"> </span><span class="se">\</span>
+</span><span id="__span-8-2"><a id="__codelineno-8-2" name="__codelineno-8-2" href="#__codelineno-8-2"></a><span class="w">  </span>--prometheus-url<span class="w"> </span>https://monitoring.googleapis.com/v1/projects/PROJECT_ID/location/global/prometheus<span class="w"> </span><span class="se">\</span>
+</span><span id="__span-8-3"><a id="__codelineno-8-3" name="__codelineno-8-3" href="#__codelineno-8-3"></a><span class="w">  </span>--prometheus-bearer-token-file<span class="w"> </span>&lt;<span class="o">(</span>gcloud<span class="w"> </span>auth<span class="w"> </span>print-access-token<span class="o">)</span><span class="w"> </span><span class="se">\</span>
+</span><span id="__span-8-4"><a id="__codelineno-8-4" name="__codelineno-8-4" href="#__codelineno-8-4"></a><span class="w">  </span>--prometheus-selector<span class="w"> </span><span class="s1">'cluster="CLUSTER_NAME"'</span>
+</span></code></pre></div>
+<p>If you've deployed its frontend in the cluster, <code>--prometheus-service NAMESPACE/frontend</code> reads it through that instead, with the frontend's own credentials. Either way, its history has the CPU the replay reads only if it collects cAdvisor's metrics, which <code>kubeletScraping</code> in its OperatorConfig turns on.
+- <strong>Amazon Managed Service for Prometheus</strong> needs requests signed with SigV4, which the scan doesn't do: point <code>--prometheus-url</code> at a signing proxy in front of it.</p>
+</li>
+</ul>
+<p>The source is shown in the report with any password in its URL hidden.</p>
+<h3 id="exit-status">Exit status<a class="headerlink" href="#exit-status" title="Permanent link">&para;</a></h3>
+<p>The scan exits 0 when it read everything your access allows. Namespaces or resources your access doesn't allow (a <code>403</code>) are explained in the notes, and don't change the exit status, unless you named the namespace with <code>-n</code>.</p>
+<p>It exits 1, after writing the report, when it couldn't read something it should have: a timeout, throttling, a server error, a failed Prometheus query, or a <code>403</code> or missing namespace among those you named with <code>-n</code>. The notes say what was missed, the error says what to do about it (check a namespace's name, ask for access, or try again with a longer <code>--timeout</code>), and JSON and YAML list the namespaces in <code>incomplete</code>, by why: <code>missing</code>, <code>denied</code>, <code>failed</code>, or <code>unscanned</code>. JSON and YAML also give the number of namespaces read in <code>namespaces</code>, and <code>"workloads": []</code> for a cluster with none.</p>
+<p>A scan that runs out of <code>--timeout</code> still reports the namespaces it scanned in time, and lists the rest as <code>unscanned</code>; only one that scanned none fails without a report. Scanning every namespace, the scan lists each kind of object across the cluster at once, a page at a time, rather than in each namespace, so a cluster of thousands of namespaces takes a few dozen requests. A kind your access only lets you list namespace by namespace is read that way.</p>
+<p>Workloads someone else already scaled to zero count toward nothing the scan says could be freed: they cost nothing now, and the headline counts them apart.</p>
+<h3 id="permissions">Permissions<a class="headerlink" href="#permissions" title="Permanent link">&para;</a></h3>
+<p>Your user needs to list Deployments, StatefulSets, ReplicaSets, ControllerRevisions, Pods, pod metrics, Services and ManagedWorkloads in the namespaces scanned, and to read the namespaces and the ConfigMaps workloads take variables from; to list namespaces unless you name them with <code>-n</code>; and to list nodes, to price workloads at their nodes. Naming the node autoscaler reads what <a href="#see-why-nodes-dont-scale-down"><code>nodes</code></a> does for that. The standard <code>view</code> role covers the namespaced reads, ManagedWorkloads too, which Hybernate's chart and manifests add to <code>view</code>; it doesn't cover nodes, which are cluster-wide. Without one of these the scan carries on, and the notes say what it couldn't see. Reading history through the service proxy also needs <code>get</code> on <code>services/proxy</code> for the Prometheus Service, which <code>view</code> doesn't include. Without it, the scan judges from CPU right now and prints what an admin can run to let you, for that one Service and nothing else:</p>
+<div class="language-text highlight"><pre><span></span><code><span id="__span-9-1"><a id="__codelineno-9-1" name="__codelineno-9-1" href="#__codelineno-9-1"></a>To replay history, an admin can let you read Prometheus, and nothing else, with:
+</span><span id="__span-9-2"><a id="__codelineno-9-2" name="__codelineno-9-2" href="#__codelineno-9-2"></a>  kubectl create role hybernate-scan -n monitoring --verb=get --resource=services/proxy --resource-name=prometheus-operated:web
+</span><span id="__span-9-3"><a id="__codelineno-9-3" name="__codelineno-9-3" href="#__codelineno-9-3"></a>  kubectl create rolebinding hybernate-scan -n monitoring --role=hybernate-scan --user=jane@example.com
+</span><span id="__span-9-4"><a id="__codelineno-9-4" name="__codelineno-9-4" href="#__codelineno-9-4"></a>Or pass --prometheus-url if Prometheus is reachable from your machine.
+</span></code></pre></div>
+<p>A Prometheus you name with <code>--prometheus-service</code> fails the scan instead, with the same commands in its error; reading it also needs <code>get</code> on that Service, to find its port, which <code>view</code> covers.</p>
+<p>That's only when the API server refuses you the proxy. A <code>403</code> from behind it, such as from a <code>kube-rbac-proxy</code> in front of Prometheus, is shown as Prometheus's own answer, since a Role for <code>services/proxy</code> wouldn't change it.</p>
+<h2 id="replay-the-forecast">Replay the Forecast<a class="headerlink" href="#replay-the-forecast" title="Permanent link">&para;</a></h2>
+<div class="language-bash highlight"><pre><span></span><code><span id="__span-10-1"><a id="__codelineno-10-1" name="__codelineno-10-1" href="#__codelineno-10-1"></a>kubectl<span class="w"> </span>hybernate<span class="w"> </span>forecast<span class="w"> </span>-n<span class="w"> </span>preview-42
+</span></code></pre></div>
+<div class="language-text highlight"><pre><span></span><code><span id="__span-11-1"><a id="__codelineno-11-1" name="__codelineno-11-1" href="#__codelineno-11-1"></a>staging: the forecast replayed over 28 days of CPU history from monitoring/prometheus-operated, times in UTC
+</span><span id="__span-11-2"><a id="__codelineno-11-2" name="__codelineno-11-2" href="#__codelineno-11-2"></a>
+</span><span id="__span-11-3"><a id="__codelineno-11-3" name="__codelineno-11-3" href="#__codelineno-11-3"></a>NAMESPACE   NAME     FORECAST             READY  COLD  WOKEN FOR NOTHING  WOKEN
+</span><span id="__span-11-4"><a id="__codelineno-11-4" name="__codelineno-11-4" href="#__codelineno-11-4"></a>preview-42  api      acts from day one    9/10   1     0                  08:45, 25m ahead
+</span><span id="__span-11-5"><a id="__codelineno-11-5" name="__codelineno-11-5" href="#__codelineno-11-5"></a>preview-42  worker   acts from Mon 2 Nov  3/10   7     2 (3.5h)           09:45, 20m ahead
+</span><span id="__span-11-6"><a id="__codelineno-11-6" name="__codelineno-11-6" href="#__codelineno-11-6"></a>preview-42  reports  not within 4 weeks   0/6    6     0                  -
+</span></code></pre></div>
+<p><code>forecast</code> shows what Hybernate's <a href="../../concepts/forecasting/">forecast</a> would make of your workloads, from their own CPU history, before you trust <code>autoResume</code> with them. It runs the operator's own forecast and decision rules, through the <a href="../../concepts/forecasting/#proving-it">simulator</a>, over the history scan reads:</p>
+<ul>
+<li><strong>FORECAST</strong> is when the forecast would act if the workload were opted in today, having <a href="../../concepts/forecasting/#learning-from-history">learned all its history</a> as the operator does for a new workload: <code>acts from day one</code>, from a date it projects, or <code>not within 4 weeks</code> for a pattern too irregular for the setting. For a workload Hybernate already manages, marked <code>(managed)</code> beside its name, it's that forecast's own, from <code>status.prediction</code>: <code>acting</code>, <code>learning</code>, from a date it projects, or <code>not learning: paused without wake on request</code>.</li>
+<li><strong>READY</strong>, <strong>COLD</strong>, <strong>WOKEN FOR NOTHING</strong> and <strong>WOKEN</strong> replay the last half of the history as Hybernate with <code>autoResume</code> would have managed it, from a forecast that learned only the first half: the mornings it had the workload up before its first use, those whose first use found it paused and woke it, the wakes ahead of demand that didn't come and how long they kept it up, and when it usually woke it. Having learned less, the replay is a little less ready than opting in now would be.</li>
+</ul>
+<p>A workload counts as used whenever its CPU is above <code>--cpu-threshold</code>, as the activity clock counts it; use that shows only in requests or activity annotations isn't in Prometheus. Name a workload, as <code>api</code> or <code>statefulset/postgres</code>, to see it day by day: each day's first use, how it found the workload, when the forecast woke it, and whether the forecast was acting.</p>
+<div class="language-bash highlight"><pre><span></span><code><span id="__span-12-1"><a id="__codelineno-12-1" name="__codelineno-12-1" href="#__codelineno-12-1"></a>kubectl<span class="w"> </span>hybernate<span class="w"> </span>forecast<span class="w"> </span>api<span class="w"> </span>-n<span class="w"> </span>preview-42<span class="w"> </span>--timezone<span class="w"> </span>Europe/London
+</span></code></pre></div>
+<p>It reads Prometheus as <a href="#scan-a-cluster">scan</a> does, found in the cluster or at <code>--prometheus-url</code>, with the same <a href="#a-prometheus-elsewhere">flags</a> and <a href="#permissions">permissions</a>, and fails when there's no history to read. With less than two days of it, a day to learn from and a day to replay, it says so and when there will be enough. Its notes are only those about the history it read; <code>scan</code> has the rest. It only reads.</p>
+<table>
+<thead>
+<tr>
+<th>Flag</th>
+<th>Short</th>
+<th>Default</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>--namespace</code></td>
+<td><code>-n</code></td>
+<td>all you can read</td>
+<td>Namespace to replay; repeat for several</td>
+</tr>
+<tr>
+<td><code>--all-namespaces</code></td>
+<td><code>-A</code></td>
+<td><code>false</code></td>
+<td>Every namespace, failing rather than falling back when your access doesn't allow it</td>
+</tr>
+<tr>
+<td><code>--exclude-namespaces</code></td>
+<td></td>
+<td>system namespaces</td>
+<td>Namespaces to skip</td>
+</tr>
+<tr>
+<td><code>--window</code></td>
+<td></td>
+<td><code>28d</code></td>
+<td>How much history to read, from <code>2d</code> to <code>34d</code>; the operator learns up to four weeks</td>
+</tr>
+<tr>
+<td><code>--forecast</code></td>
+<td></td>
+<td><code>balanced</code></td>
+<td>How soon the forecast acts, <code>eager</code>, <code>balanced</code> or <code>cautious</code>, for workloads Hybernate doesn't manage; see <a href="../../concepts/forecasting/#forecast-setting">Forecast setting</a></td>
+</tr>
+<tr>
+<td><code>--timezone</code></td>
+<td></td>
+<td>the operator's</td>
+<td>The time zone whose hours and weekdays the forecast learns, and that times are shown in: by default the operator's <code>timezone</code>, as its ManagedWorkloads record it in <code>status.prediction.timeZone</code>, or <code>UTC</code> when you can read none</td>
+</tr>
+<tr>
+<td><code>--cpu-threshold</code></td>
+<td></td>
+<td><code>10</code></td>
+<td>CPU use, as a percentage of requests, above which a workload is in use; managed workloads use their own</td>
+</tr>
+<tr>
+<td><code>--idle-after</code></td>
+<td></td>
+<td><code>1h</code></td>
+<td>How long without use before a pause; managed workloads use their own</td>
+</tr>
+<tr>
+<td><code>--output</code></td>
+<td><code>-o</code></td>
+<td><code>table</code></td>
+<td><code>table</code>, <code>json</code>, or <code>yaml</code>; JSON and YAML give every workload's days</td>
+</tr>
+<tr>
+<td><code>--timeout</code></td>
+<td></td>
+<td><code>5m</code></td>
+<td>How long the replay may take before it gives up</td>
+</tr>
+<tr>
+<td><code>--prometheus-url</code> and the other <code>--prometheus-*</code> flags</td>
+<td></td>
+<td></td>
+<td>As for scan</td>
+</tr>
+</tbody>
+</table>
+<h2 id="see-what-hybernate-is-doing">See What Hybernate Is Doing<a class="headerlink" href="#see-what-hybernate-is-doing" title="Permanent link">&para;</a></h2>
+<div class="language-bash highlight"><pre><span></span><code><span id="__span-13-1"><a id="__codelineno-13-1" name="__codelineno-13-1" href="#__codelineno-13-1"></a>kubectl<span class="w"> </span>hybernate<span class="w"> </span>status
+</span></code></pre></div>
+<div class="language-text highlight"><pre><span></span><code><span id="__span-14-1"><a id="__codelineno-14-1" name="__codelineno-14-1" href="#__codelineno-14-1"></a>staging (EKS us-east-1): Hybernate manages 4 workloads.
+</span><span id="__span-14-2"><a id="__codelineno-14-2" name="__codelineno-14-2" href="#__codelineno-14-2"></a>  1 paused, 2 running, 1 resuming; 1 in dry-run, never paused: pausing it would have freed $7 since Oct 1
+</span><span id="__span-14-3"><a id="__codelineno-14-3" name="__codelineno-14-3" href="#__codelineno-14-3"></a>  Node autoscaler: Karpenter (consolidates when underutilized after 1m)
+</span><span id="__span-14-4"><a id="__codelineno-14-4" name="__codelineno-14-4" href="#__codelineno-14-4"></a>  Forecast time zone: Europe/London
+</span><span id="__span-14-5"><a id="__codelineno-14-5" name="__codelineno-14-5" href="#__codelineno-14-5"></a>  Freed $42 this month, and saved $9 of it.
+</span><span id="__span-14-6"><a id="__codelineno-14-6" name="__codelineno-14-6" href="#__codelineno-14-6"></a>
+</span><span id="__span-14-7"><a id="__codelineno-14-7" name="__codelineno-14-7" href="#__codelineno-14-7"></a>Needs attention:
+</span><span id="__span-14-8"><a id="__codelineno-14-8" name="__codelineno-14-8" href="#__codelineno-14-8"></a>  Pausing freed $42 this month, but only $9 of it came off the bill: nodes aren't scaling down.
+</span><span id="__span-14-9"><a id="__codelineno-14-9" name="__codelineno-14-9" href="#__codelineno-14-9"></a>  kubectl hybernate nodes shows why.
+</span><span id="__span-14-10"><a id="__codelineno-14-10" name="__codelineno-14-10" href="#__codelineno-14-10"></a>  preview-7/worker   GitOpsConflict   Argo CD set the replicas from Git, undoing the pause; ...
+</span><span id="__span-14-11"><a id="__codelineno-14-11" name="__codelineno-14-11" href="#__codelineno-14-11"></a>  preview-7/worker   Stuck            resuming for 25m: waiting for preview-42/statefulset/postgres
+</span><span id="__span-14-12"><a id="__codelineno-14-12" name="__codelineno-14-12" href="#__codelineno-14-12"></a>
+</span><span id="__span-14-13"><a id="__codelineno-14-13" name="__codelineno-14-13" href="#__codelineno-14-13"></a>  NAMESPACE    WORKLOAD               STATE               FOR   LAST ACTIVITY      NEXT                                        FREED THIS MONTH   SAVED   WOULD FREE
+</span><span id="__span-14-14"><a id="__codelineno-14-14" name="__codelineno-14-14" href="#__codelineno-14-14"></a>  preview-42   deployment/api         paused              3h    request, 4h ago    wakes on a request or activity              $12                $9      -
+</span><span id="__span-14-15"><a id="__codelineno-14-15" name="__codelineno-14-15" href="#__codelineno-14-15"></a>  preview-42   statefulset/postgres   running             5h    cpu, 2h ago        held awake while preview-7/worker uses it   $30                -       -
+</span><span id="__span-14-16"><a id="__codelineno-14-16" name="__codelineno-14-16" href="#__codelineno-14-16"></a>  preview-7    deployment/web         running (dry-run)   2h    rollout, 15m ago   would pause in 45m                          -                  -       $7
+</span><span id="__span-14-17"><a id="__codelineno-14-17" name="__codelineno-14-17" href="#__codelineno-14-17"></a>  preview-7    deployment/worker      resuming            25m   -                  -                                           -                  -       -
+</span><span id="__span-14-18"><a id="__codelineno-14-18" name="__codelineno-14-18" href="#__codelineno-14-18"></a>
+</span><span id="__span-14-19"><a id="__codelineno-14-19" name="__codelineno-14-19" href="#__codelineno-14-19"></a>Recent pauses and wakes:
+</span><span id="__span-14-20"><a id="__codelineno-14-20" name="__codelineno-14-20" href="#__codelineno-14-20"></a>  30m ago   preview-7/worker   scaled up to 2 replicas by argocd-controller outside Hybernate; counted as activity
+</span><span id="__span-14-21"><a id="__codelineno-14-21" name="__codelineno-14-21" href="#__codelineno-14-21"></a>  3h ago    preview-42/api     paused
+</span><span id="__span-14-22"><a id="__codelineno-14-22" name="__codelineno-14-22" href="#__codelineno-14-22"></a>  5h ago    preview-42/api     request on Service api, waking
+</span></code></pre></div>
+<p><code>status</code> is one screen of every workload Hybernate manages, read from their ManagedWorkloads and events:</p>
+<ul>
+<li><strong>The summary:</strong> how many workloads are in each phase, and how many are in dry-run, with what pausing them would have freed since the first started measuring, by what dry-run measured (<code>status.dryRun.estimatedFreed</code>, the would-be pause under way included); the node autoscaler, found as <a href="#see-why-nodes-dont-scale-down"><code>nodes</code></a> finds it, or <code>none found</code>, or <code>unknown</code> when your access doesn't allow reading what would tell; and what pausing live workloads has freed this month, its requests at list price, and how much of that has been saved, come off the bill as nodes scaled down, in whole dollars as <code>scan</code> shows them, or <code>&lt;$1</code> under 50¢. Freed capacity is only money once a node autoscaler removes the nodes it was on. When the operator can't measure what's saved for some workloads, the summary says why, once for each reason. It also says which time zone the <a href="../../concepts/forecasting/#wall-clock-alignment">forecast</a> counts hours in, the operator's <code>timezone</code> as each workload's <code>status.prediction.timeZone</code> records it, and, when that's UTC, the default, how to set it to your users' zone, so <code>autoResume</code> follows their clock through daylight saving.</li>
+<li><strong>Needs attention:</strong> when pausing freed at least a dollar this month and less than half of it was saved, counting only workloads whose savings are measured, a line saying nodes aren't scaling down, pointing at <code>kubectl hybernate nodes</code>. Then what keeps Hybernate from doing its job, from each workload's conditions: a GitOps tool undoing pauses (<code>GitOpsConflict</code>), a dependency that's missing, in a cycle, or in a namespace that doesn't allow it (<code>DependencyNotAllowed</code>), two ManagedWorkloads for one target, a protected namespace, a target that's gone, metrics or Prometheus that can't be read, a Prometheus query that has never matched a series (<code>PrometheusQueryEmpty</code>), a workload whose requests can't wake it while it's paused (<code>WakeOnRequest</code>), which for one that's awake now is what its last pause found with its Services, to fix before the next, but not its being awake (<code>NotPaused</code>) or the doorman being turned off, a resume that stopped with replicas not Ready (<code>ResumeIncomplete</code>), a pause that stopped waiting with pods still running (<code>PauseIncomplete</code>), and a pause or wake taking over 10 minutes (<code>Stuck</code>), with what it waits for. <code>kubectl describe managedworkload</code> has the rest.</li>
+<li><strong>The table:</strong> each workload as <code>kind/name</code>, with its ManagedWorkload's name in brackets when you wrote one under another name; its state and for how long; its last activity and where it came from; what pausing it has freed this month and what of that it has saved, in whole dollars or <code>&lt;$1</code> under 50¢, or <code>unknown</code> when what's saved can't be measured, where totals last brought up to date in an earlier month count as none, and one in dry-run now keeps what its pauses freed and saved before dry-run was turned on; when any workload is in dry-run, <strong>WOULD FREE</strong>, what pausing it would have freed since dry-run started measuring it, <code>$0</code> until a would-be pause has, and <code>-</code> for one that isn't in dry-run; and <strong>NEXT</strong>:<ul>
+<li>when it pauses: <code>pauses in 45m</code>, <code>pauses now</code> once it's <code>Idle</code>, and <code>would pause …</code> in dry-run. After a GitOps tool undid its last pause, Hybernate waits an hour before pausing it again, which reads <code>pauses at 14:20 UTC (after GitOps conflict)</code>; see <a href="../../guides/gitops/#what-hybernate-does">GitOps tools</a>. Status is written every few minutes, so for up to 7 minutes after the time it showed, a workload still running reads <code>pauses soon</code>; after that, <code>overdue to pause</code>, which means something the table can't see holds it, and <code>kubectl describe managedworkload</code> says what</li>
+<li>why it won't pause yet, and until when: <code>held awake while preview-7/worker uses it</code> (its dependents, until they pause), <code>held awake for 2h (active-until)</code> (<code>hybernate.io/active-until</code> on the ManagedWorkload or the workload, as <code>wake --for</code> sets), or <code>held awake by the forecast: busy from 13:00 UTC</code> (the hour the forecast expects demand in)</li>
+<li>why it won't pause at all: <code>never pauses: no idlePolicy</code>, <code>never pauses: namespace protected</code>, <code>never pauses: part of Hybernate</code> (the operator's or the doorman's own Deployment), <code>never pauses: PVCs deleted on scale-down</code> (a StatefulSet whose <code>persistentVolumeClaimRetentionPolicy.whenScaled</code> is <code>Delete</code>), <code>nothing: labelled hybernate.io/ignore</code>, <code>nothing: workload not found</code>, <code>nothing: another ManagedWorkload has it</code>, <code>won't pause: dependsOn cycle</code>, <code>won't pause: no CPU metrics</code>, or <code>won't pause: Prometheus failing</code></li>
+<li>for a paused one, what wakes it: <code>wakes on a request or activity</code>, or <code>wakes on activity</code> without the doorman</li>
+</ul>
+</li>
+<li><strong>FORECAST:</strong> whether the workload's <a href="../../concepts/forecasting/#when-it-acts">forecast</a> acts: <code>acting</code>; <code>learning</code>, with <code>acts from Oct 8</code> when the operator expects it to start, if the coming days repeat the last week it saw; <code>relearning</code>, after demand broke from what it had learned; or <code>not learning</code>, while it's paused without wake on request, so its demand can't be seen. <code>-</code> until the operator has recorded one. JSON gives the reason from <code>status.prediction.reason</code> in <code>forecast</code>, and <code>forecastStartsActing</code>.</li>
+<li><strong>Recent pauses and wakes,</strong> newest first, as far back as the cluster keeps events, or <code>--since</code>: each pause, and each wake with its cause, a request on a Service, an activity annotation (including <code>kubectl hybernate wake</code> and a dependent waking), the forecast, or a scale-up from outside Hybernate. Requests the doorman closed without reaching the workload are listed too, and a wake whose cause wasn't recorded, such as a hand-back when a namespace becomes protected, is listed by its <code>resumed</code> event alone. The table shows the latest 10; <code>-o json</code> has every one. The API server keeps events for an hour unless its <code>--event-ttl</code> says otherwise, so on most clusters that's what <code>status</code> can show.</li>
+</ul>
+<div class="language-bash highlight"><pre><span></span><code><span id="__span-15-1"><a id="__codelineno-15-1" name="__codelineno-15-1" href="#__codelineno-15-1"></a>kubectl<span class="w"> </span>hybernate<span class="w"> </span>status<span class="w"> </span>--context<span class="w"> </span>staging<span class="w"> </span>-n<span class="w"> </span>preview-42
+</span><span id="__span-15-2"><a id="__codelineno-15-2" name="__codelineno-15-2" href="#__codelineno-15-2"></a>kubectl<span class="w"> </span>hybernate<span class="w"> </span>status<span class="w"> </span>--since<span class="w"> </span>1h<span class="w"> </span>-o<span class="w"> </span>json
+</span></code></pre></div>
+<h3 id="share-it-as-a-web-page">Share it as a web page<a class="headerlink" href="#share-it-as-a-web-page" title="Permanent link">&para;</a></h3>
+<div class="language-bash highlight"><pre><span></span><code><span id="__span-16-1"><a id="__codelineno-16-1" name="__codelineno-16-1" href="#__codelineno-16-1"></a>kubectl<span class="w"> </span>hybernate<span class="w"> </span>status<span class="w"> </span>--html<span class="w">              </span><span class="c1"># opens it in your browser</span>
+</span><span id="__span-16-2"><a id="__codelineno-16-2" name="__codelineno-16-2" href="#__codelineno-16-2"></a>kubectl<span class="w"> </span>hybernate<span class="w"> </span>status<span class="w"> </span>--html<span class="w"> </span>status.html<span class="w">  </span><span class="c1"># saves it, to send around</span>
+</span></code></pre></div>
+<p><code>--html</code> writes the same status as a web page, for a team or a manager: the summary, with the node autoscaler and the forecast's time zone; what pausing freed this month, what of that was saved, and what dry-run measured pausing would have freed; what needs attention; every workload, with its state and for how long, its last activity, what happens to it next, and what it freed or would free, in a table you can sort and filter; and every pause and wake since <code>--since</code>, with what caused it, at its time in UTC. Given a file, it writes it there; given none, to a new temporary file. Either is readable only by you, since it names the cluster's workloads. In a terminal, it opens the page in your browser, as <a href="#scan-a-cluster"><code>scan</code></a> does with its report, unless <code>--open=false</code>; otherwise it prints where the page is. The terminal table, or <code>-o json</code>, is printed as well. The page loads nothing from elsewhere, so it works offline and attached to an email.</p>
+<table>
+<thead>
+<tr>
+<th>Flag</th>
+<th>Short</th>
+<th>Default</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>--namespace</code></td>
+<td><code>-n</code></td>
+<td>all you can read</td>
+<td>Namespace to show; repeat for several</td>
+</tr>
+<tr>
+<td><code>--all-namespaces</code></td>
+<td><code>-A</code></td>
+<td></td>
+<td>Read every namespace, and fail rather than fall back when your access doesn't allow that. Can't be combined with <code>-n</code></td>
+</tr>
+<tr>
+<td><code>--output</code></td>
+<td><code>-o</code></td>
+<td><code>table</code></td>
+<td><code>table</code>, <code>json</code>, or <code>yaml</code></td>
+</tr>
+<tr>
+<td><code>--since</code></td>
+<td></td>
+<td><code>24h</code></td>
+<td>How far back to list pauses and wakes</td>
+</tr>
+<tr>
+<td><code>--html</code></td>
+<td></td>
+<td></td>
+<td>Also write the status as a web page to this file; given without one, to a temporary file</td>
+</tr>
+<tr>
+<td><code>--open</code></td>
+<td></td>
+<td><code>true</code></td>
+<td>Open the <code>--html</code> page in your browser, when run in a terminal</td>
+</tr>
+<tr>
+<td><code>--timeout</code></td>
+<td></td>
+<td><code>1m</code></td>
+<td>How long to wait for the cluster before giving up</td>
+</tr>
+</tbody>
+</table>
+<p>Your user needs <code>list</code> on <code>managedworkloads</code> and <code>events</code>, in every namespace or the ones passed with <code>-n</code>. Without access to events, it shows the rest and says so. To name the node autoscaler, it reads what <a href="#see-why-nodes-dont-scale-down"><code>nodes</code></a> does for that: Karpenter's NodePools, nodes' metadata, the <code>cluster-autoscaler-status</code> ConfigMap and Deployments' metadata in <code>kube-system</code>; without enough of them to tell, it says the autoscaler is unknown. It also lists <code>deployments</code> and <code>statefulsets</code>, reading only their metadata, for a <code>hybernate.io/active-until</code> annotation on the workload itself, and goes without it when it can't. A namespace named with <code>-n</code> that doesn't exist is an error, which takes <code>get</code> on <code>namespaces</code> to tell; without it, the namespace shows as one Hybernate manages nothing in.</p>
+<h2 id="see-why-nodes-dont-scale-down">See Why Nodes Don't Scale Down<a class="headerlink" href="#see-why-nodes-dont-scale-down" title="Permanent link">&para;</a></h2>
+<p>Pausing a workload frees what its pods requested, but that comes off the bill only once a node autoscaler removes the node they ran on. <code>nodes</code> shows what's in the way:</p>
+<div class="language-bash highlight"><pre><span></span><code><span id="__span-17-1"><a id="__codelineno-17-1" name="__codelineno-17-1" href="#__codelineno-17-1"></a>kubectl<span class="w"> </span>hybernate<span class="w"> </span>nodes
+</span></code></pre></div>
+<div class="language-text highlight"><pre><span></span><code><span id="__span-18-1"><a id="__codelineno-18-1" name="__codelineno-18-1" href="#__codelineno-18-1"></a>staging (EKS us-east-1): 3 nodes
+</span><span id="__span-18-2"><a id="__codelineno-18-2" name="__codelineno-18-2" href="#__codelineno-18-2"></a>Node autoscaler: Karpenter (NodePool batch consolidates only empty nodes after 1m; NodePool default consolidates when underutilized after 1m)
+</span><span id="__span-18-3"><a id="__codelineno-18-3" name="__codelineno-18-3" href="#__codelineno-18-3"></a>Hybernate's 2 paused workloads would request 2.0 vCPU and 4.0 GiB of memory if awake.
+</span><span id="__span-18-4"><a id="__codelineno-18-4" name="__codelineno-18-4" href="#__codelineno-18-4"></a>  in pool batch: 0.5 vCPU and 1.0 GiB
+</span><span id="__span-18-5"><a id="__codelineno-18-5" name="__codelineno-18-5" href="#__codelineno-18-5"></a>  in pool default: 1.5 vCPU and 3.0 GiB
+</span><span id="__span-18-6"><a id="__codelineno-18-6" name="__codelineno-18-6" href="#__codelineno-18-6"></a>
+</span><span id="__span-18-7"><a id="__codelineno-18-7" name="__codelineno-18-7" href="#__codelineno-18-7"></a>  NODE      POOL      INSTANCE TYPE   CPU REQUESTED     MEMORY REQUESTED   UTILISATION   BLOCKED BY
+</span><span id="__span-18-8"><a id="__codelineno-18-8" name="__codelineno-18-8" href="#__codelineno-18-8"></a>  batch-1   batch     c5.large        0.1 of 1.9 vCPU   0.3 of 3.0 GiB     10%           NodePool consolidates only empty nodes
+</span><span id="__span-18-9"><a id="__codelineno-18-9" name="__codelineno-18-9" href="#__codelineno-18-9"></a>  quiet-1   default   m5.large        0.2 of 1.9 vCPU   1.0 of 7.0 GiB     14%           PDB allows no disruption (shop/db)
+</span><span id="__span-18-10"><a id="__codelineno-18-10" name="__codelineno-18-10" href="#__codelineno-18-10"></a>  busy-1    default   m5.xlarge       3.0 of 3.9 vCPU   8.0 of 14.0 GiB    77%           -
+</span><span id="__span-18-11"><a id="__codelineno-18-11" name="__codelineno-18-11" href="#__codelineno-18-11"></a>
+</span><span id="__span-18-12"><a id="__codelineno-18-12" name="__codelineno-18-12" href="#__codelineno-18-12"></a>Next steps:
+</span><span id="__span-18-13"><a id="__codelineno-18-13" name="__codelineno-18-13" href="#__codelineno-18-13"></a>  1. A NodePool consolidates only empty nodes, which a node running anything never is. Set spec.disruption.consolidationPolicy: WhenEmptyOrUnderutilized.
+</span><span id="__span-18-14"><a id="__codelineno-18-14" name="__codelineno-18-14" href="#__codelineno-18-14"></a>     For example: NodePool batch consolidates only empty nodes, and this one runs 1 pod
+</span><span id="__span-18-15"><a id="__codelineno-18-15" name="__codelineno-18-15" href="#__codelineno-18-15"></a>  2. A PodDisruptionBudget allows no disruptions, so its pods can't be moved. Raise maxUnavailable, lower minAvailable, or run more replicas than it requires.
+</span><span id="__span-18-16"><a id="__codelineno-18-16" name="__codelineno-18-16" href="#__codelineno-18-16"></a>     For example: shop/db: PodDisruptionBudget db allows no disruptions
+</span><span id="__span-18-17"><a id="__codelineno-18-17" name="__codelineno-18-17" href="#__codelineno-18-17"></a>  See https://okedeji.io/hybernate/guides/cluster-autoscaler/
+</span><span id="__span-18-18"><a id="__codelineno-18-18" name="__codelineno-18-18" href="#__codelineno-18-18"></a>  To have pausing empty whole nodes, put non-production workloads on a node pool of their own: https://okedeji.io/hybernate/guides/node-pools/
+</span></code></pre></div>
+<ul>
+<li><strong>Node autoscaler:</strong> what scales the cluster's nodes, which <code>status</code> and <code>scan</code> show too:<ul>
+<li><strong>Karpenter</strong>, from the <code>nodepools.karpenter.sh</code> CRD or nodes labelled <code>karpenter.sh/nodepool</code>, with each NodePool's <code>spec.disruption.consolidationPolicy</code> and <code>consolidateAfter</code></li>
+<li><strong>EKS Auto Mode</strong>, from nodes labelled <code>eks.amazonaws.com/compute-type: auto</code>; its NodePools are Karpenter's, and read the same way</li>
+<li><strong>Cluster Autoscaler</strong>, self-managed or the one GKE Standard and AKS run for you, from the <code>cluster-autoscaler-status</code> ConfigMap it writes in <code>kube-system</code>, with the cloud its nodes are on. Without the ConfigMap, a Deployment in <code>kube-system</code> whose name ends in <code>cluster-autoscaler</code> is named as a hint that it may not be running</li>
+<li><strong>GKE Autopilot</strong>, from that ConfigMap and nodes all named <code>gk3-</code>, as Autopilot names them; it scales nodes itself</li>
+<li><code>none found</code>, when every place was read and none of them showed one: freed capacity won't come off the bill until something removes nodes</li>
+<li><code>unknown</code>, when your access didn't allow reading what would tell, which it names. It never says none when it couldn't look</li>
+</ul>
+</li>
+<li><strong>The table:</strong> each node, least used first, with its pool (Karpenter NodePool, EKS node group, GKE node pool or AKS agent pool), its instance type, what its running pods request of what it can allocate, and its utilisation: the larger of the two, as Cluster Autoscaler measures it against its scale-down threshold. DaemonSet pods count towards what's requested, as they do for the autoscaler.</li>
+<li><strong>BLOCKED BY:</strong> why the autoscaler won't remove the node, however little of it is used, the first two in the table and every one in <code>-o json</code>. On a node a Karpenter NodePool owns, Karpenter's reasons: the node or a pod annotated <code>karpenter.sh/do-not-disrupt: "true"</code>, a pod whose PodDisruptionBudget allows no disruptions (<code>status.disruptionsAllowed</code> is 0), a NodePool with <code>consolidationPolicy: WhenEmpty</code> and anything but DaemonSet pods on the node, or <code>consolidateAfter: Never</code>. On any other node, Cluster Autoscaler's: the node annotated <code>cluster-autoscaler.kubernetes.io/scale-down-disabled: "true"</code>, a pod annotated <code>cluster-autoscaler.kubernetes.io/safe-to-evict: "false"</code>, a pod with an <code>emptyDir</code> not in memory or a <code>hostPath</code> volume it doesn't name in <code>cluster-autoscaler.kubernetes.io/safe-to-evict-local-volumes</code>, a pod no controller owns, a <code>kube-system</code> pod without a PodDisruptionBudget, and the PodDisruptionBudget rule. DaemonSet and static pods never block, and a pod annotated <code>safe-to-evict: "true"</code> blocks only by its PodDisruptionBudget, as with Cluster Autoscaler. Local storage and <code>kube-system</code> pods block only while Cluster Autoscaler's <code>--skip-nodes-with-local-storage</code> and <code>--skip-nodes-with-system-pods</code> are on, as they are by default upstream; AKS turns the first off. While the autoscaler is unknown, nodes Karpenter doesn't own are judged by Cluster Autoscaler's rules. A node no autoscaler found scales is <code>not autoscaled</code>.</li>
+<li><strong>Next steps:</strong> how to clear each kind of reason the table shows, with one example of it, the <a href="../../guides/cluster-autoscaler/">node autoscaler guide</a>, and the <a href="../../guides/node-pools/">node pools guide</a>.</li>
+</ul>
+<p>A node with nothing in BLOCKED BY that stays is still in use: paused workloads share it with busy ones. <a href="../../guides/node-pools/">Node Pools for Real Savings</a> shows how to give non-prod workloads nodes that pausing them empties.</p>
+<p>What paused workloads would request is what Hybernate recorded their pause freed, in all and by the node pool their pods ran in, as each pause recorded it: the pools that would need room for them if they woke. A workload whose pods ran in several pools is shared between them by how many ran in each. Pauses that recorded no pool are counted in all but not by pool.</p>
+<div class="language-bash highlight"><pre><span></span><code><span id="__span-19-1"><a id="__codelineno-19-1" name="__codelineno-19-1" href="#__codelineno-19-1"></a>kubectl<span class="w"> </span>hybernate<span class="w"> </span>nodes<span class="w"> </span>--context<span class="w"> </span>staging<span class="w"> </span>-o<span class="w"> </span>json
+</span></code></pre></div>
+<table>
+<thead>
+<tr>
+<th>Flag</th>
+<th>Short</th>
+<th>Default</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>--output</code></td>
+<td><code>-o</code></td>
+<td><code>table</code></td>
+<td><code>table</code>, <code>json</code>, or <code>yaml</code></td>
+</tr>
+<tr>
+<td><code>--timeout</code></td>
+<td></td>
+<td><code>1m</code></td>
+<td>How long to wait for the cluster before giving up</td>
+</tr>
+</tbody>
+</table>
+<p>Your user needs <code>list</code> on <code>nodes</code>, and on <code>pods</code> and <code>poddisruptionbudgets</code> in every namespace; <code>list</code> on <code>nodepools.karpenter.sh</code>; <code>get</code> on the <code>cluster-autoscaler-status</code> ConfigMap and <code>list</code> on <code>deployments</code> in <code>kube-system</code>; and <code>list</code> on <code>managedworkloads</code>. It reads what it can, and the notes say what it couldn't: without pods, what each node runs and the reasons that come from its pods are left out; without nodes, there's no table.</p>
+<h2 id="pause-a-workload">Pause a Workload<a class="headerlink" href="#pause-a-workload" title="Permanent link">&para;</a></h2>
+<div class="language-bash highlight"><pre><span></span><code><span id="__span-20-1"><a id="__codelineno-20-1" name="__codelineno-20-1" href="#__codelineno-20-1"></a>kubectl<span class="w"> </span>hybernate<span class="w"> </span>pause<span class="w"> </span>my-api<span class="w"> </span>-n<span class="w"> </span>staging
+</span></code></pre></div>
+<div class="language-text highlight"><pre><span></span><code><span id="__span-21-1"><a id="__codelineno-21-1" name="__codelineno-21-1" href="#__codelineno-21-1"></a>pausing staging/my-api...
+</span><span id="__span-21-2"><a id="__codelineno-21-2" name="__codelineno-21-2" href="#__codelineno-21-2"></a>staging/my-api is Paused after 4s; a request to it, or kubectl hybernate wake, wakes it
+</span></code></pre></div>
+<p><code>pause</code> asks Hybernate to pause a workload now, instead of when its idle clock runs out: a preview environment at the end of the day, say. It's an ordinary pause, the same as an idle one: a request to the workload through the <a href="../../concepts/wake-on-request/">doorman</a>, <a href="../../concepts/idle-detection/#activity-annotations">activity</a>, <code>autoResume</code> or <a href="#wake-a-workload"><code>wake</code></a> wakes it. It works whether or not the workload has an <code>idlePolicy</code>. See <a href="../../guides/pause/#pause-now">Pause and Resume</a> for exactly what Hybernate does with the request.</p>
+<div class="language-bash highlight"><pre><span></span><code><span id="__span-22-1"><a id="__codelineno-22-1" name="__codelineno-22-1" href="#__codelineno-22-1"></a><span class="c1"># Pause it even if the forecast expects it to be busy soon, without asking</span>
+</span><span id="__span-22-2"><a id="__codelineno-22-2" name="__codelineno-22-2" href="#__codelineno-22-2"></a>kubectl<span class="w"> </span>hybernate<span class="w"> </span>pause<span class="w"> </span>my-api<span class="w"> </span>-n<span class="w"> </span>staging<span class="w"> </span>--yes
+</span><span id="__span-22-3"><a id="__codelineno-22-3" name="__codelineno-22-3" href="#__codelineno-22-3"></a>
+</span><span id="__span-22-4"><a id="__codelineno-22-4" name="__codelineno-22-4" href="#__codelineno-22-4"></a><span class="c1"># Request the pause and return straight away</span>
+</span><span id="__span-22-5"><a id="__codelineno-22-5" name="__codelineno-22-5" href="#__codelineno-22-5"></a>kubectl<span class="w"> </span>hybernate<span class="w"> </span>pause<span class="w"> </span>my-api<span class="w"> </span>-n<span class="w"> </span>staging<span class="w"> </span>--wait<span class="o">=</span><span class="nb">false</span>
+</span></code></pre></div>
+<p>NAME is found as for <a href="#wake-a-workload"><code>wake</code></a>.</p>
+<p>What it says depends on the phase:</p>
+<table>
+<thead>
+<tr>
+<th>Phase</th>
+<th>What happens</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>Running</code></td>
+<td>It pauses, and <code>pause</code> waits until it's <code>Paused</code></td>
+</tr>
+<tr>
+<td><code>Idle</code></td>
+<td>It pauses now</td>
+</tr>
+<tr>
+<td><code>Resuming</code></td>
+<td>It pauses once it's up</td>
+</tr>
+<tr>
+<td><code>Pausing</code></td>
+<td>Already pausing; <code>pause</code> waits until it's <code>Paused</code></td>
+</tr>
+<tr>
+<td><code>Paused</code></td>
+<td>Already paused; <code>pause</code> returns at once</td>
+</tr>
+<tr>
+<td>dry-run</td>
+<td>Never paused: Hybernate counts a would-be pause, and <code>pause</code> says so</td>
+</tr>
+</tbody>
+</table>
+<p>Hybernate pauses it by the same rules as an idle pause, so <code>pause</code> exits 1 with Hybernate's reason when it won't: workloads that are awake depend on it, a <code>dependsOn</code> cycle runs through it, its namespace is protected, or the workload doesn't exist, is labelled <code>hybernate.io/ignore</code> or is managed by another ManagedWorkload. A workload scaled to zero outside Hybernate is off already, which <code>pause</code> says, exiting 0. Asking does override the hour Hybernate waits after a GitOps tool undid its last pause.</p>
+<p>When a confident forecast expects the workload to be busy within the hour, Hybernate declines the pause and says when, since it would likely be woken straight back, and <code>pause</code> asks:</p>
+<div class="language-text highlight"><pre><span></span><code><span id="__span-23-1"><a id="__codelineno-23-1" name="__codelineno-23-1" href="#__codelineno-23-1"></a>preview-42/api wasn't paused: the forecast expects demand at 80% of requests in the hour from 09:00 UTC
+</span><span id="__span-23-2"><a id="__codelineno-23-2" name="__codelineno-23-2" href="#__codelineno-23-2"></a>Pause it anyway? [y/N]
+</span></code></pre></div>
+<p>Answering <code>y</code> asks again overriding the forecast, and it pauses; anything else leaves it running, exiting 0. The question waits for you as long as you take: <code>--timeout</code> counts only the time spent on the cluster, and starts again after your answer. <code>--yes</code> overrides the forecast from the start, without asking. With no terminal to ask on, such as in a script, <code>pause</code> exits 1 with the reason and says to pass <code>--yes</code>.</p>
+<p>When a <code>hybernate.io/active-until</code> annotation holds it awake, on the ManagedWorkload, as <code>wake --for</code> sets, or on the workload itself, Hybernate would refuse the pause, so <code>pause</code> asks first, naming which holds it:</p>
+<div class="language-text highlight"><pre><span></span><code><span id="__span-24-1"><a id="__codelineno-24-1" name="__codelineno-24-1" href="#__codelineno-24-1"></a>preview-42/api wasn't paused: the hybernate.io/active-until annotation on its ManagedWorkload keeps it awake until 2026-10-17T20:00:00Z
+</span><span id="__span-24-2"><a id="__codelineno-24-2" name="__codelineno-24-2" href="#__codelineno-24-2"></a>Clear it and pause now? [y/N]
+</span></code></pre></div>
+<p>Answering <code>y</code> removes the annotation, from both when both hold it, and pauses it; anything else leaves it running, exiting 0. <code>--clear-hold</code> clears it without asking; with no terminal to ask on and without <code>--clear-hold</code>, <code>pause</code> exits 1 and says to pass it. <code>--yes</code> doesn't clear a hold, so a nightly script that pauses with <code>--yes</code> doesn't end one someone set for a demo.</p>
+<p>When a GitOps tool sets the workload's replicas from Git and isn't told to leave them to Hybernate, <code>pause</code> warns before asking, with the one-time fix: the tool sets them again on its next sync, which undoes the pause. See <a href="../../guides/gitops/#checking-the-fix-is-in">GitOps tools</a> for how it tells:</p>
+<div class="language-text highlight"><pre><span></span><code><span id="__span-25-1"><a id="__codelineno-25-1" name="__codelineno-25-1" href="#__codelineno-25-1"></a>Warning: Argo CD application argocd/shop sets preview-42/api's replicas from Git, as argocd-controller, so its next sync will likely scale it back up, undoing this pause. To have Argo CD leave replicas to Hybernate, once:
+</span><span id="__span-25-2"><a id="__codelineno-25-2" name="__codelineno-25-2" href="#__codelineno-25-2"></a>  Add RespectIgnoreDifferences=true to the syncPolicy.syncOptions of Argo CD application argocd/shop, so syncs leave the replicas it ignores.
+</span><span id="__span-25-3"><a id="__codelineno-25-3" name="__codelineno-25-3" href="#__codelineno-25-3"></a>See https://okedeji.io/hybernate/guides/gitops/#argo-cd
+</span></code></pre></div>
+<p>When it can't tell, such as without access to Argo CD's namespace, the warning says why, and to make the fix if you haven't already.</p>
+<p>If the workload isn't <code>Paused</code>, and Hybernate hasn't said why, within <code>--timeout</code>, <code>pause</code> exits 1 with its phase and the <code>kubectl describe</code> command that says why.</p>
+<table>
+<thead>
+<tr>
+<th>Flag</th>
+<th>Short</th>
+<th>Default</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>--namespace</code></td>
+<td><code>-n</code></td>
+<td>kubeconfig context's</td>
+<td>Namespace of the workload</td>
+</tr>
+<tr>
+<td><code>--wait</code></td>
+<td></td>
+<td><code>true</code></td>
+<td>Wait until the workload is Paused, or Hybernate says why it isn't</td>
+</tr>
+<tr>
+<td><code>--yes</code></td>
+<td><code>-y</code></td>
+<td><code>false</code></td>
+<td>Pause it even if the forecast expects it to be busy within the hour, without asking</td>
+</tr>
+<tr>
+<td><code>--clear-hold</code></td>
+<td></td>
+<td><code>false</code></td>
+<td>Clear a <code>hybernate.io/active-until</code> hold on its ManagedWorkload, as <code>wake --for</code> sets, or on the workload, without asking</td>
+</tr>
+<tr>
+<td><code>--timeout</code></td>
+<td></td>
+<td><code>5m</code></td>
+<td>How long to wait, cluster calls included; it starts again after you answer a question</td>
+</tr>
+</tbody>
+</table>
+<p>Your user needs <code>get</code>, <code>list</code> and <code>patch</code> on <code>managedworkloads</code> in the namespace, and <code>get</code> on the workload for the GitOps warning and its own hold, which are left out without it. Clearing a hold on the workload takes <code>patch</code> on it. For a workload Argo CD applies, telling whether Argo CD leaves its replicas takes <code>list</code> on <code>applications.argoproj.io</code> in every namespace, or <code>get</code> in <code>argocd</code>, and <code>get</code> on the <code>argocd-cm</code> ConfigMap; without them, the warning says it couldn't check.</p>
+<h2 id="wake-a-workload">Wake a Workload<a class="headerlink" href="#wake-a-workload" title="Permanent link">&para;</a></h2>
+<div class="language-bash highlight"><pre><span></span><code><span id="__span-26-1"><a id="__codelineno-26-1" name="__codelineno-26-1" href="#__codelineno-26-1"></a>kubectl<span class="w"> </span>hybernate<span class="w"> </span>wake<span class="w"> </span>my-api<span class="w"> </span>-n<span class="w"> </span>staging
+</span></code></pre></div>
+<div class="language-text highlight"><pre><span></span><code><span id="__span-27-1"><a id="__codelineno-27-1" name="__codelineno-27-1" href="#__codelineno-27-1"></a>waking staging/my-api...
+</span><span id="__span-27-2"><a id="__codelineno-27-2" name="__codelineno-27-2" href="#__codelineno-27-2"></a>staging/my-api is Running after 23s
+</span></code></pre></div>
+<p><code>wake</code> marks the ManagedWorkload as active now by setting its <code>hybernate.io/last-activity</code> annotation, the same <a href="../../concepts/idle-detection/#activity-annotations">activity annotation</a> a developer portal would set. A paused workload wakes, along with the workloads it <a href="../../concepts/dependencies/">depends on</a>; a running one has its idle clock restarted. It then waits until the workload is Running.</p>
+<div class="language-bash highlight"><pre><span></span><code><span id="__span-28-1"><a id="__codelineno-28-1" name="__codelineno-28-1" href="#__codelineno-28-1"></a><span class="c1"># Keep it awake for the next two hours, e.g. for a demo</span>
+</span><span id="__span-28-2"><a id="__codelineno-28-2" name="__codelineno-28-2" href="#__codelineno-28-2"></a>kubectl<span class="w"> </span>hybernate<span class="w"> </span>wake<span class="w"> </span>my-api<span class="w"> </span>-n<span class="w"> </span>staging<span class="w"> </span>--for<span class="w"> </span>2h
+</span><span id="__span-28-3"><a id="__codelineno-28-3" name="__codelineno-28-3" href="#__codelineno-28-3"></a>
+</span><span id="__span-28-4"><a id="__codelineno-28-4" name="__codelineno-28-4" href="#__codelineno-28-4"></a><span class="c1"># Request the wake and return straight away</span>
+</span><span id="__span-28-5"><a id="__codelineno-28-5" name="__codelineno-28-5" href="#__codelineno-28-5"></a>kubectl<span class="w"> </span>hybernate<span class="w"> </span>wake<span class="w"> </span>my-api<span class="w"> </span>-n<span class="w"> </span>staging<span class="w"> </span>--wait<span class="o">=</span><span class="nb">false</span>
+</span></code></pre></div>
+<p>NAME is the workload, as <code>status</code> shows it, such as <code>api</code> or <code>statefulset/postgres</code>, or its ManagedWorkload's name. When a bare name answers to more than one ManagedWorkload, such as when a Deployment and a StatefulSet share it, or one ManagedWorkload is named after a workload another one manages, it lists them and asks for the workload as <code>kind/name</code>, which only matches workloads.</p>
+<p>What it says depends on the phase:</p>
+<table>
+<thead>
+<tr>
+<th>Phase</th>
+<th>What happens</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>Paused</code></td>
+<td>It wakes, and <code>wake</code> waits until it's <code>Running</code></td>
+</tr>
+<tr>
+<td><code>Pausing</code></td>
+<td>It wakes once the pause finishes</td>
+</tr>
+<tr>
+<td><code>Resuming</code></td>
+<td>It's already waking</td>
+</tr>
+<tr>
+<td><code>Idle</code></td>
+<td>Marked active, so it stays up</td>
+</tr>
+<tr>
+<td><code>Running</code></td>
+<td>Already running; its idle clock restarts, and <code>wake</code> returns at once</td>
+</tr>
+<tr>
+<td>dry-run, not paused</td>
+<td>Never paused; its idle clock restarts, and <code>wake</code> returns at once</td>
+</tr>
+</tbody>
+</table>
+<p>It refuses, and says why, when activity can't wake the workload: the workload doesn't exist or is labelled <code>hybernate.io/ignore</code>, or another ManagedWorkload manages it.</p>
+<p>If the workload isn't <code>Running</code> within <code>--timeout</code>, <code>wake</code> exits 1 with its phase and the <code>kubectl describe</code> command that says why.</p>
+<table>
+<thead>
+<tr>
+<th>Flag</th>
+<th>Short</th>
+<th>Default</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>--namespace</code></td>
+<td><code>-n</code></td>
+<td>kubeconfig context's</td>
+<td>Namespace of the workload</td>
+</tr>
+<tr>
+<td><code>--for</code></td>
+<td></td>
+<td></td>
+<td>Also keep the workload awake for this long, by setting <code>hybernate.io/active-until</code> on its ManagedWorkload. A hold there that ends later stays, and <code>wake</code> says so</td>
+</tr>
+<tr>
+<td><code>--wait</code></td>
+<td></td>
+<td><code>true</code></td>
+<td>Wait until the workload is Running</td>
+</tr>
+<tr>
+<td><code>--timeout</code></td>
+<td></td>
+<td><code>5m</code></td>
+<td>How long to wait, cluster calls included</td>
+</tr>
+</tbody>
+</table>
+<p>Your user needs <code>get</code>, <code>list</code> and <code>patch</code> on <code>managedworkloads</code> in the namespace.</p>
+<h2 id="show-a-workloads-dependencies">Show a Workload's Dependencies<a class="headerlink" href="#show-a-workloads-dependencies" title="Permanent link">&para;</a></h2>
+<div class="language-bash highlight"><pre><span></span><code><span id="__span-29-1"><a id="__codelineno-29-1" name="__codelineno-29-1" href="#__codelineno-29-1"></a>kubectl<span class="w"> </span>hybernate<span class="w"> </span>deps<span class="w"> </span>postgres<span class="w"> </span>-n<span class="w"> </span>preview-42
+</span></code></pre></div>
+<div class="language-text highlight"><pre><span></span><code><span id="__span-30-1"><a id="__codelineno-30-1" name="__codelineno-30-1" href="#__codelineno-30-1"></a>preview-42/postgres (StatefulSet, Paused)
+</span><span id="__span-30-2"><a id="__codelineno-30-2" name="__codelineno-30-2" href="#__codelineno-30-2"></a>Depends on:
+</span><span id="__span-30-3"><a id="__codelineno-30-3" name="__codelineno-30-3" href="#__codelineno-30-3"></a>  nothing
+</span><span id="__span-30-4"><a id="__codelineno-30-4" name="__codelineno-30-4" href="#__codelineno-30-4"></a>Depended on by:
+</span><span id="__span-30-5"><a id="__codelineno-30-5" name="__codelineno-30-5" href="#__codelineno-30-5"></a>  preview-42/api      learned from PGHOST                   Running
+</span><span id="__span-30-6"><a id="__codelineno-30-6" name="__codelineno-30-6" href="#__codelineno-30-6"></a>  preview-42/worker   declared in dependsOn, waitForReady   Paused
+</span><span id="__span-30-7"><a id="__codelineno-30-7" name="__codelineno-30-7" href="#__codelineno-30-7"></a>Learned links come from the dependent's environment or its requests; hybernate.io/ignore-dependencies drops one.
+</span></code></pre></div>
+<p><code>deps</code> shows what Hybernate holds awake and wakes with a ManagedWorkload, in both directions: what it depends on, and what depends on it, in any namespace. Each link says where it comes from, a <code>dependsOn</code> or what Hybernate <a href="../../concepts/dependencies/#learned-dependencies">learned</a> from the dependent's environment or from a wake, and what the other workload is doing now; one Hybernate doesn't manage shows as <code>not managed</code>. It only reads ManagedWorkloads. Without access to them in every namespace, it reads the workload's own and says that dependents elsewhere aren't shown; a dependency in another namespace then shows as <code>unknown (can't read &lt;namespace&gt;)</code>. NAME is found as for <a href="#wake-a-workload"><code>wake</code></a>.</p>
+<table>
+<thead>
+<tr>
+<th>Flag</th>
+<th>Short</th>
+<th>Default</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>--namespace</code></td>
+<td><code>-n</code></td>
+<td>kubeconfig context's</td>
+<td>Namespace of the workload</td>
+</tr>
+<tr>
+<td><code>--timeout</code></td>
+<td></td>
+<td><code>1m</code></td>
+<td>How long to wait for the cluster before giving up</td>
+</tr>
+</tbody>
+</table>
+<h2 id="enable-a-workload">Enable a Workload<a class="headerlink" href="#enable-a-workload" title="Permanent link">&para;</a></h2>
+<p>A workload in dry-run, whether from its own <code>hybernate.io/dry-run: "true"</code>, its namespace's, the cluster default, or <code>spec.dryRun</code> on a ManagedWorkload you wrote, is measured but never paused. <code>enable</code> ends that, so Hybernate starts pausing it while idle:</p>
+<div class="language-bash highlight"><pre><span></span><code><span id="__span-31-1"><a id="__codelineno-31-1" name="__codelineno-31-1" href="#__codelineno-31-1"></a>kubectl<span class="w"> </span>hybernate<span class="w"> </span><span class="nb">enable</span><span class="w"> </span>checkout-api<span class="w"> </span>-n<span class="w"> </span>preview-42
+</span><span id="__span-31-2"><a id="__codelineno-31-2" name="__codelineno-31-2" href="#__codelineno-31-2"></a>kubectl<span class="w"> </span>hybernate<span class="w"> </span><span class="nb">enable</span><span class="w"> </span>statefulset/postgres<span class="w"> </span>-n<span class="w"> </span>preview-42
+</span><span id="__span-31-3"><a id="__codelineno-31-3" name="__codelineno-31-3" href="#__codelineno-31-3"></a>kubectl<span class="w"> </span>hybernate<span class="w"> </span><span class="nb">enable</span><span class="w"> </span>--all<span class="w"> </span>-n<span class="w"> </span>preview-42
+</span></code></pre></div>
+<div class="language-text highlight"><pre><span></span><code><span id="__span-32-1"><a id="__codelineno-32-1" name="__codelineno-32-1" href="#__codelineno-32-1"></a>deployment/checkout-api: dry-run ended, Hybernate will pause it while idle
+</span></code></pre></div>
+<p>For a workload opted in with the <code>hybernate.io/managed</code> label, it sets the workload's own <code>hybernate.io/dry-run</code> annotation to <code>"false"</code>, which wins over its namespace's annotation and the cluster's default. It reads the workload's ManagedWorkload to tell whether it's in dry-run, so a dry-run from the cluster default counts too. For a ManagedWorkload you wrote, it sets <code>spec.dryRun: false</code>. It doesn't wait: Hybernate pauses the workload once its clock runs out.</p>
+<p><code>enable</code> only ends dry-run for a workload Hybernate manages. Otherwise it changes nothing and exits non-zero with the reason: the namespace is protected (labelled <code>hybernate.io/protected=true</code>, or a <code>kube-*</code> namespace, unless labelled <code>hybernate.io/allow-protected=true</code>); the workload is labelled <code>hybernate.io/ignore=true</code>, or its own <code>hybernate.io/managed</code> is anything but <code>"true"</code>, which opts it out of a managed namespace; no ManagedWorkload manages it, because the operator isn't running, doesn't watch the namespace, or protects it by its own settings; or its ManagedWorkload says Hybernate never pauses it: <code>Protected=True</code> (such as by a <code>protectedNamespaces</code> pattern, or for Hybernate's own operator and doorman), a target labelled <code>hybernate.io/ignore</code>, or <code>DuplicateTarget=True</code>. Right after you label a workload, the operator may not have made its ManagedWorkload yet; run <code>enable</code> again a few seconds later. Without the ManagedWorkload CRD, it says Hybernate isn't installed.</p>
+<p><code>--all</code> ends dry-run for every workload in the namespace. When the namespace's own <code>hybernate.io/dry-run</code> annotation, or the cluster default, keeps any of them in dry-run, it sets the namespace's annotation to <code>"false"</code> and drops the workloads' own annotations, so the namespace decides for all of them. When each is in dry-run by its own annotation, it leaves the namespace alone and sets each workload's annotation to <code>"false"</code>. Either way, it sets <code>spec.dryRun: false</code> on ManagedWorkloads written by hand in the namespace. When Git owns the namespace, its annotation is left for you to change there, which also ends dry-run for the workloads that take it, and workloads with their own annotation get <code>"false"</code>. When your access doesn't allow changing the namespace, as with <code>edit</code> or <code>admin</code> bound in it, <code>enable</code> leaves its annotation alone, says so, and sets every workload's own annotation to <code>"false"</code>, which wins over it; with nothing but the namespace's annotation to change, it exits non-zero. Labelled workloads no ManagedWorkload manages are left alone. When <code>enable</code> just set the namespace's annotation to <code>"false"</code>, that ends their dry-run too once Hybernate picks them up, unless they have an annotation of their own, so they're covered. The rest are listed, and <code>enable</code> exits non-zero. When none of the namespace's workloads has been picked up yet, <code>enable</code> changes nothing, the namespace's annotation included, and exits non-zero, since the operator may not be running. Workloads Hybernate never pauses, by their ManagedWorkload, are left alone and listed too.</p>
+<p>When a GitOps tool (Argo CD, Flux, Fleet, kapp or Kluctl) applies the setting <code>enable</code> would change, the <code>hybernate.io/dry-run</code> annotation on the workload or its namespace, or a ManagedWorkload's <code>spec.dryRun</code>, <code>enable</code> changes nothing there, because the tool would put the old value straight back. It tells by the field managers the API server records as owning that setting, as <code>pause</code> does for replicas, so it doesn't matter how the tool tracks what it applies; for an object with no managed fields recorded, it goes by the tracking label or annotation Argo CD or Flux adds. A tool that applies the workload but not the annotation, such as when Git doesn't have it, leaves a change to it alone. It names the tool, prints the change to make in Git, and exits non-zero:</p>
+<div class="language-text highlight"><pre><span></span><code><span id="__span-33-1"><a id="__codelineno-33-1" name="__codelineno-33-1" href="#__codelineno-33-1"></a>deployment/checkout-api is managed by Argo CD application shop, which would undo a change made here. In its manifest:
+</span><span id="__span-33-2"><a id="__codelineno-33-2" name="__codelineno-33-2" href="#__codelineno-33-2"></a>  set the annotation  hybernate.io/dry-run: "false"
+</span><span id="__span-33-3"><a id="__codelineno-33-3" name="__codelineno-33-3" href="#__codelineno-33-3"></a>Or pass --force to change the cluster anyway.
+</span></code></pre></div>
+<p>When Helm set it, <code>enable</code> changes it, since Helm only applies a chart when you run it, and warns that the next <code>helm upgrade</code> puts the chart's value back, so set it in the chart too. See <a href="../../guides/gitops/#ending-dry-run">GitOps tools</a>.</p>
+<p>Ending dry-run lets Hybernate pause the workload, and a GitOps tool that sets its replicas from Git scales it back up on its next sync after each pause. So whatever <code>enable</code> does, ends dry-run, finds it ended already, or leaves the change to Git, it warns as <a href="#pause-a-workload"><code>pause</code></a> does, with the one-time fix, unless the tool is told to leave the replicas to Hybernate. With <code>--all</code>, workloads a tool treats alike, such as those of one Argo CD application, get one warning between them.</p>
+<p>A bare name is looked up as a Deployment and as a StatefulSet. When both have it, <code>enable</code> lists them and asks for the kind; prefix the name with <code>deployment/</code> or <code>statefulset/</code> to be exact.</p>
+<table>
+<thead>
+<tr>
+<th>Flag</th>
+<th>Short</th>
+<th>Default</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>--namespace</code></td>
+<td><code>-n</code></td>
+<td>kubeconfig context's</td>
+<td>Namespace of the workload</td>
+</tr>
+<tr>
+<td><code>--all</code></td>
+<td></td>
+<td><code>false</code></td>
+<td>Enable every workload in the namespace</td>
+</tr>
+<tr>
+<td><code>--force</code></td>
+<td></td>
+<td><code>false</code></td>
+<td>Change the cluster even when a GitOps tool applies the setting from Git</td>
+</tr>
+<tr>
+<td><code>--timeout</code></td>
+<td></td>
+<td><code>1m</code></td>
+<td>How long to wait for the cluster before giving up</td>
+</tr>
+</tbody>
+</table>
+<p>Your user needs <code>get</code> and <code>patch</code> on the workload, <code>get</code> on its namespace, and <code>list</code> on <code>managedworkloads</code> in it. Without <code>list</code> on ManagedWorkloads, <code>enable</code> goes by the annotations alone, so it can't check that Hybernate manages the workload or see a dry-run from the cluster default, and it says so. With <code>--all</code>, it also needs <code>list</code> on Deployments and StatefulSets, and <code>patch</code> on the namespace to end its dry-run there; without it, each workload gets its own annotation instead. The GitOps warning reads Argo CD as <code>pause</code>'s does. See <a href="../../guides/opt-in/">Opting In</a> for the label and every setting.</p>
+
+
+
+
+
+
+
+
+
+
+
+
+                
+              </article>
+            </div>
+          
+          
+<script>var target=document.getElementById(location.hash.slice(1));target&&target.name&&(target.checked=target.name.startsWith("__tabbed_"))</script>
+        </div>
+        
+          <button type="button" class="md-top md-icon" data-md-component="top" hidden>
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M13 20h-2V8l-5.5 5.5-1.42-1.42L12 4.16l7.92 7.92-1.42 1.42L13 8z"/></svg>
+  Back to top
+</button>
+        
+      </main>
+      
+        <footer class="md-footer">
+  
+  <div class="md-footer-meta md-typeset">
+    <div class="md-footer-meta__inner md-grid">
+      <div class="md-copyright">
+  
+  
+    Made with
+    <a href="https://squidfunk.github.io/mkdocs-material/" target="_blank" rel="noopener">
+      Material for MkDocs
+    </a>
+  
+</div>
+      
+    </div>
+  </div>
+</footer>
+      
+    </div>
+    <div class="md-dialog" data-md-component="dialog">
+      <div class="md-dialog__inner md-typeset"></div>
+    </div>
+    
+    
+    
+      
+      
+      <script id="__config" type="application/json">{"annotate": null, "base": "../..", "features": ["navigation.tabs", "navigation.sections", "navigation.expand", "navigation.top", "search.suggest", "search.highlight", "content.code.copy", "content.code.annotate", "content.code.select", "content.action.edit"], "search": "../../assets/javascripts/workers/search.2c215733.min.js", "tags": null, "translations": {"clipboard.copied": "Copied to clipboard", "clipboard.copy": "Copy to clipboard", "search.result.more.one": "1 more on this page", "search.result.more.other": "# more on this page", "search.result.none": "No matching documents", "search.result.one": "1 matching document", "search.result.other": "# matching documents", "search.result.placeholder": "Type to start searching", "search.result.term.missing": "Missing", "select.version": "Select version"}, "version": {"alias": true, "default": "latest", "provider": "mike"}}</script>
+    
+    
+      <script src="../../assets/javascripts/bundle.d7400e89.min.js"></script>
+      
+        <script src="../../javascripts/mathjax.js"></script>
+      
+        <script src="https://unpkg.com/mathjax@3.2.2/es5/tex-mml-chtml.js"></script>
+      
+    
+  </body>
+</html>

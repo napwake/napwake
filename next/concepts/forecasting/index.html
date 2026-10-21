@@ -1,0 +1,2505 @@
+
+<!doctype html>
+<html lang="en" class="no-js">
+  <head>
+    
+      <meta charset="utf-8">
+      <meta name="viewport" content="width=device-width,initial-scale=1">
+      
+        <meta name="description" content="Intelligent Kubernetes workload lifecycle management">
+      
+      
+      
+        <link rel="canonical" href="https://okedeji.io/hybernate/latest/concepts/forecasting/">
+      
+      
+        <link rel="prev" href="../lifecycle/">
+      
+      
+        <link rel="next" href="../idle-detection/">
+      
+      
+        
+      
+      
+      <link rel="icon" href="../../assets/favicon.svg">
+      <meta name="generator" content="mkdocs-1.6.1, mkdocs-material-9.7.7">
+    
+    
+      
+        <title>Forecasting - Hybernate</title>
+      
+    
+    
+      <link rel="stylesheet" href="../../assets/stylesheets/main.ec1eaa64.min.css">
+      
+        
+        <link rel="stylesheet" href="../../assets/stylesheets/palette.ab4e12ef.min.css">
+      
+      
+
+
+    
+    
+      
+    
+    
+      
+        
+        
+        <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+        <link rel="stylesheet" href="https://fonts.googleapis.com/css?family=Roboto:300,300i,400,400i,700,700i%7CRoboto+Mono:400,400i,700,700i&display=fallback">
+        <style>:root{--md-text-font:"Roboto";--md-code-font:"Roboto Mono"}</style>
+      
+    
+    
+      <link rel="stylesheet" href="../../stylesheets/custom.css">
+    
+    <script>__md_scope=new URL("../..",location),__md_hash=e=>[...e].reduce(((e,_)=>(e<<5)-e+_.charCodeAt(0)),0),__md_get=(e,_=localStorage,t=__md_scope)=>JSON.parse(_.getItem(t.pathname+"."+e)),__md_set=(e,_,t=localStorage,a=__md_scope)=>{try{t.setItem(a.pathname+"."+e,JSON.stringify(_))}catch(e){}}</script>
+    
+      
+
+    
+    
+  </head>
+  
+  
+    
+    
+    
+    
+    
+    <body dir="ltr" data-md-color-scheme="default" data-md-color-primary="white" data-md-color-accent="black">
+  
+    
+    <input class="md-toggle" data-md-toggle="drawer" type="checkbox" id="__drawer" autocomplete="off">
+    <input class="md-toggle" data-md-toggle="search" type="checkbox" id="__search" autocomplete="off">
+    <label class="md-overlay" for="__drawer"></label>
+    <div data-md-component="skip">
+      
+        
+        <a href="#forecasting" class="md-skip">
+          Skip to content
+        </a>
+      
+    </div>
+    <div data-md-component="announce">
+      
+    </div>
+    
+      <div data-md-color-scheme="default" data-md-component="outdated" hidden>
+        
+          <aside class="md-banner md-banner--warning">
+            <div class="md-banner__inner md-grid md-typeset">
+              
+  
+    These docs are for Hybernate 0.2.0-rc.4, a release candidate, and may change before it's released.
+  
+  <a href="../../.."><strong>Read the docs for the latest release.</strong></a>
+
+            </div>
+            <script>var el=document.querySelector("[data-md-component=outdated]"),base=new URL("../.."),outdated=__md_get("__outdated",sessionStorage,base);!0===outdated&&el&&(el.hidden=!1)</script>
+          </aside>
+        
+      </div>
+    
+    
+      
+
+<header class="md-header" data-md-component="header">
+  <nav class="md-header__inner md-grid" aria-label="Header">
+    <a href="../.." title="Hybernate" class="md-header__button md-logo" aria-label="Hybernate" data-md-component="logo">
+      
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="m20.79 13.95-2.33.62-2-1.13v-2.88l2-1.13 2.33.62.52-1.93-1.77-.47.46-1.77-1.93-.52-.62 2.33-2 1.13L13 7.38V5.12l1.71-1.71L13.29 2 12 3.29 10.71 2 9.29 3.41 11 5.12v2.26L8.5 8.82l-2-1.13-.58-2.33L4 5.88l.47 1.77-1.77.47.52 1.93 2.33-.62 2 1.13v2.89l-2 1.13-2.33-.62-.52 1.93 1.77.47L4 18.12l1.93.52.62-2.33 2-1.13L11 16.62v2.26l-1.71 1.71L10.71 22 12 20.71 13.29 22l1.41-1.41-1.7-1.71v-2.26l2.5-1.45 2 1.13.62 2.33 1.88-.51-.47-1.77 1.77-.47zM9.5 10.56 12 9.11l2.5 1.45v2.88L12 14.89l-2.5-1.45z"/></svg>
+
+    </a>
+    <label class="md-header__button md-icon" for="__drawer">
+      
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M3 6h18v2H3zm0 5h18v2H3zm0 5h18v2H3z"/></svg>
+    </label>
+    <div class="md-header__title" data-md-component="header-title">
+      <div class="md-header__ellipsis">
+        <div class="md-header__topic">
+          <span class="md-ellipsis">
+            Hybernate
+          </span>
+        </div>
+        <div class="md-header__topic" data-md-component="header-topic">
+          <span class="md-ellipsis">
+            
+              Forecasting
+            
+          </span>
+        </div>
+      </div>
+    </div>
+    
+      
+    
+    
+    
+    
+      
+      
+        <label class="md-header__button md-icon" for="__search">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+        </label>
+        <div class="md-search" data-md-component="search" role="dialog">
+  <label class="md-search__overlay" for="__search"></label>
+  <div class="md-search__inner" role="search">
+    <form class="md-search__form" name="search">
+      <input type="text" class="md-search__input" name="query" aria-label="Search" placeholder="Search" autocapitalize="off" autocorrect="off" autocomplete="off" spellcheck="false" data-md-component="search-query" required>
+      <label class="md-search__icon md-icon" for="__search">
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M20 11v2H8l5.5 5.5-1.42 1.42L4.16 12l7.92-7.92L13.5 5.5 8 11z"/></svg>
+      </label>
+      <nav class="md-search__options" aria-label="Search">
+        
+        <button type="reset" class="md-search__icon md-icon" title="Clear" aria-label="Clear" tabindex="-1">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M19 6.41 17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/></svg>
+        </button>
+      </nav>
+      
+        <div class="md-search__suggest" data-md-component="search-suggest"></div>
+      
+    </form>
+    <div class="md-search__output">
+      <div class="md-search__scrollwrap" tabindex="0" data-md-scrollfix>
+        <div class="md-search-result" data-md-component="search-result">
+          <div class="md-search-result__meta">
+            Initializing search
+          </div>
+          <ol class="md-search-result__list" role="presentation"></ol>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+      
+    
+    
+      <div class="md-header__source">
+        <a href="https://github.com/okedeji/hybernate" title="Go to repository" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M173.9 397.4c0 2-2.3 3.6-5.2 3.6-3.3.3-5.6-1.3-5.6-3.6 0-2 2.3-3.6 5.2-3.6 3-.3 5.6 1.3 5.6 3.6m-31.1-4.5c-.7 2 1.3 4.3 4.3 4.9 2.6 1 5.6 0 6.2-2s-1.3-4.3-4.3-5.2c-2.6-.7-5.5.3-6.2 2.3m44.2-1.7c-2.9.7-4.9 2.6-4.6 4.9.3 2 2.9 3.3 5.9 2.6 2.9-.7 4.9-2.6 4.6-4.6-.3-1.9-3-3.2-5.9-2.9M252.8 8C114.1 8 8 113.3 8 252c0 110.9 69.8 205.8 169.5 239.2 12.8 2.3 17.3-5.6 17.3-12.1 0-6.2-.3-40.4-.3-61.4 0 0-70 15-84.7-29.8 0 0-11.4-29.1-27.8-36.6 0 0-22.9-15.7 1.6-15.4 0 0 24.9 2 38.6 25.8 21.9 38.6 58.6 27.5 72.9 20.9 2.3-16 8.8-27.1 16-33.7-55.9-6.2-112.3-14.3-112.3-110.5 0-27.5 7.6-41.3 23.6-58.9-2.6-6.5-11.1-33.3 2.6-67.9 20.9-6.5 69 27 69 27 20-5.6 41.5-8.5 62.8-8.5s42.8 2.9 62.8 8.5c0 0 48.1-33.6 69-27 13.7 34.7 5.2 61.4 2.6 67.9 16 17.7 25.8 31.5 25.8 58.9 0 96.5-58.9 104.2-114.8 110.5 9.2 7.9 17 22.9 17 46.4 0 33.7-.3 75.4-.3 83.6 0 6.5 4.6 14.4 17.3 12.1C436.2 457.8 504 362.9 504 252 504 113.3 391.5 8 252.8 8M105.2 352.9c-1.3 1-1 3.3.7 5.2 1.6 1.6 3.9 2.3 5.2 1 1.3-1 1-3.3-.7-5.2-1.6-1.6-3.9-2.3-5.2-1m-10.8-8.1c-.7 1.3.3 2.9 2.3 3.9 1.6 1 3.6.7 4.3-.7.7-1.3-.3-2.9-2.3-3.9-2-.6-3.6-.3-4.3.7m32.4 35.6c-1.6 1.3-1 4.3 1.3 6.2 2.3 2.3 5.2 2.6 6.5 1 1.3-1.3.7-4.3-1.3-6.2-2.2-2.3-5.2-2.6-6.5-1m-11.4-14.7c-1.6 1-1.6 3.6 0 5.9s4.3 3.3 5.6 2.3c1.6-1.3 1.6-3.9 0-6.2-1.4-2.3-4-3.3-5.6-2"/></svg>
+  </div>
+  <div class="md-source__repository">
+    okedeji/hybernate
+  </div>
+</a>
+      </div>
+    
+  </nav>
+  
+</header>
+    
+    <div class="md-container" data-md-component="container">
+      
+      
+        
+          
+            
+<nav class="md-tabs" aria-label="Tabs" data-md-component="tabs">
+  <div class="md-grid">
+    <ul class="md-tabs__list">
+      
+        
+  
+  
+  
+  
+    <li class="md-tabs__item">
+      <a href="../.." class="md-tabs__link">
+        
+  
+  
+    
+  
+  Home
+
+      </a>
+    </li>
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../getting-started/installation/" class="md-tabs__link">
+          
+  
+  
+  Getting Started
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+    
+  
+  
+    
+    
+      <li class="md-tabs__item md-tabs__item--active">
+        <a href="../architecture/" class="md-tabs__link">
+          
+  
+  
+  Concepts
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../guides/opt-in/" class="md-tabs__link">
+          
+  
+  
+  Guides
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../reference/api/" class="md-tabs__link">
+          
+  
+  
+  Reference
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../operations/monitoring/" class="md-tabs__link">
+          
+  
+  
+  Operations
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    <li class="md-tabs__item">
+      <a href="../../contributing/" class="md-tabs__link">
+        
+  
+  
+    
+  
+  Contributing
+
+      </a>
+    </li>
+  
+
+      
+    </ul>
+  </div>
+</nav>
+          
+        
+      
+      <main class="md-main" data-md-component="main">
+        <div class="md-main__inner md-grid">
+          
+            
+              
+              <div class="md-sidebar md-sidebar--primary" data-md-component="sidebar" data-md-type="navigation" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+
+  
+
+
+<nav class="md-nav md-nav--primary md-nav--lifted" aria-label="Navigation" data-md-level="0">
+  <label class="md-nav__title" for="__drawer">
+    <a href="../.." title="Hybernate" class="md-nav__button md-logo" aria-label="Hybernate" data-md-component="logo">
+      
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="m20.79 13.95-2.33.62-2-1.13v-2.88l2-1.13 2.33.62.52-1.93-1.77-.47.46-1.77-1.93-.52-.62 2.33-2 1.13L13 7.38V5.12l1.71-1.71L13.29 2 12 3.29 10.71 2 9.29 3.41 11 5.12v2.26L8.5 8.82l-2-1.13-.58-2.33L4 5.88l.47 1.77-1.77.47.52 1.93 2.33-.62 2 1.13v2.89l-2 1.13-2.33-.62-.52 1.93 1.77.47L4 18.12l1.93.52.62-2.33 2-1.13L11 16.62v2.26l-1.71 1.71L10.71 22 12 20.71 13.29 22l1.41-1.41-1.7-1.71v-2.26l2.5-1.45 2 1.13.62 2.33 1.88-.51-.47-1.77 1.77-.47zM9.5 10.56 12 9.11l2.5 1.45v2.88L12 14.89l-2.5-1.45z"/></svg>
+
+    </a>
+    Hybernate
+  </label>
+  
+    <div class="md-nav__source">
+      <a href="https://github.com/okedeji/hybernate" title="Go to repository" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M173.9 397.4c0 2-2.3 3.6-5.2 3.6-3.3.3-5.6-1.3-5.6-3.6 0-2 2.3-3.6 5.2-3.6 3-.3 5.6 1.3 5.6 3.6m-31.1-4.5c-.7 2 1.3 4.3 4.3 4.9 2.6 1 5.6 0 6.2-2s-1.3-4.3-4.3-5.2c-2.6-.7-5.5.3-6.2 2.3m44.2-1.7c-2.9.7-4.9 2.6-4.6 4.9.3 2 2.9 3.3 5.9 2.6 2.9-.7 4.9-2.6 4.6-4.6-.3-1.9-3-3.2-5.9-2.9M252.8 8C114.1 8 8 113.3 8 252c0 110.9 69.8 205.8 169.5 239.2 12.8 2.3 17.3-5.6 17.3-12.1 0-6.2-.3-40.4-.3-61.4 0 0-70 15-84.7-29.8 0 0-11.4-29.1-27.8-36.6 0 0-22.9-15.7 1.6-15.4 0 0 24.9 2 38.6 25.8 21.9 38.6 58.6 27.5 72.9 20.9 2.3-16 8.8-27.1 16-33.7-55.9-6.2-112.3-14.3-112.3-110.5 0-27.5 7.6-41.3 23.6-58.9-2.6-6.5-11.1-33.3 2.6-67.9 20.9-6.5 69 27 69 27 20-5.6 41.5-8.5 62.8-8.5s42.8 2.9 62.8 8.5c0 0 48.1-33.6 69-27 13.7 34.7 5.2 61.4 2.6 67.9 16 17.7 25.8 31.5 25.8 58.9 0 96.5-58.9 104.2-114.8 110.5 9.2 7.9 17 22.9 17 46.4 0 33.7-.3 75.4-.3 83.6 0 6.5 4.6 14.4 17.3 12.1C436.2 457.8 504 362.9 504 252 504 113.3 391.5 8 252.8 8M105.2 352.9c-1.3 1-1 3.3.7 5.2 1.6 1.6 3.9 2.3 5.2 1 1.3-1 1-3.3-.7-5.2-1.6-1.6-3.9-2.3-5.2-1m-10.8-8.1c-.7 1.3.3 2.9 2.3 3.9 1.6 1 3.6.7 4.3-.7.7-1.3-.3-2.9-2.3-3.9-2-.6-3.6-.3-4.3.7m32.4 35.6c-1.6 1.3-1 4.3 1.3 6.2 2.3 2.3 5.2 2.6 6.5 1 1.3-1.3.7-4.3-1.3-6.2-2.2-2.3-5.2-2.6-6.5-1m-11.4-14.7c-1.6 1-1.6 3.6 0 5.9s4.3 3.3 5.6 2.3c1.6-1.3 1.6-3.9 0-6.2-1.4-2.3-4-3.3-5.6-2"/></svg>
+  </div>
+  <div class="md-source__repository">
+    okedeji/hybernate
+  </div>
+</a>
+    </div>
+  
+  <ul class="md-nav__list" data-md-scrollfix>
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../.." class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Home
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_2" >
+        
+          
+          <label class="md-nav__link" for="__nav_2" id="__nav_2_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Getting Started
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_2_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_2">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Getting Started
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../getting-started/installation/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Installation
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../getting-started/quickstart/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Quickstart
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../getting-started/kubectl-plugin/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    kubectl Plugin
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+    
+  
+  
+  
+    
+    
+    
+    
+      
+        
+        
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--active md-nav__item--section md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_3" checked>
+        
+          
+          <label class="md-nav__link" for="__nav_3" id="__nav_3_label" tabindex="">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Concepts
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_3_label" aria-expanded="true">
+          <label class="md-nav__title" for="__nav_3">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Concepts
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../architecture/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Architecture
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../lifecycle/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Lifecycle
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+    
+  
+  
+  
+    <li class="md-nav__item md-nav__item--active">
+      
+      <input class="md-nav__toggle md-toggle" type="checkbox" id="__toc">
+      
+      
+        
+      
+      
+        <label class="md-nav__link md-nav__link--active" for="__toc">
+          
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Forecasting
+  
+
+    
+  </span>
+  
+  
+
+          <span class="md-nav__icon md-icon"></span>
+        </label>
+      
+      <a href="./" class="md-nav__link md-nav__link--active">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Forecasting
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+      
+        
+
+<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#the-idea" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        The Idea
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#what-an-hour-records" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        What an Hour Records
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#how-it-works" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        How It Works
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#phase-lifecycle" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Phase Lifecycle
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#forecast-setting" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Forecast Setting
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Forecast Setting">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#how-long-it-takes" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        How Long It Takes
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#when-it-acts" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        When It Acts
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#learning-from-history" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Learning from History
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#confidence-scoring" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Confidence Scoring
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#anomaly-detection" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Anomaly Detection
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#persistence" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Persistence
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#wall-clock-alignment" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Wall-Clock Alignment
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#tuning" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Tuning
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#proving-it" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Proving It
+      
+    </span>
+  </a>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+      
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../idle-detection/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Idle Detection
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../dependencies/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Dependencies
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../wake-on-request/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Wake on Request
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../cost-tracking/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Cost Tracking
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_4" >
+        
+          
+          <label class="md-nav__link" for="__nav_4" id="__nav_4_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Guides
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_4_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_4">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Guides
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../guides/opt-in/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Opting In
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../guides/managed-workload/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    ManagedWorkload
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../guides/pause/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Pause and Resume
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../guides/cluster-autoscaler/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Cluster Autoscaler
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../guides/node-pools/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Node Pools for Real Savings
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../guides/dry-run/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Dry Run
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../guides/prometheus-signals/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Prometheus Activity
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../guides/gitops/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    GitOps tools
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../guides/autoscalers/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    HPA and KEDA
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_5" >
+        
+          
+          <label class="md-nav__link" for="__nav_5" id="__nav_5_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Reference
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_5_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_5">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Reference
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../reference/api/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    API
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../reference/helm-values/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Helm Values
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../reference/metrics/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Metrics
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../reference/labels-annotations/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Labels & Annotations
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../reference/data-and-access/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Data and Access
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../reference/security/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Security
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../reference/configuration/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Configuration
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../reference/compatibility/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Compatibility
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_6" >
+        
+          
+          <label class="md-nav__link" for="__nav_6" id="__nav_6_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Operations
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_6_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_6">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Operations
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../operations/monitoring/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Monitoring
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../operations/troubleshooting/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Troubleshooting
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../operations/upgrading/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Upgrading
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../contributing/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Contributing
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+  </ul>
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+            
+              
+              <div class="md-sidebar md-sidebar--secondary" data-md-component="sidebar" data-md-type="toc" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#the-idea" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        The Idea
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#what-an-hour-records" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        What an Hour Records
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#how-it-works" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        How It Works
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#phase-lifecycle" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Phase Lifecycle
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#forecast-setting" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Forecast Setting
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Forecast Setting">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#how-long-it-takes" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        How Long It Takes
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#when-it-acts" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        When It Acts
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#learning-from-history" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Learning from History
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#confidence-scoring" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Confidence Scoring
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#anomaly-detection" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Anomaly Detection
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#persistence" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Persistence
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#wall-clock-alignment" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Wall-Clock Alignment
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#tuning" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Tuning
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#proving-it" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Proving It
+      
+    </span>
+  </a>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+          
+          
+            <div class="md-content" data-md-component="content">
+              
+              <article class="md-content__inner md-typeset">
+                
+                  
+
+
+  
+    <a href="https://github.com/okedeji/hybernate/edit/main/docs/concepts/forecasting.md" title="Edit this page" class="md-content__button md-icon" rel="edit">
+      
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M10 20H6V4h7v5h5v3.1l2-2V8l-6-6H6c-1.1 0-2 .9-2 2v16c0 1.1.9 2 2 2h4zm10.2-7c.1 0 .3.1.4.2l1.3 1.3c.2.2.2.6 0 .8l-1 1-2.1-2.1 1-1c.1-.1.2-.2.4-.2m0 3.9L14.1 23H12v-2.1l6.1-6.1z"/></svg>
+    </a>
+  
+  
+
+
+<h1 id="forecasting">Forecasting<a class="headerlink" href="#forecasting" title="Permanent link">&para;</a></h1>
+<p>Hybernate uses a <strong>Holt-Winters double seasonal model</strong> to learn your workload's demand patterns and predict future resource needs. This page covers the mathematical model, how it builds confidence over time, how soon it acts and how to choose that, how it starts from your Prometheus history, and how it handles pattern shifts. Every figure on it is measured by the <a href="#proving-it">simulator</a>, which runs the operator's own engine and rules.</p>
+<h2 id="the-idea">The Idea<a class="headerlink" href="#the-idea" title="Permanent link">&para;</a></h2>
+<p>Most workloads follow predictable patterns:</p>
+<ul>
+<li><strong>Daily</strong>: Traffic peaks during business hours, drops overnight</li>
+<li><strong>Weekly</strong>: Weekdays are busier than weekends</li>
+</ul>
+<p>Hybernate learns these two patterns independently by feeding hourly CPU utilization into a Holt-Winters model. Once it has enough data and confidence, it uses the learned patterns to:</p>
+<ul>
+<li>Hold off a pause when it's confident demand is coming in the hour under way or the next. It never causes a pause: the <a href="../idle-detection/">activity clock</a> decides that</li>
+<li>Wake paused workloads ahead of predicted demand, starting 15 minutes before an hour it expects to be busy</li>
+</ul>
+<h2 id="what-an-hour-records">What an Hour Records<a class="headerlink" href="#what-an-hour-records" title="Permanent link">&para;</a></h2>
+<p>The forecast learns CPU utilization: usage as a percentage of what the workload's own containers request in the pods reporting it, the same measure <code>cpuThreshold</code> is set in (see <a href="../idle-detection/#what-counts-as-activity">Idle Detection</a>). Holding back a pause and waking ahead of demand compare its forecast with <code>cpuThreshold</code> directly, so a forecast that keeps an idle workload awake would also wake it once paused.</p>
+<p>It's fed each hour once it's over, as the busiest moment seen in it:</p>
+<ul>
+<li>While the workload is awake, its CPU is read every minute, and the hour records the highest utilization. The peak, rather than the mean, is what the forecast's decisions need: the activity clock counts any minute above <code>cpuThreshold</code> as activity, so an hour busy only for its last ten minutes is an hour the workload has to be awake for. Usage in the first 15 minutes after a wake, including one by something else scaling it up such as <code>kubectl scale</code>, isn't counted: starting up isn't demand, and counted, a wake ahead of a busy hour would teach the forecast that the hour before it is busy too, so that it woke the workload earlier every week. Once it's warmed up, an hour the <a href="../idle-detection/#what-counts-as-activity">activity clock</a> sees it in use in, from CPU above <code>cpuThreshold</code>, an activity annotation or a Prometheus query, counts as at least twice <code>cpuThreshold</code>, as an hour a request wakes it in does. A light-use workload's use may show only in an annotation or a query: taught its own light utilization on mornings <code>autoResume</code> had it ready, and a request's twice <code>cpuThreshold</code> on mornings people woke it, the forecast would have it ready only every other morning. A workload whose use stays under <code>cpuThreshold</code> with no other source is idle to Hybernate while it's awake, so <code>autoResume</code> can't learn its mornings; lower <code>cpuThreshold</code> below its use or add a source that sees it</li>
+<li>While the workload is paused behind the <a href="../wake-on-request/">doorman</a> (<code>WakeOnRequest=True</code>), a request would wake it, so a check that finds it still paused finds no demand. A request that wakes it counts as at least twice <code>cpuThreshold</code>, however little it then uses, so the hour people arrive in is learned as busy</li>
+<li>While the workload is paused without the doorman, demand can't be seen, and the hour isn't recorded: demand it can't see isn't zero</li>
+<li>An hour is recorded only if it was checked from its start to its end. The hour under way is kept in memory, so after an operator restart or a leader change, the hour it happened in is skipped, unless it was only minutes old, rather than recorded from the part seen after it</li>
+</ul>
+<h2 id="how-it-works">How It Works<a class="headerlink" href="#how-it-works" title="Permanent link">&para;</a></h2>
+<p>The model tracks four components:</p>
+<table>
+<thead>
+<tr>
+<th>Component</th>
+<th>What it represents</th>
+<th>Smoothing parameter</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>Level</strong></td>
+<td>The mean demand</td>
+<td><span class="arithmatex">\( \alpha = 0.01 \)</span></td>
+</tr>
+<tr>
+<td><strong>Trend</strong></td>
+<td>Whether demand is growing or shrinking</td>
+<td><span class="arithmatex">\( \beta = 0.001 \)</span></td>
+</tr>
+<tr>
+<td><strong>Daily components</strong></td>
+<td>24 offsets, one per hour of day: the shape of an average day</td>
+<td><span class="arithmatex">\( \gamma_1 = 0.1 \)</span></td>
+</tr>
+<tr>
+<td><strong>Weekly components</strong></td>
+<td>168 offsets, one per hour of week: how each weekday departs from that shape</td>
+<td><span class="arithmatex">\( \gamma_2 = 0.5 \)</span></td>
+</tr>
+</tbody>
+</table>
+<p>Each hour, the model takes the hour's utilization <span class="arithmatex">\( Y(t) \)</span>, compares it to what it predicted (for confidence scoring), and updates all four components using exponential smoothing. The model is <strong>additive</strong>: idle workloads spend much of their time at zero demand, where a multiplicative model, which divides by the level and the seasonal factors, diverges.</p>
+<div class="arithmatex">\[
+\begin{aligned}
+L(t) &amp;= \max\Bigl(0,\; \alpha \cdot \bigl(Y(t) - D(t) - W(t)\bigr) + (1 - \alpha) \cdot \bigl(L(t{-}k) + k \cdot T(t{-}k)\bigr)\Bigr) \\[6pt]
+T(t) &amp;= \beta \cdot \frac{L(t) - L(t{-}k)}{k} + (1 - \beta) \cdot T(t{-}k) \\[6pt]
+D(t) &amp;= \gamma_1 \cdot \bigl(Y(t) - L(t) - W(t)\bigr) + (1 - \gamma_1) \cdot D(t - s_1) \\[6pt]
+W(t) &amp;= \gamma_2 \cdot \bigl(Y(t) - L(t) - D(t)\bigr) + (1 - \gamma_2) \cdot W(t - s_2)
+\end{aligned}
+\]</div>
+<p>Where <span class="arithmatex">\( s_1 = 24 \)</span> (daily season length), <span class="arithmatex">\( s_2 = 168 \)</span> (weekly season length), and <span class="arithmatex">\( k \)</span> is the number of hours since the previous observation (1, unless observations were missed).</p>
+<p>After each update the components are renormalised: the daily components sum to zero, and for each hour of the day the weekly components across the seven days sum to zero. The shift is moved into the component above, which leaves every forecast unchanged and keeps the level the mean demand, so it is never negative.</p>
+<p>The forecast for <span class="arithmatex">\( h \)</span> hours ahead is never negative either:</p>
+<div class="arithmatex">\[
+F(t+h) = \max\Bigl(0,\; L(t) + h \cdot T(t) + D(t+h) + W(t+h)\Bigr)
+\]</div>
+<p>A gap in the observations, from the operator being down or a workload paused without the doorman, is skipped rather than filled in: there is no honest value to fill it with, and since slots are wall-clock hours (below), skipping an hour doesn't shift what was learned. The trend is carried across a gap of at most a day.</p>
+<p>The first week initialises the model, as the first season does in classical Holt-Winters. The first time an hour of the week is seen, its weekly component is set so the forecast for that hour is what was seen, and the level, trend and daily components learn only from hours seen again. So after one week of office hours, the forecast for the next week is the week it saw, weekends quiet. The forecast isn't scored on an hour of the week it's seeing for the first time, since it had nothing to forecast it from, and doesn't act on one it hasn't seen.</p>
+<h2 id="phase-lifecycle">Phase Lifecycle<a class="headerlink" href="#phase-lifecycle" title="Permanent link">&para;</a></h2>
+<p>The engine doesn't start making decisions immediately. It progresses through phases as it collects data and builds confidence:</p>
+<p><code>Observing</code> → <code>DailySuggesting</code> → <code>DailyActive</code> → <code>WeeklySuggesting</code> → <code>FullyActive</code></p>
+<table>
+<thead>
+<tr>
+<th>Phase</th>
+<th>Requires</th>
+<th>Behavior</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>Observing</strong></td>
+<td>No day of forecasts scored yet</td>
+<td>Collecting data, its first week: an hour of the week is scored from the second time it's seen. No predictions yet.</td>
+</tr>
+<tr>
+<td><strong>DailySuggesting</strong></td>
+<td>Every hour of the day observed, and a day of forecasts scored</td>
+<td>Daily confidence is being scored; predictions aren't acted on yet.</td>
+</tr>
+<tr>
+<td><strong>DailyActive</strong></td>
+<td>Daily confidence &gt;= threshold</td>
+<td>Predictions drive decisions. Weekly patterns still learning.</td>
+</tr>
+<tr>
+<td><strong>WeeklySuggesting</strong></td>
+<td>Every hour of the week observed at least once</td>
+<td>Weekly confidence still being earned.</td>
+</tr>
+<tr>
+<td><strong>FullyActive</strong></td>
+<td>Weekly confidence &gt;= threshold</td>
+<td>Both daily and weekly patterns drive decisions.</td>
+</tr>
+</tbody>
+</table>
+<p>The gates count hours of the calendar, not data points: a workload that is only ever observed from 9 to 5 hasn't shown what happens at night, however many hours it has been watched.</p>
+<p>That has a consequence for workloads paused without the <a href="../wake-on-request/">doorman</a>: an hour paused without it isn't observed (see <a href="#what-an-hour-records">What an Hour Records</a>), so a workload paused every night that way never has its nights observed, and its forecast never reaches <code>DailySuggesting</code>. Keep wake on request on if you want <code>autoResume</code> and the forecast's veto.</p>
+<p>The ManagedWorkload shows the phase per season, in <code>status.prediction</code>: <code>dailyPhase</code> and <code>weeklyPhase</code> are each <code>Observing</code>, <code>Suggesting</code> or <code>Active</code>, next to <code>dailyConfidence</code> and <code>weeklyConfidence</code>. <code>DailyActive</code>, for example, is <code>dailyPhase: Active</code> with <code>weeklyPhase: Observing</code>. The phase shown, there and in <code>hybernate_prediction_phase</code>, is the one the forecast is acting in: after a <a href="#anomaly-detection">regime change</a> leaves it at <code>WeeklySuggesting</code> with nothing scored, it's shown as <code>DailySuggesting</code> until a day of its forecasts has been scored and it drives decisions again.</p>
+<p>The confidence threshold is the <a href="#forecast-setting">forecast setting</a>'s, and a change applies at the next reconcile. A phase is earned at the threshold and lost 5 points below it, so confidence hovering at the threshold doesn't switch the forecast on and off every hour.</p>
+<h2 id="forecast-setting">Forecast Setting<a class="headerlink" href="#forecast-setting" title="Permanent link">&para;</a></h2>
+<p>How soon the forecast acts on what it has learned is one setting, in plain words: <code>eager</code>, <code>balanced</code> (the default) or <code>cautious</code>. Set it with the <code>hybernate.io/forecast</code> annotation on an <a href="../../guides/opt-in/#settings">opted-in</a> workload or its namespace, the Helm value <code>defaults.forecast</code> for every opted-in workload, or <code>spec.prediction.mode</code> on a ManagedWorkload you write:</p>
+<div class="language-yaml highlight"><pre><span></span><code><span id="__span-0-1"><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a><span class="nt">apiVersion</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">apps/v1</span>
+</span><span id="__span-0-2"><a id="__codelineno-0-2" name="__codelineno-0-2" href="#__codelineno-0-2"></a><span class="nt">kind</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">Deployment</span>
+</span><span id="__span-0-3"><a id="__codelineno-0-3" name="__codelineno-0-3" href="#__codelineno-0-3"></a><span class="nt">metadata</span><span class="p">:</span>
+</span><span id="__span-0-4"><a id="__codelineno-0-4" name="__codelineno-0-4" href="#__codelineno-0-4"></a><span class="w">  </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">preview-api</span>
+</span><span id="__span-0-5"><a id="__codelineno-0-5" name="__codelineno-0-5" href="#__codelineno-0-5"></a><span class="w">  </span><span class="nt">annotations</span><span class="p">:</span>
+</span><span id="__span-0-6"><a id="__codelineno-0-6" name="__codelineno-0-6" href="#__codelineno-0-6"></a><span class="w">    </span><span class="nt">hybernate.io/forecast</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">eager</span>
+</span></code></pre></div>
+<table>
+<thead>
+<tr>
+<th>Setting</th>
+<th>Acts at a confidence of</th>
+<th>What it trades</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>eager</code></td>
+<td>60%</td>
+<td>Acts on less regular patterns <code>balanced</code> waits out; wakes a workload for nothing more often</td>
+</tr>
+<tr>
+<td><code>balanced</code></td>
+<td>75%</td>
+<td>The default: acts on a weekday pattern after 8 days, and wakes a steadily used one for nothing almost never</td>
+</tr>
+<tr>
+<td><code>cautious</code></td>
+<td>85%</td>
+<td>Acts only on patterns it forecasts well; for workloads that are costly to keep awake for nothing, such as one on GPUs</td>
+</tr>
+</tbody>
+</table>
+<p>A wrong forecast costs a little money, never availability: it only wakes a workload early or keeps it up a while longer, and a request still wakes a paused workload through the doorman whatever the forecast says. So the choice is between mornings ready and hours awake for nothing. Over eight weeks of office hours kept loosely, people arriving up to an hour either side of 09:10 and away one weekday in four, twenty simulated workloads averaged:</p>
+<table>
+<thead>
+<tr>
+<th>Setting</th>
+<th>Mornings ready, of 30</th>
+<th>Hours woken for nothing</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>eager</code></td>
+<td>10</td>
+<td>14</td>
+</tr>
+<tr>
+<td><code>balanced</code></td>
+<td>8</td>
+<td>8</td>
+</tr>
+<tr>
+<td><code>cautious</code></td>
+<td>4</td>
+<td>5</td>
+</tr>
+</tbody>
+</table>
+<p>On office hours kept steadily, every setting acts after 8 days and has every morning after ready, and none wakes the workload on a weekend: the settings differ only on patterns the forecast can't get right every day. Below 60, a threshold gains a morning or so on the most irregular patterns for two more hours woken for nothing; above 85, it loses mornings about as fast as it saves hours.</p>
+<p><code>spec.prediction.confidence</code> on the ManagedWorkload, from 50 to 100, overrides the setting's threshold with your own; a label-created ManagedWorkload keeps it when its annotations are applied again.</p>
+<h3 id="how-long-it-takes">How Long It Takes<a class="headerlink" href="#how-long-it-takes" title="Permanent link">&para;</a></h3>
+<p>Learning live from a fresh start, behind the doorman with <code>autoResume</code> on, the simulator measures how many days the forecast takes to act (<code>DailyActive</code>) and to be fully active (<code>FullyActive</code>), for a workload at 40% of its CPU request while in use and 1% otherwise, over ten weeks (never: not within them):</p>
+<table>
+<thead>
+<tr>
+<th>Workload</th>
+<th><code>eager</code> (60)</th>
+<th><code>balanced</code> (75)</th>
+<th><code>cautious</code> (85)</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Busy on weekdays from 09:10 to 17:30, quiet nights and weekends</td>
+<td>8 / 14</td>
+<td>8 / 14</td>
+<td>8 / 14</td>
+</tr>
+<tr>
+<td>The same, with people arriving and leaving up to 20 minutes either side and away one weekday in ten (the median of 20)</td>
+<td>8 / 14</td>
+<td>8 / 14</td>
+<td>8 / 14</td>
+</tr>
+<tr>
+<td>The same, with people arriving and leaving up to an hour either side and away one weekday in four (the median of 20)</td>
+<td>8 / 29</td>
+<td>9 / never</td>
+<td>10 / never</td>
+</tr>
+<tr>
+<td>The same hours every day, weekends included</td>
+<td>8 / 14</td>
+<td>8 / 14</td>
+<td>8 / 14</td>
+</tr>
+<tr>
+<td>Always busy</td>
+<td>8 / 14</td>
+<td>8 / 14</td>
+<td>8 / 14</td>
+</tr>
+<tr>
+<td>Always idle</td>
+<td>8 / 14</td>
+<td>8 / 14</td>
+<td>8 / 14</td>
+</tr>
+</tbody>
+</table>
+<p>A test in the repo runs these and fails if they drift from this table.</p>
+<p>Every pattern the forecast can get right takes the same time, at every setting: its first week is learned, not scored, since the first time it sees an hour of the week it has nothing to forecast it from, and once it has scored a day of the second week, it acts. On office hours that's the Tuesday of the second week, so the Monday before it is the only morning after the first week that the first request wakes the workload: every morning after is ready, Mondays included, and weekends are left asleep, since the first weekend taught the forecast they're quiet. A setting's threshold matters on patterns the forecast can't get right every day, such as the third row's, where a higher threshold waits for more evidence. An always-busy workload is never paused, and an always-idle one never woken or held awake by its forecast of no demand, so for them, acting changes nothing.</p>
+<p>None of this delays idle detection or wake on request, which work from the first hour: until the forecast acts, the first request of the morning wakes the workload, instead of <code>autoResume</code> having it ready. And with a Prometheus, a new workload doesn't wait at all: it <a href="#learning-from-history">learns from its history</a> first, and a workload with a few weeks of a steady pattern acts from the first day.</p>
+<h2 id="when-it-acts">When It Acts<a class="headerlink" href="#when-it-acts" title="Permanent link">&para;</a></h2>
+<p><code>status.prediction</code> says whether the forecast is acting, and if it isn't, what it waits for and when it's expected to start:</p>
+<table>
+<thead>
+<tr>
+<th>Field</th>
+<th>What it says</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>acting</code></td>
+<td>Whether the forecast drives decisions: it holds off pauses before hours it expects to be busy and, with <code>autoResume</code>, wakes the workload 15 minutes ahead of them</td>
+</tr>
+<tr>
+<td><code>threshold</code></td>
+<td>The confidence it acts at: the setting's, or <code>spec.prediction.confidence</code></td>
+</tr>
+<tr>
+<td><code>reason</code></td>
+<td><code>Acting</code>; <code>Observing</code>, it hasn't scored a day of its forecasts yet, as in its first week, or hasn't seen every hour of the day; <code>EarningConfidence</code>, its forecasts of the last day aren't yet right enough; <code>Relearning</code>, demand broke from what it had learned, after a <a href="#anomaly-detection">regime change</a>; <code>NotLearning</code>, the workload is paused without wake on request, so its demand can't be seen</td>
+</tr>
+<tr>
+<td><code>message</code></td>
+<td>The same in a sentence, with its confidence and threshold once it has them, such as <code>learning: it has seen 100 of the 168 hours of the week, and scores its forecast of an hour from the second time it sees it; expected to start acting around Tue 24 Mar 00:00 UTC, if the coming days repeat the last week</code></td>
+</tr>
+<tr>
+<td><code>startsActing</code></td>
+<td>When it's expected to start acting</td>
+</tr>
+<tr>
+<td><code>history</code></td>
+<td>What it learned from Prometheus when Hybernate began managing the workload; see <a href="#learning-from-history">Learning from History</a></td>
+</tr>
+</tbody>
+</table>
+<p><code>startsActing</code> is projected by running a copy of the forecast on through the demand it last saw in each hour of the week, until it would act: the same phase gates and confidence, on the assumption that the coming week looks like the last one. For an hour of the week it hasn't seen yet, it assumes the same hour on the nearest day it has; an hour of the day it has never seen, as a workload paused every night without the doorman leaves them, is never assumed, so such a workload is never projected to act. On office hours the projection is within a day of when the forecast does act from its second day, and within an hour once it has seen a weekend. It's unset while the forecast is acting, and, with the message saying so, when the forecast isn't expected to act within four weeks, as for a pattern too irregular for its setting. It's projected again once an hour, as the forecast learns.</p>
+<p><code>kubectl get managedworkloads -o wide</code> shows the reason in a <code>Forecast</code> column.</p>
+<h2 id="learning-from-history">Learning from History<a class="headerlink" href="#learning-from-history" title="Permanent link">&para;</a></h2>
+<p>With a Prometheus URL (<code>prometheus.url</code>, <code>--prometheus-url</code>), a new ManagedWorkload's forecast starts from the workload's history rather than from nothing: the operator reads up to the last four weeks of its CPU and learns them in one go, as it would have learned them live, then carries on live. A workload with a steady pattern acts from the first day, and one whose history is irregular or short goes on learning, as it would have, through the same phase gates and confidence.</p>
+<p>Each hour of history is measured as a live hour is: the workload's own containers' usage, sidecars injected into its pods left out, against what they request, at its busiest moment in the hour, as at least twice <code>cpuThreshold</code> once above it. Its pods are found by the names a Deployment or StatefulSet gives them, so old revisions' pods are part of its history too. With a Prometheus that holds more than one cluster's series, such as Thanos, Mimir or a shared Prometheus, set <code>prometheus.selector</code> (<code>--prometheus-selector</code>), such as <code>cluster="staging"</code>: its matchers are added to the query, so a same-named workload in another cluster isn't read as this one. It's one range query per workload, a point an hour, of the busiest five-minute rate of <code>container_cpu_usage_seconds_total</code> in each hour, so Prometheus works it out and answers with at most 672 points; the operator asks for one workload at a time, waits up to 30 seconds for an answer, and tries a query that fails twice more, two minutes apart, before the forecast learns live only. Reading history never holds up a reconcile: the forecast learns live meanwhile, and takes up what was learned once it's ready.</p>
+<p>What history can't tell, it assumes:</p>
+<ul>
+<li><strong>Hours none of its pods ran in</strong> are learned as quiet, as an hour scaled to zero by something else is live. That includes hours Hybernate itself had it paused, if it managed the workload before: an hour paused behind the doorman is quiet anyway, but one paused without it, whose demand live learning skips, can't be told from an hour nobody used</li>
+<li><strong>Requests</strong> are today's. If the workload's CPU requests changed over the four weeks, its earlier hours are measured against the new ones</li>
+<li><strong>Use that shows only in requests or activity annotations</strong> isn't in Prometheus: a light-use workload's history looks quieter than its live hours will</li>
+<li><strong>Five-minute rates</strong> are smoother than the minute-by-minute readings live learning takes, so a burst of a minute or two counts for less</li>
+</ul>
+<p><code>status.prediction.history</code> says what came of it, with an event once:</p>
+<table>
+<thead>
+<tr>
+<th><code>history.reason</code></th>
+<th>Event</th>
+<th>Meaning</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>Learned</code></td>
+<td><code>ForecastLearnedHistory</code></td>
+<td>Learned <code>hours</code> of history, <code>from</code> and <code>to</code>; the message says how much, such as <code>the forecast learned from 4 weeks of the workload's CPU history in Prometheus</code></td>
+</tr>
+<tr>
+<td><code>NoHistory</code></td>
+<td><code>ForecastLearningLive</code></td>
+<td>Prometheus has no CPU for its pods, as for a workload deployed with it; the forecast learns from now</td>
+</tr>
+<tr>
+<td><code>NoCPURequests</code></td>
+<td><code>ForecastHistoryUnavailable</code> (warning)</td>
+<td>Its containers request no CPU, so there's nothing to measure its use against</td>
+</tr>
+<tr>
+<td><code>QueryFailed</code></td>
+<td><code>ForecastHistoryUnavailable</code> (warning)</td>
+<td>Prometheus didn't answer three times; the message has its error</td>
+</tr>
+<tr>
+<td><code>NoPrometheusURL</code></td>
+<td>none</td>
+<td>The operator has no Prometheus URL, so the forecast learns live from the start</td>
+</tr>
+</tbody>
+</table>
+<p>History is read once per ManagedWorkload, when it's new: one that has learned live keeps what it learned. Deleting and creating a ManagedWorkload again starts it afresh, from history again.</p>
+<p>To see what the forecast would make of your workloads' history before opting them in, run <a href="../../getting-started/kubectl-plugin/#replay-the-forecast"><code>kubectl hybernate forecast</code></a>.</p>
+<h2 id="confidence-scoring">Confidence Scoring<a class="headerlink" href="#confidence-scoring" title="Permanent link">&para;</a></h2>
+<p>Confidence is <span class="arithmatex">\( 1 - \text{WAPE} \)</span>, the <strong>weighted absolute percentage error</strong>: the total absolute error of the hourly forecasts over a window, divided by the total demand in it.</p>
+<div class="arithmatex">\[
+C = 1 - \frac{\sum_{i} |F(i) - Y(i)|}{\max\bigl(\sum_{i} Y(i),\; n \cdot f\bigr)}
+\]</div>
+<p>A confidence of 75% means the forecast's total error over the window is 25% of the demand in it. Unlike an average of per-hour percentage errors, it is defined when demand is zero, and an hour of zero demand forecast as zero isn't counted as a perfect hour. The denominator is never less than <span class="arithmatex">\( n \cdot f \)</span>, where <span class="arithmatex">\( f \)</span> is the workload's mean hourly demand over about a week, and at least 1% of the CPU requested: a quiet weekend day is judged against the demand of a typical day, and a workload that idles at a sliver of its request isn't judged on its noise.</p>
+<ul>
+<li><strong>Daily confidence</strong> is scored over the last 24 scored hours</li>
+<li><strong>Weekly confidence</strong> is scored over the last 168 scored hours: a whole week of weekdays and weekend must be forecast well, not just the day just gone</li>
+<li>Each needs its full window before it reports a score</li>
+<li>An hour of the week seen for the first time isn't scored, or judged an anomaly: there was nothing to forecast it from</li>
+</ul>
+<h2 id="anomaly-detection">Anomaly Detection<a class="headerlink" href="#anomaly-detection" title="Permanent link">&para;</a></h2>
+<p>Traffic patterns change. A marketing campaign, a new feature launch, or a seasonal shift can invalidate what the model has learned.</p>
+<p>Hybernate detects these <strong>regime changes</strong> using z-score anomaly detection:</p>
+<ol>
+<li>
+<p>Each hour, the signed prediction error <span class="arithmatex">\( e(t) = Y(t) - F(t) \)</span> is converted to a two-sided z-score using an exponentially weighted mean <span class="arithmatex">\( \mu \)</span> and standard deviation <span class="arithmatex">\( \sigma \)</span> of recent errors, which remember about a week:</p>
+<div class="arithmatex">\[
+z(t) = \frac{|e(t) - \mu|}{\max(\sigma, f)}
+\]</div>
+<p>A sudden surge and a sudden disappearance of demand both count.</p>
+</li>
+<li>
+<p>If <span class="arithmatex">\( z(t) &gt; 3.0 \)</span>, the observation is flagged as an anomaly. The model learns from it only up to 3 standard deviations, so a single spike isn't learned as a pattern. An error that large in the same direction as the last one in the same hour of the week isn't an anomaly, though: it's a weekly pattern, such as a Tuesday night batch job, and the model learns it in full</p>
+</li>
+<li>If 3 or more anomalies occur within 24 observed hours, the engine declares a <strong>regime change</strong></li>
+</ol>
+<p>What breaks from the learned pattern, an anomaly or any hour in the day after a regime change, isn't learned into the weekly components at once: the change it would make to its hour of the week is held until the same hour the next day. If that hour breaks from its forecast the same way, the change lasted and is made; if it goes as forecast, the day was a one-off, such as a holiday, and the change is dropped. The level and daily components learn it as usual. Learned at once, a weekday holiday had the same weekday a week later forecast quieter than it is.</p>
+<p>The hour after one far quieter than forecast, an anomaly, the forecast doubts what it expects: it neither holds off a pause nor wakes the workload until an hour goes as forecast, or a regime change has it relearn. One far busier than forecast casts no doubt, since the workload is in use then anyway.</p>
+<p>On a regime change, the engine ends up at least one level below the phase it held before the anomalies began:</p>
+<ul>
+<li><code>FullyActive</code> → <code>WeeklySuggesting</code></li>
+<li><code>WeeklySuggesting</code> or <code>DailyActive</code> → <code>DailySuggesting</code></li>
+<li><code>DailySuggesting</code> → <code>Observing</code></li>
+</ul>
+<p>If the anomalies have already cost it that level or more, by lowering its confidence, it stays where they left it: one regime change is never a second demotion, and never a promotion.</p>
+<p>It then discards the evidence its confidence rested on: the scored errors, the anomaly statistics, and which hours of the week have been observed. Confidence has to be earned again on the new pattern before the forecast drives decisions again: whatever its phase, it neither holds back a pause nor wakes a workload until a full day of its forecasts has been scored again. A <code>RegimeChange</code> warning event is emitted once.</p>
+<p>A weekday holiday looks like this: <code>autoResume</code> wakes the workload for the hours the forecast expects, and its first quiet office hour is an anomaly, so the forecast doubts the rest and the activity clock pauses the workload, an hour and a quarter awake for nothing. A regime change follows once three hours have been quiet. The forecast is off from then until a day has been scored, about 30 hours, so the first request of the next morning wakes the workload, and it's back on during that day. That day is busy again, so the holiday isn't learned into the week: the same weekday a week later, and every morning from the second after the holiday, is ready. Idle detection and wake on request carry on throughout. A single deviant day can't be told from the start of a new pattern until the next day shows which it was, so the forecast doesn't guess; it costs the next morning, and nothing after. A Saturday people come in on is the same: the Saturday after isn't woken, and the Monday after is the morning it costs.</p>
+<p>A lasting change, such as a team moving its hours from 09:00 to 13:00, is noticed within the day as a regime change, and learned into the week from its second day. For about a week people wake the workload themselves; at <code>balanced</code>, from the second Tuesday every afternoon is ready, and within two weeks the forecast stops waking it for nothing, which until then it does a few times, for the old hours and, on weekends, for the new ones. A workload nobody uses any more is woken for its old hours twice, on its first quiet morning and the same weekday a week later, and then left asleep.</p>
+<h2 id="persistence">Persistence<a class="headerlink" href="#persistence" title="Permanent link">&para;</a></h2>
+<p>The engine's learned state (the model's components, the scored errors, the anomaly statistics, the weekly changes held for the next day and whether it doubts the hour under way, the last hour observed, and the demand last seen in each hour of the week, which <a href="#when-it-acts"><code>startsActing</code></a> is projected from) is stored in the ManagedWorkload's status, in <code>status.prediction.state</code>: gzipped JSON, base64-encoded, about 2.5 KB. It is written with each hourly observation. This means:</p>
+<ul>
+<li>The engine survives operator restarts and leader changes, and an hour observed before a restart isn't observed twice. The hour under way when the operator restarts is skipped. Restarted every day, at a different hour each day, the operator loses those hours and nothing else: the forecast starts acting within hours of when it would have without the restarts</li>
+<li>A last observed hour more than an hour ahead of the operator's clock, recorded by a clock that was wrong, isn't trusted: the next hour is observed as usual rather than refused until real time catches up</li>
+<li>No external database, persistent volume, or ConfigMap is needed</li>
+<li>Each workload has its own independent engine</li>
+</ul>
+<p>State that can't be read, from an older version or a hand edit, is discarded with a <code>ForecastReset</code> warning event, and the engine starts learning again.</p>
+<h2 id="wall-clock-alignment">Wall-Clock Alignment<a class="headerlink" href="#wall-clock-alignment" title="Permanent link">&para;</a></h2>
+<p>Seasonal slots are keyed to wall-clock time, not to a running counter. The hour of day and day of week are counted in the operator's timezone (<code>--timezone</code>, the Helm value <code>timezone</code>, UTC by default), so business hours stay in their slots when the clocks change for daylight saving. Each workload records it in <code>status.prediction.timeZone</code>, and <a href="../../getting-started/kubectl-plugin/#see-what-hybernate-is-doing"><code>kubectl hybernate status</code></a> shows it. This means:</p>
+<ul>
+<li>If a workload is paused for 6 hours without the doorman, the model doesn't lose alignment. The next observation goes into the correct hour-of-day slot</li>
+<li>An hour paused behind the doorman is recorded as no demand: that's how the model learns that nights and weekends are quiet</li>
+<li>Monday 9am always maps to the same slot, regardless of gaps. In a timezone whose hours start at half or quarter past the hour in UTC, such as India's, hours, and the 15 minutes <code>autoResume</code> wakes ahead of one, are counted on the local clock</li>
+</ul>
+<p>With <code>--timezone</code> set to its users' zone, a workload in New York or London is up at 08:45 local time every weekday through the clock change. Left at UTC, the operator's clock is an hour off its users' after the change, and the forecast has to learn their mornings again: in the simulator, four mornings the week of the change find the workload paused, and the forecast holds it awake for nothing on others, until about two weeks on.</p>
+<h2 id="tuning">Tuning<a class="headerlink" href="#tuning" title="Permanent link">&para;</a></h2>
+<p>The <a href="#forecast-setting">forecast setting</a>, or <code>spec.prediction.confidence</code> in its place, is the only thing to tune. The smoothing parameters are fixed, the same for every workload, and can't be configured:</p>
+<table>
+<thead>
+<tr>
+<th>Parameter</th>
+<th>Value</th>
+<th>What a higher value would do</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><span class="arithmatex">\( \alpha \)</span></td>
+<td>0.01</td>
+<td>Level reacts faster to demand changes</td>
+</tr>
+<tr>
+<td><span class="arithmatex">\( \beta \)</span></td>
+<td>0.001</td>
+<td>Trend detection is more aggressive</td>
+</tr>
+<tr>
+<td><span class="arithmatex">\( \gamma_1 \)</span></td>
+<td>0.1</td>
+<td>Daily pattern adapts faster</td>
+</tr>
+<tr>
+<td><span class="arithmatex">\( \gamma_2 \)</span></td>
+<td>0.5</td>
+<td>Weekly pattern adapts faster</td>
+</tr>
+</tbody>
+</table>
+<p>Lower values give more stable, smoother forecasts; higher ones a more reactive but noisier model. A weekly component is updated once a week, so <span class="arithmatex">\( \gamma_2 \)</span> is high enough for a lasting change in a weekday's hours to be half learned the week after it; the first week sets each one outright (see <a href="#how-it-works">How It Works</a>). The values were chosen by simulating office-hours, always-on, idle, and noisy workloads.</p>
+<h2 id="proving-it">Proving It<a class="headerlink" href="#proving-it" title="Permanent link">&para;</a></h2>
+<p>A forecasting mistake, such as a wrong slot, a late wake or a weekend false wake, would otherwise show only after weeks in a real cluster. The repo's simulator, <code>internal/forecast/sim</code>, runs the operator's own forecast engine and decision rules through simulated time a minute at a time, as the operator looks at a ManagedWorkload: the activity clock pausing an idle workload, the forecast holding off a pause, <code>autoResume</code> waking it 15 minutes ahead of an hour expected busy, the doorman waking it on a request, the warm-up after a wake, each hour's peak fed to the forecast, and operator restarts through the state saved in status. Months of traffic take milliseconds, and a test runs six weeks of office hours through both the reconciler and the simulator and finds the same wakes and pauses at the same minutes.</p>
+<p>The tests run in CI on every change, and check, besides <a href="#how-long-it-takes">How Long It Takes</a>:</p>
+<ul>
+<li><strong>Office hours</strong>: once learned, the workload is up at 08:45 every weekday, 25 minutes before people arrive at 09:10, paused an hour after they leave, and left asleep at weekends; at every setting, every morning from the day the forecast acts is ready, Mondays included, and it never sleeps through a morning it acts on</li>
+<li><strong>Every day, always busy, always idle, light use</strong> seen only through an activity annotation: each acts as above, and the light-use workload is ready every morning</li>
+<li><strong>Loosely kept hours</strong>: ready on most mornings once learned, woken for nothing about twice a month, for an hour or two each time; and the settings trade ready mornings for hours woken for nothing as <a href="#forecast-setting">Forecast Setting</a> says</li>
+<li><strong>A holiday, a Saturday at work, a permanent change of hours, a workload nobody uses any more, daylight saving</strong> in New York and London, with and without <code>--timezone</code>, <strong>daily operator restarts</strong>, and <strong>pauses without the doorman</strong>, which never let the forecast act: as described above</li>
+<li><strong>Learning from history</strong>: a forecast that learned four weeks of office hours has the workload ready from the first morning, and the <a href="#when-it-acts">projection</a> made in the first week is within a day of when the forecast starts acting</li>
+</ul>
+<p><code>go run ./hack/forecastsim</code> runs every scenario at every setting and prints what it measured; <code>-scenario holiday -setting eager -days</code> shows one day by day. <code>-history</code> replays a workload's recorded CPU instead, as a percentage of its requests: a Prometheus range query's JSON, or CSV of <code>time,percent</code> rows, a step of at most seven minutes apart.</p>
+<p>On your own cluster, <a href="../../getting-started/kubectl-plugin/#replay-the-forecast"><code>kubectl hybernate forecast</code></a> replays the forecast over each workload's own Prometheus history: whether it would act opted in today, and over the last two weeks, how many mornings it would have had each workload ready and how often it would have woken one for nothing.</p>
+
+
+
+
+
+
+
+
+
+
+
+
+                
+              </article>
+            </div>
+          
+          
+<script>var target=document.getElementById(location.hash.slice(1));target&&target.name&&(target.checked=target.name.startsWith("__tabbed_"))</script>
+        </div>
+        
+          <button type="button" class="md-top md-icon" data-md-component="top" hidden>
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M13 20h-2V8l-5.5 5.5-1.42-1.42L12 4.16l7.92 7.92-1.42 1.42L13 8z"/></svg>
+  Back to top
+</button>
+        
+      </main>
+      
+        <footer class="md-footer">
+  
+  <div class="md-footer-meta md-typeset">
+    <div class="md-footer-meta__inner md-grid">
+      <div class="md-copyright">
+  
+  
+    Made with
+    <a href="https://squidfunk.github.io/mkdocs-material/" target="_blank" rel="noopener">
+      Material for MkDocs
+    </a>
+  
+</div>
+      
+    </div>
+  </div>
+</footer>
+      
+    </div>
+    <div class="md-dialog" data-md-component="dialog">
+      <div class="md-dialog__inner md-typeset"></div>
+    </div>
+    
+    
+    
+      
+      
+      <script id="__config" type="application/json">{"annotate": null, "base": "../..", "features": ["navigation.tabs", "navigation.sections", "navigation.expand", "navigation.top", "search.suggest", "search.highlight", "content.code.copy", "content.code.annotate", "content.code.select", "content.action.edit"], "search": "../../assets/javascripts/workers/search.2c215733.min.js", "tags": null, "translations": {"clipboard.copied": "Copied to clipboard", "clipboard.copy": "Copy to clipboard", "search.result.more.one": "1 more on this page", "search.result.more.other": "# more on this page", "search.result.none": "No matching documents", "search.result.one": "1 matching document", "search.result.other": "# matching documents", "search.result.placeholder": "Type to start searching", "search.result.term.missing": "Missing", "select.version": "Select version"}, "version": {"alias": true, "default": "latest", "provider": "mike"}}</script>
+    
+    
+      <script src="../../assets/javascripts/bundle.d7400e89.min.js"></script>
+      
+        <script src="../../javascripts/mathjax.js"></script>
+      
+        <script src="https://unpkg.com/mathjax@3.2.2/es5/tex-mml-chtml.js"></script>
+      
+    
+  </body>
+</html>
