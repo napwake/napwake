@@ -170,6 +170,9 @@ type Workload struct {
 	// History is what replaying the activity clock over its recorded CPU
 	// found, in ModeHistory.
 	History *History `json:"history,omitempty"`
+	// Forecast is what replaying the forecast over its recorded CPU found,
+	// when the scan asked for it.
+	Forecast *ForecastReplay `json:"forecast,omitempty"`
 	// Dependencies are the workloads its environment points at.
 	Dependencies []Dependency `json:"dependencies,omitempty"`
 	// Clues are facts beyond CPU that bear on whether it's in use.
@@ -276,6 +279,8 @@ type ClusterOptions struct {
 	// History, when set, is replayed over Window.
 	History *Prometheus
 	Window  time.Duration
+	// Forecast, when set with History, also replays the forecast over it.
+	Forecast *ForecastOptions
 	// NamedNamespaces says the user named the namespaces, so one their
 	// access doesn't let the scan read is a failure to scan what was asked,
 	// not a limit to note.

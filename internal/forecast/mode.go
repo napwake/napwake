@@ -60,6 +60,15 @@ func ParseMode(s string) (Mode, bool) {
 	return "", false
 }
 
+// Threshold is the confidence a workload's forecast acts at: confidence,
+// when set, or mode's.
+func Threshold(mode Mode, confidence int) int {
+	if confidence > 0 {
+		return confidence
+	}
+	return mode.Threshold()
+}
+
 // Threshold is the confidence percentage the mode acts at; a mode it
 // doesn't know acts as Balanced.
 func (m Mode) Threshold() int {

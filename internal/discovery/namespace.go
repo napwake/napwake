@@ -206,8 +206,14 @@ func (s *Scanner) scanNamespace(ctx, historyCtx context.Context, namespace strin
 		w.FreedThisMonth = FreedThisMonth(mw, now)
 		w.SavedThisMonth = SavedThisMonth(mw, now)
 		if history != nil && ownCPU > 0 && !w.ScaledByHand {
-			w.History = replayWorkload(w, spec, ownCPU, history, owners.podsOf(wl), scan.historySince, rollouts,
-				thresholdFor(mw, opts), idleAfterFor(mw, opts), opts)
+			if r, ok := workloadReplay(w, spec, ownCPU, history, owners.podsOf(wl), scan.historySince, rollouts,
+				thresholdFor(mw, opts), idleAfterFor(mw, opts), opts); ok {
+				h := r.run()
+				w.History = &h
+				if opts.Forecast != nil {
+					w.Forecast = replayForecast(r, confidenceFor(mw, *opts.Forecast), mw, *opts.Forecast)
+				}
+			}
 			if w.History == nil && w.State != StateUnknown && w.Platform == "" {
 				scan.noHistory = append(scan.noHistory, w.Namespace+"/"+w.Name)
 			}

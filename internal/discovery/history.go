@@ -356,8 +356,9 @@ func (s *Scanner) readHistory(ctx context.Context, namespace string, opts Cluste
 	return history, nil
 }
 
-// replayWorkload replays the activity clock over one workload's share of
-// its namespace's history, or returns nil when none of it is the workload's.
+// workloadReplay is one workload's share of its namespace's history, to
+// replay the activity clock over, or false when none of it is the
+// workload's.
 // The replay starts at the workload's first sample, or at since if it was
 // running before then, as the activity clock starts when a workload first
 // runs: one younger than the window isn't charged for hours before it ran.
@@ -366,15 +367,15 @@ func (s *Scanner) readHistory(ctx context.Context, namespace string, opts Cluste
 // reinstall does, runs the same pods, whose history is its own. Its
 // requests and prices are today's, since the history only records CPU:
 // ownCPU is what one of its pods requests now for its own containers.
-func replayWorkload(w Workload, spec corev1.PodSpec, ownCPU int64, history []containerCPU, podsOf podNames,
-	since time.Time, rollouts []time.Time, threshold int, idleAfter time.Duration, opts ClusterOptions) *History {
+func workloadReplay(w Workload, spec corev1.PodSpec, ownCPU int64, history []containerCPU, podsOf podNames,
+	since time.Time, rollouts []time.Time, threshold int, idleAfter time.Duration, opts ClusterOptions) (replay, bool) {
 	containers := make([]string, 0, len(spec.Containers))
 	for _, c := range metrics.WorkloadContainers(spec) {
 		containers = append(containers, c.Name)
 	}
 	used, pods, found := workloadSeries(history, podsOf, containers)
 	if !found {
-		return nil
+		return replay{}, false
 	}
 	if len(pods) > 0 {
 		if first := time.Unix(slices.Min(slices.Collect(maps.Keys(pods))), 0); first.After(since) {
@@ -383,7 +384,7 @@ func replayWorkload(w Workload, spec corev1.PodSpec, ownCPU int64, history []con
 	}
 
 	step := historyStep(opts.Window)
-	h := replay{
+	return replay{
 		start:        since,
 		end:          opts.Now().Truncate(step),
 		step:         step,
@@ -395,8 +396,7 @@ func replayWorkload(w Workload, spec corev1.PodSpec, ownCPU int64, history []con
 			float64(w.PodMemoryRequestBytes)/(1<<30), w.rates),
 		threshold: threshold,
 		idleAfter: idleAfter,
-	}.run()
-	return &h
+	}, true
 }
 
 // CouldFree is what pausing a workload Hybernate doesn't pause yet would

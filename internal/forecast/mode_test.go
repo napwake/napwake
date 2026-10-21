@@ -36,3 +36,9 @@ func TestMode(t *testing.T) {
 	assert.False(t, ok, "names are lowercase, as the annotation and the spec spell them")
 	assert.Equal(t, 75, Mode("").Threshold())
 }
+
+func TestThreshold(t *testing.T) {
+	assert.Equal(t, 60, Threshold(Eager, 0))
+	assert.Equal(t, 90, Threshold(Eager, 90), "a confidence overrides the mode")
+	assert.Equal(t, 75, Threshold("", 0))
+}

@@ -129,10 +129,7 @@ func (r *Reconciler) forecastEngine(workload *v1alpha1.ManagedWorkload) forecast
 // confidenceFor is the confidence threshold the workload's forecast acts
 // at: the one its spec sets, or its mode's.
 func confidenceFor(workload *v1alpha1.ManagedWorkload) int {
-	if c := workload.Spec.Prediction.Confidence; c > 0 {
-		return c
-	}
-	return forecast.Mode(workload.Spec.Prediction.Mode).Threshold()
+	return forecast.Threshold(forecast.Mode(workload.Spec.Prediction.Mode), workload.Spec.Prediction.Confidence)
 }
 
 // updatePredictionStatus publishes the engine's phase and confidence,
