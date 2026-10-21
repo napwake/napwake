@@ -45,6 +45,8 @@ kubectl hybernate scan -n dev
 
 The scan shows each workload, whether it's idle right now and why, and what it costs while running. A workload deployed in the last hour counts as active, as Hybernate would treat it, so a brand-new one shows as active until then.
 
+On your own cluster, leave out `-n` to scan every namespace. When Argo CD or Flux applies your workloads, the scan's notes list those whose replicas it sets from Git; see [step 5](#5-applied-by-argo-cd-or-flux-leave-the-replicas-to-hybernate) before letting Hybernate pause them.
+
 ## 3. Opt it in, measuring first
 
 ```bash
@@ -88,7 +90,16 @@ kubectl get managedworkload my-api -n dev -o jsonpath='{.status.dryRun}'
 
 Requests to a running workload don't count as activity by themselves: Hybernate sees its CPU, deploys and activity annotations, and requests only through a [Prometheus query](../guides/prometheus-signals.md) you give it, or once it's paused, through the doorman. An nginx serving the odd request uses almost no CPU, so it would pause.
 
-## 5. Let it pause
+## 5. Applied by Argo CD or Flux? Leave the replicas to Hybernate
+
+Skip this for the sample. Hybernate pauses a workload by setting its replicas to zero, and a GitOps tool that applies `replicas` from Git sets them straight back. Hybernate reports that as a `GitOpsConflict` and, rather than fight the tool, waits an hour before pausing again, so until the tool is told, pausing seems not to work. Tell it once, before step 6:
+
+- **Argo CD:** ignore `/spec/replicas` on Deployments and StatefulSets, in `argocd-cm` for every app or in an Application's `ignoreDifferences`, and add `RespectIgnoreDifferences=true` to the Application's sync options.
+- **Flux:** leave `replicas` out of the workload's manifest, or remove it with a post-renderer for a chart that always sets it.
+
+An HPA needs the same, so a workload that already has one under Argo CD or Flux is set. [GitOps tools](../guides/gitops.md) has the YAML, and the settings for Fleet, kapp and Kluctl. The scan's notes from step 2 list the workloads whose replicas are set from Git, and `kubectl hybernate enable` and `pause` warn when it isn't in place.
+
+## 6. Let it pause
 
 When you're happy with what you see:
 
@@ -103,7 +114,7 @@ kubectl get deployment my-api -n dev
 # READY: 0/0
 ```
 
-## 6. Use it again
+## 7. Use it again
 
 Send it a request. The [doorman](../concepts/wake-on-request.md) holds the request, wakes the workload, and answers once it's Ready:
 
@@ -117,7 +128,7 @@ A browser opening it gets a waking-up page instead, which loads the app once it'
 kubectl hybernate wake my-api -n dev
 ```
 
-## 7. Stop managing it
+## 8. Stop managing it
 
 ```bash
 kubectl label deployment my-api -n dev hybernate.io/managed-
