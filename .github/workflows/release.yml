@@ -91,7 +91,7 @@ jobs:
 
       # A pre-release, such as v0.3.0-rc.1, has a hyphen. It rehearses the
       # release: everything is published but latest, so it's installed only
-      # by asking for it, and the docs site stays on the last release.
+      # by asking for it, and its docs are the site's next, not its latest.
       - name: Read the release's version
         id: version
         run: |
@@ -283,9 +283,8 @@ jobs:
           DIGEST: ${{ steps.build.outputs.digest }}
         run: oras tag "${REGISTRY}/${IMAGE_NAME}@${DIGEST}" latest
 
-      # Publishing a release, not a pre-release, moves releases/latest, which
-      # the install docs and the krew manifest download from. The docs
-      # workflow publishes the site once this run succeeds.
+      # Publishing a release, not a pre-release, moves releases/latest. The
+      # docs workflow publishes the release's docs once this run succeeds.
       - name: Publish the GitHub release
         env:
           GH_TOKEN: ${{ github.token }}

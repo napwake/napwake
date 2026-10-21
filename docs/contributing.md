@@ -130,9 +130,9 @@ The docs are built with mkdocs: `pip install --require-hashes -r docs/requiremen
 
 ## Releasing
 
-A release is a tag on `main`, `vX.Y.Z`. `make release VERSION=X.Y.Z` bumps the chart's version and appVersion, the kustomize image, and the install and verify commands in the docs, dates the version's section of `CHANGELOG.md`, commits that, and tags it. Pushing the tag starts the release workflow:
+A release is a tag on `main`, `vX.Y.Z`. `make release VERSION=X.Y.Z` bumps the chart's version and appVersion, the kustomize image, and the install and verify commands and download links in the docs (the pages in the Makefile's `VERSIONED_DOCS`), dates the version's section of `CHANGELOG.md`, commits that, and tags it. Pushing the tag starts the release workflow:
 
-1. Checks the chart, the kustomize image, the docs and the dated changelog name the tag's version (`make verify-version`), then runs every check a pull request does, including Trivy on the image.
+1. Checks the chart, the kustomize image, the docs and the dated changelog name the tag's version, and that no page's install link is to `releases/latest` or another release (`make verify-version`), then runs every check a pull request does, including Trivy on the image.
 2. Builds the plugin archives, the krew manifest, `install.yaml` and the chart; pushes the image by digest, untagged, and signs it and attaches its SBOMs and provenance; and drafts the GitHub release with every file, its signed checksums, and the changelog section as its notes.
 3. Tags the image, pushes and signs the chart, tags the image `latest`, and publishes the GitHub release, which moves `releases/latest`.
 
@@ -140,7 +140,7 @@ Once the workflow succeeds, the docs workflow publishes the tag's docs, as [the 
 
 Until step 3 nothing users install has changed, so a run that fails earlier can be run again: it replaces its draft. One that fails in step 3 can be too.
 
-**Rehearse a release with a release candidate first.** A tag with a hyphen, such as `v0.2.0-rc.1`, runs the whole workflow as a pre-release: everything is published but `latest`, so the image, the chart and the GitHub release exist only for those who ask for that version, krew and the install docs' `releases/latest` links stay on the last release, and its docs are published under `next`, with a banner saying it's a release candidate. Its notes are its version's changelog section, which needn't be dated yet. From a throwaway branch, so `main` keeps the release's version:
+**Rehearse a release with a release candidate first.** A tag with a hyphen, such as `v0.2.0-rc.1`, runs the whole workflow as a pre-release: everything is published but `latest`, so the image, the chart and the GitHub release exist only for those who ask for that version, and its docs are published under `next`, with a banner saying it's a release candidate. Its notes are its version's changelog section, which needn't be dated yet. From a throwaway branch, so `main` keeps the release's version:
 
 ```bash
 git switch -c rehearse-v0.2.0-rc.1 main

@@ -48,7 +48,7 @@
     Apply the all-in-one installer manifest directly:
 
     ```bash
-    kubectl apply -f https://github.com/okedeji/hybernate/releases/latest/download/install.yaml
+    kubectl apply -f https://github.com/okedeji/hybernate/releases/download/v0.2.0/install.yaml
     ```
 
     This installs the CRD, RBAC, the operator Deployment, and the doorman Deployment, Service and PodDisruptionBudget into the `hybernate-system` namespace. The operator is `deployment/hybernate-controller-manager`.

@@ -42,7 +42,7 @@ flowchart TD
 
 ```bash
 kubectl krew install --manifest-url \
-  https://github.com/okedeji/hybernate/releases/latest/download/krew-hybernate.yaml
+  https://github.com/okedeji/hybernate/releases/download/v0.2.0/krew-hybernate.yaml
 kubectl hybernate scan
 ```
 

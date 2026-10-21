@@ -14,13 +14,13 @@ Every command takes kubectl's connection flags: `--kubeconfig`, `--context`, `--
 
     ```bash
     # macOS (Apple Silicon)
-    curl -LO https://github.com/okedeji/hybernate/releases/latest/download/kubectl-hybernate-darwin-arm64.tar.gz
+    curl -LO https://github.com/okedeji/hybernate/releases/download/v0.2.0/kubectl-hybernate-darwin-arm64.tar.gz
     tar xzf kubectl-hybernate-darwin-arm64.tar.gz
     chmod +x kubectl-hybernate-darwin-arm64
     mv kubectl-hybernate-darwin-arm64 /usr/local/bin/kubectl-hybernate
 
     # Linux (amd64)
-    curl -LO https://github.com/okedeji/hybernate/releases/latest/download/kubectl-hybernate-linux-amd64.tar.gz
+    curl -LO https://github.com/okedeji/hybernate/releases/download/v0.2.0/kubectl-hybernate-linux-amd64.tar.gz
     tar xzf kubectl-hybernate-linux-amd64.tar.gz
     chmod +x kubectl-hybernate-linux-amd64
     mv kubectl-hybernate-linux-amd64 /usr/local/bin/kubectl-hybernate
@@ -30,7 +30,7 @@ Every command takes kubectl's connection flags: `--kubeconfig`, `--context`, `--
 
     ```bash
     kubectl krew install --manifest-url \
-      https://github.com/okedeji/hybernate/releases/latest/download/krew-hybernate.yaml
+      https://github.com/okedeji/hybernate/releases/download/v0.2.0/krew-hybernate.yaml
     ```
 
     Krew installs the plugin on Linux and macOS (amd64 and arm64) and on Windows (amd64).
