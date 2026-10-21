@@ -397,8 +397,8 @@ func writeForecastDetail(p *printer, w forecastWorkload, loc *time.Location) {
 // spanOf is a number of hours of history in days, or in hours under two
 // days.
 func spanOf(hours float64) string {
-	if hours < 48 {
-		return plural(int(hours), "hour", "hours")
+	if hours < 47.5 {
+		return plural(int(hours+0.5), "hour", "hours")
 	}
 	return plural(int(hours/24+0.5), "day", "days")
 }

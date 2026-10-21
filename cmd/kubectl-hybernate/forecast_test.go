@@ -213,7 +213,8 @@ func TestPickWorkload(t *testing.T) {
 func TestSpanOf(t *testing.T) {
 	assert.Equal(t, "28 days", spanOf(672.98))
 	assert.Equal(t, "2 days", spanOf(48))
-	assert.Equal(t, "36 hours", spanOf(36.5))
+	assert.Equal(t, "36 hours", spanOf(36.4))
+	assert.Equal(t, "5 hours", spanOf(4.6), "rounded, as the scan's notes say it")
 	assert.Equal(t, "1 hour", spanOf(1))
 }
 
