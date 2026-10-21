@@ -355,6 +355,32 @@ func TestWriteTable_HistoryWithNothingToSleep(t *testing.T) {
 		"Replaying the last 30 hours, 0 of 2 unmanaged workloads would have slept.")
 }
 
+// With too little history to show a day's pattern, the terminal says why
+// nothing would have slept, as the report does.
+func TestWriteTable_TooLittleHistory(t *testing.T) {
+	cluster := sampleCluster()
+	cluster.Mode = discovery.ModeHistory
+	cluster.History = &discovery.HistorySource{Hours: 0.5, Partial: true}
+	for i := range cluster.Workloads {
+		cluster.Workloads[i].History = &discovery.History{Hours: 0.5}
+	}
+	cluster.Workloads = append(cluster.Workloads, discovery.Workload{Namespace: "reports", Name: "reports",
+		Kind: v1alpha1.TargetKindStatefulSet, State: discovery.StateActive, WontPause: "PVCs deleted on scale-down"})
+	cluster.Totals.Replayed = discovery.ReplayTotals{Workloads: 2}
+	var out bytes.Buffer
+
+	require.NoError(t, writeScan(&out, cluster, scanOptions{output: "table"}))
+
+	assert.Contains(t, out.String(), "  Replaying the last 30 minutes, 0 of 2 unmanaged workloads would have slept.\n"+
+		"  That's too little history to show a day's pattern; run the scan again after a few days.\n"+
+		"  Not counted: 1 that won't pause (PVCs deleted on scale-down).\n", "why, right after what it's about")
+
+	cluster.History.Partial = false
+	out.Reset()
+	require.NoError(t, writeScan(&out, cluster, scanOptions{output: "table"}))
+	assert.NotContains(t, out.String(), "too little history", "half an hour was all that was asked for")
+}
+
 // The replay's count leaves out what it can't count, and says what, so it
 // adds up to the workloads the table lists.
 func TestWriteTable_SaysWhatTheReplayDoesntCount(t *testing.T) {

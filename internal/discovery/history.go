@@ -46,9 +46,10 @@ type HistorySource struct {
 	Prometheus string    `json:"prometheus"`
 	Others     []string  `json:"others,omitempty"`
 	Since      time.Time `json:"since,omitzero"`
-	// Hours is how much history the replay covered, which is less than the
-	// window asked for when Prometheus has less.
-	Hours float64 `json:"hours"`
+	// Hours is how much history the replay covered, and Partial says it's
+	// less than the window asked for, as Prometheus has less.
+	Hours   float64 `json:"hours"`
+	Partial bool    `json:"partial,omitempty"`
 }
 
 // Span is how much history the replay covered, as people say it: "30

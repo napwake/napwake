@@ -645,7 +645,7 @@ func writeTable(w io.Writer, result scanResult, limit int) error {
 		p.line("  %s", emptySentence(result))
 		p.line("")
 	} else {
-		writeHeadline(p, result.Totals, replayedOver(result.History), notReplayed(result.Workloads))
+		writeHeadline(p, result)
 	}
 	judged, unjudged := splitJudged(result.Workloads)
 	if len(judged) > 0 {
@@ -682,7 +682,9 @@ func writeTable(w io.Writer, result scanResult, limit int) error {
 	return p.err
 }
 
-func writeHeadline(p *printer, t discovery.Totals, replayed, notCounted string) {
+func writeHeadline(p *printer, result scanResult) {
+	t := result.Totals
+	replayed, notCounted := replayedOver(result.History), notReplayed(result.Workloads)
 	if t.Paused > 0 {
 		p.line("  Hybernate has %s paused right now, freeing %s an hour.",
 			countOf(t.Paused, "workload"), cents(t.PausedHourlyCost))
@@ -730,6 +732,13 @@ func writeHeadline(p *printer, t discovery.Totals, replayed, notCounted string) 
 			p.line("  Replaying %s, Hybernate would have paused %d of %s for %s in all,",
 				replayed, r.Sleepers, countOf(r.Workloads, "unmanaged workload"), hoursTotal(r.SleepHours))
 			p.line("  and freed %s: about %s/month.", dollars(r.Freed), dollars(r.MonthlyFreed))
+		}
+		switch {
+		case tooLittleHistory(result.History) && r.Sleepers == 0:
+			p.line("  That's too little history to show a day's pattern; run the scan again after a few days.")
+		case tooLittleHistory(result.History):
+			p.line("  That's from only %s of history; run the scan again after a few days for a steadier estimate.",
+				result.History.Span())
 		}
 		if notCounted != "" {
 			p.line("  Not counted: %s.", notCounted)
@@ -837,11 +846,16 @@ func workloadsIn(result scanResult) string {
 	if result.Totals.Workloads == 0 {
 		return countOf(result.Namespaces, "namespace") + " scanned"
 	}
+	return countOf(result.Totals.Workloads, "workload") + " in " + countOf(namespacesOf(result.Workloads), "namespace")
+}
+
+// namespacesOf is how many namespaces the workloads are in.
+func namespacesOf(workloads []Workload) int {
 	namespaces := map[string]bool{}
-	for _, wl := range result.Workloads {
+	for _, wl := range workloads {
 		namespaces[wl.Namespace] = true
 	}
-	return countOf(result.Totals.Workloads, "workload") + " in " + countOf(len(namespaces), "namespace")
+	return len(namespaces)
 }
 
 // emptySentence says why a scan found no workloads.

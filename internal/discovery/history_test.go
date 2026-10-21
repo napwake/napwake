@@ -260,6 +260,7 @@ func TestScanCluster_ReplaysHistory(t *testing.T) {
 	assert.Equal(t, ModeHistory, report.Mode)
 	require.NotNil(t, report.History)
 	assert.InDelta(t, 168, report.History.Hours, 0.1)
+	assert.False(t, report.History.Partial, "the whole window")
 	got := byName(report)
 
 	idle := got["idle-api"].History
@@ -342,6 +343,7 @@ func TestScanCluster_SaysWhenPrometheusHasLessHistory(t *testing.T) {
 
 			require.NoError(t, err)
 			assert.InDelta(t, tt.hours, report.History.Hours, 0.1)
+			assert.True(t, report.History.Partial)
 			assert.Equal(t, tt.span, report.History.Span())
 			assert.Contains(t, strings.Join(report.Notes, "\n"), tt.note)
 			assert.NotContains(t, strings.Join(report.Notes, "\n"), "Prometheus keeps",
