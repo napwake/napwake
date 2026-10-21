@@ -905,6 +905,33 @@ func TestReconcileDoorman_WarnsOfNoReadinessProbeAfterAWake(t *testing.T) {
 	assert.Len(t, recorded(r.Recorder.(*events.FakeRecorder), "Warning NoReadinessProbe"), 1)
 }
 
+// While a workload wakes, the Ready pods behind its Service are its own:
+// the Service leaving the doorman then is the wake finishing, not a
+// problem, and nothing about it is kept once the workload is awake.
+func TestReconcileDoorman_ItsOwnPodsAreNoProblemAsItWakes(t *testing.T) {
+	workload := lifecycleWorkload("shop", v1alpha1.PhasePaused)
+	target := appTarget()
+	target.Name = "shop"
+	target.Spec.Template.Labels = map[string]string{"app": "shop"}
+	r := doormanReconciler(t, workload, doormanEndpoints("10.0.0.7"),
+		service("shop", map[string]string{"app": "shop"}, corev1.ServicePort{Name: "http", Port: 80}))
+	ctx := context.Background()
+	require.NoError(t, doormanErr(ctx, r, workload, target))
+	require.Equal(t, "DoormanRouted", wakeCondition(t, workload).Reason)
+
+	workload.Status.Phase = v1alpha1.PhaseResuming
+	require.NoError(t, r.Create(ctx, servingSlice()))
+	require.NoError(t, r.Create(ctx, servingPod()))
+	require.NoError(t, doormanErr(ctx, r, workload, target))
+
+	assert.NotEqual(t, "ServedByOtherPods", wakeCondition(t, workload).Reason, "its own pods, waking")
+	workload.Status.Phase = v1alpha1.PhaseRunning
+	require.NoError(t, doormanErr(ctx, r, workload, target))
+	awake := wakeCondition(t, workload)
+	assert.Equal(t, "NotPaused", awake.Reason)
+	assert.Empty(t, awake.Message, "nothing found at the last pause to keep")
+}
+
 // Requests through a skipped Service fail while the workload is paused, so
 // that's surfaced as a warning, once rather than on every reconcile.
 func TestReconcileDoorman_WarnsOnceAboutASkippedService(t *testing.T) {

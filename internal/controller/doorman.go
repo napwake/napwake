@@ -436,6 +436,15 @@ func hasReadinessCheck(spec corev1.PodSpec) bool {
 // requests that wake it may reach before its app can answer them.
 func (r *Reconciler) reportDoorman(ctx context.Context, workload *v1alpha1.ManagedWorkload, target client.Object,
 	routes []v1alpha1.DoormanRoute, skipped skippedServices) {
+	// While the workload wakes, the Ready pods serving a Service are its
+	// own: the Service leaving the doorman is the wake finishing, and what
+	// its pause found stands until it's awake.
+	if workload.Status.Phase == v1alpha1.PhaseResuming && len(skipped.served) > 0 {
+		skipped.served = nil
+		if len(routes) == 0 {
+			return
+		}
+	}
 	status, reason, message := metav1.ConditionTrue, "DoormanRouted", "requests are held and wake the workload"
 	switch {
 	case len(routes) > 0:
