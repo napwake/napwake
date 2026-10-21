@@ -67,8 +67,8 @@ func newRootCmd(newClient clientFunc) *cobra.Command {
 		Annotations: map[string]string{cobra.CommandDisplayNameAnnotation: "kubectl hybernate"},
 	}
 	kube := addKubeFlags(root.PersistentFlags(), newClient)
-	root.AddCommand(depsCmd(kube), enableCmd(kube), nodesCmd(kube), pauseCmd(kube), scanCmd(kube), statusCmd(kube),
-		versionCmd(), wakeCmd(kube))
+	root.AddCommand(depsCmd(kube), enableCmd(kube), forecastCmd(kube), nodesCmd(kube), pauseCmd(kube), scanCmd(kube),
+		statusCmd(kube), versionCmd(), wakeCmd(kube))
 	for _, cmd := range root.Commands() {
 		silenceUsageOnceRunning(cmd)
 	}

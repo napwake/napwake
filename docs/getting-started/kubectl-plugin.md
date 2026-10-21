@@ -1,8 +1,8 @@
 # kubectl Plugin
 
-The `kubectl hybernate` plugin scans a cluster for idle workloads, shows what Hybernate is doing in it and why its nodes aren't scaling down, ends dry-run for workloads you've opted in, pauses workloads on demand, and wakes paused ones.
+The `kubectl hybernate` plugin scans a cluster for idle workloads, replays Hybernate's forecast over their history, shows what Hybernate is doing in it and why its nodes aren't scaling down, ends dry-run for workloads you've opted in, pauses workloads on demand, and wakes paused ones.
 
-`scan` and `status` read every namespace you can, and fall back to your kubeconfig context's namespace, with a note, when your access doesn't allow listing them all; `-n` names namespaces instead, and `-A` (`--all-namespaces`) insists on every one, failing rather than falling back. `pause`, `wake`, `deps` and `enable` work in one namespace: `-n`, or your context's, as kubectl does.
+`scan`, `forecast` and `status` read every namespace you can, and fall back to your kubeconfig context's namespace, with a note, when your access doesn't allow listing them all; `-n` names namespaces instead, and `-A` (`--all-namespaces`) insists on every one, failing rather than falling back. `pause`, `wake`, `deps` and `enable` work in one namespace: `-n`, or your context's, as kubectl does.
 
 Every command takes kubectl's connection flags: `--kubeconfig`, `--context`, `--cluster`, `--user`, `--as`, `--as-group`, `--as-uid`, `--token`, `--server`, `--certificate-authority`, `--client-certificate`, `--client-key`, `--insecure-skip-tls-verify`, `--tls-server-name`, `--proxy-url`, `--username`, `--password`, `--disable-compression` and `--request-timeout`. Each request to the API server gives up after 30 seconds unless `--request-timeout` sets otherwise (`0` keeps the 30 seconds, unlike kubectl, where it means no limit), so a cluster that stops answering ends a command with an error, not a hang. `kubectl hybernate version` prints the plugin's version.
 
@@ -261,6 +261,48 @@ Or pass --prometheus-url if Prometheus is reachable from your machine.
 A Prometheus you name with `--prometheus-service` fails the scan instead, with the same commands in its error; reading it also needs `get` on that Service, to find its port, which `view` covers.
 
 That's only when the API server refuses you the proxy. A `403` from behind it, such as from a `kube-rbac-proxy` in front of Prometheus, is shown as Prometheus's own answer, since a Role for `services/proxy` wouldn't change it.
+
+## Replay the Forecast
+
+```bash
+kubectl hybernate forecast -n preview-42
+```
+
+```
+staging: the forecast replayed over 28 days of CPU history from monitoring/prometheus-operated, times in UTC
+
+NAMESPACE   NAME     FORECAST             READY  COLD  WOKEN FOR NOTHING  WOKEN
+preview-42  api      acts from day one    9/10   1     0                  08:45, 25m ahead
+preview-42  worker   acts from Mon 2 Nov  3/10   7     2 (3.5h)           09:45, 20m ahead
+preview-42  reports  not within 4 weeks   0/6    6     0                  -
+```
+
+`forecast` shows what Hybernate's [forecast](../concepts/forecasting.md) would make of your workloads, from their own CPU history, before you trust `autoResume` with them. It runs the operator's own forecast and decision rules, through the [simulator](../concepts/forecasting.md#proving-it), over the history scan reads:
+
+- **FORECAST** is when the forecast would act if the workload were opted in today, having [learned all its history](../concepts/forecasting.md#learning-from-history) as the operator does for a new workload: `acts from day one`, from a date it projects, or `not within 4 weeks` for a pattern too irregular for the setting. For a workload Hybernate already manages, it's that forecast's own, from `status.prediction`.
+- **READY**, **COLD**, **WOKEN FOR NOTHING** and **WOKEN** replay the last half of the history as Hybernate with `autoResume` would have managed it, from a forecast that learned only the first half: the mornings it had the workload up before its first use, those whose first use found it paused and woke it, the wakes ahead of demand that didn't come and how long they kept it up, and when it usually woke it. Having learned less, the replay is a little less ready than opting in now would be.
+
+A workload counts as used whenever its CPU is above `--cpu-threshold`, as the activity clock counts it; use that shows only in requests or activity annotations isn't in Prometheus. Name a workload, as `api` or `statefulset/postgres`, to see it day by day: each day's first use, how it found the workload, when the forecast woke it, and whether the forecast was acting.
+
+```bash
+kubectl hybernate forecast api -n preview-42 --timezone Europe/London
+```
+
+It reads Prometheus as [scan](#scan-a-cluster) does, found in the cluster or at `--prometheus-url`, with the same [flags](#a-prometheus-elsewhere) and [permissions](#permissions), and fails when there's no history to read. It only reads.
+
+| Flag | Short | Default | Description |
+|------|-------|---------|-------------|
+| `--namespace` | `-n` | all you can read | Namespace to replay; repeat for several |
+| `--all-namespaces` | `-A` | `false` | Every namespace, failing rather than falling back when your access doesn't allow it |
+| `--exclude-namespaces` | | system namespaces | Namespaces to skip |
+| `--window` | | `28d` | How much history to read, from `2d` to `34d`; the operator learns up to four weeks |
+| `--forecast` | | `balanced` | How soon the forecast acts, `eager`, `balanced` or `cautious`, for workloads Hybernate doesn't manage; see [Forecast setting](../concepts/forecasting.md#forecast-setting) |
+| `--timezone` | | `UTC` | The operator's `--timezone`, whose hours and weekdays the forecast learns, and that times are shown in |
+| `--cpu-threshold` | | `10` | CPU use, as a percentage of requests, above which a workload is in use; managed workloads use their own |
+| `--idle-after` | | `1h` | How long without use before a pause; managed workloads use their own |
+| `--output` | `-o` | `table` | `table`, `json`, or `yaml`; JSON and YAML give every workload's days |
+| `--timeout` | | `5m` | How long the replay may take before it gives up |
+| `--prometheus-url` and the other `--prometheus-*` flags | | | As for scan |
 
 ## See What Hybernate Is Doing
 

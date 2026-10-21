@@ -763,21 +763,14 @@ func (r *Reconciler) clearIdleVeto(workload *v1alpha1.ManagedWorkload) {
 }
 
 // forecastVeto defers a pause while a confident forecast expects demand
-// above the activity threshold in the hour under way or the next. It
-// covers every hour autoResume would wake the workload for, so a workload
-// is never paused only to be woken straight back. It reports the busiest
-// of the two hours, and when it begins.
+// above the activity threshold in the hour under way or the next, by
+// forecast.HoldPause. It reports the busiest of the two hours, and when it
+// begins.
 func (r *Reconciler) forecastVeto(workload *v1alpha1.ManagedWorkload, engine forecaster) (vetoed bool, predicted float64, hour time.Time) {
-	if engine == nil || engine.GetPhase() < forecast.DailyActive {
+	if engine == nil {
 		return false, 0, time.Time{}
 	}
-	now := r.now()
-	hour = r.hourStart(now)
-	predicted = engine.Predict(0, now)
-	if next := engine.Predict(1, now); next > predicted {
-		predicted, hour = next, hour.Add(time.Hour)
-	}
-	return predicted >= float64(cpuThresholdFor(workload)), predicted, hour
+	return forecast.HoldPause(engine, r.now(), r.Timezone, cpuThresholdFor(workload))
 }
 
 // nextCheck is when the clock next needs evaluating: at the next CPU poll,

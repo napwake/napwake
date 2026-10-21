@@ -16,12 +16,13 @@ These flags are passed to the binary (`/manager`), which runs as the operator, o
 | `--leader-elect` | `false` | Elect a leader, so only one replica reconciles. A leader that stops releases its lease, so the next replica, or the new one in a rollout, takes over at once. Ignored by the doorman |
 | `--max-concurrent-reconciles` | `8` | How many ManagedWorkloads are reconciled at once, so one slow metrics or Prometheus query doesn't hold up wakes, which are queued ahead of periodic checks. At least 1 |
 | `--timezone` | `UTC` | IANA time zone, such as `Europe/London`, whose hours and weekdays forecasts learn, so they follow daylight saving. The time zone database is built in |
-| `--prometheus-url` | | Base URL of the Prometheus API for Prometheus activity queries, such as `http://prometheus.monitoring.svc:9090`; `http` or `https` with a host. Required only if workloads set `idlePolicy.activity.prometheus` |
+| `--prometheus-url` | | Base URL of the Prometheus API, such as `http://prometheus.monitoring.svc:9090`; `http` or `https` with a host. Required for workloads that set `idlePolicy.activity.prometheus`; with it, each new workload's forecast also starts from up to four weeks of its CPU history (see [Learning from history](../concepts/forecasting.md#learning-from-history)) |
 | `--watch-namespaces` | every namespace | Comma-separated namespaces to work in, with a Role in each |
 | `--protected-namespaces` | | Comma-separated name patterns, such as `prod-*`, of namespaces Hybernate never manages, as if labelled `hybernate.io/protected=true`, unless labelled `hybernate.io/allow-protected=true`. The `kube-*` namespaces, `$POD_NAMESPACE`, and the doorman's namespace are always protected besides; see [Protected namespaces](../guides/opt-in.md#protected-namespaces) |
 | `--default-idle-after` | `1h` | Idle time before pausing, for workloads opted in with the label whose annotations and namespace don't set it. At least `1m` |
 | `--default-cpu-threshold` | `10` | CPU percentage of requests that counts as active, for opted-in workloads that don't set it. 1 to 100 |
 | `--default-dry-run` | `false` | Measure opted-in workloads without pausing, unless they or their namespace set `hybernate.io/dry-run` |
+| `--default-forecast` | `balanced` | How soon the forecast acts, `eager`, `balanced` or `cautious`, for opted-in workloads that don't set `hybernate.io/forecast` |
 | `--doorman` | `false` | Run as the doorman instead of the operator. The doorman Deployment sets it |
 | `--doorman-service` | `hybernate-doorman` | Name of the doorman's Service, which the operator routes paused workloads to. Empty disables waking on request |
 | `--doorman-ports-per-workload` | `32` | The most doorman ports one workload may hold, one per routed Service port. A workload with more isn't routed (`WakeOnRequest=False`, reason `TooManyPorts`) |

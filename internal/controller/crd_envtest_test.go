@@ -214,6 +214,7 @@ func TestCRD_TargetIsAllAManagedWorkloadNeeds(t *testing.T) {
 	for _, name := range []string{"api", "worker"} {
 		var mw v1alpha1.ManagedWorkload
 		require.NoError(t, c.Get(ctx, client.ObjectKey{Namespace: "dev", Name: name}, &mw))
-		assert.Equal(t, 75, mw.Spec.Prediction.Confidence, "%s takes the default confidence", name)
+		assert.Equal(t, v1alpha1.PredictionBalanced, mw.Spec.Prediction.Mode, "%s takes the default mode", name)
+		assert.Zero(t, mw.Spec.Prediction.Confidence, "%s overrides no threshold", name)
 	}
 }

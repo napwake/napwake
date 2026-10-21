@@ -703,33 +703,6 @@ func TestActivityClock_VetoAndAutoResumeAgree(t *testing.T) {
 	assert.Equal(t, 1, pauser.resumeCalls, "the forecast that held it awake wakes it")
 }
 
-func TestHourStart(t *testing.T) {
-	kolkata, err := time.LoadLocation("Asia/Kolkata")
-	require.NoError(t, err)
-	newYork, err := time.LoadLocation("America/New_York")
-	require.NoError(t, err)
-	tests := []struct {
-		name string
-		loc  *time.Location
-		at   time.Time
-		want time.Time
-	}{
-		{name: "UTC", at: fixedTime.Add(10 * time.Minute), want: fixedTime},
-		{name: "hours at half past in UTC", loc: kolkata, at: fixedTime.Add(10 * time.Minute),
-			want: fixedTime.Add(-30 * time.Minute)},
-		{name: "the first 1am of a clock change", loc: newYork, at: time.Date(2026, 11, 1, 5, 40, 0, 0, time.UTC),
-			want: time.Date(2026, 11, 1, 5, 0, 0, 0, time.UTC)},
-		{name: "the repeated 1am", loc: newYork, at: time.Date(2026, 11, 1, 6, 40, 0, 0, time.UTC),
-			want: time.Date(2026, 11, 1, 6, 0, 0, 0, time.UTC)},
-	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			r := &Reconciler{Timezone: tt.loc}
-			assert.True(t, tt.want.Equal(r.hourStart(tt.at)), "got %s", r.hourStart(tt.at).UTC())
-		})
-	}
-}
-
 func TestActivityClock_DryRunReportsIdleOnceWithoutPausing(t *testing.T) {
 	target := clockTarget("app:v1", nil)
 	workload := clockWorkload(fixedTime.Add(-61*time.Minute), target)

@@ -473,6 +473,7 @@ func TestOptIn_UserSettingsSurvive(t *testing.T) {
 	mw, _ := managedWorkload(t, r, "api")
 	cpu := resource.MustParse("0.05")
 	mw.Spec.Prediction.Confidence = 70
+	mw.Spec.Prediction.Mode = v1alpha1.PredictionEager
 	mw.Spec.CostTracking = &v1alpha1.CostTrackingSpec{Rates: &v1alpha1.CostRates{CPUPerHour: &cpu}}
 	mw.Spec.IdlePolicy.Activity.Prometheus = []v1alpha1.PrometheusActivity{{PromQL: "sum(up)"}}
 	mw.Spec.DependsOn[0].WaitForReady = true
@@ -491,6 +492,7 @@ func TestOptIn_UserSettingsSurvive(t *testing.T) {
 	assert.True(t, mw.Spec.DependsOn[0].WaitForReady)
 	assert.Equal(t, 3*time.Hour, mw.Spec.IdlePolicy.IdleAfter.Duration, "the annotations still apply")
 	assert.False(t, mw.Spec.DryRun, "dry-run is the annotations' to set")
+	assert.Equal(t, v1alpha1.PredictionBalanced, mw.Spec.Prediction.Mode, "and so is the forecast's mode")
 }
 
 // A label-created ManagedWorkload another install took on is left to it,

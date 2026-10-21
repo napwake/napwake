@@ -35,6 +35,11 @@ spec:
       jsonPath: .status.dryRun.estimatedFreed
       name: Would Free
       type: string
+    - description: Whether the forecast is acting, or what it waits for
+      jsonPath: .status.prediction.reason
+      name: Forecast
+      priority: 1
+      type: string
     - jsonPath: .metadata.creationTimestamp
       name: Age
       type: date
@@ -217,21 +222,32 @@ spec:
                   idle detection and wakes paused workloads ahead of predicted demand.
                 properties:
                   confidence:
-                    default: 75
                     description: |-
-                      Confidence is the accuracy percentage (50-100) a season's forecasts
-                      must reach before they drive decisions rather than only being
-                      reported. Accuracy is 1 - WAPE: 75 means the forecast's total error
-                      over the window is 25% of the demand in it. A season that falls 5
-                      points below it stops driving decisions until it earns it again. The
-                      minimum is 50 because below that a forecast that is wrong more than it
-                      is right would wake workloads and hold off pauses. The default of 75
-                      starts acting on a weekday pattern after about a week; a higher bar
-                      takes longer to reach, for little more accuracy, since a wrong forecast
-                      only wakes a workload early or keeps it up an hour longer.
+                      Confidence, when set, is the accuracy percentage (50-100) a season's
+                      forecasts must reach to drive decisions, in place of Mode's. Accuracy
+                      is 1 - WAPE: 75 means the forecast's total error over the window is
+                      25% of the demand in it. A season that falls 5 points below it stops
+                      driving decisions until it earns it again. The minimum is 50 because
+                      below that a forecast that is wrong more than it is right would wake
+                      workloads and hold off pauses.
                     maximum: 100
                     minimum: 50
                     type: integer
+                  mode:
+                    default: balanced
+                    description: |-
+                      Mode is how soon the forecast acts on what it has learned: eager acts
+                      sooner, and on less regular patterns, and wakes the workload for
+                      nothing more often; cautious acts later, only on patterns it forecasts
+                      well, for workloads costly to keep awake for nothing. A wrong forecast
+                      only wakes a workload early or keeps it up a while longer, never
+                      costing availability, since a request still wakes it through the
+                      doorman. They act at a confidence of 60, 75 and 85.
+                    enum:
+                    - eager
+                    - balanced
+                    - cautious
+                    type: string
                 type: object
               target:
                 description: |-
@@ -1085,6 +1101,12 @@ spec:
                 description: Prediction reflects the current state of the forecasting
                   engine.
                 properties:
+                  acting:
+                    description: |-
+                      Acting says the forecast drives decisions: it holds off a pause before
+                      an hour it expects to be busy, and with autoResume, wakes the workload
+                      ahead of one.
+                    type: boolean
                   dailyConfidence:
                     description: |-
                       DailyConfidence is the forecast's accuracy over the last 24 observed
@@ -1095,6 +1117,53 @@ spec:
                       DailyPhase is the daily season's lifecycle phase
                       (Observing, Suggesting, or Active).
                     type: string
+                  history:
+                    description: |-
+                      History is what the forecast learned from the workload's CPU history
+                      in Prometheus when Hybernate began managing it.
+                    properties:
+                      from:
+                        description: From and To bound the history learned.
+                        format: date-time
+                        type: string
+                      hours:
+                        description: Hours is how many hours of history the forecast
+                          learned.
+                        type: integer
+                      message:
+                        description: Message says what was learned, or why nothing
+                          was.
+                        type: string
+                      reason:
+                        description: |-
+                          Reason says in a word what came of reading it: Learned,
+                          NoPrometheusURL, NoHistory, NoCPURequests or QueryFailed.
+                        type: string
+                      to:
+                        format: date-time
+                        type: string
+                    required:
+                    - reason
+                    type: object
+                  message:
+                    description: Message says the same in a sentence, and what the
+                      forecast waits for.
+                    type: string
+                  reason:
+                    description: |-
+                      Reason says in a word why the forecast is or isn't acting: Acting,
+                      Observing (it hasn't seen every hour of the day yet), EarningConfidence
+                      (its forecasts aren't yet right enough), Relearning (demand broke from
+                      what it had learned), or NotLearning (the workload is paused without
+                      the doorman, so its demand can't be seen).
+                    type: string
+                  startsActing:
+                    description: |-
+                      StartsActing is when the forecast is expected to start acting, if the
+                      coming days repeat the last week it saw. It's unset while the forecast
+                      is acting, and when it isn't expected to start within four weeks.
+                    format: date-time
+                    type: string
                   state:
                     description: |-
                       State is what the forecasting engine has learned, compressed and
@@ -1102,6 +1171,11 @@ spec:
                       each hourly observation. State that can't be read is discarded, with a
                       warning event, and the engine starts learning again.
                     type: string
+                  threshold:
+                    description: |-
+                      Threshold is the confidence the forecast acts at: spec.prediction's
+                      confidence, or its mode's.
+                    type: integer
                   timeZone:
                     description: |-
                       TimeZone is the IANA time zone the forecast counts hours of the day
@@ -1119,6 +1193,7 @@ spec:
                       (Observing, Suggesting, or Active).
                     type: string
                 required:
+                - acting
                 - dailyConfidence
                 - dailyPhase
                 - weeklyConfidence

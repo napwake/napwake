@@ -40,6 +40,7 @@ Hybernate is packaged two ways: a Helm chart, and the Kustomize manifests, the r
         | `defaults.idleAfter` | `1h` | Idle time before pausing, for opted-in workloads that don't set their own |
         | `defaults.cpuThreshold` | `10` | CPU percentage of requests that counts as active |
         | `defaults.dryRun` | `false` | Measure every opted-in workload without pausing, unless it sets its own |
+        | `defaults.forecast` | `balanced` | How soon the forecast acts: `eager`, `balanced` or `cautious` |
         | `resources.limits.cpu` | `500m` | CPU limit |
         | `resources.limits.memory` | `512Mi` | Memory limit |
 

@@ -57,6 +57,7 @@ type stubForecaster struct {
 	exportErr        error
 	exportCalls      int
 	settings         forecast.Settings
+	outlook          forecast.Outlook
 }
 
 func (f *stubForecaster) Observe(actual float64, hour time.Time) (float64, error) {
@@ -88,6 +89,11 @@ func (f *stubForecaster) WeeklyConfidence() int                { return f.weekly
 func (f *stubForecaster) GetDataPoints() int                   { return f.dataPoints }
 func (f *stubForecaster) RegimeChanged() bool                  { return f.regimeChanged }
 func (f *stubForecaster) AnomalyDetected() bool                { return f.anomalyDetected }
+func (f *stubForecaster) Outlook() forecast.Outlook {
+	o := f.outlook
+	o.Acting = o.Acting || f.phase >= forecast.DailyActive
+	return o
+}
 
 type stubMetrics struct {
 	cpuMillis        float64
@@ -277,7 +283,7 @@ func TestAutoResume_FiresOnTimeAlone(t *testing.T) {
 	}
 
 	require.Equal(t, 1, pauser.resumeCalls, "autoResume never fired")
-	assert.Equal(t, fixedTime.Add(time.Hour-autoResumeLead), now, "woken as the lead before the busy hour begins")
+	assert.Equal(t, fixedTime.Add(time.Hour-forecast.AutoResumeLead), now, "woken as the lead before the busy hour begins")
 }
 
 func TestAutomation_NoIdlePolicyOnlyLearns(t *testing.T) {
@@ -335,7 +341,7 @@ func TestAutomation_FeedsEachHourItsPeak(t *testing.T) {
 // an autoResume wake at 12:45 would teach the forecast that 12:00 is busy,
 // and it would wake the workload an hour earlier the next week.
 func TestAutomation_WarmUpAfterAWakeIsNotDemand(t *testing.T) {
-	woke := fixedTime.Add(time.Hour - autoResumeLead)
+	woke := fixedTime.Add(time.Hour - forecast.AutoResumeLead)
 	workload := automationWorkload(v1alpha1.PhaseRunning)
 	engine := &stubForecaster{phase: forecast.Observing}
 	metrics := &stubMetrics{}
@@ -891,7 +897,7 @@ func TestAutoResume_LearnsToWakeBeforePeopleArrive(t *testing.T) {
 		require.Len(t, got, 2, "%s of the last week: woken once and paused once, got %v", at(d, 0).Weekday(), got)
 		wake, pause := got[0], got[1]
 		assert.Equal(t, ReasonAutoResume, wake.reason, "%s", wake.at)
-		assert.Equal(t, at(d, 9*time.Hour-autoResumeLead), wake.at, "awake before people arrive at 09:10")
+		assert.Equal(t, at(d, 9*time.Hour-forecast.AutoResumeLead), wake.at, "awake before people arrive at 09:10")
 		assert.Equal(t, ReasonPaused, pause.reason)
 		assert.Equal(t, at(d, 18*time.Hour+29*time.Minute), pause.at,
 			"paused an idleAfter after the last busy minute: the veto doesn't hold it into the evening")

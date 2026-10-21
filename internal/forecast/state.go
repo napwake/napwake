@@ -28,10 +28,11 @@ import (
 	"time"
 )
 
-// stateVersion 3 is the additive model learning utilization, as a
-// percentage of the CPU requested; 2 learned millicores. State of any other
-// version is rejected rather than migrated: an engine relearns in days.
-const stateVersion = 3
+// stateVersion 4 is the additive model learning utilization, as a
+// percentage of the CPU requested, with the demand last seen in each hour
+// of the week. State of any other version is rejected rather than
+// migrated: an engine relearns in days.
+const stateVersion = 4
 
 // maxStateBytes bounds the decompressed state, so a hand-edited state
 // can't expand into gigabytes. A real one is a few kilobytes.
@@ -71,6 +72,8 @@ type engineState struct {
 	AnAbove  weekSlots             `json:"aa"`
 	AnBelow  weekSlots             `json:"ab"`
 	PrePhase int                   `json:"pp"`
+	Recent   [WeeklySeason]float32 `json:"r"`
+	Seen     weekSlots             `json:"rs"`
 }
 
 // Export encodes what the engine has learned as compact text: gzipped JSON
@@ -92,6 +95,8 @@ func (e *Engine) Export() (string, error) {
 		AnAbove:  e.Anomaly.above,
 		AnBelow:  e.Anomaly.below,
 		PrePhase: int(e.phaseBeforeAnomalies),
+		Recent:   e.recent,
+		Seen:     e.recentSeen,
 	}
 	for i, v := range e.Model.daily {
 		st.Daily[i] = float32(v)
@@ -172,6 +177,8 @@ func decodeEngine(data []byte, settings Settings) (*Engine, error) {
 	e.Anomaly.above = st.AnAbove
 	e.Anomaly.below = st.AnBelow
 	e.phaseBeforeAnomalies = Phase(st.PrePhase)
+	e.recent = st.Recent
+	e.recentSeen = st.Seen
 	return e, nil
 }
 
@@ -189,7 +196,7 @@ func (st *engineState) validate() error {
 		return errors.New("data points and last observed hour disagree")
 	case st.LastHour < 0 || st.LastHour > maxLastHour:
 		return fmt.Errorf("last observed hour %d out of range", st.LastHour)
-	case !st.Coverage.valid() || !st.AnAbove.valid() || !st.AnBelow.valid():
+	case !st.Coverage.valid() || !st.AnAbove.valid() || !st.AnBelow.valid() || !st.Seen.valid():
 		return errors.New("hours beyond the hours of a week")
 	case len(st.AbsErr) != len(st.Actual) || len(st.AbsErr) > weeklyWindow:
 		return fmt.Errorf("error window of %d and %d hours", len(st.AbsErr), len(st.Actual))
@@ -223,6 +230,11 @@ func (st *engineState) validateMagnitudes() error {
 	for i := range st.AbsErr {
 		if !nonNegative(float64(st.AbsErr[i])) || !nonNegative(float64(st.Actual[i])) {
 			return errors.New("recorded error out of range")
+		}
+	}
+	for _, v := range st.Recent {
+		if !nonNegative(float64(v)) || float64(v) > maxDemand {
+			return errors.New("recent demand out of range")
 		}
 	}
 	return nil

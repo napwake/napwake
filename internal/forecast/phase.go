@@ -116,6 +116,12 @@ type Engine struct {
 	// or last saw its patterns break.
 	coverage weekSlots
 
+	// recent is the demand last observed in each hour of the week, where
+	// recentSeen says one was. Unlike coverage, it outlasts a regime change:
+	// it's what the demand was, not evidence for what was learned.
+	recent     [WeeklySeason]float32
+	recentSeen weekSlots
+
 	// phaseBeforeAnomalies is the highest phase held since the oldest
 	// anomaly still in the anomaly window: what a regime change demotes
 	// from, so that the anomalies leading up to it, which may already have
@@ -215,6 +221,8 @@ func (e *Engine) Observe(actual float64, now time.Time) (float64, error) {
 	e.lastHour = hourStart(t)
 	e.updateScale(actual)
 	e.coverage.set(weeklyIndex(t), true)
+	e.recent[weeklyIndex(t)] = float32(actual)
+	e.recentSeen.set(weeklyIndex(t), true)
 	e.advancePhase()
 
 	if !e.Model.finite() || !isFinite(e.scale) {

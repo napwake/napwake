@@ -51,6 +51,7 @@ import (
 
 	v1alpha1 "github.com/okedeji/hybernate/api/v1alpha1"
 	"github.com/okedeji/hybernate/internal/autoscaler"
+	"github.com/okedeji/hybernate/internal/discovery"
 	"github.com/okedeji/hybernate/internal/forecast"
 	"github.com/okedeji/hybernate/internal/human"
 	"github.com/okedeji/hybernate/internal/lifecycle"
@@ -147,6 +148,7 @@ type Reconciler struct {
 	doormanPorts    portAllocator
 	doormanFailures failureBackoff
 	prometheus      *signal.Prometheus
+	history         historyReader
 	doormanFamilies doormanFamilies
 	uids            workloadUIDs
 	graph           *workloadGraph
@@ -1625,10 +1627,42 @@ func (r *Reconciler) initDefaults() {
 	}
 }
 
+// setupHistoryLearner registers the historyLearner, which seeds new
+// workloads' forecasts from Prometheus, when there's a Prometheus to read.
+func (r *Reconciler) setupHistoryLearner(mgr ctrl.Manager) error {
+	if r.history == nil && r.PrometheusURL != "" {
+		httpClient, err := discovery.NewHTTPClient(discovery.HTTPOptions{})
+		if err != nil {
+			return fmt.Errorf("creating the Prometheus history client: %w", err)
+		}
+		p, err := discovery.NewPrometheusURL(r.PrometheusURL, httpClient, nil)
+		if err != nil {
+			return fmt.Errorf("reading --prometheus-url for history: %w", err)
+		}
+		r.history = p
+	}
+	if r.history == nil {
+		return nil
+	}
+	learner := &historyLearner{client: mgr.GetClient(), history: r.history, metrics: r.metrics, engines: r.engines,
+		timezone: r.Timezone, clock: r.now}
+	return ctrl.NewControllerManagedBy(mgr).
+		Named("forecasthistory").
+		For(&v1alpha1.ManagedWorkload{}, builder.WithPredicates(predicate.NewPredicateFuncs(func(o client.Object) bool {
+			workload, ok := o.(*v1alpha1.ManagedWorkload)
+			return ok && needsHistory(workload)
+		}))).
+		WithOptions(controller.Options{MaxConcurrentReconciles: 1}).
+		Complete(learner)
+}
+
 // SetupWithManager registers the reconciler with the controller manager.
 func (r *Reconciler) SetupWithManager(mgr ctrl.Manager) error {
 	r.initDefaults()
 	if err := r.setupDoormanSliceSync(mgr); err != nil {
+		return err
+	}
+	if err := r.setupHistoryLearner(mgr); err != nil {
 		return err
 	}
 	for field, index := range workloadIndexes() {

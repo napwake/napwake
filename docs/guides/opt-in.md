@@ -88,6 +88,7 @@ These leave the selectors alone:
 | `hybernate.io/idle-after` | duration of at least `1m`, e.g. `"90m"`, `"2h"` | `1h` | How long without activity before pausing |
 | `hybernate.io/cpu-threshold` | whole number, `"1"` to `"100"` | `10` | CPU use, as a percentage of requests, above which the workload counts as active |
 | `hybernate.io/auto-resume` | `"true"`, `"false"` | `"false"` | Wake ahead of the demand a confident [forecast](../concepts/forecasting.md) predicts |
+| `hybernate.io/forecast` | `"eager"`, `"balanced"`, `"cautious"` | `"balanced"` | How soon the forecast acts on what it has learned; see [Forecast setting](../concepts/forecasting.md#forecast-setting) |
 | `hybernate.io/depends-on` | comma-separated `kind/name` or `namespace/kind/name` | none | Workloads this one needs; see [Dependencies](../concepts/dependencies.md) |
 | `hybernate.io/wake-on-request` | `"true"`, `"false"` | `"true"` | Wake when a request reaches the workload's Service; see [Wake on Request](../concepts/wake-on-request.md) |
 | `hybernate.io/wake-max-wait` | duration, at most `1h` | `2m` | How long a request is held while the workload wakes |
@@ -103,13 +104,13 @@ hybernate.io/depends-on: "statefulset/postgres, messaging/statefulset/nats"
 
 On a namespace, `depends-on` reaches every workload in it except those it names, and those they depend on by their own `depends-on`: they're what the others depend on, and taking the list too would make them depend on each other, so none could pause.
 
-Settings that need more than one value aren't annotations: Prometheus activity queries, `waitForReady` on a dependency, cost rates, and the forecast's `prediction.confidence`. Set those on the ManagedWorkload Hybernate creates, such as with `kubectl patch`, which keeps them (see [What Hybernate does with the label](#what-hybernate-does-with-the-label)), or write a [ManagedWorkload](managed-workload.md) yourself.
+Settings that need more than one value aren't annotations: Prometheus activity queries, `waitForReady` on a dependency, cost rates, and the forecast's `prediction.confidence`, a percentage that overrides `hybernate.io/forecast`. Set those on the ManagedWorkload Hybernate creates, such as with `kubectl patch`, which keeps them (see [What Hybernate does with the label](#what-hybernate-does-with-the-label)), or write a [ManagedWorkload](managed-workload.md) yourself.
 
 ### Which setting wins
 
 1. The workload's own annotation.
 2. Its namespace's annotation.
-3. The cluster-wide defaults, set in the Helm values (`defaults.idleAfter`, `defaults.cpuThreshold`, `defaults.dryRun`).
+3. The cluster-wide defaults, set in the Helm values (`defaults.idleAfter`, `defaults.cpuThreshold`, `defaults.dryRun`, `defaults.forecast`).
 4. The built-in default.
 
 So a namespace can measure everything with `dry-run: "true"` while one workload in it goes live with `dry-run: "false"`.

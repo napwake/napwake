@@ -89,12 +89,13 @@ Settings for workloads opted in with the `hybernate.io/managed` label, used when
 | `defaults.idleAfter` | `1h` | How long without activity before pausing; a Go duration of at least `1m`, such as `90s` or `1h30m`. Passed as `--default-idle-after` |
 | `defaults.cpuThreshold` | `10` | CPU use, as a percentage of requests from 1 to 100, above which a workload counts as active. Passed as `--default-cpu-threshold` |
 | `defaults.dryRun` | `false` | Measure without pausing. Set `true` to roll Hybernate out across a cluster measuring first. Passed as `--default-dry-run` |
+| `defaults.forecast` | `balanced` | How soon the forecast acts: `eager`, `balanced` or `cautious`. See [Forecast setting](../concepts/forecasting.md#forecast-setting). Passed as `--default-forecast` |
 
 ## Prometheus Activity
 
 | Value | Default | Description |
 |-------|---------|-------------|
-| `prometheus.url` | `""` | Base URL of the Prometheus API used for Prometheus activity queries, such as `http://prometheus.monitoring.svc:9090`. Passed to the operator as `--prometheus-url`. Leave empty if no workload sets `idlePolicy.activity.prometheus` |
+| `prometheus.url` | `""` | Base URL of the Prometheus API, such as `http://prometheus.monitoring.svc:9090`, for Prometheus activity queries and to start each new workload's forecast from up to four weeks of its CPU history (see [Learning from history](../concepts/forecasting.md#learning-from-history)). Passed to the operator as `--prometheus-url` |
 
 ## Metrics
 

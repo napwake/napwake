@@ -29,6 +29,7 @@ import (
 // +kubebuilder:printcolumn:name="Freed",type=string,JSONPath=`.status.cost.freedThisMonth`,description="What pausing freed this month (UTC), at list price"
 // +kubebuilder:printcolumn:name="Saved",type=string,JSONPath=`.status.cost.savedThisMonth`,description="What pausing took off the node bill this month (UTC), at least"
 // +kubebuilder:printcolumn:name="Would Free",type=string,JSONPath=`.status.dryRun.estimatedFreed`,description="In dry-run: what the pauses Hybernate would have made would have freed since dry-run began"
+// +kubebuilder:printcolumn:name="Forecast",type=string,JSONPath=`.status.prediction.reason`,priority=1,description="Whether the forecast is acting, or what it waits for"
 // +kubebuilder:printcolumn:name="Age",type=date,JSONPath=`.metadata.creationTimestamp`
 
 // ManagedWorkload declares a workload whose lifecycle is managed by Hybernate.
@@ -182,22 +183,39 @@ type WorkloadRef struct {
 
 // PredictionSpec configures the Holt-Winters forecasting engine.
 type PredictionSpec struct {
-	// Confidence is the accuracy percentage (50-100) a season's forecasts
-	// must reach before they drive decisions rather than only being
-	// reported. Accuracy is 1 - WAPE: 75 means the forecast's total error
-	// over the window is 25% of the demand in it. A season that falls 5
-	// points below it stops driving decisions until it earns it again. The
-	// minimum is 50 because below that a forecast that is wrong more than it
-	// is right would wake workloads and hold off pauses. The default of 75
-	// starts acting on a weekday pattern after about a week; a higher bar
-	// takes longer to reach, for little more accuracy, since a wrong forecast
-	// only wakes a workload early or keeps it up an hour longer.
+	// Mode is how soon the forecast acts on what it has learned: eager acts
+	// sooner, and on less regular patterns, and wakes the workload for
+	// nothing more often; cautious acts later, only on patterns it forecasts
+	// well, for workloads costly to keep awake for nothing. A wrong forecast
+	// only wakes a workload early or keeps it up a while longer, never
+	// costing availability, since a request still wakes it through the
+	// doorman. They act at a confidence of 60, 75 and 85.
+	// +kubebuilder:default=balanced
+	// +optional
+	Mode PredictionMode `json:"mode,omitempty"`
+
+	// Confidence, when set, is the accuracy percentage (50-100) a season's
+	// forecasts must reach to drive decisions, in place of Mode's. Accuracy
+	// is 1 - WAPE: 75 means the forecast's total error over the window is
+	// 25% of the demand in it. A season that falls 5 points below it stops
+	// driving decisions until it earns it again. The minimum is 50 because
+	// below that a forecast that is wrong more than it is right would wake
+	// workloads and hold off pauses.
 	// +kubebuilder:validation:Minimum=50
 	// +kubebuilder:validation:Maximum=100
-	// +kubebuilder:default=75
 	// +optional
 	Confidence int `json:"confidence,omitempty"`
 }
+
+// PredictionMode is how soon the forecast acts on what it has learned.
+// +kubebuilder:validation:Enum=eager;balanced;cautious
+type PredictionMode string
+
+const (
+	PredictionEager    PredictionMode = "eager"
+	PredictionBalanced PredictionMode = "balanced"
+	PredictionCautious PredictionMode = "cautious"
+)
 
 // IdlePolicySpec configures automatic pausing. The operator tracks when the
 // workload was last active and pauses it once it has been inactive for
@@ -650,6 +668,38 @@ type PredictionStatus struct {
 	// --timezone.
 	// +optional
 	TimeZone string `json:"timeZone,omitempty"`
+	// Threshold is the confidence the forecast acts at: spec.prediction's
+	// confidence, or its mode's.
+	// +optional
+	Threshold int `json:"threshold,omitempty"`
+
+	// Acting says the forecast drives decisions: it holds off a pause before
+	// an hour it expects to be busy, and with autoResume, wakes the workload
+	// ahead of one.
+	Acting bool `json:"acting"`
+
+	// StartsActing is when the forecast is expected to start acting, if the
+	// coming days repeat the last week it saw. It's unset while the forecast
+	// is acting, and when it isn't expected to start within four weeks.
+	// +optional
+	StartsActing *metav1.Time `json:"startsActing,omitempty"`
+
+	// Reason says in a word why the forecast is or isn't acting: Acting,
+	// Observing (it hasn't seen every hour of the day yet), EarningConfidence
+	// (its forecasts aren't yet right enough), Relearning (demand broke from
+	// what it had learned), or NotLearning (the workload is paused without
+	// the doorman, so its demand can't be seen).
+	// +optional
+	Reason string `json:"reason,omitempty"`
+
+	// Message says the same in a sentence, and what the forecast waits for.
+	// +optional
+	Message string `json:"message,omitempty"`
+
+	// History is what the forecast learned from the workload's CPU history
+	// in Prometheus when Hybernate began managing it.
+	// +optional
+	History *PredictionHistory `json:"history,omitempty"`
 
 	// State is what the forecasting engine has learned, compressed and
 	// encoded, so that it survives an operator restart. It is written with
@@ -657,6 +707,28 @@ type PredictionStatus struct {
 	// warning event, and the engine starts learning again.
 	// +optional
 	State string `json:"state,omitempty"`
+}
+
+// PredictionHistory is what the forecast learned from the workload's CPU
+// history in Prometheus, up to four weeks of it, before it learned live.
+type PredictionHistory struct {
+	// Reason says in a word what came of reading it: Learned,
+	// NoPrometheusURL, NoHistory, NoCPURequests or QueryFailed.
+	Reason string `json:"reason"`
+
+	// Hours is how many hours of history the forecast learned.
+	// +optional
+	Hours int `json:"hours,omitempty"`
+
+	// From and To bound the history learned.
+	// +optional
+	From *metav1.Time `json:"from,omitempty"`
+	// +optional
+	To *metav1.Time `json:"to,omitempty"`
+
+	// Message says what was learned, or why nothing was.
+	// +optional
+	Message string `json:"message,omitempty"`
 }
 
 // CostStatus is what the workload has cost, what pausing it has freed, and

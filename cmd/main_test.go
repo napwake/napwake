@@ -118,6 +118,10 @@ func TestValidateOptInDefaults(t *testing.T) {
 			mutate: func(d *controller.OptInDefaults) { d.IdleAfter = 30 * time.Second }, wantErr: true},
 		{name: "negative idleAfter", mutate: func(d *controller.OptInDefaults) { d.IdleAfter = -time.Minute },
 			wantErr: true},
+		{name: "an eager forecast", mutate: func(d *controller.OptInDefaults) { d.Forecast = v1alpha1.PredictionEager }},
+		{name: "a forecast setting the CRD doesn't have",
+			mutate: func(d *controller.OptInDefaults) { d.Forecast = "Eager" }, wantErr: true},
+		{name: "no forecast setting", mutate: func(d *controller.OptInDefaults) { d.Forecast = "" }, wantErr: true},
 	}
 
 	for _, tt := range tests {

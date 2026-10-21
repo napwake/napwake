@@ -28,7 +28,8 @@
 | `wake.maxWait` | duration (at most `1h`) | No | `2m` | How long a request is held while the workload wakes |
 | `wake.page` | bool | No | `true` | Answer a browser loading a page with a waking-up page instead of holding it |
 | `prediction` | `PredictionSpec` | No | `{}` | Forecast engine config; left out or `{}`, it takes the defaults |
-| `prediction.confidence` | int (50-100) | No | `75` | Accuracy (1 − WAPE, %) a season's forecasts must reach before they drive decisions |
+| `prediction.mode` | `eager` \| `balanced` \| `cautious` | No | `balanced` | How soon the forecast acts on what it has learned: at a confidence of 60, 75 or 85. See [Forecast setting](../concepts/forecasting.md#forecast-setting) |
+| `prediction.confidence` | int (50-100) | No | the mode's | Accuracy (1 − WAPE, %) a season's forecasts must reach before they drive decisions, in place of the mode's |
 | `costTracking` | `CostTrackingSpec` | No | | Custom cost rate overrides |
 | `costTracking.rates` | `CostRates` | No | node list prices, then AWS defaults | Custom cost rates, none of them negative |
 | `dryRun` | bool | No | `false` | Measure without pausing; see [Dry Run](../guides/dry-run.md). A workload already paused when it's turned on is woken |
@@ -80,6 +81,11 @@ A duration is a Go duration above zero, such as `45s`, `90m` or `1h30m`. Days an
 | `prediction.dailyPhase`, `prediction.weeklyPhase` | string | Each season's phase: `Observing`, `Suggesting`, or `Active` |
 | `prediction.dailyConfidence`, `prediction.weeklyConfidence` | int | Accuracy % over the last 24 and 168 observed hours |
 | `prediction.timeZone` | string | The IANA time zone the forecast counts hours and weekdays in, the operator's `--timezone` (Helm value `timezone`), such as `Europe/London` |
+| `prediction.threshold` | int | The confidence the forecast acts at: `spec.prediction.confidence`, or the mode's |
+| `prediction.acting` | bool | Whether the forecast drives decisions: holds off pauses and, with `autoResume`, wakes the workload ahead of demand |
+| `prediction.startsActing` | time | When the forecast is expected to start acting, if the coming days repeat the last week it saw; unset while it's acting or when it isn't expected to within four weeks |
+| `prediction.reason`, `prediction.message` | string | Why the forecast is or isn't acting: `Acting`, `Observing`, `EarningConfidence`, `Relearning` or `NotLearning`, and in a sentence. See [When it acts](../concepts/forecasting.md#when-it-acts) |
+| `prediction.history` | `PredictionHistory` | What the forecast learned from Prometheus history when Hybernate began managing the workload: `reason` (`Learned`, `NoPrometheusURL`, `NoHistory`, `NoCPURequests`, `QueryFailed`), `hours`, `from`, `to`, `message`. See [Learning from history](../concepts/forecasting.md#learning-from-history) |
 | `prediction.state` | string | The engine's learned state, gzipped and base64-encoded |
 | `cost` | `CostStatus` | Cost for the current calendar month, in UTC; see [Cost Tracking](../concepts/cost-tracking.md#status-fields) |
 | `cost.tracked` | duration | How much of the month the totals cover |

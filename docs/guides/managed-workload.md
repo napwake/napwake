@@ -47,7 +47,7 @@ spec:
     page: true
 
   prediction:
-    confidence: 75
+    mode: balanced
 
   costTracking:
     rates:
@@ -107,7 +107,8 @@ While the workload is paused, a request to any of its Services wakes it and is a
 
 | Field | Type | Default | Description |
 |-------|------|---------|-------------|
-| `confidence` | int (50-100) | `75` | Accuracy, as 1 − WAPE, a season's forecasts must reach before they drive decisions. See [Forecasting](../concepts/forecasting.md) |
+| `mode` | `eager`, `balanced`, `cautious` | `balanced` | How soon the forecast acts on what it has learned: eager sooner, waking the workload for nothing more often; cautious later, for workloads costly to keep awake. See [Forecast setting](../concepts/forecasting.md#forecast-setting) |
+| `confidence` | int (50-100) | the mode's: `60`, `75`, `85` | Accuracy, as 1 − WAPE, a season's forecasts must reach before they drive decisions, in place of the mode's. See [Forecasting](../concepts/forecasting.md#phase-lifecycle) |
 
 Leave `prediction` out, or write `prediction: {}`, for the default.
 

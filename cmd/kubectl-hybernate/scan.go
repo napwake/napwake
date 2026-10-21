@@ -65,6 +65,8 @@ type scanOptions struct {
 	html           string
 	open           bool
 	prometheus     prometheusOptions
+	// forecast, when set, also replays the forecast over the history.
+	forecast *discovery.ForecastOptions
 }
 
 // prometheusOptions say where to read history from and how to reach it.
@@ -524,6 +526,7 @@ func scanCluster(ctx context.Context, window time.Duration, prom prometheusSetup
 		History:         history,
 		Window:          window,
 		IdleAfter:       opts.idleAfter,
+		Forecast:        opts.forecast,
 		NamedNamespaces: len(opts.namespaces.list()) > 0,
 		AllNamespaces:   len(opts.namespaces.list()) == 0 && namespaceNote == "",
 	})

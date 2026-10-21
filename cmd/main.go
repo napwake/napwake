@@ -136,6 +136,11 @@ func main() {
 		"CPU threshold, as a percentage of requests, for workloads opted in with the label, unless annotated otherwise.")
 	flag.BoolVar(&optIn.DryRun, "default-dry-run", optIn.DryRun,
 		"Measure workloads opted in with the label without pausing them, unless annotated otherwise.")
+	flag.Func("default-forecast", "How soon the forecast acts, eager, balanced or cautious, for workloads opted in "+
+		"with the label, unless annotated otherwise. (default balanced)", func(v string) error {
+		optIn.Forecast = v1alpha1.PredictionMode(v)
+		return nil
+	})
 	var watched stringList
 	flag.Var(&watched, "watch-namespaces",
 		"Comma-separated namespaces to work in, with a Role in each. Empty means every namespace.")
@@ -454,6 +459,11 @@ func validateOptInDefaults(d controller.OptInDefaults) error {
 	}
 	if d.CPUThreshold < 1 || d.CPUThreshold > 100 {
 		return fmt.Errorf("--default-cpu-threshold %d must be from 1 to 100", d.CPUThreshold)
+	}
+	switch d.Forecast {
+	case v1alpha1.PredictionEager, v1alpha1.PredictionBalanced, v1alpha1.PredictionCautious:
+	default:
+		return fmt.Errorf("--default-forecast %q must be eager, balanced or cautious", d.Forecast)
 	}
 	return nil
 }
