@@ -331,12 +331,14 @@ func clusterStatus(ctx context.Context, c client.Client, home string, opts statu
 	}
 
 	targets := map[client.ObjectKey]string{}
+	checker := gitops.NewChecker(c)
 	for i := range workloads {
 		w := &workloads[i]
 		targets[client.ObjectKeyFromObject(w)] = w.Spec.Target.Name
 		row := workloadStatus(w, activeUntil[targetOfManaged(w)], now)
 		result.Workloads = append(result.Workloads, row)
-		result.Problems = append(result.Problems, problemsOf(w, now)...)
+		problems := reviewGitOpsConflict(ctx, c, checker, w, problemsOf(w, now), now)
+		result.Problems = append(result.Problems, problems...)
 		if p := w.Status.Prediction; p != nil && p.TimeZone != "" && !slices.Contains(result.ForecastTimeZones, p.TimeZone) {
 			result.ForecastTimeZones = append(result.ForecastTimeZones, p.TimeZone)
 		}
@@ -685,6 +687,41 @@ func later(a, b time.Time) time.Time {
 		return a
 	}
 	return b
+}
+
+// reviewGitOpsConflict checks a GitOpsConflict against what's true now:
+// once the tool is told to leave the replicas, it's no longer a problem,
+// though the operator only clears it when a pause holds, which a workload
+// in dry-run never makes. Once Hybernate's wait to pause again is over,
+// the condition's "pauses it again from" is past, so it's told as past.
+func reviewGitOpsConflict(ctx context.Context, c client.Client, checker *gitops.Checker,
+	w *v1alpha1.ManagedWorkload, problems []problem, now time.Time) []problem {
+	i := slices.IndexFunc(problems, func(p problem) bool { return p.Type == "GitOpsConflict" })
+	undone := w.Status.LastScaledUp
+	if i < 0 || undone == nil {
+		return problems
+	}
+	target := readTarget(ctx, c, w)
+	if target == nil {
+		return problems
+	}
+	r := checker.Replicas(ctx, target)
+	if r.Undo == gitops.Leaves {
+		return slices.Delete(problems, i, i+1)
+	}
+	if now.Before(undone.At.Add(gitops.RetryAfter)) {
+		return problems
+	}
+	guide := gitOpsGuide + "#" + gitOpsAnchors[r.Writer.Tool]
+	past := fmt.Sprintf("%s set the replicas from Git at %s, undoing the last pause", undone.GitOps,
+		clockTime(undone.At.Time))
+	if r.Undo == gitops.Undoes {
+		problems[i].Message = fmt.Sprintf("%s, and isn't told to leave them, so it will undo the next: %s", past, guide)
+	} else {
+		problems[i].Message = fmt.Sprintf("%s; whether it's told to leave them now couldn't be checked: %s. If it "+
+			"isn't, it will undo the next: %s", past, r.Unread, guide)
+	}
+	return problems
 }
 
 func problemsOf(w *v1alpha1.ManagedWorkload, now time.Time) []problem {

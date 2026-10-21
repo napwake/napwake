@@ -22,6 +22,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"slices"
 	"testing"
 	"time"
 
@@ -33,6 +34,7 @@ import (
 	"k8s.io/apimachinery/pkg/api/meta"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
@@ -367,6 +369,70 @@ func undoneBy(w *v1alpha1.ManagedWorkload, tool string, ago time.Duration) {
 	w.Status.LastScaledUp = &v1alpha1.ScaledUp{At: *before(ago), By: "argocd-controller", GitOps: tool, Replicas: 2}
 	w.Status.Conditions = []metav1.Condition{condition("GitOpsConflict", metav1.ConditionTrue, "PauseUndone",
 		tool+" set the replicas from Git, undoing the pause")}
+}
+
+// A GitOps conflict needs attention while the tool would still undo a
+// pause. The operator clears it only once a pause holds, which a workload
+// in dry-run never makes, so status checks the tool itself: once it's told
+// to leave the replicas, the conflict isn't listed, and once Hybernate's
+// wait is over, it's told as past rather than as a time gone by.
+func TestStatus_GitOpsConflictAsItIsNow(t *testing.T) {
+	forbidArgo := replicasSetBy("argocd-controller")
+	get := forbidArgo.Get
+	forbidArgo.Get = func(ctx context.Context, c client.WithWatch, key client.ObjectKey, obj client.Object,
+		opts ...client.GetOption) error {
+		if key.Namespace == "argocd" {
+			return apierrors.NewForbidden(schema.GroupResource{}, key.Name, nil)
+		}
+		return get(ctx, c, key, obj, opts...)
+	}
+	forbidArgo.List = func(ctx context.Context, c client.WithWatch, list client.ObjectList,
+		opts ...client.ListOption) error {
+		if _, ok := list.(*unstructured.UnstructuredList); ok {
+			return apierrors.NewForbidden(schema.GroupResource{Group: "argoproj.io", Resource: "applications"}, "", nil)
+		}
+		return c.List(ctx, list, opts...)
+	}
+	unfixed := []client.Object{argoApplication(map[string]any{}), argoFixed()[1]}
+	tests := []struct {
+		name  string
+		ago   time.Duration
+		funcs interceptor.Funcs
+		argo  []client.Object
+		want  string
+	}{
+		{name: "fixed since", ago: 10 * time.Minute, funcs: replicasSetBy("argocd-controller"), argo: argoFixed()},
+		{name: "unfixed, while Hybernate waits", ago: 10 * time.Minute, funcs: replicasSetBy("argocd-controller"),
+			argo: unfixed, want: "Argo CD set the replicas from Git, undoing the pause"},
+		{name: "unfixed, once Hybernate's wait is over", ago: 3 * time.Hour,
+			funcs: replicasSetBy("argocd-controller"), argo: unfixed,
+			want: "Argo CD set the replicas from Git at 09:00 UTC, undoing the last pause, and isn't told to leave " +
+				"them, so it will undo the next: https://okedeji.io/hybernate/guides/gitops/#argo-cd"},
+		{name: "can't be checked", ago: 3 * time.Hour, funcs: forbidArgo, argo: argoFixed(),
+			want: "Argo CD set the replicas from Git at 09:00 UTC, undoing the last pause; whether it's told to " +
+				"leave them now couldn't be checked: your access doesn't allow reading Argo CD's Applications. If " +
+				"it isn't, it will undo the next: https://okedeji.io/hybernate/guides/gitops/#argo-cd"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			w := statusWorkloadObj("preview-42", "api", v1alpha1.TargetKindDeployment, v1alpha1.PhaseIdle, time.Hour)
+			undoneBy(w, "Argo CD", tt.ago)
+			w.Spec.DryRun = true
+			api := trackedByArgoCD(&appsv1.Deployment{ObjectMeta: metav1.ObjectMeta{Name: "api", Namespace: "preview-42"}})
+			c := newStatusClient(t, tt.funcs, append([]client.Object{w, api}, tt.argo...)...)
+
+			result, err := clusterStatus(context.Background(), c, "preview-42", statusOpts())
+
+			require.NoError(t, err)
+			i := slices.IndexFunc(result.Problems, func(p problem) bool { return p.Type == "GitOpsConflict" })
+			if tt.want == "" {
+				assert.Negative(t, i, "not listed once Argo CD leaves the replicas")
+				return
+			}
+			require.GreaterOrEqual(t, i, 0)
+			assert.Equal(t, tt.want, result.Problems[i].Message)
+		})
+	}
 }
 
 // In dry-run, Hybernate never pauses, so a GitOps conflict holds nothing
