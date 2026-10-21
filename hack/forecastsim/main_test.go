@@ -94,7 +94,7 @@ func TestReplaysRecordedHistory(t *testing.T) {
 			require.Len(t, reports, 1)
 			s := reports[0].Summarize(reports[0].Start.AddDate(0, 0, 21))
 			assert.Equal(t, 5, s.UsedDays)
-			assert.Equal(t, 4, s.Ready, "the fourth week's mornings after Monday, which the weekend before still costs")
+			assert.Equal(t, 5, s.Ready, "every morning of the fourth week")
 		})
 	}
 }

@@ -26,8 +26,10 @@ import (
 type Waiting string
 
 const (
-	// WaitingForDay means it hasn't seen every hour of the day yet, so it
-	// can't score a day of its forecasts.
+	// WaitingForDay means it hasn't scored a day of its forecasts yet. It
+	// scores its forecast of an hour of the week from the second time it
+	// sees that hour, so a new forecast observes through its first week,
+	// and one that hasn't seen every hour of the day can't score a day.
 	WaitingForDay Waiting = "Day"
 	// WaitingForConfidence means its forecasts of the last day aren't yet
 	// as right as its threshold asks.
@@ -51,6 +53,9 @@ type Outlook struct {
 	HoursOfDaySeen int
 	// WeekSeen says it has seen every hour of the week since then.
 	WeekSeen bool
+	// HoursOfWeekSeen is how many of the 168 hours of the week it has ever
+	// seen.
+	HoursOfWeekSeen int
 	// Confidence is its daily confidence, and Threshold what it acts at.
 	Confidence int
 	Threshold  int
@@ -65,11 +70,12 @@ type Outlook struct {
 // demand it last saw in each hour of the week, until it would act.
 func (e *Engine) Outlook() Outlook {
 	o := Outlook{
-		Acting:         e.Active(),
-		HoursOfDaySeen: e.hoursOfDayCovered(),
-		WeekSeen:       e.coveredWeek(),
-		Confidence:     e.DailyConfidence(),
-		Threshold:      e.settings.Threshold,
+		Acting:          e.Active(),
+		HoursOfDaySeen:  e.hoursOfDayCovered(),
+		WeekSeen:        e.coveredWeek(),
+		HoursOfWeekSeen: e.recentSeen.count(),
+		Confidence:      e.DailyConfidence(),
+		Threshold:       e.settings.Threshold,
 	}
 	if o.Acting {
 		return o
@@ -77,7 +83,7 @@ func (e *Engine) Outlook() Outlook {
 	switch {
 	case e.relearning():
 		o.Waiting = WaitingToRelearn
-	case !e.coveredDay():
+	case e.Phase == Observing:
 		o.Waiting = WaitingForDay
 	default:
 		o.Waiting = WaitingForConfidence
@@ -87,10 +93,10 @@ func (e *Engine) Outlook() Outlook {
 }
 
 // relearning reports whether a regime change discarded the forecast's
-// scored errors: without one, every observation after the first is scored,
-// up to a week of them.
+// scored errors: without one, every observation of an hour of the week seen
+// before is scored, up to a week of them.
 func (e *Engine) relearning() bool {
-	return e.Scorer.count < min(e.Model.n-1, weeklyWindow)
+	return e.Scorer.count < min(e.Model.n-e.recentSeen.count(), weeklyWindow)
 }
 
 // projectStart runs a copy of the engine through the demand it last saw in

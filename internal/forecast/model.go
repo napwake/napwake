@@ -46,6 +46,14 @@ limitations under the License.
 // demand, the daily components the shape of a day, and the weekly
 // components how each weekday departs from that shape, so a level held at
 // zero or above means what it says.
+//
+// The first week initialises the model, as the first season does in
+// classical Holt-Winters: the first observation of each hour of the week
+// sets its weekly component so the forecast for that hour is what was
+// observed, and the level, trend and daily components learn only from the
+// hours seen again. Learned a share at a time from a start of zeros, the
+// weekly components took weeks to learn that weekends are quiet, and the
+// forecast predicted weekday demand on Saturdays meanwhile.
 
 package forecast
 
@@ -95,9 +103,9 @@ type Params struct {
 
 // DefaultParams suit each hour's peak CPU utilization, as a percentage of
 // the CPU requested, and were chosen by simulating office-hours,
-// always-on, idle, and noisy traces. A weekly slot
-// is updated once a week, so Gamma2 is high enough for a weekday/weekend
-// pattern to be learned in about three weeks. Alpha and Gamma1 are low so
+// always-on, idle, and noisy traces. A weekly slot is updated once a week,
+// so Gamma2 is high enough for a lasting change in a weekday's hours to be
+// half learned the week after it. Alpha and Gamma1 are low so
 // that the level stays the mean demand and the daily components the
 // average day, leaving the weekly components to carry how weekdays differ.
 func DefaultParams() Params {
@@ -135,9 +143,22 @@ func (m *Model) forecast(t time.Time, steps int) float64 {
 	return math.Min(maxMagnitude, math.Max(0, f))
 }
 
+// fit says how an observation updates the model.
+type fit int
+
+const (
+	// fitAll updates every component.
+	fitAll fit = iota
+	// fitFirst is the first observation of an hour of the week. It sets
+	// that hour's weekly component so the forecast for it is what was
+	// observed, and leaves the level, trend and daily components, which
+	// haven't seen that hour either, as they are.
+	fitFirst
+)
+
 // update fits an observation y made at t, steps hours after the previous
 // one.
-func (m *Model) update(y float64, t time.Time, steps int) {
+func (m *Model) update(y float64, t time.Time, steps int, how fit) {
 	if m.n == 0 {
 		m.level = y
 		m.n = 1
@@ -148,13 +169,17 @@ func (m *Model) update(y float64, t time.Time, steps int) {
 	di, wi := dailyIndex(t), weeklyIndex(t)
 	d, w := m.daily[di], m.weekly[wi]
 	p := m.params
+	alpha, gamma1, gamma2 := p.Alpha, p.Gamma1, p.Gamma2
+	if how == fitFirst {
+		alpha, gamma1, gamma2 = 0, 0, 1
+	}
 
 	prevLevel := m.level
-	m.level = math.Max(0, p.Alpha*(y-d-w)+(1-p.Alpha)*(prevLevel+float64(steps)*m.trend))
+	m.level = math.Max(0, alpha*(y-d-w)+(1-alpha)*(prevLevel+float64(steps)*m.trend))
 	m.trend = p.Beta*(m.level-prevLevel)/float64(steps) + (1-p.Beta)*m.trend
 
-	newD := p.Gamma1*(y-m.level-w) + (1-p.Gamma1)*d
-	newW := p.Gamma2*(y-m.level-newD) + (1-p.Gamma2)*w
+	newD := gamma1*(y-m.level-w) + (1-gamma1)*d
+	newW := gamma2*(y-m.level-newD) + (1-gamma2)*w
 	m.setDaily(di, newD)
 	m.setWeekly(wi, newW)
 	m.bound()

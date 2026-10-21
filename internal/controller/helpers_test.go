@@ -373,10 +373,16 @@ func TestForecastOutlook(t *testing.T) {
 			wantMessage: "acting: its forecasts of the last day were 82% right, and it acts from 75%, so it holds " +
 				"off pauses before hours it expects to be busy; turn on autoResume to have it wake the workload " +
 				"ahead of them too"},
-		{name: "a new forecast", outlook: forecast.Outlook{Waiting: forecast.WaitingForDay, HoursOfDaySeen: 14},
+		{name: "a new forecast", outlook: forecast.Outlook{Waiting: forecast.WaitingForDay, HoursOfDaySeen: 14,
+			HoursOfWeekSeen: 14},
+			wantReason:  ForecastObserving,
+			wantMessage: "learning: it has seen 14 of the 24 hours of the day, and can't act until it has seen them all"},
+		{name: "its first week", outlook: forecast.Outlook{Waiting: forecast.WaitingForDay, HoursOfDaySeen: 24,
+			HoursOfWeekSeen: 100, StartsActing: starts},
 			wantReason: ForecastObserving,
-			wantMessage: "learning: it has seen 14 of the 24 hours of the day, and starts scoring its forecasts once " +
-				"it has seen them all"},
+			wantMessage: "learning: it has seen 100 of the 168 hours of the week, and scores its forecast of an hour " +
+				"from the second time it sees it; expected to start acting around Mon 30 Mar 16:00 UTC, if the " +
+				"coming days repeat the last week"},
 		{name: "needs another weekend", outlook: forecast.Outlook{Waiting: forecast.WaitingForConfidence,
 			WeekSeen: true, Confidence: 40, Threshold: 75, StartsActing: starts},
 			wantReason: ForecastEarningConfidence,
@@ -400,8 +406,7 @@ func TestForecastOutlook(t *testing.T) {
 				"on request"},
 		{name: "paused behind the doorman learns", outlook: forecast.Outlook{Waiting: forecast.WaitingForDay,
 			HoursOfDaySeen: 20}, workload: routed, wantReason: ForecastObserving,
-			wantMessage: "learning: it has seen 20 of the 24 hours of the day, and starts scoring its forecasts once " +
-				"it has seen them all"},
+			wantMessage: "learning: it has seen 20 of the 24 hours of the day, and can't act until it has seen them all"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

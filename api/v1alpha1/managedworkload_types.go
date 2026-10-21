@@ -685,7 +685,7 @@ type PredictionStatus struct {
 	StartsActing *metav1.Time `json:"startsActing,omitempty"`
 
 	// Reason says in a word why the forecast is or isn't acting: Acting,
-	// Observing (it hasn't seen every hour of the day yet), EarningConfidence
+	// Observing (it hasn't scored a day of its forecasts yet), EarningConfidence
 	// (its forecasts aren't yet right enough), Relearning (demand broke from
 	// what it had learned), or NotLearning (the workload is paused without
 	// the doorman, so its demand can't be seen).

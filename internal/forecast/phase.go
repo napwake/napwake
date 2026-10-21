@@ -118,7 +118,9 @@ type Engine struct {
 
 	// recent is the demand last observed in each hour of the week, where
 	// recentSeen says one was. Unlike coverage, it outlasts a regime change:
-	// it's what the demand was, not evidence for what was learned.
+	// it's what the demand was, not evidence for what was learned. An hour
+	// of the week not yet seen is learned the first time it is, not scored,
+	// and isn't acted on: there's nothing to forecast it from.
 	recent     [WeeklySeason]float32
 	recentSeen weekSlots
 
@@ -208,21 +210,28 @@ func (e *Engine) Observe(actual float64, now time.Time) (float64, error) {
 		e.lastHour = 0
 	}
 	steps := e.hoursSinceLast(t)
+	slot := weeklyIndex(t)
+	how := fitFirst
+	if e.recentSeen.has(slot) {
+		how = fitAll
+	}
 	forecast, fit := actual, actual
 	e.lastAnomaly = false
 	if e.Model.n > 0 {
 		forecast = e.Model.forecast(t, steps)
+	}
+	if how == fitAll {
 		e.Scorer.Record(forecast, actual)
 		var learn float64
-		e.lastAnomaly, learn = e.Anomaly.Record(forecast, actual, e.floor(), weeklyIndex(t))
+		e.lastAnomaly, learn = e.Anomaly.Record(forecast, actual, e.floor(), slot)
 		fit = math.Max(0, forecast+learn)
 	}
-	e.Model.update(fit, t, steps)
+	e.Model.update(fit, t, steps, how)
 	e.lastHour = hourStart(t)
 	e.updateScale(actual)
-	e.coverage.set(weeklyIndex(t), true)
-	e.recent[weeklyIndex(t)] = float32(actual)
-	e.recentSeen.set(weeklyIndex(t), true)
+	e.coverage.set(slot, true)
+	e.recent[slot] = float32(actual)
+	e.recentSeen.set(slot, true)
 	e.advancePhase()
 
 	if !e.Model.finite() || !isFinite(e.scale) {
@@ -246,12 +255,16 @@ func (e *Engine) floor() float64 {
 }
 
 // Predict returns the demand forecast for the hour h hours after the one
-// containing now. It is 0 until the forecast drives decisions.
+// containing now. It is 0 until the forecast drives decisions, and for an
+// hour of the week it hasn't seen.
 func (e *Engine) Predict(h int, now time.Time) float64 {
 	if !e.Active() {
 		return 0
 	}
 	t := e.local(now).Add(time.Duration(h) * time.Hour)
+	if !e.recentSeen.has(weeklyIndex(t)) {
+		return 0
+	}
 	return e.Model.forecast(t, max(0, e.hoursSinceLast(t)))
 }
 
@@ -283,11 +296,7 @@ func (e *Engine) hoursOfDayCovered() int {
 }
 
 func (e *Engine) coveredWeek() bool {
-	n := 0
-	for _, word := range e.coverage {
-		n += bits.OnesCount64(word)
-	}
-	return n == WeeklySeason
+	return e.coverage.count() == WeeklySeason
 }
 
 func (e *Engine) advancePhase() {
@@ -303,7 +312,7 @@ func (e *Engine) advancePhase() {
 
 	switch e.Phase {
 	case Observing:
-		if e.coveredDay() {
+		if e.coveredDay() && e.Scorer.Ready(dailyWindow) {
 			e.Phase = DailySuggesting
 		}
 

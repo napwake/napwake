@@ -39,12 +39,12 @@ var Modes = []Mode{Eager, Balanced, Cautious}
 // The thresholds were chosen by simulating eight weeks of office-hours
 // traffic, as kept and with people arriving up to 90 minutes either side of
 // their usual time and staying away up to one weekday in three, over twenty
-// seeds each (see internal/forecast/sim). Below 75, a steady office
-// workload starts acting no sooner but begins waking on its first
-// weekends; 60 has the first ready mornings of 50, the minimum, on every
-// pattern but the most irregular, for about half the hours woken for
-// nothing. Above 75 a steady workload starts a week later, and 85 avoids
-// most of what waking for nothing is left.
+// seeds each (see internal/forecast/sim). On steadily kept hours every
+// threshold from 50 to 95 acts on the same day and never wakes for
+// nothing, so the thresholds trade only on irregular patterns: 60 keeps
+// most of the ready mornings of 50, the minimum, for less waking for
+// nothing; 75 roughly halves 60's hours woken for nothing, for a quarter to
+// a half fewer ready mornings; and 85 roughly halves them again.
 const (
 	eagerThreshold    = 60
 	balancedThreshold = 75

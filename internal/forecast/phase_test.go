@@ -164,10 +164,11 @@ func TestEngine_ConfidenceIsNotFooledByZeros(t *testing.T) {
 
 func TestEngine_DailyAndWeeklyConfidenceDiffer(t *testing.T) {
 	e := newTestEngine()
+	noise := rand.New(rand.NewSource(1))
 	differ := 0
 	for i := range 4 * WeeklySeason {
 		at := hourAt(i)
-		_, err := e.Observe(officeHours(at), at)
+		_, err := e.Observe(officeHours(at)*(0.8+0.4*noise.Float64()), at)
 		require.NoError(t, err)
 		if i >= 2*WeeklySeason && e.DailyConfidence() != e.WeeklyConfidence() {
 			differ++
@@ -302,6 +303,29 @@ func TestEngine_HolidayDoesNotWakeIntoTheHoliday(t *testing.T) {
 	}
 	require.True(t, regimeChanged)
 	assert.Zero(t, acting, "hours of the holiday after the regime change the forecast acts on")
+}
+
+// The first time it sees an hour of the week, the forecast learns it, and
+// doesn't score itself on it: it had nothing to forecast the hour from. An
+// hour of the week it hasn't seen isn't acted on.
+func TestEngine_FirstWeekIsLearnedNotScored(t *testing.T) {
+	e := NewEngine(DefaultParams(), Settings{Threshold: 75})
+	tuesday10 := DailySeason + 10
+	skipTuesday10 := func(_ int, at time.Time) float64 { return officeHours(at) }
+	for i := range 3 * WeeklySeason {
+		if i%WeeklySeason == tuesday10 {
+			continue
+		}
+		if i == WeeklySeason-1 {
+			assert.Zero(t, e.Scorer.count, "nothing scored in the first week")
+			assert.Equal(t, Observing, e.Phase)
+		}
+		run(t, e, i, 1, skipTuesday10)
+	}
+	require.True(t, e.Active())
+	monday := hourAt(3 * WeeklySeason)
+	assert.Zero(t, e.Predict(DailySeason+10, monday), "Tuesday 10am, never seen")
+	assert.InDelta(t, 50, e.Predict(DailySeason+11, monday), 2.5, "Tuesday 11am")
 }
 
 // A large spike that recurs every week is a pattern, not an outlier. It is
