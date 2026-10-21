@@ -165,6 +165,19 @@ func TestWriteHTML_History(t *testing.T) {
 	assert.NotContains(t, got, "<link", "nothing loads from elsewhere")
 }
 
+// The summary's replay count says what it doesn't count, so it adds up to
+// the workloads listed.
+func TestWriteHTML_SaysWhatTheReplayDoesntCount(t *testing.T) {
+	result := historyResult()
+	result.Workloads = append(result.Workloads, discovery.Workload{Namespace: "reports", Name: "reports",
+		Kind: v1alpha1.TargetKindStatefulSet, State: discovery.StateActive, WontPause: "PVCs deleted on scale-down"})
+
+	got := renderHTML(t, result)
+
+	assert.Contains(t, got, "<div>1 of 2<span>unmanaged workloads would have slept over the last 7 days; not "+
+		"counted: 1 that won&#39;t pause (PVCs deleted on scale-down)</span></div>")
+}
+
 // Every place the report names the window says what was replayed, in the
 // same words: the subtitle, the summary, and the glossary.
 func TestWriteHTML_WindowReplayed(t *testing.T) {
@@ -201,7 +214,7 @@ func TestHeadlineFor_FreeableShareIsOfTheirOwnCost(t *testing.T) {
 	totals := discovery.Totals{Workloads: 1, MonthlyCost: 36.5, FreeableBasis: 146,
 		Replayed: discovery.ReplayTotals{Workloads: 1, Sleepers: 1, MonthlyFreed: 145}}
 
-	h, _ := headlineFor(totals, "the last 7 days")
+	h, _ := headlineFor(totals, "the last 7 days", "")
 
 	require.Len(t, h.Figures, 2)
 	assert.Equal(t, "$145", h.Figures[1].Value)

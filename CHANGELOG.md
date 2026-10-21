@@ -200,6 +200,7 @@ The relaunch. The 0.1.x releases were early experiments, and 0.2.0 is a fresh st
 - `kubectl hybernate scan`'s first line counts the namespaces the workloads it lists are in, "14 workloads in 3 namespaces", rather than every namespace it read, infrastructure-only ones included; a scan that finds only infrastructure says so
 - `kubectl hybernate scan`'s note on the cluster's infrastructure says apart what it leaves out of the totals and what Hybernate would pause: never Kubernetes' own workloads or itself, and anything else, infrastructure included, only once you opt it in
 - `kubectl hybernate scan` says what Hybernate does with each dependency it lists, knowing whether it manages the dependency too: "woken with it once both are managed", "not managed, so never paused", "woken and held with it", rather than "connected once Hybernate manages it". Before anything is managed, when every dependency would say the same, it's said once above the list, without the column
+- `kubectl hybernate scan`'s replay count, "0 of 13 unmanaged workloads would have slept", says which of the workloads it lists it doesn't count, and why, such as "1 that won't pause (PVCs deleted on scale-down)", in the terminal and the report alike, so it adds up to the table
 
 ## [0.1.7] - 2026-04-08
 

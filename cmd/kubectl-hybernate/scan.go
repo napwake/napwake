@@ -645,7 +645,7 @@ func writeTable(w io.Writer, result scanResult, limit int) error {
 		p.line("  %s", emptySentence(result))
 		p.line("")
 	} else {
-		writeHeadline(p, result.Totals, replayedOver(result.History))
+		writeHeadline(p, result.Totals, replayedOver(result.History), notReplayed(result.Workloads))
 	}
 	judged, unjudged := splitJudged(result.Workloads)
 	if len(judged) > 0 {
@@ -682,7 +682,7 @@ func writeTable(w io.Writer, result scanResult, limit int) error {
 	return p.err
 }
 
-func writeHeadline(p *printer, t discovery.Totals, replayed string) {
+func writeHeadline(p *printer, t discovery.Totals, replayed, notCounted string) {
 	if t.Paused > 0 {
 		p.line("  Hybernate has %s paused right now, freeing %s an hour.",
 			countOf(t.Paused, "workload"), cents(t.PausedHourlyCost))
@@ -725,14 +725,58 @@ func writeHeadline(p *printer, t discovery.Totals, replayed string) {
 	}
 	if r := t.Replayed; r.Workloads > 0 && replayed != "" {
 		if r.Sleepers == 0 {
-			p.line("  Replaying %s, no unmanaged workload would have slept.", replayed)
+			p.line("  Replaying %s, 0 of %s would have slept.", replayed, countOf(r.Workloads, "unmanaged workload"))
 		} else {
 			p.line("  Replaying %s, Hybernate would have paused %d of %s for %s in all,",
 				replayed, r.Sleepers, countOf(r.Workloads, "unmanaged workload"), hoursTotal(r.SleepHours))
 			p.line("  and freed %s: about %s/month.", dollars(r.Freed), dollars(r.MonthlyFreed))
 		}
+		if notCounted != "" {
+			p.line("  Not counted: %s.", notCounted)
+		}
 	}
 	p.line("")
+}
+
+// notReplayed says which unmanaged workloads the table lists that the
+// replay's totals leave out, and why, such as "1 that won't pause (PVCs
+// deleted on scale-down)", so its count adds up to the table's.
+func notReplayed(workloads []Workload) string {
+	wontPause := map[string]int{}
+	var reasons []string
+	protected, scaledByHand, noHistory := 0, 0, 0
+	for _, wl := range workloads {
+		if wl.Managed || wl.State == discovery.StateUnknown {
+			continue
+		}
+		switch {
+		case wl.WontPause != "":
+			if wontPause[wl.WontPause] == 0 {
+				reasons = append(reasons, wl.WontPause)
+			}
+			wontPause[wl.WontPause]++
+		case wl.Protected:
+			protected++
+		case wl.ScaledByHand:
+			scaledByHand++
+		case wl.History == nil:
+			noHistory++
+		}
+	}
+	var parts []string
+	for _, reason := range reasons {
+		parts = append(parts, fmt.Sprintf("%d that won't pause (%s)", wontPause[reason], reason))
+	}
+	if protected > 0 {
+		parts = append(parts, fmt.Sprintf("%d in protected namespaces", protected))
+	}
+	if scaledByHand > 0 {
+		parts = append(parts, fmt.Sprintf("%d scaled to zero by hand", scaledByHand))
+	}
+	if noHistory > 0 {
+		parts = append(parts, fmt.Sprintf("%d without CPU history to replay", noHistory))
+	}
+	return joinAnd(parts)
 }
 
 // historyLine says which Prometheus the history was read from, how much

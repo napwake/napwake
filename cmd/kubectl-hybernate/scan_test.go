@@ -352,7 +352,46 @@ func TestWriteTable_HistoryWithNothingToSleep(t *testing.T) {
 		scanOptions{output: "table"}))
 
 	assert.Contains(t, out.String(),
-		"Replaying the last 30 hours, no unmanaged workload would have slept.")
+		"Replaying the last 30 hours, 0 of 2 unmanaged workloads would have slept.")
+}
+
+// The replay's count leaves out what it can't count, and says what, so it
+// adds up to the workloads the table lists.
+func TestWriteTable_SaysWhatTheReplayDoesntCount(t *testing.T) {
+	cluster := sampleCluster()
+	cluster.Mode = discovery.ModeHistory
+	cluster.History = &discovery.HistorySource{Hours: 168}
+	for i := range cluster.Workloads {
+		cluster.Workloads[i].History = &discovery.History{Hours: 168}
+	}
+	cluster.Workloads = append(cluster.Workloads, discovery.Workload{Namespace: "reports", Name: "reports",
+		Kind: v1alpha1.TargetKindStatefulSet, State: discovery.StateActive, WontPause: "PVCs deleted on scale-down"})
+	cluster.Totals.Replayed = discovery.ReplayTotals{Workloads: 2}
+	var out bytes.Buffer
+
+	require.NoError(t, writeScan(&out, cluster, scanOptions{output: "table"}))
+
+	assert.Contains(t, out.String(), "  Replaying the last 7 days, 0 of 2 unmanaged workloads would have slept.\n"+
+		"  Not counted: 1 that won't pause (PVCs deleted on scale-down).\n")
+}
+
+func TestNotReplayed(t *testing.T) {
+	replayed := &discovery.History{Hours: 168}
+	workloads := []Workload{
+		{Name: "counted", State: discovery.StateIdle, History: replayed},
+		{Name: "managed", State: discovery.StateIdle, Managed: true},
+		{Name: "unjudged", State: discovery.StateUnknown},
+		{Name: "reports", State: discovery.StateActive, WontPause: "PVCs deleted on scale-down", History: replayed},
+		{Name: "archive", State: discovery.StateIdle, WontPause: "PVCs deleted on scale-down"},
+		{Name: "locked", State: discovery.StateIdle, Protected: true, History: replayed},
+		{Name: "off", State: discovery.StatePaused, ScaledByHand: true},
+		{Name: "new", State: discovery.StateActive},
+	}
+
+	assert.Equal(t, "2 that won't pause (PVCs deleted on scale-down), 1 in protected namespaces, 1 scaled to zero "+
+		"by hand and 1 without CPU history to replay", notReplayed(workloads))
+	assert.Empty(t, notReplayed(workloads[:3]), "managed and unjudged workloads aren't in the replay's count or the "+
+		"unmanaged ones the table lists")
 }
 
 // The window is the history actually replayed, said as people say it.

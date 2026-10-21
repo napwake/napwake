@@ -311,7 +311,7 @@ func buildReport(result scanResult, idleAfter time.Duration) reportPage {
 	if result.Totals.Workloads == 0 {
 		page.Empty = emptySentence(result)
 	}
-	page.Headline, page.Facts = headlineFor(result.Totals, replayedOver(result.History))
+	page.Headline, page.Facts = headlineFor(result.Totals, replayedOver(result.History), notReplayed(result.Workloads))
 	page.Freeing, page.CouldFree = moneyColumns(result.Workloads)
 	page.Sleep = sleepColumns(history, result.Workloads)
 	page.Slept = sleptColumn(result.Workloads)
@@ -413,7 +413,7 @@ func basisSentence(result scanResult) string {
 // running, since one moment can't show what pausing would free. Four facts
 // follow: the scale, the waste right now, how many workloads there are to
 // act on, and how far Hybernate's rollout has got.
-func headlineFor(t discovery.Totals, over string) (headline, []fact) {
+func headlineFor(t discovery.Totals, over, notCounted string) (headline, []fact) {
 	freed := figure{Value: dollars(t.FreedThisMonth), Label: "freed by Hybernate this month",
 		Detail: "nothing is live yet"}
 	switch {
@@ -457,8 +457,12 @@ func headlineFor(t discovery.Totals, over string) (headline, []fact) {
 		idle,
 	}
 	if r.Workloads > 0 {
-		facts = append(facts, fact{Value: fmt.Sprintf("%d of %d", r.Sleepers, r.Workloads),
-			Label: fmt.Sprintf("unmanaged workloads would have slept over %s", over)})
+		replayed := fact{Value: fmt.Sprintf("%d of %d", r.Sleepers, r.Workloads),
+			Label: fmt.Sprintf("unmanaged workloads would have slept over %s", over)}
+		if notCounted != "" {
+			replayed.Label += "; not counted: " + notCounted
+		}
+		facts = append(facts, replayed)
 	} else {
 		facts = append(facts, fact{Value: cents(t.IdleHourlyCost), Label: "an hour, what idle workloads cost while running"})
 	}
