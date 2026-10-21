@@ -42,6 +42,9 @@ import (
 
 var statusNow = time.Date(2026, 10, 5, 12, 0, 0, 0, time.UTC)
 
+// testCluster is the cluster status names, from the kubeconfig context.
+const testCluster = "staging (EKS us-east-1)"
+
 func before(d time.Duration) *metav1.Time {
 	t := metav1.NewTime(statusNow.Add(-d))
 	return &t
@@ -157,7 +160,7 @@ func runStatus(t *testing.T, c client.Client, opts statusOptions) string {
 	t.Helper()
 	result, err := clusterStatus(context.Background(), c, "preview-42", opts)
 	require.NoError(t, err)
-	result.Cluster = "staging (EKS us-east-1)"
+	result.Cluster = testCluster
 	var out bytes.Buffer
 	require.NoError(t, writeStatus(&out, result, "table", statusNow))
 	return out.String()

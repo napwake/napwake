@@ -78,10 +78,14 @@ type statusOptions struct {
 	since      time.Duration
 	timeout    time.Duration
 	now        func() time.Time
+	// html is where to write the status page, statusPagePattern for a new
+	// temporary file, or "" for none.
+	html string
+	open bool
 }
 
 func statusCmd(kube *kubeFlags) *cobra.Command {
-	opts := statusOptions{since: 24 * time.Hour, timeout: time.Minute, now: time.Now}
+	opts := statusOptions{since: 24 * time.Hour, timeout: time.Minute, now: time.Now, open: true}
 	cmd := &cobra.Command{
 		Use:   "status",
 		Short: "Show what Hybernate is doing in a cluster right now",
@@ -94,6 +98,9 @@ attention, and below it recent pauses and wakes, with what caused each, as
 far back as the cluster keeps events: an hour, unless its API server is set
 to keep more.
 
+With --html, it also writes all of it as a web page, to share with a team or
+a manager, and opens it in the browser when run in a terminal.
+
 It reads every namespace you can, or only the context's namespace when your
 access doesn't allow listing them all. It only reads ManagedWorkloads, their
 events, their workloads' annotations, and what tells which node autoscaler
@@ -103,8 +110,20 @@ exists. kubectl hybernate nodes shows why nodes aren't scaling down.
 Examples:
   kubectl hybernate status
   kubectl hybernate status --context staging -n preview-42
-  kubectl hybernate status --since 1h -o json`,
-		Args: cobra.NoArgs,
+  kubectl hybernate status --since 1h -o json
+
+  # Open it as a web page, or save one to send around
+  kubectl hybernate status --html
+  kubectl hybernate status --html status.html`,
+		Args: func(cmd *cobra.Command, args []string) error {
+			// pflag takes an optional flag's value only after "=", so the file
+			// in "--html status.html" arrives as an argument.
+			if len(args) == 1 && opts.html == statusPagePattern {
+				opts.html = args[0]
+				return nil
+			}
+			return cobra.NoArgs(cmd, args)
+		},
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			if err := checkOutput(opts.output); err != nil {
 				return err
@@ -127,13 +146,26 @@ Examples:
 			}
 			result.Context = at.context
 			result.Cluster = clusterName(at.context)
-			return writeStatus(cmd.OutOrStdout(), result, opts.output, opts.now())
+			now := opts.now()
+			if err := writeStatus(cmd.OutOrStdout(), result, opts.output, now); err != nil {
+				return err
+			}
+			if opts.html == "" {
+				return nil
+			}
+			return writeStatusPage(cmd.ErrOrStderr(), opts.html, result, opts.since, now,
+				opts.open && interactive(cmd.OutOrStdout()))
 		},
 	}
 	addNamespaceFlags(cmd, &opts.namespaces, "Namespace to show; repeat for several (defaults to all you can read)")
 	addOutputFlag(cmd, &opts.output)
 	cmd.Flags().DurationVar(&opts.since, "since", opts.since, "How far back to list pauses and wakes")
 	addTimeoutFlag(cmd, &opts.timeout, "How long to wait for the cluster before giving up")
+	cmd.Flags().StringVar(&opts.html, "html", "",
+		"Also write the status as a web page to this `file`, to share; given without one, to a temporary file")
+	cmd.Flags().Lookup("html").NoOptDefVal = statusPagePattern
+	cmd.Flags().BoolVar(&opts.open, "open", opts.open,
+		"Open the --html page in your browser, when run in a terminal")
 	return cmd
 }
 
@@ -914,19 +946,11 @@ func phaseCounts(workloads []statusWorkload) string {
 // dryRunSummary is how many workloads are in dry-run, and what pausing them
 // would have freed since the first started measuring.
 func dryRunSummary(workloads []statusWorkload) string {
-	n := 0
+	n, since := dryRunMeasured(workloads)
 	var wouldFree float64
-	var since *time.Time
 	for _, wl := range workloads {
-		if !wl.DryRun {
-			continue
-		}
-		n++
 		if wl.WouldFree != nil {
 			wouldFree += *wl.WouldFree
-		}
-		if wl.DryRunSince != nil && (since == nil || wl.DryRunSince.Before(*since)) {
-			since = wl.DryRunSince
 		}
 	}
 	s := fmt.Sprintf("%d in dry-run, never paused", n)
@@ -935,6 +959,23 @@ func dryRunSummary(workloads []statusWorkload) string {
 			since.Format("Jan 2"))
 	}
 	return s
+}
+
+// dryRunMeasured is how many workloads are in dry-run, and when the first
+// of them started measuring, or nil before any has.
+func dryRunMeasured(workloads []statusWorkload) (int, *time.Time) {
+	n := 0
+	var since *time.Time
+	for _, wl := range workloads {
+		if !wl.DryRun {
+			continue
+		}
+		n++
+		if wl.DryRunSince != nil && (since == nil || wl.DryRunSince.Before(*since)) {
+			since = wl.DryRunSince
+		}
+	}
+	return n, since
 }
 
 // timeZoneLine says which time zone forecasts count hours in, by what the

@@ -279,12 +279,23 @@ kubectl hybernate status --context staging -n preview-42
 kubectl hybernate status --since 1h -o json
 ```
 
+### Share it as a web page
+
+```bash
+kubectl hybernate status --html              # opens it in your browser
+kubectl hybernate status --html status.html  # saves it, to send around
+```
+
+`--html` writes the same status as a web page, for a team or a manager: the summary, with the node autoscaler and the forecast's time zone; what pausing freed this month, what of that was saved, and what dry-run measured pausing would have freed; what needs attention; every workload, with its state and for how long, its last activity, what happens to it next, and what it freed or would free, in a table you can sort and filter; and every pause and wake since `--since`, with what caused it, at its time in UTC. Given a file, it writes it there; given none, to a new temporary file. Either is readable only by you, since it names the cluster's workloads. In a terminal, it opens the page in your browser, as [`scan`](#scan-a-cluster) does with its report, unless `--open=false`; otherwise it prints where the page is. The terminal table, or `-o json`, is printed as well. The page loads nothing from elsewhere, so it works offline and attached to an email.
+
 | Flag | Short | Default | Description |
 |------|-------|---------|-------------|
 | `--namespace` | `-n` | all you can read | Namespace to show; repeat for several |
 | `--all-namespaces` | `-A` | | Read every namespace, and fail rather than fall back when your access doesn't allow that. Can't be combined with `-n` |
 | `--output` | `-o` | `table` | `table`, `json`, or `yaml` |
 | `--since` | | `24h` | How far back to list pauses and wakes |
+| `--html` | | | Also write the status as a web page to this file; given without one, to a temporary file |
+| `--open` | | `true` | Open the `--html` page in your browser, when run in a terminal |
 | `--timeout` | | `1m` | How long to wait for the cluster before giving up |
 
 Your user needs `list` on `managedworkloads` and `events`, in every namespace or the ones passed with `-n`. Without access to events, it shows the rest and says so. To name the node autoscaler, it reads what [`nodes`](#see-why-nodes-dont-scale-down) does for that: Karpenter's NodePools, nodes' metadata, the `cluster-autoscaler-status` ConfigMap and Deployments' metadata in `kube-system`; without enough of them to tell, it says the autoscaler is unknown. It also lists `deployments` and `statefulsets`, reading only their metadata, for a `hybernate.io/active-until` annotation on the workload itself, and goes without it when it can't. A namespace named with `-n` that doesn't exist is an error, which takes `get` on `namespaces` to tell; without it, the namespace shows as one Hybernate manages nothing in.
