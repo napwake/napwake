@@ -120,7 +120,14 @@ func AwakeDemand(now, wokeAt time.Time, loc *time.Location, percent float64, thr
 			since = warm
 		}
 	}
-	if percent > float64(threshold) || usedSince(since) {
+	return Demand(percent, threshold, usedSince(since))
+}
+
+// Demand is the demand a workload at utilization percent shows: at least
+// RequestDemand once percent is above threshold, or once inUse says another
+// activity source saw it in use, and percent otherwise.
+func Demand(percent float64, threshold int, inUse bool) float64 {
+	if percent > float64(threshold) || inUse {
 		return max(percent, RequestDemand(threshold))
 	}
 	return percent

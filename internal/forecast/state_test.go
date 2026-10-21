@@ -117,6 +117,8 @@ func TestState_ImportRejectsInvalidState(t *testing.T) {
 		{"error windows disagree", func(st *engineState) { st.Actual = st.Actual[:len(st.Actual)-1] }},
 		{"negative error", func(st *engineState) { st.AbsErr[0] = -1 }},
 		{"infinite weekly component", func(st *engineState) { st.Weekly[3] = float32(math.Inf(1)) }},
+		{"negative recent demand", func(st *engineState) { st.Recent[5] = -1 }},
+		{"recent demand beyond the week", func(st *engineState) { st.Seen[2] |= 1 << 63 }},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -139,7 +141,8 @@ func TestState_ImportRejectsMalformedText(t *testing.T) {
 		"not base64":       "%%%",
 		"not gzip":         base64.StdEncoding.EncodeToString([]byte("plain")),
 		"not json":         encodeState(t, []byte("not json")),
-		"bare version":     encodeState(t, []byte(`{"v":3}`)),
+		"bare version":     encodeState(t, []byte(`{"v":4}`)),
+		"version 3":        encodeState(t, []byte(`{"v":3}`)),
 		"version 2":        encodeState(t, []byte(`{"v":2}`)),
 		"version 1":        encodeState(t, []byte(`{"v":1}`)),
 		"empty slices":     encodeState(t, []byte(`{"v":1,"ds":{"w":24,"e":[]},"ws":{"w":24,"e":[]}}`)),
