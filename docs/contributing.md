@@ -202,9 +202,9 @@ Each release carries a krew manifest, `krew-hybernate.yaml`, which the release w
 
 The site keeps a version of the docs for each minor release, `0.2`, `0.3` and so on, each built from its newest patch's tag, so the install commands on every page name the release that page documents. The docs workflow publishes them once the release workflow succeeds, with [mike](https://github.com/jimporter/mike), to the `gh-pages` branch, which GitHub Pages serves:
 
-- A release's docs go to its minor version, and to `latest` when it's the newest release. The site's root sends readers to `latest`.
+- A release's docs go to its minor version, and to `latest` when it's the newest release. The site's root sends readers to `latest`, or to `next` until there's a release.
 - A release candidate's docs go to `next`, with a banner saying they're for a release candidate. The release it rehearses removes `next`.
-- A link without a version, such as `https://okedeji.io/hybernate/guides/gitops/`, which the operator and the plugin print, goes to the same page in `latest`, through the `404.html` at the branch's root.
+- A link without a version, such as `https://okedeji.io/hybernate/guides/gitops/`, which the operator and the plugin print, goes to the same page in the version the root sends readers to, through the `404.html` at the branch's root.
 
 [`hack/docsite`](https://github.com/okedeji/hybernate/tree/main/hack/docsite) decides what a tag publishes, and never replaces a version's docs with an older release's. To republish a release's docs, run the docs workflow by hand with its tag. To see what a tag would publish, run it with `-dry-run` from a checkout with the docs requirements installed and the `gh-pages` branch fetched from `origin`:
 
