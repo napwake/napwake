@@ -24,8 +24,13 @@ through daylight saving.
    kubectl annotate deployment my-app -n my-namespace hybernate.io/dry-run=true
    kubectl label deployment my-app -n my-namespace hybernate.io/managed=true
 
-   Label a namespace instead to opt in everything in it. When you're ready,
-   let Hybernate pause it while idle:
+   Label a namespace instead to opt in everything in it.
+
+   Applied by Argo CD or Flux? Before enable, have it leave replicas to
+   Hybernate, or it scales the workload back up after every pause:
+   {{ $docs }}guides/gitops/
+
+   When you're ready, let Hybernate pause it while idle:
 
    kubectl hybernate enable my-app -n my-namespace
 

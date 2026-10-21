@@ -82,6 +82,7 @@ The relaunch. The 0.1.x releases were early experiments, and 0.2.0 is a fresh st
 - `hybernate_workload_phase{namespace, workload, phase}`: 1 for each workload's current phase, and a `HybernateWorkloadStuck` alert for workloads left in `Pausing` or `Resuming` for 15 minutes
 - Versioned docs: [okedeji.io/hybernate](https://okedeji.io/hybernate) keeps the docs of each minor release, such as `/hybernate/0.2/`, built from its tag so their install commands name that release, with a version selector. `latest`, where the site's root goes, is the newest release's, and `next` the newest release candidate's, with a banner saying so. A link without a version lands on the same page in `latest`. The chart's NOTES link to the docs of the chart's version
 - Setting the time zone is part of installing: the install commands set `timezone`, the installation guide says why, and the chart's NOTES name the zone the forecast counts hours and weekdays in, asking for the users' while it's UTC
+- The chart's NOTES tell teams whose workloads Argo CD or Flux applies to have it leave replicas to Hybernate before `enable`, with a link to the GitOps guide, since otherwise it scales each workload back up after every pause
 
 ### Changed
 

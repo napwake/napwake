@@ -240,6 +240,9 @@ check-chart: ## Lint the Helm chart, render it for each provider's Kubernetes ve
 	@hack/chart-notes.sh 0.3.1 | grep -qF 'weekdays in UTC. Set timezone to your users' && \
 		hack/chart-notes.sh 0.3.1 --set timezone=America/New_York | grep -qxF 'weekdays in America/New_York.' || { \
 		echo "the chart's NOTES don't name the time zone the forecast counts hours in, or ask for the users' when it's UTC"; exit 1; }
+	@hack/chart-notes.sh 0.3.1 | awk '/okedeji.io\/hybernate\/0.3\/guides\/gitops\// {gitops = NR} /kubectl hybernate enable/ {enable = NR} \
+		END {exit !(gitops && gitops < enable)}' && test -f docs/guides/gitops.md || { \
+		echo "the chart's NOTES don't send Argo CD and Flux users to the GitOps guide before enable"; exit 1; }
 	@helm template hybernate charts/hybernate --set leaderElection.enabled=false --show-only templates/deployment.yaml | grep -q 'type: Recreate' && \
 		! helm template hybernate charts/hybernate --show-only templates/deployment.yaml | grep -q 'type: Recreate' || { \
 		echo "without leader election, a rolling update runs two operators at once"; exit 1; }
