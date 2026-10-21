@@ -35,6 +35,7 @@ import (
 	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
+	"k8s.io/apimachinery/pkg/util/intstr"
 	"k8s.io/client-go/tools/events"
 	"k8s.io/utils/ptr"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -73,11 +74,15 @@ func doormanEndpointsV6(ips ...string) *discoveryv1.EndpointSlice {
 	return slice
 }
 
+// appTarget is default/api, whose pods say when they're ready to serve.
 func appTarget() *appsv1.Deployment {
 	return &appsv1.Deployment{
 		ObjectMeta: metav1.ObjectMeta{Name: "api", Namespace: "default"},
 		Spec: appsv1.DeploymentSpec{Template: corev1.PodTemplateSpec{
 			ObjectMeta: metav1.ObjectMeta{Labels: map[string]string{"app": "api", "tier": "web"}},
+			Spec: corev1.PodSpec{Containers: []corev1.Container{{Name: "app", Image: "api:v1",
+				ReadinessProbe: &corev1.Probe{ProbeHandler: corev1.ProbeHandler{
+					HTTPGet: &corev1.HTTPGetAction{Path: "/ready", Port: intstr.FromInt32(8080)}}}}}},
 		}},
 	}
 }
@@ -769,6 +774,63 @@ func TestReconcileDoorman_SkipsGKENEGServices(t *testing.T) {
 			cond := wakeCondition(t, workload)
 			assert.Equal(t, tt.wantStatus, cond.Status)
 			assert.Equal(t, tt.wantReason, cond.Reason)
+		})
+	}
+}
+
+// The doorman passes a held request on once a pod is Ready, and a pod with
+// no readiness probe is Ready as soon as it starts, before its app may be
+// able to answer. That's warned about once a pause, when it's routed.
+func TestReconcileDoorman_WarnsWhenPodsHaveNoReadinessProbe(t *testing.T) {
+	withSpec := func(change func(*corev1.PodSpec)) *appsv1.Deployment {
+		target := appTarget()
+		change(&target.Spec.Template.Spec)
+		return target
+	}
+	noProbe := withSpec(func(s *corev1.PodSpec) { s.Containers[0].ReadinessProbe = nil })
+	tests := []struct {
+		name     string
+		target   *appsv1.Deployment
+		services []client.Object
+		warned   bool
+	}{
+		{name: "no readiness probe", target: noProbe, warned: true},
+		{name: "a readiness probe", target: appTarget()},
+		{name: "only a startup probe", target: withSpec(func(s *corev1.PodSpec) {
+			s.Containers[0].StartupProbe, s.Containers[0].ReadinessProbe = s.Containers[0].ReadinessProbe, nil
+		})},
+		{name: "a readiness gate", target: withSpec(func(s *corev1.PodSpec) {
+			s.Containers[0].ReadinessProbe = nil
+			s.ReadinessGates = []corev1.PodReadinessGate{{ConditionType: "example.com/load-balancer-ready"}}
+		})},
+		{name: "no probe, but nothing routed", target: noProbe, services: []client.Object{}},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			workload := lifecycleWorkload("api", v1alpha1.PhasePaused)
+			services := tt.services
+			if services == nil {
+				services = []client.Object{service("api", map[string]string{"app": "api"},
+					corev1.ServicePort{Name: "http", Port: 80})}
+			}
+			r := doormanReconciler(t, append([]client.Object{workload, doormanEndpoints("10.0.0.7")}, services...)...)
+
+			for range 2 {
+				require.NoError(t, doormanErr(context.Background(), r, workload, tt.target))
+			}
+
+			warnings := recorded(r.Recorder.(*events.FakeRecorder), "Warning NoReadinessProbe")
+			cond := wakeCondition(t, workload)
+			if !tt.warned {
+				assert.Empty(t, warnings)
+				assert.NotContains(t, cond.Message, "readiness probe")
+				return
+			}
+			assert.Equal(t, metav1.ConditionTrue, cond.Status, "requests still wake it")
+			assert.Equal(t, "requests are held and wake the workload; its pods have no readiness probe, so held "+
+				"requests reach them as soon as they start, which may be before the app can answer them", cond.Message)
+			require.Len(t, warnings, 1, "once, not on every reconcile")
+			assert.Contains(t, warnings[0], "https://okedeji.io/hybernate/concepts/wake-on-request/#readiness-probes")
 		})
 	}
 }

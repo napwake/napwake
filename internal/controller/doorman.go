@@ -234,7 +234,7 @@ func (r *Reconciler) reconcileDoorman(ctx context.Context, workload *v1alpha1.Ma
 	if len(errs) > 0 {
 		return 0, errors.Join(errs...)
 	}
-	r.reportDoorman(ctx, workload, routes, plan.skipped)
+	r.reportDoorman(ctx, workload, target, routes, plan.skipped)
 	return recheck, nil
 }
 
@@ -345,10 +345,33 @@ func (s skippedServices) notes() string {
 	return strings.Join(notes, "; ")
 }
 
+const (
+	reasonNoReadinessProbe = "NoReadinessProbe"
+
+	// noReadinessNote is what the WakeOnRequest condition adds for a routed
+	// workload whose pods have no readiness probe.
+	noReadinessNote = "its pods have no readiness probe, so held requests reach them as soon as they start, " +
+		"which may be before the app can answer them"
+)
+
+// hasReadinessCheck reports whether a pod template tells Kubernetes when
+// its app can serve: a readiness or startup probe on one of its containers,
+// or a readiness gate. Without one, a pod is Ready as soon as its
+// containers start, and the doorman passes held requests to it then.
+// Injected sidecars aren't in the template, and their probes say nothing of
+// the app's.
+func hasReadinessCheck(spec corev1.PodSpec) bool {
+	return len(spec.ReadinessGates) > 0 || slices.ContainsFunc(spec.Containers, func(c corev1.Container) bool {
+		return c.ReadinessProbe != nil || c.StartupProbe != nil
+	})
+}
+
 // reportDoorman sets the WakeOnRequest condition. Requests through a Service
 // left unrouted because of its load balancer fail while the workload is
-// paused, so a warning event says so whenever that list changes.
-func (r *Reconciler) reportDoorman(ctx context.Context, workload *v1alpha1.ManagedWorkload,
+// paused, so a warning event says so whenever that list changes, as one
+// does when a routed workload's pods have no readiness probe, which the
+// requests that wake it may reach before its app can answer them.
+func (r *Reconciler) reportDoorman(ctx context.Context, workload *v1alpha1.ManagedWorkload, target client.Object,
 	routes []v1alpha1.DoormanRoute, skipped skippedServices) {
 	status, reason, message := metav1.ConditionTrue, "DoormanRouted", "requests are held and wake the workload"
 	switch {
@@ -374,6 +397,10 @@ func (r *Reconciler) reportDoorman(ctx context.Context, workload *v1alpha1.Manag
 	if notes := skipped.notes(); notes != "" {
 		message += "; " + notes
 	}
+	unready := len(routes) > 0 && !hasReadinessCheck(podTemplateOf(target).Spec)
+	if unready {
+		message += "; " + noReadinessNote
+	}
 	previous := meta.FindStatusCondition(workload.Status.Conditions, conditionWakeOnRequest)
 	r.setCondition(workload, conditionWakeOnRequest, status, reason, message)
 	if len(skipped.unsupported) > 0 && (previous == nil || previous.Message != message) {
@@ -381,7 +408,15 @@ func (r *Reconciler) reportDoorman(ctx context.Context, workload *v1alpha1.Manag
 			"requests to Services %s won't wake the workload: GKE container-native load balancing (NEGs) can't use the doorman",
 			strings.Join(skipped.unsupported, ", "))
 	}
+	if unready && (previous == nil || !strings.Contains(previous.Message, noReadinessNote)) {
+		r.announceRouting(ctx, workload, reasonNoReadinessProbe,
+			"its pods have no readiness probe, so a request that wakes it reaches them as soon as they start, "+
+				"which may be before the app can answer it; give it a readiness probe that passes once it can serve: %s",
+			readinessProbesGuide)
+	}
 }
+
+const readinessProbesGuide = "https://okedeji.io/hybernate/concepts/wake-on-request/#readiness-probes"
 
 func (r *Reconciler) doormanEndpoints(ctx context.Context) (map[discoveryv1.AddressType][]discoveryv1.Endpoint, error) {
 	return readDoormanEndpoints(ctx, r.Client, r.DoormanNamespace, r.DoormanService)

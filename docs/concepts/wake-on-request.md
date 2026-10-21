@@ -10,7 +10,7 @@ Hybernate runs a small proxy, the **doorman**, as its own Deployment (two replic
 
 1. When a workload pauses, the operator finds every Service that selects its pods and adds an extra EndpointSlice to each, one per IP family, pointing at the doorman's pods on a port of their own (20000-29999). The Service, its ClusterIP, and its DNS name don't change, so callers and Ingresses need no changes. IPv4, IPv6 and dual-stack Services are all supported.
 2. A connection to the Service reaches the doorman. If one of the Service's pods is already Ready, because the workload is waking or another workload's pods serve the Service, the connection goes straight to it. Otherwise, once the caller has sent something, the doorman holds the connection and sets `hybernate.io/last-request` on the ManagedWorkload, which wakes it the same way as an [activity annotation](idle-detection.md#activity-annotations). A `WokenByRequest` event names the Service, and once the workload is Running, its clock shows `lastActivitySource: request`.
-3. The doorman watches the Service's own EndpointSlices. As soon as a pod is Ready, it connects to one of the Ready pods and passes the held connection through, including any bytes the caller already sent.
+3. The doorman watches the Service's own EndpointSlices. As soon as a pod is Ready, it connects to one of the Ready pods and passes the held connection through, including any bytes the caller already sent. Ready is what the pod's readiness probe says, so the app needs one that passes only once it can serve; see [Readiness probes](#readiness-probes).
 4. Once the workload is `Running`, the operator removes the doorman's EndpointSlices and traffic goes straight to the pods again. For 30 seconds after that, the doorman still passes connections that reach it to the Ready pods, without waking anything, while kube-proxy and load balancers catch up.
 
 The doorman works on TCP connections, not HTTP requests, so it handles any TCP protocol: HTTP, gRPC, Postgres, Redis. Waking a workload also wakes its [dependencies](dependencies.md).
@@ -20,6 +20,25 @@ Ingress controllers, Gateway API implementations, and cloud load balancers that 
 ```
 WakeOnRequest=True   DoormanRouted   requests are held and wake the workload
 ```
+
+### Readiness probes
+
+The doorman passes a held request on as soon as one of the workload's pods is Ready, and Kubernetes decides Ready from the pod's readiness probe. A pod without one is Ready as soon as its containers start, which is often before the app inside can answer: while it loads its configuration or schema, connects to its database, or warms a cache. The request that woke it then gets whatever the app answers while it starts, such as a `503`, instead of waiting for it. An app that isn't listening yet is fine: the doorman tries again every second until `maxWait`. Wake on request relies on a readiness probe that passes only once the app can serve:
+
+```yaml title="deployment.yaml"
+spec:
+  template:
+    spec:
+      containers:
+        - name: api
+          readinessProbe:
+            httpGet:
+              path: /ready   # answers 200 only once the app can serve requests
+              port: 8080
+            periodSeconds: 2
+```
+
+A short `periodSeconds` passes held requests on sooner once the app is ready. A `startupProbe` gates readiness too, and a `tcpSocket` probe on the app's port is enough for an app that only listens once it's ready. Hybernate reads the workload's pod template when it routes a paused workload: when none of its containers has a readiness or startup probe, and the pod has no readiness gates, the `WakeOnRequest` condition says so, and a `NoReadinessProbe` warning event points here, once each pause.
 
 ### What wakes a workload, and what doesn't
 
@@ -302,6 +321,7 @@ The doorman's ServiceAccount can patch ManagedWorkloads, to set `hybernate.io/la
 - **A browser**: the waking-up page at once, then the app on the first reload after one of its pods is Ready.
 - **Anything else, from a pod in the cluster or through an Ingress**: usually one slow response while the workload starts, then a normal one. Not when something between the caller and the workload gives up first: behind ingress-nginx, a workload that takes longer than its 60-second default `proxy-read-timeout` gets the caller a 504 (see [How long a connection is held](#how-long-a-connection-is-held)); with Istio's STRICT mTLS, the woken pod's sidecar refuses the doorman and the caller gets a 503 (see [Compatibility](../reference/compatibility.md#service-meshes)). The cases below are the others.
 - **The client's source IP**: the woken pod sees the doorman's IP for held connections, not the caller's. Only the connections that arrive while the workload is paused or waking go through the doorman. The doorman records the caller's address on the ManagedWorkload as `hybernate.io/last-request-from`, so Hybernate can [learn](dependencies.md#learned-dependencies) which workload sent it.
+- **Right after a wake, an error from the app itself**, such as a `503`: the workload's pods were Ready before the app could answer, because they have no readiness probe, or one that passes too soon. See [Readiness probes](#readiness-probes).
 - **Right after the pause**: for a few seconds, until kube-proxy, ingress controllers and the doorman itself pick up the new route, a request can be refused or get a 502 from an ingress, as after any scale-down. A retry is held.
 - **A connection held past `maxWait`, or one whose woken pods can't be reached**: it's closed with no response, which most clients report as an empty reply or a connection reset. A `RequestNotServed` warning event on the ManagedWorkload names the Service, how long the request waited and why; each doorman pod emits it at most once a minute per workload.
 - **A connection over a [limit](#limits)**: over the held-connection caps, closed at once with nothing sent; over the wake rate limits, held, or shown the waking-up page, while the wake is retried.
