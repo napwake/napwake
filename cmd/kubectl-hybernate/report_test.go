@@ -99,7 +99,8 @@ func TestWriteHTML_History(t *testing.T) {
 
 	assert.Contains(t, got, "<title>Workload scan: staging (EKS us-east-1)</title>")
 	assert.Contains(t, got, "3 October 2026, 09:00 UTC")
-	assert.Contains(t, got, "Based on the last 7 days of Prometheus history, and CPU at the time of the scan.")
+	assert.Contains(t, got, "Based on the last 7 days of Prometheus history, from monitoring/prometheus-operated, "+
+		"and CPU at the time of the scan.", "which Prometheus the history is from")
 	assert.Contains(t, got, "Costs use assumed list prices: $0.031 per vCPU-hour and $0.004 per GiB-hour of memory")
 	assert.Contains(t, got, `<div class="figure"><b>$4</b><span>freed by Hybernate this month</span>`+
 		`<small>so far, pausing 1 live workload; $1 of it saved as nodes scaled down</small></div>`)

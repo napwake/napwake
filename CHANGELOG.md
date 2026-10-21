@@ -80,6 +80,7 @@ The relaunch. The 0.1.x releases were early experiments, and 0.2.0 is a fresh st
 - `MetricsAvailable` reason `NoCPURequests`: idle detection doesn't act on a workload whose CPU utilization can't be measured
 - `hybernate_idle_seconds{namespace, workload}`: time since the workload's last activity
 - `hybernate_workload_phase{namespace, workload, phase}`: 1 for each workload's current phase, and a `HybernateWorkloadStuck` alert for workloads left in `Pausing` or `Resuming` for 15 minutes
+- `kubectl hybernate scan` names the Prometheus its history came from, and how much it replayed, in a `History:` line and the report's subtitle, and lists any others it found (JSON `history.others`). With several in the cluster it reads the one with the most of the window's CPU history, and `--prometheus-service namespace/name[:port]` reads the one you name through the API server, such as a Thanos Query or GKE's managed Prometheus frontend it wouldn't recognise. The docs say how to read Google Cloud Managed Service for Prometheus with an access token
 
 ### Changed
 

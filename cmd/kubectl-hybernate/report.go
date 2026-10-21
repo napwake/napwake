@@ -386,10 +386,15 @@ func workloadRef(wl Workload) string {
 }
 
 func basisSentence(result scanResult) string {
-	if over := replayedOver(result.History); result.Mode == discovery.ModeHistory && over != "" {
-		return fmt.Sprintf("Based on %s of Prometheus history, and CPU at the time of the scan.", over)
+	if result.Mode != discovery.ModeHistory || result.History == nil {
+		return "A snapshot of CPU at the time of the scan, without history."
 	}
-	return "A snapshot of CPU at the time of the scan, without history."
+	if over := replayedOver(result.History); over != "" {
+		return fmt.Sprintf("Based on %s of Prometheus history, from %s, and CPU at the time of the scan.", over,
+			result.History.Prometheus)
+	}
+	return fmt.Sprintf("A snapshot of CPU at the time of the scan: %s has no CPU history of the namespaces scanned.",
+		result.History.Prometheus)
 }
 
 // headlineFor leads with two figures: what Hybernate has freed this month,

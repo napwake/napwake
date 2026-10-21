@@ -32,6 +32,7 @@ import (
 
 	"github.com/spf13/cobra"
 	authenticationv1 "k8s.io/api/authentication/v1"
+	"k8s.io/apimachinery/pkg/util/validation"
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/rest"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -69,6 +70,7 @@ type scanOptions struct {
 // prometheusOptions say where to read history from and how to reach it.
 type prometheusOptions struct {
 	url                string
+	service            string
 	selector           string
 	headers            []string
 	bearerTokenFile    string
@@ -124,7 +126,9 @@ in the cluster.
 With a Prometheus in the cluster, found automatically and queried through
 the API server, it replays Hybernate's activity clock over the last week of
 CPU and rollouts: how long each workload would have slept, how often it
-would have been woken, and what that would have freed. Without one, it
+would have been woken, and what that would have freed. It says which
+Prometheus it read; with several, it picks the one with the most of the
+week's CPU history, and --prometheus-service picks another. Without one, it
 judges from CPU right now.
 
 Run in a terminal, it also opens the report as a web page, to share.
@@ -138,6 +142,9 @@ Examples:
 
   # One namespace, as JSON
   kubectl hybernate scan -n preview-42 -o json
+
+  # History from a Prometheus Service of your choosing
+  kubectl hybernate scan --prometheus-service monitoring/prometheus-operated
 
   # A month of history from a Thanos that holds many clusters
   kubectl hybernate scan --window 30d --prometheus-url https://thanos.example.com \
@@ -229,9 +236,12 @@ Examples:
 
 func addPrometheusFlags(cmd *cobra.Command, o *prometheusOptions) {
 	cmd.Flags().StringVar(&o.url, "prometheus-url", "",
-		"Prometheus API to read history from, such as Thanos or Mimir (defaults to one found in the cluster). "+
-			"Amazon and Google Managed Prometheus need requests signed with SigV4 or OAuth, which the scan "+
-			"doesn't do; point this at a signing proxy in front of them")
+		"Prometheus API to read history from, such as Thanos, Mimir, or Google Cloud Managed Prometheus with "+
+			"an access token (defaults to the one found in the cluster with the most history). Amazon Managed "+
+			"Prometheus needs requests signed with SigV4, which the scan doesn't do; point this at a signing proxy")
+	cmd.Flags().StringVar(&o.service, "prometheus-service", "",
+		"Prometheus Service in the cluster to read history from, as namespace/name or namespace/name:port, "+
+			"reached through the API server (defaults to the one found with the most history)")
 	cmd.Flags().StringVar(&o.selector, "prometheus-selector", "",
 		`Label matchers added to every history query, such as 'cluster="prod"', for a Prometheus that holds `+
 			`more than one cluster`)
@@ -249,9 +259,26 @@ func addPrometheusFlags(cmd *cobra.Command, o *prometheusOptions) {
 // scan starts so a mistyped flag fails at once.
 type prometheusSetup struct {
 	url      string
+	service  *serviceRef
 	selector discovery.Selector
 	client   *http.Client
 	header   http.Header
+}
+
+// serviceRef is a Service named with --prometheus-service, and the port to
+// reach it on, if one was given.
+type serviceRef struct {
+	namespace, name, port string
+}
+
+func (s *serviceRef) String() string {
+	return s.namespace + "/" + s.name
+}
+
+// explicit says the user named the Prometheus, so failing to read it fails
+// the scan rather than leaving it to judge from CPU right now.
+func (s prometheusSetup) explicit() bool {
+	return s.url != "" || s.service != nil
 }
 
 func prometheusFrom(o prometheusOptions) (prometheusSetup, error) {
@@ -260,11 +287,20 @@ func prometheusFrom(o prometheusOptions) (prometheusSetup, error) {
 		return prometheusSetup{}, fmt.Errorf("--prometheus-selector: %w", err)
 	}
 	setup := prometheusSetup{url: o.url, selector: selector}
+	if o.url != "" && o.service != "" {
+		return prometheusSetup{}, errors.New("--prometheus-url and --prometheus-service each name the Prometheus " +
+			"to read history from; pass one")
+	}
+	if o.service != "" {
+		if setup.service, err = parseServiceRef(o.service); err != nil {
+			return prometheusSetup{}, err
+		}
+	}
 	if o.url == "" {
 		if len(o.headers) > 0 || o.bearerTokenFile != "" || o.caFile != "" || o.insecureSkipVerify {
 			return prometheusSetup{}, errors.New("--prometheus-header, --prometheus-bearer-token-file, " +
 				"--prometheus-ca-file and --prometheus-insecure-skip-verify are for --prometheus-url; a Prometheus " +
-				"found in the cluster is reached through the API server with your kubeconfig")
+				"in the cluster is reached through the API server with your kubeconfig")
 		}
 		return setup, nil
 	}
@@ -289,6 +325,18 @@ func prometheusFrom(o prometheusOptions) (prometheusSetup, error) {
 		return prometheusSetup{}, fmt.Errorf("--prometheus-ca-file: %w", err)
 	}
 	return setup, nil
+}
+
+// parseServiceRef reads namespace/name or namespace/name:port.
+func parseServiceRef(s string) (*serviceRef, error) {
+	ref, port, _ := strings.Cut(s, ":")
+	namespace, name, ok := strings.Cut(ref, "/")
+	if !ok || len(validation.IsDNS1123Label(namespace)) > 0 || len(validation.IsDNS1035Label(name)) > 0 ||
+		strings.Contains(s, ":") && port == "" {
+		return nil, fmt.Errorf("--prometheus-service %q isn't namespace/name or namespace/name:port, such as "+
+			"monitoring/prometheus-operated", s)
+	}
+	return &serviceRef{namespace: namespace, name: name, port: port}, nil
 }
 
 // parseHeaders reads "Name: value" headers.
@@ -443,16 +491,24 @@ func scanCluster(ctx context.Context, window time.Duration, prom prometheusSetup
 	var historyNote string
 	if window > 0 {
 		var err error
-		history, err = historySource(ctx, c, config, namespaces, prom)
-		if prom.url != "" && err != nil {
-			return scanResult{}, &historyError{fmt.Errorf("reading history from --prometheus-url: %w", err)}
-		}
-		if ctxErr := ctx.Err(); ctxErr != nil {
-			return scanResult{}, &historyError{fmt.Errorf("looking for Prometheus: %w", ctxErr)}
-		}
+		history, err = historySource(ctx, c, config, namespaces, time.Now().Add(-window), prom)
 		var forbidden *discovery.ProxyForbiddenError
 		if errors.As(err, &forbidden) {
 			scan.HistoryAccess = historyAccess(ctx, c, forbidden)
+		}
+		switch {
+		case prom.url != "" && err != nil:
+			return scanResult{}, &historyError{fmt.Errorf("reading history from --prometheus-url: %w", err)}
+		case prom.service != nil && forbidden != nil:
+			return scanResult{}, &historyError{fmt.Errorf("reading history from --prometheus-service %s: %w; an "+
+				"admin can let you, for that Service and nothing else, with: %s", prom.service, err,
+				strings.Join(scan.HistoryAccess, " && "))}
+		case prom.service != nil && err != nil:
+			return scanResult{}, &historyError{fmt.Errorf("reading history from --prometheus-service %s: %w",
+				prom.service, err)}
+		}
+		if ctxErr := ctx.Err(); ctxErr != nil {
+			return scanResult{}, &historyError{fmt.Errorf("looking for Prometheus: %w", ctxErr)}
 		}
 		if err != nil {
 			historyNote = err.Error() + "; judging from CPU right now"
@@ -495,11 +551,11 @@ func scanCluster(ctx context.Context, window time.Duration, prom prometheusSetup
 	return scan, nil
 }
 
-// historySource finds the Prometheus to replay history from, or says why
-// there's none to use.
+// historySource finds the Prometheus to replay history from since, or says
+// why there's none to use: the one the user named, or the one found in the
+// cluster with the most of that history.
 func historySource(ctx context.Context, c client.Client, config *rest.Config, namespaces []string,
-	setup prometheusSetup) (*discovery.Prometheus, error) {
-	var prom *discovery.Prometheus
+	since time.Time, setup prometheusSetup) (*discovery.Prometheus, error) {
 	if setup.url != "" {
 		p, err := discovery.NewPrometheusURL(setup.url, setup.client, setup.header)
 		if err != nil {
@@ -508,29 +564,39 @@ func historySource(ctx context.Context, c client.Client, config *rest.Config, na
 		if err := p.Check(ctx); err != nil {
 			return nil, err
 		}
-		prom = p
-	} else {
-		// A history query through the service proxy is bounded by the time
-		// the scan gives history, which --request-timeout, meant for the
-		// scan's many small requests, would otherwise cut short.
-		proxyConfig := rest.CopyConfig(config)
-		proxyConfig.Timeout = 0
-		clientset, err := kubernetes.NewForConfig(proxyConfig)
-		if err != nil {
-			return nil, fmt.Errorf("can't look for Prometheus: %w", err)
-		}
-		p, err := discovery.FindPrometheus(ctx, c, clientset.CoreV1().RESTClient(), namespaces)
-		if errors.Is(err, discovery.ErrNoPrometheus) {
-			return nil, errors.New("no Prometheus found in the cluster, so there's no history to replay; " +
-				"pass --prometheus-url for one elsewhere")
-		}
+		p.Selector = setup.selector
+		return p, nil
+	}
+	// A history query through the service proxy is bounded by the time the
+	// scan gives history, which --request-timeout, meant for the scan's many
+	// small requests, would otherwise cut short.
+	proxyConfig := rest.CopyConfig(config)
+	proxyConfig.Timeout = 0
+	clientset, err := kubernetes.NewForConfig(proxyConfig)
+	if err != nil {
+		return nil, fmt.Errorf("can't look for Prometheus: %w", err)
+	}
+	proxy := clientset.CoreV1().RESTClient()
+	if s := setup.service; s != nil {
+		p, err := discovery.PrometheusService(ctx, c, proxy, s.namespace, s.name, s.port)
 		if err != nil {
 			return nil, err
 		}
-		prom = p
+		if err := p.Check(ctx); err != nil {
+			return nil, err
+		}
+		p.Selector = setup.selector
+		return p, nil
 	}
-	prom.Selector = setup.selector
-	return prom, nil
+	p, err := discovery.FindPrometheus(ctx, c, proxy, namespaces, since, setup.selector)
+	if errors.Is(err, discovery.ErrNoPrometheus) {
+		return nil, errors.New("no Prometheus found in the cluster, so there's no history to replay; pass " +
+			"--prometheus-service for one the scan doesn't recognise, or --prometheus-url for one elsewhere")
+	}
+	if err != nil {
+		return nil, err
+	}
+	return p, nil
 }
 
 // historyAccess is what an admin can run to let the user read Prometheus
@@ -570,6 +636,9 @@ func writeTable(w io.Writer, result scanResult, limit int) error {
 		countOf(result.Namespaces, "namespace"))
 	p.line("%s", nodeAutoscalerLine(result.NodeAutoscaler))
 	if s := freedBecomesSaved(result.NodeAutoscaler); s != "" {
+		p.line("%s", s)
+	}
+	if s := historyLine(result); s != "" {
 		p.line("%s", s)
 	}
 	p.line("")
@@ -665,6 +734,29 @@ func writeHeadline(p *printer, t discovery.Totals, replayed string) {
 		}
 	}
 	p.line("")
+}
+
+// historyLine says which Prometheus the history was read from, how much
+// of it was replayed, and the others found in the cluster, which
+// --prometheus-service picks instead.
+func historyLine(result scanResult) string {
+	if result.ClusterReport == nil || result.Mode != discovery.ModeHistory || result.History == nil {
+		return ""
+	}
+	h := result.History
+	line := "History: " + replayedOver(h) + ", from " + h.Prometheus
+	if replayedOver(h) == "" {
+		line = "History: " + h.Prometheus + " has no CPU history of the namespaces scanned"
+	}
+	if len(h.Others) > 0 {
+		const shown = 3
+		others := joinAnd(h.Others)
+		if len(h.Others) > shown {
+			others = fmt.Sprintf("%s and %d more", strings.Join(h.Others[:shown], ", "), len(h.Others)-shown)
+		}
+		line += "; also found " + others + ", which --prometheus-service reads instead"
+	}
+	return line
 }
 
 // replayedOver says what a cluster's history replay covered, such as "the

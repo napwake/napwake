@@ -57,6 +57,7 @@ kubectl hybernate scan
 staging (EKS us-east-1): 214 workloads in 38 namespaces
 Node autoscaler: Karpenter (consolidates when underutilized after 1m)
 What pausing frees comes off the bill only as nodes scale down.
+History: the last 7 days, from monitoring/prometheus-operated
 
   Hybernate has 12 workloads paused right now, freeing $1.84 an hour.
   Hybernate has freed $96 this month pausing 14 live workloads, and saved $71 of it.
@@ -101,7 +102,9 @@ Pass --cpu-price and --memory-price for yours.
 
 **History from Prometheus:** when the cluster has a Prometheus, the scan replays Hybernate's activity clock over the last week of each workload's CPU and rollouts, as if Hybernate had managed it with `--idle-after` and `--cpu-threshold`:
 
-- It finds Prometheus by the Services the Prometheus Operator (and so kube-prometheus-stack) and the community Helm chart create, and queries it through the API server's service proxy, so there's no port-forward or URL to give. Pass `--prometheus-url` for one outside the cluster, such as Thanos or Mimir; see [A Prometheus elsewhere](#a-prometheus-elsewhere).
+- It finds Prometheus by the Services the Prometheus Operator (and so kube-prometheus-stack) and the community Helm chart create, and queries it through the API server's service proxy, so there's no port-forward or URL to give. The `History:` line under the node autoscaler, and the report's subtitle, name the one it read and how much history it replayed (JSON `history.prometheus` and `history.hours`).
+- **With several Prometheus**, it reads the one with the most of the window's CPU history: one with cAdvisor's container CPU from the start of the window, then one with any, then any that answers. Among equals, it prefers one in a monitoring namespace (`monitoring`, `prometheus`, `observability`, `kube-prometheus-stack`, `cattle-monitoring-system`, `openshift-monitoring`, in that order), then one with a usual name (`prometheus-operated`, `kube-prometheus-stack-prometheus`, `prometheus-server`, `prometheus`, `prometheus-k8s`), then the Prometheus Operator's Service over the community chart's, then the first by namespace and name, and it tries five at most. The `History:` line lists the others it found (JSON `history.others`).
+- **To choose another**, `--prometheus-service namespace/name` reads that Service through the API server the same way, whether the scan found it or not, on its API port or the one you add, as in `monitoring/thanos-query:http`. `--prometheus-url` reads one outside the cluster, such as Thanos or Mimir; see [A Prometheus elsewhere](#a-prometheus-elsewhere). Either fails the scan if it can't be read, rather than carrying on without history.
 - It reads CPU per container from cAdvisor's `container_cpu_usage_seconds_total`, which every common setup scrapes, at five-minute steps (coarser for windows over about 34 days), and matches pods to their workload by name. Sidecars added at pod creation are left out of activity, as for the activity clock.
 - A step counts as active when the workload's own CPU is at or above the threshold of what its running pods request, or it rolled out. After `--idle-after` with none, it would be asleep until the next, which is one wake.
 - **STATE** is right now: idle means no activity for `--idle-after`, so Hybernate would pause it now. Each money and history cell has one source:
@@ -189,7 +192,8 @@ kubectl hybernate scan --open=false
 | `--memory-price` | | `0.004` | Your price per GiB-hour of memory, in dollars, zero or more |
 | `--window` | | `7d` | How much Prometheus history to replay, such as `7d` or `36h`, up to `366d`; `0` judges from CPU right now only |
 | `--idle-after` | | `1h` | How long without activity makes a workload idle, now and in the replay, as Hybernate's `idleAfter`. Workloads Hybernate manages use their own setting |
-| `--prometheus-url` | | found in the cluster | Prometheus API to read history from, such as Thanos or Mimir |
+| `--prometheus-service` | | the one found in the cluster with the most history | Prometheus Service in the cluster to read history from, as `namespace/name` or `namespace/name:port`, through the API server |
+| `--prometheus-url` | | the one found in the cluster with the most history | Prometheus API to read history from, such as Thanos, Mimir, or Google Cloud Managed Service for Prometheus |
 | `--prometheus-selector` | | | Label matchers added to every history query, such as `'cluster="prod"'`, for a Prometheus that holds more than one cluster. Values are double-quoted, as in PromQL |
 | `--prometheus-header` | | | Header to send to `--prometheus-url`, as `"Name: value"`, such as `"X-Scope-OrgID: tenant"` for Mimir; repeat for several |
 | `--prometheus-bearer-token-file` | | | File holding a bearer token to send to `--prometheus-url` |
@@ -205,7 +209,17 @@ kubectl hybernate scan --open=false
 
 - **Several clusters in one store**, such as Thanos or Mimir: pass `--prometheus-selector` with the label that tells them apart, so the scan reads only this cluster's series. When it finds series from more than one source, the notes suggest it.
 - **Authentication**: `--prometheus-header` (for example `X-Scope-OrgID` for a Mimir tenant, or an `Authorization` header), or `--prometheus-bearer-token-file`, but not both for the same header. `--prometheus-ca-file` and `--prometheus-insecure-skip-verify` are for its certificate. These flags only apply with `--prometheus-url`: a Prometheus found in the cluster is reached through the API server with your kubeconfig.
-- **Amazon Managed Service for Prometheus** and **Google Cloud Managed Service for Prometheus** need requests signed with SigV4 or OAuth, which the scan doesn't do: point `--prometheus-url` at a signing or authenticating proxy in front of them.
+- **Google Cloud Managed Service for Prometheus**, GKE's managed Prometheus, keeps its data in Cloud Monitoring rather than in the cluster: `gmp-system` runs its collectors, which have nothing to query, so the scan doesn't find it there and reads another Prometheus if the cluster has one. To read it instead, give it an access token and name your project and cluster, as the store holds every cluster in the project:
+
+    ```bash
+    kubectl hybernate scan \
+      --prometheus-url https://monitoring.googleapis.com/v1/projects/PROJECT_ID/location/global/prometheus \
+      --prometheus-bearer-token-file <(gcloud auth print-access-token) \
+      --prometheus-selector 'cluster="CLUSTER_NAME"'
+    ```
+
+    If you've deployed its frontend in the cluster, `--prometheus-service NAMESPACE/frontend` reads it through that instead, with the frontend's own credentials. Either way, its history has the CPU the replay reads only if it collects cAdvisor's metrics, which `kubeletScraping` in its OperatorConfig turns on.
+- **Amazon Managed Service for Prometheus** needs requests signed with SigV4, which the scan doesn't do: point `--prometheus-url` at a signing proxy in front of it.
 
 The source is shown in the report with any password in its URL hidden.
 
@@ -229,6 +243,8 @@ To replay history, an admin can let you read Prometheus, and nothing else, with:
   kubectl create rolebinding hybernate-scan -n monitoring --role=hybernate-scan --user=jane@example.com
 Or pass --prometheus-url if Prometheus is reachable from your machine.
 ```
+
+A Prometheus you name with `--prometheus-service` fails the scan instead, with the same commands in its error; reading it also needs `get` on that Service, to find its port, which `view` covers.
 
 That's only when the API server refuses you the proxy. A `403` from behind it, such as from a `kube-rbac-proxy` in front of Prometheus, is shown as Prometheus's own answer, since a Role for `services/proxy` wouldn't change it.
 

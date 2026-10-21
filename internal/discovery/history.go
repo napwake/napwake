@@ -40,8 +40,11 @@ const maxPointsPerSeries = 10000
 
 // HistorySource says what a scan's history came from.
 type HistorySource struct {
-	// Prometheus is the Prometheus the CPU history was read from.
+	// Prometheus is the Prometheus the CPU history was read from, and
+	// Others the other Prometheus Services found in the cluster, when it
+	// was found there.
 	Prometheus string    `json:"prometheus"`
+	Others     []string  `json:"others,omitempty"`
 	Since      time.Time `json:"since,omitzero"`
 	// Hours is how much history the replay covered, which is less than the
 	// window asked for when Prometheus has less.

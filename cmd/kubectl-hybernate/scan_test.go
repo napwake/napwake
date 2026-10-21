@@ -39,6 +39,7 @@ import (
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime/schema"
+	"k8s.io/client-go/rest"
 	"k8s.io/utils/ptr"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
@@ -818,6 +819,15 @@ func TestPrometheusFrom(t *testing.T) {
 		{"a missing token file", prometheusOptions{url: "https://p", bearerTokenFile: tokenFile + "-missing"},
 			"--prometheus-bearer-token-file"},
 		{"a missing CA file", prometheusOptions{url: "https://p", caFile: tokenFile + "-missing"}, "--prometheus-ca-file"},
+		{"a URL and a Service", prometheusOptions{url: "https://p", service: "monitoring/prometheus"}, "pass one"},
+		{"a Service without a namespace", prometheusOptions{service: "prometheus-operated"},
+			"isn't namespace/name or namespace/name:port"},
+		{"a Service with an empty port", prometheusOptions{service: "monitoring/prometheus-operated:"},
+			"isn't namespace/name or namespace/name:port"},
+		{"a Service that can't be named so", prometheusOptions{service: "monitoring/Prometheus"},
+			"isn't namespace/name or namespace/name:port"},
+		{"auth with a Service", prometheusOptions{service: "monitoring/prometheus", bearerTokenFile: tokenFile},
+			"are for --prometheus-url"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -826,6 +836,131 @@ func TestPrometheusFrom(t *testing.T) {
 			assert.Contains(t, err.Error(), tt.want)
 		})
 	}
+}
+
+func TestPrometheusFrom_Service(t *testing.T) {
+	setup, err := prometheusFrom(prometheusOptions{service: "monitoring/prometheus-operated:web"})
+	require.NoError(t, err)
+	assert.Equal(t, &serviceRef{namespace: "monitoring", name: "prometheus-operated", port: "web"}, setup.service)
+	assert.True(t, setup.explicit())
+
+	setup, err = prometheusFrom(prometheusOptions{service: "monitoring/prometheus-operated"})
+	require.NoError(t, err)
+	assert.Empty(t, setup.service.port, "the Service's own API port")
+
+	setup, err = prometheusFrom(prometheusOptions{})
+	require.NoError(t, err)
+	assert.False(t, setup.explicit(), "found in the cluster")
+}
+
+// The terminal names the Prometheus the history is from, how much it
+// replayed, and the others it could have read.
+func TestWriteTable_HistoryLine(t *testing.T) {
+	tests := []struct {
+		name    string
+		history discovery.HistorySource
+		want    string
+	}{
+		{name: "found", history: discovery.HistorySource{Prometheus: "monitoring/prometheus-operated", Hours: 0.5},
+			want: "History: the last 30 minutes, from monitoring/prometheus-operated\n"},
+		{name: "one of several", history: discovery.HistorySource{Prometheus: "monitoring/prometheus-operated",
+			Hours: 168, Others: []string{"istio-system/prometheus"}},
+			want: "History: the last 7 days, from monitoring/prometheus-operated; also found istio-system/prometheus, " +
+				"which --prometheus-service reads instead\n"},
+		{name: "a URL", history: discovery.HistorySource{Prometheus: "https://thanos.example.com", Hours: 720},
+			want: "History: the last 30 days, from https://thanos.example.com\n"},
+		{name: "none of the namespaces' history",
+			history: discovery.HistorySource{Prometheus: "monitoring/prometheus-operated"},
+			want:    "History: monitoring/prometheus-operated has no CPU history of the namespaces scanned\n"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			cluster := sampleCluster()
+			cluster.Mode = discovery.ModeHistory
+			cluster.History = &tt.history
+			var out bytes.Buffer
+
+			require.NoError(t, writeScan(&out, cluster, scanOptions{output: "table"}))
+
+			assert.Contains(t, out.String(), tt.want)
+		})
+	}
+
+	var out bytes.Buffer
+	require.NoError(t, writeScan(&out, sampleCluster(), scanOptions{output: "table"}))
+	assert.NotContains(t, out.String(), "History:", "no history read, no line")
+}
+
+// proxiedPrometheus is an API server whose service proxy reaches one
+// Prometheus, at path, and refuses the user any other.
+func proxiedPrometheus(t *testing.T, path string) *httptest.Server {
+	t.Helper()
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case path + "/api/v1/query":
+			_, _ = io.WriteString(w, `{"status":"success","data":{"resultType":"vector","result":[]}}`)
+		case path + "/api/v1/query_range":
+			_, _ = io.WriteString(w, `{"status":"success","data":{"resultType":"matrix","result":[]}}`)
+		default:
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusForbidden)
+			_, _ = io.WriteString(w, `{"kind":"Status","apiVersion":"v1","status":"Failure","reason":"Forbidden",`+
+				`"code":403}`)
+		}
+	}))
+	t.Cleanup(server.Close)
+	return server
+}
+
+// runCLIAt is runCLI against an API server, for what goes through it
+// rather than the client, such as the service proxy.
+func runCLIAt(t *testing.T, server string, c client.Client, args ...string) (string, error) {
+	t.Helper()
+	writeKubeconfig(t, server, "preview-42")
+	root := newRootCmd(func(*rest.Config) (client.Client, error) { return c, nil })
+	var out bytes.Buffer
+	root.SetOut(&out)
+	root.SetErr(&out)
+	root.SetIn(strings.NewReader(""))
+	root.SetArgs(args)
+	err := root.Execute()
+	return out.String(), err
+}
+
+// --prometheus-service reads history from the Prometheus Service it names,
+// one the scan wouldn't have found, through the API server.
+func TestCLI_ScanPrometheusService(t *testing.T) {
+	ns := &corev1.Namespace{ObjectMeta: metav1.ObjectMeta{Name: "preview-42"}}
+	prometheus := &corev1.Service{ObjectMeta: metav1.ObjectMeta{Name: "frontend", Namespace: "gmp-public"},
+		Spec: corev1.ServiceSpec{Ports: []corev1.ServicePort{{Name: "web", Port: 9090}}}}
+	server := proxiedPrometheus(t, "/api/v1/namespaces/gmp-public/services/frontend:web/proxy")
+
+	out, err := runCLIAt(t, server.URL, newStatusClient(t, interceptor.Funcs{}, ns, prometheus), "scan",
+		"-n", "preview-42", "-o", "json", "--prometheus-service", "gmp-public/frontend")
+
+	require.NoError(t, err, out)
+	var result scanResult
+	require.NoError(t, json.Unmarshal([]byte(out), &result))
+	require.NotNil(t, result.History)
+	assert.Equal(t, "gmp-public/frontend", result.History.Prometheus)
+}
+
+// A Prometheus the user names that the API server won't let them reach
+// fails the scan, saying what an admin can run to let them.
+func TestCLI_ScanPrometheusServiceForbidden(t *testing.T) {
+	ns := &corev1.Namespace{ObjectMeta: metav1.ObjectMeta{Name: "preview-42"}}
+	prometheus := &corev1.Service{ObjectMeta: metav1.ObjectMeta{Name: "prometheus-operated", Namespace: "monitoring"},
+		Spec: corev1.ServiceSpec{Ports: []corev1.ServicePort{{Name: "web", Port: 9090}}}}
+	server := proxiedPrometheus(t, "/nowhere")
+
+	_, err := runCLIAt(t, server.URL, newStatusClient(t, interceptor.Funcs{}, ns, prometheus), "scan",
+		"-n", "preview-42", "-o", "json", "--prometheus-service", "monitoring/prometheus-operated")
+
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "reading history from --prometheus-service monitoring/prometheus-operated: "+
+		"can't query monitoring/prometheus-operated through the API server")
+	assert.Contains(t, err.Error(), "kubectl create role hybernate-scan -n monitoring --verb=get "+
+		"--resource=services/proxy --resource-name=prometheus-operated:web")
 }
 
 // A scan that couldn't read all it should have exits non-zero, after its

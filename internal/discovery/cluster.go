@@ -299,7 +299,7 @@ func (s *Scanner) ScanCluster(ctx context.Context, opts ClusterOptions) (*Cluste
 	report := &ClusterReport{Mode: ModeSnapshot, Namespaces: len(opts.Namespaces), Workloads: []Workload{}}
 	if opts.History != nil {
 		report.Mode = ModeHistory
-		report.History = &HistorySource{Prometheus: opts.History.Source}
+		report.History = &HistorySource{Prometheus: opts.History.Source, Others: opts.History.Others}
 	}
 	pricing, nodePrices := s.readNodePrices(ctx)
 	report.NodePrices = nodePrices
