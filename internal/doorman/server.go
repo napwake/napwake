@@ -125,6 +125,10 @@ type route struct {
 	maxWait  time.Duration
 	page     bool
 
+	// forwarded is set for a Service behind GKE container-native load
+	// balancing, whose traffic arrives through a forwarder in its namespace.
+	forwarded bool
+
 	// drainUntil is set once the route has left status. Until then, the
 	// port passes connections to the workload's Ready pods, if any, without
 	// waking it.
@@ -455,11 +459,12 @@ func (s *Server) syncRoutes(ctx, connCtx context.Context) error {
 		page := w.Spec.Wake == nil || w.Spec.Wake.Page == nil || *w.Spec.Wake.Page
 		for _, r := range w.Status.Doorman {
 			claims[r.DoormanPort] = append(claims[r.DoormanPort], route{
-				workload: types.NamespacedName{Namespace: w.Namespace, Name: w.Name},
-				service:  r.Service,
-				portName: r.PortName,
-				maxWait:  maxWait,
-				page:     page,
+				workload:  types.NamespacedName{Namespace: w.Namespace, Name: w.Name},
+				service:   r.Service,
+				portName:  r.PortName,
+				maxWait:   maxWait,
+				page:      page,
+				forwarded: r.Forwarded,
 			})
 		}
 	}

@@ -154,6 +154,11 @@ var defaultHealthCheckAgents = []string{
 	"Gatus/",
 }
 
+// forwarderCheckAgents are the load balancer health checks a route reached
+// through a forwarder answers as healthy: Google Cloud's, whose container-
+// native load balancing is the only reason for a forwarder.
+var forwarderCheckAgents = []string{"GoogleHC/"}
+
 // isHealthCheck reports whether req comes from a health checker or scraper,
 // one whose User-Agent starts with one of agents, or names it as
 // "(compatible; agent", as monitors that present themselves as a browser
@@ -206,6 +211,16 @@ func writeNotFound(w io.Writer) error {
 // isn't healthy, and it stays paused.
 func writeUnavailable(w io.Writer) error {
 	_, err := io.WriteString(w, "HTTP/1.1 503 Service Unavailable\r\n"+
+		"Content-Length: 0\r\n"+
+		"Cache-Control: no-store\r\n"+
+		"Connection: close\r\n\r\n")
+	return err
+}
+
+// writeHealthy answers a load balancer's check of a forwarder, which is up
+// and holds requests for the paused workload behind it.
+func writeHealthy(w io.Writer) error {
+	_, err := io.WriteString(w, "HTTP/1.1 200 OK\r\n"+
 		"Content-Length: 0\r\n"+
 		"Cache-Control: no-store\r\n"+
 		"Connection: close\r\n\r\n")
