@@ -300,6 +300,33 @@ func TestForecast_ExportFailureKeepsTheLastSavedState(t *testing.T) {
 	assert.Equal(t, "Active", workload.Status.Prediction.DailyPhase)
 }
 
+// Status says which zone the forecast counts hours in, so kubectl hybernate
+// status can show it without access to the operator's flags.
+func TestPredictionStatus_NamesTheTimeZone(t *testing.T) {
+	london, err := time.LoadLocation("Europe/London")
+	require.NoError(t, err)
+	tests := []struct {
+		name string
+		zone *time.Location
+		want string
+	}{
+		{name: "the operator's --timezone", zone: london, want: "Europe/London"},
+		{name: "the default", want: "UTC"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			workload := automationWorkload(v1alpha1.PhaseRunning)
+			engine := &stubForecaster{phase: forecast.Observing}
+			r := newAutomationReconciler(t, workload, engine, automationOpts{})
+			r.Timezone = tt.zone
+
+			r.updatePredictionStatus(context.Background(), workload, engine)
+
+			assert.Equal(t, tt.want, workload.Status.Prediction.TimeZone)
+		})
+	}
+}
+
 // TestForecastState_IsEncodedOnlyOnceItChanges: encoding the state
 // compresses all of it, and a reconcile publishes it every minute while it
 // changes once an hour.

@@ -79,6 +79,7 @@ A duration is a Go duration above zero, such as `45s`, `90m` or `1h30m`. Days an
 | `dryRun.resources` | `ResourceSnapshot` | What the workload ran when the current would-be pause began |
 | `prediction.dailyPhase`, `prediction.weeklyPhase` | string | Each season's phase: `Observing`, `Suggesting`, or `Active` |
 | `prediction.dailyConfidence`, `prediction.weeklyConfidence` | int | Accuracy % over the last 24 and 168 observed hours |
+| `prediction.timeZone` | string | The IANA time zone the forecast counts hours and weekdays in, the operator's `--timezone` (Helm value `timezone`), such as `Europe/London` |
 | `prediction.state` | string | The engine's learned state, gzipped and base64-encoded |
 | `cost` | `CostStatus` | Cost for the current calendar month, in UTC; see [Cost Tracking](../concepts/cost-tracking.md#status-fields) |
 | `cost.tracked` | duration | How much of the month the totals cover |
