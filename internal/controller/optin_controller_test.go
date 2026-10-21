@@ -490,6 +490,27 @@ func TestKindQualifiedName(t *testing.T) {
 		"a cut that ends on a dot is still a valid name")
 }
 
+// A ManagedWorkload from before the forecast setting stored a confidence
+// of 75, the default then. It isn't kept as though someone chose it, or the
+// forecast setting the annotations give would never apply.
+func TestOptIn_FormerDefaultConfidenceGivesWayToTheSetting(t *testing.T) {
+	d := optInDeployment("api", managedLabel, nil)
+	r, _ := optInReconciler(t, optInNamespace(nil, nil), d)
+	reconcileOptIn(t, r, "api")
+	mw, _ := managedWorkload(t, r, "api")
+	mw.Spec.Prediction.Confidence = formerDefaultConfidence
+	require.NoError(t, r.Update(context.Background(), mw))
+
+	require.NoError(t, r.Get(context.Background(), client.ObjectKeyFromObject(d), d))
+	d.Annotations = map[string]string{v1alpha1.AnnotationForecast: "eager"}
+	require.NoError(t, r.Update(context.Background(), d))
+	reconcileOptIn(t, r, "api")
+
+	mw, _ = managedWorkload(t, r, "api")
+	assert.Zero(t, mw.Spec.Prediction.Confidence)
+	assert.Equal(t, 60, confidenceFor(mw), "eager's threshold")
+}
+
 // Settings no annotation controls, such as costTracking rates patched in,
 // survive the annotations being applied again.
 func TestOptIn_UserSettingsSurvive(t *testing.T) {

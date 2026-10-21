@@ -83,7 +83,16 @@ The CRD is kept when the chart is uninstalled, so uninstalling and reinstalling 
 The forecast engine state is serialized in each ManagedWorkload's status, in `status.prediction.state`. On upgrade:
 
 - Compatible state versions are imported automatically
-- State that can't be read, from an incompatible version or a hand edit, is discarded, and the engine re-learns from scratch, with a `ForecastReset` warning event
+- State that can't be read, from an incompatible version or a hand edit, is discarded, with a `ForecastReset` event, and the engine learns again: from the workload's [CPU history](../concepts/forecasting.md#learning-from-history) when `prometheus.url` is set, otherwise from scratch
+
+### The forecast setting, from before 0.2.0
+
+Before 0.2.0, `spec.prediction.confidence` defaulted to `75`, so every ManagedWorkload created then has it stored, and a confidence overrides the [forecast setting](../concepts/forecasting.md#forecast-setting). On one created from the label, Hybernate drops a stored `75`, balanced's own threshold, so `hybernate.io/forecast` and `defaults.forecast` apply. On one you wrote, remove it for `spec.prediction.mode` to apply:
+
+```bash
+kubectl patch managedworkload my-api -n staging --type=json \
+  -p '[{"op":"remove","path":"/spec/prediction/confidence"}]'
+```
 
 ## Rollback
 

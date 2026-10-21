@@ -291,6 +291,10 @@ func optInSpec(namespace string, target v1alpha1.WorkloadRef, workloadAnnotation
 	return spec, s.problems
 }
 
+// formerDefaultConfidence is what spec.prediction.confidence defaulted to
+// before the forecast setting replaced it.
+const formerDefaultConfidence = 75
+
 // keepUserSettings carries over, from a label-created ManagedWorkload's
 // current spec, everything no annotation sets, so an edit made to it, such
 // as setting costTracking rates with kubectl patch, isn't undone. Those are
@@ -299,7 +303,12 @@ func optInSpec(namespace string, target v1alpha1.WorkloadRef, workloadAnnotation
 // lists. The target is never changed once the ManagedWorkload exists.
 func keepUserSettings(spec *v1alpha1.ManagedWorkloadSpec, current *v1alpha1.ManagedWorkloadSpec) {
 	spec.Target = current.Target
-	spec.Prediction.Confidence = current.Prediction.Confidence
+	// Before the forecast setting, every ManagedWorkload stored a confidence
+	// of 75. Kept, it would override the setting the annotations give, and
+	// it's balanced's threshold, so dropping it loses nothing anyone chose.
+	if current.Prediction.Confidence != formerDefaultConfidence {
+		spec.Prediction.Confidence = current.Prediction.Confidence
+	}
 	spec.CostTracking = current.CostTracking
 	if current.IdlePolicy != nil && current.IdlePolicy.Activity != nil {
 		spec.IdlePolicy.Activity.Prometheus = current.IdlePolicy.Activity.Prometheus
