@@ -1,0 +1,48 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Page not found - Hybernate</title>
+<style>
+  body { margin: 0; padding: 4rem 1rem; font: 16px/1.5 system-ui, sans-serif; color: #1f2328; background: #fff; text-align: center; }
+  a { color: #0969da; }
+  @media (prefers-color-scheme: dark) {
+    body { color: #e6edf3; background: #0d1117; }
+    a { color: #4493f8; }
+  }
+</style>
+<script>
+  // A link without a version, such as /hybernate/guides/gitops/, predates
+  // versioned docs or comes from the operator or the plugin: send it to the
+  // same page in the root version. So does one into a version that isn't
+  // published, such as next once its release is out, or latest before the
+  // first release. A missing page inside a version is a real 404.
+  (function () {
+    var base = "/hybernate/";
+    var root = "next";
+    if (location.pathname.indexOf(base) !== 0) return;
+    var rest = location.pathname.slice(base.length);
+    var first = rest.split("/")[0];
+    if (first === root) return;
+    fetch(base + "versions.json")
+      .then(function (r) { return r.ok ? r.json() : []; })
+      .catch(function () { return []; })
+      .then(function (versions) {
+        var versioned = versions.some(function (v) {
+          return v.version === first || (v.aliases || []).indexOf(first) !== -1;
+        });
+        if (versioned) return;
+        if (first === "next" || first === "latest" || /^\d+\.\d+$/.test(first)) {
+          rest = rest.slice(first.length + 1);
+        }
+        location.replace(base + root + "/" + rest + location.search + location.hash);
+      });
+  })();
+</script>
+</head>
+<body>
+<h1>Page not found</h1>
+<p>These docs have no such page. <a href="/hybernate/">Go to the Hybernate docs</a>.</p>
+</body>
+</html>
