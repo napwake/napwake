@@ -112,7 +112,7 @@ learnedDependencies:
 with a `DependenciesLearned` event when the set changes. The event says of each whether it's woken with the workload, which only a dependency Hybernate manages is, in a namespace that [allows it](#across-namespaces). Opt the dependency in too to have them paused and woken together:
 
 ```
-api: depends on preview-42/postgres (PGHOST), which Hybernate doesn't manage, so isn't woken with api: opt it in to have them paused and woken together
+api: depends on preview-42/postgres (PGHOST), which isn't managed by Hybernate, so it isn't woken with api: opt it in to have them paused and woken together
 ```
 
 They're learned again when the pod template changes, and hourly for ConfigMaps changed since. Secrets are never read, so an address set only in a Secret isn't learned from the environment.

@@ -258,35 +258,35 @@ func TestLearnedMessage(t *testing.T) {
 	}{
 		{name: "managed", learned: []v1alpha1.LearnedDependency{dep("default", "postgres", "DATABASE_URL")},
 			managed: []v1alpha1.ManagedWorkload{managed("default", "postgres")},
-			want:    "depends on default/postgres (DATABASE_URL), woken with api, and kept awake while api is"},
+			want:    "depends on default/postgres (DATABASE_URL), woken and held with it"},
 		{name: "not managed", learned: []v1alpha1.LearnedDependency{dep("default", "postgres", "PGRST_DB_URI")},
-			want: "depends on default/postgres (PGRST_DB_URI), which Hybernate doesn't manage, so isn't woken " +
+			want: "depends on default/postgres (PGRST_DB_URI), which isn't managed by Hybernate, so it isn't woken " +
 				"with api: opt it in to have them paused and woken together"},
 		{name: "two not managed",
 			learned: []v1alpha1.LearnedDependency{dep("default", "postgres", "PGHOST"), dep("default", "redis", "REDIS_URL")},
-			want: "depends on default/postgres (PGHOST), default/redis (REDIS_URL), which Hybernate doesn't manage, " +
-				"so aren't woken with api: opt them in to have them paused and woken together"},
+			want: "depends on default/postgres (PGHOST), default/redis (REDIS_URL), which aren't managed by " +
+				"Hybernate, so they aren't woken with api: opt them in to have them paused and woken together"},
 		{name: "one of each",
 			learned: []v1alpha1.LearnedDependency{dep("default", "postgres", "PGHOST"), dep("default", "redis", "REDIS_URL")},
 			managed: []v1alpha1.ManagedWorkload{managed("default", "redis")},
-			want: "depends on default/redis (REDIS_URL), woken with api, and kept awake while api is; and on " +
-				"default/postgres (PGHOST), which Hybernate doesn't manage, so isn't woken with api: " +
-				"opt it in to have them paused and woken together"},
+			want: "depends on default/redis (REDIS_URL), woken and held with it; and on default/postgres (PGHOST), " +
+				"which isn't managed by Hybernate, so it isn't woken with api: opt it in to have them paused and " +
+				"woken together"},
 		{name: "in a namespace that doesn't allow it",
 			learned: []v1alpha1.LearnedDependency{dep("data", "postgres", "PGHOST")},
 			managed: []v1alpha1.ManagedWorkload{managed("data", "postgres")},
 			want: "depends on data/postgres (PGHOST), in a namespace whose hybernate.io/dependents-from doesn't " +
-				"allow dependents from default, so not woken with api or kept awake for it"},
+				"allow dependents from default, so it isn't woken or held with api"},
 		{name: "in a namespace that allows it",
 			learned:        []v1alpha1.LearnedDependency{dep("data", "postgres", "PGHOST")},
 			managed:        []v1alpha1.ManagedWorkload{managed("data", "postgres")},
 			dependentsFrom: map[string]string{"data": "default"},
-			want:           "depends on data/postgres (PGHOST), woken with api, and kept awake while api is"},
+			want:           "depends on data/postgres (PGHOST), woken and held with it"},
 		{name: "learned from a wake",
 			learned: []v1alpha1.LearnedDependency{{Namespace: "default", Kind: v1alpha1.TargetKindStatefulSet,
 				Name: "postgres", Source: v1alpha1.LearnedFromWake}},
 			managed: []v1alpha1.ManagedWorkload{managed("default", "postgres")},
-			want:    "depends on default/postgres (a request that woke it), woken with api, and kept awake while api is"},
+			want:    "depends on default/postgres (a request that woke it), woken and held with it"},
 		{name: "nothing", want: "no dependencies found in its environment"},
 	}
 	for _, tt := range tests {
@@ -308,8 +308,9 @@ func TestLearnDependencies_SaysAnUnmanagedDependencyIsntWoken(t *testing.T) {
 
 	learned := recorded(r.Recorder.(*events.FakeRecorder), ReasonDependenciesLearned)
 	require.Len(t, learned, 1)
-	assert.Contains(t, learned[0], "api: depends on default/postgres (DATABASE_URL), which Hybernate doesn't manage")
-	assert.NotContains(t, learned[0], "kept awake")
+	assert.Contains(t, learned[0], "api: depends on default/postgres (DATABASE_URL), which isn't managed by "+
+		"Hybernate, so it isn't woken with api")
+	assert.NotContains(t, learned[0], "woken and held")
 }
 
 // What's learned is announced once it's recorded, so a write that fails
@@ -509,7 +510,7 @@ func TestLearnFromWake(t *testing.T) {
 			if tt.want != nil && tt.api == nil {
 				assert.Equal(t, v1alpha1.LearnedFromWake, got.Status.LearnedDependencies.Dependencies[0].Source)
 				assert.Equal(t, []string{"Normal DependenciesLearned api: depends on default/postgres, learned from a " +
-					"request it sent that woke it; woken with api, and kept awake while api is"},
+					"request it sent that woke it; woken and held with it"},
 					recorded(r.Recorder.(*events.FakeRecorder), ReasonDependenciesLearned))
 			}
 		})

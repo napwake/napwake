@@ -349,7 +349,8 @@ func sameDependencies(a, b []v1alpha1.LearnedDependency) bool {
 
 // learnedMessage says what the workload was learned to depend on, and what
 // that does for each dependency: only one Hybernate manages, in a namespace
-// that allows the workload's, is woken with it and kept awake while it is.
+// that allows the workload's, is woken with it and held awake while it is.
+// The phrases are the scan's, so both say the same of a dependency.
 func learnedMessage(workload *v1alpha1.ManagedWorkload, learned []v1alpha1.LearnedDependency, g *dependencyGraph) string {
 	if len(learned) == 0 {
 		return "no dependencies found in its environment"
@@ -374,28 +375,32 @@ func learnedMessage(workload *v1alpha1.ManagedWorkload, learned []v1alpha1.Learn
 	self := workload.Spec.Target.Name
 	var parts []string
 	if len(together) > 0 {
-		parts = append(parts, listNames(together)+", "+wokenWith(self))
+		parts = append(parts, listNames(together)+", "+wokenAndHeld)
 	}
 	if len(unmanaged) > 0 {
-		isnt, it := "isn't", "it"
-		if len(unmanaged) > 1 {
-			isnt, it = "aren't", "them"
-		}
-		parts = append(parts, fmt.Sprintf("%s, which Hybernate doesn't manage, so %s woken with %s: "+
-			"opt %s in to have them paused and woken together", listNames(unmanaged), isnt, self, it))
+		isnt, subject, object := agreeing(len(unmanaged))
+		parts = append(parts, fmt.Sprintf("%s, which %s managed by Hybernate, so %s %s woken with %s: "+
+			"opt %s in to have them paused and woken together", listNames(unmanaged), isnt, subject, isnt, self, object))
 	}
 	if len(notAllowed) > 0 {
+		isnt, subject, _ := agreeing(len(notAllowed))
 		parts = append(parts, fmt.Sprintf("%s, in a namespace whose %s doesn't allow dependents from %s, "+
-			"so not woken with %s or kept awake for it", listNames(notAllowed),
-			v1alpha1.AnnotationDependentsFrom, workload.Namespace, self))
+			"so %s %s woken or held with %s", listNames(notAllowed),
+			v1alpha1.AnnotationDependentsFrom, workload.Namespace, subject, isnt, self))
 	}
 	return "depends on " + strings.Join(parts, "; and on ")
 }
 
-// wokenWith says what Hybernate does for a dependency it manages: it wakes
-// it with the dependent, and keeps it awake while the dependent is.
-func wokenWith(dependent string) string {
-	return fmt.Sprintf("woken with %s, and kept awake while %s is", dependent, dependent)
+// wokenAndHeld is what Hybernate does for a dependency it manages: it wakes
+// it with the dependent, and holds it awake while the dependent is.
+const wokenAndHeld = "woken and held with it"
+
+// agreeing is the verb and pronouns that agree with n dependencies.
+func agreeing(n int) (isnt, subject, object string) {
+	if n > 1 {
+		return "aren't", "they", "them"
+	}
+	return "isn't", "it", "it"
 }
 
 // dependencyRefs are the workloads a ManagedWorkload depends on: those its
@@ -477,7 +482,7 @@ func (r *Reconciler) learnFromWake(ctx context.Context, workload *v1alpha1.Manag
 	}
 	r.emitEvent(dependent, false, "Normal", ReasonDependenciesLearned, actionLearnDependencies,
 		"depends on %s/%s, learned from a request it sent that woke it; %s",
-		learned.Namespace, learned.Name, wokenWith(dependent.Spec.Target.Name))
+		learned.Namespace, learned.Name, wokenAndHeld)
 	return nil
 }
 
