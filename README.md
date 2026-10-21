@@ -41,10 +41,18 @@ flowchart TD
 **See what's idle across your cluster, before installing anything:**
 
 ```bash
-kubectl krew install --manifest-url \
-  https://github.com/okedeji/hybernate/releases/download/v0.2.0/krew-hybernate.yaml
+brew install okedeji/tap/kubectl-hybernate
 kubectl hybernate scan
 ```
+
+Without Homebrew, install the plugin with [krew](https://krew.sigs.k8s.io/docs/user-guide/setup/install/):
+
+```bash
+kubectl krew install --manifest-url \
+  https://github.com/okedeji/hybernate/releases/download/v0.2.0/krew-hybernate.yaml
+```
+
+or [download it](https://okedeji.io/hybernate/getting-started/kubectl-plugin/#installation) for Linux, macOS or Windows.
 
 **Install the operator:**
 

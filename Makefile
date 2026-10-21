@@ -348,7 +348,7 @@ verify-version: ## Fail unless the chart, the kustomize image, the docs and the 
 	@# releases/latest installs whatever was released last.
 	@unpinned=$$(grep -rnF 'okedeji/hybernate/releases/latest' README.md docs || true); [ -z "$$unpinned" ] || { \
 		echo "$$unpinned"; echo "install links must name the release, as releases/download/v$$VERSION/ does"; exit 1; }
-	@stale=$$(grep -rnoE 'okedeji/hybernate(/releases/download/|//config/[a-z-]+\?ref=)v[0-9][0-9A-Za-z.-]*' README.md docs | \
+	@stale=$$(grep -rnoE 'okedeji/hybernate(/releases/(download|tag)/|//config/[a-z-]+\?ref=)v[0-9][0-9A-Za-z.-]*' README.md docs | \
 		grep -vE -- "v$${VERSION//./\\.}$$" || true); [ -z "$$stale" ] || { \
 		echo "$$stale"; echo "these install links don't name v$$VERSION; add their pages to VERSIONED_DOCS and run make bump VERSION=$$VERSION"; exit 1; }
 	@base="$${VERSION%%-*}"; heading="^## \[$${base//./\\.}\] - "; \

@@ -8,35 +8,46 @@ Every command takes kubectl's connection flags: `--kubeconfig`, `--context`, `--
 
 ## Installation
 
-=== "curl"
+=== "Homebrew"
 
-    Download the binary from the [releases page](https://github.com/okedeji/hybernate/releases) and place it in your `PATH`:
+    On macOS and Linux:
 
     ```bash
-    # macOS (Apple Silicon)
-    curl -LO https://github.com/okedeji/hybernate/releases/download/v0.2.0/kubectl-hybernate-darwin-arm64.tar.gz
-    tar xzf kubectl-hybernate-darwin-arm64.tar.gz
-    chmod +x kubectl-hybernate-darwin-arm64
-    mv kubectl-hybernate-darwin-arm64 /usr/local/bin/kubectl-hybernate
-
-    # Linux (amd64)
-    curl -LO https://github.com/okedeji/hybernate/releases/download/v0.2.0/kubectl-hybernate-linux-amd64.tar.gz
-    tar xzf kubectl-hybernate-linux-amd64.tar.gz
-    chmod +x kubectl-hybernate-linux-amd64
-    mv kubectl-hybernate-linux-amd64 /usr/local/bin/kubectl-hybernate
+    brew install okedeji/tap/kubectl-hybernate
+    kubectl hybernate version
     ```
 
+    Homebrew installs the newest release, and `brew upgrade` keeps it current. For this version of the docs exactly, use Krew or a download.
+
 === "Krew"
+
+    With [krew](https://krew.sigs.k8s.io/docs/user-guide/setup/install/), kubectl's plugin manager, installed:
 
     ```bash
     kubectl krew install --manifest-url \
       https://github.com/okedeji/hybernate/releases/download/v0.2.0/krew-hybernate.yaml
+    kubectl hybernate version
     ```
 
-    Krew installs the plugin on Linux and macOS (amd64 and arm64) and on Windows (amd64).
+    Krew installs the plugin on Linux and macOS (amd64 and arm64) and on Windows (amd64). `kubectl krew upgrade` doesn't upgrade a plugin installed from a manifest URL: to move to a later release, run `kubectl krew uninstall hybernate`, then install that release's manifest.
 
     !!! note
-        This uses a custom manifest URL. Once the plugin is accepted into the [krew-index](https://github.com/kubernetes-sigs/krew-index), you'll be able to install with just `kubectl krew install hybernate`.
+        Once the plugin is accepted into the [krew-index](https://github.com/kubernetes-sigs/krew-index), you'll be able to install it with just `kubectl krew install hybernate`, and upgrade it with `kubectl krew upgrade`.
+
+=== "Download"
+
+    Download the archive for your platform from the release, and put the binary on your `PATH` as `kubectl-hybernate`. On macOS and Linux:
+
+    ```bash
+    os=$(uname -s | tr '[:upper:]' '[:lower:]')
+    arch=$(uname -m | sed -e 's/x86_64/amd64/' -e 's/aarch64/arm64/')
+    curl -fLO "https://github.com/okedeji/hybernate/releases/download/v0.2.0/kubectl-hybernate-${os}-${arch}.tar.gz"
+    tar xzf "kubectl-hybernate-${os}-${arch}.tar.gz"
+    sudo install "kubectl-hybernate-${os}-${arch}" /usr/local/bin/kubectl-hybernate
+    kubectl hybernate version
+    ```
+
+    On Windows, download `kubectl-hybernate-windows-amd64.tar.gz` from the [release](https://github.com/okedeji/hybernate/releases/tag/v0.2.0), extract it with `tar xzf`, and rename `kubectl-hybernate-windows-amd64.exe` to `kubectl-hybernate.exe` in a folder on your `PATH`. To check that an archive came from the release workflow, see [Verifying a release](../reference/security.md#verifying-a-release).
 
 === "Source"
 
