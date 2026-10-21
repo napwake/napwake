@@ -69,6 +69,7 @@ History: the last 7 days, from monitoring/prometheus-operated
   They cost $3,180/month while running, $4.36 an hour: each hour asleep frees that.
   Replaying the last 7 days, Hybernate would have paused 58 of 190 unmanaged workloads for 6,120 hours in all,
   and freed $1,240: about $5,380/month.
+  Not counted: 4 scaled to zero by hand and 1 without CPU history to replay.
 
   NAMESPACE    WORKLOAD               STATE                BECAUSE                                                  COST/MO   FREED THIS MONTH   SAVED   COULD SLEEP   WAKES   COULD FREE/MO
   preview-42   statefulset/postgres   idle (unmanaged)     CPU under 1% of its request; last deployed 23 days ago   $140      -                  -       167h          0       $139
@@ -79,8 +80,9 @@ History: the last 7 days, from monitoring/prometheus-operated
   ...
 
 Notes:
-  - the history replay sees CPU and rollouts only; requests and activity annotations aren't in Prometheus, so a workload used with little CPU can look like it would sleep more than it would
   - 2 workloads set no CPU requests, so their use can't be measured: kube-tools/agent, ops/exporter
+  - 23 infrastructure workloads are left out of the totals and next steps: monitoring (9), argocd (7), ingress-nginx (3) and 2 more. Hybernate never pauses Kubernetes' own workloads or itself; anything else, infrastructure included, pauses only if you opt it in
+  - the history replay sees CPU and rollouts only; requests and activity annotations aren't in Prometheus, so a workload used with little CPU can look like it would sleep more than it would
 
 Costs use the on-demand and spot list prices of the cluster's 4 node types (m6i.xlarge, m6i.2xlarge, r6i.xlarge and 1 more, AWS us-east-1). 6 workloads run on spot nodes, priced at spot.
 Pass --cpu-price and --memory-price for yours.
