@@ -86,6 +86,7 @@ The relaunch. The 0.1.x releases were early experiments, and 0.2.0 is a fresh st
 - Installing with Kustomize: the installation guide uses the Kustomize manifests as a remote base pinned to the release, `https://github.com/okedeji/hybernate//config/default?ref=v0.2.0`, setting the operator's time zone in your kustomization, with `config/prometheus` and `config/network-policy` for what the chart's values turn on. The docs call `config/default`, and `install.yaml`, which is built from it, the Kustomize manifests throughout, and give each base as a pinned link rather than a path in a clone of the repository
 - Installing with Argo CD or Flux: the installation guide has an Argo CD `Application` for the OCI chart (`repoURL: ghcr.io/okedeji/charts`, `chart: hybernate`, no `oci://`), and a Flux `OCIRepository` and `HelmRelease` that keep the release named `hybernate` in `hybernate-system`
 - `brew install okedeji/tap/kubectl-hybernate` installs the plugin on macOS and Linux, with no krew needed. The release workflow writes the formula from each release's published archives and pushes it to the [okedeji/homebrew-tap](https://github.com/okedeji/homebrew-tap) repository. The README and the plugin's page install it with Homebrew first, then with krew, linking krew's own setup, then by a download for any platform
+- The plugin's usage and help name it as it's run, `kubectl hybernate`, as krew asks of plugins, rather than by its binary's name
 
 ### Changed
 
