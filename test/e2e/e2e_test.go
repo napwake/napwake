@@ -919,7 +919,8 @@ spec:
 				g.Expect(jsonpath("managedworkload", gitOpsName, gitOpsNamespace,
 					`{.status.conditions[?(@.type=="GitOpsConflict")].status}`)).To(Equal("True"))
 				g.Expect(jsonpath("managedworkload", gitOpsName, gitOpsNamespace,
-					`{.status.conditions[?(@.type=="GitOpsConflict")].message}`)).To(ContainSubstring("/spec/replicas"))
+					`{.status.conditions[?(@.type=="GitOpsConflict")].message}`)).To(ContainSubstring(
+					"have Argo CD ignore replicas, as for an HPA: https://okedeji.io/hybernate/guides/gitops/#argo-cd"))
 				g.Expect(jsonpath("managedworkload", gitOpsName, gitOpsNamespace, "{.status.lastScaledUp.by}")).
 					To(Equal("argocd-controller"))
 				g.Expect(jsonpath("managedworkload", gitOpsName, gitOpsNamespace, "{.status.lastScaledUp.gitOps}")).
