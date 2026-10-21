@@ -42,7 +42,42 @@ func TestOptInSpec_Defaults(t *testing.T) {
 	assert.Equal(t, 2*time.Minute, spec.Wake.MaxWait.Duration)
 	assert.True(t, *spec.Wake.Page)
 	// Fields the API server would default, set so a rewrite changes nothing.
-	assert.Equal(t, 75, spec.Prediction.Confidence)
+	assert.Equal(t, v1alpha1.PredictionBalanced, spec.Prediction.Mode)
+	assert.Zero(t, spec.Prediction.Confidence, "no annotation overrides the mode's threshold")
+}
+
+func TestOptInSpec_Forecast(t *testing.T) {
+	cautious := OptInDefaults{IdleAfter: time.Hour, CPUThreshold: 10, Forecast: v1alpha1.PredictionCautious}
+	tests := []struct {
+		name         string
+		workload     map[string]string
+		namespace    map[string]string
+		defaults     OptInDefaults
+		want         v1alpha1.PredictionMode
+		wantProblems int
+	}{
+		{name: "not annotated", defaults: DefaultOptInDefaults, want: v1alpha1.PredictionBalanced},
+		{name: "the cluster's default", defaults: cautious, want: v1alpha1.PredictionCautious},
+		{name: "the namespace's", namespace: map[string]string{v1alpha1.AnnotationForecast: "eager"},
+			defaults: cautious, want: v1alpha1.PredictionEager},
+		{name: "the workload's own",
+			workload:  map[string]string{v1alpha1.AnnotationForecast: "cautious"},
+			namespace: map[string]string{v1alpha1.AnnotationForecast: "eager"},
+			defaults:  DefaultOptInDefaults, want: v1alpha1.PredictionCautious},
+		{name: "a value that can't be read leaves the namespace's",
+			workload:  map[string]string{v1alpha1.AnnotationForecast: "Eager"},
+			namespace: map[string]string{v1alpha1.AnnotationForecast: "eager"},
+			defaults:  DefaultOptInDefaults, want: v1alpha1.PredictionEager, wantProblems: 1},
+		{name: "a percentage isn't a setting", workload: map[string]string{v1alpha1.AnnotationForecast: "60"},
+			defaults: cautious, want: v1alpha1.PredictionCautious, wantProblems: 1},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			spec, problems := optInSpec("dev", apiTarget, tt.workload, tt.namespace, tt.defaults)
+			assert.Len(t, problems, tt.wantProblems)
+			assert.Equal(t, tt.want, spec.Prediction.Mode)
+		})
+	}
 }
 
 func TestOptInSpec_Precedence(t *testing.T) {

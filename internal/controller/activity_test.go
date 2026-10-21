@@ -124,6 +124,41 @@ func TestActivityClock_PausesAfterIdleAfter(t *testing.T) {
 	assert.Equal(t, v1alpha1.PhasePaused, workload.Status.Phase)
 }
 
+// The IdleDetected event says, in words, how long the workload has been
+// idle, since what, and what Hybernate does about it: in dry-run, only what
+// it would have done.
+func TestActivityClock_IdleDetectedSaysWhatHappens(t *testing.T) {
+	tests := []struct {
+		name   string
+		dryRun bool
+		source v1alpha1.ActivitySource
+		want   string
+	}{
+		{name: "dry-run", dryRun: true, source: v1alpha1.ActivitySourceCreated,
+			want: "[dry-run] api: idle for 2 hours, since Hybernate started managing it; would have paused"},
+		{name: "pausing", source: v1alpha1.ActivitySourceRequest,
+			want: "api: idle for 2 hours, since a request woke it; pausing"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			target := clockTarget("app:v1", nil)
+			workload := clockWorkload(fixedTime.Add(-2*time.Hour), target)
+			workload.Spec.DryRun = tt.dryRun
+			workload.Status.Activity.LastActivitySource = tt.source
+			metrics := idleCPU
+			r := newAutomationReconciler(t, workload, &stubForecaster{phase: forecast.Observing},
+				automationOpts{metrics: &metrics, pauser: &stubPauser{pauseDone: true}})
+
+			_, err := r.reconcileAutomation(context.Background(), workload, target)
+			require.NoError(t, err)
+
+			idle := recorded(r.Recorder.(*events.FakeRecorder), ReasonIdleDetected)
+			require.Len(t, idle, 1)
+			assert.True(t, strings.HasSuffix(idle[0], tt.want), "got %q", idle[0])
+		})
+	}
+}
+
 func TestActivityClock_StaysAwake(t *testing.T) {
 	stale := fixedTime.Add(-61 * time.Minute)
 
@@ -282,6 +317,11 @@ func TestActivityClock_DoesNotActWithoutCPUData(t *testing.T) {
 	}{
 		{name: "metrics API down", metrics: stubMetrics{err: errors.New("metrics API unavailable")}, wantReason: "MetricsUnavailable"},
 		{name: "no CPU requests", metrics: stubMetrics{cpuMillis: 50, replicas: 1, noCPURequests: true}, wantReason: "NoCPURequests"},
+		{name: "requests that say none", metrics: stubMetrics{cpuMillis: 50, replicas: 1,
+			requestsErr: fmt.Errorf("%w: the running pods request no CPU", opmetrics.ErrNoCPURequests)},
+			wantReason: "NoCPURequests"},
+		{name: "requests that can't be read", metrics: stubMetrics{cpuMillis: 50, replicas: 1,
+			requestsErr: errors.New("listing pods: etcdserver: request timed out")}, wantReason: "MetricsUnavailable"},
 	}
 
 	for _, tt := range tests {
@@ -573,12 +613,15 @@ func TestActivityClock_ForecastVetoIsACondition(t *testing.T) {
 	assert.Zero(t, pauser.pauseCalls)
 	written := getWorkload(t, r, "api")
 	assert.True(t, meta.IsStatusConditionTrue(written.Status.Conditions, conditionIdleVetoed), "and it's written")
+	require.NotNil(t, written.Status.Activity.ForecastBusyFrom, "with the hour, for tools to show")
+	assert.Equal(t, "13:00", written.Status.Activity.ForecastBusyFrom.UTC().Format("15:04"))
 
 	engine.predictByHour[1] = 2
 	_, err := r.reconcileAutomation(context.Background(), workload, target)
 	require.NoError(t, err)
 
 	assert.True(t, meta.IsStatusConditionFalse(workload.Status.Conditions, conditionIdleVetoed), "the veto is over")
+	assert.Nil(t, workload.Status.Activity.ForecastBusyFrom)
 	assert.Equal(t, 1, pauser.pauseCalls)
 }
 
@@ -666,33 +709,6 @@ func TestActivityClock_VetoAndAutoResumeAgree(t *testing.T) {
 	_, err = r.reconcileAutomation(context.Background(), workload, target)
 	require.NoError(t, err)
 	assert.Equal(t, 1, pauser.resumeCalls, "the forecast that held it awake wakes it")
-}
-
-func TestHourStart(t *testing.T) {
-	kolkata, err := time.LoadLocation("Asia/Kolkata")
-	require.NoError(t, err)
-	newYork, err := time.LoadLocation("America/New_York")
-	require.NoError(t, err)
-	tests := []struct {
-		name string
-		loc  *time.Location
-		at   time.Time
-		want time.Time
-	}{
-		{name: "UTC", at: fixedTime.Add(10 * time.Minute), want: fixedTime},
-		{name: "hours at half past in UTC", loc: kolkata, at: fixedTime.Add(10 * time.Minute),
-			want: fixedTime.Add(-30 * time.Minute)},
-		{name: "the first 1am of a clock change", loc: newYork, at: time.Date(2026, 11, 1, 5, 40, 0, 0, time.UTC),
-			want: time.Date(2026, 11, 1, 5, 0, 0, 0, time.UTC)},
-		{name: "the repeated 1am", loc: newYork, at: time.Date(2026, 11, 1, 6, 40, 0, 0, time.UTC),
-			want: time.Date(2026, 11, 1, 6, 0, 0, 0, time.UTC)},
-	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			r := &Reconciler{Timezone: tt.loc}
-			assert.True(t, tt.want.Equal(r.hourStart(tt.at)), "got %s", r.hourStart(tt.at).UTC())
-		})
-	}
 }
 
 func TestActivityClock_DryRunReportsIdleOnceWithoutPausing(t *testing.T) {

@@ -57,6 +57,24 @@ operator's Service and NetworkPolicy don't select doorman pods.
 {{- printf "%s-doorman" (include "hybernate.fullname" .) }}
 {{- end }}
 
+{{/*
+The headless Service whose DNS name resolves to the doorman's Ready pods,
+which forwarders connect to, and its labels: not the doorman's, so the
+doorman's ServiceMonitor doesn't select it.
+*/}}
+{{- define "hybernate.doormanPodsName" -}}
+{{- printf "%s-pods" (include "hybernate.doormanName" .) }}
+{{- end }}
+
+{{- define "hybernate.doormanPodsLabels" -}}
+helm.sh/chart: {{ include "hybernate.chart" . }}
+app.kubernetes.io/name: {{ include "hybernate.name" . }}
+app.kubernetes.io/instance: {{ .Release.Name }}
+app.kubernetes.io/component: doorman-pods
+app.kubernetes.io/version: {{ .Chart.AppVersion | quote }}
+app.kubernetes.io/managed-by: {{ .Release.Service }}
+{{- end }}
+
 {{- define "hybernate.doormanSelectorLabels" -}}
 app.kubernetes.io/name: {{ include "hybernate.name" . }}
 app.kubernetes.io/instance: {{ .Release.Name }}
@@ -123,6 +141,9 @@ watchNamespaces, a Role's in each of them.
   verbs: [create, patch]
 - apiGroups: [""]
   resources: [services]
+  verbs: [get, list, watch]
+- apiGroups: [networking.k8s.io]
+  resources: [ingresses]
   verbs: [get, list, watch]
 - apiGroups: [""]
   resources: [pods]

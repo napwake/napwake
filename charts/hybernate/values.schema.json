@@ -121,7 +121,8 @@
       "type": "object",
       "additionalProperties": false,
       "properties": {
-        "url": {"type": "string", "pattern": "^(https?://.+)?$"}
+        "url": {"type": "string", "pattern": "^(https?://.+)?$"},
+        "selector": {"type": "string"}
       }
     },
     "watchNamespaces": {
@@ -147,7 +148,8 @@
           ]
         },
         "cpuThreshold": {"type": "integer", "minimum": 1, "maximum": 100},
-        "dryRun": {"type": "boolean"}
+        "dryRun": {"type": "boolean"},
+        "forecast": {"enum": ["eager", "balanced", "cautious"]}
       }
     },
     "doorman": {
@@ -173,6 +175,15 @@
         "extraEnv": {"$ref": "#/definitions/env"},
         "topologySpreadConstraints": {"type": "array"},
         "resources": {"type": "object"},
+        "negForwarder": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "enabled": {"type": "boolean"},
+            "replicas": {"type": "integer", "minimum": 1},
+            "resources": {"type": "object"}
+          }
+        },
         "networkPolicy": {
           "type": "object",
           "additionalProperties": false,

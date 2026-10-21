@@ -29,6 +29,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	corev1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/fields"
 	"k8s.io/apimachinery/pkg/runtime"
@@ -207,9 +208,9 @@ func TestForecastState_UnreadableStateStartsAfreshWithAWarning(t *testing.T) {
 	}
 	for name, state := range map[string]string{
 		"garbage":                        "not state",
-		"an older version":               gzipped(`{"v":1}`),
-		"a hand edit out of range":       gzipped(`{"v":2,"p":7}`),
-		"a hand edit with broken arrays": gzipped(`{"v":2,"n":3,"lh":1,"ae":[1,2],"ay":[1]}`),
+		"a newer version":                gzipped(`{"v":99}`),
+		"a hand edit out of range":       gzipped(`{"v":5,"p":7}`),
+		"a hand edit with broken arrays": gzipped(`{"v":5,"n":3,"lh":1,"ae":[1,2],"ay":[1]}`),
 	} {
 		t.Run(name, func(t *testing.T) {
 			workload := forecastWorkload()
@@ -223,6 +224,31 @@ func TestForecastState_UnreadableStateStartsAfreshWithAWarning(t *testing.T) {
 			assert.Zero(t, restored.GetDataPoints(), "the engine started afresh")
 			assert.Contains(t, drainEvents(t, fr.Reconciler), "Warning "+ReasonForecastReset)
 		})
+	}
+}
+
+// An upgrade leaves state an older version saved, which isn't a problem to
+// warn of: the forecast learns again, from history when there's a
+// Prometheus to read it from.
+func TestForecastState_OlderVersionLearnsAgain(t *testing.T) {
+	var buf bytes.Buffer
+	zw := gzip.NewWriter(&buf)
+	_, _ = zw.Write([]byte(`{"v":1}`))
+	_ = zw.Close()
+	workload := forecastWorkload()
+	workload.Status.Prediction = &v1alpha1.PredictionStatus{State: base64.StdEncoding.EncodeToString(buf.Bytes()),
+		History: &v1alpha1.PredictionHistory{Reason: HistoryLearned, Hours: 4}}
+	fr := newForecastReconciler(t, workload, nil)
+	fr.PrometheusURL = "http://prometheus.monitoring.svc:9090"
+
+	fr.reconcile(t, workload)
+
+	got := drainEvents(t, fr.Reconciler)
+	assert.Contains(t, got, "Normal "+ReasonForecastReset)
+	assert.NotContains(t, got, "Warning "+ReasonForecastReset)
+	assert.Contains(t, got, "from an older version of Hybernate, so it learns again, from its CPU history in Prometheus")
+	if h := workload.Status.Prediction.History; h != nil {
+		assert.NotEqual(t, HistoryLearned, h.Reason, "the old history record is gone, to be read again")
 	}
 }
 
@@ -255,6 +281,170 @@ func TestReconciler_AppliesTimezoneToTheForecast(t *testing.T) {
 
 	assert.Equal(t, tokyo, engine.settings.Location)
 	assert.Equal(t, 85, engine.settings.Threshold)
+}
+
+func TestConfidenceFor(t *testing.T) {
+	tests := []struct {
+		name string
+		spec v1alpha1.PredictionSpec
+		want int
+	}{
+		{name: "the default", want: 75},
+		{name: "eager", spec: v1alpha1.PredictionSpec{Mode: v1alpha1.PredictionEager}, want: 60},
+		{name: "balanced", spec: v1alpha1.PredictionSpec{Mode: v1alpha1.PredictionBalanced}, want: 75},
+		{name: "cautious", spec: v1alpha1.PredictionSpec{Mode: v1alpha1.PredictionCautious}, want: 85},
+		{name: "a confidence overrides the mode",
+			spec: v1alpha1.PredictionSpec{Mode: v1alpha1.PredictionEager, Confidence: 90}, want: 90},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			workload := forecastWorkload()
+			workload.Spec.Prediction = tt.spec
+			assert.Equal(t, tt.want, confidenceFor(workload))
+		})
+	}
+}
+
+func TestReconciler_AppliesTheModeToTheForecast(t *testing.T) {
+	workload := forecastWorkload()
+	workload.Spec.Prediction = v1alpha1.PredictionSpec{Mode: v1alpha1.PredictionEager}
+	engine := &stubForecaster{phase: forecast.Observing}
+	r := newAutomationReconciler(t, workload, engine, automationOpts{})
+	r.engines.engines[workload.UID] = engine
+
+	_, err := r.reconcileAutomation(context.Background(), workload, nil)
+	require.NoError(t, err)
+
+	assert.Equal(t, 60, engine.settings.Threshold)
+	assert.Equal(t, 60, workload.Status.Prediction.Threshold)
+}
+
+// What the forecast waits for is in status, with when it's expected to
+// start acting.
+func TestPredictionStatus_Outlook(t *testing.T) {
+	starts := fixedTime.Add(50 * time.Hour)
+	workload := forecastWorkload()
+	engine := &stubForecaster{phase: forecast.DailySuggesting, dataPoints: 40, outlook: forecast.Outlook{
+		Waiting: forecast.WaitingForConfidence, HoursOfDaySeen: 24, Confidence: 62, Threshold: 85,
+		StartsActing: starts}}
+	r := newAutomationReconciler(t, workload, engine, automationOpts{})
+
+	r.updatePredictionStatus(context.Background(), workload, engine)
+
+	p := workload.Status.Prediction
+	assert.False(t, p.Acting)
+	assert.Equal(t, 85, p.Threshold)
+	assert.Equal(t, v1alpha1.ForecastEarningConfidence, p.Reason)
+	assert.Equal(t, "learning: its forecasts of the last day were 62% right, and it acts from 85%; it hasn't seen "+
+		"a whole week yet; expected to start acting around Mon 16 Mar 14:00 UTC, if the coming days repeat the last "+
+		"week", p.Message)
+	require.NotNil(t, p.StartsActing)
+	assert.True(t, starts.Equal(p.StartsActing.Time))
+}
+
+// Projecting the outlook runs the engine on for up to four weeks, so it's
+// done again only once the engine learns another hour or its threshold
+// changes.
+func TestPredictionStatus_OutlookIsProjectedOnceAnHour(t *testing.T) {
+	workload := forecastWorkload()
+	engine := &countingOutlook{stubForecaster: stubForecaster{phase: forecast.DailySuggesting, dataPoints: 40}}
+	r := newAutomationReconciler(t, workload, &engine.stubForecaster, automationOpts{})
+
+	for range 3 {
+		r.updatePredictionStatus(context.Background(), workload, engine)
+	}
+	assert.Equal(t, 1, engine.outlooks)
+	engine.dataPoints++
+	r.updatePredictionStatus(context.Background(), workload, engine)
+	workload.Spec.Prediction.Confidence = 60
+	r.updatePredictionStatus(context.Background(), workload, engine)
+	assert.Equal(t, 3, engine.outlooks)
+}
+
+type countingOutlook struct {
+	stubForecaster
+	outlooks int
+}
+
+func (c *countingOutlook) Outlook() forecast.Outlook {
+	c.outlooks++
+	return c.stubForecaster.Outlook()
+}
+
+func TestForecastOutlook(t *testing.T) {
+	paused := func(w *v1alpha1.ManagedWorkload) { w.Status.Phase = v1alpha1.PhasePaused }
+	routed := func(w *v1alpha1.ManagedWorkload) {
+		paused(w)
+		meta.SetStatusCondition(&w.Status.Conditions, metav1.Condition{Type: conditionWakeOnRequest,
+			Status: metav1.ConditionTrue, Reason: "DoormanRouted"})
+	}
+	autoResume := func(w *v1alpha1.ManagedWorkload) {
+		w.Spec.IdlePolicy = &v1alpha1.IdlePolicySpec{AutoResume: true}
+	}
+	starts := time.Date(2026, 3, 30, 16, 0, 0, 0, time.UTC)
+	tests := []struct {
+		name        string
+		outlook     forecast.Outlook
+		workload    func(*v1alpha1.ManagedWorkload)
+		wantReason  string
+		wantMessage string
+	}{
+		{name: "acting with autoResume", outlook: forecast.Outlook{Acting: true, Confidence: 82, Threshold: 75},
+			workload: autoResume, wantReason: v1alpha1.ForecastActing,
+			wantMessage: "acting: its forecasts of the last day were 82% right, and it acts from 75%, so it holds " +
+				"off pauses before hours it expects to be busy and wakes the workload 15 minutes ahead of them"},
+		{name: "acting without autoResume", outlook: forecast.Outlook{Acting: true, Confidence: 82, Threshold: 75},
+			wantReason: v1alpha1.ForecastActing,
+			wantMessage: "acting: its forecasts of the last day were 82% right, and it acts from 75%, so it holds " +
+				"off pauses before hours it expects to be busy; turn on autoResume to have it wake the workload " +
+				"ahead of them too"},
+		{name: "a new forecast", outlook: forecast.Outlook{Waiting: forecast.WaitingForDay, HoursOfDaySeen: 14,
+			HoursOfWeekSeen: 14},
+			wantReason:  v1alpha1.ForecastObserving,
+			wantMessage: "learning: it has seen 14 of the 24 hours of the day, and can't act until it has seen them all"},
+		{name: "its first week", outlook: forecast.Outlook{Waiting: forecast.WaitingForDay, HoursOfDaySeen: 24,
+			HoursOfWeekSeen: 100, StartsActing: starts},
+			wantReason: v1alpha1.ForecastObserving,
+			wantMessage: "learning: it has seen 100 of the 168 hours of the week, and scores its forecast of an hour " +
+				"from the second time it sees it; expected to start acting around Mon 30 Mar 16:00 UTC, if the " +
+				"coming days repeat the last week"},
+		{name: "needs another weekend", outlook: forecast.Outlook{Waiting: forecast.WaitingForConfidence,
+			WeekSeen: true, Confidence: 40, Threshold: 75, StartsActing: starts},
+			wantReason: v1alpha1.ForecastEarningConfidence,
+			wantMessage: "learning: its forecasts of the last day were 40% right, and it acts from 75%; expected to " +
+				"start acting around Mon 30 Mar 16:00 UTC, if the coming days repeat the last week"},
+		{name: "too irregular to act", outlook: forecast.Outlook{Waiting: forecast.WaitingForConfidence,
+			WeekSeen: true, Confidence: 30, Threshold: 85},
+			wantReason: v1alpha1.ForecastEarningConfidence,
+			wantMessage: "learning: its forecasts of the last day were 30% right, and it acts from 85%; not expected " +
+				"to start within four weeks if the coming days repeat the last week"},
+		{name: "relearning", outlook: forecast.Outlook{Waiting: forecast.WaitingToRelearn, Confidence: 0,
+			Threshold: 75, StartsActing: starts},
+			wantReason: v1alpha1.ForecastRelearning,
+			wantMessage: "relearning: demand stopped matching what it had learned, so it's earning its confidence " +
+				"again; its forecasts of the last day were 0% right, and it acts from 75%; expected to start acting " +
+				"around Mon 30 Mar 16:00 UTC, if the coming days repeat the last week"},
+		{name: "paused without the doorman", outlook: forecast.Outlook{Waiting: forecast.WaitingForDay},
+			workload: paused, wantReason: v1alpha1.ForecastNotLearning,
+			wantMessage: "not learning: the workload is paused without wake on request, so a request can't wake it " +
+				"and its demand can't be seen; the forecast learns while it's awake, and from every hour with wake " +
+				"on request"},
+		{name: "paused behind the doorman learns", outlook: forecast.Outlook{Waiting: forecast.WaitingForDay,
+			HoursOfDaySeen: 20}, workload: routed, wantReason: v1alpha1.ForecastObserving,
+			wantMessage: "learning: it has seen 20 of the 24 hours of the day, and can't act until it has seen them all"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			workload := forecastWorkload()
+			workload.Spec.IdlePolicy = nil
+			if tt.workload != nil {
+				tt.workload(workload)
+			}
+			reason, message := forecastOutlook(workload, tt.outlook)
+			assert.Equal(t, tt.wantReason, reason)
+			assert.Equal(t, tt.wantMessage, message)
+		})
+	}
 }
 
 func TestEngineRegistry_ForgetsADeletedWorkload(t *testing.T) {
@@ -298,6 +488,33 @@ func TestForecast_ExportFailureKeepsTheLastSavedState(t *testing.T) {
 
 	assert.Equal(t, "saved", workload.Status.Prediction.State)
 	assert.Equal(t, "Active", workload.Status.Prediction.DailyPhase)
+}
+
+// Status says which zone the forecast counts hours in, so kubectl hybernate
+// status can show it without access to the operator's flags.
+func TestPredictionStatus_NamesTheTimeZone(t *testing.T) {
+	london, err := time.LoadLocation("Europe/London")
+	require.NoError(t, err)
+	tests := []struct {
+		name string
+		zone *time.Location
+		want string
+	}{
+		{name: "the operator's --timezone", zone: london, want: "Europe/London"},
+		{name: "the default", want: "UTC"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			workload := automationWorkload(v1alpha1.PhaseRunning)
+			engine := &stubForecaster{phase: forecast.Observing}
+			r := newAutomationReconciler(t, workload, engine, automationOpts{})
+			r.Timezone = tt.zone
+
+			r.updatePredictionStatus(context.Background(), workload, engine)
+
+			assert.Equal(t, tt.want, workload.Status.Prediction.TimeZone)
+		})
+	}
 }
 
 // TestForecastState_IsEncodedOnlyOnceItChanges: encoding the state

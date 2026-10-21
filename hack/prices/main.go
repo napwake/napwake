@@ -14,10 +14,10 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
-// Command prices regenerates the on-demand list prices Hybernate prices
-// nodes with, from the instance data published by instances.vantage.sh
-// (github.com/vantage-sh/ec2instances.info, MIT), which collects each
-// provider's public price lists.
+// Command prices regenerates the list prices Hybernate prices nodes with,
+// on-demand and spot, from the instance data published by
+// instances.vantage.sh (github.com/vantage-sh/ec2instances.info, MIT), which
+// collects each provider's public price lists.
 //
 //	go run ./hack/prices internal/cost/prices.csv.gz
 package main
@@ -44,12 +44,16 @@ import (
 type source struct {
 	provider string
 	url      string
+	// spotKey is the field holding the Linux spot price. AWS's moves with
+	// demand, so it's the average across the region's zones when the table
+	// is generated; Azure and Google Cloud publish one per region.
+	spotKey string
 }
 
 var sources = []source{
-	{"aws", "https://instances.vantage.sh/instances.json"},
-	{"azure", "https://instances.vantage.sh/azure/instances.json"},
-	{"gcp", "https://instances.vantage.sh/gcp/instances.json"},
+	{"aws", "https://instances.vantage.sh/instances.json", "spot_avg"},
+	{"azure", "https://instances.vantage.sh/azure/instances.json", "spot_min"},
+	{"gcp", "https://instances.vantage.sh/gcp/instances.json", "spot"},
 }
 
 // instance is the part of each provider's records the table needs. AWS and
@@ -64,9 +68,7 @@ type instance struct {
 }
 
 type osPrices struct {
-	Linux struct {
-		OnDemand json.RawMessage `json:"ondemand"`
-	} `json:"linux"`
+	Linux map[string]json.RawMessage `json:"linux"`
 }
 
 type row struct {
@@ -75,16 +77,20 @@ type row struct {
 	prices                 []regionPrice
 }
 
+// regionPrice is an instance type's hourly price in a region, on-demand and
+// spot, which is zero where the provider publishes none.
 type regionPrice struct {
-	region string
-	price  float64
+	region         string
+	onDemand, spot float64
 }
 
 // A feed that's emptied or renamed would otherwise drop every price for its
-// provider without an error, and every node there would go unpriced.
+// provider without an error, and every node there would go unpriced; one
+// whose spot field is renamed would price every spot node on-demand.
 const (
-	minRows     = 100
-	maxDropRate = 0.2
+	minRows      = 100
+	maxDropRate  = 0.2
+	minSpotShare = 0.5
 )
 
 func main() {
@@ -106,7 +112,7 @@ func run(out string) error {
 			return fmt.Errorf("fetching %s prices: %w", s.provider, err)
 		}
 		for _, in := range instances {
-			if r, ok := rowFor(s.provider, in); ok {
+			if r, ok := rowFor(s, in); ok {
 				rows = append(rows, r)
 			}
 		}
@@ -122,16 +128,6 @@ func run(out string) error {
 		return strings.Compare(a.provider+" "+a.instanceType, b.provider+" "+b.instanceType)
 	})
 
-	var csv bytes.Buffer
-	csv.WriteString("# provider,instance type,vCPUs,memory GiB,region=on-demand USD per hour...\n")
-	for _, r := range rows {
-		fmt.Fprintf(&csv, "%s,%s,%s,%s", r.provider, r.instanceType, number(r.vcpu), number(r.memoryGiB))
-		for _, p := range r.prices {
-			fmt.Fprintf(&csv, ",%s=%s", p.region, number(p.price))
-		}
-		csv.WriteByte('\n')
-	}
-
 	var gz bytes.Buffer
 	// No name or modification time in the header, so the same prices
 	// always produce the same file.
@@ -139,7 +135,7 @@ func run(out string) error {
 	if err != nil {
 		return fmt.Errorf("compressing prices: %w", err)
 	}
-	if _, err := w.Write(csv.Bytes()); err != nil {
+	if _, err := w.Write(table(rows)); err != nil {
 		return fmt.Errorf("compressing prices: %w", err)
 	}
 	if err := w.Close(); err != nil {
@@ -152,17 +148,47 @@ func run(out string) error {
 	return nil
 }
 
-func countsOf(rows []row) map[string]int {
-	counts := make(map[string]int)
+// table writes the rows as internal/cost reads them: a line per instance
+// type, then each region's on-demand price, and its spot price after a
+// slash where there is one.
+func table(rows []row) []byte {
+	var csv bytes.Buffer
+	csv.WriteString("# provider,instance type,vCPUs,memory GiB,region=on-demand[/spot] USD per hour...\n")
 	for _, r := range rows {
-		counts[r.provider]++
+		fmt.Fprintf(&csv, "%s,%s,%s,%s", r.provider, r.instanceType, number(r.vcpu), number(r.memoryGiB))
+		for _, p := range r.prices {
+			fmt.Fprintf(&csv, ",%s=%s", p.region, number(p.onDemand))
+			if p.spot > 0 {
+				fmt.Fprintf(&csv, "/%s", number(p.spot))
+			}
+		}
+		csv.WriteByte('\n')
 	}
-	return counts
+	return csv.Bytes()
+}
+
+// counts are how many instance types a provider has in a table, and how
+// many of those have a spot price in at least one region.
+type counts struct {
+	types, spot int
+}
+
+func countsOf(rows []row) map[string]counts {
+	out := make(map[string]counts)
+	for _, r := range rows {
+		c := out[r.provider]
+		c.types++
+		if slices.ContainsFunc(r.prices, func(p regionPrice) bool { return p.spot > 0 }) {
+			c.spot++
+		}
+		out[r.provider] = c
+	}
+	return out
 }
 
 // countsIn counts the instance types per provider in the committed table at
 // path; there's none to compare against the first time it's written.
-func countsIn(path string) (map[string]int, error) {
+func countsIn(path string) (map[string]counts, error) {
 	f, err := os.Open(path)
 	if errors.Is(err, fs.ErrNotExist) {
 		return nil, nil
@@ -175,15 +201,15 @@ func countsIn(path string) (map[string]int, error) {
 	if err != nil {
 		return nil, fmt.Errorf("decompressing %s: %w", path, err)
 	}
-	counts, err := countRows(gz)
+	c, err := countRows(gz)
 	if err != nil {
 		return nil, fmt.Errorf("reading %s: %w", path, err)
 	}
-	return counts, nil
+	return c, nil
 }
 
-func countRows(r io.Reader) (map[string]int, error) {
-	counts := make(map[string]int)
+func countRows(r io.Reader) (map[string]counts, error) {
+	out := make(map[string]counts)
 	scanner := bufio.NewScanner(r)
 	scanner.Buffer(nil, 1<<20)
 	for scanner.Scan() {
@@ -191,25 +217,37 @@ func countRows(r io.Reader) (map[string]int, error) {
 		if line == "" || strings.HasPrefix(line, "#") {
 			continue
 		}
-		provider, _, _ := strings.Cut(line, ",")
-		counts[provider]++
+		provider, rest, _ := strings.Cut(line, ",")
+		c := out[provider]
+		c.types++
+		if strings.Contains(rest, "/") {
+			c.spot++
+		}
+		out[provider] = c
 	}
-	return counts, scanner.Err()
+	return out, scanner.Err()
 }
 
 // checkCounts fails if any provider has fewer than minRows instance types,
-// or lost more than maxDropRate of those in the previous table.
-func checkCounts(previous, current map[string]int) error {
+// or spot prices for fewer than minSpotShare of them, or lost more than
+// maxDropRate of either since the previous table.
+func checkCounts(previous, current map[string]counts) error {
 	var errs []error
 	for _, s := range sources {
 		n, was := current[s.provider], previous[s.provider]
 		switch {
-		case n < minRows:
+		case n.types < minRows:
 			errs = append(errs, fmt.Errorf("%s has %d instance types, fewer than %d; is %s still the feed?",
-				s.provider, n, minRows, s.url))
-		case float64(n) < float64(was)*(1-maxDropRate):
+				s.provider, n.types, minRows, s.url))
+		case float64(n.types) < float64(was.types)*(1-maxDropRate):
 			errs = append(errs, fmt.Errorf("%s has %d instance types, down from %d; is %s still the feed?",
-				s.provider, n, was, s.url))
+				s.provider, n.types, was.types, s.url))
+		case float64(n.spot) < float64(n.types)*minSpotShare:
+			errs = append(errs, fmt.Errorf("%s has spot prices for %d of %d instance types; is %q still the spot "+
+				"field of %s?", s.provider, n.spot, n.types, s.spotKey, s.url))
+		case float64(n.spot) < float64(was.spot)*(1-maxDropRate):
+			errs = append(errs, fmt.Errorf("%s has spot prices for %d instance types, down from %d; is %q still "+
+				"the spot field of %s?", s.provider, n.spot, was.spot, s.spotKey, s.url))
 		}
 	}
 	return errors.Join(errs...)
@@ -241,7 +279,7 @@ func fetch(url string) ([]instance, error) {
 
 var space = regexp.MustCompile(`\s+`)
 
-func rowFor(provider string, in instance) (row, bool) {
+func rowFor(s source, in instance) (row, bool) {
 	vcpu, _ := in.VCPU.Float64()
 	if vcpu == 0 {
 		vcpu, _ = in.VCPULower.Float64()
@@ -250,33 +288,46 @@ func rowFor(provider string, in instance) (row, bool) {
 	if vcpu <= 0 || memory <= 0 {
 		return row{}, false
 	}
-	r := row{provider: provider, instanceType: strings.ToLower(in.InstanceType), vcpu: vcpu, memoryGiB: memory}
+	r := row{provider: s.provider, instanceType: strings.ToLower(in.InstanceType), vcpu: vcpu, memoryGiB: memory}
 	for region, raw := range in.Pricing {
 		var p osPrices
 		if json.Unmarshal(raw, &p) != nil {
 			continue
 		}
-		price, err := strconv.ParseFloat(strings.Trim(string(p.Linux.OnDemand), `"`), 64)
-		if err != nil || price <= 0 {
+		onDemand := hourly(p.Linux["ondemand"])
+		if onDemand <= 0 {
 			continue
 		}
 		// Azure's records key regions by a slug of their display name;
 		// nodes are labelled with the ARM name, which is that display name
 		// lowercased without spaces ("East US 2" is eastus2).
-		if provider == "azure" {
+		if s.provider == "azure" {
 			name, ok := in.Regions[region]
 			if !ok {
 				continue
 			}
 			region = strings.ToLower(space.ReplaceAllString(name, ""))
 		}
-		r.prices = append(r.prices, regionPrice{region: region, price: price})
+		// Spot is never billed above on-demand, so a feed's figure over it
+		// is a stale reading, not a price anyone pays.
+		spot := max(min(hourly(p.Linux[s.spotKey]), onDemand), 0)
+		r.prices = append(r.prices, regionPrice{region: region, onDemand: onDemand, spot: spot})
 	}
 	if len(r.prices) == 0 {
 		return row{}, false
 	}
 	slices.SortFunc(r.prices, func(a, b regionPrice) int { return strings.Compare(a.region, b.region) })
 	return r, true
+}
+
+// hourly reads a price the feeds write as a string or a number, or 0 for
+// one that's missing or isn't a number.
+func hourly(raw json.RawMessage) float64 {
+	price, err := strconv.ParseFloat(strings.Trim(string(raw), `"`), 64)
+	if err != nil {
+		return 0
+	}
+	return price
 }
 
 func number(f float64) string {

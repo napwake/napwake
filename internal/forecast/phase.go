@@ -116,6 +116,28 @@ type Engine struct {
 	// or last saw its patterns break.
 	coverage weekSlots
 
+	// recent is the demand last observed in each hour of the week, where
+	// recentSeen says one was. Unlike coverage, it outlasts a regime change:
+	// it's what the demand was, not evidence for what was learned. An hour
+	// of the week not yet seen is learned the first time it is, not scored,
+	// and isn't acted on: there's nothing to forecast it from.
+	recent     [WeeklySeason]float32
+	recentSeen weekSlots
+
+	// held is the change to each hour of the week's weekly component that
+	// an observation breaking the learned pattern would have made, held
+	// until the same hour the next day shows whether the break lasted; zero
+	// where none is held. Learned at once, a weekday holiday had the same
+	// weekday a week later forecast quieter than it is.
+	held [WeeklySeason]float64
+
+	// doubting says the last hour observed was far quieter than forecast,
+	// an anomaly, so the day may be a holiday: the forecast's expectations
+	// aren't acted on until an hour goes as forecast or a regime change
+	// discards them. Held to them, it kept a workload awake through a
+	// holiday's morning, and woke it again once paused.
+	doubting bool
+
 	// phaseBeforeAnomalies is the highest phase held since the oldest
 	// anomaly still in the anomaly window: what a regime change demotes
 	// from, so that the anomalies leading up to it, which may already have
@@ -202,19 +224,38 @@ func (e *Engine) Observe(actual float64, now time.Time) (float64, error) {
 		e.lastHour = 0
 	}
 	steps := e.hoursSinceLast(t)
+	slot := weeklyIndex(t)
+	how := fitFirst
+	if e.recentSeen.has(slot) {
+		how = fitAll
+	}
+	afterBreak := e.relearning() && !e.Scorer.Ready(dailyWindow)
 	forecast, fit := actual, actual
 	e.lastAnomaly = false
 	if e.Model.n > 0 {
 		forecast = e.Model.forecast(t, steps)
+	}
+	if how == fitAll {
 		e.Scorer.Record(forecast, actual)
 		var learn float64
-		e.lastAnomaly, learn = e.Anomaly.Record(forecast, actual, e.floor(), weeklyIndex(t))
+		e.lastAnomaly, learn = e.Anomaly.Record(forecast, actual, e.floor(), slot)
 		fit = math.Max(0, forecast+learn)
+		if e.lastAnomaly || afterBreak {
+			how = fitHoldWeekly
+		}
 	}
-	e.Model.update(fit, t, steps)
+	change := e.Model.update(fit, t, steps, how)
+	e.settleHeld(slot, steps, how != fitFirst, actual-forecast)
+	e.held[slot] = 0
+	if how == fitHoldWeekly {
+		e.held[slot] = change
+	}
+	e.doubting = e.lastAnomaly && actual < forecast
 	e.lastHour = hourStart(t)
 	e.updateScale(actual)
-	e.coverage.set(weeklyIndex(t), true)
+	e.coverage.set(slot, true)
+	e.recent[slot] = float32(actual)
+	e.recentSeen.set(slot, true)
 	e.advancePhase()
 
 	if !e.Model.finite() || !isFinite(e.scale) {
@@ -223,6 +264,24 @@ func (e *Engine) Observe(actual float64, now time.Time) (float64, error) {
 		return 0, fmt.Errorf("%w: %g made the model diverge", ErrInvalidObservation, actual)
 	}
 	return forecast, nil
+}
+
+// settleHeld settles the weekly change held for the same hour the day
+// before, now that this hour, the hour of the week slot, has been seen: it's
+// made if this hour broke from its forecast, err, the same way and by at
+// least the floor, so the break lasted, and dropped if it didn't. A held
+// change whose next day's hour went unobserved, steps hours since the last
+// observation, can't be settled and is dropped. scored says this hour's
+// forecast came from having seen it before.
+func (e *Engine) settleHeld(slot, steps int, scored bool, err float64) {
+	for back := 1; back < min(steps, WeeklySeason); back++ {
+		e.held[(slot-DailySeason-back+2*WeeklySeason)%WeeklySeason] = 0
+	}
+	yesterday := (slot - DailySeason + WeeklySeason) % WeeklySeason
+	if change := e.held[yesterday]; scored && change*err > 0 && math.Abs(err) >= e.floor() {
+		e.Model.shiftWeekly(yesterday, change)
+	}
+	e.held[yesterday] = 0
 }
 
 func (e *Engine) updateScale(actual float64) {
@@ -238,12 +297,17 @@ func (e *Engine) floor() float64 {
 }
 
 // Predict returns the demand forecast for the hour h hours after the one
-// containing now. It is 0 until the forecast drives decisions.
+// containing now. It is 0 until the forecast drives decisions, while it
+// doubts them after an hour far quieter than forecast, and for an hour of
+// the week it hasn't seen.
 func (e *Engine) Predict(h int, now time.Time) float64 {
-	if !e.Active() {
+	if !e.Active() || e.doubting {
 		return 0
 	}
 	t := e.local(now).Add(time.Duration(h) * time.Hour)
+	if !e.recentSeen.has(weeklyIndex(t)) {
+		return 0
+	}
 	return e.Model.forecast(t, max(0, e.hoursSinceLast(t)))
 }
 
@@ -275,11 +339,7 @@ func (e *Engine) hoursOfDayCovered() int {
 }
 
 func (e *Engine) coveredWeek() bool {
-	n := 0
-	for _, word := range e.coverage {
-		n += bits.OnesCount64(word)
-	}
-	return n == WeeklySeason
+	return e.coverage.count() == WeeklySeason
 }
 
 func (e *Engine) advancePhase() {
@@ -295,7 +355,7 @@ func (e *Engine) advancePhase() {
 
 	switch e.Phase {
 	case Observing:
-		if e.coveredDay() {
+		if e.coveredDay() && e.Scorer.Ready(dailyWindow) {
 			e.Phase = DailySuggesting
 		}
 

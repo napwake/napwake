@@ -39,6 +39,7 @@ import (
 	v1alpha1 "github.com/okedeji/hybernate/api/v1alpha1"
 	"github.com/okedeji/hybernate/internal/cost"
 	"github.com/okedeji/hybernate/internal/forecast"
+	"github.com/okedeji/hybernate/internal/human"
 	opmetrics "github.com/okedeji/hybernate/internal/metrics"
 	"github.com/okedeji/hybernate/internal/signal"
 )
@@ -201,7 +202,7 @@ func (r *Reconciler) observeActivity(ctx context.Context, workload *v1alpha1.Man
 
 	if load.err != nil {
 		obs.cpuErr = load.err
-	} else if load.percent > float64(cpuThresholdFor(workload)) {
+	} else if forecast.Busy(load.percent, cpuThresholdFor(workload)) {
 		recordActivity(status, now, v1alpha1.ActivitySourceCPU)
 	}
 
@@ -613,7 +614,7 @@ func (r *Reconciler) reconcileIdleClock(ctx context.Context, workload *v1alpha1.
 	pauseAt := workload.Status.Activity.PauseAt.Time
 
 	if obs.cpuErr != nil {
-		return r.reportMetricsUnavailable(ctx, workload, obs.cpuErr)
+		return r.reportMetricsUnavailable(ctx, workload, target, obs.cpuErr)
 	}
 	r.setCondition(workload, conditionMetricsAvailable, metav1.ConditionTrue, "MetricsReported", "")
 
@@ -651,7 +652,7 @@ func (r *Reconciler) reconcileIdleClock(ctx context.Context, workload *v1alpha1.
 		return held, err
 	}
 
-	idleFor := now.Sub(workload.Status.Activity.LastActivityTime.Time).Round(time.Minute)
+	idleFor := now.Sub(workload.Status.Activity.LastActivityTime.Time)
 
 	if workload.Status.Phase != v1alpha1.PhaseIdle {
 		if workload.Spec.DryRun {
@@ -664,8 +665,12 @@ func (r *Reconciler) reconcileIdleClock(ctx context.Context, workload *v1alpha1.
 		if workload.Spec.DryRun {
 			opmetrics.DryrunActions.WithLabelValues("idle_pause").Inc()
 		}
+		outcome := "pausing"
+		if workload.Spec.DryRun {
+			outcome = "would have paused"
+		}
 		r.emitEvent(workload, workload.Spec.DryRun, "Normal", ReasonIdleDetected, actionEvaluateIdle,
-			"no activity for %s, last seen from %s; pause", idleFor, workload.Status.Activity.LastActivitySource)
+			"idle for %s, %s; %s", human.Duration(idleFor), sinceActivity(workload.Status.Activity.LastActivitySource), outcome)
 	}
 
 	if workload.Spec.DryRun {
@@ -675,6 +680,33 @@ func (r *Reconciler) reconcileIdleClock(ctx context.Context, workload *v1alpha1.
 		return &ctrl.Result{RequeueAfter: until.Sub(now)}, nil
 	}
 	return r.handlePause(ctx, workload, target, nil)
+}
+
+// sinceActivity says what a workload has been idle since, from what last
+// restarted its clock.
+func sinceActivity(source v1alpha1.ActivitySource) string {
+	switch source {
+	case v1alpha1.ActivitySourceCreated:
+		return "since Hybernate started managing it"
+	case v1alpha1.ActivitySourceWoke:
+		return "since it woke"
+	case v1alpha1.ActivitySourceRequest:
+		return "since a request woke it"
+	case v1alpha1.ActivitySourceCPU:
+		return "since its CPU use was last above the activity threshold"
+	case v1alpha1.ActivitySourceRollout:
+		return "since its last rollout"
+	case v1alpha1.ActivitySourceAnnotation:
+		return "since its last activity annotation"
+	case v1alpha1.ActivitySourcePrometheus:
+		return "since a Prometheus activity query last found activity"
+	case v1alpha1.ActivitySourceUnobserved:
+		return "since Hybernate could last watch it"
+	case v1alpha1.ActivitySourceScaledUp:
+		return "since it was scaled up outside Hybernate"
+	default:
+		return fmt.Sprintf("since its last activity (%s)", source)
+	}
 }
 
 // activeSinceClockRanOut reports whether there has been activity since the
@@ -705,7 +737,7 @@ func (r *Reconciler) reportActivityResumed(workload *v1alpha1.ManagedWorkload, s
 	}
 	r.emitEvent(workload, true, "Normal", ReasonActivityResumed, actionEvaluateIdle,
 		"activity resumed (%s): would have slept %s, freeing %s; %s",
-		source, roundedDuration(slept), cost.FormatDollars(freed), dryRunSummary(workload.Status.DryRun))
+		source, human.Duration(slept), cost.FormatDollars(freed), dryRunSummary(workload.Status.DryRun))
 }
 
 // reportIdleVetoed holds back a pause because the forecast expects demand
@@ -717,6 +749,9 @@ func (r *Reconciler) reportIdleVetoed(ctx context.Context, workload *v1alpha1.Ma
 	msg := fmt.Sprintf("idle, but the forecast expects demand at %.0f%% of requests in the hour from %s; not pausing yet",
 		predicted, hour.UTC().Format("15:04 UTC"))
 	r.setCondition(workload, conditionIdleVetoed, metav1.ConditionTrue, "ForecastExpectsDemand", msg)
+	if a := workload.Status.Activity; a != nil {
+		a.ForecastBusyFrom = &metav1.Time{Time: hour.UTC()}
+	}
 	if began {
 		if err := r.Status().Update(ctx, workload); err != nil {
 			return nil, fmt.Errorf("recording the forecast's veto: %w", err)
@@ -728,24 +763,20 @@ func (r *Reconciler) reportIdleVetoed(ctx context.Context, workload *v1alpha1.Ma
 
 func (r *Reconciler) clearIdleVeto(workload *v1alpha1.ManagedWorkload) {
 	r.clearCondition(workload, conditionIdleVetoed, "NotVetoed")
+	if a := workload.Status.Activity; a != nil {
+		a.ForecastBusyFrom = nil
+	}
 }
 
 // forecastVeto defers a pause while a confident forecast expects demand
-// above the activity threshold in the hour under way or the next. It
-// covers every hour autoResume would wake the workload for, so a workload
-// is never paused only to be woken straight back. It reports the busiest
-// of the two hours, and when it begins.
+// above the activity threshold in the hour under way or the next, by
+// forecast.HoldPause. It reports the busiest of the two hours, and when it
+// begins.
 func (r *Reconciler) forecastVeto(workload *v1alpha1.ManagedWorkload, engine forecaster) (vetoed bool, predicted float64, hour time.Time) {
-	if engine == nil || engine.GetPhase() < forecast.DailyActive {
+	if engine == nil {
 		return false, 0, time.Time{}
 	}
-	now := r.now()
-	hour = r.hourStart(now)
-	predicted = engine.Predict(0, now)
-	if next := engine.Predict(1, now); next > predicted {
-		predicted, hour = next, hour.Add(time.Hour)
-	}
-	return predicted >= float64(cpuThresholdFor(workload)), predicted, hour
+	return forecast.HoldPause(engine, r.now(), r.Timezone, cpuThresholdFor(workload))
 }
 
 // nextCheck is when the clock next needs evaluating: at the next CPU poll,

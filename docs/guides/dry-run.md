@@ -54,7 +54,7 @@ spec:
   idlePolicy:
     idleAfter: 1h
   prediction:
-    confidence: 75
+    mode: balanced
   dryRun: true
 ```
 
@@ -80,7 +80,20 @@ The operator runs its full evaluation pipeline:
 
 ### What Dry Run Measured
 
-Hybernate keeps a running summary of the pauses it would have made. A would-be pause starts when the activity clock runs out, and ends at the next activity, which is when a paused workload would have been woken. It also ends when Hybernate stops measuring it: the workload is scaled to zero outside Hybernate, labelled `hybernate.io/ignore`, or its namespace becomes protected; see [When Hybernate Lets Go](pause.md#when-hybernate-lets-go). It's counted up to that moment:
+Hybernate keeps a running summary of the pauses it would have made. A would-be pause starts when the activity clock runs out, and ends at the next activity, which is when a paused workload would have been woken. It also ends when Hybernate stops measuring it: the workload is scaled to zero outside Hybernate, labelled `hybernate.io/ignore`, or its namespace becomes protected; see [When Hybernate Lets Go](pause.md#when-hybernate-lets-go). It's counted up to that moment.
+
+What it would have freed is in the list of ManagedWorkloads:
+
+```bash
+kubectl get managedworkloads -n staging
+```
+
+```
+NAME     PHASE   FREED   SAVED   WOULD FREE   AGE
+my-api   Idle    $0.00   $0.00   $7.50        4d
+```
+
+[`kubectl hybernate status`](../getting-started/kubectl-plugin.md#see-what-hybernate-is-doing) leads with it too, in its summary and its `WOULD FREE` column. The whole summary is in `status.dryRun`:
 
 ```bash
 kubectl get managedworkload my-api -n staging -o jsonpath='{.status.dryRun}'
@@ -97,7 +110,7 @@ estimatedFreed: $7.50
 
 `freedCPUHours` and `freedMemoryHours` are the vCPU-hours and GiB-hours the workload's replicas requested during `slept`: what the would-be pauses would have freed, kept to a billionth of an hour. `estimatedFreed` is those hours priced at the workload's [cost rates](../concepts/cost-tracking.md#prices), for display; the hours are the record. It's what pausing would free, not what it would save: freed capacity becomes money only once nodes go, which Hybernate [measures](../concepts/cost-tracking.md#how-saved-is-measured) for real pauses.
 
-`slept` counts finished would-be pauses. While the phase is `Idle`, the one under way, which began at `status.lastTransitionTime`, is added when it ends; `resources` is what the workload ran when it began.
+`slept` and the freed hours count finished would-be pauses. While the phase is `Idle`, the one under way, which began at `status.lastTransitionTime`, is added to them when it ends; `resources` is what the workload ran when it began. `estimatedFreed` counts it as it goes, up to the last status write, at most 5 minutes ago, so a workload idle all weekend shows what it would have freed before Monday's activity ends the pause.
 
 The summary starts when dry-run does, and is removed when dry-run ends: once Hybernate is pausing, `status.cost` records what it actually frees.
 
@@ -122,8 +135,8 @@ kubectl describe managedworkload my-api -n staging
 When the clock runs out, and when activity ends the would-be pause:
 
 ```
-[dry-run] my-api: no activity for 1h0m0s, last seen from cpu; pause
-[dry-run] my-api: activity resumed (cpu): would have slept 3h12m, freeing $0.25; since Oct 1: would have paused 4 times, slept 96h12m, freeing $7.50
+[dry-run] my-api: idle for 1 hour, since its CPU use was last above the activity threshold; would have paused
+[dry-run] my-api: activity resumed (cpu): would have slept 3 hours 12 minutes, freeing $0.25; since Oct 1: would have paused 4 times, slept 4 days, freeing $7.50
 ```
 
 The `[dry-run]` prefix marks the decisions dry-run holds back: `IdleDetected`, `ActivityResumed`, `IdleVetoed`, `HeldByDependents`, `DependencyCycle`, and the `PauseRequested` event for a pause request it doesn't act on. Events about what really happens, such as a wake, a forecast update, or a metrics problem, have no prefix.
@@ -135,7 +148,7 @@ In dry-run the phase goes `Running` → `Idle` when the clock runs out, or a pau
 ## Recommended Workflow
 
 1. **Opt in with `hybernate.io/dry-run: "true"`**. Let it measure for a few days, across a weekend if the workload is used on weekdays.
-2. **Review what it measured**. `status.dryRun` or `kubectl hybernate scan` says how often it would have paused, for how long, and what that would have freed; the events say when.
+2. **Review what it measured**. `kubectl hybernate status` leads with what it would have freed, and `kubectl hybernate scan` adds how often it would have paused and for how long; the events say when.
 3. **End dry run**:
 
     ```bash

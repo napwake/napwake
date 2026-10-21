@@ -69,6 +69,9 @@ var ErrNoPrometheus = errors.New("no Prometheus found")
 type Prometheus struct {
 	// Source says which Prometheus it is, for the report.
 	Source string
+	// Others are the other Prometheus Services FindPrometheus found, which
+	// it didn't pick, by namespace/name.
+	Others []string
 	// Selector narrows every query, as to one cluster of a store that holds
 	// many.
 	Selector Selector
@@ -93,6 +96,9 @@ const (
 	schemeHTTP  = "http"
 	schemeHTTPS = "https"
 )
+
+// statusSuccess is the status a Prometheus API answers a query it ran with.
+const statusSuccess = "success"
 
 // ProxyForbiddenError means the user may not reach a Prometheus Service
 // through the API server's service proxy. It names the Service and port,
@@ -285,13 +291,25 @@ var prometheusNames = []string{"prometheus-operated", "kube-prometheus-stack-pro
 // maxCandidates bounds how many Prometheus Services are tried in turn.
 const maxCandidates = 5
 
+// How much of the CPU history a replay reads a Prometheus has, which picks
+// between several.
+const (
+	noCPUHistory = iota
+	someCPUHistory
+	wholeCPUHistory
+)
+
 // FindPrometheus looks for a Prometheus Service and returns a reader for the
-// best one that answers like a Prometheus API, through the service proxy.
-// It looks across the cluster, or, when the user can't list Services
-// everywhere, in the usual monitoring namespaces and the scanned ones. When
-// none answers, the error is why the best one didn't, or, if any refused the
+// one to replay history from, through the service proxy. It looks across
+// the cluster, or, when the user can't list Services everywhere, in the
+// usual monitoring namespaces and the scanned ones. It takes the first, in
+// prometheusServices' order, that has the CPU history the replay reads
+// from since, matching selector; failing that, the first with any of it;
+// failing that, the first that answers like a Prometheus API. When none
+// answers, the error is why the best one didn't, or, if any refused the
 // user, that, which says what access to ask for.
-func FindPrometheus(ctx context.Context, c client.Client, restClient rest.Interface, namespaces []string) (*Prometheus, error) {
+func FindPrometheus(ctx context.Context, c client.Client, restClient rest.Interface, namespaces []string,
+	since time.Time, selector Selector) (*Prometheus, error) {
 	candidates, err := prometheusServices(ctx, c, namespaces)
 	if err != nil {
 		return nil, err
@@ -299,24 +317,102 @@ func FindPrometheus(ctx context.Context, c client.Client, restClient rest.Interf
 	if len(candidates) == 0 {
 		return nil, ErrNoPrometheus
 	}
+	var best *Prometheus
+	bestHistory := -1
 	var first error
 	var forbidden *ProxyForbiddenError
 	for _, svc := range candidates[:min(len(candidates), maxCandidates)] {
 		scheme, port := servicePort(&svc)
 		p := NewPrometheusProxy(restClient, svc.Namespace, svc.Name, scheme, port)
-		err := p.Check(ctx)
-		if err == nil {
-			return p, nil
+		p.Selector = selector
+		if err := p.Check(ctx); err != nil {
+			first = cmp.Or(first, err)
+			if forbidden == nil {
+				errors.As(err, &forbidden)
+			}
+			continue
 		}
-		first = cmp.Or(first, err)
-		if forbidden == nil {
-			errors.As(err, &forbidden)
+		if history := p.cpuHistory(ctx, since); history > bestHistory {
+			best, bestHistory = p, history
+			if history == wholeCPUHistory {
+				break
+			}
 		}
+	}
+	if best != nil {
+		for _, svc := range candidates {
+			if name := svc.Namespace + "/" + svc.Name; name != best.Source {
+				best.Others = append(best.Others, name)
+			}
+		}
+		return best, nil
 	}
 	if forbidden != nil {
 		return nil, forbidden
 	}
 	return nil, first
+}
+
+// cpuHistory says how much of the history a replay from since needs the
+// Prometheus has of cAdvisor's container CPU: all of it, from since on;
+// some; or none. A query that fails counts as none, as this only picks
+// between Prometheus that answer.
+func (p *Prometheus) cpuHistory(ctx context.Context, since time.Time) int {
+	switch {
+	case p.hasCPU(ctx, since):
+		return wholeCPUHistory
+	case p.hasCPU(ctx, time.Time{}):
+		return someCPUHistory
+	}
+	return noCPUHistory
+}
+
+// hasCPU says the Prometheus has container CPU series at an instant, or
+// now for a zero one.
+func (p *Prometheus) hasCPU(ctx context.Context, at time.Time) bool {
+	ctx, cancel := context.WithTimeout(ctx, prometheusTimeout)
+	defer cancel()
+	matchers := append([]string{`container!=""`}, p.Selector...)
+	params := url.Values{"query": {fmt.Sprintf("count(container_cpu_usage_seconds_total{%s})",
+		strings.Join(matchers, ", "))}}
+	if !at.IsZero() {
+		params.Set("time", strconv.FormatInt(at.Unix(), 10))
+	}
+	body, err := p.get(ctx, "api/v1/query", params)
+	if err != nil {
+		return false
+	}
+	var resp struct {
+		Status string `json:"status"`
+		Data   struct {
+			Result []json.RawMessage `json:"result"`
+		} `json:"data"`
+	}
+	return json.Unmarshal(body, &resp) == nil && resp.Status == statusSuccess && len(resp.Data.Result) > 0
+}
+
+// PrometheusService reads from a Prometheus Service the user named, through
+// the API server's service proxy, on port, a port's name or number, or the
+// one servicePort picks without it.
+func PrometheusService(ctx context.Context, c client.Client, restClient rest.Interface, namespace, name,
+	port string) (*Prometheus, error) {
+	var svc corev1.Service
+	if err := c.Get(ctx, client.ObjectKey{Namespace: namespace, Name: name}, &svc); err != nil {
+		if apierrors.IsNotFound(err) {
+			return nil, fmt.Errorf("there's no Service %s/%s", namespace, name)
+		}
+		return nil, fmt.Errorf("reading Service %s/%s: %w", namespace, name, err)
+	}
+	if port == "" {
+		scheme, p := servicePort(&svc)
+		return NewPrometheusProxy(restClient, namespace, name, scheme, p), nil
+	}
+	for _, p := range svc.Spec.Ports {
+		if p.Name == port || strconv.Itoa(int(p.Port)) == port {
+			return NewPrometheusProxy(restClient, namespace, name, portScheme(p), portName(p)), nil
+		}
+	}
+	return nil, fmt.Errorf("there's no port %s on Service %s/%s", port, namespace, name)
 }
 
 // prometheusServices are the Services that look like Prometheus, best first.
@@ -441,7 +537,7 @@ func (p *Prometheus) Check(ctx context.Context) error {
 		return fmt.Errorf("can't query %s: %w", p.Source, err)
 	}
 	var resp rangeResponse
-	if err := json.Unmarshal(body, &resp); err != nil || resp.Status != "success" {
+	if err := json.Unmarshal(body, &resp); err != nil || resp.Status != statusSuccess {
 		return fmt.Errorf("%s didn't answer like a Prometheus API", p.Source)
 	}
 	return nil
@@ -571,7 +667,7 @@ func (p *Prometheus) namespaceCPU(ctx context.Context, namespace string, start, 
 	if err := json.Unmarshal(body, &resp); err != nil {
 		return nil, fmt.Errorf("reading %s's response: %w", p.Source, err)
 	}
-	if resp.Status != "success" {
+	if resp.Status != statusSuccess {
 		return nil, fmt.Errorf("%s: query failed: %s", p.Source, resp.Error)
 	}
 	type fromSource struct{ pod, container, source string }

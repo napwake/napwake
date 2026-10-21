@@ -503,7 +503,7 @@ func TestServer_WarnsOnceWhenRequestsAreNotServed(t *testing.T) {
 		}
 	}
 	require.Len(t, warnings, 1)
-	assert.Contains(t, warnings[0], "Service api")
+	assert.Contains(t, warnings[0], "Service api was closed after under a second")
 	assert.Contains(t, warnings[0], "maxWait")
 }
 
@@ -652,6 +652,57 @@ func TestServer_ProbesAndScrapesDoNotWake(t *testing.T) {
 			assert.Empty(t, lastRequest(t, c), "the workload stays paused")
 		})
 	}
+}
+
+// Google's load balancers send nothing to a backend failing their health
+// check, so told a paused workload is down, nothing would wake it: through
+// a forwarder, behind NEGs, or through a node port, behind instance groups.
+// Every other checker still hears the workload is down.
+func TestServer_TellsGooglesLoadBalancerItIsUp(t *testing.T) {
+	googleCheck := "GET /healthz HTTP/1.1\r\nHost: 10.0.0.1\r\nUser-Agent: GoogleHC/1.0\r\n\r\n"
+	kubeProbe := "GET /healthz HTTP/1.1\r\nHost: 10.0.0.1\r\nUser-Agent: kube-probe/1.31\r\n\r\n"
+	tests := []struct {
+		name      string
+		forwarded bool
+		request   string
+		want      int
+	}{
+		{name: "Google's check of a forwarder", forwarded: true, request: googleCheck, want: http.StatusOK},
+		{name: "another checker through a forwarder", forwarded: true, request: kubeProbe, want: http.StatusServiceUnavailable},
+		{name: "Google's check without a forwarder", request: googleCheck, want: http.StatusOK},
+		{name: "another checker", request: kubeProbe, want: http.StatusServiceUnavailable},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			port := freePort(t)
+			w := pausedWorkload("api", port, time.Minute)
+			w.Status.Doorman[0].Forwarded = tt.forwarded
+			_, c := startServer(t, w)
+			before := wakes(resultIgnored)
+
+			conn := dial(t, port)
+			send(t, conn, tt.request)
+			resp, _ := readResponse(t, conn)
+
+			assert.Equal(t, tt.want, resp.StatusCode)
+			require.Eventually(t, func() bool { return wakes(resultIgnored) == before+1 }, 5*time.Second, 10*time.Millisecond)
+			assert.Empty(t, lastRequest(t, c), "the workload stays paused")
+		})
+	}
+}
+
+func TestServer_WakesForARequestThroughAForwarder(t *testing.T) {
+	port := freePort(t)
+	w := pausedWorkload("api", port, time.Minute)
+	w.Status.Doorman[0].Forwarded = true
+	_, c := startServer(t, w)
+
+	conn := dial(t, port)
+	send(t, conn, "hello")
+
+	require.Eventually(t, func() bool { return lastRequest(t, c) != "" }, 5*time.Second, 20*time.Millisecond)
+	require.NoError(t, c.Create(context.Background(), readySlice(echoPort(t))))
+	echoed(t, conn, "hello")
 }
 
 // Prometheus remote write comes from the same agent as a scrape, but it's

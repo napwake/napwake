@@ -38,13 +38,21 @@ flowchart TD
 
 ## Quick Start
 
-**See what's idle across your cluster, before installing anything:**
+**See what's idle across your cluster, with nothing installed in it:**
+
+```bash
+brew install okedeji/tap/kubectl-hybernate
+kubectl hybernate scan
+```
+
+Homebrew installs the newest release, or the newest release candidate until 0.2.0 is out. Without Homebrew, or for exactly this version, install the plugin with [krew](https://krew.sigs.k8s.io/docs/user-guide/setup/install/):
 
 ```bash
 kubectl krew install --manifest-url \
-  https://github.com/okedeji/hybernate/releases/latest/download/krew-hybernate.yaml
-kubectl hybernate scan
+  https://github.com/okedeji/hybernate/releases/download/v0.2.0/krew-hybernate.yaml
 ```
+
+or [download it](https://okedeji.io/hybernate/getting-started/kubectl-plugin/#installation) for Linux, macOS or Windows.
 
 **Install the operator:**
 
@@ -52,8 +60,11 @@ kubectl hybernate scan
 helm install hybernate oci://ghcr.io/okedeji/charts/hybernate \
   --version 0.2.0 \
   --namespace hybernate-system \
-  --create-namespace
+  --create-namespace \
+  --set timezone=Europe/London
 ```
+
+Set `timezone` to your users' time zone: the forecast learns their busy hours in it, so it wakes workloads for their mornings all year, through daylight saving. To install with `install.yaml`, Kustomize, Argo CD or Flux instead, see [Installation](https://okedeji.io/hybernate/getting-started/installation/).
 
 Hybernate supports Kubernetes 1.30 and later, and is tested in CI on 1.30 and 1.37. The chart installs the operator, the doorman that wakes paused workloads on request, and the ManagedWorkload CRD.
 
@@ -72,7 +83,7 @@ metadata:
     hybernate.io/idle-after: "2h"
 ```
 
-The label opts it in; the annotations are its settings. Label a namespace instead to cover every workload in it. In dry-run, Hybernate tracks the workload's activity and what pausing would free, without pausing it. When you're confident:
+The label opts it in; the annotations are its settings. Label a namespace instead to cover every workload in it. In dry-run, Hybernate tracks the workload's activity and what pausing would free, without pausing it. If Argo CD or Flux applies the workload, first have it [leave the replicas to Hybernate](https://okedeji.io/hybernate/guides/gitops/), or it undoes every pause. When you're confident:
 
 ```bash
 kubectl hybernate enable my-api -n staging
@@ -95,6 +106,7 @@ kubectl hybernate enable my-api -n staging
 - **`kubectl hybernate status`** shows what Hybernate is doing in a cluster on one screen: each workload's state, when it pauses next or what holds it awake, what needs attention, what pausing has freed and what of that it saved, and the latest pauses and wakes with what caused them
 - **`kubectl hybernate pause`** pauses a workload now, such as a preview environment at the end of the day, to wake on its next request
 - **`kubectl hybernate wake`** wakes a paused workload from the terminal and waits until it's Running
+- **`kubectl hybernate forecast`** replays the forecast over your cluster's own Prometheus history, to show when it would have woken each workload and how often for nothing, before you trust `autoResume` with it
 - **`kubectl hybernate nodes`** names the node autoscaler and shows, for each node, what keeps it from being removed, so what pausing frees can come off the bill
 - **`kubectl hybernate enable`** ends dry-run once you trust what you've measured, and says what to change in Git when a GitOps tool applies the workload
 - **Cost tracking** per workload, for the current month: what it cost, what pausing freed, what that saved once nodes went, and a projection for the month, priced at the list price of the nodes it runs on

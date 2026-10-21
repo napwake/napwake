@@ -15,7 +15,7 @@ spec:
     - {namespace: messaging, kind: StatefulSet, name: nats}       # another namespace
   idlePolicy:
     idleAfter: 1h
-  prediction: {}                                                  # default confidence
+  prediction: {}                                                  # the default, balanced
 ```
 
 With the label instead, set `hybernate.io/depends-on: "statefulset/postgres, messaging/statefulset/nats"` on the workload; see [Opting In](../guides/opt-in.md#settings).
@@ -59,7 +59,7 @@ A dependency that has some replicas Ready but not all, such as one with a pod cr
 The wait is long, because a slow start is exactly why you'd set it, but bounded: a dependency that's up but never Ready, such as one crash-looping or whose image can't be pulled, would otherwise leave the dependent at zero for good. The dependent waits, from when it began resuming, as long as the dependency's Deployment `progressDeadlineSeconds` (600 by default), past which Kubernetes itself reports the rollout failed, or 10 minutes for a StatefulSet, which has none. Then it starts anyway, with `WaitingForDependencies=False`, reason `DependencyWontStart`, and a Warning event naming the dependency:
 
 ```
-WaitingForDependencies=False   not waiting for preview-42/statefulset/postgres (it isn't Ready after 10m)
+WaitingForDependencies=False   not waiting for preview-42/statefulset/postgres (it isn't Ready after 10 minutes)
 ```
 
 It doesn't wait at all for a dependency that can't start by waiting: one Hybernate doesn't manage that's scaled to zero, reported the same way. Nor for one that in turn waits, through `waitForReady`, for the dependent, directly or through others: each would wait for the other to start first. That's reason `DependencyCycle`, and both start together. A managed dependency that's still paused is woken again every few seconds while the dependent waits.
@@ -109,7 +109,13 @@ learnedDependencies:
     - {namespace: preview-42, kind: StatefulSet, name: redis, source: wake}
 ```
 
-with a `DependenciesLearned` event when the set changes. They're learned again when the pod template changes, and hourly for ConfigMaps changed since. Secrets are never read, so an address set only in a Secret isn't learned from the environment.
+with a `DependenciesLearned` event when the set changes. The event says of each whether it's woken with the workload, which only a dependency Hybernate manages is, in a namespace that [allows it](#across-namespaces). Opt the dependency in too to have them paused and woken together:
+
+```
+api: depends on preview-42/postgres (PGHOST), which isn't managed by Hybernate, so it isn't woken with api: opt it in to have them paused and woken together
+```
+
+They're learned again when the pod template changes, and hourly for ConfigMaps changed since. Secrets are never read, so an address set only in a Secret isn't learned from the environment.
 
 **From wakes, too.** When a request wakes a paused workload, the [doorman](wake-on-request.md) records where it came from, and the operator finds the pod that sent it. If that pod belongs to a workload Hybernate manages, that workload depends on the one it woke, and the link is learned with `source: wake`. That covers addresses in Secrets, built in code, or read from files, the first time they're used. A request from a workload Hybernate doesn't manage, such as an ingress controller, or from a pod on the node's network, teaches nothing. Only an address the doorman wrote counts: the operator checks, from the field managers the API server records, that `hybernate.io/last-request-from` was set under Hybernate's own, so one set by hand teaches nothing, and the chart's admission policy refuses anyone but the doorman setting it at all. The sender is only looked for in the woken workload's namespace and those its [`hybernate.io/dependents-from`](#across-namespaces) allows. Links learned from wakes are kept when the environment is read again, for 14 days after the last request that woke the dependency: `lastSeen` records it, at most once a day. While a link is kept, the dependency is held awake with the workload and woken with it, so the workload's requests no longer reach the doorman and don't renew the link. A link in steady use is dropped too, 14 days after it was learned or last renewed, and learned again from the next request that wakes the dependency, at the cost of that request's cold start, about once a fortnight. A one-off call, such as someone's `curl` from a pod, is forgotten the same way, so it doesn't tie two workloads together for good.
 
@@ -131,4 +137,4 @@ A request through a normal Service wakes a paused workload by itself, through [w
 - **Addresses Hybernate hasn't seen used yet**: set in Secrets, built in code, or read from files, before a request to a paused dependency teaches it.
 - **A dependency on a workload behind no Service**, which no address names.
 
-[`kubectl hybernate scan`](../getting-started/kubectl-plugin.md#scan-a-cluster) lists the dependencies it finds in each workload's environment, and whether each is declared, connected by Hybernate, or will be once Hybernate manages the workload.
+[`kubectl hybernate scan`](../getting-started/kubectl-plugin.md#scan-a-cluster) lists the dependencies it finds in each workload's environment, and what Hybernate does with each: woken and held with the workload that needs it, declared or learned, once Hybernate manages both; never paused, for a dependency it doesn't manage.

@@ -4,10 +4,11 @@ Complete reference for the Hybernate Helm chart. Install with:
 
 ```bash
 helm install hybernate oci://ghcr.io/okedeji/charts/hybernate --version 0.2.0 \
-  --namespace hybernate-system --create-namespace
+  --namespace hybernate-system --create-namespace \
+  --set timezone=Europe/London
 ```
 
-The chart is published only as an OCI artifact; there's no `helm repo` to add. Its version has no `v` (`0.2.0`); the image tags do (`v0.2.0`). To see all defaults:
+Set `timezone` to your users' [time zone](../getting-started/installation.md#time-zone). The chart is published only as an OCI artifact; there's no `helm repo` to add. Its version has no `v` (`0.2.0`); the image tags do (`v0.2.0`). To see all defaults:
 
 ```bash
 helm show values oci://ghcr.io/okedeji/charts/hybernate --version 0.2.0
@@ -61,7 +62,7 @@ The CRD is a chart template with `helm.sh/resource-policy: keep`, so `helm unins
 | `resources.limits.cpu` | `500m` | CPU limit |
 | `resources.limits.memory` | `512Mi` | Memory limit |
 
-The operator caches the cluster's ManagedWorkloads, Deployments, StatefulSets, Services, PVCs, HPAs, Nodes and Namespaces, or only the watched namespaces' with `watchNamespaces`, and the EndpointSlices it writes and the doorman Service's, so its memory grows with the cluster. Nodes are cached without their image lists, and pods only as what spare node capacity needs: those bound to a node and not finished, as their node, phase and requests, about 2.6 KB a pod. Other EndpointSlices, ConfigMaps and KEDA ScaledObjects are read when needed, not cached. Raise the limit on clusters with many thousands of workloads. Go's garbage collector is given a soft limit of 90% of the memory limit, for the operator and the doorman alike, leaving the rest for memory outside its heap, so it works harder near the limit rather than letting either be OOM-killed. Setting `GOMEMLIMIT` in the pod overrides it.
+The operator caches the cluster's ManagedWorkloads, Deployments, StatefulSets, Services, Ingresses, PVCs, HPAs, Nodes and Namespaces, or only the watched namespaces' with `watchNamespaces`, and the EndpointSlices it writes and the doorman Service's, so its memory grows with the cluster. Nodes are cached without their image lists, and pods only as what spare node capacity needs: those bound to a node and not finished, as their node, phase and requests, about 2.6 KB a pod. Other EndpointSlices, ConfigMaps and KEDA ScaledObjects are read when needed, not cached. Raise the limit on clusters with many thousands of workloads. Go's garbage collector is given a soft limit of 90% of the memory limit, for the operator and the doorman alike, leaving the rest for memory outside its heap, so it works harder near the limit rather than letting either be OOM-killed. Setting `GOMEMLIMIT` in the pod overrides it.
 
 ## Namespaces
 
@@ -88,12 +89,14 @@ Settings for workloads opted in with the `hybernate.io/managed` label, used when
 | `defaults.idleAfter` | `1h` | How long without activity before pausing; a Go duration of at least `1m`, such as `90s` or `1h30m`. Passed as `--default-idle-after` |
 | `defaults.cpuThreshold` | `10` | CPU use, as a percentage of requests from 1 to 100, above which a workload counts as active. Passed as `--default-cpu-threshold` |
 | `defaults.dryRun` | `false` | Measure without pausing. Set `true` to roll Hybernate out across a cluster measuring first. Passed as `--default-dry-run` |
+| `defaults.forecast` | `balanced` | How soon the forecast acts: `eager`, `balanced` or `cautious`. See [Forecast setting](../concepts/forecasting.md#forecast-setting). Passed as `--default-forecast` |
 
 ## Prometheus Activity
 
 | Value | Default | Description |
 |-------|---------|-------------|
-| `prometheus.url` | `""` | Base URL of the Prometheus API used for Prometheus activity queries, such as `http://prometheus.monitoring.svc:9090`. Passed to the operator as `--prometheus-url`. Leave empty if no workload sets `idlePolicy.activity.prometheus` |
+| `prometheus.url` | `""` | Base URL of the Prometheus API, such as `http://prometheus.monitoring.svc:9090`, for Prometheus activity queries and to start each new workload's forecast from up to four weeks of its CPU history (see [Learning from history](../concepts/forecasting.md#learning-from-history)). Passed to the operator as `--prometheus-url` |
+| `prometheus.selector` | `""` | Label matchers added to the history query the operator makes, such as `cluster="staging"`, for a Prometheus that holds more than one cluster's series, as Thanos, Mimir or a shared Prometheus may; written as inside PromQL's braces, as `kubectl hybernate scan --prometheus-selector` takes them. Activity queries run as written. Needs `prometheus.url`. Passed to the operator as `--prometheus-selector` |
 
 ## Metrics
 
@@ -158,6 +161,11 @@ The doorman holds requests to paused workloads and wakes them. See [Wake on Requ
 | `doorman.resources.requests.memory` | `64Mi` | Memory request |
 | `doorman.resources.limits.cpu` | `500m` | CPU limit |
 | `doorman.resources.limits.memory` | `256Mi` | Memory limit |
+| `doorman.negForwarder.enabled` | `false` | Optional, for GKE: route paused workloads' Services that sit behind container-native load balancing (NEGs), as a GKE Ingress's or Gateway's do, through a forwarder Deployment the operator runs in each workload's namespace while it's paused, so requests through the load balancer wake them. Grants the operator `create` and `delete` on Deployments, in a ClusterRole `<fullname>-forwarder` or a Role in each watched namespace, and adds a headless Service `<fullname>-doorman-pods`. Needs `doorman.enabled`. See [GKE container-native load balancing](../concepts/wake-on-request.md#gke-container-native-load-balancing-negs) |
+| `doorman.negForwarder.replicas` | `2` | Pods per forwarder, spread across nodes, so one stays while a node drains |
+| `doorman.negForwarder.resources.requests.cpu` | `10m` | Each forwarder pod's CPU request |
+| `doorman.negForwarder.resources.requests.memory` | `32Mi` | Each forwarder pod's memory request |
+| `doorman.negForwarder.resources.limits.memory` | `64Mi` | Each forwarder pod's memory limit |
 
 The doorman uses the operator image, the `metrics.*` settings, `logLevel` and `logEncoder`. It caches ManagedWorkloads and the EndpointSlices the EndpointSlice controller writes in the watched namespaces, cut down to what it reads: about 300 bytes per pod and 700 per Service. Held connections take up to 72Mi more under a flood. The default 256Mi limit covers a cluster of some 100,000 pods; raise it beyond that. On Kubernetes 1.30 and later it sleeps 5 seconds before shutting down, so kube-proxy and load balancers stop sending it new connections first. A rollout waits 5 seconds after a new doorman pod is Ready (`minReadySeconds`) before stopping an old one, so the operator has moved paused workloads' routes to it.
 
@@ -172,7 +180,7 @@ The doorman uses the operator image, the `metrics.*` settings, `logLevel` and `l
 | `doorman.networkPolicy.egress.apiServer` | `[]` | CIDRs of the API server's endpoints (`kubectl get endpointslices -n default -l kubernetes.io/service-name=kubernetes`), not the `kubernetes` Service's ClusterIP. Required when enabled |
 | `doorman.networkPolicy.egress.apiServerPorts` | `[443, 6443]` | The API server endpoints' ports |
 
-When enabled, the operator's and the doorman's metrics port admits only namespaces labelled `metrics: enabled`, and the doorman's routing ports (TCP 20000-29999) admit every source, since every client of a paused workload's Services is sent to them. To narrow who can reach the doorman, see [Restricting who can reach the doorman](../concepts/wake-on-request.md#restricting-who-can-reach-the-doorman).
+When enabled, the operator's and the doorman's metrics port admits only namespaces labelled `metrics: enabled`, and the doorman's routing ports (TCP 20000-29999) admit every source, since every client of a paused workload's Services is sent to them. With `ingressFrom` and `doorman.negForwarder.enabled`, they also admit the forwarders, from any namespace. To narrow who can reach the doorman, see [Restricting who can reach the doorman](../concepts/wake-on-request.md#restricting-who-can-reach-the-doorman).
 
 The doorman's egress policy is separate from `networkPolicy.enabled`, and needs a CNI that enforces egress policies. The doorman needs no DNS: it reaches the API server by address, and pods by their endpoint addresses. If a routed workload uses `hostNetwork`, add your node CIDRs to `podCIDRs`.
 
@@ -269,7 +277,9 @@ With `watchNamespaces` set, both get a Role and RoleBinding in each of those nam
 
 If leader election is enabled, a `<fullname>-leader-election` Role in the release namespace grants Leases (`get`, `create`, `update`) and Events.
 
-For people, the chart adds ManagedWorkloads to Kubernetes' built-in roles, through two aggregated ClusterRoles: `<fullname>-view`, in `view`, `edit` and `admin`, lets whoever can view a namespace `get`, `list` and `watch` its ManagedWorkloads, as `kubectl hybernate status` and `scan` do; `<fullname>-edit`, in `edit` and `admin`, lets whoever can edit it `create`, `update`, `patch` and `delete` them, as `pause`, `wake` and `enable` do. The kustomize manifests' `managedworkload-viewer-role` and `managedworkload-editor-role` are aggregated the same way.
+With `doorman.negForwarder.enabled`, a ClusterRole `<fullname>-forwarder`, or with `watchNamespaces` a Role of that name in each watched namespace, lets the operator `create` and `delete` Deployments, for the [forwarders](../concepts/wake-on-request.md#gke-container-native-load-balancing-negs) it runs beside paused workloads behind GKE NEGs. It only ever deletes its own, owned by a ManagedWorkload. The forwarders run as their namespace's `default` ServiceAccount, without its token, and have no access to the API server.
+
+For people, the chart adds ManagedWorkloads to Kubernetes' built-in roles, through two aggregated ClusterRoles: `<fullname>-view`, in `view`, `edit` and `admin`, lets whoever can view a namespace `get`, `list` and `watch` its ManagedWorkloads, as `kubectl hybernate status` and `scan` do; `<fullname>-edit`, in `edit` and `admin`, lets whoever can edit it `create`, `update`, `patch` and `delete` them, as `pause`, `wake` and `enable` do. The Kustomize manifests' `managedworkload-viewer-role` and `managedworkload-editor-role` are aggregated the same way.
 
 What all of this reads, writes, and sends is listed in [Data and Access](data-and-access.md).
 

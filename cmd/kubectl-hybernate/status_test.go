@@ -22,6 +22,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"slices"
 	"testing"
 	"time"
 
@@ -31,7 +32,9 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/meta"
+	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
@@ -41,6 +44,9 @@ import (
 )
 
 var statusNow = time.Date(2026, 10, 5, 12, 0, 0, 0, time.UTC)
+
+// testCluster is the cluster status names, from the kubeconfig context.
+const testCluster = "staging (EKS us-east-1)"
 
 func before(d time.Duration) *metav1.Time {
 	t := metav1.NewTime(statusNow.Add(-d))
@@ -86,14 +92,22 @@ func statusCluster() []client.Object {
 		5*time.Hour)
 	postgres.Status.Activity = activity(v1alpha1.ActivitySourceCPU, 2*time.Hour, -time.Hour)
 	postgres.Status.Conditions = []metav1.Condition{
-		condition("HeldByDependents", metav1.ConditionTrue, "DependentsAwake", "held awake for preview-42/worker"),
+		condition("HeldByDependents", metav1.ConditionTrue, "DependentsAwake", "kept awake for preview-7/worker"),
 	}
+	postgres.Status.Activity.HeldByDependents = []string{"preview-7/worker"}
 	postgres.Status.Cost = &v1alpha1.CostStatus{FreedThisMonth: "$30.05", SavedThisMonth: "$25.00"}
 
 	web := statusWorkloadObj("preview-7", "web", v1alpha1.TargetKindDeployment, v1alpha1.PhaseRunning, 2*time.Hour)
 	web.Spec.DryRun = true
 	web.Status.Activity = activity(v1alpha1.ActivitySourceRollout, 15*time.Minute, 45*time.Minute)
 	web.Status.Cost = &v1alpha1.CostStatus{FreedThisMonth: "$0.00", SavedThisMonth: "$0.00"}
+	web.Status.DryRun = &v1alpha1.DryRunStatus{Since: *before(99 * time.Hour), Pauses: 4, EstimatedFreed: "$7.40"}
+	for _, w := range []*v1alpha1.ManagedWorkload{api, postgres, web} {
+		w.Status.Prediction = &v1alpha1.PredictionStatus{TimeZone: "Europe/London"}
+	}
+	api.Status.Prediction.Reason = v1alpha1.ForecastActing
+	web.Status.Prediction.Reason = v1alpha1.ForecastEarningConfidence
+	web.Status.Prediction.StartsActing = &metav1.Time{Time: statusNow.Add(72 * time.Hour)}
 
 	worker := statusWorkloadObj("preview-7", "worker", v1alpha1.TargetKindDeployment, v1alpha1.PhaseResuming,
 		25*time.Minute)
@@ -153,7 +167,7 @@ func runStatus(t *testing.T, c client.Client, opts statusOptions) string {
 	t.Helper()
 	result, err := clusterStatus(context.Background(), c, "preview-42", opts)
 	require.NoError(t, err)
-	result.Cluster = "staging (EKS us-east-1)"
+	result.Cluster = testCluster
 	var out bytes.Buffer
 	require.NoError(t, writeStatus(&out, result, "table", statusNow))
 	return out.String()
@@ -164,19 +178,20 @@ func TestStatus(t *testing.T) {
 
 	//nolint:lll // the expected screen is as wide as the command prints it
 	assert.Equal(t, `staging (EKS us-east-1): Hybernate manages 4 workloads.
-  1 paused, 2 running, 1 resuming; 1 in dry-run, measured but never paused
+  1 paused, 2 running, 1 resuming; 1 in dry-run, never paused: pausing it would have freed $7 since Oct 1
   Node autoscaler: none found — freed capacity won't lower the bill until nodes scale down; see https://okedeji.io/hybernate/guides/cluster-autoscaler/
+  Forecast time zone: Europe/London
   Freed $42 this month, and saved $35 of it.
 
 Needs attention:
   preview-7/worker   GitOpsConflict   Argo CD set the replicas from Git
   preview-7/worker   Stuck            resuming for 25m: waiting for preview-42/postgres
 
-  NAMESPACE    WORKLOAD               STATE               FOR   LAST ACTIVITY      NEXT                             FREED THIS MONTH   SAVED
-  preview-42   deployment/api         paused              3h    request, 4h ago    wakes on a request or activity   $12                $10
-  preview-42   statefulset/postgres   running             5h    cpu, 2h ago        held awake by its dependents     $30                $25
-  preview-7    deployment/web         running (dry-run)   2h    rollout, 15m ago   would pause in 45m               -                  -
-  preview-7    deployment/worker      resuming            25m   -                  -                                -                  -
+  NAMESPACE    WORKLOAD               STATE               FOR   LAST ACTIVITY      NEXT                                        FORECAST                    FREED THIS MONTH   SAVED   WOULD FREE
+  preview-42   deployment/api         paused              3h    request, 4h ago    wakes on a request or activity              acting                      $12                $10     -
+  preview-42   statefulset/postgres   running             5h    cpu, 2h ago        held awake while preview-7/worker uses it   -                           $30                $25     -
+  preview-7    deployment/web         running (dry-run)   2h    rollout, 15m ago   would pause in 45m                          learning, acts from Oct 8   -                  -       $7
+  preview-7    deployment/worker      resuming            25m   -                  -                                           -                           -                  -       -
 
 Recent pauses and wakes:
   30m ago   preview-7/worker   scaled up to 2 replicas by argocd-controller outside Hybernate; counted as activity
@@ -201,7 +216,7 @@ func TestNextFor(t *testing.T) {
 		{name: "held by active-until", mutate: func(w *v1alpha1.ManagedWorkload) {
 			w.Annotations = map[string]string{v1alpha1.AnnotationActiveUntil: statusNow.Add(2 * time.Hour).Format(time.RFC3339)}
 			w.Status.Activity = activity(v1alpha1.ActivitySourceCPU, 2*time.Hour, -time.Hour)
-		}, want: "held awake for 2h"},
+		}, want: "held awake for 2h (active-until)"},
 		{name: "an expired active-until doesn't hold", mutate: func(w *v1alpha1.ManagedWorkload) {
 			w.Annotations = map[string]string{v1alpha1.AnnotationActiveUntil: statusNow.Add(-time.Hour).Format(time.RFC3339)}
 			w.Status.Activity = activity(v1alpha1.ActivitySourceCPU, 0, 10*time.Minute)
@@ -231,6 +246,13 @@ func TestNextFor_WhatKeepsItUp(t *testing.T) {
 		return func(w *v1alpha1.ManagedWorkload) {
 			overdue(w)
 			w.Status.Conditions = []metav1.Condition{c}
+		}
+	}
+	vetoed := condition("IdleVetoed", metav1.ConditionTrue, "ForecastExpectsDemand", "")
+	heldBy := func(names ...string) func(*v1alpha1.ManagedWorkload) {
+		return func(w *v1alpha1.ManagedWorkload) {
+			withCondition(condition("HeldByDependents", metav1.ConditionTrue, "DependentsAwake", ""))(w)
+			w.Status.Activity.HeldByDependents = names
 		}
 	}
 	tests := []struct {
@@ -270,9 +292,41 @@ func TestNextFor_WhatKeepsItUp(t *testing.T) {
 		{name: "a dependsOn cycle",
 			mutate: withCondition(condition("DependencyCycle", metav1.ConditionTrue, "DependencyCycle", "")),
 			want:   "won't pause: dependsOn cycle"},
-		{name: "vetoed by the forecast",
-			mutate: withCondition(condition("IdleVetoed", metav1.ConditionTrue, "ForecastExpectsDemand", "")),
-			want:   "held awake by the forecast"},
+		{name: "vetoed by the forecast, saying when it expects demand", mutate: func(w *v1alpha1.ManagedWorkload) {
+			withCondition(vetoed)(w)
+			w.Status.Activity.ForecastBusyFrom = &metav1.Time{Time: time.Date(2026, 10, 5, 13, 0, 0, 0, time.UTC)}
+		}, want: "held awake by the forecast: busy from 13:00 UTC"},
+		{name: "vetoed by the forecast, without saying when", mutate: withCondition(vetoed),
+			want: "held awake by the forecast"},
+		{name: "held by a dependent", mutate: heldBy("shop/web"), want: "held awake while shop/web uses it"},
+		{name: "held by two dependents", mutate: heldBy("shop/web", "shop/worker"),
+			want: "held awake while shop/web and shop/worker use it"},
+		{name: "held by dependents", mutate: heldBy("shop/web", "shop/worker", "shop/cron"),
+			want: "held awake while shop/web and 2 others use it"},
+		{name: "held by dependents it doesn't name", mutate: heldBy(), want: "held awake by its dependents"},
+		{name: "idle, after a GitOps tool undid its last pause", mutate: func(w *v1alpha1.ManagedWorkload) {
+			undoneBy(w, "Argo CD", 10*time.Minute)
+			w.Status.Phase = v1alpha1.PhaseIdle
+		}, want: "pauses at 12:50 UTC (after GitOps conflict)"},
+		{name: "its clock runs out before Hybernate pauses again after a GitOps conflict",
+			mutate: func(w *v1alpha1.ManagedWorkload) {
+				undoneBy(w, "Flux", 10*time.Minute)
+				w.Status.Activity = activity(v1alpha1.ActivitySourceScaledUp, 10*time.Minute, 20*time.Minute)
+			}, want: "pauses at 12:50 UTC (after GitOps conflict)"},
+		{name: "its clock runs out after Hybernate would pause again after a GitOps conflict",
+			mutate: func(w *v1alpha1.ManagedWorkload) {
+				undoneBy(w, "Flux", 10*time.Minute)
+				w.Status.Activity = activity(v1alpha1.ActivitySourceScaledUp, 10*time.Minute, 2*time.Hour)
+			}, want: "pauses in 2h"},
+		{name: "the hour after a GitOps conflict is over", mutate: func(w *v1alpha1.ManagedWorkload) {
+			undoneBy(w, "Argo CD", 2*time.Hour)
+			w.Status.Phase = v1alpha1.PhaseIdle
+		}, want: "pauses now"},
+		{name: "the forecast holds it before the hour after a GitOps conflict", mutate: func(w *v1alpha1.ManagedWorkload) {
+			undoneBy(w, "Argo CD", 10*time.Minute)
+			w.Status.Conditions = append(w.Status.Conditions,
+				condition("IdleVetoed", metav1.ConditionTrue, "ForecastExpectsDemand", ""))
+		}, want: "held awake by the forecast"},
 		{name: "a veto that's over doesn't hold",
 			mutate: withCondition(condition("IdleVetoed", metav1.ConditionFalse, "NotVetoed", "")),
 			want:   "overdue to pause"},
@@ -284,7 +338,7 @@ func TestNextFor_WhatKeepsItUp(t *testing.T) {
 			},
 			want: "pauses in 20m"},
 		{name: "active-until on the workload itself", mutate: overdue,
-			targetActiveUntil: statusNow.Add(3 * time.Hour), want: "held awake for 3h"},
+			targetActiveUntil: statusNow.Add(3 * time.Hour), want: "held awake for 3h (active-until)"},
 		{name: "idle", mutate: func(w *v1alpha1.ManagedWorkload) {
 			overdue(w)
 			w.Status.Phase = v1alpha1.PhaseIdle
@@ -311,6 +365,89 @@ func TestNextFor_WhatKeepsItUp(t *testing.T) {
 	}
 }
 
+// undoneBy has a GitOps tool undo the workload's last pause ago, as the
+// operator reports it, leaving its clock run out.
+func undoneBy(w *v1alpha1.ManagedWorkload, tool string, ago time.Duration) {
+	w.Status.Activity = activity(v1alpha1.ActivitySourceScaledUp, 2*time.Hour, -time.Hour)
+	w.Status.LastScaledUp = &v1alpha1.ScaledUp{At: *before(ago), By: "argocd-controller", GitOps: tool, Replicas: 2}
+	w.Status.Conditions = []metav1.Condition{condition("GitOpsConflict", metav1.ConditionTrue, "PauseUndone",
+		tool+" set the replicas from Git, undoing the pause")}
+}
+
+// A GitOps conflict needs attention while the tool would still undo a
+// pause. The operator clears it only once a pause holds, which a workload
+// in dry-run never makes, so status checks the tool itself: once it's told
+// to leave the replicas, the conflict isn't listed, and once Hybernate's
+// wait is over, it's told as past rather than as a time gone by.
+func TestStatus_GitOpsConflictAsItIsNow(t *testing.T) {
+	forbidArgo := replicasSetBy("argocd-controller")
+	get := forbidArgo.Get
+	forbidArgo.Get = func(ctx context.Context, c client.WithWatch, key client.ObjectKey, obj client.Object,
+		opts ...client.GetOption) error {
+		if key.Namespace == "argocd" {
+			return apierrors.NewForbidden(schema.GroupResource{}, key.Name, nil)
+		}
+		return get(ctx, c, key, obj, opts...)
+	}
+	forbidArgo.List = func(ctx context.Context, c client.WithWatch, list client.ObjectList,
+		opts ...client.ListOption) error {
+		if _, ok := list.(*unstructured.UnstructuredList); ok {
+			return apierrors.NewForbidden(schema.GroupResource{Group: "argoproj.io", Resource: "applications"}, "", nil)
+		}
+		return c.List(ctx, list, opts...)
+	}
+	unfixed := []client.Object{argoApplication(map[string]any{}), argoFixed()[1]}
+	tests := []struct {
+		name  string
+		ago   time.Duration
+		funcs interceptor.Funcs
+		argo  []client.Object
+		want  string
+	}{
+		{name: "fixed since", ago: 10 * time.Minute, funcs: replicasSetBy("argocd-controller"), argo: argoFixed()},
+		{name: "unfixed, while Hybernate waits", ago: 10 * time.Minute, funcs: replicasSetBy("argocd-controller"),
+			argo: unfixed, want: "Argo CD set the replicas from Git, undoing the pause"},
+		{name: "unfixed, once Hybernate's wait is over", ago: 3 * time.Hour,
+			funcs: replicasSetBy("argocd-controller"), argo: unfixed,
+			want: "Argo CD set the replicas from Git at 09:00 UTC, undoing the last pause, and isn't told to leave " +
+				"them, so it will undo the next: https://okedeji.io/hybernate/guides/gitops/#argo-cd"},
+		{name: "can't be checked", ago: 3 * time.Hour, funcs: forbidArgo, argo: argoFixed(),
+			want: "Argo CD set the replicas from Git at 09:00 UTC, undoing the last pause; whether it's told to " +
+				"leave them now couldn't be checked: your access doesn't allow reading Argo CD's Applications. If " +
+				"it isn't, it will undo the next: https://okedeji.io/hybernate/guides/gitops/#argo-cd"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			w := statusWorkloadObj("preview-42", "api", v1alpha1.TargetKindDeployment, v1alpha1.PhaseIdle, time.Hour)
+			undoneBy(w, "Argo CD", tt.ago)
+			w.Spec.DryRun = true
+			api := trackedByArgoCD(&appsv1.Deployment{ObjectMeta: metav1.ObjectMeta{Name: "api", Namespace: "preview-42"}})
+			c := newStatusClient(t, tt.funcs, append([]client.Object{w, api}, tt.argo...)...)
+
+			result, err := clusterStatus(context.Background(), c, "preview-42", statusOpts())
+
+			require.NoError(t, err)
+			i := slices.IndexFunc(result.Problems, func(p problem) bool { return p.Type == "GitOpsConflict" })
+			if tt.want == "" {
+				assert.Negative(t, i, "not listed once Argo CD leaves the replicas")
+				return
+			}
+			require.GreaterOrEqual(t, i, 0)
+			assert.Equal(t, tt.want, result.Problems[i].Message)
+		})
+	}
+}
+
+// In dry-run, Hybernate never pauses, so a GitOps conflict holds nothing
+// back.
+func TestNextFor_DryRunAfterAGitOpsConflict(t *testing.T) {
+	w := statusWorkloadObj("ns", "api", v1alpha1.TargetKindDeployment, v1alpha1.PhaseIdle, time.Hour)
+	undoneBy(w, "Argo CD", 10*time.Minute)
+	w.Spec.DryRun = true
+
+	assert.Equal(t, "would pause now", nextFor(w, time.Time{}, statusNow))
+}
+
 func deployment(namespace, name string, annotations map[string]string) *appsv1.Deployment {
 	return &appsv1.Deployment{ObjectMeta: metav1.ObjectMeta{Namespace: namespace, Name: name, Annotations: annotations}}
 }
@@ -331,7 +468,7 @@ func TestStatus_ActiveUntilOnTheWorkload(t *testing.T) {
 	c := newStatusClient(t, interceptor.Funcs{}, w, deployment("shop", "api",
 		map[string]string{v1alpha1.AnnotationActiveUntil: statusNow.Add(2 * time.Hour).Format(time.RFC3339)}))
 
-	assert.Equal(t, "held awake for 2h", onlyWorkload(t, c).Next)
+	assert.Equal(t, "held awake for 2h (active-until)", onlyWorkload(t, c).Next)
 }
 
 // The veto is read from the ManagedWorkload's condition, so it shows for as
@@ -342,6 +479,7 @@ func TestStatus_ForecastVeto(t *testing.T) {
 	w.Status.Activity = activity(v1alpha1.ActivitySourceCPU, 2*time.Hour, -time.Hour)
 	w.Status.Conditions = []metav1.Condition{condition("IdleVetoed", metav1.ConditionTrue, "ForecastExpectsDemand",
 		"idle, but the forecast expects demand at 40% of requests in the hour from 13:00 UTC; not pausing yet")}
+	w.Status.Activity.ForecastBusyFrom = &metav1.Time{Time: time.Date(2026, 10, 5, 13, 0, 0, 0, time.UTC)}
 	forbidEvents := interceptor.Funcs{
 		List: func(ctx context.Context, c client.WithWatch, list client.ObjectList, opts ...client.ListOption) error {
 			if _, ok := list.(*corev1.EventList); ok {
@@ -351,7 +489,7 @@ func TestStatus_ForecastVeto(t *testing.T) {
 		}}
 	c := newStatusClient(t, forbidEvents, w)
 
-	assert.Equal(t, "held awake by the forecast", onlyWorkload(t, c).Next)
+	assert.Equal(t, "held awake by the forecast: busy from 13:00 UTC", onlyWorkload(t, c).Next)
 }
 
 // The operator starts a new month's savings at its first reconcile in the
@@ -438,11 +576,11 @@ func TestStatus_HandWrittenNamedApart(t *testing.T) {
 	assert.Contains(t, out, "  shop        deployment/api (api-mw)   running")
 }
 
-func forbidClusterWide(resource string) interceptor.Funcs {
+func forbidClusterWide(plural string) interceptor.Funcs {
 	return interceptor.Funcs{List: func(ctx context.Context, c client.WithWatch, list client.ObjectList,
 		opts ...client.ListOption) error {
 		if _, ok := list.(*v1alpha1.ManagedWorkloadList); ok && listNamespace(opts) == "" {
-			return apierrors.NewForbidden(schema.GroupResource{Group: "hybernate.io", Resource: resource}, "", nil)
+			return apierrors.NewForbidden(schema.GroupResource{Group: "hybernate.io", Resource: plural}, "", nil)
 		}
 		return c.List(ctx, list, opts...)
 	}}
@@ -579,11 +717,136 @@ func TestStatus_FreedBeforeDryRun(t *testing.T) {
 	w := statusWorkloadObj("preview-7", "web", v1alpha1.TargetKindDeployment, v1alpha1.PhaseRunning, time.Hour)
 	w.Spec.DryRun = true
 	w.Status.Cost = &v1alpha1.CostStatus{FreedThisMonth: "$9.00", SavedThisMonth: "$9.00"}
+	w.Status.DryRun = &v1alpha1.DryRunStatus{Since: *before(time.Hour), EstimatedFreed: "$0.00"}
 
 	out := runStatus(t, newStatusClient(t, interceptor.Funcs{}, w), statusOpts())
 
 	assert.Contains(t, out, "  Freed $9 this month, and saved $9 of it.\n")
-	assert.Regexp(t, `deployment/web\s+running \(dry-run\) .* \$9\s+\$9\n`, out)
+	assert.Regexp(t, `deployment/web\s+running \(dry-run\) .* \$9\s+\$9\s+\$0\n`, out)
+}
+
+// Dry-run is how people come to trust Hybernate, so status leads with what
+// it measured: in the summary, and in a column of its own, which only
+// workloads in dry-run fill. One measuring that hasn't found a pause yet
+// shows $0, not the dash of one that isn't measuring.
+func TestStatus_DryRunLeadsWithWhatItWouldFree(t *testing.T) {
+	web := statusWorkloadObj("preview-7", "web", v1alpha1.TargetKindDeployment, v1alpha1.PhaseIdle, time.Hour)
+	web.Spec.DryRun = true
+	web.Status.DryRun = &v1alpha1.DryRunStatus{Since: *before(50 * time.Hour), Pauses: 3, EstimatedFreed: "$12.60"}
+	api := statusWorkloadObj("preview-7", "api", v1alpha1.TargetKindDeployment, v1alpha1.PhaseRunning, time.Hour)
+	api.Spec.DryRun = true
+	api.Status.DryRun = &v1alpha1.DryRunStatus{Since: *before(2 * time.Hour), EstimatedFreed: "$0.00"}
+	live := statusWorkloadObj("preview-7", "worker", v1alpha1.TargetKindDeployment, v1alpha1.PhasePaused, time.Hour)
+	c := newStatusClient(t, interceptor.Funcs{}, web, api, live)
+
+	result, err := clusterStatus(context.Background(), c, "preview-7", statusOpts())
+	require.NoError(t, err)
+	var out bytes.Buffer
+	require.NoError(t, writeStatus(&out, result, "table", statusNow))
+
+	assert.Contains(t, out.String(), "  1 paused, 1 running, 1 idle; 2 in dry-run, never paused: pausing them "+
+		"would have freed $13 since Oct 3\n")
+	assert.Regexp(t, `FREED THIS MONTH\s+SAVED\s+WOULD FREE\n`, out.String())
+	assert.Regexp(t, `deployment/api\s+running \(dry-run\) .*-\s+-\s+\$0\n`, out.String())
+	assert.Regexp(t, `deployment/web\s+idle \(dry-run\) .*-\s+-\s+\$13\n`, out.String())
+	assert.Regexp(t, `deployment/worker\s+paused .*-\s+-\s+-\n`, out.String())
+	assert.InDelta(t, 12.6, result.WouldFree, 0.001)
+	require.NotNil(t, result.Workloads[1].WouldFree)
+	assert.InDelta(t, 12.6, *result.Workloads[1].WouldFree, 0.001)
+	assert.Nil(t, result.Workloads[2].WouldFree, "a live workload has nothing in dry-run to show")
+
+	out.Reset()
+	live.Spec.DryRun = false
+	result, err = clusterStatus(context.Background(), newStatusClient(t, interceptor.Funcs{}, live), "preview-7",
+		statusOpts())
+	require.NoError(t, err)
+	require.NoError(t, writeStatus(&out, result, "table", statusNow))
+	assert.NotContains(t, out.String(), "WOULD FREE", "no column without a workload in dry-run")
+}
+
+// Status says which zone the forecast counts hours in, as the operator
+// recorded it, and how to change the default, which is rarely where people
+// are.
+func TestStatus_ForecastTimeZone(t *testing.T) {
+	tests := []struct {
+		name  string
+		zones []string
+		want  string
+	}{
+		{name: "set", zones: []string{"Europe/London"}, want: "  Forecast time zone: Europe/London\n"},
+		{name: "the default", zones: []string{"UTC", ""},
+			want: "  Forecast time zone: UTC, the default; if your users are elsewhere, set the Helm value timezone " +
+				"to theirs, such as Europe/London, so wakes follow their clock\n"},
+		{name: "two installs", zones: []string{"UTC", "America/New_York", "UTC"},
+			want: "  Forecast time zones: America/New_York, UTC, as the installs differ\n"},
+		{name: "not recorded yet", zones: []string{""}},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			objs := make([]client.Object, 0, len(tt.zones))
+			for i, zone := range tt.zones {
+				w := statusWorkloadObj("shop", fmt.Sprintf("w%d", i), v1alpha1.TargetKindDeployment,
+					v1alpha1.PhaseRunning, time.Hour)
+				if zone != "" {
+					w.Status.Prediction = &v1alpha1.PredictionStatus{TimeZone: zone}
+				}
+				objs = append(objs, w)
+			}
+
+			out := runStatus(t, newStatusClient(t, interceptor.Funcs{}, objs...), statusOpts())
+
+			if tt.want == "" {
+				assert.NotContains(t, out, "Forecast time zone")
+				return
+			}
+			assert.Contains(t, out, tt.want)
+		})
+	}
+}
+
+// Status says when its money figures are at spot prices, as the operator
+// priced them, so they aren't read against on-demand prices; a workload's
+// own rates win over its nodes', so it isn't counted.
+func TestStatus_PricedAtSpot(t *testing.T) {
+	cpu, memory := resource.MustParse("30m"), resource.MustParse("4m")
+	tests := []struct {
+		name  string
+		price []v1alpha1.ListPrice
+		rates *v1alpha1.CostRates
+		want  string
+	}{
+		{name: "on-demand", price: []v1alpha1.ListPrice{v1alpha1.ListPriceOnDemand}},
+		{name: "one on spot", price: []v1alpha1.ListPrice{v1alpha1.ListPriceSpot, v1alpha1.ListPriceOnDemand},
+			want: "  1 workload runs on spot nodes, priced at spot.\n"},
+		{name: "partly on spot", price: []v1alpha1.ListPrice{v1alpha1.ListPriceSpot,
+			v1alpha1.ListPriceSpotAndOnDemand}, want: "  2 workloads run on spot nodes, priced at spot.\n"},
+		{name: "own rates win", price: []v1alpha1.ListPrice{v1alpha1.ListPriceSpot},
+			rates: &v1alpha1.CostRates{CPUPerHour: &cpu, MemoryPerHour: &memory}},
+		{name: "own CPU rate only", price: []v1alpha1.ListPrice{v1alpha1.ListPriceSpot},
+			rates: &v1alpha1.CostRates{CPUPerHour: &cpu}, want: "  1 workload runs on spot nodes, priced at spot.\n"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			objs := make([]client.Object, 0, len(tt.price))
+			for i, price := range tt.price {
+				w := statusWorkloadObj("shop", fmt.Sprintf("w%d", i), v1alpha1.TargetKindDeployment,
+					v1alpha1.PhaseRunning, time.Hour)
+				w.Status.Cost = &v1alpha1.CostStatus{ListPrice: price}
+				if tt.rates != nil {
+					w.Spec.CostTracking = &v1alpha1.CostTrackingSpec{Rates: tt.rates}
+				}
+				objs = append(objs, w)
+			}
+
+			out := runStatus(t, newStatusClient(t, interceptor.Funcs{}, objs...), statusOpts())
+
+			if tt.want == "" {
+				assert.NotContains(t, out, "spot")
+				return
+			}
+			assert.Contains(t, out, tt.want)
+		})
+	}
 }
 
 // Freed well above saved means nodes aren't scaling down, which status
@@ -761,6 +1024,13 @@ func TestStatus_WhatNeedsAttention(t *testing.T) {
 			condition: condition("PauseIncomplete", metav1.ConditionFalse, "PodsStopped", "")},
 		{name: "Hybernate's own workload",
 			condition: condition("Protected", metav1.ConditionTrue, "HybernateComponent", "")},
+		{name: "an awake workload, which isn't routed to the doorman",
+			condition: condition("WakeOnRequest", metav1.ConditionFalse, "NotPaused", "")},
+		{name: "the doorman turned off for the cluster",
+			condition: condition("WakeOnRequest", metav1.ConditionFalse, "DoormanDisabled", "")},
+		{name: "a routing problem its last pause found, while it runs", want: true,
+			condition: condition("WakeOnRequest", metav1.ConditionFalse, "UnsupportedLoadBalancer",
+				"at its last pause: no Service can be routed through the doorman")},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

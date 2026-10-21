@@ -17,7 +17,7 @@ Hybernate fixes this by learning your workload patterns and acting on them:
 ## Key Features
 
 ### Demand Forecasting
-A Holt-Winters double seasonal model learns daily and weekly traffic patterns for each workload. Once it has seen every hour of the day, it starts scoring its predictions, and acts on them only when they're accurate enough. If traffic patterns shift, a built-in anomaly detector notices the drift, demotes the model's confidence, and re-learns from the new baseline.
+A Holt-Winters double seasonal model learns daily and weekly traffic patterns for each workload, starting from up to four weeks of its history in Prometheus. Its first week sets what it expects of each hour of the week; from the second it scores its predictions, and acts on them only when they're accurate enough: `eager`, `balanced` or `cautious` says how accurate. If traffic patterns shift, a built-in anomaly detector notices the drift, demotes the model's confidence, and re-learns from the new baseline, while a one-off day, such as a holiday, isn't learned as a pattern.
 
 ### Activity Clock
 Hybernate records the last time each workload was in use: CPU above a threshold, a deploy, an activity annotation from your own tooling, or a Prometheus query such as request rate. Once nothing has been active for `idleAfter`, it pauses the workload. There's no learning period.

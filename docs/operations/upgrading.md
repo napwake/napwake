@@ -22,6 +22,18 @@
         kubectl apply -f https://github.com/okedeji/hybernate/releases/download/vX.Y.Z/install.yaml
         ```
 
+    === "Kustomize"
+
+        Change each Hybernate base's `ref` in your kustomization to `vX.Y.Z`, then:
+
+        ```bash
+        kubectl apply -k .
+        ```
+
+    === "Argo CD or Flux"
+
+        Change the Application's `targetRevision`, or the `OCIRepository`'s `tag`, to `X.Y.Z` in Git, and let it sync.
+
 3. **Verify the upgrade:**
 
     ```bash
@@ -71,7 +83,17 @@ The CRD is kept when the chart is uninstalled, so uninstalling and reinstalling 
 The forecast engine state is serialized in each ManagedWorkload's status, in `status.prediction.state`. On upgrade:
 
 - Compatible state versions are imported automatically
-- State that can't be read, from an incompatible version or a hand edit, is discarded, and the engine re-learns from scratch, with a `ForecastReset` warning event
+- State an older version saved is discarded, with a `ForecastReset` event, and the engine learns again: from the workload's [CPU history](../concepts/forecasting.md#learning-from-history), read again, when `prometheus.url` is set, otherwise from scratch
+- State that can't be read otherwise, such as after a hand edit, is discarded the same way, with a `ForecastReset` warning
+
+### The forecast setting, from before 0.2.0
+
+Before 0.2.0, `spec.prediction.confidence` defaulted to `75`, so every ManagedWorkload created then has it stored, and a confidence overrides the [forecast setting](../concepts/forecasting.md#forecast-setting). On one created from the label, Hybernate drops a stored `75`, balanced's own threshold, so `hybernate.io/forecast` and `defaults.forecast` apply. On one you wrote, remove it for `spec.prediction.mode` to apply:
+
+```bash
+kubectl patch managedworkload my-api -n staging --type=json \
+  -p '[{"op":"remove","path":"/spec/prediction/confidence"}]'
+```
 
 ## Rollback
 
@@ -88,6 +110,10 @@ If something goes wrong:
     ```bash
     kubectl apply -f https://github.com/okedeji/hybernate/releases/download/vPREVIOUS/install.yaml
     ```
+
+=== "Kustomize, Argo CD or Flux"
+
+    Put the previous release's `ref`, `targetRevision` or `tag` back, and apply or sync it.
 
 Paused workloads remain paused during rollback. The previous operator version resumes managing them. Rolling back across a breaking API change isn't supported.
 

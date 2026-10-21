@@ -21,6 +21,7 @@ import (
 	"errors"
 	"fmt"
 	"path/filepath"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -188,11 +189,14 @@ func TestDependencies_HoldWhileDependentsAwake(t *testing.T) {
 			held := meta.FindStatusCondition(postgres.Status.Conditions, conditionHeldByDependents)
 			if tt.wantHeldBy == "" {
 				assert.False(t, held != nil && held.Status == metav1.ConditionTrue)
+				assert.Empty(t, postgres.Status.Activity.HeldByDependents)
 				return
 			}
 			require.NotNil(t, held)
 			assert.Equal(t, metav1.ConditionTrue, held.Status)
 			assert.Equal(t, tt.wantHeldBy, held.Message)
+			assert.Equal(t, tt.wantHeldBy, "kept awake for "+strings.Join(postgres.Status.Activity.HeldByDependents, ", "),
+				"the same dependents, for tools to show")
 		})
 	}
 }
@@ -223,6 +227,7 @@ func TestDependencies_HoldersListIsBounded(t *testing.T) {
 	assert.Equal(t, "kept awake for default/api-0000, default/api-0001, default/api-0002, default/api-0003, "+
 		"default/api-0004, default/api-0005, default/api-0006, default/api-0007, default/api-0008, default/api-0009 "+
 		"and 1990 more", held.Message)
+	assert.Len(t, postgres.Status.Activity.HeldByDependents, maxListed)
 }
 
 func TestDependencies_HoldAppliesInDryRun(t *testing.T) {
@@ -442,15 +447,15 @@ func TestDependencies_WaitIsBounded(t *testing.T) {
 			target: postgresTarget(1, 0), resuming: 9 * time.Minute, wantWait: true},
 		{name: "a StatefulSet past its deadline", kind: v1alpha1.TargetKindStatefulSet,
 			target: postgresTarget(1, 0), resuming: 11 * time.Minute,
-			wantWhy: "not waiting for default/statefulset/postgres (it isn't Ready after 10m)"},
+			wantWhy: "not waiting for default/statefulset/postgres (it isn't Ready after 10 minutes)"},
 		{name: "a managed dependency whose resume settled with none Ready", kind: v1alpha1.TargetKindStatefulSet,
 			target: postgresTarget(1, 0), managed: v1alpha1.PhaseRunning, resuming: 11 * time.Minute,
-			wantWhy: "not waiting for default/statefulset/postgres (it isn't Ready after 10m)"},
+			wantWhy: "not waiting for default/statefulset/postgres (it isn't Ready after 10 minutes)"},
 		{name: "a Deployment within its progress deadline", kind: v1alpha1.TargetKindDeployment,
 			target: deployment(ptr.To[int32](120)), resuming: time.Minute, wantWait: true},
 		{name: "a Deployment past its progress deadline", kind: v1alpha1.TargetKindDeployment,
 			target: deployment(ptr.To[int32](120)), resuming: 3 * time.Minute,
-			wantWhy: "not waiting for default/deployment/postgres (it isn't Ready after 2m)"},
+			wantWhy: "not waiting for default/deployment/postgres (it isn't Ready after 2 minutes)"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

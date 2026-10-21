@@ -69,12 +69,28 @@ spec:
             {{- with .Values.prometheus.url }}
             - {{ printf "--prometheus-url=%v" . | quote }}
             {{- end }}
+            {{- with .Values.prometheus.selector }}
+            {{- if not $.Values.prometheus.url }}
+            {{- fail "prometheus.selector narrows the queries made of prometheus.url, which isn't set" }}
+            {{- end }}
+            - {{ printf "--prometheus-selector=%v" . | quote }}
+            {{- end }}
             - {{ printf "--default-idle-after=%v" .Values.defaults.idleAfter | quote }}
             - {{ printf "--default-cpu-threshold=%v" .Values.defaults.cpuThreshold | quote }}
             - {{ printf "--default-dry-run=%v" .Values.defaults.dryRun | quote }}
+            - {{ printf "--default-forecast=%v" .Values.defaults.forecast | quote }}
             - {{ printf "--doorman-service=%s" (ternary (include "hybernate.doormanName" .) "" .Values.doorman.enabled) | quote }}
             - {{ printf "--doorman-ports-per-workload=%v" .Values.doorman.portsPerWorkload | quote }}
             - {{ printf "--doorman-ports-per-namespace=%v" .Values.doorman.portsPerNamespace | quote }}
+            {{- with .Values.doorman.negForwarder }}
+            {{- if .enabled }}
+            - --neg-forwarder
+            - {{ printf "--neg-forwarder-image=%s" (include "hybernate.image" $) | quote }}
+            - {{ printf "--neg-forwarder-replicas=%v" .replicas | quote }}
+            - {{ printf "--neg-forwarder-resources=%s" (toJson .resources) | quote }}
+            - {{ printf "--neg-forwarder-doorman-service=%s" (include "hybernate.doormanPodsName" $) | quote }}
+            {{- end }}
+            {{- end }}
           env:
             - name: POD_NAMESPACE
               valueFrom:

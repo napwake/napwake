@@ -22,10 +22,10 @@ metrics:
       namespace: monitoring
 ```
 
-**With the kustomize manifests**, apply the ServiceMonitors and the alerting rules into `hybernate-system`:
+**With `install.yaml` or the Kustomize manifests**, apply the ServiceMonitors and the alerting rules into `hybernate-system`, from the `config/prometheus` base pinned to your release, or add it to your kustomization's `resources`:
 
 ```bash
-kubectl apply -k config/prometheus
+kubectl apply -k "https://github.com/okedeji/hybernate//config/prometheus?ref=v0.2.0"
 ```
 
 and bind your Prometheus's ServiceAccount to the `hybernate-metrics-reader` ClusterRole yourself:
@@ -88,7 +88,7 @@ rate(hybernate_lifecycle_transitions_total[1h])
 
 ## Alerting Rules
 
-The Helm chart creates these rules when `metrics.prometheusRule.enabled` is `true`; `kubectl apply -k config/prometheus` creates the same rules for kustomize installs.
+The Helm chart creates these rules when `metrics.prometheusRule.enabled` is `true`; `config/prometheus`, [above](#scraping), creates the same rules for an install from `install.yaml` or the Kustomize manifests.
 
 | Alert | Fires when | Severity |
 |-------|-----------|----------|
@@ -103,7 +103,7 @@ The Helm chart creates these rules when `metrics.prometheusRule.enabled` is `tru
 
 ## Health Checks
 
-The operator and the doorman expose health endpoints on port 8081, which the chart and the kustomize manifests already use as liveness and readiness probes. To check them yourself, forward the port first, here the operator's, from a Helm install named `hybernate`:
+The operator and the doorman expose health endpoints on port 8081, which the chart and the Kustomize manifests already use as liveness and readiness probes. To check them yourself, forward the port first, here the operator's, from a Helm install named `hybernate`:
 
 ```bash
 kubectl port-forward -n hybernate-system deployment/hybernate 8081:8081
@@ -117,14 +117,14 @@ curl http://localhost:8081/readyz
 
 ## Operator Logs
 
-Logs are JSON by default. For debugging, check the operator logs; the label selectors work for both Helm and kustomize installs:
+Logs are JSON by default. For debugging, check the operator logs; the label selectors work for every install:
 
 ```bash
 kubectl logs -n hybernate-system -l control-plane=controller-manager -f
 kubectl logs -n hybernate-system -l control-plane=doorman -f
 ```
 
-The Deployments themselves are `hybernate` and `hybernate-doorman` for a Helm release named `hybernate`, and `hybernate-controller-manager` and `hybernate-doorman` with kustomize.
+The Deployments themselves are `hybernate` and `hybernate-doorman` for a Helm release named `hybernate`, and `hybernate-controller-manager` and `hybernate-doorman` with `install.yaml` or the Kustomize manifests.
 
 Log entries to look for:
 

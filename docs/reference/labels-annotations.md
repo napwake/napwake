@@ -9,8 +9,10 @@
 | `hybernate.io/protected` | `"true"` | Namespaces | Hybernate never manages anything in the namespace, whatever its workloads' labels, and wakes what it had paused there. `kube-*` namespaces and Hybernate's own are protected without it. See [Protected namespaces](../guides/opt-in.md#protected-namespaces). |
 | `hybernate.io/allow-protected` | `"true"` | Namespaces | Lets Hybernate manage a namespace that's labelled protected, matches `protectedNamespaces`, or is always protected, such as `kube-system` or Hybernate's own. The operator's and the doorman's own Deployments are never managed. Set on purpose; Hybernate never sets it. |
 | `hybernate.io/from-label` | `"true"` | ManagedWorkloads | Set on ManagedWorkloads Hybernate created from the `managed` label. Hybernate updates and deletes only these; ManagedWorkloads without it are yours. |
-| `hybernate.io/managed-workload` | ManagedWorkload name | EndpointSlices | Set on the EndpointSlices that route a paused workload's Services to the doorman, along with `endpointslice.kubernetes.io/managed-by: doorman.hybernate.io`. A name longer than 63 characters is shortened, with a hash. They're removed when the workload is Running. |
-| `hybernate.io/operator` | namespace | EndpointSlices | Set on the doorman EndpointSlices an operator writes: the namespace of its install. Another install doesn't move them to its own doorman. See [More than one install](../getting-started/installation.md#more-than-one-install) |
+| `hybernate.io/managed-workload` | ManagedWorkload name | EndpointSlices | Set on the EndpointSlices that route a paused workload's Services to the doorman, or to its forwarder, along with `endpointslice.kubernetes.io/managed-by: doorman.hybernate.io`. A name longer than 63 characters is shortened, with a hash. They're removed when the workload is Running. |
+| `hybernate.io/operator` | namespace | EndpointSlices, forwarder pods | Set on the doorman EndpointSlices an operator writes, and on its [forwarders'](../concepts/wake-on-request.md#gke-container-native-load-balancing-negs) pods: the namespace of its install. Another install doesn't move them to its own doorman. See [More than one install](../getting-started/installation.md#more-than-one-install) |
+| `hybernate.io/forwarded` | `"true"` | EndpointSlices | Set on a doorman EndpointSlice that points a Service behind GKE NEGs at the workload's [forwarder](../concepts/wake-on-request.md#gke-container-native-load-balancing-negs) rather than the doorman |
+| `app.kubernetes.io/name` | `hybernate-forwarder` | Deployments, pods | Set on each forwarder Deployment the operator runs beside a paused workload behind GKE NEGs, and on its pods. The Deployment also carries `hybernate.io/ignore: "true"`, so a namespace opted in with its label doesn't have Hybernate manage it |
 
 ### Usage
 
@@ -35,7 +37,7 @@ kubectl get managedworkloads -l hybernate.io/from-label=true --all-namespaces
 
 ## Settings Annotations
 
-Set on an opted-in Deployment or StatefulSet, or on its Namespace to apply to every workload in it. Each setting is the first value that can be read from: the workload's annotation, its namespace's, the [Helm defaults](helm-values.md#opt-in-defaults) (only `idle-after`, `cpu-threshold` and `dry-run` have one), and the built-in default. See [Opting In](../guides/opt-in.md#settings).
+Set on an opted-in Deployment or StatefulSet, or on its Namespace to apply to every workload in it. Each setting is the first value that can be read from: the workload's annotation, its namespace's, the [Helm defaults](helm-values.md#opt-in-defaults) (only `idle-after`, `cpu-threshold`, `dry-run` and `forecast` have one), and the built-in default. See [Opting In](../guides/opt-in.md#settings).
 
 | Annotation | Accepted values | Default | Description |
 |------------|-----------------|---------|-------------|
@@ -43,6 +45,7 @@ Set on an opted-in Deployment or StatefulSet, or on its Namespace to apply to ev
 | `hybernate.io/idle-after` | a Go duration of at least `1m`, such as `"90m"` or `"2h"` | `1h` | How long without activity before pausing |
 | `hybernate.io/cpu-threshold` | a whole number, `"1"` to `"100"` | `10` | CPU use, as a percentage of requests, above which the workload counts as active |
 | `hybernate.io/auto-resume` | exactly `"true"` or `"false"` | `"false"` | Wake ahead of forecast demand |
+| `hybernate.io/forecast` | exactly `"eager"`, `"balanced"` or `"cautious"` | `"balanced"` | How soon the forecast acts: at a confidence of 60, 75 or 85. Eager acts sooner and wakes the workload for nothing more often; cautious acts later, for workloads costly to keep awake. Sets `spec.prediction.mode`; a `spec.prediction.confidence` set on the ManagedWorkload overrides it. See [Forecast setting](../concepts/forecasting.md#forecast-setting) |
 | `hybernate.io/depends-on` | comma-separated `kind/name` or `namespace/kind/name`, kind `deployment` or `statefulset` | none | Workloads this one needs. An empty value declares none, so a workload can drop its namespace's. On a namespace, it leaves out the workloads it names, and those they depend on by their own `depends-on`, which are dependencies rather than dependents. One in another namespace needs that namespace's `hybernate.io/dependents-from` |
 | `hybernate.io/wake-on-request` | exactly `"true"` or `"false"` | `"true"` | Wake when a request reaches the workload's Service |
 | `hybernate.io/wake-max-wait` | a Go duration above zero, at most `1h` | `2m` | How long a request is held while the workload wakes |

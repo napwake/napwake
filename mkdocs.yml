@@ -1,12 +1,13 @@
 site_name: Hybernate
 site_description: Intelligent Kubernetes workload lifecycle management
-site_url: https://okedeji.io/hybernate
+site_url: https://okedeji.io/hybernate/
 repo_url: https://github.com/okedeji/hybernate
 repo_name: okedeji/hybernate
 edit_uri: edit/main/docs/
 
 theme:
   name: material
+  custom_dir: overrides
   palette:
     scheme: default
     primary: white
@@ -32,6 +33,22 @@ extra_css:
 
 plugins:
   - search
+  # Each release's docs are a version of the site, published by
+  # hack/docsite. Aliases are copies, which any static host serves, and
+  # every version's canonical URL is latest's, so search engines send
+  # readers to the current release.
+  - mike:
+      alias_type: copy
+      canonical_version: latest
+
+extra:
+  version:
+    provider: mike
+    default: latest
+    alias: true
+  # The release a version documents, such as 0.2.0-rc.1, which
+  # overrides/main.html names in the banner of every version but latest.
+  release: !ENV [HYBERNATE_DOCS_RELEASE, ""]
 
 markdown_extensions:
   - admonition

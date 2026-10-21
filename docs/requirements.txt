@@ -1,7 +1,11 @@
-# mkdocs-material and everything it pulls in, pinned with their hashes so a
-# docs build is reproducible and pip refuses a changed package. To upgrade,
-# change the mkdocs-material pin and run:
-#   echo mkdocs-material==<version> | uv pip compile - --python-version 3.12 --universal --no-header --no-annotate --generate-hashes
+# mkdocs-material, mike, which publishes each release's docs as a version of
+# the site, and everything they pull in, pinned with their hashes so a docs
+# build is reproducible and pip refuses a changed package. verspec stays at
+# 0.1.0, what mike has always run with: its later releases only wrap
+# inversion, a package first published in October 2026. To upgrade, change a
+# pin and run:
+#   printf 'mkdocs-material==<version>\nmike==<version>\nverspec==0.1.0\n' |
+#     uv pip compile - --python-version 3.12 --universal --no-header --no-annotate --generate-hashes
 babel==2.18.0 \
     --hash=sha256:b80b99a14bd085fcacfa15c9165f651fbb3406e66cc603abf11c5750937c992d \
     --hash=sha256:e2b422b277c2b9a9630c1d7903c2a00d0830c409c59ac8cae9081c92f1aeba35
@@ -362,6 +366,9 @@ markupsafe==3.0.4 \
 mergedeep==1.3.4 \
     --hash=sha256:0096d52e9dad9939c3d975a774666af186eda617e6ca84df4c94dec30004f2a8 \
     --hash=sha256:70775750742b25c0d8f36c55aed03d24c3384d17c951b3175d898bd778ef0307
+mike==2.2.0 \
+    --hash=sha256:1e3858e32c0f125aac14432fc7848434358f9ae0962c5c5cde387ad47f6ad25e \
+    --hash=sha256:e1f4981c1152eec7c2490a3401142292cc47d686194188416db2648fdfe1d040
 mkdocs==1.6.1 \
     --hash=sha256:7b432f01d928c084353ab39c57282f29f92136665bdd6abf7c1ec8d822ef86f2 \
     --hash=sha256:db91759624d1647f3f34aa0c3f327dd2601beae39a366d6e064c03468d35c20e
@@ -392,6 +399,9 @@ pygments==2.21.0 \
 pymdown-extensions==12.3 \
     --hash=sha256:345493a8e3497e24382902903a1c43a28e34a52f2b7571a1c9641429b820ca74 \
     --hash=sha256:a7f2a4e0bc60c6e6babfa7922cfb3b01cd640eb00fb208f3c582e12bae00ea67
+pyparsing==3.3.3 \
+    --hash=sha256:928ae7e20211f3b6f3915a72f06a0cfd29ab9d24279dd6346b6b1a7146397d36 \
+    --hash=sha256:ece8c00a69cf01b45d0b1dedabb469c90d8caf996d4fda40f147627a122849a4
 python-dateutil==2.9.0.post0 \
     --hash=sha256:37dd54208da7e1cd875388217d5e00ebd4179249f90fb72437e91a35459a0ad3 \
     --hash=sha256:a8b2bc7bffae282281c8140a97d3aa9c14da0b136dfe83f850eea9a5f7470427
@@ -481,6 +491,9 @@ six==1.17.0 \
 urllib3==2.8.0 \
     --hash=sha256:0cf3cae568d36aa9576b28dfb35f11328f1cb974ca7647d9475ebb86c75ac6e3 \
     --hash=sha256:63bf2ead4c879426ebf22ef2a781eeb4aa3b4ae798a0435506f8687fd5bb9b63
+verspec==0.1.0 \
+    --hash=sha256:741877d5633cc9464c45a469ae2a31e801e6dbbaa85b9675d481cda100f11c31 \
+    --hash=sha256:c4504ca697b2056cdb4bfa7121461f5a0e81809255b41c03dda4ba823637c01e
 watchdog==6.0.0 \
     --hash=sha256:07df1fdd701c5d4c8e55ef6cf55b8f0120fe1aef7ef39a1c6fc6bc2e606d517a \
     --hash=sha256:20ffe5b202af80ab4266dcd3e91aae72bf2da48c0d33bdb15c66658e685e94e2 \

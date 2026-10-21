@@ -27,6 +27,7 @@ import (
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	discoveryv1 "k8s.io/api/discovery/v1"
+	networkingv1 "k8s.io/api/networking/v1"
 	"k8s.io/apimachinery/pkg/api/equality"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/meta"
@@ -50,7 +51,9 @@ import (
 
 	v1alpha1 "github.com/okedeji/hybernate/api/v1alpha1"
 	"github.com/okedeji/hybernate/internal/autoscaler"
+	"github.com/okedeji/hybernate/internal/discovery"
 	"github.com/okedeji/hybernate/internal/forecast"
+	"github.com/okedeji/hybernate/internal/human"
 	"github.com/okedeji/hybernate/internal/lifecycle"
 	"github.com/okedeji/hybernate/internal/metrics"
 	"github.com/okedeji/hybernate/internal/signal"
@@ -84,6 +87,11 @@ type Reconciler struct {
 	Recorder      events.EventRecorder
 	PrometheusURL string
 
+	// PrometheusSelector is label matchers added to every query the
+	// operator builds itself, as to one cluster of a Prometheus that holds
+	// many. Activity queries are a workload's own, and run as written.
+	PrometheusSelector discovery.Selector
+
 	// MaxConcurrentReconciles is how many workloads are reconciled at once.
 	// Zero means one.
 	MaxConcurrentReconciles int
@@ -98,6 +106,11 @@ type Reconciler struct {
 	// DefaultDoormanPortsPerWorkload and DefaultDoormanPortsPerNamespace.
 	DoormanPortsPerWorkload  int
 	DoormanPortsPerNamespace int
+
+	// NEGForwarder, when set, routes a paused workload's Services that sit
+	// behind GKE container-native load balancing through a forwarder in
+	// its namespace. Nil leaves them unrouted.
+	NEGForwarder *ForwarderOptions
 
 	// PodReader reads from the API server what the cache leaves out: pods,
 	// Services' own EndpointSlices, and every workload's doorman routes.
@@ -145,6 +158,7 @@ type Reconciler struct {
 	doormanPorts    portAllocator
 	doormanFailures failureBackoff
 	prometheus      *signal.Prometheus
+	history         historyReader
 	doormanFamilies doormanFamilies
 	uids            workloadUIDs
 	graph           *workloadGraph
@@ -168,6 +182,7 @@ type lifecyclePauser interface {
 // +kubebuilder:rbac:groups="",resources=configmaps,verbs=get
 // +kubebuilder:rbac:groups="",resources=events,verbs=create;patch
 // +kubebuilder:rbac:groups="",resources=services,verbs=get;list;watch
+// +kubebuilder:rbac:groups=networking.k8s.io,resources=ingresses,verbs=get;list;watch
 // +kubebuilder:rbac:groups="",resources=pods,verbs=get;list;watch
 // +kubebuilder:rbac:groups="",resources=nodes,verbs=get;list;watch
 // +kubebuilder:rbac:groups=autoscaling,resources=horizontalpodautoscalers,verbs=get;list;watch
@@ -520,7 +535,7 @@ func (r *Reconciler) handlePause(ctx context.Context, workload *v1alpha1.Managed
 	if paused.Running > 0 {
 		stillRunning = fmt.Sprintf("paused with %d pods still running %s after it was scaled to zero: they may be "+
 			"stuck terminating, or a StatefulSet with OrderedReady pod management may be waiting on one that isn't "+
-			"Ready", paused.Running, roundedDuration(r.now().Sub(workload.Status.Pause.PausedAt.Time)))
+			"Ready", paused.Running, human.Duration(r.now().Sub(workload.Status.Pause.PausedAt.Time)))
 		r.setCondition(workload, conditionPauseIncomplete, metav1.ConditionTrue, "PodsStillRunning", stillRunning)
 	} else if meta.IsStatusConditionTrue(workload.Status.Conditions, conditionPauseIncomplete) {
 		r.setCondition(workload, conditionPauseIncomplete, metav1.ConditionFalse, reasonPodsStopped, "")
@@ -758,7 +773,7 @@ func (r *Reconciler) handleResume(ctx context.Context, workload *v1alpha1.Manage
 	var shortfall string
 	if short {
 		shortfall = fmt.Sprintf("resumed with %d of %d replicas Ready: Hybernate stopped waiting for the rest after %s",
-			resumed.Ready, resumed.Replicas, roundedDuration(waited.ScaledUp))
+			resumed.Ready, resumed.Replicas, human.Duration(waited.ScaledUp))
 		r.setCondition(workload, conditionResumeIncomplete, metav1.ConditionTrue, "ReplicasNotReady", shortfall)
 	} else {
 		r.clearCondition(workload, conditionResumeIncomplete, ReasonAllReplicasReady)
@@ -955,7 +970,7 @@ func (r *Reconciler) abandonHandBack(ctx context.Context, workload *v1alpha1.Man
 		"workload", workload.Name, "namespace", workload.Namespace, "error", failure.Error())
 	r.emitEvent(workload, false, "Warning", ReasonHandBackAbandoned, actionResume,
 		"namespace %s is being deleted and handing the target back has failed for %s, so Hybernate lets it go: %v",
-		workload.Namespace, roundedDuration(handBackGiveUpAfter), failure)
+		workload.Namespace, human.Duration(handBackGiveUpAfter), failure)
 	return true
 }
 
@@ -1460,6 +1475,22 @@ func phaseChanged() predicate.Predicate {
 	}
 }
 
+// ingressBackendsChanged passes the changes to an Ingress that can put a
+// Service behind GKE's NEGs or take it out: its creation and deletion, its
+// class, and its backends. GKE's ingress controller keeps rewriting its
+// own annotations and status, which change neither.
+func ingressBackendsChanged() predicate.Predicate {
+	return predicate.Funcs{
+		UpdateFunc: func(e event.UpdateEvent) bool {
+			old, okOld := e.ObjectOld.(*networkingv1.Ingress)
+			cur, okNew := e.ObjectNew.(*networkingv1.Ingress)
+			return !okOld || !okNew ||
+				old.Annotations[annotationIngressClass] != cur.Annotations[annotationIngressClass] ||
+				!equality.Semantic.DeepEqual(old.Spec, cur.Spec)
+		},
+	}
+}
+
 // targetRefFor identifies a watched object as a ManagedWorkload target.
 // Typed objects from the cache carry no GVK, so the kind comes from the Go
 // type rather than obj.GetObjectKind().
@@ -1606,10 +1637,38 @@ func (r *Reconciler) initDefaults() {
 	}
 }
 
+// setupHistoryLearner registers the historyLearner, which seeds new
+// workloads' forecasts from Prometheus, when there's a Prometheus to read.
+func (r *Reconciler) setupHistoryLearner(mgr ctrl.Manager) error {
+	if r.history == nil && r.PrometheusURL != "" {
+		p, err := newHistoryReader(r.PrometheusURL, r.PrometheusSelector)
+		if err != nil {
+			return err
+		}
+		r.history = p
+	}
+	if r.history == nil {
+		return nil
+	}
+	learner := &historyLearner{client: mgr.GetClient(), history: r.history, metrics: r.metrics, engines: r.engines,
+		timezone: r.Timezone, clock: r.now}
+	return ctrl.NewControllerManagedBy(mgr).
+		Named("forecasthistory").
+		For(&v1alpha1.ManagedWorkload{}, builder.WithPredicates(predicate.NewPredicateFuncs(func(o client.Object) bool {
+			workload, ok := o.(*v1alpha1.ManagedWorkload)
+			return ok && needsHistory(workload)
+		}))).
+		WithOptions(controller.Options{MaxConcurrentReconciles: 1}).
+		Complete(learner)
+}
+
 // SetupWithManager registers the reconciler with the controller manager.
 func (r *Reconciler) SetupWithManager(mgr ctrl.Manager) error {
 	r.initDefaults()
 	if err := r.setupDoormanSliceSync(mgr); err != nil {
+		return err
+	}
+	if err := r.setupHistoryLearner(mgr); err != nil {
 		return err
 	}
 	for field, index := range workloadIndexes() {
@@ -1622,7 +1681,13 @@ func (r *Reconciler) SetupWithManager(mgr ctrl.Manager) error {
 	// so no reconcile reads it before it's complete.
 	r.graph = newWorkloadGraph()
 	targetHandler := handler.EnqueueRequestsFromMapFunc(r.findWorkloadsForTarget)
-	return ctrl.NewControllerManagedBy(mgr).
+	b := ctrl.NewControllerManagedBy(mgr)
+	if r.NEGForwarder != nil {
+		// A forwarder's pods coming and going show in its status, and its
+		// workload's slices follow them.
+		b = b.Owns(&appsv1.Deployment{})
+	}
+	return b.
 		For(&v1alpha1.ManagedWorkload{}).
 		Watches(&v1alpha1.ManagedWorkload{}, wakeHandler()).
 		Watches(&v1alpha1.ManagedWorkload{}, r.relatedHandler()).
@@ -1635,6 +1700,8 @@ func (r *Reconciler) SetupWithManager(mgr ctrl.Manager) error {
 		Watches(&discoveryv1.EndpointSlice{}, handler.EnqueueRequestsFromMapFunc(r.findWorkloadsForDoorman),
 			builder.WithPredicates(predicate.NewPredicateFuncs(r.isDoormanEndpoints))).
 		Watches(&corev1.Service{}, handler.EnqueueRequestsFromMapFunc(r.findPausedWorkloadsInNamespace)).
+		Watches(&networkingv1.Ingress{}, handler.EnqueueRequestsFromMapFunc(r.findPausedWorkloadsInNamespace),
+			builder.WithPredicates(ingressBackendsChanged())).
 		Watches(&corev1.Namespace{}, handler.EnqueueRequestsFromMapFunc(r.findWorkloadsInNamespace),
 			builder.WithPredicates(inWatchedNamespaces(r.WatchNamespaces))).
 		Named("managedworkload").

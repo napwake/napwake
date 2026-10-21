@@ -119,6 +119,35 @@ func TestReplay(t *testing.T) {
 	}
 }
 
+// CPU exactly at the threshold isn't activity, as the operator's activity
+// clock counts it: the replay sleeps through a week of it.
+func TestReplay_CPUAtTheThresholdIsNotActivity(t *testing.T) {
+	atThreshold := week(func(time.Time) float64 { return 0.2 }) // 10% of two pods' requests
+	h := atThreshold.run()
+	assert.InDelta(t, 168-1, h.SleepHours, 0.01)
+	assert.Zero(t, h.Wakes)
+
+	above := week(func(time.Time) float64 { return 0.21 })
+	assert.Zero(t, above.run().SleepHours)
+}
+
+// The scan judges current CPU as the operator does, by the share before
+// it's rounded to a whole percent for the report.
+func TestJudgeUnmanaged_CPUAtTheThreshold(t *testing.T) {
+	ten := 10
+	for _, tt := range []struct {
+		share float64
+		want  State
+	}{
+		{share: 10, want: StateIdle},
+		{share: 10.4, want: StateActive},
+	} {
+		w := &Workload{CPUPercent: &ten, CPUMillisUsed: 100, cpuShare: tt.share}
+		judgeUnmanaged(w, &appsv1.Deployment{}, weekStart, 10, time.Hour)
+		assert.Equal(t, tt.want, w.State, "CPU at %g%% of its requests", tt.share)
+	}
+}
+
 func TestReplay_RolloutIsActivity(t *testing.T) {
 	r := week(func(time.Time) float64 { return 0 })
 	r.rollouts = []time.Time{weekStart.Add(72*time.Hour + 2*time.Minute)}
@@ -260,6 +289,7 @@ func TestScanCluster_ReplaysHistory(t *testing.T) {
 	assert.Equal(t, ModeHistory, report.Mode)
 	require.NotNil(t, report.History)
 	assert.InDelta(t, 168, report.History.Hours, 0.1)
+	assert.False(t, report.History.Partial, "the whole window")
 	got := byName(report)
 
 	idle := got["idle-api"].History
@@ -313,24 +343,65 @@ func TestScanCluster_SavingsAreAShareOfTheirOwnCost(t *testing.T) {
 	assert.InDelta(t, (168-1)/168.0, share, 0.001, "asleep all but its first hour, of the pods it ran")
 }
 
-func TestScanCluster_SaysWhenPrometheusKeepsLessHistory(t *testing.T) {
-	f := &fakePrometheus{from: scanTime.Add(-50 * time.Hour), byNamespace: map[string][]series{testNamespace: {
-		{pod: "idle-api-7d9f8c6b5-abcde", container: "main", cores: func(time.Time) float64 { return 0 }},
-	}}}
-	objs := deploymentWithRollout("idle-api", testNamespace, 1, 30*24*time.Hour)
-	objs = append(objs, makePodMetrics("idle-api", testNamespace, "1m", "20Mi"))
-	opts := scanOptions(testNamespace)
-	opts.History, opts.Window, opts.IdleAfter = newFakePrometheus(t, f), 7*24*time.Hour, time.Hour
-	c := fake.NewClientBuilder().WithScheme(newScheme()).WithRuntimeObjects(objs...).Build()
+func TestScanCluster_SaysWhenPrometheusHasLessHistory(t *testing.T) {
+	tests := []struct {
+		name  string
+		since time.Duration
+		hours float64
+		span  string
+		note  string
+	}{
+		{name: "days", since: 50 * time.Hour, hours: 50, span: "2 days",
+			note: "the replay covers 2 days, not the 7 days asked for: that's all the CPU history Prometheus has " +
+				"of the namespaces scanned"},
+		{name: "a Prometheus installed half an hour ago", since: 30 * time.Minute, hours: 0.5, span: "30 minutes",
+			note: "the replay covers 30 minutes, not the 7 days asked for"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			f := &fakePrometheus{from: scanTime.Add(-tt.since), byNamespace: map[string][]series{testNamespace: {
+				{pod: "idle-api-7d9f8c6b5-abcde", container: "main", cores: func(time.Time) float64 { return 0 }},
+			}}}
+			objs := deploymentWithRollout("idle-api", testNamespace, 1, 30*24*time.Hour)
+			objs = append(objs, makePodMetrics("idle-api", testNamespace, "1m", "20Mi"))
+			opts := scanOptions(testNamespace)
+			opts.History, opts.Window, opts.IdleAfter = newFakePrometheus(t, f), 7*24*time.Hour, time.Hour
+			c := fake.NewClientBuilder().WithScheme(newScheme()).WithRuntimeObjects(objs...).Build()
 
-	report, err := NewScanner(c, c).ScanCluster(context.Background(), opts)
+			report, err := NewScanner(c, c).ScanCluster(context.Background(), opts)
 
-	require.NoError(t, err)
-	assert.InDelta(t, 50, report.History.Hours, 0.1)
-	assert.Contains(t, strings.Join(report.Notes, "\n"), "Prometheus keeps 2 days of history, so the replay covers that, not the 7 days asked for")
-	h := byName(report)["idle-api"].History
-	require.NotNil(t, h)
-	assert.InDelta(t, h.Freed/h.Hours*hoursPerMonth, h.MonthlyFreed, 0.001, "a month at the rate it covered")
+			require.NoError(t, err)
+			assert.InDelta(t, tt.hours, report.History.Hours, 0.1)
+			assert.True(t, report.History.Partial)
+			assert.Equal(t, tt.span, report.History.Span())
+			assert.Contains(t, strings.Join(report.Notes, "\n"), tt.note)
+			assert.NotContains(t, strings.Join(report.Notes, "\n"), "Prometheus keeps",
+				"how much it has, not a retention it may not have")
+			h := byName(report)["idle-api"].History
+			require.NotNil(t, h)
+			assert.InDelta(t, h.Freed/h.Hours*hoursPerMonth, h.MonthlyFreed, 0.001, "a month at the rate it covered")
+		})
+	}
+}
+
+func TestSpelled(t *testing.T) {
+	tests := map[time.Duration]string{
+		0: "1 minute", 20 * time.Second: "1 minute", time.Minute: "1 minute", 30 * time.Minute: "30 minutes",
+		59*time.Minute + 29*time.Second: "59 minutes", 59*time.Minute + 30*time.Second: "1 hour",
+		90 * time.Minute: "2 hours", 36 * time.Hour: "36 hours", 47*time.Hour + 29*time.Minute: "47 hours",
+		47*time.Hour + 30*time.Minute: "2 days", 7 * 24 * time.Hour: "7 days", 30 * 24 * time.Hour: "30 days",
+	}
+	for d, want := range tests {
+		assert.Equal(t, want, spelled(d), d.String())
+	}
+}
+
+func TestHistorySource_Span(t *testing.T) {
+	assert.Empty(t, (*HistorySource)(nil).Span())
+	assert.Empty(t, (&HistorySource{}).Span(), "no history, no span")
+	assert.Equal(t, "30 minutes", (&HistorySource{Hours: 0.5}).Span())
+	assert.Equal(t, "1 hour", (&HistorySource{Hours: 1}).Span())
+	assert.Equal(t, "7 days", (&HistorySource{Hours: 168}).Span())
 }
 
 // Workloads Hybernate manages are replayed with their own idleAfter;

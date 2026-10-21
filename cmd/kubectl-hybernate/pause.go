@@ -146,6 +146,12 @@ When an active-until annotation holds it awake, on its ManagedWorkload, as
 wake --for sets, or on the workload itself, pause asks whether to clear it
 and pause now; --clear-hold clears it without asking.
 
+When a GitOps tool sets the workload's replicas from Git and isn't told to
+leave them to Hybernate, pause warns that its next sync will likely undo the
+pause, with the one-time fix. For Argo CD, the workload's Application and
+argocd-cm say whether it's told to; when they can't be read, the warning
+says so.
+
 NAME is the workload, as status shows it, such as api or statefulset/postgres,
 or its ManagedWorkload's name.
 
@@ -246,7 +252,7 @@ func pause(s clusterSteps, key client.ObjectKey, opts pauseOptions, out, errOut 
 			return waitForPause(ctx, c, key, ref, "", w.Status.Phase, opts.now(), opts, out)
 		}
 		target := readTarget(ctx, c, w)
-		warnIfGitOpsUndoes(target, ref, errOut)
+		warnIfGitOpsUndoes(ctx, c, target, ref, errOut)
 		held := holdOn(w, target, opts.now())
 		if !held.until.IsZero() && !opts.clearHold {
 			held.ref = ref
@@ -457,26 +463,59 @@ func pauseAnswered(w *v1alpha1.ManagedWorkload, ref string, requested bool, out 
 	return true, fmt.Errorf("%s %w: %s", ref, errNotPaused, why)
 }
 
-// warnIfGitOpsUndoes warns when a GitOps tool last set the workload's
-// replicas: it sets them from Git again on its next sync, which undoes the
-// pause, as the operator finds from the same managed fields. The pause is
-// asked for anyway. A workload that couldn't be read goes without the
-// warning.
-func warnIfGitOpsUndoes(target client.Object, ref string, out io.Writer) {
+// warnIfGitOpsUndoes warns when a GitOps tool sets the workload's replicas
+// from Git and isn't told to leave them: its next sync undoes the pause, as
+// the operator would find. The pause is asked for anyway. A workload that
+// couldn't be read goes without the warning.
+func warnIfGitOpsUndoes(ctx context.Context, c client.Client, target client.Object, ref string, out io.Writer) {
 	if target == nil {
 		return
 	}
-	writer, found := gitops.ReplicasWriter(target.GetManagedFields())
-	if !found || !writer.FromGit() {
+	writeGitOpsWarning(out, gitops.NewChecker(c).Replicas(ctx, target), []string{ref}, "this pause")
+}
+
+// gitOpsAnchors are the sections of the GitOps guide for each tool.
+var gitOpsAnchors = map[gitops.Tool]string{
+	gitops.ArgoCD: "argo-cd",
+	gitops.Flux:   "flux",
+	gitops.Fleet:  "rancher-fleet",
+	gitops.Kapp:   "kapp",
+	gitops.Kluctl: "kluctl",
+}
+
+// writeGitOpsWarning says a GitOps tool will likely undo the pauses of the
+// workloads refs names, which it was found to treat alike, and what to
+// change, once, to have it leave their replicas to Hybernate. When whether
+// it's been told to couldn't be read, it says why, and to make the change if
+// it hasn't been made. undoing is what a sync undoes, "this pause" or "each
+// pause". Nothing is written for a tool that leaves them.
+func writeGitOpsWarning(out io.Writer, r gitops.Replicas, refs []string, undoing string) {
+	if r.Undo == gitops.Leaves || len(refs) == 0 {
 		return
 	}
-	_, _ = fmt.Fprintf(out, "Warning: %s set %s's replicas last, as %s, so it will likely scale it back up on its "+
-		"next sync and undo this pause. To have %s leave replicas to Hybernate, once:\n",
-		writer.Tool, ref, writer.Manager, writer.Tool)
-	for _, line := range gitops.Fix(writer.Tool) {
+	tool := string(r.Writer.Tool)
+	if r.App != "" {
+		tool += " application " + r.App
+	}
+	subject := refs[0] + "'s replicas"
+	if len(refs) > 1 {
+		subject = "the replicas of " + strings.Join(refs, ", ")
+	}
+	object := pronounObject(len(refs))
+	if r.Undo == gitops.Undoes {
+		_, _ = fmt.Fprintf(out, "Warning: %s sets %s from Git, as %s, so its next sync will likely scale %s back up, "+
+			"undoing %s. To have %s leave replicas to Hybernate, once:\n", tool, subject, r.Writer.Manager, object,
+			undoing, r.Writer.Tool)
+	} else {
+		_, _ = fmt.Fprintf(out, "Warning: %s sets %s from Git, as %s, and whether it's told to leave them to "+
+			"Hybernate couldn't be checked: %s. If you haven't already, have %s leave them, once, or its next sync "+
+			"will likely scale %s back up, undoing %s:\n", tool, subject, r.Writer.Manager, r.Unread, r.Writer.Tool,
+			object, undoing)
+	}
+	for _, line := range r.Fix {
 		_, _ = fmt.Fprintf(out, "  %s\n", line)
 	}
-	_, _ = fmt.Fprintf(out, "See %s\n", gitOpsGuide)
+	_, _ = fmt.Fprintf(out, "See %s#%s\n", gitOpsGuide, gitOpsAnchors[r.Writer.Tool])
 }
 
 // readTarget reads the workload the ManagedWorkload manages, or nil when it

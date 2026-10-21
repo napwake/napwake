@@ -7,9 +7,10 @@ Everything the Hybernate operator and its doorman read, write, and send, for a s
 | Resource | Why | How |
 |---|---|---|
 | Deployments, StatefulSets | The workloads it manages: replicas, pod template, labels, and annotations | Watched |
-| Pods | What a workload's running pods request: the app containers', at most every 5 minutes, to judge CPU activity against, and all containers', sidecars included, to price it; and which pod sent a request that woke a workload. What every pod bound to a node requests, to measure the spare capacity on each node pool that [saved](../concepts/cost-tracking.md#how-saved-is-measured) is worked out from. The doorman reads the pod each of a woken workload's endpoints names, to check the endpoint's address is that pod's | Watched, with only bound, unfinished pods cached, and of each only its name, node, phase and requests; read from the API server for the rest. Not watched by an operator limited by `watchNamespaces`. The doorman keeps a pod's addresses for 30 seconds |
+| Pods | What a workload's running pods request: the app containers', at most every 5 minutes, to judge CPU activity against, and all containers', sidecars included, to price it; and which pod sent a request that woke a workload. What every pod bound to a node requests, to measure the spare capacity on each node pool that [saved](../concepts/cost-tracking.md#how-saved-is-measured) is worked out from. The doorman reads the pod each of a woken workload's endpoints names, to check the endpoint's address is that pod's. With `doorman.negForwarder.enabled`, a forwarder's pods, for their addresses and readiness | Watched, with only bound, unfinished pods cached, and of each only its name, node, phase and requests; read from the API server for the rest. Not watched by an operator limited by `watchNamespaces`. The doorman keeps a pod's addresses for 30 seconds |
 | Pod metrics (`metrics.k8s.io`) | CPU use, the activity clock's main signal | Read when needed, not cached |
 | Services | Which Services to route a paused workload's requests through, and which workload an address in an environment names | Watched |
+| Ingresses | Their class and the Services they send traffic to, to tell which Services a GKE Ingress puts behind container-native load balancing, which can't be routed to the doorman | Watched |
 | EndpointSlices | Its own, routing paused workloads to the doorman, and the doorman Service's, to find the doorman's pods. The doorman reads every slice in the watched namespaces, to find a woken workload's Ready pods | Watched |
 | ConfigMaps | The ones a managed workload takes environment variables from, to learn its dependencies; and `kube-system/cluster-autoscaler-status`, whose existence shows Cluster Autoscaler runs | Read one by one with `get`, not cached; never listed or written. Of `cluster-autoscaler-status`, only its metadata, every 10 minutes |
 | PersistentVolumeClaims | Their size, to price the storage a paused workload keeps | Watched |
@@ -27,13 +28,14 @@ Everything the Hybernate operator and its doorman read, write, and send, for a s
 | Resource | What |
 |---|---|
 | Deployments, StatefulSets | Their replica count, through the scale subresource, and, while one is paused, the `hybernate.io/paused-from` annotation: a copy of what the pause changed, removed when it's handed back. No other field, and never a delete |
+| Deployments of its own, with `doorman.negForwarder.enabled` | A forwarder, `hybernate-forwarder-<workload>`, in the namespace of each paused workload whose Service is behind GKE container-native load balancing, owned by its ManagedWorkload and deleted a minute after the workload wakes. See [GKE container-native load balancing](../concepts/wake-on-request.md#gke-container-native-load-balancing-negs) |
 | KEDA ScaledObjects | The `autoscaling.keda.sh/paused-replicas` annotation, while their workload is paused or resuming; afterwards the value it had before, or none |
 | EndpointSlices | Its own, routing a paused workload's Services to the doorman; deleted when the workload wakes |
 | ManagedWorkloads | Its own status, including each workload's forecast state; the ones it creates for labelled workloads; the `hybernate.io/cleanup` finalizer, added to each so that deleting it restores its workload first, and removed once it has, with `hybernate.io/operator`, the operator's namespace; `hybernate.io/last-activity` on a dependency it wakes; and, from the doorman, `hybernate.io/last-request` and `hybernate.io/last-request-from` (the caller's IP address) on one a request wakes |
 | Events | On ManagedWorkloads and workloads, to say what it did and why |
 | Leases | Leader election, in its own namespace |
 
-**Never written:** any other resource, any other field of a workload, and nothing is ever deleted but its own ManagedWorkloads and EndpointSlices.
+**Never written:** any other resource, any other field of a workload, and nothing is ever deleted but its own ManagedWorkloads, EndpointSlices and forwarder Deployments.
 
 ## What it sends
 
@@ -42,9 +44,9 @@ Nothing leaves the cluster, unless configured to:
 | Destination | When |
 |---|---|
 | The Kubernetes API server | Always: everything above |
-| Prometheus, at `prometheus.url` | Only with Prometheus activity queries configured; it sends the queries and reads their results |
+| Prometheus, at `prometheus.url` | Only with `prometheus.url` set: the Prometheus activity queries workloads configure, and, once for each new ManagedWorkload, one range query for up to four weeks of its own containers' CPU (`container_cpu_usage_seconds_total`), an hour a point, to start its forecast from, narrowed by `prometheus.selector` when it's set |
 
-No telemetry, no usage reporting, no update checks. The doorman answers requests to paused workloads and forwards them to the woken pod; it doesn't store or log their contents.
+No telemetry, no usage reporting, no update checks. The doorman answers requests to paused workloads and forwards them to the woken pod; it doesn't store or log their contents. Nor does a forwarder, which reads nothing from the API server and only passes connections on to the doorman.
 
 ## RBAC
 
@@ -60,6 +62,7 @@ What the Helm chart grants, for a release named `hybernate`; resource names star
 | `""` | `events` | `create`, `patch` | namespaced |
 | `events.k8s.io` | `events` | `create`, `patch` | namespaced |
 | `""` | `services` | `get`, `list`, `watch` | namespaced |
+| `networking.k8s.io` | `ingresses` | `get`, `list`, `watch` | namespaced |
 | `""` | `pods` | `get`, `list`, `watch` | namespaced |
 | `""` | `persistentvolumeclaims` | `get`, `list`, `watch` | namespaced |
 | `discovery.k8s.io` | `endpointslices` | `get`, `list`, `watch`, `create`, `update`, `patch`, `delete` | namespaced |
@@ -75,6 +78,8 @@ What the Helm chart grants, for a release named `hybernate`; resource names star
 With `watchNamespaces` and the doorman enabled, a Role `hybernate-doorman-endpoints` in the release namespace lets the operator `get`, `list` and `watch` `endpointslices` there, to find the doorman's pods.
 
 With leader election, a Role `hybernate-leader-election` in the release namespace grants `coordination.k8s.io` `leases` (`get`, `create`, `update`) and `""` `events` (`create`, `patch`).
+
+With `doorman.negForwarder.enabled`, a ClusterRole and ClusterRoleBinding `hybernate-forwarder`, or a Role and RoleBinding of that name in each watched namespace, grant `apps` `deployments` (`create`, `delete`), for the forwarders. A forwarder runs as its namespace's `default` ServiceAccount, without its token, and has no access to the API server.
 
 **Doorman** (ServiceAccount `hybernate-doorman`), ClusterRole and ClusterRoleBinding `hybernate-doorman`, or a Role in each watched namespace:
 
@@ -95,4 +100,4 @@ With leader election, a Role `hybernate-leader-election` in the release namespac
 
 ## The plugin
 
-`kubectl hybernate` runs with your own kubeconfig and permissions, reads the same kinds of resources and their events, and changes nothing except for `wake` (activity annotations on a ManagedWorkload), `pause` (the `hybernate.io/pause-requested` annotation on a ManagedWorkload, with `hybernate.io/pause-overrides-forecast` when told to pause one the forecast expects demand for, and, with `--clear-hold`, removing its `hybernate.io/active-until`) and `enable` (the `hybernate.io/dry-run` annotation, on a workload or its namespace, or `spec.dryRun` on a ManagedWorkload you wrote). `scan` reads Prometheus through the API server's service proxy, or at `--prometheus-url`, and writes its report only to your machine, in a file only you can read.
+`kubectl hybernate` runs with your own kubeconfig and permissions, reads the same kinds of resources and their events, and changes nothing except for `wake` (activity annotations on a ManagedWorkload), `pause` (the `hybernate.io/pause-requested` annotation on a ManagedWorkload, with `hybernate.io/pause-overrides-forecast` when told to pause one the forecast expects demand for, and, with `--clear-hold`, removing its `hybernate.io/active-until`) and `enable` (the `hybernate.io/dry-run` annotation, on a workload or its namespace, or `spec.dryRun` on a ManagedWorkload you wrote). `scan` reads Prometheus through the API server's service proxy, or at `--prometheus-url`, and writes its report only to your machine, in a file only you can read, as `status --html` does its page. For a workload Argo CD applies, `scan`, `status`, `pause` and `enable` read Argo CD's Applications and its `argocd-cm` ConfigMap, to tell whether it leaves the workload's replicas to Hybernate.

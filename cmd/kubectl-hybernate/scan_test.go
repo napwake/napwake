@@ -39,6 +39,7 @@ import (
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime/schema"
+	"k8s.io/client-go/rest"
 	"k8s.io/utils/ptr"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
@@ -90,6 +91,35 @@ func TestWriteTable(t *testing.T) {
 		"next steps name a real idle workload, putting it in dry-run before opting it in, which alone would "+
 			"have it paused")
 	assert.NotContains(t, got, "Hybernate Hub", "it has no page to send anyone to yet")
+}
+
+// The first line counts the namespaces the workloads listed are in, not
+// those holding only infrastructure, which the notes count apart.
+func TestWriteTable_CountsTheWorkloadsNamespaces(t *testing.T) {
+	cluster := sampleCluster()
+	cluster.Namespaces = 15
+	cluster.Workloads = append(cluster.Workloads, discovery.Workload{Namespace: "orders", Name: "api",
+		Kind: v1alpha1.TargetKindDeployment, State: discovery.StateActive})
+	cluster.Totals.Workloads = 3
+	cluster.Platform = []discovery.Workload{{Namespace: "argocd", Name: "argocd-server", Platform: "argocd"}}
+	var out bytes.Buffer
+
+	require.NoError(t, writeScan(&out, cluster, scanOptions{output: "table"}))
+
+	assert.Contains(t, out.String(), "staging: 3 workloads in 2 namespaces\n")
+}
+
+func TestWriteTable_OnlyInfrastructure(t *testing.T) {
+	report := &discovery.ClusterReport{Mode: discovery.ModeSnapshot, Namespaces: 2, Workloads: []discovery.Workload{},
+		Platform: []discovery.Workload{{Namespace: "argocd", Name: "argocd-server", Platform: "argocd"}},
+		Notes:    []string{"1 infrastructure workload is left out of the totals and next steps: argocd (1)"}}
+	var out bytes.Buffer
+
+	require.NoError(t, writeScan(&out, scanResult{Cluster: "staging", ClusterReport: report},
+		scanOptions{output: "table"}))
+
+	assert.Contains(t, out.String(), "staging: 2 namespaces scanned\n")
+	assert.Contains(t, out.String(), "Only the cluster's own infrastructure was found")
 }
 
 func TestWriteTable_Limit(t *testing.T) {
@@ -281,6 +311,21 @@ func TestWriteTable_OnlyMeasuring(t *testing.T) {
 	assert.NotContains(t, got, "kubectl label", "nothing unmanaged is idle")
 }
 
+// A replay of a few hours frees cents, which say "<$1" rather than a $0
+// that reads as nothing beside the month it projects.
+func TestWriteTable_HistoryFreedUnderADollar(t *testing.T) {
+	cluster := sampleCluster()
+	cluster.Mode = discovery.ModeHistory
+	cluster.History = &discovery.HistorySource{Prometheus: "monitoring/prometheus-operated", Hours: 4}
+	cluster.Totals.Replayed = discovery.ReplayTotals{Workloads: 12, Sleepers: 12, SleepHours: 36, Freed: 0.03,
+		MonthlyFreed: 11.2}
+	var out bytes.Buffer
+
+	require.NoError(t, writeScan(&out, cluster, scanOptions{output: "table"}))
+
+	assert.Contains(t, out.String(), "and freed <$1: about $11/month.")
+}
+
 func TestWriteTable_History(t *testing.T) {
 	cluster := sampleCluster()
 	cluster.Mode = discovery.ModeHistory
@@ -322,7 +367,97 @@ func TestWriteTable_HistoryWithNothingToSleep(t *testing.T) {
 		scanOptions{output: "table"}))
 
 	assert.Contains(t, out.String(),
-		"Replaying the last 30 hours, no unmanaged workload would have slept.")
+		"Replaying the last 30 hours, 0 of 2 unmanaged workloads would have slept.")
+}
+
+// With too little history to show a day's pattern, the terminal says why
+// nothing would have slept, as the report does.
+func TestWriteTable_TooLittleHistory(t *testing.T) {
+	cluster := sampleCluster()
+	cluster.Mode = discovery.ModeHistory
+	cluster.History = &discovery.HistorySource{Hours: 0.5, Partial: true}
+	for i := range cluster.Workloads {
+		cluster.Workloads[i].History = &discovery.History{Hours: 0.5}
+	}
+	cluster.Workloads = append(cluster.Workloads, discovery.Workload{Namespace: "reports", Name: "reports",
+		Kind: v1alpha1.TargetKindStatefulSet, State: discovery.StateActive, WontPause: "PVCs deleted on scale-down"})
+	cluster.Totals.Replayed = discovery.ReplayTotals{Workloads: 2}
+	var out bytes.Buffer
+
+	require.NoError(t, writeScan(&out, cluster, scanOptions{output: "table"}))
+
+	assert.Contains(t, out.String(), "  Replaying the last 30 minutes, 0 of 2 unmanaged workloads would have slept.\n"+
+		"  That's too little history to show a day's pattern; run the scan again after a few days.\n"+
+		"  Not counted: 1 that won't pause (PVCs deleted on scale-down).\n", "why, right after what it's about")
+
+	cluster.History.Partial = false
+	out.Reset()
+	require.NoError(t, writeScan(&out, cluster, scanOptions{output: "table"}))
+	assert.NotContains(t, out.String(), "too little history", "half an hour was all that was asked for")
+}
+
+// The replay's count leaves out what it can't count, and says what, so it
+// adds up to the workloads the table lists.
+func TestWriteTable_SaysWhatTheReplayDoesntCount(t *testing.T) {
+	cluster := sampleCluster()
+	cluster.Mode = discovery.ModeHistory
+	cluster.History = &discovery.HistorySource{Hours: 168}
+	for i := range cluster.Workloads {
+		cluster.Workloads[i].History = &discovery.History{Hours: 168}
+	}
+	cluster.Workloads = append(cluster.Workloads, discovery.Workload{Namespace: "reports", Name: "reports",
+		Kind: v1alpha1.TargetKindStatefulSet, State: discovery.StateActive, WontPause: "PVCs deleted on scale-down"})
+	cluster.Totals.Replayed = discovery.ReplayTotals{Workloads: 2}
+	var out bytes.Buffer
+
+	require.NoError(t, writeScan(&out, cluster, scanOptions{output: "table"}))
+
+	assert.Contains(t, out.String(), "  Replaying the last 7 days, 0 of 2 unmanaged workloads would have slept.\n"+
+		"  Not counted: 1 that won't pause (PVCs deleted on scale-down).\n")
+}
+
+func TestNotReplayed(t *testing.T) {
+	replayed := &discovery.History{Hours: 168}
+	workloads := []Workload{
+		{Name: "counted", State: discovery.StateIdle, History: replayed},
+		{Name: "managed", State: discovery.StateIdle, Managed: true},
+		{Name: "unjudged", State: discovery.StateUnknown},
+		{Name: "reports", State: discovery.StateActive, WontPause: "PVCs deleted on scale-down", History: replayed},
+		{Name: "archive", State: discovery.StateIdle, WontPause: "PVCs deleted on scale-down"},
+		{Name: "locked", State: discovery.StateIdle, Protected: true, History: replayed},
+		{Name: "off", State: discovery.StatePaused, ScaledByHand: true},
+		{Name: "new", State: discovery.StateActive},
+	}
+
+	assert.Equal(t, "2 that won't pause (PVCs deleted on scale-down), 1 in protected namespaces, 1 scaled to zero "+
+		"by hand and 1 without CPU history to replay", notReplayed(workloads))
+	assert.Empty(t, notReplayed(workloads[:3]), "managed and unjudged workloads aren't in the replay's count or the "+
+		"unmanaged ones the table lists")
+}
+
+// The window is the history actually replayed, said as people say it.
+func TestReplayedOver(t *testing.T) {
+	tests := map[float64]string{0: "", 0.01: "the last minute", 0.5: "the last 30 minutes", 1: "the last hour",
+		5: "the last 5 hours", 30: "the last 30 hours", 168: "the last 7 days", 720: "the last 30 days"}
+	for hours, want := range tests {
+		assert.Equal(t, want, replayedOver(&discovery.HistorySource{Hours: hours}), hours)
+	}
+	assert.Empty(t, replayedOver(nil))
+}
+
+// With half an hour of history the headline says half an hour, not "1
+// hours".
+func TestWriteTable_HistoryOfMinutes(t *testing.T) {
+	cluster := sampleCluster()
+	cluster.Mode = discovery.ModeHistory
+	cluster.History = &discovery.HistorySource{Hours: 0.5}
+	cluster.Totals.Replayed = discovery.ReplayTotals{Workloads: 2}
+	var out bytes.Buffer
+
+	require.NoError(t, writeScan(&out, cluster, scanOptions{output: "table"}))
+
+	assert.Contains(t, out.String(), "Replaying the last 30 minutes, ")
+	assert.NotContains(t, out.String(), "1 hours")
 }
 
 func TestHistoryAccess(t *testing.T) {
@@ -404,13 +539,36 @@ func TestWriteTable_Dependencies(t *testing.T) {
 		scanOptions{output: "table"}))
 
 	got := out.String()
-	assert.Contains(t, got, "Dependencies Hybernate wakes and holds with the workloads that need them: 4 dependencies")
-	assert.Regexp(t, `deployment/checkout-api\s+->\s+statefulset/postgres\s+PGHOST\s+connected once Hybernate manages it`,
-		got, "an unmanaged workload's")
-	assert.Regexp(t, `->\s+messaging/statefulset/nats\s+NATS_URL\s+connected once`, got,
-		"another namespace's is named with it")
-	assert.Regexp(t, `statefulset/backup\s+BACKUP\s+declared`, got)
+	assert.Contains(t, got, "  4 dependencies found. Once Hybernate manages both ends of one, it wakes the "+
+		"dependency with the workload that needs it, and keeps it up while that workload runs:\n",
+		"with nothing managed, what every status would say is said once")
+	assert.Regexp(t, `deployment/checkout-api\s+->\s+statefulset/postgres\s+PGHOST\n`, got, "no status column")
+	assert.Regexp(t, `->\s+messaging/statefulset/nats\s+NATS_URL\n`, got, "another namespace's is named with it")
+	assert.NotContains(t, got, "connected once", "no jargon")
 	assert.NotContains(t, got, "hybernate.io/depends-on=", "Hybernate connects dependencies itself")
+}
+
+// Once Hybernate manages a workload, each of its dependencies says what
+// Hybernate does with it.
+func TestWriteTable_DependenciesOfManagedWorkloads(t *testing.T) {
+	cluster := sampleCluster()
+	cluster.Workloads[0].Managed = true
+	cluster.Workloads[0].Dependencies = []discovery.Dependency{
+		{Namespace: "preview-42", Kind: v1alpha1.TargetKindStatefulSet, Name: "postgres", Via: "PGHOST",
+			Connected: true},
+		{Namespace: "preview-42", Kind: v1alpha1.TargetKindDeployment, Name: "cache", Via: "CACHE"},
+	}
+	cluster.Workloads[1].Managed = true
+	cluster.Workloads = append(cluster.Workloads, discovery.Workload{Namespace: "preview-42", Name: "cache",
+		Kind: v1alpha1.TargetKindDeployment, State: discovery.StateActive})
+	var out bytes.Buffer
+
+	require.NoError(t, writeScan(&out, cluster, scanOptions{output: "table"}))
+
+	got := out.String()
+	assert.Contains(t, got, "  2 dependencies found, and what Hybernate does with each:\n")
+	assert.Regexp(t, `statefulset/postgres\s+PGHOST\s+woken and held with it\n`, got)
+	assert.Regexp(t, `deployment/cache\s+CACHE\s+not managed, so never paused\n`, got)
 }
 
 // Many dependencies are summed up, listed most useful first, and cut at
@@ -547,25 +705,53 @@ func TestPricesFor(t *testing.T) {
 	}
 }
 
+// A dependency is woken and held with the workload that needs it only when
+// Hybernate manages both, and each status says what it does.
 func TestDependencyStatus(t *testing.T) {
 	tests := []struct {
-		name    string
-		managed bool
-		d       discovery.Dependency
-		want    string
+		name                string
+		managed, depManaged bool
+		d                   discovery.Dependency
+		want                string
 	}{
-		{name: "declared wins", managed: true, d: discovery.Dependency{Declared: true, Connected: true}, want: "declared"},
-		{name: "connected by Hybernate", managed: true, d: discovery.Dependency{Connected: true},
-			want: "connected by Hybernate"},
-		{name: "unmanaged", want: "connected once Hybernate manages it"},
-		{name: "managed, not yet applied", managed: true, want: "not connected yet"},
+		{name: "neither managed", want: "woken with it once both are managed"},
+		{name: "only the dependency managed", depManaged: true, d: discovery.Dependency{Declared: true},
+			want: "woken with it once both are managed"},
+		{name: "the dependency not managed", managed: true, d: discovery.Dependency{Connected: true},
+			want: "not managed, so never paused"},
+		{name: "declared", managed: true, depManaged: true, d: discovery.Dependency{Declared: true, Connected: true},
+			want: "declared; woken and held with it"},
+		{name: "learned", managed: true, depManaged: true, d: discovery.Dependency{Connected: true},
+			want: "woken and held with it"},
+		{name: "not learned yet", managed: true, depManaged: true, want: "not learned yet"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			l := dependencyLine{wl: Workload{Managed: tt.managed}, d: tt.d}
+			l := dependencyLine{wl: Workload{Managed: tt.managed}, d: tt.d, managed: tt.depManaged}
 			assert.Equal(t, tt.want, dependencyStatus(l))
 		})
 	}
+}
+
+// Whether a dependency is managed is read from the workloads scanned, the
+// cluster's infrastructure included.
+func TestDependencyLines_KnowWhatsManaged(t *testing.T) {
+	db := discovery.Workload{Namespace: "dev", Kind: v1alpha1.TargetKindStatefulSet, Name: "db", Managed: true}
+	queue := discovery.Workload{Namespace: "infra", Kind: v1alpha1.TargetKindStatefulSet, Name: "queue",
+		Managed: true, Platform: "rabbitmq"}
+	api := discovery.Workload{Namespace: "dev", Kind: v1alpha1.TargetKindDeployment, Name: "api", Managed: true,
+		Dependencies: []discovery.Dependency{
+			{Namespace: "dev", Kind: v1alpha1.TargetKindStatefulSet, Name: "db"},
+			{Namespace: "infra", Kind: v1alpha1.TargetKindStatefulSet, Name: "queue"},
+			{Namespace: "dev", Kind: v1alpha1.TargetKindStatefulSet, Name: "cache"},
+		}}
+
+	lines := dependencyLines([]Workload{api, db}, []Workload{queue})
+
+	require.Len(t, lines, 3)
+	assert.True(t, lines[0].managed)
+	assert.True(t, lines[1].managed, "infrastructure Hybernate manages")
+	assert.False(t, lines[2].managed, "one not scanned isn't known to be managed")
 }
 
 func TestWriteScan_FreedAndSavedThisMonth(t *testing.T) {
@@ -617,7 +803,8 @@ func TestWriteScan_NodeAutoscaler(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			result := scanResult{Cluster: "staging", NodeAutoscaler: tt.a, ClusterReport: &discovery.ClusterReport{
-				Namespaces: 1, Totals: discovery.Totals{Workloads: 1}}}
+				Namespaces: 1, Workloads: []discovery.Workload{{Namespace: "preview-42", Name: "api",
+					State: discovery.StateActive}}, Totals: discovery.Totals{Workloads: 1}}}
 			var out bytes.Buffer
 
 			require.NoError(t, writeScan(&out, result, scanOptions{output: "table"}))
@@ -793,6 +980,15 @@ func TestPrometheusFrom(t *testing.T) {
 		{"a missing token file", prometheusOptions{url: "https://p", bearerTokenFile: tokenFile + "-missing"},
 			"--prometheus-bearer-token-file"},
 		{"a missing CA file", prometheusOptions{url: "https://p", caFile: tokenFile + "-missing"}, "--prometheus-ca-file"},
+		{"a URL and a Service", prometheusOptions{url: "https://p", service: "monitoring/prometheus"}, "pass one"},
+		{"a Service without a namespace", prometheusOptions{service: "prometheus-operated"},
+			"isn't namespace/name or namespace/name:port"},
+		{"a Service with an empty port", prometheusOptions{service: "monitoring/prometheus-operated:"},
+			"isn't namespace/name or namespace/name:port"},
+		{"a Service that can't be named so", prometheusOptions{service: "monitoring/Prometheus"},
+			"isn't namespace/name or namespace/name:port"},
+		{"auth with a Service", prometheusOptions{service: "monitoring/prometheus", bearerTokenFile: tokenFile},
+			"are for --prometheus-url"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -801,6 +997,130 @@ func TestPrometheusFrom(t *testing.T) {
 			assert.Contains(t, err.Error(), tt.want)
 		})
 	}
+}
+
+func TestPrometheusFrom_Service(t *testing.T) {
+	setup, err := prometheusFrom(prometheusOptions{service: "monitoring/prometheus-operated:web"})
+	require.NoError(t, err)
+	assert.Equal(t, &serviceRef{namespace: "monitoring", name: "prometheus-operated", port: "web"}, setup.service)
+
+	setup, err = prometheusFrom(prometheusOptions{service: "monitoring/prometheus-operated"})
+	require.NoError(t, err)
+	assert.Empty(t, setup.service.port, "the Service's own API port")
+
+	setup, err = prometheusFrom(prometheusOptions{})
+	require.NoError(t, err)
+	assert.Nil(t, setup.service, "found in the cluster")
+}
+
+// The terminal names the Prometheus the history is from, how much it
+// replayed, and the others it could have read.
+func TestWriteTable_HistoryLine(t *testing.T) {
+	tests := []struct {
+		name    string
+		history discovery.HistorySource
+		want    string
+	}{
+		{name: "found", history: discovery.HistorySource{Prometheus: "monitoring/prometheus-operated", Hours: 0.5},
+			want: "History: the last 30 minutes, from monitoring/prometheus-operated\n"},
+		{name: "one of several", history: discovery.HistorySource{Prometheus: "monitoring/prometheus-operated",
+			Hours: 168, Others: []string{"istio-system/prometheus"}},
+			want: "History: the last 7 days, from monitoring/prometheus-operated; also found istio-system/prometheus, " +
+				"which --prometheus-service reads instead\n"},
+		{name: "a URL", history: discovery.HistorySource{Prometheus: "https://thanos.example.com", Hours: 720},
+			want: "History: the last 30 days, from https://thanos.example.com\n"},
+		{name: "none of the namespaces' history",
+			history: discovery.HistorySource{Prometheus: "monitoring/prometheus-operated"},
+			want:    "History: monitoring/prometheus-operated has no CPU history of the namespaces scanned\n"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			cluster := sampleCluster()
+			cluster.Mode = discovery.ModeHistory
+			cluster.History = &tt.history
+			var out bytes.Buffer
+
+			require.NoError(t, writeScan(&out, cluster, scanOptions{output: "table"}))
+
+			assert.Contains(t, out.String(), tt.want)
+		})
+	}
+
+	var out bytes.Buffer
+	require.NoError(t, writeScan(&out, sampleCluster(), scanOptions{output: "table"}))
+	assert.NotContains(t, out.String(), "History:", "no history read, no line")
+}
+
+// proxiedPrometheus is an API server whose service proxy reaches one
+// Prometheus, at path, and refuses the user any other.
+func proxiedPrometheus(t *testing.T, path string) *httptest.Server {
+	t.Helper()
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case path + "/api/v1/query":
+			_, _ = io.WriteString(w, `{"status":"success","data":{"resultType":"vector","result":[]}}`)
+		case path + "/api/v1/query_range":
+			_, _ = io.WriteString(w, `{"status":"success","data":{"resultType":"matrix","result":[]}}`)
+		default:
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusForbidden)
+			_, _ = io.WriteString(w, `{"kind":"Status","apiVersion":"v1","status":"Failure","reason":"Forbidden",`+
+				`"code":403}`)
+		}
+	}))
+	t.Cleanup(server.Close)
+	return server
+}
+
+// runCLIAt is runCLI against an API server, for what goes through it
+// rather than the client, such as the service proxy.
+func runCLIAt(t *testing.T, server string, c client.Client, args ...string) (string, error) {
+	t.Helper()
+	writeKubeconfig(t, server, "preview-42")
+	root := newRootCmd(func(*rest.Config) (client.Client, error) { return c, nil })
+	var out bytes.Buffer
+	root.SetOut(&out)
+	root.SetErr(&out)
+	root.SetIn(strings.NewReader(""))
+	root.SetArgs(args)
+	err := root.Execute()
+	return out.String(), err
+}
+
+// --prometheus-service reads history from the Prometheus Service it names,
+// one the scan wouldn't have found, through the API server.
+func TestCLI_ScanPrometheusService(t *testing.T) {
+	ns := &corev1.Namespace{ObjectMeta: metav1.ObjectMeta{Name: "preview-42"}}
+	prometheus := &corev1.Service{ObjectMeta: metav1.ObjectMeta{Name: "frontend", Namespace: "gmp-public"},
+		Spec: corev1.ServiceSpec{Ports: []corev1.ServicePort{{Name: "web", Port: 9090}}}}
+	server := proxiedPrometheus(t, "/api/v1/namespaces/gmp-public/services/frontend:web/proxy")
+
+	out, err := runCLIAt(t, server.URL, newStatusClient(t, interceptor.Funcs{}, ns, prometheus), "scan",
+		"-n", "preview-42", "-o", "json", "--prometheus-service", "gmp-public/frontend")
+
+	require.NoError(t, err, out)
+	var result scanResult
+	require.NoError(t, json.Unmarshal([]byte(out), &result))
+	require.NotNil(t, result.History)
+	assert.Equal(t, "gmp-public/frontend", result.History.Prometheus)
+}
+
+// A Prometheus the user names that the API server won't let them reach
+// fails the scan, saying what an admin can run to let them.
+func TestCLI_ScanPrometheusServiceForbidden(t *testing.T) {
+	ns := &corev1.Namespace{ObjectMeta: metav1.ObjectMeta{Name: "preview-42"}}
+	prometheus := &corev1.Service{ObjectMeta: metav1.ObjectMeta{Name: "prometheus-operated", Namespace: "monitoring"},
+		Spec: corev1.ServiceSpec{Ports: []corev1.ServicePort{{Name: "web", Port: 9090}}}}
+	server := proxiedPrometheus(t, "/nowhere")
+
+	_, err := runCLIAt(t, server.URL, newStatusClient(t, interceptor.Funcs{}, ns, prometheus), "scan",
+		"-n", "preview-42", "-o", "json", "--prometheus-service", "monitoring/prometheus-operated")
+
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "reading history from --prometheus-service monitoring/prometheus-operated: "+
+		"can't query monitoring/prometheus-operated through the API server")
+	assert.Contains(t, err.Error(), "kubectl create role hybernate-scan -n monitoring --verb=get "+
+		"--resource=services/proxy --resource-name=prometheus-operated:web")
 }
 
 // A scan that couldn't read all it should have exits non-zero, after its
@@ -925,7 +1245,7 @@ func TestEmptyCluster(t *testing.T) {
 
 	require.NoError(t, writeScan(&out, result, scanOptions{output: "table"}))
 
-	assert.Contains(t, out.String(), "c: 0 workloads in 3 namespaces")
+	assert.Contains(t, out.String(), "c: 3 namespaces scanned\n")
 	assert.Contains(t, out.String(), "No Deployments or StatefulSets were found.")
 	assert.NotContains(t, out.String(), "No running workloads are idle")
 	page := renderHTML(t, result)

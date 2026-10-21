@@ -26,6 +26,7 @@ import (
 	corev1 "k8s.io/api/core/v1"
 
 	"github.com/okedeji/hybernate/internal/cost"
+	"github.com/okedeji/hybernate/internal/forecast"
 	"github.com/okedeji/hybernate/internal/metrics"
 )
 
@@ -40,12 +41,37 @@ const maxPointsPerSeries = 10000
 
 // HistorySource says what a scan's history came from.
 type HistorySource struct {
-	// Prometheus is the Prometheus the CPU history was read from.
+	// Prometheus is the Prometheus the CPU history was read from, and
+	// Others the other Prometheus Services found in the cluster, when it
+	// was found there.
 	Prometheus string    `json:"prometheus"`
+	Others     []string  `json:"others,omitempty"`
 	Since      time.Time `json:"since,omitzero"`
-	// Hours is how much history the replay covered, which is less than the
-	// window asked for when Prometheus keeps less.
-	Hours float64 `json:"hours"`
+	// Hours is how much history the replay covered, and Partial says it's
+	// less than the window asked for, as Prometheus has less.
+	Hours   float64 `json:"hours"`
+	Partial bool    `json:"partial,omitempty"`
+}
+
+// Span is how much history the replay covered, as people say it: "30
+// minutes", "5 hours", "7 days"; "" when it covered none.
+func (h *HistorySource) Span() string {
+	if h == nil || h.Hours <= 0 {
+		return ""
+	}
+	return spelled(time.Duration(h.Hours * float64(time.Hour)))
+}
+
+// spelled says how long d is in the largest unit that reads naturally, to
+// the nearest one: minutes under an hour, hours under two days, then days.
+func spelled(d time.Duration) string {
+	if minutes := int(d.Round(time.Minute) / time.Minute); minutes < 60 {
+		return plural(max(minutes, 1), "minute", "minutes")
+	}
+	if hours := int(d.Round(time.Hour) / time.Hour); hours < 48 {
+		return plural(hours, "hour", "hours")
+	}
+	return plural(int(d.Round(24*time.Hour)/(24*time.Hour)), "day", "days")
 }
 
 // History is what replaying the activity clock over a workload's recorded
@@ -100,7 +126,7 @@ type replay struct {
 }
 
 // run walks the history a step at a time under the activity clock's rules:
-// CPU at or above the threshold, or a rollout, is activity, and once there
+// CPU above the threshold, or a rollout, is activity, and once there
 // has been none for idleAfter the workload would be paused until the next.
 // The clock starts at the beginning of the history, as it does for a new
 // ManagedWorkload.
@@ -118,7 +144,7 @@ func (r replay) run() History {
 		active := rolledOutBetween(rollouts, t.Add(-r.step), t)
 		if pods > 0 && r.requestCores > 0 {
 			percent := r.usedCores[at] / (float64(pods) * r.requestCores) * 100
-			active = active || percent >= float64(r.threshold)
+			active = active || forecast.Busy(percent, r.threshold)
 		}
 		switch {
 		case active:
@@ -356,8 +382,9 @@ func (s *Scanner) readHistory(ctx context.Context, namespace string, opts Cluste
 	return history, nil
 }
 
-// replayWorkload replays the activity clock over one workload's share of
-// its namespace's history, or returns nil when none of it is the workload's.
+// workloadReplay is one workload's share of its namespace's history, to
+// replay the activity clock over, or false when none of it is the
+// workload's.
 // The replay starts at the workload's first sample, or at since if it was
 // running before then, as the activity clock starts when a workload first
 // runs: one younger than the window isn't charged for hours before it ran.
@@ -366,15 +393,15 @@ func (s *Scanner) readHistory(ctx context.Context, namespace string, opts Cluste
 // reinstall does, runs the same pods, whose history is its own. Its
 // requests and prices are today's, since the history only records CPU:
 // ownCPU is what one of its pods requests now for its own containers.
-func replayWorkload(w Workload, spec corev1.PodSpec, ownCPU int64, history []containerCPU, podsOf podNames,
-	since time.Time, rollouts []time.Time, threshold int, idleAfter time.Duration, opts ClusterOptions) *History {
+func workloadReplay(w Workload, spec corev1.PodSpec, ownCPU int64, history []containerCPU, podsOf podNames,
+	since time.Time, rollouts []time.Time, threshold int, idleAfter time.Duration, opts ClusterOptions) (replay, bool) {
 	containers := make([]string, 0, len(spec.Containers))
 	for _, c := range metrics.WorkloadContainers(spec) {
 		containers = append(containers, c.Name)
 	}
 	used, pods, found := workloadSeries(history, podsOf, containers)
 	if !found {
-		return nil
+		return replay{}, false
 	}
 	if len(pods) > 0 {
 		if first := time.Unix(slices.Min(slices.Collect(maps.Keys(pods))), 0); first.After(since) {
@@ -383,7 +410,7 @@ func replayWorkload(w Workload, spec corev1.PodSpec, ownCPU int64, history []con
 	}
 
 	step := historyStep(opts.Window)
-	h := replay{
+	return replay{
 		start:        since,
 		end:          opts.Now().Truncate(step),
 		step:         step,
@@ -395,8 +422,7 @@ func replayWorkload(w Workload, spec corev1.PodSpec, ownCPU int64, history []con
 			float64(w.PodMemoryRequestBytes)/(1<<30), w.rates),
 		threshold: threshold,
 		idleAfter: idleAfter,
-	}.run()
-	return &h
+	}, true
 }
 
 // CouldFree is what pausing a workload Hybernate doesn't pause yet would

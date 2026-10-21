@@ -28,10 +28,11 @@ import (
 	"time"
 )
 
-// stateVersion 3 is the additive model learning utilization, as a
-// percentage of the CPU requested; 2 learned millicores. State of any other
+// stateVersion 5 is the additive model learning utilization, as a
+// percentage of the CPU requested, with the demand last seen in each hour
+// of the week and the weekly changes held for a day. State of any other
 // version is rejected rather than migrated: an engine relearns in days.
-const stateVersion = 3
+const stateVersion = 5
 
 // maxStateBytes bounds the decompressed state, so a hand-edited state
 // can't expand into gigabytes. A real one is a few kilobytes.
@@ -47,6 +48,10 @@ var maxLastHour = time.Date(4000, 1, 1, 0, 0, 0, 0, time.UTC).Unix()
 
 // ErrInvalidState is returned for persisted state that can't be restored.
 var ErrInvalidState = errors.New("invalid forecast state")
+
+// ErrOlderState is returned, with ErrInvalidState, for state an older
+// version of the engine saved, as an upgrade leaves behind.
+var ErrOlderState = errors.New("saved by an older version of the forecast")
 
 // engineState is what is persisted of an engine, in the ManagedWorkload's
 // status. Keys are short and the seasonal components and errors are single
@@ -71,6 +76,10 @@ type engineState struct {
 	AnAbove  weekSlots             `json:"aa"`
 	AnBelow  weekSlots             `json:"ab"`
 	PrePhase int                   `json:"pp"`
+	Recent   [WeeklySeason]float32 `json:"r"`
+	Seen     weekSlots             `json:"rs"`
+	Held     [WeeklySeason]float32 `json:"hw"`
+	Doubting bool                  `json:"dq,omitempty"`
 }
 
 // Export encodes what the engine has learned as compact text: gzipped JSON
@@ -92,12 +101,18 @@ func (e *Engine) Export() (string, error) {
 		AnAbove:  e.Anomaly.above,
 		AnBelow:  e.Anomaly.below,
 		PrePhase: int(e.phaseBeforeAnomalies),
+		Recent:   e.recent,
+		Seen:     e.recentSeen,
+		Doubting: e.doubting,
 	}
 	for i, v := range e.Model.daily {
 		st.Daily[i] = float32(v)
 	}
 	for i, v := range e.Model.weekly {
 		st.Weekly[i] = float32(v)
+	}
+	for i, v := range e.held {
+		st.Held[i] = float32(v)
 	}
 	absErr, actual := e.Scorer.ordered()
 	st.AbsErr, st.Actual = toFloat32s(absErr), toFloat32s(actual)
@@ -162,6 +177,9 @@ func decodeEngine(data []byte, settings Settings) (*Engine, error) {
 	for i, v := range st.Weekly {
 		e.Model.weekly[i] = float64(v)
 	}
+	for i, v := range st.Held {
+		e.held[i] = float64(v)
+	}
 	for i := range st.AbsErr {
 		e.Scorer.push(float64(st.AbsErr[i]), float64(st.Actual[i]))
 	}
@@ -172,11 +190,16 @@ func decodeEngine(data []byte, settings Settings) (*Engine, error) {
 	e.Anomaly.above = st.AnAbove
 	e.Anomaly.below = st.AnBelow
 	e.phaseBeforeAnomalies = Phase(st.PrePhase)
+	e.recent = st.Recent
+	e.recentSeen = st.Seen
+	e.doubting = st.Doubting
 	return e, nil
 }
 
 func (st *engineState) validate() error {
 	switch {
+	case st.Version < stateVersion:
+		return fmt.Errorf("%w, version %d (now %d)", ErrOlderState, st.Version, stateVersion)
 	case st.Version != stateVersion:
 		return fmt.Errorf("unsupported version %d (expected %d)", st.Version, stateVersion)
 	case st.Phase < int(Observing) || st.Phase > int(FullyActive):
@@ -189,7 +212,7 @@ func (st *engineState) validate() error {
 		return errors.New("data points and last observed hour disagree")
 	case st.LastHour < 0 || st.LastHour > maxLastHour:
 		return fmt.Errorf("last observed hour %d out of range", st.LastHour)
-	case !st.Coverage.valid() || !st.AnAbove.valid() || !st.AnBelow.valid():
+	case !st.Coverage.valid() || !st.AnAbove.valid() || !st.AnBelow.valid() || !st.Seen.valid():
 		return errors.New("hours beyond the hours of a week")
 	case len(st.AbsErr) != len(st.Actual) || len(st.AbsErr) > weeklyWindow:
 		return fmt.Errorf("error window of %d and %d hours", len(st.AbsErr), len(st.Actual))
@@ -220,9 +243,19 @@ func (st *engineState) validateMagnitudes() error {
 			return errors.New("weekly component out of range")
 		}
 	}
+	for _, v := range st.Held {
+		if !bounded(float64(v)) {
+			return errors.New("held weekly change out of range")
+		}
+	}
 	for i := range st.AbsErr {
 		if !nonNegative(float64(st.AbsErr[i])) || !nonNegative(float64(st.Actual[i])) {
 			return errors.New("recorded error out of range")
+		}
+	}
+	for _, v := range st.Recent {
+		if !nonNegative(float64(v)) || float64(v) > maxDemand {
+			return errors.New("recent demand out of range")
 		}
 	}
 	return nil

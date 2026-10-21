@@ -25,10 +25,17 @@ spec:
       scan     finds idle Deployments and StatefulSets and what they cost,
                without Hybernate installed
       status   shows what Hybernate is pausing, waking and saving
+      nodes    shows why nodes aren't scaling down, so pausing saves money
+      forecast replays the forecast over Prometheus history, to show when
+               it would wake each workload
       enable   ends dry-run, so Hybernate pauses a workload it's measuring
       pause    pauses a workload now, to wake on its next request
       wake     wakes a paused workload and waits until it's ready
       deps     shows what a workload depends on and what depends on it
+  caveats: |
+    scan, nodes and forecast work on any cluster. status, enable, pause,
+    wake and deps need the Hybernate operator installed in it:
+    https://okedeji.io/hybernate/getting-started/installation/
   platforms:
 EOF
 

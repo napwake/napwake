@@ -200,6 +200,10 @@ func (h *heldConn) hold(ctx context.Context) (net.Conn, string) {
 	h.head = head
 	req, isHTTP := parseRequest(head)
 
+	if isHTTP && isHealthCheck(req, failClosedCheckAgents) {
+		_ = h.reply(writeHealthy) // the caller may already have gone
+		return nil, resultIgnored
+	}
 	if isHTTP && isHealthCheck(req, h.healthCheckAgents) {
 		_ = h.reply(writeUnavailable) // the caller may already have gone
 		return nil, resultIgnored

@@ -18,6 +18,8 @@ package main
 
 import (
 	"context"
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"sync"
@@ -42,6 +44,7 @@ import (
 	v1alpha1 "github.com/okedeji/hybernate/api/v1alpha1"
 	"github.com/okedeji/hybernate/internal/controller"
 	"github.com/okedeji/hybernate/internal/doorman"
+	"github.com/okedeji/hybernate/internal/forwarder"
 	"github.com/okedeji/hybernate/internal/gitops"
 )
 
@@ -95,6 +98,36 @@ func TestValidatePrometheusURL(t *testing.T) {
 	}
 }
 
+func TestParsePrometheusSelector(t *testing.T) {
+	const url = "http://thanos.monitoring.svc:9090"
+	tests := []struct {
+		name    string
+		raw     string
+		url     string
+		want    []string
+		wantErr string
+	}{
+		{name: "none", url: url},
+		{name: "one cluster", raw: `cluster="prelaunch"`, url: url, want: []string{`cluster="prelaunch"`}},
+		{name: "braces and a regex", raw: `{cluster=~"pre.*", replica!="b"}`, url: url,
+			want: []string{`cluster=~"pre.*"`, `replica!="b"`}},
+		{name: "unquoted value", raw: `cluster=prelaunch`, url: url, wantErr: "double-quoted"},
+		{name: "a query smuggled in", raw: `cluster="a"} or vector(1)`, url: url, wantErr: "expected a comma"},
+		{name: "no Prometheus to narrow", raw: `cluster="prelaunch"`, wantErr: "--prometheus-url, which isn't set"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, err := parsePrometheusSelector(tt.raw, tt.url)
+			if tt.wantErr != "" {
+				assert.ErrorContains(t, err, tt.wantErr)
+				return
+			}
+			require.NoError(t, err)
+			assert.Equal(t, tt.want, []string(got))
+		})
+	}
+}
+
 func TestValidateOptInDefaults(t *testing.T) {
 	tests := []struct {
 		name    string
@@ -118,6 +151,10 @@ func TestValidateOptInDefaults(t *testing.T) {
 			mutate: func(d *controller.OptInDefaults) { d.IdleAfter = 30 * time.Second }, wantErr: true},
 		{name: "negative idleAfter", mutate: func(d *controller.OptInDefaults) { d.IdleAfter = -time.Minute },
 			wantErr: true},
+		{name: "an eager forecast", mutate: func(d *controller.OptInDefaults) { d.Forecast = v1alpha1.PredictionEager }},
+		{name: "a forecast setting the CRD doesn't have",
+			mutate: func(d *controller.OptInDefaults) { d.Forecast = "Eager" }, wantErr: true},
+		{name: "no forecast setting", mutate: func(d *controller.OptInDefaults) { d.Forecast = "" }, wantErr: true},
 	}
 
 	for _, tt := range tests {
@@ -519,4 +556,76 @@ func TestOperatorCacheHoldsPodsAsWhatTheyRequest(t *testing.T) {
 	assert.Equal(t, "4", cached.Status.Allocatable.Cpu().String())
 	assert.Equal(t, []corev1.NodeCondition{{Type: corev1.NodeReady, Status: corev1.ConditionTrue}},
 		cached.Status.Conditions)
+}
+
+// The forwarder's pod is Ready only once it reaches the doorman, so the
+// operator doesn't point a Service at a forwarder that would drop its
+// connections.
+func TestForwarderProbes(t *testing.T) {
+	f := forwarder.New(forwarder.Options{
+		Routes:  map[int32]int32{8080: 23456},
+		Doorman: "hybernate-doorman-pods.hybernate-system.svc",
+	})
+	probes := forwarderProbes(f)
+
+	live := httptest.NewRecorder()
+	probes.ServeHTTP(live, httptest.NewRequest(http.MethodGet, "/healthz", nil))
+	ready := httptest.NewRecorder()
+	probes.ServeHTTP(ready, httptest.NewRequest(http.MethodGet, "/readyz", nil))
+
+	assert.Equal(t, http.StatusOK, live.Code)
+	assert.Equal(t, http.StatusServiceUnavailable, ready.Code, "Ready before it has reached the doorman")
+	assert.Contains(t, ready.Body.String(), "doorman", "the probe says why it isn't Ready")
+}
+
+func TestForwarderOptions(t *testing.T) {
+	valid := forwarderFlags{
+		image:          "ghcr.io/okedeji/hybernate:v0.2.0",
+		replicas:       2,
+		resources:      defaultForwarderResources,
+		doormanPods:    "hybernate-doorman-pods",
+		doormanService: "hybernate-doorman",
+		doormanNS:      "hybernate-system",
+	}
+	tests := []struct {
+		name    string
+		change  func(*forwarderFlags)
+		wantErr string
+	}{
+		{name: "valid"},
+		{name: "no doorman", change: func(f *forwarderFlags) { f.doormanService = "" }, wantErr: "turns off"},
+		{name: "no image", change: func(f *forwarderFlags) { f.image = "" }, wantErr: "--neg-forwarder-image"},
+		{name: "no replicas", change: func(f *forwarderFlags) { f.replicas = 0 }, wantErr: "at least 1"},
+		{name: "no headless Service", change: func(f *forwarderFlags) { f.doormanPods = "" }, wantErr: "doorman-service"},
+		{name: "resources not in JSON", change: func(f *forwarderFlags) { f.resources = "cpu: 1" }, wantErr: "resources"},
+		{
+			name:    "a misspelt resources field",
+			change:  func(f *forwarderFlags) { f.resources = `{"request":{"cpu":"10m"}}` },
+			wantErr: "unknown field",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			flags := valid
+			if tt.change != nil {
+				tt.change(&flags)
+			}
+
+			opts, err := forwarderOptions(true, flags)
+
+			if tt.wantErr != "" {
+				assert.ErrorContains(t, err, tt.wantErr)
+				return
+			}
+			require.NoError(t, err)
+			assert.Equal(t, "hybernate-doorman-pods.hybernate-system.svc", opts.Doorman)
+			assert.Equal(t, int32(2), opts.Replicas)
+			assert.Equal(t, "10m", opts.Resources.Requests.Cpu().String())
+			assert.Equal(t, "64Mi", opts.Resources.Limits.Memory().String())
+		})
+	}
+
+	off, err := forwarderOptions(false, forwarderFlags{})
+	require.NoError(t, err)
+	assert.Nil(t, off, "off by default")
 }

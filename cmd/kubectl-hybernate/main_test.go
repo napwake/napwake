@@ -202,6 +202,20 @@ func TestCLI_UsageForUsageErrors(t *testing.T) {
 	}
 }
 
+// Usage names the plugin as it's run, as krew asks of a plugin, whatever
+// installed its binary.
+func TestCLI_UsageNamesKubectlHybernate(t *testing.T) {
+	for _, args := range [][]string{{"--help"}, {"scan", "--help"}} {
+		t.Run(fmt.Sprint(args), func(t *testing.T) {
+			out, err := runCLI(t, nil, args...)
+
+			require.NoError(t, err)
+			assert.Contains(t, out, "kubectl hybernate")
+			assert.NotContains(t, out, "kubectl-hybernate ")
+		})
+	}
+}
+
 func TestCLI_Version(t *testing.T) {
 	out, err := runCLI(t, nil, "version")
 

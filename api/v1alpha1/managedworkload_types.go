@@ -26,8 +26,10 @@ import (
 // +kubebuilder:object:root=true
 // +kubebuilder:subresource:status
 // +kubebuilder:printcolumn:name="Phase",type=string,JSONPath=`.status.phase`
-// +kubebuilder:printcolumn:name="Saved",type=string,JSONPath=`.status.cost.savedThisMonth`,description="What pausing took off the node bill this month (UTC), at least"
 // +kubebuilder:printcolumn:name="Freed",type=string,JSONPath=`.status.cost.freedThisMonth`,description="What pausing freed this month (UTC), at list price"
+// +kubebuilder:printcolumn:name="Saved",type=string,JSONPath=`.status.cost.savedThisMonth`,description="What pausing took off the node bill this month (UTC), at least"
+// +kubebuilder:printcolumn:name="Would Free",type=string,JSONPath=`.status.dryRun.estimatedFreed`,description="In dry-run: what the pauses Hybernate would have made would have freed since dry-run began"
+// +kubebuilder:printcolumn:name="Forecast",type=string,JSONPath=`.status.prediction.reason`,priority=1,description="Whether the forecast is acting, or what it waits for"
 // +kubebuilder:printcolumn:name="Age",type=date,JSONPath=`.metadata.creationTimestamp`
 
 // ManagedWorkload declares a workload whose lifecycle is managed by Hybernate.
@@ -181,22 +183,39 @@ type WorkloadRef struct {
 
 // PredictionSpec configures the Holt-Winters forecasting engine.
 type PredictionSpec struct {
-	// Confidence is the accuracy percentage (50-100) a season's forecasts
-	// must reach before they drive decisions rather than only being
-	// reported. Accuracy is 1 - WAPE: 75 means the forecast's total error
-	// over the window is 25% of the demand in it. A season that falls 5
-	// points below it stops driving decisions until it earns it again. The
-	// minimum is 50 because below that a forecast that is wrong more than it
-	// is right would wake workloads and hold off pauses. The default of 75
-	// starts acting on a weekday pattern after about a week; a higher bar
-	// takes longer to reach, for little more accuracy, since a wrong forecast
-	// only wakes a workload early or keeps it up an hour longer.
+	// Mode is how soon the forecast acts on what it has learned: eager acts
+	// sooner, and on less regular patterns, and wakes the workload for
+	// nothing more often; cautious acts later, only on patterns it forecasts
+	// well, for workloads costly to keep awake for nothing. A wrong forecast
+	// only wakes a workload early or keeps it up a while longer, never
+	// costing availability, since a request still wakes it through the
+	// doorman. They act at a confidence of 60, 75 and 85.
+	// +kubebuilder:default=balanced
+	// +optional
+	Mode PredictionMode `json:"mode,omitempty"`
+
+	// Confidence, when set, is the accuracy percentage (50-100) a season's
+	// forecasts must reach to drive decisions, in place of Mode's. Accuracy
+	// is 1 - WAPE: 75 means the forecast's total error over the window is
+	// 25% of the demand in it. A season that falls 5 points below it stops
+	// driving decisions until it earns it again. The minimum is 50 because
+	// below that a forecast that is wrong more than it is right would wake
+	// workloads and hold off pauses.
 	// +kubebuilder:validation:Minimum=50
 	// +kubebuilder:validation:Maximum=100
-	// +kubebuilder:default=75
 	// +optional
 	Confidence int `json:"confidence,omitempty"`
 }
+
+// PredictionMode is how soon the forecast acts on what it has learned.
+// +kubebuilder:validation:Enum=eager;balanced;cautious
+type PredictionMode string
+
+const (
+	PredictionEager    PredictionMode = "eager"
+	PredictionBalanced PredictionMode = "balanced"
+	PredictionCautious PredictionMode = "cautious"
+)
 
 // IdlePolicySpec configures automatic pausing. The operator tracks when the
 // workload was last active and pauses it once it has been inactive for
@@ -381,6 +400,12 @@ type DoormanRoute struct {
 
 	// DoormanPort is the doorman's listening port for this Service port.
 	DoormanPort int32 `json:"doormanPort"`
+
+	// Forwarded is true when the Service sits behind GKE container-native
+	// load balancing, so its traffic reaches the doorman through a
+	// forwarder in the workload's namespace rather than directly.
+	// +optional
+	Forwarded bool `json:"forwarded,omitempty"`
 }
 
 // DrainingPort is a doorman port no other workload may have before Until.
@@ -496,6 +521,18 @@ type ActivityStatus struct {
 	// configuration change counts as activity while replica changes don't.
 	// +optional
 	TemplateHash string `json:"templateHash,omitempty"`
+
+	// HeldByDependents are the awake workloads that use this one, as
+	// namespace/name, while they keep it from pausing, as the
+	// HeldByDependents condition says: at most 10, the first by name.
+	// +optional
+	HeldByDependents []string `json:"heldByDependents,omitempty"`
+
+	// ForecastBusyFrom is the start of the hour the forecast expects demand
+	// in, while it keeps the workload from pausing, as the IdleVetoed
+	// condition says.
+	// +optional
+	ForecastBusyFrom *metav1.Time `json:"forecastBusyFrom,omitempty"`
 }
 
 // DryRunStatus sums up the pauses Hybernate would have made in dry-run. A
@@ -522,7 +559,9 @@ type DryRunStatus struct {
 	FreedMemoryHours resource.Quantity `json:"freedMemoryHours"`
 
 	// EstimatedFreed is the freed hours priced at the workload's cost
-	// rates, to the cent. It's for display: the hours are the record.
+	// rates, to the cent, with the would-be pause under way counted up to
+	// the last status write, at most 5 minutes ago. It's for display: the
+	// hours are the record.
 	EstimatedFreed string `json:"estimatedFreed"`
 
 	// Resources is what the workload ran when the current would-be pause
@@ -642,12 +681,72 @@ type PredictionStatus struct {
 	// observed hours, a whole week of weekdays and weekend, as a percentage.
 	WeeklyConfidence int `json:"weeklyConfidence"`
 
+	// TimeZone is the IANA time zone the forecast counts hours of the day
+	// and days of the week in, such as Europe/London: the operator's
+	// --timezone.
+	// +optional
+	TimeZone string `json:"timeZone,omitempty"`
+	// Threshold is the confidence the forecast acts at: spec.prediction's
+	// confidence, or its mode's.
+	// +optional
+	Threshold int `json:"threshold,omitempty"`
+
+	// Acting says the forecast drives decisions: it holds off a pause before
+	// an hour it expects to be busy, and with autoResume, wakes the workload
+	// ahead of one.
+	Acting bool `json:"acting"`
+
+	// StartsActing is when the forecast is expected to start acting, if the
+	// coming days repeat the last week it saw. It's unset while the forecast
+	// is acting, and when it isn't expected to start within four weeks.
+	// +optional
+	StartsActing *metav1.Time `json:"startsActing,omitempty"`
+
+	// Reason says in a word why the forecast is or isn't acting: Acting,
+	// Observing (it hasn't scored a day of its forecasts yet), EarningConfidence
+	// (its forecasts aren't yet right enough), Relearning (demand broke from
+	// what it had learned), or NotLearning (the workload is paused without
+	// the doorman, so its demand can't be seen).
+	// +optional
+	Reason string `json:"reason,omitempty"`
+
+	// Message says the same in a sentence, and what the forecast waits for.
+	// +optional
+	Message string `json:"message,omitempty"`
+
+	// History is what the forecast learned from the workload's CPU history
+	// in Prometheus when Hybernate began managing it.
+	// +optional
+	History *PredictionHistory `json:"history,omitempty"`
+
 	// State is what the forecasting engine has learned, compressed and
 	// encoded, so that it survives an operator restart. It is written with
 	// each hourly observation. State that can't be read is discarded, with a
 	// warning event, and the engine starts learning again.
 	// +optional
 	State string `json:"state,omitempty"`
+}
+
+// PredictionHistory is what the forecast learned from the workload's CPU
+// history in Prometheus, up to four weeks of it, before it learned live.
+type PredictionHistory struct {
+	// Reason says in a word what came of reading it: Learned,
+	// NoPrometheusURL, NoHistory, NoCPURequests or QueryFailed.
+	Reason string `json:"reason"`
+
+	// Hours is how many hours of history the forecast learned.
+	// +optional
+	Hours int `json:"hours,omitempty"`
+
+	// From and To bound the history learned.
+	// +optional
+	From *metav1.Time `json:"from,omitempty"`
+	// +optional
+	To *metav1.Time `json:"to,omitempty"`
+
+	// Message says what was learned, or why nothing was.
+	// +optional
+	Message string `json:"message,omitempty"`
 }
 
 // CostStatus is what the workload has cost, what pausing it has freed, and
@@ -756,20 +855,45 @@ type CostStatus struct {
 	// +optional
 	PricedTemplateHash string `json:"pricedTemplateHash,omitempty"`
 
-	// ListRates are the on-demand list rates of the nodes the workload's
-	// pods last ran on, from their instance type and region, which its cost,
-	// what it frees and what it saves are priced at unless
-	// costTracking.rates sets its own. Kept while it's paused, so a pause
-	// is priced at where it ran. Unset
-	// when its nodes aren't in Hybernate's price table, and the default
-	// rates apply.
+	// ListRates are the list rates of the nodes the workload's pods last
+	// ran on, from their instance type and region, on-demand or spot as
+	// ListPrice says, which its cost, what it frees and what it saves are
+	// priced at unless costTracking.rates sets its own. Kept while it's
+	// paused, so a pause is priced at where it ran. Unset when its nodes
+	// aren't in Hybernate's price table, and the default rates apply.
 	// +optional
 	ListRates *CostRates `json:"listRates,omitempty"`
+
+	// ListPrice is which list prices ListRates are: OnDemand; Spot, for
+	// pods on spot or preemptible nodes, priced at their type's spot
+	// price; or SpotAndOnDemand, for pods on both. A spot node of a type
+	// without a spot price is priced on-demand. Unset with ListRates.
+	// +optional
+	ListPrice ListPrice `json:"listPrice,omitempty"`
 
 	// ResourceReduction is what the current pause freed on its nodes.
 	// +optional
 	ResourceReduction *ResourceReduction `json:"resourceReduction,omitempty"`
 }
+
+// Why the forecast is or isn't acting, in PredictionStatus.Reason.
+const (
+	ForecastActing            = "Acting"
+	ForecastObserving         = "Observing"
+	ForecastEarningConfidence = "EarningConfidence"
+	ForecastRelearning        = "Relearning"
+	ForecastNotLearning       = "NotLearning"
+)
+
+// ListPrice is which list prices a workload's nodes were priced at.
+// +kubebuilder:validation:Enum=OnDemand;Spot;SpotAndOnDemand
+type ListPrice string
+
+const (
+	ListPriceOnDemand        ListPrice = "OnDemand"
+	ListPriceSpot            ListPrice = "Spot"
+	ListPriceSpotAndOnDemand ListPrice = "SpotAndOnDemand"
+)
 
 // ResourceReduction tracks the workload-level resources freed by Hybernate
 // pauses. These resources are released on the

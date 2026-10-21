@@ -18,12 +18,14 @@ package controller
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"slices"
 	"time"
 	"unicode/utf8"
 
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	ctrl "sigs.k8s.io/controller-runtime"
 
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -109,34 +111,69 @@ func dryRunPrefix(dryRun bool) string {
 // forecastEngine is the workload's forecast engine, with the settings it
 // asks for applied. The first time, it is restored from the state in the
 // workload's status; state that can't be restored is discarded, and the
-// engine starts learning again.
+// engine starts learning again. A new workload's engine is the one that
+// learned its history, once that has been read.
 func (r *Reconciler) forecastEngine(workload *v1alpha1.ManagedWorkload) forecaster {
 	var state string
 	if p := workload.Status.Prediction; p != nil {
 		state = p.State
 	}
-	settings := forecast.Settings{Threshold: workload.Spec.Prediction.Confidence, Location: r.Timezone}
+	settings := forecast.Settings{Threshold: confidenceFor(workload), Location: r.Timezone}
 	engine, err := r.engines.getOrCreate(workload.UID, settings, state)
-	if err != nil {
+	switch {
+	case errors.Is(err, forecast.ErrOlderState):
+		// An upgrade needn't lose what history can teach again: with its
+		// record gone, the workload's history is read as for a new one.
+		again := ""
+		if p := workload.Status.Prediction; p != nil && r.PrometheusURL != "" {
+			p.History = nil
+			again = ", from its CPU history in Prometheus"
+		}
+		r.emitEvent(workload, false, "Normal", ReasonForecastReset, actionForecast,
+			"the forecast's saved state is from an older version of Hybernate, so it learns again%s", again)
+	case err != nil:
 		r.emitEvent(workload, false, "Warning", ReasonForecastReset, actionForecast,
 			"the forecast's saved state can't be read, so it starts learning again: %v", err)
 	}
-	return engine
+	return r.takeUpHistory(workload, engine, settings)
 }
 
-// updatePredictionStatus publishes the engine's phase and confidence, and
-// the state it has learned. The state only changes when an hour is
-// observed, so it is written once an hour; a write that fails is made again
-// from the engine on the next reconcile.
+// confidenceFor is the confidence threshold the workload's forecast acts
+// at: the one its spec sets, or its mode's.
+func confidenceFor(workload *v1alpha1.ManagedWorkload) int {
+	return forecast.Threshold(forecast.Mode(workload.Spec.Prediction.Mode), workload.Spec.Prediction.Confidence)
+}
+
+// updatePredictionStatus publishes the engine's phase and confidence,
+// whether it's acting and what it waits for, and the state it has learned.
+// The state only changes when an hour is observed, so it is written once an
+// hour; a write that fails is made again from the engine on the next
+// reconcile.
 func (r *Reconciler) updatePredictionStatus(ctx context.Context, workload *v1alpha1.ManagedWorkload, engine forecaster) {
 	phase := engine.GetPhase()
 	dailyPhase, weeklyPhase := seasonPhases(phase)
+	threshold := confidenceFor(workload)
+	outlook := r.engines.outlook(workload.UID, engine, threshold)
 
+	zone := time.UTC
+	if r.Timezone != nil {
+		zone = r.Timezone
+	}
 	status := &v1alpha1.PredictionStatus{
 		DailyPhase:       dailyPhase,
 		DailyConfidence:  engine.DailyConfidence(),
 		WeeklyPhase:      weeklyPhase,
 		WeeklyConfidence: engine.WeeklyConfidence(),
+		TimeZone:         zone.String(),
+		Threshold:        threshold,
+		Acting:           outlook.Acting,
+	}
+	status.Reason, status.Message = forecastOutlook(workload, outlook)
+	if !outlook.StartsActing.IsZero() {
+		status.StartsActing = &metav1.Time{Time: outlook.StartsActing.UTC()}
+	}
+	if last := workload.Status.Prediction; last != nil {
+		status.History = last.History
 	}
 	state, err := r.engines.export(workload.UID, engine)
 	if err != nil {

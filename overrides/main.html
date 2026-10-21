@@ -1,0 +1,12 @@
+{% extends "base.html" %}
+
+{#- Material shows this banner on every version but the one aliased latest.
+    The link goes to the site's root, which sends readers to latest. -#}
+{% block outdated %}
+  {% if "-" in config.extra.release %}
+    These docs are for Hybernate {{ config.extra.release }}, a release candidate, and may change before it's released.
+  {% else %}
+    These docs are for Hybernate {{ config.extra.release }}, not the latest release.
+  {% endif %}
+  <a href="{{ '../' ~ base_url }}"><strong>Read the docs for the latest release.</strong></a>
+{% endblock %}

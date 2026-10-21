@@ -27,9 +27,12 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	appsv1 "k8s.io/api/apps/v1"
+	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
+	"k8s.io/apimachinery/pkg/runtime/schema"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/interceptor"
 
@@ -290,48 +293,142 @@ func TestPause_Names(t *testing.T) {
 	})
 }
 
-// A workload whose replicas Argo CD or Flux set from Git is paused anyway,
-// with a warning that the tool will likely undo it, and the one-time fix.
-// One a person scaled last gets no warning.
+// replicasSetBy has every read of a Deployment show its replicas last set
+// by manager, as the API server records it.
+func replicasSetBy(manager string) interceptor.Funcs {
+	return interceptor.Funcs{Get: func(ctx context.Context, c client.WithWatch, key client.ObjectKey,
+		obj client.Object, opts ...client.GetOption) error {
+		if err := c.Get(ctx, key, obj, opts...); err != nil {
+			return err
+		}
+		if d, ok := obj.(*appsv1.Deployment); ok {
+			d.ManagedFields = []metav1.ManagedFieldsEntry{{Manager: manager,
+				Operation: metav1.ManagedFieldsOperationApply, FieldsType: "FieldsV1",
+				FieldsV1: metav1.NewFieldsV1(`{"f:spec":{"f:replicas":{}}}`)}}
+		}
+		return nil
+	}}
+}
+
+// argoApplication is Argo CD's Application shop, in its own namespace,
+// with spec as given.
+func argoApplication(spec map[string]any) *unstructured.Unstructured {
+	app := &unstructured.Unstructured{Object: map[string]any{"spec": spec}}
+	app.SetAPIVersion("argoproj.io/v1alpha1")
+	app.SetKind("Application")
+	app.SetNamespace("argocd")
+	app.SetName("shop")
+	return app
+}
+
+// argoFixed is the Application and argocd-cm as the GitOps guide has them:
+// replicas ignored for every app, and syncs that respect it.
+func argoFixed() []client.Object {
+	return []client.Object{
+		argoApplication(map[string]any{"syncPolicy": map[string]any{
+			"syncOptions": []any{"RespectIgnoreDifferences=true"}}}),
+		&corev1.ConfigMap{ObjectMeta: metav1.ObjectMeta{Name: "argocd-cm", Namespace: "argocd"},
+			Data: map[string]string{
+				"resource.customizations.ignoreDifferences.apps_Deployment":  "jsonPointers:\n  - /spec/replicas\n",
+				"resource.customizations.ignoreDifferences.apps_StatefulSet": "jsonPointers:\n  - /spec/replicas\n",
+			}},
+	}
+}
+
+func trackedByArgoCD(d *appsv1.Deployment) *appsv1.Deployment {
+	d.Annotations = map[string]string{
+		"argocd.argoproj.io/tracking-id": "shop:apps/Deployment:" + d.Namespace + "/" + d.Name}
+	return d
+}
+
+// A workload whose replicas a GitOps tool sets from Git is paused anyway,
+// with a warning that the tool will likely undo it, and the one-time fix,
+// unless the tool is told to leave them: with Argo CD, which owns the
+// replicas even then, that's read from its Application and argocd-cm. When
+// it can't be read, the warning says so, and to make the fix if it isn't
+// made. One a person scaled last gets no warning.
 func TestPause_WarnsWhenGitOpsWillUndoIt(t *testing.T) {
+	api := func() *appsv1.Deployment {
+		return trackedByArgoCD(&appsv1.Deployment{ObjectMeta: metav1.ObjectMeta{Name: "api", Namespace: "preview-42"}})
+	}
 	tests := []struct {
-		manager, tool, fix string
+		name    string
+		manager string
+		objs    []client.Object
+		want    []string
 	}{
-		{manager: "argocd-controller", tool: "Argo CD", fix: "resource.customizations.ignoreDifferences.apps_Deployment"},
-		{manager: "kustomize-controller", tool: "Flux", fix: "Leave replicas out of the workload's manifest in Git"},
-		{manager: "kubectl-edit"},
+		{name: "Flux", manager: "kustomize-controller", want: []string{
+			"Warning: Flux sets preview-42/api's replicas from Git, as kustomize-controller, so its next sync will " +
+				"likely scale it back up, undoing this pause. To have Flux leave replicas to Hybernate, once:\n",
+			"  Leave replicas out of the workload's manifest in Git",
+			"See https://okedeji.io/hybernate/guides/gitops/#flux\n"}},
+		{name: "Argo CD told to ignore replicas, and its syncs not to set them", manager: "argocd-controller",
+			objs: argoFixed()},
+		{name: "Argo CD's Application isn't in the cluster", manager: "argocd-controller",
+			objs: argoFixed()[1:2], want: []string{
+				"Warning: Argo CD sets preview-42/api's replicas from Git",
+				"couldn't be checked: no Argo CD Application named shop is in this cluster. If you haven't already, " +
+					"have Argo CD leave them, once,"}},
+		{name: "Argo CD told to ignore replicas, but its syncs still set them", manager: "argocd-controller",
+			objs: []client.Object{argoApplication(map[string]any{}), argoFixed()[1]}, want: []string{
+				"Warning: Argo CD application argocd/shop sets preview-42/api's replicas from Git, as " +
+					"argocd-controller, so its next sync will likely scale it back up, undoing this pause.",
+				"  Add RespectIgnoreDifferences=true to the syncPolicy.syncOptions of Argo CD application " +
+					"argocd/shop, so syncs leave the replicas it ignores.\n",
+				"See https://okedeji.io/hybernate/guides/gitops/#argo-cd\n"}},
+		{name: "a person", manager: "kubectl-edit"},
 	}
 	for _, tt := range tests {
-		t.Run(tt.manager, func(t *testing.T) {
-			replicasSetBy := interceptor.Funcs{Get: func(ctx context.Context, c client.WithWatch, key client.ObjectKey,
-				obj client.Object, opts ...client.GetOption) error {
-				if err := c.Get(ctx, key, obj, opts...); err != nil {
-					return err
-				}
-				if d, ok := obj.(*appsv1.Deployment); ok {
-					d.ManagedFields = []metav1.ManagedFieldsEntry{{Manager: tt.manager,
-						Operation: metav1.ManagedFieldsOperationApply, FieldsType: "FieldsV1",
-						FieldsV1: metav1.NewFieldsV1(`{"f:spec":{"f:replicas":{}}}`)}}
-				}
-				return nil
-			}}
-			api := &appsv1.Deployment{ObjectMeta: metav1.ObjectMeta{Name: "api", Namespace: "preview-42"}}
-			c := newClient(t, replicasSetBy, managedWorkload(v1alpha1.PhaseRunning), api)
+		t.Run(tt.name, func(t *testing.T) {
+			c := newClient(t, replicasSetBy(tt.manager),
+				append([]client.Object{managedWorkload(v1alpha1.PhaseRunning), api()}, tt.objs...)...)
 
 			out, err := runCLI(t, c, "pause", "api", "--wait=false")
 
 			require.NoError(t, err)
 			assert.NotEmpty(t, pauseRequested(t, c), "it's paused anyway")
-			if tt.tool == "" {
+			if len(tt.want) == 0 {
 				assert.Equal(t, "pausing preview-42/api\n", out)
 				return
 			}
-			assert.Contains(t, out, "Warning: "+tt.tool+" set preview-42/api's replicas last, as "+tt.manager+
-				", so it will likely scale it back up on its next sync and undo this pause.")
-			assert.Contains(t, out, tt.fix)
-			assert.Contains(t, out, "See https://okedeji.io/hybernate/guides/gitops/")
+			for _, want := range tt.want {
+				assert.Contains(t, out, want)
+			}
 		})
 	}
+}
+
+// The finding that prompted the check: with Argo CD fixed exactly as the
+// guide says, a person without access to Argo CD's namespace is told to
+// make the fix only if it isn't made, rather than that Argo CD will undo
+// the pause.
+func TestPause_GitOpsWarningWithoutAccessToArgoCD(t *testing.T) {
+	api := trackedByArgoCD(&appsv1.Deployment{ObjectMeta: metav1.ObjectMeta{Name: "api", Namespace: "preview-42"}})
+	funcs := replicasSetBy("argocd-controller")
+	get := funcs.Get
+	funcs.Get = func(ctx context.Context, c client.WithWatch, key client.ObjectKey, obj client.Object,
+		opts ...client.GetOption) error {
+		if key.Namespace == "argocd" {
+			return apierrors.NewForbidden(schema.GroupResource{}, key.Name, nil)
+		}
+		return get(ctx, c, key, obj, opts...)
+	}
+	funcs.List = func(ctx context.Context, c client.WithWatch, list client.ObjectList, opts ...client.ListOption) error {
+		if _, ok := list.(*unstructured.UnstructuredList); ok {
+			return apierrors.NewForbidden(schema.GroupResource{Group: "argoproj.io", Resource: "applications"}, "", nil)
+		}
+		return c.List(ctx, list, opts...)
+	}
+	c := newClient(t, funcs, append([]client.Object{managedWorkload(v1alpha1.PhaseRunning), api}, argoFixed()...)...)
+
+	out, err := runCLI(t, c, "pause", "api", "--wait=false")
+
+	require.NoError(t, err)
+	assert.Contains(t, out, "Warning: Argo CD sets preview-42/api's replicas from Git, as argocd-controller, and "+
+		"whether it's told to leave them to Hybernate couldn't be checked: your access doesn't allow reading Argo "+
+		"CD's Applications. If you haven't already, have Argo CD leave them, once, or its next sync will likely "+
+		"scale it back up, undoing this pause:\n")
+	assert.NotContains(t, out, "so its next sync will likely")
 }
 
 // expectsDemand answers a request the way the operator does when the

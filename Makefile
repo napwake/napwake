@@ -47,7 +47,7 @@ manifests: controller-gen ## Generate WebhookConfiguration, ClusterRole and Cust
 	./hack/chart-crds.sh config/crd/bases charts/hybernate/templates/crds
 
 .PHONY: prices
-prices: ## Regenerate the on-demand list prices nodes are priced at, before each release
+prices: ## Regenerate the on-demand and spot list prices nodes are priced at, before each release
 	go run ./hack/prices internal/cost/prices.csv.gz
 
 .PHONY: generate
@@ -181,7 +181,8 @@ check-chart: ## Lint the Helm chart, render it for each provider's Kubernetes ve
 	helm template hybernate charts/hybernate --set 'watchNamespaces={shop,blog}' | go run ./hack/rbaccheck config/rbac/role.yaml
 	@long=abcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabc; \
 	names=$$(helm template hybernate charts/hybernate --set fullnameOverride=$$long --set networkPolicy.enabled=true \
-		--set metrics.serviceMonitor.enabled=true --set metrics.prometheusRule.enabled=true | \
+		--set metrics.serviceMonitor.enabled=true --set metrics.prometheusRule.enabled=true \
+		--set doorman.negForwarder.enabled=true | \
 		awk '/^kind:/ {k = $$2} /^[a-zA-Z]/ {m = ($$1 == "metadata:")} m && /^  name: / {print k, $$2}'); \
 	! awk 'length($$2) > 63 {print "too long: " $$0; bad = 1} END {exit !bad}' <<<"$$names" && \
 		[ -z "$$(sort <<<"$$names" | uniq -d)" ] || { \
@@ -194,6 +195,12 @@ check-chart: ## Lint the Helm chart, render it for each provider's Kubernetes ve
 			echo "the chart accepts metrics.port=$$p, which the health probes or the doorman's routing ports use"; exit 1; }; \
 	done
 	@helm template hybernate charts/hybernate --set metrics.port=30000 >/dev/null
+	@helm template hybernate charts/hybernate --set prometheus.url=http://thanos:9090 \
+		--set-string 'prometheus.selector=cluster="staging"' --show-only templates/deployment.yaml | \
+		grep -qF -- '- "--prometheus-selector=cluster=\"staging\""' || { \
+		echo "prometheus.selector doesn't reach the operator as --prometheus-selector"; exit 1; }
+	@! helm template hybernate charts/hybernate --set-string 'prometheus.selector=cluster="staging"' >/dev/null 2>&1 || { \
+		echo "the chart accepts prometheus.selector without prometheus.url, which the operator refuses to start with"; exit 1; }
 	@out=$$(helm template hybernate charts/hybernate --set-string podLabels.team=checkout \
 		--set-string podLabels.control-plane=other --set priorityClassName=hybernate-critical \
 		--set 'doorman.extraEnv[0].name=GOMAXPROCS' --set-string 'doorman.extraEnv[0].value=2'); \
@@ -234,6 +241,27 @@ check-chart: ## Lint the Helm chart, render it for each provider's Kubernetes ve
 		grep -q 'aggregate-to-view: "true"' config/rbac/managedworkload_viewer_role.yaml && \
 		grep -q 'aggregate-to-edit: "true"' config/rbac/managedworkload_editor_role.yaml || { \
 		echo "ManagedWorkloads aren't in the built-in view and edit roles, so namespace users can't see or pause them"; exit 1; }
+	@hack/chart-notes.sh 0.3.1 | grep -qxF 'Docs for this version: https://okedeji.io/hybernate/0.3/' && \
+		hack/chart-notes.sh 0.3.0-rc.2 | grep -qxF 'Docs for this version: https://okedeji.io/hybernate/next/' || { \
+		echo "the chart's NOTES don't link to the docs of its version: its minor's, or next's for a release candidate"; exit 1; }
+	@hack/chart-notes.sh 0.3.1 | grep -qF 'weekdays in UTC. Set timezone to your users' && \
+		hack/chart-notes.sh 0.3.1 --set timezone=America/New_York | grep -qxF 'weekdays in America/New_York.' || { \
+		echo "the chart's NOTES don't name the time zone the forecast counts hours in, or ask for the users' when it's UTC"; exit 1; }
+	@hack/chart-notes.sh 0.3.1 | awk '/okedeji.io\/hybernate\/0.3\/guides\/gitops\// {gitops = NR} /kubectl hybernate enable/ {enable = NR} \
+		END {exit !(gitops && gitops < enable)}' && test -f docs/guides/gitops.md || { \
+		echo "the chart's NOTES don't send Argo CD and Flux users to the GitOps guide before enable"; exit 1; }
+	@! helm template hybernate charts/hybernate | grep -qE -- '--neg-forwarder|doorman-pods|verbs: \[create, delete\]' || { \
+		echo "the chart runs NEG forwarders, or lets the operator create Deployments, without doorman.negForwarder.enabled"; exit 1; }
+	@for ns in '' "--set watchNamespaces={shop}"; do \
+		out=$$(helm template hybernate charts/hybernate --namespace hybernate-system --set doorman.negForwarder.enabled=true \
+			--set networkPolicy.enabled=true --set 'doorman.networkPolicy.ingressFrom[0].podSelector.matchLabels.app=ingress' $$ns); \
+		grep -q -- '- --neg-forwarder$$' <<<"$$out" && grep -qF -- '"--neg-forwarder-resources={\"limits\"' <<<"$$out" && \
+			grep -q 'name: hybernate-doorman-pods$$' <<<"$$out" && grep -q 'verbs: \[create, delete\]' <<<"$$out" && \
+			grep -q 'app.kubernetes.io/name: hybernate-forwarder' <<<"$$out" || { \
+			echo "doorman.negForwarder.enabled $$ns doesn't turn on the forwarders, the doorman's headless Service, their RBAC, or the doorman NetworkPolicy's way in for them"; exit 1; }; \
+	done
+	@! helm template hybernate charts/hybernate --set doorman.negForwarder.enabled=true --set doorman.enabled=false >/dev/null 2>&1 || { \
+		echo "the chart accepts doorman.negForwarder.enabled without the doorman forwarders pass connections to"; exit 1; }
 	@helm template hybernate charts/hybernate --set leaderElection.enabled=false --show-only templates/deployment.yaml | grep -q 'type: Recreate' && \
 		! helm template hybernate charts/hybernate --show-only templates/deployment.yaml | grep -q 'type: Recreate' || { \
 		echo "without leader election, a rolling update runs two operators at once"; exit 1; }
@@ -300,7 +328,8 @@ lint-config: golangci-lint ## Verify golangci-lint linter configuration
 
 # The docs that name the current release, for installing or verifying it.
 # docs/operations/upgrading.md isn't one: its versions are history.
-VERSIONED_DOCS = README.md docs/getting-started/installation.md docs/reference/helm-values.md docs/reference/security.md
+VERSIONED_DOCS = README.md docs/getting-started/installation.md docs/getting-started/kubectl-plugin.md \
+	docs/operations/monitoring.md docs/reference/helm-values.md docs/reference/security.md
 
 # Versioning recipes read VERSION from the environment rather than having
 # make expand it into them, and check its form first, so a tag can't run as
@@ -328,11 +357,19 @@ verify-version: ## Fail unless the chart, the kustomize image, the docs and the 
 	@grep -qxF "appVersion: \"v$$VERSION\"" charts/hybernate/Chart.yaml || { echo "Chart.yaml's appVersion isn't v$$VERSION"; exit 1; }
 	@grep -qxF "  newTag: v$$VERSION" config/manager/kustomization.yaml || { echo "config/manager's image isn't v$$VERSION"; exit 1; }
 	@# The install and verify commands name the version whole: after
-	@# --version, or as the image's or the chart's tag.
-	@pattern="(--version |hybernate:v?)$${VERSION//./\\.}([^0-9A-Za-z.-]|$$)"; \
+	@# --version, as the image's or the chart's tag, or in a release
+	@# download's or a Kustomize base's link.
+	@pattern="(--version |hybernate:v?|/releases/download/v|\?ref=v)$${VERSION//./\\.}([^0-9A-Za-z.-]|$$)"; \
 	for f in $(VERSIONED_DOCS); do \
 		grep -qE -- "$$pattern" "$$f" || { echo "$$f doesn't name $$VERSION; run make bump VERSION=$$VERSION"; exit 1; }; \
 	done
+	@# Every page's install links name the release the page documents:
+	@# releases/latest installs whatever was released last.
+	@unpinned=$$(grep -rnF 'okedeji/hybernate/releases/latest' README.md docs || true); [ -z "$$unpinned" ] || { \
+		echo "$$unpinned"; echo "install links must name the release, as releases/download/v$$VERSION/ does"; exit 1; }
+	@stale=$$(grep -rnoE 'okedeji/hybernate(/releases/(download|tag)/|//config/[a-z-]+\?ref=)v[0-9][0-9A-Za-z.-]*' README.md docs | \
+		grep -vE -- "v$${VERSION//./\\.}$$" || true); [ -z "$$stale" ] || { \
+		echo "$$stale"; echo "these install links don't name v$$VERSION; add their pages to VERSIONED_DOCS and run make bump VERSION=$$VERSION"; exit 1; }
 	@base="$${VERSION%%-*}"; heading="^## \[$${base//./\\.}\] - "; \
 	if [[ "$$VERSION" == *-* ]]; then \
 		grep -qE -- "$$heading" CHANGELOG.md || { echo "CHANGELOG.md has no section for $$base"; exit 1; }; \

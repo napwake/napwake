@@ -63,7 +63,8 @@ const (
 // that should wake their workloads; rewriting only the slices' endpoints,
 // many at once, takes seconds. Slices of an IP family with no Ready doorman
 // pod are left to the workloads' own reconciles, which stop routing them
-// (see findWorkloadsForDoorman).
+// (see findWorkloadsForDoorman), and so are slices that point at a
+// workload's forwarder, whose pods aren't the doorman's.
 type doormanSliceSync struct {
 	reader client.Reader
 	// writer has a rate limit of its own, so a rollout's burst of writes
@@ -94,7 +95,8 @@ func (s *doormanSliceSync) Reconcile(ctx context.Context, _ reconcile.Request) (
 	for i := range list.Items {
 		slice := &list.Items[i]
 		want := endpoints[slice.AddressType]
-		if len(want) == 0 || equality.Semantic.DeepEqual(slice.Endpoints, want) || s.anotherInstalls(slice) {
+		if len(want) == 0 || equality.Semantic.DeepEqual(slice.Endpoints, want) || s.anotherInstalls(slice) ||
+			slice.Labels[labelForwarded] == v1alpha1.True {
 			continue
 		}
 		moved++

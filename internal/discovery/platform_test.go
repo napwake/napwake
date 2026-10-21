@@ -77,10 +77,16 @@ func TestScanCluster_LeavesOutThePlatform(t *testing.T) {
 		"cert-manager/webhook":  "cert-manager",
 		"edge/controller":       "ingress-nginx",
 	}, platform)
-	assert.Contains(t, report.Notes, "5 workloads run the cluster's own infrastructure, such as Kubernetes', "+
-		"Hybernate's, ingress or monitoring, so they're left out of the totals and next steps: ops (2), "+
-		"cert-manager (1), edge (1) and 1 more. Hybernate never pauses Kubernetes' or its own, but pauses the "+
-		"rest like any app once opted in, so a namespace labelled hybernate.io/managed=true is counted in full")
+	assert.Contains(t, report.Notes, "5 infrastructure workloads are left out of the totals and next steps: "+
+		"ops (2), cert-manager (1), edge (1) and 1 more. Hybernate never pauses Kubernetes' own workloads or "+
+		"itself; anything else, infrastructure included, pauses only if you opt it in",
+		"what the scan leaves out, then, apart, what Hybernate would pause")
+}
+
+func TestPlatformNote_One(t *testing.T) {
+	assert.Equal(t, "1 infrastructure workload is left out of the totals and next steps: argocd (1). Hybernate "+
+		"never pauses Kubernetes' own workloads or itself; anything else, infrastructure included, pauses only "+
+		"if you opt it in", platformNote([]Workload{{Namespace: "argocd", Name: "argocd-server", Platform: "argocd"}}))
 }
 
 // A namespace labelled allow-protected is one Hybernate manages, so it's

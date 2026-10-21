@@ -31,7 +31,6 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	v1alpha1 "github.com/okedeji/hybernate/api/v1alpha1"
-	"github.com/okedeji/hybernate/internal/gitops"
 	"github.com/okedeji/hybernate/internal/metrics"
 )
 
@@ -162,8 +161,7 @@ func (s *Scanner) scanNamespace(ctx, historyCtx context.Context, namespace strin
 			Protected: protected,
 			Platform:  platform[string(wl.kind)+"/"+obj.GetName()],
 		}
-		writer, _ := gitops.ReplicasWriter(obj.GetManagedFields())
-		w.ReplicasFromGit = string(writer.Tool)
+		w.recordGitOps(reads.gitOps.Replicas(ctx, obj))
 		rollouts := owners.rollouts[obj.GetUID()]
 		if len(rollouts) > 0 {
 			last := slices.MaxFunc(rollouts, func(a, b time.Time) int { return a.Compare(b) }).UTC()
@@ -199,15 +197,21 @@ func (s *Scanner) scanNamespace(ctx, historyCtx context.Context, namespace strin
 		}
 		w.WontPause = wontPause(obj)
 		w.Clues = clues(w, now)
-		w.rates, w.OnSpot = pricing.ratesFor(running, mw, opts)
+		w.rates, w.OnSpot, w.SpotAtOnDemand = pricing.ratesFor(running, mw, opts)
 		w.HourlyCost = hourlyCost(w, w.rates)
 		w.MonthlyCost = w.HourlyCost * hoursPerMonth
 		w.Measured = measured(mw, w.HourlyCost, now)
 		w.FreedThisMonth = FreedThisMonth(mw, now)
 		w.SavedThisMonth = SavedThisMonth(mw, now)
 		if history != nil && ownCPU > 0 && !w.ScaledByHand {
-			w.History = replayWorkload(w, spec, ownCPU, history, owners.podsOf(wl), scan.historySince, rollouts,
-				thresholdFor(mw, opts), idleAfterFor(mw, opts), opts)
+			if r, ok := workloadReplay(w, spec, ownCPU, history, owners.podsOf(wl), scan.historySince, rollouts,
+				thresholdFor(mw, opts), idleAfterFor(mw, opts), opts); ok {
+				h := r.run()
+				w.History = &h
+				if opts.Forecast != nil {
+					w.Forecast = replayForecast(r, confidenceFor(mw, *opts.Forecast), mw, *opts.Forecast)
+				}
+			}
 			if w.History == nil && w.State != StateUnknown && w.Platform == "" {
 				scan.noHistory = append(scan.noHistory, w.Namespace+"/"+w.Name)
 			}
@@ -275,8 +279,9 @@ func measure(w *Workload, podMetrics []metricsv1beta1.PodMetrics, unmeasured str
 		w.Unmeasured = "no metrics yet"
 	default:
 		used, _ := metrics.Usage(podMetrics, spec)
-		percent := int(float64(used) / float64(ownCPU*int64(len(podMetrics))) * 100)
-		w.CPUPercent, w.CPUMillisUsed = &percent, used
+		share := float64(used) / float64(ownCPU*int64(len(podMetrics))) * 100
+		percent := int(share)
+		w.CPUPercent, w.CPUMillisUsed, w.cpuShare = &percent, used, share
 	}
 }
 

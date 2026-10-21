@@ -28,6 +28,7 @@ import (
 	"k8s.io/utils/ptr"
 
 	v1alpha1 "github.com/okedeji/hybernate/api/v1alpha1"
+	"github.com/okedeji/hybernate/internal/forecast"
 )
 
 // OptInDefaults are the cluster-wide settings for workloads opted in with
@@ -36,10 +37,12 @@ type OptInDefaults struct {
 	IdleAfter    time.Duration
 	CPUThreshold int
 	DryRun       bool
+	Forecast     v1alpha1.PredictionMode
 }
 
 // DefaultOptInDefaults match a ManagedWorkload written with no settings.
-var DefaultOptInDefaults = OptInDefaults{IdleAfter: defaultIdleAfter, CPUThreshold: defaultCPUThreshold}
+var DefaultOptInDefaults = OptInDefaults{IdleAfter: defaultIdleAfter, CPUThreshold: defaultCPUThreshold,
+	Forecast: v1alpha1.PredictionBalanced}
 
 // settingProblem is an annotation value that couldn't be read, so the
 // setting came from further down the order of precedence.
@@ -153,6 +156,20 @@ func (s *settings) durationUpTo(key string, fallback, least, limit time.Duration
 	return d
 }
 
+// forecastMode accepts eager, balanced or cautious, spelt as the spec
+// spells them.
+func (s *settings) forecastMode(key string, fallback v1alpha1.PredictionMode) v1alpha1.PredictionMode {
+	m := fallback
+	s.resolve(key, `isn't "eager", "balanced" or "cautious"`, func(v, _ string) bool {
+		parsed, ok := forecast.ParseMode(v)
+		if ok {
+			m = v1alpha1.PredictionMode(parsed)
+		}
+		return ok
+	})
+	return m
+}
+
 // percent accepts a whole number from 1 to 100.
 func (s *settings) percent(key string, fallback int) int {
 	n := fallback
@@ -240,8 +257,9 @@ func parseDependency(entry string) (v1alpha1.DependencyRef, bool) {
 // then what a ManagedWorkload written with no settings would get.
 //
 // The annotations control dryRun, idlePolicy (idleAfter, the CPU threshold
-// and autoResume), which dependencies dependsOn lists, and wake. The rest
-// is the user's to set on the ManagedWorkload; see keepUserSettings.
+// and autoResume), which dependencies dependsOn lists, wake, and the
+// forecast's mode. The rest is the user's to set on the ManagedWorkload;
+// see keepUserSettings.
 //
 // A workload never depends on itself, whichever annotation names it. A
 // namespace's depends-on that must not reach this workload, because the
@@ -268,22 +286,29 @@ func optInSpec(namespace string, target v1alpha1.WorkloadRef, workloadAnnotation
 				0, v1alpha1.WakeMaxWaitLimit, `isn't a duration above zero and at most 1h, like "90s" or "5m"`)},
 			Page: ptr.To(s.boolean(v1alpha1.AnnotationWakePage, true)),
 		},
-		// Every field the API server would default is set here, so the spec
-		// written matches the one stored and rewriting it changes nothing.
-		Prediction: v1alpha1.PredictionSpec{Confidence: 75},
+		Prediction: v1alpha1.PredictionSpec{Mode: s.forecastMode(v1alpha1.AnnotationForecast, d.Forecast)},
 	}
 	return spec, s.problems
 }
 
+// formerDefaultConfidence is what spec.prediction.confidence defaulted to
+// before the forecast setting replaced it.
+const formerDefaultConfidence = 75
+
 // keepUserSettings carries over, from a label-created ManagedWorkload's
 // current spec, everything no annotation sets, so an edit made to it, such
 // as setting costTracking rates with kubectl patch, isn't undone. Those are
-// prediction, costTracking, the Prometheus activity queries, and
-// waitForReady on a dependency the annotation still lists. The target is
-// never changed once the ManagedWorkload exists.
+// the forecast's confidence threshold, costTracking, the Prometheus
+// activity queries, and waitForReady on a dependency the annotation still
+// lists. The target is never changed once the ManagedWorkload exists.
 func keepUserSettings(spec *v1alpha1.ManagedWorkloadSpec, current *v1alpha1.ManagedWorkloadSpec) {
 	spec.Target = current.Target
-	spec.Prediction = current.Prediction
+	// Before the forecast setting, every ManagedWorkload stored a confidence
+	// of 75. Kept, it would override the setting the annotations give, and
+	// it's balanced's threshold, so dropping it loses nothing anyone chose.
+	if current.Prediction.Confidence != formerDefaultConfidence {
+		spec.Prediction.Confidence = current.Prediction.Confidence
+	}
 	spec.CostTracking = current.CostTracking
 	if current.IdlePolicy != nil && current.IdlePolicy.Activity != nil {
 		spec.IdlePolicy.Activity.Prometheus = current.IdlePolicy.Activity.Prometheus

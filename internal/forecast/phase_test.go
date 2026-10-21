@@ -164,10 +164,11 @@ func TestEngine_ConfidenceIsNotFooledByZeros(t *testing.T) {
 
 func TestEngine_DailyAndWeeklyConfidenceDiffer(t *testing.T) {
 	e := newTestEngine()
+	noise := rand.New(rand.NewSource(1))
 	differ := 0
 	for i := range 4 * WeeklySeason {
 		at := hourAt(i)
-		_, err := e.Observe(officeHours(at), at)
+		_, err := e.Observe(officeHours(at)*(0.8+0.4*noise.Float64()), at)
 		require.NoError(t, err)
 		if i >= 2*WeeklySeason && e.DailyConfidence() != e.WeeklyConfidence() {
 			differ++
@@ -302,6 +303,111 @@ func TestEngine_HolidayDoesNotWakeIntoTheHoliday(t *testing.T) {
 	}
 	require.True(t, regimeChanged)
 	assert.Zero(t, acting, "hours of the holiday after the regime change the forecast acts on")
+}
+
+// A weekday holiday is a regime change, but the weekly pattern doesn't
+// learn it: the next day is busy again, so the holiday was a day off, not
+// a new pattern, and the same weekday a week later is forecast as busy as
+// before.
+func TestEngine_HolidayIsNotLearnedIntoTheWeek(t *testing.T) {
+	e := NewEngine(DefaultParams(), Settings{Threshold: 75})
+	run(t, e, 0, 6*WeeklySeason, office)
+	holiday := 6*WeeklySeason + 2*DailySeason
+	wednesday10 := hourAt(holiday + 10)
+	before := e.Model.forecast(wednesday10, 1)
+	require.InDelta(t, 50, before, 5)
+
+	run(t, e, 6*WeeklySeason, 2*DailySeason, office)
+	log := run(t, e, holiday, DailySeason, func(int, time.Time) float64 { return 0 })
+	require.NotEmpty(t, log.regimeChanges)
+	run(t, e, holiday+DailySeason, 6*DailySeason, office)
+
+	nextWednesday := wednesday10.Add(7 * 24 * time.Hour)
+	assert.InDelta(t, before, e.Model.forecast(nextWednesday, 1), 5, "the Wednesday after is expected as busy")
+	assert.InDelta(t, 0, e.Model.forecast(nextWednesday.Add(10*time.Hour), 1), 2.5, "and its evening as quiet")
+}
+
+// A lasting change is learned into the week from the day after it shows:
+// the weekly change held on its first day is made once the second day
+// breaks from the old pattern the same way.
+func TestEngine_LastingChangeIsLearnedIntoTheWeek(t *testing.T) {
+	e := NewEngine(DefaultParams(), Settings{Threshold: 75})
+	run(t, e, 0, 6*WeeklySeason, office)
+	monday10 := hourAt(6*WeeklySeason + 10)
+	busy := e.Model.forecast(monday10, 1)
+
+	held := NewEngine(DefaultParams(), Settings{Threshold: 75})
+	run(t, held, 0, 6*WeeklySeason, office)
+	quiet := func(int, time.Time) float64 { return 0 }
+	run(t, held, 6*WeeklySeason, DailySeason, quiet)
+	run(t, held, 6*WeeklySeason+DailySeason, DailySeason, office)
+	run(t, e, 6*WeeklySeason, 2*DailySeason, quiet)
+
+	nextMonday := monday10.Add(7 * 24 * time.Hour)
+	assert.Less(t, e.Model.forecast(nextMonday, 1), busy/2+5,
+		"two quiet days in a row: next Monday is expected at most half as busy")
+	assert.Greater(t, held.Model.forecast(nextMonday, 1), e.Model.forecast(nextMonday, 1)+10,
+		"one quiet Monday, then a busy Tuesday: next Monday is expected busier")
+}
+
+// The hour after one far quieter than forecast, the forecast doesn't act on
+// what it expects: the day may be a holiday. An hour that goes as forecast
+// restores it; one far busier doesn't cast doubt, since the workload is in
+// use then anyway.
+func TestEngine_DoubtsAfterAQuietSurprise(t *testing.T) {
+	e := NewEngine(DefaultParams(), Settings{Threshold: 75})
+	run(t, e, 0, 6*WeeklySeason, office)
+	monday := 6 * WeeklySeason
+	run(t, e, monday, 9, office)
+	require.Greater(t, e.Predict(1, hourAt(monday+9)), 40.0, "10am is expected busy")
+
+	run(t, e, monday+9, 1, func(int, time.Time) float64 { return 0 })
+	require.True(t, e.AnomalyDetected())
+	assert.Zero(t, e.Predict(0, hourAt(monday+10)), "after a quiet 9am, 10am isn't acted on")
+
+	run(t, e, monday+10, 1, office)
+	assert.Greater(t, e.Predict(1, hourAt(monday+11)), 40.0, "a busy 10am restores it")
+
+	run(t, e, monday+11, 9, office)
+	run(t, e, monday+20, 1, func(int, time.Time) float64 { return 100 })
+	require.True(t, e.AnomalyDetected())
+	assert.False(t, e.doubting, "a busy 8pm")
+}
+
+// A held change whose next day's hour isn't observed can't be settled, and
+// is dropped rather than settled a week later.
+func TestEngine_HeldChangeLapsesOverAGap(t *testing.T) {
+	e := NewEngine(DefaultParams(), Settings{Threshold: 75})
+	run(t, e, 0, 6*WeeklySeason, office)
+	run(t, e, 6*WeeklySeason, DailySeason, func(int, time.Time) float64 { return 0 })
+	require.NotZero(t, e.held[10], "Monday 10am's change is held")
+
+	_, err := e.Observe(0, hourAt(6*WeeklySeason+2*DailySeason))
+	require.NoError(t, err)
+	assert.Zero(t, e.held[10], "Tuesday 10am went unobserved")
+}
+
+// The first time it sees an hour of the week, the forecast learns it, and
+// doesn't score itself on it: it had nothing to forecast the hour from. An
+// hour of the week it hasn't seen isn't acted on.
+func TestEngine_FirstWeekIsLearnedNotScored(t *testing.T) {
+	e := NewEngine(DefaultParams(), Settings{Threshold: 75})
+	tuesday10 := DailySeason + 10
+	skipTuesday10 := func(_ int, at time.Time) float64 { return officeHours(at) }
+	for i := range 3 * WeeklySeason {
+		if i%WeeklySeason == tuesday10 {
+			continue
+		}
+		if i == WeeklySeason-1 {
+			assert.Zero(t, e.Scorer.count, "nothing scored in the first week")
+			assert.Equal(t, Observing, e.Phase)
+		}
+		run(t, e, i, 1, skipTuesday10)
+	}
+	require.True(t, e.Active())
+	monday := hourAt(3 * WeeklySeason)
+	assert.Zero(t, e.Predict(DailySeason+10, monday), "Tuesday 10am, never seen")
+	assert.InDelta(t, 50, e.Predict(DailySeason+11, monday), 2.5, "Tuesday 11am")
 }
 
 // A large spike that recurs every week is a pattern, not an outlier. It is

@@ -33,6 +33,8 @@ import (
 
 	v1alpha1 "github.com/okedeji/hybernate/api/v1alpha1"
 	"github.com/okedeji/hybernate/internal/cost"
+	"github.com/okedeji/hybernate/internal/forecast"
+	"github.com/okedeji/hybernate/internal/gitops"
 )
 
 // State is how a scan judges a workload's use.
@@ -121,6 +123,9 @@ type Workload struct {
 	// Nil and zero when it couldn't be measured.
 	CPUPercent    *int  `json:"cpuPercent,omitempty"`
 	CPUMillisUsed int64 `json:"cpuMillisUsed,omitempty"`
+	// cpuShare is CPUPercent before it's rounded down: what the activity
+	// threshold is compared with, as the operator compares it.
+	cpuShare float64
 	// PodCPURequestMillis and PodMemoryRequestBytes are what one replica's
 	// pod reserves, sidecars included: what pausing a replica frees.
 	PodCPURequestMillis   int64      `json:"podCPURequestMillis"`
@@ -162,14 +167,26 @@ type Workload struct {
 	// ReplicasFromGit is the GitOps tool that last set its replicas from
 	// Git, which would undo every pause until it's told to leave them.
 	ReplicasFromGit string `json:"replicasFromGit,omitempty"`
-	// OnSpot means a pod of it is on a spot node, priced at on-demand, so it
-	// costs less than shown.
-	OnSpot bool `json:"onSpot,omitempty"`
+	// GitOpsLeavesReplicas is set when that tool is told to leave the
+	// replicas to Hybernate, so it won't undo a pause.
+	GitOpsLeavesReplicas bool `json:"gitOpsLeavesReplicas,omitempty"`
+	// GitOpsUnchecked says why whether that tool is told to leave the
+	// replicas couldn't be checked, when it couldn't.
+	GitOpsUnchecked string `json:"gitOpsUnchecked,omitempty"`
+	// OnSpot means a pod of it is on a spot node priced at its type's spot
+	// price, or, with none on a node, Hybernate last priced it at spot.
+	// SpotAtOnDemand means one is on a spot node of a type without a spot
+	// price, priced on-demand, so it costs less than shown.
+	OnSpot         bool `json:"onSpot,omitempty"`
+	SpotAtOnDemand bool `json:"spotAtOnDemand,omitempty"`
 	// rates are what it's priced at.
 	rates cost.Rates
 	// History is what replaying the activity clock over its recorded CPU
 	// found, in ModeHistory.
 	History *History `json:"history,omitempty"`
+	// Forecast is what replaying the forecast over its recorded CPU found,
+	// when the scan asked for it.
+	Forecast *ForecastReplay `json:"forecast,omitempty"`
 	// Dependencies are the workloads its environment points at.
 	Dependencies []Dependency `json:"dependencies,omitempty"`
 	// Clues are facts beyond CPU that bear on whether it's in use.
@@ -276,6 +293,8 @@ type ClusterOptions struct {
 	// History, when set, is replayed over Window.
 	History *Prometheus
 	Window  time.Duration
+	// Forecast, when set with History, also replays the forecast over it.
+	Forecast *ForecastOptions
 	// NamedNamespaces says the user named the namespaces, so one their
 	// access doesn't let the scan read is a failure to scan what was asked,
 	// not a limit to note.
@@ -297,7 +316,7 @@ func (s *Scanner) ScanCluster(ctx context.Context, opts ClusterOptions) (*Cluste
 	report := &ClusterReport{Mode: ModeSnapshot, Namespaces: len(opts.Namespaces), Workloads: []Workload{}}
 	if opts.History != nil {
 		report.Mode = ModeHistory
-		report.History = &HistorySource{Prometheus: opts.History.Source}
+		report.History = &HistorySource{Prometheus: opts.History.Source, Others: opts.History.Others}
 	}
 	pricing, nodePrices := s.readNodePrices(ctx)
 	report.NodePrices = nodePrices
@@ -306,6 +325,7 @@ func (s *Scanner) ScanCluster(ctx context.Context, opts ClusterOptions) (*Cluste
 	if opts.AllNamespaces {
 		reads = s.readAcross(ctx, opts.Namespaces)
 	}
+	reads.gitOps = gitops.NewChecker(s.client)
 	historyCtx, cancel := historyBudget(ctx)
 	defer cancel()
 	scans, unscanned := s.scanNamespaces(ctx, historyCtx, reads, pricing, opts)
@@ -373,8 +393,9 @@ func (s *Scanner) ScanCluster(ctx context.Context, opts ClusterOptions) (*Cluste
 		report.Notes = append(report.Notes, "the history replay sees CPU and rollouts only; requests and activity "+
 			"annotations aren't in Prometheus, so a workload used with little CPU can look like it would sleep more than it would")
 		if covered := opts.Now().Sub(since); covered < opts.Window-historyStep(opts.Window) {
-			report.Notes = append(report.Notes, fmt.Sprintf("Prometheus keeps %s of history, so the replay covers that, not the %s asked for",
-				duration(covered), duration(opts.Window)))
+			report.History.Partial = true
+			report.Notes = append(report.Notes, fmt.Sprintf("the replay covers %s, not the %s asked for: that's "+
+				"all the CPU history Prometheus has of the namespaces scanned", spelled(covered), spelled(opts.Window)))
 		}
 	}
 	if len(historyOutOfTime) > 0 {
@@ -399,8 +420,12 @@ func (s *Scanner) ScanCluster(ctx context.Context, opts ClusterOptions) (*Cluste
 		report.Notes = append(report.Notes, fmt.Sprintf("%s no CPU history in Prometheus, so only their CPU right now is known: %s",
 			plural(len(noHistory), "workload has", "workloads have"), listSome(noHistory)))
 	}
-	report.Notes = append(report.Notes, dependencyNotes...)
-	report.Notes = append(report.Notes, gitOpsNotes(report.Workloads)...)
+	if opts.Forecast == nil {
+		// A forecast replay is about when each workload is used; what
+		// depends on what, and what GitOps would undo, are the scan's.
+		report.Notes = append(report.Notes, dependencyNotes...)
+		report.Notes = append(report.Notes, gitOpsNotes(report.Workloads)...)
+	}
 
 	slices.SortFunc(report.Workloads, func(a, b Workload) int {
 		if c := cmp.Compare(stateOrder[a.State], stateOrder[b.State]); c != 0 {
@@ -448,22 +473,44 @@ func (s *Scanner) scanNamespaces(ctx, historyCtx context.Context, reads *cluster
 	return slices.DeleteFunc(scans, func(scan namespaceScan) bool { return scan.unscanned }), unscanned
 }
 
+// recordGitOps notes the GitOps tool that sets the workload's replicas from
+// Git, if one does, and whether it's told to leave them to Hybernate.
+func (w *Workload) recordGitOps(r gitops.Replicas) {
+	if !r.Writer.FromGit() {
+		return
+	}
+	w.ReplicasFromGit, w.GitOpsUnchecked = string(r.Writer.Tool), r.Unread
+	w.GitOpsLeavesReplicas = r.Undo == gitops.Leaves
+}
+
 // gitOpsNotes say which workloads have replicas set from Git, which their
-// GitOps tool would set again after each pause, and where the fix is.
+// GitOps tool would set again after each pause, and where the fix is: one
+// note for each tool, and for each reason it couldn't be checked whether
+// the tool is told to leave them.
 func gitOpsNotes(workloads []Workload) []string {
-	byTool := map[string][]string{}
+	type by struct{ tool, unchecked string }
+	names := map[by][]string{}
 	for _, w := range workloads {
-		if w.ReplicasFromGit != "" {
-			byTool[w.ReplicasFromGit] = append(byTool[w.ReplicasFromGit], w.Namespace+"/"+w.Name)
+		if w.ReplicasFromGit != "" && !w.GitOpsLeavesReplicas {
+			key := by{w.ReplicasFromGit, w.GitOpsUnchecked}
+			names[key] = append(names[key], w.Namespace+"/"+w.Name)
 		}
 	}
-	tools := slices.Sorted(maps.Keys(byTool))
-	notes := make([]string, 0, len(tools))
-	for _, tool := range tools {
-		names := byTool[tool]
-		notes = append(notes, fmt.Sprintf("%s set from Git by %s, which would undo every pause: %s. "+
-			"Have %s leave the replicas to Hybernate first: %s", plural(len(names), "workload has its replicas",
-			"workloads have their replicas"), tool, listSome(names), tool, gitOpsGuide))
+	keys := slices.SortedFunc(maps.Keys(names), func(a, b by) int {
+		return cmp.Or(cmp.Compare(a.tool, b.tool), cmp.Compare(a.unchecked, b.unchecked))
+	})
+	notes := make([]string, 0, len(keys))
+	for _, key := range keys {
+		subject := plural(len(names[key]), "workload has its replicas", "workloads have their replicas")
+		if key.unchecked == "" {
+			notes = append(notes, fmt.Sprintf("%s set from Git by %s, which would undo every pause: %s. "+
+				"Have %s leave the replicas to Hybernate first: %s", subject, key.tool, listSome(names[key]),
+				key.tool, gitOpsGuide))
+			continue
+		}
+		notes = append(notes, fmt.Sprintf("%s set from Git by %s, and whether it's told to leave them to "+
+			"Hybernate couldn't be checked: %s. If it isn't, it would undo every pause: %s. See %s", subject,
+			key.tool, key.unchecked, listSome(names[key]), gitOpsGuide))
 	}
 	return notes
 }
@@ -567,7 +614,7 @@ func judgeManaged(w *Workload, mw *v1alpha1.ManagedWorkload, now time.Time, thre
 		w.State, w.Reason = StateActive, "waking"
 	case since < idleAfter:
 		w.State, w.Reason = StateActive, fmt.Sprintf("active %s (%s)", ago(since), a.LastActivitySource)
-	case w.CPUPercent != nil && *w.CPUPercent >= threshold:
+	case w.CPUPercent != nil && forecast.Busy(w.cpuShare, threshold):
 		w.State, w.Reason = StateActive, cpuReason(*w)
 	default:
 		w.State, w.Reason = StateIdle, "no activity for "+duration(since)
@@ -611,7 +658,7 @@ func thresholdFor(mw *v1alpha1.ManagedWorkload, opts ClusterOptions) int {
 // judgeUnmanaged applies the activity clock's sources a scan can see
 // without Hybernate: activity annotations, a recent rollout, and CPU.
 func judgeUnmanaged(w *Workload, obj client.Object, now time.Time, threshold int, idleAfter time.Duration) {
-	if w.CPUPercent != nil && *w.CPUPercent >= threshold {
+	if w.CPUPercent != nil && forecast.Busy(w.cpuShare, threshold) {
 		w.State, w.Reason = StateActive, cpuReason(*w)
 		return
 	}

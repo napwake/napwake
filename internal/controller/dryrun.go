@@ -19,11 +19,11 @@ package controller
 import (
 	"context"
 	"fmt"
-	"strings"
 	"time"
 
 	v1alpha1 "github.com/okedeji/hybernate/api/v1alpha1"
 	"github.com/okedeji/hybernate/internal/cost"
+	"github.com/okedeji/hybernate/internal/human"
 )
 
 // trackDryRun starts the dry-run summary when a workload enters dry-run and
@@ -36,6 +36,24 @@ func (r *Reconciler) trackDryRun(workload *v1alpha1.ManagedWorkload) {
 	if workload.Status.DryRun == nil {
 		workload.Status.DryRun = &v1alpha1.DryRunStatus{Since: r.clockTime(), EstimatedFreed: cost.FormatDollars(0)}
 	}
+	r.estimateDryRun(workload)
+}
+
+// estimateDryRun prices what the would-be pauses would have freed: the
+// finished ones' hours, and the one under way up to now. A workload idle
+// for days would otherwise show nothing measured until its next activity.
+// The hours, which are the record, still count finished pauses only.
+func (r *Reconciler) estimateDryRun(workload *v1alpha1.ManagedWorkload) {
+	d := workload.Status.DryRun
+	hours := cost.Hours{CPU: d.FreedCPUHours.AsApproximateFloat64(), Memory: d.FreedMemoryHours.AsApproximateFloat64()}
+	if began := workload.Status.LastTransitionTime; workload.Status.Phase == v1alpha1.PhaseIdle &&
+		d.Resources != nil && began != nil {
+		cores, gib := requested(d.Resources)
+		underWay := max(r.now().Sub(began.Time), 0).Hours()
+		hours.CPU += cores * underWay
+		hours.Memory += gib * underWay
+	}
+	d.EstimatedFreed = cost.FormatDollars(hours.Price(resolveCostRates(workload)))
 }
 
 // beginWouldBePause counts a pause dry-run held back, and records what the
@@ -85,11 +103,8 @@ func (r *Reconciler) endWouldBePauseAt(workload *v1alpha1.ManagedWorkload, end t
 		freed.Memory = addHours(&d.FreedMemoryHours, gib, slept)
 	}
 	d.Slept.Duration += slept
-	d.EstimatedFreed = cost.FormatDollars(cost.Hours{
-		CPU:    d.FreedCPUHours.AsApproximateFloat64(),
-		Memory: d.FreedMemoryHours.AsApproximateFloat64(),
-	}.Price(rates))
 	d.Resources = nil
+	r.estimateDryRun(workload)
 	return slept, freed.Price(rates), true
 }
 
@@ -100,18 +115,5 @@ func dryRunSummary(d *v1alpha1.DryRunStatus) string {
 		times = "time"
 	}
 	return fmt.Sprintf("since %s: would have paused %d %s, slept %s, freeing %s",
-		d.Since.Format("Jan 2"), d.Pauses, times, roundedDuration(d.Slept.Duration), d.EstimatedFreed)
-}
-
-// roundedDuration is d to the minute, without the zero units Duration's
-// String adds: "3h12m", "96h", "45m".
-func roundedDuration(d time.Duration) string {
-	if d < time.Minute {
-		return "under a minute"
-	}
-	s := strings.TrimSuffix(d.Round(time.Minute).String(), "0s")
-	if strings.HasSuffix(s, "h0m") {
-		s = strings.TrimSuffix(s, "0m")
-	}
-	return s
+		d.Since.Format("Jan 2"), d.Pauses, times, human.Duration(d.Slept.Duration), d.EstimatedFreed)
 }

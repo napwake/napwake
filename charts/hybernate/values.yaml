@@ -29,7 +29,7 @@ maxConcurrentReconciles: 8
 timezone: UTC
 
 # The operator caches the cluster's ManagedWorkloads, Deployments,
-# StatefulSets, Services, PVCs, HPAs, nodes and namespaces, or only the
+# StatefulSets, Services, Ingresses, PVCs, HPAs, nodes and namespaces, or only the
 # watched namespaces', the EndpointSlices it writes and the doorman's, and,
 # watching every namespace, what each pod bound to a node requests, about
 # 2.6 KB a pod, so its memory grows with the cluster. Raise the limit on
@@ -84,8 +84,16 @@ metrics:
     enabled: false
     additionalLabels: {}
 
+# The Prometheus API the operator reads, such as
+# http://prometheus.monitoring.svc:9090: for Prometheus activity queries,
+# and to start each new workload's forecast from up to four weeks of its
+# CPU history, one query per workload, rather than from nothing.
 prometheus:
-  url: "" # required only for Prometheus activity queries, e.g. http://prometheus.monitoring.svc:9090
+  url: ""
+  # Label matchers added to the history query, such as cluster="staging",
+  # for a Prometheus that holds more than one cluster's series, as Thanos,
+  # Mimir or a shared Prometheus may. Activity queries run as written.
+  selector: ""
 
 # Namespaces Hybernate works in. Empty means every namespace, with a
 # ClusterRole; set, Hybernate gets a Role in each of these only, and can't
@@ -104,6 +112,10 @@ defaults:
   idleAfter: 1h
   cpuThreshold: 10
   dryRun: false
+  # How soon the forecast acts on what it has learned: eager, balanced or
+  # cautious. Eager acts sooner and wakes workloads for nothing more often;
+  # cautious, for workloads costly to keep awake, acts later.
+  forecast: balanced
 
 # The doorman wakes paused workloads when a request reaches them.
 doorman:
@@ -156,6 +168,25 @@ doorman:
     requests:
       cpu: 10m
       memory: 64Mi
+  # Optional, for GKE clusters whose Services sit behind container-native
+  # load balancing (NEGs), as a GKE Ingress's or Gateway's do: GKE accepts
+  # only endpoints in the Service's own namespace, so those Services are
+  # otherwise left unrouted. While such a workload is paused, the operator
+  # runs a small forwarder Deployment beside it, which passes connections
+  # to the doorman, and deletes it once the workload is awake. It grants
+  # the operator create and delete on Deployments. See
+  # https://okedeji.io/hybernate/concepts/wake-on-request/#gke-container-native-load-balancing-negs
+  negForwarder:
+    enabled: false
+    # Pods per forwarder. Two keep a paused workload reachable while a node
+    # it runs on drains.
+    replicas: 2
+    resources:
+      limits:
+        memory: 64Mi
+      requests:
+        cpu: 10m
+        memory: 32Mi
   networkPolicy:
     # Who may reach paused workloads through the doorman, as NetworkPolicy
     # peers, such as your ingress controller's namespace and the namespaces

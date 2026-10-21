@@ -23,6 +23,8 @@ import (
 	"errors"
 	"flag"
 	"fmt"
+	"net"
+	"net/http"
 	"net/url"
 	"os"
 	"path"
@@ -59,7 +61,9 @@ import (
 	v1alpha1 "github.com/okedeji/hybernate/api/v1alpha1"
 	"github.com/okedeji/hybernate/internal/capacity"
 	"github.com/okedeji/hybernate/internal/controller"
+	scan "github.com/okedeji/hybernate/internal/discovery"
 	"github.com/okedeji/hybernate/internal/doorman"
+	"github.com/okedeji/hybernate/internal/forwarder"
 	"github.com/okedeji/hybernate/internal/guard"
 	opmetrics "github.com/okedeji/hybernate/internal/metrics"
 	"github.com/okedeji/hybernate/internal/nodescale"
@@ -87,7 +91,7 @@ func main() {
 	var metricsCertPath, metricsCertName, metricsCertKey string
 	var enableLeaderElection bool
 	var probeAddr string
-	var prometheusURL string
+	var prometheusURL, prometheusSelector string
 	var runDoorman bool
 	var doormanService, doormanNamespace, doormanHealthCheckAgents string
 	var secureMetrics bool
@@ -120,8 +124,25 @@ func main() {
 		"The most doorman ports one workload may hold; one with more Service ports isn't routed.")
 	flag.IntVar(&doormanPortsPerNamespace, "doorman-ports-per-namespace", controller.DefaultDoormanPortsPerNamespace,
 		"The most doorman ports the workloads of one namespace may hold together.")
+	var negForwarder bool
+	var negForwarderImage, negForwarderResources, negForwarderDoorman string
+	var negForwarderReplicas int
+	flag.BoolVar(&negForwarder, "neg-forwarder", false,
+		"Route paused workloads' Services that sit behind GKE container-native load balancing (NEGs) through a "+
+			"forwarder Deployment in the workload's namespace, which the operator creates and deletes, so requests "+
+			"through GKE's load balancer wake them too. Needs create and delete on Deployments.")
+	flag.StringVar(&negForwarderImage, "neg-forwarder-image", "",
+		"The image forwarders run, the operator's own. Required with --neg-forwarder.")
+	flag.IntVar(&negForwarderReplicas, "neg-forwarder-replicas", 2, "How many pods each forwarder runs.")
+	flag.StringVar(&negForwarderResources, "neg-forwarder-resources", defaultForwarderResources,
+		"Each forwarder pod's resources, as JSON with requests and limits.")
+	flag.StringVar(&negForwarderDoorman, "neg-forwarder-doorman-service", "hybernate-doorman-pods",
+		"Headless Service in --doorman-namespace selecting the doorman's pods, which forwarders find them through.")
 	flag.StringVar(&prometheusURL, "prometheus-url", "",
 		"Base URL of the Prometheus API used for activity queries, e.g. http://prometheus.monitoring.svc:9090.")
+	flag.StringVar(&prometheusSelector, "prometheus-selector", "",
+		`Label matchers added to the queries the operator builds itself, such as 'cluster="prod"', for a Prometheus `+
+			`that holds more than one cluster; activity queries are a workload's own and run as written.`)
 	flag.IntVar(&maxConcurrentReconciles, "max-concurrent-reconciles", 8,
 		"How many ManagedWorkloads are reconciled at once, so one slow metrics or Prometheus query doesn't hold up wakes.")
 	flag.StringVar(&timezone, "timezone", "UTC",
@@ -129,6 +150,15 @@ func main() {
 	flag.StringVar(&guardOp, "guard", "",
 		"Run as the Helm chart's uninstall or upgrade hook, which fails while that would leave ManagedWorkloads "+
 			"without an operator, instead of the operator: uninstall or upgrade.")
+	var forwarderMode bool
+	var forwardRoutes, forwarderDoorman string
+	flag.BoolVar(&forwarderMode, "forwarder", false,
+		"Run as a forwarder, which passes connections from a paused workload's namespace to the doorman, instead of "+
+			"the operator. The forwarder Deployments the operator runs with --neg-forwarder set it.")
+	flag.StringVar(&forwardRoutes, "forward", "",
+		"The forwarder's routes: comma-separated listen=doorman port pairs, such as 8080=23456.")
+	flag.StringVar(&forwarderDoorman, "forwarder-doorman", "",
+		"The DNS name that resolves to the doorman's Ready pods, which the forwarder passes connections to.")
 	optIn := controller.DefaultOptInDefaults
 	flag.DurationVar(&optIn.IdleAfter, "default-idle-after", optIn.IdleAfter,
 		"idleAfter, at least 1m, for workloads opted in with the hybernate.io/managed label, unless annotated otherwise.")
@@ -136,6 +166,11 @@ func main() {
 		"CPU threshold, as a percentage of requests, for workloads opted in with the label, unless annotated otherwise.")
 	flag.BoolVar(&optIn.DryRun, "default-dry-run", optIn.DryRun,
 		"Measure workloads opted in with the label without pausing them, unless annotated otherwise.")
+	flag.Func("default-forecast", "How soon the forecast acts, eager, balanced or cautious, for workloads opted in "+
+		"with the label, unless annotated otherwise. (default balanced)", func(v string) error {
+		optIn.Forecast = v1alpha1.PredictionMode(v)
+		return nil
+	})
 	var watched stringList
 	flag.Var(&watched, "watch-namespaces",
 		"Comma-separated namespaces to work in, with a Role in each. Empty means every namespace.")
@@ -150,19 +185,19 @@ func main() {
 
 	ctrl.SetLogger(zap.New(zap.UseFlagOptions(&opts)))
 
-	if guardOp != "" {
-		os.Exit(runGuard(guardOp, watched))
-	}
-
 	if limit, ok := softMemoryLimit(os.Getenv("GOMEMLIMIT"), os.Getenv(envMemoryLimit)); ok {
 		debug.SetMemoryLimit(limit)
+	}
+	if code, ran := runWithoutManager(guardOp, watched, forwarderMode, forwardRoutes, forwarderDoorman, probeAddr); ran {
+		os.Exit(code)
 	}
 	if err := validatePatterns(protected); err != nil {
 		setupLog.Error(err, "invalid --protected-namespaces")
 		os.Exit(1)
 	}
-	if err := validatePrometheusURL(prometheusURL); err != nil {
-		setupLog.Error(err, "invalid --prometheus-url")
+	selector, err := prometheusFlags(prometheusURL, prometheusSelector)
+	if err != nil {
+		setupLog.Error(err, "invalid Prometheus flag")
 		os.Exit(1)
 	}
 	if err := validateOptInDefaults(optIn); err != nil {
@@ -183,6 +218,18 @@ func main() {
 	location, err := time.LoadLocation(timezone)
 	if err != nil {
 		setupLog.Error(err, "invalid --timezone")
+		os.Exit(1)
+	}
+	forwarders, err := forwarderOptions(negForwarder, forwarderFlags{
+		image:          negForwarderImage,
+		replicas:       negForwarderReplicas,
+		resources:      negForwarderResources,
+		doormanPods:    negForwarderDoorman,
+		doormanService: doormanService,
+		doormanNS:      doormanNamespace,
+	})
+	if err != nil {
+		setupLog.Error(err, "invalid --neg-forwarder flag")
 		os.Exit(1)
 	}
 
@@ -285,10 +332,12 @@ func main() {
 			Scheme:                   mgr.GetScheme(),
 			Recorder:                 mgr.GetEventRecorder("hybernate"),
 			PrometheusURL:            prometheusURL,
+			PrometheusSelector:       selector,
 			DoormanService:           doormanService,
 			DoormanNamespace:         doormanNamespace,
 			DoormanPortsPerWorkload:  doormanPortsPerWorkload,
 			DoormanPortsPerNamespace: doormanPortsPerNamespace,
+			NEGForwarder:             forwarders,
 			PodReader:                mgr.GetAPIReader(),
 			ProtectedNamespaces:      protected,
 			WatchNamespaces:          watched,
@@ -337,6 +386,21 @@ func main() {
 	}
 }
 
+// runWithoutManager runs the binary as one of the modes that need no
+// manager, when asked to: the chart's guard hook, or a forwarder. It
+// reports whether one ran, and the exit code.
+func runWithoutManager(guardOp string, watched []string, forwarderMode bool,
+	forwardRoutes, forwarderDoorman, probeAddr string) (int, bool) {
+	switch {
+	case guardOp != "":
+		return runGuard(guardOp, watched), true
+	case forwarderMode:
+		return runForwarder(forwardRoutes, forwarderDoorman, probeAddr), true
+	default:
+		return 0, false
+	}
+}
+
 // guardWait outlasts the minute a deleted ManagedWorkload waits for its
 // doorman ports to drain, so one deleted just before helm uninstall
 // doesn't fail it. The chart's hook Jobs allow for it, with room to start.
@@ -367,6 +431,109 @@ func runGuard(op string, watched []string) int {
 		return 1
 	}
 	return 0
+}
+
+// defaultForwarderResources are a forwarder pod's: it keeps no state and
+// copies through small buffers.
+const defaultForwarderResources = `{"requests":{"cpu":"10m","memory":"32Mi"},"limits":{"memory":"64Mi"}}`
+
+type forwarderFlags struct {
+	image, resources, doormanPods string
+	replicas                      int
+	doormanService, doormanNS     string
+}
+
+// forwarderOptions are the forwarders' settings with --neg-forwarder, or nil
+// without it.
+func forwarderOptions(enabled bool, f forwarderFlags) (*controller.ForwarderOptions, error) {
+	if !enabled {
+		return nil, nil
+	}
+	if f.doormanService == "" {
+		return nil, errors.New("--neg-forwarder routes to the doorman, which --doorman-service=\"\" turns off")
+	}
+	if f.image == "" {
+		return nil, errors.New("--neg-forwarder-image must be set")
+	}
+	if f.replicas < 1 {
+		return nil, fmt.Errorf("--neg-forwarder-replicas %d must be at least 1", f.replicas)
+	}
+	if f.doormanPods == "" {
+		return nil, errors.New("--neg-forwarder-doorman-service must be set")
+	}
+	var resources corev1.ResourceRequirements
+	decoder := json.NewDecoder(strings.NewReader(f.resources))
+	decoder.DisallowUnknownFields()
+	if err := decoder.Decode(&resources); err != nil {
+		return nil, fmt.Errorf("--neg-forwarder-resources %q: %w", f.resources, err)
+	}
+	return &controller.ForwarderOptions{
+		Image:     f.image,
+		Replicas:  int32(f.replicas),
+		Resources: resources,
+		Doorman:   fmt.Sprintf("%s.%s.svc", f.doormanPods, f.doormanNS),
+	}, nil
+}
+
+// probeShutdown bounds how long the forwarder's probe server takes to stop
+// once the forwarder has.
+const probeShutdown = 5 * time.Second
+
+// runForwarder runs a forwarder until it's signalled to stop and has
+// drained, returning the exit code.
+func runForwarder(routesFlag, doormanHost, probeAddr string) int {
+	routes, err := forwarder.ParseRoutes(routesFlag)
+	if err != nil {
+		setupLog.Error(err, "invalid --forward")
+		return 1
+	}
+	if doormanHost == "" {
+		setupLog.Error(errors.New("must be set"), "invalid --forwarder-doorman")
+		return 1
+	}
+	f := forwarder.New(forwarder.Options{Routes: routes, Doorman: doormanHost})
+
+	probes, err := net.Listen("tcp", probeAddr)
+	if err != nil {
+		setupLog.Error(err, "unable to listen for health probes", "address", probeAddr)
+		return 1
+	}
+	server := &http.Server{Handler: forwarderProbes(f), ReadHeaderTimeout: 5 * time.Second}
+	serving := make(chan error, 1)
+	go func() { serving <- server.Serve(probes) }()
+
+	setupLog.Info("starting forwarder", "version", version, "routes", routesFlag, "doorman", doormanHost)
+	err = f.Start(ctrl.SetupSignalHandler())
+	ctx, cancel := context.WithTimeout(context.Background(), probeShutdown)
+	defer cancel()
+	if shutdownErr := server.Shutdown(ctx); shutdownErr != nil {
+		setupLog.Error(shutdownErr, "stopping the forwarder's health probes")
+	}
+	if serveErr := <-serving; !errors.Is(serveErr, http.ErrServerClosed) {
+		setupLog.Error(serveErr, "serving the forwarder's health probes")
+	}
+	if err != nil {
+		setupLog.Error(err, "forwarder exited with error")
+		return 1
+	}
+	return 0
+}
+
+// forwarderProbes serves the forwarder's liveness and readiness. It's Ready
+// only while it reaches the doorman on every port it forwards to.
+func forwarderProbes(f *forwarder.Forwarder) http.Handler {
+	mux := http.NewServeMux()
+	mux.HandleFunc("/healthz", func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	})
+	mux.HandleFunc("/readyz", func(w http.ResponseWriter, r *http.Request) {
+		if err := f.Ready(r); err != nil {
+			http.Error(w, err.Error(), http.StatusServiceUnavailable)
+			return
+		}
+		w.WriteHeader(http.StatusOK)
+	})
+	return mux
 }
 
 // withLeaderElection has the operator elect a leader when enabled; every
@@ -444,6 +611,33 @@ func validatePrometheusURL(raw string) error {
 	return nil
 }
 
+// prometheusFlags checks --prometheus-url and reads --prometheus-selector,
+// with errors that name the flag.
+func prometheusFlags(prometheusURL, rawSelector string) (scan.Selector, error) {
+	if err := validatePrometheusURL(prometheusURL); err != nil {
+		return nil, fmt.Errorf("--prometheus-url: %w", err)
+	}
+	selector, err := parsePrometheusSelector(rawSelector, prometheusURL)
+	if err != nil {
+		return nil, fmt.Errorf("--prometheus-selector: %w", err)
+	}
+	return selector, nil
+}
+
+// parsePrometheusSelector reads --prometheus-selector as the scan's
+// --prometheus-selector reads it. It narrows only queries made of
+// --prometheus-url, so it's refused without one rather than ignored.
+func parsePrometheusSelector(raw, prometheusURL string) (scan.Selector, error) {
+	selector, err := scan.ParseSelector(raw)
+	if err != nil {
+		return nil, err
+	}
+	if len(selector) > 0 && prometheusURL == "" {
+		return nil, fmt.Errorf("%q narrows the queries made of --prometheus-url, which isn't set", raw)
+	}
+	return selector, nil
+}
+
 // validateOptInDefaults applies the rules a workload's own annotations are
 // held to. A default outside them would be written into every label-created
 // ManagedWorkload and fail its validation, or, for a CPU threshold of 0,
@@ -454,6 +648,11 @@ func validateOptInDefaults(d controller.OptInDefaults) error {
 	}
 	if d.CPUThreshold < 1 || d.CPUThreshold > 100 {
 		return fmt.Errorf("--default-cpu-threshold %d must be from 1 to 100", d.CPUThreshold)
+	}
+	switch d.Forecast {
+	case v1alpha1.PredictionEager, v1alpha1.PredictionBalanced, v1alpha1.PredictionCautious:
+	default:
+		return fmt.Errorf("--default-forecast %q must be eager, balanced or cautious", d.Forecast)
 	}
 	return nil
 }

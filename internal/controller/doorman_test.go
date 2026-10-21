@@ -35,6 +35,7 @@ import (
 	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
+	"k8s.io/apimachinery/pkg/util/intstr"
 	"k8s.io/client-go/tools/events"
 	"k8s.io/utils/ptr"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -73,11 +74,15 @@ func doormanEndpointsV6(ips ...string) *discoveryv1.EndpointSlice {
 	return slice
 }
 
+// appTarget is default/api, whose pods say when they're ready to serve.
 func appTarget() *appsv1.Deployment {
 	return &appsv1.Deployment{
 		ObjectMeta: metav1.ObjectMeta{Name: "api", Namespace: "default"},
 		Spec: appsv1.DeploymentSpec{Template: corev1.PodTemplateSpec{
 			ObjectMeta: metav1.ObjectMeta{Labels: map[string]string{"app": "api", "tier": "web"}},
+			Spec: corev1.PodSpec{Containers: []corev1.Container{{Name: "app", Image: "api:v1",
+				ReadinessProbe: &corev1.Probe{ProbeHandler: corev1.ProbeHandler{
+					HTTPGet: &corev1.HTTPGetAction{Path: "/ready", Port: intstr.FromInt32(8080)}}}}}},
 		}},
 	}
 }
@@ -676,41 +681,69 @@ func TestReconcileDoorman_SharedService(t *testing.T) {
 	assert.Contains(t, cond.Message, "shop")
 }
 
+// GKE annotates every Service of a VPC-native cluster for NEGs, but only a
+// Service a GKE Ingress uses, or one with standalone NEGs, is in any, and
+// only those are left off the doorman.
 func TestReconcileDoorman_SkipsGKENEGServices(t *testing.T) {
-	neg := func(name, value string) *corev1.Service {
+	neg := func(name string, annotations map[string]string) *corev1.Service {
 		svc := service(name, map[string]string{"app": "api"}, corev1.ServicePort{Name: "http", Port: 80})
-		svc.Annotations = map[string]string{annotationGKENEG: value}
+		svc.Annotations = annotations
 		return svc
 	}
+	auto := map[string]string{annotationGKENEG: gkeAutoNEG}
+	synced := map[string]string{annotationGKENEG: gkeAutoNEG,
+		annotationGKENEGStatus: `{"network_endpoint_groups":{"80":"k8s1-abc-default-api-80-1"}}`}
+	gce := gceIngressTo("api")
+	nginx := ingressTo("api", nil, ptr.To("nginx"))
 
 	tests := []struct {
 		name       string
-		services   []client.Object
+		objects    []client.Object
 		wantRouted []string
 		wantStatus metav1.ConditionStatus
 		wantReason string
 	}{
 		{
-			name:       "every Service uses NEGs",
-			services:   []client.Object{neg("api", `{"ingress":true}`)},
+			name:       "GKE's own annotation, with no GKE Ingress",
+			objects:    []client.Object{neg("api", auto)},
+			wantRouted: []string{"api"},
+			wantStatus: metav1.ConditionTrue,
+			wantReason: "DoormanRouted",
+		},
+		{
+			name:       "GKE's own annotation, behind an nginx Ingress",
+			objects:    []client.Object{neg("api", auto), &nginx},
+			wantRouted: []string{"api"},
+			wantStatus: metav1.ConditionTrue,
+			wantReason: "DoormanRouted",
+		},
+		{
+			name:       "a GKE Ingress uses it",
+			objects:    []client.Object{neg("api", auto), &gce},
+			wantStatus: metav1.ConditionFalse,
+			wantReason: "UnsupportedLoadBalancer",
+		},
+		{
+			name:       "the NEG controller keeps NEGs for it",
+			objects:    []client.Object{neg("api", synced)},
 			wantStatus: metav1.ConditionFalse,
 			wantReason: "UnsupportedLoadBalancer",
 		},
 		{
 			name:       "exposed NEG ports",
-			services:   []client.Object{neg("api", `{"exposed_ports":{"80":{}}}`)},
+			objects:    []client.Object{neg("api", map[string]string{annotationGKENEG: `{"exposed_ports":{"80":{}}}`})},
 			wantStatus: metav1.ConditionFalse,
 			wantReason: "UnsupportedLoadBalancer",
 		},
 		{
 			name:       "an unparseable annotation counts as NEG",
-			services:   []client.Object{neg("api", `ingress`)},
+			objects:    []client.Object{neg("api", map[string]string{annotationGKENEG: `ingress`})},
 			wantStatus: metav1.ConditionFalse,
 			wantReason: "UnsupportedLoadBalancer",
 		},
 		{
 			name: "only the NEG Service is skipped",
-			services: []client.Object{neg("api-gclb", `{"ingress":true}`),
+			objects: []client.Object{neg("api-gclb", synced),
 				service("api", map[string]string{"app": "api"}, corev1.ServicePort{Name: "http", Port: 80})},
 			wantRouted: []string{"api"},
 			wantStatus: metav1.ConditionTrue,
@@ -718,7 +751,7 @@ func TestReconcileDoorman_SkipsGKENEGServices(t *testing.T) {
 		},
 		{
 			name:       "NEGs turned off",
-			services:   []client.Object{neg("api", `{"ingress":false}`)},
+			objects:    []client.Object{neg("api", map[string]string{annotationGKENEG: `{"ingress":false}`}), &gce},
 			wantRouted: []string{"api"},
 			wantStatus: metav1.ConditionTrue,
 			wantReason: "DoormanRouted",
@@ -728,7 +761,7 @@ func TestReconcileDoorman_SkipsGKENEGServices(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			workload := lifecycleWorkload("api", v1alpha1.PhasePaused)
-			r := doormanReconciler(t, append([]client.Object{workload, doormanEndpoints("10.0.0.7")}, tt.services...)...)
+			r := doormanReconciler(t, append([]client.Object{workload, doormanEndpoints("10.0.0.7")}, tt.objects...)...)
 
 			require.NoError(t, doormanErr(context.Background(), r, workload, appTarget()))
 
@@ -745,12 +778,186 @@ func TestReconcileDoorman_SkipsGKENEGServices(t *testing.T) {
 	}
 }
 
+// A problem the last pause found with the workload's Services stays in
+// WakeOnRequest once it's awake, saying so, since the next pause meets it
+// again: someone can fix it before then, rather than find out when a
+// request doesn't wake the workload. A problem that passes, such as the
+// doorman being down, and one wake.onRequest turned off makes moot, don't.
+func TestReconcileDoorman_KeepsALastingProblemOnceAwake(t *testing.T) {
+	local := service("api", map[string]string{"app": "api"}, corev1.ServicePort{Name: "http", Port: 80})
+	local.Spec.InternalTrafficPolicy = ptr.To(corev1.ServiceInternalTrafficPolicyLocal)
+	routable := service("api", map[string]string{"app": "api"}, corev1.ServicePort{Name: "http", Port: 80})
+	ctx := context.Background()
+	tests := []struct {
+		name        string
+		objs        []client.Object
+		onRequest   *bool
+		wantReason  string
+		wantPrefix  bool
+		wantMessage string
+	}{
+		{name: "a node-local Service", objs: []client.Object{doormanEndpoints("10.0.0.7"), local.DeepCopy()},
+			wantReason: "NodeLocalTraffic", wantPrefix: true},
+		{name: "no doorman pods Ready", objs: []client.Object{routable.DeepCopy()}, wantReason: "NotPaused"},
+		{name: "routed", objs: []client.Object{doormanEndpoints("10.0.0.7"), routable.DeepCopy()},
+			wantReason: "NotPaused"},
+		{name: "wake.onRequest turned off since", objs: []client.Object{doormanEndpoints("10.0.0.7"), local.DeepCopy()},
+			onRequest: ptr.To(false), wantReason: "TurnedOff", wantMessage: "wake.onRequest is false"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			workload := lifecycleWorkload("api", v1alpha1.PhasePaused)
+			r := doormanReconciler(t, append([]client.Object{workload}, tt.objs...)...)
+			require.NoError(t, doormanErr(ctx, r, workload, appTarget()))
+			atPause := *wakeCondition(t, workload)
+
+			workload.Status.Phase = v1alpha1.PhaseRunning
+			if tt.onRequest != nil {
+				workload.Spec.Wake = &v1alpha1.WakeSpec{OnRequest: tt.onRequest}
+			}
+			require.NoError(t, doormanErr(ctx, r, workload, appTarget()))
+			require.NoError(t, doormanErr(ctx, r, workload, appTarget()))
+
+			awake := wakeCondition(t, workload)
+			assert.Equal(t, tt.wantReason, awake.Reason)
+			if !tt.wantPrefix {
+				if tt.wantMessage == "" {
+					assert.Empty(t, awake.Message)
+				}
+				assert.Contains(t, awake.Message, tt.wantMessage)
+				return
+			}
+			assert.Equal(t, metav1.ConditionFalse, awake.Status)
+			assert.Equal(t, "at its last pause: "+atPause.Message, awake.Message, "said once, however often it's reconciled")
+		})
+	}
+}
+
+// The doorman passes a held request on once a pod is Ready, and a pod with
+// no readiness probe is Ready as soon as it starts, before its app may be
+// able to answer. That's warned about once a pause, when it's routed.
+func TestReconcileDoorman_WarnsWhenPodsHaveNoReadinessProbe(t *testing.T) {
+	withSpec := func(change func(*corev1.PodSpec)) *appsv1.Deployment {
+		target := appTarget()
+		change(&target.Spec.Template.Spec)
+		return target
+	}
+	noProbe := withSpec(func(s *corev1.PodSpec) { s.Containers[0].ReadinessProbe = nil })
+	tests := []struct {
+		name     string
+		target   *appsv1.Deployment
+		services []client.Object
+		warned   bool
+	}{
+		{name: "no readiness probe", target: noProbe, warned: true},
+		{name: "a readiness probe", target: appTarget()},
+		{name: "only a startup probe", target: withSpec(func(s *corev1.PodSpec) {
+			s.Containers[0].StartupProbe, s.Containers[0].ReadinessProbe = s.Containers[0].ReadinessProbe, nil
+		})},
+		{name: "a readiness gate", target: withSpec(func(s *corev1.PodSpec) {
+			s.Containers[0].ReadinessProbe = nil
+			s.ReadinessGates = []corev1.PodReadinessGate{{ConditionType: "example.com/load-balancer-ready"}}
+		})},
+		{name: "no probe, but nothing routed", target: noProbe, services: []client.Object{}},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			workload := lifecycleWorkload("api", v1alpha1.PhasePaused)
+			services := tt.services
+			if services == nil {
+				services = []client.Object{service("api", map[string]string{"app": "api"},
+					corev1.ServicePort{Name: "http", Port: 80})}
+			}
+			r := doormanReconciler(t, append([]client.Object{workload, doormanEndpoints("10.0.0.7")}, services...)...)
+
+			for range 2 {
+				require.NoError(t, doormanErr(context.Background(), r, workload, tt.target))
+			}
+
+			warnings := recorded(r.Recorder.(*events.FakeRecorder), "Warning NoReadinessProbe")
+			cond := wakeCondition(t, workload)
+			if !tt.warned {
+				assert.Empty(t, warnings)
+				assert.NotContains(t, cond.Message, "readiness probe")
+				return
+			}
+			assert.Equal(t, metav1.ConditionTrue, cond.Status, "requests still wake it")
+			assert.Equal(t, "requests are held and wake the workload; its pods have no readiness probe, so held "+
+				"requests reach them as soon as they start, which may be before the app can answer them", cond.Message)
+			require.Len(t, warnings, 1, "once, not on every reconcile")
+			assert.Contains(t, warnings[0], "https://okedeji.io/hybernate/concepts/wake-on-request/#readiness-probes")
+		})
+	}
+}
+
+// A paused workload with wake on request turned off isn't routed, and
+// says so: not NotPaused, which it is.
+func TestReconcileDoorman_TurnedOffWhilePaused(t *testing.T) {
+	workload := lifecycleWorkload("api", v1alpha1.PhasePaused)
+	workload.Spec.Wake = &v1alpha1.WakeSpec{OnRequest: ptr.To(false)}
+	r := doormanReconciler(t, workload, doormanEndpoints("10.0.0.7"),
+		service("api", map[string]string{"app": "api"}, corev1.ServicePort{Name: "http", Port: 80}))
+
+	require.NoError(t, doormanErr(context.Background(), r, workload, appTarget()))
+
+	assert.Empty(t, doormanSlices(t, r))
+	cond := wakeCondition(t, workload)
+	assert.Equal(t, metav1.ConditionFalse, cond.Status)
+	assert.Equal(t, "TurnedOff", cond.Reason)
+}
+
+// A workload paused before has a WakeOnRequest condition already, from
+// its last wake, and the warning that its pods have no readiness probe is
+// made on each pause all the same, not only the first.
+func TestReconcileDoorman_WarnsOfNoReadinessProbeAfterAWake(t *testing.T) {
+	workload := lifecycleWorkload("api", v1alpha1.PhasePaused)
+	meta.SetStatusCondition(&workload.Status.Conditions, metav1.Condition{Type: conditionWakeOnRequest,
+		Status: metav1.ConditionFalse, Reason: "NotPaused"})
+	target := appTarget()
+	target.Spec.Template.Spec.Containers[0].ReadinessProbe = nil
+	r := doormanReconciler(t, workload, doormanEndpoints("10.0.0.7"),
+		service("api", map[string]string{"app": "api"}, corev1.ServicePort{Name: "http", Port: 80}))
+
+	for range 2 {
+		require.NoError(t, doormanErr(context.Background(), r, workload, target))
+	}
+
+	assert.Len(t, recorded(r.Recorder.(*events.FakeRecorder), "Warning NoReadinessProbe"), 1)
+}
+
+// While a workload wakes, the Ready pods behind its Service are its own:
+// the Service leaving the doorman then is the wake finishing, not a
+// problem, and nothing about it is kept once the workload is awake.
+func TestReconcileDoorman_ItsOwnPodsAreNoProblemAsItWakes(t *testing.T) {
+	workload := lifecycleWorkload("shop", v1alpha1.PhasePaused)
+	target := appTarget()
+	target.Name = "shop"
+	target.Spec.Template.Labels = map[string]string{"app": "shop"}
+	r := doormanReconciler(t, workload, doormanEndpoints("10.0.0.7"),
+		service("shop", map[string]string{"app": "shop"}, corev1.ServicePort{Name: "http", Port: 80}))
+	ctx := context.Background()
+	require.NoError(t, doormanErr(ctx, r, workload, target))
+	require.Equal(t, "DoormanRouted", wakeCondition(t, workload).Reason)
+
+	workload.Status.Phase = v1alpha1.PhaseResuming
+	require.NoError(t, r.Create(ctx, servingSlice()))
+	require.NoError(t, r.Create(ctx, servingPod()))
+	require.NoError(t, doormanErr(ctx, r, workload, target))
+
+	assert.NotEqual(t, "ServedByOtherPods", wakeCondition(t, workload).Reason, "its own pods, waking")
+	workload.Status.Phase = v1alpha1.PhaseRunning
+	require.NoError(t, doormanErr(ctx, r, workload, target))
+	awake := wakeCondition(t, workload)
+	assert.Equal(t, "NotPaused", awake.Reason)
+	assert.Empty(t, awake.Message, "nothing found at the last pause to keep")
+}
+
 // Requests through a skipped Service fail while the workload is paused, so
 // that's surfaced as a warning, once rather than on every reconcile.
 func TestReconcileDoorman_WarnsOnceAboutASkippedService(t *testing.T) {
 	workload := lifecycleWorkload("api", v1alpha1.PhasePaused)
 	svc := service("api", map[string]string{"app": "api"}, corev1.ServicePort{Name: "http", Port: 80})
-	svc.Annotations = map[string]string{annotationGKENEG: `{"ingress":true}`}
+	svc.Annotations = map[string]string{annotationGKENEG: `{"exposed_ports":{"80":{}}}`}
 	r := doormanReconciler(t, workload, doormanEndpoints("10.0.0.7"), svc)
 
 	require.NoError(t, doormanErr(context.Background(), r, workload, appTarget()))

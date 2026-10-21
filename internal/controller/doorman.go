@@ -19,7 +19,6 @@ package controller
 import (
 	"cmp"
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"net/netip"
@@ -32,6 +31,7 @@ import (
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	discoveryv1 "k8s.io/api/discovery/v1"
+	networkingv1 "k8s.io/api/networking/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -52,10 +52,6 @@ const (
 	conditionWakeOnRequest = "WakeOnRequest"
 	actionRouteDoorman     = "RouteDoorman"
 	reasonRoutingFailed    = "RoutingFailed"
-
-	// annotationGKENEG puts a Service behind GKE's container-native load
-	// balancing. GKE adds it to Services used by an Ingress by default.
-	annotationGKENEG = "cloud.google.com/neg"
 
 	labelServiceProxyName = "service.kubernetes.io/service-proxy-name"
 
@@ -162,8 +158,11 @@ func (r *Reconciler) reconcileDoorman(ctx context.Context, workload *v1alpha1.Ma
 		return 0, r.removeDoorman(ctx, workload)
 	}
 	if !doormanEligible(workload) || target == nil {
-		r.clearCondition(workload, conditionWakeOnRequest, "NotPaused")
-		return 0, r.removeDoorman(ctx, workload)
+		r.keepRoutingProblem(workload)
+		if err := r.removeDoorman(ctx, workload); err != nil {
+			return 0, err
+		}
+		return r.forwarderRecheck(workload), nil
 	}
 
 	endpoints, err := r.doormanEndpoints(ctx)
@@ -209,15 +208,32 @@ func (r *Reconciler) reconcileDoorman(ctx context.Context, workload *v1alpha1.Ma
 	// on every retry.
 	r.recordDrains(workload, routes)
 	workload.Status.Doorman = routes
+	fwd, fwdErr := r.reconcileForwarder(ctx, workload, target, plan.services, routes)
+	recheck = shortest(recheck, fwd.recheck)
 
 	keep := map[string]bool{}
+	routed := map[string]bool{}
 	var errs []error
+	if fwdErr != nil {
+		errs = append(errs, fwdErr)
+	}
 	for _, s := range plan.services {
 		svcRoutes := routesFor(routes, s.svc.Name)
+		want := doormanSlice{ports: slicePorts(svcRoutes, nil), endpoints: endpoints}
+		if s.forwarded {
+			want = doormanSlice{ports: slicePorts(svcRoutes, fwd.ports), endpoints: fwd.endpoints, forwarded: true}
+			if want.doormanPorts, err = doormanPortsAnnotation(svcRoutes); err != nil {
+				return 0, err
+			}
+		}
 		for _, family := range s.families {
+			if len(want.endpoints[family]) == 0 || len(want.ports) == 0 {
+				continue
+			}
 			name := doorman.SliceName(s.svc.Name, workload.Name, family)
 			keep[name] = true
-			err := r.applyDoormanSlice(ctx, workload, s.svc, name, family, svcRoutes, endpoints[family])
+			routed[s.svc.Name] = true
+			err := r.applyDoormanSlice(ctx, workload, s.svc, name, family, want)
 			if apierrors.IsAlreadyExists(err) {
 				err = r.claimedSlice(ctx, workload.Namespace, name, err)
 			}
@@ -231,6 +247,10 @@ func (r *Reconciler) reconcileDoorman(ctx context.Context, workload *v1alpha1.Ma
 				errs = append(errs, err)
 			}
 		}
+		if s.forwarded && !routed[s.svc.Name] {
+			plan.skipped.forwarding = append(plan.skipped.forwarding, s.svc.Name)
+			recheck = shortest(recheck, forwarderRecheckInterval)
+		}
 	}
 	if err := r.deleteDoormanSlices(ctx, current, keep); err != nil {
 		errs = append(errs, err)
@@ -238,8 +258,44 @@ func (r *Reconciler) reconcileDoorman(ctx context.Context, workload *v1alpha1.Ma
 	if len(errs) > 0 {
 		return 0, errors.Join(errs...)
 	}
-	r.reportDoorman(ctx, workload, routes, plan.skipped)
+	plan.skipped.forwarder = fwd.unready
+	live := slices.DeleteFunc(slices.Clone(routes), func(rt v1alpha1.DoormanRoute) bool { return !routed[rt.Service] })
+	r.reportDoorman(ctx, workload, target, live, plan.skipped)
 	return recheck, nil
+}
+
+// lastingRoutingProblems are the WakeOnRequest reasons that come from how the
+// workload's Services are set up, which the next pause meets again unless
+// someone changes them.
+var lastingRoutingProblems = map[string]bool{
+	"UnsupportedLoadBalancer": true,
+	"ServedByOtherPods":       true,
+	"NodeLocalTraffic":        true,
+	"UnsupportedIPFamily":     true,
+	"TooManyPorts":            true,
+}
+
+const foundAtLastPause = "at its last pause: "
+
+// keepRoutingProblem sets WakeOnRequest for a workload the doorman doesn't
+// route: TurnedOff while its wake.onRequest is false, paused or not, and
+// otherwise cleared once it isn't paused, except for a problem its last
+// pause found with its Services, which stays, so it can be fixed before the
+// next pause rather than found by someone whose request doesn't wake it.
+func (r *Reconciler) keepRoutingProblem(workload *v1alpha1.ManagedWorkload) {
+	if !wakeOnRequest(workload) {
+		r.setCondition(workload, conditionWakeOnRequest, metav1.ConditionFalse, reasonTurnedOff,
+			"wake.onRequest is false, so requests to the workload don't wake it while it's paused")
+		return
+	}
+	c := meta.FindStatusCondition(workload.Status.Conditions, conditionWakeOnRequest)
+	if c == nil || c.Status != metav1.ConditionFalse || !lastingRoutingProblems[c.Reason] {
+		r.clearCondition(workload, conditionWakeOnRequest, "NotPaused")
+		return
+	}
+	if !strings.HasPrefix(c.Message, foundAtLastPause) {
+		r.setCondition(workload, conditionWakeOnRequest, metav1.ConditionFalse, c.Reason, foundAtLastPause+c.Message)
+	}
 }
 
 // shortest is the sooner of two requeue delays, where zero means none.
@@ -275,7 +331,7 @@ func (r *Reconciler) removeDoorman(ctx context.Context, workload *v1alpha1.Manag
 	r.doormanPorts.release(workload.UID, r.now())
 	r.recordDrains(workload, nil)
 	workload.Status.Doorman = nil
-	return nil
+	return r.retireForwarder(ctx, workload)
 }
 
 // mayMissSlices reports whether the cache may not have a doorman slice of
@@ -333,10 +389,19 @@ type skippedServices struct {
 	served      []string
 	nodeLocal   []string
 	family      []string
+
+	// forwarding are those behind GKE container-native load balancing
+	// whose forwarder has no Ready pod yet, and forwarder says why.
+	forwarding []string
+	forwarder  string
 }
 
 func (s skippedServices) notes() string {
 	var notes []string
+	if len(s.forwarding) > 0 {
+		notes = append(notes, fmt.Sprintf("not routed until the forwarder is Ready (%s): %s",
+			s.forwarder, strings.Join(s.forwarding, ", ")))
+	}
 	if len(s.served) > 0 {
 		notes = append(notes, "served by other Ready pods, so not routed: "+strings.Join(s.served, ", "))
 	}
@@ -349,14 +414,52 @@ func (s skippedServices) notes() string {
 	return strings.Join(notes, "; ")
 }
 
+const (
+	reasonNoReadinessProbe = "NoReadinessProbe"
+	// reasonTurnedOff is WakeOnRequest's reason for a workload whose
+	// wake.onRequest is false.
+	reasonTurnedOff = "TurnedOff"
+
+	// noReadinessNote is what the WakeOnRequest condition adds for a routed
+	// workload whose pods have no readiness probe.
+	noReadinessNote = "its pods have no readiness probe, so held requests reach them as soon as they start, " +
+		"which may be before the app can answer them"
+)
+
+// hasReadinessCheck reports whether a pod template tells Kubernetes when
+// its app can serve: a readiness or startup probe on one of its containers,
+// or a readiness gate. Without one, a pod is Ready as soon as its
+// containers start, and the doorman passes held requests to it then.
+// Injected sidecars aren't in the template, and their probes say nothing of
+// the app's.
+func hasReadinessCheck(spec corev1.PodSpec) bool {
+	return len(spec.ReadinessGates) > 0 || slices.ContainsFunc(spec.Containers, func(c corev1.Container) bool {
+		return c.ReadinessProbe != nil || c.StartupProbe != nil
+	})
+}
+
 // reportDoorman sets the WakeOnRequest condition. Requests through a Service
 // left unrouted because of its load balancer fail while the workload is
-// paused, so a warning event says so whenever that list changes.
-func (r *Reconciler) reportDoorman(ctx context.Context, workload *v1alpha1.ManagedWorkload,
+// paused, so a warning event says so whenever that list changes, as one
+// does when a routed workload's pods have no readiness probe, which the
+// requests that wake it may reach before its app can answer them.
+func (r *Reconciler) reportDoorman(ctx context.Context, workload *v1alpha1.ManagedWorkload, target client.Object,
 	routes []v1alpha1.DoormanRoute, skipped skippedServices) {
+	// While the workload wakes, the Ready pods serving a Service are its
+	// own: the Service leaving the doorman is the wake finishing, and what
+	// its pause found stands until it's awake.
+	if workload.Status.Phase == v1alpha1.PhaseResuming && len(skipped.served) > 0 {
+		skipped.served = nil
+		if len(routes) == 0 {
+			return
+		}
+	}
 	status, reason, message := metav1.ConditionTrue, "DoormanRouted", "requests are held and wake the workload"
 	switch {
 	case len(routes) > 0:
+	case len(skipped.forwarding) > 0:
+		status, reason, message = metav1.ConditionFalse, reasonForwarderNotReady,
+			"requests through GKE's load balancer reach the doorman through a forwarder beside the workload, which isn't Ready yet"
 	case len(skipped.unsupported) > 0:
 		status, reason, message = metav1.ConditionFalse, "UnsupportedLoadBalancer", "no Service can be routed through the doorman"
 	case len(skipped.served) > 0:
@@ -378,14 +481,26 @@ func (r *Reconciler) reportDoorman(ctx context.Context, workload *v1alpha1.Manag
 	if notes := skipped.notes(); notes != "" {
 		message += "; " + notes
 	}
-	previous := meta.FindStatusCondition(workload.Status.Conditions, conditionWakeOnRequest)
+	unready := len(routes) > 0 && !hasReadinessCheck(podTemplateOf(target).Spec)
+	if unready {
+		message += "; " + noReadinessNote
+	}
+	previous := meta.FindStatusCondition(workload.Status.Conditions, conditionWakeOnRequest).DeepCopy()
 	r.setCondition(workload, conditionWakeOnRequest, status, reason, message)
 	if len(skipped.unsupported) > 0 && (previous == nil || previous.Message != message) {
 		r.announceRouting(ctx, workload, "UnsupportedLoadBalancer",
 			"requests to Services %s won't wake the workload: GKE container-native load balancing (NEGs) can't use the doorman",
 			strings.Join(skipped.unsupported, ", "))
 	}
+	if unready && (previous == nil || !strings.Contains(previous.Message, noReadinessNote)) {
+		r.announceRouting(ctx, workload, reasonNoReadinessProbe,
+			"its pods have no readiness probe, so a request that wakes it reaches them as soon as they start, "+
+				"which may be before the app can answer it; give it a readiness probe that passes once it can serve: %s",
+			readinessProbesGuide)
+	}
 }
+
+const readinessProbesGuide = "https://okedeji.io/hybernate/concepts/wake-on-request/#readiness-probes"
 
 func (r *Reconciler) doormanEndpoints(ctx context.Context) (map[discoveryv1.AddressType][]discoveryv1.Endpoint, error) {
 	return readDoormanEndpoints(ctx, r.Client, r.DoormanNamespace, r.DoormanService)
@@ -432,11 +547,14 @@ func readDoormanEndpoints(ctx context.Context, reader client.Reader, namespace, 
 }
 
 // doormanService is a Service to route through the doorman: the address
-// families to route it for, and the ports.
+// families to route it for, and the ports. A forwarded one is behind GKE
+// container-native load balancing, and routed through the workload's
+// forwarder (see reconcileForwarder).
 type doormanService struct {
-	svc      corev1.Service
-	families []discoveryv1.AddressType
-	ports    []corev1.ServicePort
+	svc       corev1.Service
+	families  []discoveryv1.AddressType
+	ports     []corev1.ServicePort
+	forwarded bool
 }
 
 type doormanPlan struct {
@@ -464,6 +582,10 @@ func (r *Reconciler) planDoorman(ctx context.Context, workload *v1alpha1.Managed
 	if err := r.List(ctx, &list, client.InNamespace(workload.Namespace)); err != nil {
 		return doormanPlan{}, fmt.Errorf("listing services: %w", err)
 	}
+	var ingresses networkingv1.IngressList
+	if err := r.List(ctx, &ingresses, client.InNamespace(workload.Namespace), client.UnsafeDisableDeepCopy); err != nil {
+		return doormanPlan{}, fmt.Errorf("listing ingresses: %w", err)
+	}
 	var plan doormanPlan
 	for _, svc := range list.Items {
 		if len(svc.Spec.Selector) == 0 || svc.Spec.ClusterIP == corev1.ClusterIPNone ||
@@ -473,7 +595,8 @@ func (r *Reconciler) planDoorman(ctx context.Context, workload *v1alpha1.Managed
 		if !labels.SelectorFromSet(svc.Spec.Selector).Matches(podLabels) {
 			continue
 		}
-		if usesGKENEG(svc) {
+		forwarded := usesGKENEG(svc, ingresses.Items)
+		if forwarded && r.NEGForwarder == nil {
 			plan.skipped.unsupported = append(plan.skipped.unsupported, svc.Name)
 			continue
 		}
@@ -502,7 +625,7 @@ func (r *Reconciler) planDoorman(ctx context.Context, workload *v1alpha1.Managed
 			}
 		}
 		if len(families) > 0 {
-			plan.services = append(plan.services, doormanService{svc: svc, families: families, ports: ports})
+			plan.services = append(plan.services, doormanService{svc: svc, families: families, ports: ports, forwarded: forwarded})
 		}
 	}
 	slices.SortFunc(plan.services, func(a, b doormanService) int { return cmp.Compare(a.svc.Name, b.svc.Name) })
@@ -605,27 +728,6 @@ func serviceFamilies(svc corev1.Service) []discoveryv1.AddressType {
 	return out
 }
 
-// usesGKENEG reports whether a Service is behind GKE container-native load
-// balancing. The NEG controller can fail a Service's whole sync on one
-// endpoint it rejects, and it checks each endpoint's pod against the Service
-// in the pod's own namespace, which for the doorman is the wrong one. Routing
-// such a Service risks freezing its load balancer until the workload wakes.
-// An annotation that can't be parsed counts as NEG, to stay safe.
-func usesGKENEG(svc corev1.Service) bool {
-	value, ok := svc.Annotations[annotationGKENEG]
-	if !ok {
-		return false
-	}
-	var neg struct {
-		Ingress      bool                       `json:"ingress"`
-		ExposedPorts map[string]json.RawMessage `json:"exposed_ports"`
-	}
-	if err := json.Unmarshal([]byte(value), &neg); err != nil {
-		return true
-	}
-	return neg.Ingress || len(neg.ExposedPorts) > 0
-}
-
 func podTemplateLabels(target client.Object) map[string]string {
 	switch t := target.(type) {
 	case *appsv1.Deployment:
@@ -648,14 +750,12 @@ func (r *Reconciler) allocateRoutes(ctx context.Context, workload *v1alpha1.Mana
 		}
 	}
 	existing := map[routeKey]int32{}
-	for _, slice := range current {
-		for _, p := range slice.Ports {
-			if p.Name != nil && p.Port != nil {
-				existing[routeKey{service: slice.Labels[discoveryv1.LabelServiceName], portName: *p.Name}] = *p.Port
-			}
+	for i := range current {
+		for name, port := range doormanPortsOf(&current[i]) {
+			existing[routeKey{service: current[i].Labels[discoveryv1.LabelServiceName], portName: name}] = port
 		}
 	}
-	for _, route := range workload.Status.Doorman {
+	for _, route := range append(r.forwarderRoutes(ctx, workload), workload.Status.Doorman...) {
 		existing[routeKey{service: route.Service, portName: route.PortName}] = route.DoormanPort
 	}
 	reader := routeReader{reader: r.apiReader(), namespaces: r.WatchNamespaces}
@@ -940,10 +1040,8 @@ func (a *portAllocator) merge(inUse portsInUse, now time.Time) {
 		if owner == nil {
 			continue
 		}
-		for _, p := range slice.Ports {
-			if p.Port != nil {
-				claim(*p.Port, owner.UID, slice.Namespace)
-			}
+		for _, port := range doormanPortsOf(&slice) {
+			claim(port, owner.UID, slice.Namespace)
 		}
 	}
 	for port, c := range a.claims {
@@ -988,12 +1086,25 @@ func routesFor(routes []v1alpha1.DoormanRoute, service string) []v1alpha1.Doorma
 	return out
 }
 
+// doormanSlice is what a Service's doorman slices say, in each address
+// family.
+type doormanSlice struct {
+	ports     []discoveryv1.EndpointPort
+	endpoints map[discoveryv1.AddressType][]discoveryv1.Endpoint
+
+	// forwarded points the Service at the workload's forwarder, with
+	// doormanPorts recording the doorman's ports (see
+	// annotationDoormanPorts).
+	forwarded    bool
+	doormanPorts string
+}
+
 // applyDoormanSlice creates or updates the EndpointSlice that points one
 // address family of a Service at the doorman. Each port keeps its Service
 // port name, which is how kube-proxy matches a slice port to a Service port,
 // so traffic to the Service port reaches the doorman port allocated for it.
 func (r *Reconciler) applyDoormanSlice(ctx context.Context, workload *v1alpha1.ManagedWorkload, svc corev1.Service,
-	name string, family discoveryv1.AddressType, routes []v1alpha1.DoormanRoute, endpoints []discoveryv1.Endpoint) error {
+	name string, family discoveryv1.AddressType, want doormanSlice) error {
 	slice := &discoveryv1.EndpointSlice{
 		ObjectMeta: metav1.ObjectMeta{Name: name, Namespace: workload.Namespace},
 	}
@@ -1014,16 +1125,14 @@ func (r *Reconciler) applyDoormanSlice(ctx context.Context, workload *v1alpha1.M
 		if r.OperatorNamespace != "" {
 			slice.Labels[v1alpha1.LabelOperator] = r.OperatorNamespace
 		}
-		slice.AddressType = family
-		slice.Endpoints = endpoints
-		slice.Ports = make([]discoveryv1.EndpointPort, 0, len(routes))
-		for _, route := range routes {
-			slice.Ports = append(slice.Ports, discoveryv1.EndpointPort{
-				Name:     ptr.To(route.PortName),
-				Port:     ptr.To(route.DoormanPort),
-				Protocol: ptr.To(corev1.ProtocolTCP),
-			})
+		delete(slice.Annotations, annotationDoormanPorts)
+		if want.forwarded {
+			slice.Labels[labelForwarded] = v1alpha1.True
+			metav1.SetMetaDataAnnotation(&slice.ObjectMeta, annotationDoormanPorts, want.doormanPorts)
 		}
+		slice.AddressType = family
+		slice.Endpoints = want.endpoints[family]
+		slice.Ports = want.ports
 		return controllerutil.SetControllerReference(workload, slice, r.Scheme)
 	})
 	if err != nil {
@@ -1141,7 +1250,9 @@ func (r *Reconciler) findWorkloadsForDoorman(ctx context.Context, _ client.Objec
 }
 
 // findPausedWorkloadsInNamespace re-queues paused workloads when a Service
-// in their namespace changes, since it may now select their pods.
+// in their namespace changes, since it may now select their pods or be
+// behind GKE's NEGs, or an Ingress there does, which may put one of their
+// Services behind NEGs or take it out.
 func (r *Reconciler) findPausedWorkloadsInNamespace(ctx context.Context, obj client.Object) []reconcile.Request {
 	var list v1alpha1.ManagedWorkloadList
 	if err := r.List(ctx, &list, client.InNamespace(obj.GetNamespace()), client.UnsafeDisableDeepCopy); err != nil {

@@ -160,6 +160,32 @@ func TestOptIn_NotOptedIn(t *testing.T) {
 	assert.Contains(t, ignored[0], "settings such as dry-run are annotations")
 }
 
+// A chart's podLabels put the label on the pod template, where Hybernate
+// doesn't look: that's pointed out, since nothing else would say why the
+// workload isn't managed. In a managed namespace it's in anyway.
+func TestOptIn_LabelOnThePodTemplate(t *testing.T) {
+	onPods := func(name string) *appsv1.Deployment {
+		d := optInDeployment(name, nil, nil)
+		d.Spec.Template.Labels = map[string]string{"app": name, v1alpha1.LabelManaged: v1alpha1.True}
+		return d
+	}
+	r, recorder := optInReconciler(t, optInNamespace(nil, nil), onPods("api"))
+
+	reconcileOptIn(t, r, "api")
+
+	_, ok := managedWorkload(t, r, "api")
+	assert.False(t, ok)
+	ignored := recorded(recorder, ReasonLabelIgnored)
+	require.Len(t, ignored, 1)
+	assert.Contains(t, ignored[0], "hybernate.io/managed is on the pod template, where Hybernate doesn't look")
+
+	r, recorder = optInReconciler(t, optInNamespace(managedLabel, nil), onPods("api"))
+	reconcileOptIn(t, r, "api")
+	_, ok = managedWorkload(t, r, "api")
+	assert.True(t, ok, "its namespace opts it in")
+	assert.Empty(t, recorded(recorder, ReasonLabelIgnored))
+}
+
 // managed: "false" on a workload in a managed namespace opts it out
 // quietly, as ignore does: it says what it means.
 func TestOptIn_ManagedFalseOptsOutQuietly(t *testing.T) {
@@ -464,6 +490,27 @@ func TestKindQualifiedName(t *testing.T) {
 		"a cut that ends on a dot is still a valid name")
 }
 
+// A ManagedWorkload from before the forecast setting stored a confidence
+// of 75, the default then. It isn't kept as though someone chose it, or the
+// forecast setting the annotations give would never apply.
+func TestOptIn_FormerDefaultConfidenceGivesWayToTheSetting(t *testing.T) {
+	d := optInDeployment("api", managedLabel, nil)
+	r, _ := optInReconciler(t, optInNamespace(nil, nil), d)
+	reconcileOptIn(t, r, "api")
+	mw, _ := managedWorkload(t, r, "api")
+	mw.Spec.Prediction.Confidence = formerDefaultConfidence
+	require.NoError(t, r.Update(context.Background(), mw))
+
+	require.NoError(t, r.Get(context.Background(), client.ObjectKeyFromObject(d), d))
+	d.Annotations = map[string]string{v1alpha1.AnnotationForecast: "eager"}
+	require.NoError(t, r.Update(context.Background(), d))
+	reconcileOptIn(t, r, "api")
+
+	mw, _ = managedWorkload(t, r, "api")
+	assert.Zero(t, mw.Spec.Prediction.Confidence)
+	assert.Equal(t, 60, confidenceFor(mw), "eager's threshold")
+}
+
 // Settings no annotation controls, such as costTracking rates patched in,
 // survive the annotations being applied again.
 func TestOptIn_UserSettingsSurvive(t *testing.T) {
@@ -473,6 +520,7 @@ func TestOptIn_UserSettingsSurvive(t *testing.T) {
 	mw, _ := managedWorkload(t, r, "api")
 	cpu := resource.MustParse("0.05")
 	mw.Spec.Prediction.Confidence = 70
+	mw.Spec.Prediction.Mode = v1alpha1.PredictionEager
 	mw.Spec.CostTracking = &v1alpha1.CostTrackingSpec{Rates: &v1alpha1.CostRates{CPUPerHour: &cpu}}
 	mw.Spec.IdlePolicy.Activity.Prometheus = []v1alpha1.PrometheusActivity{{PromQL: "sum(up)"}}
 	mw.Spec.DependsOn[0].WaitForReady = true
@@ -491,6 +539,7 @@ func TestOptIn_UserSettingsSurvive(t *testing.T) {
 	assert.True(t, mw.Spec.DependsOn[0].WaitForReady)
 	assert.Equal(t, 3*time.Hour, mw.Spec.IdlePolicy.IdleAfter.Duration, "the annotations still apply")
 	assert.False(t, mw.Spec.DryRun, "dry-run is the annotations' to set")
+	assert.Equal(t, v1alpha1.PredictionBalanced, mw.Spec.Prediction.Mode, "and so is the forecast's mode")
 }
 
 // A label-created ManagedWorkload another install took on is left to it,

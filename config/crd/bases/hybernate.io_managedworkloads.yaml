@@ -18,13 +18,23 @@ spec:
     - jsonPath: .status.phase
       name: Phase
       type: string
+    - description: What pausing freed this month (UTC), at list price
+      jsonPath: .status.cost.freedThisMonth
+      name: Freed
+      type: string
     - description: What pausing took off the node bill this month (UTC), at least
       jsonPath: .status.cost.savedThisMonth
       name: Saved
       type: string
-    - description: What pausing freed this month (UTC), at list price
-      jsonPath: .status.cost.freedThisMonth
-      name: Freed
+    - description: 'In dry-run: what the pauses Hybernate would have made would have
+        freed since dry-run began'
+      jsonPath: .status.dryRun.estimatedFreed
+      name: Would Free
+      type: string
+    - description: Whether the forecast is acting, or what it waits for
+      jsonPath: .status.prediction.reason
+      name: Forecast
+      priority: 1
       type: string
     - jsonPath: .metadata.creationTimestamp
       name: Age
@@ -208,21 +218,32 @@ spec:
                   idle detection and wakes paused workloads ahead of predicted demand.
                 properties:
                   confidence:
-                    default: 75
                     description: |-
-                      Confidence is the accuracy percentage (50-100) a season's forecasts
-                      must reach before they drive decisions rather than only being
-                      reported. Accuracy is 1 - WAPE: 75 means the forecast's total error
-                      over the window is 25% of the demand in it. A season that falls 5
-                      points below it stops driving decisions until it earns it again. The
-                      minimum is 50 because below that a forecast that is wrong more than it
-                      is right would wake workloads and hold off pauses. The default of 75
-                      starts acting on a weekday pattern after about a week; a higher bar
-                      takes longer to reach, for little more accuracy, since a wrong forecast
-                      only wakes a workload early or keeps it up an hour longer.
+                      Confidence, when set, is the accuracy percentage (50-100) a season's
+                      forecasts must reach to drive decisions, in place of Mode's. Accuracy
+                      is 1 - WAPE: 75 means the forecast's total error over the window is
+                      25% of the demand in it. A season that falls 5 points below it stops
+                      driving decisions until it earns it again. The minimum is 50 because
+                      below that a forecast that is wrong more than it is right would wake
+                      workloads and hold off pauses.
                     maximum: 100
                     minimum: 50
                     type: integer
+                  mode:
+                    default: balanced
+                    description: |-
+                      Mode is how soon the forecast acts on what it has learned: eager acts
+                      sooner, and on less regular patterns, and wakes the workload for
+                      nothing more often; cautious acts later, only on patterns it forecasts
+                      well, for workloads costly to keep awake for nothing. A wrong forecast
+                      only wakes a workload early or keeps it up a while longer, never
+                      costing availability, since a request still wakes it through the
+                      doorman. They act at a confidence of 60, 75 and 85.
+                    enum:
+                    - eager
+                    - balanced
+                    - cautious
+                    type: string
                 type: object
               target:
                 description: |-
@@ -288,6 +309,21 @@ spec:
                 description: Activity tracks when the workload was last active, for
                   idle detection.
                 properties:
+                  forecastBusyFrom:
+                    description: |-
+                      ForecastBusyFrom is the start of the hour the forecast expects demand
+                      in, while it keeps the workload from pausing, as the IdleVetoed
+                      condition says.
+                    format: date-time
+                    type: string
+                  heldByDependents:
+                    description: |-
+                      HeldByDependents are the awake workloads that use this one, as
+                      namespace/name, while they keep it from pausing, as the
+                      HeldByDependents condition says: at most 10, the first by name.
+                    items:
+                      type: string
+                    type: array
                   lastActivitySource:
                     description: LastActivitySource is what produced LastActivityTime.
                     enum:
@@ -432,15 +468,25 @@ spec:
                       workload did meanwhile isn't known.
                     format: date-time
                     type: string
+                  listPrice:
+                    description: |-
+                      ListPrice is which list prices ListRates are: OnDemand; Spot, for
+                      pods on spot or preemptible nodes, priced at their type's spot
+                      price; or SpotAndOnDemand, for pods on both. A spot node of a type
+                      without a spot price is priced on-demand. Unset with ListRates.
+                    enum:
+                    - OnDemand
+                    - Spot
+                    - SpotAndOnDemand
+                    type: string
                   listRates:
                     description: |-
-                      ListRates are the on-demand list rates of the nodes the workload's
-                      pods last ran on, from their instance type and region, which its cost,
-                      what it frees and what it saves are priced at unless
-                      costTracking.rates sets its own. Kept while it's paused, so a pause
-                      is priced at where it ran. Unset
-                      when its nodes aren't in Hybernate's price table, and the default
-                      rates apply.
+                      ListRates are the list rates of the nodes the workload's pods last
+                      ran on, from their instance type and region, on-demand or spot as
+                      ListPrice says, which its cost, what it frees and what it saves are
+                      priced at unless costTracking.rates sets its own. Kept while it's
+                      paused, so a pause is priced at where it ran. Unset when its nodes
+                      aren't in Hybernate's price table, and the default rates apply.
                     properties:
                       cpuPerHour:
                         anyOf:
@@ -671,6 +717,12 @@ spec:
                         this Service port.
                       format: int32
                       type: integer
+                    forwarded:
+                      description: |-
+                        Forwarded is true when the Service sits behind GKE container-native
+                        load balancing, so its traffic reaches the doorman through a
+                        forwarder in the workload's namespace rather than directly.
+                      type: boolean
                     portName:
                       description: PortName is the Service port's name; empty for
                         an unnamed single port.
@@ -717,7 +769,9 @@ spec:
                   estimatedFreed:
                     description: |-
                       EstimatedFreed is the freed hours priced at the workload's cost
-                      rates, to the cent. It's for display: the hours are the record.
+                      rates, to the cent, with the would-be pause under way counted up to
+                      the last status write, at most 5 minutes ago. It's for display: the
+                      hours are the record.
                     type: string
                   freedCPUHours:
                     anyOf:
@@ -1064,6 +1118,12 @@ spec:
                 description: Prediction reflects the current state of the forecasting
                   engine.
                 properties:
+                  acting:
+                    description: |-
+                      Acting says the forecast drives decisions: it holds off a pause before
+                      an hour it expects to be busy, and with autoResume, wakes the workload
+                      ahead of one.
+                    type: boolean
                   dailyConfidence:
                     description: |-
                       DailyConfidence is the forecast's accuracy over the last 24 observed
@@ -1074,12 +1134,70 @@ spec:
                       DailyPhase is the daily season's lifecycle phase
                       (Observing, Suggesting, or Active).
                     type: string
+                  history:
+                    description: |-
+                      History is what the forecast learned from the workload's CPU history
+                      in Prometheus when Hybernate began managing it.
+                    properties:
+                      from:
+                        description: From and To bound the history learned.
+                        format: date-time
+                        type: string
+                      hours:
+                        description: Hours is how many hours of history the forecast
+                          learned.
+                        type: integer
+                      message:
+                        description: Message says what was learned, or why nothing
+                          was.
+                        type: string
+                      reason:
+                        description: |-
+                          Reason says in a word what came of reading it: Learned,
+                          NoPrometheusURL, NoHistory, NoCPURequests or QueryFailed.
+                        type: string
+                      to:
+                        format: date-time
+                        type: string
+                    required:
+                    - reason
+                    type: object
+                  message:
+                    description: Message says the same in a sentence, and what the
+                      forecast waits for.
+                    type: string
+                  reason:
+                    description: |-
+                      Reason says in a word why the forecast is or isn't acting: Acting,
+                      Observing (it hasn't scored a day of its forecasts yet), EarningConfidence
+                      (its forecasts aren't yet right enough), Relearning (demand broke from
+                      what it had learned), or NotLearning (the workload is paused without
+                      the doorman, so its demand can't be seen).
+                    type: string
+                  startsActing:
+                    description: |-
+                      StartsActing is when the forecast is expected to start acting, if the
+                      coming days repeat the last week it saw. It's unset while the forecast
+                      is acting, and when it isn't expected to start within four weeks.
+                    format: date-time
+                    type: string
                   state:
                     description: |-
                       State is what the forecasting engine has learned, compressed and
                       encoded, so that it survives an operator restart. It is written with
                       each hourly observation. State that can't be read is discarded, with a
                       warning event, and the engine starts learning again.
+                    type: string
+                  threshold:
+                    description: |-
+                      Threshold is the confidence the forecast acts at: spec.prediction's
+                      confidence, or its mode's.
+                    type: integer
+                  timeZone:
+                    description: |-
+                      TimeZone is the IANA time zone the forecast counts hours of the day
+                      and days of the week in, such as Europe/London: the operator's
+                      --timezone.
                     type: string
                   weeklyConfidence:
                     description: |-
@@ -1092,6 +1210,7 @@ spec:
                       (Observing, Suggesting, or Active).
                     type: string
                 required:
+                - acting
                 - dailyConfidence
                 - dailyPhase
                 - weeklyConfidence

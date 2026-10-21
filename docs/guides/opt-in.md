@@ -15,7 +15,7 @@ metadata:
     hybernate.io/idle-after: "2h"
 ```
 
-The label is usually one line in your Helm values or manifests, in a file you already keep in Git. Hybernate then creates a [ManagedWorkload](managed-workload.md) for the workload and keeps it in step with the annotations.
+The label is usually one line in your Helm values or manifests, in a file you already keep in Git. It goes on the Deployment or StatefulSet itself: a chart's `podLabels` and `podAnnotations` put it on the pods, where Hybernate doesn't look, and a `LabelIgnored` warning event on the workload says so. With Kustomize, don't use `commonLabels`, which changes the workload's selector; see [With Kustomize](#with-kustomize). Hybernate then creates a [ManagedWorkload](managed-workload.md) for the workload and keeps it in step with the annotations.
 
 ## A whole namespace
 
@@ -35,6 +35,51 @@ metadata:
 
 This covers dev and preview namespaces, and third-party charts that don't let you add labels to their workloads. To leave one workload out of a managed namespace, label it `hybernate.io/ignore: "true"`, or `hybernate.io/managed: "false"`.
 
+## With Kustomize
+
+Don't use `commonLabels` for the label. Kustomize puts it in each Deployment's and StatefulSet's `spec.selector` too, and in a StatefulSet's `volumeClaimTemplates`, neither of which Kubernetes lets change. Applied to a workload that already exists, it fails with `field is immutable`, while the workload's Service, applied with it, can take the new selector, which none of the running pods has, so it stops sending them traffic. A tool set to recreate what it can't change, such as Flux with `force: true`, deletes and recreates the workloads instead. On a new workload it applies, but the label is then part of the selector, so removing it to stop managing the workload fails the same way. `labels` with `includeSelectors: true`, which is what `kustomize edit fix` turns `commonLabels` into, does the same.
+
+These leave the selectors alone:
+
+- **A whole namespace:** when the kustomization has the Namespace, label and annotate it there, as in [A whole namespace](#a-whole-namespace). Nothing on the workloads changes.
+- **Everything the kustomization applies:** `labels` with `includeSelectors: false`, which labels each resource's own metadata and nothing else:
+
+    ```yaml title="kustomization.yaml"
+    resources:
+      - ../../base
+    labels:
+      - pairs:
+          hybernate.io/managed: "true"
+        includeSelectors: false
+    ```
+
+    Leave `includeTemplates` out: it labels the pods too, which restarts them for nothing, since Hybernate doesn't read pods' labels, and a StatefulSet's `volumeClaimTemplates`, which fails as the selector does. Services and ConfigMaps get the label as well, and Hybernate ignores it there, but a Namespace in the kustomization gets it too, which opts in the whole namespace.
+
+- **Chosen workloads, with their settings:** a patch, which changes only the workload's own labels and annotations:
+
+    ```yaml title="kustomization.yaml"
+    resources:
+      - ../../base
+    patches:
+      - target:
+          kind: Deployment
+          name: checkout-api
+        patch: |
+          apiVersion: apps/v1
+          kind: Deployment
+          metadata:
+            name: checkout-api
+            labels:
+              hybernate.io/managed: "true"
+            annotations:
+              hybernate.io/dry-run: "true"
+              hybernate.io/idle-after: "2h"
+    ```
+
+    Keep the `target`: without one, the patch has to give the workload's namespace too when its manifest has one, or the build fails with `no resource matches strategic merge patch`. To patch every Deployment and StatefulSet, target `kind: Deployment|StatefulSet` with no name; the patch still needs a `name`, which is then ignored.
+
+`commonAnnotations` can carry the settings, but it puts them on the pod templates too, so adding or changing one, such as `dry-run` to `"false"` to start pausing, restarts the pods of every workload in the kustomization, and Hybernate counts each restart as a [deploy](../concepts/idle-detection.md#what-counts-as-activity), which is activity. Set them on the Namespace or in a patch instead.
+
 ## Settings
 
 | Annotation | Values | Default | Description |
@@ -43,6 +88,7 @@ This covers dev and preview namespaces, and third-party charts that don't let yo
 | `hybernate.io/idle-after` | duration of at least `1m`, e.g. `"90m"`, `"2h"` | `1h` | How long without activity before pausing |
 | `hybernate.io/cpu-threshold` | whole number, `"1"` to `"100"` | `10` | CPU use, as a percentage of requests, above which the workload counts as active |
 | `hybernate.io/auto-resume` | `"true"`, `"false"` | `"false"` | Wake ahead of the demand a confident [forecast](../concepts/forecasting.md) predicts |
+| `hybernate.io/forecast` | `"eager"`, `"balanced"`, `"cautious"` | `"balanced"` | How soon the forecast acts on what it has learned; see [Forecast setting](../concepts/forecasting.md#forecast-setting) |
 | `hybernate.io/depends-on` | comma-separated `kind/name` or `namespace/kind/name` | none | Workloads this one needs; see [Dependencies](../concepts/dependencies.md) |
 | `hybernate.io/wake-on-request` | `"true"`, `"false"` | `"true"` | Wake when a request reaches the workload's Service; see [Wake on Request](../concepts/wake-on-request.md) |
 | `hybernate.io/wake-max-wait` | duration, at most `1h` | `2m` | How long a request is held while the workload wakes |
@@ -58,13 +104,13 @@ hybernate.io/depends-on: "statefulset/postgres, messaging/statefulset/nats"
 
 On a namespace, `depends-on` reaches every workload in it except those it names, and those they depend on by their own `depends-on`: they're what the others depend on, and taking the list too would make them depend on each other, so none could pause.
 
-Settings that need more than one value aren't annotations: Prometheus activity queries, `waitForReady` on a dependency, cost rates, and the forecast's `prediction.confidence`. Set those on the ManagedWorkload Hybernate creates, such as with `kubectl patch`, which keeps them (see [What Hybernate does with the label](#what-hybernate-does-with-the-label)), or write a [ManagedWorkload](managed-workload.md) yourself.
+Settings that need more than one value aren't annotations: Prometheus activity queries, `waitForReady` on a dependency, cost rates, and the forecast's `prediction.confidence`, a percentage that overrides `hybernate.io/forecast`. Set those on the ManagedWorkload Hybernate creates, such as with `kubectl patch`, which keeps them (see [What Hybernate does with the label](#what-hybernate-does-with-the-label)), or write a [ManagedWorkload](managed-workload.md) yourself.
 
 ### Which setting wins
 
 1. The workload's own annotation.
 2. Its namespace's annotation.
-3. The cluster-wide defaults, set in the Helm values (`defaults.idleAfter`, `defaults.cpuThreshold`, `defaults.dryRun`).
+3. The cluster-wide defaults, set in the Helm values (`defaults.idleAfter`, `defaults.cpuThreshold`, `defaults.dryRun`, `defaults.forecast`).
 4. The built-in default.
 
 So a namespace can measure everything with `dry-run: "true"` while one workload in it goes live with `dry-run: "false"`.

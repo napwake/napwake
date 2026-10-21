@@ -65,17 +65,27 @@ func listPrice(t *testing.T, instanceType string) cost.Rates {
 	return p.Rates
 }
 
+func spotPrice(t *testing.T, instanceType string) cost.Rates {
+	t.Helper()
+	p, ok := cost.ListPriceOf(cost.NodeType{InstanceType: instanceType, Region: "us-east-1", Spot: true})
+	require.True(t, ok, instanceType)
+	require.True(t, p.Spot, "%s has a spot price", instanceType)
+	return p.Rates
+}
+
 // One pod at 1 vCPU and 4 GiB, an hour.
 func podHour(r cost.Rates) float64 {
 	return cost.ComputeHourly(1, 4, r)
 }
 
-// Each workload is priced at the nodes its own pods run on.
+// Each workload is priced at the nodes its own pods run on, spot ones at
+// their spot price.
 func TestScanCluster_PricesAtItsNodes(t *testing.T) {
 	small, large := listPrice(t, "m6i.large"), listPrice(t, "r6i.4xlarge")
 	objs := []runtime.Object{
 		node("small-1", "m6i.large"), node("small-2", "m6i.large"), node("large-1", "r6i.4xlarge"),
 		node("metal-1", "custom.metal"), node("spot-1", "m6i.large", "karpenter.sh/capacity-type", "spot"),
+		node("huge-spot-1", unsoldAsSpot, "karpenter.sh/capacity-type", "spot"),
 	}
 	add := func(name string, nodes ...string) {
 		objs = append(objs, makeDeployment(name, testNamespace, int32(len(nodes)), "1", "4Gi", nil))
@@ -87,6 +97,8 @@ func TestScanCluster_PricesAtItsNodes(t *testing.T) {
 	add("on-both", "small-2", "large-1")
 	add("on-metal", "metal-1")
 	add("on-spot", "spot-1")
+	add("on-spot-and-not", "spot-1", "small-1")
+	add("on-spot-without-a-price", "huge-spot-1")
 
 	got := byName(scanWorkloads(t, objs...))
 
@@ -95,10 +107,23 @@ func TestScanCluster_PricesAtItsNodes(t *testing.T) {
 		"averaged over its pods")
 	assert.InDelta(t, podHour(cost.DefaultRates), got["on-metal"].HourlyCost, 1e-9,
 		"a node type without a list price gets the scan's rates")
-	assert.True(t, got["on-spot"].OnSpot)
 	assert.False(t, got["on-small"].OnSpot)
-	assert.InDelta(t, podHour(small), got["on-spot"].HourlyCost, 1e-9, "spot is priced at on-demand")
+	assert.True(t, got["on-spot"].OnSpot)
+	assert.False(t, got["on-spot"].SpotAtOnDemand)
+	assert.InDelta(t, podHour(spotPrice(t, "m6i.large")), got["on-spot"].HourlyCost, 1e-9, "spot is priced at spot")
+	assert.Less(t, got["on-spot"].HourlyCost, got["on-small"].HourlyCost)
+	assert.InDelta(t, 2*podHour(cost.Mean([]cost.Rates{spotPrice(t, "m6i.large"), small})),
+		got["on-spot-and-not"].HourlyCost, 1e-9, "each pod at its own node's price")
+	assert.True(t, got["on-spot-and-not"].OnSpot)
+	assert.True(t, got["on-spot-without-a-price"].SpotAtOnDemand, "said, as it costs less than shown")
+	assert.False(t, got["on-spot-without-a-price"].OnSpot)
+	assert.InDelta(t, podHour(listPrice(t, unsoldAsSpot)), got["on-spot-without-a-price"].HourlyCost, 1e-9,
+		"a type without a spot price is priced on-demand")
 }
+
+// unsoldAsSpot is an instance type AWS doesn't sell as spot, so the price
+// table has no spot price for it.
+const unsoldAsSpot = "u7in-32tb.224xlarge"
 
 // A workload with no pod on a node is priced where Hybernate last saw it
 // run, or at the cluster's most common node type.
@@ -112,28 +137,41 @@ func TestScanCluster_PricesPausedWorkloads(t *testing.T) {
 			Cost: &v1alpha1.CostStatus{ListRates: rates}}
 	}
 	recorded := managedFor("recorded", pausedStatus(&v1alpha1.CostRates{CPUPerHour: &cpu, MemoryPerHour: &memory}))
+	recordedAtSpot := managedFor("recorded-at-spot",
+		pausedStatus(&v1alpha1.CostRates{CPUPerHour: &cpu, MemoryPerHour: &memory}))
+	recordedAtSpot.Status.Cost.ListPrice = v1alpha1.ListPriceSpot
 	unrecorded := managedFor("unrecorded", pausedStatus(nil))
 	objs := []runtime.Object{node("small-1", "m6i.large"), node("small-2", "m6i.large"),
-		node("large-1", "r6i.4xlarge"), recorded, unrecorded,
+		node("large-1", "r6i.4xlarge"), recorded, recordedAtSpot, unrecorded,
 		makeDeployment("recorded", testNamespace, 0, "1", "4Gi", nil),
+		makeDeployment("recorded-at-spot", testNamespace, 0, "1", "4Gi", nil),
 		makeDeployment("unrecorded", testNamespace, 0, "1", "4Gi", nil)}
 
 	got := byName(scanWorkloads(t, objs...))
 
 	assert.InDelta(t, podHour(cost.Rates{CPUPerHour: 0.05, MemoryPerHour: 0.006}), got["recorded"].HourlyCost, 1e-9,
 		"where Hybernate last saw it run")
+	assert.False(t, got["recorded"].OnSpot)
+	assert.True(t, got["recorded-at-spot"].OnSpot, "Hybernate priced it at spot, so the scan says so")
 	assert.InDelta(t, podHour(small), got["unrecorded"].HourlyCost, 1e-9, "the most common node type")
 }
 
+// Spot and on-demand nodes of the same type are listed apart, as they're
+// priced apart.
 func TestScanCluster_NodePrices(t *testing.T) {
 	report := scanWorkloads(t, node("small-1", "m6i.large"), node("small-2", "m6i.large"),
-		node("spot-1", "m6i.large", "eks.amazonaws.com/capacityType", "SPOT"), node("metal-1", "custom.metal"))
+		node("spot-1", "m6i.large", "eks.amazonaws.com/capacityType", "SPOT"), node("metal-1", "custom.metal"),
+		node("huge-spot-1", unsoldAsSpot, "eks.amazonaws.com/capacityType", "SPOT"))
 
-	small := listPrice(t, "m6i.large")
+	small, spot, huge := listPrice(t, "m6i.large"), spotPrice(t, "m6i.large"), listPrice(t, unsoldAsSpot)
 	assert.Equal(t, []NodeTypePrice{
-		{Provider: "aws", InstanceType: "m6i.large", Region: "us-east-1", Nodes: 3, SpotNodes: 1, Listed: true,
+		{Provider: "aws", InstanceType: "m6i.large", Region: "us-east-1", Nodes: 2, Listed: true,
 			CPUPerHour: small.CPUPerHour, MemoryPerHour: small.MemoryPerHour},
 		{InstanceType: "custom.metal", Region: "us-east-1", Nodes: 1},
+		{Provider: "aws", InstanceType: "m6i.large", Region: "us-east-1", Spot: true, AtSpot: true, Nodes: 1,
+			Listed: true, CPUPerHour: spot.CPUPerHour, MemoryPerHour: spot.MemoryPerHour},
+		{Provider: "aws", InstanceType: unsoldAsSpot, Region: "us-east-1", Spot: true, Nodes: 1, Listed: true,
+			CPUPerHour: huge.CPUPerHour, MemoryPerHour: huge.MemoryPerHour},
 	}, report.NodePrices.NodeTypes)
 	assert.Empty(t, report.NodePrices.NodesUnread)
 }

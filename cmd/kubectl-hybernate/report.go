@@ -64,15 +64,19 @@ type reportPage struct {
 	Namespaces     []namespaceRow
 	Workloads      []workloadRow
 	Dependencies   []dependencyRow
-	Notes          []string
-	Method         []string
-	NextSteps      []template.HTML
-	Threshold      int
-	IdleAfter      string
-	Over           string
-	Tips           tips
-	Terms          []term
-	Mark           string
+	// DependencyStatus says each dependency shows its status; without it,
+	// DependenciesLead says what they'd all say.
+	DependencyStatus bool
+	DependenciesLead string
+	Notes            []string
+	Method           []string
+	NextSteps        []template.HTML
+	Threshold        int
+	IdleAfter        string
+	Over             string
+	Tips             tips
+	Terms            []term
+	Mark             string
 	// Unjudged is how many workloads the notes list instead of Workloads.
 	Unjudged int
 }
@@ -179,16 +183,22 @@ func writeReport(stdout, stderr io.Writer, result scanResult, opts scanOptions) 
 	if err != nil {
 		return err
 	}
+	showPage(stderr, "Report", path, open)
+	return nil
+}
+
+// showPage says on stderr where a page was written, as label, and opens it
+// in the browser first if asked to.
+func showPage(stderr io.Writer, label, path string, open bool) {
 	if !open {
-		_, _ = fmt.Fprintf(stderr, "Report: %s\n", path)
-		return nil
+		_, _ = fmt.Fprintf(stderr, "%s: %s\n", label, path)
+		return
 	}
 	if err := browse(path); err != nil {
-		_, _ = fmt.Fprintf(stderr, "Report: %s (couldn't open a browser: %v)\n", path, err)
-		return nil
+		_, _ = fmt.Fprintf(stderr, "%s: %s (couldn't open a browser: %v)\n", label, path, err)
+		return
 	}
-	_, _ = fmt.Fprintf(stderr, "Report: %s (opened in your browser; --open=false to skip)\n", path)
-	return nil
+	_, _ = fmt.Fprintf(stderr, "%s: %s (opened in your browser; --open=false to skip)\n", label, path)
 }
 
 // isTerminal reports whether stream, such as stdout or stdin, is a terminal.
@@ -218,8 +228,10 @@ func canBrowseOn(goos string, getenv func(string) string) bool {
 	if getenv("SSH_CONNECTION") != "" || getenv("SSH_TTY") != "" {
 		return false
 	}
-	return goos == "darwin" || goos == "windows"
+	return goos == "darwin" || goos == goosWindows
 }
+
+const goosWindows = "windows"
 
 // openerWait is how long the opener has to say it failed. Most hand the
 // file to the browser and exit at once, but xdg-open without a desktop
@@ -231,7 +243,7 @@ func openInBrowser(path string) error {
 	switch runtime.GOOS {
 	case "darwin":
 		cmd = exec.Command("open", path)
-	case "windows":
+	case goosWindows:
 		cmd = exec.Command("rundll32", "url.dll,FileProtocolHandler", path)
 	default:
 		cmd = exec.Command("xdg-open", path)
@@ -260,20 +272,34 @@ func startOpener(cmd *exec.Cmd, wait time.Duration) error {
 }
 
 // writeHTMLFile writes the report to path, or, without one, to a new
-// temporary file only the user can read, since the report names the
-// cluster's workloads. It returns where it wrote.
+// temporary file. It returns where it wrote.
 func writeHTMLFile(path string, result scanResult, idleAfter time.Duration) (string, error) {
+	return writePage(path, "hybernate-scan-*.html", func(w io.Writer) error { return writeHTML(w, result, idleAfter) })
+}
+
+// writePage writes a page to path, or, without one, to a new temporary file
+// named after pattern, as os.CreateTemp takes it. Either is readable only by
+// the user, since a page names the cluster's workloads. It returns where it
+// wrote.
+func writePage(path, pattern string, write func(io.Writer) error) (string, error) {
 	var f *os.File
 	var err error
 	if path == "" {
-		f, err = os.CreateTemp("", "hybernate-scan-*.html")
+		f, err = os.CreateTemp("", pattern)
 	} else {
 		f, err = os.OpenFile(path, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0o600)
+		// The mode applies only to a file it creates: one written over keeps
+		// its own, which may let others read it.
+		if err == nil {
+			if err = f.Chmod(0o600); err != nil {
+				_ = f.Close() // the chmod error is the one to report
+			}
+		}
 	}
 	if err != nil {
-		return "", fmt.Errorf("creating the report: %w", err)
+		return "", fmt.Errorf("creating the page: %w", err)
 	}
-	if err := writeHTML(f, result, idleAfter); err != nil {
+	if err := write(f); err != nil {
 		_ = f.Close() // the write error is the one to report
 		return "", err
 	}
@@ -296,7 +322,7 @@ func buildReport(result scanResult, idleAfter time.Duration) reportPage {
 		Cluster:        result.Cluster,
 		ScannedAt:      result.ScannedAt.Format("2 January 2006, 15:04 MST"),
 		Basis:          basisSentence(result),
-		Prices:         result.pricesSentence(),
+		Prices:         result.costsSentence(),
 		NodeAutoscaler: reportAutoscaler(result.NodeAutoscaler),
 		History:        history,
 		Threshold:      result.Settings.CPUThreshold,
@@ -307,7 +333,7 @@ func buildReport(result scanResult, idleAfter time.Duration) reportPage {
 	if result.Totals.Workloads == 0 {
 		page.Empty = emptySentence(result)
 	}
-	page.Headline, page.Facts = headlineFor(result.Totals, replayedOver(result.History))
+	page.Headline, page.Facts = headlineFor(result)
 	page.Freeing, page.CouldFree = moneyColumns(result.Workloads)
 	page.Sleep = sleepColumns(history, result.Workloads)
 	page.Slept = sleptColumn(result.Workloads)
@@ -350,9 +376,14 @@ func buildReport(result scanResult, idleAfter time.Duration) reportPage {
 		return strings.Compare(a.Namespace, b.Namespace)
 	})
 
-	for _, l := range dependencyLines(result.Workloads) {
+	lines := dependencyLines(result.Workloads, result.Platform)
+	for _, l := range lines {
 		page.Dependencies = append(page.Dependencies, dependencyRow{Workload: workloadRef(l.wl),
 			Target: dependencyRef(l.wl.Namespace, l.d), Found: foundVia(l.d), Status: dependencyStatus(l)})
+	}
+	page.DependencyStatus = statusColumn(lines)
+	if !page.DependencyStatus {
+		page.DependenciesLead = dependenciesLead + "."
 	}
 
 	_, unjudged := splitJudged(result.Workloads)
@@ -386,33 +417,87 @@ func workloadRef(wl Workload) string {
 }
 
 func basisSentence(result scanResult) string {
-	if over := replayedOver(result.History); result.Mode == discovery.ModeHistory && over != "" {
-		return fmt.Sprintf("Based on %s of Prometheus history, and CPU at the time of the scan.", over)
+	if result.Mode != discovery.ModeHistory || result.History == nil {
+		return "A snapshot of CPU at the time of the scan, without history."
 	}
-	return "A snapshot of CPU at the time of the scan, without history."
+	if over := replayedOver(result.History); over != "" {
+		return fmt.Sprintf("Based on %s of Prometheus history, from %s, and CPU at the time of the scan.", over,
+			result.History.Prometheus)
+	}
+	return fmt.Sprintf("A snapshot of CPU at the time of the scan: %s has no CPU history of the namespaces scanned.",
+		result.History.Prometheus)
 }
 
-// headlineFor leads with two figures: what Hybernate has freed this month,
-// with how much of it was saved, and what pausing could free a month,
-// measured for dry-run workloads and estimated from history for unmanaged
-// ones. Without either, the second is what idle workloads cost while
-// running, since one moment can't show what pausing would free. Four facts
+// headlineFor leads with two figures. Until Hybernate has paused anything,
+// they're the opportunity, what pausing could free a month, and what the
+// workloads it comes from cost; a zero that's down to too little history
+// says so. Once it has, they're what it has freed this month, with how much
+// of it was saved, and the opportunity, while there's one. Four facts
 // follow: the scale, the waste right now, how many workloads there are to
 // act on, and how far Hybernate's rollout has got.
-func headlineFor(t discovery.Totals, over string) (headline, []fact) {
-	freed := figure{Value: dollars(t.FreedThisMonth), Label: "freed by Hybernate this month",
-		Detail: "nothing is live yet"}
-	switch {
-	case t.Live > 0:
-		freed.Detail = fmt.Sprintf("so far, pausing %s; %s of it saved as nodes scaled down",
-			countOf(t.Live, "live workload"), dollars(t.SavedThisMonth))
-	case t.FreedThisMonth > 0:
-		freed.Detail = fmt.Sprintf("so far, pausing workloads since put back in dry-run; %s of it saved",
-			dollars(t.SavedThisMonth))
+func headlineFor(result scanResult) (headline, []fact) {
+	t := result.Totals
+	live := t.Live > 0 || t.FreedThisMonth > 0
+	var h headline
+	if live {
+		freed := figure{Value: dollars(t.FreedThisMonth), Label: "freed by Hybernate this month",
+			Detail: fmt.Sprintf("so far, pausing workloads since put back in dry-run; %s of it saved",
+				dollars(t.SavedThisMonth))}
+		if t.Live > 0 {
+			freed.Detail = fmt.Sprintf("so far, pausing %s; %s of it saved as nodes scaled down",
+				countOf(t.Live, "live workload"), dollars(t.SavedThisMonth))
+		}
+		h.Figures = append(h.Figures, freed)
 	}
-	h := headline{Figures: []figure{freed}}
+	if f, ok := couldFree(result, live); ok {
+		h.Figures = append(h.Figures, f)
+	}
 
-	r := t.Replayed
+	idle := fact{Value: strconv.Itoa(t.Idle), Label: "idle right now"}
+	if t.Idle > 0 {
+		idle.Label = fmt.Sprintf("idle right now, reserving %s and %s of memory",
+			vcpu(t.IdleCPUMillis), gib(t.IdleMemoryBytes))
+	}
+	cost := fact{Value: dollars(t.MonthlyCost), Label: "a month, what these workloads cost while running"}
+	facts := []fact{cost, idle}
+	if !live {
+		h.Figures = append(h.Figures, figure{Value: cost.Value, Label: cost.Label})
+		workloads := "workloads"
+		if t.Workloads == 1 {
+			workloads = "workload"
+		}
+		facts[0] = fact{Value: strconv.Itoa(t.Workloads),
+			Label: workloads + " in " + countOf(namespacesOf(result.Workloads), "namespace")}
+	}
+	over, notCounted := replayedOver(result.History), notReplayed(result.Workloads)
+	if r := t.Replayed; r.Workloads > 0 {
+		replayed := fact{Value: fmt.Sprintf("%d of %d", r.Sleepers, r.Workloads),
+			Label: fmt.Sprintf("unmanaged workloads would have slept over %s", over)}
+		if notCounted != "" {
+			replayed.Label += "; not counted: " + notCounted
+		}
+		facts = append(facts, replayed)
+	} else {
+		facts = append(facts, fact{Value: cents(t.IdleHourlyCost), Label: "an hour, what idle workloads cost while running"})
+	}
+	facts = append(facts, fact{Value: fmt.Sprintf("%d of %d", t.Live+t.DryRun, t.Workloads),
+		Label: fmt.Sprintf("managed by Hybernate: %d live, %d in dry-run", t.Live, t.DryRun)})
+	return h, facts
+}
+
+// couldFree is the headline's figure for what pausing could free a month:
+// what dry-run measured and history shows, or, without either, what's idle
+// right now costs, as the most pausing it could free. Before anything is
+// live it's always shown, a zero with why; after, only when there's
+// something to free.
+func couldFree(result scanResult, live bool) (figure, bool) {
+	t, r := result.Totals, result.Totals.Replayed
+	short := tooLittleHistory(result.History)
+	var tooEarly string
+	if short {
+		tooEarly = "too little history yet: Prometheus has only " + result.History.Span() + " of it; run the scan " +
+			"again after a few days"
+	}
 	switch {
 	case r.Sleepers > 0 || t.DryRun > 0:
 		could := r.MonthlyFreed + t.Measured.MonthlyFreed
@@ -427,30 +512,48 @@ func headlineFor(t discovery.Totals, over string) (headline, []fact) {
 			}
 			f.Detail = fmt.Sprintf("%d%% of %s", int(could/t.FreeableBasis*100+0.5), of)
 		}
-		h.Figures = append(h.Figures, f)
-	case t.Idle > 0:
-		h.Figures = append(h.Figures, figure{Value: dollars(t.IdleMonthlyCost),
-			Label: "a month, what idle workloads cost while running", Detail: cents(t.IdleHourlyCost) + " an hour"})
+		if short && r.Sleepers > 0 {
+			steadier := "from only " + result.History.Span() + " of history, so run the scan again after a few " +
+				"days for a steadier figure"
+			if f.Detail != "" {
+				steadier = f.Detail + "; " + steadier
+			}
+			f.Detail = steadier
+		}
+		return f, true
+	case t.Idle > 0 && (r.Workloads == 0 || short):
+		// A whole window replayed in which nothing would have slept says
+		// more than one moment's idleness, so this is only for without one.
+		costs := "cost"
+		if t.Idle == 1 {
+			costs = "costs"
+		}
+		f := figure{Value: dollars(t.IdleMonthlyCost), Label: "could be freed a month, at most",
+			Detail: fmt.Sprintf("what the %s idle right now %s while running, %s an hour",
+				countOf(t.Idle, "workload"), costs, cents(t.IdleHourlyCost))}
+		if short {
+			f.Detail += "; " + tooEarly
+		}
+		return f, true
+	case live:
+		return figure{}, false
 	}
+	f := figure{Value: dollars(0), Label: "could be freed a month",
+		Detail: "nothing is idle right now; Prometheus history, or measuring in dry-run, shows how often workloads are"}
+	switch {
+	case short:
+		f.Detail = tooEarly
+	case r.Workloads > 0:
+		f.Detail = "no unmanaged workload would have slept over " + replayedOver(result.History)
+	}
+	return f, true
+}
 
-	idle := fact{Value: strconv.Itoa(t.Idle), Label: "idle right now"}
-	if t.Idle > 0 {
-		idle.Label = fmt.Sprintf("idle right now, reserving %s and %s of memory",
-			vcpu(t.IdleCPUMillis), gib(t.IdleMemoryBytes))
-	}
-	facts := []fact{
-		{Value: dollars(t.MonthlyCost), Label: "a month, what these workloads cost while running"},
-		idle,
-	}
-	if r.Workloads > 0 {
-		facts = append(facts, fact{Value: fmt.Sprintf("%d of %d", r.Sleepers, r.Workloads),
-			Label: fmt.Sprintf("unmanaged workloads would have slept over %s", over)})
-	} else {
-		facts = append(facts, fact{Value: cents(t.IdleHourlyCost), Label: "an hour, what idle workloads cost while running"})
-	}
-	facts = append(facts, fact{Value: fmt.Sprintf("%d of %d", t.Live+t.DryRun, t.Workloads),
-		Label: fmt.Sprintf("managed by Hybernate: %d live, %d in dry-run", t.Live, t.DryRun)})
-	return h, facts
+// tooLittleHistory says the replay had less than a day of history, short
+// of the window asked for: a workload's pattern is daily, so a day is the
+// least that can show how much of it would be idle.
+func tooLittleHistory(h *discovery.HistorySource) bool {
+	return h != nil && h.Partial && h.Hours > 0 && h.Hours < 24
 }
 
 func workloadRowFor(wl Workload) workloadRow {

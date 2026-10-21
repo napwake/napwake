@@ -136,7 +136,7 @@ Karpenter won't consolidate a node that's annotated `karpenter.sh/do-not-disrupt
 
 - **Right-sizing on resume**: When Hybernate resumes a workload, Karpenter provisions a node sized to fit the exact pod requirements rather than falling back to a fixed node group size. This avoids over-provisioning on resume.
 - **Consolidation**: Karpenter repacks underutilized nodes as well as removing empty ones, so more of what pausing frees on shared nodes becomes saved, and sooner.
-- **Spot instances**: Non-critical workloads that Hybernate manages are good candidates for spot capacity. Hybernate prices spot nodes at on-demand, so set `costTracking.rates` for what you pay.
+- **Spot instances**: Non-critical workloads that Hybernate manages are good candidates for spot capacity. Hybernate prices spot nodes at their spot list price; see [Spot nodes](../concepts/cost-tracking.md#spot-nodes).
 
 ## Autopilot and Serverless Modes
 

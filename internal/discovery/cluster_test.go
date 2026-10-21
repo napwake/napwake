@@ -31,6 +31,7 @@ import (
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/apimachinery/pkg/types"
@@ -575,31 +576,58 @@ func TestMeasured_Wakes(t *testing.T) {
 }
 
 // A workload whose replicas a GitOps tool sets is flagged before anyone
-// opts it in, with where to find the fix.
+// opts it in, with where to find the fix, unless the tool is told to leave
+// them already, as Argo CD's Application and argocd-cm say. When that
+// can't be read, the note says so.
 func TestScanCluster_ReplicasFromGit(t *testing.T) {
-	fromGit := func(name, manager string) runtime.Object {
+	fromGit := func(name, manager, app string) runtime.Object {
 		d := makeDeployment(name, testNamespace, 1, "100m", "128Mi", nil)
 		d.ManagedFields = []metav1.ManagedFieldsEntry{{Manager: manager, Operation: metav1.ManagedFieldsOperationApply, APIVersion: "apps/v1",
 			Time: &metav1.Time{Time: scanTime}, FieldsType: "FieldsV1",
 			FieldsV1: metav1.NewFieldsV1(`{"f:spec":{"f:replicas":{}}}`)}}
+		if app != "" {
+			d.Annotations = map[string]string{
+				"argocd.argoproj.io/tracking-id": app + ":apps/Deployment:" + testNamespace + "/" + name}
+		}
 		return d
 	}
+	application := func(name string, syncOptions ...any) runtime.Object {
+		app := &unstructured.Unstructured{Object: map[string]any{"spec": map[string]any{
+			"syncPolicy": map[string]any{"syncOptions": syncOptions}}}}
+		app.SetAPIVersion("argoproj.io/v1alpha1")
+		app.SetKind("Application")
+		app.SetNamespace("argocd")
+		app.SetName(name)
+		return app
+	}
+	argoCM := &corev1.ConfigMap{ObjectMeta: metav1.ObjectMeta{Name: "argocd-cm", Namespace: "argocd"},
+		Data: map[string]string{"resource.customizations.ignoreDifferences.apps_Deployment": "jsonPointers:\n  - /spec/replicas\n"}}
 
 	c := fake.NewClientBuilder().WithScheme(newScheme()).WithReturnManagedFields().WithRuntimeObjects(
-		fromGit("argo-app", "argocd-controller"), fromGit("argo-db", "argocd-controller"),
-		fromGit("flux-app", "kustomize-controller"), fromGit("scaled", "kubectl-edit")).Build()
+		fromGit("argo-app", "argocd-controller", "shop"), fromGit("argo-db", "argocd-controller", "shop"),
+		fromGit("argo-told", "argocd-controller", "told"), fromGit("argo-untracked", "argocd-controller", ""),
+		fromGit("flux-app", "kustomize-controller", ""), fromGit("scaled", "kubectl-edit", ""),
+		application("shop"), application("told", "RespectIgnoreDifferences=true"), argoCM).Build()
 	report, err := NewScanner(c, c).ScanCluster(context.Background(), scanOptions(testNamespace))
 	require.NoError(t, err)
 
 	got := byName(report)
 	assert.Equal(t, "Argo CD", got["argo-app"].ReplicasFromGit)
+	assert.Equal(t, "Argo CD", got["argo-told"].ReplicasFromGit)
+	assert.True(t, got["argo-told"].GitOpsLeavesReplicas, "Argo CD is told to leave them")
+	assert.False(t, got["argo-app"].GitOpsLeavesReplicas)
+	assert.Equal(t, "Argo CD", got["argo-untracked"].ReplicasFromGit)
+	assert.NotEmpty(t, got["argo-untracked"].GitOpsUnchecked)
 	assert.Equal(t, "Flux", got["flux-app"].ReplicasFromGit)
 	assert.Empty(t, got["scaled"].ReplicasFromGit)
 	notes := strings.Join(report.Notes, "\n")
 	assert.Contains(t, notes, "2 workloads have their replicas set from Git by Argo CD, which would undo every pause: "+
 		testNamespace+"/argo-app, "+testNamespace+"/argo-db. Have Argo CD leave the replicas to Hybernate first: "+
 		"https://okedeji.io/hybernate/guides/gitops/")
+	assert.Contains(t, notes, "1 workload has its replicas set from Git by Argo CD, and whether it's told to leave "+
+		"them to Hybernate couldn't be checked: ")
 	assert.Contains(t, notes, "1 workload has its replicas set from Git by Flux")
+	assert.NotContains(t, notes, "argo-told")
 }
 
 // A workload in a protected namespace is shown, but never counted as what

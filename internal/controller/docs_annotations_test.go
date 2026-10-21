@@ -69,11 +69,109 @@ type docsObject struct {
 	} `json:"metadata"`
 }
 
+// The docs' kustomizations never put the opt-in label in a selector or a
+// pod template: Kubernetes doesn't let a workload's selector change, so
+// copying one onto a workload that exists would fail to apply.
+func TestDocsKustomizationsLeaveSelectorsAlone(t *testing.T) {
+	kustomizations := kustomizationsIn(docsDocuments(t))
+	require.NotEmpty(t, kustomizations, "the docs have kustomizations to check")
+	for _, k := range kustomizations {
+		for key := range k.CommonLabels {
+			assert.False(t, strings.HasPrefix(key, "hybernate.io/"),
+				"%s: commonLabels puts %s in the workloads' selectors", k.source, key)
+		}
+		for _, l := range k.Labels {
+			for key := range l.Pairs {
+				if !strings.HasPrefix(key, "hybernate.io/") {
+					continue
+				}
+				assert.False(t, l.IncludeSelectors, "%s: includeSelectors puts %s in the workloads' selectors", k.source, key)
+				assert.False(t, l.IncludeTemplates, "%s: includeTemplates puts %s on the pods", k.source, key)
+			}
+		}
+	}
+}
+
 // docsObjects are the Deployments, StatefulSets and Namespaces in the docs'
-// yaml blocks.
+// yaml blocks, including those a kustomization's patches describe.
 func docsObjects(t *testing.T) []docsObject {
 	t.Helper()
+	docs := docsDocuments(t)
+	objs := make([]docsObject, 0, len(docs))
+	for _, doc := range docs {
+		objs = append(objs, objectsIn(t, doc.source, doc.data)...)
+	}
+	for _, k := range kustomizationsIn(docs) {
+		for _, p := range k.Patches {
+			objs = append(objs, objectsIn(t, k.source+" patch", []byte(p.Patch))...)
+		}
+	}
+	return objs
+}
+
+// objectsIn picks the Deployments, StatefulSets and Namespaces out of a
+// stream of YAML documents.
+func objectsIn(t *testing.T, source string, data []byte) []docsObject {
+	t.Helper()
 	var objs []docsObject
+	for _, doc := range splitYAML(t, source, data) {
+		var obj docsObject
+		if yaml.Unmarshal(doc, &obj) != nil {
+			continue
+		}
+		switch obj.Kind {
+		case string(v1alpha1.TargetKindDeployment), string(v1alpha1.TargetKindStatefulSet), kindNamespace:
+			obj.source = source
+			objs = append(objs, obj)
+		}
+	}
+	return objs
+}
+
+type kustomization struct {
+	source       string
+	APIVersion   string            `json:"apiVersion"`
+	Kind         string            `json:"kind"`
+	Resources    []string          `json:"resources"`
+	CommonLabels map[string]string `json:"commonLabels"`
+	Labels       []struct {
+		Pairs            map[string]string `json:"pairs"`
+		IncludeSelectors bool              `json:"includeSelectors"`
+		IncludeTemplates bool              `json:"includeTemplates"`
+	} `json:"labels"`
+	Patches []struct {
+		Patch string `json:"patch"`
+	} `json:"patches"`
+}
+
+// kustomizationsIn picks the kustomization.yaml files out of the docs'
+// documents: a Kustomization, or a document with no kind that lists
+// resources, as most are written.
+func kustomizationsIn(docs []docsDocument) []kustomization {
+	var out []kustomization
+	for _, doc := range docs {
+		var k kustomization
+		if yaml.Unmarshal(doc.data, &k) != nil || len(k.Resources) == 0 {
+			continue
+		}
+		if k.Kind != "" && (k.Kind != "Kustomization" || !strings.HasPrefix(k.APIVersion, "kustomize.config.k8s.io/")) {
+			continue
+		}
+		k.source = doc.source
+		out = append(out, k)
+	}
+	return out
+}
+
+type docsDocument struct {
+	source string
+	data   []byte
+}
+
+// docsDocuments are the YAML documents in the docs' yaml blocks.
+func docsDocuments(t *testing.T) []docsDocument {
+	t.Helper()
+	var docs []docsDocument
 	root := filepath.Join("..", "..", "docs")
 	err := filepath.WalkDir(root, func(path string, d fs.DirEntry, err error) error {
 		if err != nil || d.IsDir() || filepath.Ext(path) != ".md" {
@@ -84,30 +182,28 @@ func docsObjects(t *testing.T) []docsObject {
 			return err
 		}
 		for _, block := range markdownYAML(page) {
-			reader := utilyaml.NewYAMLReader(bufio.NewReader(bytes.NewReader(block)))
-			for {
-				doc, err := reader.Read()
-				if errors.Is(err, io.EOF) {
-					break
-				}
-				if err != nil {
-					return err
-				}
-				var obj docsObject
-				if yaml.Unmarshal(doc, &obj) != nil {
-					continue
-				}
-				switch obj.Kind {
-				case string(v1alpha1.TargetKindDeployment), string(v1alpha1.TargetKindStatefulSet), kindNamespace:
-					obj.source = path
-					objs = append(objs, obj)
-				}
+			for _, doc := range splitYAML(t, path, block) {
+				docs = append(docs, docsDocument{source: path, data: doc})
 			}
 		}
 		return nil
 	})
 	require.NoError(t, err)
-	return objs
+	return docs
+}
+
+func splitYAML(t *testing.T, source string, data []byte) [][]byte {
+	t.Helper()
+	var docs [][]byte
+	reader := utilyaml.NewYAMLReader(bufio.NewReader(bytes.NewReader(data)))
+	for {
+		doc, err := reader.Read()
+		if errors.Is(err, io.EOF) {
+			return docs
+		}
+		require.NoError(t, err, "reading %s", source)
+		docs = append(docs, doc)
+	}
 }
 
 // markdownYAML returns the bodies of a page's fenced yaml blocks, dedented
