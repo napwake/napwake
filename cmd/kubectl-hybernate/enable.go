@@ -22,6 +22,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"slices"
 	"strings"
 	"time"
 
@@ -78,6 +79,10 @@ A setting a GitOps tool (Argo CD, Flux, Fleet, kapp or Kluctl) applies from
 Git, as the object's managed fields record, isn't changed: the tool would
 put the old value back. Enable says what to change there instead. One Helm
 set is changed, with a warning that the next helm upgrade puts it back.
+
+When a GitOps tool sets the workload's replicas from Git, its next sync
+after each pause would scale it back up, so enable warns, with the one-time
+fix, unless the tool is told to leave them to Hybernate, as pause does.
 
 Examples:
   # Start pausing a Deployment
@@ -208,8 +213,20 @@ func enableWorkload(
 	if why := wontPause(mw); why != "" {
 		return fmt.Errorf("%s isn't changed: Hybernate never pauses it, as %s", ref, why)
 	}
+	// Hybernate pauses the workload once enable is done, or once Git says
+	// so, and a GitOps tool that sets its replicas would undo each pause.
+	// Who sets them is read from the workload as it was found, before
+	// enable's own change records enable as a manager.
+	found := obj.DeepCopyObject().(client.Object)
+	warn := func() {
+		writeGitOpsWarning(out, gitops.NewChecker(c).Replicas(ctx, found), []string{ref}, "each pause")
+	}
 	if mw != nil && mw.Labels[v1alpha1.LabelFromLabel] != v1alpha1.True {
-		return enableHandWritten(ctx, c, mw, ref, opts, out)
+		err := enableHandWritten(ctx, c, mw, ref, opts, out)
+		if err == nil || errors.Is(err, errManagedByGit) {
+			warn()
+		}
+		return err
 	}
 	if err := checkOptedIn(obj, &ns, ref); err != nil {
 		return err
@@ -219,6 +236,7 @@ func enableWorkload(
 	}
 	if !inDryRun(mw, obj, &ns) {
 		_, _ = fmt.Fprintf(out, "%s isn't in dry-run; Hybernate already pauses it while idle\n", ref)
+		warn()
 		return nil
 	}
 	applied := appliedBy(obj, dryRunAnnotationField)
@@ -227,6 +245,7 @@ func enableWorkload(
 			applied.gitOps)
 		_, _ = fmt.Fprintf(out, "  set the annotation  %s: \"false\"\n", v1alpha1.AnnotationDryRun)
 		_, _ = fmt.Fprintln(out, "Or pass --force to change the cluster anyway.")
+		warn()
 		return errManagedByGit
 	}
 	if err := setAnnotation(ctx, c, obj, v1alpha1.AnnotationDryRun, dryRunOff); err != nil {
@@ -240,6 +259,7 @@ func enableWorkload(
 	if applied.helm {
 		_, _ = fmt.Fprintln(out, helmWarning(ref, v1alpha1.AnnotationDryRun+" annotation"))
 	}
+	warn()
 	return nil
 }
 
@@ -477,6 +497,7 @@ func enableNamespace(ctx context.Context, c client.Client, namespace string, opt
 		return err
 	}
 
+	ending := endingDryRun(found, workloads)
 	e := &namespaceEnabler{c: c, opts: opts}
 	namespaceEnded := false
 	if !nsLive && (nsSet || found.inherits) {
@@ -518,6 +539,7 @@ func enableNamespace(ctx context.Context, c client.Client, namespace string, opt
 	for _, w := range e.warnings {
 		_, _ = fmt.Fprintln(out, w)
 	}
+	warnGitOpsUndoes(ctx, c, out, ending)
 	var errs []error
 	if len(e.git) > 0 {
 		_, _ = fmt.Fprintln(out, "Not changed, because their manifests come from Git; change them there:")
@@ -530,6 +552,55 @@ func enableNamespace(ctx context.Context, c client.Client, namespace string, opt
 		errs = append(errs, reportNotPickedUp(out, namespace, waiting))
 	}
 	return errors.Join(errs...)
+}
+
+// endingDryRun are the workloads whose dry-run enable ends, or leaves for
+// Git to end: those opted in with the label, and the targets of the
+// ManagedWorkloads written by hand. They're copies as found, before enable's
+// own changes record enable as a manager of them.
+func endingDryRun(found dryRunSet, workloads []client.Object) []client.Object {
+	ending := make([]client.Object, 0, len(found.labelled)+len(found.handWritten))
+	for _, obj := range found.labelled {
+		ending = append(ending, obj.DeepCopyObject().(client.Object))
+	}
+	for _, mw := range found.handWritten {
+		if i := slices.IndexFunc(workloads, func(obj client.Object) bool {
+			return workloadKey(obj) == targetOfManaged(mw)
+		}); i >= 0 {
+			ending = append(ending, workloads[i].DeepCopyObject().(client.Object))
+		}
+	}
+	return ending
+}
+
+// warnGitOpsUndoes warns about the workloads whose pauses a GitOps tool
+// would undo, once for each tool and application that treats them alike.
+func warnGitOpsUndoes(ctx context.Context, c client.Client, out io.Writer, workloads []client.Object) {
+	type alike struct {
+		replicas gitops.Replicas
+		refs     []string
+	}
+	checker := gitops.NewChecker(c)
+	var groups []*alike
+	byKey := map[string]*alike{}
+	for _, obj := range workloads {
+		r := checker.Replicas(ctx, obj)
+		if r.Undo == gitops.Leaves {
+			continue
+		}
+		key := fmt.Sprintf("%d\n%s\n%s\n%s\n%s\n%s", r.Undo, r.Writer.Tool, r.Writer.Manager, r.App, r.Unread,
+			strings.Join(r.Fix, "\n"))
+		g := byKey[key]
+		if g == nil {
+			g = &alike{replicas: r}
+			byKey[key] = g
+			groups = append(groups, g)
+		}
+		g.refs = append(g.refs, fmt.Sprintf("%s/%s", kindOf(obj), obj.GetName()))
+	}
+	for _, g := range groups {
+		writeGitOpsWarning(out, g.replicas, g.refs, "each pause")
+	}
 }
 
 // nothingToEnd reports a namespace where enable has nothing to change, and

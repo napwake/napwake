@@ -398,7 +398,15 @@ Clear it and pause now? [y/N]
 
 Answering `y` removes the annotation, from both when both hold it, and pauses it; anything else leaves it running, exiting 0. `--clear-hold` clears it without asking; with no terminal to ask on and without `--clear-hold`, `pause` exits 1 and says to pass it. `--yes` doesn't clear a hold, so a nightly script that pauses with `--yes` doesn't end one someone set for a demo.
 
-When a GitOps tool last set the workload's replicas, `pause` warns before asking, with the one-time fix: the tool sets them from Git again on its next sync, which undoes the pause. See [GitOps tools](../guides/gitops.md).
+When a GitOps tool sets the workload's replicas from Git and isn't told to leave them to Hybernate, `pause` warns before asking, with the one-time fix: the tool sets them again on its next sync, which undoes the pause. See [GitOps tools](../guides/gitops.md#checking-the-fix-is-in) for how it tells:
+
+```
+Warning: Argo CD application argocd/shop sets preview-42/api's replicas from Git, as argocd-controller, so its next sync will likely scale it back up, undoing this pause. To have Argo CD leave replicas to Hybernate, once:
+  Add RespectIgnoreDifferences=true to the syncPolicy.syncOptions of Argo CD application argocd/shop, so syncs leave the replicas it ignores.
+See https://okedeji.io/hybernate/guides/gitops/#argo-cd
+```
+
+When it can't tell, such as without access to Argo CD's namespace, the warning says why, and to make the fix if you haven't already.
 
 If the workload isn't `Paused`, and Hybernate hasn't said why, within `--timeout`, `pause` exits 1 with its phase and the `kubectl describe` command that says why.
 
@@ -410,7 +418,7 @@ If the workload isn't `Paused`, and Hybernate hasn't said why, within `--timeout
 | `--clear-hold` | | `false` | Clear a `hybernate.io/active-until` hold on its ManagedWorkload, as `wake --for` sets, or on the workload, without asking |
 | `--timeout` | | `5m` | How long to wait, cluster calls included; it starts again after you answer a question |
 
-Your user needs `get`, `list` and `patch` on `managedworkloads` in the namespace, and `get` on the workload for the GitOps warning and its own hold, which are left out without it. Clearing a hold on the workload takes `patch` on it.
+Your user needs `get`, `list` and `patch` on `managedworkloads` in the namespace, and `get` on the workload for the GitOps warning and its own hold, which are left out without it. Clearing a hold on the workload takes `patch` on it. For a workload Argo CD applies, telling whether Argo CD leaves its replicas takes `list` on `applications.argoproj.io` in every namespace, or `get` in `argocd`, and `get` on the `argocd-cm` ConfigMap; without them, the warning says it couldn't check.
 
 ## Wake a Workload
 
@@ -512,6 +520,8 @@ Or pass --force to change the cluster anyway.
 
 When Helm set it, `enable` changes it, since Helm only applies a chart when you run it, and warns that the next `helm upgrade` puts the chart's value back, so set it in the chart too. See [GitOps tools](../guides/gitops.md#ending-dry-run).
 
+Ending dry-run lets Hybernate pause the workload, and a GitOps tool that sets its replicas from Git scales it back up on its next sync after each pause. So whatever `enable` does, ends dry-run, finds it ended already, or leaves the change to Git, it warns as [`pause`](#pause-a-workload) does, with the one-time fix, unless the tool is told to leave the replicas to Hybernate. With `--all`, workloads a tool treats alike, such as those of one Argo CD application, get one warning between them.
+
 A bare name is looked up as a Deployment and as a StatefulSet. When both have it, `enable` lists them and asks for the kind; prefix the name with `deployment/` or `statefulset/` to be exact.
 
 | Flag | Short | Default | Description |
@@ -521,4 +531,4 @@ A bare name is looked up as a Deployment and as a StatefulSet. When both have it
 | `--force` | | `false` | Change the cluster even when a GitOps tool applies the setting from Git |
 | `--timeout` | | `1m` | How long to wait for the cluster before giving up |
 
-Your user needs `get` and `patch` on the workload, `get` on its namespace, and `list` on `managedworkloads` in it. Without `list` on ManagedWorkloads, `enable` goes by the annotations alone, so it can't check that Hybernate manages the workload or see a dry-run from the cluster default, and it says so. With `--all`, it also needs `list` on Deployments and StatefulSets, and `patch` on the namespace to end its dry-run there; without it, each workload gets its own annotation instead. See [Opting In](../guides/opt-in.md) for the label and every setting.
+Your user needs `get` and `patch` on the workload, `get` on its namespace, and `list` on `managedworkloads` in it. Without `list` on ManagedWorkloads, `enable` goes by the annotations alone, so it can't check that Hybernate manages the workload or see a dry-run from the cluster default, and it says so. With `--all`, it also needs `list` on Deployments and StatefulSets, and `patch` on the namespace to end its dry-run there; without it, each workload gets its own annotation instead. The GitOps warning reads Argo CD as `pause`'s does. See [Opting In](../guides/opt-in.md) for the label and every setting.
