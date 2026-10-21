@@ -124,6 +124,13 @@ type Engine struct {
 	recent     [WeeklySeason]float32
 	recentSeen weekSlots
 
+	// held is the change to each hour of the week's weekly component that
+	// an observation breaking the learned pattern would have made, held
+	// until the same hour the next day shows whether the break lasted; zero
+	// where none is held. Learned at once, a weekday holiday had the same
+	// weekday a week later forecast quieter than it is.
+	held [WeeklySeason]float64
+
 	// phaseBeforeAnomalies is the highest phase held since the oldest
 	// anomaly still in the anomaly window: what a regime change demotes
 	// from, so that the anomalies leading up to it, which may already have
@@ -215,6 +222,7 @@ func (e *Engine) Observe(actual float64, now time.Time) (float64, error) {
 	if e.recentSeen.has(slot) {
 		how = fitAll
 	}
+	afterBreak := e.relearning() && !e.Scorer.Ready(dailyWindow)
 	forecast, fit := actual, actual
 	e.lastAnomaly = false
 	if e.Model.n > 0 {
@@ -225,8 +233,16 @@ func (e *Engine) Observe(actual float64, now time.Time) (float64, error) {
 		var learn float64
 		e.lastAnomaly, learn = e.Anomaly.Record(forecast, actual, e.floor(), slot)
 		fit = math.Max(0, forecast+learn)
+		if e.lastAnomaly || afterBreak {
+			how = fitHoldWeekly
+		}
 	}
-	e.Model.update(fit, t, steps, how)
+	change := e.Model.update(fit, t, steps, how)
+	e.settleHeld(slot, steps, how != fitFirst, actual-forecast)
+	e.held[slot] = 0
+	if how == fitHoldWeekly {
+		e.held[slot] = change
+	}
 	e.lastHour = hourStart(t)
 	e.updateScale(actual)
 	e.coverage.set(slot, true)
@@ -240,6 +256,24 @@ func (e *Engine) Observe(actual float64, now time.Time) (float64, error) {
 		return 0, fmt.Errorf("%w: %g made the model diverge", ErrInvalidObservation, actual)
 	}
 	return forecast, nil
+}
+
+// settleHeld settles the weekly change held for the same hour the day
+// before, now that this hour, the hour of the week slot, has been seen: it's
+// made if this hour broke from its forecast, err, the same way and by at
+// least the floor, so the break lasted, and dropped if it didn't. A held
+// change whose next day's hour went unobserved, steps hours since the last
+// observation, can't be settled and is dropped. scored says this hour's
+// forecast came from having seen it before.
+func (e *Engine) settleHeld(slot, steps int, scored bool, err float64) {
+	for back := 1; back < min(steps, WeeklySeason); back++ {
+		e.held[(slot-DailySeason-back+2*WeeklySeason)%WeeklySeason] = 0
+	}
+	yesterday := (slot - DailySeason + WeeklySeason) % WeeklySeason
+	if change := e.held[yesterday]; scored && change*err > 0 && math.Abs(err) >= e.floor() {
+		e.Model.shiftWeekly(yesterday, change)
+	}
+	e.held[yesterday] = 0
 }
 
 func (e *Engine) updateScale(actual float64) {

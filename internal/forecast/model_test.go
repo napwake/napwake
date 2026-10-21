@@ -124,6 +124,28 @@ func TestModel_FirstWeekInitialises(t *testing.T) {
 	}
 }
 
+// An update held from the weekly component changes the level and daily
+// components only; made later, it has the effect it would have had.
+func TestModel_HeldWeeklyChange(t *testing.T) {
+	learn := func() *Model {
+		m := NewModel(DefaultParams())
+		for i := range 3 * WeeklySeason {
+			m.update(officeHours(hourAt(i)), hourAt(i), 1, fitAll)
+		}
+		return m
+	}
+	at := hourAt(3*WeeklySeason + 10)
+	direct, held := learn(), learn()
+	direct.update(0, at, 1, fitAll)
+	change := held.update(0, at, 1, fitHoldWeekly)
+
+	assert.Negative(t, change, "a quiet weekday morning pulls its weekly component down")
+	assert.Greater(t, held.forecast(at.Add(7*24*time.Hour), 1), direct.forecast(at.Add(7*24*time.Hour), 1),
+		"held, the same hour next week is still expected busier")
+	held.shiftWeekly(weeklyIndex(at), change)
+	assert.InDelta(t, direct.forecast(at.Add(7*24*time.Hour), 1), held.forecast(at.Add(7*24*time.Hour), 1), 1e-9)
+}
+
 func TestModel_WallClockSlots(t *testing.T) {
 	monday3pm := time.Date(2026, 3, 16, 15, 0, 0, 0, time.UTC)
 	sunday11pm := time.Date(2026, 3, 22, 23, 0, 0, 0, time.UTC)

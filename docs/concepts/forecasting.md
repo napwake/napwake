@@ -106,9 +106,9 @@ A wrong forecast costs a little money, never availability: it only wakes a workl
 
 | Setting | Mornings ready, of 30 | Hours woken for nothing |
 |---------|-----------------------|-------------------------|
-| `eager` | 12 | 16 |
+| `eager` | 11 | 15 |
 | `balanced` | 8 | 8 |
-| `cautious` | 4 | 4 |
+| `cautious` | 4 | 5 |
 
 On office hours kept steadily, every setting acts after 8 days and has every morning after ready, and none wakes the workload on a weekend: the settings differ only on patterns the forecast can't get right every day. Below 60, a threshold gains a morning or so on the most irregular patterns for two more hours woken for nothing; above 85, it loses mornings about as fast as it saves hours.
 
@@ -122,7 +122,7 @@ Learning live from a fresh start, behind the doorman with `autoResume` on, the s
 |----------|--------------|-----------------|-----------------|
 | Busy on weekdays from 09:10 to 17:30, quiet nights and weekends | 8 / 14 | 8 / 14 | 8 / 14 |
 | The same, with people arriving and leaving up to 20 minutes either side and away one weekday in ten (the median of 20) | 8 / 14 | 8 / 14 | 8 / 14 |
-| The same, with people arriving and leaving up to an hour either side and away one weekday in four (the median of 20) | 8 / 25 | 9 / never | 10 / never |
+| The same, with people arriving and leaving up to an hour either side and away one weekday in four (the median of 20) | 8 / 29 | 9 / never | 10 / never |
 | The same hours every day, weekends included | 8 / 14 | 8 / 14 | 8 / 14 |
 | Always busy | 8 / 14 | 8 / 14 | 8 / 14 |
 | Always idle | 8 / 14 | 8 / 14 | 8 / 14 |
@@ -209,6 +209,8 @@ Hybernate detects these **regime changes** using z-score anomaly detection:
 2. If \( z(t) > 3.0 \), the observation is flagged as an anomaly. The model learns from it only up to 3 standard deviations, so a single spike isn't learned as a pattern. An error that large in the same direction as the last one in the same hour of the week isn't an anomaly, though: it's a weekly pattern, such as a Tuesday night batch job, and the model learns it in full
 3. If 3 or more anomalies occur within 24 observed hours, the engine declares a **regime change**
 
+What breaks from the learned pattern, an anomaly or any hour in the day after a regime change, isn't learned into the weekly components at once: the change it would make to its hour of the week is held until the same hour the next day. If that hour breaks from its forecast the same way, the change lasted and is made; if it goes as forecast, the day was a one-off, such as a holiday, and the change is dropped. The level and daily components learn it as usual. Learned at once, a weekday holiday had the same weekday a week later forecast quieter than it is.
+
 On a regime change, the engine ends up at least one level below the phase it held before the anomalies began:
 
 - `FullyActive` → `WeeklySuggesting`
@@ -219,13 +221,13 @@ If the anomalies have already cost it that level or more, by lowering its confid
 
 It then discards the evidence its confidence rested on: the scored errors, the anomaly statistics, and which hours of the week have been observed. Confidence has to be earned again on the new pattern before the forecast drives decisions again: whatever its phase, it neither holds back a pause nor wakes a workload until a full day of its forecasts has been scored again. A `RegimeChange` warning event is emitted once.
 
-A weekday holiday looks like this: `autoResume` wakes the workload for the hours the forecast still expects, and its first quiet office hours are anomalies; a regime change follows once three hours have been quiet, which lets the workload pause, a few hours awake for nothing in all. The forecast is off from then until a day has been scored, about 30 hours, so the first request of the next morning wakes the workload, and it's back on during that day. The holiday's afternoon, learned in full after the regime change, has the same weekday a week later forecast quieter than it is, which costs the morning after that too; from the second week, every morning is ready again. Idle detection and wake on request carry on throughout. A single deviant day can't be told from the start of a new pattern until later days show which it was, so the forecast doesn't guess.
+A weekday holiday looks like this: `autoResume` wakes the workload for the hours the forecast still expects, and its first quiet office hours are anomalies; a regime change follows once three hours have been quiet, which lets the workload pause, a few hours awake for nothing in all. The forecast is off from then until a day has been scored, about 30 hours, so the first request of the next morning wakes the workload, and it's back on during that day. That day is busy again, so the holiday isn't learned into the week: the same weekday a week later, and every morning from the second after the holiday, is ready. Idle detection and wake on request carry on throughout. A single deviant day can't be told from the start of a new pattern until the next day shows which it was, so the forecast doesn't guess; it costs the next morning, and nothing after. A Saturday people come in on is the same: the Saturday after isn't woken, and the Monday after is the morning it costs.
 
-A permanent change, such as a team moving its hours from 09:00 to 13:00, is noticed within the day as a regime change. For about a week people wake the workload themselves and the forecast wakes it a few times for the old hours; within two weeks every afternoon is ready.
+A lasting change, such as a team moving its hours from 09:00 to 13:00, is noticed within the day as a regime change, and learned into the week from its second day. For about a week people wake the workload themselves; at `balanced`, from the second Tuesday every afternoon is ready, and within two weeks the forecast stops waking it for nothing, which until then it does a few times, for the old hours and, on weekends, for the new ones. A workload nobody uses any more is woken for its old hours twice, on its first quiet morning and the same weekday a week later, and then left asleep.
 
 ## Persistence
 
-The engine's learned state (the model's components, the scored errors, the anomaly statistics, the last hour observed, and the demand last seen in each hour of the week, which [`startsActing`](#when-it-acts) is projected from) is stored in the ManagedWorkload's status, in `status.prediction.state`: gzipped JSON, base64-encoded, about 2.5 KB. It is written with each hourly observation. This means:
+The engine's learned state (the model's components, the scored errors, the anomaly statistics, the weekly changes held for the next day, the last hour observed, and the demand last seen in each hour of the week, which [`startsActing`](#when-it-acts) is projected from) is stored in the ManagedWorkload's status, in `status.prediction.state`: gzipped JSON, base64-encoded, about 2.5 KB. It is written with each hourly observation. This means:
 
 - The engine survives operator restarts and leader changes, and an hour observed before a restart isn't observed twice. The hour under way when the operator restarts is skipped. Restarted every day, at a different hour each day, the operator loses those hours and nothing else: the forecast starts acting within hours of when it would have without the restarts
 - A last observed hour more than an hour ahead of the operator's clock, recorded by a clock that was wrong, isn't trusted: the next hour is observed as usual rather than refused until real time catches up
@@ -266,7 +268,7 @@ The tests run in CI on every change, and check, besides [How Long It Takes](#how
 - **Office hours**: once learned, the workload is up at 08:45 every weekday, 25 minutes before people arrive at 09:10, paused an hour after they leave, and left asleep at weekends; at every setting, every morning from the day the forecast acts is ready, Mondays included, and it never sleeps through a morning it acts on
 - **Every day, always busy, always idle, light use** seen only through an activity annotation: each acts as above, and the light-use workload is ready every morning
 - **Loosely kept hours**: ready on most mornings once learned, woken for nothing about twice a month, for a couple of hours each time; and the settings trade ready mornings for hours woken for nothing as [Forecast Setting](#forecast-setting) says
-- **A holiday, a permanent change of hours, daylight saving** in New York and London, with and without `--timezone`, **daily operator restarts**, and **pauses without the doorman**, which never let the forecast act: as described above
+- **A holiday, a Saturday at work, a permanent change of hours, a workload nobody uses any more, daylight saving** in New York and London, with and without `--timezone`, **daily operator restarts**, and **pauses without the doorman**, which never let the forecast act: as described above
 - **Learning from history**: a forecast that learned four weeks of office hours has the workload ready from the first morning, and the [projection](#when-it-acts) made in the first week is within a day of when the forecast starts acting
 
 `go run ./hack/forecastsim` runs every scenario at every setting and prints what it measured; `-scenario holiday -setting eager -days` shows one day by day. `-history` replays a workload's recorded CPU instead, as a percentage of its requests: a Prometheus range query's JSON, or CSV of `time,percent` rows, a step of at most seven minutes apart.

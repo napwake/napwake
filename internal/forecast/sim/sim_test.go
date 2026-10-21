@@ -182,12 +182,13 @@ func TestAlwaysIdle(t *testing.T) {
 }
 
 // A weekday holiday costs one wake for nothing, kept awake while the
-// forecast still expects the day, and the morning after it the first
-// request wakes the workload, since the regime change the holiday's
+// forecast still expects the day, until the regime change the holiday's
+// anomalies set off lets the activity clock pause it. The morning after,
+// the first request wakes it, since the regime change the holiday's
 // anomalies set off has the forecast earning its confidence again. The
-// holiday's afternoon, learned after the regime change, has the same
-// weekday a week later forecast quieter than it is, which costs the
-// morning after that too. Then it's every morning ready.
+// weekly pattern doesn't learn the holiday, because the day after it is
+// busy again: the same weekday a week later, and every morning after the
+// holiday's next, is ready.
 func TestHoliday(t *testing.T) {
 	holiday := monday.Add(6*week + 2*day)
 	r := simulate(t, Scenario{Duration: 9 * week, Traffic: Except(OfficeHours(time.UTC), time.UTC, holiday)})
@@ -204,9 +205,57 @@ func TestHoliday(t *testing.T) {
 			cold = append(cold, d.Date)
 		}
 	}
-	assert.Equal(t, []time.Time{holiday.Add(day), holiday.Add(week + day)}, cold)
-	after := r.Summarize(holiday.Add(2 * week))
-	assert.Equal(t, after.UsedDays, after.Ready, "ready every morning from the second week")
+	assert.Equal(t, []time.Time{holiday.Add(day)}, cold, "only the morning after the holiday")
+	for _, d := range r.Days {
+		if d.Date.Equal(holiday.Add(week)) {
+			assert.Equal(t, Ready, d.Outcome, "the same weekday a week later")
+		}
+	}
+	after := r.Summarize(holiday.Add(2 * day))
+	assert.Equal(t, after.UsedDays, after.Ready, "ready every morning from the second day after")
+}
+
+// People who come in on one Saturday don't have the forecast wake the
+// workload the Saturday after: the Sunday is quiet again, so the Saturday
+// was a one-off, and the weekly pattern doesn't learn it. Like a holiday,
+// it costs the next working morning, while the forecast earns back the
+// confidence the regime change discarded.
+func TestOneSaturdayAtWork(t *testing.T) {
+	saturday := monday.Add(5*week + 5*day)
+	atWork := Working(time.UTC, func(d time.Time) bool { return d.Equal(saturday) },
+		9*time.Hour+10*time.Minute, 17*time.Hour+30*time.Minute, 40)
+	office := OfficeHours(time.UTC)
+	traffic := func(t time.Time) Use {
+		if u := atWork(t); u.Active {
+			return u
+		}
+		return office(t)
+	}
+	r := simulate(t, Scenario{Duration: 8 * week, Traffic: traffic})
+
+	s := r.Summarize(saturday.Add(day))
+	assert.Zero(t, s.IdleDayWakes, "weekend wakes after the Saturday at work")
+	assert.Zero(t, s.WastedWakes)
+	assert.Equal(t, s.UsedDays-1, s.Ready, "every morning but the Monday after")
+	after := r.Summarize(saturday.Add(3 * day))
+	assert.Equal(t, after.UsedDays, after.Ready)
+}
+
+// A workload nobody uses any more is left asleep within about a week: the
+// first quiet day is a regime change, and the weekly pattern learns the
+// quiet from the second.
+func TestRetiredWorkload(t *testing.T) {
+	retired := monday.Add(6 * week)
+	r := simulate(t, Scenario{Duration: 10 * week, Traffic: Switch(retired, OfficeHours(time.UTC), Always(false, 0))})
+
+	require.Len(t, r.RegimeChanges, 1)
+	assert.WithinDuration(t, retired, r.RegimeChanges[0], day, "noticed within the first day")
+	s := r.Summarize(retired)
+	assert.LessOrEqual(t, s.WastedWakes, 2, "wakes for the old hours")
+	assert.LessOrEqual(t, s.WastedHours, 3.5)
+	for _, w := range r.Wakes {
+		assert.False(t, w.At.After(retired.Add(8*day)), "woken %s", w.At.Format("Mon 02 Jan 15:04"))
+	}
 }
 
 // A team that moves its hours from 09:00 to 13:00 for good is relearned:

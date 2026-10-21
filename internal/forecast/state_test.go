@@ -79,6 +79,27 @@ func TestState_RoundTrip(t *testing.T) {
 	assert.Equal(t, state, again, "an engine that hasn't changed exports the same state")
 }
 
+// What a quiet morning leaves pending, the weekly changes held for the next
+// day, survives a restart.
+func TestState_RoundTripKeepsWhatIsHeld(t *testing.T) {
+	e := trainedEngine(t)
+	for i := range 10 {
+		at := hourAt(5*WeeklySeason + i)
+		_, err := e.Observe(0, at)
+		require.NoError(t, err)
+	}
+	require.NotZero(t, e.held[9])
+
+	state, err := e.Export()
+	require.NoError(t, err)
+	restored, err := ImportEngine(state, Settings{Threshold: 85})
+	require.NoError(t, err)
+
+	for slot := range WeeklySeason {
+		assert.InDelta(t, e.held[slot], restored.held[slot], 1e-4, "hour of the week %d", slot)
+	}
+}
+
 func TestState_ImportRejectsInvalidState(t *testing.T) {
 	valid := func() engineState {
 		e := trainedEngine(t)
@@ -118,6 +139,7 @@ func TestState_ImportRejectsInvalidState(t *testing.T) {
 		{"negative error", func(st *engineState) { st.AbsErr[0] = -1 }},
 		{"infinite weekly component", func(st *engineState) { st.Weekly[3] = float32(math.Inf(1)) }},
 		{"negative recent demand", func(st *engineState) { st.Recent[5] = -1 }},
+		{"held weekly change out of range", func(st *engineState) { st.Held[7] = 1e16 }},
 		{"recent demand beyond the week", func(st *engineState) { st.Seen[2] |= 1 << 63 }},
 	}
 	for _, tt := range tests {
@@ -141,7 +163,8 @@ func TestState_ImportRejectsMalformedText(t *testing.T) {
 		"not base64":       "%%%",
 		"not gzip":         base64.StdEncoding.EncodeToString([]byte("plain")),
 		"not json":         encodeState(t, []byte("not json")),
-		"bare version":     encodeState(t, []byte(`{"v":4}`)),
+		"bare version":     encodeState(t, []byte(`{"v":5}`)),
+		"version 4":        encodeState(t, []byte(`{"v":4}`)),
 		"version 3":        encodeState(t, []byte(`{"v":3}`)),
 		"version 2":        encodeState(t, []byte(`{"v":2}`)),
 		"version 1":        encodeState(t, []byte(`{"v":1}`)),

@@ -154,15 +154,19 @@ const (
 	// observed, and leaves the level, trend and daily components, which
 	// haven't seen that hour either, as they are.
 	fitFirst
+	// fitHoldWeekly updates the level, trend and daily components, and
+	// leaves the weekly one for the engine to change later, or not.
+	fitHoldWeekly
 )
 
 // update fits an observation y made at t, steps hours after the previous
-// one.
-func (m *Model) update(y float64, t time.Time, steps int, how fit) {
+// one, and returns the change it made, or with fitHoldWeekly would have
+// made, to the weekly component of t's hour of the week.
+func (m *Model) update(y float64, t time.Time, steps int, how fit) float64 {
 	if m.n == 0 {
 		m.level = y
 		m.n = 1
-		return
+		return 0
 	}
 	steps = max(1, min(steps, maxTrendSteps))
 
@@ -179,11 +183,21 @@ func (m *Model) update(y float64, t time.Time, steps int, how fit) {
 	m.trend = p.Beta*(m.level-prevLevel)/float64(steps) + (1-p.Beta)*m.trend
 
 	newD := gamma1*(y-m.level-w) + (1-gamma1)*d
-	newW := gamma2*(y-m.level-newD) + (1-gamma2)*w
+	change := gamma2 * (y - m.level - newD - w)
 	m.setDaily(di, newD)
-	m.setWeekly(wi, newW)
+	if how != fitHoldWeekly {
+		m.setWeekly(wi, w+change)
+	}
 	m.bound()
 	m.n++
+	return change
+}
+
+// shiftWeekly changes the weekly component of the hour of the week slot by
+// change, as an update held with fitHoldWeekly would have.
+func (m *Model) shiftWeekly(slot int, change float64) {
+	m.setWeekly(slot, m.weekly[slot]+change)
+	m.bound()
 }
 
 // bound holds every component within what persisted state may hold. Only a
