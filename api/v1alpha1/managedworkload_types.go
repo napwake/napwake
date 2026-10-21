@@ -642,6 +642,12 @@ type PredictionStatus struct {
 	// observed hours, a whole week of weekdays and weekend, as a percentage.
 	WeeklyConfidence int `json:"weeklyConfidence"`
 
+	// TimeZone is the IANA time zone the forecast counts hours of the day
+	// and days of the week in, such as Europe/London: the operator's
+	// --timezone.
+	// +optional
+	TimeZone string `json:"timeZone,omitempty"`
+
 	// State is what the forecasting engine has learned, compressed and
 	// encoded, so that it survives an operator restart. It is written with
 	// each hourly observation. State that can't be read is discarded, with a
