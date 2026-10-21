@@ -41,7 +41,7 @@ helm upgrade hybernate oci://ghcr.io/okedeji/charts/hybernate --version X.Y.Z \
 
 The URL is the base of the Prometheus HTTP API, `http` or `https`; the operator refuses to start with any other. Hybernate appends `/api/v1/query` and keeps any path prefix, so endpoints like `https://mimir.example.com/prometheus` work as-is. It sends no credentials or headers, so a Prometheus that needs them must be reached through a proxy that adds them.
 
-With a Prometheus URL, each new workload's forecast also starts from up to four weeks of its CPU history rather than from nothing, so `autoResume` can act from the first day; see [Learning from history](../concepts/forecasting.md#learning-from-history).
+With a Prometheus URL, each new workload's forecast also starts from up to four weeks of its CPU history rather than from nothing, so `autoResume` can act from the first day; see [Learning from history](../concepts/forecasting.md#learning-from-history). For a Prometheus that holds more than one cluster's series, `prometheus.selector` (`--prometheus-selector`), such as `cluster="staging"`, narrows that history query to this cluster. It isn't added to activity queries, which run as you write them: narrow those in the query itself.
 
 ## When a Query Can't Be Evaluated
 

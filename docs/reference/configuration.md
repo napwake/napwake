@@ -17,6 +17,7 @@ These flags are passed to the binary (`/manager`), which runs as the operator, o
 | `--max-concurrent-reconciles` | `8` | How many ManagedWorkloads are reconciled at once, so one slow metrics or Prometheus query doesn't hold up wakes, which are queued ahead of periodic checks. At least 1 |
 | `--timezone` | `UTC` | IANA time zone, such as `Europe/London`, whose hours and weekdays forecasts learn, so they follow daylight saving. The time zone database is built in |
 | `--prometheus-url` | | Base URL of the Prometheus API, such as `http://prometheus.monitoring.svc:9090`; `http` or `https` with a host. Required for workloads that set `idlePolicy.activity.prometheus`; with it, each new workload's forecast also starts from up to four weeks of its CPU history (see [Learning from history](../concepts/forecasting.md#learning-from-history)) |
+| `--prometheus-selector` | | Label matchers added to the queries the operator builds itself, the history query, such as `cluster="staging"`, written as inside PromQL's braces: `=`, `!=`, `=~` or `!~` and a double-quoted or backquoted value, comma-separated. For a Prometheus that holds more than one cluster's series, so same-named pods of another cluster aren't read as this one's. Activity queries are a workload's own and run as written. Needs `--prometheus-url` |
 | `--watch-namespaces` | every namespace | Comma-separated namespaces to work in, with a Role in each |
 | `--protected-namespaces` | | Comma-separated name patterns, such as `prod-*`, of namespaces Hybernate never manages, as if labelled `hybernate.io/protected=true`, unless labelled `hybernate.io/allow-protected=true`. The `kube-*` namespaces, `$POD_NAMESPACE`, and the doorman's namespace are always protected besides; see [Protected namespaces](../guides/opt-in.md#protected-namespaces) |
 | `--default-idle-after` | `1h` | Idle time before pausing, for workloads opted in with the label whose annotations and namespace don't set it. At least `1m` |
@@ -37,7 +38,7 @@ These flags are passed to the binary (`/manager`), which runs as the operator, o
 | `--zap-stacktrace-level` | `error` | Level from which stack traces are logged: `info`, `error`, or `panic` |
 | `--zap-time-encoding` | RFC 3339 | Time format of log entries: `epoch`, `millis`, `nano`, `iso8601`, `rfc3339` or `rfc3339nano` |
 
-The operator checks its flags at startup and exits with an error naming the flag when one is invalid: a `--protected-namespaces` pattern that isn't a valid glob, a `--prometheus-url` that isn't `http` or `https` with a host, a `--default-idle-after` under `1m`, a `--default-cpu-threshold` outside 1 to 100, a `--max-concurrent-reconciles`, `--doorman-ports-per-workload` or `--doorman-ports-per-namespace` below 1, or a `--timezone` that isn't a known IANA zone.
+The operator checks its flags at startup and exits with an error naming the flag when one is invalid: a `--protected-namespaces` pattern that isn't a valid glob, a `--prometheus-url` that isn't `http` or `https` with a host, a `--prometheus-selector` that isn't label matchers or is set without `--prometheus-url`, a `--default-idle-after` under `1m`, a `--default-cpu-threshold` outside 1 to 100, a `--max-concurrent-reconciles`, `--doorman-ports-per-workload` or `--doorman-ports-per-namespace` below 1, or a `--timezone` that isn't a known IANA zone.
 
 ## Endpoints
 

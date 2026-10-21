@@ -90,6 +90,10 @@ metrics:
 # CPU history, one query per workload, rather than from nothing.
 prometheus:
   url: ""
+  # Label matchers added to the history query, such as cluster="staging",
+  # for a Prometheus that holds more than one cluster's series, as Thanos,
+  # Mimir or a shared Prometheus may. Activity queries run as written.
+  selector: ""
 
 # Namespaces Hybernate works in. Empty means every namespace, with a
 # ClusterRole; set, Hybernate gets a Role in each of these only, and can't

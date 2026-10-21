@@ -194,6 +194,12 @@ check-chart: ## Lint the Helm chart, render it for each provider's Kubernetes ve
 			echo "the chart accepts metrics.port=$$p, which the health probes or the doorman's routing ports use"; exit 1; }; \
 	done
 	@helm template hybernate charts/hybernate --set metrics.port=30000 >/dev/null
+	@helm template hybernate charts/hybernate --set prometheus.url=http://thanos:9090 \
+		--set-string 'prometheus.selector=cluster="staging"' --show-only templates/deployment.yaml | \
+		grep -qF -- '- "--prometheus-selector=cluster=\"staging\""' || { \
+		echo "prometheus.selector doesn't reach the operator as --prometheus-selector"; exit 1; }
+	@! helm template hybernate charts/hybernate --set-string 'prometheus.selector=cluster="staging"' >/dev/null 2>&1 || { \
+		echo "the chart accepts prometheus.selector without prometheus.url, which the operator refuses to start with"; exit 1; }
 	@out=$$(helm template hybernate charts/hybernate --set-string podLabels.team=checkout \
 		--set-string podLabels.control-plane=other --set priorityClassName=hybernate-critical \
 		--set 'doorman.extraEnv[0].name=GOMAXPROCS' --set-string 'doorman.extraEnv[0].value=2'); \

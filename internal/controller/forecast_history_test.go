@@ -259,12 +259,15 @@ func countEvents(recorder *events.FakeRecorder, reason string) int {
 }
 
 // End to end against a Prometheus API: the history learner's query, as the
-// operator makes it with --prometheus-url, is read and learned, and the new
-// workload's forecast acts from its first reconcile.
+// operator makes it with --prometheus-url and --prometheus-selector, is read
+// and learned, and the new workload's forecast acts from its first
+// reconcile. The query reads only the selected cluster's series.
 func TestWarmStart_FromAPrometheusAPI(t *testing.T) {
 	peaks := officePeaks(fixedTime)
+	var queries []string
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		q := r.URL.Query()
+		queries = append(queries, q.Get("query"))
 		start, _ := strconv.ParseInt(q.Get("start"), 10, 64)
 		end, _ := strconv.ParseInt(q.Get("end"), 10, 64)
 		var values [][2]any
@@ -277,7 +280,7 @@ func TestWarmStart_FromAPrometheusAPI(t *testing.T) {
 			"resultType": "matrix", "result": []any{map[string]any{"metric": map[string]string{}, "values": values}}}})
 	}))
 	t.Cleanup(server.Close)
-	prom, err := discovery.NewPrometheusURL(server.URL, server.Client(), nil)
+	prom, err := newHistoryReader(server.URL, discovery.Selector{`cluster="prelaunch"`})
 	require.NoError(t, err)
 
 	workload := forecastWorkload()
@@ -297,6 +300,11 @@ func TestWarmStart_FromAPrometheusAPI(t *testing.T) {
 	assert.Equal(t, HistoryLearned, p.History.Reason)
 	assert.Equal(t, 672, p.History.Hours)
 	assert.True(t, p.Acting, "%s", p.Message)
+	require.NotEmpty(t, queries)
+	for _, q := range queries {
+		assert.Contains(t, q, `container_cpu_usage_seconds_total{namespace=`, "%s", q)
+		assert.Contains(t, q, `, cluster="prelaunch"}`, "%s", q)
+	}
 }
 
 func TestHistoryHours(t *testing.T) {

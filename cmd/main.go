@@ -59,6 +59,7 @@ import (
 	v1alpha1 "github.com/okedeji/hybernate/api/v1alpha1"
 	"github.com/okedeji/hybernate/internal/capacity"
 	"github.com/okedeji/hybernate/internal/controller"
+	scan "github.com/okedeji/hybernate/internal/discovery"
 	"github.com/okedeji/hybernate/internal/doorman"
 	"github.com/okedeji/hybernate/internal/guard"
 	opmetrics "github.com/okedeji/hybernate/internal/metrics"
@@ -87,7 +88,7 @@ func main() {
 	var metricsCertPath, metricsCertName, metricsCertKey string
 	var enableLeaderElection bool
 	var probeAddr string
-	var prometheusURL string
+	var prometheusURL, prometheusSelector string
 	var runDoorman bool
 	var doormanService, doormanNamespace, doormanHealthCheckAgents string
 	var secureMetrics bool
@@ -122,6 +123,9 @@ func main() {
 		"The most doorman ports the workloads of one namespace may hold together.")
 	flag.StringVar(&prometheusURL, "prometheus-url", "",
 		"Base URL of the Prometheus API used for activity queries, e.g. http://prometheus.monitoring.svc:9090.")
+	flag.StringVar(&prometheusSelector, "prometheus-selector", "",
+		`Label matchers added to the queries the operator builds itself, such as 'cluster="prod"', for a Prometheus `+
+			`that holds more than one cluster; activity queries are a workload's own and run as written.`)
 	flag.IntVar(&maxConcurrentReconciles, "max-concurrent-reconciles", 8,
 		"How many ManagedWorkloads are reconciled at once, so one slow metrics or Prometheus query doesn't hold up wakes.")
 	flag.StringVar(&timezone, "timezone", "UTC",
@@ -168,6 +172,11 @@ func main() {
 	}
 	if err := validatePrometheusURL(prometheusURL); err != nil {
 		setupLog.Error(err, "invalid --prometheus-url")
+		os.Exit(1)
+	}
+	selector, err := parsePrometheusSelector(prometheusSelector, prometheusURL)
+	if err != nil {
+		setupLog.Error(err, "invalid --prometheus-selector")
 		os.Exit(1)
 	}
 	if err := validateOptInDefaults(optIn); err != nil {
@@ -290,6 +299,7 @@ func main() {
 			Scheme:                   mgr.GetScheme(),
 			Recorder:                 mgr.GetEventRecorder("hybernate"),
 			PrometheusURL:            prometheusURL,
+			PrometheusSelector:       selector,
 			DoormanService:           doormanService,
 			DoormanNamespace:         doormanNamespace,
 			DoormanPortsPerWorkload:  doormanPortsPerWorkload,
@@ -447,6 +457,20 @@ func validatePrometheusURL(raw string) error {
 		return fmt.Errorf("%q has no host", raw)
 	}
 	return nil
+}
+
+// parsePrometheusSelector reads --prometheus-selector as the scan's
+// --prometheus-selector reads it. It narrows only queries made of
+// --prometheus-url, so it's refused without one rather than ignored.
+func parsePrometheusSelector(raw, prometheusURL string) (scan.Selector, error) {
+	selector, err := scan.ParseSelector(raw)
+	if err != nil {
+		return nil, err
+	}
+	if len(selector) > 0 && prometheusURL == "" {
+		return nil, fmt.Errorf("%q narrows the queries made of --prometheus-url, which isn't set", raw)
+	}
+	return selector, nil
 }
 
 // validateOptInDefaults applies the rules a workload's own annotations are

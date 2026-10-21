@@ -76,6 +76,21 @@ type historyReader interface {
 	HourlyPeaks(ctx context.Context, w discovery.WorkloadCPU, start, end time.Time) (map[int64]float64, error)
 }
 
+// newHistoryReader is the Prometheus at url that new workloads' history is
+// read from, with selector's matchers added to the query.
+func newHistoryReader(url string, selector discovery.Selector) (*discovery.Prometheus, error) {
+	httpClient, err := discovery.NewHTTPClient(discovery.HTTPOptions{})
+	if err != nil {
+		return nil, fmt.Errorf("creating the Prometheus history client: %w", err)
+	}
+	p, err := discovery.NewPrometheusURL(url, httpClient, nil)
+	if err != nil {
+		return nil, fmt.Errorf("reading --prometheus-url for history: %w", err)
+	}
+	p.Selector = selector
+	return p, nil
+}
+
 // historySeed is what reading a workload's history came to: a forecast that
 // learned it, or why there's none.
 type historySeed struct {

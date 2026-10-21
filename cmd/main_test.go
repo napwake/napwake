@@ -95,6 +95,36 @@ func TestValidatePrometheusURL(t *testing.T) {
 	}
 }
 
+func TestParsePrometheusSelector(t *testing.T) {
+	const url = "http://thanos.monitoring.svc:9090"
+	tests := []struct {
+		name    string
+		raw     string
+		url     string
+		want    []string
+		wantErr string
+	}{
+		{name: "none", url: url},
+		{name: "one cluster", raw: `cluster="prelaunch"`, url: url, want: []string{`cluster="prelaunch"`}},
+		{name: "braces and a regex", raw: `{cluster=~"pre.*", replica!="b"}`, url: url,
+			want: []string{`cluster=~"pre.*"`, `replica!="b"`}},
+		{name: "unquoted value", raw: `cluster=prelaunch`, url: url, wantErr: "double-quoted"},
+		{name: "a query smuggled in", raw: `cluster="a"} or vector(1)`, url: url, wantErr: "expected a comma"},
+		{name: "no Prometheus to narrow", raw: `cluster="prelaunch"`, wantErr: "--prometheus-url, which isn't set"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, err := parsePrometheusSelector(tt.raw, tt.url)
+			if tt.wantErr != "" {
+				assert.ErrorContains(t, err, tt.wantErr)
+				return
+			}
+			require.NoError(t, err)
+			assert.Equal(t, tt.want, []string(got))
+		})
+	}
+}
+
 func TestValidateOptInDefaults(t *testing.T) {
 	tests := []struct {
 		name    string

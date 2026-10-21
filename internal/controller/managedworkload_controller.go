@@ -87,6 +87,11 @@ type Reconciler struct {
 	Recorder      events.EventRecorder
 	PrometheusURL string
 
+	// PrometheusSelector is label matchers added to every query the
+	// operator builds itself, as to one cluster of a Prometheus that holds
+	// many. Activity queries are a workload's own, and run as written.
+	PrometheusSelector discovery.Selector
+
 	// MaxConcurrentReconciles is how many workloads are reconciled at once.
 	// Zero means one.
 	MaxConcurrentReconciles int
@@ -1631,13 +1636,9 @@ func (r *Reconciler) initDefaults() {
 // workloads' forecasts from Prometheus, when there's a Prometheus to read.
 func (r *Reconciler) setupHistoryLearner(mgr ctrl.Manager) error {
 	if r.history == nil && r.PrometheusURL != "" {
-		httpClient, err := discovery.NewHTTPClient(discovery.HTTPOptions{})
+		p, err := newHistoryReader(r.PrometheusURL, r.PrometheusSelector)
 		if err != nil {
-			return fmt.Errorf("creating the Prometheus history client: %w", err)
-		}
-		p, err := discovery.NewPrometheusURL(r.PrometheusURL, httpClient, nil)
-		if err != nil {
-			return fmt.Errorf("reading --prometheus-url for history: %w", err)
+			return err
 		}
 		r.history = p
 	}
