@@ -17,7 +17,7 @@ Every command takes kubectl's connection flags: `--kubeconfig`, `--context`, `--
     kubectl hybernate version
     ```
 
-    Homebrew installs the newest release, or, until the first stable release, 0.2.0, the newest release candidate, and `brew upgrade` keeps it current. For this version of the docs exactly, use Krew or a download.
+    Homebrew installs the newest release, or, until the first stable release, the newest release candidate, and `brew upgrade` keeps it current. For this version of the docs exactly, use Krew or a download.
 
 === "Krew"
 
