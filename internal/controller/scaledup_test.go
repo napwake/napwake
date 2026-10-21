@@ -87,13 +87,16 @@ func TestWakeOnScaleUp_ByAPerson(t *testing.T) {
 }
 
 // A GitOps tool undoing a pause is a setup problem: reported once with the
-// fix, not fought.
+// fix, not fought. The fix is a line and a link, since kubectl describe
+// flattens the YAML setting the guide gives onto one line.
 func TestWakeOnScaleUp_ByGitOps(t *testing.T) {
 	tests := []struct {
 		manager, tool, fix string
 	}{
-		{"argocd-controller", "Argo CD", "jsonPointers: [/spec/replicas]"},
-		{"kustomize-controller", "Flux", "Leave replicas out of the workload's manifest"},
+		{"argocd-controller", "Argo CD",
+			"To stop it, have Argo CD ignore replicas, as for an HPA: https://okedeji.io/hybernate/guides/gitops/#argo-cd"},
+		{"kustomize-controller", "Flux",
+			"To stop it, leave replicas out of what Flux applies: https://okedeji.io/hybernate/guides/gitops/#flux"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.tool, func(t *testing.T) {
@@ -108,10 +111,9 @@ func TestWakeOnScaleUp_ByGitOps(t *testing.T) {
 			c := meta.FindStatusCondition(w.Status.Conditions, conditionGitOpsConflict)
 			require.NotNil(t, c)
 			assert.Equal(t, metav1.ConditionTrue, c.Status)
-			assert.Contains(t, c.Message, tt.tool+" set the replicas from Git, undoing the pause")
-			assert.Contains(t, c.Message, "pauses it again from 13:00 UTC")
-			assert.Contains(t, strings.Join(strings.Fields(c.Message), " "), tt.fix)
-			assert.Contains(t, drainEvents(t, r), "Warning GitOpsConflict")
+			assert.Equal(t, tt.tool+" set the replicas from Git, undoing the pause; Hybernate pauses it again from "+
+				"13:00 UTC. "+tt.fix, c.Message)
+			assert.Contains(t, drainEvents(t, r), "Warning GitOpsConflict api: "+c.Message)
 		})
 	}
 }
