@@ -18,6 +18,7 @@ package controller
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"slices"
 	"sync"
@@ -211,6 +212,11 @@ type historyLearner struct {
 	failures map[types.UID]int
 }
 
+// errReadingTarget is a failure to read the workload's target or what it
+// requests from the API server, which is retried until it succeeds rather
+// than counted against Prometheus.
+var errReadingTarget = errors.New("reading the target")
+
 func (l *historyLearner) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
 	var workload v1alpha1.ManagedWorkload
 	if err := l.client.Get(ctx, req.NamespacedName, &workload); err != nil {
@@ -220,6 +226,9 @@ func (l *historyLearner) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.
 		return ctrl.Result{}, nil
 	}
 	seed, ready, err := l.learn(ctx, &workload)
+	if errors.Is(err, errReadingTarget) {
+		return ctrl.Result{}, err
+	}
 	if err != nil {
 		if l.failed(workload.UID) < historyAttempts {
 			log.FromContext(ctx).Info("Could not read CPU history from Prometheus, trying again",
@@ -262,13 +271,16 @@ func (l *historyLearner) learn(ctx context.Context, workload *v1alpha1.ManagedWo
 		return historySeed{}, false, nil
 	}
 	if err != nil {
-		return historySeed{}, false, fmt.Errorf("reading the target: %w", err)
+		return historySeed{}, false, fmt.Errorf("%w: %w", errReadingTarget, err)
 	}
 	requested, err := l.metrics.CPURequestPerReplica(ctx, workload)
-	if err != nil || requested <= 0 {
+	switch {
+	case errors.Is(err, metrics.ErrNoCPURequests), err == nil && requested <= 0:
 		return historySeed{history: v1alpha1.PredictionHistory{Reason: HistoryNoCPURequests,
 			Message: "the target's containers request no CPU, so its CPU history can't be measured against " +
 				"them, and the forecast learns from now"}}, true, nil
+	case err != nil:
+		return historySeed{}, false, fmt.Errorf("%w's CPU requests: %w", errReadingTarget, err)
 	}
 	containers := make([]string, 0, len(podTemplateOf(target).Spec.Containers))
 	for _, c := range metrics.WorkloadContainers(podTemplateOf(target).Spec) {

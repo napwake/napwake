@@ -105,6 +105,8 @@ type stubMetrics struct {
 	// measuredPods is how many pods report usage; every replica unless set.
 	measuredPods int
 	err          error
+	// requestsErr fails reading what the workload requests, and only that.
+	requestsErr error
 }
 
 func (m *stubMetrics) WorkloadCPUMillis(ctx context.Context, w *v1alpha1.ManagedWorkload) (float64, int, error) {
@@ -118,6 +120,9 @@ func (m *stubMetrics) WorkloadCPUMillis(ctx context.Context, w *v1alpha1.Managed
 // CPURequestPerReplica is 100m unless cpuPerReplica says otherwise, so that
 // with one replica a utilization reads as the millicores used.
 func (m *stubMetrics) CPURequestPerReplica(_ context.Context, _ *v1alpha1.ManagedWorkload) (float64, error) {
+	if m.requestsErr != nil {
+		return 0, m.requestsErr
+	}
 	if m.noCPURequests {
 		return 0, m.err
 	}

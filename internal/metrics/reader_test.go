@@ -560,6 +560,7 @@ func TestReader_CPURequestPerReplica(t *testing.T) {
 			got, err := NewReader(c, c).CPURequestPerReplica(context.Background(), webWorkload())
 
 			if tt.wantErr != "" {
+				require.ErrorIs(t, err, ErrNoCPURequests)
 				require.ErrorContains(t, err, tt.wantErr)
 				return
 			}

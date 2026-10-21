@@ -304,8 +304,11 @@ func (r *Reconciler) utilization(ctx context.Context, workload *v1alpha1.Managed
 		return 0, nil
 	}
 	perReplica, err := r.metrics.CPURequestPerReplica(ctx, workload)
-	if err != nil {
+	if errors.Is(err, opmetrics.ErrNoCPURequests) {
 		return 0, fmt.Errorf("%w: %w", errNoCPURequests, err)
+	}
+	if err != nil {
+		return 0, fmt.Errorf("reading CPU requests: %w", err)
 	}
 	requested := perReplica * float64(pods)
 	if requested <= 0 {

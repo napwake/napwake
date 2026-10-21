@@ -20,6 +20,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"strconv"
@@ -38,6 +39,7 @@ import (
 	v1alpha1 "github.com/okedeji/hybernate/api/v1alpha1"
 	"github.com/okedeji/hybernate/internal/discovery"
 	"github.com/okedeji/hybernate/internal/forecast"
+	opmetrics "github.com/okedeji/hybernate/internal/metrics"
 )
 
 // officePeaks are four weeks of an office-hours workload's hourly peaks,
@@ -136,6 +138,9 @@ func TestHistoryLearner_WithoutHistory(t *testing.T) {
 			wantReason: HistoryNone},
 		{name: "no CPU requests to measure it against", history: &stubHistory{peaks: officePeaks(fixedTime)},
 			metrics: &stubMetrics{noCPURequests: true}, wantReason: HistoryNoCPURequests},
+		{name: "pods that request no CPU", history: &stubHistory{peaks: officePeaks(fixedTime)},
+			metrics: &stubMetrics{requestsErr: fmt.Errorf("%w: the running pods request no CPU",
+				opmetrics.ErrNoCPURequests)}, wantReason: HistoryNoCPURequests},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -165,6 +170,30 @@ func TestHistoryLearner_RetriesAFailingPrometheus(t *testing.T) {
 	assert.Equal(t, HistoryQueryFailed, seed.history.Reason)
 	assert.Contains(t, seed.history.Message, "connection refused")
 	assert.Len(t, history.asked, historyAttempts)
+}
+
+// The target or its requests failing to be read from the API server isn't
+// the workload requesting no CPU: the read is retried, with the
+// controller's backoff, and neither recorded nor counted against
+// Prometheus.
+func TestHistoryLearner_RetriesReadingTheTarget(t *testing.T) {
+	history := &stubHistory{peaks: officePeaks(fixedTime)}
+	metrics := &stubMetrics{requestsErr: errors.New("listing pods: etcdserver: request timed out")}
+	l, workload := newHistoryLearner(t, history, metrics, historyTarget())
+	req := ctrl.Request{NamespacedName: client.ObjectKeyFromObject(workload)}
+
+	for range historyAttempts + 1 {
+		_, err := l.Reconcile(context.Background(), req)
+		require.ErrorContains(t, err, "request timed out")
+	}
+	assert.False(t, l.engines.seeded(workload.UID))
+	assert.Empty(t, history.asked)
+
+	metrics.requestsErr = nil
+	learnHistory(t, l, workload)
+	seed, _, ok := l.engines.adoptSeed(workload.UID, forecast.Settings{})
+	require.True(t, ok)
+	assert.Equal(t, HistoryLearned, seed.history.Reason)
 }
 
 // A workload whose target doesn't exist yet is read once it does; one whose
