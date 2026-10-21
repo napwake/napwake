@@ -15,7 +15,7 @@ metadata:
     hybernate.io/idle-after: "2h"
 ```
 
-The label is usually one line in your Helm values or manifests, in a file you already keep in Git. It goes on the Deployment or StatefulSet itself: a chart's `podLabels` and `podAnnotations` put it on the pods, where Hybernate doesn't look. With Kustomize, don't use `commonLabels`, which changes the workload's selector; see [With Kustomize](#with-kustomize). Hybernate then creates a [ManagedWorkload](managed-workload.md) for the workload and keeps it in step with the annotations.
+The label is usually one line in your Helm values or manifests, in a file you already keep in Git. It goes on the Deployment or StatefulSet itself: a chart's `podLabels` and `podAnnotations` put it on the pods, where Hybernate doesn't look, and a `LabelIgnored` warning event on the workload says so. With Kustomize, don't use `commonLabels`, which changes the workload's selector; see [With Kustomize](#with-kustomize). Hybernate then creates a [ManagedWorkload](managed-workload.md) for the workload and keeps it in step with the annotations.
 
 ## A whole namespace
 

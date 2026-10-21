@@ -160,6 +160,32 @@ func TestOptIn_NotOptedIn(t *testing.T) {
 	assert.Contains(t, ignored[0], "settings such as dry-run are annotations")
 }
 
+// A chart's podLabels put the label on the pod template, where Hybernate
+// doesn't look: that's pointed out, since nothing else would say why the
+// workload isn't managed. In a managed namespace it's in anyway.
+func TestOptIn_LabelOnThePodTemplate(t *testing.T) {
+	onPods := func(name string) *appsv1.Deployment {
+		d := optInDeployment(name, nil, nil)
+		d.Spec.Template.Labels = map[string]string{"app": name, v1alpha1.LabelManaged: v1alpha1.True}
+		return d
+	}
+	r, recorder := optInReconciler(t, optInNamespace(nil, nil), onPods("api"))
+
+	reconcileOptIn(t, r, "api")
+
+	_, ok := managedWorkload(t, r, "api")
+	assert.False(t, ok)
+	ignored := recorded(recorder, ReasonLabelIgnored)
+	require.Len(t, ignored, 1)
+	assert.Contains(t, ignored[0], "hybernate.io/managed is on the pod template, where Hybernate doesn't look")
+
+	r, recorder = optInReconciler(t, optInNamespace(managedLabel, nil), onPods("api"))
+	reconcileOptIn(t, r, "api")
+	_, ok = managedWorkload(t, r, "api")
+	assert.True(t, ok, "its namespace opts it in")
+	assert.Empty(t, recorded(recorder, ReasonLabelIgnored))
+}
+
 // managed: "false" on a workload in a managed namespace opts it out
 // quietly, as ignore does: it says what it means.
 func TestOptIn_ManagedFalseOptsOutQuietly(t *testing.T) {

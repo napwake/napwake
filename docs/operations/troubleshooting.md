@@ -2,6 +2,20 @@
 
 ## Common Issues
 
+### A labelled workload has no ManagedWorkload
+
+`kubectl get managedworkloads -n <namespace>` doesn't list it. The opt-in controller says why in events on the Deployment or StatefulSet itself:
+
+```bash
+kubectl describe deployment <name> -n <namespace>
+```
+
+- **`LabelIgnored`, the label is on the pod template**: it was put on the pods, as a chart's `podLabels` does, where Hybernate doesn't look. Put it on the Deployment or StatefulSet itself, or on its namespace; see [Opting In](../guides/opt-in.md).
+- **`LabelIgnored`, a value that isn't `"true"`**: `hybernate.io/managed` opts in only with `"true"`; settings such as `dry-run` are annotations.
+- **`Protected`**: its namespace is protected, such as `kube-system`; see [Protected namespaces](../guides/opt-in.md#protected-namespaces).
+- **`LabelIgnored`, Hybernate's own**: the operator's and the doorman's Deployments are never managed.
+- **No event**: it's labelled `hybernate.io/ignore: "true"`, or someone wrote a ManagedWorkload for it, which wins over the label. With Kustomize, check the label reached the workload at all: `commonLabels` fails to apply to an existing workload (see [With Kustomize](../guides/opt-in.md#with-kustomize)).
+
 ### Workload is idle but not being paused
 
 **Check 1: Is dry run enabled?**

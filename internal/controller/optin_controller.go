@@ -256,7 +256,17 @@ func (r *OptInReconciler) optedIn(obj client.Object, ns *corev1.Namespace) bool 
 			v1alpha1.LabelManaged, v)
 		return false
 	}
-	return ns.GetLabels()[v1alpha1.LabelManaged] == v1alpha1.True
+	if ns.GetLabels()[v1alpha1.LabelManaged] == v1alpha1.True {
+		return true
+	}
+	// A chart's podLabels put the label on the pod template, which is an
+	// easy mistake to make and otherwise silent.
+	if podTemplateOf(obj).Labels[v1alpha1.LabelManaged] == v1alpha1.True {
+		r.Recorder.Eventf(obj, nil, "Warning", ReasonLabelIgnored, actionOptIn,
+			"%s is on the pod template, where Hybernate doesn't look, so it doesn't opt the workload in: put it on "+
+				"the %s itself, or on its namespace", v1alpha1.LabelManaged, r.Kind)
+	}
+	return false
 }
 
 // existingWorkloads is what the namespace's ManagedWorkloads mean for one
@@ -402,11 +412,12 @@ func kindQualifiedName(name string, kind v1alpha1.TargetKind) string {
 // can change which of them take their namespace's (see inheritsDependsOn).
 func (r *OptInReconciler) SetupWithManager(mgr ctrl.Manager) error {
 	metadataChanged := predicate.Or(predicate.LabelChangedPredicate{}, predicate.AnnotationChangedPredicate{})
+	optInChanged := predicate.Or(metadataChanged, podTemplateOptInChanged())
 	specOrLabelsChanged := predicate.Or(predicate.GenerationChangedPredicate{}, predicate.LabelChangedPredicate{})
 	beside := handler.EnqueueRequestsFromMapFunc(r.workloadsBeside)
 	return ctrl.NewControllerManagedBy(mgr).
 		Named("optin-"+string(r.Kind)).
-		For(r.newWorkload(), builder.WithPredicates(metadataChanged)).
+		For(r.newWorkload(), builder.WithPredicates(optInChanged)).
 		Watches(&corev1.Namespace{}, handler.EnqueueRequestsFromMapFunc(r.workloadsInNamespace),
 			builder.WithPredicates(metadataChanged, inWatchedNamespaces(r.WatchNamespaces))).
 		Watches(&v1alpha1.ManagedWorkload{}, handler.EnqueueRequestsFromMapFunc(r.targetOf),
@@ -414,6 +425,18 @@ func (r *OptInReconciler) SetupWithManager(mgr ctrl.Manager) error {
 		Watches(&appsv1.Deployment{}, beside, builder.WithPredicates(dependsOnChanged())).
 		Watches(&appsv1.StatefulSet{}, beside, builder.WithPredicates(dependsOnChanged())).
 		Complete(r)
+}
+
+// podTemplateOptInChanged passes a workload whose pod template gains or
+// loses the managed label, which is pointed out, since it opts nothing in.
+func podTemplateOptInChanged() predicate.Predicate {
+	return predicate.Funcs{
+		UpdateFunc: func(e event.UpdateEvent) bool {
+			before := podTemplateOf(e.ObjectOld).Labels[v1alpha1.LabelManaged]
+			after := podTemplateOf(e.ObjectNew).Labels[v1alpha1.LabelManaged]
+			return before != after
+		},
+	}
 }
 
 // dependsOnChanged passes a workload created or deleted with its own
