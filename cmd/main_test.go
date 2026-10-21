@@ -543,3 +543,55 @@ func TestForwarderProbes(t *testing.T) {
 	assert.Equal(t, http.StatusServiceUnavailable, ready.Code, "Ready before it has reached the doorman")
 	assert.Contains(t, ready.Body.String(), "doorman", "the probe says why it isn't Ready")
 }
+
+func TestForwarderOptions(t *testing.T) {
+	valid := forwarderFlags{
+		image:          "ghcr.io/okedeji/hybernate:v0.2.0",
+		replicas:       2,
+		resources:      defaultForwarderResources,
+		doormanPods:    "hybernate-doorman-pods",
+		doormanService: "hybernate-doorman",
+		doormanNS:      "hybernate-system",
+	}
+	tests := []struct {
+		name    string
+		change  func(*forwarderFlags)
+		wantErr string
+	}{
+		{name: "valid"},
+		{name: "no doorman", change: func(f *forwarderFlags) { f.doormanService = "" }, wantErr: "turns off"},
+		{name: "no image", change: func(f *forwarderFlags) { f.image = "" }, wantErr: "--neg-forwarder-image"},
+		{name: "no replicas", change: func(f *forwarderFlags) { f.replicas = 0 }, wantErr: "at least 1"},
+		{name: "no headless Service", change: func(f *forwarderFlags) { f.doormanPods = "" }, wantErr: "doorman-service"},
+		{name: "resources not in JSON", change: func(f *forwarderFlags) { f.resources = "cpu: 1" }, wantErr: "resources"},
+		{
+			name:    "a misspelt resources field",
+			change:  func(f *forwarderFlags) { f.resources = `{"request":{"cpu":"10m"}}` },
+			wantErr: "unknown field",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			flags := valid
+			if tt.change != nil {
+				tt.change(&flags)
+			}
+
+			opts, err := forwarderOptions(true, flags)
+
+			if tt.wantErr != "" {
+				assert.ErrorContains(t, err, tt.wantErr)
+				return
+			}
+			require.NoError(t, err)
+			assert.Equal(t, "hybernate-doorman-pods.hybernate-system.svc", opts.Doorman)
+			assert.Equal(t, int32(2), opts.Replicas)
+			assert.Equal(t, "10m", opts.Resources.Requests.Cpu().String())
+			assert.Equal(t, "64Mi", opts.Resources.Limits.Memory().String())
+		})
+	}
+
+	off, err := forwarderOptions(false, forwarderFlags{})
+	require.NoError(t, err)
+	assert.Nil(t, off, "off by default")
+}

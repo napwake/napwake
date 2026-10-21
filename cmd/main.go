@@ -123,6 +123,20 @@ func main() {
 		"The most doorman ports one workload may hold; one with more Service ports isn't routed.")
 	flag.IntVar(&doormanPortsPerNamespace, "doorman-ports-per-namespace", controller.DefaultDoormanPortsPerNamespace,
 		"The most doorman ports the workloads of one namespace may hold together.")
+	var negForwarder bool
+	var negForwarderImage, negForwarderResources, negForwarderDoorman string
+	var negForwarderReplicas int
+	flag.BoolVar(&negForwarder, "neg-forwarder", false,
+		"Route paused workloads' Services that sit behind GKE container-native load balancing (NEGs) through a "+
+			"forwarder Deployment in the workload's namespace, which the operator creates and deletes, so requests "+
+			"through GKE's load balancer wake them too. Needs create and delete on Deployments.")
+	flag.StringVar(&negForwarderImage, "neg-forwarder-image", "",
+		"The image forwarders run, the operator's own. Required with --neg-forwarder.")
+	flag.IntVar(&negForwarderReplicas, "neg-forwarder-replicas", 2, "How many pods each forwarder runs.")
+	flag.StringVar(&negForwarderResources, "neg-forwarder-resources", defaultForwarderResources,
+		"Each forwarder pod's resources, as JSON with requests and limits.")
+	flag.StringVar(&negForwarderDoorman, "neg-forwarder-doorman-service", "hybernate-doorman-pods",
+		"Headless Service in --doorman-namespace selecting the doorman's pods, which forwarders find them through.")
 	flag.StringVar(&prometheusURL, "prometheus-url", "",
 		"Base URL of the Prometheus API used for activity queries, e.g. http://prometheus.monitoring.svc:9090.")
 	flag.IntVar(&maxConcurrentReconciles, "max-concurrent-reconciles", 8,
@@ -162,15 +176,11 @@ func main() {
 
 	ctrl.SetLogger(zap.New(zap.UseFlagOptions(&opts)))
 
-	if guardOp != "" {
-		os.Exit(runGuard(guardOp, watched))
-	}
-
 	if limit, ok := softMemoryLimit(os.Getenv("GOMEMLIMIT"), os.Getenv(envMemoryLimit)); ok {
 		debug.SetMemoryLimit(limit)
 	}
-	if forwarderMode {
-		os.Exit(runForwarder(forwardRoutes, forwarderDoorman, probeAddr))
+	if code, ran := runWithoutManager(guardOp, watched, forwarderMode, forwardRoutes, forwarderDoorman, probeAddr); ran {
+		os.Exit(code)
 	}
 	if err := validatePatterns(protected); err != nil {
 		setupLog.Error(err, "invalid --protected-namespaces")
@@ -198,6 +208,18 @@ func main() {
 	location, err := time.LoadLocation(timezone)
 	if err != nil {
 		setupLog.Error(err, "invalid --timezone")
+		os.Exit(1)
+	}
+	forwarders, err := forwarderOptions(negForwarder, forwarderFlags{
+		image:          negForwarderImage,
+		replicas:       negForwarderReplicas,
+		resources:      negForwarderResources,
+		doormanPods:    negForwarderDoorman,
+		doormanService: doormanService,
+		doormanNS:      doormanNamespace,
+	})
+	if err != nil {
+		setupLog.Error(err, "invalid --neg-forwarder flag")
 		os.Exit(1)
 	}
 
@@ -304,6 +326,7 @@ func main() {
 			DoormanNamespace:         doormanNamespace,
 			DoormanPortsPerWorkload:  doormanPortsPerWorkload,
 			DoormanPortsPerNamespace: doormanPortsPerNamespace,
+			NEGForwarder:             forwarders,
 			PodReader:                mgr.GetAPIReader(),
 			ProtectedNamespaces:      protected,
 			WatchNamespaces:          watched,
@@ -352,6 +375,21 @@ func main() {
 	}
 }
 
+// runWithoutManager runs the binary as one of the modes that need no
+// manager, when asked to: the chart's guard hook, or a forwarder. It
+// reports whether one ran, and the exit code.
+func runWithoutManager(guardOp string, watched []string, forwarderMode bool,
+	forwardRoutes, forwarderDoorman, probeAddr string) (int, bool) {
+	switch {
+	case guardOp != "":
+		return runGuard(guardOp, watched), true
+	case forwarderMode:
+		return runForwarder(forwardRoutes, forwarderDoorman, probeAddr), true
+	default:
+		return 0, false
+	}
+}
+
 // guardWait outlasts the minute a deleted ManagedWorkload waits for its
 // doorman ports to drain, so one deleted just before helm uninstall
 // doesn't fail it. The chart's hook Jobs allow for it, with room to start.
@@ -382,6 +420,48 @@ func runGuard(op string, watched []string) int {
 		return 1
 	}
 	return 0
+}
+
+// defaultForwarderResources are a forwarder pod's: it keeps no state and
+// copies through small buffers.
+const defaultForwarderResources = `{"requests":{"cpu":"10m","memory":"32Mi"},"limits":{"memory":"64Mi"}}`
+
+type forwarderFlags struct {
+	image, resources, doormanPods string
+	replicas                      int
+	doormanService, doormanNS     string
+}
+
+// forwarderOptions are the forwarders' settings with --neg-forwarder, or nil
+// without it.
+func forwarderOptions(enabled bool, f forwarderFlags) (*controller.ForwarderOptions, error) {
+	if !enabled {
+		return nil, nil
+	}
+	if f.doormanService == "" {
+		return nil, errors.New("--neg-forwarder routes to the doorman, which --doorman-service=\"\" turns off")
+	}
+	if f.image == "" {
+		return nil, errors.New("--neg-forwarder-image must be set")
+	}
+	if f.replicas < 1 {
+		return nil, fmt.Errorf("--neg-forwarder-replicas %d must be at least 1", f.replicas)
+	}
+	if f.doormanPods == "" {
+		return nil, errors.New("--neg-forwarder-doorman-service must be set")
+	}
+	var resources corev1.ResourceRequirements
+	decoder := json.NewDecoder(strings.NewReader(f.resources))
+	decoder.DisallowUnknownFields()
+	if err := decoder.Decode(&resources); err != nil {
+		return nil, fmt.Errorf("--neg-forwarder-resources %q: %w", f.resources, err)
+	}
+	return &controller.ForwarderOptions{
+		Image:     f.image,
+		Replicas:  int32(f.replicas),
+		Resources: resources,
+		Doorman:   fmt.Sprintf("%s.%s.svc", f.doormanPods, f.doormanNS),
+	}, nil
 }
 
 // probeShutdown bounds how long the forwarder's probe server takes to stop
