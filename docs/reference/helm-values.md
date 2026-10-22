@@ -1,14 +1,20 @@
 # Helm Values Reference
 
-Complete reference for the Hybernate Helm chart. Install with:
+Complete reference for the Hybernate Helm chart. Put the values you set in a file, starting with your users' [time zone](../getting-started/installation.md#time-zone):
+
+```yaml title="hybernate-values.yaml"
+timezone: Europe/London
+```
+
+and install with it:
 
 ```bash
 helm install hybernate oci://ghcr.io/okedeji/charts/hybernate --version 0.2.0 \
   --namespace hybernate-system --create-namespace \
-  --set timezone=Europe/London
+  -f hybernate-values.yaml
 ```
 
-Set `timezone` to your users' [time zone](../getting-started/installation.md#time-zone). The chart is published only as an OCI artifact; there's no `helm repo` to add. Its version has no `v` (`0.2.0`); the image tags do (`v0.2.0`). To see all defaults:
+Upgrade with the same file, so upgrades keep your settings; see [Keeping your settings](../operations/upgrading.md#keeping-your-settings). The chart is published only as an OCI artifact; there's no `helm repo` to add. Its version has no `v` (`0.2.0`); the image tags do (`v0.2.0`). To see all defaults:
 
 ```bash
 helm show values oci://ghcr.io/okedeji/charts/hybernate --version 0.2.0

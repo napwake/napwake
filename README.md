@@ -54,17 +54,21 @@ kubectl krew install --manifest-url \
 
 or [download it](https://okedeji.io/hybernate/getting-started/kubectl-plugin/#installation) for Linux, macOS or Windows.
 
-**Install the operator:**
+**Install the operator**, with your settings in a values file, starting with your users' time zone:
+
+```yaml title="hybernate-values.yaml"
+timezone: Europe/London
+```
 
 ```bash
 helm install hybernate oci://ghcr.io/okedeji/charts/hybernate \
   --version 0.2.0 \
   --namespace hybernate-system \
   --create-namespace \
-  --set timezone=Europe/London
+  -f hybernate-values.yaml
 ```
 
-Set `timezone` to your users' time zone: the forecast learns their busy hours in it, so it wakes workloads for their mornings all year, through daylight saving. To install with `install.yaml`, Kustomize, Argo CD or Flux instead, see [Installation](https://okedeji.io/hybernate/getting-started/installation/).
+The forecast learns your users' busy hours in their time zone, so it wakes workloads for their mornings all year, through daylight saving. Keep the file and upgrade with it too, so upgrades keep your settings; see [Keeping your settings](https://okedeji.io/hybernate/operations/upgrading/#keeping-your-settings). To install with `install.yaml`, Kustomize, Argo CD or Flux instead, see [Installation](https://okedeji.io/hybernate/getting-started/installation/).
 
 Hybernate supports Kubernetes 1.30 and later, and is tested in CI on 1.30 and 1.37. The chart installs the operator, the doorman that wakes paused workloads on request, and the ManagedWorkload CRD.
 
