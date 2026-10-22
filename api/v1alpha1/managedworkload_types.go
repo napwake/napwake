@@ -272,7 +272,7 @@ type ActivitySpec struct {
 // PrometheusActivity is a PromQL instant query used as an activity source.
 type PrometheusActivity struct {
 	// PromQL is the query. Example:
-	// sum(rate(nginx_ingress_controller_requests{exported_service="api"}[5m]))
+	// sum(rate(nginx_ingress_controller_requests{exported_namespace="staging",exported_service="api"}[5m]))
 	// +kubebuilder:validation:MinLength=1
 	PromQL string `json:"promQL"`
 }
