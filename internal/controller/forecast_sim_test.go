@@ -38,12 +38,14 @@ func TestSimulatorMatchesTheReconciler(t *testing.T) {
 	if testing.Short() {
 		t.Skip("simulates six weeks of reconciles")
 	}
+	t.Parallel()
 	require.Equal(t, unobservedGap, sim.LookGap, "an hour is seen whole on the same terms")
 
 	monday := time.Date(2026, 3, 16, 0, 0, 0, 0, time.UTC)
 	const days = 42
 	for _, pauseEarly := range []bool{false, true} {
 		t.Run(fmt.Sprintf("pauseEarly %t", pauseEarly), func(t *testing.T) {
+			t.Parallel()
 			reconciled := doormanDays(t, monday, days, v1alpha1.IdlePolicySpec{AutoResume: true, PauseEarly: pauseEarly},
 				func(now time.Time, _ *v1alpha1.ManagedWorkload, metrics *stubMetrics) bool {
 					if !officeDay(now) {

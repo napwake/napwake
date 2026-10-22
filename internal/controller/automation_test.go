@@ -890,6 +890,9 @@ func TestAutoResume_LearnsToWakeBeforePeopleArrive(t *testing.T) {
 	if testing.Short() {
 		t.Skip("simulates six weeks of reconciles")
 	}
+	// Six weeks of reconciles each, independent of every other test: run
+	// alongside the rest, they keep the package within CI's time.
+	t.Parallel()
 	monday := time.Date(2026, 3, 16, 0, 0, 0, 0, time.UTC)
 	history := doormanDays(t, monday, 42, v1alpha1.IdlePolicySpec{AutoResume: true},
 		func(now time.Time, _ *v1alpha1.ManagedWorkload, metrics *stubMetrics) bool {
@@ -938,6 +941,7 @@ func TestAutoResume_LightUseIsReadyEveryMorning(t *testing.T) {
 	if testing.Short() {
 		t.Skip("simulates six weeks of reconciles")
 	}
+	t.Parallel()
 	monday := time.Date(2026, 3, 16, 0, 0, 0, 0, time.UTC)
 	history := doormanDays(t, monday, 42, v1alpha1.IdlePolicySpec{AutoResume: true},
 		func(now time.Time, workload *v1alpha1.ManagedWorkload, metrics *stubMetrics) bool {
