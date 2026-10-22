@@ -25,7 +25,7 @@ metrics:
 **With `install.yaml` or the Kustomize manifests**, apply the ServiceMonitors and the alerting rules into `hybernate-system`, from the `config/prometheus` base pinned to your release, or add it to your kustomization's `resources`:
 
 ```bash
-kubectl apply -k "https://github.com/okedeji/hybernate//config/prometheus?ref=v0.2.0"
+kubectl apply -k "https://github.com/okedeji/hybernate//config/prometheus?ref=v0.2.0-rc.5"
 ```
 
 and bind your Prometheus's ServiceAccount to the `hybernate-metrics-reader` ClusterRole yourself:
