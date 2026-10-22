@@ -209,15 +209,21 @@ func TestPausedQueries_WakeDependencies(t *testing.T) {
 
 // The hours a paused worker's query watches are learned, quiet while it
 // finds nothing, so a worker with no Service, paused every night, learns
-// whole days. Paused hours a query couldn't be read in aren't learned.
+// whole days. A query that can't be evaluated blinds the hour, unless the
+// doorman watches it too: behind the doorman, a request would still have
+// woken the workload, so the hour is learned as it was before the query.
 func TestPausedQueries_TheForecastLearnsTheHoursTheyWatch(t *testing.T) {
 	tests := []struct {
 		name     string
+		routed   bool
 		down     bool
+		noURL    bool
 		wantHour bool
 	}{
 		{name: "watched by its query", wantHour: true},
 		{name: "with Prometheus down", down: true},
+		{name: "behind the doorman, with Prometheus down", routed: true, down: true, wantHour: true},
+		{name: "behind the doorman, without --prometheus-url", routed: true, noURL: true, wantHour: true},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -226,15 +232,28 @@ func TestPausedQueries_TheForecastLearnsTheHoursTheyWatch(t *testing.T) {
 			worker := queueWorker(v1alpha1.PhasePaused, fixedTime)
 			worker.Status.Pause = &v1alpha1.PauseStatus{PreviousReplicas: 1,
 				PausedAt: ptr.To(metav1.NewTime(fixedTime.Add(-time.Hour)))}
+			if tt.routed {
+				meta.SetStatusCondition(&worker.Status.Conditions, metav1.Condition{Type: conditionWakeOnRequest,
+					Status: metav1.ConditionTrue, Reason: "DoormanRouted"})
+			}
 			engine := &stubForecaster{phase: forecast.Observing}
 			r := newAutomationReconciler(t, worker, engine, automationOpts{})
 			r.prometheus = prom
+			if tt.noURL {
+				r.prometheus = signal.NewPrometheus("")
+			}
 
 			for now := fixedTime; !now.After(fixedTime.Add(time.Hour)); now = now.Add(time.Minute) {
 				r.clock = func() time.Time { return now }
 				_, err := r.reconcileAutomation(context.Background(), worker, nil)
 				require.NoError(t, err)
-				require.Equal(t, v1alpha1.PhasePaused, worker.Status.Phase)
+				require.Equal(t, v1alpha1.PhasePaused, worker.Status.Phase, "a query that fails never wakes it")
+			}
+			if tt.routed {
+				c := meta.FindStatusCondition(worker.Status.Conditions, conditionPrometheusAvailable)
+				require.NotNil(t, c)
+				assert.Contains(t, c.Message, "a request through the doorman still does, and the forecast learns the "+
+					"time it's paused from those")
 			}
 
 			if !tt.wantHour {

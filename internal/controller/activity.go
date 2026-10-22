@@ -954,7 +954,12 @@ func (r *Reconciler) wokenByActivity(workload *v1alpha1.ManagedWorkload, target 
 // awake workload isn't paused, and a paused one isn't woken by the query.
 func (r *Reconciler) reportPrometheusUnavailable(ctx context.Context, workload *v1alpha1.ManagedWorkload, err error) *ctrl.Result {
 	effect := "so idle detection is paused"
-	if workload.Status.Phase == v1alpha1.PhasePaused {
+	switch {
+	case workload.Status.Phase != v1alpha1.PhasePaused:
+	case meta.IsStatusConditionTrue(workload.Status.Conditions, conditionWakeOnRequest):
+		effect = "so the queries can't wake the paused workload until Prometheus answers; a request through the " +
+			"doorman still does, and the forecast learns the time it's paused from those"
+	default:
 		effect = "so the queries can't wake the paused workload, and the forecast doesn't learn the time it's paused, " +
 			"until Prometheus answers"
 	}

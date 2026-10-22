@@ -93,23 +93,24 @@ const (
 // spends paused are learned: requests through the doorman, which would
 // wake it, and Prometheus activity queries, which show the activity they
 // measure. It's empty for a workload that isn't paused, or that nothing
-// watches: a query that can't be evaluated blinds the forecast to the hour.
+// watches. Queries that can't be evaluated show nothing, but don't blind
+// the doorman.
 func pausedSeenBy(workload *v1alpha1.ManagedWorkload) string {
 	if workload.Status.Phase != v1alpha1.PhasePaused {
 		return ""
 	}
 	conditions := workload.Status.Conditions
 	queries := hasPrometheusActivity(workload)
-	if queries && meta.IsStatusConditionFalse(conditions, conditionPrometheusAvailable) {
-		return ""
-	}
+	failing := queries && meta.IsStatusConditionFalse(conditions, conditionPrometheusAvailable)
 	routed := meta.IsStatusConditionTrue(conditions, conditionWakeOnRequest)
 	switch {
+	case routed && failing:
+		return "requests through the doorman, its Prometheus activity queries failing"
 	case routed && queries:
 		return "requests through the doorman and its Prometheus activity queries"
 	case routed:
 		return "requests through the doorman"
-	case queries:
+	case queries && !failing:
 		return "its Prometheus activity queries"
 	}
 	return ""

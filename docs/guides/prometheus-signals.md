@@ -42,8 +42,8 @@ spec:
 
 - **Query something that's there while the workload is paused**, such as the queue's broker. A metric the workload exports itself has no series while it has no pods, so it can't wake it.
 - **A pause you ask for isn't undone by a query already showing activity.** If a query shows activity as a [requested pause](pause.md#pause-now) begins, such as a queue that still has messages on it, it wakes the workload only once a check has found it quiet and it shows activity again. An idle pause begins only once every query is quiet, so this is only ever a requested one.
-- **A query that can't be evaluated never wakes the workload.** `PrometheusAvailable` is `False`, as while it's awake, and its message says the queries can't wake it until Prometheus answers.
-- **The [forecast](../concepts/forecasting.md#what-an-hour-records) learns the hours the queries watch**: quiet while they find nothing, busy when they find activity. So a worker paused every night still learns whole days, and with `autoResume` is woken ahead of its first messages once the forecast acts.
+- **A query that can't be evaluated never wakes the workload.** `PrometheusAvailable` is `False`, as while it's awake, and its message says the queries can't wake it until Prometheus answers, and whether a request through the doorman still does.
+- **The [forecast](../concepts/forecasting.md#what-an-hour-records) learns the hours the queries watch**: quiet while they find nothing, busy when they find activity. So a worker paused every night still learns whole days, and with `autoResume` is woken ahead of its first messages once the forecast acts. While the queries can't be evaluated, a workload behind the doorman goes on learning its paused hours through it, as without queries: busy if a request woke it, quiet otherwise. One without the doorman doesn't learn them until Prometheus answers.
 
 A workload with queries is checked every minute while it's paused, rather than every 5 minutes, so a query wakes it within a minute of its activity showing in Prometheus.
 
