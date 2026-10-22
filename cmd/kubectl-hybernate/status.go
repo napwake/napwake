@@ -597,7 +597,8 @@ func nextFor(w *v1alpha1.ManagedWorkload, targetActiveUntil, now time.Time) stri
 	default:
 		return "-"
 	}
-	if w.Spec.IdlePolicy == nil {
+	idle := w.Status.Phase == v1alpha1.PhaseIdle
+	if w.Spec.IdlePolicy == nil && !idle {
 		return "never pauses: no idlePolicy"
 	}
 	if c := meta.FindStatusCondition(conditions, "HeldByDependents"); c != nil && c.Status == metav1.ConditionTrue {
@@ -614,33 +615,46 @@ func nextFor(w *v1alpha1.ManagedWorkload, targetActiveUntil, now time.Time) stri
 	case meta.IsStatusConditionFalse(conditions, "PrometheusAvailable"):
 		return "won't pause: Prometheus failing"
 	}
+	return pausesNext(w, idle, now)
+}
+
+// pausesNext says when a workload that may pause does: now, for one Idle,
+// unless the hour after a GitOps conflict or the forecast holds it, or when
+// its clock runs out.
+func pausesNext(w *v1alpha1.ManagedWorkload, idle bool, now time.Time) string {
+	conditions := w.Status.Conditions
 	a := w.Status.Activity
-	if a == nil || a.PauseAt == nil {
-		return "-"
-	}
 	verb := "pauses"
 	if w.Spec.DryRun {
 		verb = "would pause"
 	}
-	pauseAt := a.PauseAt.Time
-	if w.Status.Phase == v1alpha1.PhaseIdle {
-		// The pause is due now, not when the clock would run out: a pause
-		// request or the forecast brought it forward without rewriting pauseAt.
-		pauseAt = now
-	}
 	retryAt, heldByGitOps := gitOpsHold(w, now)
 	afterGitOps := "pauses at " + clockTime(retryAt) + " (after GitOps conflict)"
+	if idle {
+		// The pause is due now, whatever the clock recorded: a pause request
+		// or the forecast may have brought it forward, without an idle policy
+		// or without rewriting pauseAt.
+		switch {
+		case heldByGitOps:
+			return afterGitOps
+		case meta.IsStatusConditionTrue(conditions, "IdleVetoed"):
+			return heldByForecast(a)
+		}
+		return verb + " now" + pausedEarly(a, ", ", "")
+	}
+	if a == nil || a.PauseAt == nil {
+		return "-"
+	}
+	pauseAt := a.PauseAt.Time
 	switch {
 	case pauseAt.After(now) && heldByGitOps && retryAt.After(pauseAt):
 		return afterGitOps
 	case pauseAt.After(now):
 		return verb + " in " + span(pauseAt.Sub(now))
 	case meta.IsStatusConditionTrue(conditions, "IdleVetoed"):
-		return heldByForecast(w.Status.Activity)
+		return heldByForecast(a)
 	case heldByGitOps:
 		return afterGitOps
-	case w.Status.Phase == v1alpha1.PhaseIdle:
-		return verb + " now" + pausedEarly(a, ", ", "")
 	case now.Sub(pauseAt) < clockLag:
 		return verb + " soon"
 	}
