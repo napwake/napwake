@@ -46,6 +46,53 @@ func (r Report) ActingAt(t time.Time) bool {
 	return acting
 }
 
+// Awake is how long the workload was awake from from to to: from the
+// start, until it was first paused, and from each wake until the pause
+// after it.
+func (r Report) Awake(from, to time.Time) time.Duration {
+	type change struct {
+		at    time.Time
+		awake bool
+	}
+	changes := make([]change, 0, len(r.Pauses)+len(r.Wakes)+1)
+	changes = append(changes, change{at: r.Start, awake: true})
+	for _, p := range r.Pauses {
+		changes = append(changes, change{at: p})
+	}
+	for _, w := range r.Wakes {
+		changes = append(changes, change{at: w.At, awake: true})
+	}
+	slices.SortStableFunc(changes, func(a, b change) int { return a.at.Compare(b.at) })
+	var awake time.Duration
+	for i, c := range changes {
+		end := r.End
+		if i+1 < len(changes) {
+			end = changes[i+1].at
+		}
+		if !c.awake {
+			continue
+		}
+		if start, stop := later(c.at, from), earlier(end, to); stop.After(start) {
+			awake += stop.Sub(start)
+		}
+	}
+	return awake
+}
+
+func later(a, b time.Time) time.Time {
+	if a.After(b) {
+		return a
+	}
+	return b
+}
+
+func earlier(a, b time.Time) time.Time {
+	if a.Before(b) {
+		return a
+	}
+	return b
+}
+
 // Summary counts what a simulation measured over the days from From.
 type Summary struct {
 	From time.Time
@@ -74,6 +121,13 @@ type Summary struct {
 	Vetoes       int
 	UnusedVetoes int
 	VetoHours    float64
+	// EarlyPauses are pauses the forecast brought forward; ColdEarly those
+	// a use found paused when the workload would otherwise have been awake,
+	// and SavedHours how long they had it paused that it would otherwise
+	// have been awake for.
+	EarlyPauses int
+	ColdEarly   int
+	SavedHours  float64
 }
 
 // Summarize counts the report's days, wakes and vetoes from from on.
@@ -126,6 +180,16 @@ func (r Report) Summarize(from time.Time) Summary {
 		sum.VetoHours += v.To.Sub(v.From).Hours()
 		if !v.Used {
 			sum.UnusedVetoes++
+		}
+	}
+	for _, p := range r.EarlyPauses {
+		if p.At.Before(from) {
+			continue
+		}
+		sum.EarlyPauses++
+		sum.SavedHours += p.Saved(r.End).Hours()
+		if p.Cold {
+			sum.ColdEarly++
 		}
 	}
 	return sum
