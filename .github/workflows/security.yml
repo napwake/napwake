@@ -50,23 +50,46 @@ jobs:
           ignore-unfixed: true
           exit-code: "1"
 
-  # The image the last release published, which runs the operator and the
-  # doorman both.
-  released:
-    name: Released image vulnerabilities
+  # The releases people install: the newest, a release candidate included,
+  # and the latest stable one. Releases before 0.2.0 aren't scanned: 0.2.0
+  # replaces them without an upgrade from them, and they get no fixes.
+  releases:
+    name: Releases to scan
     if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    outputs:
+      tags: ${{ steps.tags.outputs.tags }}
+    steps:
+      - id: tags
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+        run: |
+          tags="$(gh release list --repo "$REPO" --exclude-drafts --limit 100 --json tagName,isPrerelease \
+            --jq '[.[0].tagName, ([.[] | select(.isPrerelease | not)][0].tagName // empty)]
+              | unique | map(select(test("^v0\\.[01]\\.") | not))')"
+          echo "tags=$tags" >> "$GITHUB_OUTPUT"
+          echo "Scanning: $tags"
+
+  # Each release's image, which runs the operator and the doorman both.
+  released:
+    name: Released image vulnerabilities (${{ matrix.tag }}, ${{ matrix.platform }})
+    needs: releases
+    if: needs.releases.outputs.tags != '[]'
     runs-on: ubuntu-24.04
     timeout-minutes: 30
     strategy:
       fail-fast: false
       matrix:
+        tag: ${{ fromJSON(needs.releases.outputs.tags) }}
         platform: [linux/amd64, linux/arm64]
     steps:
       - uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
         env:
           TRIVY_PLATFORM: ${{ matrix.platform }}
         with:
-          image-ref: ghcr.io/${{ github.repository }}:latest
+          image-ref: ghcr.io/${{ github.repository }}:${{ matrix.tag }}
           severity: CRITICAL,HIGH
           ignore-unfixed: true
           exit-code: "1"
