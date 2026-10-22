@@ -310,22 +310,31 @@ func TestScanCluster_ReadsHybernatesClock(t *testing.T) {
 		Activity: &v1alpha1.ActivityStatus{LastActivityTime: metav1.NewTime(scanTime.Add(-2 * time.Hour)),
 			LastActivitySource: v1alpha1.ActivitySourceCPU}})
 	measuring.Spec.DryRun = true
-	unwatched := managedFor("unwatched", v1alpha1.ManagedWorkloadStatus{Phase: v1alpha1.PhaseRunning,
-		Activity: &v1alpha1.ActivityStatus{LastActivityTime: metav1.NewTime(scanTime.Add(-3 * time.Minute)),
-			LastActivitySource: v1alpha1.ActivitySourceUnobserved}})
+	started := func(name string, source v1alpha1.ActivitySource) *v1alpha1.ManagedWorkload {
+		return managedFor(name, v1alpha1.ManagedWorkloadStatus{Phase: v1alpha1.PhaseRunning,
+			Activity: &v1alpha1.ActivityStatus{LastActivityTime: metav1.NewTime(scanTime.Add(-3 * time.Minute)),
+				LastActivitySource: source}})
+	}
+	unwatched, created, woke := started("unwatched", v1alpha1.ActivitySourceUnobserved),
+		started("created", v1alpha1.ActivitySourceCreated), started("woke", v1alpha1.ActivitySourceWoke)
 
-	objs := make([]runtime.Object, 0, 12)
-	objs = append(objs, active, quiet, measuring, unwatched)
-	for _, name := range []string{"active", "quiet", "measuring", "unwatched"} {
+	objs := make([]runtime.Object, 0, 18)
+	objs = append(objs, active, quiet, measuring, unwatched, created, woke)
+	for _, name := range []string{"active", "quiet", "measuring", "unwatched", "created", "woke"} {
 		objs = append(objs, idleNow(name)...)
 	}
 	got := byName(scanWorkloads(t, objs...))
 
 	assert.Equal(t, StateActive, got["active"].State, "a Prometheus signal the scan can't see itself")
 	assert.Equal(t, "active 5m ago (prometheus)", got["active"].Reason)
-	assert.Equal(t, StateActive, got["unwatched"].State, "its clock restarted, so it isn't idle yet")
-	assert.Equal(t, "not idle yet: Hybernate wasn't watching until 3m ago", got["unwatched"].Reason,
-		"a gap in watching isn't activity")
+	for name, want := range map[string]string{
+		"unwatched": "not idle yet: Hybernate wasn't watching until 3m ago",
+		"created":   "not idle yet: Hybernate began managing it 3m ago",
+		"woke":      "not idle yet: it woke 3m ago",
+	} {
+		assert.Equal(t, StateActive, got[name].State, "its clock started, so it isn't idle yet")
+		assert.Equal(t, want, got[name].Reason, "what started the clock isn't activity")
+	}
 	assert.Equal(t, StateIdle, got["quiet"].State)
 	assert.Equal(t, "no activity for 3h, held awake by dependents", got["quiet"].Reason)
 	assert.True(t, got["measuring"].DryRun)
