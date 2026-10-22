@@ -72,11 +72,11 @@ func (f *stubForecaster) Observe(actual float64, hour time.Time) (float64, error
 func (f *stubForecaster) Observed(hour time.Time) bool {
 	return slices.ContainsFunc(f.observedHours, hour.Equal)
 }
-func (f *stubForecaster) Predict(h int, _ time.Time) float64 {
+func (f *stubForecaster) Expect(h int, _ time.Time) (float64, bool) {
 	if v, ok := f.predictByHour[h]; ok {
-		return v
+		return v, f.phase >= forecast.DailyActive
 	}
-	return f.predictValue
+	return f.predictValue, f.phase >= forecast.DailyActive
 }
 func (f *stubForecaster) Export() (string, error) {
 	f.exportCalls++

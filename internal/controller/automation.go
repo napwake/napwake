@@ -42,7 +42,7 @@ import (
 type forecaster interface {
 	Observe(actual float64, now time.Time) (float64, error)
 	Observed(now time.Time) bool
-	Predict(h int, now time.Time) float64
+	Expect(h int, now time.Time) (float64, bool)
 	Export() (string, error)
 	Configure(settings forecast.Settings)
 	GetPhase() forecast.Phase
