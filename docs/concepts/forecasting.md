@@ -117,7 +117,7 @@ On office hours kept steadily, every setting acts after 8 days and has every mor
 
 ### How Long It Takes
 
-Learning live from a fresh start, behind the doorman with `autoResume` on, the simulator measures how many days the forecast takes to act (`DailyActive`) and to be fully active (`FullyActive`), for a workload at 40% of its CPU request while in use and 1% otherwise, over ten weeks (never: not within them):
+Learning live from a fresh start, with `autoResume` on, behind the doorman or, for the last row, woken by a Prometheus activity query, the simulator measures how many days the forecast takes to act (`DailyActive`) and to be fully active (`FullyActive`), for a workload at 40% of its CPU request while in use and 1% otherwise, over ten weeks (never: not within them):
 
 | Workload | `eager` (60) | `balanced` (75) | `cautious` (85) |
 |----------|--------------|-----------------|-----------------|
@@ -127,6 +127,7 @@ Learning live from a fresh start, behind the doorman with `autoResume` on, the s
 | The same hours every day, weekends included | 8 / 14 | 8 / 14 | 8 / 14 |
 | Always busy | 8 / 14 | 8 / 14 | 8 / 14 |
 | Always idle | 8 / 14 | 8 / 14 | 8 / 14 |
+| A queue worker with no Service, which a query of its queue's length wakes, busy every day from 07:00 to 19:00, paused every night | 8 / 14 | 8 / 14 | 8 / 14 |
 
 A test in the repo runs these and fails if they drift from this table.
 
@@ -272,6 +273,7 @@ The tests run in CI on every change, and check, besides [How Long It Takes](#how
 - **Every day, always busy, always idle, light use** seen only through an activity annotation: each acts as above, and the light-use workload is ready every morning
 - **Loosely kept hours**: ready on most mornings once learned, woken for nothing about twice a month, for an hour or two each time; and the settings trade ready mornings for hours woken for nothing as [Forecast Setting](#forecast-setting) says
 - **A holiday, a Saturday at work, a permanent change of hours, a workload nobody uses any more, daylight saving** in New York and London, with and without `--timezone`, **daily operator restarts**, and **pauses without the doorman**, which never let the forecast act: as described above
+- **A queue worker with no Service**, woken by a query of its queue's length and paused every night: it acts after 8 days, as behind the doorman, and from then autoResume has it up before the morning's messages
 - **Learning from history**: a forecast that learned four weeks of office hours has the workload ready from the first morning, and the [projection](#when-it-acts) made in the first week is within a day of when the forecast starts acting
 
 `go run ./hack/forecastsim` runs every scenario at every setting and prints what it measured; `-scenario holiday -setting eager -days` shows one day by day. `-history` replays a workload's recorded CPU instead, as a percentage of its requests: a Prometheus range query's JSON, or CSV of `time,percent` rows, a step of at most seven minutes apart.
