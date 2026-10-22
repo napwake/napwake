@@ -10,7 +10,7 @@ Metrics are served over HTTPS, and only to a scraper whose token is allowed to `
 
 **With Helm**, turn on the ServiceMonitors (one for the operator, one for the doorman) and bind your Prometheus's ServiceAccount to the chart's `<fullname>-metrics-reader` ClusterRole:
 
-```yaml title="values.yaml"
+```yaml title="hybernate-values.yaml"
 metrics:
   serviceMonitor:
     enabled: true
@@ -39,7 +39,7 @@ Without that binding, the targets show as down with `401` or `403`, and the `Hyb
 
 **Prometheus must select the ServiceMonitors.** A Prometheus picks up only the ServiceMonitors that match its `serviceMonitorSelector` (and `serviceMonitorNamespaceSelector`). The chart's carry no label a Prometheus selects by default, so targets that never appear usually mean the selector doesn't match. [kube-prometheus-stack](https://github.com/prometheus-community/helm-charts/tree/main/charts/kube-prometheus-stack) selects `release: <its release name>`, and its Prometheus runs as the `<its release name>-kube-prometheus-prometheus` ServiceAccount. For a stack installed as `kube-prometheus-stack` in `monitoring`:
 
-```yaml title="values.yaml"
+```yaml title="hybernate-values.yaml"
 metrics:
   serviceMonitor:
     enabled: true
