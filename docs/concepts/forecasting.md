@@ -1,5 +1,8 @@
 # Forecasting
 
+- **It always learns**, for every managed workload, whatever `autoResume` says: from every hour it's awake, and every hour it's paused that the doorman or an activity query watches. Once it's confident, it holds off pauses before hours it expects to be busy, on its own.
+- **With `autoResume`**, it also wakes a paused workload 15 minutes ahead of the demand it expects. Turning `autoResume` on later loses nothing: the forecast has been learning all along, and wakes the workload ahead from then, once it acts.
+
 Hybernate uses a **Holt-Winters double seasonal model** to learn your workload's demand patterns and predict future resource needs. This page covers the mathematical model, how it builds confidence over time, how soon it acts and how to choose that, how it starts from your Prometheus history, and how it handles pattern shifts. Every figure on it is measured by the [simulator](#proving-it), which runs the operator's own engine and rules.
 
 ## The Idea
