@@ -316,6 +316,20 @@ func TestHeadlineFor_Live(t *testing.T) {
 	assert.Equal(t, "a month, what these workloads cost while running", facts[0].Label)
 }
 
+// A live workload Hybernate never pauses is managed, but not counted among
+// those it pauses, in the report as in the terminal.
+func TestHeadlineFor_LiveProtected(t *testing.T) {
+	result := scanResult{ClusterReport: &discovery.ClusterReport{Mode: discovery.ModeSnapshot,
+		Totals: discovery.Totals{Workloads: 3, Live: 1, LiveProtected: 1, FreedThisMonth: 0.03}}}
+
+	h, facts := headlineFor(result)
+
+	assert.Equal(t, "<$1", h.Figures[0].Value)
+	assert.Equal(t, "so far, pausing 1 live workload; $0 of it saved as nodes scaled down", h.Figures[0].Detail)
+	assert.Equal(t, fact{Value: "2 of 3", Label: "managed by Hybernate: 1 live, 0 in dry-run, 1 live but protected, " +
+		"so never paused"}, facts[len(facts)-1])
+}
+
 func TestWriteHTML_ByNamespace(t *testing.T) {
 	page := buildReport(historyResult(), time.Hour)
 

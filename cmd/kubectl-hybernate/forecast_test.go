@@ -17,6 +17,8 @@ limitations under the License.
 package main
 
 import (
+	"bytes"
+	"context"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
@@ -25,23 +27,33 @@ import (
 	"testing"
 	"time"
 
+	"github.com/spf13/pflag"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/client-go/rest"
 	"k8s.io/utils/ptr"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/interceptor"
 
 	v1alpha1 "github.com/okedeji/hybernate/api/v1alpha1"
 	"github.com/okedeji/hybernate/internal/discovery"
+	"github.com/okedeji/hybernate/internal/forecast"
 )
 
 // officePrometheus answers history queries with a pod requesting 100m busy
 // at 40m on weekdays from 09:10 to 17:30 UTC, and at 1m otherwise.
 func officePrometheus(t *testing.T) *httptest.Server {
+	t.Helper()
+	return officePrometheusSince(t, time.Time{})
+}
+
+// officePrometheusSince is officePrometheus with no history before since,
+// as a Prometheus installed then keeps.
+func officePrometheusSince(t *testing.T, since time.Time) *httptest.Server {
 	t.Helper()
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if strings.HasSuffix(r.URL.Path, "/api/v1/query") {
@@ -53,7 +65,11 @@ func officePrometheus(t *testing.T) *httptest.Server {
 		end, _ := strconv.ParseInt(q.Get("end"), 10, 64)
 		step, _ := strconv.ParseInt(q.Get("step"), 10, 64)
 		var values [][2]any
-		for at := start; at <= end; at += step {
+		first := start
+		for first < since.Unix() {
+			first += step
+		}
+		for at := first; at <= end; at += step {
 			cores := 0.001
 			t := time.Unix(at, 0).UTC()
 			since := t.Sub(time.Date(t.Year(), t.Month(), t.Day(), 0, 0, 0, 0, time.UTC))
@@ -84,14 +100,35 @@ func forecastCluster() []client.Object {
 	}
 }
 
-func TestCLI_ForecastJSON(t *testing.T) {
-	prom := officePrometheus(t)
-	out, err := runCLI(t, newStatusClient(t, interceptor.Funcs{}, forecastCluster()...), "forecast", "-n",
-		"preview-42", "-o", "json", "--prometheus-url", prom.URL)
-	require.NoError(t, err, out)
+// replayAt replays the forecast over the cluster objs as forecast -n
+// preview-42 does, with the replay's clock at now, and returns the JSON it
+// prints.
+func replayAt(t *testing.T, now time.Time, promURL string, objs ...client.Object) forecastResult {
+	t.Helper()
+	writeKubeconfig(t, "https://127.0.0.1:1", "preview-42")
+	c := newStatusClient(t, interceptor.Funcs{}, objs...)
+	kube := addKubeFlags(pflag.NewFlagSet("forecast", pflag.ContinueOnError),
+		func(*rest.Config) (client.Client, error) { return c, nil })
+	prom, err := prometheusFrom(prometheusOptions{url: promURL})
+	require.NoError(t, err)
+	opts := forecastOptions{kube: kube, namespaces: namespaceFlags{names: []string{"preview-42"}}, window: "28d",
+		cpuThreshold: defaultCPUThreshold, idleAfter: time.Hour, now: func() time.Time { return now }}
 
-	var result forecastResult
-	require.NoError(t, json.Unmarshal([]byte(out), &result))
+	result, _, err := replayCluster(context.Background(), forecastRun{window: 28 * 24 * time.Hour, prom: prom,
+		mode: forecast.Balanced}, time.UTC, opts)
+	require.NoError(t, err)
+	var out bytes.Buffer
+	require.NoError(t, writeOutput(&out, outputJSON, result, nil))
+	var decoded forecastResult
+	require.NoError(t, json.Unmarshal(out.Bytes(), &decoded))
+	return decoded
+}
+
+func TestForecastJSON(t *testing.T) {
+	sunday := time.Date(2026, 10, 25, 12, 0, 0, 0, time.UTC)
+
+	result := replayAt(t, sunday, officePrometheus(t).URL, forecastCluster()...)
+
 	assert.Equal(t, "balanced", result.Setting)
 	assert.Equal(t, "UTC", result.Timezone)
 	require.Len(t, result.Workloads, 1)
@@ -100,7 +137,8 @@ func TestCLI_ForecastJSON(t *testing.T) {
 	assert.Equal(t, 75, f.Threshold)
 	assert.True(t, f.IfOptedIn.Acting, "four weeks of office hours, learned at once")
 	require.NotNil(t, f.Replay)
-	assert.Equal(t, 10, f.Replay.UsedDays, "two weeks replayed")
+	assert.Equal(t, time.Date(2026, 10, 11, 12, 0, 0, 0, time.UTC), f.Replay.From)
+	assert.Equal(t, 10, f.Replay.UsedDays, "the two weeks from Sunday noon to Sunday noon have ten weekdays")
 	assert.GreaterOrEqual(t, f.Replay.Ready, 7)
 	assert.Zero(t, f.Replay.Missed)
 	assert.LessOrEqual(t, f.Replay.WastedWakes, 1)
@@ -115,7 +153,8 @@ func TestCLI_ForecastTable(t *testing.T) {
 	assert.Contains(t, out, "NAMESPACE   NAME  FORECAST           READY")
 	assert.Contains(t, out, "preview-42  api   acts from day one")
 	assert.Contains(t, out, ", 25m ahead")
-	assert.Contains(t, out, "Name a workload to see\nit day by day.")
+	assert.Contains(t, out, "Name a workload to see\nit day by day, and for one Hybernate manages, what its own "+
+		"forecast is doing now.")
 }
 
 func TestCLI_ForecastOneWorkload(t *testing.T) {
@@ -124,15 +163,46 @@ func TestCLI_ForecastOneWorkload(t *testing.T) {
 		"preview-42", "--prometheus-url", prom.URL, "--timezone", "Europe/London")
 	require.NoError(t, err, out)
 
-	assert.Contains(t, out, "preview-42/api: acts from day one, at a confidence of 75%.")
+	assert.Contains(t, out, ": the forecast of preview-42/api, times in Europe/London\n")
+	assert.Contains(t, out, "Replayed over its last 28 days of CPU history, from "+prom.URL+":\n"+
+		"  Opted in today: acts from day one, at a confidence of 75%.")
+	assert.NotContains(t, out, "Hybernate's forecast", "Hybernate doesn't manage it")
 	assert.Contains(t, out, "DAY")
 	assert.Contains(t, out, "FOUND IT")
-	assert.Contains(t, out, "times in Europe/London")
 	assert.Contains(t, out, "Ready on ")
 
 	_, err = runCLI(t, newStatusClient(t, interceptor.Funcs{}, forecastCluster()...), "forecast", "web", "-n",
 		"preview-42", "--prometheus-url", prom.URL)
-	require.ErrorContains(t, err, "no workload web with CPU history")
+	require.EqualError(t, err, "no Deployment or StatefulSet named web in preview-42; check the name and the namespace")
+}
+
+// The scan's note on the cluster's infrastructure is about what pausing
+// could free; the forecast has no totals or next steps to leave it out of,
+// so it doesn't say it, for the cluster or for one workload.
+func TestCLI_ForecastLeavesOutTheInfrastructureNote(t *testing.T) {
+	prom := officePrometheus(t)
+	ingress := &appsv1.Deployment{ObjectMeta: metav1.ObjectMeta{Name: "ingress-nginx-controller",
+		Namespace: "preview-42", Labels: map[string]string{"app.kubernetes.io/name": "ingress-nginx"}},
+		Spec: appsv1.DeploymentSpec{Replicas: ptr.To[int32](1),
+			Selector: &metav1.LabelSelector{MatchLabels: map[string]string{"app": "ingress"}},
+			Template: corev1.PodTemplateSpec{ObjectMeta: metav1.ObjectMeta{Labels: map[string]string{"app": "ingress"}},
+				Spec: corev1.PodSpec{Containers: []corev1.Container{{Name: "controller"}}}}}}
+	objs := append(forecastCluster(), ingress)
+
+	for _, args := range [][]string{{"forecast"}, {"forecast", "api"}} {
+		t.Run(strings.Join(args, " "), func(t *testing.T) {
+			out, err := runCLI(t, newStatusClient(t, interceptor.Funcs{}, objs...),
+				append(args, "-n", "preview-42", "--prometheus-url", prom.URL)...)
+
+			require.NoError(t, err, out)
+			assert.Contains(t, out, "preview-42")
+			assert.NotContains(t, out, "infrastructure workload")
+		})
+	}
+	scan, err := runCLI(t, newStatusClient(t, interceptor.Funcs{}, objs...), "scan", "-n", "preview-42",
+		"--window", "0", "--open=false")
+	require.NoError(t, err, scan)
+	assert.Contains(t, scan, "1 infrastructure workload is left out of the totals and next steps", "scan keeps it")
 }
 
 // The forecast counts hours in the operator's time zone, which its
@@ -166,10 +236,12 @@ func TestWriteForecast_TooLittleHistory(t *testing.T) {
 	var out strings.Builder
 
 	require.NoError(t, writeForecast(&out, forecastResult{Cluster: "prelaunch", Prometheus: "monitoring/prometheus",
-		HistoryHours: 4, HistorySince: since, Timezone: "UTC"}, false, time.UTC))
+		HistoryHours: 4, HistorySince: since, Timezone: "UTC", managed: "api -n orders"}, time.UTC))
 
 	assert.Contains(t, out.String(), "4 hours of CPU history is too little to replay the forecast over: it needs "+
-		"at least 2 days.\n  Run it again after Fri 23 Oct 02:00 UTC.")
+		"at least 2 days.\n  Run it again after Fri 23 Oct 02:00 UTC.\n"+
+		"  To see what Hybernate's own forecast of a workload it manages is doing, which needs no history, name it: "+
+		"kubectl hybernate forecast api -n orders\n")
 	assert.NotContains(t, out.String(), "No workload has CPU history")
 }
 
@@ -193,21 +265,6 @@ func TestCLI_ForecastRejectsBadFlags(t *testing.T) {
 			require.Error(t, err)
 		})
 	}
-}
-
-func TestPickWorkload(t *testing.T) {
-	workloads := []forecastWorkload{
-		{Namespace: "a", Kind: v1alpha1.TargetKindDeployment, Name: "api"},
-		{Namespace: "b", Kind: v1alpha1.TargetKindDeployment, Name: "api"},
-		{Namespace: "a", Kind: v1alpha1.TargetKindStatefulSet, Name: "db"},
-	}
-	got, err := pickWorkload(workloads, "statefulset/db")
-	require.NoError(t, err)
-	assert.Equal(t, "db", got[0].Name)
-	_, err = pickWorkload(workloads, "api")
-	require.ErrorContains(t, err, "api is a/deployment/api and b/deployment/api")
-	_, err = pickWorkload(workloads, "deployment/db")
-	require.Error(t, err)
 }
 
 func TestSpanOf(t *testing.T) {

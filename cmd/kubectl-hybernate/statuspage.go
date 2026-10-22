@@ -127,7 +127,7 @@ func buildStatusPage(result statusResult, since time.Duration, now time.Time) st
 	if result.NodesNotScalingDown {
 		page.Attention = append(page.Attention, attentionRow{Type: "Nodes not scaling down",
 			Message: fmt.Sprintf("Pausing freed %s this month, but only %s of it came off the bill. "+
-				"kubectl hybernate nodes shows why.", savedMoney(result.FreedThisMonth), savedMoney(result.SavedThisMonth))})
+				"kubectl hybernate nodes shows why.", dollars(result.FreedThisMonth), dollars(result.SavedThisMonth))})
 	}
 	for _, pr := range result.Problems {
 		page.Attention = append(page.Attention, attentionRow{Workload: pr.Workload, Namespace: pr.Namespace,
@@ -145,7 +145,7 @@ func buildStatusPage(result statusResult, since time.Duration, now time.Time) st
 			LastActivity:  activityCell(wl, now),
 			Next:          wl.Next,
 			Forecast:      forecastCell(wl),
-			Freed:         moneyCell(wl.FreedThisMonth),
+			Freed:         statusFreedCell(wl),
 			FreedSort:     wl.FreedThisMonth,
 			SavedNote:     savedNote(wl),
 			WouldFree:     wouldFreeCell(wl),
@@ -180,18 +180,18 @@ func buildStatusPage(result statusResult, since time.Duration, now time.Time) st
 // that was saved, then, when any workload is in dry-run, what dry-run
 // measured pausing would have freed.
 func statusFigures(result statusResult) []figure {
-	saved := figure{Value: savedMoney(result.SavedThisMonth), Label: "saved of it",
+	saved := figure{Value: dollars(result.SavedThisMonth), Label: "saved of it",
 		Detail: "what came off the bill as nodes scaled down"}
 	if len(result.SavingsUnknown) > 0 {
 		saved.Detail = "for the workloads whose savings can be measured"
 	}
 	figures := []figure{
-		{Value: savedMoney(result.FreedThisMonth), Label: "freed by pausing this month",
+		{Value: dollars(result.FreedThisMonth), Label: "freed by pausing this month",
 			Detail: "what the paused replicas request, at list price"},
 		saved,
 	}
 	if n, since := dryRunMeasured(result.Workloads); n > 0 && since != nil {
-		figures = append(figures, figure{Value: savedMoney(result.WouldFree), Label: "pausing would have freed",
+		figures = append(figures, figure{Value: dollars(result.WouldFree), Label: "pausing would have freed",
 			Detail: fmt.Sprintf("measured in dry-run since %s, for %s", since.Format("Jan 2"),
 				countOf(n, "workload"))})
 	}
@@ -204,10 +204,10 @@ func savedNote(wl statusWorkload) string {
 	if wl.FreedThisMonth == 0 {
 		return ""
 	}
-	switch saved := statusSavedCell(wl); saved {
-	case "unknown":
+	switch saved := statusSavedCell(wl); {
+	case saved == "unknown":
 		return "saved can't be measured"
-	case "-":
+	case wl.SavedThisMonth == 0:
 		return "none of it saved yet"
 	default:
 		return saved + " saved"

@@ -480,8 +480,12 @@ func headlineFor(result scanResult) (headline, []fact) {
 	} else {
 		facts = append(facts, fact{Value: cents(t.IdleHourlyCost), Label: "an hour, what idle workloads cost while running"})
 	}
-	facts = append(facts, fact{Value: fmt.Sprintf("%d of %d", t.Live+t.DryRun, t.Workloads),
-		Label: fmt.Sprintf("managed by Hybernate: %d live, %d in dry-run", t.Live, t.DryRun)})
+	managed := fact{Value: fmt.Sprintf("%d of %d", t.Live+t.LiveProtected+t.DryRun, t.Workloads),
+		Label: fmt.Sprintf("managed by Hybernate: %d live, %d in dry-run", t.Live, t.DryRun)}
+	if t.LiveProtected > 0 {
+		managed.Label += fmt.Sprintf(", %d live but protected, so never paused", t.LiveProtected)
+	}
+	facts = append(facts, managed)
 	return h, facts
 }
 

@@ -160,6 +160,10 @@ type Workload struct {
 	// as for a StatefulSet that deletes its PVCs when scaled down, so it's
 	// left out of what pausing could free.
 	WontPause string `json:"wontPause,omitempty"`
+	// protectedByHybernate says its ManagedWorkload is Protected: Hybernate
+	// never pauses it, for a reason the scan may not see, such as the
+	// operator's protectedNamespaces.
+	protectedByHybernate bool
 	// Platform is the part of the cluster's own infrastructure it runs, such
 	// as Kubernetes, Hybernate or cert-manager, for one the scan leaves out
 	// of what pausing could free.
@@ -258,7 +262,11 @@ type Totals struct {
 	DryRun         int          `json:"dryRun"`
 	FreedThisMonth float64      `json:"freedThisMonth"`
 	SavedThisMonth float64      `json:"savedThisMonth"`
-	Live           int          `json:"live"`
+	// Live is how many workloads Hybernate pauses while idle, and
+	// LiveProtected how many more are live but never paused: in a protected
+	// namespace, part of Hybernate, or deleting their PVCs when scaled down.
+	Live          int `json:"live"`
+	LiveProtected int `json:"liveProtected"`
 }
 
 // ReplayTotals sum what replaying the activity clock found.
@@ -384,7 +392,9 @@ func (s *Scanner) ScanCluster(ctx context.Context, opts ClusterOptions) (*Cluste
 		incomplete.Unscanned = unscanned
 	}
 	report.Incomplete = incomplete
-	if len(report.Platform) > 0 {
+	// A forecast replay has no totals or next steps to leave the cluster's
+	// infrastructure out of.
+	if len(report.Platform) > 0 && opts.Forecast == nil {
 		report.Notes = append(report.Notes, platformNote(report.Platform))
 	}
 	if report.History != nil && !since.IsZero() {
@@ -762,6 +772,8 @@ func totals(workloads []Workload) Totals {
 			t.Measured.SleptHours += w.Measured.SleptHours
 			t.Measured.Freed += w.Measured.Freed
 			t.Measured.MonthlyFreed += w.Measured.MonthlyFreed
+		case w.Managed && !w.DryRun && (w.Protected || w.WontPause != "" || w.protectedByHybernate):
+			t.LiveProtected++
 		case w.Managed && !w.DryRun:
 			t.Live++
 		}
