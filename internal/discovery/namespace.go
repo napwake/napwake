@@ -24,6 +24,7 @@ import (
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
+	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/apimachinery/pkg/types"
@@ -160,6 +161,8 @@ func (s *Scanner) scanNamespace(ctx, historyCtx context.Context, namespace strin
 			DryRun:    mw != nil && mw.Spec.DryRun,
 			Protected: protected,
 			Platform:  platform[string(wl.kind)+"/"+obj.GetName()],
+
+			protectedByHybernate: hybernateProtects(mw),
 		}
 		w.recordGitOps(reads.gitOps.Replicas(ctx, obj))
 		rollouts := owners.rollouts[obj.GetUID()]
@@ -249,6 +252,12 @@ func (s *Scanner) readHistoryOf(ctx, historyCtx context.Context, scan *namespace
 		scan.historySince = time.Unix(first, 0).UTC()
 	}
 	return history
+}
+
+// hybernateProtects reports whether a workload's ManagedWorkload says
+// Hybernate never pauses it.
+func hybernateProtects(mw *v1alpha1.ManagedWorkload) bool {
+	return mw != nil && meta.IsStatusConditionTrue(mw.Status.Conditions, "Protected")
 }
 
 // wontPause says why the operator refuses to pause a workload whatever its

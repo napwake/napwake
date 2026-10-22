@@ -655,6 +655,25 @@ func TestScanCluster_ProtectedNamespace(t *testing.T) {
 	assert.Zero(t, report.Totals.Replayed.Workloads, "not counted")
 }
 
+// A live workload Hybernate never pauses, for a reason the scan can't see
+// itself, such as the operator's protectedNamespaces, is counted apart from
+// those it pauses.
+func TestScanCluster_LiveProtectedCountedApart(t *testing.T) {
+	protected := managedFor("guarded", v1alpha1.ManagedWorkloadStatus{Phase: v1alpha1.PhaseRunning,
+		Conditions: []metav1.Condition{{Type: "Protected", Status: metav1.ConditionTrue,
+			Reason: "ProtectedNamespace", Message: "namespace matches protectedNamespaces"}}})
+	live := managedFor("live", v1alpha1.ManagedWorkloadStatus{Phase: v1alpha1.PhaseRunning})
+	objs := append(deploymentWithRollout("guarded", testNamespace, 1, 30*24*time.Hour), protected,
+		makePodMetrics("guarded", testNamespace, "1m", "10Mi"))
+	objs = append(objs, deploymentWithRollout("live", testNamespace, 1, 30*24*time.Hour)...)
+	objs = append(objs, live, makePodMetrics("live", testNamespace, "1m", "10Mi"))
+
+	report := scanWorkloads(t, objs...)
+
+	assert.Equal(t, 1, report.Totals.Live)
+	assert.Equal(t, 1, report.Totals.LiveProtected)
+}
+
 // A workload put back in dry-run keeps what it saved this month while live;
 // its would-be pauses since are measured, never added to what was saved.
 func TestScanCluster_SavedBeforeGoingBackToDryRun(t *testing.T) {

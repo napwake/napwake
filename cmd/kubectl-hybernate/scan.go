@@ -701,6 +701,9 @@ func writeHeadline(p *printer, result scanResult) {
 		p.line("  Hybernate has freed %s this month, and saved %s of it, pausing workloads since put back in dry-run.",
 			dollars(t.FreedThisMonth), dollars(t.SavedThisMonth))
 	}
+	if t.LiveProtected > 0 {
+		p.line("  %s", liveProtected(t))
+	}
 	if t.DryRun > 0 {
 		p.line("  %s in dry-run: measured by Hybernate since starting, %s would have slept %s, freeing %s,",
 			plural(t.DryRun, "workload is", "workloads are"), pronoun(t.DryRun),
@@ -735,7 +738,7 @@ func writeHeadline(p *printer, result scanResult) {
 		} else {
 			p.line("  Replaying %s, Hybernate would have paused %d of %s for %s in all,",
 				replayed, r.Sleepers, countOf(r.Workloads, "unmanaged workload"), hoursTotal(r.SleepHours))
-			p.line("  and freed %s: about %s/month.", savedMoney(r.Freed), dollars(r.MonthlyFreed))
+			p.line("  and freed %s: about %s/month.", dollars(r.Freed), dollars(r.MonthlyFreed))
 		}
 		switch {
 		case tooLittleHistory(result.History) && r.Sleepers == 0:
@@ -749,6 +752,19 @@ func writeHeadline(p *printer, result scanResult) {
 		}
 	}
 	p.line("")
+}
+
+// liveProtected says how many live workloads Hybernate never pauses, which
+// the count of those it pauses leaves out.
+func liveProtected(t discovery.Totals) string {
+	more := ""
+	if t.Live > 0 {
+		more = " more"
+	}
+	if t.LiveProtected == 1 {
+		return "1" + more + " live workload is protected, so Hybernate never pauses it."
+	}
+	return fmt.Sprintf("%d%s live workloads are protected, so Hybernate never pauses them.", t.LiveProtected, more)
 }
 
 // notReplayed says which unmanaged workloads the table lists that the
@@ -828,7 +844,7 @@ func replayedOver(h *discovery.HistorySource) string {
 
 // hoursTotal writes a number of hours with thousands separated.
 func hoursTotal(h float64) string {
-	return strings.TrimPrefix(dollars(h), "$") + " hours"
+	return thousands(int64(math.Round(h))) + " hours"
 }
 
 // splitJudged separates the workloads the scan could judge from those it
@@ -1021,7 +1037,15 @@ func scanSavedCell(wl Workload) string {
 }
 
 func hasPaused(wl Workload) bool {
-	return wl.Managed && (!wl.DryRun || wl.FreedThisMonth > 0 || wl.SavedThisMonth > 0)
+	return wl.Managed && showsFreed(wl.DryRun, wl.FreedThisMonth, wl.SavedThisMonth)
+}
+
+// showsFreed says a managed workload's freed and saved this month are
+// shown, as money, even $0: Hybernate pauses it, or it freed something
+// while it did. One only ever measured in dry-run shows "-" for them, in
+// scan and status alike.
+func showsFreed(dryRun bool, freed, saved float64) bool {
+	return !dryRun || freed > 0 || saved > 0
 }
 
 // freedBecomesSaved says what turns freed capacity into savings, once a
@@ -1407,18 +1431,29 @@ func cents(amount float64) string {
 }
 
 // dollars formats whole dollars with thousands separators, a negative
-// amount with its sign before the dollar sign.
+// amount with its sign before the dollar sign. An amount above zero that
+// rounds to nothing isn't nothing, so it's <$1: $0 is only for none. Every
+// command shows money this way, so scan and status agree.
 func dollars(amount float64) string {
+	if amount > 0 && amount < 0.5 {
+		return "<$1"
+	}
 	sign := ""
 	if amount < 0 {
 		sign, amount = "-", -amount
 	}
-	s := strconv.FormatInt(int64(math.Round(amount)), 10)
+	rounded := int64(math.Round(amount))
+	if rounded == 0 {
+		sign = ""
+	}
+	return sign + "$" + thousands(rounded)
+}
+
+// thousands writes n with its thousands separated by commas.
+func thousands(n int64) string {
+	s := strconv.FormatInt(n, 10)
 	for i := len(s) - 3; i > 0; i -= 3 {
 		s = s[:i] + "," + s[i:]
 	}
-	if s == "0" {
-		sign = ""
-	}
-	return sign + "$" + s
+	return s
 }

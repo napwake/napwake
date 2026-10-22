@@ -191,7 +191,7 @@ Needs attention:
   preview-42   deployment/api         paused              3h    request, 4h ago    wakes on a request or activity              acting                      $12                $10     -
   preview-42   statefulset/postgres   running             5h    cpu, 2h ago        held awake while preview-7/worker uses it   -                           $30                $25     -
   preview-7    deployment/web         running (dry-run)   2h    rollout, 15m ago   would pause in 45m                          learning, acts from Oct 8   -                  -       $7
-  preview-7    deployment/worker      resuming            25m   -                  -                                           -                           -                  -       -
+  preview-7    deployment/worker      resuming            25m   -                  -                                           -                           $0                 $0      -
 
 Recent pauses and wakes:
   30m ago   preview-7/worker   scaled up to 2 replicas by argocd-controller outside Hybernate; counted as activity
@@ -749,7 +749,8 @@ func TestStatus_DryRunLeadsWithWhatItWouldFree(t *testing.T) {
 	assert.Regexp(t, `FREED THIS MONTH\s+SAVED\s+WOULD FREE\n`, out.String())
 	assert.Regexp(t, `deployment/api\s+running \(dry-run\) .*-\s+-\s+\$0\n`, out.String())
 	assert.Regexp(t, `deployment/web\s+idle \(dry-run\) .*-\s+-\s+\$13\n`, out.String())
-	assert.Regexp(t, `deployment/worker\s+paused .*-\s+-\s+-\n`, out.String())
+	assert.Regexp(t, `deployment/worker\s+paused .*-\s+\$0\s+\$0\s+-\n`, out.String(),
+		"a live workload that has freed nothing yet shows $0, as scan does; only dry-run's show -")
 	assert.InDelta(t, 12.6, result.WouldFree, 0.001)
 	require.NotNil(t, result.Workloads[1].WouldFree)
 	assert.InDelta(t, 12.6, *result.Workloads[1].WouldFree, 0.001)

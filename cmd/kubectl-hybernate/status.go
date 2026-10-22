@@ -911,8 +911,8 @@ func writeStatusTable(w io.Writer, result statusResult, now time.Time) error {
 		p.line("  %s", spot)
 	}
 	if result.FreedThisMonth > 0 || result.SavedThisMonth > 0 {
-		p.line("  Freed %s this month, and saved %s of it.", savedMoney(result.FreedThisMonth),
-			savedMoney(result.SavedThisMonth))
+		p.line("  Freed %s this month, and saved %s of it.", dollars(result.FreedThisMonth),
+			dollars(result.SavedThisMonth))
 	}
 	for _, why := range result.SavingsUnknown {
 		p.line("  What's saved can't be measured for some workloads: %s", oneLine(why))
@@ -926,7 +926,7 @@ func writeStatusTable(w io.Writer, result statusResult, now time.Time) error {
 		p.line("Needs attention:")
 		if result.NodesNotScalingDown {
 			p.line("  Pausing freed %s this month, but only %s of it came off the bill: nodes aren't scaling down.",
-				savedMoney(result.FreedThisMonth), savedMoney(result.SavedThisMonth))
+				dollars(result.FreedThisMonth), dollars(result.SavedThisMonth))
 			p.line("  kubectl hybernate nodes shows why.")
 		}
 		tw := tabwriter.NewWriter(p, 0, 0, 3, ' ', 0)
@@ -947,7 +947,7 @@ func writeStatusTable(w io.Writer, result statusResult, now time.Time) error {
 	for _, wl := range result.Workloads {
 		_, _ = fmt.Fprintf(tw, "  %s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s", wl.Namespace, workloadCell(wl),
 			stateCell(wl), sinceCell(wl.Since, now), activityCell(wl, now), wl.Next, forecastCell(wl),
-			moneyCell(wl.FreedThisMonth), statusSavedCell(wl))
+			statusFreedCell(wl), statusSavedCell(wl))
 		if dryRun {
 			_, _ = fmt.Fprintf(tw, "\t%s", wouldFreeCell(wl))
 		}
@@ -1022,7 +1022,7 @@ func dryRunSummary(workloads []statusWorkload) string {
 	}
 	s := fmt.Sprintf("%d in dry-run, never paused", n)
 	if since != nil {
-		s += fmt.Sprintf(": pausing %s would have freed %s since %s", pronounObject(n), savedMoney(wouldFree),
+		s += fmt.Sprintf(": pausing %s would have freed %s since %s", pronounObject(n), dollars(wouldFree),
 			since.Format("Jan 2"))
 	}
 	return s
@@ -1129,10 +1129,22 @@ func activityCell(wl statusWorkload, now time.Time) string {
 // statusSavedCell is what pausing a workload took off the bill this month,
 // or "unknown" when the operator can't measure it.
 func statusSavedCell(wl statusWorkload) string {
+	if !showsFreed(wl.DryRun, wl.FreedThisMonth, wl.SavedThisMonth) {
+		return "-"
+	}
 	if wl.SavingsUnknown != "" && wl.SavedThisMonth == 0 {
 		return "unknown"
 	}
-	return moneyCell(wl.SavedThisMonth)
+	return dollars(wl.SavedThisMonth)
+}
+
+// statusFreedCell is what pausing a workload has freed this month, as
+// scan's FREED THIS MONTH shows it.
+func statusFreedCell(wl statusWorkload) string {
+	if !showsFreed(wl.DryRun, wl.FreedThisMonth, wl.SavedThisMonth) {
+		return "-"
+	}
+	return dollars(wl.FreedThisMonth)
 }
 
 // wouldFreeCell is what dry-run measured a workload would have freed, or
@@ -1142,23 +1154,7 @@ func wouldFreeCell(wl statusWorkload) string {
 	if wl.WouldFree == nil {
 		return "-"
 	}
-	return savedMoney(*wl.WouldFree)
-}
-
-func moneyCell(amount float64) string {
-	if amount == 0 {
-		return "-"
-	}
-	return savedMoney(amount)
-}
-
-// savedMoney is an amount in whole dollars, as scan shows one. An amount
-// under half a dollar isn't nothing, so it isn't shown as $0.
-func savedMoney(amount float64) string {
-	if amount > 0 && amount < 0.5 {
-		return "<$1"
-	}
-	return dollars(amount)
+	return dollars(*wl.WouldFree)
 }
 
 func ago(t, now time.Time) string {
