@@ -592,7 +592,7 @@ func nextFor(w *v1alpha1.ManagedWorkload, targetActiveUntil, now time.Time) stri
 	}
 	switch w.Status.Phase {
 	case v1alpha1.PhasePaused:
-		return pausedEarly(w.Status.Activity, "paused ", "expected", "; ") + wakesOn(w)
+		return pausedEarly(w.Status.Activity, "paused ", "; ", true, now) + wakesOn(w)
 	case v1alpha1.PhaseRunning, v1alpha1.PhaseIdle:
 	default:
 		return "-"
@@ -640,7 +640,7 @@ func pausesNext(w *v1alpha1.ManagedWorkload, idle bool, now time.Time) string {
 		case meta.IsStatusConditionTrue(conditions, "IdleVetoed"):
 			return heldByForecast(a)
 		}
-		return verb + " now" + pausedEarly(a, ", ", "expects", "")
+		return verb + " now" + pausedEarly(a, ", ", "", false, now)
 	}
 	if a == nil || a.PauseAt == nil {
 		return "-"
@@ -710,12 +710,19 @@ func wakesOn(w *v1alpha1.ManagedWorkload) string {
 
 // pausedEarly says, between before and after, that the forecast brought a
 // workload's pause forward, before idleAfter ran out, and until when it
-// expects, or for a pause made, expected, quiet, as the operator recorded
-// it; empty for a pause the clock decided. The day is given, since a pause
-// made on Friday evening is still read on Sunday.
-func pausedEarly(a *v1alpha1.ActivityStatus, before, expects, after string) string {
+// expected quiet, as the operator recorded it; empty for a pause the clock
+// decided. It says the forecast expects quiet only of a pause not yet made
+// whose quiet hours are still ahead of now: a pause made says what it
+// expected then, and a would-be pause in dry-run, Idle until activity,
+// outlasts its quiet hours. The day is given, since a pause made on Friday
+// evening is still read on Sunday.
+func pausedEarly(a *v1alpha1.ActivityStatus, before, after string, made bool, now time.Time) string {
 	if a == nil || a.ForecastQuietUntil == nil {
 		return ""
+	}
+	expects := "expects"
+	if made || !a.ForecastQuietUntil.After(now) {
+		expects = "expected"
 	}
 	return before + "early: the forecast " + expects + " quiet until " +
 		a.ForecastQuietUntil.UTC().Format("Mon 15:04 UTC") + after
