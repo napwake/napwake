@@ -1,6 +1,6 @@
 # Dry Run Guide
 
-Dry run mode lets you observe what Hybernate would do without it ever reducing a workload's availability. The operator evaluates all policies, emits events, and updates predictions, but never pauses a workload. Wakes are never held back.
+Dry run mode lets you observe what Hybernate would do without it ever reducing a workload's availability. The activity clock, dependency holds and the forecast all run as they do live, and only the scale to zero is skipped, so what dry-run can't show is what happens once a workload is paused: how long a wake on request takes, and whether a GitOps tool scales it straight back up. Wakes are never held back.
 
 ## Enabling Dry Run
 
@@ -80,7 +80,7 @@ The operator runs its full evaluation pipeline:
 
 ### What Dry Run Measured
 
-Hybernate keeps a running summary of the pauses it would have made. A would-be pause starts when the activity clock runs out, and ends at the next activity, which is when a paused workload would have been woken. It also ends when Hybernate stops measuring it: the workload is scaled to zero outside Hybernate, labelled `hybernate.io/ignore`, or its namespace becomes protected; see [When Hybernate Lets Go](pause.md#when-hybernate-lets-go). It's counted up to that moment.
+Hybernate keeps a running summary of the pauses it would have made. A would-be pause starts when the activity clock runs out, and ends at the next activity, which is when a paused workload would have been woken. Two wakes are the exception. A request reaching a paused workload wakes it, but a workload in dry-run is still running, so a request counts only through the activity it shows, its CPU use or a [Prometheus activity query](prometheus-signals.md); and `autoResume` wakes a paused workload ahead of hours the forecast expects to be busy, which dry-run doesn't count. So for a workload that serves the odd light request, or has `autoResume` on, real pauses would be shorter than the would-be ones. A would-be pause also ends when Hybernate stops measuring it: the workload is scaled to zero outside Hybernate, labelled `hybernate.io/ignore`, or its namespace becomes protected; see [When Hybernate Lets Go](pause.md#when-hybernate-lets-go). It's counted up to that moment.
 
 What it would have freed is in the list of ManagedWorkloads:
 

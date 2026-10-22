@@ -6,9 +6,15 @@ Hybernate is installed in namespace {{ .Release.Namespace }}.
 
 The forecast, which learns when each workload is busy, counts hours and
 weekdays in {{ .Values.timezone }}.
-{{- if eq .Values.timezone "UTC" }} Set timezone to your users' zone, such as
---set timezone=Europe/London, so workloads wake for their mornings all year,
-through daylight saving.
+{{- if eq .Values.timezone "UTC" }} Set timezone to your users' zone, so workloads wake for
+their mornings all year, through daylight saving. This sets it, and keeps
+the other values you set:
+
+   helm upgrade {{ .Release.Name }} oci://ghcr.io/okedeji/charts/hybernate --version {{ .Chart.Version }} \
+     -n {{ .Release.Namespace }} --reset-then-reuse-values --set timezone=Europe/London
+
+If you install from a values file, set it there and upgrade with the file
+instead: {{ $docs }}operations/upgrading/#keeping-your-settings
 {{- end }}
 
 1. Check the operator and the doorman are running:

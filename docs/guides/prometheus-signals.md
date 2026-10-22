@@ -51,13 +51,22 @@ Prometheus queries can't be set with an annotation. On a ManagedWorkload created
 
 ## Prometheus Endpoint
 
-Set the Prometheus URL with the `prometheus.url` Helm value, which passes `--prometheus-url` to the operator. Pass the chart version you have installed as `--version`, which `helm list -n hybernate-system` shows, or Helm upgrades to the newest chart too:
+Set the Prometheus URL with the `prometheus.url` Helm value, which passes `--prometheus-url` to the operator. Add it to your values file:
+
+```yaml title="hybernate-values.yaml"
+timezone: Europe/London
+prometheus:
+  url: http://prometheus.monitoring.svc.cluster.local:9090
+```
+
+and upgrade with the file. Pass the chart version you have installed as `--version`, which `helm list -n hybernate-system` shows, or Helm upgrades to the newest chart too:
 
 ```bash
 helm upgrade hybernate oci://ghcr.io/okedeji/charts/hybernate --version X.Y.Z \
-  --namespace hybernate-system --reuse-values \
-  --set prometheus.url=http://prometheus.monitoring.svc.cluster.local:9090
+  --namespace hybernate-system -f hybernate-values.yaml
 ```
+
+Installed without a values file, see [Keeping your settings](../operations/upgrading.md#keeping-your-settings).
 
 The URL is the base of the Prometheus HTTP API, `http` or `https`; the operator refuses to start with any other. Hybernate appends `/api/v1/query` and keeps any path prefix, so endpoints like `https://mimir.example.com/prometheus` work as-is. It sends no credentials or headers, so a Prometheus that needs them must be reached through a proxy that adds them.
 
