@@ -1524,6 +1524,9 @@ func (r *Reconciler) transition(ctx context.Context, workload *v1alpha1.ManagedW
 	r.settleCost(ctx, workload)
 	if phase == v1alpha1.PhaseRunning {
 		workload.Status.Pause = nil
+		if a := workload.Status.Activity; a != nil {
+			a.ForecastQuietUntil = nil
+		}
 	}
 	old := workload.Status.Phase
 	workload.Status.Phase = phase
