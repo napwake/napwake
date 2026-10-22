@@ -71,17 +71,17 @@ helm upgrade hybernate oci://ghcr.io/okedeji/charts/hybernate \
   -f hybernate-values.yaml
 ```
 
-Without a file, `--reset-then-reuse-values`, in Helm 3.14 and later, keeps the release's values and adds yours, over the chart's own defaults:
+Without a file, `--reuse-values` keeps the release's values and adds yours:
 
 ```bash
 helm upgrade hybernate oci://ghcr.io/okedeji/charts/hybernate \
   --version X.Y.Z \
   --namespace hybernate-system \
-  --reset-then-reuse-values \
+  --reuse-values \
   --set timezone=America/New_York
 ```
 
-Not `--reuse-values`, which also keeps the defaults of the version installed, so to a newer version it gives none of the values that version adds. Upgrading 0.2.0-rc.3 to 0.2.0-rc.4 with it fails in Helm 3 and Helm 4 alike, with `nil pointer evaluating interface {}.enabled` for `doorman.negForwarder.enabled`, a value rc.4 added; without the failure, a default the new version changes would be quietly ignored.
+Upgrading to a newer version with it, Helm renders with the installed version's defaults rather than the new one's, and those lack every value added since. From 0.2.0 on, the chart fills those in from its own defaults, so upgrading with `--reuse-values` from any earlier version works, 0.2.0-rc.3 and rc.4 included, in Helm 3 and Helm 4 alike. What it still keeps is the installed version's default for each value both versions have, so a default the new version changes isn't picked up. Helm keeps those older defaults with the release, too, so after such an upgrade, a `--reuse-values` that sets a value to `null`, to remove a default, renders this version's default for it instead, and removes it only at the upgrade after. `--reset-then-reuse-values`, in Helm 3.14 and later, renders with the new version's defaults and keeps your values over them, as an upgrade with the values file does.
 
 ## Narrowing watchNamespaces
 

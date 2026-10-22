@@ -45,6 +45,7 @@ help: ## Display this help.
 manifests: controller-gen ## Generate WebhookConfiguration, ClusterRole and CustomResourceDefinition objects.
 	"$(CONTROLLER_GEN)" rbac:roleName=manager-role crd webhook paths="./..." output:crd:artifacts:config=config/crd/bases
 	./hack/chart-crds.sh config/crd/bases charts/hybernate/templates/crds
+	mkdir -p charts/hybernate/files && cp charts/hybernate/values.yaml charts/hybernate/files/defaults.yaml
 
 .PHONY: prices
 prices: ## Regenerate the on-demand and spot list prices nodes are priced at, before each release
@@ -248,8 +249,40 @@ check-chart: ## Lint the Helm chart, render it for each provider's Kubernetes ve
 		hack/chart-notes.sh 0.3.1 --set timezone=America/New_York | grep -qxF 'weekdays in America/New_York.' || { \
 		echo "the chart's NOTES don't name the time zone the forecast counts hours in, or ask for the users' when it's UTC"; exit 1; }
 	@notes=$$(hack/chart-notes.sh 0.3.1); grep -qF -- '--version 0.3.1 \' <<<"$$notes" && \
-		grep -qF -- '--reset-then-reuse-values --set timezone=' <<<"$$notes" || { \
+		grep -qF -- '--reuse-values --set timezone=' <<<"$$notes" || { \
 		echo "the chart's NOTES don't show setting the time zone at the installed version, keeping the other values: --set alone drops them"; exit 1; }
+	@# helm upgrade --reuse-values renders with the previous release's
+	@# defaults, which lack every value added since, so the chart fills
+	@# them in from files/defaults.yaml, a copy of its values.yaml.
+	@cmp -s charts/hybernate/values.yaml charts/hybernate/files/defaults.yaml || { \
+		echo "charts/hybernate/files/defaults.yaml isn't a copy of values.yaml, which the chart fills in missing values from; run make manifests"; exit 1; }
+	@[ "$$(awk '$$1 == "defaultsVersion:" {print $$2}' charts/hybernate/values.yaml)" = \
+		"$$(awk '$$1 == "version:" {print $$2}' charts/hybernate/Chart.yaml)" ] || { \
+		echo "values.yaml's defaultsVersion isn't Chart.yaml's version, so the chart can't tell its own defaults from an older release's"; exit 1; }
+	@missing=$$(grep -L '^{{- include "hybernate.defaults" . -}}$$' charts/hybernate/templates/*.yaml \
+		charts/hybernate/templates/crds/*.yaml charts/hybernate/templates/NOTES.txt || true); [ -z "$$missing" ] || { \
+		echo "$$missing"; echo "these templates don't start by filling in missing values, with {{- include \"hybernate.defaults\" . -}}"; exit 1; }
+	@[ "$$(hack/chart-fill.sh '{"off": false, "zero": 0, "empty": "", "list": ["mine"], "map": {"mine": 1, "emptied": {}}}' \
+		'{"off": true, "zero": 5, "empty": "x", "list": ["a", "b"], "map": {"mine": 2, "added": 3, "emptied": {"added": 4}}, "added": 6}')" = \
+		'{"added":6,"empty":"","list":["mine"],"map":{"added":3,"emptied":{"added":4},"mine":1},"off":false,"zero":0}' ] || { \
+		echo "hybernate.fill doesn't keep every value given, false, 0 and \"\" included, and add only the keys missing"; exit 1; }
+	@! helm template hybernate charts/hybernate --set resources.limits=null --show-only templates/deployment.yaml | grep -q 'limits:' || { \
+		echo "a default removed with null comes back, though Helm rendered with the chart's own defaults"; exit 1; }
+	@go build -o bin/manager cmd/main.go
+	@[ "$$(hack/chart-reuse-values.sh /dev/null)" = "$$(helm template hybernate charts/hybernate --namespace hybernate-system)" ] || { \
+		echo "with no defaults to render with, the chart doesn't fill in every value from its own, as helm upgrade --reuse-values needs"; exit 1; }
+	@out=$$(hack/chart-reuse-values.sh /dev/null --set doorman.enabled=false --set leaderElection.enabled=false); \
+		! grep -qE 'name: hybernate-doorman$$|--leader-elect' <<<"$$out" || { \
+		echo "filling in missing values overrode ones set to false"; exit 1; }
+	@for old in hack/testdata/chart-values/*.yaml; do \
+		out=$$(hack/chart-reuse-values.sh "$$old" --set timezone=Africa/Lagos) || { \
+			echo "the chart doesn't render with $$old as its defaults, as helm upgrade --reuse-values from that release does"; exit 1; }; \
+		! grep -nE '<nil>|<no value>|%!' <<<"$$out" || { \
+			echo "rendered with $$old as its defaults, as helm upgrade --reuse-values from that release does, the chart has values missing"; exit 1; }; \
+		grep -qF -- '"--timezone=Africa/Lagos"' <<<"$$out" || { echo "with $$old as its defaults, the chart drops a value set"; exit 1; }; \
+		go run ./hack/chartflags bin/manager <<<"$$out" || { echo "with $$old as its defaults, as helm upgrade --reuse-values from that release does"; exit 1; }; \
+	done
+	@helm template hybernate charts/hybernate --namespace hybernate-system | go run ./hack/chartflags bin/manager
 	@hack/chart-notes.sh 0.3.1 | awk '/okedeji.io\/hybernate\/0.3\/guides\/gitops\// {gitops = NR} /kubectl hybernate enable/ {enable = NR} \
 		END {exit !(gitops && gitops < enable)}' && test -f docs/guides/gitops.md || { \
 		echo "the chart's NOTES don't send Argo CD and Flux users to the GitOps guide before enable"; exit 1; }
@@ -348,6 +381,7 @@ bump: ## Bump the version in the chart, the kustomize image, and docs, and date 
 		perl -pi -e 's/(?<![\d.])\Q$$ENV{OLD}\E(?!\.?[\w-])/$$ENV{VERSION}/g' $(VERSIONED_DOCS)
 	@perl -pi -e 's/^version:.*/version: $$ENV{VERSION}/' charts/hybernate/Chart.yaml
 	@perl -pi -e 's/^appVersion:.*/appVersion: "v$$ENV{VERSION}"/' charts/hybernate/Chart.yaml
+	@perl -pi -e 's/^defaultsVersion:.*/defaultsVersion: $$ENV{VERSION}/' charts/hybernate/values.yaml charts/hybernate/files/defaults.yaml
 	@perl -pi -e 's/^  newTag:.*/  newTag: v$$ENV{VERSION}/' config/manager/kustomization.yaml
 	@[[ "$$VERSION" == *-* ]] || TODAY="$$(date -u +%F)" \
 		perl -pi -e 's/^## \[\Q$$ENV{VERSION}\E\] - Unreleased$$/## [$$ENV{VERSION}] - $$ENV{TODAY}/' CHANGELOG.md
@@ -358,6 +392,7 @@ verify-version: ## Fail unless the chart, the kustomize image, the docs and the 
 	@$(CHECK_VERSION)
 	@grep -qxF "version: $$VERSION" charts/hybernate/Chart.yaml || { echo "Chart.yaml's version isn't $$VERSION"; exit 1; }
 	@grep -qxF "appVersion: \"v$$VERSION\"" charts/hybernate/Chart.yaml || { echo "Chart.yaml's appVersion isn't v$$VERSION"; exit 1; }
+	@grep -qxF "defaultsVersion: $$VERSION" charts/hybernate/values.yaml || { echo "values.yaml's defaultsVersion isn't $$VERSION"; exit 1; }
 	@grep -qxF "  newTag: v$$VERSION" config/manager/kustomization.yaml || { echo "config/manager's image isn't v$$VERSION"; exit 1; }
 	@# The install and verify commands name the version whole: after
 	@# --version, as the image's or the chart's tag, or in a release

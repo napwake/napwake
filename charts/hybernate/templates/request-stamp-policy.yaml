@@ -1,3 +1,4 @@
+{{- include "hybernate.defaults" . -}}
 {{- if .Values.doorman.admissionPolicy.enabled }}
 {{- /*
 The operator learns which workload depends on which from the address in

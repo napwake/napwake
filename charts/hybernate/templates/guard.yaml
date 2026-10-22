@@ -1,3 +1,4 @@
+{{- include "hybernate.defaults" . -}}
 {{- /*
 Hook Jobs that refuse what would leave ManagedWorkloads with no operator:
 their finalizers would never run, their workloads would stay at 0

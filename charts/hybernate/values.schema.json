@@ -230,6 +230,7 @@
         {"type": "integer", "minimum": 1}
       ]
     },
-    "logEncoder": {"enum": ["json", "console"]}
+    "logEncoder": {"enum": ["json", "console"]},
+    "defaultsVersion": {"type": "string"}
   }
 }
