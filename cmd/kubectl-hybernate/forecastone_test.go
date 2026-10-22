@@ -247,6 +247,10 @@ func TestActsFrom(t *testing.T) {
 			"not known until it has seen every hour of the day"},
 		{"too irregular", operatorForecast{Learned: &forecastLearned{HoursOfDay: 24}},
 			"not expected within 4 weeks, if the coming days repeat the last week"},
+		{"observing, its state unread", operatorForecast{Reason: v1alpha1.ForecastObserving},
+			"not known until it has scored a day of its forecasts"},
+		{"observing all day", operatorForecast{Reason: v1alpha1.ForecastObserving,
+			Learned: &forecastLearned{HoursOfDay: 24}}, "not known until it has scored a day of its forecasts"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

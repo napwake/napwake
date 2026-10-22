@@ -479,6 +479,10 @@ func actsFrom(o *operatorForecast, loc *time.Location) string {
 			", if the coming days repeat the last week"
 	case o.Learned != nil && o.Learned.HoursOfDay < forecast.DailySeason:
 		return "not known until it has seen every hour of the day"
+	case o.Reason == v1alpha1.ForecastObserving:
+		// The operator projects no start while the forecast observes, so
+		// none recorded then says nothing about four weeks.
+		return "not known until it has scored a day of its forecasts"
 	}
 	return "not expected within 4 weeks, if the coming days repeat the last week"
 }
