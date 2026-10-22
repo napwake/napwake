@@ -493,7 +493,8 @@ func (r *Reconciler) handlePause(ctx context.Context, workload *v1alpha1.Managed
 	}
 	switch workload.Status.Phase {
 	case v1alpha1.PhaseRunning, v1alpha1.PhaseIdle:
-		if err := r.preparePause(ctx, workload, target); err != nil {
+		requested := why != nil && why.reason == ReasonPauseRequested
+		if err := r.preparePause(ctx, workload, target, requested); err != nil {
 			return nil, err
 		}
 		// The cache showed replicas the target no longer has: it was scaled
@@ -549,7 +550,7 @@ func (r *Reconciler) handlePause(ctx context.Context, workload *v1alpha1.Managed
 	} else {
 		r.emitEvent(workload, false, "Normal", ReasonPaused, actionPause, "paused")
 	}
-	return &ctrl.Result{RequeueAfter: r.pausedRecheck()}, nil
+	return &ctrl.Result{RequeueAfter: r.pausedRecheck(workload)}, nil
 }
 
 // conditionPauseIncomplete says the workload's last pause stopped waiting
@@ -576,8 +577,15 @@ func (r *Reconciler) clearPauseIncomplete(workload *v1alpha1.ManagedWorkload, ta
 }
 
 // preparePause records in workload.Status.Pause what the pause will change,
-// for the caller to persist before acting on it.
-func (r *Reconciler) preparePause(ctx context.Context, workload *v1alpha1.ManagedWorkload, target client.Object) error {
+// for the caller to persist before acting on it. A requested pause also
+// records whether a Prometheus activity query shows activity as it begins,
+// which then doesn't wake the workload until it has been quiet. An idle or
+// early pause doesn't: it begins once the idle clock has found the queries
+// quiet, earlier in the same reconcile, and asking them again could find a
+// message that arrived since, holding the pause until a queue that never
+// empties while the worker is paused went quiet.
+func (r *Reconciler) preparePause(ctx context.Context, workload *v1alpha1.ManagedWorkload, target client.Object,
+	requested bool) error {
 	if err := r.pauser.Prepare(ctx, workload); err != nil {
 		return fmt.Errorf("preparing to pause: %w", err)
 	}
@@ -585,6 +593,9 @@ func (r *Reconciler) preparePause(ctx context.Context, workload *v1alpha1.Manage
 	workload.Status.Pause.WakeAnnotations = &v1alpha1.WakeAnnotations{
 		Workload: activityAnnotationValues(workload),
 		Target:   activityAnnotationValues(target),
+	}
+	if requested {
+		workload.Status.Pause.QueryActiveSincePause = r.queryActiveAtPause(ctx, workload)
 	}
 	return nil
 }
@@ -645,7 +656,7 @@ func (r *Reconciler) recoverPause(ctx context.Context, workload *v1alpha1.Manage
 	r.emitEvent(workload, false, "Normal", ReasonPauseRecovered, actionPause,
 		"its pause record was lost, so it's taken up again from the %s annotation: paused, to wake to %d replicas",
 		v1alpha1.AnnotationPausedFrom, pause.PreviousReplicas)
-	return &ctrl.Result{RequeueAfter: r.pausedRecheck()}, nil
+	return &ctrl.Result{RequeueAfter: r.pausedRecheck(workload)}, nil
 }
 
 // pauseRecordOn is the copy of a pause record the target carries, read past
@@ -1524,6 +1535,9 @@ func (r *Reconciler) transition(ctx context.Context, workload *v1alpha1.ManagedW
 	r.settleCost(ctx, workload)
 	if phase == v1alpha1.PhaseRunning {
 		workload.Status.Pause = nil
+		if a := workload.Status.Activity; a != nil {
+			a.ForecastQuietUntil = nil
+		}
 	}
 	old := workload.Status.Phase
 	workload.Status.Phase = phase

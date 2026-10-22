@@ -440,14 +440,9 @@ func headlineFor(result scanResult) (headline, []fact) {
 	live := t.Live > 0 || t.FreedThisMonth > 0
 	var h headline
 	if live {
-		freed := figure{Value: dollars(t.FreedThisMonth), Label: "freed by Hybernate this month",
-			Detail: fmt.Sprintf("so far, pausing workloads since put back in dry-run; %s of it saved",
-				dollars(t.SavedThisMonth))}
-		if t.Live > 0 {
-			freed.Detail = fmt.Sprintf("so far, pausing %s; %s of it saved as nodes scaled down",
-				countOf(t.Live, "live workload"), dollars(t.SavedThisMonth))
-		}
-		h.Figures = append(h.Figures, freed)
+		h.Figures = append(h.Figures, figure{Value: dollars(t.FreedThisMonth), Label: "freed by Hybernate this month",
+			Detail: fmt.Sprintf("so far, pausing %s; %s of it saved as nodes scaled down", freedBy(t),
+				dollars(t.SavedThisMonth))})
 	}
 	if f, ok := couldFree(result, live); ok {
 		h.Figures = append(h.Figures, f)
@@ -480,9 +475,36 @@ func headlineFor(result scanResult) (headline, []fact) {
 	} else {
 		facts = append(facts, fact{Value: cents(t.IdleHourlyCost), Label: "an hour, what idle workloads cost while running"})
 	}
-	facts = append(facts, fact{Value: fmt.Sprintf("%d of %d", t.Live+t.DryRun, t.Workloads),
-		Label: fmt.Sprintf("managed by Hybernate: %d live, %d in dry-run", t.Live, t.DryRun)})
+	managed := fact{Value: fmt.Sprintf("%d of %d", t.Live+t.LiveProtected+t.DryRun, t.Workloads),
+		Label: fmt.Sprintf("managed by Hybernate: %d live, %d in dry-run", t.Live, t.DryRun)}
+	if t.LiveProtected > 0 {
+		managed.Label += fmt.Sprintf(", %d live but protected, so never paused", t.LiveProtected)
+	}
+	facts = append(facts, managed)
 	return h, facts
+}
+
+// freedBy says which workloads what Hybernate freed this month came from:
+// those live now, or with none live, those put back in dry-run, and those
+// since protected.
+func freedBy(t discovery.Totals) string {
+	freed, _ := unprotectedFreed(t)
+	var by []string
+	switch {
+	case t.Live > 0:
+		by = append(by, countOf(t.Live, "live workload"))
+	case anyMoney(freed) && t.DryRun > 0:
+		by = append(by, "workloads since put back in dry-run")
+	case anyMoney(freed):
+		by = append(by, "workloads")
+	}
+	if anyMoney(t.ProtectedFreedThisMonth) {
+		by = append(by, "workloads since protected")
+	}
+	if len(by) == 0 {
+		return "workloads"
+	}
+	return strings.Join(by, " and ")
 }
 
 // couldFree is the headline's figure for what pausing could free a month:

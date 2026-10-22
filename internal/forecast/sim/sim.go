@@ -17,10 +17,11 @@ limitations under the License.
 // Package sim runs the forecast engine and the operator's decision rules
 // through simulated time: the activity clock pausing an idle workload, the
 // forecast holding off a pause and autoResume waking ahead of demand, the
-// doorman waking it on a request, and each hour's peak fed to the forecast,
-// as the operator does for a ManagedWorkload, a look at a time. Months of
-// traffic take milliseconds, so what the forecast does with a pattern, and
-// how long it takes to start, can be measured rather than guessed.
+// doorman or an activity query waking it, and each hour's peak fed to the
+// forecast, as the operator does for a ManagedWorkload, a look at a time.
+// Months of traffic take milliseconds, so what the forecast does with a
+// pattern, and how long it takes to start, can be measured rather than
+// guessed.
 package sim
 
 import (
@@ -46,9 +47,18 @@ type Settings struct {
 	CPUThreshold int
 	IdleAfter    time.Duration
 	AutoResume   bool
+	// PauseEarly lets a confident forecast that expects quiet hours pause
+	// the workload before IdleAfter runs out, when WakeOnRequest has a
+	// request wake it.
+	PauseEarly bool
 	// WakeOnRequest routes the workload's Services to the doorman while it's
 	// paused, so a request wakes it and an hour paused is seen as quiet.
 	WakeOnRequest bool
+	// WakeOnQuery gives the workload a Prometheus activity query that sees
+	// its use, as a queue's length shows a worker's: awake, the query keeps
+	// it awake, and paused, it wakes it, and an hour paused is seen as
+	// quiet.
+	WakeOnQuery bool
 	// Location is the operator's --timezone, the clock the forecast's hours
 	// and weekdays are counted in.
 	Location *time.Location
@@ -102,6 +112,7 @@ type WakeCause string
 const (
 	WokenByForecast WakeCause = "autoResume"
 	WokenByRequest  WakeCause = "request"
+	WokenByQuery    WakeCause = "query"
 	WokenByHand     WakeCause = "hand"
 )
 
@@ -153,6 +164,35 @@ type PhaseChange struct {
 	Phase forecast.Phase
 }
 
+// EarlyPause is a pause the forecast brought forward, before the activity
+// clock would have paused the workload.
+type EarlyPause struct {
+	At time.Time
+	// ClockAt is when the activity clock would have paused it.
+	ClockAt time.Time
+	// QuietUntil is when the hours the forecast expected to be quiet end.
+	QuietUntil time.Time
+	// WokeAt is when it next woke, and Cold says a request, or people by
+	// hand, woke it before ClockAt: a use that found it paused when it
+	// would otherwise have been awake. Zero if it was still paused when
+	// the simulation ended.
+	WokeAt time.Time
+	Cold   bool
+}
+
+// Saved is how long the early pause had the workload paused that it would
+// otherwise have been awake for, up to end, when the simulation ended.
+func (p EarlyPause) Saved(end time.Time) time.Duration {
+	until := p.ClockAt
+	if !p.WokeAt.IsZero() && p.WokeAt.Before(until) {
+		until = p.WokeAt
+	}
+	if end.Before(until) {
+		until = end
+	}
+	return max(until.Sub(p.At), 0)
+}
+
 // Veto is a stretch the forecast held off a pause the activity clock had
 // decided.
 type Veto struct {
@@ -172,7 +212,10 @@ type Report struct {
 	Days          []Day
 	Wakes         []Wake
 	Pauses        []time.Time
-	Vetoes        []Veto
+	// EarlyPauses are the pauses, among Pauses, that the forecast brought
+	// forward.
+	EarlyPauses []EarlyPause
+	Vetoes      []Veto
 	// Hours is how many hours the forecast was fed.
 	Hours int
 	// AwakeFor and PausedFor sum the time the workload spent each way.
@@ -368,12 +411,20 @@ func (s *run) lookAwake(t time.Time, use Use) error {
 	if err := s.see(t, demand, true); err != nil {
 		return err
 	}
-	if forecast.Busy(percent, set.CPUThreshold) || use.Seen {
+	if forecast.Busy(percent, set.CPUThreshold) || use.Seen || use.Active && set.WakeOnQuery {
 		s.lastActivity, s.lastWasUse = t, true
 	}
 
-	if t.Sub(s.lastActivity) < set.IdleAfter {
+	if clockAt := s.lastActivity.Add(set.IdleAfter); t.Before(clockAt) {
 		s.endVeto(t)
+		if !set.PauseEarly || !set.WakeOnRequest {
+			return nil
+		}
+		early, _, until := forecast.PauseEarly(s.engine, t, s.lastActivity, clockAt, set.Location, set.CPUThreshold)
+		if early {
+			s.pause(t)
+			s.report.EarlyPauses = append(s.report.EarlyPauses, EarlyPause{At: t, ClockAt: clockAt, QuietUntil: until})
+		}
 		return nil
 	}
 	if hold, _, _ := forecast.HoldPause(s.engine, t, set.Location, set.CPUThreshold); hold {
@@ -426,6 +477,8 @@ func (s *run) lookPaused(t time.Time, use Use) error {
 	switch {
 	case use.Active && set.WakeOnRequest:
 		cause = WokenByRequest
+	case use.Active && set.WakeOnQuery:
+		cause = WokenByQuery
 	case use.Active:
 		if s.wantedFrom.IsZero() {
 			s.wantedFrom = t
@@ -440,7 +493,7 @@ func (s *run) lookPaused(t time.Time, use Use) error {
 	if cause != "" {
 		demand = forecast.RequestDemand(set.CPUThreshold)
 	}
-	if err := s.see(t, demand, set.WakeOnRequest || cause != ""); err != nil {
+	if err := s.see(t, demand, set.WakeOnRequest || set.WakeOnQuery || cause != ""); err != nil {
 		return err
 	}
 	if cause != "" {
@@ -457,6 +510,11 @@ func (s *run) lookPaused(t time.Time, use Use) error {
 }
 
 func (s *run) wake(t time.Time, cause WakeCause) {
+	if n := len(s.report.EarlyPauses); n > 0 && s.report.EarlyPauses[n-1].WokeAt.IsZero() {
+		p := &s.report.EarlyPauses[n-1]
+		p.WokeAt = t
+		p.Cold = cause != WokenByForecast && t.Before(p.ClockAt)
+	}
 	s.awake = true
 	s.wokeAt = t
 	s.lastActivity, s.lastWasUse = t, false

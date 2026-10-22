@@ -143,7 +143,7 @@ func (r *Reader) WorkloadCPUMillis(ctx context.Context, workload *v1alpha1.Manag
 	}
 	measured := make([]metricsv1beta1.PodMetrics, 0, len(list.Items))
 	for _, pod := range list.Items {
-		if runBy(target, &pod) {
+		if RunBy(target, &pod) {
 			measured = append(measured, pod)
 		}
 	}
@@ -463,7 +463,7 @@ func (r *Reader) podsOf(ctx context.Context, workload *v1alpha1.ManagedWorkload,
 	}
 	pods := make([]corev1.Pod, 0, len(list.Items))
 	for _, pod := range list.Items {
-		if runBy(target, &pod) {
+		if RunBy(target, &pod) {
 			pods = append(pods, pod)
 		}
 	}
@@ -681,14 +681,14 @@ func selectorFromTarget(obj client.Object) (labels.Selector, error) {
 // before adding its five random characters.
 const maxGeneratedNamePrefix = 58
 
-// runBy reports whether a pod, or the metrics of one, is run by target
+// RunBy reports whether a pod, or the metrics of one, is run by target
 // rather than by another workload whose selector overlaps it, such as a
 // canary's. It goes by name, since metrics carry the pod's name and labels
 // but not its owners: a Deployment's pods are named after the ReplicaSet
 // that runs them, <deployment>-<pod-template-hash>, cut to the length the
 // API server keeps of a generated name, and a StatefulSet's are
 // <statefulset>-<ordinal>.
-func runBy(target client.Object, pod metav1.Object) bool {
+func RunBy(target client.Object, pod metav1.Object) bool {
 	switch target.(type) {
 	case *appsv1.Deployment:
 		hash := pod.GetLabels()[appsv1.DefaultDeploymentUniqueLabelKey]

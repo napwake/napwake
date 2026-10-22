@@ -24,6 +24,7 @@ import (
 	"io"
 	"net/http"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -146,7 +147,7 @@ func TestCLI_NotInstalled(t *testing.T) {
 }
 
 func TestCLI_StatusAllNamespacesForbidden(t *testing.T) {
-	c := newStatusClient(t, forbidClusterWide("managedworkloads"), statusCluster()...)
+	c := newStatusClient(t, forbidClusterWide(), statusCluster()...)
 
 	out, err := runCLI(t, c, "status", "-A")
 
@@ -414,4 +415,16 @@ func TestCancelWith(t *testing.T) {
 		assert.EqualError(t, context.Cause(reqCtx), "--timeout")
 		require.NoError(t, resp.Body.Close())
 	})
+}
+
+// The plugin carries the time zone database, as the operator does: Windows
+// has none of its own, and a release built with -trimpath can't find Go's,
+// so without it forecast fails for any operator time zone but UTC. Pointing
+// ZONEINFO at an empty directory can't show it here, since Go falls back to
+// the system's zoneinfo before its own, so the test checks the plugin
+// links it.
+func TestPluginCarriesTimeZones(t *testing.T) {
+	out, err := exec.Command("go", "list", "-deps", ".").Output()
+	require.NoError(t, err)
+	assert.Contains(t, strings.Fields(string(out)), "time/tzdata")
 }

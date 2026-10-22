@@ -1,3 +1,4 @@
+{{- include "hybernate.defaults" . -}}
 {{- if .Values.doorman.enabled }}
 {{- /*
 The doorman holds connections to paused workloads and wakes them. It runs

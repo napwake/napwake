@@ -1,4 +1,43 @@
 {{/*
+Fills in .Values, in place, with this chart's default for every value it
+lacks. Helm renders with the chart's own values.yaml as the defaults,
+except on helm upgrade --reuse-values, which renders with the previous
+release's chart's, lacking every value added since: each would render as
+nil, or fail the render. defaultsVersion says whose defaults Helm used.
+When they're another version's, the missing values are taken from
+files/defaults.yaml, a copy of values.yaml, which templates can't read.
+With the chart's own nothing is filled, so a default removed with null
+stays removed. Every template includes it first.
+*/}}
+{{- define "hybernate.defaults" -}}
+{{- $defaults := .Files.Get "files/defaults.yaml" | fromYaml -}}
+{{- if or (not $defaults) (hasKey $defaults "Error") -}}
+{{- fail "the chart's files/defaults.yaml, which it fills in missing values from, is missing or unreadable" -}}
+{{- end -}}
+{{- if ne (toString .Values.defaultsVersion) (toString $defaults.defaultsVersion) -}}
+{{- include "hybernate.fill" (list .Values $defaults) -}}
+{{- $_ := set .Values "defaultsVersion" $defaults.defaultsVersion -}}
+{{- end -}}
+{{- end }}
+
+{{/*
+Adds to a map of values, given first, every key of the defaults, given
+second, that it lacks, and does the same in each map both have. A value
+that's there is kept, false, 0 and "" included, and lists aren't merged,
+as Helm does with values it's given.
+*/}}
+{{- define "hybernate.fill" -}}
+{{- $values := index . 0 -}}
+{{- range $key, $default := index . 1 -}}
+{{- if not (hasKey $values $key) -}}
+{{- $_ := set $values $key $default -}}
+{{- else if and (kindIs "map" $default) (kindIs "map" (index $values $key)) -}}
+{{- include "hybernate.fill" (list (index $values $key) $default) -}}
+{{- end -}}
+{{- end -}}
+{{- end }}
+
+{{/*
 Chart name, truncated to 63 chars.
 */}}
 {{- define "hybernate.name" -}}

@@ -8,13 +8,16 @@
 
     === "Helm"
 
+        With the values file you install with:
+
         ```bash
         helm upgrade hybernate oci://ghcr.io/okedeji/charts/hybernate \
           --version X.Y.Z \
-          --namespace hybernate-system
+          --namespace hybernate-system \
+          -f hybernate-values.yaml
         ```
 
-        The chart is only published as an OCI artifact: there's no `helm repo` to update. Its version has no `v`. The CRD is a template in the chart, so `helm upgrade` upgrades it too, unless you installed with `crds.install: false` and manage it yourself.
+        Give it the file every time, or no values at all: given `--set` alone, Helm drops the values set before; see [Keeping your settings](#keeping-your-settings). The chart is only published as an OCI artifact: there's no `helm repo` to update. Its version has no `v`. The CRD is a template in the chart, so `helm upgrade` upgrades it too, unless you installed with `crds.install: false` and manage it yourself.
 
     === "kubectl"
 
@@ -32,7 +35,7 @@
 
     === "Argo CD or Flux"
 
-        Change the Application's `targetRevision`, or the `OCIRepository`'s `tag`, to `X.Y.Z` in Git, and let it sync.
+        Change the Application's `targetRevision`, or the `OCIRepository`'s `tag`, to `X.Y.Z` in Git, and let it sync. To hand an install made with `helm install` to Argo CD or Flux, see [Moving a Helm install to Argo CD or Flux](../getting-started/installation.md#moving-a-helm-install-to-argo-cd-or-flux).
 
 3. **Verify the upgrade:**
 
@@ -46,6 +49,39 @@
     ```bash
     kubectl get managedworkloads --all-namespaces
     ```
+
+## Keeping your settings
+
+Helm reuses a release's values only on an upgrade given none. Given any, with `--set` or `-f`, it starts again from the chart's defaults and adds only those. On a release installed with `timezone` and `prometheus.url`, an upgrade with `--set timezone=America/New_York` sets the time zone and drops `prometheus.url`, and the next upgrade with `--set` drops whatever that one didn't name. Helm 3 and Helm 4 do the same.
+
+So keep every value you set in one file, give it to `helm install` and every `helm upgrade`, and change a setting by changing the file. The file is the whole of your settings, in one place you can review, the same in every Helm, and it's what you'd commit to Git: Argo CD and Flux take the same values, so [moving to one](../getting-started/installation.md#moving-a-helm-install-to-argo-cd-or-flux) is a copy. Installed with `--set`, write the values the release has now to a file first:
+
+```bash
+helm get values hybernate -n hybernate-system -o yaml > hybernate-values.yaml
+```
+
+A release installed with no values writes `null`; replace it with your settings.
+
+To change a setting, such as the [time zone](../getting-started/installation.md#time-zone), change it in the file and upgrade with it, at the version you run, which `helm list -n hybernate-system` shows in its `CHART` column, so the change doesn't upgrade Hybernate too:
+
+```bash
+helm upgrade hybernate oci://ghcr.io/okedeji/charts/hybernate \
+  --version X.Y.Z \
+  --namespace hybernate-system \
+  -f hybernate-values.yaml
+```
+
+Without a file, `--reuse-values` keeps the release's values and adds yours:
+
+```bash
+helm upgrade hybernate oci://ghcr.io/okedeji/charts/hybernate \
+  --version X.Y.Z \
+  --namespace hybernate-system \
+  --reuse-values \
+  --set timezone=America/New_York
+```
+
+Upgrading to a newer version with it, Helm renders with the installed version's defaults rather than the new one's, and those lack every value added since. From 0.2.0 on, the chart fills those in from its own defaults, so upgrading with `--reuse-values` from any 0.2.0 release candidate works, in Helm 3 and Helm 4 alike. From 0.1.x it doesn't: 0.1.x's values have settings 0.2.0 no longer takes, such as `grafana`, so install 0.2.0 new, as [0.2.0's changelog](https://github.com/okedeji/hybernate/blob/main/CHANGELOG.md) says. What `--reuse-values` still keeps is the installed version's default for each value both versions have, so a default the new version changes isn't picked up. Helm keeps those older defaults with the release, too, and goes on reusing them, which has one more catch: after such an upgrade, a default you remove by setting it to `null` doesn't stay removed. Helm 4 renders the default for the upgrade that sets it to `null`, and removes it from the next; Helm 3 brings it back at every other `--reuse-values` upgrade. To remove a default after such an upgrade, upgrade once with the values file, or with `--reset-then-reuse-values` (Helm 3.14 and later), which renders with the new version's defaults and keeps your values over them. From then on, `--reuse-values` keeps a removed default removed.
 
 ## Narrowing watchNamespaces
 

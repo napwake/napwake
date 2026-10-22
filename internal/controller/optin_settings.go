@@ -37,6 +37,7 @@ type OptInDefaults struct {
 	IdleAfter    time.Duration
 	CPUThreshold int
 	DryRun       bool
+	PauseEarly   bool
 	Forecast     v1alpha1.PredictionMode
 }
 
@@ -256,9 +257,9 @@ func parseDependency(entry string) (v1alpha1.DependencyRef, bool) {
 // setting its annotation, then its namespace's, then the cluster default,
 // then what a ManagedWorkload written with no settings would get.
 //
-// The annotations control dryRun, idlePolicy (idleAfter, the CPU threshold
-// and autoResume), which dependencies dependsOn lists, wake, and the
-// forecast's mode. The rest is the user's to set on the ManagedWorkload;
+// The annotations control dryRun, idlePolicy (idleAfter, the CPU
+// threshold, autoResume and pauseEarly), which dependencies dependsOn
+// lists, wake, and the forecast's mode. The rest is the user's to set on the ManagedWorkload;
 // see keepUserSettings.
 //
 // A workload never depends on itself, whichever annotation names it. A
@@ -278,6 +279,7 @@ func optInSpec(namespace string, target v1alpha1.WorkloadRef, workloadAnnotation
 			IdleAfter:  &metav1.Duration{Duration: s.duration(v1alpha1.AnnotationIdleAfter, d.IdleAfter)},
 			Activity:   &v1alpha1.ActivitySpec{CPUThreshold: s.percent(v1alpha1.AnnotationCPUThreshold, d.CPUThreshold)},
 			AutoResume: s.boolean(v1alpha1.AnnotationAutoResume, false),
+			PauseEarly: s.boolean(v1alpha1.AnnotationPauseEarly, d.PauseEarly),
 		},
 		DependsOn: dependsOn,
 		Wake: &v1alpha1.WakeSpec{

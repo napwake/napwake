@@ -191,7 +191,7 @@ Needs attention:
   preview-42   deployment/api         paused              3h    request, 4h ago    wakes on a request or activity              acting                      $12                $10     -
   preview-42   statefulset/postgres   running             5h    cpu, 2h ago        held awake while preview-7/worker uses it   -                           $30                $25     -
   preview-7    deployment/web         running (dry-run)   2h    rollout, 15m ago   would pause in 45m                          learning, acts from Oct 8   -                  -       $7
-  preview-7    deployment/worker      resuming            25m   -                  -                                           -                           -                  -       -
+  preview-7    deployment/worker      resuming            25m   -                  -                                           -                           $0                 $0      -
 
 Recent pauses and wakes:
   30m ago   preview-7/worker   scaled up to 2 replicas by argocd-controller outside Hybernate; counted as activity
@@ -348,6 +348,17 @@ func TestNextFor_WhatKeepsItUp(t *testing.T) {
 			w.Status.Phase = v1alpha1.PhaseIdle
 			w.Spec.DryRun = true
 		}, want: "would pause now"},
+		// A pause request runs the clock out without rewriting when it would
+		// have: Idle is due now, not in the 40 minutes it shows.
+		{name: "pause requested before the clock ran out", mutate: func(w *v1alpha1.ManagedWorkload) {
+			w.Status.Activity = activity(v1alpha1.ActivitySourceCPU, 20*time.Minute, 40*time.Minute)
+			w.Status.Phase = v1alpha1.PhaseIdle
+		}, want: "pauses now"},
+		{name: "pause requested in dry-run before the clock ran out", mutate: func(w *v1alpha1.ManagedWorkload) {
+			w.Status.Activity = activity(v1alpha1.ActivitySourceCPU, 20*time.Minute, 40*time.Minute)
+			w.Status.Phase = v1alpha1.PhaseIdle
+			w.Spec.DryRun = true
+		}, want: "would pause now"},
 		// The clock in status is written every five minutes, so a pause time
 		// just past may only mean activity status doesn't show yet.
 		{name: "running, its pause time just past", mutate: func(w *v1alpha1.ManagedWorkload) {
@@ -436,6 +447,70 @@ func TestStatus_GitOpsConflictAsItIsNow(t *testing.T) {
 			assert.Equal(t, tt.want, result.Problems[i].Message)
 		})
 	}
+}
+
+// A pause the forecast brought forward, before idleAfter ran out, says so,
+// and until when the forecast expected quiet, so a workload paused 20
+// minutes after its last activity isn't a puzzle.
+func TestNextFor_PausedEarly(t *testing.T) {
+	quietUntil := &metav1.Time{Time: time.Date(2026, 10, 5, 14, 0, 0, 0, time.UTC)}
+	early := func(phase v1alpha1.WorkloadPhase, dryRun bool) *v1alpha1.ManagedWorkload {
+		w := statusWorkloadObj("ns", "api", v1alpha1.TargetKindDeployment, phase, time.Hour)
+		w.Spec.DryRun = dryRun
+		w.Status.Activity = activity(v1alpha1.ActivitySourceCPU, 20*time.Minute, 40*time.Minute)
+		w.Status.Activity.ForecastQuietUntil = quietUntil
+		return w
+	}
+	paused := early(v1alpha1.PhasePaused, false)
+	paused.Status.Doorman = []v1alpha1.DoormanRoute{{Service: "api", DoormanPort: 20000}}
+	assert.Equal(t, "paused early: the forecast expected quiet until Mon 14:00 UTC; wakes on a request or activity",
+		nextFor(paused, time.Time{}, statusNow), "what it expected when it paused, and still true all weekend")
+	assert.Equal(t, "would pause now, early: the forecast expects quiet until Mon 14:00 UTC",
+		nextFor(early(v1alpha1.PhaseIdle, true), time.Time{}, statusNow), "a would-be pause in dry-run")
+	assert.Equal(t, "pauses now, early: the forecast expects quiet until Mon 14:00 UTC",
+		nextFor(early(v1alpha1.PhaseIdle, false), time.Time{}, statusNow), "not the clock's 40 minutes")
+
+	// A would-be pause in dry-run stays Idle until activity, with its quiet
+	// hours recorded, so once they're over it says what the forecast
+	// expected, not what it expects.
+	weekend := early(v1alpha1.PhaseIdle, true)
+	weekend.Status.Activity.ForecastQuietUntil = &metav1.Time{Time: time.Date(2026, 10, 2, 20, 0, 0, 0, time.UTC)}
+	assert.Equal(t, "would pause now, early: the forecast expected quiet until Fri 20:00 UTC",
+		nextFor(weekend, time.Time{}, statusNow), "read on Monday, of a would-be pause made on Friday")
+	weekend.Spec.DryRun = false
+	assert.Equal(t, "pauses now, early: the forecast expected quiet until Fri 20:00 UTC",
+		nextFor(weekend, time.Time{}, statusNow), "the same for a pause not yet made")
+
+	waiting := early(v1alpha1.PhaseIdle, false)
+	undoneBy(waiting, "Argo CD", 10*time.Minute)
+	waiting.Status.Activity = activity(v1alpha1.ActivitySourceCPU, 20*time.Minute, 70*time.Minute)
+	waiting.Status.Activity.ForecastQuietUntil = quietUntil
+	assert.Equal(t, "pauses at 12:50 UTC (after GitOps conflict)", nextFor(waiting, time.Time{}, statusNow),
+		"the hour Hybernate waits, though the clock would run out after it")
+
+	clock := early(v1alpha1.PhasePaused, false)
+	clock.Status.Activity.ForecastQuietUntil = nil
+	assert.Equal(t, "wakes on activity", nextFor(clock, time.Time{}, statusNow), "the clock's own pause")
+}
+
+// A workload Idle is in a pause, or a would-be pause in dry-run, due now,
+// whether or not it has an idle policy, as one whose pause was requested
+// may not, and whatever the clock recorded of when it would run out.
+func TestNextFor_IdleWithoutTheClock(t *testing.T) {
+	requested := statusWorkloadObj("ns", "api", v1alpha1.TargetKindDeployment, v1alpha1.PhaseIdle, time.Hour)
+	requested.Spec.IdlePolicy, requested.Spec.DryRun = nil, true
+	requested.Status.Activity = &v1alpha1.ActivityStatus{LastActivityTime: *before(10 * time.Minute)}
+	assert.Equal(t, "would pause now", nextFor(requested, time.Time{}, statusNow), "a requested would-be pause")
+
+	noPauseAt := statusWorkloadObj("ns", "api", v1alpha1.TargetKindDeployment, v1alpha1.PhaseIdle, time.Hour)
+	noPauseAt.Status.Activity = &v1alpha1.ActivityStatus{LastActivityTime: *before(10 * time.Minute)}
+	assert.Equal(t, "pauses now", nextFor(noPauseAt, time.Time{}, statusNow))
+
+	afterConflict := noPauseAt.DeepCopy()
+	afterConflict.Spec.IdlePolicy = nil
+	undoneBy(afterConflict, "Argo CD", 10*time.Minute)
+	assert.Equal(t, "pauses at 12:50 UTC (after GitOps conflict)", nextFor(afterConflict, time.Time{}, statusNow),
+		"the hour Hybernate waits after a GitOps conflict still holds it")
 }
 
 // In dry-run, Hybernate never pauses, so a GitOps conflict holds nothing
@@ -576,11 +651,12 @@ func TestStatus_HandWrittenNamedApart(t *testing.T) {
 	assert.Contains(t, out, "  shop        deployment/api (api-mw)   running")
 }
 
-func forbidClusterWide(plural string) interceptor.Funcs {
+func forbidClusterWide() interceptor.Funcs {
 	return interceptor.Funcs{List: func(ctx context.Context, c client.WithWatch, list client.ObjectList,
 		opts ...client.ListOption) error {
 		if _, ok := list.(*v1alpha1.ManagedWorkloadList); ok && listNamespace(opts) == "" {
-			return apierrors.NewForbidden(schema.GroupResource{Group: "hybernate.io", Resource: plural}, "", nil)
+			return apierrors.NewForbidden(schema.GroupResource{Group: "hybernate.io", Resource: "managedworkloads"}, "",
+				nil)
 		}
 		return c.List(ctx, list, opts...)
 	}}
@@ -595,7 +671,7 @@ func listNamespace(opts []client.ListOption) string {
 // Without access to every namespace, status falls back to the context's,
 // and says so, unless -A asked for all of them.
 func TestStatus_CantListEveryNamespace(t *testing.T) {
-	c := newStatusClient(t, forbidClusterWide("managedworkloads"), statusCluster()...)
+	c := newStatusClient(t, forbidClusterWide(), statusCluster()...)
 
 	result, err := clusterStatus(context.Background(), c, "preview-7", statusOpts())
 	require.NoError(t, err)
@@ -749,7 +825,8 @@ func TestStatus_DryRunLeadsWithWhatItWouldFree(t *testing.T) {
 	assert.Regexp(t, `FREED THIS MONTH\s+SAVED\s+WOULD FREE\n`, out.String())
 	assert.Regexp(t, `deployment/api\s+running \(dry-run\) .*-\s+-\s+\$0\n`, out.String())
 	assert.Regexp(t, `deployment/web\s+idle \(dry-run\) .*-\s+-\s+\$13\n`, out.String())
-	assert.Regexp(t, `deployment/worker\s+paused .*-\s+-\s+-\n`, out.String())
+	assert.Regexp(t, `deployment/worker\s+paused .*-\s+\$0\s+\$0\s+-\n`, out.String(),
+		"a live workload that has freed nothing yet shows $0, as scan does; only dry-run's show -")
 	assert.InDelta(t, 12.6, result.WouldFree, 0.001)
 	require.NotNil(t, result.Workloads[1].WouldFree)
 	assert.InDelta(t, 12.6, *result.Workloads[1].WouldFree, 0.001)
@@ -762,6 +839,24 @@ func TestStatus_DryRunLeadsWithWhatItWouldFree(t *testing.T) {
 	require.NoError(t, err)
 	require.NoError(t, writeStatus(&out, result, "table", statusNow))
 	assert.NotContains(t, out.String(), "WOULD FREE", "no column without a workload in dry-run")
+}
+
+// A would-be pause that has freed less than a cent reads $0.00 in the
+// operator's estimate. It has freed something, so it reads <$1, as any
+// amount above zero does; $0 is for a workload still waiting for its first.
+func TestStatus_WouldFreeBelowACent(t *testing.T) {
+	small := statusWorkloadObj("preview-7", "redis", v1alpha1.TargetKindDeployment, v1alpha1.PhaseIdle, time.Hour)
+	small.Spec.DryRun = true
+	small.Status.DryRun = &v1alpha1.DryRunStatus{Since: *before(3 * time.Hour), Pauses: 1, EstimatedFreed: "$0.00"}
+	waiting := statusWorkloadObj("preview-7", "api", v1alpha1.TargetKindDeployment, v1alpha1.PhaseRunning, time.Hour)
+	waiting.Spec.DryRun = true
+	waiting.Status.DryRun = &v1alpha1.DryRunStatus{Since: *before(2 * time.Hour), EstimatedFreed: "$0.00"}
+
+	out := runStatus(t, newStatusClient(t, interceptor.Funcs{}, small, waiting), statusOpts())
+
+	assert.Regexp(t, `deployment/redis\s+idle \(dry-run\) .*-\s+-\s+<\$1\n`, out)
+	assert.Regexp(t, `deployment/api\s+running \(dry-run\) .*-\s+-\s+\$0\n`, out)
+	assert.Contains(t, out, "pausing them would have freed <$1 since")
 }
 
 // Status says which zone the forecast counts hours in, as the operator

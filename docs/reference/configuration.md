@@ -23,6 +23,7 @@ These flags are passed to the binary (`/manager`), which runs as the operator, a
 | `--default-idle-after` | `1h` | Idle time before pausing, for workloads opted in with the label whose annotations and namespace don't set it. At least `1m` |
 | `--default-cpu-threshold` | `10` | CPU percentage of requests that counts as active, for opted-in workloads that don't set it. 1 to 100 |
 | `--default-dry-run` | `false` | Measure opted-in workloads without pausing, unless they or their namespace set `hybernate.io/dry-run` |
+| `--default-pause-early` | `false` | Let a confident forecast that expects quiet hours pause opted-in workloads before their `idleAfter` runs out, unless they or their namespace set `hybernate.io/pause-early`. See [Pausing Early](../concepts/forecasting.md#pausing-early) |
 | `--default-forecast` | `balanced` | How soon the forecast acts, `eager`, `balanced` or `cautious`, for opted-in workloads that don't set `hybernate.io/forecast` |
 | `--doorman` | `false` | Run as the doorman instead of the operator. The doorman Deployment sets it |
 | `--doorman-service` | `hybernate-doorman` | Name of the doorman's Service, which the operator routes paused workloads to. Empty disables waking on request |

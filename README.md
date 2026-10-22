@@ -45,7 +45,7 @@ brew install okedeji/tap/kubectl-hybernate
 kubectl hybernate scan
 ```
 
-Homebrew installs the newest release, or the newest release candidate until 0.2.0 is out. Without Homebrew, or for exactly this version, install the plugin with [krew](https://krew.sigs.k8s.io/docs/user-guide/setup/install/):
+Homebrew installs the newest release, or the newest release candidate until the first stable release. Without Homebrew, or for exactly this version, install the plugin with [krew](https://krew.sigs.k8s.io/docs/user-guide/setup/install/):
 
 ```bash
 kubectl krew install --manifest-url \
@@ -54,17 +54,21 @@ kubectl krew install --manifest-url \
 
 or [download it](https://okedeji.io/hybernate/getting-started/kubectl-plugin/#installation) for Linux, macOS or Windows.
 
-**Install the operator:**
+**Install the operator**, with your settings in a values file, `hybernate-values.yaml`, starting with your users' time zone:
+
+```yaml title="hybernate-values.yaml"
+timezone: Europe/London
+```
 
 ```bash
 helm install hybernate oci://ghcr.io/okedeji/charts/hybernate \
   --version 0.2.0 \
   --namespace hybernate-system \
   --create-namespace \
-  --set timezone=Europe/London
+  -f hybernate-values.yaml
 ```
 
-Set `timezone` to your users' time zone: the forecast learns their busy hours in it, so it wakes workloads for their mornings all year, through daylight saving. To install with `install.yaml`, Kustomize, Argo CD or Flux instead, see [Installation](https://okedeji.io/hybernate/getting-started/installation/).
+The forecast learns your users' busy hours in their time zone, so it wakes workloads for their mornings all year, through daylight saving. Keep the file and upgrade with it too, so upgrades keep your settings; see [Keeping your settings](https://okedeji.io/hybernate/operations/upgrading/#keeping-your-settings). To install with `install.yaml`, Kustomize, Argo CD or Flux instead, see [Installation](https://okedeji.io/hybernate/getting-started/installation/).
 
 Hybernate supports Kubernetes 1.30 and later, and is tested in CI on 1.30 and 1.37. The chart installs the operator, the doorman that wakes paused workloads on request, and the ManagedWorkload CRD.
 
@@ -101,12 +105,14 @@ kubectl hybernate enable my-api -n staging
 
 ### Operations
 
+Not sure which command to use? The plugin page opens with [a table of them](https://okedeji.io/hybernate/getting-started/kubectl-plugin/#which-command): what each is for, and which need the operator installed.
+
 - **Label opt-in**: `hybernate.io/managed: "true"` on a workload or namespace, with settings as annotations, all in the manifests you already keep in Git
 - **`kubectl hybernate scan`** finds idle workloads in a cluster and what they cost, with nothing installed, and with Prometheus replays the last week to show how long each would have slept and what that frees, in a report that opens in your browser to share
 - **`kubectl hybernate status`** shows what Hybernate is doing in a cluster on one screen: each workload's state, when it pauses next or what holds it awake, what needs attention, what pausing has freed and what of that it saved, and the latest pauses and wakes with what caused them
 - **`kubectl hybernate pause`** pauses a workload now, such as a preview environment at the end of the day, to wake on its next request
 - **`kubectl hybernate wake`** wakes a paused workload from the terminal and waits until it's Running
-- **`kubectl hybernate forecast`** replays the forecast over your cluster's own Prometheus history, to show when it would have woken each workload and how often for nothing, before you trust `autoResume` with it
+- **`kubectl hybernate forecast`** replays the forecast over your cluster's own Prometheus history, to show when it would have woken each workload and how often for nothing, before you trust `autoResume` with it; named, as `forecast api -n staging`, it also shows what Hybernate's own forecast of a workload it manages is doing: whether it's acting and why, what it has learned, and the hours it expects busy
 - **`kubectl hybernate nodes`** names the node autoscaler and shows, for each node, what keeps it from being removed, so what pausing frees can come off the bill
 - **`kubectl hybernate enable`** ends dry-run once you trust what you've measured, and says what to change in Git when a GitOps tool applies the workload
 - **Cost tracking** per workload, for the current month: what it cost, what pausing freed, what that saved once nodes went, and a projection for the month, priced at the list price of the nodes it runs on

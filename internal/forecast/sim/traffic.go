@@ -143,6 +143,56 @@ func Noisy(loc *time.Location, seed uint64, jitter time.Duration, absent int) Tr
 	}
 }
 
+// ComingBack is office hours in loc where, one weekday in every, someone
+// comes back for ten minutes, 15 to 50 minutes after people left at 17:30,
+// as to check one last thing. It's deterministic for a seed.
+func ComingBack(loc *time.Location, seed uint64, every int) Traffic {
+	office := OfficeHours(loc)
+	return func(t time.Time) Use {
+		if u := office(t); u.Active {
+			return u
+		}
+		day := midnight(t.In(loc))
+		key := uint64(day.Unix())
+		if !Weekdays(day) || mix(seed, key, 4)%uint64(every) != 0 {
+			return Use{Percent: Quiet}
+		}
+		back := day.Add(17*time.Hour + 45*time.Minute + time.Duration(mix(seed, key, 5)%36)*time.Minute)
+		if !t.Before(back) && t.Before(back.Add(10*time.Minute)) {
+			return Use{Active: true, Percent: 40}
+		}
+		return Use{Percent: Quiet}
+	}
+}
+
+// EveningWork is office hours in loc where, one weekday in every, someone
+// works in the evening too, from a time between 19:00 and 22:00, in three
+// bursts of 5 to 15 minutes with 2 to 25 minutes between them, as people
+// work: an hour of the day the forecast learns as quiet, used now and then.
+// It's deterministic for a seed.
+func EveningWork(loc *time.Location, seed uint64, every int) Traffic {
+	office := OfficeHours(loc)
+	return func(t time.Time) Use {
+		if u := office(t); u.Active {
+			return u
+		}
+		day := midnight(t.In(loc))
+		key := uint64(day.Unix())
+		if !Weekdays(day) || mix(seed, key, 6)%uint64(every) != 0 {
+			return Use{Percent: Quiet}
+		}
+		at := day.Add(19*time.Hour + time.Duration(mix(seed, key, 7)%180)*time.Minute)
+		for burst := range uint64(3) {
+			length := 5*time.Minute + time.Duration(mix(seed, key, 10+burst)%11)*time.Minute
+			if !t.Before(at) && t.Before(at.Add(length)) {
+				return Use{Active: true, Percent: 40}
+			}
+			at = at.Add(length + 2*time.Minute + time.Duration(mix(seed, key, 20+burst)%24)*time.Minute)
+		}
+		return Use{Percent: Quiet}
+	}
+}
+
 // Peaks is what traffic shows of an always-awake workload hour by hour from
 // from to to, in loc's hours: each hour's highest CPU, looked at every
 // step, as Prometheus history records a workload that was never paused.

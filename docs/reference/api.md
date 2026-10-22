@@ -18,6 +18,7 @@
 | `idlePolicy.activity.cpuThreshold` | int | No | `10` | CPU utilization % of requests above which the workload is active (1-100) |
 | `idlePolicy.activity.prometheus[].promQL` | string | Yes (per entry) | | PromQL instant query; a result above zero is activity. At most 10 queries |
 | `idlePolicy.autoResume` | bool | No | `false` | Wake ahead of confident forecast demand |
+| `idlePolicy.pauseEarly` | bool | No | `false` | Pause before `idleAfter` runs out, once idle for 20 minutes, when a confident forecast expects the hours until then to be quiet and a request would wake the workload through the doorman. See [Pausing Early](../concepts/forecasting.md#pausing-early) |
 | `dependsOn[]` | `DependencyRef` | No | | Workloads this one needs, at most 20 |
 | `dependsOn[].namespace` | string | No | this namespace | Namespace of the dependency |
 | `dependsOn[].kind` | `Deployment` \| `StatefulSet` | Yes | | Kind of the dependency |
@@ -60,6 +61,7 @@ A duration is a Go duration above zero, such as `45s`, `90m` or `1h30m`. Days an
 | `activity.templateHash` | string | Fingerprint of the target's pod template, used to detect deploys |
 | `activity.heldByDependents` | []string | The awake workloads that use this one, as `namespace/name`, while they keep it from pausing (`HeldByDependents`): at most 10, the first by name |
 | `activity.forecastBusyFrom` | time | The start of the hour the forecast expects demand in, while it keeps the workload from pausing (`IdleVetoed`) |
+| `activity.forecastQuietUntil` | time | The end of the hours the forecast expected to be quiet when it brought the workload's pause forward (`PausedEarly`), until the pause, or the would-be pause in dry-run, ends |
 | `pause` | `PauseStatus` | What a pause changed, from before the workload is scaled to zero until it's running again |
 | `pause.previousReplicas` | int32 | Replicas before the pause, restored on resume |
 | `pause.pausedAt` | time | When it was scaled to zero; unset until then. The pause is `Paused` once its pods have stopped |
@@ -69,6 +71,7 @@ A duration is a Go duration above zero, such as `45s`, `90m` or `1h30m`. Days an
 | `pause.scaledObjectPausedReplicas` | string | The ScaledObject's own `autoscaling.keda.sh/paused-replicas` from before the pause, put back after it |
 | `pause.resources` | `ResourceSnapshot` | What the workload ran when the pause began: `replicas`, and per replica `cpuMillis`, `memoryBytes`, and its claims' `storageBytes`; and `nodePools`, the node pools its pods ran in (`name`, `""` for nodes without a pool label) and how many `pods` in each, which what it saves is measured against |
 | `pause.wakeAnnotations` | object | The activity annotations on the ManagedWorkload (`workload`) and its target (`target`) as the pause began; one that changes since wakes it |
+| `pause.queryActiveSincePause` | bool | A [Prometheus activity query](../guides/prometheus-signals.md#while-the-workload-is-paused) has shown activity at every check since the pause began, as one can when it was requested; until a check finds every query quiet, they don't wake it |
 | `learnedDependencies` | `LearnedDependencies` | Dependencies Hybernate found, held and woken like `dependsOn`: `from`, `at`, and `dependencies` (`namespace`, `kind`, `name`, `source`: `environment` or `wake`, `via` and `address` for one found in the environment, and `lastSeen` for one learned from a wake). See [Learned dependencies](../concepts/dependencies.md#learned-dependencies) |
 | `lastScaledUp` | `ScaledUp` | The last time the workload was scaled up outside Hybernate while paused, which wakes it: `at`, `replicas`, `by` (the field manager, such as `argocd-controller`, or `unknown` for a scale through the scale subresource, as `kubectl scale` makes, which records none), and `gitOps` (`Argo CD`, `Flux`, `Fleet`, `kapp` or `Kluctl`, when it was set from Git; see [GitOps tools](../guides/gitops.md)) |
 | `doorman[]` | `DoormanRoute` | Service ports routed to the doorman while paused: `service`, `portName`, `doormanPort`, and `forwarded`, set for a Service behind GKE NEGs routed through the [forwarder](../concepts/wake-on-request.md#gke-container-native-load-balancing-negs) |
@@ -80,6 +83,7 @@ A duration is a Go duration above zero, such as `45s`, `90m` or `1h30m`. Days an
 | `dryRun.freedCPUHours`, `dryRun.freedMemoryHours` | quantity | vCPU-hours and GiB-hours the replicas requested during `slept` |
 | `dryRun.estimatedFreed` | string | Those hours priced, for display, with the would-be pause under way counted up to the last status write: what pausing would have freed. Also the `Would Free` column of `kubectl get managedworkloads` |
 | `dryRun.resources` | `ResourceSnapshot` | What the workload ran when the current would-be pause began |
+| `dryRun.queryActiveSincePause` | bool | A [Prometheus activity query](../guides/prometheus-signals.md#while-the-workload-is-paused) has shown activity at every check since the would-be pause under way was asked for; until a check finds every query quiet, they don't end it, as they wouldn't wake a real pause |
 | `prediction.dailyPhase`, `prediction.weeklyPhase` | string | Each season's phase: `Observing`, `Suggesting`, or `Active` |
 | `prediction.dailyConfidence`, `prediction.weeklyConfidence` | int | Accuracy % over the last 24 and 168 observed hours |
 | `prediction.timeZone` | string | The IANA time zone the forecast counts hours and weekdays in, the operator's `--timezone` (Helm value `timezone`), such as `Europe/London` |

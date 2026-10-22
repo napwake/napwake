@@ -246,19 +246,21 @@ func echoed(t *testing.T, conn net.Conn, want string) {
 	assert.Equal(t, want, string(got))
 }
 
-// closedWithin asserts the doorman closes conn, without a reply, within a
-// second.
+// closeBound is how long closedWithin waits for the doorman to close a
+// connection: far more than a loaded runner needs, and far less than any
+// hold the tests guard against, a minute's maxWait the shortest.
+const closeBound = 20 * time.Second
+
+// closedWithin asserts the doorman closes conn, without a reply, well
+// before it could have held it for a maxWait.
 func closedWithin(t *testing.T, conn net.Conn) {
-	const d = time.Second
 	t.Helper()
-	start := time.Now()
-	require.NoError(t, conn.SetReadDeadline(time.Now().Add(d+2*time.Second)))
+	require.NoError(t, conn.SetReadDeadline(time.Now().Add(closeBound)))
 	n, err := conn.Read(make([]byte, 1))
 	assert.Zero(t, n)
 	require.Error(t, err)
 	var netErr net.Error
-	require.False(t, errors.As(err, &netErr) && netErr.Timeout(), "the connection was still open after %s", d+2*time.Second)
-	assert.Less(t, time.Since(start), d+time.Second)
+	require.False(t, errors.As(err, &netErr) && netErr.Timeout(), "the connection was still open after %s", closeBound)
 }
 
 func lastRequest(t *testing.T, c client.Client) string {
@@ -1402,6 +1404,8 @@ func TestServer_InformerWakesHeldConnections(t *testing.T) {
 	s := NewServer(c, nil, Options{Host: "127.0.0.1", Informers: informers})
 	s.backends.allowed = func(netip.Addr) bool { return true }
 	s.acceptFor, s.grace = 0, 100*time.Millisecond
+	// No resync comes within the test, so only the change can pass it on.
+	s.resyncEvery = time.Hour
 	run(t, s)
 
 	conn := dial(t, port)
@@ -1409,11 +1413,9 @@ func TestServer_InformerWakesHeldConnections(t *testing.T) {
 	require.Eventually(t, func() bool { return lastRequest(t, c) != "" }, 5*time.Second, 20*time.Millisecond)
 	slice := readySlice(echoPort(t))
 	require.NoError(t, c.Create(context.Background(), slice))
-	start := time.Now()
 	informer.Add(slice)
 
 	echoed(t, conn, "hello\n")
-	assert.Less(t, time.Since(start), backendResyncInterval/2, "passed through on the change, not the resync")
 }
 
 func TestNeedsWake(t *testing.T) {
@@ -1703,19 +1705,20 @@ func TestServer_ClosesIdleProxiedConnections(t *testing.T) {
 func TestServer_ClosesProxiedConnectionsOnceTheRouteDrains(t *testing.T) {
 	port := freePort(t)
 	s, c := startServerWith(t, func(s *Server) {
-		s.drainedLifetime, s.proxyCheck = 200*time.Millisecond, 20*time.Millisecond
+		s.drainedLifetime, s.proxyCheck = time.Second, 20*time.Millisecond
 	}, pausedWorkload("api", port, time.Minute), readySlice(echoPort(t)))
 
 	conn := dial(t, port)
 	send(t, conn, "hello\n")
 	echoed(t, conn, "hello\n")
-	time.Sleep(300 * time.Millisecond)
+	time.Sleep(1500 * time.Millisecond)
 	send(t, conn, "routed\n")
 	echoed(t, conn, "routed\n")
 
 	removeRoute(t, s, c)
 	start := time.Now()
-	for time.Since(start) < 150*time.Millisecond {
+	// A quarter of the lifetime, leaving the rest for a slow runner's pings.
+	for time.Since(start) < 250*time.Millisecond {
 		send(t, conn, "ping\n")
 		echoed(t, conn, "ping\n")
 	}
@@ -1947,7 +1950,18 @@ func hangPatches(release <-chan struct{}) func(client.WithWatch) client.WithWatc
 // period rather than apiTimeout later.
 func TestServer_ShutdownDoesNotWaitOutAStamp(t *testing.T) {
 	port := freePort(t)
-	s, _ := newTestServer(t, hangPatches(nil), pausedWorkload("api", port, time.Minute))
+	ended := make(chan error, 1)
+	s, _ := newTestServer(t, func(c client.WithWatch) client.WithWatch {
+		return interceptor.NewClient(c, interceptor.Funcs{Patch: func(ctx context.Context, _ client.WithWatch,
+			_ client.Object, _ client.Patch, _ ...client.PatchOption) error {
+			<-ctx.Done()
+			select {
+			case ended <- ctx.Err():
+			default:
+			}
+			return ctx.Err()
+		}})
+	}, pausedWorkload("api", port, time.Minute))
 	stop := run(t, s)
 	conn := dial(t, port)
 	send(t, conn, "hello\n")
@@ -1957,9 +1971,14 @@ func TestServer_ShutdownDoesNotWaitOutAStamp(t *testing.T) {
 		return len(s.wakeCalls) == 1
 	}, 5*time.Second, 10*time.Millisecond, "the stamp is under way")
 
-	start := time.Now()
 	stop()
-	assert.Less(t, time.Since(start), apiTimeout/2)
+
+	select {
+	case err := <-ended:
+		assert.ErrorIs(t, err, context.Canceled, "cut short by the shutdown, not waited out to apiTimeout")
+	default:
+		t.Fatal("the doorman stopped with the stamp still under way")
+	}
 }
 
 // A browser gets the waking-up page at once, however slow the API server
@@ -1967,15 +1986,22 @@ func TestServer_ShutdownDoesNotWaitOutAStamp(t *testing.T) {
 func TestServer_ServesThePageWithoutWaitingForTheWake(t *testing.T) {
 	port := freePort(t)
 	release := make(chan struct{})
-	s, c := newTestServer(t, hangPatches(release), pausedWorkload("api", port, time.Minute))
+	var stamped atomic.Int32
+	s, c := newTestServer(t, func(c client.WithWatch) client.WithWatch {
+		hanging := hangPatches(release)(c)
+		return interceptor.NewClient(hanging, interceptor.Funcs{Patch: func(ctx context.Context,
+			cl client.WithWatch, obj client.Object, patch client.Patch, opts ...client.PatchOption) error {
+			defer stamped.Add(1)
+			return cl.Patch(ctx, obj, patch, opts...)
+		}})
+	}, pausedWorkload("api", port, time.Minute))
 	run(t, s)
 
 	conn := dial(t, port)
-	start := time.Now()
 	send(t, conn, browserGET)
 	resp, _ := readResponse(t, conn)
 	assert.Equal(t, http.StatusServiceUnavailable, resp.StatusCode)
-	assert.Less(t, time.Since(start), time.Second, "the page doesn't wait on the stamp")
+	assert.Zero(t, stamped.Load(), "the page came while the stamp was still waiting on the API server")
 	assert.Empty(t, lastRequest(t, c))
 
 	close(release)

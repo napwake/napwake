@@ -1,3 +1,4 @@
+{{- include "hybernate.defaults" . -}}
 {{- if and .Values.doorman.networkPolicy.ingressFrom (not .Values.networkPolicy.enabled) }}
 {{- fail "doorman.networkPolicy.ingressFrom needs networkPolicy.enabled: true; without it no policy is created and the doorman stays open to everyone" }}
 {{- end }}

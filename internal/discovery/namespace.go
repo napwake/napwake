@@ -24,6 +24,7 @@ import (
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
+	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/apimachinery/pkg/types"
@@ -100,7 +101,7 @@ func (n *namespaceScan) problem(what reading, err error) {
 func (s *Scanner) scanNamespace(ctx, historyCtx context.Context, namespace string, reads *clusterReads,
 	pricing nodePricing, opts ClusterOptions) namespaceScan {
 	scan := namespaceScan{namespace: namespace, sources: map[workloadKey]workloadSource{}}
-	namespaceLabels, err := s.namespaceLabels(ctx, reads, namespace)
+	namespaceLabels, namespaceAnnotations, err := s.namespaceMeta(ctx, reads, namespace)
 	if err != nil {
 		scan.problem(readingNamespace, err)
 	}
@@ -160,6 +161,8 @@ func (s *Scanner) scanNamespace(ctx, historyCtx context.Context, namespace strin
 			DryRun:    mw != nil && mw.Spec.DryRun,
 			Protected: protected,
 			Platform:  platform[string(wl.kind)+"/"+obj.GetName()],
+
+			protectedByHybernate: hybernateProtects(mw),
 		}
 		w.recordGitOps(reads.gitOps.Replicas(ctx, obj))
 		rollouts := owners.rollouts[obj.GetUID()]
@@ -209,7 +212,9 @@ func (s *Scanner) scanNamespace(ctx, historyCtx context.Context, namespace strin
 				h := r.run()
 				w.History = &h
 				if opts.Forecast != nil {
-					w.Forecast = replayForecast(r, confidenceFor(mw, *opts.Forecast), mw, *opts.Forecast)
+					w.Forecast = replayForecast(r, confidenceFor(mw, *opts.Forecast), mw,
+						replayWakes(mw, optedInWakeOnRequest(obj.GetAnnotations(), namespaceAnnotations),
+							wl.template.Labels, scan.services, installFor(reads.installs, namespace, mw)), *opts.Forecast)
 				}
 			}
 			if w.History == nil && w.State != StateUnknown && w.Platform == "" {
@@ -249,6 +254,12 @@ func (s *Scanner) readHistoryOf(ctx, historyCtx context.Context, scan *namespace
 		scan.historySince = time.Unix(first, 0).UTC()
 	}
 	return history
+}
+
+// hybernateProtects reports whether a workload's ManagedWorkload says
+// Hybernate never pauses it.
+func hybernateProtects(mw *v1alpha1.ManagedWorkload) bool {
+	return mw != nil && meta.IsStatusConditionTrue(mw.Status.Conditions, "Protected")
 }
 
 // wontPause says why the operator refuses to pause a workload whatever its
@@ -506,13 +517,13 @@ func (u podUsage) of(pods []corev1.Pod, sel labels.Selector) []metricsv1beta1.Po
 	return out
 }
 
-// readServices reads a namespace's Services, keeping only what resolving a
-// dependency needs.
+// readServices reads a namespace's Services, keeping only what the scan
+// needs of them.
 func (s *Scanner) readServices(ctx context.Context, reads *clusterReads, namespace string) (
 	map[string]corev1.Service, error) {
 	out := map[string]corev1.Service{}
 	err := eachIn(ctx, s.client, reads.services, namespace, servicesItems, func(svc *corev1.Service) {
-		out[svc.Name] = dependencyService(svc)
+		out[svc.Name] = scannedService(svc)
 	})
 	if err != nil {
 		return nil, err
@@ -535,20 +546,21 @@ func (s *Scanner) managedInNamespace(ctx context.Context, reads *clusterReads, n
 	return out, nil
 }
 
-// namespaceLabels reads a namespace's labels, which say whether it's
-// protected. The operator's own protected name patterns aren't visible to
+// namespaceMeta reads a namespace's labels, which say whether it's
+// protected, and its annotations, which set what opting its workloads in
+// gives them. The operator's own protected name patterns aren't visible to
 // the scan, so only the label counts for that.
-func (s *Scanner) namespaceLabels(ctx context.Context, reads *clusterReads, namespace string) (
-	map[string]string, error) {
+func (s *Scanner) namespaceMeta(ctx context.Context, reads *clusterReads, namespace string) (
+	nsLabels, nsAnnotations map[string]string, err error) {
 	if listed := reads.namespaces.byNamespace; listed != nil {
 		if found := listed[namespace]; len(found) > 0 {
-			return found[0].Labels, nil
+			return found[0].Labels, found[0].Annotations, nil
 		}
-		return nil, apierrors.NewNotFound(corev1.Resource("namespaces"), namespace)
+		return nil, nil, apierrors.NewNotFound(corev1.Resource("namespaces"), namespace)
 	}
 	var ns corev1.Namespace
 	if err := s.client.Get(ctx, client.ObjectKey{Name: namespace}, &ns); err != nil {
-		return nil, err
+		return nil, nil, err
 	}
-	return ns.Labels, nil
+	return ns.Labels, ns.Annotations, nil
 }

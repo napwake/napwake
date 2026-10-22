@@ -1,14 +1,20 @@
 # Helm Values Reference
 
-Complete reference for the Hybernate Helm chart. Install with:
+Complete reference for the Hybernate Helm chart. Put the values you set in a file, starting with your users' [time zone](../getting-started/installation.md#time-zone):
+
+```yaml title="hybernate-values.yaml"
+timezone: Europe/London
+```
+
+and install with it:
 
 ```bash
 helm install hybernate oci://ghcr.io/okedeji/charts/hybernate --version 0.2.0 \
   --namespace hybernate-system --create-namespace \
-  --set timezone=Europe/London
+  -f hybernate-values.yaml
 ```
 
-Set `timezone` to your users' [time zone](../getting-started/installation.md#time-zone). The chart is published only as an OCI artifact; there's no `helm repo` to add. Its version has no `v` (`0.2.0`); the image tags do (`v0.2.0`). To see all defaults:
+Upgrade with the same file, so upgrades keep your settings; see [Keeping your settings](../operations/upgrading.md#keeping-your-settings). The chart is published only as an OCI artifact; there's no `helm repo` to add. Its version has no `v` (`0.2.0`); the image tags do (`v0.2.0`). To see all defaults:
 
 ```bash
 helm show values oci://ghcr.io/okedeji/charts/hybernate --version 0.2.0
@@ -41,6 +47,14 @@ The full name is the release name when it contains `hybernate`, and `<release>-h
 | `crds.install` | `true` | Install the ManagedWorkload CRD, and upgrade it with each `helm upgrade` |
 
 The CRD is a chart template with `helm.sh/resource-policy: keep`, so `helm uninstall` leaves it, and every ManagedWorkload, in place: deleting the CRD would delete them all. Argo CD ignores that policy, so the CRD also carries `argocd.argoproj.io/sync-options: Delete=false`, and deleting or pruning the Application leaves it too. Set `crds.install: false` only if you manage the CRD yourself, for example from `config/crd` in the repository.
+
+## Defaults version
+
+| Value | Default | Description |
+|-------|---------|-------------|
+| `defaultsVersion` | the chart's version, such as `0.2.0` | The chart version the defaults Helm renders with are from. Leave it as it is |
+
+`helm upgrade --reuse-values` to a newer version renders with the installed version's defaults rather than the new one's, and those lack every value added since. The chart tells from `defaultsVersion` that they're another version's, and fills in each missing value from its own defaults, kept in `files/defaults.yaml`, a copy of `values.yaml`, since templates can't read `values.yaml` itself. A value that's there is kept, `false`, `0` and `""` included. With its own defaults, the chart fills in nothing, so a default you remove with `null` stays removed. See [Keeping your settings](../operations/upgrading.md#keeping-your-settings).
 
 ## Operator
 
@@ -89,6 +103,7 @@ Settings for workloads opted in with the `hybernate.io/managed` label, used when
 | `defaults.idleAfter` | `1h` | How long without activity before pausing; a Go duration of at least `1m`, such as `90s` or `1h30m`. Passed as `--default-idle-after` |
 | `defaults.cpuThreshold` | `10` | CPU use, as a percentage of requests from 1 to 100, above which a workload counts as active. Passed as `--default-cpu-threshold` |
 | `defaults.dryRun` | `false` | Measure without pausing. Set `true` to roll Hybernate out across a cluster measuring first. Passed as `--default-dry-run` |
+| `defaults.pauseEarly` | `false` | Let a confident forecast that expects quiet hours pause a workload before `idleAfter` runs out. See [Pausing Early](../concepts/forecasting.md#pausing-early). Passed as `--default-pause-early` |
 | `defaults.forecast` | `balanced` | How soon the forecast acts: `eager`, `balanced` or `cautious`. See [Forecast setting](../concepts/forecasting.md#forecast-setting). Passed as `--default-forecast` |
 
 ## Prometheus Activity

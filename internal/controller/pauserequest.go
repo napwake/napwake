@@ -30,20 +30,28 @@ import (
 )
 
 const (
-	// conditionPauseRequest says what came of the last pause request: True
-	// when it paused the workload, or found it paused already, and False,
-	// with the reason, when it didn't.
+	// conditionPauseRequest says what came of the last pause request, and
+	// when: True, reason Paused or AlreadyPaused, when it paused the
+	// workload or found it paused already, and False, with why, when it
+	// didn't. It answers that request until the next one, through every
+	// wake and idle pause meanwhile, so it says what happened, in the past
+	// tense, rather than what's happening.
 	conditionPauseRequest = "PauseRequest"
 
 	ReasonPauseRequested = "PauseRequested"
 
-	reasonPausing       = "Pausing"
 	reasonAlreadyPaused = "AlreadyPaused"
 	reasonActiveUntil   = "ActiveUntil"
 	reasonDryRun        = "DryRun"
 
 	reasonForecastExpectsDemand = "ForecastExpectsDemand"
 )
+
+// answeredAt is when a pause request was answered, as its condition says
+// it: to the minute, in UTC, which kubectl describe shows as it is.
+func answeredAt(t time.Time) string {
+	return t.UTC().Format("2006-01-02 15:04 UTC")
+}
 
 // pendingPauseRequest is the hybernate.io/pause-requested value Hybernate
 // hasn't acted on yet, if there is one.
@@ -71,7 +79,8 @@ func (r *Reconciler) refusePauseRequest(ctx context.Context, workload *v1alpha1.
 	if _, ok := pendingPauseRequest(workload); !ok {
 		return nil
 	}
-	r.answerPauseRequest(workload, metav1.ConditionFalse, reason, "not paused: "+why)
+	r.answerPauseRequest(workload, metav1.ConditionFalse, reason, fmt.Sprintf("not paused at %s: %s",
+		answeredAt(r.now()), why))
 	if err := r.Status().Update(ctx, workload); err != nil {
 		return fmt.Errorf("answering the pause request: %w", err)
 	}
@@ -102,7 +111,8 @@ func (r *Reconciler) reconcilePauseRequest(ctx context.Context, workload *v1alph
 	phase := workload.Status.Phase
 	switch phase {
 	case v1alpha1.PhasePaused:
-		r.answerPauseRequest(workload, metav1.ConditionTrue, reasonAlreadyPaused, "the workload was already paused")
+		r.answerPauseRequest(workload, metav1.ConditionTrue, reasonAlreadyPaused,
+			"already paused at "+answeredAt(r.now()))
 		return nil, nil
 	case v1alpha1.PhaseRunning, v1alpha1.PhaseIdle:
 	default:
@@ -139,7 +149,7 @@ func (r *Reconciler) reconcilePauseRequest(ctx context.Context, workload *v1alph
 	}
 
 	r.clearIdleVeto(workload)
-	r.answerPauseRequest(workload, metav1.ConditionTrue, reasonPausing, "pausing as requested")
+	r.answerPauseRequest(workload, metav1.ConditionTrue, ReasonPaused, "paused as requested at "+answeredAt(r.now()))
 	return r.handlePause(ctx, workload, target, &phaseEvent{reason: ReasonPauseRequested,
 		message: "pause requested, pausing"})
 }
@@ -173,13 +183,15 @@ func (r *Reconciler) heldAwakeUntil(ctx context.Context, workload *v1alpha1.Mana
 // in a would-be pause already.
 func (r *Reconciler) pauseRequestedInDryRun(ctx context.Context, workload *v1alpha1.ManagedWorkload) (*ctrl.Result, error) {
 	if workload.Status.Phase == v1alpha1.PhaseIdle {
-		r.answerPauseRequest(workload, metav1.ConditionFalse, reasonDryRun,
-			"not paused: dry-run is on, and a would-be pause is already under way")
+		r.answerPauseRequest(workload, metav1.ConditionFalse, reasonDryRun, fmt.Sprintf(
+			"not paused at %s: dry-run is on, and a would-be pause was already under way", answeredAt(r.now())))
 		return nil, nil
 	}
 	r.beginWouldBePause(ctx, workload)
-	r.answerPauseRequest(workload, metav1.ConditionFalse, reasonDryRun,
-		"not paused: dry-run is on, so Hybernate counts a would-be pause and leaves the workload running")
+	workload.Status.DryRun.QueryActiveSincePause = r.queryActiveAtPause(ctx, workload)
+	r.answerPauseRequest(workload, metav1.ConditionFalse, reasonDryRun, fmt.Sprintf(
+		"not paused at %s: dry-run is on, so Hybernate counted a would-be pause and left the workload running",
+		answeredAt(r.now())))
 	if err := r.transition(ctx, workload, v1alpha1.PhaseIdle, ReasonPauseRequested); err != nil {
 		return nil, err
 	}

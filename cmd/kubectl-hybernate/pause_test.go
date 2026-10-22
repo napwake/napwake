@@ -63,7 +63,7 @@ func operator(answer func(w *v1alpha1.ManagedWorkload)) interceptor.Funcs {
 // workload.
 func pauses(w *v1alpha1.ManagedWorkload) {
 	w.Status.Phase = v1alpha1.PhasePaused
-	answer(w, metav1.ConditionTrue, "Pausing", "pausing as requested")
+	answer(w, metav1.ConditionTrue, "Paused", "paused as requested at 2026-10-21 03:32 UTC")
 }
 
 // refuses answers a request the way the operator does when it won't pause
@@ -163,29 +163,37 @@ func TestPause_Answers(t *testing.T) {
 	}{
 		{
 			name: "dry-run", dryRun: true,
-			answer: refuses(v1alpha1.PhaseIdle, "DryRun",
-				"not paused: dry-run is on, so Hybernate counts a would-be pause and leaves the workload running"),
+			answer: refuses(v1alpha1.PhaseIdle, "DryRun", "not paused at 2026-10-21 03:32 UTC: dry-run is on, "+
+				"so Hybernate counted a would-be pause and left the workload running"),
 			wantStep: "preview-42/api is in dry-run, so Hybernate counts a would-be pause and leaves it running...\n",
-			want: "preview-42/api wasn't paused: dry-run is on, so Hybernate counts a would-be pause and leaves " +
+			want: "preview-42/api wasn't paused: dry-run is on, so Hybernate counted a would-be pause and left " +
 				"the workload running\n",
 		},
 		{
 			name: "scaled to zero",
 			answer: refuses(v1alpha1.PhaseRunning, "ScaledToZero",
-				"not paused: it's scaled to zero outside Hybernate, so it's off already"),
+				"not paused at 2026-10-21 03:32 UTC: it's scaled to zero outside Hybernate, so it's off already"),
 			wantStep: "pausing preview-42/api...\n",
 			want:     "preview-42/api is scaled to zero outside Hybernate, so it's off already\n",
 		},
 		{
 			name: "protected namespace",
 			answer: refuses(v1alpha1.PhaseRunning, "Protected",
-				"not paused: namespace preview-42 is protected, so Hybernate doesn't pause workloads in it"),
+				"not paused at 2026-10-21 03:32 UTC: namespace preview-42 is protected, so Hybernate doesn't pause "+
+					"workloads in it"),
 			wantStep: "pausing preview-42/api...\n",
 			wantErr: "preview-42/api wasn't paused: namespace preview-42 is protected, so Hybernate doesn't pause " +
 				"workloads in it",
 		},
 		{
-			name:     "awake dependents",
+			name: "awake dependents",
+			answer: refuses(v1alpha1.PhaseRunning, "HeldByDependents",
+				"not paused at 2026-10-21 03:32 UTC: kept awake for preview-42/web"),
+			wantStep: "pausing preview-42/api...\n",
+			wantErr:  "preview-42/api wasn't paused: kept awake for preview-42/web",
+		},
+		{
+			name:     "an answer without its time, from an operator before 0.2.0",
 			answer:   refuses(v1alpha1.PhaseRunning, "HeldByDependents", "not paused: kept awake for preview-42/web"),
 			wantStep: "pausing preview-42/api...\n",
 			wantErr:  "preview-42/api wasn't paused: kept awake for preview-42/web",
@@ -236,7 +244,7 @@ func TestPause_TimesOut(t *testing.T) {
 	require.ErrorIs(t, err, context.DeadlineExceeded)
 	assert.Contains(t, err.Error(), "preview-42/api isn't Paused yet: it's still Running")
 	assert.Contains(t, err.Error(), "kubectl describe managedworkload api -n preview-42")
-	assert.Less(t, time.Since(start), 5*time.Second)
+	assert.Less(t, time.Since(start), promptly)
 }
 
 // The wait running out during a poll's read is the workload not being
@@ -439,8 +447,9 @@ func expectsDemand(w *v1alpha1.ManagedWorkload) {
 		pauses(w)
 		return
 	}
-	refuses(v1alpha1.PhaseRunning, "ForecastExpectsDemand", "not paused: the forecast expects demand at 80% of "+
-		"requests in the hour from 09:00 UTC; ask again overriding the forecast to pause anyway")(w)
+	refuses(v1alpha1.PhaseRunning, "ForecastExpectsDemand", "not paused at 2026-10-21 08:20 UTC: the forecast "+
+		"expects demand at 80% of requests in the hour from 09:00 UTC; ask again overriding the forecast to pause "+
+		"anyway")(w)
 }
 
 // When the forecast expects the workload to be busy soon, pause says when
@@ -520,7 +529,9 @@ func failsOnceDone(funcs interceptor.Funcs) interceptor.Funcs {
 // own.
 func TestPause_AnswerAfterTheTimeout(t *testing.T) {
 	c := newClient(t, failsOnceDone(operator(expectsDemand)), managedWorkload(v1alpha1.PhaseRunning))
-	const timeout = 200 * time.Millisecond
+	// Each step after the answer must finish within it, so it's long enough
+	// for a loaded runner's in-memory API calls.
+	const timeout = time.Second
 	opts := pauseOptions{wait: true, pollInterval: time.Millisecond, now: time.Now,
 		confirm: func(string) (bool, error) { time.Sleep(2 * timeout); return true, nil }}
 	var out bytes.Buffer

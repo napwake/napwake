@@ -23,7 +23,6 @@ import (
 	"fmt"
 	"net/netip"
 	"slices"
-	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -46,12 +45,14 @@ import (
 
 	v1alpha1 "github.com/okedeji/hybernate/api/v1alpha1"
 	"github.com/okedeji/hybernate/internal/doorman"
+	opmetrics "github.com/okedeji/hybernate/internal/metrics"
 )
 
 const (
 	conditionWakeOnRequest = "WakeOnRequest"
 	actionRouteDoorman     = "RouteDoorman"
 	reasonRoutingFailed    = "RoutingFailed"
+	reasonNotPaused        = "NotPaused"
 
 	labelServiceProxyName = "service.kubernetes.io/service-proxy-name"
 
@@ -112,6 +113,66 @@ func doormanEligible(workload *v1alpha1.ManagedWorkload) bool {
 	default:
 		return false
 	}
+}
+
+// requestWouldWake reports whether, were the awake workload paused now, a
+// request to any Service that selects its pods would wake it: the doorman
+// is on and has a Ready pod, the workload's last pause found nothing wrong
+// with its routing, and the plan its pause would be routed by routes at
+// least one of those Services, every port of each but those
+// hybernate.io/doorman-ignore-ports lists, and takes no more doorman ports
+// than the workload and its namespace may hold. Otherwise it says why not.
+// What it can't check counts against it.
+func (r *Reconciler) requestWouldWake(ctx context.Context, workload *v1alpha1.ManagedWorkload,
+	target client.Object) (bool, string, error) {
+	switch {
+	case r.DoormanService == "" || target == nil:
+		return false, "the doorman is off", nil
+	case !wakeOnRequest(workload):
+		return false, "wake on request is turned off", nil
+	}
+	if c := meta.FindStatusCondition(workload.Status.Conditions, conditionWakeOnRequest); c != nil &&
+		c.Status == metav1.ConditionFalse && c.Reason != reasonNotPaused {
+		return false, fmt.Sprintf("its routing has a problem (WakeOnRequest reason %s)", c.Reason), nil
+	}
+	endpoints, err := r.doormanEndpoints(ctx)
+	if err != nil {
+		return false, "", err
+	}
+	if len(endpoints) == 0 {
+		return false, "no doorman pod is Ready", nil
+	}
+	plan, err := r.planDoorman(ctx, workload, target, endpoints, true)
+	if err != nil {
+		return false, "", err
+	}
+	if left := plan.unroutable; len(left) > 0 {
+		return false, "Services the doorman can't route select its pods: " + strings.Join(left, ", "), nil
+	}
+	if skipped := plan.skipped.unsupported; len(skipped) > 0 {
+		return false, "Services behind GKE container-native load balancing, which can't use the doorman without " +
+			"its forwarder, select its pods: " + strings.Join(skipped, ", "), nil
+	}
+	if notes := plan.skipped.notes(); notes != "" {
+		return false, notes, nil
+	}
+	ports := 0
+	for _, s := range plan.services {
+		ports += len(s.ports)
+	}
+	if ports == 0 {
+		return false, "no Service routes TCP traffic to it", nil
+	}
+	reader := routeReader{reader: r.apiReader(), namespaces: r.WatchNamespaces}
+	holder := portHolder{uid: workload.UID, namespace: workload.Namespace}
+	err = r.doormanPorts.fits(ctx, reader, r.now(), holder, r.portLimits(), ports)
+	if tooMany := (*tooManyPortsError)(nil); errors.As(err, &tooMany) {
+		return false, tooMany.Error(), nil
+	}
+	if err != nil {
+		return false, "", err
+	}
+	return true, "", nil
 }
 
 // routeDoorman brings the workload's doorman routing up to date. Routing is
@@ -175,7 +236,7 @@ func (r *Reconciler) reconcileDoorman(ctx context.Context, workload *v1alpha1.Ma
 		return 0, r.removeDoorman(ctx, workload)
 	}
 
-	plan, err := r.planDoorman(ctx, workload, target, endpoints)
+	plan, err := r.planDoorman(ctx, workload, target, endpoints, false)
 	if err != nil {
 		return 0, err
 	}
@@ -290,7 +351,7 @@ func (r *Reconciler) keepRoutingProblem(workload *v1alpha1.ManagedWorkload) {
 	}
 	c := meta.FindStatusCondition(workload.Status.Conditions, conditionWakeOnRequest)
 	if c == nil || c.Status != metav1.ConditionFalse || !lastingRoutingProblems[c.Reason] {
-		r.clearCondition(workload, conditionWakeOnRequest, "NotPaused")
+		r.clearCondition(workload, conditionWakeOnRequest, reasonNotPaused)
 		return
 	}
 	if !strings.HasPrefix(c.Message, foundAtLastPause) {
@@ -560,6 +621,11 @@ type doormanService struct {
 type doormanPlan struct {
 	services []doormanService
 	skipped  skippedServices
+	// unroutable are the Services that select an awake workload's pods
+	// which the doorman can't route at all, or not on every port, each with
+	// why, planned ahead of its pause. A paused workload's routing leaves
+	// them out as it always does.
+	unroutable []string
 }
 
 // planDoorman picks the Services in the workload's namespace to route
@@ -574,9 +640,15 @@ type doormanPlan struct {
 // canary and a stable Deployment of which only one is paused, is left to
 // them: requests reach a running workload, and waking the paused one for
 // them would be no use. Once every workload behind it is paused, it's
-// routed by each, so a request wakes one of them.
+// routed by each, so a request wakes one of them. For an awake workload,
+// planned ahead of its pause, its own pods serve its Services, and aren't
+// counted among those other pods.
 func (r *Reconciler) planDoorman(ctx context.Context, workload *v1alpha1.ManagedWorkload, target client.Object,
-	endpoints map[discoveryv1.AddressType][]discoveryv1.Endpoint) (doormanPlan, error) {
+	endpoints map[discoveryv1.AddressType][]discoveryv1.Endpoint, awake bool) (doormanPlan, error) {
+	var own client.Object
+	if awake {
+		own = target
+	}
 	podLabels := labels.Set(podTemplateLabels(target))
 	var list corev1.ServiceList
 	if err := r.List(ctx, &list, client.InNamespace(workload.Namespace)); err != nil {
@@ -588,11 +660,15 @@ func (r *Reconciler) planDoorman(ctx context.Context, workload *v1alpha1.Managed
 	}
 	var plan doormanPlan
 	for _, svc := range list.Items {
-		if len(svc.Spec.Selector) == 0 || svc.Spec.ClusterIP == corev1.ClusterIPNone ||
-			svc.Spec.Type == corev1.ServiceTypeExternalName {
+		if len(svc.Spec.Selector) == 0 || svc.Spec.Type == corev1.ServiceTypeExternalName ||
+			!labels.SelectorFromSet(svc.Spec.Selector).Matches(podLabels) {
 			continue
 		}
-		if !labels.SelectorFromSet(svc.Spec.Selector).Matches(podLabels) {
+		if why := unroutable(svc); awake && why != "" {
+			plan.unroutable = append(plan.unroutable, fmt.Sprintf("%s (%s)", svc.Name, why))
+			continue
+		}
+		if svc.Spec.ClusterIP == corev1.ClusterIPNone {
 			continue
 		}
 		forwarded := usesGKENEG(svc, ingresses.Items)
@@ -600,7 +676,7 @@ func (r *Reconciler) planDoorman(ctx context.Context, workload *v1alpha1.Managed
 			plan.skipped.unsupported = append(plan.skipped.unsupported, svc.Name)
 			continue
 		}
-		ports := routablePorts(svc)
+		ports := doorman.RoutablePorts(svc)
 		if len(ports) == 0 {
 			continue
 		}
@@ -608,7 +684,7 @@ func (r *Reconciler) planDoorman(ctx context.Context, workload *v1alpha1.Managed
 			plan.skipped.nodeLocal = append(plan.skipped.nodeLocal, svc.Name)
 			continue
 		}
-		served, err := r.servedByOthers(ctx, svc)
+		served, err := r.servedByOthers(ctx, svc, own)
 		if err != nil {
 			return doormanPlan{}, err
 		}
@@ -633,17 +709,39 @@ func (r *Reconciler) planDoorman(ctx context.Context, workload *v1alpha1.Managed
 	slices.Sort(plan.skipped.served)
 	slices.Sort(plan.skipped.nodeLocal)
 	slices.Sort(plan.skipped.family)
+	slices.Sort(plan.unroutable)
 	return plan, nil
 }
 
+// unroutable says why the doorman can't route a Service that selects a
+// workload's pods, or not on every port: one that's headless hands callers
+// the pods' addresses directly, and UDP and SCTP it can't hold. Empty when
+// it can route every port but those hybernate.io/doorman-ignore-ports
+// lists, which are meant to fail while the workload is paused.
+func unroutable(svc corev1.Service) string {
+	if svc.Spec.ClusterIP == corev1.ClusterIPNone {
+		return "headless"
+	}
+	ports := doorman.UnroutablePorts(svc)
+	if len(ports) == 0 {
+		return ""
+	}
+	names := make([]string, 0, len(ports))
+	for _, p := range ports {
+		names = append(names, fmt.Sprintf("%s port %d", p.Protocol, p.Port))
+	}
+	return strings.Join(names, ", ")
+}
+
 // servedByOthers reports whether a Service's own EndpointSlices have a
-// Ready pod, which can only be another workload's while this one is paused.
+// Ready pod, which can only be another workload's while this one is paused,
+// or, for an awake one, is one that own, its target, doesn't run.
 // They're read from the API server: the operator caches only the doorman's
 // slices, since caching every Service's would cost memory in proportion to
 // every pod in the cluster. An endpoint counts only once the pod it names,
 // in the Service's namespace, has its address: anyone who may write
 // EndpointSlices could otherwise keep a Service from being routed.
-func (r *Reconciler) servedByOthers(ctx context.Context, svc corev1.Service) (bool, error) {
+func (r *Reconciler) servedByOthers(ctx context.Context, svc corev1.Service, own client.Object) (bool, error) {
 	ctx, cancel := context.WithTimeout(ctx, endpointsReadTimeout)
 	defer cancel()
 	var list discoveryv1.EndpointSliceList
@@ -655,55 +753,32 @@ func (r *Reconciler) servedByOthers(ctx context.Context, svc corev1.Service) (bo
 		if ep.Namespace != svc.Namespace {
 			continue
 		}
-		has, err := r.podHasAddress(ctx, types.NamespacedName{Namespace: svc.Namespace, Name: ep.Pod}, ep.Addr)
+		pod, err := r.podWithAddress(ctx, types.NamespacedName{Namespace: svc.Namespace, Name: ep.Pod}, ep.Addr)
 		if err != nil {
 			return false, err
 		}
-		if has {
+		if pod != nil && (own == nil || !opmetrics.RunBy(own, pod)) {
 			return true, nil
 		}
 	}
 	return false, nil
 }
 
-func (r *Reconciler) podHasAddress(ctx context.Context, name types.NamespacedName, addr netip.Addr) (bool, error) {
+// podWithAddress is the pod of name, if it has addr; nil otherwise.
+func (r *Reconciler) podWithAddress(ctx context.Context, name types.NamespacedName, addr netip.Addr) (*corev1.Pod, error) {
 	var pod corev1.Pod
 	if err := r.apiReader().Get(ctx, name, &pod); err != nil {
 		if apierrors.IsNotFound(err) {
-			return false, nil
+			return nil, nil
 		}
-		return false, fmt.Errorf("reading pod %s: %w", name, err)
+		return nil, fmt.Errorf("reading pod %s: %w", name, err)
 	}
 	for _, ip := range pod.Status.PodIPs {
 		if parsed, err := netip.ParseAddr(ip.IP); err == nil && parsed.Unmap() == addr {
-			return true, nil
+			return &pod, nil
 		}
 	}
-	return false, nil
-}
-
-// routablePorts are a Service's TCP ports, less those its
-// hybernate.io/doorman-ignore-ports annotation lists by name or number.
-// Those fail while the workload is paused, as they would without the
-// doorman, which is what a port only health checks or scrapers use wants.
-func routablePorts(svc corev1.Service) []corev1.ServicePort {
-	ignored := map[string]bool{}
-	for p := range strings.SplitSeq(svc.Annotations[doorman.AnnotationIgnorePorts], ",") {
-		if p = strings.TrimSpace(p); p != "" {
-			ignored[p] = true
-		}
-	}
-	var out []corev1.ServicePort
-	for _, port := range svc.Spec.Ports {
-		if port.Protocol != "" && port.Protocol != corev1.ProtocolTCP {
-			continue
-		}
-		if ignored[strconv.Itoa(int(port.Port))] || (port.Name != "" && ignored[port.Name]) {
-			continue
-		}
-		out = append(out, port)
-	}
-	return out
+	return nil, nil
 }
 
 // serviceFamilies are the address families a Service has cluster IPs in,
@@ -931,6 +1006,18 @@ func (a *portAllocator) assign(ctx context.Context, reader routeReader, now time
 		delete(a.draining, port)
 	}
 	return routes, nil
+}
+
+// fits reports, with a *tooManyPortsError, whether holder could be given n
+// ports now without going over limits, as assign would find.
+func (a *portAllocator) fits(ctx context.Context, reader routeReader, now time.Time, holder portHolder,
+	limits portLimits, n int) error {
+	if err := a.load(ctx, reader, now); err != nil {
+		return err
+	}
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	return a.withinLimits(holder, limits, n)
 }
 
 // withinLimits reports whether holder may hold n ports. a.mu must be held.

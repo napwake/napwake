@@ -1,6 +1,10 @@
 # Forecasting
 
-Hybernate uses a **Holt-Winters double seasonal model** to learn your workload's demand patterns and predict future resource needs. This page covers the mathematical model, how it builds confidence over time, how soon it acts and how to choose that, how it starts from your Prometheus history, and how it handles pattern shifts. Every figure on it is measured by the [simulator](#proving-it), which runs the operator's own engine and rules.
+- **It always learns**, for every managed workload, whatever `autoResume` says: from every hour it's awake, and every hour it's paused that the doorman or an activity query watches, the doorman's even while the queries can't be evaluated. Once it's confident, it holds off pauses before hours it expects to be busy, on its own.
+- **With `autoResume`**, it also wakes a paused workload 15 minutes ahead of the demand it expects. Turning `autoResume` on later loses nothing: the forecast has been learning all along, and wakes the workload ahead from then, once it acts.
+- **With `pauseEarly`**, off by default, it also pauses an idle workload before `idleAfter` runs out, when it's confident the coming hours are quiet and a request would wake it; see [Pausing Early](#pausing-early).
+
+Hybernate uses a **Holt-Winters double seasonal model** to learn your workload's demand patterns and predict future resource needs. This page covers the mathematical model, how it builds confidence over time, how soon it acts and how to choose that, how it can bring a pause forward, how it starts from your Prometheus history, and how it handles pattern shifts. Every figure on it is measured by the [simulator](#proving-it), which runs the operator's own engine and rules.
 
 ## The Idea
 
@@ -11,8 +15,9 @@ Most workloads follow predictable patterns:
 
 Hybernate learns these two patterns independently by feeding hourly CPU utilization into a Holt-Winters model. Once it has enough data and confidence, it uses the learned patterns to:
 
-- Hold off a pause when it's confident demand is coming in the hour under way or the next. It never causes a pause: the [activity clock](idle-detection.md) decides that
+- Hold off a pause when it's confident demand is coming in the hour under way or the next
 - Wake paused workloads ahead of predicted demand, starting 15 minutes before an hour it expects to be busy
+- With [`pauseEarly`](#pausing-early), which is off unless you turn it on, pause an idle workload before `idleAfter` runs out when it's confident the hours ahead are quiet. Otherwise it never causes a pause: the [activity clock](idle-detection.md) decides that
 
 ## What an Hour Records
 
@@ -21,8 +26,9 @@ The forecast learns CPU utilization: usage as a percentage of what the workload'
 It's fed each hour once it's over, as the busiest moment seen in it:
 
 - While the workload is awake, its CPU is read every minute, and the hour records the highest utilization. The peak, rather than the mean, is what the forecast's decisions need: the activity clock counts any minute above `cpuThreshold` as activity, so an hour busy only for its last ten minutes is an hour the workload has to be awake for. Usage in the first 15 minutes after a wake, including one by something else scaling it up such as `kubectl scale`, isn't counted: starting up isn't demand, and counted, a wake ahead of a busy hour would teach the forecast that the hour before it is busy too, so that it woke the workload earlier every week. Once it's warmed up, an hour the [activity clock](idle-detection.md#what-counts-as-activity) sees it in use in, from CPU above `cpuThreshold`, an activity annotation or a Prometheus query, counts as at least twice `cpuThreshold`, as an hour a request wakes it in does. A light-use workload's use may show only in an annotation or a query: taught its own light utilization on mornings `autoResume` had it ready, and a request's twice `cpuThreshold` on mornings people woke it, the forecast would have it ready only every other morning. A workload whose use stays under `cpuThreshold` with no other source is idle to Hybernate while it's awake, so `autoResume` can't learn its mornings; lower `cpuThreshold` below its use or add a source that sees it
-- While the workload is paused behind the [doorman](wake-on-request.md) (`WakeOnRequest=True`), a request would wake it, so a check that finds it still paused finds no demand. A request that wakes it counts as at least twice `cpuThreshold`, however little it then uses, so the hour people arrive in is learned as busy
-- While the workload is paused without the doorman, demand can't be seen, and the hour isn't recorded: demand it can't see isn't zero
+- While the workload is paused behind the [doorman](wake-on-request.md) (`WakeOnRequest=True`), a request would wake it, so a check that finds it still paused finds no demand. A request that wakes it counts as at least twice `cpuThreshold`, however little it then uses, so the hour people arrive in is learned as busy. That stands while its Prometheus activity queries, if it has any, can't be evaluated: a request would still wake it, so the hour is learned, busy if a request woke it or a query found activity, and quiet otherwise
+- While the workload is paused with a [Prometheus activity query](../guides/prometheus-signals.md#while-the-workload-is-paused), the query is evaluated every minute, as while it's awake, and wakes it when it finds activity. So a check that finds the query quiet finds no demand, and one that finds activity counts as at least twice `cpuThreshold`, as a request does. That's how a workload no Service routes requests to, such as a queue worker, learns its nights: from a query of its queue's length. Without the doorman, a check where a query can't be evaluated can't see demand, so the hour isn't recorded; behind the doorman, the hour is learned as above. A query that can't be evaluated never wakes the workload
+- While the workload is paused with neither watching it, demand can't be seen, and the hour isn't recorded: demand it can't see isn't zero
 - An hour is recorded only if it was checked from its start to its end. The hour under way is kept in memory, so after an operator restart or a leader change, the hour it happened in is skipped, unless it was only minutes old, rather than recorded from the part seen after it
 
 ## How It Works
@@ -57,7 +63,7 @@ The forecast for \( h \) hours ahead is never negative either:
 F(t+h) = \max\Bigl(0,\; L(t) + h \cdot T(t) + D(t+h) + W(t+h)\Bigr)
 \]
 
-A gap in the observations, from the operator being down or a workload paused without the doorman, is skipped rather than filled in: there is no honest value to fill it with, and since slots are wall-clock hours (below), skipping an hour doesn't shift what was learned. The trend is carried across a gap of at most a day.
+A gap in the observations, from the operator being down or a workload paused with neither the doorman nor an activity query watching it, is skipped rather than filled in: there is no honest value to fill it with, and since slots are wall-clock hours (below), skipping an hour doesn't shift what was learned. The trend is carried across a gap of at most a day.
 
 The first week initialises the model, as the first season does in classical Holt-Winters. The first time an hour of the week is seen, its weekly component is set so the forecast for that hour is what was seen, and the level, trend and daily components learn only from hours seen again. So after one week of office hours, the forecast for the next week is the week it saw, weekends quiet. The forecast isn't scored on an hour of the week it's seeing for the first time, since it had nothing to forecast it from, and doesn't act on one it hasn't seen.
 
@@ -77,7 +83,7 @@ The engine doesn't start making decisions immediately. It progresses through pha
 
 The gates count hours of the calendar, not data points: a workload that is only ever observed from 9 to 5 hasn't shown what happens at night, however many hours it has been watched.
 
-That has a consequence for workloads paused without the [doorman](wake-on-request.md): an hour paused without it isn't observed (see [What an Hour Records](#what-an-hour-records)), so a workload paused every night that way never has its nights observed, and its forecast never reaches `DailySuggesting`. Keep wake on request on if you want `autoResume` and the forecast's veto.
+That has a consequence for workloads paused with nothing to watch them: an hour paused without the [doorman](wake-on-request.md) or a [Prometheus activity query](../guides/prometheus-signals.md#while-the-workload-is-paused) isn't observed (see [What an Hour Records](#what-an-hour-records)), so a workload paused every night that way never has its nights observed, and its forecast never reaches `DailySuggesting`. Keep wake on request on if you want `autoResume` and the forecast's veto, and for a workload no Service routes requests to, such as a queue worker, give it an activity query that sees its demand, such as its queue's length.
 
 The ManagedWorkload shows the phase per season, in `status.prediction`: `dailyPhase` and `weeklyPhase` are each `Observing`, `Suggesting` or `Active`, next to `dailyConfidence` and `weeklyConfidence`. `DailyActive`, for example, is `dailyPhase: Active` with `weeklyPhase: Observing`. The phase shown, there and in `hybernate_prediction_phase`, is the one the forecast is acting in: after a [regime change](#anomaly-detection) leaves it at `WeeklySuggesting` with nothing scored, it's shown as `DailySuggesting` until a day of its forecasts has been scored and it drives decisions again.
 
@@ -116,7 +122,7 @@ On office hours kept steadily, every setting acts after 8 days and has every mor
 
 ### How Long It Takes
 
-Learning live from a fresh start, behind the doorman with `autoResume` on, the simulator measures how many days the forecast takes to act (`DailyActive`) and to be fully active (`FullyActive`), for a workload at 40% of its CPU request while in use and 1% otherwise, over ten weeks (never: not within them):
+Learning live from a fresh start, with `autoResume` on, behind the doorman or, for the last row, woken by a Prometheus activity query, the simulator measures how many days the forecast takes to act (`DailyActive`) and to be fully active (`FullyActive`), for a workload at 40% of its CPU request while in use and 1% otherwise, over ten weeks (never: not within them):
 
 | Workload | `eager` (60) | `balanced` (75) | `cautious` (85) |
 |----------|--------------|-----------------|-----------------|
@@ -126,6 +132,7 @@ Learning live from a fresh start, behind the doorman with `autoResume` on, the s
 | The same hours every day, weekends included | 8 / 14 | 8 / 14 | 8 / 14 |
 | Always busy | 8 / 14 | 8 / 14 | 8 / 14 |
 | Always idle | 8 / 14 | 8 / 14 | 8 / 14 |
+| A queue worker with no Service, which a query of its queue's length wakes, busy every day from 07:00 to 19:00, paused every night | 8 / 14 | 8 / 14 | 8 / 14 |
 
 A test in the repo runs these and fails if they drift from this table.
 
@@ -139,16 +146,66 @@ None of this delays idle detection or wake on request, which work from the first
 
 | Field | What it says |
 |-------|--------------|
-| `acting` | Whether the forecast drives decisions: it holds off pauses before hours it expects to be busy and, with `autoResume`, wakes the workload 15 minutes ahead of them |
+| `acting` | Whether the forecast drives decisions: it holds off pauses before hours it expects to be busy and, with `autoResume`, wakes the workload 15 minutes ahead of them, and with [`pauseEarly`](#pausing-early), brings pauses forward before hours it expects quiet |
 | `threshold` | The confidence it acts at: the setting's, or `spec.prediction.confidence` |
-| `reason` | `Acting`; `Observing`, it hasn't scored a day of its forecasts yet, as in its first week, or hasn't seen every hour of the day; `EarningConfidence`, its forecasts of the last day aren't yet right enough; `Relearning`, demand broke from what it had learned, after a [regime change](#anomaly-detection); `NotLearning`, the workload is paused without wake on request, so its demand can't be seen |
-| `message` | The same in a sentence, with its confidence and threshold once it has them, such as `learning: it has seen 100 of the 168 hours of the week, and scores its forecast of an hour from the second time it sees it; expected to start acting around Tue 24 Mar 00:00 UTC, if the coming days repeat the last week` |
+| `reason` | `Acting`; `Observing`, it hasn't scored a day of its forecasts yet, as in its first week, or hasn't seen every hour of the day; `EarningConfidence`, its forecasts of the last day aren't yet right enough; `Relearning`, demand broke from what it had learned, after a [regime change](#anomaly-detection); `NotLearning`, the workload is paused with nothing to see its demand: neither the doorman, its message saying why requests don't wake it and how to fix that, nor a Prometheus activity query that can be evaluated. Behind the doorman it learns whatever its queries do, its message ending `its Prometheus activity queries failing` while they can't be evaluated |
+| `message` | The same in a sentence, with its confidence and threshold once it has them, such as `learning: it has seen 100 of the 168 hours of the week, and scores its forecast of an hour from the second time it sees it; expected to start acting around Tue 24 Mar 00:00 UTC, if the coming days repeat the last week`. While the workload is paused, it ends with what it learns from then: `requests through the doorman`, `its Prometheus activity queries`, or both. Not learning, it says why and how to fix it, with a link, such as `not learning while paused: no Service routes requests to it; a request can't wake it, so its demand can't be seen, and it learns only the hours it's awake. To learn the hours it's paused too, give it a Service, or, for a workload no request reaches, such as a queue worker, a Prometheus activity query that sees its demand: https://okedeji.io/hybernate/concepts/wake-on-request/#when-a-workload-isnt-routed` |
 | `startsActing` | When it's expected to start acting |
 | `history` | What it learned from Prometheus when Hybernate began managing the workload; see [Learning from History](#learning-from-history) |
 
-`startsActing` is projected by running a copy of the forecast on through the demand it last saw in each hour of the week, until it would act: the same phase gates and confidence, on the assumption that the coming week looks like the last one. For an hour of the week it hasn't seen yet, it assumes the same hour on the nearest day it has; an hour of the day it has never seen, as a workload paused every night without the doorman leaves them, is never assumed, so such a workload is never projected to act. On office hours the projection is within a day of when the forecast does act from its second day, and within an hour once it has seen a weekend. It's unset while the forecast is acting, and, with the message saying so, when the forecast isn't expected to act within four weeks, as for a pattern too irregular for its setting. It's projected again once an hour, as the forecast learns.
+`startsActing` is projected by running a copy of the forecast on through the demand it last saw in each hour of the week, until it would act: the same phase gates and confidence, on the assumption that the coming week looks like the last one. For an hour of the week it hasn't seen yet, it assumes the same hour on the nearest day it has; an hour of the day it has never seen, as a workload paused every night with nothing watching it leaves them, is never assumed, so such a workload is never projected to act. On office hours the projection is within a day of when the forecast does act from its second day, and within an hour once it has seen a weekend. It's unset while the forecast is acting, and, with the message saying so, when the forecast isn't expected to act within four weeks, as for a pattern too irregular for its setting. It's projected again once an hour, as the forecast learns.
 
 `kubectl get managedworkloads -o wide` shows the reason in a `Forecast` column.
+
+## Pausing Early
+
+The forecast can bring a pause forward. With `pauseEarly` on, a workload that has been idle for 20 minutes is paused without waiting out `idleAfter` when all of these hold:
+
+- **The forecast is acting, and sure the hours ahead are quiet:** every hour until `idleAfter` would run out, and at least the hour under way and the next, is forecast below `cpuThreshold`, judged as the veto and `autoResume` judge them, at the same confidence threshold. An hour of the week it hasn't seen, and the hours after one far quieter than it forecast, as on a holiday, are hours it can't say are quiet, and nothing is brought forward
+- **A request would wake it:** wake on request is on, the [doorman](wake-on-request.md) has a Ready pod, and the workload's last pause found nothing wrong with its routing (`WakeOnRequest`). Every Service that selects the workload's pods is one the doorman would route while it's paused, on every port but those its `hybernate.io/doorman-ignore-ports` annotation lists: it isn't headless, has no UDP or SCTP port, doesn't keep traffic on the caller's node (`internalTrafficPolicy: Local`), has no other workload's Ready pods behind it, and, behind GKE container-native load balancing, has the doorman's [forwarder](wake-on-request.md#gke-container-native-load-balancing-negs) to reach it. At least one of them routes TCP, and their ports fit within the doorman ports the workload, and its namespace, may hold. A wrong forecast then costs a request a wake, a cold start, never its answer. If anything here doesn't hold, or can't be read, the workload waits out `idleAfter` as usual, and the operator logs why. Services without a selector, whose endpoints are written by hand, and `ExternalName` Services aren't checked, since nothing says which pods they reach
+- **Nothing else holds it:** an `active-until` hold, awake [dependents](dependencies.md) and the hour Hybernate waits after a [GitOps tool](../guides/gitops.md#what-hybernate-does) undid its last pause hold an early pause as they hold any. In [dry-run](../guides/dry-run.md), an early pause is a would-be pause, measured like any other
+
+It's off unless you turn it on, with `hybernate.io/pause-early: "true"` on an [opted-in](../guides/opt-in.md#settings) workload or its namespace, the Helm value `defaults.pauseEarly` for every opted-in workload, or `spec.idlePolicy.pauseEarly: true` on a ManagedWorkload you write:
+
+```yaml
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: preview-api
+  annotations:
+    hybernate.io/auto-resume: "true"
+    hybernate.io/pause-early: "true"
+```
+
+It's a setting of its own, apart from the [forecast setting](#forecast-setting): that one says how sure the forecast must be before it acts at all, and this one whether, once it is, it brings pauses forward, so a `cautious` forecast can pause early too.
+
+A pause the forecast brings forward has a `PausedEarly` event in place of `IdleDetected`, naming the hours it expects to be quiet: `idle for 20 minutes, since its CPU use was last above the activity threshold, and the forecast expects the hours from 18:00 to 20:00 UTC to be quiet; pausing before idleAfter (1 hour) runs out`. Until the workload wakes, `status.activity.forecastQuietUntil` holds when those hours end, and [`kubectl hybernate status`](../getting-started/kubectl-plugin.md#see-what-hybernate-is-doing) says so in NEXT: `paused early: the forecast expected quiet until Fri 20:00 UTC; wakes on a request or activity`.
+
+Behind the doorman, the hours an early pause sleeps through are learned as any paused hour is (see [What an Hour Records](#what-an-hour-records)): a request would have woken the workload, so a check that finds it still paused finds no demand, and the forecast keeps learning.
+
+### What It Saves and Costs
+
+The hour people leave in is learned as busy, so the forecast can't bring a pause forward before that hour is over: on office hours ending at 17:30, the pause comes at 18:00, where the clock would have paused the workload at 18:29, an `idleAfter` after the last busy minute. The longer `idleAfter`, the more that saves. What it costs is a cold start for anyone who uses the workload in an hour the forecast expected quiet, before `idleAfter` would have run out: their request waits for it to wake, where it would have been up. The simulator measures both at `balanced`, for a workload at 40% of its CPU request while in use, over the weeks after the forecast acts: for a holiday, the week it's in, and for a change of hours, the two weeks after it.
+
+| Workload | Hours awake a week, without → with | Extra cold starts a week |
+|----------|------------------------------------|--------------------------|
+| Busy on weekdays from 09:10 to 17:30, quiet nights and weekends | 48.7 → 46.3 | 0 |
+| The same, with `idleAfter: 2h` | 53.7 → 46.3 | 0 |
+| The same hours every day, weekends included | 68.1 → 64.8 | 0 |
+| Office hours, people arriving and leaving up to 20 minutes either side and away one weekday in ten (the average of 20) | 45.2 → 43.3 | 0 |
+| Office hours, people arriving and leaving up to an hour either side and away one weekday in four (the average of 20) | 38.2 → 37.8 | 0 |
+| Office hours, the week of a holiday on a Wednesday | 39.8 → 37.8 | 0 |
+| Office hours moving to 13:00 to 21:00, the two weeks after | 56.0 → 54.7 | 0 |
+| Office hours, someone coming back for ten minutes 15 to 50 minutes after people left, one weekday in three (the average of 20) | 50.6 → 48.6 | 0.6 |
+| Office hours, someone working in the evening too, one weekday in three, in three bursts with up to 25 minutes between them (the average of 20) | 55.4 → 52.2 | 0.5 |
+| Always busy | 168.0 → 168.0 | 0 |
+| Always idle | 0.0 → 0.0 | 0 |
+
+A test in the repo runs these and fails if they drift from this table.
+
+At the default `idleAfter` of an hour, that's half an hour a weekday, about 5% of the hours awake; at two hours, the same early pause saves an hour and a half a weekday. On every pattern the forecast has learned, holidays and changes of hours included, it costs no cold starts: it brings nothing forward on a holiday, since the forecast doubts what it expects from the holiday's first quiet hour, nor on the first two days of new hours, while it relearns, and nobody comes back in the hours it does pause through. Loosely kept hours save less: there are fewer days people leave to bring a pause forward from, and fewer evenings the forecast is sure of.
+
+The cold starts come from use it can't foresee within `idleAfter` of the last: someone coming back after the others have left, or working in the evening in bursts, where each gap longer than 20 minutes, in an hour the forecast learned as quiet, finds the workload paused. That's what the 20 minutes are for: at 10, evening work like the row above's costs three times the cold starts for a quarter more of the hours saved, while on office hours any wait up to half an hour saves the same. So turn it on for workloads used to a pattern, where an hour after the last use is an hour paid for nothing every day; leave it off for one people come back to at odd hours, or set `active-until` while they do.
 
 ## Learning from History
 
@@ -158,7 +215,7 @@ Each hour of history is measured as a live hour is: the workload's own container
 
 What history can't tell, it assumes:
 
-- **Hours none of its pods ran in** are learned as quiet, as an hour scaled to zero by something else is live. That includes hours Hybernate itself had it paused, if it managed the workload before: an hour paused behind the doorman is quiet anyway, but one paused without it, whose demand live learning skips, can't be told from an hour nobody used
+- **Hours none of its pods ran in** are learned as quiet, as an hour scaled to zero by something else is live. That includes hours Hybernate itself had it paused, if it managed the workload before: an hour paused behind the doorman or watched by an activity query is quiet anyway, but one paused with neither, whose demand live learning skips, can't be told from an hour nobody used
 - **Requests** are today's. If the workload's CPU requests changed over the four weeks, its earlier hours are measured against the new ones
 - **Use that shows only in requests or activity annotations** isn't in Prometheus: a light-use workload's history looks quieter than its live hours will
 - **Five-minute rates** are smoother than the minute-by-minute readings live learning takes, so a burst of a minute or two counts for less
@@ -243,7 +300,7 @@ State that can't be read, from an older version or a hand edit, is discarded wit
 Seasonal slots are keyed to wall-clock time, not to a running counter. The hour of day and day of week are counted in the operator's timezone (`--timezone`, the Helm value `timezone`, UTC by default), so business hours stay in their slots when the clocks change for daylight saving. Each workload records it in `status.prediction.timeZone`, and [`kubectl hybernate status`](../getting-started/kubectl-plugin.md#see-what-hybernate-is-doing) shows it. This means:
 
 - If a workload is paused for 6 hours without the doorman, the model doesn't lose alignment. The next observation goes into the correct hour-of-day slot
-- An hour paused behind the doorman is recorded as no demand: that's how the model learns that nights and weekends are quiet
+- An hour paused behind the doorman, or watched by an activity query, is recorded as no demand: that's how the model learns that nights and weekends are quiet
 - Monday 9am always maps to the same slot, regardless of gaps. In a timezone whose hours start at half or quarter past the hour in UTC, such as India's, hours, and the 15 minutes `autoResume` wakes ahead of one, are counted on the local clock
 
 With `--timezone` set to its users' zone, a workload in New York or London is up at 08:45 local time every weekday through the clock change. Left at UTC, the operator's clock is an hour off its users' after the change, and the forecast has to learn their mornings again: in the simulator, four mornings the week of the change find the workload paused, and the forecast holds it awake for nothing on others, until about two weeks on.
@@ -263,16 +320,18 @@ Lower values give more stable, smoother forecasts; higher ones a more reactive b
 
 ## Proving It
 
-A forecasting mistake, such as a wrong slot, a late wake or a weekend false wake, would otherwise show only after weeks in a real cluster. The repo's simulator, `internal/forecast/sim`, runs the operator's own forecast engine and decision rules through simulated time a minute at a time, as the operator looks at a ManagedWorkload: the activity clock pausing an idle workload, the forecast holding off a pause, `autoResume` waking it 15 minutes ahead of an hour expected busy, the doorman waking it on a request, the warm-up after a wake, each hour's peak fed to the forecast, and operator restarts through the state saved in status. Months of traffic take milliseconds, and a test runs six weeks of office hours through both the reconciler and the simulator and finds the same wakes and pauses at the same minutes.
+A forecasting mistake, such as a wrong slot, a late wake or a weekend false wake, would otherwise show only after weeks in a real cluster. The repo's simulator, `internal/forecast/sim`, runs the operator's own forecast engine and decision rules through simulated time a minute at a time, as the operator looks at a ManagedWorkload: the activity clock pausing an idle workload, the forecast holding off a pause, `autoResume` waking it 15 minutes ahead of an hour expected busy, the doorman or an activity query waking it, the warm-up after a wake, each hour's peak fed to the forecast, and operator restarts through the state saved in status. Months of traffic take milliseconds, and a test runs six weeks of office hours through both the reconciler and the simulator and finds the same wakes and pauses at the same minutes.
 
 The tests run in CI on every change, and check, besides [How Long It Takes](#how-long-it-takes):
 
 - **Office hours**: once learned, the workload is up at 08:45 every weekday, 25 minutes before people arrive at 09:10, paused an hour after they leave, and left asleep at weekends; at every setting, every morning from the day the forecast acts is ready, Mondays included, and it never sleeps through a morning it acts on
 - **Every day, always busy, always idle, light use** seen only through an activity annotation: each acts as above, and the light-use workload is ready every morning
 - **Loosely kept hours**: ready on most mornings once learned, woken for nothing about twice a month, for an hour or two each time; and the settings trade ready mornings for hours woken for nothing as [Forecast Setting](#forecast-setting) says
-- **A holiday, a Saturday at work, a permanent change of hours, a workload nobody uses any more, daylight saving** in New York and London, with and without `--timezone`, **daily operator restarts**, and **pauses without the doorman**, which never let the forecast act: as described above
+- **A holiday, a Saturday at work, a permanent change of hours, a workload nobody uses any more, daylight saving** in New York and London, with and without `--timezone`, **daily operator restarts**, and **pauses with neither the doorman nor an activity query**, which never let the forecast act: as described above
+- **Pausing early**: on office hours, every weekday's pause comes at 18:00, with mornings as ready and the same hours learned as without it; nothing is brought forward on a holiday or the first two days of new hours, and nobody finds the workload paused who wouldn't have; someone coming back after 18:00 finds the workload paused; and without the doorman nothing is brought forward. The six weeks run through the reconciler bring the same pauses forward at the same minutes. [What It Saves and Costs](#what-it-saves-and-costs) is measured there too
+- **A queue worker with no Service**, woken by a query of its queue's length and paused every night: it acts after 8 days, as behind the doorman, and from then autoResume has it up before the morning's messages
 - **Learning from history**: a forecast that learned four weeks of office hours has the workload ready from the first morning, and the [projection](#when-it-acts) made in the first week is within a day of when the forecast starts acting
 
-`go run ./hack/forecastsim` runs every scenario at every setting and prints what it measured; `-scenario holiday -setting eager -days` shows one day by day. `-history` replays a workload's recorded CPU instead, as a percentage of its requests: a Prometheus range query's JSON, or CSV of `time,percent` rows, a step of at most seven minutes apart.
+`go run ./hack/forecastsim` runs every scenario at every setting and prints what it measured; `-scenario holiday -setting eager -days` shows one day by day, and `-pause-early` has the forecast bring pauses forward, counting the hours that saved and the uses that then found the workload paused, and `-wake-on-request=false -wake-on-query` runs a scenario as a queue worker its activity query wakes. `-history` replays a workload's recorded CPU instead, as a percentage of its requests: a Prometheus range query's JSON, or CSV of `time,percent` rows, a step of at most seven minutes apart.
 
-On your own cluster, [`kubectl hybernate forecast`](../getting-started/kubectl-plugin.md#replay-the-forecast) replays the forecast over each workload's own Prometheus history: whether it would act opted in today, and over the last two weeks, how many mornings it would have had each workload ready and how often it would have woken one for nothing.
+On your own cluster, [`kubectl hybernate forecast`](../getting-started/kubectl-plugin.md#replay-the-forecast) replays the forecast over each workload's own Prometheus history: whether it would act opted in today, and over the last two weeks, how many mornings it would have had each workload ready and how often it would have woken one for nothing. Named, as `kubectl hybernate forecast api -n orders`, it shows [one workload's forecast](../getting-started/kubectl-plugin.md#one-workloads-forecast): for one Hybernate manages, what its own forecast is doing, from its status and saved state, whatever history Prometheus has: its phase, the hours of the day and week it has seen, how many hours it has learned from history and live, whether it's acting or when it's expected to, why, and the hours of the next day it expects busy; then the replay of its history, day by day, when there's enough of it.

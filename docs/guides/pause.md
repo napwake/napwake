@@ -30,7 +30,7 @@ When you're done with a workload for the day, such as a preview environment, pau
 kubectl hybernate pause my-api -n staging
 ```
 
-The result is an ordinary pause, the same as one the idle clock makes: a request to the workload through the [doorman](../concepts/wake-on-request.md), a change to its [activity annotations](../concepts/idle-detection.md#activity-annotations), `autoResume`, or [`kubectl hybernate wake`](../getting-started/kubectl-plugin.md#wake-a-workload) wakes it. It doesn't need an `idlePolicy`, and it works on a ManagedWorkload created from the `hybernate.io/managed` label as on one you wrote: name the workload, as `kubectl hybernate status` shows it.
+The result is an ordinary pause, the same as one the idle clock makes: a request to the workload through the [doorman](../concepts/wake-on-request.md), a change to its [activity annotations](../concepts/idle-detection.md#activity-annotations), a [Prometheus activity query](prometheus-signals.md#while-the-workload-is-paused), `autoResume`, or [`kubectl hybernate wake`](../getting-started/kubectl-plugin.md#wake-a-workload) wakes it. A query already showing activity as you pause it, such as a queue with messages still on it, wakes it only once it has been quiet, so it doesn't undo the pause. It doesn't need an `idlePolicy`, and it works on a ManagedWorkload created from the `hybernate.io/managed` label as on one you wrote: name the workload, as `kubectl hybernate status` shows it.
 
 The plugin asks by setting the `hybernate.io/pause-requested` annotation on the ManagedWorkload to a token, the time of the request. Any tool can do the same; the value only has to differ from the last request's:
 
@@ -47,12 +47,12 @@ The request runs the idle clock out now, and the workload is paused by the same 
 
 | The workload | What Hybernate does | `PauseRequest` condition |
 |--------------|---------------------|--------------------------|
-| `Running` or `Idle` | Pauses it, with a `PauseRequested` event, then `Paused` | `True`, `Pausing` |
+| `Running` or `Idle` | Pauses it, with a `PauseRequested` event, then `Paused` | `True`, `Paused` |
 | A confident forecast expects demand within the hour | Leaves it running and says when the demand is expected, since a pause would likely be woken straight back. `kubectl hybernate pause` asks whether to pause it anyway; a request with `hybernate.io/pause-overrides-forecast: "true"`, which `--yes` sets, pauses it | `False`, `ForecastExpectsDemand` |
-| Within the hour Hybernate waits after a GitOps tool (Argo CD, Flux, Fleet, kapp or Kluctl) undid its last pause | Pauses it: you asked. If the tool undoes it again, that's a new [`GitOpsConflict`](gitops.md) | `True`, `Pausing` |
+| Within the hour Hybernate waits after a GitOps tool (Argo CD, Flux, Fleet, kapp or Kluctl) undid its last pause | Pauses it: you asked. If the tool undoes it again, that's a new [`GitOpsConflict`](gitops.md) | `True`, `Paused` |
 | `Pausing` | Finishes the pause, then marks the request handled | `True`, `AlreadyPaused` |
 | `Paused` | Marks the request handled | `True`, `AlreadyPaused` |
-| `Resuming` | Lets the wake finish, then pauses it | `True`, `Pausing` |
+| `Resuming` | Lets the wake finish, then pauses it | `True`, `Paused` |
 | In [dry-run](dry-run.md) | Never scales it: counts a would-be pause in `status.dryRun`, moves it to `Idle`, and emits a `[dry-run]` `PauseRequested` event. Activity after the request ends the would-be pause, as it would wake a paused workload | `False`, `DryRun` |
 | Held awake by `hybernate.io/active-until` on it or its workload | Leaves it running, with a Warning event | `False`, `ActiveUntil` |
 | Depended on by awake workloads | Leaves it running, with a `HeldByDependents` event, as for an idle pause | `False`, `HeldByDependents` |
@@ -60,6 +60,8 @@ The request runs the idle clock out now, and the workload is paused by the same 
 | In a [protected namespace](opt-in.md#protected-namespaces), or Hybernate's own operator or doorman | Leaves it running, with a Warning event | `False`, `Protected` |
 | Scaled to zero outside Hybernate | Nothing to do: it's off already | `False`, `ScaledToZero` |
 | Its workload is missing, labelled `hybernate.io/ignore`, or managed by another ManagedWorkload | Nothing, with a Warning event | `False`, `TargetNotFound`, `TargetIgnored` or `DuplicateTarget` |
+
+The condition answers the last request until the next one, through any wakes and idle pauses since, so its message says what happened and when, in UTC: `paused as requested at 2026-10-21 03:32 UTC`, `already paused at …`, or `not paused at 2026-10-21 03:32 UTC:` and why. Hybernate keeps it rather than dropping it at the next wake, so `kubectl hybernate pause`, or a script that set the annotation, can always read the answer to its request, and `kubectl describe` shows why last night's pause didn't happen long after its events have expired. `status.lastPauseRequest` says which request it answers.
 
 A request Hybernate won't act on is answered once, not retried: ask again once the reason is gone. Activity from before the request doesn't undo it: the pause records the activity annotations as they stood, and only a change made since wakes the workload.
 
@@ -71,11 +73,12 @@ Resuming wakes the workload's [dependencies](../concepts/dependencies.md), scale
 
 - A request to the workload's Service, through [wake on request](../concepts/wake-on-request.md)
 - A change to `hybernate.io/last-activity`, `hybernate.io/last-request` or `hybernate.io/active-until` on the ManagedWorkload or its target since the pause began, whatever time the new value states; [`kubectl hybernate wake`](../getting-started/kubectl-plugin.md#wake-a-workload) sets one
+- A [Prometheus activity query](prometheus-signals.md#while-the-workload-is-paused) showing activity, such as messages waiting for a queue worker
 - With `autoResume: true`, 15 minutes ahead of the hour a confident forecast expects demand in
 - Something else scaling it up, such as `kubectl scale`: it's counted as activity and the workload goes straight to `Running`; see [GitOps tools](gitops.md) for when that's a GitOps tool
 - Turning on [dry-run](dry-run.md), which never leaves a workload paused (`DryRunWake` event)
 
-A paused workload is looked at again at least every 5 minutes, 15 minutes before each hour and on the hour, as well as whenever it or its target changes.
+A paused workload is looked at again at least every 5 minutes, or every minute when it has Prometheus activity queries, 15 minutes before each hour and on the hour, as well as whenever it or its target changes.
 
 **On demand:**
 

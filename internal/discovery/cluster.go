@@ -160,6 +160,10 @@ type Workload struct {
 	// as for a StatefulSet that deletes its PVCs when scaled down, so it's
 	// left out of what pausing could free.
 	WontPause string `json:"wontPause,omitempty"`
+	// protectedByHybernate says its ManagedWorkload is Protected: Hybernate
+	// never pauses it, for a reason the scan may not see, such as the
+	// operator's protectedNamespaces.
+	protectedByHybernate bool
 	// Platform is the part of the cluster's own infrastructure it runs, such
 	// as Kubernetes, Hybernate or cert-manager, for one the scan leaves out
 	// of what pausing could free.
@@ -258,7 +262,16 @@ type Totals struct {
 	DryRun         int          `json:"dryRun"`
 	FreedThisMonth float64      `json:"freedThisMonth"`
 	SavedThisMonth float64      `json:"savedThisMonth"`
-	Live           int          `json:"live"`
+	// Live is how many workloads Hybernate pauses while idle, and
+	// LiveProtected how many more are live but never paused: in a protected
+	// namespace, part of Hybernate, or deleting their PVCs when scaled down.
+	Live          int `json:"live"`
+	LiveProtected int `json:"liveProtected"`
+	// ProtectedFreedThisMonth and ProtectedSavedThisMonth are the part of
+	// FreedThisMonth and SavedThisMonth those protected ones freed and
+	// saved this month, before they were protected.
+	ProtectedFreedThisMonth float64 `json:"protectedFreedThisMonth"`
+	ProtectedSavedThisMonth float64 `json:"protectedSavedThisMonth"`
 }
 
 // ReplayTotals sum what replaying the activity clock found.
@@ -326,6 +339,10 @@ func (s *Scanner) ScanCluster(ctx context.Context, opts ClusterOptions) (*Cluste
 		reads = s.readAcross(ctx, opts.Namespaces)
 	}
 	reads.gitOps = gitops.NewChecker(s.client)
+	var installNote string
+	if opts.Forecast != nil {
+		reads.installs, installNote = s.readInstalls(ctx, reads, opts.Namespaces)
+	}
 	historyCtx, cancel := historyBudget(ctx)
 	defer cancel()
 	scans, unscanned := s.scanNamespaces(ctx, historyCtx, reads, pricing, opts)
@@ -384,7 +401,9 @@ func (s *Scanner) ScanCluster(ctx context.Context, opts ClusterOptions) (*Cluste
 		incomplete.Unscanned = unscanned
 	}
 	report.Incomplete = incomplete
-	if len(report.Platform) > 0 {
+	// A forecast replay has no totals or next steps to leave the cluster's
+	// infrastructure out of.
+	if len(report.Platform) > 0 && opts.Forecast == nil {
 		report.Notes = append(report.Notes, platformNote(report.Platform))
 	}
 	if report.History != nil && !since.IsZero() {
@@ -415,6 +434,9 @@ func (s *Scanner) ScanCluster(ctx context.Context, opts ClusterOptions) (*Cluste
 		if note := opts.History.mixedSourcesNote(); note != "" {
 			report.Notes = append(report.Notes, note)
 		}
+	}
+	if installNote != "" {
+		report.Notes = append(report.Notes, installNote)
 	}
 	if len(noHistory) > 0 {
 		report.Notes = append(report.Notes, fmt.Sprintf("%s no CPU history in Prometheus, so only their CPU right now is known: %s",
@@ -762,6 +784,10 @@ func totals(workloads []Workload) Totals {
 			t.Measured.SleptHours += w.Measured.SleptHours
 			t.Measured.Freed += w.Measured.Freed
 			t.Measured.MonthlyFreed += w.Measured.MonthlyFreed
+		case w.Managed && !w.DryRun && (w.Protected || w.WontPause != "" || w.protectedByHybernate):
+			t.LiveProtected++
+			t.ProtectedFreedThisMonth += w.FreedThisMonth
+			t.ProtectedSavedThisMonth += w.SavedThisMonth
 		case w.Managed && !w.DryRun:
 			t.Live++
 		}

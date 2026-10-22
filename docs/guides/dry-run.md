@@ -1,6 +1,6 @@
 # Dry Run Guide
 
-Dry run mode lets you observe what Hybernate would do without it ever reducing a workload's availability. The operator evaluates all policies, emits events, and updates predictions, but never pauses a workload. Wakes are never held back.
+Dry run mode lets you observe what Hybernate would do without it ever reducing a workload's availability. The activity clock, dependency holds and the forecast all run as they do live, and only the scale to zero is skipped, so what dry-run can't show is what happens once a workload is paused: how long a wake on request takes, and whether a GitOps tool scales it straight back up. Wakes are never held back.
 
 ## Enabling Dry Run
 
@@ -67,8 +67,8 @@ The operator runs its full evaluation pipeline:
 | Action | Dry Run Behavior |
 |--------|-----------------|
 | Idle detection | The activity clock runs and the phase becomes `Idle` when it runs out, but the workload is **not** paused |
-| Forecast veto and dependency holds | Applied and reported as usual: `IdleVetoed`, `HeldByDependents`, `DependencyCycle` |
-| A [pause request](pause.md#pause-now) | Counted as a would-be pause: the phase becomes `Idle`, with a `[dry-run]` `PauseRequested` event and `PauseRequest=False`, reason `DryRun`, and the workload keeps running. Activity after the request ends the would-be pause, as it would wake a paused workload |
+| Forecast veto and dependency holds | Applied and reported as usual: `IdleVetoed`, `HeldByDependents`, `DependencyCycle`. A dependent in dry-run that would have paused no longer holds a dependency in dry-run, so a whole app measured in dry-run counts every pause it would make, and when the dependent's would-be pause ends, its dry-run dependencies are stamped with activity, as its wake would have woken them, so theirs end with it and their clocks restart; see [Dependencies](../concepts/dependencies.md#edge-cases) |
+| A [pause request](pause.md#pause-now) | Counted as a would-be pause: the phase becomes `Idle`, with a `[dry-run]` `PauseRequested` event and `PauseRequest=False`, reason `DryRun`, and the workload keeps running. Activity after the request ends the would-be pause, as it would wake a paused workload, except a Prometheus activity query that already showed activity as it was asked for, which ends it only once it has been quiet, as for a real pause |
 | A workload Hybernate had already paused | Woken as soon as dry-run is turned on, with a `DryRunWake` event: dry-run never leaves a workload paused |
 | Wakes | Never held back: `kubectl hybernate wake` and activity work as usual |
 | Cost tracking | Costs are accumulated normally, all as awake time, since the workload never pauses; see [Cost Tracking](../concepts/cost-tracking.md#in-dry-run) |
@@ -80,7 +80,15 @@ The operator runs its full evaluation pipeline:
 
 ### What Dry Run Measured
 
-Hybernate keeps a running summary of the pauses it would have made. A would-be pause starts when the activity clock runs out, and ends at the next activity, which is when a paused workload would have been woken. It also ends when Hybernate stops measuring it: the workload is scaled to zero outside Hybernate, labelled `hybernate.io/ignore`, or its namespace becomes protected; see [When Hybernate Lets Go](pause.md#when-hybernate-lets-go). It's counted up to that moment.
+Hybernate keeps a running summary of the pauses it would have made. A would-be pause starts when the activity clock runs out, and ends at the next activity, which is when a paused workload would have been woken. Two wakes are the exception. A request reaching a paused workload wakes it, but a workload in dry-run is still running, so a request counts only through the activity it shows, its CPU use or a [Prometheus activity query](prometheus-signals.md); and `autoResume` wakes a paused workload ahead of hours the forecast expects to be busy, which dry-run doesn't count. So for a workload that serves the odd light request, or has `autoResume` on, real pauses would be shorter than the would-be ones. A would-be pause also ends when Hybernate stops measuring it: the workload is scaled to zero outside Hybernate, labelled `hybernate.io/ignore`, or its namespace becomes protected; see [When Hybernate Lets Go](pause.md#when-hybernate-lets-go). It's counted up to that moment.
+
+For a workload that serves the odd light request, add a [Prometheus activity query](prometheus-signals.md) on its request rate at its ingress, with the operator's `prometheus.url` set, so that dry-run sees requests as activity, as the doorman would see them and wake the workload. Use the ingress's metrics, not the app's own: a paused workload has no pods to export them, so a query on them shows nothing once it pauses for real. On a workload opted in with the label, add the query to the ManagedWorkload Hybernate created, which keeps it:
+
+```bash
+kubectl patch managedworkload my-api -n staging --type=json -p '[{"op":"add","path":"/spec/idlePolicy/activity/prometheus","value":[{"promQL":"sum(rate(nginx_ingress_controller_requests{exported_namespace=\"staging\",exported_service=\"my-api\"}[5m]))"}]}]'
+```
+
+The ingress keeps counting requests once the workload pauses for real, so the query wakes it then too, as in [While the Workload Is Paused](prometheus-signals.md#while-the-workload-is-paused).
 
 What it would have freed is in the list of ManagedWorkloads:
 
@@ -139,7 +147,7 @@ When the clock runs out, and when activity ends the would-be pause:
 [dry-run] my-api: activity resumed (cpu): would have slept 3 hours 12 minutes, freeing $0.25; since Oct 1: would have paused 4 times, slept 4 days, freeing $7.50
 ```
 
-The `[dry-run]` prefix marks the decisions dry-run holds back: `IdleDetected`, `ActivityResumed`, `IdleVetoed`, `HeldByDependents`, `DependencyCycle`, and the `PauseRequested` event for a pause request it doesn't act on. Events about what really happens, such as a wake, a forecast update, or a metrics problem, have no prefix.
+The `[dry-run]` prefix marks the decisions dry-run holds back: `IdleDetected`, `PausedEarly`, `ActivityResumed`, `IdleVetoed`, `HeldByDependents`, `DependencyCycle`, and the `PauseRequested` event for a pause request it doesn't act on. Events about what really happens, such as a wake, a forecast update, or a metrics problem, have no prefix.
 
 ### Phase
 

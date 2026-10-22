@@ -127,9 +127,15 @@ func servingPod() *corev1.Pod {
 func doormanReconciler(t *testing.T, objs ...client.Object) *Reconciler {
 	t.Helper()
 	r := depReconciler(t, &stubPauser{}, objs...)
+	routeThroughDoorman(r)
+	return r
+}
+
+// routeThroughDoorman points r at the doorman whose slice doormanEndpoints
+// is.
+func routeThroughDoorman(r *Reconciler) {
 	r.DoormanService = "hybernate-doorman"
 	r.DoormanNamespace = "hybernate-system"
-	return r
 }
 
 func doormanSlices(t *testing.T, r *Reconciler) []discoveryv1.EndpointSlice {

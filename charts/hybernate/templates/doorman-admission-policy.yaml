@@ -1,3 +1,4 @@
+{{- include "hybernate.defaults" . -}}
 {{- if and .Values.doorman.enabled .Values.doorman.admissionPolicy.enabled }}
 {{- /*
 The doorman's ServiceAccount may patch any ManagedWorkload it can read,

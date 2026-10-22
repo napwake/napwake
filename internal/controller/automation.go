@@ -42,7 +42,7 @@ import (
 type forecaster interface {
 	Observe(actual float64, now time.Time) (float64, error)
 	Observed(now time.Time) bool
-	Predict(h int, now time.Time) float64
+	Expect(h int, now time.Time) (float64, bool)
 	Export() (string, error)
 	Configure(settings forecast.Settings)
 	GetPhase() forecast.Phase
@@ -318,15 +318,20 @@ func (r *Reconciler) utilization(ctx context.Context, workload *v1alpha1.Managed
 }
 
 // reconcileWake resumes a paused workload when an activity annotation asks
-// for it, or ahead of the demand a confident forecast predicts. Otherwise
-// it's looked at again when that forecast could next change its mind.
+// for it, a Prometheus activity query finds activity, or ahead of the
+// demand a confident forecast predicts. Otherwise it's looked at again when
+// a query or that forecast could next change its mind.
 func (r *Reconciler) reconcileWake(ctx context.Context, workload *v1alpha1.ManagedWorkload, target client.Object) (*ctrl.Result, error) {
-	recheck := &ctrl.Result{RequeueAfter: r.pausedRecheck()}
+	recheck := &ctrl.Result{RequeueAfter: r.pausedRecheck(workload)}
 	r.clearIdleVeto(workload)
 	recordIdleSeconds(workload, r.now())
 	engine := r.forecastEngine(workload)
 	woken := r.wokenByActivity(workload, target)
-	r.seePausedDemand(ctx, workload, engine, woken)
+	var queries pausedQueries
+	if !woken {
+		queries = r.checkPausedQueries(ctx, workload)
+	}
+	r.seePausedDemand(ctx, workload, engine, woken, queries)
 	r.updatePredictionStatus(ctx, workload, engine)
 
 	if woken {
@@ -335,6 +340,10 @@ func (r *Reconciler) reconcileWake(ctx context.Context, workload *v1alpha1.Manag
 			message = "a request is waiting, waking"
 		}
 		return r.handleResume(ctx, workload, &phaseEvent{reason: ReasonWokeByActivity, message: message})
+	}
+	if queries.wake {
+		r.recordQueryWake(workload)
+		return r.handleResume(ctx, workload, &phaseEvent{reason: ReasonWokeByActivity, message: queryWakeMessage})
 	}
 
 	if workload.Spec.IdlePolicy == nil || !workload.Spec.IdlePolicy.AutoResume {
@@ -361,9 +370,14 @@ func (r *Reconciler) untilNextHour(now time.Time) time.Duration {
 // pausedRecheck is when a paused workload is next looked at: when autoResume
 // could next decide differently, forecast.AutoResumeLead before the hour and
 // on it, and at least every statusFlushInterval, so the forecast learns each
-// quiet hour and savings accrue steadily.
-func (r *Reconciler) pausedRecheck() time.Duration {
+// quiet hour and savings accrue steadily. One with Prometheus activity
+// queries is looked at as often as an awake one, so a query wakes it within
+// a minute of finding activity.
+func (r *Reconciler) pausedRecheck(workload *v1alpha1.ManagedWorkload) time.Duration {
 	wait := statusFlushInterval
+	if hasPrometheusActivity(workload) {
+		wait = activityCheckInterval
+	}
 	next := r.untilNextHour(r.now())
 	for _, d := range []time.Duration{next - forecast.AutoResumeLead, next} {
 		if d > 0 && d < wait {
@@ -374,16 +388,22 @@ func (r *Reconciler) pausedRecheck() time.Duration {
 }
 
 // seePausedDemand is a look at a paused workload's demand. Behind the
-// doorman, any request would have woken it, so a look that finds it still
-// paused found no demand, and one that finds a request waking it found
-// some. Without the doorman, demand can't be seen at all.
-func (r *Reconciler) seePausedDemand(ctx context.Context, workload *v1alpha1.ManagedWorkload, engine forecaster, woken bool) {
+// doorman, any request would have woken it, and a Prometheus activity
+// query shows any activity it measures, so a look that finds it still
+// paused, and its queries quiet, found no demand, and one that finds a
+// request waking it, or a query showing activity, found some. The doorman's
+// watch stands while the queries can't be evaluated: a request would still
+// have woken it. Without the doorman, a query that can't be evaluated
+// leaves the look blind, and with neither, it can't see demand.
+func (r *Reconciler) seePausedDemand(ctx context.Context, workload *v1alpha1.ManagedWorkload, engine forecaster,
+	woken bool, queries pausedQueries) {
 	routed := meta.IsStatusConditionTrue(workload.Status.Conditions, conditionWakeOnRequest)
+	busy := woken || queries.active
 	var demand float64
-	if woken {
+	if busy {
 		demand = forecast.RequestDemand(cpuThresholdFor(workload))
 	}
-	r.seeDemand(ctx, workload, engine, demand, routed || woken)
+	r.seeDemand(ctx, workload, engine, demand, busy || routed || queries.watched)
 }
 
 // awakeDemand is the demand an awake workload's utilization shows, counting

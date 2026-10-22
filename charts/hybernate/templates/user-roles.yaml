@@ -1,3 +1,4 @@
+{{- include "hybernate.defaults" . -}}
 {{- /*
 Aggregated into the built-in view, edit and admin ClusterRoles, so that
 whoever can view a namespace can see its ManagedWorkloads, and whoever can

@@ -209,6 +209,29 @@ func withCondition(w *v1alpha1.ManagedWorkload, condType string, status metav1.C
 
 // A condition's message over 32768 bytes fails the whole status write, so
 // a dependency with many dependents names only some.
+// A held workload whose clock restarts is up for its own activity, so the
+// hold is over until its clock runs out again.
+func TestDependencies_HoldEndsWhenItsClockRestarts(t *testing.T) {
+	postgres := depWorkload("default", "postgres", v1alpha1.TargetKindStatefulSet, v1alpha1.PhaseRunning)
+	api := depWorkload("default", "api", v1alpha1.TargetKindDeployment, v1alpha1.PhaseRunning, postgresRef())
+	r := depReconciler(t, &stubPauser{pauseDone: true}, postgres, api)
+
+	_, err := r.reconcileAutomation(context.Background(), postgres, postgresTarget(1, 1))
+	require.NoError(t, err)
+	require.True(t, meta.IsStatusConditionTrue(postgres.Status.Conditions, conditionHeldByDependents))
+	require.Equal(t, []string{"default/api"}, postgres.Status.Activity.HeldByDependents)
+
+	postgres.Annotations = map[string]string{v1alpha1.AnnotationLastActivity: fixedTime.Format(time.RFC3339)}
+	_, err = r.reconcileAutomation(context.Background(), postgres, postgresTarget(1, 1))
+	require.NoError(t, err)
+
+	held := meta.FindStatusCondition(postgres.Status.Conditions, conditionHeldByDependents)
+	require.NotNil(t, held)
+	assert.Equal(t, metav1.ConditionFalse, held.Status)
+	assert.Equal(t, "NotIdle", held.Reason)
+	assert.Empty(t, postgres.Status.Activity.HeldByDependents)
+}
+
 func TestDependencies_HoldersListIsBounded(t *testing.T) {
 	postgres := depWorkload("default", "postgres", v1alpha1.TargetKindStatefulSet, v1alpha1.PhaseRunning)
 	objs := make([]client.Object, 0, 2001)
@@ -241,6 +264,121 @@ func TestDependencies_HoldAppliesInDryRun(t *testing.T) {
 
 	assert.Equal(t, v1alpha1.PhaseRunning, postgres.Status.Phase, "a held workload isn't reported as idle")
 	assert.True(t, meta.IsStatusConditionTrue(postgres.Status.Conditions, conditionHeldByDependents))
+}
+
+// A dependent's dry-run would-be pause leaves its pods up, so it still holds
+// a dependency that pauses for real, but lets a dependency in dry-run too
+// measure the pause it would make live.
+func TestDependencies_DryRunWouldBePause(t *testing.T) {
+	tests := []struct {
+		name          string
+		dependencyDry bool
+		dependentDry  bool
+		dependent     v1alpha1.WorkloadPhase
+		wantHeld      bool
+	}{
+		{name: "both in dry-run, dependent would pause", dependencyDry: true, dependentDry: true,
+			dependent: v1alpha1.PhaseIdle, wantHeld: false},
+		{name: "both in dry-run, dependent running", dependencyDry: true, dependentDry: true,
+			dependent: v1alpha1.PhaseRunning, wantHeld: true},
+		{name: "live dependency, dependent would pause in dry-run", dependentDry: true,
+			dependent: v1alpha1.PhaseIdle, wantHeld: true},
+		{name: "dependency in dry-run, live dependent idle", dependencyDry: true,
+			dependent: v1alpha1.PhaseIdle, wantHeld: true},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			postgres := depWorkload("default", "postgres", v1alpha1.TargetKindStatefulSet, v1alpha1.PhaseRunning)
+			postgres.Spec.DryRun = tt.dependencyDry
+			api := depWorkload("default", "api", v1alpha1.TargetKindDeployment, tt.dependent, postgresRef())
+			api.Spec.DryRun = tt.dependentDry
+			pauser := &stubPauser{pauseDone: true}
+			r := depReconciler(t, pauser, postgres, api)
+
+			_, err := r.reconcileAutomation(context.Background(), postgres, postgresTarget(1, 1))
+			require.NoError(t, err)
+
+			assert.Equal(t, tt.wantHeld, meta.IsStatusConditionTrue(postgres.Status.Conditions, conditionHeldByDependents))
+			if !tt.wantHeld {
+				assert.Equal(t, v1alpha1.PhaseIdle, postgres.Status.Phase, "a dry-run dependency measures its would-be pause")
+				assert.Zero(t, pauser.pauseCalls)
+			}
+		})
+	}
+}
+
+// A dry-run dependency in a would-be pause its dependent let it begin is
+// woken with that dependent, as a live one would be: its would-be pause ends
+// when the dependent's does, and its clock restarts, so it doesn't begin
+// another the moment the dependent is idle again.
+func TestDependencies_DryRunWouldBePauseEndsWhenADependentWakes(t *testing.T) {
+	postgres := depWorkload("default", "postgres", v1alpha1.TargetKindStatefulSet, v1alpha1.PhaseRunning)
+	postgres.Spec.DryRun = true
+	api := depWorkload("default", "api", v1alpha1.TargetKindDeployment, v1alpha1.PhaseIdle, postgresRef())
+	api.Spec.DryRun = true
+	r := depReconciler(t, &stubPauser{pauseDone: true}, postgres, api)
+	ctx := context.Background()
+
+	_, err := r.reconcileAutomation(ctx, postgres, postgresTarget(1, 1))
+	require.NoError(t, err)
+	require.Equal(t, v1alpha1.PhaseIdle, postgres.Status.Phase, "measuring the pause api's let it make")
+
+	r.clock = func() time.Time { return fixedTime.Add(time.Minute) }
+	api = fetch(t, r, "api")
+	api.Annotations = map[string]string{v1alpha1.AnnotationLastActivity: fixedTime.Add(time.Minute).Format(time.RFC3339)}
+	_, err = r.reconcileAutomation(ctx, api, clockTarget("app:v1", nil))
+	require.NoError(t, err)
+	require.Equal(t, v1alpha1.PhaseRunning, api.Status.Phase, "api's would-be pause ended")
+
+	postgres = fetch(t, r, "postgres")
+	_, err = r.reconcileAutomation(ctx, postgres, postgresTarget(1, 1))
+	require.NoError(t, err)
+	assert.Equal(t, v1alpha1.PhaseRunning, postgres.Status.Phase, "woken with api, as live")
+	require.NotNil(t, postgres.Status.DryRun)
+	assert.Equal(t, int32(1), postgres.Status.DryRun.Pauses)
+	assert.Equal(t, time.Minute, postgres.Status.DryRun.Slept.Duration, "slept from its would-be pause until api woke")
+
+	api = fetch(t, r, "api")
+	api.Status.Phase = v1alpha1.PhaseIdle
+	require.NoError(t, r.Status().Update(ctx, api))
+	r.clock = func() time.Time { return fixedTime.Add(2 * time.Minute) }
+	postgres = fetch(t, r, "postgres")
+	_, err = r.reconcileAutomation(ctx, postgres, postgresTarget(1, 1))
+	require.NoError(t, err)
+	assert.Equal(t, v1alpha1.PhaseRunning, postgres.Status.Phase, "its clock restarted with the wake: an hour to go")
+	assert.Equal(t, int32(1), postgres.Status.DryRun.Pauses)
+}
+
+// Only a wake ends a would-be pause. A dependent leaving dry-run on its way to
+// a real pause holds the dependency for the moments it's still up, but the
+// dependency's one would-be pause goes on, as its real pause would.
+func TestDependencies_DryRunWouldBePauseOutlastsAHold(t *testing.T) {
+	postgres := depWorkload("default", "postgres", v1alpha1.TargetKindStatefulSet, v1alpha1.PhaseRunning)
+	postgres.Spec.DryRun = true
+	api := depWorkload("default", "api", v1alpha1.TargetKindDeployment, v1alpha1.PhaseIdle, postgresRef())
+	api.Spec.DryRun = true
+	r := depReconciler(t, &stubPauser{pauseDone: true}, postgres, api)
+	ctx := context.Background()
+
+	_, err := r.reconcileAutomation(ctx, postgres, postgresTarget(1, 1))
+	require.NoError(t, err)
+	require.Equal(t, v1alpha1.PhaseIdle, postgres.Status.Phase)
+
+	for i, phase := range []v1alpha1.WorkloadPhase{v1alpha1.PhasePausing, v1alpha1.PhasePaused} {
+		api = fetch(t, r, "api")
+		api.Spec.DryRun = false
+		require.NoError(t, r.Update(ctx, api))
+		api = fetch(t, r, "api")
+		api.Status.Phase = phase
+		require.NoError(t, r.Status().Update(ctx, api))
+		r.clock = func() time.Time { return fixedTime.Add(time.Duration(i+1) * time.Minute) }
+
+		postgres = fetch(t, r, "postgres")
+		_, err = r.reconcileAutomation(ctx, postgres, postgresTarget(1, 1))
+		require.NoError(t, err)
+		assert.Equal(t, v1alpha1.PhaseIdle, postgres.Status.Phase, "api %s", phase)
+		assert.Equal(t, int32(1), postgres.Status.DryRun.Pauses, "one would-be pause, not split, with api %s", phase)
+	}
 }
 
 func TestDependencies_CycleBlocksBothWithCondition(t *testing.T) {

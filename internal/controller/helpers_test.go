@@ -23,6 +23,7 @@ import (
 	"encoding/base64"
 	"errors"
 	"slices"
+	"strings"
 	"testing"
 	"time"
 
@@ -86,8 +87,19 @@ func realEngineRegistry() *engineRegistry {
 	})
 }
 
+// monotonic is t as time.Now() would give it at that moment: with a
+// monotonic clock reading, which Go takes apart from the wall clock's, so
+// the two differ by a few nanoseconds more or less from one reading to the
+// next. Times that both carry one are compared by it alone. A clock built
+// with time.Date carries none, and hides any comparison that depends on it.
+func monotonic(t time.Time) time.Time {
+	now := time.Now()
+	return now.Add(t.Sub(now.Round(0)))
+}
+
 // forecastReconciler runs automation with the real forecast engine against
-// a fake API server, at a clock the test moves.
+// a fake API server, at a clock the test moves. The reconciler reads it as
+// it reads the real clock, monotonic readings and all.
 type forecastReconciler struct {
 	*Reconciler
 	now time.Time
@@ -107,7 +119,7 @@ func newForecastReconciler(t *testing.T, workload *v1alpha1.ManagedWorkload, c c
 		pauser:   &stubPauser{},
 		metrics:  &stubMetrics{cpuMillis: 250},
 		engines:  realEngineRegistry(),
-		clock:    func() time.Time { return fr.now },
+		clock:    func() time.Time { return monotonic(fr.now) },
 	}
 	return fr
 }
@@ -381,6 +393,11 @@ func TestForecastOutlook(t *testing.T) {
 	autoResume := func(w *v1alpha1.ManagedWorkload) {
 		w.Spec.IdlePolicy = &v1alpha1.IdlePolicySpec{AutoResume: true}
 	}
+	watched := func(w *v1alpha1.ManagedWorkload) {
+		paused(w)
+		w.Spec.IdlePolicy = &v1alpha1.IdlePolicySpec{Activity: &v1alpha1.ActivitySpec{
+			Prometheus: []v1alpha1.PrometheusActivity{{PromQL: `sum(rabbitmq_queue_messages{queue="tasks"})`}}}}
+	}
 	starts := time.Date(2026, 3, 30, 16, 0, 0, 0, time.UTC)
 	tests := []struct {
 		name        string
@@ -426,12 +443,37 @@ func TestForecastOutlook(t *testing.T) {
 				"around Mon 30 Mar 16:00 UTC, if the coming days repeat the last week"},
 		{name: "paused without the doorman", outlook: forecast.Outlook{Waiting: forecast.WaitingForDay},
 			workload: paused, wantReason: v1alpha1.ForecastNotLearning,
-			wantMessage: "not learning: the workload is paused without wake on request, so a request can't wake it " +
-				"and its demand can't be seen; the forecast learns while it's awake, and from every hour with wake " +
-				"on request"},
+			wantMessage: "not learning while paused: requests don't wake it; a request can't wake it, so its demand " +
+				"can't be seen, and it learns only the hours it's awake. To learn the hours it's paused too, see why " +
+				"in its WakeOnRequest condition: " +
+				"https://okedeji.io/hybernate/concepts/wake-on-request/#when-a-workload-isnt-routed"},
 		{name: "paused behind the doorman learns", outlook: forecast.Outlook{Waiting: forecast.WaitingForDay,
 			HoursOfDaySeen: 20}, workload: routed, wantReason: v1alpha1.ForecastObserving,
-			wantMessage: "learning: it has seen 20 of the 24 hours of the day, and can't act until it has seen them all"},
+			wantMessage: "learning: it has seen 20 of the 24 hours of the day, and can't act until it has seen them " +
+				"all; while it's paused, it learns from requests through the doorman"},
+		{name: "a paused worker its query watches learns", outlook: forecast.Outlook{Waiting: forecast.WaitingForDay,
+			HoursOfDaySeen: 20}, workload: watched, wantReason: v1alpha1.ForecastObserving,
+			wantMessage: "learning: it has seen 20 of the 24 hours of the day, and can't act until it has seen them " +
+				"all; while it's paused, it learns from its Prometheus activity queries"},
+		{name: "paused behind the doorman, its query failing", outlook: forecast.Outlook{Waiting: forecast.WaitingForDay,
+			HoursOfDaySeen: 20}, workload: func(w *v1alpha1.ManagedWorkload) {
+			watched(w)
+			routed(w)
+			meta.SetStatusCondition(&w.Status.Conditions, metav1.Condition{Type: conditionPrometheusAvailable,
+				Status: metav1.ConditionFalse, Reason: "EndpointNotConfigured"})
+		}, wantReason: v1alpha1.ForecastObserving,
+			wantMessage: "learning: it has seen 20 of the 24 hours of the day, and can't act until it has seen them " +
+				"all; while it's paused, it learns from requests through the doorman, its Prometheus activity " +
+				"queries failing"},
+		{name: "a paused worker whose query fails", outlook: forecast.Outlook{Waiting: forecast.WaitingForDay},
+			workload: func(w *v1alpha1.ManagedWorkload) {
+				watched(w)
+				meta.SetStatusCondition(&w.Status.Conditions, metav1.Condition{Type: conditionPrometheusAvailable,
+					Status: metav1.ConditionFalse, Reason: "QueryFailed"})
+			}, wantReason: v1alpha1.ForecastNotLearning,
+			wantMessage: "not learning while paused: its Prometheus activity queries can't be evaluated; they can't " +
+				"show its demand until Prometheus answers, and PrometheusAvailable says why: " +
+				"https://okedeji.io/hybernate/guides/prometheus-signals/#when-a-query-cant-be-evaluated"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -443,6 +485,47 @@ func TestForecastOutlook(t *testing.T) {
 			reason, message := forecastOutlook(workload, tt.outlook)
 			assert.Equal(t, tt.wantReason, reason)
 			assert.Equal(t, tt.wantMessage, message)
+		})
+	}
+}
+
+// A forecast that can't learn while its workload is paused says why, from
+// the WakeOnRequest condition's reason, what fixes it, and where the docs
+// say how; the cause comes first, which kubectl hybernate's tables show.
+func TestForecastOutlook_SaysWhyItIsntLearningWhilePaused(t *testing.T) {
+	tests := []struct {
+		reason, cause, fix, section string
+	}{
+		{reason: "NoServices", cause: "no Service routes requests to it",
+			fix: "give it a Service, or, for a workload no request reaches, such as a queue worker, a Prometheus " +
+				"activity query that sees its demand", section: "#when-a-workload-isnt-routed"},
+		{reason: reasonTurnedOff,
+			cause: `wake on request is turned off, by wake.onRequest: false or hybernate.io/wake-on-request: "false"`,
+			fix:   "turn it back on", section: "#turning-it-off"},
+		{reason: "DoormanDisabled", cause: "the doorman is turned off for the cluster",
+			fix: "set the Helm value doorman.enabled to true", section: "#turning-it-off"},
+		{reason: "UnsupportedLoadBalancer",
+			cause: "its Services are behind GKE container-native load balancing (NEGs), which the doorman can't " +
+				"route without its forwarder",
+			fix: "set the Helm value doorman.negForwarder.enabled to true", section: "#gke-container-native-load-balancing-negs"},
+		{reason: "NodeLocalTraffic",
+			cause: "its Services keep traffic on the caller's node, with internalTrafficPolicy: Local",
+			fix:   "give it a Service with the default policy, Cluster", section: "#when-a-workload-isnt-routed"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.reason, func(t *testing.T) {
+			workload := forecastWorkload()
+			workload.Status.Phase = v1alpha1.PhasePaused
+			meta.SetStatusCondition(&workload.Status.Conditions, metav1.Condition{Type: conditionWakeOnRequest,
+				Status: metav1.ConditionFalse, Reason: tt.reason})
+
+			reason, message := forecastOutlook(workload, forecast.Outlook{Waiting: forecast.WaitingForDay})
+
+			assert.Equal(t, v1alpha1.ForecastNotLearning, reason)
+			cause, rest, _ := strings.Cut(message, "; ")
+			assert.Equal(t, "not learning while paused: "+tt.cause, cause)
+			assert.Contains(t, rest, "To learn the hours it's paused too, "+tt.fix+": ")
+			assert.True(t, strings.HasSuffix(message, wakeOnRequestGuide+tt.section), "%s", message)
 		})
 	}
 }

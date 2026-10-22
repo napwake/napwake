@@ -181,10 +181,16 @@ func TestCents(t *testing.T) {
 
 func TestDollars(t *testing.T) {
 	tests := map[float64]string{0: "$0", 12.4: "$12", 999.5: "$1,000", 1240.4: "$1,240", 1234567.8: "$1,234,568",
-		-123: "-$123", -1234.4: "-$1,234", -999999.6: "-$1,000,000", -0.2: "$0"}
+		-123: "-$123", -1234.4: "-$1,234", -999999.6: "-$1,000,000", -0.2: "$0",
+		0.03: "<$1", 0.49: "<$1", 0.5: "$1"}
 	for in, want := range tests {
 		assert.Equal(t, want, dollars(in))
 	}
+}
+
+func TestHoursTotal(t *testing.T) {
+	assert.Equal(t, "0 hours", hoursTotal(0.3), "hours aren't money")
+	assert.Equal(t, "6,120 hours", hoursTotal(6120.4))
 }
 
 func TestShortClusterName(t *testing.T) {
@@ -783,6 +789,104 @@ func TestWriteScan_FreedBeforeGoingBackToDryRun(t *testing.T) {
 		"in dry-run.")
 	assert.Regexp(t, `preview-3\s+deployment/web\s+idle \(dry-run\)\s+measuring since Jan 1\s+\$0\s+\$0.00\s+\$7\s+\$2\s`,
 		got)
+}
+
+// Scan and status show the same workload's money the same way: three cents
+// freed is <$1 in both, never $0, which reads as nothing happened. A live
+// workload Hybernate never pauses isn't counted among those it pauses, and
+// the headline says how many there are.
+func TestCLI_ScanAndStatusAgreeOnMoney(t *testing.T) {
+	now := metav1.Now()
+	cost := &v1alpha1.CostStatus{FreedThisMonth: "$0.03", SavedThisMonth: "$0.00", LastAccumulatedAt: &now}
+	api := &appsv1.Deployment{ObjectMeta: metav1.ObjectMeta{Name: "api", Namespace: "orders"},
+		Spec: appsv1.DeploymentSpec{Replicas: ptr.To[int32](0),
+			Selector: &metav1.LabelSelector{MatchLabels: map[string]string{"app": "api"}},
+			Template: corev1.PodTemplateSpec{ObjectMeta: metav1.ObjectMeta{Labels: map[string]string{"app": "api"}},
+				Spec: corev1.PodSpec{Containers: []corev1.Container{{Name: "main"}}}}}}
+	apiMW := statusWorkloadObj("orders", "api", v1alpha1.TargetKindDeployment, v1alpha1.PhasePaused, time.Hour)
+	apiMW.Status.Cost, apiMW.Status.Pause = cost, &v1alpha1.PauseStatus{PreviousReplicas: 2}
+	reports := &appsv1.StatefulSet{ObjectMeta: metav1.ObjectMeta{Name: "reports", Namespace: "orders"},
+		Spec: appsv1.StatefulSetSpec{Replicas: ptr.To[int32](1),
+			Selector: &metav1.LabelSelector{MatchLabels: map[string]string{"app": "reports"}},
+			Template: corev1.PodTemplateSpec{ObjectMeta: metav1.ObjectMeta{Labels: map[string]string{"app": "reports"}},
+				Spec: corev1.PodSpec{Containers: []corev1.Container{{Name: "main"}}}},
+			PersistentVolumeClaimRetentionPolicy: &appsv1.StatefulSetPersistentVolumeClaimRetentionPolicy{
+				WhenScaled: appsv1.DeletePersistentVolumeClaimRetentionPolicyType}}}
+	reportsMW := statusWorkloadObj("orders", "reports", v1alpha1.TargetKindStatefulSet, v1alpha1.PhaseRunning,
+		time.Hour)
+	reportsMW.Status.Conditions = []metav1.Condition{condition("Protected", metav1.ConditionTrue,
+		"PVCsDeletedOnScaleDown", "StatefulSet reports deletes its PersistentVolumeClaims when scaled down")}
+	objs := []client.Object{&corev1.Namespace{ObjectMeta: metav1.ObjectMeta{Name: "orders"}}, api, apiMW, reports,
+		reportsMW}
+
+	scan, err := runCLI(t, newStatusClient(t, interceptor.Funcs{}, objs...), "scan", "-n", "orders", "--window",
+		"0", "--open=false")
+	require.NoError(t, err, scan)
+	status, err := runCLI(t, newStatusClient(t, interceptor.Funcs{}, objs...), "status", "-n", "orders")
+	require.NoError(t, err, status)
+
+	assert.Contains(t, scan, "Hybernate has freed <$1 this month pausing 1 live workload, and saved $0 of it.\n"+
+		"  1 more live workload is protected, so Hybernate never pauses it.\n")
+	assert.Regexp(t, `orders\s+deployment/api\s+paused \(live\)\s+.*\s<\$1\s+\$0\s`, scan)
+	assert.Contains(t, status, "Freed <$1 this month, and saved $0 of it.")
+	assert.Regexp(t, `orders\s+deployment/api\s+paused\s.*\s<\$1\s+\$0\s*\n`, status)
+	assert.NotContains(t, scan+status, "$0 this month")
+}
+
+// What a workload freed before it was protected is said as its own, never
+// as freed by workloads put back in dry-run when none were.
+func TestWriteScan_FreedBeforeProtected(t *testing.T) {
+	result := scanResult{Cluster: "staging", ClusterReport: &discovery.ClusterReport{Namespaces: 1,
+		Workloads: []Workload{{Namespace: "reports", Kind: "StatefulSet", Name: "reports", State: discovery.StateIdle,
+			Managed: true, WontPause: "PVCs deleted on scale-down", FreedThisMonth: 12, SavedThisMonth: 5}}}}
+	result.Totals = discovery.Totals{Workloads: 1, LiveProtected: 1, FreedThisMonth: 12, SavedThisMonth: 5,
+		ProtectedFreedThisMonth: 12, ProtectedSavedThisMonth: 5}
+	var out bytes.Buffer
+
+	require.NoError(t, writeScan(&out, result, scanOptions{output: "table"}))
+
+	got := out.String()
+	assert.NotContains(t, got, "dry-run")
+	assert.Contains(t, got, "  1 live workload is protected, so Hybernate never pauses it; it freed $12 this month "+
+		"before it was, and saved $5 of that.\n")
+	assert.NotContains(t, got, "Hybernate has freed", "nothing else freed anything")
+
+	h, _ := headlineFor(result)
+	require.NotEmpty(t, h.Figures)
+	assert.Equal(t, "$12", h.Figures[0].Value)
+	assert.Equal(t, "so far, pausing workloads since protected; $5 of it saved as nodes scaled down",
+		h.Figures[0].Detail)
+
+	result.Workloads = append(result.Workloads, Workload{Namespace: "orders", Kind: "Deployment", Name: "api",
+		State: discovery.StatePaused, Managed: true, FreedThisMonth: 3, SavedThisMonth: 1})
+	result.Totals.Live, result.Totals.FreedThisMonth, result.Totals.SavedThisMonth = 1, 15, 6
+	out.Reset()
+	require.NoError(t, writeScan(&out, result, scanOptions{output: "table"}))
+	assert.Contains(t, out.String(), "  Hybernate has freed $3 this month pausing 1 live workload, and saved $1 of it.\n"+
+		"  1 more live workload is protected, so Hybernate never pauses it; it freed $12 this month before it was, "+
+		"and saved $5 of that.\n")
+	h, _ = headlineFor(result)
+	assert.Equal(t, "$15", h.Figures[0].Value)
+	assert.Equal(t, "so far, pausing 1 live workload and workloads since protected; $6 of it saved as nodes "+
+		"scaled down", h.Figures[0].Detail)
+}
+
+// What protected workloads freed before they were is said of one or of
+// several alike.
+func TestLiveProtected_Freed(t *testing.T) {
+	assert.Equal(t, "1 live workload is protected, so Hybernate never pauses it; it freed $12 this month before "+
+		"it was, and saved $5 of that.", liveProtected(discovery.Totals{LiveProtected: 1, ProtectedFreedThisMonth: 12,
+		ProtectedSavedThisMonth: 5}))
+	assert.Equal(t, "2 more live workloads are protected, so Hybernate never pauses them; they freed $12 this "+
+		"month before they were, and saved $5 of that.", liveProtected(discovery.Totals{Live: 1, LiveProtected: 2,
+		ProtectedFreedThisMonth: 12, ProtectedSavedThisMonth: 5}))
+}
+
+func TestLiveProtected(t *testing.T) {
+	assert.Equal(t, "1 more live workload is protected, so Hybernate never pauses it.",
+		liveProtected(discovery.Totals{Live: 1, LiveProtected: 1}))
+	assert.Equal(t, "2 live workloads are protected, so Hybernate never pauses them.",
+		liveProtected(discovery.Totals{LiveProtected: 2}))
 }
 
 // The node autoscaler decides whether what pausing frees is ever saved, so

@@ -17,6 +17,7 @@ limitations under the License.
 package controller
 
 import (
+	"fmt"
 	"slices"
 	"testing"
 	"time"
@@ -31,51 +32,65 @@ import (
 // The simulator stands in for the operator only if it decides what the
 // operator decides. Six weeks of office hours, run through the reconciler
 // against a fake API server and through the simulator, wake and pause the
-// workload at the same minutes for the same reasons.
+// workload at the same minutes for the same reasons, the forecast bringing
+// the same pauses forward with pauseEarly.
 func TestSimulatorMatchesTheReconciler(t *testing.T) {
 	if testing.Short() {
 		t.Skip("simulates six weeks of reconciles")
 	}
+	t.Parallel()
 	require.Equal(t, unobservedGap, sim.LookGap, "an hour is seen whole on the same terms")
 
 	monday := time.Date(2026, 3, 16, 0, 0, 0, 0, time.UTC)
 	const days = 42
-	reconciled := doormanDays(t, monday, days, v1alpha1.IdlePolicySpec{AutoResume: true},
-		func(now time.Time, _ *v1alpha1.ManagedWorkload, metrics *stubMetrics) bool {
-			if !officeDay(now) {
-				return false
+	for _, pauseEarly := range []bool{false, true} {
+		t.Run(fmt.Sprintf("pauseEarly %t", pauseEarly), func(t *testing.T) {
+			t.Parallel()
+			reconciled := doormanDays(t, monday, days, v1alpha1.IdlePolicySpec{AutoResume: true, PauseEarly: pauseEarly},
+				func(now time.Time, _ *v1alpha1.ManagedWorkload, metrics *stubMetrics) bool {
+					if !officeDay(now) {
+						return false
+					}
+					metrics.cpuMillis = 400
+					return true
+				})
+
+			settings := sim.DefaultSettings()
+			settings.Confidence = forecastWorkload().Spec.Prediction.Confidence
+			settings.PauseEarly = pauseEarly
+			r, err := sim.Run(sim.Scenario{
+				Start:    monday,
+				Duration: days * 24 * time.Hour,
+				Traffic: func(now time.Time) sim.Use {
+					if officeDay(now) {
+						return sim.Use{Active: true, Percent: 40}
+					}
+					return sim.Use{Percent: 0.5}
+				},
+				Settings: settings,
+				Startup:  sim.Startup{Percent: 80, For: 3 * time.Minute},
+			})
+			require.NoError(t, err)
+			simulated := make([]lifecycleEvent, 0, len(r.Wakes)+len(r.EarlyPauses)+len(r.Pauses))
+			for _, w := range r.Wakes {
+				reason := ReasonWokeByActivity
+				if w.Cause == sim.WokenByForecast {
+					reason = ReasonAutoResume
+				}
+				simulated = append(simulated, lifecycleEvent{at: w.At, reason: reason})
 			}
-			metrics.cpuMillis = 400
-			return true
+			for _, p := range r.EarlyPauses {
+				simulated = append(simulated, lifecycleEvent{at: p.At, reason: ReasonPausedEarly})
+			}
+			for _, p := range r.Pauses {
+				simulated = append(simulated, lifecycleEvent{at: p, reason: ReasonPaused})
+			}
+			slices.SortStableFunc(simulated, func(a, b lifecycleEvent) int { return a.at.Compare(b.at) })
+
+			assert.Equal(t, reconciled, simulated)
+			if pauseEarly {
+				assert.NotEmpty(t, r.EarlyPauses)
+			}
 		})
-
-	settings := sim.DefaultSettings()
-	settings.Confidence = forecastWorkload().Spec.Prediction.Confidence
-	r, err := sim.Run(sim.Scenario{
-		Start:    monday,
-		Duration: days * 24 * time.Hour,
-		Traffic: func(now time.Time) sim.Use {
-			if officeDay(now) {
-				return sim.Use{Active: true, Percent: 40}
-			}
-			return sim.Use{Percent: 0.5}
-		},
-		Settings: settings,
-		Startup:  sim.Startup{Percent: 80, For: 3 * time.Minute},
-	})
-	require.NoError(t, err)
-	simulated := make([]lifecycleEvent, 0, len(r.Wakes)+len(r.Pauses))
-	for _, w := range r.Wakes {
-		reason := ReasonWokeByActivity
-		if w.Cause == sim.WokenByForecast {
-			reason = ReasonAutoResume
-		}
-		simulated = append(simulated, lifecycleEvent{at: w.At, reason: reason})
 	}
-	for _, p := range r.Pauses {
-		simulated = append(simulated, lifecycleEvent{at: p, reason: ReasonPaused})
-	}
-	slices.SortStableFunc(simulated, func(a, b lifecycleEvent) int { return a.at.Compare(b.at) })
-
-	assert.Equal(t, reconciled, simulated)
 }

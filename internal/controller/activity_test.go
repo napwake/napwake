@@ -24,6 +24,7 @@ import (
 	"net/http/httptest"
 	"strconv"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -1010,9 +1011,15 @@ func TestActivityClock_PrometheusQueriesShareABudget(t *testing.T) {
 	if testing.Short() {
 		t.Skip("waits out the budget")
 	}
+	const answerAfter = 1200 * time.Millisecond
+	var mu sync.Mutex
+	var asked []string
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		mu.Lock()
+		asked = append(asked, r.URL.Query().Get("query"))
+		mu.Unlock()
 		select {
-		case <-time.After(1200 * time.Millisecond):
+		case <-time.After(answerAfter):
 			_, _ = w.Write([]byte(promValue("0")))
 		case <-r.Context().Done():
 		}
@@ -1020,21 +1027,32 @@ func TestActivityClock_PrometheusQueriesShareABudget(t *testing.T) {
 	t.Cleanup(srv.Close)
 	target := clockTarget("app:v1", nil)
 	workload := clockWorkload(fixedTime.Add(-61*time.Minute), target)
-	workload.Spec.IdlePolicy.Activity = &v1alpha1.ActivitySpec{Prometheus: promQueries(8)}
+	queries := promQueries(8)
+	workload.Spec.IdlePolicy.Activity = &v1alpha1.ActivitySpec{Prometheus: queries}
 	metrics := idleCPU
 	pauser := &stubPauser{pauseDone: true}
 	r := newAutomationReconciler(t, workload, &stubForecaster{}, automationOpts{metrics: &metrics, pauser: pauser})
 	r.prometheus = signal.NewPrometheus(srv.URL)
 
-	began := time.Now()
 	_, err := r.reconcileAutomation(context.Background(), workload, target)
 	require.NoError(t, err)
 
-	assert.Less(t, time.Since(began), prometheusBudget+time.Second, "8 queries of 1.2s each stopped at the budget")
+	mu.Lock()
+	defer mu.Unlock()
+	// Each query takes at least answerAfter, so however slow the machine,
+	// no more than this many can begin within the budget.
+	most := int((prometheusBudget + answerAfter - 1) / answerAfter)
+	require.NotEmpty(t, asked)
+	assert.LessOrEqual(t, len(asked), most, "the queries after the budget ran out weren't asked: %v", asked)
+	for i, q := range asked {
+		assert.Equal(t, queries[i].PromQL, q, "asked in turn")
+	}
 	assert.Zero(t, pauser.pauseCalls, "queries not evaluated leave the workload awake")
 	cond := meta.FindStatusCondition(workload.Status.Conditions, conditionPrometheusAvailable)
 	require.NotNil(t, cond)
 	assert.Equal(t, metav1.ConditionFalse, cond.Status)
+	assert.Equal(t, "QueryFailed", cond.Reason)
+	assert.Contains(t, cond.Message, "context deadline exceeded", "the budget ran out")
 }
 
 // A query that matches no series, such as one with a misspelt metric, looks

@@ -364,6 +364,32 @@ func TestWithoutTheDoorman(t *testing.T) {
 	}
 }
 
+// A queue worker has no Service for the doorman to route, but a query of
+// its queue's length watches it while it's paused: messages waiting wake
+// it, and its quiet nights are learned. Paused every night, it learns whole
+// days, the forecast acts as it does behind the doorman, and once it does,
+// autoResume has the worker up before the morning's messages arrive.
+func TestQueueWorkerWokenByItsQuery(t *testing.T) {
+	set := DefaultSettings()
+	set.WakeOnRequest = false
+	set.WakeOnQuery = true
+	messages := Working(time.UTC, EveryDay, 7*time.Hour, 19*time.Hour, 30)
+	r := simulate(t, Scenario{Duration: 4 * week, Traffic: messages, Settings: set})
+
+	acts, ok := r.Reached(forecast.DailyActive)
+	require.True(t, ok, "it acts")
+	t.Logf("the forecast acts after %.1f days", acts.Hours()/24)
+	assert.LessOrEqual(t, acts, 9*day, "as soon as behind the doorman")
+	for _, w := range r.Wakes {
+		if w.At.Before(monday.Add(acts)) {
+			assert.Equal(t, WokenByQuery, w.Cause, "%s: woken by its queue until the forecast acts", w.At)
+		}
+	}
+	assert.GreaterOrEqual(t, len(r.Pauses), 27, "paused every night")
+	s := r.Summarize(monday.Add(acts).Add(day))
+	assert.Equal(t, s.UsedDays, s.Ready, "up before the messages, every morning once it acts")
+}
+
 // A light-use workload, used at 3% of its request while people are on it,
 // is ready every morning when its use is seen another way, such as an
 // activity annotation its portal stamps: the operator's own controller

@@ -275,12 +275,12 @@ func inlineRefs(t *testing.T, node any, definitions map[string]any) any {
 	}
 }
 
-var valuesFile = regexp.MustCompile(`^values(-[\w.-]+)?\.yaml$`)
+var valuesFile = regexp.MustCompile(`^(hybernate-)?values(-[\w.-]+)?\.yaml$`)
 
 // isChartValues reports whether a block is Hybernate's Helm values: one the
-// docs title values.yaml or values-<something>.yaml, or an untitled one
-// whose every key is one of the chart's. Another chart's values, such as
-// the cluster autoscaler's, are titled differently.
+// docs title hybernate-values.yaml, values.yaml or values-<something>.yaml,
+// or an untitled one whose every key is one of the chart's. Another chart's
+// values, such as Argo CD's argo-cd-values.yaml, are titled differently.
 func isChartValues(m manifest, values, defaults map[string]any, schema *spec.Schema) bool {
 	if valuesFile.MatchString(m.title) {
 		return true

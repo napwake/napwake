@@ -107,6 +107,10 @@ rebaseRules:
 
 Leave `replicas` out of the workload's manifest in Git. For a Helm chart that always sets them, remove them with a patch in the deployment item's `kustomization.yaml`. Kluctl's conflict settings, such as `kluctl.io/ignore-conflicts-manager`, can't help: a scale through the scale subresource leaves the replicas with no field manager, so Kluctl's next deploy sets them back without a conflict to ignore.
 
+## Opting in a whole namespace
+
+A namespace is opted in by a label on the Namespace, which isn't in Git when the tool creates it: an Argo CD Application with `CreateNamespace=true`, or a Flux HelmRelease with `install.createNamespace`. For Argo CD, put the label in the Application's `managedNamespaceMetadata`; for Flux, add the Namespace to the kustomization. See [A whole namespace](opt-in.md#a-whole-namespace).
+
 ## Ending dry-run
 
 A workload's dry-run lives in its `hybernate.io/dry-run` annotation, its namespace's, or a ManagedWorkload's `spec.dryRun`. When Git has that setting, change it there: a change made in the cluster is put back on the tool's next sync. [`kubectl hybernate enable`](../getting-started/kubectl-plugin.md#enable-a-workload) knows this. It reads who owns the setting from the field managers the API server records, so it finds Argo CD whether it tracks apps by label (`app.kubernetes.io/instance`, its default) or by annotation, Flux whether it applies a Kustomization or a HelmRelease, and Fleet, kapp and Kluctl. For those it changes nothing, prints the change to make in Git, and exits non-zero; `--force` changes the cluster anyway. When the tool applies the workload but Git doesn't have the annotation, nothing would put it back, so `enable` sets it.

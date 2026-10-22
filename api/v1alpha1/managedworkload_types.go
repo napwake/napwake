@@ -237,6 +237,18 @@ type IdlePolicySpec struct {
 	// predicts.
 	// +optional
 	AutoResume bool `json:"autoResume,omitempty"`
+
+	// PauseEarly pauses the workload before IdleAfter runs out, once it has
+	// been idle for 20 minutes, when a confident forecast expects every
+	// hour until IdleAfter would run out, and at least the hour under way
+	// and the next, to be quiet, and a request would wake it once paused:
+	// the doorman has a Ready pod, and would route every Service that
+	// selects the workload's pods, on every port but those
+	// hybernate.io/doorman-ignore-ports lists. A headless Service, or one
+	// with a UDP or SCTP port, keeps it from pausing early. So a wrong
+	// forecast costs a request a wake, never an answer.
+	// +optional
+	PauseEarly bool `json:"pauseEarly,omitempty"`
 }
 
 // ActivitySpec configures the activity sources for idle detection.
@@ -260,7 +272,7 @@ type ActivitySpec struct {
 // PrometheusActivity is a PromQL instant query used as an activity source.
 type PrometheusActivity struct {
 	// PromQL is the query. Example:
-	// sum(rate(nginx_ingress_controller_requests{exported_service="api"}[5m]))
+	// sum(rate(nginx_ingress_controller_requests{exported_namespace="staging",exported_service="api"}[5m]))
 	// +kubebuilder:validation:MinLength=1
 	PromQL string `json:"promQL"`
 }
@@ -533,6 +545,13 @@ type ActivityStatus struct {
 	// condition says.
 	// +optional
 	ForecastBusyFrom *metav1.Time `json:"forecastBusyFrom,omitempty"`
+
+	// ForecastQuietUntil is the end of the hours the forecast expected to
+	// be quiet when it brought the workload's pause forward, with
+	// idlePolicy.pauseEarly: set from that pause, or would-be pause in
+	// dry-run, until it ends.
+	// +optional
+	ForecastQuietUntil *metav1.Time `json:"forecastQuietUntil,omitempty"`
 }
 
 // DryRunStatus sums up the pauses Hybernate would have made in dry-run. A
@@ -568,6 +587,14 @@ type DryRunStatus struct {
 	// began, which is what pausing it would free.
 	// +optional
 	Resources *ResourceSnapshot `json:"resources,omitempty"`
+
+	// QueryActiveSincePause says a Prometheus activity query has shown
+	// activity at every check since the would-be pause under way began, as
+	// one can when it was requested. Until a check finds every query quiet,
+	// a query showing activity doesn't end it, as it wouldn't wake the
+	// workload from a real pause.
+	// +optional
+	QueryActiveSincePause bool `json:"queryActiveSincePause,omitempty"`
 }
 
 // ResourceSnapshot is what a workload runs, read at one moment, so it can be
@@ -651,6 +678,14 @@ type PauseStatus struct {
 	// a clock behind the operator's can't lose a wake.
 	// +optional
 	WakeAnnotations *WakeAnnotations `json:"wakeAnnotations,omitempty"`
+
+	// QueryActiveSincePause says a Prometheus activity query has shown
+	// activity at every check since the pause began, as one can when the
+	// pause was requested. Until a check finds every query quiet, a query
+	// showing activity doesn't wake the workload, so it doesn't undo the
+	// pause at once.
+	// +optional
+	QueryActiveSincePause bool `json:"queryActiveSincePause,omitempty"`
 }
 
 // WakeAnnotations are the hybernate.io/last-activity, last-request and
@@ -693,7 +728,8 @@ type PredictionStatus struct {
 
 	// Acting says the forecast drives decisions: it holds off a pause before
 	// an hour it expects to be busy, and with autoResume, wakes the workload
-	// ahead of one.
+	// ahead of one; with idlePolicy.pauseEarly, it brings a pause forward
+	// before hours it expects to be quiet.
 	Acting bool `json:"acting"`
 
 	// StartsActing is when the forecast is expected to start acting, if the

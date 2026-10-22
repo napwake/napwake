@@ -21,17 +21,73 @@ The label is usually one line in your Helm values or manifests, in a file you al
 
 Label the namespace to opt in every Deployment and StatefulSet in it. Annotations on the namespace set the defaults for its workloads:
 
-```yaml
-apiVersion: v1
-kind: Namespace
-metadata:
-  name: preview-42
-  labels:
-    hybernate.io/managed: "true"
-  annotations:
-    hybernate.io/dry-run: "true"
-    hybernate.io/idle-after: "2h"
-```
+=== "Namespace"
+
+    ```yaml
+    apiVersion: v1
+    kind: Namespace
+    metadata:
+      name: preview-42
+      labels:
+        hybernate.io/managed: "true"
+      annotations:
+        hybernate.io/dry-run: "true"
+        hybernate.io/idle-after: "2h"
+    ```
+
+=== "Argo CD"
+
+    An Application that creates its namespace, with `CreateNamespace=true`, has no Namespace in Git to label. Put the label and annotations in its `managedNamespaceMetadata`, which Argo CD sets on the namespace it creates:
+
+    ```yaml title="application.yaml"
+    apiVersion: argoproj.io/v1alpha1
+    kind: Application
+    metadata:
+      name: preview-42
+      namespace: argocd
+    spec:
+      project: default
+      source:
+        repoURL: https://github.com/your-org/environments.git
+        targetRevision: main
+        path: previews/preview-42
+      destination:
+        server: https://kubernetes.default.svc
+        namespace: preview-42
+      syncPolicy:
+        automated: {}
+        managedNamespaceMetadata:
+          labels:
+            hybernate.io/managed: "true"
+          annotations:
+            hybernate.io/dry-run: "true"
+            hybernate.io/idle-after: "2h"
+        syncOptions:
+          - CreateNamespace=true
+    ```
+
+    Argo CD sets `managedNamespaceMetadata` only in a sync with `CreateNamespace=true`. A namespace the Application created before, without it, gets it at the next sync, but adding it doesn't start an automated sync unless the Application has both `prune: true` and `selfHeal: true`. Otherwise sync once by hand: **Sync** in Argo CD's UI, which takes the Application's sync options, or with kubectl, giving them:
+
+    ```bash
+    kubectl patch application preview-42 -n argocd --type merge -p '{"operation":{"sync":{"syncOptions":["CreateNamespace=true"]}}}'
+    ```
+
+    To stop managing the namespace, remove the label from `managedNamespaceMetadata` and sync. Removing `managedNamespaceMetadata` altogether leaves the label on the namespace, since Argo CD then leaves a namespace that exists alone. Have Argo CD leave the workloads' replicas to Hybernate too, as in [With GitOps](#with-gitops).
+
+=== "Flux"
+
+    Flux doesn't create a Kustomization's namespace, so it's in Git already. Label and annotate the Namespace there, as in the first tab, saved as `namespace.yaml` beside the kustomization Flux applies:
+
+    ```yaml title="kustomization.yaml"
+    apiVersion: kustomize.config.k8s.io/v1beta1
+    kind: Kustomization
+    namespace: preview-42
+    resources:
+      - namespace.yaml
+      - ../../base
+    ```
+
+    A HelmRelease's `install.createNamespace` creates its namespace unlabelled, so add the Namespace to the Kustomization that applies the HelmRelease. To stop managing the namespace, remove the label, not the Namespace: with `prune: true`, Flux deletes a Namespace that leaves Git, and everything in it.
 
 This covers dev and preview namespaces, and third-party charts that don't let you add labels to their workloads. To leave one workload out of a managed namespace, label it `hybernate.io/ignore: "true"`, or `hybernate.io/managed: "false"`.
 
@@ -88,6 +144,7 @@ These leave the selectors alone:
 | `hybernate.io/idle-after` | duration of at least `1m`, e.g. `"90m"`, `"2h"` | `1h` | How long without activity before pausing |
 | `hybernate.io/cpu-threshold` | whole number, `"1"` to `"100"` | `10` | CPU use, as a percentage of requests, above which the workload counts as active |
 | `hybernate.io/auto-resume` | `"true"`, `"false"` | `"false"` | Wake ahead of the demand a confident [forecast](../concepts/forecasting.md) predicts |
+| `hybernate.io/pause-early` | `"true"`, `"false"` | `"false"` | Pause before `idle-after` runs out when a confident forecast expects the hours until then to be quiet and a request would wake the workload; see [Pausing Early](../concepts/forecasting.md#pausing-early) |
 | `hybernate.io/forecast` | `"eager"`, `"balanced"`, `"cautious"` | `"balanced"` | How soon the forecast acts on what it has learned; see [Forecast setting](../concepts/forecasting.md#forecast-setting) |
 | `hybernate.io/depends-on` | comma-separated `kind/name` or `namespace/kind/name` | none | Workloads this one needs; see [Dependencies](../concepts/dependencies.md) |
 | `hybernate.io/wake-on-request` | `"true"`, `"false"` | `"true"` | Wake when a request reaches the workload's Service; see [Wake on Request](../concepts/wake-on-request.md) |
@@ -110,7 +167,7 @@ Settings that need more than one value aren't annotations: Prometheus activity q
 
 1. The workload's own annotation.
 2. Its namespace's annotation.
-3. The cluster-wide defaults, set in the Helm values (`defaults.idleAfter`, `defaults.cpuThreshold`, `defaults.dryRun`, `defaults.forecast`).
+3. The cluster-wide defaults, set in the Helm values (`defaults.idleAfter`, `defaults.cpuThreshold`, `defaults.dryRun`, `defaults.pauseEarly`, `defaults.forecast`).
 4. The built-in default.
 
 So a namespace can measure everything with `dry-run: "true"` while one workload in it goes live with `dry-run: "false"`.
@@ -176,7 +233,7 @@ GitOps tools do notice the replica count of a paused workload changing, and woul
 ## What Hybernate does with the label
 
 - **Labelled:** creates a ManagedWorkload named after the workload, owned by it, marked with `hybernate.io/from-label: "true"`, and announces it with a `Managed` event on the workload. If that name is taken, for example by a StatefulSet's of the same name as a Deployment, it's named after the workload and its kind instead, such as `api-statefulset`.
-- **Annotations changed:** updates the ManagedWorkload within seconds. The annotations are the source of truth for what they set: `dryRun`, `idlePolicy` (`idleAfter`, `activity.cpuThreshold`, `autoResume`), which workloads `dependsOn` lists, and `wake`. Direct edits to those are overwritten. Everything else is yours to set on the ManagedWorkload and is kept: `prediction`, `costTracking`, `idlePolicy.activity.prometheus`, and `waitForReady` on a dependency the annotation lists. The target never changes.
+- **Annotations changed:** updates the ManagedWorkload within seconds. The annotations are the source of truth for what they set: `dryRun`, `idlePolicy` (`idleAfter`, `activity.cpuThreshold`, `autoResume`, `pauseEarly`), which workloads `dependsOn` lists, and `wake`. Direct edits to those are overwritten. Everything else is yours to set on the ManagedWorkload and is kept: `prediction`, `costTracking`, `idlePolicy.activity.prometheus`, and `waitForReady` on a dependency the annotation lists. The target never changes.
 - **Label removed, or `hybernate.io/ignore` added:** deletes the ManagedWorkload. If the workload is paused, it's first scaled back to the replicas it had.
 - **Workload deleted:** its ManagedWorkload goes with it.
 - **A ManagedWorkload you wrote for the workload exists:** yours wins, and the label does nothing.

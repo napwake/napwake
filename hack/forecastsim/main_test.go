@@ -56,6 +56,19 @@ func TestOneScenarioDayByDay(t *testing.T) {
 	assert.Equal(t, 1+1+1+1+14, strings.Count(out.String(), "\n")-1, "the summary, then a line a day")
 }
 
+// With -pause-early, the forecast brings office hours' evening pauses
+// forward once it acts, and says so.
+func TestPausesEarly(t *testing.T) {
+	o := defaults()
+	o.scenario, o.confidence, o.pauseEarly, o.output = "office", 75, true, outputJSON
+	var out bytes.Buffer
+	require.NoError(t, run(o, &out))
+	var reports []sim.Report
+	require.NoError(t, json.Unmarshal(out.Bytes(), &reports))
+	require.Len(t, reports, 1)
+	assert.NotEmpty(t, reports[0].EarlyPauses)
+}
+
 // office hours recorded every five minutes for four weeks, as a CSV and as
 // a Prometheus range query's response.
 func recordings(t *testing.T) (csvPath, promPath string) {

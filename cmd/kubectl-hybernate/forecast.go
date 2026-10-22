@@ -53,6 +53,8 @@ type forecastOptions struct {
 	idleAfter    time.Duration
 	timeout      time.Duration
 	prometheus   prometheusOptions
+	// now is the replay's clock: the history it reads ends now.
+	now func() time.Time
 }
 
 // forecastResult is the forecast replayed over a cluster's history.
@@ -71,14 +73,23 @@ type forecastResult struct {
 	Setting   string             `json:"setting"`
 	Workloads []forecastWorkload `json:"workloads"`
 	Notes     []string           `json:"notes,omitempty"`
+	// managed is a workload Hybernate manages, as forecast NAME takes it,
+	// such as "api -n orders": its own forecast shows without history.
+	managed string
 }
 
 type forecastWorkload struct {
-	Namespace string                    `json:"namespace"`
-	Kind      v1alpha1.TargetKind       `json:"kind"`
-	Name      string                    `json:"name"`
-	Managed   bool                      `json:"managed"`
-	Forecast  *discovery.ForecastReplay `json:"forecast"`
+	Namespace string              `json:"namespace"`
+	Kind      v1alpha1.TargetKind `json:"kind"`
+	Name      string              `json:"name"`
+	Managed   bool                `json:"managed"`
+	// Operator is what the operator's own forecast of a workload it
+	// manages is doing, for the workload NAME names.
+	Operator *operatorForecast         `json:"operator,omitempty"`
+	Forecast *discovery.ForecastReplay `json:"forecast,omitempty"`
+	// NoReplay says why the workload NAME names has no replay of its
+	// history, and what would give it one.
+	NoReplay string `json:"noReplay,omitempty"`
 }
 
 func forecastCmd(kube *kubeFlags) *cobra.Command {
@@ -90,6 +101,7 @@ func forecastCmd(kube *kubeFlags) *cobra.Command {
 		cpuThreshold: defaultCPUThreshold,
 		idleAfter:    time.Hour,
 		timeout:      5 * time.Minute,
+		now:          time.Now,
 	}
 	cmd := &cobra.Command{
 		Use:   "forecast [NAME]",
@@ -108,7 +120,9 @@ activity clock counts it. It runs the operator's own forecast and decision
 rules, and reads Prometheus as scan does: found in the cluster and queried
 through the API server, or at --prometheus-url. It only reads.
 
-NAME, a workload's name or kind/name, shows that workload day by day.
+NAME, a workload's name or kind/name, shows that workload's forecast: for
+one Hybernate manages, what its own forecast is doing, from the
+ManagedWorkload, and for any, the replay of its history day by day.
 
 Examples:
   # Every workload in a namespace
@@ -151,26 +165,27 @@ Examples:
 			}
 			ctx, cancel := context.WithTimeout(cmd.Context(), opts.timeout)
 			defer cancel()
-			if !cmd.Flags().Changed("timezone") {
-				if zone := operatorTimeZone(ctx, opts.kube); zone != "" {
+			zone := ""
+			if cmd.Flags().Changed("timezone") {
+				zone = opts.timezone
+			}
+			if len(args) == 1 {
+				return forecastNamed(ctx, cmd.OutOrStdout(), args[0], forecastRun{window: window, prom: prom,
+					mode: mode, zone: zone}, opts)
+			}
+			if zone == "" {
+				if zone = operatorTimeZone(ctx, opts.kube); zone != "" {
 					if loc, err = time.LoadLocation(zone); err != nil {
 						return fmt.Errorf("the operator's time zone, %s: %w", zone, err)
 					}
 				}
 			}
-			result, err := replayCluster(ctx, window, prom, mode, loc, opts)
+			result, _, err := replayCluster(ctx, forecastRun{window: window, prom: prom, mode: mode}, loc, opts)
 			if err != nil {
 				return forecastFailed(ctx, err, opts.timeout)
 			}
-			name := ""
-			if len(args) == 1 {
-				name = args[0]
-				if result.Workloads, err = pickWorkload(result.Workloads, name); err != nil {
-					return err
-				}
-			}
 			return writeOutput(cmd.OutOrStdout(), opts.output, result, func() error {
-				return writeForecast(cmd.OutOrStdout(), result, name != "", loc)
+				return writeForecast(cmd.OutOrStdout(), result, loc)
 			})
 		},
 	}
@@ -207,40 +222,60 @@ func forecastWindow(s string) (time.Duration, error) {
 	return window, nil
 }
 
+// forecastRun is what a forecast replay reads, and how: the history's
+// window and Prometheus, the setting for workloads Hybernate doesn't manage,
+// and the time zone --timezone names, if it does.
+type forecastRun struct {
+	window time.Duration
+	prom   prometheusSetup
+	mode   forecast.Mode
+	zone   string
+	// historyOptional replays what history there is, and scans on without
+	// any, for a workload named on the command line.
+	historyOptional bool
+}
+
 // replayCluster scans the cluster with the forecast replayed over each
-// workload's history, which needs Prometheus.
-func replayCluster(ctx context.Context, window time.Duration, prom prometheusSetup, mode forecast.Mode,
-	loc *time.Location, opts forecastOptions) (forecastResult, error) {
-	scan, err := scanCluster(ctx, window, prom, scanOptions{
-		kube:         opts.kube,
-		namespaces:   opts.namespaces,
-		exclude:      opts.exclude,
-		cpuThreshold: opts.cpuThreshold,
-		cpuPrice:     cost.DefaultRates.CPUPerHour,
-		memoryPrice:  cost.DefaultRates.MemoryPerHour,
-		idleAfter:    opts.idleAfter,
-		forecast:     &discovery.ForecastOptions{Confidence: mode.Threshold(), Location: loc},
+// workload's history, which needs Prometheus unless run.historyOptional
+// says to go on without it. The result lists the workloads replayed; the
+// scan has every workload read.
+func replayCluster(ctx context.Context, run forecastRun, loc *time.Location, opts forecastOptions) (
+	forecastResult, scanResult, error) {
+	scan, err := scanCluster(ctx, run.window, run.prom, scanOptions{
+		kube:            opts.kube,
+		namespaces:      opts.namespaces,
+		exclude:         opts.exclude,
+		cpuThreshold:    opts.cpuThreshold,
+		cpuPrice:        cost.DefaultRates.CPUPerHour,
+		memoryPrice:     cost.DefaultRates.MemoryPerHour,
+		idleAfter:       opts.idleAfter,
+		forecast:        &discovery.ForecastOptions{Confidence: run.mode.Threshold(), Location: loc},
+		historyOptional: run.historyOptional,
+		now:             opts.now,
 	})
 	if err != nil {
-		return forecastResult{}, err
+		return forecastResult{}, scanResult{}, err
 	}
-	if scan.History == nil {
-		return forecastResult{}, &historyError{errors.New("the forecast is replayed over CPU history, and there's " +
-			"none to read")}
+	if scan.History == nil && scan.historyUnread == nil {
+		return forecastResult{}, scanResult{}, &historyError{errors.New("the forecast is replayed over CPU " +
+			"history, and there's none to read")}
 	}
-	result := forecastResult{Context: scan.Context, Cluster: scan.Cluster, Prometheus: scan.History.Prometheus,
-		HistoryHours: scan.History.Hours, HistorySince: scan.History.Since, Window: opts.window,
-		Timezone: loc.String(), Setting: string(mode),
-		Workloads: []forecastWorkload{}}
+	result := forecastResult{Context: scan.Context, Cluster: scan.Cluster, Window: opts.window,
+		Timezone: loc.String(), Setting: string(run.mode), Workloads: []forecastWorkload{}, Notes: scan.Notes}
+	if h := scan.History; h != nil {
+		result.Prometheus, result.HistoryHours, result.HistorySince = h.Prometheus, h.Hours, h.Since
+	}
 	for _, w := range scan.Workloads {
+		if w.Managed && result.managed == "" {
+			result.managed = kindName(forecastWorkload{Kind: w.Kind, Name: w.Name}) + " -n " + w.Namespace
+		}
 		if w.Forecast == nil {
 			continue
 		}
 		result.Workloads = append(result.Workloads, forecastWorkload{Namespace: w.Namespace, Kind: w.Kind,
 			Name: w.Name, Managed: w.Managed, Forecast: w.Forecast})
 	}
-	result.Notes = scan.Notes
-	return result, nil
+	return result, scan, nil
 }
 
 // operatorTimeZone is the time zone the operator's forecasts count hours
@@ -281,32 +316,7 @@ func forecastFailed(ctx context.Context, err error, timeout time.Duration) error
 	return scanFailed(ctx, err, timeout)
 }
 
-// pickWorkload is the one workload NAME names, as name or kind/name.
-func pickWorkload(workloads []forecastWorkload, name string) ([]forecastWorkload, error) {
-	kind, bare, qualified := strings.Cut(name, "/")
-	if !qualified {
-		bare = name
-	}
-	var picked []forecastWorkload
-	for _, w := range workloads {
-		if w.Name == bare && (!qualified || strings.EqualFold(string(w.Kind), kind)) {
-			picked = append(picked, w)
-		}
-	}
-	switch len(picked) {
-	case 0:
-		return nil, fmt.Errorf("no workload %s with CPU history to replay; leave NAME out to see those there are", name)
-	case 1:
-		return picked, nil
-	}
-	var names []string
-	for _, w := range picked {
-		names = append(names, w.Namespace+"/"+strings.ToLower(string(w.Kind))+"/"+w.Name)
-	}
-	return nil, fmt.Errorf("%s is %s; name one with -n or kind/name", name, strings.Join(names, " and "))
-}
-
-func writeForecast(w io.Writer, result forecastResult, detail bool, loc *time.Location) error {
+func writeForecast(w io.Writer, result forecastResult, loc *time.Location) error {
 	p := &printer{w: w}
 	p.line("%s: the forecast replayed over %s of CPU history from %s, times in %s", result.Cluster,
 		spanOf(result.HistoryHours), result.Prometheus, result.Timezone)
@@ -318,27 +328,34 @@ func writeForecast(w io.Writer, result forecastResult, detail bool, loc *time.Lo
 		if !result.HistorySince.IsZero() {
 			p.line("  Run it again after %s.", result.HistorySince.Add(least).In(loc).Format("Mon 2 Jan 15:04 MST"))
 		}
+		if result.managed != "" {
+			p.line("  To see what Hybernate's own forecast of a workload it manages is doing, which needs no history, "+
+				"name it: kubectl hybernate forecast %s", result.managed)
+		}
 		p.line("")
 	} else if len(result.Workloads) == 0 {
 		p.line("  No workload has CPU history to replay the forecast over.")
-	} else if detail {
-		writeForecastDetail(p, result.Workloads[0], loc)
 	} else {
 		writeForecastTable(p, result.Workloads, loc)
 	}
-	if len(result.Notes) > 0 {
-		p.line("Notes:")
-		for _, n := range result.Notes {
-			p.line("  - %s", oneLine(n))
-		}
-		p.line("")
-	}
+	writeForecastNotes(p, result.Notes)
 	return p.err
+}
+
+func writeForecastNotes(p *printer, notes []string) {
+	if len(notes) == 0 {
+		return
+	}
+	p.line("Notes:")
+	for _, n := range notes {
+		p.line("  - %s", oneLine(n))
+	}
+	p.line("")
 }
 
 func writeForecastTable(p *printer, workloads []forecastWorkload, loc *time.Location) {
 	tw := tabwriter.NewWriter(p, 0, 0, 2, ' ', 0)
-	_, _ = fmt.Fprintln(tw, "NAMESPACE\tNAME\tFORECAST\tREADY\tCOLD\tWOKEN FOR NOTHING\tWOKEN")
+	_, _ = fmt.Fprintln(tw, "NAMESPACE\tNAME\tFORECAST\tREADY\tCOLD\tWOKEN FOR NOTHING\tWOKEN\tWAKES ON")
 	for _, w := range workloads {
 		f := w.Forecast
 		ready, cold, wasted, woken := "-", "-", "-", "-"
@@ -349,61 +366,49 @@ func writeForecastTable(p *printer, workloads []forecastWorkload, loc *time.Loca
 			}
 			woken = typicalWake(r, loc)
 		}
-		_, _ = fmt.Fprintf(tw, "%s\t%s\t%s\t%s\t%s\t%s\t%s\n", w.Namespace, displayName(w), forecastNow(w, loc),
-			ready, cold, wasted, woken)
+		_, _ = fmt.Fprintf(tw, "%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n", w.Namespace, displayName(w), forecastNow(w, loc),
+			ready, cold, wasted, woken, replayWakesCell(f.Wakes))
 	}
 	_ = tw.Flush()
 	p.line("")
 	p.line("FORECAST is when the forecast would act if the workload were opted in today, having learned all of")
 	p.line("its history, or a managed workload's own. READY and COLD replay the last half of the history with")
 	p.line("autoResume, from a forecast that learned only the first half: the mornings it had the workload up")
-	p.line("before its first use, and those the first use found it paused and woke it. Name a workload to see")
-	p.line("it day by day.")
+	p.line("before its first use, and those the first use found it paused and woke it. WAKES ON is what wakes")
+	p.line("it once it's paused, as it would under Hybernate: a request through the doorman, its Prometheus")
+	p.line("activity query, or nothing, so people wake it by hand and the forecast doesn't learn those hours.")
+	p.line("Name a workload to see it day by day, and for one Hybernate manages, what its own forecast is doing")
+	p.line("now.")
 	p.line("")
 }
 
-func writeForecastDetail(p *printer, w forecastWorkload, loc *time.Location) {
-	f := w.Forecast
-	p.line("%s/%s: %s, at a confidence of %d%%.", w.Namespace, displayName(w), forecastNow(w, loc), f.Threshold)
-	if f.Live != nil && f.Live.Message != "" {
-		p.line("  Its forecast now: %s.", oneLine(f.Live.Message))
+// replayWakesCell is what wakes a workload once it's paused, in the
+// replay, for a table.
+func replayWakesCell(w discovery.ReplayWakes) string {
+	switch {
+	case w.Request && w.Query:
+		return "request, query"
+	case w.Request:
+		return "request"
+	case w.Query:
+		return "query"
 	}
-	r := f.Replay
-	if r == nil {
-		p.line("")
-		return
+	return "nothing"
+}
+
+// wakesSentence says what wakes a workload once it's paused, in the
+// replay, and what that means for what the forecast learns.
+func wakesSentence(w discovery.ReplayWakes) string {
+	switch {
+	case w.Request && w.Query:
+		return "a request through the doorman, or its Prometheus activity query, wakes it"
+	case w.Request:
+		return "a request through the doorman wakes it"
+	case w.Query:
+		return fmt.Sprintf("its Prometheus activity query wakes it, since %s", w.NoRequest)
 	}
-	p.line("")
-	p.line("From %s to %s, with autoResume, from a forecast that learned only the history before:",
-		r.From.In(loc).Format("Mon 2 Jan"), r.To.In(loc).Format("Mon 2 Jan"))
-	tw := tabwriter.NewWriter(p, 0, 0, 2, ' ', 0)
-	_, _ = fmt.Fprintln(tw, "DAY\tFIRST USE\tFOUND IT\tWOKEN AT\tFORECAST\tWOKEN FOR NOTHING")
-	for _, d := range r.Days {
-		first, found, woke := "-", "-", "-"
-		if d.FirstUse != nil {
-			first, found = d.FirstUse.In(loc).Format("15:04"), d.Found
-		}
-		if d.WokeAt != nil {
-			woke = d.WokeAt.In(loc).Format("15:04")
-		}
-		acting := forecastLearning
-		if d.Acting {
-			acting = forecastActing
-		}
-		wasted := "-"
-		if d.WastedWakes > 0 {
-			wasted = fmt.Sprint(d.WastedWakes)
-		}
-		_, _ = fmt.Fprintf(tw, "%s\t%s\t%s\t%s\t%s\t%s\n", d.Date.Format("Mon 2 Jan"), first, found, woke, acting, wasted)
-	}
-	_ = tw.Flush()
-	p.line("")
-	if r.UsedDays > 0 {
-		p.line("Ready on %d of %d mornings%s; %s.", r.Ready, r.UsedDays, leadClause(r), wastedSentence(r))
-	} else {
-		p.line("Nobody used it; %s.", wastedSentence(r))
-	}
-	p.line("")
+	return fmt.Sprintf("nothing wakes it but a person, since %s, so the forecast doesn't learn the hours it's "+
+		"paused", w.NoRequest)
 }
 
 // spanOf is a number of hours of history in days, or in hours under two
@@ -439,7 +444,7 @@ func forecastNow(w forecastWorkload, loc *time.Location) string {
 		return "acts from day one"
 	}
 	if o.Waiting == v1alpha1.ForecastNotLearning {
-		return "not learning: paused without wake on request"
+		return notLearning(o.Message)
 	}
 	if o.StartsActing != nil {
 		return "acts from " + o.StartsActing.In(loc).Format("Mon 2 Jan")
@@ -448,6 +453,15 @@ func forecastNow(w forecastWorkload, loc *time.Location) string {
 		return forecastLearning
 	}
 	return "not within 4 weeks"
+}
+
+// notLearning is a forecast that can't learn while its workload is paused,
+// for a table: the cause its message leads with, before what fixes it.
+func notLearning(message string) string {
+	if cause, _, ok := strings.Cut(message, "; "); ok && strings.HasPrefix(cause, "not learning") {
+		return cause
+	}
+	return "not learning"
 }
 
 func wastedWakes(r *discovery.ForecastRun) string {

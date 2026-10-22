@@ -1,6 +1,6 @@
 # Idle Detection
 
-Hybernate keeps an **activity clock** for every ManagedWorkload: the last time anything showed the workload was in use. When the clock is older than `idlePolicy.idleAfter`, the workload is paused: scaled to zero, keeping its replica count and a resource snapshot. Any single sign of activity resets it.
+Hybernate keeps an **activity clock** for every ManagedWorkload: the last time anything showed the workload was in use. When the clock is older than `idlePolicy.idleAfter`, the workload is paused: scaled to zero, keeping its replica count and a resource snapshot. Any single sign of activity resets it. With `idlePolicy.pauseEarly`, a confident forecast can bring the pause forward (see [Pausing Early](forecasting.md#pausing-early)).
 
 There's no learning period. A new workload can be paused as soon as it has gone `idleAfter` without activity.
 
@@ -59,16 +59,16 @@ A workload at zero replicas that Hybernate didn't pause isn't checked at all: it
 
 1. CPU, or a configured Prometheus query, can't be read: stay awake (see [below](#when-a-source-cant-be-read)).
 2. `active-until` is in the future: stay awake.
-3. The last activity is less than `idleAfter` ago: stay awake.
+3. The last activity is less than `idleAfter` ago: stay awake, unless `pauseEarly` is on and the [forecast brings the pause forward](forecasting.md#pausing-early): the last activity was at least 20 minutes ago, the forecast is confident every hour until `idleAfter` would run out, and at least the hour under way and the next, is quiet, and a request would wake the workload through the doorman once it's paused. Then the pause goes on through the steps below, as if the clock had run out.
 4. The [forecast](forecasting.md) is confident (shown as `DailyActive` or later, `dailyPhase: Active`) and predicts utilization above `cpuThreshold` in the hour under way or the next: stay awake. The `IdleVetoed` condition is `True`, with reason `ForecastExpectsDemand` and a message naming the hour, while this holds the pause back, and an `IdleVetoed` event marks the start of each veto. The hour after one far quieter than it forecast, as on a holiday, the forecast doubts what it expects and holds nothing back (see [Anomaly Detection](forecasting.md#anomaly-detection)).
 5. Another workload that [depends on](dependencies.md) this one is awake, or `dependsOn` forms a cycle: stay awake (`HeldByDependents` or `DependencyCycle`).
-6. Otherwise the clock has run out. The phase becomes `Idle`, with an `IdleDetected` event, and the workload is [paused](../guides/pause.md).
+6. Otherwise the clock has run out, or the forecast brought the pause forward. The phase becomes `Idle`, with an `IdleDetected` event, or a `PausedEarly` event naming the hours the forecast expects to be quiet, and the workload is [paused](../guides/pause.md).
 
 Without an `idlePolicy`, none of this runs, and the workload is only paused when someone asks.
 
 A [pause request](../guides/pause.md#pause-now), from `kubectl hybernate pause`, runs the clock out at once. Steps 1 and 3 don't apply, and nor does the hour Hybernate waits after a GitOps tool undid its last pause, since someone asked; an `active-until` hold, awake dependents and a `dependsOn` cycle still keep the workload up, and so does the forecast (step 4) unless the request comes with `hybernate.io/pause-overrides-forecast: "true"`, which `kubectl hybernate pause --yes` sets. A request held back is answered with the reason.
 
-With `dryRun: true`, the phase still becomes `Idle` and the `IdleDetected` event carries a `[dry-run]` prefix, but nothing is changed. If activity resumes, the phase goes back to `Running`. See [Dry Run](../guides/dry-run.md).
+With `dryRun: true`, the phase still becomes `Idle` and the `IdleDetected` or `PausedEarly` event carries a `[dry-run]` prefix, but nothing is changed. If activity resumes, the phase goes back to `Running`. See [Dry Run](../guides/dry-run.md).
 
 The forecast never blocks a pause until it's confident, so a workload with no history is handled by the clock alone.
 
@@ -107,8 +107,9 @@ A paused workload wakes when:
 
 - A request reaches one of its Services. The request is held while the workload starts, then answered; see [Wake on Request](wake-on-request.md).
 - A `hybernate.io/last-activity`, `last-request` or `active-until` annotation on the ManagedWorkload or its target changes after the pause began to an RFC 3339 time, whatever time it states, so a clock that's behind the operator's can't lose a wake. Only a change counts: the pause records the annotations as they stood, so a value set before it, even one stating a later time, doesn't wake it. `kubectl hybernate wake` sets one, and this is how a "start environment" button in a developer portal works.
+- A [Prometheus activity query](../guides/prometheus-signals.md#while-the-workload-is-paused) shows activity: the queries are run about once a minute while it's paused, as while it's awake. One that already showed activity as a [requested pause](../guides/pause.md#pause-now) began wakes it only once it has been quiet, so it doesn't undo the request, and one that can't be evaluated never wakes it.
 - `autoResume: true` is set and a confident forecast (`dailyPhase: Active`) predicts utilization above `cpuThreshold` for the current hour, or for the next hour once it's 15 minutes away, so the workload is ready before people arrive; not the hour after one far quieter than it forecast.
 - Something other than Hybernate scales it up, such as `kubectl scale`.
 - Dry-run is turned on: dry-run never leaves a workload paused.
 
-Each wake restarts the clock, so a woken workload gets a full `idleAfter` before it can pause again. The clock records `lastActivitySource: request` when a held request woke it, `scaled-up` when something else scaled it up, and `woke` for any other wake.
+Each wake restarts the clock, so a woken workload gets a full `idleAfter` before it can pause again, unless [`pauseEarly`](forecasting.md#pausing-early) is on and the forecast expects the coming hours quiet: then the pause can come 20 minutes after the wake. The clock records `lastActivitySource: request` when a held request woke it, `prometheus` when an activity query did, `scaled-up` when something else scaled it up, and `woke` for any other wake.

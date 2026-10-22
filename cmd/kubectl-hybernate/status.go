@@ -213,6 +213,9 @@ type statusWorkload struct {
 	// freed, and since when it has been measured. Unset for one that isn't.
 	WouldFree   *float64   `json:"wouldFree,omitempty"`
 	DryRunSince *time.Time `json:"dryRunSince,omitempty"`
+	// wouldBePaused is whether dry-run has measured a would-be pause, which
+	// has freed something however little the estimate shows.
+	wouldBePaused bool
 	// AtSpot is set when its money figures are at spot prices, from the
 	// spot nodes it runs on, rather than on-demand.
 	AtSpot bool `json:"atSpot,omitempty"`
@@ -220,6 +223,7 @@ type statusWorkload struct {
 	// recorded it, and ForecastStartsActing when it's expected to start.
 	Forecast             string     `json:"forecast,omitempty"`
 	ForecastStartsActing *time.Time `json:"forecastStartsActing,omitempty"`
+	forecastMessage      string
 	// namedApart is set for a ManagedWorkload written by hand under a name
 	// other than its target's, which the table then shows beside it.
 	namedApart bool
@@ -265,12 +269,16 @@ var troubles = map[string]metav1.ConditionStatus{
 	"PauseIncomplete":      metav1.ConditionTrue,
 }
 
+// reasonTargetIgnored is TargetAvailable's reason when the workload is
+// labelled hybernate.io/ignore, so Hybernate leaves it alone.
+const reasonTargetIgnored = "TargetIgnored"
+
 // untroubled are the reasons a trouble condition carries when it needs
 // nobody's attention: it reports what the user set up on purpose, or the
 // normal state of a workload that's awake.
 var untroubled = map[string]bool{
 	"NoServices":         true,
-	"TargetIgnored":      true,
+	reasonTargetIgnored:  true,
 	"HybernateComponent": true,
 	"DoormanDisabled":    true,
 	"TurnedOff":          true,
@@ -527,7 +535,7 @@ func workloadStatus(w *v1alpha1.ManagedWorkload, targetActiveUntil, now time.Tim
 	}
 	row.AtSpot = pricedAtSpot(w)
 	if p := w.Status.Prediction; p != nil {
-		row.Forecast = p.Reason
+		row.Forecast, row.forecastMessage = p.Reason, p.Message
 		if p.StartsActing != nil {
 			starts := p.StartsActing.UTC()
 			row.ForecastStartsActing = &starts
@@ -537,6 +545,7 @@ func workloadStatus(w *v1alpha1.ManagedWorkload, targetActiveUntil, now time.Tim
 		wouldFree := dollarsIn(d.EstimatedFreed)
 		since := d.Since.UTC()
 		row.WouldFree, row.DryRunSince = &wouldFree, &since
+		row.wouldBePaused = d.Pauses > 0
 	}
 	if t := w.Status.LastTransitionTime; t != nil {
 		since := t.UTC()
@@ -568,7 +577,7 @@ func pricedAtSpot(w *v1alpha1.ManagedWorkload) bool {
 func nextFor(w *v1alpha1.ManagedWorkload, targetActiveUntil, now time.Time) string {
 	conditions := w.Status.Conditions
 	if c := meta.FindStatusCondition(conditions, "TargetAvailable"); c != nil && c.Status == metav1.ConditionFalse {
-		if c.Reason == "TargetIgnored" {
+		if c.Reason == reasonTargetIgnored {
 			return "nothing: labelled " + v1alpha1.LabelIgnore
 		}
 		return "nothing: workload not found"
@@ -587,15 +596,13 @@ func nextFor(w *v1alpha1.ManagedWorkload, targetActiveUntil, now time.Time) stri
 	}
 	switch w.Status.Phase {
 	case v1alpha1.PhasePaused:
-		if len(w.Status.Doorman) > 0 {
-			return "wakes on a request or activity"
-		}
-		return "wakes on activity"
+		return pausedEarly(w.Status.Activity, "paused ", "; ", true, now) + wakesOn(w)
 	case v1alpha1.PhaseRunning, v1alpha1.PhaseIdle:
 	default:
 		return "-"
 	}
-	if w.Spec.IdlePolicy == nil {
+	idle := w.Status.Phase == v1alpha1.PhaseIdle
+	if w.Spec.IdlePolicy == nil && !idle {
 		return "never pauses: no idlePolicy"
 	}
 	if c := meta.FindStatusCondition(conditions, "HeldByDependents"); c != nil && c.Status == metav1.ConditionTrue {
@@ -612,28 +619,46 @@ func nextFor(w *v1alpha1.ManagedWorkload, targetActiveUntil, now time.Time) stri
 	case meta.IsStatusConditionFalse(conditions, "PrometheusAvailable"):
 		return "won't pause: Prometheus failing"
 	}
+	return pausesNext(w, idle, now)
+}
+
+// pausesNext says when a workload that may pause does: now, for one Idle,
+// unless the hour after a GitOps conflict or the forecast holds it, or when
+// its clock runs out.
+func pausesNext(w *v1alpha1.ManagedWorkload, idle bool, now time.Time) string {
+	conditions := w.Status.Conditions
 	a := w.Status.Activity
-	if a == nil || a.PauseAt == nil {
-		return "-"
-	}
 	verb := "pauses"
 	if w.Spec.DryRun {
 		verb = "would pause"
 	}
-	pauseAt := a.PauseAt.Time
 	retryAt, heldByGitOps := gitOpsHold(w, now)
 	afterGitOps := "pauses at " + clockTime(retryAt) + " (after GitOps conflict)"
+	if idle {
+		// The pause is due now, whatever the clock recorded: a pause request
+		// or the forecast may have brought it forward, without an idle policy
+		// or without rewriting pauseAt.
+		switch {
+		case heldByGitOps:
+			return afterGitOps
+		case meta.IsStatusConditionTrue(conditions, "IdleVetoed"):
+			return heldByForecast(a)
+		}
+		return verb + " now" + pausedEarly(a, ", ", "", false, now)
+	}
+	if a == nil || a.PauseAt == nil {
+		return "-"
+	}
+	pauseAt := a.PauseAt.Time
 	switch {
 	case pauseAt.After(now) && heldByGitOps && retryAt.After(pauseAt):
 		return afterGitOps
 	case pauseAt.After(now):
 		return verb + " in " + span(pauseAt.Sub(now))
 	case meta.IsStatusConditionTrue(conditions, "IdleVetoed"):
-		return heldByForecast(w.Status.Activity)
+		return heldByForecast(a)
 	case heldByGitOps:
 		return afterGitOps
-	case w.Status.Phase == v1alpha1.PhaseIdle:
-		return verb + " now"
 	case now.Sub(pauseAt) < clockLag:
 		return verb + " soon"
 	}
@@ -677,6 +702,34 @@ func heldByForecast(a *v1alpha1.ActivityStatus) string {
 		return "held awake by the forecast"
 	}
 	return "held awake by the forecast: busy from " + clockTime(a.ForecastBusyFrom.Time)
+}
+
+// wakesOn says what wakes a paused workload.
+func wakesOn(w *v1alpha1.ManagedWorkload) string {
+	if len(w.Status.Doorman) > 0 {
+		return "wakes on a request or activity"
+	}
+	return "wakes on activity"
+}
+
+// pausedEarly says, between before and after, that the forecast brought a
+// workload's pause forward, before idleAfter ran out, and until when it
+// expected quiet, as the operator recorded it; empty for a pause the clock
+// decided. It says the forecast expects quiet only of a pause not yet made
+// whose quiet hours are still ahead of now: a pause made says what it
+// expected then, and a would-be pause in dry-run, Idle until activity,
+// outlasts its quiet hours. The day is given, since a pause made on Friday
+// evening is still read on Sunday.
+func pausedEarly(a *v1alpha1.ActivityStatus, before, after string, made bool, now time.Time) string {
+	if a == nil || a.ForecastQuietUntil == nil {
+		return ""
+	}
+	expects := "expects"
+	if made || !a.ForecastQuietUntil.After(now) {
+		expects = "expected"
+	}
+	return before + "early: the forecast " + expects + " quiet until " +
+		a.ForecastQuietUntil.UTC().Format("Mon 15:04 UTC") + after
 }
 
 // clockTime is a time of day in UTC, as the operator's messages give one.
@@ -911,8 +964,8 @@ func writeStatusTable(w io.Writer, result statusResult, now time.Time) error {
 		p.line("  %s", spot)
 	}
 	if result.FreedThisMonth > 0 || result.SavedThisMonth > 0 {
-		p.line("  Freed %s this month, and saved %s of it.", savedMoney(result.FreedThisMonth),
-			savedMoney(result.SavedThisMonth))
+		p.line("  Freed %s this month, and saved %s of it.", dollars(result.FreedThisMonth),
+			dollars(result.SavedThisMonth))
 	}
 	for _, why := range result.SavingsUnknown {
 		p.line("  What's saved can't be measured for some workloads: %s", oneLine(why))
@@ -926,7 +979,7 @@ func writeStatusTable(w io.Writer, result statusResult, now time.Time) error {
 		p.line("Needs attention:")
 		if result.NodesNotScalingDown {
 			p.line("  Pausing freed %s this month, but only %s of it came off the bill: nodes aren't scaling down.",
-				savedMoney(result.FreedThisMonth), savedMoney(result.SavedThisMonth))
+				dollars(result.FreedThisMonth), dollars(result.SavedThisMonth))
 			p.line("  kubectl hybernate nodes shows why.")
 		}
 		tw := tabwriter.NewWriter(p, 0, 0, 3, ' ', 0)
@@ -947,7 +1000,7 @@ func writeStatusTable(w io.Writer, result statusResult, now time.Time) error {
 	for _, wl := range result.Workloads {
 		_, _ = fmt.Fprintf(tw, "  %s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s", wl.Namespace, workloadCell(wl),
 			stateCell(wl), sinceCell(wl.Since, now), activityCell(wl, now), wl.Next, forecastCell(wl),
-			moneyCell(wl.FreedThisMonth), statusSavedCell(wl))
+			statusFreedCell(wl), statusSavedCell(wl))
 		if dryRun {
 			_, _ = fmt.Fprintf(tw, "\t%s", wouldFreeCell(wl))
 		}
@@ -1015,14 +1068,16 @@ func phaseCounts(workloads []statusWorkload) string {
 func dryRunSummary(workloads []statusWorkload) string {
 	n, since := dryRunMeasured(workloads)
 	var wouldFree float64
+	paused := false
 	for _, wl := range workloads {
 		if wl.WouldFree != nil {
 			wouldFree += *wl.WouldFree
+			paused = paused || wl.wouldBePaused
 		}
 	}
 	s := fmt.Sprintf("%d in dry-run, never paused", n)
 	if since != nil {
-		s += fmt.Sprintf(": pausing %s would have freed %s since %s", pronounObject(n), savedMoney(wouldFree),
+		s += fmt.Sprintf(": pausing %s would have freed %s since %s", pronounObject(n), wouldFreeDollars(wouldFree, paused),
 			since.Format("Jan 2"))
 	}
 	return s
@@ -1061,7 +1116,7 @@ func forecastCell(wl statusWorkload) string {
 	case v1alpha1.ForecastActing:
 		return forecastActing
 	case v1alpha1.ForecastNotLearning:
-		return "not learning"
+		return notLearning(wl.forecastMessage)
 	case v1alpha1.ForecastRelearning:
 		cell = "relearning"
 	default:
@@ -1129,10 +1184,22 @@ func activityCell(wl statusWorkload, now time.Time) string {
 // statusSavedCell is what pausing a workload took off the bill this month,
 // or "unknown" when the operator can't measure it.
 func statusSavedCell(wl statusWorkload) string {
+	if !showsFreed(wl.DryRun, wl.FreedThisMonth, wl.SavedThisMonth) {
+		return "-"
+	}
 	if wl.SavingsUnknown != "" && wl.SavedThisMonth == 0 {
 		return "unknown"
 	}
-	return moneyCell(wl.SavedThisMonth)
+	return dollars(wl.SavedThisMonth)
+}
+
+// statusFreedCell is what pausing a workload has freed this month, as
+// scan's FREED THIS MONTH shows it.
+func statusFreedCell(wl statusWorkload) string {
+	if !showsFreed(wl.DryRun, wl.FreedThisMonth, wl.SavedThisMonth) {
+		return "-"
+	}
+	return dollars(wl.FreedThisMonth)
 }
 
 // wouldFreeCell is what dry-run measured a workload would have freed, or
@@ -1142,20 +1209,15 @@ func wouldFreeCell(wl statusWorkload) string {
 	if wl.WouldFree == nil {
 		return "-"
 	}
-	return savedMoney(*wl.WouldFree)
+	return wouldFreeDollars(*wl.WouldFree, wl.wouldBePaused)
 }
 
-func moneyCell(amount float64) string {
-	if amount == 0 {
-		return "-"
-	}
-	return savedMoney(amount)
-}
-
-// savedMoney is an amount in whole dollars, as scan shows one. An amount
-// under half a dollar isn't nothing, so it isn't shown as $0.
-func savedMoney(amount float64) string {
-	if amount > 0 && amount < 0.5 {
+// wouldFreeDollars is dollars for what dry-run measured. The operator's
+// estimate is to the cent, so would-be pauses that have freed less than a
+// cent read $0.00 there; any would-be pause has freed something, which
+// reads <$1, as any amount above zero does.
+func wouldFreeDollars(amount float64, paused bool) string {
+	if paused && amount == 0 {
 		return "<$1"
 	}
 	return dollars(amount)

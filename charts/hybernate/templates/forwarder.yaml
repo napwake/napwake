@@ -1,3 +1,4 @@
+{{- include "hybernate.defaults" . -}}
 {{- if .Values.doorman.negForwarder.enabled }}
 {{- if not .Values.doorman.enabled }}
 {{- fail "doorman.negForwarder.enabled needs doorman.enabled: forwarders pass connections to the doorman" }}

@@ -67,6 +67,13 @@ type scanOptions struct {
 	prometheus     prometheusOptions
 	// forecast, when set, also replays the forecast over the history.
 	forecast *discovery.ForecastOptions
+	// now is the scan's clock: the history it reads ends now.
+	now func() time.Time
+	// historyOptional has a forecast replay scan on without history, for
+	// a workload named on the command line, whose operator's forecast is
+	// worth showing without one: why there's none is the result's
+	// historyUnread.
+	historyOptional bool
 }
 
 // prometheusOptions say where to read history from and how to reach it.
@@ -96,6 +103,9 @@ type scanResult struct {
 	// HistoryAccess is what an admin can run to let the user read the
 	// cluster's Prometheus, when the scan found one it wasn't allowed to.
 	HistoryAccess []string `json:"historyAccess,omitempty"`
+	// historyUnread says why a forecast replay that went on without
+	// history has none.
+	historyUnread error
 }
 
 // settings are the rules the scan judged with, so a report can state them.
@@ -115,6 +125,7 @@ func scanCmd(kube *kubeFlags) *cobra.Command {
 		idleAfter:    time.Hour,
 		timeout:      5 * time.Minute,
 		open:         true,
+		now:          time.Now,
 	}
 	cmd := &cobra.Command{
 		Use:   "scan",
@@ -196,7 +207,7 @@ Examples:
 			if err != nil {
 				return scanFailed(ctx, err, opts.timeout)
 			}
-			result.ScannedAt = time.Now().UTC().Truncate(time.Second)
+			result.ScannedAt = opts.now().UTC().Truncate(time.Second)
 			result.Settings = settings{CPUThreshold: opts.cpuThreshold, IdleAfter: roundedDuration(opts.idleAfter),
 				Window: opts.window}
 			result.Prices = pricesFor(opts)
@@ -486,35 +497,8 @@ func scanCluster(ctx context.Context, window time.Duration, prom prometheusSetup
 	var history *discovery.Prometheus
 	var historyNote string
 	if window > 0 {
-		var err error
-		history, err = historySource(ctx, c, config, namespaces, time.Now().Add(-window), prom)
-		var forbidden *discovery.ProxyForbiddenError
-		if errors.As(err, &forbidden) {
-			scan.HistoryAccess = historyAccess(ctx, c, forbidden)
-		}
-		switch {
-		case prom.url != "" && err != nil:
-			return scanResult{}, &historyError{fmt.Errorf("reading history from --prometheus-url: %w", err)}
-		case prom.service != nil && forbidden != nil:
-			return scanResult{}, &historyError{fmt.Errorf("reading history from --prometheus-service %s: %w; an "+
-				"admin can let you, for that Service and nothing else, with: %s", prom.service, err,
-				strings.Join(scan.HistoryAccess, " && "))}
-		case prom.service != nil && err != nil:
-			return scanResult{}, &historyError{fmt.Errorf("reading history from --prometheus-service %s: %w",
-				prom.service, err)}
-		}
-		if ctxErr := ctx.Err(); ctxErr != nil {
-			return scanResult{}, &historyError{fmt.Errorf("looking for Prometheus: %w", ctxErr)}
-		}
-		if err != nil && opts.forecast != nil {
-			why := "the forecast is replayed over CPU history, and there's none to read: " + err.Error()
-			if len(scan.HistoryAccess) > 0 {
-				why += "; an admin can let you read it with: " + strings.Join(scan.HistoryAccess, " && ")
-			}
-			return scanResult{}, &historyError{errors.New(why)}
-		}
-		if err != nil {
-			historyNote = err.Error() + "; judging from CPU right now"
+		if history, historyNote, err = scanHistory(ctx, c, config, namespaces, window, prom, opts, &scan); err != nil {
+			return scanResult{}, err
 		}
 	}
 	scan.NodeAutoscaler, err = nodescale.Detect(ctx, c)
@@ -529,7 +513,7 @@ func scanCluster(ctx context.Context, window time.Duration, prom prometheusSetup
 			StoragePerMonth: cost.DefaultRates.StoragePerMonth},
 		OwnCPUPrice:     opts.ownCPUPrice,
 		OwnMemoryPrice:  opts.ownMemoryPrice,
-		Now:             time.Now,
+		Now:             opts.now,
 		History:         history,
 		Window:          window,
 		IdleAfter:       opts.idleAfter,
@@ -553,6 +537,52 @@ func scanCluster(ctx context.Context, window time.Duration, prom prometheusSetup
 	}
 	scan.ClusterReport = report
 	return scan, nil
+}
+
+// scanHistory finds the Prometheus the scan replays history from, or says
+// why there's none: an error when the scan can't go on without it, a note
+// when it judges from CPU right now instead, and for a forecast replay that
+// goes on without history, scan.historyUnread.
+func scanHistory(ctx context.Context, c client.Client, config *rest.Config, namespaces []string,
+	window time.Duration, prom prometheusSetup, opts scanOptions, scan *scanResult) (
+	*discovery.Prometheus, string, error) {
+	history, err := historySource(ctx, c, config, namespaces, opts.now().Add(-window), prom)
+	var forbidden *discovery.ProxyForbiddenError
+	if errors.As(err, &forbidden) {
+		scan.HistoryAccess = historyAccess(ctx, c, forbidden)
+	}
+	var unread error
+	switch {
+	case prom.url != "" && err != nil:
+		unread = &historyError{fmt.Errorf("reading history from --prometheus-url: %w", err)}
+	case prom.service != nil && forbidden != nil:
+		unread = &historyError{fmt.Errorf("reading history from --prometheus-service %s: %w; an "+
+			"admin can let you, for that Service and nothing else, with: %s", prom.service, err,
+			strings.Join(scan.HistoryAccess, " && "))}
+	case prom.service != nil && err != nil:
+		unread = &historyError{fmt.Errorf("reading history from --prometheus-service %s: %w",
+			prom.service, err)}
+	}
+	if ctxErr := ctx.Err(); ctxErr != nil {
+		return nil, "", &historyError{fmt.Errorf("looking for Prometheus: %w", ctxErr)}
+	}
+	if unread == nil && err != nil && opts.forecast != nil {
+		why := "the forecast is replayed over CPU history, and there's none to read: " + err.Error()
+		if len(scan.HistoryAccess) > 0 {
+			why += "; an admin can let you read it with: " + strings.Join(scan.HistoryAccess, " && ")
+		}
+		unread = &historyError{errors.New(why)}
+	}
+	switch {
+	case unread != nil && opts.historyOptional:
+		scan.historyUnread = unread
+		return nil, "", nil
+	case unread != nil:
+		return nil, "", unread
+	case err != nil:
+		return nil, err.Error() + "; judging from CPU right now", nil
+	}
+	return history, "", nil
 }
 
 // historySource finds the Prometheus to replay history from since, or says
@@ -693,13 +723,19 @@ func writeHeadline(p *printer, result scanResult) {
 		p.line("  Hybernate has %s paused right now, freeing %s an hour.",
 			countOf(t.Paused, "workload"), cents(t.PausedHourlyCost))
 	}
+	freed, saved := unprotectedFreed(t)
 	switch {
 	case t.Live > 0:
-		p.line("  Hybernate has freed %s this month pausing %s, and saved %s of it.", dollars(t.FreedThisMonth),
-			countOf(t.Live, "live workload"), dollars(t.SavedThisMonth))
-	case t.FreedThisMonth > 0:
+		p.line("  Hybernate has freed %s this month pausing %s, and saved %s of it.", dollars(freed),
+			countOf(t.Live, "live workload"), dollars(saved))
+	case anyMoney(freed) && t.DryRun > 0:
 		p.line("  Hybernate has freed %s this month, and saved %s of it, pausing workloads since put back in dry-run.",
-			dollars(t.FreedThisMonth), dollars(t.SavedThisMonth))
+			dollars(freed), dollars(saved))
+	case anyMoney(freed):
+		p.line("  Hybernate has freed %s this month, and saved %s of it.", dollars(freed), dollars(saved))
+	}
+	if t.LiveProtected > 0 {
+		p.line("  %s", liveProtected(t))
 	}
 	if t.DryRun > 0 {
 		p.line("  %s in dry-run: measured by Hybernate since starting, %s would have slept %s, freeing %s,",
@@ -735,7 +771,7 @@ func writeHeadline(p *printer, result scanResult) {
 		} else {
 			p.line("  Replaying %s, Hybernate would have paused %d of %s for %s in all,",
 				replayed, r.Sleepers, countOf(r.Workloads, "unmanaged workload"), hoursTotal(r.SleepHours))
-			p.line("  and freed %s: about %s/month.", savedMoney(r.Freed), dollars(r.MonthlyFreed))
+			p.line("  and freed %s: about %s/month.", dollars(r.Freed), dollars(r.MonthlyFreed))
 		}
 		switch {
 		case tooLittleHistory(result.History) && r.Sleepers == 0:
@@ -749,6 +785,38 @@ func writeHeadline(p *printer, result scanResult) {
 		}
 	}
 	p.line("")
+}
+
+// liveProtected says how many live workloads Hybernate never pauses, which
+// the count of those it pauses leaves out, and what they freed this month
+// before they were protected, apart from what it frees pausing the rest.
+func liveProtected(t discovery.Totals) string {
+	more := ""
+	if t.Live > 0 {
+		more = " more"
+	}
+	s := fmt.Sprintf("%d%s live workloads are protected, so Hybernate never pauses them", t.LiveProtected, more)
+	they, were := "they", "were"
+	if t.LiveProtected == 1 {
+		s, they, were = "1"+more+" live workload is protected, so Hybernate never pauses it", "it", "was"
+	}
+	if anyMoney(t.ProtectedFreedThisMonth) {
+		s += fmt.Sprintf("; %s freed %s this month before %s %s, and saved %s of that", they,
+			dollars(t.ProtectedFreedThisMonth), they, were, dollars(t.ProtectedSavedThisMonth))
+	}
+	return s + "."
+}
+
+// unprotectedFreed is what Hybernate has freed and saved this month pausing
+// workloads it can still pause, live or put back in dry-run.
+func unprotectedFreed(t discovery.Totals) (freed, saved float64) {
+	return t.FreedThisMonth - t.ProtectedFreedThisMonth, t.SavedThisMonth - t.ProtectedSavedThisMonth
+}
+
+// anyMoney says an amount is a cent or more, as the operator records money,
+// rather than nothing, or what's left of subtracting one total from another.
+func anyMoney(amount float64) bool {
+	return amount >= 0.005
 }
 
 // notReplayed says which unmanaged workloads the table lists that the
@@ -828,7 +896,7 @@ func replayedOver(h *discovery.HistorySource) string {
 
 // hoursTotal writes a number of hours with thousands separated.
 func hoursTotal(h float64) string {
-	return strings.TrimPrefix(dollars(h), "$") + " hours"
+	return thousands(int64(math.Round(h))) + " hours"
 }
 
 // splitJudged separates the workloads the scan could judge from those it
@@ -1021,7 +1089,15 @@ func scanSavedCell(wl Workload) string {
 }
 
 func hasPaused(wl Workload) bool {
-	return wl.Managed && (!wl.DryRun || wl.FreedThisMonth > 0 || wl.SavedThisMonth > 0)
+	return wl.Managed && showsFreed(wl.DryRun, wl.FreedThisMonth, wl.SavedThisMonth)
+}
+
+// showsFreed says a managed workload's freed and saved this month are
+// shown, as money, even $0: Hybernate pauses it, or it freed something
+// while it did. One only ever measured in dry-run shows "-" for them, in
+// scan and status alike.
+func showsFreed(dryRun bool, freed, saved float64) bool {
+	return !dryRun || freed > 0 || saved > 0
 }
 
 // freedBecomesSaved says what turns freed capacity into savings, once a
@@ -1407,18 +1483,29 @@ func cents(amount float64) string {
 }
 
 // dollars formats whole dollars with thousands separators, a negative
-// amount with its sign before the dollar sign.
+// amount with its sign before the dollar sign. An amount above zero that
+// rounds to nothing isn't nothing, so it's <$1: $0 is only for none. Every
+// command shows money this way, so scan and status agree.
 func dollars(amount float64) string {
+	if amount > 0 && amount < 0.5 {
+		return "<$1"
+	}
 	sign := ""
 	if amount < 0 {
 		sign, amount = "-", -amount
 	}
-	s := strconv.FormatInt(int64(math.Round(amount)), 10)
+	rounded := int64(math.Round(amount))
+	if rounded == 0 {
+		sign = ""
+	}
+	return sign + "$" + thousands(rounded)
+}
+
+// thousands writes n with its thousands separated by commas.
+func thousands(n int64) string {
+	s := strconv.FormatInt(n, 10)
 	for i := len(s) - 3; i > 0; i -= 3 {
 		s = s[:i] + "," + s[i:]
 	}
-	if s == "0" {
-		sign = ""
-	}
-	return sign + "$" + s
+	return s
 }

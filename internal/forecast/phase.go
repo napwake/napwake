@@ -297,18 +297,26 @@ func (e *Engine) floor() float64 {
 }
 
 // Predict returns the demand forecast for the hour h hours after the one
-// containing now. It is 0 until the forecast drives decisions, while it
-// doubts them after an hour far quieter than forecast, and for an hour of
-// the week it hasn't seen.
+// containing now, or 0 where Expect has none.
 func (e *Engine) Predict(h int, now time.Time) float64 {
+	demand, _ := e.Expect(h, now)
+	return demand
+}
+
+// Expect returns the demand forecast for the hour h hours after the one
+// containing now, and whether there is one to act on. There isn't until
+// the forecast drives decisions, while it doubts them after an hour far
+// quieter than forecast, or for an hour of the week it hasn't seen: there,
+// a demand of 0 is the forecast having nothing to say, not quiet.
+func (e *Engine) Expect(h int, now time.Time) (float64, bool) {
 	if !e.Active() || e.doubting {
-		return 0
+		return 0, false
 	}
 	t := e.local(now).Add(time.Duration(h) * time.Hour)
 	if !e.recentSeen.has(weeklyIndex(t)) {
-		return 0
+		return 0, false
 	}
-	return e.Model.forecast(t, max(0, e.hoursSinceLast(t)))
+	return e.Model.forecast(t, max(0, e.hoursSinceLast(t))), true
 }
 
 // DailyConfidence is the forecast's accuracy over the last day, as a
