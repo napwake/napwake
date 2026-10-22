@@ -598,8 +598,9 @@ func podTemplateHash(target client.Object) string {
 }
 
 // reconcileIdleClock pauses a workload once it has been inactive for
-// IdleAfter. Phase Idle means the clock has run out, or a pause was
-// requested: in dry-run the workload stays Idle and reports the pause it
+// IdleAfter, or sooner when the forecast brings the pause forward. Phase
+// Idle means the clock has run out, or a pause was requested or brought
+// forward: in dry-run the workload stays Idle and reports the pause it
 // would make; otherwise it pauses.
 func (r *Reconciler) reconcileIdleClock(ctx context.Context, workload *v1alpha1.ManagedWorkload, target client.Object,
 	engine forecaster, load cpuLoad) (*ctrl.Result, error) {
@@ -626,7 +627,8 @@ func (r *Reconciler) reconcileIdleClock(ctx context.Context, workload *v1alpha1.
 	}
 	r.reportEmptyQueries(workload)
 
-	if obs.activeUntil.After(now) || activeSinceClockRanOut(workload, now, pauseAt) {
+	early, pausingEarly := r.pauseEarly(ctx, workload, target, engine, obs)
+	if !pausingEarly && (obs.activeUntil.After(now) || activeSinceClockRanOut(workload, now, pauseAt)) {
 		if workload.Status.Phase == v1alpha1.PhaseIdle {
 			source := workload.Status.Activity.LastActivitySource
 			slept, freed, measured := r.endWouldBePause(workload)
@@ -658,19 +660,33 @@ func (r *Reconciler) reconcileIdleClock(ctx context.Context, workload *v1alpha1.
 		if workload.Spec.DryRun {
 			r.beginWouldBePause(ctx, workload)
 		}
-		if err := r.transition(ctx, workload, v1alpha1.PhaseIdle, "IdleDetected"); err != nil {
+		reason, action := ReasonIdleDetected, "idle_pause"
+		workload.Status.Activity.ForecastQuietUntil = nil
+		if pausingEarly {
+			reason, action = ReasonPausedEarly, "early_pause"
+			workload.Status.Activity.ForecastQuietUntil = &metav1.Time{Time: early.until.UTC()}
+		}
+		if err := r.transition(ctx, workload, v1alpha1.PhaseIdle, reason); err != nil {
 			return nil, err
 		}
 		opmetrics.IdleDetections.WithLabelValues(workload.Namespace, workload.Name).Inc()
 		if workload.Spec.DryRun {
-			opmetrics.DryrunActions.WithLabelValues("idle_pause").Inc()
+			opmetrics.DryrunActions.WithLabelValues(action).Inc()
 		}
 		outcome := "pausing"
 		if workload.Spec.DryRun {
 			outcome = "would have paused"
 		}
-		r.emitEvent(workload, workload.Spec.DryRun, "Normal", ReasonIdleDetected, actionEvaluateIdle,
-			"idle for %s, %s; %s", human.Duration(idleFor), sinceActivity(workload.Status.Activity.LastActivitySource), outcome)
+		idle := fmt.Sprintf("idle for %s, %s", human.Duration(idleFor), sinceActivity(workload.Status.Activity.LastActivitySource))
+		if pausingEarly {
+			r.emitEvent(workload, workload.Spec.DryRun, "Normal", ReasonPausedEarly, actionEvaluateIdle,
+				"%s, and the forecast expects the hours from %s to %s to be quiet; %s before idleAfter (%s) runs out",
+				idle, early.from.UTC().Format("15:04"), early.until.UTC().Format("15:04 UTC"), outcome,
+				human.Duration(idleAfterFor(workload)))
+		} else {
+			r.emitEvent(workload, workload.Spec.DryRun, "Normal", ReasonIdleDetected, actionEvaluateIdle,
+				"%s; %s", idle, outcome)
+		}
 	}
 
 	if workload.Spec.DryRun {
@@ -680,6 +696,42 @@ func (r *Reconciler) reconcileIdleClock(ctx context.Context, workload *v1alpha1.
 		return &ctrl.Result{RequeueAfter: until.Sub(now)}, nil
 	}
 	return r.handlePause(ctx, workload, target, nil)
+}
+
+// quietHours are the hours a forecast that brings a pause forward expects
+// to be quiet.
+type quietHours struct {
+	from, until time.Time
+}
+
+// pauseEarly reports whether the forecast brings a Running workload's pause
+// forward, with idlePolicy.pauseEarly: by forecast.PauseEarly, from the
+// activity clock, and only when a request would wake it once paused, so a
+// wrong forecast costs a request a wake, never an answer. An active-until
+// hold keeps it awake; awake dependents, the GitOps back-off and dry-run
+// apply after, as to any pause the clock decides. A check that fails
+// leaves the pause to the clock.
+func (r *Reconciler) pauseEarly(ctx context.Context, workload *v1alpha1.ManagedWorkload, target client.Object,
+	engine forecaster, obs activityObservation) (quietHours, bool) {
+	now := r.now()
+	p, clock := workload.Spec.IdlePolicy, workload.Status.Activity
+	if p == nil || !p.PauseEarly || engine == nil || workload.Status.Phase != v1alpha1.PhaseRunning ||
+		obs.activeUntil.After(now) || clock.PauseAt == nil {
+		return quietHours{}, false
+	}
+	early, from, until := forecast.PauseEarly(engine, now, clock.LastActivityTime.Time, clock.PauseAt.Time,
+		r.Timezone, cpuThresholdFor(workload))
+	if !early {
+		return quietHours{}, false
+	}
+	wakes, err := r.requestWouldWake(ctx, workload, target)
+	if err != nil {
+		log.FromContext(ctx).V(1).Info("can't tell whether a request would wake the workload once paused, so the "+
+			"forecast doesn't bring its pause forward", "workload", workload.Name, "namespace", workload.Namespace,
+			"error", err.Error())
+		return quietHours{}, false
+	}
+	return quietHours{from: from, until: until}, wakes
 }
 
 // sinceActivity says what a workload has been idle since, from what last

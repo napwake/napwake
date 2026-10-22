@@ -53,7 +53,24 @@ func HourStart(t time.Time, loc *time.Location) time.Time {
 // Predictor is what the decision rules read of a forecast.
 type Predictor interface {
 	GetPhase() Phase
-	Predict(h int, now time.Time) float64
+	// Expect is the demand forecast for the hour h hours after the one
+	// containing now, and whether there is one to act on; with none, the
+	// demand is 0.
+	Expect(h int, now time.Time) (float64, bool)
+}
+
+// acting reports whether a forecast is confident enough to drive
+// decisions: its phase, earned at the confidence threshold its settings
+// give it, is DailyActive or later.
+func acting(p Predictor) bool {
+	return p.GetPhase() >= DailyActive
+}
+
+// expectsDemand reports whether a forecast of predicted is demand the
+// workload must be awake for: at or above threshold, the activity
+// threshold.
+func expectsDemand(predicted float64, threshold int) bool {
+	return predicted >= float64(threshold)
 }
 
 // HoldPause reports whether a confident forecast expects demand at or
@@ -63,15 +80,15 @@ type Predictor interface {
 // busier of the two hours' forecasts, and when that hour begins.
 func HoldPause(p Predictor, now time.Time, loc *time.Location, threshold int) (hold bool, predicted float64,
 	hour time.Time) {
-	if p.GetPhase() < DailyActive {
+	if !acting(p) {
 		return false, 0, time.Time{}
 	}
 	hour = HourStart(now, loc)
-	predicted = p.Predict(0, now)
-	if next := p.Predict(1, now); next > predicted {
+	predicted, _ = p.Expect(0, now)
+	if next, _ := p.Expect(1, now); next > predicted {
 		predicted, hour = next, hour.Add(time.Hour)
 	}
-	return predicted >= float64(threshold), predicted, hour
+	return expectsDemand(predicted, threshold), predicted, hour
 }
 
 // WakeAhead reports whether autoResume wakes a paused workload at now: a
@@ -80,16 +97,67 @@ func HoldPause(p Predictor, now time.Time, loc *time.Location, threshold int) (h
 // the forecast it acted on, and whether that was the next hour's.
 func WakeAhead(p Predictor, now time.Time, loc *time.Location, threshold int) (wake bool, predicted float64,
 	nextHour bool) {
-	if p.GetPhase() < DailyActive {
+	if !acting(p) {
 		return false, 0, false
 	}
-	predicted = p.Predict(0, now)
+	predicted, _ = p.Expect(0, now)
 	if HourStart(now, loc).Add(time.Hour).Sub(now) <= AutoResumeLead {
-		if next := p.Predict(1, now); next > predicted {
+		if next, _ := p.Expect(1, now); next > predicted {
 			predicted, nextHour = next, true
 		}
 	}
-	return predicted >= float64(threshold), predicted, nextHour
+	return expectsDemand(predicted, threshold), predicted, nextHour
+}
+
+// They were chosen by simulating office hours, kept and loosely kept, a
+// holiday, a change of hours, and use the forecast can't foresee, such as
+// someone coming back after people left, or working in the evening in
+// bursts (see internal/forecast/sim). The hour people leave in is learned
+// as busy, so no pause comes forward before it ends, and on office hours
+// any floor up to half an hour saves the same. The floor matters for use
+// the forecast doesn't expect, where each gap in it longer than the floor
+// costs a cold start: at 10 minutes, evening work in bursts cost three
+// times the cold starts of 20 for a quarter more of the hours saved.
+// Hours past the one the activity clock would pause the workload in change
+// nothing, since it would be paused by then anyway, so the fewest are
+// those HoldPause and WakeAhead look at: the hour under way and the next.
+const (
+	// EarlyPauseIdle is how long a workload must have gone without
+	// activity before PauseEarly brings its pause forward.
+	EarlyPauseIdle = 20 * time.Minute
+	// EarlyPauseHours is the fewest hours, the one under way and those
+	// after it, a forecast must expect to be quiet for PauseEarly to bring
+	// a pause forward.
+	EarlyPauseHours = 2
+)
+
+// PauseEarly reports whether a confident forecast brings forward the pause
+// of a workload last active at lastActivity, which the activity clock
+// would pause at pauseAt: it has been idle for EarlyPauseIdle, and the
+// forecast expects demand below threshold, the activity threshold, in
+// every hour from the one under way to the one pauseAt falls in, and at
+// least EarlyPauseHours of them. Those are the hours the workload would
+// otherwise be awake for, so a wrong forecast costs a request a wake, and
+// they cover every hour HoldPause and WakeAhead judge, by the same rules,
+// so a pause it brings forward is never one the forecast would hold off,
+// or wake straight back from. Each hour must be one the forecast has a
+// forecast for: one it hasn't seen, or one after an hour far quieter than
+// forecast, which it doubts, isn't known to be quiet. It returns when the
+// quiet hours it expects begin and end.
+func PauseEarly(p Predictor, now, lastActivity, pauseAt time.Time, loc *time.Location, threshold int) (early bool,
+	from, until time.Time) {
+	if !acting(p) || now.Sub(lastActivity) < EarlyPauseIdle || !now.Before(pauseAt) {
+		return false, time.Time{}, time.Time{}
+	}
+	from = HourStart(now, loc)
+	hours := max(EarlyPauseHours, int(HourStart(pauseAt, loc).Sub(from)/time.Hour)+1)
+	for h := range hours {
+		predicted, ok := p.Expect(h, now)
+		if !ok || expectsDemand(predicted, threshold) {
+			return false, time.Time{}, time.Time{}
+		}
+	}
+	return true, from, from.Add(time.Duration(hours) * time.Hour)
 }
 
 // RequestDemand is the demand a request that wakes a paused workload shows,

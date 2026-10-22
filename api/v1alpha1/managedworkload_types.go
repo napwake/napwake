@@ -237,6 +237,15 @@ type IdlePolicySpec struct {
 	// predicts.
 	// +optional
 	AutoResume bool `json:"autoResume,omitempty"`
+
+	// PauseEarly pauses the workload before IdleAfter runs out, once it has
+	// been idle for 20 minutes, when a confident forecast expects every
+	// hour until IdleAfter would run out, and at least the hour under way
+	// and the next, to be quiet, and every Service that routes to it is
+	// routed through the doorman while it's paused, so a wrong forecast
+	// costs a request a wake, never an answer.
+	// +optional
+	PauseEarly bool `json:"pauseEarly,omitempty"`
 }
 
 // ActivitySpec configures the activity sources for idle detection.
@@ -533,6 +542,13 @@ type ActivityStatus struct {
 	// condition says.
 	// +optional
 	ForecastBusyFrom *metav1.Time `json:"forecastBusyFrom,omitempty"`
+
+	// ForecastQuietUntil is the end of the hours the forecast expected to
+	// be quiet when it brought the workload's pause forward, with
+	// idlePolicy.pauseEarly: set from that pause, or would-be pause in
+	// dry-run, until it ends.
+	// +optional
+	ForecastQuietUntil *metav1.Time `json:"forecastQuietUntil,omitempty"`
 }
 
 // DryRunStatus sums up the pauses Hybernate would have made in dry-run. A
@@ -693,7 +709,8 @@ type PredictionStatus struct {
 
 	// Acting says the forecast drives decisions: it holds off a pause before
 	// an hour it expects to be busy, and with autoResume, wakes the workload
-	// ahead of one.
+	// ahead of one; with idlePolicy.pauseEarly, it brings a pause forward
+	// before hours it expects to be quiet.
 	Acting bool `json:"acting"`
 
 	// StartsActing is when the forecast is expected to start acting, if the

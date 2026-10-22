@@ -1,6 +1,6 @@
 # Idle Detection
 
-Hybernate keeps an **activity clock** for every ManagedWorkload: the last time anything showed the workload was in use. When the clock is older than `idlePolicy.idleAfter`, the workload is paused: scaled to zero, keeping its replica count and a resource snapshot. Any single sign of activity resets it.
+Hybernate keeps an **activity clock** for every ManagedWorkload: the last time anything showed the workload was in use. When the clock is older than `idlePolicy.idleAfter`, the workload is paused: scaled to zero, keeping its replica count and a resource snapshot. Any single sign of activity resets it. With `idlePolicy.pauseEarly`, a confident forecast can bring the pause forward (see [Pausing Early](forecasting.md#pausing-early)).
 
 There's no learning period. A new workload can be paused as soon as it has gone `idleAfter` without activity.
 
@@ -59,16 +59,16 @@ A workload at zero replicas that Hybernate didn't pause isn't checked at all: it
 
 1. CPU, or a configured Prometheus query, can't be read: stay awake (see [below](#when-a-source-cant-be-read)).
 2. `active-until` is in the future: stay awake.
-3. The last activity is less than `idleAfter` ago: stay awake.
+3. The last activity is less than `idleAfter` ago: stay awake, unless `pauseEarly` is on and the [forecast brings the pause forward](forecasting.md#pausing-early): the last activity was at least 20 minutes ago, the forecast is confident every hour until `idleAfter` would run out, and at least the hour under way and the next, is quiet, and a request would wake the workload through the doorman once it's paused. Then the pause goes on through the steps below, as if the clock had run out.
 4. The [forecast](forecasting.md) is confident (shown as `DailyActive` or later, `dailyPhase: Active`) and predicts utilization above `cpuThreshold` in the hour under way or the next: stay awake. The `IdleVetoed` condition is `True`, with reason `ForecastExpectsDemand` and a message naming the hour, while this holds the pause back, and an `IdleVetoed` event marks the start of each veto. The hour after one far quieter than it forecast, as on a holiday, the forecast doubts what it expects and holds nothing back (see [Anomaly Detection](forecasting.md#anomaly-detection)).
 5. Another workload that [depends on](dependencies.md) this one is awake, or `dependsOn` forms a cycle: stay awake (`HeldByDependents` or `DependencyCycle`).
-6. Otherwise the clock has run out. The phase becomes `Idle`, with an `IdleDetected` event, and the workload is [paused](../guides/pause.md).
+6. Otherwise the clock has run out, or the forecast brought the pause forward. The phase becomes `Idle`, with an `IdleDetected` event, or a `PausedEarly` event naming the hours the forecast expects to be quiet, and the workload is [paused](../guides/pause.md).
 
 Without an `idlePolicy`, none of this runs, and the workload is only paused when someone asks.
 
 A [pause request](../guides/pause.md#pause-now), from `kubectl hybernate pause`, runs the clock out at once. Steps 1 and 3 don't apply, and nor does the hour Hybernate waits after a GitOps tool undid its last pause, since someone asked; an `active-until` hold, awake dependents and a `dependsOn` cycle still keep the workload up, and so does the forecast (step 4) unless the request comes with `hybernate.io/pause-overrides-forecast: "true"`, which `kubectl hybernate pause --yes` sets. A request held back is answered with the reason.
 
-With `dryRun: true`, the phase still becomes `Idle` and the `IdleDetected` event carries a `[dry-run]` prefix, but nothing is changed. If activity resumes, the phase goes back to `Running`. See [Dry Run](../guides/dry-run.md).
+With `dryRun: true`, the phase still becomes `Idle` and the `IdleDetected` or `PausedEarly` event carries a `[dry-run]` prefix, but nothing is changed. If activity resumes, the phase goes back to `Running`. See [Dry Run](../guides/dry-run.md).
 
 The forecast never blocks a pause until it's confident, so a workload with no history is handled by the clock alone.
 

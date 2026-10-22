@@ -29,6 +29,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	appsv1 "k8s.io/api/apps/v1"
+	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/tools/events"
@@ -72,11 +73,11 @@ func (f *stubForecaster) Observe(actual float64, hour time.Time) (float64, error
 func (f *stubForecaster) Observed(hour time.Time) bool {
 	return slices.ContainsFunc(f.observedHours, hour.Equal)
 }
-func (f *stubForecaster) Predict(h int, _ time.Time) float64 {
+func (f *stubForecaster) Expect(h int, _ time.Time) (float64, bool) {
 	if v, ok := f.predictByHour[h]; ok {
-		return v
+		return v, f.phase >= forecast.DailyActive
 	}
-	return f.predictValue
+	return f.predictValue, f.phase >= forecast.DailyActive
 }
 func (f *stubForecaster) Export() (string, error) {
 	f.exportCalls++
@@ -796,10 +797,11 @@ type lifecycleEvent struct {
 
 // doormanDays runs a workload behind the doorman for days from monday,
 // reconciled as the operator would: at the requeue each reconcile asks for,
-// and when a request stamped by the doorman wakes it. use sets what it's
-// doing at each reconcile, and reports whether people are using it, in
-// which case a request reaches it while it's paused. It returns the
-// workload's wakes and pauses.
+// and when a request stamped by the doorman wakes it. Its one Service is
+// one the doorman routes. use sets what it's doing at each reconcile, and
+// reports whether people are using it, in which case a request reaches it
+// while it's paused. It returns the workload's wakes and pauses, and the
+// pauses the forecast brought forward.
 func doormanDays(t *testing.T, monday time.Time, days int, policy v1alpha1.IdlePolicySpec,
 	use func(now time.Time, workload *v1alpha1.ManagedWorkload, metrics *stubMetrics) bool) []lifecycleEvent {
 	t.Helper()
@@ -816,7 +818,12 @@ func doormanDays(t *testing.T, monday time.Time, days int, policy v1alpha1.IdleP
 	fr.metrics = metrics
 	recorder := events.NewFakeRecorder(100)
 	fr.Recorder = recorder
-	target := clockTarget("app:v1", nil)
+	target := earlyTarget()
+	routeThroughDoorman(fr.Reconciler)
+	for _, obj := range []client.Object{doormanEndpoints("10.0.0.7"),
+		service(apiService, apiPods, corev1.ServicePort{Name: "http", Port: 80})} {
+		require.NoError(t, fr.Create(ctx, obj))
+	}
 
 	var history []lifecycleEvent
 	for end := monday.AddDate(0, 0, days); fr.now.Before(end); {
@@ -837,7 +844,7 @@ func doormanDays(t *testing.T, monday time.Time, days int, policy v1alpha1.IdleP
 		require.NoError(t, fr.persistStatus(ctx, workload, observed))
 		for len(recorder.Events) > 0 {
 			e := <-recorder.Events
-			for _, reason := range []string{ReasonAutoResume, ReasonWokeByActivity, ReasonPaused} {
+			for _, reason := range []string{ReasonAutoResume, ReasonWokeByActivity, ReasonPaused, ReasonPausedEarly} {
 				if strings.HasPrefix(e, "Normal "+reason+" ") {
 					history = append(history, lifecycleEvent{at: fr.now, reason: reason})
 				}

@@ -88,6 +88,7 @@ These leave the selectors alone:
 | `hybernate.io/idle-after` | duration of at least `1m`, e.g. `"90m"`, `"2h"` | `1h` | How long without activity before pausing |
 | `hybernate.io/cpu-threshold` | whole number, `"1"` to `"100"` | `10` | CPU use, as a percentage of requests, above which the workload counts as active |
 | `hybernate.io/auto-resume` | `"true"`, `"false"` | `"false"` | Wake ahead of the demand a confident [forecast](../concepts/forecasting.md) predicts |
+| `hybernate.io/pause-early` | `"true"`, `"false"` | `"false"` | Pause before `idle-after` runs out when a confident forecast expects the hours until then to be quiet and a request would wake the workload; see [Pausing Early](../concepts/forecasting.md#pausing-early) |
 | `hybernate.io/forecast` | `"eager"`, `"balanced"`, `"cautious"` | `"balanced"` | How soon the forecast acts on what it has learned; see [Forecast setting](../concepts/forecasting.md#forecast-setting) |
 | `hybernate.io/depends-on` | comma-separated `kind/name` or `namespace/kind/name` | none | Workloads this one needs; see [Dependencies](../concepts/dependencies.md) |
 | `hybernate.io/wake-on-request` | `"true"`, `"false"` | `"true"` | Wake when a request reaches the workload's Service; see [Wake on Request](../concepts/wake-on-request.md) |
@@ -110,7 +111,7 @@ Settings that need more than one value aren't annotations: Prometheus activity q
 
 1. The workload's own annotation.
 2. Its namespace's annotation.
-3. The cluster-wide defaults, set in the Helm values (`defaults.idleAfter`, `defaults.cpuThreshold`, `defaults.dryRun`, `defaults.forecast`).
+3. The cluster-wide defaults, set in the Helm values (`defaults.idleAfter`, `defaults.cpuThreshold`, `defaults.dryRun`, `defaults.pauseEarly`, `defaults.forecast`).
 4. The built-in default.
 
 So a namespace can measure everything with `dry-run: "true"` while one workload in it goes live with `dry-run: "false"`.
@@ -176,7 +177,7 @@ GitOps tools do notice the replica count of a paused workload changing, and woul
 ## What Hybernate does with the label
 
 - **Labelled:** creates a ManagedWorkload named after the workload, owned by it, marked with `hybernate.io/from-label: "true"`, and announces it with a `Managed` event on the workload. If that name is taken, for example by a StatefulSet's of the same name as a Deployment, it's named after the workload and its kind instead, such as `api-statefulset`.
-- **Annotations changed:** updates the ManagedWorkload within seconds. The annotations are the source of truth for what they set: `dryRun`, `idlePolicy` (`idleAfter`, `activity.cpuThreshold`, `autoResume`), which workloads `dependsOn` lists, and `wake`. Direct edits to those are overwritten. Everything else is yours to set on the ManagedWorkload and is kept: `prediction`, `costTracking`, `idlePolicy.activity.prometheus`, and `waitForReady` on a dependency the annotation lists. The target never changes.
+- **Annotations changed:** updates the ManagedWorkload within seconds. The annotations are the source of truth for what they set: `dryRun`, `idlePolicy` (`idleAfter`, `activity.cpuThreshold`, `autoResume`, `pauseEarly`), which workloads `dependsOn` lists, and `wake`. Direct edits to those are overwritten. Everything else is yours to set on the ManagedWorkload and is kept: `prediction`, `costTracking`, `idlePolicy.activity.prometheus`, and `waitForReady` on a dependency the annotation lists. The target never changes.
 - **Label removed, or `hybernate.io/ignore` added:** deletes the ManagedWorkload. If the workload is paused, it's first scaled back to the replicas it had.
 - **Workload deleted:** its ManagedWorkload goes with it.
 - **A ManagedWorkload you wrote for the workload exists:** yours wins, and the label does nothing.

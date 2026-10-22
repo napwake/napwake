@@ -38,6 +38,7 @@ func TestOptInSpec_Defaults(t *testing.T) {
 	assert.Equal(t, time.Hour, spec.IdlePolicy.IdleAfter.Duration)
 	assert.Equal(t, 10, spec.IdlePolicy.Activity.CPUThreshold)
 	assert.False(t, spec.IdlePolicy.AutoResume)
+	assert.False(t, spec.IdlePolicy.PauseEarly, "the forecast brings no pause forward unless asked to")
 	assert.True(t, *spec.Wake.OnRequest)
 	assert.Equal(t, 2*time.Minute, spec.Wake.MaxWait.Duration)
 	assert.True(t, *spec.Wake.Page)
@@ -76,6 +77,43 @@ func TestOptInSpec_Forecast(t *testing.T) {
 			spec, problems := optInSpec("dev", apiTarget, tt.workload, tt.namespace, tt.defaults)
 			assert.Len(t, problems, tt.wantProblems)
 			assert.Equal(t, tt.want, spec.Prediction.Mode)
+		})
+	}
+}
+
+// Pausing early is a setting of its own, resolved like the others: the
+// workload's, its namespace's, then the cluster's default, off.
+func TestOptInSpec_PauseEarly(t *testing.T) {
+	early := DefaultOptInDefaults
+	early.PauseEarly = true
+	tests := []struct {
+		name         string
+		workload     map[string]string
+		namespace    map[string]string
+		defaults     OptInDefaults
+		want         bool
+		wantProblems int
+	}{
+		{name: "not annotated", defaults: DefaultOptInDefaults},
+		{name: "the cluster's default", defaults: early, want: true},
+		{name: "the namespace's", namespace: map[string]string{v1alpha1.AnnotationPauseEarly: "true"},
+			defaults: DefaultOptInDefaults, want: true},
+		{name: "the workload's own",
+			workload:  map[string]string{v1alpha1.AnnotationPauseEarly: "false"},
+			namespace: map[string]string{v1alpha1.AnnotationPauseEarly: "true"},
+			defaults:  early},
+		{name: "a value that can't be read leaves the namespace's",
+			workload:  map[string]string{v1alpha1.AnnotationPauseEarly: "yes"},
+			namespace: map[string]string{v1alpha1.AnnotationPauseEarly: "true"},
+			defaults:  DefaultOptInDefaults, want: true, wantProblems: 1},
+		{name: "an eager forecast doesn't pause early",
+			workload: map[string]string{v1alpha1.AnnotationForecast: "eager"}, defaults: DefaultOptInDefaults},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			spec, problems := optInSpec("dev", apiTarget, tt.workload, tt.namespace, tt.defaults)
+			assert.Len(t, problems, tt.wantProblems)
+			assert.Equal(t, tt.want, spec.IdlePolicy.PauseEarly)
 		})
 	}
 }

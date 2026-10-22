@@ -46,12 +46,14 @@ import (
 
 	v1alpha1 "github.com/okedeji/hybernate/api/v1alpha1"
 	"github.com/okedeji/hybernate/internal/doorman"
+	opmetrics "github.com/okedeji/hybernate/internal/metrics"
 )
 
 const (
 	conditionWakeOnRequest = "WakeOnRequest"
 	actionRouteDoorman     = "RouteDoorman"
 	reasonRoutingFailed    = "RoutingFailed"
+	reasonNotPaused        = "NotPaused"
 
 	labelServiceProxyName = "service.kubernetes.io/service-proxy-name"
 
@@ -112,6 +114,37 @@ func doormanEligible(workload *v1alpha1.ManagedWorkload) bool {
 	default:
 		return false
 	}
+}
+
+// requestWouldWake reports whether, were the awake workload paused now, a
+// request to any of its Services would wake it: the doorman is on and has
+// a Ready pod, the workload's last pause found nothing wrong with its
+// routing, and the plan its pause would be routed by routes at least one
+// of its Services, leaves none out, and takes no more doorman ports than
+// it may hold. What it can't check counts against it.
+func (r *Reconciler) requestWouldWake(ctx context.Context, workload *v1alpha1.ManagedWorkload, target client.Object) (bool, error) {
+	if r.DoormanService == "" || !wakeOnRequest(workload) || target == nil {
+		return false, nil
+	}
+	if c := meta.FindStatusCondition(workload.Status.Conditions, conditionWakeOnRequest); c != nil &&
+		c.Status == metav1.ConditionFalse && c.Reason != reasonNotPaused {
+		return false, nil
+	}
+	endpoints, err := r.doormanEndpoints(ctx)
+	if err != nil || len(endpoints) == 0 {
+		return false, err
+	}
+	plan, err := r.planDoorman(ctx, workload, target, endpoints, true)
+	if err != nil {
+		return false, err
+	}
+	ports := 0
+	for _, s := range plan.services {
+		ports += len(s.ports)
+	}
+	left := plan.skipped
+	return ports > 0 && ports <= r.portLimits().perWorkload &&
+		len(left.unsupported)+len(left.served)+len(left.nodeLocal)+len(left.family) == 0, nil
 }
 
 // routeDoorman brings the workload's doorman routing up to date. Routing is
@@ -175,7 +208,7 @@ func (r *Reconciler) reconcileDoorman(ctx context.Context, workload *v1alpha1.Ma
 		return 0, r.removeDoorman(ctx, workload)
 	}
 
-	plan, err := r.planDoorman(ctx, workload, target, endpoints)
+	plan, err := r.planDoorman(ctx, workload, target, endpoints, false)
 	if err != nil {
 		return 0, err
 	}
@@ -290,7 +323,7 @@ func (r *Reconciler) keepRoutingProblem(workload *v1alpha1.ManagedWorkload) {
 	}
 	c := meta.FindStatusCondition(workload.Status.Conditions, conditionWakeOnRequest)
 	if c == nil || c.Status != metav1.ConditionFalse || !lastingRoutingProblems[c.Reason] {
-		r.clearCondition(workload, conditionWakeOnRequest, "NotPaused")
+		r.clearCondition(workload, conditionWakeOnRequest, reasonNotPaused)
 		return
 	}
 	if !strings.HasPrefix(c.Message, foundAtLastPause) {
@@ -574,9 +607,15 @@ type doormanPlan struct {
 // canary and a stable Deployment of which only one is paused, is left to
 // them: requests reach a running workload, and waking the paused one for
 // them would be no use. Once every workload behind it is paused, it's
-// routed by each, so a request wakes one of them.
+// routed by each, so a request wakes one of them. For an awake workload,
+// planned ahead of its pause, its own pods serve its Services, and aren't
+// counted among those other pods.
 func (r *Reconciler) planDoorman(ctx context.Context, workload *v1alpha1.ManagedWorkload, target client.Object,
-	endpoints map[discoveryv1.AddressType][]discoveryv1.Endpoint) (doormanPlan, error) {
+	endpoints map[discoveryv1.AddressType][]discoveryv1.Endpoint, awake bool) (doormanPlan, error) {
+	var own client.Object
+	if awake {
+		own = target
+	}
 	podLabels := labels.Set(podTemplateLabels(target))
 	var list corev1.ServiceList
 	if err := r.List(ctx, &list, client.InNamespace(workload.Namespace)); err != nil {
@@ -608,7 +647,7 @@ func (r *Reconciler) planDoorman(ctx context.Context, workload *v1alpha1.Managed
 			plan.skipped.nodeLocal = append(plan.skipped.nodeLocal, svc.Name)
 			continue
 		}
-		served, err := r.servedByOthers(ctx, svc)
+		served, err := r.servedByOthers(ctx, svc, own)
 		if err != nil {
 			return doormanPlan{}, err
 		}
@@ -637,13 +676,14 @@ func (r *Reconciler) planDoorman(ctx context.Context, workload *v1alpha1.Managed
 }
 
 // servedByOthers reports whether a Service's own EndpointSlices have a
-// Ready pod, which can only be another workload's while this one is paused.
+// Ready pod, which can only be another workload's while this one is paused,
+// or, for an awake one, is one that own, its target, doesn't run.
 // They're read from the API server: the operator caches only the doorman's
 // slices, since caching every Service's would cost memory in proportion to
 // every pod in the cluster. An endpoint counts only once the pod it names,
 // in the Service's namespace, has its address: anyone who may write
 // EndpointSlices could otherwise keep a Service from being routed.
-func (r *Reconciler) servedByOthers(ctx context.Context, svc corev1.Service) (bool, error) {
+func (r *Reconciler) servedByOthers(ctx context.Context, svc corev1.Service, own client.Object) (bool, error) {
 	ctx, cancel := context.WithTimeout(ctx, endpointsReadTimeout)
 	defer cancel()
 	var list discoveryv1.EndpointSliceList
@@ -655,31 +695,32 @@ func (r *Reconciler) servedByOthers(ctx context.Context, svc corev1.Service) (bo
 		if ep.Namespace != svc.Namespace {
 			continue
 		}
-		has, err := r.podHasAddress(ctx, types.NamespacedName{Namespace: svc.Namespace, Name: ep.Pod}, ep.Addr)
+		pod, err := r.podWithAddress(ctx, types.NamespacedName{Namespace: svc.Namespace, Name: ep.Pod}, ep.Addr)
 		if err != nil {
 			return false, err
 		}
-		if has {
+		if pod != nil && (own == nil || !opmetrics.RunBy(own, pod)) {
 			return true, nil
 		}
 	}
 	return false, nil
 }
 
-func (r *Reconciler) podHasAddress(ctx context.Context, name types.NamespacedName, addr netip.Addr) (bool, error) {
+// podWithAddress is the pod of name, if it has addr; nil otherwise.
+func (r *Reconciler) podWithAddress(ctx context.Context, name types.NamespacedName, addr netip.Addr) (*corev1.Pod, error) {
 	var pod corev1.Pod
 	if err := r.apiReader().Get(ctx, name, &pod); err != nil {
 		if apierrors.IsNotFound(err) {
-			return false, nil
+			return nil, nil
 		}
-		return false, fmt.Errorf("reading pod %s: %w", name, err)
+		return nil, fmt.Errorf("reading pod %s: %w", name, err)
 	}
 	for _, ip := range pod.Status.PodIPs {
 		if parsed, err := netip.ParseAddr(ip.IP); err == nil && parsed.Unmap() == addr {
-			return true, nil
+			return &pod, nil
 		}
 	}
-	return false, nil
+	return nil, nil
 }
 
 // routablePorts are a Service's TCP ports, less those its

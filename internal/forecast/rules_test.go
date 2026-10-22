@@ -26,13 +26,18 @@ import (
 
 var ruleTime = time.Date(2026, 3, 14, 12, 0, 0, 0, time.UTC)
 
+// stubPredictor forecasts the hours ahead in byHour, and has no forecast
+// for the others.
 type stubPredictor struct {
 	phase  Phase
 	byHour map[int]float64
 }
 
-func (s stubPredictor) GetPhase() Phase                    { return s.phase }
-func (s stubPredictor) Predict(h int, _ time.Time) float64 { return s.byHour[h] }
+func (s stubPredictor) GetPhase() Phase { return s.phase }
+func (s stubPredictor) Expect(h int, _ time.Time) (float64, bool) {
+	v, ok := s.byHour[h]
+	return v, ok
+}
 
 func TestHourStart(t *testing.T) {
 	kolkata, err := time.LoadLocation("Asia/Kolkata")
@@ -129,6 +134,82 @@ func TestWakeAhead(t *testing.T) {
 			assert.Equal(t, tt.wantWake, wake)
 			assert.Equal(t, tt.wantNextHour, nextHour)
 		})
+	}
+}
+
+// The forecast brings a pause forward only once the workload has been idle
+// for EarlyPauseIdle, and only while it's acting and sure every hour the
+// workload would otherwise be awake for, and at least the one under way and
+// the next, is quiet: under the activity threshold, the line the veto and
+// autoResume draw.
+func TestPauseEarly(t *testing.T) {
+	quiet := func(hours int) map[int]float64 {
+		byHour := map[int]float64{}
+		for h := range hours {
+			byHour[h] = 9
+		}
+		return byHour
+	}
+	now := ruleTime.Add(20 * time.Minute)
+	tests := []struct {
+		name      string
+		predictor stubPredictor
+		idle      time.Duration
+		idleAfter time.Duration
+		wantUntil time.Duration
+	}{
+		{name: "quiet this hour and the next", predictor: stubPredictor{phase: DailyActive, byHour: quiet(2)},
+			idle: 20 * time.Minute, idleAfter: time.Hour, wantUntil: 2 * time.Hour},
+		{name: "idle for less than the floor", predictor: stubPredictor{phase: DailyActive, byHour: quiet(2)},
+			idle: 19 * time.Minute, idleAfter: time.Hour},
+		{name: "not yet confident", predictor: stubPredictor{phase: DailySuggesting, byHour: quiet(2)},
+			idle: 30 * time.Minute, idleAfter: time.Hour},
+		{name: "demand at the threshold this hour", predictor: stubPredictor{phase: DailyActive,
+			byHour: map[int]float64{0: 10, 1: 0}}, idle: 30 * time.Minute, idleAfter: time.Hour},
+		{name: "demand the next hour", predictor: stubPredictor{phase: FullyActive,
+			byHour: map[int]float64{0: 0, 1: 40}}, idle: 30 * time.Minute, idleAfter: time.Hour},
+		{name: "no forecast for the next hour", predictor: stubPredictor{phase: DailyActive,
+			byHour: map[int]float64{0: 0}}, idle: 30 * time.Minute, idleAfter: time.Hour},
+		{name: "the clock has run out", predictor: stubPredictor{phase: DailyActive, byHour: quiet(2)},
+			idle: time.Hour, idleAfter: time.Hour},
+		{name: "quiet until the hour the clock would pause in", predictor: stubPredictor{phase: DailyActive,
+			byHour: quiet(4)}, idle: 30 * time.Minute, idleAfter: 3*time.Hour + 30*time.Minute, wantUntil: 4 * time.Hour},
+		{name: "demand before the clock would pause", predictor: stubPredictor{phase: DailyActive,
+			byHour: map[int]float64{0: 0, 1: 0, 2: 0, 3: 40}}, idle: 30 * time.Minute,
+			idleAfter: 3*time.Hour + 30*time.Minute},
+		{name: "demand after the clock would have paused it", predictor: stubPredictor{phase: DailyActive,
+			byHour: map[int]float64{0: 0, 1: 0, 2: 40}}, idle: 30 * time.Minute, idleAfter: time.Hour,
+			wantUntil: 2 * time.Hour},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			last := now.Add(-tt.idle)
+			early, from, until := PauseEarly(tt.predictor, now, last, last.Add(tt.idleAfter), nil, 10)
+			assert.Equal(t, tt.wantUntil > 0, early)
+			if tt.wantUntil > 0 {
+				assert.Equal(t, ruleTime, from)
+				assert.Equal(t, ruleTime.Add(tt.wantUntil), until)
+			}
+		})
+	}
+}
+
+// What PauseEarly brings forward, the veto doesn't hold off and autoResume
+// doesn't wake straight back from: it's judged by the same rules, over
+// every hour they look at.
+func TestPauseEarly_AgreesWithTheVetoAndAutoResume(t *testing.T) {
+	now := ruleTime.Add(50 * time.Minute)
+	for _, byHour := range []map[int]float64{
+		{0: 9.9, 1: 9.9}, {0: 10, 1: 0}, {0: 0, 1: 10}, {0: 0, 1: 0}, {0: 30, 1: 30},
+	} {
+		p := stubPredictor{phase: DailyActive, byHour: byHour}
+		early, _, _ := PauseEarly(p, now, now.Add(-30*time.Minute), now.Add(30*time.Minute), nil, 10)
+		hold, _, _ := HoldPause(p, now, nil, 10)
+		wake, _, _ := WakeAhead(p, now, nil, 10)
+		if early {
+			assert.False(t, wake, "%v", byHour)
+		}
+		assert.Equal(t, !hold, early, "%v: the forecast either holds the pause off or may bring it forward", byHour)
 	}
 }
 

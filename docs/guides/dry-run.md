@@ -139,7 +139,7 @@ When the clock runs out, and when activity ends the would-be pause:
 [dry-run] my-api: activity resumed (cpu): would have slept 3 hours 12 minutes, freeing $0.25; since Oct 1: would have paused 4 times, slept 4 days, freeing $7.50
 ```
 
-The `[dry-run]` prefix marks the decisions dry-run holds back: `IdleDetected`, `ActivityResumed`, `IdleVetoed`, `HeldByDependents`, `DependencyCycle`, and the `PauseRequested` event for a pause request it doesn't act on. Events about what really happens, such as a wake, a forecast update, or a metrics problem, have no prefix.
+The `[dry-run]` prefix marks the decisions dry-run holds back: `IdleDetected`, `PausedEarly`, `ActivityResumed`, `IdleVetoed`, `HeldByDependents`, `DependencyCycle`, and the `PauseRequested` event for a pause request it doesn't act on. Events about what really happens, such as a wake, a forecast update, or a metrics problem, have no prefix.
 
 ### Phase
 

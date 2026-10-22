@@ -166,6 +166,9 @@ func main() {
 		"CPU threshold, as a percentage of requests, for workloads opted in with the label, unless annotated otherwise.")
 	flag.BoolVar(&optIn.DryRun, "default-dry-run", optIn.DryRun,
 		"Measure workloads opted in with the label without pausing them, unless annotated otherwise.")
+	flag.BoolVar(&optIn.PauseEarly, "default-pause-early", optIn.PauseEarly,
+		"Let a confident forecast that expects quiet hours pause workloads opted in with the label before their "+
+			"idleAfter runs out, unless annotated otherwise.")
 	flag.Func("default-forecast", "How soon the forecast acts, eager, balanced or cautious, for workloads opted in "+
 		"with the label, unless annotated otherwise. (default balanced)", func(v string) error {
 		optIn.Forecast = v1alpha1.PredictionMode(v)

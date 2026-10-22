@@ -138,6 +138,26 @@ func TestEngine_OfficeHoursForecast(t *testing.T) {
 	assert.Less(t, e.Predict(10, saturday), 2.5, "Saturday 10am")
 }
 
+// An hour of the week the forecast hasn't seen has no forecast to act on:
+// its demand of 0 isn't quiet, only unknown. One it has seen, even quiet,
+// has one.
+func TestEngine_ExpectOnlyHoursItHasSeen(t *testing.T) {
+	e := newTestEngine()
+	run(t, e, 0, 2*WeeklySeason+DailySeason, office)
+	require.GreaterOrEqual(t, e.GetPhase(), DailyActive)
+	now := hourAt(2*WeeklySeason + DailySeason)
+
+	demand, ok := e.Expect(3, now)
+	assert.True(t, ok, "Tuesday 3am, seen")
+	assert.Less(t, demand, 2.5)
+	_, ok = e.Expect(7*DailySeason+3, now)
+	assert.True(t, ok, "a week on, the same hour")
+	e.recentSeen.set(weeklyIndex(now.Add(3*time.Hour)), false)
+	demand, ok = e.Expect(3, now)
+	assert.False(t, ok, "an hour of the week it hasn't seen")
+	assert.Zero(t, demand)
+}
+
 func TestEngine_AlwaysIdleForecastsNothing(t *testing.T) {
 	e := newTestEngine()
 	run(t, e, 0, 3*WeeklySeason, func(int, time.Time) float64 { return 0 })
@@ -364,6 +384,8 @@ func TestEngine_DoubtsAfterAQuietSurprise(t *testing.T) {
 	run(t, e, monday+9, 1, func(int, time.Time) float64 { return 0 })
 	require.True(t, e.AnomalyDetected())
 	assert.Zero(t, e.Predict(0, hourAt(monday+10)), "after a quiet 9am, 10am isn't acted on")
+	_, ok := e.Expect(4, hourAt(monday+10))
+	assert.False(t, ok, "nor taken to be quiet: the forecast has nothing to say until an hour goes as forecast")
 
 	run(t, e, monday+10, 1, office)
 	assert.Greater(t, e.Predict(1, hourAt(monday+11)), 40.0, "a busy 10am restores it")

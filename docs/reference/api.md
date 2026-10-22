@@ -18,6 +18,7 @@
 | `idlePolicy.activity.cpuThreshold` | int | No | `10` | CPU utilization % of requests above which the workload is active (1-100) |
 | `idlePolicy.activity.prometheus[].promQL` | string | Yes (per entry) | | PromQL instant query; a result above zero is activity. At most 10 queries |
 | `idlePolicy.autoResume` | bool | No | `false` | Wake ahead of confident forecast demand |
+| `idlePolicy.pauseEarly` | bool | No | `false` | Pause before `idleAfter` runs out, once idle for 20 minutes, when a confident forecast expects the hours until then to be quiet and a request would wake the workload through the doorman. See [Pausing Early](../concepts/forecasting.md#pausing-early) |
 | `dependsOn[]` | `DependencyRef` | No | | Workloads this one needs, at most 20 |
 | `dependsOn[].namespace` | string | No | this namespace | Namespace of the dependency |
 | `dependsOn[].kind` | `Deployment` \| `StatefulSet` | Yes | | Kind of the dependency |
@@ -60,6 +61,7 @@ A duration is a Go duration above zero, such as `45s`, `90m` or `1h30m`. Days an
 | `activity.templateHash` | string | Fingerprint of the target's pod template, used to detect deploys |
 | `activity.heldByDependents` | []string | The awake workloads that use this one, as `namespace/name`, while they keep it from pausing (`HeldByDependents`): at most 10, the first by name |
 | `activity.forecastBusyFrom` | time | The start of the hour the forecast expects demand in, while it keeps the workload from pausing (`IdleVetoed`) |
+| `activity.forecastQuietUntil` | time | The end of the hours the forecast expected to be quiet when it brought the workload's pause forward (`PausedEarly`), until the pause, or the would-be pause in dry-run, ends |
 | `pause` | `PauseStatus` | What a pause changed, from before the workload is scaled to zero until it's running again |
 | `pause.previousReplicas` | int32 | Replicas before the pause, restored on resume |
 | `pause.pausedAt` | time | When it was scaled to zero; unset until then. The pause is `Paused` once its pods have stopped |

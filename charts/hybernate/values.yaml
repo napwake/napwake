@@ -112,6 +112,14 @@ defaults:
   idleAfter: 1h
   cpuThreshold: 10
   dryRun: false
+  # Let a confident forecast pause a workload before idleAfter runs out,
+  # once it has been idle 20 minutes, when it expects the hours until then
+  # to be quiet and a request would wake the workload through the doorman.
+  # On office hours at the default idleAfter, that's half an hour less
+  # awake each weekday; it costs a cold start whenever someone uses the
+  # workload in an hour the forecast expected quiet, such as coming back
+  # after everyone left. hybernate.io/pause-early sets it per workload.
+  pauseEarly: false
   # How soon the forecast acts on what it has learned: eager, balanced or
   # cautious. Eager acts sooner and wakes workloads for nothing more often;
   # cautious, for workloads costly to keep awake, acts later.

@@ -587,10 +587,7 @@ func nextFor(w *v1alpha1.ManagedWorkload, targetActiveUntil, now time.Time) stri
 	}
 	switch w.Status.Phase {
 	case v1alpha1.PhasePaused:
-		if len(w.Status.Doorman) > 0 {
-			return "wakes on a request or activity"
-		}
-		return "wakes on activity"
+		return pausedEarly(w.Status.Activity, "paused ", "; ") + wakesOn(w)
 	case v1alpha1.PhaseRunning, v1alpha1.PhaseIdle:
 	default:
 		return "-"
@@ -621,6 +618,11 @@ func nextFor(w *v1alpha1.ManagedWorkload, targetActiveUntil, now time.Time) stri
 		verb = "would pause"
 	}
 	pauseAt := a.PauseAt.Time
+	if a.ForecastQuietUntil != nil && w.Status.Phase == v1alpha1.PhaseIdle {
+		// The forecast brought the pause forward: it's due now, not when the
+		// clock would run out.
+		pauseAt = now
+	}
 	retryAt, heldByGitOps := gitOpsHold(w, now)
 	afterGitOps := "pauses at " + clockTime(retryAt) + " (after GitOps conflict)"
 	switch {
@@ -633,7 +635,7 @@ func nextFor(w *v1alpha1.ManagedWorkload, targetActiveUntil, now time.Time) stri
 	case heldByGitOps:
 		return afterGitOps
 	case w.Status.Phase == v1alpha1.PhaseIdle:
-		return verb + " now"
+		return verb + " now" + pausedEarly(a, ", ", "")
 	case now.Sub(pauseAt) < clockLag:
 		return verb + " soon"
 	}
@@ -677,6 +679,25 @@ func heldByForecast(a *v1alpha1.ActivityStatus) string {
 		return "held awake by the forecast"
 	}
 	return "held awake by the forecast: busy from " + clockTime(a.ForecastBusyFrom.Time)
+}
+
+// wakesOn says what wakes a paused workload.
+func wakesOn(w *v1alpha1.ManagedWorkload) string {
+	if len(w.Status.Doorman) > 0 {
+		return "wakes on a request or activity"
+	}
+	return "wakes on activity"
+}
+
+// pausedEarly says, between before and after, that the forecast brought a
+// workload's pause forward, before idleAfter ran out, and until when it
+// expected quiet, as the operator recorded it; empty for a pause the clock
+// decided.
+func pausedEarly(a *v1alpha1.ActivityStatus, before, after string) string {
+	if a == nil || a.ForecastQuietUntil == nil {
+		return ""
+	}
+	return before + "early: the forecast expects quiet until " + clockTime(a.ForecastQuietUntil.Time) + after
 }
 
 // clockTime is a time of day in UTC, as the operator's messages give one.

@@ -17,11 +17,13 @@ limitations under the License.
 // Command forecastsim runs the forecast engine and the operator's decision
 // rules through simulated traffic, or through a workload's recorded CPU,
 // and reports what Hybernate would have done: how long the forecast took
-// to act, the mornings autoResume had the workload ready, and the wakes it
-// made for nothing.
+// to act, the mornings autoResume had the workload ready, the wakes it
+// made for nothing, and with -pause-early, the pauses it brought forward
+// and the uses that then found the workload paused.
 //
 //	go run ./hack/forecastsim                     # every scenario, every setting
 //	go run ./hack/forecastsim -scenario holiday -setting eager -days
+//	go run ./hack/forecastsim -scenario coming-back -pause-early
 //	go run ./hack/forecastsim -history cpu.json -timezone Europe/London -days
 //
 // -history reads a Prometheus range query's JSON response, or CSV of
@@ -68,6 +70,7 @@ type options struct {
 	idleAfter    time.Duration
 	timezone     string
 	autoResume   bool
+	pauseEarly   bool
 	doorman      bool
 	days         bool
 	output       string
@@ -84,6 +87,8 @@ func main() {
 	flag.DurationVar(&o.idleAfter, "idle-after", time.Hour, "How long without activity before a pause")
 	flag.StringVar(&o.timezone, "timezone", "UTC", "The operator's --timezone")
 	flag.BoolVar(&o.autoResume, "auto-resume", true, "Wake ahead of forecast demand")
+	flag.BoolVar(&o.pauseEarly, "pause-early", false,
+		"Pause before idle-after runs out when the forecast expects quiet hours")
 	flag.BoolVar(&o.doorman, "wake-on-request", true, "Route the workload's Services to the doorman while paused")
 	flag.BoolVar(&o.days, "days", false, "List every day: when people first used the workload, and how it found it")
 	flag.StringVar(&o.output, "o", outputTable, "Output: table or json")
@@ -109,7 +114,7 @@ func run(o options, out io.Writer) error {
 	var reports []sim.Report
 	for _, th := range thresholds {
 		set := sim.Settings{Confidence: th.confidence, CPUThreshold: o.cpuThreshold, IdleAfter: o.idleAfter,
-			AutoResume: o.autoResume, WakeOnRequest: o.doorman, Location: loc}
+			AutoResume: o.autoResume, PauseEarly: o.pauseEarly, WakeOnRequest: o.doorman, Location: loc}
 		if o.history != "" {
 			r, err := replay(o.history, th.name, set)
 			if err != nil {
@@ -182,12 +187,12 @@ func writeTable(out io.Writer, reports []sim.Report, days bool) error {
 	tw := tabwriter.NewWriter(out, 0, 0, 2, ' ', 0)
 	p := &printer{w: tw}
 	p.printf("SCENARIO\tACTS AFTER\tFULLY ACTIVE\tREADY\tAWAKE\tCOLD\tMISSED\tWASTED WAKES\tON IDLE DAYS\t" +
-		"HOURS WASTED\tVETOES\n")
+		"HOURS WASTED\tVETOES\tPAUSED EARLY\tHOURS SAVED\tFOUND PAUSED\n")
 	for _, r := range reports {
 		s := r.Summarize(r.Start)
-		p.printf("%s\t%s\t%s\t%d/%d\t%d\t%d\t%d\t%d\t%d\t%.1f\t%d\n", r.Name, reached(r, forecast.DailyActive),
-			reached(r, forecast.FullyActive), s.Ready, s.UsedDays, s.Awake, s.Cold, s.Missed, s.WastedWakes,
-			s.IdleDayWakes, s.WastedHours, s.Vetoes)
+		p.printf("%s\t%s\t%s\t%d/%d\t%d\t%d\t%d\t%d\t%d\t%.1f\t%d\t%d\t%.1f\t%d\n", r.Name,
+			reached(r, forecast.DailyActive), reached(r, forecast.FullyActive), s.Ready, s.UsedDays, s.Awake, s.Cold,
+			s.Missed, s.WastedWakes, s.IdleDayWakes, s.WastedHours, s.Vetoes, s.EarlyPauses, s.SavedHours, s.ColdEarly)
 	}
 	if !days {
 		return errors.Join(p.err, tw.Flush())
@@ -370,6 +375,8 @@ func scenarios(name string, loc *time.Location, length time.Duration) ([]sim.Sce
 		}},
 		{Name: "light-use", Traffic: sim.SeenElsewhere(sim.Working(loc, sim.Weekdays, 9*time.Hour+10*time.Minute,
 			17*time.Hour+30*time.Minute, 3))},
+		{Name: "coming-back", Traffic: sim.ComingBack(loc, 1, 3)},
+		{Name: "evening-work", Traffic: sim.EveningWork(loc, 1, 3)},
 		{Name: "restarts", Traffic: office, Restarts: restarts},
 		{Name: "new-york-users", Traffic: sim.OfficeHours(newYork), Start: time.Date(2026, 2, 2, 0, 0, 0, 0, newYork)},
 	}
@@ -392,6 +399,9 @@ func scenarios(name string, loc *time.Location, length time.Duration) ([]sim.Sce
 
 // scenarioNames are the scenarios' names, for -scenario's help. The
 // new-york-users scenario's people keep New York's hours, through its
-// clock change, so it shows what -timezone does.
+// clock change, so it shows what -timezone does. In coming-back and
+// evening-work, people use the workload in hours the forecast learns as
+// quiet, which is what -pause-early costs.
 var scenarioNames = []string{"office", "every-day", "always-busy", "always-idle", "noisy", "irregular", "holiday",
-	"new-hours", "retired", "weekend-work", "light-use", "restarts", "new-york-users"}
+	"new-hours", "retired", "weekend-work", "light-use", "coming-back", "evening-work", "restarts",
+	"new-york-users"}
