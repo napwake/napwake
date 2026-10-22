@@ -192,7 +192,7 @@ spec:
                             promQL:
                               description: |-
                                 PromQL is the query. Example:
-                                sum(rate(nginx_ingress_controller_requests{exported_service="api"}[5m]))
+                                sum(rate(nginx_ingress_controller_requests{exported_namespace="staging",exported_service="api"}[5m]))
                               minLength: 1
                               type: string
                           required:
