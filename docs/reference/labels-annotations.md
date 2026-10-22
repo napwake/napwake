@@ -37,7 +37,7 @@ kubectl get managedworkloads -l hybernate.io/from-label=true --all-namespaces
 
 ## Settings Annotations
 
-Set on an opted-in Deployment or StatefulSet, or on its Namespace to apply to every workload in it. Each setting is the first value that can be read from: the workload's annotation, its namespace's, the [Helm defaults](helm-values.md#opt-in-defaults) (only `idle-after`, `cpu-threshold`, `dry-run` and `forecast` have one), and the built-in default. See [Opting In](../guides/opt-in.md#settings).
+Set on an opted-in Deployment or StatefulSet, or on its Namespace to apply to every workload in it. Each setting is the first value that can be read from: the workload's annotation, its namespace's, the [Helm defaults](helm-values.md#opt-in-defaults) (only `idle-after`, `cpu-threshold`, `dry-run`, `pause-early` and `forecast` have one), and the built-in default. See [Opting In](../guides/opt-in.md#settings).
 
 | Annotation | Accepted values | Default | Description |
 |------------|-----------------|---------|-------------|
@@ -45,6 +45,7 @@ Set on an opted-in Deployment or StatefulSet, or on its Namespace to apply to ev
 | `hybernate.io/idle-after` | a Go duration of at least `1m`, such as `"90m"` or `"2h"` | `1h` | How long without activity before pausing |
 | `hybernate.io/cpu-threshold` | a whole number, `"1"` to `"100"` | `10` | CPU use, as a percentage of requests, above which the workload counts as active |
 | `hybernate.io/auto-resume` | exactly `"true"` or `"false"` | `"false"` | Wake ahead of forecast demand |
+| `hybernate.io/pause-early` | exactly `"true"` or `"false"` | `"false"` | Pause before `idle-after` runs out, once idle for 20 minutes, when a confident forecast expects the hours until then to be quiet and a request would wake the workload through the doorman. Sets `spec.idlePolicy.pauseEarly`. See [Pausing Early](../concepts/forecasting.md#pausing-early) |
 | `hybernate.io/forecast` | exactly `"eager"`, `"balanced"` or `"cautious"` | `"balanced"` | How soon the forecast acts: at a confidence of 60, 75 or 85. Eager acts sooner and wakes the workload for nothing more often; cautious acts later, for workloads costly to keep awake. Sets `spec.prediction.mode`; a `spec.prediction.confidence` set on the ManagedWorkload overrides it. See [Forecast setting](../concepts/forecasting.md#forecast-setting) |
 | `hybernate.io/depends-on` | comma-separated `kind/name` or `namespace/kind/name`, kind `deployment` or `statefulset` | none | Workloads this one needs. An empty value declares none, so a workload can drop its namespace's. On a namespace, it leaves out the workloads it names, and those they depend on by their own `depends-on`, which are dependencies rather than dependents. One in another namespace needs that namespace's `hybernate.io/dependents-from` |
 | `hybernate.io/wake-on-request` | exactly `"true"` or `"false"` | `"true"` | Wake when a request reaches the workload's Service |

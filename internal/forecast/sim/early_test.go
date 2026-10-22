@@ -17,6 +17,7 @@ limitations under the License.
 package sim
 
 import (
+	"strings"
 	"testing"
 	"time"
 
@@ -126,4 +127,107 @@ func TestEarlyPause_NeedsTheDoorman(t *testing.T) {
 	set.WakeOnRequest = false
 	r := simulate(t, Scenario{Duration: 4 * week, Traffic: OfficeHours(time.UTC), Settings: set, HandWake: 5 * time.Minute})
 	assert.Empty(t, r.EarlyPauses)
+}
+
+// earlyPauseRow is one row of the forecasting page's table of what pausing
+// early saves and costs: a pattern, and the weeks it's measured over.
+type earlyPauseRow struct {
+	label   string
+	traffic func(seed uint64) Traffic
+	seeds   int
+	weeks   int
+	// from and to bound what's measured, from the start of the run.
+	from, to time.Duration
+	// idleAfter is the workload's, an hour unless set.
+	idleAfter time.Duration
+}
+
+// earlyPauseRows are the patterns the forecasting page's table measures.
+func earlyPauseRows() []earlyPauseRow {
+	office := OfficeHours(time.UTC)
+	holiday := monday.Add(6*week + 2*day)
+	change := monday.Add(6 * week)
+	return []earlyPauseRow{
+		{"Busy on weekdays", func(uint64) Traffic { return office }, 1, 8, 2 * week, 8 * week, 0},
+		{"The same, with `idleAfter: 2h`", func(uint64) Traffic { return office }, 1, 8, 2 * week, 8 * week, 2 * time.Hour},
+		{"The same hours every day", func(uint64) Traffic {
+			return Working(time.UTC, EveryDay, 9*time.Hour+10*time.Minute, 17*time.Hour+30*time.Minute, 40)
+		}, 1, 8, 2 * week, 8 * week, 0},
+		{"Office hours, people arriving and leaving up to 20 minutes", func(seed uint64) Traffic {
+			return Noisy(time.UTC, seed, 20*time.Minute, 10)
+		}, 20, 8, 2 * week, 8 * week, 0},
+		{"Office hours, people arriving and leaving up to an hour", func(seed uint64) Traffic {
+			return Noisy(time.UTC, seed, 60*time.Minute, 4)
+		}, 20, 8, 2 * week, 8 * week, 0},
+		{"Office hours, the week of a holiday", func(uint64) Traffic { return Except(office, time.UTC, holiday) },
+			1, 9, 6 * week, 7 * week, 0},
+		{"Office hours moving to 13:00", func(uint64) Traffic {
+			return Switch(change, office, Working(time.UTC, Weekdays, 13*time.Hour, 21*time.Hour, 40))
+		}, 1, 10, 6 * week, 8 * week, 0},
+		{"Office hours, someone coming back", func(seed uint64) Traffic { return ComingBack(time.UTC, seed, 3) },
+			20, 8, 2 * week, 8 * week, 0},
+		{"Office hours, someone working in the evening", func(seed uint64) Traffic { return EveningWork(time.UTC, seed, 3) },
+			20, 8, 2 * week, 8 * week, 0},
+		{"Always busy", func(uint64) Traffic { return Always(true, 40) }, 1, 8, 2 * week, 8 * week, 0},
+		{"Always idle", func(uint64) Traffic { return Always(false, 0) }, 1, 8, 2 * week, 8 * week, 0},
+	}
+}
+
+// measure runs the row's pattern at balanced without and with pausing
+// early, and returns the hours a week the workload was awake each way, and
+// the cold starts a week pausing early added: uses that found it paused
+// when it would otherwise have been up. Each is averaged over the row's
+// seeds.
+func (row earlyPauseRow) measure(t *testing.T) (off, on, cold float64) {
+	t.Helper()
+	runs := make([]Scenario, 0, 2*row.seeds)
+	for seed := uint64(1); seed <= uint64(row.seeds); seed++ {
+		sc := Scenario{Duration: time.Duration(row.weeks) * week, Traffic: row.traffic(seed), Settings: DefaultSettings()}
+		if row.idleAfter > 0 {
+			sc.Settings.IdleAfter = row.idleAfter
+		}
+		runs = append(runs, sc)
+		sc.Settings.PauseEarly = true
+		runs = append(runs, sc)
+	}
+	reports := simulateAll(t, runs)
+	from, to := monday.Add(row.from), monday.Add(row.to)
+	for i := 0; i < len(reports); i += 2 {
+		off += reports[i].Awake(from, to).Hours()
+		on += reports[i+1].Awake(from, to).Hours()
+		for _, p := range reports[i+1].EarlyPauses {
+			if p.Cold && !p.At.Before(from) && p.At.Before(to) {
+				cold++
+			}
+		}
+	}
+	n := float64(row.seeds) * (row.to - row.from).Hours() / week.Hours()
+	return off / n, on / n, cold / n
+}
+
+// The forecasting page's table of what pausing early saves and costs is
+// what the simulator measures at balanced: for each pattern, the hours a
+// week the workload is awake without and with pausing early, and the cold
+// starts a week pausing early adds, averaged over twenty seeds for traffic
+// drawn from one.
+func TestDocs_PausingEarly(t *testing.T) {
+	t.Parallel()
+	rows := earlyPauseRows()
+	table := readDocsTable(t, "### What It Saves and Costs", "Hours awake a week")
+	require.Len(t, table.rows, len(rows), "a row for each pattern the test measures")
+	for _, row := range rows {
+		var cells [][]float64
+		for label, values := range table.rows {
+			if strings.HasPrefix(label, row.label) {
+				cells = values
+			}
+		}
+		require.Len(t, cells, 2, "the page has a row starting %q", row.label)
+		off, on, cold := row.measure(t)
+		require.Len(t, cells[0], 2, "%s: hours awake without and with", row.label)
+		require.Len(t, cells[1], 1, "%s: extra cold starts", row.label)
+		assert.InDelta(t, off, cells[0][0], 0.15, "%s: hours awake a week without pausing early", row.label)
+		assert.InDelta(t, on, cells[0][1], 0.15, "%s: hours awake a week pausing early", row.label)
+		assert.InDelta(t, cold, cells[1][0], 0.15, "%s: extra cold starts a week", row.label)
+	}
 }

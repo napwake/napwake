@@ -35,7 +35,7 @@ These metrics help troubleshoot specific workload behavior.
 |--------|------|--------|-------------|
 | `hybernate_idle_seconds` | Gauge | `namespace`, `workload` | Seconds since the workload's last activity. It keeps growing while the workload is paused, updated each time Hybernate checks it: every minute awake, every few minutes paused |
 | `hybernate_prediction_regime_changes_total` | Counter | `namespace`, `workload` | Regime changes detected |
-| `hybernate_dryrun_actions_total` | Counter | `action` | Actions that would have been taken in dry-run; `action` is `idle_pause`, or `requested_pause` for a pause asked for with `kubectl hybernate pause` |
+| `hybernate_dryrun_actions_total` | Counter | `action` | Actions that would have been taken in dry-run; `action` is `idle_pause`, `early_pause` for one the forecast brought forward (`pauseEarly`), or `requested_pause` for a pause asked for with `kubectl hybernate pause` |
 | `hybernate_target_unavailable_total` | Counter | `namespace`, `workload` | Target workload not found |
 
 ## Savings

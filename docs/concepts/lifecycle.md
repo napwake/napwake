@@ -26,7 +26,7 @@ A workload already at zero replicas, scaled there by a person, a pipeline or KED
 
 ### Automatic
 
-- **Running → Idle**: No activity for `idleAfter`, no `active-until` hold, no confident forecast of demand, no awake dependents, CPU (and any Prometheus query) readable, and at least one replica; see [Idle Detection](idle-detection.md#the-decision)
+- **Running → Idle**: No activity for `idleAfter`, or with `pauseEarly`, for 20 minutes before hours a confident forecast expects quiet (see [Pausing Early](forecasting.md#pausing-early)); no `active-until` hold, no confident forecast of demand, no awake dependents, CPU (and any Prometheus query) readable, and at least one replica; see [Idle Detection](idle-detection.md#the-decision)
 - **Idle → Pausing**: Right away, unless the workload is in dry-run, or a GitOps tool undid its last pause within the hour
 - **Idle → Running**: Activity resumes (in dry-run, or while a GitOps tool's undoing holds the pause off; otherwise the pause has already started), or the workload is scaled to zero outside Hybernate
 - **Paused → Resuming**: A request to its Service, a change to an activity annotation since the pause, `autoResume` ahead of forecast demand, or dry-run being turned on
@@ -79,7 +79,7 @@ The operator sets standard Kubernetes conditions on the CR, each with `Reason`, 
 
 User-visible state changes emit Kubernetes events that show up in `kubectl describe`, each once, when the change happens:
 
-- Lifecycle: `IdleDetected`, `PauseRequested`, `Paused`, `Resumed`, `ActivityResumed` (in dry-run, with what the would-be pause would have freed)
+- Lifecycle: `IdleDetected`, `PausedEarly` (the forecast brought the pause forward, with [`pauseEarly`](forecasting.md#pausing-early)), `PauseRequested`, `Paused`, `Resumed`, `ActivityResumed` (in dry-run, with what the would-be pause would have freed)
 - A pause record lost from status: `PauseRecovered` (taken up again from the target's `hybernate.io/paused-from`), `PauseRecordLost` (a warning: nothing to finish it from)
 - A pause request Hybernate didn't act on: an event whose reason says why, the same as the `PauseRequest` condition's
 - What woke it: `WokeByActivity`, `WokenByRequest` (from the doorman), `AutoResume`, `ScaledUp`, `DryRunWake`
