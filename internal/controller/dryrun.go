@@ -65,6 +65,12 @@ func (r *Reconciler) beginWouldBePause(ctx context.Context, workload *v1alpha1.M
 	workload.Status.DryRun.QueryActiveSincePause = false
 }
 
+// inWouldBePause reports whether the workload is in a pause dry-run holds
+// back: Idle in dry-run, where it stands for a paused workload.
+func inWouldBePause(workload *v1alpha1.ManagedWorkload) bool {
+	return workload.Spec.DryRun && workload.Status.Phase == v1alpha1.PhaseIdle
+}
+
 // heldByWouldBePause reports whether a Prometheus activity query's
 // activity at this check is held back from ending the workload's would-be
 // pause, as it would be from waking a real one: the queries have shown

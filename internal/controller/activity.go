@@ -171,7 +171,10 @@ func (r *Reconciler) observeActivity(ctx context.Context, workload *v1alpha1.Man
 		}
 	}
 
-	if last := status.LastEvaluatedTime; last != nil && now.Sub(last.Time) > unobservedAfter(workload, inMemory) {
+	// A gap in watching doesn't wake a paused workload, so it doesn't end
+	// the pause dry-run stands in for either.
+	if last := status.LastEvaluatedTime; last != nil && !inWouldBePause(workload) &&
+		now.Sub(last.Time) > unobservedAfter(workload, inMemory) {
 		status.LastActivityTime = metav1.NewTime(now)
 		status.LastActivitySource = v1alpha1.ActivitySourceUnobserved
 	}
