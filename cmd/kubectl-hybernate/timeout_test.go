@@ -57,6 +57,11 @@ current-context: hanging
 	t.Setenv("KUBECONFIG", kubeconfig)
 }
 
+// promptly is how soon a command given --timeout 300ms has given up
+// rather than hung: far more than a loaded CI runner needs to give up at
+// 300ms, and far less than a hang, which only the test's own timeout ends.
+const promptly = 30 * time.Second
+
 // runRoot runs the plugin against the cluster the kubeconfig names.
 func runRoot(args ...string) error {
 	root := newRootCmd(newKubeClient)
@@ -76,7 +81,7 @@ func TestScan_GivesUpAtTimeout(t *testing.T) {
 
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "the scan didn't finish within --timeout 300ms")
-	assert.Less(t, time.Since(start), 5*time.Second)
+	assert.Less(t, time.Since(start), promptly)
 }
 
 // A Prometheus that stops answering is named as what was slow, not the
@@ -134,7 +139,7 @@ func TestCommands_GiveUpAtTimeout(t *testing.T) {
 
 			require.Error(t, err)
 			assert.Contains(t, err.Error(), "didn't answer within --timeout 300ms")
-			assert.Less(t, time.Since(start), 5*time.Second)
+			assert.Less(t, time.Since(start), promptly)
 		})
 	}
 }

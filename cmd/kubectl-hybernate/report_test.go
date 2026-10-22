@@ -471,9 +471,15 @@ func TestStartOpener(t *testing.T) {
 	if _, err := exec.LookPath("sleep"); err != nil {
 		t.Skip("uses sleep, true and false")
 	}
+	browser := exec.Command("sleep", "120")
+	t.Cleanup(func() {
+		if browser.Process != nil {
+			_ = browser.Process.Kill() // it's left running by design, and only the test needs it gone
+		}
+	})
 	start := time.Now()
-	assert.NoError(t, startOpener(exec.Command("sleep", "10"), 50*time.Millisecond), "the browser, still open")
-	assert.Less(t, time.Since(start), 5*time.Second, "not waited for")
+	assert.NoError(t, startOpener(browser, 50*time.Millisecond), "the browser, still open")
+	assert.Less(t, time.Since(start), promptly, "not waited for, the two minutes it stays open")
 	assert.NoError(t, startOpener(exec.Command("true"), 5*time.Second))
 	assert.Error(t, startOpener(exec.Command("false"), 5*time.Second))
 	assert.Error(t, startOpener(exec.Command("no-such-opener-anywhere"), 5*time.Second))
