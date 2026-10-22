@@ -78,6 +78,7 @@ spec:
             - {{ printf "--default-idle-after=%v" .Values.defaults.idleAfter | quote }}
             - {{ printf "--default-cpu-threshold=%v" .Values.defaults.cpuThreshold | quote }}
             - {{ printf "--default-dry-run=%v" .Values.defaults.dryRun | quote }}
+            - {{ printf "--default-pause-early=%v" .Values.defaults.pauseEarly | quote }}
             - {{ printf "--default-forecast=%v" .Values.defaults.forecast | quote }}
             - {{ printf "--doorman-service=%s" (ternary (include "hybernate.doormanName" .) "" .Values.doorman.enabled) | quote }}
             - {{ printf "--doorman-ports-per-workload=%v" .Values.doorman.portsPerWorkload | quote }}
