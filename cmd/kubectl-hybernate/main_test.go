@@ -147,7 +147,7 @@ func TestCLI_NotInstalled(t *testing.T) {
 }
 
 func TestCLI_StatusAllNamespacesForbidden(t *testing.T) {
-	c := newStatusClient(t, forbidClusterWide("managedworkloads"), statusCluster()...)
+	c := newStatusClient(t, forbidClusterWide(), statusCluster()...)
 
 	out, err := runCLI(t, c, "status", "-A")
 

@@ -138,22 +138,30 @@ func forecastNamed(ctx context.Context, out io.Writer, name string, run forecast
 	}
 
 	run.historyOptional = true
-	result, scan, err := replayCluster(ctx, run, loc, opts)
-	if err != nil {
-		return forecastFailed(ctx, err, opts.timeout)
-	}
-	picked, err := pickNamed(scan, managed, kind, bare, name)
+	result, scan, w, err := replayNamed(ctx, c, run, loc, opts, managed, kind, bare, name)
 	if err != nil {
 		return err
 	}
-	if len(picked) == 0 {
-		return notFound(ctx, c, opts, kind, bare, name)
-	}
-	now := opts.now()
-	w := picked[0]
 	if w.mw == nil && w.Managed {
 		w.mw = managedIn(ctx, c, w.Namespace, w.Kind, w.Name)
+		// Found only now, in the workload's own namespace, its ManagedWorkload
+		// may record another time zone than the one the replay counted hours
+		// in, so that namespace is replayed again in the operator's.
+		if p := w.mw; p != nil && run.zone == "" && p.Status.Prediction != nil &&
+			p.Status.Prediction.TimeZone != "" && p.Status.Prediction.TimeZone != loc.String() {
+			zone = p.Status.Prediction.TimeZone
+			if loc, err = time.LoadLocation(zone); err != nil {
+				return fmt.Errorf("the operator's time zone, %s: %w", zone, err)
+			}
+			opts.namespaces = namespaceFlags{names: []string{w.Namespace}}
+			result, scan, w, err = replayNamed(ctx, c, run, loc, opts, []v1alpha1.ManagedWorkload{*p}, kind, bare,
+				name)
+			if err != nil {
+				return err
+			}
+		}
 	}
+	now := opts.now()
 	if w.mw != nil {
 		w.Operator = operatorForecastOf(w.mw, now)
 	}
@@ -165,6 +173,25 @@ func forecastNamed(ctx context.Context, out io.Writer, name string, run forecast
 	return writeOutput(out, opts.output, result, func() error {
 		return writeForecastNamed(out, result, loc, now)
 	})
+}
+
+// replayNamed replays the forecast over the namespaces opts reads, in loc,
+// and picks the one workload NAME names from them, with its ManagedWorkload
+// among managed, or says why there's none.
+func replayNamed(ctx context.Context, c client.Client, run forecastRun, loc *time.Location, opts forecastOptions,
+	managed []v1alpha1.ManagedWorkload, kind, bare, name string) (forecastResult, scanResult, named, error) {
+	result, scan, err := replayCluster(ctx, run, loc, opts)
+	if err != nil {
+		return forecastResult{}, scanResult{}, named{}, forecastFailed(ctx, err, opts.timeout)
+	}
+	picked, err := pickNamed(scan, managed, kind, bare, name)
+	if err != nil {
+		return forecastResult{}, scanResult{}, named{}, err
+	}
+	if len(picked) == 0 {
+		return forecastResult{}, scanResult{}, named{}, notFound(ctx, c, opts, kind, bare, name)
+	}
+	return result, scan, picked[0], nil
 }
 
 // named is a workload NAME names: as the scan read it, if it did, and its
