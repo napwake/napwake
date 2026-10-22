@@ -174,7 +174,7 @@ Requests to the paused workload then fail, as they would without Hybernate, and 
 
 | Situation | What happens |
 |-----------|--------------|
-| No Service selects the workload, or none has a TCP port that isn't in `hybernate.io/doorman-ignore-ports` | `WakeOnRequest=False`, reason `NoServices` |
+| No Service selects the workload, or none has a TCP port that isn't in `hybernate.io/doorman-ignore-ports` | `WakeOnRequest=False`, reason `NoServices`. A workload no request reaches, such as a queue worker, wakes on a [Prometheus activity query](../guides/prometheus-signals.md#while-the-workload-is-paused) that sees its demand instead, such as its queue's length, and its forecast learns the hours it's paused from it |
 | A headless Service (`clusterIP: None`) | Not routed. Callers resolve pod IPs from DNS and never reach the doorman; wake the workload with an [activity annotation](idle-detection.md#activity-annotations) instead |
 | A Service without a selector, or an `ExternalName` Service | Not routed, since its endpoints aren't the workload's pods |
 | UDP or SCTP ports | Not routed; only TCP ports are |

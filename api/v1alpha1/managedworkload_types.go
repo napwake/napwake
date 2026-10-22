@@ -651,6 +651,14 @@ type PauseStatus struct {
 	// a clock behind the operator's can't lose a wake.
 	// +optional
 	WakeAnnotations *WakeAnnotations `json:"wakeAnnotations,omitempty"`
+
+	// QueryActiveSincePause says a Prometheus activity query has shown
+	// activity at every check since the pause began, as one can when the
+	// pause was requested. Until a check finds every query quiet, a query
+	// showing activity doesn't wake the workload, so it doesn't undo the
+	// pause at once.
+	// +optional
+	QueryActiveSincePause bool `json:"queryActiveSincePause,omitempty"`
 }
 
 // WakeAnnotations are the hybernate.io/last-activity, last-request and

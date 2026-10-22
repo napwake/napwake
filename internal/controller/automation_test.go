@@ -213,10 +213,11 @@ func TestPausedRecheck(t *testing.T) {
 	kolkata, err := time.LoadLocation("Asia/Kolkata")
 	require.NoError(t, err)
 	tests := []struct {
-		name string
-		at   time.Time
-		loc  *time.Location
-		want time.Duration
+		name    string
+		at      time.Time
+		loc     *time.Location
+		queries bool
+		want    time.Duration
 	}{
 		{name: "at the flush interval", at: fixedTime.Add(10 * time.Minute), want: statusFlushInterval},
 		{name: "when autoResume next looks ahead", at: fixedTime.Add(42 * time.Minute), want: 3 * time.Minute},
@@ -225,11 +226,20 @@ func TestPausedRecheck(t *testing.T) {
 			want: 3 * time.Minute},
 		{name: "on a local hour at half past in UTC", at: fixedTime.Add(28 * time.Minute), loc: kolkata,
 			want: 2 * time.Minute},
+		{name: "every minute, as when awake, with activity queries to wake it",
+			at: fixedTime.Add(10 * time.Minute), queries: true, want: activityCheckInterval},
+		{name: "on the hour, with activity queries", at: fixedTime.Add(59*time.Minute + 30*time.Second),
+			queries: true, want: 30 * time.Second},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			workload := pausedForecastWorkload()
+			if tt.queries {
+				workload.Spec.IdlePolicy = &v1alpha1.IdlePolicySpec{Activity: &v1alpha1.ActivitySpec{
+					Prometheus: []v1alpha1.PrometheusActivity{{PromQL: "queue_length"}}}}
+			}
 			r := &Reconciler{Timezone: tt.loc, clock: func() time.Time { return tt.at }}
-			assert.Equal(t, tt.want, r.pausedRecheck())
+			assert.Equal(t, tt.want, r.pausedRecheck(workload))
 		})
 	}
 }

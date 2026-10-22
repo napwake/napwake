@@ -1,10 +1,10 @@
 # Prometheus Activity Guide
 
-CPU tells Hybernate whether a workload is doing work. A Prometheus query tells it whether anyone is *using* it: requests through an ingress, open connections, messages arriving on a queue. Add queries as activity sources, and any result above zero keeps the workload awake.
+CPU tells Hybernate whether a workload is doing work. A Prometheus query tells it whether anyone is *using* it: requests through an ingress, open connections, messages arriving on a queue. Add queries as activity sources, and any result above zero keeps the workload awake, and [wakes it](#while-the-workload-is-paused) once it's paused.
 
 ## How It Works
 
-On every check (about once a minute while the workload is awake), Hybernate runs each query in turn as an instant query against the Prometheus API (`/api/v1/query`), stopping at the first that shows activity. Each query has 2 seconds to answer, and all of a workload's queries 5 seconds together.
+On every check, about once a minute whether the workload is awake or paused, Hybernate runs each query in turn as an instant query against the Prometheus API (`/api/v1/query`), stopping at the first that shows activity. Each query has 2 seconds to answer, and all of a workload's queries 5 seconds together.
 
 - **Any series above zero**: activity. The [activity clock](../concepts/idle-detection.md) resets. With a series per pod, one busy pod is enough.
 - **Zero, or an empty result**: no activity from this source. The clock keeps running.
@@ -27,6 +27,26 @@ spec:
 
 Queries are combined with the other activity sources: CPU, deploys, and activity annotations. Any one of them is enough to keep the workload awake.
 
+## While the Workload Is Paused
+
+A paused workload's queries are run about once a minute too, and one that shows activity wakes it, with a `WokeByActivity` event, `a Prometheus activity query shows activity, waking`, and `lastActivitySource: prometheus` once it's awake. It wakes the workload's [dependencies](../concepts/dependencies.md) with it, as any wake does. That's how a workload no request reaches wakes on its own, such as a queue worker, which no Service routes requests to, with a query of its queue's length:
+
+```yaml title="managedworkload.yaml" linenums="1"
+spec:
+  idlePolicy:
+    idleAfter: 30m
+    activity:
+      prometheus:
+        - promQL: 'sum(rabbitmq_queue_messages{queue="tasks"})'
+```
+
+- **Query something that's there while the workload is paused**, such as the queue's broker. A metric the workload exports itself has no series while it has no pods, so it can't wake it.
+- **A pause you ask for isn't undone by a query already showing activity.** If a query shows activity as a [requested pause](pause.md#pause-now) begins, such as a queue that still has messages on it, it wakes the workload only once a check has found it quiet and it shows activity again. An idle pause begins only once every query is quiet, so this is only ever a requested one.
+- **A query that can't be evaluated never wakes the workload.** `PrometheusAvailable` is `False`, as while it's awake, and its message says the queries can't wake it until Prometheus answers.
+- **The [forecast](../concepts/forecasting.md#what-an-hour-records) learns the hours the queries watch**: quiet while they find nothing, busy when they find activity. So a worker paused every night still learns whole days, and with `autoResume` is woken ahead of its first messages once the forecast acts.
+
+A workload with queries is checked every minute while it's paused, rather than every 5 minutes, so a query wakes it within a minute of its activity showing in Prometheus.
+
 Prometheus queries can't be set with an annotation. On a ManagedWorkload created from the `hybernate.io/managed` label, add them to its `spec.idlePolicy.activity.prometheus`: the opt-in controller keeps them when it updates the rest from the annotations.
 
 ## Prometheus Endpoint
@@ -45,7 +65,7 @@ With a Prometheus URL, each new workload's forecast also starts from up to four 
 
 ## When a Query Can't Be Evaluated
 
-If a query fails, Hybernate can't see that activity, so it doesn't pause the workload. The `PrometheusAvailable` condition says why:
+If a query fails, Hybernate can't see that activity, so it doesn't pause the workload, and a paused one isn't woken by it. The `PrometheusAvailable` condition says why:
 
 | Reason | Meaning |
 |--------|---------|
@@ -81,7 +101,7 @@ When Prometheus itself fails, by not answering, answering with a server error or
 
 ### Exclude traffic that isn't people
 
-Health checks, uptime monitors, and scrapers keep a workload awake if the query counts them. Filter them out by path or user agent where your metrics allow it:
+Health checks, uptime monitors, and scrapers keep a workload awake if the query counts them, and wake it once it's paused. Filter them out by path or user agent where your metrics allow it:
 
 ```promql
 sum(rate(nginx_ingress_controller_requests{exported_service="api", path!~"/healthz|/metrics"}[5m]))

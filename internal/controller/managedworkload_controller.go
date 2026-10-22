@@ -549,7 +549,7 @@ func (r *Reconciler) handlePause(ctx context.Context, workload *v1alpha1.Managed
 	} else {
 		r.emitEvent(workload, false, "Normal", ReasonPaused, actionPause, "paused")
 	}
-	return &ctrl.Result{RequeueAfter: r.pausedRecheck()}, nil
+	return &ctrl.Result{RequeueAfter: r.pausedRecheck(workload)}, nil
 }
 
 // conditionPauseIncomplete says the workload's last pause stopped waiting
@@ -586,6 +586,7 @@ func (r *Reconciler) preparePause(ctx context.Context, workload *v1alpha1.Manage
 		Workload: activityAnnotationValues(workload),
 		Target:   activityAnnotationValues(target),
 	}
+	workload.Status.Pause.QueryActiveSincePause = r.queryActiveAtPause(ctx, workload)
 	return nil
 }
 
@@ -645,7 +646,7 @@ func (r *Reconciler) recoverPause(ctx context.Context, workload *v1alpha1.Manage
 	r.emitEvent(workload, false, "Normal", ReasonPauseRecovered, actionPause,
 		"its pause record was lost, so it's taken up again from the %s annotation: paused, to wake to %d replicas",
 		v1alpha1.AnnotationPausedFrom, pause.PreviousReplicas)
-	return &ctrl.Result{RequeueAfter: r.pausedRecheck()}, nil
+	return &ctrl.Result{RequeueAfter: r.pausedRecheck(workload)}, nil
 }
 
 // pauseRecordOn is the copy of a pause record the target carries, read past
