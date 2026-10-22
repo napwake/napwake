@@ -338,8 +338,34 @@ func TestCLI_ForecastManagedListedByNamespace(t *testing.T) {
 	out, err := runCLI(t, c, "forecast", "api")
 
 	require.NoError(t, err, out)
-	assert.Contains(t, out, "the forecast of orders/api")
+	assert.Contains(t, out, "the forecast of orders/api, times in Africa/Lagos\n",
+		"in the operator's time zone, as its ManagedWorkload records it, though found only in its namespace")
 	assert.Contains(t, out, "Hybernate's forecast, from ManagedWorkload api: learning\n")
+}
+
+// The replay counts hours in the operator's time zone too, when the
+// ManagedWorkload that records it is found only in the workload's own
+// namespace: its days start at midnight there, not in UTC.
+func TestCLI_ForecastManagedListedByNamespaceReplaysInItsZone(t *testing.T) {
+	objs := inNamespace("orders", append(forecastCluster(), learningAPI(t, time.Now().Add(-32*time.Hour)))...)
+	c := newStatusClient(t, forbidClusterWide(), objs...)
+	prom := officePrometheus(t)
+
+	out, err := runCLI(t, c, "forecast", "api", "--prometheus-url", prom.URL, "-o", "json")
+
+	require.NoError(t, err, out)
+	var result forecastResult
+	require.NoError(t, json.Unmarshal([]byte(out), &result))
+	assert.Equal(t, "Africa/Lagos", result.Timezone)
+	require.Len(t, result.Workloads, 1)
+	require.NotNil(t, result.Workloads[0].Forecast)
+	require.NotNil(t, result.Workloads[0].Forecast.Replay)
+	days := result.Workloads[0].Forecast.Replay.Days
+	require.NotEmpty(t, days)
+	lagos, err := time.LoadLocation("Africa/Lagos")
+	require.NoError(t, err)
+	at := days[1].Date.In(lagos)
+	assert.Equal(t, 0, at.Hour(), "a replayed day starts at midnight in Lagos, not %s", days[1].Date)
 }
 
 // A workload labelled hybernate.io/ignore under a ManagedWorkload written
