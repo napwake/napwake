@@ -266,12 +266,16 @@ var troubles = map[string]metav1.ConditionStatus{
 	"PauseIncomplete":      metav1.ConditionTrue,
 }
 
+// reasonTargetIgnored is TargetAvailable's reason when the workload is
+// labelled hybernate.io/ignore, so Hybernate leaves it alone.
+const reasonTargetIgnored = "TargetIgnored"
+
 // untroubled are the reasons a trouble condition carries when it needs
 // nobody's attention: it reports what the user set up on purpose, or the
 // normal state of a workload that's awake.
 var untroubled = map[string]bool{
 	"NoServices":         true,
-	"TargetIgnored":      true,
+	reasonTargetIgnored:  true,
 	"HybernateComponent": true,
 	"DoormanDisabled":    true,
 	"TurnedOff":          true,
@@ -569,7 +573,7 @@ func pricedAtSpot(w *v1alpha1.ManagedWorkload) bool {
 func nextFor(w *v1alpha1.ManagedWorkload, targetActiveUntil, now time.Time) string {
 	conditions := w.Status.Conditions
 	if c := meta.FindStatusCondition(conditions, "TargetAvailable"); c != nil && c.Status == metav1.ConditionFalse {
-		if c.Reason == "TargetIgnored" {
+		if c.Reason == reasonTargetIgnored {
 			return "nothing: labelled " + v1alpha1.LabelIgnore
 		}
 		return "nothing: workload not found"

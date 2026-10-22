@@ -28,6 +28,8 @@ import (
 
 	appsv1 "k8s.io/api/apps/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
+	"k8s.io/apimachinery/pkg/api/meta"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	v1alpha1 "github.com/okedeji/hybernate/api/v1alpha1"
@@ -53,6 +55,10 @@ type operatorForecast struct {
 	// Pending says why the operator hasn't recorded a forecast yet, and
 	// what to check; the rest is empty while it is.
 	Pending string `json:"pending,omitempty"`
+	// Stopped says why Hybernate isn't forecasting the workload at all, by
+	// its ManagedWorkload's TargetAvailable condition; the rest, which would
+	// be what it last recorded, is left empty.
+	Stopped string `json:"stopped,omitempty"`
 	Acting  bool   `json:"acting"`
 	// Reason and Message say why it is or isn't acting, and what it waits
 	// for, as the operator wrote them.
@@ -289,6 +295,10 @@ func notFound(ctx context.Context, c client.Client, opts forecastOptions, kind, 
 func operatorForecastOf(mw *v1alpha1.ManagedWorkload, now time.Time) *operatorForecast {
 	f := &operatorForecast{ManagedWorkload: mw.Name, ManagedSince: mw.CreationTimestamp.UTC(),
 		AutoResume: mw.Spec.IdlePolicy != nil && mw.Spec.IdlePolicy.AutoResume}
+	if why := targetUnavailable(mw); why != "" {
+		f.Stopped = why
+		return f
+	}
 	p := mw.Status.Prediction
 	if p == nil {
 		f.Pending = fmt.Sprintf("Hybernate hasn't recorded a forecast for it yet. It does on its first look at the "+
@@ -308,6 +318,33 @@ func operatorForecastOf(mw *v1alpha1.ManagedWorkload, now time.Time) *operatorFo
 	}
 	f.Learned, f.Unread = learnedFrom(p, f.Threshold, cpuThresholdOf(mw), now)
 	return f
+}
+
+// leftAlone reports whether Hybernate leaves a ManagedWorkload's workload
+// alone, by its TargetAvailable condition, as status's NEXT reads it, and
+// whether that's for the hybernate.io/ignore label rather than its being
+// gone.
+func leftAlone(mw *v1alpha1.ManagedWorkload) (alone, ignored bool) {
+	c := meta.FindStatusCondition(mw.Status.Conditions, "TargetAvailable")
+	if c == nil || c.Status != metav1.ConditionFalse {
+		return false, false
+	}
+	return true, c.Reason == reasonTargetIgnored
+}
+
+// targetUnavailable says why Hybernate leaves a ManagedWorkload's workload
+// alone, or "" when it doesn't.
+func targetUnavailable(mw *v1alpha1.ManagedWorkload) string {
+	alone, ignored := leftAlone(mw)
+	ref := strings.ToLower(string(mw.Spec.Target.Kind)) + "/" + mw.Spec.Target.Name
+	switch {
+	case ignored:
+		return fmt.Sprintf("%s is labelled %s=true, which keeps Hybernate and its forecast away from it; remove the "+
+			"label to see its forecast", ref, v1alpha1.LabelIgnore)
+	case alone:
+		return fmt.Sprintf("its workload, %s, isn't there, so Hybernate forecasts nothing for it", ref)
+	}
+	return ""
 }
 
 // cpuThresholdOf is the CPU use, as a percentage of requests, the operator
@@ -365,6 +402,12 @@ func whyNoReplay(w named, scan scanResult, result forecastResult, now time.Time,
 	switch {
 	case w.Forecast != nil:
 		return ""
+	case w.mw != nil && targetUnavailable(w.mw) != "":
+		if _, ignored := leftAlone(w.mw); ignored {
+			return fmt.Sprintf("it's labelled %s=true, which the forecast leaves out, as Hybernate does",
+				v1alpha1.LabelIgnore)
+		}
+		return "its workload isn't there to replay"
 	case scan.historyUnread != nil:
 		return scan.historyUnread.Error()
 	case s == nil:
@@ -413,6 +456,11 @@ func kindName(w forecastWorkload) string {
 }
 
 func writeOperatorForecast(p *printer, o *operatorForecast, loc *time.Location, now time.Time) {
+	if o.Stopped != "" {
+		p.line("Hybernate's forecast: none: %s.", o.Stopped)
+		p.line("")
+		return
+	}
 	if o.Pending != "" {
 		p.line("Hybernate's forecast: none yet. %s.", o.Pending)
 		p.line("")

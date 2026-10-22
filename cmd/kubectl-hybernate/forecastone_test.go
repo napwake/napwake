@@ -340,3 +340,27 @@ func TestCLI_ForecastManagedListedByNamespace(t *testing.T) {
 	assert.Contains(t, out, "the forecast of orders/api")
 	assert.Contains(t, out, "Hybernate's forecast, from ManagedWorkload api: learning\n")
 }
+
+// A workload labelled hybernate.io/ignore under a ManagedWorkload written
+// by hand isn't forecast by Hybernate, whatever its status last said, and
+// forecast NAME says why, as status NEXT does, rather than that it wasn't
+// read.
+func TestCLI_ForecastIgnoredWithItsOwnManagedWorkload(t *testing.T) {
+	objs := forecastCluster()
+	objs[1].(*appsv1.Deployment).Labels = map[string]string{v1alpha1.LabelIgnore: v1alpha1.True}
+	mw := learningAPI(t, time.Now().Add(-32*time.Hour))
+	mw.Status.Conditions = []metav1.Condition{{Type: "TargetAvailable", Status: metav1.ConditionFalse,
+		Reason: "TargetIgnored", Message: "Deployment api has the hybernate.io/ignore label"}}
+	prom := officePrometheus(t)
+
+	out, err := runCLI(t, newStatusClient(t, interceptor.Funcs{}, append(objs, mw)...), "forecast", "api", "-n",
+		"preview-42", "--prometheus-url", prom.URL)
+
+	require.NoError(t, err, out)
+	assert.Contains(t, out, "Hybernate's forecast: none: deployment/api is labelled hybernate.io/ignore=true, which "+
+		"keeps Hybernate and its forecast away from it; remove the label to see its forecast.\n")
+	assert.NotContains(t, out, "learning", "not the forecast it last recorded")
+	assert.Contains(t, out, "No replay of its history: it's labelled hybernate.io/ignore=true, which the forecast "+
+		"leaves out, as Hybernate does.\n")
+	assert.NotContains(t, out, "was read")
+}
