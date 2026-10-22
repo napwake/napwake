@@ -108,7 +108,8 @@ func TestCLI_ForecastManagedWithTooLittleHistory(t *testing.T) {
 	assert.Regexp(t, `\n  Confidence:\s+0% right over the last day, 0% over the last week; it acts from 75%\n`, out)
 	assert.Regexp(t, `\n  Acts from:\s+not known until it has seen every hour of the day\n`, out)
 	assert.Regexp(t, `\n  Busy hours:\s+none yet: it forecasts the hours it acts on once it's acting\n`, out)
-	assert.Regexp(t, `\n  autoResume:\s+off: .* hybernate.io/auto-resume: "true" turns it on\n`, out)
+	assert.Regexp(t, `\n  autoResume:\s+off: .* spec.idlePolicy.autoResume: true on its ManagedWorkload turns it on\n`,
+		out)
 	assert.Contains(t, out, "\nNo replay of its history: Prometheus has 32 hours of its CPU history, and the replay "+
 		"needs at least 2 days, a day to learn from and a day to replay; run it again after ")
 
@@ -363,4 +364,20 @@ func TestCLI_ForecastIgnoredWithItsOwnManagedWorkload(t *testing.T) {
 	assert.Contains(t, out, "No replay of its history: it's labelled hybernate.io/ignore=true, which the forecast "+
 		"leaves out, as Hybernate does.\n")
 	assert.NotContains(t, out, "was read")
+}
+
+// How to turn autoResume on depends on where the ManagedWorkload's
+// settings come from: the workload's annotations for one the label opt-in
+// made, its spec for one written by hand, which no annotation changes.
+func TestOperatorForecast_AutoResumeAdvice(t *testing.T) {
+	written := learningAPI(t, time.Now().Add(-32*time.Hour))
+	fromLabel := written.DeepCopy()
+	fromLabel.Labels = map[string]string{v1alpha1.LabelFromLabel: v1alpha1.True}
+
+	assert.Equal(t, "off: it holds off pauses before the hours it expects busy, but doesn't wake the workload "+
+		"for them; spec.idlePolicy.autoResume: true on its ManagedWorkload turns it on",
+		autoResumeCell(operatorForecastOf(written, time.Now())))
+	assert.Equal(t, "off: it holds off pauses before the hours it expects busy, but doesn't wake the workload "+
+		"for them; the workload's hybernate.io/auto-resume: \"true\" annotation turns it on",
+		autoResumeCell(operatorForecastOf(fromLabel, time.Now())))
 }

@@ -80,6 +80,9 @@ type operatorForecast struct {
 	// it couldn't be, when it couldn't.
 	Learned *forecastLearned `json:"learned,omitempty"`
 	Unread  string           `json:"unread,omitempty"`
+	// fromLabel says the label opt-in wrote the ManagedWorkload, from the
+	// workload's annotations, which are then where its settings change.
+	fromLabel bool
 }
 
 // forecastLearned is what the operator's forecast has learned, and the
@@ -294,7 +297,8 @@ func notFound(ctx context.Context, c client.Client, opts forecastOptions, kind, 
 // from now on.
 func operatorForecastOf(mw *v1alpha1.ManagedWorkload, now time.Time) *operatorForecast {
 	f := &operatorForecast{ManagedWorkload: mw.Name, ManagedSince: mw.CreationTimestamp.UTC(),
-		AutoResume: mw.Spec.IdlePolicy != nil && mw.Spec.IdlePolicy.AutoResume}
+		AutoResume: mw.Spec.IdlePolicy != nil && mw.Spec.IdlePolicy.AutoResume,
+		fromLabel:  mw.Labels[v1alpha1.LabelFromLabel] == v1alpha1.True}
 	if why := targetUnavailable(mw); why != "" {
 		f.Stopped = why
 		return f
@@ -564,8 +568,12 @@ func autoResumeCell(o *operatorForecast) string {
 		return "on: it holds off pauses before the hours it expects busy, and wakes the workload 15 minutes " +
 			"ahead of them"
 	}
-	return fmt.Sprintf("off: it holds off pauses before the hours it expects busy, but doesn't wake the workload "+
-		"for them; %s: \"true\" turns it on", v1alpha1.AnnotationAutoResume)
+	turnOn := "spec.idlePolicy.autoResume: true on its ManagedWorkload"
+	if o.fromLabel {
+		turnOn = fmt.Sprintf("the workload's %s: \"true\" annotation", v1alpha1.AnnotationAutoResume)
+	}
+	return "off: it holds off pauses before the hours it expects busy, but doesn't wake the workload for them; " +
+		turnOn + " turns it on"
 }
 
 // writeReplayDetail is the replay of a workload's history: what the
