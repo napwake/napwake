@@ -17,16 +17,24 @@ limitations under the License.
 package discovery
 
 import (
+	"cmp"
 	"context"
+	"errors"
+	"slices"
+	"strings"
 	"testing"
 	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/runtime/schema"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
+	"sigs.k8s.io/controller-runtime/pkg/client/interceptor"
 
 	v1alpha1 "github.com/okedeji/hybernate/api/v1alpha1"
 )
@@ -52,6 +60,13 @@ func forecastScan(t *testing.T, objs ...client.Object) Workload {
 // for as long as since, and objs beside it.
 func forecastScanOf(t *testing.T, since time.Duration, objs ...client.Object) Workload {
 	t.Helper()
+	return byName(forecastReportOf(t, since, interceptor.Funcs{}, objs...))["api"]
+}
+
+// forecastReportOf is the scan forecastScanOf makes, its client's calls
+// through funcs, and the whole report.
+func forecastReportOf(t *testing.T, since time.Duration, funcs interceptor.Funcs, objs ...client.Object) *ClusterReport {
+	t.Helper()
 	window := 28 * 24 * time.Hour
 	f := &fakePrometheus{from: scanTime.Add(-since), byNamespace: map[string][]series{testNamespace: {
 		{pod: "api-7d9f8c6b5-abcde", container: "main", cores: officeCores},
@@ -60,11 +75,12 @@ func forecastScanOf(t *testing.T, since time.Duration, objs ...client.Object) Wo
 	opts.History, opts.Window, opts.IdleAfter = newFakePrometheus(t, f), window, time.Hour
 	opts.Forecast = &ForecastOptions{Location: time.UTC}
 	runtimeObjs := deploymentWithRollout("api", testNamespace, 1, 60*24*time.Hour)
-	c := fake.NewClientBuilder().WithScheme(newScheme()).WithRuntimeObjects(runtimeObjs...).WithObjects(objs...).Build()
+	c := interceptor.NewClient(fake.NewClientBuilder().WithScheme(newScheme()).WithRuntimeObjects(runtimeObjs...).
+		WithObjects(objs...).Build(), funcs)
 
 	report, err := NewScanner(c, c).ScanCluster(context.Background(), opts)
 	require.NoError(t, err)
-	return byName(report)["api"]
+	return report
 }
 
 // Four weeks of office hours: opted in now, the forecast acts at once, and
@@ -302,4 +318,61 @@ func TestScanCluster_ReplaysWithTheNamespacesWakeOnRequest(t *testing.T) {
 
 	require.NotNil(t, w.Forecast)
 	assert.Equal(t, ReplayWakes{NoRequest: noRequestTurnedOff}, w.Forecast.Wakes)
+}
+
+// deploymentsOnlyIn has the API server refuse lists of Deployments outside
+// allowed, as for a user who may list them only in their own namespaces.
+func deploymentsOnlyIn(allowed ...string) interceptor.Funcs {
+	return interceptor.Funcs{List: func(ctx context.Context, c client.WithWatch, list client.ObjectList,
+		opts ...client.ListOption) error {
+		var o client.ListOptions
+		o.ApplyOptions(opts)
+		if _, ok := list.(*appsv1.DeploymentList); ok && !slices.Contains(allowed, o.Namespace) {
+			return apierrors.NewForbidden(schema.GroupResource{Group: "apps", Resource: "deployments"}, "",
+				errors.New("not allowed in "+cmp.Or(o.Namespace, "the cluster")))
+		}
+		return c.List(ctx, list, opts...)
+	}}
+}
+
+// A user who can't list Deployments across the cluster still has the
+// operator read in its own namespace. One who can't list them there either
+// is told the doorman's defaults were assumed, why, and what access reads
+// them, in forecast's notes, and scan, which doesn't read the operator,
+// says nothing of it.
+func TestScanCluster_SaysWhenTheInstallCouldntBeRead(t *testing.T) {
+	service := &corev1.Service{ObjectMeta: metav1.ObjectMeta{Name: "api", Namespace: testNamespace},
+		Spec: corev1.ServiceSpec{Selector: map[string]string{"app": "api"}, ClusterIP: "10.96.0.10",
+			Ports: []corev1.ServicePort{{Port: 80}}}}
+	operator := operatorDeployment("--doorman-service=")
+	installNote := func(notes []string) string {
+		for _, n := range notes {
+			if strings.Contains(n, "doorman") {
+				return n
+			}
+		}
+		return ""
+	}
+
+	inItsNamespace := forecastReportOf(t, 14*24*time.Hour, deploymentsOnlyIn(testNamespace, "hybernate-system"),
+		service, operator)
+	assert.Equal(t, ReplayWakes{NoRequest: noRequestDoormanOff}, byName(inItsNamespace)["api"].Forecast.Wakes,
+		"read in the operator's own namespace")
+	assert.Empty(t, installNote(inItsNamespace.Notes))
+
+	unread := forecastReportOf(t, 14*24*time.Hour, deploymentsOnlyIn(testNamespace), service, operator)
+	assert.Equal(t, ReplayWakes{Request: true}, byName(unread)["api"].Forecast.Wakes, "Hybernate's defaults")
+	note := installNote(unread.Notes)
+	assert.Contains(t, note, "couldn't read Hybernate's operator to see whether its doorman and NEG forwarder are on")
+	assert.Contains(t, note, "not allowed in the cluster", "why")
+	assert.Contains(t, note, "so the replay assumes Hybernate's defaults, the doorman on and the forwarder off")
+	assert.Contains(t, note, "let your user list Deployments in the operator's namespace, hybernate-system by "+
+		"default, or across the cluster")
+
+	c := interceptor.NewClient(fake.NewClientBuilder().WithScheme(newScheme()).
+		WithRuntimeObjects(deploymentWithRollout("api", testNamespace, 1, 60*24*time.Hour)...).
+		WithObjects(service, operator).Build(), deploymentsOnlyIn(testNamespace))
+	scan, err := NewScanner(c, c).ScanCluster(context.Background(), scanOptions(testNamespace))
+	require.NoError(t, err)
+	assert.Empty(t, installNote(scan.Notes), "scan doesn't read the operator")
 }

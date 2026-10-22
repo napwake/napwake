@@ -18,6 +18,8 @@ package discovery
 
 import (
 	"context"
+	"fmt"
+	"maps"
 	"slices"
 	"strconv"
 	"strings"
@@ -47,11 +49,46 @@ type Install struct {
 	NEGForwarder bool
 }
 
+// defaultOperatorNamespace is where the chart's documented install puts the
+// operator.
+const defaultOperatorNamespace = "hybernate-system"
+
 // readInstalls finds Hybernate's operators by the labels its chart and
-// manifests give their Deployments, across the cluster, and reads their
-// flags. When none can be read, as without access to their namespaces, the
-// replay assumes Hybernate's defaults.
-func (s *Scanner) readInstalls(ctx context.Context) []Install {
+// manifests give their Deployments, and reads their flags: across the
+// cluster, or, where that's refused, in the namespaces the scanned
+// namespaces' ManagedWorkloads name as their install's, and in
+// hybernate-system. When none can be read, the replay assumes Hybernate's
+// defaults, and the note says so, why, and what access reads them.
+func (s *Scanner) readInstalls(ctx context.Context, reads *clusterReads, namespaces []string) (
+	installs []Install, note string) {
+	installs, err := s.listInstalls(ctx)
+	if err == nil {
+		return installs, ""
+	}
+	homes := map[string]bool{defaultOperatorNamespace: true}
+	for _, ns := range namespaces {
+		_ = eachIn(ctx, s.client, reads.managed, ns, managedItems, func(mw *v1alpha1.ManagedWorkload) {
+			if owner := mw.Annotations[v1alpha1.AnnotationOperator]; owner != "" {
+				homes[owner] = true
+			}
+		}) // a namespace whose ManagedWorkloads can't be read names no install
+	}
+	for _, ns := range slices.Sorted(maps.Keys(homes)) {
+		if found, nsErr := s.listInstalls(ctx, client.InNamespace(ns)); nsErr == nil {
+			installs = append(installs, found...)
+		}
+	}
+	if len(installs) > 0 {
+		return installs, ""
+	}
+	return nil, fmt.Sprintf("forecast couldn't read Hybernate's operator to see whether its doorman and NEG "+
+		"forwarder are on (%v), so the replay assumes Hybernate's defaults, the doorman on and the forwarder off, "+
+		"and WAKES ON may say request where the install wouldn't route one; to read them, let your user list "+
+		"Deployments in the operator's namespace, %s by default, or across the cluster", err, defaultOperatorNamespace)
+}
+
+// listInstalls lists the Hybernate operators the list options reach.
+func (s *Scanner) listInstalls(ctx context.Context, opts ...client.ListOption) ([]Install, error) {
 	var installs []Install
 	err := listAll(ctx, s.client, func(list *appsv1.DeploymentList) {
 		for i := range list.Items {
@@ -59,11 +96,8 @@ func (s *Scanner) readInstalls(ctx context.Context) []Install {
 				installs = append(installs, installOf(d))
 			}
 		}
-	}, client.MatchingLabels{"control-plane": "controller-manager"})
-	if err != nil {
-		return nil
-	}
-	return installs
+	}, append(opts, client.MatchingLabels{"control-plane": "controller-manager"})...)
+	return installs, err
 }
 
 func isHybernateApp(labels map[string]string) bool {
