@@ -38,7 +38,7 @@ spec:
     activity:
       cpuThreshold: 10
       prometheus:
-        - promQL: 'sum(rate(nginx_ingress_controller_requests{exported_service="my-api"}[5m]))'
+        - promQL: 'sum(rate(nginx_ingress_controller_requests{exported_namespace="staging", exported_service="my-api"}[5m]))'
     autoResume: true
 
   wake:
