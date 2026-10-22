@@ -25,7 +25,9 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	appsv1 "k8s.io/api/apps/v1"
+	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/interceptor"
 
 	v1alpha1 "github.com/okedeji/hybernate/api/v1alpha1"
@@ -106,7 +108,8 @@ func TestCLI_ForecastManagedWithTooLittleHistory(t *testing.T) {
 	assert.Regexp(t, `\n  Confidence:\s+0% right over the last day, 0% over the last week; it acts from 75%\n`, out)
 	assert.Regexp(t, `\n  Acts from:\s+not known until it has seen every hour of the day\n`, out)
 	assert.Regexp(t, `\n  Busy hours:\s+none yet: it forecasts the hours it acts on once it's acting\n`, out)
-	assert.Regexp(t, `\n  autoResume:\s+off: .* hybernate.io/auto-resume: "true" turns it on\n`, out)
+	assert.Regexp(t, `\n  autoResume:\s+off: .* spec.idlePolicy.autoResume: true on its ManagedWorkload turns it on\n`,
+		out)
 	assert.Contains(t, out, "\nNo replay of its history: Prometheus has 32 hours of its CPU history, and the replay "+
 		"needs at least 2 days, a day to learn from and a day to replay; run it again after ")
 
@@ -245,6 +248,10 @@ func TestActsFrom(t *testing.T) {
 			"not known until it has seen every hour of the day"},
 		{"too irregular", operatorForecast{Learned: &forecastLearned{HoursOfDay: 24}},
 			"not expected within 4 weeks, if the coming days repeat the last week"},
+		{"observing, its state unread", operatorForecast{Reason: v1alpha1.ForecastObserving},
+			"not known until it has scored a day of its forecasts"},
+		{"observing all day", operatorForecast{Reason: v1alpha1.ForecastObserving,
+			Learned: &forecastLearned{HoursOfDay: 24}}, "not known until it has scored a day of its forecasts"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -306,4 +313,71 @@ func TestCLI_ForecastIgnoredWorkload(t *testing.T) {
 
 	require.EqualError(t, err, "preview-42/deployment/api is labelled hybernate.io/ignore=true, which keeps "+
 		"Hybernate and its forecast away from it; remove the label to see its forecast")
+}
+
+// inNamespace is objs moved to namespace.
+func inNamespace(namespace string, objs ...client.Object) []client.Object {
+	for _, obj := range objs {
+		if _, ok := obj.(*corev1.Namespace); ok {
+			obj.SetName(namespace)
+			continue
+		}
+		obj.SetNamespace(namespace)
+	}
+	return objs
+}
+
+// Someone who can read ManagedWorkloads only namespace by namespace still
+// sees a workload's own forecast: the scan finds it managed in its
+// namespace, and its ManagedWorkload is read there, not only in the
+// context's namespace.
+func TestCLI_ForecastManagedListedByNamespace(t *testing.T) {
+	objs := inNamespace("orders", append(forecastCluster(), learningAPI(t, time.Now().Add(-32*time.Hour)))...)
+	c := newStatusClient(t, forbidClusterWide("managedworkloads"), objs...)
+
+	out, err := runCLI(t, c, "forecast", "api")
+
+	require.NoError(t, err, out)
+	assert.Contains(t, out, "the forecast of orders/api")
+	assert.Contains(t, out, "Hybernate's forecast, from ManagedWorkload api: learning\n")
+}
+
+// A workload labelled hybernate.io/ignore under a ManagedWorkload written
+// by hand isn't forecast by Hybernate, whatever its status last said, and
+// forecast NAME says why, as status NEXT does, rather than that it wasn't
+// read.
+func TestCLI_ForecastIgnoredWithItsOwnManagedWorkload(t *testing.T) {
+	objs := forecastCluster()
+	objs[1].(*appsv1.Deployment).Labels = map[string]string{v1alpha1.LabelIgnore: v1alpha1.True}
+	mw := learningAPI(t, time.Now().Add(-32*time.Hour))
+	mw.Status.Conditions = []metav1.Condition{{Type: "TargetAvailable", Status: metav1.ConditionFalse,
+		Reason: "TargetIgnored", Message: "Deployment api has the hybernate.io/ignore label"}}
+	prom := officePrometheus(t)
+
+	out, err := runCLI(t, newStatusClient(t, interceptor.Funcs{}, append(objs, mw)...), "forecast", "api", "-n",
+		"preview-42", "--prometheus-url", prom.URL)
+
+	require.NoError(t, err, out)
+	assert.Contains(t, out, "Hybernate's forecast: none: deployment/api is labelled hybernate.io/ignore=true, which "+
+		"keeps Hybernate and its forecast away from it; remove the label to see its forecast.\n")
+	assert.NotContains(t, out, "learning", "not the forecast it last recorded")
+	assert.Contains(t, out, "No replay of its history: it's labelled hybernate.io/ignore=true, which the forecast "+
+		"leaves out, as Hybernate does.\n")
+	assert.NotContains(t, out, "was read")
+}
+
+// How to turn autoResume on depends on where the ManagedWorkload's
+// settings come from: the workload's annotations for one the label opt-in
+// made, its spec for one written by hand, which no annotation changes.
+func TestOperatorForecast_AutoResumeAdvice(t *testing.T) {
+	written := learningAPI(t, time.Now().Add(-32*time.Hour))
+	fromLabel := written.DeepCopy()
+	fromLabel.Labels = map[string]string{v1alpha1.LabelFromLabel: v1alpha1.True}
+
+	assert.Equal(t, "off: it holds off pauses before the hours it expects busy, but doesn't wake the workload "+
+		"for them; spec.idlePolicy.autoResume: true on its ManagedWorkload turns it on",
+		autoResumeCell(operatorForecastOf(written, time.Now())))
+	assert.Equal(t, "off: it holds off pauses before the hours it expects busy, but doesn't wake the workload "+
+		"for them; the workload's hybernate.io/auto-resume: \"true\" annotation turns it on",
+		autoResumeCell(operatorForecastOf(fromLabel, time.Now())))
 }

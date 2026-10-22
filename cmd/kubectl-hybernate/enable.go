@@ -325,7 +325,7 @@ func wontPause(mw *v1alpha1.ManagedWorkload) string {
 	if c := meta.FindStatusCondition(conditions, "Protected"); c != nil && c.Status == metav1.ConditionTrue {
 		return "it's protected: " + c.Message
 	}
-	if c := meta.FindStatusCondition(conditions, "TargetAvailable"); c != nil && c.Reason == "TargetIgnored" {
+	if c := meta.FindStatusCondition(conditions, "TargetAvailable"); c != nil && c.Reason == reasonTargetIgnored {
 		return "it's labelled " + v1alpha1.LabelIgnore
 	}
 	if meta.IsStatusConditionTrue(conditions, "DuplicateTarget") {

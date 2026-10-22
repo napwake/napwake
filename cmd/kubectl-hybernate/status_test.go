@@ -463,11 +463,11 @@ func TestNextFor_PausedEarly(t *testing.T) {
 	}
 	paused := early(v1alpha1.PhasePaused, false)
 	paused.Status.Doorman = []v1alpha1.DoormanRoute{{Service: "api", DoormanPort: 20000}}
-	assert.Equal(t, "paused early: the forecast expects quiet until 14:00 UTC; wakes on a request or activity",
-		nextFor(paused, time.Time{}, statusNow))
-	assert.Equal(t, "would pause now, early: the forecast expects quiet until 14:00 UTC",
+	assert.Equal(t, "paused early: the forecast expected quiet until Mon 14:00 UTC; wakes on a request or activity",
+		nextFor(paused, time.Time{}, statusNow), "what it expected when it paused, and still true all weekend")
+	assert.Equal(t, "would pause now, early: the forecast expects quiet until Mon 14:00 UTC",
 		nextFor(early(v1alpha1.PhaseIdle, true), time.Time{}, statusNow), "a would-be pause in dry-run")
-	assert.Equal(t, "pauses now, early: the forecast expects quiet until 14:00 UTC",
+	assert.Equal(t, "pauses now, early: the forecast expects quiet until Mon 14:00 UTC",
 		nextFor(early(v1alpha1.PhaseIdle, false), time.Time{}, statusNow), "not the clock's 40 minutes")
 
 	waiting := early(v1alpha1.PhaseIdle, false)
@@ -480,6 +480,26 @@ func TestNextFor_PausedEarly(t *testing.T) {
 	clock := early(v1alpha1.PhasePaused, false)
 	clock.Status.Activity.ForecastQuietUntil = nil
 	assert.Equal(t, "wakes on activity", nextFor(clock, time.Time{}, statusNow), "the clock's own pause")
+}
+
+// A workload Idle is in a pause, or a would-be pause in dry-run, due now,
+// whether or not it has an idle policy, as one whose pause was requested
+// may not, and whatever the clock recorded of when it would run out.
+func TestNextFor_IdleWithoutTheClock(t *testing.T) {
+	requested := statusWorkloadObj("ns", "api", v1alpha1.TargetKindDeployment, v1alpha1.PhaseIdle, time.Hour)
+	requested.Spec.IdlePolicy, requested.Spec.DryRun = nil, true
+	requested.Status.Activity = &v1alpha1.ActivityStatus{LastActivityTime: *before(10 * time.Minute)}
+	assert.Equal(t, "would pause now", nextFor(requested, time.Time{}, statusNow), "a requested would-be pause")
+
+	noPauseAt := statusWorkloadObj("ns", "api", v1alpha1.TargetKindDeployment, v1alpha1.PhaseIdle, time.Hour)
+	noPauseAt.Status.Activity = &v1alpha1.ActivityStatus{LastActivityTime: *before(10 * time.Minute)}
+	assert.Equal(t, "pauses now", nextFor(noPauseAt, time.Time{}, statusNow))
+
+	afterConflict := noPauseAt.DeepCopy()
+	afterConflict.Spec.IdlePolicy = nil
+	undoneBy(afterConflict, "Argo CD", 10*time.Minute)
+	assert.Equal(t, "pauses at 12:50 UTC (after GitOps conflict)", nextFor(afterConflict, time.Time{}, statusNow),
+		"the hour Hybernate waits after a GitOps conflict still holds it")
 }
 
 // In dry-run, Hybernate never pauses, so a GitOps conflict holds nothing

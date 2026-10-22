@@ -266,12 +266,16 @@ var troubles = map[string]metav1.ConditionStatus{
 	"PauseIncomplete":      metav1.ConditionTrue,
 }
 
+// reasonTargetIgnored is TargetAvailable's reason when the workload is
+// labelled hybernate.io/ignore, so Hybernate leaves it alone.
+const reasonTargetIgnored = "TargetIgnored"
+
 // untroubled are the reasons a trouble condition carries when it needs
 // nobody's attention: it reports what the user set up on purpose, or the
 // normal state of a workload that's awake.
 var untroubled = map[string]bool{
 	"NoServices":         true,
-	"TargetIgnored":      true,
+	reasonTargetIgnored:  true,
 	"HybernateComponent": true,
 	"DoormanDisabled":    true,
 	"TurnedOff":          true,
@@ -569,7 +573,7 @@ func pricedAtSpot(w *v1alpha1.ManagedWorkload) bool {
 func nextFor(w *v1alpha1.ManagedWorkload, targetActiveUntil, now time.Time) string {
 	conditions := w.Status.Conditions
 	if c := meta.FindStatusCondition(conditions, "TargetAvailable"); c != nil && c.Status == metav1.ConditionFalse {
-		if c.Reason == "TargetIgnored" {
+		if c.Reason == reasonTargetIgnored {
 			return "nothing: labelled " + v1alpha1.LabelIgnore
 		}
 		return "nothing: workload not found"
@@ -588,12 +592,13 @@ func nextFor(w *v1alpha1.ManagedWorkload, targetActiveUntil, now time.Time) stri
 	}
 	switch w.Status.Phase {
 	case v1alpha1.PhasePaused:
-		return pausedEarly(w.Status.Activity, "paused ", "; ") + wakesOn(w)
+		return pausedEarly(w.Status.Activity, "paused ", "expected", "; ") + wakesOn(w)
 	case v1alpha1.PhaseRunning, v1alpha1.PhaseIdle:
 	default:
 		return "-"
 	}
-	if w.Spec.IdlePolicy == nil {
+	idle := w.Status.Phase == v1alpha1.PhaseIdle
+	if w.Spec.IdlePolicy == nil && !idle {
 		return "never pauses: no idlePolicy"
 	}
 	if c := meta.FindStatusCondition(conditions, "HeldByDependents"); c != nil && c.Status == metav1.ConditionTrue {
@@ -610,33 +615,46 @@ func nextFor(w *v1alpha1.ManagedWorkload, targetActiveUntil, now time.Time) stri
 	case meta.IsStatusConditionFalse(conditions, "PrometheusAvailable"):
 		return "won't pause: Prometheus failing"
 	}
+	return pausesNext(w, idle, now)
+}
+
+// pausesNext says when a workload that may pause does: now, for one Idle,
+// unless the hour after a GitOps conflict or the forecast holds it, or when
+// its clock runs out.
+func pausesNext(w *v1alpha1.ManagedWorkload, idle bool, now time.Time) string {
+	conditions := w.Status.Conditions
 	a := w.Status.Activity
-	if a == nil || a.PauseAt == nil {
-		return "-"
-	}
 	verb := "pauses"
 	if w.Spec.DryRun {
 		verb = "would pause"
 	}
-	pauseAt := a.PauseAt.Time
-	if w.Status.Phase == v1alpha1.PhaseIdle {
-		// The pause is due now, not when the clock would run out: a pause
-		// request or the forecast brought it forward without rewriting pauseAt.
-		pauseAt = now
-	}
 	retryAt, heldByGitOps := gitOpsHold(w, now)
 	afterGitOps := "pauses at " + clockTime(retryAt) + " (after GitOps conflict)"
+	if idle {
+		// The pause is due now, whatever the clock recorded: a pause request
+		// or the forecast may have brought it forward, without an idle policy
+		// or without rewriting pauseAt.
+		switch {
+		case heldByGitOps:
+			return afterGitOps
+		case meta.IsStatusConditionTrue(conditions, "IdleVetoed"):
+			return heldByForecast(a)
+		}
+		return verb + " now" + pausedEarly(a, ", ", "expects", "")
+	}
+	if a == nil || a.PauseAt == nil {
+		return "-"
+	}
+	pauseAt := a.PauseAt.Time
 	switch {
 	case pauseAt.After(now) && heldByGitOps && retryAt.After(pauseAt):
 		return afterGitOps
 	case pauseAt.After(now):
 		return verb + " in " + span(pauseAt.Sub(now))
 	case meta.IsStatusConditionTrue(conditions, "IdleVetoed"):
-		return heldByForecast(w.Status.Activity)
+		return heldByForecast(a)
 	case heldByGitOps:
 		return afterGitOps
-	case w.Status.Phase == v1alpha1.PhaseIdle:
-		return verb + " now" + pausedEarly(a, ", ", "")
 	case now.Sub(pauseAt) < clockLag:
 		return verb + " soon"
 	}
@@ -692,13 +710,15 @@ func wakesOn(w *v1alpha1.ManagedWorkload) string {
 
 // pausedEarly says, between before and after, that the forecast brought a
 // workload's pause forward, before idleAfter ran out, and until when it
-// expected quiet, as the operator recorded it; empty for a pause the clock
-// decided.
-func pausedEarly(a *v1alpha1.ActivityStatus, before, after string) string {
+// expects, or for a pause made, expected, quiet, as the operator recorded
+// it; empty for a pause the clock decided. The day is given, since a pause
+// made on Friday evening is still read on Sunday.
+func pausedEarly(a *v1alpha1.ActivityStatus, before, expects, after string) string {
 	if a == nil || a.ForecastQuietUntil == nil {
 		return ""
 	}
-	return before + "early: the forecast expects quiet until " + clockTime(a.ForecastQuietUntil.Time) + after
+	return before + "early: the forecast " + expects + " quiet until " +
+		a.ForecastQuietUntil.UTC().Format("Mon 15:04 UTC") + after
 }
 
 // clockTime is a time of day in UTC, as the operator's messages give one.

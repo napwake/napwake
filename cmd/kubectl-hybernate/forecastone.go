@@ -28,6 +28,8 @@ import (
 
 	appsv1 "k8s.io/api/apps/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
+	"k8s.io/apimachinery/pkg/api/meta"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	v1alpha1 "github.com/okedeji/hybernate/api/v1alpha1"
@@ -53,6 +55,10 @@ type operatorForecast struct {
 	// Pending says why the operator hasn't recorded a forecast yet, and
 	// what to check; the rest is empty while it is.
 	Pending string `json:"pending,omitempty"`
+	// Stopped says why Hybernate isn't forecasting the workload at all, by
+	// its ManagedWorkload's TargetAvailable condition; the rest, which would
+	// be what it last recorded, is left empty.
+	Stopped string `json:"stopped,omitempty"`
 	Acting  bool   `json:"acting"`
 	// Reason and Message say why it is or isn't acting, and what it waits
 	// for, as the operator wrote them.
@@ -74,6 +80,9 @@ type operatorForecast struct {
 	// it couldn't be, when it couldn't.
 	Learned *forecastLearned `json:"learned,omitempty"`
 	Unread  string           `json:"unread,omitempty"`
+	// fromLabel says the label opt-in wrote the ManagedWorkload, from the
+	// workload's annotations, which are then where its settings change.
+	fromLabel bool
 }
 
 // forecastLearned is what the operator's forecast has learned, and the
@@ -142,6 +151,9 @@ func forecastNamed(ctx context.Context, out io.Writer, name string, run forecast
 	}
 	now := opts.now()
 	w := picked[0]
+	if w.mw == nil && w.Managed {
+		w.mw = managedIn(ctx, c, w.Namespace, w.Kind, w.Name)
+	}
 	if w.mw != nil {
 		w.Operator = operatorForecastOf(w.mw, now)
 	}
@@ -179,6 +191,23 @@ func managedNamed(ctx context.Context, c client.Client, ns namespaceFlags,
 		return byTarget
 	}
 	return slices.DeleteFunc(all, func(w v1alpha1.ManagedWorkload) bool { return w.Name != name })
+}
+
+// managedIn is the ManagedWorkload of the workload kind/name in namespace,
+// read there: one the scan found managed, which a user who can't list
+// ManagedWorkloads in every namespace may not have seen in the context's.
+func managedIn(ctx context.Context, c client.Client, namespace string, kind v1alpha1.TargetKind,
+	name string) *v1alpha1.ManagedWorkload {
+	var list v1alpha1.ManagedWorkloadList
+	if err := c.List(ctx, &list, client.InNamespace(namespace)); err != nil {
+		return nil
+	}
+	for i := range list.Items {
+		if t := list.Items[i].Spec.Target; t.Kind == kind && t.Name == name {
+			return &list.Items[i]
+		}
+	}
+	return nil
 }
 
 // targets reports whether the workload kind/name is the one named, by a
@@ -268,7 +297,12 @@ func notFound(ctx context.Context, c client.Client, opts forecastOptions, kind, 
 // from now on.
 func operatorForecastOf(mw *v1alpha1.ManagedWorkload, now time.Time) *operatorForecast {
 	f := &operatorForecast{ManagedWorkload: mw.Name, ManagedSince: mw.CreationTimestamp.UTC(),
-		AutoResume: mw.Spec.IdlePolicy != nil && mw.Spec.IdlePolicy.AutoResume}
+		AutoResume: mw.Spec.IdlePolicy != nil && mw.Spec.IdlePolicy.AutoResume,
+		fromLabel:  mw.Labels[v1alpha1.LabelFromLabel] == v1alpha1.True}
+	if why := targetUnavailable(mw); why != "" {
+		f.Stopped = why
+		return f
+	}
 	p := mw.Status.Prediction
 	if p == nil {
 		f.Pending = fmt.Sprintf("Hybernate hasn't recorded a forecast for it yet. It does on its first look at the "+
@@ -288,6 +322,33 @@ func operatorForecastOf(mw *v1alpha1.ManagedWorkload, now time.Time) *operatorFo
 	}
 	f.Learned, f.Unread = learnedFrom(p, f.Threshold, cpuThresholdOf(mw), now)
 	return f
+}
+
+// leftAlone reports whether Hybernate leaves a ManagedWorkload's workload
+// alone, by its TargetAvailable condition, as status's NEXT reads it, and
+// whether that's for the hybernate.io/ignore label rather than its being
+// gone.
+func leftAlone(mw *v1alpha1.ManagedWorkload) (alone, ignored bool) {
+	c := meta.FindStatusCondition(mw.Status.Conditions, "TargetAvailable")
+	if c == nil || c.Status != metav1.ConditionFalse {
+		return false, false
+	}
+	return true, c.Reason == reasonTargetIgnored
+}
+
+// targetUnavailable says why Hybernate leaves a ManagedWorkload's workload
+// alone, or "" when it doesn't.
+func targetUnavailable(mw *v1alpha1.ManagedWorkload) string {
+	alone, ignored := leftAlone(mw)
+	ref := strings.ToLower(string(mw.Spec.Target.Kind)) + "/" + mw.Spec.Target.Name
+	switch {
+	case ignored:
+		return fmt.Sprintf("%s is labelled %s=true, which keeps Hybernate and its forecast away from it; remove the "+
+			"label to see its forecast", ref, v1alpha1.LabelIgnore)
+	case alone:
+		return fmt.Sprintf("its workload, %s, isn't there, so Hybernate forecasts nothing for it", ref)
+	}
+	return ""
 }
 
 // cpuThresholdOf is the CPU use, as a percentage of requests, the operator
@@ -345,6 +406,12 @@ func whyNoReplay(w named, scan scanResult, result forecastResult, now time.Time,
 	switch {
 	case w.Forecast != nil:
 		return ""
+	case w.mw != nil && targetUnavailable(w.mw) != "":
+		if _, ignored := leftAlone(w.mw); ignored {
+			return fmt.Sprintf("it's labelled %s=true, which the forecast leaves out, as Hybernate does",
+				v1alpha1.LabelIgnore)
+		}
+		return "its workload isn't there to replay"
 	case scan.historyUnread != nil:
 		return scan.historyUnread.Error()
 	case s == nil:
@@ -393,6 +460,11 @@ func kindName(w forecastWorkload) string {
 }
 
 func writeOperatorForecast(p *printer, o *operatorForecast, loc *time.Location, now time.Time) {
+	if o.Stopped != "" {
+		p.line("Hybernate's forecast: none: %s.", o.Stopped)
+		p.line("")
+		return
+	}
 	if o.Pending != "" {
 		p.line("Hybernate's forecast: none yet. %s.", o.Pending)
 		p.line("")
@@ -459,6 +531,10 @@ func actsFrom(o *operatorForecast, loc *time.Location) string {
 			", if the coming days repeat the last week"
 	case o.Learned != nil && o.Learned.HoursOfDay < forecast.DailySeason:
 		return "not known until it has seen every hour of the day"
+	case o.Reason == v1alpha1.ForecastObserving:
+		// The operator projects no start while the forecast observes, so
+		// none recorded then says nothing about four weeks.
+		return "not known until it has scored a day of its forecasts"
 	}
 	return "not expected within 4 weeks, if the coming days repeat the last week"
 }
@@ -492,8 +568,12 @@ func autoResumeCell(o *operatorForecast) string {
 		return "on: it holds off pauses before the hours it expects busy, and wakes the workload 15 minutes " +
 			"ahead of them"
 	}
-	return fmt.Sprintf("off: it holds off pauses before the hours it expects busy, but doesn't wake the workload "+
-		"for them; %s: \"true\" turns it on", v1alpha1.AnnotationAutoResume)
+	turnOn := "spec.idlePolicy.autoResume: true on its ManagedWorkload"
+	if o.fromLabel {
+		turnOn = fmt.Sprintf("the workload's %s: \"true\" annotation", v1alpha1.AnnotationAutoResume)
+	}
+	return "off: it holds off pauses before the hours it expects busy, but doesn't wake the workload for them; " +
+		turnOn + " turns it on"
 }
 
 // writeReplayDetail is the replay of a workload's history: what the
