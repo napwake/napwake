@@ -59,6 +59,17 @@ func newQueuePrometheus(t *testing.T) (*queuePrometheus, *signal.Prometheus) {
 	return q, signal.NewPrometheus(srv.URL)
 }
 
+// steadyClock is the real clock moved on to ten past the coming hour, for
+// tests the real lifecycle pauser runs in: it stamps pausedAt with the real
+// clock, which this one is never behind. Read straight, the real clock put a
+// test within a minute of a quarter to or of an hour now and then, where a
+// paused workload is looked at sooner than every minute.
+func steadyClock() func() time.Time {
+	now := time.Now()
+	offset := now.Truncate(time.Hour).Add(time.Hour + 10*time.Minute).Sub(now)
+	return func() time.Time { return time.Now().Add(offset) }
+}
+
 // queueWorker is a queue worker with no Service, which a query of its
 // queue's length keeps awake, last active two hours before now, with an
 // hour's idle clock.
@@ -83,9 +94,9 @@ func queueWorker(phase v1alpha1.WorkloadPhase, now time.Time) *v1alpha1.ManagedW
 // and the wake is recorded as the query's.
 func TestPausedQueries_WakeAWorkerPausedWhenIdle(t *testing.T) {
 	queue, prom := newQueuePrometheus(t)
-	r := lifecycleReconciler(t, queueWorker(v1alpha1.PhaseRunning, time.Now()), 3, interceptor.Funcs{})
-	// The real clock, which the lifecycle stamps pausedAt with.
-	r.clock = time.Now
+	clock := steadyClock()
+	r := lifecycleReconciler(t, queueWorker(v1alpha1.PhaseRunning, clock()), 3, interceptor.Funcs{})
+	r.clock = clock
 	r.prometheus = prom
 
 	reconcileUntilSettled(t, r)
@@ -118,9 +129,10 @@ func TestPausedQueries_WakeAWorkerPausedWhenIdle(t *testing.T) {
 func TestPausedQueries_DontUndoARequestedPause(t *testing.T) {
 	queue, prom := newQueuePrometheus(t)
 	queue.waiting.Store(40)
-	r := lifecycleReconciler(t, withPauseRequested(queueWorker(v1alpha1.PhaseRunning, time.Now())), 3,
+	clock := steadyClock()
+	r := lifecycleReconciler(t, withPauseRequested(queueWorker(v1alpha1.PhaseRunning, clock())), 3,
 		interceptor.Funcs{})
-	r.clock = time.Now
+	r.clock = clock
 	r.prometheus = prom
 
 	reconcileUntilSettled(t, r)
@@ -242,10 +254,11 @@ func TestPausedQueries_TheForecastLearnsTheHoursTheyWatch(t *testing.T) {
 func TestPausedQueries_DontEndARequestedWouldBePause(t *testing.T) {
 	queue, prom := newQueuePrometheus(t)
 	queue.waiting.Store(40)
-	workload := withPauseRequested(queueWorker(v1alpha1.PhaseRunning, time.Now()))
+	clock := steadyClock()
+	workload := withPauseRequested(queueWorker(v1alpha1.PhaseRunning, clock()))
 	workload.Spec.DryRun = true
 	r := lifecycleReconciler(t, workload, 3, interceptor.Funcs{})
-	r.clock = time.Now
+	r.clock = clock
 	r.prometheus = prom
 
 	reconcileUntilSettled(t, r)
@@ -288,8 +301,9 @@ func TestPausedQueries_AnIdlePauseIsNeverHeld(t *testing.T) {
 		_, _ = w.Write([]byte(promValue(waiting)))
 	}))
 	t.Cleanup(srv.Close)
-	r := lifecycleReconciler(t, queueWorker(v1alpha1.PhaseRunning, time.Now()), 3, interceptor.Funcs{})
-	r.clock = time.Now
+	clock := steadyClock()
+	r := lifecycleReconciler(t, queueWorker(v1alpha1.PhaseRunning, clock()), 3, interceptor.Funcs{})
+	r.clock = clock
 	r.prometheus = signal.NewPrometheus(srv.URL)
 
 	_, err := r.Reconcile(context.Background(), reconcileFor("api"))
@@ -318,10 +332,11 @@ func TestPausedQueries_AnIdleWouldBePauseIsNeverHeld(t *testing.T) {
 		_, _ = w.Write([]byte(promValue(waiting)))
 	}))
 	t.Cleanup(srv.Close)
-	workload := queueWorker(v1alpha1.PhaseRunning, time.Now())
+	clock := steadyClock()
+	workload := queueWorker(v1alpha1.PhaseRunning, clock())
 	workload.Spec.DryRun = true
 	r := lifecycleReconciler(t, workload, 3, interceptor.Funcs{})
-	r.clock = time.Now
+	r.clock = clock
 	r.prometheus = signal.NewPrometheus(srv.URL)
 
 	_, err := r.Reconcile(context.Background(), reconcileFor("api"))
