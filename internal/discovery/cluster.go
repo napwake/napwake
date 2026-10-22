@@ -634,6 +634,8 @@ func judgeManaged(w *Workload, mw *v1alpha1.ManagedWorkload, now time.Time, thre
 	switch {
 	case mw.Status.Phase == v1alpha1.PhaseResuming:
 		w.State, w.Reason = StateActive, "waking"
+	case since < idleAfter && a.LastActivitySource == v1alpha1.ActivitySourceUnobserved:
+		w.State, w.Reason = StateActive, "not idle yet: Hybernate wasn't watching until "+ago(since)
 	case since < idleAfter:
 		w.State, w.Reason = StateActive, fmt.Sprintf("active %s (%s)", ago(since), a.LastActivitySource)
 	case w.CPUPercent != nil && forecast.Busy(w.cpuShare, threshold):

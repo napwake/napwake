@@ -1178,6 +1178,10 @@ func activityCell(wl statusWorkload, now time.Time) string {
 	if wl.LastActivity == nil {
 		return "-"
 	}
+	// A gap in watching restarts the clock as it ends, but it isn't activity.
+	if wl.ActivitySource == string(v1alpha1.ActivitySourceUnobserved) {
+		return "unobserved until " + ago(*wl.LastActivity, now)
+	}
 	return wl.ActivitySource + ", " + ago(*wl.LastActivity, now)
 }
 

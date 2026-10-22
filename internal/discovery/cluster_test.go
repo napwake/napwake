@@ -310,16 +310,22 @@ func TestScanCluster_ReadsHybernatesClock(t *testing.T) {
 		Activity: &v1alpha1.ActivityStatus{LastActivityTime: metav1.NewTime(scanTime.Add(-2 * time.Hour)),
 			LastActivitySource: v1alpha1.ActivitySourceCPU}})
 	measuring.Spec.DryRun = true
+	unwatched := managedFor("unwatched", v1alpha1.ManagedWorkloadStatus{Phase: v1alpha1.PhaseRunning,
+		Activity: &v1alpha1.ActivityStatus{LastActivityTime: metav1.NewTime(scanTime.Add(-3 * time.Minute)),
+			LastActivitySource: v1alpha1.ActivitySourceUnobserved}})
 
-	objs := make([]runtime.Object, 0, 9)
-	objs = append(objs, active, quiet, measuring)
-	for _, name := range []string{"active", "quiet", "measuring"} {
+	objs := make([]runtime.Object, 0, 12)
+	objs = append(objs, active, quiet, measuring, unwatched)
+	for _, name := range []string{"active", "quiet", "measuring", "unwatched"} {
 		objs = append(objs, idleNow(name)...)
 	}
 	got := byName(scanWorkloads(t, objs...))
 
 	assert.Equal(t, StateActive, got["active"].State, "a Prometheus signal the scan can't see itself")
 	assert.Equal(t, "active 5m ago (prometheus)", got["active"].Reason)
+	assert.Equal(t, StateActive, got["unwatched"].State, "its clock restarted, so it isn't idle yet")
+	assert.Equal(t, "not idle yet: Hybernate wasn't watching until 3m ago", got["unwatched"].Reason,
+		"a gap in watching isn't activity")
 	assert.Equal(t, StateIdle, got["quiet"].State)
 	assert.Equal(t, "no activity for 3h, held awake by dependents", got["quiet"].Reason)
 	assert.True(t, got["measuring"].DryRun)
