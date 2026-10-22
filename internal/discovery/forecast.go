@@ -82,7 +82,8 @@ const (
 	noRequestNoService = "no Service routes requests to it"
 	noRequestNEGs      = "its Services are behind GKE container-native load balancing (NEGs), which the doorman " +
 		"routes only with its forwarder"
-	noRequestNodeLocal = "its Services keep traffic on the caller's node"
+	noRequestNodeLocal  = "its Services keep traffic on the caller's node"
+	noRequestDoormanOff = "the doorman is turned off for the cluster"
 )
 
 // notRouted are the WakeOnRequest reasons with which the operator found it
@@ -92,7 +93,7 @@ const (
 var notRouted = map[string]string{
 	"NoServices":              noRequestNoService,
 	"TurnedOff":               noRequestTurnedOff,
-	"DoormanDisabled":         "the doorman is turned off for the cluster",
+	"DoormanDisabled":         noRequestDoormanOff,
 	"UnsupportedLoadBalancer": noRequestNEGs,
 	"ServedByOtherPods":       "its Services are served by other workloads' Ready pods",
 	"NodeLocalTraffic":        noRequestNodeLocal,
@@ -102,24 +103,29 @@ var notRouted = map[string]string{
 
 // replayWakes is what would wake the workload were it paused: its
 // ManagedWorkload mw's, if Hybernate manages it, and otherwise what one made
-// from the workload's annotations would. The operator's own verdict on its
-// routing stands where it has one; otherwise it's judged from services, its
-// namespace's Services, against its pods' labels, and with none read, the
-// doorman is assumed, as Hybernate's default.
+// from the workload's annotations would, under install, the Hybernate
+// install that would manage it. An install with its doorman off wakes
+// nothing on request. The operator's own verdict on the workload's routing
+// stands where it has one, as from its last pause; otherwise it's judged
+// from services, its namespace's Services, against its pods' labels, and
+// with none read, the doorman is assumed, as Hybernate's default.
 func replayWakes(mw *v1alpha1.ManagedWorkload, annotations, podLabels map[string]string,
-	services map[string]corev1.Service) ReplayWakes {
+	services map[string]corev1.Service, install Install) ReplayWakes {
 	var w ReplayWakes
-	if mw == nil && annotations[v1alpha1.AnnotationWakeOnRequest] == "false" {
+	if mw != nil {
+		p := mw.Spec.IdlePolicy
+		w.Query = p != nil && p.Activity != nil && len(p.Activity.Prometheus) > 0
+	}
+	switch {
+	case install.DoormanOff:
+		w.NoRequest = noRequestDoormanOff
+		return w
+	case mw == nil && annotations[v1alpha1.AnnotationWakeOnRequest] == "false",
+		mw != nil && mw.Spec.Wake != nil && mw.Spec.Wake.OnRequest != nil && !*mw.Spec.Wake.OnRequest:
 		w.NoRequest = noRequestTurnedOff
 		return w
 	}
 	if mw != nil {
-		p := mw.Spec.IdlePolicy
-		w.Query = p != nil && p.Activity != nil && len(p.Activity.Prometheus) > 0
-		if wake := mw.Spec.Wake; wake != nil && wake.OnRequest != nil && !*wake.OnRequest {
-			w.NoRequest = noRequestTurnedOff
-			return w
-		}
 		if c := meta.FindStatusCondition(mw.Status.Conditions, "WakeOnRequest"); c != nil {
 			if c.Status == "True" || c.Reason == "ForwarderNotReady" {
 				w.Request = true
@@ -142,6 +148,10 @@ func replayWakes(mw *v1alpha1.ManagedWorkload, annotations, podLabels map[string
 			w.Request, w.NoRequest = true, ""
 			return w
 		case inNEGs:
+			if install.NEGForwarder {
+				w.Request, w.NoRequest = true, ""
+				return w
+			}
 			w.NoRequest = noRequestNEGs
 		case nodeLocal:
 			if w.NoRequest == noRequestNoService {
@@ -166,7 +176,7 @@ const (
 // workload whose pods are labeled podLabels, as the operator decides it: a
 // Service with a selector and a cluster IP that selects them on a TCP port
 // the doorman serves, and keeps traffic cluster-wide. One in GKE's pod NEGs
-// is routed only through the doorman's forwarder, which is off by default.
+// is routed only through the doorman's forwarder, where the install runs it.
 func doormanRoute(svc corev1.Service, podLabels map[string]string) route {
 	if len(svc.Spec.Selector) == 0 || svc.Spec.ClusterIP == corev1.ClusterIPNone ||
 		svc.Spec.Type == corev1.ServiceTypeExternalName ||

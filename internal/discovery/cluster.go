@@ -339,6 +339,9 @@ func (s *Scanner) ScanCluster(ctx context.Context, opts ClusterOptions) (*Cluste
 		reads = s.readAcross(ctx, opts.Namespaces)
 	}
 	reads.gitOps = gitops.NewChecker(s.client)
+	if opts.Forecast != nil {
+		reads.installs = s.readInstalls(ctx)
+	}
 	historyCtx, cancel := historyBudget(ctx)
 	defer cancel()
 	scans, unscanned := s.scanNamespaces(ctx, historyCtx, reads, pricing, opts)

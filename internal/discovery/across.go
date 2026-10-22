@@ -59,6 +59,9 @@ type clusterReads struct {
 	// gitOps tells whether the GitOps tools that set workloads' replicas
 	// are told to leave them, reading each tool's settings once.
 	gitOps *gitops.Checker
+	// installs are the Hybernate installs found, read for a replay of the
+	// forecast.
+	installs []Install
 }
 
 // readAcross lists each kind the scan reads across the cluster, keeping
