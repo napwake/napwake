@@ -23,7 +23,6 @@ import (
 	"fmt"
 	"net/netip"
 	"slices"
-	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -639,7 +638,7 @@ func (r *Reconciler) planDoorman(ctx context.Context, workload *v1alpha1.Managed
 			plan.skipped.unsupported = append(plan.skipped.unsupported, svc.Name)
 			continue
 		}
-		ports := routablePorts(svc)
+		ports := doorman.RoutablePorts(svc)
 		if len(ports) == 0 {
 			continue
 		}
@@ -721,30 +720,6 @@ func (r *Reconciler) podWithAddress(ctx context.Context, name types.NamespacedNa
 		}
 	}
 	return nil, nil
-}
-
-// routablePorts are a Service's TCP ports, less those its
-// hybernate.io/doorman-ignore-ports annotation lists by name or number.
-// Those fail while the workload is paused, as they would without the
-// doorman, which is what a port only health checks or scrapers use wants.
-func routablePorts(svc corev1.Service) []corev1.ServicePort {
-	ignored := map[string]bool{}
-	for p := range strings.SplitSeq(svc.Annotations[doorman.AnnotationIgnorePorts], ",") {
-		if p = strings.TrimSpace(p); p != "" {
-			ignored[p] = true
-		}
-	}
-	var out []corev1.ServicePort
-	for _, port := range svc.Spec.Ports {
-		if port.Protocol != "" && port.Protocol != corev1.ProtocolTCP {
-			continue
-		}
-		if ignored[strconv.Itoa(int(port.Port))] || (port.Name != "" && ignored[port.Name]) {
-			continue
-		}
-		out = append(out, port)
-	}
-	return out
 }
 
 // serviceFamilies are the address families a Service has cluster IPs in,
