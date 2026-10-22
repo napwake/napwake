@@ -215,9 +215,12 @@ spec:
                       PauseEarly pauses the workload before IdleAfter runs out, once it has
                       been idle for 20 minutes, when a confident forecast expects every
                       hour until IdleAfter would run out, and at least the hour under way
-                      and the next, to be quiet, and every Service that routes to it is
-                      routed through the doorman while it's paused, so a wrong forecast
-                      costs a request a wake, never an answer.
+                      and the next, to be quiet, and a request would wake it once paused:
+                      the doorman has a Ready pod, and would route every Service that
+                      selects the workload's pods, on every port but those
+                      hybernate.io/doorman-ignore-ports lists. A headless Service, or one
+                      with a UDP or SCTP port, keeps it from pausing early. So a wrong
+                      forecast costs a request a wake, never an answer.
                     type: boolean
                 type: object
               prediction:
