@@ -796,13 +796,13 @@ func liveProtected(t discovery.Totals) string {
 		more = " more"
 	}
 	s := fmt.Sprintf("%d%s live workloads are protected, so Hybernate never pauses them", t.LiveProtected, more)
-	they := "they"
+	they, were := "they", "were"
 	if t.LiveProtected == 1 {
-		s, they = "1"+more+" live workload is protected, so Hybernate never pauses it", "it"
+		s, they, were = "1"+more+" live workload is protected, so Hybernate never pauses it", "it", "was"
 	}
 	if anyMoney(t.ProtectedFreedThisMonth) {
-		s += fmt.Sprintf("; %s freed %s this month before it was, and saved %s of that", they,
-			dollars(t.ProtectedFreedThisMonth), dollars(t.ProtectedSavedThisMonth))
+		s += fmt.Sprintf("; %s freed %s this month before %s %s, and saved %s of that", they,
+			dollars(t.ProtectedFreedThisMonth), they, were, dollars(t.ProtectedSavedThisMonth))
 	}
 	return s + "."
 }

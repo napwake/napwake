@@ -871,6 +871,17 @@ func TestWriteScan_FreedBeforeProtected(t *testing.T) {
 		"scaled down", h.Figures[0].Detail)
 }
 
+// What protected workloads freed before they were is said of one or of
+// several alike.
+func TestLiveProtected_Freed(t *testing.T) {
+	assert.Equal(t, "1 live workload is protected, so Hybernate never pauses it; it freed $12 this month before "+
+		"it was, and saved $5 of that.", liveProtected(discovery.Totals{LiveProtected: 1, ProtectedFreedThisMonth: 12,
+		ProtectedSavedThisMonth: 5}))
+	assert.Equal(t, "2 more live workloads are protected, so Hybernate never pauses them; they freed $12 this "+
+		"month before they were, and saved $5 of that.", liveProtected(discovery.Totals{Live: 1, LiveProtected: 2,
+		ProtectedFreedThisMonth: 12, ProtectedSavedThisMonth: 5}))
+}
+
 func TestLiveProtected(t *testing.T) {
 	assert.Equal(t, "1 more live workload is protected, so Hybernate never pauses it.",
 		liveProtected(discovery.Totals{Live: 1, LiveProtected: 1}))
