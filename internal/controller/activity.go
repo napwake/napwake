@@ -461,10 +461,9 @@ func (r *Reconciler) recordQueryWake(workload *v1alpha1.ManagedWorkload) {
 }
 
 // queryActiveAtPause reports whether a Prometheus activity query shows
-// activity as a pause begins. One that can't be read counts as quiet: an
-// idle pause begins only once every query was quiet at the last check, and
-// counting it active could leave a paused worker down while its queue
-// fills.
+// activity as a requested pause begins. One that can't be read counts as
+// quiet: counting it active could leave a paused worker down while its
+// queue fills.
 func (r *Reconciler) queryActiveAtPause(ctx context.Context, workload *v1alpha1.ManagedWorkload) bool {
 	if !hasPrometheusActivity(workload) {
 		return false

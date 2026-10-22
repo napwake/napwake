@@ -272,3 +272,66 @@ func TestPausedQueries_DontEndARequestedWouldBePause(t *testing.T) {
 	assert.Equal(t, int32(1), ended.Status.DryRun.Pauses)
 	assert.Contains(t, drainEvents(t, r), "ActivityResumed [dry-run] api: activity resumed (prometheus)")
 }
+
+// An idle pause begins with its queries found quiet, earlier in the same
+// reconcile, so a message that arrives while it begins wakes the worker at
+// the next check. Asked again as the pause began, the query found it and
+// held the pause until the queue went quiet, which a paused worker's queue
+// never does, and the worker stayed down while its queue grew.
+func TestPausedQueries_AnIdlePauseIsNeverHeld(t *testing.T) {
+	var asked atomic.Int64
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		waiting := "0"
+		if asked.Add(1) > 1 {
+			waiting = "5"
+		}
+		_, _ = w.Write([]byte(promValue(waiting)))
+	}))
+	t.Cleanup(srv.Close)
+	r := lifecycleReconciler(t, queueWorker(v1alpha1.PhaseRunning, time.Now()), 3, interceptor.Funcs{})
+	r.clock = time.Now
+	r.prometheus = signal.NewPrometheus(srv.URL)
+
+	_, err := r.Reconcile(context.Background(), reconcileFor("api"))
+	require.NoError(t, err)
+	paused := getWorkload(t, r, "api")
+	require.Equal(t, v1alpha1.PhasePaused, paused.Status.Phase, "idle, its queue empty")
+	assert.False(t, paused.Status.Pause.QueryActiveSincePause, "an idle pause isn't held")
+
+	for range 10 {
+		_, err := r.Reconcile(context.Background(), reconcileFor("api"))
+		require.NoError(t, err)
+	}
+	assert.Equal(t, v1alpha1.PhaseRunning, getWorkload(t, r, "api").Status.Phase,
+		"woken by the messages that arrived as it paused")
+}
+
+// In dry-run too, an idle would-be pause isn't held: a message that
+// arrives as it begins ends it at the next check.
+func TestPausedQueries_AnIdleWouldBePauseIsNeverHeld(t *testing.T) {
+	var asked atomic.Int64
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		waiting := "0"
+		if asked.Add(1) > 1 {
+			waiting = "5"
+		}
+		_, _ = w.Write([]byte(promValue(waiting)))
+	}))
+	t.Cleanup(srv.Close)
+	workload := queueWorker(v1alpha1.PhaseRunning, time.Now())
+	workload.Spec.DryRun = true
+	r := lifecycleReconciler(t, workload, 3, interceptor.Funcs{})
+	r.clock = time.Now
+	r.prometheus = signal.NewPrometheus(srv.URL)
+
+	_, err := r.Reconcile(context.Background(), reconcileFor("api"))
+	require.NoError(t, err)
+	measuring := getWorkload(t, r, "api")
+	require.Equal(t, v1alpha1.PhaseIdle, measuring.Status.Phase, "a would-be pause, its queue empty")
+	assert.False(t, measuring.Status.DryRun.QueryActiveSincePause)
+
+	_, err = r.Reconcile(context.Background(), reconcileFor("api"))
+	require.NoError(t, err)
+	assert.Equal(t, v1alpha1.PhaseRunning, getWorkload(t, r, "api").Status.Phase,
+		"ended by the messages that arrived as it began")
+}
