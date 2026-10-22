@@ -244,7 +244,7 @@ func TestPause_TimesOut(t *testing.T) {
 	require.ErrorIs(t, err, context.DeadlineExceeded)
 	assert.Contains(t, err.Error(), "preview-42/api isn't Paused yet: it's still Running")
 	assert.Contains(t, err.Error(), "kubectl describe managedworkload api -n preview-42")
-	assert.Less(t, time.Since(start), 5*time.Second)
+	assert.Less(t, time.Since(start), promptly)
 }
 
 // The wait running out during a poll's read is the workload not being
@@ -529,7 +529,9 @@ func failsOnceDone(funcs interceptor.Funcs) interceptor.Funcs {
 // own.
 func TestPause_AnswerAfterTheTimeout(t *testing.T) {
 	c := newClient(t, failsOnceDone(operator(expectsDemand)), managedWorkload(v1alpha1.PhaseRunning))
-	const timeout = 200 * time.Millisecond
+	// Each step after the answer must finish within it, so it's long enough
+	// for a loaded runner's in-memory API calls.
+	const timeout = time.Second
 	opts := pauseOptions{wait: true, pollInterval: time.Millisecond, now: time.Now,
 		confirm: func(string) (bool, error) { time.Sleep(2 * timeout); return true, nil }}
 	var out bytes.Buffer
