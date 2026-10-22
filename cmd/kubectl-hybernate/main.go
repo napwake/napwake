@@ -29,6 +29,11 @@ import (
 	"time"
 	"unicode"
 
+	// Windows has no zoneinfo of its own, and a release built with
+	// -trimpath can't find Go's, so --timezone and the operator's zone need
+	// the database compiled in, as the operator has it.
+	_ "time/tzdata"
+
 	"github.com/spf13/cobra"
 	"github.com/spf13/pflag"
 	"k8s.io/apimachinery/pkg/runtime"
