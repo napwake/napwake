@@ -155,7 +155,9 @@ type Server struct {
 	grace     time.Duration
 	acceptFor time.Duration
 	pollEvery time.Duration
-	silent    time.Duration
+	// resyncEvery is pollEvery once an informer says when endpoints change.
+	resyncEvery time.Duration
+	silent      time.Duration
 
 	proxyIdle       time.Duration
 	drainedLifetime time.Duration
@@ -209,6 +211,7 @@ func NewServer(c client.Client, recorder events.EventRecorder, opts Options) *Se
 		silent:    silentWake,
 		backends:  newBackends(c, pods),
 
+		resyncEvery:     backendResyncInterval,
 		proxyIdle:       proxyIdleTimeout,
 		drainedLifetime: drainedProxyLifetime,
 		proxyCheck:      proxyCheckInterval,
@@ -258,7 +261,7 @@ func (s *Server) Start(ctx context.Context) error {
 			return err
 		}
 		defer stop()
-		poll = backendResyncInterval
+		poll = s.resyncEvery
 	}
 	syncTicker := time.NewTicker(routeSyncInterval)
 	defer syncTicker.Stop()
