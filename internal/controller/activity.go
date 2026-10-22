@@ -720,6 +720,9 @@ func (r *Reconciler) reconcileIdleClock(ctx context.Context, workload *v1alpha1.
 				return nil, err
 			}
 			r.reportActivityResumed(workload, source, slept, freed, measured)
+			if workload.Spec.DryRun {
+				r.wakeDryRunDependencies(ctx, workload)
+			}
 		}
 		return &ctrl.Result{RequeueAfter: nextCheck(now, pauseAt, obs.activeUntil)}, nil
 	}
@@ -735,9 +738,6 @@ func (r *Reconciler) reconcileIdleClock(ctx context.Context, workload *v1alpha1.
 	}
 
 	if held, err := r.dependencyHold(ctx, workload); held != nil || err != nil {
-		if err == nil && workload.Spec.DryRun && workload.Status.Phase == v1alpha1.PhaseIdle {
-			return r.endHeldWouldBePause(ctx, workload, held)
-		}
 		return held, err
 	}
 

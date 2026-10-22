@@ -35,7 +35,6 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/log"
 
 	v1alpha1 "github.com/okedeji/hybernate/api/v1alpha1"
-	"github.com/okedeji/hybernate/internal/cost"
 	"github.com/okedeji/hybernate/internal/human"
 	"github.com/okedeji/hybernate/internal/lifecycle"
 )
@@ -284,32 +283,6 @@ func (r *Reconciler) dependencyHold(ctx context.Context, workload *v1alpha1.Mana
 	return &ctrl.Result{RequeueAfter: activityCheckInterval}, nil
 }
 
-// endHeldWouldBePause ends a dry-run would-be pause that something now
-// holds, such as a dependent that has woken. Live, the dependent's wake
-// would have woken this workload with it, so the pause it's measuring ends
-// now, as that wake would have ended it.
-func (r *Reconciler) endHeldWouldBePause(ctx context.Context, workload *v1alpha1.ManagedWorkload,
-	held *ctrl.Result) (*ctrl.Result, error) {
-	slept, freed, measured := r.endWouldBePauseAt(workload, r.now())
-	if err := r.transition(ctx, workload, v1alpha1.PhaseRunning, "DependentsAwake"); err != nil {
-		return nil, err
-	}
-	why := "a dependency cycle holds it"
-	if c := meta.FindStatusCondition(workload.Status.Conditions, conditionHeldByDependents); c != nil &&
-		c.Status == metav1.ConditionTrue {
-		why = c.Message
-	}
-	if !measured {
-		r.emitEvent(workload, true, "Normal", ReasonActivityResumed, actionEvaluateIdle,
-			"%s, so it would have been woken; no longer idle", why)
-		return held, nil
-	}
-	r.emitEvent(workload, true, "Normal", ReasonActivityResumed, actionEvaluateIdle,
-		"%s, so it would have been woken: would have slept %s, freeing %s; %s",
-		why, human.Duration(slept), cost.FormatDollars(freed), dryRunSummary(workload.Status.DryRun))
-	return held, nil
-}
-
 // recordHolders keeps the dependents holding the workload awake in its
 // activity status, for tools to show without reading the condition's
 // message: the first maxListed, as the message names.
@@ -405,6 +378,20 @@ func (r *Reconciler) clearCondition(workload *v1alpha1.ManagedWorkload, condType
 // deleted. Each failure is reported in a Warning event on this workload,
 // and every dependency is tried.
 func (r *Reconciler) wakeDependencies(ctx context.Context, workload *v1alpha1.ManagedWorkload) {
+	r.stampDependencies(ctx, workload, false)
+}
+
+// wakeDryRunDependencies is wakeDependencies for a dry-run would-be pause
+// that has ended. Live, the wake it stands for would have woken the
+// workload's dependencies, so those in dry-run too, which its would-be
+// pause let go, are stamped: their own would-be pauses end as that wake
+// would end them, and their clocks restart. A dependency that pauses for
+// real was held all along, and isn't stamped.
+func (r *Reconciler) wakeDryRunDependencies(ctx context.Context, workload *v1alpha1.ManagedWorkload) {
+	r.stampDependencies(ctx, workload, true)
+}
+
+func (r *Reconciler) stampDependencies(ctx context.Context, workload *v1alpha1.ManagedWorkload, onlyDryRun bool) {
 	refs := dependencyRefs(workload)
 	if len(refs) == 0 {
 		return
@@ -420,7 +407,7 @@ func (r *Reconciler) wakeDependencies(ctx context.Context, workload *v1alpha1.Ma
 	for _, ref := range refs {
 		id := dependencyID(workload, ref)
 		dep := g.owner(id)
-		if dep == nil || dep.uid == workload.UID || !g.allows(workload.Namespace, id) {
+		if dep == nil || dep.uid == workload.UID || !g.allows(workload.Namespace, id) || (onlyDryRun && !dep.dryRun) {
 			continue
 		}
 		if err := r.stampActivity(ctx, dep.key); err != nil {
