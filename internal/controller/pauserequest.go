@@ -188,6 +188,7 @@ func (r *Reconciler) pauseRequestedInDryRun(ctx context.Context, workload *v1alp
 		return nil, nil
 	}
 	r.beginWouldBePause(ctx, workload)
+	workload.Status.DryRun.QueryActiveSincePause = r.queryActiveAtPause(ctx, workload)
 	r.answerPauseRequest(workload, metav1.ConditionFalse, reasonDryRun, fmt.Sprintf(
 		"not paused at %s: dry-run is on, so Hybernate counted a would-be pause and left the workload running",
 		answeredAt(r.now())))

@@ -62,6 +62,21 @@ func (r *Reconciler) beginWouldBePause(ctx context.Context, workload *v1alpha1.M
 	r.trackDryRun(workload)
 	workload.Status.DryRun.Pauses++
 	workload.Status.DryRun.Resources = r.captureResourceSnapshot(ctx, workload)
+	workload.Status.DryRun.QueryActiveSincePause = false
+}
+
+// heldByWouldBePause reports whether a Prometheus activity query's
+// activity at this check is held back from ending the workload's would-be
+// pause, as it would be from waking a real one: the queries have shown
+// activity at every check since the pause was asked for. A check that finds
+// them quiet releases it.
+func heldByWouldBePause(workload *v1alpha1.ManagedWorkload, active bool) bool {
+	d := workload.Status.DryRun
+	if !workload.Spec.DryRun || workload.Status.Phase != v1alpha1.PhaseIdle || d == nil || !d.QueryActiveSincePause {
+		return false
+	}
+	d.QueryActiveSincePause = active
+	return active
 }
 
 // endWouldBePause adds the would-be pause that began when the workload went
@@ -104,6 +119,7 @@ func (r *Reconciler) endWouldBePauseAt(workload *v1alpha1.ManagedWorkload, end t
 	}
 	d.Slept.Duration += slept
 	d.Resources = nil
+	d.QueryActiveSincePause = false
 	r.estimateDryRun(workload)
 	return slept, freed.Price(rates), true
 }

@@ -234,3 +234,41 @@ func TestPausedQueries_TheForecastLearnsTheHoursTheyWatch(t *testing.T) {
 		})
 	}
 }
+
+// In dry-run, a pause requested while a query shows activity is measured
+// for as long as the real pause would last: the query ends it only once a
+// check has found it quiet and it shows activity again, as it would wake the
+// workload, and not at the next check.
+func TestPausedQueries_DontEndARequestedWouldBePause(t *testing.T) {
+	queue, prom := newQueuePrometheus(t)
+	queue.waiting.Store(40)
+	workload := withPauseRequested(queueWorker(v1alpha1.PhaseRunning, time.Now()))
+	workload.Spec.DryRun = true
+	r := lifecycleReconciler(t, workload, 3, interceptor.Funcs{})
+	r.clock = time.Now
+	r.prometheus = prom
+
+	reconcileUntilSettled(t, r)
+	measuring := getWorkload(t, r, "api")
+	require.Equal(t, v1alpha1.PhaseIdle, measuring.Status.Phase, "a would-be pause, with 40 messages waiting")
+	require.NotNil(t, measuring.Status.DryRun)
+	assert.True(t, measuring.Status.DryRun.QueryActiveSincePause)
+
+	queue.waiting.Store(41)
+	reconcileUntilSettled(t, r)
+	assert.Equal(t, v1alpha1.PhaseIdle, getWorkload(t, r, "api").Status.Phase,
+		"still showing activity, as when the pause was asked for")
+
+	queue.waiting.Store(0)
+	reconcileUntilSettled(t, r)
+	quiet := getWorkload(t, r, "api")
+	assert.Equal(t, v1alpha1.PhaseIdle, quiet.Status.Phase)
+	assert.False(t, quiet.Status.DryRun.QueryActiveSincePause, "quiet since the request")
+
+	queue.waiting.Store(3)
+	reconcileUntilSettled(t, r)
+	ended := getWorkload(t, r, "api")
+	assert.Equal(t, v1alpha1.PhaseRunning, ended.Status.Phase, "the query would have woken it")
+	assert.Equal(t, int32(1), ended.Status.DryRun.Pauses)
+	assert.Contains(t, drainEvents(t, r), "ActivityResumed [dry-run] api: activity resumed (prometheus)")
+}
