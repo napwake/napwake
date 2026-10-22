@@ -371,25 +371,104 @@ func (r *Reconciler) warnMalformedActivity(workload *v1alpha1.ManagedWorkload, t
 }
 
 // wakeSource is what to record as the activity that woke a paused workload:
-// a request the doorman stamped since the pause began, or any other wake. It
-// must be read before the resume completes, which clears the pause.
+// a request the doorman stamped since the pause began, a Prometheus
+// activity query that found activity since, or any other wake. It must be
+// read before the resume completes, which clears the pause.
 func wakeSource(workload *v1alpha1.ManagedWorkload) v1alpha1.ActivitySource {
 	pause := workload.Status.Pause
-	if pause == nil {
+	switch {
+	case pause == nil:
 		return v1alpha1.ActivitySourceWoke
+	case requestedSince(workload, pause):
+		return v1alpha1.ActivitySourceRequest
+	case queriedSince(workload, pause):
+		return v1alpha1.ActivitySourcePrometheus
 	}
+	return v1alpha1.ActivitySourceWoke
+}
+
+// queriedSince reports whether the activity clock records a Prometheus
+// activity query finding activity since the pause began, as recordQueryWake
+// records the one that wakes it. Both times are written to the second, so
+// one in the second the pause began counts.
+func queriedSince(workload *v1alpha1.ManagedWorkload, pause *v1alpha1.PauseStatus) bool {
+	a := workload.Status.Activity
+	return a != nil && pause.PausedAt != nil && a.LastActivitySource == v1alpha1.ActivitySourcePrometheus &&
+		!a.LastActivityTime.Time.Before(pause.PausedAt.Truncate(time.Second))
+}
+
+// requestedSince reports whether the doorman stamped a request after the
+// pause began.
+func requestedSince(workload *v1alpha1.ManagedWorkload, pause *v1alpha1.PauseStatus) bool {
 	raw, ok := workload.Annotations[v1alpha1.AnnotationLastRequest]
 	if !ok {
-		return v1alpha1.ActivitySourceWoke
+		return false
 	}
 	if pause.WakeAnnotations != nil && raw != pause.WakeAnnotations.Workload[v1alpha1.AnnotationLastRequest] {
-		return v1alpha1.ActivitySourceRequest
+		return true
 	}
 	requested, err := time.Parse(time.RFC3339, raw)
-	if err != nil || pause.PausedAt == nil || requested.Before(pause.PausedAt.Time) {
-		return v1alpha1.ActivitySourceWoke
+	return err == nil && pause.PausedAt != nil && !requested.Before(pause.PausedAt.Time)
+}
+
+// queryWakeMessage is how a wake by a Prometheus activity query is
+// announced.
+const queryWakeMessage = "a Prometheus activity query shows activity, waking"
+
+// pausedQueries is what a paused workload's Prometheus activity queries
+// found at one check: watched says they were evaluated, so they'd show any
+// activity they measure, and failed that one couldn't be; active says one
+// showed activity, and wake that it wakes the workload.
+type pausedQueries struct {
+	watched, failed, active, wake bool
+}
+
+// checkPausedQueries evaluates a paused workload's Prometheus activity
+// queries. One showing activity wakes it, unless they have shown activity at
+// every check since the pause began, as they can when the pause was
+// requested: until a check finds them quiet, they don't undo it. A query
+// that can't be evaluated never wakes it, and is reported as it is while the
+// workload is awake.
+func (r *Reconciler) checkPausedQueries(ctx context.Context, workload *v1alpha1.ManagedWorkload) pausedQueries {
+	if !hasPrometheusActivity(workload) {
+		return pausedQueries{}
 	}
-	return v1alpha1.ActivitySourceRequest
+	active, err := r.prometheusActive(ctx, workload)
+	if err != nil {
+		r.reportPrometheusUnavailable(ctx, workload, err)
+		return pausedQueries{failed: true}
+	}
+	r.setCondition(workload, conditionPrometheusAvailable, metav1.ConditionTrue, "QueriesEvaluated", "")
+	held := false
+	if pause := workload.Status.Pause; pause != nil && pause.QueryActiveSincePause {
+		held = active
+		pause.QueryActiveSincePause = active
+	}
+	return pausedQueries{watched: true, active: active, wake: active && !held}
+}
+
+// recordQueryWake records on the activity clock the Prometheus activity
+// query that wakes the workload, for the resume to record as what woke it.
+func (r *Reconciler) recordQueryWake(workload *v1alpha1.ManagedWorkload) {
+	now := r.clockTime()
+	if workload.Status.Activity == nil {
+		workload.Status.Activity = &v1alpha1.ActivityStatus{}
+	}
+	workload.Status.Activity.LastActivityTime = now
+	workload.Status.Activity.LastActivitySource = v1alpha1.ActivitySourcePrometheus
+}
+
+// queryActiveAtPause reports whether a Prometheus activity query shows
+// activity as a pause begins. One that can't be read counts as quiet: an
+// idle pause begins only once every query was quiet at the last check, and
+// counting it active could leave a paused worker down while its queue
+// fills.
+func (r *Reconciler) queryActiveAtPause(ctx context.Context, workload *v1alpha1.ManagedWorkload) bool {
+	if !hasPrometheusActivity(workload) {
+		return false
+	}
+	active, err := r.prometheusActive(ctx, workload)
+	return err == nil && active
 }
 
 // activityAnnotations are the annotations that wake a paused workload.
@@ -860,13 +939,19 @@ func (r *Reconciler) wokenByActivity(workload *v1alpha1.ManagedWorkload, target 
 }
 
 // reportPrometheusUnavailable surfaces a Prometheus activity source that can't
-// be evaluated. The clock can't see that activity, so it doesn't act.
+// be evaluated. The clock can't see that activity, so it doesn't act: an
+// awake workload isn't paused, and a paused one isn't woken by the query.
 func (r *Reconciler) reportPrometheusUnavailable(ctx context.Context, workload *v1alpha1.ManagedWorkload, err error) *ctrl.Result {
+	effect := "so idle detection is paused"
+	if workload.Status.Phase == v1alpha1.PhasePaused {
+		effect = "so the queries can't wake the paused workload, and the forecast doesn't learn the time it's paused, " +
+			"until Prometheus answers"
+	}
 	reason := "QueryFailed"
-	msg := fmt.Sprintf("a Prometheus activity query failed, so idle detection is paused: %v", err)
+	msg := fmt.Sprintf("a Prometheus activity query failed, %s: %v", effect, err)
 	if errors.Is(err, signal.ErrEndpointNotConfigured) {
 		reason = "EndpointNotConfigured"
-		msg = "Prometheus activity queries are configured but the operator has no --prometheus-url, so idle detection is paused"
+		msg = "Prometheus activity queries are configured but the operator has no --prometheus-url, " + effect
 	}
 
 	firstFailure := !meta.IsStatusConditionFalse(workload.Status.Conditions, conditionPrometheusAvailable)

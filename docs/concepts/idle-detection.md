@@ -107,8 +107,9 @@ A paused workload wakes when:
 
 - A request reaches one of its Services. The request is held while the workload starts, then answered; see [Wake on Request](wake-on-request.md).
 - A `hybernate.io/last-activity`, `last-request` or `active-until` annotation on the ManagedWorkload or its target changes after the pause began to an RFC 3339 time, whatever time it states, so a clock that's behind the operator's can't lose a wake. Only a change counts: the pause records the annotations as they stood, so a value set before it, even one stating a later time, doesn't wake it. `kubectl hybernate wake` sets one, and this is how a "start environment" button in a developer portal works.
+- A [Prometheus activity query](../guides/prometheus-signals.md#while-the-workload-is-paused) shows activity: the queries are run about once a minute while it's paused, as while it's awake. One that already showed activity as a [requested pause](../guides/pause.md#pause-now) began wakes it only once it has been quiet, so it doesn't undo the request, and one that can't be evaluated never wakes it.
 - `autoResume: true` is set and a confident forecast (`dailyPhase: Active`) predicts utilization above `cpuThreshold` for the current hour, or for the next hour once it's 15 minutes away, so the workload is ready before people arrive; not the hour after one far quieter than it forecast.
 - Something other than Hybernate scales it up, such as `kubectl scale`.
 - Dry-run is turned on: dry-run never leaves a workload paused.
 
-Each wake restarts the clock, so a woken workload gets a full `idleAfter` before it can pause again. The clock records `lastActivitySource: request` when a held request woke it, `scaled-up` when something else scaled it up, and `woke` for any other wake.
+Each wake restarts the clock, so a woken workload gets a full `idleAfter` before it can pause again. The clock records `lastActivitySource: request` when a held request woke it, `prometheus` when an activity query did, `scaled-up` when something else scaled it up, and `woke` for any other wake.

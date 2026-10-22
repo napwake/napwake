@@ -24,6 +24,7 @@ import (
 	"io"
 	"maps"
 	"slices"
+	"strings"
 	"text/tabwriter"
 	"time"
 
@@ -411,7 +412,7 @@ func forecastNow(w forecastWorkload, loc *time.Location) string {
 		return "acts from day one"
 	}
 	if o.Waiting == v1alpha1.ForecastNotLearning {
-		return "not learning: paused without wake on request"
+		return notLearning(o.Message)
 	}
 	if o.StartsActing != nil {
 		return "acts from " + o.StartsActing.In(loc).Format("Mon 2 Jan")
@@ -420,6 +421,15 @@ func forecastNow(w forecastWorkload, loc *time.Location) string {
 		return forecastLearning
 	}
 	return "not within 4 weeks"
+}
+
+// notLearning is a forecast that can't learn while its workload is paused,
+// for a table: the cause its message leads with, before what fixes it.
+func notLearning(message string) string {
+	if cause, _, ok := strings.Cut(message, "; "); ok && strings.HasPrefix(cause, "not learning") {
+		return cause
+	}
+	return "not learning"
 }
 
 func wastedWakes(r *discovery.ForecastRun) string {

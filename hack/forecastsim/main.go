@@ -72,6 +72,7 @@ type options struct {
 	autoResume   bool
 	pauseEarly   bool
 	doorman      bool
+	query        bool
 	days         bool
 	output       string
 }
@@ -90,6 +91,8 @@ func main() {
 	flag.BoolVar(&o.pauseEarly, "pause-early", false,
 		"Pause before idle-after runs out when the forecast expects quiet hours")
 	flag.BoolVar(&o.doorman, "wake-on-request", true, "Route the workload's Services to the doorman while paused")
+	flag.BoolVar(&o.query, "wake-on-query", false,
+		"Give the workload a Prometheus activity query that sees its use, as a queue's length does a worker's")
 	flag.BoolVar(&o.days, "days", false, "List every day: when people first used the workload, and how it found it")
 	flag.StringVar(&o.output, "o", outputTable, "Output: table or json")
 	flag.Parse()
@@ -114,7 +117,7 @@ func run(o options, out io.Writer) error {
 	var reports []sim.Report
 	for _, th := range thresholds {
 		set := sim.Settings{Confidence: th.confidence, CPUThreshold: o.cpuThreshold, IdleAfter: o.idleAfter,
-			AutoResume: o.autoResume, PauseEarly: o.pauseEarly, WakeOnRequest: o.doorman, Location: loc}
+			AutoResume: o.autoResume, PauseEarly: o.pauseEarly, WakeOnRequest: o.doorman, WakeOnQuery: o.query, Location: loc}
 		if o.history != "" {
 			r, err := replay(o.history, th.name, set)
 			if err != nil {

@@ -128,23 +128,28 @@ func median(vs []float64) float64 {
 func TestDocs_HowLongItTakes(t *testing.T) {
 	t.Parallel()
 	office := func(uint64) Traffic { return OfficeHours(time.UTC) }
+	queueWorker := func(set *Settings) { set.WakeOnRequest, set.WakeOnQuery = false, true }
 	scenarios := []struct {
-		label   string
-		traffic func(seed uint64) Traffic
-		seeds   int
+		label    string
+		traffic  func(seed uint64) Traffic
+		seeds    int
+		settings func(*Settings)
 	}{
-		{"Busy on weekdays", office, 1},
+		{"Busy on weekdays", office, 1, nil},
 		{"The same, with people arriving and leaving up to 20 minutes", func(seed uint64) Traffic {
 			return Noisy(time.UTC, seed, 20*time.Minute, 10)
-		}, 20},
+		}, 20, nil},
 		{"The same, with people arriving and leaving up to an hour", func(seed uint64) Traffic {
 			return Noisy(time.UTC, seed, 60*time.Minute, 4)
-		}, 20},
+		}, 20, nil},
 		{"The same hours every day", func(uint64) Traffic {
 			return Working(time.UTC, EveryDay, 9*time.Hour+10*time.Minute, 17*time.Hour+30*time.Minute, 40)
-		}, 1},
-		{"Always busy", func(uint64) Traffic { return Always(true, 40) }, 1},
-		{"Always idle", func(uint64) Traffic { return Always(false, 0) }, 1},
+		}, 1, nil},
+		{"Always busy", func(uint64) Traffic { return Always(true, 40) }, 1, nil},
+		{"Always idle", func(uint64) Traffic { return Always(false, 0) }, 1, nil},
+		{"A queue worker with no Service", func(uint64) Traffic {
+			return Working(time.UTC, EveryDay, 7*time.Hour, 19*time.Hour, 40)
+		}, 1, queueWorker},
 	}
 	table := readDocsTable(t, "### How Long It Takes", "`balanced` (75)")
 	require.Len(t, table.rows, len(scenarios), "a row for each scenario the test measures")
@@ -161,6 +166,9 @@ func TestDocs_HowLongItTakes(t *testing.T) {
 			for seed := uint64(1); seed <= uint64(sc.seeds); seed++ {
 				set := DefaultSettings()
 				set.Confidence = th
+				if sc.settings != nil {
+					sc.settings(&set)
+				}
 				runs = append(runs, Scenario{Duration: 10 * week, Traffic: sc.traffic(seed), Settings: set})
 			}
 			actsDays, fullDays := make([]float64, 0, sc.seeds), make([]float64, 0, sc.seeds)

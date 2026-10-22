@@ -220,6 +220,7 @@ type statusWorkload struct {
 	// recorded it, and ForecastStartsActing when it's expected to start.
 	Forecast             string     `json:"forecast,omitempty"`
 	ForecastStartsActing *time.Time `json:"forecastStartsActing,omitempty"`
+	forecastMessage      string
 	// namedApart is set for a ManagedWorkload written by hand under a name
 	// other than its target's, which the table then shows beside it.
 	namedApart bool
@@ -527,7 +528,7 @@ func workloadStatus(w *v1alpha1.ManagedWorkload, targetActiveUntil, now time.Tim
 	}
 	row.AtSpot = pricedAtSpot(w)
 	if p := w.Status.Prediction; p != nil {
-		row.Forecast = p.Reason
+		row.Forecast, row.forecastMessage = p.Reason, p.Message
 		if p.StartsActing != nil {
 			starts := p.StartsActing.UTC()
 			row.ForecastStartsActing = &starts
@@ -1082,7 +1083,7 @@ func forecastCell(wl statusWorkload) string {
 	case v1alpha1.ForecastActing:
 		return forecastActing
 	case v1alpha1.ForecastNotLearning:
-		return "not learning"
+		return notLearning(wl.forecastMessage)
 	case v1alpha1.ForecastRelearning:
 		cell = "relearning"
 	default:

@@ -17,10 +17,11 @@ limitations under the License.
 // Package sim runs the forecast engine and the operator's decision rules
 // through simulated time: the activity clock pausing an idle workload, the
 // forecast holding off a pause and autoResume waking ahead of demand, the
-// doorman waking it on a request, and each hour's peak fed to the forecast,
-// as the operator does for a ManagedWorkload, a look at a time. Months of
-// traffic take milliseconds, so what the forecast does with a pattern, and
-// how long it takes to start, can be measured rather than guessed.
+// doorman or an activity query waking it, and each hour's peak fed to the
+// forecast, as the operator does for a ManagedWorkload, a look at a time.
+// Months of traffic take milliseconds, so what the forecast does with a
+// pattern, and how long it takes to start, can be measured rather than
+// guessed.
 package sim
 
 import (
@@ -53,6 +54,11 @@ type Settings struct {
 	// WakeOnRequest routes the workload's Services to the doorman while it's
 	// paused, so a request wakes it and an hour paused is seen as quiet.
 	WakeOnRequest bool
+	// WakeOnQuery gives the workload a Prometheus activity query that sees
+	// its use, as a queue's length shows a worker's: awake, the query keeps
+	// it awake, and paused, it wakes it, and an hour paused is seen as
+	// quiet.
+	WakeOnQuery bool
 	// Location is the operator's --timezone, the clock the forecast's hours
 	// and weekdays are counted in.
 	Location *time.Location
@@ -106,6 +112,7 @@ type WakeCause string
 const (
 	WokenByForecast WakeCause = "autoResume"
 	WokenByRequest  WakeCause = "request"
+	WokenByQuery    WakeCause = "query"
 	WokenByHand     WakeCause = "hand"
 )
 
@@ -404,7 +411,7 @@ func (s *run) lookAwake(t time.Time, use Use) error {
 	if err := s.see(t, demand, true); err != nil {
 		return err
 	}
-	if forecast.Busy(percent, set.CPUThreshold) || use.Seen {
+	if forecast.Busy(percent, set.CPUThreshold) || use.Seen || use.Active && set.WakeOnQuery {
 		s.lastActivity, s.lastWasUse = t, true
 	}
 
@@ -470,6 +477,8 @@ func (s *run) lookPaused(t time.Time, use Use) error {
 	switch {
 	case use.Active && set.WakeOnRequest:
 		cause = WokenByRequest
+	case use.Active && set.WakeOnQuery:
+		cause = WokenByQuery
 	case use.Active:
 		if s.wantedFrom.IsZero() {
 			s.wantedFrom = t
@@ -484,7 +493,7 @@ func (s *run) lookPaused(t time.Time, use Use) error {
 	if cause != "" {
 		demand = forecast.RequestDemand(set.CPUThreshold)
 	}
-	if err := s.see(t, demand, set.WakeOnRequest || cause != ""); err != nil {
+	if err := s.see(t, demand, set.WakeOnRequest || set.WakeOnQuery || cause != ""); err != nil {
 		return err
 	}
 	if cause != "" {
