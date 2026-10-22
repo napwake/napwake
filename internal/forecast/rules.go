@@ -32,10 +32,17 @@ const ResumeWarmup = AutoResumeLead
 // (UTC when nil), where an hour may begin at half or quarter past the hour
 // in UTC. Stepping back to the local hour's start, rather than building it
 // with time.Date, stays exact in the hour a clock change repeats.
+//
+// The hour start carries no monotonic clock reading. Every look in an hour
+// must find the same start, and Go compares two times that both carry one
+// by that reading alone. Taken from time.Now(), which reads the monotonic
+// clock apart from the wall clock, each look's start would differ from the
+// last by a few nanoseconds, and no hour would ever be seen whole.
 func HourStart(t time.Time, loc *time.Location) time.Time {
 	if loc == nil {
 		loc = time.UTC
 	}
+	t = t.Round(0)
 	local := t.In(loc)
 	into := time.Duration(local.Minute())*time.Minute +
 		time.Duration(local.Second())*time.Second +

@@ -86,8 +86,19 @@ func realEngineRegistry() *engineRegistry {
 	})
 }
 
+// monotonic is t as time.Now() would give it at that moment: with a
+// monotonic clock reading, which Go takes apart from the wall clock's, so
+// the two differ by a few nanoseconds more or less from one reading to the
+// next. Times that both carry one are compared by it alone. A clock built
+// with time.Date carries none, and hides any comparison that depends on it.
+func monotonic(t time.Time) time.Time {
+	now := time.Now()
+	return now.Add(t.Sub(now.Round(0)))
+}
+
 // forecastReconciler runs automation with the real forecast engine against
-// a fake API server, at a clock the test moves.
+// a fake API server, at a clock the test moves. The reconciler reads it as
+// it reads the real clock, monotonic readings and all.
 type forecastReconciler struct {
 	*Reconciler
 	now time.Time
@@ -107,7 +118,7 @@ func newForecastReconciler(t *testing.T, workload *v1alpha1.ManagedWorkload, c c
 		pauser:   &stubPauser{},
 		metrics:  &stubMetrics{cpuMillis: 250},
 		engines:  realEngineRegistry(),
-		clock:    func() time.Time { return fr.now },
+		clock:    func() time.Time { return monotonic(fr.now) },
 	}
 	return fr
 }
