@@ -45,10 +45,8 @@ func forecastOutlook(workload *v1alpha1.ManagedWorkload, o forecast.Outlook) (re
 			b.WriteString("; turn on autoResume to have it wake the workload ahead of them too")
 		}
 		return reason, b.String()
-	case pausedUnseen(workload):
-		return v1alpha1.ForecastNotLearning, "not learning: the workload is paused without wake on request, so a request " +
-			"can't wake it and its demand can't be seen; the forecast learns while it's awake, and from every hour " +
-			"with wake on request"
+	case pausedUnseen(workload) != "":
+		return v1alpha1.ForecastNotLearning, "not learning while paused: " + pausedUnseen(workload)
 	case o.Waiting == forecast.WaitingToRelearn:
 		reason = v1alpha1.ForecastRelearning
 		fmt.Fprintf(&b, "relearning: demand stopped matching what it had learned, so it's earning its confidence "+
@@ -76,6 +74,9 @@ func forecastOutlook(workload *v1alpha1.ManagedWorkload, o forecast.Outlook) (re
 	case reason != v1alpha1.ForecastObserving:
 		b.WriteString("; not expected to start within four weeks if the coming days repeat the last week")
 	}
+	if seen := pausedSeenBy(workload); seen != "" {
+		fmt.Fprintf(&b, "; while it's paused, it learns from %s", seen)
+	}
 	return reason, b.String()
 }
 
@@ -83,9 +84,89 @@ func autoResumes(workload *v1alpha1.ManagedWorkload) bool {
 	return workload.Spec.IdlePolicy != nil && workload.Spec.IdlePolicy.AutoResume
 }
 
-// pausedUnseen reports whether the workload is paused where a request
-// wouldn't wake it, so the hours it spends paused aren't learned.
-func pausedUnseen(workload *v1alpha1.ManagedWorkload) bool {
-	return workload.Status.Phase == v1alpha1.PhasePaused &&
-		!meta.IsStatusConditionTrue(workload.Status.Conditions, conditionWakeOnRequest)
+const (
+	wakeOnRequestGuide = "https://okedeji.io/hybernate/concepts/wake-on-request/"
+	queriesGuide       = "https://okedeji.io/hybernate/guides/prometheus-signals/"
+)
+
+// pausedSeenBy is what shows a paused workload's demand, so the hours it
+// spends paused are learned: requests through the doorman, which would
+// wake it, and Prometheus activity queries, which show the activity they
+// measure. It's empty for a workload that isn't paused, or that nothing
+// watches: a query that can't be evaluated blinds the forecast to the hour.
+func pausedSeenBy(workload *v1alpha1.ManagedWorkload) string {
+	if workload.Status.Phase != v1alpha1.PhasePaused {
+		return ""
+	}
+	conditions := workload.Status.Conditions
+	queries := hasPrometheusActivity(workload)
+	if queries && meta.IsStatusConditionFalse(conditions, conditionPrometheusAvailable) {
+		return ""
+	}
+	routed := meta.IsStatusConditionTrue(conditions, conditionWakeOnRequest)
+	switch {
+	case routed && queries:
+		return "requests through the doorman and its Prometheus activity queries"
+	case routed:
+		return "requests through the doorman"
+	case queries:
+		return "its Prometheus activity queries"
+	}
+	return ""
+}
+
+// pausedUnseen says why the forecast can't see a paused workload's demand,
+// so the hours it spends paused aren't learned, then what fixes it and
+// where the docs say how; it's empty when something watches the workload,
+// or it isn't paused. Without activity queries, the cause is why requests
+// don't wake it, by its WakeOnRequest condition's reason. The cause comes
+// first, up to the first semicolon, for kubectl hybernate's tables.
+func pausedUnseen(workload *v1alpha1.ManagedWorkload) string {
+	if workload.Status.Phase != v1alpha1.PhasePaused || pausedSeenBy(workload) != "" {
+		return ""
+	}
+	if hasPrometheusActivity(workload) {
+		return "its Prometheus activity queries can't be evaluated; they can't show its demand until Prometheus " +
+			"answers, and PrometheusAvailable says why: " + queriesGuide + "#when-a-query-cant-be-evaluated"
+	}
+	var reason string
+	if c := meta.FindStatusCondition(workload.Status.Conditions, conditionWakeOnRequest); c != nil {
+		reason = c.Reason
+	}
+	why, fix, section := "requests don't wake it", "see why in its WakeOnRequest condition",
+		"#when-a-workload-isnt-routed"
+	switch reason {
+	case "NoServices":
+		why, fix = "no Service routes requests to it", "give it a Service, or, for a workload no request "+
+			"reaches, such as a queue worker, a Prometheus activity query that sees its demand"
+	case reasonTurnedOff:
+		why, fix, section = `wake on request is turned off, by wake.onRequest: false or `+
+			`hybernate.io/wake-on-request: "false"`, "turn it back on", "#turning-it-off"
+	case "DoormanDisabled":
+		why, fix, section = "the doorman is turned off for the cluster", "set the Helm value doorman.enabled to true",
+			"#turning-it-off"
+	case "UnsupportedLoadBalancer":
+		why, fix, section = "its Services are behind GKE container-native load balancing (NEGs), which the "+
+			"doorman can't route without its forwarder", "set the Helm value doorman.negForwarder.enabled to true",
+			"#gke-container-native-load-balancing-negs"
+	case reasonForwarderNotReady:
+		why, fix, section = "the forwarder its GKE NEG Services are routed through isn't Ready",
+			"see why in its WakeOnRequest condition", "#gke-container-native-load-balancing-negs"
+	case "ServedByOtherPods":
+		why, fix, section = "its Services are served by other workloads' Ready pods",
+			"give it a Service of its own", "#services-shared-with-other-workloads"
+	case "NodeLocalTraffic":
+		why, fix = "its Services keep traffic on the caller's node, with internalTrafficPolicy: Local",
+			"give it a Service with the default policy, Cluster"
+	case "UnsupportedIPFamily":
+		why = "no doorman pod has an address in its Services' IP family"
+	case "DoormanUnavailable":
+		why, fix = "no doorman pod is Ready", "check the doorman's pods in the operator's namespace"
+	case "NoFreePort", "TooManyPorts":
+		why = "the doorman has no port for it"
+	case reasonRoutingFailed:
+		why = "routing its Services through the doorman is failing, and being retried"
+	}
+	return fmt.Sprintf("%s; a request can't wake it, so its demand can't be seen, and it learns only the hours "+
+		"it's awake. To learn the hours it's paused too, %s: %s%s", why, fix, wakeOnRequestGuide, section)
 }

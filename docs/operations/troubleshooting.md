@@ -192,7 +192,7 @@ A `HandBackAbandoned` warning event means the ManagedWorkload's namespace is bei
 
 ### Prediction confidence stays at 0
 
-The confidence scorer needs a full 24-hour window of observed hours before reporting daily confidence, and 168 for weekly. An hour isn't observed while the operator is down, while CPU can't be read, or while the workload is paused with neither the doorman nor a [Prometheus activity query](../guides/prometheus-signals.md#while-the-workload-is-paused) to see its demand, so a workload paused every night that way never gets a full day. `status.prediction.reason` and `message` say what the forecast waits for, and `startsActing` when it's expected to act; see [When It Acts](../concepts/forecasting.md#when-it-acts). With a Prometheus URL, a new workload starts from its history instead: `status.prediction.history` says what came of reading it.
+The confidence scorer needs a full 24-hour window of observed hours before reporting daily confidence, and 168 for weekly. An hour isn't observed while the operator is down, while CPU can't be read, or while the workload is paused with neither the doorman nor a [Prometheus activity query](../guides/prometheus-signals.md#while-the-workload-is-paused) to see its demand, so a workload paused every night that way never gets a full day; its `status.prediction.message` says why requests don't wake it and how to fix it. `status.prediction.reason` and `message` say what the forecast waits for, and `startsActing` when it's expected to act; see [When It Acts](../concepts/forecasting.md#when-it-acts). With a Prometheus URL, a new workload starts from its history instead: `status.prediction.history` says what came of reading it.
 
 Also check that metrics-server is running and returning data:
 
