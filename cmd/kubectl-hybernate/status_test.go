@@ -463,11 +463,11 @@ func TestNextFor_PausedEarly(t *testing.T) {
 	}
 	paused := early(v1alpha1.PhasePaused, false)
 	paused.Status.Doorman = []v1alpha1.DoormanRoute{{Service: "api", DoormanPort: 20000}}
-	assert.Equal(t, "paused early: the forecast expects quiet until 14:00 UTC; wakes on a request or activity",
-		nextFor(paused, time.Time{}, statusNow))
-	assert.Equal(t, "would pause now, early: the forecast expects quiet until 14:00 UTC",
+	assert.Equal(t, "paused early: the forecast expected quiet until Mon 14:00 UTC; wakes on a request or activity",
+		nextFor(paused, time.Time{}, statusNow), "what it expected when it paused, and still true all weekend")
+	assert.Equal(t, "would pause now, early: the forecast expects quiet until Mon 14:00 UTC",
 		nextFor(early(v1alpha1.PhaseIdle, true), time.Time{}, statusNow), "a would-be pause in dry-run")
-	assert.Equal(t, "pauses now, early: the forecast expects quiet until 14:00 UTC",
+	assert.Equal(t, "pauses now, early: the forecast expects quiet until Mon 14:00 UTC",
 		nextFor(early(v1alpha1.PhaseIdle, false), time.Time{}, statusNow), "not the clock's 40 minutes")
 
 	waiting := early(v1alpha1.PhaseIdle, false)

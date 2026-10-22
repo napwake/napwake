@@ -592,7 +592,7 @@ func nextFor(w *v1alpha1.ManagedWorkload, targetActiveUntil, now time.Time) stri
 	}
 	switch w.Status.Phase {
 	case v1alpha1.PhasePaused:
-		return pausedEarly(w.Status.Activity, "paused ", "; ") + wakesOn(w)
+		return pausedEarly(w.Status.Activity, "paused ", "expected", "; ") + wakesOn(w)
 	case v1alpha1.PhaseRunning, v1alpha1.PhaseIdle:
 	default:
 		return "-"
@@ -640,7 +640,7 @@ func pausesNext(w *v1alpha1.ManagedWorkload, idle bool, now time.Time) string {
 		case meta.IsStatusConditionTrue(conditions, "IdleVetoed"):
 			return heldByForecast(a)
 		}
-		return verb + " now" + pausedEarly(a, ", ", "")
+		return verb + " now" + pausedEarly(a, ", ", "expects", "")
 	}
 	if a == nil || a.PauseAt == nil {
 		return "-"
@@ -710,13 +710,15 @@ func wakesOn(w *v1alpha1.ManagedWorkload) string {
 
 // pausedEarly says, between before and after, that the forecast brought a
 // workload's pause forward, before idleAfter ran out, and until when it
-// expected quiet, as the operator recorded it; empty for a pause the clock
-// decided.
-func pausedEarly(a *v1alpha1.ActivityStatus, before, after string) string {
+// expects, or for a pause made, expected, quiet, as the operator recorded
+// it; empty for a pause the clock decided. The day is given, since a pause
+// made on Friday evening is still read on Sunday.
+func pausedEarly(a *v1alpha1.ActivityStatus, before, expects, after string) string {
 	if a == nil || a.ForecastQuietUntil == nil {
 		return ""
 	}
-	return before + "early: the forecast expects quiet until " + clockTime(a.ForecastQuietUntil.Time) + after
+	return before + "early: the forecast " + expects + " quiet until " +
+		a.ForecastQuietUntil.UTC().Format("Mon 15:04 UTC") + after
 }
 
 // clockTime is a time of day in UTC, as the operator's messages give one.
