@@ -213,6 +213,9 @@ type statusWorkload struct {
 	// freed, and since when it has been measured. Unset for one that isn't.
 	WouldFree   *float64   `json:"wouldFree,omitempty"`
 	DryRunSince *time.Time `json:"dryRunSince,omitempty"`
+	// wouldBePaused is whether dry-run has measured a would-be pause, which
+	// has freed something however little the estimate shows.
+	wouldBePaused bool
 	// AtSpot is set when its money figures are at spot prices, from the
 	// spot nodes it runs on, rather than on-demand.
 	AtSpot bool `json:"atSpot,omitempty"`
@@ -542,6 +545,7 @@ func workloadStatus(w *v1alpha1.ManagedWorkload, targetActiveUntil, now time.Tim
 		wouldFree := dollarsIn(d.EstimatedFreed)
 		since := d.Since.UTC()
 		row.WouldFree, row.DryRunSince = &wouldFree, &since
+		row.wouldBePaused = d.Pauses > 0
 	}
 	if t := w.Status.LastTransitionTime; t != nil {
 		since := t.UTC()
@@ -1064,14 +1068,16 @@ func phaseCounts(workloads []statusWorkload) string {
 func dryRunSummary(workloads []statusWorkload) string {
 	n, since := dryRunMeasured(workloads)
 	var wouldFree float64
+	paused := false
 	for _, wl := range workloads {
 		if wl.WouldFree != nil {
 			wouldFree += *wl.WouldFree
+			paused = paused || wl.wouldBePaused
 		}
 	}
 	s := fmt.Sprintf("%d in dry-run, never paused", n)
 	if since != nil {
-		s += fmt.Sprintf(": pausing %s would have freed %s since %s", pronounObject(n), dollars(wouldFree),
+		s += fmt.Sprintf(": pausing %s would have freed %s since %s", pronounObject(n), wouldFreeDollars(wouldFree, paused),
 			since.Format("Jan 2"))
 	}
 	return s
@@ -1203,7 +1209,18 @@ func wouldFreeCell(wl statusWorkload) string {
 	if wl.WouldFree == nil {
 		return "-"
 	}
-	return dollars(*wl.WouldFree)
+	return wouldFreeDollars(*wl.WouldFree, wl.wouldBePaused)
+}
+
+// wouldFreeDollars is dollars for what dry-run measured. The operator's
+// estimate is to the cent, so would-be pauses that have freed less than a
+// cent read $0.00 there; any would-be pause has freed something, which
+// reads <$1, as any amount above zero does.
+func wouldFreeDollars(amount float64, paused bool) string {
+	if paused && amount == 0 {
+		return "<$1"
+	}
+	return dollars(amount)
 }
 
 func ago(t, now time.Time) string {
