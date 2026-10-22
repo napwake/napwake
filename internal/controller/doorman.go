@@ -116,34 +116,63 @@ func doormanEligible(workload *v1alpha1.ManagedWorkload) bool {
 }
 
 // requestWouldWake reports whether, were the awake workload paused now, a
-// request to any of its Services would wake it: the doorman is on and has
-// a Ready pod, the workload's last pause found nothing wrong with its
-// routing, and the plan its pause would be routed by routes at least one
-// of its Services, leaves none out, and takes no more doorman ports than
-// it may hold. What it can't check counts against it.
-func (r *Reconciler) requestWouldWake(ctx context.Context, workload *v1alpha1.ManagedWorkload, target client.Object) (bool, error) {
-	if r.DoormanService == "" || !wakeOnRequest(workload) || target == nil {
-		return false, nil
+// request to any Service that selects its pods would wake it: the doorman
+// is on and has a Ready pod, the workload's last pause found nothing wrong
+// with its routing, and the plan its pause would be routed by routes at
+// least one of those Services, every port of each but those
+// hybernate.io/doorman-ignore-ports lists, and takes no more doorman ports
+// than the workload and its namespace may hold. Otherwise it says why not.
+// What it can't check counts against it.
+func (r *Reconciler) requestWouldWake(ctx context.Context, workload *v1alpha1.ManagedWorkload,
+	target client.Object) (bool, string, error) {
+	switch {
+	case r.DoormanService == "" || target == nil:
+		return false, "the doorman is off", nil
+	case !wakeOnRequest(workload):
+		return false, "wake on request is turned off", nil
 	}
 	if c := meta.FindStatusCondition(workload.Status.Conditions, conditionWakeOnRequest); c != nil &&
 		c.Status == metav1.ConditionFalse && c.Reason != reasonNotPaused {
-		return false, nil
+		return false, fmt.Sprintf("its routing has a problem (WakeOnRequest reason %s)", c.Reason), nil
 	}
 	endpoints, err := r.doormanEndpoints(ctx)
-	if err != nil || len(endpoints) == 0 {
-		return false, err
+	if err != nil {
+		return false, "", err
+	}
+	if len(endpoints) == 0 {
+		return false, "no doorman pod is Ready", nil
 	}
 	plan, err := r.planDoorman(ctx, workload, target, endpoints, true)
 	if err != nil {
-		return false, err
+		return false, "", err
+	}
+	if left := plan.unroutable; len(left) > 0 {
+		return false, "Services the doorman can't route select its pods: " + strings.Join(left, ", "), nil
+	}
+	if skipped := plan.skipped.unsupported; len(skipped) > 0 {
+		return false, "Services behind GKE container-native load balancing, which can't use the doorman without " +
+			"its forwarder, select its pods: " + strings.Join(skipped, ", "), nil
+	}
+	if notes := plan.skipped.notes(); notes != "" {
+		return false, notes, nil
 	}
 	ports := 0
 	for _, s := range plan.services {
 		ports += len(s.ports)
 	}
-	left := plan.skipped
-	return ports > 0 && ports <= r.portLimits().perWorkload &&
-		len(left.unsupported)+len(left.served)+len(left.nodeLocal)+len(left.family) == 0, nil
+	if ports == 0 {
+		return false, "no Service routes TCP traffic to it", nil
+	}
+	reader := routeReader{reader: r.apiReader(), namespaces: r.WatchNamespaces}
+	holder := portHolder{uid: workload.UID, namespace: workload.Namespace}
+	err = r.doormanPorts.fits(ctx, reader, r.now(), holder, r.portLimits(), ports)
+	if tooMany := (*tooManyPortsError)(nil); errors.As(err, &tooMany) {
+		return false, tooMany.Error(), nil
+	}
+	if err != nil {
+		return false, "", err
+	}
+	return true, "", nil
 }
 
 // routeDoorman brings the workload's doorman routing up to date. Routing is
@@ -592,6 +621,11 @@ type doormanService struct {
 type doormanPlan struct {
 	services []doormanService
 	skipped  skippedServices
+	// unroutable are the Services that select an awake workload's pods
+	// which the doorman can't route at all, or not on every port, each with
+	// why, planned ahead of its pause. A paused workload's routing leaves
+	// them out as it always does.
+	unroutable []string
 }
 
 // planDoorman picks the Services in the workload's namespace to route
@@ -626,11 +660,15 @@ func (r *Reconciler) planDoorman(ctx context.Context, workload *v1alpha1.Managed
 	}
 	var plan doormanPlan
 	for _, svc := range list.Items {
-		if len(svc.Spec.Selector) == 0 || svc.Spec.ClusterIP == corev1.ClusterIPNone ||
-			svc.Spec.Type == corev1.ServiceTypeExternalName {
+		if len(svc.Spec.Selector) == 0 || svc.Spec.Type == corev1.ServiceTypeExternalName ||
+			!labels.SelectorFromSet(svc.Spec.Selector).Matches(podLabels) {
 			continue
 		}
-		if !labels.SelectorFromSet(svc.Spec.Selector).Matches(podLabels) {
+		if why := unroutable(svc); awake && why != "" {
+			plan.unroutable = append(plan.unroutable, fmt.Sprintf("%s (%s)", svc.Name, why))
+			continue
+		}
+		if svc.Spec.ClusterIP == corev1.ClusterIPNone {
 			continue
 		}
 		forwarded := usesGKENEG(svc, ingresses.Items)
@@ -671,7 +709,28 @@ func (r *Reconciler) planDoorman(ctx context.Context, workload *v1alpha1.Managed
 	slices.Sort(plan.skipped.served)
 	slices.Sort(plan.skipped.nodeLocal)
 	slices.Sort(plan.skipped.family)
+	slices.Sort(plan.unroutable)
 	return plan, nil
+}
+
+// unroutable says why the doorman can't route a Service that selects a
+// workload's pods, or not on every port: one that's headless hands callers
+// the pods' addresses directly, and UDP and SCTP it can't hold. Empty when
+// it can route every port but those hybernate.io/doorman-ignore-ports
+// lists, which are meant to fail while the workload is paused.
+func unroutable(svc corev1.Service) string {
+	if svc.Spec.ClusterIP == corev1.ClusterIPNone {
+		return "headless"
+	}
+	ports := doorman.UnroutablePorts(svc)
+	if len(ports) == 0 {
+		return ""
+	}
+	names := make([]string, 0, len(ports))
+	for _, p := range ports {
+		names = append(names, fmt.Sprintf("%s port %d", p.Protocol, p.Port))
+	}
+	return strings.Join(names, ", ")
 }
 
 // servedByOthers reports whether a Service's own EndpointSlices have a
@@ -947,6 +1006,18 @@ func (a *portAllocator) assign(ctx context.Context, reader routeReader, now time
 		delete(a.draining, port)
 	}
 	return routes, nil
+}
+
+// fits reports, with a *tooManyPortsError, whether holder could be given n
+// ports now without going over limits, as assign would find.
+func (a *portAllocator) fits(ctx context.Context, reader routeReader, now time.Time, holder portHolder,
+	limits portLimits, n int) error {
+	if err := a.load(ctx, reader, now); err != nil {
+		return err
+	}
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	return a.withinLimits(holder, limits, n)
 }
 
 // withinLimits reports whether holder may hold n ports. a.mu must be held.

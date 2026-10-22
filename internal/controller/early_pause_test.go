@@ -33,6 +33,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	v1alpha1 "github.com/okedeji/hybernate/api/v1alpha1"
+	"github.com/okedeji/hybernate/internal/doorman"
 	"github.com/okedeji/hybernate/internal/forecast"
 )
 
@@ -114,6 +115,55 @@ func TestEarlyPause_PausesBeforeIdleAfterRunsOut(t *testing.T) {
 	assert.Empty(t, recorded(r.Recorder.(*events.FakeRecorder), ReasonIdleDetected))
 }
 
+// A Service whose every port hybernate.io/doorman-ignore-ports leaves out,
+// such as one only a scraper uses, is meant to fail while the workload is
+// paused, so it doesn't hold an early pause back.
+func TestEarlyPause_IgnoredPortsDontHoldItBack(t *testing.T) {
+	r, workload, target, pauser := earlyPause(t, 30*time.Minute, quietForecast(), nil)
+	metrics := service("api-metrics", apiPods, corev1.ServicePort{Name: "metrics", Port: 9100})
+	metrics.Annotations = map[string]string{doorman.AnnotationIgnorePorts: "metrics"}
+	require.NoError(t, r.Create(context.Background(), metrics))
+
+	_, err := r.reconcileAutomation(context.Background(), workload, target)
+	require.NoError(t, err)
+
+	assert.Equal(t, 1, pauser.pauseCalls)
+}
+
+// requestWouldWake says why a request wouldn't wake the workload, for the
+// log to say why the forecast didn't bring its pause forward.
+func TestRequestWouldWake_SaysWhyNot(t *testing.T) {
+	headless := service("api-headless", apiPods, corev1.ServicePort{Name: "grpc", Port: 9090})
+	headless.Spec.ClusterIP = corev1.ClusterIPNone
+	udp := service("api-udp", apiPods, corev1.ServicePort{Name: "syslog", Port: 514, Protocol: corev1.ProtocolUDP})
+	tests := []struct {
+		name  string
+		objs  []client.Object
+		setup func(*Reconciler)
+		want  string
+	}{
+		{name: "it would", want: ""},
+		{name: "Services the doorman can't route", objs: []client.Object{headless, udp},
+			want: "Services the doorman can't route select its pods: api-headless (headless), api-udp (UDP port 514)"},
+		{name: "no doorman", setup: func(r *Reconciler) { r.DoormanService = "" }, want: "the doorman is off"},
+		{name: "too many ports", setup: func(r *Reconciler) { r.DoormanPortsPerWorkload = 1 },
+			objs: []client.Object{service("api-admin", apiPods, corev1.ServicePort{Name: "admin", Port: 8081})},
+			want: "the workload would hold 2 doorman ports, more than its limit of 1"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			r, workload, target, _ := earlyPause(t, 30*time.Minute, quietForecast(), nil, tt.objs...)
+			if tt.setup != nil {
+				tt.setup(r)
+			}
+			wakes, why, err := r.requestWouldWake(context.Background(), workload, target)
+			require.NoError(t, err)
+			assert.Equal(t, tt.want == "", wakes)
+			assert.Equal(t, tt.want, why)
+		})
+	}
+}
+
 // Each thing an early pause rests on, missing, leaves the pause to the
 // clock: the setting, 20 minutes without activity, a forecast acting and
 // sure of every hour until the clock would pause it, and a request that
@@ -159,6 +209,31 @@ func TestEarlyPause_OnlyWhenSure(t *testing.T) {
 				other.Labels[discoveryv1.LabelServiceName] = apiService
 				require.NoError(t, r.Create(context.Background(), other))
 				require.NoError(t, r.Create(context.Background(), servingPod()))
+			}},
+		{name: "a headless Service selects it too", idle: 30 * time.Minute, engine: quietForecast(),
+			setup: func(r *Reconciler) {
+				headless := service("api-headless", apiPods, corev1.ServicePort{Name: "grpc", Port: 9090})
+				headless.Spec.ClusterIP = corev1.ClusterIPNone
+				require.NoError(t, r.Create(context.Background(), headless))
+			}},
+		{name: "a UDP Service selects it too", idle: 30 * time.Minute, engine: quietForecast(),
+			setup: func(r *Reconciler) {
+				require.NoError(t, r.Create(context.Background(), service("api-udp", apiPods,
+					corev1.ServicePort{Name: "syslog", Port: 514, Protocol: corev1.ProtocolUDP})))
+			}},
+		{name: "its Service has a UDP port beside its TCP one", idle: 30 * time.Minute, engine: quietForecast(),
+			setup: func(r *Reconciler) {
+				require.NoError(t, r.Create(context.Background(), service("api-dns", apiPods,
+					corev1.ServicePort{Name: "dns-tcp", Port: 53},
+					corev1.ServicePort{Name: "dns", Port: 53, Protocol: corev1.ProtocolUDP})))
+			}},
+		{name: "its namespace's doorman ports are all held", idle: 30 * time.Minute, engine: quietForecast(),
+			setup: func(r *Reconciler) {
+				r.DoormanPortsPerNamespace = 1
+				web := lifecycleWorkload("web", v1alpha1.PhasePaused)
+				web.UID = "uid-web"
+				web.Status.Doorman = []v1alpha1.DoormanRoute{{Service: "web", PortName: "http", DoormanPort: 20001}}
+				require.NoError(t, r.Create(context.Background(), web))
 			}},
 		{name: "active-until holds it", idle: 30 * time.Minute, engine: quietForecast(),
 			workload: func(w *v1alpha1.ManagedWorkload) {
