@@ -25,7 +25,9 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	appsv1 "k8s.io/api/apps/v1"
+	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/interceptor"
 
 	v1alpha1 "github.com/okedeji/hybernate/api/v1alpha1"
@@ -306,4 +308,31 @@ func TestCLI_ForecastIgnoredWorkload(t *testing.T) {
 
 	require.EqualError(t, err, "preview-42/deployment/api is labelled hybernate.io/ignore=true, which keeps "+
 		"Hybernate and its forecast away from it; remove the label to see its forecast")
+}
+
+// inNamespace is objs moved to namespace.
+func inNamespace(namespace string, objs ...client.Object) []client.Object {
+	for _, obj := range objs {
+		if _, ok := obj.(*corev1.Namespace); ok {
+			obj.SetName(namespace)
+			continue
+		}
+		obj.SetNamespace(namespace)
+	}
+	return objs
+}
+
+// Someone who can read ManagedWorkloads only namespace by namespace still
+// sees a workload's own forecast: the scan finds it managed in its
+// namespace, and its ManagedWorkload is read there, not only in the
+// context's namespace.
+func TestCLI_ForecastManagedListedByNamespace(t *testing.T) {
+	objs := inNamespace("orders", append(forecastCluster(), learningAPI(t, time.Now().Add(-32*time.Hour)))...)
+	c := newStatusClient(t, forbidClusterWide("managedworkloads"), objs...)
+
+	out, err := runCLI(t, c, "forecast", "api")
+
+	require.NoError(t, err, out)
+	assert.Contains(t, out, "the forecast of orders/api")
+	assert.Contains(t, out, "Hybernate's forecast, from ManagedWorkload api: learning\n")
 }

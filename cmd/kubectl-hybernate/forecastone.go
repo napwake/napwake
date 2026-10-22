@@ -142,6 +142,9 @@ func forecastNamed(ctx context.Context, out io.Writer, name string, run forecast
 	}
 	now := opts.now()
 	w := picked[0]
+	if w.mw == nil && w.Managed {
+		w.mw = managedIn(ctx, c, w.Namespace, w.Kind, w.Name)
+	}
 	if w.mw != nil {
 		w.Operator = operatorForecastOf(w.mw, now)
 	}
@@ -179,6 +182,23 @@ func managedNamed(ctx context.Context, c client.Client, ns namespaceFlags,
 		return byTarget
 	}
 	return slices.DeleteFunc(all, func(w v1alpha1.ManagedWorkload) bool { return w.Name != name })
+}
+
+// managedIn is the ManagedWorkload of the workload kind/name in namespace,
+// read there: one the scan found managed, which a user who can't list
+// ManagedWorkloads in every namespace may not have seen in the context's.
+func managedIn(ctx context.Context, c client.Client, namespace string, kind v1alpha1.TargetKind,
+	name string) *v1alpha1.ManagedWorkload {
+	var list v1alpha1.ManagedWorkloadList
+	if err := c.List(ctx, &list, client.InNamespace(namespace)); err != nil {
+		return nil
+	}
+	for i := range list.Items {
+		if t := list.Items[i].Spec.Target; t.Kind == kind && t.Name == name {
+			return &list.Items[i]
+		}
+	}
+	return nil
 }
 
 // targets reports whether the workload kind/name is the one named, by a
