@@ -1,3 +1,4 @@
+{{- include "hybernate.defaults" . -}}
 {{- /* The docs site keeps a version per minor release, and a release candidate's under next. */ -}}
 {{- $chart := semver .Chart.Version -}}
 {{- $docs := printf "https://okedeji.io/hybernate/%d.%d/" $chart.Major $chart.Minor -}}

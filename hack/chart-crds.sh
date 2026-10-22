@@ -26,6 +26,7 @@ for crd in "$src"/*.yaml; do
     exit 1
   fi
   {
+    echo '{{- include "hybernate.defaults" . -}}'
     echo '{{- if .Values.crds.install }}'
     awk '
       /^---$/ && NR == 1 { next }

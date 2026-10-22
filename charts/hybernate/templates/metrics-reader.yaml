@@ -1,3 +1,4 @@
+{{- include "hybernate.defaults" . -}}
 {{- if and .Values.metrics.enabled .Values.metrics.secure }}
 {{- /*
 The secure metrics endpoints serve only those allowed to get /metrics.
