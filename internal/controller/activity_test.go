@@ -79,6 +79,13 @@ func clockWorkload(lastActivity time.Time, target *appsv1.Deployment) *v1alpha1.
 	return workload
 }
 
+// remember puts the workload's clock in the operator's memory, as a
+// running operator's last check, which evaluated it, left it.
+func remember(r *Reconciler, workload *v1alpha1.ManagedWorkload) {
+	clock := workload.Status.Activity
+	r.activityMemo.put(workload.UID, *clock.DeepCopy(), clock.LastEvaluatedTime.Time)
+}
+
 type clockOpts struct {
 	metrics stubMetrics
 	engine  *stubForecaster
@@ -422,8 +429,40 @@ func TestActivityClock_AnOutageIsNotIdleTime(t *testing.T) {
 			}
 			check()
 			assert.Equal(t, 1, pauser.pauseCalls, "paused once idleAfter has passed with every source seeing nothing")
+			gaps := recorded(r.Recorder.(*events.FakeRecorder), ReasonUnobserved)
+			require.Len(t, gaps, 1, "the outage is announced once, as it ends")
+			// From the last evaluation, 30 seconds before the outage.
+			assert.Contains(t, gaps[0], "Hybernate couldn't read its activity for 41 minutes, "+
+				"so its idle clock starts again")
 		})
 	}
+}
+
+// A real pause held back once the clock ran out, as by a GitOps tool's
+// hour, waits awake. A gap in watching restarts its clock as for any awake
+// workload, so it's no longer idle, but nothing calls the gap activity.
+func TestActivityClock_AGapEndsAnIdleWorkloadsWaitAsAGap(t *testing.T) {
+	target := clockTarget("app:v1", nil)
+	workload := clockWorkload(fixedTime.Add(-90*time.Minute), target)
+	workload.Status.Phase = v1alpha1.PhaseIdle
+	idleSince := metav1.NewTime(fixedTime.Add(-30 * time.Minute))
+	workload.Status.LastTransitionTime = &idleSince
+	evaluated := metav1.NewTime(fixedTime.Add(-20 * time.Minute))
+	workload.Status.Activity.LastEvaluatedTime = &evaluated
+	metrics := idleCPU
+	pauser := &stubPauser{pauseDone: true}
+	r := newAutomationReconciler(t, workload, &stubForecaster{}, automationOpts{metrics: &metrics, pauser: pauser})
+	remember(r, workload)
+
+	_, err := r.reconcileAutomation(context.Background(), workload, target)
+	require.NoError(t, err)
+
+	assert.Zero(t, pauser.pauseCalls)
+	assert.Equal(t, v1alpha1.PhaseRunning, workload.Status.Phase)
+	emitted := drainEvents(t, r)
+	assert.Contains(t, emitted,
+		"Hybernate wasn't watching for 20 minutes, so its idle clock starts again; no longer idle")
+	assert.NotContains(t, emitted, ReasonActivityResumed)
 }
 
 // An activity annotation is stamped to the second, so one stamped in the
@@ -521,7 +560,7 @@ func TestActivityClock_AGapInWatchingRestartsTheClock(t *testing.T) {
 			pauser := &stubPauser{pauseDone: true}
 			r := newAutomationReconciler(t, workload, &stubForecaster{}, automationOpts{metrics: &metrics, pauser: pauser})
 			if tt.inMemory {
-				r.activityMemo.put(workload.UID, *workload.Status.Activity.DeepCopy())
+				remember(r, workload)
 			}
 
 			_, err := r.reconcileAutomation(context.Background(), workload, target)

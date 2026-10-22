@@ -44,6 +44,7 @@ const (
 	ReasonIdleVetoed             = "IdleVetoed"
 	ReasonPausedEarly            = "PausedEarly"
 	ReasonActivityResumed        = "ActivityResumed"
+	ReasonUnobserved             = "Unobserved"
 	ReasonWokeByActivity         = "WokeByActivity"
 	ReasonPaused                 = "Paused"
 	ReasonResumed                = "Resumed"

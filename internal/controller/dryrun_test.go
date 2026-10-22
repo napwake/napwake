@@ -141,7 +141,7 @@ func TestDryRun_AGapInWatchingDoesNotEndAWouldBePause(t *testing.T) {
 			now := fixedTime
 			r.clock = func() time.Time { return now }
 			if tt.inMemory {
-				r.activityMemo.put(workload.UID, *workload.Status.Activity.DeepCopy())
+				remember(r, workload)
 			}
 			check := func() {
 				t.Helper()
