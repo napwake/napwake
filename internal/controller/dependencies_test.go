@@ -307,6 +307,39 @@ func TestDependencies_DryRunWouldBePause(t *testing.T) {
 	}
 }
 
+// A dry-run dependency in a would-be pause its dependent let it begin is
+// woken with that dependent, as a live one would be: its would-be pause ends
+// when the dependent wakes, not hours later.
+func TestDependencies_DryRunWouldBePauseEndsWhenADependentWakes(t *testing.T) {
+	postgres := depWorkload("default", "postgres", v1alpha1.TargetKindStatefulSet, v1alpha1.PhaseRunning)
+	postgres.Spec.DryRun = true
+	api := depWorkload("default", "api", v1alpha1.TargetKindDeployment, v1alpha1.PhaseIdle, postgresRef())
+	api.Spec.DryRun = true
+	r := depReconciler(t, &stubPauser{pauseDone: true}, postgres, api)
+	ctx := context.Background()
+
+	_, err := r.reconcileAutomation(ctx, postgres, postgresTarget(1, 1))
+	require.NoError(t, err)
+	require.Equal(t, v1alpha1.PhaseIdle, postgres.Status.Phase, "measuring the pause api's let it make")
+
+	awake := fetch(t, r, "api")
+	awake.Status.Phase = v1alpha1.PhaseRunning
+	require.NoError(t, r.Status().Update(ctx, awake))
+	// A minute later, as the next look comes: a longer gap restarts the
+	// clock, which ends the would-be pause on its own.
+	r.clock = func() time.Time { return fixedTime.Add(time.Minute) }
+
+	postgres = fetch(t, r, "postgres")
+	_, err = r.reconcileAutomation(ctx, postgres, postgresTarget(1, 1))
+	require.NoError(t, err)
+
+	assert.Equal(t, v1alpha1.PhaseRunning, postgres.Status.Phase, "woken with api, as live")
+	assert.True(t, meta.IsStatusConditionTrue(postgres.Status.Conditions, conditionHeldByDependents))
+	require.NotNil(t, postgres.Status.DryRun)
+	assert.Equal(t, int32(1), postgres.Status.DryRun.Pauses)
+	assert.Equal(t, time.Minute, postgres.Status.DryRun.Slept.Duration, "slept from its would-be pause until api woke")
+}
+
 func TestDependencies_CycleBlocksBothWithCondition(t *testing.T) {
 	a := depWorkload("default", "a", v1alpha1.TargetKindDeployment, v1alpha1.PhaseRunning,
 		v1alpha1.DependencyRef{Kind: v1alpha1.TargetKindDeployment, Name: "b"})

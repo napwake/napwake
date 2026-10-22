@@ -736,6 +736,9 @@ func (r *Reconciler) reconcileIdleClock(ctx context.Context, workload *v1alpha1.
 	}
 
 	if held, err := r.dependencyHold(ctx, workload); held != nil || err != nil {
+		if err == nil && workload.Spec.DryRun && workload.Status.Phase == v1alpha1.PhaseIdle {
+			return r.endHeldWouldBePause(ctx, workload, held)
+		}
 		return held, err
 	}
 

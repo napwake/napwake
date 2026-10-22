@@ -35,6 +35,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/log"
 
 	v1alpha1 "github.com/okedeji/hybernate/api/v1alpha1"
+	"github.com/okedeji/hybernate/internal/cost"
 	"github.com/okedeji/hybernate/internal/human"
 	"github.com/okedeji/hybernate/internal/lifecycle"
 )
@@ -281,6 +282,32 @@ func (r *Reconciler) dependencyHold(ctx context.Context, workload *v1alpha1.Mana
 	}
 	r.setCondition(workload, conditionHeldByDependents, metav1.ConditionTrue, "DependentsAwake", h.message())
 	return &ctrl.Result{RequeueAfter: activityCheckInterval}, nil
+}
+
+// endHeldWouldBePause ends a dry-run would-be pause that something now
+// holds, such as a dependent that has woken. Live, the dependent's wake
+// would have woken this workload with it, so the pause it's measuring ends
+// now, as that wake would have ended it.
+func (r *Reconciler) endHeldWouldBePause(ctx context.Context, workload *v1alpha1.ManagedWorkload,
+	held *ctrl.Result) (*ctrl.Result, error) {
+	slept, freed, measured := r.endWouldBePauseAt(workload, r.now())
+	if err := r.transition(ctx, workload, v1alpha1.PhaseRunning, "DependentsAwake"); err != nil {
+		return nil, err
+	}
+	why := "a dependency cycle holds it"
+	if c := meta.FindStatusCondition(workload.Status.Conditions, conditionHeldByDependents); c != nil &&
+		c.Status == metav1.ConditionTrue {
+		why = c.Message
+	}
+	if !measured {
+		r.emitEvent(workload, true, "Normal", ReasonActivityResumed, actionEvaluateIdle,
+			"%s, so it would have been woken; no longer idle", why)
+		return held, nil
+	}
+	r.emitEvent(workload, true, "Normal", ReasonActivityResumed, actionEvaluateIdle,
+		"%s, so it would have been woken: would have slept %s, freeing %s; %s",
+		why, human.Duration(slept), cost.FormatDollars(freed), dryRunSummary(workload.Status.DryRun))
+	return held, nil
 }
 
 // recordHolders keeps the dependents holding the workload awake in its
