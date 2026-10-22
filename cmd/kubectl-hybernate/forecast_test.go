@@ -100,7 +100,10 @@ func TestCLI_ForecastJSON(t *testing.T) {
 	assert.Equal(t, 75, f.Threshold)
 	assert.True(t, f.IfOptedIn.Acting, "four weeks of office hours, learned at once")
 	require.NotNil(t, f.Replay)
-	assert.Equal(t, 10, f.Replay.UsedDays, "two weeks replayed")
+	// Two weeks are ten weekdays, and an eleventh run during office hours:
+	// the replay starts and ends partway through the same weekday.
+	assert.GreaterOrEqual(t, f.Replay.UsedDays, 10, "two weeks replayed")
+	assert.LessOrEqual(t, f.Replay.UsedDays, 11, "two weeks replayed")
 	assert.GreaterOrEqual(t, f.Replay.Ready, 7)
 	assert.Zero(t, f.Replay.Missed)
 	assert.LessOrEqual(t, f.Replay.WastedWakes, 1)
