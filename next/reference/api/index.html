@@ -93,7 +93,7 @@
             <div class="md-banner__inner md-grid md-typeset">
               
   
-    These docs are for Hybernate 0.2.0-rc.4, a release candidate, and may change before it's released.
+    These docs are for Hybernate 0.2.0-rc.5, a release candidate, and may change before it's released.
   
   <a href="../../.."><strong>Read the docs for the latest release.</strong></a>
 
@@ -1889,6 +1889,13 @@
 <td>Wake ahead of confident forecast demand</td>
 </tr>
 <tr>
+<td><code>idlePolicy.pauseEarly</code></td>
+<td>bool</td>
+<td>No</td>
+<td><code>false</code></td>
+<td>Pause before <code>idleAfter</code> runs out, once idle for 20 minutes, when a confident forecast expects the hours until then to be quiet and a request would wake the workload through the doorman. See <a href="../../concepts/forecasting/#pausing-early">Pausing Early</a></td>
+</tr>
+<tr>
 <td><code>dependsOn[]</code></td>
 <td><code>DependencyRef</code></td>
 <td>No</td>
@@ -2098,6 +2105,11 @@
 <td>The start of the hour the forecast expects demand in, while it keeps the workload from pausing (<code>IdleVetoed</code>)</td>
 </tr>
 <tr>
+<td><code>activity.forecastQuietUntil</code></td>
+<td>time</td>
+<td>The end of the hours the forecast expected to be quiet when it brought the workload's pause forward (<code>PausedEarly</code>), until the pause, or the would-be pause in dry-run, ends</td>
+</tr>
+<tr>
 <td><code>pause</code></td>
 <td><code>PauseStatus</code></td>
 <td>What a pause changed, from before the workload is scaled to zero until it's running again</td>
@@ -2141,6 +2153,11 @@
 <td><code>pause.wakeAnnotations</code></td>
 <td>object</td>
 <td>The activity annotations on the ManagedWorkload (<code>workload</code>) and its target (<code>target</code>) as the pause began; one that changes since wakes it</td>
+</tr>
+<tr>
+<td><code>pause.queryActiveSincePause</code></td>
+<td>bool</td>
+<td>A <a href="../../guides/prometheus-signals/#while-the-workload-is-paused">Prometheus activity query</a> has shown activity at every check since the pause began, as one can when it was requested; until a check finds every query quiet, they don't wake it</td>
 </tr>
 <tr>
 <td><code>learnedDependencies</code></td>
@@ -2196,6 +2213,11 @@
 <td><code>dryRun.resources</code></td>
 <td><code>ResourceSnapshot</code></td>
 <td>What the workload ran when the current would-be pause began</td>
+</tr>
+<tr>
+<td><code>dryRun.queryActiveSincePause</code></td>
+<td>bool</td>
+<td>A <a href="../../guides/prometheus-signals/#while-the-workload-is-paused">Prometheus activity query</a> has shown activity at every check since the would-be pause under way was asked for; until a check finds every query quiet, they don't end it, as they wouldn't wake a real pause</td>
 </tr>
 <tr>
 <td><code>prediction.dailyPhase</code>, <code>prediction.weeklyPhase</code></td>

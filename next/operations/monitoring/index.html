@@ -93,7 +93,7 @@
             <div class="md-banner__inner md-grid md-typeset">
               
   
-    These docs are for Hybernate 0.2.0-rc.4, a release candidate, and may change before it's released.
+    These docs are for Hybernate 0.2.0-rc.5, a release candidate, and may change before it's released.
   
   <a href="../../.."><strong>Read the docs for the latest release.</strong></a>
 
@@ -1844,7 +1844,7 @@
 <h3 id="scraping">Scraping<a class="headerlink" href="#scraping" title="Permanent link">&para;</a></h3>
 <p>Metrics are served over HTTPS, and only to a scraper whose token is allowed to <code>get</code> the <code>/metrics</code> URL.</p>
 <p><strong>With Helm</strong>, turn on the ServiceMonitors (one for the operator, one for the doorman) and bind your Prometheus's ServiceAccount to the chart's <code>&lt;fullname&gt;-metrics-reader</code> ClusterRole:</p>
-<div class="language-yaml highlight"><span class="filename">values.yaml</span><pre><span></span><code><span id="__span-0-1"><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a><span class="nt">metrics</span><span class="p">:</span>
+<div class="language-yaml highlight"><span class="filename">hybernate-values.yaml</span><pre><span></span><code><span id="__span-0-1"><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a><span class="nt">metrics</span><span class="p">:</span>
 </span><span id="__span-0-2"><a id="__codelineno-0-2" name="__codelineno-0-2" href="#__codelineno-0-2"></a><span class="w">  </span><span class="nt">serviceMonitor</span><span class="p">:</span>
 </span><span id="__span-0-3"><a id="__codelineno-0-3" name="__codelineno-0-3" href="#__codelineno-0-3"></a><span class="w">    </span><span class="nt">enabled</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">true</span>
 </span><span id="__span-0-4"><a id="__codelineno-0-4" name="__codelineno-0-4" href="#__codelineno-0-4"></a><span class="w">  </span><span class="nt">prometheusRule</span><span class="p">:</span>
@@ -1855,7 +1855,7 @@
 </span><span id="__span-0-9"><a id="__codelineno-0-9" name="__codelineno-0-9" href="#__codelineno-0-9"></a><span class="w">      </span><span class="nt">namespace</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">monitoring</span>
 </span></code></pre></div>
 <p><strong>With <code>install.yaml</code> or the Kustomize manifests</strong>, apply the ServiceMonitors and the alerting rules into <code>hybernate-system</code>, from the <code>config/prometheus</code> base pinned to your release, or add it to your kustomization's <code>resources</code>:</p>
-<div class="language-bash highlight"><pre><span></span><code><span id="__span-1-1"><a id="__codelineno-1-1" name="__codelineno-1-1" href="#__codelineno-1-1"></a>kubectl<span class="w"> </span>apply<span class="w"> </span>-k<span class="w"> </span><span class="s2">"https://github.com/okedeji/hybernate//config/prometheus?ref=v0.2.0-rc.4"</span>
+<div class="language-bash highlight"><pre><span></span><code><span id="__span-1-1"><a id="__codelineno-1-1" name="__codelineno-1-1" href="#__codelineno-1-1"></a>kubectl<span class="w"> </span>apply<span class="w"> </span>-k<span class="w"> </span><span class="s2">"https://github.com/okedeji/hybernate//config/prometheus?ref=v0.2.0-rc.5"</span>
 </span></code></pre></div>
 <p>and bind your Prometheus's ServiceAccount to the <code>hybernate-metrics-reader</code> ClusterRole yourself:</p>
 <div class="language-bash highlight"><pre><span></span><code><span id="__span-2-1"><a id="__codelineno-2-1" name="__codelineno-2-1" href="#__codelineno-2-1"></a>kubectl<span class="w"> </span>create<span class="w"> </span>clusterrolebinding<span class="w"> </span>hybernate-metrics-reader<span class="w"> </span><span class="se">\</span>
@@ -1863,7 +1863,7 @@
 </span></code></pre></div>
 <p>Without that binding, the targets show as down with <code>401</code> or <code>403</code>, and the <code>HybernateDown</code> and <code>HybernateDoormanDown</code> alerts fire. With <code>metrics.secure: false</code> in the chart, metrics are plain HTTP and need no binding, but anyone who can reach the port can read them.</p>
 <p><strong>Prometheus must select the ServiceMonitors.</strong> A Prometheus picks up only the ServiceMonitors that match its <code>serviceMonitorSelector</code> (and <code>serviceMonitorNamespaceSelector</code>). The chart's carry no label a Prometheus selects by default, so targets that never appear usually mean the selector doesn't match. <a href="https://github.com/prometheus-community/helm-charts/tree/main/charts/kube-prometheus-stack">kube-prometheus-stack</a> selects <code>release: &lt;its release name&gt;</code>, and its Prometheus runs as the <code>&lt;its release name&gt;-kube-prometheus-prometheus</code> ServiceAccount. For a stack installed as <code>kube-prometheus-stack</code> in <code>monitoring</code>:</p>
-<div class="language-yaml highlight"><span class="filename">values.yaml</span><pre><span></span><code><span id="__span-3-1"><a id="__codelineno-3-1" name="__codelineno-3-1" href="#__codelineno-3-1"></a><span class="nt">metrics</span><span class="p">:</span>
+<div class="language-yaml highlight"><span class="filename">hybernate-values.yaml</span><pre><span></span><code><span id="__span-3-1"><a id="__codelineno-3-1" name="__codelineno-3-1" href="#__codelineno-3-1"></a><span class="nt">metrics</span><span class="p">:</span>
 </span><span id="__span-3-2"><a id="__codelineno-3-2" name="__codelineno-3-2" href="#__codelineno-3-2"></a><span class="w">  </span><span class="nt">serviceMonitor</span><span class="p">:</span>
 </span><span id="__span-3-3"><a id="__codelineno-3-3" name="__codelineno-3-3" href="#__codelineno-3-3"></a><span class="w">    </span><span class="nt">enabled</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">true</span>
 </span><span id="__span-3-4"><a id="__codelineno-3-4" name="__codelineno-3-4" href="#__codelineno-3-4"></a><span class="w">    </span><span class="nt">additionalLabels</span><span class="p">:</span>

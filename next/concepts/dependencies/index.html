@@ -93,7 +93,7 @@
             <div class="md-banner__inner md-grid md-typeset">
               
   
-    These docs are for Hybernate 0.2.0-rc.4, a release candidate, and may change before it's released.
+    These docs are for Hybernate 0.2.0-rc.5, a release candidate, and may change before it's released.
   
   <a href="../../.."><strong>Read the docs for the latest release.</strong></a>
 
@@ -1921,7 +1921,7 @@
 </tr>
 <tr>
 <td><code>dryRun: true</code></td>
-<td>The hold still applies and is reported; nothing is changed</td>
+<td>The hold still applies and is reported; nothing is changed. A dependency in dry-run is measured as it would be live: a dependent in dry-run that would have paused (<code>Idle</code>) no longer holds it, so the whole chain's would-be pauses are counted. A dependency that pauses for real stays held by a dry-run dependent, whose pods are still up</td>
 </tr>
 <tr>
 <td>A dependent that manages nothing: one being deleted, a duplicate (<code>DuplicateTarget=True</code>), or one whose target is gone (<code>TargetAvailable=False</code>, reason <code>TargetNotFound</code>)</td>

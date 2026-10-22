@@ -93,7 +93,7 @@
             <div class="md-banner__inner md-grid md-typeset">
               
   
-    These docs are for Hybernate 0.2.0-rc.4, a release candidate, and may change before it's released.
+    These docs are for Hybernate 0.2.0-rc.5, a release candidate, and may change before it's released.
   
   <a href="../../.."><strong>Read the docs for the latest release.</strong></a>
 
@@ -1937,7 +1937,7 @@
 <li>Finishes a pause or resume an earlier reconcile started, taking a pause up again from the target's <code>hybernate.io/paused-from</code> if status lost it, and wakes a paused workload put in dry-run</li>
 <li>Leaves alone a target scaled to zero outside Hybernate</li>
 <li>Acts on a pause someone asked for with <code>kubectl hybernate pause</code></li>
-<li>Runs the activity clock and the forecast: records activity, and pauses once there has been none for <code>idleAfter</code> and no demand is forecast; for a paused workload, checks whether anything, or <code>autoResume</code>, asks it to wake</li>
+<li>Runs the activity clock and the forecast: records activity, and pauses once there has been none for <code>idleAfter</code> and no demand is forecast, or sooner with <code>pauseEarly</code> when the forecast expects quiet hours; for a paused workload, checks whether anything, or <code>autoResume</code>, asks it to wake</li>
 <li>Adds up what dry-run held back, accumulates cost, and writes status</li>
 </ol>
 <p>Each ManagedWorkload gets its own forecast engine, kept in memory and saved to the ManagedWorkload's <code>status.prediction.state</code> as it learns each hour, so it survives operator restarts and leader changes. Every reconcile is bounded by a 2-minute timeout, and <code>--max-concurrent-reconciles</code> (8 by default) workloads are reconciled at once, so one slow metrics or Prometheus query doesn't hold up another workload's wake. Reconciles wait in one queue ordered by priority: what wakes a workload (a request the doorman holds, an activity or pause annotation, a scale-up from zero) and a resume under way come first, then other changes, and the periodic checks of awake and paused workloads last, so a wake isn't queued behind every workload's metrics and Prometheus checks.</p>

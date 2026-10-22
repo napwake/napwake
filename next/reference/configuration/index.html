@@ -93,7 +93,7 @@
             <div class="md-banner__inner md-grid md-typeset">
               
   
-    These docs are for Hybernate 0.2.0-rc.4, a release candidate, and may change before it's released.
+    These docs are for Hybernate 0.2.0-rc.5, a release candidate, and may change before it's released.
   
   <a href="../../.."><strong>Read the docs for the latest release.</strong></a>
 
@@ -1956,6 +1956,11 @@
 <td><code>--default-dry-run</code></td>
 <td><code>false</code></td>
 <td>Measure opted-in workloads without pausing, unless they or their namespace set <code>hybernate.io/dry-run</code></td>
+</tr>
+<tr>
+<td><code>--default-pause-early</code></td>
+<td><code>false</code></td>
+<td>Let a confident forecast that expects quiet hours pause opted-in workloads before their <code>idleAfter</code> runs out, unless they or their namespace set <code>hybernate.io/pause-early</code>. See <a href="../../concepts/forecasting/#pausing-early">Pausing Early</a></td>
 </tr>
 <tr>
 <td><code>--default-forecast</code></td>

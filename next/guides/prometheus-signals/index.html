@@ -93,7 +93,7 @@
             <div class="md-banner__inner md-grid md-typeset">
               
   
-    These docs are for Hybernate 0.2.0-rc.4, a release candidate, and may change before it's released.
+    These docs are for Hybernate 0.2.0-rc.5, a release candidate, and may change before it's released.
   
   <a href="../../.."><strong>Read the docs for the latest release.</strong></a>
 
@@ -1137,6 +1137,17 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#while-the-workload-is-paused" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        While the Workload Is Paused
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#prometheus-endpoint" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -1797,6 +1808,17 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#while-the-workload-is-paused" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        While the Workload Is Paused
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#prometheus-endpoint" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -1905,9 +1927,9 @@
 
 
 <h1 id="prometheus-activity-guide">Prometheus Activity Guide<a class="headerlink" href="#prometheus-activity-guide" title="Permanent link">&para;</a></h1>
-<p>CPU tells Hybernate whether a workload is doing work. A Prometheus query tells it whether anyone is <em>using</em> it: requests through an ingress, open connections, messages arriving on a queue. Add queries as activity sources, and any result above zero keeps the workload awake.</p>
+<p>CPU tells Hybernate whether a workload is doing work. A Prometheus query tells it whether anyone is <em>using</em> it: requests through an ingress, open connections, messages arriving on a queue. Add queries as activity sources, and any result above zero keeps the workload awake, and <a href="#while-the-workload-is-paused">wakes it</a> once it's paused.</p>
 <h2 id="how-it-works">How It Works<a class="headerlink" href="#how-it-works" title="Permanent link">&para;</a></h2>
-<p>On every check (about once a minute while the workload is awake), Hybernate runs each query in turn as an instant query against the Prometheus API (<code>/api/v1/query</code>), stopping at the first that shows activity. Each query has 2 seconds to answer, and all of a workload's queries 5 seconds together.</p>
+<p>On every check, about once a minute whether the workload is awake or paused, Hybernate runs each query in turn as an instant query against the Prometheus API (<code>/api/v1/query</code>), stopping at the first that shows activity. Each query has 2 seconds to answer, and all of a workload's queries 5 seconds together.</p>
 <ul>
 <li><strong>Any series above zero</strong>: activity. The <a href="../../concepts/idle-detection/">activity clock</a> resets. With a series per pod, one busy pod is enough.</li>
 <li><strong>Zero, or an empty result</strong>: no activity from this source. The clock keeps running.</li>
@@ -1926,20 +1948,46 @@
 </span><span id="__span-0-3"><a id="__codelineno-0-3" name="__codelineno-0-3"></a><span class="w">    </span><span class="nt">idleAfter</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">1h</span>
 </span><span id="__span-0-4"><a id="__codelineno-0-4" name="__codelineno-0-4"></a><span class="w">    </span><span class="nt">activity</span><span class="p">:</span>
 </span><span id="__span-0-5"><a id="__codelineno-0-5" name="__codelineno-0-5"></a><span class="w">      </span><span class="nt">prometheus</span><span class="p">:</span>
-</span><span id="__span-0-6"><a id="__codelineno-0-6" name="__codelineno-0-6"></a><span class="w">        </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">promQL</span><span class="p">:</span><span class="w"> </span><span class="s">'sum(rate(nginx_ingress_controller_requests{exported_service="my-api"}[5m]))'</span>
+</span><span id="__span-0-6"><a id="__codelineno-0-6" name="__codelineno-0-6"></a><span class="w">        </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">promQL</span><span class="p">:</span><span class="w"> </span><span class="s">'sum(rate(nginx_ingress_controller_requests{exported_namespace="staging",</span><span class="nv"> </span><span class="s">exported_service="my-api"}[5m]))'</span>
 </span></code></pre></div></td></tr></table></div>
 <p>Queries are combined with the other activity sources: CPU, deploys, and activity annotations. Any one of them is enough to keep the workload awake.</p>
+<h2 id="while-the-workload-is-paused">While the Workload Is Paused<a class="headerlink" href="#while-the-workload-is-paused" title="Permanent link">&para;</a></h2>
+<p>A paused workload's queries are run about once a minute too, and one that shows activity wakes it, with a <code>WokeByActivity</code> event, <code>a Prometheus activity query shows activity, waking</code>, and <code>lastActivitySource: prometheus</code> once it's awake. It wakes the workload's <a href="../../concepts/dependencies/">dependencies</a> with it, as any wake does. That's how a workload no request reaches wakes on its own, such as a queue worker, which no Service routes requests to, with a query of its queue's length:</p>
+<div class="language-yaml highlight"><table class="highlighttable"><tr><th colspan="2" class="filename"><span class="filename">managedworkload.yaml</span></th></tr><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal"><a href="#__codelineno-1-1">1</a></span>
+<span class="normal"><a href="#__codelineno-1-2">2</a></span>
+<span class="normal"><a href="#__codelineno-1-3">3</a></span>
+<span class="normal"><a href="#__codelineno-1-4">4</a></span>
+<span class="normal"><a href="#__codelineno-1-5">5</a></span>
+<span class="normal"><a href="#__codelineno-1-6">6</a></span></pre></div></td><td class="code"><div><pre><span></span><code><span id="__span-1-1"><a id="__codelineno-1-1" name="__codelineno-1-1"></a><span class="nt">spec</span><span class="p">:</span>
+</span><span id="__span-1-2"><a id="__codelineno-1-2" name="__codelineno-1-2"></a><span class="w">  </span><span class="nt">idlePolicy</span><span class="p">:</span>
+</span><span id="__span-1-3"><a id="__codelineno-1-3" name="__codelineno-1-3"></a><span class="w">    </span><span class="nt">idleAfter</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">30m</span>
+</span><span id="__span-1-4"><a id="__codelineno-1-4" name="__codelineno-1-4"></a><span class="w">    </span><span class="nt">activity</span><span class="p">:</span>
+</span><span id="__span-1-5"><a id="__codelineno-1-5" name="__codelineno-1-5"></a><span class="w">      </span><span class="nt">prometheus</span><span class="p">:</span>
+</span><span id="__span-1-6"><a id="__codelineno-1-6" name="__codelineno-1-6"></a><span class="w">        </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">promQL</span><span class="p">:</span><span class="w"> </span><span class="s">'sum(rabbitmq_queue_messages{queue="tasks"})'</span>
+</span></code></pre></div></td></tr></table></div>
+<ul>
+<li><strong>Query something that's there while the workload is paused</strong>, such as the queue's broker. A metric the workload exports itself has no series while it has no pods, so it can't wake it.</li>
+<li><strong>A pause you ask for isn't undone by a query already showing activity.</strong> If a query shows activity as a <a href="../pause/#pause-now">requested pause</a> begins, such as a queue that still has messages on it, it wakes the workload only once a check has found it quiet and it shows activity again. An idle pause begins only once every query is quiet, so this is only ever a requested one.</li>
+<li><strong>A query that can't be evaluated never wakes the workload.</strong> <code>PrometheusAvailable</code> is <code>False</code>, as while it's awake, and its message says the queries can't wake it until Prometheus answers, and whether a request through the doorman still does.</li>
+<li><strong>The <a href="../../concepts/forecasting/#what-an-hour-records">forecast</a> learns the hours the queries watch</strong>: quiet while they find nothing, busy when they find activity. So a worker paused every night still learns whole days, and with <code>autoResume</code> is woken ahead of its first messages once the forecast acts. While the queries can't be evaluated, a workload behind the doorman goes on learning its paused hours through it, as without queries: busy if a request woke it, quiet otherwise. One without the doorman doesn't learn them until Prometheus answers.</li>
+</ul>
+<p>A workload with queries is checked every minute while it's paused, rather than every 5 minutes, so a query wakes it within a minute of its activity showing in Prometheus.</p>
 <p>Prometheus queries can't be set with an annotation. On a ManagedWorkload created from the <code>hybernate.io/managed</code> label, add them to its <code>spec.idlePolicy.activity.prometheus</code>: the opt-in controller keeps them when it updates the rest from the annotations.</p>
 <h2 id="prometheus-endpoint">Prometheus Endpoint<a class="headerlink" href="#prometheus-endpoint" title="Permanent link">&para;</a></h2>
-<p>Set the Prometheus URL with the <code>prometheus.url</code> Helm value, which passes <code>--prometheus-url</code> to the operator. Pass the chart version you have installed as <code>--version</code>, which <code>helm list -n hybernate-system</code> shows, or Helm upgrades to the newest chart too:</p>
-<div class="language-bash highlight"><pre><span></span><code><span id="__span-1-1"><a id="__codelineno-1-1" name="__codelineno-1-1" href="#__codelineno-1-1"></a>helm<span class="w"> </span>upgrade<span class="w"> </span>hybernate<span class="w"> </span>oci://ghcr.io/okedeji/charts/hybernate<span class="w"> </span>--version<span class="w"> </span>X.Y.Z<span class="w"> </span><span class="se">\</span>
-</span><span id="__span-1-2"><a id="__codelineno-1-2" name="__codelineno-1-2" href="#__codelineno-1-2"></a><span class="w">  </span>--namespace<span class="w"> </span>hybernate-system<span class="w"> </span>--reuse-values<span class="w"> </span><span class="se">\</span>
-</span><span id="__span-1-3"><a id="__codelineno-1-3" name="__codelineno-1-3" href="#__codelineno-1-3"></a><span class="w">  </span>--set<span class="w"> </span>prometheus.url<span class="o">=</span>http://prometheus.monitoring.svc.cluster.local:9090
+<p>Set the Prometheus URL with the <code>prometheus.url</code> Helm value, which passes <code>--prometheus-url</code> to the operator. Add it to your values file:</p>
+<div class="language-yaml highlight"><span class="filename">hybernate-values.yaml</span><pre><span></span><code><span id="__span-2-1"><a id="__codelineno-2-1" name="__codelineno-2-1" href="#__codelineno-2-1"></a><span class="nt">timezone</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">Europe/London</span>
+</span><span id="__span-2-2"><a id="__codelineno-2-2" name="__codelineno-2-2" href="#__codelineno-2-2"></a><span class="nt">prometheus</span><span class="p">:</span>
+</span><span id="__span-2-3"><a id="__codelineno-2-3" name="__codelineno-2-3" href="#__codelineno-2-3"></a><span class="w">  </span><span class="nt">url</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">http://prometheus.monitoring.svc.cluster.local:9090</span>
 </span></code></pre></div>
+<p>and upgrade with the file. Pass the chart version you have installed as <code>--version</code>, which <code>helm list -n hybernate-system</code> shows, or Helm upgrades to the newest chart too:</p>
+<div class="language-bash highlight"><pre><span></span><code><span id="__span-3-1"><a id="__codelineno-3-1" name="__codelineno-3-1" href="#__codelineno-3-1"></a>helm<span class="w"> </span>upgrade<span class="w"> </span>hybernate<span class="w"> </span>oci://ghcr.io/okedeji/charts/hybernate<span class="w"> </span>--version<span class="w"> </span>X.Y.Z<span class="w"> </span><span class="se">\</span>
+</span><span id="__span-3-2"><a id="__codelineno-3-2" name="__codelineno-3-2" href="#__codelineno-3-2"></a><span class="w">  </span>--namespace<span class="w"> </span>hybernate-system<span class="w"> </span>-f<span class="w"> </span>hybernate-values.yaml
+</span></code></pre></div>
+<p>Installed without a values file, see <a href="../../operations/upgrading/#keeping-your-settings">Keeping your settings</a>.</p>
 <p>The URL is the base of the Prometheus HTTP API, <code>http</code> or <code>https</code>; the operator refuses to start with any other. Hybernate appends <code>/api/v1/query</code> and keeps any path prefix, so endpoints like <code>https://mimir.example.com/prometheus</code> work as-is. It sends no credentials or headers, so a Prometheus that needs them must be reached through a proxy that adds them.</p>
 <p>With a Prometheus URL, each new workload's forecast also starts from up to four weeks of its CPU history rather than from nothing, so <code>autoResume</code> can act from the first day; see <a href="../../concepts/forecasting/#learning-from-history">Learning from history</a>. For a Prometheus that holds more than one cluster's series, <code>prometheus.selector</code> (<code>--prometheus-selector</code>), such as <code>cluster="staging"</code>, narrows that history query to this cluster. It isn't added to activity queries, which run as you write them: narrow those in the query itself.</p>
 <h2 id="when-a-query-cant-be-evaluated">When a Query Can't Be Evaluated<a class="headerlink" href="#when-a-query-cant-be-evaluated" title="Permanent link">&para;</a></h2>
-<p>If a query fails, Hybernate can't see that activity, so it doesn't pause the workload. The <code>PrometheusAvailable</code> condition says why:</p>
+<p>If a query fails, Hybernate can't see that activity, so it doesn't pause the workload, and a paused one isn't woken by it. The <code>PrometheusAvailable</code> condition says why:</p>
 <table>
 <thead>
 <tr>
@@ -1958,8 +2006,8 @@
 </tr>
 </tbody>
 </table>
-<div class="language-bash highlight"><pre><span></span><code><span id="__span-2-1"><a id="__codelineno-2-1" name="__codelineno-2-1" href="#__codelineno-2-1"></a>kubectl<span class="w"> </span>get<span class="w"> </span>managedworkload<span class="w"> </span>my-api<span class="w"> </span>-n<span class="w"> </span>staging<span class="w"> </span><span class="se">\</span>
-</span><span id="__span-2-2"><a id="__codelineno-2-2" name="__codelineno-2-2" href="#__codelineno-2-2"></a><span class="w">  </span>-o<span class="w"> </span><span class="nv">jsonpath</span><span class="o">=</span><span class="s1">'{.status.conditions[?(@.type=="PrometheusAvailable")]}'</span>
+<div class="language-bash highlight"><pre><span></span><code><span id="__span-4-1"><a id="__codelineno-4-1" name="__codelineno-4-1" href="#__codelineno-4-1"></a>kubectl<span class="w"> </span>get<span class="w"> </span>managedworkload<span class="w"> </span>my-api<span class="w"> </span>-n<span class="w"> </span>staging<span class="w"> </span><span class="se">\</span>
+</span><span id="__span-4-2"><a id="__codelineno-4-2" name="__codelineno-4-2" href="#__codelineno-4-2"></a><span class="w">  </span>-o<span class="w"> </span><span class="nv">jsonpath</span><span class="o">=</span><span class="s1">'{.status.conditions[?(@.type=="PrometheusAvailable")]}'</span>
 </span></code></pre></div>
 <p>The condition only appears on workloads that configure Prometheus queries.</p>
 <p>A query that answers but matches no series at all looks just like a quiet workload, and that's also what a misspelt metric or label name gives. Hybernate can't tell the two apart, so the workload pauses on its other sources as usual, but a query that has matched no series since it was first evaluated is pointed out: <code>PrometheusQueryEmpty=True</code>, reason <code>NoSeries</code>, with the queries in its message, and a <code>PrometheusQueryEmpty</code> warning event when it begins. It clears once the query matches a series, even one at zero. A counter that's only created on the first request, as many client libraries' labelled counters are, also matches nothing until then; once it exists the condition clears. What a query has matched is remembered in memory, so after an operator restart a query is checked again from its first evaluation.</p>
@@ -1975,7 +2023,7 @@
 <tbody>
 <tr>
 <td>Requests through ingress-nginx</td>
-<td><code>sum(rate(nginx_ingress_controller_requests{exported_service="api"}[5m]))</code></td>
+<td><code>sum(rate(nginx_ingress_controller_requests{exported_namespace="staging", exported_service="api"}[5m]))</code></td>
 </tr>
 <tr>
 <td>Requests seen by the app</td>
@@ -1995,19 +2043,21 @@
 </tr>
 </tbody>
 </table>
+<p>ingress-nginx labels each request with the namespace and Service it went to. Scraped by the Prometheus Operator, which keeps its own <code>namespace</code> and <code>service</code> labels for the scrape's target, they become <code>exported_namespace</code> and <code>exported_service</code>. Give the namespace as well as the Service: preview environments often share Service names, and another one's traffic would keep this workload awake.</p>
+<p>A request-rate query is also how <a href="../dry-run/#what-dry-run-measured">dry-run</a> sees a workload's requests: while it runs, nothing goes through the doorman, so without one a request counts only through the CPU it uses.</p>
 <h2 id="writing-good-queries">Writing Good Queries<a class="headerlink" href="#writing-good-queries" title="Permanent link">&para;</a></h2>
 <h3 id="use-a-rate-window-that-matches-how-quiet-idle-is">Use a rate window that matches how quiet "idle" is<a class="headerlink" href="#use-a-rate-window-that-matches-how-quiet-idle-is" title="Permanent link">&para;</a></h3>
 <p><code>rate(...[5m])</code> stays above zero for about five minutes after the last request. That's usually what you want: a single request keeps the workload awake, and the clock starts once traffic has stopped.</p>
 <h3 id="exclude-traffic-that-isnt-people">Exclude traffic that isn't people<a class="headerlink" href="#exclude-traffic-that-isnt-people" title="Permanent link">&para;</a></h3>
-<p>Health checks, uptime monitors, and scrapers keep a workload awake if the query counts them. Filter them out by path or user agent where your metrics allow it:</p>
-<div class="language-promql highlight"><pre><span></span><code><span id="__span-3-1"><a id="__codelineno-3-1" name="__codelineno-3-1" href="#__codelineno-3-1"></a><span class="k">sum</span><span class="o">(</span><span class="kr">rate</span><span class="o">(</span><span class="nv">nginx_ingress_controller_requests</span><span class="p">{</span><span class="nl">exported_service</span><span class="o">=</span><span class="p">"</span><span class="s">api</span><span class="p">",</span><span class="w"> </span><span class="nl">path</span><span class="o">!~</span><span class="p">"</span><span class="s">/healthz|/metrics</span><span class="p">"}[</span><span class="s">5m</span><span class="p">]</span><span class="o">))</span>
+<p>Health checks, uptime monitors, and scrapers keep a workload awake if the query counts them, and wake it once it's paused. Filter them out by path or user agent where your metrics allow it:</p>
+<div class="language-promql highlight"><pre><span></span><code><span id="__span-5-1"><a id="__codelineno-5-1" name="__codelineno-5-1" href="#__codelineno-5-1"></a><span class="k">sum</span><span class="o">(</span><span class="kr">rate</span><span class="o">(</span><span class="nv">nginx_ingress_controller_requests</span><span class="p">{</span><span class="nl">exported_namespace</span><span class="o">=</span><span class="p">"</span><span class="s">staging</span><span class="p">",</span><span class="w"> </span><span class="nl">exported_service</span><span class="o">=</span><span class="p">"</span><span class="s">api</span><span class="p">",</span><span class="w"> </span><span class="nl">path</span><span class="o">!~</span><span class="p">"</span><span class="s">/healthz|/metrics</span><span class="p">"}[</span><span class="s">5m</span><span class="p">]</span><span class="o">))</span>
 </span></code></pre></div>
 <h3 id="test-the-query-directly">Test the query directly<a class="headerlink" href="#test-the-query-directly" title="Permanent link">&para;</a></h3>
-<div class="language-bash highlight"><pre><span></span><code><span id="__span-4-1"><a id="__codelineno-4-1" name="__codelineno-4-1" href="#__codelineno-4-1"></a>curl<span class="w"> </span>-s<span class="w"> </span><span class="s1">'http://prometheus:9090/api/v1/query'</span><span class="w"> </span><span class="se">\</span>
-</span><span id="__span-4-2"><a id="__codelineno-4-2" name="__codelineno-4-2" href="#__codelineno-4-2"></a><span class="w">  </span>--data-urlencode<span class="w"> </span><span class="s1">'query=sum(rate(nginx_ingress_controller_requests{exported_service="api"}[5m]))'</span>
+<div class="language-bash highlight"><pre><span></span><code><span id="__span-6-1"><a id="__codelineno-6-1" name="__codelineno-6-1" href="#__codelineno-6-1"></a>curl<span class="w"> </span>-s<span class="w"> </span><span class="s1">'http://prometheus:9090/api/v1/query'</span><span class="w"> </span><span class="se">\</span>
+</span><span id="__span-6-2"><a id="__codelineno-6-2" name="__codelineno-6-2" href="#__codelineno-6-2"></a><span class="w">  </span>--data-urlencode<span class="w"> </span><span class="s1">'query=sum(rate(nginx_ingress_controller_requests{exported_namespace="staging", exported_service="api"}[5m]))'</span>
 </span></code></pre></div>
 <p>Then check what kept the workload awake:</p>
-<div class="language-bash highlight"><pre><span></span><code><span id="__span-5-1"><a id="__codelineno-5-1" name="__codelineno-5-1" href="#__codelineno-5-1"></a>kubectl<span class="w"> </span>get<span class="w"> </span>managedworkload<span class="w"> </span>my-api<span class="w"> </span>-n<span class="w"> </span>staging<span class="w"> </span>-o<span class="w"> </span><span class="nv">jsonpath</span><span class="o">=</span><span class="s1">'{.status.activity.lastActivitySource}'</span>
+<div class="language-bash highlight"><pre><span></span><code><span id="__span-7-1"><a id="__codelineno-7-1" name="__codelineno-7-1" href="#__codelineno-7-1"></a>kubectl<span class="w"> </span>get<span class="w"> </span>managedworkload<span class="w"> </span>my-api<span class="w"> </span>-n<span class="w"> </span>staging<span class="w"> </span>-o<span class="w"> </span><span class="nv">jsonpath</span><span class="o">=</span><span class="s1">'{.status.activity.lastActivitySource}'</span>
 </span></code></pre></div>
 <p><code>prometheus</code> means a query was the most recent source of activity.</p>
 

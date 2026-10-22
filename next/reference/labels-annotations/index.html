@@ -93,7 +93,7 @@
             <div class="md-banner__inner md-grid md-typeset">
               
   
-    These docs are for Hybernate 0.2.0-rc.4, a release candidate, and may change before it's released.
+    These docs are for Hybernate 0.2.0-rc.5, a release candidate, and may change before it's released.
   
   <a href="../../.."><strong>Read the docs for the latest release.</strong></a>
 
@@ -1918,7 +1918,7 @@
 <div class="language-bash highlight"><pre><span></span><code><span id="__span-2-1"><a id="__codelineno-2-1" name="__codelineno-2-1" href="#__codelineno-2-1"></a>kubectl<span class="w"> </span>get<span class="w"> </span>managedworkloads<span class="w"> </span>-l<span class="w"> </span>hybernate.io/from-label<span class="o">=</span><span class="nb">true</span><span class="w"> </span>--all-namespaces
 </span></code></pre></div>
 <h2 id="settings-annotations">Settings Annotations<a class="headerlink" href="#settings-annotations" title="Permanent link">&para;</a></h2>
-<p>Set on an opted-in Deployment or StatefulSet, or on its Namespace to apply to every workload in it. Each setting is the first value that can be read from: the workload's annotation, its namespace's, the <a href="../helm-values/#opt-in-defaults">Helm defaults</a> (only <code>idle-after</code>, <code>cpu-threshold</code>, <code>dry-run</code> and <code>forecast</code> have one), and the built-in default. See <a href="../../guides/opt-in/#settings">Opting In</a>.</p>
+<p>Set on an opted-in Deployment or StatefulSet, or on its Namespace to apply to every workload in it. Each setting is the first value that can be read from: the workload's annotation, its namespace's, the <a href="../helm-values/#opt-in-defaults">Helm defaults</a> (only <code>idle-after</code>, <code>cpu-threshold</code>, <code>dry-run</code>, <code>pause-early</code> and <code>forecast</code> have one), and the built-in default. See <a href="../../guides/opt-in/#settings">Opting In</a>.</p>
 <table>
 <thead>
 <tr>
@@ -1952,6 +1952,12 @@
 <td>exactly <code>"true"</code> or <code>"false"</code></td>
 <td><code>"false"</code></td>
 <td>Wake ahead of forecast demand</td>
+</tr>
+<tr>
+<td><code>hybernate.io/pause-early</code></td>
+<td>exactly <code>"true"</code> or <code>"false"</code></td>
+<td><code>"false"</code></td>
+<td>Pause before <code>idle-after</code> runs out, once idle for 20 minutes, when a confident forecast expects the hours until then to be quiet and a request would wake the workload through the doorman. Sets <code>spec.idlePolicy.pauseEarly</code>. See <a href="../../concepts/forecasting/#pausing-early">Pausing Early</a></td>
 </tr>
 <tr>
 <td><code>hybernate.io/forecast</code></td>

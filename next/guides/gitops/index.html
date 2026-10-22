@@ -93,7 +93,7 @@
             <div class="md-banner__inner md-grid md-typeset">
               
   
-    These docs are for Hybernate 0.2.0-rc.4, a release candidate, and may change before it's released.
+    These docs are for Hybernate 0.2.0-rc.5, a release candidate, and may change before it's released.
   
   <a href="../../.."><strong>Read the docs for the latest release.</strong></a>
 
@@ -1226,6 +1226,17 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#opting-in-a-whole-namespace" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Opting in a whole namespace
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#ending-dry-run" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -1847,6 +1858,17 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#opting-in-a-whole-namespace" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Opting in a whole namespace
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#ending-dry-run" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -1986,6 +2008,8 @@
 </span></code></pre></div></td></tr></table></div>
 <h2 id="kluctl">Kluctl<a class="headerlink" href="#kluctl" title="Permanent link">&para;</a></h2>
 <p>Leave <code>replicas</code> out of the workload's manifest in Git. For a Helm chart that always sets them, remove them with a patch in the deployment item's <code>kustomization.yaml</code>. Kluctl's conflict settings, such as <code>kluctl.io/ignore-conflicts-manager</code>, can't help: a scale through the scale subresource leaves the replicas with no field manager, so Kluctl's next deploy sets them back without a conflict to ignore.</p>
+<h2 id="opting-in-a-whole-namespace">Opting in a whole namespace<a class="headerlink" href="#opting-in-a-whole-namespace" title="Permanent link">&para;</a></h2>
+<p>A namespace is opted in by a label on the Namespace, which isn't in Git when the tool creates it: an Argo CD Application with <code>CreateNamespace=true</code>, or a Flux HelmRelease with <code>install.createNamespace</code>. For Argo CD, put the label in the Application's <code>managedNamespaceMetadata</code>; for Flux, add the Namespace to the kustomization. See <a href="../opt-in/#a-whole-namespace">A whole namespace</a>.</p>
 <h2 id="ending-dry-run">Ending dry-run<a class="headerlink" href="#ending-dry-run" title="Permanent link">&para;</a></h2>
 <p>A workload's dry-run lives in its <code>hybernate.io/dry-run</code> annotation, its namespace's, or a ManagedWorkload's <code>spec.dryRun</code>. When Git has that setting, change it there: a change made in the cluster is put back on the tool's next sync. <a href="../../getting-started/kubectl-plugin/#enable-a-workload"><code>kubectl hybernate enable</code></a> knows this. It reads who owns the setting from the field managers the API server records, so it finds Argo CD whether it tracks apps by label (<code>app.kubernetes.io/instance</code>, its default) or by annotation, Flux whether it applies a Kustomization or a HelmRelease, and Fleet, kapp and Kluctl. For those it changes nothing, prints the change to make in Git, and exits non-zero; <code>--force</code> changes the cluster anyway. When the tool applies the workload but Git doesn't have the annotation, nothing would put it back, so <code>enable</code> sets it.</p>
 <p>A chart installed with plain <code>helm</code> is different: Helm only applies it when you run it, so <code>enable</code> sets the annotation and warns that the next <code>helm upgrade</code> restores the chart's value. Set it to <code>"false"</code> in the chart's values too.</p>

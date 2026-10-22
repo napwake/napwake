@@ -93,7 +93,7 @@
             <div class="md-banner__inner md-grid md-typeset">
               
   
-    These docs are for Hybernate 0.2.0-rc.4, a release candidate, and may change before it's released.
+    These docs are for Hybernate 0.2.0-rc.5, a release candidate, and may change before it's released.
   
   <a href="../../.."><strong>Read the docs for the latest release.</strong></a>
 
@@ -1612,6 +1612,17 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#keeping-your-settings" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Keeping your settings
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#narrowing-watchnamespaces" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -1764,6 +1775,17 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#keeping-your-settings" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Keeping your settings
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#narrowing-watchnamespaces" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -1871,11 +1893,13 @@
 <div class="tabbed-set tabbed-alternate" data-tabs="1:4"><input checked="checked" id="__tabbed_1_1" name="__tabbed_1" type="radio" /><input id="__tabbed_1_2" name="__tabbed_1" type="radio" /><input id="__tabbed_1_3" name="__tabbed_1" type="radio" /><input id="__tabbed_1_4" name="__tabbed_1" type="radio" /><div class="tabbed-labels"><label for="__tabbed_1_1">Helm</label><label for="__tabbed_1_2">kubectl</label><label for="__tabbed_1_3">Kustomize</label><label for="__tabbed_1_4">Argo CD or Flux</label></div>
 <div class="tabbed-content">
 <div class="tabbed-block">
+<p>With the values file you install with:</p>
 <div class="language-bash highlight"><pre><span></span><code><span id="__span-0-1"><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a>helm<span class="w"> </span>upgrade<span class="w"> </span>hybernate<span class="w"> </span>oci://ghcr.io/okedeji/charts/hybernate<span class="w"> </span><span class="se">\</span>
 </span><span id="__span-0-2"><a id="__codelineno-0-2" name="__codelineno-0-2" href="#__codelineno-0-2"></a><span class="w">  </span>--version<span class="w"> </span>X.Y.Z<span class="w"> </span><span class="se">\</span>
-</span><span id="__span-0-3"><a id="__codelineno-0-3" name="__codelineno-0-3" href="#__codelineno-0-3"></a><span class="w">  </span>--namespace<span class="w"> </span>hybernate-system
+</span><span id="__span-0-3"><a id="__codelineno-0-3" name="__codelineno-0-3" href="#__codelineno-0-3"></a><span class="w">  </span>--namespace<span class="w"> </span>hybernate-system<span class="w"> </span><span class="se">\</span>
+</span><span id="__span-0-4"><a id="__codelineno-0-4" name="__codelineno-0-4" href="#__codelineno-0-4"></a><span class="w">  </span>-f<span class="w"> </span>hybernate-values.yaml
 </span></code></pre></div>
-<p>The chart is only published as an OCI artifact: there's no <code>helm repo</code> to update. Its version has no <code>v</code>. The CRD is a template in the chart, so <code>helm upgrade</code> upgrades it too, unless you installed with <code>crds.install: false</code> and manage it yourself.</p>
+<p>Give it the file every time, or no values at all: given <code>--set</code> alone, Helm drops the values set before; see <a href="#keeping-your-settings">Keeping your settings</a>. The chart is only published as an OCI artifact: there's no <code>helm repo</code> to update. Its version has no <code>v</code>. The CRD is a template in the chart, so <code>helm upgrade</code> upgrades it too, unless you installed with <code>crds.install: false</code> and manage it yourself.</p>
 </div>
 <div class="tabbed-block">
 <div class="language-bash highlight"><pre><span></span><code><span id="__span-1-1"><a id="__codelineno-1-1" name="__codelineno-1-1" href="#__codelineno-1-1"></a>kubectl<span class="w"> </span>apply<span class="w"> </span>-f<span class="w"> </span>https://github.com/okedeji/hybernate/releases/download/vX.Y.Z/install.yaml
@@ -1887,7 +1911,7 @@
 </span></code></pre></div>
 </div>
 <div class="tabbed-block">
-<p>Change the Application's <code>targetRevision</code>, or the <code>OCIRepository</code>'s <code>tag</code>, to <code>X.Y.Z</code> in Git, and let it sync.</p>
+<p>Change the Application's <code>targetRevision</code>, or the <code>OCIRepository</code>'s <code>tag</code>, to <code>X.Y.Z</code> in Git, and let it sync. To hand an install made with <code>helm install</code> to Argo CD or Flux, see <a href="../../getting-started/installation/#moving-a-helm-install-to-argo-cd-or-flux">Moving a Helm install to Argo CD or Flux</a>.</p>
 </div>
 </div>
 </div>
@@ -1904,6 +1928,26 @@
 </span></code></pre></div>
 </li>
 </ol>
+<h2 id="keeping-your-settings">Keeping your settings<a class="headerlink" href="#keeping-your-settings" title="Permanent link">&para;</a></h2>
+<p>Helm reuses a release's values only on an upgrade given none. Given any, with <code>--set</code> or <code>-f</code>, it starts again from the chart's defaults and adds only those. On a release installed with <code>timezone</code> and <code>prometheus.url</code>, an upgrade with <code>--set timezone=America/New_York</code> sets the time zone and drops <code>prometheus.url</code>, and the next upgrade with <code>--set</code> drops whatever that one didn't name. Helm 3 and Helm 4 do the same.</p>
+<p>So keep every value you set in one file, give it to <code>helm install</code> and every <code>helm upgrade</code>, and change a setting by changing the file. The file is the whole of your settings, in one place you can review, the same in every Helm, and it's what you'd commit to Git: Argo CD and Flux take the same values, so <a href="../../getting-started/installation/#moving-a-helm-install-to-argo-cd-or-flux">moving to one</a> is a copy. Installed with <code>--set</code>, write the values the release has now to a file first:</p>
+<div class="language-bash highlight"><pre><span></span><code><span id="__span-5-1"><a id="__codelineno-5-1" name="__codelineno-5-1" href="#__codelineno-5-1"></a>helm<span class="w"> </span>get<span class="w"> </span>values<span class="w"> </span>hybernate<span class="w"> </span>-n<span class="w"> </span>hybernate-system<span class="w"> </span>-o<span class="w"> </span>yaml<span class="w"> </span>&gt;<span class="w"> </span>hybernate-values.yaml
+</span></code></pre></div>
+<p>A release installed with no values writes <code>null</code>; replace it with your settings.</p>
+<p>To change a setting, such as the <a href="../../getting-started/installation/#time-zone">time zone</a>, change it in the file and upgrade with it, at the version you run, which <code>helm list -n hybernate-system</code> shows in its <code>CHART</code> column, so the change doesn't upgrade Hybernate too:</p>
+<div class="language-bash highlight"><pre><span></span><code><span id="__span-6-1"><a id="__codelineno-6-1" name="__codelineno-6-1" href="#__codelineno-6-1"></a>helm<span class="w"> </span>upgrade<span class="w"> </span>hybernate<span class="w"> </span>oci://ghcr.io/okedeji/charts/hybernate<span class="w"> </span><span class="se">\</span>
+</span><span id="__span-6-2"><a id="__codelineno-6-2" name="__codelineno-6-2" href="#__codelineno-6-2"></a><span class="w">  </span>--version<span class="w"> </span>X.Y.Z<span class="w"> </span><span class="se">\</span>
+</span><span id="__span-6-3"><a id="__codelineno-6-3" name="__codelineno-6-3" href="#__codelineno-6-3"></a><span class="w">  </span>--namespace<span class="w"> </span>hybernate-system<span class="w"> </span><span class="se">\</span>
+</span><span id="__span-6-4"><a id="__codelineno-6-4" name="__codelineno-6-4" href="#__codelineno-6-4"></a><span class="w">  </span>-f<span class="w"> </span>hybernate-values.yaml
+</span></code></pre></div>
+<p>Without a file, <code>--reuse-values</code> keeps the release's values and adds yours:</p>
+<div class="language-bash highlight"><pre><span></span><code><span id="__span-7-1"><a id="__codelineno-7-1" name="__codelineno-7-1" href="#__codelineno-7-1"></a>helm<span class="w"> </span>upgrade<span class="w"> </span>hybernate<span class="w"> </span>oci://ghcr.io/okedeji/charts/hybernate<span class="w"> </span><span class="se">\</span>
+</span><span id="__span-7-2"><a id="__codelineno-7-2" name="__codelineno-7-2" href="#__codelineno-7-2"></a><span class="w">  </span>--version<span class="w"> </span>X.Y.Z<span class="w"> </span><span class="se">\</span>
+</span><span id="__span-7-3"><a id="__codelineno-7-3" name="__codelineno-7-3" href="#__codelineno-7-3"></a><span class="w">  </span>--namespace<span class="w"> </span>hybernate-system<span class="w"> </span><span class="se">\</span>
+</span><span id="__span-7-4"><a id="__codelineno-7-4" name="__codelineno-7-4" href="#__codelineno-7-4"></a><span class="w">  </span>--reuse-values<span class="w"> </span><span class="se">\</span>
+</span><span id="__span-7-5"><a id="__codelineno-7-5" name="__codelineno-7-5" href="#__codelineno-7-5"></a><span class="w">  </span>--set<span class="w"> </span><span class="nv">timezone</span><span class="o">=</span>America/New_York
+</span></code></pre></div>
+<p>Upgrading to a newer version with it, Helm renders with the installed version's defaults rather than the new one's, and those lack every value added since. From 0.2.0 on, the chart fills those in from its own defaults, so upgrading with <code>--reuse-values</code> from any 0.2.0 release candidate works, in Helm 3 and Helm 4 alike. From 0.1.x it doesn't: 0.1.x's values have settings 0.2.0 no longer takes, such as <code>grafana</code>, so install 0.2.0 new, as <a href="https://github.com/okedeji/hybernate/blob/main/CHANGELOG.md">0.2.0's changelog</a> says. What <code>--reuse-values</code> still keeps is the installed version's default for each value both versions have, so a default the new version changes isn't picked up. Helm keeps those older defaults with the release, too, and goes on reusing them, which has one more catch: after such an upgrade, a default you remove by setting it to <code>null</code> doesn't stay removed. Helm 4 renders the default for the upgrade that sets it to <code>null</code>, and removes it from the next; Helm 3 brings it back at every other <code>--reuse-values</code> upgrade. To remove a default after such an upgrade, upgrade once with the values file, or with <code>--reset-then-reuse-values</code> (Helm 3.14 and later), which renders with the new version's defaults and keeps your values over them. From then on, <code>--reuse-values</code> keeps a removed default removed.</p>
 <h2 id="narrowing-watchnamespaces">Narrowing watchNamespaces<a class="headerlink" href="#narrowing-watchnamespaces" title="Permanent link">&para;</a></h2>
 <p>Upgrading to a <code>watchNamespaces</code> that leaves out a namespace, or setting it where it was empty, removes the operator's and the doorman's Roles in the namespaces left out, and stops them watching there. Workloads paused in those namespaces would stay at zero replicas, their Services still routed to doorman ports nothing serves, and their ManagedWorkloads' finalizers would never run.</p>
 <p>So the chart refuses it. A pre-upgrade hook, the <code>&lt;fullname&gt;-upgrade-guard</code> Job, lists the ManagedWorkloads the running operator took on, with its <code>hybernate.io/cleanup</code> finalizer, in namespaces the new <code>watchNamespaces</code> leaves out, and fails if there are any, before anything changes: <code>helm upgrade</code> stops with <code>job hybernate-upgrade-guard failed</code>, or with Helm 4 <code>resource Job/hybernate-system/hybernate-upgrade-guard not ready</code>, and Helm 3.18 and later print them in a message whose first sentence, <code>Hybernate refuses this upgrade: ...</code>, names them and what to do, followed by the steps below; <code>kubectl logs job/hybernate-upgrade-guard -n hybernate-system</code> shows the same. It waits two and a half minutes for any being deleted first. <code>helm rollback</code> to a revision with a narrower <code>watchNamespaces</code> is guarded the same way.</p>
@@ -1912,7 +1956,7 @@
 <li>Remove the <code>hybernate.io/managed</code> label from the workloads and namespaces there.</li>
 <li>
 <p>Delete the ManagedWorkloads you wrote yourself there:</p>
-<div class="language-bash highlight"><pre><span></span><code><span id="__span-5-1"><a id="__codelineno-5-1" name="__codelineno-5-1" href="#__codelineno-5-1"></a>kubectl<span class="w"> </span>delete<span class="w"> </span>managedworkloads<span class="w"> </span>--all<span class="w"> </span>-n<span class="w"> </span>preview-1
+<div class="language-bash highlight"><pre><span></span><code><span id="__span-8-1"><a id="__codelineno-8-1" name="__codelineno-8-1" href="#__codelineno-8-1"></a>kubectl<span class="w"> </span>delete<span class="w"> </span>managedworkloads<span class="w"> </span>--all<span class="w"> </span>-n<span class="w"> </span>preview-1
 </span></code></pre></div>
 </li>
 <li>
@@ -1938,19 +1982,19 @@
 </ul>
 <h3 id="the-forecast-setting-from-before-020">The forecast setting, from before 0.2.0<a class="headerlink" href="#the-forecast-setting-from-before-020" title="Permanent link">&para;</a></h3>
 <p>Before 0.2.0, <code>spec.prediction.confidence</code> defaulted to <code>75</code>, so every ManagedWorkload created then has it stored, and a confidence overrides the <a href="../../concepts/forecasting/#forecast-setting">forecast setting</a>. On one created from the label, Hybernate drops a stored <code>75</code>, balanced's own threshold, so <code>hybernate.io/forecast</code> and <code>defaults.forecast</code> apply. On one you wrote, remove it for <code>spec.prediction.mode</code> to apply:</p>
-<div class="language-bash highlight"><pre><span></span><code><span id="__span-6-1"><a id="__codelineno-6-1" name="__codelineno-6-1" href="#__codelineno-6-1"></a>kubectl<span class="w"> </span>patch<span class="w"> </span>managedworkload<span class="w"> </span>my-api<span class="w"> </span>-n<span class="w"> </span>staging<span class="w"> </span>--type<span class="o">=</span>json<span class="w"> </span><span class="se">\</span>
-</span><span id="__span-6-2"><a id="__codelineno-6-2" name="__codelineno-6-2" href="#__codelineno-6-2"></a><span class="w">  </span>-p<span class="w"> </span><span class="s1">'[{"op":"remove","path":"/spec/prediction/confidence"}]'</span>
+<div class="language-bash highlight"><pre><span></span><code><span id="__span-9-1"><a id="__codelineno-9-1" name="__codelineno-9-1" href="#__codelineno-9-1"></a>kubectl<span class="w"> </span>patch<span class="w"> </span>managedworkload<span class="w"> </span>my-api<span class="w"> </span>-n<span class="w"> </span>staging<span class="w"> </span>--type<span class="o">=</span>json<span class="w"> </span><span class="se">\</span>
+</span><span id="__span-9-2"><a id="__codelineno-9-2" name="__codelineno-9-2" href="#__codelineno-9-2"></a><span class="w">  </span>-p<span class="w"> </span><span class="s1">'[{"op":"remove","path":"/spec/prediction/confidence"}]'</span>
 </span></code></pre></div>
 <h2 id="rollback">Rollback<a class="headerlink" href="#rollback" title="Permanent link">&para;</a></h2>
 <p>If something goes wrong:</p>
 <div class="tabbed-set tabbed-alternate" data-tabs="2:3"><input checked="checked" id="__tabbed_2_1" name="__tabbed_2" type="radio" /><input id="__tabbed_2_2" name="__tabbed_2" type="radio" /><input id="__tabbed_2_3" name="__tabbed_2" type="radio" /><div class="tabbed-labels"><label for="__tabbed_2_1">Helm</label><label for="__tabbed_2_2">kubectl</label><label for="__tabbed_2_3">Kustomize, Argo CD or Flux</label></div>
 <div class="tabbed-content">
 <div class="tabbed-block">
-<div class="language-bash highlight"><pre><span></span><code><span id="__span-7-1"><a id="__codelineno-7-1" name="__codelineno-7-1" href="#__codelineno-7-1"></a>helm<span class="w"> </span>rollback<span class="w"> </span>hybernate<span class="w"> </span>-n<span class="w"> </span>hybernate-system
+<div class="language-bash highlight"><pre><span></span><code><span id="__span-10-1"><a id="__codelineno-10-1" name="__codelineno-10-1" href="#__codelineno-10-1"></a>helm<span class="w"> </span>rollback<span class="w"> </span>hybernate<span class="w"> </span>-n<span class="w"> </span>hybernate-system
 </span></code></pre></div>
 </div>
 <div class="tabbed-block">
-<div class="language-bash highlight"><pre><span></span><code><span id="__span-8-1"><a id="__codelineno-8-1" name="__codelineno-8-1" href="#__codelineno-8-1"></a>kubectl<span class="w"> </span>apply<span class="w"> </span>-f<span class="w"> </span>https://github.com/okedeji/hybernate/releases/download/vPREVIOUS/install.yaml
+<div class="language-bash highlight"><pre><span></span><code><span id="__span-11-1"><a id="__codelineno-11-1" name="__codelineno-11-1" href="#__codelineno-11-1"></a>kubectl<span class="w"> </span>apply<span class="w"> </span>-f<span class="w"> </span>https://github.com/okedeji/hybernate/releases/download/vPREVIOUS/install.yaml
 </span></code></pre></div>
 </div>
 <div class="tabbed-block">

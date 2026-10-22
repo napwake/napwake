@@ -93,7 +93,7 @@
             <div class="md-banner__inner md-grid md-typeset">
               
   
-    These docs are for Hybernate 0.2.0-rc.4, a release candidate, and may change before it's released.
+    These docs are for Hybernate 0.2.0-rc.5, a release candidate, and may change before it's released.
   
   <a href="../../.."><strong>Read the docs for the latest release.</strong></a>
 
@@ -2041,7 +2041,7 @@
 </span><span id="__span-1-13"><a id="__codelineno-1-13" name="__codelineno-1-13"></a><span class="w">    </span><span class="nt">activity</span><span class="p">:</span>
 </span><span id="__span-1-14"><a id="__codelineno-1-14" name="__codelineno-1-14"></a><span class="w">      </span><span class="nt">cpuThreshold</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">10</span>
 </span><span id="__span-1-15"><a id="__codelineno-1-15" name="__codelineno-1-15"></a><span class="w">      </span><span class="nt">prometheus</span><span class="p">:</span>
-</span><span id="__span-1-16"><a id="__codelineno-1-16" name="__codelineno-1-16"></a><span class="w">        </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">promQL</span><span class="p">:</span><span class="w"> </span><span class="s">'sum(rate(nginx_ingress_controller_requests{exported_service="my-api"}[5m]))'</span>
+</span><span id="__span-1-16"><a id="__codelineno-1-16" name="__codelineno-1-16"></a><span class="w">        </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">promQL</span><span class="p">:</span><span class="w"> </span><span class="s">'sum(rate(nginx_ingress_controller_requests{exported_namespace="staging",</span><span class="nv"> </span><span class="s">exported_service="my-api"}[5m]))'</span>
 </span><span id="__span-1-17"><a id="__codelineno-1-17" name="__codelineno-1-17"></a><span class="w">    </span><span class="nt">autoResume</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">true</span>
 </span><span id="__span-1-18"><a id="__codelineno-1-18" name="__codelineno-1-18"></a>
 </span><span id="__span-1-19"><a id="__codelineno-1-19" name="__codelineno-1-19"></a><span class="w">  </span><span class="nt">wake</span><span class="p">:</span>
@@ -2122,6 +2122,12 @@
 <td>bool</td>
 <td><code>false</code></td>
 <td>Wake ahead of the demand a confident forecast predicts</td>
+</tr>
+<tr>
+<td><code>pauseEarly</code></td>
+<td>bool</td>
+<td><code>false</code></td>
+<td>Pause before <code>idleAfter</code> runs out, once idle for 20 minutes, when a confident forecast expects the hours until then to be quiet and a request would wake the workload through the doorman. See <a href="../../concepts/forecasting/#pausing-early">Pausing Early</a></td>
 </tr>
 </tbody>
 </table>

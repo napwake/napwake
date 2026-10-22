@@ -93,7 +93,7 @@
             <div class="md-banner__inner md-grid md-typeset">
               
   
-    These docs are for Hybernate 0.2.0-rc.4, a release candidate, and may change before it's released.
+    These docs are for Hybernate 0.2.0-rc.5, a release candidate, and may change before it's released.
   
   <a href="../../.."><strong>Read the docs for the latest release.</strong></a>
 
@@ -1839,7 +1839,7 @@
 
 
 <h1 id="idle-detection">Idle Detection<a class="headerlink" href="#idle-detection" title="Permanent link">&para;</a></h1>
-<p>Hybernate keeps an <strong>activity clock</strong> for every ManagedWorkload: the last time anything showed the workload was in use. When the clock is older than <code>idlePolicy.idleAfter</code>, the workload is paused: scaled to zero, keeping its replica count and a resource snapshot. Any single sign of activity resets it.</p>
+<p>Hybernate keeps an <strong>activity clock</strong> for every ManagedWorkload: the last time anything showed the workload was in use. When the clock is older than <code>idlePolicy.idleAfter</code>, the workload is paused: scaled to zero, keeping its replica count and a resource snapshot. Any single sign of activity resets it. With <code>idlePolicy.pauseEarly</code>, a confident forecast can bring the pause forward (see <a href="../forecasting/#pausing-early">Pausing Early</a>).</p>
 <p>There's no learning period. A new workload can be paused as soon as it has gone <code>idleAfter</code> without activity.</p>
 <div class="language-yaml highlight"><table class="highlighttable"><tr><th colspan="2" class="filename"><span class="filename">managedworkload.yaml</span></th></tr><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal"><a href="#__codelineno-0-1">1</a></span>
 <span class="normal"><a href="#__codelineno-0-2">2</a></span>
@@ -1919,14 +1919,14 @@
 <ol>
 <li>CPU, or a configured Prometheus query, can't be read: stay awake (see <a href="#when-a-source-cant-be-read">below</a>).</li>
 <li><code>active-until</code> is in the future: stay awake.</li>
-<li>The last activity is less than <code>idleAfter</code> ago: stay awake.</li>
+<li>The last activity is less than <code>idleAfter</code> ago: stay awake, unless <code>pauseEarly</code> is on and the <a href="../forecasting/#pausing-early">forecast brings the pause forward</a>: the last activity was at least 20 minutes ago, the forecast is confident every hour until <code>idleAfter</code> would run out, and at least the hour under way and the next, is quiet, and a request would wake the workload through the doorman once it's paused. Then the pause goes on through the steps below, as if the clock had run out.</li>
 <li>The <a href="../forecasting/">forecast</a> is confident (shown as <code>DailyActive</code> or later, <code>dailyPhase: Active</code>) and predicts utilization above <code>cpuThreshold</code> in the hour under way or the next: stay awake. The <code>IdleVetoed</code> condition is <code>True</code>, with reason <code>ForecastExpectsDemand</code> and a message naming the hour, while this holds the pause back, and an <code>IdleVetoed</code> event marks the start of each veto. The hour after one far quieter than it forecast, as on a holiday, the forecast doubts what it expects and holds nothing back (see <a href="../forecasting/#anomaly-detection">Anomaly Detection</a>).</li>
 <li>Another workload that <a href="../dependencies/">depends on</a> this one is awake, or <code>dependsOn</code> forms a cycle: stay awake (<code>HeldByDependents</code> or <code>DependencyCycle</code>).</li>
-<li>Otherwise the clock has run out. The phase becomes <code>Idle</code>, with an <code>IdleDetected</code> event, and the workload is <a href="../../guides/pause/">paused</a>.</li>
+<li>Otherwise the clock has run out, or the forecast brought the pause forward. The phase becomes <code>Idle</code>, with an <code>IdleDetected</code> event, or a <code>PausedEarly</code> event naming the hours the forecast expects to be quiet, and the workload is <a href="../../guides/pause/">paused</a>.</li>
 </ol>
 <p>Without an <code>idlePolicy</code>, none of this runs, and the workload is only paused when someone asks.</p>
 <p>A <a href="../../guides/pause/#pause-now">pause request</a>, from <code>kubectl hybernate pause</code>, runs the clock out at once. Steps 1 and 3 don't apply, and nor does the hour Hybernate waits after a GitOps tool undid its last pause, since someone asked; an <code>active-until</code> hold, awake dependents and a <code>dependsOn</code> cycle still keep the workload up, and so does the forecast (step 4) unless the request comes with <code>hybernate.io/pause-overrides-forecast: "true"</code>, which <code>kubectl hybernate pause --yes</code> sets. A request held back is answered with the reason.</p>
-<p>With <code>dryRun: true</code>, the phase still becomes <code>Idle</code> and the <code>IdleDetected</code> event carries a <code>[dry-run]</code> prefix, but nothing is changed. If activity resumes, the phase goes back to <code>Running</code>. See <a href="../../guides/dry-run/">Dry Run</a>.</p>
+<p>With <code>dryRun: true</code>, the phase still becomes <code>Idle</code> and the <code>IdleDetected</code> or <code>PausedEarly</code> event carries a <code>[dry-run]</code> prefix, but nothing is changed. If activity resumes, the phase goes back to <code>Running</code>. See <a href="../../guides/dry-run/">Dry Run</a>.</p>
 <p>The forecast never blocks a pause until it's confident, so a workload with no history is handled by the clock alone.</p>
 <h2 id="when-a-source-cant-be-read">When a source can't be read<a class="headerlink" href="#when-a-source-cant-be-read" title="Permanent link">&para;</a></h2>
 <p>Hybernate never pauses a workload while one of its activity sources can't be read: without that data a busy workload looks idle. Nor does it count that time as idle: a check where a source can't be read doesn't count as watching, so a source out for longer than the gap allowed below restarts the clock (<code>lastActivitySource: unobserved</code>), and once the source is back, the workload pauses only after a full <code>idleAfter</code> in which every source saw nothing. A shorter blind spot, such as the minute before a woken workload's new pods have metrics, leaves its last activity as it was. A Prometheus query that answers "no requests in the last 5 minutes" as it comes back doesn't make the hour before it look idle. For CPU, the <code>MetricsAvailable</code> condition says why:</p>
@@ -1969,11 +1969,12 @@
 <ul>
 <li>A request reaches one of its Services. The request is held while the workload starts, then answered; see <a href="../wake-on-request/">Wake on Request</a>.</li>
 <li>A <code>hybernate.io/last-activity</code>, <code>last-request</code> or <code>active-until</code> annotation on the ManagedWorkload or its target changes after the pause began to an RFC 3339 time, whatever time it states, so a clock that's behind the operator's can't lose a wake. Only a change counts: the pause records the annotations as they stood, so a value set before it, even one stating a later time, doesn't wake it. <code>kubectl hybernate wake</code> sets one, and this is how a "start environment" button in a developer portal works.</li>
+<li>A <a href="../../guides/prometheus-signals/#while-the-workload-is-paused">Prometheus activity query</a> shows activity: the queries are run about once a minute while it's paused, as while it's awake. One that already showed activity as a <a href="../../guides/pause/#pause-now">requested pause</a> began wakes it only once it has been quiet, so it doesn't undo the request, and one that can't be evaluated never wakes it.</li>
 <li><code>autoResume: true</code> is set and a confident forecast (<code>dailyPhase: Active</code>) predicts utilization above <code>cpuThreshold</code> for the current hour, or for the next hour once it's 15 minutes away, so the workload is ready before people arrive; not the hour after one far quieter than it forecast.</li>
 <li>Something other than Hybernate scales it up, such as <code>kubectl scale</code>.</li>
 <li>Dry-run is turned on: dry-run never leaves a workload paused.</li>
 </ul>
-<p>Each wake restarts the clock, so a woken workload gets a full <code>idleAfter</code> before it can pause again. The clock records <code>lastActivitySource: request</code> when a held request woke it, <code>scaled-up</code> when something else scaled it up, and <code>woke</code> for any other wake.</p>
+<p>Each wake restarts the clock, so a woken workload gets a full <code>idleAfter</code> before it can pause again, unless <a href="../forecasting/#pausing-early"><code>pauseEarly</code></a> is on and the forecast expects the coming hours quiet: then the pause can come 20 minutes after the wake. The clock records <code>lastActivitySource: request</code> when a held request woke it, <code>prometheus</code> when an activity query did, <code>scaled-up</code> when something else scaled it up, and <code>woke</code> for any other wake.</p>
 
 
 

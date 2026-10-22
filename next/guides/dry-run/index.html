@@ -93,7 +93,7 @@
             <div class="md-banner__inner md-grid md-typeset">
               
   
-    These docs are for Hybernate 0.2.0-rc.4, a release candidate, and may change before it's released.
+    These docs are for Hybernate 0.2.0-rc.5, a release candidate, and may change before it's released.
   
   <a href="../../.."><strong>Read the docs for the latest release.</strong></a>
 
@@ -1983,7 +1983,7 @@
 
 
 <h1 id="dry-run-guide">Dry Run Guide<a class="headerlink" href="#dry-run-guide" title="Permanent link">&para;</a></h1>
-<p>Dry run mode lets you observe what Hybernate would do without it ever reducing a workload's availability. The operator evaluates all policies, emits events, and updates predictions, but never pauses a workload. Wakes are never held back.</p>
+<p>Dry run mode lets you observe what Hybernate would do without it ever reducing a workload's availability. The activity clock, dependency holds and the forecast all run as they do live, and only the scale to zero is skipped, so what dry-run can't show is what happens once a workload is paused: how long a wake on request takes, and whether a GitOps tool scales it straight back up. Wakes are never held back.</p>
 <h2 id="enabling-dry-run">Enabling Dry Run<a class="headerlink" href="#enabling-dry-run" title="Permanent link">&para;</a></h2>
 <h3 id="on-a-labelled-workload">On a Labelled Workload<a class="headerlink" href="#on-a-labelled-workload" title="Permanent link">&para;</a></h3>
 <div class="language-yaml highlight"><table class="highlighttable"><tr><th colspan="2" class="filename"><span class="filename">deployment.yaml</span></th></tr><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal"><a href="#__codelineno-0-1">1</a></span>
@@ -2064,11 +2064,11 @@
 </tr>
 <tr>
 <td>Forecast veto and dependency holds</td>
-<td>Applied and reported as usual: <code>IdleVetoed</code>, <code>HeldByDependents</code>, <code>DependencyCycle</code></td>
+<td>Applied and reported as usual: <code>IdleVetoed</code>, <code>HeldByDependents</code>, <code>DependencyCycle</code>. A dependent in dry-run that would have paused no longer holds a dependency in dry-run, so a whole app measured in dry-run counts every pause it would make, and when the dependent's would-be pause ends, its dry-run dependencies are stamped with activity, as its wake would have woken them, so theirs end with it and their clocks restart; see <a href="../../concepts/dependencies/#edge-cases">Dependencies</a></td>
 </tr>
 <tr>
 <td>A <a href="../pause/#pause-now">pause request</a></td>
-<td>Counted as a would-be pause: the phase becomes <code>Idle</code>, with a <code>[dry-run]</code> <code>PauseRequested</code> event and <code>PauseRequest=False</code>, reason <code>DryRun</code>, and the workload keeps running. Activity after the request ends the would-be pause, as it would wake a paused workload</td>
+<td>Counted as a would-be pause: the phase becomes <code>Idle</code>, with a <code>[dry-run]</code> <code>PauseRequested</code> event and <code>PauseRequest=False</code>, reason <code>DryRun</code>, and the workload keeps running. Activity after the request ends the would-be pause, as it would wake a paused workload, except a Prometheus activity query that already showed activity as it was asked for, which ends it only once it has been quiet, as for a real pause</td>
 </tr>
 <tr>
 <td>A workload Hybernate had already paused</td>
@@ -2098,42 +2098,46 @@
 </table>
 <h2 id="observing-dry-run-results">Observing Dry Run Results<a class="headerlink" href="#observing-dry-run-results" title="Permanent link">&para;</a></h2>
 <h3 id="what-dry-run-measured">What Dry Run Measured<a class="headerlink" href="#what-dry-run-measured" title="Permanent link">&para;</a></h3>
-<p>Hybernate keeps a running summary of the pauses it would have made. A would-be pause starts when the activity clock runs out, and ends at the next activity, which is when a paused workload would have been woken. It also ends when Hybernate stops measuring it: the workload is scaled to zero outside Hybernate, labelled <code>hybernate.io/ignore</code>, or its namespace becomes protected; see <a href="../pause/#when-hybernate-lets-go">When Hybernate Lets Go</a>. It's counted up to that moment.</p>
-<p>What it would have freed is in the list of ManagedWorkloads:</p>
-<div class="language-bash highlight"><pre><span></span><code><span id="__span-3-1"><a id="__codelineno-3-1" name="__codelineno-3-1" href="#__codelineno-3-1"></a>kubectl<span class="w"> </span>get<span class="w"> </span>managedworkloads<span class="w"> </span>-n<span class="w"> </span>staging
+<p>Hybernate keeps a running summary of the pauses it would have made. A would-be pause starts when the activity clock runs out, and ends at the next activity, which is when a paused workload would have been woken. Two wakes are the exception. A request reaching a paused workload wakes it, but a workload in dry-run is still running, so a request counts only through the activity it shows, its CPU use or a <a href="../prometheus-signals/">Prometheus activity query</a>; and <code>autoResume</code> wakes a paused workload ahead of hours the forecast expects to be busy, which dry-run doesn't count. So for a workload that serves the odd light request, or has <code>autoResume</code> on, real pauses would be shorter than the would-be ones. A would-be pause also ends when Hybernate stops measuring it: the workload is scaled to zero outside Hybernate, labelled <code>hybernate.io/ignore</code>, or its namespace becomes protected; see <a href="../pause/#when-hybernate-lets-go">When Hybernate Lets Go</a>. It's counted up to that moment.</p>
+<p>For a workload that serves the odd light request, add a <a href="../prometheus-signals/">Prometheus activity query</a> on its request rate at its ingress, with the operator's <code>prometheus.url</code> set, so that dry-run sees requests as activity, as the doorman would see them and wake the workload. Use the ingress's metrics, not the app's own: a paused workload has no pods to export them, so a query on them shows nothing once it pauses for real. On a workload opted in with the label, add the query to the ManagedWorkload Hybernate created, which keeps it:</p>
+<div class="language-bash highlight"><pre><span></span><code><span id="__span-3-1"><a id="__codelineno-3-1" name="__codelineno-3-1" href="#__codelineno-3-1"></a>kubectl<span class="w"> </span>patch<span class="w"> </span>managedworkload<span class="w"> </span>my-api<span class="w"> </span>-n<span class="w"> </span>staging<span class="w"> </span>--type<span class="o">=</span>json<span class="w"> </span>-p<span class="w"> </span><span class="s1">'[{"op":"add","path":"/spec/idlePolicy/activity/prometheus","value":[{"promQL":"sum(rate(nginx_ingress_controller_requests{exported_namespace=\"staging\",exported_service=\"my-api\"}[5m]))"}]}]'</span>
 </span></code></pre></div>
-<div class="language-text highlight"><pre><span></span><code><span id="__span-4-1"><a id="__codelineno-4-1" name="__codelineno-4-1" href="#__codelineno-4-1"></a>NAME     PHASE   FREED   SAVED   WOULD FREE   AGE
-</span><span id="__span-4-2"><a id="__codelineno-4-2" name="__codelineno-4-2" href="#__codelineno-4-2"></a>my-api   Idle    $0.00   $0.00   $7.50        4d
+<p>The ingress keeps counting requests once the workload pauses for real, so the query wakes it then too, as in <a href="../prometheus-signals/#while-the-workload-is-paused">While the Workload Is Paused</a>.</p>
+<p>What it would have freed is in the list of ManagedWorkloads:</p>
+<div class="language-bash highlight"><pre><span></span><code><span id="__span-4-1"><a id="__codelineno-4-1" name="__codelineno-4-1" href="#__codelineno-4-1"></a>kubectl<span class="w"> </span>get<span class="w"> </span>managedworkloads<span class="w"> </span>-n<span class="w"> </span>staging
+</span></code></pre></div>
+<div class="language-text highlight"><pre><span></span><code><span id="__span-5-1"><a id="__codelineno-5-1" name="__codelineno-5-1" href="#__codelineno-5-1"></a>NAME     PHASE   FREED   SAVED   WOULD FREE   AGE
+</span><span id="__span-5-2"><a id="__codelineno-5-2" name="__codelineno-5-2" href="#__codelineno-5-2"></a>my-api   Idle    $0.00   $0.00   $7.50        4d
 </span></code></pre></div>
 <p><a href="../../getting-started/kubectl-plugin/#see-what-hybernate-is-doing"><code>kubectl hybernate status</code></a> leads with it too, in its summary and its <code>WOULD FREE</code> column. The whole summary is in <code>status.dryRun</code>:</p>
-<div class="language-bash highlight"><pre><span></span><code><span id="__span-5-1"><a id="__codelineno-5-1" name="__codelineno-5-1" href="#__codelineno-5-1"></a>kubectl<span class="w"> </span>get<span class="w"> </span>managedworkload<span class="w"> </span>my-api<span class="w"> </span>-n<span class="w"> </span>staging<span class="w"> </span>-o<span class="w"> </span><span class="nv">jsonpath</span><span class="o">=</span><span class="s1">'{.status.dryRun}'</span>
+<div class="language-bash highlight"><pre><span></span><code><span id="__span-6-1"><a id="__codelineno-6-1" name="__codelineno-6-1" href="#__codelineno-6-1"></a>kubectl<span class="w"> </span>get<span class="w"> </span>managedworkload<span class="w"> </span>my-api<span class="w"> </span>-n<span class="w"> </span>staging<span class="w"> </span>-o<span class="w"> </span><span class="nv">jsonpath</span><span class="o">=</span><span class="s1">'{.status.dryRun}'</span>
 </span></code></pre></div>
-<div class="language-yaml highlight"><span class="filename">status.dryRun</span><pre><span></span><code><span id="__span-6-1"><a id="__codelineno-6-1" name="__codelineno-6-1" href="#__codelineno-6-1"></a><span class="nt">since</span><span class="p">:</span><span class="w"> </span><span class="s">"2026-10-01T09:00:00Z"</span>
-</span><span id="__span-6-2"><a id="__codelineno-6-2" name="__codelineno-6-2" href="#__codelineno-6-2"></a><span class="nt">pauses</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">4</span>
-</span><span id="__span-6-3"><a id="__codelineno-6-3" name="__codelineno-6-3" href="#__codelineno-6-3"></a><span class="nt">slept</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">96h12m0s</span>
-</span><span id="__span-6-4"><a id="__codelineno-6-4" name="__codelineno-6-4" href="#__codelineno-6-4"></a><span class="nt">freedCPUHours</span><span class="p">:</span><span class="w"> </span><span class="s">"192400m"</span>
-</span><span id="__span-6-5"><a id="__codelineno-6-5" name="__codelineno-6-5" href="#__codelineno-6-5"></a><span class="nt">freedMemoryHours</span><span class="p">:</span><span class="w"> </span><span class="s">"384800m"</span>
-</span><span id="__span-6-6"><a id="__codelineno-6-6" name="__codelineno-6-6" href="#__codelineno-6-6"></a><span class="nt">estimatedFreed</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">$7.50</span>
+<div class="language-yaml highlight"><span class="filename">status.dryRun</span><pre><span></span><code><span id="__span-7-1"><a id="__codelineno-7-1" name="__codelineno-7-1" href="#__codelineno-7-1"></a><span class="nt">since</span><span class="p">:</span><span class="w"> </span><span class="s">"2026-10-01T09:00:00Z"</span>
+</span><span id="__span-7-2"><a id="__codelineno-7-2" name="__codelineno-7-2" href="#__codelineno-7-2"></a><span class="nt">pauses</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">4</span>
+</span><span id="__span-7-3"><a id="__codelineno-7-3" name="__codelineno-7-3" href="#__codelineno-7-3"></a><span class="nt">slept</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">96h12m0s</span>
+</span><span id="__span-7-4"><a id="__codelineno-7-4" name="__codelineno-7-4" href="#__codelineno-7-4"></a><span class="nt">freedCPUHours</span><span class="p">:</span><span class="w"> </span><span class="s">"192400m"</span>
+</span><span id="__span-7-5"><a id="__codelineno-7-5" name="__codelineno-7-5" href="#__codelineno-7-5"></a><span class="nt">freedMemoryHours</span><span class="p">:</span><span class="w"> </span><span class="s">"384800m"</span>
+</span><span id="__span-7-6"><a id="__codelineno-7-6" name="__codelineno-7-6" href="#__codelineno-7-6"></a><span class="nt">estimatedFreed</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">$7.50</span>
 </span></code></pre></div>
 <p><code>freedCPUHours</code> and <code>freedMemoryHours</code> are the vCPU-hours and GiB-hours the workload's replicas requested during <code>slept</code>: what the would-be pauses would have freed, kept to a billionth of an hour. <code>estimatedFreed</code> is those hours priced at the workload's <a href="../../concepts/cost-tracking/#prices">cost rates</a>, for display; the hours are the record. It's what pausing would free, not what it would save: freed capacity becomes money only once nodes go, which Hybernate <a href="../../concepts/cost-tracking/#how-saved-is-measured">measures</a> for real pauses.</p>
 <p><code>slept</code> and the freed hours count finished would-be pauses. While the phase is <code>Idle</code>, the one under way, which began at <code>status.lastTransitionTime</code>, is added to them when it ends; <code>resources</code> is what the workload ran when it began. <code>estimatedFreed</code> counts it as it goes, up to the last status write, at most 5 minutes ago, so a workload idle all weekend shows what it would have freed before Monday's activity ends the pause.</p>
 <p>The summary starts when dry-run does, and is removed when dry-run ends: once Hybernate is pausing, <code>status.cost</code> records what it actually frees.</p>
 <p><code>kubectl hybernate scan</code> shows the same summary in each dry-run workload's COULD SLEEP, WAKES, and COULD FREE/MO columns, with a total in the headline and the command to start pausing:</p>
-<div class="language-text highlight"><pre><span></span><code><span id="__span-7-1"><a id="__codelineno-7-1" name="__codelineno-7-1" href="#__codelineno-7-1"></a>  2 workloads are in dry-run: measured by Hybernate since starting, they would have slept 140 hours, freeing $18.20,
-</span><span id="__span-7-2"><a id="__codelineno-7-2" name="__codelineno-7-2" href="#__codelineno-7-2"></a>  about $134 a month.
-</span><span id="__span-7-3"><a id="__codelineno-7-3" name="__codelineno-7-3" href="#__codelineno-7-3"></a>
-</span><span id="__span-7-4"><a id="__codelineno-7-4" name="__codelineno-7-4" href="#__codelineno-7-4"></a>  NAMESPACE   WORKLOAD         STATE            BECAUSE                                     COST/MO   COULD SLEEP   WAKES   COULD FREE/MO
-</span><span id="__span-7-5"><a id="__codelineno-7-5" name="__codelineno-7-5" href="#__codelineno-7-5"></a>  preview-7   deployment/api   idle (dry-run)   no activity for 5h; measuring since Oct 1   $96       96h           4       $91
+<div class="language-text highlight"><pre><span></span><code><span id="__span-8-1"><a id="__codelineno-8-1" name="__codelineno-8-1" href="#__codelineno-8-1"></a>  2 workloads are in dry-run: measured by Hybernate since starting, they would have slept 140 hours, freeing $18.20,
+</span><span id="__span-8-2"><a id="__codelineno-8-2" name="__codelineno-8-2" href="#__codelineno-8-2"></a>  about $134 a month.
+</span><span id="__span-8-3"><a id="__codelineno-8-3" name="__codelineno-8-3" href="#__codelineno-8-3"></a>
+</span><span id="__span-8-4"><a id="__codelineno-8-4" name="__codelineno-8-4" href="#__codelineno-8-4"></a>  NAMESPACE   WORKLOAD         STATE            BECAUSE                                     COST/MO   COULD SLEEP   WAKES   COULD FREE/MO
+</span><span id="__span-8-5"><a id="__codelineno-8-5" name="__codelineno-8-5" href="#__codelineno-8-5"></a>  preview-7   deployment/api   idle (dry-run)   no activity for 5h; measuring since Oct 1   $96       96h           4       $91
 </span></code></pre></div>
 <p>The scan prices the hours at its own prices, so <code>--cpu-price</code> and <code>--memory-price</code> apply.</p>
 <h3 id="events">Events<a class="headerlink" href="#events" title="Permanent link">&para;</a></h3>
-<div class="language-bash highlight"><pre><span></span><code><span id="__span-8-1"><a id="__codelineno-8-1" name="__codelineno-8-1" href="#__codelineno-8-1"></a>kubectl<span class="w"> </span>describe<span class="w"> </span>managedworkload<span class="w"> </span>my-api<span class="w"> </span>-n<span class="w"> </span>staging
+<div class="language-bash highlight"><pre><span></span><code><span id="__span-9-1"><a id="__codelineno-9-1" name="__codelineno-9-1" href="#__codelineno-9-1"></a>kubectl<span class="w"> </span>describe<span class="w"> </span>managedworkload<span class="w"> </span>my-api<span class="w"> </span>-n<span class="w"> </span>staging
 </span></code></pre></div>
 <p>When the clock runs out, and when activity ends the would-be pause:</p>
-<div class="language-text highlight"><pre><span></span><code><span id="__span-9-1"><a id="__codelineno-9-1" name="__codelineno-9-1" href="#__codelineno-9-1"></a>[dry-run] my-api: idle for 1 hour, since its CPU use was last above the activity threshold; would have paused
-</span><span id="__span-9-2"><a id="__codelineno-9-2" name="__codelineno-9-2" href="#__codelineno-9-2"></a>[dry-run] my-api: activity resumed (cpu): would have slept 3 hours 12 minutes, freeing $0.25; since Oct 1: would have paused 4 times, slept 4 days, freeing $7.50
+<div class="language-text highlight"><pre><span></span><code><span id="__span-10-1"><a id="__codelineno-10-1" name="__codelineno-10-1" href="#__codelineno-10-1"></a>[dry-run] my-api: idle for 1 hour, since its CPU use was last above the activity threshold; would have paused
+</span><span id="__span-10-2"><a id="__codelineno-10-2" name="__codelineno-10-2" href="#__codelineno-10-2"></a>[dry-run] my-api: activity resumed (cpu): would have slept 3 hours 12 minutes, freeing $0.25; since Oct 1: would have paused 4 times, slept 4 days, freeing $7.50
 </span></code></pre></div>
-<p>The <code>[dry-run]</code> prefix marks the decisions dry-run holds back: <code>IdleDetected</code>, <code>ActivityResumed</code>, <code>IdleVetoed</code>, <code>HeldByDependents</code>, <code>DependencyCycle</code>, and the <code>PauseRequested</code> event for a pause request it doesn't act on. Events about what really happens, such as a wake, a forecast update, or a metrics problem, have no prefix.</p>
+<p>The <code>[dry-run]</code> prefix marks the decisions dry-run holds back: <code>IdleDetected</code>, <code>PausedEarly</code>, <code>ActivityResumed</code>, <code>IdleVetoed</code>, <code>HeldByDependents</code>, <code>DependencyCycle</code>, and the <code>PauseRequested</code> event for a pause request it doesn't act on. Events about what really happens, such as a wake, a forecast update, or a metrics problem, have no prefix.</p>
 <h3 id="phase">Phase<a class="headerlink" href="#phase" title="Permanent link">&para;</a></h3>
 <p>In dry-run the phase goes <code>Running</code> → <code>Idle</code> when the clock runs out, or a pause is requested, and back to <code>Running</code> at the next activity. The workload is never scaled down.</p>
 <h2 id="recommended-workflow">Recommended Workflow<a class="headerlink" href="#recommended-workflow" title="Permanent link">&para;</a></h2>
@@ -2142,8 +2146,8 @@
 <li><strong>Review what it measured</strong>. <code>kubectl hybernate status</code> leads with what it would have freed, and <code>kubectl hybernate scan</code> adds how often it would have paused and for how long; the events say when.</li>
 <li>
 <p><strong>End dry run</strong>:</p>
-<div class="language-bash highlight"><pre><span></span><code><span id="__span-10-1"><a id="__codelineno-10-1" name="__codelineno-10-1" href="#__codelineno-10-1"></a>kubectl<span class="w"> </span>hybernate<span class="w"> </span><span class="nb">enable</span><span class="w"> </span>my-api<span class="w"> </span>-n<span class="w"> </span>staging
-</span><span id="__span-10-2"><a id="__codelineno-10-2" name="__codelineno-10-2" href="#__codelineno-10-2"></a>kubectl<span class="w"> </span>hybernate<span class="w"> </span><span class="nb">enable</span><span class="w"> </span>--all<span class="w"> </span>-n<span class="w"> </span>staging<span class="w">   </span><span class="c1"># every workload in the namespace</span>
+<div class="language-bash highlight"><pre><span></span><code><span id="__span-11-1"><a id="__codelineno-11-1" name="__codelineno-11-1" href="#__codelineno-11-1"></a>kubectl<span class="w"> </span>hybernate<span class="w"> </span><span class="nb">enable</span><span class="w"> </span>my-api<span class="w"> </span>-n<span class="w"> </span>staging
+</span><span id="__span-11-2"><a id="__codelineno-11-2" name="__codelineno-11-2" href="#__codelineno-11-2"></a>kubectl<span class="w"> </span>hybernate<span class="w"> </span><span class="nb">enable</span><span class="w"> </span>--all<span class="w"> </span>-n<span class="w"> </span>staging<span class="w">   </span><span class="c1"># every workload in the namespace</span>
 </span></code></pre></div>
 <p>For a labelled workload, <code>enable</code> sets its own <code>hybernate.io/dry-run</code> annotation to <code>"false"</code>, which wins over its namespace's and the cluster default. With <code>--all</code>, when the namespace's annotation or the cluster default keeps any workload in dry-run, it sets the namespace's annotation to <code>"false"</code> instead and drops the workloads' own, or, when your access doesn't allow changing the namespace, sets each workload's own; when each is in dry-run by its own annotation, it sets each to <code>"false"</code>. For a ManagedWorkload you wrote, it sets <code>spec.dryRun: false</code>. If a GitOps tool (Argo CD, Flux, Fleet, kapp or Kluctl) applies the setting, it changes nothing and prints the change to make in Git instead. See <a href="../../getting-started/kubectl-plugin/#enable-a-workload"><code>kubectl hybernate enable</code></a>.</p>
 </li>

@@ -93,7 +93,7 @@
             <div class="md-banner__inner md-grid md-typeset">
               
   
-    These docs are for Hybernate 0.2.0-rc.4, a release candidate, and may change before it's released.
+    These docs are for Hybernate 0.2.0-rc.5, a release candidate, and may change before it's released.
   
   <a href="../../.."><strong>Read the docs for the latest release.</strong></a>
 
@@ -1906,10 +1906,10 @@
 <h2 id="transition-triggers">Transition Triggers<a class="headerlink" href="#transition-triggers" title="Permanent link">&para;</a></h2>
 <h3 id="automatic">Automatic<a class="headerlink" href="#automatic" title="Permanent link">&para;</a></h3>
 <ul>
-<li><strong>Running → Idle</strong>: No activity for <code>idleAfter</code>, no <code>active-until</code> hold, no confident forecast of demand, no awake dependents, CPU (and any Prometheus query) readable, and at least one replica; see <a href="../idle-detection/#the-decision">Idle Detection</a></li>
+<li><strong>Running → Idle</strong>: No activity for <code>idleAfter</code>, or with <code>pauseEarly</code>, for 20 minutes before hours a confident forecast expects quiet (see <a href="../forecasting/#pausing-early">Pausing Early</a>); no <code>active-until</code> hold, no confident forecast of demand, no awake dependents, CPU (and any Prometheus query) readable, and at least one replica; see <a href="../idle-detection/#the-decision">Idle Detection</a></li>
 <li><strong>Idle → Pausing</strong>: Right away, unless the workload is in dry-run, or a GitOps tool undid its last pause within the hour</li>
 <li><strong>Idle → Running</strong>: Activity resumes (in dry-run, or while a GitOps tool's undoing holds the pause off; otherwise the pause has already started), or the workload is scaled to zero outside Hybernate</li>
-<li><strong>Paused → Resuming</strong>: A request to its Service, a change to an activity annotation since the pause, <code>autoResume</code> ahead of forecast demand, or dry-run being turned on</li>
+<li><strong>Paused → Resuming</strong>: A request to its Service, a change to an activity annotation since the pause, a <a href="../../guides/prometheus-signals/#while-the-workload-is-paused">Prometheus activity query</a> showing activity, <code>autoResume</code> ahead of forecast demand, or dry-run being turned on</li>
 <li><strong>Paused → Running</strong>: Something other than Hybernate scales it up, see <a href="../../guides/gitops/">GitOps tools</a>; or Hybernate lets go of it, see <a href="../../guides/pause/#when-hybernate-lets-go">When Hybernate Lets Go</a>. The same goes for a workload still <code>Pausing</code> once Hybernate has scaled it to zero (<code>status.pause.pausedAt</code> is set), while its pods stop: it isn't scaled back down</li>
 <li><strong>Resuming → Running</strong>: Something other than Hybernate scales it back to zero after the resume has scaled it up (<code>status.pause.resumedAt</code>): it's left off, with <code>ScaledToZero</code>, rather than scaled up again. Otherwise, every replica it was restored to is Ready. Short of that, Hybernate stops waiting 2 minutes after the first replica is Ready, or, while none is, once the Deployment's <code>progressDeadlineSeconds</code> has passed since the scale-up (10 minutes by default, and for a StatefulSet). Stopping short sets <code>ResumeIncomplete</code> until every replica is Ready, and with none Ready, requests fail until one is, since the doorman no longer holds them. A StatefulSet with the default <code>OrderedReady</code> pod management starts its pods one at a time, so a slow-starting one may have only its first pods Ready when the 2 minutes are up: it runs with those, and the rest follow. The wait starts once its <code>waitForReady</code> dependencies serve; see <a href="../dependencies/">Dependencies</a></li>
 </ul>
@@ -1971,7 +1971,7 @@
 <tr>
 <td><code>HeldByDependents</code></td>
 <td>It's kept awake for the workloads that depend on it</td>
-<td><code>DependentsAwake</code>; <code>False</code>: <code>NoAwakeDependents</code></td>
+<td><code>DependentsAwake</code>; <code>False</code>: <code>NoAwakeDependents</code>, or <code>NotIdle</code> once its own activity restarts its clock</td>
 </tr>
 <tr>
 <td><code>WaitingForDependencies</code></td>
@@ -2005,8 +2005,8 @@
 </tr>
 <tr>
 <td><code>PauseRequest</code></td>
-<td>The last <a href="../../guides/pause/#pause-now">pause request</a> paused the workload, or found it paused; <code>False</code> says why it didn't</td>
-<td><code>Pausing</code>, <code>AlreadyPaused</code>; <code>False</code>: <code>DryRun</code>, <code>ForecastExpectsDemand</code>, <code>ActiveUntil</code>, <code>HeldByDependents</code>, <code>DependencyCycle</code>, <code>Protected</code>, <code>ScaledToZero</code>, <code>TargetNotFound</code>, <code>TargetIgnored</code>, <code>DuplicateTarget</code></td>
+<td>The last <a href="../../guides/pause/#pause-now">pause request</a> paused the workload, or found it paused; <code>False</code> says why it didn't. It stays until the next request, saying what happened and when, such as <code>paused as requested at 2026-10-21 03:32 UTC</code></td>
+<td><code>Paused</code>, <code>AlreadyPaused</code>; <code>False</code>: <code>DryRun</code>, <code>ForecastExpectsDemand</code>, <code>ActiveUntil</code>, <code>HeldByDependents</code>, <code>DependencyCycle</code>, <code>Protected</code>, <code>ScaledToZero</code>, <code>TargetNotFound</code>, <code>TargetIgnored</code>, <code>DuplicateTarget</code></td>
 </tr>
 <tr>
 <td><code>GitOpsConflict</code></td>
@@ -2038,7 +2038,7 @@
 <h2 id="events">Events<a class="headerlink" href="#events" title="Permanent link">&para;</a></h2>
 <p>User-visible state changes emit Kubernetes events that show up in <code>kubectl describe</code>, each once, when the change happens:</p>
 <ul>
-<li>Lifecycle: <code>IdleDetected</code>, <code>PauseRequested</code>, <code>Paused</code>, <code>Resumed</code>, <code>ActivityResumed</code> (in dry-run, with what the would-be pause would have freed)</li>
+<li>Lifecycle: <code>IdleDetected</code>, <code>PausedEarly</code> (the forecast brought the pause forward, with <a href="../forecasting/#pausing-early"><code>pauseEarly</code></a>), <code>PauseRequested</code>, <code>Paused</code>, <code>Resumed</code>, <code>ActivityResumed</code> (in dry-run, with what the would-be pause would have freed)</li>
 <li>A pause record lost from status: <code>PauseRecovered</code> (taken up again from the target's <code>hybernate.io/paused-from</code>), <code>PauseRecordLost</code> (a warning: nothing to finish it from)</li>
 <li>A pause request Hybernate didn't act on: an event whose reason says why, the same as the <code>PauseRequest</code> condition's</li>
 <li>What woke it: <code>WokeByActivity</code>, <code>WokenByRequest</code> (from the doorman), <code>AutoResume</code>, <code>ScaledUp</code>, <code>DryRunWake</code></li>

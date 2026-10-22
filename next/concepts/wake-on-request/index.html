@@ -93,7 +93,7 @@
             <div class="md-banner__inner md-grid md-typeset">
               
   
-    These docs are for Hybernate 0.2.0-rc.4, a release candidate, and may change before it's released.
+    These docs are for Hybernate 0.2.0-rc.5, a release candidate, and may change before it's released.
   
   <a href="../../.."><strong>Read the docs for the latest release.</strong></a>
 
@@ -2375,7 +2375,7 @@
 <tbody>
 <tr>
 <td>No Service selects the workload, or none has a TCP port that isn't in <code>hybernate.io/doorman-ignore-ports</code></td>
-<td><code>WakeOnRequest=False</code>, reason <code>NoServices</code></td>
+<td><code>WakeOnRequest=False</code>, reason <code>NoServices</code>. A workload no request reaches, such as a queue worker, wakes on a <a href="../../guides/prometheus-signals/#while-the-workload-is-paused">Prometheus activity query</a> that sees its demand instead, such as its queue's length, and its forecast learns the hours it's paused from it</td>
 </tr>
 <tr>
 <td>A headless Service (<code>clusterIP: None</code>)</td>
