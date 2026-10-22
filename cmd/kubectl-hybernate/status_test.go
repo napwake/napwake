@@ -470,6 +470,17 @@ func TestNextFor_PausedEarly(t *testing.T) {
 	assert.Equal(t, "pauses now, early: the forecast expects quiet until Mon 14:00 UTC",
 		nextFor(early(v1alpha1.PhaseIdle, false), time.Time{}, statusNow), "not the clock's 40 minutes")
 
+	// A would-be pause in dry-run stays Idle until activity, with its quiet
+	// hours recorded, so once they're over it says what the forecast
+	// expected, not what it expects.
+	weekend := early(v1alpha1.PhaseIdle, true)
+	weekend.Status.Activity.ForecastQuietUntil = &metav1.Time{Time: time.Date(2026, 10, 2, 20, 0, 0, 0, time.UTC)}
+	assert.Equal(t, "would pause now, early: the forecast expected quiet until Fri 20:00 UTC",
+		nextFor(weekend, time.Time{}, statusNow), "read on Monday, of a would-be pause made on Friday")
+	weekend.Spec.DryRun = false
+	assert.Equal(t, "pauses now, early: the forecast expected quiet until Fri 20:00 UTC",
+		nextFor(weekend, time.Time{}, statusNow), "the same for a pause not yet made")
+
 	waiting := early(v1alpha1.PhaseIdle, false)
 	undoneBy(waiting, "Argo CD", 10*time.Minute)
 	waiting.Status.Activity = activity(v1alpha1.ActivitySourceCPU, 20*time.Minute, 70*time.Minute)
