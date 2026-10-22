@@ -41,23 +41,47 @@ const (
 // Those fail while the workload is paused, as they would without the
 // doorman, which is what a port only health checks or scrapers use wants.
 func RoutablePorts(svc corev1.Service) []corev1.ServicePort {
+	ignored := ignoredPorts(svc)
+	var out []corev1.ServicePort
+	for _, port := range svc.Spec.Ports {
+		if tcp(port) && !ignored(port) {
+			out = append(out, port)
+		}
+	}
+	return out
+}
+
+// UnroutablePorts are a Service's ports the doorman can't route, UDP and
+// SCTP, less those its hybernate.io/doorman-ignore-ports annotation lists:
+// traffic to them fails while the workload is paused, though nobody said it
+// may.
+func UnroutablePorts(svc corev1.Service) []corev1.ServicePort {
+	ignored := ignoredPorts(svc)
+	var out []corev1.ServicePort
+	for _, port := range svc.Spec.Ports {
+		if !tcp(port) && !ignored(port) {
+			out = append(out, port)
+		}
+	}
+	return out
+}
+
+func tcp(port corev1.ServicePort) bool {
+	return port.Protocol == "" || port.Protocol == corev1.ProtocolTCP
+}
+
+// ignoredPorts reports whether the Service's hybernate.io/doorman-ignore-ports
+// annotation lists a port, by name or number.
+func ignoredPorts(svc corev1.Service) func(corev1.ServicePort) bool {
 	ignored := map[string]bool{}
 	for p := range strings.SplitSeq(svc.Annotations[AnnotationIgnorePorts], ",") {
 		if p = strings.TrimSpace(p); p != "" {
 			ignored[p] = true
 		}
 	}
-	var out []corev1.ServicePort
-	for _, port := range svc.Spec.Ports {
-		if port.Protocol != "" && port.Protocol != corev1.ProtocolTCP {
-			continue
-		}
-		if ignored[strconv.Itoa(int(port.Port))] || (port.Name != "" && ignored[port.Name]) {
-			continue
-		}
-		out = append(out, port)
+	return func(port corev1.ServicePort) bool {
+		return ignored[strconv.Itoa(int(port.Port))] || (port.Name != "" && ignored[port.Name])
 	}
-	return out
 }
 
 // InPodNEGs reports whether GKE's NEG controller lists, for the Service, a

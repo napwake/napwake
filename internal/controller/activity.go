@@ -811,14 +811,17 @@ func (r *Reconciler) pauseEarly(ctx context.Context, workload *v1alpha1.ManagedW
 	if !early {
 		return quietHours{}, false
 	}
-	wakes, err := r.requestWouldWake(ctx, workload, target)
+	wakes, why, err := r.requestWouldWake(ctx, workload, target)
 	if err != nil {
-		log.FromContext(ctx).V(1).Info("can't tell whether a request would wake the workload once paused, so the "+
-			"forecast doesn't bring its pause forward", "workload", workload.Name, "namespace", workload.Namespace,
-			"error", err.Error())
+		why = "can't tell whether a request would wake it: " + err.Error()
+	}
+	if !wakes {
+		log.FromContext(ctx).Info("the forecast expects quiet hours, but doesn't bring the pause forward: a request "+
+			"might not wake the workload once paused", "workload", workload.Name, "namespace", workload.Namespace,
+			"reason", why)
 		return quietHours{}, false
 	}
-	return quietHours{from: from, until: until}, wakes
+	return quietHours{from: from, until: until}, true
 }
 
 // sinceActivity says what a workload has been idle since, from what last
