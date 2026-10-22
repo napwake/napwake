@@ -68,7 +68,7 @@ The operator runs its full evaluation pipeline:
 |--------|-----------------|
 | Idle detection | The activity clock runs and the phase becomes `Idle` when it runs out, but the workload is **not** paused |
 | Forecast veto and dependency holds | Applied and reported as usual: `IdleVetoed`, `HeldByDependents`, `DependencyCycle`. A dependent in dry-run that would have paused no longer holds a dependency in dry-run, so a whole app measured in dry-run counts every pause it would make; see [Dependencies](../concepts/dependencies.md#edge-cases) |
-| A [pause request](pause.md#pause-now) | Counted as a would-be pause: the phase becomes `Idle`, with a `[dry-run]` `PauseRequested` event and `PauseRequest=False`, reason `DryRun`, and the workload keeps running. Activity after the request ends the would-be pause, as it would wake a paused workload |
+| A [pause request](pause.md#pause-now) | Counted as a would-be pause: the phase becomes `Idle`, with a `[dry-run]` `PauseRequested` event and `PauseRequest=False`, reason `DryRun`, and the workload keeps running. Activity after the request ends the would-be pause, as it would wake a paused workload, except a Prometheus activity query that already showed activity as it was asked for, which ends it only once it has been quiet, as for a real pause |
 | A workload Hybernate had already paused | Woken as soon as dry-run is turned on, with a `DryRunWake` event: dry-run never leaves a workload paused |
 | Wakes | Never held back: `kubectl hybernate wake` and activity work as usual |
 | Cost tracking | Costs are accumulated normally, all as awake time, since the workload never pauses; see [Cost Tracking](../concepts/cost-tracking.md#in-dry-run) |

@@ -142,6 +142,8 @@ func TestForecastJSON(t *testing.T) {
 	assert.GreaterOrEqual(t, f.Replay.Ready, 7)
 	assert.Zero(t, f.Replay.Missed)
 	assert.LessOrEqual(t, f.Replay.WastedWakes, 1)
+	assert.Equal(t, discovery.ReplayWakes{NoRequest: "no Service routes requests to it"}, f.Wakes,
+		"what wakes it once paused, through the JSON")
 }
 
 func TestCLI_ForecastTable(t *testing.T) {
@@ -152,9 +154,10 @@ func TestCLI_ForecastTable(t *testing.T) {
 
 	assert.Contains(t, out, "NAMESPACE   NAME  FORECAST           READY")
 	assert.Contains(t, out, "preview-42  api   acts from day one")
-	assert.Contains(t, out, ", 25m ahead")
-	assert.Contains(t, out, "Name a workload to see\nit day by day, and for one Hybernate manages, what its own "+
-		"forecast is doing now.")
+	assert.Contains(t, out, ", 25m ahead  nothing\n", "no Service routes requests to it, so nothing wakes it")
+	assert.Contains(t, out, "WAKES ON is what wakes\nit once it's paused")
+	assert.Contains(t, out, "Name a workload to see it day by day, and for one Hybernate manages, what its own "+
+		"forecast is doing\nnow.")
 }
 
 func TestCLI_ForecastOneWorkload(t *testing.T) {
@@ -169,6 +172,8 @@ func TestCLI_ForecastOneWorkload(t *testing.T) {
 	assert.NotContains(t, out, "Hybernate's forecast", "Hybernate doesn't manage it")
 	assert.Contains(t, out, "DAY")
 	assert.Contains(t, out, "FOUND IT")
+	assert.Contains(t, out, "; while it's paused, nothing wakes it but a person, since no Service routes requests "+
+		"to it, so the forecast doesn't learn the hours it's paused:\n")
 	assert.Contains(t, out, "Ready on ")
 
 	_, err = runCLI(t, newStatusClient(t, interceptor.Funcs{}, forecastCluster()...), "forecast", "web", "-n",
@@ -316,4 +321,28 @@ func TestForecastCell_SaysWhyItIsntLearning(t *testing.T) {
 		forecastMessage: "not learning while paused: no Service routes requests to it; a request can't wake it, so " +
 			"its demand can't be seen"}
 	assert.Equal(t, "not learning while paused: no Service routes requests to it", forecastCell(wl))
+}
+
+// What wakes a paused workload in the replay, as the table and the named
+// workload's replay say it.
+func TestReplayWakes_Shown(t *testing.T) {
+	tests := []struct {
+		wakes          discovery.ReplayWakes
+		cell, sentence string
+	}{
+		{wakes: discovery.ReplayWakes{Request: true, Query: true}, cell: "request, query",
+			sentence: "a request through the doorman, or its Prometheus activity query, wakes it"},
+		{wakes: discovery.ReplayWakes{Request: true}, cell: "request", sentence: "a request through the doorman wakes it"},
+		{wakes: discovery.ReplayWakes{Query: true, NoRequest: "no Service routes requests to it"}, cell: "query",
+			sentence: "its Prometheus activity query wakes it, since no Service routes requests to it"},
+		{wakes: discovery.ReplayWakes{NoRequest: "wake on request is turned off"}, cell: "nothing",
+			sentence: "nothing wakes it but a person, since wake on request is turned off, so the forecast doesn't " +
+				"learn the hours it's paused"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.cell, func(t *testing.T) {
+			assert.Equal(t, tt.cell, replayWakesCell(tt.wakes))
+			assert.Equal(t, tt.sentence, wakesSentence(tt.wakes))
+		})
+	}
 }

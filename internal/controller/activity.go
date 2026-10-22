@@ -210,9 +210,11 @@ func (r *Reconciler) observeActivity(ctx context.Context, workload *v1alpha1.Man
 	// isn't asked.
 	if obs.cpuErr == nil {
 		active, err := r.prometheusActive(ctx, workload)
-		if err != nil {
+		switch {
+		case err != nil:
 			obs.prometheusErr = err
-		} else if active {
+		case heldByWouldBePause(workload, active):
+		case active:
 			recordActivity(status, now, v1alpha1.ActivitySourcePrometheus)
 		}
 	}

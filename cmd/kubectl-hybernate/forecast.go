@@ -355,7 +355,7 @@ func writeForecastNotes(p *printer, notes []string) {
 
 func writeForecastTable(p *printer, workloads []forecastWorkload, loc *time.Location) {
 	tw := tabwriter.NewWriter(p, 0, 0, 2, ' ', 0)
-	_, _ = fmt.Fprintln(tw, "NAMESPACE\tNAME\tFORECAST\tREADY\tCOLD\tWOKEN FOR NOTHING\tWOKEN")
+	_, _ = fmt.Fprintln(tw, "NAMESPACE\tNAME\tFORECAST\tREADY\tCOLD\tWOKEN FOR NOTHING\tWOKEN\tWAKES ON")
 	for _, w := range workloads {
 		f := w.Forecast
 		ready, cold, wasted, woken := "-", "-", "-", "-"
@@ -366,17 +366,49 @@ func writeForecastTable(p *printer, workloads []forecastWorkload, loc *time.Loca
 			}
 			woken = typicalWake(r, loc)
 		}
-		_, _ = fmt.Fprintf(tw, "%s\t%s\t%s\t%s\t%s\t%s\t%s\n", w.Namespace, displayName(w), forecastNow(w, loc),
-			ready, cold, wasted, woken)
+		_, _ = fmt.Fprintf(tw, "%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n", w.Namespace, displayName(w), forecastNow(w, loc),
+			ready, cold, wasted, woken, replayWakesCell(f.Wakes))
 	}
 	_ = tw.Flush()
 	p.line("")
 	p.line("FORECAST is when the forecast would act if the workload were opted in today, having learned all of")
 	p.line("its history, or a managed workload's own. READY and COLD replay the last half of the history with")
 	p.line("autoResume, from a forecast that learned only the first half: the mornings it had the workload up")
-	p.line("before its first use, and those the first use found it paused and woke it. Name a workload to see")
-	p.line("it day by day, and for one Hybernate manages, what its own forecast is doing now.")
+	p.line("before its first use, and those the first use found it paused and woke it. WAKES ON is what wakes")
+	p.line("it once it's paused, as it would under Hybernate: a request through the doorman, its Prometheus")
+	p.line("activity query, or nothing, so people wake it by hand and the forecast doesn't learn those hours.")
+	p.line("Name a workload to see it day by day, and for one Hybernate manages, what its own forecast is doing")
+	p.line("now.")
 	p.line("")
+}
+
+// replayWakesCell is what wakes a workload once it's paused, in the
+// replay, for a table.
+func replayWakesCell(w discovery.ReplayWakes) string {
+	switch {
+	case w.Request && w.Query:
+		return "request, query"
+	case w.Request:
+		return "request"
+	case w.Query:
+		return "query"
+	}
+	return "nothing"
+}
+
+// wakesSentence says what wakes a workload once it's paused, in the
+// replay, and what that means for what the forecast learns.
+func wakesSentence(w discovery.ReplayWakes) string {
+	switch {
+	case w.Request && w.Query:
+		return "a request through the doorman, or its Prometheus activity query, wakes it"
+	case w.Request:
+		return "a request through the doorman wakes it"
+	case w.Query:
+		return fmt.Sprintf("its Prometheus activity query wakes it, since %s", w.NoRequest)
+	}
+	return fmt.Sprintf("nothing wakes it but a person, since %s, so the forecast doesn't learn the hours it's "+
+		"paused", w.NoRequest)
 }
 
 // spanOf is a number of hours of history in days, or in hours under two

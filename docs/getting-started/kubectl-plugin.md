@@ -289,16 +289,17 @@ kubectl hybernate forecast -n preview-42
 ```
 staging: the forecast replayed over 28 days of CPU history from monitoring/prometheus-operated, times in UTC
 
-NAMESPACE   NAME     FORECAST             READY  COLD  WOKEN FOR NOTHING  WOKEN
-preview-42  api      acts from day one    9/10   1     0                  08:45, 25m ahead
-preview-42  worker   acts from Mon 2 Nov  3/10   7     2 (3.5h)           09:45, 20m ahead
-preview-42  reports  not within 4 weeks   0/6    6     0                  -
+NAMESPACE   NAME     FORECAST             READY  COLD  WOKEN FOR NOTHING  WOKEN             WAKES ON
+preview-42  api      acts from day one    9/10   1     0                  08:45, 25m ahead  request
+preview-42  worker   acts from Mon 2 Nov  3/10   7     2 (3.5h)           09:45, 20m ahead  query
+preview-42  reports  not within 4 weeks   0/6    6     0                  -                 nothing
 ```
 
 `forecast` shows what Hybernate's [forecast](../concepts/forecasting.md) would make of your workloads, from their own CPU history, before you trust `autoResume` with them. It runs the operator's own forecast and decision rules, through the [simulator](../concepts/forecasting.md#proving-it), over the history scan reads:
 
 - **FORECAST** is when the forecast would act if the workload were opted in today, having [learned all its history](../concepts/forecasting.md#learning-from-history) as the operator does for a new workload: `acts from day one`, from a date it projects, or `not within 4 weeks` for a pattern too irregular for the setting. For a workload Hybernate already manages, marked `(managed)` beside its name, it's that forecast's own, from `status.prediction`: `acting`, `learning`, from a date it projects, or, while it's paused with nothing to see its demand, `not learning while paused:` and why, such as `no Service routes requests to it`. [Name the workload](#one-workloads-forecast) to see what its forecast is doing in full, and the fix, from its `status.prediction.message`.
 - **READY**, **COLD**, **WOKEN FOR NOTHING** and **WOKEN** replay the last half of the history as Hybernate with `autoResume` would have managed it, from a forecast that learned only the first half: the mornings it had the workload up before its first use, those whose first use found it paused and woke it, the wakes ahead of demand that didn't come and how long they kept it up, and when it usually woke it. Having learned less, the replay is a little less ready than opting in now would be.
+- **WAKES ON** is what wakes the workload once it's paused, in the replay, as it would under Hybernate: `request`, through the [doorman](../concepts/wake-on-request.md), when a Service with a cluster IP selects its pods on a TCP port, keeps traffic cluster-wide, and isn't in GKE NEGs, which the doorman routes only with its forwarder; `query`, when its ManagedWorkload has a [Prometheus activity query](../guides/prometheus-signals.md#while-the-workload-is-paused); both; or `nothing`, so people wake it by hand, and the forecast doesn't learn the hours it's paused. For a workload Hybernate manages, what its operator found of its routing stands, as at its last pause, such as Services served by other workloads' pods. A workload not yet managed is judged by the ManagedWorkload opting it in would make, with its own `hybernate.io/wake-on-request` annotation. The JSON has it in `forecast.wakes`: `request`, `query`, and `noRequest`, why a request wouldn't wake it.
 
 A workload counts as used whenever its CPU is above `--cpu-threshold`, as the activity clock counts it; use that shows only in requests or activity annotations isn't in Prometheus.
 
@@ -328,7 +329,7 @@ Hybernate's forecast, from ManagedWorkload api: acting
 Replayed over its last 28 days of CPU history, from monitoring/prometheus-operated:
   Opted in today: acts from day one, at a confidence of 75%.
 
-From Thu 8 Oct to Thu 22 Oct, with autoResume, from a forecast that learned only the history before:
+From Thu 8 Oct to Thu 22 Oct, with autoResume, from a forecast that learned only the history before; while it's paused, a request through the doorman wakes it:
 DAY         FIRST USE  FOUND IT  WOKEN AT  FORECAST  WOKEN FOR NOTHING
 Thu 8 Oct   09:12      ready     08:45     acting    -
 Fri 9 Oct   09:20      ready     08:45     acting    -

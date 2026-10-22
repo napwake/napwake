@@ -22,6 +22,8 @@ import (
 
 	corev1 "k8s.io/api/core/v1"
 	networkingv1 "k8s.io/api/networking/v1"
+
+	"github.com/okedeji/hybernate/internal/doorman"
 )
 
 const (
@@ -31,17 +33,9 @@ const (
 	// Ingress uses the Service.
 	annotationGKENEG = "cloud.google.com/neg"
 
-	// annotationGKENEGStatus is where the NEG controller lists the NEGs it
-	// keeps for a Service, removed once it keeps none.
-	annotationGKENEGStatus = "cloud.google.com/neg-status"
+	annotationGKENEGStatus = doorman.AnnotationGKENEGStatus
 
 	annotationIngressClass = "kubernetes.io/ingress.class"
-
-	// vmIPNEGPort is the port the NEG controller lists a GCE_VM_IP NEG
-	// under, which an internal or external passthrough load balancer uses.
-	// Those NEGs hold nodes, not pods, and reach the doorman through
-	// kube-proxy like any LoadBalancer Service.
-	vmIPNEGPort = "0"
 )
 
 // gkeIngressClasses are the kubernetes.io/ingress.class values GKE's
@@ -70,7 +64,7 @@ var gkeIngressClasses = map[string]bool{
 // be parsed count, to stay safe. ingresses are those in the Service's
 // namespace.
 func usesGKENEG(svc corev1.Service, ingresses []networkingv1.Ingress) bool {
-	if hasPodNEGs(svc) {
+	if doorman.InPodNEGs(svc) {
 		return true
 	}
 	value, ok := svc.Annotations[annotationGKENEG]
@@ -90,27 +84,6 @@ func usesGKENEG(svc corev1.Service, ingresses []networkingv1.Ingress) bool {
 	return neg.Ingress && slices.ContainsFunc(ingresses, func(ing networkingv1.Ingress) bool {
 		return servedByGKE(ing) && backsOnto(ing, svc.Name)
 	})
-}
-
-// hasPodNEGs reports whether the NEG controller lists, for the Service, a
-// NEG that holds pods.
-func hasPodNEGs(svc corev1.Service) bool {
-	value, ok := svc.Annotations[annotationGKENEGStatus]
-	if !ok {
-		return false
-	}
-	var status struct {
-		NEGs map[string]string `json:"network_endpoint_groups"`
-	}
-	if err := json.Unmarshal([]byte(value), &status); err != nil {
-		return true
-	}
-	for port := range status.NEGs {
-		if port != vmIPNEGPort {
-			return true
-		}
-	}
-	return false
 }
 
 // servedByGKE reports whether GKE's ingress controller serves an Ingress:

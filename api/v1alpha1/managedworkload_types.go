@@ -584,6 +584,14 @@ type DryRunStatus struct {
 	// began, which is what pausing it would free.
 	// +optional
 	Resources *ResourceSnapshot `json:"resources,omitempty"`
+
+	// QueryActiveSincePause says a Prometheus activity query has shown
+	// activity at every check since the would-be pause under way began, as
+	// one can when it was requested. Until a check finds every query quiet,
+	// a query showing activity doesn't end it, as it wouldn't wake the
+	// workload from a real pause.
+	// +optional
+	QueryActiveSincePause bool `json:"queryActiveSincePause,omitempty"`
 }
 
 // ResourceSnapshot is what a workload runs, read at one moment, so it can be

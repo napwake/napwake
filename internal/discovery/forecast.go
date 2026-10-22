@@ -20,7 +20,12 @@ import (
 	"math"
 	"time"
 
+	corev1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/api/meta"
+	"k8s.io/apimachinery/pkg/labels"
+
 	v1alpha1 "github.com/okedeji/hybernate/api/v1alpha1"
+	"github.com/okedeji/hybernate/internal/doorman"
 	"github.com/okedeji/hybernate/internal/forecast"
 	"github.com/okedeji/hybernate/internal/forecast/sim"
 )
@@ -55,6 +60,127 @@ type ForecastReplay struct {
 	Live *ForecastOutlook `json:"live,omitempty"`
 	// Replay is the last half of the history, replayed.
 	Replay *ForecastRun `json:"replay,omitempty"`
+	// Wakes is what wakes the workload once it's paused, in the replay.
+	Wakes ReplayWakes `json:"wakes"`
+}
+
+// ReplayWakes is what wakes a paused workload, as it would under Hybernate,
+// and so what shows its demand while it's paused: a request through the
+// doorman, when one of its Services can be routed there, and a Prometheus
+// activity query, when its ManagedWorkload has one. With neither, people
+// wake it by hand, and the forecast doesn't learn the hours it's paused.
+type ReplayWakes struct {
+	Request bool `json:"request"`
+	Query   bool `json:"query"`
+	// NoRequest says why a request wouldn't wake it, when one wouldn't.
+	NoRequest string `json:"noRequest,omitempty"`
+}
+
+// Why a request wouldn't wake a paused workload, in ReplayWakes.NoRequest.
+const (
+	noRequestTurnedOff = "wake on request is turned off"
+	noRequestNoService = "no Service routes requests to it"
+	noRequestNEGs      = "its Services are behind GKE container-native load balancing (NEGs), which the doorman " +
+		"routes only with its forwarder"
+	noRequestNodeLocal = "its Services keep traffic on the caller's node"
+)
+
+// notRouted are the WakeOnRequest reasons with which the operator found it
+// can't route a paused workload's requests, and why, for the replay. Other
+// reasons pass: an awake workload's NotPaused, and a doorman that's down or
+// out of ports for now.
+var notRouted = map[string]string{
+	"NoServices":              noRequestNoService,
+	"TurnedOff":               noRequestTurnedOff,
+	"DoormanDisabled":         "the doorman is turned off for the cluster",
+	"UnsupportedLoadBalancer": noRequestNEGs,
+	"ServedByOtherPods":       "its Services are served by other workloads' Ready pods",
+	"NodeLocalTraffic":        noRequestNodeLocal,
+	"UnsupportedIPFamily":     "no doorman pod has an address in its Services' IP family",
+	"TooManyPorts":            "it would hold more doorman ports than it may",
+}
+
+// replayWakes is what would wake the workload were it paused: its
+// ManagedWorkload mw's, if Hybernate manages it, and otherwise what one made
+// from the workload's annotations would. The operator's own verdict on its
+// routing stands where it has one; otherwise it's judged from services, its
+// namespace's Services, against its pods' labels, and with none read, the
+// doorman is assumed, as Hybernate's default.
+func replayWakes(mw *v1alpha1.ManagedWorkload, annotations, podLabels map[string]string,
+	services map[string]corev1.Service) ReplayWakes {
+	var w ReplayWakes
+	if mw == nil && annotations[v1alpha1.AnnotationWakeOnRequest] == "false" {
+		w.NoRequest = noRequestTurnedOff
+		return w
+	}
+	if mw != nil {
+		p := mw.Spec.IdlePolicy
+		w.Query = p != nil && p.Activity != nil && len(p.Activity.Prometheus) > 0
+		if wake := mw.Spec.Wake; wake != nil && wake.OnRequest != nil && !*wake.OnRequest {
+			w.NoRequest = noRequestTurnedOff
+			return w
+		}
+		if c := meta.FindStatusCondition(mw.Status.Conditions, "WakeOnRequest"); c != nil {
+			if c.Status == "True" || c.Reason == "ForwarderNotReady" {
+				w.Request = true
+				return w
+			}
+			if why, ok := notRouted[c.Reason]; ok {
+				w.NoRequest = why
+				return w
+			}
+		}
+	}
+	if services == nil {
+		w.Request = true
+		return w
+	}
+	w.NoRequest = noRequestNoService
+	for _, svc := range services {
+		switch doormanRoute(svc, podLabels) {
+		case routed:
+			w.Request, w.NoRequest = true, ""
+			return w
+		case inNEGs:
+			w.NoRequest = noRequestNEGs
+		case nodeLocal:
+			if w.NoRequest == noRequestNoService {
+				w.NoRequest = noRequestNodeLocal
+			}
+		}
+	}
+	return w
+}
+
+// route is whether the doorman would route a Service to a paused workload.
+type route int
+
+const (
+	notTheWorkloads route = iota
+	routed
+	inNEGs
+	nodeLocal
+)
+
+// doormanRoute is whether the doorman would route svc to the paused
+// workload whose pods are labeled podLabels, as the operator decides it: a
+// Service with a selector and a cluster IP that selects them on a TCP port
+// the doorman serves, and keeps traffic cluster-wide. One in GKE's pod NEGs
+// is routed only through the doorman's forwarder, which is off by default.
+func doormanRoute(svc corev1.Service, podLabels map[string]string) route {
+	if len(svc.Spec.Selector) == 0 || svc.Spec.ClusterIP == corev1.ClusterIPNone ||
+		svc.Spec.Type == corev1.ServiceTypeExternalName ||
+		!labels.SelectorFromSet(svc.Spec.Selector).Matches(labels.Set(podLabels)) ||
+		len(doorman.RoutablePorts(svc)) == 0 {
+		return notTheWorkloads
+	}
+	switch {
+	case doorman.InPodNEGs(svc):
+		return inNEGs
+	case svc.Spec.InternalTrafficPolicy != nil && *svc.Spec.InternalTrafficPolicy == corev1.ServiceInternalTrafficPolicyLocal:
+		return nodeLocal
+	}
+	return routed
 }
 
 // ForecastOutlook is whether a forecast acts, and if not, what it waits
@@ -127,9 +253,10 @@ func (r replay) recording() sim.Recorded {
 }
 
 // replayForecast replays the forecast over the workload's history, with
-// threshold its confidence threshold and mw its ManagedWorkload, if
-// Hybernate manages it.
-func replayForecast(r replay, threshold int, mw *v1alpha1.ManagedWorkload, opts ForecastOptions) *ForecastReplay {
+// threshold its confidence threshold, mw its ManagedWorkload, if Hybernate
+// manages it, and wakes what would wake it while it's paused.
+func replayForecast(r replay, threshold int, mw *v1alpha1.ManagedWorkload, wakes ReplayWakes,
+	opts ForecastOptions) *ForecastReplay {
 	if r.end.Sub(r.start) < MinForecastHistory || r.step > sim.LookGap || time.Hour%r.step != 0 {
 		return nil
 	}
@@ -139,7 +266,8 @@ func replayForecast(r replay, threshold int, mw *v1alpha1.ManagedWorkload, opts 
 	}
 	rec := r.recording()
 	settings := forecast.Settings{Threshold: threshold, Location: loc}
-	fr := &ForecastReplay{Threshold: threshold, IfOptedIn: outlookOf(learnedEngine(rec.Hours(loc), settings, r.threshold))}
+	fr := &ForecastReplay{Threshold: threshold, Wakes: wakes,
+		IfOptedIn: outlookOf(learnedEngine(rec.Hours(loc), settings, r.threshold))}
 	if mw != nil {
 		fr.Live = liveOutlook(mw)
 	}
@@ -157,7 +285,8 @@ func replayForecast(r replay, threshold int, mw *v1alpha1.ManagedWorkload, opts 
 	}
 	report, err := sim.Run(sim.Scenario{Start: half, Duration: r.end.Sub(half), Step: r.step,
 		Traffic: rec.Traffic(r.threshold), State: state, Settings: sim.Settings{Confidence: threshold,
-			CPUThreshold: r.threshold, IdleAfter: r.idleAfter, AutoResume: true, WakeOnRequest: true, Location: loc}})
+			CPUThreshold: r.threshold, IdleAfter: r.idleAfter, AutoResume: true, WakeOnRequest: wakes.Request,
+			WakeOnQuery: wakes.Query, Location: loc}})
 	if err != nil {
 		return fr
 	}

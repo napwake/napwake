@@ -83,6 +83,7 @@ A duration is a Go duration above zero, such as `45s`, `90m` or `1h30m`. Days an
 | `dryRun.freedCPUHours`, `dryRun.freedMemoryHours` | quantity | vCPU-hours and GiB-hours the replicas requested during `slept` |
 | `dryRun.estimatedFreed` | string | Those hours priced, for display, with the would-be pause under way counted up to the last status write: what pausing would have freed. Also the `Would Free` column of `kubectl get managedworkloads` |
 | `dryRun.resources` | `ResourceSnapshot` | What the workload ran when the current would-be pause began |
+| `dryRun.queryActiveSincePause` | bool | A [Prometheus activity query](../guides/prometheus-signals.md#while-the-workload-is-paused) has shown activity at every check since the would-be pause under way was asked for; until a check finds every query quiet, they don't end it, as they wouldn't wake a real pause |
 | `prediction.dailyPhase`, `prediction.weeklyPhase` | string | Each season's phase: `Observing`, `Suggesting`, or `Active` |
 | `prediction.dailyConfidence`, `prediction.weeklyConfidence` | int | Accuracy % over the last 24 and 168 observed hours |
 | `prediction.timeZone` | string | The IANA time zone the forecast counts hours and weekdays in, the operator's `--timezone` (Helm value `timezone`), such as `Europe/London` |
