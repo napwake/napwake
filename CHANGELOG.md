@@ -144,6 +144,7 @@ The relaunch. The 0.1.x releases were early experiments, and 0.2.0 is a fresh st
 - The `IdleDetected` event says in words what the workload has been idle since, and in dry-run that it would have paused rather than that it pauses: `[dry-run] api: idle for 1 hour, since its last rollout; would have paused`
 - The `DependenciesLearned` event says of each dependency what the scan says: "woken and held with it" only for one Hybernate manages, in a namespace that allows the workload's; of one it doesn't manage, that it isn't managed by Hybernate, so it isn't woken with the workload, and to opt it in too. It used to say every dependency was held and woken
 - The `GitOpsConflict` event and condition say in a line what to change and link to the tool's section of the GitOps guide, instead of carrying the YAML setting, which `kubectl describe` flattened onto one line: `To stop it, have Argo CD ignore replicas, as for an HPA: https://okedeji.io/hybernate/guides/gitops/#argo-cd`
+- The dry-run guide says up front what dry-run runs: the activity clock, dependency holds and the forecast run as they do live, and only the scale to zero is skipped, so what it can't show is what happens once a workload is paused, how long a wake on request takes and whether a GitOps tool scales it back up. It also says that a request counts in dry-run only through the activity it shows, such as its CPU, and `autoResume`'s wakes not at all, so a workload's real pauses can be shorter than its would-be ones
 
 ### Fixed
 
