@@ -833,6 +833,44 @@ func TestCLI_ScanAndStatusAgreeOnMoney(t *testing.T) {
 	assert.NotContains(t, scan+status, "$0 this month")
 }
 
+// What a workload freed before it was protected is said as its own, never
+// as freed by workloads put back in dry-run when none were.
+func TestWriteScan_FreedBeforeProtected(t *testing.T) {
+	result := scanResult{Cluster: "staging", ClusterReport: &discovery.ClusterReport{Namespaces: 1,
+		Workloads: []Workload{{Namespace: "reports", Kind: "StatefulSet", Name: "reports", State: discovery.StateIdle,
+			Managed: true, WontPause: "PVCs deleted on scale-down", FreedThisMonth: 12, SavedThisMonth: 5}}}}
+	result.Totals = discovery.Totals{Workloads: 1, LiveProtected: 1, FreedThisMonth: 12, SavedThisMonth: 5,
+		ProtectedFreedThisMonth: 12, ProtectedSavedThisMonth: 5}
+	var out bytes.Buffer
+
+	require.NoError(t, writeScan(&out, result, scanOptions{output: "table"}))
+
+	got := out.String()
+	assert.NotContains(t, got, "dry-run")
+	assert.Contains(t, got, "  1 live workload is protected, so Hybernate never pauses it; it freed $12 this month "+
+		"before it was, and saved $5 of that.\n")
+	assert.NotContains(t, got, "Hybernate has freed", "nothing else freed anything")
+
+	h, _ := headlineFor(result)
+	require.NotEmpty(t, h.Figures)
+	assert.Equal(t, "$12", h.Figures[0].Value)
+	assert.Equal(t, "so far, pausing workloads since protected; $5 of it saved as nodes scaled down",
+		h.Figures[0].Detail)
+
+	result.Workloads = append(result.Workloads, Workload{Namespace: "orders", Kind: "Deployment", Name: "api",
+		State: discovery.StatePaused, Managed: true, FreedThisMonth: 3, SavedThisMonth: 1})
+	result.Totals.Live, result.Totals.FreedThisMonth, result.Totals.SavedThisMonth = 1, 15, 6
+	out.Reset()
+	require.NoError(t, writeScan(&out, result, scanOptions{output: "table"}))
+	assert.Contains(t, out.String(), "  Hybernate has freed $3 this month pausing 1 live workload, and saved $1 of it.\n"+
+		"  1 more live workload is protected, so Hybernate never pauses it; it freed $12 this month before it was, "+
+		"and saved $5 of that.\n")
+	h, _ = headlineFor(result)
+	assert.Equal(t, "$15", h.Figures[0].Value)
+	assert.Equal(t, "so far, pausing 1 live workload and workloads since protected; $6 of it saved as nodes "+
+		"scaled down", h.Figures[0].Detail)
+}
+
 func TestLiveProtected(t *testing.T) {
 	assert.Equal(t, "1 more live workload is protected, so Hybernate never pauses it.",
 		liveProtected(discovery.Totals{Live: 1, LiveProtected: 1}))

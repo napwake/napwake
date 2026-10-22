@@ -267,6 +267,11 @@ type Totals struct {
 	// namespace, part of Hybernate, or deleting their PVCs when scaled down.
 	Live          int `json:"live"`
 	LiveProtected int `json:"liveProtected"`
+	// ProtectedFreedThisMonth and ProtectedSavedThisMonth are the part of
+	// FreedThisMonth and SavedThisMonth those protected ones freed and
+	// saved this month, before they were protected.
+	ProtectedFreedThisMonth float64 `json:"protectedFreedThisMonth"`
+	ProtectedSavedThisMonth float64 `json:"protectedSavedThisMonth"`
 }
 
 // ReplayTotals sum what replaying the activity clock found.
@@ -774,6 +779,8 @@ func totals(workloads []Workload) Totals {
 			t.Measured.MonthlyFreed += w.Measured.MonthlyFreed
 		case w.Managed && !w.DryRun && (w.Protected || w.WontPause != "" || w.protectedByHybernate):
 			t.LiveProtected++
+			t.ProtectedFreedThisMonth += w.FreedThisMonth
+			t.ProtectedSavedThisMonth += w.SavedThisMonth
 		case w.Managed && !w.DryRun:
 			t.Live++
 		}

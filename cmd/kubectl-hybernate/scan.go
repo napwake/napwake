@@ -723,13 +723,16 @@ func writeHeadline(p *printer, result scanResult) {
 		p.line("  Hybernate has %s paused right now, freeing %s an hour.",
 			countOf(t.Paused, "workload"), cents(t.PausedHourlyCost))
 	}
+	freed, saved := unprotectedFreed(t)
 	switch {
 	case t.Live > 0:
-		p.line("  Hybernate has freed %s this month pausing %s, and saved %s of it.", dollars(t.FreedThisMonth),
-			countOf(t.Live, "live workload"), dollars(t.SavedThisMonth))
-	case t.FreedThisMonth > 0:
+		p.line("  Hybernate has freed %s this month pausing %s, and saved %s of it.", dollars(freed),
+			countOf(t.Live, "live workload"), dollars(saved))
+	case anyMoney(freed) && t.DryRun > 0:
 		p.line("  Hybernate has freed %s this month, and saved %s of it, pausing workloads since put back in dry-run.",
-			dollars(t.FreedThisMonth), dollars(t.SavedThisMonth))
+			dollars(freed), dollars(saved))
+	case anyMoney(freed):
+		p.line("  Hybernate has freed %s this month, and saved %s of it.", dollars(freed), dollars(saved))
 	}
 	if t.LiveProtected > 0 {
 		p.line("  %s", liveProtected(t))
@@ -785,16 +788,35 @@ func writeHeadline(p *printer, result scanResult) {
 }
 
 // liveProtected says how many live workloads Hybernate never pauses, which
-// the count of those it pauses leaves out.
+// the count of those it pauses leaves out, and what they freed this month
+// before they were protected, apart from what it frees pausing the rest.
 func liveProtected(t discovery.Totals) string {
 	more := ""
 	if t.Live > 0 {
 		more = " more"
 	}
+	s := fmt.Sprintf("%d%s live workloads are protected, so Hybernate never pauses them", t.LiveProtected, more)
+	they := "they"
 	if t.LiveProtected == 1 {
-		return "1" + more + " live workload is protected, so Hybernate never pauses it."
+		s, they = "1"+more+" live workload is protected, so Hybernate never pauses it", "it"
 	}
-	return fmt.Sprintf("%d%s live workloads are protected, so Hybernate never pauses them.", t.LiveProtected, more)
+	if anyMoney(t.ProtectedFreedThisMonth) {
+		s += fmt.Sprintf("; %s freed %s this month before it was, and saved %s of that", they,
+			dollars(t.ProtectedFreedThisMonth), dollars(t.ProtectedSavedThisMonth))
+	}
+	return s + "."
+}
+
+// unprotectedFreed is what Hybernate has freed and saved this month pausing
+// workloads it can still pause, live or put back in dry-run.
+func unprotectedFreed(t discovery.Totals) (freed, saved float64) {
+	return t.FreedThisMonth - t.ProtectedFreedThisMonth, t.SavedThisMonth - t.ProtectedSavedThisMonth
+}
+
+// anyMoney says an amount is a cent or more, as the operator records money,
+// rather than nothing, or what's left of subtracting one total from another.
+func anyMoney(amount float64) bool {
+	return amount >= 0.005
 }
 
 // notReplayed says which unmanaged workloads the table lists that the
