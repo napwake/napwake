@@ -331,13 +331,46 @@ var _ = Describe("Operator restart", Serial, func() {
 	It("keeps a paused workload paused across a restart of the operator and the doorman, and still wakes it", func() {
 		ns := createNamespace("hybernate-e2e-restart")
 		const name = "e2e-web"
+		// A restart is a gap in watching, which doesn't wake a paused
+		// workload, so it doesn't end a would-be pause either.
+		const measured = "e2e-dry-run"
 		startWebApp(name, ns, 3)
+		startWebApp(measured, ns, 1)
 		manage(ns, "Deployment", name, "1m")
+		Expect(kubectlApply(fmt.Sprintf(`
+apiVersion: hybernate.io/v1alpha1
+kind: ManagedWorkload
+metadata: {name: %[1]s, namespace: %[2]s}
+spec:
+  target: {kind: Deployment, name: %[1]s}
+  idlePolicy: {idleAfter: 1m}
+  dryRun: true
+`, measured, ns))).To(Succeed())
 		waitForDoorman(ns, name)
 		pausedAt, err := jsonpath("managedworkload", name, ns, "{.status.pause.pausedAt}")
 		Expect(err).NotTo(HaveOccurred())
 		Expect(pausedAt).NotTo(BeEmpty())
 		Expect(jsonpath("managedworkload", name, ns, "{.status.pause.previousReplicas}")).To(Equal("3"))
+
+		By("waiting for the dry-run workload's would-be pause")
+		Eventually(func(g Gomega) {
+			g.Expect(jsonpath("managedworkload", measured, ns, "{.status.phase}")).To(Equal("Idle"))
+		}, 3*time.Minute, 5*time.Second).Should(Succeed())
+		wouldBePause, err := jsonpath("managedworkload", measured, ns, "{.status.lastTransitionTime}")
+		Expect(err).NotTo(HaveOccurred())
+		Expect(jsonpath("managedworkload", measured, ns, "{.status.dryRun.pauses}")).To(Equal("1"))
+
+		By("waiting until what's written of its clock is minutes old, as the status flush leaves it")
+		// The restart then finds a gap of over 2 minutes since what's
+		// written, which restarts an awake workload's clock.
+		Eventually(func(g Gomega) {
+			evaluated, err := jsonpath("managedworkload", measured, ns, "{.status.activity.lastEvaluatedTime}")
+			g.Expect(err).NotTo(HaveOccurred())
+			at, err := time.Parse(time.RFC3339, evaluated)
+			g.Expect(err).NotTo(HaveOccurred())
+			g.Expect(time.Since(at)).To(BeNumerically(">", 150*time.Second))
+			g.Expect(time.Since(at)).To(BeNumerically("<", 4*time.Minute), "a flush is near")
+		}, 8*time.Minute, 5*time.Second).Should(Succeed())
 
 		By("deleting the operator's and the doorman's pods")
 		for _, d := range []struct{ deployment, label string }{
@@ -357,13 +390,20 @@ var _ = Describe("Operator restart", Serial, func() {
 			rollout(namespace, "deployment/"+d.deployment)
 		}
 
-		By("checking the workload stays paused, with its pause record intact")
+		By("checking the workload stays paused, with its pause record intact, and the would-be pause goes on")
 		Consistently(func(g Gomega) {
 			g.Expect(jsonpath("managedworkload", name, ns, "{.status.phase}")).To(Equal("Paused"))
 			g.Expect(jsonpath("deployment", name, ns, "{.spec.replicas}")).To(Equal("0"))
 			g.Expect(jsonpath("managedworkload", name, ns, "{.status.pause.previousReplicas}")).To(Equal("3"))
 			g.Expect(jsonpath("managedworkload", name, ns, "{.status.pause.pausedAt}")).To(Equal(pausedAt))
+			g.Expect(jsonpath("managedworkload", measured, ns, "{.status.phase}")).To(Equal("Idle"))
+			g.Expect(jsonpath("managedworkload", measured, ns, "{.status.lastTransitionTime}")).To(Equal(wouldBePause))
+			g.Expect(jsonpath("managedworkload", measured, ns, "{.status.dryRun.pauses}")).To(Equal("1"))
 		}, 45*time.Second, 5*time.Second).Should(Succeed())
+		events, err := utils.Output(exec.Command("kubectl", "get", "events.events.k8s.io", "-n", ns,
+			"-o", `jsonpath={range .items[*]}{.reason}: {.note}{"\n"}{end}`))
+		Expect(err).NotTo(HaveOccurred())
+		Expect(events).NotTo(ContainSubstring("ActivityResumed"), "the restart isn't activity")
 
 		By("checking its Service points at the new doorman pods")
 		Eventually(func(g Gomega) {
