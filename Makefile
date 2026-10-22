@@ -367,6 +367,11 @@ lint-config: golangci-lint ## Verify golangci-lint linter configuration
 VERSIONED_DOCS = README.md docs/getting-started/installation.md docs/getting-started/kubectl-plugin.md \
 	docs/operations/monitoring.md docs/reference/helm-values.md docs/reference/security.md
 
+# Every file bump writes, which release commits. A file bump writes that
+# isn't here is left out of the release commit, and release stops.
+BUMPED_FILES = charts/hybernate/Chart.yaml charts/hybernate/values.yaml charts/hybernate/files/defaults.yaml \
+	config/manager/kustomization.yaml CHANGELOG.md $(VERSIONED_DOCS)
+
 # Versioning recipes read VERSION from the environment rather than having
 # make expand it into them, and check its form first, so a tag can't run as
 # shell. A pre-release, such as 0.2.0-rc.1, rehearses its version's release:
@@ -419,7 +424,9 @@ verify-version: ## Fail unless the chart, the kustomize image, the docs and the 
 .PHONY: release
 release: bump ## Bump version, commit, and tag. Usage: make release VERSION=0.1.2
 	@$(MAKE) --no-print-directory verify-version
-	@git add charts/hybernate/Chart.yaml config/manager/kustomization.yaml CHANGELOG.md $(VERSIONED_DOCS)
+	@git add $(BUMPED_FILES)
+	@left="$$(git diff --name-only)"; [ -z "$$left" ] || { \
+		echo "make bump changed files release doesn't commit; add them to BUMPED_FILES:"; echo "$$left"; exit 1; }
 	@# Versions bumped in an earlier commit leave nothing to commit, and the
 	@# release is tagged as it stands.
 	@git diff --cached --quiet || git commit -m "chore(release): bump version to v$$VERSION"
