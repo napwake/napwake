@@ -43,6 +43,13 @@ import (
 // at 40m on weekdays from 09:10 to 17:30 UTC, and at 1m otherwise.
 func officePrometheus(t *testing.T) *httptest.Server {
 	t.Helper()
+	return officePrometheusSince(t, time.Time{})
+}
+
+// officePrometheusSince is officePrometheus with no history before since,
+// as a Prometheus installed then keeps.
+func officePrometheusSince(t *testing.T, since time.Time) *httptest.Server {
+	t.Helper()
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if strings.HasSuffix(r.URL.Path, "/api/v1/query") {
 			_, _ = w.Write([]byte(`{"status":"success","data":{"resultType":"vector","result":[]}}`))
@@ -53,7 +60,11 @@ func officePrometheus(t *testing.T) *httptest.Server {
 		end, _ := strconv.ParseInt(q.Get("end"), 10, 64)
 		step, _ := strconv.ParseInt(q.Get("step"), 10, 64)
 		var values [][2]any
-		for at := start; at <= end; at += step {
+		first := start
+		for first < since.Unix() {
+			first += step
+		}
+		for at := first; at <= end; at += step {
 			cores := 0.001
 			t := time.Unix(at, 0).UTC()
 			since := t.Sub(time.Date(t.Year(), t.Month(), t.Day(), 0, 0, 0, 0, time.UTC))
@@ -118,7 +129,8 @@ func TestCLI_ForecastTable(t *testing.T) {
 	assert.Contains(t, out, "NAMESPACE   NAME  FORECAST           READY")
 	assert.Contains(t, out, "preview-42  api   acts from day one")
 	assert.Contains(t, out, ", 25m ahead")
-	assert.Contains(t, out, "Name a workload to see\nit day by day.")
+	assert.Contains(t, out, "Name a workload to see\nit day by day, and for one Hybernate manages, what its own "+
+		"forecast is doing now.")
 }
 
 func TestCLI_ForecastOneWorkload(t *testing.T) {
@@ -127,15 +139,17 @@ func TestCLI_ForecastOneWorkload(t *testing.T) {
 		"preview-42", "--prometheus-url", prom.URL, "--timezone", "Europe/London")
 	require.NoError(t, err, out)
 
-	assert.Contains(t, out, "preview-42/api: acts from day one, at a confidence of 75%.")
+	assert.Contains(t, out, ": the forecast of preview-42/api, times in Europe/London\n")
+	assert.Contains(t, out, "Replayed over its last 28 days of CPU history, from "+prom.URL+":\n"+
+		"  Opted in today: acts from day one, at a confidence of 75%.")
+	assert.NotContains(t, out, "Hybernate's forecast", "Hybernate doesn't manage it")
 	assert.Contains(t, out, "DAY")
 	assert.Contains(t, out, "FOUND IT")
-	assert.Contains(t, out, "times in Europe/London")
 	assert.Contains(t, out, "Ready on ")
 
 	_, err = runCLI(t, newStatusClient(t, interceptor.Funcs{}, forecastCluster()...), "forecast", "web", "-n",
 		"preview-42", "--prometheus-url", prom.URL)
-	require.ErrorContains(t, err, "no workload web with CPU history")
+	require.EqualError(t, err, "no Deployment or StatefulSet named web in preview-42; check the name and the namespace")
 }
 
 // The forecast counts hours in the operator's time zone, which its
@@ -169,10 +183,12 @@ func TestWriteForecast_TooLittleHistory(t *testing.T) {
 	var out strings.Builder
 
 	require.NoError(t, writeForecast(&out, forecastResult{Cluster: "prelaunch", Prometheus: "monitoring/prometheus",
-		HistoryHours: 4, HistorySince: since, Timezone: "UTC"}, false, time.UTC))
+		HistoryHours: 4, HistorySince: since, Timezone: "UTC", managed: "api -n orders"}, time.UTC))
 
 	assert.Contains(t, out.String(), "4 hours of CPU history is too little to replay the forecast over: it needs "+
-		"at least 2 days.\n  Run it again after Fri 23 Oct 02:00 UTC.")
+		"at least 2 days.\n  Run it again after Fri 23 Oct 02:00 UTC.\n"+
+		"  To see what Hybernate's own forecast of a workload it manages is doing, which needs no history, name it: "+
+		"kubectl hybernate forecast api -n orders\n")
 	assert.NotContains(t, out.String(), "No workload has CPU history")
 }
 
@@ -196,21 +212,6 @@ func TestCLI_ForecastRejectsBadFlags(t *testing.T) {
 			require.Error(t, err)
 		})
 	}
-}
-
-func TestPickWorkload(t *testing.T) {
-	workloads := []forecastWorkload{
-		{Namespace: "a", Kind: v1alpha1.TargetKindDeployment, Name: "api"},
-		{Namespace: "b", Kind: v1alpha1.TargetKindDeployment, Name: "api"},
-		{Namespace: "a", Kind: v1alpha1.TargetKindStatefulSet, Name: "db"},
-	}
-	got, err := pickWorkload(workloads, "statefulset/db")
-	require.NoError(t, err)
-	assert.Equal(t, "db", got[0].Name)
-	_, err = pickWorkload(workloads, "api")
-	require.ErrorContains(t, err, "api is a/deployment/api and b/deployment/api")
-	_, err = pickWorkload(workloads, "deployment/db")
-	require.Error(t, err)
 }
 
 func TestSpanOf(t *testing.T) {

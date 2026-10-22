@@ -279,16 +279,62 @@ preview-42  reports  not within 4 weeks   0/6    6     0                  -
 
 `forecast` shows what Hybernate's [forecast](../concepts/forecasting.md) would make of your workloads, from their own CPU history, before you trust `autoResume` with them. It runs the operator's own forecast and decision rules, through the [simulator](../concepts/forecasting.md#proving-it), over the history scan reads:
 
-- **FORECAST** is when the forecast would act if the workload were opted in today, having [learned all its history](../concepts/forecasting.md#learning-from-history) as the operator does for a new workload: `acts from day one`, from a date it projects, or `not within 4 weeks` for a pattern too irregular for the setting. For a workload Hybernate already manages, marked `(managed)` beside its name, it's that forecast's own, from `status.prediction`: `acting`, `learning`, from a date it projects, or `not learning: paused without wake on request`.
+- **FORECAST** is when the forecast would act if the workload were opted in today, having [learned all its history](../concepts/forecasting.md#learning-from-history) as the operator does for a new workload: `acts from day one`, from a date it projects, or `not within 4 weeks` for a pattern too irregular for the setting. For a workload Hybernate already manages, marked `(managed)` beside its name, it's that forecast's own, from `status.prediction`: `acting`, `learning`, from a date it projects, or `not learning: paused without wake on request`; [name it](#one-workloads-forecast) to see what it's doing in full.
 - **READY**, **COLD**, **WOKEN FOR NOTHING** and **WOKEN** replay the last half of the history as Hybernate with `autoResume` would have managed it, from a forecast that learned only the first half: the mornings it had the workload up before its first use, those whose first use found it paused and woke it, the wakes ahead of demand that didn't come and how long they kept it up, and when it usually woke it. Having learned less, the replay is a little less ready than opting in now would be.
 
-A workload counts as used whenever its CPU is above `--cpu-threshold`, as the activity clock counts it; use that shows only in requests or activity annotations isn't in Prometheus. Name a workload, as `api` or `statefulset/postgres`, to see it day by day: each day's first use, how it found the workload, when the forecast woke it, and whether the forecast was acting.
+A workload counts as used whenever its CPU is above `--cpu-threshold`, as the activity clock counts it; use that shows only in requests or activity annotations isn't in Prometheus.
+
+It reads Prometheus as [scan](#scan-a-cluster) does, found in the cluster or at `--prometheus-url`, with the same [flags](#a-prometheus-elsewhere) and [permissions](#permissions), and fails when there's no history to read. With less than two days of it, a day to learn from and a day to replay, it says so and when there will be enough, and, when Hybernate manages a workload, how to see its own forecast, which needs no history. It only reads.
+
+### One Workload's Forecast
+
+Name a workload, as `api` or `statefulset/postgres`, to see its forecast:
 
 ```bash
-kubectl hybernate forecast api -n preview-42 --timezone Europe/London
+kubectl hybernate forecast api -n preview-42
 ```
 
-It reads Prometheus as [scan](#scan-a-cluster) does, found in the cluster or at `--prometheus-url`, with the same [flags](#a-prometheus-elsewhere) and [permissions](#permissions), and fails when there's no history to read. With less than two days of it, a day to learn from and a day to replay, it says so and when there will be enough. Its notes are only those about the history it read; `scan` has the rest. It only reads.
+```
+staging (EKS us-east-1): the forecast of preview-42/api, times in Europe/London
+
+Hybernate's forecast, from ManagedWorkload api: acting
+  acting, on 4 weeks of CPU history and what it has seen since: its forecasts of the last day were 91% right, and it acts from 75%, so it holds off pauses before hours it expects to be busy and wakes the workload 15 minutes ahead of them
+  Phase:       daily Active, weekly Active
+  Hours seen:  24 of the 24 hours of the day, 168 of the 168 hours of the week
+  Learned:     790 hours: 672 from its CPU history in Prometheus, and 118 live in the 5 days Hybernate has managed it
+  Confidence:  91% right over the last day, 88% over the last week; it acts from 75%
+  Acts from:   now
+  Busy hours:  Thu 22 Oct 09:00–18:00, up to 64% of its CPU requests
+  autoResume:  on: it holds off pauses before the hours it expects busy, and wakes the workload 15 minutes ahead of them
+
+Replayed over its last 28 days of CPU history, from monitoring/prometheus-operated:
+  Opted in today: acts from day one, at a confidence of 75%.
+
+From Thu 8 Oct to Thu 22 Oct, with autoResume, from a forecast that learned only the history before:
+DAY         FIRST USE  FOUND IT  WOKEN AT  FORECAST  WOKEN FOR NOTHING
+Thu 8 Oct   09:12      ready     08:45     acting    -
+Fri 9 Oct   09:20      ready     08:45     acting    -
+Sat 10 Oct  -          -         -         acting    -
+...
+
+Ready on 9 of 10 mornings, woken 25m ahead; it never woke it for nothing.
+```
+
+For a workload Hybernate manages, it first shows what Hybernate's own forecast of it is doing, from its ManagedWorkload's `status.prediction` and the state the forecast saves there, as the operator restores it:
+
+- **The first line** says whether it's acting, as `status` shows it in FORECAST: `acting`, `learning`, `relearning` or `not learning`. Under it is the operator's own message, as it wrote it in `status.prediction.message`: what it's waiting for and why.
+- **Phase** is the phase of each season, daily and weekly: `Observing`, `Suggesting` or `Active`. See [Phase Lifecycle](../concepts/forecasting.md#phase-lifecycle).
+- **Hours seen** are the hours of the day it has seen since it started or last relearned, all 24 of which it needs before it can act, and the hours of the week it has seen.
+- **Learned** is how many hours of demand it has learned, how many of them came from the workload's CPU history in Prometheus when Hybernate began managing it (`status.prediction.history`), and how many it has learned live since, out of how long Hybernate has managed it. When it learned no history, the **History** line gives the operator's reason.
+- **Confidence** is how right its forecasts of the last day and the last week were, and the confidence it acts from.
+- **Acts from** is `now`, when it's acting; the time it's expected to start (`status.prediction.startsActing`), if the coming days repeat the last week; `not known until it has seen every hour of the day`; or `not expected within 4 weeks`, for a pattern too irregular for its setting.
+- **Busy hours** are the hours of the next 24 it expects demand at or above the workload's `cpuThreshold` in, with the most it expects as a share of the CPU it requests. It holds off a pause before each, and with `autoResume` wakes the workload 15 minutes ahead of it. It forecasts none until it's acting.
+- **autoResume** says whether it's on, and what that changes.
+- **Its state** says why the plugin couldn't read the saved state, such as a plugin of another version than the operator; the lines read from it are left out. A workload the operator hasn't recorded a forecast for yet says so, and what to check.
+
+Then, for any workload, managed or not, comes the replay of its history: when the forecast would act were the workload opted in today, and the last half of the history day by day, with each day's first use, how it found the workload, when the forecast woke it, and whether the forecast was acting. When it can't be replayed, the line that takes its place says why and what to do: too little history, a day to learn from and a day to replay, with when there will be enough; no Prometheus to read, or one it couldn't; no CPU requests to measure use against; no CPU history of its pods; or a workload scaled to zero outside Hybernate. A workload Hybernate manages shows its own forecast whatever its history, and exits 0. One it doesn't manage, with nothing else to show, exits 1 when there's no Prometheus it can read; with too little history, it says so and exits 0.
+
+NAME is looked for in every namespace `forecast` reads, or those given with `-n`. It matches a Deployment or StatefulSet, and a ManagedWorkload's own name, for one written under another name. When it matches more than one, such as `api` in two namespaces, `forecast` names them and asks for `-n` or `kind/name`. A name that matches nothing says so; in a namespace named with `-n`, a workload labelled `hybernate.io/ignore=true`, which the forecast leaves out as Hybernate does, is named as such. Times are in the operator's time zone, as the workload's ManagedWorkload records it, unless `--timezone` says otherwise. `-o json` and `-o yaml` give the same in each workload's `operator` (with `learned`: `hours`, `fromHistory`, `hoursOfDay`, `hoursOfWeek`, and `busy`, each span's `from`, `to` and `peak`), `forecast` and `noReplay`. Reading the ManagedWorkload takes `list` on `managedworkloads`, which `view` has; without it, the workload is shown as one Hybernate doesn't manage.
 
 | Flag | Short | Default | Description |
 |------|-------|---------|-------------|

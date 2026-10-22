@@ -106,7 +106,7 @@ kubectl hybernate enable my-api -n staging
 - **`kubectl hybernate status`** shows what Hybernate is doing in a cluster on one screen: each workload's state, when it pauses next or what holds it awake, what needs attention, what pausing has freed and what of that it saved, and the latest pauses and wakes with what caused them
 - **`kubectl hybernate pause`** pauses a workload now, such as a preview environment at the end of the day, to wake on its next request
 - **`kubectl hybernate wake`** wakes a paused workload from the terminal and waits until it's Running
-- **`kubectl hybernate forecast`** replays the forecast over your cluster's own Prometheus history, to show when it would have woken each workload and how often for nothing, before you trust `autoResume` with it
+- **`kubectl hybernate forecast`** replays the forecast over your cluster's own Prometheus history, to show when it would have woken each workload and how often for nothing, before you trust `autoResume` with it; named, as `forecast api -n staging`, it also shows what Hybernate's own forecast of a workload it manages is doing: whether it's acting and why, what it has learned, and the hours it expects busy
 - **`kubectl hybernate nodes`** names the node autoscaler and shows, for each node, what keeps it from being removed, so what pausing frees can come off the bill
 - **`kubectl hybernate enable`** ends dry-run once you trust what you've measured, and says what to change in Git when a GitOps tool applies the workload
 - **Cost tracking** per workload, for the current month: what it cost, what pausing freed, what that saved once nodes went, and a projection for the month, priced at the list price of the nodes it runs on

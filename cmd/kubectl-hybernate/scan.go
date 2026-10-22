@@ -67,6 +67,11 @@ type scanOptions struct {
 	prometheus     prometheusOptions
 	// forecast, when set, also replays the forecast over the history.
 	forecast *discovery.ForecastOptions
+	// historyOptional has a forecast replay scan on without history, for
+	// a workload named on the command line, whose operator's forecast is
+	// worth showing without one: why there's none is the result's
+	// historyUnread.
+	historyOptional bool
 }
 
 // prometheusOptions say where to read history from and how to reach it.
@@ -96,6 +101,9 @@ type scanResult struct {
 	// HistoryAccess is what an admin can run to let the user read the
 	// cluster's Prometheus, when the scan found one it wasn't allowed to.
 	HistoryAccess []string `json:"historyAccess,omitempty"`
+	// historyUnread says why a forecast replay that went on without
+	// history has none.
+	historyUnread error
 }
 
 // settings are the rules the scan judged with, so a report can state them.
@@ -486,35 +494,8 @@ func scanCluster(ctx context.Context, window time.Duration, prom prometheusSetup
 	var history *discovery.Prometheus
 	var historyNote string
 	if window > 0 {
-		var err error
-		history, err = historySource(ctx, c, config, namespaces, time.Now().Add(-window), prom)
-		var forbidden *discovery.ProxyForbiddenError
-		if errors.As(err, &forbidden) {
-			scan.HistoryAccess = historyAccess(ctx, c, forbidden)
-		}
-		switch {
-		case prom.url != "" && err != nil:
-			return scanResult{}, &historyError{fmt.Errorf("reading history from --prometheus-url: %w", err)}
-		case prom.service != nil && forbidden != nil:
-			return scanResult{}, &historyError{fmt.Errorf("reading history from --prometheus-service %s: %w; an "+
-				"admin can let you, for that Service and nothing else, with: %s", prom.service, err,
-				strings.Join(scan.HistoryAccess, " && "))}
-		case prom.service != nil && err != nil:
-			return scanResult{}, &historyError{fmt.Errorf("reading history from --prometheus-service %s: %w",
-				prom.service, err)}
-		}
-		if ctxErr := ctx.Err(); ctxErr != nil {
-			return scanResult{}, &historyError{fmt.Errorf("looking for Prometheus: %w", ctxErr)}
-		}
-		if err != nil && opts.forecast != nil {
-			why := "the forecast is replayed over CPU history, and there's none to read: " + err.Error()
-			if len(scan.HistoryAccess) > 0 {
-				why += "; an admin can let you read it with: " + strings.Join(scan.HistoryAccess, " && ")
-			}
-			return scanResult{}, &historyError{errors.New(why)}
-		}
-		if err != nil {
-			historyNote = err.Error() + "; judging from CPU right now"
+		if history, historyNote, err = scanHistory(ctx, c, config, namespaces, window, prom, opts, &scan); err != nil {
+			return scanResult{}, err
 		}
 	}
 	scan.NodeAutoscaler, err = nodescale.Detect(ctx, c)
@@ -553,6 +534,52 @@ func scanCluster(ctx context.Context, window time.Duration, prom prometheusSetup
 	}
 	scan.ClusterReport = report
 	return scan, nil
+}
+
+// scanHistory finds the Prometheus the scan replays history from, or says
+// why there's none: an error when the scan can't go on without it, a note
+// when it judges from CPU right now instead, and for a forecast replay that
+// goes on without history, scan.historyUnread.
+func scanHistory(ctx context.Context, c client.Client, config *rest.Config, namespaces []string,
+	window time.Duration, prom prometheusSetup, opts scanOptions, scan *scanResult) (
+	*discovery.Prometheus, string, error) {
+	history, err := historySource(ctx, c, config, namespaces, time.Now().Add(-window), prom)
+	var forbidden *discovery.ProxyForbiddenError
+	if errors.As(err, &forbidden) {
+		scan.HistoryAccess = historyAccess(ctx, c, forbidden)
+	}
+	var unread error
+	switch {
+	case prom.url != "" && err != nil:
+		unread = &historyError{fmt.Errorf("reading history from --prometheus-url: %w", err)}
+	case prom.service != nil && forbidden != nil:
+		unread = &historyError{fmt.Errorf("reading history from --prometheus-service %s: %w; an "+
+			"admin can let you, for that Service and nothing else, with: %s", prom.service, err,
+			strings.Join(scan.HistoryAccess, " && "))}
+	case prom.service != nil && err != nil:
+		unread = &historyError{fmt.Errorf("reading history from --prometheus-service %s: %w",
+			prom.service, err)}
+	}
+	if ctxErr := ctx.Err(); ctxErr != nil {
+		return nil, "", &historyError{fmt.Errorf("looking for Prometheus: %w", ctxErr)}
+	}
+	if unread == nil && err != nil && opts.forecast != nil {
+		why := "the forecast is replayed over CPU history, and there's none to read: " + err.Error()
+		if len(scan.HistoryAccess) > 0 {
+			why += "; an admin can let you read it with: " + strings.Join(scan.HistoryAccess, " && ")
+		}
+		unread = &historyError{errors.New(why)}
+	}
+	switch {
+	case unread != nil && opts.historyOptional:
+		scan.historyUnread = unread
+		return nil, "", nil
+	case unread != nil:
+		return nil, "", unread
+	case err != nil:
+		return nil, err.Error() + "; judging from CPU right now", nil
+	}
+	return history, "", nil
 }
 
 // historySource finds the Prometheus to replay history from since, or says
