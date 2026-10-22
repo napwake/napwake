@@ -18,6 +18,7 @@ package discovery
 
 import (
 	"math"
+	"strings"
 	"time"
 
 	corev1 "k8s.io/api/core/v1"
@@ -101,15 +102,31 @@ var notRouted = map[string]string{
 	"TooManyPorts":            "it would hold more doorman ports than it may",
 }
 
+// optedInWakeOnRequest is whether the ManagedWorkload opting a workload in
+// would have it wake on request, by hybernate.io/wake-on-request as the
+// opt-in controller resolves it: the workload's annotations', then its
+// namespace's, the first that's "true" or "false", and on otherwise.
+func optedInWakeOnRequest(workload, namespace map[string]string) bool {
+	for _, annotations := range []map[string]string{workload, namespace} {
+		switch strings.TrimSpace(annotations[v1alpha1.AnnotationWakeOnRequest]) {
+		case v1alpha1.True:
+			return true
+		case "false":
+			return false
+		}
+	}
+	return true
+}
+
 // replayWakes is what would wake the workload were it paused: its
-// ManagedWorkload mw's, if Hybernate manages it, and otherwise what one made
-// from the workload's annotations would, under install, the Hybernate
-// install that would manage it. An install with its doorman off wakes
+// ManagedWorkload mw's, if Hybernate manages it, and otherwise what one
+// opting it in would, with wake on request as onRequest says, under
+// install, the Hybernate install that would manage it. An install with its doorman off wakes
 // nothing on request. The operator's own verdict on the workload's routing
 // stands where it has one, as from its last pause; otherwise it's judged
 // from services, its namespace's Services, against its pods' labels, and
 // with none read, the doorman is assumed, as Hybernate's default.
-func replayWakes(mw *v1alpha1.ManagedWorkload, annotations, podLabels map[string]string,
+func replayWakes(mw *v1alpha1.ManagedWorkload, onRequest bool, podLabels map[string]string,
 	services map[string]corev1.Service, install Install) ReplayWakes {
 	var w ReplayWakes
 	if mw != nil {
@@ -120,7 +137,7 @@ func replayWakes(mw *v1alpha1.ManagedWorkload, annotations, podLabels map[string
 	case install.DoormanOff:
 		w.NoRequest = noRequestDoormanOff
 		return w
-	case mw == nil && annotations[v1alpha1.AnnotationWakeOnRequest] == "false",
+	case mw == nil && !onRequest,
 		mw != nil && mw.Spec.Wake != nil && mw.Spec.Wake.OnRequest != nil && !*mw.Spec.Wake.OnRequest:
 		w.NoRequest = noRequestTurnedOff
 		return w
