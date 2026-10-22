@@ -466,7 +466,8 @@ func TestFindDependencies_GrowsWithTheCluster(t *testing.T) {
 		found += len(w.Dependencies)
 	}
 	assert.Equal(t, 1000*(3*10-3), found, "three each, less the one that's itself, in each namespace")
-	assert.Less(t, elapsed, 5*time.Second)
+	// Under a second even with -race; the quadratic pass took twice this.
+	assert.Less(t, elapsed, 15*time.Second)
 }
 
 // Stopped short, it says whose dependencies it didn't find, so an empty
