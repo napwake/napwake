@@ -348,6 +348,17 @@ func TestNextFor_WhatKeepsItUp(t *testing.T) {
 			w.Status.Phase = v1alpha1.PhaseIdle
 			w.Spec.DryRun = true
 		}, want: "would pause now"},
+		// A pause request runs the clock out without rewriting when it would
+		// have: Idle is due now, not in the 40 minutes it shows.
+		{name: "pause requested before the clock ran out", mutate: func(w *v1alpha1.ManagedWorkload) {
+			w.Status.Activity = activity(v1alpha1.ActivitySourceCPU, 20*time.Minute, 40*time.Minute)
+			w.Status.Phase = v1alpha1.PhaseIdle
+		}, want: "pauses now"},
+		{name: "pause requested in dry-run before the clock ran out", mutate: func(w *v1alpha1.ManagedWorkload) {
+			w.Status.Activity = activity(v1alpha1.ActivitySourceCPU, 20*time.Minute, 40*time.Minute)
+			w.Status.Phase = v1alpha1.PhaseIdle
+			w.Spec.DryRun = true
+		}, want: "would pause now"},
 		// The clock in status is written every five minutes, so a pause time
 		// just past may only mean activity status doesn't show yet.
 		{name: "running, its pause time just past", mutate: func(w *v1alpha1.ManagedWorkload) {

@@ -618,9 +618,9 @@ func nextFor(w *v1alpha1.ManagedWorkload, targetActiveUntil, now time.Time) stri
 		verb = "would pause"
 	}
 	pauseAt := a.PauseAt.Time
-	if a.ForecastQuietUntil != nil && w.Status.Phase == v1alpha1.PhaseIdle {
-		// The forecast brought the pause forward: it's due now, not when the
-		// clock would run out.
+	if w.Status.Phase == v1alpha1.PhaseIdle {
+		// The pause is due now, not when the clock would run out: a pause
+		// request or the forecast brought it forward without rewriting pauseAt.
 		pauseAt = now
 	}
 	retryAt, heldByGitOps := gitOpsHold(w, now)
