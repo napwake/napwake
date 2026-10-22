@@ -243,6 +243,47 @@ func TestDependencies_HoldAppliesInDryRun(t *testing.T) {
 	assert.True(t, meta.IsStatusConditionTrue(postgres.Status.Conditions, conditionHeldByDependents))
 }
 
+// A dependent's dry-run would-be pause leaves its pods up, so it still holds
+// a dependency that pauses for real, but lets a dependency in dry-run too
+// measure the pause it would make live.
+func TestDependencies_DryRunWouldBePause(t *testing.T) {
+	tests := []struct {
+		name          string
+		dependencyDry bool
+		dependentDry  bool
+		dependent     v1alpha1.WorkloadPhase
+		wantHeld      bool
+	}{
+		{name: "both in dry-run, dependent would pause", dependencyDry: true, dependentDry: true,
+			dependent: v1alpha1.PhaseIdle, wantHeld: false},
+		{name: "both in dry-run, dependent running", dependencyDry: true, dependentDry: true,
+			dependent: v1alpha1.PhaseRunning, wantHeld: true},
+		{name: "live dependency, dependent would pause in dry-run", dependentDry: true,
+			dependent: v1alpha1.PhaseIdle, wantHeld: true},
+		{name: "dependency in dry-run, live dependent idle", dependencyDry: true,
+			dependent: v1alpha1.PhaseIdle, wantHeld: true},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			postgres := depWorkload("default", "postgres", v1alpha1.TargetKindStatefulSet, v1alpha1.PhaseRunning)
+			postgres.Spec.DryRun = tt.dependencyDry
+			api := depWorkload("default", "api", v1alpha1.TargetKindDeployment, tt.dependent, postgresRef())
+			api.Spec.DryRun = tt.dependentDry
+			pauser := &stubPauser{pauseDone: true}
+			r := depReconciler(t, pauser, postgres, api)
+
+			_, err := r.reconcileAutomation(context.Background(), postgres, postgresTarget(1, 1))
+			require.NoError(t, err)
+
+			assert.Equal(t, tt.wantHeld, meta.IsStatusConditionTrue(postgres.Status.Conditions, conditionHeldByDependents))
+			if !tt.wantHeld {
+				assert.Equal(t, v1alpha1.PhaseIdle, postgres.Status.Phase, "a dry-run dependency measures its would-be pause")
+				assert.Zero(t, pauser.pauseCalls)
+			}
+		})
+	}
+}
+
 func TestDependencies_CycleBlocksBothWithCondition(t *testing.T) {
 	a := depWorkload("default", "a", v1alpha1.TargetKindDeployment, v1alpha1.PhaseRunning,
 		v1alpha1.DependencyRef{Kind: v1alpha1.TargetKindDeployment, Name: "b"})

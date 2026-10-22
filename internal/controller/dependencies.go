@@ -220,7 +220,7 @@ func (g *dependencyGraph) holdsOf(workload *v1alpha1.ManagedWorkload) dependency
 		if d.uid == self.uid || !g.allows(d.key.Namespace, self.target) {
 			continue
 		}
-		if d.acts && isAwake(d.phase) && g.holds(d, self) {
+		if d.acts && awakeFor(d, self) && g.holds(d, self) {
 			h.holders = append(h.holders, d.key.String())
 		}
 	}
@@ -237,6 +237,18 @@ func isAwake(phase v1alpha1.WorkloadPhase) bool {
 	default:
 		return true
 	}
+}
+
+// awakeFor reports whether dependent counts as awake for its dependency
+// workload. A dry-run workload's would-be pause, Idle, leaves its pods up,
+// so it holds a dependency that pauses for real. A dependency in dry-run too
+// is measured as it would be live, where the dependent would have paused and
+// let it go.
+func awakeFor(dependent, workload *workloadNode) bool {
+	if dependent.dryRun && workload.dryRun && dependent.phase == v1alpha1.PhaseIdle {
+		return false
+	}
+	return isAwake(dependent.phase)
 }
 
 // dependencyHold reports why a workload whose clock has run out must stay
