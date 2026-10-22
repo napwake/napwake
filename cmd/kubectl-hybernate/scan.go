@@ -67,6 +67,8 @@ type scanOptions struct {
 	prometheus     prometheusOptions
 	// forecast, when set, also replays the forecast over the history.
 	forecast *discovery.ForecastOptions
+	// now is the scan's clock: the history it reads ends now.
+	now func() time.Time
 	// historyOptional has a forecast replay scan on without history, for
 	// a workload named on the command line, whose operator's forecast is
 	// worth showing without one: why there's none is the result's
@@ -123,6 +125,7 @@ func scanCmd(kube *kubeFlags) *cobra.Command {
 		idleAfter:    time.Hour,
 		timeout:      5 * time.Minute,
 		open:         true,
+		now:          time.Now,
 	}
 	cmd := &cobra.Command{
 		Use:   "scan",
@@ -204,7 +207,7 @@ Examples:
 			if err != nil {
 				return scanFailed(ctx, err, opts.timeout)
 			}
-			result.ScannedAt = time.Now().UTC().Truncate(time.Second)
+			result.ScannedAt = opts.now().UTC().Truncate(time.Second)
 			result.Settings = settings{CPUThreshold: opts.cpuThreshold, IdleAfter: roundedDuration(opts.idleAfter),
 				Window: opts.window}
 			result.Prices = pricesFor(opts)
@@ -510,7 +513,7 @@ func scanCluster(ctx context.Context, window time.Duration, prom prometheusSetup
 			StoragePerMonth: cost.DefaultRates.StoragePerMonth},
 		OwnCPUPrice:     opts.ownCPUPrice,
 		OwnMemoryPrice:  opts.ownMemoryPrice,
-		Now:             time.Now,
+		Now:             opts.now,
 		History:         history,
 		Window:          window,
 		IdleAfter:       opts.idleAfter,
@@ -543,7 +546,7 @@ func scanCluster(ctx context.Context, window time.Duration, prom prometheusSetup
 func scanHistory(ctx context.Context, c client.Client, config *rest.Config, namespaces []string,
 	window time.Duration, prom prometheusSetup, opts scanOptions, scan *scanResult) (
 	*discovery.Prometheus, string, error) {
-	history, err := historySource(ctx, c, config, namespaces, time.Now().Add(-window), prom)
+	history, err := historySource(ctx, c, config, namespaces, opts.now().Add(-window), prom)
 	var forbidden *discovery.ProxyForbiddenError
 	if errors.As(err, &forbidden) {
 		scan.HistoryAccess = historyAccess(ctx, c, forbidden)

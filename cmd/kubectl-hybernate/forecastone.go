@@ -140,7 +140,7 @@ func forecastNamed(ctx context.Context, out io.Writer, name string, run forecast
 	if len(picked) == 0 {
 		return notFound(ctx, c, opts, kind, bare, name)
 	}
-	now := time.Now()
+	now := opts.now()
 	w := picked[0]
 	if w.mw != nil {
 		w.Operator = operatorForecastOf(w.mw, now)

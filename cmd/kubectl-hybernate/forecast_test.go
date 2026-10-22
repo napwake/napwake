@@ -17,6 +17,8 @@ limitations under the License.
 package main
 
 import (
+	"bytes"
+	"context"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
@@ -25,18 +27,21 @@ import (
 	"testing"
 	"time"
 
+	"github.com/spf13/pflag"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/client-go/rest"
 	"k8s.io/utils/ptr"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/interceptor"
 
 	v1alpha1 "github.com/okedeji/hybernate/api/v1alpha1"
 	"github.com/okedeji/hybernate/internal/discovery"
+	"github.com/okedeji/hybernate/internal/forecast"
 )
 
 // officePrometheus answers history queries with a pod requesting 100m busy
@@ -95,14 +100,35 @@ func forecastCluster() []client.Object {
 	}
 }
 
-func TestCLI_ForecastJSON(t *testing.T) {
-	prom := officePrometheus(t)
-	out, err := runCLI(t, newStatusClient(t, interceptor.Funcs{}, forecastCluster()...), "forecast", "-n",
-		"preview-42", "-o", "json", "--prometheus-url", prom.URL)
-	require.NoError(t, err, out)
+// replayAt replays the forecast over the cluster objs as forecast -n
+// preview-42 does, with the replay's clock at now, and returns the JSON it
+// prints.
+func replayAt(t *testing.T, now time.Time, promURL string, objs ...client.Object) forecastResult {
+	t.Helper()
+	writeKubeconfig(t, "https://127.0.0.1:1", "preview-42")
+	c := newStatusClient(t, interceptor.Funcs{}, objs...)
+	kube := addKubeFlags(pflag.NewFlagSet("forecast", pflag.ContinueOnError),
+		func(*rest.Config) (client.Client, error) { return c, nil })
+	prom, err := prometheusFrom(prometheusOptions{url: promURL})
+	require.NoError(t, err)
+	opts := forecastOptions{kube: kube, namespaces: namespaceFlags{names: []string{"preview-42"}}, window: "28d",
+		cpuThreshold: defaultCPUThreshold, idleAfter: time.Hour, now: func() time.Time { return now }}
 
-	var result forecastResult
-	require.NoError(t, json.Unmarshal([]byte(out), &result))
+	result, _, err := replayCluster(context.Background(), forecastRun{window: 28 * 24 * time.Hour, prom: prom,
+		mode: forecast.Balanced}, time.UTC, opts)
+	require.NoError(t, err)
+	var out bytes.Buffer
+	require.NoError(t, writeOutput(&out, outputJSON, result, nil))
+	var decoded forecastResult
+	require.NoError(t, json.Unmarshal(out.Bytes(), &decoded))
+	return decoded
+}
+
+func TestForecastJSON(t *testing.T) {
+	sunday := time.Date(2026, 10, 25, 12, 0, 0, 0, time.UTC)
+
+	result := replayAt(t, sunday, officePrometheus(t).URL, forecastCluster()...)
+
 	assert.Equal(t, "balanced", result.Setting)
 	assert.Equal(t, "UTC", result.Timezone)
 	require.Len(t, result.Workloads, 1)
@@ -111,10 +137,8 @@ func TestCLI_ForecastJSON(t *testing.T) {
 	assert.Equal(t, 75, f.Threshold)
 	assert.True(t, f.IfOptedIn.Acting, "four weeks of office hours, learned at once")
 	require.NotNil(t, f.Replay)
-	// Two weeks are ten weekdays, and an eleventh run during office hours:
-	// the replay starts and ends partway through the same weekday.
-	assert.GreaterOrEqual(t, f.Replay.UsedDays, 10, "two weeks replayed")
-	assert.LessOrEqual(t, f.Replay.UsedDays, 11, "two weeks replayed")
+	assert.Equal(t, time.Date(2026, 10, 11, 12, 0, 0, 0, time.UTC), f.Replay.From)
+	assert.Equal(t, 10, f.Replay.UsedDays, "the two weeks from Sunday noon to Sunday noon have ten weekdays")
 	assert.GreaterOrEqual(t, f.Replay.Ready, 7)
 	assert.Zero(t, f.Replay.Missed)
 	assert.LessOrEqual(t, f.Replay.WastedWakes, 1)

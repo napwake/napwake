@@ -52,6 +52,8 @@ type forecastOptions struct {
 	idleAfter    time.Duration
 	timeout      time.Duration
 	prometheus   prometheusOptions
+	// now is the replay's clock: the history it reads ends now.
+	now func() time.Time
 }
 
 // forecastResult is the forecast replayed over a cluster's history.
@@ -98,6 +100,7 @@ func forecastCmd(kube *kubeFlags) *cobra.Command {
 		cpuThreshold: defaultCPUThreshold,
 		idleAfter:    time.Hour,
 		timeout:      5 * time.Minute,
+		now:          time.Now,
 	}
 	cmd := &cobra.Command{
 		Use:   "forecast [NAME]",
@@ -247,6 +250,7 @@ func replayCluster(ctx context.Context, run forecastRun, loc *time.Location, opt
 		idleAfter:       opts.idleAfter,
 		forecast:        &discovery.ForecastOptions{Confidence: run.mode.Threshold(), Location: loc},
 		historyOptional: run.historyOptional,
+		now:             opts.now,
 	})
 	if err != nil {
 		return forecastResult{}, scanResult{}, err
