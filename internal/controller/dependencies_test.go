@@ -84,7 +84,7 @@ func depReconciler(t *testing.T, pauser *stubPauser, objs ...client.Object) *Rec
 	t.Helper()
 	scheme := testScheme(t)
 	metrics := idleCPU
-	return &Reconciler{
+	return holding(&Reconciler{
 		Client: fakeClientBuilder(scheme).
 			WithStatusSubresource(&v1alpha1.ManagedWorkload{}).WithObjects(objs...).Build(),
 		Scheme:   scheme,
@@ -93,7 +93,7 @@ func depReconciler(t *testing.T, pauser *stubPauser, objs ...client.Object) *Rec
 		metrics:  &metrics,
 		engines:  newEngineRegistry(func() forecaster { return &stubForecaster{phase: forecast.Observing} }),
 		clock:    func() time.Time { return fixedTime },
-	}
+	}, objs...)
 }
 
 func fetch(t *testing.T, r *Reconciler, name string) *v1alpha1.ManagedWorkload {

@@ -174,7 +174,7 @@ func newAutomationReconciler(t *testing.T, workload *v1alpha1.ManagedWorkload, e
 	if r.pauser == nil {
 		r.pauser = &stubPauser{}
 	}
-	return r
+	return holding(r, workload)
 }
 
 type automationOpts struct {

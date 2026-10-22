@@ -86,6 +86,25 @@ func remember(r *Reconciler, workload *v1alpha1.ManagedWorkload) {
 	r.activityMemo.put(workload.UID, *clock.DeepCopy(), clock.LastEvaluatedTime.Time)
 }
 
+// holding has the reconciler hold the clock of each ManagedWorkload it
+// starts with, as a running operator does: the test constructors make one
+// that has been running, and a test of a restart says so with restarted.
+func holding(r *Reconciler, objs ...client.Object) *Reconciler {
+	for _, obj := range objs {
+		if w, ok := obj.(*v1alpha1.ManagedWorkload); ok && w != nil && w.Status.Activity != nil &&
+			w.Status.Activity.LastEvaluatedTime != nil {
+			remember(r, w)
+		}
+	}
+	return r
+}
+
+// restarted has the reconciler forget the workload's clock, as an operator
+// that has just started, or just been elected, holds none.
+func restarted(r *Reconciler, workload *v1alpha1.ManagedWorkload) {
+	r.activityMemo.forget(workload.UID)
+}
+
 type clockOpts struct {
 	metrics stubMetrics
 	engine  *stubForecaster
@@ -527,8 +546,8 @@ func TestActivityClock_AShortBlindSpotKeepsWhatWokeIt(t *testing.T) {
 }
 
 // A gap in watching is never counted as idle time once it could bring the
-// pause forward by much: a short idleAfter tolerates less of one, and after
-// a restart, when the gap's start is unknown, little at all.
+// pause forward by much: a short idleAfter tolerates less of one, and a
+// restart none at all.
 func TestActivityClock_AGapInWatchingRestartsTheClock(t *testing.T) {
 	tests := []struct {
 		name      string
@@ -547,7 +566,7 @@ func TestActivityClock_AGapInWatchingRestartsTheClock(t *testing.T) {
 		{name: "a restart with the written evaluation minutes old", idleAfter: time.Hour, idleFor: 61 * time.Minute,
 			gap: 3 * time.Minute},
 		{name: "a restart with the written evaluation moments old", idleAfter: time.Hour, idleFor: 61 * time.Minute,
-			gap: 30 * time.Second, wantPause: true},
+			gap: 30 * time.Second},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -559,8 +578,8 @@ func TestActivityClock_AGapInWatchingRestartsTheClock(t *testing.T) {
 			metrics := idleCPU
 			pauser := &stubPauser{pauseDone: true}
 			r := newAutomationReconciler(t, workload, &stubForecaster{}, automationOpts{metrics: &metrics, pauser: pauser})
-			if tt.inMemory {
-				remember(r, workload)
+			if !tt.inMemory {
+				restarted(r, workload)
 			}
 
 			_, err := r.reconcileAutomation(context.Background(), workload, target)
@@ -570,6 +589,51 @@ func TestActivityClock_AGapInWatchingRestartsTheClock(t *testing.T) {
 			if !tt.wantPause {
 				assert.Equal(t, v1alpha1.ActivitySourceUnobserved, workload.Status.Activity.LastActivitySource)
 			}
+		})
+	}
+}
+
+// A clock this operator doesn't hold was written by an operator before
+// it, which may have seen activity it hadn't written yet: up to a tenth of
+// idleAfter, and 5 minutes, of it. So however recently the clock was
+// written, a restart restarts an awake workload's clock, which can delay
+// its pause but never bring it forward. A clock this operator started
+// itself, as when it creates a workload's or wakes one paused before it
+// took over, is its own.
+func TestActivityClock_ARestartRestartsAnAwakeClock(t *testing.T) {
+	target := clockTarget("app:v1", nil)
+	t.Run("written moments before the restart", func(t *testing.T) {
+		workload := clockWorkload(fixedTime.Add(-61*time.Minute), target)
+		metrics := idleCPU
+		pauser := &stubPauser{pauseDone: true}
+		r := newAutomationReconciler(t, workload, &stubForecaster{}, automationOpts{metrics: &metrics, pauser: pauser})
+		restarted(r, workload)
+
+		_, err := r.reconcileAutomation(context.Background(), workload, target)
+		require.NoError(t, err)
+
+		assert.Zero(t, pauser.pauseCalls)
+		assert.Equal(t, v1alpha1.ActivitySourceUnobserved, workload.Status.Activity.LastActivitySource)
+		assert.True(t, workload.Status.Activity.PauseAt.Time.Equal(fixedTime.Add(time.Hour)))
+		gap := recorded(r.Recorder.(*events.FakeRecorder), ReasonUnobserved)
+		require.Len(t, gap, 1)
+		assert.Contains(t, gap[0], "Hybernate wasn't watching for up to 30 seconds, across a restart of the "+
+			"operator, so its idle clock starts again")
+	})
+	for _, source := range []v1alpha1.ActivitySource{v1alpha1.ActivitySourceCreated, v1alpha1.ActivitySourceRequest} {
+		t.Run("started by this operator: "+string(source), func(t *testing.T) {
+			workload := clockWorkload(fixedTime, target)
+			metrics := idleCPU
+			r := newAutomationReconciler(t, workload, &stubForecaster{}, automationOpts{metrics: &metrics})
+			restarted(r, workload)
+			r.resetActivity(workload, source)
+			r.clock = func() time.Time { return fixedTime.Add(activityCheckInterval) }
+
+			_, err := r.reconcileAutomation(context.Background(), workload, target)
+			require.NoError(t, err)
+
+			assert.Equal(t, source, workload.Status.Activity.LastActivitySource)
+			assert.Empty(t, recorded(r.Recorder.(*events.FakeRecorder), ReasonUnobserved))
 		})
 	}
 }

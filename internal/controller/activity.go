@@ -69,7 +69,8 @@ const (
 // Status is written every statusFlushInterval at most when only the clock
 // has moved, so without this, activity seen on an unwritten check would be
 // lost and the workload could pause up to one flush interval early. It's
-// in-memory only: after a restart the written status is the baseline.
+// in-memory only, and holds every clock this operator has evaluated or
+// started: one it doesn't hold was written by an operator before it.
 type activityMemo struct {
 	mu     sync.Mutex
 	clocks map[types.UID]rememberedClock
@@ -193,6 +194,7 @@ func (r *Reconciler) resetActivity(workload *v1alpha1.ManagedWorkload, source v1
 		LastEvaluatedTime:  &now,
 		TemplateHash:       hash,
 	}
+	r.activityMemo.put(workload.UID, *workload.Status.Activity.DeepCopy(), now.Time)
 }
 
 // observeActivity reads every activity source and advances the clock in
@@ -296,18 +298,18 @@ func gapTolerance(workload *v1alpha1.ManagedWorkload) time.Duration {
 // unwatched is the gap in watching the workload since its clock was last
 // evaluated at last, and whether it's long enough to restart the clock.
 //
-// In memory the gap is exact. With no clock in memory, as after a restart
-// or a change of leader, what's written can be a flush interval behind the
-// last check, so the gap's start is unknown: anything beyond two checks
-// restarts the clock, which can delay a pause but never bring one forward.
+// In memory the gap is exact. A clock not in memory was written by an
+// operator before this one, as after a restart or a change of leader, and
+// always restarts, however recently it was written: that operator may have
+// seen activity it hadn't written yet, so going on from what's written
+// could bring the pause forward. Restarting can only delay it.
 func (r *Reconciler) unwatched(workload *v1alpha1.ManagedWorkload, last time.Time, inMemory bool,
 	now time.Time) (watchGap, bool) {
 	if inMemory {
 		gap := watchGap{length: now.Sub(last), blind: r.activityMemo.checked(workload.UID).After(last)}
 		return gap, gap.length > gapTolerance(workload)
 	}
-	gap := watchGap{length: now.Sub(last), restarted: true}
-	return gap, gap.length > 2*activityCheckInterval
+	return watchGap{length: now.Sub(last), restarted: true}, true
 }
 
 // recordIdleSeconds publishes how long the workload has gone without

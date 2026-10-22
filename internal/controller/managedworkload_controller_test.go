@@ -137,14 +137,14 @@ func newTestReconcilerWithReplicas(t *testing.T, workload *v1alpha1.ManagedWorkl
 		builder = builder.WithObjects(targetDeploymentWithReplicas(workload.Spec.Target.Name, workload.Namespace, replicas))
 	}
 
-	return &Reconciler{
+	return holding(&Reconciler{
 		Client:   builder.Build(),
 		Scheme:   scheme,
 		Recorder: events.NewFakeRecorder(10),
 		pauser:   pauser,
 		engines:  newEngineRegistry(func() forecaster { return &stubForecaster{} }),
 		clock:    func() time.Time { return fixedTime },
-	}
+	}, workload)
 }
 
 func newTestReconciler(t *testing.T, workload *v1alpha1.ManagedWorkload, pauser *stubPauser) *Reconciler {
@@ -170,14 +170,14 @@ func newTestReconcilerWithTarget(t *testing.T, workload *v1alpha1.ManagedWorkloa
 		}
 	}
 
-	return &Reconciler{
+	return holding(&Reconciler{
 		Client:   builder.Build(),
 		Scheme:   scheme,
 		Recorder: events.NewFakeRecorder(10),
 		pauser:   pauser,
 		engines:  newEngineRegistry(func() forecaster { return &stubForecaster{} }),
 		clock:    func() time.Time { return fixedTime },
-	}
+	}, workload)
 }
 
 func reconcileFor(name string) reconcile.Request {
@@ -1408,7 +1408,7 @@ func lifecycleReconciler(t *testing.T, workload *v1alpha1.ManagedWorkload, repli
 		WithObjects(append([]client.Object{workload, target}, objs...)...).
 		WithInterceptorFuncs(funcs).Build()
 	finder := autoscaler.NewFinder(c)
-	return &Reconciler{
+	return holding(&Reconciler{
 		Client:      c,
 		Scheme:      scheme,
 		Recorder:    events.NewFakeRecorder(100),
@@ -1417,7 +1417,7 @@ func lifecycleReconciler(t *testing.T, workload *v1alpha1.ManagedWorkload, repli
 		metrics:     &stubMetrics{cpuMillis: 5, cpuPerReplica: 500, memoryPerReplica: 1 << 30, replicas: max(replicas, 1)},
 		engines:     newEngineRegistry(func() forecaster { return &stubForecaster{} }),
 		clock:       func() time.Time { return fixedTime },
-	}
+	}, append([]client.Object{workload}, objs...)...)
 }
 
 func realPauserReconciler(t *testing.T, workload *v1alpha1.ManagedWorkload, objs ...client.Object) *Reconciler {

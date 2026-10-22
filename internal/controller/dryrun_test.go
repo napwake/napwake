@@ -140,8 +140,8 @@ func TestDryRun_AGapInWatchingDoesNotEndAWouldBePause(t *testing.T) {
 				automationOpts{metrics: &metrics, pauser: &stubPauser{}})
 			now := fixedTime
 			r.clock = func() time.Time { return now }
-			if tt.inMemory {
-				remember(r, workload)
+			if !tt.inMemory {
+				restarted(r, workload)
 			}
 			check := func() {
 				t.Helper()
