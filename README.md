@@ -54,7 +54,7 @@ kubectl krew install --manifest-url \
 
 or [download it](https://okedeji.io/hybernate/getting-started/kubectl-plugin/#installation) for Linux, macOS or Windows.
 
-**Install the operator**, with your settings in a values file, starting with your users' time zone:
+**Install the operator**, with your settings in a values file, `hybernate-values.yaml`, starting with your users' time zone:
 
 ```yaml title="hybernate-values.yaml"
 timezone: Europe/London
