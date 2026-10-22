@@ -640,11 +640,12 @@ func TestStatus_HandWrittenNamedApart(t *testing.T) {
 	assert.Contains(t, out, "  shop        deployment/api (api-mw)   running")
 }
 
-func forbidClusterWide(plural string) interceptor.Funcs {
+func forbidClusterWide() interceptor.Funcs {
 	return interceptor.Funcs{List: func(ctx context.Context, c client.WithWatch, list client.ObjectList,
 		opts ...client.ListOption) error {
 		if _, ok := list.(*v1alpha1.ManagedWorkloadList); ok && listNamespace(opts) == "" {
-			return apierrors.NewForbidden(schema.GroupResource{Group: "hybernate.io", Resource: plural}, "", nil)
+			return apierrors.NewForbidden(schema.GroupResource{Group: "hybernate.io", Resource: "managedworkloads"}, "",
+				nil)
 		}
 		return c.List(ctx, list, opts...)
 	}}
@@ -659,7 +660,7 @@ func listNamespace(opts []client.ListOption) string {
 // Without access to every namespace, status falls back to the context's,
 // and says so, unless -A asked for all of them.
 func TestStatus_CantListEveryNamespace(t *testing.T) {
-	c := newStatusClient(t, forbidClusterWide("managedworkloads"), statusCluster()...)
+	c := newStatusClient(t, forbidClusterWide(), statusCluster()...)
 
 	result, err := clusterStatus(context.Background(), c, "preview-7", statusOpts())
 	require.NoError(t, err)

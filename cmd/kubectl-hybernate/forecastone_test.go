@@ -333,7 +333,7 @@ func inNamespace(namespace string, objs ...client.Object) []client.Object {
 // context's namespace.
 func TestCLI_ForecastManagedListedByNamespace(t *testing.T) {
 	objs := inNamespace("orders", append(forecastCluster(), learningAPI(t, time.Now().Add(-32*time.Hour)))...)
-	c := newStatusClient(t, forbidClusterWide("managedworkloads"), objs...)
+	c := newStatusClient(t, forbidClusterWide(), objs...)
 
 	out, err := runCLI(t, c, "forecast", "api")
 
