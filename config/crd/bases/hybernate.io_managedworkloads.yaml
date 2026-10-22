@@ -1011,6 +1011,14 @@ spec:
                       restore on resume.
                     format: int32
                     type: integer
+                  queryActiveSincePause:
+                    description: |-
+                      QueryActiveSincePause says a Prometheus activity query has shown
+                      activity at every check since the pause began, as one can when the
+                      pause was requested. Until a check finds every query quiet, a query
+                      showing activity doesn't wake the workload, so it doesn't undo the
+                      pause at once.
+                    type: boolean
                   resources:
                     description: |-
                       Resources is what the workload ran as it paused, which is what the
