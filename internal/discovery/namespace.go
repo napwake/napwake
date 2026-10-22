@@ -101,7 +101,7 @@ func (n *namespaceScan) problem(what reading, err error) {
 func (s *Scanner) scanNamespace(ctx, historyCtx context.Context, namespace string, reads *clusterReads,
 	pricing nodePricing, opts ClusterOptions) namespaceScan {
 	scan := namespaceScan{namespace: namespace, sources: map[workloadKey]workloadSource{}}
-	namespaceLabels, err := s.namespaceLabels(ctx, reads, namespace)
+	namespaceLabels, namespaceAnnotations, err := s.namespaceMeta(ctx, reads, namespace)
 	if err != nil {
 		scan.problem(readingNamespace, err)
 	}
@@ -213,7 +213,8 @@ func (s *Scanner) scanNamespace(ctx, historyCtx context.Context, namespace strin
 				w.History = &h
 				if opts.Forecast != nil {
 					w.Forecast = replayForecast(r, confidenceFor(mw, *opts.Forecast), mw,
-						replayWakes(mw, obj.GetAnnotations(), wl.template.Labels, scan.services), *opts.Forecast)
+						replayWakes(mw, optedInWakeOnRequest(obj.GetAnnotations(), namespaceAnnotations),
+							wl.template.Labels, scan.services, installFor(reads.installs, namespace, mw)), *opts.Forecast)
 				}
 			}
 			if w.History == nil && w.State != StateUnknown && w.Platform == "" {
@@ -545,20 +546,21 @@ func (s *Scanner) managedInNamespace(ctx context.Context, reads *clusterReads, n
 	return out, nil
 }
 
-// namespaceLabels reads a namespace's labels, which say whether it's
-// protected. The operator's own protected name patterns aren't visible to
+// namespaceMeta reads a namespace's labels, which say whether it's
+// protected, and its annotations, which set what opting its workloads in
+// gives them. The operator's own protected name patterns aren't visible to
 // the scan, so only the label counts for that.
-func (s *Scanner) namespaceLabels(ctx context.Context, reads *clusterReads, namespace string) (
-	map[string]string, error) {
+func (s *Scanner) namespaceMeta(ctx context.Context, reads *clusterReads, namespace string) (
+	nsLabels, nsAnnotations map[string]string, err error) {
 	if listed := reads.namespaces.byNamespace; listed != nil {
 		if found := listed[namespace]; len(found) > 0 {
-			return found[0].Labels, nil
+			return found[0].Labels, found[0].Annotations, nil
 		}
-		return nil, apierrors.NewNotFound(corev1.Resource("namespaces"), namespace)
+		return nil, nil, apierrors.NewNotFound(corev1.Resource("namespaces"), namespace)
 	}
 	var ns corev1.Namespace
 	if err := s.client.Get(ctx, client.ObjectKey{Name: namespace}, &ns); err != nil {
-		return nil, err
+		return nil, nil, err
 	}
-	return ns.Labels, nil
+	return ns.Labels, ns.Annotations, nil
 }

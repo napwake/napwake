@@ -455,6 +455,16 @@ func TestForecastOutlook(t *testing.T) {
 			HoursOfDaySeen: 20}, workload: watched, wantReason: v1alpha1.ForecastObserving,
 			wantMessage: "learning: it has seen 20 of the 24 hours of the day, and can't act until it has seen them " +
 				"all; while it's paused, it learns from its Prometheus activity queries"},
+		{name: "paused behind the doorman, its query failing", outlook: forecast.Outlook{Waiting: forecast.WaitingForDay,
+			HoursOfDaySeen: 20}, workload: func(w *v1alpha1.ManagedWorkload) {
+			watched(w)
+			routed(w)
+			meta.SetStatusCondition(&w.Status.Conditions, metav1.Condition{Type: conditionPrometheusAvailable,
+				Status: metav1.ConditionFalse, Reason: "EndpointNotConfigured"})
+		}, wantReason: v1alpha1.ForecastObserving,
+			wantMessage: "learning: it has seen 20 of the 24 hours of the day, and can't act until it has seen them " +
+				"all; while it's paused, it learns from requests through the doorman, its Prometheus activity " +
+				"queries failing"},
 		{name: "a paused worker whose query fails", outlook: forecast.Outlook{Waiting: forecast.WaitingForDay},
 			workload: func(w *v1alpha1.ManagedWorkload) {
 				watched(w)
