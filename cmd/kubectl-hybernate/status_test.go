@@ -438,6 +438,39 @@ func TestStatus_GitOpsConflictAsItIsNow(t *testing.T) {
 	}
 }
 
+// A pause the forecast brought forward, before idleAfter ran out, says so,
+// and until when the forecast expected quiet, so a workload paused 20
+// minutes after its last activity isn't a puzzle.
+func TestNextFor_PausedEarly(t *testing.T) {
+	quietUntil := &metav1.Time{Time: time.Date(2026, 10, 5, 14, 0, 0, 0, time.UTC)}
+	early := func(phase v1alpha1.WorkloadPhase, dryRun bool) *v1alpha1.ManagedWorkload {
+		w := statusWorkloadObj("ns", "api", v1alpha1.TargetKindDeployment, phase, time.Hour)
+		w.Spec.DryRun = dryRun
+		w.Status.Activity = activity(v1alpha1.ActivitySourceCPU, 20*time.Minute, 40*time.Minute)
+		w.Status.Activity.ForecastQuietUntil = quietUntil
+		return w
+	}
+	paused := early(v1alpha1.PhasePaused, false)
+	paused.Status.Doorman = []v1alpha1.DoormanRoute{{Service: "api", DoormanPort: 20000}}
+	assert.Equal(t, "paused early: the forecast expects quiet until 14:00 UTC; wakes on a request or activity",
+		nextFor(paused, time.Time{}, statusNow))
+	assert.Equal(t, "would pause now, early: the forecast expects quiet until 14:00 UTC",
+		nextFor(early(v1alpha1.PhaseIdle, true), time.Time{}, statusNow), "a would-be pause in dry-run")
+	assert.Equal(t, "pauses now, early: the forecast expects quiet until 14:00 UTC",
+		nextFor(early(v1alpha1.PhaseIdle, false), time.Time{}, statusNow), "not the clock's 40 minutes")
+
+	waiting := early(v1alpha1.PhaseIdle, false)
+	undoneBy(waiting, "Argo CD", 10*time.Minute)
+	waiting.Status.Activity = activity(v1alpha1.ActivitySourceCPU, 20*time.Minute, 70*time.Minute)
+	waiting.Status.Activity.ForecastQuietUntil = quietUntil
+	assert.Equal(t, "pauses at 12:50 UTC (after GitOps conflict)", nextFor(waiting, time.Time{}, statusNow),
+		"the hour Hybernate waits, though the clock would run out after it")
+
+	clock := early(v1alpha1.PhasePaused, false)
+	clock.Status.Activity.ForecastQuietUntil = nil
+	assert.Equal(t, "wakes on activity", nextFor(clock, time.Time{}, statusNow), "the clock's own pause")
+}
+
 // In dry-run, Hybernate never pauses, so a GitOps conflict holds nothing
 // back.
 func TestNextFor_DryRunAfterAGitOpsConflict(t *testing.T) {
