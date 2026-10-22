@@ -29,6 +29,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	appsv1 "k8s.io/api/apps/v1"
+	coordinationv1 "k8s.io/api/coordination/v1"
 	corev1 "k8s.io/api/core/v1"
 	discoveryv1 "k8s.io/api/discovery/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
@@ -288,17 +289,22 @@ func TestLeaderElectionHandsOverOnStop(t *testing.T) {
 	stop()
 	running.Wait()
 
+	direct, err := client.New(cfg, client.Options{Scheme: scheme})
+	require.NoError(t, err)
+	var lease coordinationv1.Lease
+	require.NoError(t, direct.Get(context.Background(),
+		client.ObjectKey{Namespace: "default", Name: withLeaderElection(ctrl.Options{}, true).LeaderElectionID}, &lease))
+	assert.Empty(t, ptr.Deref(lease.Spec.HolderIdentity, ""), "the lease was handed over, not left to expire")
+
 	second := newManager()
 	ctx, stop = context.WithCancel(context.Background())
 	defer func() {
 		stop()
 		running.Wait()
 	}()
-	started := time.Now()
 	running.Go(func() { assert.NoError(t, second.Start(ctx)) })
 	select {
 	case <-second.Elected():
-		assert.Less(t, time.Since(started), 10*time.Second, "the lease was handed over, not left to expire")
 	case <-time.After(30 * time.Second):
 		t.Fatal("the second operator never led")
 	}
