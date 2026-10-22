@@ -295,6 +295,9 @@ func TestForecastNow(t *testing.T) {
 			IfOptedIn: discovery.ForecastOutlook{Waiting: "Confidence"}}}, "not within 4 weeks"},
 		{"managed and acting", forecastWorkload{Managed: true, Forecast: &discovery.ForecastReplay{
 			Live: &discovery.ForecastOutlook{Acting: true}}}, "acting"},
+		{"managed, too irregular to act within four weeks", forecastWorkload{Managed: true,
+			Forecast: &discovery.ForecastReplay{Live: &discovery.ForecastOutlook{
+				Waiting: v1alpha1.ForecastEarningConfidence}}}, "not within 4 weeks"},
 		{"managed and learning the day", forecastWorkload{Managed: true, Forecast: &discovery.ForecastReplay{
 			IfOptedIn: discovery.ForecastOutlook{Acting: true}, Live: &discovery.ForecastOutlook{Waiting: "Observing"}}},
 			"learning"},
