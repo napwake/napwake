@@ -144,6 +144,7 @@ The relaunch. The 0.1.x releases were early experiments, and 0.2.0 is a fresh st
 - The `IdleDetected` event says in words what the workload has been idle since, and in dry-run that it would have paused rather than that it pauses: `[dry-run] api: idle for 1 hour, since its last rollout; would have paused`
 - The `DependenciesLearned` event says of each dependency what the scan says: "woken and held with it" only for one Hybernate manages, in a namespace that allows the workload's; of one it doesn't manage, that it isn't managed by Hybernate, so it isn't woken with the workload, and to opt it in too. It used to say every dependency was held and woken
 - The `GitOpsConflict` event and condition say in a line what to change and link to the tool's section of the GitOps guide, instead of carrying the YAML setting, which `kubectl describe` flattened onto one line: `To stop it, have Argo CD ignore replicas, as for an HPA: https://okedeji.io/hybernate/guides/gitops/#argo-cd`
+- The kubectl plugin page opens with a Which Command table: what `scan`, `status`, `forecast`, `nodes`, `enable`, `pause`, `wake`, `deps` and `version` are each for, and which need the operator, starting with how `scan` and `status` differ. The README points to it
 
 ### Fixed
 

@@ -101,6 +101,8 @@ kubectl hybernate enable my-api -n staging
 
 ### Operations
 
+Not sure which command to use? The plugin page opens with [a table of them](https://okedeji.io/hybernate/getting-started/kubectl-plugin/#which-command): what each is for, and which need the operator installed.
+
 - **Label opt-in**: `hybernate.io/managed: "true"` on a workload or namespace, with settings as annotations, all in the manifests you already keep in Git
 - **`kubectl hybernate scan`** finds idle workloads in a cluster and what they cost, with nothing installed, and with Prometheus replays the last week to show how long each would have slept and what that frees, in a report that opens in your browser to share
 - **`kubectl hybernate status`** shows what Hybernate is doing in a cluster on one screen: each workload's state, when it pauses next or what holds it awake, what needs attention, what pausing has freed and what of that it saved, and the latest pauses and wakes with what caused them

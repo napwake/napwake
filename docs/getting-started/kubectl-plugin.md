@@ -2,6 +2,24 @@
 
 The `kubectl hybernate` plugin scans a cluster for idle workloads, replays Hybernate's forecast over their history, shows what Hybernate is doing in it and why its nodes aren't scaling down, ends dry-run for workloads you've opted in, pauses workloads on demand, and wakes paused ones.
 
+## Which Command
+
+`scan` and `status` both show idle workloads and money, from opposite ends: `scan` is the survey of a whole cluster, managed or not, of what could be paused and what that could free; `status` is what Hybernate is doing with the workloads it manages. The rest answer narrower questions.
+
+| Command | Use it to | Needs the operator |
+|---------|-----------|--------------------|
+| [`scan`](#scan-a-cluster) | Find what's idle in a cluster, what it costs, and what pausing it could free, replaying the last week from Prometheus. Before you install Hybernate, or after, to see what's left to opt in | No. Once it's installed, the scan also shows what it has paused and freed |
+| [`status`](#see-what-hybernate-is-doing) | See what Hybernate is doing with what it manages: each workload's state, when it pauses next or what holds it awake, what needs attention, what pausing has freed and saved, and the latest pauses and wakes | Yes |
+| [`forecast`](#replay-the-forecast) | Check, before you turn on `autoResume`, how the forecast would do on your workloads' own history; name a workload to see [its forecast](#one-workloads-forecast), and for one Hybernate manages, what its own forecast is doing now | No, but it needs Prometheus history. A workload's own forecast needs the operator, and no history |
+| [`nodes`](#see-why-nodes-dont-scale-down) | Find out why what pausing frees isn't coming off the bill: the node autoscaler, and what keeps each node from being removed | No. Once it's installed, it also shows what paused workloads would request if they woke |
+| [`enable`](#enable-a-workload) | End dry-run for a workload, or a namespace, once you trust what Hybernate measured | Yes |
+| [`pause`](#pause-a-workload) | Pause a workload now rather than when its idle clock runs out, such as a preview at the end of the day | Yes |
+| [`wake`](#wake-a-workload) | Wake a paused workload now, or keep one awake for a while with `--for`, such as for a demo | Yes |
+| [`deps`](#show-a-workloads-dependencies) | See what Hybernate wakes and holds awake with a workload, and what depends on it | Yes |
+| `version` | Print the plugin's version | No |
+
+## Namespaces and Connections
+
 `scan`, `forecast` and `status` read every namespace you can, and fall back to your kubeconfig context's namespace, with a note, when your access doesn't allow listing them all; `-n` names namespaces instead, and `-A` (`--all-namespaces`) insists on every one, failing rather than falling back. `pause`, `wake`, `deps` and `enable` work in one namespace: `-n`, or your context's, as kubectl does.
 
 Every command takes kubectl's connection flags: `--kubeconfig`, `--context`, `--cluster`, `--user`, `--as`, `--as-group`, `--as-uid`, `--token`, `--server`, `--certificate-authority`, `--client-certificate`, `--client-key`, `--insecure-skip-tls-verify`, `--tls-server-name`, `--proxy-url`, `--username`, `--password`, `--disable-compression` and `--request-timeout`. Each request to the API server gives up after 30 seconds unless `--request-timeout` sets otherwise (`0` keeps the 30 seconds, unlike kubectl, where it means no limit), so a cluster that stops answering ends a command with an error, not a hang. `kubectl hybernate version` prints the plugin's version.
