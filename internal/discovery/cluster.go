@@ -339,8 +339,9 @@ func (s *Scanner) ScanCluster(ctx context.Context, opts ClusterOptions) (*Cluste
 		reads = s.readAcross(ctx, opts.Namespaces)
 	}
 	reads.gitOps = gitops.NewChecker(s.client)
+	var installNote string
 	if opts.Forecast != nil {
-		reads.installs = s.readInstalls(ctx)
+		reads.installs, installNote = s.readInstalls(ctx, reads, opts.Namespaces)
 	}
 	historyCtx, cancel := historyBudget(ctx)
 	defer cancel()
@@ -433,6 +434,9 @@ func (s *Scanner) ScanCluster(ctx context.Context, opts ClusterOptions) (*Cluste
 		if note := opts.History.mixedSourcesNote(); note != "" {
 			report.Notes = append(report.Notes, note)
 		}
+	}
+	if installNote != "" {
+		report.Notes = append(report.Notes, installNote)
 	}
 	if len(noHistory) > 0 {
 		report.Notes = append(report.Notes, fmt.Sprintf("%s no CPU history in Prometheus, so only their CPU right now is known: %s",
