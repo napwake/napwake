@@ -302,7 +302,7 @@ preview-42  reports  not within 4 weeks   0/6    6     0                  -
 
 A workload counts as used whenever its CPU is above `--cpu-threshold`, as the activity clock counts it; use that shows only in requests or activity annotations isn't in Prometheus.
 
-It reads Prometheus as [scan](#scan-a-cluster) does, found in the cluster or at `--prometheus-url`, with the same [flags](#a-prometheus-elsewhere) and [permissions](#permissions), and fails when there's no history to read. With less than two days of it, a day to learn from and a day to replay, it says so and when there will be enough, and, when Hybernate manages a workload, how to see its own forecast, which needs no history. It only reads.
+It reads Prometheus as [scan](#scan-a-cluster) does, found in the cluster or at `--prometheus-url`, with the same [flags](#a-prometheus-elsewhere) and [permissions](#permissions), and fails when there's no history to read. With less than two days of it, a day to learn from and a day to replay, it says so and when there will be enough, and, when Hybernate manages a workload, how to see its own forecast, which needs no history. It leaves out scan's notes on dependencies, GitOps tools and the cluster's infrastructure, which are about what pausing could free. It only reads.
 
 ### One Workload's Forecast
 

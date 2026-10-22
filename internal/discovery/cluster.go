@@ -392,7 +392,9 @@ func (s *Scanner) ScanCluster(ctx context.Context, opts ClusterOptions) (*Cluste
 		incomplete.Unscanned = unscanned
 	}
 	report.Incomplete = incomplete
-	if len(report.Platform) > 0 {
+	// A forecast replay has no totals or next steps to leave the cluster's
+	// infrastructure out of.
+	if len(report.Platform) > 0 && opts.Forecast == nil {
 		report.Notes = append(report.Notes, platformNote(report.Platform))
 	}
 	if report.History != nil && !since.IsZero() {

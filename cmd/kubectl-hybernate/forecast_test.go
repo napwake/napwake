@@ -176,6 +176,35 @@ func TestCLI_ForecastOneWorkload(t *testing.T) {
 	require.EqualError(t, err, "no Deployment or StatefulSet named web in preview-42; check the name and the namespace")
 }
 
+// The scan's note on the cluster's infrastructure is about what pausing
+// could free; the forecast has no totals or next steps to leave it out of,
+// so it doesn't say it, for the cluster or for one workload.
+func TestCLI_ForecastLeavesOutTheInfrastructureNote(t *testing.T) {
+	prom := officePrometheus(t)
+	ingress := &appsv1.Deployment{ObjectMeta: metav1.ObjectMeta{Name: "ingress-nginx-controller",
+		Namespace: "preview-42", Labels: map[string]string{"app.kubernetes.io/name": "ingress-nginx"}},
+		Spec: appsv1.DeploymentSpec{Replicas: ptr.To[int32](1),
+			Selector: &metav1.LabelSelector{MatchLabels: map[string]string{"app": "ingress"}},
+			Template: corev1.PodTemplateSpec{ObjectMeta: metav1.ObjectMeta{Labels: map[string]string{"app": "ingress"}},
+				Spec: corev1.PodSpec{Containers: []corev1.Container{{Name: "controller"}}}}}}
+	objs := append(forecastCluster(), ingress)
+
+	for _, args := range [][]string{{"forecast"}, {"forecast", "api"}} {
+		t.Run(strings.Join(args, " "), func(t *testing.T) {
+			out, err := runCLI(t, newStatusClient(t, interceptor.Funcs{}, objs...),
+				append(args, "-n", "preview-42", "--prometheus-url", prom.URL)...)
+
+			require.NoError(t, err, out)
+			assert.Contains(t, out, "preview-42")
+			assert.NotContains(t, out, "infrastructure workload")
+		})
+	}
+	scan, err := runCLI(t, newStatusClient(t, interceptor.Funcs{}, objs...), "scan", "-n", "preview-42",
+		"--window", "0", "--open=false")
+	require.NoError(t, err, scan)
+	assert.Contains(t, scan, "1 infrastructure workload is left out of the totals and next steps", "scan keeps it")
+}
+
 // The forecast counts hours in the operator's time zone, which its
 // ManagedWorkloads record, so the replay uses it unless told otherwise.
 func TestCLI_ForecastInTheOperatorsTimeZone(t *testing.T) {
