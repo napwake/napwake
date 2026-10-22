@@ -47,12 +47,12 @@ The request runs the idle clock out now, and the workload is paused by the same 
 
 | The workload | What Hybernate does | `PauseRequest` condition |
 |--------------|---------------------|--------------------------|
-| `Running` or `Idle` | Pauses it, with a `PauseRequested` event, then `Paused` | `True`, `Pausing` |
+| `Running` or `Idle` | Pauses it, with a `PauseRequested` event, then `Paused` | `True`, `Paused` |
 | A confident forecast expects demand within the hour | Leaves it running and says when the demand is expected, since a pause would likely be woken straight back. `kubectl hybernate pause` asks whether to pause it anyway; a request with `hybernate.io/pause-overrides-forecast: "true"`, which `--yes` sets, pauses it | `False`, `ForecastExpectsDemand` |
-| Within the hour Hybernate waits after a GitOps tool (Argo CD, Flux, Fleet, kapp or Kluctl) undid its last pause | Pauses it: you asked. If the tool undoes it again, that's a new [`GitOpsConflict`](gitops.md) | `True`, `Pausing` |
+| Within the hour Hybernate waits after a GitOps tool (Argo CD, Flux, Fleet, kapp or Kluctl) undid its last pause | Pauses it: you asked. If the tool undoes it again, that's a new [`GitOpsConflict`](gitops.md) | `True`, `Paused` |
 | `Pausing` | Finishes the pause, then marks the request handled | `True`, `AlreadyPaused` |
 | `Paused` | Marks the request handled | `True`, `AlreadyPaused` |
-| `Resuming` | Lets the wake finish, then pauses it | `True`, `Pausing` |
+| `Resuming` | Lets the wake finish, then pauses it | `True`, `Paused` |
 | In [dry-run](dry-run.md) | Never scales it: counts a would-be pause in `status.dryRun`, moves it to `Idle`, and emits a `[dry-run]` `PauseRequested` event. Activity after the request ends the would-be pause, as it would wake a paused workload | `False`, `DryRun` |
 | Held awake by `hybernate.io/active-until` on it or its workload | Leaves it running, with a Warning event | `False`, `ActiveUntil` |
 | Depended on by awake workloads | Leaves it running, with a `HeldByDependents` event, as for an idle pause | `False`, `HeldByDependents` |
@@ -60,6 +60,8 @@ The request runs the idle clock out now, and the workload is paused by the same 
 | In a [protected namespace](opt-in.md#protected-namespaces), or Hybernate's own operator or doorman | Leaves it running, with a Warning event | `False`, `Protected` |
 | Scaled to zero outside Hybernate | Nothing to do: it's off already | `False`, `ScaledToZero` |
 | Its workload is missing, labelled `hybernate.io/ignore`, or managed by another ManagedWorkload | Nothing, with a Warning event | `False`, `TargetNotFound`, `TargetIgnored` or `DuplicateTarget` |
+
+The condition answers the last request until the next one, through any wakes and idle pauses since, so its message says what happened and when, in UTC: `paused as requested at 2026-10-21 03:32 UTC`, `already paused at …`, or `not paused at 2026-10-21 03:32 UTC:` and why. Hybernate keeps it rather than dropping it at the next wake, so `kubectl hybernate pause`, or a script that set the annotation, can always read the answer to its request, and `kubectl describe` shows why last night's pause didn't happen long after its events have expired. `status.lastPauseRequest` says which request it answers.
 
 A request Hybernate won't act on is answered once, not retried: ask again once the reason is gone. Activity from before the request doesn't undo it: the pause records the activity annotations as they stood, and only a change made since wakes the workload.
 

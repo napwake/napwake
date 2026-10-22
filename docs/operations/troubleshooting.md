@@ -108,14 +108,14 @@ It waits until the workload is Running, or tells you why it can't wake it. See t
 kubectl hybernate pause my-api -n staging
 ```
 
-It waits until the workload is Paused, or prints why Hybernate didn't pause it. The answer stays in the `PauseRequest` condition:
+It waits until the workload is Paused, or prints why Hybernate didn't pause it. The answer to the last request stays in the `PauseRequest` condition until the next request, saying what happened and when, such as `paused as requested at 2026-10-21 03:32 UTC`; a pause since, or a wake, doesn't change it:
 
 ```bash
 kubectl get managedworkload my-api -n staging \
   -o jsonpath='{.status.conditions[?(@.type=="PauseRequest")]}'
 ```
 
-`False` gives the reason: a confident forecast expects demand within the hour (`ForecastExpectsDemand`; `kubectl hybernate pause --yes` pauses it anyway), workloads that depend on it are awake (`HeldByDependents`) or it's in a `dependsOn` cycle (`DependencyCycle`), a `hybernate.io/active-until` annotation holds it (`ActiveUntil`), it's in dry-run (`DryRun`) or protected (`Protected`), it's scaled to zero already (`ScaledToZero`), or its target is missing, ignored or managed by another ManagedWorkload (`TargetNotFound`, `TargetIgnored`, `DuplicateTarget`). Each request is answered once: fix the reason, then run `pause` again. See [Pause Now](../guides/pause.md#pause-now).
+`True` is `Paused`, or `AlreadyPaused` when it was paused already. `False`, with a message starting `not paused at` and the time, gives the reason: a confident forecast expects demand within the hour (`ForecastExpectsDemand`; `kubectl hybernate pause --yes` pauses it anyway), workloads that depend on it are awake (`HeldByDependents`) or it's in a `dependsOn` cycle (`DependencyCycle`), a `hybernate.io/active-until` annotation holds it (`ActiveUntil`), it's in dry-run (`DryRun`) or protected (`Protected`), it's scaled to zero already (`ScaledToZero`), or its target is missing, ignored or managed by another ManagedWorkload (`TargetNotFound`, `TargetIgnored`, `DuplicateTarget`). Each request is answered once: fix the reason, then run `pause` again. See [Pause Now](../guides/pause.md#pause-now).
 
 ### Requests to a paused workload fail instead of waking it
 

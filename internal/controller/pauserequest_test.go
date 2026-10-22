@@ -105,7 +105,9 @@ func TestPauseRequest_PausesNowAndOnce(t *testing.T) {
 			assert.Equal(t, pauseToken, got.Status.LastPauseRequest)
 			c := pauseRequestCondition(t, got)
 			assert.Equal(t, metav1.ConditionTrue, c.Status)
-			assert.Equal(t, reasonPausing, c.Reason)
+			assert.Equal(t, ReasonPaused, c.Reason)
+			assert.Equal(t, "paused as requested at 2026-03-14 12:00 UTC", c.Message,
+				"what happened and when, as it still reads days and many pauses later")
 			recorded := drainEvents(t, r)
 			assert.Equal(t, 1, strings.Count(recorded, "Normal PauseRequested api: pause requested, pausing"), recorded)
 			assert.Equal(t, 1, strings.Count(recorded, "Normal Paused api: paused"), recorded)
@@ -275,7 +277,7 @@ func TestPauseRequest_Refused(t *testing.T) {
 			c := pauseRequestCondition(t, got)
 			assert.Equal(t, metav1.ConditionFalse, c.Status)
 			assert.Equal(t, tt.wantReason, c.Reason)
-			assert.True(t, strings.HasPrefix(c.Message, "not paused: "), c.Message)
+			assert.True(t, strings.HasPrefix(c.Message, "not paused at 2026-03-14 12:00 UTC: "), c.Message)
 			recorded := drainEvents(t, r)
 			assert.Contains(t, recorded, tt.wantEvent)
 			assert.Equal(t, 1, strings.Count(recorded, "pause requested, but"), "answered once: %s", recorded)
@@ -303,6 +305,8 @@ func TestPauseRequest_DryRun(t *testing.T) {
 	c := pauseRequestCondition(t, got)
 	assert.Equal(t, metav1.ConditionFalse, c.Status)
 	assert.Equal(t, reasonDryRun, c.Reason)
+	assert.Equal(t, "not paused at 2026-03-14 12:00 UTC: dry-run is on, so Hybernate counted a would-be pause and "+
+		"left the workload running", c.Message)
 	require.NotNil(t, got.Status.DryRun)
 	assert.Equal(t, int32(1), got.Status.DryRun.Pauses)
 	recorded := drainEvents(t, r)
@@ -397,12 +401,15 @@ func TestPauseRequest_ForecastDeclinesUnlessOverridden(t *testing.T) {
 // that's done: one pausing is then paused, and one waking is paused again.
 func TestPauseRequest_DuringATransition(t *testing.T) {
 	tests := []struct {
-		phase      v1alpha1.WorkloadPhase
-		replicas   int32
-		wantReason string
+		phase       v1alpha1.WorkloadPhase
+		replicas    int32
+		wantReason  string
+		wantMessage string
 	}{
-		{phase: v1alpha1.PhasePausing, replicas: 3, wantReason: reasonAlreadyPaused},
-		{phase: v1alpha1.PhaseResuming, replicas: 3, wantReason: reasonPausing},
+		{phase: v1alpha1.PhasePausing, replicas: 3, wantReason: reasonAlreadyPaused,
+			wantMessage: "already paused at 2026-03-14 12:00 UTC"},
+		{phase: v1alpha1.PhaseResuming, replicas: 3, wantReason: ReasonPaused,
+			wantMessage: "paused as requested at 2026-03-14 12:00 UTC"},
 	}
 	for _, tt := range tests {
 		t.Run(string(tt.phase), func(t *testing.T) {
@@ -416,7 +423,9 @@ func TestPauseRequest_DuringATransition(t *testing.T) {
 			got := getWorkload(t, r, "api")
 			assert.Equal(t, v1alpha1.PhasePaused, got.Status.Phase)
 			assert.Equal(t, pauseToken, got.Status.LastPauseRequest)
-			assert.Equal(t, tt.wantReason, pauseRequestCondition(t, got).Reason)
+			c := pauseRequestCondition(t, got)
+			assert.Equal(t, tt.wantReason, c.Reason)
+			assert.Equal(t, tt.wantMessage, c.Message)
 		})
 	}
 }
@@ -478,6 +487,12 @@ func TestPauseRequest_AcrossARestart(t *testing.T) {
 	require.NoError(t, c.Status().Update(ctx, &d))
 	require.Eventually(t, func() bool { return get().Status.Phase == v1alpha1.PhaseRunning },
 		30*time.Second, 100*time.Millisecond, "and it's Running once its pods are Ready")
+	answer := meta.FindStatusCondition(get().Status.Conditions, conditionPauseRequest)
+	require.NotNil(t, answer, "the answer stays, for whoever asked to read")
+	assert.Equal(t, metav1.ConditionTrue, answer.Status)
+	assert.Equal(t, ReasonPaused, answer.Reason)
+	assert.Regexp(t, `^paused as requested at \d{4}-\d{2}-\d{2} \d{2}:\d{2} UTC$`, answer.Message,
+		"woken since, it says what happened and when, not that a pause is under way")
 
 	stop()
 	startOperator(t, cfg, opScheme)

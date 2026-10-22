@@ -220,7 +220,10 @@ var _ = Describe("Manager", func() {
 			Expect(out).To(ContainSubstring(appNamespace + "/" + appName + " is Paused after"))
 			Expect(jsonpath("deployment", appName, appNamespace, "{.spec.replicas}")).To(Equal("0"))
 			Expect(jsonpath("managedworkload", appName, appNamespace,
-				`{.status.conditions[?(@.type=="PauseRequest")].reason}`)).To(Equal("Pausing"))
+				`{.status.conditions[?(@.type=="PauseRequest")].reason}`)).To(Equal("Paused"))
+			pauseAnswer := `^paused as requested at \d{4}-\d{2}-\d{2} \d{2}:\d{2} UTC$`
+			Expect(jsonpath("managedworkload", appName, appNamespace,
+				`{.status.conditions[?(@.type=="PauseRequest")].message}`)).To(MatchRegexp(pauseAnswer))
 
 			By("checking the API server accepted the events.k8s.io event")
 			Eventually(func(g Gomega) {
@@ -235,6 +238,9 @@ var _ = Describe("Manager", func() {
 			Expect(curlInCluster("curl-lifecycle", appNamespace, fmt.Sprintf("http://%s/hostname", appName),
 				"--retry", "10", "--retry-delay", "1", "--retry-connrefused")).To(HavePrefix(appName + "-"))
 			expectWokenByRequest(appNamespace, "deployment", appName, 2)
+			Expect(jsonpath("managedworkload", appName, appNamespace,
+				`{.status.conditions[?(@.type=="PauseRequest")].message}`)).To(MatchRegexp(pauseAnswer),
+				"woken since, the answer still says what happened and when, not that a pause is under way")
 
 			By("deleting the ManagedWorkload, which must release its finalizer and leave the Deployment")
 			_, err = utils.Run(exec.Command("kubectl", "delete", "managedworkload", appName,

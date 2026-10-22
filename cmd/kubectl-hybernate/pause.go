@@ -446,7 +446,7 @@ func pauseAnswered(w *v1alpha1.ManagedWorkload, ref string, requested bool, out 
 	if !requested || c == nil || c.Status != metav1.ConditionFalse {
 		return false, nil
 	}
-	why := strings.TrimPrefix(oneLine(c.Message), "not paused: ")
+	why := refusal(oneLine(c.Message))
 	switch c.Reason {
 	case reasonDryRun:
 		_, _ = fmt.Fprintf(out, "%s wasn't paused: %s\n", ref, why)
@@ -461,6 +461,20 @@ func pauseAnswered(w *v1alpha1.ManagedWorkload, ref string, requested bool, out 
 		return true, demandExpected{msg: fmt.Sprintf("%s %s: %s", ref, errNotPaused, why)}
 	}
 	return true, fmt.Errorf("%s %w: %s", ref, errNotPaused, why)
+}
+
+// refusal is why the operator's answer says a request didn't pause the
+// workload: the message without the "not paused at <time>: " it starts
+// with, since whoever just asked knows when.
+func refusal(message string) string {
+	rest, ok := strings.CutPrefix(message, "not paused")
+	if !ok {
+		return message
+	}
+	if _, why, found := strings.Cut(rest, ": "); found {
+		return why
+	}
+	return message
 }
 
 // warnIfGitOpsUndoes warns when a GitOps tool sets the workload's replicas
