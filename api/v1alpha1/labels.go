@@ -97,6 +97,7 @@ const (
 	AnnotationIdleAfter     = "hybernate.io/idle-after"
 	AnnotationCPUThreshold  = "hybernate.io/cpu-threshold"
 	AnnotationAutoResume    = "hybernate.io/auto-resume"
+	AnnotationPauseEarly    = "hybernate.io/pause-early"
 	AnnotationForecast      = "hybernate.io/forecast"
 	AnnotationDependsOn     = "hybernate.io/depends-on"
 	AnnotationWakeOnRequest = "hybernate.io/wake-on-request"
