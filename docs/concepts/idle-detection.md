@@ -112,4 +112,4 @@ A paused workload wakes when:
 - Something other than Hybernate scales it up, such as `kubectl scale`.
 - Dry-run is turned on: dry-run never leaves a workload paused.
 
-Each wake restarts the clock, so a woken workload gets a full `idleAfter` before it can pause again. The clock records `lastActivitySource: request` when a held request woke it, `prometheus` when an activity query did, `scaled-up` when something else scaled it up, and `woke` for any other wake.
+Each wake restarts the clock, so a woken workload gets a full `idleAfter` before it can pause again, unless [`pauseEarly`](forecasting.md#pausing-early) is on and the forecast expects the coming hours quiet: then the pause can come 20 minutes after the wake. The clock records `lastActivitySource: request` when a held request woke it, `prometheus` when an activity query did, `scaled-up` when something else scaled it up, and `woke` for any other wake.
