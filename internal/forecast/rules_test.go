@@ -61,6 +61,21 @@ func TestHourStart(t *testing.T) {
 	}
 }
 
+// Every look in an hour must find the same hour start, so one taken from
+// the real clock carries no monotonic reading: Go compares two times that
+// both carry one by that reading alone, and two from time.Now() differ by
+// the nanoseconds between its reads of the wall and monotonic clocks.
+func TestHourStart_CarriesNoMonotonicReading(t *testing.T) {
+	lagos, err := time.LoadLocation("Africa/Lagos")
+	require.NoError(t, err)
+	kolkata, err := time.LoadLocation("Asia/Kolkata")
+	require.NoError(t, err)
+	for _, loc := range []*time.Location{nil, time.UTC, lagos, kolkata} {
+		start := HourStart(time.Now(), loc)
+		assert.Equal(t, start.Round(0), start, "in %v: %s", loc, start)
+	}
+}
+
 func TestHoldPause(t *testing.T) {
 	tests := []struct {
 		name          string
