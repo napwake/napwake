@@ -27,6 +27,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	v1alpha1 "github.com/okedeji/hybernate/api/v1alpha1"
+	"github.com/okedeji/hybernate/internal/doorman"
 	"github.com/okedeji/hybernate/internal/gitops"
 )
 
@@ -119,7 +120,7 @@ func (s *Scanner) readAcross(ctx context.Context, namespaces []string) *clusterR
 	})
 	g.Go(func() error {
 		r.services = listAcross(ctx, s.client, servicesItems, func(svc *corev1.Service) bool {
-			*svc = dependencyService(svc)
+			*svc = scannedService(svc)
 			return scanned[svc.Namespace]
 		})
 		return nil
@@ -238,11 +239,22 @@ func trimContainers(containers []corev1.Container) []corev1.Container {
 	return containers
 }
 
-// dependencyService is what resolving a dependency needs of a Service.
-func dependencyService(svc *corev1.Service) corev1.Service {
+// scannedService is what the scan needs of a Service: what resolving a
+// dependency needs, and what tells whether the doorman would route it.
+func scannedService(svc *corev1.Service) corev1.Service {
+	var annotations map[string]string
+	for _, key := range []string{doorman.AnnotationIgnorePorts, doorman.AnnotationGKENEGStatus} {
+		if v, ok := svc.Annotations[key]; ok {
+			if annotations == nil {
+				annotations = map[string]string{}
+			}
+			annotations[key] = v
+		}
+	}
 	return corev1.Service{
-		ObjectMeta: metav1.ObjectMeta{Namespace: svc.Namespace, Name: svc.Name},
-		Spec:       corev1.ServiceSpec{Selector: svc.Spec.Selector, ClusterIP: svc.Spec.ClusterIP},
+		ObjectMeta: metav1.ObjectMeta{Namespace: svc.Namespace, Name: svc.Name, Annotations: annotations},
+		Spec: corev1.ServiceSpec{Selector: svc.Spec.Selector, ClusterIP: svc.Spec.ClusterIP, Type: svc.Spec.Type,
+			Ports: svc.Spec.Ports, InternalTrafficPolicy: svc.Spec.InternalTrafficPolicy},
 	}
 }
 

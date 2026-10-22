@@ -23,6 +23,7 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
@@ -44,8 +45,15 @@ func officeCores(t time.Time) float64 {
 
 func forecastScan(t *testing.T, objs ...client.Object) Workload {
 	t.Helper()
+	return forecastScanOf(t, 28*24*time.Hour, objs...)
+}
+
+// forecastScanOf scans the api Deployment, with history of office hours
+// for as long as since, and objs beside it.
+func forecastScanOf(t *testing.T, since time.Duration, objs ...client.Object) Workload {
+	t.Helper()
 	window := 28 * 24 * time.Hour
-	f := &fakePrometheus{from: scanTime.Add(-window), byNamespace: map[string][]series{testNamespace: {
+	f := &fakePrometheus{from: scanTime.Add(-since), byNamespace: map[string][]series{testNamespace: {
 		{pod: "api-7d9f8c6b5-abcde", container: "main", cores: officeCores},
 	}}}
 	opts := scanOptions(testNamespace)
@@ -106,4 +114,121 @@ func TestScanCluster_ReplaysAManagedWorkloadsForecast(t *testing.T) {
 	assert.Equal(t, 62, w.Forecast.Live.Confidence)
 	require.NotNil(t, w.Forecast.Live.StartsActing)
 	assert.True(t, starts.Time.Equal(*w.Forecast.Live.StartsActing))
+}
+
+// The replay wakes a paused workload as Hybernate would: through the doorman
+// when one of its Services can be routed there, with its activity query
+// when it has one, and by hand otherwise, the hours it's paused then going
+// unseen. Two weeks of history leave the forecast a week to learn before it
+// acts, so what it sees of the workload's nights decides the mornings ready.
+func TestScanCluster_ReplaysWithTheWorkloadsOwnWakes(t *testing.T) {
+	service := &corev1.Service{ObjectMeta: metav1.ObjectMeta{Name: "api", Namespace: testNamespace},
+		Spec: corev1.ServiceSpec{Selector: map[string]string{"app": "api"}, ClusterIP: "10.96.0.10",
+			Ports: []corev1.ServicePort{{Port: 80}}}}
+	worker := &v1alpha1.ManagedWorkload{
+		ObjectMeta: metav1.ObjectMeta{Name: "api", Namespace: testNamespace},
+		Spec: v1alpha1.ManagedWorkloadSpec{
+			Target: v1alpha1.WorkloadRef{Kind: v1alpha1.TargetKindDeployment, Name: "api"},
+			IdlePolicy: &v1alpha1.IdlePolicySpec{Activity: &v1alpha1.ActivitySpec{Prometheus: []v1alpha1.PrometheusActivity{
+				{PromQL: `sum(rabbitmq_queue_messages{queue="tasks"})`}}}},
+		},
+		Status: v1alpha1.ManagedWorkloadStatus{Phase: v1alpha1.PhaseRunning},
+	}
+	tests := []struct {
+		name      string
+		objs      []client.Object
+		want      ReplayWakes
+		wantReady int
+	}{
+		{name: "behind the doorman", objs: []client.Object{service}, want: ReplayWakes{Request: true}, wantReady: 5},
+		{name: "a queue worker its query wakes", objs: []client.Object{worker},
+			want: ReplayWakes{Query: true, NoRequest: "no Service routes requests to it"}, wantReady: 5},
+		{name: "with nothing to wake it", want: ReplayWakes{NoRequest: "no Service routes requests to it"}, wantReady: 2},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			w := forecastScanOf(t, 14*24*time.Hour, tt.objs...)
+
+			require.NotNil(t, w.Forecast)
+			assert.Equal(t, tt.want, w.Forecast.Wakes)
+			require.NotNil(t, w.Forecast.Replay)
+			assert.Equal(t, 5, w.Forecast.Replay.UsedDays)
+			assert.Equal(t, tt.wantReady, w.Forecast.Replay.Ready)
+		})
+	}
+}
+
+// What would wake a paused workload is the operator's verdict on its
+// routing where it has one, and otherwise judged from its namespace's
+// Services as the doorman routes them.
+func TestReplayWakes(t *testing.T) {
+	pods := map[string]string{"app": "api", "tier": "web"}
+	service := func(mutate func(*corev1.Service)) map[string]corev1.Service {
+		svc := corev1.Service{ObjectMeta: metav1.ObjectMeta{Name: "api"}, Spec: corev1.ServiceSpec{
+			Selector: map[string]string{"app": "api"}, ClusterIP: "10.96.0.10", Ports: []corev1.ServicePort{{Port: 80}}}}
+		if mutate != nil {
+			mutate(&svc)
+		}
+		return map[string]corev1.Service{svc.Name: svc}
+	}
+	managed := func(mutate func(*v1alpha1.ManagedWorkload)) *v1alpha1.ManagedWorkload {
+		mw := &v1alpha1.ManagedWorkload{}
+		mutate(mw)
+		return mw
+	}
+	routing := func(status metav1.ConditionStatus, reason string) func(*v1alpha1.ManagedWorkload) {
+		return func(mw *v1alpha1.ManagedWorkload) {
+			mw.Status.Conditions = []metav1.Condition{{Type: "WakeOnRequest", Status: status, Reason: reason}}
+		}
+	}
+	local := corev1.ServiceInternalTrafficPolicyLocal
+	tests := []struct {
+		name        string
+		mw          *v1alpha1.ManagedWorkload
+		annotations map[string]string
+		services    map[string]corev1.Service
+		want        ReplayWakes
+	}{
+		{name: "a Service selects its pods", services: service(nil), want: ReplayWakes{Request: true}},
+		{name: "no Service", services: map[string]corev1.Service{},
+			want: ReplayWakes{NoRequest: noRequestNoService}},
+		{name: "a Service selecting other pods", services: service(func(s *corev1.Service) {
+			s.Spec.Selector = map[string]string{"app": "web"}
+		}), want: ReplayWakes{NoRequest: noRequestNoService}},
+		{name: "a headless Service", services: service(func(s *corev1.Service) { s.Spec.ClusterIP = "None" }),
+			want: ReplayWakes{NoRequest: noRequestNoService}},
+		{name: "only UDP", services: service(func(s *corev1.Service) {
+			s.Spec.Ports[0].Protocol = corev1.ProtocolUDP
+		}), want: ReplayWakes{NoRequest: noRequestNoService}},
+		{name: "a Service in GKE NEGs", services: service(func(s *corev1.Service) {
+			s.Annotations = map[string]string{"cloud.google.com/neg-status": `{"network_endpoint_groups":{"80":"k8s1-neg"}}`}
+		}), want: ReplayWakes{NoRequest: noRequestNEGs}},
+		{name: "a node-local Service", services: service(func(s *corev1.Service) {
+			s.Spec.InternalTrafficPolicy = &local
+		}), want: ReplayWakes{NoRequest: noRequestNodeLocal}},
+		{name: "Services not read, as Hybernate's default", want: ReplayWakes{Request: true}},
+		{name: "turned off by the annotation it would be opted in with", services: service(nil),
+			annotations: map[string]string{v1alpha1.AnnotationWakeOnRequest: "false"},
+			want:        ReplayWakes{NoRequest: noRequestTurnedOff}},
+		{name: "managed, turned off", services: service(nil), mw: managed(func(mw *v1alpha1.ManagedWorkload) {
+			mw.Spec.Wake = &v1alpha1.WakeSpec{OnRequest: new(false)}
+		}), want: ReplayWakes{NoRequest: noRequestTurnedOff}},
+		{name: "managed and routed while paused", services: map[string]corev1.Service{},
+			mw: managed(routing(metav1.ConditionTrue, "DoormanRouted")), want: ReplayWakes{Request: true}},
+		{name: "managed, its Services in NEGs at its last pause", services: service(nil),
+			mw:   managed(routing(metav1.ConditionFalse, "UnsupportedLoadBalancer")),
+			want: ReplayWakes{NoRequest: noRequestNEGs}},
+		{name: "managed and awake, judged from its Services", services: service(nil),
+			mw: managed(routing(metav1.ConditionFalse, "NotPaused")), want: ReplayWakes{Request: true}},
+		{name: "managed with an activity query and no Service", services: map[string]corev1.Service{},
+			mw: managed(func(mw *v1alpha1.ManagedWorkload) {
+				mw.Spec.IdlePolicy = &v1alpha1.IdlePolicySpec{Activity: &v1alpha1.ActivitySpec{
+					Prometheus: []v1alpha1.PrometheusActivity{{PromQL: "queue_length"}}}}
+			}), want: ReplayWakes{Query: true, NoRequest: noRequestNoService}},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			assert.Equal(t, tt.want, replayWakes(tt.mw, tt.annotations, pods, tt.services))
+		})
+	}
 }

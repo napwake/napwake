@@ -212,7 +212,8 @@ func (s *Scanner) scanNamespace(ctx, historyCtx context.Context, namespace strin
 				h := r.run()
 				w.History = &h
 				if opts.Forecast != nil {
-					w.Forecast = replayForecast(r, confidenceFor(mw, *opts.Forecast), mw, *opts.Forecast)
+					w.Forecast = replayForecast(r, confidenceFor(mw, *opts.Forecast), mw,
+						replayWakes(mw, obj.GetAnnotations(), wl.template.Labels, scan.services), *opts.Forecast)
 				}
 			}
 			if w.History == nil && w.State != StateUnknown && w.Platform == "" {
@@ -515,13 +516,13 @@ func (u podUsage) of(pods []corev1.Pod, sel labels.Selector) []metricsv1beta1.Po
 	return out
 }
 
-// readServices reads a namespace's Services, keeping only what resolving a
-// dependency needs.
+// readServices reads a namespace's Services, keeping only what the scan
+// needs of them.
 func (s *Scanner) readServices(ctx context.Context, reads *clusterReads, namespace string) (
 	map[string]corev1.Service, error) {
 	out := map[string]corev1.Service{}
 	err := eachIn(ctx, s.client, reads.services, namespace, servicesItems, func(svc *corev1.Service) {
-		out[svc.Name] = dependencyService(svc)
+		out[svc.Name] = scannedService(svc)
 	})
 	if err != nil {
 		return nil, err

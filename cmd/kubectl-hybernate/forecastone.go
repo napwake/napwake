@@ -509,8 +509,8 @@ func writeReplayDetail(p *printer, w forecastWorkload, result forecastResult, lo
 		return
 	}
 	p.line("")
-	p.line("From %s to %s, with autoResume, from a forecast that learned only the history before:",
-		r.From.In(loc).Format("Mon 2 Jan"), r.To.In(loc).Format("Mon 2 Jan"))
+	p.line("From %s to %s, with autoResume, from a forecast that learned only the history before; while it's "+
+		"paused, %s:", r.From.In(loc).Format("Mon 2 Jan"), r.To.In(loc).Format("Mon 2 Jan"), wakesSentence(f.Wakes))
 	tw := tabwriter.NewWriter(p, 0, 0, 2, ' ', 0)
 	_, _ = fmt.Fprintln(tw, "DAY\tFIRST USE\tFOUND IT\tWOKEN AT\tFORECAST\tWOKEN FOR NOTHING")
 	for _, d := range r.Days {
