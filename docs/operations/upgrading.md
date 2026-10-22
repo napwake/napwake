@@ -8,13 +8,16 @@
 
     === "Helm"
 
+        With the values file you install with:
+
         ```bash
         helm upgrade hybernate oci://ghcr.io/okedeji/charts/hybernate \
           --version X.Y.Z \
-          --namespace hybernate-system
+          --namespace hybernate-system \
+          -f hybernate-values.yaml
         ```
 
-        The chart is only published as an OCI artifact: there's no `helm repo` to update. Its version has no `v`. The CRD is a template in the chart, so `helm upgrade` upgrades it too, unless you installed with `crds.install: false` and manage it yourself.
+        Give it the file every time, or no values at all: given `--set` alone, Helm drops the values set before; see [Keeping your settings](#keeping-your-settings). The chart is only published as an OCI artifact: there's no `helm repo` to update. Its version has no `v`. The CRD is a template in the chart, so `helm upgrade` upgrades it too, unless you installed with `crds.install: false` and manage it yourself.
 
     === "kubectl"
 
@@ -46,6 +49,39 @@
     ```bash
     kubectl get managedworkloads --all-namespaces
     ```
+
+## Keeping your settings
+
+Helm reuses a release's values only on an upgrade given none. Given any, with `--set` or `-f`, it starts again from the chart's defaults and adds only those. On a release installed with `timezone` and `prometheus.url`, an upgrade with `--set timezone=America/New_York` sets the time zone and drops `prometheus.url`, and the next upgrade with `--set` drops whatever that one didn't name. Helm 3 and Helm 4 do the same.
+
+So keep every value you set in one file, give it to `helm install` and every `helm upgrade`, and change a setting by changing the file. The file is the whole of your settings, in one place you can review, the same in every Helm, and it's what you'd commit to Git: Argo CD and Flux take the same values, so moving to one is a copy. Installed with `--set`, write the values the release has now to a file first:
+
+```bash
+helm get values hybernate -n hybernate-system -o yaml > hybernate-values.yaml
+```
+
+A release installed with no values writes `null`; replace it with your settings.
+
+To change a setting, such as the [time zone](../getting-started/installation.md#time-zone), change it in the file and upgrade with it, at the version you run, which `helm list -n hybernate-system` shows in its `CHART` column, so the change doesn't upgrade Hybernate too:
+
+```bash
+helm upgrade hybernate oci://ghcr.io/okedeji/charts/hybernate \
+  --version X.Y.Z \
+  --namespace hybernate-system \
+  -f hybernate-values.yaml
+```
+
+Without a file, `--reset-then-reuse-values`, in Helm 3.14 and later, keeps the release's values and adds yours, over the chart's own defaults:
+
+```bash
+helm upgrade hybernate oci://ghcr.io/okedeji/charts/hybernate \
+  --version X.Y.Z \
+  --namespace hybernate-system \
+  --reset-then-reuse-values \
+  --set timezone=America/New_York
+```
+
+Not `--reuse-values`, which also keeps the defaults of the version installed, so to a newer version it gives none of the values that version adds. Upgrading 0.2.0-rc.3 to 0.2.0-rc.4 with it fails in Helm 3 and Helm 4 alike, with `nil pointer evaluating interface {}.enabled` for `doorman.negForwarder.enabled`, a value rc.4 added; without the failure, a default the new version changes would be quietly ignored.
 
 ## Narrowing watchNamespaces
 
