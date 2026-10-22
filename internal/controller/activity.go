@@ -708,6 +708,10 @@ func (r *Reconciler) reconcileIdleClock(ctx context.Context, workload *v1alpha1.
 
 	early, pausingEarly := r.pauseEarly(ctx, workload, target, engine, obs)
 	if !pausingEarly && (obs.activeUntil.After(now) || activeSinceClockRanOut(workload, now, pauseAt)) {
+		// Up for its own activity, nothing holds it: a hold from before its
+		// clock restarted would name dependents it isn't waiting on.
+		r.clearCondition(workload, conditionHeldByDependents, "NotIdle")
+		recordHolders(workload, nil)
 		if workload.Status.Phase == v1alpha1.PhaseIdle {
 			source := workload.Status.Activity.LastActivitySource
 			slept, freed, measured := r.endWouldBePause(workload)

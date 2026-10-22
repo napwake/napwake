@@ -209,6 +209,29 @@ func withCondition(w *v1alpha1.ManagedWorkload, condType string, status metav1.C
 
 // A condition's message over 32768 bytes fails the whole status write, so
 // a dependency with many dependents names only some.
+// A held workload whose clock restarts is up for its own activity, so the
+// hold is over until its clock runs out again.
+func TestDependencies_HoldEndsWhenItsClockRestarts(t *testing.T) {
+	postgres := depWorkload("default", "postgres", v1alpha1.TargetKindStatefulSet, v1alpha1.PhaseRunning)
+	api := depWorkload("default", "api", v1alpha1.TargetKindDeployment, v1alpha1.PhaseRunning, postgresRef())
+	r := depReconciler(t, &stubPauser{pauseDone: true}, postgres, api)
+
+	_, err := r.reconcileAutomation(context.Background(), postgres, postgresTarget(1, 1))
+	require.NoError(t, err)
+	require.True(t, meta.IsStatusConditionTrue(postgres.Status.Conditions, conditionHeldByDependents))
+	require.Equal(t, []string{"default/api"}, postgres.Status.Activity.HeldByDependents)
+
+	postgres.Annotations = map[string]string{v1alpha1.AnnotationLastActivity: fixedTime.Format(time.RFC3339)}
+	_, err = r.reconcileAutomation(context.Background(), postgres, postgresTarget(1, 1))
+	require.NoError(t, err)
+
+	held := meta.FindStatusCondition(postgres.Status.Conditions, conditionHeldByDependents)
+	require.NotNil(t, held)
+	assert.Equal(t, metav1.ConditionFalse, held.Status)
+	assert.Equal(t, "NotIdle", held.Reason)
+	assert.Empty(t, postgres.Status.Activity.HeldByDependents)
+}
+
 func TestDependencies_HoldersListIsBounded(t *testing.T) {
 	postgres := depWorkload("default", "postgres", v1alpha1.TargetKindStatefulSet, v1alpha1.PhaseRunning)
 	objs := make([]client.Object, 0, 2001)
