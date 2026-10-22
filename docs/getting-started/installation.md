@@ -203,6 +203,45 @@ The chart is published only to an OCI registry, which Argo CD and Flux each name
 
 To upgrade, change the version, `targetRevision` or `tag`, to the new release's.
 
+#### Moving a Helm install to Argo CD or Flux
+
+An install made with `helm install`, as in the Helm tab, can be handed to Argo CD or Flux where it runs, given the same values: nothing is reinstalled, the operator isn't restarted, and paused workloads stay paused. Don't uninstall it first. `helm uninstall` refuses while ManagedWorkloads are left, as in [Uninstall](#uninstall), and doing what it asks, stopping managing every workload, wakes every paused one and throws away what Hybernate has learned of each, its forecast and its tally of what pausing freed.
+
+Give Argo CD or Flux the values the release has now, which this prints, and the version it runs, which `helm list -n hybernate-system` shows in its `CHART` column:
+
+```bash
+helm get values hybernate -n hybernate-system
+```
+
+=== "Argo CD"
+
+    1. Commit the Application above, with those values under `valuesObject` and that version as `targetRevision`. Argo CD renders the chart, finds every resource already there as it would make it, and shows the Application `Synced` and `Healthy` without applying anything, so an automated sync doesn't start.
+    2. Sync it once by hand, which applies the resources and marks them as the Application's own, with Argo CD's `argocd.argoproj.io/tracking-id` annotation: **Sync** in Argo CD's UI, or with kubectl, giving the Application's sync options:
+
+        ```bash
+        kubectl patch application hybernate -n argocd --type merge -p '{"operation":{"sync":{"syncOptions":["CreateNamespace=true"]}}}'
+        ```
+
+        The sync's result warns, for each resource, that it's missing the `kubectl.kubernetes.io/last-applied-configuration` annotation, which Helm doesn't set and the sync adds.
+
+    3. Check it's `Synced` and `Healthy`:
+
+        ```bash
+        kubectl get application hybernate -n argocd
+        ```
+
+    4. Delete Helm's record of the release, its `sh.helm.release.v1.hybernate.v<revision>` Secrets, so `helm` no longer acts on it:
+
+        ```bash
+        kubectl delete secrets -n hybernate-system -l owner=helm,name=hybernate
+        ```
+
+    `helm list -n hybernate-system` no longer shows the release. From then on, change it in Git: Argo CD applies a change to the values or `targetRevision`, and, from 3.3, runs the uninstall guard when the Application is deleted.
+
+=== "Flux"
+
+    Commit the `OCIRepository` and `HelmRelease` above, with those values under `values` and that version as `tag`. Their `releaseName` and `storageNamespace` are the release's own, so Flux's helm-controller finds it in Helm's storage and takes it over in place: it upgrades the release to a new revision, with the same values, and nothing is deleted. `helm list -n hybernate-system` goes on showing it, its chart version now followed by `+` and the start of the chart's digest, as Flux names it. From then on, change it in Git: a `helm upgrade` by hand is undone at Flux's next reconcile.
+
 ## Time zone
 
 The [forecast](../concepts/forecasting.md) learns when each workload is busy by hour of day and day of week, counted in the operator's time zone, holds off pausing ahead of those hours and, with `autoResume`, wakes workloads before them. Set it to your users' IANA time zone, such as `Europe/London`, `America/New_York` or `Asia/Kolkata`: Helm's `timezone` value, or the operator's `--timezone` flag. Left at the default, UTC, a team whose clocks change for daylight saving finds its workloads woken an hour early or late for half the year. For teams in different zones, pick the zone most of them work in, or give each team an install of its own, as below. The chart's install notes say which zone the forecast uses, and [Wall-Clock Alignment](../concepts/forecasting.md#wall-clock-alignment) has the details.

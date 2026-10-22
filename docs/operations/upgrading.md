@@ -35,7 +35,7 @@
 
     === "Argo CD or Flux"
 
-        Change the Application's `targetRevision`, or the `OCIRepository`'s `tag`, to `X.Y.Z` in Git, and let it sync.
+        Change the Application's `targetRevision`, or the `OCIRepository`'s `tag`, to `X.Y.Z` in Git, and let it sync. To hand an install made with `helm install` to Argo CD or Flux, see [Moving a Helm install to Argo CD or Flux](../getting-started/installation.md#moving-a-helm-install-to-argo-cd-or-flux).
 
 3. **Verify the upgrade:**
 
@@ -54,7 +54,7 @@
 
 Helm reuses a release's values only on an upgrade given none. Given any, with `--set` or `-f`, it starts again from the chart's defaults and adds only those. On a release installed with `timezone` and `prometheus.url`, an upgrade with `--set timezone=America/New_York` sets the time zone and drops `prometheus.url`, and the next upgrade with `--set` drops whatever that one didn't name. Helm 3 and Helm 4 do the same.
 
-So keep every value you set in one file, give it to `helm install` and every `helm upgrade`, and change a setting by changing the file. The file is the whole of your settings, in one place you can review, the same in every Helm, and it's what you'd commit to Git: Argo CD and Flux take the same values, so moving to one is a copy. Installed with `--set`, write the values the release has now to a file first:
+So keep every value you set in one file, give it to `helm install` and every `helm upgrade`, and change a setting by changing the file. The file is the whole of your settings, in one place you can review, the same in every Helm, and it's what you'd commit to Git: Argo CD and Flux take the same values, so [moving to one](../getting-started/installation.md#moving-a-helm-install-to-argo-cd-or-flux) is a copy. Installed with `--set`, write the values the release has now to a file first:
 
 ```bash
 helm get values hybernate -n hybernate-system -o yaml > hybernate-values.yaml
