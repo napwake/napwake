@@ -82,6 +82,14 @@ The operator runs its full evaluation pipeline:
 
 Hybernate keeps a running summary of the pauses it would have made. A would-be pause starts when the activity clock runs out, and ends at the next activity, which is when a paused workload would have been woken. Two wakes are the exception. A request reaching a paused workload wakes it, but a workload in dry-run is still running, so a request counts only through the activity it shows, its CPU use or a [Prometheus activity query](prometheus-signals.md); and `autoResume` wakes a paused workload ahead of hours the forecast expects to be busy, which dry-run doesn't count. So for a workload that serves the odd light request, or has `autoResume` on, real pauses would be shorter than the would-be ones. A would-be pause also ends when Hybernate stops measuring it: the workload is scaled to zero outside Hybernate, labelled `hybernate.io/ignore`, or its namespace becomes protected; see [When Hybernate Lets Go](pause.md#when-hybernate-lets-go). It's counted up to that moment.
 
+For a workload that serves the odd light request, add a [Prometheus activity query](prometheus-signals.md) on its request rate, from its ingress or the app's own metrics, with the operator's `prometheus.url` set, so that dry-run sees requests as activity, as the doorman would see them and wake the workload. On a workload opted in with the label, add the query to the ManagedWorkload Hybernate created, which keeps it:
+
+```bash
+kubectl patch managedworkload my-api -n staging --type=json -p '[{"op":"add","path":"/spec/idlePolicy/activity/prometheus","value":[{"promQL":"sum(rate(nginx_ingress_controller_requests{exported_namespace=\"staging\",exported_service=\"my-api\"}[5m]))"}]}]'
+```
+
+The query keeps counting once the workload pauses for real, and wakes it, as in [While the Workload Is Paused](prometheus-signals.md#while-the-workload-is-paused).
+
 What it would have freed is in the list of ManagedWorkloads:
 
 ```bash

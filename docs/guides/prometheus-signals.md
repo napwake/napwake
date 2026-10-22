@@ -22,7 +22,7 @@ spec:
     idleAfter: 1h
     activity:
       prometheus:
-        - promQL: 'sum(rate(nginx_ingress_controller_requests{exported_service="my-api"}[5m]))'
+        - promQL: 'sum(rate(nginx_ingress_controller_requests{exported_namespace="staging", exported_service="my-api"}[5m]))'
 ```
 
 Queries are combined with the other activity sources: CPU, deploys, and activity annotations. Any one of them is enough to keep the workload awake.
@@ -96,11 +96,15 @@ When Prometheus itself fails, by not answering, answering with a server error or
 
 | Use case | PromQL |
 |----------|--------|
-| Requests through ingress-nginx | `sum(rate(nginx_ingress_controller_requests{exported_service="api"}[5m]))` |
+| Requests through ingress-nginx | `sum(rate(nginx_ingress_controller_requests{exported_namespace="staging", exported_service="api"}[5m]))` |
 | Requests seen by the app | `sum(rate(http_requests_total{service="api"}[5m]))` |
 | Open WebSocket connections | `sum(websocket_connections{service="api"})` |
 | Messages waiting on a queue | `sum(rabbitmq_queue_messages{queue="tasks"})` |
 | Kafka consumer lag | `sum(kafka_consumer_lag{group="worker"})` |
+
+ingress-nginx labels each request with the namespace and Service it went to. Scraped by the Prometheus Operator, which keeps its own `namespace` and `service` labels for the scrape's target, they become `exported_namespace` and `exported_service`. Give the namespace as well as the Service: preview environments often share Service names, and another one's traffic would keep this workload awake.
+
+A request-rate query is also how [dry-run](dry-run.md#what-dry-run-measured) sees a workload's requests: while it runs, nothing goes through the doorman, so without one a request counts only through the CPU it uses.
 
 ## Writing Good Queries
 
@@ -113,14 +117,14 @@ When Prometheus itself fails, by not answering, answering with a server error or
 Health checks, uptime monitors, and scrapers keep a workload awake if the query counts them, and wake it once it's paused. Filter them out by path or user agent where your metrics allow it:
 
 ```promql
-sum(rate(nginx_ingress_controller_requests{exported_service="api", path!~"/healthz|/metrics"}[5m]))
+sum(rate(nginx_ingress_controller_requests{exported_namespace="staging", exported_service="api", path!~"/healthz|/metrics"}[5m]))
 ```
 
 ### Test the query directly
 
 ```bash
 curl -s 'http://prometheus:9090/api/v1/query' \
-  --data-urlencode 'query=sum(rate(nginx_ingress_controller_requests{exported_service="api"}[5m]))'
+  --data-urlencode 'query=sum(rate(nginx_ingress_controller_requests{exported_namespace="staging", exported_service="api"}[5m]))'
 ```
 
 Then check what kept the workload awake:

@@ -1,0 +1,29 @@
+# promtool tests for the activity queries docs/guides/prometheus-signals.md
+# and docs/guides/dry-run.md give: a request-rate query is above zero
+# within its window of a request, zero after, and counts only its own
+# namespace's Service. Run with make test-alerts.
+rule_files: []
+
+evaluation_interval: 1m
+
+tests:
+  - name: requests through ingress-nginx, to one namespace's Service
+    interval: 1m
+    input_series:
+      # One request to staging's my-api at minute 3, none after.
+      - series: 'nginx_ingress_controller_requests{exported_namespace="staging",exported_service="my-api",status="200"}'
+        values: '0 0 0 1 1 1 1 1 1 1 1 1 1'
+      # Another namespace's my-api, busy throughout, which mustn't count.
+      - series: 'nginx_ingress_controller_requests{exported_namespace="preview-7",exported_service="my-api",status="200"}'
+        values: '0+10x12'
+    promql_expr_test:
+      - expr: sum(rate(nginx_ingress_controller_requests{exported_namespace="staging", exported_service="my-api"}[5m]))
+        eval_time: 5m
+        exp_samples:
+          - labels: '{}'
+            value: 3.3333333333333335E-03
+      - expr: sum(rate(nginx_ingress_controller_requests{exported_namespace="staging", exported_service="my-api"}[5m]))
+        eval_time: 12m
+        exp_samples:
+          - labels: '{}'
+            value: 0
