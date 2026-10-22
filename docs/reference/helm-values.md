@@ -42,6 +42,14 @@ The full name is the release name when it contains `hybernate`, and `<release>-h
 
 The CRD is a chart template with `helm.sh/resource-policy: keep`, so `helm uninstall` leaves it, and every ManagedWorkload, in place: deleting the CRD would delete them all. Argo CD ignores that policy, so the CRD also carries `argocd.argoproj.io/sync-options: Delete=false`, and deleting or pruning the Application leaves it too. Set `crds.install: false` only if you manage the CRD yourself, for example from `config/crd` in the repository.
 
+## Defaults version
+
+| Value | Default | Description |
+|-------|---------|-------------|
+| `defaultsVersion` | the chart's version, such as `0.2.0` | The chart version the defaults Helm renders with are from. Leave it as it is |
+
+`helm upgrade --reuse-values` to a newer version renders with the installed version's defaults rather than the new one's, and those lack every value added since. The chart tells from `defaultsVersion` that they're another version's, and fills in each missing value from its own defaults, kept in `files/defaults.yaml`, a copy of `values.yaml`, since templates can't read `values.yaml` itself. A value that's there is kept, `false`, `0` and `""` included. With its own defaults, the chart fills in nothing, so a default you remove with `null` stays removed. See [Keeping your settings](../operations/upgrading.md#keeping-your-settings).
+
 ## Operator
 
 | Value | Default | Description |
