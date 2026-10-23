@@ -97,7 +97,7 @@ kubectl annotate managedworkload my-api -n staging --overwrite \
   hybernate.io/wake-requested="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
 ```
 
-A ManagedWorkload created from the `hybernate.io/managed` label is named after its workload, or after the workload and its kind, such as `my-api-statefulset`, when that name is taken. Setting the annotation takes `patch` on `managedworkloads` in the namespace, which Kubernetes' built-in `edit` and `admin` roles include once Hybernate is installed. It's an annotation, like `pause-requested`, so a GitOps tool that owns the ManagedWorkload's spec leaves it alone.
+A ManagedWorkload created from the `hybernate.io/managed` label is named after its workload, or after the workload and its kind, such as `my-api-statefulset`, when that name is taken. Setting the annotation takes `get` and `patch` on `managedworkloads` in the namespace with `kubectl annotate`, or `patch` alone from an HTTP client. Waiting for the answer with `kubectl wait` takes `get`, `list` and `watch` too, and `kubectl hybernate wake` takes `get`, `list` and `patch`. Kubernetes' built-in `edit` and `admin` roles include all of them once Hybernate is installed; the [preview environments guide](preview-environments.md#waking-it-from-tooling) gives a minimal Role. It's an annotation, like `pause-requested`, so a GitOps tool that owns the ManagedWorkload's spec leaves it alone.
 
 Hybernate acts on each value once: it records the value it handled in `status.lastWakeRequest`, which survives an operator restart, and says what came of it in the `WakeRequest` condition, so the tool can tell its request was taken up:
 
