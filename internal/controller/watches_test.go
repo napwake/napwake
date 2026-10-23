@@ -134,6 +134,10 @@ func TestWakesAreQueuedFirst(t *testing.T) {
 	paused := lifecycleWorkload("api", v1alpha1.PhasePaused)
 	stamped := paused.DeepCopy()
 	stamped.Annotations = map[string]string{v1alpha1.AnnotationLastRequest: fixedTime.Format(time.RFC3339)}
+	counted := paused.DeepCopy()
+	counted.Annotations = map[string]string{v1alpha1.AnnotationTurnedAway: `{"pausedAt":"2026-10-23T09:00:00Z","requests":3}`}
+	stampedAndCounted := stamped.DeepCopy()
+	stampedAndCounted.Annotations[v1alpha1.AnnotationTurnedAway] = counted.Annotations[v1alpha1.AnnotationTurnedAway]
 	r := depReconciler(t, &stubPauser{}, paused)
 	tests := []struct {
 		name    string
@@ -145,6 +149,10 @@ func TestWakesAreQueuedFirst(t *testing.T) {
 			event: event.UpdateEvent{ObjectOld: paused, ObjectNew: stamped}, queued: true},
 		{name: "a status write", handler: wakeHandler().Update,
 			event: event.UpdateEvent{ObjectOld: paused, ObjectNew: paused.DeepCopy()}},
+		{name: "the doorman's count of what it turned away, which wakes nothing", handler: wakeHandler().Update,
+			event: event.UpdateEvent{ObjectOld: paused, ObjectNew: counted}},
+		{name: "a stamp with the count", handler: wakeHandler().Update,
+			event: event.UpdateEvent{ObjectOld: counted, ObjectNew: stampedAndCounted}, queued: true},
 		{name: "a scale-up from zero", handler: r.scaleUpHandler().Update,
 			event: event.UpdateEvent{ObjectOld: targetDeploymentWithReplicas("api", "default", 0),
 				ObjectNew: targetDeploymentWithReplicas("api", "default", 2)}, queued: true},

@@ -341,15 +341,26 @@ func enqueueAt(q workqueue.TypedRateLimitingInterface[reconcile.Request], priori
 
 // wakeHandler enqueues at priorityWake a ManagedWorkload whose annotations
 // changed, as the doorman's stamp of a held request, kubectl hybernate wake
-// and pause, and other tools' activity annotations change them.
+// and pause, and other tools' activity annotations change them. The
+// doorman's count of what it turned away wakes nothing, and is written
+// for every crawled workload that asks, so a change to it alone is left
+// to the queue's default priority, behind clicks and wakes.
 func wakeHandler() handler.EventHandler {
 	return handler.Funcs{
 		UpdateFunc: func(_ context.Context, e event.UpdateEvent, q workqueue.TypedRateLimitingInterface[reconcile.Request]) {
-			if !maps.Equal(e.ObjectOld.GetAnnotations(), e.ObjectNew.GetAnnotations()) {
+			if !maps.Equal(wakeAnnotations(e.ObjectOld), wakeAnnotations(e.ObjectNew)) {
 				enqueueAt(q, priorityWake, reconcile.Request{NamespacedName: client.ObjectKeyFromObject(e.ObjectNew)})
 			}
 		},
 	}
+}
+
+// wakeAnnotations are an object's annotations, less the doorman's count of
+// what it turned away.
+func wakeAnnotations(o client.Object) map[string]string {
+	annotations := maps.Clone(o.GetAnnotations())
+	delete(annotations, v1alpha1.AnnotationTurnedAway)
+	return annotations
 }
 
 // scaleUpHandler enqueues at priorityWake the ManagedWorkloads of a
