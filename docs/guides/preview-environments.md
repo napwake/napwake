@@ -298,7 +298,7 @@ People with Kubernetes' built-in `edit` or `admin` role in the namespace have al
 
 ## Up before people come
 
-With `wake: ask`, only people wake a paused preview, so the forecast learns from every hour it's paused: busy if someone woke it, with a click, a wake request or an activity annotation, and quiet otherwise. If someone had needed it, they'd have woken it. Turn on `autoResume`, and once the forecast is confident, it wakes the preview 15 minutes ahead of the hour people usually come:
+With `wake: ask`, only people wake a paused preview, so behind the doorman the forecast learns from every hour it's paused: busy if someone woke it, with a click, a wake request or an activity annotation, and quiet otherwise. If someone had needed it, they'd have woken it. An hour the doorman isn't routing it, or its activity queries can't be evaluated, isn't learned unless someone woke it, so an outage can't teach the forecast quiet hours; see [What an Hour Records](../concepts/forecasting.md#what-an-hour-records). Turn on `autoResume`, and once the forecast is confident, it wakes the preview 15 minutes ahead of the hour people usually come:
 
 ```yaml title="namespace.yaml"
 apiVersion: v1

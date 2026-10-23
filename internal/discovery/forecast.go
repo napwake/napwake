@@ -122,12 +122,9 @@ func optedInAsks(workload, namespace map[string]string, install Install) bool {
 // replayWakes is what would wake the workload were it paused: its
 // ManagedWorkload mw's, if Hybernate manages it, and otherwise what one
 // opting it in would, asking before waking it as asks says, under install,
-// the Hybernate install that would manage it. An install with its doorman
-// off wakes nothing on request, and a doorman that asks wakes it only for a
-// person. The operator's own verdict on the workload's routing
-// stands where it has one, as from its last pause; otherwise it's judged
-// from services, its namespace's Services, against its pods' labels, and
-// with none read, the doorman is assumed, as Hybernate's default.
+// the Hybernate install that would manage it. A doorman that asks wakes it
+// only for a person, who can click Wake it only where the doorman routes
+// it: elsewhere nothing shows that nobody needed it, as without the doorman.
 func replayWakes(mw *v1alpha1.ManagedWorkload, asks bool, podLabels map[string]string,
 	services map[string]corev1.Service, install Install) ReplayWakes {
 	var w ReplayWakes
@@ -136,50 +133,55 @@ func replayWakes(mw *v1alpha1.ManagedWorkload, asks bool, podLabels map[string]s
 		w.Query = p != nil && p.Activity != nil && len(p.Activity.Prometheus) > 0
 		asks = mw.Spec.Wake.Asks()
 	}
-	w.People = asks
-	switch {
-	case install.DoormanOff:
-		w.NoRequest = noRequestDoormanOff
-		return w
-	case asks:
-		w.NoRequest = noRequestAsks
-		return w
+	w.Request, w.NoRequest = doormanRoutes(mw, podLabels, services, install)
+	if asks && w.Request {
+		w.Request, w.People, w.NoRequest = false, true, noRequestAsks
+	}
+	return w
+}
+
+// doormanRoutes reports whether the doorman would route the paused
+// workload's Services, and why not when it wouldn't. An install with its
+// doorman off routes nothing. The operator's own verdict on the workload's
+// routing stands where it has one, as from its last pause; otherwise it's
+// judged from services, its namespace's Services, against its pods'
+// labels, and with none read, the doorman is assumed, as Hybernate's
+// default.
+func doormanRoutes(mw *v1alpha1.ManagedWorkload, podLabels map[string]string, services map[string]corev1.Service,
+	install Install) (bool, string) {
+	if install.DoormanOff {
+		return false, noRequestDoormanOff
 	}
 	if mw != nil {
 		if c := meta.FindStatusCondition(mw.Status.Conditions, "WakeOnRequest"); c != nil {
 			if c.Status == "True" || c.Reason == "ForwarderNotReady" {
-				w.Request = true
-				return w
+				return true, ""
 			}
 			if why, ok := notRouted[c.Reason]; ok {
-				w.NoRequest = why
-				return w
+				return false, why
 			}
 		}
 	}
 	if services == nil {
-		w.Request = true
-		return w
+		return true, ""
 	}
-	w.NoRequest = noRequestNoService
+	why := noRequestNoService
 	for _, svc := range services {
 		switch doormanRoute(svc, podLabels) {
 		case routed:
-			w.Request, w.NoRequest = true, ""
-			return w
+			return true, ""
 		case inNEGs:
 			if install.NEGForwarder {
-				w.Request, w.NoRequest = true, ""
-				return w
+				return true, ""
 			}
-			w.NoRequest = noRequestNEGs
+			why = noRequestNEGs
 		case nodeLocal:
-			if w.NoRequest == noRequestNoService {
-				w.NoRequest = noRequestNodeLocal
+			if why == noRequestNoService {
+				why = noRequestNodeLocal
 			}
 		}
 	}
-	return w
+	return false, why
 }
 
 // route is whether the doorman would route a Service to a paused workload.

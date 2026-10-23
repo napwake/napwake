@@ -91,10 +91,11 @@ const (
 
 // pausedSeenBy is what shows a paused workload's demand, so the hours it
 // spends paused are learned: requests through the doorman, which would
-// wake it, people, who alone wake it with wake.mode Ask, and Prometheus
-// activity queries, which show the activity they measure. It's empty for a
-// workload that isn't paused, or that nothing watches. Queries that can't
-// be evaluated show nothing, but don't blind the doorman or people.
+// wake it, people, who alone wake it with wake.mode Ask, through the
+// doorman's asleep page, and Prometheus activity queries, which show the
+// activity they measure. It's empty for a workload that isn't paused, or
+// that nothing watches. Queries that can't be evaluated show nothing, but
+// don't blind the doorman, unless it asks: then it sees only people.
 func pausedSeenBy(workload *v1alpha1.ManagedWorkload) string {
 	if workload.Status.Phase != v1alpha1.PhasePaused {
 		return ""
@@ -104,17 +105,18 @@ func pausedSeenBy(workload *v1alpha1.ManagedWorkload) string {
 	failing := queries && meta.IsStatusConditionFalse(conditions, conditionPrometheusAvailable)
 	routed := meta.IsStatusConditionTrue(conditions, conditionWakeOnRequest)
 	if workload.Spec.Wake.Asks() {
-		people := "people waking it (a wake request or an activity annotation)"
-		if routed {
-			people = "people waking it (a click on its asleep page, a wake request or an activity annotation)"
-		}
+		const people = "people waking it (a click on its asleep page, a wake request or an activity annotation)"
 		switch {
 		case failing:
-			return people + ", its Prometheus activity queries failing"
-		case queries:
+			return ""
+		case routed && queries:
 			return people + " and its Prometheus activity queries"
+		case routed:
+			return people
+		case queries:
+			return "its Prometheus activity queries"
 		}
-		return people
+		return ""
 	}
 	switch {
 	case routed && failing:
@@ -178,6 +180,11 @@ func pausedUnseen(workload *v1alpha1.ManagedWorkload) string {
 	case reasonRoutingFailed:
 		why = "routing its Services through the doorman is failing, and being retried"
 	}
-	return fmt.Sprintf("%s; a request can't wake it, so its demand can't be seen, and it learns only the hours "+
-		"it's awake. To learn the hours it's paused too, %s: %s%s", why, fix, wakeOnRequestGuide, section)
+	unseen := "a request can't wake it, so its demand can't be seen"
+	if workload.Spec.Wake.Asks() {
+		unseen = "nobody can click Wake it on its asleep page, so an hour nobody woke it in can't be told from one " +
+			"they couldn't"
+	}
+	return fmt.Sprintf("%s; %s, and it learns only the hours it's awake. To learn the hours it's paused too, "+
+		"%s: %s%s", why, unseen, fix, wakeOnRequestGuide, section)
 }

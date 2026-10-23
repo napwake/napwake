@@ -60,6 +60,7 @@ func TestOptIn_RemovingTheLabelFromAPausedWorkloadRestoresIt(t *testing.T) {
 	optIn, req := optInEnv(t, env, "shop")
 	r := env.reconciler(t, env.admin)
 
+	env.reconcileUntil(t, r, req.NamespacedName, v1alpha1.PhaseRunning, 3)
 	w := env.workload(t, req.NamespacedName)
 	withPauseRequested(w)
 	require.NoError(t, env.admin.Update(env.ctx, w))

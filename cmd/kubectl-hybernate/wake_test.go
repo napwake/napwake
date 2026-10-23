@@ -241,6 +241,109 @@ func TestWake_Refused(t *testing.T) {
 		"off until its replicas are set above zero")
 }
 
+// laterRequest stands in for another tool asking too, just after wake: its
+// token replaces wake's on the annotation, and Hybernate answers it,
+// leaving the workload in phase.
+func laterRequest(status metav1.ConditionStatus, reason, message string,
+	phase v1alpha1.WorkloadPhase) interceptor.Funcs {
+	reads := 0
+	return interceptor.Funcs{Get: func(ctx context.Context, c client.WithWatch, key client.ObjectKey,
+		obj client.Object, opts ...client.GetOption) error {
+		if err := c.Get(ctx, key, obj, opts...); err != nil {
+			return err
+		}
+		w, ok := obj.(*v1alpha1.ManagedWorkload)
+		if !ok {
+			return nil
+		}
+		if reads++; reads > 1 {
+			w.Annotations[v1alpha1.AnnotationWakeRequested] = "the-bots-token"
+			answerWake(w, status, reason, message)
+			w.Status.Phase = phase
+		}
+		return nil
+	}}
+}
+
+// Another tool asking just after wake replaces its token, and Hybernate
+// answers that one: what came of it is what came of wake's, so wake doesn't
+// wait out its timeout for an answer that can't come.
+func TestWake_AnsweredThroughALaterRequest(t *testing.T) {
+	t.Run("woken", func(t *testing.T) {
+		w := managedWorkload(v1alpha1.PhasePaused)
+		w.Annotations = map[string]string{v1alpha1.AnnotationWakeRequested: "an-earlier-request"}
+		w.Status.LastWakeRequest = "an-earlier-request"
+		c := newClient(t, laterRequest(metav1.ConditionTrue, "Woken", "woken as requested at 2026-10-03 09:00 UTC",
+			v1alpha1.PhaseRunning), w)
+		var out bytes.Buffer
+
+		require.NoError(t, wake(testContext(t), c, apiKey, testOptions(), &out))
+
+		assert.Equal(t, "waking preview-42/api...\npreview-42/api is Running after 0s\n", out.String())
+	})
+	t.Run("refused", func(t *testing.T) {
+		c := newClient(t, laterRequest(metav1.ConditionFalse, "ScaledToZero", "not woken at 2026-10-03 09:00 UTC: "+
+			"it's scaled to zero outside Hybernate, which leaves it off until its replicas are set above zero",
+			v1alpha1.PhaseRunning), managedWorkload(v1alpha1.PhasePaused))
+
+		err := wake(testContext(t), c, apiKey, testOptions(), &bytes.Buffer{})
+
+		require.ErrorIs(t, err, errNotWoken)
+		assert.Contains(t, err.Error(), "it's scaled to zero outside Hybernate")
+	})
+	t.Run("not yet Running", func(t *testing.T) {
+		c := newClient(t, laterRequest(metav1.ConditionTrue, "Woken", "woken as requested at 2026-10-03 09:00 UTC",
+			v1alpha1.PhaseResuming), managedWorkload(v1alpha1.PhasePaused))
+		ctx, cancel := context.WithTimeout(context.Background(), 50*time.Millisecond)
+		defer cancel()
+
+		err := wake(ctx, c, apiKey, testOptions(), &bytes.Buffer{})
+
+		require.ErrorIs(t, err, errNotRunningYet)
+		assert.Contains(t, err.Error(), "it's still Resuming (", "taken up, through the later request")
+	})
+}
+
+// A workload read as Running while a pause was already under way is
+// paused, then woken by the request: wake waits until it's Running again,
+// rather than return as the wake begins, saying it was already running.
+func TestWake_WokenAfterAPauseUnderWay(t *testing.T) {
+	reads := 0
+	funcs := interceptor.Funcs{Get: func(ctx context.Context, c client.WithWatch, key client.ObjectKey,
+		obj client.Object, opts ...client.GetOption) error {
+		if err := c.Get(ctx, key, obj, opts...); err != nil {
+			return err
+		}
+		w, ok := obj.(*v1alpha1.ManagedWorkload)
+		if !ok {
+			return nil
+		}
+		reads++
+		switch {
+		case reads == 1:
+			w.Status.Phase = v1alpha1.PhaseRunning
+		case reads == 2:
+			w.Status.Phase = v1alpha1.PhasePausing
+		case reads == 3:
+			w.Status.Phase = v1alpha1.PhasePaused
+		case reads < 6:
+			w.Status.Phase = v1alpha1.PhaseResuming
+			answerWake(w, metav1.ConditionTrue, "Woken", "woken as requested at 2026-10-03 09:00 UTC")
+		default:
+			w.Status.Phase = v1alpha1.PhaseRunning
+			answerWake(w, metav1.ConditionTrue, "Woken", "woken as requested at 2026-10-03 09:00 UTC")
+		}
+		return nil
+	}}
+	c := newClient(t, funcs, managedWorkload(v1alpha1.PhaseRunning))
+	var out bytes.Buffer
+
+	require.NoError(t, wake(testContext(t), c, apiKey, testOptions(), &out))
+
+	assert.Equal(t, "preview-42/api is Running after 0s\n", out.String())
+	assert.GreaterOrEqual(t, reads, 6, "it waits until the workload is Running")
+}
+
 // A ManagedWorkload deleted while wake waits has handed its workload back.
 func TestWake_DeletedWhileWaiting(t *testing.T) {
 	var gets int
