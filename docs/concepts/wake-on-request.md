@@ -165,7 +165,7 @@ A robot that presents itself as a browser gets the page, and wakes nothing eithe
 
 So a spider that fetches the page and posts its token wakes nothing, even with a browser's `User-Agent`, nor does a script that submits the form. What this can't stop is a robot that drives a real browser and clicks the button, or one that forges those headers on purpose: that's rare, and costs at most a wake a minute.
 
-Browsers send `Sec-Fetch-Site` only to an HTTPS address, or to `localhost`, and only those from 2023 on do: Chrome since 2019, Edge since 2020, Firefox since version 90 in 2021, and Safari, and every browser on iOS, since 16.4 in March 2023. A click that doesn't say where it came from, from an older browser or a page opened over plain HTTP, can't be told from a spider's, so it wakes nothing. The asleep page comes back saying the browser didn't say the click came from the page, and to wake it with `kubectl hybernate wake`, the `hybernate.io/wake-requested` annotation, or a current browser over HTTPS.
+Every browser from 2023 on sends `Sec-Fetch-Site`: Chrome since 2019, Edge since 2020, Firefox since version 90 in 2021, and Safari, and every browser on iOS, since 16.4 in March 2023. But they send it only to an HTTPS address, or to `localhost`. A click that doesn't say where it came from, from an older browser or a page opened over plain HTTP, can't be told from a spider's, so it wakes nothing. The asleep page comes back saying the browser didn't say the click came from the page, and to wake it with `kubectl hybernate wake`, the `hybernate.io/wake-requested` annotation, or a current browser over HTTPS.
 
 The pages name no namespace, workload or Service, so they give nothing away to whoever reaches them.
 
