@@ -118,10 +118,14 @@ func (h *heldConn) click(ctx, waitCtx context.Context, req *http.Request) string
 		h.servePage(waitCtx, req)
 		return resultPage
 	}
-	token, ok := h.readClick()
-	if !ok || !sameOrigin(req) || !h.wakeKeys.valid(token, h.route.scope(), h.now()) {
+	token, posted := h.readClick()
+	if !posted || !sameOrigin(req) || !h.wakeKeys.valid(token, h.route.scope(), h.now()) {
 		if looksLikeBrowser(req.UserAgent()) {
-			h.serveAsleepPage(ctx, req, noticeExpired)
+			notice := noticeExpired
+			if !posted {
+				notice = ""
+			}
+			h.serveAsleepPage(ctx, req, notice)
 			return resultAsked
 		}
 		h.turnedAway(h.route)
@@ -162,7 +166,7 @@ func sameOrigin(req *http.Request) bool {
 }
 
 // readClick reads the rest of a click, its body, and returns the token it
-// posted.
+// posted, if it posted one: a form without one is the app's own.
 func (h *heldConn) readClick() (string, bool) {
 	_ = h.conn.SetReadDeadline(time.Now().Add(clickReadTimeout)) // a failure just means no deadline
 	defer func() { _ = h.conn.SetReadDeadline(time.Time{}) }()   // a failure just leaves the deadline

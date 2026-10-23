@@ -247,6 +247,26 @@ func TestServer_AClickWithoutAGoodTokenWakesNothing(t *testing.T) {
 	}
 }
 
+// A browser posting the app's own form while it's asleep, as from a page it
+// cached, is asked as when it opens a page, not told the button expired.
+func TestServer_AnAppsOwnFormFromABrowserIsAsked(t *testing.T) {
+	port := freePort(t)
+	s, c := newTestServer(t, nil, askingWorkload(port))
+	stop := run(t, s)
+	form := "user=ada"
+	request := "POST /login HTTP/1.1\r\nHost: pr-42.preview.example.dev\r\nUser-Agent: " + chrome + "\r\n" +
+		"Content-Type: application/x-www-form-urlencoded\r\nSec-Fetch-Site: same-origin\r\nSec-Fetch-Mode: navigate\r\n" +
+		fmt.Sprintf("Content-Length: %d\r\n\r\n", len(form)) + form
+
+	resp, body := click(t, port, request)
+
+	stop()
+	assert.Equal(t, http.StatusOK, resp.StatusCode, "the asleep page")
+	assert.NotContains(t, body, noticeExpired)
+	tokenIn(t, body)
+	assert.Empty(t, lastRequest(t, c))
+}
+
 // Anything but a person's browser, and the probes and hidden files the
 // doorman knows, gets a 503 saying it's asleep and how to wake it, and
 // nothing wakes: crawlers, scanners and API clients on a public URL can't
