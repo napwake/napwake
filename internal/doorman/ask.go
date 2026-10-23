@@ -25,6 +25,7 @@ import (
 	"mime"
 	"net"
 	"net/http"
+	"slices"
 	"strings"
 	"time"
 
@@ -184,12 +185,17 @@ func marksPeoplesNavigations(agent string) bool {
 	return strings.Contains(agent, "Chrome/") || strings.Contains(agent, "Firefox/")
 }
 
-// isClick reports whether a POST could be the Wake it button's: a small
-// form, as the page's is. Its token is read and checked next.
+// isClick reports whether a POST could be the Wake it button's: a form,
+// small as the page's is, or chunked, as a proxy may send one a browser
+// sent it over HTTP/2 without a length; readClick reads no more of that
+// than the button's could be. Its token is read and checked next.
 func isClick(req *http.Request) bool {
 	media, _, err := mime.ParseMediaType(req.Header.Get("Content-Type"))
-	return err == nil && media == "application/x-www-form-urlencoded" &&
-		req.ContentLength > 0 && req.ContentLength <= maxClickBody
+	if err != nil || media != "application/x-www-form-urlencoded" {
+		return false
+	}
+	chunked := req.ContentLength == -1 && slices.Equal(req.TransferEncoding, []string{"chunked"})
+	return chunked || (req.ContentLength > 0 && req.ContentLength <= maxClickBody)
 }
 
 // sameOrigin reports whether a browser says the click came from a page of

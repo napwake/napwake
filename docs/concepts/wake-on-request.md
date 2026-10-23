@@ -188,7 +188,7 @@ status:
 
 ### When to keep waking on request
 
-Asking suits what people open in a browser. Keep `Request`, the default, for a workload that other workloads, scripts or webhooks call: they're turned away while it's paused, and nothing they send wakes it. It needs plain HTTP to reach the doorman, so TLS ended at an ingress or a load balancer in front of it, as is usual; a workload that ends TLS itself is never woken by a click.
+Asking suits what people open in a browser. Keep `Request`, the default, for a workload that other workloads, scripts or webhooks call: they're turned away while it's paused, and nothing they send wakes it. It needs plain HTTP/1.1 to reach the doorman, so TLS ended at an ingress or a load balancer in front of it, which then speaks HTTP/1.1 to its backends, as they do unless told otherwise. A browser's HTTP/2 or HTTP/3 to the ingress is fine, and so is a click's form sent on chunked. A workload that ends TLS itself is never woken by a click, nor is one behind a proxy told to speak HTTP/2 or gRPC to it, such as ingress-nginx with `backend-protocol: GRPC`: the doorman turns that away.
 
 A workload that asks never [pauses early](forecasting.md#pausing-early), even with `pauseEarly` on: a request doesn't wake it, so someone who came while the forecast expected quiet would find it asleep and have to ask. It pauses when `idleAfter` runs out.
 

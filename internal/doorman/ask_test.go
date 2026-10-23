@@ -705,6 +705,63 @@ func turnedAwayOf(t *testing.T, c client.Client) v1alpha1.TurnedAway {
 	return count
 }
 
+// A proxy in front of the doorman may send the click's form chunked, as
+// ingress-nginx does a body it doesn't buffer, from a browser speaking
+// HTTP/2 to it without a Content-Length. It still wakes the workload; a
+// chunked body too large to be the button's doesn't.
+func TestServer_AChunkedClickWakesIt(t *testing.T) {
+	tests := []struct {
+		name  string
+		pad   int
+		wakes bool
+	}{
+		{name: "the button's form", wakes: true},
+		{name: "a body too large to be the button's", pad: 2 * maxClickBody},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			port := freePort(t)
+			s, c := newTestServer(t, nil, askingWorkload(port))
+			stop := run(t, s)
+			form := url.Values{wakeField: {askedPage(t, port)}, "pad": {strings.Repeat("a", tt.pad)}}.Encode()
+			half := len(form) / 2
+			request := "POST /orders?id=7 HTTP/1.1\r\nHost: pr-42.preview.example.dev\r\nUser-Agent: " + chrome + "\r\n" +
+				"Content-Type: application/x-www-form-urlencoded\r\n" + chromeClick + "Transfer-Encoding: chunked\r\n\r\n" +
+				fmt.Sprintf("%x\r\n%s\r\n%x\r\n%s\r\n0\r\n\r\n", half, form[:half], len(form)-half, form[half:])
+
+			resp, _ := click(t, port, request)
+
+			stop()
+			if tt.wakes {
+				assert.Equal(t, http.StatusServiceUnavailable, resp.StatusCode, "the waking-up page")
+				assert.NotEmpty(t, lastRequest(t, c))
+				return
+			}
+			assert.Equal(t, http.StatusOK, resp.StatusCode, "the asleep page again")
+			assert.Empty(t, lastRequest(t, c))
+		})
+	}
+}
+
+// HTTP/2 spoken to the doorman itself, as a proxy told to use it for its
+// backends does, can't be asked: it wakes nothing, and is turned away. A
+// browser's HTTP/2 to the proxy, which speaks HTTP/1.1 on, is asked as
+// usual.
+func TestServer_AskingTurnsAwayHTTP2(t *testing.T) {
+	port := freePort(t)
+	s, c := newTestServer(t, nil, askingWorkload(port))
+	stop := run(t, s)
+	before := wakes(resultTurnedAway)
+
+	conn := dial(t, port)
+	send(t, conn, "PRI * HTTP/2.0\r\n\r\nSM\r\n\r\n\x00\x00\x00\x04\x00\x00\x00\x00\x00")
+	_, _ = io.Copy(io.Discard, conn)
+
+	stop()
+	assert.Empty(t, lastRequest(t, c), "nothing wakes it")
+	assert.Equal(t, before+1, wakes(resultTurnedAway))
+}
+
 // The click's form can arrive after its headers, as a slow link or a proxy
 // may send it.
 func TestServer_ReadsAClickSentInPieces(t *testing.T) {
