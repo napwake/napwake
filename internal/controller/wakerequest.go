@@ -94,36 +94,39 @@ func (r *Reconciler) refuseRequests(ctx context.Context, workload *v1alpha1.Mana
 const predatesStatus = "the request was on the ManagedWorkload before Hybernate's record of it began, as when " +
 	"it's restored without its status, so it may have been answered already; set a new value to ask again"
 
-// answerEarlierRequests answers, without acting on them, the pause and wake
-// requests a ManagedWorkload carries as its status starts afresh, as it
-// does when it's created and when a pause it has lost the record of is
-// taken up again. Status is the only record of which requests were
-// answered, and annotations outlive it: a backup restored without status,
-// kubectl replace --force or an exported manifest applied again brings
-// back requests answered long ago, which would otherwise pause or wake the
-// workload again. The answers are for the caller to write, and the events
-// it returns, to send once they're written.
-func (r *Reconciler) answerEarlierRequests(workload *v1alpha1.ManagedWorkload) (announce func()) {
-	_, pause := pendingPauseRequest(workload)
-	_, wake := pendingWakeRequest(workload)
-	at := answeredAt(r.now())
-	if pause {
-		r.answerPauseRequest(workload, metav1.ConditionFalse, reasonPredatesStatus,
-			fmt.Sprintf("not paused at %s: %s", at, predatesStatus))
+// answerEarlierPauseRequest answers, without acting on it, a pause request
+// a ManagedWorkload carries as its status starts afresh. Status is
+// Hybernate's only record of which requests it has answered, and
+// annotations outlive it: a backup restored without status, kubectl
+// replace --force or an exported manifest applied again brings back
+// requests answered long ago, which would otherwise pause the workload
+// again. The answer is for the caller to write, and the event it returns,
+// to send once it's written.
+func (r *Reconciler) answerEarlierPauseRequest(workload *v1alpha1.ManagedWorkload) (announce func()) {
+	if _, ok := pendingPauseRequest(workload); !ok {
+		return func() {}
 	}
-	if wake {
-		r.answerWakeRequest(workload, metav1.ConditionFalse, reasonPredatesStatus,
-			fmt.Sprintf("not woken at %s: %s", at, predatesStatus))
-	}
+	r.answerPauseRequest(workload, metav1.ConditionFalse, reasonPredatesStatus,
+		fmt.Sprintf("not paused at %s: %s", answeredAt(r.now()), predatesStatus))
 	return func() {
-		if pause {
-			r.emitEvent(workload, false, "Normal", reasonPredatesStatus, actionPause, "pause requested, but %s",
-				predatesStatus)
-		}
-		if wake {
-			r.emitEvent(workload, false, "Normal", reasonPredatesStatus, actionResume, "wake requested, but %s",
-				predatesStatus)
-		}
+		r.emitEvent(workload, false, "Normal", reasonPredatesStatus, actionPause, "pause requested, but %s",
+			predatesStatus)
+	}
+}
+
+// answerEarlierWakeRequest answers, without acting on it, a wake request
+// a ManagedWorkload carries as its pause is taken up again after its status
+// was lost, as answerEarlierPauseRequest does a pause request, so an old
+// request doesn't wake it.
+func (r *Reconciler) answerEarlierWakeRequest(workload *v1alpha1.ManagedWorkload) (announce func()) {
+	if _, ok := pendingWakeRequest(workload); !ok {
+		return func() {}
+	}
+	r.answerWakeRequest(workload, metav1.ConditionFalse, reasonPredatesStatus,
+		fmt.Sprintf("not woken at %s: %s", answeredAt(r.now()), predatesStatus))
+	return func() {
+		r.emitEvent(workload, false, "Normal", reasonPredatesStatus, actionResume, "wake requested, but %s",
+			predatesStatus)
 	}
 }
 

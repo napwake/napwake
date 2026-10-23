@@ -325,6 +325,35 @@ func TestWakeRequest_RefusedWhileBeingDeleted(t *testing.T) {
 	assert.Equal(t, 1, strings.Count(drainEvents(t, r), "wake requested, but"))
 }
 
+// A tool that creates a ManagedWorkload and asks for its wake at once, as a
+// pull request's first push does, may set the request before Hybernate has
+// taken the ManagedWorkload on. Hybernate takes it on Running, so the
+// request is answered as for any awake workload, under dry-run too, rather
+// than refused as one that came before its record: the worst a stale one
+// can do is restart the idle clock.
+func TestWakeRequest_OnAManagedWorkloadJustCreated(t *testing.T) {
+	for _, dryRun := range []bool{false, true} {
+		t.Run(fmt.Sprintf("dry-run=%t", dryRun), func(t *testing.T) {
+			workload := lifecycleWorkload("api", "")
+			workload.Spec.DryRun = dryRun
+			workload.Annotations = map[string]string{v1alpha1.AnnotationWakeRequested: wakeToken}
+			r := lifecycleReconciler(t, workload, 3, interceptor.Funcs{})
+
+			reconcileUntilSettled(t, r)
+
+			got := getWorkload(t, r, "api")
+			assert.Equal(t, v1alpha1.PhaseRunning, got.Status.Phase)
+			assert.Equal(t, int32(3), targetReplicas(t, r))
+			assert.Equal(t, wakeToken, got.Status.LastWakeRequest)
+			c := wakeRequestCondition(t, got)
+			assert.Equal(t, metav1.ConditionTrue, c.Status)
+			assert.Equal(t, reasonAlreadyAwake, c.Reason)
+			assert.Equal(t, "already awake at 2026-03-14 12:00 UTC", c.Message)
+			assert.NotContains(t, drainEvents(t, r), "wake requested, but")
+		})
+	}
+}
+
 // lostStatus is a ManagedWorkload as a backup restored without its status,
 // a kubectl replace --force or an exported manifest applied again leaves
 // it: its annotations, and the requests in them, but nothing of what

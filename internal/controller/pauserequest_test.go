@@ -285,6 +285,26 @@ func TestPauseRequest_Refused(t *testing.T) {
 	}
 }
 
+// A pause request already on a ManagedWorkload as Hybernate takes it on
+// isn't acted on, however new the ManagedWorkload: it can't be told from
+// one answered before a backup was restored, and a wrong pause is the one
+// thing Hybernate never does.
+func TestPauseRequest_OnAManagedWorkloadJustCreated(t *testing.T) {
+	workload := lifecycleWorkload("api", "")
+	workload.Annotations = map[string]string{v1alpha1.AnnotationPauseRequested: pauseToken}
+	r := lifecycleReconciler(t, workload, 3, interceptor.Funcs{})
+
+	reconcileUntilSettled(t, r)
+
+	got := getWorkload(t, r, "api")
+	assert.Equal(t, v1alpha1.PhaseRunning, got.Status.Phase)
+	assert.Equal(t, int32(3), targetReplicas(t, r))
+	assert.Equal(t, pauseToken, got.Status.LastPauseRequest)
+	c := pauseRequestCondition(t, got)
+	assert.Equal(t, metav1.ConditionFalse, c.Status)
+	assert.Equal(t, reasonPredatesStatus, c.Reason)
+}
+
 // A ManagedWorkload that loses its status, as to a backup restored without
 // it, keeps the pause request it had answered, and isn't paused by it
 // again: the request is taken as answered, saying why, and only a new one
