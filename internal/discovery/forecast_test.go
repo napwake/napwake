@@ -242,8 +242,15 @@ func TestReplayWakes(t *testing.T) {
 		{name: "managed, asking", services: service(nil), mw: managed(func(mw *v1alpha1.ManagedWorkload) {
 			mw.Spec.Wake = &v1alpha1.WakeSpec{Mode: v1alpha1.WakeOnAsk}
 		}), want: ReplayWakes{People: true, NoRequest: noRequestAsks}},
-		{name: "asking, with the doorman turned off", services: service(nil), asks: true,
-			install: Install{DoormanOff: true}, want: ReplayWakes{People: true, NoRequest: noRequestDoormanOff}},
+		{name: "asking, with the doorman turned off, so nobody can click", services: service(nil), asks: true,
+			install: Install{DoormanOff: true}, want: ReplayWakes{NoRequest: noRequestDoormanOff}},
+		{name: "asking, with no Service the doorman could route", services: map[string]corev1.Service{},
+			asks: true, want: ReplayWakes{NoRequest: noRequestNoService}},
+		{name: "managed, asking, its Services unroutable at its last pause", services: service(nil),
+			mw: managed(func(mw *v1alpha1.ManagedWorkload) {
+				mw.Spec.Wake = &v1alpha1.WakeSpec{Mode: v1alpha1.WakeOnAsk}
+				routing(metav1.ConditionFalse, "NoServices")(mw)
+			}), want: ReplayWakes{NoRequest: noRequestNoService}},
 		{name: "managed, waking on request, whatever it would be opted in with", services: service(nil), asks: true,
 			mw: managed(func(mw *v1alpha1.ManagedWorkload) {
 				mw.Spec.Wake = &v1alpha1.WakeSpec{Mode: v1alpha1.WakeOnRequest}

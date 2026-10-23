@@ -60,10 +60,11 @@ type Settings struct {
 	// quiet.
 	WakeOnQuery bool
 	// WakeOnAsk has only people wake the workload while it's paused, as
-	// wake.mode Ask does: the doorman shows a browser an asleep page, and a
-	// use wakes it as the person clicks Wake it, or asks with a wake
-	// request. Nothing else can wake it, so an hour paused that nobody woke
-	// it in is seen as quiet. It's instead of WakeOnRequest.
+	// wake.mode Ask does: the doorman, which routes its Services
+	// throughout, shows a browser an asleep page, and a use wakes it as the
+	// person clicks Wake it, or asks with a wake request. Nothing else can
+	// wake it, so an hour paused that nobody woke it in is seen as quiet.
+	// It's instead of WakeOnRequest.
 	WakeOnAsk bool
 	// Location is the operator's --timezone, the clock the forecast's hours
 	// and weekdays are counted in.
