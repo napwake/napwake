@@ -48,6 +48,7 @@ var errNotRunningYet = errors.New("isn't Running yet")
 const (
 	conditionWakeRequest = "WakeRequest"
 	reasonWoken          = "Woken"
+	reasonPredatesStatus = "PredatesStatus"
 )
 
 type wakeOptions struct {
@@ -193,12 +194,21 @@ type wakeRequest struct {
 	awake string
 }
 
-// answers reports whether lastWakeRequest, the last request Hybernate
-// answered, answers req: its own token, or one another tool set after it,
-// which replaced it on the annotation, so what came of that one came of
-// req too. A status lost meanwhile answers nothing.
-func (req wakeRequest) answers(lastWakeRequest string) bool {
-	return lastWakeRequest == req.token || lastWakeRequest != "" && lastWakeRequest != req.before
+// answers reports whether answer, Hybernate's answer to lastWakeRequest,
+// the last request it answered, answers req: its own token, or one another
+// tool set after it, which replaced it on the annotation, so what came of
+// that one came of req too. A status lost meanwhile answers nothing, and so
+// does another request refused as having come before Hybernate's record of
+// the ManagedWorkload began: that's about the other request alone, and
+// Hybernate answers req's next.
+func (req wakeRequest) answers(lastWakeRequest string, answer *metav1.Condition) bool {
+	if lastWakeRequest == req.token {
+		return true
+	}
+	if answer != nil && answer.Reason == reasonPredatesStatus {
+		return false
+	}
+	return lastWakeRequest != "" && lastWakeRequest != req.before
 }
 
 // waitForWake waits until Hybernate has answered req, and then until the
@@ -232,9 +242,9 @@ func waitForWake(ctx context.Context, c client.Client, key client.ObjectKey, ref
 			return fmt.Errorf("waiting for %s: %w", ref, err)
 		}
 		phase = w.Status.Phase
-		if req.answers(w.Status.LastWakeRequest) {
+		answer := meta.FindStatusCondition(w.Status.Conditions, conditionWakeRequest)
+		if req.answers(w.Status.LastWakeRequest, answer) {
 			answered = true
-			answer := meta.FindStatusCondition(w.Status.Conditions, conditionWakeRequest)
 			if answer != nil && answer.Status == metav1.ConditionFalse {
 				return fmt.Errorf("%s %w: %s", ref, errNotWoken, refusal("not woken", oneLine(answer.Message)))
 			}
