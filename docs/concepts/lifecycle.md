@@ -36,7 +36,7 @@ A workload already at zero replicas, scaled there by a person, a pipeline or KED
 ### On request
 
 - **Running or Idle → Pausing → Paused**: `kubectl hybernate pause`, which sets a new `hybernate.io/pause-requested` value. The idle clock runs out at once, and the workload is paused by the rules of an idle pause, except that the hour after a GitOps conflict doesn't hold it back. A forecast expecting demand within the hour declines it, saying when, unless the request overrides the forecast. In dry-run it goes **Running → Idle** instead, as a would-be pause. See [Pause Now](../guides/pause.md#pause-now)
-- **Paused → Resuming → Running**: `kubectl hybernate wake`, which changes an activity annotation, or any of the automatic wakes above: a requested pause wakes like any other
+- **Paused → Resuming → Running**: `kubectl hybernate wake`, which sets a new `hybernate.io/wake-requested` value, whatever the workload's wake setting, or any of the automatic wakes above: a requested pause wakes like any other. A request that finds the workload awake restarts its idle clock. See [Wake Now](../guides/pause.md#wake-now)
 
 ## Idempotency
 
@@ -69,6 +69,7 @@ The operator sets standard Kubernetes conditions on the CR, each with `Reason`, 
 | `DuplicateTarget` | Another, older ManagedWorkload manages the same target, so this one does nothing, after handing back a pause it had made | `DuplicateTarget`; `False`: `Resolved` |
 | `Protected` | Its namespace is protected, it's Hybernate's own operator or doorman, or it's a StatefulSet that deletes its PVCs when scaled down, so it's never paused | `ProtectedNamespace`, `HybernateComponent`, `PVCsDeletedOnScaleDown`; `False`: `NotProtected` |
 | `PauseRequest` | The last [pause request](../guides/pause.md#pause-now) paused the workload, or found it paused; `False` says why it didn't. It stays until the next request, saying what happened and when, such as `paused as requested at 2026-10-21 03:32 UTC` | `Paused`, `AlreadyPaused`; `False`: `DryRun`, `ForecastExpectsDemand`, `ActiveUntil`, `HeldByDependents`, `DependencyCycle`, `Protected`, `ScaledToZero`, `TargetNotFound`, `TargetIgnored`, `DuplicateTarget` |
+| `WakeRequest` | The last [wake request](../guides/pause.md#wake-now) woke the workload, or found it awake; `False` says why it didn't. It stays until the next request, saying what happened and when, such as `woken as requested at 2026-10-23 09:05 UTC` | `Woken`, `AlreadyAwake`; `False`: `ScaledToZero`, `Protected`, `TargetNotFound`, `TargetIgnored`, `DuplicateTarget`, `BeingDeleted` |
 | `GitOpsConflict` | A GitOps tool undid its last pause; removed once a pause holds for an hour. See [GitOps tools](../guides/gitops.md) | `PauseUndone` |
 | `ResumeIncomplete` | The last resume stopped waiting with some replicas not Ready, and the workload runs with those that are, until they all are; see [Workload resumed with replicas not Ready](../operations/troubleshooting.md#workload-resumed-with-replicas-not-ready) | `ReplicasNotReady`; `False`: `AllReplicasReady` |
 | `PauseIncomplete` | The last pause stopped waiting for its pods with some still running, after their termination grace period and a minute more, and the workload is `Paused` regardless; see [Workload paused with pods still running](../operations/troubleshooting.md#workload-paused-with-pods-still-running) | `PodsStillRunning`; `False`: `PodsStopped`, `NotPaused` |
@@ -81,8 +82,8 @@ User-visible state changes emit Kubernetes events that show up in `kubectl descr
 
 - Lifecycle: `IdleDetected`, `PausedEarly` (the forecast brought the pause forward, with [`pauseEarly`](forecasting.md#pausing-early)), `PauseRequested`, `Paused`, `Resumed`, `ActivityResumed` (in dry-run, with what the would-be pause would have freed), `Unobserved` (a gap in watching restarted the idle clock, and how long it was)
 - A pause record lost from status: `PauseRecovered` (taken up again from the target's `hybernate.io/paused-from`), `PauseRecordLost` (a warning: nothing to finish it from)
-- A pause request Hybernate didn't act on: an event whose reason says why, the same as the `PauseRequest` condition's
-- What woke it: `WokeByActivity`, `WokenByRequest` (from the doorman), `AutoResume`, `ScaledUp`, `DryRunWake`
+- A pause or wake request Hybernate didn't act on: an event whose reason says why, the same as the `PauseRequest` or `WakeRequest` condition's
+- What woke it: `WakeRequested` (a [wake request](../guides/pause.md#wake-now), as `kubectl hybernate wake` sets), `WokeByActivity`, `WokenByRequest` (from the doorman), `AutoResume`, `ScaledUp`, `DryRunWake`
 - Scaled to zero outside Hybernate, and left off: `ScaledToZero`
 - What holds it awake: `IdleVetoed`, `HeldByDependents`, `DependencyCycle`
 - A GitOps tool undoing a pause, and the conflict ending: `GitOpsConflict`, `GitOpsConflictResolved`

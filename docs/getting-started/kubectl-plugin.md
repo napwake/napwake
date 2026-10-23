@@ -410,7 +410,7 @@ Recent pauses and wakes:
     - why it won't pause at all: `never pauses: no idlePolicy`, `never pauses: namespace protected`, `never pauses: part of Hybernate` (the operator's or the doorman's own Deployment), `never pauses: PVCs deleted on scale-down` (a StatefulSet whose `persistentVolumeClaimRetentionPolicy.whenScaled` is `Delete`), `nothing: labelled hybernate.io/ignore`, `nothing: workload not found`, `nothing: another ManagedWorkload has it`, `won't pause: dependsOn cycle`, `won't pause: no CPU metrics`, or `won't pause: Prometheus failing`
     - for a paused one, what wakes it: `wakes on a request or activity`, or `wakes on activity` without the doorman. When the forecast [brought the pause forward](../concepts/forecasting.md#pausing-early), before `idleAfter` ran out, it says so first, and until when the forecast expected quiet: `paused early: the forecast expected quiet until Fri 20:00 UTC; wakes on a request or activity`
 - **FORECAST:** whether the workload's [forecast](../concepts/forecasting.md#when-it-acts) acts: `acting`; `learning`, with `acts from Oct 8` when the operator expects it to start, if the coming days repeat the last week it saw; `relearning`, after demand broke from what it had learned; or `not learning while paused:` and why, such as `no Service routes requests to it`, while it's paused with neither the doorman nor a [Prometheus activity query](../guides/prometheus-signals.md#while-the-workload-is-paused) to see its demand; its `status.prediction.message` says how to fix it. `-` until the operator has recorded one. JSON gives the reason from `status.prediction.reason` in `forecast`, and `forecastStartsActing`.
-- **Recent pauses and wakes,** newest first, as far back as the cluster keeps events, or `--since`: each pause, and each wake with its cause, a request on a Service, an activity annotation (including `kubectl hybernate wake` and a dependent waking), the forecast, or a scale-up from outside Hybernate. Requests the doorman closed without reaching the workload are listed too, and a wake whose cause wasn't recorded, such as a hand-back when a namespace becomes protected, is listed by its `resumed` event alone. The table shows the latest 10; `-o json` has every one. The API server keeps events for an hour unless its `--event-ttl` says otherwise, so on most clusters that's what `status` can show.
+- **Recent pauses and wakes,** newest first, as far back as the cluster keeps events, or `--since`: each pause, and each wake with its cause, a request on a Service, a wake request (including `kubectl hybernate wake`), an activity annotation (including a dependent waking), the forecast, or a scale-up from outside Hybernate. Requests the doorman closed without reaching the workload are listed too, and a wake whose cause wasn't recorded, such as a hand-back when a namespace becomes protected, is listed by its `resumed` event alone. The table shows the latest 10; `-o json` has every one. The API server keeps events for an hour unless its `--event-ttl` says otherwise, so on most clusters that's what `status` can show.
 
 ```bash
 kubectl hybernate status --context staging -n preview-42
@@ -580,7 +580,7 @@ waking staging/my-api...
 staging/my-api is Running after 23s
 ```
 
-`wake` marks the ManagedWorkload as active now by setting its `hybernate.io/last-activity` annotation, the same [activity annotation](../concepts/idle-detection.md#activity-annotations) a developer portal would set. A paused workload wakes, along with the workloads it [depends on](../concepts/dependencies.md); a running one has its idle clock restarted. It then waits until the workload is Running.
+`wake` asks Hybernate to wake the workload now, whatever its [wake setting](../concepts/wake-on-request.md), by setting the `hybernate.io/wake-requested` annotation on its ManagedWorkload to a fresh token, as any tool can; see [Wake Now](../guides/pause.md#wake-now). A paused workload wakes, along with the workloads it [depends on](../concepts/dependencies.md); a running one has its idle clock restarted. It then waits for Hybernate's answer, in the ManagedWorkload's `WakeRequest` condition, and until the workload is Running.
 
 ```bash
 # Keep it awake for the next two hours, e.g. for a demo
@@ -599,19 +599,19 @@ What it says depends on the phase:
 | `Paused` | It wakes, and `wake` waits until it's `Running` |
 | `Pausing` | It wakes once the pause finishes |
 | `Resuming` | It's already waking |
-| `Idle` | Marked active, so it stays up |
-| `Running` | Already running; its idle clock restarts, and `wake` returns at once |
-| dry-run, not paused | Never paused; its idle clock restarts, and `wake` returns at once |
+| `Idle` | Its idle clock restarts, so it stays up |
+| `Running` | Already running; its idle clock restarts, and `wake` returns once Hybernate has answered |
+| dry-run, not paused | Never paused; its idle clock restarts, and `wake` returns once Hybernate has answered |
 
-It refuses, and says why, when activity can't wake the workload: the workload doesn't exist or is labelled `hybernate.io/ignore`, or another ManagedWorkload manages it.
+It refuses, and says why, before asking, when Hybernate isn't managing the workload: it doesn't exist or is labelled `hybernate.io/ignore`, or another ManagedWorkload manages it. When Hybernate answers that it won't wake it, `wake` exits 1 with Hybernate's reason, such as `preview-42/api wasn't woken: it's scaled to zero outside Hybernate, which leaves it off until its replicas are set above zero`; the reasons are in [Wake Now](../guides/pause.md#wake-now).
 
-If the workload isn't `Running` within `--timeout`, `wake` exits 1 with its phase and the `kubectl describe` command that says why.
+If the workload isn't `Running` within `--timeout`, `wake` exits 1 with its phase, whether Hybernate had taken the request up, and the `kubectl describe` command that says why. Hybernate not taking it up at all usually means its operator isn't running.
 
 | Flag | Short | Default | Description |
 |------|-------|---------|-------------|
 | `--namespace` | `-n` | kubeconfig context's | Namespace of the workload |
 | `--for` | | | Also keep the workload awake for this long, by setting `hybernate.io/active-until` on its ManagedWorkload. A hold there that ends later stays, and `wake` says so |
-| `--wait` | | `true` | Wait until the workload is Running |
+| `--wait` | | `true` | Wait for Hybernate's answer, and then until the workload is Running |
 | `--timeout` | | `5m` | How long to wait, cluster calls included |
 
 Your user needs `get`, `list` and `patch` on `managedworkloads` in the namespace.
