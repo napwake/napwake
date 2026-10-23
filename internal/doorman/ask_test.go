@@ -118,6 +118,7 @@ func TestServer_AsksAPersonBeforeWaking(t *testing.T) {
 	tokenIn(t, body)
 	assert.NotContains(t, body, "dev/api", "the page names nothing inside the cluster")
 	assert.NotContains(t, body, "uid-api")
+	assert.Contains(t, body, `href="https://okedeji.io/hybernate/guides/pause/#wake-now"`, "how tooling wakes it")
 
 	stop()
 	assert.Empty(t, lastRequest(t, c), "nothing wakes it")
@@ -336,7 +337,8 @@ func assertSaysHowToWake(t *testing.T, resp *http.Response, body string, wantJSO
 		assert.Equal(t, "text/plain; charset=utf-8", resp.Header.Get("Content-Type"))
 	}
 	for _, how := range []string{"Wake it", "hybernate.io/wake-requested", "kubectl hybernate wake",
-		"https://okedeji.io/hybernate/concepts/wake-on-request/#asking-before-waking"} {
+		"https://okedeji.io/hybernate/concepts/wake-on-request/#asking-before-waking",
+		"https://okedeji.io/hybernate/guides/pause/#wake-now"} {
 		assert.Contains(t, body, how)
 	}
 	assert.NotContains(t, body, "dev/api", "it names nothing inside the cluster")

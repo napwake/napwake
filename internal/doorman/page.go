@@ -71,6 +71,9 @@ type pageData struct {
 	Field  string
 	Token  string
 	Notice string
+	// WakeRequestDocs is where the asleep page says tooling can wake the
+	// workload instead.
+	WakeRequestDocs string
 }
 
 // pageAddress is the host the browser asked for, without its port.
@@ -299,6 +302,7 @@ func writeAsleepPage(w io.Writer, data pageData) error {
 	data.Mark = Mark
 	data.Asleep = true
 	data.Field = wakeField
+	data.WakeRequestDocs = wakeRequestDocs
 	var body bytes.Buffer
 	if err := pageTemplate.Execute(&body, data); err != nil {
 		return fmt.Errorf("rendering page: %w", err)
@@ -333,8 +337,12 @@ const (
 	asleepMessage = "This environment is asleep. A request doesn't wake it: only a person who opens it in a " +
 		"browser and clicks Wake it, or their tooling, can."
 	asleepHowTo = "Open it in a browser and click Wake it; set the hybernate.io/wake-requested annotation on its " +
-		"ManagedWorkload; or run kubectl hybernate wake."
+		"ManagedWorkload; or run kubectl hybernate wake: " + wakeRequestDocs
 	asleepDocs = "https://okedeji.io/hybernate/concepts/wake-on-request/#asking-before-waking"
+
+	// wakeRequestDocs says how tooling wakes a workload, for the people
+	// whose tooling reaches it.
+	wakeRequestDocs = "https://okedeji.io/hybernate/guides/pause/#wake-now"
 )
 
 var asleepJSON = func() string {

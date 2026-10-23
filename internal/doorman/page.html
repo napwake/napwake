@@ -93,7 +93,8 @@ button {
 }
 button:hover { opacity: .85; }
 button:focus-visible { outline: 2px solid var(--amber); outline-offset: 3px; }
-.hint { margin: 0; color: var(--muted); font-size: 13px; }
+.hint { margin: 0; color: var(--muted); font-size: 13px; line-height: 1.6; }
+.hint a { color: inherit; }
 footer { display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 16px; padding: 22px 32px; font: 12px var(--mono); color: var(--muted); }
 footer a { display: inline-flex; align-items: center; gap: 7px; color: inherit; text-decoration: none; }
 footer a:hover { color: var(--text); }
@@ -118,7 +119,7 @@ footer svg { width: 13px; height: 13px; }
       <input type="hidden" name="{{.Field}}" value="{{.Token}}">
       <button type="submit">Wake it</button>
     </form>
-    <p class="hint">It takes a minute or so to start, and opens here once it's up.</p>
+    <p class="hint">It takes a minute or so to start, and opens here once it's up. Your team's tooling can wake it too, with a <a href="{{.WakeRequestDocs}}" target="_blank" rel="noopener noreferrer">wake request</a>.</p>
   </div>
 </main>
 <footer>
