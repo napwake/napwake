@@ -106,7 +106,7 @@ defaults:
 
 A workload's own `hybernate.io/wake` wins over its namespace's, and the namespace's over the Helm default; see [Which setting wins](opt-in.md#which-setting-wins). A value other than `request` or `ask` is read as `ask`, with an `InvalidSetting` warning event, so a typo never lets robots wake a preview.
 
-The doorman reads each request to tell a person's browser from a robot, so it needs plain HTTP: TLS ended at the ingress or load balancer in front of the preview, as is usual. A workload that ends TLS itself is never woken by a click. People, though, need to open the preview over HTTPS: a browser says a click came from the page only to an HTTPS address, and a click that doesn't say wakes nothing; see [What browsers, robots and API clients see](../concepts/wake-on-request.md#what-browsers-robots-and-api-clients-see). Behind a GKE Ingress or Gateway, it also needs the doorman's [forwarder](../concepts/wake-on-request.md#gke-container-native-load-balancing-negs).
+The doorman reads each request to tell a person's browser from a robot, so it needs plain HTTP: TLS ended at the ingress or load balancer in front of the preview, as is usual. A workload that ends TLS itself is never woken by a click. Behind a GKE Ingress or Gateway, it also needs the doorman's [forwarder](../concepts/wake-on-request.md#gke-container-native-load-balancing-negs).
 
 ### A preview of more than one workload
 
@@ -157,13 +157,13 @@ Any other reason under DOORMAN says why requests can't reach the doorman; see [W
 
 ## What people see
 
-1. **The asleep page.** Someone opens the preview, say `https://pr-42.preview.example.com/orders/7`, and gets a page saying it's asleep, with a **Wake it** button. It's sent as `200 OK` with `Cache-Control: no-store` and `X-Robots-Tag: noindex`, runs no script, can't be shown in another site's frame, and names no namespace, workload or Service. Nothing wakes.
-2. **The click.** The button posts back to the same address, with a token the doorman signed for this preview and this pause, good for 10 minutes. From a browser that says the click came from the page, as every browser from 2023 on does over HTTPS, the preview wakes, with what it depends on, and a `WokenByRequest` event says a person asked.
+1. **The asleep page.** Someone opens the preview, say `https://pr-42.preview.example.com/orders/7`, and gets a page saying it's asleep, with a **Wake it** button. It's sent as `200 OK` with `Cache-Control: no-store`, `X-Robots-Tag: noindex` and `Referrer-Policy: same-origin`, runs no script, can't be shown in another site's frame, and names no namespace, workload or Service. Nothing wakes.
+2. **The click.** The button posts back to the same address, with a token the doorman signed for this preview and this pause, good for 10 minutes. From a browser that says the click came from the page, as current browsers do, with `Sec-Fetch-Site` over HTTPS and with its `Origin` over plain HTTP, the preview wakes, with what it depends on, and a `WokenByRequest` event says a person asked.
 3. **The waking-up page,** which says the preview is starting, and for how long, and reloads every 3 seconds. Once one of its pods is Ready, the next reload is the page they opened, `/orders/7`.
 
 A page left open reloads itself every minute, with a fresh token, so it doesn't go stale: it expires only if its reloads failed, as after a laptop slept, and then says so and offers the button again. Once someone has clicked, others who open the preview get the waking-up page, then the app, without clicking. The preview pauses again once it has had no activity for `idleAfter`, an hour by default. See [The Wake it button](../concepts/wake-on-request.md#the-wake-it-button) for the token, and for what a click from another site gets.
 
-A browser from before 2023, or any on a page opened over plain HTTP, doesn't say where a click came from, so its click wakes nothing: the page comes back saying so, and that `kubectl hybernate wake`, a [wake request](#waking-it-from-tooling) or a current browser over HTTPS wakes the preview instead. A browser posting a form of the app's own after the preview paused, such as its login form, gets the asleep page too, and nothing wakes until someone clicks.
+A browser from before about 2020 may not say where a click came from, so its click wakes nothing: the page comes back saying so, and that `kubectl hybernate wake`, a [wake request](#waking-it-from-tooling) or a current browser wakes the preview instead. A browser posting a form of the app's own after the preview paused, such as its login form, gets the asleep page too, and nothing wakes until someone clicks.
 
 ## What robots and API clients see
 
