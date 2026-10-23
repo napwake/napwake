@@ -78,6 +78,12 @@ const (
 	// it.
 	AnnotationLastRequestFrom = "hybernate.io/last-request-from"
 
+	// AnnotationTurnedAway is where the doorman counts the requests it
+	// turned away from a paused workload whose wake.mode is Ask, as a JSON
+	// TurnedAway. The operator copies it to status.turnedAway. Don't set
+	// it.
+	AnnotationTurnedAway = "hybernate.io/turned-away"
+
 	// AnnotationPauseRequested asks Hybernate to pause a ManagedWorkload's
 	// workload now rather than when its idle clock runs out. The value is a
 	// token, such as the time of the request, that only needs to differ from

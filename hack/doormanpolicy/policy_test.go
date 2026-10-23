@@ -121,6 +121,8 @@ func testPolicy(t *testing.T, manifest string) {
 		{"stamps a request", `{"metadata":{"annotations":{` +
 			`"hybernate.io/last-request":"2026-10-17T00:00:00Z","hybernate.io/last-request-from":"10.0.0.1"}}}`, true},
 		{"removes its own stamp", `{"metadata":{"annotations":{"hybernate.io/last-request-from":null}}}`, true},
+		{"counts requests turned away", `{"metadata":{"annotations":{` +
+			`"hybernate.io/turned-away":"{\"pausedAt\":\"2026-10-17T00:00:00Z\",\"requests\":3}"}}}`, true},
 		{"changes the spec", `{"spec":{"dryRun":true}}`, false},
 		{"adds a settings annotation", `{"metadata":{"annotations":{"hybernate.io/idle-after":"1m"}}}`, false},
 		{"changes another annotation", `{"metadata":{"annotations":{"keep":"you"}}}`, false},

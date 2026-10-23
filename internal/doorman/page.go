@@ -20,6 +20,7 @@ import (
 	"bufio"
 	"bytes"
 	_ "embed"
+	"encoding/json"
 	"fmt"
 	"html/template"
 	"io"
@@ -62,6 +63,14 @@ type pageData struct {
 	Elapsed string
 	Refresh int
 	Mark    string
+
+	// Asleep shows the page that asks, whose Wake it button posts Token
+	// back to the page's own address as the form field Field. Notice says
+	// why an earlier click woke nothing.
+	Asleep bool
+	Field  string
+	Token  string
+	Notice string
 }
 
 // pageAddress is the host the browser asked for, without its port.
@@ -275,6 +284,130 @@ func writePage(w io.Writer, req *http.Request, data pageData) error {
 		return fmt.Errorf("writing page: %w", err)
 	}
 	return nil
+}
+
+// asleepPolicy keeps the asleep page to itself: no script runs on it, its
+// button posts only back to the page's own address, and no other site can
+// frame it, to trick someone into clicking it.
+const asleepPolicy = "default-src 'none'; style-src 'unsafe-inline'; form-action 'self'; base-uri 'none'; " +
+	"frame-ancestors 'none'"
+
+// writeAsleepPage answers a person's browser with the page that asks before
+// waking the workload. It's a 200, as a page that works is, and like the
+// waking-up page, nothing may cache or index it.
+func writeAsleepPage(w io.Writer, data pageData) error {
+	data.Mark = Mark
+	data.Asleep = true
+	data.Field = wakeField
+	var body bytes.Buffer
+	if err := pageTemplate.Execute(&body, data); err != nil {
+		return fmt.Errorf("rendering page: %w", err)
+	}
+	header := fmt.Sprintf("HTTP/1.1 200 OK\r\n"+
+		"Content-Type: text/html; charset=utf-8\r\n"+
+		"Content-Length: %d\r\n"+
+		"Cache-Control: no-store\r\n"+
+		"X-Robots-Tag: noindex\r\n"+
+		"Content-Security-Policy: %s\r\n"+
+		"X-Frame-Options: DENY\r\n"+
+		"Referrer-Policy: no-referrer\r\n"+
+		"Connection: close\r\n\r\n", body.Len(), asleepPolicy)
+	if _, err := io.WriteString(w, header); err != nil {
+		return fmt.Errorf("writing page header: %w", err)
+	}
+	if _, err := w.Write(body.Bytes()); err != nil {
+		return fmt.Errorf("writing page: %w", err)
+	}
+	return nil
+}
+
+// asleepRetryAfter is what the 503 for a workload that asks tells a client
+// to wait. Asking again sooner wakes nothing: only a person, or their
+// tooling, can.
+const asleepRetryAfter = 5 * time.Minute
+
+// The 503 a workload that asks gives everything that isn't a person's
+// browser: what it is, and how to wake it. It names nothing inside the
+// cluster, since anyone who reaches the Service reads it.
+const (
+	asleepMessage = "This environment is asleep. A request doesn't wake it: only a person who opens it in a " +
+		"browser and clicks Wake it, or their tooling, can."
+	asleepHowTo = "Open it in a browser and click Wake it; set the hybernate.io/wake-requested annotation on its " +
+		"ManagedWorkload; or run kubectl hybernate wake."
+	asleepDocs = "https://okedeji.io/hybernate/concepts/wake-on-request/#asking-before-waking"
+)
+
+var asleepJSON = func() string {
+	body, _ := json.Marshal(struct { // a struct of strings always marshals
+		Status  string `json:"status"`
+		Message string `json:"message"`
+		Wake    string `json:"wake"`
+		Docs    string `json:"docs"`
+	}{"asleep", asleepMessage, asleepHowTo, asleepDocs})
+	return string(body) + "\n"
+}()
+
+const asleepText = asleepMessage + "\n" + asleepHowTo + "\n" + asleepDocs + "\n"
+
+// writeAsleep answers a request that doesn't wake the workload: a 503,
+// with a short body in JSON for a client that asks for it, and in plain
+// text otherwise.
+func writeAsleep(w io.Writer, req *http.Request) error {
+	body, contentType := asleepText, "text/plain; charset=utf-8"
+	if wantsJSON(req) {
+		body, contentType = asleepJSON, "application/json"
+	}
+	header := fmt.Sprintf("HTTP/1.1 503 Service Unavailable\r\n"+
+		"Content-Type: %s\r\n"+
+		"Content-Length: %d\r\n"+
+		"Cache-Control: no-store\r\n"+
+		"Retry-After: %d\r\n"+
+		"X-Robots-Tag: noindex\r\n"+
+		"Connection: close\r\n\r\n", contentType, len(body), int(asleepRetryAfter.Seconds()))
+	if req.Method == http.MethodHead {
+		_, err := io.WriteString(w, header)
+		return err
+	}
+	_, err := io.WriteString(w, header+body)
+	return err
+}
+
+// wantsJSON reports whether req asks for JSON before plain text or HTML.
+func wantsJSON(req *http.Request) bool {
+	before, _, found := strings.Cut(strings.ToLower(req.Header.Get("Accept")), "json")
+	return found && !strings.Contains(before, "text/")
+}
+
+// botMarkers are what crawlers, link previewers, scanners and headless
+// browsers put in a User-Agent that otherwise reads as a browser's. They're
+// matched with what follows "bot" or a word's end, so a phone model such as
+// a Cubot's isn't taken for one.
+var botMarkers = []string{
+	"bot/", "bot;", "bot-", "bot)", "bot.", "bot+",
+	"spider", "crawl", "slurp", "headless", "lighthouse", "zgrab", "compatible;",
+}
+
+// looksLikeBrowser reports whether a User-Agent is a person's browser:
+// every browser in use starts its User-Agent with "Mozilla/", and crawlers
+// that do too name themselves after it. One that's wrongly taken for a
+// browser is only shown the asleep page, which wakes nothing either.
+func looksLikeBrowser(agent string) bool {
+	if !strings.HasPrefix(agent, "Mozilla/") {
+		return false
+	}
+	agent = strings.ToLower(agent)
+	for _, marker := range botMarkers {
+		if strings.Contains(agent, marker) {
+			return false
+		}
+	}
+	return !strings.HasSuffix(agent, "bot")
+}
+
+// isPersonLoadingAPage reports whether req is a person's browser loading a
+// page, which a workload that asks shows the asleep page to.
+func isPersonLoadingAPage(req *http.Request) bool {
+	return req.Method == http.MethodGet && isPageLoad(req) && looksLikeBrowser(req.UserAgent())
 }
 
 // sinceLabel says how long ago the wake started, for the page.

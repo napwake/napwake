@@ -99,7 +99,7 @@ func (s *Server) requestWake(ctx, waitCtx context.Context, rt route, from netip.
 		delete(s.wakeCalls, rt.workload)
 		s.mu.Unlock()
 		close(call.done)
-		if call.err != nil && !errors.Is(call.err, errWakeLimited) {
+		if call.err != nil && !errors.Is(call.err, errWakeLimited) && !errors.Is(call.err, errClickLimited) {
 			log.FromContext(ctx).Error(call.err, "waking workload",
 				"workload", rt.workload.Name, "namespace", rt.workload.Namespace, "service", rt.service)
 		}
@@ -130,6 +130,9 @@ func (s *Server) stamp(ctx context.Context, rt route, from netip.Addr) error {
 	if stamped && last.pausedAt.Equal(pausedAt) && now.Sub(last.at) < wakeStampInterval {
 		return nil
 	}
+	if rt.asks && stampedRecently(&w, now) {
+		return errClickLimited
+	}
 	if !s.admission.allowWake(from, now) {
 		return errWakeLimited
 	}
@@ -143,8 +146,11 @@ func (s *Server) stamp(ctx context.Context, rt route, from netip.Addr) error {
 	s.stamped[rt.workload] = stampRecord{pausedAt: pausedAt, at: now}
 	s.mu.Unlock()
 	if s.recorder != nil && won {
-		s.recorder.Eventf(&w, nil, "Normal", "WokenByRequest", "Wake",
-			"request on Service %s, waking", rt.service)
+		what := "request"
+		if rt.asks {
+			what = "a person asked"
+		}
+		s.recorder.Eventf(&w, nil, "Normal", "WokenByRequest", "Wake", "%s on Service %s, waking", what, rt.service)
 	}
 	return nil
 }
@@ -229,9 +235,11 @@ func recordedLastRequest(w *v1alpha1.ManagedWorkload) string {
 	return ""
 }
 
+// pausedAt is when the workload's pause began, to the second, as status
+// records it, so every replica names a pause the same.
 func pausedAt(w *v1alpha1.ManagedWorkload) time.Time {
 	if p := w.Status.Pause; p != nil && p.PausedAt != nil {
-		return p.PausedAt.Time
+		return p.PausedAt.Truncate(time.Second).UTC()
 	}
 	return time.Time{}
 }

@@ -3,9 +3,10 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<meta http-equiv="refresh" content="{{.Refresh}}">
-<meta name="robots" content="noindex">
-<title>Waking up{{with .Address}} {{.}}{{end}}</title>
+{{if not .Asleep}}<meta http-equiv="refresh" content="{{.Refresh}}">
+{{end}}<meta name="robots" content="noindex">
+<meta name="referrer" content="no-referrer">
+<title>{{if .Asleep}}Asleep{{else}}Waking up{{end}}{{with .Address}} {{.}}{{end}}</title>
 <style>
 :root {
   --mono: ui-monospace, "SF Mono", SFMono-Regular, "JetBrains Mono", "Cascadia Code", Menlo, Consolas, monospace;
@@ -63,6 +64,7 @@ main { flex: 1; display: flex; align-items: center; justify-content: center; pad
   animation: pulse 1.6s ease-out infinite;
 }
 @keyframes pulse { to { box-shadow: 0 0 0 9px transparent; } }
+.asleep .dot { background: var(--faint); animation: none; }
 h1 { margin: 0 0 14px; font: 600 30px/1.2 var(--mono); letter-spacing: -.02em; overflow-wrap: anywhere; }
 h1 span { color: var(--muted); font-weight: 500; }
 .lede { margin: 0 0 36px; max-width: 470px; color: var(--muted); font-size: 15px; line-height: 1.65; }
@@ -78,6 +80,20 @@ li.done .i { background: var(--text); border-color: var(--text); }
 li.done .i svg { width: 10px; height: 10px; color: var(--bg); }
 li.now .i { border-color: var(--line); border-top-color: var(--amber); animation: spin .9s linear infinite; }
 @keyframes spin { to { transform: rotate(360deg); } }
+.notice { margin: -16px 0 28px; padding: 10px 14px; border-left: 2px solid var(--amber); color: var(--text); font-size: 14px; line-height: 1.5; }
+form { margin: 0 0 18px; }
+button {
+  padding: 12px 22px;
+  border: 0;
+  border-radius: 6px;
+  background: var(--text);
+  color: var(--bg);
+  font: 600 14px var(--mono);
+  cursor: pointer;
+}
+button:hover { opacity: .85; }
+button:focus-visible { outline: 2px solid var(--amber); outline-offset: 3px; }
+.hint { margin: 0; color: var(--muted); font-size: 13px; }
 footer { display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 16px; padding: 22px 32px; font: 12px var(--mono); color: var(--muted); }
 footer a { display: inline-flex; align-items: center; gap: 7px; color: inherit; text-decoration: none; }
 footer a:hover { color: var(--text); }
@@ -92,7 +108,22 @@ footer svg { width: 13px; height: 13px; }
 </head>
 <body>
 <header>{{.Address}}</header>
-<main role="status" aria-live="polite">
+{{if .Asleep}}<main class="asleep">
+  <div class="wrap">
+    <div class="state"><span class="dot"></span>Asleep</div>
+    <h1>{{with .Address}}{{.}}{{else}}This app{{end}} <span>is asleep</span></h1>
+    <p class="lede">This environment was paused while nobody was using it. It wakes when someone asks, so crawlers and bots can't keep it running.</p>
+    {{with .Notice}}<p class="notice" role="alert">{{.}}</p>{{end}}
+    <form method="post">
+      <input type="hidden" name="{{.Field}}" value="{{.Token}}">
+      <button type="submit">Wake it</button>
+    </form>
+    <p class="hint">It takes a minute or so to start, and opens here once it's up.</p>
+  </div>
+</main>
+<footer>
+  <span>Nothing runs until you ask</span>
+{{else}}<main role="status" aria-live="polite">
   <div class="wrap">
     <div class="state"><span class="dot"></span>Starting</div>
     <h1>Waking up <span>{{with .Address}}{{.}}{{else}}this app{{end}}</span></h1>
@@ -107,7 +138,7 @@ footer svg { width: 13px; height: 13px; }
 </main>
 <footer>
   <span>Refreshes automatically</span>
-  <a href="https://okedeji.io/hybernate/" target="_blank" rel="noopener"><svg viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" d="{{.Mark}}"/></svg>Paused by Hybernate</a>
+{{end}}  <a href="https://okedeji.io/hybernate/" target="_blank" rel="noopener noreferrer"><svg viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" d="{{.Mark}}"/></svg>Paused by Hybernate</a>
 </footer>
 </body>
 </html>

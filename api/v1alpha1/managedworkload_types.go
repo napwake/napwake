@@ -373,6 +373,13 @@ type ManagedWorkloadStatus struct {
 	// +optional
 	LastScaledUp *ScaledUp `json:"lastScaledUp,omitempty"`
 
+	// TurnedAway counts the requests the doorman turned away during the
+	// workload's current pause, or its last one, with wake.mode Ask:
+	// answered that it's asleep, and not woken. Many mean something
+	// automated calls it. It's brought up to date about once a minute.
+	// +optional
+	TurnedAway *TurnedAway `json:"turnedAway,omitempty"`
+
 	// Prediction reflects the current state of the forecasting engine.
 	// +optional
 	Prediction *PredictionStatus `json:"prediction,omitempty"`
@@ -520,6 +527,15 @@ const (
 )
 
 // ScaledUp is a paused workload scaled up outside Hybernate.
+// TurnedAway is how many requests were turned away during one pause. A
+// person's browser, shown the page that asks, isn't counted, nor are the
+// probes and health checks the doorman knows.
+type TurnedAway struct {
+	// PausedAt is when the pause they were turned away during began.
+	PausedAt metav1.Time `json:"pausedAt"`
+	Requests int64       `json:"requests"`
+}
+
 type ScaledUp struct {
 	At metav1.Time `json:"at"`
 	// By is the field manager that set the replicas, such as
