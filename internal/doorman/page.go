@@ -66,11 +66,13 @@ type pageData struct {
 
 	// Asleep shows the page that asks, whose Wake it button posts Token
 	// back to the page's own address as the form field Field. Notice says
-	// why an earlier click woke nothing.
-	Asleep bool
-	Field  string
-	Token  string
-	Notice string
+	// why an earlier click woke nothing, and NoticeDocs, if clicking again
+	// won't help, where the docs say how else to wake it.
+	Asleep     bool
+	Field      string
+	Token      string
+	Notice     string
+	NoticeDocs string
 	// WakeRequestDocs is where the asleep page says tooling can wake the
 	// workload instead.
 	WakeRequestDocs string

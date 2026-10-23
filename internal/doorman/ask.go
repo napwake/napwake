@@ -72,11 +72,26 @@ const (
 	resultTurnedAway = "turned_away"
 )
 
+// A notice is what the asleep page says when a click woke nothing, and,
+// where clicking again won't help, the docs that say how else to wake it.
+type notice struct {
+	text string
+	docs string
+}
+
 // The notices the asleep page gives when a click woke nothing.
-const (
-	noticeExpired = "That page had expired, so nothing woke. Click Wake it again."
-	noticeLimited = "It was asked to wake less than a minute ago. Try again in a minute."
-	noticeFailed  = "It couldn't be woken just now. Try again in a moment."
+var (
+	noticeExpired = notice{text: "That page had expired, so nothing woke. Click Wake it again."}
+	noticeLimited = notice{text: "It was asked to wake less than a minute ago. Try again in a minute."}
+	noticeFailed  = notice{text: "It couldn't be woken just now. Try again in a moment."}
+	// noticeNoFetchMetadata answers a browser that said nothing of where its
+	// click came from; see sameOrigin.
+	noticeNoFetchMetadata = notice{
+		text: "This browser didn't say the click came from this page, so nothing woke. Browsers from 2023 on say " +
+			"so over HTTPS. Wake it with kubectl hybernate wake, the hybernate.io/wake-requested annotation, or " +
+			"a current browser over HTTPS.",
+		docs: asleepDocs,
+	}
 )
 
 // errClickLimited means a click came too soon after the last wake request.
@@ -100,7 +115,7 @@ func (h *heldConn) ask(ctx, waitCtx context.Context, req *http.Request) (net.Con
 		return h.await(ctx, waitCtx, nil)
 	}
 	if req != nil && isPersonLoadingAPage(req) {
-		h.serveAsleepPage(ctx, req, "")
+		h.serveAsleepPage(ctx, req, notice{})
 		return nil, resultAsked
 	}
 	h.turnedAway(h.route)
@@ -122,8 +137,7 @@ func (h *heldConn) click(ctx, waitCtx context.Context, req *http.Request) string
 		return resultPage
 	}
 	token, posted := h.readClick()
-	byAPerson := clickedByAPerson(req)
-	if posted && byAPerson && sameOrigin(req) && h.wakeKeys.valid(token, h.route.scope(), h.now()) {
+	if posted && clickedByAPerson(req) && sameOrigin(req) && h.wakeKeys.valid(token, h.route.scope(), h.now()) {
 		return h.wakeForClick(ctx, waitCtx, req)
 	}
 	if !looksLikeBrowser(req.UserAgent()) {
@@ -131,12 +145,27 @@ func (h *heldConn) click(ctx, waitCtx context.Context, req *http.Request) string
 		_ = h.reply(func(w io.Writer) error { return writeAsleep(w, req) }) // the caller may already have gone
 		return resultTurnedAway
 	}
-	notice := ""
-	if posted && byAPerson {
-		notice = noticeExpired
-	}
-	h.serveAsleepPage(ctx, req, notice)
+	h.serveAsleepPage(ctx, req, clickNotice(req, posted))
 	return resultAsked
+}
+
+// clickNotice is what the asleep page says to a browser whose post woke
+// nothing. A form of the app's own, posted with no token, gets the page as
+// any page load does. A click that doesn't say where it came from is told
+// how else to wake the workload, since clicking again won't do it. A
+// person's click whose token had expired, or that came from another site,
+// is asked to click again; a script's is just shown the page.
+func clickNotice(req *http.Request, posted bool) notice {
+	switch {
+	case !posted:
+		return notice{}
+	case req.Header.Get("Sec-Fetch-Site") == "":
+		return noticeNoFetchMetadata
+	case clickedByAPerson(req):
+		return noticeExpired
+	default:
+		return notice{}
+	}
 }
 
 // wakeForClick wakes the workload for a person's click, and answers with
@@ -163,9 +192,9 @@ func (h *heldConn) wakeForClick(ctx, waitCtx context.Context, req *http.Request)
 // the navigations a person starts with Sec-Fetch-User, marked so. A spider
 // that fetches the page and posts its token isn't a browser, and a script
 // submitting the form isn't marked. Safari, and every browser on iOS,
-// which runs WebKit, send the rest of the fetch metadata but never that
-// mark, so their clicks are judged without it, as are those of browsers
-// from before 2020, which send no fetch metadata at all.
+// which runs WebKit, never send that mark, so their clicks are judged
+// without it: by the token, the User-Agent and sameOrigin, which every
+// browser's click must pass too.
 func clickedByAPerson(req *http.Request) bool {
 	agent := req.UserAgent()
 	if !looksLikeBrowser(agent) {
@@ -174,7 +203,7 @@ func clickedByAPerson(req *http.Request) bool {
 	if user := req.Header.Get("Sec-Fetch-User"); user != "" {
 		return user == "?1"
 	}
-	return req.Header.Get("Sec-Fetch-Site") == "" || !marksPeoplesNavigations(agent)
+	return !marksPeoplesNavigations(agent)
 }
 
 // marksPeoplesNavigations reports whether a browser sends Sec-Fetch-User
@@ -198,13 +227,15 @@ func isClick(req *http.Request) bool {
 	return chunked || (req.ContentLength > 0 && req.ContentLength <= maxClickBody)
 }
 
-// sameOrigin reports whether a browser says the click came from a page of
-// the same site and port, as the asleep page's does. A browser that doesn't
-// say, one from before 2020, is judged by its token alone; so is anything
-// else, which a token from a GET of the page lets click too.
+// sameOrigin reports whether the browser says the click came from a page of
+// the same origin, the same scheme, host and port, as the asleep page's
+// does, with Sec-Fetch-Site: same-origin. Every browser has said so with a
+// form it posts since Safari 16.4, in March 2023, but only to a URL it
+// trusts: over HTTPS, or to localhost. A click that doesn't say can't be
+// told from a spider's that fetched the page and posted its token as a
+// browser, so it wakes nothing, and the page says how else to wake it.
 func sameOrigin(req *http.Request) bool {
-	site := req.Header.Get("Sec-Fetch-Site")
-	return site == "" || site == "same-origin"
+	return req.Header.Get("Sec-Fetch-Site") == "same-origin"
 }
 
 // readClick reads the rest of a click, its body, and returns the token it
@@ -230,11 +261,12 @@ func (h *heldConn) readClick() (string, bool) {
 
 // serveAsleepPage answers a person's browser with the asleep page, its Wake
 // it button signed for this pause of the workload.
-func (h *heldConn) serveAsleepPage(ctx context.Context, req *http.Request, notice string) {
+func (h *heldConn) serveAsleepPage(ctx context.Context, req *http.Request, n notice) {
 	data := pageData{
-		Address: pageAddress(req),
-		Token:   h.wakeKeys.sign(h.route.scope(), h.now().Add(tokenTTL)),
-		Notice:  notice,
+		Address:    pageAddress(req),
+		Token:      h.wakeKeys.sign(h.route.scope(), h.now().Add(tokenTTL)),
+		Notice:     n.text,
+		NoticeDocs: n.docs,
 	}
 	if err := h.reply(func(w io.Writer) error { return writeAsleepPage(w, data) }); err != nil {
 		log.FromContext(ctx).V(1).Info("writing asleep page", "error", err.Error(),
