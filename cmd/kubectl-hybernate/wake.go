@@ -171,12 +171,13 @@ func wake(ctx context.Context, c client.Client, key client.ObjectKey, opts wakeO
 
 // awakeMessage says what a wake request does for a workload that's awake
 // and not about to pause, which it finds awake and restarts the idle clock
-// of, or is empty for one it wakes.
+// of, or is empty for one it wakes. A ManagedWorkload Hybernate hasn't
+// taken on yet, with no phase, is taken on Running.
 func awakeMessage(ref string, w *v1alpha1.ManagedWorkload) string {
 	switch phase := w.Status.Phase; {
 	case w.Spec.DryRun && phase != v1alpha1.PhasePaused && phase != v1alpha1.PhasePausing:
 		return ref + " is in dry-run, so Hybernate never paused it; its idle clock restarts now"
-	case phase == v1alpha1.PhaseRunning:
+	case phase == v1alpha1.PhaseRunning, phase == "", phase == v1alpha1.PhaseCreating:
 		return ref + " is already running; its idle clock restarts now"
 	}
 	return ""

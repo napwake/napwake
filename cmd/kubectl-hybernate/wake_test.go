@@ -344,6 +344,18 @@ func TestWake_WokenAfterAPauseUnderWay(t *testing.T) {
 	assert.GreaterOrEqual(t, reads, 6, "it waits until the workload is Running")
 }
 
+// A ManagedWorkload just created, which Hybernate hasn't taken on yet, has
+// no status: Hybernate takes it on Running and answers the request as for
+// any awake workload, and wake says so.
+func TestWake_AManagedWorkloadJustCreated(t *testing.T) {
+	c := newClient(t, wakes("AlreadyAwake", 0), managedWorkload(""))
+	var out bytes.Buffer
+
+	require.NoError(t, wake(testContext(t), c, apiKey, testOptions(), &out))
+
+	assert.Equal(t, "preview-42/api is already running; its idle clock restarts now\n", out.String())
+}
+
 // A ManagedWorkload deleted while wake waits has handed its workload back.
 func TestWake_DeletedWhileWaiting(t *testing.T) {
 	var gets int
