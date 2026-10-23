@@ -893,7 +893,72 @@ func TestReconcileDoorman_RoutesAWorkloadThatAsks(t *testing.T) {
 
 	assert.Len(t, doormanSlices(t, r), 1)
 	assert.Len(t, workload.Status.Doorman, 1)
-	assert.Equal(t, metav1.ConditionTrue, wakeCondition(t, workload).Status)
+	cond := wakeCondition(t, workload)
+	assert.Equal(t, metav1.ConditionTrue, cond.Status)
+	assert.Equal(t, "the doorman asks a person's browser before waking the workload, and turns away other requests",
+		cond.Message)
+}
+
+// What the doorman turned away is shown in status for the current pause, or
+// the last one once it's awake: each pause starts with none, and a count
+// the doorman wrote late for an earlier pause never stands in for it.
+func TestRecordTurnedAway(t *testing.T) {
+	paused := time.Date(2026, 10, 23, 9, 0, 0, 0, time.UTC)
+	earlier := paused.Add(-24 * time.Hour)
+	counted := func(at time.Time, n int64) string {
+		return fmt.Sprintf(`{"pausedAt":%q,"requests":%d}`, at.Format(time.RFC3339), n)
+	}
+	tests := []struct {
+		name       string
+		mode       v1alpha1.WakeMode
+		pausedAt   *time.Time
+		annotation string
+		status     *v1alpha1.TurnedAway
+		want       *v1alpha1.TurnedAway
+	}{
+		{name: "a pause begins", mode: v1alpha1.WakeOnAsk, pausedAt: &paused,
+			want: &v1alpha1.TurnedAway{PausedAt: metav1.NewTime(paused)}},
+		{name: "the doorman counted some", mode: v1alpha1.WakeOnAsk, pausedAt: &paused, annotation: counted(paused, 12),
+			want: &v1alpha1.TurnedAway{PausedAt: metav1.NewTime(paused), Requests: 12}},
+		{name: "awake again, the count flushed after", mode: v1alpha1.WakeOnAsk, annotation: counted(paused, 14),
+			status: &v1alpha1.TurnedAway{PausedAt: metav1.NewTime(paused), Requests: 12},
+			want:   &v1alpha1.TurnedAway{PausedAt: metav1.NewTime(paused), Requests: 14}},
+		{name: "a new pause, the annotation still the last one's", mode: v1alpha1.WakeOnAsk, pausedAt: &paused,
+			annotation: counted(earlier, 30), status: &v1alpha1.TurnedAway{PausedAt: metav1.NewTime(earlier), Requests: 30},
+			want: &v1alpha1.TurnedAway{PausedAt: metav1.NewTime(paused)}},
+		{name: "awake after a pause that turned none away", mode: v1alpha1.WakeOnAsk, annotation: counted(earlier, 30),
+			status: &v1alpha1.TurnedAway{PausedAt: metav1.NewTime(paused)},
+			want:   &v1alpha1.TurnedAway{PausedAt: metav1.NewTime(paused)}},
+		{name: "a count that can't be read", mode: v1alpha1.WakeOnAsk, pausedAt: &paused, annotation: "lots",
+			want: &v1alpha1.TurnedAway{PausedAt: metav1.NewTime(paused)}},
+		{name: "waking on request", mode: v1alpha1.WakeOnRequest, pausedAt: &paused, annotation: counted(paused, 12),
+			status: &v1alpha1.TurnedAway{PausedAt: metav1.NewTime(paused), Requests: 3}},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			workload := lifecycleWorkload("api", v1alpha1.PhasePaused)
+			workload.Spec.Wake = &v1alpha1.WakeSpec{Mode: tt.mode}
+			if tt.pausedAt != nil {
+				at := metav1.NewTime(tt.pausedAt.Add(400 * time.Millisecond))
+				workload.Status.Pause = &v1alpha1.PauseStatus{PausedAt: &at}
+			}
+			if tt.annotation != "" {
+				workload.Annotations = map[string]string{v1alpha1.AnnotationTurnedAway: tt.annotation}
+			}
+			workload.Status.TurnedAway = tt.status
+
+			recordTurnedAway(workload)
+
+			got := workload.Status.TurnedAway
+			if tt.want == nil {
+				assert.Nil(t, got)
+				return
+			}
+			require.NotNil(t, got)
+			assert.True(t, tt.want.PausedAt.Equal(&got.PausedAt), "of the pause from %s, not %s", tt.want.PausedAt, got.PausedAt)
+			assert.Equal(t, tt.want.Requests, got.Requests)
+		})
+	}
 }
 
 // A workload paused before has a WakeOnRequest condition already, from

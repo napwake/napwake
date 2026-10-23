@@ -19,6 +19,7 @@ package controller
 import (
 	"cmp"
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"net/netip"
@@ -170,6 +171,7 @@ func (r *Reconciler) requestWouldWake(ctx context.Context, workload *v1alpha1.Ma
 // on the WakeOnRequest condition and retried, and never stops the reconcile.
 // It returns how soon to reconcile again, to retry or to recheck, or zero.
 func (r *Reconciler) routeDoorman(ctx context.Context, workload *v1alpha1.ManagedWorkload, target client.Object) time.Duration {
+	recordTurnedAway(workload)
 	failing := conditionFalseWith(workload, conditionWakeOnRequest, reasonRoutingFailed)
 	recheck, err := r.reconcileDoorman(ctx, workload, target)
 	if err == nil {
@@ -184,6 +186,32 @@ func (r *Reconciler) routeDoorman(ctx context.Context, workload *v1alpha1.Manage
 		r.announceRouting(ctx, workload, reasonRoutingFailed, "requests may not wake the workload: %v", err)
 	}
 	return r.doormanFailures.next(workload.UID)
+}
+
+// recordTurnedAway brings status.turnedAway up to date for a workload whose
+// doorman asks before waking it: a pause starts with none turned away, and
+// the doorman's count, in its annotation, is copied in once it's of that
+// pause or a later one. A count of an earlier pause, written late, is left
+// out, so it never stands in for the current pause's.
+func recordTurnedAway(workload *v1alpha1.ManagedWorkload) {
+	if !workload.Spec.Wake.Asks() {
+		workload.Status.TurnedAway = nil
+		return
+	}
+	current := workload.Status.TurnedAway
+	if p := workload.Status.Pause; p != nil && p.PausedAt != nil {
+		pausedAt := metav1.NewTime(p.PausedAt.Truncate(time.Second))
+		if current == nil || current.PausedAt.Before(&pausedAt) {
+			current = &v1alpha1.TurnedAway{PausedAt: pausedAt}
+		}
+	}
+	var counted v1alpha1.TurnedAway
+	if value, ok := workload.Annotations[v1alpha1.AnnotationTurnedAway]; ok &&
+		json.Unmarshal([]byte(value), &counted) == nil && counted.Requests >= 0 &&
+		(current == nil || !counted.PausedAt.Before(&current.PausedAt)) {
+		current = &counted
+	}
+	workload.Status.TurnedAway = current
 }
 
 // announceRouting warns about a change in the workload's routing once the
@@ -497,6 +525,9 @@ func (r *Reconciler) reportDoorman(ctx context.Context, workload *v1alpha1.Manag
 		}
 	}
 	status, reason, message := metav1.ConditionTrue, "DoormanRouted", "requests are held and wake the workload"
+	if workload.Spec.Wake.Asks() {
+		message = "the doorman asks a person's browser before waking the workload, and turns away other requests"
+	}
 	switch {
 	case len(routes) > 0:
 	case len(skipped.forwarding) > 0:
