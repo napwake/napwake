@@ -518,6 +518,13 @@ func TestWakeKeys_Lifetime(t *testing.T) {
 	padded := []byte(issued)
 	padded[len(padded)-1] = base64URLWithLowBit(padded[len(padded)-1])
 	assert.False(t, keys.valid(string(padded), scope, now), "only one spelling of a token passes")
+	half := len(issued) / 2
+	for _, extra := range []string{"\r\n", "\n", "\r", "=", " ", "+", "/", "%2D"} {
+		spelling := issued[:half] + extra + issued[half:]
+		assert.False(t, keys.valid(spelling, scope, now), "only one spelling of a token passes, not with %q", extra)
+	}
+	assert.False(t, keys.valid(issued+"\n", scope, now), "nor with a line end after it")
+	assert.False(t, keys.valid(issued+"==", scope, now), "nor padded")
 }
 
 // base64URLWithLowBit is the base64url digit c's value with its lowest bit

@@ -111,6 +111,9 @@ func (k *wakeKeys) sign(scope tokenScope, expires time.Time) string {
 // scope, and hasn't expired. The MAC is compared in constant time, so the
 // time taken says nothing about how much of a forged one was right.
 func (k *wakeKeys) valid(token string, scope tokenScope, now time.Time) bool {
+	if !wellFormed(token) {
+		return false
+	}
 	raw, err := base64.RawURLEncoding.Strict().DecodeString(token)
 	if err != nil || len(raw) != tokenSize || raw[0] != tokenVersion {
 		return false
@@ -132,6 +135,27 @@ func (k *wakeKeys) valid(token string, scope tokenScope, now time.Time) bool {
 		}
 	}
 	return ok
+}
+
+// tokenLength is how long a token is, spelt out.
+var tokenLength = base64.RawURLEncoding.EncodedLen(tokenSize)
+
+// wellFormed reports whether token is spelt as sign spells one: base64url
+// digits alone, and as many as a token takes. The decoder skips line ends
+// wherever they are, so without this a token would pass in more than one
+// spelling.
+func wellFormed(token string) bool {
+	if len(token) != tokenLength {
+		return false
+	}
+	for i := range len(token) {
+		switch c := token[i]; {
+		case 'A' <= c && c <= 'Z', 'a' <= c && c <= 'z', '0' <= c && c <= '9', c == '-', c == '_':
+		default:
+			return false
+		}
+	}
+	return true
 }
 
 // tokenMAC is the HMAC-SHA256 of the scope and expiry, each field ended by
