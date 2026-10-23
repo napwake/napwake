@@ -92,11 +92,17 @@ With `doorman.negForwarder.enabled`, a ClusterRole and ClusterRoleBinding `hyber
 | `""` | `pods` | `get` |
 | `""`, `events.k8s.io` | `events` | `create`, `patch` |
 
+And a Role and RoleBinding `hybernate-doorman-wake-key` in the release namespace, for its [wake key](../concepts/wake-on-request.md#the-wake-it-button), the one Secret it may read:
+
+| API group | Resources | Resource names | Verbs |
+|---|---|---|---|
+| `""` | `secrets` | `hybernate-doorman-wake-key` | `get`, `update` |
+
 **Guards**, with `guard.uninstall` and, with `watchNamespaces`, `guard.upgrade` (the defaults): a ServiceAccount `hybernate-uninstall-guard`, and a ClusterRole and ClusterRoleBinding of the same name, allowing `list` on `hybernate.io` `managedworkloads`, cluster-wide even with `watchNamespaces`; and the same named `hybernate-upgrade-guard`. They're Helm hooks, like the Jobs that use them: they exist only while `helm uninstall` runs its pre-delete hook, or `helm upgrade` or `helm rollback` its pre-upgrade or pre-rollback hook, which refuse to leave ManagedWorkloads without an operator.
 
 **People**: ClusterRoles `hybernate-view` and `hybernate-edit`, which grant nothing to Hybernate itself. They're aggregated into Kubernetes' built-in roles: `view`, `edit` and `admin` gain `get`, `list` and `watch` on `hybernate.io` `managedworkloads`, and `get` on their status; `edit` and `admin` gain `create`, `update`, `patch` and `delete`.
 
-**Admission policy**, with `doorman.admissionPolicy.enabled` (the default): a ValidatingAdmissionPolicy and binding `hybernate-doorman`, cluster-scoped, which refuse any change the doorman's ServiceAccount makes to a ManagedWorkload other than to its `hybernate.io/last-request` and `last-request-from` annotations; and a ValidatingAdmissionPolicy and binding `hybernate-request-stamps`, cluster-scoped, which refuse anyone else setting those two annotations, limited to `watchNamespaces` when set.
+**Admission policy**, with `doorman.admissionPolicy.enabled` (the default): a ValidatingAdmissionPolicy and binding `hybernate-doorman`, cluster-scoped, which refuse any change the doorman's ServiceAccount makes to a ManagedWorkload other than to its `hybernate.io/last-request`, `last-request-from` and `turned-away` annotations; and a ValidatingAdmissionPolicy and binding `hybernate-request-stamps`, cluster-scoped, which refuse anyone else setting those two annotations, limited to `watchNamespaces` when set.
 
 **Metrics**, with `metrics.enabled` and `metrics.secure` (the defaults): ClusterRoleBindings `hybernate-auth-delegator` and `hybernate-doorman-auth-delegator` to the built-in `system:auth-delegator` ClusterRole, so the operator and the doorman can check the tokens of whoever scrapes them; and a ClusterRole `hybernate-metrics-reader` allowing `get` on the `/metrics` URL, bound to `metrics.readerSubjects` by a ClusterRoleBinding of the same name.
 
