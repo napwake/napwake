@@ -200,6 +200,33 @@ Recent pauses and wakes:
 `, out)
 }
 
+// A workload whose doorman asks before waking it says so in NEXT, and the
+// requests it turned away during its pause are listed under the table:
+// something automated may be calling it.
+func TestStatus_ShowsWhatAskingTurnedAway(t *testing.T) {
+	web := statusWorkloadObj("preview-42", "web", v1alpha1.TargetKindDeployment, v1alpha1.PhasePaused, 3*time.Hour)
+	web.Spec.Wake = &v1alpha1.WakeSpec{Mode: v1alpha1.WakeOnAsk}
+	web.Status.Doorman = []v1alpha1.DoormanRoute{{Service: "web", DoormanPort: 20001}}
+	web.Status.TurnedAway = &v1alpha1.TurnedAway{PausedAt: *before(3 * time.Hour), Requests: 312}
+	quiet := statusWorkloadObj("preview-42", "docs", v1alpha1.TargetKindDeployment, v1alpha1.PhasePaused, time.Hour)
+	quiet.Spec.Wake = &v1alpha1.WakeSpec{Mode: v1alpha1.WakeOnAsk}
+	quiet.Status.Doorman = []v1alpha1.DoormanRoute{{Service: "docs", DoormanPort: 20002}}
+	quiet.Status.TurnedAway = &v1alpha1.TurnedAway{PausedAt: *before(time.Hour)}
+
+	out := runStatus(t, newStatusClient(t, interceptor.Funcs{}, web, quiet), statusOpts())
+
+	assert.Contains(t, out, "wakes when a person asks, or on activity")
+	assert.Contains(t, out, "Turned away while asleep, by a doorman that asks before waking: something automated may "+
+		"call these.\n  preview-42/web   312 requests during the pause from 3h ago\n")
+	assert.NotContains(t, out, "preview-42/docs ", "one that turned none away isn't listed")
+
+	result, err := clusterStatus(context.Background(), newStatusClient(t, interceptor.Funcs{}, web), "preview-42",
+		statusOpts())
+	require.NoError(t, err)
+	require.NotNil(t, result.Workloads[0].TurnedAway)
+	assert.Equal(t, int64(312), result.Workloads[0].TurnedAway.Requests, "and in -o json")
+}
+
 func TestNextFor(t *testing.T) {
 	tests := []struct {
 		name   string

@@ -227,6 +227,9 @@ type statusWorkload struct {
 	// namedApart is set for a ManagedWorkload written by hand under a name
 	// other than its target's, which the table then shows beside it.
 	namedApart bool
+	// TurnedAway is what the doorman turned away during its current or
+	// last pause, for a workload whose doorman asks before waking it.
+	TurnedAway *v1alpha1.TurnedAway `json:"turnedAway,omitempty"`
 }
 
 // problem is something about a workload that keeps Hybernate from doing
@@ -281,7 +284,6 @@ var untroubled = map[string]bool{
 	reasonTargetIgnored:  true,
 	"HybernateComponent": true,
 	"DoormanDisabled":    true,
-	"TurnedOff":          true,
 	"NotPaused":          true,
 }
 
@@ -556,6 +558,9 @@ func workloadStatus(w *v1alpha1.ManagedWorkload, targetActiveUntil, now time.Tim
 		row.LastActivity = &last
 		row.ActivitySource = string(a.LastActivitySource)
 	}
+	if away := w.Status.TurnedAway; away != nil && w.Spec.Wake.Asks() {
+		row.TurnedAway = &v1alpha1.TurnedAway{PausedAt: metav1.NewTime(away.PausedAt.UTC()), Requests: away.Requests}
+	}
 	return row
 }
 
@@ -706,10 +711,14 @@ func heldByForecast(a *v1alpha1.ActivityStatus) string {
 
 // wakesOn says what wakes a paused workload.
 func wakesOn(w *v1alpha1.ManagedWorkload) string {
-	if len(w.Status.Doorman) > 0 {
+	switch {
+	case len(w.Status.Doorman) == 0:
+		return "wakes on activity"
+	case w.Spec.Wake.Asks():
+		return "wakes when a person asks, or on activity"
+	default:
 		return "wakes on a request or activity"
 	}
-	return "wakes on activity"
 }
 
 // pausedEarly says, between before and after, that the forecast brought a
@@ -1007,6 +1016,7 @@ func writeStatusTable(w io.Writer, result statusResult, now time.Time) error {
 		_, _ = fmt.Fprintln(tw)
 	}
 	_ = tw.Flush() // writes through p, which keeps the first error
+	writeTurnedAway(p, result.Workloads, now)
 
 	p.line("")
 	switch {
@@ -1027,6 +1037,31 @@ func writeStatusTable(w io.Writer, result statusResult, now time.Time) error {
 		_ = tw.Flush() // writes through p, which keeps the first error
 	}
 	return p.err
+}
+
+// writeTurnedAway lists the workloads whose doorman asks before waking them
+// and turned requests away during their current or last pause: something
+// that isn't a person, such as a monitor, a webhook or another service,
+// may be calling them.
+func writeTurnedAway(p *printer, workloads []statusWorkload, now time.Time) {
+	var away []statusWorkload
+	for _, wl := range workloads {
+		if wl.TurnedAway != nil && wl.TurnedAway.Requests > 0 {
+			away = append(away, wl)
+		}
+	}
+	if len(away) == 0 {
+		return
+	}
+	p.line("")
+	p.line("Turned away while asleep, by a doorman that asks before waking: something automated may call these.")
+	tw := tabwriter.NewWriter(p, 0, 0, 3, ' ', 0)
+	for _, wl := range away {
+		_, name, _ := strings.Cut(wl.Target, "/")
+		_, _ = fmt.Fprintf(tw, "  %s/%s\t%s during the pause from %s\n", wl.Namespace, name,
+			countOf(int(wl.TurnedAway.Requests), "request"), ago(wl.TurnedAway.PausedAt.Time, now))
+	}
+	_ = tw.Flush() // writes through p, which keeps the first error
 }
 
 // workloadCell names the workload, with its ManagedWorkload when that's
