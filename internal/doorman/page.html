@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta http-equiv="refresh" content="{{.Refresh}}">
 <meta name="robots" content="noindex">
-<meta name="referrer" content="no-referrer">
+<meta name="referrer" content="{{if .Asleep}}same-origin{{else}}no-referrer{{end}}">
 <title>{{if .Asleep}}Asleep{{else}}Waking up{{end}}{{with .Address}} {{.}}{{end}}</title>
 <style>
 :root {
@@ -94,7 +94,7 @@ button {
 button:hover { opacity: .85; }
 button:focus-visible { outline: 2px solid var(--amber); outline-offset: 3px; }
 .hint { margin: 0; color: var(--muted); font-size: 13px; line-height: 1.6; }
-.hint a { color: inherit; }
+.hint a, .notice a { color: inherit; }
 footer { display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 16px; padding: 22px 32px; font: 12px var(--mono); color: var(--muted); }
 footer a { display: inline-flex; align-items: center; gap: 7px; color: inherit; text-decoration: none; }
 footer a:hover { color: var(--text); }
@@ -114,7 +114,7 @@ footer svg { width: 13px; height: 13px; }
     <div class="state"><span class="dot"></span>Asleep</div>
     <h1>{{with .Address}}{{.}}{{else}}This app{{end}} <span>is asleep</span></h1>
     <p class="lede">This environment was paused while nobody was using it. It wakes when someone asks, so crawlers and bots can't keep it running.</p>
-    {{with .Notice}}<p class="notice" role="alert">{{.}}</p>{{end}}
+    {{with .Notice}}<p class="notice" role="alert">{{.}}{{with $.NoticeDocs}} <a href="{{.}}" target="_blank" rel="noopener noreferrer">How to wake it</a>{{end}}</p>{{end}}
     <form method="post">
       <input type="hidden" name="{{.Field}}" value="{{.Token}}">
       <button type="submit">Wake it</button>

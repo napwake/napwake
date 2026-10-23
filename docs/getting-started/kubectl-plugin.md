@@ -606,7 +606,7 @@ What it says depends on the phase:
 
 It refuses, and says why, before asking, when Hybernate isn't managing the workload: it doesn't exist or is labelled `hybernate.io/ignore`, or another ManagedWorkload manages it. When Hybernate answers that it won't wake it, `wake` exits 1 with Hybernate's reason, such as `preview-42/api wasn't woken: it's scaled to zero outside Hybernate, which leaves it off until its replicas are set above zero`; the reasons are in [Wake Now](../guides/pause.md#wake-now).
 
-If the workload isn't `Running` within `--timeout`, `wake` exits 1 with its phase, whether Hybernate had taken the request up, and the `kubectl describe` command that says why. Hybernate not taking it up at all usually means its operator isn't running.
+If the workload isn't `Running` within `--timeout`, `wake` exits 1 with its phase, whether Hybernate had taken the request up, and the `kubectl describe` command that says why. The timeout covers the whole wait, Hybernate's answer and then `Running`, and a request made while a pause or a wake is under way is answered only once that finishes; for a workload that takes longer than 5 minutes to start, raise it, such as `--timeout 10m`. Hybernate not taking it up at all usually means its operator isn't running.
 
 | Flag | Short | Default | Description |
 |------|-------|---------|-------------|

@@ -66,11 +66,13 @@ type pageData struct {
 
 	// Asleep shows the page that asks, whose Wake it button posts Token
 	// back to the page's own address as the form field Field. Notice says
-	// why an earlier click woke nothing.
-	Asleep bool
-	Field  string
-	Token  string
-	Notice string
+	// why an earlier click woke nothing, and NoticeDocs, if clicking again
+	// won't help, where the docs say how else to wake it.
+	Asleep     bool
+	Field      string
+	Token      string
+	Notice     string
+	NoticeDocs string
 	// WakeRequestDocs is where the asleep page says tooling can wake the
 	// workload instead.
 	WakeRequestDocs string
@@ -302,7 +304,10 @@ const asleepPolicy = "default-src 'none'; style-src 'unsafe-inline'; form-action
 
 // writeAsleepPage answers a person's browser with the page that asks before
 // waking the workload. It's a 200, as a page that works is, and like the
-// waking-up page, nothing may cache or index it.
+// waking-up page, nothing may cache or index it. Its referrer policy is
+// same-origin, not no-referrer, under which a browser posts the click with
+// Origin: null: over plain HTTP, its Origin is all that says the click came
+// from the page, and other sites still get nothing.
 func writeAsleepPage(w io.Writer, data pageData) error {
 	data.Mark = Mark
 	data.Refresh = int(asleepRefresh.Seconds())
@@ -320,7 +325,7 @@ func writeAsleepPage(w io.Writer, data pageData) error {
 		"X-Robots-Tag: noindex\r\n"+
 		"Content-Security-Policy: %s\r\n"+
 		"X-Frame-Options: DENY\r\n"+
-		"Referrer-Policy: no-referrer\r\n"+
+		"Referrer-Policy: same-origin\r\n"+
 		"Connection: close\r\n\r\n", body.Len(), asleepPolicy)
 	if _, err := io.WriteString(w, header); err != nil {
 		return fmt.Errorf("writing page header: %w", err)

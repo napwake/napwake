@@ -42,6 +42,8 @@ Put the `hybernate.io/managed` label and `hybernate.io/wake: ask` on each previe
         hybernate.io/wake: ask
     ```
 
+    Leave `replicas` out of the workloads' manifests, and Kubernetes starts a new Deployment at one replica. A deploy that sets them, with `kubectl apply` or Helm, scales a paused preview back up, which wakes it, and a GitOps tool that sets them undoes every pause; see [GitOps tools](gitops.md).
+
 === "Argo CD"
 
     An Application that creates the preview's namespace, with `CreateNamespace=true`, sets them in `managedNamespaceMetadata`. It also has to leave the replicas to Hybernate, or it scales the preview back up after every pause:
@@ -92,6 +94,8 @@ Put the `hybernate.io/managed` label and `hybernate.io/wake: ask` on each previe
       - namespace.yaml
       - ../base
     ```
+
+    Leave `replicas` out of the workloads' manifests in the base. Flux sets the replicas a manifest has, so it would scale the preview back up after every pause, a `GitOpsConflict` that holds off the next pause for an hour; see [Flux](gitops.md#flux).
 
 To have every workload opted in on the cluster ask, whatever its namespace, set the Helm value `defaults.wake`:
 
@@ -153,15 +157,17 @@ Any other reason under DOORMAN says why requests can't reach the doorman; see [W
 
 ## What people see
 
-1. **The asleep page.** Someone opens the preview, say `https://pr-42.preview.example.com/orders/7`, and gets a page saying it's asleep, with a **Wake it** button. It's sent as `200 OK` with `Cache-Control: no-store` and `X-Robots-Tag: noindex`, runs no script, can't be shown in another site's frame, and names no namespace, workload or Service. Nothing wakes.
-2. **The click.** The button posts back to the same address, with a token the doorman signed for this preview and this pause, good for 10 minutes. The preview wakes, with what it depends on, and a `WokenByRequest` event says a person asked.
+1. **The asleep page.** Someone opens the preview, say `https://pr-42.preview.example.com/orders/7`, and gets a page saying it's asleep, with a **Wake it** button. It's sent as `200 OK` with `Cache-Control: no-store`, `X-Robots-Tag: noindex` and `Referrer-Policy: same-origin`, runs no script, can't be shown in another site's frame, and names no namespace, workload or Service. Nothing wakes.
+2. **The click.** The button posts back to the same address, with a token the doorman signed for this preview and this pause, good for 10 minutes. From a browser that says the click came from the page, as current browsers do, with `Sec-Fetch-Site` over HTTPS and with its `Origin` over plain HTTP, the preview wakes, with what it depends on, and a `WokenByRequest` event says a person asked.
 3. **The waking-up page,** which says the preview is starting, and for how long, and reloads every 3 seconds. Once one of its pods is Ready, the next reload is the page they opened, `/orders/7`.
 
-A page left open longer than 10 minutes says it had expired, and offers the button again. Once someone has clicked, others who open the preview get the waking-up page, then the app, without clicking. The preview pauses again once it has had no activity for `idleAfter`, an hour by default. See [The Wake it button](../concepts/wake-on-request.md#the-wake-it-button) for the token, and for what a click from another site gets.
+A page left open reloads itself every minute, with a fresh token, so it doesn't go stale: it expires only if its reloads failed, as after a laptop slept, and then says so and offers the button again. Once someone has clicked, others who open the preview get the waking-up page, then the app, without clicking. The preview pauses again once it has had no activity for `idleAfter`, an hour by default. See [The Wake it button](../concepts/wake-on-request.md#the-wake-it-button) for the token, and for what a click from another site gets.
+
+A browser from before about 2020 may not say where a click came from, so its click wakes nothing: the page comes back saying so, and that `kubectl hybernate wake`, a [wake request](#waking-it-from-tooling) or a current browser wakes the preview instead. A browser posting a form of the app's own after the preview paused, such as its login form, gets the asleep page too, and nothing wakes until someone clicks.
 
 ## What robots and API clients see
 
-Anything but a person's browser opening a page, such as `curl`, scripts and API clients, crawlers and link previewers such as `Googlebot`, headless browsers, scanners, or a page's own `fetch`, gets a `503` saying the preview is asleep and how to wake it. Nothing wakes:
+Anything but a person's browser opening a page or posting a small form, such as `curl`, scripts and API clients, crawlers and link previewers such as `Googlebot`, headless browsers, scanners, or a page's own `fetch`, gets a `503` saying the preview is asleep and how to wake it. Nothing wakes:
 
 ```bash
 curl -i https://pr-42.preview.example.com/
@@ -187,7 +193,7 @@ Tooling wakes a preview by setting the `hybernate.io/wake-requested` annotation 
 
 ### When a pull request is pushed
 
-A deploy to a paused preview doesn't wake it: its new pods start at its next wake. To have it up for whoever reviews each push, wake it from the workflow that deploys it, and wait until it's Running. In GitHub Actions:
+A deploy that leaves the replicas to Hybernate, as each tab of [Turning it on](#turning-it-on) sets up, doesn't wake a paused preview: its new pods start at its next wake. One that sets `replicas` scales the preview up, which Hybernate counts as a scale-up from outside, so it wakes; under Flux, that's a `GitOpsConflict`, and the next pause waits an hour; see [GitOps tools](gitops.md). To have it up for whoever reviews each push, wake it from the workflow that deploys it, and wait until it's Running. In GitHub Actions:
 
 ```yaml title=".github/workflows/preview.yaml"
 name: Preview
@@ -206,7 +212,7 @@ jobs:
         run: |
           kubectl wait managedworkload/web -n "$NS" --for=create --timeout=1m
           kubectl annotate managedworkload web -n "$NS" --overwrite hybernate.io/wake-requested="$TOKEN"
-          kubectl wait managedworkload web -n "$NS" --for=jsonpath='{.status.lastWakeRequest}'="$TOKEN" --timeout=2m
+          kubectl wait managedworkload web -n "$NS" --for=jsonpath='{.status.lastWakeRequest}'="$TOKEN" --timeout=10m
           answer=$(kubectl get managedworkload web -n "$NS" \
             -o jsonpath='{.status.conditions[?(@.type=="WakeRequest")].status} {.status.conditions[?(@.type=="WakeRequest")].message}')
           case "$answer" in
@@ -216,7 +222,7 @@ jobs:
           kubectl wait managedworkload web -n "$NS" --for=jsonpath='{.status.phase}'=Running --timeout=10m
 ```
 
-On a pull request's first push, Hybernate makes the ManagedWorkload from the label moments after the deploy, so the first `kubectl wait` waits for it to exist; `--for=create` needs kubectl 1.31 or later. A request set before Hybernate has taken the ManagedWorkload on is answered as for any awake preview, `already awake`. The token is the run's ID and attempt, so each run asks afresh, a re-run included. The next `kubectl wait` waits for Hybernate to take the request up; when it won't wake the preview, the step fails with its reason, such as `not woken at 2026-10-23 21:01 UTC: it's scaled to zero outside Hybernate, which leaves it off until its replicas are set above zero`. The last waits until the preview is Running. Its dependencies wake with it; to wait for them too, add a `kubectl wait` for each.
+On a pull request's first push, Hybernate makes the ManagedWorkload from the label moments after the deploy, so the first `kubectl wait` waits for it to exist; `--for=create` needs kubectl 1.31 or later. A request set before Hybernate has taken the ManagedWorkload on is answered as for any awake preview, `already awake`. The token is the run's ID and attempt, so each run asks afresh, a re-run included. The next `kubectl wait` waits for Hybernate to take the request up. A request made while a pause or a wake is under way is answered once that finishes, as [Wake Now](pause.md#wake-now) says, so while the preview is starting this wait lasts as long as its start does, and has the same 10 minutes as the last. When Hybernate won't wake the preview, the step fails with its reason, such as `not woken at 2026-10-23 21:01 UTC: it's scaled to zero outside Hybernate, which leaves it off until its replicas are set above zero`. The last waits until the preview is Running. Its dependencies wake with it; to wait for them too, add a `kubectl wait` for each.
 
 ### From a terminal
 
@@ -229,7 +235,7 @@ waking preview-42/web...
 preview-42/web is Running after 2s
 ```
 
-`--wait`, the default, waits for Hybernate's answer and then until the workload is Running, for up to `--timeout`, 5 minutes by default. See [Wake a Workload](../getting-started/kubectl-plugin.md#wake-a-workload).
+`--wait`, the default, waits for Hybernate's answer and then until the workload is Running, both within `--timeout`, 5 minutes by default. A request made while a pause or a wake is under way is answered once that finishes, and the same 5 minutes covers that wait too; for a preview that takes longer to start, give it more, such as `--timeout 10m`. See [Wake a Workload](../getting-started/kubectl-plugin.md#wake-a-workload).
 
 ### From a portal or a chat bot
 
@@ -245,7 +251,7 @@ curl --fail-with-body -sS -o /dev/null --cacert ca.crt -X PATCH \
   "$APISERVER/apis/hybernate.io/v1alpha1/namespaces/$NS/managedworkloads/web"
 ```
 
-Then read the ManagedWorkload until Hybernate has answered that request, every second or two:
+Then read the ManagedWorkload until Hybernate has answered that request, every second or two. A request made while the preview is pausing or waking is answered once that finishes, so keep reading for as long as the preview takes to start:
 
 ```bash
 curl --fail-with-body -sS --cacert ca.crt -H "Authorization: Bearer $KUBE_TOKEN" \

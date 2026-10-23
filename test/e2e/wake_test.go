@@ -110,10 +110,11 @@ var _ = Describe("Wake on request", func() {
 		}, time.Minute, time.Second).Should(Succeed())
 	})
 
-	It("asks before waking a paused app: curl is turned away, and a click on the asleep page wakes it", func() {
+	It("asks before waking a paused app through ingress-nginx: curl is turned away, and a click on the asleep page "+
+		"over plain HTTP wakes it", func() {
 		ns := createNamespace("hybernate-e2e-wake-ask")
 		const name = "e2e-web"
-		startWebApp(name, ns, 1)
+		host := routeThroughIngress(ns, name)
 		manage(ns, "Deployment", name, "1m")
 		_, err := utils.Run(exec.Command("kubectl", "patch", "managedworkload", name, "-n", ns, "--type=merge",
 			"-p", `{"spec":{"wake":{"mode":"Ask"}}}`))
@@ -121,12 +122,13 @@ var _ = Describe("Wake on request", func() {
 		waitForDoorman(ns, name)
 
 		By("calling the paused app with curl, which the doorman turns away")
-		// A refused connection, before kube-proxy routes the Service, is
-		// status 000.
+		// nginx can still send to the deleted pod for a moment after the
+		// pause, which answers 502, so this looks for the doorman's 503
+		// across a few tries.
 		attempt := 0
 		Eventually(func(g Gomega) {
 			attempt++
-			out, _ := runCurl(fmt.Sprintf("curl-ask-%d", attempt), ns, fmt.Sprintf("http://%s/hostname", name),
+			out, _ := runCurl(fmt.Sprintf("curl-ask-%d", attempt), ns, ingressURL, "-H", "Host: "+host,
 				"-s", "--max-time", "30", "-w", "\nstatus=%{http_code}")
 			g.Expect(out).To(ContainSubstring("status=503"))
 			g.Expect(out).To(ContainSubstring("kubectl hybernate wake"), "it says how to wake it")
@@ -137,22 +139,38 @@ var _ = Describe("Wake on request", func() {
 			g.Expect(jsonpath("deployment", name, ns, "{.spec.replicas}")).To(Equal("0"))
 		}, 30*time.Second, 5*time.Second).Should(Succeed(), "curl must not wake the app")
 
-		By("opening the app in a browser and clicking Wake it, sending what Chrome does")
-		// The page and the click are two connections, which may reach
-		// different doorman replicas: the shared wake key lets either
+		// The page and each click are connections of their own, which may
+		// reach different doorman replicas: the shared wake key lets either
 		// check the other's token.
 		const browser = "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) " +
 			"Chrome/141.0.0.0 Safari/537.36"
-		click := fmt.Sprintf(`set -e
-page=$(curl -sS -A '%[1]s' -H 'Accept: text/html' -H 'Sec-Fetch-Mode: navigate' http://%[2]s/orders)
+		clickWith := func(headers string) string {
+			return fmt.Sprintf(`set -e
+page=$(curl -sS -A '%[1]s' -H 'Host: %[2]s' -H 'Accept: text/html' -H 'Sec-Fetch-Mode: navigate' %[3]s)
 token=$(echo "$page" | sed -n 's/.*name="hybernate-wake" value="\([^"]*\)".*/\1/p')
 test -n "$token"
-curl -sS -o /dev/null -w 'status=%%{http_code}' -A '%[1]s' -H 'Sec-Fetch-Site: same-origin' \
-  -H 'Sec-Fetch-Mode: navigate' -H 'Sec-Fetch-User: ?1' -H 'Sec-Fetch-Dest: document' \
-  --data-urlencode "hybernate-wake=$token" http://%[2]s/orders`, browser, name)
-		out, ok := runShell("curl-ask-click", ns, click)
+curl -sS -w '\nstatus=%%{http_code}' -A '%[1]s' -H 'Host: %[2]s' %[4]s \
+  --data-urlencode "hybernate-wake=$token" %[3]s`, browser, host, ingressURL, headers)
+		}
+
+		By("posting the page's token as a browser that says nothing of where the click came from")
+		// As a spider that fetched the page sends it: no fetch metadata, and
+		// no Origin.
+		out, ok := runShell("curl-ask-no-metadata", ns, clickWith(""))
+		Expect(ok).To(BeTrue(), "the post failed: %s", out)
+		Expect(out).To(ContainSubstring("status=200"), "the asleep page again")
+		Expect(out).To(ContainSubstring("didn&#39;t say the click came from this page"), "it says how else to wake it")
+		Expect(jsonpath("managedworkload", name, ns, `{.metadata.annotations.hybernate\.io/last-request}`)).
+			To(BeEmpty(), "nothing stamped a wake")
+
+		By("opening the app in a browser and clicking Wake it, sending what Chrome does over plain HTTP")
+		// No fetch metadata, which browsers send only over HTTPS: the
+		// page's Origin, which its Referrer-Policy: same-origin lets them
+		// send, says the click came from it.
+		out, ok = runShell("curl-ask-click", ns, clickWith("-H 'Origin: http://"+host+"' -o /dev/null"))
 		Expect(ok).To(BeTrue(), "the click failed: %s", out)
-		Expect(out).To(ContainSubstring("status=503"), "the click is answered by the waking-up page")
+		Expect(out).To(ContainSubstring("status=503"),
+			"the click, its Origin passed on by nginx, is answered by the waking-up page")
 		expectWokenByRequest(ns, "deployment", name, 1)
 		key, err := jsonpath("secret", "hybernate-doorman-wake-key", namespace, "{.data.key}")
 		Expect(err).NotTo(HaveOccurred())

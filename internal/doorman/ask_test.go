@@ -18,10 +18,12 @@ package doorman
 
 import (
 	"bufio"
+	"cmp"
 	"context"
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
+	"html/template"
 	"io"
 	"net"
 	"net/http"
@@ -101,13 +103,21 @@ const (
 		"Safari/605.1.15"
 	chromeOnIPhone = "Mozilla/5.0 (iPhone; CPU iPhone OS 26_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) " +
 		"CriOS/141.0.7390.41 Mobile/15E148 Safari/604.1"
+	firefoxOnIPhone = "Mozilla/5.0 (iPhone; CPU iPhone OS 26_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) " +
+		"FxiOS/144.0 Mobile/15E148 Safari/605.1.15"
 )
 
 // clickFrom is the POST the Wake it button sends, with token, back to the
 // page it's on, from a browser of agent sending headers.
 func clickFrom(token, agent, headers string) string {
+	return clickAt("pr-42.preview.example.dev", token, agent, headers)
+}
+
+// clickAt is the POST the Wake it button sends, with token, back to a page
+// served at host.
+func clickAt(host, token, agent, headers string) string {
 	body := url.Values{wakeField: {token}}.Encode()
-	return "POST /orders?id=7 HTTP/1.1\r\nHost: pr-42.preview.example.dev\r\nUser-Agent: " + agent + "\r\n" +
+	return "POST /orders?id=7 HTTP/1.1\r\nHost: " + host + "\r\nUser-Agent: " + agent + "\r\n" +
 		"Content-Type: application/x-www-form-urlencoded\r\n" + headers +
 		fmt.Sprintf("Content-Length: %d\r\n\r\n", len(body)) + body
 }
@@ -135,6 +145,9 @@ func TestServer_AsksAPersonBeforeWaking(t *testing.T) {
 	assert.Equal(t, "no-store", resp.Header.Get("Cache-Control"))
 	assert.Equal(t, "noindex", resp.Header.Get("X-Robots-Tag"))
 	assert.Contains(t, resp.Header.Get("Content-Security-Policy"), "frame-ancestors 'none'")
+	assert.Equal(t, "same-origin", resp.Header.Get("Referrer-Policy"),
+		"a click carries the page's Origin, which no-referrer would make null, and other sites get nothing")
+	assert.Contains(t, body, `<meta name="referrer" content="same-origin">`)
 	assert.Contains(t, body, `<meta name="robots" content="noindex">`)
 	assert.Contains(t, body, `<meta http-equiv="refresh" content="60">`,
 		"a tab left open reloads itself, into the app once someone has woken it, and with a fresh token until then")
@@ -166,6 +179,7 @@ func TestServer_AClickWakesIt(t *testing.T) {
 	assert.Equal(t, http.StatusServiceUnavailable, resp.StatusCode, "the waking-up page")
 	assert.Contains(t, body, "<title>Waking up pr-42.preview.example.dev</title>")
 	assert.Contains(t, body, `<meta http-equiv="refresh" content="3">`, "it reloads the page it's on, with a GET")
+	assert.Contains(t, body, `<meta name="referrer" content="no-referrer">`, "the waking-up page posts nothing")
 	assert.NotEmpty(t, lastRequest(t, c), "the click stamps the request annotation, as a held request does")
 	assert.Equal(t, 1, wokenEvents(recorder))
 }
@@ -266,34 +280,50 @@ func TestServer_AClickWithoutAGoodTokenWakesNothing(t *testing.T) {
 				return
 			}
 			assert.Equal(t, http.StatusOK, resp.StatusCode, "the asleep page again")
-			assert.Contains(t, body, noticeExpired)
+			assert.Contains(t, body, noticeExpired.text)
 			tokenIn(t, body)
 			assert.Empty(t, lastRequest(t, c), "nothing wakes it")
 		})
 	}
 }
 
-// Only a person's click wakes the workload: a browser's, and, from a
-// browser that marks the navigations a person starts, marked so. A spider
-// that fetches the page and posts its token, or a script that submits the
-// form, wakes nothing.
+// Only a person's click wakes the workload: a browser's, that the browser
+// says came from the page, and, from a browser that marks the navigations a
+// person starts, marked so. A spider that fetches the page and posts its
+// token, even as a browser, or a script that submits the form, wakes
+// nothing.
 func TestServer_AClickMustComeFromAPerson(t *testing.T) {
+	fromSite := func(headers, site string) string {
+		return strings.Replace(headers, "Sec-Fetch-Site: same-origin", "Sec-Fetch-Site: "+site, 1)
+	}
+	scripted := strings.Replace(chromeClick, "Sec-Fetch-User: ?1\r\n", "", 1)
 	tests := []struct {
 		name    string
 		agent   string
 		headers string
 		wakes   bool
 		page    bool
+		notice  notice
 	}{
 		{name: "Chrome, clicked", agent: chrome, headers: chromeClick, wakes: true},
 		{name: "Firefox, clicked", agent: firefox, headers: chromeClick, wakes: true},
 		{name: "Safari, clicked", agent: safari, headers: safariClick, wakes: true},
 		{name: "Chrome on an iPhone, which is WebKit, clicked", agent: chromeOnIPhone, headers: safariClick, wakes: true},
-		{name: "a browser that sends no fetch metadata", agent: chrome, wakes: true},
-		{name: "Chrome, a script submitting the form", agent: chrome, page: true,
-			headers: strings.Replace(chromeClick, "Sec-Fetch-User: ?1\r\n", "", 1)},
-		{name: "Firefox, a script submitting the form", agent: firefox, page: true,
-			headers: strings.Replace(chromeClick, "Sec-Fetch-User: ?1\r\n", "", 1)},
+		{name: "Firefox on an iPhone, which is WebKit, clicked", agent: firefoxOnIPhone, headers: safariClick, wakes: true},
+		{name: "Chrome, saying nothing of where the click came from", agent: chrome, page: true,
+			notice: noticeNoFetchMetadata},
+		{name: "Safari, saying nothing of where the click came from", agent: safari, page: true,
+			notice: noticeNoFetchMetadata},
+		{name: "Chrome, marked as a person's but saying nothing of where it came from", agent: chrome, page: true,
+			headers: "Sec-Fetch-User: ?1\r\n", notice: noticeNoFetchMetadata},
+		{name: "Safari, from another site", agent: safari, page: true, headers: fromSite(safariClick, "cross-site"),
+			notice: noticeExpired},
+		{name: "Safari, from another subdomain", agent: safari, page: true, headers: fromSite(safariClick, "same-site"),
+			notice: noticeExpired},
+		{name: "Safari, from no page at all", agent: safari, page: true, headers: fromSite(safariClick, "none"),
+			notice: noticeExpired},
+		{name: "Chrome, a script submitting the form", agent: chrome, page: true, headers: scripted},
+		{name: "Firefox, a script submitting the form", agent: firefox, page: true, headers: scripted},
 		{name: "not started by a person, said outright", agent: safari, page: true,
 			headers: safariClick + "Sec-Fetch-User: ?0\r\n"},
 		{name: "a spider posting the token it fetched", agent: "python-requests/2.32.3", headers: chromeClick},
@@ -318,6 +348,14 @@ func TestServer_AClickMustComeFromAPerson(t *testing.T) {
 			case tt.page:
 				assert.Equal(t, http.StatusOK, resp.StatusCode, "the asleep page again")
 				tokenIn(t, body)
+				for _, other := range []notice{noticeExpired, noticeNoFetchMetadata} {
+					if other != tt.notice {
+						assert.NotContains(t, body, template.HTMLEscapeString(other.text))
+					}
+				}
+				if tt.notice != (notice{}) {
+					assert.Contains(t, body, template.HTMLEscapeString(tt.notice.text))
+				}
 			default:
 				assert.Equal(t, http.StatusServiceUnavailable, resp.StatusCode)
 				assert.Contains(t, body, asleepMessage)
@@ -328,23 +366,151 @@ func TestServer_AClickMustComeFromAPerson(t *testing.T) {
 }
 
 // A browser posting the app's own form while it's asleep, as from a page it
-// cached, is asked as when it opens a page, not told the button expired.
+// cached, is asked as when it opens a page, with no notice, and isn't
+// counted as turned away, whatever fetch metadata it sends.
 func TestServer_AnAppsOwnFormFromABrowserIsAsked(t *testing.T) {
-	port := freePort(t)
-	s, c := newTestServer(t, nil, askingWorkload(port))
-	stop := run(t, s)
-	form := "user=ada"
-	request := "POST /login HTTP/1.1\r\nHost: pr-42.preview.example.dev\r\nUser-Agent: " + chrome + "\r\n" +
-		"Content-Type: application/x-www-form-urlencoded\r\nSec-Fetch-Site: same-origin\r\nSec-Fetch-Mode: navigate\r\n" +
-		fmt.Sprintf("Content-Length: %d\r\n\r\n", len(form)) + form
+	tests := []struct {
+		name    string
+		headers string
+	}{
+		{name: "with fetch metadata", headers: "Sec-Fetch-Site: same-origin\r\nSec-Fetch-Mode: navigate\r\n"},
+		{name: "without", headers: ""},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			port := freePort(t)
+			s, c := newTestServer(t, nil, askingWorkload(port))
+			stop := run(t, s)
+			asked, away := wakes(resultAsked), wakes(resultTurnedAway)
+			form := "user=ada"
+			request := "POST /login HTTP/1.1\r\nHost: pr-42.preview.example.dev\r\nUser-Agent: " + chrome + "\r\n" +
+				"Content-Type: application/x-www-form-urlencoded\r\n" + tt.headers +
+				fmt.Sprintf("Content-Length: %d\r\n\r\n", len(form)) + form
 
-	resp, body := click(t, port, request)
+			resp, body := click(t, port, request)
 
-	stop()
-	assert.Equal(t, http.StatusOK, resp.StatusCode, "the asleep page")
-	assert.NotContains(t, body, noticeExpired)
-	tokenIn(t, body)
-	assert.Empty(t, lastRequest(t, c))
+			stop()
+			assert.Equal(t, http.StatusOK, resp.StatusCode, "the asleep page")
+			assert.NotContains(t, body, `class="notice"`)
+			tokenIn(t, body)
+			assert.Empty(t, lastRequest(t, c))
+			assert.Equal(t, asked+1, wakes(resultAsked))
+			assert.Equal(t, away, wakes(resultTurnedAway), "not turned away")
+		})
+	}
+}
+
+// A browser that says nothing of where a click came from, neither with
+// fetch metadata nor with its Origin, as browsers from before about 2020
+// don't, can't be told from a spider that fetched the page and posted its
+// token as a browser. It wakes nothing, and the page says how else to wake
+// it, since clicking again won't.
+func TestServer_AClickThatDoesntSayWhereItCameFromSaysHowElseToWake(t *testing.T) {
+	tests := []struct {
+		name    string
+		headers string
+	}{
+		{name: "no Origin"},
+		{name: "a null Origin, as a page with Referrer-Policy: no-referrer sends", headers: "Origin: null\r\n"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			port := freePort(t)
+			s, c := newTestServer(t, nil, askingWorkload(port))
+			stop := run(t, s)
+			asked, away := wakes(resultAsked), wakes(resultTurnedAway)
+
+			resp, body := click(t, port, clickFrom(askedPage(t, port), chrome, tt.headers))
+
+			stop()
+			assert.Equal(t, http.StatusOK, resp.StatusCode, "the asleep page again")
+			tokenIn(t, body)
+			for _, how := range []string{
+				"didn&#39;t say the click came from this page", "kubectl hybernate wake",
+				"hybernate.io/wake-requested", "a current browser", `href="` + asleepDocs + `"`,
+			} {
+				assert.Contains(t, body, how)
+			}
+			assert.NotContains(t, body, "HTTPS", "a current browser over plain HTTP says it with its Origin")
+			assert.Empty(t, lastRequest(t, c), "nothing wakes it")
+			assert.Equal(t, asked+2, wakes(resultAsked), "a browser shown the page, then asked again")
+			assert.Equal(t, away, wakes(resultTurnedAway))
+		})
+	}
+}
+
+// Over plain HTTP, browsers send no fetch metadata, so a click there is
+// judged by its Origin, which the page's Referrer-Policy: same-origin lets
+// them send: the scheme, host and port of the page the click came from. It
+// must be the address the page was served at, the host the browser asked
+// for, as the page shows it, and its port.
+func TestServer_AClickOverPlainHTTPIsJudgedByItsOrigin(t *testing.T) {
+	const page = "pr-42.preview.example.dev"
+	tests := []struct {
+		name       string
+		agent      string
+		host       string
+		origin     string
+		wakes      bool
+		notice     notice
+		turnedAway bool
+	}{
+		{name: "Chrome", agent: chrome, origin: "http://" + page, wakes: true},
+		{name: "Safari", agent: safari, origin: "http://" + page, wakes: true},
+		{name: "Firefox", agent: firefox, origin: "http://" + page, wakes: true},
+		{name: "a browser from before fetch metadata, over HTTPS", agent: safari, origin: "https://" + page, wakes: true},
+		{name: "on a port of its own", agent: chrome, host: "localhost:8080", origin: "http://localhost:8080", wakes: true},
+		{name: "with the default port a proxy named", agent: chrome, host: page + ":80", origin: "http://" + page,
+			wakes: true},
+		{name: "an IPv6 address", agent: chrome, host: "[2001:db8::7]:8080", origin: "http://[2001:db8::7]:8080",
+			wakes: true},
+		{name: "the host in capitals", agent: chrome, host: "PR-42.preview.example.dev", origin: "http://" + page,
+			wakes: true},
+		{name: "no Origin", agent: chrome, notice: noticeNoFetchMetadata},
+		{name: "a null Origin", agent: safari, origin: "null", notice: noticeNoFetchMetadata},
+		{name: "another site", agent: chrome, origin: "http://attacker.example", notice: noticeExpired},
+		{name: "another subdomain", agent: chrome, origin: "http://pr-43.preview.example.dev", notice: noticeExpired},
+		{name: "another port", agent: chrome, host: "localhost:8080", origin: "http://localhost:8081",
+			notice: noticeExpired},
+		{name: "the default port, for a page on another", agent: chrome, host: "localhost:8080",
+			origin: "http://localhost", notice: noticeExpired},
+		{name: "HTTPS on its default port, for a page on port 80", agent: chrome, host: page + ":80",
+			origin: "https://" + page, notice: noticeExpired},
+		{name: "not a web origin", agent: chrome, origin: "file://", notice: noticeExpired},
+		{name: "a spider sending the page's Origin", agent: "python-requests/2.32.3", origin: "http://" + page,
+			turnedAway: true},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			port := freePort(t)
+			s, c := newTestServer(t, nil, askingWorkload(port))
+			stop := run(t, s)
+			host := cmp.Or(tt.host, page)
+			headers := ""
+			if tt.origin != "" {
+				headers = "Origin: " + tt.origin + "\r\n"
+			}
+
+			resp, body := click(t, port, clickAt(host, askedPage(t, port), tt.agent, headers))
+
+			stop()
+			switch {
+			case tt.wakes:
+				assert.Equal(t, http.StatusServiceUnavailable, resp.StatusCode, "the waking-up page")
+				assert.Contains(t, body, "Waking up")
+				assert.NotEmpty(t, lastRequest(t, c))
+				return
+			case tt.turnedAway:
+				assert.Equal(t, http.StatusServiceUnavailable, resp.StatusCode)
+				assert.Contains(t, body, asleepMessage)
+			default:
+				assert.Equal(t, http.StatusOK, resp.StatusCode, "the asleep page again")
+				tokenIn(t, body)
+				assert.Contains(t, body, template.HTMLEscapeString(tt.notice.text))
+			}
+			assert.Empty(t, lastRequest(t, c), "nothing wakes it")
+		})
+	}
 }
 
 // Anything but a person's browser, and the probes and hidden files the
@@ -516,7 +682,7 @@ func TestServer_ClickWakesAreRateLimited(t *testing.T) {
 				return
 			}
 			assert.Equal(t, http.StatusOK, resp.StatusCode, "asked again")
-			assert.Contains(t, body, noticeLimited)
+			assert.Contains(t, body, noticeLimited.text)
 			assert.Equal(t, stamp, lastRequest(t, c), "no new wake")
 		})
 	}
