@@ -472,11 +472,29 @@ func TestWakeKeys_APageShownBeforeTheKeyChangedStillWorks(t *testing.T) {
 	scope := tokenScope{workload: apiKey, uid: "uid-api", pausedAt: time.Now().Truncate(time.Second)}
 	token := keys.sign(scope, time.Now().Add(tokenTTL))
 
-	keys.use(newWakeKey())
+	keys.use(newWakeKey(), time.Now())
 
 	assert.True(t, keys.valid(token, scope, time.Now()))
-	keys.use(newWakeKey())
+	keys.use(newWakeKey(), time.Now())
 	assert.False(t, keys.valid(token, scope, time.Now()), "but not two keys on")
+}
+
+// Once the key changes, the one before it passes only as long as a token
+// signed with it could last, so a key that leaked stops working once the
+// Secret is emptied, rather than for as long as the doorman runs.
+func TestWakeKeys_RetireTheKeyBefore(t *testing.T) {
+	keys := newWakeKeys()
+	leaked := &wakeKeys{current: keys.current}
+	scope := tokenScope{workload: apiKey, uid: "uid-api", pausedAt: time.Now().Truncate(time.Second)}
+	changed := time.Now()
+	keys.use(newWakeKey(), changed)
+
+	soon := changed.Add(tokenTTL)
+	assert.True(t, keys.valid(leaked.sign(scope, soon.Add(time.Minute)), scope, soon),
+		"a page shown before the change works for as long as its token lasts")
+	late := changed.Add(tokenTTL + tokenSkew + time.Second)
+	assert.False(t, keys.valid(leaked.sign(scope, late.Add(time.Minute)), scope, late),
+		"the key before signs nothing that passes once its tokens could all have expired")
 }
 
 // A token is good for its whole lifetime and not a moment longer, and one
