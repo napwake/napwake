@@ -46,6 +46,7 @@ import (
 	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/apimachinery/pkg/types"
 	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
 	"k8s.io/client-go/discovery"
 	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
@@ -116,6 +117,11 @@ func main() {
 		"Name of the doorman's Service. Empty disables waking on request.")
 	flag.StringVar(&doormanNamespace, "doorman-namespace", envOr("POD_NAMESPACE", "hybernate-system"),
 		"Namespace of the doorman's Service.")
+	var wakeKeySecret string
+	flag.StringVar(&wakeKeySecret, "wake-key-secret", "",
+		"The doorman's: Secret in its namespace holding the key it signs the Wake it button on the asleep page "+
+			"with, which it fills when empty. Every replica must share it, since a click can reach any of them; "+
+			"empty, each signs with its own.")
 	flag.StringVar(&doormanHealthCheckAgents, "doorman-health-check-user-agents", "",
 		"Comma-separated User-Agent prefixes of health checkers and scrapers whose GET and HEAD requests don't wake "+
 			"a paused workload, besides the built-in ones, such as MyCorpMonitor/.")
@@ -176,14 +182,7 @@ func main() {
 	})
 	flag.Func("default-wake", "What wakes a paused workload opted in with the label through the doorman, unless "+
 		"annotated otherwise: request, any request, or ask, only a person who clicks Wake it on the page the "+
-		"doorman shows a browser. (default request)", func(v string) error {
-		on, ok := v1alpha1.ParseWake(v)
-		if !ok {
-			return errors.New(`must be "request" or "ask"`)
-		}
-		optIn.Wake = on
-		return nil
-	})
+		"doorman shows a browser. (default request)", wakeFlag(&optIn.Wake))
 	var watched stringList
 	flag.Var(&watched, "watch-namespaces",
 		"Comma-separated namespaces to work in, with a Role in each. Empty means every namespace.")
@@ -310,6 +309,7 @@ func main() {
 			Informers:         mgr.GetCache(),
 			APIReader:         mgr.GetAPIReader(),
 			HealthCheckAgents: strings.Split(doormanHealthCheckAgents, ","),
+			WakeKeySecret:     wakeKeySecretName(doormanNamespace, wakeKeySecret),
 			// Every authenticated client may read /readyz, so this needs
 			// no RBAC, whichever namespaces the doorman is limited to.
 			CheckAPI: func(ctx context.Context) error {
@@ -649,6 +649,27 @@ func parsePrometheusSelector(raw, prometheusURL string) (scan.Selector, error) {
 		return nil, fmt.Errorf("%q narrows the queries made of --prometheus-url, which isn't set", raw)
 	}
 	return selector, nil
+}
+
+// wakeFlag sets mode from --default-wake, spelt as hybernate.io/wake is.
+func wakeFlag(mode *v1alpha1.WakeMode) func(string) error {
+	return func(v string) error {
+		parsed, ok := v1alpha1.ParseWake(v)
+		if !ok {
+			return errors.New(`must be "request" or "ask"`)
+		}
+		*mode = parsed
+		return nil
+	}
+}
+
+// wakeKeySecretName is the wake key Secret, in the doorman's own namespace,
+// or none.
+func wakeKeySecretName(namespace, name string) types.NamespacedName {
+	if name == "" {
+		return types.NamespacedName{}
+	}
+	return types.NamespacedName{Namespace: namespace, Name: name}
 }
 
 // validateOptInDefaults applies the rules a workload's own annotations are

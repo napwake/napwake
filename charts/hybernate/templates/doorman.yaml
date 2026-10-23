@@ -74,7 +74,12 @@ spec:
             {{- end }}
             - {{ printf "--zap-log-level=%v" .Values.logLevel | quote }}
             - {{ printf "--zap-encoder=%v" .Values.logEncoder | quote }}
+            - {{ printf "--wake-key-secret=%s-wake-key" (include "hybernate.doormanName" .) | quote }}
           env:
+            - name: POD_NAMESPACE
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.namespace
             - name: MEMORY_LIMIT
               valueFrom:
                 resourceFieldRef:
@@ -199,7 +204,7 @@ metadata:
 {{- /*
 The doorman reads its routes from ManagedWorkload status, reads the woken
 workload's endpoints and the pods they name, and wakes it by patching an
-annotation. Nothing else.
+annotation. Besides that, it reads only its wake key, below.
 */}}
 {{- if not .Values.watchNamespaces }}
 apiVersion: rbac.authorization.k8s.io/v1
@@ -226,6 +231,56 @@ subjects:
     name: {{ include "hybernate.doormanName" . }}
     namespace: {{ .Release.Namespace }}
 {{- end }}
+---
+{{- /*
+The key the doorman signs the asleep page's Wake it button with, for
+workloads with wake.mode Ask. Every replica must use the same one, since a
+click can reach any of them, so it's kept here, and the first replica to
+find it empty fills it with a random key. It's created empty, so a GitOps
+tool or a helm upgrade, which never set its data, leaves the key alone.
+Delete it to change the key.
+*/}}
+apiVersion: v1
+kind: Secret
+metadata:
+  name: {{ include "hybernate.doormanName" . }}-wake-key
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "hybernate.doormanLabels" . | nindent 4 }}
+type: Opaque
+---
+{{- /*
+The one Secret the doorman reads, and writes once to fill it. It's named,
+so the doorman can't read any other.
+*/}}
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: {{ include "hybernate.doormanName" . }}-wake-key
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "hybernate.doormanLabels" . | nindent 4 }}
+rules:
+  - apiGroups: [""]
+    resources: [secrets]
+    resourceNames: [{{ include "hybernate.doormanName" . }}-wake-key]
+    verbs: [get, update]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: {{ include "hybernate.doormanName" . }}-wake-key
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "hybernate.doormanLabels" . | nindent 4 }}
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: {{ include "hybernate.doormanName" . }}-wake-key
+subjects:
+  - kind: ServiceAccount
+    name: {{ include "hybernate.doormanName" . }}
+    namespace: {{ .Release.Namespace }}
 {{- range .Values.watchNamespaces }}
 ---
 apiVersion: rbac.authorization.k8s.io/v1

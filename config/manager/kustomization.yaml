@@ -1,6 +1,7 @@
 resources:
 - manager.yaml
 - doorman.yaml
+- doorman_wake_key.yaml
 apiVersion: kustomize.config.k8s.io/v1beta1
 kind: Kustomization
 images:
