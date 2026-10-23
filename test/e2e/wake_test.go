@@ -141,7 +141,8 @@ var _ = Describe("Wake on request", func() {
 		// The page and the click are two connections, which may reach
 		// different doorman replicas: the shared wake key lets either
 		// check the other's token.
-		const browser = "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/141.0.0.0 Safari/537.36"
+		const browser = "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) " +
+			"Chrome/141.0.0.0 Safari/537.36"
 		click := fmt.Sprintf(`set -e
 page=$(curl -sS -A '%[1]s' -H 'Accept: text/html' -H 'Sec-Fetch-Mode: navigate' http://%[2]s/orders)
 token=$(echo "$page" | sed -n 's/.*name="hybernate-wake" value="\([^"]*\)".*/\1/p')
