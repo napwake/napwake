@@ -68,9 +68,9 @@ func pauseRequestCondition(t *testing.T, w *v1alpha1.ManagedWorkload) *metav1.Co
 	return c
 }
 
-func patchWorkload(t *testing.T, r *Reconciler, name string, mutate func(*v1alpha1.ManagedWorkload)) {
+func patchWorkload(t *testing.T, r *Reconciler, mutate func(*v1alpha1.ManagedWorkload)) {
 	t.Helper()
-	w := getWorkload(t, r, name)
+	w := getWorkload(t, r, "api")
 	patch := client.MergeFrom(w.DeepCopy())
 	mutate(w)
 	require.NoError(t, r.Patch(context.Background(), w, patch))
@@ -140,7 +140,7 @@ func TestPauseRequest_WakesOnARequest(t *testing.T) {
 	require.Equal(t, v1alpha1.PhasePaused, paused.Status.Phase)
 	assert.True(t, doormanEligible(paused), "its Services route to the doorman")
 
-	patchWorkload(t, r, "api", func(w *v1alpha1.ManagedWorkload) {
+	patchWorkload(t, r, func(w *v1alpha1.ManagedWorkload) {
 		w.Annotations[v1alpha1.AnnotationLastRequest] = fixedTime.Format(time.RFC3339)
 	})
 	reconcileUntilSettled(t, r)
@@ -314,7 +314,7 @@ func TestPauseRequest_DryRun(t *testing.T) {
 		recorded)
 
 	now = fixedTime.Add(30 * time.Minute)
-	patchWorkload(t, r, "api", func(w *v1alpha1.ManagedWorkload) {
+	patchWorkload(t, r, func(w *v1alpha1.ManagedWorkload) {
 		w.Annotations[v1alpha1.AnnotationLastActivity] = now.Format(time.RFC3339)
 	})
 	reconcileUntilSettled(t, r)

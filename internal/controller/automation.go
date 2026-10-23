@@ -317,16 +317,19 @@ func (r *Reconciler) utilization(ctx context.Context, workload *v1alpha1.Managed
 	return usage / requested * 100, nil
 }
 
-// reconcileWake resumes a paused workload when an activity annotation asks
-// for it, a Prometheus activity query finds activity, or ahead of the
-// demand a confident forecast predicts. Otherwise it's looked at again when
-// a query or that forecast could next change its mind.
+// reconcileWake resumes a paused workload when a wake request or an
+// activity annotation asks for it, a Prometheus activity query finds
+// activity, or ahead of the demand a confident forecast predicts. Otherwise
+// it's looked at again when a query or that forecast could next change its
+// mind.
 func (r *Reconciler) reconcileWake(ctx context.Context, workload *v1alpha1.ManagedWorkload, target client.Object) (*ctrl.Result, error) {
 	recheck := &ctrl.Result{RequeueAfter: r.pausedRecheck(workload)}
 	r.clearIdleVeto(workload)
 	recordIdleSeconds(workload, r.now())
 	engine := r.forecastEngine(workload)
 	woken := r.wokenByActivity(workload, target)
+	requested := r.takeWakeRequest(workload)
+	woken = woken || requested
 	var queries pausedQueries
 	if !woken {
 		queries = r.checkPausedQueries(ctx, workload)
@@ -334,6 +337,9 @@ func (r *Reconciler) reconcileWake(ctx context.Context, workload *v1alpha1.Manag
 	r.seePausedDemand(ctx, workload, engine, woken, queries)
 	r.updatePredictionStatus(ctx, workload, engine)
 
+	if requested {
+		return r.handleResume(ctx, workload, &phaseEvent{reason: ReasonWakeRequested, message: wakeRequestedMessage})
+	}
 	if woken {
 		message := "activity annotation is newer than the pause, waking"
 		if wakeSource(workload) == v1alpha1.ActivitySourceRequest {

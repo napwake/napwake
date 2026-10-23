@@ -412,6 +412,12 @@ type ManagedWorkloadStatus struct {
 	// +optional
 	LastPauseRequest string `json:"lastPauseRequest,omitempty"`
 
+	// LastWakeRequest is the last hybernate.io/wake-requested value
+	// Hybernate acted on, so each request is acted on once, across restarts.
+	// The WakeRequest condition says what came of it.
+	// +optional
+	LastWakeRequest string `json:"lastWakeRequest,omitempty"`
+
 	// LastActedAt is when the target was last paused or woken: by
 	// Hybernate, or scaled up from zero outside it, such as with kubectl
 	// scale or by a GitOps tool.
