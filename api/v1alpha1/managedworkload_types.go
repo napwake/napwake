@@ -532,7 +532,6 @@ const (
 	LearnedFromWake        LearnedSource = "wake"
 )
 
-// ScaledUp is a paused workload scaled up outside Hybernate.
 // TurnedAway is how many requests were turned away during one pause. A
 // person's browser, shown the page that asks, isn't counted, nor are the
 // probes and health checks the doorman knows.
@@ -542,6 +541,7 @@ type TurnedAway struct {
 	Requests int64       `json:"requests"`
 }
 
+// ScaledUp is a paused workload scaled up outside Hybernate.
 type ScaledUp struct {
 	At metav1.Time `json:"at"`
 	// By is the field manager that set the replicas, such as
