@@ -79,7 +79,7 @@ The operator sets standard Kubernetes conditions on the CR, each with `Reason`, 
 
 User-visible state changes emit Kubernetes events that show up in `kubectl describe`, each once, when the change happens:
 
-- Lifecycle: `IdleDetected`, `PausedEarly` (the forecast brought the pause forward, with [`pauseEarly`](forecasting.md#pausing-early)), `PauseRequested`, `Paused`, `Resumed`, `ActivityResumed` (in dry-run, with what the would-be pause would have freed)
+- Lifecycle: `IdleDetected`, `PausedEarly` (the forecast brought the pause forward, with [`pauseEarly`](forecasting.md#pausing-early)), `PauseRequested`, `Paused`, `Resumed`, `ActivityResumed` (in dry-run, with what the would-be pause would have freed), `Unobserved` (a gap in watching restarted the idle clock, and how long it was)
 - A pause record lost from status: `PauseRecovered` (taken up again from the target's `hybernate.io/paused-from`), `PauseRecordLost` (a warning: nothing to finish it from)
 - A pause request Hybernate didn't act on: an event whose reason says why, the same as the `PauseRequest` condition's
 - What woke it: `WokeByActivity`, `WokenByRequest` (from the doorman), `AutoResume`, `ScaledUp`, `DryRunWake`

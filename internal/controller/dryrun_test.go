@@ -106,6 +106,69 @@ func TestDryRun_ActivityEndsAWouldBePause(t *testing.T) {
 	assert.Contains(t, resumed[0], "since Mar 10: would have paused 2 times, slept 4 hours, freeing $0.28")
 }
 
+// A gap in watching doesn't wake a paused workload, so it doesn't end a
+// would-be pause either: dry-run would otherwise split one pause in two at
+// every operator restart, count an hour awake for each, and call the gap
+// activity. Activity seen after the gap still ends it.
+func TestDryRun_AGapInWatchingDoesNotEndAWouldBePause(t *testing.T) {
+	tests := []struct {
+		name     string
+		gap      time.Duration
+		inMemory bool
+	}{
+		{name: "a restart, with status written minutes before", gap: 4 * time.Minute},
+		{name: "an hour with no operator", gap: time.Hour},
+		{name: "a gap while the operator runs", gap: 20 * time.Minute, inMemory: true},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			target := clockTarget("app:v1", nil)
+			workload := clockWorkload(fixedTime.Add(-4*time.Hour), target)
+			workload.Spec.DryRun = true
+			workload.Status.Phase = v1alpha1.PhaseIdle
+			idleSince := metav1.NewTime(fixedTime.Add(-3 * time.Hour))
+			workload.Status.LastTransitionTime = &idleSince
+			evaluated := metav1.NewTime(fixedTime.Add(-tt.gap))
+			workload.Status.Activity.LastEvaluatedTime = &evaluated
+			workload.Status.DryRun = measuring(fixedTime.Add(-24 * time.Hour))
+			workload.Status.DryRun.Pauses = 1
+			workload.Status.DryRun.Resources = &v1alpha1.ResourceSnapshot{Replicas: 2, CPUMillis: 1000,
+				MemoryBytes: gibibyte}
+			metrics := twoReplicas
+			metrics.cpuMillis = 5
+			r := newAutomationReconciler(t, workload, &stubForecaster{phase: forecast.Observing},
+				automationOpts{metrics: &metrics, pauser: &stubPauser{}})
+			now := fixedTime
+			r.clock = func() time.Time { return now }
+			if !tt.inMemory {
+				restarted(r, workload)
+			}
+			check := func() {
+				t.Helper()
+				_, err := r.reconcileAutomation(context.Background(), workload, target)
+				require.NoError(t, err)
+			}
+
+			check()
+
+			assert.Equal(t, v1alpha1.PhaseIdle, workload.Status.Phase, "the would-be pause goes on")
+			assert.Equal(t, v1alpha1.ActivitySourceCPU, workload.Status.Activity.LastActivitySource)
+			assert.Zero(t, workload.Status.DryRun.Slept.Duration)
+			emitted := drainEvents(t, r)
+			assert.NotContains(t, emitted, ReasonActivityResumed)
+			assert.NotContains(t, emitted, "unobserved")
+
+			now = now.Add(activityCheckInterval)
+			metrics.cpuMillis = 1500
+			check()
+
+			assert.Equal(t, v1alpha1.PhaseRunning, workload.Status.Phase, "activity after the gap ends it")
+			assert.Equal(t, 3*time.Hour+time.Minute, workload.Status.DryRun.Slept.Duration)
+			assert.Contains(t, drainEvents(t, r), "activity resumed (cpu): would have slept 3 hours 1 minute")
+		})
+	}
+}
+
 // The estimate counts the would-be pause under way, so a workload idle for
 // days shows what it would have freed before its next activity ends the
 // pause. The hours, the record, wait for the pause to end.

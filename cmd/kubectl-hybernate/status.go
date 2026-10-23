@@ -1178,6 +1178,15 @@ func activityCell(wl statusWorkload, now time.Time) string {
 	if wl.LastActivity == nil {
 		return "-"
 	}
+	// These start the clock, but aren't activity.
+	switch v1alpha1.ActivitySource(wl.ActivitySource) {
+	case v1alpha1.ActivitySourceUnobserved:
+		return "unobserved until " + ago(*wl.LastActivity, now)
+	case v1alpha1.ActivitySourceCreated:
+		return "none since Hybernate began managing it " + ago(*wl.LastActivity, now)
+	case v1alpha1.ActivitySourceWoke:
+		return "none since it woke " + ago(*wl.LastActivity, now)
+	}
 	return wl.ActivitySource + ", " + ago(*wl.LastActivity, now)
 }
 

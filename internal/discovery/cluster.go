@@ -634,6 +634,8 @@ func judgeManaged(w *Workload, mw *v1alpha1.ManagedWorkload, now time.Time, thre
 	switch {
 	case mw.Status.Phase == v1alpha1.PhaseResuming:
 		w.State, w.Reason = StateActive, "waking"
+	case since < idleAfter && clockStarted(a.LastActivitySource) != "":
+		w.State, w.Reason = StateActive, "not idle yet: "+clockStarted(a.LastActivitySource)+" "+ago(since)
 	case since < idleAfter:
 		w.State, w.Reason = StateActive, fmt.Sprintf("active %s (%s)", ago(since), a.LastActivitySource)
 	case w.CPUPercent != nil && forecast.Busy(w.cpuShare, threshold):
@@ -644,6 +646,20 @@ func judgeManaged(w *Workload, mw *v1alpha1.ManagedWorkload, now time.Time, thre
 			w.Reason += ", held awake by dependents"
 		}
 	}
+}
+
+// clockStarted says what started a workload's activity clock without being
+// activity, to be followed by when: empty for activity.
+func clockStarted(source v1alpha1.ActivitySource) string {
+	switch source {
+	case v1alpha1.ActivitySourceUnobserved:
+		return "Hybernate wasn't watching until"
+	case v1alpha1.ActivitySourceCreated:
+		return "Hybernate began managing it"
+	case v1alpha1.ActivitySourceWoke:
+		return "it woke"
+	}
+	return ""
 }
 
 // idleAfterFor is how long without activity makes a workload idle: its own

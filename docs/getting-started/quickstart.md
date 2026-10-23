@@ -73,7 +73,7 @@ my-api   Running   $0.00   $0.00   $0.00        10s
 kubectl hybernate status -n dev
 ```
 
-`status` is one screen of what Hybernate is doing with every workload it manages. For `my-api`, STATE reads `running (dry-run)`, LAST ACTIVITY says when it was last active and from what (`created`, until something else is seen), and NEXT when it would pause. Once there's been no activity for `idle-after`, STATE becomes `idle (dry-run)` and an event says it would have paused. Nothing is scaled down in dry-run:
+`status` is one screen of what Hybernate is doing with every workload it manages. For `my-api`, STATE reads `running (dry-run)`, LAST ACTIVITY says when it was last active and from what, or, until there's been any, `none since Hybernate began managing it`, and NEXT when it would pause. Once there's been no activity for `idle-after`, STATE becomes `idle (dry-run)` and an event says it would have paused. Nothing is scaled down in dry-run:
 
 ```bash
 kubectl describe managedworkload my-api -n dev

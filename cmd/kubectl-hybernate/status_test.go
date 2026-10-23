@@ -567,6 +567,22 @@ func TestStatus_ForecastVeto(t *testing.T) {
 	assert.Equal(t, "held awake by the forecast: busy from 13:00 UTC", onlyWorkload(t, c).Next)
 }
 
+// What starts the clock without being activity, a gap in watching, the
+// start of managing a workload, or its waking, isn't shown as activity:
+// LAST ACTIVITY says there's been none since.
+func TestStatus_WhatStartsTheClockIsntActivity(t *testing.T) {
+	at := statusNow.Add(-3 * time.Minute)
+	cell := func(source v1alpha1.ActivitySource) string {
+		return activityCell(statusWorkload{ActivitySource: string(source), LastActivity: &at}, statusNow)
+	}
+
+	assert.Equal(t, "cpu, 3m ago", cell(v1alpha1.ActivitySourceCPU))
+	assert.Equal(t, "request, 3m ago", cell(v1alpha1.ActivitySourceRequest))
+	assert.Equal(t, "unobserved until 3m ago", cell(v1alpha1.ActivitySourceUnobserved))
+	assert.Equal(t, "none since Hybernate began managing it 3m ago", cell(v1alpha1.ActivitySourceCreated))
+	assert.Equal(t, "none since it woke 3m ago", cell(v1alpha1.ActivitySourceWoke))
+}
+
 // The operator starts a new month's savings at its first reconcile in the
 // month; until then status holds last month's.
 func TestStatus_SavingsFromLastMonth(t *testing.T) {

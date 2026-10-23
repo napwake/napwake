@@ -38,7 +38,7 @@ kubectl get managedworkload my-api -n staging -o jsonpath='{.status.activity}'
 - **`annotation`**: a `hybernate.io/last-activity` annotation is being refreshed, or `hybernate.io/active-until` is in the future. Check both the ManagedWorkload and its target.
 - **`rollout`**: the pod template changed recently.
 - **`prometheus`**: one of `activity.prometheus` returns a value above zero.
-- **`unobserved`**: the operator wasn't watching for a while, such as during a restart, or CPU or a Prometheus query couldn't be read for longer than a couple of checks, so the clock restarted then. If it keeps moving, check the `MetricsAvailable` and `PrometheusAvailable` conditions.
+- **`unobserved`**: not activity, but a gap in watching longer than the clock allows: the operator was down or restarted, or CPU or a Prometheus query couldn't be read for longer than a couple of checks, so the clock restarted as watching resumed. An `Unobserved` event says how long the gap was. If it keeps moving, check the `MetricsAvailable` and `PrometheusAvailable` conditions; see [Restarts and outages](../concepts/idle-detection.md#restarts-and-outages).
 
 **Check 3: Can Hybernate read CPU?**
 
