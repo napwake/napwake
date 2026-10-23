@@ -93,7 +93,7 @@
             <div class="md-banner__inner md-grid md-typeset">
               
   
-    These docs are for Hybernate 0.2.0-rc.5, a release candidate, and may change before it's released.
+    These docs are for Hybernate 0.2.0-rc.6, a release candidate, and may change before it's released.
   
   <a href="../../.."><strong>Read the docs for the latest release.</strong></a>
 
@@ -2327,7 +2327,7 @@
 <li><strong><code>annotation</code></strong>: a <code>hybernate.io/last-activity</code> annotation is being refreshed, or <code>hybernate.io/active-until</code> is in the future. Check both the ManagedWorkload and its target.</li>
 <li><strong><code>rollout</code></strong>: the pod template changed recently.</li>
 <li><strong><code>prometheus</code></strong>: one of <code>activity.prometheus</code> returns a value above zero.</li>
-<li><strong><code>unobserved</code></strong>: the operator wasn't watching for a while, such as during a restart, or CPU or a Prometheus query couldn't be read for longer than a couple of checks, so the clock restarted then. If it keeps moving, check the <code>MetricsAvailable</code> and <code>PrometheusAvailable</code> conditions.</li>
+<li><strong><code>unobserved</code></strong>: not activity, but a gap in watching longer than the clock allows: the operator was down or restarted, or CPU or a Prometheus query couldn't be read for longer than a couple of checks, so the clock restarted as watching resumed. An <code>Unobserved</code> event says how long the gap was. If it keeps moving, check the <code>MetricsAvailable</code> and <code>PrometheusAvailable</code> conditions; see <a href="../../concepts/idle-detection/#restarts-and-outages">Restarts and outages</a>.</li>
 </ul>
 <p><strong>Check 3: Can Hybernate read CPU?</strong></p>
 <div class="language-bash highlight"><pre><span></span><code><span id="__span-3-1"><a id="__codelineno-3-1" name="__codelineno-3-1" href="#__codelineno-3-1"></a>kubectl<span class="w"> </span>get<span class="w"> </span>managedworkload<span class="w"> </span>my-api<span class="w"> </span>-n<span class="w"> </span>staging<span class="w"> </span><span class="se">\</span>

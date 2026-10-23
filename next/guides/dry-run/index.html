@@ -93,7 +93,7 @@
             <div class="md-banner__inner md-grid md-typeset">
               
   
-    These docs are for Hybernate 0.2.0-rc.5, a release candidate, and may change before it's released.
+    These docs are for Hybernate 0.2.0-rc.6, a release candidate, and may change before it's released.
   
   <a href="../../.."><strong>Read the docs for the latest release.</strong></a>
 
@@ -2069,6 +2069,10 @@
 <tr>
 <td>A <a href="../pause/#pause-now">pause request</a></td>
 <td>Counted as a would-be pause: the phase becomes <code>Idle</code>, with a <code>[dry-run]</code> <code>PauseRequested</code> event and <code>PauseRequest=False</code>, reason <code>DryRun</code>, and the workload keeps running. Activity after the request ends the would-be pause, as it would wake a paused workload, except a Prometheus activity query that already showed activity as it was asked for, which ends it only once it has been quiet, as for a real pause</td>
+</tr>
+<tr>
+<td>A gap in watching, such as an operator restart, or metrics-server or Prometheus out</td>
+<td>Doesn't end a would-be pause; activity seen after the gap does. Use during the gap ends it only if it leaves a trace that outlasts the gap, such as an activity annotation, or a Prometheus query whose range covers the gap. CPU use, or a query over a shorter range, is gone by the time the gap ends, though a request would have woken a workload paused for real, so a long gap can keep a would-be pause going and overstate what pausing would have freed. An awake workload's clock restarts as usual, with an <code>Unobserved</code> event saying how long Hybernate wasn't watching; see <a href="../../concepts/idle-detection/#restarts-and-outages">Restarts and outages</a></td>
 </tr>
 <tr>
 <td>A workload Hybernate had already paused</td>

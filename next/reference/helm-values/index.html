@@ -93,7 +93,7 @@
             <div class="md-banner__inner md-grid md-typeset">
               
   
-    These docs are for Hybernate 0.2.0-rc.5, a release candidate, and may change before it's released.
+    These docs are for Hybernate 0.2.0-rc.6, a release candidate, and may change before it's released.
   
   <a href="../../.."><strong>Read the docs for the latest release.</strong></a>
 
@@ -2173,12 +2173,12 @@
 <div class="language-yaml highlight"><span class="filename">hybernate-values.yaml</span><pre><span></span><code><span id="__span-0-1"><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a><span class="nt">timezone</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">Europe/London</span>
 </span></code></pre></div>
 <p>and install with it:</p>
-<div class="language-bash highlight"><pre><span></span><code><span id="__span-1-1"><a id="__codelineno-1-1" name="__codelineno-1-1" href="#__codelineno-1-1"></a>helm<span class="w"> </span>install<span class="w"> </span>hybernate<span class="w"> </span>oci://ghcr.io/okedeji/charts/hybernate<span class="w"> </span>--version<span class="w"> </span><span class="m">0</span>.2.0-rc.5<span class="w"> </span><span class="se">\</span>
+<div class="language-bash highlight"><pre><span></span><code><span id="__span-1-1"><a id="__codelineno-1-1" name="__codelineno-1-1" href="#__codelineno-1-1"></a>helm<span class="w"> </span>install<span class="w"> </span>hybernate<span class="w"> </span>oci://ghcr.io/okedeji/charts/hybernate<span class="w"> </span>--version<span class="w"> </span><span class="m">0</span>.2.0-rc.6<span class="w"> </span><span class="se">\</span>
 </span><span id="__span-1-2"><a id="__codelineno-1-2" name="__codelineno-1-2" href="#__codelineno-1-2"></a><span class="w">  </span>--namespace<span class="w"> </span>hybernate-system<span class="w"> </span>--create-namespace<span class="w"> </span><span class="se">\</span>
 </span><span id="__span-1-3"><a id="__codelineno-1-3" name="__codelineno-1-3" href="#__codelineno-1-3"></a><span class="w">  </span>-f<span class="w"> </span>hybernate-values.yaml
 </span></code></pre></div>
-<p>Upgrade with the same file, so upgrades keep your settings; see <a href="../../operations/upgrading/#keeping-your-settings">Keeping your settings</a>. The chart is published only as an OCI artifact; there's no <code>helm repo</code> to add. Its version has no <code>v</code> (<code>0.2.0-rc.5</code>); the image tags do (<code>v0.2.0-rc.5</code>). To see all defaults:</p>
-<div class="language-bash highlight"><pre><span></span><code><span id="__span-2-1"><a id="__codelineno-2-1" name="__codelineno-2-1" href="#__codelineno-2-1"></a>helm<span class="w"> </span>show<span class="w"> </span>values<span class="w"> </span>oci://ghcr.io/okedeji/charts/hybernate<span class="w"> </span>--version<span class="w"> </span><span class="m">0</span>.2.0-rc.5
+<p>Upgrade with the same file, so upgrades keep your settings; see <a href="../../operations/upgrading/#keeping-your-settings">Keeping your settings</a>. The chart is published only as an OCI artifact; there's no <code>helm repo</code> to add. Its version has no <code>v</code> (<code>0.2.0-rc.6</code>); the image tags do (<code>v0.2.0-rc.6</code>). To see all defaults:</p>
+<div class="language-bash highlight"><pre><span></span><code><span id="__span-2-1"><a id="__codelineno-2-1" name="__codelineno-2-1" href="#__codelineno-2-1"></a>helm<span class="w"> </span>show<span class="w"> </span>values<span class="w"> </span>oci://ghcr.io/okedeji/charts/hybernate<span class="w"> </span>--version<span class="w"> </span><span class="m">0</span>.2.0-rc.6
 </span></code></pre></div>
 <p>The chart validates values against its schema (<code>values.schema.json</code>), so a mistyped value, such as <code>logLevel: warn</code> or <code>defaults.cpuThreshold: 0</code>, fails the install or upgrade rather than the operator, and so does a value the chart doesn't have, such as <code>watchNamespace</code> for <code>watchNamespaces</code>, which Helm would otherwise ignore. Only what's passed through to Kubernetes as it is, such as <code>resources</code>, <code>affinity</code>, <code>tolerations</code>, <code>nodeSelector</code> and pod annotations and labels, is left for Kubernetes to check. <code>timezone</code> is the exception: the schema can't list every IANA zone, so an unknown one is caught when the operator starts, which then exits with <code>invalid --timezone</code> and <code>unknown time zone</code> in its log, and the rollout doesn't finish.</p>
 <h2 id="names">Names<a class="headerlink" href="#names" title="Permanent link">&para;</a></h2>
@@ -2221,7 +2221,7 @@
 </tr>
 <tr>
 <td><code>image.tag</code></td>
-<td><code>""</code>, the chart's <code>appVersion</code>, such as <code>v0.2.0-rc.5</code></td>
+<td><code>""</code>, the chart's <code>appVersion</code>, such as <code>v0.2.0-rc.6</code></td>
 <td>Image tag, for the operator and the doorman</td>
 </tr>
 <tr>
@@ -2266,7 +2266,7 @@
 <tbody>
 <tr>
 <td><code>defaultsVersion</code></td>
-<td>the chart's version, such as <code>0.2.0-rc.5</code></td>
+<td>the chart's version, such as <code>0.2.0-rc.6</code></td>
 <td>The chart version the defaults Helm renders with are from. Leave it as it is</td>
 </tr>
 </tbody>
@@ -3002,7 +3002,7 @@
 </span></code></pre></div></td></tr></table></div>
 <p><code>affinity</code> applies to the doorman too unless <code>doorman.affinity</code> is set; the doorman's replicas are spread across nodes by default.</p>
 <div class="language-bash highlight"><pre><span></span><code><span id="__span-6-1"><a id="__codelineno-6-1" name="__codelineno-6-1" href="#__codelineno-6-1"></a>helm<span class="w"> </span>install<span class="w"> </span>hybernate<span class="w"> </span>oci://ghcr.io/okedeji/charts/hybernate<span class="w"> </span><span class="se">\</span>
-</span><span id="__span-6-2"><a id="__codelineno-6-2" name="__codelineno-6-2" href="#__codelineno-6-2"></a><span class="w">  </span>--version<span class="w"> </span><span class="m">0</span>.2.0-rc.5<span class="w"> </span><span class="se">\</span>
+</span><span id="__span-6-2"><a id="__codelineno-6-2" name="__codelineno-6-2" href="#__codelineno-6-2"></a><span class="w">  </span>--version<span class="w"> </span><span class="m">0</span>.2.0-rc.6<span class="w"> </span><span class="se">\</span>
 </span><span id="__span-6-3"><a id="__codelineno-6-3" name="__codelineno-6-3" href="#__codelineno-6-3"></a><span class="w">  </span>-f<span class="w"> </span>values-production.yaml<span class="w"> </span><span class="se">\</span>
 </span><span id="__span-6-4"><a id="__codelineno-6-4" name="__codelineno-6-4" href="#__codelineno-6-4"></a><span class="w">  </span>-n<span class="w"> </span>hybernate-system<span class="w"> </span>--create-namespace
 </span></code></pre></div>

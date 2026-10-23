@@ -93,7 +93,7 @@
             <div class="md-banner__inner md-grid md-typeset">
               
   
-    These docs are for Hybernate 0.2.0-rc.5, a release candidate, and may change before it's released.
+    These docs are for Hybernate 0.2.0-rc.6, a release candidate, and may change before it's released.
   
   <a href="../../.."><strong>Read the docs for the latest release.</strong></a>
 
@@ -2038,7 +2038,7 @@
 <h2 id="events">Events<a class="headerlink" href="#events" title="Permanent link">&para;</a></h2>
 <p>User-visible state changes emit Kubernetes events that show up in <code>kubectl describe</code>, each once, when the change happens:</p>
 <ul>
-<li>Lifecycle: <code>IdleDetected</code>, <code>PausedEarly</code> (the forecast brought the pause forward, with <a href="../forecasting/#pausing-early"><code>pauseEarly</code></a>), <code>PauseRequested</code>, <code>Paused</code>, <code>Resumed</code>, <code>ActivityResumed</code> (in dry-run, with what the would-be pause would have freed)</li>
+<li>Lifecycle: <code>IdleDetected</code>, <code>PausedEarly</code> (the forecast brought the pause forward, with <a href="../forecasting/#pausing-early"><code>pauseEarly</code></a>), <code>PauseRequested</code>, <code>Paused</code>, <code>Resumed</code>, <code>ActivityResumed</code> (in dry-run, with what the would-be pause would have freed), <code>Unobserved</code> (a gap in watching restarted the idle clock, and how long it was)</li>
 <li>A pause record lost from status: <code>PauseRecovered</code> (taken up again from the target's <code>hybernate.io/paused-from</code>), <code>PauseRecordLost</code> (a warning: nothing to finish it from)</li>
 <li>A pause request Hybernate didn't act on: an event whose reason says why, the same as the <code>PauseRequest</code> condition's</li>
 <li>What woke it: <code>WokeByActivity</code>, <code>WokenByRequest</code> (from the doorman), <code>AutoResume</code>, <code>ScaledUp</code>, <code>DryRunWake</code></li>
