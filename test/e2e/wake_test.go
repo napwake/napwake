@@ -137,7 +137,7 @@ var _ = Describe("Wake on request", func() {
 			g.Expect(jsonpath("deployment", name, ns, "{.spec.replicas}")).To(Equal("0"))
 		}, 30*time.Second, 5*time.Second).Should(Succeed(), "curl must not wake the app")
 
-		By("opening the app in a browser and clicking Wake it")
+		By("opening the app in a browser and clicking Wake it, sending what Chrome does")
 		// The page and the click are two connections, which may reach
 		// different doorman replicas: the shared wake key lets either
 		// check the other's token.
@@ -148,6 +148,7 @@ page=$(curl -sS -A '%[1]s' -H 'Accept: text/html' -H 'Sec-Fetch-Mode: navigate' 
 token=$(echo "$page" | sed -n 's/.*name="hybernate-wake" value="\([^"]*\)".*/\1/p')
 test -n "$token"
 curl -sS -o /dev/null -w 'status=%%{http_code}' -A '%[1]s' -H 'Sec-Fetch-Site: same-origin' \
+  -H 'Sec-Fetch-Mode: navigate' -H 'Sec-Fetch-User: ?1' -H 'Sec-Fetch-Dest: document' \
   --data-urlencode "hybernate-wake=$token" http://%[2]s/orders`, browser, name)
 		out, ok := runShell("curl-ask-click", ns, click)
 		Expect(ok).To(BeTrue(), "the click failed: %s", out)

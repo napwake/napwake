@@ -25,6 +25,7 @@ import (
 	"mime"
 	"net"
 	"net/http"
+	"strings"
 	"time"
 
 	"sigs.k8s.io/controller-runtime/pkg/log"
@@ -109,29 +110,37 @@ func (h *heldConn) ask(ctx, waitCtx context.Context, req *http.Request) (net.Con
 }
 
 // click answers a POST from the asleep page's Wake it button. A token this
-// doorman signed for this pause of this workload, not yet expired, wakes it
-// as a held request does, and the waking-up page follows. Anything else
-// wakes nothing: a browser is asked again, and anything else turned away.
-// Once the workload is waking, every click gets the waking-up page.
+// doorman signed for this pause of this workload, not yet expired, posted
+// by a person's browser from the page, wakes it as a held request does,
+// and the waking-up page follows. Anything else wakes nothing: a browser
+// is asked again, and anything else turned away. Once the workload is
+// waking, every click gets the waking-up page.
 func (h *heldConn) click(ctx, waitCtx context.Context, req *http.Request) string {
 	if h.waking() {
 		h.servePage(waitCtx, req)
 		return resultPage
 	}
 	token, posted := h.readClick()
-	if !posted || !sameOrigin(req) || !h.wakeKeys.valid(token, h.route.scope(), h.now()) {
-		if looksLikeBrowser(req.UserAgent()) {
-			notice := noticeExpired
-			if !posted {
-				notice = ""
-			}
-			h.serveAsleepPage(ctx, req, notice)
-			return resultAsked
-		}
+	byAPerson := clickedByAPerson(req)
+	if posted && byAPerson && sameOrigin(req) && h.wakeKeys.valid(token, h.route.scope(), h.now()) {
+		return h.wakeForClick(ctx, waitCtx, req)
+	}
+	if !looksLikeBrowser(req.UserAgent()) {
 		h.turnedAway(h.route)
 		_ = h.reply(func(w io.Writer) error { return writeAsleep(w, req) }) // the caller may already have gone
 		return resultTurnedAway
 	}
+	notice := ""
+	if posted && byAPerson {
+		notice = noticeExpired
+	}
+	h.serveAsleepPage(ctx, req, notice)
+	return resultAsked
+}
+
+// wakeForClick wakes the workload for a person's click, and answers with
+// the waking-up page, or the asleep page again saying why it didn't.
+func (h *heldConn) wakeForClick(ctx, waitCtx context.Context, req *http.Request) string {
 	switch err := h.requestWake(ctx, waitCtx, h.route, h.from); {
 	case err == nil:
 		h.servePage(waitCtx, req)
@@ -146,6 +155,33 @@ func (h *heldConn) click(ctx, waitCtx context.Context, req *http.Request) string
 		h.serveAsleepPage(ctx, req, noticeFailed)
 		return resultError
 	}
+}
+
+// clickedByAPerson reports whether a click comes from a person: from a
+// browser, as the asleep page is shown to, and, from a browser that marks
+// the navigations a person starts with Sec-Fetch-User, marked so. A spider
+// that fetches the page and posts its token isn't a browser, and a script
+// submitting the form isn't marked. Safari, and every browser on iOS,
+// which runs WebKit, send the rest of the fetch metadata but never that
+// mark, so their clicks are judged without it, as are those of browsers
+// from before 2020, which send no fetch metadata at all.
+func clickedByAPerson(req *http.Request) bool {
+	agent := req.UserAgent()
+	if !looksLikeBrowser(agent) {
+		return false
+	}
+	if user := req.Header.Get("Sec-Fetch-User"); user != "" {
+		return user == "?1"
+	}
+	return req.Header.Get("Sec-Fetch-Site") == "" || !marksPeoplesNavigations(agent)
+}
+
+// marksPeoplesNavigations reports whether a browser sends Sec-Fetch-User
+// with the navigations a person starts: Chrome and the browsers built on
+// Chromium, such as Edge, and Firefox, but not on iOS, where they're
+// WebKit and name themselves otherwise (CriOS, EdgiOS, FxiOS).
+func marksPeoplesNavigations(agent string) bool {
+	return strings.Contains(agent, "Chrome/") || strings.Contains(agent, "Firefox/")
 }
 
 // isClick reports whether a POST could be the Wake it button's: a small

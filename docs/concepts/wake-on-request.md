@@ -155,7 +155,7 @@ WakeOnRequest=True   DoormanRouted   the doorman asks a person's browser before 
 | A known probe, health check or hidden file | Answered as for any workload; see [What wakes a workload](#what-wakes-a-workload-and-what-doesnt) |
 | Anything, once the workload is waking: someone has clicked, or something else woke it | As for a workload that wakes on any request: a browser gets the waking-up page, and anything else is held until the workload is Ready |
 
-A robot that presents itself as a browser gets the page, and wakes nothing either. A robot that clicks the button wakes the workload, at most once a minute; that's rare, and costs a wake.
+A robot that presents itself as a browser gets the page, and wakes nothing either. A click must come from a person's browser: one the page would be shown to, and, from Chrome, Edge, Firefox and the other browsers that mark a navigation a person starts (`Sec-Fetch-User: ?1`), marked so. So a spider that fetches the page and posts its token wakes nothing, nor does a script that submits the form. Safari, and every browser on iOS, don't send the mark, so a click from them is judged by the rest. What this can't stop is a robot that drives a real browser and clicks the button, or one that sends what Safari does: that's rare, and costs a wake, at most once a minute.
 
 The pages name no namespace, workload or Service, so they give nothing away to whoever reaches them.
 

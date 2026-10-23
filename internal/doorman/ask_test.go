@@ -81,9 +81,34 @@ func tokenIn(t *testing.T, page string) string {
 // clickRequest is the POST the Wake it button sends, with token, back to
 // the page it's on.
 func clickRequest(token string) string {
+	return clickFrom(token, chrome, chromeClick)
+}
+
+// What browsers send with a form a person submits by clicking it, besides
+// their User-Agent. Chrome, Edge and Firefox mark a navigation a person
+// started with Sec-Fetch-User; Safari, and every browser on iOS, which run
+// WebKit, send the rest of the fetch metadata without it.
+const (
+	chromeClick = "Origin: https://pr-42.preview.example.dev\r\nSec-Fetch-Site: same-origin\r\n" +
+		"Sec-Fetch-Mode: navigate\r\nSec-Fetch-User: ?1\r\nSec-Fetch-Dest: document\r\n"
+	safariClick = "Origin: https://pr-42.preview.example.dev\r\nSec-Fetch-Site: same-origin\r\n" +
+		"Sec-Fetch-Mode: navigate\r\nSec-Fetch-Dest: document\r\n"
+)
+
+const (
+	firefox = "Mozilla/5.0 (Macintosh; Intel Mac OS X 15.6; rv:144.0) Gecko/20100101 Firefox/144.0"
+	safari  = "Mozilla/5.0 (Macintosh; Intel Mac OS X 15_6) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/26.0 " +
+		"Safari/605.1.15"
+	chromeOnIPhone = "Mozilla/5.0 (iPhone; CPU iPhone OS 26_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) " +
+		"CriOS/141.0.7390.41 Mobile/15E148 Safari/604.1"
+)
+
+// clickFrom is the POST the Wake it button sends, with token, back to the
+// page it's on, from a browser of agent sending headers.
+func clickFrom(token, agent, headers string) string {
 	body := url.Values{wakeField: {token}}.Encode()
-	return "POST /orders?id=7 HTTP/1.1\r\nHost: pr-42.preview.example.dev\r\nUser-Agent: " + chrome + "\r\n" +
-		"Content-Type: application/x-www-form-urlencoded\r\nSec-Fetch-Site: same-origin\r\nSec-Fetch-Mode: navigate\r\n" +
+	return "POST /orders?id=7 HTTP/1.1\r\nHost: pr-42.preview.example.dev\r\nUser-Agent: " + agent + "\r\n" +
+		"Content-Type: application/x-www-form-urlencoded\r\n" + headers +
 		fmt.Sprintf("Content-Length: %d\r\n\r\n", len(body)) + body
 }
 
@@ -243,6 +268,60 @@ func TestServer_AClickWithoutAGoodTokenWakesNothing(t *testing.T) {
 			assert.Equal(t, http.StatusOK, resp.StatusCode, "the asleep page again")
 			assert.Contains(t, body, noticeExpired)
 			tokenIn(t, body)
+			assert.Empty(t, lastRequest(t, c), "nothing wakes it")
+		})
+	}
+}
+
+// Only a person's click wakes the workload: a browser's, and, from a
+// browser that marks the navigations a person starts, marked so. A spider
+// that fetches the page and posts its token, or a script that submits the
+// form, wakes nothing.
+func TestServer_AClickMustComeFromAPerson(t *testing.T) {
+	tests := []struct {
+		name    string
+		agent   string
+		headers string
+		wakes   bool
+		page    bool
+	}{
+		{name: "Chrome, clicked", agent: chrome, headers: chromeClick, wakes: true},
+		{name: "Firefox, clicked", agent: firefox, headers: chromeClick, wakes: true},
+		{name: "Safari, clicked", agent: safari, headers: safariClick, wakes: true},
+		{name: "Chrome on an iPhone, which is WebKit, clicked", agent: chromeOnIPhone, headers: safariClick, wakes: true},
+		{name: "a browser that sends no fetch metadata", agent: chrome, wakes: true},
+		{name: "Chrome, a script submitting the form", agent: chrome, page: true,
+			headers: strings.Replace(chromeClick, "Sec-Fetch-User: ?1\r\n", "", 1)},
+		{name: "Firefox, a script submitting the form", agent: firefox, page: true,
+			headers: strings.Replace(chromeClick, "Sec-Fetch-User: ?1\r\n", "", 1)},
+		{name: "not started by a person, said outright", agent: safari, page: true,
+			headers: safariClick + "Sec-Fetch-User: ?0\r\n"},
+		{name: "a spider posting the token it fetched", agent: "python-requests/2.32.3", headers: chromeClick},
+		{name: "a headless browser", agent: "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) " +
+			"HeadlessChrome/141.0.0.0 Safari/537.36", headers: chromeClick},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			port := freePort(t)
+			s, c := newTestServer(t, nil, askingWorkload(port))
+			stop := run(t, s)
+
+			resp, body := click(t, port, clickFrom(askedPage(t, port), tt.agent, tt.headers))
+
+			stop()
+			switch {
+			case tt.wakes:
+				assert.Equal(t, http.StatusServiceUnavailable, resp.StatusCode, "the waking-up page")
+				assert.Contains(t, body, "Waking up")
+				assert.NotEmpty(t, lastRequest(t, c))
+				return
+			case tt.page:
+				assert.Equal(t, http.StatusOK, resp.StatusCode, "the asleep page again")
+				tokenIn(t, body)
+			default:
+				assert.Equal(t, http.StatusServiceUnavailable, resp.StatusCode)
+				assert.Contains(t, body, asleepMessage)
+			}
 			assert.Empty(t, lastRequest(t, c), "nothing wakes it")
 		})
 	}
