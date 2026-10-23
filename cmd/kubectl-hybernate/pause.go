@@ -446,7 +446,7 @@ func pauseAnswered(w *v1alpha1.ManagedWorkload, ref string, requested bool, out 
 	if !requested || c == nil || c.Status != metav1.ConditionFalse {
 		return false, nil
 	}
-	why := refusal(oneLine(c.Message))
+	why := refusal("not paused", oneLine(c.Message))
 	switch c.Reason {
 	case reasonDryRun:
 		_, _ = fmt.Fprintf(out, "%s wasn't paused: %s\n", ref, why)
@@ -463,11 +463,12 @@ func pauseAnswered(w *v1alpha1.ManagedWorkload, ref string, requested bool, out 
 	return true, fmt.Errorf("%s %w: %s", ref, errNotPaused, why)
 }
 
-// refusal is why the operator's answer says a request didn't pause the
-// workload: the message without the "not paused at <time>: " it starts
-// with, since whoever just asked knows when.
-func refusal(message string) string {
-	rest, ok := strings.CutPrefix(message, "not paused")
+// refusal is why the operator's answer says a request didn't pause or wake
+// the workload: the message without the "not paused at <time>: " or "not
+// woken at <time>: " it starts with, outcome, since whoever just asked knows
+// when.
+func refusal(outcome, message string) string {
+	rest, ok := strings.CutPrefix(message, outcome)
 	if !ok {
 		return message
 	}

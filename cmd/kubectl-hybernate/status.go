@@ -292,6 +292,7 @@ var untroubled = map[string]bool{
 var wakeCauses = map[string]bool{
 	"WokeByActivity": true,
 	"WokenByRequest": true,
+	"WakeRequested":  true,
 	"AutoResume":     true,
 	"ScaledUp":       true,
 }
@@ -302,6 +303,7 @@ var happenings = map[string]bool{
 	"Resumed":          true,
 	"WokeByActivity":   true,
 	"WokenByRequest":   true,
+	"WakeRequested":    true,
 	"AutoResume":       true,
 	"ScaledUp":         true,
 	"RequestNotServed": true,
