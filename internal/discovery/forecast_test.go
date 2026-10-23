@@ -238,10 +238,12 @@ func TestReplayWakes(t *testing.T) {
 		}), want: ReplayWakes{NoRequest: noRequestNodeLocal}},
 		{name: "Services not read, as Hybernate's default", want: ReplayWakes{Request: true}},
 		{name: "asking, by the annotation it would be opted in with", services: service(nil), asks: true,
-			want: ReplayWakes{NoRequest: noRequestAsks}},
+			want: ReplayWakes{People: true, NoRequest: noRequestAsks}},
 		{name: "managed, asking", services: service(nil), mw: managed(func(mw *v1alpha1.ManagedWorkload) {
 			mw.Spec.Wake = &v1alpha1.WakeSpec{Mode: v1alpha1.WakeOnAsk}
-		}), want: ReplayWakes{NoRequest: noRequestAsks}},
+		}), want: ReplayWakes{People: true, NoRequest: noRequestAsks}},
+		{name: "asking, with the doorman turned off", services: service(nil), asks: true,
+			install: Install{DoormanOff: true}, want: ReplayWakes{People: true, NoRequest: noRequestDoormanOff}},
 		{name: "managed, waking on request, whatever it would be opted in with", services: service(nil), asks: true,
 			mw: managed(func(mw *v1alpha1.ManagedWorkload) {
 				mw.Spec.Wake = &v1alpha1.WakeSpec{Mode: v1alpha1.WakeOnRequest}
@@ -251,7 +253,7 @@ func TestReplayWakes(t *testing.T) {
 				mw.Spec.Wake = &v1alpha1.WakeSpec{Mode: v1alpha1.WakeOnAsk}
 				mw.Spec.IdlePolicy = &v1alpha1.IdlePolicySpec{Activity: &v1alpha1.ActivitySpec{
 					Prometheus: []v1alpha1.PrometheusActivity{{PromQL: "queue_length"}}}}
-			}), want: ReplayWakes{Query: true, NoRequest: noRequestAsks}},
+			}), want: ReplayWakes{Query: true, People: true, NoRequest: noRequestAsks}},
 		{name: "managed and routed while paused", services: map[string]corev1.Service{},
 			mw: managed(routing(metav1.ConditionTrue, "DoormanRouted")), want: ReplayWakes{Request: true}},
 		{name: "managed, its Services in NEGs at its last pause", services: service(nil),
@@ -320,7 +322,10 @@ func TestOptedInAsks(t *testing.T) {
 }
 
 // A namespace that has the doorman ask before waking the workloads it opts
-// in has the replay wake its workloads on nothing but their queries.
+// in has the replay wake its workloads only for people, as they come. Only
+// people can wake it, so the forecast learns the hours it's paused, as it
+// does behind the doorman: having learned only the first week, it acts in
+// the second, and has the workload ready on the same mornings.
 func TestScanCluster_ReplaysWithTheNamespacesWake(t *testing.T) {
 	service := &corev1.Service{ObjectMeta: metav1.ObjectMeta{Name: "api", Namespace: testNamespace},
 		Spec: corev1.ServiceSpec{Selector: map[string]string{"app": "api"}, ClusterIP: "10.96.0.10",
@@ -329,9 +334,14 @@ func TestScanCluster_ReplaysWithTheNamespacesWake(t *testing.T) {
 		Annotations: map[string]string{v1alpha1.AnnotationWake: "ask"}}}
 
 	w := forecastScanOf(t, 14*24*time.Hour, service, ns)
+	onRequest := forecastScanOf(t, 14*24*time.Hour, service)
 
 	require.NotNil(t, w.Forecast)
-	assert.Equal(t, ReplayWakes{NoRequest: noRequestAsks}, w.Forecast.Wakes)
+	assert.Equal(t, ReplayWakes{People: true, NoRequest: noRequestAsks}, w.Forecast.Wakes)
+	require.NotNil(t, w.Forecast.Replay)
+	require.NotNil(t, onRequest.Forecast.Replay)
+	assert.Positive(t, w.Forecast.Replay.Ready, "%+v", w.Forecast.Replay)
+	assert.Equal(t, onRequest.Forecast.Replay.Ready, w.Forecast.Replay.Ready)
 }
 
 // An install whose operator asks by default has the replay ask for the
@@ -344,7 +354,7 @@ func TestScanCluster_ReplaysWithTheInstallsWake(t *testing.T) {
 	w := forecastScanOf(t, 14*24*time.Hour, service, operatorDeployment("--default-wake=ask"))
 
 	require.NotNil(t, w.Forecast)
-	assert.Equal(t, ReplayWakes{NoRequest: noRequestAsks}, w.Forecast.Wakes)
+	assert.Equal(t, ReplayWakes{People: true, NoRequest: noRequestAsks}, w.Forecast.Wakes)
 }
 
 // deploymentsOnlyIn has the API server refuse lists of Deployments outside

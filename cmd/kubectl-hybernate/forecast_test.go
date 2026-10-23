@@ -338,9 +338,14 @@ func TestReplayWakes_Shown(t *testing.T) {
 		{wakes: discovery.ReplayWakes{Request: true}, cell: "request", sentence: "a request through the doorman wakes it"},
 		{wakes: discovery.ReplayWakes{Query: true, NoRequest: "no Service routes requests to it"}, cell: "query",
 			sentence: "its Prometheus activity query wakes it, since no Service routes requests to it"},
-		{wakes: discovery.ReplayWakes{NoRequest: "wake on request is turned off"}, cell: "nothing",
-			sentence: "nothing wakes it but a person, since wake on request is turned off, so the forecast doesn't " +
-				"learn the hours it's paused"},
+		{wakes: discovery.ReplayWakes{NoRequest: "the doorman is turned off for the cluster"}, cell: "nothing",
+			sentence: "nothing wakes it but a person, since the doorman is turned off for the cluster, so the " +
+				"forecast doesn't learn the hours it's paused"},
+		{wakes: discovery.ReplayWakes{People: true, NoRequest: "the doorman asks before waking it"}, cell: "people",
+			sentence: "only people wake it, with wake: ask, so the forecast learns the hours it's paused from " +
+				"whether they do"},
+		{wakes: discovery.ReplayWakes{People: true, Query: true, NoRequest: "the doorman asks before waking it"},
+			cell: "people, query", sentence: "people, or its Prometheus activity query, wake it, with wake: ask"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.cell, func(t *testing.T) {

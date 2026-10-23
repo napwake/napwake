@@ -67,12 +67,14 @@ type ForecastReplay struct {
 
 // ReplayWakes is what wakes a paused workload, as it would under Hybernate,
 // and so what shows its demand while it's paused: a request through the
-// doorman, when one of its Services can be routed there, and a Prometheus
-// activity query, when its ManagedWorkload has one. With neither, people
-// wake it by hand, and the forecast doesn't learn the hours it's paused.
+// doorman, when one of its Services can be routed there, a Prometheus
+// activity query, when its ManagedWorkload has one, and people alone, with
+// wake.mode Ask, when nothing else may. With none, people wake it by hand,
+// and the forecast doesn't learn the hours it's paused.
 type ReplayWakes struct {
 	Request bool `json:"request"`
 	Query   bool `json:"query"`
+	People  bool `json:"people"`
 	// NoRequest says why a request wouldn't wake it, when one wouldn't.
 	NoRequest string `json:"noRequest,omitempty"`
 }
@@ -132,12 +134,14 @@ func replayWakes(mw *v1alpha1.ManagedWorkload, asks bool, podLabels map[string]s
 	if mw != nil {
 		p := mw.Spec.IdlePolicy
 		w.Query = p != nil && p.Activity != nil && len(p.Activity.Prometheus) > 0
+		asks = mw.Spec.Wake.Asks()
 	}
+	w.People = asks
 	switch {
 	case install.DoormanOff:
 		w.NoRequest = noRequestDoormanOff
 		return w
-	case mw == nil && asks, mw != nil && mw.Spec.Wake.Asks():
+	case asks:
 		w.NoRequest = noRequestAsks
 		return w
 	}
@@ -312,7 +316,7 @@ func replayForecast(r replay, threshold int, mw *v1alpha1.ManagedWorkload, wakes
 	report, err := sim.Run(sim.Scenario{Start: half, Duration: r.end.Sub(half), Step: r.step,
 		Traffic: rec.Traffic(r.threshold), State: state, Settings: sim.Settings{Confidence: threshold,
 			CPUThreshold: r.threshold, IdleAfter: r.idleAfter, AutoResume: true, WakeOnRequest: wakes.Request,
-			WakeOnQuery: wakes.Query, Location: loc}})
+			WakeOnQuery: wakes.Query, WakeOnAsk: wakes.People, Location: loc}})
 	if err != nil {
 		return fr
 	}
