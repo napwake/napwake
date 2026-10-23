@@ -204,6 +204,7 @@ jobs:
           NS: preview-${{ github.event.pull_request.number }}
           TOKEN: ${{ github.run_id }}-${{ github.run_attempt }}
         run: |
+          kubectl wait managedworkload/web -n "$NS" --for=create --timeout=1m
           kubectl annotate managedworkload web -n "$NS" --overwrite hybernate.io/wake-requested="$TOKEN"
           kubectl wait managedworkload web -n "$NS" --for=jsonpath='{.status.lastWakeRequest}'="$TOKEN" --timeout=2m
           answer=$(kubectl get managedworkload web -n "$NS" \
@@ -215,7 +216,7 @@ jobs:
           kubectl wait managedworkload web -n "$NS" --for=jsonpath='{.status.phase}'=Running --timeout=10m
 ```
 
-The token is the run's ID and attempt, so each run asks afresh, a re-run included. The first `kubectl wait` waits for Hybernate to take the request up; when it won't wake the preview, the step fails with its reason, such as `not woken at 2026-10-23 21:01 UTC: it's scaled to zero outside Hybernate, which leaves it off until its replicas are set above zero`. The last waits until the preview is Running. Its dependencies wake with it; to wait for them too, add a `kubectl wait` for each.
+On a pull request's first push, Hybernate makes the ManagedWorkload from the label moments after the deploy, so the first `kubectl wait` waits for it to exist; `--for=create` needs kubectl 1.31 or later. A request set before Hybernate has taken the ManagedWorkload on is answered as for any awake preview, `already awake`. The token is the run's ID and attempt, so each run asks afresh, a re-run included. The next `kubectl wait` waits for Hybernate to take the request up; when it won't wake the preview, the step fails with its reason, such as `not woken at 2026-10-23 21:01 UTC: it's scaled to zero outside Hybernate, which leaves it off until its replicas are set above zero`. The last waits until the preview is Running. Its dependencies wake with it; to wait for them too, add a `kubectl wait` for each.
 
 ### From a terminal
 
@@ -232,7 +233,7 @@ preview-42/web is Running after 2s
 
 ### From a portal or a chat bot
 
-Anything that talks to the Kubernetes API can ask. With `curl`, a `PATCH` sets the annotation, printing nothing unless it fails, with the API server's address in `$APISERVER`, its CA certificate in `ca.crt`, and a token for the bot's ServiceAccount in `$KUBE_TOKEN`:
+Anything that talks to the Kubernetes API can ask. A portal that has just made the environment gets `404 Not Found` until Hybernate has made its ManagedWorkload from the label, a moment after the workload, so it retries until the ManagedWorkload exists. With `curl`, a `PATCH` sets the annotation, printing nothing unless it fails, with the API server's address in `$APISERVER`, its CA certificate in `ca.crt`, and a token for the bot's ServiceAccount in `$KUBE_TOKEN`:
 
 ```bash
 NS=preview-42

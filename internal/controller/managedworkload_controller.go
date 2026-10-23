@@ -303,9 +303,16 @@ func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (res ctrl.
 }
 
 // takeOn starts the status of a ManagedWorkload Hybernate has just taken
-// on, Running, answering the requests already on it without acting on them.
+// on, Running. A pause request already on it is answered without acting on
+// it: it may be one answered before its status was lost, and a wrong pause
+// is the one thing Hybernate never does. A wake request is left to the
+// reconcile the status write brings, which answers it by the workload as it
+// finds it, so a tool may create a ManagedWorkload and ask for its wake at
+// once: one taken on Running is already awake, and even a stale request
+// only restarts its idle clock, while one whose pause is taken up again,
+// after its status was lost, mustn't be woken by an old request.
 func (r *Reconciler) takeOn(ctx context.Context, workload *v1alpha1.ManagedWorkload) error {
-	announce := r.answerEarlierRequests(workload)
+	announce := r.answerEarlierPauseRequest(workload)
 	if err := r.transition(ctx, workload, v1alpha1.PhaseRunning, "Created"); err != nil {
 		return err
 	}
@@ -673,14 +680,15 @@ func (r *Reconciler) recoverPause(ctx context.Context, workload *v1alpha1.Manage
 		Target:   activityAnnotationValues(target),
 	}
 	workload.Status.Pause = pause
-	announce := r.answerEarlierRequests(workload)
+	pauseAnswered, wakeAnswered := r.answerEarlierPauseRequest(workload), r.answerEarlierWakeRequest(workload)
 	if err := r.transition(ctx, workload, v1alpha1.PhasePaused, ReasonPauseRecovered); err != nil {
 		return nil, err
 	}
 	r.emitEvent(workload, false, "Normal", ReasonPauseRecovered, actionPause,
 		"its pause record was lost, so it's taken up again from the %s annotation: paused, to wake to %d replicas",
 		v1alpha1.AnnotationPausedFrom, pause.PreviousReplicas)
-	announce()
+	pauseAnswered()
+	wakeAnswered()
 	return &ctrl.Result{RequeueAfter: r.pausedRecheck(workload)}, nil
 }
 

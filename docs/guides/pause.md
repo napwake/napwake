@@ -113,7 +113,8 @@ Hybernate acts on each value once: it records the value it handled in `status.la
 | In a [protected namespace](opt-in.md#protected-namespaces), Hybernate's own operator or doorman, or a StatefulSet that deletes its PVCs when scaled down | Nothing: Hybernate never pauses it | `False`, `Protected` |
 | Its workload is missing, labelled `hybernate.io/ignore`, or managed by another ManagedWorkload | Nothing, with a Warning event | `False`, `TargetNotFound`, `TargetIgnored` or `DuplicateTarget` |
 | Its ManagedWorkload is being deleted | Hands the workload back, with the replicas it had, as it lets go | `False`, `BeingDeleted` |
-| Already on the ManagedWorkload as Hybernate takes it on, or takes a pause up again after its status was lost | Nothing: it may have been answered before, and brought back with the ManagedWorkload, as by a backup restored without status. Set a new value to ask | `False`, `PredatesStatus` |
+| Set before Hybernate has taken the ManagedWorkload on, as by a tool that creates it and asks for its wake at once | Takes it on `Running`, so it's awake: restarts its idle clock, as for any awake workload | `True`, `AlreadyAwake` |
+| Already on the ManagedWorkload as Hybernate takes up a pause again after its status was lost | Nothing: it may have been answered before, and brought back with the ManagedWorkload, as by a backup restored without status, so it leaves the workload paused. Set a new value to ask | `False`, `PredatesStatus` |
 
 As with a pause request, the condition answers the last request until the next one, through the pauses and wakes since, so its message says what happened and when, in UTC: `woken as requested at 2026-10-23 09:05 UTC`, `already awake at …`, or `not woken at 2026-10-23 09:05 UTC:` and why:
 
@@ -122,7 +123,7 @@ kubectl get managedworkload my-api -n staging \
   -o jsonpath='{.status.conditions[?(@.type=="WakeRequest")]}'
 ```
 
-A request Hybernate can't act on is answered once, not retried: ask again once the reason is gone. As for a pause request, one already on the ManagedWorkload as Hybernate takes it on is taken as answered, not acted on, so set it once the ManagedWorkload is `Running`.
+A request Hybernate can't act on is answered once, not retried: ask again once the reason is gone. Unlike a pause request, a wake request may be set at any time, even on a ManagedWorkload Hybernate hasn't taken on yet: it takes the ManagedWorkload on `Running` and answers the request as already awake, since at worst an old request restarts the idle clock. Only one already there when Hybernate takes a pause up again, after the ManagedWorkload's status was lost, is answered `PredatesStatus` and left paused.
 
 ## When Hybernate Lets Go
 

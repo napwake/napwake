@@ -344,6 +344,63 @@ func TestWake_WokenAfterAPauseUnderWay(t *testing.T) {
 	assert.GreaterOrEqual(t, reads, 6, "it waits until the workload is Running")
 }
 
+// A ManagedWorkload just created, which Hybernate hasn't taken on yet, has
+// no status: Hybernate takes it on Running and answers the request as for
+// any awake workload, and wake says so.
+func TestWake_AManagedWorkloadJustCreated(t *testing.T) {
+	c := newClient(t, wakes("AlreadyAwake", 0), managedWorkload(""))
+	var out bytes.Buffer
+
+	require.NoError(t, wake(testContext(t), c, apiKey, testOptions(), &out))
+
+	assert.Equal(t, "preview-42/api is already running; its idle clock restarts now\n", out.String())
+}
+
+// A paused workload restored without its status is read by wake before
+// Hybernate takes its pause up again, and the old request still on it is
+// answered PredatesStatus before wake's own request lands. That answer is
+// about the old request alone: Hybernate then answers wake's, waking the
+// workload, and wake waits for that rather than fail on the old one.
+func TestWake_NotAnsweredByAnOlderRequestsPredatesStatus(t *testing.T) {
+	reads := 0
+	funcs := interceptor.Funcs{Get: func(ctx context.Context, c client.WithWatch, key client.ObjectKey,
+		obj client.Object, opts ...client.GetOption) error {
+		if err := c.Get(ctx, key, obj, opts...); err != nil {
+			return err
+		}
+		w, ok := obj.(*v1alpha1.ManagedWorkload)
+		if !ok {
+			return nil
+		}
+		reads++
+		switch {
+		case reads == 1:
+		case reads < 4:
+			w.Status.Phase = v1alpha1.PhasePaused
+			w.Status.LastWakeRequest = "the-old-request"
+			meta.SetStatusCondition(&w.Status.Conditions, metav1.Condition{Type: "WakeRequest",
+				Status: metav1.ConditionFalse, Reason: "PredatesStatus", Message: "not woken at 2026-10-03 09:00 UTC: " +
+					"the request was on the ManagedWorkload before Hybernate's record of it began"})
+		case reads < 6:
+			w.Status.Phase = v1alpha1.PhaseResuming
+			answerWake(w, metav1.ConditionTrue, "Woken", "woken as requested at 2026-10-03 09:00 UTC")
+		default:
+			w.Status.Phase = v1alpha1.PhaseRunning
+			answerWake(w, metav1.ConditionTrue, "Woken", "woken as requested at 2026-10-03 09:00 UTC")
+		}
+		return nil
+	}}
+	restored := managedWorkload("")
+	restored.Annotations = map[string]string{v1alpha1.AnnotationWakeRequested: "the-old-request"}
+	c := newClient(t, funcs, restored)
+	var out bytes.Buffer
+
+	require.NoError(t, wake(testContext(t), c, apiKey, testOptions(), &out))
+
+	assert.Equal(t, "preview-42/api is Running after 0s\n", out.String())
+	assert.GreaterOrEqual(t, reads, 6, "it waits for its own request's answer")
+}
+
 // A ManagedWorkload deleted while wake waits has handed its workload back.
 func TestWake_DeletedWhileWaiting(t *testing.T) {
 	var gets int
