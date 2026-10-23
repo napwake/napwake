@@ -44,8 +44,11 @@ var errNotWoken = errors.New("wasn't woken")
 // Running when the wait ran out.
 var errNotRunningYet = errors.New("isn't Running yet")
 
-// The operator's WakeRequest condition says what came of a request.
-const conditionWakeRequest = "WakeRequest"
+// What the operator's WakeRequest condition says came of a request.
+const (
+	conditionWakeRequest = "WakeRequest"
+	reasonWoken          = "Woken"
+)
 
 type wakeOptions struct {
 	keepAwake    time.Duration
@@ -134,6 +137,7 @@ func wake(ctx context.Context, c client.Client, key client.ObjectKey, opts wakeO
 
 	start := opts.now()
 	token := start.UTC().Format(time.RFC3339Nano)
+	before := w.Status.LastWakeRequest
 	patch := client.MergeFrom(w.DeepCopy())
 	if w.Annotations == nil {
 		w.Annotations = map[string]string{}
@@ -161,7 +165,8 @@ func wake(ctx context.Context, c client.Client, key client.ObjectKey, opts wakeO
 	if !opts.wait {
 		return nil
 	}
-	return waitForWake(ctx, c, key, ref, token, awake, w.Status.Phase, start, opts, out)
+	return waitForWake(ctx, c, key, ref, wakeRequest{token: token, before: before, awake: awake}, w.Status.Phase,
+		start, opts, out)
 }
 
 // awakeMessage says what a wake request does for a workload that's awake
@@ -177,11 +182,28 @@ func awakeMessage(ref string, w *v1alpha1.ManagedWorkload) string {
 	return ""
 }
 
-// waitForWake waits until Hybernate has answered the request token, and
-// then until the workload is Running, or Hybernate has said why it didn't
-// wake it. awake is what to say once a workload that was awake is answered,
-// or empty for one that wakes; phase is the workload's when the wait starts.
-func waitForWake(ctx context.Context, c client.Client, key client.ObjectKey, ref, token, awake string,
+// wakeRequest is a request wake made, to wait for the answer to.
+type wakeRequest struct {
+	token string
+	// before is the last request Hybernate had answered when wake asked.
+	before string
+	// awake is what to say once a workload that was awake is answered as
+	// such, or empty for one that wakes.
+	awake string
+}
+
+// answers reports whether lastWakeRequest, the last request Hybernate
+// answered, answers req: its own token, or one another tool set after it,
+// which replaced it on the annotation, so what came of that one came of
+// req too. A status lost meanwhile answers nothing.
+func (req wakeRequest) answers(lastWakeRequest string) bool {
+	return lastWakeRequest == req.token || lastWakeRequest != "" && lastWakeRequest != req.before
+}
+
+// waitForWake waits until Hybernate has answered req, and then until the
+// workload is Running, or Hybernate has said why it didn't wake it. phase
+// is the workload's when the wait starts.
+func waitForWake(ctx context.Context, c client.Client, key client.ObjectKey, ref string, req wakeRequest,
 	phase v1alpha1.WorkloadPhase, start time.Time, opts wakeOptions, out io.Writer) error {
 	ticker := time.NewTicker(opts.pollInterval)
 	defer ticker.Stop()
@@ -209,15 +231,18 @@ func waitForWake(ctx context.Context, c client.Client, key client.ObjectKey, ref
 			return fmt.Errorf("waiting for %s: %w", ref, err)
 		}
 		phase = w.Status.Phase
-		if w.Status.LastWakeRequest == token {
+		if req.answers(w.Status.LastWakeRequest) {
 			answered = true
-			if answer := meta.FindStatusCondition(w.Status.Conditions, conditionWakeRequest); answer != nil &&
-				answer.Status == metav1.ConditionFalse {
+			answer := meta.FindStatusCondition(w.Status.Conditions, conditionWakeRequest)
+			if answer != nil && answer.Status == metav1.ConditionFalse {
 				return fmt.Errorf("%s %w: %s", ref, errNotWoken, refusal("not woken", oneLine(answer.Message)))
 			}
+			// A workload read as awake can have been woken all the same,
+			// after a pause already under way when wake read it.
+			woken := answer != nil && answer.Reason == reasonWoken
 			switch {
-			case awake != "":
-				_, _ = fmt.Fprintf(out, "%s\n", awake)
+			case req.awake != "" && !woken:
+				_, _ = fmt.Fprintf(out, "%s\n", req.awake)
 				return nil
 			case phase == v1alpha1.PhaseRunning:
 				_, _ = fmt.Fprintf(out, "%s is Running after %s\n", ref, opts.now().Sub(start).Round(time.Second))

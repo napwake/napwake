@@ -581,7 +581,7 @@ waking staging/my-api...
 staging/my-api is Running after 23s
 ```
 
-`wake` asks Hybernate to wake the workload now, whatever its [wake setting](../concepts/wake-on-request.md), by setting the `hybernate.io/wake-requested` annotation on its ManagedWorkload to a fresh token, as any tool can; see [Wake Now](../guides/pause.md#wake-now). A paused workload wakes, along with the workloads it [depends on](../concepts/dependencies.md); a running one has its idle clock restarted. It then waits for Hybernate's answer, in the ManagedWorkload's `WakeRequest` condition, and until the workload is Running.
+`wake` asks Hybernate to wake the workload now, whatever its [wake setting](../concepts/wake-on-request.md), by setting the `hybernate.io/wake-requested` annotation on its ManagedWorkload to a fresh token, as any tool can; see [Wake Now](../guides/pause.md#wake-now). A paused workload wakes, along with the workloads it [depends on](../concepts/dependencies.md); a running one has its idle clock restarted. It then waits for Hybernate's answer, in the ManagedWorkload's `WakeRequest` condition, and until the workload is Running. Another tool asking meanwhile replaces `wake`'s token with its own, and Hybernate's answer to that one stands for both.
 
 ```bash
 # Keep it awake for the next two hours, e.g. for a demo
