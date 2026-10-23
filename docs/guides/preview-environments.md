@@ -42,6 +42,8 @@ Put the `hybernate.io/managed` label and `hybernate.io/wake: ask` on each previe
         hybernate.io/wake: ask
     ```
 
+    Leave `replicas` out of the workloads' manifests, and Kubernetes starts a new Deployment at one replica. A deploy that sets them, with `kubectl apply` or Helm, scales a paused preview back up, which wakes it, and a GitOps tool that sets them undoes every pause; see [GitOps tools](gitops.md).
+
 === "Argo CD"
 
     An Application that creates the preview's namespace, with `CreateNamespace=true`, sets them in `managedNamespaceMetadata`. It also has to leave the replicas to Hybernate, or it scales the preview back up after every pause:
@@ -92,6 +94,8 @@ Put the `hybernate.io/managed` label and `hybernate.io/wake: ask` on each previe
       - namespace.yaml
       - ../base
     ```
+
+    Leave `replicas` out of the workloads' manifests in the base. Flux sets the replicas a manifest has, so it would scale the preview back up after every pause, a `GitOpsConflict` that holds off the next pause for an hour; see [Flux](gitops.md#flux).
 
 To have every workload opted in on the cluster ask, whatever its namespace, set the Helm value `defaults.wake`:
 
@@ -189,7 +193,7 @@ Tooling wakes a preview by setting the `hybernate.io/wake-requested` annotation 
 
 ### When a pull request is pushed
 
-A deploy to a paused preview doesn't wake it: its new pods start at its next wake. To have it up for whoever reviews each push, wake it from the workflow that deploys it, and wait until it's Running. In GitHub Actions:
+A deploy that leaves the replicas to Hybernate, as each tab of [Turning it on](#turning-it-on) sets up, doesn't wake a paused preview: its new pods start at its next wake. One that sets `replicas` scales the preview up, which Hybernate counts as a scale-up from outside, so it wakes; under Flux, that's a `GitOpsConflict`, and the next pause waits an hour; see [GitOps tools](gitops.md). To have it up for whoever reviews each push, wake it from the workflow that deploys it, and wait until it's Running. In GitHub Actions:
 
 ```yaml title=".github/workflows/preview.yaml"
 name: Preview
