@@ -933,6 +933,19 @@ func TestRecordTurnedAway(t *testing.T) {
 			want: &v1alpha1.TurnedAway{PausedAt: metav1.NewTime(paused)}},
 		{name: "waking on request", mode: v1alpha1.WakeOnRequest, pausedAt: &paused, annotation: counted(paused, 12),
 			status: &v1alpha1.TurnedAway{PausedAt: metav1.NewTime(paused), Requests: 3}},
+		{name: "a count reset by hand, without a pause, while paused", mode: v1alpha1.WakeOnAsk, pausedAt: &paused,
+			annotation: `{"requests":0}`, status: &v1alpha1.TurnedAway{PausedAt: metav1.NewTime(paused), Requests: 12},
+			want: &v1alpha1.TurnedAway{PausedAt: metav1.NewTime(paused), Requests: 12}},
+		{name: "a count reset by hand, without a pause, while awake with none recorded", mode: v1alpha1.WakeOnAsk,
+			annotation: `{"requests":0}`},
+		{name: "a count of a pause still to come, while paused", mode: v1alpha1.WakeOnAsk, pausedAt: &paused,
+			annotation: counted(paused.Add(48*time.Hour), 99),
+			want:       &v1alpha1.TurnedAway{PausedAt: metav1.NewTime(paused)}},
+		{name: "a count of a pause still to come, while awake", mode: v1alpha1.WakeOnAsk,
+			annotation: counted(paused.Add(48*time.Hour), 99),
+			status:     &v1alpha1.TurnedAway{PausedAt: metav1.NewTime(paused), Requests: 12},
+			want:       &v1alpha1.TurnedAway{PausedAt: metav1.NewTime(paused), Requests: 12}},
+		{name: "a count, while awake with none recorded", mode: v1alpha1.WakeOnAsk, annotation: counted(paused, 12)},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -950,6 +963,9 @@ func TestRecordTurnedAway(t *testing.T) {
 			recordTurnedAway(workload)
 
 			got := workload.Status.TurnedAway
+			if got != nil {
+				assert.False(t, got.PausedAt.IsZero(), "status needs the pause it counts, or its every write fails")
+			}
 			if tt.want == nil {
 				assert.Nil(t, got)
 				return

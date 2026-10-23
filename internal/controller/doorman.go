@@ -192,10 +192,13 @@ func (r *Reconciler) routeDoorman(ctx context.Context, workload *v1alpha1.Manage
 }
 
 // recordTurnedAway brings status.turnedAway up to date for a workload whose
-// doorman asks before waking it: a pause starts with none turned away, and
-// the doorman's count, in its annotation, is copied in once it's of that
-// pause or a later one. A count of an earlier pause, written late, is left
-// out, so it never stands in for the current pause's.
+// doorman asks before waking it: each pause starts with none turned away,
+// and the doorman's count, in its annotation, is copied in only when it's
+// of the pause status counts, the current one or, once the workload is
+// awake, the last. Anything else in the annotation, such as a count of an
+// earlier pause written late, or one edited by hand without a pause or
+// with one still to come, is left out: status needs the pause it counts,
+// and a write without one would fail every status write after it.
 func recordTurnedAway(workload *v1alpha1.ManagedWorkload) {
 	if !workload.Spec.Wake.Asks() {
 		workload.Status.TurnedAway = nil
@@ -204,17 +207,29 @@ func recordTurnedAway(workload *v1alpha1.ManagedWorkload) {
 	current := workload.Status.TurnedAway
 	if p := workload.Status.Pause; p != nil && p.PausedAt != nil {
 		pausedAt := metav1.NewTime(p.PausedAt.Truncate(time.Second))
-		if current == nil || current.PausedAt.Before(&pausedAt) {
+		if current == nil || !current.PausedAt.Truncate(time.Second).Equal(pausedAt.Time) {
 			current = &v1alpha1.TurnedAway{PausedAt: pausedAt}
 		}
 	}
-	var counted v1alpha1.TurnedAway
-	if value, ok := workload.Annotations[v1alpha1.AnnotationTurnedAway]; ok &&
-		json.Unmarshal([]byte(value), &counted) == nil && counted.Requests >= 0 &&
-		(current == nil || !counted.PausedAt.Before(&current.PausedAt)) {
-		current = &counted
+	if current == nil {
+		return
+	}
+	if counted, ok := turnedAwayIn(workload.Annotations); ok &&
+		counted.PausedAt.Truncate(time.Second).Equal(current.PausedAt.Truncate(time.Second)) {
+		current = &v1alpha1.TurnedAway{PausedAt: current.PausedAt, Requests: counted.Requests}
 	}
 	workload.Status.TurnedAway = current
+}
+
+// turnedAwayIn is the doorman's count in a workload's annotations, if
+// there's one that names its pause.
+func turnedAwayIn(annotations map[string]string) (v1alpha1.TurnedAway, bool) {
+	var counted v1alpha1.TurnedAway
+	value, ok := annotations[v1alpha1.AnnotationTurnedAway]
+	if !ok || json.Unmarshal([]byte(value), &counted) != nil {
+		return counted, false
+	}
+	return counted, counted.Requests >= 0 && !counted.PausedAt.IsZero()
 }
 
 // announceRouting warns about a change in the workload's routing once the

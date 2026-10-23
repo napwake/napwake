@@ -153,7 +153,8 @@ doorman:
   portsPerNamespace: 256
   # Two ValidatingAdmissionPolicies: one lets the doorman's ServiceAccount
   # set only the two annotations recording a request on ManagedWorkloads,
-  # though its role may patch them; the other lets no one else set them,
+  # and the one counting the requests it turned away, though its role may
+  # patch them; the other lets no one else set the two recording a request,
   # since the operator learns dependencies from them.
   admissionPolicy:
     enabled: true

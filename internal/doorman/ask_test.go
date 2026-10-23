@@ -81,9 +81,34 @@ func tokenIn(t *testing.T, page string) string {
 // clickRequest is the POST the Wake it button sends, with token, back to
 // the page it's on.
 func clickRequest(token string) string {
+	return clickFrom(token, chrome, chromeClick)
+}
+
+// What browsers send with a form a person submits by clicking it, besides
+// their User-Agent. Chrome, Edge and Firefox mark a navigation a person
+// started with Sec-Fetch-User; Safari, and every browser on iOS, which run
+// WebKit, send the rest of the fetch metadata without it.
+const (
+	chromeClick = "Origin: https://pr-42.preview.example.dev\r\nSec-Fetch-Site: same-origin\r\n" +
+		"Sec-Fetch-Mode: navigate\r\nSec-Fetch-User: ?1\r\nSec-Fetch-Dest: document\r\n"
+	safariClick = "Origin: https://pr-42.preview.example.dev\r\nSec-Fetch-Site: same-origin\r\n" +
+		"Sec-Fetch-Mode: navigate\r\nSec-Fetch-Dest: document\r\n"
+)
+
+const (
+	firefox = "Mozilla/5.0 (Macintosh; Intel Mac OS X 15.6; rv:144.0) Gecko/20100101 Firefox/144.0"
+	safari  = "Mozilla/5.0 (Macintosh; Intel Mac OS X 15_6) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/26.0 " +
+		"Safari/605.1.15"
+	chromeOnIPhone = "Mozilla/5.0 (iPhone; CPU iPhone OS 26_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) " +
+		"CriOS/141.0.7390.41 Mobile/15E148 Safari/604.1"
+)
+
+// clickFrom is the POST the Wake it button sends, with token, back to the
+// page it's on, from a browser of agent sending headers.
+func clickFrom(token, agent, headers string) string {
 	body := url.Values{wakeField: {token}}.Encode()
-	return "POST /orders?id=7 HTTP/1.1\r\nHost: pr-42.preview.example.dev\r\nUser-Agent: " + chrome + "\r\n" +
-		"Content-Type: application/x-www-form-urlencoded\r\nSec-Fetch-Site: same-origin\r\nSec-Fetch-Mode: navigate\r\n" +
+	return "POST /orders?id=7 HTTP/1.1\r\nHost: pr-42.preview.example.dev\r\nUser-Agent: " + agent + "\r\n" +
+		"Content-Type: application/x-www-form-urlencoded\r\n" + headers +
 		fmt.Sprintf("Content-Length: %d\r\n\r\n", len(body)) + body
 }
 
@@ -111,7 +136,8 @@ func TestServer_AsksAPersonBeforeWaking(t *testing.T) {
 	assert.Equal(t, "noindex", resp.Header.Get("X-Robots-Tag"))
 	assert.Contains(t, resp.Header.Get("Content-Security-Policy"), "frame-ancestors 'none'")
 	assert.Contains(t, body, `<meta name="robots" content="noindex">`)
-	assert.NotContains(t, body, `http-equiv="refresh"`, "it waits for a click")
+	assert.Contains(t, body, `<meta http-equiv="refresh" content="60">`,
+		"a tab left open reloads itself, into the app once someone has woken it, and with a fresh token until then")
 	assert.Contains(t, body, "<title>Asleep pr-42.preview.example.dev</title>")
 	assert.Contains(t, body, `<form method="post">`, "the button posts back to the page it's on")
 	assert.Contains(t, body, "Wake it")
@@ -242,6 +268,60 @@ func TestServer_AClickWithoutAGoodTokenWakesNothing(t *testing.T) {
 			assert.Equal(t, http.StatusOK, resp.StatusCode, "the asleep page again")
 			assert.Contains(t, body, noticeExpired)
 			tokenIn(t, body)
+			assert.Empty(t, lastRequest(t, c), "nothing wakes it")
+		})
+	}
+}
+
+// Only a person's click wakes the workload: a browser's, and, from a
+// browser that marks the navigations a person starts, marked so. A spider
+// that fetches the page and posts its token, or a script that submits the
+// form, wakes nothing.
+func TestServer_AClickMustComeFromAPerson(t *testing.T) {
+	tests := []struct {
+		name    string
+		agent   string
+		headers string
+		wakes   bool
+		page    bool
+	}{
+		{name: "Chrome, clicked", agent: chrome, headers: chromeClick, wakes: true},
+		{name: "Firefox, clicked", agent: firefox, headers: chromeClick, wakes: true},
+		{name: "Safari, clicked", agent: safari, headers: safariClick, wakes: true},
+		{name: "Chrome on an iPhone, which is WebKit, clicked", agent: chromeOnIPhone, headers: safariClick, wakes: true},
+		{name: "a browser that sends no fetch metadata", agent: chrome, wakes: true},
+		{name: "Chrome, a script submitting the form", agent: chrome, page: true,
+			headers: strings.Replace(chromeClick, "Sec-Fetch-User: ?1\r\n", "", 1)},
+		{name: "Firefox, a script submitting the form", agent: firefox, page: true,
+			headers: strings.Replace(chromeClick, "Sec-Fetch-User: ?1\r\n", "", 1)},
+		{name: "not started by a person, said outright", agent: safari, page: true,
+			headers: safariClick + "Sec-Fetch-User: ?0\r\n"},
+		{name: "a spider posting the token it fetched", agent: "python-requests/2.32.3", headers: chromeClick},
+		{name: "a headless browser", agent: "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) " +
+			"HeadlessChrome/141.0.0.0 Safari/537.36", headers: chromeClick},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			port := freePort(t)
+			s, c := newTestServer(t, nil, askingWorkload(port))
+			stop := run(t, s)
+
+			resp, body := click(t, port, clickFrom(askedPage(t, port), tt.agent, tt.headers))
+
+			stop()
+			switch {
+			case tt.wakes:
+				assert.Equal(t, http.StatusServiceUnavailable, resp.StatusCode, "the waking-up page")
+				assert.Contains(t, body, "Waking up")
+				assert.NotEmpty(t, lastRequest(t, c))
+				return
+			case tt.page:
+				assert.Equal(t, http.StatusOK, resp.StatusCode, "the asleep page again")
+				tokenIn(t, body)
+			default:
+				assert.Equal(t, http.StatusServiceUnavailable, resp.StatusCode)
+				assert.Contains(t, body, asleepMessage)
+			}
 			assert.Empty(t, lastRequest(t, c), "nothing wakes it")
 		})
 	}
@@ -472,11 +552,29 @@ func TestWakeKeys_APageShownBeforeTheKeyChangedStillWorks(t *testing.T) {
 	scope := tokenScope{workload: apiKey, uid: "uid-api", pausedAt: time.Now().Truncate(time.Second)}
 	token := keys.sign(scope, time.Now().Add(tokenTTL))
 
-	keys.use(newWakeKey())
+	keys.use(newWakeKey(), time.Now())
 
 	assert.True(t, keys.valid(token, scope, time.Now()))
-	keys.use(newWakeKey())
+	keys.use(newWakeKey(), time.Now())
 	assert.False(t, keys.valid(token, scope, time.Now()), "but not two keys on")
+}
+
+// Once the key changes, the one before it passes only as long as a token
+// signed with it could last, so a key that leaked stops working once the
+// Secret is emptied, rather than for as long as the doorman runs.
+func TestWakeKeys_RetireTheKeyBefore(t *testing.T) {
+	keys := newWakeKeys()
+	leaked := &wakeKeys{current: keys.current}
+	scope := tokenScope{workload: apiKey, uid: "uid-api", pausedAt: time.Now().Truncate(time.Second)}
+	changed := time.Now()
+	keys.use(newWakeKey(), changed)
+
+	soon := changed.Add(tokenTTL)
+	assert.True(t, keys.valid(leaked.sign(scope, soon.Add(time.Minute)), scope, soon),
+		"a page shown before the change works for as long as its token lasts")
+	late := changed.Add(tokenTTL + tokenSkew + time.Second)
+	assert.False(t, keys.valid(leaked.sign(scope, late.Add(time.Minute)), scope, late),
+		"the key before signs nothing that passes once its tokens could all have expired")
 }
 
 // A token is good for its whole lifetime and not a moment longer, and one
@@ -500,6 +598,13 @@ func TestWakeKeys_Lifetime(t *testing.T) {
 	padded := []byte(issued)
 	padded[len(padded)-1] = base64URLWithLowBit(padded[len(padded)-1])
 	assert.False(t, keys.valid(string(padded), scope, now), "only one spelling of a token passes")
+	half := len(issued) / 2
+	for _, extra := range []string{"\r\n", "\n", "\r", "=", " ", "+", "/", "%2D"} {
+		spelling := issued[:half] + extra + issued[half:]
+		assert.False(t, keys.valid(spelling, scope, now), "only one spelling of a token passes, not with %q", extra)
+	}
+	assert.False(t, keys.valid(issued+"\n", scope, now), "nor with a line end after it")
+	assert.False(t, keys.valid(issued+"==", scope, now), "nor padded")
 }
 
 // base64URLWithLowBit is the base64url digit c's value with its lowest bit
@@ -589,6 +694,46 @@ func TestServer_CountsTheRequestsItTurnsAway(t *testing.T) {
 	assert.True(t, got.PausedAt.Equal(&metav1.Time{Time: next}))
 }
 
+// A count is always written with the pause it counts, and one in the
+// annotation without a pause, or with one later than the workload's
+// current pause, as one edited by hand might be, is started again rather
+// than added to, or kept in place of this pause's.
+func TestWithTurnedAway(t *testing.T) {
+	paused := time.Date(2026, 10, 23, 9, 0, 0, 0, time.UTC)
+	count := func(at time.Time, n int64) string {
+		return fmt.Sprintf(`{"pausedAt":%q,"requests":%d}`, at.Format(time.RFC3339), n)
+	}
+	tests := []struct {
+		name    string
+		current string
+		latest  time.Time
+		add     awayCount
+		want    int64
+		writes  bool
+	}{
+		{name: "none yet", latest: paused, add: awayCount{pausedAt: paused, requests: 3}, want: 3, writes: true},
+		{name: "this pause's", current: count(paused, 4), latest: paused, add: awayCount{pausedAt: paused, requests: 3},
+			want: 7, writes: true},
+		{name: "a later pause's, since begun", current: count(paused.Add(time.Hour), 4), latest: paused.Add(time.Hour),
+			add: awayCount{pausedAt: paused, requests: 3}},
+		{name: "one without a pause", current: `{"requests":40}`, latest: paused,
+			add: awayCount{pausedAt: paused, requests: 3}, want: 3, writes: true},
+		{name: "one of a pause still to come", current: count(paused.Add(48*time.Hour), 40), latest: paused,
+			add: awayCount{pausedAt: paused, requests: 3}, want: 3, writes: true},
+		{name: "counted without a pause", latest: paused, add: awayCount{requests: 3}},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, writes := withTurnedAway(tt.current, tt.add, tt.latest)
+			assert.Equal(t, tt.writes, writes)
+			if writes {
+				assert.Equal(t, tt.want, got.Requests)
+				assert.True(t, got.PausedAt.Equal(&metav1.Time{Time: tt.add.pausedAt}))
+			}
+		})
+	}
+}
+
 func turnedAwayOf(t *testing.T, c client.Client) v1alpha1.TurnedAway {
 	t.Helper()
 	var w v1alpha1.ManagedWorkload
@@ -598,6 +743,63 @@ func turnedAwayOf(t *testing.T, c client.Client) v1alpha1.TurnedAway {
 		require.NoError(t, json.Unmarshal([]byte(value), &count))
 	}
 	return count
+}
+
+// A proxy in front of the doorman may send the click's form chunked, as
+// ingress-nginx does a body it doesn't buffer, from a browser speaking
+// HTTP/2 to it without a Content-Length. It still wakes the workload; a
+// chunked body too large to be the button's doesn't.
+func TestServer_AChunkedClickWakesIt(t *testing.T) {
+	tests := []struct {
+		name  string
+		pad   int
+		wakes bool
+	}{
+		{name: "the button's form", wakes: true},
+		{name: "a body too large to be the button's", pad: 2 * maxClickBody},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			port := freePort(t)
+			s, c := newTestServer(t, nil, askingWorkload(port))
+			stop := run(t, s)
+			form := url.Values{wakeField: {askedPage(t, port)}, "pad": {strings.Repeat("a", tt.pad)}}.Encode()
+			half := len(form) / 2
+			request := "POST /orders?id=7 HTTP/1.1\r\nHost: pr-42.preview.example.dev\r\nUser-Agent: " + chrome + "\r\n" +
+				"Content-Type: application/x-www-form-urlencoded\r\n" + chromeClick + "Transfer-Encoding: chunked\r\n\r\n" +
+				fmt.Sprintf("%x\r\n%s\r\n%x\r\n%s\r\n0\r\n\r\n", half, form[:half], len(form)-half, form[half:])
+
+			resp, _ := click(t, port, request)
+
+			stop()
+			if tt.wakes {
+				assert.Equal(t, http.StatusServiceUnavailable, resp.StatusCode, "the waking-up page")
+				assert.NotEmpty(t, lastRequest(t, c))
+				return
+			}
+			assert.Equal(t, http.StatusOK, resp.StatusCode, "the asleep page again")
+			assert.Empty(t, lastRequest(t, c))
+		})
+	}
+}
+
+// HTTP/2 spoken to the doorman itself, as a proxy told to use it for its
+// backends does, can't be asked: it wakes nothing, and is turned away. A
+// browser's HTTP/2 to the proxy, which speaks HTTP/1.1 on, is asked as
+// usual.
+func TestServer_AskingTurnsAwayHTTP2(t *testing.T) {
+	port := freePort(t)
+	s, c := newTestServer(t, nil, askingWorkload(port))
+	stop := run(t, s)
+	before := wakes(resultTurnedAway)
+
+	conn := dial(t, port)
+	send(t, conn, "PRI * HTTP/2.0\r\n\r\nSM\r\n\r\n\x00\x00\x00\x04\x00\x00\x00\x00\x00")
+	_, _ = io.Copy(io.Discard, conn)
+
+	stop()
+	assert.Empty(t, lastRequest(t, c), "nothing wakes it")
+	assert.Equal(t, before+1, wakes(resultTurnedAway))
 }
 
 // The click's form can arrive after its headers, as a slow link or a proxy

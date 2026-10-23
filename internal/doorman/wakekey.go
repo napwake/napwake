@@ -76,7 +76,7 @@ func (s *Server) loadWakeKey(ctx context.Context) error {
 				return fmt.Errorf("the wake key secret's %q is %d bytes, fewer than the %d needed", WakeKeyField,
 					len(key), wakeKeySize)
 			}
-			s.wakeKeys.use(key)
+			s.wakeKeys.use(key, s.now())
 			return nil
 		}
 		key := newWakeKey()
@@ -91,7 +91,7 @@ func (s *Server) loadWakeKey(ctx context.Context) error {
 		if err != nil {
 			return fmt.Errorf("writing the wake key secret: %w", err)
 		}
-		s.wakeKeys.use(key)
+		s.wakeKeys.use(key, s.now())
 		return nil
 	}
 	return fmt.Errorf("the wake key secret %s kept changing while being filled", s.wakeKeySecret)

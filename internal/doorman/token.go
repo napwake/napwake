@@ -60,13 +60,16 @@ type tokenScope struct {
 }
 
 // wakeKeys sign and check the tokens behind the asleep page's Wake it
-// button. Tokens signed with the key before the current one still pass, so
-// a key changed by another replica doesn't fail a click on a page shown a
-// moment before.
+// button. Tokens signed with the key before the current one still pass
+// until previousUntil, as long as one signed just before the change could
+// last, so a key changed by another replica doesn't fail a click on a page
+// shown a moment before, and a key that leaked stops working soon after
+// it's replaced.
 type wakeKeys struct {
-	mu       sync.RWMutex
-	current  []byte
-	previous []byte
+	mu            sync.RWMutex
+	current       []byte
+	previous      []byte
+	previousUntil time.Time
 }
 
 // newWakeKeys starts with a key of this replica's own, used until one
@@ -81,14 +84,15 @@ func newWakeKey() []byte {
 	return key
 }
 
-// use makes key the one tokens are signed with.
-func (k *wakeKeys) use(key []byte) {
+// use makes key the one tokens are signed with, from now.
+func (k *wakeKeys) use(key []byte, now time.Time) {
 	k.mu.Lock()
 	defer k.mu.Unlock()
 	if hmac.Equal(key, k.current) {
 		return
 	}
 	k.previous, k.current = k.current, append([]byte(nil), key...)
+	k.previousUntil = now.Add(tokenTTL + tokenSkew)
 }
 
 // sign returns a token for scope, good until expires.
@@ -107,6 +111,9 @@ func (k *wakeKeys) sign(scope tokenScope, expires time.Time) string {
 // scope, and hasn't expired. The MAC is compared in constant time, so the
 // time taken says nothing about how much of a forged one was right.
 func (k *wakeKeys) valid(token string, scope tokenScope, now time.Time) bool {
+	if !wellFormed(token) {
+		return false
+	}
 	raw, err := base64.RawURLEncoding.Strict().DecodeString(token)
 	if err != nil || len(raw) != tokenSize || raw[0] != tokenVersion {
 		return false
@@ -116,7 +123,10 @@ func (k *wakeKeys) valid(token string, scope tokenScope, now time.Time) bool {
 		return false
 	}
 	k.mu.RLock()
-	keys := [][]byte{k.current, k.previous}
+	keys := [][]byte{k.current}
+	if now.Before(k.previousUntil) {
+		keys = append(keys, k.previous)
+	}
 	k.mu.RUnlock()
 	ok := false
 	for _, key := range keys {
@@ -125,6 +135,27 @@ func (k *wakeKeys) valid(token string, scope tokenScope, now time.Time) bool {
 		}
 	}
 	return ok
+}
+
+// tokenLength is how long a token is, spelt out.
+var tokenLength = base64.RawURLEncoding.EncodedLen(tokenSize)
+
+// wellFormed reports whether token is spelt as sign spells one: base64url
+// digits alone, and as many as a token takes. The decoder skips line ends
+// wherever they are, so without this a token would pass in more than one
+// spelling.
+func wellFormed(token string) bool {
+	if len(token) != tokenLength {
+		return false
+	}
+	for i := range len(token) {
+		switch c := token[i]; {
+		case 'A' <= c && c <= 'Z', 'a' <= c && c <= 'z', '0' <= c && c <= '9', c == '-', c == '_':
+		default:
+			return false
+		}
+	}
+	return true
 }
 
 // tokenMAC is the HMAC-SHA256 of the scope and expiry, each field ended by
