@@ -105,6 +105,29 @@ func TestWakeRequest_WakesAPausedWorkloadOnce(t *testing.T) {
 	assert.Equal(t, v1alpha1.PhaseRunning, getWorkload(t, r, "api").Status.Phase, "a new request wakes it")
 }
 
+// A wake request is a person asking, so it wakes the workload whatever its
+// wake setting: with ask, the doorman turns away every request but a
+// click, but not this.
+func TestWakeRequest_WhateverTheWakeSetting(t *testing.T) {
+	for _, mode := range []v1alpha1.WakeMode{v1alpha1.WakeOnRequest, v1alpha1.WakeOnAsk} {
+		t.Run(string(mode), func(t *testing.T) {
+			workload := requestedPause()
+			workload.Spec.Wake = &v1alpha1.WakeSpec{Mode: mode}
+			r := lifecycleReconciler(t, workload, 3, interceptor.Funcs{})
+			reconcileUntilSettled(t, r)
+			require.Equal(t, v1alpha1.PhasePaused, getWorkload(t, r, "api").Status.Phase)
+
+			requestWake(t, r, wakeToken)
+			reconcileUntilSettled(t, r)
+
+			got := getWorkload(t, r, "api")
+			assert.Equal(t, v1alpha1.PhaseRunning, got.Status.Phase)
+			assert.Equal(t, int32(3), targetReplicas(t, r))
+			assert.Equal(t, reasonWoken, wakeRequestCondition(t, got).Reason)
+		})
+	}
+}
+
 // A wake request for a workload that's awake is answered so, and restarts
 // its idle clock, as someone means to use it: it pauses an idleAfter later,
 // not when its clock would have run out.
