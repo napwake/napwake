@@ -156,8 +156,9 @@ func TestCLI_ForecastTable(t *testing.T) {
 	assert.Contains(t, out, "preview-42  api   acts from day one")
 	assert.Contains(t, out, ", 25m ahead  nothing\n", "no Service routes requests to it, so nothing wakes it")
 	assert.Contains(t, out, "WAKES ON is what wakes\nit once it's paused")
-	assert.Contains(t, out, "Name a workload to see it day by day, and for one Hybernate manages, what its own "+
-		"forecast is doing\nnow.")
+	assert.Contains(t, out, "people alone, with wake: ask, whose wakes the forecast learns from")
+	assert.Contains(t, out, "Name a workload to see it day by\nday, and for one Hybernate manages, what its own "+
+		"forecast is doing now.")
 }
 
 func TestCLI_ForecastOneWorkload(t *testing.T) {
