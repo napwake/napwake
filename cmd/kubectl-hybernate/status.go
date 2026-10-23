@@ -715,7 +715,7 @@ func wakesOn(w *v1alpha1.ManagedWorkload) string {
 	case len(w.Status.Doorman) == 0:
 		return "wakes on activity"
 	case w.Spec.Wake.Asks():
-		return "wakes when a person asks, or on activity"
+		return "wakes on a click, a wake request or activity"
 	default:
 		return "wakes on a request or activity"
 	}

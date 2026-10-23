@@ -215,7 +215,7 @@ func TestStatus_ShowsWhatAskingTurnedAway(t *testing.T) {
 
 	out := runStatus(t, newStatusClient(t, interceptor.Funcs{}, web, quiet), statusOpts())
 
-	assert.Contains(t, out, "wakes when a person asks, or on activity")
+	assert.Contains(t, out, "wakes on a click, a wake request or activity")
 	assert.Contains(t, out, "Turned away while asleep, by a doorman that asks before waking: something automated may "+
 		"call these.\n  preview-42/web   312 requests during the pause from 3h ago\n")
 	assert.NotContains(t, out, "preview-42/docs ", "one that turned none away isn't listed")
@@ -251,6 +251,15 @@ func TestNextFor(t *testing.T) {
 		{name: "paused without the doorman", mutate: func(w *v1alpha1.ManagedWorkload) {
 			w.Status.Phase = v1alpha1.PhasePaused
 		}, want: "wakes on activity"},
+		{name: "paused, its doorman asking before waking it", mutate: func(w *v1alpha1.ManagedWorkload) {
+			w.Status.Phase = v1alpha1.PhasePaused
+			w.Status.Doorman = []v1alpha1.DoormanRoute{{Service: "api", DoormanPort: 20000}}
+			w.Spec.Wake = &v1alpha1.WakeSpec{Mode: v1alpha1.WakeOnAsk}
+		}, want: "wakes on a click, a wake request or activity"},
+		{name: "paused, waking on request", mutate: func(w *v1alpha1.ManagedWorkload) {
+			w.Status.Phase = v1alpha1.PhasePaused
+			w.Status.Doorman = []v1alpha1.DoormanRoute{{Service: "api", DoormanPort: 20000}}
+		}, want: "wakes on a request or activity"},
 		{name: "no activity clock yet", mutate: func(*v1alpha1.ManagedWorkload) {}, want: "-"},
 	}
 	for _, tt := range tests {
