@@ -93,16 +93,21 @@ const (
 
 	// Settings for a workload opted in with LabelManaged, set on the
 	// workload or its namespace; the workload's own wins.
-	AnnotationDryRun        = "hybernate.io/dry-run"
-	AnnotationIdleAfter     = "hybernate.io/idle-after"
-	AnnotationCPUThreshold  = "hybernate.io/cpu-threshold"
-	AnnotationAutoResume    = "hybernate.io/auto-resume"
-	AnnotationPauseEarly    = "hybernate.io/pause-early"
-	AnnotationForecast      = "hybernate.io/forecast"
-	AnnotationDependsOn     = "hybernate.io/depends-on"
-	AnnotationWakeOnRequest = "hybernate.io/wake-on-request"
-	AnnotationWakeMaxWait   = "hybernate.io/wake-max-wait"
-	AnnotationWakePage      = "hybernate.io/wake-page"
+	AnnotationDryRun       = "hybernate.io/dry-run"
+	AnnotationIdleAfter    = "hybernate.io/idle-after"
+	AnnotationCPUThreshold = "hybernate.io/cpu-threshold"
+	AnnotationAutoResume   = "hybernate.io/auto-resume"
+	AnnotationPauseEarly   = "hybernate.io/pause-early"
+	AnnotationForecast     = "hybernate.io/forecast"
+	AnnotationDependsOn    = "hybernate.io/depends-on"
+	AnnotationWakeMaxWait  = "hybernate.io/wake-max-wait"
+	AnnotationWakePage     = "hybernate.io/wake-page"
+
+	// AnnotationWake is what wakes a paused workload opted in with
+	// LabelManaged through the doorman, as wake.mode: "request" or "ask".
+	// Any other value is read as "ask", so a typo never lets crawlers wake
+	// a workload meant to wake only for people.
+	AnnotationWake = "hybernate.io/wake"
 
 	// AnnotationPausedFrom is set by Hybernate on a Deployment or
 	// StatefulSet it has paused, before scaling it to zero, and removed when
@@ -135,6 +140,19 @@ const (
 	// guards don't count it.
 	AnnotationOperator = "hybernate.io/operator"
 )
+
+// ParseWake reads a wake setting as hybernate.io/wake and the Helm default
+// spell it, "request" or "ask".
+func ParseWake(v string) (WakeMode, bool) {
+	switch v {
+	case "request":
+		return WakeOnRequest, true
+	case "ask":
+		return WakeOnAsk, true
+	default:
+		return "", false
+	}
+}
 
 // SystemNamespacePrefix starts the names of the namespaces Kubernetes itself
 // runs in, such as kube-system, which are always protected: pausing CoreDNS

@@ -187,10 +187,6 @@ func TestEarlyPause_OnlyWhenSure(t *testing.T) {
 			engine: &stubForecaster{phase: forecast.DailyActive, predictValue: 10}},
 		{name: "no doorman", idle: 30 * time.Minute, engine: quietForecast(),
 			setup: func(r *Reconciler) { r.DoormanService = "" }},
-		{name: "wake on request turned off", idle: 30 * time.Minute, engine: quietForecast(),
-			workload: func(w *v1alpha1.ManagedWorkload) {
-				w.Spec.Wake = &v1alpha1.WakeSpec{OnRequest: ptr.To(false)}
-			}},
 		{name: "its last pause found its Services couldn't be routed", idle: 30 * time.Minute, engine: quietForecast(),
 			workload: func(w *v1alpha1.ManagedWorkload) {
 				meta.SetStatusCondition(&w.Status.Conditions, metav1.Condition{Type: conditionWakeOnRequest,

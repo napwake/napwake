@@ -115,11 +115,14 @@ const (
 // Services route to the doorman, which holds each connection, wakes the
 // workload, and passes the connection through once it's Ready.
 type WakeSpec struct {
-	// OnRequest routes the workload's Services to the doorman while it's
-	// paused. When false, requests to a paused workload fail.
-	// +kubebuilder:default=true
+	// Mode is what wakes the paused workload through the doorman. Request,
+	// the default: any request but a known probe's. Ask: only a person,
+	// clicking Wake it on the page the doorman shows a browser; anything
+	// else is answered 503 and wakes nothing, so crawlers and scanners on a
+	// public URL can't keep it awake.
+	// +kubebuilder:default=Request
 	// +optional
-	OnRequest *bool `json:"onRequest,omitempty"`
+	Mode WakeMode `json:"mode,omitempty"`
 
 	// MaxWait is how long the doorman holds a connection while the workload
 	// wakes, at most 1h. After it, the connection is closed; the wake
@@ -131,10 +134,30 @@ type WakeSpec struct {
 
 	// Page answers a browser loading a page with a "waking up" page that
 	// refreshes until the workload is Running, instead of holding the
-	// request. Other requests are held either way.
+	// request. Other requests are held either way. With mode: Ask, a browser
+	// is always shown a page, since that's where a person asks.
 	// +kubebuilder:default=true
 	// +optional
 	Page *bool `json:"page,omitempty"`
+}
+
+// WakeMode is what wakes a paused workload through the doorman.
+// +kubebuilder:validation:Enum=Request;Ask
+type WakeMode string
+
+const (
+	// WakeOnRequest wakes the workload on any request the doorman can't
+	// tell is a probe.
+	WakeOnRequest WakeMode = "Request"
+	// WakeOnAsk wakes it only when a person asks for it, on the page the
+	// doorman shows a browser.
+	WakeOnAsk WakeMode = "Ask"
+)
+
+// Asks reports whether the doorman asks a person before waking the
+// workload, wake.mode being Ask. Unset, it doesn't.
+func (w *WakeSpec) Asks() bool {
+	return w != nil && w.Mode == WakeOnAsk
 }
 
 // MaxDependsOn is the most dependencies dependsOn may list.

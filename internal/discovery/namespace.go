@@ -212,9 +212,10 @@ func (s *Scanner) scanNamespace(ctx, historyCtx context.Context, namespace strin
 				h := r.run()
 				w.History = &h
 				if opts.Forecast != nil {
+					install := installFor(reads.installs, namespace, mw)
 					w.Forecast = replayForecast(r, confidenceFor(mw, *opts.Forecast), mw,
-						replayWakes(mw, optedInWakeOnRequest(obj.GetAnnotations(), namespaceAnnotations),
-							wl.template.Labels, scan.services, installFor(reads.installs, namespace, mw)), *opts.Forecast)
+						replayWakes(mw, optedInAsks(obj.GetAnnotations(), namespaceAnnotations, install),
+							wl.template.Labels, scan.services, install), *opts.Forecast)
 				}
 			}
 			if w.History == nil && w.State != StateUnknown && w.Platform == "" {

@@ -243,15 +243,6 @@ func TestReconcileDoorman_NotRouted(t *testing.T) {
 		wantReason string
 	}{
 		{
-			name: "opted out",
-			workload: func() *v1alpha1.ManagedWorkload {
-				w := lifecycleWorkload("api", v1alpha1.PhasePaused)
-				w.Spec.Wake = &v1alpha1.WakeSpec{OnRequest: ptr.To(false)}
-				return w
-			},
-			doorman: doormanEndpoints("10.0.0.7"),
-		},
-		{
 			name:       "no doorman pod is ready",
 			workload:   func() *v1alpha1.ManagedWorkload { return lifecycleWorkload("api", v1alpha1.PhasePaused) },
 			wantReason: "DoormanUnavailable",
@@ -788,7 +779,7 @@ func TestReconcileDoorman_SkipsGKENEGServices(t *testing.T) {
 // WakeOnRequest once it's awake, saying so, since the next pause meets it
 // again: someone can fix it before then, rather than find out when a
 // request doesn't wake the workload. A problem that passes, such as the
-// doorman being down, and one wake.onRequest turned off makes moot, don't.
+// doorman being down, doesn't.
 func TestReconcileDoorman_KeepsALastingProblemOnceAwake(t *testing.T) {
 	local := service("api", map[string]string{"app": "api"}, corev1.ServicePort{Name: "http", Port: 80})
 	local.Spec.InternalTrafficPolicy = ptr.To(corev1.ServiceInternalTrafficPolicyLocal)
@@ -797,7 +788,6 @@ func TestReconcileDoorman_KeepsALastingProblemOnceAwake(t *testing.T) {
 	tests := []struct {
 		name        string
 		objs        []client.Object
-		onRequest   *bool
 		wantReason  string
 		wantPrefix  bool
 		wantMessage string
@@ -807,8 +797,6 @@ func TestReconcileDoorman_KeepsALastingProblemOnceAwake(t *testing.T) {
 		{name: "no doorman pods Ready", objs: []client.Object{routable.DeepCopy()}, wantReason: "NotPaused"},
 		{name: "routed", objs: []client.Object{doormanEndpoints("10.0.0.7"), routable.DeepCopy()},
 			wantReason: "NotPaused"},
-		{name: "wake.onRequest turned off since", objs: []client.Object{doormanEndpoints("10.0.0.7"), local.DeepCopy()},
-			onRequest: ptr.To(false), wantReason: "TurnedOff", wantMessage: "wake.onRequest is false"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -818,9 +806,6 @@ func TestReconcileDoorman_KeepsALastingProblemOnceAwake(t *testing.T) {
 			atPause := *wakeCondition(t, workload)
 
 			workload.Status.Phase = v1alpha1.PhaseRunning
-			if tt.onRequest != nil {
-				workload.Spec.Wake = &v1alpha1.WakeSpec{OnRequest: tt.onRequest}
-			}
 			require.NoError(t, doormanErr(ctx, r, workload, appTarget()))
 			require.NoError(t, doormanErr(ctx, r, workload, appTarget()))
 
@@ -896,20 +881,19 @@ func TestReconcileDoorman_WarnsWhenPodsHaveNoReadinessProbe(t *testing.T) {
 	}
 }
 
-// A paused workload with wake on request turned off isn't routed, and
-// says so: not NotPaused, which it is.
-func TestReconcileDoorman_TurnedOffWhilePaused(t *testing.T) {
+// A paused workload that asks before waking is routed through the doorman
+// as one that wakes on any request: it's the doorman that asks.
+func TestReconcileDoorman_RoutesAWorkloadThatAsks(t *testing.T) {
 	workload := lifecycleWorkload("api", v1alpha1.PhasePaused)
-	workload.Spec.Wake = &v1alpha1.WakeSpec{OnRequest: ptr.To(false)}
+	workload.Spec.Wake = &v1alpha1.WakeSpec{Mode: v1alpha1.WakeOnAsk}
 	r := doormanReconciler(t, workload, doormanEndpoints("10.0.0.7"),
 		service("api", map[string]string{"app": "api"}, corev1.ServicePort{Name: "http", Port: 80}))
 
 	require.NoError(t, doormanErr(context.Background(), r, workload, appTarget()))
 
-	assert.Empty(t, doormanSlices(t, r))
-	cond := wakeCondition(t, workload)
-	assert.Equal(t, metav1.ConditionFalse, cond.Status)
-	assert.Equal(t, "TurnedOff", cond.Reason)
+	assert.Len(t, doormanSlices(t, r), 1)
+	assert.Len(t, workload.Status.Doorman, 1)
+	assert.Equal(t, metav1.ConditionTrue, wakeCondition(t, workload).Status)
 }
 
 // A workload paused before has a WakeOnRequest condition already, from

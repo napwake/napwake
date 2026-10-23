@@ -140,9 +140,6 @@ func pausedUnseen(workload *v1alpha1.ManagedWorkload) string {
 	case "NoServices":
 		why, fix = "no Service routes requests to it", "give it a Service, or, for a workload no request "+
 			"reaches, such as a queue worker, a Prometheus activity query that sees its demand"
-	case reasonTurnedOff:
-		why, fix, section = `wake on request is turned off, by wake.onRequest: false or `+
-			`hybernate.io/wake-on-request: "false"`, "turn it back on", "#turning-it-off"
 	case "DoormanDisabled":
 		why, fix, section = "the doorman is turned off for the cluster", "set the Helm value doorman.enabled to true",
 			"#turning-it-off"

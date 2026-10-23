@@ -162,13 +162,11 @@ When a workload stops being routed, the doorman goes on serving its port for 30 
 
 ## Turning it off
 
-```yaml
-spec:
-  wake:
-    onRequest: false
-```
+There's no setting to turn waking off for one workload: a paused workload whose requests just fail is rarely what anyone wants. Instead:
 
-Requests to the paused workload then fail, as they would without Hybernate, and it reports `WakeOnRequest=False` with reason `TurnedOff`. With the label, set `hybernate.io/wake-on-request: "false"`. To turn it off for the whole cluster, set the Helm value `doorman.enabled: false`, or run the operator with `--doorman-service=""`; workloads then report `WakeOnRequest=False` with reason `DoormanDisabled`.
+- **For a workload on a public URL,** which crawlers and scanners would keep awake, have the doorman [ask before waking](#asking-before-waking) it: only a person's click wakes it.
+- **For one port of a Service,** such as a metrics port something scrapes, list it in `hybernate.io/doorman-ignore-ports` on the Service. That port then fails while the workload is paused, as it would without Hybernate.
+- **For the whole cluster,** set the Helm value `doorman.enabled: false`, or run the operator with `--doorman-service=""`. Requests to paused workloads then fail, and they report `WakeOnRequest=False` with reason `DoormanDisabled`.
 
 ## When a workload isn't routed
 

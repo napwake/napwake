@@ -25,7 +25,7 @@
 | `dependsOn[].name` | string | Yes | | Name of the dependency's workload |
 | `dependsOn[].waitForReady` | bool | No | `false` | Hold this workload's resume until the dependency is Ready |
 | `wake` | `WakeSpec` | No | | Waking on request while paused |
-| `wake.onRequest` | bool | No | `true` | Route the workload's Services to the doorman while paused |
+| `wake.mode` | `Request` or `Ask` | No | `Request` | What wakes the paused workload through the doorman: any request, or only a person who clicks **Wake it** on the page the doorman shows a browser |
 | `wake.maxWait` | duration (at most `1h`) | No | `2m` | How long a request is held while the workload wakes |
 | `wake.page` | bool | No | `true` | Answer a browser loading a page with a waking-up page instead of holding it |
 | `prediction` | `PredictionSpec` | No | `{}` | Forecast engine config; left out or `{}`, it takes the defaults |

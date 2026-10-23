@@ -92,13 +92,6 @@ const (
 	sliceSettle = time.Minute
 )
 
-// wakeOnRequest reports whether the workload's Services should route to the
-// doorman while it's paused, which they do unless wake.onRequest is false.
-func wakeOnRequest(workload *v1alpha1.ManagedWorkload) bool {
-	w := workload.Spec.Wake
-	return w == nil || w.OnRequest == nil || *w.OnRequest
-}
-
 // doormanEligible reports whether doorman routes should exist now. They're
 // added when a workload is paused and kept through Resuming, so connections
 // arriving mid-wake are held too; they're removed once it's Running, which
@@ -107,7 +100,7 @@ func wakeOnRequest(workload *v1alpha1.ManagedWorkload) bool {
 func doormanEligible(workload *v1alpha1.ManagedWorkload) bool {
 	switch workload.Status.Phase {
 	case v1alpha1.PhasePaused:
-		return wakeOnRequest(workload)
+		return true
 	case v1alpha1.PhaseResuming:
 		return len(workload.Status.Doorman) > 0
 	default:
@@ -125,11 +118,8 @@ func doormanEligible(workload *v1alpha1.ManagedWorkload) bool {
 // What it can't check counts against it.
 func (r *Reconciler) requestWouldWake(ctx context.Context, workload *v1alpha1.ManagedWorkload,
 	target client.Object) (bool, string, error) {
-	switch {
-	case r.DoormanService == "" || target == nil:
+	if r.DoormanService == "" || target == nil {
 		return false, "the doorman is off", nil
-	case !wakeOnRequest(workload):
-		return false, "wake on request is turned off", nil
 	}
 	if c := meta.FindStatusCondition(workload.Status.Conditions, conditionWakeOnRequest); c != nil &&
 		c.Status == metav1.ConditionFalse && c.Reason != reasonNotPaused {
@@ -338,17 +328,11 @@ var lastingRoutingProblems = map[string]bool{
 
 const foundAtLastPause = "at its last pause: "
 
-// keepRoutingProblem sets WakeOnRequest for a workload the doorman doesn't
-// route: TurnedOff while its wake.onRequest is false, paused or not, and
-// otherwise cleared once it isn't paused, except for a problem its last
-// pause found with its Services, which stays, so it can be fixed before the
-// next pause rather than found by someone whose request doesn't wake it.
+// keepRoutingProblem clears WakeOnRequest for a workload the doorman doesn't
+// route once it isn't paused, except for a problem its last pause found
+// with its Services, which stays, so it can be fixed before the next pause
+// rather than found by someone whose request doesn't wake it.
 func (r *Reconciler) keepRoutingProblem(workload *v1alpha1.ManagedWorkload) {
-	if !wakeOnRequest(workload) {
-		r.setCondition(workload, conditionWakeOnRequest, metav1.ConditionFalse, reasonTurnedOff,
-			"wake.onRequest is false, so requests to the workload don't wake it while it's paused")
-		return
-	}
 	c := meta.FindStatusCondition(workload.Status.Conditions, conditionWakeOnRequest)
 	if c == nil || c.Status != metav1.ConditionFalse || !lastingRoutingProblems[c.Reason] {
 		r.clearCondition(workload, conditionWakeOnRequest, reasonNotPaused)
@@ -477,9 +461,6 @@ func (s skippedServices) notes() string {
 
 const (
 	reasonNoReadinessProbe = "NoReadinessProbe"
-	// reasonTurnedOff is WakeOnRequest's reason for a workload whose
-	// wake.onRequest is false.
-	reasonTurnedOff = "TurnedOff"
 
 	// noReadinessNote is what the WakeOnRequest condition adds for a routed
 	// workload whose pods have no readiness probe.

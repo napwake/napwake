@@ -156,6 +156,10 @@ func TestValidateOptInDefaults(t *testing.T) {
 		{name: "a forecast setting the CRD doesn't have",
 			mutate: func(d *controller.OptInDefaults) { d.Forecast = "Eager" }, wantErr: true},
 		{name: "no forecast setting", mutate: func(d *controller.OptInDefaults) { d.Forecast = "" }, wantErr: true},
+		{name: "asking before waking", mutate: func(d *controller.OptInDefaults) { d.Wake = v1alpha1.WakeOnAsk }},
+		{name: "a wake setting the CRD doesn't have",
+			mutate: func(d *controller.OptInDefaults) { d.Wake = "ask" }, wantErr: true},
+		{name: "no wake setting", mutate: func(d *controller.OptInDefaults) { d.Wake = "" }, wantErr: true},
 	}
 
 	for _, tt := range tests {

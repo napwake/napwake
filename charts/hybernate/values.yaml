@@ -124,6 +124,12 @@ defaults:
   # cautious. Eager acts sooner and wakes workloads for nothing more often;
   # cautious, for workloads costly to keep awake, acts later.
   forecast: balanced
+  # What wakes a paused workload through the doorman: request, any request
+  # but a known probe's, or ask, only a person who clicks Wake it on the
+  # page the doorman shows a browser, for environments on a public URL that
+  # crawlers and scanners would otherwise keep awake. hybernate.io/wake
+  # sets it per workload or namespace.
+  wake: request
 
 # The doorman wakes paused workloads when a request reaches them.
 doorman:

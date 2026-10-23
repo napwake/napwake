@@ -499,9 +499,6 @@ func TestForecastOutlook_SaysWhyItIsntLearningWhilePaused(t *testing.T) {
 		{reason: "NoServices", cause: "no Service routes requests to it",
 			fix: "give it a Service, or, for a workload no request reaches, such as a queue worker, a Prometheus " +
 				"activity query that sees its demand", section: "#when-a-workload-isnt-routed"},
-		{reason: reasonTurnedOff,
-			cause: `wake on request is turned off, by wake.onRequest: false or hybernate.io/wake-on-request: "false"`,
-			fix:   "turn it back on", section: "#turning-it-off"},
 		{reason: "DoormanDisabled", cause: "the doorman is turned off for the cluster",
 			fix: "set the Helm value doorman.enabled to true", section: "#turning-it-off"},
 		{reason: "UnsupportedLoadBalancer",

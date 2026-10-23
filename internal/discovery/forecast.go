@@ -79,7 +79,7 @@ type ReplayWakes struct {
 
 // Why a request wouldn't wake a paused workload, in ReplayWakes.NoRequest.
 const (
-	noRequestTurnedOff = "wake on request is turned off"
+	noRequestAsks      = "the doorman asks before waking it, and only a person's click does"
 	noRequestNoService = "no Service routes requests to it"
 	noRequestNEGs      = "its Services are behind GKE container-native load balancing (NEGs), which the doorman " +
 		"routes only with its forwarder"
@@ -93,7 +93,6 @@ const (
 // out of ports for now.
 var notRouted = map[string]string{
 	"NoServices":              noRequestNoService,
-	"TurnedOff":               noRequestTurnedOff,
 	"DoormanDisabled":         noRequestDoormanOff,
 	"UnsupportedLoadBalancer": noRequestNEGs,
 	"ServedByOtherPods":       "its Services are served by other workloads' Ready pods",
@@ -102,31 +101,32 @@ var notRouted = map[string]string{
 	"TooManyPorts":            "it would hold more doorman ports than it may",
 }
 
-// optedInWakeOnRequest is whether the ManagedWorkload opting a workload in
-// would have it wake on request, by hybernate.io/wake-on-request as the
-// opt-in controller resolves it: the workload's annotations', then its
-// namespace's, the first that's "true" or "false", and on otherwise.
-func optedInWakeOnRequest(workload, namespace map[string]string) bool {
+// optedInAsks is whether the ManagedWorkload opting a workload in would
+// have the doorman ask before waking it, by hybernate.io/wake as the opt-in
+// controller resolves it: the workload's annotation, then its namespace's,
+// then the install's default, where a value that can't be read asks.
+func optedInAsks(workload, namespace map[string]string, install Install) bool {
 	for _, annotations := range []map[string]string{workload, namespace} {
-		switch strings.TrimSpace(annotations[v1alpha1.AnnotationWakeOnRequest]) {
-		case v1alpha1.True:
-			return true
-		case "false":
-			return false
+		v, ok := annotations[v1alpha1.AnnotationWake]
+		if !ok {
+			continue
 		}
+		on, ok := v1alpha1.ParseWake(strings.TrimSpace(v))
+		return !ok || on == v1alpha1.WakeOnAsk
 	}
-	return true
+	return install.Asks
 }
 
 // replayWakes is what would wake the workload were it paused: its
 // ManagedWorkload mw's, if Hybernate manages it, and otherwise what one
-// opting it in would, with wake on request as onRequest says, under
-// install, the Hybernate install that would manage it. An install with its doorman off wakes
-// nothing on request. The operator's own verdict on the workload's routing
+// opting it in would, asking before waking it as asks says, under install,
+// the Hybernate install that would manage it. An install with its doorman
+// off wakes nothing on request, and a doorman that asks wakes it only for a
+// person. The operator's own verdict on the workload's routing
 // stands where it has one, as from its last pause; otherwise it's judged
 // from services, its namespace's Services, against its pods' labels, and
 // with none read, the doorman is assumed, as Hybernate's default.
-func replayWakes(mw *v1alpha1.ManagedWorkload, onRequest bool, podLabels map[string]string,
+func replayWakes(mw *v1alpha1.ManagedWorkload, asks bool, podLabels map[string]string,
 	services map[string]corev1.Service, install Install) ReplayWakes {
 	var w ReplayWakes
 	if mw != nil {
@@ -137,9 +137,8 @@ func replayWakes(mw *v1alpha1.ManagedWorkload, onRequest bool, podLabels map[str
 	case install.DoormanOff:
 		w.NoRequest = noRequestDoormanOff
 		return w
-	case mw == nil && !onRequest,
-		mw != nil && mw.Spec.Wake != nil && mw.Spec.Wake.OnRequest != nil && !*mw.Spec.Wake.OnRequest:
-		w.NoRequest = noRequestTurnedOff
+	case mw == nil && asks, mw != nil && mw.Spec.Wake.Asks():
+		w.NoRequest = noRequestAsks
 		return w
 	}
 	if mw != nil {

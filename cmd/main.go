@@ -174,6 +174,16 @@ func main() {
 		optIn.Forecast = v1alpha1.PredictionMode(v)
 		return nil
 	})
+	flag.Func("default-wake", "What wakes a paused workload opted in with the label through the doorman, unless "+
+		"annotated otherwise: request, any request, or ask, only a person who clicks Wake it on the page the "+
+		"doorman shows a browser. (default request)", func(v string) error {
+		on, ok := v1alpha1.ParseWake(v)
+		if !ok {
+			return errors.New(`must be "request" or "ask"`)
+		}
+		optIn.Wake = on
+		return nil
+	})
 	var watched stringList
 	flag.Var(&watched, "watch-namespaces",
 		"Comma-separated namespaces to work in, with a Role in each. Empty means every namespace.")
@@ -656,6 +666,11 @@ func validateOptInDefaults(d controller.OptInDefaults) error {
 	case v1alpha1.PredictionEager, v1alpha1.PredictionBalanced, v1alpha1.PredictionCautious:
 	default:
 		return fmt.Errorf("--default-forecast %q must be eager, balanced or cautious", d.Forecast)
+	}
+	switch d.Wake {
+	case v1alpha1.WakeOnRequest, v1alpha1.WakeOnAsk:
+	default:
+		return fmt.Errorf("--default-wake %q must be request or ask", d.Wake)
 	}
 	return nil
 }

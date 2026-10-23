@@ -39,7 +39,7 @@ func TestOptInSpec_Defaults(t *testing.T) {
 	assert.Equal(t, 10, spec.IdlePolicy.Activity.CPUThreshold)
 	assert.False(t, spec.IdlePolicy.AutoResume)
 	assert.False(t, spec.IdlePolicy.PauseEarly, "the forecast brings no pause forward unless asked to")
-	assert.True(t, *spec.Wake.OnRequest)
+	assert.Equal(t, v1alpha1.WakeOnRequest, spec.Wake.Mode)
 	assert.Equal(t, 2*time.Minute, spec.Wake.MaxWait.Duration)
 	assert.True(t, *spec.Wake.Page)
 	// Fields the API server would default, set so a rewrite changes nothing.
@@ -118,6 +118,56 @@ func TestOptInSpec_PauseEarly(t *testing.T) {
 	}
 }
 
+// The wake setting resolves like the others, except that a value that can't
+// be read anywhere along the way has the doorman ask: a typo must never let
+// crawlers wake a workload meant to wake only for people.
+func TestOptInSpec_Wake(t *testing.T) {
+	asks := DefaultOptInDefaults
+	asks.Wake = v1alpha1.WakeOnAsk
+	tests := []struct {
+		name         string
+		workload     map[string]string
+		namespace    map[string]string
+		defaults     OptInDefaults
+		want         v1alpha1.WakeMode
+		wantProblems int
+	}{
+		{name: "not annotated", defaults: DefaultOptInDefaults, want: v1alpha1.WakeOnRequest},
+		{name: "the cluster's default", defaults: asks, want: v1alpha1.WakeOnAsk},
+		{name: "the namespace's", namespace: map[string]string{v1alpha1.AnnotationWake: "ask"},
+			defaults: DefaultOptInDefaults, want: v1alpha1.WakeOnAsk},
+		{name: "the workload's own",
+			workload:  map[string]string{v1alpha1.AnnotationWake: "request"},
+			namespace: map[string]string{v1alpha1.AnnotationWake: "ask"},
+			defaults:  asks, want: v1alpha1.WakeOnRequest},
+		{name: "spaces around it", workload: map[string]string{v1alpha1.AnnotationWake: " ask\n"},
+			defaults: DefaultOptInDefaults, want: v1alpha1.WakeOnAsk},
+		{name: "a value that can't be read asks", workload: map[string]string{v1alpha1.AnnotationWake: "Request"},
+			defaults: DefaultOptInDefaults, want: v1alpha1.WakeOnAsk, wantProblems: 1},
+		{name: "the old setting's spelling asks", workload: map[string]string{v1alpha1.AnnotationWake: "true"},
+			defaults: DefaultOptInDefaults, want: v1alpha1.WakeOnAsk, wantProblems: 1},
+		{name: "an empty value asks", workload: map[string]string{v1alpha1.AnnotationWake: ""},
+			defaults: DefaultOptInDefaults, want: v1alpha1.WakeOnAsk, wantProblems: 1},
+		{name: "a value that can't be read asks, whatever the namespace says",
+			workload:  map[string]string{v1alpha1.AnnotationWake: "requests"},
+			namespace: map[string]string{v1alpha1.AnnotationWake: "request"},
+			defaults:  DefaultOptInDefaults, want: v1alpha1.WakeOnAsk, wantProblems: 1},
+		{name: "the namespace's that can't be read asks",
+			namespace: map[string]string{v1alpha1.AnnotationWake: "click"},
+			defaults:  DefaultOptInDefaults, want: v1alpha1.WakeOnAsk, wantProblems: 1},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			spec, problems := optInSpec("dev", apiTarget, tt.workload, tt.namespace, tt.defaults)
+			assert.Equal(t, tt.want, spec.Wake.Mode)
+			require.Len(t, problems, tt.wantProblems)
+			for _, p := range problems {
+				assert.Contains(t, p.String(), `isn't "request" or "ask", so the doorman asks before waking it, to be safe`)
+			}
+		})
+	}
+}
+
 func TestOptInSpec_Precedence(t *testing.T) {
 	cluster := OptInDefaults{IdleAfter: 3 * time.Hour, CPUThreshold: 20, DryRun: true}
 	namespace := map[string]string{v1alpha1.AnnotationIdleAfter: "2h", v1alpha1.AnnotationCPUThreshold: "15"}
@@ -180,7 +230,9 @@ func TestOptInSpec_InvalidValues(t *testing.T) {
 		{v1alpha1.AnnotationIdleAfter, "1d", func(t *testing.T, s v1alpha1.ManagedWorkloadSpec) {
 			assert.Equal(t, time.Hour, s.IdlePolicy.IdleAfter.Duration)
 		}},
-		{v1alpha1.AnnotationWakeOnRequest, "yes", func(t *testing.T, s v1alpha1.ManagedWorkloadSpec) { assert.True(t, *s.Wake.OnRequest) }},
+		{v1alpha1.AnnotationWake, "yes", func(t *testing.T, s v1alpha1.ManagedWorkloadSpec) {
+			assert.Equal(t, v1alpha1.WakeOnAsk, s.Wake.Mode)
+		}},
 		{v1alpha1.AnnotationIdleAfter, "soon", func(t *testing.T, s v1alpha1.ManagedWorkloadSpec) {
 			assert.Equal(t, time.Hour, s.IdlePolicy.IdleAfter.Duration)
 		}},
