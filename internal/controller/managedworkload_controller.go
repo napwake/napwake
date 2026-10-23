@@ -297,6 +297,7 @@ func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (res ctrl.
 	if result != nil {
 		return *result, nil
 	}
+	r.answerAwakeWakeRequest(&workload)
 
 	return r.reconcileSettled(ctx, &workload, target, observed)
 }
@@ -928,6 +929,12 @@ func (r *Reconciler) reconcileDelete(ctx context.Context, workload *v1alpha1.Man
 	// the target back again: scaling up one someone has since scaled to
 	// zero, putting KEDA's value back, and waking its dependencies.
 	workload.Status.Pause = nil
+	// Answered while the ManagedWorkload is still there for whoever asked
+	// to read.
+	if err := r.refuseWakeRequest(ctx, workload, "Normal", reasonBeingDeleted, "its ManagedWorkload is being "+
+		"deleted, so Hybernate hands the workload back, with the replicas it had, as it lets go"); err != nil {
+		return 0, err
+	}
 	if wait := r.drainLeft(workload); wait > 0 {
 		if err := r.Status().Update(ctx, workload); err != nil {
 			return 0, fmt.Errorf("recording the doorman ports draining: %w", err)
@@ -1078,7 +1085,7 @@ func (r *Reconciler) announceHandBack(workload *v1alpha1.ManagedWorkload, replic
 // its doorman routes, or nothing would ever wake the target.
 func (r *Reconciler) reconcileDuplicate(ctx context.Context, workload *v1alpha1.ManagedWorkload) (ctrl.Result, error) {
 	c := meta.FindStatusCondition(workload.Status.Conditions, conditionDuplicateTarget)
-	if err := r.refusePauseRequest(ctx, workload, "Warning", conditionDuplicateTarget, c.Message); err != nil {
+	if err := r.refuseRequests(ctx, workload, conditionDuplicateTarget, c.Message); err != nil {
 		return ctrl.Result{}, err
 	}
 	if workload.Status.Pause == nil && len(workload.Status.Doorman) == 0 {
@@ -1106,7 +1113,7 @@ func (r *Reconciler) reconcileIgnored(ctx context.Context, workload *v1alpha1.Ma
 	reported := conditionFalseWith(workload, conditionTargetAvailable, "TargetIgnored")
 	r.setCondition(workload, conditionTargetAvailable, metav1.ConditionFalse, "TargetIgnored",
 		fmt.Sprintf("%s %s has %s label", ref.Kind, ref.Name, v1alpha1.LabelIgnore))
-	if err := r.refusePauseRequest(ctx, workload, "Warning", "TargetIgnored", fmt.Sprintf(
+	if err := r.refuseRequests(ctx, workload, "TargetIgnored", fmt.Sprintf(
 		"%s %s has the %s label, so Hybernate doesn't manage it", ref.Kind, ref.Name, v1alpha1.LabelIgnore)); err != nil {
 		return ctrl.Result{}, err
 	}
@@ -1138,7 +1145,7 @@ func (r *Reconciler) reconcileIgnored(ctx context.Context, workload *v1alpha1.Ma
 // that nothing will start, where without the doorman it fails at once.
 func (r *Reconciler) reconcileTargetMissing(ctx context.Context, workload *v1alpha1.ManagedWorkload) (ctrl.Result, error) {
 	ref := workload.Spec.Target
-	if err := r.refusePauseRequest(ctx, workload, "Warning", ReasonTargetNotFound,
+	if err := r.refuseRequests(ctx, workload, ReasonTargetNotFound,
 		fmt.Sprintf("%s %s not found", ref.Kind, ref.Name)); err != nil {
 		return ctrl.Result{}, err
 	}

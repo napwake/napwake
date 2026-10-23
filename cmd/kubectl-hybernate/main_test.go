@@ -227,13 +227,13 @@ func TestCLI_Version(t *testing.T) {
 // wake, pause, enable and deps default to the kubeconfig context's namespace.
 func TestCLI_ContextNamespace(t *testing.T) {
 	t.Run("wake", func(t *testing.T) {
-		c := newClient(t, interceptor.Funcs{}, managedWorkload(v1alpha1.PhaseRunning))
+		c := newClient(t, wakes("AlreadyAwake", 0), managedWorkload(v1alpha1.PhaseRunning))
 
 		out, err := runCLI(t, c, "wake", "deployment/api")
 
 		require.NoError(t, err)
 		assert.Equal(t, "preview-42/api is already running; its idle clock restarts now\n", out)
-		assert.NotEmpty(t, annotations(t, c)[v1alpha1.AnnotationLastActivity])
+		assert.NotEmpty(t, annotations(t, c)[v1alpha1.AnnotationWakeRequested])
 	})
 
 	t.Run("pause", func(t *testing.T) {

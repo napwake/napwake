@@ -91,10 +91,10 @@ const (
 
 // pausedSeenBy is what shows a paused workload's demand, so the hours it
 // spends paused are learned: requests through the doorman, which would
-// wake it, and Prometheus activity queries, which show the activity they
-// measure. It's empty for a workload that isn't paused, or that nothing
-// watches. Queries that can't be evaluated show nothing, but don't blind
-// the doorman.
+// wake it, people, who alone wake it with wake.mode Ask, and Prometheus
+// activity queries, which show the activity they measure. It's empty for a
+// workload that isn't paused, or that nothing watches. Queries that can't
+// be evaluated show nothing, but don't blind the doorman or people.
 func pausedSeenBy(workload *v1alpha1.ManagedWorkload) string {
 	if workload.Status.Phase != v1alpha1.PhasePaused {
 		return ""
@@ -103,6 +103,19 @@ func pausedSeenBy(workload *v1alpha1.ManagedWorkload) string {
 	queries := hasPrometheusActivity(workload)
 	failing := queries && meta.IsStatusConditionFalse(conditions, conditionPrometheusAvailable)
 	routed := meta.IsStatusConditionTrue(conditions, conditionWakeOnRequest)
+	if workload.Spec.Wake.Asks() {
+		people := "people waking it (a wake request or an activity annotation)"
+		if routed {
+			people = "people waking it (a click on its asleep page, a wake request or an activity annotation)"
+		}
+		switch {
+		case failing:
+			return people + ", its Prometheus activity queries failing"
+		case queries:
+			return people + " and its Prometheus activity queries"
+		}
+		return people
+	}
 	switch {
 	case routed && failing:
 		return "requests through the doorman, its Prometheus activity queries failing"

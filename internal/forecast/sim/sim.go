@@ -17,10 +17,10 @@ limitations under the License.
 // Package sim runs the forecast engine and the operator's decision rules
 // through simulated time: the activity clock pausing an idle workload, the
 // forecast holding off a pause and autoResume waking ahead of demand, the
-// doorman or an activity query waking it, and each hour's peak fed to the
-// forecast, as the operator does for a ManagedWorkload, a look at a time.
-// Months of traffic take milliseconds, so what the forecast does with a
-// pattern, and how long it takes to start, can be measured rather than
+// doorman, an activity query or people waking it, and each hour's peak fed
+// to the forecast, as the operator does for a ManagedWorkload, a look at a
+// time. Months of traffic take milliseconds, so what the forecast does with
+// a pattern, and how long it takes to start, can be measured rather than
 // guessed.
 package sim
 
@@ -59,6 +59,12 @@ type Settings struct {
 	// it awake, and paused, it wakes it, and an hour paused is seen as
 	// quiet.
 	WakeOnQuery bool
+	// WakeOnAsk has only people wake the workload while it's paused, as
+	// wake.mode Ask does: the doorman shows a browser an asleep page, and a
+	// use wakes it as the person clicks Wake it, or asks with a wake
+	// request. Nothing else can wake it, so an hour paused that nobody woke
+	// it in is seen as quiet. It's instead of WakeOnRequest.
+	WakeOnAsk bool
 	// Location is the operator's --timezone, the clock the forecast's hours
 	// and weekdays are counted in.
 	Location *time.Location
@@ -113,6 +119,7 @@ const (
 	WokenByForecast WakeCause = "autoResume"
 	WokenByRequest  WakeCause = "request"
 	WokenByQuery    WakeCause = "query"
+	WokenByPeople   WakeCause = "people"
 	WokenByHand     WakeCause = "hand"
 )
 
@@ -284,6 +291,9 @@ func newRun(sc Scenario) (*run, error) {
 	}
 	if sc.Traffic == nil {
 		return nil, errors.New("a scenario needs traffic")
+	}
+	if sc.Settings.WakeOnRequest && sc.Settings.WakeOnAsk {
+		return nil, errors.New("a workload wakes on any request, or asks people first, not both")
 	}
 	set := forecast.Settings{Threshold: sc.Settings.Confidence, Location: sc.Settings.Location}
 	engine := forecast.NewEngine(forecast.DefaultParams(), set)
@@ -477,6 +487,8 @@ func (s *run) lookPaused(t time.Time, use Use) error {
 	switch {
 	case use.Active && set.WakeOnRequest:
 		cause = WokenByRequest
+	case use.Active && set.WakeOnAsk:
+		cause = WokenByPeople
 	case use.Active && set.WakeOnQuery:
 		cause = WokenByQuery
 	case use.Active:
@@ -493,7 +505,7 @@ func (s *run) lookPaused(t time.Time, use Use) error {
 	if cause != "" {
 		demand = forecast.RequestDemand(set.CPUThreshold)
 	}
-	if err := s.see(t, demand, set.WakeOnRequest || set.WakeOnQuery || cause != ""); err != nil {
+	if err := s.see(t, demand, set.WakeOnRequest || set.WakeOnQuery || set.WakeOnAsk || cause != ""); err != nil {
 		return err
 	}
 	if cause != "" {

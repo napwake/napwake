@@ -156,8 +156,9 @@ func TestCLI_ForecastTable(t *testing.T) {
 	assert.Contains(t, out, "preview-42  api   acts from day one")
 	assert.Contains(t, out, ", 25m ahead  nothing\n", "no Service routes requests to it, so nothing wakes it")
 	assert.Contains(t, out, "WAKES ON is what wakes\nit once it's paused")
-	assert.Contains(t, out, "Name a workload to see it day by day, and for one Hybernate manages, what its own "+
-		"forecast is doing\nnow.")
+	assert.Contains(t, out, "people alone, with wake: ask, whose wakes the forecast learns from")
+	assert.Contains(t, out, "Name a workload to see it day by\nday, and for one Hybernate manages, what its own "+
+		"forecast is doing now.")
 }
 
 func TestCLI_ForecastOneWorkload(t *testing.T) {
@@ -338,9 +339,14 @@ func TestReplayWakes_Shown(t *testing.T) {
 		{wakes: discovery.ReplayWakes{Request: true}, cell: "request", sentence: "a request through the doorman wakes it"},
 		{wakes: discovery.ReplayWakes{Query: true, NoRequest: "no Service routes requests to it"}, cell: "query",
 			sentence: "its Prometheus activity query wakes it, since no Service routes requests to it"},
-		{wakes: discovery.ReplayWakes{NoRequest: "wake on request is turned off"}, cell: "nothing",
-			sentence: "nothing wakes it but a person, since wake on request is turned off, so the forecast doesn't " +
-				"learn the hours it's paused"},
+		{wakes: discovery.ReplayWakes{NoRequest: "the doorman is turned off for the cluster"}, cell: "nothing",
+			sentence: "nothing wakes it but a person, since the doorman is turned off for the cluster, so the " +
+				"forecast doesn't learn the hours it's paused"},
+		{wakes: discovery.ReplayWakes{People: true, NoRequest: "the doorman asks before waking it"}, cell: "people",
+			sentence: "only people wake it, with wake: ask, so the forecast learns the hours it's paused from " +
+				"whether they do"},
+		{wakes: discovery.ReplayWakes{People: true, Query: true, NoRequest: "the doorman asks before waking it"},
+			cell: "people, query", sentence: "people, or its Prometheus activity query, wake it, with wake: ask"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.cell, func(t *testing.T) {

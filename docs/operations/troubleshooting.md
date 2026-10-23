@@ -100,7 +100,7 @@ A pause is `Paused` once the workload's pods have stopped. `PauseIncomplete=True
 kubectl hybernate wake my-api -n staging
 ```
 
-It waits until the workload is Running, or tells you why it can't wake it. See the [kubectl plugin](../getting-started/kubectl-plugin.md#wake-a-workload).
+It wakes the workload whatever its wake setting, and waits until it's Running, or tells you why Hybernate won't wake it. The answer to the last request stays in the `WakeRequest` condition until the next, as for a pause below: `False`, with a message starting `not woken at` and the time, gives the reason. See [Wake Now](../guides/pause.md#wake-now) and the [kubectl plugin](../getting-started/kubectl-plugin.md#wake-a-workload).
 
 ### Pausing a workload by hand
 

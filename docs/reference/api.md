@@ -53,6 +53,7 @@ A duration is a Go duration above zero, such as `45s`, `90m` or `1h30m`. Days an
 | `conditions[]` | `Condition` | Standard Kubernetes conditions; see [Lifecycle](../concepts/lifecycle.md#status-conditions) |
 | `lastActedAt` | time | When the target was last paused or woken: by Hybernate, or scaled up from zero outside it, such as with `kubectl scale` or by a GitOps tool |
 | `lastPauseRequest` | string | The last `hybernate.io/pause-requested` value acted on, so each request is acted on once; the `PauseRequest` condition says what came of it. See [Pause Now](../guides/pause.md#pause-now) |
+| `lastWakeRequest` | string | The last `hybernate.io/wake-requested` value acted on, so each request is acted on once; the `WakeRequest` condition says what came of it. See [Wake Now](../guides/pause.md#wake-now) |
 | `lastTransitionTime` | time | Last phase change |
 | `activity.lastActivityTime` | time | Most recent activity from any source |
 | `activity.lastActivitySource` | string | `created`, `woke`, `request`, `cpu`, `rollout`, `annotation`, `prometheus`, `unobserved`, or `scaled-up` |

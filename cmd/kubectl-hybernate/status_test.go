@@ -669,6 +669,22 @@ func TestStatus_WakeWithoutACause(t *testing.T) {
 `)
 }
 
+// A wake asked for with hybernate.io/wake-requested, as kubectl hybernate
+// wake asks, is listed as what woke the workload.
+func TestStatus_WakeRequested(t *testing.T) {
+	w := statusWorkloadObj("shop", "api", v1alpha1.TargetKindDeployment, v1alpha1.PhaseRunning, time.Hour)
+	out := runStatus(t, newStatusClient(t, interceptor.Funcs{}, w,
+		statusEvent("shop", "api", "Paused", "api: paused", 3*time.Hour),
+		statusEvent("shop", "api", "WakeRequested", "api: wake requested, waking", 30*time.Minute),
+		statusEvent("shop", "api", "Resumed", "api: resumed", 29*time.Minute),
+	), statusOpts())
+
+	assert.Contains(t, out, `Recent pauses and wakes:
+  30m ago   shop/api   wake requested, waking
+  3h ago    shop/api   paused
+`)
+}
+
 // A workload deliberately labelled hybernate.io/ignore needs nobody's
 // attention.
 func TestStatus_IgnoredIsntAProblem(t *testing.T) {

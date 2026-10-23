@@ -390,6 +390,54 @@ func TestQueueWorkerWokenByItsQuery(t *testing.T) {
 	assert.Equal(t, s.UsedDays, s.Ready, "up before the messages, every morning once it acts")
 }
 
+// A public preview environment with wake: ask is woken only by people: a
+// click on its asleep page, or their tooling's wake request. Nothing else
+// can wake it, so every hour it's paused is seen, quiet unless someone woke
+// it. Paused every night and woken by a person at 09:05 on weekdays, it
+// learns whole days, acts as behind the doorman, and from then autoResume
+// has it up at 08:45, before they come.
+func TestPreviewWokenByPeople(t *testing.T) {
+	set := DefaultSettings()
+	set.WakeOnRequest = false
+	set.WakeOnAsk = true
+	people := Working(time.UTC, Weekdays, 9*time.Hour+5*time.Minute, 17*time.Hour+30*time.Minute, 40)
+	r := simulate(t, Scenario{Duration: 4 * week, Traffic: people, Settings: set})
+
+	acts, ok := r.Reached(forecast.DailyActive)
+	require.True(t, ok, "it acts")
+	t.Logf("the forecast acts after %.1f days", acts.Hours()/24)
+	assert.LessOrEqual(t, acts, 9*day, "as soon as behind the doorman")
+	for _, w := range r.Wakes {
+		if w.At.Before(monday.Add(acts)) {
+			assert.Equal(t, WokenByPeople, w.Cause, "%s: woken by people until the forecast acts", w.At)
+			assert.Equal(t, "09:05", w.At.Format("15:04"), "as they come")
+		}
+	}
+	assert.GreaterOrEqual(t, len(r.Pauses), 19, "paused every weekday night")
+	s := r.Summarize(monday.Add(acts).Add(day))
+	assert.Equal(t, s.UsedDays, s.Ready, "up before people come, every morning once it acts")
+	for _, w := range r.Wakes {
+		if w.At.After(monday.Add(acts).Add(day)) {
+			assert.Equal(t, WokenByForecast, w.Cause, "%s", w.At)
+			assert.Equal(t, "08:45", w.At.Format("15:04"), "15 minutes before the hour people come in, %s", w.At)
+		}
+	}
+}
+
+// Without people to wake it, a workload that asks, paused for good, is
+// still seen every hour, and learned as quiet.
+func TestPreviewNobodyWakes(t *testing.T) {
+	set := DefaultSettings()
+	set.WakeOnRequest = false
+	set.WakeOnAsk = true
+	r := simulate(t, Scenario{Duration: 3 * week, Traffic: Always(false, 0), Settings: set})
+
+	assert.Len(t, r.Pauses, 1)
+	assert.Empty(t, r.Wakes)
+	_, ok := r.Reached(forecast.DailyActive)
+	assert.True(t, ok, "its quiet hours are learned")
+}
+
 // A light-use workload, used at 3% of its request while people are on it,
 // is ready every morning when its use is seen another way, such as an
 // activity annotation its portal stamps: the operator's own controller
@@ -470,6 +518,9 @@ func TestScenarioValidation(t *testing.T) {
 	require.Error(t, err)
 	_, err = Run(Scenario{Start: monday, Duration: day, Traffic: Always(false, 0), State: "not state"})
 	require.Error(t, err)
+	_, err = Run(Scenario{Start: monday, Duration: day, Traffic: Always(false, 0),
+		Settings: Settings{WakeOnRequest: true, WakeOnAsk: true}})
+	require.Error(t, err, "a workload wakes on any request, or asks, not both")
 }
 
 // The simulation is fast enough to run months of it in every test run.

@@ -47,7 +47,7 @@ kubectl annotate deployment my-api -n staging --overwrite \
   hybernate.io/active-until="2026-10-03T18:00:00Z"
 ```
 
-From a terminal, [`kubectl hybernate wake`](../getting-started/kubectl-plugin.md#wake-a-workload) sets them for you and waits until the workload is Running.
+To wake a workload on purpose, rather than record its use, ask for it with [`hybernate.io/wake-requested`](../guides/pause.md#wake-now), which Hybernate answers, and which wakes it whatever its wake setting; [`kubectl hybernate wake`](../getting-started/kubectl-plugin.md#wake-a-workload) sets it for you and waits until the workload is Running.
 
 - A `last-activity` time in the future is treated as now. Use `active-until` for a deliberate hold, since it says when the hold ends.
 - Annotations can only keep a workload awake or wake it. They never cause a pause.

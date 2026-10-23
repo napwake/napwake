@@ -129,6 +129,7 @@ func TestDocs_HowLongItTakes(t *testing.T) {
 	t.Parallel()
 	office := func(uint64) Traffic { return OfficeHours(time.UTC) }
 	queueWorker := func(set *Settings) { set.WakeOnRequest, set.WakeOnQuery = false, true }
+	asks := func(set *Settings) { set.WakeOnRequest, set.WakeOnAsk = false, true }
 	scenarios := []struct {
 		label    string
 		traffic  func(seed uint64) Traffic
@@ -150,6 +151,9 @@ func TestDocs_HowLongItTakes(t *testing.T) {
 		{"A queue worker with no Service", func(uint64) Traffic {
 			return Working(time.UTC, EveryDay, 7*time.Hour, 19*time.Hour, 40)
 		}, 1, queueWorker},
+		{"A public preview only people wake", func(uint64) Traffic {
+			return Working(time.UTC, Weekdays, 9*time.Hour+5*time.Minute, 17*time.Hour+30*time.Minute, 40)
+		}, 1, asks},
 	}
 	table := readDocsTable(t, "### How Long It Takes", "`balanced` (75)")
 	require.Len(t, table.rows, len(scenarios), "a row for each scenario the test measures")

@@ -957,6 +957,12 @@ spec:
                   phases.
                 format: date-time
                 type: string
+              lastWakeRequest:
+                description: |-
+                  LastWakeRequest is the last hybernate.io/wake-requested value
+                  Hybernate acted on, so each request is acted on once, across restarts.
+                  The WakeRequest condition says what came of it.
+                type: string
               learnedDependencies:
                 description: |-
                   LearnedDependencies are the workloads Hybernate found this one depends

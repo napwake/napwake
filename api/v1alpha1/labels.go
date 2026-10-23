@@ -97,6 +97,15 @@ const (
 	// is expected, so the person asking can decide.
 	AnnotationPauseOverridesForecast = "hybernate.io/pause-overrides-forecast"
 
+	// AnnotationWakeRequested asks Hybernate to wake a ManagedWorkload's
+	// workload now, as a person's tooling does for them: a pull request
+	// bot, a portal or a chat command. It wakes a paused workload whatever
+	// the wake setting, and restarts an awake one's idle clock. The value is
+	// a token, such as the time of the request, that only needs to differ
+	// from the last request's: Hybernate acts on each value once, recording
+	// it in status.lastWakeRequest. kubectl hybernate wake sets it.
+	AnnotationWakeRequested = "hybernate.io/wake-requested"
+
 	// Settings for a workload opted in with LabelManaged, set on the
 	// workload or its namespace; the workload's own wins.
 	AnnotationDryRun       = "hybernate.io/dry-run"

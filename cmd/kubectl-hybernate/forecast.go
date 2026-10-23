@@ -376,9 +376,9 @@ func writeForecastTable(p *printer, workloads []forecastWorkload, loc *time.Loca
 	p.line("autoResume, from a forecast that learned only the first half: the mornings it had the workload up")
 	p.line("before its first use, and those the first use found it paused and woke it. WAKES ON is what wakes")
 	p.line("it once it's paused, as it would under Hybernate: a request through the doorman, its Prometheus")
-	p.line("activity query, or nothing, so people wake it by hand and the forecast doesn't learn those hours.")
-	p.line("Name a workload to see it day by day, and for one Hybernate manages, what its own forecast is doing")
-	p.line("now.")
+	p.line("activity query, people alone, with wake: ask, whose wakes the forecast learns from, or nothing, so")
+	p.line("people wake it by hand and the forecast doesn't learn those hours. Name a workload to see it day by")
+	p.line("day, and for one Hybernate manages, what its own forecast is doing now.")
 	p.line("")
 }
 
@@ -390,6 +390,10 @@ func replayWakesCell(w discovery.ReplayWakes) string {
 		return "request, query"
 	case w.Request:
 		return "request"
+	case w.People && w.Query:
+		return "people, query"
+	case w.People:
+		return "people"
 	case w.Query:
 		return "query"
 	}
@@ -404,6 +408,10 @@ func wakesSentence(w discovery.ReplayWakes) string {
 		return "a request through the doorman, or its Prometheus activity query, wakes it"
 	case w.Request:
 		return "a request through the doorman wakes it"
+	case w.People && w.Query:
+		return "people, or its Prometheus activity query, wake it, with wake: ask"
+	case w.People:
+		return "only people wake it, with wake: ask, so the forecast learns the hours it's paused from whether they do"
 	case w.Query:
 		return fmt.Sprintf("its Prometheus activity query wakes it, since %s", w.NoRequest)
 	}
