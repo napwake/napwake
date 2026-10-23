@@ -79,6 +79,17 @@ func envtestWorkload(namespace string) *v1alpha1.ManagedWorkload {
 	}
 }
 
+// createTakenOn creates w as a ManagedWorkload Hybernate has taken on
+// already, Running, so the requests on it are acted on: those already on a
+// ManagedWorkload as Hybernate takes it on are taken as answered.
+func createTakenOn(ctx context.Context, c client.Client, w *v1alpha1.ManagedWorkload) error {
+	if err := c.Create(ctx, w); err != nil {
+		return err
+	}
+	w.Status.Phase = v1alpha1.PhaseRunning
+	return c.Status().Update(ctx, w)
+}
+
 // withPauseRequested asks for w's workload to be paused now.
 func withPauseRequested(w *v1alpha1.ManagedWorkload) *v1alpha1.ManagedWorkload {
 	w.Annotations = map[string]string{v1alpha1.AnnotationPauseRequested: pauseToken}
@@ -131,7 +142,7 @@ var _ = ginkgo.Describe("A pause interrupted by a conflict", func() {
 	ginkgo.BeforeEach(func() {
 		ns = envtestNamespace()
 		gomega.Expect(k8sClient.Create(ctx, envtestDeployment(ns, 3))).To(gomega.Succeed())
-		gomega.Expect(k8sClient.Create(ctx, withPauseRequested(envtestWorkload(ns)))).To(gomega.Succeed())
+		gomega.Expect(createTakenOn(ctx, k8sClient, withPauseRequested(envtestWorkload(ns)))).To(gomega.Succeed())
 
 		base, err := client.NewWithWatch(cfg, client.Options{Scheme: scheme.Scheme})
 		gomega.Expect(err).NotTo(gomega.HaveOccurred())
@@ -268,7 +279,7 @@ func TestKEDAUninstalledWhileTheOperatorRuns(t *testing.T) {
 		if name == "api" {
 			withPauseRequested(w)
 		}
-		require.NoError(t, c.Create(ctx, w))
+		require.NoError(t, createTakenOn(ctx, c, w))
 	}
 
 	mgr, err := ctrl.NewManager(cfg, ctrl.Options{Scheme: opScheme,

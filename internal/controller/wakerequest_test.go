@@ -325,6 +325,60 @@ func TestWakeRequest_RefusedWhileBeingDeleted(t *testing.T) {
 	assert.Equal(t, 1, strings.Count(drainEvents(t, r), "wake requested, but"))
 }
 
+// lostStatus is a ManagedWorkload as a backup restored without its status,
+// a kubectl replace --force or an exported manifest applied again leaves
+// it: its annotations, and the requests in them, but nothing of what
+// Hybernate recorded.
+func lostStatus(t *testing.T, r *Reconciler) {
+	t.Helper()
+	w := getWorkload(t, r, "api")
+	w.Status = v1alpha1.ManagedWorkloadStatus{}
+	require.NoError(t, r.Status().Update(context.Background(), w))
+	drainEvents(t, r)
+}
+
+// A ManagedWorkload that loses its status keeps its annotations, and the
+// requests in them, which may have been answered long ago. Its pause is
+// taken up again from the workload, and the wake request it had answered
+// doesn't wake it: a request already there as its record starts afresh is
+// taken as answered, saying why, and only a new one is acted on.
+func TestWakeRequest_NotActedOnAgainAfterStatusIsLost(t *testing.T) {
+	r := pausedOnRequest(t)
+	requestWake(t, r, wakeToken)
+	reconcileUntilSettled(t, r)
+	require.Equal(t, v1alpha1.PhaseRunning, getWorkload(t, r, "api").Status.Phase)
+	patchWorkload(t, r, func(w *v1alpha1.ManagedWorkload) {
+		w.Annotations[v1alpha1.AnnotationPauseRequested] = "a-second-pause"
+	})
+	reconcileUntilSettled(t, r)
+	require.Equal(t, v1alpha1.PhasePaused, getWorkload(t, r, "api").Status.Phase)
+
+	lostStatus(t, r)
+	reconcileUntilSettled(t, r)
+
+	got := getWorkload(t, r, "api")
+	assert.Equal(t, v1alpha1.PhasePaused, got.Status.Phase, "taken up again, and not woken")
+	assert.Equal(t, int32(0), targetReplicas(t, r))
+	assert.Equal(t, wakeToken, got.Status.LastWakeRequest)
+	assert.Equal(t, "a-second-pause", got.Status.LastPauseRequest)
+	c := wakeRequestCondition(t, got)
+	assert.Equal(t, metav1.ConditionFalse, c.Status)
+	assert.Equal(t, reasonPredatesStatus, c.Reason)
+	assert.Equal(t, "not woken at 2026-03-14 12:00 UTC: the request was on the ManagedWorkload before "+
+		"Hybernate's record of it began, as when it's restored without its status, so it may have been answered "+
+		"already; set a new value to ask again", c.Message)
+	recorded := drainEvents(t, r)
+	assert.Contains(t, recorded, "PauseRecovered")
+	assert.NotContains(t, recorded, ReasonWakeRequested)
+	assert.Equal(t, 1, strings.Count(recorded, "wake requested, but the request was on the ManagedWorkload"),
+		recorded)
+
+	requestWake(t, r, "a-new-wake")
+	reconcileUntilSettled(t, r)
+
+	assert.Equal(t, v1alpha1.PhaseRunning, getWorkload(t, r, "api").Status.Phase, "a new request wakes it")
+}
+
 // Against an API server, a wake request is recorded in status, so a
 // workload paused since isn't woken by it again, and a new request wakes it.
 func TestWakeRequest_AgainstAnAPIServer(t *testing.T) {
@@ -340,7 +394,7 @@ func TestWakeRequest_AgainstAnAPIServer(t *testing.T) {
 	mw := envtestWorkload("preview")
 	mw.Annotations = map[string]string{v1alpha1.AnnotationWakeRequested: wakeToken}
 	mw.Spec.IdlePolicy = &v1alpha1.IdlePolicySpec{IdleAfter: &metav1.Duration{Duration: time.Hour}}
-	require.NoError(t, c.Create(ctx, mw))
+	require.NoError(t, createTakenOn(ctx, c, mw))
 
 	key := client.ObjectKeyFromObject(mw)
 	get := func() *v1alpha1.ManagedWorkload {

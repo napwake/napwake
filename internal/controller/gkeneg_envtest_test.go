@@ -75,7 +75,7 @@ func TestGKENEGRoutingFollowsIngressesAndServices(t *testing.T) {
 		},
 	}
 	require.NoError(t, c.Create(ctx, svc))
-	require.NoError(t, c.Create(ctx, withPauseRequested(envtestWorkload(ns))))
+	require.NoError(t, createTakenOn(ctx, c, withPauseRequested(envtestWorkload(ns))))
 
 	mgr, err := ctrl.NewManager(cfg, ctrl.Options{Scheme: opScheme,
 		Metrics:    metricsserver.Options{BindAddress: "0"},

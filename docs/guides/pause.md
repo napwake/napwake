@@ -60,10 +60,11 @@ The request runs the idle clock out now, and the workload is paused by the same 
 | In a [protected namespace](opt-in.md#protected-namespaces), or Hybernate's own operator or doorman | Leaves it running, with a Warning event | `False`, `Protected` |
 | Scaled to zero outside Hybernate | Nothing to do: it's off already | `False`, `ScaledToZero` |
 | Its workload is missing, labelled `hybernate.io/ignore`, or managed by another ManagedWorkload | Nothing, with a Warning event | `False`, `TargetNotFound`, `TargetIgnored` or `DuplicateTarget` |
+| Already on the ManagedWorkload as Hybernate takes it on, or takes a pause up again after its status was lost | Nothing: it may have been answered before, and brought back with the ManagedWorkload, as by a backup restored without status. Set a new value to ask | `False`, `PredatesStatus` |
 
 The condition answers the last request until the next one, through any wakes and idle pauses since, so its message says what happened and when, in UTC: `paused as requested at 2026-10-21 03:32 UTC`, `already paused at …`, or `not paused at 2026-10-21 03:32 UTC:` and why. Hybernate keeps it rather than dropping it at the next wake, so `kubectl hybernate pause`, or a script that set the annotation, can always read the answer to its request, and `kubectl describe` shows why last night's pause didn't happen long after its events have expired. `status.lastPauseRequest` says which request it answers.
 
-A request Hybernate won't act on is answered once, not retried: ask again once the reason is gone. Activity from before the request doesn't undo it: the pause records the activity annotations as they stood, and only a change made since wakes the workload.
+A request Hybernate won't act on is answered once, not retried: ask again once the reason is gone. Hybernate's record of which requests it answered is the ManagedWorkload's status, so a request already on it as Hybernate takes it on is taken as answered, not acted on: a backup restored without status, `kubectl replace --force` or an exported manifest applied again would otherwise bring back requests answered long ago. Set the annotation once the ManagedWorkload is `Running`. Activity from before the request doesn't undo it: the pause records the activity annotations as they stood, and only a change made since wakes the workload.
 
 ## Resume
 
@@ -112,6 +113,7 @@ Hybernate acts on each value once: it records the value it handled in `status.la
 | In a [protected namespace](opt-in.md#protected-namespaces), Hybernate's own operator or doorman, or a StatefulSet that deletes its PVCs when scaled down | Nothing: Hybernate never pauses it | `False`, `Protected` |
 | Its workload is missing, labelled `hybernate.io/ignore`, or managed by another ManagedWorkload | Nothing, with a Warning event | `False`, `TargetNotFound`, `TargetIgnored` or `DuplicateTarget` |
 | Its ManagedWorkload is being deleted | Hands the workload back, with the replicas it had, as it lets go | `False`, `BeingDeleted` |
+| Already on the ManagedWorkload as Hybernate takes it on, or takes a pause up again after its status was lost | Nothing: it may have been answered before, and brought back with the ManagedWorkload, as by a backup restored without status. Set a new value to ask | `False`, `PredatesStatus` |
 
 As with a pause request, the condition answers the last request until the next one, through the pauses and wakes since, so its message says what happened and when, in UTC: `woken as requested at 2026-10-23 09:05 UTC`, `already awake at …`, or `not woken at 2026-10-23 09:05 UTC:` and why:
 
@@ -120,7 +122,7 @@ kubectl get managedworkload my-api -n staging \
   -o jsonpath='{.status.conditions[?(@.type=="WakeRequest")]}'
 ```
 
-A request Hybernate can't act on is answered once, not retried: ask again once the reason is gone.
+A request Hybernate can't act on is answered once, not retried: ask again once the reason is gone. As for a pause request, one already on the ManagedWorkload as Hybernate takes it on is taken as answered, not acted on, so set it once the ManagedWorkload is `Running`.
 
 ## When Hybernate Lets Go
 

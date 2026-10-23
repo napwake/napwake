@@ -221,7 +221,7 @@ func TestDependencies_HeldThroughTheOperatorsWatch(t *testing.T) {
 	postgres := withPauseRequested(envtestWorkload("shop"))
 	postgres.Name = "postgres"
 	postgres.Spec.Target.Name = postgres.Name
-	require.NoError(t, c.Create(ctx, postgres))
+	require.NoError(t, createTakenOn(ctx, c, postgres))
 
 	mgr, err := ctrl.NewManager(cfg, ctrl.Options{Scheme: opScheme,
 		Metrics:    metricsserver.Options{BindAddress: "0"},

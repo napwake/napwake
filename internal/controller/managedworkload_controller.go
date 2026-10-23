@@ -240,7 +240,7 @@ func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (res ctrl.
 	}
 
 	if workload.Status.Phase == "" || workload.Status.Phase == v1alpha1.PhaseCreating {
-		return ctrl.Result{}, r.transition(ctx, &workload, v1alpha1.PhaseRunning, "Created")
+		return ctrl.Result{}, r.takeOn(ctx, &workload)
 	}
 
 	target, err := r.checkTarget(ctx, &workload)
@@ -300,6 +300,17 @@ func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (res ctrl.
 	r.answerAwakeWakeRequest(&workload)
 
 	return r.reconcileSettled(ctx, &workload, target, observed)
+}
+
+// takeOn starts the status of a ManagedWorkload Hybernate has just taken
+// on, Running, answering the requests already on it without acting on them.
+func (r *Reconciler) takeOn(ctx context.Context, workload *v1alpha1.ManagedWorkload) error {
+	announce := r.answerEarlierRequests(workload)
+	if err := r.transition(ctx, workload, v1alpha1.PhaseRunning, "Created"); err != nil {
+		return err
+	}
+	announce()
+	return nil
 }
 
 // Every workload's reconciles share one queue, ordered by priority, so a
@@ -651,12 +662,14 @@ func (r *Reconciler) recoverPause(ctx context.Context, workload *v1alpha1.Manage
 		Target:   activityAnnotationValues(target),
 	}
 	workload.Status.Pause = pause
+	announce := r.answerEarlierRequests(workload)
 	if err := r.transition(ctx, workload, v1alpha1.PhasePaused, ReasonPauseRecovered); err != nil {
 		return nil, err
 	}
 	r.emitEvent(workload, false, "Normal", ReasonPauseRecovered, actionPause,
 		"its pause record was lost, so it's taken up again from the %s annotation: paused, to wake to %d replicas",
 		v1alpha1.AnnotationPausedFrom, pause.PreviousReplicas)
+	announce()
 	return &ctrl.Result{RequeueAfter: r.pausedRecheck(workload)}, nil
 }
 

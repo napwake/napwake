@@ -40,6 +40,8 @@ const (
 	reasonAlreadyAwake = "AlreadyAwake"
 	reasonBeingDeleted = "BeingDeleted"
 
+	reasonPredatesStatus = "PredatesStatus"
+
 	wakeRequestedMessage = "wake requested, waking"
 )
 
@@ -85,6 +87,44 @@ func (r *Reconciler) refuseRequests(ctx context.Context, workload *v1alpha1.Mana
 		return err
 	}
 	return r.refuseWakeRequest(ctx, workload, "Warning", reason, why)
+}
+
+// predatesStatus is why a request already on a ManagedWorkload as its
+// status starts afresh isn't acted on.
+const predatesStatus = "the request was on the ManagedWorkload before Hybernate's record of it began, as when " +
+	"it's restored without its status, so it may have been answered already; set a new value to ask again"
+
+// answerEarlierRequests answers, without acting on them, the pause and wake
+// requests a ManagedWorkload carries as its status starts afresh, as it
+// does when it's created and when a pause it has lost the record of is
+// taken up again. Status is the only record of which requests were
+// answered, and annotations outlive it: a backup restored without status,
+// kubectl replace --force or an exported manifest applied again brings
+// back requests answered long ago, which would otherwise pause or wake the
+// workload again. The answers are for the caller to write, and the events
+// it returns, to send once they're written.
+func (r *Reconciler) answerEarlierRequests(workload *v1alpha1.ManagedWorkload) (announce func()) {
+	_, pause := pendingPauseRequest(workload)
+	_, wake := pendingWakeRequest(workload)
+	at := answeredAt(r.now())
+	if pause {
+		r.answerPauseRequest(workload, metav1.ConditionFalse, reasonPredatesStatus,
+			fmt.Sprintf("not paused at %s: %s", at, predatesStatus))
+	}
+	if wake {
+		r.answerWakeRequest(workload, metav1.ConditionFalse, reasonPredatesStatus,
+			fmt.Sprintf("not woken at %s: %s", at, predatesStatus))
+	}
+	return func() {
+		if pause {
+			r.emitEvent(workload, false, "Normal", reasonPredatesStatus, actionPause, "pause requested, but %s",
+				predatesStatus)
+		}
+		if wake {
+			r.emitEvent(workload, false, "Normal", reasonPredatesStatus, actionResume, "wake requested, but %s",
+				predatesStatus)
+		}
+	}
 }
 
 // answerAwakeWakeRequest answers a wake request that finds the workload
