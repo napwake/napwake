@@ -190,6 +190,8 @@ status:
 
 Asking suits what people open in a browser. Keep `Request`, the default, for a workload that other workloads, scripts or webhooks call: they're turned away while it's paused, and nothing they send wakes it. It needs plain HTTP to reach the doorman, so TLS ended at an ingress or a load balancer in front of it, as is usual; a workload that ends TLS itself is never woken by a click.
 
+A workload that asks never [pauses early](forecasting.md#pausing-early), even with `pauseEarly` on: a request doesn't wake it, so someone who came while the forecast expected quiet would find it asleep and have to ask. It pauses when `idleAfter` runs out.
+
 ## How long a connection is held
 
 The doorman holds each connection for up to `wake.maxWait`, 2 minutes by default and at most 1 hour, which is the most the ManagedWorkload accepts. If no pod is Ready by then, it closes the connection. The wake carries on, so a retry a little later succeeds.
