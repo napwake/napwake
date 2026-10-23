@@ -19,12 +19,14 @@ package doorman
 import (
 	"bufio"
 	"bytes"
+	"cmp"
 	"context"
 	"errors"
 	"io"
 	"mime"
 	"net"
 	"net/http"
+	"net/url"
 	"slices"
 	"strings"
 	"time"
@@ -87,9 +89,8 @@ var (
 	// noticeNoFetchMetadata answers a browser that said nothing of where its
 	// click came from; see sameOrigin.
 	noticeNoFetchMetadata = notice{
-		text: "This browser didn't say the click came from this page, so nothing woke. Browsers from 2023 on say " +
-			"so over HTTPS. Wake it with kubectl hybernate wake, the hybernate.io/wake-requested annotation, or " +
-			"a current browser over HTTPS.",
+		text: "This browser didn't say the click came from this page, so nothing woke. Wake it with kubectl " +
+			"hybernate wake, the hybernate.io/wake-requested annotation, or a current browser.",
 		docs: asleepDocs,
 	}
 )
@@ -159,7 +160,7 @@ func clickNotice(req *http.Request, posted bool) notice {
 	switch {
 	case !posted:
 		return notice{}
-	case req.Header.Get("Sec-Fetch-Site") == "":
+	case req.Header.Get("Sec-Fetch-Site") == "" && !namesAnOrigin(req):
 		return noticeNoFetchMetadata
 	case clickedByAPerson(req):
 		return noticeExpired
@@ -188,17 +189,21 @@ func (h *heldConn) wakeForClick(ctx, waitCtx context.Context, req *http.Request)
 }
 
 // clickedByAPerson reports whether a click comes from a person: from a
-// browser, as the asleep page is shown to, and, from a browser that marks
-// the navigations a person starts with Sec-Fetch-User, marked so. A spider
-// that fetches the page and posts its token isn't a browser, and a script
-// submitting the form isn't marked. Safari, and every browser on iOS,
-// which runs WebKit, never send that mark, so their clicks are judged
-// without it: by the token, the User-Agent and sameOrigin, which every
-// browser's click must pass too.
+// browser, as the asleep page is shown to, and, from a browser that sends
+// fetch metadata and marks the navigations a person starts with
+// Sec-Fetch-User, marked so. A spider that fetches the page and posts its
+// token isn't a browser, and a script submitting the form isn't marked.
+// Safari, and every browser on iOS, which runs WebKit, never send that
+// mark, and no browser sends fetch metadata over plain HTTP, so their
+// clicks are judged without it: by the token, the User-Agent and
+// sameOrigin, which every browser's click must pass too.
 func clickedByAPerson(req *http.Request) bool {
 	agent := req.UserAgent()
 	if !looksLikeBrowser(agent) {
 		return false
+	}
+	if req.Header.Get("Sec-Fetch-Site") == "" {
+		return true
 	}
 	if user := req.Header.Get("Sec-Fetch-User"); user != "" {
 		return user == "?1"
@@ -229,13 +234,52 @@ func isClick(req *http.Request) bool {
 
 // sameOrigin reports whether the browser says the click came from a page of
 // the same origin, the same scheme, host and port, as the asleep page's
-// does, with Sec-Fetch-Site: same-origin. Every browser has said so with a
-// form it posts since Safari 16.4, in March 2023, but only to a URL it
-// trusts: over HTTPS, or to localhost. A click that doesn't say can't be
-// told from a spider's that fetched the page and posted its token as a
-// browser, so it wakes nothing, and the page says how else to wake it.
+// does. Where it sends fetch metadata, to an HTTPS or localhost address, as
+// every browser has since Safari 16.4 in March 2023, Sec-Fetch-Site says
+// so. Over plain HTTP, where none does, the Origin of the form it posts
+// must be the address the page was served at, which the page's
+// Referrer-Policy: same-origin lets it send. A click that says neither, as
+// browsers from before about 2020 don't, can't be told from a spider's that
+// fetched the page and posted its token as a browser, so it wakes nothing,
+// and the page says how else to wake it.
 func sameOrigin(req *http.Request) bool {
-	return req.Header.Get("Sec-Fetch-Site") == "same-origin"
+	if site := req.Header.Get("Sec-Fetch-Site"); site != "" {
+		return site == "same-origin"
+	}
+	return fromPageAddress(req)
+}
+
+// namesAnOrigin reports whether a click says what page it came from with
+// its Origin, which is "null" from a page whose referrer policy forbids
+// saying, or from one with no origin of its own.
+func namesAnOrigin(req *http.Request) bool {
+	origin := req.Header.Get("Origin")
+	return origin != "" && origin != "null"
+}
+
+// fromPageAddress reports whether a click's Origin is the address the
+// asleep page was served at: the host the browser asked for, which
+// pageAddress shows, and its port. Browsers leave a scheme's default port
+// out of both, though a proxy may name it in the host.
+func fromPageAddress(req *http.Request) bool {
+	origin, err := url.Parse(req.Header.Get("Origin"))
+	if err != nil || origin.Hostname() == "" {
+		return false
+	}
+	var defaultPort string
+	switch origin.Scheme {
+	case "http":
+		defaultPort = "80"
+	case "https":
+		defaultPort = "443"
+	default:
+		return false
+	}
+	host, port, err := net.SplitHostPort(req.Host)
+	if err != nil {
+		host, port = strings.TrimSuffix(strings.TrimPrefix(req.Host, "["), "]"), ""
+	}
+	return strings.EqualFold(origin.Hostname(), host) && cmp.Or(origin.Port(), defaultPort) == cmp.Or(port, defaultPort)
 }
 
 // readClick reads the rest of a click, its body, and returns the token it
