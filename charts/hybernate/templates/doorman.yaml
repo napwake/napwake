@@ -238,7 +238,7 @@ workloads with wake.mode Ask. Every replica must use the same one, since a
 click can reach any of them, so it's kept here, and the first replica to
 find it empty fills it with a random key. It's created empty, so a GitOps
 tool or a helm upgrade, which never set its data, leaves the key alone.
-Delete it to change the key.
+Empty it to change the key.
 */}}
 apiVersion: v1
 kind: Secret

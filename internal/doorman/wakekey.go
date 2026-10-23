@@ -31,7 +31,7 @@ const (
 	WakeKeyField = "key"
 
 	// wakeKeyRefresh is how often the shared key is read again, so a key
-	// replaced by deleting it reaches every replica.
+	// changed by emptying the Secret reaches every replica.
 	wakeKeyRefresh = time.Minute
 )
 
