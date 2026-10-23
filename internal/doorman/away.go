@@ -103,7 +103,7 @@ func (s *Server) addTurnedAway(ctx context.Context, key types.NamespacedName, c 
 		if err := s.client.Get(ctx, key, &w); err != nil {
 			return client.IgnoreNotFound(err)
 		}
-		count, ok := withTurnedAway(w.Annotations[v1alpha1.AnnotationTurnedAway], c)
+		count, ok := withTurnedAway(w.Annotations[v1alpha1.AnnotationTurnedAway], c, pausedAt(&w))
 		if !ok {
 			return nil
 		}
@@ -125,16 +125,25 @@ func (s *Server) addTurnedAway(ctx context.Context, key types.NamespacedName, c 
 }
 
 // withTurnedAway is the count after adding c to current, the annotation's
-// value: c's pause's count goes on, an earlier pause's, or one that can't
-// be read, starts again from c, and ok is false when the count is already
-// of a later pause than c's.
-func withTurnedAway(current string, c awayCount) (v1alpha1.TurnedAway, bool) {
+// value, for a workload whose current pause began at latest, or zero while
+// it's awake: c's pause's count goes on; an earlier pause's, one that can't
+// be read, one without a pause, or one of a pause after latest, as a count
+// edited by hand might be, starts again from c; and ok is false when the
+// count is already of a later pause than c's, or c names no pause.
+func withTurnedAway(current string, c awayCount, latest time.Time) (v1alpha1.TurnedAway, bool) {
+	if c.pausedAt.IsZero() {
+		return v1alpha1.TurnedAway{}, false
+	}
 	count := v1alpha1.TurnedAway{PausedAt: metav1.NewTime(c.pausedAt), Requests: c.requests}
 	var have v1alpha1.TurnedAway
-	if json.Unmarshal([]byte(current), &have) != nil || have.Requests < 0 {
+	if json.Unmarshal([]byte(current), &have) != nil || have.Requests < 0 || have.PausedAt.IsZero() {
 		return count, true
 	}
-	switch at := have.PausedAt.Truncate(time.Second); {
+	at := have.PausedAt.Truncate(time.Second)
+	if !latest.IsZero() && at.After(latest) {
+		return count, true
+	}
+	switch {
 	case at.Equal(c.pausedAt):
 		count.Requests += have.Requests
 	case at.After(c.pausedAt):

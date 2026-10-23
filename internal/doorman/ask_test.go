@@ -694,6 +694,46 @@ func TestServer_CountsTheRequestsItTurnsAway(t *testing.T) {
 	assert.True(t, got.PausedAt.Equal(&metav1.Time{Time: next}))
 }
 
+// A count is always written with the pause it counts, and one in the
+// annotation without a pause, or with one later than the workload's
+// current pause, as one edited by hand might be, is started again rather
+// than added to, or kept in place of this pause's.
+func TestWithTurnedAway(t *testing.T) {
+	paused := time.Date(2026, 10, 23, 9, 0, 0, 0, time.UTC)
+	count := func(at time.Time, n int64) string {
+		return fmt.Sprintf(`{"pausedAt":%q,"requests":%d}`, at.Format(time.RFC3339), n)
+	}
+	tests := []struct {
+		name    string
+		current string
+		latest  time.Time
+		add     awayCount
+		want    int64
+		writes  bool
+	}{
+		{name: "none yet", latest: paused, add: awayCount{pausedAt: paused, requests: 3}, want: 3, writes: true},
+		{name: "this pause's", current: count(paused, 4), latest: paused, add: awayCount{pausedAt: paused, requests: 3},
+			want: 7, writes: true},
+		{name: "a later pause's, since begun", current: count(paused.Add(time.Hour), 4), latest: paused.Add(time.Hour),
+			add: awayCount{pausedAt: paused, requests: 3}},
+		{name: "one without a pause", current: `{"requests":40}`, latest: paused,
+			add: awayCount{pausedAt: paused, requests: 3}, want: 3, writes: true},
+		{name: "one of a pause still to come", current: count(paused.Add(48*time.Hour), 40), latest: paused,
+			add: awayCount{pausedAt: paused, requests: 3}, want: 3, writes: true},
+		{name: "counted without a pause", latest: paused, add: awayCount{requests: 3}},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, writes := withTurnedAway(tt.current, tt.add, tt.latest)
+			assert.Equal(t, tt.writes, writes)
+			if writes {
+				assert.Equal(t, tt.want, got.Requests)
+				assert.True(t, got.PausedAt.Equal(&metav1.Time{Time: tt.add.pausedAt}))
+			}
+		})
+	}
+}
+
 func turnedAwayOf(t *testing.T, c client.Client) v1alpha1.TurnedAway {
 	t.Helper()
 	var w v1alpha1.ManagedWorkload
