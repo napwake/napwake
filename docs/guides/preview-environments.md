@@ -232,12 +232,12 @@ preview-42/web is Running after 2s
 
 ### From a portal or a chat bot
 
-Anything that talks to the Kubernetes API can ask. With `curl`, a `PATCH` sets the annotation, with the API server's address in `$APISERVER`, its CA certificate in `ca.crt`, and a token for the bot's ServiceAccount in `$KUBE_TOKEN`:
+Anything that talks to the Kubernetes API can ask. With `curl`, a `PATCH` sets the annotation, printing nothing unless it fails, with the API server's address in `$APISERVER`, its CA certificate in `ca.crt`, and a token for the bot's ServiceAccount in `$KUBE_TOKEN`:
 
 ```bash
 NS=preview-42
 REQUEST=chat-$(date -u +%Y%m%dT%H%M%SZ)
-curl --fail-with-body -sS --cacert ca.crt -X PATCH \
+curl --fail-with-body -sS -o /dev/null --cacert ca.crt -X PATCH \
   -H "Authorization: Bearer $KUBE_TOKEN" \
   -H 'Content-Type: application/merge-patch+json' \
   -d '{"metadata":{"annotations":{"hybernate.io/wake-requested":"'"$REQUEST"'"}}}' \
