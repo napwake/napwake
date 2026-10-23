@@ -78,10 +78,13 @@ type activityMemo struct {
 
 // rememberedClock is a workload's clock as its latest check left it, and
 // when that check was: later than the clock's last evaluation when a source
-// couldn't be read.
+// couldn't be read. gap is a gap in watching that restarted the clock on a
+// check that couldn't say so, as one that couldn't read a source: the next
+// check that can reports it.
 type rememberedClock struct {
 	clock   v1alpha1.ActivityStatus
 	checked time.Time
+	gap     *watchGap
 }
 
 func (m *activityMemo) get(uid types.UID) (v1alpha1.ActivityStatus, bool) {
@@ -98,13 +101,31 @@ func (m *activityMemo) checked(uid types.UID) time.Time {
 	return m.clocks[uid].checked
 }
 
-func (m *activityMemo) put(uid types.UID, clock v1alpha1.ActivityStatus, checked time.Time) {
+func (m *activityMemo) put(uid types.UID, clock v1alpha1.ActivityStatus, checked time.Time, gap *watchGap) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	if m.clocks == nil {
 		m.clocks = make(map[types.UID]rememberedClock)
 	}
-	m.clocks[uid] = rememberedClock{clock: clock, checked: checked}
+	m.clocks[uid] = rememberedClock{clock: clock, checked: checked, gap: gap}
+}
+
+// pending is the gap that restarted the workload's clock and hasn't been
+// reported yet, if any.
+func (m *activityMemo) pending(uid types.UID) *watchGap {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	return m.clocks[uid].gap
+}
+
+// reported clears the workload's pending gap once it has been reported.
+func (m *activityMemo) reported(uid types.UID) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if remembered, ok := m.clocks[uid]; ok {
+		remembered.gap = nil
+		m.clocks[uid] = remembered
+	}
 }
 
 func (m *activityMemo) forget(uid types.UID) {
@@ -143,17 +164,28 @@ type watchGap struct {
 	blind bool
 }
 
-// String says what the gap was, plainly, and never as activity.
-func (g watchGap) String() string {
-	switch {
-	case g.restarted:
-		return fmt.Sprintf("Hybernate wasn't watching for up to %s, across a restart of the operator",
-			human.Duration(g.length))
-	case g.blind:
-		return fmt.Sprintf("Hybernate couldn't read its activity for %s", human.Duration(g.length))
-	default:
-		return fmt.Sprintf("Hybernate wasn't watching for %s", human.Duration(g.length))
+// message says what the gap was, plainly, and never as activity, and that
+// the clock starts again, which can end a wait in Idle. A restart leads
+// with its cause, since only the gap's longest is known.
+func (g watchGap) message(endsIdle bool) string {
+	length := human.Duration(g.length)
+	if g.restarted {
+		idle := ""
+		if endsIdle {
+			idle = " and it's no longer idle"
+		}
+		return fmt.Sprintf("the operator restarted, or another took over, so its idle clock starts again%s; "+
+			"it wasn't watching for up to %s", idle, length)
 	}
+	what := fmt.Sprintf("Hybernate wasn't watching for %s", length)
+	if g.blind {
+		what = fmt.Sprintf("Hybernate couldn't read its activity for %s", length)
+	}
+	then := ""
+	if endsIdle {
+		then = "; no longer idle"
+	}
+	return what + ", so its idle clock starts again" + then
 }
 
 func idleAfterFor(workload *v1alpha1.ManagedWorkload) time.Duration {
@@ -194,7 +226,7 @@ func (r *Reconciler) resetActivity(workload *v1alpha1.ManagedWorkload, source v1
 		LastEvaluatedTime:  &now,
 		TemplateHash:       hash,
 	}
-	r.activityMemo.put(workload.UID, *workload.Status.Activity.DeepCopy(), now.Time)
+	r.activityMemo.put(workload.UID, *workload.Status.Activity.DeepCopy(), now.Time, nil)
 }
 
 // observeActivity reads every activity source and advances the clock in
@@ -219,10 +251,16 @@ func (r *Reconciler) observeActivity(ctx context.Context, workload *v1alpha1.Man
 	// A gap in watching doesn't wake a paused workload, so it doesn't end
 	// the pause dry-run stands in for either.
 	if last := status.LastEvaluatedTime; last != nil && !inWouldBePause(workload) {
-		if gap, restart := r.unwatched(workload, last.Time, inMemory, now); restart {
+		pending := r.activityMemo.pending(workload.UID)
+		gap, restart := r.unwatched(workload, last.Time, inMemory, now)
+		switch {
+		case restart:
 			status.LastActivityTime = metav1.NewTime(now)
 			status.LastActivitySource = v1alpha1.ActivitySourceUnobserved
+			gap.restarted = gap.restarted || pending != nil && pending.restarted
 			obs.gap = &gap
+		case pending != nil:
+			obs.gap = pending
 		}
 	}
 
@@ -281,7 +319,7 @@ func (r *Reconciler) observeActivity(ctx context.Context, workload *v1alpha1.Man
 	}
 	pauseAt := metav1.NewTime(status.LastActivityTime.Add(idleAfterFor(workload)))
 	status.PauseAt = &pauseAt
-	r.activityMemo.put(workload.UID, *status.DeepCopy(), now)
+	r.activityMemo.put(workload.UID, *status.DeepCopy(), now, obs.gap)
 	recordIdleSeconds(workload, now)
 	return obs
 }
@@ -945,12 +983,8 @@ func activeSinceClockRanOut(workload *v1alpha1.ManagedWorkload, now, pauseAt tim
 // clock, and for how long, so a pause an idleAfter later isn't a mystery.
 // It's a real event in dry-run too: the clock restarts either way.
 func (r *Reconciler) reportGap(workload *v1alpha1.ManagedWorkload, gap watchGap, endsIdle bool) {
-	then := ""
-	if endsIdle {
-		then = "; no longer idle"
-	}
-	r.emitEvent(workload, false, "Normal", ReasonUnobserved, actionEvaluateIdle,
-		"%s, so its idle clock starts again%s", gap, then)
+	r.emitEvent(workload, false, "Normal", ReasonUnobserved, actionEvaluateIdle, "%s", gap.message(endsIdle))
+	r.activityMemo.reported(workload.UID)
 }
 
 func (r *Reconciler) reportActivityResumed(workload *v1alpha1.ManagedWorkload, source v1alpha1.ActivitySource,

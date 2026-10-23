@@ -83,7 +83,7 @@ func clockWorkload(lastActivity time.Time, target *appsv1.Deployment) *v1alpha1.
 // running operator's last check, which evaluated it, left it.
 func remember(r *Reconciler, workload *v1alpha1.ManagedWorkload) {
 	clock := workload.Status.Activity
-	r.activityMemo.put(workload.UID, *clock.DeepCopy(), clock.LastEvaluatedTime.Time)
+	r.activityMemo.put(workload.UID, *clock.DeepCopy(), clock.LastEvaluatedTime.Time, nil)
 }
 
 // holding has the reconciler hold the clock of each ManagedWorkload it
@@ -600,6 +600,79 @@ func TestActivityClock_AGapInWatchingRestartsTheClock(t *testing.T) {
 // its pause but never bring it forward. A clock this operator started
 // itself, as when it creates a workload's or wakes one paused before it
 // took over, is its own.
+// A restart whose first check can't read a source still restarts the
+// clock, and says so once a check can: the gap waits in memory until it's
+// reported, rather than being lost to a check that, in memory, finds none.
+func TestActivityClock_ARestartIsReportedOnceASourceCanBeRead(t *testing.T) {
+	tests := []struct {
+		name    string
+		promQL  bool
+		blind   int
+		breakIt func(m *stubMetrics, promDown *atomic.Bool)
+		fixIt   func(m *stubMetrics, promDown *atomic.Bool)
+	}{
+		{name: "metrics API down", breakIt: func(m *stubMetrics, _ *atomic.Bool) { m.err = errors.New("metrics API unavailable") },
+			fixIt: func(m *stubMetrics, _ *atomic.Bool) { m.err = nil }},
+		// Out for longer than a gap may last, the clock restarts again in
+		// memory, and the restart is still what's said.
+		{name: "metrics API down for 10 minutes", blind: 10,
+			breakIt: func(m *stubMetrics, _ *atomic.Bool) { m.err = errors.New("metrics API unavailable") },
+			fixIt:   func(m *stubMetrics, _ *atomic.Bool) { m.err = nil }},
+		{name: "CPU requests unreadable", breakIt: func(m *stubMetrics, _ *atomic.Bool) { m.noCPURequests = true },
+			fixIt: func(m *stubMetrics, _ *atomic.Bool) { m.noCPURequests = false }},
+		{name: "Prometheus down", promQL: true,
+			breakIt: func(_ *stubMetrics, promDown *atomic.Bool) { promDown.Store(true) },
+			fixIt:   func(_ *stubMetrics, promDown *atomic.Bool) { promDown.Store(false) }},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			var promDown atomic.Bool
+			srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+				if promDown.Load() {
+					w.WriteHeader(http.StatusServiceUnavailable)
+					return
+				}
+				_, _ = w.Write([]byte(`{"status":"success","data":{"resultType":"vector","result":[]}}`))
+			}))
+			t.Cleanup(srv.Close)
+			target := clockTarget("app:v1", nil)
+			workload := clockWorkload(fixedTime.Add(-30*time.Minute), target)
+			if tt.promQL {
+				workload.Spec.IdlePolicy.Activity = &v1alpha1.ActivitySpec{
+					Prometheus: []v1alpha1.PrometheusActivity{{PromQL: `sum(rate(http_requests_total[5m]))`}},
+				}
+			}
+			metrics := idleCPU
+			r := newAutomationReconciler(t, workload, &stubForecaster{}, automationOpts{metrics: &metrics})
+			r.prometheus = signal.NewPrometheus(srv.URL)
+			restarted(r, workload)
+			now := fixedTime
+			r.clock = func() time.Time { return now }
+			check := func() {
+				t.Helper()
+				_, err := r.reconcileAutomation(context.Background(), workload, target)
+				require.NoError(t, err)
+			}
+
+			tt.breakIt(&metrics, &promDown)
+			for range max(tt.blind, 1) {
+				check()
+				now = now.Add(activityCheckInterval)
+			}
+			assert.Equal(t, v1alpha1.ActivitySourceUnobserved, workload.Status.Activity.LastActivitySource)
+			tt.fixIt(&metrics, &promDown)
+			r.prometheus = signal.NewPrometheus(srv.URL)
+			check()
+			now = now.Add(activityCheckInterval)
+			check()
+
+			gaps := recorded(r.Recorder.(*events.FakeRecorder), ReasonUnobserved)
+			require.Len(t, gaps, 1, "the restart is announced once, by the first check that can read every source")
+			assert.Contains(t, gaps[0], "the operator restarted, or another took over")
+		})
+	}
+}
+
 func TestActivityClock_ARestartRestartsAnAwakeClock(t *testing.T) {
 	target := clockTarget("app:v1", nil)
 	t.Run("written moments before the restart", func(t *testing.T) {
@@ -617,8 +690,8 @@ func TestActivityClock_ARestartRestartsAnAwakeClock(t *testing.T) {
 		assert.True(t, workload.Status.Activity.PauseAt.Time.Equal(fixedTime.Add(time.Hour)))
 		gap := recorded(r.Recorder.(*events.FakeRecorder), ReasonUnobserved)
 		require.Len(t, gap, 1)
-		assert.Contains(t, gap[0], "Hybernate wasn't watching for up to 30 seconds, across a restart of the "+
-			"operator, so its idle clock starts again")
+		assert.Contains(t, gap[0], "the operator restarted, or another took over, so its idle clock starts again; "+
+			"it wasn't watching for up to 30 seconds")
 	})
 	for _, source := range []v1alpha1.ActivitySource{v1alpha1.ActivitySourceCreated, v1alpha1.ActivitySourceRequest} {
 		t.Run("started by this operator: "+string(source), func(t *testing.T) {

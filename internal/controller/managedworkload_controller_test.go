@@ -220,7 +220,7 @@ func TestReconcile_DeletedWithoutItsFinalizerIsForgotten(t *testing.T) {
 	_, err := r.Reconcile(context.Background(), reconcileFor("api"))
 	require.NoError(t, err)
 	r.forecastEngine(getWorkload(t, r, "api"))
-	r.activityMemo.put("api-uid", v1alpha1.ActivityStatus{}, fixedTime)
+	r.activityMemo.put("api-uid", v1alpha1.ActivityStatus{}, fixedTime, nil)
 	r.doormanFailures.next("api-uid")
 	r.doormanPorts.claims = map[int32]portClaim{30001: {owner: "api-uid", at: fixedTime}}
 
