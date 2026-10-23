@@ -111,7 +111,7 @@ var _ = Describe("Wake on request", func() {
 	})
 
 	It("asks before waking a paused app through ingress-nginx: curl is turned away, and a click on the asleep page "+
-		"wakes it", func() {
+		"over plain HTTP wakes it", func() {
 		ns := createNamespace("hybernate-e2e-wake-ask")
 		const name = "e2e-web"
 		host := routeThroughIngress(ns, name)
@@ -154,8 +154,8 @@ curl -sS -w '\nstatus=%%{http_code}' -A '%[1]s' -H 'Host: %[2]s' %[4]s \
 		}
 
 		By("posting the page's token as a browser that says nothing of where the click came from")
-		// As a spider that fetched the page sends it, or a browser over
-		// plain HTTP: no fetch metadata.
+		// As a spider that fetched the page sends it: no fetch metadata, and
+		// no Origin.
 		out, ok := runShell("curl-ask-no-metadata", ns, clickWith(""))
 		Expect(ok).To(BeTrue(), "the post failed: %s", out)
 		Expect(out).To(ContainSubstring("status=200"), "the asleep page again")
@@ -163,12 +163,14 @@ curl -sS -w '\nstatus=%%{http_code}' -A '%[1]s' -H 'Host: %[2]s' %[4]s \
 		Expect(jsonpath("managedworkload", name, ns, `{.metadata.annotations.hybernate\.io/last-request}`)).
 			To(BeEmpty(), "nothing stamped a wake")
 
-		By("opening the app in a browser and clicking Wake it, sending what Chrome does, through ingress-nginx")
-		out, ok = runShell("curl-ask-click", ns, clickWith("-H 'Sec-Fetch-Site: same-origin' "+
-			"-H 'Sec-Fetch-Mode: navigate' -H 'Sec-Fetch-User: ?1' -H 'Sec-Fetch-Dest: document' -o /dev/null"))
+		By("opening the app in a browser and clicking Wake it, sending what Chrome does over plain HTTP")
+		// No fetch metadata, which browsers send only over HTTPS: the
+		// page's Origin, which its Referrer-Policy: same-origin lets them
+		// send, says the click came from it.
+		out, ok = runShell("curl-ask-click", ns, clickWith("-H 'Origin: http://"+host+"' -o /dev/null"))
 		Expect(ok).To(BeTrue(), "the click failed: %s", out)
 		Expect(out).To(ContainSubstring("status=503"),
-			"the click, its fetch metadata passed on by nginx, is answered by the waking-up page")
+			"the click, its Origin passed on by nginx, is answered by the waking-up page")
 		expectWokenByRequest(ns, "deployment", name, 1)
 		key, err := jsonpath("secret", "hybernate-doorman-wake-key", namespace, "{.data.key}")
 		Expect(err).NotTo(HaveOccurred())
