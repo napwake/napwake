@@ -69,7 +69,7 @@ func prose(doc *ast.CommentGroup) string {
 		return ""
 	}
 	var lines []string
-	for _, line := range strings.Split(doc.Text(), "\n") {
+	for line := range strings.SplitSeq(doc.Text(), "\n") {
 		if !strings.HasPrefix(line, "+") {
 			lines = append(lines, line)
 		}
