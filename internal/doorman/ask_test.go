@@ -111,7 +111,8 @@ func TestServer_AsksAPersonBeforeWaking(t *testing.T) {
 	assert.Equal(t, "noindex", resp.Header.Get("X-Robots-Tag"))
 	assert.Contains(t, resp.Header.Get("Content-Security-Policy"), "frame-ancestors 'none'")
 	assert.Contains(t, body, `<meta name="robots" content="noindex">`)
-	assert.NotContains(t, body, `http-equiv="refresh"`, "it waits for a click")
+	assert.Contains(t, body, `<meta http-equiv="refresh" content="60">`,
+		"a tab left open reloads itself, into the app once someone has woken it, and with a fresh token until then")
 	assert.Contains(t, body, "<title>Asleep pr-42.preview.example.dev</title>")
 	assert.Contains(t, body, `<form method="post">`, "the button posts back to the page it's on")
 	assert.Contains(t, body, "Wake it")

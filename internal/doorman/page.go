@@ -289,6 +289,11 @@ func writePage(w io.Writer, req *http.Request, data pageData) error {
 	return nil
 }
 
+// asleepRefresh is how often the asleep page reloads itself. A tab left
+// open then reaches the app once someone has woken it, rather than posting
+// a stale click to the app, and its button's token never expires.
+const asleepRefresh = time.Minute
+
 // asleepPolicy keeps the asleep page to itself: no script runs on it, its
 // button posts only back to the page's own address, and no other site can
 // frame it, to trick someone into clicking it.
@@ -300,6 +305,7 @@ const asleepPolicy = "default-src 'none'; style-src 'unsafe-inline'; form-action
 // waking-up page, nothing may cache or index it.
 func writeAsleepPage(w io.Writer, data pageData) error {
 	data.Mark = Mark
+	data.Refresh = int(asleepRefresh.Seconds())
 	data.Asleep = true
 	data.Field = wakeField
 	data.WakeRequestDocs = wakeRequestDocs
