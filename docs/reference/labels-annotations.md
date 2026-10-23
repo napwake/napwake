@@ -37,7 +37,7 @@ kubectl get managedworkloads -l hybernate.io/from-label=true --all-namespaces
 
 ## Settings Annotations
 
-Set on an opted-in Deployment or StatefulSet, or on its Namespace to apply to every workload in it. Each setting is the first value that can be read from: the workload's annotation, its namespace's, the [Helm defaults](helm-values.md#opt-in-defaults) (only `idle-after`, `cpu-threshold`, `dry-run`, `pause-early` and `forecast` have one), and the built-in default. See [Opting In](../guides/opt-in.md#settings).
+Set on an opted-in Deployment or StatefulSet, or on its Namespace to apply to every workload in it. Each setting is the first value that can be read from: the workload's annotation, its namespace's, the [Helm defaults](helm-values.md#opt-in-defaults) (only `idle-after`, `cpu-threshold`, `dry-run`, `pause-early`, `forecast` and `wake` have one), and the built-in default. See [Opting In](../guides/opt-in.md#settings).
 
 | Annotation | Accepted values | Default | Description |
 |------------|-----------------|---------|-------------|
@@ -48,13 +48,14 @@ Set on an opted-in Deployment or StatefulSet, or on its Namespace to apply to ev
 | `hybernate.io/pause-early` | exactly `"true"` or `"false"` | `"false"` | Pause before `idle-after` runs out, once idle for 20 minutes, when a confident forecast expects the hours until then to be quiet and a request would wake the workload through the doorman. Sets `spec.idlePolicy.pauseEarly`. See [Pausing Early](../concepts/forecasting.md#pausing-early) |
 | `hybernate.io/forecast` | exactly `"eager"`, `"balanced"` or `"cautious"` | `"balanced"` | How soon the forecast acts: at a confidence of 60, 75 or 85. Eager acts sooner and wakes the workload for nothing more often; cautious acts later, for workloads costly to keep awake. Sets `spec.prediction.mode`; a `spec.prediction.confidence` set on the ManagedWorkload overrides it. See [Forecast setting](../concepts/forecasting.md#forecast-setting) |
 | `hybernate.io/depends-on` | comma-separated `kind/name` or `namespace/kind/name`, kind `deployment` or `statefulset` | none | Workloads this one needs. An empty value declares none, so a workload can drop its namespace's. On a namespace, it leaves out the workloads it names, and those they depend on by their own `depends-on`, which are dependencies rather than dependents. One in another namespace needs that namespace's `hybernate.io/dependents-from` |
-| `hybernate.io/wake-on-request` | exactly `"true"` or `"false"` | `"true"` | Wake when a request reaches the workload's Service |
+| `hybernate.io/wake` | exactly `"request"` or `"ask"` | `"request"` | What wakes the paused workload through the doorman: any request, or, with `ask`, only a person who clicks **Wake it** on the page the doorman shows a browser; everything else gets a `503` and wakes nothing. Sets `spec.wake.mode` to `Request` or `Ask`. See [Asking before waking](../concepts/wake-on-request.md#asking-before-waking) |
 | `hybernate.io/wake-max-wait` | a Go duration above zero, at most `1h` | `2m` | How long a request is held while the workload wakes |
 | `hybernate.io/wake-page` | exactly `"true"` or `"false"` | `"true"` | Show browsers a waking-up page |
 
 A value that can't be read, such as `"True"`, `"yes"`, `"soon"` or `"0"`, is reported in an `InvalidSetting` warning event on the workload and skipped: the setting comes from the next place in the order above, never from the default in place of a namespace's value, and the other settings still apply. Two exceptions:
 
 - **`dry-run`**: a value that can't be read turns dry-run on, wherever it is, since a typo in the setting meant to stop pauses must never start them.
+- **`wake`**: a value that can't be read, such as `"Ask"` or `"true"`, has the doorman ask, wherever it is, since a typo must never let crawlers wake a workload meant to wake only for people.
 - **`depends-on`**: an entry that can't be read is skipped and the rest apply; only a value with no readable entry at all falls through to the namespace's.
 
 ## Activity Annotations
@@ -65,6 +66,7 @@ A value that can't be read, such as `"True"`, `"yes"`, `"soon"` or `"0"`, is rep
 | `hybernate.io/active-until` | RFC 3339 time | ManagedWorkloads, Deployments, StatefulSets | Keeps the workload awake until that time, and wakes it if paused |
 | `hybernate.io/last-request` | RFC 3339 time | ManagedWorkloads | Set by the doorman when it holds a request for a paused workload, and, with `doorman.admissionPolicy.enabled`, by no one else; set `last-activity` to wake a workload yourself. Wakes it like `last-activity`, and the clock records the wake as `request`. See [Wake on Request](../concepts/wake-on-request.md) |
 | `hybernate.io/last-request-from` | IP address | ManagedWorkloads | Set by the doorman with `last-request`, and by no one else, like it: where the request that woke the workload came from, so the operator can [learn](../concepts/dependencies.md#learned-dependencies) which workload depends on it |
+| `hybernate.io/turned-away` | JSON, set by the doorman | ManagedWorkloads | Where the doorman counts the requests it turned away during a pause, for a workload with `wake.mode: Ask`; the operator copies it into `status.turnedAway`. Don't set or edit it. See [What it turns away](../concepts/wake-on-request.md#what-it-turns-away) |
 
 A value that isn't an RFC 3339 time, such as epoch seconds, is ignored: it neither keeps the workload awake nor wakes it, and an `InvalidActivityAnnotation` warning event on the ManagedWorkload says so, once per value.
 

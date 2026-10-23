@@ -20,8 +20,9 @@ Everything the Hybernate operator and its doorman read, write, and send, for a s
 | Karpenter NodePools (`karpenter.sh/v1`) | Their names and `spec.disruption`, to report which node autoscaler runs | Listed every 10 minutes, not cached. Without Karpenter installed, nothing is read |
 | Deployments in `kube-system` | Their names, to find a Cluster Autoscaler that hasn't written its status ConfigMap | Metadata listed every 10 minutes, only while that ConfigMap is missing |
 | ManagedWorkloads | Its own configuration | Watched |
+| Its wake key Secret, `<fullname>-doorman-wake-key` | The doorman's: the key it signs the asleep page's [Wake it button](../concepts/wake-on-request.md#the-wake-it-button) with, shared by its replicas | Read by name every minute, from the API server, not cached; written once, to fill it when it's empty |
 
-**Never read:** Secrets, of any kind, anywhere. An address set in a Secret is learned only from the request it's used for.
+**Never read:** any other Secret, of any kind, anywhere. An address set in a Secret is learned only from the request it's used for.
 
 ## What it writes
 
@@ -31,7 +32,8 @@ Everything the Hybernate operator and its doorman read, write, and send, for a s
 | Deployments of its own, with `doorman.negForwarder.enabled` | A forwarder, `hybernate-forwarder-<workload>`, in the namespace of each paused workload whose Service is behind GKE container-native load balancing, owned by its ManagedWorkload and deleted a minute after the workload wakes. See [GKE container-native load balancing](../concepts/wake-on-request.md#gke-container-native-load-balancing-negs) |
 | KEDA ScaledObjects | The `autoscaling.keda.sh/paused-replicas` annotation, while their workload is paused or resuming; afterwards the value it had before, or none |
 | EndpointSlices | Its own, routing a paused workload's Services to the doorman; deleted when the workload wakes |
-| ManagedWorkloads | Its own status, including each workload's forecast state; the ones it creates for labelled workloads; the `hybernate.io/cleanup` finalizer, added to each so that deleting it restores its workload first, and removed once it has, with `hybernate.io/operator`, the operator's namespace; `hybernate.io/last-activity` on a dependency it wakes; and, from the doorman, `hybernate.io/last-request` and `hybernate.io/last-request-from` (the caller's IP address) on one a request wakes |
+| ManagedWorkloads | Its own status, including each workload's forecast state; the ones it creates for labelled workloads; the `hybernate.io/cleanup` finalizer, added to each so that deleting it restores its workload first, and removed once it has, with `hybernate.io/operator`, the operator's namespace; `hybernate.io/last-activity` on a dependency it wakes; and, from the doorman, `hybernate.io/last-request` and `hybernate.io/last-request-from` (the caller's IP address) on one a request wakes, and `hybernate.io/turned-away`, a count of the requests it turned away from one that [asks before waking](../concepts/wake-on-request.md#what-it-turns-away), with nothing of the requests themselves |
+| Its wake key Secret | The doorman fills it with a random key when it's empty, and changes nothing else |
 | Events | On ManagedWorkloads and workloads, to say what it did and why |
 | Leases | Leader election, in its own namespace |
 

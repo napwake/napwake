@@ -74,6 +74,8 @@ Served by the doorman pods, on the same port and path as the operator's metrics.
 | `ignored` | A health check or scraper, recognised by its `User-Agent` and answered 503, or Google's load balancer health check, answered 200 (see [Health checks the doorman can't recognise](../concepts/wake-on-request.md#health-checks-the-doorman-cant-recognise)); a request for a hidden file such as `/.env`, answered 404; or a connection that closed without sending anything, as each forwarder pod's check that it reaches the doorman does every 5 seconds |
 | `limited` | Refused by a cap on held connections or a wake rate limit; see [Limits](../concepts/wake-on-request.md#limits) |
 | `refused` | The workload's route is draining and none of its pods is Ready |
+| `asked` | With `wake.mode: Ask`, a person's browser was shown the page that asks before waking the workload. See [Asking before waking](../concepts/wake-on-request.md#asking-before-waking) |
+| `turned_away` | With `wake.mode: Ask`, anything else, such as a crawler, a scanner or an API client, was told the workload is asleep, and nothing woke. Many mean something automated calls it; `status.turnedAway` counts them for each pause |
 
 ## Prediction Phase Values
 

@@ -2,7 +2,7 @@
 
 A paused workload has no pods, so nothing answers its Service. With wake on request, the first request wakes it instead: the connection is held while the workload starts, then passed to one of its Ready pods. The caller usually sees one slow response, not an error; [What the caller sees](#what-the-caller-sees) lists when it doesn't.
 
-It's on by default for every workload Hybernate pauses on its own. There's nothing to configure.
+It's on by default for every workload Hybernate pauses on its own. There's nothing to configure. For a workload on a public URL, which crawlers and scanners would wake every few minutes, the doorman can [ask before waking](#asking-before-waking) it, so that only a person's click does.
 
 ## How it works
 
@@ -95,7 +95,10 @@ Either way, most load balancers see the workload as unhealthy while it's paused,
 
 Wake on request wakes a paused workload for any request it can't recognise as a health check, and on the public internet most requests are robots: search engine crawlers, and scanners that try every address for known weaknesses. Many of them present an ordinary browser's `User-Agent` on purpose, so no list of agents can keep up with them. A paused workload anyone on the internet can reach is woken by them every few minutes, and frees little.
 
-The doorman turns away the scanners hunting for leaked secrets in hidden files, as above, but not the rest. Put non-production environments behind a VPN, single sign-on at the ingress, or an allowlist of your offices' and VPN's addresses. That keeps the robots away from them, which pausing needs, and keeps unfinished work away from the internet, which a staging or preview environment needs anyway.
+The doorman turns away the scanners hunting for leaked secrets in hidden files, as above, but not the rest. So for an environment anyone on the internet can reach, such as a preview environment for each pull request, either:
+
+- **Have the doorman ask before waking it,** with `wake.mode: Ask`: a browser gets a page with a **Wake it** button, and only a click wakes the workload. See [Asking before waking](#asking-before-waking).
+- **Put it behind a VPN,** single sign-on at the ingress, or an allowlist of your offices' and VPN's addresses. That keeps the robots away from it, and unfinished work away from the internet, and any request wakes it, as usual.
 
 ### Services shared with other workloads
 
@@ -125,6 +128,68 @@ spec:
 
 For a workload opted in with the label, set the annotation `hybernate.io/wake-page: "false"` on it instead.
 
+## Asking before waking
+
+A workload with `wake.mode: Ask` wakes only when a person asks: crawlers, scanners and API clients reach the doorman as before, and nothing they send wakes it. It's for environments on a public URL, such as a preview environment for each pull request, which robots would otherwise keep awake.
+
+```yaml
+spec:
+  wake:
+    mode: Ask     # the default is Request: any request wakes it
+```
+
+For a workload opted in with the label, set the annotation `hybernate.io/wake: ask` on it or on its namespace instead, or make it the default for the cluster with the Helm value `defaults.wake: ask`. A value other than `request` or `ask` is read as `ask`, with an `InvalidSetting` warning, so a typo never lets robots wake a workload meant to wake only for people. The `WakeOnRequest` condition says the doorman asks:
+
+```
+WakeOnRequest=True   DoormanRouted   the doorman asks a person's browser before waking the workload, and turns away other requests
+```
+
+### What browsers, robots and API clients see
+
+| The caller | What happens |
+|------------|--------------|
+| A person's browser opening a page: a `GET` with `Sec-Fetch-Mode: navigate`, or asking for HTML, whose `User-Agent` starts with `Mozilla/` and doesn't name a crawler | A page saying the environment is asleep, with a **Wake it** button. It's a `200` with `Cache-Control: no-store` and `X-Robots-Tag: noindex`, and nothing wakes |
+| A click on **Wake it** | The workload wakes, as for a held request: `hybernate.io/last-request` is stamped, and a `WokenByRequest` event says a person asked. The waking-up page follows, and reloads the page the person opened until the app answers |
+| Anything else: `curl`, scripts and API clients, crawlers and link previewers such as `Googlebot` and `facebookexternalhit`, headless browsers, scanners, a `HEAD`, a WebSocket, a browser's `fetch` | `503 Service Unavailable`, with `Retry-After: 300`, and a short body, JSON for a client that asks for it and plain text otherwise, saying it's asleep and how to wake it. Nothing wakes |
+| A connection that isn't HTTP, such as a database protocol, or TLS the doorman can't read | Closed; nothing wakes |
+| A known probe, health check or hidden file | Answered as for any workload; see [What wakes a workload](#what-wakes-a-workload-and-what-doesnt) |
+| Anything, once the workload is waking: someone has clicked, or something else woke it | As for a workload that wakes on any request: a browser gets the waking-up page, and anything else is held until the workload is Ready |
+
+A robot that presents itself as a browser gets the page, and wakes nothing either. A robot that clicks the button wakes the workload, at most once a minute; that's rare, and costs a wake.
+
+The pages name no namespace, workload or Service, so they give nothing away to whoever reaches them.
+
+### The Wake it button
+
+The button posts back to the address of the page the person opened, so it reaches the same workload however an ingress routes it, a path prefix included. What it posts is a token the doorman signed for that workload and that pause: it's good for 10 minutes, and wakes no other workload, nor the same one in a later pause. A page left open longer says it had expired, and offers the button again. A click from a page of another site, which the browser says with `Sec-Fetch-Site`, wakes nothing, and no other site can show the page in a frame.
+
+The doorman's replicas sign with one key, since a click can reach any of them. It's kept in a Secret the chart creates empty, `hybernate-doorman-wake-key` for a release named `hybernate`, and the first doorman pod to find it empty fills it with a random key. Helm and GitOps tools never set its data, so they leave the key alone. To change the key, empty the Secret, and each doorman pod uses the new one within a minute:
+
+```sh
+kubectl patch secret hybernate-doorman-wake-key -n hybernate-system --type=json -p '[{"op":"remove","path":"/data"}]'
+```
+
+A click wakes a workload at most once a minute, whichever doorman pod it reaches: a click within a minute of the last wake request, such as one moments before the workload paused again, is asked to try again shortly.
+
+People's tooling can wake it too, without a browser: a pull request bot, a developer portal or a chat command, with the `hybernate.io/wake-requested` annotation or `kubectl hybernate wake`. Both work whatever `wake.mode` says.
+
+### What it turns away
+
+The doorman counts the requests it turns away during each pause: the `503`s and closed connections, not a person shown the page, nor probes and health checks. It's a count only, with nothing of the requests themselves: no paths, addresses or headers. It's in the ManagedWorkload's status, brought up to date about once a minute, for the current pause or, once the workload is awake, the last one:
+
+```yaml
+status:
+  turnedAway:
+    pausedAt: "2026-10-23T18:04:12Z"
+    requests: 312
+```
+
+[`kubectl hybernate status`](../getting-started/kubectl-plugin.md#see-what-hybernate-is-doing) lists the workloads that turned requests away, and `hybernate_doorman_wakes_total{result="turned_away"}` counts them as they happen; see [Metrics](../reference/metrics.md#doorman). Many mean something automated calls the workload: a monitor, a webhook, or another service. A person can't be turned away, so it's worth finding out what it is.
+
+### When to keep waking on request
+
+Asking suits what people open in a browser. Keep `Request`, the default, for a workload that other workloads, scripts or webhooks call: they're turned away while it's paused, and nothing they send wakes it. It needs plain HTTP to reach the doorman, so TLS ended at an ingress or a load balancer in front of it, as is usual; a workload that ends TLS itself is never woken by a click.
+
 ## How long a connection is held
 
 The doorman holds each connection for up to `wake.maxWait`, 2 minutes by default and at most 1 hour, which is the most the ManagedWorkload accepts. If no pod is Ready by then, it closes the connection. The wake carries on, so a retry a little later succeeds.
@@ -151,6 +216,7 @@ So that a flood of connections can't exhaust the doorman, or wake workloads fast
 
 - Each doorman pod holds at most 2048 connections: at most 256 for one workload, at most 1024 from one source IP, and at most 128 from one source IP for one workload. A connection over these caps is closed at once, with nothing sent.
 - Each doorman pod passes through at most 1024 connections at once, at most 512 from one source IP. A connection over these caps is held, as if the workload weren't Ready yet, until a place frees or `maxWait` runs out. A passed-through connection that carries nothing either way for 10 minutes is closed, so a caller that vanished without closing doesn't keep its place; one whose client or server pings, as WebSockets and database pools do, stays open. Once the workload is awake and its route starts draining, connections still passing through the doorman are closed after 5 minutes, so long-lived callers reconnect to the pods directly.
+- A click on the asleep page's **Wake it** button wakes a workload at most once a minute; see [Asking before waking](#the-wake-it-button).
 - Wakes are rate-limited per source IP (a burst of 30, then one every 2 seconds) and overall (a burst of 200, then 10 a second). Only a request that would actually wake a paused workload counts, and one refused overall doesn't use up its source's allowance. A caller whose wake is over the limit isn't turned away: a browser gets the waking-up page, anything else is held, and the wake is retried every 2 seconds until the allowance lets it through or `maxWait` runs out.
 - While a connection is held, the doorman reads what the caller sends, so that a caller who gives up is let go at once: up to 1MiB per connection, and 32MiB across all of them. The first 8KiB of each doesn't count towards the 32MiB, so a caller who sent an ordinary request and left is let go at once even while large uploads have used it up. A larger request body waits in the network until the workload is up, or until other held connections free some of the 32MiB, and a caller who leaves partway through one is let go only then. A caller that closes its connection has left, whatever its protocol, and is never passed to the workload: over TCP, closing and shutting down only the sending side look the same, and nearly every caller that does either has given up. So a client that sends its request and then shuts down its side to wait for the answer, as `nc -N` does, is dropped while the workload is asleep; leave the connection open instead.
 
@@ -407,11 +473,12 @@ doorman:
 
 List every IP family your cluster uses, and the node CIDRs too if a routed workload uses `hostNetwork`. `apiServer` is the API server's endpoint addresses, not the `kubernetes` Service's ClusterIP, since policies apply after the Service is resolved.
 
-The doorman's ServiceAccount can patch ManagedWorkloads, to set `hybernate.io/last-request`. The chart's ValidatingAdmissionPolicy (`doorman.admissionPolicy.enabled`, on by default, and in the Kustomize manifests too) narrows that: it lets the ServiceAccount change only the `hybernate.io/last-request` and `hybernate.io/last-request-from` annotations. A second policy lets no one else set those two, so only the doorman can say a request woke a workload, or where it came from. See [Security](../reference/security.md#the-doorman-is-a-way-in-to-paused-workloads).
+The doorman's ServiceAccount can patch ManagedWorkloads, to set `hybernate.io/last-request`. The chart's ValidatingAdmissionPolicy (`doorman.admissionPolicy.enabled`, on by default, and in the Kustomize manifests too) narrows that: it lets the ServiceAccount change only the `hybernate.io/last-request` and `hybernate.io/last-request-from` annotations, and `hybernate.io/turned-away`, where it counts what it [turned away](#what-it-turns-away). Besides those, it reads one Secret, its own [wake key](#the-wake-it-button), by name, and writes it once to fill it. A second policy lets no one else set those two, so only the doorman can say a request woke a workload, or where it came from. See [Security](../reference/security.md#the-doorman-is-a-way-in-to-paused-workloads).
 
 ## What the caller sees
 
-- **A browser**: the waking-up page at once, then the app on the first reload after one of its pods is Ready.
+- **A browser**: the waking-up page at once, then the app on the first reload after one of its pods is Ready. With [`wake.mode: Ask`](#asking-before-waking), first a page asking whether to wake it.
+- **With `wake.mode: Ask`, anything but a person's browser**: a `503` saying it's asleep and how to wake it, until someone does.
 - **Anything else, from a pod in the cluster or through an Ingress**: usually one slow response while the workload starts, then a normal one. Not when something between the caller and the workload gives up first: behind ingress-nginx, a workload that takes longer than its 60-second default `proxy-read-timeout` gets the caller a 504 (see [How long a connection is held](#how-long-a-connection-is-held)); with Istio's STRICT mTLS, the woken pod's sidecar refuses the doorman and the caller gets a 503 (see [Compatibility](../reference/compatibility.md#service-meshes)). The cases below are the others.
 - **The client's source IP**: the woken pod sees the doorman's IP for held connections, not the caller's. Only the connections that arrive while the workload is paused or waking go through the doorman. The doorman records the caller's address on the ManagedWorkload as `hybernate.io/last-request-from`, so Hybernate can [learn](dependencies.md#learned-dependencies) which workload sent it.
 - **Right after a wake, an error from the app itself**, such as a `503`: the workload's pods were Ready before the app could answer, because they have no readiness probe, or one that passes too soon. See [Readiness probes](#readiness-probes).

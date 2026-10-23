@@ -105,6 +105,7 @@ Settings for workloads opted in with the `hybernate.io/managed` label, used when
 | `defaults.dryRun` | `false` | Measure without pausing. Set `true` to roll Hybernate out across a cluster measuring first. Passed as `--default-dry-run` |
 | `defaults.pauseEarly` | `false` | Let a confident forecast that expects quiet hours pause a workload before `idleAfter` runs out. See [Pausing Early](../concepts/forecasting.md#pausing-early). Passed as `--default-pause-early` |
 | `defaults.forecast` | `balanced` | How soon the forecast acts: `eager`, `balanced` or `cautious`. See [Forecast setting](../concepts/forecasting.md#forecast-setting). Passed as `--default-forecast` |
+| `defaults.wake` | `request` | What wakes a paused workload through the doorman: `request`, any request, or `ask`, only a person who clicks **Wake it** on the page the doorman shows a browser, for environments on a public URL that crawlers would keep awake. See [Asking before waking](../concepts/wake-on-request.md#asking-before-waking). Passed as `--default-wake` |
 
 ## Prometheus Activity
 
@@ -286,7 +287,7 @@ By default the chart creates a ClusterRole, `<fullname>-manager`, with permissio
 - Create Events for user-facing status updates
 - Read Services, and manage the EndpointSlices that route paused workloads to the doorman
 
-The doorman has its own ServiceAccount and ClusterRole, `<fullname>-doorman`: it reads ManagedWorkloads and EndpointSlices, gets the pods a woken workload's endpoints name, to check each endpoint's address is its pod's, patches ManagedWorkloads to wake them, and creates Events. With `doorman.admissionPolicy.enabled`, those patches may only set the two annotations that record a request.
+The doorman has its own ServiceAccount and ClusterRole, `<fullname>-doorman`: it reads ManagedWorkloads and EndpointSlices, gets the pods a woken workload's endpoints name, to check each endpoint's address is its pod's, patches ManagedWorkloads to wake them, and creates Events. With `doorman.admissionPolicy.enabled`, those patches may only set the two annotations that record a request, and the one that counts the requests it [turned away](../concepts/wake-on-request.md#what-it-turns-away). A `<fullname>-doorman-wake-key` Role in the release namespace lets it `get` and `update` one Secret, of the same name, which the chart creates empty and the doorman fills with the key it signs the [Wake it button](../concepts/wake-on-request.md#the-wake-it-button) with; it can't read or list any other.
 
 With `watchNamespaces` set, both get a Role and RoleBinding in each of those namespaces instead. The operator keeps one ClusterRole, to read Namespaces and Nodes and list Karpenter's NodePools, which only a ClusterRole can grant, and gets a `<fullname>-doorman-endpoints` Role in the release namespace to read the doorman's EndpointSlices. Workloads in other namespaces can't be read, scaled, or opted in, and dependencies on them aren't held or woken. With `metrics.enabled` and `metrics.secure`, both ServiceAccounts also keep their cluster-wide `system:auth-delegator` bindings, which let them check scrapers' tokens and nothing else.
 
