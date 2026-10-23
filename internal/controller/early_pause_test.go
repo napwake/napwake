@@ -140,12 +140,15 @@ func TestRequestWouldWake_SaysWhyNot(t *testing.T) {
 		name  string
 		objs  []client.Object
 		setup func(*Reconciler)
+		ask   bool
 		want  string
 	}{
 		{name: "it would", want: ""},
 		{name: "Services the doorman can't route", objs: []client.Object{headless, udp},
 			want: "Services the doorman can't route select its pods: api-headless (headless), api-udp (UDP port 514)"},
 		{name: "no doorman", setup: func(r *Reconciler) { r.DoormanService = "" }, want: "the doorman is off"},
+		{name: "the doorman asks before waking it", ask: true,
+			want: "the doorman asks a person before waking it, so a request doesn't"},
 		{name: "too many ports", setup: func(r *Reconciler) { r.DoormanPortsPerWorkload = 1 },
 			objs: []client.Object{service("api-admin", apiPods, corev1.ServicePort{Name: "admin", Port: 8081})},
 			want: "the workload would hold 2 doorman ports, more than its limit of 1"},
@@ -155,6 +158,9 @@ func TestRequestWouldWake_SaysWhyNot(t *testing.T) {
 			r, workload, target, _ := earlyPause(t, 30*time.Minute, quietForecast(), nil, tt.objs...)
 			if tt.setup != nil {
 				tt.setup(r)
+			}
+			if tt.ask {
+				workload.Spec.Wake = &v1alpha1.WakeSpec{Mode: v1alpha1.WakeOnAsk}
 			}
 			wakes, why, err := r.requestWouldWake(context.Background(), workload, target)
 			require.NoError(t, err)
@@ -187,6 +193,10 @@ func TestEarlyPause_OnlyWhenSure(t *testing.T) {
 			engine: &stubForecaster{phase: forecast.DailyActive, predictValue: 10}},
 		{name: "no doorman", idle: 30 * time.Minute, engine: quietForecast(),
 			setup: func(r *Reconciler) { r.DoormanService = "" }},
+		{name: "the doorman asks before waking it", idle: 30 * time.Minute, engine: quietForecast(),
+			workload: func(w *v1alpha1.ManagedWorkload) {
+				w.Spec.Wake = &v1alpha1.WakeSpec{Mode: v1alpha1.WakeOnAsk}
+			}},
 		{name: "its last pause found its Services couldn't be routed", idle: 30 * time.Minute, engine: quietForecast(),
 			workload: func(w *v1alpha1.ManagedWorkload) {
 				meta.SetStatusCondition(&w.Status.Conditions, metav1.Condition{Type: conditionWakeOnRequest,

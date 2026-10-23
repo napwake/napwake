@@ -110,8 +110,8 @@ func doormanEligible(workload *v1alpha1.ManagedWorkload) bool {
 }
 
 // requestWouldWake reports whether, were the awake workload paused now, a
-// request to any Service that selects its pods would wake it: the doorman
-// is on and has a Ready pod, the workload's last pause found nothing wrong
+// request to any Service that selects its pods would wake it: its doorman
+// doesn't ask a person first, the doorman is on and has a Ready pod, the workload's last pause found nothing wrong
 // with its routing, and the plan its pause would be routed by routes at
 // least one of those Services, every port of each but those
 // hybernate.io/doorman-ignore-ports lists, and takes no more doorman ports
@@ -119,8 +119,11 @@ func doormanEligible(workload *v1alpha1.ManagedWorkload) bool {
 // What it can't check counts against it.
 func (r *Reconciler) requestWouldWake(ctx context.Context, workload *v1alpha1.ManagedWorkload,
 	target client.Object) (bool, string, error) {
-	if r.DoormanService == "" || target == nil {
+	switch {
+	case r.DoormanService == "" || target == nil:
 		return false, "the doorman is off", nil
+	case workload.Spec.Wake.Asks():
+		return false, "the doorman asks a person before waking it, so a request doesn't", nil
 	}
 	if c := meta.FindStatusCondition(workload.Status.Conditions, conditionWakeOnRequest); c != nil &&
 		c.Status == metav1.ConditionFalse && c.Reason != reasonNotPaused {
