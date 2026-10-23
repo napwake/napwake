@@ -43,7 +43,7 @@ Every command takes kubectl's connection flags: `--kubeconfig`, `--context`, `--
 
     ```bash
     kubectl krew install --manifest-url \
-      https://github.com/okedeji/hybernate/releases/download/v0.2.0/krew-hybernate.yaml
+      https://github.com/okedeji/hybernate/releases/download/v0.2.0-rc.6/krew-hybernate.yaml
     kubectl hybernate version
     ```
 
@@ -59,13 +59,13 @@ Every command takes kubectl's connection flags: `--kubeconfig`, `--context`, `--
     ```bash
     os=$(uname -s | tr '[:upper:]' '[:lower:]')
     arch=$(uname -m | sed -e 's/x86_64/amd64/' -e 's/aarch64/arm64/')
-    curl -fLO "https://github.com/okedeji/hybernate/releases/download/v0.2.0/kubectl-hybernate-${os}-${arch}.tar.gz"
+    curl -fLO "https://github.com/okedeji/hybernate/releases/download/v0.2.0-rc.6/kubectl-hybernate-${os}-${arch}.tar.gz"
     tar xzf "kubectl-hybernate-${os}-${arch}.tar.gz"
     sudo install "kubectl-hybernate-${os}-${arch}" /usr/local/bin/kubectl-hybernate
     kubectl hybernate version
     ```
 
-    On Windows, download `kubectl-hybernate-windows-amd64.tar.gz` from the [release](https://github.com/okedeji/hybernate/releases/tag/v0.2.0), extract it with `tar xzf`, and rename `kubectl-hybernate-windows-amd64.exe` to `kubectl-hybernate.exe` in a folder on your `PATH`. To check that an archive came from the release workflow, see [Verifying a release](../reference/security.md#verifying-a-release).
+    On Windows, download `kubectl-hybernate-windows-amd64.tar.gz` from the [release](https://github.com/okedeji/hybernate/releases/tag/v0.2.0-rc.6), extract it with `tar xzf`, and rename `kubectl-hybernate-windows-amd64.exe` to `kubectl-hybernate.exe` in a folder on your `PATH`. To check that an archive came from the release workflow, see [Verifying a release](../reference/security.md#verifying-a-release).
 
 === "Source"
 

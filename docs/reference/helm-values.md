@@ -9,15 +9,15 @@ timezone: Europe/London
 and install with it:
 
 ```bash
-helm install hybernate oci://ghcr.io/okedeji/charts/hybernate --version 0.2.0 \
+helm install hybernate oci://ghcr.io/okedeji/charts/hybernate --version 0.2.0-rc.6 \
   --namespace hybernate-system --create-namespace \
   -f hybernate-values.yaml
 ```
 
-Upgrade with the same file, so upgrades keep your settings; see [Keeping your settings](../operations/upgrading.md#keeping-your-settings). The chart is published only as an OCI artifact; there's no `helm repo` to add. Its version has no `v` (`0.2.0`); the image tags do (`v0.2.0`). To see all defaults:
+Upgrade with the same file, so upgrades keep your settings; see [Keeping your settings](../operations/upgrading.md#keeping-your-settings). The chart is published only as an OCI artifact; there's no `helm repo` to add. Its version has no `v` (`0.2.0-rc.6`); the image tags do (`v0.2.0-rc.6`). To see all defaults:
 
 ```bash
-helm show values oci://ghcr.io/okedeji/charts/hybernate --version 0.2.0
+helm show values oci://ghcr.io/okedeji/charts/hybernate --version 0.2.0-rc.6
 ```
 
 The chart validates values against its schema (`values.schema.json`), so a mistyped value, such as `logLevel: warn` or `defaults.cpuThreshold: 0`, fails the install or upgrade rather than the operator, and so does a value the chart doesn't have, such as `watchNamespace` for `watchNamespaces`, which Helm would otherwise ignore. Only what's passed through to Kubernetes as it is, such as `resources`, `affinity`, `tolerations`, `nodeSelector` and pod annotations and labels, is left for Kubernetes to check. `timezone` is the exception: the schema can't list every IANA zone, so an unknown one is caught when the operator starts, which then exits with `invalid --timezone` and `unknown time zone` in its log, and the rollout doesn't finish.
@@ -36,7 +36,7 @@ The full name is the release name when it contains `hybernate`, and `<release>-h
 | Value | Default | Description |
 |-------|---------|-------------|
 | `image.repository` | `ghcr.io/okedeji/hybernate` | Container image repository |
-| `image.tag` | `""`, the chart's `appVersion`, such as `v0.2.0` | Image tag, for the operator and the doorman |
+| `image.tag` | `""`, the chart's `appVersion`, such as `v0.2.0-rc.6` | Image tag, for the operator and the doorman |
 | `image.pullPolicy` | `IfNotPresent` | Image pull policy |
 | `imagePullSecrets` | `[]` | Private registry credentials |
 
@@ -52,7 +52,7 @@ The CRD is a chart template with `helm.sh/resource-policy: keep`, so `helm unins
 
 | Value | Default | Description |
 |-------|---------|-------------|
-| `defaultsVersion` | the chart's version, such as `0.2.0` | The chart version the defaults Helm renders with are from. Leave it as it is |
+| `defaultsVersion` | the chart's version, such as `0.2.0-rc.6` | The chart version the defaults Helm renders with are from. Leave it as it is |
 
 `helm upgrade --reuse-values` to a newer version renders with the installed version's defaults rather than the new one's, and those lack every value added since. The chart tells from `defaultsVersion` that they're another version's, and fills in each missing value from its own defaults, kept in `files/defaults.yaml`, a copy of `values.yaml`, since templates can't read `values.yaml` itself. A value that's there is kept, `false`, `0` and `""` included. With its own defaults, the chart fills in nothing, so a default you remove with `null` stays removed. See [Keeping your settings](../operations/upgrading.md#keeping-your-settings).
 
@@ -347,7 +347,7 @@ affinity:
 
 ```bash
 helm install hybernate oci://ghcr.io/okedeji/charts/hybernate \
-  --version 0.2.0 \
+  --version 0.2.0-rc.6 \
   -f values-production.yaml \
   -n hybernate-system --create-namespace
 ```
