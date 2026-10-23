@@ -401,6 +401,12 @@ func (r *Reconciler) pausedRecheck(workload *v1alpha1.ManagedWorkload) time.Dura
 // watch stands while the queries can't be evaluated: a request would still
 // have woken it. Without the doorman, a query that can't be evaluated
 // leaves the look blind, and with neither, it can't see demand.
+//
+// With wake.mode Ask, only people wake it: a click on the doorman's asleep
+// page, a wake request, or an activity annotation, none of which needs the
+// doorman to route a request or Prometheus to answer. Someone who needed it
+// would have woken it, so a look that finds it still paused found no
+// demand, whatever else can or can't be seen.
 func (r *Reconciler) seePausedDemand(ctx context.Context, workload *v1alpha1.ManagedWorkload, engine forecaster,
 	woken bool, queries pausedQueries) {
 	routed := meta.IsStatusConditionTrue(workload.Status.Conditions, conditionWakeOnRequest)
@@ -409,7 +415,7 @@ func (r *Reconciler) seePausedDemand(ctx context.Context, workload *v1alpha1.Man
 	if busy {
 		demand = forecast.RequestDemand(cpuThresholdFor(workload))
 	}
-	r.seeDemand(ctx, workload, engine, demand, busy || routed || queries.watched)
+	r.seeDemand(ctx, workload, engine, demand, busy || routed || queries.watched || workload.Spec.Wake.Asks())
 }
 
 // awakeDemand is the demand an awake workload's utilization shows, counting
