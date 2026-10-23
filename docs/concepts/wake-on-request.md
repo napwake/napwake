@@ -130,7 +130,7 @@ For a workload opted in with the label, set the annotation `hybernate.io/wake-pa
 
 ## Asking before waking
 
-A workload with `wake.mode: Ask` wakes only when a person asks: crawlers, scanners and API clients reach the doorman as before, and nothing they send wakes it. It's for environments on a public URL, such as a preview environment for each pull request, which robots would otherwise keep awake.
+A workload with `wake.mode: Ask` wakes only when a person asks: crawlers, scanners and API clients reach the doorman as before, and nothing they send wakes it. It's for environments on a public URL, such as a preview environment for each pull request, which robots would otherwise keep awake. [Public Preview Environments](../guides/preview-environments.md) walks through setting it up for them, waking them from a pull request's workflow, and having them up before people come.
 
 ```yaml
 spec:
