@@ -296,18 +296,25 @@ spec:
                     - message: must be a duration above zero and at most 1h, such
                         as 90s or 5m
                       rule: duration(self) > duration('0s') && duration(self) <= duration('1h')
-                  onRequest:
-                    default: true
+                  mode:
+                    default: Request
                     description: |-
-                      OnRequest routes the workload's Services to the doorman while it's
-                      paused. When false, requests to a paused workload fail.
-                    type: boolean
+                      Mode is what wakes the paused workload through the doorman. Request,
+                      the default: any request but a known probe's. Ask: only a person,
+                      clicking Wake it on the page the doorman shows a browser; anything
+                      else is answered 503 and wakes nothing, so crawlers and scanners on a
+                      public URL can't keep it awake.
+                    enum:
+                    - Request
+                    - Ask
+                    type: string
                   page:
                     default: true
                     description: |-
                       Page answers a browser loading a page with a "waking up" page that
                       refreshes until the workload is Running, instead of holding the
-                      request. Other requests are held either way.
+                      request. Other requests are held either way. With mode: Ask, a browser
+                      is always shown a page, since that's where a person asks.
                     type: boolean
                 type: object
             required:
