@@ -1265,6 +1265,25 @@ spec:
                 - weeklyConfidence
                 - weeklyPhase
                 type: object
+              turnedAway:
+                description: |-
+                  TurnedAway counts the requests the doorman turned away during the
+                  workload's current pause, or its last one, with wake.mode Ask:
+                  answered that it's asleep, and not woken. Many mean something
+                  automated calls it. It's brought up to date about once a minute.
+                properties:
+                  pausedAt:
+                    description: PausedAt is when the pause they were turned away
+                      during began.
+                    format: date-time
+                    type: string
+                  requests:
+                    format: int64
+                    type: integer
+                required:
+                - pausedAt
+                - requests
+                type: object
             type: object
         required:
         - spec
