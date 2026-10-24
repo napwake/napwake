@@ -1060,6 +1060,12 @@ spec:
                       showing activity doesn't wake the workload, so it doesn't undo the
                       pause at once.
                     type: boolean
+                  requested:
+                    description: |-
+                      Requested says the pause was asked for, with the
+                      napwake.dev/pause-requested annotation, rather than decided by the
+                      idle clock or the forecast.
+                    type: boolean
                   resources:
                     description: |-
                       Resources is what the workload ran as it paused, which is what the
