@@ -1,7 +1,9 @@
 # Only pods in namespaces labelled metrics: enabled may scrape the doorman.
 # Its routing ports are open to every source, since every client of a
 # paused workload's Services is sent to them; to admit only the callers
-# paused workloads really have, add them as from peers on that rule.
+# paused workloads really have, add them as from peers on that rule, with
+# the operator's own pods (control-plane: controller-manager), which check
+# every doorman replica answers on a pausing workload's routes.
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata:

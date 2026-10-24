@@ -7,7 +7,7 @@ Napwake's one action is to **pause**: scale a workload to zero replicas. The Dep
 ### What Happens When a Workload Is Paused
 
 1. What the pause will change is recorded in `status.pause`, in the same status write that moves the phase to `Pausing`, before anything is scaled: when the pause began (`startedAt`), the replica count (`previousReplicas`), the KEDA ScaledObject and its own `autoscaling.keda.sh/paused-replicas` value if it has one, what each replica requests (for [cost tracking](../concepts/cost-tracking.md)), and the activity annotations as they stand
-2. The [doorman](../concepts/wake-on-request.md) steps in front of the workload's Services, beside its pods, so no request is refused as they stop. Its routes go into `status.doorman` with the move to `Pausing`, and every doorman pod listens on them. `status.pause.routesWrittenAt` records when they were stored. Five seconds after, its EndpointSlice stands beside the pods' own, and it passes what it gets straight to a Ready pod. `status.pause.routedAt` records when. Five seconds after that, once kube-proxy and ingress controllers send to it too, the pause goes on, however late Napwake gets to it. A workload the doorman doesn't route goes on at once, and none waits more than a minute for the doorman
+2. The [doorman](../concepts/wake-on-request.md) steps in front of the workload's Services, beside its pods, so no request is refused as they stop. Its routes go into `status.doorman` with the move to `Pausing`, and every doorman pod listens on them. `status.pause.routesWrittenAt` records when they were stored. Five seconds after, once every doorman pod answers on those ports, which the operator checks by connecting to each, its EndpointSlice stands beside the pods' own, and it passes what it gets straight to a Ready pod. `status.pause.routedAt` records when. Five seconds after that, once kube-proxy and ingress controllers send to it too, the pause goes on, however late Napwake gets to it. A workload the doorman doesn't route goes on at once, and none waits more than a minute for the doorman
 3. A copy of what undoing the pause needs, the replica count and the KEDA ScaledObject with its own `paused-replicas` value, is written to the workload's `napwake.dev/paused-from` annotation, where it stays until the workload is handed back. Should the ManagedWorkload lose its status while the workload is paused, such as to a Velero restore without status, or being deleted without its finalizer and created again, Napwake takes the pause up again from it, with a `PauseRecovered` event, and the workload wakes as it would have
 4. A KEDA ScaledObject, if the workload has one, is held at zero with `autoscaling.keda.sh/paused-replicas: "0"`
 5. The workload is scaled to 0 through its scale subresource. The API server records no field manager for a write that way, so the replicas show as no one's rather than Napwake's
@@ -38,7 +38,7 @@ a request came as it paused; the pause is cancelled
 
 The doorman doesn't see every request as a workload pauses. The pods answer these, and the pause goes on:
 
-- requests in the first 5 seconds, before the doorman's EndpointSlice stands beside the pods' own
+- requests in the first 5 seconds or more, before the doorman's EndpointSlice stands beside the pods' own
 - the share kube-proxy and ingress controllers still send to the pods, for about 5 seconds more, until they're scaled down
 - requests on connections opened before the pause
 - every request after the first on a connection the doorman passed on

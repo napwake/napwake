@@ -101,6 +101,12 @@ type Reconciler struct {
 	DoormanService   string
 	DoormanNamespace string
 
+	// DialDoorman checks that a doorman replica accepts connections at an
+	// address, before a pausing workload's Services are sent there; see
+	// untilDoormanAnswers. Nil leaves the check out, which only tests do:
+	// production uses DialTCP.
+	DialDoorman func(ctx context.Context, addr string) error
+
 	// DoormanPortsPerWorkload and DoormanPortsPerNamespace cap the doorman
 	// ports one workload, and one namespace, may hold. Zero means
 	// DefaultDoormanPortsPerWorkload and DefaultDoormanPortsPerNamespace.

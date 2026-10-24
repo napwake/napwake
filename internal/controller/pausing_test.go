@@ -19,6 +19,7 @@ package controller
 import (
 	"context"
 	"errors"
+	"fmt"
 	"testing"
 	"time"
 
@@ -146,6 +147,62 @@ func TestPause_TheDoormanFrontsTheWorkloadBeforeItsPodsStop(t *testing.T) {
 	after := doormanSlices(t, r)
 	require.Len(t, after, 1)
 	assert.Equal(t, slices[0].UID, after[0].UID, "the same slice fronts it from Pausing into Paused")
+}
+
+// The listen wait is time for every doorman replica to read the routes,
+// not proof each did: a replica slow to, as on a busy node, would refuse
+// what its slice is sent while the pods still serve. So the slice goes in
+// only once every Ready replica answers on the routes' ports, and the pods
+// stop only once proxies send to the slice too.
+func TestPause_TheDoormanFrontsTheWorkloadOnlyOnceEachReplicaAnswers(t *testing.T) {
+	r, pauser, now := pausingReconciler(t, nil)
+	answering := false
+	var dialled []string
+	r.DialDoorman = func(_ context.Context, addr string) error {
+		dialled = append(dialled, addr)
+		if !answering {
+			return errors.New("connection refused")
+		}
+		return nil
+	}
+
+	reconcileAPI(t, r)
+	require.Equal(t, v1alpha1.PhasePausing, fetch(t, r, "api").Status.Phase)
+	*now = now.Add(doormanListenWait)
+	reconcileAPI(t, r)
+	assert.Empty(t, doormanSlices(t, r), "a replica that doesn't answer yet is sent nothing")
+	assert.Nil(t, fetch(t, r, "api").Status.Pause.RoutedAt)
+	assert.Zero(t, pauser.pauseCalls, "and the pods keep serving")
+	require.NotEmpty(t, dialled)
+	route := fetch(t, r, "api").Status.Doorman[0]
+	assert.Contains(t, dialled, fmt.Sprintf("10.0.0.7:%d", route.DoormanPort), "it dials the replica on the route's port")
+
+	answering = true
+	*now = now.Add(staleCacheRetry)
+	reconcileAPI(t, r)
+	require.Len(t, doormanSlices(t, r), 1, "once it answers, the doorman fronts the Service")
+	assert.Zero(t, pauser.pauseCalls)
+	*now = now.Add(doormanTakeover)
+	reconcileAPI(t, r)
+	assert.Equal(t, 1, pauser.pauseCalls, "and the pods stop once proxies send to it too")
+}
+
+// A doorman that never answers, as one a NetworkPolicy keeps the operator
+// from, holds a pause no longer than doormanFrontLimit: it goes on as it
+// did before the doorman fronted pauses.
+func TestPause_ADoormanThatNeverAnswersHoldsThePauseOnlySoLong(t *testing.T) {
+	r, pauser, now := pausingReconciler(t, nil)
+	r.DialDoorman = func(context.Context, string) error { return errors.New("connection timed out") }
+
+	reconcileAPI(t, r)
+	for range 3 {
+		*now = now.Add(doormanListenWait)
+		reconcileAPI(t, r)
+	}
+	assert.Zero(t, pauser.pauseCalls)
+	*now = now.Add(doormanFrontLimit)
+	reconcileAPI(t, r)
+	assert.Equal(t, 1, pauser.pauseCalls, "after doormanFrontLimit the pause goes on")
 }
 
 // A pause records when it began in the write that moves the workload to

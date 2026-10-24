@@ -307,7 +307,7 @@ func (r *Reconciler) reconcileDoorman(ctx context.Context, workload *v1alpha1.Ma
 	// on every retry.
 	r.recordDrains(workload, routes)
 	workload.Status.Doorman = routes
-	if wait, err := r.untilDoormanListens(ctx, workload); err != nil || wait > 0 {
+	if wait, err := r.untilDoormanReady(ctx, workload, endpoints); err != nil || wait > 0 {
 		return wait, err
 	}
 	fwd, fwdErr := r.reconcileForwarder(ctx, workload, target, plan.services, routes)
