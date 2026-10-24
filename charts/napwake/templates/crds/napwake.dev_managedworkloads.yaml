@@ -1238,6 +1238,14 @@ spec:
                       autoscaling.keda.sh/paused-replicas annotation from before the pause,
                       put back when it's released. Unset when it had none.
                     type: string
+                  startedAt:
+                    description: |-
+                      StartedAt is when the pause began, as the workload went Pausing,
+                      before anything was scaled, or when Napwake took up a pause whose
+                      record was lost. It names this pause from its first moment: the
+                      asleep page's Wake it button is good for it alone.
+                    format: date-time
+                    type: string
                   wakeAnnotations:
                     description: |-
                       WakeAnnotations are the activity annotations as the pause began. One
