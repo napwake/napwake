@@ -77,9 +77,27 @@ type pageData struct {
 	// to wake it.
 	Field       string
 	Token       string
-	Notice      string
+	Notice      []textPart
 	NoticeTitle string
 	NoticeDocs  string
+}
+
+// A textPart is a run of a notice's text, which the page sets as code when
+// it's a command.
+type textPart struct {
+	Text string
+	Code bool
+}
+
+// textParts splits text at its backticks, between which is a command.
+func textParts(text string) []textPart {
+	var parts []textPart
+	for i, run := range strings.Split(text, "`") {
+		if run != "" {
+			parts = append(parts, textPart{Text: run, Code: i%2 == 1})
+		}
+	}
+	return parts
 }
 
 // pageAddress is the host the browser asked for, without its port.
@@ -349,7 +367,7 @@ func writeAsleepPage(w io.Writer, data pageData, n notice) error {
 	data.Mark = Mark
 	data.Refresh = int(asleepRefresh.Seconds())
 	data.Field = wakeField
-	data.Notice, data.NoticeTitle, data.NoticeDocs = n.text, n.title, n.docs
+	data.Notice, data.NoticeTitle, data.NoticeDocs = textParts(n.text), n.title, n.docs
 	var body bytes.Buffer
 	if err := asleepTemplate.Execute(&body, data); err != nil {
 		return fmt.Errorf("rendering page: %w", err)

@@ -74,10 +74,11 @@ const (
 	resultTurnedAway = "turned_away"
 )
 
-// A notice is what the asleep page says when a click woke nothing, under
-// its title, and, where clicking again won't help, the docs that say how
-// else to wake it. The page comes with its status, a 200 unless it says
-// otherwise, and when to try again, if it says when.
+// A notice is what the asleep page says when a click woke nothing: its
+// title, its text, in which a command is set between backticks, and,
+// where clicking again won't help, the docs that say how else to wake it.
+// The page comes with its status, a 200 unless it says otherwise, and when
+// to try again, if it says when.
 type notice struct {
 	title, text, docs string
 	status            int
@@ -86,26 +87,26 @@ type notice struct {
 
 // The notices the asleep page gives when a click woke nothing.
 var (
-	noticeExpired = notice{title: "The button had run out",
-		text: "This page was open a while, so nothing woke. Press Wake it again.", status: http.StatusForbidden}
+	noticeExpired = notice{title: "This page was open too long", text: "Nothing woke. Press Wake it again.",
+		status: http.StatusForbidden}
 	noticeLimited = notice{title: "Try again in a minute",
-		text:   "Wake it was pressed a moment ago. Wakes are limited, so robots can't keep it awake.",
+		text:   "It was asked to wake less than a minute ago. Wake it works once a minute at most.",
 		status: http.StatusTooManyRequests, retryAfter: clickWakeInterval}
-	noticeFailed = notice{text: "It couldn't be woken just now. Try again in a moment."}
+	noticeFailed = notice{title: "It didn't wake",
+		text: "Something went wrong at the cluster's end. Try again in a moment."}
 	// noticeElsewhere answers a person's click that the browser says came
 	// from a page at another address: another site's, or, behind a proxy
 	// that rewrites Host, this page's under an address the doorman doesn't
 	// see. Pressing again won't help, so it says how else to wake it.
-	noticeElsewhere = notice{
-		text: "This click didn't come from this page's address, so nothing woke. Wake it with kubectl napwake " +
-			"wake or the napwake.dev/wake-requested annotation.",
+	noticeElsewhere = notice{title: "The click came from another address",
+		text: "Nothing woke. Someone with access to the cluster can wake it with `kubectl napwake wake`.",
 		docs: wakeItDocs, status: http.StatusForbidden,
 	}
 	// noticeNoFetchMetadata answers a browser that said nothing of where its
 	// click came from; see sameOrigin.
-	noticeNoFetchMetadata = notice{
-		text: "This browser didn't say the click came from this page, so nothing woke. Wake it with kubectl " +
-			"napwake wake, the napwake.dev/wake-requested annotation, or a current browser.",
+	noticeNoFetchMetadata = notice{title: "Try a current browser",
+		text: "This browser didn't say the click came from this page, so nothing woke. Use a current browser, " +
+			"or someone with access to the cluster can wake it with `kubectl napwake wake`.",
 		docs: asleepDocs,
 	}
 )

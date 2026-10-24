@@ -9,8 +9,9 @@ Fields (pageData):
   .Field        The form field the token is posted in. The form posts back to the page's own address.
   .Token        The token the doorman signed for this page and this pause of the workload.
   .Refresh      Seconds between reloads, which keep the token fresh.
-  .Notice       Why the last click woke nothing, with .NoticeTitle above it and .NoticeDocs, where
-                clicking again won't help, the docs that say how else to wake it.
+  .Notice       Why the last click woke nothing, in runs of text and of code, each a command, with
+                .NoticeTitle above it and .NoticeDocs, where clicking again won't help, the docs that
+                say how else to wake it.
   .Mark         The doorman mark's path.
 The style and the script are hashed into the page's Content-Security-Policy, so they hold no actions.
 */ -}}
@@ -110,7 +111,7 @@ footer a:focus-visible{outline:2px solid transparent;box-shadow:0 0 0 2px var(--
       <div class="state"><svg class="g-asleep" viewBox="0 0 24 24" aria-hidden="true"><path d="M6 22V10a6 6 0 0 1 12 0v12z" fill="var(--slate)"/><circle cx="15.3" cy="15" r="1.2" fill="var(--paper)"/></svg><svg class="g-waking" viewBox="0 0 24 24" aria-hidden="true"><path d="M6 22V10a6 6 0 0 1 12 0v12z" fill="var(--room)" stroke="currentColor" stroke-width="1.6"/><path d="M6 22V10a6 6 0 0 1 3.5-5.4L12 6v16z" fill="var(--leaf)"/></svg><span class="a">Asleep</span><span class="w">Waking</span></div>
       <h1><span class="a">{{if .Notice}}Still asleep{{else}}Wake it up?{{end}}</span><span class="w">Waking up</span>{{with .Address}} <span class="at">{{.}}</span>{{end}}</h1>
       {{- with .Notice}}
-      <p class="note a">{{with $.NoticeTitle}}<b>{{.}}</b>{{end}}{{.}}{{with $.NoticeDocs}} <a href="{{.}}" target="_blank" rel="noopener noreferrer">How to wake it</a>{{end}}</p>
+      <p class="note a">{{with $.NoticeTitle}}<b>{{.}}</b>{{end}}{{range .}}{{if .Code}}<code>{{.Text}}</code>{{else}}{{.Text}}{{end}}{{end}}{{with $.NoticeDocs}} <a href="{{.}}" target="_blank" rel="noopener noreferrer">How to wake it</a>{{end}}</p>
       {{- else}}
       <p class="lede a">This environment was paused while nobody was using it, to save money. Press Wake it to start it again. This page opens it when it's ready.</p>
       {{- end}}
@@ -120,7 +121,7 @@ footer a:focus-visible{outline:2px solid transparent;box-shadow:0 0 0 2px var(--
         <button class="wake" type="submit" aria-describedby="takes"><span class="a">Wake it</span><span class="w">Waking it</span></button>
         <p class="takes" id="takes">Starting takes as long as the app needs.</p>
       </form>
-      <p class="why"><svg viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" fill-rule="evenodd" d="{{.Mark}}"/></svg>The doorman asks first, so a person wakes it and robots don't.</p>
+      <p class="why"><svg viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" fill-rule="evenodd" d="{{.Mark}}"/></svg>The doorman asks first. Crawlers, scanners and API calls wake nothing.</p>
       <p class="vh" id="say" role="status"></p>
     </div>
   </div>

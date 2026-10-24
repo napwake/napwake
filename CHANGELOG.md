@@ -208,7 +208,7 @@ There's no upgrade path from Hybernate 0.1.x or a 0.2.0 release candidate. Unins
 - The scan report and the status page are redesigned. The cluster is drawn as a hotel at night, one room per workload up to 35. On a scan, the rooms of idle workloads go dark by themselves once, to show what Napwake would do. Nothing is paused
 - `scan` and `status` say what the bill rests on in one short line, such as `Your bill: drops only as Karpenter removes nodes (it consolidates when underutilized after 1m)`. It replaces the `Node autoscaler:` line and the line under it. `kubectl napwake nodes` keeps its `Node autoscaler:` line
 - `scan` says what costs were priced at in one short line, such as `Prices: AWS us-east-1 list prices · 3 node types · 3 workloads on spot, priced at spot`. It's in full, as before, when the prices are too mixed for that
-- The waking-up page and the asleep page show the doorman at the door, in Napwake's colours, light and dark. The doorman's mark replaces the snowflake on every page
+- The waking-up page and the asleep page show the doorman at the door, in Napwake's colours, light and dark. The doorman's mark replaces the snowflake on every page. Each of the asleep page's notices has a title, and sets `kubectl napwake wake` as code where it names it
 - The asleep page answers an expired **Wake it** button with a `403`, and a click inside the one-a-minute limit with a `429` and `Retry-After: 60`. The page is the same. Its Content-Security-Policy allows only its own style and script, by their hashes, and an inline tab icon, so browsers don't ask for `/favicon.ico`
 - The `503` a workload that asks gives `curl`, scripts and crawlers lists each way to wake it, one a line. The JSON's `wake` is a list
 
@@ -330,7 +330,7 @@ There's no upgrade path from Hybernate 0.1.x or a 0.2.0 release candidate. Unins
 - With no node autoscaler found, `scan` and `status` say the bill won't drop until something removes nodes. They no longer say nothing will
 - The scan report's Workloads section mentions what pausing freed and saved only once something is live
 - The scan's headline says what was freed "pausing 1 live workload and others before they were protected", in place of "and workloads since protected"
-- A click on **Wake it** that the browser says came from another address no longer gets "The button had run out", which asked for another press that couldn't help. That's a click from another site, or, over plain HTTP, an `Origin` that isn't the page's, as behind a proxy that rewrites `Host`. The page says the click didn't come from its address, and how else to wake it, as a `403`
+- A click on **Wake it** that the browser says came from another address no longer gets "That page had expired", which asked for another click that couldn't help. That's a click from another site, or, over plain HTTP, an `Origin` that isn't the page's, as behind a proxy that rewrites `Host`. The page says the click came from another address, and how else to wake it, as a `403`
 - The waking-up page draws its own tab icon, so browsers no longer ask the doorman for `/favicon.ico`, which it held until the workload was Ready. Its Content-Security-Policy allows its own style, no script, and images only from `data:`
 
 ## [0.1.7] - 2026-04-08

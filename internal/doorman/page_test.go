@@ -294,19 +294,20 @@ func TestWriteAsleepPage_Notices(t *testing.T) {
 		says       string
 	}{
 		{name: "expired", notice: noticeExpired, status: http.StatusForbidden,
-			says: "<b>The button had run out</b>This page was open a while, so nothing woke. Press Wake it again."},
+			says: "<b>This page was open too long</b>Nothing woke. Press Wake it again."},
 		{name: "from another address", notice: noticeElsewhere, status: http.StatusForbidden,
-			says: "This click didn&#39;t come from this page&#39;s address, so nothing woke. Wake it with kubectl " +
-				"napwake wake or the napwake.dev/wake-requested annotation. <a href=\"" + wakeItDocs +
+			says: "<b>The click came from another address</b>Nothing woke. Someone with access to the cluster can " +
+				"wake it with <code>kubectl napwake wake</code>. <a href=\"" + wakeItDocs +
 				`" target="_blank" rel="noopener noreferrer">How to wake it</a>`},
 		{name: "rate-limited", notice: noticeLimited, status: http.StatusTooManyRequests, retryAfter: "60",
-			says: "<b>Try again in a minute</b>Wake it was pressed a moment ago. Wakes are limited, so robots can&#39;t " +
-				"keep it awake."},
+			says: "<b>Try again in a minute</b>It was asked to wake less than a minute ago. Wake it works once a " +
+				"minute at most."},
 		{name: "couldn't wake", notice: noticeFailed, status: http.StatusOK,
-			says: "It couldn&#39;t be woken just now. Try again in a moment."},
+			says: "<b>It didn&#39;t wake</b>Something went wrong at the cluster&#39;s end. Try again in a moment."},
 		{name: "no fetch metadata", notice: noticeNoFetchMetadata, status: http.StatusOK,
-			says: "This browser didn&#39;t say the click came from this page, so nothing woke. Wake it with kubectl " +
-				"napwake wake, the napwake.dev/wake-requested annotation, or a current browser. " +
+			says: "<b>Try a current browser</b>This browser didn&#39;t say the click came from this page, so nothing " +
+				"woke. Use a current browser, or someone with access to the cluster can wake it with " +
+				"<code>kubectl napwake wake</code>. " +
 				`<a href="` + asleepDocs + `" target="_blank" rel="noopener noreferrer">How to wake it</a>`},
 	}
 	for _, tt := range tests {
@@ -324,6 +325,18 @@ func TestWriteAsleepPage_Notices(t *testing.T) {
 			assert.NotContains(t, body, `<p class="lede a">`)
 		})
 	}
+}
+
+// A command in a notice is set as code, escaped as the rest of the page is.
+func TestWriteAsleepPage_SetsACommandAsCode(t *testing.T) {
+	var out bytes.Buffer
+
+	require.NoError(t, writeAsleepPage(&out, pageData{Token: "tok"},
+		notice{title: "Wake it another way", text: "Run `kubectl napwake wake <name>` or ask `ops`."}))
+
+	_, body := readPage(t, out.Bytes(), http.MethodGet)
+	assert.Contains(t, body, `<p class="note a"><b>Wake it another way</b>Run <code>kubectl napwake wake &lt;name&gt;</code> `+
+		`or ask <code>ops</code>.</p>`)
 }
 
 // The page is shown to whoever reaches the Service, so it says nothing about

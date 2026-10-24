@@ -285,8 +285,8 @@ func TestServer_AClickWithoutAGoodTokenWakesNothing(t *testing.T) {
 				want, other = noticeElsewhere, noticeExpired
 			}
 			assert.Equal(t, http.StatusForbidden, resp.StatusCode, "the asleep page again, refused")
-			assert.Contains(t, body, template.HTMLEscapeString(want.text))
-			assert.NotContains(t, body, template.HTMLEscapeString(other.text))
+			assert.Contains(t, body, template.HTMLEscapeString(want.title))
+			assert.NotContains(t, body, template.HTMLEscapeString(other.title))
 			tokenIn(t, body)
 			assert.Empty(t, lastRequest(t, c), "nothing wakes it")
 		})
@@ -360,11 +360,11 @@ func TestServer_AClickMustComeFromAPerson(t *testing.T) {
 				tokenIn(t, body)
 				for _, other := range []notice{noticeExpired, noticeElsewhere, noticeNoFetchMetadata} {
 					if other != tt.notice {
-						assert.NotContains(t, body, template.HTMLEscapeString(other.text))
+						assert.NotContains(t, body, template.HTMLEscapeString(other.title))
 					}
 				}
 				if tt.notice != (notice{}) {
-					assert.Contains(t, body, template.HTMLEscapeString(tt.notice.text))
+					assert.Contains(t, body, template.HTMLEscapeString(tt.notice.title))
 				}
 			default:
 				assert.Equal(t, http.StatusServiceUnavailable, resp.StatusCode)
@@ -436,8 +436,8 @@ func TestServer_AClickThatDoesntSayWhereItCameFromSaysHowElseToWake(t *testing.T
 			assert.Equal(t, http.StatusOK, resp.StatusCode, "the asleep page again")
 			tokenIn(t, body)
 			for _, how := range []string{
-				"didn&#39;t say the click came from this page", "kubectl napwake wake",
-				"napwake.dev/wake-requested", "a current browser", `href="` + asleepDocs + `"`,
+				"didn&#39;t say the click came from this page", "<code>kubectl napwake wake</code>",
+				"Use a current browser", `href="` + asleepDocs + `"`,
 			} {
 				assert.Contains(t, body, how)
 			}
@@ -522,7 +522,7 @@ func TestServer_AClickOverPlainHTTPIsJudgedByItsOrigin(t *testing.T) {
 				}
 				assert.Equal(t, status, resp.StatusCode, "the asleep page again")
 				tokenIn(t, body)
-				assert.Contains(t, body, template.HTMLEscapeString(tt.notice.text))
+				assert.Contains(t, body, template.HTMLEscapeString(tt.notice.title))
 			}
 			assert.Empty(t, lastRequest(t, c), "nothing wakes it")
 		})
