@@ -23,6 +23,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"regexp"
 	"runtime"
 	"testing"
 	"time"
@@ -162,8 +163,19 @@ func TestWriteHTML_History(t *testing.T) {
 		`<span class="sh-val">true</span></span>`, "coloured like a shell")
 	assert.Contains(t, got, `napwake enable deployment/api <span class="sh-flag">-n</span> preview-7`,
 		"enable the one dry-run measured")
-	assert.NotContains(t, got, "<script src", "nothing loads from elsewhere")
-	assert.NotContains(t, got, "<link", "nothing loads from elsewhere")
+	assertLoadsNothingFromElsewhere(t, got)
+	assert.Contains(t, got, `<link rel="icon" type="image/svg+xml" href="data:image/svg+xml;base64,`,
+		"its tab shows the doorman, drawn inline")
+}
+
+// assertLoadsNothingFromElsewhere checks a page is one file: no script
+// from a URL, and anything it links, such as its tab icon, inline.
+func assertLoadsNothingFromElsewhere(t *testing.T, page string) {
+	t.Helper()
+	assert.NotContains(t, page, "<script src", "nothing loads from elsewhere")
+	for _, link := range regexp.MustCompile(`<link[^>]*>`).FindAllString(page, -1) {
+		assert.Contains(t, link, `href="data:`, "a link is drawn inline, not loaded from elsewhere: %s", link)
+	}
 }
 
 // The summary's replay count says what it doesn't count, so it adds up to

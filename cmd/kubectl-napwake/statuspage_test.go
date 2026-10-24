@@ -78,8 +78,9 @@ func TestWriteStatusHTML(t *testing.T) {
         <td class="ref">api<span class="sub">preview-42</span></td>
         <td class="message">paused</td>`)
 	assert.Contains(t, got, "over the last 24h")
-	assert.NotContains(t, got, "<script src", "nothing loads from elsewhere")
-	assert.NotContains(t, got, "<link", "nothing loads from elsewhere")
+	assertLoadsNothingFromElsewhere(t, got)
+	assert.Contains(t, got, `<link rel="icon" type="image/svg+xml" href="data:image/svg+xml;base64,`,
+		"its tab shows the doorman, drawn inline")
 }
 
 // Messages come from conditions and events that anyone who can write a
