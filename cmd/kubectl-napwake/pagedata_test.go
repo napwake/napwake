@@ -18,12 +18,15 @@ package main
 
 import (
 	"bytes"
+	"context"
 	"strings"
 	"testing"
 	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/controller-runtime/pkg/client/interceptor"
 
 	v1alpha1 "github.com/napwake/napwake/api/v1alpha1"
 	"github.com/napwake/napwake/internal/discovery"
@@ -38,6 +41,22 @@ func renderReportPage(t *testing.T, page reportPage) string {
 	var out bytes.Buffer
 	require.NoError(t, reportTemplate.Execute(&out, page))
 	return out.String()
+}
+
+func renderStatusPageData(t *testing.T, page statusPage) string {
+	t.Helper()
+	var out bytes.Buffer
+	require.NoError(t, statusPageTemplate.Execute(&out, page))
+	return out.String()
+}
+
+func statusPageOf(t *testing.T, objs ...client.Object) statusPage {
+	t.Helper()
+	result, err := clusterStatus(context.Background(), newStatusClient(t, interceptor.Funcs{}, objs...), "preview-42",
+		statusOpts())
+	require.NoError(t, err)
+	result.Cluster = testCluster
+	return buildStatusPage(result, 24*time.Hour, statusNow)
 }
 
 // A live scan leads with what Napwake freed, and the page knows it's live
@@ -154,4 +173,46 @@ func TestReportPage_WontPauseWhateverTheReasonSays(t *testing.T) {
 	pageHas(t, got, `<tr id="wl-3">`, "one in use stays on anyway, and isn't counted as kept lit")
 	assert.Equal(t, "PVCs deleted on scale-down", buildReport(result, time.Hour).Workloads[3].WontPause,
 		"the reason, as its own field")
+}
+
+// The status page leads with what came off the bill, under what was freed,
+// and draws the meter between them, from the amounts as numbers, not from
+// the digits of "$35".
+func TestStatusPage_MoneyWhateverTheFiguresRead(t *testing.T) {
+	page := statusPageOf(t, statusCluster()...)
+	page.Figures[0].Value, page.Figures[1].Value = "42 dollars", "35 dollars"
+
+	got := renderStatusPageData(t, page)
+
+	pageHas(t, got, `<div class="slot s1 lead">`, "what was saved leads")
+	pageHas(t, got, `data-of="42.45" data-part="35"`, "the meter's amounts")
+
+	objs := statusCluster()
+	for _, o := range objs {
+		if w, ok := o.(*v1alpha1.ManagedWorkload); ok && w.Status.Cost != nil {
+			w.Status.Cost.SavedThisMonth = "$0.00"
+		}
+	}
+	page = statusPageOf(t, objs...)
+	page.Figures[0].Value, page.Figures[1].Value = "42 dollars", "0 dollars"
+	got = renderStatusPageData(t, page)
+	pageHas(t, got, `<div class="slot s0 lead">`, "with nothing saved, what was freed leads")
+	pageHas(t, got, `None of the 42 dollars freed has come off the bill yet.`)
+}
+
+// The status page's amounts are the status's own totals, and say whether
+// what's saved is measured for every workload.
+func TestStatusPage_Amounts(t *testing.T) {
+	page := statusPageOf(t, statusCluster()...)
+
+	assert.InDelta(t, 42.45, page.FreedThisMonth, 0.001)
+	assert.InDelta(t, 35, page.SavedThisMonth, 0.001)
+	assert.True(t, page.SavedMeasurable)
+	assert.Equal(t, []string{figureFreed, figureSaved, figureWouldHaveFreed},
+		[]string{page.Figures[0].Kind, page.Figures[1].Kind, page.Figures[2].Kind})
+	assert.InDelta(t, 7.4, page.Figures[2].Amount, 0.001, "what dry-run measured")
+
+	objs := statusCluster()
+	objs[0].(*v1alpha1.ManagedWorkload).Status.Cost.SavingsUnknown = "pods outside watchNamespaces aren't visible"
+	assert.False(t, statusPageOf(t, objs...).SavedMeasurable)
 }

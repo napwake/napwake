@@ -46,11 +46,17 @@ type statusPage struct {
 	TimeZone  string
 	Spot      string
 	Figures   []figure
-	Notes     []string
-	Attention []attentionRow
-	Workloads []statusPageRow
-	DryRun    bool
-	Recent    []recentRow
+	// FreedThisMonth and SavedThisMonth are what the first two figures
+	// say, as numbers, for the page to lead with and draw the meter from.
+	// SavedMeasurable says what's saved can be measured for every
+	// workload; without it, SavedThisMonth is of those it can.
+	FreedThisMonth, SavedThisMonth float64
+	SavedMeasurable                bool
+	Notes                          []string
+	Attention                      []attentionRow
+	Workloads                      []statusPageRow
+	DryRun                         bool
+	Recent                         []recentRow
 	// NoRecent says why no pauses and wakes are listed, when none are.
 	NoRecent string
 	Since    string
@@ -109,6 +115,10 @@ func buildStatusPage(result statusResult, since time.Duration, now time.Time) st
 		Since:     span(since),
 		Mark:      doorman.Mark,
 		Figures:   statusFigures(result),
+
+		FreedThisMonth:  result.FreedThisMonth,
+		SavedThisMonth:  result.SavedThisMonth,
+		SavedMeasurable: len(result.SavingsUnknown) == 0,
 	}
 	if len(result.Workloads) == 0 {
 		page.Summary = "Napwake manages no workloads here. kubectl napwake scan finds idle ones; label one " +

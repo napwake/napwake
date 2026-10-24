@@ -1792,11 +1792,11 @@ html:not(.js) th { position: static; }
   refresh();
 
   // ---------------------------------------------------------------- the status page's meter
-  // What came off the bill, against what pausing freed: a bar from the two figures the page shows.
-  var money = function (s) { var m = (s || "").replace(/[^0-9.]/g, ""); return m ? parseFloat(m) : NaN; };
+  // What came off the bill, against what pausing freed: a bar from the two amounts, which the product gives as
+  // numbers. Under half a dollar freed, the figure reads <$1, and there's no bar.
   each($$(".meter"), function (m) {
-    var freed = money(m.dataset.of), saved = money(m.dataset.part);
-    if (!(freed >= 1) || isNaN(saved)) { m.hidden = true; return; }
+    var freed = parseFloat(m.dataset.of), saved = parseFloat(m.dataset.part);
+    if (!(freed >= .5) || isNaN(saved)) { m.hidden = true; return; }
     var share = Math.max(0, Math.min(1, saved / freed));
     m.dataset.share = share;
     m.style.setProperty("--share", (share * 100).toFixed(1) + "%");
