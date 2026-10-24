@@ -378,7 +378,15 @@ func (r *Reconciler) clearCondition(workload *v1alpha1.ManagedWorkload, condType
 // deleted. Each failure is reported in a Warning event on this workload,
 // and every dependency is tried.
 func (r *Reconciler) wakeDependencies(ctx context.Context, workload *v1alpha1.ManagedWorkload) {
-	r.stampDependencies(ctx, workload, false)
+	r.stampDependencies(ctx, workload, func(*workloadNode) bool { return true })
+}
+
+// wakePausedDependencies is wakeDependencies for a resume under way: it
+// stamps those of the workload's dependencies still paused, which its wake
+// may not have stamped, as when the operator restarted between writing
+// Resuming and stamping them.
+func (r *Reconciler) wakePausedDependencies(ctx context.Context, workload *v1alpha1.ManagedWorkload) {
+	r.stampDependencies(ctx, workload, func(dep *workloadNode) bool { return dep.phase == v1alpha1.PhasePaused })
 }
 
 // wakeDryRunDependencies is wakeDependencies for a dry-run would-be pause
@@ -388,10 +396,13 @@ func (r *Reconciler) wakeDependencies(ctx context.Context, workload *v1alpha1.Ma
 // would end them, and their clocks restart. A dependency that pauses for
 // real was held all along, and isn't stamped.
 func (r *Reconciler) wakeDryRunDependencies(ctx context.Context, workload *v1alpha1.ManagedWorkload) {
-	r.stampDependencies(ctx, workload, true)
+	r.stampDependencies(ctx, workload, func(dep *workloadNode) bool { return dep.dryRun })
 }
 
-func (r *Reconciler) stampDependencies(ctx context.Context, workload *v1alpha1.ManagedWorkload, onlyDryRun bool) {
+// stampDependencies stamps those of the workload's dependencies that Napwake
+// manages and that stamp picks.
+func (r *Reconciler) stampDependencies(ctx context.Context, workload *v1alpha1.ManagedWorkload,
+	stamp func(*workloadNode) bool) {
 	refs := dependencyRefs(workload)
 	if len(refs) == 0 {
 		return
@@ -407,7 +418,7 @@ func (r *Reconciler) stampDependencies(ctx context.Context, workload *v1alpha1.M
 	for _, ref := range refs {
 		id := dependencyID(workload, ref)
 		dep := g.owner(id)
-		if dep == nil || dep.uid == workload.UID || !g.allows(workload.Namespace, id) || (onlyDryRun && !dep.dryRun) {
+		if dep == nil || dep.uid == workload.UID || !g.allows(workload.Namespace, id) || !stamp(dep) {
 			continue
 		}
 		if err := r.stampActivity(ctx, dep.key); err != nil {

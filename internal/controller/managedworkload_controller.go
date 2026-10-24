@@ -804,6 +804,7 @@ func (r *Reconciler) handleResume(ctx context.Context, workload *v1alpha1.Manage
 		}
 		judged()
 	case v1alpha1.PhaseResuming:
+		r.wakePausedDependencies(ctx, workload)
 	default:
 		return nil, nil
 	}

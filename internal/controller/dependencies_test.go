@@ -461,6 +461,26 @@ func TestDependencies_WakingWakesDependencies(t *testing.T) {
 	assert.Equal(t, v1alpha1.PhaseRunning, api.Status.Phase, "without waitForReady the dependent doesn't wait")
 }
 
+// A resume that wrote Resuming but stopped before it stamped its
+// dependencies, as an operator restarting in between leaves it, wakes the
+// ones still paused on its next reconcile, and not those already awake.
+func TestDependencies_AResumeWakesDependenciesStillPaused(t *testing.T) {
+	pausedAt := metav1.NewTime(fixedTime.Add(-time.Hour))
+	api := depWorkload("default", "api", v1alpha1.TargetKindDeployment, v1alpha1.PhaseResuming,
+		postgresRef(), v1alpha1.DependencyRef{Kind: v1alpha1.TargetKindStatefulSet, Name: "redis"})
+	api.Status.Pause = &v1alpha1.PauseStatus{PreviousReplicas: 1, PausedAt: &pausedAt}
+	postgres := depWorkload("default", "postgres", v1alpha1.TargetKindStatefulSet, v1alpha1.PhasePaused)
+	redis := depWorkload("default", "redis", v1alpha1.TargetKindStatefulSet, v1alpha1.PhaseRunning)
+	r := depReconciler(t, &stubPauser{resumeDone: true}, api, postgres, redis, postgresTarget(1, 1))
+
+	_, err := r.handleResume(context.Background(), api, nil)
+	require.NoError(t, err)
+
+	assert.Equal(t, fixedTime.UTC().Format(time.RFC3339),
+		fetch(t, r, "postgres").Annotations[v1alpha1.AnnotationLastActivity], "the paused dependency is woken")
+	assert.Empty(t, fetch(t, r, "redis").Annotations[v1alpha1.AnnotationLastActivity], "an awake one isn't stamped")
+}
+
 func TestDependencies_WaitForReady(t *testing.T) {
 	pausedPostgres := depWorkload("default", "postgres", v1alpha1.TargetKindStatefulSet, v1alpha1.PhasePaused)
 	tests := []struct {
