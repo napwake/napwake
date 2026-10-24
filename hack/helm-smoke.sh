@@ -14,12 +14,15 @@
 # ClusterRole, so this is what tests the chart.
 #
 # KIND_CLUSTER names the cluster, which is created and deleted here, so it
-# must not already exist. KEEP_CLUSTER=true keeps it for debugging.
+# must not already exist. It's this checkout's own by default, and the
+# image is named after it, so smoke tests from two worktrees at once never
+# share either. KEEP_CLUSTER=true keeps it for debugging.
 set -euo pipefail
 
-CLUSTER=${KIND_CLUSTER:-napwake-helm-smoke}
+CLUSTER=${KIND_CLUSTER:-$("$(dirname "$0")/kind-cluster-name.sh" smoke)}
 KIND=${KIND:-kind}
-IMG=napwake:smoke
+IMG_TAG=$CLUSTER
+IMG=napwake:$IMG_TAG
 RELEASE_NAMESPACE=napwake-system
 WATCHED=smoke-watched
 UNWATCHED=smoke-unwatched
@@ -73,7 +76,8 @@ cleanup() {
   if [ "${KEEP_CLUSTER:-false}" = true ]; then
     echo "kept kind cluster $CLUSTER; its kubeconfig is $KUBECONFIG"
   else
-    "$KIND" delete cluster --name "$CLUSTER" >/dev/null 2>&1 || true
+    "$KIND" delete cluster --name "$CLUSTER" --kubeconfig "$KUBECONFIG" >/dev/null 2>&1 || true
+    docker rmi "$IMG" >/dev/null 2>&1 || true
     rm -f "$KUBECONFIG"
     rm -rf "$PLUGIN_DIR"
   fi
@@ -127,7 +131,7 @@ unrouted() {
     [ -z "$slices" ]
 }
 
-"$KIND" create cluster --name "$CLUSTER" --wait 2m
+"$KIND" create cluster --name "$CLUSTER" --kubeconfig "$KUBECONFIG" --wait 2m
 make docker-build IMG="$IMG"
 make load-test-e2e-images KIND_CLUSTER="$CLUSTER" E2E_IMAGES="$WEB_IMAGE $CURL_IMAGE $METRICS_SERVER_IMAGE"
 "$KIND" load docker-image "$IMG" --name "$CLUSTER"
@@ -143,7 +147,7 @@ kubectl patch deployment metrics-server -n kube-system --type=json \
 kubectl create namespace "$WATCHED"
 kubectl create namespace "$UNWATCHED"
 helm install napwake charts/napwake --namespace "$RELEASE_NAMESPACE" --create-namespace --wait --timeout 5m \
-  --set image.repository=napwake --set image.tag=smoke --set image.pullPolicy=Never \
+  --set image.repository=napwake --set image.tag="$IMG_TAG" --set image.pullPolicy=Never \
   --set "watchNamespaces={$WATCHED}"
 kubectl wait --for=condition=Available apiservice/v1beta1.metrics.k8s.io --timeout=3m
 
