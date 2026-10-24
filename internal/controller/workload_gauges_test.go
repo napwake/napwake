@@ -31,6 +31,7 @@ import (
 	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
+	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/utils/ptr"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/interceptor"
@@ -71,14 +72,14 @@ func TestReconcile_AStaleCachedPhaseLeavesOnePhaseInTheGauge(t *testing.T) {
 	_, err = r.Reconcile(context.Background(), reconcileFor("stale-gauge-app"))
 	require.NoError(t, err)
 
-	phases := reportedPhases(t, "default", "stale-gauge-app")
+	phases := reportedPhases(t, "stale-gauge-app")
 	assert.Len(t, phases, 1, "one phase from a stale read, not one more: %v", phases)
 
 	r.Client = live
 	_, err = r.Reconcile(context.Background(), reconcileFor("stale-gauge-app"))
 	require.NoError(t, err)
 
-	assert.Equal(t, map[string]float64{"Paused": 1}, reportedPhases(t, "default", "stale-gauge-app"),
+	assert.Equal(t, map[string]float64{"Paused": 1}, reportedPhases(t, "stale-gauge-app"),
 		"once the cache catches up")
 }
 
@@ -196,12 +197,12 @@ func TestRecordConditions(t *testing.T) {
 
 			recordConditions(workload)
 
-			unreadable := seriesOf(t, metrics.ActivityUnreadable, "default", "gauges-app", "source")
+			unreadable := seriesOf(t, metrics.ActivityUnreadable, "gauges-app", "source")
 			assert.ElementsMatch(t, tt.unreadable, slices.Collect(maps.Keys(unreadable)))
 			for source, v := range unreadable {
 				assert.Equal(t, 1.0, v, source)
 			}
-			incomplete := seriesOf(t, metrics.ResumeIncomplete, "default", "gauges-app", "")
+			incomplete := seriesOf(t, metrics.ResumeIncomplete, "gauges-app", "")
 			if tt.resumeIncomplete {
 				assert.Equal(t, map[string]float64{"": 1}, incomplete)
 			} else {
@@ -222,7 +223,7 @@ func TestReconcile_PublishesConditions(t *testing.T) {
 	_, err := r.Reconcile(context.Background(), reconcileFor("resumed-gauge-app"))
 	require.NoError(t, err)
 	assert.Equal(t, map[string]float64{"": 1},
-		seriesOf(t, metrics.ResumeIncomplete, "default", "resumed-gauge-app", ""))
+		seriesOf(t, metrics.ResumeIncomplete, "resumed-gauge-app", ""))
 
 	w := getWorkload(t, r, "resumed-gauge-app")
 	meta.SetStatusCondition(&w.Status.Conditions, metav1.Condition{Type: conditionResumeIncomplete,
@@ -230,20 +231,57 @@ func TestReconcile_PublishesConditions(t *testing.T) {
 	require.NoError(t, r.Status().Update(context.Background(), w))
 	_, err = r.Reconcile(context.Background(), reconcileFor("resumed-gauge-app"))
 	require.NoError(t, err)
-	assert.Empty(t, seriesOf(t, metrics.ResumeIncomplete, "default", "resumed-gauge-app", ""))
+	assert.Empty(t, seriesOf(t, metrics.ResumeIncomplete, "resumed-gauge-app", ""))
+}
+
+// A workload another install's annotation now names is that install's to
+// manage, so this one drops what it published and kept for it, as for one
+// deleted. A Pausing series left behind would keep NapwakeWorkloadStuck
+// firing, and a doorman port it claimed would never go to another workload.
+func TestReconcile_AWorkloadHandedToAnotherInstallIsForgotten(t *testing.T) {
+	workload := lifecycleWorkload("handed-app", v1alpha1.PhaseRunning)
+	workload.UID = "handed-uid"
+	workload.Finalizers = []string{finalizerName}
+	workload.Annotations = map[string]string{v1alpha1.AnnotationOperator: thisInstall}
+	r := newTestReconciler(t, workload, &stubPauser{})
+	r.OperatorNamespace = thisInstall
+	_, err := r.Reconcile(context.Background(), reconcileFor("handed-app"))
+	require.NoError(t, err)
+	require.Equal(t, map[string]float64{"Running": 1}, reportedPhases(t, "handed-app"))
+	metrics.ActivityUnreadable.WithLabelValues("default", "handed-app", "cpu").Set(1)
+	metrics.ResumeIncomplete.WithLabelValues("default", "handed-app").Set(1)
+	r.forecastEngine(getWorkload(t, r, "handed-app"))
+	r.activityMemo.put("handed-uid", v1alpha1.ActivityStatus{}, fixedTime, nil)
+	r.doormanFailures.next("handed-uid")
+	r.doormanPorts.claims = map[int32]portClaim{30002: {owner: "handed-uid", at: fixedTime}}
+
+	handed := getWorkload(t, r, "handed-app")
+	handed.Annotations[v1alpha1.AnnotationOperator] = "team-b-system"
+	require.NoError(t, r.Update(context.Background(), handed))
+	_, err = r.Reconcile(context.Background(), reconcileFor("handed-app"))
+	require.NoError(t, err)
+
+	assert.Empty(t, reportedPhases(t, "handed-app"))
+	assert.Empty(t, seriesOf(t, metrics.ActivityUnreadable, "handed-app", "source"))
+	assert.Empty(t, seriesOf(t, metrics.ResumeIncomplete, "handed-app", ""))
+	assert.NotContains(t, r.engines.engines, types.UID("handed-uid"))
+	_, remembered := r.activityMemo.get("handed-uid")
+	assert.False(t, remembered)
+	assert.NotContains(t, r.doormanFailures.failures, types.UID("handed-uid"))
+	assert.Empty(t, r.doormanPorts.claims)
 }
 
 // reportedPhases returns the phases napwake_workload_phase reports for a
 // workload, with their values.
-func reportedPhases(t *testing.T, namespace, name string) map[string]float64 {
+func reportedPhases(t *testing.T, name string) map[string]float64 {
 	t.Helper()
-	return seriesOf(t, metrics.WorkloadPhase, namespace, name, "phase")
+	return seriesOf(t, metrics.WorkloadPhase, name, "phase")
 }
 
-// seriesOf returns the series a collector has for a workload, with their
-// values, by the value of their label key, or by "" for a collector without
-// it.
-func seriesOf(t *testing.T, c prometheus.Collector, namespace, name, key string) map[string]float64 {
+// seriesOf returns the series a collector has for a workload in the test
+// reconciler's namespace, default, with their values, by the value of their
+// label key, or by "" for a collector without it.
+func seriesOf(t *testing.T, c prometheus.Collector, name, key string) map[string]float64 {
 	t.Helper()
 	reg := prometheus.NewPedanticRegistry()
 	require.NoError(t, reg.Register(c))
@@ -257,7 +295,7 @@ func seriesOf(t *testing.T, c prometheus.Collector, namespace, name, key string)
 			for _, l := range m.GetLabel() {
 				labels[l.GetName()] = l.GetValue()
 			}
-			if labels["namespace"] == namespace && labels["workload"] == name {
+			if labels["namespace"] == "default" && labels["workload"] == name {
 				series[labels[key]] = m.GetGauge().GetValue()
 			}
 		}

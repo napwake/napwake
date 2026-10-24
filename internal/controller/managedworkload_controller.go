@@ -410,8 +410,9 @@ func (r *Reconciler) observeTarget(ctx context.Context, workload *v1alpha1.Manag
 // readWorkload reads the workload, and reports whether it exists and is
 // this install's to reconcile. One deleted without its finalizer running
 // would otherwise leave its metric series and what's kept in memory for it,
-// and one created again under the same name what was kept for the one
-// before.
+// one created again under the same name what was kept for the one before,
+// and one another install's annotation now names what this one kept while
+// it managed it.
 func (r *Reconciler) readWorkload(ctx context.Context, name types.NamespacedName,
 	workload *v1alpha1.ManagedWorkload) (bool, error) {
 	err := r.Get(ctx, name, workload)
@@ -425,15 +426,22 @@ func (r *Reconciler) readWorkload(ctx context.Context, name types.NamespacedName
 	if err != nil {
 		return false, fmt.Errorf("getting managed workload: %w", err)
 	}
-	if replaced, ok := r.uids.see(name, workload.UID); ok {
-		r.forgetWorkload(replaced)
-	}
 	if owner := otherInstall(workload, r.OperatorNamespace); owner != "" {
+		// Only a workload this install has read as its own since it
+		// started can have series or state here, so later events find
+		// nothing to drop.
+		if uid, ok := r.uids.take(name); ok {
+			r.forgetWorkload(uid)
+			metrics.DeleteWorkload(name.Namespace, name.Name)
+		}
 		r.emitEvent(workload, false, "Warning", ReasonManagedByAnotherInstall, actionCheckInstall,
 			"the Napwake installed in %s manages this ManagedWorkload, so the one in %s leaves it alone; "+
 				"installs must watch different namespaces. If the one in %s is gone, remove the %s annotation",
 			owner, r.OperatorNamespace, owner, v1alpha1.AnnotationOperator)
 		return false, nil
+	}
+	if replaced, ok := r.uids.see(name, workload.UID); ok {
+		r.forgetWorkload(replaced)
 	}
 	return true, nil
 }
