@@ -1,0 +1,71 @@
+time: "2026-10-24 06:12:41.218437513 +0000 UTC"
+autoscalerStatus: "Running"
+clusterWide:
+  health:
+    status: "Healthy"
+    nodeCounts:
+      registered:
+        total: 1
+        ready: 1
+        notStarted: 0
+      longUnregistered: 0
+      unregistered: 0
+    lastProbeTime: "2026-10-24T06:12:41.026170354Z"
+    lastTransitionTime: "2026-10-21T09:40:03.712394Z"
+  scaleUp:
+    status: "NoActivity"
+    lastProbeTime: "2026-10-24T06:12:41.026170354Z"
+    lastTransitionTime: "2026-10-23T18:02:44.109324Z"
+  scaleDown:
+    status: "NoCandidates"
+    lastProbeTime: "2026-10-24T06:12:41.026170354Z"
+    lastTransitionTime: "2026-10-23T19:21:07.455810Z"
+nodeGroups:
+  -
+    name: "https://www.googleapis.com/compute/v1/projects/staging-412907/zones/europe-west1-b/instanceGroups/gke-prelaunch-default-pool-3f9c1a2b-grp"
+    health:
+      status: "Healthy"
+      nodeCounts:
+        registered:
+          total: 1
+          ready: 1
+          notStarted: 0
+        longUnregistered: 0
+        unregistered: 0
+      cloudProviderTarget: 1
+      minSize: 1
+      maxSize: 3
+      lastProbeTime: "2026-10-24T06:12:41.026170354Z"
+      lastTransitionTime: "2026-10-21T09:40:03.712394Z"
+    scaleUp:
+      status: "NoActivity"
+      lastProbeTime: "2026-10-24T06:12:41.026170354Z"
+      lastTransitionTime: "2026-10-23T18:02:44.109324Z"
+    scaleDown:
+      status: "NoCandidates"
+      lastProbeTime: "2026-10-24T06:12:41.026170354Z"
+      lastTransitionTime: "2026-10-23T19:21:07.455810Z"
+  -
+    name: "https://www.googleapis.com/compute/v1/projects/staging-412907/zones/europe-west1-b/instanceGroups/gke-prelaunch-workloads-7d2e94c1-grp"
+    health:
+      status: "Healthy"
+      nodeCounts:
+        registered:
+          total: 0
+          ready: 0
+          notStarted: 0
+        longUnregistered: 0
+        unregistered: 0
+      cloudProviderTarget: 0
+      minSize: 0
+      maxSize: 4
+      lastProbeTime: "2026-10-24T06:12:41.026170354Z"
+      lastTransitionTime: "2026-10-21T09:40:03.712394Z"
+    scaleUp:
+      status: "NoActivity"
+      lastProbeTime: "2026-10-24T06:12:41.026170354Z"
+      lastTransitionTime: "2026-10-23T18:02:44.109324Z"
+    scaleDown:
+      status: "NoCandidates"
+      lastProbeTime: "2026-10-24T06:12:41.026170354Z"
+      lastTransitionTime: "2026-10-23T19:21:07.455810Z"

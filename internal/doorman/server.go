@@ -44,10 +44,10 @@ import (
 const (
 	defaultMaxWait = 2 * time.Minute
 
-	// routeSyncInterval is how often listeners are matched to the routes in
+	// RouteSyncInterval is how often listeners are matched to the routes in
 	// ManagedWorkload status. A connection to a newly paused workload in the
 	// gap is refused, as it would be without the doorman.
-	routeSyncInterval = 2 * time.Second
+	RouteSyncInterval = 2 * time.Second
 
 	// backendPollInterval is how often held connections look for a Ready
 	// pod when nothing tells the doorman that endpoints changed. With an
@@ -140,6 +140,10 @@ type route struct {
 	uid      types.UID
 	pausedAt time.Time
 	waking   bool
+
+	// pausing says the workload was pausing as of the last sync: its pods
+	// may still serve what the doorman passes on.
+	pausing bool
 
 	// drainUntil is set once the route has left status. Until then, the
 	// port passes connections to the workload's Ready pods, if any, without
@@ -295,7 +299,7 @@ func (s *Server) Start(ctx context.Context) error {
 		defer stop()
 		poll = s.resyncEvery
 	}
-	syncTicker := time.NewTicker(routeSyncInterval)
+	syncTicker := time.NewTicker(RouteSyncInterval)
 	defer syncTicker.Stop()
 	pollTicker := time.NewTicker(poll)
 	defer pollTicker.Stop()
@@ -507,6 +511,7 @@ func (s *Server) syncRoutes(ctx, connCtx context.Context) error {
 				uid:      w.UID,
 				pausedAt: pausedAt(&w),
 				waking:   isWaking(&w),
+				pausing:  w.Status.Phase == v1alpha1.PhasePausing,
 			})
 		}
 	}

@@ -168,8 +168,9 @@ func main() {
 	optIn := controller.DefaultOptInDefaults
 	flag.DurationVar(&optIn.IdleAfter, "default-idle-after", optIn.IdleAfter,
 		"idleAfter, at least 1m, for workloads opted in with the napwake.dev/managed label, unless annotated otherwise.")
-	flag.IntVar(&optIn.CPUThreshold, "default-cpu-threshold", optIn.CPUThreshold,
-		"CPU threshold, as a percentage of requests, for workloads opted in with the label, unless annotated otherwise.")
+	flag.Float64Var(&optIn.CPUThreshold, "default-cpu-threshold", optIn.CPUThreshold,
+		"CPU threshold, as a percentage of requests from 0.1 to 100, such as 10 or 0.5, for workloads opted in with the "+
+			"label, unless annotated otherwise.")
 	flag.BoolVar(&optIn.DryRun, "default-dry-run", optIn.DryRun,
 		"Measure workloads opted in with the label without pausing them, unless annotated otherwise.")
 	flag.BoolVar(&optIn.PauseEarly, "default-pause-early", optIn.PauseEarly,
@@ -680,8 +681,9 @@ func validateOptInDefaults(d controller.OptInDefaults) error {
 	if d.IdleAfter < v1alpha1.MinIdleAfter {
 		return fmt.Errorf("--default-idle-after %s must be at least %s", d.IdleAfter, v1alpha1.MinIdleAfter)
 	}
-	if d.CPUThreshold < 1 || d.CPUThreshold > 100 {
-		return fmt.Errorf("--default-cpu-threshold %d must be from 1 to 100", d.CPUThreshold)
+	if _, err := v1alpha1.ParseCPUThreshold(strconv.FormatFloat(d.CPUThreshold, 'f', -1, 64)); err != nil {
+		return fmt.Errorf("--default-cpu-threshold must be a percentage from 0.1 to 100, to at most two decimal "+
+			"places: %w", err)
 	}
 	switch d.Forecast {
 	case v1alpha1.PredictionEager, v1alpha1.PredictionBalanced, v1alpha1.PredictionCautious:

@@ -446,7 +446,7 @@ func TestScanCluster_EachWithItsCPUThreshold(t *testing.T) {
 	mw := managedFor("managed", v1alpha1.ManagedWorkloadStatus{Phase: v1alpha1.PhaseRunning,
 		Activity: &v1alpha1.ActivityStatus{LastActivityTime: metav1.NewTime(scanTime.Add(-5 * time.Hour)),
 			LastActivitySource: v1alpha1.ActivitySourceCPU}})
-	mw.Spec.IdlePolicy = &v1alpha1.IdlePolicySpec{Activity: &v1alpha1.ActivitySpec{CPUThreshold: 50}}
+	mw.Spec.IdlePolicy = &v1alpha1.IdlePolicySpec{Activity: &v1alpha1.ActivitySpec{CPUThreshold: v1alpha1.CPUThresholdValue(50)}}
 	objs = append(objs, makePodMetrics("managed", testNamespace, "20m", "20Mi"), mw)
 	opts := scanOptions(testNamespace)
 	opts.History, opts.Window, opts.IdleAfter = newFakePrometheus(t, f), 7*24*time.Hour, time.Hour

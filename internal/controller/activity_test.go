@@ -36,6 +36,7 @@ import (
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/util/intstr"
 	"k8s.io/client-go/tools/events"
 	"k8s.io/utils/ptr"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -1328,5 +1329,25 @@ func TestWokenByActivity(t *testing.T) {
 
 			assert.Equal(t, tt.want, pauser.resumeCalls > 0)
 		})
+	}
+}
+
+// A decimal threshold counts as activity what a whole one can't: a workload
+// set to 0.5% is in use at 0.6% of its requests, and idle at 0.4%.
+func TestActivityClock_ADecimalCPUThreshold(t *testing.T) {
+	for millis, busy := range map[float64]bool{6: true, 4: false} {
+		target := clockTarget("app:v1", nil)
+		workload := clockWorkload(fixedTime.Add(-61*time.Minute), target)
+		workload.Spec.IdlePolicy.Activity = &v1alpha1.ActivitySpec{CPUThreshold: ptr.To(intstr.FromString("0.5"))}
+
+		pauser := runClock(t, workload, target, clockOpts{metrics: stubMetrics{cpuMillis: millis, cpuPerReplica: 1000,
+			replicas: 1}})
+
+		if busy {
+			assert.Zero(t, pauser.pauseCalls, "%v%% is in use", millis/10)
+			assert.Equal(t, v1alpha1.ActivitySourceCPU, workload.Status.Activity.LastActivitySource)
+		} else {
+			assert.Equal(t, 1, pauser.pauseCalls, "%v%% is idle", millis/10)
+		}
 	}
 }

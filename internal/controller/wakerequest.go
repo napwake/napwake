@@ -134,9 +134,9 @@ func (r *Reconciler) answerEarlierWakeRequest(workload *v1alpha1.ManagedWorkload
 // awake, and restarts its idle clock: whoever asked means to use it, as
 // kubectl napwake wake has always restarted it. Under dry-run that ends a
 // would-be pause, as activity does. A paused workload's request is the
-// wake's to answer, with the look at its demand that sees it, and one
-// pausing or waking is answered once that's done, by the reconcile that
-// finds it Paused or Running.
+// wake's to answer, with the look at its demand that sees it, one pausing
+// is answered as it calls the pause off, and one waking is answered once
+// that's done, by the reconcile that finds it Running.
 func (r *Reconciler) answerAwakeWakeRequest(workload *v1alpha1.ManagedWorkload) {
 	if _, ok := pendingWakeRequest(workload); !ok {
 		return

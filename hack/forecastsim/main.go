@@ -66,7 +66,7 @@ type options struct {
 	confidence   int
 	weeks        int
 	history      string
-	cpuThreshold int
+	cpuThreshold float64
 	idleAfter    time.Duration
 	timezone     string
 	autoResume   bool
@@ -85,7 +85,7 @@ func main() {
 	flag.IntVar(&o.confidence, "confidence", 0, "Confidence threshold to act at, from 50 to 100, in place of -setting")
 	flag.IntVar(&o.weeks, "weeks", 8, "Weeks to simulate a scenario for")
 	flag.StringVar(&o.history, "history", "", "Replay this recorded CPU history instead of a scenario")
-	flag.IntVar(&o.cpuThreshold, "cpu-threshold", 10, "CPU threshold, as a percentage of requests")
+	flag.Float64Var(&o.cpuThreshold, "cpu-threshold", 10, "CPU threshold, as a percentage of requests")
 	flag.DurationVar(&o.idleAfter, "idle-after", time.Hour, "How long without activity before a pause")
 	flag.StringVar(&o.timezone, "timezone", "UTC", "The operator's --timezone")
 	flag.BoolVar(&o.autoResume, "auto-resume", true, "Wake ahead of forecast demand")

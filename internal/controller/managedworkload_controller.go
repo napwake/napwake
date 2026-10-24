@@ -160,6 +160,7 @@ type Reconciler struct {
 	prometheus      *signal.Prometheus
 	history         historyReader
 	doormanFamilies doormanFamilies
+	quietCPU        quietCPU
 	uids            workloadUIDs
 	graph           *workloadGraph
 	clock           func() time.Time
@@ -504,7 +505,8 @@ func (r *Reconciler) staleForRouting(ctx context.Context, workload *v1alpha1.Man
 // resumeTransition finishes a pause or resume that an earlier reconcile
 // started but didn't complete, without which a transient failure would strand
 // the workload in the intermediate phase. It also turns back a pause the
-// workload must no longer be in: dry-run never leaves a workload paused.
+// workload must no longer be in: dry-run never leaves a workload paused, and
+// a pause that whatever would wake it came during is called off.
 func (r *Reconciler) resumeTransition(ctx context.Context, workload *v1alpha1.ManagedWorkload, target client.Object) (*ctrl.Result, error) {
 	phase := workload.Status.Phase
 	if workload.Spec.DryRun && (phase == v1alpha1.PhasePausing || phase == v1alpha1.PhasePaused) {
@@ -513,6 +515,12 @@ func (r *Reconciler) resumeTransition(ctx context.Context, workload *v1alpha1.Ma
 	}
 	switch phase {
 	case v1alpha1.PhasePausing:
+		if why, err := r.pauseCancelled(ctx, workload, target); err != nil || why != nil {
+			if err != nil {
+				return nil, err
+			}
+			return r.handleResume(ctx, workload, why)
+		}
 		return r.handlePause(ctx, workload, target, nil)
 	case v1alpha1.PhaseResuming:
 		return r.handleResume(ctx, workload, nil)
@@ -537,6 +545,10 @@ func (r *Reconciler) handlePause(ctx context.Context, workload *v1alpha1.Managed
 		if err := r.preparePause(ctx, workload, target, requested); err != nil {
 			return nil, err
 		}
+		workload.Status.Pause.Requested = requested
+		if !requested {
+			r.recordCPUBefore(workload)
+		}
 		// The cache showed replicas the target no longer has: it was scaled
 		// to zero outside Napwake, which the next reconcile sees.
 		if workload.Status.Pause.PreviousReplicas == 0 {
@@ -549,7 +561,17 @@ func (r *Reconciler) handlePause(ctx context.Context, workload *v1alpha1.Managed
 		if why != nil {
 			r.emitEvent(workload, false, "Normal", why.reason, actionPause, "%s", why.message)
 		}
+		if routed, err := r.routeAsPauseBegins(ctx, workload, target); err != nil {
+			return nil, err
+		} else if routed {
+			return &ctrl.Result{RequeueAfter: doormanListenWait}, nil
+		}
 	case v1alpha1.PhasePausing:
+		if wait, err := r.untilFronted(ctx, workload); err != nil {
+			return nil, err
+		} else if wait > 0 {
+			return &ctrl.Result{RequeueAfter: wait}, nil
+		}
 	default:
 		return nil, nil
 	}
@@ -745,9 +767,11 @@ func (r *Reconciler) forgetLostPause(ctx context.Context, workload *v1alpha1.Man
 
 // phaseEvent says why a workload pauses or wakes. It's emitted once the
 // workload is Pausing or Resuming, so a retried pause or wake doesn't
-// announce itself twice.
+// announce itself twice. cause is the workload's own use that wakes it, if
+// that's what does, which makes a pause it ends soon after wrong.
 type phaseEvent struct {
 	reason, message string
+	cause           v1alpha1.WakeCause
 }
 
 // handleResume drives the workload to Running: a paused one, or one pausing,
@@ -767,12 +791,14 @@ func (r *Reconciler) handleResume(ctx context.Context, workload *v1alpha1.Manage
 				"workload", workload.Name, "namespace", workload.Namespace, "error", err.Error())
 		}
 		r.wakeDependencies(ctx, workload)
+		judged := r.judgePause(ctx, workload, why)
 		if err := r.transition(ctx, workload, v1alpha1.PhaseResuming, "ResumeRequested"); err != nil {
 			return nil, err
 		}
 		if why != nil {
 			r.emitEvent(workload, false, "Normal", why.reason, actionResume, "%s", why.message)
 		}
+		judged()
 	case v1alpha1.PhaseResuming:
 	default:
 		return nil, nil
@@ -1038,6 +1064,7 @@ func (r *Reconciler) abandonHandBack(ctx context.Context, workload *v1alpha1.Man
 // Its doorman ports drain before another workload may have them.
 func (r *Reconciler) forgetWorkload(uid types.UID) {
 	r.activityMemo.forget(uid)
+	r.quietCPU.forget(uid)
 	r.querySeries.forget(uid)
 	r.activityWarned.forget(uid)
 	r.templateHashes.forget(uid)

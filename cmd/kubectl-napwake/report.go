@@ -30,6 +30,7 @@ import (
 	"strings"
 	"time"
 
+	v1alpha1 "github.com/napwake/napwake/api/v1alpha1"
 	"github.com/napwake/napwake/internal/discovery"
 	"github.com/napwake/napwake/internal/doorman"
 	"github.com/napwake/napwake/internal/nodescale"
@@ -71,7 +72,7 @@ type reportPage struct {
 	Notes            []string
 	Method           []string
 	NextSteps        []template.HTML
-	Threshold        int
+	Threshold        float64
 	IdleAfter        string
 	Over             string
 	Tips             tips
@@ -608,12 +609,12 @@ func methodFor(result scanResult, history, dependencies bool, idleAfter time.Dur
 			"prices for the capacity reserved, not your bill.",
 		"An hour asleep frees that capacity. It becomes money only when a node autoscaler removes the nodes " +
 			"it no longer needs, so the scan reports what pausing could free, not what it would save.",
-		fmt.Sprintf("A workload is active when its CPU is at least %d%% of what it requests (the scan's "+
+		fmt.Sprintf("A workload is active when its CPU is above %s%% of what it requests (the scan's "+
 			"--cpu-threshold), it was deployed, or an activity annotation says so. It's idle once it has had no "+
 			"activity for %s (the scan's --idle-after), which is when Napwake would pause it. Workloads Napwake "+
 			"manages are judged by the activity clock it keeps for them, with their own CPU threshold and "+
 			"idle-after.",
-			result.Settings.CPUThreshold, roundedDuration(idleAfter)),
+			v1alpha1.FormatCPUThreshold(result.Settings.CPUThreshold), roundedDuration(idleAfter)),
 	}
 	if history {
 		method = append(method, fmt.Sprintf("The history replay applies Napwake's rules to recorded CPU and "+

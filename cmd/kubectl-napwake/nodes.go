@@ -88,6 +88,10 @@ Autoscaler, EKS Auto Mode or GKE Autopilot, with Karpenter's consolidation
 settings, and what Napwake's paused workloads would request if they were
 awake. Below it, how to fix each thing in the way.
 
+A node whose node group is at its minimum, as Cluster Autoscaler's status
+ConfigMap reports it, stays whatever runs on it, so it says why instead of
+giving steps. Karpenter keeps no minimum.
+
 It only reads: nodes, pods and PodDisruptionBudgets in every namespace,
 Karpenter's NodePools, Cluster Autoscaler's status ConfigMap and the
 Deployments in kube-system, and ManagedWorkloads. What your access doesn't
@@ -242,6 +246,9 @@ func unreadNote(what string) string {
 	case "pods in every namespace":
 		return "your access doesn't allow listing pods in every namespace, so what's requested of each node, " +
 			"and what its pods keep it from scaling down, leave them out"
+	case "Cluster Autoscaler's status ConfigMap in kube-system":
+		return "your access doesn't allow reading Cluster Autoscaler's status ConfigMap in kube-system, so nodes " +
+			"at their node group's minimum, which no step frees, aren't told apart"
 	}
 	return "your access doesn't allow listing " + what + ", so the reasons that come from them are left out"
 }
@@ -395,6 +402,7 @@ var blockerLabels = map[nodescale.Code]string{
 	nodescale.CodeWhenEmpty:         "NodePool consolidates only empty nodes",
 	nodescale.CodeConsolidationOff:  "NodePool never consolidates",
 	nodescale.CodeNotAutoscaled:     "not autoscaled",
+	nodescale.CodeAtMinimum:         "node group at its minimum",
 }
 
 // blockerFixes say how to clear each reason, in the order next steps list
@@ -429,14 +437,30 @@ var blockerFixes = []struct {
 		"PodDisruptionBudget that allows a disruption."},
 }
 
+// writeNodeNextSteps says how to clear what keeps nodes from scaling down,
+// and why the nodes at their node group's minimum stay, for which no step
+// would save anything.
 func writeNodeNextSteps(p *printer, nodes []nodeRow) {
 	examples := map[nodescale.Code]nodescale.Reason{}
+	var atMinimum []string
 	for _, n := range nodes {
 		for _, r := range n.BlockedBy {
+			if r.Code == nodescale.CodeAtMinimum {
+				atMinimum = append(atMinimum, n.Name+": "+r.Detail)
+				continue
+			}
 			if _, seen := examples[r.Code]; !seen {
 				examples[r.Code] = r
 			}
 		}
+	}
+	if len(atMinimum) > 0 {
+		p.line("These nodes stay at their node group's minimum, which Cluster Autoscaler doesn't go below, " +
+			"whatever runs on them:")
+		for _, n := range atMinimum {
+			p.line("  %s", n)
+		}
+		p.line("")
 	}
 	if len(examples) == 0 {
 		return

@@ -1177,7 +1177,7 @@ func TestServer_DropsADeletedWorkloadsSeries(t *testing.T) {
 	require.Eventually(t, func() bool { return series() == before+1 }, 5*time.Second, 10*time.Millisecond)
 
 	require.NoError(t, c.Delete(context.Background(), w))
-	assert.Eventually(t, func() bool { return series() == before }, 3*routeSyncInterval, 20*time.Millisecond)
+	assert.Eventually(t, func() bool { return series() == before }, 3*RouteSyncInterval, 20*time.Millisecond)
 }
 
 // A workload that never becomes Ready, called from many sources, can't take
@@ -1464,6 +1464,21 @@ func TestNeedsWake(t *testing.T) {
 			w.Status.Phase = v1alpha1.PhaseResuming
 			return w
 		}()},
+		{name: "pausing, never stamped", want: true, workload: func() *v1alpha1.ManagedWorkload {
+			w := paused("", nil)
+			w.Status.Phase = v1alpha1.PhasePausing
+			return w
+		}()},
+		{name: "pausing, stamped since the pause began", workload: func() *v1alpha1.ManagedWorkload {
+			w := paused(after, map[string]string{v1alpha1.AnnotationLastRequest: before})
+			w.Status.Phase = v1alpha1.PhasePausing
+			return w
+		}()},
+		{name: "awake", workload: func() *v1alpha1.ManagedWorkload {
+			w := paused("", nil)
+			w.Status.Phase = v1alpha1.PhaseRunning
+			return w
+		}()},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -1555,6 +1570,50 @@ func TestServer_LeavesAPendingWakeAlone(t *testing.T) {
 
 	assert.Equal(t, pending, lastRequest(t, c))
 	assert.Equal(t, 0, wokenEvents(recorder))
+}
+
+// The operator routes a workload's Services through the doorman from the
+// moment its pause starts. A request held once its pods have gone, while
+// it's still Pausing, wakes it: the operator ends the pause.
+func TestServer_StampsARequestHeldWhileThePauseIsUnderWay(t *testing.T) {
+	port := freePort(t)
+	w := pausedWorkload("api", port, time.Minute)
+	w.Status.Phase = v1alpha1.PhasePausing
+	_, c := startServer(t, w)
+
+	conn := dial(t, port)
+	send(t, conn, "hello\n")
+	require.Eventually(t, func() bool { return lastRequest(t, c) != "" }, 5*time.Second, 20*time.Millisecond,
+		"a request held while the workload pauses must stamp it")
+
+	require.NoError(t, c.Create(context.Background(), readySlice(echoPort(t))))
+	echoed(t, conn, "hello\n")
+}
+
+// A held connection whose workload the doorman's cache still shows awake,
+// as it can for a moment around a pause, is stamped once the cache shows
+// it paused, rather than held unstamped until maxWait with the workload
+// left asleep.
+func TestServer_StampsAHeldRequestOnceTheWorkloadShowsPaused(t *testing.T) {
+	port := freePort(t)
+	w := pausedWorkload("api", port, time.Minute)
+	w.Status.Phase = v1alpha1.PhaseRunning
+	_, c := startServer(t, w)
+
+	conn := dial(t, port)
+	send(t, conn, "hello\n")
+	require.Never(t, func() bool { return lastRequest(t, c) != "" }, 500*time.Millisecond, 50*time.Millisecond,
+		"an awake workload isn't stamped")
+
+	var live v1alpha1.ManagedWorkload
+	require.NoError(t, c.Get(context.Background(), apiKey, &live))
+	live.Status.Phase = v1alpha1.PhasePaused
+	require.NoError(t, c.Update(context.Background(), &live))
+	require.Eventually(t, func() bool { return lastRequest(t, c) != "" }, 5*time.Second, 20*time.Millisecond,
+		"the held request must stamp the workload once it shows paused")
+
+	require.NoError(t, c.Create(context.Background(), readySlice(echoPort(t))))
+	echoed(t, conn, "hello\n")
 }
 
 // staleReads makes Get return a copy of the workload as it was when the
@@ -1749,7 +1808,7 @@ func TestServer_APortReassignedWhileDrainingWaitsForTheDrain(t *testing.T) {
 	other.Namespace = "other-team"
 	require.NoError(t, c.Create(ctx, other))
 	for range 3 {
-		clock.Advance(routeSyncInterval)
+		clock.Advance(RouteSyncInterval)
 		require.NoError(t, s.syncRoutes(ctx, ctx))
 		assert.True(t, refused(t, port), "the port is served for neither while the old route drains")
 		assert.Equal(t, float64(1), testutil.ToFloat64(opmetrics.DoormanPortConflicts))
@@ -2101,4 +2160,93 @@ func TestServer_ReadsARequestSplitInsideItsMethod(t *testing.T) {
 
 	resp, _ := readResponse(t, conn)
 	assert.Equal(t, http.StatusServiceUnavailable, resp.StatusCode)
+}
+
+// A request that calls off a pause under way is announced by the operator,
+// as PauseCancelled, not as a wake.
+func TestServer_LeavesAPauseItCallsOffToTheOperatorToAnnounce(t *testing.T) {
+	w := pausedWorkload("api", freePort(t), time.Minute)
+	w.Status.Phase = v1alpha1.PhasePausing
+	recorder := events.NewFakeRecorder(10)
+	s, c := newTestServer(t, nil, w)
+	s.recorder = recorder
+
+	require.NoError(t, s.stamp(context.Background(), route{workload: apiKey, service: "api"}, caller))
+
+	assert.NotEmpty(t, lastRequest(t, c))
+	assert.Equal(t, 0, wokenEvents(recorder))
+}
+
+// pausingWorkload is a workload whose pause is under way, its pods still
+// up: the doorman fronts its Service beside them.
+func pausingWorkload(port int32) *v1alpha1.ManagedWorkload {
+	w := pausedWorkload("api", port, time.Minute)
+	w.Status.Phase = v1alpha1.PhasePausing
+	w.Status.Pause.PausedAt = nil
+	return w
+}
+
+// A request the doorman passes straight to a Ready pod while the workload
+// pauses shows it's in use, so the doorman stamps it, which calls the pause
+// off. The caller isn't held for it.
+func TestServer_ARequestPassedOnAsItPausesStampsIt(t *testing.T) {
+	tests := []struct {
+		name    string
+		request []string
+	}{
+		{name: "an HTTP request", request: []string{"GET /orders HTTP/1.1\r\nHost: api\r\nUser-Agent: curl/8.7.1\r\n\r\n"}},
+		{name: "an HTTP request whose headers arrive in pieces",
+			request: []string{"GET /orders HTTP/1.1\r\nHost: api\r\n", "User-Agent: curl/8.7.1\r\n\r\n"}},
+		{name: "a client of another protocol", request: []string{"\x16\x03\x01\x02\x00\x01\x00\x01\xfc\x03\x03"}},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			port := freePort(t)
+			_, c := startServer(t, pausingWorkload(port), readySlice(echoPort(t)))
+
+			conn := dial(t, port)
+			for _, part := range tt.request {
+				send(t, conn, part)
+				echoed(t, conn, part)
+			}
+			require.Eventually(t, func() bool { return lastRequest(t, c) != "" }, 5*time.Second, 20*time.Millisecond,
+				"a request passed on as the workload pauses stamps it")
+		})
+	}
+}
+
+// What wouldn't wake a paused workload doesn't call off a pause either: a
+// probe or scrape, a hunt for hidden files, a TCP check that sends nothing,
+// and anything but a click for a workload that asks first.
+func TestServer_WhatWouldntWakeItPassesOnUnstamped(t *testing.T) {
+	tests := []struct {
+		name, request string
+		asks          bool
+	}{
+		{name: "a scrape", request: "GET /metrics HTTP/1.1\r\nHost: 10.0.0.1\r\nUser-Agent: Prometheus/2.53.0\r\n\r\n"},
+		{name: "a probe", request: "GET /healthz HTTP/1.1\r\nHost: 10.0.0.1\r\nUser-Agent: kube-probe/1.36\r\n\r\n"},
+		{name: "a hidden file", request: "GET /.env HTTP/1.1\r\nHost: api\r\n\r\n"},
+		{name: "a TCP check"},
+		{name: "a request to a workload that asks", asks: true,
+			request: "GET /orders HTTP/1.1\r\nHost: api\r\nUser-Agent: curl/8.7.1\r\n\r\n"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			port := freePort(t)
+			w := pausingWorkload(port)
+			if tt.asks {
+				w.Spec.Wake.Mode = v1alpha1.WakeOnAsk
+			}
+			_, c := startServer(t, w, readySlice(echoPort(t)))
+
+			conn := dial(t, port)
+			if tt.request == "" {
+				require.NoError(t, conn.Close())
+			} else {
+				send(t, conn, tt.request)
+				echoed(t, conn, tt.request)
+			}
+			assert.Never(t, func() bool { return lastRequest(t, c) != "" }, 500*time.Millisecond, 50*time.Millisecond)
+		})
+	}
 }

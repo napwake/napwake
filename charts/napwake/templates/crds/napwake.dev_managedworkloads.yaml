@@ -173,13 +173,22 @@ spec:
                       activity annotations that always count.
                     properties:
                       cpuThreshold:
+                        anyOf:
+                        - type: integer
+                        - type: string
                         default: 10
                         description: |-
                           CPUThreshold is the CPU utilization, as a percentage of the workload's
-                          CPU requests, above which the workload counts as active.
-                        maximum: 100
-                        minimum: 1
-                        type: integer
+                          CPU requests, above which the workload counts as active: from 0.1 to
+                          100, a whole number such as 10, or a decimal written as a string, such
+                          as "0.5", to at most two places.
+                        pattern: ^[0-9]{1,3}(\.[0-9]{1,2})?$
+                        x-kubernetes-int-or-string: true
+                        x-kubernetes-validations:
+                        - message: must be a percentage from 0.1 to 100, such as 10
+                            or "0.5"
+                          rule: 'type(self) == string ? double(self) >= 0.1 && double(self)
+                            <= 100.0 : self >= 1 && self <= 100'
                       prometheus:
                         description: |-
                           Prometheus queries that measure activity, such as an ingress request
@@ -910,6 +919,69 @@ spec:
                 - since
                 - slept
                 type: object
+              idleWait:
+                description: |-
+                  IdleWait records the pauses made while the workload was in use, which
+                  lengthen how long its idle clock waits, and what Napwake measured of
+                  its CPU in use and idle, from which it suggests a CPU threshold.
+                properties:
+                  idleCPU:
+                    description: |-
+                      IdleCPU is the most CPU the workload used, as a percentage of its
+                      requests, in the minutes before its pauses that nothing undid, over
+                      the last week: what it uses idle. Unset until such a pause.
+                    type: string
+                  idleCPUAt:
+                    description: IdleCPUAt is when IdleCPU was last measured.
+                    format: date-time
+                    type: string
+                  lastWrongPause:
+                    description: LastWrongPause is the latest of them.
+                    properties:
+                      after:
+                        description: After is how soon after the pause began it was
+                          undone.
+                        type: string
+                      by:
+                        description: By is what undid it.
+                        enum:
+                        - request
+                        - click
+                        - wakeRequest
+                        - annotation
+                        type: string
+                      from:
+                        description: |-
+                          From is where the request that undid it came from, as the doorman
+                          recorded it.
+                        type: string
+                      inUseCPU:
+                        description: |-
+                          InUseCPU is the most CPU the workload used, as a percentage of its
+                          requests, through the stretch without activity that ran its clock out,
+                          in which, as it turned out, it was in use. Unset when none was
+                          measured.
+                        type: string
+                      pausedAt:
+                        description: PausedAt is when the pause began.
+                        format: date-time
+                        type: string
+                    required:
+                    - after
+                    - by
+                    - pausedAt
+                    type: object
+                  wrongPauses:
+                    description: |-
+                      WrongPauses counts the pauses in a row that something undid soon after
+                      they began, within idleAfter or 15 minutes, whichever is shorter: a
+                      request, a person's click, a wake request or an activity annotation.
+                      The workload was in use, unseen. Each doubles how long its idle clock
+                      waits without activity before a pause, up to idleAfter plus an hour. A
+                      pause nothing undoes that soon sets it back to zero.
+                    format: int32
+                    type: integer
+                type: object
               lastActedAt:
                 description: |-
                   LastActedAt is when the target was last paused or woken: by
@@ -1038,6 +1110,17 @@ spec:
                   Pause records what pausing changed, from before the workload is scaled
                   to zero until it's running again.
                 properties:
+                  cpuBefore:
+                    description: |-
+                      CPUBefore is the most CPU the workload used, as a percentage of its
+                      requests, through the stretch without activity that ran its clock out,
+                      and CPUJustBefore the most in its last minutes: within idleAfter or 15
+                      minutes of the pause, whichever is shorter. A pause undone soon after
+                      shows what it uses in use; one that holds, what it uses idle. Unset
+                      when the clock measured none, as for a requested pause.
+                    type: string
+                  cpuJustBefore:
+                    type: string
                   firstReadyAt:
                     description: |-
                       FirstReadyAt is when the resume under way first saw one of the
@@ -1064,6 +1147,12 @@ spec:
                       pause was requested. Until a check finds every query quiet, a query
                       showing activity doesn't wake the workload, so it doesn't undo the
                       pause at once.
+                    type: boolean
+                  requested:
+                    description: |-
+                      Requested says the pause was asked for, with the
+                      napwake.dev/pause-requested annotation, rather than decided by the
+                      idle clock or the forecast.
                     type: boolean
                   resources:
                     description: |-
@@ -1127,6 +1216,15 @@ spec:
                       ResumedAt is when the resume under way scaled the workload back up.
                       Scaled to zero after it, by something other than Napwake, the
                       workload is left off rather than scaled up again.
+                    format: date-time
+                    type: string
+                  routedAt:
+                    description: |-
+                      RoutedAt is when the doorman's EndpointSlices first stood in front of
+                      the workload's Services for this pause, beside its pods, which still
+                      served. It's scaled to zero a few seconds after, once proxies send new
+                      connections to the doorman too, so none is refused as the pods stop.
+                      Unset for a workload the doorman doesn't route.
                     format: date-time
                     type: string
                   scaledObject:

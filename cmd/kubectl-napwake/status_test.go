@@ -685,6 +685,42 @@ func TestStatus_WakeRequested(t *testing.T) {
 `)
 }
 
+// A pause a request called off is listed, with what came, and the resume
+// that follows it adds nothing.
+func TestStatus_PauseCancelled(t *testing.T) {
+	w := statusWorkloadObj("shop", "api", v1alpha1.TargetKindDeployment, v1alpha1.PhaseRunning, time.Hour)
+	out := runStatus(t, newStatusClient(t, interceptor.Funcs{}, w,
+		statusEvent("shop", "api", "Paused", "api: paused", 3*time.Hour),
+		statusEvent("shop", "api", "PauseCancelled", "api: a request came as it paused; the pause is cancelled",
+			30*time.Minute),
+		statusEvent("shop", "api", "Resumed", "api: resumed", 29*time.Minute),
+	), statusOpts())
+
+	assert.Contains(t, out, `Recent pauses and wakes:
+  30m ago   shop/api   a request came as it paused; the pause is cancelled
+  3h ago    shop/api   paused
+`)
+}
+
+// A pause made while the workload was in use needs attention, with what to
+// change, until a pause holds.
+func TestStatus_PausedWhileInUse(t *testing.T) {
+	w := statusWorkloadObj("shop", "api", v1alpha1.TargetKindDeployment, v1alpha1.PhaseRunning, time.Hour)
+	w.Status.Conditions = []metav1.Condition{condition("PausedWhileInUse", metav1.ConditionTrue, "WokenSoonAfterPause",
+		`a request came 40 seconds after it paused, so it was in use: it now waits 10 minutes without activity `+
+			`before pausing, not 5 minutes, until a pause holds. It used up to 0.6% of its CPU requests while in `+
+			`use, and up to 0.2% idle: try napwake.dev/cpu-threshold: "0.4"`)}
+
+	problems := problemsOf(w, statusNow)
+
+	require.Len(t, problems, 1)
+	assert.Equal(t, "PausedWhileInUse", problems[0].Type)
+	assert.Contains(t, problems[0].Message, `try napwake.dev/cpu-threshold: "0.4"`)
+
+	w.Status.Conditions = []metav1.Condition{condition("PausedWhileInUse", metav1.ConditionFalse, "PauseHeld", "")}
+	assert.Empty(t, problemsOf(w, statusNow), "a pause that held needs nobody")
+}
+
 // A workload deliberately labelled napwake.dev/ignore needs nobody's
 // attention.
 func TestStatus_IgnoredIsntAProblem(t *testing.T) {

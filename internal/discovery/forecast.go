@@ -318,7 +318,7 @@ func replayForecast(r replay, threshold int, mw *v1alpha1.ManagedWorkload, wakes
 	report, err := sim.Run(sim.Scenario{Start: half, Duration: r.end.Sub(half), Step: r.step,
 		Traffic: rec.Traffic(r.threshold), State: state, Settings: sim.Settings{Confidence: threshold,
 			CPUThreshold: r.threshold, IdleAfter: r.idleAfter, AutoResume: true, WakeOnRequest: wakes.Request,
-			WakeOnQuery: wakes.Query, WakeOnAsk: wakes.People, Location: loc}})
+			WakeOnQuery: wakes.Query, WakeOnAsk: wakes.People, BackOff: true, Location: loc}})
 	if err != nil {
 		return fr
 	}
@@ -326,7 +326,7 @@ func replayForecast(r replay, threshold int, mw *v1alpha1.ManagedWorkload, wakes
 	return fr
 }
 
-func learnedEngine(hours []forecast.Hour, settings forecast.Settings, cpuThreshold int) *forecast.Engine {
+func learnedEngine(hours []forecast.Hour, settings forecast.Settings, cpuThreshold float64) *forecast.Engine {
 	e := forecast.NewEngine(forecast.DefaultParams(), settings)
 	// History parsed from Prometheus is finite and never negative, which is
 	// all an observation is checked for.

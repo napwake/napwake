@@ -84,6 +84,12 @@ var (
 		Help: "Times each workload's idle clock ran out.",
 	}, []string{"namespace", "workload"})
 
+	WrongPauses = prometheus.NewCounterVec(prometheus.CounterOpts{
+		Name: "napwake_wrong_pauses_total",
+		Help: "Pauses made while each workload was in use: undone soon after by a request, a click, a wake " +
+			"request or an activity annotation.",
+	}, []string{"namespace", "workload"})
+
 	ExternalScaleUps = prometheus.NewCounterVec(prometheus.CounterOpts{
 		Name: "napwake_external_scale_ups_total",
 		Help: "Times each paused workload was scaled up outside Napwake, by what did it: argo-cd, flux, or other.",
@@ -253,6 +259,7 @@ func init() {
 		PredictionDataPoints,
 		PredictionAnomalies,
 		IdleDetections,
+		WrongPauses,
 		ExternalScaleUps,
 
 		// Tier 3
@@ -294,6 +301,7 @@ var perWorkload = []interface {
 	PredictionDataPoints,
 	PredictionAnomalies,
 	IdleDetections,
+	WrongPauses,
 	ExternalScaleUps,
 	IdleSeconds,
 	PredictionRegimeChanges,

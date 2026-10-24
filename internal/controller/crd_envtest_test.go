@@ -156,6 +156,61 @@ func TestCRD_RatesAndLists(t *testing.T) {
 	}
 }
 
+// The CPU threshold is a percentage from 0.1 to 100: a whole number, or a
+// decimal written as a string, as Kubernetes APIs write what isn't whole.
+// It's stored as written.
+func TestCRD_CPUThresholdTakesDecimals(t *testing.T) {
+	cfg := startEnvtest(t)
+	c, err := client.New(cfg, client.Options{Scheme: testScheme(t)})
+	require.NoError(t, err)
+	ctx, cancel := context.WithTimeout(context.Background(), time.Minute)
+	defer cancel()
+	require.NoError(t, c.Create(ctx, &corev1.Namespace{ObjectMeta: metav1.ObjectMeta{Name: "dev"}}))
+
+	tests := []struct {
+		value any
+		valid bool
+	}{
+		{value: int64(10), valid: true},
+		{value: int64(1), valid: true},
+		{value: int64(100), valid: true},
+		{value: "0.5", valid: true},
+		{value: "0.1", valid: true},
+		{value: "12.25", valid: true},
+		{value: "10", valid: true},
+		{value: "100", valid: true},
+		{value: int64(0)},
+		{value: int64(101)},
+		{value: "0.05"},
+		{value: "0"},
+		{value: "100.5"},
+		{value: "0.125"},
+		{value: "-1"},
+		{value: "1e1"},
+		{value: "ten"},
+		{value: 0.5},
+	}
+	for i, tt := range tests {
+		t.Run(fmt.Sprintf("%v", tt.value), func(t *testing.T) {
+			mw := &unstructured.Unstructured{Object: map[string]any{
+				"apiVersion": "napwake.dev/v1alpha1", "kind": "ManagedWorkload",
+				"metadata": map[string]any{"name": fmt.Sprintf("w%d", i), "namespace": "dev"},
+				"spec": map[string]any{"target": map[string]any{"kind": "Deployment", "name": "api"},
+					"idlePolicy": map[string]any{"activity": map[string]any{"cpuThreshold": tt.value}}},
+			}}
+
+			err := c.Create(ctx, mw)
+			if !tt.valid {
+				assert.True(t, apierrors.IsInvalid(err), "want %v rejected, got %v", tt.value, err)
+				return
+			}
+			require.NoError(t, err)
+			got, _, _ := unstructured.NestedFieldNoCopy(mw.Object, "spec", "idlePolicy", "activity", "cpuThreshold")
+			assert.Equal(t, tt.value, got, "stored as written")
+		})
+	}
+}
+
 // The spec the opt-in controller writes is the one the API server stores,
 // defaults and all, so reconciling again writes nothing.
 func TestOptIn_SecondPassAgainstTheAPIServerWritesNothing(t *testing.T) {

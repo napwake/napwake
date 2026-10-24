@@ -101,7 +101,7 @@ Settings for workloads opted in with the `napwake.dev/managed` label, used when 
 | Value | Default | Description |
 |-------|---------|-------------|
 | `defaults.idleAfter` | `1h` | How long without activity before pausing; a Go duration of at least `1m`, such as `90s` or `1h30m`. Passed as `--default-idle-after` |
-| `defaults.cpuThreshold` | `10` | CPU use, as a percentage of requests from 1 to 100, above which a workload counts as active. Passed as `--default-cpu-threshold` |
+| `defaults.cpuThreshold` | `10` | CPU use, as a percentage of requests from 0.1 to 100, such as `10` or `0.5`, above which a workload counts as active. Passed as `--default-cpu-threshold` |
 | `defaults.dryRun` | `false` | Measure without pausing. Set `true` to roll Napwake out across a cluster measuring first. Passed as `--default-dry-run` |
 | `defaults.pauseEarly` | `false` | Let a confident forecast that expects quiet hours pause a workload before `idleAfter` runs out. See [Pausing Early](../concepts/forecasting.md#pausing-early). Passed as `--default-pause-early` |
 | `defaults.forecast` | `balanced` | How soon the forecast acts: `eager`, `balanced` or `cautious`. See [Forecast setting](../concepts/forecasting.md#forecast-setting). Passed as `--default-forecast` |

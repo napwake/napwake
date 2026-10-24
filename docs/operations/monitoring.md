@@ -84,7 +84,12 @@ napwake_prediction_confidence_percent{season="daily"}
 
 # Are workloads cycling too fast?
 rate(napwake_lifecycle_transitions_total[1h])
+
+# Is a workload paused while it's in use?
+increase(napwake_wrong_pauses_total[1h]) > 0
 ```
+
+A workload paused while in use gets a `PausedWhileInUse` warning with what to change. See [Paused while in use](../concepts/idle-detection.md#paused-while-in-use).
 
 ## Alerting Rules
 

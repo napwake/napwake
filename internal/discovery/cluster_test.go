@@ -570,9 +570,16 @@ func TestClusterReport_LeavesOutTimesItDoesntHave(t *testing.T) {
 func TestCPUReason(t *testing.T) {
 	percent := func(n int) *int { return &n }
 	assert.Equal(t, "no CPU use", cpuReason(Workload{CPUPercent: percent(0)}))
-	assert.Equal(t, "CPU under 1% of its request", cpuReason(Workload{CPUPercent: percent(0), CPUMillisUsed: 3}),
+	assert.Equal(t, "CPU under 0.1% of its request",
+		cpuReason(Workload{CPUPercent: percent(0), CPUMillisUsed: 1, cpuShare: 0.05}),
 		"a little use that rounds to 0% isn't none")
-	assert.Equal(t, "CPU 64% of its request", cpuReason(Workload{CPUPercent: percent(64), CPUMillisUsed: 640}))
+	assert.Equal(t, "CPU 0.4% of its request",
+		cpuReason(Workload{CPUPercent: percent(0), CPUMillisUsed: 3, cpuShare: 0.48}),
+		"under 10%, to a tenth, which a decimal threshold such as 0.5 tells apart")
+	assert.Equal(t, "CPU 6.2% of its request",
+		cpuReason(Workload{CPUPercent: percent(6), CPUMillisUsed: 62, cpuShare: 6.25}))
+	assert.Equal(t, "CPU 64% of its request",
+		cpuReason(Workload{CPUPercent: percent(64), CPUMillisUsed: 640, cpuShare: 64.8}))
 }
 
 // A would-be pause still under way hasn't been ended by a wake yet.

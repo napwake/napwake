@@ -21,6 +21,7 @@ import (
 	"context"
 	"fmt"
 	"maps"
+	"math"
 	"slices"
 	"strconv"
 	"strings"
@@ -291,7 +292,7 @@ type ClusterOptions struct {
 	// CPUThreshold is the CPU use, as a percentage of requests, at which a
 	// workload Napwake doesn't manage counts as active; managed ones use
 	// their own. Zero means the activity clock's default.
-	CPUThreshold int
+	CPUThreshold float64
 	// Rates price what node prices can't: pods on nodes the price table
 	// doesn't have, or every workload when nodes can't be read.
 	Rates cost.Rates
@@ -627,7 +628,7 @@ func judgePaused(w *Workload, mw *v1alpha1.ManagedWorkload, now time.Time) {
 
 // judgeManaged reads the activity clock Napwake keeps for the workload,
 // which already combines every activity source it's configured with.
-func judgeManaged(w *Workload, mw *v1alpha1.ManagedWorkload, now time.Time, threshold int) {
+func judgeManaged(w *Workload, mw *v1alpha1.ManagedWorkload, now time.Time, threshold float64) {
 	idleAfter := idleAfterFor(mw, ClusterOptions{})
 	a := mw.Status.Activity
 	since := now.Sub(a.LastActivityTime.Time)
@@ -680,10 +681,12 @@ func idleAfterFor(mw *v1alpha1.ManagedWorkload, opts ClusterOptions) time.Durati
 // thresholdFor is the CPU use, as a percentage of requests, at which a
 // workload counts as active: its own setting when Napwake manages it,
 // otherwise the scan's.
-func thresholdFor(mw *v1alpha1.ManagedWorkload, opts ClusterOptions) int {
+func thresholdFor(mw *v1alpha1.ManagedWorkload, opts ClusterOptions) float64 {
 	if mw != nil {
-		if p := mw.Spec.IdlePolicy; p != nil && p.Activity != nil && p.Activity.CPUThreshold > 0 {
-			return p.Activity.CPUThreshold
+		if p := mw.Spec.IdlePolicy; p != nil {
+			if percent, ok := p.Activity.CPUThresholdPercent(); ok {
+				return percent
+			}
 		}
 		return defaultCPUThreshold
 	}
@@ -695,7 +698,7 @@ func thresholdFor(mw *v1alpha1.ManagedWorkload, opts ClusterOptions) int {
 
 // judgeUnmanaged applies the activity clock's sources a scan can see
 // without Napwake: activity annotations, a recent rollout, and CPU.
-func judgeUnmanaged(w *Workload, obj client.Object, now time.Time, threshold int, idleAfter time.Duration) {
+func judgeUnmanaged(w *Workload, obj client.Object, now time.Time, threshold float64, idleAfter time.Duration) {
 	if w.CPUPercent != nil && forecast.Busy(w.cpuShare, threshold) {
 		w.State, w.Reason = StateActive, cpuReason(*w)
 		return
@@ -725,8 +728,12 @@ func cpuReason(w Workload) string {
 	switch {
 	case w.CPUMillisUsed == 0:
 		return "no CPU use"
-	case *w.CPUPercent == 0:
-		return "CPU under 1% of its request"
+	case w.cpuShare < 0.1:
+		return "CPU under 0.1% of its request"
+	case w.cpuShare < 10:
+		// To a tenth, rounded down as CPUPercent is, which a decimal
+		// threshold such as 0.5 tells apart.
+		return fmt.Sprintf("CPU %s%% of its request", strconv.FormatFloat(math.Floor(w.cpuShare*10)/10, 'f', -1, 64))
 	default:
 		return fmt.Sprintf("CPU %d%% of its request", *w.CPUPercent)
 	}
