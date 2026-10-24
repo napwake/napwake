@@ -568,7 +568,7 @@ func (s *run) judgePause(t time.Time, cause WakeCause) {
 		return
 	}
 	switch {
-	case t.Sub(s.pausedAt) >= min(s.sc.Settings.IdleAfter, 15*time.Minute):
+	case t.Sub(s.pausedAt) >= v1alpha1.WrongPauseWindow(s.sc.Settings.IdleAfter):
 		s.wrongPauses = 0
 	case cause == WokenByRequest || cause == WokenByPeople || cause == WokenByHand:
 		s.wrongPauses++

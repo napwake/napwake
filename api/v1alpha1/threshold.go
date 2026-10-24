@@ -109,3 +109,15 @@ func IdleWait(idleAfter time.Duration, wrongPauses int32) time.Duration {
 	}
 	return min(wait, limit)
 }
+
+// MaxWrongPauseWindow caps how soon after a pause began the workload's own
+// use makes it wrong: a pause that saved a quarter of an hour paid for its
+// cold start.
+const MaxWrongPauseWindow = 15 * time.Minute
+
+// WrongPauseWindow is how soon after a pause began the workload's own use
+// makes the pause wrong, and lengthens IdleWait: idleAfter, or
+// MaxWrongPauseWindow if that's shorter. A pause that lasts it held.
+func WrongPauseWindow(idleAfter time.Duration) time.Duration {
+	return min(idleAfter, MaxWrongPauseWindow)
+}

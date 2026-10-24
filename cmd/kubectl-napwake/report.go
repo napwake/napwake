@@ -703,7 +703,8 @@ func methodFor(result scanResult, history, dependencies bool, idleAfter time.Dur
 	if history {
 		method = append(method, fmt.Sprintf("The history replay applies Napwake's rules to recorded CPU and "+
 			"rollouts: after its idle-after with no activity (%s, or a managed workload's own), a workload would "+
-			"be paused until the next activity, which wakes it. "+
+			"be paused until the next activity, which wakes it. CPU soon after a pause shows it was in use, so the "+
+			"replay waits longer before the next, as Napwake does. "+
 			"Requests and activity annotations aren't recorded in Prometheus, so a workload used with little CPU "+
 			"can look like it would sleep more than it would. Requests and prices are today's. The total counts "+
 			"only workloads Napwake doesn't pause yet.", roundedDuration(idleAfter)))
