@@ -45,7 +45,7 @@ jobs:
     outputs:
       tag: ${{ steps.release.outputs.tag }}
       version: ${{ steps.release.outputs.version }}
-      newest: ${{ steps.release.outputs.newest }}
+      brewed: ${{ steps.release.outputs.brewed }}
     steps:
       - id: release
         env:
@@ -55,14 +55,19 @@ jobs:
           newest=$(gh release list --repo "$GITHUB_REPOSITORY" --exclude-drafts --limit 1 --json tagName --jq '.[0].tagName')
           tag=${INPUT:-$newest}
           gh release view "$tag" --repo "$GITHUB_REPOSITORY" --json tagName >/dev/null
-          echo "Checking $tag; the newest release is $newest"
+          # The tap brews release candidates only until the first stable
+          # release, and after it, the newest stable release.
+          stable=$(gh release list --repo "$GITHUB_REPOSITORY" --exclude-drafts --exclude-pre-releases --limit 1 \
+            --json tagName --jq '.[0].tagName // empty')
+          brewed=${stable:-$newest}
+          echo "Checking $tag; Homebrew should give $brewed"
           {
             echo "tag=$tag"
             echo "version=${tag#v}"
-            echo "newest=$newest"
+            echo "brewed=$brewed"
           } >> "$GITHUB_OUTPUT"
 
-  # Homebrew installs the newest release, whichever is checked.
+  # Homebrew installs the newest release it brews, whichever is checked.
   homebrew:
     name: Homebrew (${{ matrix.os }})
     needs: release
@@ -73,7 +78,7 @@ jobs:
     runs-on: ${{ matrix.os }}
     timeout-minutes: 15
     env:
-      NEWEST: ${{ needs.release.outputs.newest }}
+      BREWED: ${{ needs.release.outputs.brewed }}
       HOMEBREW_NO_AUTO_UPDATE: "1"
       HOMEBREW_NO_INSTALL_CLEANUP: "1"
     steps:
@@ -86,8 +91,8 @@ jobs:
         run: |
           brew install napwake/tap/kubectl-napwake
           kubectl napwake version
-      - name: It's the newest release
-        run: kubectl napwake version | grep -Fx "kubectl-napwake $NEWEST"
+      - name: It's the release the tap brews
+        run: kubectl napwake version | grep -Fx "kubectl-napwake $BREWED"
 
   krew:
     name: Krew (${{ matrix.os }})
