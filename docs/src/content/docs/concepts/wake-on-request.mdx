@@ -230,6 +230,7 @@ WakeOnRequest=True   DoormanRouted   the doorman asks a person's browser before 
 |---|---|
 | A person's browser opening a page | A `GET` with `Sec-Fetch-Mode: navigate`, or asking for HTML, from a `User-Agent` that starts with `Mozilla/` and names no crawler |
 | The asleep page | A `200` with `Cache-Control: no-store`, `X-Robots-Tag: noindex` and `Referrer-Policy: same-origin`. It reloads every minute |
+| The asleep page's `Content-Security-Policy` | Allows its own style and script, and images only from `data:`. Its form posts only back to the page's address. No other site may show it in a frame, which `X-Frame-Options: DENY` says too |
 | A tab left open | Its reload goes on to the app once someone has woken it |
 | The click | Stamps `napwake.dev/last-request`, and a `WokenByRequest` event says a person asked. The waking-up page reloads the page the person opened until the app answers |
 | A form that isn't the button's | URL-encoded and up to 1 KiB, or sent on chunked by a proxy |

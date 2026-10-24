@@ -208,7 +208,7 @@ Someone opens the preview, say `https://pr-42.preview.example.com/orders/7`, and
 |---|---|
 | Says | The preview is asleep, with a **Wake it** button |
 | Is sent as | `200 OK`, with `Cache-Control: no-store`, `X-Robots-Tag: noindex` and `Referrer-Policy: same-origin` |
-| Runs | No script. No other site can show it in a frame |
+| Runs | Only its own style and script. No other site can show it in a frame |
 | Names | No namespace, workload or Service |
 | Reloads | Every minute, with a fresh token, so a page left open doesn't go stale |
 | Wakes | Nothing. Only the click does |
