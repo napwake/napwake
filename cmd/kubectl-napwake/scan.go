@@ -716,7 +716,8 @@ func writeTable(w io.Writer, result scanResult, limit int) error {
 		p.line("Pass --cpu-price and --memory-price for yours.")
 		p.line("")
 	}
-	if result.Totals.Idle > 0 && result.Totals.Replayed.Workloads == 0 {
+	// Only for idle workloads the next steps below go on to measure.
+	if idle, _ := nextStepTargets(result.Workloads); idle != nil && result.Totals.Replayed.Workloads == 0 {
 		p.line("What pausing would free depends on how often they'd be woken, which one moment can't show.")
 		p.line("Labelling them dry-run measures it, below; scanning with Prometheus history estimates it.")
 		p.line("")
@@ -771,8 +772,23 @@ func writeHeadline(p *printer, result scanResult) {
 		}
 		p.line("  %s %s idle right now, reserving %s and %s of memory.",
 			countOf(t.Idle, "workload"), verb, vcpu(t.IdleCPUMillis), gib(t.IdleMemoryBytes))
-		p.line("  %s %s %s/month while running, %s an hour: each hour asleep frees that.",
-			they, costs, dollars(t.IdleMonthlyCost), cents(t.IdleHourlyCost))
+		// Only what Napwake would pause is freed by pausing.
+		switch n, hourly, monthly := t.IdlePausable(); {
+		case n == t.Idle:
+			p.line("  %s %s %s/month while running, %s an hour: each hour asleep frees that.",
+				they, costs, dollars(monthly), cents(hourly))
+		case n == 0 && t.Idle == 1:
+			p.line("  Napwake never pauses it, so its idling frees nothing.")
+		case n == 0:
+			p.line("  Napwake never pauses them, so their idling frees nothing.")
+		default:
+			pausableCosts := "cost"
+			if n == 1 {
+				pausableCosts = "costs"
+			}
+			p.line("  The %s Napwake would pause %s %s/month while running, %s an hour: each hour asleep frees that.",
+				countOf(n, "workload"), pausableCosts, dollars(monthly), cents(hourly))
+		}
 	}
 	if r := t.Replayed; r.Workloads > 0 && replayed != "" {
 		if r.Sleepers == 0 {
@@ -1473,11 +1489,23 @@ func countOf(n int, noun string) string {
 }
 
 func vcpu(millis int64) string {
-	return fmt.Sprintf("%.1f vCPU", float64(millis)/1000)
+	return quantity(float64(millis)/1000) + " vCPU"
 }
 
 func gib(bytes int64) string {
-	return fmt.Sprintf("%.1f GiB", float64(bytes)/(1<<30))
+	return quantity(float64(bytes)/(1<<30)) + " GiB"
+}
+
+// quantity rounds to a tenth, or to a hundredth below a tenth, so a small
+// reservation isn't shown as none.
+func quantity(v float64) string {
+	switch {
+	case v > 0 && v < 0.005:
+		return "<0.01"
+	case v > 0 && v < 0.095:
+		return fmt.Sprintf("%.2f", v)
+	}
+	return fmt.Sprintf("%.1f", v)
 }
 
 // cents formats an amount to the cent, for costs per hour. A cost below a

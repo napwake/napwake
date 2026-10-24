@@ -25,6 +25,7 @@ import (
 	"path/filepath"
 	"regexp"
 	"runtime"
+	"strings"
 	"testing"
 	"time"
 
@@ -633,4 +634,21 @@ func TestRoundedDuration(t *testing.T) {
 	for in, want := range tests {
 		assert.Equal(t, want, roundedDuration(in), in.String())
 	}
+}
+
+// The page doesn't offer what's idle but never paused as something still to
+// free, and says why it's idle anyway (P50, P51).
+func TestBuildReport_IdleNapwakeNeverPauses(t *testing.T) {
+	page := buildReport(neverPausedIdle(), time.Hour)
+
+	for _, f := range page.Headline.Figures {
+		assert.NotEqual(t, figureCouldFree, f.Kind, "pausing can't free what Napwake never pauses: %+v", f)
+	}
+	var idle string
+	for _, f := range page.Facts {
+		if strings.HasPrefix(f.Label, "idle right now") {
+			idle = f.Value + " " + f.Label
+		}
+	}
+	assert.Equal(t, "1 idle right now, reserving 0.02 vCPU and 0.03 GiB of memory; Napwake never pauses it", idle)
 }

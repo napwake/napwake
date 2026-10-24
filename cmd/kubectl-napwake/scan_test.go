@@ -1365,3 +1365,36 @@ func TestEmptyCluster(t *testing.T) {
 	result.Notes = []string{"your access doesn't allow reading workloads in 3 namespaces"}
 	assert.Contains(t, renderHTML(t, result), "the notes say what it couldn&#39;t")
 }
+
+// neverPausedIdle is a cluster whose only idle workload is one Napwake never
+// pauses, small and live, with the rest already managed: as the test
+// cluster's reports StatefulSet was.
+func neverPausedIdle() scanResult {
+	reports := discovery.Workload{Namespace: "reports", Kind: v1alpha1.TargetKindStatefulSet, Name: "reports",
+		Replicas: 1, State: discovery.StateIdle, Managed: true, WontPause: "PVCs deleted on scale-down",
+		PodCPURequestMillis: 20, PodMemoryRequestBytes: 32 << 20, HourlyCost: 0.001, MonthlyCost: 0.73}
+	api := discovery.Workload{Namespace: "orders", Kind: v1alpha1.TargetKindDeployment, Name: "api",
+		Replicas: 1, State: discovery.StateActive, Managed: true, HourlyCost: 0.002, MonthlyCost: 1.46}
+	return scanResult{Context: "napwake", Cluster: "napwake", ClusterReport: &discovery.ClusterReport{
+		Mode: discovery.ModeSnapshot, Namespaces: 2, Workloads: []discovery.Workload{reports, api},
+		Totals: discovery.Totals{Workloads: 2, Live: 1, LiveProtected: 1, Idle: 1, IdleNeverPaused: 1,
+			IdleCPUMillis: 20, IdleMemoryBytes: 32 << 20, IdleHourlyCost: 0.001, IdleMonthlyCost: 0.73,
+			IdleNeverPausedHourlyCost: 0.001, IdleNeverPausedMonthlyCost: 0.73, MonthlyCost: 2.19},
+	}}
+}
+
+// What's idle but never paused frees nothing (P50); a small reservation
+// isn't shown as none (P51); and with nothing left to opt in, the scan
+// doesn't point at next steps below that aren't there (P53).
+func TestWriteTable_IdleNapwakeNeverPauses(t *testing.T) {
+	var out bytes.Buffer
+
+	require.NoError(t, writeScan(&out, neverPausedIdle(), scanOptions{output: "table", limit: 25}))
+
+	got := out.String()
+	assert.Contains(t, got, "1 workload is idle right now, reserving 0.02 vCPU and 0.03 GiB of memory.")
+	assert.Contains(t, got, "Napwake never pauses it, so its idling frees nothing.")
+	assert.NotContains(t, got, "each hour asleep frees that")
+	assert.NotContains(t, got, "depends on how often they'd be woken", "nothing is left to opt in")
+	assert.NotContains(t, got, "below")
+}
