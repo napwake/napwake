@@ -57,7 +57,7 @@ make build-plugin
 
 ```
 cmd/main.go                    # Operator entrypoint
-cmd/kubectl-napwake/main.go  # kubectl plugin
+cmd/kubectl-napwake/main.go    # kubectl plugin
 api/v1alpha1/                  # CRD type definitions
 internal/controller/           # Reconcilers
 internal/forecast/             # Holt-Winters engine
@@ -69,7 +69,7 @@ internal/discovery/            # Cluster scan for kubectl napwake scan
 internal/doorman/              # Wake on request
 internal/cost/                 # Cost rates and node list prices
 internal/metrics/              # Prometheus metrics, and the Metrics API reader
-charts/napwake/              # Helm chart
+charts/napwake/                # Helm chart
 config/                        # CRD, RBAC, kustomize manifests
 test/e2e/                      # End-to-end tests, in Kind
 test/docs/                     # Validates the docs' ManagedWorkloads against the CRD, and Helm values against the chart

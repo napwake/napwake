@@ -46,7 +46,7 @@ It's an annotation rather than a spec field so that Argo CD and Flux, which own 
 The request runs the idle clock out now, and the workload is paused by the same rules as an idle pause:
 
 | The workload | What Napwake does | `PauseRequest` condition |
-|--------------|---------------------|--------------------------|
+|--------------|-------------------|--------------------------|
 | `Running` or `Idle` | Pauses it, with a `PauseRequested` event, then `Paused` | `True`, `Paused` |
 | A confident forecast expects demand within the hour | Leaves it running and says when the demand is expected, since a pause would likely be woken straight back. `kubectl napwake pause` asks whether to pause it anyway; a request with `napwake.dev/pause-overrides-forecast: "true"`, which `--yes` sets, pauses it | `False`, `ForecastExpectsDemand` |
 | Within the hour Napwake waits after a GitOps tool (Argo CD, Flux, Fleet, kapp or Kluctl) undid its last pause | Pauses it: you asked. If the tool undoes it again, that's a new [`GitOpsConflict`](gitops.md) | `True`, `Paused` |
@@ -103,7 +103,7 @@ A ManagedWorkload created from the `napwake.dev/managed` label is named after it
 Napwake acts on each value once: it records the value it handled in `status.lastWakeRequest`, which survives an operator restart, and says what came of it in the `WakeRequest` condition, so the tool can tell its request was taken up:
 
 | The workload | What Napwake does | `WakeRequest` condition |
-|--------------|---------------------|-------------------------|
+|--------------|-------------------|-------------------------|
 | `Paused` | Wakes it, with a `WakeRequested` event, then `Resumed` once it's Ready | `True`, `Woken` |
 | `Pausing` | Finishes the pause, then wakes it | `True`, `Woken` |
 | `Resuming` | Lets the wake finish, then marks the request handled | `True`, `AlreadyAwake` |

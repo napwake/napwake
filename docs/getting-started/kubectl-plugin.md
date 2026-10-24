@@ -104,7 +104,7 @@ History: the last 7 days, from monitoring/prometheus-operated
   preview-42   statefulset/postgres   idle (unmanaged)     CPU under 1% of its request; last deployed 23 days ago   $140      -                  -       167h          0       $139
   preview-7    deployment/api         idle (dry-run)       no activity for 5h; measuring since Oct 1                $96       -                  -       41h           4       $40
   preview-3    deployment/web         paused (live)        paused 3h ago                                            $48       $12                $9      -             -       -
-  preview-9    deployment/demo        paused (unmanaged)   scaled to zero, not by Napwake                         $0        -                  -       -             -       -
+  preview-9    deployment/demo        paused (unmanaged)   scaled to zero, not by Napwake                           $0        -                  -       -             -       -
   payments     deployment/ledger      active (unmanaged)   CPU 64% of its request                                   $210      -                  -       0h            0       $0
   ...
 
