@@ -228,6 +228,50 @@ func (g *dependencyGraph) holdsOf(workload *v1alpha1.ManagedWorkload) dependency
 	return h
 }
 
+// dependentsOf lists the workloads that would hold workload awake were they
+// awake, whatever phase the graph has them in.
+func (g *dependencyGraph) dependentsOf(workload *v1alpha1.ManagedWorkload) []types.NamespacedName {
+	self := newWorkloadNode(workload)
+	g.mu.RLock()
+	defer g.mu.RUnlock()
+	var keys []types.NamespacedName
+	for _, d := range g.dependents[self.target] {
+		if d.uid != self.uid && d.acts && g.allows(d.key.Namespace, self.target) && g.holds(d, self) {
+			keys = append(keys, d.key)
+		}
+	}
+	return keys
+}
+
+// heldByDependentsNow reports whether one of the workload's dependents is
+// awake, holding it, as the API server has it rather than the cache. A
+// dependent's wake stamps the workload once its Resuming is written, and
+// the stamp's event can reach this workload before the cache, or the
+// graph, has that write. One Get each, for the rare check that needs it.
+func (r *Reconciler) heldByDependentsNow(ctx context.Context, workload *v1alpha1.ManagedWorkload) (bool, error) {
+	ctx, cancel := context.WithTimeout(ctx, dependencyTimeout)
+	defer cancel()
+	g, err := r.loadDependencyGraph(ctx)
+	if err != nil {
+		return false, err
+	}
+	self := newWorkloadNode(workload)
+	for _, key := range g.dependentsOf(workload) {
+		var dependent v1alpha1.ManagedWorkload
+		err := r.apiReader().Get(ctx, key, &dependent)
+		switch {
+		case apierrors.IsNotFound(err):
+			continue
+		case err != nil:
+			return false, fmt.Errorf("getting dependent %s: %w", key, err)
+		}
+		if awakeFor(newWorkloadNode(&dependent), self) {
+			return true, nil
+		}
+	}
+	return false, nil
+}
+
 // isAwake reports whether a workload is, or is about to be, running. Pausing
 // counts: its pods may still be serving.
 func isAwake(phase v1alpha1.WorkloadPhase) bool {

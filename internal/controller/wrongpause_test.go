@@ -535,3 +535,33 @@ func TestWrongPause_TheBackOffEndsOnceNoPauseCanHold(t *testing.T) {
 	assert.Equal(t, 5*time.Minute, idleWaitFor(fetch(t, inDryRun, "api")),
 		"a would-be pause doesn't wait the back-off, even before it's written as ended")
 }
+
+// A dependency woken by its dependent's stamp reads its dependents past the
+// cache before it judges its pause wrong, since the cache can still show
+// the dependent paused when the stamp's event arrives. A dependent awake
+// on the API server holds it, so its pause isn't wrong.
+func TestWrongPause_ADependencyReadsItsDependentsPastTheCache(t *testing.T) {
+	webKey := client.ObjectKey{Namespace: "default", Name: "web"}
+	web := depWorkload("default", "web", v1alpha1.TargetKindDeployment, v1alpha1.PhasePaused,
+		v1alpha1.DependencyRef{Kind: v1alpha1.TargetKindDeployment, Name: "api"})
+	r, now := pausedFor(t, "api", time.Minute, nil, web)
+	r.PodReader = interceptor.NewClient(r.Client.(client.WithWatch), interceptor.Funcs{
+		Get: func(ctx context.Context, c client.WithWatch, key client.ObjectKey, obj client.Object,
+			opts ...client.GetOption) error {
+			err := c.Get(ctx, key, obj, opts...)
+			if w, ok := obj.(*v1alpha1.ManagedWorkload); ok && err == nil && key == webKey {
+				w.Status.Phase = v1alpha1.PhaseResuming
+			}
+			return err
+		}})
+
+	annotate(t, r, "api", v1alpha1.AnnotationLastActivity, now.UTC().Format(time.RFC3339))
+	reconcileNamed(t, r, "api")
+
+	w := fetch(t, r, "api")
+	require.NotEqual(t, v1alpha1.PhasePaused, w.Status.Phase)
+	if w.Status.IdleWait != nil {
+		assert.Zero(t, w.Status.IdleWait.WrongPauses)
+	}
+	assert.Empty(t, recorded(r.Recorder.(*events.FakeRecorder), ReasonPausedWhileInUse))
+}

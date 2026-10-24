@@ -139,6 +139,17 @@ func (r *Reconciler) judgePause(ctx context.Context, workload *v1alpha1.ManagedW
 	if holds.held() {
 		return nothing
 	}
+	if why.cause == v1alpha1.WokenByAnnotation {
+		held, err := r.heldByDependentsNow(ctx, workload)
+		if err != nil {
+			log.FromContext(ctx).Info("couldn't read whether the workload's dependents woke it, so its pause "+
+				"isn't judged", "workload", workload.Name, "namespace", workload.Namespace, "error", err.Error())
+			return nothing
+		}
+		if held {
+			return nothing
+		}
+	}
 
 	wait := workload.Status.IdleWait
 	if wait == nil {
