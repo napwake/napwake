@@ -9,7 +9,6 @@
     "dev": "astro dev",
     "build": "astro build",
     "preview": "astro preview",
-    "migrate": "node scripts/migrate.mjs",
     "site:local": "node scripts/site-local.mjs",
     "tokens": "node scripts/tokens.mjs"
   },

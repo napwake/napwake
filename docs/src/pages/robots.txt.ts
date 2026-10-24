@@ -1,6 +1,6 @@
 // robots.txt: every crawler is welcome, AI crawlers included (CMO decision 0004), and pointed at the
 // sitemap of latest, the version every page names as canonical. The site's root robots.txt is
-// latest's copy (MIGRATION.md); on a build at / it's this one.
+// latest's copy (hack/docsite); on a build at / it's this one.
 import type { APIRoute } from 'astro';
 
 export const GET: APIRoute = ({ site }) => {

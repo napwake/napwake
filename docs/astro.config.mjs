@@ -3,7 +3,7 @@
 // One build is one version of the docs. The publishing workflow builds each into its own folder:
 //   NAPWAKE_DOCS_BASE=/0.2/  NAPWAKE_DOCS_VERSION=0.2   NAPWAKE_DOCS_RELEASE=0.2.0      npm run build
 //   NAPWAKE_DOCS_BASE=/next/ NAPWAKE_DOCS_VERSION=next  NAPWAKE_DOCS_RELEASE=0.3.0-rc.1 npm run build
-// With none of them set it builds at / as "dev", as for a pull request. See MIGRATION.md.
+// With none of them set it builds at / as "dev", as for a pull request. hack/docsite publishes them.
 import { defineConfig } from 'astro/config';
 import starlight from '@astrojs/starlight';
 import { satteri } from '@astrojs/markdown-satteri';
@@ -21,7 +21,7 @@ const site = env('NAPWAKE_DOCS_SITE', 'https://docs.napwake.dev');
 const base = env('NAPWAKE_DOCS_BASE', '/').replace(/\/?$/, '/');
 const version = env('NAPWAKE_DOCS_VERSION', 'dev');
 const release = env('NAPWAKE_DOCS_RELEASE', '');
-// The sidebar is mkdocs.yml's nav, written by scripts/migrate.mjs.
+// The sidebar: every page, in order, with its label.
 const sidebarFile = new URL('./src/sidebar.json', import.meta.url);
 const sidebar = existsSync(sidebarFile) ? JSON.parse(readFileSync(sidebarFile, 'utf8')) : [];
 

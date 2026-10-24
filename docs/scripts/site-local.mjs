@@ -5,7 +5,7 @@
 //   npm run site:local            # builds both, serves http://localhost:4400/
 //   npm run site:local -- --serve # serves what's there
 // The versions and releases are samples. The publishing workflow does the same with the real
-// ones (MIGRATION.md).
+// ones (hack/docsite).
 import { execFileSync } from 'node:child_process';
 import { cpSync, existsSync, mkdirSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { createServer } from 'node:http';
