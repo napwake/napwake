@@ -636,10 +636,7 @@ func couldFree(result scanResult, live bool) (f figure, shortHistory string, ok 
 		// A whole window replayed in which nothing would have slept says
 		// more than one moment's idleness, so this is only for without one.
 		// What Napwake never pauses isn't something pausing can free.
-		costs := "cost"
-		if pausable == 1 {
-			costs = "costs"
-		}
+		costs := costsFor(pausable)
 		which := "idle right now"
 		if pausable < t.Idle {
 			which = "idle right now that Napwake would pause"

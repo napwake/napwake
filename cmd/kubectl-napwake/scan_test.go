@@ -862,7 +862,8 @@ func TestWriteScan_FreedBeforeProtected(t *testing.T) {
 	result.Totals.Live, result.Totals.FreedThisMonth, result.Totals.SavedThisMonth = 1, 15, 6
 	out.Reset()
 	require.NoError(t, writeScan(&out, result, scanOptions{output: "table"}))
-	assert.Contains(t, out.String(), "  Napwake has freed $3 this month from the 1 live workload it pauses, and saved $1 of it.\n"+
+	assert.Contains(t, out.String(), "  Napwake has freed $3 this month from the 1 live workload it pauses, "+
+		"and saved $1 of it.\n"+
 		"  1 more live workload is protected, so Napwake never pauses it; it freed $12 this month before it was, "+
 		"and saved $5 of that.\n")
 	h, _ = headlineFor(result)

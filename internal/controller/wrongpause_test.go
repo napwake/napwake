@@ -140,7 +140,7 @@ func TestWrongPause_WhatUndoesAPause(t *testing.T) {
 			want: v1alpha1.WokenByRequest, says: "a request came 2 minutes after it paused",
 			woke: "WokeByActivity api: a request is waiting, waking"},
 		{name: "a person's click", want: v1alpha1.WokenByClick, says: "a person asked to wake it 2 minutes after it paused",
-			woke: "WokeByActivity api: a person asked to wake it, waking",
+			woke:  "WokeByActivity api: a person asked to wake it, waking",
 			setup: func(w *v1alpha1.ManagedWorkload) { w.Spec.Wake = &v1alpha1.WakeSpec{Mode: v1alpha1.WakeOnAsk} },
 			wake:  func(t *testing.T, r *Reconciler, now time.Time) { requestCame(t, r, "api", now) }},
 		{name: "a wake request", want: v1alpha1.WokenByWakeRequest, says: "a wake request came 2 minutes after it paused",

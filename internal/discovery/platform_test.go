@@ -219,7 +219,7 @@ func TestChartName(t *testing.T) {
 // The note's counts add up: past the first three namespaces, it says how
 // many workloads the rest hold, and in how many namespaces (P52).
 func TestPlatformNote_CountsAddUp(t *testing.T) {
-	var platform []Workload
+	platform := make([]Workload, 0, 19)
 	for ns, n := range map[string]int{"argocd": 7, "gmp-system": 3, "keda": 3, "kube-system": 2, "monitoring": 2, "napwake-system": 2} {
 		for i := range n {
 			platform = append(platform, Workload{Namespace: ns, Name: fmt.Sprint(i)})

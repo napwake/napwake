@@ -782,12 +782,8 @@ func writeHeadline(p *printer, result scanResult) {
 		case n == 0:
 			p.line("  Napwake never pauses them, so their idling frees nothing.")
 		default:
-			pausableCosts := "cost"
-			if n == 1 {
-				pausableCosts = "costs"
-			}
 			p.line("  The %s Napwake would pause %s %s/month while running, %s an hour: each hour asleep frees that.",
-				countOf(n, "workload"), pausableCosts, dollars(monthly), cents(hourly))
+				countOf(n, "workload"), costsFor(n), dollars(monthly), cents(hourly))
 		}
 	}
 	if r := t.Replayed; r.Workloads > 0 && replayed != "" {
@@ -1494,6 +1490,14 @@ func vcpu(millis int64) string {
 
 func gib(bytes int64) string {
 	return quantity(float64(bytes)/(1<<30)) + " GiB"
+}
+
+// costsFor is the verb for what n workloads cost.
+func costsFor(n int) string {
+	if n == 1 {
+		return "costs"
+	}
+	return "cost"
 }
 
 // quantity rounds to a tenth, or to a hundredth below a tenth, so a small

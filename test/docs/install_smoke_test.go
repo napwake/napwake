@@ -36,7 +36,7 @@ func TestInstallSmokeRunsTheDocsCommands(t *testing.T) {
 	workflow, err := os.ReadFile(filepath.Join(repoRoot, ".github", "workflows", "install-smoke.yml"))
 	require.NoError(t, err, "the install smoke test runs the docs' install and verify commands")
 	lines := map[string]bool{}
-	for _, line := range strings.Split(string(workflow), "\n") {
+	for line := range strings.SplitSeq(string(workflow), "\n") {
 		lines[strings.TrimSpace(line)] = true
 	}
 	version := chartVersion(t)
@@ -59,7 +59,7 @@ func TestInstallSmokeRunsTheDocsCommands(t *testing.T) {
 			}
 		}
 		require.Len(t, found, 1, "one block on %s runs %q", c.page, c.command)
-		for _, line := range strings.Split(found[0], "\n") {
+		for line := range strings.SplitSeq(found[0], "\n") {
 			line = strings.TrimSpace(line)
 			if line == "" {
 				continue
