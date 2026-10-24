@@ -364,7 +364,7 @@ func (h *heldConn) waking() bool {
 	h.mu.Lock()
 	last, ok := h.stamped[rt.workload]
 	h.mu.Unlock()
-	return ok && last.pausedAt.Equal(rt.pausedAt) && h.now().Sub(last.at) < wakeStampInterval
+	return ok && last.began.Equal(rt.began) && h.now().Sub(last.at) < wakeStampInterval
 }
 
 // isWaking reports whether a paused workload, or one pausing, has been

@@ -2251,3 +2251,43 @@ func TestServer_WhatWouldntWakeItPassesOnUnstamped(t *testing.T) {
 		})
 	}
 }
+
+// nextPauseBegins has the operator call off the workload's pause for the
+// stamp it carries and begin another at once, recording the stamp as it
+// stands, as a pause records the activity annotations it begins with.
+func nextPauseBegins(t *testing.T, c client.Client) {
+	t.Helper()
+	var live v1alpha1.ManagedWorkload
+	require.NoError(t, c.Get(context.Background(), apiKey, &live))
+	live.Status.Phase = v1alpha1.PhasePausing
+	live.Status.Pause.StartedAt = ptr.To(metav1.Now())
+	live.Status.Pause.PausedAt = nil
+	live.Status.Pause.WakeAnnotations = &v1alpha1.WakeAnnotations{Workload: map[string]string{
+		v1alpha1.AnnotationLastRequest: live.Annotations[v1alpha1.AnnotationLastRequest]}}
+	require.NoError(t, c.Update(context.Background(), &live))
+}
+
+// A stamp this replica made in one pause doesn't stand for the next, though
+// that begins within wakeStampInterval and neither had scaled the workload
+// to zero: a request in the next pause stamps it again, which calls it off,
+// and so does one held once it's scaled to zero.
+func TestServer_AStampInOnePauseDoesntStandForTheNext(t *testing.T) {
+	rt := route{workload: apiKey, service: "api"}
+	for _, scaledDown := range []bool{false, true} {
+		s, c := newTestServer(t, nil, pausingWorkload(freePort(t)))
+		require.NoError(t, s.stamp(context.Background(), rt, caller))
+		first := lastRequest(t, c)
+		require.NotEmpty(t, first)
+
+		nextPauseBegins(t, c)
+		if scaledDown {
+			var live v1alpha1.ManagedWorkload
+			require.NoError(t, c.Get(context.Background(), apiKey, &live))
+			live.Status.Phase, live.Status.Pause.PausedAt = v1alpha1.PhasePaused, ptr.To(metav1.Now())
+			require.NoError(t, c.Update(context.Background(), &live))
+		}
+		require.NoError(t, s.stamp(context.Background(), rt, caller))
+
+		assert.NotEqual(t, first, lastRequest(t, c), "scaled down: %v", scaledDown)
+	}
+}

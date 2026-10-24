@@ -62,10 +62,11 @@ type wakeCall struct {
 }
 
 // stampRecord is the last stamp this replica made for a workload, and the
-// pause it woke.
+// pause it woke, named by when it began, since a pause called off as it
+// paused never scaled the workload to zero.
 type stampRecord struct {
-	pausedAt time.Time
-	at       time.Time
+	began time.Time
+	at    time.Time
 }
 
 // requestWake makes sure the workload is woken: it stamps the last-request
@@ -133,11 +134,11 @@ func (s *Server) stamp(ctx context.Context, rt route, from netip.Addr) error {
 		return nil
 	}
 	now := s.now()
-	pausedAt := pausedAt(&w)
+	began := pauseBegan(&w)
 	s.mu.Lock()
 	last, stamped := s.stamped[rt.workload]
 	s.mu.Unlock()
-	if stamped && last.pausedAt.Equal(pausedAt) && now.Sub(last.at) < wakeStampInterval {
+	if stamped && last.began.Equal(began) && now.Sub(last.at) < wakeStampInterval {
 		return nil
 	}
 	if rt.asks && stampedRecently(&w, now) {
@@ -153,7 +154,7 @@ func (s *Server) stamp(ctx context.Context, rt route, from netip.Addr) error {
 	}
 
 	s.mu.Lock()
-	s.stamped[rt.workload] = stampRecord{pausedAt: pausedAt, at: now}
+	s.stamped[rt.workload] = stampRecord{began: began, at: now}
 	s.mu.Unlock()
 	// A stamp while the workload pauses calls the pause off, which the
 	// operator's PauseCancelled announces.

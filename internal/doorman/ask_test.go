@@ -1223,3 +1223,22 @@ func TestServer_AClickOnARouteSyncedAwakeGetsTheWakingUpPage(t *testing.T) {
 	assert.Equal(t, failed, wakes(resultError))
 	assert.Empty(t, lastRequest(t, c), "an awake workload isn't stamped")
 }
+
+// A click this replica stamped in one pause doesn't make the next look
+// waking, though it begins within wakeStampInterval: a person opening the
+// workload gets the asleep page, not a waking-up page with nothing waking,
+// and a click within the minute is told to try again in a minute.
+func TestServer_AClickInOnePauseDoesntMakeTheNextLookWaking(t *testing.T) {
+	port := freePort(t)
+	s, c := startServer(t, pausingAsks(port, time.Now().Add(-time.Minute)))
+	resp, _ := click(t, port, clickRequest(askedPage(t, port)))
+	require.Equal(t, http.StatusServiceUnavailable, resp.StatusCode, "the first pause called off")
+
+	nextPauseBegins(t, c)
+	synced(t, s)
+
+	token := askedPage(t, port)
+	resp, body := click(t, port, clickRequest(token))
+	assert.Equal(t, http.StatusTooManyRequests, resp.StatusCode, body)
+	assert.Contains(t, body, template.HTMLEscapeString(noticeLimited.title))
+}
