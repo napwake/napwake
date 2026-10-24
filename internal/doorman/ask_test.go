@@ -1070,3 +1070,30 @@ func TestServer_APageLoadAsItPausesGetsWhatAPausedWorkloadGives(t *testing.T) {
 			"the page load calls the pause off, as the page is shown")
 	})
 }
+
+// A click can come while the doorman's cache shows the workload awake with
+// its route still listed: its pause was called off, or it's Running and the
+// operator hasn't yet taken the route down. It's awake, or waking, so the
+// waking-up page follows, which reloads into the app, rather than a notice
+// that it didn't wake, and it isn't counted as a wake that failed.
+func TestServer_AClickOnAWorkloadTheCacheShowsAwakeGetsTheWakingUpPage(t *testing.T) {
+	port := freePort(t)
+	_, c := startServer(t, askingWorkload(port))
+	token := askedPage(t, port)
+	failed, paged := wakes(resultError), wakes(resultPage)
+
+	var live v1alpha1.ManagedWorkload
+	require.NoError(t, c.Get(context.Background(), apiKey, &live))
+	live.Status.Phase = v1alpha1.PhaseRunning
+	require.NoError(t, c.Update(context.Background(), &live))
+
+	resp, body := click(t, port, clickRequest(token))
+
+	assert.Equal(t, http.StatusServiceUnavailable, resp.StatusCode, body)
+	assert.Contains(t, body, "<title>Waking up pr-42.preview.example.dev</title>")
+	assert.NotContains(t, body, "It didn&#39;t wake")
+	require.Eventually(t, func() bool { return wakes(resultPage) == paged+1 }, 5*time.Second, 20*time.Millisecond,
+		"counted as a browser shown the waking-up page, once the connection is done")
+	assert.Equal(t, failed, wakes(resultError), "not a wake that failed")
+	assert.Empty(t, lastRequest(t, c), "an awake workload isn't stamped")
+}

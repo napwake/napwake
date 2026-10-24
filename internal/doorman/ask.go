@@ -203,10 +203,13 @@ func fromAnotherPage(req *http.Request) bool {
 }
 
 // wakeForClick wakes the workload for a person's click, and answers with
-// the waking-up page, or the asleep page again saying why it didn't.
+// the waking-up page, or the asleep page again saying why it didn't. A
+// workload the cache shows awake behind a route still listed had its pause
+// called off, or is Running before its route comes down: there's nothing to
+// wake, and the waking-up page reloads into the app.
 func (h *heldConn) wakeForClick(ctx, waitCtx context.Context, req *http.Request) string {
 	switch err := h.requestWake(ctx, waitCtx, h.route, h.from); {
-	case err == nil:
+	case err == nil, errors.Is(err, errNotAsleep):
 		h.servePage(waitCtx, req)
 		return resultPage
 	case errors.Is(err, errClickLimited):
