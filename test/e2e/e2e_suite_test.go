@@ -37,14 +37,16 @@ import (
 
 var (
 	// managerImage is built from the working tree and loaded into kind. Its
-	// tag isn't latest, so the kubelet never tries to pull it.
-	managerImage = "napwake:e2e"
+	// tag isn't latest, so the kubelet never tries to pull it. Like the
+	// plugin, it's named after the run's cluster unless E2E_IMG names it, so
+	// runs from two worktrees at once never build over each other's.
+	managerImage = envOr("E2E_IMG", "napwake:"+utils.KindCluster())
 	// pauseImage runs the Deployments the specs manage without serving them.
 	// The Makefile preloads it into kind so the tests don't depend on a
 	// registry pull.
 	pauseImage = "registry.k8s.io/pause:3.10"
 	// pluginBinary is the kubectl plugin, built by the suite.
-	pluginBinary = "bin/kubectl-napwake"
+	pluginBinary = envOr("E2E_PLUGIN", filepath.Join("bin", "e2e", utils.KindCluster(), "kubectl-napwake"))
 	// webImage serves HTTP for the specs that wake a workload on a request;
 	// also preloaded.
 	webImage = "registry.k8s.io/e2e-test-images/agnhost:2.52"
@@ -74,17 +76,31 @@ func TestE2E(t *testing.T) {
 	RunSpecs(t, "e2e suite")
 }
 
+// onOwnCluster is whether the first process found kubectl reaching this
+// run's kind cluster. The suite installs Napwake and add-ons cluster-wide,
+// labels nodes and deletes every ManagedWorkload, so it does none of that,
+// or the cleanup after it, through a current context that might be any
+// other cluster's, such as another run's.
+var onOwnCluster bool
+
 // The specs run in parallel against one cluster: the first process builds
 // and deploys Napwake and installs everything any spec needs, cluster-wide
 // add-ons included, and the others wait for it. Nothing cluster-wide is
 // installed or removed while specs run, so no spec can pull an add-on, or
 // an API it serves, out from under another.
 var _ = SynchronizedBeforeSuite(func() {
+	By("checking kubectl reaches this run's own kind cluster")
+	current, err := utils.Output(exec.Command("kubectl", "config", "current-context"))
+	Expect(err).NotTo(HaveOccurred(), "kubectl has no current context")
+	Expect(strings.TrimSpace(current)).To(Equal("kind-"+utils.KindCluster()),
+		"kubectl's current context isn't this run's kind cluster, %s; make test-e2e creates it, "+
+			"and points KUBECONFIG at a kubeconfig of its own", utils.KindCluster())
+	onOwnCluster = true
+
 	By("building the manager image")
 	// The build downloads the base image and Go modules, and a CI runner's
 	// network drops a stream now and then; a retry gets past that, while a
 	// real build failure fails every attempt.
-	var err error
 	for range 3 {
 		if _, err = utils.Run(exec.Command("make", "docker-build", fmt.Sprintf("IMG=%s", managerImage))); err == nil {
 			break
@@ -151,6 +167,9 @@ var _ = SynchronizedBeforeSuite(func() {
 }, func() {})
 
 var _ = SynchronizedAfterSuite(func() {}, func() {
+	if !onOwnCluster {
+		return
+	}
 	// The specs delete their namespaces without waiting, so their
 	// ManagedWorkloads can still hold the cleanup finalizer. Once the
 	// operator is gone nothing releases it, and deleting the CRD hangs.
@@ -208,6 +227,13 @@ patches:
 		return err
 	}
 	return kubectlApply(rendered)
+}
+
+func envOr(key, fallback string) string {
+	if v, ok := os.LookupEnv(key); ok && v != "" {
+		return v
+	}
+	return fallback
 }
 
 // kustomizeBinary is where `make kustomize` put kustomize, following the

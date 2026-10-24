@@ -36,6 +36,23 @@ spec:
             summary: "Napwake doorman is down"
             description: "No healthy doorman target has been scraped for 5 minutes, so requests to paused workloads fail instead of waking them."
 
+        # A doorman pod that can't listen on a port for 30 seconds reports
+        # itself not Ready, so paused workloads are routed to the others.
+        # One left that way, or a port two routes claim, which every pod
+        # refuses, means requests aren't waking workloads. Every pod counts
+        # the same conflicts, so they make one alert.
+        - alert: NapwakeDoormanCantListen
+          expr: |
+            label_replace(napwake_doorman_listen_failures > 0, "cause", "listen_failure", "", "")
+            or
+            label_replace(max by (namespace) (napwake_doorman_port_conflicts) > 0, "cause", "port_conflict", "", "")
+          for: 5m
+          labels:
+            severity: critical
+          annotations:
+            summary: "Napwake doorman can't serve some ports"
+            description: "The doorman can't serve {{ $value }} of its routed ports ({{ $labels.cause }}), so requests to the paused workloads behind them fail instead of waking them. Its logs name the ports and why."
+
     - name: napwake.warning
       rules:
         - alert: NapwakeDoormanWakesFailing
@@ -64,3 +81,91 @@ spec:
           annotations:
             summary: "Target workload not found for {{ $labels.workload }}"
             description: "ManagedWorkload {{ $labels.namespace }}/{{ $labels.workload }} cannot find its target. It may have been deleted or renamed."
+
+        # Requests passed straight to woken pods, in the first bucket, aren't
+        # waits, and each wake lets many through, so they're taken out of
+        # every bucket. A minute is half of wake.maxWait's default, which
+        # cuts a held request off. Fewer than 3 waits in the window are too
+        # few to say wakes are slow.
+        - alert: NapwakeWakesSlow
+          expr: |
+            histogram_quantile(0.9,
+              sum by (le) (rate(napwake_doorman_wait_seconds_bucket{result=~"success|timeout"}[30m]))
+              - on () group_left ()
+              sum(rate(napwake_doorman_wait_seconds_bucket{result=~"success|timeout", le="0.25"}[30m]))
+            ) > 60
+            and on ()
+            sum(increase(napwake_doorman_wait_seconds_bucket{result=~"success|timeout", le="+Inf"}[30m]))
+            - sum(increase(napwake_doorman_wait_seconds_bucket{result=~"success|timeout", le="0.25"}[30m])) >= 3
+          for: 5m
+          labels:
+            severity: warning
+          annotations:
+            summary: "Wakes through the Napwake doorman are slow"
+            description: "One in ten requests the doorman held in the last 30 minutes waited over a minute for its workload to wake. At wake.maxWait, 2 minutes by default, they're cut off. Check how long the woken workloads' pods take to be Ready."
+
+        # Each doorman pod holds at most 2048 connections and passes through
+        # at most 1024 (internal/doorman/limits.go). Five minutes is longer
+        # than a burst of wakes takes to drain at the default maxWait.
+        - alert: NapwakeDoormanNearCapacity
+          expr: |
+            label_replace(napwake_doorman_held_connections / 2048, "connections", "held", "", "") > 0.8
+            or
+            label_replace(napwake_doorman_proxied_connections / 1024, "connections", "proxied", "", "") > 0.8
+          for: 5m
+          labels:
+            severity: warning
+          annotations:
+            summary: "Napwake doorman near its cap on {{ $labels.connections }} connections"
+            description: "Doorman pod {{ $labels.pod }} has carried over 80% of the {{ $labels.connections }} connections it takes for 5 minutes. Past the cap, it refuses new held connections, and makes new proxied ones wait. Add doorman replicas with doorman.replicaCount, or find what opens so many."
+
+        # A counter's series starts at its first count, which increase()
+        # doesn't see, so one younger than the window counts from zero.
+        # Napwake pauses again an hour after a GitOps tool undoes a pause,
+        # so a tool undoing every one does it about once an hour.
+        - alert: NapwakePausesUndone
+          expr: |
+            sum by (namespace, workload) (
+              (napwake_external_scale_ups_total unless napwake_external_scale_ups_total offset 6h)
+              or
+              increase(napwake_external_scale_ups_total[6h])
+            ) >= 3
+          labels:
+            severity: warning
+          annotations:
+            summary: "Pauses of {{ $labels.workload }} keep being undone"
+            description: "Something scaled paused workload {{ $labels.namespace }}/{{ $labels.workload }} back up at least 3 times in 6 hours, so pausing it saves little. Its status.lastScaledUp names what did it. A GitOps tool needs to leave the replicas to Napwake (https://docs.napwake.dev/guides/gitops/)."
+
+        - alert: NapwakeActivityUnreadable
+          expr: max by (namespace, workload, source) (napwake_activity_unreadable) == 1
+          for: 30m
+          labels:
+            severity: warning
+          annotations:
+            summary: "Napwake can't read the {{ $labels.source }} activity of {{ $labels.workload }}"
+            description: "Napwake hasn't read the {{ $labels.source }} activity of ManagedWorkload {{ $labels.namespace }}/{{ $labels.workload }} for 30 minutes. While it can't, it doesn't pause the workload, and a paused one's Prometheus queries can't wake it. Its MetricsAvailable or PrometheusAvailable condition says why."
+
+        - alert: NapwakeResumeIncomplete
+          expr: max by (namespace, workload) (napwake_resume_incomplete) == 1
+          for: 15m
+          labels:
+            severity: warning
+          annotations:
+            summary: "Workload {{ $labels.workload }} woke without all its replicas Ready"
+            description: "ManagedWorkload {{ $labels.namespace }}/{{ $labels.workload }} has run with some of its replicas not Ready for 15 minutes since it woke. Check its pods, and its ResumeIncomplete condition."
+
+        # A wrong pause is one something woke soon after. One or two a day
+        # can be people coming back; three, after the back-off a wrong
+        # pause brings, mean the idle signal misses the workload's use.
+        - alert: NapwakePausedWhileInUse
+          expr: |
+            sum by (namespace, workload) (
+              (napwake_wrong_pauses_total unless napwake_wrong_pauses_total offset 1d)
+              or
+              increase(napwake_wrong_pauses_total[1d])
+            ) >= 3
+          labels:
+            severity: warning
+          annotations:
+            summary: "Napwake keeps pausing {{ $labels.workload }} while it's in use"
+            description: "Napwake paused ManagedWorkload {{ $labels.namespace }}/{{ $labels.workload }} at least 3 times in a day while it was in use, and something woke it soon after each. Its idle signal misses that use. Lower napwake.dev/cpu-threshold to between its CPU in use and idle, or add a request-rate query (https://docs.napwake.dev/guides/prometheus-signals/#example-queries)."

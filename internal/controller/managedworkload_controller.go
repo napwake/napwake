@@ -222,9 +222,11 @@ func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (res ctrl.
 		return ctrl.Result{RequeueAfter: wait}, err
 	}
 
-	// Re-published every reconcile so the gauge is populated after an
-	// operator restart, not only after the next transition.
+	// Re-published every reconcile so the gauges are populated after an
+	// operator restart, not only after the next transition, and follow
+	// each status write, whose watch event brings a reconcile.
 	recordPhase(&workload)
+	recordConditions(&workload)
 
 	// The status as last written, to tell what this reconcile changed.
 	observed := workload.Status.DeepCopy()
@@ -408,8 +410,9 @@ func (r *Reconciler) observeTarget(ctx context.Context, workload *v1alpha1.Manag
 // readWorkload reads the workload, and reports whether it exists and is
 // this install's to reconcile. One deleted without its finalizer running
 // would otherwise leave its metric series and what's kept in memory for it,
-// and one created again under the same name what was kept for the one
-// before.
+// one created again under the same name what was kept for the one before,
+// and one another install's annotation now names what this one kept while
+// it managed it.
 func (r *Reconciler) readWorkload(ctx context.Context, name types.NamespacedName,
 	workload *v1alpha1.ManagedWorkload) (bool, error) {
 	err := r.Get(ctx, name, workload)
@@ -423,15 +426,22 @@ func (r *Reconciler) readWorkload(ctx context.Context, name types.NamespacedName
 	if err != nil {
 		return false, fmt.Errorf("getting managed workload: %w", err)
 	}
-	if replaced, ok := r.uids.see(name, workload.UID); ok {
-		r.forgetWorkload(replaced)
-	}
 	if owner := otherInstall(workload, r.OperatorNamespace); owner != "" {
+		// Only a workload this install has read as its own since it
+		// started can have series or state here, so later events find
+		// nothing to drop.
+		if uid, ok := r.uids.take(name); ok {
+			r.forgetWorkload(uid)
+			metrics.DeleteWorkload(name.Namespace, name.Name)
+		}
 		r.emitEvent(workload, false, "Warning", ReasonManagedByAnotherInstall, actionCheckInstall,
 			"the Napwake installed in %s manages this ManagedWorkload, so the one in %s leaves it alone; "+
 				"installs must watch different namespaces. If the one in %s is gone, remove the %s annotation",
 			owner, r.OperatorNamespace, owner, v1alpha1.AnnotationOperator)
 		return false, nil
+	}
+	if replaced, ok := r.uids.see(name, workload.UID); ok {
+		r.forgetWorkload(replaced)
 	}
 	return true, nil
 }
@@ -1194,11 +1204,28 @@ func (r *Reconciler) reconcileTargetMissing(ctx context.Context, workload *v1alp
 	return ctrl.Result{RequeueAfter: targetRecheckInterval}, nil
 }
 
+// workloadPhases are every phase the API allows a workload to be in.
+var workloadPhases = []v1alpha1.WorkloadPhase{
+	v1alpha1.PhaseCreating, v1alpha1.PhaseRunning, v1alpha1.PhaseIdle,
+	v1alpha1.PhasePausing, v1alpha1.PhasePaused, v1alpha1.PhaseResuming,
+}
+
+// recordPhase publishes the workload's phase as the only one it's in. The
+// phase can come from a cache that hasn't yet seen this operator's last
+// write, so the phase it replaces isn't always the one before it. Every
+// other phase is taken down by name, rather than all of the workload's
+// series at once, so a scrape never finds the workload in none.
 func recordPhase(workload *v1alpha1.ManagedWorkload) {
-	if workload.Status.Phase == "" {
+	phase := workload.Status.Phase
+	if phase == "" {
 		return
 	}
-	metrics.WorkloadPhase.WithLabelValues(workload.Namespace, workload.Name, string(workload.Status.Phase)).Set(1)
+	for _, other := range workloadPhases {
+		if other != phase {
+			metrics.WorkloadPhase.DeleteLabelValues(workload.Namespace, workload.Name, string(other))
+		}
+	}
+	metrics.WorkloadPhase.WithLabelValues(workload.Namespace, workload.Name, string(phase)).Set(1)
 }
 
 const (
@@ -1588,7 +1615,6 @@ func (r *Reconciler) transition(ctx context.Context, workload *v1alpha1.ManagedW
 		return fmt.Errorf("updating phase to %s: %w", phase, err)
 	}
 	r.phaseWrites.record(workload.UID, now.Time)
-	metrics.WorkloadPhase.DeleteLabelValues(workload.Namespace, workload.Name, string(old))
 	recordPhase(workload)
 	metrics.LifecycleTransitions.WithLabelValues(string(old), string(phase)).Inc()
 	logger.Info("phase transition", "from", old, "to", phase, "reason", reason)

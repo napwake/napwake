@@ -1205,10 +1205,15 @@ func countSliceLists(r *Reconciler) *int {
 // nothing writes a slice for a workload being deleted.
 func TestReconcile_DrainAfterDeletionReadsTheCache(t *testing.T) {
 	r, _ := pausedRouted(t)
-	now := time.Now()
+	var now time.Time
 	r.clock = func() time.Time { return now }
 	lists := countSliceLists(r)
 	require.NoError(t, r.Delete(context.Background(), fetch(t, r, "api")))
+	// The API server stamps the deletion with its own clock, to the second,
+	// and the reconcile the deletion brings reads the operator's after it.
+	// A clock read before the deletion, in an earlier second, makes the
+	// drain look older than the deletion.
+	now = time.Now()
 
 	_, err := r.Reconcile(context.Background(), reconcileFor("api"))
 	require.NoError(t, err)

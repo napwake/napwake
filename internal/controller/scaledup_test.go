@@ -22,6 +22,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/prometheus/client_golang/prometheus/testutil"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	appsv1 "k8s.io/api/apps/v1"
@@ -37,6 +38,7 @@ import (
 	v1alpha1 "github.com/napwake/napwake/api/v1alpha1"
 	"github.com/napwake/napwake/internal/autoscaler"
 	"github.com/napwake/napwake/internal/gitops"
+	"github.com/napwake/napwake/internal/metrics"
 )
 
 // scaledBy is the target as the API server returns it after manager last
@@ -116,6 +118,18 @@ func TestWakeOnScaleUp_ByGitOps(t *testing.T) {
 			assert.Contains(t, drainEvents(t, r), "Warning GitOpsConflict api: "+c.Message)
 		})
 	}
+}
+
+// NapwakePausesUndone names the workload something keeps scaling back up,
+// so each workload's scale-ups are counted apart, by what did them.
+func TestWakeOnScaleUp_CountsEachWorkloadsScaleUps(t *testing.T) {
+	r := newTestReconcilerWithReplicas(t, pausedWorkload(v1alpha1.PhasePaused), &stubPauser{}, 3)
+	counted := metrics.ExternalScaleUps.WithLabelValues("default", "api", "argo-cd")
+	before := testutil.ToFloat64(counted)
+
+	require.NoError(t, r.wakeOnScaleUp(context.Background(), getWorkload(t, r, "api"), scaledBy("argocd-controller", 3)))
+
+	assert.Equal(t, before+1, testutil.ToFloat64(counted))
 }
 
 func conflicted(scaledUp time.Time) *v1alpha1.ManagedWorkload {

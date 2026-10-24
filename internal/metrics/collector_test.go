@@ -47,7 +47,9 @@ func TestAllMetricsRegistered(t *testing.T) {
 		"napwake_dryrun_actions_total",
 		"napwake_target_unavailable_total",
 
-		// Discovery
+		// Alerts
+		"napwake_activity_unreadable",
+		"napwake_resume_incomplete",
 	}
 
 	gathered, err := ctrlmetrics.Registry.Gather()
@@ -70,11 +72,13 @@ func TestAllMetricsRegistered(t *testing.T) {
 	PredictionDataPoints.WithLabelValues("ns", "w").Set(10)
 	PredictionAnomalies.WithLabelValues("ns", "w").Inc()
 	IdleDetections.WithLabelValues("ns", "w").Inc()
-	ExternalScaleUps.WithLabelValues("argo-cd").Inc()
+	ExternalScaleUps.WithLabelValues("ns", "w", "argo-cd").Inc()
 	IdleSeconds.WithLabelValues("ns", "w").Set(60)
 	PredictionRegimeChanges.WithLabelValues("ns", "w").Inc()
 	DryrunActions.WithLabelValues("scale_up").Inc()
 	TargetUnavailable.WithLabelValues("ns", "w").Inc()
+	ActivityUnreadable.WithLabelValues("ns", "w", "cpu").Set(1)
+	ResumeIncomplete.WithLabelValues("ns", "w").Set(1)
 
 	gathered, err = ctrlmetrics.Registry.Gather()
 	assert.NoError(t, err)
@@ -100,6 +104,9 @@ func TestDeleteWorkload(t *testing.T) {
 	PredictionRegimeChanges.WithLabelValues("shop", "gone").Inc()
 	TargetUnavailable.WithLabelValues("shop", "gone").Inc()
 	DoormanWakes.WithLabelValues("shop", "gone", "success").Inc()
+	ExternalScaleUps.WithLabelValues("shop", "gone", "flux").Inc()
+	ActivityUnreadable.WithLabelValues("shop", "gone", "prometheus").Set(1)
+	ResumeIncomplete.WithLabelValues("shop", "gone").Set(1)
 	IdleSeconds.WithLabelValues("shop", "kept").Set(60)
 
 	DeleteWorkload("shop", "gone")
