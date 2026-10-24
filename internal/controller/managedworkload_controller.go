@@ -547,6 +547,8 @@ func (r *Reconciler) handlePause(ctx context.Context, workload *v1alpha1.Managed
 		}
 		began := r.clockTime()
 		workload.Status.Pause.StartedAt, workload.Status.Pause.Requested = &began, requested
+		// The replicas its last resume left not Ready are what it now pauses.
+		r.clearCondition(workload, conditionResumeIncomplete, ReasonPaused)
 		if !requested {
 			r.recordCPUBefore(workload)
 		}

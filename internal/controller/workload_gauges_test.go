@@ -366,3 +366,36 @@ func seriesOf(t *testing.T, c prometheus.Collector, name, key string) map[string
 	}
 	return series
 }
+
+// A resume that left replicas not Ready says so while the workload runs.
+// Once it pauses, there's nothing left to be Ready, so the condition is
+// cleared as the pause begins and NapwakeResumeIncomplete doesn't fire for
+// a paused workload, whatever its status says.
+func TestPause_ClearsAResumeLeftIncomplete(t *testing.T) {
+	r, _, now := pausingReconciler(t, func(w *v1alpha1.ManagedWorkload) {
+		w.Status.Conditions = append(w.Status.Conditions, metav1.Condition{Type: conditionResumeIncomplete,
+			Status: metav1.ConditionTrue, Reason: "ReplicasNotReady", LastTransitionTime: metav1.NewTime(fixedTime)})
+	})
+	t.Cleanup(func() { metrics.DeleteWorkload("default", "api") })
+	var api appsv1.Deployment
+	require.NoError(t, r.Get(context.Background(), client.ObjectKey{Namespace: "default", Name: "api"}, &api))
+	api.Status.ReadyReplicas = 0
+	require.NoError(t, r.Status().Update(context.Background(), &api))
+
+	reconcileAPI(t, r)
+	*now = now.Add(doormanListenWait)
+	reconcileAPI(t, r)
+
+	w := fetch(t, r, "api")
+	require.Equal(t, v1alpha1.PhasePausing, w.Status.Phase)
+	assert.False(t, meta.IsStatusConditionTrue(w.Status.Conditions, conditionResumeIncomplete))
+	assert.Empty(t, seriesOf(t, metrics.ResumeIncomplete, "api", ""))
+
+	for _, phase := range []v1alpha1.WorkloadPhase{v1alpha1.PhasePausing, v1alpha1.PhasePaused, v1alpha1.PhaseResuming} {
+		stale := lifecycleWorkload("stale-app", phase)
+		stale.Status.Conditions = []metav1.Condition{{Type: conditionResumeIncomplete, Status: metav1.ConditionTrue,
+			Reason: "ReplicasNotReady"}}
+		recordConditions(stale)
+		assert.Empty(t, seriesOf(t, metrics.ResumeIncomplete, "stale-app", ""), "%s", phase)
+	}
+}
