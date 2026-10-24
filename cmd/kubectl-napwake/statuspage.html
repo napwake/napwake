@@ -1773,11 +1773,11 @@ html:not(.js) th { position: static; }
 </script>
 </body>
 </html>
-{{/* What the money rests on, as labelled rows. Today the product gives these as sentences, so each row shows its
-     sentence as it is, with no word-matching; rows-next.html builds them from structured fields (HANDOFF request 18). */}}
-{{define "price-row"}}<div class="row"><span class="row-k">Prices</span><p class="prices">{{.Prices}}</p></div>{{end}}
-{{define "bill-row"}}<div class="row"><span class="row-k">Your bill</span><p class="prices">{{.NodeAutoscaler}}</p></div>{{end}}
-{{define "price-kind"}}{{end}}
+{{/* What the money rests on, built from the structured fields of HANDOFF request 18 (.Pricing on the scan page,
+     .NodeScale on both). A nil .Pricing, prices too mixed to say in short, falls back to the full sentence. */}}
+{{define "price-row"}}{{with .Pricing}}<div class="row{{if eq .Source "assumed"}} assumed{{end}}"><span class="row-k">Prices</span><p class="prices">{{if eq .Source "custom"}}yours, {{.CPUPrice}} per vCPU-hour and {{.MemoryPrice}} per GiB-hour{{else if eq .Source "assumed"}}assumed, {{.Provider}} {{.Region}} on-demand at {{.CPUPrice}} per vCPU-hour and {{.MemoryPrice}} per GiB-hour, as your nodes have no list price{{else}}{{.Provider}} {{.Region}} list prices{{if .NodeTypes}} &middot; {{range $i, $t := .NodeTypes}}{{if $i}}, {{end}}{{$t}}{{end}}{{end}}{{if .Spot}} &middot; {{.Spot}} {{if eq .Spot 1}}workload{{else}}workloads{{end}} on spot, priced at spot{{end}}{{end}}</p></div>{{else}}<div class="row"><span class="row-k">Prices</span><p class="prices">{{.Prices}}</p></div>{{end}}{{end}}
+{{define "bill-row"}}{{with .NodeScale}}<div class="row{{if eq .State "none"}} warn{{end}}"><span class="row-k">Your bill</span><p class="prices">{{if eq .State "none"}}won&#39;t drop until something removes nodes, and no node autoscaler was found.{{if .FixURL}} <a href="{{.FixURL}}">How to fix it</a>{{end}}{{else if eq .State "unknown"}}your access can&#39;t read the node autoscaler{{with .Detail}} ({{.}}){{end}}{{else if eq .State "pods"}}drops as pods stop, since {{range $i, $k := .Kinds}}{{if $i}} or {{end}}{{$k}}{{end}} bills what pods request{{else}}drops only as {{range $i, $k := .Kinds}}{{if $i}} or {{end}}{{$k}}{{end}} removes nodes{{if .Detail}} ({{.Detail}}){{end}}{{end}}</p></div>{{end}}{{end}}
+{{define "price-kind"}}{{with .Pricing}} · {{if eq .Source "custom"}}your prices{{else if eq .Source "assumed"}}assumed prices{{else}}list prices{{end}}{{end}}{{end}}
 {{define "door"}}{{if .StateClass}}{{.StateClass}}{{else if and (ge (len .State) 8) (eq (slice .State 0 8) "resuming")}}resuming{{else if and (ge (len .State) 7) (eq (slice .State 0 7) "pausing")}}pausing{{else}}other{{end}}{{end}}
 {{define "sym"}}{{if eq .StateClass "paused"}}asleep{{else if eq .StateClass "idle"}}idle{{else if eq .StateClass "active"}}active{{else if and (ge (len .State) 8) (eq (slice .State 0 8) "resuming")}}waking{{else if and (ge (len .State) 7) (eq (slice .State 0 7) "pausing")}}pausing{{else}}other{{end}}{{end}}
 {{define "plain"}}{{if eq .StateClass "paused"}}Asleep{{else if eq .StateClass "idle"}}Idle{{else if eq .StateClass "active"}}In use{{else if and (ge (len .State) 8) (eq (slice .State 0 8) "resuming")}}Waking up{{else if and (ge (len .State) 7) (eq (slice .State 0 7) "pausing")}}Going to sleep{{else}}Setting up{{end}}{{end}}

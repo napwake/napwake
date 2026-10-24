@@ -667,10 +667,7 @@ func writeScan(w io.Writer, result scanResult, opts scanOptions) error {
 func writeTable(w io.Writer, result scanResult, limit int) error {
 	p := &printer{w: w}
 	p.line("%s: %s", result.Cluster, workloadsIn(result))
-	p.line("%s", nodeAutoscalerLine(result.NodeAutoscaler))
-	if s := freedBecomesSaved(result.NodeAutoscaler); s != "" {
-		p.line("%s", s)
-	}
+	p.line("%s", billLine(result.NodeAutoscaler))
 	if s := historyLine(result); s != "" {
 		p.line("%s", s)
 	}
@@ -703,7 +700,7 @@ func writeTable(w io.Writer, result scanResult, limit int) error {
 		p.line("")
 	}
 	if result.Prices.CPUAssumed || result.Prices.MemoryAssumed {
-		p.line("%s", result.costsSentence())
+		p.line("%s", result.pricesLine())
 		p.line("Pass --cpu-price and --memory-price for yours.")
 		p.line("")
 	}
@@ -1098,15 +1095,6 @@ func hasPaused(wl Workload) bool {
 // scan and status alike.
 func showsFreed(dryRun bool, freed, saved float64) bool {
 	return !dryRun || freed > 0 || saved > 0
-}
-
-// freedBecomesSaved says what turns freed capacity into savings, once a
-// node autoscaler has been found; without one, the autoscaler line says so.
-func freedBecomesSaved(a nodescale.Autoscaler) string {
-	if len(a.Scalers) == 0 {
-		return ""
-	}
-	return "What pausing frees comes off the bill only as nodes scale down."
 }
 
 // couldFreeCell is what pausing a workload Napwake doesn't pause yet

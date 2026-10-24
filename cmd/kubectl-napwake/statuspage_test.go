@@ -55,7 +55,7 @@ func TestWriteStatusHTML(t *testing.T) {
 	assert.Contains(t, got, "<span>staging (EKS us-east-1) &middot; 5 October 2026, 12:00 UTC</span>")
 	assert.Contains(t, got, `<p class="lede">Napwake manages 4 workloads: 1 paused, 2 running, 1 resuming; 1 in `+
 		`dry-run, never paused: pausing it would have freed $7 since Oct 1.</p>`)
-	assert.Contains(t, got, `<p class="prices">Node autoscaler: none found`)
+	assert.Contains(t, got, `<p class="prices">won&#39;t drop until something removes nodes`)
 	assert.Contains(t, got, `<p class="prices">Forecast time zone: Europe/London</p>`)
 	assert.Contains(t, got, `<div class="figure"><b>$42</b><span>freed by pausing this month</span>`)
 	assert.Contains(t, got, `<div class="figure"><b>$35</b><span>saved of it</span>`)

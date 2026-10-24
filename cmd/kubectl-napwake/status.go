@@ -958,7 +958,7 @@ func writeStatusTable(w io.Writer, result statusResult, now time.Time) error {
 	p := &printer{w: w}
 	if len(result.Workloads) == 0 {
 		p.line("%s: Napwake manages no workloads here.", result.Cluster)
-		p.line("%s", nodeAutoscalerLine(result.NodeAutoscaler))
+		p.line("%s", billLine(result.NodeAutoscaler))
 		if result.Note != "" {
 			p.line("%s", result.Note)
 		}
@@ -967,7 +967,7 @@ func writeStatusTable(w io.Writer, result statusResult, now time.Time) error {
 	}
 	p.line("%s: Napwake manages %s.", result.Cluster, countOf(len(result.Workloads), "workload"))
 	p.line("  %s", phaseCounts(result.Workloads))
-	p.line("  %s", nodeAutoscalerLine(result.NodeAutoscaler))
+	p.line("  %s", billLine(result.NodeAutoscaler))
 	if zone := timeZoneLine(result.ForecastTimeZones); zone != "" {
 		p.line("  %s", zone)
 	}

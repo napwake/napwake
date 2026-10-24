@@ -105,8 +105,8 @@ func TestWriteHTML_History(t *testing.T) {
 	assert.Contains(t, got, "Costs use assumed list prices: $0.031 per vCPU-hour and $0.004 per GiB-hour of memory")
 	assert.Contains(t, got, `<div class="figure"><b>$4</b><span>freed by Napwake this month</span>`+
 		`<small>so far, pausing 1 live workload; $1 of it saved as nodes scaled down</small></div>`)
-	assert.Contains(t, got, `<p class="prices">Node autoscaler: none found — freed capacity won&#39;t lower the `+
-		`bill until nodes scale down; see https://docs.napwake.dev/guides/cluster-autoscaler/</p>`)
+	assert.Contains(t, got, `<p class="prices">won&#39;t drop until something removes nodes, and no node autoscaler `+
+		`was found. <a href="https://docs.napwake.dev/guides/cluster-autoscaler/">How to fix it</a></p>`)
 	assert.Contains(t, got, `<div class="figure"><b>$179</b><span>could be freed a month</span>`+
 		`<small>40% of what these workloads cost over the same time</small></div>`,
 		"what history shows for unmanaged workloads, plus what dry-run measured, against what they cost")
@@ -392,7 +392,7 @@ func TestWriteHTML_Snapshot(t *testing.T) {
 	got := renderHTML(t, result)
 
 	assert.Contains(t, got, "A snapshot of CPU at the time of the scan, without history.")
-	assert.Contains(t, got, "Costs use your prices: $0.045 per vCPU-hour and $0.006 per GiB-hour of memory.")
+	assert.Contains(t, got, `<p class="prices">yours, $0.045 per vCPU-hour and $0.006 per GiB-hour</p>`)
 	assert.NotContains(t, got, "freed by Napwake this month", "nothing is live, so no zero leads")
 	assert.Contains(t, got, `<div class="figure"><b>$1,240</b><span>could be freed a month, at most</span>`+
 		`<small>what the 1 workload idle right now costs while running, $1.70 an hour</small></div>`)

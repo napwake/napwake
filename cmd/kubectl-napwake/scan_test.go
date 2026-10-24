@@ -890,7 +890,7 @@ func TestLiveProtected(t *testing.T) {
 }
 
 // The node autoscaler decides whether what pausing frees is ever saved, so
-// the scan names it, and says so.
+// the scan says what the bill rests on.
 func TestWriteScan_NodeAutoscaler(t *testing.T) {
 	tests := []struct {
 		name string
@@ -899,10 +899,10 @@ func TestWriteScan_NodeAutoscaler(t *testing.T) {
 	}{
 		{name: "found", a: nodescale.Autoscaler{Scalers: []nodescale.Scaler{{Kind: nodescale.ClusterAutoscaler,
 			Provider: "AKS"}}},
-			want: "staging: 1 workload in 1 namespace\nNode autoscaler: Cluster Autoscaler on AKS\n" +
-				"What pausing frees comes off the bill only as nodes scale down.\n\n"},
-		{name: "none", want: "staging: 1 workload in 1 namespace\nNode autoscaler: none found — freed capacity " +
-			"won't lower the bill until nodes scale down; see https://docs.napwake.dev/guides/cluster-autoscaler/\n\n"},
+			want: "staging: 1 workload in 1 namespace\nYour bill: drops only as Cluster Autoscaler on AKS removes " +
+				"nodes\n\n"},
+		{name: "none", want: "staging: 1 workload in 1 namespace\nYour bill: won't drop until something removes " +
+			"nodes, and no node autoscaler was found. See https://docs.napwake.dev/guides/cluster-autoscaler/\n\n"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
