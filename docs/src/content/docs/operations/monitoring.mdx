@@ -38,7 +38,7 @@ metrics:
 Apply the ServiceMonitors and alerting rules into `napwake-system` from the `config/prometheus` base, pinned to your release. Or add it to your kustomization's `resources`:
 
 ```bash
-kubectl apply -k "https://github.com/napwake/napwake//config/prometheus?ref=v0.2.0"
+kubectl apply -k "https://github.com/napwake/napwake//config/prometheus?ref=v0.2.0-rc.8"
 ```
 
 Then bind your Prometheus's ServiceAccount to the `napwake-metrics-reader` ClusterRole:

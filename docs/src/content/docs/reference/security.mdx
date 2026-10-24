@@ -89,7 +89,7 @@ Every release is built from a tag by the [release workflow](https://github.com/n
 Its signature, an SBOM for each platform, and build provenance:
 
 ```bash
-IMAGE=ghcr.io/napwake/napwake:v0.2.0
+IMAGE=ghcr.io/napwake/napwake:v0.2.0-rc.8
 cosign verify $IMAGE \
   --certificate-identity-regexp '^https://github.com/napwake/napwake/.github/workflows/release.yml@refs/tags/v' \
   --certificate-oidc-issuer https://token.actions.githubusercontent.com
@@ -103,7 +103,7 @@ gh attestation verify oci://$IMAGE --repo napwake/napwake
 <TabItem label="Helm chart">
 
 ```bash
-cosign verify ghcr.io/napwake/charts/napwake:0.2.0 \
+cosign verify ghcr.io/napwake/charts/napwake:0.2.0-rc.8 \
   --certificate-identity-regexp '^https://github.com/napwake/napwake/.github/workflows/release.yml@refs/tags/v' \
   --certificate-oidc-issuer https://token.actions.githubusercontent.com
 ```

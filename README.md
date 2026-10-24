@@ -49,7 +49,7 @@ Homebrew installs the newest release, or the newest release candidate until the 
 
 ```bash
 kubectl krew install --manifest-url \
-  https://github.com/napwake/napwake/releases/download/v0.2.0/krew-napwake.yaml
+  https://github.com/napwake/napwake/releases/download/v0.2.0-rc.8/krew-napwake.yaml
 ```
 
 or [download it](https://docs.napwake.dev/getting-started/kubectl-plugin/#installation) for Linux, macOS or Windows.
@@ -62,7 +62,7 @@ timezone: Europe/London
 
 ```bash
 helm install napwake oci://ghcr.io/napwake/charts/napwake \
-  --version 0.2.0 \
+  --version 0.2.0-rc.8 \
   --namespace napwake-system \
   --create-namespace \
   -f napwake-values.yaml
