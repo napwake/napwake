@@ -29,6 +29,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"golang.org/x/mod/semver"
 )
@@ -59,6 +60,9 @@ var (
 )
 
 func TestOldNameIsGone(t *testing.T) {
+	if !inWorkTree(repoRoot) {
+		t.Skip("listing the tree's files takes a git work tree")
+	}
 	for _, path := range treeFiles(t) {
 		if containsOldName([]byte(path)) {
 			t.Errorf("%s: the path names %s", path, oldName)
@@ -71,17 +75,36 @@ func TestOldNameIsGone(t *testing.T) {
 			continue // deleted, not yet staged
 		}
 		require.NoError(t, err)
-		if !containsOldName(data) {
-			continue
-		}
 		lines := strings.Split(string(data), "\n")
-		allowed := allowedLines(path, lines)
-		for i, line := range lines {
-			if containsOldName([]byte(line)) && !allowed[i] {
-				t.Errorf("%s:%d names %s: %s", path, i+1, oldName, strings.TrimSpace(line))
-			}
+		for _, n := range oldNameLines(path, data) {
+			t.Errorf("%s:%d names %s: %s", path, n, oldName, strings.TrimSpace(lines[n-1]))
 		}
 	}
+}
+
+// oldNameLines returns the numbers of a file's lines that name the old
+// name where it isn't allowed. A binary file, one with a NUL byte, has no
+// lines to read.
+func oldNameLines(path string, data []byte) []int {
+	if !containsOldName(data) || bytes.IndexByte(data, 0) >= 0 {
+		return nil
+	}
+	lines := strings.Split(string(data), "\n")
+	allowed := allowedLines(path, lines)
+	var out []int
+	for i, line := range lines {
+		if containsOldName([]byte(line)) && !allowed[i] {
+			out = append(out, i+1)
+		}
+	}
+	return out
+}
+
+func inWorkTree(dir string) bool {
+	cmd := exec.Command("git", "rev-parse", "--is-inside-work-tree")
+	cmd.Dir = dir
+	out, err := cmd.Output()
+	return err == nil && strings.TrimSpace(string(out)) == "true"
 }
 
 // treeFiles lists the files in the tree, tracked or not, but not those git
@@ -91,7 +114,7 @@ func treeFiles(t *testing.T) []string {
 	cmd := exec.Command("git", "ls-files", "-z", "--cached", "--others", "--exclude-standard")
 	cmd.Dir = repoRoot
 	out, err := cmd.Output()
-	require.NoError(t, err, "listing the tree's files needs git and a clone")
+	require.NoError(t, err)
 	files := strings.Split(strings.TrimSuffix(string(out), "\x00"), "\x00")
 	require.NotEmpty(t, files)
 	return files
@@ -152,4 +175,25 @@ func sectionFromOldName(lines []string) map[int]bool {
 		allowed[i] = in
 	}
 	return allowed
+}
+
+func TestOldNameLinesSkipsBinaryFiles(t *testing.T) {
+	text := []byte("first\nmade by " + oldName + "\n")
+	assert.Equal(t, []int{2}, oldNameLines("notes.md", text))
+	assert.Empty(t, oldNameLines("logo.png", append([]byte{0x89, 'P', 'N', 'G', 0}, text...)))
+}
+
+func TestOnlyAGitWorkTreeIsListed(t *testing.T) {
+	assert.True(t, inWorkTree(repoRoot))
+	assert.False(t, inWorkTree(t.TempDir()))
+}
+
+// A plugin binary built at the root, under either name, is ignored, so a
+// stale one built before the rename doesn't fail the guard.
+func TestRootPluginBinariesAreIgnored(t *testing.T) {
+	for _, name := range []string{"kubectl-napwake", "kubectl-" + oldName} {
+		cmd := exec.Command("git", "check-ignore", "-q", name)
+		cmd.Dir = repoRoot
+		assert.NoError(t, cmd.Run(), "git doesn't ignore %s at the root", name)
+	}
 }
