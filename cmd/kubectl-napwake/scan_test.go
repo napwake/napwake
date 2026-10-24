@@ -868,7 +868,8 @@ func TestWriteScan_FreedBeforeProtected(t *testing.T) {
 		"and saved $5 of that.\n")
 	h, _ = headlineFor(result)
 	assert.Equal(t, "$15", h.Figures[0].Value)
-	assert.Equal(t, "from the 1 live workload it pauses and others it paused before they were protected; $6 of it saved as "+
+	assert.Equal(t, "from the 1 live workload it pauses and others it paused before they were protected; "+
+		"$6 of it saved as "+
 		"nodes scaled down", h.Figures[0].Detail)
 }
 

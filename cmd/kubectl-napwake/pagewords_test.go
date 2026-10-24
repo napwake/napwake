@@ -93,7 +93,8 @@ func TestReportAndStatusPage_Words(t *testing.T) {
 // scan page's bar names where "What the numbers mean" goes (P56). Kede's
 // words (cmo-036).
 func TestReportAndStatusPage_CalloutAndBar(t *testing.T) {
-	pageHas(t, statusPageHTML, `<b>Needs you:</b> {{len .Attention}} {{if eq (len .Attention) 1}}thing{{else}}things{{end}} to look at. See what, and why.`)
+	pageHas(t, statusPageHTML, `<b>Needs you:</b> {{len .Attention}} `+
+		`{{if eq (len .Attention) 1}}thing{{else}}things{{end}} to look at. See what, and why.`)
 	pageLacks(t, statusPageHTML, "keeps</span>")
 	pageHas(t, reportHTML, `<a href="#meaning">What the numbers mean</a>`)
 	pageLacks(t, reportHTML, `>The numbers<`)
