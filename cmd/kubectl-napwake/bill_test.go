@@ -144,12 +144,23 @@ func TestNodeScale(t *testing.T) {
 			want: nodeScale{State: scaleFound, Kinds: []string{"Cluster Autoscaler on GKE"}},
 			line: "Your bill: drops only as Cluster Autoscaler on GKE removes nodes"},
 		{name: "a hint of Cluster Autoscaler", a: nodescale.Autoscaler{Scalers: []nodescale.Scaler{
-			{Kind: nodescale.ClusterAutoscaler, Evidence: "a Deployment named cluster-autoscaler in kube-system",
-				Hint: true}}},
+			{Kind: nodescale.ClusterAutoscaler, Evidence: "a Deployment named cluster-autoscaler in kube-system, which " +
+				"has written no status", Hint: true}}},
 			want: nodeScale{State: scaleFound, Kinds: []string{"Cluster Autoscaler"},
-				Detail: "from a Deployment named cluster-autoscaler in kube-system; it may not be running"},
-			line: "Your bill: drops only as Cluster Autoscaler removes nodes (from a Deployment named " +
-				"cluster-autoscaler in kube-system; it may not be running)"},
+				Detail: "it may not be running, as all that shows it is a Deployment named cluster-autoscaler in " +
+					"kube-system, which has written no status"},
+			line: "Your bill: drops only as Cluster Autoscaler removes nodes (it may not be running, as all that " +
+				"shows it is a Deployment named cluster-autoscaler in kube-system, which has written no status)"},
+		{name: "Karpenter, and a hint of Cluster Autoscaler", a: nodescale.Autoscaler{Scalers: []nodescale.Scaler{
+			{Kind: nodescale.Karpenter}, {Kind: nodescale.ClusterAutoscaler, Evidence: "a Deployment named " +
+				"cluster-autoscaler in kube-system, which has written no status", Hint: true}},
+			NodePools: []nodescale.NodePool{{Name: "default"}}},
+			want: nodeScale{State: scaleFound, Kinds: []string{"Karpenter", "Cluster Autoscaler"},
+				Detail: "Karpenter consolidates when underutilized; Cluster Autoscaler may not be running, as all " +
+					"that shows it is a Deployment named cluster-autoscaler in kube-system, which has written no status"},
+			line: "Your bill: drops only as Karpenter or Cluster Autoscaler removes nodes (Karpenter consolidates " +
+				"when underutilized; Cluster Autoscaler may not be running, as all that shows it is a Deployment " +
+				"named cluster-autoscaler in kube-system, which has written no status)"},
 		{name: "both", a: nodescale.Autoscaler{Scalers: []nodescale.Scaler{{Kind: nodescale.Karpenter},
 			{Kind: nodescale.ClusterAutoscaler}}, NodePools: []nodescale.NodePool{{Name: "default"}}},
 			want: nodeScale{State: scaleFound, Kinds: []string{"Karpenter", "Cluster Autoscaler"},

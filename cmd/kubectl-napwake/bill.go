@@ -80,9 +80,9 @@ func nodeScaleFor(a nodescale.Autoscaler) nodeScale {
 
 // scalerDetail says how an autoscaler removes nodes, beyond its name: how
 // Karpenter's NodePools consolidate, said of Karpenter when they all do it
-// alike, or that a Cluster Autoscaler was only hinted at. The subject is
-// what a line naming one autoscaler calls "it", and empty when the rest
-// names its own.
+// alike, or that a Cluster Autoscaler may not be running, when only a hint
+// shows it. The subject is what a line naming one autoscaler calls "it",
+// and empty when the rest names its own.
 func scalerDetail(s nodescale.Scaler, pools []nodescale.NodePool) (subject, rest string) {
 	switch s.Kind {
 	case nodescale.Karpenter, nodescale.EKSAutoMode:
@@ -93,7 +93,7 @@ func scalerDetail(s nodescale.Scaler, pools []nodescale.NodePool) (subject, rest
 		return string(s.Kind), c
 	case nodescale.ClusterAutoscaler:
 		if s.Hint {
-			return "", "from " + s.Evidence + "; it may not be running"
+			return string(s.Kind), "may not be running, as all that shows it is " + s.Evidence
 		}
 	}
 	return "", ""
