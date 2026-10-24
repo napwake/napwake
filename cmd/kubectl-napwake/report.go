@@ -697,7 +697,7 @@ func methodFor(result scanResult, history, dependencies bool, idleAfter time.Dur
 			"--cpu-threshold), it was deployed, or an activity annotation says so. It's idle once it has had no "+
 			"activity for %s (the scan's --idle-after), which is when Napwake would pause it. Workloads Napwake "+
 			"manages are judged by the activity clock it keeps for them, with their own CPU threshold and "+
-			"idle-after.",
+			"idle-after, which Napwake lengthens after pauses made while they were in use.",
 			v1alpha1.FormatCPUThreshold(result.Settings.CPUThreshold), roundedDuration(idleAfter)),
 	}
 	if history {
