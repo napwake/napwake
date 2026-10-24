@@ -103,3 +103,31 @@ func TestReportPage_BasisPublicLeavesOutTheSource(t *testing.T) {
 	assert.Equal(t, basisSentence(snapshot), buildReport(snapshot, time.Hour).BasisPublic,
 		"a snapshot names no source")
 }
+
+// The next steps' go-live command is marked as such, so the page splits it
+// from the measuring ones whatever the command says.
+func TestReportPage_EnableMarkedApart(t *testing.T) {
+	got := renderHTML(t, historyResult())
+
+	pageHas(t, got, `<span data-step="enable"><span class="line"><span class="sh-cmd">kubectl</span> napwake enable `+
+		`deployment/api`, "the go-live command, marked")
+	for name, page := range map[string]string{"scan": reportHTML, "status": statusPageHTML} {
+		pageLacks(t, page, `enable\b/.test(`, name, "the script reads the mark, not the command")
+	}
+}
+
+// The measuring commands are for the idle workload, and going live for the
+// one dry-run already measures, each named with its command.
+func TestReportPage_NextStepsWithTheirTargets(t *testing.T) {
+	steps := buildReport(historyResult(), time.Hour).NextSteps
+
+	require.NotNil(t, steps)
+	require.Len(t, steps.Measure, 2)
+	for _, c := range steps.Measure {
+		assert.Equal(t, command{Line: c.Line, Namespace: "preview-42", Workload: "statefulset/postgres"}, c)
+	}
+	require.NotNil(t, steps.Enable)
+	assert.Equal(t, "preview-7", steps.Enable.Namespace)
+	assert.Equal(t, "deployment/api", steps.Enable.Workload)
+	assert.Contains(t, string(steps.Enable.Line), "napwake enable deployment/api")
+}

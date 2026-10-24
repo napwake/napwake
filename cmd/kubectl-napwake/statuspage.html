@@ -1454,11 +1454,11 @@ html:not(.js) th { position: static; }
   });
 
   // ---------------------------------------------------------------- next steps: measure first, then go live
-  // The product lists the measuring commands, then `enable`. Two blocks, each with its own Copy, so pasting the
-  // first never skips the measuring. (Request 15 keeps the two apart in the data.)
+  // The product lists the measuring commands, then the one that goes live, which it marks data-step="enable". Two
+  // blocks, each with its own Copy, so pasting the first never skips the measuring.
   each($$("#next pre.shell"), function (pre) {
     var lines = Array.prototype.slice.call(pre.querySelectorAll(".line"));
-    var live = lines.filter(function (l) { return /^kubectl \S+ enable\b/.test(l.textContent); });
+    var live = lines.filter(function (l) { return l.parentNode.getAttribute("data-step") === "enable"; });
     var measure = lines.filter(function (l) { return live.indexOf(l) < 0; });
     if (!live.length || !measure.length) return;
     var steps = doc.createElement("div");

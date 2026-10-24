@@ -77,7 +77,8 @@ type reportPage struct {
 	DependenciesLead string
 	Notes            []string
 	Method           []string
-	NextSteps        []template.HTML
+	// NextSteps are the commands to opt a workload in, or nil for none.
+	NextSteps *nextSteps
 	Threshold        float64
 	IdleAfter        string
 	Over             string
@@ -181,6 +182,22 @@ type workloadRow struct {
 	SleptSort                                float64
 	CouldSleepSort, FreedSort, CouldFreeSort float64
 	Because                                  string
+}
+
+// nextSteps keep the commands that measure a workload in dry-run apart
+// from the one that then has Napwake pause it, so a page can copy them
+// apart without reading which is which.
+type nextSteps struct {
+	Measure []command
+	// Enable is nil when no workload is measured or idle to go live.
+	Enable *command
+}
+
+// command is a shell command as a page shows it, coloured as a terminal
+// would, with the workload it acts on.
+type command struct {
+	Line                template.HTML
+	Namespace, Workload string
 }
 
 type dependencyRow struct {
@@ -421,14 +438,32 @@ func buildReport(result scanResult, idleAfter time.Duration) reportPage {
 			"can pause them while idle and wake them on the next request instead"}, page.Notes...)
 	}
 	page.Method = methodFor(result, history, len(page.Dependencies) > 0, idleAfter)
-	measure, enable := nextStepCommands(nextStepTargets(result.Workloads))
-	for _, step := range measure {
-		page.NextSteps = append(page.NextSteps, shellHTML(step))
+	page.NextSteps = nextStepsFor(result.Workloads)
+	return page
+}
+
+// nextStepsFor are the report's next steps: the terminal's commands, each
+// with the workload it's for.
+func nextStepsFor(workloads []Workload) *nextSteps {
+	idle, measuring := nextStepTargets(workloads)
+	measure, enable := nextStepCommands(idle, measuring)
+	if len(measure) == 0 && enable == "" {
+		return nil
+	}
+	steps := &nextSteps{}
+	for _, c := range measure {
+		steps.Measure = append(steps.Measure, commandFor(c, idle))
 	}
 	if enable != "" {
-		page.NextSteps = append(page.NextSteps, shellHTML(enable))
+		c := commandFor(enable, cmp.Or(measuring, idle))
+		steps.Enable = &c
 	}
-	return page
+	return steps
+}
+
+func commandFor(line string, wl *Workload) command {
+	return command{Line: shellHTML(line), Namespace: wl.Namespace,
+		Workload: strings.ToLower(string(wl.Kind)) + "/" + wl.Name}
 }
 
 func workloadRef(wl Workload) string {

@@ -965,16 +965,22 @@ func TestNextSteps_SkipProtected(t *testing.T) {
 			if tt.want == nil {
 				assert.Empty(t, table.String())
 				assert.NotContains(t, page, "Next steps")
+				assert.Nil(t, buildReport(result, time.Hour).NextSteps)
 				return
 			}
 			for _, command := range tt.want {
 				assert.Contains(t, table.String(), command)
 			}
 			steps := buildReport(result, time.Hour).NextSteps
-			require.Len(t, steps, len(tt.want))
-			for _, step := range steps {
-				assert.NotContains(t, string(step), "payments")
+			require.NotNil(t, steps)
+			require.Len(t, steps.Measure, 2, "annotate, then label")
+			require.NotNil(t, steps.Enable, "then go live")
+			for _, c := range append(steps.Measure, *steps.Enable) {
+				assert.NotContains(t, string(c.Line), "payments")
+				assert.Equal(t, "dev", c.Namespace, "each command's target")
+				assert.Equal(t, "deployment/preview", c.Workload)
 			}
+			assert.Contains(t, string(steps.Enable.Line), "napwake enable")
 			assert.NotContains(t, table.String(), "payments")
 		})
 	}
