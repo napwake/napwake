@@ -605,12 +605,12 @@ html:not(.js) th { position: static; }
   {{$awake := false}}{{$idle := false}}{{$busy := true}}
   {{range .Workloads}}{{if ne .StateClass "paused"}}{{$awake = true}}{{end}}{{if eq .StateClass "idle"}}{{$idle = true}}{{end}}{{if ne .StateClass "active"}}{{$busy = false}}{{end}}{{end}}
   {{$zero := false}}{{$live := false}}{{$more := ""}}{{$moreLabel := ""}}
-  {{range $i, $f := .Headline.Figures}}{{if eq $i 0}}{{if eq .Value "$0"}}{{$zero = true}}{{end}}{{if and (ge (len .Label) 9) (eq (slice .Label 0 9) "freed by ")}}{{$live = true}}{{end}}{{end}}{{if eq $i 1}}{{$more = .Value}}{{$moreLabel = .Label}}{{end}}{{end}}
+  {{range $i, $f := .Headline.Figures}}{{if eq $i 0}}{{if not .Amount}}{{$zero = true}}{{end}}{{if eq .Kind "freed"}}{{$live = true}}{{end}}{{end}}{{if eq $i 1}}{{$more = .Value}}{{$moreLabel = .Label}}{{end}}{{end}}
   {{if .Unjudged}}{{$busy = false}}{{end}}
   {{$group := gt (len .Workloads) 400}}
   {{$calm := and .Workloads (not $awake) (not .Unjudged)}}{{$good := and .Workloads $zero (not $idle)}}
   <section id="summary">
-    <div class="hero{{if not (or .Workloads .Unjudged)}} no-building{{end}}">
+    <div class="hero{{if not (or .Workloads .Unjudged)}} no-building{{end}}"{{with .Headline.ShortHistory}} data-short-history="{{.}}"{{end}}>
       <div class="hero-main">
         <p class="eyebrow">kubectl napwake scan</p>
         <div class="hero-title"><h1>Workload scan</h1><p class="meta"><span>{{.Cluster}}</span><span>{{.ScannedAt}}</span></p></div>
@@ -622,7 +622,7 @@ html:not(.js) th { position: static; }
         {{else if $calm}}<p class="statement big">Every room is asleep.</p>
         {{else if $good}}<p class="statement big">{{if $busy}}Every room is in use.{{else}}No room is lit for nobody.{{end}}</p>
         {{else}}<p class="statement needs-js" data-statement></p>{{end}}
-        <div class="hero-figs{{if or (not .Workloads) $good $calm}} quiet{{end}}{{if $live}} live{{end}}">{{range $i, $f := .Headline.Figures}}<div class="slot s{{$i}}{{if eq $i 0}} lead{{end}}">{{if and $live (eq $i 1)}}<span class="kicker label">Still to free</span>{{end}}<div class="figure{{if eq .Value "$0"}} zero{{end}}"><b>{{.Value}}</b><span>{{.Label}}</span>{{if .Detail}}<small>{{.Detail}}</small>{{end}}</div></div>{{end}}</div>
+        <div class="hero-figs{{if or (not .Workloads) $good $calm}} quiet{{end}}{{if $live}} live{{end}}">{{range $i, $f := .Headline.Figures}}<div class="slot s{{$i}}{{if eq $i 0}} lead{{end}}">{{if and $live (eq $i 1)}}<span class="kicker label">Still to free</span>{{end}}<div class="figure{{if not .Amount}} zero{{end}}"><b>{{.Value}}</b><span>{{.Label}}</span>{{if .Detail}}<small>{{.Detail}}</small>{{end}}</div></div>{{end}}</div>
         <p class="hero-basis">{{.Basis}} <a href="#meaning">{{if .History}}What these numbers mean{{else}}What a snapshot can&#39;t show{{end}}</a></p>
         <div class="actions needs-js" role="group" aria-label="Share this report">
           {{if .Workloads}}<button type="button" class="btn primary" data-share>Share card</button>{{end}}
@@ -676,11 +676,10 @@ html:not(.js) th { position: static; }
 
     {{/* What the share card and the summary say. Infrastructure names (the cluster, the Prometheus source) sit in
          data-private and go out only when the reader ticks the box; data-public stands in for them otherwise. */}}
-    {{$public := ""}}{{if and .History .Over}}{{$public = printf "Based on %s of Prometheus history, and CPU at the time of the scan." .Over}}{{else if .History}}{{$public = "A snapshot of CPU at the time of the scan: Prometheus has no CPU history of the namespaces scanned."}}{{else}}{{$public = .Basis}}{{end}}
     <div hidden id="summary-lines">
       <p>Workload scan<span data-private> of {{.Cluster}}</span>, {{.ScannedAt}}: {{range $i, $f := .Headline.Figures}}{{if eq $i 0}}{{.Value}} {{.Label}}{{if .Detail}} ({{.Detail}}){{end}}.{{end}}{{end}}</p>
       <p>{{range $i, $f := .Headline.Figures}}{{if eq $i 1}}{{if $live}}{{.Value}} more {{.Label}}{{else}}{{.Value}} {{.Label}}{{end}}{{if .Detail}} ({{.Detail}}){{end}}. {{end}}{{end}}{{range $i, $f := .Facts}}{{if eq $i 1}}{{.Value}} {{.Label}}.{{end}}{{end}}</p>
-      <p><span data-private>{{.Basis}}</span><span data-public>{{$public}}</span> Measured with kubectl napwake scan, napwake.dev</p>
+      <p><span data-private>{{.Basis}}</span><span data-public>{{.BasisPublic}}</span> Measured with kubectl napwake scan, napwake.dev</p>
     </div>
     <div hidden id="card-data" data-eyebrow="Workload scan" data-cluster="{{.Cluster}}"{{range $i, $f := .Headline.Figures}}{{if eq $i 0}}{{if $calm}} data-statement="Every room is asleep."{{else if $good}} data-statement="{{if $busy}}Every room is in use.{{else}}No room is lit for nobody.{{end}}"{{end}} data-value="{{.Value}}" data-label="{{.Label}}" data-detail="{{.Detail}}"{{end}}{{end}}{{if $live}} data-more="{{$more}} more {{$moreLabel}}"{{end}} data-source="{{if and .History .Over}}{{.Over}} of Prometheus history{{else}}a snapshot, without history{{end}}{{template "price-kind" .}}" data-hook="kubectl napwake scan" data-hook-note="nothing to install in the cluster"></div>
   </section>
@@ -713,7 +712,7 @@ html:not(.js) th { position: static; }
             <td class="n" data-v="{{.Workloads}}">{{.Workloads}}</td>
             <td class="n" data-v="{{.Idle}}">{{.Idle}}</td>
             <td class="n{{if not $.CouldFree}} bar{{end}}" data-v="{{.CostSort}}">{{.Cost}}</td>
-            {{if $.Freeing}}<td class="n" data-v="{{.FreedSort}}">{{.Freed}}{{if ne .Freed "$0"}}<span class="sub">{{.Saved}} saved</span>{{end}}</td>{{end}}
+            {{if $.Freeing}}<td class="n" data-v="{{.FreedSort}}">{{.Freed}}{{if .FreedSort}}<span class="sub">{{.Saved}} saved</span>{{end}}</td>{{end}}
             {{if $.CouldFree}}<td class="n bar" data-v="{{.CouldFreeSort}}">{{.CouldFree}}</td>{{end}}
           </tr>{{end}}
         </tbody>
@@ -753,7 +752,7 @@ html:not(.js) th { position: static; }
           {{if .CouldFree}}<th class="n"><button type="button" class="tip" title="{{.Tips.CouldFree}}">Could free / month</button></th>{{end}}
         </tr></thead>
         <tbody>
-          {{range $i, $w := .Workloads}}<tr id="wl-{{$i}}"{{if and (ge (len .Because) 11) (eq (slice .Because 0 11) "won't pause")}} data-stays=""{{end}}>
+          {{range $i, $w := .Workloads}}<tr id="wl-{{$i}}"{{if and .WontPause (eq .StateClass "idle")}} data-stays=""{{end}}>
             <td class="ref">{{.Workload}}<span class="sub">{{.Namespace}}</span></td>
             <td class="wide"><span class="state {{.StateClass}}"><span class="dot"></span>{{.State}}</span>{{if .Because}}<span class="because">{{.Because}}</span>{{end}}</td>
             <td class="n" data-v="{{.CostSort}}">{{.Cost}}</td>
@@ -814,7 +813,8 @@ html:not(.js) th { position: static; }
     <h2>Next steps</h2>
     <p>Opt a workload in, measuring first so nothing is paused, then let Napwake pause it once the measurements look right.</p>
     <div class="next">
-    <pre class="shell">{{range .NextSteps}}{{.}}
+    <pre class="shell">{{range .NextSteps.Measure}}{{.Line}}
+{{end}}{{with .NextSteps.Enable}}<span data-step="enable">{{.Line}}</span>
 {{end}}</pre>
     <svg class="art pose-point-l" viewBox="0 0 240 260" aria-hidden="true" focusable="false"><defs><filter id="fin-point" x="-5%" y="-5%" width="110%" height="110%" color-interpolation-filters="sRGB"><feTurbulence type="fractalNoise" baseFrequency=".045" numOctaves="2" seed="3" result="w"/><feDisplacementMap in="SourceGraphic" in2="w" scale="1.3" xChannelSelector="R" yChannelSelector="G" result="d"/><feTurbulence type="fractalNoise" baseFrequency=".85" numOctaves="2" seed="9" result="n"/><feColorMatrix in="n" values="0 0 0 0 0  0 0 0 0 0  0 0 0 0 0  0 0 0 0.13 0" result="na"/><feComposite in="na" in2="d" operator="in" result="g"/><feTurbulence type="fractalNoise" baseFrequency=".018" numOctaves="2" seed="21" result="m"/><feColorMatrix in="m" values="0 0 0 0 1  0 0 0 0 1  0 0 0 0 1  0 0 0 .09 -.01" result="ma"/><feComposite in="ma" in2="d" operator="in" result="ink"/><feMerge><feMergeNode in="d"/><feMergeNode in="ink"/><feMergeNode in="g"/></feMerge></filter></defs><g transform="translate(140 244) scale(-1 1)" filter="url(#fin-point)"><ellipse cx="-3.5999999999999996" cy="2" rx="46" ry="5.5" fill="var(--doorman-night)" opacity=".13"/><g transform="rotate(-5)"><ellipse cx="-13" cy="-1" rx="10" ry="6" transform="rotate(0 -13 -1)" fill="var(--doorman-shoe)" stroke="var(--doorman-shoe-rim)" stroke-width="1.4"/><ellipse cx="16" cy="-1" rx="10" ry="6" transform="rotate(0 16 -1)" fill="var(--doorman-shoe)" stroke="var(--doorman-shoe-rim)" stroke-width="1.4"/><path d="M-31 -102 Q-31 -114 -19 -114 H19 Q31 -114 31 -102 Q35 -54 35.8 -6 Q37 -2 33 -2 Q0 1 -33 -2 Q-37 -2 -37.48 -6 Q-31.8 -54 -31 -102 Z" fill="var(--doorman-coat)"/><clipPath id="c27"><path d="M-31 -102 Q-31 -114 -19 -114 H19 Q31 -114 31 -102 Q35 -54 35.8 -6 Q37 -2 33 -2 Q0 1 -33 -2 Q-37 -2 -37.48 -6 Q-31.8 -54 -31 -102 Z"/></clipPath><g clip-path="url(#c27)"><path d="M-43 -118 H-15.399999999999999 L-18.6 4 H-43Z" fill="var(--doorman-night)" opacity="0.17200000000000001"/><path d="M28 -118 H39 V4 H33Z" fill="var(--scene-room-amber)" opacity=".1"/></g><path d="M9.8 -112 Q11.3 -54 12.8 -3" stroke="var(--doorman-coat-deep)" stroke-width="2.2" fill="none"/><circle cx="-3.58" cy="-98" r="3" fill="var(--doorman-brass)"/><circle cx="20.42" cy="-98" r="2.76" fill="var(--doorman-brass)"/><circle cx="-2.91" cy="-78" r="3" fill="var(--doorman-brass)"/><circle cx="21.09" cy="-78" r="2.76" fill="var(--doorman-brass)"/><circle cx="-2.24" cy="-58" r="3" fill="var(--doorman-brass)"/><circle cx="21.76" cy="-58" r="2.76" fill="var(--doorman-brass)"/><g clip-path="url(#c27)"><path d="M-47 -14 H47 V-4 H-47Z" fill="var(--doorman-coat-deep)" opacity=".45"/></g><rect x="-19.1" y="-46" width="14" height="4" rx="2" fill="var(--doorman-coat-deep)"/><rect x="20.1" y="-46" width="11.4" height="4" rx="2" fill="var(--doorman-coat-deep)"/><g transform="rotate(7.5 -26 -64)"><circle cx="-26" cy="-58" r="4.6" fill="none" stroke="var(--doorman-brass)" stroke-width="1.8"/><rect x="-29.6" y="-55" width="2.6" height="10" rx="1" fill="var(--doorman-brass)" transform="rotate(14 -26 -55)"/><rect x="-25.4" y="-54.5" width="2.6" height="8.5" rx="1" fill="var(--doorman-brass)" transform="rotate(-10 -26 -55)"/></g><path d="M-26 -110 Q-30 -80 -3.8 -98 M-25 -110 Q-35 -64 -3.8 -98" stroke="var(--doorman-brass)" stroke-width="2.4" fill="none" stroke-linecap="round"/><path d="M-29.5 -81 l-1 9" stroke="var(--doorman-brass)" stroke-width="3.2" stroke-linecap="round"/><rect x="-30" y="-113" width="13" height="6" rx="3" fill="var(--doorman-brass)"/><g transform="translate(0 0) rotate(-4 0 -126)"><path d="M-27 -120 V-156 Q-27 -172 -11 -172 H11 Q27 -172 27 -156 V-120 Z" fill="var(--doorman-face)"/><clipPath id="h28"><path d="M-27 -120 V-156 Q-27 -172 -11 -172 H11 Q27 -172 27 -156 V-120 Z"/></clipPath><path clip-path="url(#h28)" d="M-29 -172 H-13.2 V-118 H-29Z" fill="var(--doorman-night)" opacity="0.158"/><g transform="translate(-7.4 -146) scale(1 1)"><g class="eo"><clipPath id="e29"><circle cx="0" cy="0" r="9.57"/></clipPath><circle cx="0" cy="0" r="9.2" fill="var(--doorman-eye)"/><g clip-path="url(#e29)"><circle cx="3.48" cy="0.58" r="4.6" fill="var(--doorman-night)"/><rect x="-14.719999999999999" y="-18.4" width="29.439999999999998" height="18.03" fill="var(--doorman-face)" transform="rotate(-4 0 0)"/></g><rect x="-10.86" y="-2.12" width="21.71" height="3.5" rx="1.75" fill="var(--doorman-night)" transform="rotate(-4 0 0)"/></g><g class="ec"><circle cx="0" cy="0" r="10.3" fill="var(--doorman-face)"/><path d="M-8.73 -0.46 Q-0.43 8.27 8.73 0.46" fill="none" stroke="var(--doorman-night)" stroke-width="3.86" stroke-linecap="round"/></g></g><g transform="translate(13.8 -146) scale(0.85 1)"><g class="eo"><clipPath id="e30"><circle cx="0" cy="0" r="9.57"/></clipPath><circle cx="0" cy="0" r="9.2" fill="var(--doorman-eye)"/><g clip-path="url(#e30)"><circle cx="3.48" cy="0.58" r="4.6" fill="var(--doorman-night)"/><rect x="-14.719999999999999" y="-18.4" width="29.439999999999998" height="18.03" fill="var(--doorman-face)" transform="rotate(2 0 0)"/></g><rect x="-10.86" y="-2.12" width="21.71" height="3.5" rx="1.75" fill="var(--doorman-night)" transform="rotate(2 0 0)"/></g><g class="ec"><circle cx="0" cy="0" r="10.3" fill="var(--doorman-face)"/><path d="M-8.73 -0.46 Q-0.43 8.27 8.73 0.46" fill="none" stroke="var(--doorman-night)" stroke-width="3.86" stroke-linecap="round"/></g></g><g transform="rotate(-5 0 -168)"><path d="M-18.78 -170 L-20.400000000000002 -198.48 Q-20.400000000000002 -201.48 -16.400000000000002 -201.48 Q1.2000000000000002 -203.98 18.8 -201.48 Q22.8 -201.48 22.8 -198.48 L21.18 -170 Z" fill="var(--doorman-hat)"/><path d="M-18.580000000000002 -171 L-19.68 -178.8 H22.08 L20.98 -171 Z" fill="var(--doorman-brass)"/><path d="M-20.400000000000002 -198.48 L-14.600000000000001 -199.48 L-11.780000000000001 -171 L-18.78 -170 Z" fill="var(--night)" opacity=".22"/><path d="M-35.1 -172.5 Q-32.1 -169 -25.1 -169.5 H25.1 Q32.1 -169 35.1 -172.5 Q36.1 -165 27.1 -164.5 H-27.1 Q-36.1 -165 -35.1 -172.5 Z" fill="var(--doorman-hat)"/></g></g><path d="M-31 -128 H31 V-110 Q2.4 -106 -31 -110 Z" fill="var(--doorman-coat-deep)"/><rect x="-31" y="-129" width="62" height="2.6" rx="1.3" fill="var(--doorman-brass)"/></g><circle cx="-35.08" cy="-100.32" r="7.2" fill="var(--doorman-coat-deep)"/><circle cx="-52.08" cy="-80.32" r="5.9" fill="var(--doorman-coat-deep)"/><path d="M-40.57 -104.98 L-56.58 -84.14 L-47.58 -76.5 L-29.59 -95.66 Z" fill="var(--doorman-coat-deep)"/><circle cx="-52.08" cy="-80.32" r="5.9" fill="var(--doorman-coat-deep)"/><circle cx="-42.67" cy="-66.87" r="5.1" fill="var(--doorman-coat-deep)"/><path d="M-56.91 -76.94 L-46.85 -63.95 L-38.49 -69.8 L-47.25 -83.7 Z" fill="var(--doorman-coat-deep)"/><path d="M-47.72 -83.62 Q-49.68 -80.21 -48.05 -76.63" stroke="var(--doorman-night)" stroke-width="1.5" fill="none" opacity=".35" stroke-linecap="round"/><rect x="-3.2" y="-6.6" width="6.4" height="13.2" rx="2" fill="var(--doorman-brass)" transform="translate(-42.67 -66.87) rotate(55.01)"/><g transform="translate(-38.08 -60.32) rotate(55.01)"><ellipse cx="-1" cy="4.5" rx="3.9" ry="3" transform="rotate(-38 -1 4.5)" fill="var(--doorman-mitten)"/><ellipse cx="0" cy="0" rx="6.4" ry="6.8" fill="var(--doorman-mitten)"/><ellipse cx="1" cy="-2.856" rx="3.5200000000000005" ry="1.9040000000000001" fill="var(--doorman-eye)" opacity=".16"/></g><circle cx="13.94" cy="-104.61" r="7.2" fill="var(--doorman-coat-deep)"/><circle cx="39.94" cy="-102.61" r="5.9" fill="var(--doorman-coat-deep)"/><path d="M13.39 -97.43 L39.49 -96.73 L40.39 -108.49 L14.49 -111.79 Z" fill="var(--doorman-coat-deep)"/><circle cx="39.94" cy="-102.61" r="5.9" fill="var(--doorman-coat-deep)"/><circle cx="60.12" cy="-106.93" r="5.1" fill="var(--doorman-coat-deep)"/><path d="M41.18 -96.84 L61.19 -101.95 L59.05 -111.92 L38.7 -108.38 Z" fill="var(--doorman-coat-deep)"/><rect x="-3.2" y="-6.6" width="6.4" height="13.2" rx="2" fill="var(--doorman-brass)" transform="translate(60.12 -106.93) rotate(-12.09)"/><g transform="translate(67.94 -108.61) rotate(-12.09)"><ellipse cx="0.5" cy="-5.6" rx="3.9" ry="3" transform="rotate(38 0.5 -5.6)" fill="var(--doorman-mitten)"/><ellipse cx="4" cy="0" rx="10.5" ry="5.6" fill="var(--doorman-mitten)"/><ellipse cx="5" cy="2.352" rx="5.775" ry="1.568" fill="var(--doorman-eye)" opacity=".16"/><path d="M6 1.5 h5" stroke="var(--doorman-mitten-line)" stroke-width="1.1" stroke-linecap="round" opacity=".5"/></g></g></svg>
     </div>
@@ -1414,21 +1414,16 @@ html:not(.js) th { position: static; }
   }
   addEventListener("scroll", hideKind, { passive: true });
   // Too little history: the page says so before the figure, in full, and offers no card for an estimate that
-  // will change. The product's own sentence is the lead figure's detail.
-  var leadSmall = $(".hero-figs .lead small"), hero = $(".hero");
-  var early = !!(leadSmall && /too little history yet|from only .+ of history/.test(leadSmall.textContent));
-  if (early && hero) {
+  // will change. The product gives the caveat as a sentence of its own: "Prometheus has only 30 minutes of it;
+  // run the scan again after a few days."
+  var hero = $(".hero"), early = hero ? hero.dataset.shortHistory || "" : "";
+  if (early) {
     hero.classList.add("early");
-    // The caveat, from its first mention of history to the end, never cut: "Prometheus has only 30 minutes of it;
-    // run the scan again after a few days".
-    var parts = leadSmall.textContent.split("; "), from = 0;
-    while (from < parts.length && !/history/.test(parts[from])) from++;
-    var warn = parts.slice(from).join("; ").replace(/^too little history yet: /, "");
     var note = doc.createElement("p");
     note.className = "callout early-note";
     note.innerHTML = '<span class="door-g" aria-hidden="true"></span><span><b></b> <span></span></span>';
     note.querySelector("b").textContent = "Too little history yet.";
-    note.querySelector("span > span").textContent = warn.charAt(0).toUpperCase() + warn.slice(1) + ".";
+    note.querySelector("span > span").textContent = early;
     var figs = $(".hero-figs");
     figs.classList.add("quiet");
     figs.parentNode.insertBefore(note, figs);
@@ -1509,11 +1504,11 @@ html:not(.js) th { position: static; }
   });
 
   // ---------------------------------------------------------------- next steps: measure first, then go live
-  // The product lists the measuring commands, then `enable`. Two blocks, each with its own Copy, so pasting the
-  // first never skips the measuring. (Request 15 keeps the two apart in the data.)
+  // The product lists the measuring commands, then the one that goes live, which it marks data-step="enable". Two
+  // blocks, each with its own Copy, so pasting the first never skips the measuring.
   each($$("#next pre.shell"), function (pre) {
     var lines = Array.prototype.slice.call(pre.querySelectorAll(".line"));
-    var live = lines.filter(function (l) { return /^kubectl \S+ enable\b/.test(l.textContent); });
+    var live = lines.filter(function (l) { return l.parentNode.getAttribute("data-step") === "enable"; });
     var measure = lines.filter(function (l) { return live.indexOf(l) < 0; });
     if (!live.length || !measure.length) return;
     var steps = doc.createElement("div");
@@ -1797,11 +1792,11 @@ html:not(.js) th { position: static; }
   refresh();
 
   // ---------------------------------------------------------------- the status page's meter
-  // What came off the bill, against what pausing freed: a bar from the two figures the page shows.
-  var money = function (s) { var m = (s || "").replace(/[^0-9.]/g, ""); return m ? parseFloat(m) : NaN; };
+  // What came off the bill, against what pausing freed: a bar from the two amounts, which the product gives as
+  // numbers. Under half a dollar freed, the figure reads <$1, and there's no bar.
   each($$(".meter"), function (m) {
-    var freed = money(m.dataset.of), saved = money(m.dataset.part);
-    if (!(freed >= 1) || isNaN(saved)) { m.hidden = true; return; }
+    var freed = parseFloat(m.dataset.of), saved = parseFloat(m.dataset.part);
+    if (!(freed >= .5) || isNaN(saved)) { m.hidden = true; return; }
     var share = Math.max(0, Math.min(1, saved / freed));
     m.dataset.share = share;
     m.style.setProperty("--share", (share * 100).toFixed(1) + "%");
@@ -1825,7 +1820,7 @@ html:not(.js) th { position: static; }
 </html>
 {{/* What the money rests on, built from the structured fields of HANDOFF request 18 (.Pricing on the scan page,
      .NodeScale on both). A nil .Pricing, prices too mixed to say in short, falls back to the full sentence. */}}
-{{define "price-row"}}{{with .Pricing}}<div class="row{{if eq .Source "assumed"}} assumed{{end}}"><span class="row-k">Prices</span><p class="prices">{{if eq .Source "custom"}}yours, {{.CPUPrice}} per vCPU-hour and {{.MemoryPrice}} per GiB-hour{{else if eq .Source "assumed"}}assumed, {{.Provider}} {{.Region}} on-demand at {{.CPUPrice}} per vCPU-hour and {{.MemoryPrice}} per GiB-hour, as your nodes have no list price{{else}}{{.Provider}} {{.Region}} list prices{{if .NodeTypes}} &middot; {{range $i, $t := .NodeTypes}}{{if $i}}, {{end}}{{$t}}{{end}}{{end}}{{if .Spot}} &middot; {{.Spot}} {{if eq .Spot 1}}workload{{else}}workloads{{end}} on spot, priced at spot{{end}}{{end}}</p></div>{{else}}<div class="row"><span class="row-k">Prices</span><p class="prices">{{.Prices}}</p></div>{{end}}{{end}}
+{{define "price-row"}}{{with .Pricing}}<div class="row{{if eq .Source "assumed"}} assumed{{end}}"><span class="row-k">Prices</span><p class="prices">{{if eq .Source "yours"}}yours, {{.CPUPrice}} per vCPU-hour and {{.MemoryPrice}} per GiB-hour{{else if eq .Source "assumed"}}assumed, {{.Provider}} {{.Region}} on-demand at {{.CPUPrice}} per vCPU-hour and {{.MemoryPrice}} per GiB-hour, as your nodes have no list price{{else}}{{.Provider}} {{.Region}} list prices{{if .NodeTypes}} &middot; {{range $i, $t := .NodeTypes}}{{if $i}}, {{end}}{{$t}}{{end}}{{end}}{{if .Spot}} &middot; {{.Spot}} {{if eq .Spot 1}}workload{{else}}workloads{{end}} on spot, priced at spot{{end}}{{end}}</p></div>{{else}}<div class="row"><span class="row-k">Prices</span><p class="prices">{{.Prices}}</p></div>{{end}}{{end}}
 {{define "bill-row"}}{{with .NodeScale}}<div class="row{{if eq .State "none"}} warn{{end}}"><span class="row-k">Your bill</span><p class="prices">{{if eq .State "none"}}won&#39;t drop until something removes nodes, and no node autoscaler was found.{{if .FixURL}} <a href="{{.FixURL}}">How to fix it</a>{{end}}{{else if eq .State "unknown"}}your access can&#39;t read the node autoscaler{{with .Detail}} ({{.}}){{end}}{{else if eq .State "pods"}}drops as pods stop, since {{range $i, $k := .Kinds}}{{if $i}} or {{end}}{{$k}}{{end}} bills what pods request{{else}}drops only as {{range $i, $k := .Kinds}}{{if $i}} or {{end}}{{$k}}{{end}} removes nodes{{if .Detail}} ({{.Detail}}){{end}}{{end}}</p></div>{{end}}{{end}}
-{{define "price-kind"}}{{with .Pricing}} · {{if eq .Source "custom"}}your prices{{else if eq .Source "assumed"}}assumed prices{{else}}list prices{{end}}{{end}}{{end}}
+{{define "price-kind"}}{{with .Pricing}} · {{if eq .Source "yours"}}your prices{{else if eq .Source "assumed"}}assumed prices{{else}}list prices{{end}}{{end}}{{end}}
 {{define "sym"}}{{if eq . "paused"}}asleep{{else if eq . "idle"}}idle{{else if eq . "active"}}active{{else if eq . "resuming"}}waking{{else if eq . "pausing"}}pausing{{else}}other{{end}}{{end}}

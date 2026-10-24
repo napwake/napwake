@@ -26,7 +26,6 @@ import (
 	"os/exec"
 	"runtime"
 	"slices"
-	"strconv"
 	"strings"
 	"time"
 
@@ -51,6 +50,10 @@ type reportPage struct {
 	// Empty says why there are no workloads, when there are none.
 	Empty string
 	Basis string
+	// BasisPublic is Basis without the Prometheus it names, which can be
+	// a host, a path or a project, for what the page shares unless the
+	// reader ticks the box.
+	BasisPublic string
 	// Prices is what costs were priced at, in full, for a Pricing too
 	// mixed to say in short.
 	Prices  string
@@ -73,19 +76,24 @@ type reportPage struct {
 	DependenciesLead string
 	Notes            []string
 	Method           []string
-	NextSteps        []template.HTML
-	Threshold        float64
-	IdleAfter        string
-	Over             string
-	Tips             tips
-	Terms            []term
-	Mark             string
+	// NextSteps are the commands to opt a workload in, or nil for none.
+	NextSteps *nextSteps
+	Threshold float64
+	IdleAfter string
+	Over      string
+	Tips      tips
+	Terms     []term
+	Mark      string
 	// Unjudged is how many workloads the notes list instead of Workloads.
 	Unjudged int
 }
 
 type headline struct {
 	Figures []figure
+	// ShortHistory is the caveat on the lead figure, as a sentence, when
+	// it's estimated from too little history: the page says it before the
+	// figure, and offers no card of an estimate that will change.
+	ShortHistory string
 }
 
 // tips explain the money and sleep columns, on their headers and in the
@@ -132,9 +140,23 @@ func termsFor(page reportPage) []term {
 	return terms
 }
 
+// figure is a headline amount. Kind says which it is, and Amount is it in
+// dollars, unrounded, so a page can tell figures apart and spot a zero
+// without reading Value or Label, which are worded for people.
 type figure struct {
 	Value, Label, Detail string
+	Kind                 string
+	Amount               float64
 }
+
+// What a figure counts.
+const (
+	figureFreed          = "freed"
+	figureCouldFree      = "couldFree"
+	figureCost           = "cost"
+	figureSaved          = "saved"
+	figureWouldHaveFreed = "wouldHaveFreed"
+)
 
 type fact struct {
 	Value, Label string
@@ -159,6 +181,29 @@ type workloadRow struct {
 	SleptSort                                float64
 	CouldSleepSort, FreedSort, CouldFreeSort float64
 	Because                                  string
+	// WontPause is why Napwake never pauses it however idle it is, as
+	// status says it, such as "namespace protected", or "" for one it
+	// would pause.
+	WontPause string
+	// IdleAfter is how long without activity Napwake waits before pausing
+	// it, such as "1h": its own idleAfter, or the scan's.
+	IdleAfter string
+}
+
+// nextSteps keep the commands that measure a workload in dry-run apart
+// from the one that then has Napwake pause it, so a page can copy them
+// apart without reading which is which.
+type nextSteps struct {
+	Measure []command
+	// Enable is nil when no workload is measured or idle to go live.
+	Enable *command
+}
+
+// command is a shell command as a page shows it, coloured as a terminal
+// would, with the workload it acts on.
+type command struct {
+	Line                template.HTML
+	Namespace, Workload string
 }
 
 type dependencyRow struct {
@@ -322,17 +367,18 @@ func writeHTML(w io.Writer, result scanResult, idleAfter time.Duration) error {
 func buildReport(result scanResult, idleAfter time.Duration) reportPage {
 	history := result.Mode == discovery.ModeHistory
 	page := reportPage{
-		Cluster:   result.Cluster,
-		ScannedAt: result.ScannedAt.Format("2 January 2006, 15:04 MST"),
-		Basis:     basisSentence(result),
-		Prices:    result.costsSentence(),
-		Pricing:   result.pricing(),
-		NodeScale: nodeScaleFor(result.NodeAutoscaler),
-		History:   history,
-		Threshold: result.Settings.CPUThreshold,
-		IdleAfter: roundedDuration(idleAfter),
-		Over:      replayedOver(result.History),
-		Mark:      doorman.Mark,
+		Cluster:     result.Cluster,
+		ScannedAt:   result.ScannedAt.Format("2 January 2006, 15:04 MST"),
+		Basis:       basisSentence(result),
+		BasisPublic: publicBasis(result),
+		Prices:      result.costsSentence(),
+		Pricing:     result.pricing(),
+		NodeScale:   nodeScaleFor(result.NodeAutoscaler),
+		History:     history,
+		Threshold:   result.Settings.CPUThreshold,
+		IdleAfter:   roundedDuration(idleAfter),
+		Over:        replayedOver(result.History),
+		Mark:        doorman.Mark,
 	}
 	if result.Totals.Workloads == 0 {
 		page.Empty = emptySentence(result)
@@ -398,14 +444,32 @@ func buildReport(result scanResult, idleAfter time.Duration) reportPage {
 			"can pause them while idle and wake them on the next request instead"}, page.Notes...)
 	}
 	page.Method = methodFor(result, history, len(page.Dependencies) > 0, idleAfter)
-	measure, enable := nextStepCommands(nextStepTargets(result.Workloads))
-	for _, step := range measure {
-		page.NextSteps = append(page.NextSteps, shellHTML(step))
+	page.NextSteps = nextStepsFor(result.Workloads)
+	return page
+}
+
+// nextStepsFor are the report's next steps: the terminal's commands, each
+// with the workload it's for.
+func nextStepsFor(workloads []Workload) *nextSteps {
+	idle, measuring := nextStepTargets(workloads)
+	measure, enable := nextStepCommands(idle, measuring)
+	if len(measure) == 0 && enable == "" {
+		return nil
+	}
+	steps := &nextSteps{}
+	for _, c := range measure {
+		steps.Measure = append(steps.Measure, commandFor(c, idle))
 	}
 	if enable != "" {
-		page.NextSteps = append(page.NextSteps, shellHTML(enable))
+		c := commandFor(enable, cmp.Or(measuring, idle))
+		steps.Enable = &c
 	}
-	return page
+	return steps
+}
+
+func commandFor(line string, wl *Workload) command {
+	return command{Line: shellHTML(line), Namespace: wl.Namespace,
+		Workload: strings.ToLower(string(wl.Kind)) + "/" + wl.Name}
 }
 
 func workloadRef(wl Workload) string {
@@ -424,6 +488,18 @@ func basisSentence(result scanResult) string {
 		result.History.Prometheus)
 }
 
+// publicBasis is basisSentence without the Prometheus history was read
+// from.
+func publicBasis(result scanResult) string {
+	if result.Mode != discovery.ModeHistory || result.History == nil {
+		return basisSentence(result)
+	}
+	if over := replayedOver(result.History); over != "" {
+		return fmt.Sprintf("Based on %s of Prometheus history, and CPU at the time of the scan.", over)
+	}
+	return "A snapshot of CPU at the time of the scan: Prometheus has no CPU history of the namespaces scanned."
+}
+
 // headlineFor leads with two figures. Until Napwake has paused anything,
 // they're the opportunity, what pausing could free a month, and what the
 // workloads it comes from cost; a zero that's down to too little history
@@ -438,13 +514,16 @@ func headlineFor(result scanResult) (headline, []fact) {
 	if live {
 		h.Figures = append(h.Figures, figure{Value: dollars(t.FreedThisMonth), Label: "freed by Napwake this month",
 			Detail: fmt.Sprintf("so far, pausing %s; %s of it saved as nodes scaled down", freedBy(t),
-				dollars(t.SavedThisMonth))})
+				dollars(t.SavedThisMonth)), Kind: figureFreed, Amount: t.FreedThisMonth})
 	}
-	if f, ok := couldFree(result, live); ok {
+	if f, shortHistory, ok := couldFree(result, live); ok {
 		h.Figures = append(h.Figures, f)
+		if !live {
+			h.ShortHistory = shortHistory
+		}
 	}
 
-	idle := fact{Value: strconv.Itoa(t.Idle), Label: "idle right now"}
+	idle := fact{Value: number(t.Idle), Label: "idle right now"}
 	if t.Idle > 0 {
 		idle.Label = fmt.Sprintf("idle right now, reserving %s and %s of memory",
 			vcpu(t.IdleCPUMillis), gib(t.IdleMemoryBytes))
@@ -452,17 +531,18 @@ func headlineFor(result scanResult) (headline, []fact) {
 	cost := fact{Value: dollars(t.MonthlyCost), Label: "a month, what these workloads cost while running"}
 	facts := []fact{cost, idle}
 	if !live {
-		h.Figures = append(h.Figures, figure{Value: cost.Value, Label: cost.Label})
+		h.Figures = append(h.Figures, figure{Value: cost.Value, Label: cost.Label, Kind: figureCost,
+			Amount: t.MonthlyCost})
 		workloads := "workloads"
 		if t.Workloads == 1 {
 			workloads = "workload"
 		}
-		facts[0] = fact{Value: strconv.Itoa(t.Workloads),
+		facts[0] = fact{Value: number(t.Workloads),
 			Label: workloads + " in " + countOf(namespacesOf(result.Workloads), "namespace")}
 	}
 	over, notCounted := replayedOver(result.History), notReplayed(result.Workloads)
 	if r := t.Replayed; r.Workloads > 0 {
-		replayed := fact{Value: fmt.Sprintf("%d of %d", r.Sleepers, r.Workloads),
+		replayed := fact{Value: number(r.Sleepers) + " of " + number(r.Workloads),
 			Label: fmt.Sprintf("unmanaged workloads would have slept over %s", over)}
 		if notCounted != "" {
 			replayed.Label += "; not counted: " + notCounted
@@ -471,10 +551,10 @@ func headlineFor(result scanResult) (headline, []fact) {
 	} else {
 		facts = append(facts, fact{Value: cents(t.IdleHourlyCost), Label: "an hour, what idle workloads cost while running"})
 	}
-	managed := fact{Value: fmt.Sprintf("%d of %d", t.Live+t.LiveProtected+t.DryRun, t.Workloads),
-		Label: fmt.Sprintf("managed by Napwake: %d live, %d in dry-run", t.Live, t.DryRun)}
+	managed := fact{Value: number(t.Live+t.LiveProtected+t.DryRun) + " of " + number(t.Workloads),
+		Label: "managed by Napwake: " + number(t.Live) + " live, " + number(t.DryRun) + " in dry-run"}
 	if t.LiveProtected > 0 {
-		managed.Label += fmt.Sprintf(", %d live but protected, so never paused", t.LiveProtected)
+		managed.Label += ", " + number(t.LiveProtected) + " live but protected, so never paused"
 	}
 	facts = append(facts, managed)
 	return h, facts
@@ -508,19 +588,20 @@ func freedBy(t discovery.Totals) string {
 // what dry-run measured and history shows, or, without either, what's idle
 // right now costs, as the most pausing it could free. Before anything is
 // live it's always shown, a zero with why; after, only when there's
-// something to free.
-func couldFree(result scanResult, live bool) (figure, bool) {
+// something to free. An estimate from too little history says so in its
+// detail, and that caveat comes back as a sentence of its own too.
+func couldFree(result scanResult, live bool) (f figure, shortHistory string, ok bool) {
 	t, r := result.Totals, result.Totals.Replayed
 	short := tooLittleHistory(result.History)
-	var tooEarly string
+	var onlyHas, tooEarly string
 	if short {
-		tooEarly = "too little history yet: Prometheus has only " + result.History.Span() + " of it; run the scan " +
-			"again after a few days"
+		onlyHas = "Prometheus has only " + result.History.Span() + " of it; run the scan again after a few days"
+		tooEarly = "too little history yet: " + onlyHas
 	}
 	switch {
 	case r.Sleepers > 0 || t.DryRun > 0:
 		could := r.MonthlyFreed + t.Measured.MonthlyFreed
-		f := figure{Value: dollars(could), Label: "could be freed a month"}
+		f = figure{Value: dollars(could), Label: "could be freed a month", Kind: figureCouldFree, Amount: could}
 		// The share is of what the workloads cost on the estimate's own
 		// basis. A workload that ran more pods in its history than it runs
 		// now would otherwise be shown freeing more than it costs.
@@ -534,12 +615,13 @@ func couldFree(result scanResult, live bool) (figure, bool) {
 		if short && r.Sleepers > 0 {
 			steadier := "from only " + result.History.Span() + " of history, so run the scan again after a few " +
 				"days for a steadier figure"
+			shortHistory = upperFirst(steadier) + "."
 			if f.Detail != "" {
 				steadier = f.Detail + "; " + steadier
 			}
 			f.Detail = steadier
 		}
-		return f, true
+		return f, shortHistory, true
 	case t.Idle > 0 && (r.Workloads == 0 || short):
 		// A whole window replayed in which nothing would have slept says
 		// more than one moment's idleness, so this is only for without one.
@@ -547,25 +629,28 @@ func couldFree(result scanResult, live bool) (figure, bool) {
 		if t.Idle == 1 {
 			costs = "costs"
 		}
-		f := figure{Value: dollars(t.IdleMonthlyCost), Label: "could be freed a month, at most",
+		f = figure{Value: dollars(t.IdleMonthlyCost), Label: "could be freed a month, at most",
 			Detail: fmt.Sprintf("what the %s idle right now %s while running, %s an hour",
-				countOf(t.Idle, "workload"), costs, cents(t.IdleHourlyCost))}
+				countOf(t.Idle, "workload"), costs, cents(t.IdleHourlyCost)), Kind: figureCouldFree,
+			Amount: t.IdleMonthlyCost}
 		if short {
 			f.Detail += "; " + tooEarly
+			shortHistory = onlyHas + "."
 		}
-		return f, true
+		return f, shortHistory, true
 	case live:
-		return figure{}, false
+		return figure{}, "", false
 	}
-	f := figure{Value: dollars(0), Label: "could be freed a month",
-		Detail: "nothing is idle right now; Prometheus history, or measuring in dry-run, shows how often workloads are"}
+	f = figure{Value: dollars(0), Label: "could be freed a month",
+		Detail: "nothing is idle right now; Prometheus history, or measuring in dry-run, shows how often workloads are",
+		Kind:   figureCouldFree}
 	switch {
 	case short:
-		f.Detail = tooEarly
+		f.Detail, shortHistory = tooEarly, onlyHas+"."
 	case r.Workloads > 0:
 		f.Detail = "no unmanaged workload would have slept over " + replayedOver(result.History)
 	}
-	return f, true
+	return f, shortHistory, true
 }
 
 // tooLittleHistory says the replay had less than a day of history, short
@@ -585,7 +670,10 @@ func workloadRowFor(wl Workload) workloadRow {
 		CostSort:   wl.MonthlyCost,
 		Freed:      freedCell(wl), FreedSort: -1, Saved: scanSavedCell(wl),
 		CouldFree: couldFreeCell(wl), CouldFreeSort: -1,
-		Because: because(wl),
+		Because: because(wl), WontPause: wl.NeverPaused(),
+	}
+	if d := wl.IdleAfter.Duration; d > 0 {
+		row.IdleAfter = roundedDuration(d)
 	}
 	row.State += " (" + management(wl) + ")"
 	row.CouldSleep, row.Wakes, row.Since, row.CouldSleepSort = sleepCells(wl)

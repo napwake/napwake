@@ -30,6 +30,7 @@ import (
 	"golang.org/x/sync/errgroup"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/meta"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	v1alpha1 "github.com/napwake/napwake/api/v1alpha1"
@@ -132,6 +133,10 @@ type Workload struct {
 	PodCPURequestMillis   int64      `json:"podCPURequestMillis"`
 	PodMemoryRequestBytes int64      `json:"podMemoryRequestBytes"`
 	LastDeployed          *time.Time `json:"lastDeployed,omitempty"`
+	// IdleAfter is how long without activity makes it idle, which is when
+	// Napwake would pause it: its own idleAfter when Napwake manages it,
+	// otherwise the scan's.
+	IdleAfter metav1.Duration `json:"idleAfter"`
 	// Reason is the evidence for State, e.g. "CPU 64% of its request" or "deployed 20m ago".
 	Reason string `json:"reason,omitempty"`
 	// Unmeasured says why CPU couldn't be measured.
@@ -165,6 +170,9 @@ type Workload struct {
 	// never pauses it, for a reason the scan may not see, such as the
 	// operator's protectedNamespaces.
 	protectedByNapwake bool
+	// neverPaused is why its ManagedWorkload has Napwake never pause it:
+	// why it's Protected, or that it has no idlePolicy.
+	neverPaused string
 	// Platform is the part of the cluster's own infrastructure it runs, such
 	// as Kubernetes, Napwake or cert-manager, for one the scan leaves out
 	// of what pausing could free.
@@ -202,6 +210,29 @@ type Workload struct {
 	// becomes money only if the autoscaler removes that capacity.
 	HourlyCost  float64 `json:"hourlyCost"`
 	MonthlyCost float64 `json:"monthlyCost"`
+}
+
+// What status says of a workload Napwake never pauses.
+const (
+	namespaceProtected     = "namespace protected"
+	pvcsDeletedOnScaleDown = "PVCs deleted on scale-down"
+)
+
+// NeverPaused says why Napwake never pauses the workload however idle it
+// is, as status says it, or "" for one it would: WontPause, which the scan
+// sees itself, then what its ManagedWorkload says, as for part of Napwake
+// or a namespace the operator's protectedNamespaces protects, then a
+// namespace labelled protected.
+func (w Workload) NeverPaused() string {
+	switch {
+	case w.WontPause != "":
+		return w.WontPause
+	case w.neverPaused != "":
+		return w.neverPaused
+	case w.Protected:
+		return namespaceProtected
+	}
+	return ""
 }
 
 // Measured is what Napwake would have done to a workload in dry-run.

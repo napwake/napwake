@@ -236,9 +236,10 @@ func TestHeadlineFor_BeforeAnythingIsLive(t *testing.T) {
 
 	require.Len(t, h.Figures, 2)
 	assert.Equal(t, figure{Value: "$179", Label: "could be freed a month",
-		Detail: "40% of what these workloads cost over the same time"}, h.Figures[0], "the opportunity first")
-	assert.Equal(t, figure{Value: "$446", Label: "a month, what these workloads cost while running"}, h.Figures[1],
-		"the cost it comes from beside it")
+		Detail: "40% of what these workloads cost over the same time", Kind: figureCouldFree, Amount: 179}, h.Figures[0],
+		"the opportunity first")
+	assert.Equal(t, figure{Value: "$446", Label: "a month, what these workloads cost while running",
+		Kind: figureCost, Amount: 446}, h.Figures[1], "the cost it comes from beside it")
 	assert.Equal(t, fact{Value: "2", Label: "workloads in 2 namespaces"}, facts[0],
 		"the cost moves to the headline; the scale stays")
 	for _, f := range h.Figures {
@@ -252,24 +253,29 @@ func TestHeadlineFor_BeforeAnythingIsLive(t *testing.T) {
 func TestHeadlineFor_TooLittleHistory(t *testing.T) {
 	short := &discovery.HistorySource{Prometheus: "monitoring/prometheus-operated", Hours: 0.5, Partial: true}
 	tests := []struct {
-		name   string
-		totals discovery.Totals
-		want   figure
+		name      string
+		totals    discovery.Totals
+		want      figure
+		wantShort string
 	}{
 		{name: "nothing idle", totals: discovery.Totals{Workloads: 14, MonthlyCost: 30,
 			Replayed: discovery.ReplayTotals{Workloads: 13}},
 			want: figure{Value: "$0", Label: "could be freed a month", Detail: "too little history yet: Prometheus " +
-				"has only 30 minutes of it; run the scan again after a few days"}},
+				"has only 30 minutes of it; run the scan again after a few days", Kind: figureCouldFree},
+			wantShort: "Prometheus has only 30 minutes of it; run the scan again after a few days."},
 		{name: "something idle now", totals: discovery.Totals{Workloads: 14, MonthlyCost: 30, Idle: 2,
 			IdleMonthlyCost: 8, IdleHourlyCost: 0.011, Replayed: discovery.ReplayTotals{Workloads: 13}},
 			want: figure{Value: "$8", Label: "could be freed a month, at most", Detail: "what the 2 workloads idle " +
 				"right now cost while running, $0.01 an hour; too little history yet: Prometheus has only 30 " +
-				"minutes of it; run the scan again after a few days"}},
+				"minutes of it; run the scan again after a few days", Kind: figureCouldFree, Amount: 8},
+			wantShort: "Prometheus has only 30 minutes of it; run the scan again after a few days."},
 		{name: "some would have slept", totals: discovery.Totals{Workloads: 14, MonthlyCost: 30, FreeableBasis: 30,
 			Replayed: discovery.ReplayTotals{Workloads: 13, Sleepers: 1, MonthlyFreed: 3}},
 			want: figure{Value: "$3", Label: "could be freed a month", Detail: "10% of what these workloads cost " +
 				"over the same time; from only 30 minutes of history, so run the scan again after a few days for a " +
-				"steadier figure"}},
+				"steadier figure", Kind: figureCouldFree, Amount: 3},
+			wantShort: "From only 30 minutes of history, so run the scan again after a few days for a steadier " +
+				"figure."},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -278,6 +284,13 @@ func TestHeadlineFor_TooLittleHistory(t *testing.T) {
 
 			require.NotEmpty(t, h.Figures)
 			assert.Equal(t, tt.want, h.Figures[0])
+			assert.Equal(t, tt.wantShort, h.ShortHistory, "the caveat, as a sentence of its own")
+
+			live := tt.totals
+			live.Live, live.FreedThisMonth = 1, 5
+			h, _ = headlineFor(scanResult{ClusterReport: &discovery.ClusterReport{Mode: discovery.ModeHistory,
+				History: short, Totals: live}})
+			assert.Empty(t, h.ShortHistory, "what was freed leads, and it's measured")
 		})
 	}
 }
@@ -296,7 +309,7 @@ func TestHeadlineFor_NothingToFree(t *testing.T) {
 	replayed.Totals.Idle, replayed.Totals.IdleMonthlyCost = 1, 120
 	h, _ = headlineFor(replayed)
 	assert.Equal(t, figure{Value: "$0", Label: "could be freed a month",
-		Detail: "no unmanaged workload would have slept over the last 7 days"}, h.Figures[0],
+		Detail: "no unmanaged workload would have slept over the last 7 days", Kind: figureCouldFree}, h.Figures[0],
 		"a week of history says more than what's idle this moment")
 	h, _ = headlineFor(snapshot)
 	assert.Equal(t, "$0", h.Figures[0].Value)
@@ -313,6 +326,8 @@ func TestHeadlineFor_Live(t *testing.T) {
 
 	require.Len(t, h.Figures, 1, "no zero opportunity beside what was freed")
 	assert.Equal(t, "freed by Napwake this month", h.Figures[0].Label)
+	assert.Equal(t, figureFreed, h.Figures[0].Kind, "a page tells it's live by the kind")
+	assert.InDelta(t, 12, h.Figures[0].Amount, 0.001)
 	assert.Equal(t, "a month, what these workloads cost while running", facts[0].Label)
 }
 
