@@ -16,8 +16,8 @@ limitations under the License.
 
 // Package oldname_test keeps the product's old name, Hybernate, out of the
 // tree. It's allowed only where it's history: the changelog's sections for
-// the releases that shipped under it, and the upgrade guide's section for
-// people moving from it.
+// the releases that shipped under it and its entry for the rename, and the
+// upgrade guide's section for people moving from it.
 package oldname_test
 
 import (
@@ -39,9 +39,11 @@ const (
 	thisFile = "test/oldname/oldname_test.go"
 
 	// The changelog's sections for releases before renamedIn, the first
-	// under the new name, keep the name they shipped under.
-	changelog = "CHANGELOG.md"
-	renamedIn = "v0.2.0"
+	// under the new name, keep the name they shipped under, and
+	// renamedIn's own renamedHeading subsection says what it was.
+	changelog      = "CHANGELOG.md"
+	renamedIn      = "v0.2.0"
+	renamedHeading = "### Renamed"
 
 	// The upgrade guide's section for people moving from the old name,
 	// whose heading ends with fromOldName, names it to say what changed.
@@ -49,8 +51,12 @@ const (
 	fromOldName  = "{ #moving-to-napwake }"
 )
 
-// releaseHeading is a changelog section for a release that has shipped.
-var releaseHeading = regexp.MustCompile(`^## \[(\d+\.\d+\.\d+)\] - \d{4}-\d{2}-\d{2}$`)
+// releaseHeading is a changelog section for a release, dated once it has
+// shipped.
+var (
+	releaseHeading = regexp.MustCompile(`^## \[(\d+\.\d+\.\d+)\] - (.+)$`)
+	shipped        = regexp.MustCompile(`^\d{4}-\d{2}-\d{2}$`)
+)
 
 func TestOldNameIsGone(t *testing.T) {
 	for _, path := range treeFiles(t) {
@@ -99,27 +105,34 @@ func containsOldName(data []byte) bool {
 func allowedLines(path string, lines []string) map[int]bool {
 	switch path {
 	case changelog:
-		return releasedBeforeRename(lines)
+		return changelogHistory(lines)
 	case upgradeGuide:
 		return sectionFromOldName(lines)
 	}
 	return nil
 }
 
-// releasedBeforeRename marks the changelog's sections for releases before
-// renamedIn. The link references at the end of the file aren't theirs.
-func releasedBeforeRename(lines []string) map[int]bool {
+// changelogHistory marks the changelog's sections for releases shipped
+// before renamedIn, and renamedIn's entry for the rename. The link
+// references at the end of the file are neither.
+func changelogHistory(lines []string) map[int]bool {
 	allowed := map[int]bool{}
-	history := false
+	var before, renaming, renamed bool
 	for i, line := range lines {
 		switch {
 		case strings.HasPrefix(line, "## "):
-			m := releaseHeading.FindStringSubmatch(line)
-			history = m != nil && semver.Compare("v"+m[1], renamedIn) < 0
+			before, renaming, renamed = false, false, false
+			if m := releaseHeading.FindStringSubmatch(line); m != nil {
+				version := "v" + m[1]
+				before = shipped.MatchString(m[2]) && semver.Compare(version, renamedIn) < 0
+				renaming = version == renamedIn
+			}
+		case strings.HasPrefix(line, "### "):
+			renamed = renaming && line == renamedHeading
 		case strings.HasPrefix(line, "["):
-			history = false
+			before, renaming, renamed = false, false, false
 		}
-		allowed[i] = history
+		allowed[i] = before || renamed
 	}
 	return allowed
 }
