@@ -152,6 +152,24 @@ func TestReportPage_NextStepsWithTheirTargets(t *testing.T) {
 	assert.Contains(t, string(steps.Enable.Line), "napwake enable deployment/api")
 }
 
+// Every row Napwake won't pause says why, as the room card says each one
+// does: the scan's own reason is among its clues, and one it learns from
+// elsewhere, such as a namespace labelled protected, is added once.
+func TestReportPage_EachRowNapwakeWontPauseSaysWhy(t *testing.T) {
+	result := historyResult()
+	result.Workloads[0].Protected = true
+	result.Workloads[1].WontPause = "PVCs deleted on scale-down"
+	result.Workloads[1].Clues = []string{"won't pause: PVCs deleted on scale-down"}
+
+	page := buildReport(result, time.Hour)
+
+	assert.Contains(t, page.Workloads[0].Because, "won't pause: namespace protected")
+	assert.Equal(t, 1, strings.Count(page.Workloads[1].Because, "won't pause:"), "said once")
+	got := renderReportPage(t, page)
+	pageHas(t, got, `"Napwake won't pause " + fmt(stays) + " of them. Each one's row says why."`)
+	pageLacks(t, got, "the table says why")
+}
+
 // An idle workload Napwake won't pause keeps its light in the With Napwake
 // picture, which the page knows from the row's own field, wherever its
 // reason sits in the line under the state.
@@ -199,6 +217,42 @@ func TestStatusPage_MoneyWhateverTheFiguresRead(t *testing.T) {
 	got = renderStatusPageData(t, page)
 	pageHas(t, got, `<div class="slot s0 lead">`, "with nothing saved, what was freed leads")
 	pageHas(t, got, `None of the 42 dollars freed has come off the bill yet.`)
+}
+
+// The meter says only what Napwake can see: where what's saved can't be
+// measured for some workloads, nothing saved is "can't tell", not "none",
+// and anything saved is at least that much (P37).
+func TestStatusPage_MeterSaysOnlyWhatNapwakeCanSee(t *testing.T) {
+	unmeasured := func(saved string) statusPage {
+		objs := statusCluster()
+		for _, o := range objs {
+			if w, ok := o.(*v1alpha1.ManagedWorkload); ok && w.Status.Cost != nil {
+				w.Status.Cost.SavedThisMonth = saved
+				w.Status.Cost.SavingsUnknown = "the operator can't list nodes"
+			}
+		}
+		page := statusPageOf(t, objs...)
+		require.False(t, page.SavedMeasurable)
+		page.Figures[0].Value, page.Figures[1].Value = "42 dollars", "35 dollars"
+		return page
+	}
+
+	got := renderStatusPageData(t, unmeasured("$0.00"))
+	pageHas(t, got, `Napwake can&#39;t tell here how much of the 42 dollars freed came off the bill.`)
+	pageLacks(t, got, `None of the`, "it may have")
+	pageLacks(t, got, `class="meter"`, "no bar for what can't be told")
+	pageHas(t, got, `at list price; Napwake can&#39;t tell here how much came off the bill"`, "the card says so too")
+
+	got = renderStatusPageData(t, unmeasured("$17.50"))
+	pageHas(t, got, `At least 35 dollars of the 42 dollars freed came off the bill.`)
+	pageHas(t, got, `class="meter"`, "the bar shows what's known")
+	pageHas(t, got, `data-detail="for the workloads whose savings can be measured"`, "the card says what it's of")
+
+	page := statusPageOf(t, statusCluster()...)
+	page.Figures[0].Value, page.Figures[1].Value = "42 dollars", "35 dollars"
+	got = renderStatusPageData(t, page)
+	pageHas(t, got, `<p class="meter-t">35 dollars of the 42 dollars freed came off the bill.</p>`, "measured for all")
+	pageHas(t, got, `data-detail=""`, "the card needs no caveat")
 }
 
 // The status page's amounts are the status's own totals, and say whether

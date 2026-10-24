@@ -53,6 +53,18 @@ func TestWriteHTML_WorkloadsIntroSaysWhatTheColumnsShow(t *testing.T) {
 	pageHas(t, got, "notes list: what each is doing right now, and what pausing them could free.</p>")
 }
 
+// The pages say only what Napwake can see, signs of use, never people:
+// an idle room is lit with no one seen, not lit for nobody.
+func TestReportAndStatusPage_SayOnlyWhatNapwakeSees(t *testing.T) {
+	for name, page := range map[string]string{"scan": reportHTML, "status": statusPageHTML} {
+		pageLacks(t, page, "nobody", name)
+		pageHas(t, page, `<em>lit, no one seen</em> &middot; idle`, name, "the legend")
+		pageHas(t, page, `idle: "lit, no one seen"`, name, "the rooms' word")
+		pageHas(t, page, `" workloads") + " with no one seen would be paused until someone uses "`, name)
+	}
+	pageHas(t, reportHTML, "Every lit room shows signs of use.")
+}
+
 // A dependency Napwake manages stays up while what depends on it is awake,
 // as the dependencies concept says, and the pages say so plainly.
 func TestReportAndStatusPage_Words(t *testing.T) {

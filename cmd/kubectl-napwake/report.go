@@ -672,6 +672,14 @@ func workloadRowFor(wl Workload) workloadRow {
 		CouldFree: couldFreeCell(wl), CouldFreeSort: -1,
 		Because: because(wl), WontPause: wl.NeverPaused(),
 	}
+	// The scan's own reason is among its clues; one from its ManagedWorkload
+	// or its namespace's label isn't, so the row says it too.
+	if row.WontPause != "" && wl.WontPause == "" {
+		if row.Because != "" {
+			row.Because += "; "
+		}
+		row.Because += "won't pause: " + row.WontPause
+	}
 	if d := wl.IdleAfter.Duration; d > 0 {
 		row.IdleAfter = roundedDuration(d)
 	}
