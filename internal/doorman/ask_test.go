@@ -1066,6 +1066,7 @@ func TestServer_APageLoadAsItPausesGetsWhatAPausedWorkloadGives(t *testing.T) {
 		resp, body := click(t, port, personGET)
 		assert.Equal(t, http.StatusServiceUnavailable, resp.StatusCode, body)
 		assert.Contains(t, body, "<title>Waking up pr-42.preview.example.dev</title>")
-		assert.NotEmpty(t, lastRequest(t, c), "the page load calls the pause off")
+		require.Eventually(t, func() bool { return lastRequest(t, c) != "" }, 5*time.Second, 20*time.Millisecond,
+			"the page load calls the pause off, as the page is shown")
 	})
 }
