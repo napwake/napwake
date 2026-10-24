@@ -4,6 +4,7 @@ description: "Count requests, connections or queue messages as activity with a P
 lede: "Count requests, connections or queue messages as activity, so a workload stays awake while it's used and wakes when it's needed."
 ---
 
+import { Tabs, TabItem } from '@astrojs/starlight/components';
 import StateFlow from '../../../components/StateFlow.astro';
 import NextSteps from '../../../components/NextSteps.astro';
 import StartCheckpoint from '../../../components/StartCheckpoint.astro';
@@ -12,7 +13,10 @@ CPU tells Napwake whether a workload is working. A Prometheus query tells it whe
 
 ## Point Napwake at Prometheus
 
-Set `prometheus.url` in your Helm values. It passes `--prometheus-url` to the operator:
+Give the operator your Prometheus's address in the Helm value `prometheus.url`, where you keep your other values:
+
+<Tabs syncKey="gitops">
+<TabItem label="Helm">
 
 ```yaml title="napwake-values.yaml"
 timezone: Europe/London
@@ -28,6 +32,48 @@ helm upgrade napwake oci://ghcr.io/napwake/charts/napwake --version X.Y.Z \
 ```
 
 Installed without a values file, see [Keeping your settings](/operations/upgrading/#keeping-your-settings).
+
+</TabItem>
+<TabItem label="Argo CD">
+
+Add it to the Application's `valuesObject`, as on [Installation](/getting-started/installation/), and commit. Don't run `helm upgrade`, since the next sync undoes it.
+
+```yaml title="Argo CD Application"
+spec:
+  source:
+    helm:
+      valuesObject:
+        timezone: Europe/London
+        prometheus:
+          url: http://prometheus.monitoring.svc.cluster.local:9090
+```
+
+</TabItem>
+<TabItem label="Flux">
+
+Add it to the HelmRelease's `values`, as on [Installation](/getting-started/installation/), and commit. Don't run `helm upgrade`, since the next reconcile undoes it.
+
+```yaml title="Flux HelmRelease"
+spec:
+  values:
+    timezone: Europe/London
+    prometheus:
+      url: http://prometheus.monitoring.svc.cluster.local:9090
+```
+
+</TabItem>
+</Tabs>
+
+The operator restarts with it. From the manifests, `--prometheus-url` is the operator flag to add, as [Installation](/getting-started/installation/) adds `--timezone`.
+
+<StartCheckpoint>
+The operator runs with your URL. This prints it:
+
+```bash
+kubectl get deployment napwake-controller-manager \
+  -n napwake-system -o yaml | grep prometheus-url
+```
+</StartCheckpoint>
 
 | URL | Rule |
 |-----|------|
