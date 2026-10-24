@@ -789,11 +789,14 @@ func (r *Reconciler) handleResume(ctx context.Context, workload *v1alpha1.Manage
 			log.FromContext(ctx).Info("couldn't learn what sent the request that woke the workload",
 				"workload", workload.Name, "namespace", workload.Namespace, "error", err.Error())
 		}
-		r.wakeDependencies(ctx, workload)
 		judged := r.judgePause(ctx, workload, why)
 		if err := r.transition(ctx, workload, v1alpha1.PhaseResuming, "ResumeRequested"); err != nil {
 			return nil, err
 		}
+		// Its dependencies are woken once it's written Resuming, so one
+		// reconciled for the stamp finds it awake, holding it, rather than
+		// judging its own pause wrong.
+		r.wakeDependencies(ctx, workload)
 		if why != nil {
 			r.emitEvent(workload, false, "Normal", why.reason, actionResume, "%s", why.message)
 		}

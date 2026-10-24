@@ -29,6 +29,7 @@ import (
 	"k8s.io/client-go/tools/events"
 	"k8s.io/utils/ptr"
 	"sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/controller-runtime/pkg/client/interceptor"
 
 	v1alpha1 "github.com/napwake/napwake/api/v1alpha1"
 	opmetrics "github.com/napwake/napwake/internal/metrics"
@@ -432,4 +433,42 @@ func TestWrongPause_IsCounted(t *testing.T) {
 	opmetrics.WrongPauses.WithLabelValues("default", "gone").Inc()
 	opmetrics.DeleteWorkload("default", "gone")
 	assert.Zero(t, counted("gone"), "a deleted workload's series goes, and one of its name starts again")
+}
+
+// A dependent that wakes stamps its dependencies only once it's Resuming,
+// so a dependency reconciled for the stamp finds it awake, holding it, and
+// its pause isn't judged wrong: it was the dependent's use.
+func TestWrongPause_ADependentStampsItsDependenciesOnceItsWaking(t *testing.T) {
+	pausedAt := metav1.NewTime(monotonic(fixedTime).Add(-time.Minute))
+	web := depWorkload("default", "web", v1alpha1.TargetKindDeployment, v1alpha1.PhasePaused,
+		v1alpha1.DependencyRef{Kind: v1alpha1.TargetKindDeployment, Name: "api"})
+	web.Status.Pause = &v1alpha1.PauseStatus{PreviousReplicas: 1, StartedAt: &pausedAt, PausedAt: &pausedAt,
+		WakeAnnotations: &v1alpha1.WakeAnnotations{}}
+	web.Status.LastTransitionTime = &pausedAt
+	r, now := pausedFor(t, "api", time.Minute, nil, web, targetDeploymentWithReplicas("web", "default", 0))
+	var webPhase v1alpha1.WorkloadPhase
+	r.Client = interceptor.NewClient(r.Client.(client.WithWatch), interceptor.Funcs{
+		Patch: func(ctx context.Context, c client.WithWatch, obj client.Object, patch client.Patch,
+			opts ...client.PatchOption) error {
+			if client.ObjectKeyFromObject(obj) == (client.ObjectKey{Namespace: "default", Name: "api"}) {
+				if _, ok := obj.(*v1alpha1.ManagedWorkload); ok && webPhase == "" {
+					var dependent v1alpha1.ManagedWorkload
+					require.NoError(t, c.Get(ctx, client.ObjectKey{Namespace: "default", Name: "web"}, &dependent))
+					webPhase = dependent.Status.Phase
+				}
+			}
+			return c.Patch(ctx, obj, patch, opts...)
+		}})
+
+	requestCame(t, r, "web", *now)
+	reconcileNamed(t, r, "web")
+	require.NotEmpty(t, webPhase, "the dependency was stamped")
+	assert.Equal(t, v1alpha1.PhaseResuming, webPhase, "stamped once its dependent's wake is written")
+
+	reconcileNamed(t, r, "api")
+	w := fetch(t, r, "api")
+	require.NotEqual(t, v1alpha1.PhasePaused, w.Status.Phase)
+	if w.Status.IdleWait != nil {
+		assert.Zero(t, w.Status.IdleWait.WrongPauses)
+	}
 }
