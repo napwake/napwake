@@ -9,7 +9,7 @@ home: https://github.com/napwake/napwake
 sources:
   - https://github.com/napwake/napwake
 maintainers:
-  - name: Tobi okedeji
+  - name: Tobi Okedeji
 keywords:
   - kubernetes
   - operator
