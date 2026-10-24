@@ -24,6 +24,7 @@ import (
 	"github.com/prometheus/client_golang/prometheus/testutil"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	appsv1 "k8s.io/api/apps/v1"
 	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/tools/events"
@@ -474,7 +475,8 @@ func TestWrongPause_ADependentStampsItsDependenciesOnceItsWaking(t *testing.T) {
 }
 
 // backedOff is the named workload, running, after two wrong pauses in a
-// row, with what setup makes of it and a reconciler for it.
+// row, with what setup makes of it, and a reconciler for it and objs,
+// which include its target, if it has one.
 func backedOff(t *testing.T, name string, setup func(*v1alpha1.ManagedWorkload),
 	objs ...client.Object) *Reconciler {
 	t.Helper()
@@ -487,8 +489,7 @@ func backedOff(t *testing.T, name string, setup func(*v1alpha1.ManagedWorkload),
 	if setup != nil {
 		setup(workload)
 	}
-	r := depReconciler(t, &stubPauser{pauseDone: true, resumeDone: true},
-		append([]client.Object{workload, targetDeploymentWithReplicas(name, "default", 1)}, objs...)...)
+	r := depReconciler(t, &stubPauser{pauseDone: true, resumeDone: true}, append(objs, workload)...)
 	r.Recorder = events.NewFakeRecorder(100)
 	r.clock = func() time.Time { return now }
 	return r
@@ -496,18 +497,25 @@ func backedOff(t *testing.T, name string, setup func(*v1alpha1.ManagedWorkload),
 
 // Once no pause can hold, the back-off would never end, and Napwake would
 // go on saying the workload was paused while in use. So dry-run,
-// protection and having no idle policy end it, and clear what Napwake
-// said, and a would-be pause in dry-run waits idleAfter, as a first pause
-// would.
+// protection, having no idle policy, an ignored target and a target gone
+// end it, and clear what Napwake said, and a would-be pause in dry-run
+// waits idleAfter, as a first pause would.
 func TestWrongPause_TheBackOffEndsOnceNoPauseCanHold(t *testing.T) {
+	target := func() *appsv1.Deployment { return targetDeploymentWithReplicas("api", "default", 1) }
+	ignored := target()
+	ignored.Labels = map[string]string{v1alpha1.LabelIgnore: v1alpha1.True}
 	tests := []struct {
 		name  string
 		setup func(*v1alpha1.ManagedWorkload)
 		objs  []client.Object
 	}{
-		{name: "dry-run", setup: func(w *v1alpha1.ManagedWorkload) { w.Spec.DryRun = true }},
-		{name: "protected", objs: []client.Object{defaultNamespace(protectedLabel)}},
-		{name: "no idle policy", setup: func(w *v1alpha1.ManagedWorkload) { w.Spec.IdlePolicy = nil }},
+		{name: "dry-run", setup: func(w *v1alpha1.ManagedWorkload) { w.Spec.DryRun = true },
+			objs: []client.Object{target()}},
+		{name: "protected", objs: []client.Object{target(), defaultNamespace(protectedLabel)}},
+		{name: "no idle policy", setup: func(w *v1alpha1.ManagedWorkload) { w.Spec.IdlePolicy = nil },
+			objs: []client.Object{target()}},
+		{name: "ignored", objs: []client.Object{ignored}},
+		{name: "its target gone"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -523,7 +531,7 @@ func TestWrongPause_TheBackOffEndsOnceNoPauseCanHold(t *testing.T) {
 		})
 	}
 
-	inDryRun := backedOff(t, "api", func(w *v1alpha1.ManagedWorkload) { w.Spec.DryRun = true })
+	inDryRun := backedOff(t, "api", func(w *v1alpha1.ManagedWorkload) { w.Spec.DryRun = true }, target())
 	assert.Equal(t, 5*time.Minute, idleWaitFor(fetch(t, inDryRun, "api")),
 		"a would-be pause doesn't wait the back-off, even before it's written as ended")
 }

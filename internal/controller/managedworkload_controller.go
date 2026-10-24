@@ -1192,6 +1192,7 @@ func (r *Reconciler) reconcileIgnored(ctx context.Context, workload *v1alpha1.Ma
 	}
 
 	routed := len(workload.Status.Doorman) > 0
+	backedOff := r.endBackOff(workload, "TargetIgnored")
 	released, replicas, err := r.releaseTarget(ctx, workload)
 	if err != nil {
 		return ctrl.Result{}, err
@@ -1202,7 +1203,7 @@ func (r *Reconciler) reconcileIgnored(ctx context.Context, workload *v1alpha1.Ma
 		if err := r.transition(ctx, workload, v1alpha1.PhaseRunning, "TargetIgnored"); err != nil {
 			return ctrl.Result{}, err
 		}
-	case !reported || routed:
+	case !reported || routed || backedOff:
 		if err := r.Status().Update(ctx, workload); err != nil {
 			return ctrl.Result{}, fmt.Errorf("updating target condition: %w", err)
 		}
@@ -1226,8 +1227,11 @@ func (r *Reconciler) reconcileTargetMissing(ctx context.Context, workload *v1alp
 	if err := r.removeDoorman(ctx, workload); err != nil {
 		return ctrl.Result{}, fmt.Errorf("removing doorman routes: %w", err)
 	}
-	if routed {
-		r.clearCondition(workload, conditionWakeOnRequest, "TargetNotFound")
+	backedOff := r.endBackOff(workload, ReasonTargetNotFound)
+	if routed || backedOff {
+		if routed {
+			r.clearCondition(workload, conditionWakeOnRequest, "TargetNotFound")
+		}
 		if err := r.Status().Update(ctx, workload); err != nil {
 			return ctrl.Result{}, fmt.Errorf("recording doorman routes removed: %w", err)
 		}

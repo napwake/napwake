@@ -96,7 +96,7 @@ After a wrong pause, the idle clock waits longer before the next. Each wrong pau
 | 3 | 40 minutes | 2 hours |
 | 4 or more | 1 hour 5 minutes | 2 hours |
 
-A pause that lasts the window ends the wait. So do dry-run, protecting the workload and removing its `idlePolicy`, which no pause can last through, and a would-be pause in dry-run never waits longer. The count is kept in `status.idleWait`, so a restart keeps it. The wait only ever delays a pause.
+A pause that lasts the window ends the wait. So do dry-run, protecting the workload, removing its `idlePolicy`, ignoring it and its target going, which no pause can last through, and a would-be pause in dry-run never waits longer. The count is kept in `status.idleWait`, so a restart keeps it. The wait only ever delays a pause.
 
 These don't make a pause wrong, since Napwake didn't misjudge the workload's use:
 

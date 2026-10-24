@@ -78,8 +78,8 @@ func idleWaitFor(workload *v1alpha1.ManagedWorkload) time.Duration {
 }
 
 // endBackOff ends the back-off of a workload no pause can hold for now: one
-// in dry-run, protected, or without an idle policy, for which no pause
-// would ever end it. Its next pause, whenever one comes, waits idleAfter,
+// in dry-run, protected, without an idle policy, ignored, or whose target
+// is gone, for which no pause would ever end it. Its next pause, whenever one comes, waits idleAfter,
 // and Napwake no longer says it was paused while in use. What it measured
 // of the workload's CPU, and its last wrong pause, are kept. It reports
 // whether that changed the workload's status.
