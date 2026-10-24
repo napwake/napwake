@@ -213,7 +213,7 @@ WakeOnRequest=True   DoormanRouted   the doorman asks a person's browser before 
 |------------|--------------|
 | A person's browser opening a page | <Outcome state="asleep">The asleep page, with a **Wake it** button</Outcome> |
 | A click on **Wake it**, from a browser that says it came from the page | <Outcome state="waking">Wakes it, as a held request does. The waking-up page follows</Outcome> |
-| A click whose button has run out, as on a page left open while its reloads failed | <Outcome state="asleep">The asleep page again, a `403`, saying the page was open too long, with a fresh button</Outcome> |
+| A click whose button has run out, as on a page left open while its reloads failed | <Outcome state="asleep">The asleep page again, a `403`, saying nothing woke, as the page may have been open too long, with a fresh button</Outcome> |
 | A click the browser says came from a page at another address. That's another site or subdomain. Or, over plain HTTP, an `Origin` that isn't the page's, as behind a proxy that rewrites `Host` | <Outcome state="asleep">The asleep page again, a `403`, saying the click came from another address. It says someone with access to the cluster can wake it with `kubectl napwake wake`</Outcome> |
 | A click within a minute of the last wake request | <Outcome state="asleep">The asleep page again, a `429` with `Retry-After: 60`, saying to try again in a minute</Outcome> |
 | A click from a browser that doesn't say it came from the page, one from before about 2020 | <Outcome state="asleep">The asleep page again, saying so. It says to use a current browser, or that someone with access to the cluster can wake it with `kubectl napwake wake`</Outcome> |
