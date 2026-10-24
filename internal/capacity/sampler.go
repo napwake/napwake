@@ -28,9 +28,9 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/log"
 
-	v1alpha1 "github.com/okedeji/hybernate/api/v1alpha1"
-	"github.com/okedeji/hybernate/internal/cost"
-	"github.com/okedeji/hybernate/internal/metrics"
+	v1alpha1 "github.com/napwake/napwake/api/v1alpha1"
+	"github.com/napwake/napwake/internal/cost"
+	"github.com/napwake/napwake/internal/metrics"
 )
 
 const (
@@ -64,7 +64,7 @@ type Options struct {
 	Clock clock.WithTicker
 }
 
-// Sampler measures, every SampleInterval, how much of what Hybernate holds
+// Sampler measures, every SampleInterval, how much of what Napwake holds
 // paused each node pool's spare capacity couldn't hold, and credits each
 // paused workload its share as saved resource-hours, until they're
 // drained into its status.

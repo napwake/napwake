@@ -28,7 +28,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/interceptor"
 
-	"github.com/okedeji/hybernate/internal/autoscaler"
+	"github.com/napwake/napwake/internal/autoscaler"
 )
 
 // A workload KEDA scales is held at zero by KEDA while it's paused, so KEDA

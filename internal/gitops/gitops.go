@@ -16,7 +16,7 @@ limitations under the License.
 
 // Package gitops tells who sets a workload's replica count, from the field
 // managers the API server records, whether a GitOps tool has been told to
-// leave it to Hybernate, and how to tell it.
+// leave it to Napwake, and how to tell it.
 package gitops
 
 import (
@@ -39,7 +39,7 @@ const (
 	Kluctl Tool = "Kluctl"
 )
 
-// RetryAfter is how long Hybernate waits to pause a workload again after a
+// RetryAfter is how long Napwake waits to pause a workload again after a
 // GitOps tool undid a pause. Pausing is also how it finds out the tool has
 // been told to leave the replicas, so it keeps trying, at the cost of one
 // restart each time until then.
@@ -70,12 +70,12 @@ func ReplicasWriter(managedFields []metav1.ManagedFieldsEntry) (Writer, bool) {
 }
 
 // FieldWriter is whoever last set the field at path, given as its field
-// names, such as "metadata", "annotations", "hybernate.io/dry-run", and
+// names, such as "metadata", "annotations", "napwake.dev/dry-run", and
 // false when no field manager records it.
 //
 // Managed-field times have one-second precision, so two managers can tie.
 // A GitOps tool wins a tie: it sets the field again on every sync, and
-// missing that would have Hybernate keep pausing what the tool keeps waking.
+// missing that would have Napwake keep pausing what the tool keeps waking.
 func FieldWriter(managedFields []metav1.ManagedFieldsEntry, path ...string) (Writer, bool) {
 	var found Writer
 	ok := false
@@ -142,7 +142,7 @@ var argoIgnoreFix = []string{
 	"    jsonPointers: [/spec/replicas]",
 }
 
-// Fix is what to change so the tool stops setting replicas Hybernate has
+// Fix is what to change so the tool stops setting replicas Napwake has
 // paused, one line per step.
 func Fix(t Tool) []string {
 	switch t {

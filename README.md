@@ -1,4 +1,4 @@
-# Hybernate
+# Napwake
 
 [![Go](https://img.shields.io/badge/Go-1.26+-00ADD8?logo=go)](https://go.dev)
 [![License](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](LICENSE)
@@ -6,31 +6,31 @@
 
 **Your Kubernetes workloads are running 24/7. Your users aren't.**
 
-Hybernate is a Kubernetes operator that detects idle workloads, learns their demand patterns, and automatically pauses them, scaling to zero without deleting anything. It brings them back on the first request or before traffic returns, turning your non-production clusters from always-on cost centers into pay-for-what-you-use environments.
+Napwake is a Kubernetes operator that detects idle workloads, learns their demand patterns, and automatically pauses them, scaling to zero without deleting anything. It brings them back on the first request or before traffic returns, turning your non-production clusters from always-on cost centers into pay-for-what-you-use environments.
 
-## Why Hybernate?
+## Why Napwake?
 
 Most staging, dev, and test workloads sit idle 60-80% of the time: nights, weekends, holidays. You're paying for compute that nobody is using.
 
-Hybernate fixes this by:
+Napwake fixes this by:
 
 - **Detecting idle workloads** with a per-workload activity clock: CPU, deploys, Prometheus queries, and activity annotations from your own tooling, with no learning period
 - **Learning demand patterns** via a per-workload Holt-Winters forecasting model that tracks daily and weekly seasonality
 - **Acting automatically** by pausing idle workloads, waking them on the first request, and, with `autoResume`, resuming them before users arrive
-- **Tracking cost** per workload on what pods request: what each pause frees, and what of that measurably came off the bill as nodes scaled down, from the spare capacity left on each node pool, with cluster-wide totals in `kubectl hybernate status`. Freed capacity becomes money only once a node autoscaler removes nodes
+- **Tracking cost** per workload on what pods request: what each pause frees, and what of that measurably came off the bill as nodes scaled down, from the spare capacity left on each node pool, with cluster-wide totals in `kubectl napwake status`. Freed capacity becomes money only once a node autoscaler removes nodes
 
 ## How It Works
 
 ```mermaid
 flowchart TD
-    label["Deployment, StatefulSet, or namespace<br/>labelled hybernate.io/managed: &quot;true&quot;"] --> mw["ManagedWorkload<br/>settings from annotations"]
+    label["Deployment, StatefulSet, or namespace<br/>labelled napwake.dev/managed: &quot;true&quot;"] --> mw["ManagedWorkload<br/>settings from annotations"]
     mw --> running["Running<br/>activity clock: CPU, deploys,<br/>activity annotations, Prometheus"]
     running -- "no activity for idleAfter,<br/>and no forecast of demand" --> paused["Paused<br/>scaled to zero; Services<br/>routed to the doorman"]
     paused -- "a request, an activity annotation,<br/>or autoResume ahead of demand" --> resuming["Resuming<br/>replicas restored,<br/>dependencies woken"]
     resuming -- "pods Ready;<br/>held requests passed through" --> running
 ```
 
-1. You label a Deployment, StatefulSet, or namespace `hybernate.io/managed: "true"`
+1. You label a Deployment, StatefulSet, or namespace `napwake.dev/managed: "true"`
 2. The operator tracks when the workload was last active: CPU, deploys, activity annotations, and any Prometheus query you give it
 3. A per-workload forecast model learns when the workload is typically busy
 4. When nothing has been active for `idleAfter` (default 1 hour), the workload is paused
@@ -41,36 +41,36 @@ flowchart TD
 **See what's idle across your cluster, with nothing installed in it:**
 
 ```bash
-brew install okedeji/tap/kubectl-hybernate
-kubectl hybernate scan
+brew install napwake/tap/kubectl-napwake
+kubectl napwake scan
 ```
 
 Homebrew installs the newest release, or the newest release candidate until the first stable release. Without Homebrew, or for exactly this version, install the plugin with [krew](https://krew.sigs.k8s.io/docs/user-guide/setup/install/):
 
 ```bash
 kubectl krew install --manifest-url \
-  https://github.com/okedeji/hybernate/releases/download/v0.2.0/krew-hybernate.yaml
+  https://github.com/napwake/napwake/releases/download/v0.2.0/krew-napwake.yaml
 ```
 
-or [download it](https://okedeji.io/hybernate/getting-started/kubectl-plugin/#installation) for Linux, macOS or Windows.
+or [download it](https://docs.napwake.dev/getting-started/kubectl-plugin/#installation) for Linux, macOS or Windows.
 
-**Install the operator**, with your settings in a values file, `hybernate-values.yaml`, starting with your users' time zone:
+**Install the operator**, with your settings in a values file, `napwake-values.yaml`, starting with your users' time zone:
 
-```yaml title="hybernate-values.yaml"
+```yaml title="napwake-values.yaml"
 timezone: Europe/London
 ```
 
 ```bash
-helm install hybernate oci://ghcr.io/okedeji/charts/hybernate \
+helm install napwake oci://ghcr.io/napwake/charts/napwake \
   --version 0.2.0 \
-  --namespace hybernate-system \
+  --namespace napwake-system \
   --create-namespace \
-  -f hybernate-values.yaml
+  -f napwake-values.yaml
 ```
 
-The forecast learns your users' busy hours in their time zone, so it wakes workloads for their mornings all year, through daylight saving. Keep the file and upgrade with it too, so upgrades keep your settings; see [Keeping your settings](https://okedeji.io/hybernate/operations/upgrading/#keeping-your-settings). To install with `install.yaml`, Kustomize, Argo CD or Flux instead, see [Installation](https://okedeji.io/hybernate/getting-started/installation/).
+The forecast learns your users' busy hours in their time zone, so it wakes workloads for their mornings all year, through daylight saving. Keep the file and upgrade with it too, so upgrades keep your settings; see [Keeping your settings](https://docs.napwake.dev/operations/upgrading/#keeping-your-settings). To install with `install.yaml`, Kustomize, Argo CD or Flux instead, see [Installation](https://docs.napwake.dev/getting-started/installation/).
 
-Hybernate supports Kubernetes 1.30 and later, and is tested in CI on 1.30 and 1.37. The chart installs the operator, the doorman that wakes paused workloads on request, and the ManagedWorkload CRD.
+Napwake supports Kubernetes 1.30 and later, and is tested in CI on 1.30 and 1.37. The chart installs the operator, the doorman that wakes paused workloads on request, and the ManagedWorkload CRD.
 
 **Opt a workload in, measuring first:**
 
@@ -81,16 +81,16 @@ metadata:
   name: my-api
   namespace: staging
   labels:
-    hybernate.io/managed: "true"
+    napwake.dev/managed: "true"
   annotations:
-    hybernate.io/dry-run: "true"
-    hybernate.io/idle-after: "2h"
+    napwake.dev/dry-run: "true"
+    napwake.dev/idle-after: "2h"
 ```
 
-The label opts it in; the annotations are its settings. Label a namespace instead to cover every workload in it. In dry-run, Hybernate tracks the workload's activity and what pausing would free, without pausing it. If Argo CD or Flux applies the workload, first have it [leave the replicas to Hybernate](https://okedeji.io/hybernate/guides/gitops/), or it undoes every pause. When you're confident:
+The label opts it in; the annotations are its settings. Label a namespace instead to cover every workload in it. In dry-run, Napwake tracks the workload's activity and what pausing would free, without pausing it. If Argo CD or Flux applies the workload, first have it [leave the replicas to Napwake](https://docs.napwake.dev/guides/gitops/), or it undoes every pause. When you're confident:
 
 ```bash
-kubectl hybernate enable my-api -n staging
+kubectl napwake enable my-api -n staging
 ```
 
 ## Features
@@ -100,21 +100,21 @@ kubectl hybernate enable my-api -n staging
 - **Activity-based idle detection**: any sign of use (CPU, a deploy, a Prometheus query such as request rate, an activity annotation) keeps a workload awake; it pauses after `idleAfter` with none
 - **Demand forecasting** via a Holt-Winters double seasonal model that learns daily and weekly patterns per workload, with confidence scoring and anomaly detection
 - **Works with HPA, KEDA, and GitOps tools** (Argo CD, Flux, Fleet, kapp, Kluctl): an HPA leaves a paused workload at zero, a KEDA one is held there through KEDA, and a GitOps tool undoing a pause is reported with the fix rather than fought
-- **Wake on request**: a request to a paused workload's Service wakes it and is held until the workload is Ready, so callers usually see a slow response instead of an error ([when they don't](https://okedeji.io/hybernate/concepts/wake-on-request/#what-the-caller-sees)). Browsers get a waking-up page that reloads until the app is up. On a public URL, which crawlers and scanners would keep awake, the doorman can [ask before waking](https://okedeji.io/hybernate/concepts/wake-on-request/#asking-before-waking) it, so only a person's click does; see [Public Preview Environments](https://okedeji.io/hybernate/guides/preview-environments/)
-- **Pause and resume** with scale to zero and forecast-driven resume. Hybernate never deletes a workload or its storage
+- **Wake on request**: a request to a paused workload's Service wakes it and is held until the workload is Ready, so callers usually see a slow response instead of an error ([when they don't](https://docs.napwake.dev/concepts/wake-on-request/#what-the-caller-sees)). Browsers get a waking-up page that reloads until the app is up. On a public URL, which crawlers and scanners would keep awake, the doorman can [ask before waking](https://docs.napwake.dev/concepts/wake-on-request/#asking-before-waking) it, so only a person's click does; see [Public Preview Environments](https://docs.napwake.dev/guides/preview-environments/)
+- **Pause and resume** with scale to zero and forecast-driven resume. Napwake never deletes a workload or its storage
 
 ### Operations
 
-Not sure which command to use? The plugin page opens with [a table of them](https://okedeji.io/hybernate/getting-started/kubectl-plugin/#which-command): what each is for, and which need the operator installed.
+Not sure which command to use? The plugin page opens with [a table of them](https://docs.napwake.dev/getting-started/kubectl-plugin/#which-command): what each is for, and which need the operator installed.
 
-- **Label opt-in**: `hybernate.io/managed: "true"` on a workload or namespace, with settings as annotations, all in the manifests you already keep in Git
-- **`kubectl hybernate scan`** finds idle workloads in a cluster and what they cost, with nothing installed, and with Prometheus replays the last week to show how long each would have slept and what that frees, in a report that opens in your browser to share
-- **`kubectl hybernate status`** shows what Hybernate is doing in a cluster on one screen: each workload's state, when it pauses next or what holds it awake, what needs attention, what pausing has freed and what of that it saved, and the latest pauses and wakes with what caused them
-- **`kubectl hybernate pause`** pauses a workload now, such as a preview environment at the end of the day, to wake on its next request
-- **`kubectl hybernate wake`** wakes a paused workload from the terminal and waits until it's Running
-- **`kubectl hybernate forecast`** replays the forecast over your cluster's own Prometheus history, to show when it would have woken each workload and how often for nothing, before you trust `autoResume` with it; named, as `forecast api -n staging`, it also shows what Hybernate's own forecast of a workload it manages is doing: whether it's acting and why, what it has learned, and the hours it expects busy
-- **`kubectl hybernate nodes`** names the node autoscaler and shows, for each node, what keeps it from being removed, so what pausing frees can come off the bill
-- **`kubectl hybernate enable`** ends dry-run once you trust what you've measured, and says what to change in Git when a GitOps tool applies the workload
+- **Label opt-in**: `napwake.dev/managed: "true"` on a workload or namespace, with settings as annotations, all in the manifests you already keep in Git
+- **`kubectl napwake scan`** finds idle workloads in a cluster and what they cost, with nothing installed, and with Prometheus replays the last week to show how long each would have slept and what that frees, in a report that opens in your browser to share
+- **`kubectl napwake status`** shows what Napwake is doing in a cluster on one screen: each workload's state, when it pauses next or what holds it awake, what needs attention, what pausing has freed and what of that it saved, and the latest pauses and wakes with what caused them
+- **`kubectl napwake pause`** pauses a workload now, such as a preview environment at the end of the day, to wake on its next request
+- **`kubectl napwake wake`** wakes a paused workload from the terminal and waits until it's Running
+- **`kubectl napwake forecast`** replays the forecast over your cluster's own Prometheus history, to show when it would have woken each workload and how often for nothing, before you trust `autoResume` with it; named, as `forecast api -n staging`, it also shows what Napwake's own forecast of a workload it manages is doing: whether it's acting and why, what it has learned, and the hours it expects busy
+- **`kubectl napwake nodes`** names the node autoscaler and shows, for each node, what keeps it from being removed, so what pausing frees can come off the bill
+- **`kubectl napwake enable`** ends dry-run once you trust what you've measured, and says what to change in Git when a GitOps tool applies the workload
 - **Cost tracking** per workload, for the current month: what it cost, what pausing freed, what that saved once nodes went, and a projection for the month, priced at the list price of the nodes it runs on
 - **Dry-run mode** to see every pause the operator would make, and what it would free, without it pausing anything
 
@@ -138,7 +138,7 @@ flowchart TB
         door["Holds requests to paused workloads,<br/>wakes them, passes requests through"]
     end
     clients["Clients, ingress controllers,<br/>load balancers"] -- "Service of a paused workload" --> door
-    door -- "hybernate.io/last-request" --> api
+    door -- "napwake.dev/last-request" --> api
     mwr --> api["Kubernetes API server"]
     mwr --> ms["metrics-server"]
     mwr -.-> prom["Prometheus<br/>optional"]
@@ -153,17 +153,17 @@ flowchart TB
 
 ## Documentation
 
-Full docs at **[okedeji.io/hybernate](https://okedeji.io/hybernate)**
+Full docs at **[docs.napwake.dev](https://docs.napwake.dev)**
 
-- [Installation](https://okedeji.io/hybernate/getting-started/installation/): Helm, kubectl, and source
-- [Quickstart](https://okedeji.io/hybernate/getting-started/quickstart/): manage your first workload
-- [Opting In](https://okedeji.io/hybernate/guides/opt-in/): the label, every setting, and GitOps
-- [Idle Detection](https://okedeji.io/hybernate/concepts/idle-detection/): how the activity clock decides when to pause
-- [Forecasting](https://okedeji.io/hybernate/concepts/forecasting/): the Holt-Winters prediction engine
-- [Cost Tracking](https://okedeji.io/hybernate/concepts/cost-tracking/): what a workload costs, what pausing frees, and what that saves
-- [Node Pools for Real Savings](https://okedeji.io/hybernate/guides/node-pools/): turning what pausing frees into nodes off the bill
-- [API Reference](https://okedeji.io/hybernate/reference/api/): complete CRD field reference
-- [Metrics Reference](https://okedeji.io/hybernate/reference/metrics/): all Prometheus metrics
+- [Installation](https://docs.napwake.dev/getting-started/installation/): Helm, kubectl, and source
+- [Quickstart](https://docs.napwake.dev/getting-started/quickstart/): manage your first workload
+- [Opting In](https://docs.napwake.dev/guides/opt-in/): the label, every setting, and GitOps
+- [Idle Detection](https://docs.napwake.dev/concepts/idle-detection/): how the activity clock decides when to pause
+- [Forecasting](https://docs.napwake.dev/concepts/forecasting/): the Holt-Winters prediction engine
+- [Cost Tracking](https://docs.napwake.dev/concepts/cost-tracking/): what a workload costs, what pausing frees, and what that saves
+- [Node Pools for Real Savings](https://docs.napwake.dev/guides/node-pools/): turning what pausing frees into nodes off the bill
+- [API Reference](https://docs.napwake.dev/reference/api/): complete CRD field reference
+- [Metrics Reference](https://docs.napwake.dev/reference/metrics/): all Prometheus metrics
 
 ## Contributing
 

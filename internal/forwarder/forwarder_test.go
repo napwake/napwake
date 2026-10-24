@@ -98,7 +98,7 @@ func closedPort(t *testing.T) int32 {
 }
 
 func newForwarder(routes map[int32]int32, r resolver) *Forwarder {
-	f := New(Options{Routes: routes, Doorman: "hybernate-doorman-pods.hybernate-system.svc"})
+	f := New(Options{Routes: routes, Doorman: "napwake-doorman-pods.napwake-system.svc"})
 	f.resolver = r
 	f.listen = func(int32) (net.Listener, error) { return net.Listen("tcp", "127.0.0.1:0") }
 	f.checkEvery = 50 * time.Millisecond

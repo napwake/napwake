@@ -33,8 +33,8 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 	"sigs.k8s.io/controller-runtime/pkg/client/interceptor"
 
-	v1alpha1 "github.com/okedeji/hybernate/api/v1alpha1"
-	"github.com/okedeji/hybernate/internal/cost"
+	v1alpha1 "github.com/napwake/napwake/api/v1alpha1"
+	"github.com/napwake/napwake/internal/cost"
 )
 
 func node(name, instanceType string, labels ...string) *corev1.Node {
@@ -125,7 +125,7 @@ func TestScanCluster_PricesAtItsNodes(t *testing.T) {
 // table has no spot price for it.
 const unsoldAsSpot = "u7in-32tb.224xlarge"
 
-// A workload with no pod on a node is priced where Hybernate last saw it
+// A workload with no pod on a node is priced where Napwake last saw it
 // run, or at the cluster's most common node type.
 func TestScanCluster_PricesPausedWorkloads(t *testing.T) {
 	small := listPrice(t, "m6i.large")
@@ -150,9 +150,9 @@ func TestScanCluster_PricesPausedWorkloads(t *testing.T) {
 	got := byName(scanWorkloads(t, objs...))
 
 	assert.InDelta(t, podHour(cost.Rates{CPUPerHour: 0.05, MemoryPerHour: 0.006}), got["recorded"].HourlyCost, 1e-9,
-		"where Hybernate last saw it run")
+		"where Napwake last saw it run")
 	assert.False(t, got["recorded"].OnSpot)
-	assert.True(t, got["recorded-at-spot"].OnSpot, "Hybernate priced it at spot, so the scan says so")
+	assert.True(t, got["recorded-at-spot"].OnSpot, "Napwake priced it at spot, so the scan says so")
 	assert.InDelta(t, podHour(small), got["unrecorded"].HourlyCost, 1e-9, "the most common node type")
 }
 

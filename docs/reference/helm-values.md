@@ -1,23 +1,23 @@
 # Helm Values Reference
 
-Complete reference for the Hybernate Helm chart. Put the values you set in a file, starting with your users' [time zone](../getting-started/installation.md#time-zone):
+Complete reference for the Napwake Helm chart. Put the values you set in a file, starting with your users' [time zone](../getting-started/installation.md#time-zone):
 
-```yaml title="hybernate-values.yaml"
+```yaml title="napwake-values.yaml"
 timezone: Europe/London
 ```
 
 and install with it:
 
 ```bash
-helm install hybernate oci://ghcr.io/okedeji/charts/hybernate --version 0.2.0 \
-  --namespace hybernate-system --create-namespace \
-  -f hybernate-values.yaml
+helm install napwake oci://ghcr.io/napwake/charts/napwake --version 0.2.0 \
+  --namespace napwake-system --create-namespace \
+  -f napwake-values.yaml
 ```
 
 Upgrade with the same file, so upgrades keep your settings; see [Keeping your settings](../operations/upgrading.md#keeping-your-settings). The chart is published only as an OCI artifact; there's no `helm repo` to add. Its version has no `v` (`0.2.0`); the image tags do (`v0.2.0`). To see all defaults:
 
 ```bash
-helm show values oci://ghcr.io/okedeji/charts/hybernate --version 0.2.0
+helm show values oci://ghcr.io/napwake/charts/napwake --version 0.2.0
 ```
 
 The chart validates values against its schema (`values.schema.json`), so a mistyped value, such as `logLevel: warn` or `defaults.cpuThreshold: 0`, fails the install or upgrade rather than the operator, and so does a value the chart doesn't have, such as `watchNamespace` for `watchNamespaces`, which Helm would otherwise ignore. Only what's passed through to Kubernetes as it is, such as `resources`, `affinity`, `tolerations`, `nodeSelector` and pod annotations and labels, is left for Kubernetes to check. `timezone` is the exception: the schema can't list every IANA zone, so an unknown one is caught when the operator starts, which then exits with `invalid --timezone` and `unknown time zone` in its log, and the rollout doesn't finish.
@@ -29,13 +29,13 @@ The chart validates values against its schema (`values.schema.json`), so a misty
 | `nameOverride` | `""` | Replaces the chart name in resource names |
 | `fullnameOverride` | `""` | Replaces the full name the chart's resources are named after |
 
-The full name is the release name when it contains `hybernate`, and `<release>-hybernate` otherwise, cut to 40 characters, so that every name built from it, the longest being `<fullname>-doorman-auth-delegator`, fits in 63. For a release named `hybernate`, the operator Deployment and ServiceAccount are `hybernate`, and the doorman's are `hybernate-doorman`. The operator's pods are labelled `app.kubernetes.io/name: hybernate`, `app.kubernetes.io/instance: <release>` and `control-plane: controller-manager`; the doorman's the same, with `control-plane: doorman`.
+The full name is the release name when it contains `napwake`, and `<release>-napwake` otherwise, cut to 40 characters, so that every name built from it, the longest being `<fullname>-doorman-auth-delegator`, fits in 63. For a release named `napwake`, the operator Deployment and ServiceAccount are `napwake`, and the doorman's are `napwake-doorman`. The operator's pods are labelled `app.kubernetes.io/name: napwake`, `app.kubernetes.io/instance: <release>` and `control-plane: controller-manager`; the doorman's the same, with `control-plane: doorman`.
 
 ## Image
 
 | Value | Default | Description |
 |-------|---------|-------------|
-| `image.repository` | `ghcr.io/okedeji/hybernate` | Container image repository |
+| `image.repository` | `ghcr.io/napwake/napwake` | Container image repository |
 | `image.tag` | `""`, the chart's `appVersion`, such as `v0.2.0` | Image tag, for the operator and the doorman |
 | `image.pullPolicy` | `IfNotPresent` | Image pull policy |
 | `imagePullSecrets` | `[]` | Private registry credentials |
@@ -82,27 +82,27 @@ The operator caches the cluster's ManagedWorkloads, Deployments, StatefulSets, S
 
 | Value | Default | Description |
 |-------|---------|-------------|
-| `watchNamespaces` | `[]` | Namespaces Hybernate works in. Empty means every namespace. Set, Hybernate gets a Role in each of them instead of a ClusterRole, so Kubernetes itself refuses it anything elsewhere; see [RBAC](#rbac). Passed as `--watch-namespaces`, to the doorman too. Each of several installs in one cluster needs its own; see [More than one install](../getting-started/installation.md#more-than-one-install) |
-| `protectedNamespaces` | `[]` | Name patterns, such as `prod-*`, of namespaces Hybernate never manages, as if labelled `hybernate.io/protected=true`, unless one is labelled `hybernate.io/allow-protected=true`. `kube-*`, and the operator's and the doorman's namespace, are always protected, besides these, with the same exception. See [Protected namespaces](../guides/opt-in.md#protected-namespaces). Passed as `--protected-namespaces` |
+| `watchNamespaces` | `[]` | Namespaces Napwake works in. Empty means every namespace. Set, Napwake gets a Role in each of them instead of a ClusterRole, so Kubernetes itself refuses it anything elsewhere; see [RBAC](#rbac). Passed as `--watch-namespaces`, to the doorman too. Each of several installs in one cluster needs its own; see [More than one install](../getting-started/installation.md#more-than-one-install) |
+| `protectedNamespaces` | `[]` | Name patterns, such as `prod-*`, of namespaces Napwake never manages, as if labelled `napwake.dev/protected=true`, unless one is labelled `napwake.dev/allow-protected=true`. `kube-*`, and the operator's and the doorman's namespace, are always protected, besides these, with the same exception. See [Protected namespaces](../guides/opt-in.md#protected-namespaces). Passed as `--protected-namespaces` |
 
 ```yaml title="values.yaml"
 watchNamespaces: [preview-1, preview-2, staging]
 protectedNamespaces: ["prod-*", production]
 ```
 
-Wake on request works with `watchNamespaces`: the operator always reads the doorman's own EndpointSlices in the release namespace, through a `<fullname>-doorman-endpoints` Role there. A `dependsOn` pointing into a namespace that isn't watched, and that allows the dependent's with `hybernate.io/dependents-from`, is reported on the dependent, as `DependencyNotFound=True` with reason `DependencyNotVisible`, and never blocks it.
+Wake on request works with `watchNamespaces`: the operator always reads the doorman's own EndpointSlices in the release namespace, through a `<fullname>-doorman-endpoints` Role there. A `dependsOn` pointing into a namespace that isn't watched, and that allows the dependent's with `napwake.dev/dependents-from`, is reported on the dependent, as `DependencyNotFound=True` with reason `DependencyNotVisible`, and never blocks it.
 
 An upgrade or rollback to a `watchNamespaces` that leaves out a namespace where the operator manages workloads, or that sets it where it was empty, is refused while they're there, since they'd stay paused with no operator: see [Narrowing watchNamespaces](../operations/upgrading.md#narrowing-watchnamespaces).
 
 ## Opt-In Defaults
 
-Settings for workloads opted in with the `hybernate.io/managed` label, used when neither the workload nor its namespace sets the annotation. See [Opting In](../guides/opt-in.md#which-setting-wins).
+Settings for workloads opted in with the `napwake.dev/managed` label, used when neither the workload nor its namespace sets the annotation. See [Opting In](../guides/opt-in.md#which-setting-wins).
 
 | Value | Default | Description |
 |-------|---------|-------------|
 | `defaults.idleAfter` | `1h` | How long without activity before pausing; a Go duration of at least `1m`, such as `90s` or `1h30m`. Passed as `--default-idle-after` |
 | `defaults.cpuThreshold` | `10` | CPU use, as a percentage of requests from 1 to 100, above which a workload counts as active. Passed as `--default-cpu-threshold` |
-| `defaults.dryRun` | `false` | Measure without pausing. Set `true` to roll Hybernate out across a cluster measuring first. Passed as `--default-dry-run` |
+| `defaults.dryRun` | `false` | Measure without pausing. Set `true` to roll Napwake out across a cluster measuring first. Passed as `--default-dry-run` |
 | `defaults.pauseEarly` | `false` | Let a confident forecast that expects quiet hours pause a workload before `idleAfter` runs out. See [Pausing Early](../concepts/forecasting.md#pausing-early). Passed as `--default-pause-early` |
 | `defaults.forecast` | `balanced` | How soon the forecast acts: `eager`, `balanced` or `cautious`. See [Forecast setting](../concepts/forecasting.md#forecast-setting). Passed as `--default-forecast` |
 | `defaults.wake` | `request` | What wakes a paused workload through the doorman: `request`, any request, or `ask`, only a person who clicks **Wake it** on the page the doorman shows a browser, for environments on a public URL that crawlers would keep awake. See [Asking before waking](../concepts/wake-on-request.md#asking-before-waking). Passed as `--default-wake` |
@@ -112,7 +112,7 @@ Settings for workloads opted in with the `hybernate.io/managed` label, used when
 | Value | Default | Description |
 |-------|---------|-------------|
 | `prometheus.url` | `""` | Base URL of the Prometheus API, such as `http://prometheus.monitoring.svc:9090`, for Prometheus activity queries and to start each new workload's forecast from up to four weeks of its CPU history (see [Learning from history](../concepts/forecasting.md#learning-from-history)). Passed to the operator as `--prometheus-url` |
-| `prometheus.selector` | `""` | Label matchers added to the history query the operator makes, such as `cluster="staging"`, for a Prometheus that holds more than one cluster's series, as Thanos, Mimir or a shared Prometheus may; written as inside PromQL's braces, as `kubectl hybernate scan --prometheus-selector` takes them. Activity queries run as written. Needs `prometheus.url`. Passed to the operator as `--prometheus-selector` |
+| `prometheus.selector` | `""` | Label matchers added to the history query the operator makes, such as `cluster="staging"`, for a Prometheus that holds more than one cluster's series, as Thanos, Mimir or a shared Prometheus may; written as inside PromQL's braces, as `kubectl napwake scan --prometheus-selector` takes them. Activity queries run as written. Needs `prometheus.url`. Passed to the operator as `--prometheus-selector` |
 
 ## Metrics
 
@@ -149,7 +149,7 @@ The ServiceMonitors set `honorLabels: true`, so the metrics keep the workload's 
 
 | Value | Default | Description |
 |-------|---------|-------------|
-| `metrics.prometheusRule.enabled` | `false` | Create a PrometheusRule with the alerts in [Monitoring](../operations/monitoring.md#alerting-rules). `HybernateDown` and `HybernateDoormanDown`, which match the ServiceMonitors' scrape jobs, only with `metrics.serviceMonitor.enabled` |
+| `metrics.prometheusRule.enabled` | `false` | Create a PrometheusRule with the alerts in [Monitoring](../operations/monitoring.md#alerting-rules). `NapwakeDown` and `NapwakeDoormanDown`, which match the ServiceMonitors' scrape jobs, only with `metrics.serviceMonitor.enabled` |
 | `metrics.prometheusRule.additionalLabels` | `{}` | Extra labels on the PrometheusRule. Your Prometheus loads it only if these match its `ruleSelector`: kube-prometheus-stack needs `release: <its release name>` |
 
 ## Doorman
@@ -163,7 +163,7 @@ The doorman holds requests to paused workloads and wakes them. See [Wake on Requ
 | `doorman.portsPerWorkload` | `32` | The most doorman ports one workload may hold, one per routed Service port, so one tenant can't use up the 10,000 the cluster shares; 1 to 10000. A workload with more isn't routed: `WakeOnRequest=False`, reason `TooManyPorts`. Passed as `--doorman-ports-per-workload` |
 | `doorman.portsPerNamespace` | `256` | The most doorman ports the workloads of one namespace may hold together; 1 to 10000. Passed as `--doorman-ports-per-namespace` |
 | `doorman.healthCheckUserAgents` | `[]` | `User-Agent` prefixes, or names that follow `(compatible; ` in a browser-style one, of health checkers and scrapers whose `GET` and `HEAD` requests don't wake a paused workload, besides the built-in ones (`kube-probe`, Prometheus, load balancers' checks, `Blackbox Exporter/`, `Datadog/Synthetics`, `Amazon-Route53-Health-Check-Service`, `GoogleStackdriverMonitoring-UptimeChecks`, `UptimeRobot`, `Pingdom.com_bot`, `NewRelicPinger/`, `Uptime-Kuma/`, `Gatus/` and others), such as `["MyCorpMonitor/"]`. See [What wakes a workload](../concepts/wake-on-request.md#what-wakes-a-workload-and-what-doesnt) |
-| `doorman.admissionPolicy.enabled` | `true` | Two ValidatingAdmissionPolicies: one that lets the doorman's ServiceAccount change only the `hybernate.io/last-request`, `hybernate.io/last-request-from` and `hybernate.io/turned-away` annotations on ManagedWorkloads, though its role may patch them, and one that lets no one else set the first two, so a forged `last-request-from` can't have the operator learn a dependency. See [Security](security.md#the-doorman-is-a-way-in-to-paused-workloads) |
+| `doorman.admissionPolicy.enabled` | `true` | Two ValidatingAdmissionPolicies: one that lets the doorman's ServiceAccount change only the `napwake.dev/last-request`, `napwake.dev/last-request-from` and `napwake.dev/turned-away` annotations on ManagedWorkloads, though its role may patch them, and one that lets no one else set the first two, so a forged `last-request-from` can't have the operator learn a dependency. See [Security](security.md#the-doorman-is-a-way-in-to-paused-workloads) |
 | `doorman.podDisruptionBudget.enabled` | `true` | A PodDisruptionBudget keeping one doorman serving through node drains, when `replicaCount` is above 1 |
 | `doorman.nodeSelector` | `{}` | Node selector; empty uses the operator's `nodeSelector` |
 | `doorman.tolerations` | `[]` | Tolerations; empty uses the operator's `tolerations` |
@@ -227,7 +227,7 @@ The doorman always gets its own ServiceAccount, `<fullname>-doorman`.
 
 Without the operator, a ManagedWorkload's finalizer never runs: its workload stays paused at 0 replicas, and its Services keep routing to the doorman. The guards are hook Jobs that run the operator's image with `--guard`: each waits two and a half minutes for any ManagedWorkloads being deleted, then lists those it would leave without an operator, and fails, which stops Helm before it changes anything. Helm prints the list.
 
-- The `<fullname>-uninstall-guard` Job counts every ManagedWorkload in the watched namespaces, or in every namespace without `watchNamespaces`, and any elsewhere that the operator took on, with its `hybernate.io/cleanup` finalizer, but none another install took on, stamped with its namespace in `hybernate.io/operator`. See [Uninstall](../getting-started/installation.md#uninstall). Argo CD 3.3 and later runs it as a PreDelete hook, so deleting the Application is blocked the same way; earlier versions skip it.
+- The `<fullname>-uninstall-guard` Job counts every ManagedWorkload in the watched namespaces, or in every namespace without `watchNamespaces`, and any elsewhere that the operator took on, with its `napwake.dev/cleanup` finalizer, but none another install took on, stamped with its namespace in `napwake.dev/operator`. See [Uninstall](../getting-started/installation.md#uninstall). Argo CD 3.3 and later runs it as a PreDelete hook, so deleting the Application is blocked the same way; earlier versions skip it.
 - The `<fullname>-upgrade-guard` Job counts those the operator took on in namespaces the new `watchNamespaces` leaves out. See [Narrowing watchNamespaces](../operations/upgrading.md#narrowing-watchnamespaces). Argo CD runs it as a PreSync hook, before every sync.
 
 Each runs as a ServiceAccount of its own name, through a ClusterRole that may only list ManagedWorkloads, which read their metadata cluster-wide, even with `watchNamespaces`, since those they look for may be outside it. The ServiceAccounts and RBAC are hooks too, deleted once the hook has run; a failed Job is kept for an hour, for `kubectl logs`. The hooks use `image`, `imagePullSecrets` and `logLevel`. Meshes' sidecars are kept out of their pods, since a sidecar that keeps running would keep the Job from finishing. Their pods have their own `control-plane: uninstall-guard` and `control-plane: upgrade-guard` labels, so the operator's Service and NetworkPolicy don't select them. `--no-hooks` skips both.
@@ -275,14 +275,14 @@ These are not configurable via values. To override, use Helm post-rendering or K
 By default the chart creates a ClusterRole, `<fullname>-manager`, with permissions to:
 
 - Manage `ManagedWorkload` CRs, including creating them for labelled workloads
-- Read Namespaces, for the `hybernate.io/managed` label and settings annotations on them
-- Read Deployments and StatefulSets, scale them through the scale subresource, and patch them to set and remove the `hybernate.io/paused-from` annotation while they're paused. Hybernate can't delete them, and changes nothing else on them
+- Read Namespaces, for the `napwake.dev/managed` label and settings annotations on them
+- Read Deployments and StatefulSets, scale them through the scale subresource, and patch them to set and remove the `napwake.dev/paused-from` annotation while they're paused. Napwake can't delete them, and changes nothing else on them
 - Read PersistentVolumeClaims, to price the storage a paused workload keeps
 - Read HorizontalPodAutoscalers, and read and annotate KEDA ScaledObjects, to pause a KEDA workload through KEDA
 - Read pod metrics from metrics-server
 - Read pods, to price what pausing a workload frees, sidecars included, and watch them, to measure the spare node capacity that what pausing [saved](../concepts/cost-tracking.md#how-saved-is-measured) is worked out from. Only pods bound to a node and not finished are cached, as their node, phase and requests
 - Read Nodes, to price workloads at the list price of the instance types they run on, and to measure their spare capacity. They're cached without their image lists
-- List Karpenter's NodePools, and get Cluster Autoscaler's `cluster-autoscaler-status` ConfigMap and list Deployments in `kube-system`, to report which node autoscaler runs (`hybernate_node_autoscaler`). It reads NodePools' names and consolidation settings, and only the metadata of the rest
+- List Karpenter's NodePools, and get Cluster Autoscaler's `cluster-autoscaler-status` ConfigMap and list Deployments in `kube-system`, to report which node autoscaler runs (`napwake_node_autoscaler`). It reads NodePools' names and consolidation settings, and only the metadata of the rest
 - Get ConfigMaps, one at a time and uncached, to [learn dependencies](../concepts/dependencies.md#learned-dependencies) from the ones a workload's environment references. It can't list or change them
 - Create Events for user-facing status updates
 - Read Services, and manage the EndpointSlices that route paused workloads to the doorman
@@ -295,7 +295,7 @@ If leader election is enabled, a `<fullname>-leader-election` Role in the releas
 
 With `doorman.negForwarder.enabled`, a ClusterRole `<fullname>-forwarder`, or with `watchNamespaces` a Role of that name in each watched namespace, lets the operator `create` and `delete` Deployments, for the [forwarders](../concepts/wake-on-request.md#gke-container-native-load-balancing-negs) it runs beside paused workloads behind GKE NEGs. It only ever deletes its own, owned by a ManagedWorkload. The forwarders run as their namespace's `default` ServiceAccount, without its token, and have no access to the API server.
 
-For people, the chart adds ManagedWorkloads to Kubernetes' built-in roles, through two aggregated ClusterRoles: `<fullname>-view`, in `view`, `edit` and `admin`, lets whoever can view a namespace `get`, `list` and `watch` its ManagedWorkloads, as `kubectl hybernate status` and `scan` do; `<fullname>-edit`, in `edit` and `admin`, lets whoever can edit it `create`, `update`, `patch` and `delete` them, as `pause`, `wake` and `enable` do. The Kustomize manifests' `managedworkload-viewer-role` and `managedworkload-editor-role` are aggregated the same way.
+For people, the chart adds ManagedWorkloads to Kubernetes' built-in roles, through two aggregated ClusterRoles: `<fullname>-view`, in `view`, `edit` and `admin`, lets whoever can view a namespace `get`, `list` and `watch` its ManagedWorkloads, as `kubectl napwake status` and `scan` do; `<fullname>-edit`, in `edit` and `admin`, lets whoever can edit it `create`, `update`, `patch` and `delete` them, as `pause`, `wake` and `enable` do. The Kustomize manifests' `managedworkload-viewer-role` and `managedworkload-editor-role` are aggregated the same way.
 
 What all of this reads, writes, and sends is listed in [Data and Access](data-and-access.md).
 
@@ -339,7 +339,7 @@ affinity:
         podAffinityTerm:
           labelSelector:
             matchLabels:
-              app.kubernetes.io/name: hybernate
+              app.kubernetes.io/name: napwake
               control-plane: controller-manager
           topologyKey: kubernetes.io/hostname
 ```
@@ -347,8 +347,8 @@ affinity:
 `affinity` applies to the doorman too unless `doorman.affinity` is set; the doorman's replicas are spread across nodes by default.
 
 ```bash
-helm install hybernate oci://ghcr.io/okedeji/charts/hybernate \
+helm install napwake oci://ghcr.io/napwake/charts/napwake \
   --version 0.2.0 \
   -f values-production.yaml \
-  -n hybernate-system --create-namespace
+  -n napwake-system --create-namespace
 ```

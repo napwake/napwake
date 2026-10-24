@@ -18,9 +18,9 @@ limitations under the License.
 // kubectl plugin to stdout, from the release's macOS and Linux archives in
 // a directory. The release workflow downloads them from the published
 // release, so the checksums are those of the files brew downloads, and
-// pushes the formula to the okedeji/homebrew-tap repository.
+// pushes the formula to the napwake/homebrew-tap repository.
 //
-//	go run ./hack/brewformula -tag v0.2.0 -repo okedeji/hybernate -dir release > kubectl-hybernate.rb
+//	go run ./hack/brewformula -tag v0.2.0 -repo napwake/napwake -dir release > kubectl-napwake.rb
 package main
 
 import (
@@ -47,7 +47,7 @@ var formulaTemplate string
 
 func main() {
 	tag := flag.String("tag", "", "the release's tag, such as v0.2.0")
-	repo := flag.String("repo", "okedeji/hybernate", "the GitHub repository the release is in")
+	repo := flag.String("repo", "napwake/napwake", "the GitHub repository the release is in")
 	dir := flag.String("dir", ".", "the directory holding the release's plugin archives")
 	flag.Parse()
 
@@ -78,7 +78,7 @@ func run(out io.Writer, tag, repo, dir string) error {
 		return fmt.Errorf("%q isn't a release tag, such as v0.2.0", tag)
 	}
 	if !repoPattern.MatchString(repo) {
-		return fmt.Errorf("%q isn't a GitHub repository, such as okedeji/hybernate", repo)
+		return fmt.Errorf("%q isn't a GitHub repository, such as napwake/napwake", repo)
 	}
 	f := formula{
 		Version:  strings.TrimPrefix(tag, "v"),
@@ -90,7 +90,7 @@ func run(out io.Writer, tag, repo, dir string) error {
 		"linux-arm64":  &f.LinuxARM,
 		"linux-amd64":  &f.LinuxIntel,
 	} {
-		name := "kubectl-hybernate-" + platform + ".tar.gz"
+		name := "kubectl-napwake-" + platform + ".tar.gz"
 		sum, err := sha256File(filepath.Join(dir, name))
 		if err != nil {
 			return err

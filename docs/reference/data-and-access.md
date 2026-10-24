@@ -1,6 +1,6 @@
 # Data and Access
 
-Everything the Hybernate operator and its doorman read, write, and send, for a security review. The [RBAC](#rbac) the Helm chart grants matches this list.
+Everything the Napwake operator and its doorman read, write, and send, for a security review. The [RBAC](#rbac) the Helm chart grants matches this list.
 
 ## What it reads
 
@@ -28,11 +28,11 @@ Everything the Hybernate operator and its doorman read, write, and send, for a s
 
 | Resource | What |
 |---|---|
-| Deployments, StatefulSets | Their replica count, through the scale subresource, and, while one is paused, the `hybernate.io/paused-from` annotation: a copy of what the pause changed, removed when it's handed back. No other field, and never a delete |
-| Deployments of its own, with `doorman.negForwarder.enabled` | A forwarder, `hybernate-forwarder-<workload>`, in the namespace of each paused workload whose Service is behind GKE container-native load balancing, owned by its ManagedWorkload and deleted a minute after the workload wakes. See [GKE container-native load balancing](../concepts/wake-on-request.md#gke-container-native-load-balancing-negs) |
+| Deployments, StatefulSets | Their replica count, through the scale subresource, and, while one is paused, the `napwake.dev/paused-from` annotation: a copy of what the pause changed, removed when it's handed back. No other field, and never a delete |
+| Deployments of its own, with `doorman.negForwarder.enabled` | A forwarder, `napwake-forwarder-<workload>`, in the namespace of each paused workload whose Service is behind GKE container-native load balancing, owned by its ManagedWorkload and deleted a minute after the workload wakes. See [GKE container-native load balancing](../concepts/wake-on-request.md#gke-container-native-load-balancing-negs) |
 | KEDA ScaledObjects | The `autoscaling.keda.sh/paused-replicas` annotation, while their workload is paused or resuming; afterwards the value it had before, or none |
 | EndpointSlices | Its own, routing a paused workload's Services to the doorman; deleted when the workload wakes |
-| ManagedWorkloads | Its own status, including each workload's forecast state; the ones it creates for labelled workloads; the `hybernate.io/cleanup` finalizer, added to each so that deleting it restores its workload first, and removed once it has, with `hybernate.io/operator`, the operator's namespace; `hybernate.io/last-activity` on a dependency it wakes; and, from the doorman, `hybernate.io/last-request` and `hybernate.io/last-request-from` (the caller's IP address) on one a request wakes, and `hybernate.io/turned-away`, a count of the requests it turned away from one that [asks before waking](../concepts/wake-on-request.md#what-it-turns-away), with nothing of the requests themselves |
+| ManagedWorkloads | Its own status, including each workload's forecast state; the ones it creates for labelled workloads; the `napwake.dev/cleanup` finalizer, added to each so that deleting it restores its workload first, and removed once it has, with `napwake.dev/operator`, the operator's namespace; `napwake.dev/last-activity` on a dependency it wakes; and, from the doorman, `napwake.dev/last-request` and `napwake.dev/last-request-from` (the caller's IP address) on one a request wakes, and `napwake.dev/turned-away`, a count of the requests it turned away from one that [asks before waking](../concepts/wake-on-request.md#what-it-turns-away), with nothing of the requests themselves |
 | Its wake key Secret | The doorman fills it with a random key when it's empty, and changes nothing else |
 | Events | On ManagedWorkloads and workloads, to say what it did and why |
 | Leases | Leader election, in its own namespace |
@@ -52,9 +52,9 @@ No telemetry, no usage reporting, no update checks. The doorman answers requests
 
 ## RBAC
 
-What the Helm chart grants, for a release named `hybernate`; resource names start with the release's full name. Without `watchNamespaces`, the rules marked _namespaced_ are in ClusterRoles; with it, they're in a Role in each watched namespace, and nothing marked _namespaced_ is granted anywhere else.
+What the Helm chart grants, for a release named `napwake`; resource names start with the release's full name. Without `watchNamespaces`, the rules marked _namespaced_ are in ClusterRoles; with it, they're in a Role in each watched namespace, and nothing marked _namespaced_ is granted anywhere else.
 
-**Operator** (ServiceAccount `hybernate`), ClusterRole and ClusterRoleBinding `hybernate-manager`:
+**Operator** (ServiceAccount `napwake`), ClusterRole and ClusterRoleBinding `napwake-manager`:
 
 | API group | Resources | Verbs | |
 |---|---|---|---|
@@ -72,40 +72,40 @@ What the Helm chart grants, for a release named `hybernate`; resource names star
 | `apps` | `deployments/scale`, `statefulsets/scale` | `get`, `update` | namespaced |
 | `autoscaling` | `horizontalpodautoscalers` | `get`, `list`, `watch` | namespaced |
 | `keda.sh` | `scaledobjects` | `get`, `list`, `watch`, `patch` | namespaced |
-| `hybernate.io` | `managedworkloads` | `get`, `list`, `watch`, `create`, `update`, `patch`, `delete` | namespaced |
-| `hybernate.io` | `managedworkloads/status` | `get`, `update`, `patch` | namespaced |
-| `hybernate.io` | `managedworkloads/finalizers` | `update` | namespaced |
+| `napwake.dev` | `managedworkloads` | `get`, `list`, `watch`, `create`, `update`, `patch`, `delete` | namespaced |
+| `napwake.dev` | `managedworkloads/status` | `get`, `update`, `patch` | namespaced |
+| `napwake.dev` | `managedworkloads/finalizers` | `update` | namespaced |
 | `metrics.k8s.io` | `pods` | `get`, `list` | namespaced |
 
-With `watchNamespaces` and the doorman enabled, a Role `hybernate-doorman-endpoints` in the release namespace lets the operator `get`, `list` and `watch` `endpointslices` there, to find the doorman's pods.
+With `watchNamespaces` and the doorman enabled, a Role `napwake-doorman-endpoints` in the release namespace lets the operator `get`, `list` and `watch` `endpointslices` there, to find the doorman's pods.
 
-With leader election, a Role `hybernate-leader-election` in the release namespace grants `coordination.k8s.io` `leases` (`get`, `create`, `update`) and `""` `events` (`create`, `patch`).
+With leader election, a Role `napwake-leader-election` in the release namespace grants `coordination.k8s.io` `leases` (`get`, `create`, `update`) and `""` `events` (`create`, `patch`).
 
-With `doorman.negForwarder.enabled`, a ClusterRole and ClusterRoleBinding `hybernate-forwarder`, or a Role and RoleBinding of that name in each watched namespace, grant `apps` `deployments` (`create`, `delete`), for the forwarders. A forwarder runs as its namespace's `default` ServiceAccount, without its token, and has no access to the API server.
+With `doorman.negForwarder.enabled`, a ClusterRole and ClusterRoleBinding `napwake-forwarder`, or a Role and RoleBinding of that name in each watched namespace, grant `apps` `deployments` (`create`, `delete`), for the forwarders. A forwarder runs as its namespace's `default` ServiceAccount, without its token, and has no access to the API server.
 
-**Doorman** (ServiceAccount `hybernate-doorman`), ClusterRole and ClusterRoleBinding `hybernate-doorman`, or a Role in each watched namespace:
+**Doorman** (ServiceAccount `napwake-doorman`), ClusterRole and ClusterRoleBinding `napwake-doorman`, or a Role in each watched namespace:
 
 | API group | Resources | Verbs |
 |---|---|---|
-| `hybernate.io` | `managedworkloads` | `get`, `list`, `watch`, `patch` |
+| `napwake.dev` | `managedworkloads` | `get`, `list`, `watch`, `patch` |
 | `discovery.k8s.io` | `endpointslices` | `get`, `list`, `watch` |
 | `""` | `pods` | `get` |
 | `""`, `events.k8s.io` | `events` | `create`, `patch` |
 
-And a Role and RoleBinding `hybernate-doorman-wake-key` in the release namespace, for its [wake key](../concepts/wake-on-request.md#the-wake-it-button), the one Secret it may read:
+And a Role and RoleBinding `napwake-doorman-wake-key` in the release namespace, for its [wake key](../concepts/wake-on-request.md#the-wake-it-button), the one Secret it may read:
 
 | API group | Resources | Resource names | Verbs |
 |---|---|---|---|
-| `""` | `secrets` | `hybernate-doorman-wake-key` | `get`, `update` |
+| `""` | `secrets` | `napwake-doorman-wake-key` | `get`, `update` |
 
-**Guards**, with `guard.uninstall` and, with `watchNamespaces`, `guard.upgrade` (the defaults): a ServiceAccount `hybernate-uninstall-guard`, and a ClusterRole and ClusterRoleBinding of the same name, allowing `list` on `hybernate.io` `managedworkloads`, cluster-wide even with `watchNamespaces`; and the same named `hybernate-upgrade-guard`. They're Helm hooks, like the Jobs that use them: they exist only while `helm uninstall` runs its pre-delete hook, or `helm upgrade` or `helm rollback` its pre-upgrade or pre-rollback hook, which refuse to leave ManagedWorkloads without an operator.
+**Guards**, with `guard.uninstall` and, with `watchNamespaces`, `guard.upgrade` (the defaults): a ServiceAccount `napwake-uninstall-guard`, and a ClusterRole and ClusterRoleBinding of the same name, allowing `list` on `napwake.dev` `managedworkloads`, cluster-wide even with `watchNamespaces`; and the same named `napwake-upgrade-guard`. They're Helm hooks, like the Jobs that use them: they exist only while `helm uninstall` runs its pre-delete hook, or `helm upgrade` or `helm rollback` its pre-upgrade or pre-rollback hook, which refuse to leave ManagedWorkloads without an operator.
 
-**People**: ClusterRoles `hybernate-view` and `hybernate-edit`, which grant nothing to Hybernate itself. They're aggregated into Kubernetes' built-in roles: `view`, `edit` and `admin` gain `get`, `list` and `watch` on `hybernate.io` `managedworkloads`, and `get` on their status; `edit` and `admin` gain `create`, `update`, `patch` and `delete`.
+**People**: ClusterRoles `napwake-view` and `napwake-edit`, which grant nothing to Napwake itself. They're aggregated into Kubernetes' built-in roles: `view`, `edit` and `admin` gain `get`, `list` and `watch` on `napwake.dev` `managedworkloads`, and `get` on their status; `edit` and `admin` gain `create`, `update`, `patch` and `delete`.
 
-**Admission policy**, with `doorman.admissionPolicy.enabled` (the default): a ValidatingAdmissionPolicy and binding `hybernate-doorman`, cluster-scoped, which refuse any change the doorman's ServiceAccount makes to a ManagedWorkload other than to its `hybernate.io/last-request`, `last-request-from` and `turned-away` annotations; and a ValidatingAdmissionPolicy and binding `hybernate-request-stamps`, cluster-scoped, which refuse anyone else setting those two annotations, limited to `watchNamespaces` when set.
+**Admission policy**, with `doorman.admissionPolicy.enabled` (the default): a ValidatingAdmissionPolicy and binding `napwake-doorman`, cluster-scoped, which refuse any change the doorman's ServiceAccount makes to a ManagedWorkload other than to its `napwake.dev/last-request`, `last-request-from` and `turned-away` annotations; and a ValidatingAdmissionPolicy and binding `napwake-request-stamps`, cluster-scoped, which refuse anyone else setting those two annotations, limited to `watchNamespaces` when set.
 
-**Metrics**, with `metrics.enabled` and `metrics.secure` (the defaults): ClusterRoleBindings `hybernate-auth-delegator` and `hybernate-doorman-auth-delegator` to the built-in `system:auth-delegator` ClusterRole, so the operator and the doorman can check the tokens of whoever scrapes them; and a ClusterRole `hybernate-metrics-reader` allowing `get` on the `/metrics` URL, bound to `metrics.readerSubjects` by a ClusterRoleBinding of the same name.
+**Metrics**, with `metrics.enabled` and `metrics.secure` (the defaults): ClusterRoleBindings `napwake-auth-delegator` and `napwake-doorman-auth-delegator` to the built-in `system:auth-delegator` ClusterRole, so the operator and the doorman can check the tokens of whoever scrapes them; and a ClusterRole `napwake-metrics-reader` allowing `get` on the `/metrics` URL, bound to `metrics.readerSubjects` by a ClusterRoleBinding of the same name.
 
 ## The plugin
 
-`kubectl hybernate` runs with your own kubeconfig and permissions, reads the same kinds of resources and their events, and changes nothing except for `wake` (the `hybernate.io/wake-requested` annotation on a ManagedWorkload, with `hybernate.io/active-until` for `--for`), `pause` (the `hybernate.io/pause-requested` annotation on a ManagedWorkload, with `hybernate.io/pause-overrides-forecast` when told to pause one the forecast expects demand for, and, with `--clear-hold`, removing its `hybernate.io/active-until`) and `enable` (the `hybernate.io/dry-run` annotation, on a workload or its namespace, or `spec.dryRun` on a ManagedWorkload you wrote). `scan` reads Prometheus through the API server's service proxy, or at `--prometheus-url`, and writes its report only to your machine, in a file only you can read, as `status --html` does its page. For a workload Argo CD applies, `scan`, `status`, `pause` and `enable` read Argo CD's Applications and its `argocd-cm` ConfigMap, to tell whether it leaves the workload's replicas to Hybernate.
+`kubectl napwake` runs with your own kubeconfig and permissions, reads the same kinds of resources and their events, and changes nothing except for `wake` (the `napwake.dev/wake-requested` annotation on a ManagedWorkload, with `napwake.dev/active-until` for `--for`), `pause` (the `napwake.dev/pause-requested` annotation on a ManagedWorkload, with `napwake.dev/pause-overrides-forecast` when told to pause one the forecast expects demand for, and, with `--clear-hold`, removing its `napwake.dev/active-until`) and `enable` (the `napwake.dev/dry-run` annotation, on a workload or its namespace, or `spec.dryRun` on a ManagedWorkload you wrote). `scan` reads Prometheus through the API server's service proxy, or at `--prometheus-url`, and writes its report only to your machine, in a file only you can read, as `status --html` does its page. For a workload Argo CD applies, `scan`, `status`, `pause` and `enable` read Argo CD's Applications and its `argocd-cm` ConfigMap, to tell whether it leaves the workload's replicas to Napwake.

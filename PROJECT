@@ -3,18 +3,18 @@
 # and allow the plugins properly work.
 # More info: https://book.kubebuilder.io/reference/project-config.html
 cliVersion: 4.13.0
-domain: hybernate.io
+domain: napwake.dev
 layout:
 - go.kubebuilder.io/v4
-projectName: hybernate
-repo: github.com/okedeji/hybernate
+projectName: napwake
+repo: github.com/napwake/napwake
 resources:
 - api:
     crdVersion: v1
     namespaced: true
   controller: true
-  domain: hybernate.io
+  domain: napwake.dev
   kind: ManagedWorkload
-  path: github.com/okedeji/hybernate/api/v1alpha1
+  path: github.com/napwake/napwake/api/v1alpha1
   version: v1alpha1
 version: "3"

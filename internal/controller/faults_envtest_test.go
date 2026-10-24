@@ -35,9 +35,9 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/interceptor"
 
-	v1alpha1 "github.com/okedeji/hybernate/api/v1alpha1"
-	"github.com/okedeji/hybernate/internal/autoscaler"
-	"github.com/okedeji/hybernate/internal/lifecycle"
+	v1alpha1 "github.com/napwake/napwake/api/v1alpha1"
+	"github.com/napwake/napwake/internal/autoscaler"
+	"github.com/napwake/napwake/internal/lifecycle"
 )
 
 var errInjected = errors.New("injected failure")
@@ -241,11 +241,11 @@ func TestPauseAndWake_ConvergeAfterAnyFailedWrite(t *testing.T) {
 	}
 }
 
-// After a clean pause, each way Hybernate hands a workload back (its
+// After a clean pause, each way Napwake hands a workload back (its
 // ManagedWorkload deleted, the ignore label, its namespace protected, and a
-// scale-up outside Hybernate) has each of its writes failed in turn, before
+// scale-up outside Napwake) has each of its writes failed in turn, before
 // and after it lands. Each converges on the target running, KEDA's own
-// paused-replicas put back, and no pause record left. Hybernate's own
+// paused-replicas put back, and no pause record left. Napwake's own
 // scale-up, retried, is never taken for one from outside.
 func TestHandBack_ConvergesAfterAnyFailedWrite(t *testing.T) {
 	env := startFaultEnv(t)
@@ -296,7 +296,7 @@ func TestHandBack_ConvergesAfterAnyFailedWrite(t *testing.T) {
 		if hb.want != "gone" {
 			w := env.workload(t, key)
 			require.Nil(t, w.Status.Pause)
-			require.Equal(t, hb.outside, w.Status.LastScaledUp != nil, "scaled up outside Hybernate")
+			require.Equal(t, hb.outside, w.Status.LastScaledUp != nil, "scaled up outside Napwake")
 		}
 	}
 

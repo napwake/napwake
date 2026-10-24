@@ -5,7 +5,7 @@
 # Service is routed to the doorman, and a request to the Service wakes it,
 # restores its replicas and is answered. One in an unwatched namespace is
 # left alone. A StatefulSet opted in with dry-run, as the README's
-# quickstart does, is measured but not paused until kubectl hybernate
+# quickstart does, is measured but not paused until kubectl napwake
 # enable ends dry-run. Neither the operator nor the doorman logs an error.
 # An upgrade that stops watching the namespace is refused. Last, helm
 # uninstall is refused while ManagedWorkloads are left, and goes
@@ -17,10 +17,10 @@
 # must not already exist. KEEP_CLUSTER=true keeps it for debugging.
 set -euo pipefail
 
-CLUSTER=${KIND_CLUSTER:-hybernate-helm-smoke}
+CLUSTER=${KIND_CLUSTER:-napwake-helm-smoke}
 KIND=${KIND:-kind}
-IMG=hybernate:smoke
-RELEASE_NAMESPACE=hybernate-system
+IMG=napwake:smoke
+RELEASE_NAMESPACE=napwake-system
 WATCHED=smoke-watched
 UNWATCHED=smoke-unwatched
 APP=web
@@ -58,11 +58,11 @@ diagnose() {
   kubectl get endpointslices -n "$WATCHED" -o wide || true
   echo "--- events in $WATCHED"
   kubectl get events -n "$WATCHED" --sort-by=.lastTimestamp || true
-  echo "--- Hybernate's pods and logs"
+  echo "--- Napwake's pods and logs"
   kubectl get pods -n "$RELEASE_NAMESPACE" -o wide || true
   kubectl get events -n "$RELEASE_NAMESPACE" --sort-by=.lastTimestamp || true
-  kubectl logs -n "$RELEASE_NAMESPACE" -l app.kubernetes.io/instance=hybernate --prefix --previous --tail=50 || true
-  kubectl logs -n "$RELEASE_NAMESPACE" -l app.kubernetes.io/instance=hybernate --prefix --tail=200 || true
+  kubectl logs -n "$RELEASE_NAMESPACE" -l app.kubernetes.io/instance=napwake --prefix --previous --tail=50 || true
+  kubectl logs -n "$RELEASE_NAMESPACE" -l app.kubernetes.io/instance=napwake --prefix --tail=200 || true
 }
 
 cleanup() {
@@ -115,7 +115,7 @@ gone() {
 
 # The EndpointSlices the operator writes to route the workload's Services
 # to the doorman. Their names are hashed, so they're found by label.
-DOORMAN_SLICES="endpointslice.kubernetes.io/managed-by=doorman.hybernate.io,hybernate.io/managed-workload=$APP"
+DOORMAN_SLICES="endpointslice.kubernetes.io/managed-by=doorman.napwake.dev,napwake.dev/managed-workload=$APP"
 
 routed() {
   [ -n "$(kubectl get endpointslices -n "$WATCHED" -l "$DOORMAN_SLICES" -o 'jsonpath={.items[*].endpoints[*].addresses[0]}')" ]
@@ -131,8 +131,8 @@ unrouted() {
 make docker-build IMG="$IMG"
 make load-test-e2e-images KIND_CLUSTER="$CLUSTER" E2E_IMAGES="$WEB_IMAGE $CURL_IMAGE $METRICS_SERVER_IMAGE"
 "$KIND" load docker-image "$IMG" --name "$CLUSTER"
-PLUGIN="$PLUGIN_DIR/kubectl-hybernate"
-go build -o "$PLUGIN" ./cmd/kubectl-hybernate
+PLUGIN="$PLUGIN_DIR/kubectl-napwake"
+go build -o "$PLUGIN" ./cmd/kubectl-napwake
 
 echo "installing metrics-server, which the idle clock reads CPU from"
 kubectl apply -f "$METRICS_SERVER_MANIFEST"
@@ -142,8 +142,8 @@ kubectl patch deployment metrics-server -n kube-system --type=json \
 
 kubectl create namespace "$WATCHED"
 kubectl create namespace "$UNWATCHED"
-helm install hybernate charts/hybernate --namespace "$RELEASE_NAMESPACE" --create-namespace --wait --timeout 5m \
-  --set image.repository=hybernate --set image.tag=smoke --set image.pullPolicy=Never \
+helm install napwake charts/napwake --namespace "$RELEASE_NAMESPACE" --create-namespace --wait --timeout 5m \
+  --set image.repository=napwake --set image.tag=smoke --set image.pullPolicy=Never \
   --set "watchNamespaces={$WATCHED}"
 kubectl wait --for=condition=Available apiservice/v1beta1.metrics.k8s.io --timeout=3m
 
@@ -154,8 +154,8 @@ kind: Deployment
 metadata:
   name: $APP
   namespace: $ns
-  labels: {hybernate.io/managed: "true"}
-  annotations: {hybernate.io/idle-after: 1m}
+  labels: {napwake.dev/managed: "true"}
+  annotations: {napwake.dev/idle-after: 1m}
 spec:
   replicas: $REPLICAS
   selector: {matchLabels: {app: $APP}}
@@ -189,8 +189,8 @@ kind: StatefulSet
 metadata:
   name: $DB
   namespace: $WATCHED
-  labels: {hybernate.io/managed: "true"}
-  annotations: {hybernate.io/dry-run: "true", hybernate.io/idle-after: 1m}
+  labels: {napwake.dev/managed: "true"}
+  annotations: {napwake.dev/dry-run: "true", napwake.dev/idle-after: 1m}
 spec:
   serviceName: $DB
   replicas: 1
@@ -268,9 +268,9 @@ is managedworkload/$DB "$WATCHED" '{.spec.dryRun}' true
 eventually 120 "dry-run to count a pause it would have made" would_pause
 is statefulset/$DB "$WATCHED" '{.spec.replicas}' 1
 
-echo "ending dry-run with kubectl hybernate enable"
+echo "ending dry-run with kubectl napwake enable"
 "$PLUGIN" enable "statefulset/$DB" -n "$WATCHED"
-is statefulset/$DB "$WATCHED" '{.metadata.annotations.hybernate\.io/dry-run}' false
+is statefulset/$DB "$WATCHED" '{.metadata.annotations.napwake\.dev/dry-run}' false
 eventually 60 "the ManagedWorkload to leave dry-run" is managedworkload/$DB "$WATCHED" '{.spec.dryRun}' ''
 eventually 180 "the StatefulSet to pause" is managedworkload/$DB "$WATCHED" '{.status.phase}' Paused
 eventually 60 "the StatefulSet to scale to 0" is statefulset/$DB "$WATCHED" '{.spec.replicas}' 0
@@ -278,7 +278,7 @@ eventually 60 "the StatefulSet to scale to 0" is statefulset/$DB "$WATCHED" '{.s
 echo "checking the operator and the doorman logged no errors"
 # Every pod of both, not one per Deployment. A conflict is an optimistic
 # write that lost a race; controller-runtime retries it at once.
-logs=$(kubectl logs -n "$RELEASE_NAMESPACE" -l app.kubernetes.io/instance=hybernate --prefix --tail=-1)
+logs=$(kubectl logs -n "$RELEASE_NAMESPACE" -l app.kubernetes.io/instance=napwake --prefix --tail=-1)
 errors=$(grep -E '"level":"error"|forbidden|unknown namespace' <<<"$logs" |
   grep -v 'the object has been modified; please apply your changes to the latest version' || true)
 if [ -n "$errors" ]; then
@@ -288,7 +288,7 @@ if [ -n "$errors" ]; then
 fi
 
 echo "checking helm upgrade is refused when it would stop watching $WATCHED"
-if refusal=$(helm upgrade hybernate charts/hybernate --namespace "$RELEASE_NAMESPACE" --reuse-values \
+if refusal=$(helm upgrade napwake charts/napwake --namespace "$RELEASE_NAMESPACE" --reuse-values \
   --set "watchNamespaces={$UNWATCHED}" --wait --timeout 5m 2>&1); then
   echo "$refusal" >&2
   echo "helm upgrade stopped watching $WATCHED, leaving its ManagedWorkloads with no operator" >&2
@@ -297,13 +297,13 @@ fi
 # Helm 4 prints the hook's output as one log message with its line breaks
 # escaped, so the refusal's first line, up to the first break, must name
 # what's left and link the docs on its own.
-lead=$(grep -o 'Hybernate refuses this upgrade: [^\\]*' <<<"$refusal" || true)
+lead=$(grep -o 'Napwake refuses this upgrade: [^\\]*' <<<"$refusal" || true)
 if ! grep -qF "$WATCHED/$APP" <<<"$lead" || ! grep -qF 'upgrading/#narrowing-watchnamespaces' <<<"$lead"; then
   echo "$refusal" >&2
   echo "the refused upgrade didn't lead with a line naming the ManagedWorkloads it would leave, and the docs" >&2
   exit 1
 fi
-kubectl get deployment hybernate -n "$RELEASE_NAMESPACE" -o 'jsonpath={.spec.template.spec.containers[0].args}' |
+kubectl get deployment napwake -n "$RELEASE_NAMESPACE" -o 'jsonpath={.spec.template.spec.containers[0].args}' |
   grep -qF -- "--watch-namespaces=$WATCHED" || {
   echo "the refused upgrade changed the operator's namespaces" >&2
   exit 1
@@ -313,33 +313,33 @@ kubectl get deployment hybernate -n "$RELEASE_NAMESPACE" -o 'jsonpath={.spec.tem
 # uninstalls with, so the guard must still find the ManagedWorkloads the
 # operator took on in a namespace those values don't watch.
 echo "checking helm uninstall is refused while ManagedWorkloads are left"
-if refusal=$(helm uninstall hybernate --namespace "$RELEASE_NAMESPACE" --wait --timeout 5m 2>&1); then
+if refusal=$(helm uninstall napwake --namespace "$RELEASE_NAMESPACE" --wait --timeout 5m 2>&1); then
   echo "$refusal" >&2
   echo "helm uninstall went ahead, leaving ManagedWorkloads with no operator" >&2
   exit 1
 fi
-lead=$(grep -o 'Hybernate refuses to uninstall: [^\\]*' <<<"$refusal" || true)
+lead=$(grep -o 'Napwake refuses to uninstall: [^\\]*' <<<"$refusal" || true)
 if ! grep -qF "$WATCHED/$APP" <<<"$lead" || ! grep -qF "$WATCHED/$DB" <<<"$lead" ||
   ! grep -qF 'installation/#uninstall' <<<"$lead"; then
   echo "$refusal" >&2
   echo "the refused uninstall didn't lead with a line naming the ManagedWorkloads left, and the docs" >&2
   exit 1
 fi
-is deployment/hybernate "$RELEASE_NAMESPACE" '{.status.readyReplicas}' 1
+is deployment/napwake "$RELEASE_NAMESPACE" '{.status.readyReplicas}' 1
 
 echo "checking helm rollback recovers the release a refused uninstall left uninstalling, as the docs say"
-helm rollback hybernate --namespace "$RELEASE_NAMESPACE" --wait --timeout 5m
-status=$(helm status hybernate --namespace "$RELEASE_NAMESPACE" | awk '/^STATUS:/ {print $2}')
+helm rollback napwake --namespace "$RELEASE_NAMESPACE" --wait --timeout 5m
+status=$(helm status napwake --namespace "$RELEASE_NAMESPACE" | awk '/^STATUS:/ {print $2}')
 if [ "$status" != deployed ]; then
   echo "after helm rollback the release is $status, not deployed" >&2
   exit 1
 fi
 
 echo "stopping managing the workloads, which restores the paused StatefulSet, then uninstalling"
-kubectl label deployment "$APP" -n "$WATCHED" hybernate.io/managed-
-kubectl label statefulset "$DB" -n "$WATCHED" hybernate.io/managed-
+kubectl label deployment "$APP" -n "$WATCHED" napwake.dev/managed-
+kubectl label statefulset "$DB" -n "$WATCHED" napwake.dev/managed-
 eventually "$DELETE_TIMEOUT" "the Deployment's ManagedWorkload to be deleted" gone managedworkload/$APP "$WATCHED"
 eventually "$DELETE_TIMEOUT" "the StatefulSet's ManagedWorkload to be deleted" gone managedworkload/$DB "$WATCHED"
 is statefulset/$DB "$WATCHED" '{.spec.replicas}' 1
-helm uninstall hybernate --namespace "$RELEASE_NAMESPACE" --wait --timeout 5m
+helm uninstall napwake --namespace "$RELEASE_NAMESPACE" --wait --timeout 5m
 echo "ok"

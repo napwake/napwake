@@ -11,7 +11,7 @@ kind: ValidatingAdmissionPolicy
 metadata:
   name: doorman
   labels:
-    app.kubernetes.io/name: hybernate
+    app.kubernetes.io/name: napwake
     app.kubernetes.io/managed-by: kustomize
     control-plane: doorman
 spec:
@@ -21,7 +21,7 @@ spec:
     kind: ServiceAccount
   matchConstraints:
     resourceRules:
-      - apiGroups: [hybernate.io]
+      - apiGroups: [napwake.dev]
         apiVersions: ["*"]
         operations: [UPDATE]
         resources: [managedworkloads]
@@ -30,7 +30,7 @@ spec:
       expression: request.userInfo.username == "system:serviceaccount:" + params.metadata.namespace + ":" + params.metadata.name
   variables:
     - name: allowed
-      expression: "['hybernate.io/last-request', 'hybernate.io/last-request-from', 'hybernate.io/turned-away']"
+      expression: "['napwake.dev/last-request', 'napwake.dev/last-request-from', 'napwake.dev/turned-away']"
     - name: annotations
       expression: "has(object.metadata.annotations) ? object.metadata.annotations : {}"
     - name: oldAnnotations
@@ -42,7 +42,7 @@ spec:
         variables.annotations.all(k, k in variables.allowed
           || (k in variables.oldAnnotations && variables.oldAnnotations[k] == variables.annotations[k]))
         && variables.oldAnnotations.all(k, k in variables.allowed || k in variables.annotations)
-      message: The doorman may only set the hybernate.io/last-request, hybernate.io/last-request-from and hybernate.io/turned-away annotations.
+      message: The doorman may only set the napwake.dev/last-request, napwake.dev/last-request-from and napwake.dev/turned-away annotations.
     - expression: >-
         (has(object.metadata.labels) ? object.metadata.labels : {})
         == (has(oldObject.metadata.labels) ? oldObject.metadata.labels : {})
@@ -61,7 +61,7 @@ kind: ValidatingAdmissionPolicyBinding
 metadata:
   name: doorman
   labels:
-    app.kubernetes.io/name: hybernate
+    app.kubernetes.io/name: napwake
     app.kubernetes.io/managed-by: kustomize
     control-plane: doorman
 spec:

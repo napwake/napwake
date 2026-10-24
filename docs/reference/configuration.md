@@ -19,27 +19,27 @@ These flags are passed to the binary (`/manager`), which runs as the operator, a
 | `--prometheus-url` | | Base URL of the Prometheus API, such as `http://prometheus.monitoring.svc:9090`; `http` or `https` with a host. Required for workloads that set `idlePolicy.activity.prometheus`; with it, each new workload's forecast also starts from up to four weeks of its CPU history (see [Learning from history](../concepts/forecasting.md#learning-from-history)) |
 | `--prometheus-selector` | | Label matchers added to the queries the operator builds itself, the history query, such as `cluster="staging"`, written as inside PromQL's braces: `=`, `!=`, `=~` or `!~` and a double-quoted or backquoted value, comma-separated. For a Prometheus that holds more than one cluster's series, so same-named pods of another cluster aren't read as this one's. Activity queries are a workload's own and run as written. Needs `--prometheus-url` |
 | `--watch-namespaces` | every namespace | Comma-separated namespaces to work in, with a Role in each |
-| `--protected-namespaces` | | Comma-separated name patterns, such as `prod-*`, of namespaces Hybernate never manages, as if labelled `hybernate.io/protected=true`, unless labelled `hybernate.io/allow-protected=true`. The `kube-*` namespaces, `$POD_NAMESPACE`, and the doorman's namespace are always protected besides; see [Protected namespaces](../guides/opt-in.md#protected-namespaces) |
+| `--protected-namespaces` | | Comma-separated name patterns, such as `prod-*`, of namespaces Napwake never manages, as if labelled `napwake.dev/protected=true`, unless labelled `napwake.dev/allow-protected=true`. The `kube-*` namespaces, `$POD_NAMESPACE`, and the doorman's namespace are always protected besides; see [Protected namespaces](../guides/opt-in.md#protected-namespaces) |
 | `--default-idle-after` | `1h` | Idle time before pausing, for workloads opted in with the label whose annotations and namespace don't set it. At least `1m` |
 | `--default-cpu-threshold` | `10` | CPU percentage of requests that counts as active, for opted-in workloads that don't set it. 1 to 100 |
-| `--default-dry-run` | `false` | Measure opted-in workloads without pausing, unless they or their namespace set `hybernate.io/dry-run` |
-| `--default-pause-early` | `false` | Let a confident forecast that expects quiet hours pause opted-in workloads before their `idleAfter` runs out, unless they or their namespace set `hybernate.io/pause-early`. See [Pausing Early](../concepts/forecasting.md#pausing-early) |
-| `--default-forecast` | `balanced` | How soon the forecast acts, `eager`, `balanced` or `cautious`, for opted-in workloads that don't set `hybernate.io/forecast` |
-| `--default-wake` | `request` | What wakes a paused opted-in workload that doesn't set `hybernate.io/wake` through the doorman: `request`, any request, or `ask`, only a person's click on the page the doorman shows a browser. Helm value `defaults.wake` |
+| `--default-dry-run` | `false` | Measure opted-in workloads without pausing, unless they or their namespace set `napwake.dev/dry-run` |
+| `--default-pause-early` | `false` | Let a confident forecast that expects quiet hours pause opted-in workloads before their `idleAfter` runs out, unless they or their namespace set `napwake.dev/pause-early`. See [Pausing Early](../concepts/forecasting.md#pausing-early) |
+| `--default-forecast` | `balanced` | How soon the forecast acts, `eager`, `balanced` or `cautious`, for opted-in workloads that don't set `napwake.dev/forecast` |
+| `--default-wake` | `request` | What wakes a paused opted-in workload that doesn't set `napwake.dev/wake` through the doorman: `request`, any request, or `ask`, only a person's click on the page the doorman shows a browser. Helm value `defaults.wake` |
 | `--doorman` | `false` | Run as the doorman instead of the operator. The doorman Deployment sets it |
-| `--doorman-service` | `hybernate-doorman` | Name of the doorman's Service, which the operator routes paused workloads to. Empty disables waking on request |
+| `--doorman-service` | `napwake-doorman` | Name of the doorman's Service, which the operator routes paused workloads to. Empty disables waking on request |
 | `--doorman-ports-per-workload` | `32` | The most doorman ports one workload may hold, one per routed Service port. A workload with more isn't routed (`WakeOnRequest=False`, reason `TooManyPorts`) |
 | `--doorman-ports-per-namespace` | `256` | The most doorman ports the workloads of one namespace may hold together |
-| `--doorman-namespace` | `$POD_NAMESPACE`, else `hybernate-system` | Namespace of the doorman's Service |
+| `--doorman-namespace` | `$POD_NAMESPACE`, else `napwake-system` | Namespace of the doorman's Service |
 | `--doorman-health-check-user-agents` | | Comma-separated `User-Agent` prefixes of health checkers and scrapers, besides the built-in ones, whose `GET` and `HEAD` requests don't wake a paused workload. Helm value `doorman.healthCheckUserAgents` |
 | `--wake-key-secret` | | The doorman's: a Secret in its namespace holding the key it signs the asleep page's **Wake it** button with, which it fills when empty. Every replica must share it, since a click can reach any of them; without it, each signs with its own, which works only for one replica. The chart sets `<fullname>-doorman-wake-key` |
 | `--neg-forwarder` | `false` | Route paused workloads' Services that sit behind GKE container-native load balancing (NEGs) through a forwarder Deployment the operator runs in each workload's namespace, instead of leaving them unrouted. Needs `create` and `delete` on Deployments. Helm value `doorman.negForwarder.enabled`; see [GKE container-native load balancing](../concepts/wake-on-request.md#gke-container-native-load-balancing-negs) |
 | `--neg-forwarder-image` | | The image forwarders run: the operator's own. Required with `--neg-forwarder` |
 | `--neg-forwarder-replicas` | `2` | Pods per forwarder. At least 1 |
 | `--neg-forwarder-resources` | `{"requests":{"cpu":"10m","memory":"32Mi"},"limits":{"memory":"64Mi"}}` | Each forwarder pod's resources, as JSON |
-| `--neg-forwarder-doorman-service` | `hybernate-doorman-pods` | Headless Service in `--doorman-namespace` selecting the doorman's pods, whose DNS name forwarders resolve to reach them |
+| `--neg-forwarder-doorman-service` | `napwake-doorman-pods` | Headless Service in `--doorman-namespace` selecting the doorman's pods, whose DNS name forwarders resolve to reach them |
 | `--forwarder` | `false` | Run as a forwarder instead of the operator. The operator's forwarder Deployments set it, with `--forward`, the routes as comma-separated `listen=doorman` port pairs, and `--forwarder-doorman`, the DNS name of the doorman's pods |
-| `--guard` | | Run as the chart's `uninstall` or `upgrade` hook instead of the operator. It waits up to two and a half minutes for ManagedWorkloads being deleted, then exits 1, listing those the operation would leave without an operator: for `uninstall`, every one in `--watch-namespaces` (every namespace when empty) or carrying the `hybernate.io/cleanup` finalizer; for `upgrade`, those carrying the finalizer outside the new `--watch-namespaces`. The chart's `guard.uninstall` and `guard.upgrade` hooks set it |
+| `--guard` | | Run as the chart's `uninstall` or `upgrade` hook instead of the operator. It waits up to two and a half minutes for ManagedWorkloads being deleted, then exits 1, listing those the operation would leave without an operator: for `uninstall`, every one in `--watch-namespaces` (every namespace when empty) or carrying the `napwake.dev/cleanup` finalizer; for `upgrade`, those carrying the finalizer outside the new `--watch-namespaces`. The chart's `guard.uninstall` and `guard.upgrade` hooks set it |
 | `--kubeconfig` | in-cluster | Path to a kubeconfig, only when running outside the cluster |
 | `--zap-log-level` | `info` | Log level: `debug`, `info`, `error`, `panic`, or a whole number above 0 for more verbose debug levels |
 | `--zap-encoder` | `json` | Log format: `json` or `console` |
@@ -65,7 +65,7 @@ For HA deployments with multiple replicas, enable leader election:
 --leader-elect=true
 ```
 
-The leader election ID is `479a98fc.hybernate.io`, held as a Lease in the operator's namespace. Only the leader runs reconciliation loops; standby replicas take over if the leader fails.
+The leader election ID is `479a98fc.napwake.dev`, held as a Lease in the operator's namespace. Only the leader runs reconciliation loops; standby replicas take over if the leader fails.
 
 The doorman doesn't use leader election: every replica serves traffic.
 

@@ -35,7 +35,7 @@ var pageHTML string
 
 var pageTemplate = template.Must(template.New("page").Parse(pageHTML))
 
-// Mark is the Hybernate snowflake as an SVG path, drawn on the waking-up page
+// Mark is the Napwake snowflake as an SVG path, drawn on the waking-up page
 // and the scan report.
 const Mark = "M20.79,13.95L18.46,14.57L16.46,12.57L18.46,10.57L20.79,11.19C21.15,11.28 21.52,11.06 21.6,10.7C21.69," +
 	"10.34 21.47,9.97 21.11,9.89L18.79,9.27L19.41,6.95C19.5,6.59 19.27,6.22 18.91,6.14C18.56,6.05 18.19,6.27 18.1," +
@@ -347,13 +347,13 @@ const asleepRetryAfter = 5 * time.Minute
 const (
 	asleepMessage = "This environment is asleep. A request doesn't wake it: only a person who opens it in a " +
 		"browser and clicks Wake it, or their tooling, can."
-	asleepHowTo = "Open it in a browser and click Wake it; set the hybernate.io/wake-requested annotation on its " +
-		"ManagedWorkload; or run kubectl hybernate wake: " + wakeRequestDocs
-	asleepDocs = "https://okedeji.io/hybernate/concepts/wake-on-request/#asking-before-waking"
+	asleepHowTo = "Open it in a browser and click Wake it; set the napwake.dev/wake-requested annotation on its " +
+		"ManagedWorkload; or run kubectl napwake wake: " + wakeRequestDocs
+	asleepDocs = "https://docs.napwake.dev/concepts/wake-on-request/#asking-before-waking"
 
 	// wakeRequestDocs says how tooling wakes a workload, for the people
 	// whose tooling reaches it.
-	wakeRequestDocs = "https://okedeji.io/hybernate/guides/pause/#wake-now"
+	wakeRequestDocs = "https://docs.napwake.dev/guides/pause/#wake-now"
 )
 
 var asleepJSON = func() string {

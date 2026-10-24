@@ -14,7 +14,7 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
-// Command prices regenerates the list prices Hybernate prices nodes with,
+// Command prices regenerates the list prices Napwake prices nodes with,
 // on-demand and spot, from the instance data published by
 // instances.vantage.sh (github.com/vantage-sh/ec2instances.info, MIT), which
 // collects each provider's public price lists.

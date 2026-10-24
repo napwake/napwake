@@ -28,9 +28,9 @@ import (
 	"k8s.io/apimachinery/pkg/types"
 	"sigs.k8s.io/controller-runtime/pkg/log"
 
-	v1alpha1 "github.com/okedeji/hybernate/api/v1alpha1"
-	"github.com/okedeji/hybernate/internal/cost"
-	"github.com/okedeji/hybernate/internal/metrics"
+	v1alpha1 "github.com/napwake/napwake/api/v1alpha1"
+	"github.com/napwake/napwake/internal/cost"
+	"github.com/napwake/napwake/internal/metrics"
 )
 
 const bytesPerGiB = 1024 * 1024 * 1024
@@ -245,7 +245,7 @@ func priceCost(c *v1alpha1.CostStatus, rates cost.Rates, now time.Time) {
 
 	c.CostThisMonth = cost.FormatDollars(spent)
 	c.FreedThisMonth = cost.FormatDollars(freed)
-	c.CostWithoutHybernateThisMonth = cost.FormatDollars(spent + freed)
+	c.CostWithoutNapwakeThisMonth = cost.FormatDollars(spent + freed)
 	c.ProjectedMonthlyCost = projected(spent, c.Tracked.Duration, now)
 	c.ProjectedMonthlyFreed = projected(freed, c.Tracked.Duration, now)
 	if c.SavingsUnknown != "" {

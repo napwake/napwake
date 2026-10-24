@@ -44,8 +44,8 @@ help: ## Display this help.
 .PHONY: manifests
 manifests: controller-gen ## Generate WebhookConfiguration, ClusterRole and CustomResourceDefinition objects.
 	"$(CONTROLLER_GEN)" rbac:roleName=manager-role crd webhook paths="./..." output:crd:artifacts:config=config/crd/bases
-	./hack/chart-crds.sh config/crd/bases charts/hybernate/templates/crds
-	mkdir -p charts/hybernate/files && cp charts/hybernate/values.yaml charts/hybernate/files/defaults.yaml
+	./hack/chart-crds.sh config/crd/bases charts/napwake/templates/crds
+	mkdir -p charts/napwake/files && cp charts/napwake/values.yaml charts/napwake/files/defaults.yaml
 
 .PHONY: prices
 prices: ## Regenerate the on-demand and spot list prices nodes are priced at, before each release
@@ -70,7 +70,7 @@ test: manifests generate fmt vet setup-envtest ## Run tests.
 
 # The e2e setup assumes Kind is installed, and builds and loads the manager
 # image itself. KIND_NODE_IMAGE picks the Kubernetes version.
-KIND_CLUSTER ?= hybernate-test-e2e
+KIND_CLUSTER ?= napwake-test-e2e
 KIND_NODE_IMAGE ?=
 
 .PHONY: setup-test-e2e
@@ -128,7 +128,7 @@ PROMETHEUS_IMAGE ?= prom/prometheus:v3.15.0@sha256:efd719c99d83b060d9daefdcf0036
 test-alerts: ## Unit-test the chart's and config/prometheus's alert rules with promtool
 	@# The tests' series carry the workload's namespace, as a scrape keeps it
 	@# only when every ServiceMonitor endpoint honors the target's labels.
-	@test "$$(helm template hybernate charts/hybernate --set metrics.serviceMonitor.enabled=true \
+	@test "$$(helm template napwake charts/napwake --set metrics.serviceMonitor.enabled=true \
 		--show-only templates/servicemonitor.yaml | grep -c 'honorLabels: true')" = 2 || { \
 		echo "the chart's ServiceMonitors don't both set honorLabels, so the workload's namespace label is overwritten"; exit 1; }
 	@test "$$(grep -c 'honorLabels: true' config/prometheus/monitor.yaml)" = 2 || { \
@@ -136,114 +136,114 @@ test-alerts: ## Unit-test the chart's and config/prometheus's alert rules with p
 	@dir=$$(mktemp -d); trap 'rm -rf "$$dir"' EXIT; \
 	cp tests/prometheus/*_test.yaml "$$dir"; \
 	go run ./hack/promrules < config/prometheus/alerts.yaml > "$$dir/kustomize.rules.yaml"; \
-	helm template hybernate charts/hybernate --set metrics.prometheusRule.enabled=true --set metrics.serviceMonitor.enabled=true \
+	helm template napwake charts/napwake --set metrics.prometheusRule.enabled=true --set metrics.serviceMonitor.enabled=true \
 		--show-only templates/prometheusrule.yaml | go run ./hack/promrules > "$$dir/chart.rules.yaml"; \
 	$(CONTAINER_TOOL) run --rm --user "$$(id -u):$$(id -g)" -v "$$dir:/rules" -w /rules --entrypoint promtool $(PROMETHEUS_IMAGE) \
 		test rules $$(cd "$$dir" && ls *_test.yaml)
 
 .PHONY: check-chart
 check-chart: ## Lint the Helm chart, render it for each provider's Kubernetes versions, and check its RBAC matches config/rbac
-	helm lint charts/hybernate --strict
+	helm lint charts/napwake --strict
 	@for v in v1.30.0 v1.30.2-eks-1552ad0 v1.31.1-gke.1678000 v1.32.5 v1.34.1 v1.37.0; do \
 		echo "rendering for Kubernetes $$v"; \
-		helm template hybernate charts/hybernate --kube-version $$v >/dev/null || exit 1; \
+		helm template napwake charts/napwake --kube-version $$v >/dev/null || exit 1; \
 	done
-	@! helm template hybernate charts/hybernate --kube-version v1.29.9 >/dev/null 2>&1 || { \
+	@! helm template napwake charts/napwake --kube-version v1.29.9 >/dev/null 2>&1 || { \
 		echo "the chart installs on Kubernetes 1.29, below the 1.30 it supports"; exit 1; }
 	@for d in 0s 0.0m 0h0m0s 59s 0.5m 500ms; do \
-		! helm template hybernate charts/hybernate --set defaults.idleAfter=$$d >/dev/null 2>&1 || { \
+		! helm template napwake charts/napwake --set defaults.idleAfter=$$d >/dev/null 2>&1 || { \
 			echo "the chart accepts defaults.idleAfter=$$d, under a minute, which the operator refuses to start with"; exit 1; }; \
 	done
-	@! helm template hybernate charts/hybernate --set 'metrics.readerSubjects[0].kind=ServiceAccount' \
+	@! helm template napwake charts/napwake --set 'metrics.readerSubjects[0].kind=ServiceAccount' \
 		--set 'metrics.readerSubjects[0].name=prometheus' >/dev/null 2>&1 || { \
 		echo "the chart accepts a ServiceAccount in metrics.readerSubjects without its namespace, which the API server refuses"; exit 1; }
 	@for v in 'watchNamespace={staging}' doorman.enabeld=false metrics.serviceMonitor.enable=true; do \
-		! helm template hybernate charts/hybernate --set "$$v" >/dev/null 2>&1 || { \
+		! helm template napwake charts/napwake --set "$$v" >/dev/null 2>&1 || { \
 			echo "the chart accepts $$v, a value it doesn't have, and would ignore it"; exit 1; }; \
 	done
 	@for d in 1h30m 1m 90s 0h5m 1.5h; do \
-		helm template hybernate charts/hybernate --set defaults.idleAfter=$$d >/dev/null || exit 1; \
+		helm template napwake charts/napwake --set defaults.idleAfter=$$d >/dev/null || exit 1; \
 	done
-	@helm template hybernate charts/hybernate --set networkPolicy.enabled=true \
+	@helm template napwake charts/napwake --set networkPolicy.enabled=true \
 		--set 'doorman.networkPolicy.ingressFrom[0].namespaceSelector.matchLabels.team=checkout' \
 		--show-only templates/networkpolicy.yaml | grep -q 'team: checkout' || { \
 		echo "doorman.networkPolicy.ingressFrom doesn't reach the doorman's NetworkPolicy"; exit 1; }
-	@! helm template hybernate charts/hybernate \
+	@! helm template napwake charts/napwake \
 		--set 'doorman.networkPolicy.ingressFrom[0].namespaceSelector.matchLabels.team=checkout' >/dev/null 2>&1 || { \
 		echo "the chart accepts doorman.networkPolicy.ingressFrom without networkPolicy.enabled, which leaves the doorman open"; exit 1; }
-	@clashes=$$({ helm template hybernate charts/hybernate --namespace hybernate-system --set 'watchNamespaces={shop}'; \
-		helm template team-b charts/hybernate --namespace team-b-system --set 'watchNamespaces={blog}' \
+	@clashes=$$({ helm template napwake charts/napwake --namespace napwake-system --set 'watchNamespaces={shop}'; \
+		helm template team-b charts/napwake --namespace team-b-system --set 'watchNamespaces={blog}' \
 			--set crds.install=false; } | \
 		awk '/^---/ {kind = ""; named = 0} /^kind:/ {kind = $$2} \
 			/^  name:/ && !named {named = 1; if (kind ~ /^(Cluster|ValidatingAdmission|CustomResource)/) print kind "/" $$2}' | \
 		sort | uniq -d); [ -z "$$clashes" ] || { \
 		echo "two releases in different namespaces would both create these cluster-scoped objects: $$clashes"; exit 1; }
-	helm template hybernate charts/hybernate | go run ./hack/rbaccheck config/rbac/role.yaml
-	helm template hybernate charts/hybernate --set 'watchNamespaces={shop,blog}' | go run ./hack/rbaccheck config/rbac/role.yaml
+	helm template napwake charts/napwake | go run ./hack/rbaccheck config/rbac/role.yaml
+	helm template napwake charts/napwake --set 'watchNamespaces={shop,blog}' | go run ./hack/rbaccheck config/rbac/role.yaml
 	@long=abcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabc; \
-	names=$$(helm template hybernate charts/hybernate --set fullnameOverride=$$long --set networkPolicy.enabled=true \
+	names=$$(helm template napwake charts/napwake --set fullnameOverride=$$long --set networkPolicy.enabled=true \
 		--set metrics.serviceMonitor.enabled=true --set metrics.prometheusRule.enabled=true \
 		--set doorman.negForwarder.enabled=true | \
 		awk '/^kind:/ {k = $$2} /^[a-zA-Z]/ {m = ($$1 == "metadata:")} m && /^  name: / {print k, $$2}'); \
 	! awk 'length($$2) > 63 {print "too long: " $$0; bad = 1} END {exit !bad}' <<<"$$names" && \
 		[ -z "$$(sort <<<"$$names" | uniq -d)" ] || { \
 		echo "a 63-character fullnameOverride makes a name over 63 characters, or two resources the same name"; exit 1; }
-	@crd=$$(helm template hybernate charts/hybernate --show-only templates/crds/hybernate.io_managedworkloads.yaml); \
+	@crd=$$(helm template napwake charts/napwake --show-only templates/crds/napwake.dev_managedworkloads.yaml); \
 	grep -q 'helm.sh/resource-policy: keep' <<<"$$crd" && grep -q 'argocd.argoproj.io/sync-options: Delete=false' <<<"$$crd" || { \
 		echo "the chart's CRD isn't kept on uninstall by both Helm and Argo CD, which would delete every ManagedWorkload"; exit 1; }
 	@for p in 8081 20000 29999; do \
-		! helm template hybernate charts/hybernate --set metrics.port=$$p >/dev/null 2>&1 || { \
+		! helm template napwake charts/napwake --set metrics.port=$$p >/dev/null 2>&1 || { \
 			echo "the chart accepts metrics.port=$$p, which the health probes or the doorman's routing ports use"; exit 1; }; \
 	done
-	@helm template hybernate charts/hybernate --set metrics.port=30000 >/dev/null
-	@helm template hybernate charts/hybernate --set prometheus.url=http://thanos:9090 \
+	@helm template napwake charts/napwake --set metrics.port=30000 >/dev/null
+	@helm template napwake charts/napwake --set prometheus.url=http://thanos:9090 \
 		--set-string 'prometheus.selector=cluster="staging"' --show-only templates/deployment.yaml | \
 		grep -qF -- '- "--prometheus-selector=cluster=\"staging\""' || { \
 		echo "prometheus.selector doesn't reach the operator as --prometheus-selector"; exit 1; }
-	@! helm template hybernate charts/hybernate --set-string 'prometheus.selector=cluster="staging"' >/dev/null 2>&1 || { \
+	@! helm template napwake charts/napwake --set-string 'prometheus.selector=cluster="staging"' >/dev/null 2>&1 || { \
 		echo "the chart accepts prometheus.selector without prometheus.url, which the operator refuses to start with"; exit 1; }
-	@out=$$(helm template hybernate charts/hybernate --set-string podLabels.team=checkout \
-		--set-string podLabels.control-plane=other --set priorityClassName=hybernate-critical \
+	@out=$$(helm template napwake charts/napwake --set-string podLabels.team=checkout \
+		--set-string podLabels.control-plane=other --set priorityClassName=napwake-critical \
 		--set 'doorman.extraEnv[0].name=GOMAXPROCS' --set-string 'doorman.extraEnv[0].value=2'); \
-	[ "$$(grep -c 'team: checkout' <<<"$$out")" = 2 ] && [ "$$(grep -c 'priorityClassName: hybernate-critical' <<<"$$out")" = 3 ] && \
+	[ "$$(grep -c 'team: checkout' <<<"$$out")" = 2 ] && [ "$$(grep -c 'priorityClassName: napwake-critical' <<<"$$out")" = 3 ] && \
 		grep -q 'name: GOMAXPROCS' <<<"$$out" && ! grep -q 'control-plane: other' <<<"$$out" || { \
 		echo "podLabels, priorityClassName or doorman.extraEnv don't reach the operator's, the doorman's and the guard's pods, or podLabels replaced a selector label"; exit 1; }
-	@out=$$(helm template hybernate charts/hybernate --set 'doorman.healthCheckUserAgents={Bot #1,Probe: v2}' \
+	@out=$$(helm template napwake charts/napwake --set 'doorman.healthCheckUserAgents={Bot #1,Probe: v2}' \
 		--set 'protectedNamespaces={*-prod}' --set timezone=Europe/London); \
 	grep -qF -- '- "--doorman-health-check-user-agents=Bot #1,Probe: v2"' <<<"$$out" && \
 		grep -qF -- '- "--protected-namespaces=*-prod"' <<<"$$out" && grep -qF -- '- "--timezone=Europe/London"' <<<"$$out" || { \
 		echo "the chart doesn't quote a container argument, so a # starts a YAML comment, or a ': ' makes it a map"; exit 1; }
-	@! helm template hybernate charts/hybernate | grep -q -- '--guard=upgrade' && \
-		helm template hybernate charts/hybernate --set 'watchNamespaces={shop}' | grep -q -- '--guard=upgrade' || { \
+	@! helm template napwake charts/napwake | grep -q -- '--guard=upgrade' && \
+		helm template napwake charts/napwake --set 'watchNamespaces={shop}' | grep -q -- '--guard=upgrade' || { \
 		echo "the upgrade guard doesn't run exactly when watchNamespaces is set, so narrowing it can strand paused workloads"; exit 1; }
-	@out=$$(helm template hybernate charts/hybernate --show-only templates/guard.yaml --set-string guard.podAnnotations.team=checkout \
+	@out=$$(helm template napwake charts/napwake --show-only templates/guard.yaml --set-string guard.podAnnotations.team=checkout \
 		--set-string guard.podLabels.control-plane=other --set 'tolerations[0].operator=Exists'); \
 	grep -q 'sidecar.istio.io/inject: "false"' <<<"$$out" && grep -q 'linkerd.io/inject: disabled' <<<"$$out" && \
 		grep -q 'team: checkout' <<<"$$out" && grep -q 'operator: Exists' <<<"$$out" && \
 		! grep -q 'control-plane: other' <<<"$$out" && ! grep -q 'runAsUser' <<<"$$out" || { \
 		echo "the guard's pod lets a mesh's sidecar in, which never exits, ignores guard.* or the operator's scheduling, or fixes a UID OpenShift refuses"; exit 1; }
 	@for field in terminationGracePeriodSeconds: seconds: minReadySeconds:; do \
-		chart=$$(helm template hybernate charts/hybernate --show-only templates/doorman.yaml | awk -v f="$$field" '$$1 == f {print $$2}'); \
+		chart=$$(helm template napwake charts/napwake --show-only templates/doorman.yaml | awk -v f="$$field" '$$1 == f {print $$2}'); \
 		kustomize=$$(awk -v f="$$field" '$$1 == f {print $$2}' config/manager/doorman.yaml); \
 		[ -n "$$chart" ] && [ "$$chart" = "$$kustomize" ] || { \
 			echo "config/manager's doorman has $$field '$$kustomize', the chart's '$$chart', so one drops connections on shutdown"; exit 1; }; \
 	done
-	@chart=$$(helm template hybernate charts/hybernate --show-only templates/deployment.yaml | awk '$$1 == "terminationGracePeriodSeconds:" {print $$2}'); \
+	@chart=$$(helm template napwake charts/napwake --show-only templates/deployment.yaml | awk '$$1 == "terminationGracePeriodSeconds:" {print $$2}'); \
 	kustomize=$$(awk '$$1 == "terminationGracePeriodSeconds:" {print $$2}' config/manager/manager.yaml); \
 	[ "$$chart" -gt 30 ] && [ "$$chart" = "$$kustomize" ] || { \
 		echo "the operator's grace period, the chart's '$$chart' and config/manager's '$$kustomize', isn't over the 30s its reconciles get to finish"; exit 1; }
-	@! helm template hybernate charts/hybernate --set metrics.prometheusRule.enabled=true | grep -q 'alert: Hybernate.*Down' && \
-		[ "$$(helm template hybernate charts/hybernate --set metrics.prometheusRule.enabled=true --set metrics.serviceMonitor.enabled=true | \
-			grep -c 'alert: Hybernate.*Down')" = 2 ] || { \
-		echo "HybernateDown and HybernateDoormanDown aren't created exactly with the ServiceMonitors whose jobs they match, so they fire forever"; exit 1; }
-	@! helm template hybernate charts/hybernate --set metrics.enabled=false | grep -q 'system:auth-delegator' || { \
+	@! helm template napwake charts/napwake --set metrics.prometheusRule.enabled=true | grep -q 'alert: Napwake.*Down' && \
+		[ "$$(helm template napwake charts/napwake --set metrics.prometheusRule.enabled=true --set metrics.serviceMonitor.enabled=true | \
+			grep -c 'alert: Napwake.*Down')" = 2 ] || { \
+		echo "NapwakeDown and NapwakeDoormanDown aren't created exactly with the ServiceMonitors whose jobs they match, so they fire forever"; exit 1; }
+	@! helm template napwake charts/napwake --set metrics.enabled=false | grep -q 'system:auth-delegator' || { \
 		echo "the chart lets the operator and the doorman review tokens with metrics disabled, when nothing checks one"; exit 1; }
-	@[ "$$(helm template hybernate charts/hybernate --show-only templates/user-roles.yaml | grep -c 'aggregate-to-view: "true"')" = 1 ] && \
+	@[ "$$(helm template napwake charts/napwake --show-only templates/user-roles.yaml | grep -c 'aggregate-to-view: "true"')" = 1 ] && \
 		grep -q 'aggregate-to-view: "true"' config/rbac/managedworkload_viewer_role.yaml && \
 		grep -q 'aggregate-to-edit: "true"' config/rbac/managedworkload_editor_role.yaml || { \
 		echo "ManagedWorkloads aren't in the built-in view and edit roles, so namespace users can't see or pause them"; exit 1; }
-	@hack/chart-notes.sh 0.3.1 | grep -qxF 'Docs for this version: https://okedeji.io/hybernate/0.3/' && \
-		hack/chart-notes.sh 0.3.0-rc.2 | grep -qxF 'Docs for this version: https://okedeji.io/hybernate/next/' || { \
+	@hack/chart-notes.sh 0.3.1 | grep -qxF 'Docs for this version: https://docs.napwake.dev/0.3/' && \
+		hack/chart-notes.sh 0.3.0-rc.2 | grep -qxF 'Docs for this version: https://docs.napwake.dev/next/' || { \
 		echo "the chart's NOTES don't link to the docs of its version: its minor's, or next's for a release candidate"; exit 1; }
 	@hack/chart-notes.sh 0.3.1 | grep -qF 'weekdays in UTC. Set timezone to your users' && \
 		hack/chart-notes.sh 0.3.1 --set timezone=America/New_York | grep -qxF 'weekdays in America/New_York.' || { \
@@ -254,25 +254,25 @@ check-chart: ## Lint the Helm chart, render it for each provider's Kubernetes ve
 	@# helm upgrade --reuse-values renders with the previous release's
 	@# defaults, which lack every value added since, so the chart fills
 	@# them in from files/defaults.yaml, a copy of its values.yaml.
-	@cmp -s charts/hybernate/values.yaml charts/hybernate/files/defaults.yaml || { \
-		echo "charts/hybernate/files/defaults.yaml isn't a copy of values.yaml, which the chart fills in missing values from; run make manifests"; exit 1; }
-	@[ "$$(awk '$$1 == "defaultsVersion:" {print $$2}' charts/hybernate/values.yaml)" = \
-		"$$(awk '$$1 == "version:" {print $$2}' charts/hybernate/Chart.yaml)" ] || { \
+	@cmp -s charts/napwake/values.yaml charts/napwake/files/defaults.yaml || { \
+		echo "charts/napwake/files/defaults.yaml isn't a copy of values.yaml, which the chart fills in missing values from; run make manifests"; exit 1; }
+	@[ "$$(awk '$$1 == "defaultsVersion:" {print $$2}' charts/napwake/values.yaml)" = \
+		"$$(awk '$$1 == "version:" {print $$2}' charts/napwake/Chart.yaml)" ] || { \
 		echo "values.yaml's defaultsVersion isn't Chart.yaml's version, so the chart can't tell its own defaults from an older release's"; exit 1; }
-	@missing=$$(grep -L '^{{- include "hybernate.defaults" . -}}$$' charts/hybernate/templates/*.yaml \
-		charts/hybernate/templates/crds/*.yaml charts/hybernate/templates/NOTES.txt || true); [ -z "$$missing" ] || { \
-		echo "$$missing"; echo "these templates don't start by filling in missing values, with {{- include \"hybernate.defaults\" . -}}"; exit 1; }
+	@missing=$$(grep -L '^{{- include "napwake.defaults" . -}}$$' charts/napwake/templates/*.yaml \
+		charts/napwake/templates/crds/*.yaml charts/napwake/templates/NOTES.txt || true); [ -z "$$missing" ] || { \
+		echo "$$missing"; echo "these templates don't start by filling in missing values, with {{- include \"napwake.defaults\" . -}}"; exit 1; }
 	@[ "$$(hack/chart-fill.sh '{"off": false, "zero": 0, "empty": "", "list": ["mine"], "map": {"mine": 1, "emptied": {}}}' \
 		'{"off": true, "zero": 5, "empty": "x", "list": ["a", "b"], "map": {"mine": 2, "added": 3, "emptied": {"added": 4}}, "added": 6}')" = \
 		'{"added":6,"empty":"","list":["mine"],"map":{"added":3,"emptied":{"added":4},"mine":1},"off":false,"zero":0}' ] || { \
-		echo "hybernate.fill doesn't keep every value given, false, 0 and \"\" included, and add only the keys missing"; exit 1; }
-	@! helm template hybernate charts/hybernate --set resources.limits=null --show-only templates/deployment.yaml | grep -q 'limits:' || { \
+		echo "napwake.fill doesn't keep every value given, false, 0 and \"\" included, and add only the keys missing"; exit 1; }
+	@! helm template napwake charts/napwake --set resources.limits=null --show-only templates/deployment.yaml | grep -q 'limits:' || { \
 		echo "a default removed with null comes back, though Helm rendered with the chart's own defaults"; exit 1; }
 	@go build -o bin/manager cmd/main.go
-	@[ "$$(hack/chart-reuse-values.sh /dev/null)" = "$$(helm template hybernate charts/hybernate --namespace hybernate-system)" ] || { \
+	@[ "$$(hack/chart-reuse-values.sh /dev/null)" = "$$(helm template napwake charts/napwake --namespace napwake-system)" ] || { \
 		echo "with no defaults to render with, the chart doesn't fill in every value from its own, as helm upgrade --reuse-values needs"; exit 1; }
 	@out=$$(hack/chart-reuse-values.sh /dev/null --set doorman.enabled=false --set leaderElection.enabled=false); \
-		! grep -qE 'name: hybernate-doorman$$|--leader-elect' <<<"$$out" || { \
+		! grep -qE 'name: napwake-doorman$$|--leader-elect' <<<"$$out" || { \
 		echo "filling in missing values overrode ones set to false"; exit 1; }
 	@for old in hack/testdata/chart-values/*.yaml; do \
 		out=$$(hack/chart-reuse-values.sh "$$old" --set timezone=Africa/Lagos) || { \
@@ -282,33 +282,33 @@ check-chart: ## Lint the Helm chart, render it for each provider's Kubernetes ve
 		grep -qF -- '"--timezone=Africa/Lagos"' <<<"$$out" || { echo "with $$old as its defaults, the chart drops a value set"; exit 1; }; \
 		go run ./hack/chartflags bin/manager <<<"$$out" || { echo "with $$old as its defaults, as helm upgrade --reuse-values from that release does"; exit 1; }; \
 	done
-	@helm template hybernate charts/hybernate --namespace hybernate-system | go run ./hack/chartflags bin/manager
-	@hack/chart-notes.sh 0.3.1 | awk '/okedeji.io\/hybernate\/0.3\/guides\/gitops\// {gitops = NR} /kubectl hybernate enable/ {enable = NR} \
+	@helm template napwake charts/napwake --namespace napwake-system | go run ./hack/chartflags bin/manager
+	@hack/chart-notes.sh 0.3.1 | awk '/docs.napwake.dev\/0.3\/guides\/gitops\// {gitops = NR} /kubectl napwake enable/ {enable = NR} \
 		END {exit !(gitops && gitops < enable)}' && test -f docs/guides/gitops.md || { \
 		echo "the chart's NOTES don't send Argo CD and Flux users to the GitOps guide before enable"; exit 1; }
-	@! helm template hybernate charts/hybernate | grep -qE -- '--neg-forwarder|doorman-pods|verbs: \[create, delete\]' || { \
+	@! helm template napwake charts/napwake | grep -qE -- '--neg-forwarder|doorman-pods|verbs: \[create, delete\]' || { \
 		echo "the chart runs NEG forwarders, or lets the operator create Deployments, without doorman.negForwarder.enabled"; exit 1; }
 	@for ns in '' "--set watchNamespaces={shop}"; do \
-		out=$$(helm template hybernate charts/hybernate --namespace hybernate-system --set doorman.negForwarder.enabled=true \
+		out=$$(helm template napwake charts/napwake --namespace napwake-system --set doorman.negForwarder.enabled=true \
 			--set networkPolicy.enabled=true --set 'doorman.networkPolicy.ingressFrom[0].podSelector.matchLabels.app=ingress' $$ns); \
 		grep -q -- '- --neg-forwarder$$' <<<"$$out" && grep -qF -- '"--neg-forwarder-resources={\"limits\"' <<<"$$out" && \
-			grep -q 'name: hybernate-doorman-pods$$' <<<"$$out" && grep -q 'verbs: \[create, delete\]' <<<"$$out" && \
-			grep -q 'app.kubernetes.io/name: hybernate-forwarder' <<<"$$out" || { \
+			grep -q 'name: napwake-doorman-pods$$' <<<"$$out" && grep -q 'verbs: \[create, delete\]' <<<"$$out" && \
+			grep -q 'app.kubernetes.io/name: napwake-forwarder' <<<"$$out" || { \
 			echo "doorman.negForwarder.enabled $$ns doesn't turn on the forwarders, the doorman's headless Service, their RBAC, or the doorman NetworkPolicy's way in for them"; exit 1; }; \
 	done
-	@! helm template hybernate charts/hybernate --set doorman.negForwarder.enabled=true --set doorman.enabled=false >/dev/null 2>&1 || { \
+	@! helm template napwake charts/napwake --set doorman.negForwarder.enabled=true --set doorman.enabled=false >/dev/null 2>&1 || { \
 		echo "the chart accepts doorman.negForwarder.enabled without the doorman forwarders pass connections to"; exit 1; }
-	@helm template hybernate charts/hybernate --set leaderElection.enabled=false --show-only templates/deployment.yaml | grep -q 'type: Recreate' && \
-		! helm template hybernate charts/hybernate --show-only templates/deployment.yaml | grep -q 'type: Recreate' || { \
+	@helm template napwake charts/napwake --set leaderElection.enabled=false --show-only templates/deployment.yaml | grep -q 'type: Recreate' && \
+		! helm template napwake charts/napwake --show-only templates/deployment.yaml | grep -q 'type: Recreate' || { \
 		echo "without leader election, a rolling update runs two operators at once"; exit 1; }
 
 .PHONY: test-doorman-policy
 test-doorman-policy: setup-envtest kustomize ## Check against envtest that the chart's and kustomize's admission policies, and an overlay's, hold the doorman to stamping requests, and keep the stamps to it
 	@dir=$$(mktemp -d); trap 'rm -rf "$$dir"' EXIT; \
-	helm template hybernate charts/hybernate --namespace hybernate-system > "$$dir/chart.yaml"; \
+	helm template napwake charts/napwake --namespace napwake-system > "$$dir/chart.yaml"; \
 	"$(KUSTOMIZE)" build config/default > "$$dir/kustomize.yaml"; \
 	"$(KUSTOMIZE)" build hack/doormanpolicy/overlay > "$$dir/overlay.yaml"; \
-	grep -q 'name: staging-hybernate-doorman$$' "$$dir/overlay.yaml" || { \
+	grep -q 'name: staging-napwake-doorman$$' "$$dir/overlay.yaml" || { \
 		echo "couldn't rename the kustomize install to check its admission policy follows"; exit 1; }; \
 	CHART_MANIFEST="$$dir/chart.yaml" KUSTOMIZE_MANIFEST="$$dir/kustomize.yaml" KUSTOMIZE_OVERLAY_MANIFEST="$$dir/overlay.yaml" \
 	KUBEBUILDER_ASSETS="$$("$(ENVTEST)" use $(ENVTEST_K8S_VERSION) --bin-dir "$(LOCALBIN)" -p path)" \
@@ -344,7 +344,7 @@ lint: golangci-lint ## Run golangci-lint linter
 GOVULNCHECK_VERSION ?= v1.9.0
 
 .PHONY: vulncheck
-vulncheck: ## Report vulnerabilities in Go dependencies that Hybernate's code reaches
+vulncheck: ## Report vulnerabilities in Go dependencies that Napwake's code reaches
 	go run golang.org/x/vuln/cmd/govulncheck@$(GOVULNCHECK_VERSION) ./...
 
 .PHONY: lint-fix
@@ -369,7 +369,7 @@ VERSIONED_DOCS = README.md docs/getting-started/installation.md docs/getting-sta
 
 # Every file bump writes, which release commits. A file bump writes that
 # isn't here is left out of the release commit, and release stops.
-BUMPED_FILES = charts/hybernate/Chart.yaml charts/hybernate/values.yaml charts/hybernate/files/defaults.yaml \
+BUMPED_FILES = charts/napwake/Chart.yaml charts/napwake/values.yaml charts/napwake/files/defaults.yaml \
 	config/manager/kustomization.yaml CHANGELOG.md $(VERSIONED_DOCS)
 
 # Versioning recipes read VERSION from the environment rather than having
@@ -382,11 +382,11 @@ CHECK_VERSION = [[ "$$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.]+)?$$ ]] 
 .PHONY: bump
 bump: ## Bump the version in the chart, the kustomize image, and docs, and date a release's changelog. Usage: make bump VERSION=0.1.2
 	@$(CHECK_VERSION)
-	@OLD="$$(awk '/^version:/ {print $$2}' charts/hybernate/Chart.yaml)" \
+	@OLD="$$(awk '/^version:/ {print $$2}' charts/napwake/Chart.yaml)" \
 		perl -pi -e 's/(?<![\d.])\Q$$ENV{OLD}\E(?!\.?[\w-])/$$ENV{VERSION}/g' $(VERSIONED_DOCS)
-	@perl -pi -e 's/^version:.*/version: $$ENV{VERSION}/' charts/hybernate/Chart.yaml
-	@perl -pi -e 's/^appVersion:.*/appVersion: "v$$ENV{VERSION}"/' charts/hybernate/Chart.yaml
-	@perl -pi -e 's/^defaultsVersion:.*/defaultsVersion: $$ENV{VERSION}/' charts/hybernate/values.yaml charts/hybernate/files/defaults.yaml
+	@perl -pi -e 's/^version:.*/version: $$ENV{VERSION}/' charts/napwake/Chart.yaml
+	@perl -pi -e 's/^appVersion:.*/appVersion: "v$$ENV{VERSION}"/' charts/napwake/Chart.yaml
+	@perl -pi -e 's/^defaultsVersion:.*/defaultsVersion: $$ENV{VERSION}/' charts/napwake/values.yaml charts/napwake/files/defaults.yaml
 	@perl -pi -e 's/^  newTag:.*/  newTag: v$$ENV{VERSION}/' config/manager/kustomization.yaml
 	@[[ "$$VERSION" == *-* ]] || TODAY="$$(date -u +%F)" \
 		perl -pi -e 's/^## \[\Q$$ENV{VERSION}\E\] - Unreleased$$/## [$$ENV{VERSION}] - $$ENV{TODAY}/' CHANGELOG.md
@@ -395,22 +395,22 @@ bump: ## Bump the version in the chart, the kustomize image, and docs, and date 
 .PHONY: verify-version
 verify-version: ## Fail unless the chart, the kustomize image, the docs and the changelog name VERSION. Usage: make verify-version VERSION=0.1.2
 	@$(CHECK_VERSION)
-	@grep -qxF "version: $$VERSION" charts/hybernate/Chart.yaml || { echo "Chart.yaml's version isn't $$VERSION"; exit 1; }
-	@grep -qxF "appVersion: \"v$$VERSION\"" charts/hybernate/Chart.yaml || { echo "Chart.yaml's appVersion isn't v$$VERSION"; exit 1; }
-	@grep -qxF "defaultsVersion: $$VERSION" charts/hybernate/values.yaml || { echo "values.yaml's defaultsVersion isn't $$VERSION"; exit 1; }
+	@grep -qxF "version: $$VERSION" charts/napwake/Chart.yaml || { echo "Chart.yaml's version isn't $$VERSION"; exit 1; }
+	@grep -qxF "appVersion: \"v$$VERSION\"" charts/napwake/Chart.yaml || { echo "Chart.yaml's appVersion isn't v$$VERSION"; exit 1; }
+	@grep -qxF "defaultsVersion: $$VERSION" charts/napwake/values.yaml || { echo "values.yaml's defaultsVersion isn't $$VERSION"; exit 1; }
 	@grep -qxF "  newTag: v$$VERSION" config/manager/kustomization.yaml || { echo "config/manager's image isn't v$$VERSION"; exit 1; }
 	@# The install and verify commands name the version whole: after
 	@# --version, as the image's or the chart's tag, or in a release
 	@# download's or a Kustomize base's link.
-	@pattern="(--version |hybernate:v?|/releases/download/v|\?ref=v)$${VERSION//./\\.}([^0-9A-Za-z.-]|$$)"; \
+	@pattern="(--version |napwake:v?|/releases/download/v|\?ref=v)$${VERSION//./\\.}([^0-9A-Za-z.-]|$$)"; \
 	for f in $(VERSIONED_DOCS); do \
 		grep -qE -- "$$pattern" "$$f" || { echo "$$f doesn't name $$VERSION; run make bump VERSION=$$VERSION"; exit 1; }; \
 	done
 	@# Every page's install links name the release the page documents:
 	@# releases/latest installs whatever was released last.
-	@unpinned=$$(grep -rnF 'okedeji/hybernate/releases/latest' README.md docs || true); [ -z "$$unpinned" ] || { \
+	@unpinned=$$(grep -rnF 'napwake/napwake/releases/latest' README.md docs || true); [ -z "$$unpinned" ] || { \
 		echo "$$unpinned"; echo "install links must name the release, as releases/download/v$$VERSION/ does"; exit 1; }
-	@stale=$$(grep -rnoE 'okedeji/hybernate(/releases/(download|tag)/|//config/[a-z-]+\?ref=)v[0-9][0-9A-Za-z.-]*' README.md docs | \
+	@stale=$$(grep -rnoE 'napwake/napwake(/releases/(download|tag)/|//config/[a-z-]+\?ref=)v[0-9][0-9A-Za-z.-]*' README.md docs | \
 		grep -vE -- "v$${VERSION//./\\.}$$" || true); [ -z "$$stale" ] || { \
 		echo "$$stale"; echo "these install links don't name v$$VERSION; add their pages to VERSIONED_DOCS and run make bump VERSION=$$VERSION"; exit 1; }
 	@base="$${VERSION%%-*}"; heading="^## \[$${base//./\\.}\] - "; \
@@ -444,8 +444,8 @@ build: manifests generate fmt vet ## Build manager binary.
 	go build -o bin/manager cmd/main.go
 
 .PHONY: build-plugin
-build-plugin: fmt vet ## Build kubectl-hybernate plugin binary.
-	go build -o bin/kubectl-hybernate ./cmd/kubectl-hybernate
+build-plugin: fmt vet ## Build kubectl-napwake plugin binary.
+	go build -o bin/kubectl-napwake ./cmd/kubectl-napwake
 
 .PHONY: run
 run: manifests generate fmt vet ## Run a controller from your host.
@@ -472,11 +472,11 @@ PLATFORMS ?= linux/arm64,linux/amd64,linux/s390x,linux/ppc64le
 .PHONY: docker-buildx
 docker-buildx: ## Build and push docker image for the manager for cross-platform support
 	@# A builder left by an interrupted run would make create fail.
-	@$(CONTAINER_TOOL) buildx rm hybernate-builder >/dev/null 2>&1 || true
-	$(CONTAINER_TOOL) buildx create --name hybernate-builder --use
+	@$(CONTAINER_TOOL) buildx rm napwake-builder >/dev/null 2>&1 || true
+	$(CONTAINER_TOOL) buildx create --name napwake-builder --use
 	$(CONTAINER_TOOL) buildx build --push --platform=$(PLATFORMS) --build-arg VERSION=$(if $(VERSION),v$(VERSION),dev) --tag ${IMG} . || { \
-		$(CONTAINER_TOOL) buildx rm hybernate-builder; exit 1; }
-	$(CONTAINER_TOOL) buildx rm hybernate-builder
+		$(CONTAINER_TOOL) buildx rm napwake-builder; exit 1; }
+	$(CONTAINER_TOOL) buildx rm napwake-builder
 
 .PHONY: build-installer
 build-installer: manifests generate kustomize ## Generate a consolidated YAML with CRDs and deployment.

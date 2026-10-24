@@ -1,10 +1,10 @@
-# Installs Hybernate with a ClusterRole, watching every namespace. For
+# Installs Napwake with a ClusterRole, watching every namespace. For
 # Prometheus's ServiceMonitors and alerts, apply config/prometheus after
 # this; to let only namespaces labelled metrics=enabled scrape, apply
 # config/network-policy.
-namespace: hybernate-system
+namespace: napwake-system
 
-namePrefix: hybernate-
+namePrefix: napwake-
 
 resources:
 - ../crd

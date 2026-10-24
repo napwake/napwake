@@ -27,7 +27,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-var update = flag.Bool("update", false, "rewrite testdata/kubectl-hybernate.rb from what the formula renders")
+var update = flag.Bool("update", false, "rewrite testdata/kubectl-napwake.rb from what the formula renders")
 
 // releaseDir writes stand-ins for a release's plugin archives, each holding
 // its own platform's name, so each has a checksum of its own.
@@ -35,7 +35,7 @@ func releaseDir(t *testing.T, platforms ...string) string {
 	t.Helper()
 	dir := t.TempDir()
 	for _, p := range platforms {
-		name := "kubectl-hybernate-" + p + ".tar.gz"
+		name := "kubectl-napwake-" + p + ".tar.gz"
 		require.NoError(t, os.WriteFile(filepath.Join(dir, name), []byte(p), 0o644))
 	}
 	return dir
@@ -45,9 +45,9 @@ func TestFormula(t *testing.T) {
 	dir := releaseDir(t, "darwin-arm64", "darwin-amd64", "linux-arm64", "linux-amd64", "windows-amd64")
 
 	var out bytes.Buffer
-	require.NoError(t, run(&out, "v0.2.0", "okedeji/hybernate", dir))
+	require.NoError(t, run(&out, "v0.2.0", "napwake/napwake", dir))
 
-	golden := filepath.Join("testdata", "kubectl-hybernate.rb")
+	golden := filepath.Join("testdata", "kubectl-napwake.rb")
 	if *update {
 		require.NoError(t, os.WriteFile(golden, out.Bytes(), 0o644))
 	}
@@ -68,23 +68,23 @@ func TestFormulaRefuses(t *testing.T) {
 		{
 			name:    "a tag that isn't a release's",
 			tag:     "main",
-			repo:    "okedeji/hybernate",
+			repo:    "napwake/napwake",
 			dir:     complete,
 			wantErr: `"main" isn't a release tag`,
 		},
 		{
 			name:    "a repository that isn't one",
 			tag:     "v0.2.0",
-			repo:    "okedeji/hybernate\" do evil",
+			repo:    "napwake/napwake\" do evil",
 			dir:     complete,
 			wantErr: "isn't a GitHub repository",
 		},
 		{
 			name:    "a missing archive",
 			tag:     "v0.2.0",
-			repo:    "okedeji/hybernate",
+			repo:    "napwake/napwake",
 			dir:     releaseDir(t, "darwin-arm64", "darwin-amd64", "linux-amd64"),
-			wantErr: "kubectl-hybernate-linux-arm64.tar.gz",
+			wantErr: "kubectl-napwake-linux-arm64.tar.gz",
 		},
 	}
 	for _, tt := range tests {

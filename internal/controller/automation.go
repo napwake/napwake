@@ -29,12 +29,12 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/log"
 
-	v1alpha1 "github.com/okedeji/hybernate/api/v1alpha1"
-	"github.com/okedeji/hybernate/internal/cost"
-	"github.com/okedeji/hybernate/internal/forecast"
-	"github.com/okedeji/hybernate/internal/human"
-	"github.com/okedeji/hybernate/internal/lifecycle"
-	opmetrics "github.com/okedeji/hybernate/internal/metrics"
+	v1alpha1 "github.com/napwake/napwake/api/v1alpha1"
+	"github.com/napwake/napwake/internal/cost"
+	"github.com/napwake/napwake/internal/forecast"
+	"github.com/napwake/napwake/internal/human"
+	"github.com/napwake/napwake/internal/lifecycle"
+	opmetrics "github.com/napwake/napwake/internal/metrics"
 
 	ctrl "sigs.k8s.io/controller-runtime"
 )

@@ -24,7 +24,7 @@ import (
 	"k8s.io/apimachinery/pkg/types"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
-	v1alpha1 "github.com/okedeji/hybernate/api/v1alpha1"
+	v1alpha1 "github.com/napwake/napwake/api/v1alpha1"
 )
 
 // workloadNode is what the dependency graph keeps of a ManagedWorkload:
@@ -71,7 +71,7 @@ func declaredEdges(n *workloadNode) []workloadID     { return n.dependsOn }
 func waitForReadyEdges(n *workloadNode) []workloadID { return n.waitsFor }
 func allEdges(n *workloadNode) []workloadID          { return n.dependencies }
 
-// workloadGraph is every ManagedWorkload Hybernate can see, as nodes
+// workloadGraph is every ManagedWorkload Napwake can see, as nodes
 // indexed by the workload each manages and by the workloads each depends
 // on. SetupWithManager keeps it up to date from the ManagedWorkload watch,
 // so a reconcile reads it without listing, and copying, every one.

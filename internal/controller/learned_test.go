@@ -37,7 +37,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/interceptor"
 
-	v1alpha1 "github.com/okedeji/hybernate/api/v1alpha1"
+	v1alpha1 "github.com/napwake/napwake/api/v1alpha1"
 )
 
 // apiWith is default/api with env in its container.
@@ -238,7 +238,7 @@ func TestLearnDependencies_NeverHoldsUpAWake(t *testing.T) {
 	assert.Equal(t, v1alpha1.PhaseRunning, fetch(t, r, "api").Status.Phase)
 }
 
-// Only a dependency Hybernate manages, in a namespace that allows the
+// Only a dependency Napwake manages, in a namespace that allows the
 // workload's, is woken with it, so the event says what's true of each.
 func TestLearnedMessage(t *testing.T) {
 	api := depWorkload("default", "api", v1alpha1.TargetKindDeployment, v1alpha1.PhaseRunning)
@@ -260,22 +260,22 @@ func TestLearnedMessage(t *testing.T) {
 			managed: []v1alpha1.ManagedWorkload{managed("default", "postgres")},
 			want:    "depends on default/postgres (DATABASE_URL), woken and held with it"},
 		{name: "not managed", learned: []v1alpha1.LearnedDependency{dep("default", "postgres", "PGRST_DB_URI")},
-			want: "depends on default/postgres (PGRST_DB_URI), which isn't managed by Hybernate, so it isn't woken " +
+			want: "depends on default/postgres (PGRST_DB_URI), which isn't managed by Napwake, so it isn't woken " +
 				"with api: opt it in to have them paused and woken together"},
 		{name: "two not managed",
 			learned: []v1alpha1.LearnedDependency{dep("default", "postgres", "PGHOST"), dep("default", "redis", "REDIS_URL")},
 			want: "depends on default/postgres (PGHOST), default/redis (REDIS_URL), which aren't managed by " +
-				"Hybernate, so they aren't woken with api: opt them in to have them paused and woken together"},
+				"Napwake, so they aren't woken with api: opt them in to have them paused and woken together"},
 		{name: "one of each",
 			learned: []v1alpha1.LearnedDependency{dep("default", "postgres", "PGHOST"), dep("default", "redis", "REDIS_URL")},
 			managed: []v1alpha1.ManagedWorkload{managed("default", "redis")},
 			want: "depends on default/redis (REDIS_URL), woken and held with it; and on default/postgres (PGHOST), " +
-				"which isn't managed by Hybernate, so it isn't woken with api: opt it in to have them paused and " +
+				"which isn't managed by Napwake, so it isn't woken with api: opt it in to have them paused and " +
 				"woken together"},
 		{name: "in a namespace that doesn't allow it",
 			learned: []v1alpha1.LearnedDependency{dep("data", "postgres", "PGHOST")},
 			managed: []v1alpha1.ManagedWorkload{managed("data", "postgres")},
-			want: "depends on data/postgres (PGHOST), in a namespace whose hybernate.io/dependents-from doesn't " +
+			want: "depends on data/postgres (PGHOST), in a namespace whose napwake.dev/dependents-from doesn't " +
 				"allow dependents from default, so it isn't woken or held with api"},
 		{name: "in a namespace that allows it",
 			learned:        []v1alpha1.LearnedDependency{dep("data", "postgres", "PGHOST")},
@@ -309,7 +309,7 @@ func TestLearnDependencies_SaysAnUnmanagedDependencyIsntWoken(t *testing.T) {
 	learned := recorded(r.Recorder.(*events.FakeRecorder), ReasonDependenciesLearned)
 	require.Len(t, learned, 1)
 	assert.Contains(t, learned[0], "api: depends on default/postgres (DATABASE_URL), which isn't managed by "+
-		"Hybernate, so it isn't woken with api")
+		"Napwake, so it isn't woken with api")
 	assert.NotContains(t, learned[0], "woken and held")
 }
 
@@ -452,7 +452,7 @@ func stampedBy(manager string) metav1.ManagedFieldsEntry {
 	return metav1.ManagedFieldsEntry{Manager: manager, Operation: metav1.ManagedFieldsOperationUpdate,
 		APIVersion: v1alpha1.GroupVersion.String(), Time: &metav1.Time{Time: fixedTime}, FieldsType: "FieldsV1",
 		FieldsV1: metav1.NewFieldsV1(`{"f:metadata":{"f:annotations":{` +
-			`"f:hybernate.io/last-request":{},"f:hybernate.io/last-request-from":{}}}}`)}
+			`"f:napwake.dev/last-request":{},"f:napwake.dev/last-request-from":{}}}}`)}
 }
 
 func TestLearnFromWake(t *testing.T) {
@@ -464,7 +464,7 @@ func TestLearnFromWake(t *testing.T) {
 		api      func(*v1alpha1.ManagedWorkload)
 		want     []string
 	}{
-		{name: "a request from a workload Hybernate manages", postgres: wokenPostgres(),
+		{name: "a request from a workload Napwake manages", postgres: wokenPostgres(),
 			objs: []client.Object{podOf("api", false), selecting(v1alpha1.TargetKindDeployment, "api", nil)},
 			want: learnedPostgres},
 		{name: "already learned", postgres: wokenPostgres(),
@@ -477,7 +477,7 @@ func TestLearnFromWake(t *testing.T) {
 			want: []string{"default/postgres PGHOST"}},
 		{name: "ignored", postgres: wokenPostgres(), objs: []client.Object{podOf("api", false),
 			selecting(v1alpha1.TargetKindDeployment, "api", map[string]string{v1alpha1.AnnotationIgnoreDependencies: "postgres"})}},
-		{name: "from a pod Hybernate doesn't manage, such as an ingress controller", postgres: wokenPostgres(),
+		{name: "from a pod Napwake doesn't manage, such as an ingress controller", postgres: wokenPostgres(),
 			objs: []client.Object{podOf("ingress-nginx", false), selecting(v1alpha1.TargetKindDeployment, "api", nil)}},
 		{name: "from its own pod", postgres: wokenPostgres(),
 			objs: []client.Object{podOf("postgres", false), selecting(v1alpha1.TargetKindDeployment, "api", nil)}},
@@ -746,7 +746,7 @@ func TestLearnFromWake_Bounded(t *testing.T) {
 	assert.LessOrEqual(t, reads.deadline, wakeLearnTimeout)
 }
 
-// Installed for some namespaces only, Hybernate can't list pods across the
+// Installed for some namespaces only, Napwake can't list pods across the
 // cluster, so it looks for the sender in each namespace it watches.
 func TestLearnFromWake_WatchedNamespaces(t *testing.T) {
 	api := depWorkload("default", "api", v1alpha1.TargetKindDeployment, v1alpha1.PhaseRunning)

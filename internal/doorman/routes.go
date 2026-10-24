@@ -38,7 +38,7 @@ limitations under the License.
 //   - An HTTP request whose User-Agent belongs to a known health checker or
 //     metrics scraper (see healthCheckAgents) is answered 503 and closed
 //     without a wake.
-//   - Service ports listed in the hybernate.io/doorman-ignore-ports
+//   - Service ports listed in the napwake.dev/doorman-ignore-ports
 //     annotation, by name or number, are never routed to the doorman, so
 //     they fail as they would without it. Use it for metrics ports scraped
 //     over TLS and for health-checked ports whose checker isn't recognised.
@@ -74,18 +74,18 @@ import (
 )
 
 const (
-	// ManagedBy marks the EndpointSlices Hybernate adds. The EndpointSlice
+	// ManagedBy marks the EndpointSlices Napwake adds. The EndpointSlice
 	// controller only manages slices labeled with its own value, so these
 	// coexist with the Service's real slice.
-	ManagedBy = "doorman.hybernate.io"
+	ManagedBy = "doorman.napwake.dev"
 
 	// LabelManagedWorkload names the ManagedWorkload a doorman slice serves,
 	// as WorkloadLabel gives it.
-	LabelManagedWorkload = "hybernate.io/managed-workload"
+	LabelManagedWorkload = "napwake.dev/managed-workload"
 
 	// AnnotationIgnorePorts on a Service lists, comma-separated, the names or
 	// numbers of the Service ports the doorman must not stand in for.
-	AnnotationIgnorePorts = "hybernate.io/doorman-ignore-ports"
+	AnnotationIgnorePorts = "napwake.dev/doorman-ignore-ports"
 
 	// RouteDrain is how long the doorman keeps serving a port after its
 	// route leaves status. Proxies and kube-proxy take a moment to stop

@@ -29,7 +29,7 @@ import (
 	"k8s.io/apimachinery/pkg/runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 
-	v1alpha1 "github.com/okedeji/hybernate/api/v1alpha1"
+	v1alpha1 "github.com/napwake/napwake/api/v1alpha1"
 )
 
 func idleIn(name, namespace string, labels map[string]string) []runtime.Object {
@@ -44,13 +44,13 @@ func namespace(name string, labels map[string]string) *corev1.Namespace {
 
 // The cluster's own infrastructure isn't an app to pause, so it's left out
 // of the workloads, the totals and every saving, and named in a note:
-// Kubernetes' namespaces, Hybernate's, wherever it's installed, and
+// Kubernetes' namespaces, Napwake's, wherever it's installed, and
 // well-known infrastructure by its namespace or its labels.
 func TestScanCluster_LeavesOutThePlatform(t *testing.T) {
 	objs := make([]runtime.Object, 0, 24)
 	objs = append(objs, idleIn("coredns", "kube-flannel", nil)...)
-	objs = append(objs, idleIn("hybernate", "ops", map[string]string{"app.kubernetes.io/name": "hybernate"})...)
-	objs = append(objs, idleIn("hybernate-doorman", "ops", nil)...)
+	objs = append(objs, idleIn("napwake", "ops", map[string]string{"app.kubernetes.io/name": "napwake"})...)
+	objs = append(objs, idleIn("napwake-doorman", "ops", nil)...)
 	objs = append(objs, idleIn("webhook", "cert-manager", nil)...)
 	objs = append(objs, idleIn("controller", "edge", map[string]string{"helm.sh/chart": "ingress-nginx-4.10.0"})...)
 	objs = append(objs, idleIn("checkout", "preview-42", nil)...)
@@ -71,29 +71,29 @@ func TestScanCluster_LeavesOutThePlatform(t *testing.T) {
 		platform[w.Namespace+"/"+w.Name] = w.Platform
 	}
 	assert.Equal(t, map[string]string{
-		"kube-flannel/coredns":  "Kubernetes",
-		"ops/hybernate":         "Hybernate",
-		"ops/hybernate-doorman": "Hybernate",
-		"cert-manager/webhook":  "cert-manager",
-		"edge/controller":       "ingress-nginx",
+		"kube-flannel/coredns": "Kubernetes",
+		"ops/napwake":          "Napwake",
+		"ops/napwake-doorman":  "Napwake",
+		"cert-manager/webhook": "cert-manager",
+		"edge/controller":      "ingress-nginx",
 	}, platform)
 	assert.Contains(t, report.Notes, "5 infrastructure workloads are left out of the totals and next steps: "+
-		"ops (2), cert-manager (1), edge (1) and 1 more. Hybernate never pauses Kubernetes' own workloads or "+
+		"ops (2), cert-manager (1), edge (1) and 1 more. Napwake never pauses Kubernetes' own workloads or "+
 		"itself; anything else, infrastructure included, pauses only if you opt it in",
-		"what the scan leaves out, then, apart, what Hybernate would pause")
+		"what the scan leaves out, then, apart, what Napwake would pause")
 }
 
 func TestPlatformNote_One(t *testing.T) {
-	assert.Equal(t, "1 infrastructure workload is left out of the totals and next steps: argocd (1). Hybernate "+
+	assert.Equal(t, "1 infrastructure workload is left out of the totals and next steps: argocd (1). Napwake "+
 		"never pauses Kubernetes' own workloads or itself; anything else, infrastructure included, pauses only "+
 		"if you opt it in", platformNote([]Workload{{Namespace: "argocd", Name: "argocd-server", Platform: "argocd"}}))
 }
 
-// A namespace labelled allow-protected is one Hybernate manages, so it's
+// A namespace labelled allow-protected is one Napwake manages, so it's
 // scanned like any other, and so is a workload someone already has
-// Hybernate managing. An app's dependency on Kubernetes isn't listed, as
-// Hybernate never pauses it, but one on other infrastructure is, as
-// Hybernate pauses that once it's opted in.
+// Napwake managing. An app's dependency on Kubernetes isn't listed, as
+// Napwake never pauses it, but one on other infrastructure is, as
+// Napwake pauses that once it's opted in.
 func TestScanCluster_PlatformExceptions(t *testing.T) {
 	objs := make([]runtime.Object, 0, 24)
 	objs = append(objs, idleIn("coredns", "kube-flannel", nil)...)
@@ -117,8 +117,8 @@ func TestScanCluster_PlatformExceptions(t *testing.T) {
 
 	require.NoError(t, err)
 	got := byName(report)
-	assert.Contains(t, got, "coredns", "its namespace allows Hybernate in")
-	assert.Contains(t, got, "grafana", "Hybernate already manages it")
+	assert.Contains(t, got, "coredns", "its namespace allows Napwake in")
+	assert.Contains(t, got, "grafana", "Napwake already manages it")
 	assert.NotContains(t, got, "prom")
 	assert.NotContains(t, got, "dns")
 	require.Contains(t, got, "api")
@@ -132,13 +132,13 @@ func TestScanCluster_PlatformExceptions(t *testing.T) {
 // Infrastructure is left out by the scan's guess, not an operator rule, so
 // a namespace opted in with the managed label, such as a preview
 // environment with its own Vault, is counted in full: the operator pauses
-// all of it. Hybernate's own components are still left out.
+// all of it. Napwake's own components are still left out.
 func TestScanCluster_CountsInfrastructureInAnOptedInNamespace(t *testing.T) {
 	objs := make([]runtime.Object, 0, 16)
 	objs = append(objs, idleIn("vault", "preview-7", map[string]string{"app": "vault"})...)
 	objs = append(objs, idleIn("grafana", "monitoring", nil)...)
-	objs = append(objs, idleIn("hybernate", "preview-7", map[string]string{
-		"control-plane": "controller-manager", "app.kubernetes.io/name": "hybernate"})...)
+	objs = append(objs, idleIn("napwake", "preview-7", map[string]string{
+		"control-plane": "controller-manager", "app.kubernetes.io/name": "napwake"})...)
 	objs = append(objs, idleIn("checkout", "preview-8", nil)...)
 	objs = append(objs, idleIn("vault", "preview-8", map[string]string{"app": "vault"})...)
 	objs = append(objs,
@@ -160,21 +160,21 @@ func TestScanCluster_CountsInfrastructureInAnOptedInNamespace(t *testing.T) {
 		platform[w.Namespace+"/"+w.Name] = w.Platform
 	}
 	assert.Equal(t, map[string]string{
-		"preview-7/hybernate": PlatformHybernate,
-		"preview-8/vault":     "vault",
+		"preview-7/napwake": PlatformNapwake,
+		"preview-8/vault":   "vault",
 	}, platform)
 	assert.Equal(t, 3, report.Totals.Workloads)
 }
 
 // The operator never pauses its own components, so in a namespace labelled
-// allow-protected that Hybernate shares with apps, its Deployments are still
-// Hybernate's while the apps beside them are scanned.
-func TestScanCluster_HybernateInAnAllowedNamespace(t *testing.T) {
+// allow-protected that Napwake shares with apps, its Deployments are still
+// Napwake's while the apps beside them are scanned.
+func TestScanCluster_NapwakeInAnAllowedNamespace(t *testing.T) {
 	objs := make([]runtime.Object, 0, 16)
 	objs = append(objs, idleIn("controller-manager", "shared", map[string]string{
-		"control-plane": "controller-manager", "app.kubernetes.io/name": "hybernate"})...)
-	objs = append(objs, idleIn("hybernate-doorman", "shared", map[string]string{
-		"control-plane": "doorman", "helm.sh/chart": "hybernate-0.4.0"})...)
+		"control-plane": "controller-manager", "app.kubernetes.io/name": "napwake"})...)
+	objs = append(objs, idleIn("napwake-doorman", "shared", map[string]string{
+		"control-plane": "doorman", "helm.sh/chart": "napwake-0.4.0"})...)
 	objs = append(objs, idleIn("checkout", "shared", nil)...)
 	objs = append(objs, namespace("shared", map[string]string{v1alpha1.LabelAllowProtected: v1alpha1.True}))
 	c := fake.NewClientBuilder().WithScheme(newScheme()).WithRuntimeObjects(objs...).Build()
@@ -189,8 +189,8 @@ func TestScanCluster_HybernateInAnAllowedNamespace(t *testing.T) {
 		platform[w.Name] = w.Platform
 	}
 	assert.Equal(t, map[string]string{
-		"controller-manager": PlatformHybernate,
-		"hybernate-doorman":  PlatformHybernate,
+		"controller-manager": PlatformNapwake,
+		"napwake-doorman":    PlatformNapwake,
 	}, platform)
 }
 

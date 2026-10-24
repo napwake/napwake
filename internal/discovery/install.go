@@ -28,12 +28,12 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
-	v1alpha1 "github.com/okedeji/hybernate/api/v1alpha1"
+	v1alpha1 "github.com/napwake/napwake/api/v1alpha1"
 )
 
-// Install is how a Hybernate install runs its doorman, as its operator's
+// Install is how a Napwake install runs its doorman, as its operator's
 // flags say, which decides whether a request wakes a paused workload it
-// manages. The zero Install is Hybernate's default: the doorman on, the NEG
+// manages. The zero Install is Napwake's default: the doorman on, the NEG
 // forwarder off.
 type Install struct {
 	// Namespace is where its operator runs.
@@ -54,13 +54,13 @@ type Install struct {
 
 // defaultOperatorNamespace is where the chart's documented install puts the
 // operator.
-const defaultOperatorNamespace = "hybernate-system"
+const defaultOperatorNamespace = "napwake-system"
 
-// readInstalls finds Hybernate's operators by the labels its chart and
+// readInstalls finds Napwake's operators by the labels its chart and
 // manifests give their Deployments, and reads their flags: across the
 // cluster, or, where that's refused, in the namespaces the scanned
 // namespaces' ManagedWorkloads name as their install's, and in
-// hybernate-system. When none can be read, the replay assumes Hybernate's
+// napwake-system. When none can be read, the replay assumes Napwake's
 // defaults, and the note says so, why, and what access reads them.
 func (s *Scanner) readInstalls(ctx context.Context, reads *clusterReads, namespaces []string) (
 	installs []Install, note string) {
@@ -84,18 +84,18 @@ func (s *Scanner) readInstalls(ctx context.Context, reads *clusterReads, namespa
 	if len(installs) > 0 {
 		return installs, ""
 	}
-	return nil, fmt.Sprintf("forecast couldn't read Hybernate's operator to see whether its doorman and NEG "+
-		"forwarder are on (%v), so the replay assumes Hybernate's defaults, the doorman on and the forwarder off, "+
+	return nil, fmt.Sprintf("forecast couldn't read Napwake's operator to see whether its doorman and NEG "+
+		"forwarder are on (%v), so the replay assumes Napwake's defaults, the doorman on and the forwarder off, "+
 		"and WAKES ON may say request where the install wouldn't route one; to read them, let your user list "+
 		"Deployments in the operator's namespace, %s by default, or across the cluster", err, defaultOperatorNamespace)
 }
 
-// listInstalls lists the Hybernate operators the list options reach.
+// listInstalls lists the Napwake operators the list options reach.
 func (s *Scanner) listInstalls(ctx context.Context, opts ...client.ListOption) ([]Install, error) {
 	var installs []Install
 	err := listAll(ctx, s.client, func(list *appsv1.DeploymentList) {
 		for i := range list.Items {
-			if d := &list.Items[i]; isHybernateApp(d.Labels) {
+			if d := &list.Items[i]; isNapwakeApp(d.Labels) {
 				installs = append(installs, installOf(d))
 			}
 		}
@@ -103,8 +103,8 @@ func (s *Scanner) listInstalls(ctx context.Context, opts ...client.ListOption) (
 	return installs, err
 }
 
-func isHybernateApp(labels map[string]string) bool {
-	return labels["app.kubernetes.io/name"] == hybernateApp || chartName(labels["helm.sh/chart"]) == hybernateApp
+func isNapwakeApp(labels map[string]string) bool {
+	return labels["app.kubernetes.io/name"] == napwakeApp || chartName(labels["helm.sh/chart"]) == napwakeApp
 }
 
 // installOf is the install whose operator d runs, from its manager
@@ -175,7 +175,7 @@ func boolFlag(args []string, name string) bool {
 
 // installFor is the install that would manage a workload in namespace: the
 // one its ManagedWorkload mw names, then one that watches namespace by
-// name, then one that watches every namespace. None is Hybernate's default.
+// name, then one that watches every namespace. None is Napwake's default.
 func installFor(installs []Install, namespace string, mw *v1alpha1.ManagedWorkload) Install {
 	if mw != nil {
 		if owner := mw.Annotations[v1alpha1.AnnotationOperator]; owner != "" {

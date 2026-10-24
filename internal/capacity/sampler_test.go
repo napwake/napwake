@@ -35,9 +35,9 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 	"sigs.k8s.io/controller-runtime/pkg/client/interceptor"
 
-	v1alpha1 "github.com/okedeji/hybernate/api/v1alpha1"
-	"github.com/okedeji/hybernate/internal/cost"
-	"github.com/okedeji/hybernate/internal/metrics"
+	v1alpha1 "github.com/napwake/napwake/api/v1alpha1"
+	"github.com/napwake/napwake/internal/cost"
+	"github.com/napwake/napwake/internal/metrics"
 )
 
 var start = time.Date(2026, 3, 14, 12, 0, 0, 0, time.UTC)
@@ -76,7 +76,7 @@ func boundPod(name, nodeName, cpu, memory string, phase corev1.PodPhase) *corev1
 
 type pausedOpt func(*v1alpha1.ManagedWorkload)
 
-// paused is api, which Hybernate paused at pausedAt from 2 replicas of 1 vCPU
+// paused is api, which Napwake paused at pausedAt from 2 replicas of 1 vCPU
 // and 4 GiB each, all of them in pool.
 func paused(pool string, pausedAt time.Time, opts ...pausedOpt) *v1alpha1.ManagedWorkload {
 	w := &v1alpha1.ManagedWorkload{
@@ -239,7 +239,7 @@ func TestSampler_WhatCounts(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			s, clock, _ := testSampler(t, Options{OperatorNamespace: "hybernate-system"}, tt.objects...)
+			s, clock, _ := testSampler(t, Options{OperatorNamespace: "napwake-system"}, tt.objects...)
 			sampleAfter(t, s, clock, 0)
 			sampleAfter(t, s, clock, time.Hour)
 

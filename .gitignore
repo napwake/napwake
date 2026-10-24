@@ -6,7 +6,8 @@
 *.dylib
 bin/*
 main
-/kubectl-hybernate
+# The plugin binary, built at the root, under any name it has had.
+/kubectl-*
 Dockerfile.cross
 
 # Test binary, built with `go test -c`

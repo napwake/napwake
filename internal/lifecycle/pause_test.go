@@ -29,8 +29,8 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/interceptor"
 
-	v1alpha1 "github.com/okedeji/hybernate/api/v1alpha1"
-	"github.com/okedeji/hybernate/internal/autoscaler"
+	v1alpha1 "github.com/napwake/napwake/api/v1alpha1"
+	"github.com/napwake/napwake/internal/autoscaler"
 )
 
 func TestPause_ScalesToZero(t *testing.T) {
@@ -317,7 +317,7 @@ func TestRestore_NoPauseIsNoOp(t *testing.T) {
 
 	require.NoError(t, err)
 	assert.Zero(t, got)
-	assert.Zero(t, replicas(t, c), "nothing Hybernate paused is started")
+	assert.Zero(t, replicas(t, c), "nothing Napwake paused is started")
 }
 
 // KEDA, still holding a ScaledObject that may scale to zero at zero, would

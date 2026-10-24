@@ -32,7 +32,7 @@ import (
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
-	v1alpha1 "github.com/okedeji/hybernate/api/v1alpha1"
+	v1alpha1 "github.com/napwake/napwake/api/v1alpha1"
 )
 
 // A duration the API server stores but metav1.Duration can't decode breaks
@@ -77,7 +77,7 @@ func TestCRD_DurationsAreThoseGoCanDecode(t *testing.T) {
 			t.Run(path[1]+"="+tt.value, func(t *testing.T) {
 				n++
 				mw := &unstructured.Unstructured{Object: map[string]any{
-					"apiVersion": "hybernate.io/v1alpha1", "kind": "ManagedWorkload",
+					"apiVersion": "napwake.dev/v1alpha1", "kind": "ManagedWorkload",
 					"metadata": map[string]any{"name": fmt.Sprintf("w%d", n), "namespace": "dev"},
 					"spec": map[string]any{
 						"target":     map[string]any{"kind": "Deployment", "name": "api"},
@@ -140,7 +140,7 @@ func TestCRD_RatesAndLists(t *testing.T) {
 	for i, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			mw := &unstructured.Unstructured{Object: map[string]any{
-				"apiVersion": "hybernate.io/v1alpha1", "kind": "ManagedWorkload",
+				"apiVersion": "napwake.dev/v1alpha1", "kind": "ManagedWorkload",
 				"metadata": map[string]any{"name": fmt.Sprintf("w%d", i), "namespace": "dev"},
 				"spec":     map[string]any{"target": map[string]any{"kind": "Deployment", "name": "api"}},
 			}}
@@ -202,7 +202,7 @@ func TestCRD_TargetIsAllAManagedWorkloadNeeds(t *testing.T) {
 	require.NoError(t, c.Create(ctx, &corev1.Namespace{ObjectMeta: metav1.ObjectMeta{Name: "dev"}}))
 
 	yaml := &unstructured.Unstructured{Object: map[string]any{
-		"apiVersion": "hybernate.io/v1alpha1", "kind": "ManagedWorkload",
+		"apiVersion": "napwake.dev/v1alpha1", "kind": "ManagedWorkload",
 		"metadata": map[string]any{"name": "api", "namespace": "dev"},
 		"spec":     map[string]any{"target": map[string]any{"name": "api"}},
 	}}

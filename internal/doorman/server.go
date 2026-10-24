@@ -37,8 +37,8 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/log"
 
-	v1alpha1 "github.com/okedeji/hybernate/api/v1alpha1"
-	opmetrics "github.com/okedeji/hybernate/internal/metrics"
+	v1alpha1 "github.com/napwake/napwake/api/v1alpha1"
+	opmetrics "github.com/napwake/napwake/internal/metrics"
 )
 
 const (

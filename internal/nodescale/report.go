@@ -81,7 +81,7 @@ func (r *Reporter) report(ctx context.Context, last string) string {
 	switch kinds[0] {
 	case "none":
 		logger.Info("no node autoscaler found: what pausing frees won't come off the bill until something "+
-			"scales nodes down", "docs", "https://okedeji.io/hybernate/guides/cluster-autoscaler/")
+			"scales nodes down", "docs", "https://docs.napwake.dev/guides/cluster-autoscaler/")
 	case "unknown":
 		logger.Info("couldn't tell which node autoscaler runs", "unreadable", strings.Join(a.Unread, ", "))
 	default:

@@ -1,7 +1,7 @@
 # Applied on its own, after config/default, with
 # kubectl apply -k config/prometheus. Names are written out rather than
 # prefixed, so they match what config/default creates.
-namespace: hybernate-system
+namespace: napwake-system
 
 resources:
 - monitor.yaml

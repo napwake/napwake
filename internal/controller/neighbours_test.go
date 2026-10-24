@@ -33,7 +33,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/event"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 
-	v1alpha1 "github.com/okedeji/hybernate/api/v1alpha1"
+	v1alpha1 "github.com/napwake/napwake/api/v1alpha1"
 )
 
 func neighbour(namespace, name string, phase v1alpha1.WorkloadPhase, routed bool) *v1alpha1.ManagedWorkload {
@@ -83,7 +83,7 @@ func TestPhaseChanged(t *testing.T) {
 }
 
 func TestRetryIfStale(t *testing.T) {
-	gr := schema.GroupResource{Group: "hybernate.io", Resource: "managedworkloads"}
+	gr := schema.GroupResource{Group: "napwake.dev", Resource: "managedworkloads"}
 	busy := ctrl.Result{RequeueAfter: time.Minute}
 	tests := []struct {
 		name    string

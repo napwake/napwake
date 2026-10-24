@@ -43,9 +43,9 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/envtest"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 
-	v1alpha1 "github.com/okedeji/hybernate/api/v1alpha1"
-	"github.com/okedeji/hybernate/internal/forecast"
-	"github.com/okedeji/hybernate/internal/lifecycle"
+	v1alpha1 "github.com/napwake/napwake/api/v1alpha1"
+	"github.com/napwake/napwake/internal/forecast"
+	"github.com/napwake/napwake/internal/lifecycle"
 )
 
 // depWorkload is a ManagedWorkload for a target of the same name, idle for
@@ -781,7 +781,7 @@ func TestDependencies_CrossNamespaceNeedsTheNamespacesConsent(t *testing.T) {
 					return
 				}
 				require.NotNil(t, c)
-				assert.Equal(t, "not in a namespace that allows dependents from preview-42 with hybernate.io/dependents-from, "+
+				assert.Equal(t, "not in a namespace that allows dependents from preview-42 with napwake.dev/dependents-from, "+
 					"so not held or woken: default/statefulset/postgres", c.Message)
 				assert.Nil(t, meta.FindStatusCondition(api.Status.Conditions, conditionDependencyNotFound),
 					"one not allowed isn't looked for, so whether it exists isn't told")
@@ -839,7 +839,7 @@ func TestFindRelatedWorkloads_Dependencies(t *testing.T) {
 }
 
 // rejectingPatches makes every patch of the ManagedWorkload named fail, as
-// a policy engine rejecting Hybernate's writes there would.
+// a policy engine rejecting Napwake's writes there would.
 func rejectingPatches(r *Reconciler, name string) {
 	r.Client = interceptor.NewClient(r.Client.(client.WithWatch), interceptor.Funcs{
 		Patch: func(ctx context.Context, c client.WithWatch, obj client.Object, patch client.Patch,
@@ -854,7 +854,7 @@ func rejectingPatches(r *Reconciler, name string) {
 }
 
 // A dependency that can't be woken, such as one in a namespace whose
-// policies reject Hybernate's writes, never keeps its dependent from
+// policies reject Napwake's writes, never keeps its dependent from
 // waking or being handed back.
 func TestDependencies_WakeIsBestEffort(t *testing.T) {
 	paused := func() *v1alpha1.ManagedWorkload {
@@ -949,7 +949,7 @@ func TestDependencies_ScaleUpWakesDependencies(t *testing.T) {
 		fetch(t, r, "postgres").Annotations[v1alpha1.AnnotationLastActivity])
 }
 
-// startEnvtest runs an API server with Hybernate's CRDs for the test.
+// startEnvtest runs an API server with Napwake's CRDs for the test.
 func startEnvtest(t *testing.T) *rest.Config {
 	t.Helper()
 	env := &envtest.Environment{

@@ -26,26 +26,26 @@ import (
 
 func TestAllMetricsRegistered(t *testing.T) {
 	expected := []string{
-		"hybernate_build_info",
-		"hybernate_workload_phase",
+		"napwake_build_info",
+		"napwake_workload_phase",
 		// Tier 1
-		"hybernate_reconcile_errors_total",
-		"hybernate_lifecycle_transitions_total",
-		"hybernate_lifecycle_action_duration_seconds",
+		"napwake_reconcile_errors_total",
+		"napwake_lifecycle_transitions_total",
+		"napwake_lifecycle_action_duration_seconds",
 
 		// Tier 2
-		"hybernate_prediction_confidence_percent",
-		"hybernate_prediction_phase",
-		"hybernate_prediction_data_points",
-		"hybernate_prediction_anomalies_total",
-		"hybernate_idle_detections_total",
-		"hybernate_external_scale_ups_total",
+		"napwake_prediction_confidence_percent",
+		"napwake_prediction_phase",
+		"napwake_prediction_data_points",
+		"napwake_prediction_anomalies_total",
+		"napwake_idle_detections_total",
+		"napwake_external_scale_ups_total",
 
 		// Tier 3
-		"hybernate_idle_seconds",
-		"hybernate_prediction_regime_changes_total",
-		"hybernate_dryrun_actions_total",
-		"hybernate_target_unavailable_total",
+		"napwake_idle_seconds",
+		"napwake_prediction_regime_changes_total",
+		"napwake_dryrun_actions_total",
+		"napwake_target_unavailable_total",
 
 		// Discovery
 	}

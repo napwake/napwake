@@ -3,9 +3,9 @@ kind: ServiceMonitor
 metadata:
   labels:
     control-plane: controller-manager
-    app.kubernetes.io/name: hybernate
+    app.kubernetes.io/name: napwake
     app.kubernetes.io/managed-by: kustomize
-  name: hybernate-controller-manager-metrics-monitor
+  name: napwake-controller-manager-metrics-monitor
 spec:
   endpoints:
     - path: /metrics
@@ -19,16 +19,16 @@ spec:
   selector:
     matchLabels:
       control-plane: controller-manager
-      app.kubernetes.io/name: hybernate
+      app.kubernetes.io/name: napwake
 ---
 apiVersion: monitoring.coreos.com/v1
 kind: ServiceMonitor
 metadata:
   labels:
     control-plane: doorman
-    app.kubernetes.io/name: hybernate
+    app.kubernetes.io/name: napwake
     app.kubernetes.io/managed-by: kustomize
-  name: hybernate-doorman
+  name: napwake-doorman
 spec:
   endpoints:
     - path: /metrics
@@ -41,4 +41,4 @@ spec:
   selector:
     matchLabels:
       control-plane: doorman
-      app.kubernetes.io/name: hybernate
+      app.kubernetes.io/name: napwake

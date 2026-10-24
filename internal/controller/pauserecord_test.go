@@ -31,8 +31,8 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/interceptor"
 
-	v1alpha1 "github.com/okedeji/hybernate/api/v1alpha1"
-	"github.com/okedeji/hybernate/internal/autoscaler"
+	v1alpha1 "github.com/napwake/napwake/api/v1alpha1"
+	"github.com/napwake/napwake/internal/autoscaler"
 )
 
 // apiScaler is the KEDA ScaledObject that scales default/api.
@@ -71,7 +71,7 @@ func copyPauseRecord(t *testing.T, r *Reconciler, record string) {
 // taken up from the copy its target carries: Paused again, then woken to
 // the replicas it had, with KEDA given back its own paused-replicas value.
 // Without it the target would be taken for one scaled to zero outside
-// Hybernate and left off for good, held there by KEDA.
+// Napwake and left off for good, held there by KEDA.
 func TestPause_StatusLostWhilePausedIsTakenUpFromTheTarget(t *testing.T) {
 	workload := withPauseRequested(lifecycleWorkload("api", v1alpha1.PhaseRunning))
 	r := lifecycleReconciler(t, workload, 3, interceptor.Funcs{}, apiScaledObject("5"))
@@ -85,7 +85,7 @@ func TestPause_StatusLostWhilePausedIsTakenUpFromTheTarget(t *testing.T) {
 	reconcileUntilSettled(t, r)
 
 	recovered := getWorkload(t, r, "api")
-	require.Equal(t, v1alpha1.PhasePaused, recovered.Status.Phase, "not left off as scaled to zero outside Hybernate")
+	require.Equal(t, v1alpha1.PhasePaused, recovered.Status.Phase, "not left off as scaled to zero outside Napwake")
 	require.NotNil(t, recovered.Status.Pause)
 	assert.Equal(t, int32(3), recovered.Status.Pause.PreviousReplicas)
 	assert.Contains(t, drainEvents(t, r), ReasonPauseRecovered)

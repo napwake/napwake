@@ -29,7 +29,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
-	v1alpha1 "github.com/okedeji/hybernate/api/v1alpha1"
+	v1alpha1 "github.com/napwake/napwake/api/v1alpha1"
 )
 
 func defaultNamespace(labels map[string]string) *corev1.Namespace {
@@ -38,7 +38,7 @@ func defaultNamespace(labels map[string]string) *corev1.Namespace {
 
 var protectedLabel = map[string]string{v1alpha1.LabelProtected: v1alpha1.True}
 
-// Hybernate pauses nothing in a protected namespace, and wakes what it had
+// Napwake pauses nothing in a protected namespace, and wakes what it had
 // paused there, so protecting one never leaves a workload off.
 func TestReconcile_ProtectedNamespace(t *testing.T) {
 	tests := []struct {
@@ -77,7 +77,7 @@ func TestReconcile_ProtectedNamespace(t *testing.T) {
 			c := meta.FindStatusCondition(got.Status.Conditions, conditionProtected)
 			require.NotNil(t, c)
 			assert.Equal(t, metav1.ConditionTrue, c.Status)
-			assert.Contains(t, c.Message, "label it hybernate.io/allow-protected=true to allow it")
+			assert.Contains(t, c.Message, "label it napwake.dev/allow-protected=true to allow it")
 		})
 	}
 }
@@ -104,9 +104,9 @@ func TestReconcile_ProtectedNamespaceFinishesAnInterruptedTransition(t *testing.
 }
 
 // The operator's and the doorman's own Deployments are never paused, even
-// by a ManagedWorkload written by hand in a Hybernate namespace labelled to
+// by a ManagedWorkload written by hand in a Napwake namespace labelled to
 // allow it, and one paused already is handed back.
-func TestReconcile_HybernateItselfIsNeverPaused(t *testing.T) {
+func TestReconcile_NapwakeItselfIsNeverPaused(t *testing.T) {
 	allowed := defaultNamespace(map[string]string{v1alpha1.LabelAllowProtected: v1alpha1.True})
 	tests := []struct {
 		name       string
@@ -119,7 +119,7 @@ func TestReconcile_HybernateItselfIsNeverPaused(t *testing.T) {
 			phase: v1alpha1.PhaseRunning, protected: true},
 		{name: "the doorman, paused", label: "doorman", namespaces: []string{"default"},
 			phase: v1alpha1.PhasePaused, protected: true},
-		{name: "the label outside Hybernate's namespaces", label: "doorman", namespaces: []string{"hybernate-system"},
+		{name: "the label outside Napwake's namespaces", label: "doorman", namespaces: []string{"napwake-system"},
 			phase: v1alpha1.PhaseRunning},
 	}
 	for _, tt := range tests {
@@ -133,7 +133,7 @@ func TestReconcile_HybernateItselfIsNeverPaused(t *testing.T) {
 			target.Labels = map[string]string{controlPlaneLabel: tt.label}
 			pauser := &stubPauser{pauseDone: true}
 			r := depReconciler(t, pauser, workload, allowed, target)
-			r.HybernateNamespaces = tt.namespaces
+			r.NapwakeNamespaces = tt.namespaces
 
 			_, err := r.Reconcile(context.Background(), reconcileFor("api"))
 			require.NoError(t, err)
@@ -146,7 +146,7 @@ func TestReconcile_HybernateItselfIsNeverPaused(t *testing.T) {
 			assert.Zero(t, pauser.pauseCalls, "never paused")
 			assert.Equal(t, v1alpha1.PhaseRunning, got.Status.Phase)
 			assert.Nil(t, got.Status.Pause)
-			assert.Equal(t, "HybernateComponent", meta.FindStatusCondition(got.Status.Conditions, conditionProtected).Reason)
+			assert.Equal(t, "NapwakeComponent", meta.FindStatusCondition(got.Status.Conditions, conditionProtected).Reason)
 		})
 	}
 }

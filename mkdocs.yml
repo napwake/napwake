@@ -1,8 +1,8 @@
-site_name: Hybernate
+site_name: Napwake
 site_description: Intelligent Kubernetes workload lifecycle management
-site_url: https://okedeji.io/hybernate/
-repo_url: https://github.com/okedeji/hybernate
-repo_name: okedeji/hybernate
+site_url: https://docs.napwake.dev/
+repo_url: https://github.com/napwake/napwake
+repo_name: napwake/napwake
 edit_uri: edit/main/docs/
 
 theme:
@@ -48,7 +48,7 @@ extra:
     alias: true
   # The release a version documents, such as 0.2.0-rc.1, which
   # overrides/main.html names in the banner of every version but latest.
-  release: !ENV [HYBERNATE_DOCS_RELEASE, ""]
+  release: !ENV [NAPWAKE_DOCS_RELEASE, ""]
 
 markdown_extensions:
   - admonition

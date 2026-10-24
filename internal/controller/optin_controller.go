@@ -44,8 +44,8 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/predicate"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 
-	v1alpha1 "github.com/okedeji/hybernate/api/v1alpha1"
-	"github.com/okedeji/hybernate/internal/metrics"
+	v1alpha1 "github.com/napwake/napwake/api/v1alpha1"
+	"github.com/napwake/napwake/internal/metrics"
 )
 
 const (
@@ -74,13 +74,13 @@ type OptInReconciler struct {
 	// aren't opted in, whatever their labels, unless the namespace is
 	// labelled to allow it.
 	ProtectedNamespaces []string
-	// WatchNamespaces are the namespaces Hybernate works in, or every
+	// WatchNamespaces are the namespaces Napwake works in, or every
 	// namespace when empty.
 	WatchNamespaces []string
-	// HybernateNamespaces are where the operator and the doorman run. Their
+	// NapwakeNamespaces are where the operator and the doorman run. Their
 	// own Deployments there are never opted in, even in a namespace allowed
 	// to be managed: nothing would be left to wake them.
-	HybernateNamespaces []string
+	NapwakeNamespaces []string
 	// OperatorNamespace is where this install's operator runs. A
 	// label-created ManagedWorkload another install took on is left to it.
 	OperatorNamespace string
@@ -88,7 +88,7 @@ type OptInReconciler struct {
 
 // +kubebuilder:rbac:groups="",resources=namespaces,verbs=get;list;watch
 // +kubebuilder:rbac:groups=apps,resources=deployments;statefulsets,verbs=get;list;watch
-// +kubebuilder:rbac:groups=hybernate.io,resources=managedworkloads,verbs=get;list;watch;create;update;patch;delete
+// +kubebuilder:rbac:groups=napwake.dev,resources=managedworkloads,verbs=get;list;watch;create;update;patch;delete
 
 // Reconcile makes the workload's label-created ManagedWorkload match its
 // labels and annotations. A ManagedWorkload someone wrote for the workload
@@ -208,21 +208,21 @@ func (r *OptInReconciler) inheritsDependsOn(ctx context.Context, ns *corev1.Name
 
 // labelComponent is the label the Helm chart and the kustomize manifests
 // put on the operator's and the doorman's Deployments, with the values
-// hybernateComponents names.
+// napwakeComponents names.
 const labelComponent = "control-plane"
 
-var hybernateComponents = map[string]string{"controller-manager": "operator", "doorman": "doorman"}
+var napwakeComponents = map[string]string{"controller-manager": "operator", "doorman": "doorman"}
 
-// isHybernate says the workload is the operator's or the doorman's own
+// isNapwake says the workload is the operator's or the doorman's own
 // Deployment.
-func (r *OptInReconciler) isHybernate(obj client.Object) bool {
-	_, ok := hybernateComponents[obj.GetLabels()[labelComponent]]
-	return ok && slices.Contains(r.HybernateNamespaces, obj.GetNamespace())
+func (r *OptInReconciler) isNapwake(obj client.Object) bool {
+	_, ok := napwakeComponents[obj.GetLabels()[labelComponent]]
+	return ok && slices.Contains(r.NapwakeNamespaces, obj.GetNamespace())
 }
 
 // optedIn reports whether the workload is managed through the label: its
 // own, or its namespace's, unless it's marked to be ignored, it's
-// Hybernate's own, or its namespace is protected. The workload's own label
+// Napwake's own, or its namespace is protected. The workload's own label
 // wins over its namespace's: "false" opts it out, like the ignore label. Any
 // other value doesn't opt in either, and is pointed out, since it's most
 // likely a setting meant for an annotation.
@@ -230,10 +230,10 @@ func (r *OptInReconciler) optedIn(obj client.Object, ns *corev1.Namespace) bool 
 	if obj.GetLabels()[v1alpha1.LabelIgnore] == v1alpha1.True {
 		return false
 	}
-	if r.isHybernate(obj) {
+	if r.isNapwake(obj) {
 		if obj.GetLabels()[v1alpha1.LabelManaged] == v1alpha1.True || ns.Labels[v1alpha1.LabelManaged] == v1alpha1.True {
 			r.Recorder.Eventf(obj, nil, "Warning", ReasonLabelIgnored, actionOptIn,
-				"this is Hybernate's own %s, which it never manages", hybernateComponents[obj.GetLabels()[labelComponent]])
+				"this is Napwake's own %s, which it never manages", napwakeComponents[obj.GetLabels()[labelComponent]])
 		}
 		return false
 	}
@@ -263,7 +263,7 @@ func (r *OptInReconciler) optedIn(obj client.Object, ns *corev1.Namespace) bool 
 	// easy mistake to make and otherwise silent.
 	if podTemplateOf(obj).Labels[v1alpha1.LabelManaged] == v1alpha1.True {
 		r.Recorder.Eventf(obj, nil, "Warning", ReasonLabelIgnored, actionOptIn,
-			"%s is on the pod template, where Hybernate doesn't look, so it doesn't opt the workload in: put it on "+
+			"%s is on the pod template, where Napwake doesn't look, so it doesn't opt the workload in: put it on "+
 				"the %s itself, or on its namespace", v1alpha1.LabelManaged, r.Kind)
 	}
 	return false
@@ -384,7 +384,7 @@ func (r *OptInReconciler) create(ctx context.Context, obj client.Object, taken m
 	if err := r.Create(ctx, mw); err != nil {
 		return fmt.Errorf("creating managed workload %s: %w", mw.Name, err)
 	}
-	r.Recorder.Eventf(obj, nil, "Normal", ReasonManaged, actionOptIn, "managed by Hybernate as ManagedWorkload %s", mw.Name)
+	r.Recorder.Eventf(obj, nil, "Normal", ReasonManaged, actionOptIn, "managed by Napwake as ManagedWorkload %s", mw.Name)
 	log.FromContext(ctx).Info("managing workload from its label", "workload", obj.GetName(),
 		"namespace", obj.GetNamespace(), "managed_workload", mw.Name)
 	return nil

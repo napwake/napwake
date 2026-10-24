@@ -1,6 +1,6 @@
 # Node Pools for Real Savings
 
-Pausing a workload frees what its pods requested on their nodes. Your cloud bill is for nodes, so what's freed becomes money only once a node goes. Hybernate reports the two apart: **freed** is what pausing released, and **saved** is what it measurably took off the bill (see [Freed and Saved](../concepts/cost-tracking.md#freed-and-saved)). This guide is about closing the gap between them, by giving non-prod workloads node pools of their own, so that pausing an environment empties whole nodes.
+Pausing a workload frees what its pods requested on their nodes. Your cloud bill is for nodes, so what's freed becomes money only once a node goes. Napwake reports the two apart: **freed** is what pausing released, and **saved** is what it measurably took off the bill (see [Freed and Saved](../concepts/cost-tracking.md#freed-and-saved)). This guide is about closing the gap between them, by giving non-prod workloads node pools of their own, so that pausing an environment empties whole nodes.
 
 ## Why a pool of their own
 
@@ -10,7 +10,7 @@ Put staging, preview and dev environments on a node pool that nothing else runs 
 
 What makes it work:
 
-- **A taint** on the pool's nodes, so nothing lands there that doesn't tolerate it: not your always-on workloads, not most `kube-system` pods, which would otherwise hold a node Cluster Autoscaler won't remove, and not Hybernate's own operator and doorman, which are never paused and must stay up to wake what is.
+- **A taint** on the pool's nodes, so nothing lands there that doesn't tolerate it: not your always-on workloads, not most `kube-system` pods, which would otherwise hold a node Cluster Autoscaler won't remove, and not Napwake's own operator and doorman, which are never paused and must stay up to wake what is.
 - **A label** on the pool's nodes, and a `nodeSelector` (or node affinity) with a matching toleration on the workloads that belong there.
 - **An autoscaler that removes empty nodes promptly**, and a minimum size of zero where the provider allows it.
 
@@ -27,9 +27,9 @@ metadata:
   name: my-api
   namespace: staging
   labels:
-    hybernate.io/managed: "true"
+    napwake.dev/managed: "true"
   annotations:
-    hybernate.io/wake-max-wait: "5m"
+    napwake.dev/wake-max-wait: "5m"
 spec:
   selector:
     matchLabels:
@@ -57,13 +57,13 @@ spec:
 
 `example.com/tier: non-prod` stands for whatever label and taint you give the pool. `wake-max-wait` is there because a wake may have to wait for a node; see [What waking costs](#what-waking-costs).
 
-To put a whole namespace on the pool without editing every workload, add the selector and toleration as pods are created. Any of these works, and Hybernate depends on none of them:
+To put a whole namespace on the pool without editing every workload, add the selector and toleration as pods are created. Any of these works, and Napwake depends on none of them:
 
 - A mutating admission policy from a policy engine, such as a Kyverno `mutate` rule or a Gatekeeper `Assign` mutation, matching pods in the namespaces you choose.
 - The `PodNodeSelector` and `PodTolerationRestriction` admission plugins, where your control plane enables them, which managed providers mostly don't: they read a default node selector and tolerations from annotations on the namespace.
 - Your templating, such as a Helm chart's or a Kustomize component's `nodeSelector` and `tolerations` for every non-prod release.
 
-Keep anything that never sleeps off the pool, such as a shared database no ManagedWorkload pauses: one always-on pod holds its node, and every pod that fits beside it. If it's a dependency of the paused workloads, consider managing it too: Hybernate [won't pause it](../concepts/dependencies.md) while anything that depends on it is awake, and wakes it first when they wake.
+Keep anything that never sleeps off the pool, such as a shared database no ManagedWorkload pauses: one always-on pod holds its node, and every pod that fits beside it. If it's a dependency of the paused workloads, consider managing it too: Napwake [won't pause it](../concepts/dependencies.md) while anything that depends on it is awake, and wakes it first when they wake.
 
 ## Karpenter
 
@@ -114,9 +114,9 @@ spec:
 - **`expireAfter`** is under `spec.template.spec` in v1, not under `disruption`.
 - **`limits`** caps what the pool can grow to, so a runaway preview environment can't.
 
-**Spot capacity** suits non-prod: it's interrupted now and then, which a staging environment can live with, and Karpenter picks spot when the requirements allow it. Karpenter deletes spot nodes it can empty by default, but replacing one spot node with a cheaper spot node needs its `SpotToSpotConsolidation` feature gate. Hybernate prices spot nodes at their spot list price, so freed and saved are close to what you pay; AWS's spot price moves through the day, which [Spot nodes](../concepts/cost-tracking.md#spot-nodes) explains.
+**Spot capacity** suits non-prod: it's interrupted now and then, which a staging environment can live with, and Karpenter picks spot when the requirements allow it. Karpenter deletes spot nodes it can empty by default, but replacing one spot node with a cheaper spot node needs its `SpotToSpotConsolidation` feature gate. Napwake prices spot nodes at their spot list price, so freed and saved are close to what you pay; AWS's spot price moves through the day, which [Spot nodes](../concepts/cost-tracking.md#spot-nodes) explains.
 
-Karpenter also won't consolidate a node whose pods are annotated `karpenter.sh/do-not-disrupt: "true"`, or whose pods' PodDisruptionBudgets allow no disruption. `kubectl hybernate nodes` lists both.
+Karpenter also won't consolidate a node whose pods are annotated `karpenter.sh/do-not-disrupt: "true"`, or whose pods' PodDisruptionBudgets allow no disruption. `kubectl napwake nodes` lists both.
 
 ## Cluster Autoscaler, GKE, AKS and EKS managed node groups
 
@@ -207,35 +207,35 @@ The settings that decide how soon a paused environment's nodes go:
 | `--skip-nodes-with-local-storage` | `true` upstream, `false` on AKS | Whether pods with `emptyDir` or `hostPath` volumes keep a node. Annotate pods with `cluster-autoscaler.kubernetes.io/safe-to-evict-local-volumes` rather than turning it off cluster-wide |
 | `--skip-nodes-with-system-pods` | `true` | Whether `kube-system` pods without a PodDisruptionBudget keep a node. The pool's taint keeps most of them off |
 
-These follow the [Cluster Autoscaler FAQ](https://github.com/kubernetes/autoscaler/blob/master/cluster-autoscaler/FAQ.md), its [AWS provider README](https://github.com/kubernetes/autoscaler/blob/master/cluster-autoscaler/cloudprovider/aws/README.md), [GKE's cluster autoscaler](https://cloud.google.com/kubernetes-engine/docs/concepts/cluster-autoscaler) and [`node-pools create`](https://cloud.google.com/sdk/gcloud/reference/container/node-pools/create) pages, and [AKS's cluster autoscaler](https://learn.microsoft.com/en-us/azure/aks/cluster-autoscaler) page. They live outside Hybernate and change with your provider's releases, so check them for your versions.
+These follow the [Cluster Autoscaler FAQ](https://github.com/kubernetes/autoscaler/blob/master/cluster-autoscaler/FAQ.md), its [AWS provider README](https://github.com/kubernetes/autoscaler/blob/master/cluster-autoscaler/cloudprovider/aws/README.md), [GKE's cluster autoscaler](https://cloud.google.com/kubernetes-engine/docs/concepts/cluster-autoscaler) and [`node-pools create`](https://cloud.google.com/sdk/gcloud/reference/container/node-pools/create) pages, and [AKS's cluster autoscaler](https://learn.microsoft.com/en-us/azure/aks/cluster-autoscaler) page. They live outside Napwake and change with your provider's releases, so check them for your versions.
 
 ## What waking costs
 
 A paused workload whose pool has scaled to nothing needs a node before it can start. The first request after a quiet night waits for the node to be provisioned and join, often 30 to 90 seconds, longer for a node group scaling up from zero, then for its images to be pulled onto a fresh node, then for the app to start.
 
-- **Raise `wake.maxWait`** (`hybernate.io/wake-max-wait` on a workload opted in with the label) above the 2-minute default, such as to `5m`, or the doorman gives up on held requests before the node is ready. The wake carries on regardless; see [How long a connection is held](../concepts/wake-on-request.md#how-long-a-connection-is-held).
+- **Raise `wake.maxWait`** (`napwake.dev/wake-max-wait` on a workload opted in with the label) above the 2-minute default, such as to `5m`, or the doorman gives up on held requests before the node is ready. The wake carries on regardless; see [How long a connection is held](../concepts/wake-on-request.md#how-long-a-connection-is-held).
 - **Raise your ingress controller's timeout to match.** ingress-nginx gives up on an upstream after 60 seconds by default. Browsers don't care: they get the [waking-up page](../concepts/wake-on-request.md#browsers) at once.
 - **Use `autoResume`** for traffic the forecast can learn, such as a team that starts at 9 every weekday. It wakes the workload 15 minutes before an hour the forecast expects to be busy, so the node has started before anyone arrives. See [Resume](pause.md#resume).
 - **Keep one node warm** if every first request must be quick: a minimum of one node, or in Karpenter a small always-on workload in the pool. You pay for that node, and pausing saves the rest.
 
 ## Check it's working
 
-**`kubectl hybernate status`** shows what pausing freed this month beside what it saved, per workload and in total. With the pool doing its job, SAVED follows FREED, a little behind, since a node takes `consolidateAfter` or `scale-down-unneeded-time` to go. When less than half of what was freed was saved, status says nodes aren't scaling down under Needs attention. See [See What Hybernate Is Doing](../getting-started/kubectl-plugin.md#see-what-hybernate-is-doing).
+**`kubectl napwake status`** shows what pausing freed this month beside what it saved, per workload and in total. With the pool doing its job, SAVED follows FREED, a little behind, since a node takes `consolidateAfter` or `scale-down-unneeded-time` to go. When less than half of what was freed was saved, status says nodes aren't scaling down under Needs attention. See [See What Napwake Is Doing](../getting-started/kubectl-plugin.md#see-what-napwake-is-doing).
 
-**`kubectl hybernate nodes`** names the node autoscaler it found and, for each node, what keeps the autoscaler from removing it, in BLOCKED BY: pods annotated `karpenter.sh/do-not-disrupt` or `cluster-autoscaler.kubernetes.io/safe-to-evict: "false"`, PodDisruptionBudgets that allow no disruption, local storage, pods without a controller, `kube-system` pods without a PodDisruptionBudget, nodes with scale-down disabled, NodePools that consolidate only empty nodes or never, and nodes no autoscaler scales. A node of the non-prod pool with a low utilisation and something in BLOCKED BY is the one to look at. See [See Why Nodes Don't Scale Down](../getting-started/kubectl-plugin.md#see-why-nodes-dont-scale-down).
+**`kubectl napwake nodes`** names the node autoscaler it found and, for each node, what keeps the autoscaler from removing it, in BLOCKED BY: pods annotated `karpenter.sh/do-not-disrupt` or `cluster-autoscaler.kubernetes.io/safe-to-evict: "false"`, PodDisruptionBudgets that allow no disruption, local storage, pods without a controller, `kube-system` pods without a PodDisruptionBudget, nodes with scale-down disabled, NodePools that consolidate only empty nodes or never, and nodes no autoscaler scales. A node of the non-prod pool with a low utilisation and something in BLOCKED BY is the one to look at. See [See Why Nodes Don't Scale Down](../getting-started/kubectl-plugin.md#see-why-nodes-dont-scale-down).
 
 **The metrics**, by node pool, with `pool` the pool's name, such as `non-prod`:
 
 ```promql
 # What the pool's paused workloads requested, against its spare capacity
-hybernate_capacity_paused_cpu_cores{pool="non-prod"}
-hybernate_capacity_spare_cpu_cores{pool="non-prod"}
+napwake_capacity_paused_cpu_cores{pool="non-prod"}
+napwake_capacity_spare_cpu_cores{pool="non-prod"}
 
 # What pausing takes off the bill an hour, in the pool
-hybernate_savings_realised_dollars_per_hour{pool="non-prod"}
+napwake_savings_realised_dollars_per_hour{pool="non-prod"}
 
 # Which node autoscaler the operator found
-hybernate_node_autoscaler
+napwake_node_autoscaler
 ```
 
-Spare capacity should fall towards zero as the pool's nodes go, and what's saved an hour rise towards what the paused replicas would cost. Spare capacity that stays above what's paused means the pool's nodes are still there: check `kubectl hybernate nodes`. See the [Metrics Reference](../reference/metrics.md#savings), and [Freed but not saved](../operations/troubleshooting.md#freed-but-not-saved) for the causes.
+Spare capacity should fall towards zero as the pool's nodes go, and what's saved an hour rise towards what the paused replicas would cost. Spare capacity that stays above what's paused means the pool's nodes are still there: check `kubectl napwake nodes`. See the [Metrics Reference](../reference/metrics.md#savings), and [Freed but not saved](../operations/troubleshooting.md#freed-but-not-saved) for the causes.

@@ -34,8 +34,8 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/config"
 	metricsserver "sigs.k8s.io/controller-runtime/pkg/metrics/server"
 
-	v1alpha1 "github.com/okedeji/hybernate/api/v1alpha1"
-	"github.com/okedeji/hybernate/internal/doorman"
+	v1alpha1 "github.com/napwake/napwake/api/v1alpha1"
+	"github.com/napwake/napwake/internal/doorman"
 )
 
 // On GKE every Service carries the NEG annotation, which mustn't keep it off
@@ -50,14 +50,14 @@ func TestGKENEGRoutingFollowsIngressesAndServices(t *testing.T) {
 	c, err := client.New(cfg, client.Options{Scheme: opScheme})
 	require.NoError(t, err)
 
-	const ns, doormanNS = "shop", "hybernate-system"
+	const ns, doormanNS = "shop", "napwake-system"
 	for _, name := range []string{ns, doormanNS} {
 		require.NoError(t, c.Create(ctx, &corev1.Namespace{ObjectMeta: metav1.ObjectMeta{Name: name}}))
 	}
 	require.NoError(t, c.Create(ctx, &discoveryv1.EndpointSlice{
 		ObjectMeta: metav1.ObjectMeta{
-			Name: "hybernate-doorman-abc", Namespace: doormanNS,
-			Labels: map[string]string{discoveryv1.LabelServiceName: "hybernate-doorman"},
+			Name: "napwake-doorman-abc", Namespace: doormanNS,
+			Labels: map[string]string{discoveryv1.LabelServiceName: "napwake-doorman"},
 		},
 		AddressType: discoveryv1.AddressTypeIPv4,
 		Endpoints: []discoveryv1.Endpoint{{
@@ -82,7 +82,7 @@ func TestGKENEGRoutingFollowsIngressesAndServices(t *testing.T) {
 		Controller: config.Controller{SkipNameValidation: ptr.To(true)}})
 	require.NoError(t, err)
 	r := &Reconciler{Client: mgr.GetClient(), Scheme: opScheme, Recorder: events.NewFakeRecorder(1000),
-		PodReader: mgr.GetAPIReader(), DoormanService: "hybernate-doorman", DoormanNamespace: doormanNS}
+		PodReader: mgr.GetAPIReader(), DoormanService: "napwake-doorman", DoormanNamespace: doormanNS}
 	require.NoError(t, r.SetupWithManager(mgr))
 	mgrCtx, stop := context.WithCancel(context.Background())
 	var running sync.WaitGroup

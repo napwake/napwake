@@ -35,7 +35,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 	"sigs.k8s.io/controller-runtime/pkg/client/interceptor"
 
-	v1alpha1 "github.com/okedeji/hybernate/api/v1alpha1"
+	v1alpha1 "github.com/napwake/napwake/api/v1alpha1"
 )
 
 func TestAddresses(t *testing.T) {
@@ -300,7 +300,7 @@ func TestScanCluster_FindsDependencies(t *testing.T) {
 		"1 workload takes environment variables from Secrets, which the scan doesn't read")
 }
 
-// A dependency Hybernate learned for a workload it manages is connected:
+// A dependency Napwake learned for a workload it manages is connected:
 // it's held and woken with the workload.
 func TestScanCluster_LearnedDependenciesAreConnected(t *testing.T) {
 	objs := []runtime.Object{

@@ -119,22 +119,22 @@ jobs:
           if [[ "$TAG" == *-* ]]; then
             docs=next
           fi
-          printf '\n**Docs for this release:** https://okedeji.io/hybernate/%s/\n' "$docs" >> release-notes.md
+          printf '\n**Docs for this release:** https://docs.napwake.dev/%s/\n' "$docs" >> release-notes.md
 
       # Static, so the Linux binaries run on Alpine and Amazon Linux as well
       # as glibc distributions. krew-index requires the LICENSE in each, and
       # NOTICE credits the price data the plugin embeds.
-      - name: Build kubectl-hybernate plugin binaries
+      - name: Build kubectl-napwake plugin binaries
         run: |
           for platform in linux/amd64 linux/arm64 darwin/amd64 darwin/arm64 windows/amd64; do
             os=${platform%/*}
             arch=${platform#*/}
             ext=""
             if [ "$os" = windows ]; then ext=.exe; fi
-            bin=kubectl-hybernate-${os}-${arch}${ext}
+            bin=kubectl-napwake-${os}-${arch}${ext}
             CGO_ENABLED=0 GOOS=$os GOARCH=$arch go build -trimpath -ldflags "-s -w -X main.version=${TAG}" \
-              -o "$bin" ./cmd/kubectl-hybernate
-            tar czf "kubectl-hybernate-${os}-${arch}.tar.gz" "$bin" LICENSE NOTICE
+              -o "$bin" ./cmd/kubectl-napwake
+            tar czf "kubectl-napwake-${os}-${arch}.tar.gz" "$bin" LICENSE NOTICE
           done
 
       - name: Generate and validate the Krew manifest
@@ -142,12 +142,12 @@ jobs:
           REPOSITORY: ${{ github.repository }}
         run: |
           mkdir -p krew
-          ./hack/krew-manifest.sh "$TAG" "$REPOSITORY" > krew/hybernate.yaml
+          ./hack/krew-manifest.sh "$TAG" "$REPOSITORY" > krew/napwake.yaml
           # The release's archives aren't uploaded yet, so installing from
           # the manifest's URIs is left to krew-index's own checks.
           GOBIN="$PWD/krew" go install sigs.k8s.io/krew/cmd/validate-krew-manifest@v0.5.0
-          ./krew/validate-krew-manifest -manifest krew/hybernate.yaml -skip-install
-          cp krew/hybernate.yaml krew-hybernate.yaml
+          ./krew/validate-krew-manifest -manifest krew/napwake.yaml -skip-install
+          cp krew/napwake.yaml krew-napwake.yaml
 
       - name: Generate install manifest
         run: make build-installer IMG="${REGISTRY}/${IMAGE_NAME}:${TAG}"
@@ -155,7 +155,7 @@ jobs:
       - name: Package the Helm chart
         env:
           CHART_VERSION: ${{ steps.version.outputs.chart }}
-        run: helm package charts/hybernate --version "$CHART_VERSION" --app-version "$TAG"
+        run: helm package charts/napwake --version "$CHART_VERSION" --app-version "$TAG"
 
       - name: Log in to GHCR
         uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4.6.0
@@ -187,8 +187,8 @@ jobs:
           subject-name: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
           subject-digest: ${{ steps.build.outputs.digest }}
           push-to-registry: true
-          # Storage records are for organizations' artifact metadata, which
-          # a personal account's repository has none of.
+          # Storage records, an organization's artifact metadata, stay off
+          # until the napwake organization has a use for them.
           create-storage-record: false
 
       - name: Sign the image, and attach an SBOM for each platform
@@ -231,7 +231,7 @@ jobs:
       - name: Collect the release files
         run: |
           mkdir release
-          cp dist/install.yaml hybernate-*.tgz kubectl-hybernate-*.tar.gz krew-hybernate.yaml sbom-*.spdx.json release/
+          cp dist/install.yaml napwake-*.tgz kubectl-napwake-*.tar.gz krew-napwake.yaml sbom-*.spdx.json release/
 
       - name: Sign the release files' checksums
         working-directory: release
@@ -280,9 +280,9 @@ jobs:
           OWNER: ${{ github.repository_owner }}
         run: |
           charts="${REGISTRY}/${OWNER}/charts"
-          helm push "hybernate-${CHART_VERSION}.tgz" "oci://${charts}"
-          digest=$(oras resolve "${charts}/hybernate:${CHART_VERSION}")
-          cosign sign --yes "${charts}/hybernate@${digest}"
+          helm push "napwake-${CHART_VERSION}.tgz" "oci://${charts}"
+          digest=$(oras resolve "${charts}/napwake:${CHART_VERSION}")
+          cosign sign --yes "${charts}/napwake@${digest}"
 
       - name: Tag the image latest
         if: steps.version.outputs.prerelease == 'false'
@@ -297,7 +297,7 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: gh release edit "$TAG" --draft=false
 
-  # brew install okedeji/tap/kubectl-hybernate installs the newest release,
+  # brew install napwake/tap/kubectl-napwake installs the newest release,
   # so release candidates aren't brewed. The formula is written from the
   # published archives, the files brew downloads, and pushed to the tap with
   # a fine-grained token that can write only to it. The release is out by
@@ -321,7 +321,7 @@ jobs:
           TAP_TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN }}
         run: |
           if [ -z "$TAP_TOKEN" ]; then
-            echo "::warning title=Homebrew tap not updated::The HOMEBREW_TAP_TOKEN secret isn't set, so okedeji/homebrew-tap stays on the last release. Add a fine-grained token with Contents read and write on that repository only, then re-run this job."
+            echo "::warning title=Homebrew tap not updated::The HOMEBREW_TAP_TOKEN secret isn't set, so napwake/homebrew-tap stays on the last release. Add a fine-grained token with Contents read and write on that repository only, then re-run this job."
             echo "present=false" >> "$GITHUB_OUTPUT"
           else
             echo "present=true" >> "$GITHUB_OUTPUT"
@@ -341,8 +341,8 @@ jobs:
           REPOSITORY: ${{ github.repository }}
         run: |
           gh release download "$TAG" --dir release \
-            --pattern 'kubectl-hybernate-darwin-*.tar.gz' --pattern 'kubectl-hybernate-linux-*.tar.gz'
-          go run ./hack/brewformula -tag "$TAG" -repo "$REPOSITORY" -dir release > kubectl-hybernate.rb
+            --pattern 'kubectl-napwake-darwin-*.tar.gz' --pattern 'kubectl-napwake-linux-*.tar.gz'
+          go run ./hack/brewformula -tag "$TAG" -repo "$REPOSITORY" -dir release > kubectl-napwake.rb
 
       - if: steps.token.outputs.present == 'true'
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -358,19 +358,19 @@ jobs:
           # Until the first stable release, release candidates are brewed, so
           # those trying them can install with Homebrew; after it, a release
           # candidate never replaces the stable release people install.
-          formula=Formula/kubectl-hybernate.rb
+          formula=Formula/kubectl-napwake.rb
           if [[ "$TAG" == *-* ]] && [ -f "$formula" ] && ! grep -Eq '^ *version "[^"]+-' "$formula"; then
             echo "The tap has a stable release, which ${TAG#v}, a release candidate, doesn't replace"
             exit 0
           fi
           mkdir -p Formula
-          cp ../kubectl-hybernate.rb "$formula"
+          cp ../kubectl-napwake.rb "$formula"
           git add "$formula"
           if git diff --cached --quiet; then
-            echo "The tap already has kubectl-hybernate ${TAG#v}"
+            echo "The tap already has kubectl-napwake ${TAG#v}"
             exit 0
           fi
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git commit -m "kubectl-hybernate ${TAG#v}"
+          git commit -m "kubectl-napwake ${TAG#v}"
           git push

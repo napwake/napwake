@@ -41,8 +41,8 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 	"sigs.k8s.io/controller-runtime/pkg/client/interceptor"
 
-	v1alpha1 "github.com/okedeji/hybernate/api/v1alpha1"
-	"github.com/okedeji/hybernate/internal/cost"
+	v1alpha1 "github.com/napwake/napwake/api/v1alpha1"
+	"github.com/napwake/napwake/internal/cost"
 )
 
 var scanTime = time.Date(2026, 10, 3, 9, 0, 0, 0, time.UTC)
@@ -148,9 +148,9 @@ func TestScanCluster_SkipsIgnored(t *testing.T) {
 	assert.Empty(t, scanWorkloads(t, ignored).Workloads)
 }
 
-// A workload someone scaled to zero is paused, but not by Hybernate: it
+// A workload someone scaled to zero is paused, but not by Napwake: it
 // costs nothing now and nothing will wake it, so it's listed and counted
-// apart from what Hybernate has paused.
+// apart from what Napwake has paused.
 func TestScanCluster_ScaledToZeroByHand(t *testing.T) {
 	report := scanWorkloads(t, makeDeployment("off", testNamespace, 0, "100m", "128Mi", nil))
 
@@ -159,10 +159,10 @@ func TestScanCluster_ScaledToZeroByHand(t *testing.T) {
 	assert.Equal(t, StatePaused, w.State)
 	assert.True(t, w.ScaledByHand)
 	assert.False(t, w.Managed)
-	assert.Equal(t, "scaled to zero, not by Hybernate", w.Reason)
+	assert.Equal(t, "scaled to zero, not by Napwake", w.Reason)
 	assert.Zero(t, w.HourlyCost)
 	assert.Equal(t, 1, report.Totals.ScaledToZero)
-	assert.Zero(t, report.Totals.Paused, "Hybernate didn't pause it")
+	assert.Zero(t, report.Totals.Paused, "Napwake didn't pause it")
 }
 
 func TestScanCluster_MarksManagedWorkloads(t *testing.T) {
@@ -244,7 +244,7 @@ func idleNow(name string) []runtime.Object {
 }
 
 // The activity clock counts more than CPU; so does the scan, as far as it
-// can see without Hybernate.
+// can see without Napwake.
 func TestScanCluster_UnmanagedActivitySources(t *testing.T) {
 	held := idleNow("held")
 	held[0].(*appsv1.Deployment).Annotations = map[string]string{
@@ -296,9 +296,9 @@ func managedFor(name string, status v1alpha1.ManagedWorkloadStatus) *v1alpha1.Ma
 	}
 }
 
-// Once Hybernate manages a workload, its activity clock already combines
+// Once Napwake manages a workload, its activity clock already combines
 // every source, so the scan reads it rather than guessing again.
-func TestScanCluster_ReadsHybernatesClock(t *testing.T) {
+func TestScanCluster_ReadsNapwakesClock(t *testing.T) {
 	active := managedFor("active", v1alpha1.ManagedWorkloadStatus{Phase: v1alpha1.PhaseRunning,
 		Activity: &v1alpha1.ActivityStatus{LastActivityTime: metav1.NewTime(scanTime.Add(-5 * time.Minute)),
 			LastActivitySource: v1alpha1.ActivitySourcePrometheus}})
@@ -328,8 +328,8 @@ func TestScanCluster_ReadsHybernatesClock(t *testing.T) {
 	assert.Equal(t, StateActive, got["active"].State, "a Prometheus signal the scan can't see itself")
 	assert.Equal(t, "active 5m ago (prometheus)", got["active"].Reason)
 	for name, want := range map[string]string{
-		"unwatched": "not idle yet: Hybernate wasn't watching until 3m ago",
-		"created":   "not idle yet: Hybernate began managing it 3m ago",
+		"unwatched": "not idle yet: Napwake wasn't watching until 3m ago",
+		"created":   "not idle yet: Napwake began managing it 3m ago",
 		"woke":      "not idle yet: it woke 3m ago",
 	} {
 		assert.Equal(t, StateActive, got[name].State, "its clock started, so it isn't idle yet")
@@ -341,7 +341,7 @@ func TestScanCluster_ReadsHybernatesClock(t *testing.T) {
 	assert.True(t, got["measuring"].Managed)
 }
 
-func TestScanCluster_ShowsWhatHybernateHasPaused(t *testing.T) {
+func TestScanCluster_ShowsWhatNapwakeHasPaused(t *testing.T) {
 	mw := managedFor("asleep", v1alpha1.ManagedWorkloadStatus{Phase: v1alpha1.PhasePaused,
 		Pause: &v1alpha1.PauseStatus{PreviousReplicas: 3, PausedAt: ptr.To(metav1.NewTime(scanTime.Add(-5 * time.Hour))),
 			Resources: &v1alpha1.ResourceSnapshot{Replicas: 3, CPUMillis: 200, MemoryBytes: 256 << 20}}})
@@ -422,7 +422,7 @@ func TestMeasured(t *testing.T) {
 	}
 }
 
-// A workload Hybernate doesn't manage is idle after the scan's idleAfter.
+// A workload Napwake doesn't manage is idle after the scan's idleAfter.
 func TestScanCluster_UnmanagedIdleAfter(t *testing.T) {
 	objs := deploymentWithRollout("deployed", testNamespace, 1, 90*time.Minute)
 	objs = append(objs, makePodMetrics("deployed", testNamespace, "1m", "10Mi"))
@@ -437,7 +437,7 @@ func TestScanCluster_UnmanagedIdleAfter(t *testing.T) {
 	}
 }
 
-// A workload labelled for Hybernate keeps its own idleAfter before Hybernate
+// A workload labelled for Napwake keeps its own idleAfter before Napwake
 // has started its activity clock.
 func TestScanCluster_ManagedBeforeItsClockStarts(t *testing.T) {
 	mw := managedFor("deployed", v1alpha1.ManagedWorkloadStatus{})
@@ -450,7 +450,7 @@ func TestScanCluster_ManagedBeforeItsClockStarts(t *testing.T) {
 	assert.Equal(t, StateActive, got["deployed"].State, "deployed 90m ago, with its own idleAfter of 2h")
 }
 
-// What Hybernate saved, what dry-run measured, and what history estimates
+// What Napwake saved, what dry-run measured, and what history estimates
 // are summed apart, each for the workloads it applies to.
 func TestScanCluster_SavingsBySource(t *testing.T) {
 	live := managedFor("live", v1alpha1.ManagedWorkloadStatus{Phase: v1alpha1.PhaseRunning,
@@ -502,7 +502,7 @@ func TestScanCluster_DryRunScaledByHandIsntMeasured(t *testing.T) {
 	assert.Equal(t, Measured{}, report.Totals.Measured)
 }
 
-// Hybernate refuses to pause a StatefulSet that deletes its PVCs when
+// Napwake refuses to pause a StatefulSet that deletes its PVCs when
 // scaled down, as a pause would lose its data, so the scan says so, and
 // leaves it out of what pausing could save, as the operator would.
 func TestScanCluster_WontPauseAStatefulSetThatDeletesItsClaims(t *testing.T) {
@@ -637,10 +637,10 @@ func TestScanCluster_ReplicasFromGit(t *testing.T) {
 	assert.Empty(t, got["scaled"].ReplicasFromGit)
 	notes := strings.Join(report.Notes, "\n")
 	assert.Contains(t, notes, "2 workloads have their replicas set from Git by Argo CD, which would undo every pause: "+
-		testNamespace+"/argo-app, "+testNamespace+"/argo-db. Have Argo CD leave the replicas to Hybernate first: "+
-		"https://okedeji.io/hybernate/guides/gitops/")
+		testNamespace+"/argo-app, "+testNamespace+"/argo-db. Have Argo CD leave the replicas to Napwake first: "+
+		"https://docs.napwake.dev/guides/gitops/")
 	assert.Contains(t, notes, "1 workload has its replicas set from Git by Argo CD, and whether it's told to leave "+
-		"them to Hybernate couldn't be checked: ")
+		"them to Napwake couldn't be checked: ")
 	assert.Contains(t, notes, "1 workload has its replicas set from Git by Flux")
 	assert.NotContains(t, notes, "argo-told")
 }
@@ -670,7 +670,7 @@ func TestScanCluster_ProtectedNamespace(t *testing.T) {
 	assert.Zero(t, report.Totals.Replayed.Workloads, "not counted")
 }
 
-// A live workload Hybernate never pauses, for a reason the scan can't see
+// A live workload Napwake never pauses, for a reason the scan can't see
 // itself, such as the operator's protectedNamespaces, is counted apart from
 // those it pauses.
 func TestScanCluster_LiveProtectedCountedApart(t *testing.T) {

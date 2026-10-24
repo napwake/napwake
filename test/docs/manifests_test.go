@@ -127,7 +127,7 @@ func managedWorkloads(t *testing.T, manifests []manifest, fields map[string]bool
 			continue
 		}
 		u := &unstructured.Unstructured{Object: obj}
-		if !assert.Equal(t, "hybernate.io/v1alpha1", u.GetAPIVersion(), "%s: apiVersion", m.source) {
+		if !assert.Equal(t, "napwake.dev/v1alpha1", u.GetAPIVersion(), "%s: apiVersion", m.source) {
 			continue
 		}
 		out = append(out, workload{source: m.source, object: u})
@@ -173,7 +173,7 @@ func wrapSpec(fragment map[string]any) *unstructured.Unstructured {
 		s["prediction"] = map[string]any{}
 	}
 	return &unstructured.Unstructured{Object: map[string]any{
-		"apiVersion": "hybernate.io/v1alpha1",
+		"apiVersion": "napwake.dev/v1alpha1",
 		"kind":       "ManagedWorkload",
 		"metadata":   map[string]any{"name": "docs-snippet"},
 		"spec":       s,
@@ -185,7 +185,7 @@ func wrapSpec(fragment map[string]any) *unstructured.Unstructured {
 // docs without changing this test.
 func specFields(t *testing.T) map[string]bool {
 	t.Helper()
-	data, err := os.ReadFile(filepath.Join(repoRoot, "config", "crd", "bases", "hybernate.io_managedworkloads.yaml"))
+	data, err := os.ReadFile(filepath.Join(repoRoot, "config", "crd", "bases", "napwake.dev_managedworkloads.yaml"))
 	require.NoError(t, err)
 	var crd struct {
 		Spec struct {
@@ -216,7 +216,7 @@ func specFields(t *testing.T) map[string]bool {
 // chart's values.schema.json, as helm install would, which also refuses a
 // value the chart doesn't have, such as a misspelt one.
 func TestDocsHelmValuesAreValid(t *testing.T) {
-	chart := filepath.Join(repoRoot, "charts", "hybernate")
+	chart := filepath.Join(repoRoot, "charts", "napwake")
 
 	data, err := os.ReadFile(filepath.Join(chart, "values.schema.json"))
 	require.NoError(t, err)
@@ -275,10 +275,10 @@ func inlineRefs(t *testing.T, node any, definitions map[string]any) any {
 	}
 }
 
-var valuesFile = regexp.MustCompile(`^(hybernate-)?values(-[\w.-]+)?\.yaml$`)
+var valuesFile = regexp.MustCompile(`^(napwake-)?values(-[\w.-]+)?\.yaml$`)
 
-// isChartValues reports whether a block is Hybernate's Helm values: one the
-// docs title hybernate-values.yaml, values.yaml or values-<something>.yaml,
+// isChartValues reports whether a block is Napwake's Helm values: one the
+// docs title napwake-values.yaml, values.yaml or values-<something>.yaml,
 // or an untitled one whose every key is one of the chart's. Another chart's
 // values, such as Argo CD's argo-cd-values.yaml, are titled differently.
 func isChartValues(m manifest, values, defaults map[string]any, schema *spec.Schema) bool {

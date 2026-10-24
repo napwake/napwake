@@ -20,11 +20,11 @@ import (
 	utilyaml "k8s.io/apimachinery/pkg/util/yaml"
 	"sigs.k8s.io/yaml"
 
-	v1alpha1 "github.com/okedeji/hybernate/api/v1alpha1"
+	v1alpha1 "github.com/napwake/napwake/api/v1alpha1"
 )
 
 // Every settings annotation on a Deployment, StatefulSet or Namespace in the
-// docs is one Hybernate knows, with a value it can read: a reader who copies
+// docs is one Napwake knows, with a value it can read: a reader who copies
 // one gets the setting the page describes, not a warning event.
 func TestDocsAnnotationsAreReadable(t *testing.T) {
 	known := knownAnnotations(t)
@@ -32,10 +32,10 @@ func TestDocsAnnotationsAreReadable(t *testing.T) {
 	for _, obj := range docsObjects(t) {
 		var annotations map[string]string
 		for key, value := range obj.Metadata.Annotations {
-			if !strings.HasPrefix(key, "hybernate.io/") {
+			if !strings.HasPrefix(key, "napwake.dev/") {
 				continue
 			}
-			assert.True(t, known[key], "%s: %s isn't an annotation Hybernate reads", obj.source, key)
+			assert.True(t, known[key], "%s: %s isn't an annotation Napwake reads", obj.source, key)
 			if annotations == nil {
 				annotations = map[string]string{}
 			}
@@ -77,12 +77,12 @@ func TestDocsKustomizationsLeaveSelectorsAlone(t *testing.T) {
 	require.NotEmpty(t, kustomizations, "the docs have kustomizations to check")
 	for _, k := range kustomizations {
 		for key := range k.CommonLabels {
-			assert.False(t, strings.HasPrefix(key, "hybernate.io/"),
+			assert.False(t, strings.HasPrefix(key, "napwake.dev/"),
 				"%s: commonLabels puts %s in the workloads' selectors", k.source, key)
 		}
 		for _, l := range k.Labels {
 			for key := range l.Pairs {
-				if !strings.HasPrefix(key, "hybernate.io/") {
+				if !strings.HasPrefix(key, "napwake.dev/") {
 					continue
 				}
 				assert.False(t, l.IncludeSelectors, "%s: includeSelectors puts %s in the workloads' selectors", k.source, key)
@@ -234,7 +234,7 @@ func markdownYAML(page []byte) [][]byte {
 	return blocks
 }
 
-// knownAnnotations are the hybernate.io annotations the API declares.
+// knownAnnotations are the napwake.dev annotations the API declares.
 // They're read from labels.go's source, so a new one is known without
 // listing it twice.
 func knownAnnotations(t *testing.T) map[string]bool {

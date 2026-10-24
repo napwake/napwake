@@ -31,8 +31,8 @@ import (
 
 	"sigs.k8s.io/controller-runtime/pkg/log"
 
-	v1alpha1 "github.com/okedeji/hybernate/api/v1alpha1"
-	opmetrics "github.com/okedeji/hybernate/internal/metrics"
+	v1alpha1 "github.com/napwake/napwake/api/v1alpha1"
+	opmetrics "github.com/napwake/napwake/internal/metrics"
 )
 
 const (
@@ -85,7 +85,7 @@ const (
 )
 
 // The results a connection the doorman accepted ends with, as counted by
-// hybernate_doorman_wakes_total.
+// napwake_doorman_wakes_total.
 const (
 	resultSuccess  = "success"
 	resultPage     = "page"

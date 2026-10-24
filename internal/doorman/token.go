@@ -48,7 +48,7 @@ const (
 
 // tokenContext keeps the MAC for this use alone, should the key ever sign
 // anything else.
-const tokenContext = "hybernate.io/wake-it\x00"
+const tokenContext = "napwake.dev/wake-it\x00"
 
 // tokenScope is what a token is good for: one workload's one pause. A
 // token from another workload's page, or from an earlier pause of this one,

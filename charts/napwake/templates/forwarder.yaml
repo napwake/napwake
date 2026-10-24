@@ -1,0 +1,87 @@
+{{- include "napwake.defaults" . -}}
+{{- if .Values.doorman.negForwarder.enabled }}
+{{- if not .Values.doorman.enabled }}
+{{- fail "doorman.negForwarder.enabled needs doorman.enabled: forwarders pass connections to the doorman" }}
+{{- end }}
+{{- /*
+Forwarders resolve this name to the doorman's Ready pods, and pass
+connections to them on the doorman's routing ports, which no Service can
+list. Headless, so its DNS name gives the pods' own addresses.
+*/}}
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "napwake.doormanPodsName" . }}
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "napwake.doormanPodsLabels" . | nindent 4 }}
+spec:
+  clusterIP: None
+  ipFamilyPolicy: PreferDualStack
+  selector:
+    {{- include "napwake.doormanSelectorLabels" . | nindent 4 }}
+{{- /*
+The operator creates a forwarder Deployment beside each paused workload
+behind GKE NEGs, and deletes it once the workload is awake. It can already
+read and patch Deployments; only this mode needs it to create and delete
+them.
+*/}}
+{{- if not .Values.watchNamespaces }}
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: {{ include "napwake.fullname" . }}-forwarder
+  labels:
+    {{- include "napwake.labels" . | nindent 4 }}
+rules:
+  - apiGroups: [apps]
+    resources: [deployments]
+    verbs: [create, delete]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: {{ include "napwake.fullname" . }}-forwarder
+  labels:
+    {{- include "napwake.labels" . | nindent 4 }}
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: {{ include "napwake.fullname" . }}-forwarder
+subjects:
+  - kind: ServiceAccount
+    name: {{ include "napwake.serviceAccountName" . }}
+    namespace: {{ .Release.Namespace }}
+{{- end }}
+{{- range .Values.watchNamespaces }}
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: {{ include "napwake.fullname" $ }}-forwarder
+  namespace: {{ . }}
+  labels:
+    {{- include "napwake.labels" $ | nindent 4 }}
+rules:
+  - apiGroups: [apps]
+    resources: [deployments]
+    verbs: [create, delete]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: {{ include "napwake.fullname" $ }}-forwarder
+  namespace: {{ . }}
+  labels:
+    {{- include "napwake.labels" $ | nindent 4 }}
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: {{ include "napwake.fullname" $ }}-forwarder
+subjects:
+  - kind: ServiceAccount
+    name: {{ include "napwake.serviceAccountName" $ }}
+    namespace: {{ $.Release.Namespace }}
+{{- end }}
+{{- end }}

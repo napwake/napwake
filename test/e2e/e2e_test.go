@@ -30,22 +30,22 @@ import (
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
-	"github.com/okedeji/hybernate/test/utils"
+	"github.com/napwake/napwake/test/utils"
 )
 
 // namespace where the project is deployed in
-const namespace = "hybernate-system"
+const namespace = "napwake-system"
 
 // serviceAccountName created for the project
-const serviceAccountName = "hybernate-controller-manager"
+const serviceAccountName = "napwake-controller-manager"
 
 // metricsServiceName is the name of the metrics service of the project
-const metricsServiceName = "hybernate-controller-manager-metrics-service"
+const metricsServiceName = "napwake-controller-manager-metrics-service"
 
 // metricsRoleBindingName is the name of the RBAC that will be created to allow get the metrics data
-const metricsRoleBindingName = "hybernate-metrics-binding"
+const metricsRoleBindingName = "napwake-metrics-binding"
 
-// After a spec fails, collect what it takes to tell why: Hybernate's logs,
+// After a spec fails, collect what it takes to tell why: Napwake's logs,
 // events and pods, and the ManagedWorkloads and EndpointSlices of the
 // namespaces the specs made.
 var _ = AfterEach(func() {
@@ -61,11 +61,11 @@ var _ = AfterEach(func() {
 		{"Previous controller logs", []string{"logs", "-l", "control-plane=controller-manager", "-n", namespace,
 			"--prefix", "--previous", "--tail=100"}},
 		{"Doorman logs", []string{"logs", "-l", "control-plane=doorman", "-n", namespace, "--prefix", "--tail=200"}},
-		{"Hybernate's events", []string{"get", "events", "-n", namespace, "--sort-by=.lastTimestamp"}},
-		{"Hybernate's pods", []string{"describe", "pods", "-n", namespace}},
+		{"Napwake's events", []string{"get", "events", "-n", namespace, "--sort-by=.lastTimestamp"}},
+		{"Napwake's pods", []string{"describe", "pods", "-n", namespace}},
 		{"ManagedWorkloads", []string{"get", "managedworkloads", "-A", "-o", "wide"}},
 		{"Doorman EndpointSlices", []string{"get", "endpointslices", "-A",
-			"-l", "endpointslice.kubernetes.io/managed-by=doorman.hybernate.io"}},
+			"-l", "endpointslice.kubernetes.io/managed-by=doorman.napwake.dev"}},
 		{"Events in the specs' namespaces", []string{"get", "events", "-A", "--sort-by=.lastTimestamp",
 			"--field-selector=involvedObject.namespace!=kube-system"}},
 		{"curl-metrics logs", []string{"logs", "curl-metrics", "-n", namespace}},
@@ -122,7 +122,7 @@ var _ = Describe("Manager", func() {
 				"--ignore-not-found"))
 			Expect(err).NotTo(HaveOccurred())
 			cmd := exec.Command("kubectl", "create", "clusterrolebinding", metricsRoleBindingName,
-				"--clusterrole=hybernate-metrics-reader",
+				"--clusterrole=napwake-metrics-reader",
 				fmt.Sprintf("--serviceaccount=%s:%s", namespace, serviceAccountName),
 			)
 			_, err = utils.Run(cmd)
@@ -165,7 +165,7 @@ var _ = Describe("Manager", func() {
 			// +kubebuilder:scaffold:e2e-metrics-webhooks-readiness
 
 			By("managing a workload, so the operator has a series for it")
-			const metered, meteredNamespace = "e2e-metered", "hybernate-e2e-metrics"
+			const metered, meteredNamespace = "e2e-metered", "napwake-e2e-metrics"
 			createNamespace(meteredNamespace)
 			Expect(kubectlApply(deploymentManifest(metered, meteredNamespace, 1))).To(Succeed())
 			manage(meteredNamespace, "Deployment", metered, "1h")
@@ -177,15 +177,15 @@ var _ = Describe("Manager", func() {
 			operatorMetrics := scrape("curl-metrics",
 				fmt.Sprintf("https://%s.%s.svc.cluster.local:8443/metrics", metricsServiceName, namespace), token)
 			Expect(operatorMetrics).To(MatchRegexp(
-				`(?m)^hybernate_workload_phase\{namespace="%s",phase="Running",workload="%s"\} 1$`,
+				`(?m)^napwake_workload_phase\{namespace="%s",phase="Running",workload="%s"\} 1$`,
 				meteredNamespace, metered))
 
 			By("scraping the doorman's metrics")
 			doormanMetrics := scrape("curl-doorman-metrics",
-				fmt.Sprintf("https://hybernate-doorman.%s.svc.cluster.local:8443/metrics", namespace), token)
-			Expect(doormanMetrics).To(MatchRegexp(`(?m)^hybernate_doorman_held_connections \d+$`))
-			Expect(doormanMetrics).To(MatchRegexp(`(?m)^hybernate_doorman_proxied_connections \d+$`))
-			Expect(doormanMetrics).To(MatchRegexp(`(?m)^hybernate_doorman_port_conflicts \d+$`))
+				fmt.Sprintf("https://napwake-doorman.%s.svc.cluster.local:8443/metrics", namespace), token)
+			Expect(doormanMetrics).To(MatchRegexp(`(?m)^napwake_doorman_held_connections \d+$`))
+			Expect(doormanMetrics).To(MatchRegexp(`(?m)^napwake_doorman_proxied_connections \d+$`))
+			Expect(doormanMetrics).To(MatchRegexp(`(?m)^napwake_doorman_port_conflicts \d+$`))
 		})
 
 		// +kubebuilder:scaffold:e2e-webhooks-checks
@@ -193,7 +193,7 @@ var _ = Describe("Manager", func() {
 
 	Context("ManagedWorkload lifecycle", Ordered, func() {
 		const (
-			appNamespace = "hybernate-e2e-apps"
+			appNamespace = "napwake-e2e-apps"
 			appName      = "e2e-app"
 		)
 
@@ -214,7 +214,7 @@ var _ = Describe("Manager", func() {
 				return jsonpath("managedworkload", appName, appNamespace, "{.status.phase}")
 			}).Should(Equal("Running"))
 
-			By("pausing it now with kubectl hybernate pause")
+			By("pausing it now with kubectl napwake pause")
 			out, err := utils.Run(exec.Command(pluginBinary, "pause", appName, "-n", appNamespace, "--timeout", "3m"))
 			Expect(err).NotTo(HaveOccurred(), out)
 			Expect(out).To(ContainSubstring(appNamespace + "/" + appName + " is Paused after"))
@@ -252,7 +252,7 @@ var _ = Describe("Manager", func() {
 
 	Context("Idle clock", Ordered, func() {
 		const (
-			idleNamespace = "hybernate-e2e-idle"
+			idleNamespace = "napwake-e2e-idle"
 			idleName      = "e2e-idle-app"
 		)
 
@@ -272,7 +272,7 @@ var _ = Describe("Manager", func() {
 		It("pauses a workload with no activity, and wakes it on an activity annotation", func() {
 			By("managing it with a one-minute idle clock")
 			Expect(kubectlApply(fmt.Sprintf(`
-apiVersion: hybernate.io/v1alpha1
+apiVersion: napwake.dev/v1alpha1
 kind: ManagedWorkload
 metadata:
   name: %[1]s
@@ -292,7 +292,7 @@ spec:
 
 			By("annotating the Deployment as active, as a developer portal would")
 			_, err := utils.Run(exec.Command("kubectl", "annotate", "deployment", idleName, "-n", idleNamespace,
-				"--overwrite", "hybernate.io/last-activity="+time.Now().UTC().Format(time.RFC3339)))
+				"--overwrite", "napwake.dev/last-activity="+time.Now().UTC().Format(time.RFC3339)))
 			Expect(err).NotTo(HaveOccurred())
 
 			Eventually(func(g Gomega) {
@@ -305,7 +305,7 @@ spec:
 	})
 
 	Context("Dependencies", Ordered, func() {
-		const depsNamespace = "hybernate-e2e-deps"
+		const depsNamespace = "napwake-e2e-deps"
 
 		BeforeAll(func() {
 			By("creating an app and the database it depends on")
@@ -325,7 +325,7 @@ spec:
 		It("holds a dependency while its dependent is awake, and wakes it with the dependent", func() {
 			By("managing the database with a shorter clock than the app that depends on it")
 			Expect(kubectlApply(fmt.Sprintf(`
-apiVersion: hybernate.io/v1alpha1
+apiVersion: napwake.dev/v1alpha1
 kind: ManagedWorkload
 metadata: {name: e2e-db, namespace: %[1]s}
 spec:
@@ -333,7 +333,7 @@ spec:
   idlePolicy: {idleAfter: 1m}
   prediction: {confidence: 85}
 ---
-apiVersion: hybernate.io/v1alpha1
+apiVersion: napwake.dev/v1alpha1
 kind: ManagedWorkload
 metadata: {name: e2e-app, namespace: %[1]s}
 spec:
@@ -357,7 +357,7 @@ spec:
 				g.Expect(jsonpath("managedworkload", "e2e-db", depsNamespace, "{.status.phase}")).To(Equal("Paused"))
 			}, 5*time.Minute, 5*time.Second).Should(Succeed())
 
-			By("waking the app with kubectl hybernate wake, which must wake the database too")
+			By("waking the app with kubectl napwake wake, which must wake the database too")
 			out, err := utils.Run(exec.Command(pluginBinary, "wake", "e2e-app", "-n", depsNamespace, "--timeout", "3m"))
 			Expect(err).NotTo(HaveOccurred())
 			Expect(out).To(ContainSubstring("is Running after"), "wake waits until the workload is Running")
@@ -372,7 +372,7 @@ spec:
 	// Serial, since it relabels every node, which the specs running beside
 	// it would otherwise see appear and vanish.
 	Context("Scan", Ordered, Serial, func() {
-		const scanNamespace = "hybernate-e2e-scan"
+		const scanNamespace = "napwake-e2e-scan"
 
 		BeforeAll(func() {
 			_, err := utils.Run(exec.Command("kubectl", "create", "ns", scanNamespace))
@@ -393,7 +393,7 @@ spec:
 				"-n", scanNamespace, "--timeout=2m"))
 			Expect(err).NotTo(HaveOccurred())
 			Expect(kubectlApply(fmt.Sprintf(`
-apiVersion: hybernate.io/v1alpha1
+apiVersion: napwake.dev/v1alpha1
 kind: ManagedWorkload
 metadata: {name: e2e-quiet, namespace: %s}
 spec:
@@ -403,7 +403,7 @@ spec:
 `, scanNamespace))).To(Succeed())
 		})
 
-		It("reports what Hybernate has paused and what that frees", func() {
+		It("reports what Napwake has paused and what that frees", func() {
 			type scanned struct {
 				Workloads []struct {
 					Name       string  `json:"name"`
@@ -423,12 +423,12 @@ spec:
 					} `json:"nodeTypes"`
 				} `json:"nodePrices"`
 			}
-			By("checking Hybernate priced the workload at its nodes' list price while it ran")
+			By("checking Napwake priced the workload at its nodes' list price while it ran")
 			Eventually(func() (string, error) {
 				return jsonpath("managedworkload", "e2e-quiet", scanNamespace, "{.status.cost.listRates.cpuPerHour}")
 			}, 2*time.Minute, 5*time.Second).ShouldNot(BeEmpty(), "the operator can read the nodes it runs on")
 
-			By("scanning once Hybernate has paused the quiet workload")
+			By("scanning once Napwake has paused the quiet workload")
 			Eventually(func(g Gomega) {
 				out, err := utils.Output(exec.Command(pluginBinary, "scan", "-n", scanNamespace, "-o", "json", "--window", "0"))
 				g.Expect(err).NotTo(HaveOccurred())
@@ -461,8 +461,8 @@ spec:
 
 	Context("Scan with history", Ordered, func() {
 		const (
-			historyNamespace = "hybernate-e2e-history"
-			promNamespace    = "hybernate-e2e-monitoring"
+			historyNamespace = "napwake-e2e-history"
+			promNamespace    = "napwake-e2e-monitoring"
 			historyName      = "e2e-quiet-history"
 		)
 
@@ -548,11 +548,11 @@ spec:
 			By("scanning as a service account with the standard view role")
 			_, err := utils.Run(exec.Command("kubectl", "create", "serviceaccount", "scanner", "-n", historyNamespace))
 			Expect(err).NotTo(HaveOccurred())
-			_, err = utils.Run(exec.Command("kubectl", "create", "clusterrolebinding", "hybernate-e2e-scanner-view",
+			_, err = utils.Run(exec.Command("kubectl", "create", "clusterrolebinding", "napwake-e2e-scanner-view",
 				"--clusterrole=view", "--serviceaccount="+historyNamespace+":scanner"))
 			Expect(err).NotTo(HaveOccurred())
 			DeferCleanup(func() {
-				_, _ = utils.Run(exec.Command("kubectl", "delete", "clusterrolebinding", "hybernate-e2e-scanner-view"))
+				_, _ = utils.Run(exec.Command("kubectl", "delete", "clusterrolebinding", "napwake-e2e-scanner-view"))
 			})
 			token, err := utils.Run(exec.Command("kubectl", "create", "token", "scanner", "-n", historyNamespace))
 			Expect(err).NotTo(HaveOccurred())
@@ -599,7 +599,7 @@ spec:
 	})
 
 	Context("Scan dependencies", Ordered, func() {
-		const depsScanNamespace = "hybernate-e2e-deps-scan"
+		const depsScanNamespace = "napwake-e2e-deps-scan"
 
 		BeforeAll(func() {
 			_, err := utils.Run(exec.Command("kubectl", "create", "ns", depsScanNamespace))
@@ -669,7 +669,7 @@ data:
 
 			table, err := utils.Run(exec.Command(pluginBinary, "scan", "-n", depsScanNamespace, "--window", "0"))
 			Expect(err).NotTo(HaveOccurred())
-			Expect(table).To(ContainSubstring("Once Hybernate manages both ends of one, it wakes the dependency"))
+			Expect(table).To(ContainSubstring("Once Napwake manages both ends of one, it wakes the dependency"))
 			Expect(table).To(MatchRegexp(`deployment/e2e-app\s+->\s+statefulset/e2e-db\s+PGHOST\n`))
 		})
 
@@ -687,14 +687,14 @@ data:
 			Expect(string(page)).NotTo(ContainSubstring("e2e-db-0.e2e-db-hl"), "its address isn't")
 		})
 
-		It("learns the dependency once Hybernate manages the app, and holds the database awake for it", func() {
+		It("learns the dependency once Napwake manages the app, and holds the database awake for it", func() {
 			for name, kind := range map[string]string{"e2e-app": "Deployment", "e2e-db": "StatefulSet"} {
 				idleAfter := "1h"
 				if name == "e2e-db" {
 					idleAfter = "1m"
 				}
 				Expect(kubectlApply(fmt.Sprintf(`
-apiVersion: hybernate.io/v1alpha1
+apiVersion: napwake.dev/v1alpha1
 kind: ManagedWorkload
 metadata: {name: %[1]s, namespace: %[2]s}
 spec:
@@ -729,7 +729,7 @@ spec:
 
 	Context("Label opt-in", Ordered, func() {
 		const (
-			optInNamespace = "hybernate-e2e-optin"
+			optInNamespace = "napwake-e2e-optin"
 			optInName      = "e2e-labelled"
 		)
 
@@ -748,15 +748,15 @@ spec:
 		It("measures a labelled workload, pauses it once enabled, and restores it when the label goes", func() {
 			By("opting the Deployment in with a label, measuring first")
 			_, err := utils.Run(exec.Command("kubectl", "annotate", "deployment", optInName, "-n", optInNamespace,
-				"hybernate.io/dry-run=true", "hybernate.io/idle-after=1m"))
+				"napwake.dev/dry-run=true", "napwake.dev/idle-after=1m"))
 			Expect(err).NotTo(HaveOccurred())
 			_, err = utils.Run(exec.Command("kubectl", "label", "deployment", optInName, "-n", optInNamespace,
-				"hybernate.io/managed=true"))
+				"napwake.dev/managed=true"))
 			Expect(err).NotTo(HaveOccurred())
 
 			Eventually(func(g Gomega) {
 				g.Expect(jsonpath("managedworkload", optInName, optInNamespace,
-					`{.metadata.labels.hybernate\.io/from-label}`)).To(Equal("true"))
+					`{.metadata.labels.napwake\.dev/from-label}`)).To(Equal("true"))
 				g.Expect(jsonpath("managedworkload", optInName, optInNamespace,
 					"{.metadata.ownerReferences[0].name}")).To(Equal(optInName))
 				g.Expect(jsonpath("managedworkload", optInName, optInNamespace, "{.spec.dryRun}")).To(Equal("true"))
@@ -773,7 +773,7 @@ spec:
 
 			By("marking it active, which ends the would-be pause dry-run counted")
 			_, err = utils.Run(exec.Command("kubectl", "annotate", "deployment", optInName, "-n", optInNamespace,
-				"--overwrite", "hybernate.io/last-activity="+time.Now().UTC().Format(time.RFC3339)))
+				"--overwrite", "napwake.dev/last-activity="+time.Now().UTC().Format(time.RFC3339)))
 			Expect(err).NotTo(HaveOccurred())
 			Eventually(func(g Gomega) {
 				g.Expect(jsonpath("managedworkload", optInName, optInNamespace, "{.status.phase}")).To(Equal("Running"))
@@ -783,7 +783,7 @@ spec:
 				g.Expect(out).To(ContainSubstring("would have paused 1 time"))
 			}, 2*time.Minute, 5*time.Second).Should(Succeed())
 
-			By("enabling it with kubectl hybernate enable")
+			By("enabling it with kubectl napwake enable")
 			out, err := utils.Run(exec.Command(pluginBinary, "enable", optInName, "-n", optInNamespace))
 			Expect(err).NotTo(HaveOccurred())
 			Expect(out).To(ContainSubstring("dry-run ended"))
@@ -795,7 +795,7 @@ spec:
 
 			By("removing the label, which must scale it back up before releasing it")
 			_, err = utils.Run(exec.Command("kubectl", "label", "deployment", optInName, "-n", optInNamespace,
-				"hybernate.io/managed-"))
+				"napwake.dev/managed-"))
 			Expect(err).NotTo(HaveOccurred())
 
 			Eventually(func(g Gomega) {
@@ -808,35 +808,35 @@ spec:
 
 	Context("Namespace opt-in", func() {
 		It("opts in a labelled namespace's workloads, each annotation over the namespace's, an invalid one under it", func() {
-			ns := createNamespace("hybernate-e2e-ns-optin")
+			ns := createNamespace("napwake-e2e-ns-optin")
 			const (
 				overriding = "e2e-overriding"
 				unsure     = "e2e-unsure"
 			)
 			By("setting the namespace's annotations, and the workloads' own")
 			_, err := utils.Run(exec.Command("kubectl", "annotate", "namespace", ns,
-				"hybernate.io/idle-after=45m", "hybernate.io/cpu-threshold=20",
-				"hybernate.io/wake-max-wait=90s", "hybernate.io/dry-run=false"))
+				"napwake.dev/idle-after=45m", "napwake.dev/cpu-threshold=20",
+				"napwake.dev/wake-max-wait=90s", "napwake.dev/dry-run=false"))
 			Expect(err).NotTo(HaveOccurred())
 			for _, name := range []string{overriding, unsure} {
 				Expect(kubectlApply(deploymentManifest(name, ns, 1))).To(Succeed())
 			}
 			_, err = utils.Run(exec.Command("kubectl", "annotate", "deployment", overriding, "-n", ns,
-				"hybernate.io/idle-after=2h", "hybernate.io/cpu-threshold=abc"))
+				"napwake.dev/idle-after=2h", "napwake.dev/cpu-threshold=abc"))
 			Expect(err).NotTo(HaveOccurred())
 			_, err = utils.Run(exec.Command("kubectl", "annotate", "deployment", unsure, "-n", ns,
-				"hybernate.io/dry-run=yes"))
+				"napwake.dev/dry-run=yes"))
 			Expect(err).NotTo(HaveOccurred())
 
 			By("labelling the namespace, which opts in the workloads already in it")
-			_, err = utils.Run(exec.Command("kubectl", "label", "namespace", ns, "hybernate.io/managed=true"))
+			_, err = utils.Run(exec.Command("kubectl", "label", "namespace", ns, "napwake.dev/managed=true"))
 			Expect(err).NotTo(HaveOccurred())
 
 			spec := func(name, path string) func() (string, error) {
 				return func() (string, error) { return jsonpath("managedworkload", name, ns, path) }
 			}
 			Eventually(func(g Gomega) {
-				g.Expect(spec(overriding, `{.metadata.labels.hybernate\.io/from-label}`)()).To(Equal("true"))
+				g.Expect(spec(overriding, `{.metadata.labels.napwake\.dev/from-label}`)()).To(Equal("true"))
 				g.Expect(spec(overriding, "{.spec.idlePolicy.idleAfter}")()).To(Equal("2h0m0s"), "the workload's own")
 				g.Expect(spec(overriding, "{.spec.idlePolicy.activity.cpuThreshold}")()).To(Equal("20"),
 					"the namespace's, under the workload's that can't be read")
@@ -855,9 +855,9 @@ spec:
 				out, err := utils.Output(exec.Command("kubectl", "get", "events.events.k8s.io", "-n", ns,
 					"-o", `jsonpath={range .items[?(@.reason=="InvalidSetting")]}{.regarding.name}: {.note}{"\n"}{end}`))
 				g.Expect(err).NotTo(HaveOccurred())
-				g.Expect(out).To(ContainSubstring(overriding + `: hybernate.io/cpu-threshold="abc" on the workload`))
+				g.Expect(out).To(ContainSubstring(overriding + `: napwake.dev/cpu-threshold="abc" on the workload`))
 				g.Expect(out).To(ContainSubstring("so the namespace's value is used"))
-				g.Expect(out).To(ContainSubstring(unsure + `: hybernate.io/dry-run="yes" on the workload`))
+				g.Expect(out).To(ContainSubstring(unsure + `: napwake.dev/dry-run="yes" on the workload`))
 				g.Expect(out).To(ContainSubstring("so dry-run is on, to be safe"))
 			}).Should(Succeed())
 		})
@@ -865,7 +865,7 @@ spec:
 
 	Context("GitOps", Ordered, func() {
 		const (
-			gitOpsNamespace = "hybernate-e2e-gitops"
+			gitOpsNamespace = "napwake-e2e-gitops"
 			gitOpsName      = "e2e-synced"
 		)
 		// syncFromGit applies the Deployment as Argo CD does, taking the
@@ -905,7 +905,7 @@ spec:
 
 			By("managing it with a one-minute idle clock, and waiting for it to pause")
 			Expect(kubectlApply(fmt.Sprintf(`
-apiVersion: hybernate.io/v1alpha1
+apiVersion: napwake.dev/v1alpha1
 kind: ManagedWorkload
 metadata: {name: %[1]s, namespace: %[2]s}
 spec:
@@ -926,7 +926,7 @@ spec:
 					`{.status.conditions[?(@.type=="GitOpsConflict")].status}`)).To(Equal("True"))
 				g.Expect(jsonpath("managedworkload", gitOpsName, gitOpsNamespace,
 					`{.status.conditions[?(@.type=="GitOpsConflict")].message}`)).To(ContainSubstring(
-					"have Argo CD ignore replicas, as for an HPA: https://okedeji.io/hybernate/guides/gitops/#argo-cd"))
+					"have Argo CD ignore replicas, as for an HPA: https://docs.napwake.dev/guides/gitops/#argo-cd"))
 				g.Expect(jsonpath("managedworkload", gitOpsName, gitOpsNamespace, "{.status.lastScaledUp.by}")).
 					To(Equal("argocd-controller"))
 				g.Expect(jsonpath("managedworkload", gitOpsName, gitOpsNamespace, "{.status.lastScaledUp.gitOps}")).
@@ -941,7 +941,7 @@ spec:
 	})
 
 	Context("Autoscalers", Ordered, func() {
-		const autoscaleNamespace = "hybernate-e2e-autoscale"
+		const autoscaleNamespace = "napwake-e2e-autoscale"
 		manageUntilPaused := func(name string) {
 			manage(autoscaleNamespace, "Deployment", name, "1m")
 			Eventually(func() (string, error) {
@@ -1037,7 +1037,7 @@ spec:
 	})
 
 	Context("Protected namespaces", Ordered, func() {
-		const protectedNamespace = "hybernate-e2e-protected"
+		const protectedNamespace = "napwake-e2e-protected"
 
 		BeforeAll(func() {
 			_, err := utils.Run(exec.Command("kubectl", "create", "ns", protectedNamespace))
@@ -1047,7 +1047,7 @@ spec:
 			})
 			Expect(kubectlApply(deploymentManifest("e2e-guarded", protectedNamespace, 2))).To(Succeed())
 			Expect(kubectlApply(fmt.Sprintf(`
-apiVersion: hybernate.io/v1alpha1
+apiVersion: napwake.dev/v1alpha1
 kind: ManagedWorkload
 metadata: {name: e2e-guarded, namespace: %s}
 spec:
@@ -1064,7 +1064,7 @@ spec:
 
 			By("protecting the namespace")
 			_, err := utils.Run(exec.Command("kubectl", "label", "namespace", protectedNamespace,
-				"hybernate.io/protected=true"))
+				"napwake.dev/protected=true"))
 			Expect(err).NotTo(HaveOccurred())
 
 			Eventually(func(g Gomega) {
@@ -1075,10 +1075,10 @@ spec:
 				g.Expect(jsonpath("deployment", "e2e-guarded", protectedNamespace, "{.spec.replicas}")).To(Equal("2"))
 			}, 2*time.Minute, 5*time.Second).Should(Succeed())
 
-			By("labelling a new workload there for Hybernate, which must not opt it in")
+			By("labelling a new workload there for Napwake, which must not opt it in")
 			Expect(kubectlApply(deploymentManifest("e2e-labelled", protectedNamespace, 1))).To(Succeed())
 			_, err = utils.Run(exec.Command("kubectl", "label", "deployment", "e2e-labelled", "-n", protectedNamespace,
-				"hybernate.io/managed=true"))
+				"napwake.dev/managed=true"))
 			Expect(err).NotTo(HaveOccurred())
 			Consistently(func() (bool, error) {
 				return exists("managedworkload", "e2e-labelled", protectedNamespace)
@@ -1158,7 +1158,7 @@ func createNamespace(name string) string {
 // manage writes a ManagedWorkload for a workload, with an idle clock.
 func manage(ns, kind, name, idleAfter string) {
 	Expect(kubectlApply(fmt.Sprintf(`
-apiVersion: hybernate.io/v1alpha1
+apiVersion: napwake.dev/v1alpha1
 kind: ManagedWorkload
 metadata: {name: %[1]s, namespace: %[2]s}
 spec:
@@ -1216,7 +1216,7 @@ func finishedPodLogs(name, namespace string) (string, bool) {
 	return logs, phase == "Succeeded"
 }
 
-// scrape fetches one of Hybernate's metrics endpoints from a pod in its
+// scrape fetches one of Napwake's metrics endpoints from a pod in its
 // namespace, with a bearer token, and returns the metrics. The metrics
 // servers' certificates are self-signed.
 func scrape(pod, url, token string) string {

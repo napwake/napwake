@@ -34,7 +34,7 @@ import (
 	"k8s.io/apimachinery/pkg/types"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
-	v1alpha1 "github.com/okedeji/hybernate/api/v1alpha1"
+	v1alpha1 "github.com/napwake/napwake/api/v1alpha1"
 )
 
 // Kind is what scales a workload.
@@ -238,7 +238,7 @@ func HoldKEDA(ctx context.Context, c client.Client, namespace, name string, repl
 }
 
 // ReleaseKEDA lets KEDA scale a ScaledObject's target again, putting back
-// the paused-replicas annotation it had before Hybernate held it, if any.
+// the paused-replicas annotation it had before Napwake held it, if any.
 func ReleaseKEDA(ctx context.Context, c client.Client, namespace, name string, previous *string) error {
 	if previous != nil {
 		return setPausedReplicas(ctx, c, namespace, name, *previous)

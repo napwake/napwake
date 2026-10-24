@@ -32,10 +32,10 @@ import (
 	logf "sigs.k8s.io/controller-runtime/pkg/log"
 	"sigs.k8s.io/controller-runtime/pkg/predicate"
 
-	v1alpha1 "github.com/okedeji/hybernate/api/v1alpha1"
-	"github.com/okedeji/hybernate/internal/cost"
-	"github.com/okedeji/hybernate/internal/forecast"
-	opmetrics "github.com/okedeji/hybernate/internal/metrics"
+	v1alpha1 "github.com/napwake/napwake/api/v1alpha1"
+	"github.com/napwake/napwake/internal/cost"
+	"github.com/napwake/napwake/internal/forecast"
+	opmetrics "github.com/napwake/napwake/internal/metrics"
 )
 
 const (
@@ -132,7 +132,7 @@ func (r *Reconciler) forecastEngine(workload *v1alpha1.ManagedWorkload) forecast
 			again = ", from its CPU history in Prometheus"
 		}
 		r.emitEvent(workload, false, "Normal", ReasonForecastReset, actionForecast,
-			"the forecast's saved state is from an older version of Hybernate, so it learns again%s", again)
+			"the forecast's saved state is from an older version of Napwake, so it learns again%s", again)
 	case err != nil:
 		r.emitEvent(workload, false, "Warning", ReasonForecastReset, actionForecast,
 			"the forecast's saved state can't be read, so it starts learning again: %v", err)
@@ -254,7 +254,7 @@ func withRates(rates cost.Rates, r *v1alpha1.CostRates) cost.Rates {
 	return rates
 }
 
-// inWatchedNamespaces passes events for the namespaces Hybernate works in,
+// inWatchedNamespaces passes events for the namespaces Napwake works in,
 // or every namespace when watched is empty. A namespaced install's cache
 // holds nothing from the others, so listing in them only fails.
 func inWatchedNamespaces(watched []string) predicate.Predicate {

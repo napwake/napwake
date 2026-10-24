@@ -46,10 +46,10 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client/interceptor"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 
-	v1alpha1 "github.com/okedeji/hybernate/api/v1alpha1"
-	"github.com/okedeji/hybernate/internal/autoscaler"
-	"github.com/okedeji/hybernate/internal/lifecycle"
-	"github.com/okedeji/hybernate/internal/metrics"
+	v1alpha1 "github.com/napwake/napwake/api/v1alpha1"
+	"github.com/napwake/napwake/internal/autoscaler"
+	"github.com/napwake/napwake/internal/lifecycle"
+	"github.com/napwake/napwake/internal/metrics"
 )
 
 var fixedTime = time.Date(2026, 3, 14, 12, 0, 0, 0, time.UTC)
@@ -161,7 +161,7 @@ func newTestReconcilerWithTarget(t *testing.T, workload *v1alpha1.ManagedWorkloa
 		builder = builder.WithObjects(workload)
 		if createTarget {
 			target := targetDeployment(workload.Spec.Target.Name, workload.Namespace)
-			// A workload Hybernate has paused is at zero; any more would be
+			// A workload Napwake has paused is at zero; any more would be
 			// a scale-up outside it, which wakes it.
 			if workload.Status.Phase == v1alpha1.PhasePaused {
 				target = targetDeploymentWithReplicas(workload.Spec.Target.Name, workload.Namespace, 0)
@@ -350,7 +350,7 @@ func TestReconcile_FinalizerAddedOnFirstReconcile(t *testing.T) {
 }
 
 // thisInstall is the namespace of the install under test's operator.
-const thisInstall = "hybernate-system"
+const thisInstall = "napwake-system"
 
 func TestReconcile_FinalizerStampsTheInstall(t *testing.T) {
 	tests := []struct {
@@ -581,7 +581,7 @@ func targetReplicas(t *testing.T, r *Reconciler) int32 {
 	return *dep.Spec.Replicas
 }
 
-// Nothing pauses a running workload but Hybernate, so a running workload's
+// Nothing pauses a running workload but Napwake, so a running workload's
 // replica changes are its team's or an autoscaler's, and left alone.
 func TestReconcile_RunningReplicaChangesAreLeftAlone(t *testing.T) {
 	workload := pausedWorkload(v1alpha1.PhaseRunning)
@@ -1001,7 +1001,7 @@ func lifecycleWorkload(name string, phase v1alpha1.WorkloadPhase) *v1alpha1.Mana
 	}
 }
 
-// wokenByActivity stamps w with activity, as kubectl hybernate wake does,
+// wokenByActivity stamps w with activity, as kubectl napwake wake does,
 // which wakes it if it's paused.
 func wokenByActivity(w *v1alpha1.ManagedWorkload) *v1alpha1.ManagedWorkload {
 	if w.Annotations == nil {
@@ -1185,7 +1185,7 @@ func TestResume_ReportsReplicasNotReady(t *testing.T) {
 	c := meta.FindStatusCondition(got.Status.Conditions, conditionResumeIncomplete)
 	require.NotNil(t, c)
 	assert.Equal(t, metav1.ConditionTrue, c.Status)
-	assert.Equal(t, "resumed with 2 of 3 replicas Ready: Hybernate stopped waiting for the rest after 3 minutes", c.Message)
+	assert.Equal(t, "resumed with 2 of 3 replicas Ready: Napwake stopped waiting for the rest after 3 minutes", c.Message)
 	announced := drainEvents(t, r)
 	assert.Contains(t, announced, "Warning "+ReasonResumeIncomplete)
 	assert.NotContains(t, announced, "Normal "+ReasonResumed)
@@ -1434,7 +1434,7 @@ func failStatusWrite(matches func(*v1alpha1.ManagedWorkload) bool) interceptor.F
 			opts ...client.SubResourceUpdateOption) error {
 			if mw, ok := obj.(*v1alpha1.ManagedWorkload); ok && sub == statusSubresource && !failed && matches(mw) {
 				failed = true
-				return apierrors.NewConflict(schema.GroupResource{Group: "hybernate.io", Resource: "managedworkloads"},
+				return apierrors.NewConflict(schema.GroupResource{Group: "napwake.dev", Resource: "managedworkloads"},
 					mw.Name, errors.New("the object has been modified"))
 			}
 			return c.SubResource(sub).Update(ctx, obj, opts...)
@@ -1640,7 +1640,7 @@ func TestLifecycle_InterruptedTransitionsComplete(t *testing.T) {
 	}
 }
 
-// The hybernate.io/ignore label stops Hybernate managing a target. One it
+// The napwake.dev/ignore label stops Napwake managing a target. One it
 // had paused is restored first, so the label never leaves it at zero.
 func TestReconcile_IgnoreLabelRestoresAPausedTarget(t *testing.T) {
 	workload := pausedWorkload(v1alpha1.PhasePaused)

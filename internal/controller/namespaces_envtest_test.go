@@ -35,7 +35,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/config"
 	metricsserver "sigs.k8s.io/controller-runtime/pkg/metrics/server"
 
-	v1alpha1 "github.com/okedeji/hybernate/api/v1alpha1"
+	v1alpha1 "github.com/napwake/napwake/api/v1alpha1"
 )
 
 // Under watchNamespaces the cache holds only the watched namespaces, so a
@@ -73,7 +73,7 @@ func TestNamespacedInstall_IgnoresUnwatchedNamespaces(t *testing.T) {
 	optIn := &OptInReconciler{
 		Client:          recording,
 		Scheme:          scheme,
-		Recorder:        mgr.GetEventRecorder("hybernate"),
+		Recorder:        mgr.GetEventRecorder("napwake"),
 		Kind:            v1alpha1.TargetKindDeployment,
 		WatchNamespaces: watched,
 	}
@@ -81,7 +81,7 @@ func TestNamespacedInstall_IgnoresUnwatchedNamespaces(t *testing.T) {
 	workloads := &Reconciler{
 		Client:          recording,
 		Scheme:          scheme,
-		Recorder:        mgr.GetEventRecorder("hybernate"),
+		Recorder:        mgr.GetEventRecorder("napwake"),
 		PodReader:       mgr.GetAPIReader(),
 		WatchNamespaces: watched,
 	}

@@ -5,11 +5,11 @@ apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRole
 metadata:
   labels:
-    app.kubernetes.io/name: hybernate
+    app.kubernetes.io/name: napwake
     app.kubernetes.io/managed-by: kustomize
   name: doorman-role
 rules:
-- apiGroups: [hybernate.io]
+- apiGroups: [napwake.dev]
   resources: [managedworkloads]
   verbs: [get, list, watch, patch]
 - apiGroups: [discovery.k8s.io]

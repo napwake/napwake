@@ -17,6 +17,10 @@ limitations under the License.
 package main
 
 import (
+	"net/url"
+	"os"
+	"path/filepath"
+	"regexp"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -153,9 +157,21 @@ func TestPlanForRefusesWhatIsntATag(t *testing.T) {
 }
 
 func TestNotFoundPage(t *testing.T) {
-	page, err := notFoundPage("/hybernate/", "latest")
+	page, err := notFoundPage("/", "latest")
 	require.NoError(t, err)
-	assert.Contains(t, string(page), `var base = "/hybernate/";`)
+	assert.Contains(t, string(page), `var base = "/";`)
 	assert.Contains(t, string(page), `var root = "latest";`)
-	assert.Contains(t, string(page), `<a href="/hybernate/">`)
+	assert.Contains(t, string(page), `<a href="/">`)
+}
+
+// Links without a version are sent on only under the path the site is
+// served from, which is the path of mkdocs.yml's site_url.
+func TestDefaultBaseIsWhereTheSiteIsServed(t *testing.T) {
+	config, err := os.ReadFile(filepath.Join("..", "..", "mkdocs.yml"))
+	require.NoError(t, err)
+	m := regexp.MustCompile(`(?m)^site_url: (\S+)$`).FindSubmatch(config)
+	require.NotNil(t, m, "mkdocs.yml has a site_url")
+	site, err := url.Parse(string(m[1]))
+	require.NoError(t, err)
+	assert.Equal(t, site.Path, defaultBase)
 }

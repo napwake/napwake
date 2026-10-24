@@ -2,7 +2,7 @@
 
 ## ManagedWorkload
 
-**Group:** `hybernate.io` | **Version:** `v1alpha1` | **Kind:** `ManagedWorkload` | **Scope:** Namespaced
+**Group:** `napwake.dev` | **Version:** `v1alpha1` | **Kind:** `ManagedWorkload` | **Scope:** Namespaced
 
 `kubectl get managedworkloads` shows each one's `Phase`, what pausing it has `Freed` this month and what of that it `Saved`, what dry-run measured it `Would Free`, blank for one that isn't in dry-run, and its `Age`.
 
@@ -51,9 +51,9 @@ A duration is a Go duration above zero, such as `45s`, `90m` or `1h30m`. Days an
 |-------|------|-------------|
 | `phase` | `WorkloadPhase` | Current lifecycle phase |
 | `conditions[]` | `Condition` | Standard Kubernetes conditions; see [Lifecycle](../concepts/lifecycle.md#status-conditions) |
-| `lastActedAt` | time | When the target was last paused or woken: by Hybernate, or scaled up from zero outside it, such as with `kubectl scale` or by a GitOps tool |
-| `lastPauseRequest` | string | The last `hybernate.io/pause-requested` value acted on, so each request is acted on once; the `PauseRequest` condition says what came of it. See [Pause Now](../guides/pause.md#pause-now) |
-| `lastWakeRequest` | string | The last `hybernate.io/wake-requested` value acted on, so each request is acted on once; the `WakeRequest` condition says what came of it. See [Wake Now](../guides/pause.md#wake-now) |
+| `lastActedAt` | time | When the target was last paused or woken: by Napwake, or scaled up from zero outside it, such as with `kubectl scale` or by a GitOps tool |
+| `lastPauseRequest` | string | The last `napwake.dev/pause-requested` value acted on, so each request is acted on once; the `PauseRequest` condition says what came of it. See [Pause Now](../guides/pause.md#pause-now) |
+| `lastWakeRequest` | string | The last `napwake.dev/wake-requested` value acted on, so each request is acted on once; the `WakeRequest` condition says what came of it. See [Wake Now](../guides/pause.md#wake-now) |
 | `lastTransitionTime` | time | Last phase change |
 | `activity.lastActivityTime` | time | Most recent activity from any source |
 | `activity.lastActivitySource` | string | `created`, `woke`, `request`, `cpu`, `rollout`, `annotation`, `prometheus`, `unobserved`, or `scaled-up` |
@@ -66,15 +66,15 @@ A duration is a Go duration above zero, such as `45s`, `90m` or `1h30m`. Days an
 | `pause` | `PauseStatus` | What a pause changed, from before the workload is scaled to zero until it's running again |
 | `pause.previousReplicas` | int32 | Replicas before the pause, restored on resume |
 | `pause.pausedAt` | time | When it was scaled to zero; unset until then. The pause is `Paused` once its pods have stopped |
-| `pause.resumedAt` | time | When the resume under way scaled it back up; scaled to zero after that by something other than Hybernate, it's left off |
+| `pause.resumedAt` | time | When the resume under way scaled it back up; scaled to zero after that by something other than Napwake, it's left off |
 | `pause.firstReadyAt` | time | When the resume under way first saw one of its replicas Ready; the rest get 2 minutes from then |
 | `pause.scaledObject` | string | The KEDA ScaledObject held at zero while paused; see [HPA and KEDA](../guides/autoscalers.md) |
 | `pause.scaledObjectPausedReplicas` | string | The ScaledObject's own `autoscaling.keda.sh/paused-replicas` from before the pause, put back after it |
 | `pause.resources` | `ResourceSnapshot` | What the workload ran when the pause began: `replicas`, and per replica `cpuMillis`, `memoryBytes`, and its claims' `storageBytes`; and `nodePools`, the node pools its pods ran in (`name`, `""` for nodes without a pool label) and how many `pods` in each, which what it saves is measured against |
 | `pause.wakeAnnotations` | object | The activity annotations on the ManagedWorkload (`workload`) and its target (`target`) as the pause began; one that changes since wakes it |
 | `pause.queryActiveSincePause` | bool | A [Prometheus activity query](../guides/prometheus-signals.md#while-the-workload-is-paused) has shown activity at every check since the pause began, as one can when it was requested; until a check finds every query quiet, they don't wake it |
-| `learnedDependencies` | `LearnedDependencies` | Dependencies Hybernate found, held and woken like `dependsOn`: `from`, `at`, and `dependencies` (`namespace`, `kind`, `name`, `source`: `environment` or `wake`, `via` and `address` for one found in the environment, and `lastSeen` for one learned from a wake). See [Learned dependencies](../concepts/dependencies.md#learned-dependencies) |
-| `lastScaledUp` | `ScaledUp` | The last time the workload was scaled up outside Hybernate while paused, which wakes it: `at`, `replicas`, `by` (the field manager, such as `argocd-controller`, or `unknown` for a scale through the scale subresource, as `kubectl scale` makes, which records none), and `gitOps` (`Argo CD`, `Flux`, `Fleet`, `kapp` or `Kluctl`, when it was set from Git; see [GitOps tools](../guides/gitops.md)) |
+| `learnedDependencies` | `LearnedDependencies` | Dependencies Napwake found, held and woken like `dependsOn`: `from`, `at`, and `dependencies` (`namespace`, `kind`, `name`, `source`: `environment` or `wake`, `via` and `address` for one found in the environment, and `lastSeen` for one learned from a wake). See [Learned dependencies](../concepts/dependencies.md#learned-dependencies) |
+| `lastScaledUp` | `ScaledUp` | The last time the workload was scaled up outside Napwake while paused, which wakes it: `at`, `replicas`, `by` (the field manager, such as `argocd-controller`, or `unknown` for a scale through the scale subresource, as `kubectl scale` makes, which records none), and `gitOps` (`Argo CD`, `Flux`, `Fleet`, `kapp` or `Kluctl`, when it was set from Git; see [GitOps tools](../guides/gitops.md)) |
 | `turnedAway` | `TurnedAway` | With `wake.mode: Ask`, the requests the doorman turned away during the current pause, or the last one once it's awake: `pausedAt`, when that pause began, and `requests`. Brought up to date about once a minute. See [What it turns away](../concepts/wake-on-request.md#what-it-turns-away) |
 | `doorman[]` | `DoormanRoute` | Service ports routed to the doorman while paused: `service`, `portName`, `doormanPort`, and `forwarded`, set for a Service behind GKE NEGs routed through the [forwarder](../concepts/wake-on-request.md#gke-container-native-load-balancing-negs) |
 | `doormanDraining[]` | `DrainingPort` | Doorman ports that routed the workload until it woke: `port`, and `until`, before which no other workload is given it, so a client still sending the workload's traffic there never reaches another. Kept in status so an operator that restarts or takes over leadership honours it |
@@ -93,7 +93,7 @@ A duration is a Go duration above zero, such as `45s`, `90m` or `1h30m`. Days an
 | `prediction.acting` | bool | Whether the forecast drives decisions: holds off pauses and, with `autoResume`, wakes the workload ahead of demand |
 | `prediction.startsActing` | time | When the forecast is expected to start acting, if the coming days repeat the last week it saw; unset while it's acting or when it isn't expected to within four weeks |
 | `prediction.reason`, `prediction.message` | string | Why the forecast is or isn't acting: `Acting`, `Observing`, `EarningConfidence`, `Relearning` or `NotLearning`, and in a sentence. See [When it acts](../concepts/forecasting.md#when-it-acts) |
-| `prediction.history` | `PredictionHistory` | What the forecast learned from Prometheus history when Hybernate began managing the workload: `reason` (`Learned`, `NoPrometheusURL`, `NoHistory`, `NoCPURequests`, `QueryFailed`), `hours`, `from`, `to`, `message`. See [Learning from history](../concepts/forecasting.md#learning-from-history) |
+| `prediction.history` | `PredictionHistory` | What the forecast learned from Prometheus history when Napwake began managing the workload: `reason` (`Learned`, `NoPrometheusURL`, `NoHistory`, `NoCPURequests`, `QueryFailed`), `hours`, `from`, `to`, `message`. See [Learning from history](../concepts/forecasting.md#learning-from-history) |
 | `prediction.state` | string | The engine's learned state, gzipped and base64-encoded |
 | `cost` | `CostStatus` | Cost for the current calendar month, in UTC; see [Cost Tracking](../concepts/cost-tracking.md#status-fields) |
 | `cost.tracked` | duration | How much of the month the totals cover |
@@ -106,7 +106,7 @@ A duration is a Go duration above zero, such as `45s`, `90m` or `1h30m`. Days an
 | `cost.freedThisMonth` | string | Paused hours, priced |
 | `cost.savedThisMonth` | string | Saved hours, priced; `unknown` while `savingsUnknown` is set |
 | `cost.savingsUnknown` | string | Why saved can't be measured, such as pods outside `watchNamespaces` not being visible; unset when it's measured |
-| `cost.costWithoutHybernateThisMonth` | string | `costThisMonth` plus `freedThisMonth` |
+| `cost.costWithoutNapwakeThisMonth` | string | `costThisMonth` plus `freedThisMonth` |
 | `cost.projectedMonthlyCost`, `cost.projectedMonthlyFreed`, `cost.projectedMonthlySavings` | string | The month so far carried to the whole month; `pending` until a day is tracked |
 | `cost.running` | `ResourceSnapshot` | What the workload ran when last brought up to date while awake |
 | `cost.pricedAt`, `cost.pricedTemplateHash` | time, string | When requests and list rates were last read, and the pod template then |

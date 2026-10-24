@@ -29,7 +29,7 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/okedeji/hybernate/internal/forecast"
+	"github.com/napwake/napwake/internal/forecast"
 )
 
 // LookGap is how far from an hour's start and end the looks at it may begin
@@ -92,7 +92,7 @@ type Startup struct {
 	For     time.Duration
 }
 
-// Scenario is one simulation: a workload's traffic, and how Hybernate is set
+// Scenario is one simulation: a workload's traffic, and how Napwake is set
 // up for it.
 type Scenario struct {
 	Name     string

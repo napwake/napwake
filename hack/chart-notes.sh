@@ -12,8 +12,8 @@ shift
 
 dir=$(mktemp -d)
 trap 'rm -rf "$dir"' EXIT
-cp -R charts/hybernate "$dir/"
-chart="$dir/hybernate"
+cp -R charts/napwake "$dir/"
+chart="$dir/napwake"
 mv "$chart/templates/NOTES.txt" "$chart/notes.txt"
 VERSION=$version perl -pi -e 's/^version:.*/version: $ENV{VERSION}/' "$chart/Chart.yaml"
 cat > "$chart/templates/notes.yaml" <<'EOF'
@@ -21,5 +21,5 @@ notes: |
 {{ tpl (.Files.Get "notes.txt") . | indent 2 }}
 EOF
 
-helm template hybernate "$chart" --namespace hybernate-system --show-only templates/notes.yaml "$@" |
+helm template napwake "$chart" --namespace napwake-system --show-only templates/notes.yaml "$@" |
   sed -n '/^notes: |$/,$p' | tail -n +2 | sed 's/^  //'

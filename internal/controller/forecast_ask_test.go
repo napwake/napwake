@@ -27,8 +27,8 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/utils/ptr"
 
-	v1alpha1 "github.com/okedeji/hybernate/api/v1alpha1"
-	"github.com/okedeji/hybernate/internal/forecast"
+	v1alpha1 "github.com/napwake/napwake/api/v1alpha1"
+	"github.com/napwake/napwake/internal/forecast"
 )
 
 func asks(w *v1alpha1.ManagedWorkload) {
@@ -196,12 +196,12 @@ func TestForecastOutlook_InAsk(t *testing.T) {
 				"asleep page, so an hour nobody woke it in can't be told from one they couldn't, and it learns only " +
 				"the hours it's awake. To learn the hours it's paused too, give it a Service, or, for a workload no " +
 				"request reaches, such as a queue worker, a Prometheus activity query that sees its demand: " +
-				"https://okedeji.io/hybernate/concepts/wake-on-request/#when-a-workload-isnt-routed"},
+				"https://docs.napwake.dev/concepts/wake-on-request/#when-a-workload-isnt-routed"},
 		{name: "its queries failing", workload: []func(*v1alpha1.ManagedWorkload){routedThroughTheDoorman, failing},
 			wantReason: v1alpha1.ForecastNotLearning,
 			want: "not learning while paused: its Prometheus activity queries can't be evaluated; they can't show " +
 				"its demand until Prometheus answers, and PrometheusAvailable says why: " +
-				"https://okedeji.io/hybernate/guides/prometheus-signals/#when-a-query-cant-be-evaluated"},
+				"https://docs.napwake.dev/guides/prometheus-signals/#when-a-query-cant-be-evaluated"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

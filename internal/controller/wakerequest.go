@@ -22,13 +22,13 @@ import (
 
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
-	v1alpha1 "github.com/okedeji/hybernate/api/v1alpha1"
+	v1alpha1 "github.com/napwake/napwake/api/v1alpha1"
 )
 
 const (
 	// conditionWakeRequest says what came of the last wake request, and
 	// when: True, reason Woken or AlreadyAwake, when it woke the workload or
-	// found it awake already, and False, with why, when Hybernate couldn't
+	// found it awake already, and False, with why, when Napwake couldn't
 	// act on it. Like PauseRequest, it answers that request until the next
 	// one, through every pause and wake meanwhile, so it says what happened,
 	// in the past tense.
@@ -45,7 +45,7 @@ const (
 	wakeRequestedMessage = "wake requested, waking"
 )
 
-// pendingWakeRequest is the hybernate.io/wake-requested value Hybernate
+// pendingWakeRequest is the napwake.dev/wake-requested value Napwake
 // hasn't acted on yet, if there is one.
 func pendingWakeRequest(workload *v1alpha1.ManagedWorkload) (string, bool) {
 	token := workload.Annotations[v1alpha1.AnnotationWakeRequested]
@@ -61,7 +61,7 @@ func (r *Reconciler) answerWakeRequest(workload *v1alpha1.ManagedWorkload, statu
 	r.setCondition(workload, conditionWakeRequest, status, reason, message)
 }
 
-// refuseWakeRequest answers a pending wake request that Hybernate can't act
+// refuseWakeRequest answers a pending wake request that Napwake can't act
 // on, saying why. It's answered rather than left pending, so it isn't tried
 // again on every reconcile, and the event is sent once the answer is
 // written, so a failed write doesn't send it twice. Without a pending
@@ -81,7 +81,7 @@ func (r *Reconciler) refuseWakeRequest(ctx context.Context, workload *v1alpha1.M
 }
 
 // refuseRequests answers the pending pause and wake requests of a workload
-// Hybernate isn't managing as it stands, saying why, with a warning.
+// Napwake isn't managing as it stands, saying why, with a warning.
 func (r *Reconciler) refuseRequests(ctx context.Context, workload *v1alpha1.ManagedWorkload, reason, why string) error {
 	if err := r.refusePauseRequest(ctx, workload, "Warning", reason, why); err != nil {
 		return err
@@ -91,12 +91,12 @@ func (r *Reconciler) refuseRequests(ctx context.Context, workload *v1alpha1.Mana
 
 // predatesStatus is why a request already on a ManagedWorkload as its
 // status starts afresh isn't acted on.
-const predatesStatus = "the request was on the ManagedWorkload before Hybernate's record of it began, as when " +
+const predatesStatus = "the request was on the ManagedWorkload before Napwake's record of it began, as when " +
 	"it's restored without its status, so it may have been answered already; set a new value to ask again"
 
 // answerEarlierPauseRequest answers, without acting on it, a pause request
 // a ManagedWorkload carries as its status starts afresh. Status is
-// Hybernate's only record of which requests it has answered, and
+// Napwake's only record of which requests it has answered, and
 // annotations outlive it: a backup restored without status, kubectl
 // replace --force or an exported manifest applied again brings back
 // requests answered long ago, which would otherwise pause the workload
@@ -132,7 +132,7 @@ func (r *Reconciler) answerEarlierWakeRequest(workload *v1alpha1.ManagedWorkload
 
 // answerAwakeWakeRequest answers a wake request that finds the workload
 // awake, and restarts its idle clock: whoever asked means to use it, as
-// kubectl hybernate wake has always restarted it. Under dry-run that ends a
+// kubectl napwake wake has always restarted it. Under dry-run that ends a
 // would-be pause, as activity does. A paused workload's request is the
 // wake's to answer, with the look at its demand that sees it, and one
 // pausing or waking is answered once that's done, by the reconcile that

@@ -32,10 +32,10 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/log"
 
-	v1alpha1 "github.com/okedeji/hybernate/api/v1alpha1"
-	"github.com/okedeji/hybernate/internal/discovery"
-	"github.com/okedeji/hybernate/internal/forecast"
-	"github.com/okedeji/hybernate/internal/metrics"
+	v1alpha1 "github.com/napwake/napwake/api/v1alpha1"
+	"github.com/napwake/napwake/internal/discovery"
+	"github.com/napwake/napwake/internal/forecast"
+	"github.com/napwake/napwake/internal/metrics"
 )
 
 // What came of reading a workload's history, in

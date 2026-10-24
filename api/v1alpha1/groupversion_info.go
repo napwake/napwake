@@ -15,7 +15,7 @@ limitations under the License.
 */
 
 // +kubebuilder:object:generate=true
-// +groupName=hybernate.io
+// +groupName=napwake.dev
 package v1alpha1
 
 import (
@@ -25,7 +25,7 @@ import (
 )
 
 var (
-	GroupVersion  = schema.GroupVersion{Group: "hybernate.io", Version: "v1alpha1"}
+	GroupVersion  = schema.GroupVersion{Group: "napwake.dev", Version: "v1alpha1"}
 	schemeBuilder = runtime.NewSchemeBuilder(addKnownTypes)
 	AddToScheme   = schemeBuilder.AddToScheme
 )

@@ -49,14 +49,14 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/predicate"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 
-	v1alpha1 "github.com/okedeji/hybernate/api/v1alpha1"
-	"github.com/okedeji/hybernate/internal/autoscaler"
-	"github.com/okedeji/hybernate/internal/discovery"
-	"github.com/okedeji/hybernate/internal/forecast"
-	"github.com/okedeji/hybernate/internal/human"
-	"github.com/okedeji/hybernate/internal/lifecycle"
-	"github.com/okedeji/hybernate/internal/metrics"
-	"github.com/okedeji/hybernate/internal/signal"
+	v1alpha1 "github.com/napwake/napwake/api/v1alpha1"
+	"github.com/napwake/napwake/internal/autoscaler"
+	"github.com/napwake/napwake/internal/discovery"
+	"github.com/napwake/napwake/internal/forecast"
+	"github.com/napwake/napwake/internal/human"
+	"github.com/napwake/napwake/internal/lifecycle"
+	"github.com/napwake/napwake/internal/metrics"
+	"github.com/napwake/napwake/internal/signal"
 )
 
 const (
@@ -118,15 +118,15 @@ type Reconciler struct {
 	PodReader client.Reader
 
 	// ProtectedNamespaces are name patterns, such as prod-*, of namespaces
-	// Hybernate doesn't manage unless they're labelled to allow it.
+	// Napwake doesn't manage unless they're labelled to allow it.
 	ProtectedNamespaces []string
 
-	// HybernateNamespaces are the namespaces Hybernate itself runs in. Its
+	// NapwakeNamespaces are the namespaces Napwake itself runs in. Its
 	// operator's and doorman's Deployments there are never paused, whatever
 	// a ManagedWorkload or a namespace label says.
-	HybernateNamespaces []string
+	NapwakeNamespaces []string
 
-	// WatchNamespaces are the namespaces Hybernate works in, with a Role in
+	// WatchNamespaces are the namespaces Napwake works in, with a Role in
 	// each, or every namespace when empty.
 	WatchNamespaces []string
 
@@ -173,9 +173,9 @@ type lifecyclePauser interface {
 }
 
 // +kubebuilder:rbac:groups=karpenter.sh,resources=nodepools,verbs=list
-// +kubebuilder:rbac:groups=hybernate.io,resources=managedworkloads,verbs=get;list;watch;create;update;patch;delete
-// +kubebuilder:rbac:groups=hybernate.io,resources=managedworkloads/status,verbs=get;update;patch
-// +kubebuilder:rbac:groups=hybernate.io,resources=managedworkloads/finalizers,verbs=update
+// +kubebuilder:rbac:groups=napwake.dev,resources=managedworkloads,verbs=get;list;watch;create;update;patch;delete
+// +kubebuilder:rbac:groups=napwake.dev,resources=managedworkloads/status,verbs=get;update;patch
+// +kubebuilder:rbac:groups=napwake.dev,resources=managedworkloads/finalizers,verbs=update
 // +kubebuilder:rbac:groups=apps,resources=deployments;statefulsets,verbs=get;list;watch;patch
 // +kubebuilder:rbac:groups=apps,resources=deployments/scale;statefulsets/scale,verbs=get;update
 // +kubebuilder:rbac:groups="",resources=persistentvolumeclaims,verbs=get;list;watch
@@ -302,10 +302,10 @@ func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (res ctrl.
 	return r.reconcileSettled(ctx, &workload, target, observed)
 }
 
-// takeOn starts the status of a ManagedWorkload Hybernate has just taken
+// takeOn starts the status of a ManagedWorkload Napwake has just taken
 // on, Running. A pause request already on it is answered without acting on
 // it: it may be one answered before its status was lost, and a wrong pause
-// is the one thing Hybernate never does. A wake request is left to the
+// is the one thing Napwake never does. A wake request is left to the
 // reconcile the status write brings, which answers it by the workload as it
 // finds it, so a tool may create a ManagedWorkload and ask for its wake at
 // once: one taken on Running is already awake, and even a stale request
@@ -358,7 +358,7 @@ func enqueueAt(q workqueue.TypedRateLimitingInterface[reconcile.Request], priori
 }
 
 // wakeHandler enqueues at priorityWake a ManagedWorkload whose annotations
-// changed, as the doorman's stamp of a held request, kubectl hybernate wake
+// changed, as the doorman's stamp of a held request, kubectl napwake wake
 // and pause, and other tools' activity annotations change them. The
 // doorman's count of what it turned away wakes nothing, and is written
 // for every crawled workload that asks, so a change to it alone is left
@@ -396,7 +396,7 @@ func (r *Reconciler) scaleUpHandler() handler.EventHandler {
 	}
 }
 
-// observeTarget takes in what's changed on the target Hybernate manages:
+// observeTarget takes in what's changed on the target Napwake manages:
 // a scale-up outside it, and the autoscaler that scales it.
 func (r *Reconciler) observeTarget(ctx context.Context, workload *v1alpha1.ManagedWorkload, target client.Object) error {
 	if err := r.wakeOnScaleUp(ctx, workload, target); err != nil {
@@ -428,7 +428,7 @@ func (r *Reconciler) readWorkload(ctx context.Context, name types.NamespacedName
 	}
 	if owner := otherInstall(workload, r.OperatorNamespace); owner != "" {
 		r.emitEvent(workload, false, "Warning", ReasonManagedByAnotherInstall, actionCheckInstall,
-			"the Hybernate installed in %s manages this ManagedWorkload, so the one in %s leaves it alone; "+
+			"the Napwake installed in %s manages this ManagedWorkload, so the one in %s leaves it alone; "+
 				"installs must watch different namespaces. If the one in %s is gone, remove the %s annotation",
 			owner, r.OperatorNamespace, owner, v1alpha1.AnnotationOperator)
 		return false, nil
@@ -499,7 +499,7 @@ func (r *Reconciler) resumeTransition(ctx context.Context, workload *v1alpha1.Ma
 	phase := workload.Status.Phase
 	if workload.Spec.DryRun && (phase == v1alpha1.PhasePausing || phase == v1alpha1.PhasePaused) {
 		return r.handleResume(ctx, workload, &phaseEvent{reason: reasonDryRunWake,
-			message: "dry-run is on, so Hybernate wakes the workload it had paused"})
+			message: "dry-run is on, so Napwake wakes the workload it had paused"})
 	}
 	switch phase {
 	case v1alpha1.PhasePausing:
@@ -528,7 +528,7 @@ func (r *Reconciler) handlePause(ctx context.Context, workload *v1alpha1.Managed
 			return nil, err
 		}
 		// The cache showed replicas the target no longer has: it was scaled
-		// to zero outside Hybernate, which the next reconcile sees.
+		// to zero outside Napwake, which the next reconcile sees.
 		if workload.Status.Pause.PreviousReplicas == 0 {
 			workload.Status.Pause = nil
 			return &ctrl.Result{RequeueAfter: time.Second}, nil
@@ -637,7 +637,7 @@ const (
 
 // recoverPause takes up a pause whose record the workload's status has
 // lost, as to a backup restored without status or a ManagedWorkload created
-// afresh, from the copy its target carries. Without it, a target Hybernate
+// afresh, from the copy its target carries. Without it, a target Napwake
 // paused would be taken for one scaled to zero by someone else and left off
 // for good, with KEDA holding it there. A target still at zero is Paused
 // again, to wake like any other; one scaled up since is released. With no
@@ -794,11 +794,11 @@ func (r *Reconciler) handleResume(ctx context.Context, workload *v1alpha1.Manage
 	}
 	if resumed.ScaledToZero {
 		// Left Running, where the next reconcile finds it scaled to zero
-		// outside Hybernate, says so, and leaves it off.
+		// outside Napwake, says so, and leaves it off.
 		if err := r.transition(ctx, workload, v1alpha1.PhaseRunning, ReasonScaledToZero); err != nil {
 			return nil, err
 		}
-		log.FromContext(ctx).Info("resuming workload scaled to zero outside Hybernate, left off",
+		log.FromContext(ctx).Info("resuming workload scaled to zero outside Napwake, left off",
 			"workload", workload.Name, "namespace", workload.Namespace)
 		return &ctrl.Result{}, nil
 	}
@@ -816,7 +816,7 @@ func (r *Reconciler) handleResume(ctx context.Context, workload *v1alpha1.Manage
 	short := resumed.Ready < resumed.Replicas
 	var shortfall string
 	if short {
-		shortfall = fmt.Sprintf("resumed with %d of %d replicas Ready: Hybernate stopped waiting for the rest after %s",
+		shortfall = fmt.Sprintf("resumed with %d of %d replicas Ready: Napwake stopped waiting for the rest after %s",
 			resumed.Ready, resumed.Replicas, human.Duration(waited.ScaledUp))
 		r.setCondition(workload, conditionResumeIncomplete, metav1.ConditionTrue, "ReplicasNotReady", shortfall)
 	} else {
@@ -838,7 +838,7 @@ func (r *Reconciler) handleResume(ctx context.Context, workload *v1alpha1.Manage
 }
 
 // conditionResumeIncomplete says the workload's last resume ended with some
-// of its replicas not Ready, after waiting as long as Hybernate waits.
+// of its replicas not Ready, after waiting as long as Napwake waits.
 const (
 	conditionResumeIncomplete = "ResumeIncomplete"
 
@@ -964,7 +964,7 @@ func (r *Reconciler) reconcileDelete(ctx context.Context, workload *v1alpha1.Man
 	// Answered while the ManagedWorkload is still there for whoever asked
 	// to read.
 	if err := r.refuseWakeRequest(ctx, workload, "Normal", reasonBeingDeleted, "its ManagedWorkload is being "+
-		"deleted, so Hybernate hands the workload back, with the replicas it had, as it lets go"); err != nil {
+		"deleted, so Napwake hands the workload back, with the replicas it had, as it lets go"); err != nil {
 		return 0, err
 	}
 	if wait := r.drainLeft(workload); wait > 0 {
@@ -1019,7 +1019,7 @@ func (r *Reconciler) abandonHandBack(ctx context.Context, workload *v1alpha1.Man
 	log.FromContext(ctx).Info("namespace is being deleted, letting the workload go without handing it back",
 		"workload", workload.Name, "namespace", workload.Namespace, "error", failure.Error())
 	r.emitEvent(workload, false, "Warning", ReasonHandBackAbandoned, actionResume,
-		"namespace %s is being deleted and handing the target back has failed for %s, so Hybernate lets it go: %v",
+		"namespace %s is being deleted and handing the target back has failed for %s, so Napwake lets it go: %v",
 		workload.Namespace, human.Duration(handBackGiveUpAfter), failure)
 	return true
 }
@@ -1077,7 +1077,7 @@ func (r *Reconciler) drainLeft(workload *v1alpha1.ManagedWorkload) time.Duration
 	return left
 }
 
-// releaseTarget is where Hybernate lets go of a target it stops managing: on
+// releaseTarget is where Napwake lets go of a target it stops managing: on
 // deletion, the ignore label and a protected namespace. A paused target, or
 // one being paused or resumed, is handed back as it was, scaled back up and
 // released from KEDA without waiting for it to be Ready, and the dependencies
@@ -1138,7 +1138,7 @@ func (r *Reconciler) reconcileDuplicate(ctx context.Context, workload *v1alpha1.
 	return ctrl.Result{RequeueAfter: duplicateRecheckInterval}, nil
 }
 
-// reconcileIgnored stops managing a target labelled hybernate.io/ignore,
+// reconcileIgnored stops managing a target labelled napwake.dev/ignore,
 // restoring it first if it's paused, so the label never leaves it off.
 func (r *Reconciler) reconcileIgnored(ctx context.Context, workload *v1alpha1.ManagedWorkload) (ctrl.Result, error) {
 	ref := workload.Spec.Target
@@ -1146,7 +1146,7 @@ func (r *Reconciler) reconcileIgnored(ctx context.Context, workload *v1alpha1.Ma
 	r.setCondition(workload, conditionTargetAvailable, metav1.ConditionFalse, "TargetIgnored",
 		fmt.Sprintf("%s %s has %s label", ref.Kind, ref.Name, v1alpha1.LabelIgnore))
 	if err := r.refuseRequests(ctx, workload, "TargetIgnored", fmt.Sprintf(
-		"%s %s has the %s label, so Hybernate doesn't manage it", ref.Kind, ref.Name, v1alpha1.LabelIgnore)); err != nil {
+		"%s %s has the %s label, so Napwake doesn't manage it", ref.Kind, ref.Name, v1alpha1.LabelIgnore)); err != nil {
 		return ctrl.Result{}, err
 	}
 
@@ -1356,11 +1356,11 @@ func claimedBefore(aCreated metav1.Time, aUID types.UID, bCreated metav1.Time, b
 const (
 	// targetField is the Deployment or StatefulSet a ManagedWorkload
 	// manages, as kind/name, in its own namespace.
-	targetField = "hybernate.io/target"
+	targetField = "napwake.dev/target"
 
 	// dependencyField is each workload a ManagedWorkload depends on, as
 	// namespace/kind/name: those dependsOn lists, and those it learned.
-	dependencyField = "hybernate.io/dependency"
+	dependencyField = "napwake.dev/dependency"
 )
 
 func targetKey(kind v1alpha1.TargetKind, name string) string {

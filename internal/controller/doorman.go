@@ -44,9 +44,9 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/log"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 
-	v1alpha1 "github.com/okedeji/hybernate/api/v1alpha1"
-	"github.com/okedeji/hybernate/internal/doorman"
-	opmetrics "github.com/okedeji/hybernate/internal/metrics"
+	v1alpha1 "github.com/napwake/napwake/api/v1alpha1"
+	"github.com/napwake/napwake/internal/doorman"
+	opmetrics "github.com/napwake/napwake/internal/metrics"
 )
 
 const (
@@ -114,7 +114,7 @@ func doormanEligible(workload *v1alpha1.ManagedWorkload) bool {
 // doesn't ask a person first, the doorman is on and has a Ready pod, the workload's last pause found nothing wrong
 // with its routing, and the plan its pause would be routed by routes at
 // least one of those Services, every port of each but those
-// hybernate.io/doorman-ignore-ports lists, and takes no more doorman ports
+// napwake.dev/doorman-ignore-ports lists, and takes no more doorman ports
 // than the workload and its namespace may hold. Otherwise it says why not.
 // What it can't check counts against it.
 func (r *Reconciler) requestWouldWake(ctx context.Context, workload *v1alpha1.ManagedWorkload,
@@ -591,7 +591,7 @@ func (r *Reconciler) reportDoorman(ctx context.Context, workload *v1alpha1.Manag
 	}
 }
 
-const readinessProbesGuide = "https://okedeji.io/hybernate/concepts/wake-on-request/#readiness-probes"
+const readinessProbesGuide = "https://docs.napwake.dev/concepts/wake-on-request/#readiness-probes"
 
 func (r *Reconciler) doormanEndpoints(ctx context.Context) (map[discoveryv1.AddressType][]discoveryv1.Endpoint, error) {
 	return readDoormanEndpoints(ctx, r.Client, r.DoormanNamespace, r.DoormanService)
@@ -746,7 +746,7 @@ func (r *Reconciler) planDoorman(ctx context.Context, workload *v1alpha1.Managed
 // unroutable says why the doorman can't route a Service that selects a
 // workload's pods, or not on every port: one that's headless hands callers
 // the pods' addresses directly, and UDP and SCTP it can't hold. Empty when
-// it can route every port but those hybernate.io/doorman-ignore-ports
+// it can route every port but those napwake.dev/doorman-ignore-ports
 // lists, which are meant to fail while the workload is paused.
 func unroutable(svc corev1.Service) string {
 	if svc.Spec.ClusterIP == corev1.ClusterIPNone {

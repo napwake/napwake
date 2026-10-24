@@ -37,7 +37,7 @@ const (
 )
 
 // RoutablePorts are a Service's TCP ports, less those its
-// hybernate.io/doorman-ignore-ports annotation lists by name or number.
+// napwake.dev/doorman-ignore-ports annotation lists by name or number.
 // Those fail while the workload is paused, as they would without the
 // doorman, which is what a port only health checks or scrapers use wants.
 func RoutablePorts(svc corev1.Service) []corev1.ServicePort {
@@ -52,7 +52,7 @@ func RoutablePorts(svc corev1.Service) []corev1.ServicePort {
 }
 
 // UnroutablePorts are a Service's ports the doorman can't route, UDP and
-// SCTP, less those its hybernate.io/doorman-ignore-ports annotation lists:
+// SCTP, less those its napwake.dev/doorman-ignore-ports annotation lists:
 // traffic to them fails while the workload is paused, though nobody said it
 // may.
 func UnroutablePorts(svc corev1.Service) []corev1.ServicePort {
@@ -70,7 +70,7 @@ func tcp(port corev1.ServicePort) bool {
 	return port.Protocol == "" || port.Protocol == corev1.ProtocolTCP
 }
 
-// ignoredPorts reports whether the Service's hybernate.io/doorman-ignore-ports
+// ignoredPorts reports whether the Service's napwake.dev/doorman-ignore-ports
 // annotation lists a port, by name or number.
 func ignoredPorts(svc corev1.Service) func(corev1.ServicePort) bool {
 	ignored := map[string]bool{}

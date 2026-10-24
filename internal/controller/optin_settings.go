@@ -27,8 +27,8 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/utils/ptr"
 
-	v1alpha1 "github.com/okedeji/hybernate/api/v1alpha1"
-	"github.com/okedeji/hybernate/internal/forecast"
+	v1alpha1 "github.com/napwake/napwake/api/v1alpha1"
+	"github.com/napwake/napwake/internal/forecast"
 )
 
 // OptInDefaults are the cluster-wide settings for workloads opted in with
@@ -102,7 +102,7 @@ func (s *settings) resolve(key, invalid string, read func(value, on string) bool
 }
 
 // boolean accepts exactly "true" or "false", the spellings kubectl
-// hybernate and the docs use, so every reader of the annotation agrees on
+// napwake and the docs use, so every reader of the annotation agrees on
 // what it says.
 func (s *settings) boolean(key string, fallback bool) bool {
 	b := fallback

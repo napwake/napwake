@@ -37,8 +37,8 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 	"sigs.k8s.io/controller-runtime/pkg/client/interceptor"
 
-	v1alpha1 "github.com/okedeji/hybernate/api/v1alpha1"
-	"github.com/okedeji/hybernate/internal/cost"
+	v1alpha1 "github.com/napwake/napwake/api/v1alpha1"
+	"github.com/napwake/napwake/internal/cost"
 )
 
 func container(name, cpu string) corev1.Container {
@@ -190,7 +190,7 @@ func webPod(name, node string) *corev1.Pod {
 
 func deleting(pod *corev1.Pod) *corev1.Pod {
 	pod.DeletionTimestamp = &metav1.Time{Time: time.Now()}
-	pod.Finalizers = []string{"e2e.hybernate.io/hold"}
+	pod.Finalizers = []string{"e2e.napwake.dev/hold"}
 	return pod
 }
 

@@ -26,8 +26,8 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
-	v1alpha1 "github.com/okedeji/hybernate/api/v1alpha1"
-	"github.com/okedeji/hybernate/internal/cost"
+	v1alpha1 "github.com/napwake/napwake/api/v1alpha1"
+	"github.com/napwake/napwake/internal/cost"
 )
 
 // Prices are what a scan priced the cluster's workloads at.
@@ -152,7 +152,7 @@ func (s *Scanner) listNodes(ctx context.Context) ([]metav1.PartialObjectMetadata
 
 // ratesFor is what a workload is priced at: the listed nodes its pods are
 // on, spot ones at their spot price. With no pod on a node, such as one
-// Hybernate paused, it's what Hybernate recorded of the nodes it last ran
+// Napwake paused, it's what Napwake recorded of the nodes it last ran
 // on, or else the cluster's most common node type. Pods only on nodes the
 // table doesn't have, and everything else, get the scan's rates. Prices the
 // user gave override each part. It also says whether any of its pods is on

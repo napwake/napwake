@@ -31,8 +31,8 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/cache"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
-	v1alpha1 "github.com/okedeji/hybernate/api/v1alpha1"
-	"github.com/okedeji/hybernate/internal/doorman"
+	v1alpha1 "github.com/napwake/napwake/api/v1alpha1"
+	"github.com/napwake/napwake/internal/doorman"
 )
 
 // The fake client used elsewhere holds every object, so it can't show what
@@ -49,8 +49,8 @@ var _ = ginkgo.Describe("Doorman routing through the operator's cache", func() {
 
 		doormanSlice := &discoveryv1.EndpointSlice{
 			ObjectMeta: metav1.ObjectMeta{
-				Name: "hybernate-doorman-abc", Namespace: doormanNS,
-				Labels: map[string]string{discoveryv1.LabelServiceName: "hybernate-doorman"},
+				Name: "napwake-doorman-abc", Namespace: doormanNS,
+				Labels: map[string]string{discoveryv1.LabelServiceName: "napwake-doorman"},
 			},
 			AddressType: discoveryv1.AddressTypeIPv4,
 			Endpoints: []discoveryv1.Endpoint{{
@@ -89,7 +89,7 @@ var _ = ginkgo.Describe("Doorman routing through the operator's cache", func() {
 			PodReader:        k8sClient,
 			Scheme:           scheme.Scheme,
 			Recorder:         events.NewFakeRecorder(100),
-			DoormanService:   "hybernate-doorman",
+			DoormanService:   "napwake-doorman",
 			DoormanNamespace: doormanNS,
 		}
 	})

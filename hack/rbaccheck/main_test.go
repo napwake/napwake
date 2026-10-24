@@ -50,14 +50,14 @@ func writeRole(t *testing.T) string {
 func TestRunAcceptsTheSameGrantsSplitAcrossRoles(t *testing.T) {
 	chart := `---
 kind: ClusterRole
-metadata: {name: hybernate-manager}
+metadata: {name: napwake-manager}
 rules:
 - apiGroups: [""]
   resources: [services]
   verbs: [get]
 ---
 kind: Role
-metadata: {name: hybernate-manager, namespace: shop}
+metadata: {name: napwake-manager, namespace: shop}
 rules:
 - apiGroups: [""]
   resources: [configmaps]
@@ -67,7 +67,7 @@ rules:
   verbs: [update, get]
 ---
 kind: Role
-metadata: {name: hybernate-leader-election}
+metadata: {name: napwake-leader-election}
 rules:
 - apiGroups: [coordination.k8s.io]
   resources: [leases]
@@ -79,7 +79,7 @@ rules:
 func TestRunReportsDrift(t *testing.T) {
 	chart := `---
 kind: ClusterRole
-metadata: {name: hybernate-manager}
+metadata: {name: napwake-manager}
 rules:
 - apiGroups: [""]
   resources: [configmaps, services]

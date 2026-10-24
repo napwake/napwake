@@ -26,9 +26,9 @@ import (
 	metricsv1beta1 "k8s.io/metrics/pkg/apis/metrics/v1beta1"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
-	v1alpha1 "github.com/okedeji/hybernate/api/v1alpha1"
-	"github.com/okedeji/hybernate/internal/doorman"
-	"github.com/okedeji/hybernate/internal/gitops"
+	v1alpha1 "github.com/napwake/napwake/api/v1alpha1"
+	"github.com/napwake/napwake/internal/doorman"
+	"github.com/napwake/napwake/internal/gitops"
 )
 
 // listed is one kind of object listed across the cluster at once, by
@@ -59,7 +59,7 @@ type clusterReads struct {
 	// gitOps tells whether the GitOps tools that set workloads' replicas
 	// are told to leave them, reading each tool's settings once.
 	gitOps *gitops.Checker
-	// installs are the Hybernate installs found, read for a replay of the
+	// installs are the Napwake installs found, read for a replay of the
 	// forecast.
 	installs []Install
 }

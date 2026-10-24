@@ -1,7 +1,7 @@
 # Written by the release workflow of {{.Homepage}}
 # with its hack/brewformula, for each release: change that, not this.
-class KubectlHybernate < Formula
-  desc "Find idle Kubernetes workloads, and pause and wake them with Hybernate"
+class KubectlNapwake < Formula
+  desc "Find idle Kubernetes workloads, and pause and wake them with Napwake"
   homepage "{{.Homepage}}"
   version "{{.Version}}"
   license "Apache-2.0"
@@ -29,10 +29,10 @@ class KubectlHybernate < Formula
   end
 
   def install
-    bin.install Dir["kubectl-hybernate-*"].first => "kubectl-hybernate"
+    bin.install Dir["kubectl-napwake-*"].first => "kubectl-napwake"
   end
 
   test do
-    assert_match "kubectl-hybernate v#{version}", shell_output("#{bin}/kubectl-hybernate version")
+    assert_match "kubectl-napwake v#{version}", shell_output("#{bin}/kubectl-napwake version")
   end
 end

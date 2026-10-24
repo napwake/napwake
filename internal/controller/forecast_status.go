@@ -22,8 +22,8 @@ import (
 
 	"k8s.io/apimachinery/pkg/api/meta"
 
-	v1alpha1 "github.com/okedeji/hybernate/api/v1alpha1"
-	"github.com/okedeji/hybernate/internal/forecast"
+	v1alpha1 "github.com/napwake/napwake/api/v1alpha1"
+	"github.com/napwake/napwake/internal/forecast"
 )
 
 // forecastOutlook says why the workload's forecast is or isn't acting, and
@@ -85,8 +85,8 @@ func autoResumes(workload *v1alpha1.ManagedWorkload) bool {
 }
 
 const (
-	wakeOnRequestGuide = "https://okedeji.io/hybernate/concepts/wake-on-request/"
-	queriesGuide       = "https://okedeji.io/hybernate/guides/prometheus-signals/"
+	wakeOnRequestGuide = "https://docs.napwake.dev/concepts/wake-on-request/"
+	queriesGuide       = "https://docs.napwake.dev/guides/prometheus-signals/"
 )
 
 // pausedSeenBy is what shows a paused workload's demand, so the hours it
@@ -136,7 +136,7 @@ func pausedSeenBy(workload *v1alpha1.ManagedWorkload) string {
 // where the docs say how; it's empty when something watches the workload,
 // or it isn't paused. Without activity queries, the cause is why requests
 // don't wake it, by its WakeOnRequest condition's reason. The cause comes
-// first, up to the first semicolon, for kubectl hybernate's tables.
+// first, up to the first semicolon, for kubectl napwake's tables.
 func pausedUnseen(workload *v1alpha1.ManagedWorkload) string {
 	if workload.Status.Phase != v1alpha1.PhasePaused || pausedSeenBy(workload) != "" {
 		return ""

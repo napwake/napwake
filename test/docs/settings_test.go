@@ -32,7 +32,7 @@ import (
 // which says what replaces it, names them.
 func TestDocsDontNameTheWakeSettingThatWent(t *testing.T) {
 	root := filepath.Join("..", "..", "docs")
-	gone := []string{"wake.onRequest", "hybernate.io/wake-on-request", "TurnedOff"}
+	gone := []string{"wake.onRequest", "napwake.dev/wake-on-request", "TurnedOff"}
 	err := filepath.WalkDir(root, func(path string, d fs.DirEntry, err error) error {
 		if err != nil || d.IsDir() || filepath.Ext(path) != ".md" ||
 			path == filepath.Join(root, "operations", "upgrading.md") {

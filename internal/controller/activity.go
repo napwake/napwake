@@ -36,12 +36,12 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/log"
 
-	v1alpha1 "github.com/okedeji/hybernate/api/v1alpha1"
-	"github.com/okedeji/hybernate/internal/cost"
-	"github.com/okedeji/hybernate/internal/forecast"
-	"github.com/okedeji/hybernate/internal/human"
-	opmetrics "github.com/okedeji/hybernate/internal/metrics"
-	"github.com/okedeji/hybernate/internal/signal"
+	v1alpha1 "github.com/napwake/napwake/api/v1alpha1"
+	"github.com/napwake/napwake/internal/cost"
+	"github.com/napwake/napwake/internal/forecast"
+	"github.com/napwake/napwake/internal/human"
+	opmetrics "github.com/napwake/napwake/internal/metrics"
+	"github.com/napwake/napwake/internal/signal"
 )
 
 const (
@@ -177,9 +177,9 @@ func (g watchGap) message(endsIdle bool) string {
 		return fmt.Sprintf("the operator restarted, or another took over, so its idle clock starts again%s; "+
 			"it wasn't watching for up to %s", idle, length)
 	}
-	what := fmt.Sprintf("Hybernate wasn't watching for %s", length)
+	what := fmt.Sprintf("Napwake wasn't watching for %s", length)
 	if g.blind {
-		what = fmt.Sprintf("Hybernate couldn't read its activity for %s", length)
+		what = fmt.Sprintf("Napwake couldn't read its activity for %s", length)
 	}
 	then := ""
 	if endsIdle {
@@ -759,7 +759,7 @@ func (h *templateHashes) forget(workload types.UID) {
 
 // podTemplateHash fingerprints the target's pod template. Scaling changes
 // spec.replicas and bumps metadata.generation, so the generation can't tell
-// a deploy from Hybernate's own pause and resume; the template can.
+// a deploy from Napwake's own pause and resume; the template can.
 func podTemplateHash(target client.Object) string {
 	switch target.(type) {
 	case *appsv1.Deployment, *appsv1.StatefulSet:
@@ -938,7 +938,7 @@ func (r *Reconciler) pauseEarly(ctx context.Context, workload *v1alpha1.ManagedW
 func sinceActivity(source v1alpha1.ActivitySource) string {
 	switch source {
 	case v1alpha1.ActivitySourceCreated:
-		return "since Hybernate started managing it"
+		return "since Napwake started managing it"
 	case v1alpha1.ActivitySourceWoke:
 		return "since it woke"
 	case v1alpha1.ActivitySourceRequest:
@@ -952,9 +952,9 @@ func sinceActivity(source v1alpha1.ActivitySource) string {
 	case v1alpha1.ActivitySourcePrometheus:
 		return "since a Prometheus activity query last found activity"
 	case v1alpha1.ActivitySourceUnobserved:
-		return "since Hybernate could watch it again after a gap"
+		return "since Napwake could watch it again after a gap"
 	case v1alpha1.ActivitySourceScaledUp:
-		return "since it was scaled up outside Hybernate"
+		return "since it was scaled up outside Napwake"
 	default:
 		return fmt.Sprintf("since its last activity (%s)", source)
 	}

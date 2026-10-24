@@ -56,7 +56,11 @@ const (
 
 	// releaseEnv names the release being built, which mkdocs.yml reads
 	// into extra.release for the banner on pages that aren't latest's.
-	releaseEnv = "HYBERNATE_DOCS_RELEASE"
+	releaseEnv = "NAPWAKE_DOCS_RELEASE"
+
+	// defaultBase is the path the site is served under: the root of
+	// docs.napwake.dev.
+	defaultBase = "/"
 )
 
 // Building and committing the docs takes a minute or two; anything near
@@ -72,7 +76,7 @@ func main() {
 	tag := flag.String("tag", "", "the release tag whose docs to publish, such as v0.2.0 or v0.2.0-rc.1")
 	push := flag.Bool("push", false, "push gh-pages to origin once it's committed")
 	dryRun := flag.Bool("dry-run", false, "print the commands instead of running them")
-	base := flag.String("base", "/hybernate/", "the path the site is served under")
+	base := flag.String("base", defaultBase, "the path the site is served under")
 	flag.Parse()
 
 	ctx, cancel := context.WithTimeout(context.Background(), timeout)

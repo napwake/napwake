@@ -15,7 +15,7 @@ limitations under the License.
 */
 
 // Package capacity measures what pausing has taken off the bill: how much
-// of what Hybernate holds paused the cluster's nodes couldn't hold if it
+// of what Napwake holds paused the cluster's nodes couldn't hold if it
 // came back now. That much capacity would have to be added for it, so it
 // costs at least what that capacity does, whatever made the nodes go.
 package capacity

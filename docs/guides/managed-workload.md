@@ -1,11 +1,11 @@
 # ManagedWorkload Guide
 
-The ManagedWorkload CR is the core resource in Hybernate. It declares a single Deployment or StatefulSet whose lifecycle Hybernate manages.
+The ManagedWorkload CR is the core resource in Napwake. It declares a single Deployment or StatefulSet whose lifecycle Napwake manages.
 
 ## Minimal Example
 
 ```yaml title="managedworkload.yaml" linenums="1"
-apiVersion: hybernate.io/v1alpha1
+apiVersion: napwake.dev/v1alpha1
 kind: ManagedWorkload
 metadata:
   name: my-api
@@ -16,14 +16,14 @@ spec:
     name: my-api
 ```
 
-This is the absolute minimum: only `target` is required, and everything else takes its default. The operator will watch the Deployment, track its cost and learn its forecast, but won't pause it on its own until you add an idle policy; [`kubectl hybernate pause`](pause.md#pause-now) pauses it when you ask.
+This is the absolute minimum: only `target` is required, and everything else takes its default. The operator will watch the Deployment, track its cost and learn its forecast, but won't pause it on its own until you add an idle policy; [`kubectl napwake pause`](pause.md#pause-now) pauses it when you ask.
 
-For most workloads you don't need to write one: the `hybernate.io/managed` label creates one from annotations; see [Opting In](opt-in.md). Settings annotations don't cover, such as Prometheus queries, `waitForReady`, or cost rates, can be set on the ManagedWorkload the label creates, which keeps them, or in one you write yourself. A ManagedWorkload you write for a workload wins over the label.
+For most workloads you don't need to write one: the `napwake.dev/managed` label creates one from annotations; see [Opting In](opt-in.md). Settings annotations don't cover, such as Prometheus queries, `waitForReady`, or cost rates, can be set on the ManagedWorkload the label creates, which keeps them, or in one you write yourself. A ManagedWorkload you write for a workload wins over the label.
 
 ## Full Example
 
 ```yaml title="managedworkload.yaml" linenums="1"
-apiVersion: hybernate.io/v1alpha1
+apiVersion: napwake.dev/v1alpha1
 kind: ManagedWorkload
 metadata:
   name: my-api
@@ -81,7 +81,7 @@ See [Idle Detection](../concepts/idle-detection.md) for how the activity clock w
 | `autoResume` | bool | `false` | Wake ahead of the demand a confident forecast predicts |
 | `pauseEarly` | bool | `false` | Pause before `idleAfter` runs out, once idle for 20 minutes, when a confident forecast expects the hours until then to be quiet and a request would wake the workload through the doorman. See [Pausing Early](../concepts/forecasting.md#pausing-early) |
 
-Deploys and the `hybernate.io/last-activity` and `hybernate.io/active-until` annotations always count as activity; see [Idle Detection](../concepts/idle-detection.md#activity-annotations).
+Deploys and the `napwake.dev/last-activity` and `napwake.dev/active-until` annotations always count as activity; see [Idle Detection](../concepts/idle-detection.md#activity-annotations).
 
 ### `dependsOn`
 
@@ -125,9 +125,9 @@ Cost tracking is always on, priced at the list price of the nodes the workload r
 
 None of the rates may be negative.
 
-### Scaled up outside Hybernate
+### Scaled up outside Napwake
 
-A paused workload scaled up by anything else, such as `kubectl scale` or a deploy, wakes: whoever did it wants it running. `status.lastScaledUp` records when and what did it. When that was a GitOps tool setting replicas from Git, see [GitOps tools](gitops.md). While a workload is running, Hybernate doesn't manage its replica count, so changes by its team or an HPA are left alone.
+A paused workload scaled up by anything else, such as `kubectl scale` or a deploy, wakes: whoever did it wants it running. `status.lastScaledUp` records when and what did it. When that was a GitOps tool setting replicas from Git, see [GitOps tools](gitops.md). While a workload is running, Napwake doesn't manage its replica count, so changes by its team or an HPA are left alone.
 
 ### `dryRun`
 

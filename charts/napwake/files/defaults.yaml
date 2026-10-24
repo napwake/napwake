@@ -1,0 +1,270 @@
+image:
+  repository: ghcr.io/napwake/napwake
+  tag: "" # defaults to the chart's appVersion
+  pullPolicy: IfNotPresent
+
+imagePullSecrets: []
+
+nameOverride: ""
+fullnameOverride: ""
+
+# Installs the ManagedWorkload CRD and upgrades it with the release. It's
+# kept on uninstall, since deleting it deletes every ManagedWorkload. Set
+# false only if you manage the CRD yourself.
+crds:
+  install: true
+
+# More than one replica needs leader election, so only one acts at a time.
+replicaCount: 1
+
+leaderElection:
+  enabled: true
+
+# How many ManagedWorkloads the operator reconciles at once, so one slow
+# metrics or Prometheus query doesn't hold up waking another workload.
+maxConcurrentReconciles: 8
+
+# IANA time zone, such as Europe/London, whose hours and weekdays forecasts
+# learn. Use your users' zone, so forecasts follow daylight saving.
+timezone: UTC
+
+# The operator caches the cluster's ManagedWorkloads, Deployments,
+# StatefulSets, Services, Ingresses, PVCs, HPAs, nodes and namespaces, or only the
+# watched namespaces', the EndpointSlices it writes and the doorman's, and,
+# watching every namespace, what each pod bound to a node requests, about
+# 2.6 KB a pod, so its memory grows with the cluster. Raise the limit on
+# clusters with many thousands of workloads. The garbage collector aims at
+# 90% of the limit, leaving the rest for memory outside its heap, and works
+# harder near it rather than letting the operator be OOM-killed.
+resources:
+  limits:
+    cpu: 500m
+    memory: 512Mi
+  requests:
+    cpu: 10m
+    memory: 128Mi
+
+nodeSelector: {}
+tolerations: []
+affinity: {}
+
+# For the operator's pods, and the doorman's unless doorman sets its own.
+# podLabels can't replace the labels the chart selects pods by.
+podAnnotations: {}
+podLabels: {}
+priorityClassName: ""
+
+# Extra environment variables for the operator, as container env entries:
+#   - name: GOMAXPROCS
+#     value: "2"
+extraEnv: []
+
+serviceAccount:
+  create: true
+  name: "" # defaults to the release's full name
+
+metrics:
+  enabled: true
+  port: 8443
+  # Serves metrics over HTTPS, to scrapers allowed to get /metrics, such as
+  # those bound to the metrics-reader ClusterRole below. False serves plain
+  # HTTP to anyone who can reach the port.
+  secure: true
+  # The ClusterRole the chart creates, while metrics.secure, is allowed to
+  # get /metrics. List your Prometheus's ServiceAccount here to bind it:
+  #   - kind: ServiceAccount
+  #     name: prometheus-k8s
+  #     namespace: monitoring
+  readerSubjects: []
+  serviceMonitor:
+    enabled: false
+    interval: 30s
+    additionalLabels: {}
+  prometheusRule:
+    enabled: false
+    additionalLabels: {}
+
+# The Prometheus API the operator reads, such as
+# http://prometheus.monitoring.svc:9090: for Prometheus activity queries,
+# and to start each new workload's forecast from up to four weeks of its
+# CPU history, one query per workload, rather than from nothing.
+prometheus:
+  url: ""
+  # Label matchers added to the history query, such as cluster="staging",
+  # for a Prometheus that holds more than one cluster's series, as Thanos,
+  # Mimir or a shared Prometheus may. Activity queries run as written.
+  selector: ""
+
+# Namespaces Napwake works in. Empty means every namespace, with a
+# ClusterRole; set, Napwake gets a Role in each of these only, and can't
+# read or scale workloads anywhere else.
+watchNamespaces: []
+
+# Name patterns, such as prod-*, of namespaces Napwake never manages,
+# as if labelled napwake.dev/protected=true, unless a namespace is
+# labelled napwake.dev/allow-protected=true. kube-*, and the operator's
+# and the doorman's namespace, are always protected, besides these.
+protectedNamespaces: []
+
+# Settings for workloads opted in with the napwake.dev/managed label, where
+# their own annotations and their namespace's don't say otherwise.
+defaults:
+  idleAfter: 1h
+  cpuThreshold: 10
+  dryRun: false
+  # Let a confident forecast pause a workload before idleAfter runs out,
+  # once it has been idle 20 minutes, when it expects the hours until then
+  # to be quiet and a request would wake the workload through the doorman.
+  # On office hours at the default idleAfter, that's half an hour less
+  # awake each weekday; it costs a cold start whenever someone uses the
+  # workload in an hour the forecast expected quiet, such as coming back
+  # after everyone left. napwake.dev/pause-early sets it per workload.
+  pauseEarly: false
+  # How soon the forecast acts on what it has learned: eager, balanced or
+  # cautious. Eager acts sooner and wakes workloads for nothing more often;
+  # cautious, for workloads costly to keep awake, acts later.
+  forecast: balanced
+  # What wakes a paused workload through the doorman: request, any request
+  # but a known probe's, or ask, only a person who clicks Wake it on the
+  # page the doorman shows a browser, for environments on a public URL that
+  # crawlers and scanners would otherwise keep awake. napwake.dev/wake
+  # sets it per workload or namespace.
+  wake: request
+
+# The doorman wakes paused workloads when a request reaches them.
+doorman:
+  enabled: true
+  replicaCount: 2
+  # User-Agent prefixes of health checkers and scrapers, or names that
+  # follow "(compatible; " in a browser-style one, whose GET and HEAD
+  # requests shouldn't wake a paused workload, besides the ones the doorman
+  # knows: kube-probe, Prometheus, load balancers' checks, Blackbox
+  # Exporter/, Datadog/Synthetics, Amazon-Route53-Health-Check-Service,
+  # GoogleStackdriverMonitoring-UptimeChecks, UptimeRobot, Pingdom.com_bot,
+  # NewRelicPinger/, Uptime-Kuma/, Gatus/ and others. For example, an
+  # in-house uptime monitor's: ["MyCorpMonitor/"].
+  healthCheckUserAgents: []
+  # The most doorman ports one workload, and one namespace, may hold. Each
+  # TCP port of each Service selecting a paused workload takes one of the
+  # 10,000 the cluster shares, so these keep one tenant from using them
+  # all. A workload over either is left unrouted, WakeOnRequest=False with
+  # reason TooManyPorts.
+  portsPerWorkload: 32
+  portsPerNamespace: 256
+  # Two ValidatingAdmissionPolicies: one lets the doorman's ServiceAccount
+  # set only the two annotations recording a request on ManagedWorkloads,
+  # and the one counting the requests it turned away, though its role may
+  # patch them; the other lets no one else set the two recording a request,
+  # since the operator learns dependencies from them.
+  admissionPolicy:
+    enabled: true
+  # Keeps one doorman serving through node drains, when replicaCount > 1.
+  podDisruptionBudget:
+    enabled: true
+  # Default to the operator's settings above when empty.
+  nodeSelector: {}
+  tolerations: []
+  affinity: {}
+  podAnnotations: {}
+  podLabels: {}
+  priorityClassName: ""
+  # The doorman's own, not the operator's extraEnv.
+  extraEnv: []
+  # Empty spreads the replicas across nodes and zones, where it can.
+  topologySpreadConstraints: []
+  # The doorman caches ManagedWorkloads, and the Services' EndpointSlices
+  # in the watched namespaces, cut down to about 300 bytes per pod and
+  # 700 per Service. Held connections take up to 72Mi more under a flood.
+  # 256Mi covers a cluster of some 100,000 pods; raise the limit beyond.
+  resources:
+    limits:
+      cpu: 500m
+      memory: 256Mi
+    requests:
+      cpu: 10m
+      memory: 64Mi
+  # Optional, for GKE clusters whose Services sit behind container-native
+  # load balancing (NEGs), as a GKE Ingress's or Gateway's do: GKE accepts
+  # only endpoints in the Service's own namespace, so those Services are
+  # otherwise left unrouted. While such a workload is paused, the operator
+  # runs a small forwarder Deployment beside it, which passes connections
+  # to the doorman, and deletes it once the workload is awake. It grants
+  # the operator create and delete on Deployments. See
+  # https://docs.napwake.dev/concepts/wake-on-request/#gke-container-native-load-balancing-negs
+  negForwarder:
+    enabled: false
+    # Pods per forwarder. Two keep a paused workload reachable while a node
+    # it runs on drains.
+    replicas: 2
+    resources:
+      limits:
+        memory: 64Mi
+      requests:
+        cpu: 10m
+        memory: 32Mi
+  networkPolicy:
+    # Who may reach paused workloads through the doorman, as NetworkPolicy
+    # peers, such as your ingress controller's namespace and the namespaces
+    # whose apps call paused workloads. A paused workload's own
+    # NetworkPolicy sees the doorman as the caller, so this is where callers
+    # are restricted while it's paused. Empty leaves the doorman open to
+    # every caller. Needs networkPolicy.enabled. For example:
+    #   - namespaceSelector:
+    #       matchLabels: {kubernetes.io/metadata.name: ingress-nginx}
+    ingressFrom: []
+    # Limits where the doorman can connect: to pods, to pass on the
+    # connections it holds, and to the API server. The doorman refuses
+    # addresses that can't be a pod's, such as cloud metadata services;
+    # this enforces it in the network as well. It needs a CNI that enforces
+    # NetworkPolicy, and both lists, in every IP family the cluster uses.
+    egress:
+      enabled: false
+      # The cluster's pod CIDRs, e.g. [10.244.0.0/16, fd00:10:244::/56].
+      podCIDRs: []
+      # The API server's addresses as pods reach them, which are its
+      # endpoints, not the kubernetes Service's ClusterIP: see
+      # kubectl get endpointslices -n default -l kubernetes.io/service-name=kubernetes
+      apiServer: []
+      apiServerPorts: [443, 6443]
+
+networkPolicy:
+  enabled: false
+
+# Hook Jobs, running the operator image, that refuse what would leave
+# ManagedWorkloads with no operator, so their workloads would stay paused at
+# 0 replicas. Each waits two and a half minutes for any being deleted, then
+# lists those left and fails. helm uninstall --no-hooks, or upgrade
+# --no-hooks, skips them.
+guard:
+  # Refuses helm uninstall while ManagedWorkloads remain. Argo CD 3.3 and
+  # later runs it as a PreDelete hook, blocking the Application's deletion.
+  uninstall: true
+  # Refuses helm upgrade or rollback to a watchNamespaces that leaves out a
+  # namespace where the operator manages workloads. Argo CD runs it as a
+  # PreSync hook, before every sync.
+  upgrade: true
+  # Empty uses the operator's settings above. Istio's and Linkerd's sidecar
+  # injection are off for the hooks' pods, whose Jobs would otherwise never
+  # finish, unless these annotations or labels say otherwise.
+  nodeSelector: {}
+  tolerations: []
+  affinity: {}
+  priorityClassName: ""
+  podAnnotations: {}
+  podLabels: {}
+  resources:
+    limits:
+      cpu: 100m
+      memory: 128Mi
+    requests:
+      cpu: 10m
+      memory: 64Mi
+
+logLevel: info
+# json, or console for reading by eye.
+logEncoder: json
+
+# The chart version these defaults are from. Leave it as it is: helm
+# upgrade --reuse-values renders with the previous release's defaults,
+# and this tells the chart to fill in the values added since from its own.
+defaultsVersion: 0.2.0

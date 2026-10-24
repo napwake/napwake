@@ -30,7 +30,7 @@ import (
 	"k8s.io/apimachinery/pkg/util/validation"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
-	v1alpha1 "github.com/okedeji/hybernate/api/v1alpha1"
+	v1alpha1 "github.com/napwake/napwake/api/v1alpha1"
 )
 
 // Dependency is a workload another one's environment points at, through a
@@ -50,9 +50,9 @@ type Dependency struct {
 	// Declared means the workload's ManagedWorkload already depends on it.
 	Declared bool `json:"declared"`
 	// Source is how it was found: in the workload's environment, or, once
-	// Hybernate learns them, from a wake it saw the workload cause.
+	// Napwake learns them, from a wake it saw the workload cause.
 	Source DependencySource `json:"source"`
-	// Connected means Hybernate has learned it for the workload's
+	// Connected means Napwake has learned it for the workload's
 	// ManagedWorkload, so it wakes and holds the dependency with the
 	// workload.
 	Connected bool `json:"connected,omitempty"`
@@ -422,7 +422,7 @@ func addDependency(deps []Dependency, d Dependency) []Dependency {
 	return append(deps, d)
 }
 
-// learnedFromWakes are the dependencies Hybernate learned from requests the
+// learnedFromWakes are the dependencies Napwake learned from requests the
 // workload sent that woke them, which its environment doesn't show.
 func learnedFromWakes(mw *v1alpha1.ManagedWorkload, found []Dependency) []Dependency {
 	if mw == nil || mw.Status.LearnedDependencies == nil {
@@ -441,7 +441,7 @@ func learnedFromWakes(mw *v1alpha1.ManagedWorkload, found []Dependency) []Depend
 	return out
 }
 
-// learned says Hybernate learned the dependency for the workload, so it
+// learned says Napwake learned the dependency for the workload, so it
 // holds and wakes it.
 func learned(mw *v1alpha1.ManagedWorkload, target workloadKey) bool {
 	if mw == nil || mw.Status.LearnedDependencies == nil {

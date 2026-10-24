@@ -8,7 +8,7 @@ metadata:
   namespace: system
   labels:
     control-plane: doorman
-    app.kubernetes.io/name: hybernate
+    app.kubernetes.io/name: napwake
     app.kubernetes.io/managed-by: kustomize
 spec:
   replicas: 2
@@ -24,12 +24,12 @@ spec:
   selector:
     matchLabels:
       control-plane: doorman
-      app.kubernetes.io/name: hybernate
+      app.kubernetes.io/name: napwake
   template:
     metadata:
       labels:
         control-plane: doorman
-        app.kubernetes.io/name: hybernate
+        app.kubernetes.io/name: napwake
     spec:
       securityContext:
         runAsNonRoot: true
@@ -42,7 +42,7 @@ spec:
           - --doorman
           - --metrics-bind-address=:8443
           - --health-probe-bind-address=:8081
-          - --wake-key-secret=hybernate-doorman-wake-key
+          - --wake-key-secret=napwake-doorman-wake-key
         image: controller:latest
         name: doorman
         env:
@@ -98,14 +98,14 @@ spec:
         labelSelector:
           matchLabels:
             control-plane: doorman
-            app.kubernetes.io/name: hybernate
+            app.kubernetes.io/name: napwake
       - maxSkew: 1
         topologyKey: topology.kubernetes.io/zone
         whenUnsatisfiable: ScheduleAnyway
         labelSelector:
           matchLabels:
             control-plane: doorman
-            app.kubernetes.io/name: hybernate
+            app.kubernetes.io/name: napwake
 ---
 # Keeps one doorman serving through node drains.
 apiVersion: policy/v1
@@ -115,14 +115,14 @@ metadata:
   namespace: system
   labels:
     control-plane: doorman
-    app.kubernetes.io/name: hybernate
+    app.kubernetes.io/name: napwake
     app.kubernetes.io/managed-by: kustomize
 spec:
   minAvailable: 1
   selector:
     matchLabels:
       control-plane: doorman
-      app.kubernetes.io/name: hybernate
+      app.kubernetes.io/name: napwake
 ---
 # The operator finds the Ready doorman pods through this Service's
 # EndpointSlices, and points paused workloads' Services at them. On a
@@ -135,13 +135,13 @@ metadata:
   namespace: system
   labels:
     control-plane: doorman
-    app.kubernetes.io/name: hybernate
+    app.kubernetes.io/name: napwake
     app.kubernetes.io/managed-by: kustomize
 spec:
   ipFamilyPolicy: PreferDualStack
   selector:
     control-plane: doorman
-    app.kubernetes.io/name: hybernate
+    app.kubernetes.io/name: napwake
   ports:
   - name: https
     port: 8443

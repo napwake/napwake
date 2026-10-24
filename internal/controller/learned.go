@@ -36,9 +36,9 @@ import (
 	"k8s.io/apimachinery/pkg/util/validation"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
-	v1alpha1 "github.com/okedeji/hybernate/api/v1alpha1"
-	"github.com/okedeji/hybernate/internal/discovery"
-	"github.com/okedeji/hybernate/internal/gitops"
+	v1alpha1 "github.com/napwake/napwake/api/v1alpha1"
+	"github.com/napwake/napwake/internal/discovery"
+	"github.com/napwake/napwake/internal/gitops"
 )
 
 // relearnAfter is how long learned dependencies stand before they're
@@ -303,7 +303,7 @@ func podTemplateOf(target client.Object) corev1.PodTemplateSpec {
 	return corev1.PodTemplateSpec{}
 }
 
-// ignoredDependencies are the dependencies hybernate.io/ignore-dependencies
+// ignoredDependencies are the dependencies napwake.dev/ignore-dependencies
 // names on the workload or its ManagedWorkload, as namespace/name.
 func ignoredDependencies(workload *v1alpha1.ManagedWorkload, target client.Object) map[string]bool {
 	ignored := map[string]bool{}
@@ -348,7 +348,7 @@ func sameDependencies(a, b []v1alpha1.LearnedDependency) bool {
 }
 
 // learnedMessage says what the workload was learned to depend on, and what
-// that does for each dependency: only one Hybernate manages, in a namespace
+// that does for each dependency: only one Napwake manages, in a namespace
 // that allows the workload's, is woken with it and held awake while it is.
 // The phrases are the scan's, so both say the same of a dependency.
 func learnedMessage(workload *v1alpha1.ManagedWorkload, learned []v1alpha1.LearnedDependency, g *dependencyGraph) string {
@@ -379,7 +379,7 @@ func learnedMessage(workload *v1alpha1.ManagedWorkload, learned []v1alpha1.Learn
 	}
 	if len(unmanaged) > 0 {
 		isnt, subject, object := agreeing(len(unmanaged))
-		parts = append(parts, fmt.Sprintf("%s, which %s managed by Hybernate, so %s %s woken with %s: "+
+		parts = append(parts, fmt.Sprintf("%s, which %s managed by Napwake, so %s %s woken with %s: "+
 			"opt %s in to have them paused and woken together", listNames(unmanaged), isnt, subject, isnt, self, object))
 	}
 	if len(notAllowed) > 0 {
@@ -391,7 +391,7 @@ func learnedMessage(workload *v1alpha1.ManagedWorkload, learned []v1alpha1.Learn
 	return "depends on " + strings.Join(parts, "; and on ")
 }
 
-// wokenAndHeld is what Hybernate does for a dependency it manages: it wakes
+// wokenAndHeld is what Napwake does for a dependency it manages: it wakes
 // it with the dependent, and holds it awake while the dependent is.
 const wokenAndHeld = "woken and held with it"
 
@@ -404,7 +404,7 @@ func agreeing(n int) (isnt, subject, object string) {
 }
 
 // dependencyRefs are the workloads a ManagedWorkload depends on: those its
-// dependsOn names, and those Hybernate learned.
+// dependsOn names, and those Napwake learned.
 func dependencyRefs(workload *v1alpha1.ManagedWorkload) []v1alpha1.DependencyRef {
 	refs := slices.Clone(workload.Spec.DependsOn)
 	l := workload.Status.LearnedDependencies
@@ -431,7 +431,7 @@ const podIPField = "status.podIP"
 const wakeLearnTimeout = 2 * time.Second
 
 // learnFromWake learns that the workload whose request woke this one
-// depends on it. Only a workload Hybernate manages counts: a request through
+// depends on it. Only a workload Napwake manages counts: a request through
 // an ingress controller comes from the controller's pod, which depends on
 // nothing. Only an address the doorman stamped counts, and only a sender in
 // a namespace this workload's allows dependents from.
@@ -511,11 +511,11 @@ func learnedList(l *v1alpha1.LearnedDependencies) []v1alpha1.LearnedDependency {
 }
 
 // stampedByDoorman is the workload's last-request-from when the doorman set
-// it, or "". A forged address would have Hybernate write a dependency into
+// it, or "". A forged address would have Napwake write a dependency into
 // the ManagedWorkload of whatever pod has it. The request-stamps admission
 // policy lets only the doorman set it, but it can be turned off, and
 // without it anyone who can patch a ManagedWorkload can. The doorman writes
-// under Hybernate's field manager, which the API server records, so that's
+// under Napwake's field manager, which the API server records, so that's
 // checked too; the cache drops managed fields, so the workload is read past
 // it.
 func (r *Reconciler) stampedByDoorman(ctx context.Context, workload *v1alpha1.ManagedWorkload) (string, error) {
@@ -536,7 +536,7 @@ func (r *Reconciler) stampedByDoorman(ctx context.Context, workload *v1alpha1.Ma
 
 // senderNamespaces are the namespaces a workload depending on one in
 // namespace can be in: namespace itself, and those its
-// hybernate.io/dependents-from allows, as far as Hybernate watches them.
+// napwake.dev/dependents-from allows, as far as Napwake watches them.
 // A search of every namespace is metav1.NamespaceAll.
 func (r *Reconciler) senderNamespaces(ctx context.Context, namespace string) ([]string, error) {
 	value, err := r.dependentsFromOf(ctx, namespace)

@@ -15,8 +15,8 @@
 ### Clone and Build
 
 ```bash
-git clone https://github.com/okedeji/hybernate.git
-cd hybernate
+git clone https://github.com/napwake/napwake.git
+cd napwake
 make build
 ```
 
@@ -50,14 +50,14 @@ make run
 
 ```bash
 make build-plugin
-# Binary at bin/kubectl-hybernate
+# Binary at bin/kubectl-napwake
 ```
 
 ## Project Structure
 
 ```
 cmd/main.go                    # Operator entrypoint
-cmd/kubectl-hybernate/main.go  # kubectl plugin
+cmd/kubectl-napwake/main.go    # kubectl plugin
 api/v1alpha1/                  # CRD type definitions
 internal/controller/           # Reconcilers
 internal/forecast/             # Holt-Winters engine
@@ -65,11 +65,11 @@ internal/signal/               # Prometheus activity queries
 internal/lifecycle/            # Pause and resume
 internal/autoscaler/           # HPA and KEDA
 internal/gitops/               # GitOps tool detection
-internal/discovery/            # Cluster scan for kubectl hybernate scan
+internal/discovery/            # Cluster scan for kubectl napwake scan
 internal/doorman/              # Wake on request
 internal/cost/                 # Cost rates and node list prices
 internal/metrics/              # Prometheus metrics, and the Metrics API reader
-charts/hybernate/              # Helm chart
+charts/napwake/                # Helm chart
 config/                        # CRD, RBAC, kustomize manifests
 test/e2e/                      # End-to-end tests, in Kind
 test/docs/                     # Validates the docs' ManagedWorkloads against the CRD, and Helm values against the chart
@@ -127,7 +127,7 @@ CI also runs the end-to-end tests on Kubernetes 1.30 and 1.37, the Helm smoke te
 
 ## Documentation
 
-The docs are built with mkdocs: `pip install --require-hashes -r docs/requirements.txt`, then `mkdocs serve`. `make test` creates every ManagedWorkload shown in a `yaml` block in `README.md` and `docs/`, and in `config/samples/`, against the real CRD, so a doc example that doesn't validate fails the build. A partial one, a `spec:` block or spec fields such as `dependsOn` on their own, is wrapped into a whole ManagedWorkload first; title it `managedworkload.yaml` or leave it untitled, since a block titled as another file, such as `application.yaml`, isn't read as one. Helm values blocks, titled `hybernate-values.yaml`, `values.yaml` or `values-<name>.yaml`, or untitled with only the chart's keys, are checked against `charts/hybernate/values.schema.json`, and every value they set must be one the chart has. Put `<!-- snippet -->` on the line before a block that's deliberately partial and shouldn't be checked. Links to `https://okedeji.io/hybernate` in the code must point at a page in `docs/`.
+The docs are built with mkdocs: `pip install --require-hashes -r docs/requirements.txt`, then `mkdocs serve`. `make test` creates every ManagedWorkload shown in a `yaml` block in `README.md` and `docs/`, and in `config/samples/`, against the real CRD, so a doc example that doesn't validate fails the build. A partial one, a `spec:` block or spec fields such as `dependsOn` on their own, is wrapped into a whole ManagedWorkload first; title it `managedworkload.yaml` or leave it untitled, since a block titled as another file, such as `application.yaml`, isn't read as one. Helm values blocks, titled `napwake-values.yaml`, `values.yaml` or `values-<name>.yaml`, or untitled with only the chart's keys, are checked against `charts/napwake/values.schema.json`, and every value they set must be one the chart has. Put `<!-- snippet -->` on the line before a block that's deliberately partial and shouldn't be checked. Links to `https://docs.napwake.dev` in the code must point at a page in `docs/`.
 
 ## Releasing
 
@@ -160,43 +160,43 @@ git push origin main v0.2.0
 
 ### The Homebrew tap
 
-`brew install okedeji/tap/kubectl-hybernate` installs the plugin from [okedeji/homebrew-tap](https://github.com/okedeji/homebrew-tap). For each release, the release workflow's last job writes the tap's `Formula/kubectl-hybernate.rb` with [`hack/brewformula`](https://github.com/okedeji/hybernate/tree/main/hack/brewformula), from the published macOS and Linux archives, and commits it as `kubectl-hybernate X.Y.Z`. A release candidate is brewed only while the tap has no stable release, so people trying it before 0.2.0 can install it with Homebrew; once a stable release is there, a release candidate never replaces it, since `brew install` and `brew upgrade` take whatever the formula is.
+`brew install napwake/tap/kubectl-napwake` installs the plugin from [napwake/homebrew-tap](https://github.com/napwake/homebrew-tap). For each release, the release workflow's last job writes the tap's `Formula/kubectl-napwake.rb` with [`hack/brewformula`](https://github.com/napwake/napwake/tree/main/hack/brewformula), from the published macOS and Linux archives, and commits it as `kubectl-napwake X.Y.Z`. A release candidate is brewed only while the tap has no stable release, so people trying it before 0.2.0 can install it with Homebrew; once a stable release is there, a release candidate never replaces it, since `brew install` and `brew upgrade` take whatever the formula is.
 
-It pushes with the `HOMEBREW_TAP_TOKEN` secret: a fine-grained personal access token whose only permission is Contents read and write on `okedeji/homebrew-tap`. Without the secret, or if the push fails, the job warns and the tap stays on the last release, while the release, and its docs, go ahead; once the token is fixed, re-run the job. Fine-grained tokens expire, so renew it before its expiry date.
+It pushes with the `HOMEBREW_TAP_TOKEN` secret: a fine-grained personal access token whose only permission is Contents read and write on `napwake/homebrew-tap`. Without the secret, or if the push fails, the job warns and the tap stays on the last release, while the release, and its docs, go ahead; once the token is fixed, re-run the job. Fine-grained tokens expire, so renew it before its expiry date.
 
 To check a change to the formula, render it from a release's archives and audit and install it from a local tap:
 
 ```bash
-gh release download v0.2.0 -R okedeji/hybernate -D /tmp/release \
-  -p 'kubectl-hybernate-darwin-*.tar.gz' -p 'kubectl-hybernate-linux-*.tar.gz'
-go run ./hack/brewformula -tag v0.2.0 -dir /tmp/release > kubectl-hybernate.rb
-brew tap-new hybernate/local --no-git
-cp kubectl-hybernate.rb "$(brew --repository hybernate/local)/Formula/"
-brew audit --strict --online --formula hybernate/local/kubectl-hybernate
-brew install hybernate/local/kubectl-hybernate
-brew test hybernate/local/kubectl-hybernate
-brew uninstall hybernate/local/kubectl-hybernate
-brew untap hybernate/local
+gh release download v0.2.0 -R napwake/napwake -D /tmp/release \
+  -p 'kubectl-napwake-darwin-*.tar.gz' -p 'kubectl-napwake-linux-*.tar.gz'
+go run ./hack/brewformula -tag v0.2.0 -dir /tmp/release > kubectl-napwake.rb
+brew tap-new napwake/local --no-git
+cp kubectl-napwake.rb "$(brew --repository napwake/local)/Formula/"
+brew audit --strict --online --formula napwake/local/kubectl-napwake
+brew install napwake/local/kubectl-napwake
+brew test napwake/local/kubectl-napwake
+brew uninstall napwake/local/kubectl-napwake
+brew untap napwake/local
 ```
 
 ### Krew
 
-Each release carries a krew manifest, `krew-hybernate.yaml`, which the release workflow writes with `hack/krew-manifest.sh` and checks with krew's `validate-krew-manifest`. Until the plugin is in [krew-index](https://github.com/kubernetes-sigs/krew-index), the docs install it from that manifest's URL.
+Each release carries a krew manifest, `krew-napwake.yaml`, which the release workflow writes with `hack/krew-manifest.sh` and checks with krew's `validate-krew-manifest`. Until the plugin is in [krew-index](https://github.com/kubernetes-sigs/krew-index), the docs install it from that manifest's URL.
 
 **Once 0.2.0 is released, submit the plugin to krew-index,** a pull request to that repository:
 
 1. Check the release's manifest installs on every platform. This needs [krew](https://krew.sigs.k8s.io/docs/user-guide/setup/install/) installed:
 
     ```bash
-    gh release download v0.2.0 -R okedeji/hybernate -p krew-hybernate.yaml
+    gh release download v0.2.0 -R napwake/napwake -p krew-napwake.yaml
     go install sigs.k8s.io/krew/cmd/validate-krew-manifest@v0.5.0
-    validate-krew-manifest -manifest krew-hybernate.yaml
+    validate-krew-manifest -manifest krew-napwake.yaml
     ```
 
-2. Fork [kubernetes-sigs/krew-index](https://github.com/kubernetes-sigs/krew-index), add the manifest as `plugins/hybernate.yaml`, and open a pull request. Krew's maintainers review a new plugin by hand, against their [naming guide](https://krew.sigs.k8s.io/docs/developer-guide/develop/naming-guide/) and [best practices](https://krew.sigs.k8s.io/docs/developer-guide/develop/best-practices/).
-3. Once it's merged, change the README's and the [plugin page's](getting-started/kubectl-plugin.md#installation) Krew instructions to `kubectl krew install hybernate`, without a manifest URL.
+2. Fork [kubernetes-sigs/krew-index](https://github.com/kubernetes-sigs/krew-index), add the manifest as `plugins/napwake.yaml`, and open a pull request. Krew's maintainers review a new plugin by hand, against their [naming guide](https://krew.sigs.k8s.io/docs/developer-guide/develop/naming-guide/) and [best practices](https://krew.sigs.k8s.io/docs/developer-guide/develop/best-practices/).
+3. Once it's merged, change the README's and the [plugin page's](getting-started/kubectl-plugin.md#installation) Krew instructions to `kubectl krew install napwake`, without a manifest URL.
 
-**For each later release,** open a pull request to krew-index that sets `plugins/hybernate.yaml`'s `version`, `uri`s and `sha256`s to those in the release's `krew-hybernate.yaml`. One that changes only those is tested and merged automatically. [krew-release-bot](https://github.com/rajatjindal/krew-release-bot) can open it from the release workflow.
+**For each later release,** open a pull request to krew-index that sets `plugins/napwake.yaml`'s `version`, `uri`s and `sha256`s to those in the release's `krew-napwake.yaml`. One that changes only those is tested and merged automatically. [krew-release-bot](https://github.com/rajatjindal/krew-release-bot) can open it from the release workflow.
 
 ### The docs site
 
@@ -204,9 +204,9 @@ The site keeps a version of the docs for each minor release, `0.2`, `0.3` and so
 
 - A release's docs go to its minor version, and to `latest` when it's the newest release. The site's root sends readers to `latest`, or to `next` until there's a release.
 - A release candidate's docs go to `next`, with a banner saying they're for a release candidate. The release it rehearses removes `next`.
-- A link without a version, such as `https://okedeji.io/hybernate/guides/gitops/`, which the operator and the plugin print, goes to the same page in the version the root sends readers to, through the `404.html` at the branch's root.
+- A link without a version, such as `https://docs.napwake.dev/guides/gitops/`, which the operator and the plugin print, goes to the same page in the version the root sends readers to, through the `404.html` at the branch's root.
 
-[`hack/docsite`](https://github.com/okedeji/hybernate/tree/main/hack/docsite) decides what a tag publishes, and never replaces a version's docs with an older release's. To republish a release's docs, run the docs workflow by hand with its tag. To see what a tag would publish, run it with `-dry-run` from a checkout with the docs requirements installed and the `gh-pages` branch fetched from `origin`:
+[`hack/docsite`](https://github.com/napwake/napwake/tree/main/hack/docsite) decides what a tag publishes, and never replaces a version's docs with an older release's. To republish a release's docs, run the docs workflow by hand with its tag. To see what a tag would publish, run it with `-dry-run` from a checkout with the docs requirements installed and the `gh-pages` branch fetched from `origin`:
 
 ```bash
 go run ./hack/docsite -tag v0.2.0 -dry-run
@@ -214,7 +214,7 @@ go run ./hack/docsite -tag v0.2.0 -dry-run
 
 `mkdocs serve` previews the docs you're editing, without versions; `mike serve` serves the versions on your local `gh-pages`.
 
-The site has no domain of its own: `okedeji.io` belongs to the owner's user site, `okedeji/okedeji.github.io`, and GitHub serves this repository's Pages under it, at `/hybernate/`. So `gh-pages` has no `CNAME` file, and mustn't get one: it would claim `okedeji.io` for this repository.
+The site is served from the root of `docs.napwake.dev`, which `mkdocs.yml`'s `site_url` names. `hack/docsite`'s 404 page sends links on from that root, and a test keeps the two the same. For GitHub Pages to serve `gh-pages` there, the domain needs a DNS `CNAME` record pointing at `napwake.github.io`, and the repository's Pages settings need it as their custom domain. Setting it commits a `CNAME` file to `gh-pages`, which mike leaves alone, as it does `404.html`.
 
 Moving the site from the old Actions deployment to `gh-pages` takes two settings, once the docs workflow has published the first release or release candidate since versioning, which creates the branch:
 

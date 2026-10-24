@@ -36,10 +36,10 @@ import (
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
-	v1alpha1 "github.com/okedeji/hybernate/api/v1alpha1"
-	"github.com/okedeji/hybernate/internal/discovery"
-	"github.com/okedeji/hybernate/internal/forecast"
-	opmetrics "github.com/okedeji/hybernate/internal/metrics"
+	v1alpha1 "github.com/napwake/napwake/api/v1alpha1"
+	"github.com/napwake/napwake/internal/discovery"
+	"github.com/napwake/napwake/internal/forecast"
+	opmetrics "github.com/napwake/napwake/internal/metrics"
 )
 
 // officePeaks are four weeks of an office-hours workload's hourly peaks,

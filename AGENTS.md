@@ -1,4 +1,4 @@
-# hybernate - AI Agent Guide
+# napwake - AI Agent Guide
 
 ## Project Structure
 

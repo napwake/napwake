@@ -25,17 +25,17 @@ import (
 	"k8s.io/apimachinery/pkg/api/meta"
 	"k8s.io/apimachinery/pkg/labels"
 
-	v1alpha1 "github.com/okedeji/hybernate/api/v1alpha1"
-	"github.com/okedeji/hybernate/internal/doorman"
-	"github.com/okedeji/hybernate/internal/forecast"
-	"github.com/okedeji/hybernate/internal/forecast/sim"
+	v1alpha1 "github.com/napwake/napwake/api/v1alpha1"
+	"github.com/napwake/napwake/internal/doorman"
+	"github.com/napwake/napwake/internal/forecast"
+	"github.com/napwake/napwake/internal/forecast/sim"
 )
 
-// ForecastOptions has a scan replay Hybernate's forecast over each
+// ForecastOptions has a scan replay Napwake's forecast over each
 // workload's history.
 type ForecastOptions struct {
 	// Confidence is the confidence threshold the forecast of a workload
-	// Hybernate doesn't manage acts at; managed ones use their own.
+	// Napwake doesn't manage acts at; managed ones use their own.
 	Confidence int
 	// Location is the operator's --timezone, whose hours and weekdays the
 	// forecast learns.
@@ -46,7 +46,7 @@ type ForecastOptions struct {
 // over: a day to learn from and a day to replay.
 const MinForecastHistory = 2 * 24 * time.Hour
 
-// ForecastReplay is what Hybernate's forecast would make of a workload's
+// ForecastReplay is what Napwake's forecast would make of a workload's
 // history: whether it would act were the workload opted in now, and how it
 // would have done over the last half of the history, had it learned the
 // first, waking the workload ahead of demand with autoResume.
@@ -56,7 +56,7 @@ type ForecastReplay struct {
 	// IfOptedIn is the forecast the operator would start a new
 	// ManagedWorkload with, having learned the whole history at once.
 	IfOptedIn ForecastOutlook `json:"ifOptedIn"`
-	// Live is the operator's own forecast's, for a workload Hybernate
+	// Live is the operator's own forecast's, for a workload Napwake
 	// manages.
 	Live *ForecastOutlook `json:"live,omitempty"`
 	// Replay is the last half of the history, replayed.
@@ -65,7 +65,7 @@ type ForecastReplay struct {
 	Wakes ReplayWakes `json:"wakes"`
 }
 
-// ReplayWakes is what wakes a paused workload, as it would under Hybernate,
+// ReplayWakes is what wakes a paused workload, as it would under Napwake,
 // and so what shows its demand while it's paused: a request through the
 // doorman, when one of its Services can be routed there, a Prometheus
 // activity query, when its ManagedWorkload has one, and people alone, with
@@ -104,7 +104,7 @@ var notRouted = map[string]string{
 }
 
 // optedInAsks is whether the ManagedWorkload opting a workload in would
-// have the doorman ask before waking it, by hybernate.io/wake as the opt-in
+// have the doorman ask before waking it, by napwake.dev/wake as the opt-in
 // controller resolves it: the workload's annotation, then its namespace's,
 // then the install's default, where a value that can't be read asks.
 func optedInAsks(workload, namespace map[string]string, install Install) bool {
@@ -120,9 +120,9 @@ func optedInAsks(workload, namespace map[string]string, install Install) bool {
 }
 
 // replayWakes is what would wake the workload were it paused: its
-// ManagedWorkload mw's, if Hybernate manages it, and otherwise what one
+// ManagedWorkload mw's, if Napwake manages it, and otherwise what one
 // opting it in would, asking before waking it as asks says, under install,
-// the Hybernate install that would manage it. A doorman that asks wakes it
+// the Napwake install that would manage it. A doorman that asks wakes it
 // only for a person, who can click Wake it only where the doorman routes
 // it: elsewhere nothing shows that nobody needed it, as without the doorman.
 func replayWakes(mw *v1alpha1.ManagedWorkload, asks bool, podLabels map[string]string,
@@ -145,7 +145,7 @@ func replayWakes(mw *v1alpha1.ManagedWorkload, asks bool, podLabels map[string]s
 // doorman off routes nothing. The operator's own verdict on the workload's
 // routing stands where it has one, as from its last pause; otherwise it's
 // judged from services, its namespace's Services, against its pods'
-// labels, and with none read, the doorman is assumed, as Hybernate's
+// labels, and with none read, the doorman is assumed, as Napwake's
 // default.
 func doormanRoutes(mw *v1alpha1.ManagedWorkload, podLabels map[string]string, services map[string]corev1.Service,
 	install Install) (bool, string) {
@@ -232,7 +232,7 @@ type ForecastOutlook struct {
 	Message string `json:"message,omitempty"`
 }
 
-// ForecastRun is Hybernate managing a workload over part of its history,
+// ForecastRun is Napwake managing a workload over part of its history,
 // with autoResume.
 type ForecastRun struct {
 	From time.Time `json:"from"`
@@ -285,7 +285,7 @@ func (r replay) recording() sim.Recorded {
 }
 
 // replayForecast replays the forecast over the workload's history, with
-// threshold its confidence threshold, mw its ManagedWorkload, if Hybernate
+// threshold its confidence threshold, mw its ManagedWorkload, if Napwake
 // manages it, and wakes what would wake it while it's paused.
 func replayForecast(r replay, threshold int, mw *v1alpha1.ManagedWorkload, wakes ReplayWakes,
 	opts ForecastOptions) *ForecastReplay {
@@ -378,7 +378,7 @@ func forecastRun(report sim.Report) *ForecastRun {
 }
 
 // confidenceFor is the confidence threshold a workload's forecast acts at:
-// its own when Hybernate manages it, otherwise the scan's.
+// its own when Napwake manages it, otherwise the scan's.
 func confidenceFor(mw *v1alpha1.ManagedWorkload, opts ForecastOptions) int {
 	if mw != nil {
 		return forecast.Threshold(forecast.Mode(mw.Spec.Prediction.Mode), mw.Spec.Prediction.Confidence)

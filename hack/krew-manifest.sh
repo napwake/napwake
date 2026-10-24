@@ -2,7 +2,7 @@
 # Writes the krew manifest for a release to stdout, from the plugin archives
 # in the current directory, which the release workflow builds.
 #
-#   hack/krew-manifest.sh v0.2.0 okedeji/hybernate > hybernate.yaml
+#   hack/krew-manifest.sh v0.2.0 napwake/napwake > napwake.yaml
 set -euo pipefail
 
 tag=$1
@@ -13,29 +13,29 @@ cat <<EOF
 apiVersion: krew.googlecontainertools.github.com/v1alpha2
 kind: Plugin
 metadata:
-  name: hybernate
+  name: napwake
 spec:
   version: ${tag}
   homepage: https://github.com/${repo}
   shortDescription: Find idle workloads, and pause and wake them
   description: |
-    Hybernate pauses idle Kubernetes workloads and wakes them when they're
+    Napwake pauses idle Kubernetes workloads and wakes them when they're
     used. This plugin works with it from the command line:
 
       scan     finds idle Deployments and StatefulSets and what they cost,
-               without Hybernate installed
-      status   shows what Hybernate is pausing, waking and saving
+               without Napwake installed
+      status   shows what Napwake is pausing, waking and saving
       nodes    shows why nodes aren't scaling down, so pausing saves money
       forecast replays the forecast over Prometheus history, to show when
                it would wake each workload
-      enable   ends dry-run, so Hybernate pauses a workload it's measuring
+      enable   ends dry-run, so Napwake pauses a workload it's measuring
       pause    pauses a workload now, to wake on its next request
       wake     wakes a paused workload and waits until it's ready
       deps     shows what a workload depends on and what depends on it
   caveats: |
     scan, nodes and forecast work on any cluster. status, enable, pause,
-    wake and deps need the Hybernate operator installed in it:
-    https://okedeji.io/hybernate/getting-started/installation/
+    wake and deps need the Napwake operator installed in it:
+    https://docs.napwake.dev/getting-started/installation/
   platforms:
 EOF
 
@@ -46,7 +46,7 @@ for platform in "${platforms[@]}"; do
   if [ "$os" = windows ]; then
     ext=.exe
   fi
-  archive=kubectl-hybernate-${os}-${arch}.tar.gz
+  archive=kubectl-napwake-${os}-${arch}.tar.gz
   sha=$(sha256sum "$archive" | cut -d' ' -f1)
   cat <<EOF
     - selector:
@@ -56,12 +56,12 @@ for platform in "${platforms[@]}"; do
       uri: https://github.com/${repo}/releases/download/${tag}/${archive}
       sha256: "${sha}"
       files:
-        - from: kubectl-hybernate-${os}-${arch}${ext}
-          to: kubectl-hybernate${ext}
+        - from: kubectl-napwake-${os}-${arch}${ext}
+          to: kubectl-napwake${ext}
         - from: LICENSE
           to: .
         - from: NOTICE
           to: .
-      bin: kubectl-hybernate${ext}
+      bin: kubectl-napwake${ext}
 EOF
 done

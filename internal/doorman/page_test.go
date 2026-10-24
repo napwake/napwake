@@ -192,7 +192,7 @@ func TestWritePage(t *testing.T) {
 	assert.Contains(t, body, "<header>admin.preview-42.example.dev</header>")
 	assert.Contains(t, body, `<li class="now">`)
 	assert.Contains(t, body, ">14s<")
-	assert.Contains(t, body, "Paused by Hybernate")
+	assert.Contains(t, body, "Paused by Napwake")
 }
 
 // The page is shown to whoever reaches the Service, so it says nothing about

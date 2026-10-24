@@ -2,7 +2,7 @@ apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRoleBinding
 metadata:
   labels:
-    app.kubernetes.io/name: hybernate
+    app.kubernetes.io/name: napwake
     app.kubernetes.io/managed-by: kustomize
   name: doorman-rolebinding
 roleRef:
@@ -19,7 +19,7 @@ apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRoleBinding
 metadata:
   labels:
-    app.kubernetes.io/name: hybernate
+    app.kubernetes.io/name: napwake
     app.kubernetes.io/managed-by: kustomize
   name: doorman-metrics-auth-rolebinding
 roleRef:

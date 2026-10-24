@@ -1,8 +1,8 @@
-apiVersion: hybernate.io/v1alpha1
+apiVersion: napwake.dev/v1alpha1
 kind: ManagedWorkload
 metadata:
   labels:
-    app.kubernetes.io/name: hybernate
+    app.kubernetes.io/name: napwake
     app.kubernetes.io/managed-by: kustomize
   name: managedworkload-sample
   namespace: staging
