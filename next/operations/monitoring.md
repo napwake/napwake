@@ -1,0 +1,180 @@
+# Monitoring
+
+> Scrape Napwake's metrics, load its alerts, and check the operator's and the doorman's health.
+
+Source: https://docs.napwake.dev/next/operations/monitoring/
+
+The operator and the doorman serve Prometheus metrics, and Napwake ships alerting rules. Every metric is in the [Metrics reference](https://docs.napwake.dev/next/reference/metrics/).
+
+## Prometheus
+
+### Scraping
+
+Metrics are served over HTTPS, only to a scraper whose token may `get` the `/metrics` URL.
+
+* Helm
+
+  Turn on the ServiceMonitors, for the operator and the doorman, and bind your Prometheus’s ServiceAccount to the chart’s `<fullname>-metrics-reader` ClusterRole:
+
+  napwake-values.yaml
+
+  ```yaml
+  metrics:
+    serviceMonitor:
+      enabled: true
+    prometheusRule:
+      enabled: true
+    readerSubjects:
+      - kind: ServiceAccount
+        name: prometheus-k8s
+        namespace: monitoring
+  ```
+
+* install.yaml or Kustomize
+
+  Apply the ServiceMonitors and alerting rules into `napwake-system` from the `config/prometheus` base, pinned to your release. Or add it to your kustomization’s `resources`:
+
+  ```bash
+  kubectl apply -k "https://github.com/napwake/napwake//config/prometheus?ref=v0.2.0-rc.9"
+  ```
+
+  Then bind your Prometheus’s ServiceAccount to the `napwake-metrics-reader` ClusterRole:
+
+  ```bash
+  kubectl create clusterrolebinding napwake-metrics-reader \
+    --clusterrole=napwake-metrics-reader --serviceaccount=monitoring:prometheus-k8s
+  ```
+
+| You see                                                                               | Fix                                                                                                                                                                                              |
+| ------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| Targets down with `401` or `403`, and `NapwakeDown` and `NapwakeDoormanDown` firing   | Bind the ServiceAccount, as above. Or set `metrics.secure: false` for plain HTTP with no binding, which anyone who can reach the port can read                                                   |
+| Targets that never appear                                                             | Give the ServiceMonitors a label your Prometheus’s `serviceMonitorSelector` (and `serviceMonitorNamespaceSelector`) matches. The chart’s carry none a Prometheus selects by default              |
+| Alerts naming the wrong namespace, or merging same-named workloads                    | In your own scrape config, set `honor_labels: true`, as the ServiceMonitors’ `honorLabels: true` does. Without it, the workload’s `namespace` label becomes the scraped pod’s (`napwake-system`) |
+| Prometheus refusing `bearerTokenFile`, under `arbitraryFSAccessThroughSMs.deny: true` | Scrape with `metrics.secure: false` behind a NetworkPolicy, or with a scrape config of your own                                                                                                  |
+
+[kube-prometheus-stack](https://github.com/prometheus-community/helm-charts/tree/main/charts/kube-prometheus-stack) selects `release: <its release name>`, and its Prometheus runs as the `<its release name>-kube-prometheus-prometheus` ServiceAccount. For a stack installed as `kube-prometheus-stack` in `monitoring`:
+
+napwake-values.yaml
+
+```yaml
+metrics:
+  serviceMonitor:
+    enabled: true
+    additionalLabels:
+      release: kube-prometheus-stack
+  prometheusRule:
+    enabled: true
+    additionalLabels:
+      release: kube-prometheus-stack
+  readerSubjects:
+    - kind: ServiceAccount
+      name: kube-prometheus-stack-kube-prometheus-prometheus
+      namespace: monitoring
+```
+
+Check what yours selects (and its `ruleSelector`, for the PrometheusRule), and its ServiceAccount:
+
+```bash
+kubectl get prometheus -A -o jsonpath='{range .items[*]}{.metadata.name}: {.spec.serviceMonitorSelector}{"\n"}{end}'
+kubectl get prometheus -A -o jsonpath='{.items[*].spec.serviceAccountName}'
+```
+
+The ServiceMonitors authenticate with the Prometheus’s own ServiceAccount token, through `bearerTokenFile`. The Prometheus Operator deprecates that for `authorization`, which takes a token only from a Secret. You’d have to create and keep a long-lived one.
+
+### Key metrics to watch
+
+**Cluster health dashboard:**
+
+```promql
+# Is the operator acting on workloads?
+rate(napwake_lifecycle_transitions_total[1h])
+
+
+# Are there errors?
+rate(napwake_reconcile_errors_total[5m]) > 0
+
+
+# Are requests to paused workloads waking them?
+sum by (result) (rate(napwake_doorman_wakes_total[1h]))
+```
+
+**Per-workload health:**
+
+```promql
+# Is the prediction engine learning?
+napwake_prediction_confidence_percent{season="daily"}
+
+
+# Are workloads cycling too fast?
+rate(napwake_lifecycle_transitions_total[1h])
+
+
+# Is a workload paused while it's in use?
+increase(napwake_wrong_pauses_total[1h]) > 0
+```
+
+A workload paused while in use gets a `PausedWhileInUse` warning, with what to change ([Paused while in use](https://docs.napwake.dev/next/concepts/idle-detection/#paused-while-in-use)).
+
+## Alerting rules
+
+The chart creates these with `metrics.prometheusRule.enabled: true`. For `install.yaml` or the Kustomize manifests, [`config/prometheus`](https://docs.napwake.dev/next/operations/monitoring/#scraping) creates the same rules.
+
+| Alert                        | Fires when                                                                                                                                                                                                                      | Severity |
+| ---------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------- |
+| `NapwakeReconcileErrorsHigh` | Reconcile errors exceed 0.1/sec for 10 minutes                                                                                                                                                                                  | critical |
+| `NapwakeDown`                | No healthy operator target has been scraped for 5 minutes, so nothing is paused or woken                                                                                                                                        | critical |
+| `NapwakeDoormanDown`         | No healthy doorman target has been scraped for 5 minutes, so requests to paused workloads fail instead of waking them. Only with the doorman enabled                                                                            | critical |
+| `NapwakeDoormanCantListen`   | For 5 minutes, a doorman pod can’t listen on a routed port. Or two routes claim one port, which every pod refuses. Requests to the paused workloads behind those ports fail                                                     | critical |
+| `NapwakeWorkloadStuck`       | A workload stays in `Pausing` or `Resuming` for 15 minutes                                                                                                                                                                      | warning  |
+| `NapwakeTargetUnavailable`   | A ManagedWorkload’s target goes missing more than 3 times in an hour                                                                                                                                                            | warning  |
+| `NapwakeDoormanWakesFailing` | More than 3 requests to one paused workload timed out or failed (`result` `timeout` or `error`) in 15 minutes, for 5 minutes                                                                                                    | warning  |
+| `NapwakeWakesSlow`           | For 5 minutes, one in ten requests the doorman held in the last 30 minutes waited over a minute. A minute is half the default `wake.maxWait`. Requests passed straight to woken pods don’t count, and it takes 3 waits at least | warning  |
+| `NapwakeDoormanNearCapacity` | For 5 minutes, a doorman pod carries over 80% of the 2048 held or 1024 proxied connections it takes. Past them it refuses or delays requests ([Limits](https://docs.napwake.dev/next/concepts/wake-on-request/#limits))                                 | warning  |
+| `NapwakePausesUndone`        | Something outside Napwake, such as a GitOps tool, scaled a paused workload back up at least 3 times in 6 hours                                                                                                                  | warning  |
+| `NapwakeActivityUnreadable`  | For 30 minutes, Napwake can’t read a workload’s CPU while it’s awake, or its Prometheus activity queries. Until it can, it doesn’t pause the workload                                                                           | warning  |
+| `NapwakeResumeIncomplete`    | A woken workload has run with replicas not Ready for 15 minutes (`ResumeIncomplete`)                                                                                                                                            | warning  |
+| `NapwakePausedWhileInUse`    | At least 3 times in a day, Napwake paused a workload while it was in use. Each time, something soon woke it                                                                                                                     | warning  |
+
+`NapwakeDown` and `NapwakeDoormanDown` match the ServiceMonitors’ scrape job. Without it they’d fire forever, so the chart creates them only with `metrics.serviceMonitor.enabled`. Scraping Napwake another way, write them on your own job’s `up` series.
+
+## Health checks
+
+Both serve health endpoints on port 8081, which the chart and the Kustomize manifests use as liveness and readiness probes. Forward the port to check one, here the operator’s from a Helm install named `napwake`:
+
+```bash
+kubectl port-forward -n napwake-system deployment/napwake 8081:8081
+
+
+# Liveness
+curl http://localhost:8081/healthz
+
+
+# Readiness
+curl http://localhost:8081/readyz
+```
+
+## Operator logs
+
+Logs are JSON by default. These label selectors work for every install:
+
+```bash
+kubectl logs -n napwake-system -l control-plane=controller-manager -f
+kubectl logs -n napwake-system -l control-plane=doorman -f
+```
+
+The Deployments are `napwake` and `napwake-doorman` for a Helm release named `napwake`, or `napwake-controller-manager` and `napwake-doorman` from `install.yaml` or Kustomize.
+
+| Log entry                                     | Means                                                        |
+| --------------------------------------------- | ------------------------------------------------------------ |
+| `"phase transition"`                          | A lifecycle state change, with `from`, `to` and `reason`     |
+| `"paused workload scaled up outside Napwake"` | Someone scaled up a paused workload                          |
+| `"managing workload from its label"`          | The opt-in controller created a ManagedWorkload              |
+| `"routing requests through the doorman"`      | An error routing a paused workload’s Services to the doorman |
+| `"ignoring malformed activity annotation"`    | An activity annotation that isn’t an RFC 3339 time           |
+
+Forecast regime changes, idle detection and wakes are ManagedWorkload [events](https://docs.napwake.dev/next/reference/conditions-and-events/#events), not log entries.
+
+Next
+
+* [Metrics reference →Every metric, and what it measures.](https://docs.napwake.dev/next/reference/metrics/)
+* [Troubleshooting →Common problems, and how to fix them.](https://docs.napwake.dev/next/operations/troubleshooting/)

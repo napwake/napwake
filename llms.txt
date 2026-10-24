@@ -1,0 +1,43 @@
+# Napwake
+
+> Pauses idle Kubernetes workloads in staging, preview and dev, and wakes them on the first request.
+
+Napwake pauses idle Kubernetes workloads in staging, preview and dev, and wakes them on the first request. It never deletes a workload or its data. It's open source (Apache 2.0): an operator, a `kubectl napwake` plugin, a Helm chart, and these docs.
+
+It's for platform and infrastructure engineers who run non-production environments on their own Kubernetes clusters. Behind a VPN, SSO or an IP allowlist, a paused environment wakes on its first request. On the public internet, robots would wake it every few minutes, so set it to ask first. A browser then gets a Wake it button, so people wake it and robots don't. Tooling wakes it with an annotation, and the forecast learns when people come.
+
+In short: label a Deployment, StatefulSet or namespace `napwake.dev/managed: "true"`. Napwake pauses the workload, scaling it to zero, once nothing has been active for `idleAfter` (an hour by default): CPU above its threshold, a deploy, an activity annotation or a Prometheus query all count as activity. While it's paused, its Services are routed to the doorman, a proxy that holds the first request and wakes it. With `autoResume`, a forecast wakes it 15 minutes before an hour it expects to be busy. `kubectl napwake scan` shows what's idle with nothing installed in the cluster.
+
+Key pages, each as Markdown:
+
+- [Installation](https://docs.napwake.dev/next/getting-started/installation.md): Helm or the Kustomize manifests, with Argo CD or Flux
+- [Quickstart](https://docs.napwake.dev/next/getting-started/quickstart.md): one workload from idle to paused while idle and woken when used, measured first
+- [kubectl plugin](https://docs.napwake.dev/next/getting-started/kubectl-plugin.md): scan, forecast, status, nodes, pause, wake, deps and enable
+- [Opting in](https://docs.napwake.dev/next/guides/opt-in.md): the label, every setting as an annotation, namespaces, Kustomize and GitOps
+- [Public preview environments](https://docs.napwake.dev/next/guides/preview-environments.md): asking before waking, so people wake an environment on a public URL and robots don't
+- [Idle detection](https://docs.napwake.dev/next/concepts/idle-detection.md): what counts as activity, and when a workload pauses
+- [Wake on request](https://docs.napwake.dev/next/concepts/wake-on-request.md): how the doorman holds a request and wakes a paused workload
+- [Forecasting](https://docs.napwake.dev/next/concepts/forecasting.md): the Holt-Winters model, `autoResume` and `pauseEarly`
+- [GitOps tools](https://docs.napwake.dev/next/guides/gitops.md): leaving replicas to Napwake under Argo CD, Flux, Fleet, kapp and Kluctl
+- [Labels and annotations](https://docs.napwake.dev/next/reference/labels-annotations.md): every label and annotation Napwake reads or writes
+- [kubectl plugin reference](https://docs.napwake.dev/next/reference/cli.md): every flag, JSON field, exit status and permission of the plugin's commands
+- [Conditions and events](https://docs.napwake.dev/next/reference/conditions-and-events.md): every status condition, with its reasons, and every event
+- [Helm values](https://docs.napwake.dev/next/reference/helm-values.md): every value of the chart
+- [Troubleshooting](https://docs.napwake.dev/next/operations/troubleshooting.md): common problems, and how to fix them
+
+Every page is also at its address with `.md` added. These docs name a workload's states paused, resuming and running; pictures and the home page call them asleep, waking up and awake.
+
+## Documentation Sets
+
+- [Abridged documentation](https://docs.napwake.dev/next/llms-small.txt): a compact version of the documentation for Napwake, with non-essential content removed
+- [Complete documentation](https://docs.napwake.dev/next/llms-full.txt): the full documentation for Napwake
+
+## Notes
+
+- The complete documentation includes all content from the official documentation
+- The content is automatically generated from the same source as the official documentation
+
+## Optional
+
+- [Source code](https://github.com/napwake/napwake): the operator, the kubectl plugin, the Helm chart and these docs
+- [napwake.dev](https://napwake.dev/): Napwake's website

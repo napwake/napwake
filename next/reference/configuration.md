@@ -1,0 +1,233 @@
+# Configuration reference
+
+> Every flag of the binary, with its default, for running Napwake from your own manifests.
+
+Source: https://docs.napwake.dev/next/reference/configuration/
+
+The binary is `/manager`. The Helm chart sets its flags from its [values](https://docs.napwake.dev/next/reference/helm-values/), so you need them only for your own manifests.
+
+[Metrics and probes 7](https://docs.napwake.dev/next/reference/configuration/#metrics-and-probes)
+
+* [`--metrics-bind-address`](https://docs.napwake.dev/next/reference/configuration/#flag-metrics-bind-address)
+* [`--metrics-secure`](https://docs.napwake.dev/next/reference/configuration/#flag-metrics-secure)
+* [`--metrics-cert-path`](https://docs.napwake.dev/next/reference/configuration/#flag-metrics-cert-path)
+* [`--metrics-cert-name`](https://docs.napwake.dev/next/reference/configuration/#flag-metrics-cert-name)
+* [`--metrics-cert-key`](https://docs.napwake.dev/next/reference/configuration/#flag-metrics-cert-key)
+* [`--enable-http2`](https://docs.napwake.dev/next/reference/configuration/#flag-enable-http2)
+* [`--health-probe-bind-address`](https://docs.napwake.dev/next/reference/configuration/#flag-health-probe-bind-address)
+
+[Operator 4](https://docs.napwake.dev/next/reference/configuration/#operator)
+
+* [`--leader-elect`](https://docs.napwake.dev/next/reference/configuration/#flag-leader-elect)
+* [`--max-concurrent-reconciles`](https://docs.napwake.dev/next/reference/configuration/#flag-max-concurrent-reconciles)
+* [`--timezone`](https://docs.napwake.dev/next/reference/configuration/#flag-timezone)
+* [`--kubeconfig`](https://docs.napwake.dev/next/reference/configuration/#flag-kubeconfig)
+
+[Prometheus 2](https://docs.napwake.dev/next/reference/configuration/#prometheus)
+
+* [`--prometheus-url`](https://docs.napwake.dev/next/reference/configuration/#flag-prometheus-url)
+* [`--prometheus-selector`](https://docs.napwake.dev/next/reference/configuration/#flag-prometheus-selector)
+
+[Namespaces 2](https://docs.napwake.dev/next/reference/configuration/#namespaces)
+
+* [`--watch-namespaces`](https://docs.napwake.dev/next/reference/configuration/#flag-watch-namespaces)
+* [`--protected-namespaces`](https://docs.napwake.dev/next/reference/configuration/#flag-protected-namespaces)
+
+[Opt-in defaults 6](https://docs.napwake.dev/next/reference/configuration/#opt-in-defaults)
+
+* [`--default-idle-after`](https://docs.napwake.dev/next/reference/configuration/#flag-default-idle-after)
+* [`--default-cpu-threshold`](https://docs.napwake.dev/next/reference/configuration/#flag-default-cpu-threshold)
+* [`--default-dry-run`](https://docs.napwake.dev/next/reference/configuration/#flag-default-dry-run)
+* [`--default-pause-early`](https://docs.napwake.dev/next/reference/configuration/#flag-default-pause-early)
+* [`--default-forecast`](https://docs.napwake.dev/next/reference/configuration/#flag-default-forecast)
+* [`--default-wake`](https://docs.napwake.dev/next/reference/configuration/#flag-default-wake)
+
+[Doorman 6](https://docs.napwake.dev/next/reference/configuration/#doorman)
+
+* [`--doorman-service`](https://docs.napwake.dev/next/reference/configuration/#flag-doorman-service)
+* [`--doorman-ports-per-workload`](https://docs.napwake.dev/next/reference/configuration/#flag-doorman-ports-per-workload)
+* [`--doorman-ports-per-namespace`](https://docs.napwake.dev/next/reference/configuration/#flag-doorman-ports-per-namespace)
+* [`--doorman-namespace`](https://docs.napwake.dev/next/reference/configuration/#flag-doorman-namespace)
+* [`--doorman-health-check-user-agents`](https://docs.napwake.dev/next/reference/configuration/#flag-doorman-health-check-user-agents)
+* [`--wake-key-secret`](https://docs.napwake.dev/next/reference/configuration/#flag-wake-key-secret)
+
+[GKE forwarder 5](https://docs.napwake.dev/next/reference/configuration/#gke-forwarder)
+
+* [`--neg-forwarder`](https://docs.napwake.dev/next/reference/configuration/#flag-neg-forwarder)
+* [`--neg-forwarder-image`](https://docs.napwake.dev/next/reference/configuration/#flag-neg-forwarder-image)
+* [`--neg-forwarder-replicas`](https://docs.napwake.dev/next/reference/configuration/#flag-neg-forwarder-replicas)
+* [`--neg-forwarder-resources`](https://docs.napwake.dev/next/reference/configuration/#flag-neg-forwarder-resources)
+* [`--neg-forwarder-doorman-service`](https://docs.napwake.dev/next/reference/configuration/#flag-neg-forwarder-doorman-service)
+
+[Modes 3](https://docs.napwake.dev/next/reference/configuration/#modes)
+
+* [`--doorman`](https://docs.napwake.dev/next/reference/configuration/#flag-doorman)
+* [`--forwarder`](https://docs.napwake.dev/next/reference/configuration/#flag-forwarder)
+* [`--guard`](https://docs.napwake.dev/next/reference/configuration/#flag-guard)
+
+[Logging 5](https://docs.napwake.dev/next/reference/configuration/#logging)
+
+* [`--zap-log-level`](https://docs.napwake.dev/next/reference/configuration/#flag-zap-log-level)
+* [`--zap-encoder`](https://docs.napwake.dev/next/reference/configuration/#flag-zap-encoder)
+* [`--zap-devel`](https://docs.napwake.dev/next/reference/configuration/#flag-zap-devel)
+* [`--zap-stacktrace-level`](https://docs.napwake.dev/next/reference/configuration/#flag-zap-stacktrace-level)
+* [`--zap-time-encoding`](https://docs.napwake.dev/next/reference/configuration/#flag-zap-time-encoding)
+
+[Endpoints 3](https://docs.napwake.dev/next/reference/configuration/#endpoints)
+
+* [`/healthz`](https://docs.napwake.dev/next/reference/configuration/#endpoint-healthz)
+* [`/readyz`](https://docs.napwake.dev/next/reference/configuration/#endpoint-readyz)
+* [`/metrics`](https://docs.napwake.dev/next/reference/configuration/#endpoint-metrics)
+
+## Operator flags
+
+### Metrics and probes
+
+| Flag                          | Default        | Description                                                                                                                                                                                                                                                                            |
+| ----------------------------- | -------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `--metrics-bind-address`      | `0` (disabled) | Metrics address, `:8443` for HTTPS or `:8080` for HTTP. The chart and the Kustomize manifests use `:8443`                                                                                                                                                                              |
+| `--metrics-secure`            | `true`         | HTTPS, only to callers allowed to `get` `/metrics` (TokenReview, SubjectAccessReview). A scraper needs such a token, which the chart’s `metrics.readerSubjects` binds ([Monitoring](https://docs.napwake.dev/next/operations/monitoring/)). `false` is plain HTTP. See [TLS configuration](https://docs.napwake.dev/next/reference/configuration/#tls-configuration) |
+| `--metrics-cert-path`         |                | Metrics TLS certificate directory. Without it, a self-signed one is generated                                                                                                                                                                                                          |
+| `--metrics-cert-name`         | `tls.crt`      | Certificate file                                                                                                                                                                                                                                                                       |
+| `--metrics-cert-key`          | `tls.key`      | Key file                                                                                                                                                                                                                                                                               |
+| `--enable-http2`              | `false`        | Allow HTTP/2 for metrics                                                                                                                                                                                                                                                               |
+| `--health-probe-bind-address` | `:8081`        | Probe address. See [Endpoints](https://docs.napwake.dev/next/reference/configuration/#endpoints)                                                                                                                                                                                                                                             |
+
+### Operator
+
+| Flag                          | Default    | Description                                                                                                                                                                                                                  |
+| ----------------------------- | ---------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `--leader-elect`              | `false`    | One replica reconciles. A leader that stops releases its lease, so the next, or a rollout’s new one, takes over at once. Ignored by the doorman, where every replica serves traffic. See [Leader election](https://docs.napwake.dev/next/reference/configuration/#leader-election) |
+| `--max-concurrent-reconciles` | `8`        | ManagedWorkloads reconciled at once, so a slow metrics or Prometheus query doesn’t hold up wakes, which queue ahead of periodic checks. At least 1                                                                           |
+| `--timezone`                  | `UTC`      | IANA zone, such as `Europe/London`, for forecasts’ hours and weekdays, so they follow daylight saving. Zone database built in                                                                                                |
+| `--kubeconfig`                | in-cluster | Kubeconfig path, outside the cluster only                                                                                                                                                                                    |
+
+### Prometheus
+
+| Flag                    | Default | Description                                                                                                                                                                                                                                                                                                                                                                                       |
+| ----------------------- | ------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `--prometheus-url`      |         | Prometheus API base URL, `http` or `https` with a host, such as `http://prometheus.monitoring.svc:9090`. Needed for `idlePolicy.activity.prometheus`. Starts each new workload’s forecast from up to four weeks of CPU history. See [Learning from history](https://docs.napwake.dev/next/concepts/forecasting/#learning-from-history)                                                                                    |
+| `--prometheus-selector` |         | Matchers added to the operator’s own (history) query, such as `cluster="staging"`. Written as inside PromQL’s braces, with `=`, `!=`, `=~` or `!~` and a double-quoted or backquoted value, comma-separated. For a Prometheus with several clusters’ series, so another cluster’s same-named pods aren’t read as this one’s. Workloads’ activity queries run as written. Needs `--prometheus-url` |
+
+### Namespaces
+
+| Flag                     | Default         | Description                                                                                                                                                                                                                                                                                                                  |
+| ------------------------ | --------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `--watch-namespaces`     | every namespace | Comma-separated namespaces to work in, a Role in each                                                                                                                                                                                                                                                                        |
+| `--protected-namespaces` |                 | Comma-separated patterns, such as `prod-*`, of namespaces never managed, as if labelled `napwake.dev/protected=true`, unless labelled `napwake.dev/allow-protected=true`. `kube-*`, `$POD_NAMESPACE` and the doorman’s namespace are always protected. See [Protected namespaces](https://docs.napwake.dev/next/guides/opt-in/#protected-namespaces) |
+
+### Opt-in defaults
+
+For workloads opted in with the label, when neither they nor their namespace set it.
+
+| Flag                      | Default    | Description                                                                                                                                                                              |
+| ------------------------- | ---------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `--default-idle-after`    | `1h`       | Idle time before pausing. At least `1m`                                                                                                                                                  |
+| `--default-cpu-threshold` | `10`       | CPU % of requests that counts as active. 0.1 to 100, at most two decimal places                                                                                                          |
+| `--default-dry-run`       | `false`    | Measure without pausing, unless `napwake.dev/dry-run` is set                                                                                                                             |
+| `--default-pause-early`   | `false`    | Let a confident forecast of quiet hours pause before `idleAfter` runs out, unless `napwake.dev/pause-early` is set. See [Pausing early](https://docs.napwake.dev/next/concepts/forecasting/#pausing-early)       |
+| `--default-forecast`      | `balanced` | How soon the forecast acts, `eager`, `balanced` or `cautious`, unless `napwake.dev/forecast` is set                                                                                      |
+| `--default-wake`          | `request`  | What wakes a paused workload through the doorman, `request` or `ask`, unless `napwake.dev/wake` is set. See [Asking before waking](https://docs.napwake.dev/next/concepts/wake-on-request/#asking-before-waking) |
+
+### Doorman
+
+| Flag                                 | Default                                 | Description                                                                                                                                                                                                                                                                                                                                                       |
+| ------------------------------------ | --------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `--doorman-service`                  | `napwake-doorman`                       | The doorman’s Service, where paused workloads are routed. Empty turns off wake on request                                                                                                                                                                                                                                                                         |
+| `--doorman-ports-per-workload`       | `32`                                    | Most doorman ports per workload, one per routed Service port. Over it, it isn’t routed (`WakeOnRequest=False`, reason `TooManyPorts`)                                                                                                                                                                                                                             |
+| `--doorman-ports-per-namespace`      | `256`                                   | Most doorman ports per namespace, its workloads together                                                                                                                                                                                                                                                                                                          |
+| `--doorman-namespace`                | `$POD_NAMESPACE`, else `napwake-system` | The doorman Service’s namespace                                                                                                                                                                                                                                                                                                                                   |
+| `--doorman-health-check-user-agents` |                                         | Comma-separated `User-Agent` prefixes of health checkers and scrapers, besides the built-in ones, whose `GET` and `HEAD` don’t wake a workload. Helm value `doorman.healthCheckUserAgents`                                                                                                                                                                        |
+| `--wake-key-secret`                  |                                         | The doorman’s. A Secret in its namespace holding the key it signs the [Wake it button](https://docs.napwake.dev/next/concepts/wake-on-request/#the-wake-it-button) with, which it fills when empty. Every replica must share it, since a click can reach any of them. Without it, each signs with its own, which works only for one replica. The chart sets `<fullname>-doorman-wake-key` |
+
+### GKE forwarder
+
+| Flag                              | Default                                                                 | Description                                                                                                                                                                                                                                                                                                                                                       |
+| --------------------------------- | ----------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `--neg-forwarder`                 | `false`                                                                 | Route Services behind GKE NEGs through a forwarder Deployment the operator runs in each paused workload’s namespace, instead of leaving them unrouted. Needs `create` and `delete` on Deployments. Helm value `doorman.negForwarder.enabled`. See [GKE container-native load balancing](https://docs.napwake.dev/next/concepts/wake-on-request/#gke-container-native-load-balancing-negs) |
+| `--neg-forwarder-image`           |                                                                         | The forwarders’ image, the operator’s own. Required with `--neg-forwarder`                                                                                                                                                                                                                                                                                        |
+| `--neg-forwarder-replicas`        | `2`                                                                     | Pods per forwarder. At least 1                                                                                                                                                                                                                                                                                                                                    |
+| `--neg-forwarder-resources`       | `{"requests":{"cpu":"10m","memory":"32Mi"},"limits":{"memory":"64Mi"}}` | Each forwarder pod’s resources, as JSON                                                                                                                                                                                                                                                                                                                           |
+| `--neg-forwarder-doorman-service` | `napwake-doorman-pods`                                                  | Headless Service in `--doorman-namespace` selecting the doorman’s pods, whose DNS name forwarders resolve                                                                                                                                                                                                                                                         |
+
+### Modes
+
+| Flag          | Default | Description                                                                                                                                                                                                                                                                                                                                                                                                           |
+| ------------- | ------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `--doorman`   | `false` | Run as the doorman instead of the operator. The doorman Deployment sets it                                                                                                                                                                                                                                                                                                                                            |
+| `--forwarder` | `false` | Run as a [forwarder](https://docs.napwake.dev/next/concepts/wake-on-request/#gke-container-native-load-balancing-negs) instead of the operator. The operator’s forwarder Deployments set it, with `--forward` (routes, comma-separated `listen=doorman` port pairs) and `--forwarder-doorman` (the doorman pods’ DNS name)                                                                                                                    |
+| `--guard`     |         | Run as the chart’s `uninstall` or `upgrade` hook (`guard.uninstall`, `guard.upgrade`). Waits up to two and a half minutes for ManagedWorkloads being deleted, then exits 1, listing those left without an operator. `uninstall` counts every one in `--watch-namespaces` (all when empty) or with the `napwake.dev/cleanup` finalizer. `upgrade` counts those with the finalizer outside the new `--watch-namespaces` |
+
+### Checked at startup
+
+The operator exits with an error naming the flag.
+
+| Flag                                                                                           | Refused when                                          |
+| ---------------------------------------------------------------------------------------------- | ----------------------------------------------------- |
+| `--protected-namespaces`                                                                       | A pattern isn’t a valid glob                          |
+| `--prometheus-url`                                                                             | Not `http` or `https` with a host                     |
+| `--prometheus-selector`                                                                        | Not label matchers, or set without `--prometheus-url` |
+| `--default-idle-after`                                                                         | Under `1m`                                            |
+| `--default-cpu-threshold`                                                                      | Outside 0.1 to 100, or more than two decimal places   |
+| `--default-forecast`                                                                           | Not `eager`, `balanced` or `cautious`                 |
+| `--default-wake`                                                                               | Not `request` or `ask`                                |
+| `--max-concurrent-reconciles`, `--doorman-ports-per-workload`, `--doorman-ports-per-namespace` | Below 1                                               |
+| `--timezone`                                                                                   | Not a known IANA zone                                 |
+
+## Endpoints
+
+| Endpoint                 | Port                                                                   | Answers                                                                                                                                                                                                    |
+| ------------------------ | ---------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `/healthz`               | 8081                                                                   | Liveness. 200 while the process runs                                                                                                                                                                       |
+| `/readyz`                | 8081                                                                   | Readiness. For the doorman, 200 once its routes are loaded and it reached the API server in the last 30 seconds. Fails while it can’t listen on a routed port for over 30 seconds, and while shutting down |
+| `/readyz`, a forwarder’s | 8081, or the next port the workload doesn’t serve, for both its probes | 200 while it reaches the doorman on every port it passes connections to. Fails once it starts shutting down                                                                                                |
+| `/metrics`               | 8443 in the chart                                                      | Prometheus metrics, HTTPS by default. See [Metrics](https://docs.napwake.dev/next/reference/metrics/)                                                                                                                              |
+
+## Leader election
+
+```plaintext
+--leader-elect=true
+```
+
+For HA, with more than one replica. The leader holds the Lease `479a98fc.napwake.dev` in the operator’s namespace. A standby takes over if it fails.
+
+## TLS configuration
+
+```plaintext
+--metrics-secure=false --metrics-bind-address=:8080
+```
+
+Plain HTTP. Not for production.
+
+```plaintext
+--metrics-cert-path=/certs/metrics
+```
+
+Your own certificate, not a self-signed one.
+
+## Logging
+
+| Flag                     | Default  | Description                                                                                                                                                                     |
+| ------------------------ | -------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `--zap-log-level`        | `info`   | `debug`, `info`, `error`, `panic`, or a whole number above 0 for more verbose debug levels                                                                                      |
+| `--zap-encoder`          | `json`   | `json`, or `console` for logs to read by eye (`--zap-encoder=console`, the chart’s `logEncoder: console`). The operator and the doorman log through `logr` (controller-runtime) |
+| `--zap-devel`            | `false`  | Development defaults, with console encoding, debug level and stack traces from warnings                                                                                         |
+| `--zap-stacktrace-level` | `error`  | The level stack traces start at, `info`, `error` or `panic`                                                                                                                     |
+| `--zap-time-encoding`    | RFC 3339 | `epoch`, `millis`, `nano`, `iso8601`, `rfc3339` or `rfc3339nano`                                                                                                                |
+
+The key fields in log entries.
+
+| Field               | What it holds                                                                                                                            |
+| ------------------- | ---------------------------------------------------------------------------------------------------------------------------------------- |
+| `name`, `namespace` | The object reconciled, such as the ManagedWorkload. controller-runtime adds them to all its entries, with `controller` and `reconcileID` |
+| `workload`          | The workload or ManagedWorkload an entry names itself, with its `namespace`                                                              |
+| `from`, `to`        | Phases of a `phase transition` entry                                                                                                     |
+| `reason`            | What caused a phase transition                                                                                                           |
+| `phase`             | Phase after a reconcile, on `reconciled` entries at debug level (`--zap-log-level=debug`)                                                |
+| `error`             | What went wrong, on failure entries                                                                                                      |
+
+Next
+
+* [Helm values →The chart values that set these flags.](https://docs.napwake.dev/next/reference/helm-values/)
+* [Metrics →What /metrics serves.](https://docs.napwake.dev/next/reference/metrics/)
+* [Monitoring →Scraping and alerts.](https://docs.napwake.dev/next/operations/monitoring/)

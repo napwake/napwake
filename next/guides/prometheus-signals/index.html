@@ -1,2021 +1,185 @@
-
-<!doctype html>
-<html lang="en" class="no-js">
-  <head>
-    
-      <meta charset="utf-8">
-      <meta name="viewport" content="width=device-width,initial-scale=1">
-      
-        <meta name="description" content="Intelligent Kubernetes workload lifecycle management">
-      
-      
-      
-        <link rel="canonical" href="https://okedeji.io/hybernate/latest/guides/prometheus-signals/">
-      
-      
-        <link rel="prev" href="../dry-run/">
-      
-      
-        <link rel="next" href="../gitops/">
-      
-      
-        
-      
-      
-      <link rel="icon" href="../../assets/favicon.svg">
-      <meta name="generator" content="mkdocs-1.6.1, mkdocs-material-9.7.7">
-    
-    
-      
-        <title>Prometheus Activity - Hybernate</title>
-      
-    
-    
-      <link rel="stylesheet" href="../../assets/stylesheets/main.ec1eaa64.min.css">
-      
-        
-        <link rel="stylesheet" href="../../assets/stylesheets/palette.ab4e12ef.min.css">
-      
-      
-
-
-    
-    
-      
-    
-    
-      
-        
-        
-        <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-        <link rel="stylesheet" href="https://fonts.googleapis.com/css?family=Roboto:300,300i,400,400i,700,700i%7CRoboto+Mono:400,400i,700,700i&display=fallback">
-        <style>:root{--md-text-font:"Roboto";--md-code-font:"Roboto Mono"}</style>
-      
-    
-    
-      <link rel="stylesheet" href="../../stylesheets/custom.css">
-    
-    <script>__md_scope=new URL("../..",location),__md_hash=e=>[...e].reduce(((e,_)=>(e<<5)-e+_.charCodeAt(0)),0),__md_get=(e,_=localStorage,t=__md_scope)=>JSON.parse(_.getItem(t.pathname+"."+e)),__md_set=(e,_,t=localStorage,a=__md_scope)=>{try{t.setItem(a.pathname+"."+e,JSON.stringify(_))}catch(e){}}</script>
-    
-      
-
-    
-    
-  </head>
-  
-  
-    
-    
-    
-    
-    
-    <body dir="ltr" data-md-color-scheme="default" data-md-color-primary="white" data-md-color-accent="black">
-  
-    
-    <input class="md-toggle" data-md-toggle="drawer" type="checkbox" id="__drawer" autocomplete="off">
-    <input class="md-toggle" data-md-toggle="search" type="checkbox" id="__search" autocomplete="off">
-    <label class="md-overlay" for="__drawer"></label>
-    <div data-md-component="skip">
-      
-        
-        <a href="#prometheus-activity-guide" class="md-skip">
-          Skip to content
-        </a>
-      
-    </div>
-    <div data-md-component="announce">
-      
-    </div>
-    
-      <div data-md-color-scheme="default" data-md-component="outdated" hidden>
-        
-          <aside class="md-banner md-banner--warning">
-            <div class="md-banner__inner md-grid md-typeset">
-              
-  
-    These docs are for Hybernate 0.2.0-rc.7, a release candidate, and may change before it's released.
-  
-  <a href="../../.."><strong>Read the docs for the latest release.</strong></a>
-
-            </div>
-            <script>var el=document.querySelector("[data-md-component=outdated]"),base=new URL("../.."),outdated=__md_get("__outdated",sessionStorage,base);!0===outdated&&el&&(el.hidden=!1)</script>
-          </aside>
-        
-      </div>
-    
-    
-      
-
-<header class="md-header" data-md-component="header">
-  <nav class="md-header__inner md-grid" aria-label="Header">
-    <a href="../.." title="Hybernate" class="md-header__button md-logo" aria-label="Hybernate" data-md-component="logo">
-      
-  
-  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="m20.79 13.95-2.33.62-2-1.13v-2.88l2-1.13 2.33.62.52-1.93-1.77-.47.46-1.77-1.93-.52-.62 2.33-2 1.13L13 7.38V5.12l1.71-1.71L13.29 2 12 3.29 10.71 2 9.29 3.41 11 5.12v2.26L8.5 8.82l-2-1.13-.58-2.33L4 5.88l.47 1.77-1.77.47.52 1.93 2.33-.62 2 1.13v2.89l-2 1.13-2.33-.62-.52 1.93 1.77.47L4 18.12l1.93.52.62-2.33 2-1.13L11 16.62v2.26l-1.71 1.71L10.71 22 12 20.71 13.29 22l1.41-1.41-1.7-1.71v-2.26l2.5-1.45 2 1.13.62 2.33 1.88-.51-.47-1.77 1.77-.47zM9.5 10.56 12 9.11l2.5 1.45v2.88L12 14.89l-2.5-1.45z"/></svg>
-
-    </a>
-    <label class="md-header__button md-icon" for="__drawer">
-      
-      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M3 6h18v2H3zm0 5h18v2H3zm0 5h18v2H3z"/></svg>
-    </label>
-    <div class="md-header__title" data-md-component="header-title">
-      <div class="md-header__ellipsis">
-        <div class="md-header__topic">
-          <span class="md-ellipsis">
-            Hybernate
-          </span>
-        </div>
-        <div class="md-header__topic" data-md-component="header-topic">
-          <span class="md-ellipsis">
-            
-              Prometheus Activity
-            
-          </span>
-        </div>
-      </div>
-    </div>
-    
-      
-    
-    
-    
-    
-      
-      
-        <label class="md-header__button md-icon" for="__search">
-          
-          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
-        </label>
-        <div class="md-search" data-md-component="search" role="dialog">
-  <label class="md-search__overlay" for="__search"></label>
-  <div class="md-search__inner" role="search">
-    <form class="md-search__form" name="search">
-      <input type="text" class="md-search__input" name="query" aria-label="Search" placeholder="Search" autocapitalize="off" autocorrect="off" autocomplete="off" spellcheck="false" data-md-component="search-query" required>
-      <label class="md-search__icon md-icon" for="__search">
-        
-        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
-        
-        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M20 11v2H8l5.5 5.5-1.42 1.42L4.16 12l7.92-7.92L13.5 5.5 8 11z"/></svg>
-      </label>
-      <nav class="md-search__options" aria-label="Search">
-        
-        <button type="reset" class="md-search__icon md-icon" title="Clear" aria-label="Clear" tabindex="-1">
-          
-          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M19 6.41 17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/></svg>
-        </button>
-      </nav>
-      
-        <div class="md-search__suggest" data-md-component="search-suggest"></div>
-      
-    </form>
-    <div class="md-search__output">
-      <div class="md-search__scrollwrap" tabindex="0" data-md-scrollfix>
-        <div class="md-search-result" data-md-component="search-result">
-          <div class="md-search-result__meta">
-            Initializing search
-          </div>
-          <ol class="md-search-result__list" role="presentation"></ol>
-        </div>
-      </div>
-    </div>
-  </div>
-</div>
-      
-    
-    
-      <div class="md-header__source">
-        <a href="https://github.com/okedeji/hybernate" title="Go to repository" class="md-source" data-md-component="source">
-  <div class="md-source__icon md-icon">
-    
-    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M173.9 397.4c0 2-2.3 3.6-5.2 3.6-3.3.3-5.6-1.3-5.6-3.6 0-2 2.3-3.6 5.2-3.6 3-.3 5.6 1.3 5.6 3.6m-31.1-4.5c-.7 2 1.3 4.3 4.3 4.9 2.6 1 5.6 0 6.2-2s-1.3-4.3-4.3-5.2c-2.6-.7-5.5.3-6.2 2.3m44.2-1.7c-2.9.7-4.9 2.6-4.6 4.9.3 2 2.9 3.3 5.9 2.6 2.9-.7 4.9-2.6 4.6-4.6-.3-1.9-3-3.2-5.9-2.9M252.8 8C114.1 8 8 113.3 8 252c0 110.9 69.8 205.8 169.5 239.2 12.8 2.3 17.3-5.6 17.3-12.1 0-6.2-.3-40.4-.3-61.4 0 0-70 15-84.7-29.8 0 0-11.4-29.1-27.8-36.6 0 0-22.9-15.7 1.6-15.4 0 0 24.9 2 38.6 25.8 21.9 38.6 58.6 27.5 72.9 20.9 2.3-16 8.8-27.1 16-33.7-55.9-6.2-112.3-14.3-112.3-110.5 0-27.5 7.6-41.3 23.6-58.9-2.6-6.5-11.1-33.3 2.6-67.9 20.9-6.5 69 27 69 27 20-5.6 41.5-8.5 62.8-8.5s42.8 2.9 62.8 8.5c0 0 48.1-33.6 69-27 13.7 34.7 5.2 61.4 2.6 67.9 16 17.7 25.8 31.5 25.8 58.9 0 96.5-58.9 104.2-114.8 110.5 9.2 7.9 17 22.9 17 46.4 0 33.7-.3 75.4-.3 83.6 0 6.5 4.6 14.4 17.3 12.1C436.2 457.8 504 362.9 504 252 504 113.3 391.5 8 252.8 8M105.2 352.9c-1.3 1-1 3.3.7 5.2 1.6 1.6 3.9 2.3 5.2 1 1.3-1 1-3.3-.7-5.2-1.6-1.6-3.9-2.3-5.2-1m-10.8-8.1c-.7 1.3.3 2.9 2.3 3.9 1.6 1 3.6.7 4.3-.7.7-1.3-.3-2.9-2.3-3.9-2-.6-3.6-.3-4.3.7m32.4 35.6c-1.6 1.3-1 4.3 1.3 6.2 2.3 2.3 5.2 2.6 6.5 1 1.3-1.3.7-4.3-1.3-6.2-2.2-2.3-5.2-2.6-6.5-1m-11.4-14.7c-1.6 1-1.6 3.6 0 5.9s4.3 3.3 5.6 2.3c1.6-1.3 1.6-3.9 0-6.2-1.4-2.3-4-3.3-5.6-2"/></svg>
-  </div>
-  <div class="md-source__repository">
-    okedeji/hybernate
-  </div>
-</a>
-      </div>
-    
-  </nav>
-  
-</header>
-    
-    <div class="md-container" data-md-component="container">
-      
-      
-        
-          
-            
-<nav class="md-tabs" aria-label="Tabs" data-md-component="tabs">
-  <div class="md-grid">
-    <ul class="md-tabs__list">
-      
-        
-  
-  
-  
-  
-    <li class="md-tabs__item">
-      <a href="../.." class="md-tabs__link">
-        
-  
-  
-    
-  
-  Home
-
-      </a>
-    </li>
-  
-
-      
-        
-  
-  
-  
-  
-    
-    
-      <li class="md-tabs__item">
-        <a href="../../getting-started/installation/" class="md-tabs__link">
-          
-  
-  
-  Getting Started
-
-        </a>
-      </li>
-    
-  
-
-      
-        
-  
-  
-  
-  
-    
-    
-      <li class="md-tabs__item">
-        <a href="../../concepts/architecture/" class="md-tabs__link">
-          
-  
-  
-  Concepts
-
-        </a>
-      </li>
-    
-  
-
-      
-        
-  
-  
-  
-    
-  
-  
-    
-    
-      <li class="md-tabs__item md-tabs__item--active">
-        <a href="../opt-in/" class="md-tabs__link">
-          
-  
-  
-  Guides
-
-        </a>
-      </li>
-    
-  
-
-      
-        
-  
-  
-  
-  
-    
-    
-      <li class="md-tabs__item">
-        <a href="../../reference/api/" class="md-tabs__link">
-          
-  
-  
-  Reference
-
-        </a>
-      </li>
-    
-  
-
-      
-        
-  
-  
-  
-  
-    
-    
-      <li class="md-tabs__item">
-        <a href="../../operations/monitoring/" class="md-tabs__link">
-          
-  
-  
-  Operations
-
-        </a>
-      </li>
-    
-  
-
-      
-        
-  
-  
-  
-  
-    <li class="md-tabs__item">
-      <a href="../../contributing/" class="md-tabs__link">
-        
-  
-  
-    
-  
-  Contributing
-
-      </a>
-    </li>
-  
-
-      
-    </ul>
-  </div>
-</nav>
-          
-        
-      
-      <main class="md-main" data-md-component="main">
-        <div class="md-main__inner md-grid">
-          
-            
-              
-              <div class="md-sidebar md-sidebar--primary" data-md-component="sidebar" data-md-type="navigation" >
-                <div class="md-sidebar__scrollwrap">
-                  <div class="md-sidebar__inner">
-                    
-
-
-  
-
-
-<nav class="md-nav md-nav--primary md-nav--lifted" aria-label="Navigation" data-md-level="0">
-  <label class="md-nav__title" for="__drawer">
-    <a href="../.." title="Hybernate" class="md-nav__button md-logo" aria-label="Hybernate" data-md-component="logo">
-      
-  
-  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="m20.79 13.95-2.33.62-2-1.13v-2.88l2-1.13 2.33.62.52-1.93-1.77-.47.46-1.77-1.93-.52-.62 2.33-2 1.13L13 7.38V5.12l1.71-1.71L13.29 2 12 3.29 10.71 2 9.29 3.41 11 5.12v2.26L8.5 8.82l-2-1.13-.58-2.33L4 5.88l.47 1.77-1.77.47.52 1.93 2.33-.62 2 1.13v2.89l-2 1.13-2.33-.62-.52 1.93 1.77.47L4 18.12l1.93.52.62-2.33 2-1.13L11 16.62v2.26l-1.71 1.71L10.71 22 12 20.71 13.29 22l1.41-1.41-1.7-1.71v-2.26l2.5-1.45 2 1.13.62 2.33 1.88-.51-.47-1.77 1.77-.47zM9.5 10.56 12 9.11l2.5 1.45v2.88L12 14.89l-2.5-1.45z"/></svg>
-
-    </a>
-    Hybernate
-  </label>
-  
-    <div class="md-nav__source">
-      <a href="https://github.com/okedeji/hybernate" title="Go to repository" class="md-source" data-md-component="source">
-  <div class="md-source__icon md-icon">
-    
-    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M173.9 397.4c0 2-2.3 3.6-5.2 3.6-3.3.3-5.6-1.3-5.6-3.6 0-2 2.3-3.6 5.2-3.6 3-.3 5.6 1.3 5.6 3.6m-31.1-4.5c-.7 2 1.3 4.3 4.3 4.9 2.6 1 5.6 0 6.2-2s-1.3-4.3-4.3-5.2c-2.6-.7-5.5.3-6.2 2.3m44.2-1.7c-2.9.7-4.9 2.6-4.6 4.9.3 2 2.9 3.3 5.9 2.6 2.9-.7 4.9-2.6 4.6-4.6-.3-1.9-3-3.2-5.9-2.9M252.8 8C114.1 8 8 113.3 8 252c0 110.9 69.8 205.8 169.5 239.2 12.8 2.3 17.3-5.6 17.3-12.1 0-6.2-.3-40.4-.3-61.4 0 0-70 15-84.7-29.8 0 0-11.4-29.1-27.8-36.6 0 0-22.9-15.7 1.6-15.4 0 0 24.9 2 38.6 25.8 21.9 38.6 58.6 27.5 72.9 20.9 2.3-16 8.8-27.1 16-33.7-55.9-6.2-112.3-14.3-112.3-110.5 0-27.5 7.6-41.3 23.6-58.9-2.6-6.5-11.1-33.3 2.6-67.9 20.9-6.5 69 27 69 27 20-5.6 41.5-8.5 62.8-8.5s42.8 2.9 62.8 8.5c0 0 48.1-33.6 69-27 13.7 34.7 5.2 61.4 2.6 67.9 16 17.7 25.8 31.5 25.8 58.9 0 96.5-58.9 104.2-114.8 110.5 9.2 7.9 17 22.9 17 46.4 0 33.7-.3 75.4-.3 83.6 0 6.5 4.6 14.4 17.3 12.1C436.2 457.8 504 362.9 504 252 504 113.3 391.5 8 252.8 8M105.2 352.9c-1.3 1-1 3.3.7 5.2 1.6 1.6 3.9 2.3 5.2 1 1.3-1 1-3.3-.7-5.2-1.6-1.6-3.9-2.3-5.2-1m-10.8-8.1c-.7 1.3.3 2.9 2.3 3.9 1.6 1 3.6.7 4.3-.7.7-1.3-.3-2.9-2.3-3.9-2-.6-3.6-.3-4.3.7m32.4 35.6c-1.6 1.3-1 4.3 1.3 6.2 2.3 2.3 5.2 2.6 6.5 1 1.3-1.3.7-4.3-1.3-6.2-2.2-2.3-5.2-2.6-6.5-1m-11.4-14.7c-1.6 1-1.6 3.6 0 5.9s4.3 3.3 5.6 2.3c1.6-1.3 1.6-3.9 0-6.2-1.4-2.3-4-3.3-5.6-2"/></svg>
-  </div>
-  <div class="md-source__repository">
-    okedeji/hybernate
-  </div>
-</a>
-    </div>
-  
-  <ul class="md-nav__list" data-md-scrollfix>
-    
-      
-      
-  
-  
-  
-  
-    <li class="md-nav__item">
-      <a href="../.." class="md-nav__link">
-        
-  
-  
-  <span class="md-ellipsis">
-    
-  
-    Home
-  
-
-    
-  </span>
-  
-  
-
-      </a>
-    </li>
-  
-
-    
-      
-      
-  
-  
-  
-  
-    
-    
-    
-    
-      
-      
-        
-      
-    
-    
-    <li class="md-nav__item md-nav__item--nested">
-      
-        
-        
-          
-        
-        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_2" >
-        
-          
-          <label class="md-nav__link" for="__nav_2" id="__nav_2_label" tabindex="0">
-            
-  
-  
-  <span class="md-ellipsis">
-    
-  
-    Getting Started
-  
-
-    
-  </span>
-  
-  
-
-            <span class="md-nav__icon md-icon"></span>
-          </label>
-        
-        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_2_label" aria-expanded="false">
-          <label class="md-nav__title" for="__nav_2">
-            <span class="md-nav__icon md-icon"></span>
-            
-  
-    Getting Started
-  
-
-          </label>
-          <ul class="md-nav__list" data-md-scrollfix>
-            
-              
-                
-  
-  
-  
-  
-    <li class="md-nav__item">
-      <a href="../../getting-started/installation/" class="md-nav__link">
-        
-  
-  
-  <span class="md-ellipsis">
-    
-  
-    Installation
-  
-
-    
-  </span>
-  
-  
-
-      </a>
-    </li>
-  
-
-              
-            
-              
-                
-  
-  
-  
-  
-    <li class="md-nav__item">
-      <a href="../../getting-started/quickstart/" class="md-nav__link">
-        
-  
-  
-  <span class="md-ellipsis">
-    
-  
-    Quickstart
-  
-
-    
-  </span>
-  
-  
-
-      </a>
-    </li>
-  
-
-              
-            
-              
-                
-  
-  
-  
-  
-    <li class="md-nav__item">
-      <a href="../../getting-started/kubectl-plugin/" class="md-nav__link">
-        
-  
-  
-  <span class="md-ellipsis">
-    
-  
-    kubectl Plugin
-  
-
-    
-  </span>
-  
-  
-
-      </a>
-    </li>
-  
-
-              
-            
-          </ul>
-        </nav>
-      
-    </li>
-  
-
-    
-      
-      
-  
-  
-  
-  
-    
-    
-    
-    
-      
-      
-        
-      
-    
-    
-    <li class="md-nav__item md-nav__item--nested">
-      
-        
-        
-          
-        
-        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_3" >
-        
-          
-          <label class="md-nav__link" for="__nav_3" id="__nav_3_label" tabindex="0">
-            
-  
-  
-  <span class="md-ellipsis">
-    
-  
-    Concepts
-  
-
-    
-  </span>
-  
-  
-
-            <span class="md-nav__icon md-icon"></span>
-          </label>
-        
-        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_3_label" aria-expanded="false">
-          <label class="md-nav__title" for="__nav_3">
-            <span class="md-nav__icon md-icon"></span>
-            
-  
-    Concepts
-  
-
-          </label>
-          <ul class="md-nav__list" data-md-scrollfix>
-            
-              
-                
-  
-  
-  
-  
-    <li class="md-nav__item">
-      <a href="../../concepts/architecture/" class="md-nav__link">
-        
-  
-  
-  <span class="md-ellipsis">
-    
-  
-    Architecture
-  
-
-    
-  </span>
-  
-  
-
-      </a>
-    </li>
-  
-
-              
-            
-              
-                
-  
-  
-  
-  
-    <li class="md-nav__item">
-      <a href="../../concepts/lifecycle/" class="md-nav__link">
-        
-  
-  
-  <span class="md-ellipsis">
-    
-  
-    Lifecycle
-  
-
-    
-  </span>
-  
-  
-
-      </a>
-    </li>
-  
-
-              
-            
-              
-                
-  
-  
-  
-  
-    <li class="md-nav__item">
-      <a href="../../concepts/forecasting/" class="md-nav__link">
-        
-  
-  
-  <span class="md-ellipsis">
-    
-  
-    Forecasting
-  
-
-    
-  </span>
-  
-  
-
-      </a>
-    </li>
-  
-
-              
-            
-              
-                
-  
-  
-  
-  
-    <li class="md-nav__item">
-      <a href="../../concepts/idle-detection/" class="md-nav__link">
-        
-  
-  
-  <span class="md-ellipsis">
-    
-  
-    Idle Detection
-  
-
-    
-  </span>
-  
-  
-
-      </a>
-    </li>
-  
-
-              
-            
-              
-                
-  
-  
-  
-  
-    <li class="md-nav__item">
-      <a href="../../concepts/dependencies/" class="md-nav__link">
-        
-  
-  
-  <span class="md-ellipsis">
-    
-  
-    Dependencies
-  
-
-    
-  </span>
-  
-  
-
-      </a>
-    </li>
-  
-
-              
-            
-              
-                
-  
-  
-  
-  
-    <li class="md-nav__item">
-      <a href="../../concepts/wake-on-request/" class="md-nav__link">
-        
-  
-  
-  <span class="md-ellipsis">
-    
-  
-    Wake on Request
-  
-
-    
-  </span>
-  
-  
-
-      </a>
-    </li>
-  
-
-              
-            
-              
-                
-  
-  
-  
-  
-    <li class="md-nav__item">
-      <a href="../../concepts/cost-tracking/" class="md-nav__link">
-        
-  
-  
-  <span class="md-ellipsis">
-    
-  
-    Cost Tracking
-  
-
-    
-  </span>
-  
-  
-
-      </a>
-    </li>
-  
-
-              
-            
-          </ul>
-        </nav>
-      
-    </li>
-  
-
-    
-      
-      
-  
-  
-    
-  
-  
-  
-    
-    
-    
-    
-      
-        
-        
-      
-      
-        
-      
-    
-    
-    <li class="md-nav__item md-nav__item--active md-nav__item--section md-nav__item--nested">
-      
-        
-        
-        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_4" checked>
-        
-          
-          <label class="md-nav__link" for="__nav_4" id="__nav_4_label" tabindex="">
-            
-  
-  
-  <span class="md-ellipsis">
-    
-  
-    Guides
-  
-
-    
-  </span>
-  
-  
-
-            <span class="md-nav__icon md-icon"></span>
-          </label>
-        
-        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_4_label" aria-expanded="true">
-          <label class="md-nav__title" for="__nav_4">
-            <span class="md-nav__icon md-icon"></span>
-            
-  
-    Guides
-  
-
-          </label>
-          <ul class="md-nav__list" data-md-scrollfix>
-            
-              
-                
-  
-  
-  
-  
-    <li class="md-nav__item">
-      <a href="../opt-in/" class="md-nav__link">
-        
-  
-  
-  <span class="md-ellipsis">
-    
-  
-    Opting In
-  
-
-    
-  </span>
-  
-  
-
-      </a>
-    </li>
-  
-
-              
-            
-              
-                
-  
-  
-  
-  
-    <li class="md-nav__item">
-      <a href="../preview-environments/" class="md-nav__link">
-        
-  
-  
-  <span class="md-ellipsis">
-    
-  
-    Public Preview Environments
-  
-
-    
-  </span>
-  
-  
-
-      </a>
-    </li>
-  
-
-              
-            
-              
-                
-  
-  
-  
-  
-    <li class="md-nav__item">
-      <a href="../managed-workload/" class="md-nav__link">
-        
-  
-  
-  <span class="md-ellipsis">
-    
-  
-    ManagedWorkload
-  
-
-    
-  </span>
-  
-  
-
-      </a>
-    </li>
-  
-
-              
-            
-              
-                
-  
-  
-  
-  
-    <li class="md-nav__item">
-      <a href="../pause/" class="md-nav__link">
-        
-  
-  
-  <span class="md-ellipsis">
-    
-  
-    Pause and Resume
-  
-
-    
-  </span>
-  
-  
-
-      </a>
-    </li>
-  
-
-              
-            
-              
-                
-  
-  
-  
-  
-    <li class="md-nav__item">
-      <a href="../cluster-autoscaler/" class="md-nav__link">
-        
-  
-  
-  <span class="md-ellipsis">
-    
-  
-    Cluster Autoscaler
-  
-
-    
-  </span>
-  
-  
-
-      </a>
-    </li>
-  
-
-              
-            
-              
-                
-  
-  
-  
-  
-    <li class="md-nav__item">
-      <a href="../node-pools/" class="md-nav__link">
-        
-  
-  
-  <span class="md-ellipsis">
-    
-  
-    Node Pools for Real Savings
-  
-
-    
-  </span>
-  
-  
-
-      </a>
-    </li>
-  
-
-              
-            
-              
-                
-  
-  
-  
-  
-    <li class="md-nav__item">
-      <a href="../dry-run/" class="md-nav__link">
-        
-  
-  
-  <span class="md-ellipsis">
-    
-  
-    Dry Run
-  
-
-    
-  </span>
-  
-  
-
-      </a>
-    </li>
-  
-
-              
-            
-              
-                
-  
-  
-    
-  
-  
-  
-    <li class="md-nav__item md-nav__item--active">
-      
-      <input class="md-nav__toggle md-toggle" type="checkbox" id="__toc">
-      
-      
-        
-      
-      
-        <label class="md-nav__link md-nav__link--active" for="__toc">
-          
-  
-  
-  <span class="md-ellipsis">
-    
-  
-    Prometheus Activity
-  
-
-    
-  </span>
-  
-  
-
-          <span class="md-nav__icon md-icon"></span>
-        </label>
-      
-      <a href="./" class="md-nav__link md-nav__link--active">
-        
-  
-  
-  <span class="md-ellipsis">
-    
-  
-    Prometheus Activity
-  
-
-    
-  </span>
-  
-  
-
-      </a>
-      
-        
-
-<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
-  
-  
-  
-    
-  
-  
-    <label class="md-nav__title" for="__toc">
-      <span class="md-nav__icon md-icon"></span>
-      Table of contents
-    </label>
-    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
-      
-        <li class="md-nav__item">
-  <a href="#how-it-works" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        How It Works
-      
-    </span>
-  </a>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#configuration" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Configuration
-      
-    </span>
-  </a>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#while-the-workload-is-paused" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        While the Workload Is Paused
-      
-    </span>
-  </a>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#prometheus-endpoint" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Prometheus Endpoint
-      
-    </span>
-  </a>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#when-a-query-cant-be-evaluated" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        When a Query Can't Be Evaluated
-      
-    </span>
-  </a>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#example-queries" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Example Queries
-      
-    </span>
-  </a>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#writing-good-queries" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Writing Good Queries
-      
-    </span>
-  </a>
-  
-    <nav class="md-nav" aria-label="Writing Good Queries">
-      <ul class="md-nav__list">
-        
-          <li class="md-nav__item">
-  <a href="#use-a-rate-window-that-matches-how-quiet-idle-is" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Use a rate window that matches how quiet "idle" is
-      
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#exclude-traffic-that-isnt-people" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Exclude traffic that isn't people
-      
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#test-the-query-directly" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Test the query directly
-      
-    </span>
-  </a>
-  
-</li>
-        
-      </ul>
-    </nav>
-  
-</li>
-      
-    </ul>
-  
-</nav>
-      
-    </li>
-  
-
-              
-            
-              
-                
-  
-  
-  
-  
-    <li class="md-nav__item">
-      <a href="../gitops/" class="md-nav__link">
-        
-  
-  
-  <span class="md-ellipsis">
-    
-  
-    GitOps tools
-  
-
-    
-  </span>
-  
-  
-
-      </a>
-    </li>
-  
-
-              
-            
-              
-                
-  
-  
-  
-  
-    <li class="md-nav__item">
-      <a href="../autoscalers/" class="md-nav__link">
-        
-  
-  
-  <span class="md-ellipsis">
-    
-  
-    HPA and KEDA
-  
-
-    
-  </span>
-  
-  
-
-      </a>
-    </li>
-  
-
-              
-            
-          </ul>
-        </nav>
-      
-    </li>
-  
-
-    
-      
-      
-  
-  
-  
-  
-    
-    
-    
-    
-      
-      
-        
-      
-    
-    
-    <li class="md-nav__item md-nav__item--nested">
-      
-        
-        
-          
-        
-        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_5" >
-        
-          
-          <label class="md-nav__link" for="__nav_5" id="__nav_5_label" tabindex="0">
-            
-  
-  
-  <span class="md-ellipsis">
-    
-  
-    Reference
-  
-
-    
-  </span>
-  
-  
-
-            <span class="md-nav__icon md-icon"></span>
-          </label>
-        
-        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_5_label" aria-expanded="false">
-          <label class="md-nav__title" for="__nav_5">
-            <span class="md-nav__icon md-icon"></span>
-            
-  
-    Reference
-  
-
-          </label>
-          <ul class="md-nav__list" data-md-scrollfix>
-            
-              
-                
-  
-  
-  
-  
-    <li class="md-nav__item">
-      <a href="../../reference/api/" class="md-nav__link">
-        
-  
-  
-  <span class="md-ellipsis">
-    
-  
-    API
-  
-
-    
-  </span>
-  
-  
-
-      </a>
-    </li>
-  
-
-              
-            
-              
-                
-  
-  
-  
-  
-    <li class="md-nav__item">
-      <a href="../../reference/helm-values/" class="md-nav__link">
-        
-  
-  
-  <span class="md-ellipsis">
-    
-  
-    Helm Values
-  
-
-    
-  </span>
-  
-  
-
-      </a>
-    </li>
-  
-
-              
-            
-              
-                
-  
-  
-  
-  
-    <li class="md-nav__item">
-      <a href="../../reference/metrics/" class="md-nav__link">
-        
-  
-  
-  <span class="md-ellipsis">
-    
-  
-    Metrics
-  
-
-    
-  </span>
-  
-  
-
-      </a>
-    </li>
-  
-
-              
-            
-              
-                
-  
-  
-  
-  
-    <li class="md-nav__item">
-      <a href="../../reference/labels-annotations/" class="md-nav__link">
-        
-  
-  
-  <span class="md-ellipsis">
-    
-  
-    Labels & Annotations
-  
-
-    
-  </span>
-  
-  
-
-      </a>
-    </li>
-  
-
-              
-            
-              
-                
-  
-  
-  
-  
-    <li class="md-nav__item">
-      <a href="../../reference/data-and-access/" class="md-nav__link">
-        
-  
-  
-  <span class="md-ellipsis">
-    
-  
-    Data and Access
-  
-
-    
-  </span>
-  
-  
-
-      </a>
-    </li>
-  
-
-              
-            
-              
-                
-  
-  
-  
-  
-    <li class="md-nav__item">
-      <a href="../../reference/security/" class="md-nav__link">
-        
-  
-  
-  <span class="md-ellipsis">
-    
-  
-    Security
-  
-
-    
-  </span>
-  
-  
-
-      </a>
-    </li>
-  
-
-              
-            
-              
-                
-  
-  
-  
-  
-    <li class="md-nav__item">
-      <a href="../../reference/configuration/" class="md-nav__link">
-        
-  
-  
-  <span class="md-ellipsis">
-    
-  
-    Configuration
-  
-
-    
-  </span>
-  
-  
-
-      </a>
-    </li>
-  
-
-              
-            
-              
-                
-  
-  
-  
-  
-    <li class="md-nav__item">
-      <a href="../../reference/compatibility/" class="md-nav__link">
-        
-  
-  
-  <span class="md-ellipsis">
-    
-  
-    Compatibility
-  
-
-    
-  </span>
-  
-  
-
-      </a>
-    </li>
-  
-
-              
-            
-          </ul>
-        </nav>
-      
-    </li>
-  
-
-    
-      
-      
-  
-  
-  
-  
-    
-    
-    
-    
-      
-      
-        
-      
-    
-    
-    <li class="md-nav__item md-nav__item--nested">
-      
-        
-        
-          
-        
-        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_6" >
-        
-          
-          <label class="md-nav__link" for="__nav_6" id="__nav_6_label" tabindex="0">
-            
-  
-  
-  <span class="md-ellipsis">
-    
-  
-    Operations
-  
-
-    
-  </span>
-  
-  
-
-            <span class="md-nav__icon md-icon"></span>
-          </label>
-        
-        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_6_label" aria-expanded="false">
-          <label class="md-nav__title" for="__nav_6">
-            <span class="md-nav__icon md-icon"></span>
-            
-  
-    Operations
-  
-
-          </label>
-          <ul class="md-nav__list" data-md-scrollfix>
-            
-              
-                
-  
-  
-  
-  
-    <li class="md-nav__item">
-      <a href="../../operations/monitoring/" class="md-nav__link">
-        
-  
-  
-  <span class="md-ellipsis">
-    
-  
-    Monitoring
-  
-
-    
-  </span>
-  
-  
-
-      </a>
-    </li>
-  
-
-              
-            
-              
-                
-  
-  
-  
-  
-    <li class="md-nav__item">
-      <a href="../../operations/troubleshooting/" class="md-nav__link">
-        
-  
-  
-  <span class="md-ellipsis">
-    
-  
-    Troubleshooting
-  
-
-    
-  </span>
-  
-  
-
-      </a>
-    </li>
-  
-
-              
-            
-              
-                
-  
-  
-  
-  
-    <li class="md-nav__item">
-      <a href="../../operations/upgrading/" class="md-nav__link">
-        
-  
-  
-  <span class="md-ellipsis">
-    
-  
-    Upgrading
-  
-
-    
-  </span>
-  
-  
-
-      </a>
-    </li>
-  
-
-              
-            
-          </ul>
-        </nav>
-      
-    </li>
-  
-
-    
-      
-      
-  
-  
-  
-  
-    <li class="md-nav__item">
-      <a href="../../contributing/" class="md-nav__link">
-        
-  
-  
-  <span class="md-ellipsis">
-    
-  
-    Contributing
-  
-
-    
-  </span>
-  
-  
-
-      </a>
-    </li>
-  
-
-    
-  </ul>
-</nav>
-                  </div>
-                </div>
-              </div>
-            
-            
-              
-              <div class="md-sidebar md-sidebar--secondary" data-md-component="sidebar" data-md-type="toc" >
-                <div class="md-sidebar__scrollwrap">
-                  <div class="md-sidebar__inner">
-                    
-
-<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
-  
-  
-  
-    
-  
-  
-    <label class="md-nav__title" for="__toc">
-      <span class="md-nav__icon md-icon"></span>
-      Table of contents
-    </label>
-    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
-      
-        <li class="md-nav__item">
-  <a href="#how-it-works" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        How It Works
-      
-    </span>
-  </a>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#configuration" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Configuration
-      
-    </span>
-  </a>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#while-the-workload-is-paused" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        While the Workload Is Paused
-      
-    </span>
-  </a>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#prometheus-endpoint" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Prometheus Endpoint
-      
-    </span>
-  </a>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#when-a-query-cant-be-evaluated" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        When a Query Can't Be Evaluated
-      
-    </span>
-  </a>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#example-queries" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Example Queries
-      
-    </span>
-  </a>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#writing-good-queries" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Writing Good Queries
-      
-    </span>
-  </a>
-  
-    <nav class="md-nav" aria-label="Writing Good Queries">
-      <ul class="md-nav__list">
-        
-          <li class="md-nav__item">
-  <a href="#use-a-rate-window-that-matches-how-quiet-idle-is" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Use a rate window that matches how quiet "idle" is
-      
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#exclude-traffic-that-isnt-people" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Exclude traffic that isn't people
-      
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#test-the-query-directly" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Test the query directly
-      
-    </span>
-  </a>
-  
-</li>
-        
-      </ul>
-    </nav>
-  
-</li>
-      
-    </ul>
-  
-</nav>
-                  </div>
-                </div>
-              </div>
-            
-          
-          
-            <div class="md-content" data-md-component="content">
-              
-              <article class="md-content__inner md-typeset">
-                
-                  
-
-
-  
-    <a href="https://github.com/okedeji/hybernate/edit/main/docs/guides/prometheus-signals.md" title="Edit this page" class="md-content__button md-icon" rel="edit">
-      
-      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M10 20H6V4h7v5h5v3.1l2-2V8l-6-6H6c-1.1 0-2 .9-2 2v16c0 1.1.9 2 2 2h4zm10.2-7c.1 0 .3.1.4.2l1.3 1.3c.2.2.2.6 0 .8l-1 1-2.1-2.1 1-1c.1-.1.2-.2.4-.2m0 3.9L14.1 23H12v-2.1l6.1-6.1z"/></svg>
-    </a>
-  
-  
-
-
-<h1 id="prometheus-activity-guide">Prometheus Activity Guide<a class="headerlink" href="#prometheus-activity-guide" title="Permanent link">&para;</a></h1>
-<p>CPU tells Hybernate whether a workload is doing work. A Prometheus query tells it whether anyone is <em>using</em> it: requests through an ingress, open connections, messages arriving on a queue. Add queries as activity sources, and any result above zero keeps the workload awake, and <a href="#while-the-workload-is-paused">wakes it</a> once it's paused.</p>
-<h2 id="how-it-works">How It Works<a class="headerlink" href="#how-it-works" title="Permanent link">&para;</a></h2>
-<p>On every check, about once a minute whether the workload is awake or paused, Hybernate runs each query in turn as an instant query against the Prometheus API (<code>/api/v1/query</code>), stopping at the first that shows activity. Each query has 2 seconds to answer, and all of a workload's queries 5 seconds together.</p>
-<ul>
-<li><strong>Any series above zero</strong>: activity. The <a href="../../concepts/idle-detection/">activity clock</a> resets. With a series per pod, one busy pod is enough.</li>
-<li><strong>Zero, or an empty result</strong>: no activity from this source. The clock keeps running.</li>
-<li><strong><code>NaN</code> or infinite values</strong> are ignored, as no evidence either way: <code>NaN</code> is what a ratio of two idle counters gives (0/0). A result with nothing else in it is treated like an empty one: it doesn't confirm activity, and the other sources decide.</li>
-</ul>
-<p>The query must return an instant vector or a scalar; a range vector (<code>metric[5m]</code> on its own) fails as <code>QueryFailed</code>. A response larger than 4 MiB, from a query that returns a series per pod across the cluster, is refused too: aggregate with <code>sum</code> or <code>max</code>.</p>
-<p>Write the query so that it measures activity, not idleness: "how many requests per second", not "are there no requests".</p>
-<h2 id="configuration">Configuration<a class="headerlink" href="#configuration" title="Permanent link">&para;</a></h2>
-<div class="language-yaml highlight"><table class="highlighttable"><tr><th colspan="2" class="filename"><span class="filename">managedworkload.yaml</span></th></tr><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal"><a href="#__codelineno-0-1">1</a></span>
-<span class="normal"><a href="#__codelineno-0-2">2</a></span>
-<span class="normal"><a href="#__codelineno-0-3">3</a></span>
-<span class="normal"><a href="#__codelineno-0-4">4</a></span>
-<span class="normal"><a href="#__codelineno-0-5">5</a></span>
-<span class="normal"><a href="#__codelineno-0-6">6</a></span></pre></div></td><td class="code"><div><pre><span></span><code><span id="__span-0-1"><a id="__codelineno-0-1" name="__codelineno-0-1"></a><span class="nt">spec</span><span class="p">:</span>
-</span><span id="__span-0-2"><a id="__codelineno-0-2" name="__codelineno-0-2"></a><span class="w">  </span><span class="nt">idlePolicy</span><span class="p">:</span>
-</span><span id="__span-0-3"><a id="__codelineno-0-3" name="__codelineno-0-3"></a><span class="w">    </span><span class="nt">idleAfter</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">1h</span>
-</span><span id="__span-0-4"><a id="__codelineno-0-4" name="__codelineno-0-4"></a><span class="w">    </span><span class="nt">activity</span><span class="p">:</span>
-</span><span id="__span-0-5"><a id="__codelineno-0-5" name="__codelineno-0-5"></a><span class="w">      </span><span class="nt">prometheus</span><span class="p">:</span>
-</span><span id="__span-0-6"><a id="__codelineno-0-6" name="__codelineno-0-6"></a><span class="w">        </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">promQL</span><span class="p">:</span><span class="w"> </span><span class="s">'sum(rate(nginx_ingress_controller_requests{exported_namespace="staging",</span><span class="nv"> </span><span class="s">exported_service="my-api"}[5m]))'</span>
-</span></code></pre></div></td></tr></table></div>
-<p>Queries are combined with the other activity sources: CPU, deploys, and activity annotations. Any one of them is enough to keep the workload awake.</p>
-<h2 id="while-the-workload-is-paused">While the Workload Is Paused<a class="headerlink" href="#while-the-workload-is-paused" title="Permanent link">&para;</a></h2>
-<p>A paused workload's queries are run about once a minute too, and one that shows activity wakes it, with a <code>WokeByActivity</code> event, <code>a Prometheus activity query shows activity, waking</code>, and <code>lastActivitySource: prometheus</code> once it's awake. It wakes the workload's <a href="../../concepts/dependencies/">dependencies</a> with it, as any wake does. That's how a workload no request reaches wakes on its own, such as a queue worker, which no Service routes requests to, with a query of its queue's length:</p>
-<div class="language-yaml highlight"><table class="highlighttable"><tr><th colspan="2" class="filename"><span class="filename">managedworkload.yaml</span></th></tr><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal"><a href="#__codelineno-1-1">1</a></span>
-<span class="normal"><a href="#__codelineno-1-2">2</a></span>
-<span class="normal"><a href="#__codelineno-1-3">3</a></span>
-<span class="normal"><a href="#__codelineno-1-4">4</a></span>
-<span class="normal"><a href="#__codelineno-1-5">5</a></span>
-<span class="normal"><a href="#__codelineno-1-6">6</a></span></pre></div></td><td class="code"><div><pre><span></span><code><span id="__span-1-1"><a id="__codelineno-1-1" name="__codelineno-1-1"></a><span class="nt">spec</span><span class="p">:</span>
-</span><span id="__span-1-2"><a id="__codelineno-1-2" name="__codelineno-1-2"></a><span class="w">  </span><span class="nt">idlePolicy</span><span class="p">:</span>
-</span><span id="__span-1-3"><a id="__codelineno-1-3" name="__codelineno-1-3"></a><span class="w">    </span><span class="nt">idleAfter</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">30m</span>
-</span><span id="__span-1-4"><a id="__codelineno-1-4" name="__codelineno-1-4"></a><span class="w">    </span><span class="nt">activity</span><span class="p">:</span>
-</span><span id="__span-1-5"><a id="__codelineno-1-5" name="__codelineno-1-5"></a><span class="w">      </span><span class="nt">prometheus</span><span class="p">:</span>
-</span><span id="__span-1-6"><a id="__codelineno-1-6" name="__codelineno-1-6"></a><span class="w">        </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">promQL</span><span class="p">:</span><span class="w"> </span><span class="s">'sum(rabbitmq_queue_messages{queue="tasks"})'</span>
-</span></code></pre></div></td></tr></table></div>
-<ul>
-<li><strong>Query something that's there while the workload is paused</strong>, such as the queue's broker. A metric the workload exports itself has no series while it has no pods, so it can't wake it.</li>
-<li><strong>A pause you ask for isn't undone by a query already showing activity.</strong> If a query shows activity as a <a href="../pause/#pause-now">requested pause</a> begins, such as a queue that still has messages on it, it wakes the workload only once a check has found it quiet and it shows activity again. An idle pause begins only once every query is quiet, so this is only ever a requested one.</li>
-<li><strong>A query that can't be evaluated never wakes the workload.</strong> <code>PrometheusAvailable</code> is <code>False</code>, as while it's awake, and its message says the queries can't wake it until Prometheus answers, and whether a request through the doorman still does.</li>
-<li><strong>The <a href="../../concepts/forecasting/#what-an-hour-records">forecast</a> learns the hours the queries watch</strong>: quiet while they find nothing, busy when they find activity. So a worker paused every night still learns whole days, and with <code>autoResume</code> is woken ahead of its first messages once the forecast acts. While the queries can't be evaluated, a workload behind the doorman goes on learning its paused hours through it, as without queries: busy if a request woke it, quiet otherwise. One without the doorman doesn't learn them until Prometheus answers.</li>
-</ul>
-<p>A workload with queries is checked every minute while it's paused, rather than every 5 minutes, so a query wakes it within a minute of its activity showing in Prometheus.</p>
-<p>Prometheus queries can't be set with an annotation. On a ManagedWorkload created from the <code>hybernate.io/managed</code> label, add them to its <code>spec.idlePolicy.activity.prometheus</code>: the opt-in controller keeps them when it updates the rest from the annotations.</p>
-<h2 id="prometheus-endpoint">Prometheus Endpoint<a class="headerlink" href="#prometheus-endpoint" title="Permanent link">&para;</a></h2>
-<p>Set the Prometheus URL with the <code>prometheus.url</code> Helm value, which passes <code>--prometheus-url</code> to the operator. Add it to your values file:</p>
-<div class="language-yaml highlight"><span class="filename">hybernate-values.yaml</span><pre><span></span><code><span id="__span-2-1"><a id="__codelineno-2-1" name="__codelineno-2-1" href="#__codelineno-2-1"></a><span class="nt">timezone</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">Europe/London</span>
-</span><span id="__span-2-2"><a id="__codelineno-2-2" name="__codelineno-2-2" href="#__codelineno-2-2"></a><span class="nt">prometheus</span><span class="p">:</span>
-</span><span id="__span-2-3"><a id="__codelineno-2-3" name="__codelineno-2-3" href="#__codelineno-2-3"></a><span class="w">  </span><span class="nt">url</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">http://prometheus.monitoring.svc.cluster.local:9090</span>
-</span></code></pre></div>
-<p>and upgrade with the file. Pass the chart version you have installed as <code>--version</code>, which <code>helm list -n hybernate-system</code> shows, or Helm upgrades to the newest chart too:</p>
-<div class="language-bash highlight"><pre><span></span><code><span id="__span-3-1"><a id="__codelineno-3-1" name="__codelineno-3-1" href="#__codelineno-3-1"></a>helm<span class="w"> </span>upgrade<span class="w"> </span>hybernate<span class="w"> </span>oci://ghcr.io/okedeji/charts/hybernate<span class="w"> </span>--version<span class="w"> </span>X.Y.Z<span class="w"> </span><span class="se">\</span>
-</span><span id="__span-3-2"><a id="__codelineno-3-2" name="__codelineno-3-2" href="#__codelineno-3-2"></a><span class="w">  </span>--namespace<span class="w"> </span>hybernate-system<span class="w"> </span>-f<span class="w"> </span>hybernate-values.yaml
-</span></code></pre></div>
-<p>Installed without a values file, see <a href="../../operations/upgrading/#keeping-your-settings">Keeping your settings</a>.</p>
-<p>The URL is the base of the Prometheus HTTP API, <code>http</code> or <code>https</code>; the operator refuses to start with any other. Hybernate appends <code>/api/v1/query</code> and keeps any path prefix, so endpoints like <code>https://mimir.example.com/prometheus</code> work as-is. It sends no credentials or headers, so a Prometheus that needs them must be reached through a proxy that adds them.</p>
-<p>With a Prometheus URL, each new workload's forecast also starts from up to four weeks of its CPU history rather than from nothing, so <code>autoResume</code> can act from the first day; see <a href="../../concepts/forecasting/#learning-from-history">Learning from history</a>. For a Prometheus that holds more than one cluster's series, <code>prometheus.selector</code> (<code>--prometheus-selector</code>), such as <code>cluster="staging"</code>, narrows that history query to this cluster. It isn't added to activity queries, which run as you write them: narrow those in the query itself.</p>
-<h2 id="when-a-query-cant-be-evaluated">When a Query Can't Be Evaluated<a class="headerlink" href="#when-a-query-cant-be-evaluated" title="Permanent link">&para;</a></h2>
-<p>If a query fails, Hybernate can't see that activity, so it doesn't pause the workload, and a paused one isn't woken by it. The <code>PrometheusAvailable</code> condition says why:</p>
+<!DOCTYPE html><html lang="en" dir="ltr" data-theme="dark" data-has-toc data-has-sidebar class="astro-g5ptsecz"><head><link rel="preload" href="/next/_astro/AtkinsonHyperlegibleNext.Cw9WDUCC.woff2" as="font" type="font/woff2" crossorigin><link rel="preload" href="/next/_astro/BigShouldersDisplay-800.CSQhGSAK.woff2" as="font" type="font/woff2" crossorigin><meta charset="utf-8"/><meta name="viewport" content="width=device-width, initial-scale=1"/><title>Prometheus activity guide | Napwake</title><link rel="canonical" href="https://docs.napwake.dev/latest/guides/prometheus-signals/"/><link rel="sitemap" href="/next/sitemap-index.xml"/><link rel="icon" href="/next/favicon.ico" sizes="32x32"/><link rel="apple-touch-icon" href="/next/apple-touch-icon.png"/><link rel="manifest" href="/next/site.webmanifest"/><link rel="shortcut icon" href="/next/favicon.svg" type="image/svg+xml"/><meta name="generator" content="Astro v7.3.8"/><meta name="generator" content="Starlight v0.42.6"/><meta property="og:title" content="Prometheus activity guide"/><meta property="og:type" content="article"/><meta property="og:url" content="https://docs.napwake.dev/next/guides/prometheus-signals/"/><meta property="og:locale" content="en"/><meta property="og:description" content="Count requests, connections or queue messages as activity with a Prometheus query, so a workload stays awake while used and wakes when needed."/><meta property="og:site_name" content="Napwake"/><meta name="twitter:card" content="summary_large_image"/><meta name="description" content="Count requests, connections or queue messages as activity with a Prometheus query, so a workload stays awake while used and wakes when needed."/><meta property="og:image" content="https://docs.napwake.dev/next/og/guides-prometheus-signals.png"/><meta property="og:image:width" content="1200"/><meta property="og:image:height" content="630"/><meta property="og:image:alt" content="Prometheus activity guide, Napwake docs"/><meta name="twitter:image" content="https://docs.napwake.dev/next/og/guides-prometheus-signals.png"/><link rel="alternate" type="text/markdown" href="/next/guides/prometheus-signals.md" title="This page as Markdown"/><meta name="theme-color" content="#14695f" media="(prefers-color-scheme: light)"><meta name="theme-color" content="#0d3f3a" media="(prefers-color-scheme: dark)"><script>
+	window.StarlightThemeProvider = (() => {
+		const storedTheme =
+			typeof localStorage !== 'undefined' && localStorage.getItem('starlight-theme');
+		const theme =
+			storedTheme ||
+			(window.matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark');
+		document.documentElement.dataset.theme = theme === 'light' ? 'light' : 'dark';
+		return {
+			updatePickers(theme = storedTheme || 'auto') {
+				document.querySelectorAll('starlight-theme-select').forEach((picker) => {
+					const select = picker.querySelector('select');
+					if (select) select.value = theme;
+					/** @type {HTMLTemplateElement | null} */
+					const tmpl = document.querySelector(`#theme-icons`);
+					const newIcon = tmpl && tmpl.content.querySelector('.' + theme);
+					if (newIcon) {
+						const oldIcon = picker.querySelector('svg.label-icon');
+						if (oldIcon) {
+							oldIcon.replaceChildren(...newIcon.cloneNode(true).childNodes);
+						}
+					}
+				});
+			},
+		};
+	})();
+</script><template id="theme-icons"><svg aria-hidden="true" class="light astro-hkc32dio" width="16" height="16" viewBox="0 0 24 24" fill="currentColor" style="--sl-icon-size: 1em;"><path d="M5 12a1 1 0 0 0-1-1H3a1 1 0 0 0 0 2h1a1 1 0 0 0 1-1Zm.64 5-.71.71a1 1 0 0 0 0 1.41 1 1 0 0 0 1.41 0l.71-.71A1 1 0 0 0 5.64 17ZM12 5a1 1 0 0 0 1-1V3a1 1 0 0 0-2 0v1a1 1 0 0 0 1 1Zm5.66 2.34a1 1 0 0 0 .7-.29l.71-.71a1 1 0 1 0-1.41-1.41l-.66.71a1 1 0 0 0 0 1.41 1 1 0 0 0 .66.29Zm-12-.29a1 1 0 0 0 1.41 0 1 1 0 0 0 0-1.41l-.71-.71a1.004 1.004 0 1 0-1.43 1.41l.73.71ZM21 11h-1a1 1 0 0 0 0 2h1a1 1 0 0 0 0-2Zm-2.64 6A1 1 0 0 0 17 18.36l.71.71a1 1 0 0 0 1.41 0 1 1 0 0 0 0-1.41l-.76-.66ZM12 6.5a5.5 5.5 0 1 0 5.5 5.5A5.51 5.51 0 0 0 12 6.5Zm0 9a3.5 3.5 0 1 1 0-7 3.5 3.5 0 0 1 0 7Zm0 3.5a1 1 0 0 0-1 1v1a1 1 0 0 0 2 0v-1a1 1 0 0 0-1-1Z"/></svg><svg aria-hidden="true" class="dark astro-hkc32dio" width="16" height="16" viewBox="0 0 24 24" fill="currentColor" style="--sl-icon-size: 1em;"><path d="M21.64 13a1 1 0 0 0-1.05-.14 8.049 8.049 0 0 1-3.37.73 8.15 8.15 0 0 1-8.14-8.1 8.59 8.59 0 0 1 .25-2A1 1 0 0 0 8 2.36a10.14 10.14 0 1 0 14 11.69 1 1 0 0 0-.36-1.05Zm-9.5 6.69A8.14 8.14 0 0 1 7.08 5.22v.27a10.15 10.15 0 0 0 10.14 10.14 9.784 9.784 0 0 0 2.1-.22 8.11 8.11 0 0 1-7.18 4.32v-.04Z"/></svg><svg aria-hidden="true" class="auto astro-hkc32dio" width="16" height="16" viewBox="0 0 24 24" fill="currentColor" style="--sl-icon-size: 1em;"><path d="M21 14h-1V7a3 3 0 0 0-3-3H7a3 3 0 0 0-3 3v7H3a1 1 0 0 0-1 1v2a3 3 0 0 0 3 3h14a3 3 0 0 0 3-3v-2a1 1 0 0 0-1-1ZM6 7a1 1 0 0 1 1-1h10a1 1 0 0 1 1 1v7H6V7Zm14 10a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1v-1h16v1Z"/></svg></template><link rel="stylesheet" href="/next/_astro/print.ehPL0gv-.css" media="print"><link rel="stylesheet" href="/next/_astro/middleware.eqZQrTWL.css"><style>@layer starlight.components{svg:where(.astro-hkc32dio){color:var(--sl-icon-color);font-size:var(--sl-icon-size,1em);width:1em;height:1em;overflow:visible}}
+</style><script type="module" src="/next/_astro/page.cNngjUgL.js"></script><style>.nw-doorman:where(.astro-rkcsz4yr){max-width:100%;height:auto;display:block;overflow:visible}
+</style><style>.nw-next:where(.astro-zkuglizp){align-items:end;gap:1rem 1.5rem;margin-top:2.5rem;display:grid}.nw-next--doorman:where(.astro-zkuglizp){grid-template-columns:minmax(0,7.5rem) minmax(0,1fr)}.nw-next__doorman:where(.astro-zkuglizp){align-self:end;width:100%;max-width:7.5rem}.nw-next__title:where(.astro-zkuglizp){font:700 .75rem/1.4 var(--font-mono);letter-spacing:.06em;text-transform:uppercase;color:var(--muted);margin:0 0 .6rem}ul:where(.astro-zkuglizp){grid-template-columns:repeat(auto-fit,minmax(min(100%,14rem),1fr));gap:.75rem;margin:0;padding:0;list-style:none;display:grid}li:where(.astro-zkuglizp){margin:0!important}a:where(.astro-zkuglizp){box-sizing:border-box;background:var(--surface);border:1px solid var(--line);border-radius:var(--radius-lg);height:100%;color:var(--text);transition:border-color var(--duration-ui-short) var(--ease-calm);flex-direction:column;gap:.25rem;padding:.9rem 1rem 1rem;text-decoration:none;display:flex}a:where(.astro-zkuglizp):hover{border-color:var(--action)}.nw-next__name:where(.astro-zkuglizp){font:700 1rem/1.35 var(--font-sans)}.nw-next__name:where(.astro-zkuglizp) span:where(.astro-zkuglizp){color:var(--muted)}a:where(.astro-zkuglizp):hover .nw-next__name:where(.astro-zkuglizp) span:where(.astro-zkuglizp){color:var(--link)}.nw-next__text:where(.astro-zkuglizp){color:var(--muted);font-size:.875rem;line-height:1.5}@media (width<=40rem){.nw-next--doorman:where(.astro-zkuglizp){grid-template-columns:1fr}.nw-next__doorman:where(.astro-zkuglizp){max-width:5.5rem}}
+</style><style>.nw-check:where(.astro-rprgpzf7){background:var(--surface);border:1px solid var(--line);border-radius:var(--radius-lg);margin-top:1.5rem;padding:.8rem 1.1rem .95rem}.nw-check__head:where(.astro-rprgpzf7){flex-wrap:wrap;align-items:center;gap:.25rem .55rem;margin:0;display:flex}.nw-check__label:where(.astro-rprgpzf7){font:700 .75rem/1.4 var(--font-mono);letter-spacing:.06em;text-transform:uppercase;color:var(--brand)}.nw-check__state:where(.astro-rprgpzf7){font:400 .75rem/1.4 var(--font-mono);color:var(--muted)}.nw-check__state:where(.astro-rprgpzf7):before{content:"·";margin-right:.55rem}.nw-check__body:where(.astro-rprgpzf7)>:first-child{margin-top:.4rem}.nw-check__body:where(.astro-rprgpzf7) .expressive-code{margin-top:.6rem}
+</style><style>.nw-badge:where(.astro-7xdsdygk){align-items:center;gap:var(--space-2);font:700 .75rem/1.6 var(--font-mono);letter-spacing:.06em;text-transform:uppercase;vertical-align:middle;white-space:nowrap;display:inline-flex}.nw-badge--asleep:where(.astro-7xdsdygk){color:var(--asleep)}.nw-badge--waking:where(.astro-7xdsdygk){color:var(--waking)}.nw-badge--awake:where(.astro-7xdsdygk){color:var(--awake)}.nw-badge--error:where(.astro-7xdsdygk){color:var(--error)}.nw-badge--product:where(.astro-7xdsdygk){text-transform:none;letter-spacing:0;font-size:.8125rem}.nw-badge__also:where(.astro-7xdsdygk){color:var(--muted);text-transform:none;letter-spacing:0;font-size:.8125rem;font-weight:400}
+</style><style>.nw-door:where(.astro-iomifxvf){vertical-align:middle;flex:none;display:inline-block;overflow:visible}
+</style><link rel="stylesheet" href="/next/_astro/StateFlow._ggTytmL.css"></head><body class="astro-g5ptsecz"><a class="sl-skip-link astro-qb7clj6f" href="#_top">Skip to content</a><div class="page sl-flex astro-yntsjkba"><header class="header astro-yntsjkba"><div class="header astro-xiqy3rs3"><div class="title-wrapper sl-flex astro-xiqy3rs3"><a href="/next/" class="nw-site-title astro-32trhkrv"><svg class="nw-site-title__logo astro-32trhkrv" viewBox="-12 -32 430.5 124" role="img" aria-label="Napwake" xmlns="http://www.w3.org/2000/svg"><g transform="translate(-10 -27.7) scale(0.95)"><path d="M12 96 V88 Q12 79 22 79 H74 Q84 79 84 88 V96 Z" fill="currentColor"></path><path d="M26 76 V44 Q26 36 34 36 H62 Q70 36 70 44 V76 Z" fill="currentColor"></path><clipPath id="nw-logo-e1"><circle cx="38.3" cy="55" r="7.8"></circle></clipPath><circle cx="38.3" cy="55" r="7.5" fill="var(--nw-cut, var(--docs-header))"></circle><g clip-path="url(#nw-logo-e1)"><circle cx="38.3" cy="55.95" r="3.75" fill="currentColor"></circle><rect x="26.299999999999997" y="40" width="24" height="15" fill="currentColor" transform="rotate(-5 38.3 55)"></rect></g><rect x="29.45" y="53.58" width="17.7" height="2.85" rx="1.43" fill="currentColor" transform="rotate(-5 38.3 55)"></rect><clipPath id="nw-logo-e2"><circle cx="57.7" cy="55" r="7.8"></circle></clipPath><circle cx="57.7" cy="55" r="7.5" fill="var(--nw-cut, var(--docs-header))"></circle><g clip-path="url(#nw-logo-e2)"><circle cx="57.7" cy="55.95" r="3.75" fill="currentColor"></circle><rect x="45.7" y="40" width="24" height="15" fill="currentColor" transform="rotate(3 57.7 55)"></rect></g><rect x="48.85" y="53.58" width="17.7" height="2.85" rx="1.43" fill="currentColor" transform="rotate(3 57.7 55)"></rect><path d="M23 71 H73 V80 Q48 83 23 80 Z" fill="currentColor"></path><g transform="rotate(-5 48 38)"><path d="M31 38 L29.5 13 Q29.5 10 32.5 10 Q48 8.5 63.5 10 Q66.5 10 66.5 13 L65 38 Z" fill="currentColor"></path><path d="M30.6 31 L30.2 25 H65.8 L65.4 31 Z" fill="var(--nw-cut, var(--docs-header))"></path><path d="M14 37 Q15 34 20 34.5 H76 Q81 34 82 37 Q82 41.5 76 41.5 H20 Q14 41.5 14 37 Z" fill="currentColor"></path></g></g><g transform="translate(86 0)"><path fill="currentColor" d="M0 60 V18 A18 18 0 0 1 36 18 V60 ZM24 60 V18 A6 6 0 0 0 12 18 V60 ZM46.5 60 V18 A18 18 0 0 1 64.5 4 H65.5 L71.5 13 V60 ZM70.5 0 H82.5 V60 H70.5 ZM70.5 48 V23.25 A6.25 6.25 0 0 0 58 23.25 V48 ZM94.5 60 V0 H112.5 A18 18 0 0 1 130.5 18 V60 ZM118.5 48 V18 A6 6 0 0 0 106.5 18 V48 ZM94.5 59 H106.5 V80 H94.5 ZM136.5 0 L149 0 L156.5 60 L144 60 ZM156.25 16 L168.75 16 L156.5 60 L144 60 ZM156.25 16 L168.75 16 L181 60 L168.5 60 ZM176 0 L188.5 0 L181 60 L168.5 60 ZM194.5 60 V18 A18 18 0 0 1 212.5 4 H213.5 L219.5 13 V60 ZM218.5 0 H230.5 V60 H218.5 ZM218.5 48 V23.25 A6.25 6.25 0 0 0 206 23.25 V48 ZM242.5 -22 H254.5 V60 H242.5 ZM267 0 L279.5 0 L254.5 44 L254.5 23 ZM261.5 31 L270 26 L280.5 60 L267.5 60 ZM286.5 28 V18 A18 18 0 0 1 322.5 18 V28 ZM310.5 28 V18 A6 6 0 0 0 298.5 18 V28 ZM286.5 26 H322.5 V38 H286.5 ZM286.5 26 H298.5 V60 H286.5 ZM286.5 48 H320.5 V60 H286.5 Z"></path></g></svg><span class="nw-site-title__docs astro-32trhkrv">Docs</span></a><span class="nw-version-wrap astro-xiqy3rs3"><nw-version-select data-versions="/versions.json" data-current="next" data-base="/next/" data-root="/" class="astro-jcjov46q"><label class="nw-version astro-jcjov46q"><span class="sr-only astro-jcjov46q">Docs version</span><select disabled aria-label="Docs version" class="astro-jcjov46q"><option value="next" selected class="astro-jcjov46q">next · 0.2.0-rc.9</option></select><svg aria-hidden="true" viewBox="0 0 12 12" width="10" height="10" class="astro-jcjov46q"><path d="M2.5 4.5 6 8l3.5-3.5" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" class="astro-jcjov46q"></path></svg></label></nw-version-select><script type="module">var e=class extends HTMLElement{connectedCallback(){let{versions:e,current:t=`dev`,base:n=`/`,root:r=`/`}=this.dataset,i=this.querySelector(`select`);i&&e&&fetch(e).then(e=>e.ok?e.json():Promise.reject(e.status)).then(e=>{if(!Array.isArray(e)||!e.length)return;i.replaceChildren(...e.map(e=>{let n=document.createElement(`option`),r=e.aliases?.includes(`latest`)?` · latest`:e.version===`next`&&e.properties?.release?` · ${e.properties.release}`:``;return n.value=e.version,n.textContent=(e.version===`next`?`next`:e.title||e.version)+r,n.selected=e.version===t||(e.aliases??[]).includes(t),n})),i.disabled=!1,this.toggleAttribute(`data-ready`,!0);let a=e.find(e=>e.version===t||(e.aliases??[]).includes(t));a&&t!==`next`&&!(a.aliases??[]).includes(`latest`)&&document.querySelectorAll(`[data-nw-outdated]`).forEach(e=>{e.hidden=!1}),i.addEventListener(`change`,()=>{let e=location.pathname.startsWith(n)?location.pathname.slice(n.length):``;location.href=`${r}${i.value}/${e}${location.hash}`})}).catch(()=>{})}};customElements.define(`nw-version-select`,e);</script></span></div><div class="sl-flex print:hidden astro-xiqy3rs3"><site-search class="astro-xiqy3rs3 astro-b5kgnn7o" data-translations="{&quot;placeholder&quot;:&quot;Search&quot;}"><button data-open-modal disabled aria-label="Search" aria-keyshortcuts="Control+K" class="astro-b5kgnn7o"><svg aria-hidden="true" class="astro-b5kgnn7o astro-hkc32dio" width="16" height="16" viewBox="0 0 24 24" fill="currentColor" style="--sl-icon-size: 1em;"><path d="M21.71 20.29 18 16.61A9 9 0 1 0 16.61 18l3.68 3.68a.999.999 0 0 0 1.42 0 1 1 0 0 0 0-1.39ZM11 18a7 7 0 1 1 0-14 7 7 0 0 1 0 14Z"/></svg><span class="sl-hidden md:sl-block astro-b5kgnn7o" aria-hidden="true">Search</span><kbd class="sl-hidden md:sl-flex astro-b5kgnn7o" style="display: none;"><kbd class="astro-b5kgnn7o">Ctrl</kbd><kbd class="astro-b5kgnn7o">K</kbd></kbd></button><dialog style="padding:0" aria-label="Search" class="astro-b5kgnn7o"><div class="dialog-frame sl-flex astro-b5kgnn7o"><button data-close-modal class="sl-flex md:sl-hidden astro-b5kgnn7o">Cancel</button><div class="search-container astro-b5kgnn7o"><div id="starlight__search" class="astro-b5kgnn7o"></div></div></div></dialog></site-search><script>
+	(() => {
+		const openBtn = document.querySelector('button[data-open-modal]');
+		const shortcut = openBtn?.querySelector('kbd');
+		if (!openBtn || !(shortcut instanceof HTMLElement)) return;
+		const platformKey = shortcut.querySelector('kbd');
+		if (platformKey && /(Mac|iPhone|iPod|iPad)/i.test(navigator.platform)) {
+			platformKey.textContent = '⌘';
+			openBtn.setAttribute('aria-keyshortcuts', 'Meta+K');
+		}
+		shortcut.style.display = '';
+	})();
+</script><script type="module" src="/next/_astro/Search.astro_astro_type_script_index_0_lang.NGFCANqr.js"></script></div><div class="sl-hidden md:sl-flex print:hidden right-group astro-xiqy3rs3"><div class="sl-flex social-icons astro-xiqy3rs3"><a href="https://github.com/napwake/napwake" rel="me" class="sl-flex astro-n2mnl6yq"><span class="sr-only astro-n2mnl6yq">Napwake on GitHub</span><svg aria-hidden="true" class="astro-n2mnl6yq astro-hkc32dio" width="16" height="16" viewBox="0 0 24 24" fill="currentColor" style="--sl-icon-size: 1em;"><path d="M12 .3a12 12 0 0 0-3.8 23.38c.6.12.83-.26.83-.57L9 21.07c-3.34.72-4.04-1.61-4.04-1.61-.55-1.39-1.34-1.76-1.34-1.76-1.08-.74.09-.73.09-.73 1.2.09 1.83 1.24 1.83 1.24 1.08 1.83 2.81 1.3 3.5 1 .1-.78.42-1.31.76-1.61-2.67-.3-5.47-1.33-5.47-5.93 0-1.31.47-2.38 1.24-3.22-.14-.3-.54-1.52.1-3.18 0 0 1-.32 3.3 1.23a11.5 11.5 0 0 1 6 0c2.28-1.55 3.29-1.23 3.29-1.23.64 1.66.24 2.88.12 3.18a4.65 4.65 0 0 1 1.23 3.22c0 4.61-2.8 5.63-5.48 5.92.42.36.81 1.1.81 2.22l-.01 3.29c0 .31.2.69.82.57A12 12 0 0 0 12 .3Z"/></svg></a></div><starlight-theme-select><label style="--sl-select-width: 6.25em" class="astro-2z5xp7gb"><span class="sr-only astro-2z5xp7gb">Select theme</span><svg aria-hidden="true" class="icon label-icon astro-2z5xp7gb astro-hkc32dio" width="16" height="16" viewBox="0 0 24 24" fill="currentColor" style="--sl-icon-size: 1em;"><path d="M21 14h-1V7a3 3 0 0 0-3-3H7a3 3 0 0 0-3 3v7H3a1 1 0 0 0-1 1v2a3 3 0 0 0 3 3h14a3 3 0 0 0 3-3v-2a1 1 0 0 0-1-1ZM6 7a1 1 0 0 1 1-1h10a1 1 0 0 1 1 1v7H6V7Zm14 10a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1v-1h16v1Z"/></svg><select autocomplete="off" class="astro-2z5xp7gb"><option value="dark" class="astro-2z5xp7gb">Dark</option><option value="light" class="astro-2z5xp7gb">Light</option><option value="auto" selected class="astro-2z5xp7gb">Auto</option></select><svg aria-hidden="true" class="icon caret astro-2z5xp7gb astro-hkc32dio" width="16" height="16" viewBox="0 0 24 24" fill="currentColor" style="--sl-icon-size: 1em;"><path d="M17 9.17a1 1 0 0 0-1.41 0L12 12.71 8.46 9.17a1 1 0 1 0-1.41 1.42l4.24 4.24a1.002 1.002 0 0 0 1.42 0L17 10.59a1.002 1.002 0 0 0 0-1.42Z"/></svg></label></starlight-theme-select><script>
+	StarlightThemeProvider.updatePickers();
+</script><script type="module">var e=`starlight-theme`,t=e=>e===`auto`||e===`dark`||e===`light`?e:`auto`,n=()=>t(typeof localStorage<`u`&&localStorage.getItem(e));function r(t){typeof localStorage<`u`&&localStorage.setItem(e,t===`light`||t===`dark`?t:``)}var i=()=>matchMedia(`(prefers-color-scheme: light)`).matches?`light`:`dark`;function a(e){StarlightThemeProvider.updatePickers(e),document.documentElement.dataset.theme=e===`auto`?i():e,r(e)}matchMedia(`(prefers-color-scheme: light)`).addEventListener(`change`,()=>{n()===`auto`&&a(`auto`)});var o=class extends HTMLElement{constructor(){super(),a(n()),this.querySelector(`select`)?.addEventListener(`change`,e=>{e.currentTarget instanceof HTMLSelectElement&&a(t(e.currentTarget.value))})}};customElements.define(`starlight-theme-select`,o);</script><script type="module">var e=class extends HTMLElement{constructor(){super();let e=this.querySelector(`select`);e&&(e.addEventListener(`change`,e=>{e.currentTarget instanceof HTMLSelectElement&&(window.location.pathname=e.currentTarget.value)}),window.addEventListener(`pageshow`,t=>{if(!t.persisted)return;let n=e.querySelector(`option[selected]`)?.index;n!==e.selectedIndex&&(e.selectedIndex=n??0)}))}};customElements.define(`starlight-lang-select`,e);</script></div></div></header><nav class="sidebar print:hidden astro-yntsjkba" aria-label="Main"><button popovertarget="starlight__sidebar" class="sl-menu-button sl-flex md:sl-hidden print:hidden astro-r2osgdlg"><svg aria-hidden="true" class="open-menu astro-r2osgdlg astro-hkc32dio" width="16" height="16" viewBox="0 0 24 24" fill="currentColor" style="--sl-icon-size: 1em;"><path d="M3 8h18a1 1 0 1 0 0-2H3a1 1 0 0 0 0 2Zm18 8H3a1 1 0 0 0 0 2h18a1 1 0 0 0 0-2Zm0-5H3a1 1 0 0 0 0 2h18a1 1 0 0 0 0-2Z"/></svg><svg aria-hidden="true" class="close-menu astro-r2osgdlg astro-hkc32dio" width="16" height="16" viewBox="0 0 24 24" fill="currentColor" style="--sl-icon-size: 1em;"><path d="m13.41 12 6.3-6.29a1.004 1.004 0 1 0-1.42-1.42L12 10.59l-6.29-6.3a1.004 1.004 0 0 0-1.42 1.42l6.3 6.29-6.3 6.29a1 1 0 0 0 0 1.42.998.998 0 0 0 1.42 0l6.29-6.3 6.29 6.3a.999.999 0 0 0 1.42 0 1 1 0 0 0 0-1.42L13.41 12Z"/></svg><span class="sr-only astro-r2osgdlg">Menu</span></button><script type="module">var e=class extends HTMLElement{constructor(){super();let e=matchMedia(`(min-width: 50em)`),t=()=>{this.popover=e.matches?null:`auto`};t(),e.addEventListener(`change`,()=>t()),this.addEventListener(`toggle`,({newState:e})=>this.trapFocus(e===`open`))}trapFocus(e){document.querySelectorAll(`.main-frame, .sl-skip-link`).forEach(t=>{t.toggleAttribute(`inert`,e)})}};customElements.define(`sl-sidebar-pane`,e);</script><sl-sidebar-pane popover id="starlight__sidebar" class="sidebar-pane astro-yntsjkba"><div class="sidebar-content sl-flex astro-yntsjkba"><sl-sidebar-state-persist data-hash="0t2qzvf" class="astro-ipdry5cl"><script aria-hidden="true">
+		(() => {
+			try {
+				if (!matchMedia('(min-width: 50em)').matches) return;
+				/** @type {HTMLElement | null} */
+				const target = document.querySelector('sl-sidebar-state-persist');
+				const state = JSON.parse(sessionStorage.getItem('sl-sidebar-state') || '0');
+				if (!target || !state || target.dataset.hash !== state.hash) return;
+				window._starlightScrollRestore = state.scroll;
+				customElements.define(
+					'sl-sidebar-restore',
+					class SidebarRestore extends HTMLElement {
+						connectedCallback() {
+							try {
+								const idx = parseInt(this.dataset.index || '');
+								const details = this.closest('details');
+								if (details && typeof state.open[idx] === 'boolean') details.open = state.open[idx];
+							} catch {}
+						}
+					}
+				);
+			} catch {}
+		})();
+	</script><ul class="top-level astro-rmhv4bp6"><li class="astro-rmhv4bp6"><a href="/next/" class="large astro-rmhv4bp6"><span class="astro-rmhv4bp6">Home</span></a></li><li class="astro-rmhv4bp6"><details open class="astro-rmhv4bp6"><summary class="astro-rmhv4bp6"><span class="group-label astro-rmhv4bp6"><span class="large astro-rmhv4bp6">Getting started</span></span><svg aria-hidden="true" class="caret astro-rmhv4bp6 astro-hkc32dio" width="16" height="16" viewBox="0 0 24 24" fill="currentColor" style="--sl-icon-size: 1.25rem;"><path d="m14.83 11.29-4.24-4.24a1 1 0 1 0-1.42 1.41L12.71 12l-3.54 3.54a1 1 0 0 0 0 1.41 1 1 0 0 0 .71.29 1 1 0 0 0 .71-.29l4.24-4.24a1.002 1.002 0 0 0 0-1.42Z"/></svg></summary><sl-sidebar-restore data-index="0"></sl-sidebar-restore><ul class="astro-rmhv4bp6"><li class="astro-rmhv4bp6"><a href="/next/getting-started/installation/" class="astro-rmhv4bp6"><span class="astro-rmhv4bp6">Installation</span></a></li><li class="astro-rmhv4bp6"><a href="/next/getting-started/quickstart/" class="astro-rmhv4bp6"><span class="astro-rmhv4bp6">Quickstart</span></a></li><li class="astro-rmhv4bp6"><a href="/next/getting-started/kubectl-plugin/" class="astro-rmhv4bp6"><span class="astro-rmhv4bp6">kubectl plugin</span></a></li></ul></details></li><li class="astro-rmhv4bp6"><details open class="astro-rmhv4bp6"><summary class="astro-rmhv4bp6"><span class="group-label astro-rmhv4bp6"><span class="large astro-rmhv4bp6">Concepts</span></span><svg aria-hidden="true" class="caret astro-rmhv4bp6 astro-hkc32dio" width="16" height="16" viewBox="0 0 24 24" fill="currentColor" style="--sl-icon-size: 1.25rem;"><path d="m14.83 11.29-4.24-4.24a1 1 0 1 0-1.42 1.41L12.71 12l-3.54 3.54a1 1 0 0 0 0 1.41 1 1 0 0 0 .71.29 1 1 0 0 0 .71-.29l4.24-4.24a1.002 1.002 0 0 0 0-1.42Z"/></svg></summary><sl-sidebar-restore data-index="1"></sl-sidebar-restore><ul class="astro-rmhv4bp6"><li class="astro-rmhv4bp6"><a href="/next/concepts/architecture/" class="astro-rmhv4bp6"><span class="astro-rmhv4bp6">Architecture</span></a></li><li class="astro-rmhv4bp6"><a href="/next/concepts/lifecycle/" class="astro-rmhv4bp6"><span class="astro-rmhv4bp6">Lifecycle</span></a></li><li class="astro-rmhv4bp6"><a href="/next/concepts/forecasting/" class="astro-rmhv4bp6"><span class="astro-rmhv4bp6">Forecasting</span></a></li><li class="astro-rmhv4bp6"><a href="/next/concepts/idle-detection/" class="astro-rmhv4bp6"><span class="astro-rmhv4bp6">Idle detection</span></a></li><li class="astro-rmhv4bp6"><a href="/next/concepts/dependencies/" class="astro-rmhv4bp6"><span class="astro-rmhv4bp6">Dependencies</span></a></li><li class="astro-rmhv4bp6"><a href="/next/concepts/wake-on-request/" class="astro-rmhv4bp6"><span class="astro-rmhv4bp6">Wake on request</span></a></li><li class="astro-rmhv4bp6"><a href="/next/concepts/cost-tracking/" class="astro-rmhv4bp6"><span class="astro-rmhv4bp6">Cost tracking</span></a></li></ul></details></li><li class="astro-rmhv4bp6"><details open class="astro-rmhv4bp6"><summary class="astro-rmhv4bp6"><span class="group-label astro-rmhv4bp6"><span class="large astro-rmhv4bp6">Guides</span></span><svg aria-hidden="true" class="caret astro-rmhv4bp6 astro-hkc32dio" width="16" height="16" viewBox="0 0 24 24" fill="currentColor" style="--sl-icon-size: 1.25rem;"><path d="m14.83 11.29-4.24-4.24a1 1 0 1 0-1.42 1.41L12.71 12l-3.54 3.54a1 1 0 0 0 0 1.41 1 1 0 0 0 .71.29 1 1 0 0 0 .71-.29l4.24-4.24a1.002 1.002 0 0 0 0-1.42Z"/></svg></summary><sl-sidebar-restore data-index="2"></sl-sidebar-restore><ul class="astro-rmhv4bp6"><li class="astro-rmhv4bp6"><a href="/next/guides/opt-in/" class="astro-rmhv4bp6"><span class="astro-rmhv4bp6">Opting in</span></a></li><li class="astro-rmhv4bp6"><a href="/next/guides/preview-environments/" class="astro-rmhv4bp6"><span class="astro-rmhv4bp6">Public preview environments</span></a></li><li class="astro-rmhv4bp6"><a href="/next/guides/managed-workload/" class="astro-rmhv4bp6"><span class="astro-rmhv4bp6">ManagedWorkload</span></a></li><li class="astro-rmhv4bp6"><a href="/next/guides/pause/" class="astro-rmhv4bp6"><span class="astro-rmhv4bp6">Pause and resume</span></a></li><li class="astro-rmhv4bp6"><a href="/next/guides/cluster-autoscaler/" class="astro-rmhv4bp6"><span class="astro-rmhv4bp6">Cluster Autoscaler</span></a></li><li class="astro-rmhv4bp6"><a href="/next/guides/node-pools/" class="astro-rmhv4bp6"><span class="astro-rmhv4bp6">Node pools for real savings</span></a></li><li class="astro-rmhv4bp6"><a href="/next/guides/dry-run/" class="astro-rmhv4bp6"><span class="astro-rmhv4bp6">Dry run</span></a></li><li class="astro-rmhv4bp6"><a href="/next/guides/prometheus-signals/" aria-current="page" class="astro-rmhv4bp6"><span class="astro-rmhv4bp6">Prometheus activity</span></a></li><li class="astro-rmhv4bp6"><a href="/next/guides/gitops/" class="astro-rmhv4bp6"><span class="astro-rmhv4bp6">GitOps tools</span></a></li><li class="astro-rmhv4bp6"><a href="/next/guides/autoscalers/" class="astro-rmhv4bp6"><span class="astro-rmhv4bp6">HPA and KEDA</span></a></li></ul></details></li><li class="astro-rmhv4bp6"><details open class="astro-rmhv4bp6"><summary class="astro-rmhv4bp6"><span class="group-label astro-rmhv4bp6"><span class="large astro-rmhv4bp6">Reference</span></span><svg aria-hidden="true" class="caret astro-rmhv4bp6 astro-hkc32dio" width="16" height="16" viewBox="0 0 24 24" fill="currentColor" style="--sl-icon-size: 1.25rem;"><path d="m14.83 11.29-4.24-4.24a1 1 0 1 0-1.42 1.41L12.71 12l-3.54 3.54a1 1 0 0 0 0 1.41 1 1 0 0 0 .71.29 1 1 0 0 0 .71-.29l4.24-4.24a1.002 1.002 0 0 0 0-1.42Z"/></svg></summary><sl-sidebar-restore data-index="3"></sl-sidebar-restore><ul class="astro-rmhv4bp6"><li class="astro-rmhv4bp6"><a href="/next/reference/api/" class="astro-rmhv4bp6"><span class="astro-rmhv4bp6">API</span></a></li><li class="astro-rmhv4bp6"><a href="/next/reference/cli/" class="astro-rmhv4bp6"><span class="astro-rmhv4bp6">kubectl plugin</span></a></li><li class="astro-rmhv4bp6"><a href="/next/reference/conditions-and-events/" class="astro-rmhv4bp6"><span class="astro-rmhv4bp6">Conditions and events</span></a></li><li class="astro-rmhv4bp6"><a href="/next/reference/helm-values/" class="astro-rmhv4bp6"><span class="astro-rmhv4bp6">Helm values</span></a></li><li class="astro-rmhv4bp6"><a href="/next/reference/metrics/" class="astro-rmhv4bp6"><span class="astro-rmhv4bp6">Metrics</span></a></li><li class="astro-rmhv4bp6"><a href="/next/reference/labels-annotations/" class="astro-rmhv4bp6"><span class="astro-rmhv4bp6">Labels and annotations</span></a></li><li class="astro-rmhv4bp6"><a href="/next/reference/data-and-access/" class="astro-rmhv4bp6"><span class="astro-rmhv4bp6">Data and access</span></a></li><li class="astro-rmhv4bp6"><a href="/next/reference/security/" class="astro-rmhv4bp6"><span class="astro-rmhv4bp6">Security</span></a></li><li class="astro-rmhv4bp6"><a href="/next/reference/configuration/" class="astro-rmhv4bp6"><span class="astro-rmhv4bp6">Configuration</span></a></li><li class="astro-rmhv4bp6"><a href="/next/reference/compatibility/" class="astro-rmhv4bp6"><span class="astro-rmhv4bp6">Compatibility</span></a></li></ul></details></li><li class="astro-rmhv4bp6"><details open class="astro-rmhv4bp6"><summary class="astro-rmhv4bp6"><span class="group-label astro-rmhv4bp6"><span class="large astro-rmhv4bp6">Operations</span></span><svg aria-hidden="true" class="caret astro-rmhv4bp6 astro-hkc32dio" width="16" height="16" viewBox="0 0 24 24" fill="currentColor" style="--sl-icon-size: 1.25rem;"><path d="m14.83 11.29-4.24-4.24a1 1 0 1 0-1.42 1.41L12.71 12l-3.54 3.54a1 1 0 0 0 0 1.41 1 1 0 0 0 .71.29 1 1 0 0 0 .71-.29l4.24-4.24a1.002 1.002 0 0 0 0-1.42Z"/></svg></summary><sl-sidebar-restore data-index="4"></sl-sidebar-restore><ul class="astro-rmhv4bp6"><li class="astro-rmhv4bp6"><a href="/next/operations/monitoring/" class="astro-rmhv4bp6"><span class="astro-rmhv4bp6">Monitoring</span></a></li><li class="astro-rmhv4bp6"><a href="/next/operations/troubleshooting/" class="astro-rmhv4bp6"><span class="astro-rmhv4bp6">Troubleshooting</span></a></li><li class="astro-rmhv4bp6"><a href="/next/operations/upgrading/" class="astro-rmhv4bp6"><span class="astro-rmhv4bp6">Upgrading</span></a></li></ul></details></li><li class="astro-rmhv4bp6"><a href="/next/contributing/" class="large astro-rmhv4bp6"><span class="astro-rmhv4bp6">Contributing</span></a></li></ul><script aria-hidden="true">
+		(() => {
+			const scroller = document.getElementById('starlight__sidebar');
+			if (!window._starlightScrollRestore || !scroller) return;
+			scroller.scrollTop = window._starlightScrollRestore;
+			delete window._starlightScrollRestore;
+		})();
+	</script></sl-sidebar-state-persist><div class="md:sl-hidden"><div class="mobile-preferences sl-flex astro-p4azlveh"><div class="social-icons astro-p4azlveh"><a href="https://github.com/napwake/napwake" rel="me" class="sl-flex astro-n2mnl6yq"><span class="sr-only astro-n2mnl6yq">Napwake on GitHub</span><svg aria-hidden="true" class="astro-n2mnl6yq astro-hkc32dio" width="16" height="16" viewBox="0 0 24 24" fill="currentColor" style="--sl-icon-size: 1em;"><path d="M12 .3a12 12 0 0 0-3.8 23.38c.6.12.83-.26.83-.57L9 21.07c-3.34.72-4.04-1.61-4.04-1.61-.55-1.39-1.34-1.76-1.34-1.76-1.08-.74.09-.73.09-.73 1.2.09 1.83 1.24 1.83 1.24 1.08 1.83 2.81 1.3 3.5 1 .1-.78.42-1.31.76-1.61-2.67-.3-5.47-1.33-5.47-5.93 0-1.31.47-2.38 1.24-3.22-.14-.3-.54-1.52.1-3.18 0 0 1-.32 3.3 1.23a11.5 11.5 0 0 1 6 0c2.28-1.55 3.29-1.23 3.29-1.23.64 1.66.24 2.88.12 3.18a4.65 4.65 0 0 1 1.23 3.22c0 4.61-2.8 5.63-5.48 5.92.42.36.81 1.1.81 2.22l-.01 3.29c0 .31.2.69.82.57A12 12 0 0 0 12 .3Z"/></svg></a></div><starlight-theme-select><label style="--sl-select-width: 6.25em" class="astro-2z5xp7gb"><span class="sr-only astro-2z5xp7gb">Select theme</span><svg aria-hidden="true" class="icon label-icon astro-2z5xp7gb astro-hkc32dio" width="16" height="16" viewBox="0 0 24 24" fill="currentColor" style="--sl-icon-size: 1em;"><path d="M21 14h-1V7a3 3 0 0 0-3-3H7a3 3 0 0 0-3 3v7H3a1 1 0 0 0-1 1v2a3 3 0 0 0 3 3h14a3 3 0 0 0 3-3v-2a1 1 0 0 0-1-1ZM6 7a1 1 0 0 1 1-1h10a1 1 0 0 1 1 1v7H6V7Zm14 10a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1v-1h16v1Z"/></svg><select autocomplete="off" class="astro-2z5xp7gb"><option value="dark" class="astro-2z5xp7gb">Dark</option><option value="light" class="astro-2z5xp7gb">Light</option><option value="auto" selected class="astro-2z5xp7gb">Auto</option></select><svg aria-hidden="true" class="icon caret astro-2z5xp7gb astro-hkc32dio" width="16" height="16" viewBox="0 0 24 24" fill="currentColor" style="--sl-icon-size: 1em;"><path d="M17 9.17a1 1 0 0 0-1.41 0L12 12.71 8.46 9.17a1 1 0 1 0-1.41 1.42l4.24 4.24a1.002 1.002 0 0 0 1.42 0L17 10.59a1.002 1.002 0 0 0 0-1.42Z"/></svg></label></starlight-theme-select><script>
+	StarlightThemeProvider.updatePickers();
+</script></div></div></div></sl-sidebar-pane></nav><div class="main-frame astro-yntsjkba"><script type="module">var e=document.getElementById(`starlight__sidebar`),t=e?.querySelector(`sl-sidebar-state-persist`),n=`sl-sidebar-state`,r=()=>{let r=[],i=t?.dataset.hash||``;try{let e=sessionStorage.getItem(n),t=JSON.parse(e||`{}`);Array.isArray(t.open)&&t.hash===i&&(r=t.open)}catch{}return{hash:i,open:r,scroll:e?.scrollTop||0}},i=e=>{try{sessionStorage.setItem(n,JSON.stringify(e))}catch{}},a=()=>i(r()),o=(e,t)=>{let n=r();n.open[t]=e,i(n)};t?.addEventListener(`click`,e=>{if(!(e.target instanceof Element))return;let t=e.target.closest(`summary`)?.closest(`details`);if(!t)return;let n=t.querySelector(`sl-sidebar-restore`),r=parseInt(n?.dataset.index||``);isNaN(r)||o(!t.open,r)}),addEventListener(`visibilitychange`,()=>{document.visibilityState===`hidden`&&a()});</script><div class="lg:sl-flex astro-lrzkfocr"><aside class="right-sidebar-container print:hidden astro-lrzkfocr"><div class="right-sidebar astro-lrzkfocr"><div class="lg:sl-hidden astro-qok35upx"><mobile-starlight-toc data-min-h="2" data-max-h="3" class="astro-66cqc7ze"><nav aria-labelledby="starlight__on-this-page--mobile" class="astro-66cqc7ze"><details id="starlight__mobile-toc" class="astro-66cqc7ze"><summary id="starlight__on-this-page--mobile" class="sl-flex astro-66cqc7ze"><span class="toggle sl-flex astro-66cqc7ze">On this page<svg aria-hidden="true" class="caret astro-66cqc7ze astro-hkc32dio" width="16" height="16" viewBox="0 0 24 24" fill="currentColor" style="--sl-icon-size: 1rem;"><path d="m14.83 11.29-4.24-4.24a1 1 0 1 0-1.42 1.41L12.71 12l-3.54 3.54a1 1 0 0 0 0 1.41 1 1 0 0 0 .71.29 1 1 0 0 0 .71-.29l4.24-4.24a1.002 1.002 0 0 0 0-1.42Z"/></svg></span><span class="display-current astro-66cqc7ze"></span></summary><div class="dropdown astro-66cqc7ze"><ul class="isMobile astro-jugkfwgx" style="--depth: 0;"><li style="--depth: 0;" class="astro-jugkfwgx"><a href="#_top" style="--depth: 0;" class="astro-jugkfwgx"><span style="--depth: 0;" class="astro-jugkfwgx">Overview</span></a></li><li style="--depth: 0;" class="astro-jugkfwgx"><a href="#point-napwake-at-prometheus" style="--depth: 0;" class="astro-jugkfwgx"><span style="--depth: 0;" class="astro-jugkfwgx">Point Napwake at Prometheus</span></a></li><li style="--depth: 0;" class="astro-jugkfwgx"><a href="#add-a-query" style="--depth: 0;" class="astro-jugkfwgx"><span style="--depth: 0;" class="astro-jugkfwgx">Add a query</span></a></li><li style="--depth: 0;" class="astro-jugkfwgx"><a href="#test-the-query-directly" style="--depth: 0;" class="astro-jugkfwgx"><span style="--depth: 0;" class="astro-jugkfwgx">Test the query directly</span></a></li><li style="--depth: 0;" class="astro-jugkfwgx"><a href="#how-a-result-counts" style="--depth: 0;" class="astro-jugkfwgx"><span style="--depth: 0;" class="astro-jugkfwgx">How a result counts</span></a></li><li style="--depth: 0;" class="astro-jugkfwgx"><a href="#while-the-workload-is-paused" style="--depth: 0;" class="astro-jugkfwgx"><span style="--depth: 0;" class="astro-jugkfwgx">While the workload is paused</span></a></li><li style="--depth: 0;" class="astro-jugkfwgx"><a href="#when-a-query-cant-be-evaluated" style="--depth: 0;" class="astro-jugkfwgx"><span style="--depth: 0;" class="astro-jugkfwgx">When a query can’t be evaluated</span></a><ul class="isMobile astro-jugkfwgx" style="--depth: 1;"><li style="--depth: 1;" class="astro-jugkfwgx"><a href="#a-query-that-matches-nothing" style="--depth: 1;" class="astro-jugkfwgx"><span style="--depth: 1;" class="astro-jugkfwgx">A query that matches nothing</span></a></li><li style="--depth: 1;" class="astro-jugkfwgx"><a href="#when-prometheus-is-down" style="--depth: 1;" class="astro-jugkfwgx"><span style="--depth: 1;" class="astro-jugkfwgx">When Prometheus is down</span></a></li></ul></li><li style="--depth: 0;" class="astro-jugkfwgx"><a href="#example-queries" style="--depth: 0;" class="astro-jugkfwgx"><span style="--depth: 0;" class="astro-jugkfwgx">Example queries</span></a></li><li style="--depth: 0;" class="astro-jugkfwgx"><a href="#writing-good-queries" style="--depth: 0;" class="astro-jugkfwgx"><span style="--depth: 0;" class="astro-jugkfwgx">Writing good queries</span></a></li></ul></div></details></nav></mobile-starlight-toc><script type="module" src="/next/_astro/MobileTableOfContents.astro_astro_type_script_index_0_lang.C3fM4Kra.js"></script></div><div class="right-sidebar-panel sl-hidden lg:sl-block astro-qok35upx"><div class="sl-container astro-qok35upx"><starlight-toc data-min-h="2" data-max-h="3"><nav aria-labelledby="starlight__on-this-page"><h2 id="starlight__on-this-page">On this page</h2><ul class="astro-jugkfwgx" style="--depth: 0;"><li style="--depth: 0;" class="astro-jugkfwgx"><a href="#_top" style="--depth: 0;" class="astro-jugkfwgx"><span style="--depth: 0;" class="astro-jugkfwgx">Overview</span></a></li><li style="--depth: 0;" class="astro-jugkfwgx"><a href="#point-napwake-at-prometheus" style="--depth: 0;" class="astro-jugkfwgx"><span style="--depth: 0;" class="astro-jugkfwgx">Point Napwake at Prometheus</span></a></li><li style="--depth: 0;" class="astro-jugkfwgx"><a href="#add-a-query" style="--depth: 0;" class="astro-jugkfwgx"><span style="--depth: 0;" class="astro-jugkfwgx">Add a query</span></a></li><li style="--depth: 0;" class="astro-jugkfwgx"><a href="#test-the-query-directly" style="--depth: 0;" class="astro-jugkfwgx"><span style="--depth: 0;" class="astro-jugkfwgx">Test the query directly</span></a></li><li style="--depth: 0;" class="astro-jugkfwgx"><a href="#how-a-result-counts" style="--depth: 0;" class="astro-jugkfwgx"><span style="--depth: 0;" class="astro-jugkfwgx">How a result counts</span></a></li><li style="--depth: 0;" class="astro-jugkfwgx"><a href="#while-the-workload-is-paused" style="--depth: 0;" class="astro-jugkfwgx"><span style="--depth: 0;" class="astro-jugkfwgx">While the workload is paused</span></a></li><li style="--depth: 0;" class="astro-jugkfwgx"><a href="#when-a-query-cant-be-evaluated" style="--depth: 0;" class="astro-jugkfwgx"><span style="--depth: 0;" class="astro-jugkfwgx">When a query can’t be evaluated</span></a><ul class="astro-jugkfwgx" style="--depth: 1;"><li style="--depth: 1;" class="astro-jugkfwgx"><a href="#a-query-that-matches-nothing" style="--depth: 1;" class="astro-jugkfwgx"><span style="--depth: 1;" class="astro-jugkfwgx">A query that matches nothing</span></a></li><li style="--depth: 1;" class="astro-jugkfwgx"><a href="#when-prometheus-is-down" style="--depth: 1;" class="astro-jugkfwgx"><span style="--depth: 1;" class="astro-jugkfwgx">When Prometheus is down</span></a></li></ul></li><li style="--depth: 0;" class="astro-jugkfwgx"><a href="#example-queries" style="--depth: 0;" class="astro-jugkfwgx"><span style="--depth: 0;" class="astro-jugkfwgx">Example queries</span></a></li><li style="--depth: 0;" class="astro-jugkfwgx"><a href="#writing-good-queries" style="--depth: 0;" class="astro-jugkfwgx"><span style="--depth: 0;" class="astro-jugkfwgx">Writing good queries</span></a></li></ul></nav></starlight-toc><script type="module" src="/next/_astro/TableOfContents.astro_astro_type_script_index_0_lang.BpJaGz7G.js"></script></div></div></div></aside><div class="main-pane astro-lrzkfocr"><main data-pagefind-body class="astro-g5ptsecz" lang="en" dir="ltr"><div class="nw-banner nw-banner--next astro-cytafyf4" role="note" data-pagefind-ignore><span class="nw-banner__tag astro-cytafyf4">Release candidate</span><span class="astro-cytafyf4">These docs are for Napwake 0.2.0-rc.9, a release candidate, and may change before it's released. <a href="/" class="astro-cytafyf4"><strong class="astro-cytafyf4">Read the docs for the latest release.</strong></a></span></div><div class="content-panel astro-a7po4psb"><div class="sl-container astro-a7po4psb"><div class="nw-title astro-xrbnetbz"><p class="nw-title__eyebrow astro-xrbnetbz">Guides</p><h1 id="_top" class="astro-xrbnetbz">Prometheus activity guide</h1><p class="nw-title__lede astro-xrbnetbz">Count requests, connections or queue messages as activity, so a workload stays awake while it&#39;s used and wakes when it&#39;s needed.</p><nw-page-tools data-md="/next/guides/prometheus-signals.md" data-pagefind-ignore="true" class="astro-luyxfm3r nw-tools not-content astro-xrbnetbz"><span class="nw-tools__label astro-luyxfm3r" aria-hidden="true">For your assistant</span><button type="button" class="nw-tools__btn astro-luyxfm3r" data-copy>Copy as Markdown</button><a class="nw-tools__btn astro-luyxfm3r" href="/next/guides/prometheus-signals.md" type="text/markdown">View .md</a><a class="nw-tools__btn astro-luyxfm3r" href="https://claude.ai/new?q=Read%20https%3A%2F%2Fdocs.napwake.dev%2Fnext%2Fguides%2Fprometheus-signals.md%2C%20a%20page%20of%20Napwake's%20docs%2C%20and%20answer%20my%20questions%20about%20it." target="_blank" rel="noopener noreferrer">Ask Claude <span aria-hidden="true" class="astro-luyxfm3r">↗</span><span class="sr-only astro-luyxfm3r"> (opens claude.ai)</span></a><a class="nw-tools__btn astro-luyxfm3r" href="https://chatgpt.com/?q=Read%20https%3A%2F%2Fdocs.napwake.dev%2Fnext%2Fguides%2Fprometheus-signals.md%2C%20a%20page%20of%20Napwake's%20docs%2C%20and%20answer%20my%20questions%20about%20it." target="_blank" rel="noopener noreferrer">Ask ChatGPT <span aria-hidden="true" class="astro-luyxfm3r">↗</span><span class="sr-only astro-luyxfm3r"> (opens chatgpt.com)</span></a><span class="sr-only astro-luyxfm3r" role="status" aria-live="polite" data-status></span></nw-page-tools><script type="module">var e=class extends HTMLElement{connectedCallback(){let e=this.querySelector(`[data-copy]`),t=this.querySelector(`[data-status]`),n=this.dataset.md;if(!e||!n)return;let r=e.textContent;e.addEventListener(`click`,async()=>{try{let r=await fetch(n).then(e=>e.ok?e.text():Promise.reject(e.status));await navigator.clipboard.writeText(r),e.textContent=`Copied`,t&&(t.textContent=`The page is copied as Markdown.`)}catch{location.href=n;return}setTimeout(()=>{e.textContent=r,t&&(t.textContent=``)},2e3)})}};customElements.define(`nw-page-tools`,e);</script></div></div></div><div class="content-panel astro-a7po4psb"><div class="sl-container astro-a7po4psb"><div class="sl-markdown-content">
+<p>CPU tells Napwake whether a workload is working. A Prometheus query tells it whether anyone uses it. That’s requests through an ingress, open connections or messages on a queue. Any result above zero keeps the workload awake, and <a href="#while-the-workload-is-paused">wakes it</a> once it’s paused.</p>
+<div class="sl-heading-wrapper level-h2"><h2 id="point-napwake-at-prometheus">Point Napwake at Prometheus</h2><a class="sl-anchor-link" href="#point-napwake-at-prometheus"><span aria-hidden="true" class="sl-anchor-icon"><svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="m12.11 15.39-3.88 3.88a2.52 2.52 0 0 1-3.5 0 2.47 2.47 0 0 1 0-3.5l3.88-3.88a1 1 0 1 0-1.42-1.42l-3.88 3.89a4.48 4.48 0 0 0 6.33 6.33l3.89-3.88a1 1 0 0 0-1.42-1.42m8.58-12.08a4.49 4.49 0 0 0-6.33 0l-3.89 3.88a1 1 0 1 0 1.42 1.42l3.88-3.88a2.52 2.52 0 0 1 3.5 0 2.47 2.47 0 0 1 0 3.5l-3.88 3.88a1 1 0 0 0 0 1.42 1 1 0 0 0 1.42 0l3.88-3.89a4.49 4.49 0 0 0 0-6.33M8.83 15.17a1 1 0 0 0 .71.29 1 1 0 0 0 .71-.29l4.92-4.92a1 1 0 1 0-1.42-1.42l-4.92 4.92a1 1 0 0 0 0 1.42"></path></svg></span><span class="sr-only" data-pagefind-ignore>Section titled “Point Napwake at Prometheus”</span></a></div>
+<p>Set <code dir="auto">prometheus.url</code> in your Helm values. It passes <code dir="auto">--prometheus-url</code> to the operator:</p>
+<div class="expressive-code"><link rel="stylesheet" href="/next/_astro/ec.jgtye.css"><script type="module" src="/next/_astro/ec.0vx5m.js"></script><figure class="frame has-title not-content"><figcaption class="header"><span class="title">napwake-values.yaml</span></figcaption><pre data-language="yaml"><code><div class="ec-line"><div class="code"><span style="--0:#4FB3A6;--1:#14695F">timezone</span><span style="--0:#A3ADAA;--1:#4E5957">:</span><span style="--0:#E3E7E4;--1:#0F1716"> </span><span style="--0:#F5B53F;--1:#825500">Europe/London</span></div></div><div class="ec-line"><div class="code"><span style="--0:#4FB3A6;--1:#14695F">prometheus</span><span style="--0:#A3ADAA;--1:#4E5957">:</span></div></div><div class="ec-line"><div class="code"><span class="indent">  </span><span style="--0:#4FB3A6;--1:#14695F">url</span><span style="--0:#A3ADAA;--1:#4E5957">:</span><span style="--0:#E3E7E4;--1:#0F1716"> </span><span style="--0:#F5B53F;--1:#825500">http://prometheus.monitoring.svc.cluster.local:9090</span></div></div></code></pre><div class="copy"><div aria-live="polite"></div><button title="Copy to clipboard" data-copied="Copied!" data-code="timezone: Europe/Londonprometheus:  url: http://prometheus.monitoring.svc.cluster.local:9090"><div></div></button></div></figure></div>
+<p>Upgrade with the file, at the chart version you run (<code dir="auto">helm list -n napwake-system</code>), or Helm upgrades the chart too:</p>
+<div class="expressive-code"><figure class="frame is-terminal not-content"><figcaption class="header"><span class="title"></span><span class="sr-only">Terminal window</span></figcaption><pre data-language="bash"><code><div class="ec-line"><div class="code"><span class="nw-prompt" aria-hidden="true">$ </span><span style="--0:#4FB3A6;--1:#14695F">helm</span><span style="--0:#E3E7E4;--1:#0F1716"> </span><span style="--0:#E3E7E4;--1:#0F1716">upgrade</span><span style="--0:#E3E7E4;--1:#0F1716"> </span><span style="--0:#E3E7E4;--1:#0F1716">napwake</span><span style="--0:#E3E7E4;--1:#0F1716"> </span><span style="--0:#E3E7E4;--1:#0F1716">oci://ghcr.io/napwake/charts/napwake</span><span style="--0:#E3E7E4;--1:#0F1716"> </span><span style="--0:#E3E7E4;--1:#0F1716">--version</span><span style="--0:#E3E7E4;--1:#0F1716"> </span><span style="--0:#E3E7E4;--1:#0F1716">X.Y.Z</span><span style="--0:#E3E7E4;--1:#0F1716"> </span><span style="--0:#F5B53F;--1:#825500">\</span></div></div><div class="ec-line"><div class="code"><span class="indent">  </span><span style="--0:#E3E7E4;--1:#0F1716">--namespace</span><span style="--0:#E3E7E4;--1:#0F1716"> </span><span style="--0:#E3E7E4;--1:#0F1716">napwake-system</span><span style="--0:#E3E7E4;--1:#0F1716"> </span><span style="--0:#E3E7E4;--1:#0F1716">-f</span><span style="--0:#E3E7E4;--1:#0F1716"> </span><span style="--0:#E3E7E4;--1:#0F1716">napwake-values.yaml</span></div></div></code></pre><div class="copy"><div aria-live="polite"></div><button title="Copy to clipboard" data-copied="Copied!" data-code="helm upgrade napwake oci://ghcr.io/napwake/charts/napwake --version X.Y.Z \  --namespace napwake-system -f napwake-values.yaml"><div></div></button></div></figure></div>
+<p>Installed without a values file, see <a href="/next/operations/upgrading/#keeping-your-settings">Keeping your settings</a>.</p>
+<table>
+<thead>
+<tr>
+<th>URL</th>
+<th>Rule</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Is</td>
+<td>The base of the Prometheus HTTP API, <code dir="auto">http</code> or <code dir="auto">https</code>. The operator refuses to start with any other</td>
+</tr>
+<tr>
+<td>Gets</td>
+<td><code dir="auto">/api/v1/query</code> appended, with any path prefix kept, so <code dir="auto">https://mimir.example.com/prometheus</code> works as-is</td>
+</tr>
+<tr>
+<td>Sends</td>
+<td>No credentials or headers. Reach a Prometheus that needs them through a proxy that adds them</td>
+</tr>
+</tbody>
+</table>
+<p>With a URL, each new workload’s forecast also starts from up to four weeks of CPU history. So <code dir="auto">autoResume</code> can act from day one (<a href="/next/concepts/forecasting/#learning-from-history">Learning from history</a>). Where Prometheus holds several clusters’ series, <code dir="auto">prometheus.selector</code> (<code dir="auto">--prometheus-selector</code>), such as <code dir="auto">cluster="staging"</code>, narrows that history query to this cluster. Activity queries run as written, so narrow those in the query.</p>
+<div class="sl-heading-wrapper level-h2"><h2 id="add-a-query">Add a query</h2><a class="sl-anchor-link" href="#add-a-query"><span aria-hidden="true" class="sl-anchor-icon"><svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="m12.11 15.39-3.88 3.88a2.52 2.52 0 0 1-3.5 0 2.47 2.47 0 0 1 0-3.5l3.88-3.88a1 1 0 1 0-1.42-1.42l-3.88 3.89a4.48 4.48 0 0 0 6.33 6.33l3.89-3.88a1 1 0 0 0-1.42-1.42m8.58-12.08a4.49 4.49 0 0 0-6.33 0l-3.89 3.88a1 1 0 1 0 1.42 1.42l3.88-3.88a2.52 2.52 0 0 1 3.5 0 2.47 2.47 0 0 1 0 3.5l-3.88 3.88a1 1 0 0 0 0 1.42 1 1 0 0 0 1.42 0l3.88-3.89a4.49 4.49 0 0 0 0-6.33M8.83 15.17a1 1 0 0 0 .71.29 1 1 0 0 0 .71-.29l4.92-4.92a1 1 0 1 0-1.42-1.42l-4.92 4.92a1 1 0 0 0 0 1.42"></path></svg></span><span class="sr-only" data-pagefind-ignore>Section titled “Add a query”</span></a></div>
+<div class="expressive-code"><figure class="frame has-title not-content"><figcaption class="header"><span class="title">managedworkload.yaml</span></figcaption><pre data-language="yaml"><code><div class="ec-line"><div class="code"><span style="--0:#4FB3A6;--1:#14695F">spec</span><span style="--0:#A3ADAA;--1:#4E5957">:</span></div></div><div class="ec-line"><div class="code"><span class="indent">  </span><span style="--0:#4FB3A6;--1:#14695F">idlePolicy</span><span style="--0:#A3ADAA;--1:#4E5957">:</span></div></div><div class="ec-line"><div class="code"><span class="indent">    </span><span style="--0:#4FB3A6;--1:#14695F">idleAfter</span><span style="--0:#A3ADAA;--1:#4E5957">:</span><span style="--0:#E3E7E4;--1:#0F1716"> </span><span style="--0:#F5B53F;--1:#825500">1h</span></div></div><div class="ec-line"><div class="code"><span class="indent">    </span><span style="--0:#4FB3A6;--1:#14695F">activity</span><span style="--0:#A3ADAA;--1:#4E5957">:</span></div></div><div class="ec-line"><div class="code"><span class="indent">      </span><span style="--0:#4FB3A6;--1:#14695F">prometheus</span><span style="--0:#A3ADAA;--1:#4E5957">:</span></div></div><div class="ec-line"><div class="code"><span class="indent">        </span><span style="--0:#A3ADAA;--1:#4E5957">-</span><span style="--0:#E3E7E4;--1:#0F1716"> </span><span style="--0:#4FB3A6;--1:#14695F">promQL</span><span style="--0:#A3ADAA;--1:#4E5957">:</span><span style="--0:#E3E7E4;--1:#0F1716"> </span><span style="--0:#F5B53F;--1:#825500">'sum(rate(nginx_ingress_controller_requests{exported_namespace="staging", exported_service="my-api"}[5m]))'</span></div></div></code></pre><div class="copy"><div aria-live="polite"></div><button title="Copy to clipboard" data-copied="Copied!" data-code="spec:  idlePolicy:    idleAfter: 1h    activity:      prometheus:        - promQL: &#x27;sum(rate(nginx_ingress_controller_requests{exported_namespace=&quot;staging&quot;, exported_service=&quot;my-api&quot;}[5m]))&#x27;"><div></div></button></div></figure></div>
+<p>Queries add to CPU, deploys and activity annotations, the other activity sources. Any one keeps the workload awake.</p>
+<p>There’s no annotation for queries. On a ManagedWorkload created from the <code dir="auto">napwake.dev/managed</code> label, add them to its <code dir="auto">spec.idlePolicy.activity.prometheus</code>. The opt-in controller keeps them when it updates the rest from the annotations.</p>
+<div class="sl-heading-wrapper level-h2"><h2 id="test-the-query-directly">Test the query directly</h2><a class="sl-anchor-link" href="#test-the-query-directly"><span aria-hidden="true" class="sl-anchor-icon"><svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="m12.11 15.39-3.88 3.88a2.52 2.52 0 0 1-3.5 0 2.47 2.47 0 0 1 0-3.5l3.88-3.88a1 1 0 1 0-1.42-1.42l-3.88 3.89a4.48 4.48 0 0 0 6.33 6.33l3.89-3.88a1 1 0 0 0-1.42-1.42m8.58-12.08a4.49 4.49 0 0 0-6.33 0l-3.89 3.88a1 1 0 1 0 1.42 1.42l3.88-3.88a2.52 2.52 0 0 1 3.5 0 2.47 2.47 0 0 1 0 3.5l-3.88 3.88a1 1 0 0 0 0 1.42 1 1 0 0 0 1.42 0l3.88-3.89a4.49 4.49 0 0 0 0-6.33M8.83 15.17a1 1 0 0 0 .71.29 1 1 0 0 0 .71-.29l4.92-4.92a1 1 0 1 0-1.42-1.42l-4.92 4.92a1 1 0 0 0 0 1.42"></path></svg></span><span class="sr-only" data-pagefind-ignore>Section titled “Test the query directly”</span></a></div>
+<div class="expressive-code"><figure class="frame is-terminal not-content"><figcaption class="header"><span class="title"></span><span class="sr-only">Terminal window</span></figcaption><pre data-language="bash"><code><div class="ec-line"><div class="code"><span class="nw-prompt" aria-hidden="true">$ </span><span style="--0:#4FB3A6;--1:#14695F">curl</span><span style="--0:#E3E7E4;--1:#0F1716"> </span><span style="--0:#E3E7E4;--1:#0F1716">-s</span><span style="--0:#E3E7E4;--1:#0F1716"> </span><span style="--0:#F5B53F;--1:#825500">'http://prometheus:9090/api/v1/query'</span><span style="--0:#E3E7E4;--1:#0F1716"> </span><span style="--0:#F5B53F;--1:#825500">\</span></div></div><div class="ec-line"><div class="code"><span class="indent">  </span><span style="--0:#E3E7E4;--1:#0F1716">--data-urlencode</span><span style="--0:#E3E7E4;--1:#0F1716"> </span><span style="--0:#F5B53F;--1:#825500">'query=sum(rate(nginx_ingress_controller_requests{exported_namespace="staging", exported_service="api"}[5m]))'</span></div></div></code></pre><div class="copy"><div aria-live="polite"></div><button title="Copy to clipboard" data-copied="Copied!" data-code="curl -s &#x27;http://prometheus:9090/api/v1/query&#x27; \  --data-urlencode &#x27;query=sum(rate(nginx_ingress_controller_requests{exported_namespace=&quot;staging&quot;, exported_service=&quot;api&quot;}[5m]))&#x27;"><div></div></button></div></figure></div>
+<p>Then check what kept the workload awake:</p>
+<div class="expressive-code"><figure class="frame is-terminal not-content"><figcaption class="header"><span class="title"></span><span class="sr-only">Terminal window</span></figcaption><pre data-language="bash"><code><div class="ec-line"><div class="code"><span class="nw-prompt" aria-hidden="true">$ </span><span style="--0:#4FB3A6;--1:#14695F">kubectl</span><span style="--0:#E3E7E4;--1:#0F1716"> </span><span style="--0:#E3E7E4;--1:#0F1716">get</span><span style="--0:#E3E7E4;--1:#0F1716"> </span><span style="--0:#E3E7E4;--1:#0F1716">managedworkload</span><span style="--0:#E3E7E4;--1:#0F1716"> </span><span style="--0:#E3E7E4;--1:#0F1716">my-api</span><span style="--0:#E3E7E4;--1:#0F1716"> </span><span style="--0:#E3E7E4;--1:#0F1716">-n</span><span style="--0:#E3E7E4;--1:#0F1716"> </span><span style="--0:#E3E7E4;--1:#0F1716">staging</span><span style="--0:#E3E7E4;--1:#0F1716"> </span><span style="--0:#E3E7E4;--1:#0F1716">-o</span><span style="--0:#E3E7E4;--1:#0F1716"> </span><span style="--0:#E3E7E4;--1:#0F1716">jsonpath=</span><span style="--0:#F5B53F;--1:#825500">'{.status.activity.lastActivitySource}'</span></div></div></code></pre><div class="copy"><div aria-live="polite"></div><button title="Copy to clipboard" data-copied="Copied!" data-code="kubectl get managedworkload my-api -n staging -o jsonpath=&#x27;{.status.activity.lastActivitySource}&#x27;"><div></div></button></div></figure></div>
+<div class="nw-check astro-rprgpzf7" role="note" aria-label="Checkpoint: awake"><p class="nw-check__head not-content astro-rprgpzf7" aria-hidden="true"><svg class="nw-door astro-rprgpzf7 astro-iomifxvf" viewBox="0 0 24 24" width="20" height="20" aria-hidden="true" focusable="false"><path d="M6 22V10A6 6 0 0 1 18 10V22Z" fill="var(--glyph-room-green)" stroke="var(--glyph-green)" stroke-width="1.6"/><rect x="10" y="0.6" width="4" height="2.2" rx="1.1" fill="var(--glyph-green)"/><path d="M6.5 22.2H17.5L21 23.6H3Z" fill="var(--glyph-green)" opacity=".6"/></svg><span class="nw-check__label astro-rprgpzf7">Checkpoint</span><span class="nw-check__state astro-rprgpzf7">Awake</span></p><div class="nw-check__body astro-rprgpzf7"><p><code dir="auto">prometheus</code> means a query was the most recent source of activity.</p></div></div>
+<div class="sl-heading-wrapper level-h2"><h2 id="how-a-result-counts">How a result counts</h2><a class="sl-anchor-link" href="#how-a-result-counts"><span aria-hidden="true" class="sl-anchor-icon"><svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="m12.11 15.39-3.88 3.88a2.52 2.52 0 0 1-3.5 0 2.47 2.47 0 0 1 0-3.5l3.88-3.88a1 1 0 1 0-1.42-1.42l-3.88 3.89a4.48 4.48 0 0 0 6.33 6.33l3.89-3.88a1 1 0 0 0-1.42-1.42m8.58-12.08a4.49 4.49 0 0 0-6.33 0l-3.89 3.88a1 1 0 1 0 1.42 1.42l3.88-3.88a2.52 2.52 0 0 1 3.5 0 2.47 2.47 0 0 1 0 3.5l-3.88 3.88a1 1 0 0 0 0 1.42 1 1 0 0 0 1.42 0l3.88-3.89a4.49 4.49 0 0 0 0-6.33M8.83 15.17a1 1 0 0 0 .71.29 1 1 0 0 0 .71-.29l4.92-4.92a1 1 0 1 0-1.42-1.42l-4.92 4.92a1 1 0 0 0 0 1.42"></path></svg></span><span class="sr-only" data-pagefind-ignore>Section titled “How a result counts”</span></a></div>
+<p>Every check, about once a minute, awake or paused, runs each query in turn as an instant query (<code dir="auto">/api/v1/query</code>). It stops at the first that shows activity. Each has 2 seconds, and all of a workload’s 5 seconds together.</p>
+<table>
+<thead>
+<tr>
+<th>The result</th>
+<th>Means</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Any series above zero</td>
+<td>Activity. The <a href="/next/concepts/idle-detection/">activity clock</a> resets. With a series per pod, one busy pod is enough</td>
+</tr>
+<tr>
+<td>Zero, or empty</td>
+<td>No activity from this source. The clock keeps running</td>
+</tr>
+<tr>
+<td><code dir="auto">NaN</code> or infinite</td>
+<td>Ignored, as no evidence either way. <code dir="auto">NaN</code> is what a ratio of two idle counters gives (0/0). A result with nothing else in it counts as empty, and the other sources decide</td>
+</tr>
+<tr>
+<td>A range vector (<code dir="auto">metric[5m]</code> on its own)</td>
+<td><code dir="auto">QueryFailed</code>. Return an instant vector or a scalar</td>
+</tr>
+<tr>
+<td>Over 4 MiB, such as a series per pod across the cluster</td>
+<td>Refused too. Aggregate with <code dir="auto">sum</code> or <code dir="auto">max</code></td>
+</tr>
+</tbody>
+</table>
+<div class="sl-heading-wrapper level-h2"><h2 id="while-the-workload-is-paused">While the workload is paused</h2><a class="sl-anchor-link" href="#while-the-workload-is-paused"><span aria-hidden="true" class="sl-anchor-icon"><svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="m12.11 15.39-3.88 3.88a2.52 2.52 0 0 1-3.5 0 2.47 2.47 0 0 1 0-3.5l3.88-3.88a1 1 0 1 0-1.42-1.42l-3.88 3.89a4.48 4.48 0 0 0 6.33 6.33l3.89-3.88a1 1 0 0 0-1.42-1.42m8.58-12.08a4.49 4.49 0 0 0-6.33 0l-3.89 3.88a1 1 0 1 0 1.42 1.42l3.88-3.88a2.52 2.52 0 0 1 3.5 0 2.47 2.47 0 0 1 0 3.5l-3.88 3.88a1 1 0 0 0 0 1.42 1 1 0 0 0 1.42 0l3.88-3.89a4.49 4.49 0 0 0 0-6.33M8.83 15.17a1 1 0 0 0 .71.29 1 1 0 0 0 .71-.29l4.92-4.92a1 1 0 1 0-1.42-1.42l-4.92 4.92a1 1 0 0 0 0 1.42"></path></svg></span><span class="sr-only" data-pagefind-ignore>Section titled “While the workload is paused”</span></a></div>
+<figure class="nw-flow nw-flow--across not-content astro-4tgvzlqj" aria-label="A paused workload woken by a Prometheus query" role="group"><ol class="nw-flow__track astro-4tgvzlqj" style="--nw-cols:minmax(0, 1fr) minmax(6rem, 0.95fr) minmax(0, 1fr) minmax(6rem, 0.95fr) minmax(0, 1fr)"><li class="nw-flow__step nw-flow__step--asleep astro-4tgvzlqj"><div class="nw-flow__head astro-4tgvzlqj"><svg class="nw-door astro-4tgvzlqj astro-iomifxvf" viewBox="0 0 24 24" width="34" height="34" aria-hidden="true" focusable="false"><path d="M6 22V10A6 6 0 0 1 18 10V22Z" fill="var(--glyph-slate)"/><circle cx="15.3" cy="15" r="1.2" fill="var(--paper)"/></svg></div><span class="nw-badge nw-badge--asleep astro-7xdsdygk"><span class="nw-badge__word astro-7xdsdygk">Asleep</span> <span class="nw-badge__also astro-7xdsdygk">· paused</span></span><p class="nw-flow__title astro-4tgvzlqj">Paused</p><p class="nw-flow__text astro-4tgvzlqj">Its queries still run every minute, not every 5.</p></li><li class="nw-flow__arrow astro-4tgvzlqj"><span class="nw-flow__line astro-4tgvzlqj" aria-hidden="true"></span><span class="nw-flow__why astro-4tgvzlqj">Activity shows in Prometheus</span></li><li class="nw-flow__step nw-flow__step--waking astro-4tgvzlqj"><div class="nw-flow__head astro-4tgvzlqj"><svg class="nw-door astro-4tgvzlqj astro-iomifxvf" viewBox="0 0 24 24" width="34" height="34" aria-hidden="true" focusable="false"><path d="M6 22V10A6 6 0 0 1 18 10V22Z" fill="var(--glyph-room-amber)" stroke="var(--glyph-amber)" stroke-width="1.6"/><path d="M6 22V10A6 6 0 0 1 9.5 4.6L12 6V22Z" fill="var(--glyph-leaf)"/><path d="M12 22.2H18L23 23.6H13Z" fill="var(--glyph-amber)"/></svg></div><span class="nw-badge nw-badge--waking astro-7xdsdygk"><span class="nw-badge__word astro-7xdsdygk">Waking up</span> <span class="nw-badge__also astro-7xdsdygk">· resuming</span></span><p class="nw-flow__title astro-4tgvzlqj">A query shows activity</p><p class="nw-flow__text astro-4tgvzlqj">A <code>WokeByActivity</code> event says <code>a Prometheus activity query shows activity, waking</code>. Its dependencies wake with it.</p></li><li class="nw-flow__arrow astro-4tgvzlqj"><span class="nw-flow__line astro-4tgvzlqj" aria-hidden="true"></span><span class="nw-flow__why astro-4tgvzlqj">Within a minute</span></li><li class="nw-flow__step nw-flow__step--awake astro-4tgvzlqj"><div class="nw-flow__head astro-4tgvzlqj"><svg class="nw-door astro-4tgvzlqj astro-iomifxvf" viewBox="0 0 24 24" width="34" height="34" aria-hidden="true" focusable="false"><path d="M6 22V10A6 6 0 0 1 18 10V22Z" fill="var(--glyph-room-green)" stroke="var(--glyph-green)" stroke-width="1.6"/><rect x="10" y="0.6" width="4" height="2.2" rx="1.1" fill="var(--glyph-green)"/><path d="M6.5 22.2H17.5L21 23.6H3Z" fill="var(--glyph-green)" opacity=".6"/></svg></div><span class="nw-badge nw-badge--awake astro-7xdsdygk"><span class="nw-badge__word astro-7xdsdygk">Awake</span> <span class="nw-badge__also astro-7xdsdygk">· running</span></span><p class="nw-flow__title astro-4tgvzlqj">Awake</p><p class="nw-flow__text astro-4tgvzlqj"><code>lastActivitySource: prometheus</code></p></li></ol></figure>
+<p>That’s how a workload no request reaches wakes on its own. No Service routes requests to a queue worker, so query its queue’s length:</p>
+<div class="expressive-code"><figure class="frame has-title not-content"><figcaption class="header"><span class="title">managedworkload.yaml</span></figcaption><pre data-language="yaml"><code><div class="ec-line"><div class="code"><span style="--0:#4FB3A6;--1:#14695F">spec</span><span style="--0:#A3ADAA;--1:#4E5957">:</span></div></div><div class="ec-line"><div class="code"><span class="indent">  </span><span style="--0:#4FB3A6;--1:#14695F">idlePolicy</span><span style="--0:#A3ADAA;--1:#4E5957">:</span></div></div><div class="ec-line"><div class="code"><span class="indent">    </span><span style="--0:#4FB3A6;--1:#14695F">idleAfter</span><span style="--0:#A3ADAA;--1:#4E5957">:</span><span style="--0:#E3E7E4;--1:#0F1716"> </span><span style="--0:#F5B53F;--1:#825500">30m</span></div></div><div class="ec-line"><div class="code"><span class="indent">    </span><span style="--0:#4FB3A6;--1:#14695F">activity</span><span style="--0:#A3ADAA;--1:#4E5957">:</span></div></div><div class="ec-line"><div class="code"><span class="indent">      </span><span style="--0:#4FB3A6;--1:#14695F">prometheus</span><span style="--0:#A3ADAA;--1:#4E5957">:</span></div></div><div class="ec-line"><div class="code"><span class="indent">        </span><span style="--0:#A3ADAA;--1:#4E5957">-</span><span style="--0:#E3E7E4;--1:#0F1716"> </span><span style="--0:#4FB3A6;--1:#14695F">promQL</span><span style="--0:#A3ADAA;--1:#4E5957">:</span><span style="--0:#E3E7E4;--1:#0F1716"> </span><span style="--0:#F5B53F;--1:#825500">'sum(rabbitmq_queue_messages{queue="tasks"})'</span></div></div></code></pre><div class="copy"><div aria-live="polite"></div><button title="Copy to clipboard" data-copied="Copied!" data-code="spec:  idlePolicy:    idleAfter: 30m    activity:      prometheus:        - promQL: &#x27;sum(rabbitmq_queue_messages{queue=&quot;tasks&quot;})&#x27;"><div></div></button></div></figure></div>
+<table>
+<thead>
+<tr>
+<th>While paused</th>
+<th>What happens</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>What to query</td>
+<td>Something that exists while it’s paused, such as the queue’s broker. The workload’s own metrics have no series while it has no pods</td>
+</tr>
+<tr>
+<td>A query already showing activity as a <a href="/next/guides/pause/#pause-now">pause you ask for</a> begins</td>
+<td>It doesn’t undo the pause, such as with messages still queued. It wakes the workload only after a check finds it quiet, then active again. An idle pause begins only once every query is quiet</td>
+</tr>
+<tr>
+<td>A query that can’t be evaluated</td>
+<td>Never wakes it. <code dir="auto">PrometheusAvailable</code> is <code dir="auto">False</code>, as while awake. Its message says the queries can’t wake it until Prometheus answers, and whether a request through the doorman still does</td>
+</tr>
+<tr>
+<td>The <a href="/next/concepts/forecasting/#what-an-hour-records">forecast</a></td>
+<td>Learns the hours the queries watch, quiet or busy. So a worker paused every night still learns whole days. With <code dir="auto">autoResume</code>, it wakes ahead of its first messages once the forecast acts</td>
+</tr>
+</tbody>
+</table>
+<div class="sl-heading-wrapper level-h2"><h2 id="when-a-query-cant-be-evaluated">When a query can’t be evaluated</h2><a class="sl-anchor-link" href="#when-a-query-cant-be-evaluated"><span aria-hidden="true" class="sl-anchor-icon"><svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="m12.11 15.39-3.88 3.88a2.52 2.52 0 0 1-3.5 0 2.47 2.47 0 0 1 0-3.5l3.88-3.88a1 1 0 1 0-1.42-1.42l-3.88 3.89a4.48 4.48 0 0 0 6.33 6.33l3.89-3.88a1 1 0 0 0-1.42-1.42m8.58-12.08a4.49 4.49 0 0 0-6.33 0l-3.89 3.88a1 1 0 1 0 1.42 1.42l3.88-3.88a2.52 2.52 0 0 1 3.5 0 2.47 2.47 0 0 1 0 3.5l-3.88 3.88a1 1 0 0 0 0 1.42 1 1 0 0 0 1.42 0l3.88-3.89a4.49 4.49 0 0 0 0-6.33M8.83 15.17a1 1 0 0 0 .71.29 1 1 0 0 0 .71-.29l4.92-4.92a1 1 0 1 0-1.42-1.42l-4.92 4.92a1 1 0 0 0 0 1.42"></path></svg></span><span class="sr-only" data-pagefind-ignore>Section titled “When a query can’t be evaluated”</span></a></div>
+<p>Napwake can’t see that activity. It doesn’t pause the workload, and a failing query doesn’t wake a paused one. The time isn’t counted as idle either (<a href="/next/concepts/idle-detection/#when-a-source-cant-be-read">When a source can’t be read</a>). <code dir="auto">PrometheusAvailable</code>, only on workloads with queries, says why:</p>
 <table>
 <thead>
 <tr>
@@ -2025,22 +189,69 @@
 </thead>
 <tbody>
 <tr>
-<td><code>EndpointNotConfigured</code></td>
-<td>Queries are configured but the operator has no <code>--prometheus-url</code></td>
+<td><code dir="auto">EndpointNotConfigured</code></td>
+<td>Queries are configured, but the operator has no <code dir="auto">--prometheus-url</code></td>
 </tr>
 <tr>
-<td><code>QueryFailed</code></td>
-<td>Prometheus returned an error, didn't answer a query within 2 seconds or all of the workload's within 5, or returned a range vector or an oversized result. The condition message has the details</td>
+<td><code dir="auto">QueryFailed</code></td>
+<td>Prometheus returned an error, a range vector or an oversized result. Or it didn’t answer a query within 2 seconds, or all of the workload’s within 5. The message has the details</td>
 </tr>
 </tbody>
 </table>
-<div class="language-bash highlight"><pre><span></span><code><span id="__span-4-1"><a id="__codelineno-4-1" name="__codelineno-4-1" href="#__codelineno-4-1"></a>kubectl<span class="w"> </span>get<span class="w"> </span>managedworkload<span class="w"> </span>my-api<span class="w"> </span>-n<span class="w"> </span>staging<span class="w"> </span><span class="se">\</span>
-</span><span id="__span-4-2"><a id="__codelineno-4-2" name="__codelineno-4-2" href="#__codelineno-4-2"></a><span class="w">  </span>-o<span class="w"> </span><span class="nv">jsonpath</span><span class="o">=</span><span class="s1">'{.status.conditions[?(@.type=="PrometheusAvailable")]}'</span>
-</span></code></pre></div>
-<p>The condition only appears on workloads that configure Prometheus queries.</p>
-<p>A query that answers but matches no series at all looks just like a quiet workload, and that's also what a misspelt metric or label name gives. Hybernate can't tell the two apart, so the workload pauses on its other sources as usual, but a query that has matched no series since it was first evaluated is pointed out: <code>PrometheusQueryEmpty=True</code>, reason <code>NoSeries</code>, with the queries in its message, and a <code>PrometheusQueryEmpty</code> warning event when it begins. It clears once the query matches a series, even one at zero. A counter that's only created on the first request, as many client libraries' labelled counters are, also matches nothing until then; once it exists the condition clears. What a query has matched is remembered in memory, so after an operator restart a query is checked again from its first evaluation.</p>
-<p>When Prometheus itself fails, by not answering, answering with a server error or <code>429</code>, or timing out on three queries in a row, the operator doesn't ask it again for a minute: every workload's queries fail at once, as <code>QueryFailed</code> with the error that failed, so none waits out a timeout and holds up the wakes queued behind it. The message is the same for the whole outage, whether or not a check asked Prometheus. A query Prometheus rejects, such as one that doesn't parse, fails only for the workloads that use it. Time that a query can't be evaluated isn't counted as idle: Prometheus out for longer than a couple of checks restarts the clock (<code>lastActivitySource: unobserved</code>), so a workload is never paused because Prometheus was down. A query that times out while other queries are answered fails only for the workloads that use it, so one tenant's slow query doesn't hold off everyone's. Still keep queries cheap: aggregate, and use recording rules for anything heavy.</p>
-<h2 id="example-queries">Example Queries<a class="headerlink" href="#example-queries" title="Permanent link">&para;</a></h2>
+<div class="expressive-code"><figure class="frame is-terminal not-content"><figcaption class="header"><span class="title"></span><span class="sr-only">Terminal window</span></figcaption><pre data-language="bash"><code><div class="ec-line"><div class="code"><span class="nw-prompt" aria-hidden="true">$ </span><span style="--0:#4FB3A6;--1:#14695F">kubectl</span><span style="--0:#E3E7E4;--1:#0F1716"> </span><span style="--0:#E3E7E4;--1:#0F1716">get</span><span style="--0:#E3E7E4;--1:#0F1716"> </span><span style="--0:#E3E7E4;--1:#0F1716">managedworkload</span><span style="--0:#E3E7E4;--1:#0F1716"> </span><span style="--0:#E3E7E4;--1:#0F1716">my-api</span><span style="--0:#E3E7E4;--1:#0F1716"> </span><span style="--0:#E3E7E4;--1:#0F1716">-n</span><span style="--0:#E3E7E4;--1:#0F1716"> </span><span style="--0:#E3E7E4;--1:#0F1716">staging</span><span style="--0:#E3E7E4;--1:#0F1716"> </span><span style="--0:#F5B53F;--1:#825500">\</span></div></div><div class="ec-line"><div class="code"><span class="indent">  </span><span style="--0:#E3E7E4;--1:#0F1716">-o</span><span style="--0:#E3E7E4;--1:#0F1716"> </span><span style="--0:#E3E7E4;--1:#0F1716">jsonpath=</span><span style="--0:#F5B53F;--1:#825500">'{.status.conditions[?(@.type=="PrometheusAvailable")]}'</span></div></div></code></pre><div class="copy"><div aria-live="polite"></div><button title="Copy to clipboard" data-copied="Copied!" data-code="kubectl get managedworkload my-api -n staging \  -o jsonpath=&#x27;{.status.conditions[?(@.type==&quot;PrometheusAvailable&quot;)]}&#x27;"><div></div></button></div></figure></div>
+<div class="sl-heading-wrapper level-h3"><h3 id="a-query-that-matches-nothing">A query that matches nothing</h3><a class="sl-anchor-link" href="#a-query-that-matches-nothing"><span aria-hidden="true" class="sl-anchor-icon"><svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="m12.11 15.39-3.88 3.88a2.52 2.52 0 0 1-3.5 0 2.47 2.47 0 0 1 0-3.5l3.88-3.88a1 1 0 1 0-1.42-1.42l-3.88 3.89a4.48 4.48 0 0 0 6.33 6.33l3.89-3.88a1 1 0 0 0-1.42-1.42m8.58-12.08a4.49 4.49 0 0 0-6.33 0l-3.89 3.88a1 1 0 1 0 1.42 1.42l3.88-3.88a2.52 2.52 0 0 1 3.5 0 2.47 2.47 0 0 1 0 3.5l-3.88 3.88a1 1 0 0 0 0 1.42 1 1 0 0 0 1.42 0l3.88-3.89a4.49 4.49 0 0 0 0-6.33M8.83 15.17a1 1 0 0 0 .71.29 1 1 0 0 0 .71-.29l4.92-4.92a1 1 0 1 0-1.42-1.42l-4.92 4.92a1 1 0 0 0 0 1.42"></path></svg></span><span class="sr-only" data-pagefind-ignore>Section titled “A query that matches nothing”</span></a></div>
+<p>A query that answers but matches no series looks like a quiet workload, as does a misspelt metric or label. Napwake can’t tell them apart, so the workload pauses on its other sources as usual.</p>
+<table>
+<thead>
+<tr>
+<th><code dir="auto">PrometheusQueryEmpty</code></th>
+<th></th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Set to <code dir="auto">True</code></td>
+<td>Reason <code dir="auto">NoSeries</code>, naming the queries, for a query that has matched nothing since its first evaluation. A <code dir="auto">PrometheusQueryEmpty</code> warning event marks when it begins</td>
+</tr>
+<tr>
+<td>Cleared</td>
+<td>Once the query matches a series, even one at zero. A counter created on the first request, as many client libraries’ labelled counters are, matches once it exists</td>
+</tr>
+<tr>
+<td>After an operator restart</td>
+<td>Checked from each query’s first evaluation again, since matches are kept in memory</td>
+</tr>
+</tbody>
+</table>
+<div class="sl-heading-wrapper level-h3"><h3 id="when-prometheus-is-down">When Prometheus is down</h3><a class="sl-anchor-link" href="#when-prometheus-is-down"><span aria-hidden="true" class="sl-anchor-icon"><svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="m12.11 15.39-3.88 3.88a2.52 2.52 0 0 1-3.5 0 2.47 2.47 0 0 1 0-3.5l3.88-3.88a1 1 0 1 0-1.42-1.42l-3.88 3.89a4.48 4.48 0 0 0 6.33 6.33l3.89-3.88a1 1 0 0 0-1.42-1.42m8.58-12.08a4.49 4.49 0 0 0-6.33 0l-3.89 3.88a1 1 0 1 0 1.42 1.42l3.88-3.88a2.52 2.52 0 0 1 3.5 0 2.47 2.47 0 0 1 0 3.5l-3.88 3.88a1 1 0 0 0 0 1.42 1 1 0 0 0 1.42 0l3.88-3.89a4.49 4.49 0 0 0 0-6.33M8.83 15.17a1 1 0 0 0 .71.29 1 1 0 0 0 .71-.29l4.92-4.92a1 1 0 1 0-1.42-1.42l-4.92 4.92a1 1 0 0 0 0 1.42"></path></svg></span><span class="sr-only" data-pagefind-ignore>Section titled “When Prometheus is down”</span></a></div>
+<p>When Prometheus fails, every workload’s queries fail at once. When one query fails, only the workloads that use it do.</p>
+<table>
+<thead>
+<tr>
+<th>When</th>
+<th>What happens</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Prometheus doesn’t answer, answers with a server error or <code dir="auto">429</code>, or times out on three queries in a row</td>
+<td>The operator doesn’t ask it again for a minute. Every workload’s queries fail at once, as <code dir="auto">QueryFailed</code> with the error. None waits out a timeout and holds up queued wakes. The message stays the same for the whole outage, whether or not a check asked Prometheus</td>
+</tr>
+<tr>
+<td>It’s out for longer than a couple of checks</td>
+<td>The clock restarts (<code dir="auto">lastActivitySource: unobserved</code>)</td>
+</tr>
+<tr>
+<td>Prometheus rejects a query, such as one that doesn’t parse</td>
+<td>It fails only for the workloads that use it</td>
+</tr>
+<tr>
+<td>A query times out while others answer</td>
+<td>It fails only for the workloads that use it, so one tenant’s slow query doesn’t hold off everyone’s</td>
+</tr>
+</tbody>
+</table>
+<div class="sl-heading-wrapper level-h2"><h2 id="example-queries">Example queries</h2><a class="sl-anchor-link" href="#example-queries"><span aria-hidden="true" class="sl-anchor-icon"><svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="m12.11 15.39-3.88 3.88a2.52 2.52 0 0 1-3.5 0 2.47 2.47 0 0 1 0-3.5l3.88-3.88a1 1 0 1 0-1.42-1.42l-3.88 3.89a4.48 4.48 0 0 0 6.33 6.33l3.89-3.88a1 1 0 0 0-1.42-1.42m8.58-12.08a4.49 4.49 0 0 0-6.33 0l-3.89 3.88a1 1 0 1 0 1.42 1.42l3.88-3.88a2.52 2.52 0 0 1 3.5 0 2.47 2.47 0 0 1 0 3.5l-3.88 3.88a1 1 0 0 0 0 1.42 1 1 0 0 0 1.42 0l3.88-3.89a4.49 4.49 0 0 0 0-6.33M8.83 15.17a1 1 0 0 0 .71.29 1 1 0 0 0 .71-.29l4.92-4.92a1 1 0 1 0-1.42-1.42l-4.92 4.92a1 1 0 0 0 0 1.42"></path></svg></span><span class="sr-only" data-pagefind-ignore>Section titled “Example queries”</span></a></div>
 <table>
 <thead>
 <tr>
@@ -2051,107 +262,34 @@
 <tbody>
 <tr>
 <td>Requests through ingress-nginx</td>
-<td><code>sum(rate(nginx_ingress_controller_requests{exported_namespace="staging", exported_service="api"}[5m]))</code></td>
+<td><code dir="auto">sum(rate(nginx_ingress_controller_requests{exported_namespace="staging", exported_service="api"}[5m]))</code></td>
 </tr>
 <tr>
 <td>Requests seen by the app</td>
-<td><code>sum(rate(http_requests_total{service="api"}[5m]))</code></td>
+<td><code dir="auto">sum(rate(http_requests_total{service="api"}[5m]))</code></td>
 </tr>
 <tr>
 <td>Open WebSocket connections</td>
-<td><code>sum(websocket_connections{service="api"})</code></td>
+<td><code dir="auto">sum(websocket_connections{service="api"})</code></td>
 </tr>
 <tr>
 <td>Messages waiting on a queue</td>
-<td><code>sum(rabbitmq_queue_messages{queue="tasks"})</code></td>
+<td><code dir="auto">sum(rabbitmq_queue_messages{queue="tasks"})</code></td>
 </tr>
 <tr>
 <td>Kafka consumer lag</td>
-<td><code>sum(kafka_consumer_lag{group="worker"})</code></td>
+<td><code dir="auto">sum(kafka_consumer_lag{group="worker"})</code></td>
 </tr>
 </tbody>
 </table>
-<p>ingress-nginx labels each request with the namespace and Service it went to. Scraped by the Prometheus Operator, which keeps its own <code>namespace</code> and <code>service</code> labels for the scrape's target, they become <code>exported_namespace</code> and <code>exported_service</code>. Give the namespace as well as the Service: preview environments often share Service names, and another one's traffic would keep this workload awake.</p>
-<p>A request-rate query is also how <a href="../dry-run/#what-dry-run-measured">dry-run</a> sees a workload's requests: while it runs, nothing goes through the doorman, so without one a request counts only through the CPU it uses.</p>
-<h2 id="writing-good-queries">Writing Good Queries<a class="headerlink" href="#writing-good-queries" title="Permanent link">&para;</a></h2>
-<h3 id="use-a-rate-window-that-matches-how-quiet-idle-is">Use a rate window that matches how quiet "idle" is<a class="headerlink" href="#use-a-rate-window-that-matches-how-quiet-idle-is" title="Permanent link">&para;</a></h3>
-<p><code>rate(...[5m])</code> stays above zero for about five minutes after the last request. That's usually what you want: a single request keeps the workload awake, and the clock starts once traffic has stopped.</p>
-<h3 id="exclude-traffic-that-isnt-people">Exclude traffic that isn't people<a class="headerlink" href="#exclude-traffic-that-isnt-people" title="Permanent link">&para;</a></h3>
-<p>Health checks, uptime monitors, and scrapers keep a workload awake if the query counts them, and wake it once it's paused. Filter them out by path or user agent where your metrics allow it:</p>
-<div class="language-promql highlight"><pre><span></span><code><span id="__span-5-1"><a id="__codelineno-5-1" name="__codelineno-5-1" href="#__codelineno-5-1"></a><span class="k">sum</span><span class="o">(</span><span class="kr">rate</span><span class="o">(</span><span class="nv">nginx_ingress_controller_requests</span><span class="p">{</span><span class="nl">exported_namespace</span><span class="o">=</span><span class="p">"</span><span class="s">staging</span><span class="p">",</span><span class="w"> </span><span class="nl">exported_service</span><span class="o">=</span><span class="p">"</span><span class="s">api</span><span class="p">",</span><span class="w"> </span><span class="nl">path</span><span class="o">!~</span><span class="p">"</span><span class="s">/healthz|/metrics</span><span class="p">"}[</span><span class="s">5m</span><span class="p">]</span><span class="o">))</span>
-</span></code></pre></div>
-<h3 id="test-the-query-directly">Test the query directly<a class="headerlink" href="#test-the-query-directly" title="Permanent link">&para;</a></h3>
-<div class="language-bash highlight"><pre><span></span><code><span id="__span-6-1"><a id="__codelineno-6-1" name="__codelineno-6-1" href="#__codelineno-6-1"></a>curl<span class="w"> </span>-s<span class="w"> </span><span class="s1">'http://prometheus:9090/api/v1/query'</span><span class="w"> </span><span class="se">\</span>
-</span><span id="__span-6-2"><a id="__codelineno-6-2" name="__codelineno-6-2" href="#__codelineno-6-2"></a><span class="w">  </span>--data-urlencode<span class="w"> </span><span class="s1">'query=sum(rate(nginx_ingress_controller_requests{exported_namespace="staging", exported_service="api"}[5m]))'</span>
-</span></code></pre></div>
-<p>Then check what kept the workload awake:</p>
-<div class="language-bash highlight"><pre><span></span><code><span id="__span-7-1"><a id="__codelineno-7-1" name="__codelineno-7-1" href="#__codelineno-7-1"></a>kubectl<span class="w"> </span>get<span class="w"> </span>managedworkload<span class="w"> </span>my-api<span class="w"> </span>-n<span class="w"> </span>staging<span class="w"> </span>-o<span class="w"> </span><span class="nv">jsonpath</span><span class="o">=</span><span class="s1">'{.status.activity.lastActivitySource}'</span>
-</span></code></pre></div>
-<p><code>prometheus</code> means a query was the most recent source of activity.</p>
-
-
-
-
-
-
-
-
-
-
-
-
-                
-              </article>
-            </div>
-          
-          
-<script>var target=document.getElementById(location.hash.slice(1));target&&target.name&&(target.checked=target.name.startsWith("__tabbed_"))</script>
-        </div>
-        
-          <button type="button" class="md-top md-icon" data-md-component="top" hidden>
-  
-  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M13 20h-2V8l-5.5 5.5-1.42-1.42L12 4.16l7.92 7.92-1.42 1.42L13 8z"/></svg>
-  Back to top
-</button>
-        
-      </main>
-      
-        <footer class="md-footer">
-  
-  <div class="md-footer-meta md-typeset">
-    <div class="md-footer-meta__inner md-grid">
-      <div class="md-copyright">
-  
-  
-    Made with
-    <a href="https://squidfunk.github.io/mkdocs-material/" target="_blank" rel="noopener">
-      Material for MkDocs
-    </a>
-  
-</div>
-      
-    </div>
-  </div>
-</footer>
-      
-    </div>
-    <div class="md-dialog" data-md-component="dialog">
-      <div class="md-dialog__inner md-typeset"></div>
-    </div>
-    
-    
-    
-      
-      
-      <script id="__config" type="application/json">{"annotate": null, "base": "../..", "features": ["navigation.tabs", "navigation.sections", "navigation.expand", "navigation.top", "search.suggest", "search.highlight", "content.code.copy", "content.code.annotate", "content.code.select", "content.action.edit"], "search": "../../assets/javascripts/workers/search.2c215733.min.js", "tags": null, "translations": {"clipboard.copied": "Copied to clipboard", "clipboard.copy": "Copy to clipboard", "search.result.more.one": "1 more on this page", "search.result.more.other": "# more on this page", "search.result.none": "No matching documents", "search.result.one": "1 matching document", "search.result.other": "# matching documents", "search.result.placeholder": "Type to start searching", "search.result.term.missing": "Missing", "select.version": "Select version"}, "version": {"alias": true, "default": "latest", "provider": "mike"}}</script>
-    
-    
-      <script src="../../assets/javascripts/bundle.d7400e89.min.js"></script>
-      
-        <script src="../../javascripts/mathjax.js"></script>
-      
-        <script src="https://unpkg.com/mathjax@3.2.2/es5/tex-mml-chtml.js"></script>
-      
-    
-  </body>
-</html>
+<p>ingress-nginx labels each request with its namespace and Service. Scraped by the Prometheus Operator, which keeps <code dir="auto">namespace</code> and <code dir="auto">service</code> for the scrape target, they become <code dir="auto">exported_namespace</code> and <code dir="auto">exported_service</code>. Give both. Preview environments often share Service names, and another’s traffic would keep this one awake.</p>
+<p>In <a href="/next/guides/dry-run/#what-dry-run-measured">dry-run</a>, nothing goes through the doorman, so a request-rate query is how it sees requests. Without one, a request counts only through the CPU it uses.</p>
+<div class="sl-heading-wrapper level-h2"><h2 id="writing-good-queries">Writing good queries</h2><a class="sl-anchor-link" href="#writing-good-queries"><span aria-hidden="true" class="sl-anchor-icon"><svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="m12.11 15.39-3.88 3.88a2.52 2.52 0 0 1-3.5 0 2.47 2.47 0 0 1 0-3.5l3.88-3.88a1 1 0 1 0-1.42-1.42l-3.88 3.89a4.48 4.48 0 0 0 6.33 6.33l3.89-3.88a1 1 0 0 0-1.42-1.42m8.58-12.08a4.49 4.49 0 0 0-6.33 0l-3.89 3.88a1 1 0 1 0 1.42 1.42l3.88-3.88a2.52 2.52 0 0 1 3.5 0 2.47 2.47 0 0 1 0 3.5l-3.88 3.88a1 1 0 0 0 0 1.42 1 1 0 0 0 1.42 0l3.88-3.89a4.49 4.49 0 0 0 0-6.33M8.83 15.17a1 1 0 0 0 .71.29 1 1 0 0 0 .71-.29l4.92-4.92a1 1 0 1 0-1.42-1.42l-4.92 4.92a1 1 0 0 0 0 1.42"></path></svg></span><span class="sr-only" data-pagefind-ignore>Section titled “Writing good queries”</span></a></div>
+<ul>
+<li>Measure activity, not idleness. Ask “how many requests per second”, not “are there no requests”.</li>
+<li><code dir="auto">rate(...[5m])</code> stays above zero for about five minutes after the last request. That’s usually right. One request keeps the workload awake, and the clock starts once traffic stops.</li>
+<li>Keep queries cheap. Aggregate, and use recording rules for anything heavy.</li>
+<li>Leave out traffic that isn’t people. Health checks, uptime monitors and scrapers counted by the query keep a workload awake, and wake it once paused. Filter them by path or user agent where your metrics allow:</li>
+</ul>
+<div class="expressive-code"><figure class="frame not-content"><figcaption class="header"></figcaption><pre data-language="promql"><code><div class="ec-line"><div class="code"><span style="--0:#4FB3A6;--1:#14695F">sum</span><span style="--0:#E3E7E4;--1:#0F1716">(</span><span style="--0:#4FB3A6;--1:#14695F">rate</span><span style="--0:#E3E7E4;--1:#0F1716">(nginx_ingress_controller_requests</span><span style="--0:#A3ADAA;--1:#4E5957">{</span><span style="--0:#4FB3A6;--1:#14695F">exported_namespace</span><span style="--0:#A3ADAA;--1:#4E5957">=</span><span style="--0:#F5B53F;--1:#825500">"staging"</span><span style="--0:#A3ADAA;--1:#4E5957">,</span><span style="--0:#E3E7E4;--1:#0F1716"> </span><span style="--0:#4FB3A6;--1:#14695F">exported_service</span><span style="--0:#A3ADAA;--1:#4E5957">=</span><span style="--0:#F5B53F;--1:#825500">"api"</span><span style="--0:#A3ADAA;--1:#4E5957">,</span><span style="--0:#E3E7E4;--1:#0F1716"> </span><span style="--0:#4FB3A6;--1:#14695F">path</span><span style="--0:#A3ADAA;--1:#4E5957">!~</span><span style="--0:#F5B53F;--1:#825500">"/healthz|/metrics"</span><span style="--0:#A3ADAA;--1:#4E5957">}</span><span style="--0:#F5B53F;--1:#825500">[5m]</span><span style="--0:#E3E7E4;--1:#0F1716">))</span></div></div></code></pre><div class="copy"><div aria-live="polite"></div><button title="Copy to clipboard" data-copied="Copied!" data-code="sum(rate(nginx_ingress_controller_requests{exported_namespace=&quot;staging&quot;, exported_service=&quot;api&quot;, path!~&quot;/healthz|/metrics&quot;}[5m]))"><div></div></button></div></figure></div>
+<section class="nw-next not-content nw-next--doorman astro-zkuglizp" aria-label="Next"><svg class="nw-doorman nw-next__doorman astro-zkuglizp astro-rkcsz4yr" viewBox="0 0 240 262" aria-hidden="true" focusable="false"><defs><filter id="nw2c-f" x="-5%" y="-5%" width="110%" height="110%" color-interpolation-filters="sRGB"><feTurbulence type="fractalNoise" baseFrequency=".045" numOctaves="2" seed="3" result="w"/><feDisplacementMap in="SourceGraphic" in2="w" scale="1.3" xChannelSelector="R" yChannelSelector="G" result="d"/><feTurbulence type="fractalNoise" baseFrequency=".85" numOctaves="2" seed="9" result="n"/><feColorMatrix in="n" values="0 0 0 0 0  0 0 0 0 0  0 0 0 0 0  0 0 0 0.13 0" result="na"/><feComposite in="na" in2="d" operator="in" result="g"/><feTurbulence type="fractalNoise" baseFrequency=".018" numOctaves="2" seed="21" result="m"/><feColorMatrix in="m" values="0 0 0 0 1  0 0 0 0 1  0 0 0 0 1  0 0 0 .09 -.01" result="ma"/><feComposite in="ma" in2="d" operator="in" result="ink"/><feMerge><feMergeNode in="d"/><feMergeNode in="ink"/><feMergeNode in="g"/></feMerge></filter></defs><g transform="translate(100 244)" filter="url(#nw2c-f)"><ellipse cx="-3.5999999999999996" cy="2" rx="46" ry="5.5" fill="var(--doorman-night)" opacity=".13"/><g transform="rotate(-5)"><ellipse cx="-13" cy="-1" rx="10" ry="6" transform="rotate(0 -13 -1)" fill="var(--doorman-shoe)" stroke="var(--doorman-shoe-rim)" stroke-width="1.4"/><ellipse cx="16" cy="-1" rx="10" ry="6" transform="rotate(0 16 -1)" fill="var(--doorman-shoe)" stroke="var(--doorman-shoe-rim)" stroke-width="1.4"/><path d="M-31 -102 Q-31 -114 -19 -114 H19 Q31 -114 31 -102 Q35 -54 35.8 -6 Q37 -2 33 -2 Q0 1 -33 -2 Q-37 -2 -37.48 -6 Q-31.8 -54 -31 -102 Z" fill="var(--doorman-coat)"/><clipPath id="nw2c-c317"><path d="M-31 -102 Q-31 -114 -19 -114 H19 Q31 -114 31 -102 Q35 -54 35.8 -6 Q37 -2 33 -2 Q0 1 -33 -2 Q-37 -2 -37.48 -6 Q-31.8 -54 -31 -102 Z"/></clipPath><g clip-path="url(#nw2c-c317)"><path d="M-43 -118 H-15.399999999999999 L-18.6 4 H-43Z" fill="var(--doorman-night)" opacity="0.17200000000000001"/><path d="M28 -118 H39 V4 H33Z" fill="#FFF6DD" opacity=".1"/></g><path d="M9.8 -112 Q11.3 -54 12.8 -3" stroke="var(--doorman-coat-deep)" stroke-width="2.2" fill="none"/><circle cx="-3.58" cy="-98" r="3" fill="var(--doorman-brass)"/><circle cx="20.42" cy="-98" r="2.76" fill="var(--doorman-brass)"/><circle cx="-2.91" cy="-78" r="3" fill="var(--doorman-brass)"/><circle cx="21.09" cy="-78" r="2.76" fill="var(--doorman-brass)"/><circle cx="-2.24" cy="-58" r="3" fill="var(--doorman-brass)"/><circle cx="21.76" cy="-58" r="2.76" fill="var(--doorman-brass)"/><g clip-path="url(#nw2c-c317)"><path d="M-47 -14 H47 V-4 H-47Z" fill="var(--doorman-coat-deep)" opacity=".45"/></g><rect x="-19.1" y="-46" width="14" height="4" rx="2" fill="var(--doorman-coat-deep)"/><rect x="20.1" y="-46" width="11.4" height="4" rx="2" fill="var(--doorman-coat-deep)"/><g transform="rotate(7.5 -26 -64)"><circle cx="-26" cy="-58" r="4.6" fill="none" stroke="var(--doorman-brass)" stroke-width="1.8"/><rect x="-29.6" y="-55" width="2.6" height="10" rx="1" fill="var(--doorman-brass)" transform="rotate(14 -26 -55)"/><rect x="-25.4" y="-54.5" width="2.6" height="8.5" rx="1" fill="var(--doorman-brass)" transform="rotate(-10 -26 -55)"/></g><path d="M-26 -110 Q-30 -80 -3.8 -98 M-25 -110 Q-35 -64 -3.8 -98" stroke="var(--doorman-brass)" stroke-width="2.4" fill="none" stroke-linecap="round"/><path d="M-29.5 -81 l-1 9" stroke="var(--doorman-brass)" stroke-width="3.2" stroke-linecap="round"/><rect x="-30" y="-113" width="13" height="6" rx="3" fill="var(--doorman-brass)"/><g transform="translate(0 0) rotate(-4 0 -126)"><path d="M-27 -120 V-156 Q-27 -172 -11 -172 H11 Q27 -172 27 -156 V-120 Z" fill="var(--doorman-face)"/><clipPath id="nw2c-h318"><path d="M-27 -120 V-156 Q-27 -172 -11 -172 H11 Q27 -172 27 -156 V-120 Z"/></clipPath><path clip-path="url(#nw2c-h318)" d="M-29 -172 H-13.2 V-118 H-29Z" fill="var(--doorman-night)" opacity="0.158"/><g transform="translate(-7.4 -146) scale(1 1)"><clipPath id="nw2c-e319"><circle cx="0" cy="0" r="9.57"/></clipPath><circle cx="0" cy="0" r="9.2" fill="var(--doorman-eye)"/><g clip-path="url(#nw2c-e319)"><circle cx="3.48" cy="0.58" r="4.6" fill="var(--doorman-night)"/><rect x="-14.719999999999999" y="-18.4" width="29.439999999999998" height="18.03" fill="var(--doorman-face)" transform="rotate(-4 0 0)"/></g><rect x="-10.86" y="-2.12" width="21.71" height="3.5" rx="1.75" fill="var(--doorman-night)" transform="rotate(-4 0 0)"/></g><g transform="translate(13.8 -146) scale(0.85 1)"><clipPath id="nw2c-e320"><circle cx="0" cy="0" r="9.57"/></clipPath><circle cx="0" cy="0" r="9.2" fill="var(--doorman-eye)"/><g clip-path="url(#nw2c-e320)"><circle cx="3.48" cy="0.58" r="4.6" fill="var(--doorman-night)"/><rect x="-14.719999999999999" y="-18.4" width="29.439999999999998" height="18.03" fill="var(--doorman-face)" transform="rotate(2 0 0)"/></g><rect x="-10.86" y="-2.12" width="21.71" height="3.5" rx="1.75" fill="var(--doorman-night)" transform="rotate(2 0 0)"/></g><g transform="rotate(-5 0 -168)"><path d="M-18.78 -170 L-20.400000000000002 -198.48 Q-20.400000000000002 -201.48 -16.400000000000002 -201.48 Q1.2000000000000002 -203.98 18.8 -201.48 Q22.8 -201.48 22.8 -198.48 L21.18 -170 Z" fill="var(--doorman-hat)"/><path d="M-18.580000000000002 -171 L-19.68 -178.8 H22.08 L20.98 -171 Z" fill="var(--doorman-brass)"/><path d="M-20.400000000000002 -198.48 L-14.600000000000001 -199.48 L-11.780000000000001 -171 L-18.78 -170 Z" fill="#000" opacity=".22"/><path d="M-35.1 -172.5 Q-32.1 -169 -25.1 -169.5 H25.1 Q32.1 -169 35.1 -172.5 Q36.1 -165 27.1 -164.5 H-27.1 Q-36.1 -165 -35.1 -172.5 Z" fill="var(--doorman-hat)"/></g></g><path d="M-31 -128 H31 V-110 Q2.4 -106 -31 -110 Z" fill="var(--doorman-coat-deep)"/><rect x="-31" y="-129" width="62" height="2.6" rx="1.3" fill="var(--doorman-brass)"/></g><circle cx="-35.08" cy="-100.32" r="7.2" fill="var(--doorman-coat-deep)"/><circle cx="-52.08" cy="-80.32" r="5.9" fill="var(--doorman-coat-deep)"/><path d="M-40.57 -104.98 L-56.58 -84.14 L-47.58 -76.5 L-29.59 -95.66 Z" fill="var(--doorman-coat-deep)"/><circle cx="-52.08" cy="-80.32" r="5.9" fill="var(--doorman-coat-deep)"/><circle cx="-42.67" cy="-66.87" r="5.1" fill="var(--doorman-coat-deep)"/><path d="M-56.91 -76.94 L-46.85 -63.95 L-38.49 -69.8 L-47.25 -83.7 Z" fill="var(--doorman-coat-deep)"/><path d="M-47.72 -83.62 Q-49.68 -80.21 -48.05 -76.63" stroke="var(--doorman-night)" stroke-width="1.5" fill="none" opacity=".35" stroke-linecap="round"/><rect x="-3.2" y="-6.6" width="6.4" height="13.2" rx="2" fill="var(--doorman-brass)" transform="translate(-42.67 -66.87) rotate(55.01)"/><g transform="translate(-38.08 -60.32) rotate(55.01)"><ellipse cx="-1" cy="4.5" rx="3.9" ry="3" transform="rotate(-38 -1 4.5)" fill="var(--doorman-mitten)"/><ellipse cx="0" cy="0" rx="6.4" ry="6.8" fill="var(--doorman-mitten)"/><ellipse cx="1" cy="-2.856" rx="3.5200000000000005" ry="1.9040000000000001" fill="#FFFFFF" opacity=".16"/></g><circle cx="13.94" cy="-104.61" r="7.2" fill="var(--doorman-coat-deep)"/><circle cx="39.94" cy="-102.61" r="5.9" fill="var(--doorman-coat-deep)"/><path d="M13.39 -97.43 L39.49 -96.73 L40.39 -108.49 L14.49 -111.79 Z" fill="var(--doorman-coat-deep)"/><circle cx="39.94" cy="-102.61" r="5.9" fill="var(--doorman-coat-deep)"/><circle cx="60.12" cy="-106.93" r="5.1" fill="var(--doorman-coat-deep)"/><path d="M41.18 -96.84 L61.19 -101.95 L59.05 -111.92 L38.7 -108.38 Z" fill="var(--doorman-coat-deep)"/><rect x="-3.2" y="-6.6" width="6.4" height="13.2" rx="2" fill="var(--doorman-brass)" transform="translate(60.12 -106.93) rotate(-12.09)"/><g transform="translate(67.94 -108.61) rotate(-12.09)"><ellipse cx="0.5" cy="-5.6" rx="3.9" ry="3" transform="rotate(38 0.5 -5.6)" fill="var(--doorman-mitten)"/><ellipse cx="4" cy="0" rx="10.5" ry="5.6" fill="var(--doorman-mitten)"/><ellipse cx="5" cy="2.352" rx="5.775" ry="1.568" fill="#FFFFFF" opacity=".16"/><path d="M6 1.5 h5" stroke="var(--doorman-mitten-line)" stroke-width="1.1" stroke-linecap="round" opacity=".5"/></g></g></svg><div class="nw-next__list astro-zkuglizp"><p class="nw-next__title astro-zkuglizp">Next</p><ul class="astro-zkuglizp"><li class="astro-zkuglizp"><a href="/next/concepts/idle-detection/" class="astro-zkuglizp"><span class="nw-next__name astro-zkuglizp">Idle detection <span aria-hidden="true" class="astro-zkuglizp">→</span></span><span class="nw-next__text astro-zkuglizp">Every source of activity, and when a workload pauses.</span></a></li><li class="astro-zkuglizp"><a href="/next/guides/dry-run/" class="astro-zkuglizp"><span class="nw-next__name astro-zkuglizp">Dry run <span aria-hidden="true" class="astro-zkuglizp">→</span></span><span class="nw-next__text astro-zkuglizp">Measure a workload before it pauses.</span></a></li></ul></div></section></div><footer class="sl-flex nw-foot astro-ft5hcqwl"><div class="meta sl-flex astro-ft5hcqwl"><a href="https://github.com/napwake/napwake/edit/main/docs/src/content/docs/guides/prometheus-signals.mdx" class="sl-flex print:hidden astro-qlekgd3o"><svg aria-hidden="true" class="astro-qlekgd3o astro-hkc32dio" width="16" height="16" viewBox="0 0 24 24" fill="currentColor" style="--sl-icon-size: 1.2em;"><path d="M22 7.24a1 1 0 0 0-.29-.71l-4.24-4.24a1 1 0 0 0-1.1-.22 1 1 0 0 0-.32.22l-2.83 2.83L2.29 16.05a1 1 0 0 0-.29.71V21a1 1 0 0 0 1 1h4.24a1 1 0 0 0 .76-.29l10.87-10.93L21.71 8c.1-.1.17-.2.22-.33a1 1 0 0 0 0-.24v-.14l.07-.05ZM6.83 20H4v-2.83l9.93-9.93 2.83 2.83L6.83 20ZM18.17 8.66l-2.83-2.83 1.42-1.41 2.82 2.82-1.41 1.42Z"/></svg>Edit page</a></div><div class="pagination-links print:hidden astro-b5raizh3" dir="ltr"><a href="/next/guides/dry-run/" rel="prev" class="astro-b5raizh3"><svg aria-hidden="true" class="astro-b5raizh3 astro-hkc32dio" width="16" height="16" viewBox="0 0 24 24" fill="currentColor" style="--sl-icon-size: 1.5rem;"><path d="M17 11H9.41l3.3-3.29a1.004 1.004 0 1 0-1.42-1.42l-5 5a1 1 0 0 0-.21.33 1 1 0 0 0 0 .76 1 1 0 0 0 .21.33l5 5a1.002 1.002 0 0 0 1.639-.325 1 1 0 0 0-.219-1.095L9.41 13H17a1 1 0 0 0 0-2Z"/></svg><span class="astro-b5raizh3">Previous<br class="astro-b5raizh3"><span class="link-title astro-b5raizh3">Dry run</span></span></a><a href="/next/guides/gitops/" rel="next" class="astro-b5raizh3"><svg aria-hidden="true" class="astro-b5raizh3 astro-hkc32dio" width="16" height="16" viewBox="0 0 24 24" fill="currentColor" style="--sl-icon-size: 1.5rem;"><path d="M17.92 11.62a1.001 1.001 0 0 0-.21-.33l-5-5a1.003 1.003 0 1 0-1.42 1.42l3.3 3.29H7a1 1 0 0 0 0 2h7.59l-3.3 3.29a1.002 1.002 0 0 0 .325 1.639 1 1 0 0 0 1.095-.219l5-5a1 1 0 0 0 .21-.33 1 1 0 0 0 0-.76Z"/></svg><span class="astro-b5raizh3">Next<br class="astro-b5raizh3"><span class="link-title astro-b5raizh3">GitOps tools</span></span></a></div><div class="nw-site-foot astro-ft5hcqwl"><a class="nw-site-foot__mark astro-ft5hcqwl" href="/next/" aria-label="Napwake docs home"><svg viewBox="0 0 24 24" width="22" height="22" aria-hidden="true" class="astro-ft5hcqwl"><path fill="currentColor" fill-rule="evenodd" d="M7.6 9.9L7.2 3.6Q7.2 2.6 8.2 2.6Q12 2.2 15.8 2.6Q16.8 2.6 16.8 3.6L16.4 9.9ZM3.4 10.7Q3.4 9.8 4.6 9.9H19.4Q20.6 9.8 20.6 10.7Q20.6 11.7 19.4 11.7H4.6Q3.4 11.7 3.4 10.7ZM6.6 19.2V13.8Q6.6 12.5 7.9 12.5H16.1Q17.4 12.5 17.4 13.8V19.2ZM8 15.4A1.9 1.9 0 0 0 11.8 15.4Z M12.2 15.4A1.9 1.9 0 0 0 16 15.4ZM3 24V22.2Q3 20 5.2 20H18.8Q21 20 21 22.2V24Z" class="astro-ft5hcqwl"></path></svg></a><p class="astro-ft5hcqwl">Napwake is open source under <a href="https://github.com/napwake/napwake/blob/main/LICENSE" class="astro-ft5hcqwl">Apache 2.0</a>. <a href="https://github.com/napwake/napwake" class="astro-ft5hcqwl">GitHub</a> · <a href="https://napwake.dev/" class="astro-ft5hcqwl">napwake.dev</a></p><p class="nw-site-foot__credit astro-ft5hcqwl">Doorman illustrations by Napwake, <a href="https://github.com/napwake/brand" class="astro-ft5hcqwl">CC BY 4.0</a>.</p></div></footer></div></div></main></div></div></div></div></body></html>

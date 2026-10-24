@@ -1,0 +1,280 @@
+# Idle detection
+
+> When Napwake pauses a workload, and what wakes it again.
+
+Source: https://docs.napwake.dev/next/concepts/idle-detection/
+
+The clockidleAfter: 1h
+
+The clock: awake from 08:00 to 10:14, asleep from 10:14 to 12:00.
+
+Asleep Waking up Awake**09:14 last activity**10:14 pauseAt
+
+The [status example](https://docs.napwake.dev/next/concepts/idle-detection/#restarts-and-outages). The last activity was at 09:14. With the default `idleAfter` of an hour, it pauses at 10:14.
+
+Napwake keeps an **activity clock** for every ManagedWorkload. It’s the last time anything showed the workload was in use. Any sign of activity resets it. Once the clock is older than `idlePolicy.idleAfter`, Napwake pauses the workload. It’s scaled to zero, keeping its replica count and a resource snapshot.
+
+* There’s no learning period. A new workload can pause after its first `idleAfter` without activity.
+* With `idlePolicy.pauseEarly`, a confident forecast can pause it sooner ([Pausing early](https://docs.napwake.dev/next/concepts/forecasting/#pausing-early)).
+
+managedworkload.yaml
+
+```yaml
+spec:
+  idlePolicy:
+    idleAfter: 1h        # default
+    activity:
+      cpuThreshold: 10   # percent of CPU requests, 0.1 to 100; default
+```
+
+Write a threshold that isn’t a whole number as a string, such as `cpuThreshold: "0.5"`. Kubernetes APIs write decimals that way. It suits a workload that idles at a fraction of a percent.
+
+## What counts as activity
+
+Every source is checked. The most recent wins, and none has priority.
+
+| Source                      | Counts when                                                                        | Setup                                                                                           |
+| --------------------------- | ---------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------- |
+| CPU                         | Above `activity.cpuThreshold`% of what the reporting pods request, from 0.1 to 100 | metrics-server                                                                                  |
+| Deploy                      | The pod template changes, such as an image, an environment variable, any edit      | None                                                                                            |
+| `napwake.dev/last-activity` | It holds a time newer than the last activity                                       | Your tooling                                                                                    |
+| `napwake.dev/active-until`  | It holds a time in the future. A hold, not an activity time                        | Your tooling                                                                                    |
+| `napwake.dev/last-request`  | It holds a time newer than the last activity                                       | The [doorman](https://docs.napwake.dev/next/concepts/wake-on-request/), when it holds a request for the paused workload |
+| Prometheus                  | A query in `activity.prometheus` returns above zero                                | `--prometheus-url` ([Prometheus activity](https://docs.napwake.dev/next/guides/prometheus-signals/))                    |
+
+* A change to the replica count isn’t a deploy, so Napwake’s own pause and resume never look like activity.
+* Memory isn’t a source. It stays allocated whether the workload is used or not.
+
+How CPU is measured
+
+* Only containers in the target’s pod template count, with native sidecars (init containers with `restartPolicy: Always`).
+* Sidecars injected at pod creation, such as Istio or Linkerd proxies, don’t. Their work isn’t use, and the template doesn’t request it. [Cost](https://docs.napwake.dev/next/concepts/cost-tracking/) counts them, as they cost the same and pausing frees them too.
+* Usage is measured over the pods metrics-server reports, against those pods’ requests. One pod serving while others are Pending, crash-looping, or not yet reporting after a scale-up reads at its own utilization.
+* Requests come from a running pod, not the template. So a LimitRange default or a Vertical Pod Autoscaler’s recommendation counts.
+* That pod is a running one of the target’s current revision. A failed pod, such as an evicted one, isn’t read. It keeps its own revision’s requests until it’s cleaned up.
+* Requests are read again every 5 minutes, and when the target’s spec changes. While a replica’s revision is unclear, as in a rollout, they’re read on each check.
+* With no pod running, the newest starting one is read, such as a Pending pod in a `Recreate` rollout. With none at all, the template’s requests are used. A container with only a CPU limit requests its limit, as in Kubernetes.
+
+### Activity annotations
+
+Set either on the ManagedWorkload or its target, as an RFC 3339 time.
+
+```bash
+# Record activity now, e.g. from a developer portal when someone opens an environment
+kubectl annotate deployment my-api -n staging --overwrite \
+  napwake.dev/last-activity="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+
+
+# Keep the workload awake until a time, e.g. during a demo
+kubectl annotate deployment my-api -n staging --overwrite \
+  napwake.dev/active-until="2026-10-03T18:00:00Z"
+```
+
+[`kubectl napwake wake`](https://docs.napwake.dev/next/getting-started/kubectl-plugin/#wake-a-workload) wakes it through [`napwake.dev/wake-requested`](https://docs.napwake.dev/next/guides/pause/#wake-now) instead, and waits until it’s Running.
+
+* A `last-activity` time in the future counts as now. For a hold, use `active-until`, which says when it ends.
+* Annotations only keep a workload awake or wake it. They never pause it.
+* A value that isn’t RFC 3339, such as epoch seconds or a space for the `T`, is ignored everywhere. Each gets one `InvalidActivityAnnotation` warning event on the ManagedWorkload, naming the annotation and where it is.
+
+## The decision
+
+Each check runs these steps in order. The first that holds decides.
+
+| Step | If                                                                                                                                                                 | Then                                                                                                                        |
+| ---- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------ | --------------------------------------------------------------------------------------------------------------------------- |
+| 1    | CPU or a configured query [can’t be read](https://docs.napwake.dev/next/concepts/idle-detection/#when-a-source-cant-be-read)                                                                                             | Stay awake                                                                                                                  |
+| 2    | `active-until` is in the future                                                                                                                                    | Stay awake                                                                                                                  |
+| 3    | The last activity was under `idleAfter` ago, or longer after [a pause made in use](https://docs.napwake.dev/next/concepts/idle-detection/#paused-while-in-use)                                                           | Stay awake, unless the forecast pauses it early (below)                                                                     |
+| 4    | The [forecast](https://docs.napwake.dev/next/concepts/forecasting/) is confident (`DailyActive` or later, `dailyPhase: Active`) and predicts above `cpuThreshold` in this hour or the next | Stay awake, with `IdleVetoed`                                                                                               |
+| 5    | An awake workload [depends on](https://docs.napwake.dev/next/concepts/dependencies/) this one, or `dependsOn` forms a cycle                                                                | Stay awake, with `HeldByDependents` or `DependencyCycle`                                                                    |
+| 6    | None of these                                                                                                                                                      | `Idle`, then [paused](https://docs.napwake.dev/next/guides/pause/), with an `IdleDetected` event. Or `PausedEarly`, naming the hours forecast quiet |
+
+With `pauseEarly`, step 3 goes on to step 4 as if the clock had run out, when:
+
+* the last activity was at least 20 minutes ago,
+* the forecast is confident that every hour until `idleAfter` runs out is quiet, and at least this hour and the next,
+* and a request would wake the workload through the doorman once it’s paused.
+
+While step 4 holds a pause off, `IdleVetoed` is `True` with reason `ForecastExpectsDemand`, its message naming the hour. An `IdleVetoed` event marks each veto’s start. After an hour far quieter than forecast, as on a holiday, the forecast doubts what it expects. For the next hour it holds nothing back ([Anomaly detection](https://docs.napwake.dev/next/concepts/forecasting/#anomaly-detection)). It never blocks a pause until it’s confident, so a workload with no history is left to the clock.
+
+| Case                                                                       | What changes                                                                                                                                                            |
+| -------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| At zero replicas, not by Napwake                                           | Not checked. It’s already off, and [left that way](https://docs.napwake.dev/next/guides/pause/#workloads-already-at-zero)                                                                       |
+| No `idlePolicy`                                                            | None of this runs. It pauses only when someone asks                                                                                                                     |
+| A [pause request](https://docs.napwake.dev/next/guides/pause/#pause-now) (`kubectl napwake pause`) | The clock runs out at once                                                                                                                                              |
+| Skipped for a request                                                      | Steps 1 and 3, and the hour after a GitOps tool undid its last pause                                                                                                    |
+| Still holding a request up                                                 | Steps 2 and 5. Step 4 too, unless the request has `napwake.dev/pause-overrides-forecast: "true"`, as `kubectl napwake pause --yes` sets                                 |
+| A request held back                                                        | It’s answered with the reason                                                                                                                                           |
+| `dryRun: true`                                                             | `Idle`, with the `IdleDetected` or `PausedEarly` event prefixed `[dry-run]`, but nothing changes. Activity sets it back to `Running` ([Dry run](https://docs.napwake.dev/next/guides/dry-run/)) |
+
+## Paused while in use
+
+Napwake can’t see requests to an awake workload. One in steady light use, under its CPU threshold, can look idle and be paused while people use it. The next request wakes it, with a cold start.
+
+A pause is wrong when the workload’s own use undoes it soon after it begins. Soon means within `idleAfter` or 15 minutes, whichever is shorter. Any of these undoes it:
+
+* a request, or a person’s click for a workload that [asks first](https://docs.napwake.dev/next/concepts/wake-on-request/#asking-before-waking)
+* a [wake request](https://docs.napwake.dev/next/guides/pause/#wake-now)
+* an activity annotation
+
+One that comes while the workload is still pausing [calls the pause off](https://docs.napwake.dev/next/guides/pause/#a-request-calls-the-pause-off). That pause was wrong too.
+
+After a wrong pause, the idle clock waits longer before the next. Each wrong pause in a row doubles the wait, up to `idleAfter` plus an hour:
+
+| Wrong pauses in a row | Wait with `idleAfter: 5m` | Wait with `idleAfter: 1h` |
+| --------------------- | ------------------------- | ------------------------- |
+| 0                     | 5 minutes                 | 1 hour                    |
+| 1                     | 10 minutes                | 2 hours                   |
+| 2                     | 20 minutes                | 2 hours                   |
+| 3                     | 40 minutes                | 2 hours                   |
+| 4 or more             | 1 hour 5 minutes          | 2 hours                   |
+
+A pause that lasts the window ends the wait. So do these, which no pause can last through:
+
+* dry-run
+* protecting the workload
+* removing its `idlePolicy`
+* ignoring it
+* its target going
+
+A would-be pause in dry-run never waits longer. The count is kept in `status.idleWait`, so a restart keeps it. The wait only ever delays a pause.
+
+These don’t make a pause wrong, since Napwake didn’t misjudge the workload’s use:
+
+* a pause someone asked for
+* the forecast waking it ahead of demand
+* a Prometheus activity query
+* a wake for an awake dependent that uses it
+
+Why the window, and what it does in the simulator
+
+Steady light use wakes a wrong pause within seconds, or a minute or two. A pause that lasted a quarter of an hour paid for its cold start. And a short `idleAfter` is what you said idle means.
+
+In the simulator, `orders/api` on the test cluster has `idleAfter: 5m` and steady requests all working day. It goes from 79 cold starts a working day to 10. It’s awake about 3.5 hours a week more, on weekday evenings.
+
+### What Napwake tells you
+
+A `PausedWhileInUse` warning event says how soon the pause was undone. It also says how long the clock waits now, and what to change. The `PausedWhileInUse` condition says the same until a pause holds, or the wait ends otherwise. [`kubectl napwake status`](https://docs.napwake.dev/next/getting-started/kubectl-plugin/#see-what-napwake-is-doing) lists it under Needs attention.
+
+```text
+a request came 40 seconds after it paused, so it was in use: it now waits 10 minutes without activity
+before pausing, not 5 minutes, until a pause holds. It used up to 0.6% of its CPU requests while in use,
+and up to 0.2% idle: try napwake.dev/cpu-threshold: "0.4"
+```
+
+The suggested number comes from the CPU Napwake measures through each stretch the clock counts as idle:
+
+* A wrong pause shows what the workload uses in use. That’s the most in the stretch before it.
+* A pause that holds shows what it uses idle. That’s the most in the 15 minutes before it, or `idleAfter` if shorter. Napwake keeps the most over the last week.
+
+Napwake suggests a threshold when the CPU in use is at least twice the idle CPU, and 0.2 points more. It’s halfway between, to a tenth. A workload you opted in with the label is told the annotation, and one you wrote the field.
+
+Otherwise CPU can’t tell its use from its idle. Then Napwake suggests a [Prometheus query](https://docs.napwake.dev/next/guides/prometheus-signals/#example-queries) that counts its requests. Until a pause has held, it hasn’t measured idle use, and says so rather than guess.
+
+```yaml
+status:
+  idleWait:
+    wrongPauses: 1
+    lastWrongPause:
+      pausedAt: "2026-10-26T09:02:11Z"
+      after: 40s
+      by: request          # request, click, wakeRequest or annotation
+      from: 10.4.1.7
+      inUseCPU: "0.6"
+    idleCPU: "0.2"
+    idleCPUAt: "2026-10-25T17:06:00Z"
+```
+
+`napwake_wrong_pauses_total` counts wrong pauses, by workload. Dry-run never pauses, so its would-be pauses aren’t judged.
+
+## When a source can’t be read
+
+Napwake never pauses while a source can’t be read. Without that data, a busy workload looks idle. Nor does that time count as idle.
+
+* A check that can’t read a source isn’t watching. A source out for longer than the [allowed gap](https://docs.napwake.dev/next/concepts/idle-detection/#restarts-and-outages) restarts the clock (`lastActivitySource: unobserved`).
+* Once the source is back, an `Unobserved` event says so. A pause then needs a full `idleAfter` in which every source saw nothing.
+* A shorter blind spot leaves the last activity alone. One is the minute before a woken workload’s pods have metrics.
+* A Prometheus query may come back saying “no requests in the last 5 minutes”. That doesn’t make the hour before look idle.
+
+For CPU, the `MetricsAvailable` condition says why, and for queries, `PrometheusAvailable`.
+
+The reasons, and what to do
+
+A target at zero isn’t an error, as no usage is real data. Nor are new pods, with no metrics until they run and for a scrape or two of metrics-server’s after.
+
+| Reason               | Status    | Means                                                                                                             | To do                                                                   |
+| -------------------- | --------- | ----------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------- |
+| `NoReadyPods`        | `Unknown` | After a wake or rollout, none of the target’s pods is Ready yet. No warning                                       |                                                                         |
+| `AwaitingPodMetrics` | `Unknown` | Then, for up to 3 minutes, Ready pods without metrics yet. No warning                                             |                                                                         |
+| `NoPodMetrics`       | `False`   | Ready pods with no metrics for over 3 minutes. One warning event says so                                          | Check metrics-server is installed and reports them (`kubectl top pods`) |
+| `NoCPURequests`      | `False`   | The running pods, or with none the pod template, request no CPU for its containers. Utilization can’t be measured | Set CPU requests, or a default in the namespace’s LimitRange            |
+| `MetricsUnavailable` | `False`   | The Metrics API failed, or didn’t answer in 2 seconds. The message has the error                                  |                                                                         |
+
+After a `MetricsUnavailable`, the API isn’t read again for a minute. So every workload’s check fails at once, instead of waiting out a timeout.
+
+For queries, `PrometheusAvailable` reports `EndpointNotConfigured` or `QueryFailed`. A query that answers but has never matched a series, as with a missing metric or label, can never keep the workload awake. `PrometheusQueryEmpty=True` and a warning event say so ([When a query can’t be evaluated](https://docs.napwake.dev/next/guides/prometheus-signals/#when-a-query-cant-be-evaluated)).
+
+## Restarts and outages
+
+The clock lives in `status.activity`, so it survives operator restarts. An outage can delay a pause, but never cause one.
+
+```yaml
+status:
+  activity:
+    lastActivityTime: "2026-10-02T09:14:00Z"
+    lastActivitySource: cpu    # created, woke, request, cpu, rollout, annotation, prometheus, unobserved, or scaled-up
+    pauseAt: "2026-10-02T10:14:00Z"
+    lastEvaluatedTime: "2026-10-02T09:41:00Z"
+```
+
+If the operator stops watching for a while, it can’t know what happened. So an awake workload’s clock restarts when it watches again (`lastActivitySource: unobserved`). An `Unobserved` event says how long the gap was:
+
+| The gap                          | The `Unobserved` event says                                                                                            |
+| -------------------------------- | ---------------------------------------------------------------------------------------------------------------------- |
+| The operator didn’t check it     | `Napwake wasn't watching for 9 minutes, so its idle clock starts again`                                                |
+| A source was out                 | `Napwake couldn't read its activity for 9 minutes, so its idle clock starts again`                                     |
+| A restart, or a change of leader | `the operator restarted, or another took over, so its idle clock starts again; it wasn't watching for up to 4 minutes` |
+
+* The gap allowed is half of `idleAfter`, at least 2 minutes (two missed checks), at most 7.
+* A restart or a change of leader always restarts an awake workload’s clock, however recently it was written.
+* The event comes with the first check that can read every source.
+* A gap or a restart isn’t activity, so a paused workload stays paused. In dry-run, a would-be pause goes on, as the real pause would ([Dry run](https://docs.napwake.dev/next/guides/dry-run/#what-happens-in-dry-run)).
+* A restart can delay a pause by up to `idleAfter`, but never brings one forward.
+
+How the clock is saved, and why a restart restarts it
+
+* An awake workload is checked about once a minute.
+* The clock is written to status with cost, at most every 5 minutes. It’s also written at once on a change of phase or condition. And when new activity is ahead of what’s written by over a tenth of `idleAfter`, at most 5 minutes.
+* Activity between writes is held in memory, so it counts while the operator runs.
+* After a restart or a change of leader, the operator has only what was written. That can be up to 5 minutes behind its last check. It can also be missing activity seen since, up to a tenth of `idleAfter`.
+* So the clock restarts. Its event says `up to`, since the last check may have come later than what’s written.
+
+## Waking up
+
+| While it’s paused                                                                                                                                                            |                                                                                                                                   |
+| ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------- |
+| A request reaches one of its Services                                                                                                                                        | Wakes. The request is held while it starts, then answered ([Wake on request](https://docs.napwake.dev/next/concepts/wake-on-request/))                    |
+| A `last-activity`, `last-request` or `active-until` annotation, on the ManagedWorkload or its target, changes to an RFC 3339 time                                            | Wakes, whatever time it states, so a clock behind the operator’s can’t lose a wake                                                |
+| `kubectl napwake wake`, or a tool setting [`napwake.dev/wake-requested`](https://docs.napwake.dev/next/guides/pause/#wake-now) on the ManagedWorkload, such as a portal’s “start environment” button | Wakes, whatever the wake setting, with a `WakeRequested` event. The tool reads the answer in the `WakeRequest` condition          |
+| An annotation set before the pause, even to a later time                                                                                                                     | Stays asleep. The pause records the annotations as they stood, and only a change counts                                           |
+| A [Prometheus activity query](https://docs.napwake.dev/next/guides/prometheus-signals/#while-the-workload-is-paused) shows activity. Queries run about once a minute, as while awake                 | Wakes. One active as a [requested pause](https://docs.napwake.dev/next/guides/pause/#pause-now) began must go quiet first, so it doesn’t undo the request |
+| A query can’t be evaluated                                                                                                                                                   | Never wakes it                                                                                                                    |
+| `autoResume: true`, and a confident forecast (`dailyPhase: Active`) predicts above `cpuThreshold` this hour, or the next from 15 minutes before                              | Wakes, ready before people arrive. Not in the hour after one far quieter than forecast                                            |
+| Something else scales it up, such as `kubectl scale`                                                                                                                         | Wakes                                                                                                                             |
+| Dry-run is turned on                                                                                                                                                         | Wakes. Dry-run never leaves a workload paused                                                                                     |
+
+Whatever would wake it, coming while it’s still pausing, [calls the pause off](https://docs.napwake.dev/next/guides/pause/#a-request-calls-the-pause-off) instead.
+
+Each wake restarts the clock, so the next pause is a full `idleAfter` away. After [a pause made in use](https://docs.napwake.dev/next/concepts/idle-detection/#paused-while-in-use), it’s longer. With `pauseEarly` and a quiet forecast, the pause can come 20 minutes after the wake. `lastActivitySource` says what woke it:
+
+| `lastActivitySource` | Woken by                     |
+| -------------------- | ---------------------------- |
+| `request`            | A held request               |
+| `prometheus`         | An activity query            |
+| `scaled-up`          | Something else scaling it up |
+| `woke`               | Anything else                |
+
+Next
+
+* [Wake on request →How a request wakes a paused workload.](https://docs.napwake.dev/next/concepts/wake-on-request/)
+* [Forecasting →How the forecast holds off a pause, or brings it forward.](https://docs.napwake.dev/next/concepts/forecasting/)

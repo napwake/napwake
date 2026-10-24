@@ -1,0 +1,193 @@
+# Dry run guide
+
+> See what Napwake would do without it ever reducing a workload's availability. The activity clock, dependency holds and the forecast run as live, and only the scale to zero is skipped.
+
+Source: https://docs.napwake.dev/next/guides/dry-run/
+
+1. Awake
+
+   Running
+
+2. The clock runs out, or a pause is requested
+
+3. Awake
+
+   Idle
+
+   A would-be pause, counted. Never scaled down.
+
+The next activity ends the would-be pause
+
+Use it when you first opt a workload or namespace in, after changing its settings, or wherever you check first. It can’t show what happens once a workload is paused. That’s how long a wake on request takes, and whether a GitOps tool scales it straight back up.
+
+1. Turn it on.
+
+   * Workload
+
+     deployment.yaml
+
+     ```yaml
+     apiVersion: apps/v1
+     kind: Deployment
+     metadata:
+       name: my-api
+       namespace: staging
+       labels:
+         napwake.dev/managed: "true"
+       annotations:
+         napwake.dev/dry-run: "true"
+     ```
+
+   * Namespace
+
+     Every opted-in workload in it is measured, unless it sets its own `napwake.dev/dry-run: "false"`.
+
+     ```yaml
+     apiVersion: v1
+     kind: Namespace
+     metadata:
+       name: staging
+       labels:
+         napwake.dev/managed: "true"
+       annotations:
+         napwake.dev/dry-run: "true"
+     ```
+
+   * Cluster
+
+     Set `defaults.dryRun: true` in the Helm values, for every opted-in workload whose own annotations and namespace’s don’t say otherwise.
+
+   * ManagedWorkload
+
+     managedworkload.yaml
+
+     ```yaml
+     apiVersion: napwake.dev/v1alpha1
+     kind: ManagedWorkload
+     metadata:
+       name: my-api
+       namespace: staging
+     spec:
+       target:
+         kind: Deployment
+         name: my-api
+       idlePolicy:
+         idleAfter: 1h
+       prediction:
+         mode: balanced
+       dryRun: true
+     ```
+
+     On one created from the label, `spec.dryRun` follows the annotations, and an edit by hand is overwritten.
+
+   A `napwake.dev/dry-run` value that can’t be read, such as `"True"` or `"yes"`, turns dry-run on, with an `InvalidSetting` warning event.
+
+2. Let it measure for a few days, across a weekend if it’s used on weekdays. Then see what it would have freed.
+
+   ```
+   kubectl get managedworkloads -n staging
+   NAME     PHASE   FREED   SAVED   WOULD FREE   AGE
+   my-api   Idle    $0.00   $0.00   $7.50        4d
+   ```
+
+   [`kubectl napwake status`](https://docs.napwake.dev/next/getting-started/kubectl-plugin/#see-what-napwake-is-doing) leads with it too, in its summary and `WOULD FREE` column. `kubectl napwake scan` adds how often it would have paused, and for how long. The [events](https://docs.napwake.dev/next/guides/dry-run/#events) say when.
+
+3. End dry run.
+
+   ```bash
+   kubectl napwake enable my-api -n staging
+   kubectl napwake enable --all -n staging   # every workload in the namespace
+   ```
+
+   `enable` sets the workload’s own `napwake.dev/dry-run` to `"false"`, or `spec.dryRun: false` on a ManagedWorkload you wrote. For `--all` and GitOps, see [`kubectl napwake enable`](https://docs.napwake.dev/next/getting-started/kubectl-plugin/#enable-a-workload).
+
+CheckpointAwake · pausing when idle
+
+`status.dryRun` is gone, and `status.cost` records what pausing actually frees.
+
+## What happens in dry run
+
+|                                                                                     | In dry-run                                                                                                                                                                                                                                                                                                                                                                                 |
+| ----------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| Idle detection                                                                      | The clock runs, and the phase becomes `Idle` when it runs out. No pause                                                                                                                                                                                                                                                                                                                    |
+| Forecast veto and dependency holds                                                  | Applied and reported, as `IdleVetoed`, `HeldByDependents` and `DependencyCycle`. A dry-run dependent that would have paused stops holding its dry-run dependencies. So a whole app counts every pause it would make. When its would-be pause ends, theirs end too and their clocks restart, as its wake would have woken them. See [Dependencies](https://docs.napwake.dev/next/concepts/dependencies/#edge-cases) |
+| A [pause request](https://docs.napwake.dev/next/guides/pause/#pause-now)                                    | A would-be pause. The phase becomes `Idle`, with a `[dry-run]` `PauseRequested` event and `PauseRequest=False`, reason `DryRun`. Later activity ends it. A Prometheus query already active when it was asked ends it only once it has been quiet                                                                                                                                           |
+| A gap in watching, such as an operator restart, or metrics-server or Prometheus out | Doesn’t end a would-be pause. Activity seen after the gap does. For use during it, see [What dry run measured](https://docs.napwake.dev/next/guides/dry-run/#what-dry-run-measured)                                                                                                                                                                                                                                                     |
+| A workload not in a would-be pause, after a gap                                     | Its clock restarts as usual, with an `Unobserved` event saying how long Napwake wasn’t watching. See [Restarts and outages](https://docs.napwake.dev/next/concepts/idle-detection/#restarts-and-outages)                                                                                                                                                                                                           |
+| A workload Napwake had paused                                                       | Woken at once, with a `DryRunWake` event. Dry-run never leaves a workload paused                                                                                                                                                                                                                                                                                                           |
+| Wakes                                                                               | Never held back. `kubectl napwake wake` and activity work as usual                                                                                                                                                                                                                                                                                                                         |
+| Cost tracking                                                                       | All awake time. See [Cost tracking](https://docs.napwake.dev/next/concepts/cost-tracking/#in-dry-run)                                                                                                                                                                                                                                                                                                              |
+| The forecast                                                                        | Learns, and builds confidence, as usual                                                                                                                                                                                                                                                                                                                                                    |
+| Status and events                                                                   | Say what would happen. `status.dryRun` sums it up, and events for what dry-run holds back carry a `[dry-run]` prefix                                                                                                                                                                                                                                                                       |
+
+## What dry run measured
+
+Real pauses can be shorter than would-be ones, since some wakes don’t show in dry-run. A would-be pause starts when the activity clock runs out. It ends at the next activity, when a paused workload would have woken. It also ends, counted up to then, when Napwake stops measuring the workload. That’s when it’s scaled to zero outside Napwake, labelled `napwake.dev/ignore`, or its namespace becomes protected (see [When Napwake lets go](https://docs.napwake.dev/next/guides/pause/#when-napwake-lets-go)).
+
+| A wake that doesn’t show                                     | In dry-run                                                                                                                |
+| ------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------- |
+| A request to a paused workload                               | Counts only through the activity it shows, its CPU use or a [Prometheus activity query](https://docs.napwake.dev/next/guides/prometheus-signals/) |
+| `autoResume`, ahead of hours the forecast expects to be busy | Not counted                                                                                                               |
+| Use during a gap in watching, such as an operator restart    | Counts only through a trace that outlasts the gap                                                                         |
+
+An activity annotation outlasts a gap, and so does a Prometheus query whose range covers it. CPU use, or a query over a shorter range, is gone when the gap ends.
+
+A request in the gap would have woken a workload paused for real. So a long gap can keep a would-be pause going, and overstate what pausing would have freed.
+
+For a workload that serves the odd light request, add a query on its request rate at its ingress. It needs the operator’s `prometheus.url` set. Dry-run then sees requests as the doorman would. Use the ingress’s metrics, since a paused workload has no pods to export the app’s own. On a labelled workload, the ManagedWorkload Napwake created keeps it:
+
+```bash
+kubectl patch managedworkload my-api -n staging --type=json -p '[{"op":"add","path":"/spec/idlePolicy/activity/prometheus","value":[{"promQL":"sum(rate(nginx_ingress_controller_requests{exported_namespace=\"staging\",exported_service=\"my-api\"}[5m]))"}]}]'
+```
+
+The ingress keeps counting once the workload pauses for real, so the query [wakes it then too](https://docs.napwake.dev/next/guides/prometheus-signals/#while-the-workload-is-paused).
+
+The scan shows each dry-run workload’s COULD SLEEP, WAKES and COULD FREE/MO. Its headline has a total and the command to start pausing. It uses its own prices, so `--cpu-price` and `--memory-price` apply:
+
+```
+kubectl napwake scan
+  2 workloads are in dry-run: measured by Napwake since starting, they would have slept 140 hours, freeing $18.20,
+  about $134 a month.
+
+  NAMESPACE   WORKLOAD         STATE            BECAUSE                                     COST/MO   COULD SLEEP   WAKES   COULD FREE/MO
+  preview-7   deployment/api   idle (dry-run)   no activity for 5h; measuring since Oct 1   $96       96h           4       $91
+```
+
+The whole summary is in `status.dryRun`, from when dry-run starts until it ends:
+
+```bash
+kubectl get managedworkload my-api -n staging -o jsonpath='{.status.dryRun}'
+```
+
+status.dryRun
+
+```yaml
+since: "2026-10-01T09:00:00Z"
+pauses: 4
+slept: 96h12m0s
+freedCPUHours: "192400m"
+freedMemoryHours: "384800m"
+estimatedFreed: $7.50
+```
+
+The hours are the record, to a billionth of an hour. A would-be pause under way, since `status.lastTransitionTime`, is added when it ends. `estimatedFreed` prices them at the workload’s [cost rates](https://docs.napwake.dev/next/concepts/cost-tracking/#prices) for display. It counts up to the last status write, at most 5 minutes ago. Freed becomes money only once [nodes go](https://docs.napwake.dev/next/concepts/cost-tracking/#how-saved-is-measured). The [API reference](https://docs.napwake.dev/next/reference/api/) has every field.
+
+## Events
+
+```bash
+kubectl describe managedworkload my-api -n staging
+```
+
+When the clock runs out, and when activity ends the would-be pause:
+
+```plaintext
+[dry-run] my-api: idle for 1 hour, since its CPU use was last above the activity threshold; would have paused
+[dry-run] my-api: activity resumed (cpu): would have slept 3 hours 12 minutes, freeing $0.25; since Oct 1: would have paused 4 times, slept 4 days, freeing $7.50
+```
+
+The prefix marks what dry-run holds back. That’s `IdleDetected`, `PausedEarly`, `ActivityResumed`, `IdleVetoed`, `HeldByDependents`, `DependencyCycle`, and `PauseRequested` for a pause request. What really happens, such as a wake, a forecast update or a metrics problem, has no prefix.
+
+Next
+
+* [Opting in →Every setting.](https://docs.napwake.dev/next/guides/opt-in/)
+* [Prometheus activity →Count requests at the ingress.](https://docs.napwake.dev/next/guides/prometheus-signals/)

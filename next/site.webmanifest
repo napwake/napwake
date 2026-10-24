@@ -1,0 +1,10 @@
+{
+  "name": "Napwake docs",
+  "short_name": "Napwake",
+  "icons": [
+    { "src": "icon-192.png", "sizes": "192x192", "type": "image/png" },
+    { "src": "icon-512.png", "sizes": "512x512", "type": "image/png" }
+  ],
+  "theme_color": "#14695f",
+  "background_color": "#f8f8f5"
+}

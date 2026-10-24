@@ -1,2074 +1,482 @@
-
-<!doctype html>
-<html lang="en" class="no-js">
-  <head>
-    
-      <meta charset="utf-8">
-      <meta name="viewport" content="width=device-width,initial-scale=1">
-      
-        <meta name="description" content="Intelligent Kubernetes workload lifecycle management">
-      
-      
-      
-        <link rel="canonical" href="https://okedeji.io/hybernate/latest/concepts/idle-detection/">
-      
-      
-        <link rel="prev" href="../forecasting/">
-      
-      
-        <link rel="next" href="../dependencies/">
-      
-      
-        
-      
-      
-      <link rel="icon" href="../../assets/favicon.svg">
-      <meta name="generator" content="mkdocs-1.6.1, mkdocs-material-9.7.7">
-    
-    
-      
-        <title>Idle Detection - Hybernate</title>
-      
-    
-    
-      <link rel="stylesheet" href="../../assets/stylesheets/main.ec1eaa64.min.css">
-      
-        
-        <link rel="stylesheet" href="../../assets/stylesheets/palette.ab4e12ef.min.css">
-      
-      
-
-
-    
-    
-      
-    
-    
-      
-        
-        
-        <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-        <link rel="stylesheet" href="https://fonts.googleapis.com/css?family=Roboto:300,300i,400,400i,700,700i%7CRoboto+Mono:400,400i,700,700i&display=fallback">
-        <style>:root{--md-text-font:"Roboto";--md-code-font:"Roboto Mono"}</style>
-      
-    
-    
-      <link rel="stylesheet" href="../../stylesheets/custom.css">
-    
-    <script>__md_scope=new URL("../..",location),__md_hash=e=>[...e].reduce(((e,_)=>(e<<5)-e+_.charCodeAt(0)),0),__md_get=(e,_=localStorage,t=__md_scope)=>JSON.parse(_.getItem(t.pathname+"."+e)),__md_set=(e,_,t=localStorage,a=__md_scope)=>{try{t.setItem(a.pathname+"."+e,JSON.stringify(_))}catch(e){}}</script>
-    
-      
-
-    
-    
-  </head>
-  
-  
-    
-    
-    
-    
-    
-    <body dir="ltr" data-md-color-scheme="default" data-md-color-primary="white" data-md-color-accent="black">
-  
-    
-    <input class="md-toggle" data-md-toggle="drawer" type="checkbox" id="__drawer" autocomplete="off">
-    <input class="md-toggle" data-md-toggle="search" type="checkbox" id="__search" autocomplete="off">
-    <label class="md-overlay" for="__drawer"></label>
-    <div data-md-component="skip">
-      
-        
-        <a href="#idle-detection" class="md-skip">
-          Skip to content
-        </a>
-      
-    </div>
-    <div data-md-component="announce">
-      
-    </div>
-    
-      <div data-md-color-scheme="default" data-md-component="outdated" hidden>
-        
-          <aside class="md-banner md-banner--warning">
-            <div class="md-banner__inner md-grid md-typeset">
-              
-  
-    These docs are for Hybernate 0.2.0-rc.7, a release candidate, and may change before it's released.
-  
-  <a href="../../.."><strong>Read the docs for the latest release.</strong></a>
-
-            </div>
-            <script>var el=document.querySelector("[data-md-component=outdated]"),base=new URL("../.."),outdated=__md_get("__outdated",sessionStorage,base);!0===outdated&&el&&(el.hidden=!1)</script>
-          </aside>
-        
-      </div>
-    
-    
-      
-
-<header class="md-header" data-md-component="header">
-  <nav class="md-header__inner md-grid" aria-label="Header">
-    <a href="../.." title="Hybernate" class="md-header__button md-logo" aria-label="Hybernate" data-md-component="logo">
-      
-  
-  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="m20.79 13.95-2.33.62-2-1.13v-2.88l2-1.13 2.33.62.52-1.93-1.77-.47.46-1.77-1.93-.52-.62 2.33-2 1.13L13 7.38V5.12l1.71-1.71L13.29 2 12 3.29 10.71 2 9.29 3.41 11 5.12v2.26L8.5 8.82l-2-1.13-.58-2.33L4 5.88l.47 1.77-1.77.47.52 1.93 2.33-.62 2 1.13v2.89l-2 1.13-2.33-.62-.52 1.93 1.77.47L4 18.12l1.93.52.62-2.33 2-1.13L11 16.62v2.26l-1.71 1.71L10.71 22 12 20.71 13.29 22l1.41-1.41-1.7-1.71v-2.26l2.5-1.45 2 1.13.62 2.33 1.88-.51-.47-1.77 1.77-.47zM9.5 10.56 12 9.11l2.5 1.45v2.88L12 14.89l-2.5-1.45z"/></svg>
-
-    </a>
-    <label class="md-header__button md-icon" for="__drawer">
-      
-      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M3 6h18v2H3zm0 5h18v2H3zm0 5h18v2H3z"/></svg>
-    </label>
-    <div class="md-header__title" data-md-component="header-title">
-      <div class="md-header__ellipsis">
-        <div class="md-header__topic">
-          <span class="md-ellipsis">
-            Hybernate
-          </span>
-        </div>
-        <div class="md-header__topic" data-md-component="header-topic">
-          <span class="md-ellipsis">
-            
-              Idle Detection
-            
-          </span>
-        </div>
-      </div>
-    </div>
-    
-      
-    
-    
-    
-    
-      
-      
-        <label class="md-header__button md-icon" for="__search">
-          
-          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
-        </label>
-        <div class="md-search" data-md-component="search" role="dialog">
-  <label class="md-search__overlay" for="__search"></label>
-  <div class="md-search__inner" role="search">
-    <form class="md-search__form" name="search">
-      <input type="text" class="md-search__input" name="query" aria-label="Search" placeholder="Search" autocapitalize="off" autocorrect="off" autocomplete="off" spellcheck="false" data-md-component="search-query" required>
-      <label class="md-search__icon md-icon" for="__search">
-        
-        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
-        
-        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M20 11v2H8l5.5 5.5-1.42 1.42L4.16 12l7.92-7.92L13.5 5.5 8 11z"/></svg>
-      </label>
-      <nav class="md-search__options" aria-label="Search">
-        
-        <button type="reset" class="md-search__icon md-icon" title="Clear" aria-label="Clear" tabindex="-1">
-          
-          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M19 6.41 17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/></svg>
-        </button>
-      </nav>
-      
-        <div class="md-search__suggest" data-md-component="search-suggest"></div>
-      
-    </form>
-    <div class="md-search__output">
-      <div class="md-search__scrollwrap" tabindex="0" data-md-scrollfix>
-        <div class="md-search-result" data-md-component="search-result">
-          <div class="md-search-result__meta">
-            Initializing search
-          </div>
-          <ol class="md-search-result__list" role="presentation"></ol>
-        </div>
-      </div>
-    </div>
-  </div>
-</div>
-      
-    
-    
-      <div class="md-header__source">
-        <a href="https://github.com/okedeji/hybernate" title="Go to repository" class="md-source" data-md-component="source">
-  <div class="md-source__icon md-icon">
-    
-    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M173.9 397.4c0 2-2.3 3.6-5.2 3.6-3.3.3-5.6-1.3-5.6-3.6 0-2 2.3-3.6 5.2-3.6 3-.3 5.6 1.3 5.6 3.6m-31.1-4.5c-.7 2 1.3 4.3 4.3 4.9 2.6 1 5.6 0 6.2-2s-1.3-4.3-4.3-5.2c-2.6-.7-5.5.3-6.2 2.3m44.2-1.7c-2.9.7-4.9 2.6-4.6 4.9.3 2 2.9 3.3 5.9 2.6 2.9-.7 4.9-2.6 4.6-4.6-.3-1.9-3-3.2-5.9-2.9M252.8 8C114.1 8 8 113.3 8 252c0 110.9 69.8 205.8 169.5 239.2 12.8 2.3 17.3-5.6 17.3-12.1 0-6.2-.3-40.4-.3-61.4 0 0-70 15-84.7-29.8 0 0-11.4-29.1-27.8-36.6 0 0-22.9-15.7 1.6-15.4 0 0 24.9 2 38.6 25.8 21.9 38.6 58.6 27.5 72.9 20.9 2.3-16 8.8-27.1 16-33.7-55.9-6.2-112.3-14.3-112.3-110.5 0-27.5 7.6-41.3 23.6-58.9-2.6-6.5-11.1-33.3 2.6-67.9 20.9-6.5 69 27 69 27 20-5.6 41.5-8.5 62.8-8.5s42.8 2.9 62.8 8.5c0 0 48.1-33.6 69-27 13.7 34.7 5.2 61.4 2.6 67.9 16 17.7 25.8 31.5 25.8 58.9 0 96.5-58.9 104.2-114.8 110.5 9.2 7.9 17 22.9 17 46.4 0 33.7-.3 75.4-.3 83.6 0 6.5 4.6 14.4 17.3 12.1C436.2 457.8 504 362.9 504 252 504 113.3 391.5 8 252.8 8M105.2 352.9c-1.3 1-1 3.3.7 5.2 1.6 1.6 3.9 2.3 5.2 1 1.3-1 1-3.3-.7-5.2-1.6-1.6-3.9-2.3-5.2-1m-10.8-8.1c-.7 1.3.3 2.9 2.3 3.9 1.6 1 3.6.7 4.3-.7.7-1.3-.3-2.9-2.3-3.9-2-.6-3.6-.3-4.3.7m32.4 35.6c-1.6 1.3-1 4.3 1.3 6.2 2.3 2.3 5.2 2.6 6.5 1 1.3-1.3.7-4.3-1.3-6.2-2.2-2.3-5.2-2.6-6.5-1m-11.4-14.7c-1.6 1-1.6 3.6 0 5.9s4.3 3.3 5.6 2.3c1.6-1.3 1.6-3.9 0-6.2-1.4-2.3-4-3.3-5.6-2"/></svg>
-  </div>
-  <div class="md-source__repository">
-    okedeji/hybernate
-  </div>
-</a>
-      </div>
-    
-  </nav>
-  
-</header>
-    
-    <div class="md-container" data-md-component="container">
-      
-      
-        
-          
-            
-<nav class="md-tabs" aria-label="Tabs" data-md-component="tabs">
-  <div class="md-grid">
-    <ul class="md-tabs__list">
-      
-        
-  
-  
-  
-  
-    <li class="md-tabs__item">
-      <a href="../.." class="md-tabs__link">
-        
-  
-  
-    
-  
-  Home
-
-      </a>
-    </li>
-  
-
-      
-        
-  
-  
-  
-  
-    
-    
-      <li class="md-tabs__item">
-        <a href="../../getting-started/installation/" class="md-tabs__link">
-          
-  
-  
-  Getting Started
-
-        </a>
-      </li>
-    
-  
-
-      
-        
-  
-  
-  
-    
-  
-  
-    
-    
-      <li class="md-tabs__item md-tabs__item--active">
-        <a href="../architecture/" class="md-tabs__link">
-          
-  
-  
-  Concepts
-
-        </a>
-      </li>
-    
-  
-
-      
-        
-  
-  
-  
-  
-    
-    
-      <li class="md-tabs__item">
-        <a href="../../guides/opt-in/" class="md-tabs__link">
-          
-  
-  
-  Guides
-
-        </a>
-      </li>
-    
-  
-
-      
-        
-  
-  
-  
-  
-    
-    
-      <li class="md-tabs__item">
-        <a href="../../reference/api/" class="md-tabs__link">
-          
-  
-  
-  Reference
-
-        </a>
-      </li>
-    
-  
-
-      
-        
-  
-  
-  
-  
-    
-    
-      <li class="md-tabs__item">
-        <a href="../../operations/monitoring/" class="md-tabs__link">
-          
-  
-  
-  Operations
-
-        </a>
-      </li>
-    
-  
-
-      
-        
-  
-  
-  
-  
-    <li class="md-tabs__item">
-      <a href="../../contributing/" class="md-tabs__link">
-        
-  
-  
-    
-  
-  Contributing
-
-      </a>
-    </li>
-  
-
-      
-    </ul>
-  </div>
-</nav>
-          
-        
-      
-      <main class="md-main" data-md-component="main">
-        <div class="md-main__inner md-grid">
-          
-            
-              
-              <div class="md-sidebar md-sidebar--primary" data-md-component="sidebar" data-md-type="navigation" >
-                <div class="md-sidebar__scrollwrap">
-                  <div class="md-sidebar__inner">
-                    
-
-
-  
-
-
-<nav class="md-nav md-nav--primary md-nav--lifted" aria-label="Navigation" data-md-level="0">
-  <label class="md-nav__title" for="__drawer">
-    <a href="../.." title="Hybernate" class="md-nav__button md-logo" aria-label="Hybernate" data-md-component="logo">
-      
-  
-  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="m20.79 13.95-2.33.62-2-1.13v-2.88l2-1.13 2.33.62.52-1.93-1.77-.47.46-1.77-1.93-.52-.62 2.33-2 1.13L13 7.38V5.12l1.71-1.71L13.29 2 12 3.29 10.71 2 9.29 3.41 11 5.12v2.26L8.5 8.82l-2-1.13-.58-2.33L4 5.88l.47 1.77-1.77.47.52 1.93 2.33-.62 2 1.13v2.89l-2 1.13-2.33-.62-.52 1.93 1.77.47L4 18.12l1.93.52.62-2.33 2-1.13L11 16.62v2.26l-1.71 1.71L10.71 22 12 20.71 13.29 22l1.41-1.41-1.7-1.71v-2.26l2.5-1.45 2 1.13.62 2.33 1.88-.51-.47-1.77 1.77-.47zM9.5 10.56 12 9.11l2.5 1.45v2.88L12 14.89l-2.5-1.45z"/></svg>
-
-    </a>
-    Hybernate
-  </label>
-  
-    <div class="md-nav__source">
-      <a href="https://github.com/okedeji/hybernate" title="Go to repository" class="md-source" data-md-component="source">
-  <div class="md-source__icon md-icon">
-    
-    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M173.9 397.4c0 2-2.3 3.6-5.2 3.6-3.3.3-5.6-1.3-5.6-3.6 0-2 2.3-3.6 5.2-3.6 3-.3 5.6 1.3 5.6 3.6m-31.1-4.5c-.7 2 1.3 4.3 4.3 4.9 2.6 1 5.6 0 6.2-2s-1.3-4.3-4.3-5.2c-2.6-.7-5.5.3-6.2 2.3m44.2-1.7c-2.9.7-4.9 2.6-4.6 4.9.3 2 2.9 3.3 5.9 2.6 2.9-.7 4.9-2.6 4.6-4.6-.3-1.9-3-3.2-5.9-2.9M252.8 8C114.1 8 8 113.3 8 252c0 110.9 69.8 205.8 169.5 239.2 12.8 2.3 17.3-5.6 17.3-12.1 0-6.2-.3-40.4-.3-61.4 0 0-70 15-84.7-29.8 0 0-11.4-29.1-27.8-36.6 0 0-22.9-15.7 1.6-15.4 0 0 24.9 2 38.6 25.8 21.9 38.6 58.6 27.5 72.9 20.9 2.3-16 8.8-27.1 16-33.7-55.9-6.2-112.3-14.3-112.3-110.5 0-27.5 7.6-41.3 23.6-58.9-2.6-6.5-11.1-33.3 2.6-67.9 20.9-6.5 69 27 69 27 20-5.6 41.5-8.5 62.8-8.5s42.8 2.9 62.8 8.5c0 0 48.1-33.6 69-27 13.7 34.7 5.2 61.4 2.6 67.9 16 17.7 25.8 31.5 25.8 58.9 0 96.5-58.9 104.2-114.8 110.5 9.2 7.9 17 22.9 17 46.4 0 33.7-.3 75.4-.3 83.6 0 6.5 4.6 14.4 17.3 12.1C436.2 457.8 504 362.9 504 252 504 113.3 391.5 8 252.8 8M105.2 352.9c-1.3 1-1 3.3.7 5.2 1.6 1.6 3.9 2.3 5.2 1 1.3-1 1-3.3-.7-5.2-1.6-1.6-3.9-2.3-5.2-1m-10.8-8.1c-.7 1.3.3 2.9 2.3 3.9 1.6 1 3.6.7 4.3-.7.7-1.3-.3-2.9-2.3-3.9-2-.6-3.6-.3-4.3.7m32.4 35.6c-1.6 1.3-1 4.3 1.3 6.2 2.3 2.3 5.2 2.6 6.5 1 1.3-1.3.7-4.3-1.3-6.2-2.2-2.3-5.2-2.6-6.5-1m-11.4-14.7c-1.6 1-1.6 3.6 0 5.9s4.3 3.3 5.6 2.3c1.6-1.3 1.6-3.9 0-6.2-1.4-2.3-4-3.3-5.6-2"/></svg>
-  </div>
-  <div class="md-source__repository">
-    okedeji/hybernate
-  </div>
-</a>
-    </div>
-  
-  <ul class="md-nav__list" data-md-scrollfix>
-    
-      
-      
-  
-  
-  
-  
-    <li class="md-nav__item">
-      <a href="../.." class="md-nav__link">
-        
-  
-  
-  <span class="md-ellipsis">
-    
-  
-    Home
-  
-
-    
-  </span>
-  
-  
-
-      </a>
-    </li>
-  
-
-    
-      
-      
-  
-  
-  
-  
-    
-    
-    
-    
-      
-      
-        
-      
-    
-    
-    <li class="md-nav__item md-nav__item--nested">
-      
-        
-        
-          
-        
-        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_2" >
-        
-          
-          <label class="md-nav__link" for="__nav_2" id="__nav_2_label" tabindex="0">
-            
-  
-  
-  <span class="md-ellipsis">
-    
-  
-    Getting Started
-  
-
-    
-  </span>
-  
-  
-
-            <span class="md-nav__icon md-icon"></span>
-          </label>
-        
-        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_2_label" aria-expanded="false">
-          <label class="md-nav__title" for="__nav_2">
-            <span class="md-nav__icon md-icon"></span>
-            
-  
-    Getting Started
-  
-
-          </label>
-          <ul class="md-nav__list" data-md-scrollfix>
-            
-              
-                
-  
-  
-  
-  
-    <li class="md-nav__item">
-      <a href="../../getting-started/installation/" class="md-nav__link">
-        
-  
-  
-  <span class="md-ellipsis">
-    
-  
-    Installation
-  
-
-    
-  </span>
-  
-  
-
-      </a>
-    </li>
-  
-
-              
-            
-              
-                
-  
-  
-  
-  
-    <li class="md-nav__item">
-      <a href="../../getting-started/quickstart/" class="md-nav__link">
-        
-  
-  
-  <span class="md-ellipsis">
-    
-  
-    Quickstart
-  
-
-    
-  </span>
-  
-  
-
-      </a>
-    </li>
-  
-
-              
-            
-              
-                
-  
-  
-  
-  
-    <li class="md-nav__item">
-      <a href="../../getting-started/kubectl-plugin/" class="md-nav__link">
-        
-  
-  
-  <span class="md-ellipsis">
-    
-  
-    kubectl Plugin
-  
-
-    
-  </span>
-  
-  
-
-      </a>
-    </li>
-  
-
-              
-            
-          </ul>
-        </nav>
-      
-    </li>
-  
-
-    
-      
-      
-  
-  
-    
-  
-  
-  
-    
-    
-    
-    
-      
-        
-        
-      
-      
-        
-      
-    
-    
-    <li class="md-nav__item md-nav__item--active md-nav__item--section md-nav__item--nested">
-      
-        
-        
-        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_3" checked>
-        
-          
-          <label class="md-nav__link" for="__nav_3" id="__nav_3_label" tabindex="">
-            
-  
-  
-  <span class="md-ellipsis">
-    
-  
-    Concepts
-  
-
-    
-  </span>
-  
-  
-
-            <span class="md-nav__icon md-icon"></span>
-          </label>
-        
-        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_3_label" aria-expanded="true">
-          <label class="md-nav__title" for="__nav_3">
-            <span class="md-nav__icon md-icon"></span>
-            
-  
-    Concepts
-  
-
-          </label>
-          <ul class="md-nav__list" data-md-scrollfix>
-            
-              
-                
-  
-  
-  
-  
-    <li class="md-nav__item">
-      <a href="../architecture/" class="md-nav__link">
-        
-  
-  
-  <span class="md-ellipsis">
-    
-  
-    Architecture
-  
-
-    
-  </span>
-  
-  
-
-      </a>
-    </li>
-  
-
-              
-            
-              
-                
-  
-  
-  
-  
-    <li class="md-nav__item">
-      <a href="../lifecycle/" class="md-nav__link">
-        
-  
-  
-  <span class="md-ellipsis">
-    
-  
-    Lifecycle
-  
-
-    
-  </span>
-  
-  
-
-      </a>
-    </li>
-  
-
-              
-            
-              
-                
-  
-  
-  
-  
-    <li class="md-nav__item">
-      <a href="../forecasting/" class="md-nav__link">
-        
-  
-  
-  <span class="md-ellipsis">
-    
-  
-    Forecasting
-  
-
-    
-  </span>
-  
-  
-
-      </a>
-    </li>
-  
-
-              
-            
-              
-                
-  
-  
-    
-  
-  
-  
-    <li class="md-nav__item md-nav__item--active">
-      
-      <input class="md-nav__toggle md-toggle" type="checkbox" id="__toc">
-      
-      
-        
-      
-      
-        <label class="md-nav__link md-nav__link--active" for="__toc">
-          
-  
-  
-  <span class="md-ellipsis">
-    
-  
-    Idle Detection
-  
-
-    
-  </span>
-  
-  
-
-          <span class="md-nav__icon md-icon"></span>
-        </label>
-      
-      <a href="./" class="md-nav__link md-nav__link--active">
-        
-  
-  
-  <span class="md-ellipsis">
-    
-  
-    Idle Detection
-  
-
-    
-  </span>
-  
-  
-
-      </a>
-      
-        
-
-<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
-  
-  
-  
-    
-  
-  
-    <label class="md-nav__title" for="__toc">
-      <span class="md-nav__icon md-icon"></span>
-      Table of contents
-    </label>
-    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
-      
-        <li class="md-nav__item">
-  <a href="#what-counts-as-activity" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        What counts as activity
-      
-    </span>
-  </a>
-  
-    <nav class="md-nav" aria-label="What counts as activity">
-      <ul class="md-nav__list">
-        
-          <li class="md-nav__item">
-  <a href="#activity-annotations" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Activity annotations
-      
-    </span>
-  </a>
-  
-</li>
-        
-      </ul>
-    </nav>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#the-decision" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        The decision
-      
-    </span>
-  </a>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#when-a-source-cant-be-read" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        When a source can't be read
-      
-    </span>
-  </a>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#restarts-and-outages" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Restarts and outages
-      
-    </span>
-  </a>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#waking-up" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Waking up
-      
-    </span>
-  </a>
-  
-</li>
-      
-    </ul>
-  
-</nav>
-      
-    </li>
-  
-
-              
-            
-              
-                
-  
-  
-  
-  
-    <li class="md-nav__item">
-      <a href="../dependencies/" class="md-nav__link">
-        
-  
-  
-  <span class="md-ellipsis">
-    
-  
-    Dependencies
-  
-
-    
-  </span>
-  
-  
-
-      </a>
-    </li>
-  
-
-              
-            
-              
-                
-  
-  
-  
-  
-    <li class="md-nav__item">
-      <a href="../wake-on-request/" class="md-nav__link">
-        
-  
-  
-  <span class="md-ellipsis">
-    
-  
-    Wake on Request
-  
-
-    
-  </span>
-  
-  
-
-      </a>
-    </li>
-  
-
-              
-            
-              
-                
-  
-  
-  
-  
-    <li class="md-nav__item">
-      <a href="../cost-tracking/" class="md-nav__link">
-        
-  
-  
-  <span class="md-ellipsis">
-    
-  
-    Cost Tracking
-  
-
-    
-  </span>
-  
-  
-
-      </a>
-    </li>
-  
-
-              
-            
-          </ul>
-        </nav>
-      
-    </li>
-  
-
-    
-      
-      
-  
-  
-  
-  
-    
-    
-    
-    
-      
-      
-        
-      
-    
-    
-    <li class="md-nav__item md-nav__item--nested">
-      
-        
-        
-          
-        
-        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_4" >
-        
-          
-          <label class="md-nav__link" for="__nav_4" id="__nav_4_label" tabindex="0">
-            
-  
-  
-  <span class="md-ellipsis">
-    
-  
-    Guides
-  
-
-    
-  </span>
-  
-  
-
-            <span class="md-nav__icon md-icon"></span>
-          </label>
-        
-        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_4_label" aria-expanded="false">
-          <label class="md-nav__title" for="__nav_4">
-            <span class="md-nav__icon md-icon"></span>
-            
-  
-    Guides
-  
-
-          </label>
-          <ul class="md-nav__list" data-md-scrollfix>
-            
-              
-                
-  
-  
-  
-  
-    <li class="md-nav__item">
-      <a href="../../guides/opt-in/" class="md-nav__link">
-        
-  
-  
-  <span class="md-ellipsis">
-    
-  
-    Opting In
-  
-
-    
-  </span>
-  
-  
-
-      </a>
-    </li>
-  
-
-              
-            
-              
-                
-  
-  
-  
-  
-    <li class="md-nav__item">
-      <a href="../../guides/preview-environments/" class="md-nav__link">
-        
-  
-  
-  <span class="md-ellipsis">
-    
-  
-    Public Preview Environments
-  
-
-    
-  </span>
-  
-  
-
-      </a>
-    </li>
-  
-
-              
-            
-              
-                
-  
-  
-  
-  
-    <li class="md-nav__item">
-      <a href="../../guides/managed-workload/" class="md-nav__link">
-        
-  
-  
-  <span class="md-ellipsis">
-    
-  
-    ManagedWorkload
-  
-
-    
-  </span>
-  
-  
-
-      </a>
-    </li>
-  
-
-              
-            
-              
-                
-  
-  
-  
-  
-    <li class="md-nav__item">
-      <a href="../../guides/pause/" class="md-nav__link">
-        
-  
-  
-  <span class="md-ellipsis">
-    
-  
-    Pause and Resume
-  
-
-    
-  </span>
-  
-  
-
-      </a>
-    </li>
-  
-
-              
-            
-              
-                
-  
-  
-  
-  
-    <li class="md-nav__item">
-      <a href="../../guides/cluster-autoscaler/" class="md-nav__link">
-        
-  
-  
-  <span class="md-ellipsis">
-    
-  
-    Cluster Autoscaler
-  
-
-    
-  </span>
-  
-  
-
-      </a>
-    </li>
-  
-
-              
-            
-              
-                
-  
-  
-  
-  
-    <li class="md-nav__item">
-      <a href="../../guides/node-pools/" class="md-nav__link">
-        
-  
-  
-  <span class="md-ellipsis">
-    
-  
-    Node Pools for Real Savings
-  
-
-    
-  </span>
-  
-  
-
-      </a>
-    </li>
-  
-
-              
-            
-              
-                
-  
-  
-  
-  
-    <li class="md-nav__item">
-      <a href="../../guides/dry-run/" class="md-nav__link">
-        
-  
-  
-  <span class="md-ellipsis">
-    
-  
-    Dry Run
-  
-
-    
-  </span>
-  
-  
-
-      </a>
-    </li>
-  
-
-              
-            
-              
-                
-  
-  
-  
-  
-    <li class="md-nav__item">
-      <a href="../../guides/prometheus-signals/" class="md-nav__link">
-        
-  
-  
-  <span class="md-ellipsis">
-    
-  
-    Prometheus Activity
-  
-
-    
-  </span>
-  
-  
-
-      </a>
-    </li>
-  
-
-              
-            
-              
-                
-  
-  
-  
-  
-    <li class="md-nav__item">
-      <a href="../../guides/gitops/" class="md-nav__link">
-        
-  
-  
-  <span class="md-ellipsis">
-    
-  
-    GitOps tools
-  
-
-    
-  </span>
-  
-  
-
-      </a>
-    </li>
-  
-
-              
-            
-              
-                
-  
-  
-  
-  
-    <li class="md-nav__item">
-      <a href="../../guides/autoscalers/" class="md-nav__link">
-        
-  
-  
-  <span class="md-ellipsis">
-    
-  
-    HPA and KEDA
-  
-
-    
-  </span>
-  
-  
-
-      </a>
-    </li>
-  
-
-              
-            
-          </ul>
-        </nav>
-      
-    </li>
-  
-
-    
-      
-      
-  
-  
-  
-  
-    
-    
-    
-    
-      
-      
-        
-      
-    
-    
-    <li class="md-nav__item md-nav__item--nested">
-      
-        
-        
-          
-        
-        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_5" >
-        
-          
-          <label class="md-nav__link" for="__nav_5" id="__nav_5_label" tabindex="0">
-            
-  
-  
-  <span class="md-ellipsis">
-    
-  
-    Reference
-  
-
-    
-  </span>
-  
-  
-
-            <span class="md-nav__icon md-icon"></span>
-          </label>
-        
-        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_5_label" aria-expanded="false">
-          <label class="md-nav__title" for="__nav_5">
-            <span class="md-nav__icon md-icon"></span>
-            
-  
-    Reference
-  
-
-          </label>
-          <ul class="md-nav__list" data-md-scrollfix>
-            
-              
-                
-  
-  
-  
-  
-    <li class="md-nav__item">
-      <a href="../../reference/api/" class="md-nav__link">
-        
-  
-  
-  <span class="md-ellipsis">
-    
-  
-    API
-  
-
-    
-  </span>
-  
-  
-
-      </a>
-    </li>
-  
-
-              
-            
-              
-                
-  
-  
-  
-  
-    <li class="md-nav__item">
-      <a href="../../reference/helm-values/" class="md-nav__link">
-        
-  
-  
-  <span class="md-ellipsis">
-    
-  
-    Helm Values
-  
-
-    
-  </span>
-  
-  
-
-      </a>
-    </li>
-  
-
-              
-            
-              
-                
-  
-  
-  
-  
-    <li class="md-nav__item">
-      <a href="../../reference/metrics/" class="md-nav__link">
-        
-  
-  
-  <span class="md-ellipsis">
-    
-  
-    Metrics
-  
-
-    
-  </span>
-  
-  
-
-      </a>
-    </li>
-  
-
-              
-            
-              
-                
-  
-  
-  
-  
-    <li class="md-nav__item">
-      <a href="../../reference/labels-annotations/" class="md-nav__link">
-        
-  
-  
-  <span class="md-ellipsis">
-    
-  
-    Labels & Annotations
-  
-
-    
-  </span>
-  
-  
-
-      </a>
-    </li>
-  
-
-              
-            
-              
-                
-  
-  
-  
-  
-    <li class="md-nav__item">
-      <a href="../../reference/data-and-access/" class="md-nav__link">
-        
-  
-  
-  <span class="md-ellipsis">
-    
-  
-    Data and Access
-  
-
-    
-  </span>
-  
-  
-
-      </a>
-    </li>
-  
-
-              
-            
-              
-                
-  
-  
-  
-  
-    <li class="md-nav__item">
-      <a href="../../reference/security/" class="md-nav__link">
-        
-  
-  
-  <span class="md-ellipsis">
-    
-  
-    Security
-  
-
-    
-  </span>
-  
-  
-
-      </a>
-    </li>
-  
-
-              
-            
-              
-                
-  
-  
-  
-  
-    <li class="md-nav__item">
-      <a href="../../reference/configuration/" class="md-nav__link">
-        
-  
-  
-  <span class="md-ellipsis">
-    
-  
-    Configuration
-  
-
-    
-  </span>
-  
-  
-
-      </a>
-    </li>
-  
-
-              
-            
-              
-                
-  
-  
-  
-  
-    <li class="md-nav__item">
-      <a href="../../reference/compatibility/" class="md-nav__link">
-        
-  
-  
-  <span class="md-ellipsis">
-    
-  
-    Compatibility
-  
-
-    
-  </span>
-  
-  
-
-      </a>
-    </li>
-  
-
-              
-            
-          </ul>
-        </nav>
-      
-    </li>
-  
-
-    
-      
-      
-  
-  
-  
-  
-    
-    
-    
-    
-      
-      
-        
-      
-    
-    
-    <li class="md-nav__item md-nav__item--nested">
-      
-        
-        
-          
-        
-        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_6" >
-        
-          
-          <label class="md-nav__link" for="__nav_6" id="__nav_6_label" tabindex="0">
-            
-  
-  
-  <span class="md-ellipsis">
-    
-  
-    Operations
-  
-
-    
-  </span>
-  
-  
-
-            <span class="md-nav__icon md-icon"></span>
-          </label>
-        
-        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_6_label" aria-expanded="false">
-          <label class="md-nav__title" for="__nav_6">
-            <span class="md-nav__icon md-icon"></span>
-            
-  
-    Operations
-  
-
-          </label>
-          <ul class="md-nav__list" data-md-scrollfix>
-            
-              
-                
-  
-  
-  
-  
-    <li class="md-nav__item">
-      <a href="../../operations/monitoring/" class="md-nav__link">
-        
-  
-  
-  <span class="md-ellipsis">
-    
-  
-    Monitoring
-  
-
-    
-  </span>
-  
-  
-
-      </a>
-    </li>
-  
-
-              
-            
-              
-                
-  
-  
-  
-  
-    <li class="md-nav__item">
-      <a href="../../operations/troubleshooting/" class="md-nav__link">
-        
-  
-  
-  <span class="md-ellipsis">
-    
-  
-    Troubleshooting
-  
-
-    
-  </span>
-  
-  
-
-      </a>
-    </li>
-  
-
-              
-            
-              
-                
-  
-  
-  
-  
-    <li class="md-nav__item">
-      <a href="../../operations/upgrading/" class="md-nav__link">
-        
-  
-  
-  <span class="md-ellipsis">
-    
-  
-    Upgrading
-  
-
-    
-  </span>
-  
-  
-
-      </a>
-    </li>
-  
-
-              
-            
-          </ul>
-        </nav>
-      
-    </li>
-  
-
-    
-      
-      
-  
-  
-  
-  
-    <li class="md-nav__item">
-      <a href="../../contributing/" class="md-nav__link">
-        
-  
-  
-  <span class="md-ellipsis">
-    
-  
-    Contributing
-  
-
-    
-  </span>
-  
-  
-
-      </a>
-    </li>
-  
-
-    
-  </ul>
-</nav>
-                  </div>
-                </div>
-              </div>
-            
-            
-              
-              <div class="md-sidebar md-sidebar--secondary" data-md-component="sidebar" data-md-type="toc" >
-                <div class="md-sidebar__scrollwrap">
-                  <div class="md-sidebar__inner">
-                    
-
-<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
-  
-  
-  
-    
-  
-  
-    <label class="md-nav__title" for="__toc">
-      <span class="md-nav__icon md-icon"></span>
-      Table of contents
-    </label>
-    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
-      
-        <li class="md-nav__item">
-  <a href="#what-counts-as-activity" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        What counts as activity
-      
-    </span>
-  </a>
-  
-    <nav class="md-nav" aria-label="What counts as activity">
-      <ul class="md-nav__list">
-        
-          <li class="md-nav__item">
-  <a href="#activity-annotations" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Activity annotations
-      
-    </span>
-  </a>
-  
-</li>
-        
-      </ul>
-    </nav>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#the-decision" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        The decision
-      
-    </span>
-  </a>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#when-a-source-cant-be-read" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        When a source can't be read
-      
-    </span>
-  </a>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#restarts-and-outages" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Restarts and outages
-      
-    </span>
-  </a>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#waking-up" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Waking up
-      
-    </span>
-  </a>
-  
-</li>
-      
-    </ul>
-  
-</nav>
-                  </div>
-                </div>
-              </div>
-            
-          
-          
-            <div class="md-content" data-md-component="content">
-              
-              <article class="md-content__inner md-typeset">
-                
-                  
-
-
-  
-    <a href="https://github.com/okedeji/hybernate/edit/main/docs/concepts/idle-detection.md" title="Edit this page" class="md-content__button md-icon" rel="edit">
-      
-      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M10 20H6V4h7v5h5v3.1l2-2V8l-6-6H6c-1.1 0-2 .9-2 2v16c0 1.1.9 2 2 2h4zm10.2-7c.1 0 .3.1.4.2l1.3 1.3c.2.2.2.6 0 .8l-1 1-2.1-2.1 1-1c.1-.1.2-.2.4-.2m0 3.9L14.1 23H12v-2.1l6.1-6.1z"/></svg>
-    </a>
-  
-  
-
-
-<h1 id="idle-detection">Idle Detection<a class="headerlink" href="#idle-detection" title="Permanent link">&para;</a></h1>
-<p>Hybernate keeps an <strong>activity clock</strong> for every ManagedWorkload: the last time anything showed the workload was in use. When the clock is older than <code>idlePolicy.idleAfter</code>, the workload is paused: scaled to zero, keeping its replica count and a resource snapshot. Any single sign of activity resets it. With <code>idlePolicy.pauseEarly</code>, a confident forecast can bring the pause forward (see <a href="../forecasting/#pausing-early">Pausing Early</a>).</p>
-<p>There's no learning period. A new workload can be paused as soon as it has gone <code>idleAfter</code> without activity.</p>
-<div class="language-yaml highlight"><table class="highlighttable"><tr><th colspan="2" class="filename"><span class="filename">managedworkload.yaml</span></th></tr><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal"><a href="#__codelineno-0-1">1</a></span>
-<span class="normal"><a href="#__codelineno-0-2">2</a></span>
-<span class="normal"><a href="#__codelineno-0-3">3</a></span>
-<span class="normal"><a href="#__codelineno-0-4">4</a></span>
-<span class="normal"><a href="#__codelineno-0-5">5</a></span></pre></div></td><td class="code"><div><pre><span></span><code><span id="__span-0-1"><a id="__codelineno-0-1" name="__codelineno-0-1"></a><span class="nt">spec</span><span class="p">:</span>
-</span><span id="__span-0-2"><a id="__codelineno-0-2" name="__codelineno-0-2"></a><span class="w">  </span><span class="nt">idlePolicy</span><span class="p">:</span>
-</span><span id="__span-0-3"><a id="__codelineno-0-3" name="__codelineno-0-3"></a><span class="w">    </span><span class="nt">idleAfter</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">1h</span><span class="w">        </span><span class="c1"># default</span>
-</span><span id="__span-0-4"><a id="__codelineno-0-4" name="__codelineno-0-4"></a><span class="w">    </span><span class="nt">activity</span><span class="p">:</span>
-</span><span id="__span-0-5"><a id="__codelineno-0-5" name="__codelineno-0-5"></a><span class="w">      </span><span class="nt">cpuThreshold</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">10</span><span class="w">   </span><span class="c1"># percent of CPU requests; default</span>
-</span></code></pre></div></td></tr></table></div>
-<h2 id="what-counts-as-activity">What counts as activity<a class="headerlink" href="#what-counts-as-activity" title="Permanent link">&para;</a></h2>
-<p>Every source is checked, and the most recent one wins. None has priority over another.</p>
+<!DOCTYPE html><html lang="en" dir="ltr" data-theme="dark" data-has-toc data-has-sidebar class="astro-g5ptsecz"><head><link rel="preload" href="/next/_astro/AtkinsonHyperlegibleNext.Cw9WDUCC.woff2" as="font" type="font/woff2" crossorigin><link rel="preload" href="/next/_astro/BigShouldersDisplay-800.CSQhGSAK.woff2" as="font" type="font/woff2" crossorigin><meta charset="utf-8"/><meta name="viewport" content="width=device-width, initial-scale=1"/><title>Idle detection | Napwake</title><link rel="canonical" href="https://docs.napwake.dev/latest/concepts/idle-detection/"/><link rel="sitemap" href="/next/sitemap-index.xml"/><link rel="icon" href="/next/favicon.ico" sizes="32x32"/><link rel="apple-touch-icon" href="/next/apple-touch-icon.png"/><link rel="manifest" href="/next/site.webmanifest"/><link rel="shortcut icon" href="/next/favicon.svg" type="image/svg+xml"/><meta name="generator" content="Astro v7.3.8"/><meta name="generator" content="Starlight v0.42.6"/><meta property="og:title" content="Idle detection"/><meta property="og:type" content="article"/><meta property="og:url" content="https://docs.napwake.dev/next/concepts/idle-detection/"/><meta property="og:locale" content="en"/><meta property="og:description" content="Napwake keeps an activity clock for every ManagedWorkload: the last time anything showed the workload was in use."/><meta property="og:site_name" content="Napwake"/><meta name="twitter:card" content="summary_large_image"/><meta name="description" content="Napwake keeps an activity clock for every ManagedWorkload: the last time anything showed the workload was in use."/><meta property="og:image" content="https://docs.napwake.dev/next/og/concepts-idle-detection.png"/><meta property="og:image:width" content="1200"/><meta property="og:image:height" content="630"/><meta property="og:image:alt" content="Idle detection, Napwake docs"/><meta name="twitter:image" content="https://docs.napwake.dev/next/og/concepts-idle-detection.png"/><link rel="alternate" type="text/markdown" href="/next/concepts/idle-detection.md" title="This page as Markdown"/><meta name="theme-color" content="#14695f" media="(prefers-color-scheme: light)"><meta name="theme-color" content="#0d3f3a" media="(prefers-color-scheme: dark)"><script>
+	window.StarlightThemeProvider = (() => {
+		const storedTheme =
+			typeof localStorage !== 'undefined' && localStorage.getItem('starlight-theme');
+		const theme =
+			storedTheme ||
+			(window.matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark');
+		document.documentElement.dataset.theme = theme === 'light' ? 'light' : 'dark';
+		return {
+			updatePickers(theme = storedTheme || 'auto') {
+				document.querySelectorAll('starlight-theme-select').forEach((picker) => {
+					const select = picker.querySelector('select');
+					if (select) select.value = theme;
+					/** @type {HTMLTemplateElement | null} */
+					const tmpl = document.querySelector(`#theme-icons`);
+					const newIcon = tmpl && tmpl.content.querySelector('.' + theme);
+					if (newIcon) {
+						const oldIcon = picker.querySelector('svg.label-icon');
+						if (oldIcon) {
+							oldIcon.replaceChildren(...newIcon.cloneNode(true).childNodes);
+						}
+					}
+				});
+			},
+		};
+	})();
+</script><template id="theme-icons"><svg aria-hidden="true" class="light astro-hkc32dio" width="16" height="16" viewBox="0 0 24 24" fill="currentColor" style="--sl-icon-size: 1em;"><path d="M5 12a1 1 0 0 0-1-1H3a1 1 0 0 0 0 2h1a1 1 0 0 0 1-1Zm.64 5-.71.71a1 1 0 0 0 0 1.41 1 1 0 0 0 1.41 0l.71-.71A1 1 0 0 0 5.64 17ZM12 5a1 1 0 0 0 1-1V3a1 1 0 0 0-2 0v1a1 1 0 0 0 1 1Zm5.66 2.34a1 1 0 0 0 .7-.29l.71-.71a1 1 0 1 0-1.41-1.41l-.66.71a1 1 0 0 0 0 1.41 1 1 0 0 0 .66.29Zm-12-.29a1 1 0 0 0 1.41 0 1 1 0 0 0 0-1.41l-.71-.71a1.004 1.004 0 1 0-1.43 1.41l.73.71ZM21 11h-1a1 1 0 0 0 0 2h1a1 1 0 0 0 0-2Zm-2.64 6A1 1 0 0 0 17 18.36l.71.71a1 1 0 0 0 1.41 0 1 1 0 0 0 0-1.41l-.76-.66ZM12 6.5a5.5 5.5 0 1 0 5.5 5.5A5.51 5.51 0 0 0 12 6.5Zm0 9a3.5 3.5 0 1 1 0-7 3.5 3.5 0 0 1 0 7Zm0 3.5a1 1 0 0 0-1 1v1a1 1 0 0 0 2 0v-1a1 1 0 0 0-1-1Z"/></svg><svg aria-hidden="true" class="dark astro-hkc32dio" width="16" height="16" viewBox="0 0 24 24" fill="currentColor" style="--sl-icon-size: 1em;"><path d="M21.64 13a1 1 0 0 0-1.05-.14 8.049 8.049 0 0 1-3.37.73 8.15 8.15 0 0 1-8.14-8.1 8.59 8.59 0 0 1 .25-2A1 1 0 0 0 8 2.36a10.14 10.14 0 1 0 14 11.69 1 1 0 0 0-.36-1.05Zm-9.5 6.69A8.14 8.14 0 0 1 7.08 5.22v.27a10.15 10.15 0 0 0 10.14 10.14 9.784 9.784 0 0 0 2.1-.22 8.11 8.11 0 0 1-7.18 4.32v-.04Z"/></svg><svg aria-hidden="true" class="auto astro-hkc32dio" width="16" height="16" viewBox="0 0 24 24" fill="currentColor" style="--sl-icon-size: 1em;"><path d="M21 14h-1V7a3 3 0 0 0-3-3H7a3 3 0 0 0-3 3v7H3a1 1 0 0 0-1 1v2a3 3 0 0 0 3 3h14a3 3 0 0 0 3-3v-2a1 1 0 0 0-1-1ZM6 7a1 1 0 0 1 1-1h10a1 1 0 0 1 1 1v7H6V7Zm14 10a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1v-1h16v1Z"/></svg></template><link rel="stylesheet" href="/next/_astro/print.ehPL0gv-.css" media="print"><link rel="stylesheet" href="/next/_astro/middleware.eqZQrTWL.css"><style>@layer starlight.components{svg:where(.astro-hkc32dio){color:var(--sl-icon-color);font-size:var(--sl-icon-size,1em);width:1em;height:1em;overflow:visible}}
+</style><script type="module" src="/next/_astro/page.cNngjUgL.js"></script><style>.nw-day:where(.astro-oh7uzvwe){background:var(--surface);border:1px solid var(--line);border-radius:var(--radius-xl);margin:1.75rem 0 0;padding:1.3rem 1.4rem 1.2rem}.nw-day__grid:where(.astro-oh7uzvwe){gap:.55rem;display:grid}.nw-day__row:where(.astro-oh7uzvwe){grid-template-columns:9.5rem minmax(0,1fr);align-items:center;gap:1rem;display:grid}.nw-day__label:where(.astro-oh7uzvwe){font:700 .875rem/1.3 var(--font-sans);color:var(--text);margin:0}.nw-day__label:where(.astro-oh7uzvwe) span:where(.astro-oh7uzvwe){font:400 .75rem/1.35 var(--font-mono);color:var(--muted);margin-top:.15rem;display:block}.nw-day__bar:where(.astro-oh7uzvwe){border-radius:var(--radius-sm);background:color-mix(in srgb, var(--asleep) 16%, var(--surface));height:1.6rem;position:relative;overflow:hidden}.nw-day__span:where(.astro-oh7uzvwe){position:absolute;top:0;bottom:0}.nw-day__span--asleep:where(.astro-oh7uzvwe){background:color-mix(in srgb, var(--asleep) 16%, var(--surface))}.nw-day__span--waking:where(.astro-oh7uzvwe){background:var(--lamp);min-width:5px}.nw-day__span--awake:where(.astro-oh7uzvwe){background:color-mix(in srgb, var(--awake) 55%, var(--surface))}.nw-day__mark:where(.astro-oh7uzvwe){border-left:2px dashed var(--text);opacity:.55;width:0;position:absolute;top:-2px;bottom:-2px}.nw-day__axis:where(.astro-oh7uzvwe){height:1.1rem;position:relative}.nw-day__axis:where(.astro-oh7uzvwe) span:where(.astro-oh7uzvwe){font:400 .6875rem/1 var(--font-mono);color:var(--muted);white-space:nowrap;position:absolute;transform:translate(-50%)}.nw-day__axis:where(.astro-oh7uzvwe) span:where(.astro-oh7uzvwe):first-child{transform:none}.nw-day__axis:where(.astro-oh7uzvwe) span:where(.astro-oh7uzvwe):last-child{transform:translate(-100%)}.nw-day__legend:where(.astro-oh7uzvwe){font:400 .75rem/1.4 var(--font-mono);color:var(--muted);flex-wrap:wrap;gap:.4rem 1.1rem;margin-top:.9rem;display:flex}.nw-day__legend:where(.astro-oh7uzvwe) span:where(.astro-oh7uzvwe){align-items:center;gap:.35rem;display:inline-flex}.nw-day__legendmark:where(.astro-oh7uzvwe) i:where(.astro-oh7uzvwe){border-left:2px dashed var(--text);opacity:.55;width:0;height:.9rem;display:inline-block}figcaption:where(.astro-oh7uzvwe){color:var(--muted);margin-top:.8rem;font-size:.8125rem;line-height:1.5}figcaption:where(.astro-oh7uzvwe) a{color:var(--link)}@media (width<=44rem){.nw-day:where(.astro-oh7uzvwe){padding:1rem}.nw-day__row:where(.astro-oh7uzvwe){grid-template-columns:minmax(0,1fr);gap:.35rem}.nw-day__row--axis:where(.astro-oh7uzvwe)>span:where(.astro-oh7uzvwe),.nw-day__axis:where(.astro-oh7uzvwe) span:where(.astro-oh7uzvwe):nth-child(2n){display:none}}
+</style><style>.nw-doorman:where(.astro-rkcsz4yr){max-width:100%;height:auto;display:block;overflow:visible}
+</style><style>.nw-next:where(.astro-zkuglizp){align-items:end;gap:1rem 1.5rem;margin-top:2.5rem;display:grid}.nw-next--doorman:where(.astro-zkuglizp){grid-template-columns:minmax(0,7.5rem) minmax(0,1fr)}.nw-next__doorman:where(.astro-zkuglizp){align-self:end;width:100%;max-width:7.5rem}.nw-next__title:where(.astro-zkuglizp){font:700 .75rem/1.4 var(--font-mono);letter-spacing:.06em;text-transform:uppercase;color:var(--muted);margin:0 0 .6rem}ul:where(.astro-zkuglizp){grid-template-columns:repeat(auto-fit,minmax(min(100%,14rem),1fr));gap:.75rem;margin:0;padding:0;list-style:none;display:grid}li:where(.astro-zkuglizp){margin:0!important}a:where(.astro-zkuglizp){box-sizing:border-box;background:var(--surface);border:1px solid var(--line);border-radius:var(--radius-lg);height:100%;color:var(--text);transition:border-color var(--duration-ui-short) var(--ease-calm);flex-direction:column;gap:.25rem;padding:.9rem 1rem 1rem;text-decoration:none;display:flex}a:where(.astro-zkuglizp):hover{border-color:var(--action)}.nw-next__name:where(.astro-zkuglizp){font:700 1rem/1.35 var(--font-sans)}.nw-next__name:where(.astro-zkuglizp) span:where(.astro-zkuglizp){color:var(--muted)}a:where(.astro-zkuglizp):hover .nw-next__name:where(.astro-zkuglizp) span:where(.astro-zkuglizp){color:var(--link)}.nw-next__text:where(.astro-zkuglizp){color:var(--muted);font-size:.875rem;line-height:1.5}@media (width<=40rem){.nw-next--doorman:where(.astro-zkuglizp){grid-template-columns:1fr}.nw-next__doorman:where(.astro-zkuglizp){max-width:5.5rem}}
+</style><style>.nw-outcome:where(.astro-pizrc632){align-items:flex-start;gap:.55rem;display:inline-flex}.nw-outcome:where(.astro-pizrc632) .nw-door{margin-top:.15rem}
+</style><style>.nw-door:where(.astro-iomifxvf){vertical-align:middle;flex:none;display:inline-block;overflow:visible}
+</style></head><body class="astro-g5ptsecz"><a class="sl-skip-link astro-qb7clj6f" href="#_top">Skip to content</a><div class="page sl-flex astro-yntsjkba"><header class="header astro-yntsjkba"><div class="header astro-xiqy3rs3"><div class="title-wrapper sl-flex astro-xiqy3rs3"><a href="/next/" class="nw-site-title astro-32trhkrv"><svg class="nw-site-title__logo astro-32trhkrv" viewBox="-12 -32 430.5 124" role="img" aria-label="Napwake" xmlns="http://www.w3.org/2000/svg"><g transform="translate(-10 -27.7) scale(0.95)"><path d="M12 96 V88 Q12 79 22 79 H74 Q84 79 84 88 V96 Z" fill="currentColor"></path><path d="M26 76 V44 Q26 36 34 36 H62 Q70 36 70 44 V76 Z" fill="currentColor"></path><clipPath id="nw-logo-e1"><circle cx="38.3" cy="55" r="7.8"></circle></clipPath><circle cx="38.3" cy="55" r="7.5" fill="var(--nw-cut, var(--docs-header))"></circle><g clip-path="url(#nw-logo-e1)"><circle cx="38.3" cy="55.95" r="3.75" fill="currentColor"></circle><rect x="26.299999999999997" y="40" width="24" height="15" fill="currentColor" transform="rotate(-5 38.3 55)"></rect></g><rect x="29.45" y="53.58" width="17.7" height="2.85" rx="1.43" fill="currentColor" transform="rotate(-5 38.3 55)"></rect><clipPath id="nw-logo-e2"><circle cx="57.7" cy="55" r="7.8"></circle></clipPath><circle cx="57.7" cy="55" r="7.5" fill="var(--nw-cut, var(--docs-header))"></circle><g clip-path="url(#nw-logo-e2)"><circle cx="57.7" cy="55.95" r="3.75" fill="currentColor"></circle><rect x="45.7" y="40" width="24" height="15" fill="currentColor" transform="rotate(3 57.7 55)"></rect></g><rect x="48.85" y="53.58" width="17.7" height="2.85" rx="1.43" fill="currentColor" transform="rotate(3 57.7 55)"></rect><path d="M23 71 H73 V80 Q48 83 23 80 Z" fill="currentColor"></path><g transform="rotate(-5 48 38)"><path d="M31 38 L29.5 13 Q29.5 10 32.5 10 Q48 8.5 63.5 10 Q66.5 10 66.5 13 L65 38 Z" fill="currentColor"></path><path d="M30.6 31 L30.2 25 H65.8 L65.4 31 Z" fill="var(--nw-cut, var(--docs-header))"></path><path d="M14 37 Q15 34 20 34.5 H76 Q81 34 82 37 Q82 41.5 76 41.5 H20 Q14 41.5 14 37 Z" fill="currentColor"></path></g></g><g transform="translate(86 0)"><path fill="currentColor" d="M0 60 V18 A18 18 0 0 1 36 18 V60 ZM24 60 V18 A6 6 0 0 0 12 18 V60 ZM46.5 60 V18 A18 18 0 0 1 64.5 4 H65.5 L71.5 13 V60 ZM70.5 0 H82.5 V60 H70.5 ZM70.5 48 V23.25 A6.25 6.25 0 0 0 58 23.25 V48 ZM94.5 60 V0 H112.5 A18 18 0 0 1 130.5 18 V60 ZM118.5 48 V18 A6 6 0 0 0 106.5 18 V48 ZM94.5 59 H106.5 V80 H94.5 ZM136.5 0 L149 0 L156.5 60 L144 60 ZM156.25 16 L168.75 16 L156.5 60 L144 60 ZM156.25 16 L168.75 16 L181 60 L168.5 60 ZM176 0 L188.5 0 L181 60 L168.5 60 ZM194.5 60 V18 A18 18 0 0 1 212.5 4 H213.5 L219.5 13 V60 ZM218.5 0 H230.5 V60 H218.5 ZM218.5 48 V23.25 A6.25 6.25 0 0 0 206 23.25 V48 ZM242.5 -22 H254.5 V60 H242.5 ZM267 0 L279.5 0 L254.5 44 L254.5 23 ZM261.5 31 L270 26 L280.5 60 L267.5 60 ZM286.5 28 V18 A18 18 0 0 1 322.5 18 V28 ZM310.5 28 V18 A6 6 0 0 0 298.5 18 V28 ZM286.5 26 H322.5 V38 H286.5 ZM286.5 26 H298.5 V60 H286.5 ZM286.5 48 H320.5 V60 H286.5 Z"></path></g></svg><span class="nw-site-title__docs astro-32trhkrv">Docs</span></a><span class="nw-version-wrap astro-xiqy3rs3"><nw-version-select data-versions="/versions.json" data-current="next" data-base="/next/" data-root="/" class="astro-jcjov46q"><label class="nw-version astro-jcjov46q"><span class="sr-only astro-jcjov46q">Docs version</span><select disabled aria-label="Docs version" class="astro-jcjov46q"><option value="next" selected class="astro-jcjov46q">next · 0.2.0-rc.9</option></select><svg aria-hidden="true" viewBox="0 0 12 12" width="10" height="10" class="astro-jcjov46q"><path d="M2.5 4.5 6 8l3.5-3.5" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" class="astro-jcjov46q"></path></svg></label></nw-version-select><script type="module">var e=class extends HTMLElement{connectedCallback(){let{versions:e,current:t=`dev`,base:n=`/`,root:r=`/`}=this.dataset,i=this.querySelector(`select`);i&&e&&fetch(e).then(e=>e.ok?e.json():Promise.reject(e.status)).then(e=>{if(!Array.isArray(e)||!e.length)return;i.replaceChildren(...e.map(e=>{let n=document.createElement(`option`),r=e.aliases?.includes(`latest`)?` · latest`:e.version===`next`&&e.properties?.release?` · ${e.properties.release}`:``;return n.value=e.version,n.textContent=(e.version===`next`?`next`:e.title||e.version)+r,n.selected=e.version===t||(e.aliases??[]).includes(t),n})),i.disabled=!1,this.toggleAttribute(`data-ready`,!0);let a=e.find(e=>e.version===t||(e.aliases??[]).includes(t));a&&t!==`next`&&!(a.aliases??[]).includes(`latest`)&&document.querySelectorAll(`[data-nw-outdated]`).forEach(e=>{e.hidden=!1}),i.addEventListener(`change`,()=>{let e=location.pathname.startsWith(n)?location.pathname.slice(n.length):``;location.href=`${r}${i.value}/${e}${location.hash}`})}).catch(()=>{})}};customElements.define(`nw-version-select`,e);</script></span></div><div class="sl-flex print:hidden astro-xiqy3rs3"><site-search class="astro-xiqy3rs3 astro-b5kgnn7o" data-translations="{&quot;placeholder&quot;:&quot;Search&quot;}"><button data-open-modal disabled aria-label="Search" aria-keyshortcuts="Control+K" class="astro-b5kgnn7o"><svg aria-hidden="true" class="astro-b5kgnn7o astro-hkc32dio" width="16" height="16" viewBox="0 0 24 24" fill="currentColor" style="--sl-icon-size: 1em;"><path d="M21.71 20.29 18 16.61A9 9 0 1 0 16.61 18l3.68 3.68a.999.999 0 0 0 1.42 0 1 1 0 0 0 0-1.39ZM11 18a7 7 0 1 1 0-14 7 7 0 0 1 0 14Z"/></svg><span class="sl-hidden md:sl-block astro-b5kgnn7o" aria-hidden="true">Search</span><kbd class="sl-hidden md:sl-flex astro-b5kgnn7o" style="display: none;"><kbd class="astro-b5kgnn7o">Ctrl</kbd><kbd class="astro-b5kgnn7o">K</kbd></kbd></button><dialog style="padding:0" aria-label="Search" class="astro-b5kgnn7o"><div class="dialog-frame sl-flex astro-b5kgnn7o"><button data-close-modal class="sl-flex md:sl-hidden astro-b5kgnn7o">Cancel</button><div class="search-container astro-b5kgnn7o"><div id="starlight__search" class="astro-b5kgnn7o"></div></div></div></dialog></site-search><script>
+	(() => {
+		const openBtn = document.querySelector('button[data-open-modal]');
+		const shortcut = openBtn?.querySelector('kbd');
+		if (!openBtn || !(shortcut instanceof HTMLElement)) return;
+		const platformKey = shortcut.querySelector('kbd');
+		if (platformKey && /(Mac|iPhone|iPod|iPad)/i.test(navigator.platform)) {
+			platformKey.textContent = '⌘';
+			openBtn.setAttribute('aria-keyshortcuts', 'Meta+K');
+		}
+		shortcut.style.display = '';
+	})();
+</script><script type="module" src="/next/_astro/Search.astro_astro_type_script_index_0_lang.NGFCANqr.js"></script></div><div class="sl-hidden md:sl-flex print:hidden right-group astro-xiqy3rs3"><div class="sl-flex social-icons astro-xiqy3rs3"><a href="https://github.com/napwake/napwake" rel="me" class="sl-flex astro-n2mnl6yq"><span class="sr-only astro-n2mnl6yq">Napwake on GitHub</span><svg aria-hidden="true" class="astro-n2mnl6yq astro-hkc32dio" width="16" height="16" viewBox="0 0 24 24" fill="currentColor" style="--sl-icon-size: 1em;"><path d="M12 .3a12 12 0 0 0-3.8 23.38c.6.12.83-.26.83-.57L9 21.07c-3.34.72-4.04-1.61-4.04-1.61-.55-1.39-1.34-1.76-1.34-1.76-1.08-.74.09-.73.09-.73 1.2.09 1.83 1.24 1.83 1.24 1.08 1.83 2.81 1.3 3.5 1 .1-.78.42-1.31.76-1.61-2.67-.3-5.47-1.33-5.47-5.93 0-1.31.47-2.38 1.24-3.22-.14-.3-.54-1.52.1-3.18 0 0 1-.32 3.3 1.23a11.5 11.5 0 0 1 6 0c2.28-1.55 3.29-1.23 3.29-1.23.64 1.66.24 2.88.12 3.18a4.65 4.65 0 0 1 1.23 3.22c0 4.61-2.8 5.63-5.48 5.92.42.36.81 1.1.81 2.22l-.01 3.29c0 .31.2.69.82.57A12 12 0 0 0 12 .3Z"/></svg></a></div><starlight-theme-select><label style="--sl-select-width: 6.25em" class="astro-2z5xp7gb"><span class="sr-only astro-2z5xp7gb">Select theme</span><svg aria-hidden="true" class="icon label-icon astro-2z5xp7gb astro-hkc32dio" width="16" height="16" viewBox="0 0 24 24" fill="currentColor" style="--sl-icon-size: 1em;"><path d="M21 14h-1V7a3 3 0 0 0-3-3H7a3 3 0 0 0-3 3v7H3a1 1 0 0 0-1 1v2a3 3 0 0 0 3 3h14a3 3 0 0 0 3-3v-2a1 1 0 0 0-1-1ZM6 7a1 1 0 0 1 1-1h10a1 1 0 0 1 1 1v7H6V7Zm14 10a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1v-1h16v1Z"/></svg><select autocomplete="off" class="astro-2z5xp7gb"><option value="dark" class="astro-2z5xp7gb">Dark</option><option value="light" class="astro-2z5xp7gb">Light</option><option value="auto" selected class="astro-2z5xp7gb">Auto</option></select><svg aria-hidden="true" class="icon caret astro-2z5xp7gb astro-hkc32dio" width="16" height="16" viewBox="0 0 24 24" fill="currentColor" style="--sl-icon-size: 1em;"><path d="M17 9.17a1 1 0 0 0-1.41 0L12 12.71 8.46 9.17a1 1 0 1 0-1.41 1.42l4.24 4.24a1.002 1.002 0 0 0 1.42 0L17 10.59a1.002 1.002 0 0 0 0-1.42Z"/></svg></label></starlight-theme-select><script>
+	StarlightThemeProvider.updatePickers();
+</script><script type="module">var e=`starlight-theme`,t=e=>e===`auto`||e===`dark`||e===`light`?e:`auto`,n=()=>t(typeof localStorage<`u`&&localStorage.getItem(e));function r(t){typeof localStorage<`u`&&localStorage.setItem(e,t===`light`||t===`dark`?t:``)}var i=()=>matchMedia(`(prefers-color-scheme: light)`).matches?`light`:`dark`;function a(e){StarlightThemeProvider.updatePickers(e),document.documentElement.dataset.theme=e===`auto`?i():e,r(e)}matchMedia(`(prefers-color-scheme: light)`).addEventListener(`change`,()=>{n()===`auto`&&a(`auto`)});var o=class extends HTMLElement{constructor(){super(),a(n()),this.querySelector(`select`)?.addEventListener(`change`,e=>{e.currentTarget instanceof HTMLSelectElement&&a(t(e.currentTarget.value))})}};customElements.define(`starlight-theme-select`,o);</script><script type="module">var e=class extends HTMLElement{constructor(){super();let e=this.querySelector(`select`);e&&(e.addEventListener(`change`,e=>{e.currentTarget instanceof HTMLSelectElement&&(window.location.pathname=e.currentTarget.value)}),window.addEventListener(`pageshow`,t=>{if(!t.persisted)return;let n=e.querySelector(`option[selected]`)?.index;n!==e.selectedIndex&&(e.selectedIndex=n??0)}))}};customElements.define(`starlight-lang-select`,e);</script></div></div></header><nav class="sidebar print:hidden astro-yntsjkba" aria-label="Main"><button popovertarget="starlight__sidebar" class="sl-menu-button sl-flex md:sl-hidden print:hidden astro-r2osgdlg"><svg aria-hidden="true" class="open-menu astro-r2osgdlg astro-hkc32dio" width="16" height="16" viewBox="0 0 24 24" fill="currentColor" style="--sl-icon-size: 1em;"><path d="M3 8h18a1 1 0 1 0 0-2H3a1 1 0 0 0 0 2Zm18 8H3a1 1 0 0 0 0 2h18a1 1 0 0 0 0-2Zm0-5H3a1 1 0 0 0 0 2h18a1 1 0 0 0 0-2Z"/></svg><svg aria-hidden="true" class="close-menu astro-r2osgdlg astro-hkc32dio" width="16" height="16" viewBox="0 0 24 24" fill="currentColor" style="--sl-icon-size: 1em;"><path d="m13.41 12 6.3-6.29a1.004 1.004 0 1 0-1.42-1.42L12 10.59l-6.29-6.3a1.004 1.004 0 0 0-1.42 1.42l6.3 6.29-6.3 6.29a1 1 0 0 0 0 1.42.998.998 0 0 0 1.42 0l6.29-6.3 6.29 6.3a.999.999 0 0 0 1.42 0 1 1 0 0 0 0-1.42L13.41 12Z"/></svg><span class="sr-only astro-r2osgdlg">Menu</span></button><script type="module">var e=class extends HTMLElement{constructor(){super();let e=matchMedia(`(min-width: 50em)`),t=()=>{this.popover=e.matches?null:`auto`};t(),e.addEventListener(`change`,()=>t()),this.addEventListener(`toggle`,({newState:e})=>this.trapFocus(e===`open`))}trapFocus(e){document.querySelectorAll(`.main-frame, .sl-skip-link`).forEach(t=>{t.toggleAttribute(`inert`,e)})}};customElements.define(`sl-sidebar-pane`,e);</script><sl-sidebar-pane popover id="starlight__sidebar" class="sidebar-pane astro-yntsjkba"><div class="sidebar-content sl-flex astro-yntsjkba"><sl-sidebar-state-persist data-hash="0t2qzvf" class="astro-ipdry5cl"><script aria-hidden="true">
+		(() => {
+			try {
+				if (!matchMedia('(min-width: 50em)').matches) return;
+				/** @type {HTMLElement | null} */
+				const target = document.querySelector('sl-sidebar-state-persist');
+				const state = JSON.parse(sessionStorage.getItem('sl-sidebar-state') || '0');
+				if (!target || !state || target.dataset.hash !== state.hash) return;
+				window._starlightScrollRestore = state.scroll;
+				customElements.define(
+					'sl-sidebar-restore',
+					class SidebarRestore extends HTMLElement {
+						connectedCallback() {
+							try {
+								const idx = parseInt(this.dataset.index || '');
+								const details = this.closest('details');
+								if (details && typeof state.open[idx] === 'boolean') details.open = state.open[idx];
+							} catch {}
+						}
+					}
+				);
+			} catch {}
+		})();
+	</script><ul class="top-level astro-rmhv4bp6"><li class="astro-rmhv4bp6"><a href="/next/" class="large astro-rmhv4bp6"><span class="astro-rmhv4bp6">Home</span></a></li><li class="astro-rmhv4bp6"><details open class="astro-rmhv4bp6"><summary class="astro-rmhv4bp6"><span class="group-label astro-rmhv4bp6"><span class="large astro-rmhv4bp6">Getting started</span></span><svg aria-hidden="true" class="caret astro-rmhv4bp6 astro-hkc32dio" width="16" height="16" viewBox="0 0 24 24" fill="currentColor" style="--sl-icon-size: 1.25rem;"><path d="m14.83 11.29-4.24-4.24a1 1 0 1 0-1.42 1.41L12.71 12l-3.54 3.54a1 1 0 0 0 0 1.41 1 1 0 0 0 .71.29 1 1 0 0 0 .71-.29l4.24-4.24a1.002 1.002 0 0 0 0-1.42Z"/></svg></summary><sl-sidebar-restore data-index="0"></sl-sidebar-restore><ul class="astro-rmhv4bp6"><li class="astro-rmhv4bp6"><a href="/next/getting-started/installation/" class="astro-rmhv4bp6"><span class="astro-rmhv4bp6">Installation</span></a></li><li class="astro-rmhv4bp6"><a href="/next/getting-started/quickstart/" class="astro-rmhv4bp6"><span class="astro-rmhv4bp6">Quickstart</span></a></li><li class="astro-rmhv4bp6"><a href="/next/getting-started/kubectl-plugin/" class="astro-rmhv4bp6"><span class="astro-rmhv4bp6">kubectl plugin</span></a></li></ul></details></li><li class="astro-rmhv4bp6"><details open class="astro-rmhv4bp6"><summary class="astro-rmhv4bp6"><span class="group-label astro-rmhv4bp6"><span class="large astro-rmhv4bp6">Concepts</span></span><svg aria-hidden="true" class="caret astro-rmhv4bp6 astro-hkc32dio" width="16" height="16" viewBox="0 0 24 24" fill="currentColor" style="--sl-icon-size: 1.25rem;"><path d="m14.83 11.29-4.24-4.24a1 1 0 1 0-1.42 1.41L12.71 12l-3.54 3.54a1 1 0 0 0 0 1.41 1 1 0 0 0 .71.29 1 1 0 0 0 .71-.29l4.24-4.24a1.002 1.002 0 0 0 0-1.42Z"/></svg></summary><sl-sidebar-restore data-index="1"></sl-sidebar-restore><ul class="astro-rmhv4bp6"><li class="astro-rmhv4bp6"><a href="/next/concepts/architecture/" class="astro-rmhv4bp6"><span class="astro-rmhv4bp6">Architecture</span></a></li><li class="astro-rmhv4bp6"><a href="/next/concepts/lifecycle/" class="astro-rmhv4bp6"><span class="astro-rmhv4bp6">Lifecycle</span></a></li><li class="astro-rmhv4bp6"><a href="/next/concepts/forecasting/" class="astro-rmhv4bp6"><span class="astro-rmhv4bp6">Forecasting</span></a></li><li class="astro-rmhv4bp6"><a href="/next/concepts/idle-detection/" aria-current="page" class="astro-rmhv4bp6"><span class="astro-rmhv4bp6">Idle detection</span></a></li><li class="astro-rmhv4bp6"><a href="/next/concepts/dependencies/" class="astro-rmhv4bp6"><span class="astro-rmhv4bp6">Dependencies</span></a></li><li class="astro-rmhv4bp6"><a href="/next/concepts/wake-on-request/" class="astro-rmhv4bp6"><span class="astro-rmhv4bp6">Wake on request</span></a></li><li class="astro-rmhv4bp6"><a href="/next/concepts/cost-tracking/" class="astro-rmhv4bp6"><span class="astro-rmhv4bp6">Cost tracking</span></a></li></ul></details></li><li class="astro-rmhv4bp6"><details open class="astro-rmhv4bp6"><summary class="astro-rmhv4bp6"><span class="group-label astro-rmhv4bp6"><span class="large astro-rmhv4bp6">Guides</span></span><svg aria-hidden="true" class="caret astro-rmhv4bp6 astro-hkc32dio" width="16" height="16" viewBox="0 0 24 24" fill="currentColor" style="--sl-icon-size: 1.25rem;"><path d="m14.83 11.29-4.24-4.24a1 1 0 1 0-1.42 1.41L12.71 12l-3.54 3.54a1 1 0 0 0 0 1.41 1 1 0 0 0 .71.29 1 1 0 0 0 .71-.29l4.24-4.24a1.002 1.002 0 0 0 0-1.42Z"/></svg></summary><sl-sidebar-restore data-index="2"></sl-sidebar-restore><ul class="astro-rmhv4bp6"><li class="astro-rmhv4bp6"><a href="/next/guides/opt-in/" class="astro-rmhv4bp6"><span class="astro-rmhv4bp6">Opting in</span></a></li><li class="astro-rmhv4bp6"><a href="/next/guides/preview-environments/" class="astro-rmhv4bp6"><span class="astro-rmhv4bp6">Public preview environments</span></a></li><li class="astro-rmhv4bp6"><a href="/next/guides/managed-workload/" class="astro-rmhv4bp6"><span class="astro-rmhv4bp6">ManagedWorkload</span></a></li><li class="astro-rmhv4bp6"><a href="/next/guides/pause/" class="astro-rmhv4bp6"><span class="astro-rmhv4bp6">Pause and resume</span></a></li><li class="astro-rmhv4bp6"><a href="/next/guides/cluster-autoscaler/" class="astro-rmhv4bp6"><span class="astro-rmhv4bp6">Cluster Autoscaler</span></a></li><li class="astro-rmhv4bp6"><a href="/next/guides/node-pools/" class="astro-rmhv4bp6"><span class="astro-rmhv4bp6">Node pools for real savings</span></a></li><li class="astro-rmhv4bp6"><a href="/next/guides/dry-run/" class="astro-rmhv4bp6"><span class="astro-rmhv4bp6">Dry run</span></a></li><li class="astro-rmhv4bp6"><a href="/next/guides/prometheus-signals/" class="astro-rmhv4bp6"><span class="astro-rmhv4bp6">Prometheus activity</span></a></li><li class="astro-rmhv4bp6"><a href="/next/guides/gitops/" class="astro-rmhv4bp6"><span class="astro-rmhv4bp6">GitOps tools</span></a></li><li class="astro-rmhv4bp6"><a href="/next/guides/autoscalers/" class="astro-rmhv4bp6"><span class="astro-rmhv4bp6">HPA and KEDA</span></a></li></ul></details></li><li class="astro-rmhv4bp6"><details open class="astro-rmhv4bp6"><summary class="astro-rmhv4bp6"><span class="group-label astro-rmhv4bp6"><span class="large astro-rmhv4bp6">Reference</span></span><svg aria-hidden="true" class="caret astro-rmhv4bp6 astro-hkc32dio" width="16" height="16" viewBox="0 0 24 24" fill="currentColor" style="--sl-icon-size: 1.25rem;"><path d="m14.83 11.29-4.24-4.24a1 1 0 1 0-1.42 1.41L12.71 12l-3.54 3.54a1 1 0 0 0 0 1.41 1 1 0 0 0 .71.29 1 1 0 0 0 .71-.29l4.24-4.24a1.002 1.002 0 0 0 0-1.42Z"/></svg></summary><sl-sidebar-restore data-index="3"></sl-sidebar-restore><ul class="astro-rmhv4bp6"><li class="astro-rmhv4bp6"><a href="/next/reference/api/" class="astro-rmhv4bp6"><span class="astro-rmhv4bp6">API</span></a></li><li class="astro-rmhv4bp6"><a href="/next/reference/cli/" class="astro-rmhv4bp6"><span class="astro-rmhv4bp6">kubectl plugin</span></a></li><li class="astro-rmhv4bp6"><a href="/next/reference/conditions-and-events/" class="astro-rmhv4bp6"><span class="astro-rmhv4bp6">Conditions and events</span></a></li><li class="astro-rmhv4bp6"><a href="/next/reference/helm-values/" class="astro-rmhv4bp6"><span class="astro-rmhv4bp6">Helm values</span></a></li><li class="astro-rmhv4bp6"><a href="/next/reference/metrics/" class="astro-rmhv4bp6"><span class="astro-rmhv4bp6">Metrics</span></a></li><li class="astro-rmhv4bp6"><a href="/next/reference/labels-annotations/" class="astro-rmhv4bp6"><span class="astro-rmhv4bp6">Labels and annotations</span></a></li><li class="astro-rmhv4bp6"><a href="/next/reference/data-and-access/" class="astro-rmhv4bp6"><span class="astro-rmhv4bp6">Data and access</span></a></li><li class="astro-rmhv4bp6"><a href="/next/reference/security/" class="astro-rmhv4bp6"><span class="astro-rmhv4bp6">Security</span></a></li><li class="astro-rmhv4bp6"><a href="/next/reference/configuration/" class="astro-rmhv4bp6"><span class="astro-rmhv4bp6">Configuration</span></a></li><li class="astro-rmhv4bp6"><a href="/next/reference/compatibility/" class="astro-rmhv4bp6"><span class="astro-rmhv4bp6">Compatibility</span></a></li></ul></details></li><li class="astro-rmhv4bp6"><details open class="astro-rmhv4bp6"><summary class="astro-rmhv4bp6"><span class="group-label astro-rmhv4bp6"><span class="large astro-rmhv4bp6">Operations</span></span><svg aria-hidden="true" class="caret astro-rmhv4bp6 astro-hkc32dio" width="16" height="16" viewBox="0 0 24 24" fill="currentColor" style="--sl-icon-size: 1.25rem;"><path d="m14.83 11.29-4.24-4.24a1 1 0 1 0-1.42 1.41L12.71 12l-3.54 3.54a1 1 0 0 0 0 1.41 1 1 0 0 0 .71.29 1 1 0 0 0 .71-.29l4.24-4.24a1.002 1.002 0 0 0 0-1.42Z"/></svg></summary><sl-sidebar-restore data-index="4"></sl-sidebar-restore><ul class="astro-rmhv4bp6"><li class="astro-rmhv4bp6"><a href="/next/operations/monitoring/" class="astro-rmhv4bp6"><span class="astro-rmhv4bp6">Monitoring</span></a></li><li class="astro-rmhv4bp6"><a href="/next/operations/troubleshooting/" class="astro-rmhv4bp6"><span class="astro-rmhv4bp6">Troubleshooting</span></a></li><li class="astro-rmhv4bp6"><a href="/next/operations/upgrading/" class="astro-rmhv4bp6"><span class="astro-rmhv4bp6">Upgrading</span></a></li></ul></details></li><li class="astro-rmhv4bp6"><a href="/next/contributing/" class="large astro-rmhv4bp6"><span class="astro-rmhv4bp6">Contributing</span></a></li></ul><script aria-hidden="true">
+		(() => {
+			const scroller = document.getElementById('starlight__sidebar');
+			if (!window._starlightScrollRestore || !scroller) return;
+			scroller.scrollTop = window._starlightScrollRestore;
+			delete window._starlightScrollRestore;
+		})();
+	</script></sl-sidebar-state-persist><div class="md:sl-hidden"><div class="mobile-preferences sl-flex astro-p4azlveh"><div class="social-icons astro-p4azlveh"><a href="https://github.com/napwake/napwake" rel="me" class="sl-flex astro-n2mnl6yq"><span class="sr-only astro-n2mnl6yq">Napwake on GitHub</span><svg aria-hidden="true" class="astro-n2mnl6yq astro-hkc32dio" width="16" height="16" viewBox="0 0 24 24" fill="currentColor" style="--sl-icon-size: 1em;"><path d="M12 .3a12 12 0 0 0-3.8 23.38c.6.12.83-.26.83-.57L9 21.07c-3.34.72-4.04-1.61-4.04-1.61-.55-1.39-1.34-1.76-1.34-1.76-1.08-.74.09-.73.09-.73 1.2.09 1.83 1.24 1.83 1.24 1.08 1.83 2.81 1.3 3.5 1 .1-.78.42-1.31.76-1.61-2.67-.3-5.47-1.33-5.47-5.93 0-1.31.47-2.38 1.24-3.22-.14-.3-.54-1.52.1-3.18 0 0 1-.32 3.3 1.23a11.5 11.5 0 0 1 6 0c2.28-1.55 3.29-1.23 3.29-1.23.64 1.66.24 2.88.12 3.18a4.65 4.65 0 0 1 1.23 3.22c0 4.61-2.8 5.63-5.48 5.92.42.36.81 1.1.81 2.22l-.01 3.29c0 .31.2.69.82.57A12 12 0 0 0 12 .3Z"/></svg></a></div><starlight-theme-select><label style="--sl-select-width: 6.25em" class="astro-2z5xp7gb"><span class="sr-only astro-2z5xp7gb">Select theme</span><svg aria-hidden="true" class="icon label-icon astro-2z5xp7gb astro-hkc32dio" width="16" height="16" viewBox="0 0 24 24" fill="currentColor" style="--sl-icon-size: 1em;"><path d="M21 14h-1V7a3 3 0 0 0-3-3H7a3 3 0 0 0-3 3v7H3a1 1 0 0 0-1 1v2a3 3 0 0 0 3 3h14a3 3 0 0 0 3-3v-2a1 1 0 0 0-1-1ZM6 7a1 1 0 0 1 1-1h10a1 1 0 0 1 1 1v7H6V7Zm14 10a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1v-1h16v1Z"/></svg><select autocomplete="off" class="astro-2z5xp7gb"><option value="dark" class="astro-2z5xp7gb">Dark</option><option value="light" class="astro-2z5xp7gb">Light</option><option value="auto" selected class="astro-2z5xp7gb">Auto</option></select><svg aria-hidden="true" class="icon caret astro-2z5xp7gb astro-hkc32dio" width="16" height="16" viewBox="0 0 24 24" fill="currentColor" style="--sl-icon-size: 1em;"><path d="M17 9.17a1 1 0 0 0-1.41 0L12 12.71 8.46 9.17a1 1 0 1 0-1.41 1.42l4.24 4.24a1.002 1.002 0 0 0 1.42 0L17 10.59a1.002 1.002 0 0 0 0-1.42Z"/></svg></label></starlight-theme-select><script>
+	StarlightThemeProvider.updatePickers();
+</script></div></div></div></sl-sidebar-pane></nav><div class="main-frame astro-yntsjkba"><script type="module">var e=document.getElementById(`starlight__sidebar`),t=e?.querySelector(`sl-sidebar-state-persist`),n=`sl-sidebar-state`,r=()=>{let r=[],i=t?.dataset.hash||``;try{let e=sessionStorage.getItem(n),t=JSON.parse(e||`{}`);Array.isArray(t.open)&&t.hash===i&&(r=t.open)}catch{}return{hash:i,open:r,scroll:e?.scrollTop||0}},i=e=>{try{sessionStorage.setItem(n,JSON.stringify(e))}catch{}},a=()=>i(r()),o=(e,t)=>{let n=r();n.open[t]=e,i(n)};t?.addEventListener(`click`,e=>{if(!(e.target instanceof Element))return;let t=e.target.closest(`summary`)?.closest(`details`);if(!t)return;let n=t.querySelector(`sl-sidebar-restore`),r=parseInt(n?.dataset.index||``);isNaN(r)||o(!t.open,r)}),addEventListener(`visibilitychange`,()=>{document.visibilityState===`hidden`&&a()});</script><div class="lg:sl-flex astro-lrzkfocr"><aside class="right-sidebar-container print:hidden astro-lrzkfocr"><div class="right-sidebar astro-lrzkfocr"><div class="lg:sl-hidden astro-qok35upx"><mobile-starlight-toc data-min-h="2" data-max-h="3" class="astro-66cqc7ze"><nav aria-labelledby="starlight__on-this-page--mobile" class="astro-66cqc7ze"><details id="starlight__mobile-toc" class="astro-66cqc7ze"><summary id="starlight__on-this-page--mobile" class="sl-flex astro-66cqc7ze"><span class="toggle sl-flex astro-66cqc7ze">On this page<svg aria-hidden="true" class="caret astro-66cqc7ze astro-hkc32dio" width="16" height="16" viewBox="0 0 24 24" fill="currentColor" style="--sl-icon-size: 1rem;"><path d="m14.83 11.29-4.24-4.24a1 1 0 1 0-1.42 1.41L12.71 12l-3.54 3.54a1 1 0 0 0 0 1.41 1 1 0 0 0 .71.29 1 1 0 0 0 .71-.29l4.24-4.24a1.002 1.002 0 0 0 0-1.42Z"/></svg></span><span class="display-current astro-66cqc7ze"></span></summary><div class="dropdown astro-66cqc7ze"><ul class="isMobile astro-jugkfwgx" style="--depth: 0;"><li style="--depth: 0;" class="astro-jugkfwgx"><a href="#_top" style="--depth: 0;" class="astro-jugkfwgx"><span style="--depth: 0;" class="astro-jugkfwgx">Overview</span></a></li><li style="--depth: 0;" class="astro-jugkfwgx"><a href="#what-counts-as-activity" style="--depth: 0;" class="astro-jugkfwgx"><span style="--depth: 0;" class="astro-jugkfwgx">What counts as activity</span></a><ul class="isMobile astro-jugkfwgx" style="--depth: 1;"><li style="--depth: 1;" class="astro-jugkfwgx"><a href="#activity-annotations" style="--depth: 1;" class="astro-jugkfwgx"><span style="--depth: 1;" class="astro-jugkfwgx">Activity annotations</span></a></li></ul></li><li style="--depth: 0;" class="astro-jugkfwgx"><a href="#the-decision" style="--depth: 0;" class="astro-jugkfwgx"><span style="--depth: 0;" class="astro-jugkfwgx">The decision</span></a></li><li style="--depth: 0;" class="astro-jugkfwgx"><a href="#paused-while-in-use" style="--depth: 0;" class="astro-jugkfwgx"><span style="--depth: 0;" class="astro-jugkfwgx">Paused while in use</span></a><ul class="isMobile astro-jugkfwgx" style="--depth: 1;"><li style="--depth: 1;" class="astro-jugkfwgx"><a href="#what-napwake-tells-you" style="--depth: 1;" class="astro-jugkfwgx"><span style="--depth: 1;" class="astro-jugkfwgx">What Napwake tells you</span></a></li></ul></li><li style="--depth: 0;" class="astro-jugkfwgx"><a href="#when-a-source-cant-be-read" style="--depth: 0;" class="astro-jugkfwgx"><span style="--depth: 0;" class="astro-jugkfwgx">When a source can’t be read</span></a></li><li style="--depth: 0;" class="astro-jugkfwgx"><a href="#restarts-and-outages" style="--depth: 0;" class="astro-jugkfwgx"><span style="--depth: 0;" class="astro-jugkfwgx">Restarts and outages</span></a></li><li style="--depth: 0;" class="astro-jugkfwgx"><a href="#waking-up" style="--depth: 0;" class="astro-jugkfwgx"><span style="--depth: 0;" class="astro-jugkfwgx">Waking up</span></a></li></ul></div></details></nav></mobile-starlight-toc><script type="module" src="/next/_astro/MobileTableOfContents.astro_astro_type_script_index_0_lang.C3fM4Kra.js"></script></div><div class="right-sidebar-panel sl-hidden lg:sl-block astro-qok35upx"><div class="sl-container astro-qok35upx"><starlight-toc data-min-h="2" data-max-h="3"><nav aria-labelledby="starlight__on-this-page"><h2 id="starlight__on-this-page">On this page</h2><ul class="astro-jugkfwgx" style="--depth: 0;"><li style="--depth: 0;" class="astro-jugkfwgx"><a href="#_top" style="--depth: 0;" class="astro-jugkfwgx"><span style="--depth: 0;" class="astro-jugkfwgx">Overview</span></a></li><li style="--depth: 0;" class="astro-jugkfwgx"><a href="#what-counts-as-activity" style="--depth: 0;" class="astro-jugkfwgx"><span style="--depth: 0;" class="astro-jugkfwgx">What counts as activity</span></a><ul class="astro-jugkfwgx" style="--depth: 1;"><li style="--depth: 1;" class="astro-jugkfwgx"><a href="#activity-annotations" style="--depth: 1;" class="astro-jugkfwgx"><span style="--depth: 1;" class="astro-jugkfwgx">Activity annotations</span></a></li></ul></li><li style="--depth: 0;" class="astro-jugkfwgx"><a href="#the-decision" style="--depth: 0;" class="astro-jugkfwgx"><span style="--depth: 0;" class="astro-jugkfwgx">The decision</span></a></li><li style="--depth: 0;" class="astro-jugkfwgx"><a href="#paused-while-in-use" style="--depth: 0;" class="astro-jugkfwgx"><span style="--depth: 0;" class="astro-jugkfwgx">Paused while in use</span></a><ul class="astro-jugkfwgx" style="--depth: 1;"><li style="--depth: 1;" class="astro-jugkfwgx"><a href="#what-napwake-tells-you" style="--depth: 1;" class="astro-jugkfwgx"><span style="--depth: 1;" class="astro-jugkfwgx">What Napwake tells you</span></a></li></ul></li><li style="--depth: 0;" class="astro-jugkfwgx"><a href="#when-a-source-cant-be-read" style="--depth: 0;" class="astro-jugkfwgx"><span style="--depth: 0;" class="astro-jugkfwgx">When a source can’t be read</span></a></li><li style="--depth: 0;" class="astro-jugkfwgx"><a href="#restarts-and-outages" style="--depth: 0;" class="astro-jugkfwgx"><span style="--depth: 0;" class="astro-jugkfwgx">Restarts and outages</span></a></li><li style="--depth: 0;" class="astro-jugkfwgx"><a href="#waking-up" style="--depth: 0;" class="astro-jugkfwgx"><span style="--depth: 0;" class="astro-jugkfwgx">Waking up</span></a></li></ul></nav></starlight-toc><script type="module" src="/next/_astro/TableOfContents.astro_astro_type_script_index_0_lang.BpJaGz7G.js"></script></div></div></div></aside><div class="main-pane astro-lrzkfocr"><main data-pagefind-body class="astro-g5ptsecz" lang="en" dir="ltr"><div class="nw-banner nw-banner--next astro-cytafyf4" role="note" data-pagefind-ignore><span class="nw-banner__tag astro-cytafyf4">Release candidate</span><span class="astro-cytafyf4">These docs are for Napwake 0.2.0-rc.9, a release candidate, and may change before it's released. <a href="/" class="astro-cytafyf4"><strong class="astro-cytafyf4">Read the docs for the latest release.</strong></a></span></div><div class="content-panel astro-a7po4psb"><div class="sl-container astro-a7po4psb"><div class="nw-title astro-xrbnetbz"><p class="nw-title__eyebrow astro-xrbnetbz">Concepts</p><h1 id="_top" class="astro-xrbnetbz">Idle detection</h1><p class="nw-title__lede astro-xrbnetbz">When Napwake pauses a workload, and what wakes it again.</p><nw-page-tools data-md="/next/concepts/idle-detection.md" data-pagefind-ignore="true" class="astro-luyxfm3r nw-tools not-content astro-xrbnetbz"><span class="nw-tools__label astro-luyxfm3r" aria-hidden="true">For your assistant</span><button type="button" class="nw-tools__btn astro-luyxfm3r" data-copy>Copy as Markdown</button><a class="nw-tools__btn astro-luyxfm3r" href="/next/concepts/idle-detection.md" type="text/markdown">View .md</a><a class="nw-tools__btn astro-luyxfm3r" href="https://claude.ai/new?q=Read%20https%3A%2F%2Fdocs.napwake.dev%2Fnext%2Fconcepts%2Fidle-detection.md%2C%20a%20page%20of%20Napwake's%20docs%2C%20and%20answer%20my%20questions%20about%20it." target="_blank" rel="noopener noreferrer">Ask Claude <span aria-hidden="true" class="astro-luyxfm3r">↗</span><span class="sr-only astro-luyxfm3r"> (opens claude.ai)</span></a><a class="nw-tools__btn astro-luyxfm3r" href="https://chatgpt.com/?q=Read%20https%3A%2F%2Fdocs.napwake.dev%2Fnext%2Fconcepts%2Fidle-detection.md%2C%20a%20page%20of%20Napwake's%20docs%2C%20and%20answer%20my%20questions%20about%20it." target="_blank" rel="noopener noreferrer">Ask ChatGPT <span aria-hidden="true" class="astro-luyxfm3r">↗</span><span class="sr-only astro-luyxfm3r"> (opens chatgpt.com)</span></a><span class="sr-only astro-luyxfm3r" role="status" aria-live="polite" data-status></span></nw-page-tools><script type="module">var e=class extends HTMLElement{connectedCallback(){let e=this.querySelector(`[data-copy]`),t=this.querySelector(`[data-status]`),n=this.dataset.md;if(!e||!n)return;let r=e.textContent;e.addEventListener(`click`,async()=>{try{let r=await fetch(n).then(e=>e.ok?e.text():Promise.reject(e.status));await navigator.clipboard.writeText(r),e.textContent=`Copied`,t&&(t.textContent=`The page is copied as Markdown.`)}catch{location.href=n;return}setTimeout(()=>{e.textContent=r,t&&(t.textContent=``)},2e3)})}};customElements.define(`nw-page-tools`,e);</script></div></div></div><div class="content-panel astro-a7po4psb"><div class="sl-container astro-a7po4psb"><div class="sl-markdown-content"><figure class="nw-day not-content astro-oh7uzvwe" aria-label="The activity clock in the status example: awake until 10:14, an hour after its last activity at 09:14, then paused" role="group"><div class="nw-day__grid astro-oh7uzvwe"><div class="nw-day__row astro-oh7uzvwe"><p class="nw-day__label astro-oh7uzvwe">The clock<span class="astro-oh7uzvwe">idleAfter: 1h</span></p><div class="nw-day__bar astro-oh7uzvwe" role="img" aria-label="The clock: awake from 08:00 to 10:14, asleep from 10:14 to 12:00"><span class="nw-day__span nw-day__span--awake astro-oh7uzvwe" style="left:0.000%;width:calc(55.833% - 0.000%)" title="Awake, 08:00 to 10:14"></span><span class="nw-day__span nw-day__span--asleep astro-oh7uzvwe" style="left:55.833%;width:calc(100.000% - 55.833%)" title="Asleep, 10:14 to 12:00"></span><span class="nw-day__mark astro-oh7uzvwe" style="left:30.833%"></span><span class="nw-day__mark astro-oh7uzvwe" style="left:55.833%"></span><span class="sr-only astro-oh7uzvwe">The clock: awake from 08:00 to 10:14, asleep from 10:14 to 12:00.</span></div></div><div class="nw-day__row nw-day__row--axis astro-oh7uzvwe" aria-hidden="true"><span class="astro-oh7uzvwe"></span><div class="nw-day__axis astro-oh7uzvwe"><span style="left:0.000%" class="astro-oh7uzvwe">08:00</span><span style="left:50.000%" class="astro-oh7uzvwe">10:00</span><span style="left:100.000%" class="astro-oh7uzvwe">12:00</span></div></div></div><div class="nw-day__legend astro-oh7uzvwe"><span class="astro-oh7uzvwe"><svg class="nw-door astro-oh7uzvwe astro-iomifxvf" viewBox="0 0 24 24" width="16" height="16" aria-hidden="true" focusable="false"><path d="M6 22V10A6 6 0 0 1 18 10V22Z" fill="var(--glyph-slate)"/><circle cx="15.3" cy="15" r="1.2" fill="var(--paper)"/></svg> Asleep</span><span class="astro-oh7uzvwe"><svg class="nw-door astro-oh7uzvwe astro-iomifxvf" viewBox="0 0 24 24" width="16" height="16" aria-hidden="true" focusable="false"><path d="M6 22V10A6 6 0 0 1 18 10V22Z" fill="var(--glyph-room-amber)" stroke="var(--glyph-amber)" stroke-width="1.6"/><path d="M6 22V10A6 6 0 0 1 9.5 4.6L12 6V22Z" fill="var(--glyph-leaf)"/><path d="M12 22.2H18L23 23.6H13Z" fill="var(--glyph-amber)"/></svg> Waking up</span><span class="astro-oh7uzvwe"><svg class="nw-door astro-oh7uzvwe astro-iomifxvf" viewBox="0 0 24 24" width="16" height="16" aria-hidden="true" focusable="false"><path d="M6 22V10A6 6 0 0 1 18 10V22Z" fill="var(--glyph-room-green)" stroke="var(--glyph-green)" stroke-width="1.6"/><rect x="10" y="0.6" width="4" height="2.2" rx="1.1" fill="var(--glyph-green)"/><path d="M6.5 22.2H17.5L21 23.6H3Z" fill="var(--glyph-green)" opacity=".6"/></svg> Awake</span><span class="nw-day__legendmark astro-oh7uzvwe"><i aria-hidden="true" class="astro-oh7uzvwe"></i>09:14 last activity</span><span class="nw-day__legendmark astro-oh7uzvwe"><i aria-hidden="true" class="astro-oh7uzvwe"></i>10:14 pauseAt</span></div><figcaption class="astro-oh7uzvwe">The <a href='#restarts-and-outages'>status example</a>. The last activity was at 09:14. With the default <code>idleAfter</code> of an hour, it pauses at 10:14.</figcaption></figure>
+<p>Napwake keeps an <strong>activity clock</strong> for every ManagedWorkload. It’s the last time anything showed the workload was in use. Any sign of activity resets it. Once the clock is older than <code dir="auto">idlePolicy.idleAfter</code>, Napwake pauses the workload. It’s scaled to zero, keeping its replica count and a resource snapshot.</p>
+<ul>
+<li>There’s no learning period. A new workload can pause after its first <code dir="auto">idleAfter</code> without activity.</li>
+<li>With <code dir="auto">idlePolicy.pauseEarly</code>, a confident forecast can pause it sooner (<a href="/next/concepts/forecasting/#pausing-early">Pausing early</a>).</li>
+</ul>
+<div class="expressive-code"><link rel="stylesheet" href="/next/_astro/ec.jgtye.css"><script type="module" src="/next/_astro/ec.0vx5m.js"></script><figure class="frame has-title not-content"><figcaption class="header"><span class="title">managedworkload.yaml</span></figcaption><pre data-language="yaml"><code><div class="ec-line"><div class="code"><span style="--0:#4FB3A6;--1:#14695F">spec</span><span style="--0:#A3ADAA;--1:#4E5957">:</span></div></div><div class="ec-line"><div class="code"><span class="indent">  </span><span style="--0:#4FB3A6;--1:#14695F">idlePolicy</span><span style="--0:#A3ADAA;--1:#4E5957">:</span></div></div><div class="ec-line"><div class="code"><span class="indent">    </span><span style="--0:#4FB3A6;--1:#14695F">idleAfter</span><span style="--0:#A3ADAA;--1:#4E5957">:</span><span style="--0:#E3E7E4;--1:#0F1716"> </span><span style="--0:#F5B53F;--1:#825500">1h</span><span style="--0:#E3E7E4;--1:#0F1716">        </span><span style="--0:#A3ADAA;--0fs:italic;--1:#4E5957;--1fs:italic"># default</span></div></div><div class="ec-line"><div class="code"><span class="indent">    </span><span style="--0:#4FB3A6;--1:#14695F">activity</span><span style="--0:#A3ADAA;--1:#4E5957">:</span></div></div><div class="ec-line"><div class="code"><span class="indent">      </span><span style="--0:#4FB3A6;--1:#14695F">cpuThreshold</span><span style="--0:#A3ADAA;--1:#4E5957">:</span><span style="--0:#E3E7E4;--1:#0F1716"> </span><span style="--0:#F5B53F;--1:#825500">10</span><span style="--0:#E3E7E4;--1:#0F1716">   </span><span style="--0:#A3ADAA;--0fs:italic;--1:#4E5957;--1fs:italic"># percent of CPU requests, 0.1 to 100; default</span></div></div></code></pre><div class="copy"><div aria-live="polite"></div><button title="Copy to clipboard" data-copied="Copied!" data-code="spec:  idlePolicy:    idleAfter: 1h        # default    activity:      cpuThreshold: 10   # percent of CPU requests, 0.1 to 100; default"><div></div></button></div></figure></div>
+<p>Write a threshold that isn’t a whole number as a string, such as <code dir="auto">cpuThreshold: "0.5"</code>. Kubernetes APIs write decimals that way. It suits a workload that idles at a fraction of a percent.</p>
+<div class="sl-heading-wrapper level-h2"><h2 id="what-counts-as-activity">What counts as activity</h2><a class="sl-anchor-link" href="#what-counts-as-activity"><span aria-hidden="true" class="sl-anchor-icon"><svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="m12.11 15.39-3.88 3.88a2.52 2.52 0 0 1-3.5 0 2.47 2.47 0 0 1 0-3.5l3.88-3.88a1 1 0 1 0-1.42-1.42l-3.88 3.89a4.48 4.48 0 0 0 6.33 6.33l3.89-3.88a1 1 0 0 0-1.42-1.42m8.58-12.08a4.49 4.49 0 0 0-6.33 0l-3.89 3.88a1 1 0 1 0 1.42 1.42l3.88-3.88a2.52 2.52 0 0 1 3.5 0 2.47 2.47 0 0 1 0 3.5l-3.88 3.88a1 1 0 0 0 0 1.42 1 1 0 0 0 1.42 0l3.88-3.89a4.49 4.49 0 0 0 0-6.33M8.83 15.17a1 1 0 0 0 .71.29 1 1 0 0 0 .71-.29l4.92-4.92a1 1 0 1 0-1.42-1.42l-4.92 4.92a1 1 0 0 0 0 1.42"></path></svg></span><span class="sr-only" data-pagefind-ignore>Section titled “What counts as activity”</span></a></div>
+<p>Every source is checked. The most recent wins, and none has priority.</p>
 <table>
 <thead>
 <tr>
 <th>Source</th>
-<th>Counts as activity when</th>
+<th>Counts when</th>
 <th>Setup</th>
 </tr>
 </thead>
 <tbody>
 <tr>
-<td><strong>CPU</strong></td>
-<td>Usage is above <code>activity.cpuThreshold</code>% of the CPU requested by the pods reporting it</td>
-<td>Requires metrics-server</td>
+<td>CPU</td>
+<td>Above <code dir="auto">activity.cpuThreshold</code>% of what the reporting pods request, from 0.1 to 100</td>
+<td>metrics-server</td>
 </tr>
 <tr>
-<td><strong>Deploy</strong></td>
-<td>The target's pod template changes: a new image, environment variable, or other template edit</td>
+<td>Deploy</td>
+<td>The pod template changes, such as an image, an environment variable, any edit</td>
 <td>None</td>
 </tr>
 <tr>
-<td><strong><code>hybernate.io/last-activity</code></strong></td>
-<td>The annotation holds a time newer than the last recorded activity</td>
-<td>Set by your own tooling</td>
+<td><code dir="auto">napwake.dev/last-activity</code></td>
+<td>It holds a time newer than the last activity</td>
+<td>Your tooling</td>
 </tr>
 <tr>
-<td><strong><code>hybernate.io/active-until</code></strong></td>
-<td>The annotation holds a time in the future (a hold, not an activity time)</td>
-<td>Set by your own tooling</td>
+<td><code dir="auto">napwake.dev/active-until</code></td>
+<td>It holds a time in the future. A hold, not an activity time</td>
+<td>Your tooling</td>
 </tr>
 <tr>
-<td><strong><code>hybernate.io/last-request</code></strong></td>
-<td>The annotation holds a time newer than the last recorded activity</td>
-<td>Set by the <a href="../wake-on-request/">doorman</a> when it holds a request for the paused workload</td>
+<td><code dir="auto">napwake.dev/last-request</code></td>
+<td>It holds a time newer than the last activity</td>
+<td>The <a href="/next/concepts/wake-on-request/">doorman</a>, when it holds a request for the paused workload</td>
 </tr>
 <tr>
-<td><strong>Prometheus</strong></td>
-<td>Any query in <code>activity.prometheus</code> returns a value above zero</td>
-<td><code>--prometheus-url</code>; see the <a href="../../guides/prometheus-signals/">Prometheus Activity Guide</a></td>
+<td>Prometheus</td>
+<td>A query in <code dir="auto">activity.prometheus</code> returns above zero</td>
+<td><code dir="auto">--prometheus-url</code> (<a href="/next/guides/prometheus-signals/">Prometheus activity</a>)</td>
 </tr>
 </tbody>
 </table>
-<p>Changes to the replica count don't count as a deploy, so Hybernate's own pause and resume never look like activity.</p>
-<p>Memory isn't a source: it stays allocated whether or not anyone uses the workload.</p>
-<p>CPU is measured for the containers in the target's pod template, including native sidecars (init containers with <code>restartPolicy: Always</code>). Sidecars injected when the pod is created, such as an Istio or Linkerd proxy, aren't counted: their own background work isn't use of the workload, and they aren't in the template's requests. <a href="../cost-tracking/">Cost</a> does count them, since they cost the same as any container and pausing frees them too.</p>
-<p>Usage is measured over the pods metrics-server reports and compared with what those pods request, so one pod serving while the others are Pending or crash-looping, or before new pods from a scale-up report, reads at its own utilization rather than a fraction of it. Usage is compared with what those containers request in a running pod, not in the template, so a request set when the pod was created counts: a LimitRange default, or a Vertical Pod Autoscaler's recommendation. The pod read is a running one of the target's current revision: a failed pod, such as one evicted, keeps the requests of whatever revision it ran until it's cleaned up, and isn't read. The request is read again every 5 minutes, at once when the target's spec changes, and on every check while it's unclear which revision a replica will have, as during a Deployment's rollout. With no pod running, the newest that's starting is read, such as a Pending one in a <code>Recreate</code> rollout, and only with none at all are the template's requests used, a container that sets only a CPU limit taken to request its limit, as Kubernetes does.</p>
-<h3 id="activity-annotations">Activity annotations<a class="headerlink" href="#activity-annotations" title="Permanent link">&para;</a></h3>
-<p>Set either annotation on the ManagedWorkload or on its target Deployment or StatefulSet. Values are RFC 3339 times.</p>
-<div class="language-bash highlight"><pre><span></span><code><span id="__span-1-1"><a id="__codelineno-1-1" name="__codelineno-1-1" href="#__codelineno-1-1"></a><span class="c1"># Record activity now, e.g. from a developer portal when someone opens an environment</span>
-</span><span id="__span-1-2"><a id="__codelineno-1-2" name="__codelineno-1-2" href="#__codelineno-1-2"></a>kubectl<span class="w"> </span>annotate<span class="w"> </span>deployment<span class="w"> </span>my-api<span class="w"> </span>-n<span class="w"> </span>staging<span class="w"> </span>--overwrite<span class="w"> </span><span class="se">\</span>
-</span><span id="__span-1-3"><a id="__codelineno-1-3" name="__codelineno-1-3" href="#__codelineno-1-3"></a><span class="w">  </span>hybernate.io/last-activity<span class="o">=</span><span class="s2">"</span><span class="k">$(</span>date<span class="w"> </span>-u<span class="w"> </span>+%Y-%m-%dT%H:%M:%SZ<span class="k">)</span><span class="s2">"</span>
-</span><span id="__span-1-4"><a id="__codelineno-1-4" name="__codelineno-1-4" href="#__codelineno-1-4"></a>
-</span><span id="__span-1-5"><a id="__codelineno-1-5" name="__codelineno-1-5" href="#__codelineno-1-5"></a><span class="c1"># Keep the workload awake until a time, e.g. during a demo</span>
-</span><span id="__span-1-6"><a id="__codelineno-1-6" name="__codelineno-1-6" href="#__codelineno-1-6"></a>kubectl<span class="w"> </span>annotate<span class="w"> </span>deployment<span class="w"> </span>my-api<span class="w"> </span>-n<span class="w"> </span>staging<span class="w"> </span>--overwrite<span class="w"> </span><span class="se">\</span>
-</span><span id="__span-1-7"><a id="__codelineno-1-7" name="__codelineno-1-7" href="#__codelineno-1-7"></a><span class="w">  </span>hybernate.io/active-until<span class="o">=</span><span class="s2">"2026-10-03T18:00:00Z"</span>
-</span></code></pre></div>
-<p>To wake a workload on purpose, rather than record its use, ask for it with <a href="../../guides/pause/#wake-now"><code>hybernate.io/wake-requested</code></a>, which Hybernate answers, and which wakes it whatever its wake setting; <a href="../../getting-started/kubectl-plugin/#wake-a-workload"><code>kubectl hybernate wake</code></a> sets it for you and waits until the workload is Running.</p>
 <ul>
-<li>A <code>last-activity</code> time in the future is treated as now. Use <code>active-until</code> for a deliberate hold, since it says when the hold ends.</li>
-<li>Annotations can only keep a workload awake or wake it. They never cause a pause.</li>
-<li>A value that isn't an RFC 3339 time, such as epoch seconds or a space in place of the <code>T</code>, is ignored everywhere: it neither keeps an awake workload awake nor wakes a paused one. Each such value gets one <code>InvalidActivityAnnotation</code> warning event on the ManagedWorkload, naming the annotation and where it is.</li>
+<li>A change to the replica count isn’t a deploy, so Napwake’s own pause and resume never look like activity.</li>
+<li>Memory isn’t a source. It stays allocated whether the workload is used or not.</li>
 </ul>
-<h2 id="the-decision">The decision<a class="headerlink" href="#the-decision" title="Permanent link">&para;</a></h2>
-<p>A workload at zero replicas that Hybernate didn't pause isn't checked at all: it's already off, and <a href="../../guides/pause/#workloads-already-at-zero">left that way</a>. For any other, each check runs in this order:</p>
-<ol>
-<li>CPU, or a configured Prometheus query, can't be read: stay awake (see <a href="#when-a-source-cant-be-read">below</a>).</li>
-<li><code>active-until</code> is in the future: stay awake.</li>
-<li>The last activity is less than <code>idleAfter</code> ago: stay awake, unless <code>pauseEarly</code> is on and the <a href="../forecasting/#pausing-early">forecast brings the pause forward</a>: the last activity was at least 20 minutes ago, the forecast is confident every hour until <code>idleAfter</code> would run out, and at least the hour under way and the next, is quiet, and a request would wake the workload through the doorman once it's paused. Then the pause goes on through the steps below, as if the clock had run out.</li>
-<li>The <a href="../forecasting/">forecast</a> is confident (shown as <code>DailyActive</code> or later, <code>dailyPhase: Active</code>) and predicts utilization above <code>cpuThreshold</code> in the hour under way or the next: stay awake. The <code>IdleVetoed</code> condition is <code>True</code>, with reason <code>ForecastExpectsDemand</code> and a message naming the hour, while this holds the pause back, and an <code>IdleVetoed</code> event marks the start of each veto. The hour after one far quieter than it forecast, as on a holiday, the forecast doubts what it expects and holds nothing back (see <a href="../forecasting/#anomaly-detection">Anomaly Detection</a>).</li>
-<li>Another workload that <a href="../dependencies/">depends on</a> this one is awake, or <code>dependsOn</code> forms a cycle: stay awake (<code>HeldByDependents</code> or <code>DependencyCycle</code>).</li>
-<li>Otherwise the clock has run out, or the forecast brought the pause forward. The phase becomes <code>Idle</code>, with an <code>IdleDetected</code> event, or a <code>PausedEarly</code> event naming the hours the forecast expects to be quiet, and the workload is <a href="../../guides/pause/">paused</a>.</li>
-</ol>
-<p>Without an <code>idlePolicy</code>, none of this runs, and the workload is only paused when someone asks.</p>
-<p>A <a href="../../guides/pause/#pause-now">pause request</a>, from <code>kubectl hybernate pause</code>, runs the clock out at once. Steps 1 and 3 don't apply, and nor does the hour Hybernate waits after a GitOps tool undid its last pause, since someone asked; an <code>active-until</code> hold, awake dependents and a <code>dependsOn</code> cycle still keep the workload up, and so does the forecast (step 4) unless the request comes with <code>hybernate.io/pause-overrides-forecast: "true"</code>, which <code>kubectl hybernate pause --yes</code> sets. A request held back is answered with the reason.</p>
-<p>With <code>dryRun: true</code>, the phase still becomes <code>Idle</code> and the <code>IdleDetected</code> or <code>PausedEarly</code> event carries a <code>[dry-run]</code> prefix, but nothing is changed. If activity resumes, the phase goes back to <code>Running</code>. See <a href="../../guides/dry-run/">Dry Run</a>.</p>
-<p>The forecast never blocks a pause until it's confident, so a workload with no history is handled by the clock alone.</p>
-<h2 id="when-a-source-cant-be-read">When a source can't be read<a class="headerlink" href="#when-a-source-cant-be-read" title="Permanent link">&para;</a></h2>
-<p>Hybernate never pauses a workload while one of its activity sources can't be read: without that data a busy workload looks idle. Nor does it count that time as idle: a check where a source can't be read doesn't count as watching, so a source out for longer than the gap allowed <a href="#restarts-and-outages">below</a> restarts the clock (<code>lastActivitySource: unobserved</code>), with an <code>Unobserved</code> event once it's back, and once the source is back, the workload pauses only after a full <code>idleAfter</code> in which every source saw nothing. A shorter blind spot, such as the minute before a woken workload's new pods have metrics, leaves its last activity as it was. A Prometheus query that answers "no requests in the last 5 minutes" as it comes back doesn't make the hour before it look idle. For CPU, the <code>MetricsAvailable</code> condition says why:</p>
+<details class="nw-details"><summary>How CPU is measured</summary><ul>
+<li>Only containers in the target’s pod template count, with native sidecars (init containers with <code dir="auto">restartPolicy: Always</code>).</li>
+<li>Sidecars injected at pod creation, such as Istio or Linkerd proxies, don’t. Their work isn’t use, and the template doesn’t request it. <a href="/next/concepts/cost-tracking/">Cost</a> counts them, as they cost the same and pausing frees them too.</li>
+<li>Usage is measured over the pods metrics-server reports, against those pods’ requests. One pod serving while others are Pending, crash-looping, or not yet reporting after a scale-up reads at its own utilization.</li>
+<li>Requests come from a running pod, not the template. So a LimitRange default or a Vertical Pod Autoscaler’s recommendation counts.</li>
+<li>That pod is a running one of the target’s current revision. A failed pod, such as an evicted one, isn’t read. It keeps its own revision’s requests until it’s cleaned up.</li>
+<li>Requests are read again every 5 minutes, and when the target’s spec changes. While a replica’s revision is unclear, as in a rollout, they’re read on each check.</li>
+<li>With no pod running, the newest starting one is read, such as a Pending pod in a <code dir="auto">Recreate</code> rollout. With none at all, the template’s requests are used. A container with only a CPU limit requests its limit, as in Kubernetes.</li>
+</ul></details>
+<div class="sl-heading-wrapper level-h3"><h3 id="activity-annotations">Activity annotations</h3><a class="sl-anchor-link" href="#activity-annotations"><span aria-hidden="true" class="sl-anchor-icon"><svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="m12.11 15.39-3.88 3.88a2.52 2.52 0 0 1-3.5 0 2.47 2.47 0 0 1 0-3.5l3.88-3.88a1 1 0 1 0-1.42-1.42l-3.88 3.89a4.48 4.48 0 0 0 6.33 6.33l3.89-3.88a1 1 0 0 0-1.42-1.42m8.58-12.08a4.49 4.49 0 0 0-6.33 0l-3.89 3.88a1 1 0 1 0 1.42 1.42l3.88-3.88a2.52 2.52 0 0 1 3.5 0 2.47 2.47 0 0 1 0 3.5l-3.88 3.88a1 1 0 0 0 0 1.42 1 1 0 0 0 1.42 0l3.88-3.89a4.49 4.49 0 0 0 0-6.33M8.83 15.17a1 1 0 0 0 .71.29 1 1 0 0 0 .71-.29l4.92-4.92a1 1 0 1 0-1.42-1.42l-4.92 4.92a1 1 0 0 0 0 1.42"></path></svg></span><span class="sr-only" data-pagefind-ignore>Section titled “Activity annotations”</span></a></div>
+<p>Set either on the ManagedWorkload or its target, as an RFC 3339 time.</p>
+<div class="expressive-code"><figure class="frame is-terminal not-content"><figcaption class="header"><span class="title"></span><span class="sr-only">Terminal window</span></figcaption><pre data-language="bash"><code><div class="ec-line"><div class="code"><span style="--0:#A3ADAA;--0fs:italic;--1:#4E5957;--1fs:italic"># Record activity now, e.g. from a developer portal when someone opens an environment</span></div></div><div class="ec-line"><div class="code"><span class="nw-prompt" aria-hidden="true">$ </span><span style="--0:#4FB3A6;--1:#14695F">kubectl</span><span style="--0:#E3E7E4;--1:#0F1716"> </span><span style="--0:#E3E7E4;--1:#0F1716">annotate</span><span style="--0:#E3E7E4;--1:#0F1716"> </span><span style="--0:#E3E7E4;--1:#0F1716">deployment</span><span style="--0:#E3E7E4;--1:#0F1716"> </span><span style="--0:#E3E7E4;--1:#0F1716">my-api</span><span style="--0:#E3E7E4;--1:#0F1716"> </span><span style="--0:#E3E7E4;--1:#0F1716">-n</span><span style="--0:#E3E7E4;--1:#0F1716"> </span><span style="--0:#E3E7E4;--1:#0F1716">staging</span><span style="--0:#E3E7E4;--1:#0F1716"> </span><span style="--0:#E3E7E4;--1:#0F1716">--overwrite</span><span style="--0:#E3E7E4;--1:#0F1716"> </span><span style="--0:#F5B53F;--1:#825500">\</span></div></div><div class="ec-line"><div class="code"><span class="indent">  </span><span style="--0:#E3E7E4;--1:#0F1716">napwake.dev/last-activity=</span><span style="--0:#F5B53F;--1:#825500">"</span><span style="--0:#A3ADAA;--1:#4E5957">$(</span><span style="--0:#4FB3A6;--1:#14695F">date</span><span style="--0:#F5B53F;--1:#825500"> </span><span style="--0:#E3E7E4;--1:#0F1716">-u +%Y-%m-%dT%H:%M:%SZ</span><span style="--0:#A3ADAA;--1:#4E5957">)</span><span style="--0:#F5B53F;--1:#825500">"</span></div></div><div class="ec-line"><div class="code">
+</div></div><div class="ec-line"><div class="code"><span style="--0:#A3ADAA;--0fs:italic;--1:#4E5957;--1fs:italic"># Keep the workload awake until a time, e.g. during a demo</span></div></div><div class="ec-line"><div class="code"><span class="nw-prompt" aria-hidden="true">$ </span><span style="--0:#4FB3A6;--1:#14695F">kubectl</span><span style="--0:#E3E7E4;--1:#0F1716"> </span><span style="--0:#E3E7E4;--1:#0F1716">annotate</span><span style="--0:#E3E7E4;--1:#0F1716"> </span><span style="--0:#E3E7E4;--1:#0F1716">deployment</span><span style="--0:#E3E7E4;--1:#0F1716"> </span><span style="--0:#E3E7E4;--1:#0F1716">my-api</span><span style="--0:#E3E7E4;--1:#0F1716"> </span><span style="--0:#E3E7E4;--1:#0F1716">-n</span><span style="--0:#E3E7E4;--1:#0F1716"> </span><span style="--0:#E3E7E4;--1:#0F1716">staging</span><span style="--0:#E3E7E4;--1:#0F1716"> </span><span style="--0:#E3E7E4;--1:#0F1716">--overwrite</span><span style="--0:#E3E7E4;--1:#0F1716"> </span><span style="--0:#F5B53F;--1:#825500">\</span></div></div><div class="ec-line"><div class="code"><span class="indent">  </span><span style="--0:#E3E7E4;--1:#0F1716">napwake.dev/active-until=</span><span style="--0:#F5B53F;--1:#825500">"2026-10-03T18:00:00Z"</span></div></div></code></pre><div class="copy"><div aria-live="polite"></div><button title="Copy to clipboard" data-copied="Copied!" data-code="kubectl annotate deployment my-api -n staging --overwrite \  napwake.dev/last-activity=&quot;$(date -u +%Y-%m-%dT%H:%M:%SZ)&quot;kubectl annotate deployment my-api -n staging --overwrite \  napwake.dev/active-until=&quot;2026-10-03T18:00:00Z&quot;"><div></div></button></div></figure></div>
+<p><a href="/next/getting-started/kubectl-plugin/#wake-a-workload"><code dir="auto">kubectl napwake wake</code></a> wakes it through <a href="/next/guides/pause/#wake-now"><code dir="auto">napwake.dev/wake-requested</code></a> instead, and waits until it’s Running.</p>
+<ul>
+<li>A <code dir="auto">last-activity</code> time in the future counts as now. For a hold, use <code dir="auto">active-until</code>, which says when it ends.</li>
+<li>Annotations only keep a workload awake or wake it. They never pause it.</li>
+<li>A value that isn’t RFC 3339, such as epoch seconds or a space for the <code dir="auto">T</code>, is ignored everywhere. Each gets one <code dir="auto">InvalidActivityAnnotation</code> warning event on the ManagedWorkload, naming the annotation and where it is.</li>
+</ul>
+<div class="sl-heading-wrapper level-h2"><h2 id="the-decision">The decision</h2><a class="sl-anchor-link" href="#the-decision"><span aria-hidden="true" class="sl-anchor-icon"><svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="m12.11 15.39-3.88 3.88a2.52 2.52 0 0 1-3.5 0 2.47 2.47 0 0 1 0-3.5l3.88-3.88a1 1 0 1 0-1.42-1.42l-3.88 3.89a4.48 4.48 0 0 0 6.33 6.33l3.89-3.88a1 1 0 0 0-1.42-1.42m8.58-12.08a4.49 4.49 0 0 0-6.33 0l-3.89 3.88a1 1 0 1 0 1.42 1.42l3.88-3.88a2.52 2.52 0 0 1 3.5 0 2.47 2.47 0 0 1 0 3.5l-3.88 3.88a1 1 0 0 0 0 1.42 1 1 0 0 0 1.42 0l3.88-3.89a4.49 4.49 0 0 0 0-6.33M8.83 15.17a1 1 0 0 0 .71.29 1 1 0 0 0 .71-.29l4.92-4.92a1 1 0 1 0-1.42-1.42l-4.92 4.92a1 1 0 0 0 0 1.42"></path></svg></span><span class="sr-only" data-pagefind-ignore>Section titled “The decision”</span></a></div>
+<p>Each check runs these steps in order. The first that holds decides.</p>
 <table>
 <thead>
 <tr>
-<th>Reason</th>
-<th>Meaning</th>
+<th>Step</th>
+<th>If</th>
+<th>Then</th>
 </tr>
 </thead>
 <tbody>
 <tr>
-<td><code>NoPodMetrics</code></td>
-<td>The target's Ready pods have had no metrics for over 3 minutes. Check that metrics-server is installed and reports them (<code>kubectl top pods</code>). A warning event says so once</td>
+<td>1</td>
+<td>CPU or a configured query <a href="#when-a-source-cant-be-read">can’t be read</a></td>
+<td><span class="nw-outcome astro-pizrc632"><svg class="nw-door astro-pizrc632 astro-iomifxvf" viewBox="0 0 24 24" width="18" height="18" role="img" aria-label="Stays awake" focusable="false"><path d="M6 22V10A6 6 0 0 1 18 10V22Z" fill="var(--glyph-room-green)" stroke="var(--glyph-green)" stroke-width="1.6"/><rect x="10" y="0.6" width="4" height="2.2" rx="1.1" fill="var(--glyph-green)"/><path d="M6.5 22.2H17.5L21 23.6H3Z" fill="var(--glyph-green)" opacity=".6"/></svg><span class="astro-pizrc632">Stay awake</span></span></td>
 </tr>
 <tr>
-<td><code>NoCPURequests</code></td>
-<td>The target's running pods request no CPU for its containers, or, with none running, its pod template requests none, so utilization can't be measured. Set CPU requests, or a default in the namespace's LimitRange.</td>
+<td>2</td>
+<td><code dir="auto">active-until</code> is in the future</td>
+<td><span class="nw-outcome astro-pizrc632"><svg class="nw-door astro-pizrc632 astro-iomifxvf" viewBox="0 0 24 24" width="18" height="18" role="img" aria-label="Stays awake" focusable="false"><path d="M6 22V10A6 6 0 0 1 18 10V22Z" fill="var(--glyph-room-green)" stroke="var(--glyph-green)" stroke-width="1.6"/><rect x="10" y="0.6" width="4" height="2.2" rx="1.1" fill="var(--glyph-green)"/><path d="M6.5 22.2H17.5L21 23.6H3Z" fill="var(--glyph-green)" opacity=".6"/></svg><span class="astro-pizrc632">Stay awake</span></span></td>
 </tr>
 <tr>
-<td><code>MetricsUnavailable</code></td>
-<td>The Metrics API itself failed, or didn't answer within 2 seconds. The condition message has the error. Once it fails, it isn't read again for a minute, so every workload's check fails at once rather than waiting out a timeout.</td>
+<td>3</td>
+<td>The last activity was under <code dir="auto">idleAfter</code> ago, or longer after <a href="#paused-while-in-use">a pause made in use</a></td>
+<td><span class="nw-outcome astro-pizrc632"><svg class="nw-door astro-pizrc632 astro-iomifxvf" viewBox="0 0 24 24" width="18" height="18" role="img" aria-label="Stays awake" focusable="false"><path d="M6 22V10A6 6 0 0 1 18 10V22Z" fill="var(--glyph-room-green)" stroke="var(--glyph-green)" stroke-width="1.6"/><rect x="10" y="0.6" width="4" height="2.2" rx="1.1" fill="var(--glyph-green)"/><path d="M6.5 22.2H17.5L21 23.6H3Z" fill="var(--glyph-green)" opacity=".6"/></svg><span class="astro-pizrc632">Stay awake, unless the forecast pauses it early (below)</span></span></td>
+</tr>
+<tr>
+<td>4</td>
+<td>The <a href="/next/concepts/forecasting/">forecast</a> is confident (<code dir="auto">DailyActive</code> or later, <code dir="auto">dailyPhase: Active</code>) and predicts above <code dir="auto">cpuThreshold</code> in this hour or the next</td>
+<td><span class="nw-outcome astro-pizrc632"><svg class="nw-door astro-pizrc632 astro-iomifxvf" viewBox="0 0 24 24" width="18" height="18" role="img" aria-label="Stays awake" focusable="false"><path d="M6 22V10A6 6 0 0 1 18 10V22Z" fill="var(--glyph-room-green)" stroke="var(--glyph-green)" stroke-width="1.6"/><rect x="10" y="0.6" width="4" height="2.2" rx="1.1" fill="var(--glyph-green)"/><path d="M6.5 22.2H17.5L21 23.6H3Z" fill="var(--glyph-green)" opacity=".6"/></svg><span class="astro-pizrc632">Stay awake, with <code dir="auto">IdleVetoed</code></span></span></td>
+</tr>
+<tr>
+<td>5</td>
+<td>An awake workload <a href="/next/concepts/dependencies/">depends on</a> this one, or <code dir="auto">dependsOn</code> forms a cycle</td>
+<td><span class="nw-outcome astro-pizrc632"><svg class="nw-door astro-pizrc632 astro-iomifxvf" viewBox="0 0 24 24" width="18" height="18" role="img" aria-label="Stays awake" focusable="false"><path d="M6 22V10A6 6 0 0 1 18 10V22Z" fill="var(--glyph-room-green)" stroke="var(--glyph-green)" stroke-width="1.6"/><rect x="10" y="0.6" width="4" height="2.2" rx="1.1" fill="var(--glyph-green)"/><path d="M6.5 22.2H17.5L21 23.6H3Z" fill="var(--glyph-green)" opacity=".6"/></svg><span class="astro-pizrc632">Stay awake, with <code dir="auto">HeldByDependents</code> or <code dir="auto">DependencyCycle</code></span></span></td>
+</tr>
+<tr>
+<td>6</td>
+<td>None of these</td>
+<td><span class="nw-outcome astro-pizrc632"><svg class="nw-door astro-pizrc632 astro-iomifxvf" viewBox="0 0 24 24" width="18" height="18" role="img" aria-label="Pauses" focusable="false"><path d="M6 22V10A6 6 0 0 1 18 10V22Z" fill="var(--glyph-slate)"/><circle cx="15.3" cy="15" r="1.2" fill="var(--paper)"/></svg><span class="astro-pizrc632"><code dir="auto">Idle</code>, then <a href="/next/guides/pause/">paused</a>, with an <code dir="auto">IdleDetected</code> event. Or <code dir="auto">PausedEarly</code>, naming the hours forecast quiet</span></span></td>
 </tr>
 </tbody>
 </table>
-<p>A target scaled to zero isn't an error: it has no usage, which is real data. Nor are new pods: a pod has no metrics until it runs, and for a scrape or two of metrics-server's after, so after a wake or a rollout <code>MetricsAvailable</code> is <code>Unknown</code>, with no warning, until they arrive: reason <code>NoReadyPods</code> while none of the target's pods is Ready, then <code>AwaitingPodMetrics</code> for up to 3 minutes. Only Ready pods that go on without metrics after that are <code>NoPodMetrics</code>.</p>
-<p>For Prometheus queries, the <code>PrometheusAvailable</code> condition reports <code>EndpointNotConfigured</code> or <code>QueryFailed</code>. A query that answers but has never matched a series, as one naming a metric or label that doesn't exist does, is reported by <code>PrometheusQueryEmpty=True</code> and a warning event, since it can never keep the workload awake; see the <a href="../../guides/prometheus-signals/#when-a-query-cant-be-evaluated">Prometheus Activity Guide</a>.</p>
-<h2 id="restarts-and-outages">Restarts and outages<a class="headerlink" href="#restarts-and-outages" title="Permanent link">&para;</a></h2>
-<p>The clock is stored in <code>status.activity</code>, so it survives operator restarts. While a workload is awake it's checked about once a minute; the clock's timestamps are written to status at most every 5 minutes, along with cost, and immediately whenever the phase or a condition changes, or when new activity is more than a tenth of <code>idleAfter</code> (at most 5 minutes) ahead of what's written. Activity seen between writes is held in memory, so it still counts while the operator runs; after a restart, the operator has only what was written.</p>
-<p>If the operator stops watching a workload for a while, it can't know whether there was activity in the meantime, so the clock restarts from the time it resumes watching (<code>lastActivitySource: unobserved</code>). How long a gap it allows depends on <code>idleAfter</code>: half of it, but at least 2 minutes (two missed checks) and at most 7. When a gap restarts the clock, an <code>Unobserved</code> event says how long it was: <code>Hybernate wasn't watching for 9 minutes, so its idle clock starts again</code>, or <code>couldn't read its activity for 9 minutes</code> when a source was out. It comes with the first check that can read every source. A gap isn't activity, so it only restarts the clock of a workload that's awake: a paused workload stays paused, and in dry-run a would-be pause goes on, as the real one would (see <a href="../../guides/dry-run/">Dry Run</a>). An outage can delay a pause, but never cause one.</p>
-<p>After a restart or a change of leader, the operator has only what was written, which can be up to 5 minutes behind its last check, and can be missing activity seen since, up to a tenth of <code>idleAfter</code>. So an awake workload's clock always restarts at a restart, however recently it was written, with an <code>Unobserved</code> event: <code>the operator restarted, or another took over, so its idle clock starts again; it wasn't watching for up to 4 minutes</code>: up to, since the last check may have come later than what's written. A restart can delay a pause by up to <code>idleAfter</code>, but never brings one forward. A paused workload stays paused through it, and in dry-run a would-be pause goes on.</p>
-<div class="language-yaml highlight"><pre><span></span><code><span id="__span-2-1"><a id="__codelineno-2-1" name="__codelineno-2-1" href="#__codelineno-2-1"></a><span class="nt">status</span><span class="p">:</span>
-</span><span id="__span-2-2"><a id="__codelineno-2-2" name="__codelineno-2-2" href="#__codelineno-2-2"></a><span class="w">  </span><span class="nt">activity</span><span class="p">:</span>
-</span><span id="__span-2-3"><a id="__codelineno-2-3" name="__codelineno-2-3" href="#__codelineno-2-3"></a><span class="w">    </span><span class="nt">lastActivityTime</span><span class="p">:</span><span class="w"> </span><span class="s">"2026-10-02T09:14:00Z"</span>
-</span><span id="__span-2-4"><a id="__codelineno-2-4" name="__codelineno-2-4" href="#__codelineno-2-4"></a><span class="w">    </span><span class="nt">lastActivitySource</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">cpu</span><span class="w">    </span><span class="c1"># created, woke, request, cpu, rollout, annotation, prometheus, unobserved, or scaled-up</span>
-</span><span id="__span-2-5"><a id="__codelineno-2-5" name="__codelineno-2-5" href="#__codelineno-2-5"></a><span class="w">    </span><span class="nt">pauseAt</span><span class="p">:</span><span class="w"> </span><span class="s">"2026-10-02T10:14:00Z"</span>
-</span><span id="__span-2-6"><a id="__codelineno-2-6" name="__codelineno-2-6" href="#__codelineno-2-6"></a><span class="w">    </span><span class="nt">lastEvaluatedTime</span><span class="p">:</span><span class="w"> </span><span class="s">"2026-10-02T09:41:00Z"</span>
-</span></code></pre></div>
-<h2 id="waking-up">Waking up<a class="headerlink" href="#waking-up" title="Permanent link">&para;</a></h2>
-<p>A paused workload wakes when:</p>
+<p>With <code dir="auto">pauseEarly</code>, step 3 goes on to step 4 as if the clock had run out, when:</p>
 <ul>
-<li>A request reaches one of its Services. The request is held while the workload starts, then answered; see <a href="../wake-on-request/">Wake on Request</a>.</li>
-<li>A <code>hybernate.io/last-activity</code>, <code>last-request</code> or <code>active-until</code> annotation on the ManagedWorkload or its target changes after the pause began to an RFC 3339 time, whatever time it states, so a clock that's behind the operator's can't lose a wake. Only a change counts: the pause records the annotations as they stood, so a value set before it, even one stating a later time, doesn't wake it.</li>
-<li>A <a href="../../guides/pause/#wake-now">wake request</a>: a new value of <code>hybernate.io/wake-requested</code> on the ManagedWorkload, whatever its wake setting. <code>kubectl hybernate wake</code> sets it, and so can a "start environment" button in a developer portal, which can then read Hybernate's answer in the <code>WakeRequest</code> condition.</li>
-<li>A <a href="../../guides/prometheus-signals/#while-the-workload-is-paused">Prometheus activity query</a> shows activity: the queries are run about once a minute while it's paused, as while it's awake. One that already showed activity as a <a href="../../guides/pause/#pause-now">requested pause</a> began wakes it only once it has been quiet, so it doesn't undo the request, and one that can't be evaluated never wakes it.</li>
-<li><code>autoResume: true</code> is set and a confident forecast (<code>dailyPhase: Active</code>) predicts utilization above <code>cpuThreshold</code> for the current hour, or for the next hour once it's 15 minutes away, so the workload is ready before people arrive; not the hour after one far quieter than it forecast.</li>
-<li>Something other than Hybernate scales it up, such as <code>kubectl scale</code>.</li>
-<li>Dry-run is turned on: dry-run never leaves a workload paused.</li>
+<li>the last activity was at least 20 minutes ago,</li>
+<li>the forecast is confident that every hour until <code dir="auto">idleAfter</code> runs out is quiet, and at least this hour and the next,</li>
+<li>and a request would wake the workload through the doorman once it’s paused.</li>
 </ul>
-<p>Each wake restarts the clock, so a woken workload gets a full <code>idleAfter</code> before it can pause again, unless <a href="../forecasting/#pausing-early"><code>pauseEarly</code></a> is on and the forecast expects the coming hours quiet: then the pause can come 20 minutes after the wake. The clock records <code>lastActivitySource: request</code> when a held request woke it, <code>prometheus</code> when an activity query did, <code>scaled-up</code> when something else scaled it up, and <code>woke</code> for any other wake.</p>
-
-
-
-
-
-
-
-
-
-
-
-
-                
-              </article>
-            </div>
-          
-          
-<script>var target=document.getElementById(location.hash.slice(1));target&&target.name&&(target.checked=target.name.startsWith("__tabbed_"))</script>
-        </div>
-        
-          <button type="button" class="md-top md-icon" data-md-component="top" hidden>
-  
-  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M13 20h-2V8l-5.5 5.5-1.42-1.42L12 4.16l7.92 7.92-1.42 1.42L13 8z"/></svg>
-  Back to top
-</button>
-        
-      </main>
-      
-        <footer class="md-footer">
-  
-  <div class="md-footer-meta md-typeset">
-    <div class="md-footer-meta__inner md-grid">
-      <div class="md-copyright">
-  
-  
-    Made with
-    <a href="https://squidfunk.github.io/mkdocs-material/" target="_blank" rel="noopener">
-      Material for MkDocs
-    </a>
-  
-</div>
-      
-    </div>
-  </div>
-</footer>
-      
-    </div>
-    <div class="md-dialog" data-md-component="dialog">
-      <div class="md-dialog__inner md-typeset"></div>
-    </div>
-    
-    
-    
-      
-      
-      <script id="__config" type="application/json">{"annotate": null, "base": "../..", "features": ["navigation.tabs", "navigation.sections", "navigation.expand", "navigation.top", "search.suggest", "search.highlight", "content.code.copy", "content.code.annotate", "content.code.select", "content.action.edit"], "search": "../../assets/javascripts/workers/search.2c215733.min.js", "tags": null, "translations": {"clipboard.copied": "Copied to clipboard", "clipboard.copy": "Copy to clipboard", "search.result.more.one": "1 more on this page", "search.result.more.other": "# more on this page", "search.result.none": "No matching documents", "search.result.one": "1 matching document", "search.result.other": "# matching documents", "search.result.placeholder": "Type to start searching", "search.result.term.missing": "Missing", "select.version": "Select version"}, "version": {"alias": true, "default": "latest", "provider": "mike"}}</script>
-    
-    
-      <script src="../../assets/javascripts/bundle.d7400e89.min.js"></script>
-      
-        <script src="../../javascripts/mathjax.js"></script>
-      
-        <script src="https://unpkg.com/mathjax@3.2.2/es5/tex-mml-chtml.js"></script>
-      
-    
-  </body>
-</html>
+<p>While step 4 holds a pause off, <code dir="auto">IdleVetoed</code> is <code dir="auto">True</code> with reason <code dir="auto">ForecastExpectsDemand</code>, its message naming the hour. An <code dir="auto">IdleVetoed</code> event marks each veto’s start. After an hour far quieter than forecast, as on a holiday, the forecast doubts what it expects. For the next hour it holds nothing back (<a href="/next/concepts/forecasting/#anomaly-detection">Anomaly detection</a>). It never blocks a pause until it’s confident, so a workload with no history is left to the clock.</p>
+<table>
+<thead>
+<tr>
+<th>Case</th>
+<th>What changes</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>At zero replicas, not by Napwake</td>
+<td>Not checked. It’s already off, and <a href="/next/guides/pause/#workloads-already-at-zero">left that way</a></td>
+</tr>
+<tr>
+<td>No <code dir="auto">idlePolicy</code></td>
+<td>None of this runs. It pauses only when someone asks</td>
+</tr>
+<tr>
+<td>A <a href="/next/guides/pause/#pause-now">pause request</a> (<code dir="auto">kubectl napwake pause</code>)</td>
+<td>The clock runs out at once</td>
+</tr>
+<tr>
+<td>Skipped for a request</td>
+<td>Steps 1 and 3, and the hour after a GitOps tool undid its last pause</td>
+</tr>
+<tr>
+<td>Still holding a request up</td>
+<td>Steps 2 and 5. Step 4 too, unless the request has <code dir="auto">napwake.dev/pause-overrides-forecast: "true"</code>, as <code dir="auto">kubectl napwake pause --yes</code> sets</td>
+</tr>
+<tr>
+<td>A request held back</td>
+<td>It’s answered with the reason</td>
+</tr>
+<tr>
+<td><code dir="auto">dryRun: true</code></td>
+<td><code dir="auto">Idle</code>, with the <code dir="auto">IdleDetected</code> or <code dir="auto">PausedEarly</code> event prefixed <code dir="auto">[dry-run]</code>, but nothing changes. Activity sets it back to <code dir="auto">Running</code> (<a href="/next/guides/dry-run/">Dry run</a>)</td>
+</tr>
+</tbody>
+</table>
+<div class="sl-heading-wrapper level-h2"><h2 id="paused-while-in-use">Paused while in use</h2><a class="sl-anchor-link" href="#paused-while-in-use"><span aria-hidden="true" class="sl-anchor-icon"><svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="m12.11 15.39-3.88 3.88a2.52 2.52 0 0 1-3.5 0 2.47 2.47 0 0 1 0-3.5l3.88-3.88a1 1 0 1 0-1.42-1.42l-3.88 3.89a4.48 4.48 0 0 0 6.33 6.33l3.89-3.88a1 1 0 0 0-1.42-1.42m8.58-12.08a4.49 4.49 0 0 0-6.33 0l-3.89 3.88a1 1 0 1 0 1.42 1.42l3.88-3.88a2.52 2.52 0 0 1 3.5 0 2.47 2.47 0 0 1 0 3.5l-3.88 3.88a1 1 0 0 0 0 1.42 1 1 0 0 0 1.42 0l3.88-3.89a4.49 4.49 0 0 0 0-6.33M8.83 15.17a1 1 0 0 0 .71.29 1 1 0 0 0 .71-.29l4.92-4.92a1 1 0 1 0-1.42-1.42l-4.92 4.92a1 1 0 0 0 0 1.42"></path></svg></span><span class="sr-only" data-pagefind-ignore>Section titled “Paused while in use”</span></a></div>
+<p>Napwake can’t see requests to an awake workload. One in steady light use, under its CPU threshold, can look idle and be paused while people use it. The next request wakes it, with a cold start.</p>
+<p>A pause is wrong when the workload’s own use undoes it soon after it begins. Soon means within <code dir="auto">idleAfter</code> or 15 minutes, whichever is shorter. Any of these undoes it:</p>
+<ul>
+<li>a request, or a person’s click for a workload that <a href="/next/concepts/wake-on-request/#asking-before-waking">asks first</a></li>
+<li>a <a href="/next/guides/pause/#wake-now">wake request</a></li>
+<li>an activity annotation</li>
+</ul>
+<p>One that comes while the workload is still pausing <a href="/next/guides/pause/#a-request-calls-the-pause-off">calls the pause off</a>. That pause was wrong too.</p>
+<p>After a wrong pause, the idle clock waits longer before the next. Each wrong pause in a row doubles the wait, up to <code dir="auto">idleAfter</code> plus an hour:</p>
+<table>
+<thead>
+<tr>
+<th>Wrong pauses in a row</th>
+<th>Wait with <code dir="auto">idleAfter: 5m</code></th>
+<th>Wait with <code dir="auto">idleAfter: 1h</code></th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>0</td>
+<td>5 minutes</td>
+<td>1 hour</td>
+</tr>
+<tr>
+<td>1</td>
+<td>10 minutes</td>
+<td>2 hours</td>
+</tr>
+<tr>
+<td>2</td>
+<td>20 minutes</td>
+<td>2 hours</td>
+</tr>
+<tr>
+<td>3</td>
+<td>40 minutes</td>
+<td>2 hours</td>
+</tr>
+<tr>
+<td>4 or more</td>
+<td>1 hour 5 minutes</td>
+<td>2 hours</td>
+</tr>
+</tbody>
+</table>
+<p>A pause that lasts the window ends the wait. So do these, which no pause can last through:</p>
+<ul>
+<li>dry-run</li>
+<li>protecting the workload</li>
+<li>removing its <code dir="auto">idlePolicy</code></li>
+<li>ignoring it</li>
+<li>its target going</li>
+</ul>
+<p>A would-be pause in dry-run never waits longer. The count is kept in <code dir="auto">status.idleWait</code>, so a restart keeps it. The wait only ever delays a pause.</p>
+<p>These don’t make a pause wrong, since Napwake didn’t misjudge the workload’s use:</p>
+<ul>
+<li>a pause someone asked for</li>
+<li>the forecast waking it ahead of demand</li>
+<li>a Prometheus activity query</li>
+<li>a wake for an awake dependent that uses it</li>
+</ul>
+<details class="nw-details"><summary>Why the window, and what it does in the simulator</summary><p>Steady light use wakes a wrong pause within seconds, or a minute or two. A pause that lasted a quarter of an hour paid for its cold start. And a short <code dir="auto">idleAfter</code> is what you said idle means.</p><p>In the simulator, <code dir="auto">orders/api</code> on the test cluster has <code dir="auto">idleAfter: 5m</code> and steady requests all working day. It goes from 79 cold starts a working day to 10. It’s awake about 3.5 hours a week more, on weekday evenings.</p></details>
+<div class="sl-heading-wrapper level-h3"><h3 id="what-napwake-tells-you">What Napwake tells you</h3><a class="sl-anchor-link" href="#what-napwake-tells-you"><span aria-hidden="true" class="sl-anchor-icon"><svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="m12.11 15.39-3.88 3.88a2.52 2.52 0 0 1-3.5 0 2.47 2.47 0 0 1 0-3.5l3.88-3.88a1 1 0 1 0-1.42-1.42l-3.88 3.89a4.48 4.48 0 0 0 6.33 6.33l3.89-3.88a1 1 0 0 0-1.42-1.42m8.58-12.08a4.49 4.49 0 0 0-6.33 0l-3.89 3.88a1 1 0 1 0 1.42 1.42l3.88-3.88a2.52 2.52 0 0 1 3.5 0 2.47 2.47 0 0 1 0 3.5l-3.88 3.88a1 1 0 0 0 0 1.42 1 1 0 0 0 1.42 0l3.88-3.89a4.49 4.49 0 0 0 0-6.33M8.83 15.17a1 1 0 0 0 .71.29 1 1 0 0 0 .71-.29l4.92-4.92a1 1 0 1 0-1.42-1.42l-4.92 4.92a1 1 0 0 0 0 1.42"></path></svg></span><span class="sr-only" data-pagefind-ignore>Section titled “What Napwake tells you”</span></a></div>
+<p>A <code dir="auto">PausedWhileInUse</code> warning event says how soon the pause was undone. It also says how long the clock waits now, and what to change. The <code dir="auto">PausedWhileInUse</code> condition says the same until a pause holds, or the wait ends otherwise. <a href="/next/getting-started/kubectl-plugin/#see-what-napwake-is-doing"><code dir="auto">kubectl napwake status</code></a> lists it under Needs attention.</p>
+<div class="expressive-code"><figure class="frame not-content"><figcaption class="header"></figcaption><pre data-language="text"><code><div class="ec-line"><div class="code"><span style="--0:#e3e7e4;--1:#0f1716">a request came 40 seconds after it paused, so it was in use: it now waits 10 minutes without activity</span></div></div><div class="ec-line"><div class="code"><span style="--0:#e3e7e4;--1:#0f1716">before pausing, not 5 minutes, until a pause holds. It used up to 0.6% of its CPU requests while in use,</span></div></div><div class="ec-line"><div class="code"><span style="--0:#e3e7e4;--1:#0f1716">and up to 0.2% idle: try napwake.dev/cpu-threshold: "0.4"</span></div></div></code></pre><div class="copy"><div aria-live="polite"></div><button title="Copy to clipboard" data-copied="Copied!" data-code="a request came 40 seconds after it paused, so it was in use: it now waits 10 minutes without activitybefore pausing, not 5 minutes, until a pause holds. It used up to 0.6% of its CPU requests while in use,and up to 0.2% idle: try napwake.dev/cpu-threshold: &quot;0.4&quot;"><div></div></button></div></figure></div>
+<p>The suggested number comes from the CPU Napwake measures through each stretch the clock counts as idle:</p>
+<ul>
+<li>A wrong pause shows what the workload uses in use. That’s the most in the stretch before it.</li>
+<li>A pause that holds shows what it uses idle. That’s the most in the 15 minutes before it, or <code dir="auto">idleAfter</code> if shorter. Napwake keeps the most over the last week.</li>
+</ul>
+<p>Napwake suggests a threshold when the CPU in use is at least twice the idle CPU, and 0.2 points more. It’s halfway between, to a tenth. A workload you opted in with the label is told the annotation, and one you wrote the field.</p>
+<p>Otherwise CPU can’t tell its use from its idle. Then Napwake suggests a <a href="/next/guides/prometheus-signals/#example-queries">Prometheus query</a> that counts its requests. Until a pause has held, it hasn’t measured idle use, and says so rather than guess.</p>
+<div class="expressive-code"><figure class="frame not-content"><figcaption class="header"></figcaption><pre data-language="yaml"><code><div class="ec-line"><div class="code"><span style="--0:#4FB3A6;--1:#14695F">status</span><span style="--0:#A3ADAA;--1:#4E5957">:</span></div></div><div class="ec-line"><div class="code"><span class="indent">  </span><span style="--0:#4FB3A6;--1:#14695F">idleWait</span><span style="--0:#A3ADAA;--1:#4E5957">:</span></div></div><div class="ec-line"><div class="code"><span class="indent">    </span><span style="--0:#4FB3A6;--1:#14695F">wrongPauses</span><span style="--0:#A3ADAA;--1:#4E5957">:</span><span style="--0:#E3E7E4;--1:#0F1716"> </span><span style="--0:#F5B53F;--1:#825500">1</span></div></div><div class="ec-line"><div class="code"><span class="indent">    </span><span style="--0:#4FB3A6;--1:#14695F">lastWrongPause</span><span style="--0:#A3ADAA;--1:#4E5957">:</span></div></div><div class="ec-line"><div class="code"><span class="indent">      </span><span style="--0:#4FB3A6;--1:#14695F">pausedAt</span><span style="--0:#A3ADAA;--1:#4E5957">:</span><span style="--0:#E3E7E4;--1:#0F1716"> </span><span style="--0:#F5B53F;--1:#825500">"2026-10-26T09:02:11Z"</span></div></div><div class="ec-line"><div class="code"><span class="indent">      </span><span style="--0:#4FB3A6;--1:#14695F">after</span><span style="--0:#A3ADAA;--1:#4E5957">:</span><span style="--0:#E3E7E4;--1:#0F1716"> </span><span style="--0:#F5B53F;--1:#825500">40s</span></div></div><div class="ec-line"><div class="code"><span class="indent">      </span><span style="--0:#4FB3A6;--1:#14695F">by</span><span style="--0:#A3ADAA;--1:#4E5957">:</span><span style="--0:#E3E7E4;--1:#0F1716"> </span><span style="--0:#F5B53F;--1:#825500">request</span><span style="--0:#E3E7E4;--1:#0F1716">          </span><span style="--0:#A3ADAA;--0fs:italic;--1:#4E5957;--1fs:italic"># request, click, wakeRequest or annotation</span></div></div><div class="ec-line"><div class="code"><span class="indent">      </span><span style="--0:#4FB3A6;--1:#14695F">from</span><span style="--0:#A3ADAA;--1:#4E5957">:</span><span style="--0:#E3E7E4;--1:#0F1716"> </span><span style="--0:#F5B53F;--1:#825500">10.4.1.7</span></div></div><div class="ec-line"><div class="code"><span class="indent">      </span><span style="--0:#4FB3A6;--1:#14695F">inUseCPU</span><span style="--0:#A3ADAA;--1:#4E5957">:</span><span style="--0:#E3E7E4;--1:#0F1716"> </span><span style="--0:#F5B53F;--1:#825500">"0.6"</span></div></div><div class="ec-line"><div class="code"><span class="indent">    </span><span style="--0:#4FB3A6;--1:#14695F">idleCPU</span><span style="--0:#A3ADAA;--1:#4E5957">:</span><span style="--0:#E3E7E4;--1:#0F1716"> </span><span style="--0:#F5B53F;--1:#825500">"0.2"</span></div></div><div class="ec-line"><div class="code"><span class="indent">    </span><span style="--0:#4FB3A6;--1:#14695F">idleCPUAt</span><span style="--0:#A3ADAA;--1:#4E5957">:</span><span style="--0:#E3E7E4;--1:#0F1716"> </span><span style="--0:#F5B53F;--1:#825500">"2026-10-25T17:06:00Z"</span></div></div></code></pre><div class="copy"><div aria-live="polite"></div><button title="Copy to clipboard" data-copied="Copied!" data-code="status:  idleWait:    wrongPauses: 1    lastWrongPause:      pausedAt: &quot;2026-10-26T09:02:11Z&quot;      after: 40s      by: request          # request, click, wakeRequest or annotation      from: 10.4.1.7      inUseCPU: &quot;0.6&quot;    idleCPU: &quot;0.2&quot;    idleCPUAt: &quot;2026-10-25T17:06:00Z&quot;"><div></div></button></div></figure></div>
+<p><code dir="auto">napwake_wrong_pauses_total</code> counts wrong pauses, by workload. Dry-run never pauses, so its would-be pauses aren’t judged.</p>
+<div class="sl-heading-wrapper level-h2"><h2 id="when-a-source-cant-be-read">When a source can’t be read</h2><a class="sl-anchor-link" href="#when-a-source-cant-be-read"><span aria-hidden="true" class="sl-anchor-icon"><svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="m12.11 15.39-3.88 3.88a2.52 2.52 0 0 1-3.5 0 2.47 2.47 0 0 1 0-3.5l3.88-3.88a1 1 0 1 0-1.42-1.42l-3.88 3.89a4.48 4.48 0 0 0 6.33 6.33l3.89-3.88a1 1 0 0 0-1.42-1.42m8.58-12.08a4.49 4.49 0 0 0-6.33 0l-3.89 3.88a1 1 0 1 0 1.42 1.42l3.88-3.88a2.52 2.52 0 0 1 3.5 0 2.47 2.47 0 0 1 0 3.5l-3.88 3.88a1 1 0 0 0 0 1.42 1 1 0 0 0 1.42 0l3.88-3.89a4.49 4.49 0 0 0 0-6.33M8.83 15.17a1 1 0 0 0 .71.29 1 1 0 0 0 .71-.29l4.92-4.92a1 1 0 1 0-1.42-1.42l-4.92 4.92a1 1 0 0 0 0 1.42"></path></svg></span><span class="sr-only" data-pagefind-ignore>Section titled “When a source can’t be read”</span></a></div>
+<p>Napwake never pauses while a source can’t be read. Without that data, a busy workload looks idle. Nor does that time count as idle.</p>
+<ul>
+<li>A check that can’t read a source isn’t watching. A source out for longer than the <a href="#restarts-and-outages">allowed gap</a> restarts the clock (<code dir="auto">lastActivitySource: unobserved</code>).</li>
+<li>Once the source is back, an <code dir="auto">Unobserved</code> event says so. A pause then needs a full <code dir="auto">idleAfter</code> in which every source saw nothing.</li>
+<li>A shorter blind spot leaves the last activity alone. One is the minute before a woken workload’s pods have metrics.</li>
+<li>A Prometheus query may come back saying “no requests in the last 5 minutes”. That doesn’t make the hour before look idle.</li>
+</ul>
+<p>For CPU, the <code dir="auto">MetricsAvailable</code> condition says why, and for queries, <code dir="auto">PrometheusAvailable</code>.</p>
+<details class="nw-details"><summary>The reasons, and what to do</summary><p>A target at zero isn’t an error, as no usage is real data. Nor are new pods, with no metrics until they run and for a scrape or two of metrics-server’s after.</p><table>
+<thead>
+<tr>
+<th>Reason</th>
+<th>Status</th>
+<th>Means</th>
+<th>To do</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code dir="auto">NoReadyPods</code></td>
+<td><code dir="auto">Unknown</code></td>
+<td>After a wake or rollout, none of the target’s pods is Ready yet. No warning</td>
+<td></td>
+</tr>
+<tr>
+<td><code dir="auto">AwaitingPodMetrics</code></td>
+<td><code dir="auto">Unknown</code></td>
+<td>Then, for up to 3 minutes, Ready pods without metrics yet. No warning</td>
+<td></td>
+</tr>
+<tr>
+<td><code dir="auto">NoPodMetrics</code></td>
+<td><code dir="auto">False</code></td>
+<td>Ready pods with no metrics for over 3 minutes. One warning event says so</td>
+<td>Check metrics-server is installed and reports them (<code dir="auto">kubectl top pods</code>)</td>
+</tr>
+<tr>
+<td><code dir="auto">NoCPURequests</code></td>
+<td><code dir="auto">False</code></td>
+<td>The running pods, or with none the pod template, request no CPU for its containers. Utilization can’t be measured</td>
+<td>Set CPU requests, or a default in the namespace’s LimitRange</td>
+</tr>
+<tr>
+<td><code dir="auto">MetricsUnavailable</code></td>
+<td><code dir="auto">False</code></td>
+<td>The Metrics API failed, or didn’t answer in 2 seconds. The message has the error</td>
+<td></td>
+</tr>
+</tbody>
+</table><p>After a <code dir="auto">MetricsUnavailable</code>, the API isn’t read again for a minute. So every workload’s check fails at once, instead of waiting out a timeout.</p><p>For queries, <code dir="auto">PrometheusAvailable</code> reports <code dir="auto">EndpointNotConfigured</code> or <code dir="auto">QueryFailed</code>. A query that answers but has never matched a series, as with a missing metric or label, can never keep the workload awake. <code dir="auto">PrometheusQueryEmpty=True</code> and a warning event say so (<a href="/next/guides/prometheus-signals/#when-a-query-cant-be-evaluated">When a query can’t be evaluated</a>).</p></details>
+<div class="sl-heading-wrapper level-h2"><h2 id="restarts-and-outages">Restarts and outages</h2><a class="sl-anchor-link" href="#restarts-and-outages"><span aria-hidden="true" class="sl-anchor-icon"><svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="m12.11 15.39-3.88 3.88a2.52 2.52 0 0 1-3.5 0 2.47 2.47 0 0 1 0-3.5l3.88-3.88a1 1 0 1 0-1.42-1.42l-3.88 3.89a4.48 4.48 0 0 0 6.33 6.33l3.89-3.88a1 1 0 0 0-1.42-1.42m8.58-12.08a4.49 4.49 0 0 0-6.33 0l-3.89 3.88a1 1 0 1 0 1.42 1.42l3.88-3.88a2.52 2.52 0 0 1 3.5 0 2.47 2.47 0 0 1 0 3.5l-3.88 3.88a1 1 0 0 0 0 1.42 1 1 0 0 0 1.42 0l3.88-3.89a4.49 4.49 0 0 0 0-6.33M8.83 15.17a1 1 0 0 0 .71.29 1 1 0 0 0 .71-.29l4.92-4.92a1 1 0 1 0-1.42-1.42l-4.92 4.92a1 1 0 0 0 0 1.42"></path></svg></span><span class="sr-only" data-pagefind-ignore>Section titled “Restarts and outages”</span></a></div>
+<p>The clock lives in <code dir="auto">status.activity</code>, so it survives operator restarts. An outage can delay a pause, but never cause one.</p>
+<div class="expressive-code"><figure class="frame not-content"><figcaption class="header"></figcaption><pre data-language="yaml"><code><div class="ec-line"><div class="code"><span style="--0:#4FB3A6;--1:#14695F">status</span><span style="--0:#A3ADAA;--1:#4E5957">:</span></div></div><div class="ec-line"><div class="code"><span class="indent">  </span><span style="--0:#4FB3A6;--1:#14695F">activity</span><span style="--0:#A3ADAA;--1:#4E5957">:</span></div></div><div class="ec-line"><div class="code"><span class="indent">    </span><span style="--0:#4FB3A6;--1:#14695F">lastActivityTime</span><span style="--0:#A3ADAA;--1:#4E5957">:</span><span style="--0:#E3E7E4;--1:#0F1716"> </span><span style="--0:#F5B53F;--1:#825500">"2026-10-02T09:14:00Z"</span></div></div><div class="ec-line"><div class="code"><span class="indent">    </span><span style="--0:#4FB3A6;--1:#14695F">lastActivitySource</span><span style="--0:#A3ADAA;--1:#4E5957">:</span><span style="--0:#E3E7E4;--1:#0F1716"> </span><span style="--0:#F5B53F;--1:#825500">cpu</span><span style="--0:#E3E7E4;--1:#0F1716">    </span><span style="--0:#A3ADAA;--0fs:italic;--1:#4E5957;--1fs:italic"># created, woke, request, cpu, rollout, annotation, prometheus, unobserved, or scaled-up</span></div></div><div class="ec-line"><div class="code"><span class="indent">    </span><span style="--0:#4FB3A6;--1:#14695F">pauseAt</span><span style="--0:#A3ADAA;--1:#4E5957">:</span><span style="--0:#E3E7E4;--1:#0F1716"> </span><span style="--0:#F5B53F;--1:#825500">"2026-10-02T10:14:00Z"</span></div></div><div class="ec-line"><div class="code"><span class="indent">    </span><span style="--0:#4FB3A6;--1:#14695F">lastEvaluatedTime</span><span style="--0:#A3ADAA;--1:#4E5957">:</span><span style="--0:#E3E7E4;--1:#0F1716"> </span><span style="--0:#F5B53F;--1:#825500">"2026-10-02T09:41:00Z"</span></div></div></code></pre><div class="copy"><div aria-live="polite"></div><button title="Copy to clipboard" data-copied="Copied!" data-code="status:  activity:    lastActivityTime: &quot;2026-10-02T09:14:00Z&quot;    lastActivitySource: cpu    # created, woke, request, cpu, rollout, annotation, prometheus, unobserved, or scaled-up    pauseAt: &quot;2026-10-02T10:14:00Z&quot;    lastEvaluatedTime: &quot;2026-10-02T09:41:00Z&quot;"><div></div></button></div></figure></div>
+<p>If the operator stops watching for a while, it can’t know what happened. So an awake workload’s clock restarts when it watches again (<code dir="auto">lastActivitySource: unobserved</code>). An <code dir="auto">Unobserved</code> event says how long the gap was:</p>
+<table>
+<thead>
+<tr>
+<th>The gap</th>
+<th>The <code dir="auto">Unobserved</code> event says</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>The operator didn’t check it</td>
+<td><code dir="auto">Napwake wasn't watching for 9 minutes, so its idle clock starts again</code></td>
+</tr>
+<tr>
+<td>A source was out</td>
+<td><code dir="auto">Napwake couldn't read its activity for 9 minutes, so its idle clock starts again</code></td>
+</tr>
+<tr>
+<td>A restart, or a change of leader</td>
+<td><code dir="auto">the operator restarted, or another took over, so its idle clock starts again; it wasn't watching for up to 4 minutes</code></td>
+</tr>
+</tbody>
+</table>
+<ul>
+<li>The gap allowed is half of <code dir="auto">idleAfter</code>, at least 2 minutes (two missed checks), at most 7.</li>
+<li>A restart or a change of leader always restarts an awake workload’s clock, however recently it was written.</li>
+<li>The event comes with the first check that can read every source.</li>
+<li>A gap or a restart isn’t activity, so a paused workload stays paused. In dry-run, a would-be pause goes on, as the real pause would (<a href="/next/guides/dry-run/#what-happens-in-dry-run">Dry run</a>).</li>
+<li>A restart can delay a pause by up to <code dir="auto">idleAfter</code>, but never brings one forward.</li>
+</ul>
+<details class="nw-details"><summary>How the clock is saved, and why a restart restarts it</summary><ul>
+<li>An awake workload is checked about once a minute.</li>
+<li>The clock is written to status with cost, at most every 5 minutes. It’s also written at once on a change of phase or condition. And when new activity is ahead of what’s written by over a tenth of <code dir="auto">idleAfter</code>, at most 5 minutes.</li>
+<li>Activity between writes is held in memory, so it counts while the operator runs.</li>
+<li>After a restart or a change of leader, the operator has only what was written. That can be up to 5 minutes behind its last check. It can also be missing activity seen since, up to a tenth of <code dir="auto">idleAfter</code>.</li>
+<li>So the clock restarts. Its event says <code dir="auto">up to</code>, since the last check may have come later than what’s written.</li>
+</ul></details>
+<div class="sl-heading-wrapper level-h2"><h2 id="waking-up">Waking up</h2><a class="sl-anchor-link" href="#waking-up"><span aria-hidden="true" class="sl-anchor-icon"><svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="m12.11 15.39-3.88 3.88a2.52 2.52 0 0 1-3.5 0 2.47 2.47 0 0 1 0-3.5l3.88-3.88a1 1 0 1 0-1.42-1.42l-3.88 3.89a4.48 4.48 0 0 0 6.33 6.33l3.89-3.88a1 1 0 0 0-1.42-1.42m8.58-12.08a4.49 4.49 0 0 0-6.33 0l-3.89 3.88a1 1 0 1 0 1.42 1.42l3.88-3.88a2.52 2.52 0 0 1 3.5 0 2.47 2.47 0 0 1 0 3.5l-3.88 3.88a1 1 0 0 0 0 1.42 1 1 0 0 0 1.42 0l3.88-3.89a4.49 4.49 0 0 0 0-6.33M8.83 15.17a1 1 0 0 0 .71.29 1 1 0 0 0 .71-.29l4.92-4.92a1 1 0 1 0-1.42-1.42l-4.92 4.92a1 1 0 0 0 0 1.42"></path></svg></span><span class="sr-only" data-pagefind-ignore>Section titled “Waking up”</span></a></div>
+<table>
+<thead>
+<tr>
+<th>While it’s paused</th>
+<th></th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>A request reaches one of its Services</td>
+<td><span class="nw-outcome astro-pizrc632"><svg class="nw-door astro-pizrc632 astro-iomifxvf" viewBox="0 0 24 24" width="18" height="18" role="img" aria-label="Wakes" focusable="false"><path d="M6 22V10A6 6 0 0 1 18 10V22Z" fill="var(--glyph-room-amber)" stroke="var(--glyph-amber)" stroke-width="1.6"/><path d="M6 22V10A6 6 0 0 1 9.5 4.6L12 6V22Z" fill="var(--glyph-leaf)"/><path d="M12 22.2H18L23 23.6H13Z" fill="var(--glyph-amber)"/></svg><span class="astro-pizrc632">Wakes. The request is held while it starts, then answered (<a href="/next/concepts/wake-on-request/">Wake on request</a>)</span></span></td>
+</tr>
+<tr>
+<td>A <code dir="auto">last-activity</code>, <code dir="auto">last-request</code> or <code dir="auto">active-until</code> annotation, on the ManagedWorkload or its target, changes to an RFC 3339 time</td>
+<td><span class="nw-outcome astro-pizrc632"><svg class="nw-door astro-pizrc632 astro-iomifxvf" viewBox="0 0 24 24" width="18" height="18" role="img" aria-label="Wakes" focusable="false"><path d="M6 22V10A6 6 0 0 1 18 10V22Z" fill="var(--glyph-room-amber)" stroke="var(--glyph-amber)" stroke-width="1.6"/><path d="M6 22V10A6 6 0 0 1 9.5 4.6L12 6V22Z" fill="var(--glyph-leaf)"/><path d="M12 22.2H18L23 23.6H13Z" fill="var(--glyph-amber)"/></svg><span class="astro-pizrc632">Wakes, whatever time it states, so a clock behind the operator’s can’t lose a wake</span></span></td>
+</tr>
+<tr>
+<td><code dir="auto">kubectl napwake wake</code>, or a tool setting <a href="/next/guides/pause/#wake-now"><code dir="auto">napwake.dev/wake-requested</code></a> on the ManagedWorkload, such as a portal’s “start environment” button</td>
+<td><span class="nw-outcome astro-pizrc632"><svg class="nw-door astro-pizrc632 astro-iomifxvf" viewBox="0 0 24 24" width="18" height="18" role="img" aria-label="Wakes" focusable="false"><path d="M6 22V10A6 6 0 0 1 18 10V22Z" fill="var(--glyph-room-amber)" stroke="var(--glyph-amber)" stroke-width="1.6"/><path d="M6 22V10A6 6 0 0 1 9.5 4.6L12 6V22Z" fill="var(--glyph-leaf)"/><path d="M12 22.2H18L23 23.6H13Z" fill="var(--glyph-amber)"/></svg><span class="astro-pizrc632">Wakes, whatever the wake setting, with a <code dir="auto">WakeRequested</code> event. The tool reads the answer in the <code dir="auto">WakeRequest</code> condition</span></span></td>
+</tr>
+<tr>
+<td>An annotation set before the pause, even to a later time</td>
+<td><span class="nw-outcome astro-pizrc632"><svg class="nw-door astro-pizrc632 astro-iomifxvf" viewBox="0 0 24 24" width="18" height="18" role="img" aria-label="Stays asleep" focusable="false"><path d="M6 22V10A6 6 0 0 1 18 10V22Z" fill="var(--glyph-slate)"/><circle cx="15.3" cy="15" r="1.2" fill="var(--paper)"/></svg><span class="astro-pizrc632">Stays asleep. The pause records the annotations as they stood, and only a change counts</span></span></td>
+</tr>
+<tr>
+<td>A <a href="/next/guides/prometheus-signals/#while-the-workload-is-paused">Prometheus activity query</a> shows activity. Queries run about once a minute, as while awake</td>
+<td><span class="nw-outcome astro-pizrc632"><svg class="nw-door astro-pizrc632 astro-iomifxvf" viewBox="0 0 24 24" width="18" height="18" role="img" aria-label="Wakes" focusable="false"><path d="M6 22V10A6 6 0 0 1 18 10V22Z" fill="var(--glyph-room-amber)" stroke="var(--glyph-amber)" stroke-width="1.6"/><path d="M6 22V10A6 6 0 0 1 9.5 4.6L12 6V22Z" fill="var(--glyph-leaf)"/><path d="M12 22.2H18L23 23.6H13Z" fill="var(--glyph-amber)"/></svg><span class="astro-pizrc632">Wakes. One active as a <a href="/next/guides/pause/#pause-now">requested pause</a> began must go quiet first, so it doesn’t undo the request</span></span></td>
+</tr>
+<tr>
+<td>A query can’t be evaluated</td>
+<td><span class="nw-outcome astro-pizrc632"><svg class="nw-door astro-pizrc632 astro-iomifxvf" viewBox="0 0 24 24" width="18" height="18" role="img" aria-label="Stays asleep" focusable="false"><path d="M6 22V10A6 6 0 0 1 18 10V22Z" fill="var(--glyph-slate)"/><circle cx="15.3" cy="15" r="1.2" fill="var(--paper)"/></svg><span class="astro-pizrc632">Never wakes it</span></span></td>
+</tr>
+<tr>
+<td><code dir="auto">autoResume: true</code>, and a confident forecast (<code dir="auto">dailyPhase: Active</code>) predicts above <code dir="auto">cpuThreshold</code> this hour, or the next from 15 minutes before</td>
+<td><span class="nw-outcome astro-pizrc632"><svg class="nw-door astro-pizrc632 astro-iomifxvf" viewBox="0 0 24 24" width="18" height="18" role="img" aria-label="Wakes" focusable="false"><path d="M6 22V10A6 6 0 0 1 18 10V22Z" fill="var(--glyph-room-amber)" stroke="var(--glyph-amber)" stroke-width="1.6"/><path d="M6 22V10A6 6 0 0 1 9.5 4.6L12 6V22Z" fill="var(--glyph-leaf)"/><path d="M12 22.2H18L23 23.6H13Z" fill="var(--glyph-amber)"/></svg><span class="astro-pizrc632">Wakes, ready before people arrive. Not in the hour after one far quieter than forecast</span></span></td>
+</tr>
+<tr>
+<td>Something else scales it up, such as <code dir="auto">kubectl scale</code></td>
+<td><span class="nw-outcome astro-pizrc632"><svg class="nw-door astro-pizrc632 astro-iomifxvf" viewBox="0 0 24 24" width="18" height="18" role="img" aria-label="Wakes" focusable="false"><path d="M6 22V10A6 6 0 0 1 18 10V22Z" fill="var(--glyph-room-amber)" stroke="var(--glyph-amber)" stroke-width="1.6"/><path d="M6 22V10A6 6 0 0 1 9.5 4.6L12 6V22Z" fill="var(--glyph-leaf)"/><path d="M12 22.2H18L23 23.6H13Z" fill="var(--glyph-amber)"/></svg><span class="astro-pizrc632">Wakes</span></span></td>
+</tr>
+<tr>
+<td>Dry-run is turned on</td>
+<td><span class="nw-outcome astro-pizrc632"><svg class="nw-door astro-pizrc632 astro-iomifxvf" viewBox="0 0 24 24" width="18" height="18" role="img" aria-label="Wakes" focusable="false"><path d="M6 22V10A6 6 0 0 1 18 10V22Z" fill="var(--glyph-room-amber)" stroke="var(--glyph-amber)" stroke-width="1.6"/><path d="M6 22V10A6 6 0 0 1 9.5 4.6L12 6V22Z" fill="var(--glyph-leaf)"/><path d="M12 22.2H18L23 23.6H13Z" fill="var(--glyph-amber)"/></svg><span class="astro-pizrc632">Wakes. Dry-run never leaves a workload paused</span></span></td>
+</tr>
+</tbody>
+</table>
+<p>Whatever would wake it, coming while it’s still pausing, <a href="/next/guides/pause/#a-request-calls-the-pause-off">calls the pause off</a> instead.</p>
+<p>Each wake restarts the clock, so the next pause is a full <code dir="auto">idleAfter</code> away. After <a href="#paused-while-in-use">a pause made in use</a>, it’s longer. With <code dir="auto">pauseEarly</code> and a quiet forecast, the pause can come 20 minutes after the wake. <code dir="auto">lastActivitySource</code> says what woke it:</p>
+<table>
+<thead>
+<tr>
+<th><code dir="auto">lastActivitySource</code></th>
+<th>Woken by</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code dir="auto">request</code></td>
+<td>A held request</td>
+</tr>
+<tr>
+<td><code dir="auto">prometheus</code></td>
+<td>An activity query</td>
+</tr>
+<tr>
+<td><code dir="auto">scaled-up</code></td>
+<td>Something else scaling it up</td>
+</tr>
+<tr>
+<td><code dir="auto">woke</code></td>
+<td>Anything else</td>
+</tr>
+</tbody>
+</table>
+<section class="nw-next not-content astro-zkuglizp" aria-label="Next"><div class="nw-next__list astro-zkuglizp"><p class="nw-next__title astro-zkuglizp">Next</p><ul class="astro-zkuglizp"><li class="astro-zkuglizp"><a href="/next/concepts/wake-on-request/" class="astro-zkuglizp"><span class="nw-next__name astro-zkuglizp">Wake on request <span aria-hidden="true" class="astro-zkuglizp">→</span></span><span class="nw-next__text astro-zkuglizp">How a request wakes a paused workload.</span></a></li><li class="astro-zkuglizp"><a href="/next/concepts/forecasting/" class="astro-zkuglizp"><span class="nw-next__name astro-zkuglizp">Forecasting <span aria-hidden="true" class="astro-zkuglizp">→</span></span><span class="nw-next__text astro-zkuglizp">How the forecast holds off a pause, or brings it forward.</span></a></li></ul></div></section></div><footer class="sl-flex nw-foot astro-ft5hcqwl"><div class="meta sl-flex astro-ft5hcqwl"><a href="https://github.com/napwake/napwake/edit/main/docs/src/content/docs/concepts/idle-detection.mdx" class="sl-flex print:hidden astro-qlekgd3o"><svg aria-hidden="true" class="astro-qlekgd3o astro-hkc32dio" width="16" height="16" viewBox="0 0 24 24" fill="currentColor" style="--sl-icon-size: 1.2em;"><path d="M22 7.24a1 1 0 0 0-.29-.71l-4.24-4.24a1 1 0 0 0-1.1-.22 1 1 0 0 0-.32.22l-2.83 2.83L2.29 16.05a1 1 0 0 0-.29.71V21a1 1 0 0 0 1 1h4.24a1 1 0 0 0 .76-.29l10.87-10.93L21.71 8c.1-.1.17-.2.22-.33a1 1 0 0 0 0-.24v-.14l.07-.05ZM6.83 20H4v-2.83l9.93-9.93 2.83 2.83L6.83 20ZM18.17 8.66l-2.83-2.83 1.42-1.41 2.82 2.82-1.41 1.42Z"/></svg>Edit page</a></div><div class="pagination-links print:hidden astro-b5raizh3" dir="ltr"><a href="/next/concepts/forecasting/" rel="prev" class="astro-b5raizh3"><svg aria-hidden="true" class="astro-b5raizh3 astro-hkc32dio" width="16" height="16" viewBox="0 0 24 24" fill="currentColor" style="--sl-icon-size: 1.5rem;"><path d="M17 11H9.41l3.3-3.29a1.004 1.004 0 1 0-1.42-1.42l-5 5a1 1 0 0 0-.21.33 1 1 0 0 0 0 .76 1 1 0 0 0 .21.33l5 5a1.002 1.002 0 0 0 1.639-.325 1 1 0 0 0-.219-1.095L9.41 13H17a1 1 0 0 0 0-2Z"/></svg><span class="astro-b5raizh3">Previous<br class="astro-b5raizh3"><span class="link-title astro-b5raizh3">Forecasting</span></span></a><a href="/next/concepts/dependencies/" rel="next" class="astro-b5raizh3"><svg aria-hidden="true" class="astro-b5raizh3 astro-hkc32dio" width="16" height="16" viewBox="0 0 24 24" fill="currentColor" style="--sl-icon-size: 1.5rem;"><path d="M17.92 11.62a1.001 1.001 0 0 0-.21-.33l-5-5a1.003 1.003 0 1 0-1.42 1.42l3.3 3.29H7a1 1 0 0 0 0 2h7.59l-3.3 3.29a1.002 1.002 0 0 0 .325 1.639 1 1 0 0 0 1.095-.219l5-5a1 1 0 0 0 .21-.33 1 1 0 0 0 0-.76Z"/></svg><span class="astro-b5raizh3">Next<br class="astro-b5raizh3"><span class="link-title astro-b5raizh3">Dependencies</span></span></a></div><div class="nw-site-foot astro-ft5hcqwl"><a class="nw-site-foot__mark astro-ft5hcqwl" href="/next/" aria-label="Napwake docs home"><svg viewBox="0 0 24 24" width="22" height="22" aria-hidden="true" class="astro-ft5hcqwl"><path fill="currentColor" fill-rule="evenodd" d="M7.6 9.9L7.2 3.6Q7.2 2.6 8.2 2.6Q12 2.2 15.8 2.6Q16.8 2.6 16.8 3.6L16.4 9.9ZM3.4 10.7Q3.4 9.8 4.6 9.9H19.4Q20.6 9.8 20.6 10.7Q20.6 11.7 19.4 11.7H4.6Q3.4 11.7 3.4 10.7ZM6.6 19.2V13.8Q6.6 12.5 7.9 12.5H16.1Q17.4 12.5 17.4 13.8V19.2ZM8 15.4A1.9 1.9 0 0 0 11.8 15.4Z M12.2 15.4A1.9 1.9 0 0 0 16 15.4ZM3 24V22.2Q3 20 5.2 20H18.8Q21 20 21 22.2V24Z" class="astro-ft5hcqwl"></path></svg></a><p class="astro-ft5hcqwl">Napwake is open source under <a href="https://github.com/napwake/napwake/blob/main/LICENSE" class="astro-ft5hcqwl">Apache 2.0</a>. <a href="https://github.com/napwake/napwake" class="astro-ft5hcqwl">GitHub</a> · <a href="https://napwake.dev/" class="astro-ft5hcqwl">napwake.dev</a></p><p class="nw-site-foot__credit astro-ft5hcqwl">Doorman illustrations by Napwake, <a href="https://github.com/napwake/brand" class="astro-ft5hcqwl">CC BY 4.0</a>.</p></div></footer></div></div></main></div></div></div></div></body></html>
