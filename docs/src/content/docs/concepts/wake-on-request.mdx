@@ -638,6 +638,7 @@ doorman:
 | | How the chart's policy treats it |
 |---|---|
 | Each `ingressFrom` entry | A NetworkPolicy peer, so `podSelector` and `ipBlock` work too. Everyone else is refused before reaching the doorman |
+| The operator's own pods | Added by the chart. They connect to each doorman pod before a pausing workload's Services are sent to it, to check it's listening |
 | The doorman's metrics port | Open to namespaces labelled `metrics: enabled` |
 | `ingressFrom` without `networkPolicy.enabled` | Refused at install, since it would create no policy and leave the doorman open |
 | A policy of your own beside the chart's | Don't add one. NetworkPolicies add up, so the chart's open routing ports would still admit everyone |

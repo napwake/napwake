@@ -93,7 +93,7 @@ Before the pods stop, the [doorman](/concepts/wake-on-request/) steps in front o
 | When | What happens |
 |------|--------------|
 | The move to `Pausing` | The doorman's routes go into `status.doorman`, and every doorman pod listens on them. `status.pause.routesWrittenAt` records when they were stored |
-| 5 seconds after | The doorman's EndpointSlice stands beside the pods' own. The doorman passes what it gets straight to a Ready pod. `status.pause.routedAt` records when |
+| 5 seconds after, once every doorman pod answers on those ports | The operator checks that by connecting to each. The doorman's EndpointSlice then stands beside the pods' own. The doorman passes what it gets straight to a Ready pod. `status.pause.routedAt` records when |
 | 5 seconds after that | kube-proxy and ingress controllers send to it too. The pause goes on, however late Napwake gets to it |
 | A workload the doorman doesn't route | The pause goes on at once |
 | At most | None waits more than a minute for the doorman |
@@ -123,7 +123,7 @@ a request came as it paused; the pause is cancelled
 
 The doorman doesn't see every request as a workload pauses. The pods answer these, and the pause goes on:
 
-- requests in the first 5 seconds, before the doorman's EndpointSlice stands beside the pods' own
+- requests in the first 5 seconds or more, before the doorman's EndpointSlice stands beside the pods' own
 - what kube-proxy and ingress controllers still send to the pods, for about 5 seconds more, until they're scaled down
 - requests on connections opened before the pause
 - every request after the first on a connection the doorman passed on
