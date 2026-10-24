@@ -80,6 +80,10 @@ export default defineConfig({
       'import.meta.env.NAPWAKE_DOCS_VERSION': JSON.stringify(version),
       'import.meta.env.NAPWAKE_DOCS_RELEASE': JSON.stringify(release),
       'import.meta.env.NAPWAKE_DOCS_VERSIONS_URL': JSON.stringify(env('NAPWAKE_DOCS_VERSIONS_URL', '')),
+      // Set by hack/docsite: the version pages name as canonical, latest once a release is out, and
+      // whether search engines should leave this version out.
+      'import.meta.env.NAPWAKE_DOCS_CANONICAL': JSON.stringify(env('NAPWAKE_DOCS_CANONICAL', 'latest')),
+      'import.meta.env.NAPWAKE_DOCS_NOINDEX': JSON.stringify(env('NAPWAKE_DOCS_NOINDEX', '')),
     },
   },
   markdown: {

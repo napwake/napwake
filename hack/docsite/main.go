@@ -160,7 +160,7 @@ func run(ctx context.Context, o options) error {
 	}
 	defer func() { _ = os.RemoveAll(staging) }() // best-effort cleanup of a temporary directory
 	for _, folder := range p.folders() {
-		if err := build(ctx, o.docs, filepath.Join(staging, folder), o.base, folder, p.release); err != nil {
+		if err := build(ctx, o.docs, filepath.Join(staging, folder), o.base, folder, p.release, p.root); err != nil {
 			return err
 		}
 	}
@@ -343,18 +343,33 @@ func versionOrder(v string) int {
 }
 
 // build builds one folder of the site, under its own base path, into out.
-func build(ctx context.Context, docs, out, base, folder, release string) error {
+// root is where the site's root goes: latest once a stable release is out,
+// next until then.
+func build(ctx context.Context, docs, out, base, folder, release, root string) error {
 	abs, err := filepath.Abs(out)
 	if err != nil {
 		return fmt.Errorf("finding where to build %s: %w", folder, err)
 	}
-	env := append(os.Environ(),
-		"NAPWAKE_DOCS_BASE="+base+folder+"/",
-		"NAPWAKE_DOCS_VERSION="+folder,
-		"NAPWAKE_DOCS_RELEASE="+release,
-	)
 	fmt.Printf("Building %s, %s's docs, at %s%s/\n", folder, release, base, folder)
-	return runCommand(ctx, docs, env, "npm", "run", "build", "--", "--outDir", abs)
+	return runCommand(ctx, docs, append(os.Environ(), buildEnv(base, folder, release, root)...),
+		"npm", "run", "build", "--", "--outDir", abs)
+}
+
+// buildEnv is what a folder's build is told: where it's served, which
+// release it documents, which version its pages name as canonical, the
+// root's, since that one exists, and whether search engines should leave
+// it out: next, once a release has a latest of its own.
+func buildEnv(base, folder, release, root string) []string {
+	env := []string{
+		"NAPWAKE_DOCS_BASE=" + base + folder + "/",
+		"NAPWAKE_DOCS_VERSION=" + folder,
+		"NAPWAKE_DOCS_RELEASE=" + release,
+		"NAPWAKE_DOCS_CANONICAL=" + root,
+	}
+	if folder == next && root != next {
+		env = append(env, "NAPWAKE_DOCS_NOINDEX=true")
+	}
+	return env
 }
 
 // publish puts a plan's built folders, in staging, into the site's

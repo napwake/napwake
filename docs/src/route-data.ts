@@ -1,5 +1,6 @@
-// Every version's canonical URL is latest's, so search engines send readers to the current release,
-// as mike's canonical_version did.
+// Every version's canonical URL is the release readers should land on: latest's once a release is out, as
+// mike's canonical_version did, and until then the version's own, since latest doesn't exist yet
+// (hack/docsite sets NAPWAKE_DOCS_CANONICAL). Once latest does, next isn't indexed.
 import { defineRouteMiddleware } from '@astrojs/starlight/route-data';
 import { mdPath, ogPath } from './components/lib';
 
@@ -29,14 +30,18 @@ export const onRequest = defineRouteMiddleware((context) => {
     );
   }
 
+  if (import.meta.env.NAPWAKE_DOCS_NOINDEX === 'true') {
+    head.push({ tag: 'meta', attrs: { name: 'robots', content: 'noindex' }, content: '' });
+  }
   const version = import.meta.env.NAPWAKE_DOCS_VERSION || 'dev';
-  if (version === 'dev' || version === 'latest') return;
+  const canonical = import.meta.env.NAPWAKE_DOCS_CANONICAL || 'latest';
+  if (version === 'dev' || version === canonical) return;
   const base = import.meta.env.BASE_URL.replace(/\/?$/, '/');
-  const latest = base.replace(/[^/]+\/$/, 'latest/');
+  const target = base.replace(/[^/]+\/$/, `${canonical}/`);
   for (const h of context.locals.starlightRoute.head) {
     if (h.tag === 'link' && h.attrs?.rel === 'canonical' && typeof h.attrs.href === 'string') {
       const url = new URL(h.attrs.href);
-      if (url.pathname.startsWith(base)) url.pathname = latest + url.pathname.slice(base.length);
+      if (url.pathname.startsWith(base)) url.pathname = target + url.pathname.slice(base.length);
       h.attrs.href = url.href;
     }
   }

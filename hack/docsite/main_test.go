@@ -386,3 +386,35 @@ func TestDefaultsAreWhereTheSiteIsServed(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, domain, site.Host)
 }
+
+// Each build names the version search engines should send readers to:
+// latest once a stable release is out, and until then the version itself,
+// since latest doesn't exist yet. Once latest does, next isn't indexed, so
+// searches find the release, not a candidate.
+func TestBuildEnv_NamesTheVersionThatExists(t *testing.T) {
+	tests := []struct {
+		name, folder, root string
+		want, notWant      []string
+	}{
+		{name: "a candidate before any release", folder: "next", root: "next",
+			want: []string{"NAPWAKE_DOCS_CANONICAL=next"}, notWant: []string{"NAPWAKE_DOCS_NOINDEX=true"}},
+		{name: "a candidate after a release", folder: "next", root: "latest",
+			want: []string{"NAPWAKE_DOCS_CANONICAL=latest", "NAPWAKE_DOCS_NOINDEX=true"}},
+		{name: "a release's minor", folder: "0.2", root: "latest",
+			want: []string{"NAPWAKE_DOCS_CANONICAL=latest"}, notWant: []string{"NAPWAKE_DOCS_NOINDEX=true"}},
+		{name: "latest", folder: "latest", root: "latest",
+			want: []string{"NAPWAKE_DOCS_CANONICAL=latest"}, notWant: []string{"NAPWAKE_DOCS_NOINDEX=true"}},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			env := buildEnv("/", tt.folder, "0.2.0", tt.root)
+			for _, w := range tt.want {
+				assert.Contains(t, env, w)
+			}
+			for _, w := range tt.notWant {
+				assert.NotContains(t, env, w)
+			}
+			assert.Contains(t, env, "NAPWAKE_DOCS_BASE=/"+tt.folder+"/")
+		})
+	}
+}
