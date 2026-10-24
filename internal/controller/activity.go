@@ -1073,6 +1073,9 @@ func (r *Reconciler) reportPrometheusUnavailable(ctx context.Context, workload *
 	effect := "so idle detection is paused"
 	switch {
 	case workload.Status.Phase != v1alpha1.PhasePaused:
+	case workload.Spec.Wake.Asks():
+		effect = "so the queries can't wake the paused workload, and the forecast doesn't learn the time it's " +
+			"paused, until Prometheus answers; people can still wake it"
 	case meta.IsStatusConditionTrue(workload.Status.Conditions, conditionWakeOnRequest):
 		effect = "so the queries can't wake the paused workload until Prometheus answers; a request through the " +
 			"doorman still does, and the forecast learns the time it's paused from those"

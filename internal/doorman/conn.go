@@ -212,6 +212,9 @@ func (h *heldConn) hold(ctx context.Context) (net.Conn, string) {
 		_ = h.reply(writeNotFound) // the caller may already have gone
 		return nil, resultIgnored
 	}
+	if h.route.asks {
+		return h.ask(ctx, waitCtx, req)
+	}
 
 	// A browser gets the page at once, while the wake goes on without it;
 	// one that fails, or is over the limits, is asked for again by the

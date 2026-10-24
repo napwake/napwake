@@ -42,7 +42,7 @@ spec:
     autoResume: true
 
   wake:
-    onRequest: true
+    mode: Request
     maxWait: 2m
     page: true
 
@@ -100,7 +100,7 @@ While the workload is paused, a request to any of its Services wakes it and is a
 
 | Field | Type | Default | Description |
 |-------|------|---------|-------------|
-| `onRequest` | bool | `true` | Hold requests to the paused workload and wake it. When `false`, requests fail while it's paused |
+| `mode` | `Request` or `Ask` | `Request` | What wakes the paused workload through the doorman. `Request`: any request but a known probe's. `Ask`: only a person who clicks **Wake it** on the page the doorman shows a browser; anything else gets a `503` and wakes nothing. See [Asking before waking](../concepts/wake-on-request.md#asking-before-waking) |
 | `maxWait` | duration | `2m` | How long a request is held while the workload wakes, at most `1h`. After it, the connection is closed; the wake carries on |
 | `page` | bool | `true` | Answer a browser loading a page with a waking-up page that reloads until the workload is Running. Other requests are held either way |
 

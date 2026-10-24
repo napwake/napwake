@@ -115,11 +115,14 @@ const (
 // Services route to the doorman, which holds each connection, wakes the
 // workload, and passes the connection through once it's Ready.
 type WakeSpec struct {
-	// OnRequest routes the workload's Services to the doorman while it's
-	// paused. When false, requests to a paused workload fail.
-	// +kubebuilder:default=true
+	// Mode is what wakes the paused workload through the doorman. Request,
+	// the default: any request but a known probe's. Ask: only a person,
+	// clicking Wake it on the page the doorman shows a browser; anything
+	// else is answered 503 and wakes nothing, so crawlers and scanners on a
+	// public URL can't keep it awake.
+	// +kubebuilder:default=Request
 	// +optional
-	OnRequest *bool `json:"onRequest,omitempty"`
+	Mode WakeMode `json:"mode,omitempty"`
 
 	// MaxWait is how long the doorman holds a connection while the workload
 	// wakes, at most 1h. After it, the connection is closed; the wake
@@ -131,10 +134,30 @@ type WakeSpec struct {
 
 	// Page answers a browser loading a page with a "waking up" page that
 	// refreshes until the workload is Running, instead of holding the
-	// request. Other requests are held either way.
+	// request. Other requests are held either way. With mode: Ask, a browser
+	// is always shown a page, since that's where a person asks.
 	// +kubebuilder:default=true
 	// +optional
 	Page *bool `json:"page,omitempty"`
+}
+
+// WakeMode is what wakes a paused workload through the doorman.
+// +kubebuilder:validation:Enum=Request;Ask
+type WakeMode string
+
+const (
+	// WakeOnRequest wakes the workload on any request the doorman can't
+	// tell is a probe.
+	WakeOnRequest WakeMode = "Request"
+	// WakeOnAsk wakes it only when a person asks for it, on the page the
+	// doorman shows a browser.
+	WakeOnAsk WakeMode = "Ask"
+)
+
+// Asks reports whether the doorman asks a person before waking the
+// workload, wake.mode being Ask. Unset, it doesn't.
+func (w *WakeSpec) Asks() bool {
+	return w != nil && w.Mode == WakeOnAsk
 }
 
 // MaxDependsOn is the most dependencies dependsOn may list.
@@ -350,6 +373,13 @@ type ManagedWorkloadStatus struct {
 	// +optional
 	LastScaledUp *ScaledUp `json:"lastScaledUp,omitempty"`
 
+	// TurnedAway counts the requests the doorman turned away during the
+	// workload's current pause, or its last one, with wake.mode Ask:
+	// answered that it's asleep, and not woken. Many mean something
+	// automated calls it. It's brought up to date about once a minute.
+	// +optional
+	TurnedAway *TurnedAway `json:"turnedAway,omitempty"`
+
 	// Prediction reflects the current state of the forecasting engine.
 	// +optional
 	Prediction *PredictionStatus `json:"prediction,omitempty"`
@@ -388,6 +418,12 @@ type ManagedWorkloadStatus struct {
 	// The PauseRequest condition says what came of it.
 	// +optional
 	LastPauseRequest string `json:"lastPauseRequest,omitempty"`
+
+	// LastWakeRequest is the last hybernate.io/wake-requested value
+	// Hybernate acted on, so each request is acted on once, across restarts.
+	// The WakeRequest condition says what came of it.
+	// +optional
+	LastWakeRequest string `json:"lastWakeRequest,omitempty"`
 
 	// LastActedAt is when the target was last paused or woken: by
 	// Hybernate, or scaled up from zero outside it, such as with kubectl
@@ -495,6 +531,15 @@ const (
 	LearnedFromEnvironment LearnedSource = "environment"
 	LearnedFromWake        LearnedSource = "wake"
 )
+
+// TurnedAway is how many requests were turned away during one pause. A
+// person's browser, shown the page that asks, isn't counted, nor are the
+// probes and health checks the doorman knows.
+type TurnedAway struct {
+	// PausedAt is when the pause they were turned away during began.
+	PausedAt metav1.Time `json:"pausedAt"`
+	Requests int64       `json:"requests"`
+}
 
 // ScaledUp is a paused workload scaled up outside Hybernate.
 type ScaledUp struct {

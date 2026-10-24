@@ -78,6 +78,12 @@ const (
 	// it.
 	AnnotationLastRequestFrom = "hybernate.io/last-request-from"
 
+	// AnnotationTurnedAway is where the doorman counts the requests it
+	// turned away from a paused workload whose wake.mode is Ask, as a JSON
+	// TurnedAway. The operator copies it to status.turnedAway. Don't set
+	// it.
+	AnnotationTurnedAway = "hybernate.io/turned-away"
+
 	// AnnotationPauseRequested asks Hybernate to pause a ManagedWorkload's
 	// workload now rather than when its idle clock runs out. The value is a
 	// token, such as the time of the request, that only needs to differ from
@@ -91,18 +97,32 @@ const (
 	// is expected, so the person asking can decide.
 	AnnotationPauseOverridesForecast = "hybernate.io/pause-overrides-forecast"
 
+	// AnnotationWakeRequested asks Hybernate to wake a ManagedWorkload's
+	// workload now, as a person's tooling does for them: a pull request
+	// bot, a portal or a chat command. It wakes a paused workload whatever
+	// the wake setting, and restarts an awake one's idle clock. The value is
+	// a token, such as the time of the request, that only needs to differ
+	// from the last request's: Hybernate acts on each value once, recording
+	// it in status.lastWakeRequest. kubectl hybernate wake sets it.
+	AnnotationWakeRequested = "hybernate.io/wake-requested"
+
 	// Settings for a workload opted in with LabelManaged, set on the
 	// workload or its namespace; the workload's own wins.
-	AnnotationDryRun        = "hybernate.io/dry-run"
-	AnnotationIdleAfter     = "hybernate.io/idle-after"
-	AnnotationCPUThreshold  = "hybernate.io/cpu-threshold"
-	AnnotationAutoResume    = "hybernate.io/auto-resume"
-	AnnotationPauseEarly    = "hybernate.io/pause-early"
-	AnnotationForecast      = "hybernate.io/forecast"
-	AnnotationDependsOn     = "hybernate.io/depends-on"
-	AnnotationWakeOnRequest = "hybernate.io/wake-on-request"
-	AnnotationWakeMaxWait   = "hybernate.io/wake-max-wait"
-	AnnotationWakePage      = "hybernate.io/wake-page"
+	AnnotationDryRun       = "hybernate.io/dry-run"
+	AnnotationIdleAfter    = "hybernate.io/idle-after"
+	AnnotationCPUThreshold = "hybernate.io/cpu-threshold"
+	AnnotationAutoResume   = "hybernate.io/auto-resume"
+	AnnotationPauseEarly   = "hybernate.io/pause-early"
+	AnnotationForecast     = "hybernate.io/forecast"
+	AnnotationDependsOn    = "hybernate.io/depends-on"
+	AnnotationWakeMaxWait  = "hybernate.io/wake-max-wait"
+	AnnotationWakePage     = "hybernate.io/wake-page"
+
+	// AnnotationWake is what wakes a paused workload opted in with
+	// LabelManaged through the doorman, as wake.mode: "request" or "ask".
+	// Any other value is read as "ask", so a typo never lets crawlers wake
+	// a workload meant to wake only for people.
+	AnnotationWake = "hybernate.io/wake"
 
 	// AnnotationPausedFrom is set by Hybernate on a Deployment or
 	// StatefulSet it has paused, before scaling it to zero, and removed when
@@ -135,6 +155,19 @@ const (
 	// guards don't count it.
 	AnnotationOperator = "hybernate.io/operator"
 )
+
+// ParseWake reads a wake setting as hybernate.io/wake and the Helm default
+// spell it, "request" or "ask".
+func ParseWake(v string) (WakeMode, bool) {
+	switch v {
+	case "request":
+		return WakeOnRequest, true
+	case "ask":
+		return WakeOnAsk, true
+	default:
+		return "", false
+	}
+}
 
 // SystemNamespacePrefix starts the names of the namespaces Kubernetes itself
 // runs in, such as kube-system, which are always protected: pausing CoreDNS

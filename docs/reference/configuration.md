@@ -25,12 +25,14 @@ These flags are passed to the binary (`/manager`), which runs as the operator, a
 | `--default-dry-run` | `false` | Measure opted-in workloads without pausing, unless they or their namespace set `hybernate.io/dry-run` |
 | `--default-pause-early` | `false` | Let a confident forecast that expects quiet hours pause opted-in workloads before their `idleAfter` runs out, unless they or their namespace set `hybernate.io/pause-early`. See [Pausing Early](../concepts/forecasting.md#pausing-early) |
 | `--default-forecast` | `balanced` | How soon the forecast acts, `eager`, `balanced` or `cautious`, for opted-in workloads that don't set `hybernate.io/forecast` |
+| `--default-wake` | `request` | What wakes a paused opted-in workload that doesn't set `hybernate.io/wake` through the doorman: `request`, any request, or `ask`, only a person's click on the page the doorman shows a browser. Helm value `defaults.wake` |
 | `--doorman` | `false` | Run as the doorman instead of the operator. The doorman Deployment sets it |
 | `--doorman-service` | `hybernate-doorman` | Name of the doorman's Service, which the operator routes paused workloads to. Empty disables waking on request |
 | `--doorman-ports-per-workload` | `32` | The most doorman ports one workload may hold, one per routed Service port. A workload with more isn't routed (`WakeOnRequest=False`, reason `TooManyPorts`) |
 | `--doorman-ports-per-namespace` | `256` | The most doorman ports the workloads of one namespace may hold together |
 | `--doorman-namespace` | `$POD_NAMESPACE`, else `hybernate-system` | Namespace of the doorman's Service |
 | `--doorman-health-check-user-agents` | | Comma-separated `User-Agent` prefixes of health checkers and scrapers, besides the built-in ones, whose `GET` and `HEAD` requests don't wake a paused workload. Helm value `doorman.healthCheckUserAgents` |
+| `--wake-key-secret` | | The doorman's: a Secret in its namespace holding the key it signs the asleep page's **Wake it** button with, which it fills when empty. Every replica must share it, since a click can reach any of them; without it, each signs with its own, which works only for one replica. The chart sets `<fullname>-doorman-wake-key` |
 | `--neg-forwarder` | `false` | Route paused workloads' Services that sit behind GKE container-native load balancing (NEGs) through a forwarder Deployment the operator runs in each workload's namespace, instead of leaving them unrouted. Needs `create` and `delete` on Deployments. Helm value `doorman.negForwarder.enabled`; see [GKE container-native load balancing](../concepts/wake-on-request.md#gke-container-native-load-balancing-negs) |
 | `--neg-forwarder-image` | | The image forwarders run: the operator's own. Required with `--neg-forwarder` |
 | `--neg-forwarder-replicas` | `2` | Pods per forwarder. At least 1 |
@@ -45,7 +47,7 @@ These flags are passed to the binary (`/manager`), which runs as the operator, a
 | `--zap-stacktrace-level` | `error` | Level from which stack traces are logged: `info`, `error`, or `panic` |
 | `--zap-time-encoding` | RFC 3339 | Time format of log entries: `epoch`, `millis`, `nano`, `iso8601`, `rfc3339` or `rfc3339nano` |
 
-The operator checks its flags at startup and exits with an error naming the flag when one is invalid: a `--protected-namespaces` pattern that isn't a valid glob, a `--prometheus-url` that isn't `http` or `https` with a host, a `--prometheus-selector` that isn't label matchers or is set without `--prometheus-url`, a `--default-idle-after` under `1m`, a `--default-cpu-threshold` outside 1 to 100, a `--default-forecast` that isn't `eager`, `balanced` or `cautious`, a `--max-concurrent-reconciles`, `--doorman-ports-per-workload` or `--doorman-ports-per-namespace` below 1, or a `--timezone` that isn't a known IANA zone.
+The operator checks its flags at startup and exits with an error naming the flag when one is invalid: a `--protected-namespaces` pattern that isn't a valid glob, a `--prometheus-url` that isn't `http` or `https` with a host, a `--prometheus-selector` that isn't label matchers or is set without `--prometheus-url`, a `--default-idle-after` under `1m`, a `--default-cpu-threshold` outside 1 to 100, a `--default-forecast` that isn't `eager`, `balanced` or `cautious`, a `--default-wake` that isn't `request` or `ask`, a `--max-concurrent-reconciles`, `--doorman-ports-per-workload` or `--doorman-ports-per-namespace` below 1, or a `--timezone` that isn't a known IANA zone.
 
 ## Endpoints
 

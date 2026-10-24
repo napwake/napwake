@@ -19,6 +19,7 @@ package controller
 import (
 	"cmp"
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"net/netip"
@@ -92,13 +93,6 @@ const (
 	sliceSettle = time.Minute
 )
 
-// wakeOnRequest reports whether the workload's Services should route to the
-// doorman while it's paused, which they do unless wake.onRequest is false.
-func wakeOnRequest(workload *v1alpha1.ManagedWorkload) bool {
-	w := workload.Spec.Wake
-	return w == nil || w.OnRequest == nil || *w.OnRequest
-}
-
 // doormanEligible reports whether doorman routes should exist now. They're
 // added when a workload is paused and kept through Resuming, so connections
 // arriving mid-wake are held too; they're removed once it's Running, which
@@ -107,7 +101,7 @@ func wakeOnRequest(workload *v1alpha1.ManagedWorkload) bool {
 func doormanEligible(workload *v1alpha1.ManagedWorkload) bool {
 	switch workload.Status.Phase {
 	case v1alpha1.PhasePaused:
-		return wakeOnRequest(workload)
+		return true
 	case v1alpha1.PhaseResuming:
 		return len(workload.Status.Doorman) > 0
 	default:
@@ -116,8 +110,8 @@ func doormanEligible(workload *v1alpha1.ManagedWorkload) bool {
 }
 
 // requestWouldWake reports whether, were the awake workload paused now, a
-// request to any Service that selects its pods would wake it: the doorman
-// is on and has a Ready pod, the workload's last pause found nothing wrong
+// request to any Service that selects its pods would wake it: its doorman
+// doesn't ask a person first, the doorman is on and has a Ready pod, the workload's last pause found nothing wrong
 // with its routing, and the plan its pause would be routed by routes at
 // least one of those Services, every port of each but those
 // hybernate.io/doorman-ignore-ports lists, and takes no more doorman ports
@@ -128,8 +122,8 @@ func (r *Reconciler) requestWouldWake(ctx context.Context, workload *v1alpha1.Ma
 	switch {
 	case r.DoormanService == "" || target == nil:
 		return false, "the doorman is off", nil
-	case !wakeOnRequest(workload):
-		return false, "wake on request is turned off", nil
+	case workload.Spec.Wake.Asks():
+		return false, "the doorman asks a person before waking it, so a request doesn't", nil
 	}
 	if c := meta.FindStatusCondition(workload.Status.Conditions, conditionWakeOnRequest); c != nil &&
 		c.Status == metav1.ConditionFalse && c.Reason != reasonNotPaused {
@@ -180,6 +174,7 @@ func (r *Reconciler) requestWouldWake(ctx context.Context, workload *v1alpha1.Ma
 // on the WakeOnRequest condition and retried, and never stops the reconcile.
 // It returns how soon to reconcile again, to retry or to recheck, or zero.
 func (r *Reconciler) routeDoorman(ctx context.Context, workload *v1alpha1.ManagedWorkload, target client.Object) time.Duration {
+	recordTurnedAway(workload)
 	failing := conditionFalseWith(workload, conditionWakeOnRequest, reasonRoutingFailed)
 	recheck, err := r.reconcileDoorman(ctx, workload, target)
 	if err == nil {
@@ -194,6 +189,47 @@ func (r *Reconciler) routeDoorman(ctx context.Context, workload *v1alpha1.Manage
 		r.announceRouting(ctx, workload, reasonRoutingFailed, "requests may not wake the workload: %v", err)
 	}
 	return r.doormanFailures.next(workload.UID)
+}
+
+// recordTurnedAway brings status.turnedAway up to date for a workload whose
+// doorman asks before waking it: each pause starts with none turned away,
+// and the doorman's count, in its annotation, is copied in only when it's
+// of the pause status counts, the current one or, once the workload is
+// awake, the last. Anything else in the annotation, such as a count of an
+// earlier pause written late, or one edited by hand without a pause or
+// with one still to come, is left out: status needs the pause it counts,
+// and a write without one would fail every status write after it.
+func recordTurnedAway(workload *v1alpha1.ManagedWorkload) {
+	if !workload.Spec.Wake.Asks() {
+		workload.Status.TurnedAway = nil
+		return
+	}
+	current := workload.Status.TurnedAway
+	if p := workload.Status.Pause; p != nil && p.PausedAt != nil {
+		pausedAt := metav1.NewTime(p.PausedAt.Truncate(time.Second))
+		if current == nil || !current.PausedAt.Truncate(time.Second).Equal(pausedAt.Time) {
+			current = &v1alpha1.TurnedAway{PausedAt: pausedAt}
+		}
+	}
+	if current == nil {
+		return
+	}
+	if counted, ok := turnedAwayIn(workload.Annotations); ok &&
+		counted.PausedAt.Truncate(time.Second).Equal(current.PausedAt.Truncate(time.Second)) {
+		current = &v1alpha1.TurnedAway{PausedAt: current.PausedAt, Requests: counted.Requests}
+	}
+	workload.Status.TurnedAway = current
+}
+
+// turnedAwayIn is the doorman's count in a workload's annotations, if
+// there's one that names its pause.
+func turnedAwayIn(annotations map[string]string) (v1alpha1.TurnedAway, bool) {
+	var counted v1alpha1.TurnedAway
+	value, ok := annotations[v1alpha1.AnnotationTurnedAway]
+	if !ok || json.Unmarshal([]byte(value), &counted) != nil {
+		return counted, false
+	}
+	return counted, counted.Requests >= 0 && !counted.PausedAt.IsZero()
 }
 
 // announceRouting warns about a change in the workload's routing once the
@@ -338,17 +374,11 @@ var lastingRoutingProblems = map[string]bool{
 
 const foundAtLastPause = "at its last pause: "
 
-// keepRoutingProblem sets WakeOnRequest for a workload the doorman doesn't
-// route: TurnedOff while its wake.onRequest is false, paused or not, and
-// otherwise cleared once it isn't paused, except for a problem its last
-// pause found with its Services, which stays, so it can be fixed before the
-// next pause rather than found by someone whose request doesn't wake it.
+// keepRoutingProblem clears WakeOnRequest for a workload the doorman doesn't
+// route once it isn't paused, except for a problem its last pause found
+// with its Services, which stays, so it can be fixed before the next pause
+// rather than found by someone whose request doesn't wake it.
 func (r *Reconciler) keepRoutingProblem(workload *v1alpha1.ManagedWorkload) {
-	if !wakeOnRequest(workload) {
-		r.setCondition(workload, conditionWakeOnRequest, metav1.ConditionFalse, reasonTurnedOff,
-			"wake.onRequest is false, so requests to the workload don't wake it while it's paused")
-		return
-	}
 	c := meta.FindStatusCondition(workload.Status.Conditions, conditionWakeOnRequest)
 	if c == nil || c.Status != metav1.ConditionFalse || !lastingRoutingProblems[c.Reason] {
 		r.clearCondition(workload, conditionWakeOnRequest, reasonNotPaused)
@@ -477,9 +507,6 @@ func (s skippedServices) notes() string {
 
 const (
 	reasonNoReadinessProbe = "NoReadinessProbe"
-	// reasonTurnedOff is WakeOnRequest's reason for a workload whose
-	// wake.onRequest is false.
-	reasonTurnedOff = "TurnedOff"
 
 	// noReadinessNote is what the WakeOnRequest condition adds for a routed
 	// workload whose pods have no readiness probe.
@@ -516,6 +543,9 @@ func (r *Reconciler) reportDoorman(ctx context.Context, workload *v1alpha1.Manag
 		}
 	}
 	status, reason, message := metav1.ConditionTrue, "DoormanRouted", "requests are held and wake the workload"
+	if workload.Spec.Wake.Asks() {
+		message = "the doorman asks a person's browser before waking the workload, and turns away other requests"
+	}
 	switch {
 	case len(routes) > 0:
 	case len(skipped.forwarding) > 0:

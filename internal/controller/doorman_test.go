@@ -243,15 +243,6 @@ func TestReconcileDoorman_NotRouted(t *testing.T) {
 		wantReason string
 	}{
 		{
-			name: "opted out",
-			workload: func() *v1alpha1.ManagedWorkload {
-				w := lifecycleWorkload("api", v1alpha1.PhasePaused)
-				w.Spec.Wake = &v1alpha1.WakeSpec{OnRequest: ptr.To(false)}
-				return w
-			},
-			doorman: doormanEndpoints("10.0.0.7"),
-		},
-		{
 			name:       "no doorman pod is ready",
 			workload:   func() *v1alpha1.ManagedWorkload { return lifecycleWorkload("api", v1alpha1.PhasePaused) },
 			wantReason: "DoormanUnavailable",
@@ -788,7 +779,7 @@ func TestReconcileDoorman_SkipsGKENEGServices(t *testing.T) {
 // WakeOnRequest once it's awake, saying so, since the next pause meets it
 // again: someone can fix it before then, rather than find out when a
 // request doesn't wake the workload. A problem that passes, such as the
-// doorman being down, and one wake.onRequest turned off makes moot, don't.
+// doorman being down, doesn't.
 func TestReconcileDoorman_KeepsALastingProblemOnceAwake(t *testing.T) {
 	local := service("api", map[string]string{"app": "api"}, corev1.ServicePort{Name: "http", Port: 80})
 	local.Spec.InternalTrafficPolicy = ptr.To(corev1.ServiceInternalTrafficPolicyLocal)
@@ -797,7 +788,6 @@ func TestReconcileDoorman_KeepsALastingProblemOnceAwake(t *testing.T) {
 	tests := []struct {
 		name        string
 		objs        []client.Object
-		onRequest   *bool
 		wantReason  string
 		wantPrefix  bool
 		wantMessage string
@@ -807,8 +797,6 @@ func TestReconcileDoorman_KeepsALastingProblemOnceAwake(t *testing.T) {
 		{name: "no doorman pods Ready", objs: []client.Object{routable.DeepCopy()}, wantReason: "NotPaused"},
 		{name: "routed", objs: []client.Object{doormanEndpoints("10.0.0.7"), routable.DeepCopy()},
 			wantReason: "NotPaused"},
-		{name: "wake.onRequest turned off since", objs: []client.Object{doormanEndpoints("10.0.0.7"), local.DeepCopy()},
-			onRequest: ptr.To(false), wantReason: "TurnedOff", wantMessage: "wake.onRequest is false"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -818,9 +806,6 @@ func TestReconcileDoorman_KeepsALastingProblemOnceAwake(t *testing.T) {
 			atPause := *wakeCondition(t, workload)
 
 			workload.Status.Phase = v1alpha1.PhaseRunning
-			if tt.onRequest != nil {
-				workload.Spec.Wake = &v1alpha1.WakeSpec{OnRequest: tt.onRequest}
-			}
 			require.NoError(t, doormanErr(ctx, r, workload, appTarget()))
 			require.NoError(t, doormanErr(ctx, r, workload, appTarget()))
 
@@ -896,20 +881,100 @@ func TestReconcileDoorman_WarnsWhenPodsHaveNoReadinessProbe(t *testing.T) {
 	}
 }
 
-// A paused workload with wake on request turned off isn't routed, and
-// says so: not NotPaused, which it is.
-func TestReconcileDoorman_TurnedOffWhilePaused(t *testing.T) {
+// A paused workload that asks before waking is routed through the doorman
+// as one that wakes on any request: it's the doorman that asks.
+func TestReconcileDoorman_RoutesAWorkloadThatAsks(t *testing.T) {
 	workload := lifecycleWorkload("api", v1alpha1.PhasePaused)
-	workload.Spec.Wake = &v1alpha1.WakeSpec{OnRequest: ptr.To(false)}
+	workload.Spec.Wake = &v1alpha1.WakeSpec{Mode: v1alpha1.WakeOnAsk}
 	r := doormanReconciler(t, workload, doormanEndpoints("10.0.0.7"),
 		service("api", map[string]string{"app": "api"}, corev1.ServicePort{Name: "http", Port: 80}))
 
 	require.NoError(t, doormanErr(context.Background(), r, workload, appTarget()))
 
-	assert.Empty(t, doormanSlices(t, r))
+	assert.Len(t, doormanSlices(t, r), 1)
+	assert.Len(t, workload.Status.Doorman, 1)
 	cond := wakeCondition(t, workload)
-	assert.Equal(t, metav1.ConditionFalse, cond.Status)
-	assert.Equal(t, "TurnedOff", cond.Reason)
+	assert.Equal(t, metav1.ConditionTrue, cond.Status)
+	assert.Equal(t, "the doorman asks a person's browser before waking the workload, and turns away other requests",
+		cond.Message)
+}
+
+// What the doorman turned away is shown in status for the current pause, or
+// the last one once it's awake: each pause starts with none, and a count
+// the doorman wrote late for an earlier pause never stands in for it.
+func TestRecordTurnedAway(t *testing.T) {
+	paused := time.Date(2026, 10, 23, 9, 0, 0, 0, time.UTC)
+	earlier := paused.Add(-24 * time.Hour)
+	counted := func(at time.Time, n int64) string {
+		return fmt.Sprintf(`{"pausedAt":%q,"requests":%d}`, at.Format(time.RFC3339), n)
+	}
+	tests := []struct {
+		name       string
+		mode       v1alpha1.WakeMode
+		pausedAt   *time.Time
+		annotation string
+		status     *v1alpha1.TurnedAway
+		want       *v1alpha1.TurnedAway
+	}{
+		{name: "a pause begins", mode: v1alpha1.WakeOnAsk, pausedAt: &paused,
+			want: &v1alpha1.TurnedAway{PausedAt: metav1.NewTime(paused)}},
+		{name: "the doorman counted some", mode: v1alpha1.WakeOnAsk, pausedAt: &paused, annotation: counted(paused, 12),
+			want: &v1alpha1.TurnedAway{PausedAt: metav1.NewTime(paused), Requests: 12}},
+		{name: "awake again, the count flushed after", mode: v1alpha1.WakeOnAsk, annotation: counted(paused, 14),
+			status: &v1alpha1.TurnedAway{PausedAt: metav1.NewTime(paused), Requests: 12},
+			want:   &v1alpha1.TurnedAway{PausedAt: metav1.NewTime(paused), Requests: 14}},
+		{name: "a new pause, the annotation still the last one's", mode: v1alpha1.WakeOnAsk, pausedAt: &paused,
+			annotation: counted(earlier, 30), status: &v1alpha1.TurnedAway{PausedAt: metav1.NewTime(earlier), Requests: 30},
+			want: &v1alpha1.TurnedAway{PausedAt: metav1.NewTime(paused)}},
+		{name: "awake after a pause that turned none away", mode: v1alpha1.WakeOnAsk, annotation: counted(earlier, 30),
+			status: &v1alpha1.TurnedAway{PausedAt: metav1.NewTime(paused)},
+			want:   &v1alpha1.TurnedAway{PausedAt: metav1.NewTime(paused)}},
+		{name: "a count that can't be read", mode: v1alpha1.WakeOnAsk, pausedAt: &paused, annotation: "lots",
+			want: &v1alpha1.TurnedAway{PausedAt: metav1.NewTime(paused)}},
+		{name: "waking on request", mode: v1alpha1.WakeOnRequest, pausedAt: &paused, annotation: counted(paused, 12),
+			status: &v1alpha1.TurnedAway{PausedAt: metav1.NewTime(paused), Requests: 3}},
+		{name: "a count reset by hand, without a pause, while paused", mode: v1alpha1.WakeOnAsk, pausedAt: &paused,
+			annotation: `{"requests":0}`, status: &v1alpha1.TurnedAway{PausedAt: metav1.NewTime(paused), Requests: 12},
+			want: &v1alpha1.TurnedAway{PausedAt: metav1.NewTime(paused), Requests: 12}},
+		{name: "a count reset by hand, without a pause, while awake with none recorded", mode: v1alpha1.WakeOnAsk,
+			annotation: `{"requests":0}`},
+		{name: "a count of a pause still to come, while paused", mode: v1alpha1.WakeOnAsk, pausedAt: &paused,
+			annotation: counted(paused.Add(48*time.Hour), 99),
+			want:       &v1alpha1.TurnedAway{PausedAt: metav1.NewTime(paused)}},
+		{name: "a count of a pause still to come, while awake", mode: v1alpha1.WakeOnAsk,
+			annotation: counted(paused.Add(48*time.Hour), 99),
+			status:     &v1alpha1.TurnedAway{PausedAt: metav1.NewTime(paused), Requests: 12},
+			want:       &v1alpha1.TurnedAway{PausedAt: metav1.NewTime(paused), Requests: 12}},
+		{name: "a count, while awake with none recorded", mode: v1alpha1.WakeOnAsk, annotation: counted(paused, 12)},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			workload := lifecycleWorkload("api", v1alpha1.PhasePaused)
+			workload.Spec.Wake = &v1alpha1.WakeSpec{Mode: tt.mode}
+			if tt.pausedAt != nil {
+				at := metav1.NewTime(tt.pausedAt.Add(400 * time.Millisecond))
+				workload.Status.Pause = &v1alpha1.PauseStatus{PausedAt: &at}
+			}
+			if tt.annotation != "" {
+				workload.Annotations = map[string]string{v1alpha1.AnnotationTurnedAway: tt.annotation}
+			}
+			workload.Status.TurnedAway = tt.status
+
+			recordTurnedAway(workload)
+
+			got := workload.Status.TurnedAway
+			if got != nil {
+				assert.False(t, got.PausedAt.IsZero(), "status needs the pause it counts, or its every write fails")
+			}
+			if tt.want == nil {
+				assert.Nil(t, got)
+				return
+			}
+			require.NotNil(t, got)
+			assert.True(t, tt.want.PausedAt.Equal(&got.PausedAt), "of the pause from %s, not %s", tt.want.PausedAt, got.PausedAt)
+			assert.Equal(t, tt.want.Requests, got.Requests)
+		})
+	}
 }
 
 // A workload paused before has a WakeOnRequest condition already, from

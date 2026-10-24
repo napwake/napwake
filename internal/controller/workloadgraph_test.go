@@ -221,7 +221,7 @@ func TestDependencies_HeldThroughTheOperatorsWatch(t *testing.T) {
 	postgres := withPauseRequested(envtestWorkload("shop"))
 	postgres.Name = "postgres"
 	postgres.Spec.Target.Name = postgres.Name
-	require.NoError(t, c.Create(ctx, postgres))
+	require.NoError(t, createTakenOn(ctx, c, postgres))
 
 	mgr, err := ctrl.NewManager(cfg, ctrl.Options{Scheme: opScheme,
 		Metrics:    metricsserver.Options{BindAddress: "0"},
@@ -255,6 +255,11 @@ func TestDependencies_HeldThroughTheOperatorsWatch(t *testing.T) {
 	}, 30*time.Second, 100*time.Millisecond, "postgres is held awake for api")
 	assert.Equal(t, v1alpha1.PhaseRunning, get("postgres").Status.Phase)
 
+	// postgres can be held for api before api is taken on, and a request
+	// already on api as it's taken on isn't acted on.
+	require.Eventually(t, func() bool {
+		return get("api").Status.Phase == v1alpha1.PhaseRunning
+	}, 30*time.Second, 100*time.Millisecond, "api is taken on")
 	requestPause("api", "api")
 	require.Eventually(t, func() bool {
 		return get("api").Status.Phase == v1alpha1.PhasePaused

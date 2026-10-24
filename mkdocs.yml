@@ -93,6 +93,7 @@ nav:
       - Cost Tracking: concepts/cost-tracking.md
   - Guides:
       - Opting In: guides/opt-in.md
+      - Public Preview Environments: guides/preview-environments.md
       - ManagedWorkload: guides/managed-workload.md
       - Pause and Resume: guides/pause.md
       - Cluster Autoscaler: guides/cluster-autoscaler.md

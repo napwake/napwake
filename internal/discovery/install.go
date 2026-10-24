@@ -47,6 +47,9 @@ type Install struct {
 	// NEGForwarder says Services behind GKE NEGs are routed through its
 	// forwarder, with --neg-forwarder.
 	NEGForwarder bool
+	// Asks says the doorman asks before waking the workloads it opts in
+	// that don't say otherwise, with --default-wake=ask.
+	Asks bool
 }
 
 // defaultOperatorNamespace is where the chart's documented install puts the
@@ -121,6 +124,10 @@ func installOf(d *appsv1.Deployment) Install {
 		in.DoormanOff = true
 	}
 	in.NEGForwarder = boolFlag(args, "neg-forwarder")
+	if wake, ok := flagValue(args, "default-wake"); ok {
+		on, _ := v1alpha1.ParseWake(wake)
+		in.Asks = on == v1alpha1.WakeOnAsk
+	}
 	if watched, ok := flagValue(args, "watch-namespaces"); ok {
 		for ns := range strings.SplitSeq(watched, ",") {
 			if ns = strings.TrimSpace(ns); ns != "" {

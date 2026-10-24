@@ -47,7 +47,7 @@ kubectl annotate deployment my-api -n staging --overwrite \
   hybernate.io/active-until="2026-10-03T18:00:00Z"
 ```
 
-From a terminal, [`kubectl hybernate wake`](../getting-started/kubectl-plugin.md#wake-a-workload) sets them for you and waits until the workload is Running.
+To wake a workload on purpose, rather than record its use, ask for it with [`hybernate.io/wake-requested`](../guides/pause.md#wake-now), which Hybernate answers, and which wakes it whatever its wake setting; [`kubectl hybernate wake`](../getting-started/kubectl-plugin.md#wake-a-workload) sets it for you and waits until the workload is Running.
 
 - A `last-activity` time in the future is treated as now. Use `active-until` for a deliberate hold, since it says when the hold ends.
 - Annotations can only keep a workload awake or wake it. They never cause a pause.
@@ -108,7 +108,8 @@ status:
 A paused workload wakes when:
 
 - A request reaches one of its Services. The request is held while the workload starts, then answered; see [Wake on Request](wake-on-request.md).
-- A `hybernate.io/last-activity`, `last-request` or `active-until` annotation on the ManagedWorkload or its target changes after the pause began to an RFC 3339 time, whatever time it states, so a clock that's behind the operator's can't lose a wake. Only a change counts: the pause records the annotations as they stood, so a value set before it, even one stating a later time, doesn't wake it. `kubectl hybernate wake` sets one, and this is how a "start environment" button in a developer portal works.
+- A `hybernate.io/last-activity`, `last-request` or `active-until` annotation on the ManagedWorkload or its target changes after the pause began to an RFC 3339 time, whatever time it states, so a clock that's behind the operator's can't lose a wake. Only a change counts: the pause records the annotations as they stood, so a value set before it, even one stating a later time, doesn't wake it.
+- A [wake request](../guides/pause.md#wake-now): a new value of `hybernate.io/wake-requested` on the ManagedWorkload, whatever its wake setting. `kubectl hybernate wake` sets it, and so can a "start environment" button in a developer portal, which can then read Hybernate's answer in the `WakeRequest` condition.
 - A [Prometheus activity query](../guides/prometheus-signals.md#while-the-workload-is-paused) shows activity: the queries are run about once a minute while it's paused, as while it's awake. One that already showed activity as a [requested pause](../guides/pause.md#pause-now) began wakes it only once it has been quiet, so it doesn't undo the request, and one that can't be evaluated never wakes it.
 - `autoResume: true` is set and a confident forecast (`dailyPhase: Active`) predicts utilization above `cpuThreshold` for the current hour, or for the next hour once it's 15 minutes away, so the workload is ready before people arrive; not the hour after one far quieter than it forecast.
 - Something other than Hybernate scales it up, such as `kubectl scale`.

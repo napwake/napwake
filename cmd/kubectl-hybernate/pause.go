@@ -239,10 +239,13 @@ func pause(s clusterSteps, key client.ObjectKey, opts pauseOptions, out, errOut 
 		}
 		key = client.ObjectKeyFromObject(w)
 		ref = key.Namespace + "/" + w.Spec.Target.Name
+		if err := waitToBeTakenOn(ctx, c, w, ref, opts.pollInterval); err != nil {
+			return err
+		}
 
 		switch w.Status.Phase {
 		case v1alpha1.PhasePaused:
-			_, _ = fmt.Fprintf(out, "%s is already paused; a request to it, or kubectl hybernate wake, wakes it\n", ref)
+			_, _ = fmt.Fprintf(out, "%s is already paused; %s\n", ref, wakesIt(w))
 			return nil
 		case v1alpha1.PhasePausing:
 			_, _ = fmt.Fprintf(out, "%s is already pausing%s\n", ref, ellipsis(opts.wait))
@@ -396,6 +399,42 @@ func ellipsis(wait bool) string {
 	return ""
 }
 
+// waitToBeTakenOn waits, reading w again every interval, until Hybernate
+// has taken the ManagedWorkload on and given it a phase. A pause request
+// already on it as it's taken on may be one its lost status had answered,
+// so Hybernate answers it without pausing; asked only once it's taken on,
+// it pauses.
+func waitToBeTakenOn(ctx context.Context, c client.Client, w *v1alpha1.ManagedWorkload, ref string,
+	interval time.Duration) error {
+	ticker := time.NewTicker(interval)
+	defer ticker.Stop()
+	for w.Status.Phase == "" || w.Status.Phase == v1alpha1.PhaseCreating {
+		select {
+		case <-ctx.Done():
+			return fmt.Errorf("%s %w: Hybernate hasn't taken %s on yet, so nothing was asked; is its operator "+
+				"running? (%w)", ref, errNotPausedYet, ref, ctx.Err())
+		case <-ticker.C:
+		}
+		if err := c.Get(ctx, client.ObjectKeyFromObject(w), w); err != nil {
+			if ctx.Err() != nil {
+				continue
+			}
+			return fmt.Errorf("waiting for Hybernate to take %s on: %w", ref, err)
+		}
+	}
+	return nil
+}
+
+// wakesIt says what wakes a paused workload: a request to it, or, for one
+// that asks before waking, which no request wakes, a person's click on its
+// asleep page.
+func wakesIt(w *v1alpha1.ManagedWorkload) string {
+	if w.Spec.Wake.Asks() {
+		return "a person's click on its asleep page, or kubectl hybernate wake, wakes it"
+	}
+	return "a request to it, or kubectl hybernate wake, wakes it"
+}
+
 // waitForPause waits until Hybernate has answered the request token, and
 // the workload is Paused, or Hybernate has said why it won't be. An empty
 // token waits for a pause already under way. phase is the workload's when
@@ -425,8 +464,8 @@ func waitForPause(ctx context.Context, c client.Client, key client.ObjectKey, re
 				return err
 			}
 			if w.Status.Phase == v1alpha1.PhasePaused {
-				_, _ = fmt.Fprintf(out, "%s is Paused after %s; a request to it, or kubectl hybernate wake, wakes it\n",
-					ref, opts.now().Sub(start).Round(time.Second))
+				_, _ = fmt.Fprintf(out, "%s is Paused after %s; %s\n", ref, opts.now().Sub(start).Round(time.Second),
+					wakesIt(&w))
 				return nil
 			}
 		}
@@ -446,7 +485,7 @@ func pauseAnswered(w *v1alpha1.ManagedWorkload, ref string, requested bool, out 
 	if !requested || c == nil || c.Status != metav1.ConditionFalse {
 		return false, nil
 	}
-	why := refusal(oneLine(c.Message))
+	why := refusal("not paused", oneLine(c.Message))
 	switch c.Reason {
 	case reasonDryRun:
 		_, _ = fmt.Fprintf(out, "%s wasn't paused: %s\n", ref, why)
@@ -463,11 +502,12 @@ func pauseAnswered(w *v1alpha1.ManagedWorkload, ref string, requested bool, out 
 	return true, fmt.Errorf("%s %w: %s", ref, errNotPaused, why)
 }
 
-// refusal is why the operator's answer says a request didn't pause the
-// workload: the message without the "not paused at <time>: " it starts
-// with, since whoever just asked knows when.
-func refusal(message string) string {
-	rest, ok := strings.CutPrefix(message, "not paused")
+// refusal is why the operator's answer says a request didn't pause or wake
+// the workload: the message without the "not paused at <time>: " or "not
+// woken at <time>: " it starts with, outcome, since whoever just asked knows
+// when.
+func refusal(outcome, message string) string {
+	rest, ok := strings.CutPrefix(message, outcome)
 	if !ok {
 		return message
 	}

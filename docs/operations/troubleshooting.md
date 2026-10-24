@@ -100,7 +100,7 @@ A pause is `Paused` once the workload's pods have stopped. `PauseIncomplete=True
 kubectl hybernate wake my-api -n staging
 ```
 
-It waits until the workload is Running, or tells you why it can't wake it. See the [kubectl plugin](../getting-started/kubectl-plugin.md#wake-a-workload).
+It wakes the workload whatever its wake setting, and waits until it's Running, or tells you why Hybernate won't wake it. The answer to the last request stays in the `WakeRequest` condition until the next, as for a pause below: `False`, with a message starting `not woken at` and the time, gives the reason. See [Wake Now](../guides/pause.md#wake-now) and the [kubectl plugin](../getting-started/kubectl-plugin.md#wake-a-workload).
 
 ### Pausing a workload by hand
 
@@ -115,7 +115,7 @@ kubectl get managedworkload my-api -n staging \
   -o jsonpath='{.status.conditions[?(@.type=="PauseRequest")]}'
 ```
 
-`True` is `Paused`, or `AlreadyPaused` when it was paused already. `False`, with a message starting `not paused at` and the time, gives the reason: a confident forecast expects demand within the hour (`ForecastExpectsDemand`; `kubectl hybernate pause --yes` pauses it anyway), workloads that depend on it are awake (`HeldByDependents`) or it's in a `dependsOn` cycle (`DependencyCycle`), a `hybernate.io/active-until` annotation holds it (`ActiveUntil`), it's in dry-run (`DryRun`) or protected (`Protected`), it's scaled to zero already (`ScaledToZero`), or its target is missing, ignored or managed by another ManagedWorkload (`TargetNotFound`, `TargetIgnored`, `DuplicateTarget`). Each request is answered once: fix the reason, then run `pause` again. See [Pause Now](../guides/pause.md#pause-now).
+`True` is `Paused`, or `AlreadyPaused` when it was paused already. `False`, with a message starting `not paused at` and the time, gives the reason: a confident forecast expects demand within the hour (`ForecastExpectsDemand`; `kubectl hybernate pause --yes` pauses it anyway), workloads that depend on it are awake (`HeldByDependents`) or it's in a `dependsOn` cycle (`DependencyCycle`), a `hybernate.io/active-until` annotation holds it (`ActiveUntil`), it's in dry-run (`DryRun`) or protected (`Protected`), it's scaled to zero already (`ScaledToZero`), or its target is missing, ignored or managed by another ManagedWorkload (`TargetNotFound`, `TargetIgnored`, `DuplicateTarget`), or the request was already on the ManagedWorkload as Hybernate took it on, as after a backup restored without status (`PredatesStatus`). Each request is answered once: fix the reason, then run `pause` again. See [Pause Now](../guides/pause.md#pause-now).
 
 ### Requests to a paused workload fail instead of waking it
 
@@ -124,7 +124,6 @@ kubectl get managedworkload my-api -n staging \
   -o jsonpath='{.status.conditions[?(@.type=="WakeOnRequest")]}'
 ```
 
-- **`TurnedOff`**: its `wake.onRequest` is `false`, or `hybernate.io/wake-on-request: "false"` when it's opted in with the label, so it doesn't wake on request.
 - **No condition, or `NotPaused`**: the workload isn't paused, so nothing is routed yet.
 - **A message starting `at its last pause:`**: the workload is awake now, and what follows is what its last pause found with its Services. The next pause meets it again unless it's fixed, so fix it now, by the reason below.
 - **`NoServices`**: no Service with a selector and a ClusterIP selects the workload's pods on a TCP port, or every such port is in `hybernate.io/doorman-ignore-ports`. Headless Services aren't routed; see [Wake on Request](../concepts/wake-on-request.md#when-a-workload-isnt-routed). A workload no request reaches, such as a queue worker, can wake on a [Prometheus activity query](../guides/prometheus-signals.md#while-the-workload-is-paused) instead.
@@ -142,6 +141,8 @@ kubectl get managedworkload my-api -n staging \
 
 If the condition is `DoormanRouted` but requests still fail:
 
+- **A `503` whose body says the environment is asleep, and how to wake it**: the workload's `wake.mode` is `Ask`, so the doorman wakes it only for a person who clicks **Wake it** on the page it shows a browser, or for `hybernate.io/wake-requested` and `kubectl hybernate wake`. That's what it's for: see [Asking before waking](../concepts/wake-on-request.md#asking-before-waking). If something that isn't a browser must wake it, such as another service or a webhook, set `wake.mode: Request`, or `hybernate.io/wake: request` with the label. `status.turnedAway` counts these requests.
+
 - **The request is closed after a while with no response**: the workload didn't become Ready within `wake.maxWait`, or its pods couldn't be reached. A `RequestNotServed` warning event says which, and `hybernate_doorman_wakes_total{result=~"timeout|error"}` counts these. Raise `maxWait`, or check why the pods are slow to become Ready.
 - **The connection is closed at once, with nothing sent**: a [limit](../concepts/wake-on-request.md#limits) on held connections or wakes was hit; `hybernate_doorman_wakes_total{result="limited"}` counts these.
 - **An error from the app itself, such as a `503` with the app's own body, on the first requests after a wake**: its pods were Ready before it could answer, as a pod with no readiness probe is as soon as its containers start. A `NoReadinessProbe` warning event, and the `WakeOnRequest` message, say when that's so. Give the app a readiness probe that passes only once it can serve; see [Readiness probes](../concepts/wake-on-request.md#readiness-probes).
@@ -156,9 +157,20 @@ The doorman's logs name the workload and Service for each held connection: `kube
 
 ### Workload keeps cycling between paused and running
 
-Something keeps waking it. Check the events for `WokeByActivity` (an activity annotation changed since the pause, or a held request: `WokenByRequest` names the Service) or `AutoResume` (the forecast expected demand). A health check or monitor that calls the Service on a timer and sends a request wakes the workload each time. The doorman already ignores connections that close without sending anything, and HTTP requests from common probes and scrapers (see [Wake on Request](../concepts/wake-on-request.md#what-wakes-a-workload-and-what-doesnt)); for anything else, point it elsewhere, list its port in `hybernate.io/doorman-ignore-ports` on the Service, or opt the workload out with `wake.onRequest: false` (`hybernate.io/wake-on-request: "false"`). A tool that refreshes `hybernate.io/last-activity` on a timer, rather than on real use, will keep waking the workload.
+Something keeps waking it. Check the events for `WokeByActivity` (an activity annotation changed since the pause, or a held request: `WokenByRequest` names the Service) or `AutoResume` (the forecast expected demand). A health check or monitor that calls the Service on a timer and sends a request wakes the workload each time. The doorman already ignores connections that close without sending anything, and HTTP requests from common probes and scrapers (see [Wake on Request](../concepts/wake-on-request.md#what-wakes-a-workload-and-what-doesnt)); for anything else, point it elsewhere, or list its port in `hybernate.io/doorman-ignore-ports` on the Service. On a public URL, where crawlers and scanners wake it, have the doorman [ask before waking](../concepts/wake-on-request.md#asking-before-waking) it, with `wake.mode: Ask` (`hybernate.io/wake: ask`), so only a person's click does. A tool that refreshes `hybernate.io/last-activity` on a timer, rather than on real use, will keep waking the workload.
 
 `ScaledUp` means something scaled it up outside Hybernate, named in the event and `status.lastScaledUp`. If it's a GitOps tool, the workload also reports `GitOpsConflict=True`: it sets the replicas from Git and will undo every pause until it's told to leave them; see [GitOps tools](../guides/gitops.md).
+
+### Wake it doesn't wake the workload
+
+With `wake.mode: Ask`, a click on the asleep page's **Wake it** button wakes the workload and shows the waking-up page. When the asleep page comes back instead, its notice says why:
+
+- **"That page had expired"**: the page's token expired because its reloads failed, as after a laptop slept, since the page reloads with a fresh one every minute; or it was shown during an earlier pause; or the click came from a page of another site. Over plain HTTP, it also means the click's `Origin` isn't the address the doorman saw the page at, the one at the top of the page, as when a proxy in front of it rewrites the `Host` header, such as ingress-nginx's `upstream-vhost`; pass the browser's `Host` on, or serve the preview over HTTPS. Click the button on the page shown now. If it keeps coming back with this notice, the doorman's replicas may be signing with different keys: their logs say `loading the key the Wake it button is signed with` when they can't read the wake key Secret, `hybernate-doorman-wake-key` in the Hybernate namespace. Check it exists and the doorman's Role still allows reading it; with the Kustomize manifests, or your own, include the Secret and its Role.
+- **"This browser didn't say the click came from this page"**: the click came with neither `Sec-Fetch-Site` nor an `Origin`, or with `Origin: null`, as some browsers from before about 2020 send it, so the doorman can't tell it from a spider posting the page's token. Open it in a current browser, or wake it with `kubectl hybernate wake` or the `hybernate.io/wake-requested` annotation. If a current browser gets this, something between the browser and the doorman drops those headers, or a browser extension does: ingress-nginx and most proxies pass them on as they are. See [What browsers, robots and API clients see](../concepts/wake-on-request.md#what-browsers-robots-and-api-clients-see).
+- **"It was asked to wake less than a minute ago"**: a click wakes a workload at most once a minute. Try again shortly.
+- **"It couldn't be woken just now"**: the doorman couldn't stamp the wake, such as when the API server didn't answer, or a wake rate limit was hit. Its logs say which.
+
+A browser that gets a plain-text `503` instead of the page doesn't look like a person's browser to the doorman: its `User-Agent` names a crawler or a headless browser, or doesn't start with `Mozilla/`. Wake it with `kubectl hybernate wake` or `hybernate.io/wake-requested` instead.
 
 ### A dependency isn't held awake, woken or waited for
 

@@ -110,6 +110,84 @@ var _ = Describe("Wake on request", func() {
 		}, time.Minute, time.Second).Should(Succeed())
 	})
 
+	It("asks before waking a paused app through ingress-nginx: curl is turned away, and a click on the asleep page "+
+		"over plain HTTP wakes it", func() {
+		ns := createNamespace("hybernate-e2e-wake-ask")
+		const name = "e2e-web"
+		host := routeThroughIngress(ns, name)
+		manage(ns, "Deployment", name, "1m")
+		_, err := utils.Run(exec.Command("kubectl", "patch", "managedworkload", name, "-n", ns, "--type=merge",
+			"-p", `{"spec":{"wake":{"mode":"Ask"}}}`))
+		Expect(err).NotTo(HaveOccurred())
+		waitForDoorman(ns, name)
+
+		By("calling the paused app with curl, which the doorman turns away")
+		// nginx can still send to the deleted pod for a moment after the
+		// pause, which answers 502, so this looks for the doorman's 503
+		// across a few tries.
+		attempt := 0
+		Eventually(func(g Gomega) {
+			attempt++
+			out, _ := runCurl(fmt.Sprintf("curl-ask-%d", attempt), ns, ingressURL, "-H", "Host: "+host,
+				"-s", "--max-time", "30", "-w", "\nstatus=%{http_code}")
+			g.Expect(out).To(ContainSubstring("status=503"))
+			g.Expect(out).To(ContainSubstring("kubectl hybernate wake"), "it says how to wake it")
+			g.Expect(out).NotTo(ContainSubstring(ns), "it names nothing inside the cluster")
+		}, 2*time.Minute, time.Second).Should(Succeed())
+		Consistently(func(g Gomega) {
+			g.Expect(jsonpath("managedworkload", name, ns, "{.status.phase}")).To(Equal("Paused"))
+			g.Expect(jsonpath("deployment", name, ns, "{.spec.replicas}")).To(Equal("0"))
+		}, 30*time.Second, 5*time.Second).Should(Succeed(), "curl must not wake the app")
+
+		// The page and each click are connections of their own, which may
+		// reach different doorman replicas: the shared wake key lets either
+		// check the other's token.
+		const browser = "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) " +
+			"Chrome/141.0.0.0 Safari/537.36"
+		clickWith := func(headers string) string {
+			return fmt.Sprintf(`set -e
+page=$(curl -sS -A '%[1]s' -H 'Host: %[2]s' -H 'Accept: text/html' -H 'Sec-Fetch-Mode: navigate' %[3]s)
+token=$(echo "$page" | sed -n 's/.*name="hybernate-wake" value="\([^"]*\)".*/\1/p')
+test -n "$token"
+curl -sS -w '\nstatus=%%{http_code}' -A '%[1]s' -H 'Host: %[2]s' %[4]s \
+  --data-urlencode "hybernate-wake=$token" %[3]s`, browser, host, ingressURL, headers)
+		}
+
+		By("posting the page's token as a browser that says nothing of where the click came from")
+		// As a spider that fetched the page sends it: no fetch metadata, and
+		// no Origin.
+		out, ok := runShell("curl-ask-no-metadata", ns, clickWith(""))
+		Expect(ok).To(BeTrue(), "the post failed: %s", out)
+		Expect(out).To(ContainSubstring("status=200"), "the asleep page again")
+		Expect(out).To(ContainSubstring("didn&#39;t say the click came from this page"), "it says how else to wake it")
+		Expect(jsonpath("managedworkload", name, ns, `{.metadata.annotations.hybernate\.io/last-request}`)).
+			To(BeEmpty(), "nothing stamped a wake")
+
+		By("opening the app in a browser and clicking Wake it, sending what Chrome does over plain HTTP")
+		// No fetch metadata, which browsers send only over HTTPS: the
+		// page's Origin, which its Referrer-Policy: same-origin lets them
+		// send, says the click came from it.
+		out, ok = runShell("curl-ask-click", ns, clickWith("-H 'Origin: http://"+host+"' -o /dev/null"))
+		Expect(ok).To(BeTrue(), "the click failed: %s", out)
+		Expect(out).To(ContainSubstring("status=503"),
+			"the click, its Origin passed on by nginx, is answered by the waking-up page")
+		expectWokenByRequest(ns, "deployment", name, 1)
+		key, err := jsonpath("secret", "hybernate-doorman-wake-key", namespace, "{.data.key}")
+		Expect(err).NotTo(HaveOccurred())
+		Expect(key).NotTo(BeEmpty(), "a doorman pod filled the wake key every replica signs with")
+
+		By("checking the requests turned away are counted in status and by kubectl hybernate status")
+		Eventually(func(g Gomega) {
+			count, err := jsonpath("managedworkload", name, ns, "{.status.turnedAway.requests}")
+			g.Expect(err).NotTo(HaveOccurred())
+			g.Expect(strconv.Atoi(count)).To(BeNumerically(">=", 1))
+		}, 3*time.Minute, 5*time.Second).Should(Succeed())
+		status, err := utils.Run(exec.Command(pluginBinary, "status", "-n", ns))
+		Expect(err).NotTo(HaveOccurred())
+		Expect(status).To(ContainSubstring("Turned away while asleep"))
+		Expect(loggedErrors(ns)).To(BeEmpty())
+	})
+
 	It("learns that a workload Hybernate manages depends on the one its request woke", func() {
 		ns := createNamespace("hybernate-e2e-wake-learn")
 		const (
@@ -473,6 +551,18 @@ spec:
           resources: {requests: {cpu: 10m, memory: 16Mi}}
 `, name, ns))).To(Succeed())
 	rollout(ns, "deployment/"+name)
+}
+
+// runShell runs a shell script in a curl pod and returns what it printed and
+// whether it exited cleanly.
+func runShell(name, namespace, script string) (string, bool) {
+	_, err := utils.Run(exec.Command("kubectl", "run", name, "-n", namespace, "--restart=Never",
+		"--image=curlimages/curl:8.7.1", "--image-pull-policy=IfNotPresent", "--command", "--", "sh", "-c", script))
+	Expect(err).NotTo(HaveOccurred())
+	DeferCleanup(func() {
+		_, _ = utils.Run(exec.Command("kubectl", "delete", "pod", name, "-n", namespace, "--wait=false"))
+	})
+	return finishedPodLogs(name, namespace)
 }
 
 // routeThroughIngress starts a web app behind an Ingress of its own host,

@@ -1,0 +1,14 @@
+# The key the doorman signs the asleep page's Wake it button with, for
+# workloads with wake.mode Ask. Every replica must use the same one, since a
+# click can reach any of them, so it's kept here, and the first replica to
+# find it empty fills it with a random key. It's created empty, so applying
+# these manifests again leaves the key alone. Empty it to change the key.
+apiVersion: v1
+kind: Secret
+metadata:
+  name: doorman-wake-key
+  namespace: system
+  labels:
+    app.kubernetes.io/name: hybernate
+    app.kubernetes.io/managed-by: kustomize
+type: Opaque

@@ -39,11 +39,12 @@ type OptInDefaults struct {
 	DryRun       bool
 	PauseEarly   bool
 	Forecast     v1alpha1.PredictionMode
+	Wake         v1alpha1.WakeMode
 }
 
 // DefaultOptInDefaults match a ManagedWorkload written with no settings.
 var DefaultOptInDefaults = OptInDefaults{IdleAfter: defaultIdleAfter, CPUThreshold: defaultCPUThreshold,
-	Forecast: v1alpha1.PredictionBalanced}
+	Forecast: v1alpha1.PredictionBalanced, Wake: v1alpha1.WakeOnRequest}
 
 // settingProblem is an annotation value that couldn't be read, so the
 // setting came from further down the order of precedence.
@@ -132,6 +133,28 @@ func (s *settings) dryRun(fallback bool) bool {
 		s.problems[i].outcome = "dry-run is on, to be safe"
 	}
 	return true
+}
+
+// wake reads the wake annotation, except that any value that can't be read
+// along the way gives ask: a typo in the setting meant to keep crawlers
+// from waking a workload must never let them.
+func (s *settings) wake(fallback v1alpha1.WakeMode) v1alpha1.WakeMode {
+	start := len(s.problems)
+	on := fallback
+	s.resolve(v1alpha1.AnnotationWake, `isn't "request" or "ask"`, func(v, _ string) bool {
+		parsed, ok := v1alpha1.ParseWake(v)
+		if ok {
+			on = parsed
+		}
+		return ok
+	})
+	if len(s.problems) == start {
+		return on
+	}
+	for i := start; i < len(s.problems); i++ {
+		s.problems[i].outcome = "the doorman asks before waking it, to be safe"
+	}
+	return v1alpha1.WakeOnAsk
 }
 
 // duration accepts a Go duration of at least v1alpha1.MinIdleAfter, the
@@ -283,7 +306,7 @@ func optInSpec(namespace string, target v1alpha1.WorkloadRef, workloadAnnotation
 		},
 		DependsOn: dependsOn,
 		Wake: &v1alpha1.WakeSpec{
-			OnRequest: ptr.To(s.boolean(v1alpha1.AnnotationWakeOnRequest, true)),
+			Mode: s.wake(d.Wake),
 			MaxWait: &metav1.Duration{Duration: s.durationUpTo(v1alpha1.AnnotationWakeMaxWait, 2*time.Minute,
 				0, v1alpha1.WakeMaxWaitLimit, `isn't a duration above zero and at most 1h, like "90s" or "5m"`)},
 			Page: ptr.To(s.boolean(v1alpha1.AnnotationWakePage, true)),

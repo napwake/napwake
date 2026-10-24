@@ -2,9 +2,10 @@
 {{- if and .Values.doorman.enabled .Values.doorman.admissionPolicy.enabled }}
 {{- /*
 The doorman's ServiceAccount may patch any ManagedWorkload it can read,
-but only ever sets the two annotations that record a request. This holds
-it to them, so a compromised doorman can't change a workload's settings,
-target, or finalizers.
+but only ever sets the two annotations that record a request, and the one
+that counts the requests it turned away. This holds it to them, so a
+compromised doorman can't change a workload's settings, target, or
+finalizers.
 */}}
 apiVersion: admissionregistration.k8s.io/v1
 kind: ValidatingAdmissionPolicy
@@ -25,7 +26,7 @@ spec:
       expression: request.userInfo.username == "system:serviceaccount:{{ .Release.Namespace }}:{{ include "hybernate.doormanName" . }}"
   variables:
     - name: allowed
-      expression: "['hybernate.io/last-request', 'hybernate.io/last-request-from']"
+      expression: "['hybernate.io/last-request', 'hybernate.io/last-request-from', 'hybernate.io/turned-away']"
     - name: annotations
       expression: "has(object.metadata.annotations) ? object.metadata.annotations : {}"
     - name: oldAnnotations
@@ -37,7 +38,7 @@ spec:
         variables.annotations.all(k, k in variables.allowed
           || (k in variables.oldAnnotations && variables.oldAnnotations[k] == variables.annotations[k]))
         && variables.oldAnnotations.all(k, k in variables.allowed || k in variables.annotations)
-      message: The doorman may only set the hybernate.io/last-request and hybernate.io/last-request-from annotations.
+      message: The doorman may only set the hybernate.io/last-request, hybernate.io/last-request-from and hybernate.io/turned-away annotations.
     - expression: >-
         (has(object.metadata.labels) ? object.metadata.labels : {})
         == (has(oldObject.metadata.labels) ? oldObject.metadata.labels : {})

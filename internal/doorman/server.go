@@ -115,6 +115,13 @@ type Options struct {
 	// CheckAPI, when set, reports whether the API server answers. The
 	// doorman isn't Ready while it hasn't for readyStaleness.
 	CheckAPI func(ctx context.Context) error
+
+	// WakeKeySecret names the Secret holding the key the asleep page's Wake
+	// it button is signed with. Every replica uses the one key, since a
+	// click may reach any of them; the first to find the Secret empty
+	// fills it. Without it, each replica signs with a key of its own, which
+	// works only for a doorman of one replica.
+	WakeKeySecret types.NamespacedName
 }
 
 // route is what the doorman knows about one listening port.
@@ -124,6 +131,15 @@ type route struct {
 	portName string
 	maxWait  time.Duration
 	page     bool
+
+	// asks is set for a workload whose wake.mode is Ask, which only a
+	// person's click wakes. uid and pausedAt name the pause its asleep
+	// page's tokens are good for, and waking says it has been asked to
+	// wake already, as of the last sync.
+	asks     bool
+	uid      types.UID
+	pausedAt time.Time
+	waking   bool
 
 	// drainUntil is set once the route has left status. Until then, the
 	// port passes connections to the workload's Ready pods, if any, without
@@ -137,6 +153,10 @@ func (r route) draining() bool { return !r.drainUntil.IsZero() }
 // place. Anything else a route carries can change without a drain.
 func (r route) sameAs(o route) bool {
 	return r.workload == o.workload && r.service == o.service && r.portName == o.portName
+}
+
+func (r route) scope() tokenScope {
+	return tokenScope{workload: r.workload, uid: r.uid, pausedAt: r.pausedAt}
 }
 
 func (r route) backendKey() backendKey {
@@ -168,6 +188,11 @@ type Server struct {
 
 	backends  *backends
 	admission *admission
+	apiReader client.Reader
+
+	wakeKeys      *wakeKeys
+	wakeKeySecret types.NamespacedName
+	awayFlush     time.Duration
 
 	mu     sync.Mutex
 	routes map[int32]route
@@ -184,6 +209,7 @@ type Server struct {
 	stamped      map[types.NamespacedName]stampRecord
 	lastWarn     map[types.NamespacedName]time.Time
 	metered      map[types.NamespacedName]bool
+	away         map[types.NamespacedName]awayCount
 	closed       bool
 
 	accepting sync.WaitGroup
@@ -210,6 +236,11 @@ func NewServer(c client.Client, recorder events.EventRecorder, opts Options) *Se
 		pollEvery: backendPollInterval,
 		silent:    silentWake,
 		backends:  newBackends(c, pods),
+		apiReader: pods,
+
+		wakeKeys:      newWakeKeys(),
+		wakeKeySecret: opts.WakeKeySecret,
+		awayFlush:     turnedAwayFlush,
 
 		resyncEvery:     backendResyncInterval,
 		proxyIdle:       proxyIdleTimeout,
@@ -229,6 +260,7 @@ func NewServer(c client.Client, recorder events.EventRecorder, opts Options) *Se
 		stamped:           map[types.NamespacedName]stampRecord{},
 		lastWarn:          map[types.NamespacedName]time.Time{},
 		metered:           map[types.NamespacedName]bool{},
+		away:              map[types.NamespacedName]awayCount{},
 	}
 }
 
@@ -272,6 +304,11 @@ func (s *Server) Start(ctx context.Context) error {
 	if s.checkAPI != nil {
 		checking.Go(func() { s.watchAPI(ctx) })
 	}
+	if s.wakeKeySecret.Name != "" {
+		s.refreshWakeKey(ctx)
+		checking.Go(func() { s.watchWakeKey(ctx) })
+	}
+	checking.Go(func() { s.watchTurnedAway(ctx) })
 	s.sync(ctx, connCtx)
 	s.serve(ctx, connCtx, ctx.Done(), syncTicker.C, pollTicker.C)
 	checking.Wait()
@@ -286,6 +323,9 @@ func (s *Server) Start(ctx context.Context) error {
 		grace -= s.acceptFor
 	}
 	s.shutdown(cancelConns, grace)
+	flushCtx, cancelFlush := context.WithTimeout(context.WithoutCancel(ctx), apiTimeout)
+	defer cancelFlush()
+	s.flushTurnedAway(flushCtx)
 	return nil
 }
 
@@ -463,6 +503,10 @@ func (s *Server) syncRoutes(ctx, connCtx context.Context) error {
 				portName: r.PortName,
 				maxWait:  maxWait,
 				page:     page,
+				asks:     w.Spec.Wake.Asks(),
+				uid:      w.UID,
+				pausedAt: pausedAt(&w),
+				waking:   isWaking(&w),
 			})
 		}
 	}
@@ -580,6 +624,11 @@ func (s *Server) forgetDeleted(existing map[types.NamespacedName]bool) {
 	for w := range s.lastWarn {
 		if !existing[w] {
 			delete(s.lastWarn, w)
+		}
+	}
+	for w := range s.away {
+		if !existing[w] {
+			delete(s.away, w)
 		}
 	}
 }

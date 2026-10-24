@@ -240,7 +240,7 @@ func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (res ctrl.
 	}
 
 	if workload.Status.Phase == "" || workload.Status.Phase == v1alpha1.PhaseCreating {
-		return ctrl.Result{}, r.transition(ctx, &workload, v1alpha1.PhaseRunning, "Created")
+		return ctrl.Result{}, r.takeOn(ctx, &workload)
 	}
 
 	target, err := r.checkTarget(ctx, &workload)
@@ -297,8 +297,27 @@ func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (res ctrl.
 	if result != nil {
 		return *result, nil
 	}
+	r.answerAwakeWakeRequest(&workload)
 
 	return r.reconcileSettled(ctx, &workload, target, observed)
+}
+
+// takeOn starts the status of a ManagedWorkload Hybernate has just taken
+// on, Running. A pause request already on it is answered without acting on
+// it: it may be one answered before its status was lost, and a wrong pause
+// is the one thing Hybernate never does. A wake request is left to the
+// reconcile the status write brings, which answers it by the workload as it
+// finds it, so a tool may create a ManagedWorkload and ask for its wake at
+// once: one taken on Running is already awake, and even a stale request
+// only restarts its idle clock, while one whose pause is taken up again,
+// after its status was lost, mustn't be woken by an old request.
+func (r *Reconciler) takeOn(ctx context.Context, workload *v1alpha1.ManagedWorkload) error {
+	announce := r.answerEarlierPauseRequest(workload)
+	if err := r.transition(ctx, workload, v1alpha1.PhaseRunning, "Created"); err != nil {
+		return err
+	}
+	announce()
+	return nil
 }
 
 // Every workload's reconciles share one queue, ordered by priority, so a
@@ -340,15 +359,26 @@ func enqueueAt(q workqueue.TypedRateLimitingInterface[reconcile.Request], priori
 
 // wakeHandler enqueues at priorityWake a ManagedWorkload whose annotations
 // changed, as the doorman's stamp of a held request, kubectl hybernate wake
-// and pause, and other tools' activity annotations change them.
+// and pause, and other tools' activity annotations change them. The
+// doorman's count of what it turned away wakes nothing, and is written
+// for every crawled workload that asks, so a change to it alone is left
+// to the queue's default priority, behind clicks and wakes.
 func wakeHandler() handler.EventHandler {
 	return handler.Funcs{
 		UpdateFunc: func(_ context.Context, e event.UpdateEvent, q workqueue.TypedRateLimitingInterface[reconcile.Request]) {
-			if !maps.Equal(e.ObjectOld.GetAnnotations(), e.ObjectNew.GetAnnotations()) {
+			if !maps.Equal(wakeAnnotations(e.ObjectOld), wakeAnnotations(e.ObjectNew)) {
 				enqueueAt(q, priorityWake, reconcile.Request{NamespacedName: client.ObjectKeyFromObject(e.ObjectNew)})
 			}
 		},
 	}
+}
+
+// wakeAnnotations are an object's annotations, less the doorman's count of
+// what it turned away.
+func wakeAnnotations(o client.Object) map[string]string {
+	annotations := maps.Clone(o.GetAnnotations())
+	delete(annotations, v1alpha1.AnnotationTurnedAway)
+	return annotations
 }
 
 // scaleUpHandler enqueues at priorityWake the ManagedWorkloads of a
@@ -650,12 +680,15 @@ func (r *Reconciler) recoverPause(ctx context.Context, workload *v1alpha1.Manage
 		Target:   activityAnnotationValues(target),
 	}
 	workload.Status.Pause = pause
+	pauseAnswered, wakeAnswered := r.answerEarlierPauseRequest(workload), r.answerEarlierWakeRequest(workload)
 	if err := r.transition(ctx, workload, v1alpha1.PhasePaused, ReasonPauseRecovered); err != nil {
 		return nil, err
 	}
 	r.emitEvent(workload, false, "Normal", ReasonPauseRecovered, actionPause,
 		"its pause record was lost, so it's taken up again from the %s annotation: paused, to wake to %d replicas",
 		v1alpha1.AnnotationPausedFrom, pause.PreviousReplicas)
+	pauseAnswered()
+	wakeAnswered()
 	return &ctrl.Result{RequeueAfter: r.pausedRecheck(workload)}, nil
 }
 
@@ -928,6 +961,12 @@ func (r *Reconciler) reconcileDelete(ctx context.Context, workload *v1alpha1.Man
 	// the target back again: scaling up one someone has since scaled to
 	// zero, putting KEDA's value back, and waking its dependencies.
 	workload.Status.Pause = nil
+	// Answered while the ManagedWorkload is still there for whoever asked
+	// to read.
+	if err := r.refuseWakeRequest(ctx, workload, "Normal", reasonBeingDeleted, "its ManagedWorkload is being "+
+		"deleted, so Hybernate hands the workload back, with the replicas it had, as it lets go"); err != nil {
+		return 0, err
+	}
 	if wait := r.drainLeft(workload); wait > 0 {
 		if err := r.Status().Update(ctx, workload); err != nil {
 			return 0, fmt.Errorf("recording the doorman ports draining: %w", err)
@@ -1078,7 +1117,7 @@ func (r *Reconciler) announceHandBack(workload *v1alpha1.ManagedWorkload, replic
 // its doorman routes, or nothing would ever wake the target.
 func (r *Reconciler) reconcileDuplicate(ctx context.Context, workload *v1alpha1.ManagedWorkload) (ctrl.Result, error) {
 	c := meta.FindStatusCondition(workload.Status.Conditions, conditionDuplicateTarget)
-	if err := r.refusePauseRequest(ctx, workload, "Warning", conditionDuplicateTarget, c.Message); err != nil {
+	if err := r.refuseRequests(ctx, workload, conditionDuplicateTarget, c.Message); err != nil {
 		return ctrl.Result{}, err
 	}
 	if workload.Status.Pause == nil && len(workload.Status.Doorman) == 0 {
@@ -1106,7 +1145,7 @@ func (r *Reconciler) reconcileIgnored(ctx context.Context, workload *v1alpha1.Ma
 	reported := conditionFalseWith(workload, conditionTargetAvailable, "TargetIgnored")
 	r.setCondition(workload, conditionTargetAvailable, metav1.ConditionFalse, "TargetIgnored",
 		fmt.Sprintf("%s %s has %s label", ref.Kind, ref.Name, v1alpha1.LabelIgnore))
-	if err := r.refusePauseRequest(ctx, workload, "Warning", "TargetIgnored", fmt.Sprintf(
+	if err := r.refuseRequests(ctx, workload, "TargetIgnored", fmt.Sprintf(
 		"%s %s has the %s label, so Hybernate doesn't manage it", ref.Kind, ref.Name, v1alpha1.LabelIgnore)); err != nil {
 		return ctrl.Result{}, err
 	}
@@ -1138,7 +1177,7 @@ func (r *Reconciler) reconcileIgnored(ctx context.Context, workload *v1alpha1.Ma
 // that nothing will start, where without the doorman it fails at once.
 func (r *Reconciler) reconcileTargetMissing(ctx context.Context, workload *v1alpha1.ManagedWorkload) (ctrl.Result, error) {
 	ref := workload.Spec.Target
-	if err := r.refusePauseRequest(ctx, workload, "Warning", ReasonTargetNotFound,
+	if err := r.refuseRequests(ctx, workload, ReasonTargetNotFound,
 		fmt.Sprintf("%s %s not found", ref.Kind, ref.Name)); err != nil {
 		return ctrl.Result{}, err
 	}

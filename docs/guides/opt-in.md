@@ -144,16 +144,16 @@ These leave the selectors alone:
 | `hybernate.io/idle-after` | duration of at least `1m`, e.g. `"90m"`, `"2h"` | `1h` | How long without activity before pausing |
 | `hybernate.io/cpu-threshold` | whole number, `"1"` to `"100"` | `10` | CPU use, as a percentage of requests, above which the workload counts as active |
 | `hybernate.io/auto-resume` | `"true"`, `"false"` | `"false"` | Wake ahead of the demand a confident [forecast](../concepts/forecasting.md) predicts |
-| `hybernate.io/pause-early` | `"true"`, `"false"` | `"false"` | Pause before `idle-after` runs out when a confident forecast expects the hours until then to be quiet and a request would wake the workload; see [Pausing Early](../concepts/forecasting.md#pausing-early) |
+| `hybernate.io/pause-early` | `"true"`, `"false"` | `"false"` | Pause before `idle-after` runs out when a confident forecast expects the hours until then to be quiet and a request would wake the workload, so never with `wake: ask`; see [Pausing Early](../concepts/forecasting.md#pausing-early) |
 | `hybernate.io/forecast` | `"eager"`, `"balanced"`, `"cautious"` | `"balanced"` | How soon the forecast acts on what it has learned; see [Forecast setting](../concepts/forecasting.md#forecast-setting) |
 | `hybernate.io/depends-on` | comma-separated `kind/name` or `namespace/kind/name` | none | Workloads this one needs; see [Dependencies](../concepts/dependencies.md) |
-| `hybernate.io/wake-on-request` | `"true"`, `"false"` | `"true"` | Wake when a request reaches the workload's Service; see [Wake on Request](../concepts/wake-on-request.md) |
+| `hybernate.io/wake` | `"request"`, `"ask"` | `"request"` | What wakes the paused workload through the doorman: any request, or, with `ask`, only a person who clicks **Wake it** on the page the doorman shows a browser, for an environment on a public URL that crawlers would keep awake. Sets `spec.wake.mode`; see [Asking before waking](../concepts/wake-on-request.md#asking-before-waking) |
 | `hybernate.io/wake-max-wait` | duration, at most `1h` | `2m` | How long a request is held while the workload wakes |
 | `hybernate.io/wake-page` | `"true"`, `"false"` | `"true"` | Show browsers a waking-up page |
 
 Leaving an annotation out means its default. A value that can't be read, such as `idle-after: "soon"` or `dry-run: "True"`, is reported in an `InvalidSetting` warning event on the workload and skipped, as if it weren't there: the setting comes from the next place in [Which setting wins](#which-setting-wins), and the others still apply. Booleans are exactly `"true"` or `"false"`; `idle-after` is at least `1m`, and `wake-max-wait` above zero and at most `1h`. In `depends-on`, an entry that can't be read is skipped and the rest apply.
 
-`dry-run` is the exception: a value that can't be read turns dry-run on, whatever comes after it, since a typo in the setting meant to stop pauses must never start them.
+`dry-run` and `wake` are the exceptions: a value of `dry-run` that can't be read turns dry-run on, and one of `wake` has the doorman ask, whatever comes after it, since a typo in a setting meant to keep a workload from pausing or waking must never undo it.
 
 ```yaml
 hybernate.io/depends-on: "statefulset/postgres, messaging/statefulset/nats"
@@ -167,7 +167,7 @@ Settings that need more than one value aren't annotations: Prometheus activity q
 
 1. The workload's own annotation.
 2. Its namespace's annotation.
-3. The cluster-wide defaults, set in the Helm values (`defaults.idleAfter`, `defaults.cpuThreshold`, `defaults.dryRun`, `defaults.pauseEarly`, `defaults.forecast`).
+3. The cluster-wide defaults, set in the Helm values (`defaults.idleAfter`, `defaults.cpuThreshold`, `defaults.dryRun`, `defaults.pauseEarly`, `defaults.forecast`, `defaults.wake`).
 4. The built-in default.
 
 So a namespace can measure everything with `dry-run: "true"` while one workload in it goes live with `dry-run: "false"`.

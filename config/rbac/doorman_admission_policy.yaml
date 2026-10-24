@@ -1,5 +1,6 @@
 # Holds the doorman's ServiceAccount to the two annotations that record a
-# request on ManagedWorkloads, though its role may patch them, as the Helm
+# request on ManagedWorkloads, and the one that counts the requests it
+# turned away, though its role may patch them, as the Helm
 # chart's doorman.admissionPolicy does. A username is a string no
 # transformer rewrites, so the policy takes the doorman's ServiceAccount as
 # its parameter and the binding names it, through kustomizeconfig, as it
@@ -29,7 +30,7 @@ spec:
       expression: request.userInfo.username == "system:serviceaccount:" + params.metadata.namespace + ":" + params.metadata.name
   variables:
     - name: allowed
-      expression: "['hybernate.io/last-request', 'hybernate.io/last-request-from']"
+      expression: "['hybernate.io/last-request', 'hybernate.io/last-request-from', 'hybernate.io/turned-away']"
     - name: annotations
       expression: "has(object.metadata.annotations) ? object.metadata.annotations : {}"
     - name: oldAnnotations
@@ -41,7 +42,7 @@ spec:
         variables.annotations.all(k, k in variables.allowed
           || (k in variables.oldAnnotations && variables.oldAnnotations[k] == variables.annotations[k]))
         && variables.oldAnnotations.all(k, k in variables.allowed || k in variables.annotations)
-      message: The doorman may only set the hybernate.io/last-request and hybernate.io/last-request-from annotations.
+      message: The doorman may only set the hybernate.io/last-request, hybernate.io/last-request-from and hybernate.io/turned-away annotations.
     - expression: >-
         (has(object.metadata.labels) ? object.metadata.labels : {})
         == (has(oldObject.metadata.labels) ? oldObject.metadata.labels : {})

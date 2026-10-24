@@ -131,6 +131,38 @@ kubectl patch managedworkload my-api -n staging --type=json \
   -p '[{"op":"remove","path":"/spec/prediction/confidence"}]'
 ```
 
+## Wake on request, from before 0.2.0
+
+Before 0.2.0, `spec.wake.onRequest: false`, or `hybernate.io/wake-on-request: "false"` with the label, turned waking on request off for one workload, so requests to it failed while it was paused. That setting is gone: once the new CRD is installed, the field is dropped from every ManagedWorkload stored with it, the annotation is ignored, and those workloads wake on request again.
+
+A manifest that still sets `spec.wake.onRequest` is refused, though. `kubectl apply` checks fields strictly by default, and answers `strict decoding error: unknown field "spec.wake.onRequest"`; a server-side apply, as Flux's and Argo CD's with `ServerSideApply=true` are, answers `.spec.wake.onRequest: field not declared in schema`, so a GitOps sync of it fails too. So take `wake.onRequest` out of the ManagedWorkloads in your manifests, in Git, as you upgrade. Where it was `true`, just remove it: waking on request is the default, `spec.wake.mode: Request`. Where it was `false`, remove it, and put in its place what fits below, usually `mode: Ask`:
+
+```yaml
+spec:
+  wake:
+    mode: Ask   # in place of onRequest: false
+```
+
+Instead of turning it off:
+
+- **For a workload on a public URL,** which crawlers and scanners would keep awake, which is what turning it off was usually for, have the doorman ask before waking it: `spec.wake.mode: Ask`, or `hybernate.io/wake: ask` with the label. Only a person's click on the page the doorman shows a browser wakes it, and anything else gets a `503`. See [Asking before waking](../concepts/wake-on-request.md#asking-before-waking).
+- **For one port of a Service,** list it in `hybernate.io/doorman-ignore-ports` on the Service. That port fails while the workload is paused, as it did with waking turned off.
+- **For the whole cluster,** set the Helm value `doorman.enabled: false`, as before.
+
+To find the ManagedWorkloads that had it, before you upgrade:
+
+```bash
+kubectl get managedworkloads -A -o json | jq -r '.items[] | select(.spec.wake.onRequest == false) | "\(.metadata.namespace)/\(.metadata.name)"'
+```
+
+and the workloads and namespaces that set the annotation:
+
+```bash
+kubectl get deployments,statefulsets,namespaces -A -o json | jq -r '.items[] | select(.metadata.annotations["hybernate.io/wake-on-request"] == "false") | "\(.kind) \(.metadata.namespace // "")/\(.metadata.name)"'
+```
+
+The `WakeOnRequest` reason `TurnedOff` is gone with it.
+
 ## Rollback
 
 If something goes wrong:

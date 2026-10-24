@@ -121,7 +121,7 @@ func (e *faultEnv) create(t *testing.T, ns string) client.ObjectKey {
 	so.SetAnnotations(map[string]string{autoscaler.PausedReplicasAnnotation: "7"})
 	require.NoError(t, e.admin.Create(e.ctx, so))
 	require.NoError(t, e.admin.Create(e.ctx, envtestDeployment(ns, 3)))
-	require.NoError(t, e.admin.Create(e.ctx, withPauseRequested(envtestWorkload(ns))))
+	require.NoError(t, createTakenOn(e.ctx, e.admin, withPauseRequested(envtestWorkload(ns))))
 	return client.ObjectKey{Namespace: ns, Name: "api"}
 }
 

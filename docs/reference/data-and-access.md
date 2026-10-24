@@ -20,8 +20,9 @@ Everything the Hybernate operator and its doorman read, write, and send, for a s
 | Karpenter NodePools (`karpenter.sh/v1`) | Their names and `spec.disruption`, to report which node autoscaler runs | Listed every 10 minutes, not cached. Without Karpenter installed, nothing is read |
 | Deployments in `kube-system` | Their names, to find a Cluster Autoscaler that hasn't written its status ConfigMap | Metadata listed every 10 minutes, only while that ConfigMap is missing |
 | ManagedWorkloads | Its own configuration | Watched |
+| Its wake key Secret, `<fullname>-doorman-wake-key` | The doorman's: the key it signs the asleep page's [Wake it button](../concepts/wake-on-request.md#the-wake-it-button) with, shared by its replicas | Read by name every minute, from the API server, not cached; written once, to fill it when it's empty |
 
-**Never read:** Secrets, of any kind, anywhere. An address set in a Secret is learned only from the request it's used for.
+**Never read:** any other Secret, of any kind, anywhere. An address set in a Secret is learned only from the request it's used for.
 
 ## What it writes
 
@@ -31,7 +32,8 @@ Everything the Hybernate operator and its doorman read, write, and send, for a s
 | Deployments of its own, with `doorman.negForwarder.enabled` | A forwarder, `hybernate-forwarder-<workload>`, in the namespace of each paused workload whose Service is behind GKE container-native load balancing, owned by its ManagedWorkload and deleted a minute after the workload wakes. See [GKE container-native load balancing](../concepts/wake-on-request.md#gke-container-native-load-balancing-negs) |
 | KEDA ScaledObjects | The `autoscaling.keda.sh/paused-replicas` annotation, while their workload is paused or resuming; afterwards the value it had before, or none |
 | EndpointSlices | Its own, routing a paused workload's Services to the doorman; deleted when the workload wakes |
-| ManagedWorkloads | Its own status, including each workload's forecast state; the ones it creates for labelled workloads; the `hybernate.io/cleanup` finalizer, added to each so that deleting it restores its workload first, and removed once it has, with `hybernate.io/operator`, the operator's namespace; `hybernate.io/last-activity` on a dependency it wakes; and, from the doorman, `hybernate.io/last-request` and `hybernate.io/last-request-from` (the caller's IP address) on one a request wakes |
+| ManagedWorkloads | Its own status, including each workload's forecast state; the ones it creates for labelled workloads; the `hybernate.io/cleanup` finalizer, added to each so that deleting it restores its workload first, and removed once it has, with `hybernate.io/operator`, the operator's namespace; `hybernate.io/last-activity` on a dependency it wakes; and, from the doorman, `hybernate.io/last-request` and `hybernate.io/last-request-from` (the caller's IP address) on one a request wakes, and `hybernate.io/turned-away`, a count of the requests it turned away from one that [asks before waking](../concepts/wake-on-request.md#what-it-turns-away), with nothing of the requests themselves |
+| Its wake key Secret | The doorman fills it with a random key when it's empty, and changes nothing else |
 | Events | On ManagedWorkloads and workloads, to say what it did and why |
 | Leases | Leader election, in its own namespace |
 
@@ -90,14 +92,20 @@ With `doorman.negForwarder.enabled`, a ClusterRole and ClusterRoleBinding `hyber
 | `""` | `pods` | `get` |
 | `""`, `events.k8s.io` | `events` | `create`, `patch` |
 
+And a Role and RoleBinding `hybernate-doorman-wake-key` in the release namespace, for its [wake key](../concepts/wake-on-request.md#the-wake-it-button), the one Secret it may read:
+
+| API group | Resources | Resource names | Verbs |
+|---|---|---|---|
+| `""` | `secrets` | `hybernate-doorman-wake-key` | `get`, `update` |
+
 **Guards**, with `guard.uninstall` and, with `watchNamespaces`, `guard.upgrade` (the defaults): a ServiceAccount `hybernate-uninstall-guard`, and a ClusterRole and ClusterRoleBinding of the same name, allowing `list` on `hybernate.io` `managedworkloads`, cluster-wide even with `watchNamespaces`; and the same named `hybernate-upgrade-guard`. They're Helm hooks, like the Jobs that use them: they exist only while `helm uninstall` runs its pre-delete hook, or `helm upgrade` or `helm rollback` its pre-upgrade or pre-rollback hook, which refuse to leave ManagedWorkloads without an operator.
 
 **People**: ClusterRoles `hybernate-view` and `hybernate-edit`, which grant nothing to Hybernate itself. They're aggregated into Kubernetes' built-in roles: `view`, `edit` and `admin` gain `get`, `list` and `watch` on `hybernate.io` `managedworkloads`, and `get` on their status; `edit` and `admin` gain `create`, `update`, `patch` and `delete`.
 
-**Admission policy**, with `doorman.admissionPolicy.enabled` (the default): a ValidatingAdmissionPolicy and binding `hybernate-doorman`, cluster-scoped, which refuse any change the doorman's ServiceAccount makes to a ManagedWorkload other than to its `hybernate.io/last-request` and `last-request-from` annotations; and a ValidatingAdmissionPolicy and binding `hybernate-request-stamps`, cluster-scoped, which refuse anyone else setting those two annotations, limited to `watchNamespaces` when set.
+**Admission policy**, with `doorman.admissionPolicy.enabled` (the default): a ValidatingAdmissionPolicy and binding `hybernate-doorman`, cluster-scoped, which refuse any change the doorman's ServiceAccount makes to a ManagedWorkload other than to its `hybernate.io/last-request`, `last-request-from` and `turned-away` annotations; and a ValidatingAdmissionPolicy and binding `hybernate-request-stamps`, cluster-scoped, which refuse anyone else setting those two annotations, limited to `watchNamespaces` when set.
 
 **Metrics**, with `metrics.enabled` and `metrics.secure` (the defaults): ClusterRoleBindings `hybernate-auth-delegator` and `hybernate-doorman-auth-delegator` to the built-in `system:auth-delegator` ClusterRole, so the operator and the doorman can check the tokens of whoever scrapes them; and a ClusterRole `hybernate-metrics-reader` allowing `get` on the `/metrics` URL, bound to `metrics.readerSubjects` by a ClusterRoleBinding of the same name.
 
 ## The plugin
 
-`kubectl hybernate` runs with your own kubeconfig and permissions, reads the same kinds of resources and their events, and changes nothing except for `wake` (activity annotations on a ManagedWorkload), `pause` (the `hybernate.io/pause-requested` annotation on a ManagedWorkload, with `hybernate.io/pause-overrides-forecast` when told to pause one the forecast expects demand for, and, with `--clear-hold`, removing its `hybernate.io/active-until`) and `enable` (the `hybernate.io/dry-run` annotation, on a workload or its namespace, or `spec.dryRun` on a ManagedWorkload you wrote). `scan` reads Prometheus through the API server's service proxy, or at `--prometheus-url`, and writes its report only to your machine, in a file only you can read, as `status --html` does its page. For a workload Argo CD applies, `scan`, `status`, `pause` and `enable` read Argo CD's Applications and its `argocd-cm` ConfigMap, to tell whether it leaves the workload's replicas to Hybernate.
+`kubectl hybernate` runs with your own kubeconfig and permissions, reads the same kinds of resources and their events, and changes nothing except for `wake` (the `hybernate.io/wake-requested` annotation on a ManagedWorkload, with `hybernate.io/active-until` for `--for`), `pause` (the `hybernate.io/pause-requested` annotation on a ManagedWorkload, with `hybernate.io/pause-overrides-forecast` when told to pause one the forecast expects demand for, and, with `--clear-hold`, removing its `hybernate.io/active-until`) and `enable` (the `hybernate.io/dry-run` annotation, on a workload or its namespace, or `spec.dryRun` on a ManagedWorkload you wrote). `scan` reads Prometheus through the API server's service proxy, or at `--prometheus-url`, and writes its report only to your machine, in a file only you can read, as `status --html` does its page. For a workload Argo CD applies, `scan`, `status`, `pause` and `enable` read Argo CD's Applications and its `argocd-cm` ConfigMap, to tell whether it leaves the workload's replicas to Hybernate.

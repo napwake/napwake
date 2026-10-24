@@ -296,18 +296,25 @@ spec:
                     - message: must be a duration above zero and at most 1h, such
                         as 90s or 5m
                       rule: duration(self) > duration('0s') && duration(self) <= duration('1h')
-                  onRequest:
-                    default: true
+                  mode:
+                    default: Request
                     description: |-
-                      OnRequest routes the workload's Services to the doorman while it's
-                      paused. When false, requests to a paused workload fail.
-                    type: boolean
+                      Mode is what wakes the paused workload through the doorman. Request,
+                      the default: any request but a known probe's. Ask: only a person,
+                      clicking Wake it on the page the doorman shows a browser; anything
+                      else is answered 503 and wakes nothing, so crawlers and scanners on a
+                      public URL can't keep it awake.
+                    enum:
+                    - Request
+                    - Ask
+                    type: string
                   page:
                     default: true
                     description: |-
                       Page answers a browser loading a page with a "waking up" page that
                       refreshes until the workload is Running, instead of holding the
-                      request. Other requests are held either way.
+                      request. Other requests are held either way. With mode: Ask, a browser
+                      is always shown a page, since that's where a person asks.
                     type: boolean
                 type: object
             required:
@@ -945,6 +952,12 @@ spec:
                   phases.
                 format: date-time
                 type: string
+              lastWakeRequest:
+                description: |-
+                  LastWakeRequest is the last hybernate.io/wake-requested value
+                  Hybernate acted on, so each request is acted on once, across restarts.
+                  The WakeRequest condition says what came of it.
+                type: string
               learnedDependencies:
                 description: |-
                   LearnedDependencies are the workloads Hybernate found this one depends
@@ -1252,6 +1265,25 @@ spec:
                 - dailyPhase
                 - weeklyConfidence
                 - weeklyPhase
+                type: object
+              turnedAway:
+                description: |-
+                  TurnedAway counts the requests the doorman turned away during the
+                  workload's current pause, or its last one, with wake.mode Ask:
+                  answered that it's asleep, and not woken. Many mean something
+                  automated calls it. It's brought up to date about once a minute.
+                properties:
+                  pausedAt:
+                    description: PausedAt is when the pause they were turned away
+                      during began.
+                    format: date-time
+                    type: string
+                  requests:
+                    format: int64
+                    type: integer
+                required:
+                - pausedAt
+                - requests
                 type: object
             type: object
         required:

@@ -1,0 +1,32 @@
+# The one Secret the doorman reads, and writes once to fill it: its wake
+# key. It's named, so the doorman can't read any other.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  labels:
+    app.kubernetes.io/name: hybernate
+    app.kubernetes.io/managed-by: kustomize
+  name: doorman-wake-key
+  namespace: system
+rules:
+- apiGroups: [""]
+  resources: [secrets]
+  resourceNames: [doorman-wake-key]
+  verbs: [get, update]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  labels:
+    app.kubernetes.io/name: hybernate
+    app.kubernetes.io/managed-by: kustomize
+  name: doorman-wake-key
+  namespace: system
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: doorman-wake-key
+subjects:
+- kind: ServiceAccount
+  name: doorman
+  namespace: system

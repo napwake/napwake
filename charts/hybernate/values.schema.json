@@ -150,7 +150,8 @@
         "cpuThreshold": {"type": "integer", "minimum": 1, "maximum": 100},
         "dryRun": {"type": "boolean"},
         "pauseEarly": {"type": "boolean"},
-        "forecast": {"enum": ["eager", "balanced", "cautious"]}
+        "forecast": {"enum": ["eager", "balanced", "cautious"]},
+        "wake": {"enum": ["request", "ask"]}
       }
     },
     "doorman": {

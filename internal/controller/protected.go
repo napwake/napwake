@@ -141,7 +141,7 @@ func (r *Reconciler) reconcileProtected(ctx context.Context, workload *v1alpha1.
 	p protection) (ctrl.Result, error) {
 	reported := meta.IsStatusConditionTrue(workload.Status.Conditions, conditionProtected)
 	r.setCondition(workload, conditionProtected, metav1.ConditionTrue, p.reason, p.message)
-	if err := r.refusePauseRequest(ctx, workload, "Warning", ReasonProtected, p.why); err != nil {
+	if err := r.refuseRequests(ctx, workload, ReasonProtected, p.why); err != nil {
 		return ctrl.Result{}, err
 	}
 

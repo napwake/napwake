@@ -202,12 +202,12 @@ func TestReplayWakes(t *testing.T) {
 		s.Annotations = map[string]string{"cloud.google.com/neg-status": `{"network_endpoint_groups":{"80":"k8s1-neg"}}`}
 	}
 	tests := []struct {
-		name       string
-		mw         *v1alpha1.ManagedWorkload
-		optedInOff bool
-		services   map[string]corev1.Service
-		install    Install
-		want       ReplayWakes
+		name     string
+		mw       *v1alpha1.ManagedWorkload
+		asks     bool
+		services map[string]corev1.Service
+		install  Install
+		want     ReplayWakes
 	}{
 		{name: "a Service selects its pods", services: service(nil), want: ReplayWakes{Request: true}},
 		{name: "no Service", services: map[string]corev1.Service{},
@@ -237,12 +237,30 @@ func TestReplayWakes(t *testing.T) {
 			s.Spec.InternalTrafficPolicy = &local
 		}), want: ReplayWakes{NoRequest: noRequestNodeLocal}},
 		{name: "Services not read, as Hybernate's default", want: ReplayWakes{Request: true}},
-		{name: "turned off by the annotation it would be opted in with", services: service(nil),
-			optedInOff: true,
-			want:       ReplayWakes{NoRequest: noRequestTurnedOff}},
-		{name: "managed, turned off", services: service(nil), mw: managed(func(mw *v1alpha1.ManagedWorkload) {
-			mw.Spec.Wake = &v1alpha1.WakeSpec{OnRequest: new(false)}
-		}), want: ReplayWakes{NoRequest: noRequestTurnedOff}},
+		{name: "asking, by the annotation it would be opted in with", services: service(nil), asks: true,
+			want: ReplayWakes{People: true, NoRequest: noRequestAsks}},
+		{name: "managed, asking", services: service(nil), mw: managed(func(mw *v1alpha1.ManagedWorkload) {
+			mw.Spec.Wake = &v1alpha1.WakeSpec{Mode: v1alpha1.WakeOnAsk}
+		}), want: ReplayWakes{People: true, NoRequest: noRequestAsks}},
+		{name: "asking, with the doorman turned off, so nobody can click", services: service(nil), asks: true,
+			install: Install{DoormanOff: true}, want: ReplayWakes{NoRequest: noRequestDoormanOff}},
+		{name: "asking, with no Service the doorman could route", services: map[string]corev1.Service{},
+			asks: true, want: ReplayWakes{NoRequest: noRequestNoService}},
+		{name: "managed, asking, its Services unroutable at its last pause", services: service(nil),
+			mw: managed(func(mw *v1alpha1.ManagedWorkload) {
+				mw.Spec.Wake = &v1alpha1.WakeSpec{Mode: v1alpha1.WakeOnAsk}
+				routing(metav1.ConditionFalse, "NoServices")(mw)
+			}), want: ReplayWakes{NoRequest: noRequestNoService}},
+		{name: "managed, waking on request, whatever it would be opted in with", services: service(nil), asks: true,
+			mw: managed(func(mw *v1alpha1.ManagedWorkload) {
+				mw.Spec.Wake = &v1alpha1.WakeSpec{Mode: v1alpha1.WakeOnRequest}
+			}), want: ReplayWakes{Request: true}},
+		{name: "managed, asking, with an activity query", services: service(nil),
+			mw: managed(func(mw *v1alpha1.ManagedWorkload) {
+				mw.Spec.Wake = &v1alpha1.WakeSpec{Mode: v1alpha1.WakeOnAsk}
+				mw.Spec.IdlePolicy = &v1alpha1.IdlePolicySpec{Activity: &v1alpha1.ActivitySpec{
+					Prometheus: []v1alpha1.PrometheusActivity{{PromQL: "queue_length"}}}}
+			}), want: ReplayWakes{Query: true, People: true, NoRequest: noRequestAsks}},
 		{name: "managed and routed while paused", services: map[string]corev1.Service{},
 			mw: managed(routing(metav1.ConditionTrue, "DoormanRouted")), want: ReplayWakes{Request: true}},
 		{name: "managed, its Services in NEGs at its last pause", services: service(nil),
@@ -258,7 +276,7 @@ func TestReplayWakes(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			assert.Equal(t, tt.want, replayWakes(tt.mw, !tt.optedInOff, pods, tt.services, tt.install))
+			assert.Equal(t, tt.want, replayWakes(tt.mw, tt.asks, pods, tt.services, tt.install))
 		})
 	}
 }
@@ -279,45 +297,71 @@ func TestScanCluster_ReplaysWithTheInstallsDoorman(t *testing.T) {
 	assert.Equal(t, 2, w.Forecast.Replay.Ready, "as with nothing to wake it")
 }
 
-// A workload not yet managed would wake on request as the ManagedWorkload
-// opting it in would: by its own hybernate.io/wake-on-request, then its
-// namespace's, the first that's "true" or "false".
-func TestOptedInWakeOnRequest(t *testing.T) {
-	off := map[string]string{v1alpha1.AnnotationWakeOnRequest: "false"}
-	on := map[string]string{v1alpha1.AnnotationWakeOnRequest: "true"}
-	invalid := map[string]string{v1alpha1.AnnotationWakeOnRequest: "no"}
+// A workload not yet managed would have the doorman ask before waking it
+// as the ManagedWorkload opting it in would: by its own hybernate.io/wake,
+// then its namespace's, then its install's default, where a value that
+// can't be read asks.
+func TestOptedInAsks(t *testing.T) {
+	ask := map[string]string{v1alpha1.AnnotationWake: "ask"}
+	request := map[string]string{v1alpha1.AnnotationWake: "request"}
+	invalid := map[string]string{v1alpha1.AnnotationWake: "no"}
 	tests := []struct {
 		name                string
 		workload, namespace map[string]string
+		install             Install
 		want                bool
 	}{
-		{name: "neither says", want: true},
-		{name: "the workload turns it off", workload: off},
-		{name: "its namespace turns it off", namespace: off},
-		{name: "the workload's own wins", workload: on, namespace: off, want: true},
-		{name: "a value that isn't true or false gives way to the namespace's", workload: invalid, namespace: off},
-		{name: "spaces around it are ignored", workload: map[string]string{v1alpha1.AnnotationWakeOnRequest: " false\n"}},
+		{name: "nothing says"},
+		{name: "the install's default", install: Install{Asks: true}, want: true},
+		{name: "the workload asks", workload: ask, want: true},
+		{name: "its namespace asks", namespace: ask, want: true},
+		{name: "the workload's own wins", workload: request, namespace: ask, install: Install{Asks: true}},
+		{name: "a value that can't be read asks, whatever its namespace says", workload: invalid, namespace: request,
+			want: true},
+		{name: "spaces around it are ignored", workload: map[string]string{v1alpha1.AnnotationWake: " ask\n"},
+			want: true},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			assert.Equal(t, tt.want, optedInWakeOnRequest(tt.workload, tt.namespace))
+			assert.Equal(t, tt.want, optedInAsks(tt.workload, tt.namespace, tt.install))
 		})
 	}
 }
 
-// A namespace that turns wake on request off for the workloads it opts in
-// has the replay wake its workloads on nothing but their queries.
-func TestScanCluster_ReplaysWithTheNamespacesWakeOnRequest(t *testing.T) {
+// A namespace that has the doorman ask before waking the workloads it opts
+// in has the replay wake its workloads only for people, as they come. Only
+// people can wake it, so the forecast learns the hours it's paused, as it
+// does behind the doorman: having learned only the first week, it acts in
+// the second, and has the workload ready on the same mornings.
+func TestScanCluster_ReplaysWithTheNamespacesWake(t *testing.T) {
 	service := &corev1.Service{ObjectMeta: metav1.ObjectMeta{Name: "api", Namespace: testNamespace},
 		Spec: corev1.ServiceSpec{Selector: map[string]string{"app": "api"}, ClusterIP: "10.96.0.10",
 			Ports: []corev1.ServicePort{{Port: 80}}}}
 	ns := &corev1.Namespace{ObjectMeta: metav1.ObjectMeta{Name: testNamespace,
-		Annotations: map[string]string{v1alpha1.AnnotationWakeOnRequest: "false"}}}
+		Annotations: map[string]string{v1alpha1.AnnotationWake: "ask"}}}
 
 	w := forecastScanOf(t, 14*24*time.Hour, service, ns)
+	onRequest := forecastScanOf(t, 14*24*time.Hour, service)
 
 	require.NotNil(t, w.Forecast)
-	assert.Equal(t, ReplayWakes{NoRequest: noRequestTurnedOff}, w.Forecast.Wakes)
+	assert.Equal(t, ReplayWakes{People: true, NoRequest: noRequestAsks}, w.Forecast.Wakes)
+	require.NotNil(t, w.Forecast.Replay)
+	require.NotNil(t, onRequest.Forecast.Replay)
+	assert.Positive(t, w.Forecast.Replay.Ready, "%+v", w.Forecast.Replay)
+	assert.Equal(t, onRequest.Forecast.Replay.Ready, w.Forecast.Replay.Ready)
+}
+
+// An install whose operator asks by default has the replay ask for the
+// workloads it would opt in that don't say otherwise.
+func TestScanCluster_ReplaysWithTheInstallsWake(t *testing.T) {
+	service := &corev1.Service{ObjectMeta: metav1.ObjectMeta{Name: "api", Namespace: testNamespace},
+		Spec: corev1.ServiceSpec{Selector: map[string]string{"app": "api"}, ClusterIP: "10.96.0.10",
+			Ports: []corev1.ServicePort{{Port: 80}}}}
+
+	w := forecastScanOf(t, 14*24*time.Hour, service, operatorDeployment("--default-wake=ask"))
+
+	require.NotNil(t, w.Forecast)
+	assert.Equal(t, ReplayWakes{People: true, NoRequest: noRequestAsks}, w.Forecast.Wakes)
 }
 
 // deploymentsOnlyIn has the API server refuse lists of Deployments outside

@@ -60,10 +60,11 @@ The request runs the idle clock out now, and the workload is paused by the same 
 | In a [protected namespace](opt-in.md#protected-namespaces), or Hybernate's own operator or doorman | Leaves it running, with a Warning event | `False`, `Protected` |
 | Scaled to zero outside Hybernate | Nothing to do: it's off already | `False`, `ScaledToZero` |
 | Its workload is missing, labelled `hybernate.io/ignore`, or managed by another ManagedWorkload | Nothing, with a Warning event | `False`, `TargetNotFound`, `TargetIgnored` or `DuplicateTarget` |
+| Already on the ManagedWorkload as Hybernate takes it on, or takes a pause up again after its status was lost | Nothing: it may have been answered before, and brought back with the ManagedWorkload, as by a backup restored without status. Set a new value to ask | `False`, `PredatesStatus` |
 
 The condition answers the last request until the next one, through any wakes and idle pauses since, so its message says what happened and when, in UTC: `paused as requested at 2026-10-21 03:32 UTC`, `already paused at …`, or `not paused at 2026-10-21 03:32 UTC:` and why. Hybernate keeps it rather than dropping it at the next wake, so `kubectl hybernate pause`, or a script that set the annotation, can always read the answer to its request, and `kubectl describe` shows why last night's pause didn't happen long after its events have expired. `status.lastPauseRequest` says which request it answers.
 
-A request Hybernate won't act on is answered once, not retried: ask again once the reason is gone. Activity from before the request doesn't undo it: the pause records the activity annotations as they stood, and only a change made since wakes the workload.
+A request Hybernate won't act on is answered once, not retried: ask again once the reason is gone. Hybernate's record of which requests it answered is the ManagedWorkload's status, so a request already on it as Hybernate takes it on is taken as answered, not acted on: a backup restored without status, `kubectl replace --force` or an exported manifest applied again would otherwise bring back requests answered long ago. Set the annotation once the ManagedWorkload is `Running`. Activity from before the request doesn't undo it: the pause records the activity annotations as they stood, and only a change made since wakes the workload.
 
 ## Resume
 
@@ -72,7 +73,7 @@ Resuming wakes the workload's [dependencies](../concepts/dependencies.md), scale
 **Automatically:**
 
 - A request to the workload's Service, through [wake on request](../concepts/wake-on-request.md)
-- A change to `hybernate.io/last-activity`, `hybernate.io/last-request` or `hybernate.io/active-until` on the ManagedWorkload or its target since the pause began, whatever time the new value states; [`kubectl hybernate wake`](../getting-started/kubectl-plugin.md#wake-a-workload) sets one
+- A change to `hybernate.io/last-activity`, `hybernate.io/last-request` or `hybernate.io/active-until` on the ManagedWorkload or its target since the pause began, whatever time the new value states
 - A [Prometheus activity query](prometheus-signals.md#while-the-workload-is-paused) showing activity, such as messages waiting for a queue worker
 - With `autoResume: true`, 15 minutes ahead of the hour a confident forecast expects demand in
 - Something else scaling it up, such as `kubectl scale`: it's counted as activity and the workload goes straight to `Running`; see [GitOps tools](gitops.md) for when that's a GitOps tool
@@ -80,13 +81,49 @@ Resuming wakes the workload's [dependencies](../concepts/dependencies.md), scale
 
 A paused workload is looked at again at least every 5 minutes, or every minute when it has Prometheus activity queries, 15 minutes before each hour and on the hour, as well as whenever it or its target changes.
 
-**On demand:**
+**On demand:** with [`kubectl hybernate wake`](#wake-now), or the `hybernate.io/wake-requested` annotation it sets, from any tool.
+
+### Wake Now
 
 ```bash
 kubectl hybernate wake my-api -n staging
 ```
 
-`wake` marks the workload active, which wakes it and restarts its idle clock, so it pauses again once it's had no activity for `idleAfter`. `--for 2h` keeps it awake for at least that long, as for a demo. To keep a workload running for good, remove the `idlePolicy` of a ManagedWorkload you wrote. One created from the `hybernate.io/managed` label always has an `idlePolicy`, rewritten from its annotations, so label the workload `hybernate.io/ignore: "true"` instead: Hybernate stops managing it, and wakes it first if it's paused. See [kubectl Plugin](../getting-started/kubectl-plugin.md#wake-a-workload).
+`wake` asks Hybernate to wake the workload now, whatever its [wake setting](../concepts/wake-on-request.md), so it wakes one whose doorman asks before waking (`wake: ask`) too. A paused workload wakes, with the workloads it [depends on](../concepts/dependencies.md), and a running one has its idle clock restarted; either way it pauses again once it's had no activity for `idleAfter`. `--for 2h` keeps it awake for at least that long, as for a demo. `wake` waits for Hybernate's answer, then until the workload is Running. To keep a workload running for good, remove the `idlePolicy` of a ManagedWorkload you wrote. One created from the `hybernate.io/managed` label always has an `idlePolicy`, rewritten from its annotations, so label the workload `hybernate.io/ignore: "true"` instead: Hybernate stops managing it, and wakes it first if it's paused. See [kubectl Plugin](../getting-started/kubectl-plugin.md#wake-a-workload).
+
+The plugin asks by setting the `hybernate.io/wake-requested` annotation on the ManagedWorkload to a token, the time of the request, as `pause` sets `hybernate.io/pause-requested`. Any tool can do the same, such as a pull request bot, a developer portal or a chat command waking a preview environment for someone. The value only has to differ from the last request's, such as the time or a CI run's ID:
+
+```bash
+kubectl annotate managedworkload my-api -n staging --overwrite \
+  hybernate.io/wake-requested="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+```
+
+A ManagedWorkload created from the `hybernate.io/managed` label is named after its workload, or after the workload and its kind, such as `my-api-statefulset`, when that name is taken. Setting the annotation takes `get` and `patch` on `managedworkloads` in the namespace with `kubectl annotate`, or `patch` alone from an HTTP client. Waiting for the answer with `kubectl wait` takes `get`, `list` and `watch` too, and `kubectl hybernate wake` takes `get`, `list` and `patch`. Kubernetes' built-in `edit` and `admin` roles include all of them once Hybernate is installed; the [preview environments guide](preview-environments.md#waking-it-from-tooling) gives a minimal Role. It's an annotation, like `pause-requested`, so a GitOps tool that owns the ManagedWorkload's spec leaves it alone.
+
+Hybernate acts on each value once: it records the value it handled in `status.lastWakeRequest`, which survives an operator restart, and says what came of it in the `WakeRequest` condition, so the tool can tell its request was taken up:
+
+| The workload | What Hybernate does | `WakeRequest` condition |
+|--------------|---------------------|-------------------------|
+| `Paused` | Wakes it, with a `WakeRequested` event, then `Resumed` once it's Ready | `True`, `Woken` |
+| `Pausing` | Finishes the pause, then wakes it | `True`, `Woken` |
+| `Resuming` | Lets the wake finish, then marks the request handled | `True`, `AlreadyAwake` |
+| `Running` or `Idle` | Restarts its idle clock, as activity does | `True`, `AlreadyAwake` |
+| In [dry-run](dry-run.md) | Never paused, so it's awake: restarts its idle clock, which ends a would-be pause, as activity does | `True`, `AlreadyAwake` |
+| Scaled to zero outside Hybernate | Leaves it off: Hybernate only wakes what it paused | `False`, `ScaledToZero` |
+| In a [protected namespace](opt-in.md#protected-namespaces), Hybernate's own operator or doorman, or a StatefulSet that deletes its PVCs when scaled down | Nothing: Hybernate never pauses it | `False`, `Protected` |
+| Its workload is missing, labelled `hybernate.io/ignore`, or managed by another ManagedWorkload | Nothing, with a Warning event | `False`, `TargetNotFound`, `TargetIgnored` or `DuplicateTarget` |
+| Its ManagedWorkload is being deleted | Hands the workload back, with the replicas it had, as it lets go | `False`, `BeingDeleted` |
+| Set before Hybernate has taken the ManagedWorkload on, as by a tool that creates it and asks for its wake at once | Takes it on `Running`, so it's awake: restarts its idle clock, as for any awake workload | `True`, `AlreadyAwake` |
+| Already on the ManagedWorkload as Hybernate takes up a pause again after its status was lost | Nothing: it may have been answered before, and brought back with the ManagedWorkload, as by a backup restored without status, so it leaves the workload paused. Set a new value to ask | `False`, `PredatesStatus` |
+
+As with a pause request, the condition answers the last request until the next one, through the pauses and wakes since, so its message says what happened and when, in UTC: `woken as requested at 2026-10-23 09:05 UTC`, `already awake at …`, or `not woken at 2026-10-23 09:05 UTC:` and why:
+
+```bash
+kubectl get managedworkload my-api -n staging \
+  -o jsonpath='{.status.conditions[?(@.type=="WakeRequest")]}'
+```
+
+A request Hybernate can't act on is answered once, not retried: ask again once the reason is gone. Unlike a pause request, a wake request may be set at any time, even on a ManagedWorkload Hybernate hasn't taken on yet: it takes the ManagedWorkload on `Running` and answers the request as already awake, since at worst an old request restarts the idle clock. Only one already there when Hybernate takes a pause up again, after the ManagedWorkload's status was lost, is answered `PredatesStatus` and left paused.
 
 ## When Hybernate Lets Go
 

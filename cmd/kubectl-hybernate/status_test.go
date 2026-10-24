@@ -200,6 +200,33 @@ Recent pauses and wakes:
 `, out)
 }
 
+// A workload whose doorman asks before waking it says so in NEXT, and the
+// requests it turned away during its pause are listed under the table:
+// something automated may be calling it.
+func TestStatus_ShowsWhatAskingTurnedAway(t *testing.T) {
+	web := statusWorkloadObj("preview-42", "web", v1alpha1.TargetKindDeployment, v1alpha1.PhasePaused, 3*time.Hour)
+	web.Spec.Wake = &v1alpha1.WakeSpec{Mode: v1alpha1.WakeOnAsk}
+	web.Status.Doorman = []v1alpha1.DoormanRoute{{Service: "web", DoormanPort: 20001}}
+	web.Status.TurnedAway = &v1alpha1.TurnedAway{PausedAt: *before(3 * time.Hour), Requests: 312}
+	quiet := statusWorkloadObj("preview-42", "docs", v1alpha1.TargetKindDeployment, v1alpha1.PhasePaused, time.Hour)
+	quiet.Spec.Wake = &v1alpha1.WakeSpec{Mode: v1alpha1.WakeOnAsk}
+	quiet.Status.Doorman = []v1alpha1.DoormanRoute{{Service: "docs", DoormanPort: 20002}}
+	quiet.Status.TurnedAway = &v1alpha1.TurnedAway{PausedAt: *before(time.Hour)}
+
+	out := runStatus(t, newStatusClient(t, interceptor.Funcs{}, web, quiet), statusOpts())
+
+	assert.Contains(t, out, "wakes on a click, a wake request or activity")
+	assert.Contains(t, out, "Turned away while asleep, by a doorman that asks before waking: something automated may "+
+		"call these.\n  preview-42/web   312 requests during the pause from 3h ago\n")
+	assert.NotContains(t, out, "preview-42/docs ", "one that turned none away isn't listed")
+
+	result, err := clusterStatus(context.Background(), newStatusClient(t, interceptor.Funcs{}, web), "preview-42",
+		statusOpts())
+	require.NoError(t, err)
+	require.NotNil(t, result.Workloads[0].TurnedAway)
+	assert.Equal(t, int64(312), result.Workloads[0].TurnedAway.Requests, "and in -o json")
+}
+
 func TestNextFor(t *testing.T) {
 	tests := []struct {
 		name   string
@@ -224,6 +251,15 @@ func TestNextFor(t *testing.T) {
 		{name: "paused without the doorman", mutate: func(w *v1alpha1.ManagedWorkload) {
 			w.Status.Phase = v1alpha1.PhasePaused
 		}, want: "wakes on activity"},
+		{name: "paused, its doorman asking before waking it", mutate: func(w *v1alpha1.ManagedWorkload) {
+			w.Status.Phase = v1alpha1.PhasePaused
+			w.Status.Doorman = []v1alpha1.DoormanRoute{{Service: "api", DoormanPort: 20000}}
+			w.Spec.Wake = &v1alpha1.WakeSpec{Mode: v1alpha1.WakeOnAsk}
+		}, want: "wakes on a click, a wake request or activity"},
+		{name: "paused, waking on request", mutate: func(w *v1alpha1.ManagedWorkload) {
+			w.Status.Phase = v1alpha1.PhasePaused
+			w.Status.Doorman = []v1alpha1.DoormanRoute{{Service: "api", DoormanPort: 20000}}
+		}, want: "wakes on a request or activity"},
 		{name: "no activity clock yet", mutate: func(*v1alpha1.ManagedWorkload) {}, want: "-"},
 	}
 	for _, tt := range tests {
@@ -629,6 +665,22 @@ func TestStatus_WakeWithoutACause(t *testing.T) {
   30m ago   shop/api   activity annotation is newer than the pause, waking
   50m ago   shop/api   paused
   1h ago    shop/api   resumed
+  3h ago    shop/api   paused
+`)
+}
+
+// A wake asked for with hybernate.io/wake-requested, as kubectl hybernate
+// wake asks, is listed as what woke the workload.
+func TestStatus_WakeRequested(t *testing.T) {
+	w := statusWorkloadObj("shop", "api", v1alpha1.TargetKindDeployment, v1alpha1.PhaseRunning, time.Hour)
+	out := runStatus(t, newStatusClient(t, interceptor.Funcs{}, w,
+		statusEvent("shop", "api", "Paused", "api: paused", 3*time.Hour),
+		statusEvent("shop", "api", "WakeRequested", "api: wake requested, waking", 30*time.Minute),
+		statusEvent("shop", "api", "Resumed", "api: resumed", 29*time.Minute),
+	), statusOpts())
+
+	assert.Contains(t, out, `Recent pauses and wakes:
+  30m ago   shop/api   wake requested, waking
   3h ago    shop/api   paused
 `)
 }

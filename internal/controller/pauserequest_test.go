@@ -68,9 +68,9 @@ func pauseRequestCondition(t *testing.T, w *v1alpha1.ManagedWorkload) *metav1.Co
 	return c
 }
 
-func patchWorkload(t *testing.T, r *Reconciler, name string, mutate func(*v1alpha1.ManagedWorkload)) {
+func patchWorkload(t *testing.T, r *Reconciler, mutate func(*v1alpha1.ManagedWorkload)) {
 	t.Helper()
-	w := getWorkload(t, r, name)
+	w := getWorkload(t, r, "api")
 	patch := client.MergeFrom(w.DeepCopy())
 	mutate(w)
 	require.NoError(t, r.Patch(context.Background(), w, patch))
@@ -140,7 +140,7 @@ func TestPauseRequest_WakesOnARequest(t *testing.T) {
 	require.Equal(t, v1alpha1.PhasePaused, paused.Status.Phase)
 	assert.True(t, doormanEligible(paused), "its Services route to the doorman")
 
-	patchWorkload(t, r, "api", func(w *v1alpha1.ManagedWorkload) {
+	patchWorkload(t, r, func(w *v1alpha1.ManagedWorkload) {
 		w.Annotations[v1alpha1.AnnotationLastRequest] = fixedTime.Format(time.RFC3339)
 	})
 	reconcileUntilSettled(t, r)
@@ -285,6 +285,59 @@ func TestPauseRequest_Refused(t *testing.T) {
 	}
 }
 
+// A pause request already on a ManagedWorkload as Hybernate takes it on
+// isn't acted on, however new the ManagedWorkload: it can't be told from
+// one answered before a backup was restored, and a wrong pause is the one
+// thing Hybernate never does.
+func TestPauseRequest_OnAManagedWorkloadJustCreated(t *testing.T) {
+	workload := lifecycleWorkload("api", "")
+	workload.Annotations = map[string]string{v1alpha1.AnnotationPauseRequested: pauseToken}
+	r := lifecycleReconciler(t, workload, 3, interceptor.Funcs{})
+
+	reconcileUntilSettled(t, r)
+
+	got := getWorkload(t, r, "api")
+	assert.Equal(t, v1alpha1.PhaseRunning, got.Status.Phase)
+	assert.Equal(t, int32(3), targetReplicas(t, r))
+	assert.Equal(t, pauseToken, got.Status.LastPauseRequest)
+	c := pauseRequestCondition(t, got)
+	assert.Equal(t, metav1.ConditionFalse, c.Status)
+	assert.Equal(t, reasonPredatesStatus, c.Reason)
+}
+
+// A ManagedWorkload that loses its status, as to a backup restored without
+// it, keeps the pause request it had answered, and isn't paused by it
+// again: the request is taken as answered, saying why, and only a new one
+// pauses it.
+func TestPauseRequest_NotActedOnAgainAfterStatusIsLost(t *testing.T) {
+	r := lifecycleReconciler(t, requestedPause(), 3, interceptor.Funcs{})
+	reconcileUntilSettled(t, r)
+	requestWake(t, r, wakeToken)
+	reconcileUntilSettled(t, r)
+	require.Equal(t, v1alpha1.PhaseRunning, getWorkload(t, r, "api").Status.Phase)
+
+	lostStatus(t, r)
+	reconcileUntilSettled(t, r)
+
+	got := getWorkload(t, r, "api")
+	assert.Equal(t, v1alpha1.PhaseRunning, got.Status.Phase, "not paused again")
+	assert.Equal(t, int32(3), targetReplicas(t, r))
+	assert.Equal(t, pauseToken, got.Status.LastPauseRequest)
+	c := pauseRequestCondition(t, got)
+	assert.Equal(t, metav1.ConditionFalse, c.Status)
+	assert.Equal(t, reasonPredatesStatus, c.Reason)
+	assert.True(t, strings.HasPrefix(c.Message, "not paused at 2026-03-14 12:00 UTC: the request was on the "+
+		"ManagedWorkload before Hybernate's record of it began"), c.Message)
+	assert.Equal(t, 1, strings.Count(drainEvents(t, r), "pause requested, but the request was on the ManagedWorkload"))
+
+	patchWorkload(t, r, func(w *v1alpha1.ManagedWorkload) {
+		w.Annotations[v1alpha1.AnnotationPauseRequested] = "a-new-pause"
+	})
+	reconcileUntilSettled(t, r)
+
+	assert.Equal(t, v1alpha1.PhasePaused, getWorkload(t, r, "api").Status.Phase, "a new request pauses it")
+}
+
 // Under dry-run a request is counted as a would-be pause, and measured as
 // one the idle clock began: the workload is Idle and stays up until
 // activity after the request, not the activity the request overrode.
@@ -314,7 +367,7 @@ func TestPauseRequest_DryRun(t *testing.T) {
 		recorded)
 
 	now = fixedTime.Add(30 * time.Minute)
-	patchWorkload(t, r, "api", func(w *v1alpha1.ManagedWorkload) {
+	patchWorkload(t, r, func(w *v1alpha1.ManagedWorkload) {
 		w.Annotations[v1alpha1.AnnotationLastActivity] = now.Format(time.RFC3339)
 	})
 	reconcileUntilSettled(t, r)
@@ -445,7 +498,7 @@ func TestPauseRequest_AcrossARestart(t *testing.T) {
 
 	require.NoError(t, c.Create(ctx, &corev1.Namespace{ObjectMeta: metav1.ObjectMeta{Name: "preview"}}))
 	require.NoError(t, c.Create(ctx, envtestDeployment("preview", 3)))
-	require.NoError(t, c.Create(ctx, &v1alpha1.ManagedWorkload{
+	require.NoError(t, createTakenOn(ctx, c, &v1alpha1.ManagedWorkload{
 		ObjectMeta: metav1.ObjectMeta{Name: "api", Namespace: "preview",
 			Annotations: map[string]string{v1alpha1.AnnotationPauseRequested: pauseToken}},
 		Spec: v1alpha1.ManagedWorkloadSpec{
