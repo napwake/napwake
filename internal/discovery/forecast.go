@@ -318,7 +318,7 @@ func replayForecast(r replay, threshold int, mw *v1alpha1.ManagedWorkload, wakes
 	report, err := sim.Run(sim.Scenario{Start: half, Duration: r.end.Sub(half), Step: r.step,
 		Traffic: rec.Traffic(r.threshold), State: state, Settings: sim.Settings{Confidence: threshold,
 			CPUThreshold: r.threshold, IdleAfter: r.idleAfter, AutoResume: true, WakeOnRequest: wakes.Request,
-			WakeOnQuery: wakes.Query, WakeOnAsk: wakes.People, Location: loc}})
+			WakeOnQuery: wakes.Query, WakeOnAsk: wakes.People, BackOff: true, Location: loc}})
 	if err != nil {
 		return fr
 	}

@@ -29,6 +29,7 @@ import (
 	"fmt"
 	"time"
 
+	v1alpha1 "github.com/napwake/napwake/api/v1alpha1"
 	"github.com/napwake/napwake/internal/forecast"
 )
 
@@ -69,12 +70,21 @@ type Settings struct {
 	// Location is the operator's --timezone, the clock the forecast's hours
 	// and weekdays are counted in.
 	Location *time.Location
+	// WakeTakes is how long a wake takes to reach Running, where the
+	// operator starts the idle clock again.
+	WakeTakes time.Duration
+	// BackOff has the idle clock wait longer after each pause the
+	// workload's own use undoes soon after it, by v1alpha1.IdleWait, as the
+	// operator does, until a pause holds: a request, a person or a hand
+	// wake, within IdleAfter or 15 minutes, whichever is shorter.
+	BackOff bool
 }
 
-// DefaultSettings are a ManagedWorkload's defaults, with autoResume on.
+// DefaultSettings are a ManagedWorkload's defaults, with autoResume on, and
+// the operator's back-off after a wrong pause.
 func DefaultSettings() Settings {
 	return Settings{Confidence: 75, CPUThreshold: 10, IdleAfter: time.Hour, AutoResume: true, WakeOnRequest: true,
-		Location: time.UTC}
+		BackOff: true, Location: time.UTC}
 }
 
 // Restart is the operator stopping at At and starting again Down later, as
@@ -280,6 +290,10 @@ type run struct {
 	day        *Day
 	// usedSinceWake says someone used the workload since it last woke.
 	usedSinceWake bool
+	// pausedAt is when it last paused, and wrongPauses how many pauses in a
+	// row its own use undid soon after, with BackOff.
+	pausedAt    time.Time
+	wrongPauses int32
 }
 
 func newRun(sc Scenario) (*run, error) {
@@ -426,7 +440,7 @@ func (s *run) lookAwake(t time.Time, use Use) error {
 		s.lastActivity, s.lastWasUse = t, true
 	}
 
-	if clockAt := s.lastActivity.Add(set.IdleAfter); t.Before(clockAt) {
+	if clockAt := s.lastActivity.Add(s.idleWait()); t.Before(clockAt) {
 		s.endVeto(t)
 		if !set.PauseEarly || !set.WakeOnRequest {
 			return nil
@@ -458,8 +472,18 @@ func (s *run) endVeto(t time.Time) {
 	}
 }
 
+// idleWait is how long the idle clock waits without activity before it
+// pauses the workload.
+func (s *run) idleWait() time.Duration {
+	if !s.sc.Settings.BackOff {
+		return s.sc.Settings.IdleAfter
+	}
+	return v1alpha1.IdleWait(s.sc.Settings.IdleAfter, s.wrongPauses)
+}
+
 func (s *run) pause(t time.Time) {
 	s.awake = false
+	s.pausedAt = t
 	s.report.Pauses = append(s.report.Pauses, t)
 	if n := len(s.report.Wakes); n > 0 && s.report.Wakes[n-1].PausedAt.IsZero() {
 		w := &s.report.Wakes[n-1]
@@ -528,11 +552,27 @@ func (s *run) wake(t time.Time, cause WakeCause) {
 		p.WokeAt = t
 		p.Cold = cause != WokenByForecast && t.Before(p.ClockAt)
 	}
+	s.judgePause(t, cause)
 	s.awake = true
 	s.wokeAt = t
-	s.lastActivity, s.lastWasUse = t, false
+	s.lastActivity, s.lastWasUse = t.Add(s.sc.Settings.WakeTakes), false
 	s.usedSinceWake = cause != WokenByForecast
 	s.report.Wakes = append(s.report.Wakes, Wake{At: t, Cause: cause})
+}
+
+// judgePause counts a pause the workload's own use undid within the window
+// as wrong, and starts the count again after one that lasted it, as the
+// operator does.
+func (s *run) judgePause(t time.Time, cause WakeCause) {
+	if !s.sc.Settings.BackOff || s.pausedAt.IsZero() {
+		return
+	}
+	switch {
+	case t.Sub(s.pausedAt) >= min(s.sc.Settings.IdleAfter, 15*time.Minute):
+		s.wrongPauses = 0
+	case cause == WokenByRequest || cause == WokenByPeople || cause == WokenByHand:
+		s.wrongPauses++
+	}
 }
 
 // see adds a look to the hour under way and feeds the forecast an hour once
