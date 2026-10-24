@@ -242,7 +242,7 @@ func pause(s clusterSteps, key client.ObjectKey, opts pauseOptions, out, errOut 
 
 		switch w.Status.Phase {
 		case v1alpha1.PhasePaused:
-			_, _ = fmt.Fprintf(out, "%s is already paused; a request to it, or kubectl hybernate wake, wakes it\n", ref)
+			_, _ = fmt.Fprintf(out, "%s is already paused; %s\n", ref, wakesIt(w))
 			return nil
 		case v1alpha1.PhasePausing:
 			_, _ = fmt.Fprintf(out, "%s is already pausing%s\n", ref, ellipsis(opts.wait))
@@ -396,6 +396,16 @@ func ellipsis(wait bool) string {
 	return ""
 }
 
+// wakesIt says what wakes a paused workload: a request to it, or, for one
+// that asks before waking, which no request wakes, a person's click on its
+// asleep page.
+func wakesIt(w *v1alpha1.ManagedWorkload) string {
+	if w.Spec.Wake.Asks() {
+		return "a person's click on its asleep page, or kubectl hybernate wake, wakes it"
+	}
+	return "a request to it, or kubectl hybernate wake, wakes it"
+}
+
 // waitForPause waits until Hybernate has answered the request token, and
 // the workload is Paused, or Hybernate has said why it won't be. An empty
 // token waits for a pause already under way. phase is the workload's when
@@ -425,8 +435,8 @@ func waitForPause(ctx context.Context, c client.Client, key client.ObjectKey, re
 				return err
 			}
 			if w.Status.Phase == v1alpha1.PhasePaused {
-				_, _ = fmt.Fprintf(out, "%s is Paused after %s; a request to it, or kubectl hybernate wake, wakes it\n",
-					ref, opts.now().Sub(start).Round(time.Second))
+				_, _ = fmt.Fprintf(out, "%s is Paused after %s; %s\n", ref, opts.now().Sub(start).Round(time.Second),
+					wakesIt(&w))
 				return nil
 			}
 		}

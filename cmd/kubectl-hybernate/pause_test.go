@@ -126,6 +126,31 @@ func TestPause_FromEachPhase(t *testing.T) {
 	}
 }
 
+// A workload that asks before waking isn't woken by a request, so pause
+// says what does wake it: a person's click on its asleep page.
+func TestPause_SaysWhatWakesAWorkloadThatAsks(t *testing.T) {
+	const wakes = "a person's click on its asleep page, or kubectl hybernate wake, wakes it\n"
+	tests := []struct {
+		phase v1alpha1.WorkloadPhase
+		want  string
+	}{
+		{phase: v1alpha1.PhaseRunning, want: "pausing preview-42/api...\npreview-42/api is Paused after 0s; " + wakes},
+		{phase: v1alpha1.PhasePaused, want: "preview-42/api is already paused; " + wakes},
+	}
+	for _, tt := range tests {
+		t.Run(string(tt.phase), func(t *testing.T) {
+			w := managedWorkload(tt.phase)
+			w.Spec.Wake = &v1alpha1.WakeSpec{Mode: v1alpha1.WakeOnAsk}
+			c := newClient(t, operator(pauses), w)
+
+			out, err := runCLI(t, c, "pause", "api")
+
+			require.NoError(t, err)
+			assert.Equal(t, tt.want, out)
+		})
+	}
+}
+
 // Each request gets a token of its own, so Hybernate acts on a pause asked
 // for again after the last one woke.
 func TestPause_EachRequestIsNew(t *testing.T) {
