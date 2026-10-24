@@ -17,11 +17,14 @@ limitations under the License.
 package main
 
 import (
+	"bytes"
 	"cmp"
 	"context"
 	"errors"
 	"fmt"
 	"io"
+	"os"
+	"runtime"
 	"slices"
 	"strconv"
 	"strings"
@@ -954,14 +957,16 @@ func findManaged(ctx context.Context, c client.Client, namespace, arg string) (*
 }
 
 func writeStatus(w io.Writer, result statusResult, output string, now time.Time) error {
-	return writeOutput(w, output, result, func() error { return writeStatusTable(w, result, now) })
+	return writeOutput(w, output, result, func() error {
+		return writeStatusTable(w, result, now, paletteFor(isTerminal(w), runtime.GOOS, os.Getenv))
+	})
 }
 
-func writeStatusTable(w io.Writer, result statusResult, now time.Time) error {
+func writeStatusTable(w io.Writer, result statusResult, now time.Time, pl palette) error {
 	p := &printer{w: w}
 	if len(result.Workloads) == 0 {
 		p.line("%s: Napwake manages no workloads here.", result.Cluster)
-		p.line("%s", nodeAutoscalerLine(result.NodeAutoscaler))
+		p.line("%s", billLine(result.NodeAutoscaler))
 		if result.Note != "" {
 			p.line("%s", result.Note)
 		}
@@ -969,8 +974,8 @@ func writeStatusTable(w io.Writer, result statusResult, now time.Time) error {
 		return p.err
 	}
 	p.line("%s: Napwake manages %s.", result.Cluster, countOf(len(result.Workloads), "workload"))
-	p.line("  %s", phaseCounts(result.Workloads))
-	p.line("  %s", nodeAutoscalerLine(result.NodeAutoscaler))
+	p.line("  %s", pl.phaseCounts(result.Workloads))
+	p.line("  %s", billLine(result.NodeAutoscaler))
 	if zone := timeZoneLine(result.ForecastTimeZones); zone != "" {
 		p.line("  %s", zone)
 	}
@@ -990,22 +995,25 @@ func writeStatusTable(w io.Writer, result statusResult, now time.Time) error {
 
 	if len(result.Problems) > 0 || result.NodesNotScalingDown {
 		p.line("")
-		p.line("Needs attention:")
+		p.line("%s", pl.paint(sgrAttention, "Needs attention:"))
 		if result.NodesNotScalingDown {
 			p.line("  Pausing freed %s this month, but only %s of it came off the bill: nodes aren't scaling down.",
 				dollars(result.FreedThisMonth), dollars(result.SavedThisMonth))
 			p.line("  kubectl napwake nodes shows why.")
 		}
-		tw := tabwriter.NewWriter(p, 0, 0, 3, ' ', 0)
+		var problems bytes.Buffer
+		tw := tabwriter.NewWriter(&problems, 0, 0, 3, ' ', 0)
 		for _, pr := range result.Problems {
 			_, _ = fmt.Fprintf(tw, "  %s/%s\t%s\t%s\n", pr.Namespace, pr.Workload, pr.Type, oneLine(pr.Message))
 		}
-		_ = tw.Flush() // writes through p, which keeps the first error
+		_ = tw.Flush() // a bytes.Buffer takes every write
+		_, _ = io.WriteString(p, pl.paintProblems(problems.String(), result.Problems))
 	}
 
 	p.line("")
 	dryRun := slices.ContainsFunc(result.Workloads, func(wl statusWorkload) bool { return wl.DryRun })
-	tw := tabwriter.NewWriter(p, 0, 0, 3, ' ', 0)
+	var table bytes.Buffer
+	tw := tabwriter.NewWriter(&table, 0, 0, 3, ' ', 0)
 	header := "  NAMESPACE\tWORKLOAD\tSTATE\tFOR\tLAST ACTIVITY\tNEXT\tFORECAST\tFREED THIS MONTH\tSAVED"
 	if dryRun {
 		header += "\tWOULD FREE"
@@ -1013,14 +1021,15 @@ func writeStatusTable(w io.Writer, result statusResult, now time.Time) error {
 	_, _ = fmt.Fprintln(tw, header)
 	for _, wl := range result.Workloads {
 		_, _ = fmt.Fprintf(tw, "  %s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s", wl.Namespace, workloadCell(wl),
-			stateCell(wl), sinceCell(wl.Since, now), activityCell(wl, now), wl.Next, forecastCell(wl),
+			pl.stateCell(wl), sinceCell(wl.Since, now), activityCell(wl, now), wl.Next, forecastCell(wl),
 			statusFreedCell(wl), statusSavedCell(wl))
 		if dryRun {
 			_, _ = fmt.Fprintf(tw, "\t%s", wouldFreeCell(wl))
 		}
 		_, _ = fmt.Fprintln(tw)
 	}
-	_ = tw.Flush() // writes through p, which keeps the first error
+	_ = tw.Flush() // a bytes.Buffer takes every write
+	_, _ = io.WriteString(p, pl.paintTable(table.String(), result.Workloads))
 	writeTurnedAway(p, result.Workloads, now)
 
 	p.line("")
@@ -1030,7 +1039,7 @@ func writeStatusTable(w io.Writer, result statusResult, now time.Time) error {
 	case len(result.Recent) == 0:
 		p.line("No pauses or wakes in this period.")
 	default:
-		p.line("Recent pauses and wakes:")
+		p.line("%s", pl.paint(sgrHeading, "Recent pauses and wakes:"))
 		tw := tabwriter.NewWriter(p, 0, 0, 3, ' ', 0)
 		for i, h := range result.Recent {
 			if i == recentLimit {
@@ -1080,6 +1089,11 @@ func workloadCell(wl statusWorkload) string {
 
 // phaseCounts is how many workloads are in each phase, busiest phases first.
 func phaseCounts(workloads []statusWorkload) string {
+	return countPhases(workloads, func(_ v1alpha1.WorkloadPhase, count string) string { return count })
+}
+
+// countPhases is phaseCounts with each phase's count as say says it.
+func countPhases(workloads []statusWorkload, say func(phase v1alpha1.WorkloadPhase, count string) string) string {
 	order := []v1alpha1.WorkloadPhase{v1alpha1.PhasePaused, v1alpha1.PhaseRunning, v1alpha1.PhaseIdle,
 		v1alpha1.PhasePausing, v1alpha1.PhaseResuming, v1alpha1.PhaseCreating}
 	counts := map[v1alpha1.WorkloadPhase]int{}
@@ -1093,7 +1107,7 @@ func phaseCounts(workloads []statusWorkload) string {
 	var parts []string
 	for _, phase := range order {
 		if n := counts[phase]; n > 0 {
-			parts = append(parts, fmt.Sprintf("%d %s", n, strings.ToLower(string(phase))))
+			parts = append(parts, say(phase, fmt.Sprintf("%d %s", n, strings.ToLower(string(phase)))))
 		}
 	}
 	s := strings.Join(parts, ", ")

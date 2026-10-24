@@ -179,7 +179,7 @@ func TestStatus(t *testing.T) {
 	//nolint:lll // the expected screen is as wide as the command prints it
 	assert.Equal(t, `staging (EKS us-east-1): Napwake manages 4 workloads.
   1 paused, 2 running, 1 resuming; 1 in dry-run, never paused: pausing it would have freed $7 since Oct 1
-  Node autoscaler: none found — freed capacity won't lower the bill until nodes scale down; see https://docs.napwake.dev/guides/cluster-autoscaler/
+  Your bill: won't drop until something removes nodes, and no node autoscaler was found. See https://docs.napwake.dev/guides/cluster-autoscaler/
   Forecast time zone: Europe/London
   Freed $42 this month, and saved $35 of it.
 
@@ -836,7 +836,7 @@ func TestStatus_NothingManaged(t *testing.T) {
 	out := runStatus(t, newStatusClient(t, interceptor.Funcs{}), statusOpts())
 
 	assert.Equal(t, "staging (EKS us-east-1): Napwake manages no workloads here.\n"+
-		"Node autoscaler: none found — freed capacity won't lower the bill until nodes scale down; see "+
+		"Your bill: won't drop until something removes nodes, and no node autoscaler was found. See "+
 		"https://docs.napwake.dev/guides/cluster-autoscaler/\n"+
 		"kubectl napwake scan finds idle ones; label one napwake.dev/managed=true for Napwake to manage it.\n", out)
 }
@@ -1111,14 +1111,15 @@ func TestStatus_SavingsUnknown(t *testing.T) {
 	assert.Regexp(t, `deployment/a .* \$4\s+unknown\n`, out.String())
 }
 
-// The node autoscaler line comes from what status can see of the cluster.
+// The Your bill line comes from what status can see of the cluster's node
+// autoscaler.
 func TestStatus_NodeAutoscaler(t *testing.T) {
 	ca := &corev1.ConfigMap{ObjectMeta: metav1.ObjectMeta{Name: "cluster-autoscaler-status", Namespace: "kube-system"}}
 	objs := append(statusCluster(), ca)
 
 	out := runStatus(t, newStatusClient(t, interceptor.Funcs{}, objs...), statusOpts())
 
-	assert.Contains(t, out, "  Node autoscaler: Cluster Autoscaler\n")
+	assert.Contains(t, out, "  Your bill: drops only as Cluster Autoscaler removes nodes\n")
 }
 
 func TestStatus_Since(t *testing.T) {

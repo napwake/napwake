@@ -152,6 +152,8 @@ There's no upgrade path from Hybernate 0.1.x or a 0.2.0 release candidate. Unins
 - Napwake says what to change, with a number. A `PausedWhileInUse` warning event and condition say how soon the pause was undone and how long the clock waits now. When the CPU the workload used in use sits clearly above what it uses idle, it suggests a CPU threshold between them, such as `try napwake.dev/cpu-threshold: "0.4"`. Otherwise it suggests a Prometheus query that counts the workload's requests. Without a measure of idle use yet, it says so. `kubectl napwake status` lists it under Needs attention, and `napwake_wrong_pauses_total` counts wrong pauses by workload
 - A CPU threshold can be a decimal, from 0.1 to 100: `cpuThreshold: "0.5"` as well as `cpuThreshold: 10`, the `napwake.dev/cpu-threshold` annotation, `defaults.cpuThreshold`, and the plugin's `scan` and `forecast` `--cpu-threshold`. The default stays 10. The scan shows CPU under 10% to a tenth, as `CPU 0.4% of its request`
 - The simulator models how long a wake takes, and the back-off after a wrong pause, which the scan's replay uses too
+- `kubectl napwake status` is in colour at a terminal. Paused is blue beside a shut door, resuming yellow beside one ajar, running green beside an open one. Needs attention is red. Set `NO_COLOR` for no colour. Piped or redirected output is plain text, as before
+- The scan report and the status page have a share card your browser draws, wide or square, with totals only. **Copy summary** gives three plain lines, and **Save as PDF** prints the page. The cluster's name, and the scan's Prometheus source, are left out unless you tick the box. The page sends nothing anywhere
 
 ### Changed
 
@@ -203,6 +205,12 @@ There's no upgrade path from Hybernate 0.1.x or a 0.2.0 release candidate. Unins
 - `idlePolicy.activity.cpuThreshold` is int-or-string, so a decimal is written as a string, as Kubernetes APIs write what isn't whole. A whole number still validates as one
 - A request while a workload pauses calls the pause off. Whatever would wake it once paused, come as it pauses, has it `Running` again, scaled back up if its pods had begun to stop, with a `PauseCancelled` event: `a request came as it paused; the pause is cancelled`. For a workload that asks first, only a person's click or a wake request does. A pause asked for answers `PauseRequest=False`, reason `PauseCancelled`, and `kubectl napwake pause` says it wasn't paused. A wake request while it pauses calls it off rather than waiting for the pause to finish
 - A pause of a workload the doorman routes takes about 10 seconds longer: the doorman steps in front of its Services, and proxies send to it, before its pods stop. `status.pause.routedAt` records when
+- The scan report and the status page are redesigned. The cluster is drawn as a hotel at night, one room per workload up to 35. On a scan, the rooms of idle workloads go dark by themselves once, to show what Napwake would do. Nothing is paused
+- `scan` and `status` say what the bill rests on in one short line, such as `Your bill: drops only as Karpenter removes nodes (it consolidates when underutilized after 1m)`. It replaces the `Node autoscaler:` line and the line under it. `kubectl napwake nodes` keeps its `Node autoscaler:` line
+- `scan` says what costs were priced at in one short line, such as `Prices: AWS us-east-1 list prices · 3 node types · 3 workloads on spot, priced at spot`. It's in full, as before, when the prices are too mixed for that
+- The waking-up page and the asleep page show the doorman at the door, in Napwake's colours, light and dark. The doorman's mark replaces the snowflake on every page
+- The asleep page answers an expired **Wake it** button with a `403`, and a click inside the one-a-minute limit with a `429` and `Retry-After: 60`. The page is the same. Its Content-Security-Policy allows only its own style and script, by their hashes, and an inline tab icon, so browsers don't ask for `/favicon.ico`
+- The `503` a workload that asks gives `curl`, scripts and crawlers lists each way to wake it, one a line. The JSON's `wake` is a list
 
 ### Fixed
 
@@ -318,6 +326,12 @@ There's no upgrade path from Hybernate 0.1.x or a 0.2.0 release candidate. Unins
 - A request through a workload's Service is no longer refused as it pauses. Its pods used to leave the Service's endpoints before the doorman's EndpointSlice was in place and picked up, for 3 to 5 seconds a pause, about one refused request a pause under steady use. The doorman now fronts the Services beside the pods from the moment the pause starts, passing what it gets to a Ready pod, and the pods stop only once proxies send to it too. A pod that exits the moment it gets `SIGTERM` can still refuse a connection in the second before kube-proxy drops it, as in any rollout. A `preStop` sleep closes that
 - A request held while the doorman's cache didn't yet show its workload Paused is stamped, and wakes it. It was held unstamped until `maxWait`, and the workload stayed asleep
 - `kubectl napwake nodes` says why a node whose node group is at its minimum stays, instead of giving steps to unblock it that would save nothing. It reads each node group's sizes from Cluster Autoscaler's `cluster-autoscaler-status` ConfigMap, GKE's included, in the YAML of Cluster Autoscaler 1.30 and later or the text before. Karpenter keeps no minimum
+- On GKE Autopilot, `scan` and `status` no longer say the bill drops only as nodes scale down. Autopilot bills what pods request, so it drops as pods stop
+- With no node autoscaler found, `scan` and `status` say the bill won't drop until something removes nodes. They no longer say nothing will
+- The scan report's Workloads section mentions what pausing freed and saved only once something is live
+- The scan's headline says what was freed "pausing 1 live workload and others before they were protected", in place of "and workloads since protected"
+- A click on **Wake it** that the browser says came from another address no longer gets "The button had run out", which asked for another press that couldn't help. That's a click from another site, or, over plain HTTP, an `Origin` that isn't the page's, as behind a proxy that rewrites `Host`. The page says the click didn't come from its address, and how else to wake it, as a `403`
+- The waking-up page draws its own tab icon, so browsers no longer ask the doorman for `/favicon.ico`, which it held until the workload was Ready. Its Content-Security-Policy allows its own style, no script, and images only from `data:`
 
 ## [0.1.7] - 2026-04-08
 

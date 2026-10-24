@@ -151,13 +151,13 @@ func TestServer_AsksAPersonBeforeWaking(t *testing.T) {
 	assert.Contains(t, body, `<meta name="robots" content="noindex">`)
 	assert.Contains(t, body, `<meta http-equiv="refresh" content="60">`,
 		"a tab left open reloads itself, into the app once someone has woken it, and with a fresh token until then")
-	assert.Contains(t, body, "<title>Asleep pr-42.preview.example.dev</title>")
-	assert.Contains(t, body, `<form method="post">`, "the button posts back to the page it's on")
+	assert.Contains(t, body, "<title>Asleep · pr-42.preview.example.dev</title>")
+	assert.Contains(t, body, `<form class="ask" id="wake" method="post">`, "the button posts back to the page it's on")
+	assert.NotContains(t, body, `name="next"`, "with nowhere else to go")
 	assert.Contains(t, body, "Wake it")
 	tokenIn(t, body)
 	assert.NotContains(t, body, "dev/api", "the page names nothing inside the cluster")
 	assert.NotContains(t, body, "uid-api")
-	assert.Contains(t, body, `href="https://docs.napwake.dev/guides/pause/#wake-now"`, "how tooling wakes it")
 
 	stop()
 	assert.Empty(t, lastRequest(t, c), "nothing wakes it")
@@ -228,10 +228,11 @@ func TestServer_AsksNothingWhileItWakes(t *testing.T) {
 func TestServer_AClickWithoutAGoodTokenWakesNothing(t *testing.T) {
 	good := func(s *Server, scope tokenScope) string { return s.wakeKeys.sign(scope, time.Now().Add(tokenTTL)) }
 	tests := []struct {
-		name  string
-		token func(*Server, tokenScope) string
-		site  string
-		wakes bool
+		name   string
+		token  func(*Server, tokenScope) string
+		site   string
+		wakes  bool
+		notice notice
 	}{
 		{name: "a good token, which the others are measured against", token: good, wakes: true},
 		{name: "no token", token: func(*Server, tokenScope) string { return "" }},
@@ -254,8 +255,8 @@ func TestServer_AClickWithoutAGoodTokenWakesNothing(t *testing.T) {
 		{name: "signed with another key", token: func(_ *Server, scope tokenScope) string {
 			return newWakeKeys().sign(scope, time.Now().Add(tokenTTL))
 		}},
-		{name: "a good token, from another site", token: good, site: "cross-site"},
-		{name: "a good token, from another subdomain", token: good, site: "same-site"},
+		{name: "a good token, from another site", token: good, site: "cross-site", notice: noticeElsewhere},
+		{name: "a good token, from another subdomain", token: good, site: "same-site", notice: noticeElsewhere},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -279,8 +280,13 @@ func TestServer_AClickWithoutAGoodTokenWakesNothing(t *testing.T) {
 				assert.NotEmpty(t, lastRequest(t, c))
 				return
 			}
-			assert.Equal(t, http.StatusOK, resp.StatusCode, "the asleep page again")
-			assert.Contains(t, body, noticeExpired.text)
+			want, other := noticeExpired, noticeElsewhere
+			if tt.notice == noticeElsewhere {
+				want, other = noticeElsewhere, noticeExpired
+			}
+			assert.Equal(t, http.StatusForbidden, resp.StatusCode, "the asleep page again, refused")
+			assert.Contains(t, body, template.HTMLEscapeString(want.text))
+			assert.NotContains(t, body, template.HTMLEscapeString(other.text))
 			tokenIn(t, body)
 			assert.Empty(t, lastRequest(t, c), "nothing wakes it")
 		})
@@ -317,9 +323,9 @@ func TestServer_AClickMustComeFromAPerson(t *testing.T) {
 		{name: "Chrome, marked as a person's but saying nothing of where it came from", agent: chrome, page: true,
 			headers: "Sec-Fetch-User: ?1\r\n", notice: noticeNoFetchMetadata},
 		{name: "Safari, from another site", agent: safari, page: true, headers: fromSite(safariClick, "cross-site"),
-			notice: noticeExpired},
+			notice: noticeElsewhere},
 		{name: "Safari, from another subdomain", agent: safari, page: true, headers: fromSite(safariClick, "same-site"),
-			notice: noticeExpired},
+			notice: noticeElsewhere},
 		{name: "Safari, from no page at all", agent: safari, page: true, headers: fromSite(safariClick, "none"),
 			notice: noticeExpired},
 		{name: "Chrome, a script submitting the form", agent: chrome, page: true, headers: scripted},
@@ -346,9 +352,13 @@ func TestServer_AClickMustComeFromAPerson(t *testing.T) {
 				assert.NotEmpty(t, lastRequest(t, c))
 				return
 			case tt.page:
-				assert.Equal(t, http.StatusOK, resp.StatusCode, "the asleep page again")
+				status := http.StatusOK
+				if tt.notice == noticeExpired || tt.notice == noticeElsewhere {
+					status = http.StatusForbidden
+				}
+				assert.Equal(t, status, resp.StatusCode, "the asleep page again")
 				tokenIn(t, body)
-				for _, other := range []notice{noticeExpired, noticeNoFetchMetadata} {
+				for _, other := range []notice{noticeExpired, noticeElsewhere, noticeNoFetchMetadata} {
 					if other != tt.notice {
 						assert.NotContains(t, body, template.HTMLEscapeString(other.text))
 					}
@@ -391,7 +401,7 @@ func TestServer_AnAppsOwnFormFromABrowserIsAsked(t *testing.T) {
 
 			stop()
 			assert.Equal(t, http.StatusOK, resp.StatusCode, "the asleep page")
-			assert.NotContains(t, body, `class="notice"`)
+			assert.NotContains(t, body, `class="note`)
 			tokenIn(t, body)
 			assert.Empty(t, lastRequest(t, c))
 			assert.Equal(t, asked+1, wakes(resultAsked))
@@ -468,15 +478,17 @@ func TestServer_AClickOverPlainHTTPIsJudgedByItsOrigin(t *testing.T) {
 			wakes: true},
 		{name: "no Origin", agent: chrome, notice: noticeNoFetchMetadata},
 		{name: "a null Origin", agent: safari, origin: "null", notice: noticeNoFetchMetadata},
-		{name: "another site", agent: chrome, origin: "http://attacker.example", notice: noticeExpired},
-		{name: "another subdomain", agent: chrome, origin: "http://pr-43.preview.example.dev", notice: noticeExpired},
+		{name: "another site", agent: chrome, origin: "http://attacker.example", notice: noticeElsewhere},
+		{name: "another subdomain", agent: chrome, origin: "http://pr-43.preview.example.dev", notice: noticeElsewhere},
 		{name: "another port", agent: chrome, host: "localhost:8080", origin: "http://localhost:8081",
-			notice: noticeExpired},
+			notice: noticeElsewhere},
 		{name: "the default port, for a page on another", agent: chrome, host: "localhost:8080",
-			origin: "http://localhost", notice: noticeExpired},
+			origin: "http://localhost", notice: noticeElsewhere},
 		{name: "HTTPS on its default port, for a page on port 80", agent: chrome, host: page + ":80",
-			origin: "https://" + page, notice: noticeExpired},
-		{name: "not a web origin", agent: chrome, origin: "file://", notice: noticeExpired},
+			origin: "https://" + page, notice: noticeElsewhere},
+		{name: "behind a proxy that rewrites Host", agent: chrome, host: "web.preview-42.svc.cluster.local",
+			origin: "http://" + page, notice: noticeElsewhere},
+		{name: "not a web origin", agent: chrome, origin: "file://", notice: noticeElsewhere},
 		{name: "a spider sending the page's Origin", agent: "python-requests/2.32.3", origin: "http://" + page,
 			turnedAway: true},
 	}
@@ -504,7 +516,11 @@ func TestServer_AClickOverPlainHTTPIsJudgedByItsOrigin(t *testing.T) {
 				assert.Equal(t, http.StatusServiceUnavailable, resp.StatusCode)
 				assert.Contains(t, body, asleepMessage)
 			default:
-				assert.Equal(t, http.StatusOK, resp.StatusCode, "the asleep page again")
+				status := http.StatusOK
+				if tt.notice == noticeExpired || tt.notice == noticeElsewhere {
+					status = http.StatusForbidden
+				}
+				assert.Equal(t, status, resp.StatusCode, "the asleep page again")
 				tokenIn(t, body)
 				assert.Contains(t, body, template.HTMLEscapeString(tt.notice.text))
 			}
@@ -595,16 +611,25 @@ func assertSaysHowToWake(t *testing.T, resp *http.Response, body string, wantJSO
 	t.Helper()
 	if wantJSON {
 		assert.Equal(t, "application/json", resp.Header.Get("Content-Type"))
-		var answer map[string]string
+		var answer struct {
+			Status, Message, Docs string
+			Wake                  []string
+		}
 		require.NoError(t, json.Unmarshal([]byte(body), &answer), body)
-		assert.Equal(t, "asleep", answer["status"])
-		body = answer["message"] + " " + answer["wake"] + " " + answer["docs"]
+		assert.Equal(t, "asleep", answer.Status)
+		assert.Len(t, answer.Wake, 3, "each way to wake it")
+		body = answer.Message + " " + strings.Join(answer.Wake, " ") + " " + answer.Docs
 	} else {
 		assert.Equal(t, "text/plain; charset=utf-8", resp.Header.Get("Content-Type"))
+		assert.Equal(t, "This environment is asleep. Napwake paused it while nobody was using it, to save money.\n"+
+			"Requests don't wake it. To wake it, do one of these, then try again:\n"+
+			"- Open it in a browser and press Wake it.\n"+
+			"- Run kubectl napwake wake NAME -n NAMESPACE.\n"+
+			"- From tooling, set the annotation napwake.dev/wake-requested to a new value on its ManagedWorkload.\n"+
+			"More at https://docs.napwake.dev/guides/preview-environments/\n", body)
 	}
-	for _, how := range []string{"Wake it", "napwake.dev/wake-requested", "kubectl napwake wake",
-		"https://docs.napwake.dev/concepts/wake-on-request/#asking-before-waking",
-		"https://docs.napwake.dev/guides/pause/#wake-now"} {
+	for _, how := range []string{"Requests don't wake it", "Wake it", "napwake.dev/wake-requested",
+		"kubectl napwake wake", "https://docs.napwake.dev/guides/preview-environments/"} {
 		assert.Contains(t, body, how)
 	}
 	assert.NotContains(t, body, "dev/api", "it names nothing inside the cluster")
@@ -681,8 +706,9 @@ func TestServer_ClickWakesAreRateLimited(t *testing.T) {
 				assert.NotEqual(t, stamp, lastRequest(t, c))
 				return
 			}
-			assert.Equal(t, http.StatusOK, resp.StatusCode, "asked again")
-			assert.Contains(t, body, noticeLimited.text)
+			assert.Equal(t, http.StatusTooManyRequests, resp.StatusCode, "asked again")
+			assert.Equal(t, "60", resp.Header.Get("Retry-After"), "when a click may wake it")
+			assert.Contains(t, body, template.HTMLEscapeString(noticeLimited.text))
 			assert.Equal(t, stamp, lastRequest(t, c), "no new wake")
 		})
 	}

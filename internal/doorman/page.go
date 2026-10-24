@@ -19,7 +19,10 @@ package doorman
 import (
 	"bufio"
 	"bytes"
+	"cmp"
+	"crypto/sha256"
 	_ "embed"
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"html/template"
@@ -30,24 +33,27 @@ import (
 	"time"
 )
 
-//go:embed page.html
-var pageHTML string
+var (
+	//go:embed page.html
+	pageHTML string
+	//go:embed asleep.html
+	asleepHTML string
 
-var pageTemplate = template.Must(template.New("page").Parse(pageHTML))
+	pageTemplate   = template.Must(template.New("page").Parse(pageHTML))
+	asleepTemplate = template.Must(template.New("asleep").Parse(asleepHTML))
+)
 
-// Mark is the Napwake snowflake as an SVG path, drawn on the waking-up page
-// and the scan report.
-const Mark = "M20.79,13.95L18.46,14.57L16.46,12.57L18.46,10.57L20.79,11.19C21.15,11.28 21.52,11.06 21.6,10.7C21.69," +
-	"10.34 21.47,9.97 21.11,9.89L18.79,9.27L19.41,6.95C19.5,6.59 19.27,6.22 18.91,6.14C18.56,6.05 18.19,6.27 18.1," +
-	"6.63L17.5,8.95L15.5,10.95L13,8.45V5.86L14.79,4.07C15.08,3.78 15.08,3.29 14.79,3C14.5,2.71 14,2.71 13.71,3L12," +
-	"4.71L10.29,3C10,2.71 9.5,2.71 9.21,3C8.92,3.29 8.92,3.78 9.21,4.07L11,5.86V8.45L8.5,10.95L6.5,8.95L5.9,6.63C5.81," +
-	"6.27 5.44,6.05 5.09,6.14C4.73,6.22 4.5,6.59 4.59,6.95L5.21,9.27L2.89,9.89C2.53,9.97 2.31,10.34 2.4,10.7C2.5," +
-	"11.06 2.85,11.28 3.21,11.19L5.54,10.57L7.54,12.57L5.54,14.57L3.21,13.95C2.85,13.86 2.5,14.08 2.4,14.44C2.31,14.8 " +
-	"2.53,15.17 2.89,15.25L5.21,15.87L4.59,18.19C4.5,18.55 4.73,18.92 5.09,19C5.44,19.09 5.81,18.87 5.9,18.5L6.5," +
-	"16.19L8.5,14.19L11,16.69V19.28L9.21,21.07C8.92,21.36 8.92,21.86 9.21,22.14C9.5,22.43 10,22.43 10.29,22.14L12," +
-	"20.43L13.71,22.14C14,22.43 14.5,22.43 14.79,22.14C15.08,21.86 15.08,21.36 14.79,21.07L13,19.28V16.69L15.5,14.19L17.5," +
-	"16.19L18.1,18.5C18.19,18.87 18.56,19.09 18.91,19C19.27,18.92 19.5,18.55 19.41,18.19L18.79,15.87L21.11,15.25C21.47," +
-	"15.17 21.69,14.8 21.6,14.44C21.52,14.08 21.15,13.86 20.79,13.95Z"
+// Mark is the Napwake doorman, his hat, his face and his shoulders, as an
+// SVG path on a 24 grid, drawn on the waking-up and asleep pages and on the
+// plugin's scan report and status page. Its eyes are counter-clockwise
+// subpaths, so they cut out under the default nonzero fill rule as well as
+// under evenodd.
+const Mark = "M7.6 9.9L7.2 3.6Q7.2 2.6 8.2 2.6Q12 2.2 15.8 2.6Q16.8 2.6 16.8 3.6L16.4 9.9Z" +
+	"M3.4 10.7Q3.4 9.8 4.6 9.9H19.4Q20.6 9.8 20.6 10.7Q20.6 11.7 19.4 11.7H4.6Q3.4 11.7 3.4 10.7Z" +
+	"M6.6 19.2V13.8Q6.6 12.5 7.9 12.5H16.1Q17.4 12.5 17.4 13.8V19.2Z" +
+	"M8 15.4A1.9 1.9 0 0 0 11.8 15.4Z" +
+	"M12.2 15.4A1.9 1.9 0 0 0 16 15.4Z" +
+	"M3 24V22.2Q3 20 5.2 20H18.8Q21 20 21 22.2V24Z"
 
 // pageRefresh is how often the page reloads while the workload starts. The
 // reload that finds it Ready is passed straight through to it.
@@ -64,18 +70,16 @@ type pageData struct {
 	Refresh int
 	Mark    string
 
-	// Asleep shows the page that asks, whose Wake it button posts Token
-	// back to the page's own address as the form field Field. Notice says
-	// why an earlier click woke nothing, and NoticeDocs, if clicking again
-	// won't help, where the docs say how else to wake it.
-	Asleep     bool
-	Field      string
-	Token      string
-	Notice     string
-	NoticeDocs string
-	// WakeRequestDocs is where the asleep page says tooling can wake the
-	// workload instead.
-	WakeRequestDocs string
+	// Field and Token are the asleep page's Wake it button, which posts the
+	// token back to the page's own address in the form field Field. Notice
+	// says why an earlier click woke nothing, under NoticeTitle, and
+	// NoticeDocs, if clicking again won't help, where the docs say how else
+	// to wake it.
+	Field       string
+	Token       string
+	Notice      string
+	NoticeTitle string
+	NoticeDocs  string
 }
 
 // pageAddress is the host the browser asked for, without its port.
@@ -262,6 +266,18 @@ func isPageLoad(req *http.Request) bool {
 	return strings.Contains(req.Header.Get("Accept"), "text/html")
 }
 
+// wakingPolicy lets the waking-up page run only its own style, with no
+// script, and show only its inline tab icon. It leaves framing alone, so an
+// app another site frames still shows its waking-up page there, and reaches
+// the app once it's Ready.
+var wakingPolicy = func() string {
+	var page bytes.Buffer
+	if err := pageTemplate.Execute(&page, pageData{}); err != nil {
+		panic(fmt.Sprintf("rendering the waking-up page: %v", err)) // the embedded template is fixed at build time
+	}
+	return "default-src 'none'; style-src " + inlineHash(page.String(), "style") + "; img-src data:; base-uri 'none'"
+}()
+
 // writePage answers a page load with the waking-up page. It's a 503 so that
 // nothing caches it or mistakes it for the app, and the connection closes
 // after it.
@@ -278,7 +294,8 @@ func writePage(w io.Writer, req *http.Request, data pageData) error {
 		"Cache-Control: no-store\r\n"+
 		"Retry-After: %d\r\n"+
 		"X-Robots-Tag: noindex\r\n"+
-		"Connection: close\r\n\r\n", body.Len(), data.Refresh)
+		"Content-Security-Policy: %s\r\n"+
+		"Connection: close\r\n\r\n", body.Len(), data.Refresh, wakingPolicy)
 	if _, err := io.WriteString(w, header); err != nil {
 		return fmt.Errorf("writing page header: %w", err)
 	}
@@ -296,37 +313,62 @@ func writePage(w io.Writer, req *http.Request, data pageData) error {
 // a stale click to the app, and its button's token never expires.
 const asleepRefresh = time.Minute
 
-// asleepPolicy keeps the asleep page to itself: no script runs on it, its
-// button posts only back to the page's own address, and no other site can
-// frame it, to trick someone into clicking it.
-const asleepPolicy = "default-src 'none'; style-src 'unsafe-inline'; form-action 'self'; base-uri 'none'; " +
-	"frame-ancestors 'none'"
+// asleepPolicy keeps the asleep page to itself: only its own style and
+// script run on it, its one image is its inline tab icon, its button posts
+// only back to the page's own address, and no other site can frame it, to
+// trick someone into clicking it.
+var asleepPolicy = func() string {
+	var page bytes.Buffer
+	if err := asleepTemplate.Execute(&page, pageData{}); err != nil {
+		panic(fmt.Sprintf("rendering the asleep page: %v", err)) // the embedded template is fixed at build time
+	}
+	return "default-src 'none'; style-src " + inlineHash(page.String(), "style") + "; script-src " +
+		inlineHash(page.String(), "script") + "; img-src data:; form-action 'self'; base-uri 'none'; " +
+		"frame-ancestors 'none'"
+}()
+
+// inlineHash is the CSP source for a rendered page's inline element named
+// tag: the SHA-256 of what's between its tags. It's of the page as served,
+// since html/template drops the comments in a style or a script, and the
+// same for every render, since they hold no template actions.
+func inlineHash(page, tag string) string {
+	_, rest, _ := strings.Cut(page, "<"+tag+">")
+	body, _, _ := strings.Cut(rest, "</"+tag+">")
+	sum := sha256.Sum256([]byte(body))
+	return "'sha256-" + base64.StdEncoding.EncodeToString(sum[:]) + "'"
+}
 
 // writeAsleepPage answers a person's browser with the page that asks before
-// waking the workload. It's a 200, as a page that works is, and like the
-// waking-up page, nothing may cache or index it. Its referrer policy is
-// same-origin, not no-referrer, under which a browser posts the click with
-// Origin: null: over plain HTTP, its Origin is all that says the click came
-// from the page, and other sites still get nothing.
-func writeAsleepPage(w io.Writer, data pageData) error {
+// waking the workload, saying n, why an earlier click woke nothing. It's a
+// 200 as a page that works is, or n's status, and like the waking-up page,
+// nothing may cache or index it. Its referrer policy is same-origin, not
+// no-referrer, under which a browser posts the click with Origin: null:
+// over plain HTTP, its Origin is all that says the click came from the
+// page, and other sites still get nothing.
+func writeAsleepPage(w io.Writer, data pageData, n notice) error {
 	data.Mark = Mark
 	data.Refresh = int(asleepRefresh.Seconds())
-	data.Asleep = true
 	data.Field = wakeField
-	data.WakeRequestDocs = wakeRequestDocs
+	data.Notice, data.NoticeTitle, data.NoticeDocs = n.text, n.title, n.docs
 	var body bytes.Buffer
-	if err := pageTemplate.Execute(&body, data); err != nil {
+	if err := asleepTemplate.Execute(&body, data); err != nil {
 		return fmt.Errorf("rendering page: %w", err)
 	}
-	header := fmt.Sprintf("HTTP/1.1 200 OK\r\n"+
+	status := cmp.Or(n.status, http.StatusOK)
+	var retry string
+	if n.retryAfter > 0 {
+		retry = fmt.Sprintf("Retry-After: %d\r\n", int(n.retryAfter.Seconds()))
+	}
+	header := fmt.Sprintf("HTTP/1.1 %d %s\r\n"+
 		"Content-Type: text/html; charset=utf-8\r\n"+
 		"Content-Length: %d\r\n"+
 		"Cache-Control: no-store\r\n"+
+		"%s"+
 		"X-Robots-Tag: noindex\r\n"+
 		"Content-Security-Policy: %s\r\n"+
 		"X-Frame-Options: DENY\r\n"+
 		"Referrer-Policy: same-origin\r\n"+
-		"Connection: close\r\n\r\n", body.Len(), asleepPolicy)
+		"Connection: close\r\n\r\n", status, http.StatusText(status), body.Len(), retry, asleepPolicy)
 	if _, err := io.WriteString(w, header); err != nil {
 		return fmt.Errorf("writing page header: %w", err)
 	}
@@ -345,28 +387,37 @@ const asleepRetryAfter = 5 * time.Minute
 // browser: what it is, and how to wake it. It names nothing inside the
 // cluster, since anyone who reaches the Service reads it.
 const (
-	asleepMessage = "This environment is asleep. A request doesn't wake it: only a person who opens it in a " +
-		"browser and clicks Wake it, or their tooling, can."
-	asleepHowTo = "Open it in a browser and click Wake it; set the napwake.dev/wake-requested annotation on its " +
-		"ManagedWorkload; or run kubectl napwake wake: " + wakeRequestDocs
+	asleepMessage = "This environment is asleep. Napwake paused it while nobody was using it, to save money."
+	asleepGuide   = "https://docs.napwake.dev/guides/preview-environments/"
+
+	// asleepDocs is where the docs say how a workload that asks is woken,
+	// for a browser whose click can't wake it.
 	asleepDocs = "https://docs.napwake.dev/concepts/wake-on-request/#asking-before-waking"
 
-	// wakeRequestDocs says how tooling wakes a workload, for the people
-	// whose tooling reaches it.
-	wakeRequestDocs = "https://docs.napwake.dev/guides/pause/#wake-now"
+	// wakeItDocs is where the docs say why a click woke nothing, such as a
+	// proxy that rewrites Host, and how else to wake it.
+	wakeItDocs = "https://docs.napwake.dev/operations/troubleshooting/#wake-it-doesnt-wake-the-workload"
 )
 
+// asleepWays are the ways to wake a workload that asks.
+var asleepWays = []string{
+	"Open it in a browser and press Wake it.",
+	"Run kubectl napwake wake NAME -n NAMESPACE.",
+	"From tooling, set the annotation napwake.dev/wake-requested to a new value on its ManagedWorkload.",
+}
+
 var asleepJSON = func() string {
-	body, _ := json.Marshal(struct { // a struct of strings always marshals
-		Status  string `json:"status"`
-		Message string `json:"message"`
-		Wake    string `json:"wake"`
-		Docs    string `json:"docs"`
-	}{"asleep", asleepMessage, asleepHowTo, asleepDocs})
+	body, _ := json.Marshal(struct { // strings always marshal
+		Status  string   `json:"status"`
+		Message string   `json:"message"`
+		Wake    []string `json:"wake"`
+		Docs    string   `json:"docs"`
+	}{"asleep", asleepMessage + " Requests don't wake it.", asleepWays, asleepGuide})
 	return string(body) + "\n"
 }()
 
-const asleepText = asleepMessage + "\n" + asleepHowTo + "\n" + asleepDocs + "\n"
+var asleepText = asleepMessage + "\nRequests don't wake it. To wake it, do one of these, then try again:\n- " +
+	strings.Join(asleepWays, "\n- ") + "\nMore at " + asleepGuide + "\n"
 
 // writeAsleep answers a request that doesn't wake the workload: a 503,
 // with a short body in JSON for a client that asks for it, and in plain

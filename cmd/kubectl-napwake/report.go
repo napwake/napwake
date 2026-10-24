@@ -33,7 +33,6 @@ import (
 	v1alpha1 "github.com/napwake/napwake/api/v1alpha1"
 	"github.com/napwake/napwake/internal/discovery"
 	"github.com/napwake/napwake/internal/doorman"
-	"github.com/napwake/napwake/internal/nodescale"
 )
 
 //go:embed report.html
@@ -50,21 +49,24 @@ type reportPage struct {
 	Cluster   string
 	ScannedAt string
 	// Empty says why there are no workloads, when there are none.
-	Empty  string
-	Basis  string
-	Prices string
-	// NodeAutoscaler names what would turn freed capacity into savings.
-	NodeAutoscaler string
-	Headline       headline
-	Facts          []fact
-	History        bool
-	Sleep          bool
-	Slept          bool
-	Freeing        bool
-	CouldFree      bool
-	Namespaces     []namespaceRow
-	Workloads      []workloadRow
-	Dependencies   []dependencyRow
+	Empty string
+	Basis string
+	// Prices is what costs were priced at, in full, for a Pricing too
+	// mixed to say in short.
+	Prices  string
+	Pricing *pricing
+	// NodeScale is what would turn freed capacity into savings.
+	NodeScale    nodeScale
+	Headline     headline
+	Facts        []fact
+	History      bool
+	Sleep        bool
+	Slept        bool
+	Freeing      bool
+	CouldFree    bool
+	Namespaces   []namespaceRow
+	Workloads    []workloadRow
+	Dependencies []dependencyRow
 	// DependencyStatus says each dependency shows its status; without it,
 	// DependenciesLead says what they'd all say.
 	DependencyStatus bool
@@ -320,16 +322,17 @@ func writeHTML(w io.Writer, result scanResult, idleAfter time.Duration) error {
 func buildReport(result scanResult, idleAfter time.Duration) reportPage {
 	history := result.Mode == discovery.ModeHistory
 	page := reportPage{
-		Cluster:        result.Cluster,
-		ScannedAt:      result.ScannedAt.Format("2 January 2006, 15:04 MST"),
-		Basis:          basisSentence(result),
-		Prices:         result.costsSentence(),
-		NodeAutoscaler: reportAutoscaler(result.NodeAutoscaler),
-		History:        history,
-		Threshold:      result.Settings.CPUThreshold,
-		IdleAfter:      roundedDuration(idleAfter),
-		Over:           replayedOver(result.History),
-		Mark:           doorman.Mark,
+		Cluster:   result.Cluster,
+		ScannedAt: result.ScannedAt.Format("2 January 2006, 15:04 MST"),
+		Basis:     basisSentence(result),
+		Prices:    result.costsSentence(),
+		Pricing:   result.pricing(),
+		NodeScale: nodeScaleFor(result.NodeAutoscaler),
+		History:   history,
+		Threshold: result.Settings.CPUThreshold,
+		IdleAfter: roundedDuration(idleAfter),
+		Over:      replayedOver(result.History),
+		Mark:      doorman.Mark,
 	}
 	if result.Totals.Workloads == 0 {
 		page.Empty = emptySentence(result)
@@ -403,14 +406,6 @@ func buildReport(result scanResult, idleAfter time.Duration) reportPage {
 		page.NextSteps = append(page.NextSteps, shellHTML(enable))
 	}
 	return page
-}
-
-func reportAutoscaler(a nodescale.Autoscaler) string {
-	line := nodeAutoscalerLine(a)
-	if s := freedBecomesSaved(a); s != "" {
-		line += ". " + s
-	}
-	return line
 }
 
 func workloadRef(wl Workload) string {
@@ -487,25 +482,26 @@ func headlineFor(result scanResult) (headline, []fact) {
 
 // freedBy says which workloads what Napwake freed this month came from:
 // those live now, or with none live, those put back in dry-run, and those
-// since protected.
+// protected since.
 func freedBy(t discovery.Totals) string {
 	freed, _ := unprotectedFreed(t)
-	var by []string
+	var by string
 	switch {
 	case t.Live > 0:
-		by = append(by, countOf(t.Live, "live workload"))
+		by = countOf(t.Live, "live workload")
 	case anyMoney(freed) && t.DryRun > 0:
-		by = append(by, "workloads since put back in dry-run")
+		by = "workloads before they went back to dry-run"
 	case anyMoney(freed):
-		by = append(by, "workloads")
+		by = "workloads"
 	}
-	if anyMoney(t.ProtectedFreedThisMonth) {
-		by = append(by, "workloads since protected")
+	switch {
+	case !anyMoney(t.ProtectedFreedThisMonth):
+	case by == "":
+		by = "workloads before they were protected"
+	default:
+		by += " and others before they were protected"
 	}
-	if len(by) == 0 {
-		return "workloads"
-	}
-	return strings.Join(by, " and ")
+	return cmp.Or(by, "workloads")
 }
 
 // couldFree is the headline's figure for what pausing could free a month:

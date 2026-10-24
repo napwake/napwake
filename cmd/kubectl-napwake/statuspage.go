@@ -39,18 +39,18 @@ const statusPagePattern = "napwake-status-*.html"
 // statusPage is what the status web page shows, worded from the same
 // status and helpers as the terminal table, so the two never disagree.
 type statusPage struct {
-	Cluster        string
-	At             string
-	Summary        string
-	NodeAutoscaler string
-	TimeZone       string
-	Spot           string
-	Figures        []figure
-	Notes          []string
-	Attention      []attentionRow
-	Workloads      []statusPageRow
-	DryRun         bool
-	Recent         []recentRow
+	Cluster   string
+	At        string
+	Summary   string
+	NodeScale nodeScale
+	TimeZone  string
+	Spot      string
+	Figures   []figure
+	Notes     []string
+	Attention []attentionRow
+	Workloads []statusPageRow
+	DryRun    bool
+	Recent    []recentRow
 	// NoRecent says why no pauses and wakes are listed, when none are.
 	NoRecent string
 	Since    string
@@ -101,14 +101,14 @@ func writeStatusHTML(w io.Writer, result statusResult, since time.Duration, now 
 
 func buildStatusPage(result statusResult, since time.Duration, now time.Time) statusPage {
 	page := statusPage{
-		Cluster:        result.Cluster,
-		At:             now.UTC().Format("2 January 2006, 15:04 MST"),
-		NodeAutoscaler: reportAutoscaler(result.NodeAutoscaler),
-		TimeZone:       timeZoneLine(result.ForecastTimeZones),
-		Spot:           spotLine(result.Workloads),
-		Since:          span(since),
-		Mark:           doorman.Mark,
-		Figures:        statusFigures(result),
+		Cluster:   result.Cluster,
+		At:        now.UTC().Format("2 January 2006, 15:04 MST"),
+		NodeScale: nodeScaleFor(result.NodeAutoscaler),
+		TimeZone:  timeZoneLine(result.ForecastTimeZones),
+		Spot:      spotLine(result.Workloads),
+		Since:     span(since),
+		Mark:      doorman.Mark,
+		Figures:   statusFigures(result),
 	}
 	if len(result.Workloads) == 0 {
 		page.Summary = "Napwake manages no workloads here. kubectl napwake scan finds idle ones; label one " +
