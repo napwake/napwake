@@ -39,6 +39,7 @@ func TestAllMetricsRegistered(t *testing.T) {
 		"napwake_prediction_data_points",
 		"napwake_prediction_anomalies_total",
 		"napwake_idle_detections_total",
+		"napwake_wrong_pauses_total",
 		"napwake_external_scale_ups_total",
 
 		// Tier 3
@@ -72,6 +73,7 @@ func TestAllMetricsRegistered(t *testing.T) {
 	PredictionDataPoints.WithLabelValues("ns", "w").Set(10)
 	PredictionAnomalies.WithLabelValues("ns", "w").Inc()
 	IdleDetections.WithLabelValues("ns", "w").Inc()
+	WrongPauses.WithLabelValues("ns", "w").Inc()
 	ExternalScaleUps.WithLabelValues("ns", "w", "argo-cd").Inc()
 	IdleSeconds.WithLabelValues("ns", "w").Set(60)
 	PredictionRegimeChanges.WithLabelValues("ns", "w").Inc()
@@ -100,6 +102,7 @@ func TestDeleteWorkload(t *testing.T) {
 	PredictionDataPoints.WithLabelValues("shop", "gone").Set(10)
 	PredictionAnomalies.WithLabelValues("shop", "gone").Inc()
 	IdleDetections.WithLabelValues("shop", "gone").Inc()
+	WrongPauses.WithLabelValues("shop", "gone").Inc()
 	IdleSeconds.WithLabelValues("shop", "gone").Set(60)
 	PredictionRegimeChanges.WithLabelValues("shop", "gone").Inc()
 	TargetUnavailable.WithLabelValues("shop", "gone").Inc()

@@ -21,8 +21,11 @@ import (
 	"maps"
 	"os"
 	"path/filepath"
+	"regexp"
 	"slices"
+	"strings"
 	"testing"
+	"time"
 
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/stretchr/testify/assert"
@@ -35,6 +38,7 @@ import (
 	"k8s.io/utils/ptr"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/interceptor"
+	ctrlmetrics "sigs.k8s.io/controller-runtime/pkg/metrics"
 	"sigs.k8s.io/yaml"
 
 	v1alpha1 "github.com/napwake/napwake/api/v1alpha1"
@@ -250,8 +254,10 @@ func TestReconcile_AWorkloadHandedToAnotherInstallIsForgotten(t *testing.T) {
 	require.Equal(t, map[string]float64{"Running": 1}, reportedPhases(t, "handed-app"))
 	metrics.ActivityUnreadable.WithLabelValues("default", "handed-app", "cpu").Set(1)
 	metrics.ResumeIncomplete.WithLabelValues("default", "handed-app").Set(1)
+	metrics.WrongPauses.WithLabelValues("default", "handed-app").Inc()
 	r.forecastEngine(getWorkload(t, r, "handed-app"))
 	r.activityMemo.put("handed-uid", v1alpha1.ActivityStatus{}, fixedTime, nil)
+	r.quietCPU.see("handed-uid", fixedTime, fixedTime, 0.5, time.Minute)
 	r.doormanFailures.next("handed-uid")
 	r.doormanPorts.claims = map[int32]portClaim{30002: {owner: "handed-uid", at: fixedTime}}
 
@@ -264,12 +270,70 @@ func TestReconcile_AWorkloadHandedToAnotherInstallIsForgotten(t *testing.T) {
 	assert.Empty(t, reportedPhases(t, "handed-app"))
 	assert.Empty(t, seriesOf(t, metrics.ActivityUnreadable, "handed-app", "source"))
 	assert.Empty(t, seriesOf(t, metrics.ResumeIncomplete, "handed-app", ""))
+	assert.Empty(t, seriesOf(t, metrics.WrongPauses, "handed-app", ""))
 	assert.NotContains(t, r.engines.engines, types.UID("handed-uid"))
 	_, remembered := r.activityMemo.get("handed-uid")
 	assert.False(t, remembered)
+	assert.NotContains(t, r.quietCPU.stretches, types.UID("handed-uid"))
 	assert.NotContains(t, r.doormanFailures.failures, types.UID("handed-uid"))
 	assert.Empty(t, r.doormanPorts.claims)
 }
+
+// NapwakePausedWhileInUse adds up napwake_wrong_pauses_total by the labels
+// it groups by, so a wrong pause has to make a series of that name with
+// those labels, and the rules, in the chart and in config/prometheus, can
+// read no other metric and group by no label the series lacks.
+func TestWrongPause_MakesTheSeriesItsAlertReads(t *testing.T) {
+	r, now := pausedFor(t, "alerted-app", time.Minute, nil)
+	t.Cleanup(func() { metrics.DeleteWorkload("default", "alerted-app") })
+	requestCame(t, r, "alerted-app", *now)
+	reconcileNamed(t, r, "alerted-app")
+
+	families, err := ctrlmetrics.Registry.Gather()
+	require.NoError(t, err)
+	var series []map[string]string
+	for _, f := range families {
+		if f.GetName() != "napwake_wrong_pauses_total" {
+			continue
+		}
+		for _, m := range f.GetMetric() {
+			labels := map[string]string{}
+			for _, l := range m.GetLabel() {
+				labels[l.GetName()] = l.GetValue()
+			}
+			if labels["workload"] == "alerted-app" {
+				series = append(series, labels)
+				assert.Equal(t, 1.0, m.GetCounter().GetValue())
+			}
+		}
+	}
+	require.Equal(t, []map[string]string{{"namespace": "default", "workload": "alerted-app"}}, series)
+
+	for _, path := range []string{
+		filepath.Join("config", "prometheus", "alerts.yaml"),
+		filepath.Join("charts", "napwake", "templates", "prometheusrule.yaml"),
+	} {
+		raw, err := os.ReadFile(filepath.Join("..", "..", path))
+		require.NoError(t, err)
+		rule := alertRule.FindStringSubmatch(string(raw))
+		require.NotNil(t, rule, "%s has NapwakePausedWhileInUse", path)
+		expr := rule[1]
+		assert.Equal(t, []string{"napwake_wrong_pauses_total"}, slices.Compact(napwakeMetric.FindAllString(expr, -1)), path)
+		groupings := groupedBy.FindAllStringSubmatch(expr, -1)
+		require.NotEmpty(t, groupings, path)
+		for _, by := range groupings {
+			for label := range strings.SplitSeq(by[1], ",") {
+				assert.Contains(t, series[0], strings.TrimSpace(label), "%s groups by a label the series lacks", path)
+			}
+		}
+	}
+}
+
+var (
+	alertRule     = regexp.MustCompile(`(?s)alert: NapwakePausedWhileInUse\s+expr: \|(.*?)\n\s+labels:`)
+	napwakeMetric = regexp.MustCompile(`napwake_\w+`)
+	groupedBy     = regexp.MustCompile(`by \(([^)]*)\)`)
+)
 
 // reportedPhases returns the phases napwake_workload_phase reports for a
 // workload, with their values.
