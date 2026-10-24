@@ -1197,3 +1197,29 @@ func TestPauseBegan(t *testing.T) {
 		})
 	}
 }
+
+// Once the doorman's routes show the workload Running, its pause record
+// gone, before the operator takes the route down, a click from a page shown
+// while it was paused gets the waking-up page too: it's awake, and there's
+// no pause left for a button to be good for.
+func TestServer_AClickOnARouteSyncedAwakeGetsTheWakingUpPage(t *testing.T) {
+	port := freePort(t)
+	s, c := startServer(t, askingWorkload(port))
+	token := askedPage(t, port)
+	failed, paged := wakes(resultError), wakes(resultPage)
+
+	var live v1alpha1.ManagedWorkload
+	require.NoError(t, c.Get(context.Background(), apiKey, &live))
+	live.Status.Phase, live.Status.Pause = v1alpha1.PhaseRunning, nil
+	require.NoError(t, c.Update(context.Background(), &live))
+	synced(t, s)
+
+	resp, body := click(t, port, clickRequest(token))
+
+	assert.Equal(t, http.StatusServiceUnavailable, resp.StatusCode, body)
+	assert.Contains(t, body, "<title>Waking up pr-42.preview.example.dev</title>")
+	require.Eventually(t, func() bool { return wakes(resultPage) == paged+1 }, 5*time.Second, 20*time.Millisecond,
+		"counted as a browser shown the waking-up page, once the connection is done")
+	assert.Equal(t, failed, wakes(resultError))
+	assert.Empty(t, lastRequest(t, c), "an awake workload isn't stamped")
+}

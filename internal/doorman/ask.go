@@ -147,9 +147,10 @@ func (h *heldConn) ask(ctx, waitCtx context.Context, req *http.Request) (net.Con
 // by a person's browser from the page, wakes it as a held request does,
 // and the waking-up page follows. Anything else wakes nothing: a browser
 // is asked again, and anything else turned away. Once the workload is
-// waking, every click gets the waking-up page.
+// waking, or awake with its route not yet taken down, every click gets the
+// waking-up page, which reloads into the app.
 func (h *heldConn) click(ctx, waitCtx context.Context, req *http.Request) string {
-	if h.waking() {
+	if h.waking() || h.currentRoute(h.port, h.route).awake {
 		h.servePage(waitCtx, req)
 		return resultPage
 	}
