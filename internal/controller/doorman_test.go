@@ -681,8 +681,9 @@ func TestReconcileDoorman_SharedService(t *testing.T) {
 // A workload just paused still has its own pods behind its Services for a
 // moment: Ready in their slice until the EndpointSlice controller sees them
 // stopping. They're on their way out, so they don't move the doorman
-// aside, which would leave the Service with nothing once they stop. Pods
-// of a paused workload scaled up by hand do: they serve its requests.
+// aside, which would leave the Service with nothing once they stop; nor
+// when the cache still shows its target as before the pause. One scaled up
+// by hand isn't Paused for long: wakeOnScaleUp wakes it.
 func TestReconcileDoorman_APausedWorkloadsStoppingPodsLeaveItRouted(t *testing.T) {
 	const name, hash = "shop", "5f8b5f6f4b"
 	run := func(t *testing.T, replicas int32) (*Reconciler, *v1alpha1.ManagedWorkload) {
@@ -707,8 +708,8 @@ func TestReconcileDoorman_APausedWorkloadsStoppingPodsLeaveItRouted(t *testing.T
 	assert.NotEqual(t, "ServedByOtherPods", wakeCondition(t, workload).Reason)
 
 	r, workload = run(t, 2)
-	assert.Empty(t, doormanSlices(t, r), "scaled up by hand, its pods serve")
-	assert.Equal(t, "ServedByOtherPods", wakeCondition(t, workload).Reason)
+	assert.Len(t, doormanSlices(t, r), 1, "the cache can show it as before the pause; its pods are still its own")
+	assert.NotEqual(t, "ServedByOtherPods", wakeCondition(t, workload).Reason)
 }
 
 // GKE annotates every Service of a VPC-native cluster for NEGs, but only a
