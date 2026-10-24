@@ -24,6 +24,7 @@ import (
 	"sync"
 	"time"
 
+	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
 	"sigs.k8s.io/controller-runtime/pkg/log"
@@ -44,6 +45,7 @@ const (
 	ReasonPausedWhileInUse    = "PausedWhileInUse"
 	reasonWokenSoonAfterPause = "WokenSoonAfterPause"
 	reasonPauseHeld           = "PauseHeld"
+	reasonNoIdlePolicy        = "NoIdlePolicy"
 
 	// wrongPauseWindowMax caps how soon after a pause a wake makes it wrong.
 	// Steady light use wakes a wrong pause within seconds or a minute or two;
@@ -73,13 +75,33 @@ func wrongPauseWindow(workload *v1alpha1.ManagedWorkload) time.Duration {
 
 // idleWaitFor is how long the workload's idle clock waits without activity
 // before a pause: idleAfter, longer after wrong pauses. It's never shorter
-// than idleAfter.
+// than idleAfter. A would-be pause in dry-run waits idleAfter, since
+// dry-run judges no pause wrong.
 func idleWaitFor(workload *v1alpha1.ManagedWorkload) time.Duration {
 	var wrong int32
-	if w := workload.Status.IdleWait; w != nil {
+	if w := workload.Status.IdleWait; w != nil && !workload.Spec.DryRun {
 		wrong = w.WrongPauses
 	}
 	return v1alpha1.IdleWait(idleAfterFor(workload), wrong)
+}
+
+// endBackOff ends the back-off of a workload no pause can hold for now: one
+// in dry-run, protected, or without an idle policy, for which no pause
+// would ever end it. Its next pause, whenever one comes, waits idleAfter,
+// and Napwake no longer says it was paused while in use. What it measured
+// of the workload's CPU, and its last wrong pause, are kept. It reports
+// whether that changed the workload's status.
+func (r *Reconciler) endBackOff(workload *v1alpha1.ManagedWorkload, reason string) bool {
+	changed := false
+	if w := workload.Status.IdleWait; w != nil && w.WrongPauses > 0 {
+		w.WrongPauses = 0
+		changed = true
+	}
+	if meta.IsStatusConditionTrue(workload.Status.Conditions, conditionPausedWhileInUse) {
+		r.clearCondition(workload, conditionPausedWhileInUse, reason)
+		changed = true
+	}
+	return changed
 }
 
 // pauseBegan is when the workload's pause began: when it was scaled to

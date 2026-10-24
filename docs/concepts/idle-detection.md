@@ -96,7 +96,7 @@ After a wrong pause, the idle clock waits longer before the next. Each wrong pau
 | 3 | 40 minutes | 2 hours |
 | 4 or more | 1 hour 5 minutes | 2 hours |
 
-A pause that lasts the window ends the wait. The count is kept in `status.idleWait`, so a restart keeps it. The wait only ever delays a pause.
+A pause that lasts the window ends the wait. So do dry-run, protecting the workload and removing its `idlePolicy`, which no pause can last through, and a would-be pause in dry-run never waits longer. The count is kept in `status.idleWait`, so a restart keeps it. The wait only ever delays a pause.
 
 These don't make a pause wrong, since Napwake didn't misjudge the workload's use:
 
@@ -109,7 +109,7 @@ Steady light use wakes a wrong pause within seconds or a minute or two. A pause 
 
 ### What Napwake tells you
 
-A `PausedWhileInUse` warning event says how soon the pause was undone, how long the clock waits now, and what to change. The `PausedWhileInUse` condition says the same until a pause holds, and [`kubectl napwake status`](../getting-started/kubectl-plugin.md#see-what-napwake-is-doing) lists it under Needs attention.
+A `PausedWhileInUse` warning event says how soon the pause was undone, how long the clock waits now, and what to change. The `PausedWhileInUse` condition says the same until a pause holds, or the wait ends otherwise, and [`kubectl napwake status`](../getting-started/kubectl-plugin.md#see-what-napwake-is-doing) lists it under Needs attention.
 
 ```text
 a request came 40 seconds after it paused, so it was in use: it now waits 10 minutes without activity

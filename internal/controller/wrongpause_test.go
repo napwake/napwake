@@ -472,3 +472,58 @@ func TestWrongPause_ADependentStampsItsDependenciesOnceItsWaking(t *testing.T) {
 		assert.Zero(t, w.Status.IdleWait.WrongPauses)
 	}
 }
+
+// backedOff is the named workload, running, after two wrong pauses in a
+// row, with what setup makes of it and a reconciler for it.
+func backedOff(t *testing.T, name string, setup func(*v1alpha1.ManagedWorkload),
+	objs ...client.Object) *Reconciler {
+	t.Helper()
+	now := monotonic(fixedTime)
+	workload := depWorkload("default", name, v1alpha1.TargetKindDeployment, v1alpha1.PhaseRunning)
+	workload.Spec.IdlePolicy.IdleAfter = &metav1.Duration{Duration: 5 * time.Minute}
+	workload.Status.IdleWait = &v1alpha1.IdleWaitStatus{WrongPauses: 2}
+	workload.Status.Conditions = []metav1.Condition{{Type: conditionPausedWhileInUse, Status: metav1.ConditionTrue,
+		Reason: reasonWokenSoonAfterPause, LastTransitionTime: metav1.NewTime(now)}}
+	if setup != nil {
+		setup(workload)
+	}
+	r := depReconciler(t, &stubPauser{pauseDone: true, resumeDone: true},
+		append([]client.Object{workload, targetDeploymentWithReplicas(name, "default", 1)}, objs...)...)
+	r.Recorder = events.NewFakeRecorder(100)
+	r.clock = func() time.Time { return now }
+	return r
+}
+
+// Once no pause can hold, the back-off would never end, and Napwake would
+// go on saying the workload was paused while in use. So dry-run,
+// protection and having no idle policy end it, and clear what Napwake
+// said, and a would-be pause in dry-run waits idleAfter, as a first pause
+// would.
+func TestWrongPause_TheBackOffEndsOnceNoPauseCanHold(t *testing.T) {
+	tests := []struct {
+		name  string
+		setup func(*v1alpha1.ManagedWorkload)
+		objs  []client.Object
+	}{
+		{name: "dry-run", setup: func(w *v1alpha1.ManagedWorkload) { w.Spec.DryRun = true }},
+		{name: "protected", objs: []client.Object{defaultNamespace(protectedLabel)}},
+		{name: "no idle policy", setup: func(w *v1alpha1.ManagedWorkload) { w.Spec.IdlePolicy = nil }},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			r := backedOff(t, "api", tt.setup, tt.objs...)
+
+			reconcileNamed(t, r, "api")
+
+			w := fetch(t, r, "api")
+			require.NotNil(t, w.Status.IdleWait)
+			assert.Zero(t, w.Status.IdleWait.WrongPauses)
+			assert.False(t, meta.IsStatusConditionTrue(w.Status.Conditions, conditionPausedWhileInUse))
+			assert.Equal(t, idleAfterFor(w), idleWaitFor(w))
+		})
+	}
+
+	inDryRun := backedOff(t, "api", func(w *v1alpha1.ManagedWorkload) { w.Spec.DryRun = true })
+	assert.Equal(t, 5*time.Minute, idleWaitFor(fetch(t, inDryRun, "api")),
+		"a would-be pause doesn't wait the back-off, even before it's written as ended")
+}

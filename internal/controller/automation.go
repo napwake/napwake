@@ -230,6 +230,12 @@ func (r *Reconciler) reconcileAutomation(ctx context.Context, workload *v1alpha1
 	if err := r.checkDependenciesExist(ctx, workload); err != nil {
 		return nil, err
 	}
+	switch {
+	case workload.Spec.DryRun:
+		r.endBackOff(workload, reasonDryRun)
+	case workload.Spec.IdlePolicy == nil:
+		r.endBackOff(workload, reasonNoIdlePolicy)
+	}
 	if phase == v1alpha1.PhasePaused {
 		return r.reconcileWake(ctx, workload, target)
 	}
@@ -264,7 +270,7 @@ func (r *Reconciler) reconcileAutomation(ctx context.Context, workload *v1alpha1
 	if workload.Spec.IdlePolicy == nil && !measuring {
 		r.clearIdleVeto(workload)
 		if phase == v1alpha1.PhaseIdle {
-			if err := r.transition(ctx, workload, v1alpha1.PhaseRunning, "NoIdlePolicy"); err != nil {
+			if err := r.transition(ctx, workload, v1alpha1.PhaseRunning, reasonNoIdlePolicy); err != nil {
 				return nil, err
 			}
 		}
