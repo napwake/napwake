@@ -69,32 +69,6 @@ rules:
   - update
   - watch
 - apiGroups:
-  - hybernate.io
-  resources:
-  - managedworkloads
-  verbs:
-  - create
-  - delete
-  - get
-  - list
-  - patch
-  - update
-  - watch
-- apiGroups:
-  - hybernate.io
-  resources:
-  - managedworkloads/finalizers
-  verbs:
-  - update
-- apiGroups:
-  - hybernate.io
-  resources:
-  - managedworkloads/status
-  verbs:
-  - get
-  - patch
-  - update
-- apiGroups:
   - karpenter.sh
   resources:
   - nodepools
@@ -116,6 +90,32 @@ rules:
   verbs:
   - get
   - list
+- apiGroups:
+  - napwake.dev
+  resources:
+  - managedworkloads
+  verbs:
+  - create
+  - delete
+  - get
+  - list
+  - patch
+  - update
+  - watch
+- apiGroups:
+  - napwake.dev
+  resources:
+  - managedworkloads/finalizers
+  verbs:
+  - update
+- apiGroups:
+  - napwake.dev
+  resources:
+  - managedworkloads/status
+  verbs:
+  - get
+  - patch
+  - update
 - apiGroups:
   - networking.k8s.io
   resources:

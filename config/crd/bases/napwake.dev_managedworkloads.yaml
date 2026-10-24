@@ -1,17 +1,12 @@
-{{- include "hybernate.defaults" . -}}
-{{- if .Values.crds.install }}
+---
 apiVersion: apiextensions.k8s.io/v1
 kind: CustomResourceDefinition
 metadata:
-  labels:
-    {{- include "hybernate.labels" . | nindent 4 }}
   annotations:
-    helm.sh/resource-policy: keep
-    argocd.argoproj.io/sync-options: Delete=false
     controller-gen.kubebuilder.io/version: v0.22.0
-  name: managedworkloads.hybernate.io
+  name: managedworkloads.napwake.dev
 spec:
-  group: hybernate.io
+  group: napwake.dev
   names:
     kind: ManagedWorkload
     listKind: ManagedWorkloadList
@@ -31,7 +26,7 @@ spec:
       jsonPath: .status.cost.savedThisMonth
       name: Saved
       type: string
-    - description: 'In dry-run: what the pauses Hybernate would have made would have
+    - description: 'In dry-run: what the pauses Napwake would have made would have
         freed since dry-run began'
       jsonPath: .status.dryRun.estimatedFreed
       name: Would Free
@@ -48,7 +43,7 @@ spec:
     schema:
       openAPIV3Schema:
         description: ManagedWorkload declares a workload whose lifecycle is managed
-          by Hybernate.
+          by Napwake.
         properties:
           apiVersion:
             description: |-
@@ -75,13 +70,13 @@ spec:
                 description: |-
                   CostTracking sets this workload's own cost rates. Cost is always
                   tracked: without them, it's priced at the list price of the nodes the
-                  workload's pods run on (status.cost.listRates), or at Hybernate's
+                  workload's pods run on (status.cost.listRates), or at Napwake's
                   default rates for nodes it has no price for.
                 properties:
                   rates:
                     description: |-
                       Rates are what you pay. Each one set is used in place of the list
-                      price of the workload's nodes and of Hybernate's default rates; one
+                      price of the workload's nodes and of Napwake's default rates; one
                       left out is priced as if Rates weren't set.
                     properties:
                       cpuPerHour:
@@ -223,7 +218,7 @@ spec:
                       and the next, to be quiet, and a request would wake it once paused:
                       the doorman has a Ready pod, and would route every Service that
                       selects the workload's pods, on every port but those
-                      hybernate.io/doorman-ignore-ports lists. A headless Service, or one
+                      napwake.dev/doorman-ignore-ports lists. A headless Service, or one
                       with a UDP or SCTP port, keeps it from pausing early. So a wrong
                       forecast costs a request a wake, never an answer.
                     type: boolean
@@ -480,9 +475,9 @@ spec:
                     description: CostThisMonth is the awake hours and the storage
                       hours, priced.
                     type: string
-                  costWithoutHybernateThisMonth:
+                  costWithoutNapwakeThisMonth:
                     description: |-
-                      CostWithoutHybernateThisMonth is what the workload would have cost
+                      CostWithoutNapwakeThisMonth is what the workload would have cost
                       this month had it never been paused: CostThisMonth plus
                       FreedThisMonth.
                     type: string
@@ -518,7 +513,7 @@ spec:
                       ListPrice says, which its cost, what it frees and what it saves are
                       priced at unless costTracking.rates sets its own. Kept while it's
                       paused, so a pause is priced at where it ran. Unset when its nodes
-                      aren't in Hybernate's price table, and the default rates apply.
+                      aren't in Napwake's price table, and the default rates apply.
                     properties:
                       cpuPerHour:
                         anyOf:
@@ -559,7 +554,7 @@ spec:
                     - type: string
                     description: |-
                       PausedCPUHours and PausedMemoryHours are the vCPU-hours and GiB-hours
-                      the replicas Hybernate paused had requested, for as long as they were
+                      the replicas Napwake paused had requested, for as long as they were
                       paused: what pausing freed.
                     pattern: ^(\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))(([KMGTPE]i)|[numkMGTPE]|([eE](\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))))?$
                     x-kubernetes-int-or-string: true
@@ -680,7 +675,7 @@ spec:
                     description: |-
                       SavedCPUHours and SavedMemoryHours are the workload's share of the
                       vCPU-hours and GiB-hours the cluster's nodes were short of holding
-                      every replica Hybernate paused in their node pools, measured every
+                      every replica Napwake paused in their node pools, measured every
                       5 minutes: capacity that would have to be added for them, so a lower
                       bound on what came off the bill. At most the paused hours.
                     pattern: ^(\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))(([KMGTPE]i)|[numkMGTPE]|([eE](\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))))?$
@@ -722,7 +717,7 @@ spec:
                 - awakeCPUHours
                 - awakeMemoryHours
                 - costThisMonth
-                - costWithoutHybernateThisMonth
+                - costWithoutNapwakeThisMonth
                 - freedThisMonth
                 - pausedCPUHours
                 - pausedMemoryHours
@@ -794,7 +789,7 @@ spec:
                 x-kubernetes-list-type: atomic
               dryRun:
                 description: |-
-                  DryRun is what dry-run has measured: what Hybernate would have done
+                  DryRun is what dry-run has measured: what Napwake would have done
                   had it been allowed to pause the workload. Set only while spec.dryRun
                   is true.
                 properties:
@@ -913,19 +908,19 @@ spec:
               lastActedAt:
                 description: |-
                   LastActedAt is when the target was last paused or woken: by
-                  Hybernate, or scaled up from zero outside it, such as with kubectl
+                  Napwake, or scaled up from zero outside it, such as with kubectl
                   scale or by a GitOps tool.
                 format: date-time
                 type: string
               lastPauseRequest:
                 description: |-
-                  LastPauseRequest is the last hybernate.io/pause-requested value
-                  Hybernate acted on, so each request is acted on once, across restarts.
+                  LastPauseRequest is the last napwake.dev/pause-requested value
+                  Napwake acted on, so each request is acted on once, across restarts.
                   The PauseRequest condition says what came of it.
                 type: string
               lastScaledUp:
                 description: |-
-                  LastScaledUp is the last time something other than Hybernate scaled
+                  LastScaledUp is the last time something other than Napwake scaled
                   the workload up while it was paused, which wakes it.
                 properties:
                   at:
@@ -941,7 +936,7 @@ spec:
                   gitOps:
                     description: |-
                       GitOps is the GitOps tool behind By, such as Argo CD or Flux, which
-                      will set the replicas again each time Hybernate pauses the workload
+                      will set the replicas again each time Napwake pauses the workload
                       until it's told to leave them.
                     type: string
                   replicas:
@@ -959,17 +954,17 @@ spec:
                 type: string
               lastWakeRequest:
                 description: |-
-                  LastWakeRequest is the last hybernate.io/wake-requested value
-                  Hybernate acted on, so each request is acted on once, across restarts.
+                  LastWakeRequest is the last napwake.dev/wake-requested value
+                  Napwake acted on, so each request is acted on once, across restarts.
                   The WakeRequest condition says what came of it.
                 type: string
               learnedDependencies:
                 description: |-
-                  LearnedDependencies are the workloads Hybernate found this one depends
+                  LearnedDependencies are the workloads Napwake found this one depends
                   on without a dependsOn: from addresses in its environment that name
                   their Services, and from requests it sent that woke them. They're held
                   awake and woken like dependsOn, less the ones the
-                  hybernate.io/ignore-dependencies annotation names.
+                  napwake.dev/ignore-dependencies annotation names.
                 properties:
                   at:
                     description: |-
@@ -1125,7 +1120,7 @@ spec:
                   resumedAt:
                     description: |-
                       ResumedAt is when the resume under way scaled the workload back up.
-                      Scaled to zero after it, by something other than Hybernate, the
+                      Scaled to zero after it, by something other than Napwake, the
                       workload is left off rather than scaled up again.
                     format: date-time
                     type: string
@@ -1192,7 +1187,7 @@ spec:
                   history:
                     description: |-
                       History is what the forecast learned from the workload's CPU history
-                      in Prometheus when Hybernate began managing it.
+                      in Prometheus when Napwake began managing it.
                     properties:
                       from:
                         description: From and To bound the history learned.
@@ -1298,4 +1293,3 @@ spec:
     storage: true
     subresources:
       status: {}
-{{- end }}
