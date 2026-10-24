@@ -50,13 +50,13 @@ const (
 // anything else.
 const tokenContext = "napwake.dev/wake-it\x00"
 
-// tokenScope is what a token is good for: one workload's one pause. A
-// token from another workload's page, or from an earlier pause of this one,
-// wakes nothing.
+// tokenScope is what a token is good for: one workload's one pause, named
+// by when it began. A token from another workload's page, or from an
+// earlier pause of this one, wakes nothing.
 type tokenScope struct {
 	workload types.NamespacedName
 	uid      types.UID
-	pausedAt time.Time
+	began    time.Time
 }
 
 // wakeKeys sign and check the tokens behind the asleep page's Wake it
@@ -108,10 +108,12 @@ func (k *wakeKeys) sign(scope tokenScope, expires time.Time) string {
 }
 
 // valid reports whether token was signed by a doorman holding the key, for
-// scope, and hasn't expired. The MAC is compared in constant time, so the
-// time taken says nothing about how much of a forged one was right.
+// scope, and hasn't expired. A scope with no pause, as a route whose pause
+// the cache hasn't recorded has, would let one token pass for every such
+// moment, so none is good for it. The MAC is compared in constant time, so
+// the time taken says nothing about how much of a forged one was right.
 func (k *wakeKeys) valid(token string, scope tokenScope, now time.Time) bool {
-	if !wellFormed(token) {
+	if scope.began.IsZero() || !wellFormed(token) {
 		return false
 	}
 	raw, err := base64.RawURLEncoding.Strict().DecodeString(token)
@@ -168,7 +170,7 @@ func tokenMAC(key []byte, scope tokenScope, expiry []byte) []byte {
 		mac.Write([]byte(field))
 		mac.Write([]byte{0})
 	}
-	mac.Write(binary.BigEndian.AppendUint64(nil, uint64(scope.pausedAt.UnixNano())))
+	mac.Write(binary.BigEndian.AppendUint64(nil, uint64(scope.began.UnixNano())))
 	mac.Write(expiry)
 	return mac.Sum(nil)
 }

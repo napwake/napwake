@@ -545,7 +545,8 @@ func (r *Reconciler) handlePause(ctx context.Context, workload *v1alpha1.Managed
 		if err := r.preparePause(ctx, workload, target, requested); err != nil {
 			return nil, err
 		}
-		workload.Status.Pause.Requested = requested
+		began := r.clockTime()
+		workload.Status.Pause.StartedAt, workload.Status.Pause.Requested = &began, requested
 		if !requested {
 			r.recordCPUBefore(workload)
 		}
@@ -702,7 +703,7 @@ func (r *Reconciler) recoverPause(ctx context.Context, workload *v1alpha1.Manage
 	}
 
 	now := r.clockTime()
-	pause.PausedAt = &now
+	pause.StartedAt, pause.PausedAt = &now, &now
 	if snap := r.captureResourceSnapshot(ctx, workload); snap != nil {
 		snap.Replicas = pause.PreviousReplicas
 		pause.Resources = snap

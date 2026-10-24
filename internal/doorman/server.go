@@ -133,11 +133,14 @@ type route struct {
 	page     bool
 
 	// asks is set for a workload whose wake.mode is Ask, which only a
-	// person's click wakes. uid and pausedAt name the pause its asleep
-	// page's tokens are good for, and waking says it has been asked to
-	// wake already, as of the last sync.
+	// person's click wakes. uid and began name the pause its asleep page's
+	// tokens are good for, from its first moment, and waking says it has
+	// been asked to wake already, as of the last sync. pausedAt is when the
+	// pause scaled it to zero, which names the pause its stamps and the
+	// requests turned away are counted for.
 	asks     bool
 	uid      types.UID
+	began    time.Time
 	pausedAt time.Time
 	waking   bool
 
@@ -160,7 +163,7 @@ func (r route) sameAs(o route) bool {
 }
 
 func (r route) scope() tokenScope {
-	return tokenScope{workload: r.workload, uid: r.uid, pausedAt: r.pausedAt}
+	return tokenScope{workload: r.workload, uid: r.uid, began: r.began}
 }
 
 func (r route) backendKey() backendKey {
@@ -509,6 +512,7 @@ func (s *Server) syncRoutes(ctx, connCtx context.Context) error {
 				page:     page,
 				asks:     w.Spec.Wake.Asks(),
 				uid:      w.UID,
+				began:    pauseBegan(&w),
 				pausedAt: pausedAt(&w),
 				waking:   isWaking(&w),
 				pausing:  w.Status.Phase == v1alpha1.PhasePausing,

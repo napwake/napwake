@@ -88,6 +88,8 @@ func TestPause_StatusLostWhilePausedIsTakenUpFromTheTarget(t *testing.T) {
 	require.Equal(t, v1alpha1.PhasePaused, recovered.Status.Phase, "not left off as scaled to zero outside Napwake")
 	require.NotNil(t, recovered.Status.Pause)
 	assert.Equal(t, int32(3), recovered.Status.Pause.PreviousReplicas)
+	require.NotNil(t, recovered.Status.Pause.StartedAt, "the pause taken up is named from when it was")
+	assert.Equal(t, recovered.Status.Pause.PausedAt, recovered.Status.Pause.StartedAt)
 	assert.Contains(t, drainEvents(t, r), ReasonPauseRecovered)
 
 	require.NoError(t, r.Update(context.Background(), wokenByActivity(recovered)))

@@ -756,6 +756,13 @@ type PauseStatus struct {
 	// restore on resume.
 	PreviousReplicas int32 `json:"previousReplicas"`
 
+	// StartedAt is when the pause began, as the workload went Pausing,
+	// before anything was scaled, or when Napwake took up a pause whose
+	// record was lost. It names this pause from its first moment: the
+	// asleep page's Wake it button is good for it alone.
+	// +optional
+	StartedAt *metav1.Time `json:"startedAt,omitempty"`
+
 	// RoutedAt is when the doorman's EndpointSlices first stood in front of
 	// the workload's Services for this pause, beside its pods, which still
 	// served. It's scaled to zero a few seconds after, once proxies send new

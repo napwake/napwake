@@ -2177,11 +2177,12 @@ func TestServer_LeavesAPauseItCallsOffToTheOperatorToAnnounce(t *testing.T) {
 	assert.Equal(t, 0, wokenEvents(recorder))
 }
 
-// pausingWorkload is a workload whose pause is under way, its pods still
-// up: the doorman fronts its Service beside them.
+// pausingWorkload is a workload whose pause began a minute ago and is
+// under way, its pods still up: the doorman fronts its Service beside them.
 func pausingWorkload(port int32) *v1alpha1.ManagedWorkload {
 	w := pausedWorkload("api", port, time.Minute)
 	w.Status.Phase = v1alpha1.PhasePausing
+	w.Status.Pause.StartedAt = ptr.To(metav1.NewTime(time.Now().Add(-time.Minute)))
 	w.Status.Pause.PausedAt = nil
 	return w
 }

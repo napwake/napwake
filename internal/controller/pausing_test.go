@@ -145,6 +145,31 @@ func TestPause_TheDoormanFrontsTheWorkloadBeforeItsPodsStop(t *testing.T) {
 	assert.Equal(t, slices[0].UID, after[0].UID, "the same slice fronts it from Pausing into Paused")
 }
 
+// A pause records when it began in the write that moves the workload to
+// Pausing, before anything is scaled or routed, and keeps it to the end:
+// the doorman's Wake it button is good for that pause alone, from its
+// first moment.
+func TestPause_RecordsWhenItBegan(t *testing.T) {
+	r, _, now := pausingReconciler(t, nil)
+	began := metav1.NewTime(*now)
+
+	reconcileAPI(t, r)
+	pause := fetch(t, r, "api").Status.Pause
+	require.NotNil(t, pause)
+	require.NotNil(t, pause.StartedAt, "named as the pause begins")
+	assert.True(t, began.Equal(pause.StartedAt))
+	assert.Nil(t, pause.RoutedAt)
+	assert.Nil(t, pause.PausedAt)
+
+	*now = now.Add(doormanListenWait)
+	reconcileAPI(t, r)
+	*now = now.Add(doormanTakeover)
+	reconcileAPI(t, r)
+	w := fetch(t, r, "api")
+	require.Equal(t, v1alpha1.PhasePaused, w.Status.Phase)
+	assert.True(t, began.Equal(w.Status.Pause.StartedAt), "the same pause once Paused")
+}
+
 // A workload the doorman doesn't route pauses as it always has, with nothing
 // to wait for.
 func TestPause_AWorkloadTheDoormanDoesNotRoutePausesAtOnce(t *testing.T) {

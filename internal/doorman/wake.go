@@ -259,13 +259,24 @@ func recordedLastRequest(w *v1alpha1.ManagedWorkload) string {
 	return ""
 }
 
-// pausedAt is when the workload's pause began, to the second, as status
-// records it, so every replica names a pause the same.
+// pausedAt is when the workload's pause scaled it to zero, to the second,
+// as status records it, so every replica names a pause the same.
 func pausedAt(w *v1alpha1.ManagedWorkload) time.Time {
 	if p := w.Status.Pause; p != nil && p.PausedAt != nil {
 		return p.PausedAt.Truncate(time.Second).UTC()
 	}
 	return time.Time{}
+}
+
+// pauseBegan is when the workload's pause began, as it went Pausing, to
+// the second, which names the pause from its first moment. A pause begun by
+// an operator from before startedAt is named by when it scaled the workload
+// to zero. Zero for a workload with no pause recorded.
+func pauseBegan(w *v1alpha1.ManagedWorkload) time.Time {
+	if p := w.Status.Pause; p != nil && p.StartedAt != nil {
+		return p.StartedAt.Truncate(time.Second).UTC()
+	}
+	return pausedAt(w)
 }
 
 // warnUnserved emits a warning event on the workload for a held connection

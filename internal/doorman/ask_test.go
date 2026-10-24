@@ -40,6 +40,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/client-go/tools/events"
+	"k8s.io/utils/ptr"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 
@@ -249,7 +250,7 @@ func TestServer_AClickWithoutAGoodTokenWakesNothing(t *testing.T) {
 			return good(s, scope)
 		}},
 		{name: "an earlier pause's", token: func(s *Server, scope tokenScope) string {
-			scope.pausedAt = scope.pausedAt.Add(-24 * time.Hour)
+			scope.began = scope.began.Add(-24 * time.Hour)
 			return good(s, scope)
 		}},
 		{name: "signed with another key", token: func(_ *Server, scope tokenScope) string {
@@ -266,7 +267,7 @@ func TestServer_AClickWithoutAGoodTokenWakesNothing(t *testing.T) {
 			stop := run(t, s)
 			var stored v1alpha1.ManagedWorkload
 			require.NoError(t, c.Get(context.Background(), apiKey, &stored))
-			scope := tokenScope{workload: apiKey, uid: stored.UID, pausedAt: pausedAt(&stored)}
+			scope := tokenScope{workload: apiKey, uid: stored.UID, began: pauseBegan(&stored)}
 
 			request := clickRequest(tt.token(s, scope))
 			if tt.site != "" {
@@ -732,7 +733,7 @@ func TestServer_ReplicasShareTheWakeKey(t *testing.T) {
 	var filled corev1.Secret
 	require.NoError(t, c.Get(context.Background(), key, &filled))
 	assert.Len(t, filled.Data[WakeKeyField], wakeKeySize, "filled with a key")
-	scope := tokenScope{workload: apiKey, uid: "uid-api", pausedAt: time.Now().Truncate(time.Second)}
+	scope := tokenScope{workload: apiKey, uid: "uid-api", began: time.Now().Truncate(time.Second)}
 	token := first.wakeKeys.sign(scope, time.Now().Add(tokenTTL))
 	assert.True(t, second.wakeKeys.valid(token, scope, time.Now()), "a page shown by one is clicked through another")
 }
@@ -741,7 +742,7 @@ func TestServer_ReplicasShareTheWakeKey(t *testing.T) {
 // click on a page shown just before.
 func TestWakeKeys_APageShownBeforeTheKeyChangedStillWorks(t *testing.T) {
 	keys := newWakeKeys()
-	scope := tokenScope{workload: apiKey, uid: "uid-api", pausedAt: time.Now().Truncate(time.Second)}
+	scope := tokenScope{workload: apiKey, uid: "uid-api", began: time.Now().Truncate(time.Second)}
 	token := keys.sign(scope, time.Now().Add(tokenTTL))
 
 	keys.use(newWakeKey(), time.Now())
@@ -757,7 +758,7 @@ func TestWakeKeys_APageShownBeforeTheKeyChangedStillWorks(t *testing.T) {
 func TestWakeKeys_RetireTheKeyBefore(t *testing.T) {
 	keys := newWakeKeys()
 	leaked := &wakeKeys{current: keys.current}
-	scope := tokenScope{workload: apiKey, uid: "uid-api", pausedAt: time.Now().Truncate(time.Second)}
+	scope := tokenScope{workload: apiKey, uid: "uid-api", began: time.Now().Truncate(time.Second)}
 	changed := time.Now()
 	keys.use(newWakeKey(), changed)
 
@@ -773,7 +774,7 @@ func TestWakeKeys_RetireTheKeyBefore(t *testing.T) {
 // claiming a lifetime longer than any doorman gives is forged.
 func TestWakeKeys_Lifetime(t *testing.T) {
 	keys := newWakeKeys()
-	scope := tokenScope{workload: apiKey, uid: "uid-api"}
+	scope := tokenScope{workload: apiKey, uid: "uid-api", began: time.Now().Truncate(time.Second)}
 	now := time.Now()
 	issued := keys.sign(scope, now.Add(tokenTTL))
 
@@ -1096,4 +1097,103 @@ func TestServer_AClickOnAWorkloadTheCacheShowsAwakeGetsTheWakingUpPage(t *testin
 		"counted as a browser shown the waking-up page, once the connection is done")
 	assert.Equal(t, failed, wakes(resultError), "not a wake that failed")
 	assert.Empty(t, lastRequest(t, c), "an awake workload isn't stamped")
+}
+
+// synced waits for the server to sync its routes once more, so they show
+// what the test has just written.
+func synced(t *testing.T, s *Server) {
+	t.Helper()
+	since := time.Now().UnixNano()
+	require.Eventually(t, func() bool { return s.lastSync.Load() > since }, 5*time.Second, 20*time.Millisecond)
+}
+
+// pausingAsks is a workload that asks first, its pause begun at began and
+// under way, its pods gone.
+func pausingAsks(port int32, began time.Time) *v1alpha1.ManagedWorkload {
+	w := askingWorkload(port)
+	w.Status.Phase = v1alpha1.PhasePausing
+	w.Status.Pause.StartedAt = ptr.To(metav1.NewTime(began))
+	w.Status.Pause.PausedAt = nil
+	return w
+}
+
+// An asleep page shown as the workload pauses is for that pause from its
+// first moment, so its button wakes the workload once it's Paused, rather
+// than being refused as expired.
+func TestServer_APageShownAsItPausesWakesItOncePaused(t *testing.T) {
+	port := freePort(t)
+	s, c := startServer(t, pausingAsks(port, time.Now().Add(-time.Minute)))
+	token := askedPage(t, port)
+
+	var live v1alpha1.ManagedWorkload
+	require.NoError(t, c.Get(context.Background(), apiKey, &live))
+	live.Status.Phase = v1alpha1.PhasePaused
+	live.Status.Pause.PausedAt = ptr.To(metav1.Now())
+	require.NoError(t, c.Update(context.Background(), &live))
+	synced(t, s)
+
+	resp, body := click(t, port, clickRequest(token))
+
+	assert.Equal(t, http.StatusServiceUnavailable, resp.StatusCode, "the waking-up page")
+	assert.Contains(t, body, "<title>Waking up pr-42.preview.example.dev</title>")
+	assert.NotEmpty(t, lastRequest(t, c), "the click wakes it")
+}
+
+// A page's button is good for its own pause alone: one shown as an earlier
+// pause began wakes nothing in a later one, though neither had scaled the
+// workload to zero when it was shown.
+func TestServer_APageFromAnEarlierPauseIsRefusedInALaterOne(t *testing.T) {
+	port := freePort(t)
+	first := time.Now().Add(-5 * time.Minute)
+	s, c := startServer(t, pausingAsks(port, first))
+	token := askedPage(t, port)
+
+	var live v1alpha1.ManagedWorkload
+	require.NoError(t, c.Get(context.Background(), apiKey, &live))
+	live.Status.Pause.StartedAt = ptr.To(metav1.NewTime(first.Add(3 * time.Minute)))
+	require.NoError(t, c.Update(context.Background(), &live))
+	synced(t, s)
+
+	resp, body := click(t, port, clickRequest(token))
+
+	assert.Equal(t, http.StatusForbidden, resp.StatusCode, "refused as a page left open")
+	assert.Contains(t, body, template.HTMLEscapeString(noticeExpired.title))
+	tokenIn(t, body)
+	assert.Empty(t, lastRequest(t, c), "nothing wakes it")
+}
+
+// A token for no pause, as one signed for a route whose pause the cache
+// hasn't recorded, is good for none.
+func TestWakeKeys_ATokenForNoPauseIsRefused(t *testing.T) {
+	keys := newWakeKeys()
+	none := tokenScope{workload: apiKey, uid: "uid-api"}
+	now := time.Now()
+
+	assert.False(t, keys.valid(keys.sign(none, now.Add(tokenTTL)), none, now))
+}
+
+// A pause is named by when it began, and one an operator from before
+// status.pause.startedAt began, by when it scaled the workload to zero.
+func TestPauseBegan(t *testing.T) {
+	began := time.Date(2026, 10, 24, 9, 0, 0, 0, time.UTC)
+	scaled := began.Add(12 * time.Second)
+	tests := []struct {
+		name  string
+		pause *v1alpha1.PauseStatus
+		want  time.Time
+	}{
+		{name: "pausing", pause: &v1alpha1.PauseStatus{StartedAt: ptr.To(metav1.NewTime(began.Add(300 * time.Millisecond)))},
+			want: began},
+		{name: "paused", pause: &v1alpha1.PauseStatus{StartedAt: ptr.To(metav1.NewTime(began)),
+			PausedAt: ptr.To(metav1.NewTime(scaled))}, want: began},
+		{name: "paused by an earlier operator", pause: &v1alpha1.PauseStatus{PausedAt: ptr.To(metav1.NewTime(scaled))},
+			want: scaled},
+		{name: "no pause"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			w := &v1alpha1.ManagedWorkload{Status: v1alpha1.ManagedWorkloadStatus{Pause: tt.pause}}
+			assert.True(t, tt.want.Equal(pauseBegan(w)), "got %s", pauseBegan(w))
+		})
+	}
 }
