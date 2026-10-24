@@ -224,8 +224,8 @@ git push origin main v0.2.0
 |---|---|
 | The formula | The release workflow's last job writes the tap's `Formula/kubectl-napwake.rb` with [`hack/brewformula`](https://github.com/napwake/napwake/tree/main/hack/brewformula), from the published macOS and Linux archives, and commits it as `kubectl-napwake X.Y.Z` |
 | Release candidates | Brewed only while the tap has no stable release, so people trying one before 0.2.0 can install it with Homebrew. Once a stable release is there, a release candidate never replaces it, since `brew install` and `brew upgrade` take whatever the formula is |
-| The token | The `HOMEBREW_TAP_TOKEN` secret, a fine-grained personal access token whose only permission is Contents read and write on `napwake/homebrew-tap`. Fine-grained tokens expire, so renew it before its expiry date |
-| A failed push | Without the secret, or if the push fails, the job warns and the tap stays on the last release, while the release and its docs go ahead. Once the token is fixed, re-run the job |
+| The token | The `HOMEBREW_TAP_TOKEN` secret, a fine-grained personal access token owned by the `napwake` organization, whose only permission is Contents read and write on `napwake/homebrew-tap`. Fine-grained tokens expire, so renew it before its expiry date |
+| A failed push | Without the secret, or if the push fails, the job fails and opens an issue, "Homebrew: kubectl-napwake vX.Y.Z isn't in the tap", which GitHub emails the repository's watchers about. The tap stays on the last release, while the release and its docs go ahead. Once the token is fixed, re-run the failed job: a run that updates the tap closes the issue |
 
 To check a change to the formula, render it from a release's archives, then audit and install it from a local tap:
 
