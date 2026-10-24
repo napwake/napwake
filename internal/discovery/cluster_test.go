@@ -367,7 +367,7 @@ func TestScanCluster_ManagedWaitsLongerAfterPausesMadeInUse(t *testing.T) {
 
 	for _, name := range []string{"written", "unwritten"} {
 		assert.Equal(t, StateActive, got[name].State, "%s: Napwake doesn't pause it for 20 minutes", name)
-		assert.Equal(t, "not idle yet: it woke 6m ago; after pauses made in use it waits 20 minutes, not 5 minutes",
+		assert.Equal(t, "not idle yet: it woke 6m ago; after pauses made while it was in use, it waits 20 minutes, not 5 minutes",
 			got[name].Reason, name)
 	}
 	for _, name := range []string{"due", "due-unwritten"} {

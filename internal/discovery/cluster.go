@@ -710,7 +710,7 @@ func longerWait(mw *v1alpha1.ManagedWorkload, pauseAt time.Time) string {
 	if wrongPauses(mw) == 0 || wait <= idleAfter {
 		return ""
 	}
-	return fmt.Sprintf("; after pauses made in use it waits %s, not %s", human.Duration(wait),
+	return fmt.Sprintf("; after pauses made while it was in use, it waits %s, not %s", human.Duration(wait),
 		human.Duration(idleAfter))
 }
 

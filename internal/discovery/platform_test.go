@@ -18,6 +18,7 @@ package discovery
 
 import (
 	"context"
+	"fmt"
 	"testing"
 	"time"
 
@@ -78,7 +79,7 @@ func TestScanCluster_LeavesOutThePlatform(t *testing.T) {
 		"edge/controller":      "ingress-nginx",
 	}, platform)
 	assert.Contains(t, report.Notes, "5 infrastructure workloads are left out of the totals and next steps: "+
-		"ops (2), cert-manager (1), edge (1) and 1 more. Napwake never pauses Kubernetes' own workloads or "+
+		"ops (2), cert-manager (1), edge (1) and 1 more in 1 namespace. Napwake never pauses Kubernetes' own workloads or "+
 		"itself; anything else, infrastructure included, pauses only if you opt it in",
 		"what the scan leaves out, then, apart, what Napwake would pause")
 }
@@ -213,4 +214,19 @@ func TestChartName(t *testing.T) {
 	} {
 		assert.Equal(t, want, chartName(label), label)
 	}
+}
+
+// The note's counts add up: past the first three namespaces, it says how
+// many workloads the rest hold, and in how many namespaces (P52).
+func TestPlatformNote_CountsAddUp(t *testing.T) {
+	var platform []Workload
+	for ns, n := range map[string]int{"argocd": 7, "gmp-system": 3, "keda": 3, "kube-system": 2, "monitoring": 2, "napwake-system": 2} {
+		for i := range n {
+			platform = append(platform, Workload{Namespace: ns, Name: fmt.Sprint(i)})
+		}
+	}
+
+	assert.Equal(t, "19 infrastructure workloads are left out of the totals and next steps: argocd (7), "+
+		"gmp-system (3), keda (3) and 6 more in 3 namespaces. Napwake never pauses Kubernetes' own workloads or "+
+		"itself; anything else, infrastructure included, pauses only if you opt it in", platformNote(platform))
 }

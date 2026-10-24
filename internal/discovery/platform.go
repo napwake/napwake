@@ -232,13 +232,24 @@ func platformNote(platform []Workload) string {
 	namespaces := slices.SortedFunc(maps.Keys(byNamespace), func(a, b string) int {
 		return cmp.Or(cmp.Compare(byNamespace[b], byNamespace[a]), strings.Compare(a, b))
 	})
-	listed := make([]string, 0, len(namespaces))
-	for _, ns := range namespaces {
+	// The first few namespaces by name, then how many workloads the rest
+	// hold, so the counts add up to the total.
+	const shown = 3
+	listed := make([]string, 0, shown)
+	for _, ns := range namespaces[:min(shown, len(namespaces))] {
 		listed = append(listed, fmt.Sprintf("%s (%d)", ns, byNamespace[ns]))
+	}
+	which := strings.Join(listed, ", ")
+	if rest := namespaces[min(shown, len(namespaces)):]; len(rest) > 0 {
+		held := 0
+		for _, ns := range rest {
+			held += byNamespace[ns]
+		}
+		which += fmt.Sprintf(" and %d more in %s", held, plural(len(rest), "namespace", "namespaces"))
 	}
 	return fmt.Sprintf("%s left out of the totals and next steps: %s. Napwake never pauses Kubernetes' own "+
 		"workloads or itself; anything else, infrastructure included, pauses only if you opt it in",
-		plural(len(platform), "infrastructure workload is", "infrastructure workloads are"), listSome(listed))
+		plural(len(platform), "infrastructure workload is", "infrastructure workloads are"), which)
 }
 
 func oneOrMany(n int, one, many string) string {

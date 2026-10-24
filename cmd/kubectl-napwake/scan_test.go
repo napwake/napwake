@@ -766,7 +766,7 @@ func TestWriteScan_FreedAndSavedThisMonth(t *testing.T) {
 	require.NoError(t, writeScan(&out, historyResult(), scanOptions{output: "table"}))
 
 	got := out.String()
-	assert.Contains(t, got, "Napwake has freed $4 this month pausing 1 live workload, and saved $1 of it.")
+	assert.Contains(t, got, "Napwake has freed $4 this month from the 1 live workload it pauses, and saved $1 of it.")
 	assert.Regexp(t, `FREED THIS MONTH\s+SAVED\s+COULD SLEEP`, got)
 	assert.Regexp(t, `preview-3\s+deployment/web\s+paused \(live\)\s+paused 3h ago\s+\$48\s+\$4\s+\$1\s+-\s+-\s+-`,
 		got, "a live workload's freed and saved are in their columns, with nothing estimated")
@@ -825,7 +825,7 @@ func TestCLI_ScanAndStatusAgreeOnMoney(t *testing.T) {
 	status, err := runCLI(t, newStatusClient(t, interceptor.Funcs{}, objs...), "status", "-n", "orders")
 	require.NoError(t, err, status)
 
-	assert.Contains(t, scan, "Napwake has freed <$1 this month pausing 1 live workload, and saved $0 of it.\n"+
+	assert.Contains(t, scan, "Napwake has freed <$1 this month from the 1 live workload it pauses, and saved $0 of it.\n"+
 		"  1 more live workload is protected, so Napwake never pauses it.\n")
 	assert.Regexp(t, `orders\s+deployment/api\s+paused \(live\)\s+.*\s<\$1\s+\$0\s`, scan)
 	assert.Contains(t, status, "Freed <$1 this month, and saved $0 of it.")
@@ -862,7 +862,7 @@ func TestWriteScan_FreedBeforeProtected(t *testing.T) {
 	result.Totals.Live, result.Totals.FreedThisMonth, result.Totals.SavedThisMonth = 1, 15, 6
 	out.Reset()
 	require.NoError(t, writeScan(&out, result, scanOptions{output: "table"}))
-	assert.Contains(t, out.String(), "  Napwake has freed $3 this month pausing 1 live workload, and saved $1 of it.\n"+
+	assert.Contains(t, out.String(), "  Napwake has freed $3 this month from the 1 live workload it pauses, and saved $1 of it.\n"+
 		"  1 more live workload is protected, so Napwake never pauses it; it freed $12 this month before it was, "+
 		"and saved $5 of that.\n")
 	h, _ = headlineFor(result)
