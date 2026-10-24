@@ -763,6 +763,14 @@ type PauseStatus struct {
 	// +optional
 	StartedAt *metav1.Time `json:"startedAt,omitempty"`
 
+	// RoutesWrittenAt is when the doorman's routes for this pause were
+	// stored in status, where every doorman replica reads the ports to
+	// listen on. Its EndpointSlices go in only once each has had time to.
+	// Unset for a workload the doorman doesn't route, and again should the
+	// routes be taken down before the scale-down.
+	// +optional
+	RoutesWrittenAt *metav1.Time `json:"routesWrittenAt,omitempty"`
+
 	// RoutedAt is when the doorman's EndpointSlices first stood in front of
 	// the workload's Services for this pause, beside its pods, which still
 	// served. It's scaled to zero a few seconds after, once proxies send new

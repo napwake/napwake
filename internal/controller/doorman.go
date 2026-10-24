@@ -307,8 +307,8 @@ func (r *Reconciler) reconcileDoorman(ctx context.Context, workload *v1alpha1.Ma
 	// on every retry.
 	r.recordDrains(workload, routes)
 	workload.Status.Doorman = routes
-	if wait := r.untilDoormanListens(workload); wait > 0 {
-		return wait, nil
+	if wait, err := r.untilDoormanListens(ctx, workload); err != nil || wait > 0 {
+		return wait, err
 	}
 	fwd, fwdErr := r.reconcileForwarder(ctx, workload, target, plan.services, routes)
 	recheck = shortest(recheck, fwd.recheck)
@@ -426,6 +426,11 @@ func (r *Reconciler) removeDoorman(ctx context.Context, workload *v1alpha1.Manag
 	}
 	r.doormanPorts.release(workload.UID, r.now())
 	r.recordDrains(workload, nil)
+	// Routes taken down before the scale-down are stored, listened on and
+	// stood in front of afresh should they come back.
+	if pause := workload.Status.Pause; len(workload.Status.Doorman) > 0 && pause != nil && pause.PausedAt == nil {
+		pause.RoutesWrittenAt, pause.RoutedAt = nil, nil
+	}
 	workload.Status.Doorman = nil
 	return r.retireForwarder(ctx, workload)
 }

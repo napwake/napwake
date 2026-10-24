@@ -26,12 +26,14 @@ import (
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	discoveryv1 "k8s.io/api/discovery/v1"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/tools/events"
 	"k8s.io/utils/ptr"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/controller-runtime/pkg/client/interceptor"
 
 	v1alpha1 "github.com/napwake/napwake/api/v1alpha1"
 )
@@ -417,4 +419,62 @@ func TestPause_DryRunHasNoPauseToCancel(t *testing.T) {
 	assert.Equal(t, v1alpha1.PhaseRunning, fetch(t, r, "api").Status.Phase)
 	assert.Zero(t, pauser.pauseCalls)
 	assert.Empty(t, recorded(r.Recorder.(*events.FakeRecorder), ReasonPauseCancelled))
+}
+
+// A reconcile that comes late, past doormanFrontLimit, still has the
+// doorman's slice stand beside the pods for doormanTakeover before they
+// stop, since proxies haven't seen the slice it has only just made.
+func TestPause_ALateReconcileStillWaitsForProxiesToSeeTheSlice(t *testing.T) {
+	r, pauser, now := pausingReconciler(t, nil)
+	reconcileAPI(t, r)
+	require.Equal(t, v1alpha1.PhasePausing, fetch(t, r, "api").Status.Phase)
+
+	*now = now.Add(doormanFrontLimit + time.Second)
+	reconcileAPI(t, r)
+	require.Len(t, doormanSlices(t, r), 1, "the doorman fronts it")
+	assert.Zero(t, pauser.pauseCalls, "the pods stay until proxies send to the slice too")
+	assert.NotNil(t, fetch(t, r, "api").Status.Pause.RoutedAt)
+
+	*now = now.Add(doormanTakeover)
+	reconcileAPI(t, r)
+	assert.Equal(t, 1, pauser.pauseCalls)
+}
+
+// The doorman listens on routes it reads from status, so a slice may send
+// to them only doormanListenWait after they're stored there. When the
+// write that stores them fails, they're written again, and the wait is
+// timed from that.
+func TestPause_TheDoormanListensOnlyOnRoutesStored(t *testing.T) {
+	r, pauser, now := pausingReconciler(t, nil)
+	writes := 0
+	r.Client = interceptor.NewClient(r.Client.(client.WithWatch), interceptor.Funcs{
+		SubResourceUpdate: func(ctx context.Context, c client.Client, sub string, obj client.Object,
+			opts ...client.SubResourceUpdateOption) error {
+			if w, ok := obj.(*v1alpha1.ManagedWorkload); ok && len(w.Status.Doorman) > 0 {
+				if writes++; writes == 1 {
+					return apierrors.NewServiceUnavailable("etcd is slow")
+				}
+			}
+			return c.SubResource(sub).Update(ctx, obj, opts...)
+		}})
+
+	_, _ = r.Reconcile(context.Background(), reconcileFor("api"))
+	w := fetch(t, r, "api")
+	require.Equal(t, v1alpha1.PhasePausing, w.Status.Phase)
+	require.Nil(t, w.Status.Pause.RoutesWrittenAt, "the routes' write failed")
+	assert.Empty(t, doormanSlices(t, r))
+
+	*now = now.Add(doormanListenWait)
+	reconcileAPI(t, r)
+	require.NotEmpty(t, fetch(t, r, "api").Status.Doorman, "the routes are written again")
+	assert.Empty(t, doormanSlices(t, r), "the doorman hasn't read them yet")
+
+	*now = now.Add(doormanListenWait)
+	reconcileAPI(t, r)
+	assert.Len(t, doormanSlices(t, r), 1)
+	assert.Zero(t, pauser.pauseCalls)
+
+	*now = now.Add(doormanTakeover)
+	reconcileAPI(t, r)
+	assert.Equal(t, 1, pauser.pauseCalls)
 }

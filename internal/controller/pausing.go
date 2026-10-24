@@ -35,74 +35,87 @@ const ReasonPauseCancelled = "PauseCancelled"
 // A pause of a workload the doorman routes goes in three steps, so that no
 // request is refused while its pods stop:
 //
-//  1. As it starts pausing, its routes are written to status, and every
-//     doorman replica opens their ports. Nothing is sent there yet.
-//  2. doormanListenWait later, the doorman's EndpointSlices stand beside the
-//     pods' own. The doorman passes what it's sent straight to a Ready pod.
-//  3. doormanTakeover later, once proxies send to the doorman too, the
-//     workload is scaled to zero. A request that comes as its pods stop is
-//     held, as for any paused workload.
+//  1. As it starts pausing, its routes are stored in status, and every
+//     doorman replica opens their ports. Nothing is sent there yet. Routes
+//     whose write fails are written again by the next reconcile.
+//  2. doormanListenWait after they're stored, the doorman's EndpointSlices
+//     stand beside the pods' own. The doorman passes what it's sent
+//     straight to a Ready pod.
+//  3. doormanTakeover after the slices first stand, once proxies send to
+//     the doorman too, the workload is scaled to zero. A request that comes
+//     as its pods stop is held, as for any paused workload.
 //
 // A workload the doorman doesn't route, or can't now, pauses at once, as it
-// always has, and none waits more than doormanFrontLimit for the doorman.
+// always has, and none waits more than doormanFrontLimit for the doorman to
+// front it. Once it does, the takeover is always waited.
 
-// routeAsPauseBegins writes the routes of a workload that has just started
-// pausing to status, for the doorman to listen on, and reports whether
+// routeAsPauseBegins stores the routes of a workload that has just started
+// pausing in status, for the doorman to listen on, and reports whether
 // there are any, which the scale-down then waits for the doorman to front.
 func (r *Reconciler) routeAsPauseBegins(ctx context.Context, workload *v1alpha1.ManagedWorkload,
-	target client.Object) (bool, error) {
+	target client.Object) bool {
 	if r.DoormanService == "" {
-		return false, nil
+		return false
 	}
 	r.routeDoorman(ctx, workload, target)
-	if len(workload.Status.Doorman) == 0 {
-		return false, nil
-	}
-	if err := r.Status().Update(ctx, workload); err != nil {
-		return false, fmt.Errorf("recording the doorman's routes as the pause begins: %w", err)
-	}
-	return true, nil
+	return len(workload.Status.Doorman) > 0
 }
 
 // untilDoormanListens is how long the doorman's slices for a workload that
 // has started pausing, and whose pods still run, wait for every doorman
-// replica to listen on its routes.
-func (r *Reconciler) untilDoormanListens(workload *v1alpha1.ManagedWorkload) time.Duration {
-	if workload.Status.Phase != v1alpha1.PhasePausing || scaledDownByNapwake(workload) {
-		return 0
+// replica to listen on its routes: doormanListenWait from when they were
+// stored in status, where the doorman reads them. Routes not yet stored are
+// written now, and timed from then.
+func (r *Reconciler) untilDoormanListens(ctx context.Context, workload *v1alpha1.ManagedWorkload) (time.Duration, error) {
+	pause := workload.Status.Pause
+	if workload.Status.Phase != v1alpha1.PhasePausing || pause == nil || scaledDownByNapwake(workload) ||
+		len(workload.Status.Doorman) == 0 {
+		return 0, nil
 	}
-	return max(doormanListenWait-r.sinceTransition(workload), 0)
+	if pause.RoutesWrittenAt == nil {
+		now := r.clockTime()
+		pause.RoutesWrittenAt = &now
+		if err := r.Status().Update(ctx, workload); err != nil {
+			pause.RoutesWrittenAt = nil
+			return 0, fmt.Errorf("storing the doorman's routes as the pause begins: %w", err)
+		}
+		return doormanListenWait, nil
+	}
+	return max(doormanListenWait-r.now().Sub(pause.RoutesWrittenAt.Time), 0), nil
 }
 
 // untilFronted is how long a pausing workload's scale-down waits for the
 // doorman to stand in front of its Services, or zero once it may go ahead:
-// it's scaled down already, isn't routed, the doorman doesn't front it after
-// all, or it has waited doormanFrontLimit. The doorman fronts it from when
-// its slices are first in place, which is recorded in status, so a restart
-// in between doesn't cut the wait short.
+// it's scaled down already, isn't routed, the doorman can't front it after
+// all, or it has waited doormanFrontLimit for it to. Once the doorman's
+// slices stand, from doormanListenWait after its routes were stored, the
+// pause always waits doormanTakeover from when they first did, which is
+// recorded in status, so neither a restart nor a late reconcile cuts the
+// wait short.
 func (r *Reconciler) untilFronted(ctx context.Context, workload *v1alpha1.ManagedWorkload) (time.Duration, error) {
 	pause := workload.Status.Pause
 	if pause == nil || pause.PausedAt != nil || len(workload.Status.Doorman) == 0 {
 		return 0, nil
 	}
-	since := r.sinceTransition(workload)
-	switch {
-	case since >= doormanFrontLimit:
-		return 0, nil
-	case since < doormanListenWait:
-		return doormanListenWait - since, nil
-	case !meta.IsStatusConditionTrue(workload.Status.Conditions, conditionWakeOnRequest):
+	if pause.RoutedAt != nil {
+		return max(doormanTakeover-r.now().Sub(pause.RoutedAt.Time), 0), nil
+	}
+	listening := doormanListenWait
+	if pause.RoutesWrittenAt != nil {
+		listening = max(doormanListenWait-r.now().Sub(pause.RoutesWrittenAt.Time), 0)
+	}
+	if listening > 0 {
+		return min(listening, max(doormanFrontLimit-r.sinceTransition(workload), 0)), nil
+	}
+	if !meta.IsStatusConditionTrue(workload.Status.Conditions, conditionWakeOnRequest) {
 		return 0, nil
 	}
-	if pause.RoutedAt == nil {
-		now := r.clockTime()
-		pause.RoutedAt = &now
-		if err := r.Status().Update(ctx, workload); err != nil {
-			return 0, fmt.Errorf("recording the doorman in front of the workload: %w", err)
-		}
-		return doormanTakeover, nil
+	now := r.clockTime()
+	pause.RoutedAt = &now
+	if err := r.Status().Update(ctx, workload); err != nil {
+		return 0, fmt.Errorf("recording the doorman in front of the workload: %w", err)
 	}
-	return max(doormanTakeover-r.now().Sub(pause.RoutedAt.Time), 0), nil
+	return doormanTakeover, nil
 }
 
 // pauseCancelled says what calls off a workload's pause under way, or nil
