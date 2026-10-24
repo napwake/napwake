@@ -187,8 +187,8 @@ jobs:
           subject-name: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
           subject-digest: ${{ steps.build.outputs.digest }}
           push-to-registry: true
-          # Storage records are for organizations' artifact metadata, which
-          # a personal account's repository has none of.
+          # Storage records, an organization's artifact metadata, stay off
+          # until the napwake organization has a use for them.
           create-storage-record: false
 
       - name: Sign the image, and attach an SBOM for each platform
