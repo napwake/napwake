@@ -393,6 +393,10 @@ const (
 	// asleepDocs is where the docs say how a workload that asks is woken,
 	// for a browser whose click can't wake it.
 	asleepDocs = "https://docs.napwake.dev/concepts/wake-on-request/#asking-before-waking"
+
+	// wakeItDocs is where the docs say why a click woke nothing, such as a
+	// proxy that rewrites Host, and how else to wake it.
+	wakeItDocs = "https://docs.napwake.dev/operations/troubleshooting/#wake-it-doesnt-wake-the-workload"
 )
 
 // asleepWays are the ways to wake a workload that asks.

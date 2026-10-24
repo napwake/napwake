@@ -295,6 +295,10 @@ func TestWriteAsleepPage_Notices(t *testing.T) {
 	}{
 		{name: "expired", notice: noticeExpired, status: http.StatusForbidden,
 			says: "<b>The button had run out</b>This page was open a while, so nothing woke. Press Wake it again."},
+		{name: "from another address", notice: noticeElsewhere, status: http.StatusForbidden,
+			says: "This click didn&#39;t come from this page&#39;s address, so nothing woke. Wake it with kubectl " +
+				"napwake wake or the napwake.dev/wake-requested annotation. <a href=\"" + wakeItDocs +
+				`" target="_blank" rel="noopener noreferrer">How to wake it</a>`},
 		{name: "rate-limited", notice: noticeLimited, status: http.StatusTooManyRequests, retryAfter: "60",
 			says: "<b>Try again in a minute</b>Wake it was pressed a moment ago. Wakes are limited, so robots can&#39;t " +
 				"keep it awake."},
