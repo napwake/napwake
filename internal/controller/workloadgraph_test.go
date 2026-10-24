@@ -255,6 +255,11 @@ func TestDependencies_HeldThroughTheOperatorsWatch(t *testing.T) {
 	}, 30*time.Second, 100*time.Millisecond, "postgres is held awake for api")
 	assert.Equal(t, v1alpha1.PhaseRunning, get("postgres").Status.Phase)
 
+	// postgres can be held for api before api is taken on, and a request
+	// already on api as it's taken on isn't acted on.
+	require.Eventually(t, func() bool {
+		return get("api").Status.Phase == v1alpha1.PhaseRunning
+	}, 30*time.Second, 100*time.Millisecond, "api is taken on")
 	requestPause("api", "api")
 	require.Eventually(t, func() bool {
 		return get("api").Status.Phase == v1alpha1.PhasePaused
