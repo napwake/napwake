@@ -36,7 +36,7 @@ Hybernate is now Napwake. Every name it leaves in a cluster or on your machine c
 | The asleep page's form field | `hybernate-wake` | `napwake-wake` |
 | Go identifiers, environment variables | `Hybernate*`, `hybernate*`, `HYBERNATE_*` | `Napwake*`, `napwake*`, `NAPWAKE_*` |
 
-To move a cluster from Hybernate 0.1.x or a 0.2.0 release candidate, hand its workloads back, uninstall it, rename your labels and install Napwake. The steps are in [Moving from Hybernate](https://docs.napwake.dev/operations/upgrading/#moving-to-napwake). The steps scale every workload Hybernate paused back up first, so none is left at zero.
+To move a cluster from Hybernate 0.1.x or a 0.2.0 release candidate, hand its workloads back, uninstall it, rename your labels and install Napwake. The steps are in [Moving from Hybernate](https://docs.napwake.dev/operations/upgrading/#moving-to-napwake). Paused workloads are handed back first, so none is left at zero.
 
 ### Security
 

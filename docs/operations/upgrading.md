@@ -15,16 +15,7 @@ Napwake is Hybernate's new name, from 0.2.0. Hybernate 0.1.x and the 0.2.0 relea
 | `kubectl hybernate` | `kubectl napwake` |
 | Metrics `hybernate_*`, alerts `Hybernate*` | Metrics `napwake_*`, alerts `Napwake*` |
 
-So you hand your workloads back, uninstall Hybernate, rename your labels and install Napwake. The steps scale every workload Hybernate paused back up, so none is left at zero with no operator.
-
-### Before you start
-
-Find what turns waking on request off, since Napwake has no such setting. [Wake on request, from before 0.2.0](#wake-on-request-from-before-020) says what replaces it:
-
-```bash
-kubectl get managedworkloads.hybernate.io -A -o json | jq -r '.items[] | select(.spec.wake.onRequest == false) | "\(.metadata.namespace)/\(.metadata.name)"'
-kubectl get deployments,statefulsets,namespaces -A -o json | jq -r '.items[] | select(.metadata.annotations["hybernate.io/wake-on-request"] == "false") | "\(.kind) \(.metadata.namespace // "-")/\(.metadata.name)"'
-```
+So you hand your workloads back, uninstall Hybernate, rename your labels and install Napwake. Hybernate scales each paused workload back up as it lets it go. None is left at zero with no operator.
 
 ### 1. Hand your workloads back
 
@@ -43,30 +34,23 @@ Do this while Hybernate still runs.
     Then save the ManagedWorkloads you wrote, if they aren't in Git, and delete them. Hybernate hands their workloads back too:
 
     ```bash
-    kubectl get managedworkloads.hybernate.io -A -o json > hybernate-managedworkloads.json
+    kubectl get managedworkloads.hybernate.io -A -o yaml > hybernate-managedworkloads.yaml
     kubectl delete managedworkloads.hybernate.io --all -A
     ```
 
 === "0.1.x"
 
-    Deleting a ManagedWorkload in 0.1.x leaves its workload at zero. Scaling it up first doesn't work either: with `conflictAction: enforce`, 0.1.x scales it back down. So this records what each paused workload ran, deletes the WorkloadPolicies and ManagedWorkloads, then scales each one back up:
+    Deleting a ManagedWorkload in 0.1.x doesn't wake its workload. So scale each paused one back to the replicas its ManagedWorkload records. Then delete the WorkloadPolicies, which would make ManagedWorkloads again, and the ManagedWorkloads:
 
     ```bash
-    kubectl get managedworkloads.hybernate.io -A -o json | jq -r '.items[] | select(.status.pause)
-      | (.status.pause.previousReplicas // 0) as $previous | (.status.pause.resources.replicas // 0) as $snapshot
-      | [.metadata.namespace, .spec.target.kind, .spec.target.name,
-         (if $previous > 0 then $previous elif $snapshot > 0 then $snapshot else 1 end),
-         (if $previous > 0 or $snapshot > 0 then "recorded" else "unknown" end)] | @tsv' > hybernate-paused.tsv
-    kubectl get managedworkloads.hybernate.io -A -o json > hybernate-managedworkloads.json
+    kubectl get managedworkloads.hybernate.io -A -o jsonpath='{range .items[?(@.status.pause)]}{.metadata.namespace} {.spec.target.kind} {.spec.target.name} {.status.pause.previousReplicas}{"\n"}{end}' |
+      while read -r ns kind name replicas; do
+        kubectl scale "$kind/$name" -n "$ns" --replicas="$replicas"
+      done
+    kubectl get managedworkloads.hybernate.io -A -o yaml > hybernate-managedworkloads.yaml
     kubectl delete workloadpolicies.hybernate.io --all -A
     kubectl delete managedworkloads.hybernate.io --all -A
-    while IFS=$'\t' read -r ns kind name replicas count; do
-      [ "$count" = recorded ] || echo "$ns/$name: no replica count recorded, so scaling it to 1"
-      kubectl scale "$kind/$name" -n "$ns" --replicas="$replicas"
-    done < hybernate-paused.tsv
     ```
-
-    0.1.x records `previousReplicas` as 0 when it pauses, so the replicas come from its snapshot of the workload, `status.pause.resources.replicas`. A workload with neither gets 1, and the loop says so. `hybernate-paused.tsv` keeps what it did.
 
 ### 2. Uninstall Hybernate
 
@@ -81,8 +65,6 @@ Use your release's name and namespace if they differ. A 0.2.0 release candidate'
 ```bash
 kubectl delete crd hybernatereports.hybernate.io workloadpolicies.hybernate.io
 ```
-
-If Argo CD or Flux installed Hybernate, take it out of Git first, so it isn't put back. Then delete the Argo CD Application with `argocd app delete hybernate`, which deletes what it installed. With Flux, delete the HelmRelease, which uninstalls the release, and then its OCIRepository. Argo CD 3.3 and later, and Flux, run a release candidate's uninstall guard as `helm uninstall` does. Delete any CRDs they leave, as above.
 
 ### 3. Rename the rest
 
@@ -112,32 +94,15 @@ kubectl get deployments,statefulsets,services,namespaces -A -o json | jq -r '
 
 ### 4. Install Napwake
 
-Install it as [Installation](../getting-started/installation.md) says.
+Install it as [Installation](../getting-started/installation.md) says. A values file from a 0.2.0 release candidate works as it is, except an `image.repository` of `ghcr.io/okedeji/hybernate`. Remove that. From 0.1.x, start from the chart's defaults.
 
-A values file from a 0.2.0 release candidate keeps its keys, but some values may name Hybernate. This finds them:
-
-```bash
-grep -in hybernate hybernate-values.yaml
-```
-
-Remove an `image.repository` of `ghcr.io/okedeji/hybernate`, and an `image.tag` pinned to a release candidate: no Hybernate release was published as `ghcr.io/napwake/napwake`. Change values that name `hybernate-system` or another `hybernate-` object, such as `metrics.readerSubjects` or a PriorityClass, to what they're called now. From 0.1.x, start from the chart's defaults.
-
-Then apply the ManagedWorkloads you wrote, under their new names. From your manifests, change `apiVersion: hybernate.io/v1alpha1` to `napwake.dev/v1alpha1`, and each `hybernate.io/` annotation:
+Apply the ManagedWorkloads you wrote with their new names. Change `apiVersion: hybernate.io/v1alpha1` to `napwake.dev/v1alpha1`, and each `hybernate.io/` annotation:
 
 ```bash
 sed 's|hybernate\.io/|napwake.dev/|g' my-api.yaml | kubectl apply -f -
 ```
 
-The copy saved in step 1 can't be applied as it is. It has Hybernate's status, finalizer and `hybernate.io/operator` annotation, and Napwake leaves alone a ManagedWorkload that another install's annotation names. This strips them first:
-
-```bash
-jq 'del(.items[] | (.status, .metadata.resourceVersion, .metadata.uid, .metadata.creationTimestamp, .metadata.generation, .metadata.managedFields, .metadata.finalizers, .metadata.annotations["hybernate.io/operator"], .metadata.annotations["kubectl.kubernetes.io/last-applied-configuration"]))' hybernate-managedworkloads.json |
-  sed 's|hybernate\.io/|napwake.dev/|g' | kubectl apply -f -
-```
-
-It may still have settings that are gone, as below.
-
-A 0.1.x ManagedWorkload needs rewriting. Its `desiredState`, `scalePolicy`, `pause`, `destroy` and `conflictAction`, and `idlePolicy`'s `action`, `cpuIdleThreshold`, `memoryIdleThreshold`, `gracePeriod` and `signals`, are gone. Napwake's CRD refuses a ManagedWorkload that sets any of them. Write it again from [ManagedWorkload](../guides/managed-workload.md), or opt the workload in with the `napwake.dev/managed` label instead.
+Apply them from your own manifests. A copy saved with `kubectl get` has Hybernate's status, and may have settings that are gone, as below.
 
 Napwake starts each workload afresh:
 
@@ -166,7 +131,12 @@ spec:
 - For one port of a Service, list it in `napwake.dev/doorman-ignore-ports` on the Service. That port fails while the workload is paused.
 - For the whole cluster, set the Helm value `doorman.enabled: false`.
 
-[Before you start](#before-you-start) finds what had it.
+To find what had it, run these before step 1:
+
+```bash
+kubectl get managedworkloads.hybernate.io -A -o json | jq -r '.items[] | select(.spec.wake.onRequest == false) | "\(.metadata.namespace)/\(.metadata.name)"'
+kubectl get deployments,statefulsets,namespaces -A -o json | jq -r '.items[] | select(.metadata.annotations["hybernate.io/wake-on-request"] == "false") | "\(.kind) \(.metadata.namespace // "-")/\(.metadata.name)"'
+```
 
 The `WakeOnRequest` reason `TurnedOff` is gone with it.
 
