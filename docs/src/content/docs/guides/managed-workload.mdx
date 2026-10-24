@@ -1,0 +1,112 @@
+---
+title: "ManagedWorkload guide"
+description: "The ManagedWorkload CR is the core resource in Napwake."
+lede: "The ManagedWorkload is Napwake's core resource. Each one names a Deployment or StatefulSet whose lifecycle Napwake manages."
+---
+
+import { Steps } from '@astrojs/starlight/components';
+import StartCheckpoint from '../../../components/StartCheckpoint.astro';
+import NextSteps from '../../../components/NextSteps.astro';
+
+:::tip[You may not need one]
+The `napwake.dev/managed` label creates one from annotations, as in [Opting in](/guides/opt-in/). Yours wins over the label.
+:::
+
+<Steps>
+
+1. Name the target.
+
+    ```yaml title="managedworkload.yaml"
+    apiVersion: napwake.dev/v1alpha1
+    kind: ManagedWorkload
+    metadata:
+      name: my-api
+      namespace: staging
+    spec:
+      target:
+        kind: Deployment
+        name: my-api
+    ```
+
+    Only `target` is required, and the rest takes its defaults. Napwake watches it, tracks its cost and learns its forecast, but pauses it only when you ask, with [`kubectl napwake pause`](/guides/pause/#pause-now).
+
+2. Add an idle policy, and what else you need.
+
+    ```yaml title="managedworkload.yaml"
+    apiVersion: napwake.dev/v1alpha1
+    kind: ManagedWorkload
+    metadata:
+      name: my-api
+      namespace: staging
+    spec:
+      target:
+        kind: Deployment
+        name: my-api
+
+      idlePolicy:
+        idleAfter: 1h
+        activity:
+          cpuThreshold: 10
+          prometheus:
+            - promQL: 'sum(rate(nginx_ingress_controller_requests{exported_namespace="staging", exported_service="my-api"}[5m]))'
+        autoResume: true
+
+      wake:
+        mode: Request
+        maxWait: 2m
+        page: true
+
+      prediction:
+        mode: balanced
+
+      costTracking:
+        rates:
+          cpuPerHour: "0.031"
+          memoryPerHour: "0.004"
+          storagePerMonth: "0.08"
+
+      dryRun: false
+    ```
+
+    With an `idlePolicy`, Napwake pauses it on its own. Each field's type, default and limits are in the [API reference](/reference/api/).
+
+</Steps>
+
+<StartCheckpoint state="awake" note="until idle">
+Once `my-api` has had no activity for `idleAfter`, Napwake pauses it. A request to its Service wakes it.
+</StartCheckpoint>
+
+## What each part does
+
+| Field | What it does |
+|-------|--------------|
+| `target` | The workload, in the same namespace. It can't change once set, since a paused target would be left at zero. The API server refuses the edit. Create another ManagedWorkload for another workload |
+| `idlePolicy` | When it's idle, and pauses. Deploys and the `napwake.dev/last-activity` and `napwake.dev/active-until` annotations always count as activity. See [Idle detection](/concepts/idle-detection/#activity-annotations) and [Prometheus activity](/guides/prometheus-signals/) |
+| `dependsOn` | Up to 20 workloads this one needs. They aren't paused while it's awake, and waking it wakes them. See [Dependencies](/concepts/dependencies/) |
+| `wake` | What wakes it through the doorman while paused. `mode: Request` is any request, and `mode: Ask` only a person's click. See [Wake on request](/concepts/wake-on-request/#asking-before-waking) |
+| `prediction` | How soon the forecast acts. Leave it out, or write `prediction: {}`, for the default. See [Forecast setting](/concepts/forecasting/#forecast-setting) and [Forecasting](/concepts/forecasting/#phase-lifecycle) |
+| `costTracking` | Your own `rates`, in place of the nodes' list price. None may be negative. See [Cost tracking](/concepts/cost-tracking/#prices) |
+| `dryRun` | Measures without pausing, waking the workload if it was paused. See [Dry run](/guides/dry-run/) |
+
+## Edit the one the label created
+
+Settings with more than one value aren't annotations. Set them on the label's ManagedWorkload, such as with `kubectl patch`, and Napwake keeps them.
+
+| The annotations own these. Edits are overwritten | Yours, and kept |
+|--------------------------------------------------|-----------------|
+| `dryRun`, `idlePolicy` (`idleAfter`, `activity.cpuThreshold`, `autoResume`, `pauseEarly`), the workloads `dependsOn` lists, `wake` | `idlePolicy.activity.prometheus`, `waitForReady` on a listed dependency, `costTracking`, and `prediction`, whose `confidence` percentage overrides `napwake.dev/forecast` |
+
+## Scaled up outside Napwake
+
+A paused workload scaled up by anything else, such as `kubectl scale` or a deploy, wakes. Whoever did it wants it running. `status.lastScaledUp` records when, and what did it. For GitOps, see [GitOps tools](/guides/gitops/). While it runs, Napwake leaves its replicas to its team or HPA.
+
+## One workload per target
+
+Only one ManagedWorkload can manage a Deployment or StatefulSet. A newer one for the same target gets a `DuplicateTarget` condition naming the other. It does nothing until the older one is gone.
+
+<NextSteps
+  items={[
+    { href: '/guides/pause/', title: 'Pause and resume', text: 'What a pause changes.' },
+    { href: '/reference/api/', title: 'API reference', text: 'Every field and its default.' },
+  ]}
+/>

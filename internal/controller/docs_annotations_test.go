@@ -168,13 +168,14 @@ type docsDocument struct {
 	data   []byte
 }
 
-// docsDocuments are the YAML documents in the docs' yaml blocks.
+// docsDocuments are the YAML documents in the yaml blocks of the docs'
+// pages, Markdown and MDX, in Starlight's content folder.
 func docsDocuments(t *testing.T) []docsDocument {
 	t.Helper()
 	var docs []docsDocument
-	root := filepath.Join("..", "..", "docs")
+	root := filepath.Join("..", "..", "docs", "src", "content", "docs")
 	err := filepath.WalkDir(root, func(path string, d fs.DirEntry, err error) error {
-		if err != nil || d.IsDir() || filepath.Ext(path) != ".md" {
+		if err != nil || d.IsDir() || (filepath.Ext(path) != ".md" && filepath.Ext(path) != ".mdx") {
 			return err
 		}
 		page, err := os.ReadFile(path)
@@ -207,7 +208,7 @@ func splitYAML(t *testing.T, source string, data []byte) [][]byte {
 }
 
 // markdownYAML returns the bodies of a page's fenced yaml blocks, dedented
-// by their fence's indentation, as blocks inside admonitions and tabs are.
+// by their fence's indentation, as blocks inside list steps and tabs are.
 func markdownYAML(page []byte) [][]byte {
 	var (
 		blocks  [][]byte

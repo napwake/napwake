@@ -1,0 +1,475 @@
+/* Napwake's theme for Starlight. Every colour is a token from tokens.css (the brand's tokens.json);
+   tints are those tokens mixed with the ground, as the brand's admonitions do. Flat: things are
+   separated by `line` and `surface`, never shadows. */
+
+/* ---------- Starlight's variables, from the tokens ---------- */
+:root {
+  /* dark (Starlight's default) */
+  --sl-color-white: var(--text);
+  --sl-color-gray-1: var(--text);
+  --sl-color-gray-2: var(--text);
+  --sl-color-gray-3: var(--muted);
+  --sl-color-gray-4: var(--faint);
+  --sl-color-gray-5: var(--line);
+  --sl-color-gray-6: var(--surface);
+  --sl-color-gray-7: var(--surface);
+  --sl-color-black: var(--bg);
+  --sl-color-accent-low: color-mix(in srgb, var(--action) 14%, var(--bg));
+  --sl-color-accent: var(--action);
+  --sl-color-accent-high: var(--action);
+  --sl-color-text: var(--text);
+  --sl-color-text-accent: var(--link);
+  --sl-color-text-invert: var(--on-action);
+  --sl-color-bg: var(--bg);
+  --sl-color-bg-nav: var(--docs-header);
+  --sl-color-bg-sidebar: var(--bg);
+  --sl-color-bg-inline-code: var(--code-bg);
+  --sl-color-bg-accent: var(--action);
+  --sl-color-hairline-light: var(--line);
+  --sl-color-hairline: var(--line);
+  --sl-color-hairline-shade: var(--line);
+  --sl-color-backdrop-overlay: color-mix(in srgb, var(--night) 72%, transparent);
+  --sl-color-blue: var(--brand);
+  --sl-color-blue-high: var(--brand);
+  --sl-color-blue-low: color-mix(in srgb, var(--brand) 12%, var(--bg));
+  --sl-color-purple: var(--brand);
+  --sl-color-purple-high: var(--brand);
+  --sl-color-purple-low: color-mix(in srgb, var(--brand) 12%, var(--bg));
+  --sl-color-green: var(--awake);
+  --sl-color-green-high: var(--awake);
+  --sl-color-green-low: color-mix(in srgb, var(--awake) 12%, var(--bg));
+  --sl-color-orange: var(--accent-text);
+  --sl-color-orange-high: var(--accent-text);
+  --sl-color-orange-low: color-mix(in srgb, var(--lamp) 16%, var(--bg));
+  --sl-color-red: var(--error);
+  --sl-color-red-high: var(--error);
+  --sl-color-red-low: color-mix(in srgb, var(--error) 12%, var(--bg));
+  --sl-shadow-sm: none;
+  --sl-shadow-md: none;
+  --sl-shadow-lg: 0 12px 40px color-mix(in srgb, var(--night) 35%, transparent);
+
+  --sl-font: var(--font-sans);
+  --sl-font-mono: var(--font-mono);
+  --sl-text-body: 1.0625rem;
+  --sl-text-body-sm: 0.9375rem;
+  --sl-text-code: 0.875rem;
+  --sl-text-code-sm: 0.8125rem;
+  --sl-line-height: 1.65;
+  --sl-line-height-headings: 1.25;
+  --sl-content-width: 46rem;
+  --sl-sidebar-width: 17.5rem;
+  --sl-nav-height: 3.75rem;
+
+  /* the doorman's cast shadow and a scene wall's grain are stronger at night */
+  --nw-cast: 0.3;
+  --nw-grain: 0.22;
+  --code-chrome: var(--line);
+  --nw-tint: color-mix(in srgb, var(--brand) 9%, var(--bg));
+  --nw-mm-node: var(--surface);
+  --nw-mm-node-line: var(--brand);
+  --nw-mm-text: var(--text);
+  --nw-mm-line: var(--muted);
+  --nw-mm-cluster: transparent;
+  --nw-mm-cluster-line: var(--line);
+  --nw-mm-label: var(--bg);
+  color-scheme: dark;
+}
+:root[data-theme='light'] {
+  --sl-color-gray-6: var(--code-bg);
+  --sl-color-gray-7: var(--surface);
+  --sl-color-black: var(--bg);
+  --sl-color-white: var(--text);
+  --sl-color-text-invert: var(--on-action);
+  --sl-color-bg-sidebar: var(--bg);
+  --sl-color-bg-nav: var(--docs-header);
+  --sl-color-hairline-light: var(--line);
+  --sl-color-hairline-shade: var(--line);
+  --sl-color-text-accent: var(--link);
+  --sl-color-accent-low: color-mix(in srgb, var(--action) 10%, var(--bg));
+  --sl-color-accent: var(--action);
+  --sl-color-accent-high: var(--action);
+  --sl-color-bg-inline-code: var(--code-bg);
+  --nw-cast: 0.09;
+  --nw-grain: 0.07;
+  --nw-mm-node: var(--surface);
+  --nw-mm-label: var(--bg);
+  color-scheme: light;
+}
+@media (min-width: 50em) {
+  :root { --sl-nav-height: 4rem; --sl-nav-pad-x: 1.5rem; }
+}
+
+/* ---------- ground and type ---------- */
+body {
+  background: var(--bg);
+  color: var(--text);
+  font-family: var(--font-sans);
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+}
+::selection { background: color-mix(in srgb, var(--lamp) 38%, transparent); color: inherit; }
+:focus-visible { outline: 2px solid var(--action); outline-offset: 2px; border-radius: 2px; }
+
+.sl-markdown-content { font-size: var(--sl-text-body); line-height: var(--sl-line-height); }
+.sl-markdown-content :is(h2, h3, h4, h5, h6):not(:where(.not-content *)) {
+  font-family: var(--font-sans);
+  color: var(--text);
+  font-weight: 700;
+  letter-spacing: 0;
+}
+.sl-markdown-content h2:not(:where(.not-content *)) { font-size: 1.75rem; line-height: 1.25; }
+.sl-markdown-content h3:not(:where(.not-content *)) { font-size: 1.3125rem; line-height: 1.3; }
+.sl-markdown-content h4:not(:where(.not-content *)) { font-size: 1.0625rem; line-height: 1.4; }
+@media (max-width: 50em) {
+  .sl-markdown-content h2:not(:where(.not-content *)) { font-size: 1.5rem; }
+  .sl-markdown-content h3:not(:where(.not-content *)) { font-size: 1.1875rem; }
+}
+/* a hairline over each section, so long reference pages read as sections */
+.sl-markdown-content .sl-heading-wrapper.level-h2:not(:first-child),
+.sl-markdown-content > h2:not(:first-child) {
+  margin-top: 3rem;
+  padding-top: 1.75rem;
+  border-top: 1px solid var(--line);
+}
+.sl-markdown-content :is(h2, h3, h4) + :is(p, ul, ol, table, .expressive-code) { margin-top: 0.75rem; }
+
+.sl-markdown-content a:not(:where(.not-content *)) {
+  color: var(--link);
+  text-decoration-line: underline;
+  text-decoration-thickness: 1px;
+  text-underline-offset: 0.2em;
+  text-decoration-color: color-mix(in srgb, var(--link) 55%, transparent);
+}
+.sl-markdown-content a:not(:where(.not-content *)):hover { text-decoration-thickness: 2px; text-decoration-color: var(--link); }
+.sl-markdown-content strong { font-weight: 700; color: var(--text); }
+
+.sl-markdown-content :not(pre) > code:not(:where(.not-content *)) {
+  font-family: var(--font-mono);
+  font-size: 0.88em;
+  background: var(--code-bg);
+  color: var(--code-text);
+  border: 0;
+  border-radius: var(--radius-sm);
+  padding: 0.1em 0.38em;
+  overflow-wrap: anywhere;
+}
+.sl-markdown-content a:not(:where(.not-content *)) code { color: inherit; }
+
+.sl-markdown-content :is(ul, ol):not(.not-content):not(:where(.not-content *)) { padding-inline-start: 1.35rem; }
+.sl-markdown-content li::marker { color: var(--muted); }
+.sl-markdown-content ol > li::marker { font-family: var(--font-mono); font-size: 0.9em; color: var(--brand); }
+.sl-markdown-content li + li { margin-top: 0.35rem; }
+.sl-markdown-content hr { border: 0; border-top: 1px solid var(--line); margin: 2.5rem 0; }
+.sl-markdown-content blockquote:not(:where(.not-content *)) { border-inline-start: 3px solid var(--line); color: var(--muted); padding-inline-start: 1rem; }
+
+/* tables: state-label headers, hairline rows, code that doesn't break in the first column */
+.sl-markdown-content table:not(:where(.not-content *)) {
+  font-size: 0.9375rem;
+  line-height: 1.5;
+  border-collapse: collapse;
+  display: block;
+  overflow-x: auto;
+  width: 100%;
+}
+.sl-markdown-content :is(th, td):not(:where(.not-content *)) {
+  overflow-wrap: break-word; /* a word breaks only when it can't fit alone, never "Val ues" in a narrow column */
+  border: 0;
+  border-bottom: 1px solid var(--line);
+  padding: 0.7rem 1rem 0.7rem 0;
+  vertical-align: top;
+  background: transparent;
+}
+.sl-markdown-content th:not(:where(.not-content *)) {
+  font: 700 0.75rem/1.4 var(--font-mono);
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--muted);
+  border-bottom: 2px solid var(--line);
+  text-align: start;
+  white-space: nowrap;
+}
+.sl-markdown-content tr:nth-child(2n) td { background: transparent; }
+.sl-markdown-content td:first-child > code:only-child { white-space: nowrap; }
+/* a reference name's cell is wide enough for most names on one line, wrapping the long ones at `_`, `.` or `/` */
+@media (min-width: 50rem) { .sl-markdown-content td:has(> .nw-ref:first-child) { min-width: 15rem; } }
+.sl-markdown-content :is(th, td):last-child:not(:where(.not-content *)) { padding-inline-end: 0; }
+.sl-markdown-content td code { overflow-wrap: break-word; }
+
+/* ---------- the header: the doorman's livery, with the Lamp piping of his collar ---------- */
+header.header {
+  background: var(--docs-header);
+  border-bottom: 0;
+  box-shadow: inset 0 -2px 0 var(--lamp);
+  color: var(--on-docs-header);
+}
+header.header :is(a, button, select, label, kbd) { color: var(--on-docs-header); }
+header.header .social-icons::after { border-color: color-mix(in srgb, var(--paper) 30%, transparent); }
+header.header .social-icons a:hover { color: var(--lamp); }
+header.header site-search > button {
+  background: color-mix(in srgb, var(--paper) 10%, transparent);
+  border: 1px solid color-mix(in srgb, var(--paper) 32%, transparent);
+  border-radius: var(--radius-md);
+  color: var(--on-docs-header);
+}
+header.header site-search > button:hover { border-color: var(--paper); color: var(--on-docs-header); }
+header.header site-search > button kbd { background: color-mix(in srgb, var(--paper) 16%, transparent); border-radius: var(--radius-sm); color: var(--on-docs-header); }
+header.header starlight-theme-select .sl-select,
+header.header starlight-theme-select select { color: var(--on-docs-header); }
+header.header starlight-theme-select select { background: transparent; }
+header.header starlight-theme-select option { color: var(--text); background: var(--surface); }
+starlight-menu-button button {
+  background: color-mix(in srgb, var(--paper) 12%, transparent) !important;
+  color: var(--on-docs-header) !important;
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--paper) 35%, transparent) !important;
+}
+starlight-menu-button[aria-expanded='true'] button { background: var(--paper) !important; color: var(--coat) !important; }
+
+/* the title runs into the page: no rule between them */
+.content-panel + .content-panel { border-top: 0; }
+/* the title's panel sits close to the page: no bottom padding to speak of, and no margin over the first block */
+.content-panel:has(> .sl-container > .nw-title) { padding-bottom: 0.5rem; }
+.sl-markdown-content > :first-child { margin-top: 0 !important; }
+
+/* ---------- the sidebar ---------- */
+.sidebar-pane { border-inline-end: 1px solid var(--line); }
+.sidebar-content { padding-top: 1.5rem; }
+.sidebar-content .large {
+  font: 700 0.75rem/1.4 var(--font-mono) !important;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--muted) !important;
+}
+.sidebar-content summary { padding-block: 0.35rem 0.25rem; }
+/* top-level pages (Home, Contributing) are links, not section labels */
+.sidebar-content a.large {
+  font: 400 0.9375rem/1.4 var(--font-sans) !important;
+  letter-spacing: 0;
+  text-transform: none;
+  color: var(--text) !important;
+}
+.sidebar-content a.large[aria-current='page'] { font-weight: 700 !important; }
+.sidebar-content ul ul li { border-inline-start-color: var(--line); }
+.sidebar-content a {
+  color: var(--text);
+  font-size: 0.9375rem !important;
+  border-radius: 0 var(--radius-md) var(--radius-md) 0;
+}
+.sidebar-content a:hover { color: var(--text); background: color-mix(in srgb, var(--text) 5%, transparent); }
+.sidebar-content a[aria-current='page'],
+.sidebar-content a[aria-current='page']:hover,
+.sidebar-content a[aria-current='page']:focus {
+  color: var(--text);
+  font-weight: 700;
+  background: var(--nw-tint);
+  box-shadow: inset 3px 0 0 var(--action);
+}
+.sidebar-content .top-level > li > a[aria-current='page'] { box-shadow: inset 3px 0 0 var(--action); }
+@media (min-width: 50rem) {
+  .sidebar-pane { background: var(--bg); }
+}
+
+/* ---------- on this page ---------- */
+.right-sidebar { border-inline-start: 1px solid var(--line); }
+.right-sidebar-panel h2,
+mobile-starlight-toc .toggle {
+  font: 700 0.75rem/1.4 var(--font-mono) !important;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--muted) !important;
+}
+starlight-toc a { color: var(--muted); font-size: 0.875rem; }
+starlight-toc a:hover { color: var(--text); }
+starlight-toc a[aria-current='true'], starlight-toc a[aria-current='true']:hover { color: var(--link); font-weight: 700; }
+mobile-starlight-toc nav { background: var(--bg); border-bottom: 1px solid var(--line); }
+
+/* ---------- asides: the brand's callouts ---------- */
+.starlight-aside {
+  --nw-ink: var(--brand);
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-inline-start: 3px solid var(--nw-ink);
+  border-radius: var(--radius-lg);
+  padding: 0.9rem 1.15rem 1rem;
+  color: var(--text);
+}
+.starlight-aside--caution { --nw-ink: var(--accent-text); }
+.starlight-aside--danger { --nw-ink: var(--error); }
+.starlight-aside__title {
+  color: var(--nw-ink);
+  font: 700 1rem/1.4 var(--font-sans);
+  gap: 0.55rem;
+  margin-bottom: 0.35rem;
+}
+.starlight-aside__icon { display: none; }
+/* needs you: the shut door with a note pinned on it, never an alarm bell */
+.starlight-aside--danger .starlight-aside__title::before {
+  content: '';
+  flex: none;
+  width: 20px;
+  height: 20px;
+  background: var(--nw-door-error) center / contain no-repeat;
+}
+.starlight-aside__content { font-size: 1rem; }
+.starlight-aside__content a { color: var(--link); }
+
+/* collapsible notes (??? in MkDocs) */
+.sl-markdown-content details.nw-details {
+  border: 1px solid var(--line);
+  border-radius: var(--radius-lg);
+  background: var(--surface);
+  padding: 0;
+  margin-top: 1.25rem;
+}
+.sl-markdown-content details.nw-details > summary {
+  cursor: pointer;
+  padding: 0.75rem 1rem;
+  font-weight: 700;
+  color: var(--text);
+  list-style-position: inside;
+}
+.sl-markdown-content details.nw-details > summary::marker { color: var(--brand); }
+.sl-markdown-content details.nw-details[open] > summary { border-bottom: 1px solid var(--line); }
+.sl-markdown-content details.nw-details > :not(summary) { margin-inline: 1rem; }
+.sl-markdown-content details.nw-details > :last-child { margin-bottom: 1rem; }
+
+/* ---------- tabs ---------- */
+starlight-tabs .tablist-wrapper { border-bottom: 1px solid var(--line); }
+starlight-tabs [role='tablist'] { border-bottom: 0 !important; gap: 0.25rem; }
+starlight-tabs [role='tab'] {
+  color: var(--muted) !important;
+  font-weight: 700;
+  font-size: 0.9375rem;
+  border-bottom: 2px solid transparent !important;
+  padding: 0.45rem 0.85rem 0.55rem !important;
+  margin-bottom: -1px;
+}
+starlight-tabs [role='tab']:hover { color: var(--text) !important; }
+starlight-tabs [role='tab'][aria-selected='true'] { color: var(--text) !important; border-bottom-color: var(--action) !important; }
+starlight-tabs [role='tabpanel'] { margin-top: 1rem; }
+
+/* ---------- code ---------- */
+.expressive-code { margin-top: 1rem; }
+.expressive-code .frame .header .title { font-family: var(--font-mono); }
+.expressive-code .frame.is-terminal:not(.has-title) .header { display: none; }
+.expressive-code .frame.is-terminal:not(.has-title) pre { border-top: 1px solid var(--line); border-radius: var(--radius-md); }
+.expressive-code .frame.is-terminal:not(.has-title) { --button-spacing: 0.35rem; }
+.expressive-code .copy button { width: 2rem !important; height: 2rem !important; background: var(--code-bg) !important; box-shadow: 0 0 0 1px var(--line); }
+.expressive-code .copy button::after { margin: 0.3rem !important; }
+/* The copy button sits over the end of a long line: the line fades out under it, so no text shows through. */
+.expressive-code .copy { inset-inline-end: 0 !important; padding-inline: 1.5rem calc(var(--ec-uiPadInl) / 2); background: linear-gradient(to right, transparent, var(--code-bg) 1.5rem); }
+.expressive-code .copy button { opacity: 1 !important; }
+
+/* ---------- maths ---------- */
+.nw-math {
+  margin-top: 1.25rem;
+  padding: 1rem 1.25rem;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-lg);
+  overflow-x: auto;
+  color: var(--text);
+}
+.nw-math .katex-display { margin: 0; }
+.sl-markdown-content .katex { font-size: 1.06em; color: var(--text); }
+.sl-markdown-content table .katex { font-size: 1em; }
+
+/* ---------- Mermaid ---------- */
+.nw-mermaid {
+  margin: 1.5rem 0 0;
+  padding: 1.5rem 1rem;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-lg);
+  overflow-x: auto;
+  text-align: center;
+}
+.nw-mermaid svg { max-width: 100%; height: auto; margin-inline: auto; }
+.nw-mermaid .nodeLabel, .nw-mermaid .edgeLabel, .nw-mermaid .label { font-family: var(--font-sans) !important; color: var(--nw-mm-text) !important; }
+.nw-mermaid .edgeLabel { font-size: 0.8125rem; color: var(--muted) !important; }
+.nw-mermaid .edgeLabel p, .nw-mermaid .edgeLabel rect { background: var(--surface) !important; fill: var(--surface) !important; }
+.nw-mermaid .node rect, .nw-mermaid .node polygon { rx: 6px; stroke-width: 1.5px !important; }
+.nw-mermaid .cluster rect { stroke-dasharray: 4 4; rx: 8px; }
+.nw-mermaid .cluster-label .nodeLabel { font: 700 0.75rem/1.4 var(--font-mono) !important; letter-spacing: 0.06em; text-transform: uppercase; color: var(--muted) !important; }
+
+/* ---------- pagination and footer ---------- */
+.pagination-links a {
+  border: 1px solid var(--line);
+  border-radius: var(--radius-lg);
+  box-shadow: none;
+  background: var(--surface);
+  color: var(--text);
+}
+.pagination-links a:hover { border-color: var(--action); }
+.pagination-links a span { font: 700 0.75rem/1.4 var(--font-mono); letter-spacing: 0.06em; text-transform: uppercase; color: var(--muted); }
+.pagination-links .link-title { font: 700 1.0625rem/1.35 var(--font-sans); letter-spacing: 0; text-transform: none; color: var(--text); }
+.pagination-links svg { color: var(--brand); }
+
+/* ---------- search ---------- */
+site-search dialog { border-radius: var(--radius-lg); border: 1px solid var(--line); background: var(--bg); }
+#starlight__search {
+  --pagefind-ui-primary: var(--action);
+  --pagefind-ui-text: var(--text);
+  --pagefind-ui-background: var(--bg);
+  --pagefind-ui-border: var(--line);
+  --pagefind-ui-tag: var(--code-bg);
+  --pagefind-ui-font: var(--font-sans);
+  --pagefind-ui-border-radius: 6px;
+}
+#starlight__search .pagefind-ui__result-title { font-weight: 700; }
+#starlight__search mark { background: color-mix(in srgb, var(--lamp) 45%, transparent); color: var(--text); }
+
+/* ---------- the door glyphs as CSS images, for places markup can't hold an SVG ---------- */
+:root {
+  --nw-door-error: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cpath d='M6 22V10A6 6 0 0 1 18 10V22Z' fill='%238C9BB5'/%3E%3Crect x='8.2' y='9.5' width='7.6' height='8.6' rx='1' fill='%23F8F8F5' transform='rotate(6 12 13.8)'/%3E%3Crect x='11.3' y='10.8' width='1.5' height='3.6' rx='.75' fill='%23F0645A'/%3E%3Ccircle cx='12.1' cy='16.2' r='.9' fill='%23F0645A'/%3E%3C/svg%3E");
+}
+:root[data-theme='light'] {
+  --nw-door-error: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cpath d='M6 22V10A6 6 0 0 1 18 10V22Z' fill='%235B6B86'/%3E%3Crect x='8.2' y='9.5' width='7.6' height='8.6' rx='1' fill='%23F8F8F5' transform='rotate(6 12 13.8)'/%3E%3Crect x='11.3' y='10.8' width='1.5' height='3.6' rx='.75' fill='%23D9443A'/%3E%3Ccircle cx='12.1' cy='16.2' r='.9' fill='%23D9443A'/%3E%3C/svg%3E");
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { animation: none !important; transition: none !important; }
+}
+
+/* a command and the output right after it read as one: joined, the output under a dashed rule */
+.sl-markdown-content .expressive-code:has(pre[data-language='bash']):has(+ .expressive-code pre[data-language='plaintext']) pre { border-bottom-left-radius: 0; border-bottom-right-radius: 0; }
+.sl-markdown-content .expressive-code:has(pre[data-language='bash']) + .expressive-code:has(pre[data-language='plaintext']) { margin-top: 0; }
+.sl-markdown-content .expressive-code:has(pre[data-language='bash']) + .expressive-code:has(pre[data-language='plaintext']) pre {
+  border-top: 1px dashed var(--line);
+  border-top-left-radius: 0;
+  border-top-right-radius: 0;
+  background: var(--surface);
+}
+.sl-markdown-content .expressive-code:has(pre[data-language='bash']) + .expressive-code:has(pre[data-language='plaintext']) .frame { position: relative; }
+.sl-markdown-content .expressive-code:has(pre[data-language='bash']) + .expressive-code:has(pre[data-language='plaintext']) .frame::after {
+  content: 'output';
+  position: absolute;
+  bottom: 0.45rem;
+  right: 0.7rem;
+  font: 700 0.625rem/1 var(--font-mono);
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--muted);
+  pointer-events: none;
+}
+
+/* an illustration beside its caption, at the top of a concept page */
+.nw-figure-side { display: grid; grid-template-columns: 8.5rem minmax(0, 1fr); gap: 1.25rem; align-items: center; margin: 1.5rem 0 0; padding: 0.75rem 1.25rem 0.75rem 0.75rem; background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius-xl); }
+.nw-figure-side .nw-doorman { width: 100%; }
+.nw-figure-side figcaption { font-size: 1rem; line-height: 1.55; color: var(--text); }
+.nw-figure-side figcaption code { font: 400 0.88em var(--font-mono); background: var(--code-bg); padding: 0.1em 0.35em; border-radius: var(--radius-sm); }
+@media (max-width: 30rem) { .nw-figure-side { grid-template-columns: 6rem minmax(0, 1fr); gap: 0.9rem; } .nw-figure-side figcaption { font-size: 0.9375rem; } }
+
+/* wide reference tables: the description column gets room; pages with a name index are wider,
+   since the index stands in for "on this page" */
+.sl-markdown-content table:has(th:nth-child(4)) td:last-child { min-width: 19rem; }
+:root:has(.nw-refindex) { --sl-content-width: 58rem; }
+
+/* a table wider than the page shows that it scrolls: a soft edge where there's more to see */
+.sl-markdown-content table:not(:where(.not-content *)) {
+  background:
+    linear-gradient(to right, var(--bg) 40%, transparent) left center / 2.5rem 100% no-repeat local,
+    linear-gradient(to left, var(--bg) 40%, transparent) right center / 2.5rem 100% no-repeat local,
+    radial-gradient(farthest-side at 0 50%, color-mix(in srgb, var(--text) 16%, transparent), transparent) left center / 0.8rem 100% no-repeat scroll,
+    radial-gradient(farthest-side at 100% 50%, color-mix(in srgb, var(--text) 16%, transparent), transparent) right center / 0.8rem 100% no-repeat scroll;
+}
+@media (max-width: 50rem) { .sl-markdown-content table:has(th:nth-child(4)) td:last-child { min-width: 15rem; } }

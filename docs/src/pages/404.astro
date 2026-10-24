@@ -1,0 +1,9 @@
+---
+// The 404, as a Starlight page outside the docs collection, so it's never in llms-full.txt, the
+// sitemap or search.
+import StarlightPage from '@astrojs/starlight/components/StarlightPage.astro';
+import NotFound from '../components/NotFound.astro';
+---
+<StarlightPage frontmatter={{ title: 'Page not found', description: 'These docs have no such page.', template: 'splash', tableOfContents: false, editUrl: false, prev: false, next: false, pagefind: false }}>
+  <NotFound />
+</StarlightPage>

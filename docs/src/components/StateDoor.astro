@@ -1,0 +1,10 @@
+---
+// The door glyph for a state, drawn by the rig in the glyph tokens, so it follows the theme.
+// Put the state's word beside it, or give it a label: colour is never the only signal.
+import { door } from '../rig/draw.mjs';
+import type { State } from './lib';
+interface Props { state: State; size?: number; label?: string; class?: string }
+const { state, size = 24, label, class: cls } = Astro.props;
+---
+<svg class:list={['nw-door', cls]} viewBox="0 0 24 24" width={size} height={size} role={label ? 'img' : undefined} aria-label={label} aria-hidden={label ? undefined : 'true'} focusable="false" set:html={door(state)} />
+<style>.nw-door { display: inline-block; flex: none; vertical-align: middle; overflow: visible; }</style>

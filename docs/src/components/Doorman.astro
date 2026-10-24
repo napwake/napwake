@@ -1,0 +1,11 @@
+---
+// One of the doorman's poses, drawn by the rig in the doorman's tokens, with the print finish.
+// Illustrations go on pages, cards and empty states, never inside documentation steps. Label it by
+// the doorman's rule: only the door is his job; any other pose's label says what Napwake does.
+import { pose } from '../rig/draw.mjs';
+interface Props { pose: string; label?: string; finish?: boolean; class?: string; width?: number }
+const { pose: name, label, finish = true, class: cls, width } = Astro.props;
+const p = pose(name, { finish });
+---
+<svg class:list={['nw-doorman', cls]} viewBox={p.viewBox} width={width} role={label ? 'img' : undefined} aria-label={label} aria-hidden={label ? undefined : 'true'} focusable="false" set:html={p.svg} />
+<style>.nw-doorman { display: block; height: auto; max-width: 100%; overflow: visible; }</style>

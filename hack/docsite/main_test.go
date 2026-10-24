@@ -17,7 +17,6 @@ limitations under the License.
 package main
 
 import (
-	"net/url"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -165,13 +164,11 @@ func TestNotFoundPage(t *testing.T) {
 }
 
 // Links without a version are sent on only under the path the site is
-// served from, which is the path of mkdocs.yml's site_url.
+// served from, which is the docs' default base, in docs/astro.config.mjs.
 func TestDefaultBaseIsWhereTheSiteIsServed(t *testing.T) {
-	config, err := os.ReadFile(filepath.Join("..", "..", "mkdocs.yml"))
+	config, err := os.ReadFile(filepath.Join("..", "..", "docs", "astro.config.mjs"))
 	require.NoError(t, err)
-	m := regexp.MustCompile(`(?m)^site_url: (\S+)$`).FindSubmatch(config)
-	require.NotNil(t, m, "mkdocs.yml has a site_url")
-	site, err := url.Parse(string(m[1]))
-	require.NoError(t, err)
-	assert.Equal(t, site.Path, defaultBase)
+	m := regexp.MustCompile(`env\('NAPWAKE_DOCS_BASE', '([^']*)'\)`).FindSubmatch(config)
+	require.NotNil(t, m, "astro.config.mjs has a default base")
+	assert.Equal(t, defaultBase, string(m[1]))
 }

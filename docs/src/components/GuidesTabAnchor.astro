@@ -1,0 +1,29 @@
+---
+// An anchor inside a tab, so a link to #id opens the tab that holds it. Starlight hides every tab
+// panel but the first, and a browser can't scroll to what's hidden, so links from the CLI and other
+// pages into one tool's tab (the GitOps guide's #flux, #kapp, …) would land nowhere. Put it first in
+// the TabItem, with the id the old heading had. The links validator counts its id like a heading.
+interface Props { id: string }
+const { id } = Astro.props;
+---
+<span id={id} class="nw-tab-anchor"></span>
+<style>
+  .nw-tab-anchor { display: block; scroll-margin-top: calc(var(--sl-nav-height, 3.5rem) + 5.5rem); }
+</style>
+<script>
+  type Tabs = HTMLElement & { tabs: HTMLAnchorElement[]; panels: HTMLElement[]; switchTab(tab: HTMLAnchorElement, i: number, sync?: boolean): void };
+  function openFromHash() {
+    const id = decodeURIComponent(location.hash.slice(1));
+    const target = id ? document.getElementById(id) : null;
+    const panel = target?.closest<HTMLElement>('[role="tabpanel"]');
+    const tabs = panel?.closest('starlight-tabs') as Tabs | null | undefined;
+    if (!target || !panel || !tabs) return;
+    const i = tabs.panels.indexOf(panel);
+    if (panel.hidden && i >= 0) tabs.switchTab(tabs.tabs[i], i, false);
+    target.scrollIntoView();
+  }
+  customElements.whenDefined('starlight-tabs').then(() => {
+    openFromHash();
+    addEventListener('hashchange', openFromHash);
+  });
+</script>

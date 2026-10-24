@@ -1,0 +1,498 @@
+---
+title: "Public preview environments"
+description: "Have a preview environment on a public URL ask before waking, so people wake it and robots don't."
+lede: "For an environment per pull request on a public URL. Napwake pauses each preview while nobody uses it, and only people wake it. Robots wake nothing."
+---
+
+import { Steps, Tabs, TabItem } from '@astrojs/starlight/components';
+import StateFlow from '../../../components/StateFlow.astro';
+import Outcome from '../../../components/Outcome.astro';
+import StartCheckpoint from '../../../components/StartCheckpoint.astro';
+import NextSteps from '../../../components/NextSteps.astro';
+
+<StateFlow
+  label="A public environment that asks before waking"
+  steps={[
+    { state: 'asleep', title: 'Asks first', text: 'A browser gets the asleep page, with a <b>Wake it</b> button. Robots get a <code>503</code>.' },
+    { state: 'waking', title: 'Woken by a person', text: 'The waking-up page carries on.' },
+    { state: 'awake', title: 'Up', text: 'The page they opened loads.' },
+  ]}
+  between={['A person clicks <b>Wake it</b>', 'A pod is Ready']}
+/>
+
+On the public internet, most requests are robots. Crawlers, link previewers and scanners try every address, and many pass for browsers. A preview that wakes on any request wakes every few minutes, and hardly ever stays paused.
+
+Its hostname doesn't stay hidden. Once it has an HTTPS certificate, it's in public certificate logs within minutes, and scanners reach it by name.
+
+With `ask`, a person's browser gets a page with a **Wake it** button, and only the click wakes the preview. Your tooling wakes it with an annotation. Behind a VPN, single sign-on or an allowlist, keep the default, `request` ([Environments on the public internet](/concepts/wake-on-request/#environments-on-the-public-internet)).
+
+<Steps>
+
+1. Opt in each preview's namespace, asking first.
+
+    <Tabs>
+    <TabItem label="Namespace">
+
+    ```yaml title="namespace.yaml"
+    apiVersion: v1
+    kind: Namespace
+    metadata:
+      name: preview-42
+      labels:
+        napwake.dev/managed: "true"
+      annotations:
+        napwake.dev/wake: "ask"
+    ```
+
+    Leave `replicas` out of the workloads' manifests, and Kubernetes starts a new Deployment at one replica. A deploy that sets them scales a paused preview up, which wakes it. A GitOps tool that sets them undoes every pause ([GitOps tools](/guides/gitops/)).
+
+    </TabItem>
+    <TabItem label="Argo CD">
+
+    An Application that creates the namespace, with `CreateNamespace=true`, sets them in `managedNamespaceMetadata`. It must leave the replicas to Napwake too, or it scales the preview up after every pause.
+
+    ```yaml title="application.yaml"
+    apiVersion: argoproj.io/v1alpha1
+    kind: Application
+    metadata:
+      name: preview-42
+      namespace: argocd
+    spec:
+      project: default
+      source:
+        repoURL: https://github.com/your-org/previews.git
+        targetRevision: main
+        path: previews/preview-42
+      destination:
+        server: https://kubernetes.default.svc
+        namespace: preview-42
+      ignoreDifferences:
+        - group: apps
+          kind: Deployment
+          jsonPointers:
+            - /spec/replicas
+      syncPolicy:
+        automated: {}
+        managedNamespaceMetadata:
+          labels:
+            napwake.dev/managed: "true"
+          annotations:
+            napwake.dev/wake: "ask"
+        syncOptions:
+          - CreateNamespace=true
+          - RespectIgnoreDifferences=true
+    ```
+
+    Argo CD sets `managedNamespaceMetadata` only in a sync with `CreateNamespace=true`. For a namespace it created before, see the Argo CD tab of [A whole namespace](/guides/opt-in/#a-whole-namespace). For StatefulSets, see [With GitOps](/guides/opt-in/#with-gitops).
+
+    </TabItem>
+    <TabItem label="Kustomize">
+
+    With Flux, or anything that applies a kustomization, put the Namespace in it, as `namespace.yaml` beside it.
+
+    ```yaml title="kustomization.yaml"
+    apiVersion: kustomize.config.k8s.io/v1beta1
+    kind: Kustomization
+    namespace: preview-42
+    resources:
+      - namespace.yaml
+      - ../base
+    ```
+
+    Leave `replicas` out of the base's manifests. Flux sets the replicas a manifest has, so it would scale the preview up after every pause. That's a `GitOpsConflict`, which holds off the next pause for an hour ([Flux](/guides/gitops/#flux)).
+
+    </TabItem>
+    <TabItem label="Every workload">
+
+    ```yaml title="values.yaml"
+    defaults:
+      wake: ask
+    ```
+
+    Every opted-in workload asks, whatever its namespace, unless its own annotations or its namespace's say `"request"`.
+
+    </TabItem>
+    <TabItem label="ManagedWorkload">
+
+    ```yaml title="managedworkload.yaml"
+    spec:
+      wake:
+        mode: Ask
+    ```
+
+    For a [ManagedWorkload](/guides/managed-workload/) you wrote. The spec spells it `Ask`, and the annotation `ask`.
+
+    </TabItem>
+    </Tabs>
+
+    A workload's own `napwake.dev/wake` wins over its namespace's, and that over the Helm default ([Which setting wins](/guides/opt-in/#which-setting-wins)). The annotation takes exactly `"request"` or `"ask"`. Any other value asks too, with an `InvalidSetting` warning event, so a typo never lets robots wake a preview.
+
+2. Check it once the preview has paused, after an hour with no activity by default.
+
+    ```bash
+    kubectl get managedworkloads -n preview-42 \
+      -o custom-columns='NAME:.metadata.name,WAKE:.spec.wake.mode,PHASE:.status.phase,DOORMAN:.status.conditions[?(@.type=="WakeOnRequest")].reason'
+    ```
+
+    ```text
+    NAME   WAKE      PHASE    DOORMAN
+    api    Request   Paused   DoormanRouted
+    web    Ask       Paused   DoormanRouted
+    ```
+
+    Any other reason under DOORMAN says why requests can't reach the doorman ([When a workload isn't routed](/concepts/wake-on-request/#when-a-workload-isnt-routed)).
+
+3. Ask for it as a robot would.
+
+    ```bash
+    curl -i https://pr-42.preview.example.com/
+    ```
+
+    It gets a `503` saying how to wake it ([what robots get](#what-robots-and-api-clients-see)), and the preview stays paused.
+
+4. Open it in a browser, and click **Wake it**.
+
+</Steps>
+
+<StartCheckpoint state="waking" note="woken by the click">
+The waking-up page carries on until a pod is Ready, then the page you opened loads. `curl` woke nothing.
+</StartCheckpoint>
+
+:::caution[It needs plain HTTP]
+The doorman reads each request to tell a browser from a robot. So end TLS at the ingress or load balancer in front of the preview, as is usual.
+
+A workload that ends TLS itself is never woken by a click. Behind a GKE Ingress or Gateway, it also needs the doorman's [forwarder](/concepts/wake-on-request/#gke-container-native-load-balancing-negs).
+:::
+
+## A preview of more than one workload
+
+Every workload in the namespace asks, which suits what people open in a browser. An API the frontend calls wakes with it when it's a [dependency](/concepts/dependencies/) of the frontend. So does a database or a queue worker.
+
+Napwake learns that from the frontend's environment, such as an `API_URL` naming the API's Service. Or declare it with `napwake.dev/depends-on`.
+
+One click then wakes the whole preview, and its dependencies stay up as long as the frontend does. To see what wakes with a workload:
+
+```bash
+kubectl napwake deps web -n preview-42
+```
+
+```text
+preview-42/web (Deployment, Paused)
+Depends on:
+  preview-42/api   learned from API_URL   Paused
+Depended on by:
+  nothing
+Learned links come from the dependent's environment or its requests; napwake.dev/ignore-dependencies drops one.
+```
+
+A workload that's nobody's dependency is woken only by tooling while it asks. Its callers are other workloads, which are turned away. A database's protocol isn't HTTP, so its connections are closed.
+
+Have it wake on any request instead, with the annotation on the workload, which wins over the namespace's. No robot reaches a Service that no Ingress exposes, so only its real callers wake it.
+
+```yaml title="deployment.yaml"
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: api
+  annotations:
+    napwake.dev/wake: "request"
+```
+
+See [When to keep waking on request](/concepts/wake-on-request/#when-to-keep-waking-on-request).
+
+## What people see
+
+Someone opens the preview, say `https://pr-42.preview.example.com/orders/7`, and gets the asleep page.
+
+| | The asleep page |
+|---|---|
+| Says | The preview is asleep, with a **Wake it** button |
+| Is sent as | `200 OK`, with `Cache-Control: no-store`, `X-Robots-Tag: noindex` and `Referrer-Policy: same-origin` |
+| Runs | No script. No other site can show it in a frame |
+| Names | No namespace, workload or Service |
+| Reloads | Every minute, with a fresh token, so a page left open doesn't go stale |
+| Wakes | Nothing. Only the click does |
+
+The button posts back to the same address, with a token the doorman signed for this preview and this pause. It's good for 10 minutes.
+
+A current browser says the click came from the page, with `Sec-Fetch-Site` over HTTPS, or its `Origin` over plain HTTP. The preview then wakes, with what it depends on, and a `WokenByRequest` event says a person asked.
+
+Next comes the waking-up page. It says the preview is starting, and for how long, and reloads every 3 seconds. Once a pod is Ready, the next reload is the page they opened, `/orders/7`.
+
+| When | What happens |
+|---|---|
+| Others open it after the click | <Outcome state="waking">The waking-up page, then the app, without clicking</Outcome> |
+| A page left open whose reloads failed, as after a laptop slept | <Outcome state="asleep">Its token expired. The page says so, and offers the button again</Outcome> |
+| A browser from before about 2020 | <Outcome state="asleep">It may not say where the click came from, so nothing wakes. The page says so, and how else to wake it</Outcome> |
+| The app's own form, such as its login, posted after the preview paused | <Outcome state="asleep">The asleep page. Nothing wakes until someone clicks</Outcome> |
+| Once it's awake | It pauses again after `idleAfter` with no activity, an hour by default |
+
+The other ways to wake it are `kubectl napwake wake`, a [wake request](#waking-it-from-tooling), or a current browser. [The Wake it button](/concepts/wake-on-request/#the-wake-it-button) has the token, and what a click from another site gets.
+
+## What robots and API clients see
+
+Anything but a person's browser opening a page, or posting a small form, gets a `503`. That's `curl`, scripts and API clients, and a page's own `fetch`. Crawlers and link previewers such as `Googlebot`, headless browsers and scanners get it too.
+
+It says the preview is asleep and how to wake it, and nothing wakes:
+
+```bash
+curl -i https://pr-42.preview.example.com/
+```
+
+```text
+HTTP/1.1 503 Service Unavailable
+Content-Type: text/plain; charset=utf-8
+Cache-Control: no-store
+Retry-After: 300
+X-Robots-Tag: noindex
+
+This environment is asleep. Napwake paused it while nobody was using it, to save money.
+Requests don't wake it. To wake it, do one of these, then try again:
+- Open it in a browser and press Wake it.
+- Run kubectl napwake wake NAME -n NAMESPACE.
+- From tooling, set the annotation napwake.dev/wake-requested to a new value on its ManagedWorkload.
+More at https://docs.napwake.dev/guides/preview-environments/
+```
+
+| The caller | What it gets |
+|---|---|
+| A client that sends `Accept: application/json` | <Outcome state="asleep">The same, in JSON</Outcome> |
+| A probe or health check the doorman knows | <Outcome state="asleep">Answered as for any workload</Outcome> |
+| A connection that isn't HTTP, such as a database's | <Outcome state="asleep">Closed</Outcome> |
+| Anyone, once someone has woken the preview | <Outcome state="waking">Served as usual</Outcome> |
+
+See [What browsers, robots and API clients see](/concepts/wake-on-request/#what-browsers-robots-and-api-clients-see).
+
+## Waking it from tooling
+
+Tooling sets `napwake.dev/wake-requested` on the preview's ManagedWorkload to a new value, whatever its wake setting. Napwake acts on each value once, records it in `status.lastWakeRequest`, and answers in the `WakeRequest` condition ([Wake now](/guides/pause/#wake-now)).
+
+A ManagedWorkload from the label is named after its workload, such as `web`. Waking it wakes what it depends on too.
+
+### When a pull request is pushed
+
+A deploy that leaves the replicas to Napwake, as each tab above sets up, doesn't wake a paused preview. Its new pods start at the next wake.
+
+One that sets `replicas` scales the preview up, which wakes it as a scale-up from outside. Under Flux, that's a `GitOpsConflict`, and the next pause waits an hour ([GitOps tools](/guides/gitops/)).
+
+To have it up for whoever reviews each push, wake it from the workflow that deploys it, and wait until it's Running. In GitHub Actions:
+
+```yaml title=".github/workflows/preview.yaml"
+name: Preview
+on:
+  pull_request:
+
+jobs:
+  preview:
+    runs-on: ubuntu-latest
+    steps:
+      # ...the steps that deploy the preview and give kubectl access to the cluster
+      - name: Wake the preview
+        env:
+          NS: preview-${{ github.event.pull_request.number }}
+          TOKEN: ${{ github.run_id }}-${{ github.run_attempt }}
+        run: |
+          kubectl wait managedworkload/web -n "$NS" --for=create --timeout=1m
+          kubectl annotate managedworkload web -n "$NS" --overwrite napwake.dev/wake-requested="$TOKEN"
+          kubectl wait managedworkload web -n "$NS" --for=jsonpath='{.status.lastWakeRequest}'="$TOKEN" --timeout=10m
+          answer=$(kubectl get managedworkload web -n "$NS" \
+            -o jsonpath='{.status.conditions[?(@.type=="WakeRequest")].status} {.status.conditions[?(@.type=="WakeRequest")].message}')
+          case "$answer" in
+            True*) ;;
+            *) echo "::error::${answer#* }"; exit 1 ;;
+          esac
+          kubectl wait managedworkload web -n "$NS" --for=jsonpath='{.status.phase}'=Running --timeout=10m
+```
+
+| Part | Why |
+|---|---|
+| The first `kubectl wait` | On the first push, Napwake makes the ManagedWorkload moments after the deploy. `--for=create` needs kubectl 1.31 or later |
+| A request set before Napwake takes it on | Answered `already awake`, as for any awake preview |
+| The token | The run's ID and attempt, so each run asks afresh, a re-run included |
+| The second wait | Until Napwake takes the request up. One made as the preview pauses is answered at once, and calls the pause off. One made as it wakes is answered once the wake finishes ([Wake now](/guides/pause/#wake-now)). So this wait can last as long as the start, and has the same 10 minutes as the last |
+| When Napwake won't wake it | The step fails with the reason, such as `not woken at 2026-10-23 21:01 UTC: it's scaled to zero outside Napwake, which leaves it off until its replicas are set above zero` |
+| The last wait | Until the preview is Running. Its dependencies wake with it. To wait for them too, add a `kubectl wait` for each |
+
+### From a terminal
+
+```bash
+kubectl napwake wake web -n preview-42
+```
+
+```text
+waking preview-42/web...
+preview-42/web is Running after 2s
+```
+
+`--wait`, the default, waits for Napwake's answer, then until it's Running. Both fit in `--timeout`, 5 minutes by default. A request made as the preview pauses calls the pause off. One made as it wakes is answered once the wake finishes.
+
+That's inside the same 5 minutes. For a slower start, give it more, such as `--timeout 10m` ([Wake a workload](/getting-started/kubectl-plugin/#wake-a-workload)).
+
+### From a portal or a chat bot
+
+Anything that talks to the Kubernetes API can ask. A portal that has just made the environment gets `404 Not Found` at first. Napwake makes its ManagedWorkload a moment after the workload, so the portal retries until it exists.
+
+With `curl`, a `PATCH` sets the annotation, and prints nothing unless it fails. `$APISERVER` is the API server's address, `ca.crt` its CA certificate, and `$KUBE_TOKEN` a token for the bot's ServiceAccount:
+
+```bash
+NS=preview-42
+REQUEST=chat-$(date -u +%Y%m%dT%H%M%SZ)
+curl --fail-with-body -sS -o /dev/null --cacert ca.crt -X PATCH \
+  -H "Authorization: Bearer $KUBE_TOKEN" \
+  -H 'Content-Type: application/merge-patch+json' \
+  -d '{"metadata":{"annotations":{"napwake.dev/wake-requested":"'"$REQUEST"'"}}}' \
+  "$APISERVER/apis/napwake.dev/v1alpha1/namespaces/$NS/managedworkloads/web"
+```
+
+Then read the ManagedWorkload every second or two until Napwake has answered. A request made as the preview pauses is answered at once, and calls the pause off. One made as it wakes is answered once the wake finishes. So keep reading as long as it takes to start:
+
+```bash
+curl --fail-with-body -sS --cacert ca.crt -H "Authorization: Bearer $KUBE_TOKEN" \
+  "$APISERVER/apis/napwake.dev/v1alpha1/namespaces/$NS/managedworkloads/web" |
+  jq -r --arg request "$REQUEST" 'select(.status.lastWakeRequest == $request)
+    | .status.conditions[] | select(.type == "WakeRequest") | "\(.status) \(.message)"'
+```
+
+```text
+True woken as requested at 2026-10-23 21:03 UTC
+```
+
+It prints nothing until then. `False` gives the reason in the message. Once it's `True`, `.status.phase` says when the preview is `Running`.
+
+### The access tooling needs
+
+A Role in the preview's namespace, bound to your tooling's ServiceAccount, such as one in a `ci` namespace:
+
+```yaml title="preview-waker.yaml"
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: preview-waker
+  namespace: preview-42
+rules:
+  - apiGroups: [napwake.dev]
+    resources: [managedworkloads]
+    verbs: [get, list, watch, patch]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: preview-waker
+  namespace: preview-42
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: preview-waker
+subjects:
+  - kind: ServiceAccount
+    name: preview-waker
+    namespace: ci
+```
+
+| Tool | Verbs on `managedworkloads` |
+|---|---|
+| `kubectl annotate` | `get`, `patch` |
+| `kubectl wait` | `get`, `list`, `watch`. It lists the ManagedWorkload by name before watching it. Without `list`, it waits out its timeout, even once the condition is met |
+| `kubectl napwake wake` | `get`, `list`, `patch` |
+| An HTTP client, such as a portal's | `patch` to ask, and `get` or `watch` to read the answer |
+
+People with the built-in `edit` or `admin` role in the namespace have all of these once Napwake is installed.
+
+### What else wakes it
+
+| Also wakes it | What to know |
+|---|---|
+| An [activity annotation](/concepts/idle-detection/#activity-annotations), from CI or a script | <Outcome state="waking">Wakes it, as with `request`</Outcome> |
+| A [dependent](/concepts/dependencies/) waking | <Outcome state="waking">Wakes it, since a wake takes its dependencies with it</Outcome> |
+| Something else scaling it up | <Outcome state="waking">It's up, with a `ScaledUp` event naming what did it</Outcome> |
+| A [Prometheus activity query](/guides/prometheus-signals/#while-the-workload-is-paused) | <Outcome state="waking">Wakes it when it sees activity</Outcome> |
+
+A query that counts ingress requests counts robots' requests too, so it would let them wake it. For a public environment, count something else, or filter bots out.
+
+## Up before people come
+
+With `ask`, only people wake a paused preview. So behind the doorman, the forecast learns from every hour it's paused. An hour is busy if someone woke it, with a click, a wake request or an activity annotation.
+
+Otherwise it's quiet. If someone had needed it, they'd have woken it.
+
+Some hours are learned only if someone woke it. Those are hours the doorman isn't routing it, or its activity queries can't be evaluated. So an outage can't teach the forecast quiet hours ([What an hour records](/concepts/forecasting/#what-an-hour-records)).
+
+Turn on `autoResume`. Once the forecast is confident, it wakes the preview 15 minutes before the hour people usually come.
+
+```yaml title="namespace.yaml"
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: preview-42
+  labels:
+    napwake.dev/managed: "true"
+  annotations:
+    napwake.dev/wake: "ask"
+    napwake.dev/auto-resume: "true"
+```
+
+| | What to expect |
+|---|---|
+| A weekday pattern | It acts after 8 days, and is fully active after 14 ([How long it takes](/concepts/forecasting/#how-long-it-takes)) |
+| From then | Someone who clicks at about 09:05 on weekdays finds it up from 08:45. Weekends stay asleep |
+| A new preview | It starts from nothing, with no history to [learn from](/concepts/forecasting/#learning-from-history). One for a pull request merged within a week is gone before the forecast acts |
+| Where it pays off | Previews that last, such as one per team or long-lived branch, or a demo environment |
+| Wakes from tooling | They count as people's. A workflow that wakes it on every push teaches the hours your team pushes in |
+| Pausing early | Never, with `ask`. Someone who came while the forecast expected quiet would find it asleep ([Pausing early](/concepts/forecasting/#pausing-early)) |
+
+The forecast says what it learns from:
+
+```bash
+kubectl get managedworkload web -n preview-42 -o jsonpath='{.status.prediction.message}'
+```
+
+```text wrap
+learning: it has seen 0 of the 24 hours of the day, and can't act until it has seen them all; while it's paused, it learns from people waking it (a click on its asleep page, a wake request or an activity annotation)
+```
+
+## What it turned away
+
+The doorman counts the requests it turns away during each pause. That's the `503`s and closed connections, not people shown the asleep page, nor probes and health checks. It's a count only, with nothing of the requests themselves.
+
+It's in the ManagedWorkload's status, brought up to date about once a minute. It covers the current pause, or the last one once the preview is awake.
+
+```bash
+kubectl get managedworkload web -n preview-42 -o jsonpath='{.status.turnedAway}'
+```
+
+```text
+{"pausedAt":"2026-10-23T20:41:44Z","requests":3}
+```
+
+[`kubectl napwake status`](/getting-started/kubectl-plugin/#see-what-napwake-is-doing) lists the workloads that turned requests away:
+
+```text
+Turned away while asleep, by a doorman that asks before waking: something automated may call these.
+  preview-42/web   3 requests during the pause from 6m ago
+```
+
+On a public URL, crawlers and scanners account for some. That's what asking is for.
+
+More than you'd expect can mean something of yours calls the preview. A person is never turned away, so find out what it is.
+
+| It's | Then |
+|---|---|
+| An uptime monitor or health checker | Add its `User-Agent` to the Helm value `doorman.healthCheckUserAgents`. It's then answered as a health check, and not counted |
+| Something that needs the preview awake, such as a test suite or a webhook | Have it set a [wake request](#waking-it-from-tooling) first |
+
+`napwake_doorman_wakes_total{result="turned_away"}` counts them as they happen ([Metrics](/reference/metrics/#doorman), [What it turns away](/concepts/wake-on-request/#what-it-turns-away)).
+
+## What it can't do
+
+| It can't | Why |
+|---|---|
+| Stop a robot that clicks | One that loads the page and clicks wakes the preview as a person does. That's at most once a minute, whichever doorman pod it reaches, and the preview then stays up for `idleAfter`. It's rare, and costs a wake |
+| Keep a preview private | Asking keeps robots from waking it, not people from using it. Anyone with its URL can click and see it. For anything private, use a VPN, single sign-on at the ingress, or an allowlist, and keep `request` |
+
+<NextSteps
+  items={[
+    { href: '/concepts/wake-on-request/#asking-before-waking', title: 'Asking before waking', text: 'How the doorman tells a person from a robot.' },
+    { href: '/guides/pause/#wake-now', title: 'Wake now', text: 'Every answer to a wake request.' },
+    { href: '/concepts/forecasting/', title: 'Forecasting', text: 'How <code>autoResume</code> learns when people come.' },
+  ]}
+/>

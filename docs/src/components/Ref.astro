@@ -1,0 +1,21 @@
+---
+// A name in a reference table, as code, with an anchor of its own so it can be linked to (#id).
+// Pass the name as `name` or as the slot. Markdown's smart typography reaches the slot first, turning
+// `--flag` into an en dash and quotes curly, so they're put back: a code name never has either.
+interface Props { id: string; name?: string }
+const { id, name } = Astro.props;
+const raw = name ?? (await Astro.slots.render('default'));
+const html = name ? raw.replace(/[&<>]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' })[c]!) : raw;
+const fixed = html.replace(/–/g, '--').replace(/—/g, '---').replace(/[“”]/g, '"').replace(/[‘’]/g, "'").replace(/…/g, '...');
+// A long name may wrap, but only after `_`, `.` or `/`, or at a hyphen inside a word, so a table's first
+// column is as wide as its words, not its longest name.
+const breakable = fixed.replace(/(^|>)([^<]+)/g, (_m, edge, text) => edge + text.replace(/([_./])(?=.)/g, '$1<wbr>').replace(/(\w)-(?=\w)/g, '$1-<wbr>'));
+---
+<span class="nw-ref" id={id}><a href={`#${id}`} class="nw-ref__link" aria-label="Link to this row">#</a><code set:html={breakable} /></span>
+<style>
+  .nw-ref { position: relative; display: inline-block; scroll-margin-top: calc(var(--sl-nav-height) + 1.5rem); }
+  .nw-ref code { font-weight: 700; }
+  .nw-ref__link { position: absolute; left: -1.05rem; top: 0.05rem; color: var(--muted); text-decoration: none; opacity: 0; font: 700 0.875rem/1.4 var(--font-mono); }
+  .nw-ref:hover .nw-ref__link, .nw-ref__link:focus-visible { opacity: 1; }
+  .nw-ref:target code { background: color-mix(in srgb, var(--lamp) 35%, var(--code-bg)); }
+</style>

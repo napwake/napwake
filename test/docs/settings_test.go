@@ -17,7 +17,6 @@ limitations under the License.
 package docs_test
 
 import (
-	"io/fs"
 	"os"
 	"path/filepath"
 	"strings"
@@ -31,21 +30,18 @@ import (
 // with the WakeOnRequest reason that reported it. Only the upgrade guide,
 // which says what replaces it, names them.
 func TestDocsDontNameTheWakeSettingThatWent(t *testing.T) {
-	root := filepath.Join("..", "..", "docs")
 	gone := []string{"wake.onRequest", "napwake.dev/wake-on-request", "TurnedOff"}
-	err := filepath.WalkDir(root, func(path string, d fs.DirEntry, err error) error {
-		if err != nil || d.IsDir() || filepath.Ext(path) != ".md" ||
-			path == filepath.Join(root, "operations", "upgrading.md") {
-			return err
+	upgrading := filepath.Join(repoRoot, contentDir, "operations", "upgrading.mdx")
+	pages := docsPages(t)
+	require.Contains(t, pages, upgrading, "the upgrade guide is where the docs say what replaced them")
+	for _, path := range pages {
+		if path == upgrading {
+			continue
 		}
 		data, err := os.ReadFile(path)
-		if err != nil {
-			return err
-		}
+		require.NoError(t, err)
 		for _, name := range gone {
 			assert.False(t, strings.Contains(string(data), name), "%s names %s, which is gone", path, name)
 		}
-		return nil
-	})
-	require.NoError(t, err)
+	}
 }

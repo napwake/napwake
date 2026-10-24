@@ -1,0 +1,94 @@
+---
+title: Napwake
+description: Pauses idle Kubernetes workloads in staging, preview and dev, and wakes them on the first request. It never deletes a workload or its data.
+template: splash
+tableOfContents: false
+prev: false
+next: false
+editUrl: false
+---
+
+import HomeHero from '../../components/HomeHero.astro';
+import ScanShowcase from '../../components/ScanShowcase.astro';
+import WhatItDoes from '../../components/WhatItDoes.astro';
+import Cards from '../../components/Cards.astro';
+import StateCard from '../../components/StateCard.astro';
+import StateFlow from '../../components/StateFlow.astro';
+import NextSteps from '../../components/NextSteps.astro';
+
+<HomeHero />
+
+## See what's idle first
+
+A team that works 10 hours a day, five days a week, uses staging 50 of 168 hours. The other 70%, it's idle. `kubectl napwake scan` shows your cluster's own number before you install anything.
+
+<ScanShowcase>
+
+```sh
+kubectl napwake scan
+```
+
+</ScanShowcase>
+
+## Four doors
+
+<Cards even>
+  <StateCard state="asleep">Scaled to zero. Its Services are routed to the doorman, which wakes it on the first request.</StateCard>
+  <StateCard state="waking">A request, an activity annotation, or `autoResume` ahead of demand woke it. Its replicas are restored and its dependencies woken.</StateCard>
+  <StateCard state="awake">Its pods are Ready and held requests passed through. With no activity for `idleAfter`, and no forecast of demand, it pauses again.</StateCard>
+  <StateCard state="error">A note pinned on the door. Something stops Napwake doing its job, and `kubectl napwake status` says what to fix.</StateCard>
+</Cards>
+
+## How it works
+
+Label a Deployment, StatefulSet or namespace `napwake.dev/managed: "true"` and Napwake creates a ManagedWorkload for it, with its settings from annotations. Then it keeps an activity clock: CPU, deploys, activity annotations, and Prometheus.
+
+<StateFlow
+  layout="across"
+  label="The lifecycle: running, paused, resuming, and running again"
+  steps={[
+    { state: 'awake', title: 'Running', text: 'Activity clock: CPU, deploys, activity annotations, Prometheus' },
+    { state: 'asleep', title: 'Paused', text: 'Scaled to zero, its Services routed to the doorman' },
+    { state: 'waking', title: 'Resuming', text: 'Replicas restored, dependencies woken' },
+  ]}
+  between={['No activity for <code>idleAfter</code>, and no forecast of demand', 'A request, an activity annotation, or <code>autoResume</code> ahead of demand']}
+  loop="Pods Ready, held requests passed through"
+/>
+
+:::note[Private or public]
+Napwake is for non-production environments on your own clusters. Behind a VPN, SSO or an allowlist, the first request wakes a paused workload.
+
+Public ones ask first. A browser gets a **Wake it** button, so people wake them and robots don't. [Public preview environments](/guides/preview-environments/) says how.
+:::
+
+## What it does
+
+<WhatItDoes />
+
+## Quick example
+
+```yaml title="deployment.yaml"
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: my-api
+  namespace: dev
+  labels:
+    napwake.dev/managed: "true"
+  annotations:
+    napwake.dev/dry-run: "true"
+    napwake.dev/idle-after: "1h"
+```
+
+Napwake watches `my-api` and records each time it's active: CPU above `cpuThreshold` (10% of its requests by default), a deploy, or an activity annotation, and, with a [Prometheus query](/guides/prometheus-signals/), its request rate. In dry-run it only measures. Once you run `kubectl napwake enable my-api -n dev`, it pauses the Deployment after an hour with no activity, and wakes it when a request reaches its Service.
+
+For every setting, see [Opting in](/guides/opt-in/). For settings annotations don't cover, write a [ManagedWorkload](/guides/managed-workload/) yourself.
+
+<NextSteps
+  title="Get started"
+  items={[
+    { href: '/getting-started/installation/', title: 'Installation', text: 'Helm or the Kustomize manifests, with Argo CD or Flux.' },
+    { href: '/getting-started/quickstart/', title: 'Quickstart', text: 'One workload from idle to paused while idle, woken when used.' },
+    { href: '/getting-started/kubectl-plugin/', title: 'kubectl plugin', text: '<code>scan</code>, <code>status</code>, <code>pause</code>, <code>wake</code> and the rest.' },
+  ]}
+/>

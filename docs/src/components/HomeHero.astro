@@ -1,0 +1,41 @@
+---
+// The docs home's opening: the headline (decision 0002), the plain line, what Napwake never does,
+// Install and Quickstart, and the corridor with the doorman holding the waking door.
+import Button from './Button.astro';
+import Scene from './Scene.astro';
+import StateDoor from './StateDoor.astro';
+---
+<section class="nw-hero not-content">
+  <p class="nw-hero__eyebrow">Napwake docs</p>
+  <h1 id="_top">Non-prod environments that sleep when nobody's using them, and wake when someone does.</h1>
+  <div class="nw-hero__row">
+    <div class="nw-hero__text">
+      <p class="nw-hero__plain">Pauses idle Kubernetes workloads in staging, preview and dev, and wakes them on the first request.</p>
+      <p class="nw-hero__never"><StateDoor state="asleep" size={20} /> It never deletes a workload or its data.</p>
+      <div class="nw-hero__actions">
+        <Button href="/getting-started/installation/" variant="primary">Install</Button>
+        <Button href="/getting-started/quickstart/">Quickstart</Button>
+      </div>
+    </div>
+    <div class="nw-hero__art">
+      <Scene
+        rooms={[{ state: 'asleep', label: 'dev' }, { state: 'waking', label: 'staging' }, { state: 'awake', label: 'preview' }]}
+        width={560} height={330} x0={34} floorY={278} scale={1.12} doormanAt={1}
+        label="The doorman holds the door of a waking room. The rooms on either side are asleep or awake."
+        caption="A request has reached staging while it was asleep. The doorman holds it at the door while staging wakes, then lets it through. Dev stays asleep. Preview is already awake."
+      />
+    </div>
+  </div>
+</section>
+
+<style>
+  .nw-hero { padding: 1.5rem 0 0.5rem; }
+  .nw-hero__eyebrow { margin: 0 0 0.9rem; font: 700 0.75rem/1.4 var(--font-mono); letter-spacing: 0.06em; text-transform: uppercase; color: var(--brand); }
+  h1 { margin: 0; max-width: 15.5em; font-family: var(--font-display); font-weight: 800; font-size: clamp(2.75rem, 1.4rem + 3.6vw, 4.5rem); line-height: 0.95; letter-spacing: 0.004em; color: var(--text); text-wrap: balance; }
+  .nw-hero__row { display: grid; grid-template-columns: minmax(0, 0.9fr) minmax(0, 1.1fr); gap: 2rem 3.5rem; align-items: start; margin-top: 2rem; }
+  .nw-hero__plain { margin: 0; font-size: 1.3125rem; line-height: 1.5; color: var(--text); max-width: 30rem; text-wrap: pretty; }
+  .nw-hero__never { display: flex; align-items: center; gap: 0.55rem; margin: 1rem 0 0; font-size: 1rem; line-height: 1.45; color: var(--muted); }
+  .nw-hero__actions { display: flex; flex-wrap: wrap; gap: 0.75rem; margin-top: 1.75rem; }
+  .nw-hero__art :global(figcaption) { font-size: 0.8125rem; }
+  @media (max-width: 56rem) { .nw-hero__row { grid-template-columns: minmax(0, 1fr); } .nw-hero__art { max-width: 36rem; } }
+</style>

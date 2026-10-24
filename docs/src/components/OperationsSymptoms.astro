@@ -1,0 +1,25 @@
+---
+// A troubleshooting page's symptoms, by area, each in the reader's words and linking to its heading,
+// so they find what they see at a glance. `code` in an item is set as code. Reads as lists of links.
+import { link } from './lib';
+interface Props { groups: { title: string; items: { href: string; text: string }[] }[]; label?: string }
+const { groups, label = 'Symptoms on this page' } = Astro.props;
+const html = (t: string) => t.replace(/[&<>]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' })[c]!).replace(/`([^`]+)`/g, '<code>$1</code>');
+---
+<nav class="nw-symptoms not-content" aria-label={label}>
+  {groups.map((g) => (
+    <div class="nw-symptoms__group">
+      <p class="nw-symptoms__title">{g.title}</p>
+      <ul>{g.items.map((it) => <li><a href={it.href.startsWith('#') ? it.href : link(it.href)} set:html={html(it.text)} /></li>)}</ul>
+    </div>
+  ))}
+</nav>
+<style>
+  .nw-symptoms { margin-top: 1.75rem; display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 17rem), 1fr)); gap: 1.25rem 2rem; padding: 1.2rem 1.3rem; background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius-xl); }
+  .nw-symptoms__title { margin: 0 0 0.4rem; font: 700 0.75rem/1.4 var(--font-mono); letter-spacing: 0.06em; text-transform: uppercase; color: var(--brand); }
+  ul { list-style: none; margin: 0; padding: 0; display: grid; gap: 0.15rem; }
+  li { margin: 0 !important; font-size: 0.875rem; line-height: 1.45; }
+  a { color: var(--text); text-decoration: none; display: inline-block; padding: 0.15rem 0; }
+  a:hover { color: var(--link); text-decoration: underline; text-underline-offset: 0.2em; }
+  a :global(code) { font: 400 0.8125rem/1.4 var(--font-mono); background: var(--code-bg); color: var(--code-text); padding: 0.05em 0.3em; border-radius: var(--radius-sm); }
+</style>

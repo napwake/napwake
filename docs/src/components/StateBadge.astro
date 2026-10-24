@@ -1,0 +1,23 @@
+---
+// A state's door and its word, in either vocabulary: plain (ASLEEP) for pages anyone reads, product
+// (paused) for reference and anything that mirrors the CLI, both (ASLEEP · paused) where they meet.
+import StateDoor from './StateDoor.astro';
+import { WORDS, type State } from './lib';
+interface Props { state: State; vocabulary?: 'plain' | 'product' | 'both'; glyph?: boolean; size?: number }
+const { state, vocabulary = 'plain', glyph = true, size = 18 } = Astro.props;
+const word = vocabulary === 'product' ? WORDS.product[state] : WORDS.plain[state];
+---
+<span class:list={['nw-badge', `nw-badge--${state}`, vocabulary === 'product' && 'nw-badge--product']}>
+  {glyph && <StateDoor state={state} size={size} />}
+  <span class="nw-badge__word">{word}</span>
+  {vocabulary === 'both' && <>{' '}<span class="nw-badge__also">· {WORDS.product[state]}</span></>}
+</span>
+<style>
+  .nw-badge { display: inline-flex; align-items: center; gap: var(--space-2); font: 700 0.75rem/1.6 var(--font-mono); letter-spacing: 0.06em; text-transform: uppercase; vertical-align: middle; white-space: nowrap; }
+  .nw-badge--asleep { color: var(--asleep); }
+  .nw-badge--waking { color: var(--waking); }
+  .nw-badge--awake { color: var(--awake); }
+  .nw-badge--error { color: var(--error); }
+  .nw-badge--product { text-transform: none; letter-spacing: 0; font-size: 0.8125rem; }
+  .nw-badge__also { color: var(--muted); font-weight: 400; text-transform: none; letter-spacing: 0; font-size: 0.8125rem; }
+</style>

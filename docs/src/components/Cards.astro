@@ -1,0 +1,16 @@
+---
+// A grid of cards: as many columns as fit, from `min` wide. With `even`, for a set of four: four in a
+// row, two by two, or one column, by the room the grid has, so no card is ever left on its own.
+interface Props { min?: string; class?: string; even?: boolean }
+const { min = '14rem', class: cls, even = false } = Astro.props;
+---
+{even
+  ? <div class:list={['nw-cards-room', 'not-content', cls]}><div class="nw-cards nw-cards--even"><slot /></div></div>
+  : <div class:list={['nw-cards', 'not-content', cls]} style={`--nw-min:${min}`}><slot /></div>}
+<style>
+  .nw-cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, var(--nw-min)), 1fr)); gap: var(--space-4); margin-top: 1.5rem; }
+  .nw-cards-room { container-type: inline-size; margin-top: 1.5rem; }
+  .nw-cards--even { grid-template-columns: repeat(4, minmax(0, 1fr)); margin-top: 0; }
+  @container (max-width: 56rem) { .nw-cards--even { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+  @container (max-width: 30rem) { .nw-cards--even { grid-template-columns: minmax(0, 1fr); } }
+</style>

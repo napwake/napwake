@@ -1,0 +1,52 @@
+---
+// The page title: its section as an eyebrow, the title in Big Shoulders Display (h1 only), and the
+// page's lede when it has one. Splash pages (the home, 404) draw their own heading.
+import PageTools from '../PageTools.astro';
+const { entry, sidebar, id } = Astro.locals.starlightRoute;
+type Item = { type: string; label: string; isCurrent?: boolean; entries?: Item[] };
+const groupOf = (items: Item[], group?: string): string | undefined => {
+  for (const it of items) {
+    if (it.type === 'link' && it.isCurrent) return group;
+    if (it.type === 'group' && it.entries) { const g = groupOf(it.entries, it.label); if (g) return g; }
+  }
+};
+const eyebrow = groupOf(sidebar as Item[]);
+const splash = entry.data.template === 'splash';
+---
+{!splash && (
+  <div class="nw-title">
+    {eyebrow && <p class="nw-title__eyebrow">{eyebrow}</p>}
+    <h1 id="_top">{entry.data.title}</h1>
+    {entry.data.lede && <p class="nw-title__lede">{entry.data.lede}</p>}
+    <PageTools id={id} />
+  </div>
+)}
+
+<style>
+  .nw-title { margin-top: 0.5rem; }
+  .nw-title__eyebrow {
+    margin: 0 0 0.6rem;
+    font: 700 0.75rem/1.4 var(--font-mono);
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    color: var(--brand);
+  }
+  h1 {
+    margin: 0;
+    font-family: var(--font-display);
+    font-weight: 800;
+    font-size: clamp(2.5rem, 2rem + 2.4vw, 3.6rem);
+    line-height: 0.98;
+    letter-spacing: 0.003em;
+    color: var(--text);
+    text-wrap: balance;
+  }
+  .nw-title__lede {
+    margin: 1rem 0 0;
+    max-width: 40rem;
+    font-size: 1.1875rem;
+    line-height: 1.55;
+    color: var(--muted);
+    text-wrap: pretty;
+  }
+</style>

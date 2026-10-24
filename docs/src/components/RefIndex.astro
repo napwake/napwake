@@ -1,0 +1,23 @@
+---
+// Every name on a reference page, by group, each linking to its row.
+interface Props { groups: { title: string; href: string; names: { id: string; name: string }[] }[]; label?: string }
+const { groups, label = 'On this page, by name' } = Astro.props;
+---
+<nav class="nw-refindex not-content" aria-label={label}>
+  {groups.map((g) => (
+    <div class="nw-refindex__group">
+      <a class="nw-refindex__title" href={g.href}>{g.title} <span>{g.names.length}</span></a>
+      <ul>{g.names.map((n) => <li><a href={`#${n.id}`}><code>{n.name}</code></a></li>)}</ul>
+    </div>
+  ))}
+</nav>
+<style>
+  .nw-refindex { margin-top: 1.75rem; display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 19rem), 1fr)); gap: 1.4rem 2rem; padding: 1.2rem 1.3rem; background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius-xl); }
+  .nw-refindex__title { display: inline-block; margin-bottom: 0.45rem; font: 700 0.75rem/1.4 var(--font-mono); letter-spacing: 0.06em; text-transform: uppercase; color: var(--brand); text-decoration: none; }
+  .nw-refindex__title span { color: var(--muted); font-weight: 400; }
+  ul { list-style: none; margin: 0; padding: 0; display: grid; gap: 0; }
+  li { margin: 0 !important; font-size: 0.8125rem; line-height: 1.5; }
+  ul a { text-decoration: none; color: var(--text); display: inline-flex; align-items: center; min-height: 1.65rem; max-width: 100%; }
+  code { font: 400 0.8125rem/1.6 var(--font-mono); color: inherit; background: none; padding: 0; white-space: nowrap; }
+  ul a:hover code { color: var(--link); text-decoration: underline; text-underline-offset: 0.2em; }
+</style>

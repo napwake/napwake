@@ -1,0 +1,16 @@
+---
+// One of the brand's six UI icons, for Napwake's own features: scan, pause, wake, status, forecast
+// (autoResume) and cost. In `brand` ink. A feature without an icon gets a word, not a borrowed icon.
+import cost from './icons/cost.svg?raw';
+import forecast from './icons/forecast.svg?raw';
+import pause from './icons/pause.svg?raw';
+import scan from './icons/scan.svg?raw';
+import status from './icons/status.svg?raw';
+import wake from './icons/wake.svg?raw';
+const ICONS = { cost, forecast, pause, scan, status, wake };
+interface Props { name: keyof typeof ICONS; size?: number; class?: string }
+const { name, size = 24, class: cls } = Astro.props;
+const inner = ICONS[name].replace(/^<svg[^>]*>/, '').replace(/<\/svg>\s*$/, '');
+---
+<svg class:list={['nw-icon', cls]} viewBox="0 0 24 24" width={size} height={size} aria-hidden="true" focusable="false" set:html={inner} />
+<style>.nw-icon { display: inline-block; flex: none; }</style>

@@ -1,0 +1,131 @@
+---
+title: "Metrics reference"
+description: "Every Prometheus metric the Napwake operator and its doorman serve, with its type, labels and meaning."
+lede: "Every metric the operator and the doorman serve, with its type, labels and meaning."
+---
+
+import Ref from '../../../components/Ref.astro';
+
+How the metrics are served.
+
+| What | How |
+|---|---|
+| Names | All start `napwake_`, registered with the controller-runtime metrics registry |
+| Endpoint | `:8443`, over HTTPS, as the chart and the Kustomize manifests serve it |
+| Scraping | Needs a token allowed to `get` `/metrics` ([Monitoring](/operations/monitoring/#prometheus)) |
+| Series dropped | The operator's, when the workload's ManagedWorkload is deleted. The doorman drops its `napwake_doorman_wakes_total` series then too, at its next sync of routes, and keeps them while a workload merely stops being routed |
+
+## Health
+
+Whether the operator is healthy, and each workload's phase.
+
+| Metric | Type | Labels | Description |
+|--------|------|--------|-------------|
+| <Ref id="napwake_build_info">napwake_build_info</Ref> | Gauge | `version` | Always 1, labelled with the release the pod runs, such as `v0.2.0`. The doorman serves it too |
+| <Ref id="napwake_workload_phase">napwake_workload_phase</Ref> | Gauge | `namespace`, `workload`, `phase` | 1 for each workload's current lifecycle phase |
+| <Ref id="napwake_activity_unreadable">napwake_activity_unreadable</Ref> | Gauge | `namespace`, `workload`, `source` | 1 while Napwake can't read one of the workload's activity sources. `source` is `cpu`, from metrics-server while it's awake (`MetricsAvailable` is `False`), or `prometheus`, its activity queries (`PrometheusAvailable` is `False`). No series otherwise, nor for a workload Napwake doesn't read, as ignored, protected, or whose target is gone |
+| <Ref id="napwake_resume_incomplete">napwake_resume_incomplete</Ref> | Gauge | `namespace`, `workload` | 1 while the workload runs after a resume that finished with replicas not Ready (`ResumeIncomplete` is `True`). A pause clears it. No series otherwise |
+| <Ref id="napwake_reconcile_errors_total">napwake_reconcile_errors_total</Ref> | Counter | `controller` | Reconciles that returned an error, by `controller`, either `managedworkload`, or `optin`, which creates ManagedWorkloads from the `napwake.dev/managed` label |
+| <Ref id="napwake_lifecycle_transitions_total">napwake_lifecycle_transitions_total</Ref> | Counter | `from`, `to` | Phase transitions |
+| <Ref id="napwake_lifecycle_action_duration_seconds">napwake_lifecycle_action_duration_seconds</Ref> | Histogram | `action` | Duration of lifecycle actions (pause, resume) |
+
+## What the operator does
+
+| Metric | Type | Labels | Description |
+|--------|------|--------|-------------|
+| <Ref id="napwake_prediction_confidence_percent">napwake_prediction_confidence_percent</Ref> | Gauge | `season`, `namespace`, `workload` | Forecast confidence, 1 − WAPE, as a percentage, for `season` `daily` or `weekly` |
+| <Ref id="napwake_prediction_phase">napwake_prediction_phase</Ref> | Gauge | `namespace`, `workload` | Engine phase, 0 to 4 ([values](#forecast-phases)) |
+| <Ref id="napwake_prediction_data_points">napwake_prediction_data_points</Ref> | Gauge | `namespace`, `workload` | Data points collected |
+| <Ref id="napwake_prediction_anomalies_total">napwake_prediction_anomalies_total</Ref> | Counter | `namespace`, `workload` | Anomalies detected |
+| <Ref id="napwake_idle_detections_total">napwake_idle_detections_total</Ref> | Counter | `namespace`, `workload` | Times each workload's idle clock ran out |
+| <Ref id="napwake_wrong_pauses_total">napwake_wrong_pauses_total</Ref> | Counter | `namespace`, `workload` | Pauses made while the workload was in use. A request, a click, a wake request or an activity annotation undid each soon after ([Paused while in use](/concepts/idle-detection/#paused-while-in-use)) |
+| <Ref id="napwake_external_scale_ups_total">napwake_external_scale_ups_total</Ref> | Counter | `namespace`, `workload`, `by` | Times each paused workload was scaled up outside Napwake, by the GitOps tool that did it (`argo-cd`, `flux`, `fleet`, `kapp`, `kluctl`), or `other` |
+
+## Debugging
+
+| Metric | Type | Labels | Description |
+|--------|------|--------|-------------|
+| <Ref id="napwake_idle_seconds">napwake_idle_seconds</Ref> | Gauge | `namespace`, `workload` | Seconds since the last activity. Keeps growing while paused, updated at each check, every minute awake and every few minutes paused |
+| <Ref id="napwake_prediction_regime_changes_total">napwake_prediction_regime_changes_total</Ref> | Counter | `namespace`, `workload` | Regime changes detected |
+| <Ref id="napwake_dryrun_actions_total">napwake_dryrun_actions_total</Ref> | Counter | `action` | Actions dry-run would have taken. `action` is `idle_pause`, `early_pause` (one the forecast brought forward, `pauseEarly`), or `requested_pause` (from `kubectl napwake pause`) |
+| <Ref id="napwake_target_unavailable_total">napwake_target_unavailable_total</Ref> | Counter | `namespace`, `workload` | Target workload not found |
+
+## Savings
+
+Each node pool's figures from the operator's [measure of what pausing saved](/concepts/cost-tracking/#how-saved-is-measured), every 5 minutes, by the leader. Not exported under `watchNamespaces`, which can't measure them.
+
+| Metric | Type | Labels | Description |
+|--------|------|--------|-------------|
+| <Ref id="napwake_capacity_paused_cpu_cores">napwake_capacity_paused_cpu_cores</Ref> | Gauge | `pool` | vCPUs the replicas Napwake holds paused requested, by the pool they ran in |
+| <Ref id="napwake_capacity_paused_memory_bytes">napwake_capacity_paused_memory_bytes</Ref> | Gauge | `pool` | Memory the replicas Napwake holds paused requested |
+| <Ref id="napwake_capacity_spare_cpu_cores">napwake_capacity_spare_cpu_cores</Ref> | Gauge | `pool` | Allocatable vCPUs on the pool's schedulable, Ready nodes that no bound, unfinished pod requests |
+| <Ref id="napwake_capacity_spare_memory_bytes">napwake_capacity_spare_memory_bytes</Ref> | Gauge | `pool` | Allocatable memory on those nodes that no pod requests |
+| <Ref id="napwake_savings_realised_dollars_per_hour">napwake_savings_realised_dollars_per_hour</Ref> | Gauge | `pool` | What the paused requests the spare capacity can't hold would cost an hour at the pool's nodes' list rates, averaged over them (the defaults for nodes with no list price). That's what pausing takes off the bill each hour, at least |
+| <Ref id="napwake_node_autoscaler">napwake_node_autoscaler</Ref> | Gauge | `kind` | 1 for each node autoscaler found, of `Karpenter`, `Cluster Autoscaler`, `EKS Auto Mode` and `GKE Autopilot`. Or `none`, when it read everywhere it looks and found none, so what pausing frees [doesn't come off the bill](/guides/cluster-autoscaler/#what-napwake-detects). Or `unknown`, when it wasn't allowed to look, as in a `watchNamespaces` install. Looked at every 10 minutes |
+
+One series for each pool with Ready nodes or paused replicas, by `pool`:
+
+| `pool` | For |
+|---|---|
+| The node's first label of `karpenter.sh/nodepool`, `cloud.google.com/gke-nodepool`, `eks.amazonaws.com/nodegroup` and `kubernetes.azure.com/agentpool` | Nodes with one of those labels |
+| `""` | Nodes with none |
+| `*` | Paused replicas whose pool wasn't recorded, set against what every pool has left over |
+
+## Doorman
+
+Served by the doorman pods, on the same port and path as the operator's.
+
+| Metric | Type | Labels | Description |
+|--------|------|--------|-------------|
+| <Ref id="napwake_doorman_wakes_total">napwake_doorman_wakes_total</Ref> | Counter | `namespace`, `workload`, `result` | Connections the doorman accepted for a paused workload, by `result` (below) |
+| <Ref id="napwake_doorman_wait_seconds">napwake_doorman_wait_seconds</Ref> | Histogram | `result` | How long the doorman held a connection before passing it through or closing it |
+| <Ref id="napwake_doorman_held_connections">napwake_doorman_held_connections</Ref> | Gauge | | Connections held right now, waiting for their workload to wake |
+| <Ref id="napwake_doorman_proxied_connections">napwake_doorman_proxied_connections</Ref> | Gauge | | Connections passed to a woken workload and still being carried |
+| <Ref id="napwake_doorman_port_conflicts">napwake_doorman_port_conflicts</Ref> | Gauge | | Doorman ports claimed by more than one route, which the doorman refuses to serve. Should be 0 |
+| <Ref id="napwake_doorman_listen_failures">napwake_doorman_listen_failures</Ref> | Gauge | | Routed doorman ports this pod can't listen on, which refuse every connection. Should be 0. A pod that can't listen on one for 30 seconds reports itself not Ready |
+
+The values of `result`.
+
+| `result` | Meaning |
+|----------|---------|
+| `success` | Passed to a Ready pod |
+| `page` | A browser was shown the waking-up page |
+| `asked` | With `wake.mode: Ask`, a person's browser was shown the page that asks before waking ([Asking before waking](/concepts/wake-on-request/#asking-before-waking)) |
+| `turned_away` | With `wake.mode: Ask`, anything else, such as a crawler, a scanner or an API client, was told it's asleep, and nothing woke. Many mean something automated calls it. `status.turnedAway` counts them for each pause |
+| `timeout` | No pod was Ready within `wake.maxWait` |
+| `error` | The woken pods couldn't be reached, or the wake couldn't be recorded, by `wake.maxWait` |
+| `canceled` | The caller left, or the doorman shut down, while the connection was held |
+| `ignored` | A health check or scraper known by its `User-Agent`, answered `503`, or [Google's load balancer health check](/concepts/wake-on-request/#health-checks-the-doorman-cant-recognise), answered `200`. A request for a hidden file such as `/.env`, answered `404`. A connection that closed without sending anything, as each forwarder pod's check that it reaches the doorman does every 5 seconds |
+| `limited` | Refused by a cap on held connections or a wake rate limit ([Limits](/concepts/wake-on-request/#limits)) |
+| `refused` | The workload's route is draining and none of its pods is Ready |
+
+## Forecast phases
+
+The values of `napwake_prediction_phase`.
+
+| Value | Phase |
+|-------|-------|
+| 0 | Observing |
+| 1 | DailySuggesting |
+| 2 | DailyActive |
+| 3 | WeeklySuggesting |
+| 4 | FullyActive |
+
+## Queries
+
+```promql
+# Workloads with low prediction confidence
+napwake_prediction_confidence_percent{season="daily"} < 70
+
+# Workloads that will pause within 10 minutes (with the default 1h idleAfter)
+napwake_idle_seconds > 3000 and on (namespace, workload) napwake_workload_phase{phase="Running"} == 1
+
+# How long a request to a paused workload waits for it to wake (p95)
+histogram_quantile(0.95, sum by (le) (rate(napwake_doorman_wait_seconds_bucket{result="success"}[1h])))
+
+# What pausing takes off the bill an hour, across the cluster
+sum(napwake_savings_realised_dollars_per_hour)
+
+# Pools where paused CPU still fits in spare capacity: freed, but not saved
+(napwake_capacity_paused_cpu_cores > 0) <= on (pool) napwake_capacity_spare_cpu_cores
+```

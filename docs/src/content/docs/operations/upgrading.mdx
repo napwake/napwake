@@ -1,0 +1,256 @@
+---
+title: "Upgrading"
+description: "Upgrade Napwake, keep your Helm settings across upgrades, narrow watchNamespaces safely, and roll back."
+lede: "Upgrade Napwake, keep your Helm settings, and roll back if you need to."
+---
+
+import { Steps, Tabs, TabItem } from '@astrojs/starlight/components';
+import NextSteps from '../../../components/NextSteps.astro';
+
+Napwake upgrades in place from one Napwake release to the next. On 0.1.x or a 0.2.0 release candidate, [move to Napwake](#moving-to-napwake) instead.
+
+## Moving to Napwake
+
+Hybernate was this project's name before 0.2.0. There's no upgrade path from it. Uninstall Hybernate, then install Napwake fresh, and opt your workloads in again with the `napwake.dev/` labels and annotations.
+
+Uninstalling a 0.2.0 release candidate as its docs say hands paused workloads back. On 0.1.x, delete its ManagedWorkloads, then scale the paused workloads back up by hand. 0.1.x leaves them at zero.
+
+The [changelog](https://github.com/napwake/napwake/blob/main/CHANGELOG.md) lists every name that changed.
+
+### Wake on request, from before 0.2.0
+
+Before 0.2.0, `spec.wake.onRequest: false`, or `hybernate.io/wake-on-request: "false"` with the label, turned waking on request off for one workload. That setting is gone. Napwake ignores the annotation, so the workload wakes on request.
+
+A manifest that still sets `spec.wake.onRequest` is refused:
+
+| Applied with | The error |
+|--------------|-----------|
+| `kubectl apply`, which checks fields strictly by default | `strict decoding error: unknown field "spec.wake.onRequest"` |
+| A server-side apply, as Flux's is, or Argo CD's with `ServerSideApply=true` | `.spec.wake.onRequest: field not declared in schema`, so the sync fails |
+
+So take `wake.onRequest` out of the ManagedWorkloads in your manifests in Git. Where it was `true`, remove it, since `spec.wake.mode: Request` is the default. Where it was `false`, put in what fits below, usually `mode: Ask`:
+
+```yaml
+spec:
+  wake:
+    mode: Ask   # in place of onRequest: false
+```
+
+| What turning it off was for | Set instead |
+|-----------------------------|-------------|
+| A workload on a public URL, which crawlers and scanners would keep awake, as it usually was | `spec.wake.mode: Ask`, or `napwake.dev/wake: "ask"` with the label. Only a person's click wakes it, and anything else gets a `503` ([Asking before waking](/concepts/wake-on-request/#asking-before-waking)) |
+| One port of a Service | List it in `napwake.dev/doorman-ignore-ports` on the Service. It fails while the workload is paused, as before |
+| The whole cluster | The Helm value `doorman.enabled: false`, as before |
+
+The `WakeOnRequest` reason `TurnedOff` is gone with it.
+
+## Upgrade
+
+<Steps>
+
+1. Read the [changelog](https://github.com/napwake/napwake/blob/main/CHANGELOG.md) for the target version. Look for breaking changes, CRD schema changes and required steps.
+
+2. Upgrade. The CRD is upgraded with the operator.
+
+    <Tabs>
+    <TabItem label="Helm">
+
+    With the values file you install with:
+
+    ```bash
+    helm upgrade napwake oci://ghcr.io/napwake/charts/napwake \
+      --version X.Y.Z \
+      --namespace napwake-system \
+      -f napwake-values.yaml
+    ```
+
+    | Upgrading with Helm | |
+    |---|---|
+    | Values | Give the file every time, or none. `--set` alone drops the values set before ([Keeping your settings](#keeping-your-settings)) |
+    | The chart | Published only as an OCI artifact, so there's no `helm repo` to update. Its version has no `v` |
+    | The CRD | A template in the chart, so `helm upgrade` upgrades it too. Not if you installed with `crds.install: false` and manage it yourself |
+
+    </TabItem>
+    <TabItem label="kubectl">
+
+    ```bash
+    kubectl apply -f https://github.com/napwake/napwake/releases/download/vX.Y.Z/install.yaml
+    ```
+
+    </TabItem>
+    <TabItem label="Kustomize">
+
+    Change each Napwake base's `ref` in your kustomization to `vX.Y.Z`, then:
+
+    ```bash
+    kubectl apply -k .
+    ```
+
+    </TabItem>
+    <TabItem label="Argo CD or Flux">
+
+    Change the Application's `targetRevision`, or the `OCIRepository`'s `tag`, to `X.Y.Z` in Git, and let it sync. To hand a `helm install` to either, see [Moving a Helm install to Argo CD or Flux](/getting-started/installation/#moving-a-helm-install-to-argo-cd-or-flux).
+
+    </TabItem>
+    </Tabs>
+
+3. Check the operator:
+
+    ```bash
+    kubectl get pods -n napwake-system
+    kubectl logs -n napwake-system -l control-plane=controller-manager --tail=20
+    ```
+
+4. Check the ManagedWorkloads are reconciling:
+
+    ```bash
+    kubectl get managedworkloads --all-namespaces
+    ```
+
+</Steps>
+
+## Keeping your settings
+
+Keep every Helm value you set in one file, and give it to `helm install` and every `helm upgrade`. Helm reuses a release's values only on an upgrade given none. Given any, by `--set` or `-f`, it starts from the chart's defaults and adds only those. Helm 3 and 4 do the same.
+
+| Installed with | Upgraded with | Keeps |
+|----------------|---------------|-------|
+| `timezone` and `prometheus.url` | `--set timezone=America/New_York` | The time zone. It drops `prometheus.url` |
+| Whatever that left | The next `--set` | Only what that one names |
+
+Change a setting by changing the file. It holds all your settings in one place to review, the same in every Helm, ready for Git. Argo CD and Flux take the same values, so [moving to one](/getting-started/installation/#moving-a-helm-install-to-argo-cd-or-flux) is a copy.
+
+If you installed with `--set`, save the release's values first. A release with none writes `null`, so put your settings there.
+
+```bash
+helm get values napwake -n napwake-system -o yaml > napwake-values.yaml
+```
+
+To change a setting, such as the [time zone](/getting-started/installation/#time-zone), edit the file and upgrade with it. Stay at the version in the `CHART` column of `helm list -n napwake-system`, so Napwake isn't upgraded too.
+
+```bash
+helm upgrade napwake oci://ghcr.io/napwake/charts/napwake \
+  --version X.Y.Z \
+  --namespace napwake-system \
+  -f napwake-values.yaml
+```
+
+<details class="nw-details">
+<summary>Upgrading with <code>--reuse-values</code></summary>
+
+Without a file, `--reuse-values` keeps the release's values and adds yours.
+
+```bash
+helm upgrade napwake oci://ghcr.io/napwake/charts/napwake \
+  --version X.Y.Z \
+  --namespace napwake-system \
+  --reuse-values \
+  --set timezone=America/New_York
+```
+
+To a newer version, Helm then renders with the installed version's defaults, which lack every value added since.
+
+| Case | With `--reuse-values` |
+|------|-----------------------|
+| From 0.2.0 on | Works in Helm 3 and 4. The chart fills in the missing values from its own defaults |
+| Before 0.2.0, as 0.1.x or a 0.2.0 release candidate | Can't be upgraded. [Move to Napwake](#moving-to-napwake) instead |
+| A value both versions have | Keeps the installed version's default, so a default the new version changes isn't picked up |
+| A default you remove by setting it to `null` | Doesn't stay removed, since Helm keeps the old defaults with the release. Helm 4 renders it for the upgrade that sets `null` and drops it from the next. Helm 3 brings it back every other `--reuse-values` upgrade |
+| Removing a default for good | Upgrade once with the values file, or with `--reset-then-reuse-values` (Helm 3.14 and later). That uses the new version's defaults under your values. After that, `--reuse-values` keeps it removed |
+
+</details>
+
+## Narrowing watchNamespaces
+
+`helm upgrade` stops with `job napwake-upgrade-guard failed`, or with Helm 4 `resource Job/napwake-system/napwake-upgrade-guard not ready`.
+
+Stop managing a namespace's workloads before you drop it from `watchNamespaces`. Dropping one, or setting `watchNamespaces` where it was empty, removes the operator's and the doorman's Roles there. They stop watching it. Workloads paused there would stay at zero, their Services routed to doorman ports nothing serves. Their ManagedWorkloads' finalizers would never run. So the chart's upgrade guard refuses.
+
+While the operator still watches them, so it scales each one back up:
+
+<Steps>
+
+1. Remove the `napwake.dev/managed` label from the workloads and namespaces there.
+
+2. Delete the ManagedWorkloads you wrote yourself there:
+
+    ```bash
+    kubectl delete managedworkloads --all -n preview-1
+    ```
+
+3. Upgrade.
+
+</Steps>
+
+<details class="nw-details">
+<summary>How the guard works</summary>
+
+| The guard | |
+|---|---|
+| What it is | The `<fullname>-upgrade-guard` Job, a pre-upgrade hook |
+| When it fails | The running operator took on ManagedWorkloads, with its `napwake.dev/cleanup` finalizer, in the namespaces left out. It fails before anything changes, after waiting two and a half minutes for any being deleted |
+| What it says | With Helm 3.18 and later, a message starting `Napwake refuses this upgrade: ...` that names them and what to do, then the steps above. `kubectl logs job/napwake-upgrade-guard -n napwake-system` shows the same |
+| What else it guards | `helm rollback` to a revision with a narrower `watchNamespaces` |
+| What it reads | ManagedWorkloads' metadata cluster-wide, through a ClusterRole that, like its ServiceAccount, exists only while it runs |
+| When it runs | Only when `watchNamespaces` is set, since widening to every namespace strands nothing. Argo CD runs it as a PreSync hook, before every sync |
+| How to skip it | `helm upgrade --no-hooks` skips it, and `guard.upgrade: false` drops it. Then restore the workloads left behind there by hand ([Restoring workloads after the operator is gone](/getting-started/installation/#restoring-workloads-after-the-operator-is-gone)) |
+| What a refusal leaves | A failed revision, and the release running the previous one. `helm uninstall` stays guarded. It runs with the failed revision's values, so it also counts ManagedWorkloads the operator took on outside them |
+
+</details>
+
+## CRD compatibility
+
+| Change | Compatibility |
+|--------|---------------|
+| Any, in `v1alpha1` | May break between minor versions. Always read the release notes |
+| A new field | Not breaking. New fields are optional, with defaults |
+| A field removed, or its type changed | Breaking, and called out in the release notes |
+
+The CRD is kept when the chart is uninstalled, so uninstalling and reinstalling never deletes your ManagedWorkloads.
+
+## Forecast engine state
+
+Each ManagedWorkload keeps its forecast's state in `status.prediction.state`. On upgrade:
+
+| State | What happens |
+|-------|--------------|
+| A compatible version | Imported |
+| Saved by an older version | Discarded, with a `ForecastReset` event. The engine learns again, from the workload's [CPU history](/concepts/forecasting/#learning-from-history), read again, when `prometheus.url` is set, otherwise from scratch |
+| Unreadable otherwise, such as after a hand edit | Discarded the same way, with a `ForecastReset` warning |
+
+## Rollback
+
+<Tabs>
+<TabItem label="Helm">
+
+```bash
+helm rollback napwake -n napwake-system
+```
+
+</TabItem>
+<TabItem label="kubectl">
+
+```bash
+kubectl apply -f https://github.com/napwake/napwake/releases/download/vPREVIOUS/install.yaml
+```
+
+</TabItem>
+<TabItem label="Kustomize, Argo CD or Flux">
+
+Put the previous release's `ref`, `targetRevision` or `tag` back, and apply or sync it.
+
+</TabItem>
+</Tabs>
+
+Paused workloads stay paused during a rollback, and the previous operator version goes on managing them. Rolling back across a breaking API change isn't supported.
+
+## Version history
+
+Every change is on the [GitHub Releases](https://github.com/napwake/napwake/releases) page and in the [changelog](https://github.com/napwake/napwake/blob/main/CHANGELOG.md).
+
+<NextSteps
+  items={[
+    { href: '/getting-started/installation/', title: 'Installation', text: 'Helm, Kustomize, Argo CD or Flux.' },
+    { href: '/reference/helm-values/', title: 'Helm values', text: 'Every value of the chart.' },
+  ]}
+/>

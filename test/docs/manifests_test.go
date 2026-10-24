@@ -33,6 +33,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -54,9 +55,15 @@ import (
 
 const repoRoot = "../.."
 
-// snippetMarker, on the line before a fenced block, marks a deliberately
-// partial example that isn't meant to be applied as it stands.
-const snippetMarker = "<!-- snippet -->"
+// contentDir holds the docs' pages, Markdown and MDX, as Starlight reads
+// them.
+const contentDir = "docs/src/content/docs"
+
+// snippetMarkers, on the line before a fenced block, mark a deliberately
+// partial example that isn't meant to be applied as it stands: the HTML
+// comment in a Markdown page, and its MDX form, since MDX has no HTML
+// comments.
+var snippetMarkers = []string{"<!-- snippet -->", "{/* snippet */}"}
 
 // manifest is one YAML document, where a reader would find it, and the file
 // name the docs give its block, if any.
@@ -300,16 +307,24 @@ func isChartValues(m manifest, values, defaults map[string]any, schema *spec.Sch
 	return true
 }
 
-func markdownManifests(t *testing.T) []manifest {
+// docsPages lists the docs' pages, which are .md or .mdx files.
+func docsPages(t *testing.T) []string {
 	t.Helper()
-	files := []string{filepath.Join(repoRoot, "README.md")}
-	err := filepath.WalkDir(filepath.Join(repoRoot, "docs"), func(path string, d fs.DirEntry, err error) error {
-		if err == nil && !d.IsDir() && filepath.Ext(path) == ".md" {
-			files = append(files, path)
+	var pages []string
+	err := filepath.WalkDir(filepath.Join(repoRoot, contentDir), func(path string, d fs.DirEntry, err error) error {
+		if err == nil && !d.IsDir() && (filepath.Ext(path) == ".md" || filepath.Ext(path) == ".mdx") {
+			pages = append(pages, path)
 		}
 		return err
 	})
 	require.NoError(t, err)
+	require.NotEmpty(t, pages, "the docs have pages under %s", contentDir)
+	return pages
+}
+
+func markdownManifests(t *testing.T) []manifest {
+	t.Helper()
+	files := append([]string{filepath.Join(repoRoot, "README.md")}, docsPages(t)...)
 
 	out := make([]manifest, 0, len(files))
 	for _, file := range files {
@@ -352,10 +367,10 @@ type block struct {
 
 var fenceTitle = regexp.MustCompile(`title="([^"]*)"`)
 
-// yamlBlocks returns the fenced yaml blocks of a Markdown page, in order,
-// leaving out those marked as snippets. Fences may be indented, as they are
-// inside admonitions and tabs, so each block is dedented by its fence's
-// indentation.
+// yamlBlocks returns the fenced yaml blocks of a Markdown or MDX page, in
+// order, leaving out those marked as snippets. Fences may be indented, as
+// they are inside list steps and tabs, so each block is dedented by its
+// fence's indentation.
 func yamlBlocks(page string) []block {
 	var (
 		blocks   []block
@@ -377,7 +392,7 @@ func yamlBlocks(page string) []block {
 				title = match[1]
 			}
 			indent = line[:len(line)-len(strings.TrimLeft(line, " \t"))]
-			skip = previous == snippetMarker
+			skip = slices.Contains(snippetMarkers, previous)
 		case current != nil && trimmed == "```":
 			if !skip {
 				blocks = append(blocks, block{title: title, body: current.Bytes()})
@@ -452,8 +467,18 @@ func TestYAMLBlocks(t *testing.T) {
 			want: []block{{body: []byte("kind: A\nspec: {}\n")}},
 		},
 		{
+			name: "an indented block, inside a step of an MDX page",
+			page: "<Steps>\n\n1. Apply it.\n\n    ```yaml title=\"managedworkload.yaml\"\n    kind: A\n    ```\n\n</Steps>\n",
+			want: []block{{title: "managedworkload.yaml", body: []byte("kind: A\n")}},
+		},
+		{
 			name: "a block marked as a snippet",
-			page: snippetMarker + "\n\n```yaml\nkind: A\n```\n```yaml\nkind: B\n```\n",
+			page: snippetMarkers[0] + "\n\n```yaml\nkind: A\n```\n```yaml\nkind: B\n```\n",
+			want: []block{{body: []byte("kind: B\n")}},
+		},
+		{
+			name: "a block marked as a snippet in MDX",
+			page: snippetMarkers[1] + "\n\n```yaml\nkind: A\n```\n```yaml\nkind: B\n```\n",
 			want: []block{{body: []byte("kind: B\n")}},
 		},
 		{

@@ -1,0 +1,25 @@
+---
+// A page's facts at a glance: a few labelled values, each true word for word on the page below.
+interface Props { items: { label: string; value: string }[]; label?: string }
+const { items, label = 'At a glance' } = Astro.props;
+---
+<section class="nw-glance not-content" aria-label={label}>
+  <dl>
+    {items.map((it) => (<div><dt>{it.label}</dt><dd set:html={it.value} /></div>))}
+  </dl>
+</section>
+<style>
+  .nw-glance { margin-top: 1.75rem; border-top: 1px solid var(--line); border-bottom: 1px solid var(--line); }
+  dl { margin: 0; display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 10rem), 1fr)); }
+  dl > div { padding: 0.9rem 1rem 1rem 0; }
+  dl > div + div { border-inline-start: 1px solid var(--line); padding-inline-start: 1rem; }
+  dt { font: 700 0.6875rem/1.4 var(--font-mono); letter-spacing: 0.06em; text-transform: uppercase; color: var(--muted); margin: 0; }
+  dd { margin: 0.3rem 0 0; font: 700 1rem/1.35 var(--font-sans); color: var(--text); }
+  dd :global(code) { font: 700 0.875em var(--font-mono); background: var(--code-bg); padding: 0.05em 0.3em; border-radius: var(--radius-sm); }
+  @media (max-width: 44rem) {
+    dl { grid-template-columns: 1fr 1fr; }
+    dl > div { border-inline-start: 0 !important; padding-inline-start: 0 !important; border-bottom: 1px solid var(--line); }
+    dl > div:nth-child(2n) { padding-inline-start: 1rem !important; border-inline-start: 1px solid var(--line) !important; }
+    dl > div:nth-last-child(-n + 2) { border-bottom: 0; }
+  }
+</style>

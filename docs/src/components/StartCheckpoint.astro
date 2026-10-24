@@ -1,0 +1,26 @@
+---
+// A step's checkpoint: what you'll see once the step has worked. With `state`, it carries the door the
+// workload is behind now, as Journey's map shows it, with the state's word beside it (and `note`, as
+// Journey's). It goes at the end of a documentation step, after its commands; the doorman never does.
+import StateDoor from './StateDoor.astro';
+import { WORDS, type State } from './lib';
+interface Props { state?: State; note?: string }
+const { state, note } = Astro.props;
+---
+<div class="nw-check" role="note" aria-label={state ? `Checkpoint: ${WORDS.plain[state].toLowerCase()}${note ? `, ${note}` : ''}` : 'Checkpoint'}>
+  <p class="nw-check__head not-content" aria-hidden="true">
+    {state && <StateDoor state={state} size={20} />}
+    <span class="nw-check__label">Checkpoint</span>
+    {state && <span class="nw-check__state">{WORDS.plain[state]}{note && <span class="nw-check__note"> · {note}</span>}</span>}
+  </p>
+  <div class="nw-check__body"><slot /></div>
+</div>
+<style>
+  .nw-check { margin-top: 1.5rem; padding: 0.8rem 1.1rem 0.95rem; background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius-lg); }
+  .nw-check__head { display: flex; align-items: center; flex-wrap: wrap; gap: 0.25rem 0.55rem; margin: 0; }
+  .nw-check__label { font: 700 0.75rem/1.4 var(--font-mono); letter-spacing: 0.06em; text-transform: uppercase; color: var(--brand); }
+  .nw-check__state { font: 400 0.75rem/1.4 var(--font-mono); color: var(--muted); }
+  .nw-check__state::before { content: '·'; margin-right: 0.55rem; }
+  .nw-check__body > :global(:first-child) { margin-top: 0.4rem; }
+  .nw-check__body :global(.expressive-code) { margin-top: 0.6rem; }
+</style>

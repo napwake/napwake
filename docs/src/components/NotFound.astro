@@ -1,0 +1,52 @@
+---
+// The 404: the doorman shrugs, there's no room by that name, and the ways back in. The words are
+// hack/docsite's notfound.html's, with the brand's line as the heading.
+import Doorman from './Doorman.astro';
+import Button from './Button.astro';
+import { link } from './lib';
+const pages = [
+  { href: '/getting-started/installation/', title: 'Installation' },
+  { href: '/getting-started/quickstart/', title: 'Quickstart' },
+  { href: '/getting-started/kubectl-plugin/', title: 'kubectl plugin' },
+  { href: '/operations/troubleshooting/', title: 'Troubleshooting' },
+];
+---
+<section class="nw-404 not-content">
+  <Doorman pose="shrug" class="nw-404__doorman" label="The doorman shrugs, his hands open." />
+  <div class="nw-404__text">
+    <p class="nw-404__eyebrow">404 · Page not found</p>
+    <h1 id="_top">No room by that name</h1>
+    <p class="nw-404__lede">These docs have no such page. It may have moved, or the link may be from another version of the docs.</p>
+    <div class="nw-404__actions">
+      <Button href="/" variant="primary">Go to the Napwake docs</Button>
+      <button class="nw-404__search" type="button" data-nw-open-search>Search the docs</button>
+    </div>
+    <p class="nw-404__more">Or start from one of these:</p>
+    <ul>
+      {pages.map((p) => <li><a href={link(p.href)}>{p.title}</a></li>)}
+    </ul>
+  </div>
+</section>
+
+<script>
+  // Opens Starlight's search dialog.
+  document.querySelector('[data-nw-open-search]')?.addEventListener('click', () => {
+    document.querySelector<HTMLButtonElement>('site-search button[data-open-modal]')?.click();
+  });
+</script>
+
+<style>
+  .nw-404 { display: grid; grid-template-columns: minmax(0, 15rem) minmax(0, 1fr); gap: 2.5rem 3.5rem; align-items: center; max-width: 52rem; margin: 3rem auto 2rem; }
+  .nw-404 .nw-404__doorman { width: 100%; }
+  .nw-404__eyebrow { margin: 0 0 0.8rem; font: 700 0.75rem/1.4 var(--font-mono); letter-spacing: 0.06em; text-transform: uppercase; color: var(--brand); }
+  h1 { margin: 0; font-family: var(--font-display); font-weight: 800; font-size: clamp(2.75rem, 1.8rem + 3vw, 4.25rem); line-height: 0.95; color: var(--text); text-wrap: balance; }
+  .nw-404__lede { margin: 1.1rem 0 0; font-size: 1.1875rem; line-height: 1.55; color: var(--muted); max-width: 30rem; }
+  .nw-404__actions { display: flex; flex-wrap: wrap; gap: 0.75rem; margin-top: 1.6rem; }
+  .nw-404__search { font: 700 1rem/1.6 var(--font-sans); padding: 0.55em 1.6em; border: 2px solid var(--action); border-radius: var(--radius-md); background: transparent; color: var(--action); cursor: pointer; }
+  .nw-404__search:hover, .nw-404__search:focus-visible { background: var(--action); color: var(--on-action); }
+  .nw-404__more { margin: 1.75rem 0 0.5rem; font: 700 0.75rem/1.4 var(--font-mono); letter-spacing: 0.06em; text-transform: uppercase; color: var(--muted); }
+  ul { list-style: none; margin: 0; padding: 0; display: flex; flex-wrap: wrap; gap: 0.4rem 1.25rem; }
+  li { margin: 0 !important; }
+  a { color: var(--link); text-underline-offset: 0.2em; }
+  @media (max-width: 40rem) { .nw-404 { grid-template-columns: 1fr; margin-top: 1.5rem; gap: 1.5rem; } .nw-404 .nw-404__doorman { max-width: 8rem; } }
+</style>

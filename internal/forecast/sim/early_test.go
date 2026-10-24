@@ -213,7 +213,7 @@ func (row earlyPauseRow) measure(t *testing.T) (off, on, cold float64) {
 func TestDocs_PausingEarly(t *testing.T) {
 	t.Parallel()
 	rows := earlyPauseRows()
-	table := readDocsTable(t, "### What It Saves and Costs", "Hours awake a week")
+	table := readDocsTable(t, "### What it saves and costs", "Hours awake a week")
 	require.Len(t, table.rows, len(rows), "a row for each pattern the test measures")
 	for _, row := range rows {
 		var cells [][]float64

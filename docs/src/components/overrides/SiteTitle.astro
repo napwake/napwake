@@ -1,0 +1,31 @@
+---
+// The site title: the one-colour lockup on the livery header, and "Docs", linking home.
+import Lockup from '../brand/Lockup.astro';
+const { siteTitleHref } = Astro.locals.starlightRoute;
+---
+<a href={siteTitleHref} class="nw-site-title">
+  <Lockup class="nw-site-title__logo" title="Napwake" />
+  <span class="nw-site-title__docs">Docs</span>
+</a>
+
+<style>
+  .nw-site-title {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.7rem;
+    color: var(--on-docs-header);
+    text-decoration: none;
+    white-space: nowrap;
+    min-width: 0;
+  }
+  .nw-site-title__logo { height: 1.85rem; width: auto; flex: none; }
+  .nw-site-title__docs {
+    font: 700 0.75rem/1 var(--font-mono);
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    padding: 0.3rem 0 0.3rem 0.7rem;
+    border-inline-start: 1px solid color-mix(in srgb, var(--paper) 35%, transparent);
+  }
+  .nw-site-title:hover .nw-site-title__docs { color: var(--lamp); }
+  @media (min-width: 50em) { .nw-site-title__logo { height: 2.05rem; } }
+</style>

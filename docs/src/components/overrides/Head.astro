@@ -1,0 +1,15 @@
+---
+// Starlight's head, plus: the two faces every page uses, preloaded; KaTeX's stylesheet on pages with
+// maths only; and the theme colour of the livery header.
+import nextFont from '../../fonts/AtkinsonHyperlegibleNext.woff2?url';
+import displayFont from '../../fonts/BigShouldersDisplay-800.woff2?url';
+const { head, entry } = Astro.locals.starlightRoute;
+const hasMath = typeof entry.body === 'string' && entry.body.includes('$$');
+const katex = `${import.meta.env.BASE_URL.replace(/\/?$/, '/')}katex/katex.min.css`;
+---
+<link rel="preload" href={nextFont} as="font" type="font/woff2" crossorigin />
+<link rel="preload" href={displayFont} as="font" type="font/woff2" crossorigin />
+{head.map(({ tag: Tag, attrs, content }) => <Tag {...attrs} set:html={content} />)}
+{hasMath && <link rel="stylesheet" href={katex} />}
+<meta name="theme-color" content="#14695f" media="(prefers-color-scheme: light)" />
+<meta name="theme-color" content="#0d3f3a" media="(prefers-color-scheme: dark)" />

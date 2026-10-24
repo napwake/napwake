@@ -32,7 +32,8 @@ var docsLink = regexp.MustCompile("https://docs\\.napwake\\.dev[^\"'`\\s)<>]*")
 
 // Every link to the docs site that the operator or the plugin shows a person,
 // in a waking page, a report, or a message, is to a page the site has. The
-// site is the docs tree, built with directory URLs.
+// site is Starlight's content folder, built with directory URLs. Its
+// anchors are checked against the built site, in test/docs.
 func TestDocsLinksExist(t *testing.T) {
 	root := filepath.Join("..", "..")
 	found := 0
@@ -60,9 +61,13 @@ func TestDocsLinksExist(t *testing.T) {
 func docsPageExists(root, link string) bool {
 	page, _, _ := strings.Cut(strings.TrimPrefix(link, "https://docs.napwake.dev"), "#")
 	page = strings.Trim(page, "/")
-	candidates := []string{filepath.Join(root, "docs", page, "index.md")}
-	if page != "" {
-		candidates = append(candidates, filepath.Join(root, "docs", page+".md"))
+	content := filepath.Join(root, "docs", "src", "content", "docs")
+	var candidates []string
+	for _, ext := range []string{".md", ".mdx"} {
+		candidates = append(candidates, filepath.Join(content, page, "index"+ext))
+		if page != "" {
+			candidates = append(candidates, filepath.Join(content, page+ext))
+		}
 	}
 	for _, c := range candidates {
 		if _, err := os.Stat(c); err == nil {

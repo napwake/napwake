@@ -1,0 +1,167 @@
+[
+  {
+    "label": "Home",
+    "slug": "index"
+  },
+  {
+    "label": "Getting started",
+    "items": [
+      {
+        "label": "Installation",
+        "slug": "getting-started/installation"
+      },
+      {
+        "label": "Quickstart",
+        "slug": "getting-started/quickstart"
+      },
+      {
+        "label": "kubectl plugin",
+        "slug": "getting-started/kubectl-plugin"
+      }
+    ]
+  },
+  {
+    "label": "Concepts",
+    "items": [
+      {
+        "label": "Architecture",
+        "slug": "concepts/architecture"
+      },
+      {
+        "label": "Lifecycle",
+        "slug": "concepts/lifecycle"
+      },
+      {
+        "label": "Forecasting",
+        "slug": "concepts/forecasting"
+      },
+      {
+        "label": "Idle detection",
+        "slug": "concepts/idle-detection"
+      },
+      {
+        "label": "Dependencies",
+        "slug": "concepts/dependencies"
+      },
+      {
+        "label": "Wake on request",
+        "slug": "concepts/wake-on-request"
+      },
+      {
+        "label": "Cost tracking",
+        "slug": "concepts/cost-tracking"
+      }
+    ]
+  },
+  {
+    "label": "Guides",
+    "items": [
+      {
+        "label": "Opting in",
+        "slug": "guides/opt-in"
+      },
+      {
+        "label": "Public preview environments",
+        "slug": "guides/preview-environments"
+      },
+      {
+        "label": "ManagedWorkload",
+        "slug": "guides/managed-workload"
+      },
+      {
+        "label": "Pause and resume",
+        "slug": "guides/pause"
+      },
+      {
+        "label": "Cluster Autoscaler",
+        "slug": "guides/cluster-autoscaler"
+      },
+      {
+        "label": "Node pools for real savings",
+        "slug": "guides/node-pools"
+      },
+      {
+        "label": "Dry run",
+        "slug": "guides/dry-run"
+      },
+      {
+        "label": "Prometheus activity",
+        "slug": "guides/prometheus-signals"
+      },
+      {
+        "label": "GitOps tools",
+        "slug": "guides/gitops"
+      },
+      {
+        "label": "HPA and KEDA",
+        "slug": "guides/autoscalers"
+      }
+    ]
+  },
+  {
+    "label": "Reference",
+    "items": [
+      {
+        "label": "API",
+        "slug": "reference/api"
+      },
+      {
+        "label": "kubectl plugin",
+        "slug": "reference/cli"
+      },
+      {
+        "label": "Conditions and events",
+        "slug": "reference/conditions-and-events"
+      },
+      {
+        "label": "Helm values",
+        "slug": "reference/helm-values"
+      },
+      {
+        "label": "Metrics",
+        "slug": "reference/metrics"
+      },
+      {
+        "label": "Labels and annotations",
+        "slug": "reference/labels-annotations"
+      },
+      {
+        "label": "Data and access",
+        "slug": "reference/data-and-access"
+      },
+      {
+        "label": "Security",
+        "slug": "reference/security"
+      },
+      {
+        "label": "Configuration",
+        "slug": "reference/configuration"
+      },
+      {
+        "label": "Compatibility",
+        "slug": "reference/compatibility"
+      }
+    ]
+  },
+  {
+    "label": "Operations",
+    "items": [
+      {
+        "label": "Monitoring",
+        "slug": "operations/monitoring"
+      },
+      {
+        "label": "Troubleshooting",
+        "slug": "operations/troubleshooting"
+      },
+      {
+        "label": "Upgrading",
+        "slug": "operations/upgrading"
+      }
+    ]
+  },
+  {
+    "label": "Contributing",
+    "slug": "contributing"
+  }
+]
