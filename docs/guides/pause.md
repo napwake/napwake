@@ -25,7 +25,7 @@ An app that should finish a job or drain connections needs to handle `SIGTERM` t
 
 A request while a workload pauses shows it's in use. Whatever would wake it once paused, coming while it's `Pausing`, calls the pause off:
 
-- a request the doorman holds, or passes on to a pod that's still Ready
+- a request that reaches the doorman, which holds it, or passes it on to a pod that's still Ready
 - for a workload that [asks before waking](../concepts/wake-on-request.md#asking-before-waking), only a person's click on the asleep page
 - a [wake request](#wake-now)
 - an activity annotation, which a waking [dependent](../concepts/dependencies.md) stamps
@@ -35,6 +35,14 @@ The workload is `Running` again, scaled back up if its pods had begun to stop, a
 ```text
 a request came as it paused; the pause is cancelled
 ```
+
+The doorman doesn't see every request as a workload pauses. The pods answer these, and the pause goes on:
+
+- requests in the first 5 seconds, before the doorman's EndpointSlice stands beside the pods' own
+- the share kube-proxy and ingress controllers still send to the pods, for about 5 seconds more, until they're scaled down
+- requests on connections opened before the pause
+- every request after the first on a connection the doorman passed on
+- traffic from a GKE load balancer through [NEGs](../concepts/wake-on-request.md#gke-container-native-load-balancing-negs), which goes to the pods' own addresses
 
 A probe, a scrape, a hunt for hidden files, or a TCP check that sends nothing, doesn't call it off. Dry-run never pauses, so there's nothing to call off. A pause the idle clock made, called off this way, counts as [made in use](../concepts/idle-detection.md#paused-while-in-use), and the clock waits longer before the next.
 
