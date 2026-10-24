@@ -1,6 +1,6 @@
 # Public Preview Environments
 
-For a team with an environment for each pull request, on a public URL: Hybernate pauses each preview while nobody uses it, and only people wake it. Someone who opens it in a browser gets a page with a **Wake it** button, and their click wakes it; a pull request workflow, a portal or a chat command wakes it for them. Crawlers and scanners, which reach every public address every few minutes, wake nothing.
+For a team with an environment for each pull request, on a public URL: Napwake pauses each preview while nobody uses it, and only people wake it. Someone who opens it in a browser gets a page with a **Wake it** button, and their click wakes it; a pull request workflow, a portal or a chat command wakes it for them. Crawlers and scanners, which reach every public address every few minutes, wake nothing.
 
 Opt in each preview's namespace, with the doorman asking before it wakes anything in it:
 
@@ -10,9 +10,9 @@ kind: Namespace
 metadata:
   name: preview-42
   labels:
-    hybernate.io/managed: "true"
+    napwake.dev/managed: "true"
   annotations:
-    hybernate.io/wake: ask
+    napwake.dev/wake: ask
 ```
 
 ## Why ask before waking
@@ -25,7 +25,7 @@ A preview behind a VPN, single sign-on at the ingress, or an allowlist of your o
 
 ## Turning it on
 
-Put the `hybernate.io/managed` label and `hybernate.io/wake: ask` on each preview's namespace, so that every Deployment and StatefulSet in it is managed and asks before waking. Where they go depends on what creates the namespace:
+Put the `napwake.dev/managed` label and `napwake.dev/wake: ask` on each preview's namespace, so that every Deployment and StatefulSet in it is managed and asks before waking. Where they go depends on what creates the namespace:
 
 === "Namespace"
 
@@ -37,16 +37,16 @@ Put the `hybernate.io/managed` label and `hybernate.io/wake: ask` on each previe
     metadata:
       name: preview-42
       labels:
-        hybernate.io/managed: "true"
+        napwake.dev/managed: "true"
       annotations:
-        hybernate.io/wake: ask
+        napwake.dev/wake: ask
     ```
 
     Leave `replicas` out of the workloads' manifests, and Kubernetes starts a new Deployment at one replica. A deploy that sets them, with `kubectl apply` or Helm, scales a paused preview back up, which wakes it, and a GitOps tool that sets them undoes every pause; see [GitOps tools](gitops.md).
 
 === "Argo CD"
 
-    An Application that creates the preview's namespace, with `CreateNamespace=true`, sets them in `managedNamespaceMetadata`. It also has to leave the replicas to Hybernate, or it scales the preview back up after every pause:
+    An Application that creates the preview's namespace, with `CreateNamespace=true`, sets them in `managedNamespaceMetadata`. It also has to leave the replicas to Napwake, or it scales the preview back up after every pause:
 
     ```yaml title="application.yaml"
     apiVersion: argoproj.io/v1alpha1
@@ -72,9 +72,9 @@ Put the `hybernate.io/managed` label and `hybernate.io/wake: ask` on each previe
         automated: {}
         managedNamespaceMetadata:
           labels:
-            hybernate.io/managed: "true"
+            napwake.dev/managed: "true"
           annotations:
-            hybernate.io/wake: ask
+            napwake.dev/wake: ask
         syncOptions:
           - CreateNamespace=true
           - RespectIgnoreDifferences=true
@@ -99,21 +99,21 @@ Put the `hybernate.io/managed` label and `hybernate.io/wake: ask` on each previe
 
 To have every workload opted in on the cluster ask, whatever its namespace, set the Helm value `defaults.wake`:
 
-```yaml title="hybernate-values.yaml"
+```yaml title="napwake-values.yaml"
 defaults:
   wake: ask
 ```
 
-A workload's own `hybernate.io/wake` wins over its namespace's, and the namespace's over the Helm default; see [Which setting wins](opt-in.md#which-setting-wins). A value other than `request` or `ask` is read as `ask`, with an `InvalidSetting` warning event, so a typo never lets robots wake a preview.
+A workload's own `napwake.dev/wake` wins over its namespace's, and the namespace's over the Helm default; see [Which setting wins](opt-in.md#which-setting-wins). A value other than `request` or `ask` is read as `ask`, with an `InvalidSetting` warning event, so a typo never lets robots wake a preview.
 
 The doorman reads each request to tell a person's browser from a robot, so it needs plain HTTP: TLS ended at the ingress or load balancer in front of the preview, as is usual. A workload that ends TLS itself is never woken by a click. Behind a GKE Ingress or Gateway, it also needs the doorman's [forwarder](../concepts/wake-on-request.md#gke-container-native-load-balancing-negs).
 
 ### A preview of more than one workload
 
-Every workload in the namespace asks, which suits what people open in a browser. What only other workloads call, such as an API the frontend calls inside the cluster, a database or a queue worker, is woken with what people open when it's a [dependency](../concepts/dependencies.md) of it. Hybernate learns that from the frontend's environment, such as an `API_URL` that names the API's Service, or you declare it with `hybernate.io/depends-on`. One click then wakes the whole preview, and the dependencies stay up as long as the frontend does. To see what wakes with a workload:
+Every workload in the namespace asks, which suits what people open in a browser. What only other workloads call, such as an API the frontend calls inside the cluster, a database or a queue worker, is woken with what people open when it's a [dependency](../concepts/dependencies.md) of it. Napwake learns that from the frontend's environment, such as an `API_URL` that names the API's Service, or you declare it with `napwake.dev/depends-on`. One click then wakes the whole preview, and the dependencies stay up as long as the frontend does. To see what wakes with a workload:
 
 ```bash
-kubectl hybernate deps web -n preview-42
+kubectl napwake deps web -n preview-42
 ```
 
 ```
@@ -122,7 +122,7 @@ Depends on:
   preview-42/api   learned from API_URL   Paused
 Depended on by:
   nothing
-Learned links come from the dependent's environment or its requests; hybernate.io/ignore-dependencies drops one.
+Learned links come from the dependent's environment or its requests; napwake.dev/ignore-dependencies drops one.
 ```
 
 A workload that's nobody's dependency is woken only by tooling while it asks: its callers are other workloads, which are turned away, and a database's protocol isn't HTTP, so its connections are closed. Have it wake on any request instead, with the annotation on the workload, which wins over the namespace's. No robot reaches a Service that no Ingress exposes, so that wakes it only for its real callers:
@@ -133,7 +133,7 @@ kind: Deployment
 metadata:
   name: api
   annotations:
-    hybernate.io/wake: request
+    napwake.dev/wake: request
 ```
 
 See [When to keep waking on request](../concepts/wake-on-request.md#when-to-keep-waking-on-request).
@@ -163,7 +163,7 @@ Any other reason under DOORMAN says why requests can't reach the doorman; see [W
 
 A page left open reloads itself every minute, with a fresh token, so it doesn't go stale: it expires only if its reloads failed, as after a laptop slept, and then says so and offers the button again. Once someone has clicked, others who open the preview get the waking-up page, then the app, without clicking. The preview pauses again once it has had no activity for `idleAfter`, an hour by default. See [The Wake it button](../concepts/wake-on-request.md#the-wake-it-button) for the token, and for what a click from another site gets.
 
-A browser from before about 2020 may not say where a click came from, so its click wakes nothing: the page comes back saying so, and that `kubectl hybernate wake`, a [wake request](#waking-it-from-tooling) or a current browser wakes the preview instead. A browser posting a form of the app's own after the preview paused, such as its login form, gets the asleep page too, and nothing wakes until someone clicks.
+A browser from before about 2020 may not say where a click came from, so its click wakes nothing: the page comes back saying so, and that `kubectl napwake wake`, a [wake request](#waking-it-from-tooling) or a current browser wakes the preview instead. A browser posting a form of the app's own after the preview paused, such as its login form, gets the asleep page too, and nothing wakes until someone clicks.
 
 ## What robots and API clients see
 
@@ -181,19 +181,19 @@ Retry-After: 300
 X-Robots-Tag: noindex
 
 This environment is asleep. A request doesn't wake it: only a person who opens it in a browser and clicks Wake it, or their tooling, can.
-Open it in a browser and click Wake it; set the hybernate.io/wake-requested annotation on its ManagedWorkload; or run kubectl hybernate wake: https://okedeji.io/hybernate/guides/pause/#wake-now
-https://okedeji.io/hybernate/concepts/wake-on-request/#asking-before-waking
+Open it in a browser and click Wake it; set the napwake.dev/wake-requested annotation on its ManagedWorkload; or run kubectl napwake wake: https://docs.napwake.dev/guides/pause/#wake-now
+https://docs.napwake.dev/concepts/wake-on-request/#asking-before-waking
 ```
 
 A client that sends `Accept: application/json` gets the same in JSON. Probes and health checks the doorman recognises are answered as for any workload, and a connection that isn't HTTP is closed. Once someone has woken the preview, every caller is served as usual. See [What browsers, robots and API clients see](../concepts/wake-on-request.md#what-browsers-robots-and-api-clients-see).
 
 ## Waking it from tooling
 
-Tooling wakes a preview by setting the `hybernate.io/wake-requested` annotation on its ManagedWorkload to a new value, whatever its wake setting. Hybernate acts on each value once, records it in `status.lastWakeRequest`, and says what came of it in the `WakeRequest` condition, so the tool can tell its request was taken up; see [Wake Now](pause.md#wake-now). A ManagedWorkload created from the label is named after its workload, such as `web`. Waking it wakes what it depends on, too.
+Tooling wakes a preview by setting the `napwake.dev/wake-requested` annotation on its ManagedWorkload to a new value, whatever its wake setting. Napwake acts on each value once, records it in `status.lastWakeRequest`, and says what came of it in the `WakeRequest` condition, so the tool can tell its request was taken up; see [Wake Now](pause.md#wake-now). A ManagedWorkload created from the label is named after its workload, such as `web`. Waking it wakes what it depends on, too.
 
 ### When a pull request is pushed
 
-A deploy that leaves the replicas to Hybernate, as each tab of [Turning it on](#turning-it-on) sets up, doesn't wake a paused preview: its new pods start at its next wake. One that sets `replicas` scales the preview up, which Hybernate counts as a scale-up from outside, so it wakes; under Flux, that's a `GitOpsConflict`, and the next pause waits an hour; see [GitOps tools](gitops.md). To have it up for whoever reviews each push, wake it from the workflow that deploys it, and wait until it's Running. In GitHub Actions:
+A deploy that leaves the replicas to Napwake, as each tab of [Turning it on](#turning-it-on) sets up, doesn't wake a paused preview: its new pods start at its next wake. One that sets `replicas` scales the preview up, which Napwake counts as a scale-up from outside, so it wakes; under Flux, that's a `GitOpsConflict`, and the next pause waits an hour; see [GitOps tools](gitops.md). To have it up for whoever reviews each push, wake it from the workflow that deploys it, and wait until it's Running. In GitHub Actions:
 
 ```yaml title=".github/workflows/preview.yaml"
 name: Preview
@@ -211,7 +211,7 @@ jobs:
           TOKEN: ${{ github.run_id }}-${{ github.run_attempt }}
         run: |
           kubectl wait managedworkload/web -n "$NS" --for=create --timeout=1m
-          kubectl annotate managedworkload web -n "$NS" --overwrite hybernate.io/wake-requested="$TOKEN"
+          kubectl annotate managedworkload web -n "$NS" --overwrite napwake.dev/wake-requested="$TOKEN"
           kubectl wait managedworkload web -n "$NS" --for=jsonpath='{.status.lastWakeRequest}'="$TOKEN" --timeout=10m
           answer=$(kubectl get managedworkload web -n "$NS" \
             -o jsonpath='{.status.conditions[?(@.type=="WakeRequest")].status} {.status.conditions[?(@.type=="WakeRequest")].message}')
@@ -222,12 +222,12 @@ jobs:
           kubectl wait managedworkload web -n "$NS" --for=jsonpath='{.status.phase}'=Running --timeout=10m
 ```
 
-On a pull request's first push, Hybernate makes the ManagedWorkload from the label moments after the deploy, so the first `kubectl wait` waits for it to exist; `--for=create` needs kubectl 1.31 or later. A request set before Hybernate has taken the ManagedWorkload on is answered as for any awake preview, `already awake`. The token is the run's ID and attempt, so each run asks afresh, a re-run included. The next `kubectl wait` waits for Hybernate to take the request up. A request made while a pause or a wake is under way is answered once that finishes, as [Wake Now](pause.md#wake-now) says, so while the preview is starting this wait lasts as long as its start does, and has the same 10 minutes as the last. When Hybernate won't wake the preview, the step fails with its reason, such as `not woken at 2026-10-23 21:01 UTC: it's scaled to zero outside Hybernate, which leaves it off until its replicas are set above zero`. The last waits until the preview is Running. Its dependencies wake with it; to wait for them too, add a `kubectl wait` for each.
+On a pull request's first push, Napwake makes the ManagedWorkload from the label moments after the deploy, so the first `kubectl wait` waits for it to exist; `--for=create` needs kubectl 1.31 or later. A request set before Napwake has taken the ManagedWorkload on is answered as for any awake preview, `already awake`. The token is the run's ID and attempt, so each run asks afresh, a re-run included. The next `kubectl wait` waits for Napwake to take the request up. A request made while a pause or a wake is under way is answered once that finishes, as [Wake Now](pause.md#wake-now) says, so while the preview is starting this wait lasts as long as its start does, and has the same 10 minutes as the last. When Napwake won't wake the preview, the step fails with its reason, such as `not woken at 2026-10-23 21:01 UTC: it's scaled to zero outside Napwake, which leaves it off until its replicas are set above zero`. The last waits until the preview is Running. Its dependencies wake with it; to wait for them too, add a `kubectl wait` for each.
 
 ### From a terminal
 
 ```bash
-kubectl hybernate wake web -n preview-42 --wait
+kubectl napwake wake web -n preview-42 --wait
 ```
 
 ```
@@ -235,11 +235,11 @@ waking preview-42/web...
 preview-42/web is Running after 2s
 ```
 
-`--wait`, the default, waits for Hybernate's answer and then until the workload is Running, both within `--timeout`, 5 minutes by default. A request made while a pause or a wake is under way is answered once that finishes, and the same 5 minutes covers that wait too; for a preview that takes longer to start, give it more, such as `--timeout 10m`. See [Wake a Workload](../getting-started/kubectl-plugin.md#wake-a-workload).
+`--wait`, the default, waits for Napwake's answer and then until the workload is Running, both within `--timeout`, 5 minutes by default. A request made while a pause or a wake is under way is answered once that finishes, and the same 5 minutes covers that wait too; for a preview that takes longer to start, give it more, such as `--timeout 10m`. See [Wake a Workload](../getting-started/kubectl-plugin.md#wake-a-workload).
 
 ### From a portal or a chat bot
 
-Anything that talks to the Kubernetes API can ask. A portal that has just made the environment gets `404 Not Found` until Hybernate has made its ManagedWorkload from the label, a moment after the workload, so it retries until the ManagedWorkload exists. With `curl`, a `PATCH` sets the annotation, printing nothing unless it fails, with the API server's address in `$APISERVER`, its CA certificate in `ca.crt`, and a token for the bot's ServiceAccount in `$KUBE_TOKEN`:
+Anything that talks to the Kubernetes API can ask. A portal that has just made the environment gets `404 Not Found` until Napwake has made its ManagedWorkload from the label, a moment after the workload, so it retries until the ManagedWorkload exists. With `curl`, a `PATCH` sets the annotation, printing nothing unless it fails, with the API server's address in `$APISERVER`, its CA certificate in `ca.crt`, and a token for the bot's ServiceAccount in `$KUBE_TOKEN`:
 
 ```bash
 NS=preview-42
@@ -247,15 +247,15 @@ REQUEST=chat-$(date -u +%Y%m%dT%H%M%SZ)
 curl --fail-with-body -sS -o /dev/null --cacert ca.crt -X PATCH \
   -H "Authorization: Bearer $KUBE_TOKEN" \
   -H 'Content-Type: application/merge-patch+json' \
-  -d '{"metadata":{"annotations":{"hybernate.io/wake-requested":"'"$REQUEST"'"}}}' \
-  "$APISERVER/apis/hybernate.io/v1alpha1/namespaces/$NS/managedworkloads/web"
+  -d '{"metadata":{"annotations":{"napwake.dev/wake-requested":"'"$REQUEST"'"}}}' \
+  "$APISERVER/apis/napwake.dev/v1alpha1/namespaces/$NS/managedworkloads/web"
 ```
 
-Then read the ManagedWorkload until Hybernate has answered that request, every second or two. A request made while the preview is pausing or waking is answered once that finishes, so keep reading for as long as the preview takes to start:
+Then read the ManagedWorkload until Napwake has answered that request, every second or two. A request made while the preview is pausing or waking is answered once that finishes, so keep reading for as long as the preview takes to start:
 
 ```bash
 curl --fail-with-body -sS --cacert ca.crt -H "Authorization: Bearer $KUBE_TOKEN" \
-  "$APISERVER/apis/hybernate.io/v1alpha1/namespaces/$NS/managedworkloads/web" |
+  "$APISERVER/apis/napwake.dev/v1alpha1/namespaces/$NS/managedworkloads/web" |
   jq -r --arg request "$REQUEST" 'select(.status.lastWakeRequest == $request)
     | .status.conditions[] | select(.type == "WakeRequest") | "\(.status) \(.message)"'
 ```
@@ -277,7 +277,7 @@ metadata:
   name: preview-waker
   namespace: preview-42
 rules:
-  - apiGroups: [hybernate.io]
+  - apiGroups: [napwake.dev]
     resources: [managedworkloads]
     verbs: [get, list, watch, patch]
 ---
@@ -298,10 +298,10 @@ subjects:
 
 - **`kubectl annotate`** takes `get` and `patch`.
 - **`kubectl wait`** takes `get`, `list` and `watch`: it lists the one ManagedWorkload by name before it watches it, and without `list` it waits out its timeout even once the condition is met.
-- **`kubectl hybernate wake`** takes `get`, `list` and `patch`.
+- **`kubectl napwake wake`** takes `get`, `list` and `patch`.
 - **An HTTP client,** such as a portal's, takes `patch` to ask, and `get`, or `watch`, to read the answer.
 
-People with Kubernetes' built-in `edit` or `admin` role in the namespace have all of these once Hybernate is installed.
+People with Kubernetes' built-in `edit` or `admin` role in the namespace have all of these once Napwake is installed.
 
 ## Up before people come
 
@@ -313,10 +313,10 @@ kind: Namespace
 metadata:
   name: preview-42
   labels:
-    hybernate.io/managed: "true"
+    napwake.dev/managed: "true"
   annotations:
-    hybernate.io/wake: ask
-    hybernate.io/auto-resume: "true"
+    napwake.dev/wake: ask
+    napwake.dev/auto-resume: "true"
 ```
 
 On a weekday pattern, it acts after 8 days and is fully active after 14. From then, someone who clicks **Wake it** at about 09:05 on weekdays finds the preview up from 08:45, and weekends are left asleep. See [How Long It Takes](../concepts/forecasting.md#how-long-it-takes). A new preview starts from nothing, since its workloads have no history to [learn from](../concepts/forecasting.md#learning-from-history), so one for a pull request merged within a week is gone before the forecast acts. It pays off for previews that last, such as one for each team or long-lived branch, or a demo environment.
@@ -345,7 +345,7 @@ kubectl get managedworkload web -n preview-42 -o jsonpath='{.status.turnedAway}'
 {"pausedAt":"2026-10-23T20:41:44Z","requests":3}
 ```
 
-[`kubectl hybernate status`](../getting-started/kubectl-plugin.md#see-what-hybernate-is-doing) lists the workloads that turned requests away:
+[`kubectl napwake status`](../getting-started/kubectl-plugin.md#see-what-napwake-is-doing) lists the workloads that turned requests away:
 
 ```
 Turned away while asleep, by a doorman that asks before waking: something automated may call these.
@@ -357,7 +357,7 @@ On a public URL, crawlers and scanners account for some of them: that's what ask
 - **An uptime monitor or health checker:** add its `User-Agent` to the Helm value `doorman.healthCheckUserAgents`. It's then answered as a health check, and no longer counted.
 - **Something that needs the preview awake,** such as a test suite or a webhook that exercises it: have it set a [wake request](#waking-it-from-tooling) first.
 
-`hybernate_doorman_wakes_total{result="turned_away"}` counts them as they happen; see [Metrics](../reference/metrics.md#doorman) and [What it turns away](../concepts/wake-on-request.md#what-it-turns-away).
+`napwake_doorman_wakes_total{result="turned_away"}` counts them as they happen; see [Metrics](../reference/metrics.md#doorman) and [What it turns away](../concepts/wake-on-request.md#what-it-turns-away).
 
 ## What it can't do
 

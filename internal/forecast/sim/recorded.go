@@ -23,7 +23,7 @@ import (
 	"slices"
 	"time"
 
-	"github.com/okedeji/hybernate/internal/forecast"
+	"github.com/napwake/napwake/internal/forecast"
 )
 
 // Recorded is a workload's recorded CPU: its utilization at each step from
@@ -135,7 +135,7 @@ func (r Recorded) Hours(loc *time.Location) []forecast.Hour {
 	return hours
 }
 
-// Replay simulates Hybernate managing the recorded workload with settings,
+// Replay simulates Napwake managing the recorded workload with settings,
 // over the whole recording: what it would have paused, woken and
 // forecast.
 func (r Recorded) Replay(name string, settings Settings) (Report, error) {

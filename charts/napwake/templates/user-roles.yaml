@@ -1,0 +1,35 @@
+{{- include "napwake.defaults" . -}}
+{{- /*
+Aggregated into the built-in view, edit and admin ClusterRoles, so that
+whoever can view a namespace can see its ManagedWorkloads, and whoever can
+edit it can pause, wake and configure them, as kubectl napwake does.
+*/}}
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: {{ include "napwake.fullname" . }}-view
+  labels:
+    {{- include "napwake.labels" . | nindent 4 }}
+    rbac.authorization.k8s.io/aggregate-to-view: "true"
+    rbac.authorization.k8s.io/aggregate-to-edit: "true"
+    rbac.authorization.k8s.io/aggregate-to-admin: "true"
+rules:
+  - apiGroups: [napwake.dev]
+    resources: [managedworkloads]
+    verbs: [get, list, watch]
+  - apiGroups: [napwake.dev]
+    resources: [managedworkloads/status]
+    verbs: [get]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: {{ include "napwake.fullname" . }}-edit
+  labels:
+    {{- include "napwake.labels" . | nindent 4 }}
+    rbac.authorization.k8s.io/aggregate-to-edit: "true"
+    rbac.authorization.k8s.io/aggregate-to-admin: "true"
+rules:
+  - apiGroups: [napwake.dev]
+    resources: [managedworkloads]
+    verbs: [create, delete, patch, update]

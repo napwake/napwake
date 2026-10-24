@@ -31,10 +31,10 @@ import (
 	"k8s.io/apimachinery/pkg/api/meta"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
-	v1alpha1 "github.com/okedeji/hybernate/api/v1alpha1"
-	"github.com/okedeji/hybernate/internal/cost"
-	"github.com/okedeji/hybernate/internal/forecast"
-	"github.com/okedeji/hybernate/internal/gitops"
+	v1alpha1 "github.com/napwake/napwake/api/v1alpha1"
+	"github.com/napwake/napwake/internal/cost"
+	"github.com/napwake/napwake/internal/forecast"
+	"github.com/napwake/napwake/internal/gitops"
 )
 
 // State is how a scan judges a workload's use.
@@ -43,7 +43,7 @@ type State string
 const (
 	StateIdle   State = "idle"
 	StateActive State = "active"
-	// StatePaused means Hybernate has it paused right now.
+	// StatePaused means Napwake has it paused right now.
 	StatePaused State = "paused"
 	// StateUnknown means nothing showed activity and its CPU couldn't be
 	// measured: no metrics, or no CPU requests to measure against.
@@ -81,9 +81,9 @@ type ClusterReport struct {
 	Namespaces int        `json:"namespaces"`
 	Workloads  []Workload `json:"workloads"`
 	// Platform are the workloads that run the cluster itself: Kubernetes',
-	// Hybernate's, and well-known infrastructure such as ingress, GitOps and
+	// Napwake's, and well-known infrastructure such as ingress, GitOps and
 	// monitoring. They're left out of Workloads, Totals and next steps, as
-	// Hybernate never pauses Kubernetes' or its own, and the scan guesses
+	// Napwake never pauses Kubernetes' or its own, and the scan guesses
 	// nobody means to pause the rest.
 	Platform []Workload `json:"platform,omitempty"`
 	// NodePrices are the node types the workloads were priced at.
@@ -135,50 +135,50 @@ type Workload struct {
 	Reason string `json:"reason,omitempty"`
 	// Unmeasured says why CPU couldn't be measured.
 	Unmeasured string `json:"unmeasured,omitempty"`
-	// DryRun means Hybernate measures it but never pauses it.
+	// DryRun means Napwake measures it but never pauses it.
 	DryRun bool `json:"dryRun,omitempty"`
 	// ScaledByHand means it's at zero replicas, put there by something
-	// other than Hybernate, so nothing will wake it on a request.
+	// other than Napwake, so nothing will wake it on a request.
 	ScaledByHand bool `json:"scaledByHand,omitempty"`
 	// Measured is what dry-run has measured, for a workload in dry-run.
 	Measured *Measured `json:"measured,omitempty"`
-	// FreedThisMonth is what Hybernate has freed this month pausing the
+	// FreedThisMonth is what Napwake has freed this month pausing the
 	// workload, priced at the rates it uses for the workload, and
 	// SavedThisMonth the part of it that came off the bill as nodes scaled
 	// down. One in dry-run keeps what it freed and saved while it was live.
 	FreedThisMonth float64 `json:"freedThisMonth,omitempty"`
 	SavedThisMonth float64 `json:"savedThisMonth,omitempty"`
-	// Slept is how long Hybernate has had a live workload paused, and how
+	// Slept is how long Napwake has had a live workload paused, and how
 	// many times it was woken, since Since: the start of the month, or when
-	// it went live if later. Hybernate doesn't record these yet, so they
+	// it went live if later. Napwake doesn't record these yet, so they
 	// stay unset until it does.
 	Slept *Slept `json:"slept,omitempty"`
-	// Protected means its namespace is labelled protected, so Hybernate
+	// Protected means its namespace is labelled protected, so Napwake
 	// won't manage it whatever its labels.
 	Protected bool `json:"protected,omitempty"`
-	// WontPause says why Hybernate refuses to pause it however idle it is,
+	// WontPause says why Napwake refuses to pause it however idle it is,
 	// as for a StatefulSet that deletes its PVCs when scaled down, so it's
 	// left out of what pausing could free.
 	WontPause string `json:"wontPause,omitempty"`
-	// protectedByHybernate says its ManagedWorkload is Protected: Hybernate
+	// protectedByNapwake says its ManagedWorkload is Protected: Napwake
 	// never pauses it, for a reason the scan may not see, such as the
 	// operator's protectedNamespaces.
-	protectedByHybernate bool
+	protectedByNapwake bool
 	// Platform is the part of the cluster's own infrastructure it runs, such
-	// as Kubernetes, Hybernate or cert-manager, for one the scan leaves out
+	// as Kubernetes, Napwake or cert-manager, for one the scan leaves out
 	// of what pausing could free.
 	Platform string `json:"platform,omitempty"`
 	// ReplicasFromGit is the GitOps tool that last set its replicas from
 	// Git, which would undo every pause until it's told to leave them.
 	ReplicasFromGit string `json:"replicasFromGit,omitempty"`
 	// GitOpsLeavesReplicas is set when that tool is told to leave the
-	// replicas to Hybernate, so it won't undo a pause.
+	// replicas to Napwake, so it won't undo a pause.
 	GitOpsLeavesReplicas bool `json:"gitOpsLeavesReplicas,omitempty"`
 	// GitOpsUnchecked says why whether that tool is told to leave the
 	// replicas couldn't be checked, when it couldn't.
 	GitOpsUnchecked string `json:"gitOpsUnchecked,omitempty"`
 	// OnSpot means a pod of it is on a spot node priced at its type's spot
-	// price, or, with none on a node, Hybernate last priced it at spot.
+	// price, or, with none on a node, Napwake last priced it at spot.
 	// SpotAtOnDemand means one is on a spot node of a type without a spot
 	// price, priced on-demand, so it costs less than shown.
 	OnSpot         bool `json:"onSpot,omitempty"`
@@ -203,7 +203,7 @@ type Workload struct {
 	MonthlyCost float64 `json:"monthlyCost"`
 }
 
-// Measured is what Hybernate would have done to a workload in dry-run.
+// Measured is what Napwake would have done to a workload in dry-run.
 type Measured struct {
 	Since  time.Time `json:"since,omitzero"`
 	Pauses int       `json:"pauses"`
@@ -220,7 +220,7 @@ type Measured struct {
 	MonthlyFreed float64 `json:"monthlyFreed"`
 }
 
-// Slept is what Hybernate has done pausing a live workload.
+// Slept is what Napwake has done pausing a live workload.
 type Slept struct {
 	Since time.Time `json:"since"`
 	Hours float64   `json:"hours"`
@@ -239,7 +239,7 @@ type Totals struct {
 	// Workloads the scan couldn't judge aren't in it, nor in Replayed, as
 	// the table doesn't list them.
 	FreeableBasis float64 `json:"freeableBasis"`
-	// Paused and PausedHourlyCost are what Hybernate has paused right now
+	// Paused and PausedHourlyCost are what Napwake has paused right now
 	// and what that frees each hour.
 	Paused           int     `json:"paused"`
 	PausedHourlyCost float64 `json:"pausedHourlyCost"`
@@ -253,7 +253,7 @@ type Totals struct {
 	IdleHourlyCost  float64 `json:"idleHourlyCost"`
 	IdleMonthlyCost float64 `json:"idleMonthlyCost"`
 	// Replayed sums the history of unmanaged workloads, Measured what
-	// Hybernate measured for those in dry-run, and FreedThisMonth and
+	// Napwake measured for those in dry-run, and FreedThisMonth and
 	// SavedThisMonth what it has freed and saved this month pausing managed
 	// ones, including what one now in dry-run freed while live: each from
 	// its own source.
@@ -262,9 +262,9 @@ type Totals struct {
 	DryRun         int          `json:"dryRun"`
 	FreedThisMonth float64      `json:"freedThisMonth"`
 	SavedThisMonth float64      `json:"savedThisMonth"`
-	// Live is how many workloads Hybernate pauses while idle, and
+	// Live is how many workloads Napwake pauses while idle, and
 	// LiveProtected how many more are live but never paused: in a protected
-	// namespace, part of Hybernate, or deleting their PVCs when scaled down.
+	// namespace, part of Napwake, or deleting their PVCs when scaled down.
 	Live          int `json:"live"`
 	LiveProtected int `json:"liveProtected"`
 	// ProtectedFreedThisMonth and ProtectedSavedThisMonth are the part of
@@ -289,7 +289,7 @@ type ReplayTotals struct {
 type ClusterOptions struct {
 	Namespaces []string
 	// CPUThreshold is the CPU use, as a percentage of requests, at which a
-	// workload Hybernate doesn't manage counts as active; managed ones use
+	// workload Napwake doesn't manage counts as active; managed ones use
 	// their own. Zero means the activity clock's default.
 	CPUThreshold int
 	// Rates price what node prices can't: pods on nodes the price table
@@ -300,7 +300,7 @@ type ClusterOptions struct {
 	OwnCPUPrice, OwnMemoryPrice bool
 	Now                         func() time.Time
 	// IdleAfter is how long without activity makes a workload idle, for
-	// workloads Hybernate doesn't manage; managed ones use their own.
+	// workloads Napwake doesn't manage; managed ones use their own.
 	// Zero means the activity clock's default.
 	IdleAfter time.Duration
 	// History, when set, is replayed over Window.
@@ -496,7 +496,7 @@ func (s *Scanner) scanNamespaces(ctx, historyCtx context.Context, reads *cluster
 }
 
 // recordGitOps notes the GitOps tool that sets the workload's replicas from
-// Git, if one does, and whether it's told to leave them to Hybernate.
+// Git, if one does, and whether it's told to leave them to Napwake.
 func (w *Workload) recordGitOps(r gitops.Replicas) {
 	if !r.Writer.FromGit() {
 		return
@@ -526,27 +526,27 @@ func gitOpsNotes(workloads []Workload) []string {
 		subject := plural(len(names[key]), "workload has its replicas", "workloads have their replicas")
 		if key.unchecked == "" {
 			notes = append(notes, fmt.Sprintf("%s set from Git by %s, which would undo every pause: %s. "+
-				"Have %s leave the replicas to Hybernate first: %s", subject, key.tool, listSome(names[key]),
+				"Have %s leave the replicas to Napwake first: %s", subject, key.tool, listSome(names[key]),
 				key.tool, gitOpsGuide))
 			continue
 		}
 		notes = append(notes, fmt.Sprintf("%s set from Git by %s, and whether it's told to leave them to "+
-			"Hybernate couldn't be checked: %s. If it isn't, it would undo every pause: %s. See %s", subject,
+			"Napwake couldn't be checked: %s. If it isn't, it would undo every pause: %s. See %s", subject,
 			key.tool, key.unchecked, listSome(names[key]), gitOpsGuide))
 	}
 	return notes
 }
 
-const gitOpsGuide = "https://okedeji.io/hybernate/guides/gitops/"
+const gitOpsGuide = "https://docs.napwake.dev/guides/gitops/"
 
 // stateOrder lists idle workloads first, the ones worth acting on.
 var stateOrder = map[State]int{StateIdle: 0, StatePaused: 1, StateActive: 2, StateUnknown: 3}
 
-func pausedByHybernate(mw *v1alpha1.ManagedWorkload) bool {
+func pausedByNapwake(mw *v1alpha1.ManagedWorkload) bool {
 	return mw != nil && mw.Status.Phase == v1alpha1.PhasePaused && mw.Status.Pause != nil
 }
 
-// measured reads the dry-run summary Hybernate keeps for the workload. The
+// measured reads the dry-run summary Napwake keeps for the workload. The
 // summary adds a would-be pause when it ends, so one under way is added here.
 func measured(mw *v1alpha1.ManagedWorkload, hourlyCost float64, now time.Time) *Measured {
 	if mw == nil || !mw.Spec.DryRun || mw.Status.DryRun == nil {
@@ -576,13 +576,13 @@ func measured(mw *v1alpha1.ManagedWorkload, hourlyCost float64, now time.Time) *
 	return m
 }
 
-// FreedThisMonth reads what Hybernate records pausing a workload has freed
+// FreedThisMonth reads what Napwake records pausing a workload has freed
 // this calendar month, at list price: money only as nodes scale down.
 func FreedThisMonth(mw *v1alpha1.ManagedWorkload, now time.Time) float64 {
 	return thisMonth(mw, now, func(c *v1alpha1.CostStatus) string { return c.FreedThisMonth })
 }
 
-// SavedThisMonth reads what Hybernate records pausing a workload has taken
+// SavedThisMonth reads what Napwake records pausing a workload has taken
 // off the bill this calendar month: the part of what it freed whose nodes
 // were removed.
 func SavedThisMonth(mw *v1alpha1.ManagedWorkload, now time.Time) float64 {
@@ -612,7 +612,7 @@ func thisMonth(mw *v1alpha1.ManagedWorkload, now time.Time, figure func(*v1alpha
 	return amount
 }
 
-// judgePaused describes a workload Hybernate has paused, priced on what it
+// judgePaused describes a workload Napwake has paused, priced on what it
 // had running before, so the scan shows what the pause frees.
 func judgePaused(w *Workload, mw *v1alpha1.ManagedWorkload, now time.Time) {
 	w.State = StatePaused
@@ -625,7 +625,7 @@ func judgePaused(w *Workload, mw *v1alpha1.ManagedWorkload, now time.Time) {
 	}
 }
 
-// judgeManaged reads the activity clock Hybernate keeps for the workload,
+// judgeManaged reads the activity clock Napwake keeps for the workload,
 // which already combines every activity source it's configured with.
 func judgeManaged(w *Workload, mw *v1alpha1.ManagedWorkload, now time.Time, threshold int) {
 	idleAfter := idleAfterFor(mw, ClusterOptions{})
@@ -653,9 +653,9 @@ func judgeManaged(w *Workload, mw *v1alpha1.ManagedWorkload, now time.Time, thre
 func clockStarted(source v1alpha1.ActivitySource) string {
 	switch source {
 	case v1alpha1.ActivitySourceUnobserved:
-		return "Hybernate wasn't watching until"
+		return "Napwake wasn't watching until"
 	case v1alpha1.ActivitySourceCreated:
-		return "Hybernate began managing it"
+		return "Napwake began managing it"
 	case v1alpha1.ActivitySourceWoke:
 		return "it woke"
 	}
@@ -663,7 +663,7 @@ func clockStarted(source v1alpha1.ActivitySource) string {
 }
 
 // idleAfterFor is how long without activity makes a workload idle: its own
-// setting when Hybernate manages it, otherwise the scan's.
+// setting when Napwake manages it, otherwise the scan's.
 func idleAfterFor(mw *v1alpha1.ManagedWorkload, opts ClusterOptions) time.Duration {
 	if mw != nil {
 		if p := mw.Spec.IdlePolicy; p != nil && p.IdleAfter != nil && p.IdleAfter.Duration > 0 {
@@ -678,7 +678,7 @@ func idleAfterFor(mw *v1alpha1.ManagedWorkload, opts ClusterOptions) time.Durati
 }
 
 // thresholdFor is the CPU use, as a percentage of requests, at which a
-// workload counts as active: its own setting when Hybernate manages it,
+// workload counts as active: its own setting when Napwake manages it,
 // otherwise the scan's.
 func thresholdFor(mw *v1alpha1.ManagedWorkload, opts ClusterOptions) int {
 	if mw != nil {
@@ -694,7 +694,7 @@ func thresholdFor(mw *v1alpha1.ManagedWorkload, opts ClusterOptions) int {
 }
 
 // judgeUnmanaged applies the activity clock's sources a scan can see
-// without Hybernate: activity annotations, a recent rollout, and CPU.
+// without Napwake: activity annotations, a recent rollout, and CPU.
 func judgeUnmanaged(w *Workload, obj client.Object, now time.Time, threshold int, idleAfter time.Duration) {
 	if w.CPUPercent != nil && forecast.Busy(w.cpuShare, threshold) {
 		w.State, w.Reason = StateActive, cpuReason(*w)
@@ -800,7 +800,7 @@ func totals(workloads []Workload) Totals {
 			t.Measured.SleptHours += w.Measured.SleptHours
 			t.Measured.Freed += w.Measured.Freed
 			t.Measured.MonthlyFreed += w.Measured.MonthlyFreed
-		case w.Managed && !w.DryRun && (w.Protected || w.WontPause != "" || w.protectedByHybernate):
+		case w.Managed && !w.DryRun && (w.Protected || w.WontPause != "" || w.protectedByNapwake):
 			t.LiveProtected++
 			t.ProtectedFreedThisMonth += w.FreedThisMonth
 			t.ProtectedSavedThisMonth += w.SavedThisMonth

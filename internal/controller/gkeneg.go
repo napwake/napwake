@@ -23,7 +23,7 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	networkingv1 "k8s.io/api/networking/v1"
 
-	"github.com/okedeji/hybernate/internal/doorman"
+	"github.com/napwake/napwake/internal/doorman"
 )
 
 const (

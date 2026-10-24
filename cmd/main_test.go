@@ -42,11 +42,11 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/envtest"
 	metricsserver "sigs.k8s.io/controller-runtime/pkg/metrics/server"
 
-	v1alpha1 "github.com/okedeji/hybernate/api/v1alpha1"
-	"github.com/okedeji/hybernate/internal/controller"
-	"github.com/okedeji/hybernate/internal/doorman"
-	"github.com/okedeji/hybernate/internal/forwarder"
-	"github.com/okedeji/hybernate/internal/gitops"
+	v1alpha1 "github.com/napwake/napwake/api/v1alpha1"
+	"github.com/napwake/napwake/internal/controller"
+	"github.com/napwake/napwake/internal/doorman"
+	"github.com/napwake/napwake/internal/forwarder"
+	"github.com/napwake/napwake/internal/gitops"
 )
 
 // The garbage collector aims below the container's limit, leaving room for
@@ -176,23 +176,23 @@ func TestValidateOptInDefaults(t *testing.T) {
 	}
 }
 
-func TestHybernateNamespaces(t *testing.T) {
+func TestNapwakeNamespaces(t *testing.T) {
 	tests := []struct {
 		name                              string
 		pod, doormanNamespace, doormanSvc string
 		want                              []string
 	}{
-		{name: "operator and doorman together", pod: "hybernate-system", doormanNamespace: "hybernate-system",
-			doormanSvc: "hybernate-doorman", want: []string{"hybernate-system"}},
-		{name: "doorman elsewhere", pod: "platform", doormanNamespace: "edge", doormanSvc: "hybernate-doorman",
+		{name: "operator and doorman together", pod: "napwake-system", doormanNamespace: "napwake-system",
+			doormanSvc: "napwake-doorman", want: []string{"napwake-system"}},
+		{name: "doorman elsewhere", pod: "platform", doormanNamespace: "edge", doormanSvc: "napwake-doorman",
 			want: []string{"platform", "edge"}},
 		{name: "doorman disabled", pod: "platform", doormanNamespace: "edge", want: []string{"platform"}},
-		{name: "run outside the cluster", doormanNamespace: "hybernate-system", doormanSvc: "hybernate-doorman",
-			want: []string{"hybernate-system"}},
+		{name: "run outside the cluster", doormanNamespace: "napwake-system", doormanSvc: "napwake-doorman",
+			want: []string{"napwake-system"}},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got := hybernateNamespaces(tt.pod, tt.doormanNamespace, tt.doormanSvc)
+			got := napwakeNamespaces(tt.pod, tt.doormanNamespace, tt.doormanSvc)
 			assert.Equal(t, tt.want, got)
 			for _, ns := range got {
 				assert.True(t, v1alpha1.Protected(ns, nil, got), "%s is protected", ns)
@@ -368,7 +368,7 @@ func TestDoormanCacheHoldsOnlyTrustedSlicesTrimmed(t *testing.T) {
 	}}
 	for _, s := range []*discoveryv1.EndpointSlice{
 		own,
-		endpointSlice("shop", "web-hybernate-doorman",
+		endpointSlice("shop", "web-napwake-doorman",
 			map[string]string{discoveryv1.LabelManagedBy: doorman.ManagedBy, discoveryv1.LabelServiceName: "web"}),
 		endpointSlice("shop", "web-by-hand", map[string]string{discoveryv1.LabelServiceName: "web"}),
 	} {
@@ -413,16 +413,16 @@ func TestOperatorCacheSeesOnlyDoormanSlices(t *testing.T) {
 
 	direct, err := client.New(cfg, client.Options{Scheme: scheme})
 	require.NoError(t, err)
-	for _, ns := range []string{"hybernate-system", "shop", "other"} {
+	for _, ns := range []string{"napwake-system", "shop", "other"} {
 		require.NoError(t, direct.Create(ctx, &corev1.Namespace{ObjectMeta: metav1.ObjectMeta{Name: ns}}))
 	}
 	routed := map[string]string{discoveryv1.LabelManagedBy: doorman.ManagedBy, discoveryv1.LabelServiceName: "web"}
 	for _, s := range []*discoveryv1.EndpointSlice{
-		endpointSlice("hybernate-system", "hybernate-doorman-abc",
-			map[string]string{discoveryv1.LabelServiceName: "hybernate-doorman"}),
-		endpointSlice("shop", "web-hybernate-doorman", routed),
+		endpointSlice("napwake-system", "napwake-doorman-abc",
+			map[string]string{discoveryv1.LabelServiceName: "napwake-doorman"}),
+		endpointSlice("shop", "web-napwake-doorman", routed),
 		endpointSlice("shop", "web-xyz", map[string]string{discoveryv1.LabelServiceName: "web"}),
-		endpointSlice("other", "api-hybernate-doorman", routed),
+		endpointSlice("other", "api-napwake-doorman", routed),
 		endpointSlice("other", "api-xyz", map[string]string{discoveryv1.LabelServiceName: "api"}),
 	} {
 		require.NoError(t, direct.Create(ctx, s))
@@ -437,22 +437,22 @@ func TestOperatorCacheSeesOnlyDoormanSlices(t *testing.T) {
 			name:    "watching some namespaces",
 			watched: []string{"shop"},
 			want: map[string][]string{
-				"hybernate-system": {"hybernate-system/hybernate-doorman-abc"},
-				"shop":             {"shop/web-hybernate-doorman"},
+				"napwake-system": {"napwake-system/napwake-doorman-abc"},
+				"shop":             {"shop/web-napwake-doorman"},
 			},
 		},
 		{
 			name: "watching every namespace",
 			want: map[string][]string{
-				"hybernate-system": {"hybernate-system/hybernate-doorman-abc"},
-				"shop":             {"shop/web-hybernate-doorman"},
-				"other":            {"other/api-hybernate-doorman"},
+				"napwake-system": {"napwake-system/napwake-doorman-abc"},
+				"shop":             {"shop/web-napwake-doorman"},
+				"other":            {"other/api-napwake-doorman"},
 			},
 		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			opts := operatorCacheOptions(tt.watched, "hybernate-system")
+			opts := operatorCacheOptions(tt.watched, "napwake-system")
 			opts.Scheme = scheme
 			c, err := cache.New(cfg, opts)
 			require.NoError(t, err)
@@ -471,9 +471,9 @@ func TestOperatorCacheSeesOnlyDoormanSlices(t *testing.T) {
 				}, 30*time.Second, 100*time.Millisecond, "namespace %s", ns)
 				assert.ElementsMatch(t, want, sliceNames(t, ctx, c, client.InNamespace(ns)))
 			}
-			assert.ElementsMatch(t, []string{"hybernate-system/hybernate-doorman-abc"},
-				sliceNames(t, ctx, c, client.InNamespace("hybernate-system"),
-					client.MatchingLabels{discoveryv1.LabelServiceName: "hybernate-doorman"}),
+			assert.ElementsMatch(t, []string{"napwake-system/napwake-doorman-abc"},
+				sliceNames(t, ctx, c, client.InNamespace("napwake-system"),
+					client.MatchingLabels{discoveryv1.LabelServiceName: "napwake-doorman"}),
 				"the operator finds the doorman's pods through these")
 		})
 	}
@@ -526,7 +526,7 @@ func TestOperatorCacheHoldsPodsAsWhatTheyRequest(t *testing.T) {
 	finished.Status.Phase = corev1.PodSucceeded
 	require.NoError(t, direct.Status().Update(ctx, finished))
 
-	opts := operatorCacheOptions(nil, "hybernate-system")
+	opts := operatorCacheOptions(nil, "napwake-system")
 	opts.Scheme = scheme
 	c, err := cache.New(cfg, opts)
 	require.NoError(t, err)
@@ -574,7 +574,7 @@ func TestOperatorCacheHoldsPodsAsWhatTheyRequest(t *testing.T) {
 func TestForwarderProbes(t *testing.T) {
 	f := forwarder.New(forwarder.Options{
 		Routes:  map[int32]int32{8080: 23456},
-		Doorman: "hybernate-doorman-pods.hybernate-system.svc",
+		Doorman: "napwake-doorman-pods.napwake-system.svc",
 	})
 	probes := forwarderProbes(f)
 
@@ -590,12 +590,12 @@ func TestForwarderProbes(t *testing.T) {
 
 func TestForwarderOptions(t *testing.T) {
 	valid := forwarderFlags{
-		image:          "ghcr.io/okedeji/hybernate:v0.2.0",
+		image:          "ghcr.io/napwake/napwake:v0.2.0",
 		replicas:       2,
 		resources:      defaultForwarderResources,
-		doormanPods:    "hybernate-doorman-pods",
-		doormanService: "hybernate-doorman",
-		doormanNS:      "hybernate-system",
+		doormanPods:    "napwake-doorman-pods",
+		doormanService: "napwake-doorman",
+		doormanNS:      "napwake-system",
 	}
 	tests := []struct {
 		name    string
@@ -628,7 +628,7 @@ func TestForwarderOptions(t *testing.T) {
 				return
 			}
 			require.NoError(t, err)
-			assert.Equal(t, "hybernate-doorman-pods.hybernate-system.svc", opts.Doorman)
+			assert.Equal(t, "napwake-doorman-pods.napwake-system.svc", opts.Doorman)
 			assert.Equal(t, int32(2), opts.Replicas)
 			assert.Equal(t, "10m", opts.Resources.Requests.Cpu().String())
 			assert.Equal(t, "64Mi", opts.Resources.Limits.Memory().String())

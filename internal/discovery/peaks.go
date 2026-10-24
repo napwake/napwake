@@ -28,7 +28,7 @@ import (
 	"strings"
 	"time"
 
-	v1alpha1 "github.com/okedeji/hybernate/api/v1alpha1"
+	v1alpha1 "github.com/napwake/napwake/api/v1alpha1"
 )
 
 // WorkloadCPU picks a workload's own containers out of CPU history: its

@@ -1,5 +1,5 @@
 image:
-  repository: ghcr.io/okedeji/hybernate
+  repository: ghcr.io/napwake/napwake
   tag: "" # defaults to the chart's appVersion
   pullPolicy: IfNotPresent
 
@@ -87,18 +87,18 @@ metrics:
 prometheus:
   url: "" # required only for Prometheus activity queries, e.g. http://prometheus.monitoring.svc:9090
 
-# Namespaces Hybernate works in. Empty means every namespace, with a
-# ClusterRole; set, Hybernate gets a Role in each of these only, and can't
+# Namespaces Napwake works in. Empty means every namespace, with a
+# ClusterRole; set, Napwake gets a Role in each of these only, and can't
 # read or scale workloads anywhere else.
 watchNamespaces: []
 
-# Name patterns, such as prod-*, of namespaces Hybernate never manages,
-# as if labelled hybernate.io/protected=true, unless a namespace is
-# labelled hybernate.io/allow-protected=true. kube-*, and the operator's
+# Name patterns, such as prod-*, of namespaces Napwake never manages,
+# as if labelled napwake.dev/protected=true, unless a namespace is
+# labelled napwake.dev/allow-protected=true. kube-*, and the operator's
 # and the doorman's namespace, are always protected, besides these.
 protectedNamespaces: []
 
-# Settings for workloads opted in with the hybernate.io/managed label, where
+# Settings for workloads opted in with the napwake.dev/managed label, where
 # their own annotations and their namespace's don't say otherwise.
 defaults:
   idleAfter: 1h

@@ -1,6 +1,6 @@
-# Contributing to Hybernate
+# Contributing to Napwake
 
-Thanks for your interest in contributing to Hybernate!
+Thanks for your interest in contributing to Napwake!
 
 For development setup, coding standards, commit conventions, and PR guidelines, see the full guide:
 
@@ -9,15 +9,15 @@ For development setup, coding standards, commit conventions, and PR guidelines, 
 ## Quick Start
 
 ```bash
-git clone https://github.com/okedeji/hybernate.git
-cd hybernate
+git clone https://github.com/napwake/napwake.git
+cd napwake
 make build
 make test
 ```
 
 ## Reporting Issues
 
-Please open a [GitHub issue](https://github.com/okedeji/hybernate/issues) with steps to reproduce, expected behavior, and actual behavior.
+Please open a [GitHub issue](https://github.com/napwake/napwake/issues) with steps to reproduce, expected behavior, and actual behavior.
 
 ## Security
 

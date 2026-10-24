@@ -27,7 +27,7 @@ var (
 	// BuildInfo is 1, labelled with the running binary's release, so a
 	// dashboard can tell which version each operator and doorman pod runs.
 	BuildInfo = prometheus.NewGaugeVec(prometheus.GaugeOpts{
-		Name: "hybernate_build_info",
+		Name: "napwake_build_info",
 		Help: "Always 1, labelled with the version of the running operator or doorman.",
 	}, []string{"version"})
 
@@ -35,22 +35,22 @@ var (
 	// kube-state-metrics, so alerts can see which workload is in which phase
 	// and for how long.
 	WorkloadPhase = prometheus.NewGaugeVec(prometheus.GaugeOpts{
-		Name: "hybernate_workload_phase",
+		Name: "napwake_workload_phase",
 		Help: "Current lifecycle phase of each managed workload (1 for the current phase).",
 	}, []string{"namespace", "workload", "phase"})
 
 	ReconcileErrors = prometheus.NewCounterVec(prometheus.CounterOpts{
-		Name: "hybernate_reconcile_errors_total",
+		Name: "napwake_reconcile_errors_total",
 		Help: "Total reconciliation errors by controller.",
 	}, []string{"controller"})
 
 	LifecycleTransitions = prometheus.NewCounterVec(prometheus.CounterOpts{
-		Name: "hybernate_lifecycle_transitions_total",
+		Name: "napwake_lifecycle_transitions_total",
 		Help: "Total lifecycle phase transitions.",
 	}, []string{"from", "to"})
 
 	LifecycleActionDuration = prometheus.NewHistogramVec(prometheus.HistogramOpts{
-		Name:    "hybernate_lifecycle_action_duration_seconds",
+		Name:    "napwake_lifecycle_action_duration_seconds",
 		Help:    "Duration of lifecycle actions (pause, resume).",
 		Buckets: prometheus.ExponentialBuckets(0.1, 2, 10),
 	}, []string{"action"})
@@ -60,33 +60,33 @@ var (
 
 var (
 	PredictionConfidence = prometheus.NewGaugeVec(prometheus.GaugeOpts{
-		Name: "hybernate_prediction_confidence_percent",
+		Name: "napwake_prediction_confidence_percent",
 		Help: "Prediction engine confidence percentage by season.",
 	}, []string{"season", "namespace", "workload"})
 
 	PredictionPhase = prometheus.NewGaugeVec(prometheus.GaugeOpts{
-		Name: "hybernate_prediction_phase",
+		Name: "napwake_prediction_phase",
 		Help: "Prediction engine phase (0=Observing, 1=DailySuggesting, 2=DailyActive, 3=WeeklySuggesting, 4=FullyActive).",
 	}, []string{"namespace", "workload"})
 
 	PredictionDataPoints = prometheus.NewGaugeVec(prometheus.GaugeOpts{
-		Name: "hybernate_prediction_data_points",
+		Name: "napwake_prediction_data_points",
 		Help: "Total data points collected by the prediction engine.",
 	}, []string{"namespace", "workload"})
 
 	PredictionAnomalies = prometheus.NewCounterVec(prometheus.CounterOpts{
-		Name: "hybernate_prediction_anomalies_total",
+		Name: "napwake_prediction_anomalies_total",
 		Help: "Total anomalies detected by the prediction engine.",
 	}, []string{"namespace", "workload"})
 
 	IdleDetections = prometheus.NewCounterVec(prometheus.CounterOpts{
-		Name: "hybernate_idle_detections_total",
+		Name: "napwake_idle_detections_total",
 		Help: "Times each workload's idle clock ran out.",
 	}, []string{"namespace", "workload"})
 
 	ExternalScaleUps = prometheus.NewCounterVec(prometheus.CounterOpts{
-		Name: "hybernate_external_scale_ups_total",
-		Help: "Paused workloads scaled up outside Hybernate, by what did it: argo-cd, flux, or other.",
+		Name: "napwake_external_scale_ups_total",
+		Help: "Paused workloads scaled up outside Napwake, by what did it: argo-cd, flux, or other.",
 	}, []string{"by"})
 )
 
@@ -94,22 +94,22 @@ var (
 
 var (
 	IdleSeconds = prometheus.NewGaugeVec(prometheus.GaugeOpts{
-		Name: "hybernate_idle_seconds",
+		Name: "napwake_idle_seconds",
 		Help: "Seconds since the workload's last activity from any source.",
 	}, []string{"namespace", "workload"})
 
 	PredictionRegimeChanges = prometheus.NewCounterVec(prometheus.CounterOpts{
-		Name: "hybernate_prediction_regime_changes_total",
+		Name: "napwake_prediction_regime_changes_total",
 		Help: "Total regime changes detected by the prediction engine.",
 	}, []string{"namespace", "workload"})
 
 	DryrunActions = prometheus.NewCounterVec(prometheus.CounterOpts{
-		Name: "hybernate_dryrun_actions_total",
+		Name: "napwake_dryrun_actions_total",
 		Help: "Total actions that would have been taken in dry-run mode.",
 	}, []string{"action"})
 
 	TargetUnavailable = prometheus.NewCounterVec(prometheus.CounterOpts{
-		Name: "hybernate_target_unavailable_total",
+		Name: "napwake_target_unavailable_total",
 		Help: "Total times the target workload was not found.",
 	}, []string{"namespace", "workload"})
 )
@@ -123,27 +123,27 @@ var (
 // recorded, which are set against what every pool has left over.
 var (
 	CapacityPausedCPUCores = prometheus.NewGaugeVec(prometheus.GaugeOpts{
-		Name: "hybernate_capacity_paused_cpu_cores",
-		Help: "vCPUs the replicas Hybernate holds paused requested, by the node pool they ran in.",
+		Name: "napwake_capacity_paused_cpu_cores",
+		Help: "vCPUs the replicas Napwake holds paused requested, by the node pool they ran in.",
 	}, []string{"pool"})
 
 	CapacityPausedMemoryBytes = prometheus.NewGaugeVec(prometheus.GaugeOpts{
-		Name: "hybernate_capacity_paused_memory_bytes",
-		Help: "Memory the replicas Hybernate holds paused requested, by the node pool they ran in.",
+		Name: "napwake_capacity_paused_memory_bytes",
+		Help: "Memory the replicas Napwake holds paused requested, by the node pool they ran in.",
 	}, []string{"pool"})
 
 	CapacitySpareCPUCores = prometheus.NewGaugeVec(prometheus.GaugeOpts{
-		Name: "hybernate_capacity_spare_cpu_cores",
+		Name: "napwake_capacity_spare_cpu_cores",
 		Help: "Allocatable vCPUs no pod requests on each node pool's schedulable, Ready nodes.",
 	}, []string{"pool"})
 
 	CapacitySpareMemoryBytes = prometheus.NewGaugeVec(prometheus.GaugeOpts{
-		Name: "hybernate_capacity_spare_memory_bytes",
+		Name: "napwake_capacity_spare_memory_bytes",
 		Help: "Allocatable memory no pod requests on each node pool's schedulable, Ready nodes.",
 	}, []string{"pool"})
 
 	SavingsRealisedDollarsPerHour = prometheus.NewGaugeVec(prometheus.GaugeOpts{
-		Name: "hybernate_savings_realised_dollars_per_hour",
+		Name: "napwake_savings_realised_dollars_per_hour",
 		Help: "What the paused replicas a node pool's spare capacity can't hold would cost, at its nodes' " +
 			"list rates: what pausing takes off the bill each hour, at least.",
 	}, []string{"pool"})
@@ -153,7 +153,7 @@ var (
 // "none" when it could read everywhere it looks and found none, "unknown"
 // when it couldn't. Freed capacity reaches the bill only as nodes scale down.
 var NodeAutoscaler = prometheus.NewGaugeVec(prometheus.GaugeOpts{
-	Name: "hybernate_node_autoscaler",
+	Name: "napwake_node_autoscaler",
 	Help: "1 for each node autoscaler found, by kind; none or unknown when there's none or it couldn't tell.",
 }, []string{"kind"})
 
@@ -189,34 +189,34 @@ var (
 	// asleep page) and turned_away (anything else was told it's asleep, and
 	// nothing woke).
 	DoormanWakes = prometheus.NewCounterVec(prometheus.CounterOpts{
-		Name: "hybernate_doorman_wakes_total",
+		Name: "napwake_doorman_wakes_total",
 		Help: "Connections the doorman accepted for a paused workload, by result " +
 			"(success, page, timeout, error, canceled, ignored, limited, refused, asked, turned_away).",
 	}, []string{"namespace", "workload", "result"})
 
 	DoormanWaitSeconds = prometheus.NewHistogramVec(prometheus.HistogramOpts{
-		Name:    "hybernate_doorman_wait_seconds",
+		Name:    "napwake_doorman_wait_seconds",
 		Help:    "How long the doorman held a connection before passing it through or closing it.",
 		Buckets: prometheus.ExponentialBuckets(0.25, 2, 10),
 	}, []string{"result"})
 
 	DoormanHeldConnections = prometheus.NewGauge(prometheus.GaugeOpts{
-		Name: "hybernate_doorman_held_connections",
+		Name: "napwake_doorman_held_connections",
 		Help: "Connections the doorman is holding while their workload wakes.",
 	})
 
 	DoormanProxiedConnections = prometheus.NewGauge(prometheus.GaugeOpts{
-		Name: "hybernate_doorman_proxied_connections",
+		Name: "napwake_doorman_proxied_connections",
 		Help: "Connections the doorman has passed to a woken workload and is still carrying.",
 	})
 
 	DoormanPortConflicts = prometheus.NewGauge(prometheus.GaugeOpts{
-		Name: "hybernate_doorman_port_conflicts",
+		Name: "napwake_doorman_port_conflicts",
 		Help: "Doorman ports claimed by more than one route, which the doorman refuses to serve.",
 	})
 
 	DoormanListenFailures = prometheus.NewGauge(prometheus.GaugeOpts{
-		Name: "hybernate_doorman_listen_failures",
+		Name: "napwake_doorman_listen_failures",
 		Help: "Routed doorman ports this doorman pod can't listen on, which refuse every connection.",
 	})
 )

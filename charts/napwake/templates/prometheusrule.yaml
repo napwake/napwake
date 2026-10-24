@@ -1,0 +1,75 @@
+{{- include "napwake.defaults" . -}}
+{{- if and .Values.metrics.enabled .Values.metrics.prometheusRule.enabled }}
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: {{ include "napwake.fullname" . }}
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "napwake.labels" . | nindent 4 }}
+    {{- with .Values.metrics.prometheusRule.additionalLabels }}
+    {{- toYaml . | nindent 4 }}
+    {{- end }}
+spec:
+  groups:
+    - name: napwake.critical
+      rules:
+        - alert: NapwakeReconcileErrorsHigh
+          expr: rate(napwake_reconcile_errors_total[5m]) > 0.1
+          for: 10m
+          labels:
+            severity: critical
+          annotations:
+            summary: "Napwake reconcile error rate is high"
+            description: "Controller {{ "{{" }} $labels.controller {{ "}}" }} is seeing >0.1 errors/sec for 10 minutes."
+        {{- /*
+        These match the scrape jobs the chart's ServiceMonitors make, and
+        would fire forever without them.
+        */}}
+        {{- if .Values.metrics.serviceMonitor.enabled }}
+        - alert: NapwakeDown
+          expr: absent(up{job="{{ include "napwake.fullname" . }}-metrics"} == 1)
+          for: 5m
+          labels:
+            severity: critical
+          annotations:
+            summary: "Napwake operator is down"
+            description: "No healthy Napwake operator target has been scraped for 5 minutes, so nothing is paused or woken."
+        {{- if .Values.doorman.enabled }}
+        - alert: NapwakeDoormanDown
+          expr: absent(up{job="{{ include "napwake.doormanName" . }}"} == 1)
+          for: 5m
+          labels:
+            severity: critical
+          annotations:
+            summary: "Napwake doorman is down"
+            description: "No healthy doorman target has been scraped for 5 minutes, so requests to paused workloads fail instead of waking them."
+        {{- end }}
+        {{- end }}
+    - name: napwake.warning
+      rules:
+        - alert: NapwakeDoormanWakesFailing
+          expr: sum by (namespace, workload) (increase(napwake_doorman_wakes_total{result=~"timeout|error"}[15m])) > 3
+          for: 5m
+          labels:
+            severity: warning
+          annotations:
+            summary: "Doorman wakes failing for {{ "{{" }} $labels.workload {{ "}}" }}"
+            description: "Requests to paused workload {{ "{{" }} $labels.namespace {{ "}}" }}/{{ "{{" }} $labels.workload {{ "}}" }} are timing out or failing while it wakes. Check its events and the doorman logs."
+        - alert: NapwakeWorkloadStuck
+          expr: max by (namespace, workload, phase) (napwake_workload_phase{phase=~"Pausing|Resuming"}) == 1
+          for: 15m
+          labels:
+            severity: warning
+          annotations:
+            summary: "Workload {{ "{{" }} $labels.workload {{ "}}" }} stuck in {{ "{{" }} $labels.phase {{ "}}" }}"
+            description: "ManagedWorkload {{ "{{" }} $labels.namespace {{ "}}" }}/{{ "{{" }} $labels.workload {{ "}}" }} has been {{ "{{" }} $labels.phase {{ "}}" }} for 15 minutes. Check its events and conditions."
+        - alert: NapwakeTargetUnavailable
+          expr: increase(napwake_target_unavailable_total[1h]) > 3
+          for: 15m
+          labels:
+            severity: warning
+          annotations:
+            summary: "Target workload not found for {{ "{{" }} $labels.workload {{ "}}" }}"
+            description: "ManagedWorkload {{ "{{" }} $labels.namespace {{ "}}" }}/{{ "{{" }} $labels.workload {{ "}}" }} cannot find its target. It may have been deleted or renamed."
+{{- end }}

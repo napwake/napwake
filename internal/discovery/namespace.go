@@ -31,8 +31,8 @@ import (
 	metricsv1beta1 "k8s.io/metrics/pkg/apis/metrics/v1beta1"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
-	v1alpha1 "github.com/okedeji/hybernate/api/v1alpha1"
-	"github.com/okedeji/hybernate/internal/metrics"
+	v1alpha1 "github.com/napwake/napwake/api/v1alpha1"
+	"github.com/napwake/napwake/internal/metrics"
 )
 
 // namespaceWorkers is how many namespaces are scanned at once. Each reads
@@ -162,7 +162,7 @@ func (s *Scanner) scanNamespace(ctx, historyCtx context.Context, namespace strin
 			Protected: protected,
 			Platform:  platform[string(wl.kind)+"/"+obj.GetName()],
 
-			protectedByHybernate: hybernateProtects(mw),
+			protectedByNapwake: napwakeProtects(mw),
 		}
 		w.recordGitOps(reads.gitOps.Replicas(ctx, obj))
 		rollouts := owners.rollouts[obj.GetUID()]
@@ -176,10 +176,10 @@ func (s *Scanner) scanNamespace(ctx, historyCtx context.Context, namespace strin
 
 		var running []corev1.Pod
 		if n == 0 {
-			if pausedByHybernate(mw) {
+			if pausedByNapwake(mw) {
 				judgePaused(&w, mw, now)
 			} else {
-				w.State, w.Reason, w.ScaledByHand = StatePaused, "scaled to zero, not by Hybernate", true
+				w.State, w.Reason, w.ScaledByHand = StatePaused, "scaled to zero, not by Napwake", true
 			}
 		} else {
 			sel, err := wl.podSelector()
@@ -257,9 +257,9 @@ func (s *Scanner) readHistoryOf(ctx, historyCtx context.Context, scan *namespace
 	return history
 }
 
-// hybernateProtects reports whether a workload's ManagedWorkload says
-// Hybernate never pauses it.
-func hybernateProtects(mw *v1alpha1.ManagedWorkload) bool {
+// napwakeProtects reports whether a workload's ManagedWorkload says
+// Napwake never pauses it.
+func napwakeProtects(mw *v1alpha1.ManagedWorkload) bool {
 	return mw != nil && meta.IsStatusConditionTrue(mw.Status.Conditions, "Protected")
 }
 
@@ -533,7 +533,7 @@ func (s *Scanner) readServices(ctx context.Context, reads *clusterReads, namespa
 }
 
 // managedInNamespace returns the ManagedWorkload covering each workload,
-// keyed by "Kind/name". Without Hybernate installed there are none, which
+// keyed by "Kind/name". Without Napwake installed there are none, which
 // isn't an error.
 func (s *Scanner) managedInNamespace(ctx context.Context, reads *clusterReads, namespace string) (
 	map[string]*v1alpha1.ManagedWorkload, error) {

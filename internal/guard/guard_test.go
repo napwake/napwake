@@ -33,10 +33,10 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 	"sigs.k8s.io/controller-runtime/pkg/client/interceptor"
 
-	v1alpha1 "github.com/okedeji/hybernate/api/v1alpha1"
+	v1alpha1 "github.com/napwake/napwake/api/v1alpha1"
 )
 
-const install = "hybernate-system"
+const install = "napwake-system"
 
 func managed(namespace, name string, finalizers ...string) *v1alpha1.ManagedWorkload {
 	return &v1alpha1.ManagedWorkload{ObjectMeta: metav1.ObjectMeta{
@@ -212,40 +212,40 @@ func TestRefusalLeadsWithOneLine(t *testing.T) {
 			name: "uninstall",
 			op:   Uninstall,
 			objs: []client.Object{managed("rc-demo", "web", v1alpha1.FinalizerCleanup), managed("blog", "api")},
-			want: "Hybernate refuses to uninstall: these ManagedWorkloads' workloads would stay paused with no " +
-				"operator: blog/api, rc-demo/web. Remove the hybernate.io/managed label from them and their " +
+			want: "Napwake refuses to uninstall: these ManagedWorkloads' workloads would stay paused with no " +
+				"operator: blog/api, rc-demo/web. Remove the napwake.dev/managed label from them and their " +
 				"namespaces, and delete ManagedWorkloads you created, then uninstall again; " +
-				"see https://okedeji.io/hybernate/getting-started/installation/#uninstall",
+				"see https://docs.napwake.dev/getting-started/installation/#uninstall",
 		},
 		{
 			name:    "upgrade",
 			op:      Upgrade,
 			watched: []string{"shop"},
 			objs:    []client.Object{managed("blog", "web", v1alpha1.FinalizerCleanup)},
-			want: "Hybernate refuses this upgrade: it stops watching namespaces where these ManagedWorkloads' " +
+			want: "Napwake refuses this upgrade: it stops watching namespaces where these ManagedWorkloads' " +
 				"workloads would stay paused with no operator: blog/web. Keep their namespaces in " +
-				"watchNamespaces, or remove the hybernate.io/managed label from them and their namespaces, " +
+				"watchNamespaces, or remove the napwake.dev/managed label from them and their namespaces, " +
 				"and delete ManagedWorkloads you created there, then upgrade again; " +
-				"see https://okedeji.io/hybernate/operations/upgrading/#narrowing-watchnamespaces",
+				"see https://docs.napwake.dev/operations/upgrading/#narrowing-watchnamespaces",
 		},
 		{
 			name: "stuck being deleted",
 			op:   Uninstall,
 			objs: []client.Object{beingDeleted("shop", "api")},
-			want: "Hybernate refuses to uninstall: these ManagedWorkloads were still being deleted after 20ms, " +
+			want: "Napwake refuses to uninstall: these ManagedWorkloads were still being deleted after 20ms, " +
 				"so the operator may not be running: shop/api. If it isn't, skip this check with --no-hooks " +
 				"and restore their workloads by hand; " +
-				"see https://okedeji.io/hybernate/getting-started/installation/#uninstall",
+				"see https://docs.napwake.dev/getting-started/installation/#uninstall",
 		},
 		{
 			name: "many left",
 			op:   Uninstall,
 			objs: many,
-			want: "Hybernate refuses to uninstall: these ManagedWorkloads' workloads would stay paused with no " +
+			want: "Napwake refuses to uninstall: these ManagedWorkloads' workloads would stay paused with no " +
 				"operator: shop/app-00, shop/app-01, shop/app-02, shop/app-03, shop/app-04, shop/app-05, " +
-				"shop/app-06, shop/app-07, shop/app-08, shop/app-09 and 2 more. Remove the hybernate.io/managed " +
+				"shop/app-06, shop/app-07, shop/app-08, shop/app-09 and 2 more. Remove the napwake.dev/managed " +
 				"label from them and their namespaces, and delete ManagedWorkloads you created, then uninstall " +
-				"again; see https://okedeji.io/hybernate/getting-started/installation/#uninstall",
+				"again; see https://docs.napwake.dev/getting-started/installation/#uninstall",
 		},
 	}
 	for _, tt := range tests {

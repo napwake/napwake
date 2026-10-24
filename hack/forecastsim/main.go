@@ -16,7 +16,7 @@ limitations under the License.
 
 // Command forecastsim runs the forecast engine and the operator's decision
 // rules through simulated traffic, or through a workload's recorded CPU,
-// and reports what Hybernate would have done: how long the forecast took
+// and reports what Napwake would have done: how long the forecast took
 // to act, the mornings autoResume had the workload ready, the wakes it
 // made for nothing, and with -pause-early, the pauses it brought forward
 // and the uses that then found the workload paused.
@@ -51,8 +51,8 @@ import (
 	"text/tabwriter"
 	"time"
 
-	"github.com/okedeji/hybernate/internal/forecast"
-	"github.com/okedeji/hybernate/internal/forecast/sim"
+	"github.com/napwake/napwake/internal/forecast"
+	"github.com/napwake/napwake/internal/forecast/sim"
 )
 
 const (

@@ -9,6 +9,6 @@ metadata:
   name: doorman-wake-key
   namespace: system
   labels:
-    app.kubernetes.io/name: hybernate
+    app.kubernetes.io/name: napwake
     app.kubernetes.io/managed-by: kustomize
 type: Opaque

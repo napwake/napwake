@@ -1,0 +1,58 @@
+{{- include "napwake.defaults" . -}}
+{{- if and .Values.metrics.enabled .Values.metrics.serviceMonitor.enabled }}
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: {{ include "napwake.fullname" . }}
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "napwake.labels" . | nindent 4 }}
+    {{- with .Values.metrics.serviceMonitor.additionalLabels }}
+    {{- toYaml . | nindent 4 }}
+    {{- end }}
+spec:
+  endpoints:
+    - path: /metrics
+      # The metrics carry the workload's namespace, which the target's own
+      # namespace label would otherwise overwrite.
+      honorLabels: true
+      port: {{ if .Values.metrics.secure }}https{{ else }}http{{ end }}
+      {{- if .Values.metrics.secure }}
+      scheme: https
+      bearerTokenFile: /var/run/secrets/kubernetes.io/serviceaccount/token
+      tlsConfig:
+        insecureSkipVerify: true
+      {{- end }}
+      interval: {{ .Values.metrics.serviceMonitor.interval | quote }}
+  selector:
+    matchLabels:
+      {{- include "napwake.selectorLabels" . | nindent 6 }}
+{{- if .Values.doorman.enabled }}
+---
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: {{ include "napwake.doormanName" . }}
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "napwake.doormanLabels" . | nindent 4 }}
+    {{- with .Values.metrics.serviceMonitor.additionalLabels }}
+    {{- toYaml . | nindent 4 }}
+    {{- end }}
+spec:
+  endpoints:
+    - path: /metrics
+      honorLabels: true
+      port: {{ if .Values.metrics.secure }}https{{ else }}http{{ end }}
+      {{- if .Values.metrics.secure }}
+      scheme: https
+      bearerTokenFile: /var/run/secrets/kubernetes.io/serviceaccount/token
+      tlsConfig:
+        insecureSkipVerify: true
+      {{- end }}
+      interval: {{ .Values.metrics.serviceMonitor.interval | quote }}
+  selector:
+    matchLabels:
+      {{- include "napwake.doormanSelectorLabels" . | nindent 6 }}
+{{- end }}
+{{- end }}

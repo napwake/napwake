@@ -35,7 +35,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/envtest"
 
-	"github.com/okedeji/hybernate/internal/gitops"
+	"github.com/napwake/napwake/internal/gitops"
 )
 
 // binaryAssets is the first envtest install under bin/k8s, or "" to leave
@@ -55,7 +55,7 @@ func binaryAssets() string {
 
 // The unit tests build managed fields by hand; this pins what the API
 // server really records when replicas are set through the scale
-// subresource, as Hybernate's pause, kubectl scale, an HPA and KEDA do.
+// subresource, as Napwake's pause, kubectl scale, an HPA and KEDA do.
 func TestReplicasWriter_APIServer(t *testing.T) {
 	env := &envtest.Environment{BinaryAssetsDirectory: binaryAssets()}
 	cfg, err := env.Start()
@@ -86,7 +86,7 @@ func TestReplicasWriter_APIServer(t *testing.T) {
 	require.NoError(t, c.SubResource("scale").Get(ctx, deploy, scale))
 	scale.Spec.Replicas = 0
 	require.NoError(t, c.SubResource("scale").Update(ctx, deploy, client.WithSubResourceBody(scale),
-		client.FieldOwner("hybernate")))
+		client.FieldOwner("napwake")))
 	require.NoError(t, c.Get(ctx, client.ObjectKeyFromObject(deploy), deploy))
 
 	writer, ok = gitops.ReplicasWriter(deploy.GetManagedFields())

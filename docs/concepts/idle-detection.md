@@ -1,6 +1,6 @@
 # Idle Detection
 
-Hybernate keeps an **activity clock** for every ManagedWorkload: the last time anything showed the workload was in use. When the clock is older than `idlePolicy.idleAfter`, the workload is paused: scaled to zero, keeping its replica count and a resource snapshot. Any single sign of activity resets it. With `idlePolicy.pauseEarly`, a confident forecast can bring the pause forward (see [Pausing Early](forecasting.md#pausing-early)).
+Napwake keeps an **activity clock** for every ManagedWorkload: the last time anything showed the workload was in use. When the clock is older than `idlePolicy.idleAfter`, the workload is paused: scaled to zero, keeping its replica count and a resource snapshot. Any single sign of activity resets it. With `idlePolicy.pauseEarly`, a confident forecast can bring the pause forward (see [Pausing Early](forecasting.md#pausing-early)).
 
 There's no learning period. A new workload can be paused as soon as it has gone `idleAfter` without activity.
 
@@ -20,12 +20,12 @@ Every source is checked, and the most recent one wins. None has priority over an
 |--------|------------------------|-------|
 | **CPU** | Usage is above `activity.cpuThreshold`% of the CPU requested by the pods reporting it | Requires metrics-server |
 | **Deploy** | The target's pod template changes: a new image, environment variable, or other template edit | None |
-| **`hybernate.io/last-activity`** | The annotation holds a time newer than the last recorded activity | Set by your own tooling |
-| **`hybernate.io/active-until`** | The annotation holds a time in the future (a hold, not an activity time) | Set by your own tooling |
-| **`hybernate.io/last-request`** | The annotation holds a time newer than the last recorded activity | Set by the [doorman](wake-on-request.md) when it holds a request for the paused workload |
+| **`napwake.dev/last-activity`** | The annotation holds a time newer than the last recorded activity | Set by your own tooling |
+| **`napwake.dev/active-until`** | The annotation holds a time in the future (a hold, not an activity time) | Set by your own tooling |
+| **`napwake.dev/last-request`** | The annotation holds a time newer than the last recorded activity | Set by the [doorman](wake-on-request.md) when it holds a request for the paused workload |
 | **Prometheus** | Any query in `activity.prometheus` returns a value above zero | `--prometheus-url`; see the [Prometheus Activity Guide](../guides/prometheus-signals.md) |
 
-Changes to the replica count don't count as a deploy, so Hybernate's own pause and resume never look like activity.
+Changes to the replica count don't count as a deploy, so Napwake's own pause and resume never look like activity.
 
 Memory isn't a source: it stays allocated whether or not anyone uses the workload.
 
@@ -40,14 +40,14 @@ Set either annotation on the ManagedWorkload or on its target Deployment or Stat
 ```bash
 # Record activity now, e.g. from a developer portal when someone opens an environment
 kubectl annotate deployment my-api -n staging --overwrite \
-  hybernate.io/last-activity="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+  napwake.dev/last-activity="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
 
 # Keep the workload awake until a time, e.g. during a demo
 kubectl annotate deployment my-api -n staging --overwrite \
-  hybernate.io/active-until="2026-10-03T18:00:00Z"
+  napwake.dev/active-until="2026-10-03T18:00:00Z"
 ```
 
-To wake a workload on purpose, rather than record its use, ask for it with [`hybernate.io/wake-requested`](../guides/pause.md#wake-now), which Hybernate answers, and which wakes it whatever its wake setting; [`kubectl hybernate wake`](../getting-started/kubectl-plugin.md#wake-a-workload) sets it for you and waits until the workload is Running.
+To wake a workload on purpose, rather than record its use, ask for it with [`napwake.dev/wake-requested`](../guides/pause.md#wake-now), which Napwake answers, and which wakes it whatever its wake setting; [`kubectl napwake wake`](../getting-started/kubectl-plugin.md#wake-a-workload) sets it for you and waits until the workload is Running.
 
 - A `last-activity` time in the future is treated as now. Use `active-until` for a deliberate hold, since it says when the hold ends.
 - Annotations can only keep a workload awake or wake it. They never cause a pause.
@@ -55,7 +55,7 @@ To wake a workload on purpose, rather than record its use, ask for it with [`hyb
 
 ## The decision
 
-A workload at zero replicas that Hybernate didn't pause isn't checked at all: it's already off, and [left that way](../guides/pause.md#workloads-already-at-zero). For any other, each check runs in this order:
+A workload at zero replicas that Napwake didn't pause isn't checked at all: it's already off, and [left that way](../guides/pause.md#workloads-already-at-zero). For any other, each check runs in this order:
 
 1. CPU, or a configured Prometheus query, can't be read: stay awake (see [below](#when-a-source-cant-be-read)).
 2. `active-until` is in the future: stay awake.
@@ -66,7 +66,7 @@ A workload at zero replicas that Hybernate didn't pause isn't checked at all: it
 
 Without an `idlePolicy`, none of this runs, and the workload is only paused when someone asks.
 
-A [pause request](../guides/pause.md#pause-now), from `kubectl hybernate pause`, runs the clock out at once. Steps 1 and 3 don't apply, and nor does the hour Hybernate waits after a GitOps tool undid its last pause, since someone asked; an `active-until` hold, awake dependents and a `dependsOn` cycle still keep the workload up, and so does the forecast (step 4) unless the request comes with `hybernate.io/pause-overrides-forecast: "true"`, which `kubectl hybernate pause --yes` sets. A request held back is answered with the reason.
+A [pause request](../guides/pause.md#pause-now), from `kubectl napwake pause`, runs the clock out at once. Steps 1 and 3 don't apply, and nor does the hour Napwake waits after a GitOps tool undid its last pause, since someone asked; an `active-until` hold, awake dependents and a `dependsOn` cycle still keep the workload up, and so does the forecast (step 4) unless the request comes with `napwake.dev/pause-overrides-forecast: "true"`, which `kubectl napwake pause --yes` sets. A request held back is answered with the reason.
 
 With `dryRun: true`, the phase still becomes `Idle` and the `IdleDetected` or `PausedEarly` event carries a `[dry-run]` prefix, but nothing is changed. If activity resumes, the phase goes back to `Running`. See [Dry Run](../guides/dry-run.md).
 
@@ -74,7 +74,7 @@ The forecast never blocks a pause until it's confident, so a workload with no hi
 
 ## When a source can't be read
 
-Hybernate never pauses a workload while one of its activity sources can't be read: without that data a busy workload looks idle. Nor does it count that time as idle: a check where a source can't be read doesn't count as watching, so a source out for longer than the gap allowed [below](#restarts-and-outages) restarts the clock (`lastActivitySource: unobserved`), with an `Unobserved` event once it's back, and once the source is back, the workload pauses only after a full `idleAfter` in which every source saw nothing. A shorter blind spot, such as the minute before a woken workload's new pods have metrics, leaves its last activity as it was. A Prometheus query that answers "no requests in the last 5 minutes" as it comes back doesn't make the hour before it look idle. For CPU, the `MetricsAvailable` condition says why:
+Napwake never pauses a workload while one of its activity sources can't be read: without that data a busy workload looks idle. Nor does it count that time as idle: a check where a source can't be read doesn't count as watching, so a source out for longer than the gap allowed [below](#restarts-and-outages) restarts the clock (`lastActivitySource: unobserved`), with an `Unobserved` event once it's back, and once the source is back, the workload pauses only after a full `idleAfter` in which every source saw nothing. A shorter blind spot, such as the minute before a woken workload's new pods have metrics, leaves its last activity as it was. A Prometheus query that answers "no requests in the last 5 minutes" as it comes back doesn't make the hour before it look idle. For CPU, the `MetricsAvailable` condition says why:
 
 | Reason | Meaning |
 |--------|---------|
@@ -90,7 +90,7 @@ For Prometheus queries, the `PrometheusAvailable` condition reports `EndpointNot
 
 The clock is stored in `status.activity`, so it survives operator restarts. While a workload is awake it's checked about once a minute; the clock's timestamps are written to status at most every 5 minutes, along with cost, and immediately whenever the phase or a condition changes, or when new activity is more than a tenth of `idleAfter` (at most 5 minutes) ahead of what's written. Activity seen between writes is held in memory, so it still counts while the operator runs; after a restart, the operator has only what was written.
 
-If the operator stops watching a workload for a while, it can't know whether there was activity in the meantime, so the clock restarts from the time it resumes watching (`lastActivitySource: unobserved`). How long a gap it allows depends on `idleAfter`: half of it, but at least 2 minutes (two missed checks) and at most 7. When a gap restarts the clock, an `Unobserved` event says how long it was: `Hybernate wasn't watching for 9 minutes, so its idle clock starts again`, or `couldn't read its activity for 9 minutes` when a source was out. It comes with the first check that can read every source. A gap isn't activity, so it only restarts the clock of a workload that's awake: a paused workload stays paused, and in dry-run a would-be pause goes on, as the real one would (see [Dry Run](../guides/dry-run.md)). An outage can delay a pause, but never cause one.
+If the operator stops watching a workload for a while, it can't know whether there was activity in the meantime, so the clock restarts from the time it resumes watching (`lastActivitySource: unobserved`). How long a gap it allows depends on `idleAfter`: half of it, but at least 2 minutes (two missed checks) and at most 7. When a gap restarts the clock, an `Unobserved` event says how long it was: `Napwake wasn't watching for 9 minutes, so its idle clock starts again`, or `couldn't read its activity for 9 minutes` when a source was out. It comes with the first check that can read every source. A gap isn't activity, so it only restarts the clock of a workload that's awake: a paused workload stays paused, and in dry-run a would-be pause goes on, as the real one would (see [Dry Run](../guides/dry-run.md)). An outage can delay a pause, but never cause one.
 
 After a restart or a change of leader, the operator has only what was written, which can be up to 5 minutes behind its last check, and can be missing activity seen since, up to a tenth of `idleAfter`. So an awake workload's clock always restarts at a restart, however recently it was written, with an `Unobserved` event: `the operator restarted, or another took over, so its idle clock starts again; it wasn't watching for up to 4 minutes`: up to, since the last check may have come later than what's written. A restart can delay a pause by up to `idleAfter`, but never brings one forward. A paused workload stays paused through it, and in dry-run a would-be pause goes on.
 
@@ -108,11 +108,11 @@ status:
 A paused workload wakes when:
 
 - A request reaches one of its Services. The request is held while the workload starts, then answered; see [Wake on Request](wake-on-request.md).
-- A `hybernate.io/last-activity`, `last-request` or `active-until` annotation on the ManagedWorkload or its target changes after the pause began to an RFC 3339 time, whatever time it states, so a clock that's behind the operator's can't lose a wake. Only a change counts: the pause records the annotations as they stood, so a value set before it, even one stating a later time, doesn't wake it.
-- A [wake request](../guides/pause.md#wake-now): a new value of `hybernate.io/wake-requested` on the ManagedWorkload, whatever its wake setting. `kubectl hybernate wake` sets it, and so can a "start environment" button in a developer portal, which can then read Hybernate's answer in the `WakeRequest` condition.
+- A `napwake.dev/last-activity`, `last-request` or `active-until` annotation on the ManagedWorkload or its target changes after the pause began to an RFC 3339 time, whatever time it states, so a clock that's behind the operator's can't lose a wake. Only a change counts: the pause records the annotations as they stood, so a value set before it, even one stating a later time, doesn't wake it.
+- A [wake request](../guides/pause.md#wake-now): a new value of `napwake.dev/wake-requested` on the ManagedWorkload, whatever its wake setting. `kubectl napwake wake` sets it, and so can a "start environment" button in a developer portal, which can then read Napwake's answer in the `WakeRequest` condition.
 - A [Prometheus activity query](../guides/prometheus-signals.md#while-the-workload-is-paused) shows activity: the queries are run about once a minute while it's paused, as while it's awake. One that already showed activity as a [requested pause](../guides/pause.md#pause-now) began wakes it only once it has been quiet, so it doesn't undo the request, and one that can't be evaluated never wakes it.
 - `autoResume: true` is set and a confident forecast (`dailyPhase: Active`) predicts utilization above `cpuThreshold` for the current hour, or for the next hour once it's 15 minutes away, so the workload is ready before people arrive; not the hour after one far quieter than it forecast.
-- Something other than Hybernate scales it up, such as `kubectl scale`.
+- Something other than Napwake scales it up, such as `kubectl scale`.
 - Dry-run is turned on: dry-run never leaves a workload paused.
 
 Each wake restarts the clock, so a woken workload gets a full `idleAfter` before it can pause again, unless [`pauseEarly`](forecasting.md#pausing-early) is on and the forecast expects the coming hours quiet: then the pause can come 20 minutes after the wake. The clock records `lastActivitySource: request` when a held request woke it, `prometheus` when an activity query did, `scaled-up` when something else scaled it up, and `woke` for any other wake.

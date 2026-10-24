@@ -32,9 +32,9 @@ import (
 	"k8s.io/utils/ptr"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
-	v1alpha1 "github.com/okedeji/hybernate/api/v1alpha1"
-	"github.com/okedeji/hybernate/internal/doorman"
-	"github.com/okedeji/hybernate/internal/forecast"
+	v1alpha1 "github.com/napwake/napwake/api/v1alpha1"
+	"github.com/napwake/napwake/internal/doorman"
+	"github.com/napwake/napwake/internal/forecast"
 )
 
 // quietForecast is a confident forecast that expects no demand in any hour.
@@ -115,7 +115,7 @@ func TestEarlyPause_PausesBeforeIdleAfterRunsOut(t *testing.T) {
 	assert.Empty(t, recorded(r.Recorder.(*events.FakeRecorder), ReasonIdleDetected))
 }
 
-// A Service whose every port hybernate.io/doorman-ignore-ports leaves out,
+// A Service whose every port napwake.dev/doorman-ignore-ports leaves out,
 // such as one only a scraper uses, is meant to fail while the workload is
 // paused, so it doesn't hold an early pause back.
 func TestEarlyPause_IgnoredPortsDontHoldItBack(t *testing.T) {
@@ -301,7 +301,7 @@ func TestEarlyPause_HeldByAwakeDependents(t *testing.T) {
 }
 
 // After a GitOps tool undid the last pause, an early pause waits out the
-// hour Hybernate gives it, as the clock's pause does.
+// hour Napwake gives it, as the clock's pause does.
 func TestEarlyPause_WaitsAfterAGitOpsConflict(t *testing.T) {
 	r, workload, target, pauser := earlyPause(t, 30*time.Minute, quietForecast(), func(w *v1alpha1.ManagedWorkload) {
 		w.Status.LastScaledUp = &v1alpha1.ScaledUp{At: metav1.NewTime(fixedTime.Add(-10 * time.Minute)),

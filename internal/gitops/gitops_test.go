@@ -96,10 +96,10 @@ func TestReplicasWriter(t *testing.T) {
 
 func TestFieldWriter(t *testing.T) {
 	const (
-		dryRun = `{"f:metadata":{"f:annotations":{"f:hybernate.io/dry-run":{}}}}`
+		dryRun = `{"f:metadata":{"f:annotations":{"f:napwake.dev/dry-run":{}}}}`
 		other  = `{"f:metadata":{"f:annotations":{"f:team":{}}}}`
 	)
-	path := []string{"metadata", "annotations", "hybernate.io/dry-run"}
+	path := []string{"metadata", "annotations", "napwake.dev/dry-run"}
 	tests := []struct {
 		name   string
 		fields []metav1.ManagedFieldsEntry

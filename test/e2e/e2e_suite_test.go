@@ -32,19 +32,19 @@ import (
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
-	"github.com/okedeji/hybernate/test/utils"
+	"github.com/napwake/napwake/test/utils"
 )
 
 var (
 	// managerImage is built from the working tree and loaded into kind. Its
 	// tag isn't latest, so the kubelet never tries to pull it.
-	managerImage = "hybernate:e2e"
+	managerImage = "napwake:e2e"
 	// pauseImage runs the Deployments the specs manage without serving them.
 	// The Makefile preloads it into kind so the tests don't depend on a
 	// registry pull.
 	pauseImage = "registry.k8s.io/pause:3.10"
 	// pluginBinary is the kubectl plugin, built by the suite.
-	pluginBinary = "bin/kubectl-hybernate"
+	pluginBinary = "bin/kubectl-napwake"
 	// webImage serves HTTP for the specs that wake a workload on a request;
 	// also preloaded.
 	webImage = "registry.k8s.io/e2e-test-images/agnhost:2.52"
@@ -70,12 +70,12 @@ func TestE2E(t *testing.T) {
 	RegisterFailHandler(Fail)
 	SetDefaultEventuallyTimeout(2 * time.Minute)
 	SetDefaultEventuallyPollingInterval(time.Second)
-	_, _ = fmt.Fprintf(GinkgoWriter, "Starting hybernate e2e test suite\n")
+	_, _ = fmt.Fprintf(GinkgoWriter, "Starting napwake e2e test suite\n")
 	RunSpecs(t, "e2e suite")
 }
 
 // The specs run in parallel against one cluster: the first process builds
-// and deploys Hybernate and installs everything any spec needs, cluster-wide
+// and deploys Napwake and installs everything any spec needs, cluster-wide
 // add-ons included, and the others wait for it. Nothing cluster-wide is
 // installed or removed while specs run, so no spec can pull an add-on, or
 // an API it serves, out from under another.
@@ -93,7 +93,7 @@ var _ = SynchronizedBeforeSuite(func() {
 	ExpectWithOffset(1, err).NotTo(HaveOccurred(), "Failed to build the manager image")
 
 	By("building the kubectl plugin")
-	_, err = utils.Run(exec.Command("go", "build", "-o", pluginBinary, "./cmd/kubectl-hybernate"))
+	_, err = utils.Run(exec.Command("go", "build", "-o", pluginBinary, "./cmd/kubectl-napwake"))
 	ExpectWithOffset(1, err).NotTo(HaveOccurred(), "Failed to build the kubectl plugin")
 
 	By("loading the manager image on Kind")
@@ -132,8 +132,8 @@ var _ = SynchronizedBeforeSuite(func() {
 
 	By("waiting for everything installed to be ready")
 	for _, d := range []struct{ namespace, name string }{
-		{namespace, "hybernate-controller-manager"},
-		{namespace, "hybernate-doorman"},
+		{namespace, "napwake-controller-manager"},
+		{namespace, "napwake-doorman"},
 		{"ingress-nginx", "ingress-nginx-controller"},
 		{"keda", "keda-operator"},
 		{"keda", "keda-metrics-apiserver"},
@@ -175,7 +175,7 @@ func deploy(image string) error {
 	if err != nil {
 		return err
 	}
-	overlay, err := os.MkdirTemp("", "hybernate-e2e-deploy-")
+	overlay, err := os.MkdirTemp("", "napwake-e2e-deploy-")
 	if err != nil {
 		return fmt.Errorf("creating the overlay directory: %w", err)
 	}

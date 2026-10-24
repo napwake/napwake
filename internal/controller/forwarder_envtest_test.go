@@ -36,8 +36,8 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/cache"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
-	v1alpha1 "github.com/okedeji/hybernate/api/v1alpha1"
-	"github.com/okedeji/hybernate/internal/doorman"
+	v1alpha1 "github.com/napwake/napwake/api/v1alpha1"
+	"github.com/napwake/napwake/internal/doorman"
 )
 
 // The API server validates the forwarder as the operator builds it, and
@@ -57,8 +57,8 @@ var _ = ginkgo.Describe("The forwarder for Services behind GKE NEGs", func() {
 		now = time.Now()
 		gomega.Expect(k8sClient.Create(ctx, &discoveryv1.EndpointSlice{
 			ObjectMeta: metav1.ObjectMeta{
-				Name: "hybernate-doorman-abc", Namespace: doormanNS,
-				Labels: map[string]string{discoveryv1.LabelServiceName: "hybernate-doorman"},
+				Name: "napwake-doorman-abc", Namespace: doormanNS,
+				Labels: map[string]string{discoveryv1.LabelServiceName: "napwake-doorman"},
 			},
 			AddressType: discoveryv1.AddressTypeIPv4,
 			Endpoints: []discoveryv1.Endpoint{{
@@ -89,17 +89,17 @@ var _ = ginkgo.Describe("The forwarder for Services behind GKE NEGs", func() {
 			PodReader:         k8sClient,
 			Scheme:            scheme.Scheme,
 			Recorder:          events.NewFakeRecorder(100),
-			DoormanService:    "hybernate-doorman",
+			DoormanService:    "napwake-doorman",
 			DoormanNamespace:  doormanNS,
 			OperatorNamespace: thisInstall,
 			NEGForwarder: &ForwarderOptions{
-				Image:    "ghcr.io/okedeji/hybernate:test",
+				Image:    "ghcr.io/napwake/napwake:test",
 				Replicas: 2,
 				Resources: corev1.ResourceRequirements{
 					Requests: corev1.ResourceList{corev1.ResourceCPU: resource.MustParse("10m")},
 					Limits:   corev1.ResourceList{corev1.ResourceMemory: resource.MustParse("64Mi")},
 				},
-				Doorman: "hybernate-doorman-pods." + doormanNS + ".svc",
+				Doorman: "napwake-doorman-pods." + doormanNS + ".svc",
 			},
 			clock: func() time.Time { return now },
 		}
@@ -124,7 +124,7 @@ var _ = ginkgo.Describe("The forwarder for Services behind GKE NEGs", func() {
 	}
 	forwarder := func() (*appsv1.Deployment, error) {
 		var d appsv1.Deployment
-		err := k8sClient.Get(ctx, types.NamespacedName{Namespace: ns, Name: "hybernate-forwarder-api"}, &d)
+		err := k8sClient.Get(ctx, types.NamespacedName{Namespace: ns, Name: "napwake-forwarder-api"}, &d)
 		return &d, err
 	}
 	routedSlices := func() []discoveryv1.EndpointSlice {

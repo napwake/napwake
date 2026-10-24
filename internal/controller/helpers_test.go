@@ -38,8 +38,8 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 
-	v1alpha1 "github.com/okedeji/hybernate/api/v1alpha1"
-	"github.com/okedeji/hybernate/internal/forecast"
+	v1alpha1 "github.com/napwake/napwake/api/v1alpha1"
+	"github.com/napwake/napwake/internal/forecast"
 )
 
 // fakeClientBuilder is a fake API server with the field indexes
@@ -258,7 +258,7 @@ func TestForecastState_OlderVersionLearnsAgain(t *testing.T) {
 	got := drainEvents(t, fr.Reconciler)
 	assert.Contains(t, got, "Normal "+ReasonForecastReset)
 	assert.NotContains(t, got, "Warning "+ReasonForecastReset)
-	assert.Contains(t, got, "from an older version of Hybernate, so it learns again, from its CPU history in Prometheus")
+	assert.Contains(t, got, "from an older version of Napwake, so it learns again, from its CPU history in Prometheus")
 	if h := workload.Status.Prediction.History; h != nil {
 		assert.NotEqual(t, HistoryLearned, h.Reason, "the old history record is gone, to be read again")
 	}
@@ -446,7 +446,7 @@ func TestForecastOutlook(t *testing.T) {
 			wantMessage: "not learning while paused: requests don't wake it; a request can't wake it, so its demand " +
 				"can't be seen, and it learns only the hours it's awake. To learn the hours it's paused too, see why " +
 				"in its WakeOnRequest condition: " +
-				"https://okedeji.io/hybernate/concepts/wake-on-request/#when-a-workload-isnt-routed"},
+				"https://docs.napwake.dev/concepts/wake-on-request/#when-a-workload-isnt-routed"},
 		{name: "paused behind the doorman learns", outlook: forecast.Outlook{Waiting: forecast.WaitingForDay,
 			HoursOfDaySeen: 20}, workload: routed, wantReason: v1alpha1.ForecastObserving,
 			wantMessage: "learning: it has seen 20 of the 24 hours of the day, and can't act until it has seen them " +
@@ -473,7 +473,7 @@ func TestForecastOutlook(t *testing.T) {
 			}, wantReason: v1alpha1.ForecastNotLearning,
 			wantMessage: "not learning while paused: its Prometheus activity queries can't be evaluated; they can't " +
 				"show its demand until Prometheus answers, and PrometheusAvailable says why: " +
-				"https://okedeji.io/hybernate/guides/prometheus-signals/#when-a-query-cant-be-evaluated"},
+				"https://docs.napwake.dev/guides/prometheus-signals/#when-a-query-cant-be-evaluated"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -491,7 +491,7 @@ func TestForecastOutlook(t *testing.T) {
 
 // A forecast that can't learn while its workload is paused says why, from
 // the WakeOnRequest condition's reason, what fixes it, and where the docs
-// say how; the cause comes first, which kubectl hybernate's tables show.
+// say how; the cause comes first, which kubectl napwake's tables show.
 func TestForecastOutlook_SaysWhyItIsntLearningWhilePaused(t *testing.T) {
 	tests := []struct {
 		reason, cause, fix, section string
@@ -570,7 +570,7 @@ func TestForecast_ExportFailureKeepsTheLastSavedState(t *testing.T) {
 	assert.Equal(t, "Active", workload.Status.Prediction.DailyPhase)
 }
 
-// Status says which zone the forecast counts hours in, so kubectl hybernate
+// Status says which zone the forecast counts hours in, so kubectl napwake
 // status can show it without access to the operator's flags.
 func TestPredictionStatus_NamesTheTimeZone(t *testing.T) {
 	london, err := time.LoadLocation("Europe/London")

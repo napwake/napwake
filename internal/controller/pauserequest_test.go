@@ -41,8 +41,8 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/config"
 	metricsserver "sigs.k8s.io/controller-runtime/pkg/metrics/server"
 
-	v1alpha1 "github.com/okedeji/hybernate/api/v1alpha1"
-	"github.com/okedeji/hybernate/internal/forecast"
+	v1alpha1 "github.com/napwake/napwake/api/v1alpha1"
+	"github.com/napwake/napwake/internal/forecast"
 )
 
 const pauseToken = "2026-03-14T11:59:30.123456789Z"
@@ -181,7 +181,7 @@ func TestPauseRequest_EarlierActivityDoesntWake(t *testing.T) {
 	assert.Equal(t, v1alpha1.PhaseRunning, getWorkload(t, r, "api").Status.Phase)
 }
 
-// A request Hybernate won't act on is answered once, with the reason, so
+// A request Napwake won't act on is answered once, with the reason, so
 // it isn't tried again on every reconcile, and the workload is left up.
 func TestPauseRequest_Refused(t *testing.T) {
 	tests := []struct {
@@ -199,8 +199,8 @@ func TestPauseRequest_Refused(t *testing.T) {
 			wantEvent:  "Warning Protected api: pause requested, but namespace default is protected",
 		},
 		{
-			name: "scaled to zero outside Hybernate", replicas: 0, wantReason: ReasonScaledToZero,
-			wantEvent: "Normal ScaledToZero api: pause requested, but it's scaled to zero outside Hybernate",
+			name: "scaled to zero outside Napwake", replicas: 0, wantReason: ReasonScaledToZero,
+			wantEvent: "Normal ScaledToZero api: pause requested, but it's scaled to zero outside Napwake",
 		},
 		{
 			name: "target missing", replicas: 3, wantReason: ReasonTargetNotFound,
@@ -216,7 +216,7 @@ func TestPauseRequest_Refused(t *testing.T) {
 					d.Labels = map[string]string{v1alpha1.LabelIgnore: v1alpha1.True}
 				})
 			},
-			wantEvent: "Warning TargetIgnored api: pause requested, but Deployment api has the hybernate.io/ignore label",
+			wantEvent: "Warning TargetIgnored api: pause requested, but Deployment api has the napwake.dev/ignore label",
 		},
 		{
 			name: "another ManagedWorkload manages the target", replicas: 3,
@@ -253,7 +253,7 @@ func TestPauseRequest_Refused(t *testing.T) {
 				w.Annotations[v1alpha1.AnnotationActiveUntil] = fixedTime.Add(time.Hour).Format(time.RFC3339)
 			},
 			wantReason: reasonActiveUntil,
-			wantEvent: "Warning ActiveUntil api: pause requested, but the hybernate.io/active-until annotation on the " +
+			wantEvent: "Warning ActiveUntil api: pause requested, but the napwake.dev/active-until annotation on the " +
 				"ManagedWorkload keeps it awake until 2026-03-14T13:00:00Z; remove it to pause now",
 		},
 	}
@@ -285,10 +285,10 @@ func TestPauseRequest_Refused(t *testing.T) {
 	}
 }
 
-// A pause request already on a ManagedWorkload as Hybernate takes it on
+// A pause request already on a ManagedWorkload as Napwake takes it on
 // isn't acted on, however new the ManagedWorkload: it can't be told from
 // one answered before a backup was restored, and a wrong pause is the one
-// thing Hybernate never does.
+// thing Napwake never does.
 func TestPauseRequest_OnAManagedWorkloadJustCreated(t *testing.T) {
 	workload := lifecycleWorkload("api", "")
 	workload.Annotations = map[string]string{v1alpha1.AnnotationPauseRequested: pauseToken}
@@ -327,7 +327,7 @@ func TestPauseRequest_NotActedOnAgainAfterStatusIsLost(t *testing.T) {
 	assert.Equal(t, metav1.ConditionFalse, c.Status)
 	assert.Equal(t, reasonPredatesStatus, c.Reason)
 	assert.True(t, strings.HasPrefix(c.Message, "not paused at 2026-03-14 12:00 UTC: the request was on the "+
-		"ManagedWorkload before Hybernate's record of it began"), c.Message)
+		"ManagedWorkload before Napwake's record of it began"), c.Message)
 	assert.Equal(t, 1, strings.Count(drainEvents(t, r), "pause requested, but the request was on the ManagedWorkload"))
 
 	patchWorkload(t, r, func(w *v1alpha1.ManagedWorkload) {
@@ -358,7 +358,7 @@ func TestPauseRequest_DryRun(t *testing.T) {
 	c := pauseRequestCondition(t, got)
 	assert.Equal(t, metav1.ConditionFalse, c.Status)
 	assert.Equal(t, reasonDryRun, c.Reason)
-	assert.Equal(t, "not paused at 2026-03-14 12:00 UTC: dry-run is on, so Hybernate counted a would-be pause and "+
+	assert.Equal(t, "not paused at 2026-03-14 12:00 UTC: dry-run is on, so Napwake counted a would-be pause and "+
 		"left the workload running", c.Message)
 	require.NotNil(t, got.Status.DryRun)
 	assert.Equal(t, int32(1), got.Status.DryRun.Pauses)

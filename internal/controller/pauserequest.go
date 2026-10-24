@@ -25,8 +25,8 @@ import (
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
-	v1alpha1 "github.com/okedeji/hybernate/api/v1alpha1"
-	opmetrics "github.com/okedeji/hybernate/internal/metrics"
+	v1alpha1 "github.com/napwake/napwake/api/v1alpha1"
+	opmetrics "github.com/napwake/napwake/internal/metrics"
 )
 
 const (
@@ -53,7 +53,7 @@ func answeredAt(t time.Time) string {
 	return t.UTC().Format("2006-01-02 15:04 UTC")
 }
 
-// pendingPauseRequest is the hybernate.io/pause-requested value Hybernate
+// pendingPauseRequest is the napwake.dev/pause-requested value Napwake
 // hasn't acted on yet, if there is one.
 func pendingPauseRequest(workload *v1alpha1.ManagedWorkload) (string, bool) {
 	token := workload.Annotations[v1alpha1.AnnotationPauseRequested]
@@ -69,7 +69,7 @@ func (r *Reconciler) answerPauseRequest(workload *v1alpha1.ManagedWorkload, stat
 	r.setCondition(workload, conditionPauseRequest, status, reason, message)
 }
 
-// refusePauseRequest answers a pending pause request that Hybernate won't
+// refusePauseRequest answers a pending pause request that Napwake won't
 // act on, saying why. It's answered rather than left pending, so it isn't
 // tried again on every reconcile, and the event is sent once the answer is
 // written, so a failed write doesn't send it twice. Without a pending
@@ -89,17 +89,17 @@ func (r *Reconciler) refusePauseRequest(ctx context.Context, workload *v1alpha1.
 }
 
 // reconcilePauseRequest acts on a pause asked for with the
-// hybernate.io/pause-requested annotation, as kubectl hybernate pause sets
+// napwake.dev/pause-requested annotation, as kubectl napwake pause sets
 // it. The request runs the idle clock out now, and the workload is paused as
 // an idle one is, to wake on a request, on activity, or by autoResume. The
 // rules an idle pause keeps still apply: an active-until hold, awake
 // dependents and dry-run all stop it. The forecast expecting demand within
 // the hour declines it too, saying when, unless the request overrides the
 // forecast: the person asking decides, knowing it would likely be woken
-// straight back. The hour Hybernate waits after a GitOps tool undid its last
+// straight back. The hour Napwake waits after a GitOps tool undid its last
 // pause doesn't stop it, because someone asked.
 //
-// The callers before it answer a request for a workload Hybernate isn't
+// The callers before it answer a request for a workload Napwake isn't
 // managing, and one scaled to zero already. One that arrives while the
 // workload is waking is answered once it's Running, and one that arrives
 // while it's pausing once it's Paused.
@@ -154,7 +154,7 @@ func (r *Reconciler) reconcilePauseRequest(ctx context.Context, workload *v1alph
 		message: "pause requested, pausing"})
 }
 
-// heldAwakeUntil is when the hybernate.io/active-until hold on the
+// heldAwakeUntil is when the napwake.dev/active-until hold on the
 // ManagedWorkload or its target ends, and which of them sets it, or zero
 // when neither holds it awake now.
 func (r *Reconciler) heldAwakeUntil(ctx context.Context, workload *v1alpha1.ManagedWorkload,
@@ -190,7 +190,7 @@ func (r *Reconciler) pauseRequestedInDryRun(ctx context.Context, workload *v1alp
 	r.beginWouldBePause(ctx, workload)
 	workload.Status.DryRun.QueryActiveSincePause = r.queryActiveAtPause(ctx, workload)
 	r.answerPauseRequest(workload, metav1.ConditionFalse, reasonDryRun, fmt.Sprintf(
-		"not paused at %s: dry-run is on, so Hybernate counted a would-be pause and left the workload running",
+		"not paused at %s: dry-run is on, so Napwake counted a would-be pause and left the workload running",
 		answeredAt(r.now())))
 	if err := r.transition(ctx, workload, v1alpha1.PhaseIdle, ReasonPauseRequested); err != nil {
 		return nil, err

@@ -88,7 +88,7 @@ const respectIgnoreDifferences = "RespectIgnoreDifferences=true"
 var applicationList = schema.GroupVersionKind{Group: "argoproj.io", Version: "v1alpha1", Kind: "ApplicationList"}
 
 // Checker tells whether the GitOps tools that set workloads' replicas leave
-// them to Hybernate once it pauses them. Managed fields say who sets the
+// them to Napwake once it pauses them. Managed fields say who sets the
 // replicas from Git. For Argo CD, which owns them even once it's told to
 // ignore them, its Application and argocd-cm say whether it is. Each is read
 // once, however many workloads are checked, with the reader's own access:

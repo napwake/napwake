@@ -39,7 +39,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 	"sigs.k8s.io/controller-runtime/pkg/client/interceptor"
 
-	v1alpha1 "github.com/okedeji/hybernate/api/v1alpha1"
+	v1alpha1 "github.com/napwake/napwake/api/v1alpha1"
 )
 
 // longDeployment is a name long enough that the API server cuts its pods' names short.
@@ -307,7 +307,7 @@ func TestScanCluster_ReplaysHistory(t *testing.T) {
 	assert.Contains(t, strings.Join(report.Notes, "\n"), "sees CPU and rollouts only")
 
 	assert.NotNil(t, got["managed-api"].History, "managed workloads are replayed too")
-	assert.Equal(t, 2, report.Totals.Replayed.Workloads, "but what Hybernate already manages isn't counted again")
+	assert.Equal(t, 2, report.Totals.Replayed.Workloads, "but what Napwake already manages isn't counted again")
 	assert.Equal(t, 1, report.Totals.Replayed.Sleepers)
 	assert.InDelta(t, idle.Freed, report.Totals.Replayed.Freed, 0.001)
 	assert.Equal(t, "idle-api", report.Workloads[0].Name, "most freed first")
@@ -404,7 +404,7 @@ func TestHistorySource_Span(t *testing.T) {
 	assert.Equal(t, "7 days", (&HistorySource{Hours: 168}).Span())
 }
 
-// Workloads Hybernate manages are replayed with their own idleAfter;
+// Workloads Napwake manages are replayed with their own idleAfter;
 // others with the scan's.
 func TestScanCluster_ReplaysEachWithItsIdleAfter(t *testing.T) {
 	quiet := func(time.Time) float64 { return 0 }

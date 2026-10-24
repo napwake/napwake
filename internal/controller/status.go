@@ -23,7 +23,7 @@ import (
 
 	"k8s.io/apimachinery/pkg/api/equality"
 
-	v1alpha1 "github.com/okedeji/hybernate/api/v1alpha1"
+	v1alpha1 "github.com/napwake/napwake/api/v1alpha1"
 )
 
 // statusFlushInterval bounds how often status is written when only

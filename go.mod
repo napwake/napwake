@@ -1,4 +1,4 @@
-module github.com/okedeji/hybernate
+module github.com/napwake/napwake
 
 go 1.26.0
 

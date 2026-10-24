@@ -1,6 +1,6 @@
 # Dry Run Guide
 
-Dry run mode lets you observe what Hybernate would do without it ever reducing a workload's availability. The activity clock, dependency holds and the forecast all run as they do live, and only the scale to zero is skipped, so what dry-run can't show is what happens once a workload is paused: how long a wake on request takes, and whether a GitOps tool scales it straight back up. Wakes are never held back.
+Dry run mode lets you observe what Napwake would do without it ever reducing a workload's availability. The activity clock, dependency holds and the forecast all run as they do live, and only the scale to zero is skipped, so what dry-run can't show is what happens once a workload is paused: how long a wake on request takes, and whether a GitOps tool scales it straight back up. Wakes are never held back.
 
 ## Enabling Dry Run
 
@@ -13,14 +13,14 @@ metadata:
   name: my-api
   namespace: staging
   labels:
-    hybernate.io/managed: "true"
+    napwake.dev/managed: "true"
   annotations:
-    hybernate.io/dry-run: "true"
+    napwake.dev/dry-run: "true"
 ```
 
 ### On a Namespace
 
-Every opted-in workload in the namespace is measured, unless it sets its own `hybernate.io/dry-run: "false"`:
+Every opted-in workload in the namespace is measured, unless it sets its own `napwake.dev/dry-run: "false"`:
 
 ```yaml
 apiVersion: v1
@@ -28,21 +28,21 @@ kind: Namespace
 metadata:
   name: staging
   labels:
-    hybernate.io/managed: "true"
+    napwake.dev/managed: "true"
   annotations:
-    hybernate.io/dry-run: "true"
+    napwake.dev/dry-run: "true"
 ```
 
 ### Across the Cluster
 
 Set `defaults.dryRun: true` in the Helm values to measure every opted-in workload that doesn't say otherwise, on the workload or its namespace.
 
-A `hybernate.io/dry-run` value that can't be read, such as `"True"` or `"yes"`, turns dry-run on, with an `InvalidSetting` warning event on the workload: a typo in the setting meant to stop pauses must never start them.
+A `napwake.dev/dry-run` value that can't be read, such as `"True"` or `"yes"`, turns dry-run on, with an `InvalidSetting` warning event on the workload: a typo in the setting meant to stop pauses must never start them.
 
 ### On a ManagedWorkload You Wrote
 
 ```yaml title="managedworkload.yaml" linenums="1"
-apiVersion: hybernate.io/v1alpha1
+apiVersion: napwake.dev/v1alpha1
 kind: ManagedWorkload
 metadata:
   name: my-api
@@ -69,9 +69,9 @@ The operator runs its full evaluation pipeline:
 | Idle detection | The activity clock runs and the phase becomes `Idle` when it runs out, but the workload is **not** paused |
 | Forecast veto and dependency holds | Applied and reported as usual: `IdleVetoed`, `HeldByDependents`, `DependencyCycle`. A dependent in dry-run that would have paused no longer holds a dependency in dry-run, so a whole app measured in dry-run counts every pause it would make, and when the dependent's would-be pause ends, its dry-run dependencies are stamped with activity, as its wake would have woken them, so theirs end with it and their clocks restart; see [Dependencies](../concepts/dependencies.md#edge-cases) |
 | A [pause request](pause.md#pause-now) | Counted as a would-be pause: the phase becomes `Idle`, with a `[dry-run]` `PauseRequested` event and `PauseRequest=False`, reason `DryRun`, and the workload keeps running. Activity after the request ends the would-be pause, as it would wake a paused workload, except a Prometheus activity query that already showed activity as it was asked for, which ends it only once it has been quiet, as for a real pause |
-| A gap in watching, such as an operator restart, or metrics-server or Prometheus out | Doesn't end a would-be pause; activity seen after the gap does. Use during the gap ends it only if it leaves a trace that outlasts the gap, such as an activity annotation, or a Prometheus query whose range covers the gap. CPU use, or a query over a shorter range, is gone by the time the gap ends, though a request would have woken a workload paused for real, so a long gap can keep a would-be pause going and overstate what pausing would have freed. An awake workload's clock restarts as usual, with an `Unobserved` event saying how long Hybernate wasn't watching; see [Restarts and outages](../concepts/idle-detection.md#restarts-and-outages) |
-| A workload Hybernate had already paused | Woken as soon as dry-run is turned on, with a `DryRunWake` event: dry-run never leaves a workload paused |
-| Wakes | Never held back: `kubectl hybernate wake` and activity work as usual |
+| A gap in watching, such as an operator restart, or metrics-server or Prometheus out | Doesn't end a would-be pause; activity seen after the gap does. Use during the gap ends it only if it leaves a trace that outlasts the gap, such as an activity annotation, or a Prometheus query whose range covers the gap. CPU use, or a query over a shorter range, is gone by the time the gap ends, though a request would have woken a workload paused for real, so a long gap can keep a would-be pause going and overstate what pausing would have freed. An awake workload's clock restarts as usual, with an `Unobserved` event saying how long Napwake wasn't watching; see [Restarts and outages](../concepts/idle-detection.md#restarts-and-outages) |
+| A workload Napwake had already paused | Woken as soon as dry-run is turned on, with a `DryRunWake` event: dry-run never leaves a workload paused |
+| Wakes | Never held back: `kubectl napwake wake` and activity work as usual |
 | Cost tracking | Costs are accumulated normally, all as awake time, since the workload never pauses; see [Cost Tracking](../concepts/cost-tracking.md#in-dry-run) |
 | Prediction engine | Data points are observed and confidence builds normally |
 | Events | The events for decisions dry-run holds back carry a `[dry-run]` prefix; see [Events](#events) |
@@ -81,9 +81,9 @@ The operator runs its full evaluation pipeline:
 
 ### What Dry Run Measured
 
-Hybernate keeps a running summary of the pauses it would have made. A would-be pause starts when the activity clock runs out, and ends at the next activity, which is when a paused workload would have been woken. Two wakes are the exception. A request reaching a paused workload wakes it, but a workload in dry-run is still running, so a request counts only through the activity it shows, its CPU use or a [Prometheus activity query](prometheus-signals.md); and `autoResume` wakes a paused workload ahead of hours the forecast expects to be busy, which dry-run doesn't count. So for a workload that serves the odd light request, or has `autoResume` on, real pauses would be shorter than the would-be ones. A would-be pause also ends when Hybernate stops measuring it: the workload is scaled to zero outside Hybernate, labelled `hybernate.io/ignore`, or its namespace becomes protected; see [When Hybernate Lets Go](pause.md#when-hybernate-lets-go). It's counted up to that moment.
+Napwake keeps a running summary of the pauses it would have made. A would-be pause starts when the activity clock runs out, and ends at the next activity, which is when a paused workload would have been woken. Two wakes are the exception. A request reaching a paused workload wakes it, but a workload in dry-run is still running, so a request counts only through the activity it shows, its CPU use or a [Prometheus activity query](prometheus-signals.md); and `autoResume` wakes a paused workload ahead of hours the forecast expects to be busy, which dry-run doesn't count. So for a workload that serves the odd light request, or has `autoResume` on, real pauses would be shorter than the would-be ones. A would-be pause also ends when Napwake stops measuring it: the workload is scaled to zero outside Napwake, labelled `napwake.dev/ignore`, or its namespace becomes protected; see [When Napwake Lets Go](pause.md#when-napwake-lets-go). It's counted up to that moment.
 
-For a workload that serves the odd light request, add a [Prometheus activity query](prometheus-signals.md) on its request rate at its ingress, with the operator's `prometheus.url` set, so that dry-run sees requests as activity, as the doorman would see them and wake the workload. Use the ingress's metrics, not the app's own: a paused workload has no pods to export them, so a query on them shows nothing once it pauses for real. On a workload opted in with the label, add the query to the ManagedWorkload Hybernate created, which keeps it:
+For a workload that serves the odd light request, add a [Prometheus activity query](prometheus-signals.md) on its request rate at its ingress, with the operator's `prometheus.url` set, so that dry-run sees requests as activity, as the doorman would see them and wake the workload. Use the ingress's metrics, not the app's own: a paused workload has no pods to export them, so a query on them shows nothing once it pauses for real. On a workload opted in with the label, add the query to the ManagedWorkload Napwake created, which keeps it:
 
 ```bash
 kubectl patch managedworkload my-api -n staging --type=json -p '[{"op":"add","path":"/spec/idlePolicy/activity/prometheus","value":[{"promQL":"sum(rate(nginx_ingress_controller_requests{exported_namespace=\"staging\",exported_service=\"my-api\"}[5m]))"}]}]'
@@ -102,7 +102,7 @@ NAME     PHASE   FREED   SAVED   WOULD FREE   AGE
 my-api   Idle    $0.00   $0.00   $7.50        4d
 ```
 
-[`kubectl hybernate status`](../getting-started/kubectl-plugin.md#see-what-hybernate-is-doing) leads with it too, in its summary and its `WOULD FREE` column. The whole summary is in `status.dryRun`:
+[`kubectl napwake status`](../getting-started/kubectl-plugin.md#see-what-napwake-is-doing) leads with it too, in its summary and its `WOULD FREE` column. The whole summary is in `status.dryRun`:
 
 ```bash
 kubectl get managedworkload my-api -n staging -o jsonpath='{.status.dryRun}'
@@ -117,16 +117,16 @@ freedMemoryHours: "384800m"
 estimatedFreed: $7.50
 ```
 
-`freedCPUHours` and `freedMemoryHours` are the vCPU-hours and GiB-hours the workload's replicas requested during `slept`: what the would-be pauses would have freed, kept to a billionth of an hour. `estimatedFreed` is those hours priced at the workload's [cost rates](../concepts/cost-tracking.md#prices), for display; the hours are the record. It's what pausing would free, not what it would save: freed capacity becomes money only once nodes go, which Hybernate [measures](../concepts/cost-tracking.md#how-saved-is-measured) for real pauses.
+`freedCPUHours` and `freedMemoryHours` are the vCPU-hours and GiB-hours the workload's replicas requested during `slept`: what the would-be pauses would have freed, kept to a billionth of an hour. `estimatedFreed` is those hours priced at the workload's [cost rates](../concepts/cost-tracking.md#prices), for display; the hours are the record. It's what pausing would free, not what it would save: freed capacity becomes money only once nodes go, which Napwake [measures](../concepts/cost-tracking.md#how-saved-is-measured) for real pauses.
 
 `slept` and the freed hours count finished would-be pauses. While the phase is `Idle`, the one under way, which began at `status.lastTransitionTime`, is added to them when it ends; `resources` is what the workload ran when it began. `estimatedFreed` counts it as it goes, up to the last status write, at most 5 minutes ago, so a workload idle all weekend shows what it would have freed before Monday's activity ends the pause.
 
-The summary starts when dry-run does, and is removed when dry-run ends: once Hybernate is pausing, `status.cost` records what it actually frees.
+The summary starts when dry-run does, and is removed when dry-run ends: once Napwake is pausing, `status.cost` records what it actually frees.
 
-`kubectl hybernate scan` shows the same summary in each dry-run workload's COULD SLEEP, WAKES, and COULD FREE/MO columns, with a total in the headline and the command to start pausing:
+`kubectl napwake scan` shows the same summary in each dry-run workload's COULD SLEEP, WAKES, and COULD FREE/MO columns, with a total in the headline and the command to start pausing:
 
 ```
-  2 workloads are in dry-run: measured by Hybernate since starting, they would have slept 140 hours, freeing $18.20,
+  2 workloads are in dry-run: measured by Napwake since starting, they would have slept 140 hours, freeing $18.20,
   about $134 a month.
 
   NAMESPACE   WORKLOAD         STATE            BECAUSE                                     COST/MO   COULD SLEEP   WAKES   COULD FREE/MO
@@ -156,16 +156,16 @@ In dry-run the phase goes `Running` → `Idle` when the clock runs out, or a pau
 
 ## Recommended Workflow
 
-1. **Opt in with `hybernate.io/dry-run: "true"`**. Let it measure for a few days, across a weekend if the workload is used on weekdays.
-2. **Review what it measured**. `kubectl hybernate status` leads with what it would have freed, and `kubectl hybernate scan` adds how often it would have paused and for how long; the events say when.
+1. **Opt in with `napwake.dev/dry-run: "true"`**. Let it measure for a few days, across a weekend if the workload is used on weekdays.
+2. **Review what it measured**. `kubectl napwake status` leads with what it would have freed, and `kubectl napwake scan` adds how often it would have paused and for how long; the events say when.
 3. **End dry run**:
 
     ```bash
-    kubectl hybernate enable my-api -n staging
-    kubectl hybernate enable --all -n staging   # every workload in the namespace
+    kubectl napwake enable my-api -n staging
+    kubectl napwake enable --all -n staging   # every workload in the namespace
     ```
 
-    For a labelled workload, `enable` sets its own `hybernate.io/dry-run` annotation to `"false"`, which wins over its namespace's and the cluster default. With `--all`, when the namespace's annotation or the cluster default keeps any workload in dry-run, it sets the namespace's annotation to `"false"` instead and drops the workloads' own, or, when your access doesn't allow changing the namespace, sets each workload's own; when each is in dry-run by its own annotation, it sets each to `"false"`. For a ManagedWorkload you wrote, it sets `spec.dryRun: false`. If a GitOps tool (Argo CD, Flux, Fleet, kapp or Kluctl) applies the setting, it changes nothing and prints the change to make in Git instead. See [`kubectl hybernate enable`](../getting-started/kubectl-plugin.md#enable-a-workload).
+    For a labelled workload, `enable` sets its own `napwake.dev/dry-run` annotation to `"false"`, which wins over its namespace's and the cluster default. With `--all`, when the namespace's annotation or the cluster default keeps any workload in dry-run, it sets the namespace's annotation to `"false"` instead and drops the workloads' own, or, when your access doesn't allow changing the namespace, sets each workload's own; when each is in dry-run by its own annotation, it sets each to `"false"`. For a ManagedWorkload you wrote, it sets `spec.dryRun: false`. If a GitOps tool (Argo CD, Flux, Fleet, kapp or Kluctl) applies the setting, it changes nothing and prints the change to make in Git instead. See [`kubectl napwake enable`](../getting-started/kubectl-plugin.md#enable-a-workload).
 
 ## When to Use Dry Run
 

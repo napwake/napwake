@@ -15,7 +15,7 @@ limitations under the License.
 */
 
 // Package guard refuses a Helm uninstall, or an upgrade that stops
-// Hybernate watching a namespace, while it would leave ManagedWorkloads
+// Napwake watching a namespace, while it would leave ManagedWorkloads
 // with no operator to run their finalizers: their workloads would stay
 // paused at 0 replicas, with their Services routed to the doorman.
 package guard
@@ -34,7 +34,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 
-	v1alpha1 "github.com/okedeji/hybernate/api/v1alpha1"
+	v1alpha1 "github.com/napwake/napwake/api/v1alpha1"
 )
 
 // Operation is what the guard is asked to let go ahead.
@@ -228,22 +228,22 @@ func writeNames(b *strings.Builder, names []string) {
 }
 
 var help = map[Operation]string{
-	Uninstall: "https://okedeji.io/hybernate/getting-started/installation/#uninstall",
-	Upgrade:   "https://okedeji.io/hybernate/operations/upgrading/#narrowing-watchnamespaces",
+	Uninstall: "https://docs.napwake.dev/getting-started/installation/#uninstall",
+	Upgrade:   "https://docs.napwake.dev/operations/upgrading/#narrowing-watchnamespaces",
 }
 
 var refusal = map[Operation]string{
-	Uninstall: "Hybernate refuses to uninstall",
-	Upgrade:   "Hybernate refuses this upgrade",
+	Uninstall: "Napwake refuses to uninstall",
+	Upgrade:   "Napwake refuses this upgrade",
 }
 
 var keptSummary = map[Operation]string{
-	Uninstall: "Hybernate refuses to uninstall: these ManagedWorkloads' workloads would stay paused with no " +
-		"operator: %s. Remove the hybernate.io/managed label from them and their namespaces, and delete " +
+	Uninstall: "Napwake refuses to uninstall: these ManagedWorkloads' workloads would stay paused with no " +
+		"operator: %s. Remove the napwake.dev/managed label from them and their namespaces, and delete " +
 		"ManagedWorkloads you created, then uninstall again; see %s\n",
-	Upgrade: "Hybernate refuses this upgrade: it stops watching namespaces where these ManagedWorkloads' " +
+	Upgrade: "Napwake refuses this upgrade: it stops watching namespaces where these ManagedWorkloads' " +
 		"workloads would stay paused with no operator: %s. Keep their namespaces in watchNamespaces, or remove " +
-		"the hybernate.io/managed label from them and their namespaces, and delete ManagedWorkloads you created " +
+		"the napwake.dev/managed label from them and their namespaces, and delete ManagedWorkloads you created " +
 		"there, then upgrade again; see %s\n",
 }
 
@@ -266,7 +266,7 @@ stay paused at 0 replicas, with their Services still routed to the doorman:
 
 var stopText = map[Operation]string{
 	Uninstall: `Stop managing them first, while the operator runs, so it scales each one back up:
-  1. Remove the hybernate.io/managed label from these workloads and their namespaces.
+  1. Remove the napwake.dev/managed label from these workloads and their namespaces.
   2. Delete the ManagedWorkloads you created yourself:
        kubectl delete managedworkloads --all --all-namespaces
 Then uninstall again: helm uninstall, or delete the Argo CD Application. To uninstall
@@ -275,7 +275,7 @@ anyway, and restore the workloads by hand, see
 `,
 	Upgrade: `Keep their namespaces in watchNamespaces, or stop managing them first, while the operator
 still watches them, so it scales each one back up:
-  1. Remove the hybernate.io/managed label from these workloads and their namespaces.
+  1. Remove the napwake.dev/managed label from these workloads and their namespaces.
   2. Delete the ManagedWorkloads you created yourself, in each of their namespaces:
        kubectl delete managedworkloads --all --namespace <namespace>
 Then upgrade again. To upgrade anyway, and restore the workloads by hand, see

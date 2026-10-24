@@ -28,11 +28,11 @@ import (
 // +kubebuilder:printcolumn:name="Phase",type=string,JSONPath=`.status.phase`
 // +kubebuilder:printcolumn:name="Freed",type=string,JSONPath=`.status.cost.freedThisMonth`,description="What pausing freed this month (UTC), at list price"
 // +kubebuilder:printcolumn:name="Saved",type=string,JSONPath=`.status.cost.savedThisMonth`,description="What pausing took off the node bill this month (UTC), at least"
-// +kubebuilder:printcolumn:name="Would Free",type=string,JSONPath=`.status.dryRun.estimatedFreed`,description="In dry-run: what the pauses Hybernate would have made would have freed since dry-run began"
+// +kubebuilder:printcolumn:name="Would Free",type=string,JSONPath=`.status.dryRun.estimatedFreed`,description="In dry-run: what the pauses Napwake would have made would have freed since dry-run began"
 // +kubebuilder:printcolumn:name="Forecast",type=string,JSONPath=`.status.prediction.reason`,priority=1,description="Whether the forecast is acting, or what it waits for"
 // +kubebuilder:printcolumn:name="Age",type=date,JSONPath=`.metadata.creationTimestamp`
 
-// ManagedWorkload declares a workload whose lifecycle is managed by Hybernate.
+// ManagedWorkload declares a workload whose lifecycle is managed by Napwake.
 type ManagedWorkload struct {
 	metav1.TypeMeta   `json:",inline"`
 	metav1.ObjectMeta `json:"metadata,omitzero"`
@@ -90,7 +90,7 @@ type ManagedWorkloadSpec struct {
 
 	// CostTracking sets this workload's own cost rates. Cost is always
 	// tracked: without them, it's priced at the list price of the nodes the
-	// workload's pods run on (status.cost.listRates), or at Hybernate's
+	// workload's pods run on (status.cost.listRates), or at Napwake's
 	// default rates for nodes it has no price for.
 	// +optional
 	CostTracking *CostTrackingSpec `json:"costTracking,omitempty"`
@@ -267,7 +267,7 @@ type IdlePolicySpec struct {
 	// and the next, to be quiet, and a request would wake it once paused:
 	// the doorman has a Ready pod, and would route every Service that
 	// selects the workload's pods, on every port but those
-	// hybernate.io/doorman-ignore-ports lists. A headless Service, or one
+	// napwake.dev/doorman-ignore-ports lists. A headless Service, or one
 	// with a UDP or SCTP port, keeps it from pausing early. So a wrong
 	// forecast costs a request a wake, never an answer.
 	// +optional
@@ -303,7 +303,7 @@ type PrometheusActivity struct {
 // CostTrackingSpec configures how this workload's cost is priced.
 type CostTrackingSpec struct {
 	// Rates are what you pay. Each one set is used in place of the list
-	// price of the workload's nodes and of Hybernate's default rates; one
+	// price of the workload's nodes and of Napwake's default rates; one
 	// left out is priced as if Rates weren't set.
 	// +optional
 	Rates *CostRates `json:"rates,omitempty"`
@@ -360,15 +360,15 @@ type ManagedWorkloadStatus struct {
 	// +optional
 	Pause *PauseStatus `json:"pause,omitempty"`
 
-	// LearnedDependencies are the workloads Hybernate found this one depends
+	// LearnedDependencies are the workloads Napwake found this one depends
 	// on without a dependsOn: from addresses in its environment that name
 	// their Services, and from requests it sent that woke them. They're held
 	// awake and woken like dependsOn, less the ones the
-	// hybernate.io/ignore-dependencies annotation names.
+	// napwake.dev/ignore-dependencies annotation names.
 	// +optional
 	LearnedDependencies *LearnedDependencies `json:"learnedDependencies,omitempty"`
 
-	// LastScaledUp is the last time something other than Hybernate scaled
+	// LastScaledUp is the last time something other than Napwake scaled
 	// the workload up while it was paused, which wakes it.
 	// +optional
 	LastScaledUp *ScaledUp `json:"lastScaledUp,omitempty"`
@@ -407,26 +407,26 @@ type ManagedWorkloadStatus struct {
 	// +optional
 	Activity *ActivityStatus `json:"activity,omitempty"`
 
-	// DryRun is what dry-run has measured: what Hybernate would have done
+	// DryRun is what dry-run has measured: what Napwake would have done
 	// had it been allowed to pause the workload. Set only while spec.dryRun
 	// is true.
 	// +optional
 	DryRun *DryRunStatus `json:"dryRun,omitempty"`
 
-	// LastPauseRequest is the last hybernate.io/pause-requested value
-	// Hybernate acted on, so each request is acted on once, across restarts.
+	// LastPauseRequest is the last napwake.dev/pause-requested value
+	// Napwake acted on, so each request is acted on once, across restarts.
 	// The PauseRequest condition says what came of it.
 	// +optional
 	LastPauseRequest string `json:"lastPauseRequest,omitempty"`
 
-	// LastWakeRequest is the last hybernate.io/wake-requested value
-	// Hybernate acted on, so each request is acted on once, across restarts.
+	// LastWakeRequest is the last napwake.dev/wake-requested value
+	// Napwake acted on, so each request is acted on once, across restarts.
 	// The WakeRequest condition says what came of it.
 	// +optional
 	LastWakeRequest string `json:"lastWakeRequest,omitempty"`
 
 	// LastActedAt is when the target was last paused or woken: by
-	// Hybernate, or scaled up from zero outside it, such as with kubectl
+	// Napwake, or scaled up from zero outside it, such as with kubectl
 	// scale or by a GitOps tool.
 	// +optional
 	LastActedAt *metav1.Time `json:"lastActedAt,omitempty"`
@@ -478,11 +478,11 @@ const (
 	// not watch the workload, so a gap in observation never causes a pause.
 	ActivitySourceUnobserved ActivitySource = "unobserved"
 	// ActivitySourceScaledUp is a paused workload scaled up by something
-	// other than Hybernate, such as a person or a GitOps tool.
+	// other than Napwake, such as a person or a GitOps tool.
 	ActivitySourceScaledUp ActivitySource = "scaled-up"
 )
 
-// LearnedDependencies are dependencies Hybernate found, and what from.
+// LearnedDependencies are dependencies Napwake found, and what from.
 type LearnedDependencies struct {
 	// From identifies what they were learned from, the pod template and the
 	// ignore annotation, so they're learned again when either changes.
@@ -541,7 +541,7 @@ type TurnedAway struct {
 	Requests int64       `json:"requests"`
 }
 
-// ScaledUp is a paused workload scaled up outside Hybernate.
+// ScaledUp is a paused workload scaled up outside Napwake.
 type ScaledUp struct {
 	At metav1.Time `json:"at"`
 	// By is the field manager that set the replicas, such as
@@ -550,7 +550,7 @@ type ScaledUp struct {
 	// scale, an HPA or KEDA.
 	By string `json:"by"`
 	// GitOps is the GitOps tool behind By, such as Argo CD or Flux, which
-	// will set the replicas again each time Hybernate pauses the workload
+	// will set the replicas again each time Napwake pauses the workload
 	// until it's told to leave them.
 	// +optional
 	GitOps   string `json:"gitOps,omitempty"`
@@ -599,7 +599,7 @@ type ActivityStatus struct {
 	ForecastQuietUntil *metav1.Time `json:"forecastQuietUntil,omitempty"`
 }
 
-// DryRunStatus sums up the pauses Hybernate would have made in dry-run. A
+// DryRunStatus sums up the pauses Napwake would have made in dry-run. A
 // would-be pause starts when the activity clock runs out and ends at the
 // next activity, when a paused workload would have been woken.
 type DryRunStatus struct {
@@ -707,7 +707,7 @@ type PauseStatus struct {
 	Resources *ResourceSnapshot `json:"resources,omitempty"`
 
 	// ResumedAt is when the resume under way scaled the workload back up.
-	// Scaled to zero after it, by something other than Hybernate, the
+	// Scaled to zero after it, by something other than Napwake, the
 	// workload is left off rather than scaled up again.
 	// +optional
 	ResumedAt *metav1.Time `json:"resumedAt,omitempty"`
@@ -733,7 +733,7 @@ type PauseStatus struct {
 	QueryActiveSincePause bool `json:"queryActiveSincePause,omitempty"`
 }
 
-// WakeAnnotations are the hybernate.io/last-activity, last-request and
+// WakeAnnotations are the napwake.dev/last-activity, last-request and
 // active-until annotations, by name, on the ManagedWorkload and its target.
 type WakeAnnotations struct {
 	// +optional
@@ -796,7 +796,7 @@ type PredictionStatus struct {
 	Message string `json:"message,omitempty"`
 
 	// History is what the forecast learned from the workload's CPU history
-	// in Prometheus when Hybernate began managing it.
+	// in Prometheus when Napwake began managing it.
 	// +optional
 	History *PredictionHistory `json:"history,omitempty"`
 
@@ -848,7 +848,7 @@ type PredictionHistory struct {
 // dollar figures are derived from them at the workload's current rates
 // whenever they're brought up to date, and are rounded to the cent for
 // display, so CostThisMonth plus FreedThisMonth is
-// CostWithoutHybernateThisMonth to within a cent.
+// CostWithoutNapwakeThisMonth to within a cent.
 type CostStatus struct {
 	// Tracked is how much of the month the totals cover. It's less than
 	// the time since the month began when the workload was created during
@@ -874,14 +874,14 @@ type CostStatus struct {
 	StorageHours resource.Quantity `json:"storageHours"`
 
 	// PausedCPUHours and PausedMemoryHours are the vCPU-hours and GiB-hours
-	// the replicas Hybernate paused had requested, for as long as they were
+	// the replicas Napwake paused had requested, for as long as they were
 	// paused: what pausing freed.
 	PausedCPUHours    resource.Quantity `json:"pausedCPUHours"`
 	PausedMemoryHours resource.Quantity `json:"pausedMemoryHours"`
 
 	// SavedCPUHours and SavedMemoryHours are the workload's share of the
 	// vCPU-hours and GiB-hours the cluster's nodes were short of holding
-	// every replica Hybernate paused in their node pools, measured every
+	// every replica Napwake paused in their node pools, measured every
 	// 5 minutes: capacity that would have to be added for them, so a lower
 	// bound on what came off the bill. At most the paused hours.
 	SavedCPUHours    resource.Quantity `json:"savedCPUHours"`
@@ -905,10 +905,10 @@ type CostStatus struct {
 	// +optional
 	SavingsUnknown string `json:"savingsUnknown,omitempty"`
 
-	// CostWithoutHybernateThisMonth is what the workload would have cost
+	// CostWithoutNapwakeThisMonth is what the workload would have cost
 	// this month had it never been paused: CostThisMonth plus
 	// FreedThisMonth.
-	CostWithoutHybernateThisMonth string `json:"costWithoutHybernateThisMonth"`
+	CostWithoutNapwakeThisMonth string `json:"costWithoutNapwakeThisMonth"`
 
 	// ProjectedMonthlyCost, ProjectedMonthlyFreed and
 	// ProjectedMonthlySavings are CostThisMonth, FreedThisMonth and
@@ -941,7 +941,7 @@ type CostStatus struct {
 	// ListPrice says, which its cost, what it frees and what it saves are
 	// priced at unless costTracking.rates sets its own. Kept while it's
 	// paused, so a pause is priced at where it ran. Unset when its nodes
-	// aren't in Hybernate's price table, and the default rates apply.
+	// aren't in Napwake's price table, and the default rates apply.
 	// +optional
 	ListRates *CostRates `json:"listRates,omitempty"`
 
@@ -976,7 +976,7 @@ const (
 	ListPriceSpotAndOnDemand ListPrice = "SpotAndOnDemand"
 )
 
-// ResourceReduction tracks the workload-level resources freed by Hybernate
+// ResourceReduction tracks the workload-level resources freed by Napwake
 // pauses. These resources are released on the
 // node when pods are removed, but the node itself is only removed if a
 // cluster autoscaler determines it is underutilized.

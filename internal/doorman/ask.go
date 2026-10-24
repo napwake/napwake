@@ -33,7 +33,7 @@ import (
 
 	"sigs.k8s.io/controller-runtime/pkg/log"
 
-	v1alpha1 "github.com/okedeji/hybernate/api/v1alpha1"
+	v1alpha1 "github.com/napwake/napwake/api/v1alpha1"
 )
 
 const (
@@ -44,7 +44,7 @@ const (
 	// page that answers the click then reloads the page the person asked
 	// for. A POST carrying this field is the only request that wakes a
 	// workload that asks.
-	wakeField = "hybernate-wake"
+	wakeField = "napwake-wake"
 
 	// maxClickBody is the most a click's form may hold: the field and its
 	// token, with room to spare. A larger body isn't a click.
@@ -65,7 +65,7 @@ const (
 )
 
 // The results of a connection to a workload that asks, besides the usual
-// ones, as counted by hybernate_doorman_wakes_total.
+// ones, as counted by napwake_doorman_wakes_total.
 const (
 	// resultAsked is a person's browser shown the asleep page.
 	resultAsked = "asked"
@@ -90,7 +90,7 @@ var (
 	// click came from; see sameOrigin.
 	noticeNoFetchMetadata = notice{
 		text: "This browser didn't say the click came from this page, so nothing woke. Wake it with kubectl " +
-			"hybernate wake, the hybernate.io/wake-requested annotation, or a current browser.",
+			"napwake wake, the napwake.dev/wake-requested annotation, or a current browser.",
 		docs: asleepDocs,
 	}
 )

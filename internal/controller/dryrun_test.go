@@ -31,9 +31,9 @@ import (
 	"k8s.io/client-go/tools/events"
 	"k8s.io/utils/ptr"
 
-	v1alpha1 "github.com/okedeji/hybernate/api/v1alpha1"
-	"github.com/okedeji/hybernate/internal/cost"
-	"github.com/okedeji/hybernate/internal/forecast"
+	v1alpha1 "github.com/napwake/napwake/api/v1alpha1"
+	"github.com/napwake/napwake/internal/cost"
+	"github.com/napwake/napwake/internal/forecast"
 )
 
 const gibibyte = 1 << 30
@@ -319,11 +319,11 @@ func TestDryRun_WouldBePauseEndsWithoutMeasuredActivity(t *testing.T) {
 	assert.Equal(t, v1alpha1.PhaseRunning, getWorkload(t, r, "api").Status.Phase)
 }
 
-// A would-be pause ends, and is counted, when Hybernate stops measuring it:
+// A would-be pause ends, and is counted, when Napwake stops measuring it:
 // the target scaled to zero, labelled to be ignored, or in a namespace
 // protected since. It lasted until then, however long ago the last activity
 // was.
-func TestDryRun_WouldBePauseEndsWhenHybernateLetsGo(t *testing.T) {
+func TestDryRun_WouldBePauseEndsWhenNapwakeLetsGo(t *testing.T) {
 	running := func() *appsv1.Deployment { return targetDeploymentWithReplicas("api", "default", 2) }
 	ignored := running()
 	ignored.Labels = map[string]string{v1alpha1.LabelIgnore: v1alpha1.True}

@@ -153,9 +153,9 @@ func TestPlanForRefusesWhatIsntATag(t *testing.T) {
 }
 
 func TestNotFoundPage(t *testing.T) {
-	page, err := notFoundPage("/hybernate/", "latest")
+	page, err := notFoundPage("/napwake/", "latest")
 	require.NoError(t, err)
-	assert.Contains(t, string(page), `var base = "/hybernate/";`)
+	assert.Contains(t, string(page), `var base = "/napwake/";`)
 	assert.Contains(t, string(page), `var root = "latest";`)
-	assert.Contains(t, string(page), `<a href="/hybernate/">`)
+	assert.Contains(t, string(page), `<a href="/napwake/">`)
 }

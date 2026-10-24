@@ -43,9 +43,9 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/config"
 	metricsserver "sigs.k8s.io/controller-runtime/pkg/metrics/server"
 
-	v1alpha1 "github.com/okedeji/hybernate/api/v1alpha1"
-	"github.com/okedeji/hybernate/internal/autoscaler"
-	"github.com/okedeji/hybernate/internal/lifecycle"
+	v1alpha1 "github.com/napwake/napwake/api/v1alpha1"
+	"github.com/napwake/napwake/internal/autoscaler"
+	"github.com/napwake/napwake/internal/lifecycle"
 )
 
 func envtestNamespace() string {
@@ -79,9 +79,9 @@ func envtestWorkload(namespace string) *v1alpha1.ManagedWorkload {
 	}
 }
 
-// createTakenOn creates w as a ManagedWorkload Hybernate has taken on
+// createTakenOn creates w as a ManagedWorkload Napwake has taken on
 // already, Running, so the requests on it are acted on: those already on a
-// ManagedWorkload as Hybernate takes it on are taken as answered.
+// ManagedWorkload as Napwake takes it on are taken as answered.
 func createTakenOn(ctx context.Context, c client.Client, w *v1alpha1.ManagedWorkload) error {
 	if err := c.Create(ctx, w); err != nil {
 		return err
@@ -386,7 +386,7 @@ func TestResume_OfADegradedWorkloadFinishes(t *testing.T) {
 	c := meta.FindStatusCondition(got.Status.Conditions, conditionResumeIncomplete)
 	require.NotNil(t, c)
 	assert.Equal(t, metav1.ConditionTrue, c.Status)
-	assert.Equal(t, "resumed with 2 of 3 replicas Ready: Hybernate stopped waiting for the rest after 3 minutes", c.Message,
+	assert.Equal(t, "resumed with 2 of 3 replicas Ready: Napwake stopped waiting for the rest after 3 minutes", c.Message,
 		"2 minutes from the first reconcile that saw them Ready, 30s after the scale-up")
 	assert.Len(t, recorded(r.Recorder.(*events.FakeRecorder), "Warning "+ReasonResumeIncomplete), 1)
 }

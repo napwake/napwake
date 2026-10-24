@@ -21,9 +21,9 @@ import (
 	"fmt"
 	"time"
 
-	v1alpha1 "github.com/okedeji/hybernate/api/v1alpha1"
-	"github.com/okedeji/hybernate/internal/cost"
-	"github.com/okedeji/hybernate/internal/human"
+	v1alpha1 "github.com/napwake/napwake/api/v1alpha1"
+	"github.com/napwake/napwake/internal/cost"
+	"github.com/napwake/napwake/internal/human"
 )
 
 // trackDryRun starts the dry-run summary when a workload enters dry-run and
@@ -99,7 +99,7 @@ func (r *Reconciler) endWouldBePause(workload *v1alpha1.ManagedWorkload) (time.D
 }
 
 // endWouldBePauseNow ends an Idle workload's would-be pause now, as
-// Hybernate stops measuring it: it lets go of the workload, or the workload
+// Napwake stops measuring it: it lets go of the workload, or the workload
 // was scaled to zero outside it. Its activity can be hours old, and the
 // pause lasted until now regardless.
 func (r *Reconciler) endWouldBePauseNow(workload *v1alpha1.ManagedWorkload) {

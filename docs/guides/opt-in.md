@@ -1,6 +1,6 @@
 # Opting In
 
-Install Hybernate once per cluster, then label what it should manage. The label says **which** workloads Hybernate manages; annotations say **how**.
+Install Napwake once per cluster, then label what it should manage. The label says **which** workloads Napwake manages; annotations say **how**.
 
 ```yaml title="deployment.yaml"
 apiVersion: apps/v1
@@ -9,13 +9,13 @@ metadata:
   name: checkout-api
   namespace: preview-42
   labels:
-    hybernate.io/managed: "true"
+    napwake.dev/managed: "true"
   annotations:
-    hybernate.io/dry-run: "true"      # measure first; nothing is paused
-    hybernate.io/idle-after: "2h"
+    napwake.dev/dry-run: "true"      # measure first; nothing is paused
+    napwake.dev/idle-after: "2h"
 ```
 
-The label is usually one line in your Helm values or manifests, in a file you already keep in Git. It goes on the Deployment or StatefulSet itself: a chart's `podLabels` and `podAnnotations` put it on the pods, where Hybernate doesn't look, and a `LabelIgnored` warning event on the workload says so. With Kustomize, don't use `commonLabels`, which changes the workload's selector; see [With Kustomize](#with-kustomize). Hybernate then creates a [ManagedWorkload](managed-workload.md) for the workload and keeps it in step with the annotations.
+The label is usually one line in your Helm values or manifests, in a file you already keep in Git. It goes on the Deployment or StatefulSet itself: a chart's `podLabels` and `podAnnotations` put it on the pods, where Napwake doesn't look, and a `LabelIgnored` warning event on the workload says so. With Kustomize, don't use `commonLabels`, which changes the workload's selector; see [With Kustomize](#with-kustomize). Napwake then creates a [ManagedWorkload](managed-workload.md) for the workload and keeps it in step with the annotations.
 
 ## A whole namespace
 
@@ -29,10 +29,10 @@ Label the namespace to opt in every Deployment and StatefulSet in it. Annotation
     metadata:
       name: preview-42
       labels:
-        hybernate.io/managed: "true"
+        napwake.dev/managed: "true"
       annotations:
-        hybernate.io/dry-run: "true"
-        hybernate.io/idle-after: "2h"
+        napwake.dev/dry-run: "true"
+        napwake.dev/idle-after: "2h"
     ```
 
 === "Argo CD"
@@ -58,10 +58,10 @@ Label the namespace to opt in every Deployment and StatefulSet in it. Annotation
         automated: {}
         managedNamespaceMetadata:
           labels:
-            hybernate.io/managed: "true"
+            napwake.dev/managed: "true"
           annotations:
-            hybernate.io/dry-run: "true"
-            hybernate.io/idle-after: "2h"
+            napwake.dev/dry-run: "true"
+            napwake.dev/idle-after: "2h"
         syncOptions:
           - CreateNamespace=true
     ```
@@ -72,7 +72,7 @@ Label the namespace to opt in every Deployment and StatefulSet in it. Annotation
     kubectl patch application preview-42 -n argocd --type merge -p '{"operation":{"sync":{"syncOptions":["CreateNamespace=true"]}}}'
     ```
 
-    To stop managing the namespace, remove the label from `managedNamespaceMetadata` and sync. Removing `managedNamespaceMetadata` altogether leaves the label on the namespace, since Argo CD then leaves a namespace that exists alone. Have Argo CD leave the workloads' replicas to Hybernate too, as in [With GitOps](#with-gitops).
+    To stop managing the namespace, remove the label from `managedNamespaceMetadata` and sync. Removing `managedNamespaceMetadata` altogether leaves the label on the namespace, since Argo CD then leaves a namespace that exists alone. Have Argo CD leave the workloads' replicas to Napwake too, as in [With GitOps](#with-gitops).
 
 === "Flux"
 
@@ -89,7 +89,7 @@ Label the namespace to opt in every Deployment and StatefulSet in it. Annotation
 
     A HelmRelease's `install.createNamespace` creates its namespace unlabelled, so add the Namespace to the Kustomization that applies the HelmRelease. To stop managing the namespace, remove the label, not the Namespace: with `prune: true`, Flux deletes a Namespace that leaves Git, and everything in it.
 
-This covers dev and preview namespaces, and third-party charts that don't let you add labels to their workloads. To leave one workload out of a managed namespace, label it `hybernate.io/ignore: "true"`, or `hybernate.io/managed: "false"`.
+This covers dev and preview namespaces, and third-party charts that don't let you add labels to their workloads. To leave one workload out of a managed namespace, label it `napwake.dev/ignore: "true"`, or `napwake.dev/managed: "false"`.
 
 ## With Kustomize
 
@@ -105,11 +105,11 @@ These leave the selectors alone:
       - ../../base
     labels:
       - pairs:
-          hybernate.io/managed: "true"
+          napwake.dev/managed: "true"
         includeSelectors: false
     ```
 
-    Leave `includeTemplates` out: it labels the pods too, which restarts them for nothing, since Hybernate doesn't read pods' labels, and a StatefulSet's `volumeClaimTemplates`, which fails as the selector does. Services and ConfigMaps get the label as well, and Hybernate ignores it there, but a Namespace in the kustomization gets it too, which opts in the whole namespace.
+    Leave `includeTemplates` out: it labels the pods too, which restarts them for nothing, since Napwake doesn't read pods' labels, and a StatefulSet's `volumeClaimTemplates`, which fails as the selector does. Services and ConfigMaps get the label as well, and Napwake ignores it there, but a Namespace in the kustomization gets it too, which opts in the whole namespace.
 
 - **Chosen workloads, with their settings:** a patch, which changes only the workload's own labels and annotations:
 
@@ -126,42 +126,42 @@ These leave the selectors alone:
           metadata:
             name: checkout-api
             labels:
-              hybernate.io/managed: "true"
+              napwake.dev/managed: "true"
             annotations:
-              hybernate.io/dry-run: "true"
-              hybernate.io/idle-after: "2h"
+              napwake.dev/dry-run: "true"
+              napwake.dev/idle-after: "2h"
     ```
 
     Keep the `target`: without one, the patch has to give the workload's namespace too when its manifest has one, or the build fails with `no resource matches strategic merge patch`. To patch every Deployment and StatefulSet, target `kind: Deployment|StatefulSet` with no name; the patch still needs a `name`, which is then ignored.
 
-`commonAnnotations` can carry the settings, but it puts them on the pod templates too, so adding or changing one, such as `dry-run` to `"false"` to start pausing, restarts the pods of every workload in the kustomization, and Hybernate counts each restart as a [deploy](../concepts/idle-detection.md#what-counts-as-activity), which is activity. Set them on the Namespace or in a patch instead.
+`commonAnnotations` can carry the settings, but it puts them on the pod templates too, so adding or changing one, such as `dry-run` to `"false"` to start pausing, restarts the pods of every workload in the kustomization, and Napwake counts each restart as a [deploy](../concepts/idle-detection.md#what-counts-as-activity), which is activity. Set them on the Namespace or in a patch instead.
 
 ## Settings
 
 | Annotation | Values | Default | Description |
 |------------|--------|---------|-------------|
-| `hybernate.io/dry-run` | `"true"`, `"false"` | `"false"` | Measure without pausing: the activity clock runs as normal, and what pausing would free is recorded, but the workload is never paused |
-| `hybernate.io/idle-after` | duration of at least `1m`, e.g. `"90m"`, `"2h"` | `1h` | How long without activity before pausing |
-| `hybernate.io/cpu-threshold` | whole number, `"1"` to `"100"` | `10` | CPU use, as a percentage of requests, above which the workload counts as active |
-| `hybernate.io/auto-resume` | `"true"`, `"false"` | `"false"` | Wake ahead of the demand a confident [forecast](../concepts/forecasting.md) predicts |
-| `hybernate.io/pause-early` | `"true"`, `"false"` | `"false"` | Pause before `idle-after` runs out when a confident forecast expects the hours until then to be quiet and a request would wake the workload, so never with `wake: ask`; see [Pausing Early](../concepts/forecasting.md#pausing-early) |
-| `hybernate.io/forecast` | `"eager"`, `"balanced"`, `"cautious"` | `"balanced"` | How soon the forecast acts on what it has learned; see [Forecast setting](../concepts/forecasting.md#forecast-setting) |
-| `hybernate.io/depends-on` | comma-separated `kind/name` or `namespace/kind/name` | none | Workloads this one needs; see [Dependencies](../concepts/dependencies.md) |
-| `hybernate.io/wake` | `"request"`, `"ask"` | `"request"` | What wakes the paused workload through the doorman: any request, or, with `ask`, only a person who clicks **Wake it** on the page the doorman shows a browser, for an environment on a public URL that crawlers would keep awake. Sets `spec.wake.mode`; see [Asking before waking](../concepts/wake-on-request.md#asking-before-waking) |
-| `hybernate.io/wake-max-wait` | duration, at most `1h` | `2m` | How long a request is held while the workload wakes |
-| `hybernate.io/wake-page` | `"true"`, `"false"` | `"true"` | Show browsers a waking-up page |
+| `napwake.dev/dry-run` | `"true"`, `"false"` | `"false"` | Measure without pausing: the activity clock runs as normal, and what pausing would free is recorded, but the workload is never paused |
+| `napwake.dev/idle-after` | duration of at least `1m`, e.g. `"90m"`, `"2h"` | `1h` | How long without activity before pausing |
+| `napwake.dev/cpu-threshold` | whole number, `"1"` to `"100"` | `10` | CPU use, as a percentage of requests, above which the workload counts as active |
+| `napwake.dev/auto-resume` | `"true"`, `"false"` | `"false"` | Wake ahead of the demand a confident [forecast](../concepts/forecasting.md) predicts |
+| `napwake.dev/pause-early` | `"true"`, `"false"` | `"false"` | Pause before `idle-after` runs out when a confident forecast expects the hours until then to be quiet and a request would wake the workload, so never with `wake: ask`; see [Pausing Early](../concepts/forecasting.md#pausing-early) |
+| `napwake.dev/forecast` | `"eager"`, `"balanced"`, `"cautious"` | `"balanced"` | How soon the forecast acts on what it has learned; see [Forecast setting](../concepts/forecasting.md#forecast-setting) |
+| `napwake.dev/depends-on` | comma-separated `kind/name` or `namespace/kind/name` | none | Workloads this one needs; see [Dependencies](../concepts/dependencies.md) |
+| `napwake.dev/wake` | `"request"`, `"ask"` | `"request"` | What wakes the paused workload through the doorman: any request, or, with `ask`, only a person who clicks **Wake it** on the page the doorman shows a browser, for an environment on a public URL that crawlers would keep awake. Sets `spec.wake.mode`; see [Asking before waking](../concepts/wake-on-request.md#asking-before-waking) |
+| `napwake.dev/wake-max-wait` | duration, at most `1h` | `2m` | How long a request is held while the workload wakes |
+| `napwake.dev/wake-page` | `"true"`, `"false"` | `"true"` | Show browsers a waking-up page |
 
 Leaving an annotation out means its default. A value that can't be read, such as `idle-after: "soon"` or `dry-run: "True"`, is reported in an `InvalidSetting` warning event on the workload and skipped, as if it weren't there: the setting comes from the next place in [Which setting wins](#which-setting-wins), and the others still apply. Booleans are exactly `"true"` or `"false"`; `idle-after` is at least `1m`, and `wake-max-wait` above zero and at most `1h`. In `depends-on`, an entry that can't be read is skipped and the rest apply.
 
 `dry-run` and `wake` are the exceptions: a value of `dry-run` that can't be read turns dry-run on, and one of `wake` has the doorman ask, whatever comes after it, since a typo in a setting meant to keep a workload from pausing or waking must never undo it.
 
 ```yaml
-hybernate.io/depends-on: "statefulset/postgres, messaging/statefulset/nats"
+napwake.dev/depends-on: "statefulset/postgres, messaging/statefulset/nats"
 ```
 
 On a namespace, `depends-on` reaches every workload in it except those it names, and those they depend on by their own `depends-on`: they're what the others depend on, and taking the list too would make them depend on each other, so none could pause.
 
-Settings that need more than one value aren't annotations: Prometheus activity queries, `waitForReady` on a dependency, cost rates, and the forecast's `prediction.confidence`, a percentage that overrides `hybernate.io/forecast`. Set those on the ManagedWorkload Hybernate creates, such as with `kubectl patch`, which keeps them (see [What Hybernate does with the label](#what-hybernate-does-with-the-label)), or write a [ManagedWorkload](managed-workload.md) yourself.
+Settings that need more than one value aren't annotations: Prometheus activity queries, `waitForReady` on a dependency, cost rates, and the forecast's `prediction.confidence`, a percentage that overrides `napwake.dev/forecast`. Set those on the ManagedWorkload Napwake creates, such as with `kubectl patch`, which keeps them (see [What Napwake does with the label](#what-napwake-does-with-the-label)), or write a [ManagedWorkload](managed-workload.md) yourself.
 
 ### Which setting wins
 
@@ -174,39 +174,39 @@ So a namespace can measure everything with `dry-run: "true"` while one workload 
 
 ## From measuring to pausing
 
-Start with `hybernate.io/dry-run: "true"`. Hybernate runs each workload's activity clock without pausing anything, and keeps a summary of the pauses it would have made in its ManagedWorkload's `status.dryRun`: how many, how long it would have slept, and what that would have freed. `kubectl hybernate scan` lists the same for every workload in dry-run. See [Dry Run](dry-run.md#what-dry-run-measured). When you're ready:
+Start with `napwake.dev/dry-run: "true"`. Napwake runs each workload's activity clock without pausing anything, and keeps a summary of the pauses it would have made in its ManagedWorkload's `status.dryRun`: how many, how long it would have slept, and what that would have freed. `kubectl napwake scan` lists the same for every workload in dry-run. See [Dry Run](dry-run.md#what-dry-run-measured). When you're ready:
 
 ```bash
-kubectl hybernate enable checkout-api -n preview-42
-kubectl hybernate enable --all -n preview-42     # every workload in the namespace
+kubectl napwake enable checkout-api -n preview-42
+kubectl napwake enable --all -n preview-42     # every workload in the namespace
 ```
 
-`enable` sets the workload's own `hybernate.io/dry-run` annotation to `"false"`, which wins over its namespace's annotation and the cluster default, wherever the dry-run came from. `enable --all` ends dry-run for everything in the namespace that's in it. When the namespace has its own `hybernate.io/dry-run`, or a workload takes its dry-run from the namespace or the cluster default, it sets the namespace's annotation to `"false"` and drops the workloads' own; otherwise it sets each workload's own to `"false"` and leaves the namespace alone. A ManagedWorkload you wrote has its `spec.dryRun` set to `false`.
+`enable` sets the workload's own `napwake.dev/dry-run` annotation to `"false"`, which wins over its namespace's annotation and the cluster default, wherever the dry-run came from. `enable --all` ends dry-run for everything in the namespace that's in it. When the namespace has its own `napwake.dev/dry-run`, or a workload takes its dry-run from the namespace or the cluster default, it sets the namespace's annotation to `"false"` and drops the workloads' own; otherwise it sets each workload's own to `"false"` and leaves the namespace alone. A ManagedWorkload you wrote has its `spec.dryRun` set to `false`.
 
-If a GitOps tool (Argo CD, Flux, Fleet, kapp or Kluctl) applies the `hybernate.io/dry-run` annotation on the workload or namespace from Git, `enable` doesn't change the cluster, since the tool would put the annotation back. It names the tool, prints the change to make in Git, and exits non-zero; `--force` changes the cluster anyway. One Helm set is changed, with a warning that the next `helm upgrade` puts the chart's value back.
+If a GitOps tool (Argo CD, Flux, Fleet, kapp or Kluctl) applies the `napwake.dev/dry-run` annotation on the workload or namespace from Git, `enable` doesn't change the cluster, since the tool would put the annotation back. It names the tool, prints the change to make in Git, and exits non-zero; `--force` changes the cluster anyway. One Helm set is changed, with a warning that the next `helm upgrade` puts the chart's value back.
 
 ## Protected namespaces
 
-Label a namespace `hybernate.io/protected: "true"`, such as production, and Hybernate never manages anything in it, whatever labels its workloads or the namespace carry. Nothing there is opted in, a ManagedWorkload written for one reports `Protected=True` and is never paused, and a workload Hybernate had paused before the namespace was protected is woken, so protecting a namespace never leaves anything off. A warning event says why on each.
+Label a namespace `napwake.dev/protected: "true"`, such as production, and Napwake never manages anything in it, whatever labels its workloads or the namespace carry. Nothing there is opted in, a ManagedWorkload written for one reports `Protected=True` and is never paused, and a workload Napwake had paused before the namespace was protected is woken, so protecting a namespace never leaves anything off. A warning event says why on each.
 
 ```bash
-kubectl label namespace payments hybernate.io/protected=true
+kubectl label namespace payments napwake.dev/protected=true
 ```
 
-To protect namespaces by name instead, such as every `prod-*`, set the Helm value `protectedNamespaces`. A protected namespace is managed again only when labelled `hybernate.io/allow-protected: "true"` on purpose; Hybernate never sets either label.
+To protect namespaces by name instead, such as every `prod-*`, set the Helm value `protectedNamespaces`. A protected namespace is managed again only when labelled `napwake.dev/allow-protected: "true"` on purpose; Napwake never sets either label.
 
 Some namespaces are always protected, with no label or Helm value:
 
 - **Kubernetes' own**, `kube-system` and every other `kube-*` namespace, so labelling every namespace managed can't pause CoreDNS or metrics-server.
-- **Hybernate's own**, the namespace it's installed in, and the doorman's if it runs elsewhere, so Hybernate can't pause itself.
+- **Napwake's own**, the namespace it's installed in, and the doorman's if it runs elsewhere, so Napwake can't pause itself.
 
-Labelling one of them `hybernate.io/allow-protected: "true"` lets Hybernate manage it like any other, except that the operator's and the doorman's own Deployments are never managed: nothing would be left to wake them.
+Labelling one of them `napwake.dev/allow-protected: "true"` lets Napwake manage it like any other, except that the operator's and the doorman's own Deployments are never managed: nothing would be left to wake them.
 
-To keep Hybernate out of namespaces altogether, not by its own rule but by Kubernetes RBAC, install it with `watchNamespaces`; see [Helm values](../reference/helm-values.md#namespaces).
+To keep Napwake out of namespaces altogether, not by its own rule but by Kubernetes RBAC, install it with `watchNamespaces`; see [Helm values](../reference/helm-values.md#namespaces).
 
 ## With GitOps
 
-The decision to manage a workload lives in Git, as the label. The ManagedWorkload Hybernate creates from it is owned by the workload, like the ReplicaSets a Deployment creates, so Argo CD and Flux leave it alone and Argo CD shows it under the workload. Hybernate never copies the workload's labels onto it, so a GitOps tool's tracking label can't make the tool claim and prune it.
+The decision to manage a workload lives in Git, as the label. The ManagedWorkload Napwake creates from it is owned by the workload, like the ReplicaSets a Deployment creates, so Argo CD and Flux leave it alone and Argo CD shows it under the workload. Napwake never copies the workload's labels onto it, so a GitOps tool's tracking label can't make the tool claim and prune it.
 
 GitOps tools do notice the replica count of a paused workload changing, and would scale it back up. Tell them to leave `spec.replicas` alone; for Fleet, kapp and Kluctl, see [GitOps tools](gitops.md):
 
@@ -228,13 +228,13 @@ GitOps tools do notice the replica count of a paused workload changing, and woul
           - RespectIgnoreDifferences=true
     ```
 
-- **Flux:** leave `replicas` out of the workload's manifest. Flux applies with server-side apply, so a field the manifest doesn't set stays with whoever set it last: Hybernate, while the workload is paused. Many charts let you leave it out, for example when their autoscaling value is on.
+- **Flux:** leave `replicas` out of the workload's manifest. Flux applies with server-side apply, so a field the manifest doesn't set stays with whoever set it last: Napwake, while the workload is paused. Many charts let you leave it out, for example when their autoscaling value is on.
 
-## What Hybernate does with the label
+## What Napwake does with the label
 
-- **Labelled:** creates a ManagedWorkload named after the workload, owned by it, marked with `hybernate.io/from-label: "true"`, and announces it with a `Managed` event on the workload. If that name is taken, for example by a StatefulSet's of the same name as a Deployment, it's named after the workload and its kind instead, such as `api-statefulset`.
+- **Labelled:** creates a ManagedWorkload named after the workload, owned by it, marked with `napwake.dev/from-label: "true"`, and announces it with a `Managed` event on the workload. If that name is taken, for example by a StatefulSet's of the same name as a Deployment, it's named after the workload and its kind instead, such as `api-statefulset`.
 - **Annotations changed:** updates the ManagedWorkload within seconds. The annotations are the source of truth for what they set: `dryRun`, `idlePolicy` (`idleAfter`, `activity.cpuThreshold`, `autoResume`, `pauseEarly`), which workloads `dependsOn` lists, and `wake`. Direct edits to those are overwritten. Everything else is yours to set on the ManagedWorkload and is kept: `prediction`, `costTracking`, `idlePolicy.activity.prometheus`, and `waitForReady` on a dependency the annotation lists. The target never changes.
-- **Label removed, or `hybernate.io/ignore` added:** deletes the ManagedWorkload. If the workload is paused, it's first scaled back to the replicas it had.
+- **Label removed, or `napwake.dev/ignore` added:** deletes the ManagedWorkload. If the workload is paused, it's first scaled back to the replicas it had.
 - **Workload deleted:** its ManagedWorkload goes with it.
 - **A ManagedWorkload you wrote for the workload exists:** yours wins, and the label does nothing.
-- **A label value other than `"true"`**, such as `hybernate.io/managed: "dry-run"`, doesn't opt the workload in, and is pointed out in an event. Settings like dry-run are annotations.
+- **A label value other than `"true"`**, such as `napwake.dev/managed: "dry-run"`, doesn't opt the workload in, and is pointed out in an event. Settings like dry-run are annotations.

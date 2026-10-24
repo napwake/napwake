@@ -1,10 +1,10 @@
 # Prometheus Activity Guide
 
-CPU tells Hybernate whether a workload is doing work. A Prometheus query tells it whether anyone is *using* it: requests through an ingress, open connections, messages arriving on a queue. Add queries as activity sources, and any result above zero keeps the workload awake, and [wakes it](#while-the-workload-is-paused) once it's paused.
+CPU tells Napwake whether a workload is doing work. A Prometheus query tells it whether anyone is *using* it: requests through an ingress, open connections, messages arriving on a queue. Add queries as activity sources, and any result above zero keeps the workload awake, and [wakes it](#while-the-workload-is-paused) once it's paused.
 
 ## How It Works
 
-On every check, about once a minute whether the workload is awake or paused, Hybernate runs each query in turn as an instant query against the Prometheus API (`/api/v1/query`), stopping at the first that shows activity. Each query has 2 seconds to answer, and all of a workload's queries 5 seconds together.
+On every check, about once a minute whether the workload is awake or paused, Napwake runs each query in turn as an instant query against the Prometheus API (`/api/v1/query`), stopping at the first that shows activity. Each query has 2 seconds to answer, and all of a workload's queries 5 seconds together.
 
 - **Any series above zero**: activity. The [activity clock](../concepts/idle-detection.md) resets. With a series per pod, one busy pod is enough.
 - **Zero, or an empty result**: no activity from this source. The clock keeps running.
@@ -47,34 +47,34 @@ spec:
 
 A workload with queries is checked every minute while it's paused, rather than every 5 minutes, so a query wakes it within a minute of its activity showing in Prometheus.
 
-Prometheus queries can't be set with an annotation. On a ManagedWorkload created from the `hybernate.io/managed` label, add them to its `spec.idlePolicy.activity.prometheus`: the opt-in controller keeps them when it updates the rest from the annotations.
+Prometheus queries can't be set with an annotation. On a ManagedWorkload created from the `napwake.dev/managed` label, add them to its `spec.idlePolicy.activity.prometheus`: the opt-in controller keeps them when it updates the rest from the annotations.
 
 ## Prometheus Endpoint
 
 Set the Prometheus URL with the `prometheus.url` Helm value, which passes `--prometheus-url` to the operator. Add it to your values file:
 
-```yaml title="hybernate-values.yaml"
+```yaml title="napwake-values.yaml"
 timezone: Europe/London
 prometheus:
   url: http://prometheus.monitoring.svc.cluster.local:9090
 ```
 
-and upgrade with the file. Pass the chart version you have installed as `--version`, which `helm list -n hybernate-system` shows, or Helm upgrades to the newest chart too:
+and upgrade with the file. Pass the chart version you have installed as `--version`, which `helm list -n napwake-system` shows, or Helm upgrades to the newest chart too:
 
 ```bash
-helm upgrade hybernate oci://ghcr.io/okedeji/charts/hybernate --version X.Y.Z \
-  --namespace hybernate-system -f hybernate-values.yaml
+helm upgrade napwake oci://ghcr.io/napwake/charts/napwake --version X.Y.Z \
+  --namespace napwake-system -f napwake-values.yaml
 ```
 
 Installed without a values file, see [Keeping your settings](../operations/upgrading.md#keeping-your-settings).
 
-The URL is the base of the Prometheus HTTP API, `http` or `https`; the operator refuses to start with any other. Hybernate appends `/api/v1/query` and keeps any path prefix, so endpoints like `https://mimir.example.com/prometheus` work as-is. It sends no credentials or headers, so a Prometheus that needs them must be reached through a proxy that adds them.
+The URL is the base of the Prometheus HTTP API, `http` or `https`; the operator refuses to start with any other. Napwake appends `/api/v1/query` and keeps any path prefix, so endpoints like `https://mimir.example.com/prometheus` work as-is. It sends no credentials or headers, so a Prometheus that needs them must be reached through a proxy that adds them.
 
 With a Prometheus URL, each new workload's forecast also starts from up to four weeks of its CPU history rather than from nothing, so `autoResume` can act from the first day; see [Learning from history](../concepts/forecasting.md#learning-from-history). For a Prometheus that holds more than one cluster's series, `prometheus.selector` (`--prometheus-selector`), such as `cluster="staging"`, narrows that history query to this cluster. It isn't added to activity queries, which run as you write them: narrow those in the query itself.
 
 ## When a Query Can't Be Evaluated
 
-If a query fails, Hybernate can't see that activity, so it doesn't pause the workload, and a paused one isn't woken by it. The `PrometheusAvailable` condition says why:
+If a query fails, Napwake can't see that activity, so it doesn't pause the workload, and a paused one isn't woken by it. The `PrometheusAvailable` condition says why:
 
 | Reason | Meaning |
 |--------|---------|
@@ -88,7 +88,7 @@ kubectl get managedworkload my-api -n staging \
 
 The condition only appears on workloads that configure Prometheus queries.
 
-A query that answers but matches no series at all looks just like a quiet workload, and that's also what a misspelt metric or label name gives. Hybernate can't tell the two apart, so the workload pauses on its other sources as usual, but a query that has matched no series since it was first evaluated is pointed out: `PrometheusQueryEmpty=True`, reason `NoSeries`, with the queries in its message, and a `PrometheusQueryEmpty` warning event when it begins. It clears once the query matches a series, even one at zero. A counter that's only created on the first request, as many client libraries' labelled counters are, also matches nothing until then; once it exists the condition clears. What a query has matched is remembered in memory, so after an operator restart a query is checked again from its first evaluation.
+A query that answers but matches no series at all looks just like a quiet workload, and that's also what a misspelt metric or label name gives. Napwake can't tell the two apart, so the workload pauses on its other sources as usual, but a query that has matched no series since it was first evaluated is pointed out: `PrometheusQueryEmpty=True`, reason `NoSeries`, with the queries in its message, and a `PrometheusQueryEmpty` warning event when it begins. It clears once the query matches a series, even one at zero. A counter that's only created on the first request, as many client libraries' labelled counters are, also matches nothing until then; once it exists the condition clears. What a query has matched is remembered in memory, so after an operator restart a query is checked again from its first evaluation.
 
 When Prometheus itself fails, by not answering, answering with a server error or `429`, or timing out on three queries in a row, the operator doesn't ask it again for a minute: every workload's queries fail at once, as `QueryFailed` with the error that failed, so none waits out a timeout and holds up the wakes queued behind it. The message is the same for the whole outage, whether or not a check asked Prometheus. A query Prometheus rejects, such as one that doesn't parse, fails only for the workloads that use it. Time that a query can't be evaluated isn't counted as idle: Prometheus out for longer than a couple of checks restarts the clock (`lastActivitySource: unobserved`), so a workload is never paused because Prometheus was down. A query that times out while other queries are answered fails only for the workloads that use it, so one tenant's slow query doesn't hold off everyone's. Still keep queries cheap: aggregate, and use recording rules for anything heavy.
 

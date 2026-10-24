@@ -31,9 +31,9 @@ import (
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/client-go/tools/events"
 
-	v1alpha1 "github.com/okedeji/hybernate/api/v1alpha1"
-	"github.com/okedeji/hybernate/internal/cost"
-	"github.com/okedeji/hybernate/internal/metrics"
+	v1alpha1 "github.com/napwake/napwake/api/v1alpha1"
+	"github.com/napwake/napwake/internal/cost"
+	"github.com/napwake/napwake/internal/metrics"
 )
 
 func costWorkload(phase v1alpha1.WorkloadPhase) *v1alpha1.ManagedWorkload {
@@ -188,7 +188,7 @@ func TestAccumulateCost_FullPrecisionOverADayOfFlushes(t *testing.T) {
 
 // Cost and what pausing freed are on the same basis, requests, over the
 // same time, so they add up to what the workload would have cost without
-// Hybernate.
+// Napwake.
 func TestAccumulateCost_CostAndFreedAddUp(t *testing.T) {
 	w := costWorkload(v1alpha1.PhaseRunning)
 	w.Status.Cost = accumulatedAt(fixedTime)
@@ -204,9 +204,9 @@ func TestAccumulateCost_CostAndFreedAddUp(t *testing.T) {
 	hourly := cost.ComputeHourly(2, 8, cost.DefaultRates)
 	assert.Equal(t, cost.FormatDollars(8*hourly), c.CostThisMonth)
 	assert.Equal(t, cost.FormatDollars(16*hourly), c.FreedThisMonth)
-	assert.Equal(t, cost.FormatDollars(24*hourly), c.CostWithoutHybernateThisMonth)
+	assert.Equal(t, cost.FormatDollars(24*hourly), c.CostWithoutNapwakeThisMonth)
 	assert.InDelta(t, dollars(t, c.CostThisMonth)+dollars(t, c.FreedThisMonth),
-		dollars(t, c.CostWithoutHybernateThisMonth), 0.01)
+		dollars(t, c.CostWithoutNapwakeThisMonth), 0.01)
 }
 
 // A workload created late in the month is projected from the time it has
@@ -479,7 +479,7 @@ func (p stubPricer) ListRates(_ context.Context, _ *v1alpha1.ManagedWorkload) (
 
 var nodeRates = cost.Rates{CPUPerHour: 0.05, MemoryPerHour: 0.006}
 
-// recordedRates are list rates Hybernate recorded for a workload's nodes.
+// recordedRates are list rates Napwake recorded for a workload's nodes.
 func recordedRates() *v1alpha1.CostRates {
 	c, m := resource.MustParse("0.05"), resource.MustParse("0.006")
 	return &v1alpha1.CostRates{CPUPerHour: &c, MemoryPerHour: &m}

@@ -1,18 +1,18 @@
-# This rule is not used by the project hybernate itself.
+# This rule is not used by the project napwake itself.
 # It is provided to allow the cluster admin to help manage permissions for users.
 #
-# Grants read-only access to hybernate.io resources.
+# Grants read-only access to napwake.dev resources.
 # This role is intended for users who need visibility into these resources
 # without permissions to modify them. It is ideal for monitoring purposes and limited-access viewing.
 # It's aggregated into the built-in view, edit and admin roles, so whoever
-# can view a namespace can see its ManagedWorkloads, as kubectl hybernate
+# can view a namespace can see its ManagedWorkloads, as kubectl napwake
 # status and scan do.
 
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRole
 metadata:
   labels:
-    app.kubernetes.io/name: hybernate
+    app.kubernetes.io/name: napwake
     app.kubernetes.io/managed-by: kustomize
     rbac.authorization.k8s.io/aggregate-to-view: "true"
     rbac.authorization.k8s.io/aggregate-to-edit: "true"
@@ -20,7 +20,7 @@ metadata:
   name: managedworkload-viewer-role
 rules:
 - apiGroups:
-  - hybernate.io
+  - napwake.dev
   resources:
   - managedworkloads
   verbs:
@@ -28,7 +28,7 @@ rules:
   - list
   - watch
 - apiGroups:
-  - hybernate.io
+  - napwake.dev
   resources:
   - managedworkloads/status
   verbs:

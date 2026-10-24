@@ -35,7 +35,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/envtest"
 
-	"github.com/okedeji/hybernate/api/v1alpha1"
+	"github.com/napwake/napwake/api/v1alpha1"
 )
 
 const workloadNS = "shop"
@@ -119,12 +119,12 @@ func testPolicy(t *testing.T, manifest string) {
 		allowed bool
 	}{
 		{"stamps a request", `{"metadata":{"annotations":{` +
-			`"hybernate.io/last-request":"2026-10-17T00:00:00Z","hybernate.io/last-request-from":"10.0.0.1"}}}`, true},
-		{"removes its own stamp", `{"metadata":{"annotations":{"hybernate.io/last-request-from":null}}}`, true},
+			`"napwake.dev/last-request":"2026-10-17T00:00:00Z","napwake.dev/last-request-from":"10.0.0.1"}}}`, true},
+		{"removes its own stamp", `{"metadata":{"annotations":{"napwake.dev/last-request-from":null}}}`, true},
 		{"counts requests turned away", `{"metadata":{"annotations":{` +
-			`"hybernate.io/turned-away":"{\"pausedAt\":\"2026-10-17T00:00:00Z\",\"requests\":3}"}}}`, true},
+			`"napwake.dev/turned-away":"{\"pausedAt\":\"2026-10-17T00:00:00Z\",\"requests\":3}"}}}`, true},
 		{"changes the spec", `{"spec":{"dryRun":true}}`, false},
-		{"adds a settings annotation", `{"metadata":{"annotations":{"hybernate.io/idle-after":"1m"}}}`, false},
+		{"adds a settings annotation", `{"metadata":{"annotations":{"napwake.dev/idle-after":"1m"}}}`, false},
 		{"changes another annotation", `{"metadata":{"annotations":{"keep":"you"}}}`, false},
 		{"removes another annotation", `{"metadata":{"annotations":{"keep":null}}}`, false},
 		{"changes a label", `{"metadata":{"labels":{"team":"other"}}}`, false},
@@ -190,7 +190,7 @@ func testWithoutTheDoormansServiceAccount(ctx context.Context, t *testing.T, cfg
 		n := 0
 		assert.Eventually(t, func() bool {
 			n++
-			stamp := fmt.Sprintf(`{"metadata":{"annotations":{"hybernate.io/last-request-from":"10.0.1.%d"}}}`, n)
+			stamp := fmt.Sprintf(`{"metadata":{"annotations":{"napwake.dev/last-request-from":"10.0.1.%d"}}}`, n)
 			return patchAs(alice, stamp) == nil
 		}, 30*time.Second, 200*time.Millisecond)
 		assert.NoError(t, patchAs(admin, `{"metadata":{"annotations":{"example.com/note":"still writable"}}}`))
@@ -214,7 +214,7 @@ func testWithoutTheDoormansServiceAccount(ctx context.Context, t *testing.T, cfg
 }
 
 // testOnlyTheDoormanStamps proves no one but the doorman can set the
-// request annotations, not even under Hybernate's field manager, which the
+// request annotations, not even under Napwake's field manager, which the
 // operator would otherwise take as the doorman's.
 func testOnlyTheDoormanStamps(ctx context.Context, t *testing.T, cfg *rest.Config, admin, doorman client.Client,
 	patchAs func(client.Client, string) error) {
@@ -234,11 +234,11 @@ func testOnlyTheDoormanStamps(ctx context.Context, t *testing.T, cfg *rest.Confi
 	userCfg.Impersonate = rest.ImpersonationConfig{UserName: user}
 	alice, err := client.New(userCfg, client.Options{Scheme: clientScheme(t)})
 	require.NoError(t, err)
-	asHybernate := client.WithFieldOwner(alice, v1alpha1.FieldManager)
+	asNapwake := client.WithFieldOwner(alice, v1alpha1.FieldManager)
 
-	forged := `{"metadata":{"annotations":{"hybernate.io/last-request-from":"10.0.0.9"}}}`
+	forged := `{"metadata":{"annotations":{"napwake.dev/last-request-from":"10.0.0.9"}}}`
 	require.Eventually(t, func() bool {
-		return apierrors.IsInvalid(patchAs(asHybernate, forged))
+		return apierrors.IsInvalid(patchAs(asNapwake, forged))
 	}, 30*time.Second, 200*time.Millisecond, "the policy never denied a user the doorman's stamp")
 
 	tests := []struct {
@@ -248,16 +248,16 @@ func testOnlyTheDoormanStamps(ctx context.Context, t *testing.T, cfg *rest.Confi
 		allowed bool
 	}{
 		{"the doorman can stamp a request", doorman, `{"metadata":{"annotations":{` +
-			`"hybernate.io/last-request":"2026-10-18T00:00:00Z","hybernate.io/last-request-from":"10.0.0.2"}}}`, true},
+			`"napwake.dev/last-request":"2026-10-18T00:00:00Z","napwake.dev/last-request-from":"10.0.0.2"}}}`, true},
 		{"a user can't set where a request came from", alice, forged, false},
-		{"a user can't set it under Hybernate's field manager", asHybernate, forged, false},
+		{"a user can't set it under Napwake's field manager", asNapwake, forged, false},
 		{"a user can't set a request time", alice,
-			`{"metadata":{"annotations":{"hybernate.io/last-request":"2026-10-18T01:00:00Z"}}}`, false},
+			`{"metadata":{"annotations":{"napwake.dev/last-request":"2026-10-18T01:00:00Z"}}}`, false},
 		{"the operator can't set where a request came from", admin, forged, false},
-		{"a user can change other annotations", asHybernate,
-			`{"metadata":{"annotations":{"hybernate.io/last-activity":"2026-10-18T00:00:00Z"}}}`, true},
+		{"a user can change other annotations", asNapwake,
+			`{"metadata":{"annotations":{"napwake.dev/last-activity":"2026-10-18T00:00:00Z"}}}`, true},
 		{"a user can remove the doorman's stamp", alice,
-			`{"metadata":{"annotations":{"hybernate.io/last-request":null}}}`, true},
+			`{"metadata":{"annotations":{"napwake.dev/last-request":null}}}`, true},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -276,7 +276,7 @@ func testOnlyTheDoormanStamps(ctx context.Context, t *testing.T, cfg *rest.Confi
 				Annotations: map[string]string{v1alpha1.AnnotationLastRequestFrom: "10.0.0.9"}},
 			Spec: v1alpha1.ManagedWorkloadSpec{Target: v1alpha1.WorkloadRef{Kind: "Deployment", Name: "forged"}},
 		}
-		err := asHybernate.Create(ctx, mw)
+		err := asNapwake.Create(ctx, mw)
 		assert.True(t, apierrors.IsInvalid(err), "want the policy to deny it, got %v", err)
 	})
 }

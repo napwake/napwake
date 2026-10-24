@@ -34,9 +34,9 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/log"
 
-	v1alpha1 "github.com/okedeji/hybernate/api/v1alpha1"
-	"github.com/okedeji/hybernate/internal/human"
-	"github.com/okedeji/hybernate/internal/lifecycle"
+	v1alpha1 "github.com/napwake/napwake/api/v1alpha1"
+	"github.com/napwake/napwake/internal/human"
+	"github.com/napwake/napwake/internal/lifecycle"
 )
 
 const (
@@ -62,7 +62,7 @@ type workloadID struct {
 	name      string
 }
 
-// String is namespace/kind/name, as hybernate.io/depends-on names it, since
+// String is namespace/kind/name, as napwake.dev/depends-on names it, since
 // a Deployment and a StatefulSet can share a name.
 func (id workloadID) String() string {
 	return id.namespace + "/" + strings.ToLower(string(id.kind)) + "/" + id.name
@@ -82,7 +82,7 @@ func dependencyID(dependent *v1alpha1.ManagedWorkload, ref v1alpha1.DependencyRe
 }
 
 // dependencyGraph is the workload graph as one reconcile reads it, with
-// the hybernate.io/dependents-from of each namespace a dependency in
+// the napwake.dev/dependents-from of each namespace a dependency in
 // another namespace is in, when it has one.
 type dependencyGraph struct {
 	*workloadGraph
@@ -113,7 +113,7 @@ func (r *Reconciler) loadDependencyGraph(ctx context.Context) (*dependencyGraph,
 	return g, nil
 }
 
-// dependentsFromOf is the namespace's hybernate.io/dependents-from, or ""
+// dependentsFromOf is the namespace's napwake.dev/dependents-from, or ""
 // for none or no such namespace.
 func (r *Reconciler) dependentsFromOf(ctx context.Context, namespace string) (string, error) {
 	var ns corev1.Namespace
@@ -127,7 +127,7 @@ func (r *Reconciler) dependentsFromOf(ctx context.Context, namespace string) (st
 	return ns.Annotations[v1alpha1.AnnotationDependentsFrom], nil
 }
 
-// allowsDependentsFrom says a hybernate.io/dependents-from value lets
+// allowsDependentsFrom says a napwake.dev/dependents-from value lets
 // workloads in namespace depend on the workloads beside it.
 func allowsDependentsFrom(value, namespace string) bool {
 	for entry := range strings.SplitSeq(value, ",") {
@@ -140,7 +140,7 @@ func allowsDependentsFrom(value, namespace string) bool {
 
 // allows reports whether a workload in namespace may depend on the
 // workload id: always in its own namespace, and in another only when that
-// namespace's hybernate.io/dependents-from lets it. A dependency it doesn't
+// namespace's napwake.dev/dependents-from lets it. A dependency it doesn't
 // allow is no edge: never held, woken or waited for.
 func (g *dependencyGraph) allows(namespace string, id workloadID) bool {
 	return id.namespace == namespace || allowsDependentsFrom(g.dependentsFrom[id.namespace], namespace)
@@ -368,12 +368,12 @@ func (r *Reconciler) clearCondition(workload *v1alpha1.ManagedWorkload, condType
 }
 
 // wakeDependencies stamps an activity annotation on each dependency that
-// Hybernate manages, which wakes it through the annotation wake path. A
+// Napwake manages, which wakes it through the annotation wake path. A
 // dependency that's already awake gets its clock reset, since this workload
 // is about to use it.
 //
 // Waking them is best-effort: a dependency that can't be woken, such as
-// one whose ManagedWorkload a policy won't let Hybernate annotate, must
+// one whose ManagedWorkload a policy won't let Napwake annotate, must
 // never keep this workload from waking, being handed back, or being
 // deleted. Each failure is reported in a Warning event on this workload,
 // and every dependency is tried.
@@ -416,7 +416,7 @@ func (r *Reconciler) stampDependencies(ctx context.Context, workload *v1alpha1.M
 	}
 }
 
-// ReasonDependencyWakeFailed reports a dependency Hybernate couldn't wake
+// ReasonDependencyWakeFailed reports a dependency Napwake couldn't wake
 // along with its dependent.
 const ReasonDependencyWakeFailed = "DependencyWakeFailed"
 
@@ -446,7 +446,7 @@ func (r *Reconciler) stampActivity(ctx context.Context, dep types.NamespacedName
 // Ready by waiting, which would leave this workload at zero for good: the
 // workload itself, listed as its own dependency; one that doesn't exist or
 // can't be seen (reported by checkDependenciesExist); one scaled to zero
-// outside Hybernate; one that waits for this workload in turn, through
+// outside Napwake; one that waits for this workload in turn, through
 // waitForReady, which would wait for each other forever; and one that
 // isn't Ready by its startDeadline, such as one crash-looping or whose
 // image can't be pulled. A managed one still paused is woken again, in
@@ -638,9 +638,9 @@ func (r *Reconciler) checkDependenciesExist(ctx context.Context, workload *v1alp
 		case dependencyMissing:
 			missing = append(missing, name)
 		case dependencyUnwatched:
-			hidden = append(hidden, fmt.Sprintf("%s (Hybernate doesn't watch namespace %s)", name, id.namespace))
+			hidden = append(hidden, fmt.Sprintf("%s (Napwake doesn't watch namespace %s)", name, id.namespace))
 		case dependencyForbidden:
-			hidden = append(hidden, fmt.Sprintf("%s (Hybernate isn't allowed to read it)", name))
+			hidden = append(hidden, fmt.Sprintf("%s (Napwake isn't allowed to read it)", name))
 		case dependencyFound:
 		}
 	}
@@ -674,7 +674,7 @@ const (
 	dependencyForbidden
 )
 
-// getDependency reads a dependency's workload. One Hybernate can't see,
+// getDependency reads a dependency's workload. One Napwake can't see,
 // because of watchNamespaces or RBAC, is reported as such rather than as an
 // error, so it never stops the dependent's lifecycle.
 func (r *Reconciler) getDependency(ctx context.Context, id workloadID) (client.Object, dependencyState, error) {

@@ -1,0 +1,59 @@
+{{- include "napwake.defaults" . -}}
+{{- /* The docs site keeps a version per minor release, and a release candidate's under next. */ -}}
+{{- $chart := semver .Chart.Version -}}
+{{- $docs := printf "https://docs.napwake.dev/%d.%d/" $chart.Major $chart.Minor -}}
+{{- if $chart.Prerelease }}{{ $docs = "https://docs.napwake.dev/next/" }}{{ end -}}
+Napwake is installed in namespace {{ .Release.Namespace }}.
+
+The forecast, which learns when each workload is busy, counts hours and
+weekdays in {{ .Values.timezone }}.
+{{- if eq .Values.timezone "UTC" }} Set timezone to your users' zone, so workloads wake for
+their mornings all year, through daylight saving. This sets it, and keeps
+the other values you set:
+
+   helm upgrade {{ .Release.Name }} oci://ghcr.io/napwake/charts/napwake --version {{ .Chart.Version }} \
+     -n {{ .Release.Namespace }} --reuse-values --set timezone=Europe/London
+
+If you install from a values file, set it there and upgrade with the file
+instead: {{ $docs }}operations/upgrading/#keeping-your-settings
+{{- end }}
+
+1. Check the operator and the doorman are running:
+
+   kubectl get pods -n {{ .Release.Namespace }}
+
+2. See which workloads are idle and what they cost, with the kubectl plugin:
+
+   kubectl napwake scan
+
+3. Opt a workload in, measuring it first so nothing is paused yet:
+
+   kubectl annotate deployment my-app -n my-namespace napwake.dev/dry-run=true
+   kubectl label deployment my-app -n my-namespace napwake.dev/managed=true
+
+   Label a namespace instead to opt in everything in it.
+
+   Applied by Argo CD or Flux? Before enable, have it leave replicas to
+   Napwake, or it scales the workload back up after every pause:
+   {{ $docs }}guides/gitops/
+
+   When you're ready, let Napwake pause it while idle:
+
+   kubectl napwake enable my-app -n my-namespace
+
+4. Check what it's doing:
+
+   kubectl get managedworkloads -A
+
+{{- if and .Values.metrics.enabled .Values.metrics.serviceMonitor.enabled }}
+
+5. Metrics are scraped through ServiceMonitors; check Prometheus's targets for the napwake endpoints.
+{{- if and .Values.metrics.secure (not .Values.metrics.readerSubjects) }}
+   They're served over HTTPS only to callers allowed to get /metrics, and
+   metrics.readerSubjects is empty: until your Prometheus's ServiceAccount
+   is listed there, or bound to the {{ include "napwake.fullname" . }}-metrics-reader ClusterRole,
+   its scrapes are refused with 401 or 403{{ if .Values.metrics.prometheusRule.enabled }}, and NapwakeDown{{ if .Values.doorman.enabled }} and NapwakeDoormanDown fire{{ else }} fires{{ end }}{{ end }}.
+{{- end }}
+{{- end }}
+
+Docs for this version: {{ $docs }}

@@ -20,7 +20,7 @@ import (
 	"math"
 	"time"
 
-	"github.com/okedeji/hybernate/internal/forecast"
+	"github.com/napwake/napwake/internal/forecast"
 )
 
 // Use is what a workload's users are doing with it at one moment.
@@ -67,7 +67,7 @@ func Weekdays(day time.Time) bool {
 // EveryDay is every day of the week, weekends included.
 func EveryDay(time.Time) bool { return true }
 
-// OfficeHours is the workload Hybernate exists for: in use on weekdays from
+// OfficeHours is the workload Napwake exists for: in use on weekdays from
 // 09:10 to 17:30 in loc, at 40% of its CPU requests, and quiet otherwise.
 func OfficeHours(loc *time.Location) Traffic {
 	return Working(loc, Weekdays, 9*time.Hour+10*time.Minute, 17*time.Hour+30*time.Minute, 40)

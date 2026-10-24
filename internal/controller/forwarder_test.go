@@ -38,18 +38,18 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 
-	v1alpha1 "github.com/okedeji/hybernate/api/v1alpha1"
-	"github.com/okedeji/hybernate/internal/forwarder"
+	v1alpha1 "github.com/napwake/napwake/api/v1alpha1"
+	"github.com/napwake/napwake/internal/forwarder"
 )
 
-const forwarderDoorman = "hybernate-doorman-pods.hybernate-system.svc"
+const forwarderDoorman = "napwake-doorman-pods.napwake-system.svc"
 
 func forwarderReconciler(t *testing.T, objs ...client.Object) *Reconciler {
 	t.Helper()
 	r := doormanReconciler(t, objs...)
 	r.OperatorNamespace = thisInstall
 	r.NEGForwarder = &ForwarderOptions{
-		Image:    "ghcr.io/okedeji/hybernate:test",
+		Image:    "ghcr.io/napwake/napwake:test",
 		Replicas: 2,
 		Resources: corev1.ResourceRequirements{
 			Requests: corev1.ResourceList{corev1.ResourceCPU: resource.MustParse("10m")},
@@ -84,7 +84,7 @@ func pausedAPI() *v1alpha1.ManagedWorkload {
 func forwarderOf(t *testing.T, r *Reconciler) *appsv1.Deployment {
 	t.Helper()
 	var d appsv1.Deployment
-	require.NoError(t, r.Get(context.Background(), types.NamespacedName{Namespace: "default", Name: "hybernate-forwarder-api"}, &d))
+	require.NoError(t, r.Get(context.Background(), types.NamespacedName{Namespace: "default", Name: "napwake-forwarder-api"}, &d))
 	return &d
 }
 
@@ -162,7 +162,7 @@ func TestForwarder_RunsBesideAPausedWorkloadBehindNEGs(t *testing.T) {
 	assert.True(t, *pod.Spec.SecurityContext.RunAsNonRoot)
 	assert.Empty(t, pod.Spec.SecurityContext.Sysctls, "port 8080 needs no unprivileged ports")
 	c := pod.Spec.Containers[0]
-	assert.Equal(t, "ghcr.io/okedeji/hybernate:test", c.Image)
+	assert.Equal(t, "ghcr.io/napwake/napwake:test", c.Image)
 	assert.Contains(t, c.Args, "--forwarder")
 	assert.Contains(t, c.Args, "--forwarder-doorman="+forwarderDoorman)
 	assert.Contains(t, c.Args, "--forward="+forwarder.FormatRoutes(map[int32]int32{8080: route.DoormanPort}),
@@ -175,7 +175,7 @@ func TestForwarder_RunsBesideAPausedWorkloadBehindNEGs(t *testing.T) {
 	cond := wakeCondition(t, w)
 	assert.Equal(t, metav1.ConditionFalse, cond.Status)
 	assert.Equal(t, reasonForwarderNotReady, cond.Reason)
-	assert.Contains(t, cond.Message, "hybernate-forwarder-api")
+	assert.Contains(t, cond.Message, "napwake-forwarder-api")
 	assert.True(t, slices.ContainsFunc(eventsOf(r), func(e string) bool { return strings.Contains(e, ReasonForwarderStarted) }))
 
 	forwarderPodFor(t, r, "fwd-a", "10.244.2.5", true)
@@ -328,10 +328,10 @@ func TestForwarder_SaysWhyItIsntReady(t *testing.T) {
 			upset: func(t *testing.T, r *Reconciler) {
 				d := forwarderOf(t, r)
 				d.Status.Conditions = []appsv1.DeploymentCondition{{Type: appsv1.DeploymentReplicaFailure,
-					Status: corev1.ConditionTrue, Message: `pods "hybernate-forwarder-api-x" is forbidden: exceeded quota`}}
+					Status: corev1.ConditionTrue, Message: `pods "napwake-forwarder-api-x" is forbidden: exceeded quota`}}
 				require.NoError(t, r.Status().Update(context.Background(), d))
 			},
-			want: "can't create its pods: pods \"hybernate-forwarder-api-x\" is forbidden: exceeded quota",
+			want: "can't create its pods: pods \"napwake-forwarder-api-x\" is forbidden: exceeded quota",
 		},
 		{
 			name: "it can't reach the doorman",
@@ -428,7 +428,7 @@ func TestForwarder_KeepsItsPortsThroughAStaleRead(t *testing.T) {
 func TestForwarder_LeavesADeploymentThatIsntItsOwn(t *testing.T) {
 	w := pausedAPI()
 	theirs := &appsv1.Deployment{
-		ObjectMeta: metav1.ObjectMeta{Name: "hybernate-forwarder-api", Namespace: "default"},
+		ObjectMeta: metav1.ObjectMeta{Name: "napwake-forwarder-api", Namespace: "default"},
 		Spec:       appsv1.DeploymentSpec{Replicas: ptr.To(int32(5))},
 	}
 	r := forwarderReconciler(t, w, doormanEndpoints("10.0.0.7"), negService("api"), theirs,
@@ -558,7 +558,7 @@ func TestDoormanSliceSync_LeavesForwardedSlices(t *testing.T) {
 }
 
 func TestForwarderName(t *testing.T) {
-	assert.Equal(t, "hybernate-forwarder-api", forwarderName("api"))
+	assert.Equal(t, "napwake-forwarder-api", forwarderName("api"))
 	long := forwarderName(strings.Repeat("a", 60))
 	assert.LessOrEqual(t, len(long), 63)
 	assert.NotEqual(t, long, forwarderName(strings.Repeat("a", 61)), "names that share a prefix stay apart")

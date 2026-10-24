@@ -29,12 +29,12 @@ const rendered = `
 apiVersion: v1
 kind: Service
 metadata:
-  name: hybernate-metrics
+  name: napwake-metrics
 ---
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: hybernate
+  name: napwake
 spec:
   template:
     spec:
@@ -49,7 +49,7 @@ spec:
 apiVersion: batch/v1
 kind: Job
 metadata:
-  name: hybernate-uninstall-guard
+  name: napwake-uninstall-guard
 spec:
   template:
     spec:
@@ -63,8 +63,8 @@ func TestOperatorContainersFindsEveryManagerContainer(t *testing.T) {
 	containers, err := operatorContainers([]byte(rendered))
 	require.NoError(t, err)
 	assert.Equal(t, []container{
-		{source: "Deployment/hybernate container manager", args: []string{"--timezone=UTC", "--default-pause-early=<nil>"}},
-		{source: "Job/hybernate-uninstall-guard container guard", args: []string{"--guard=uninstall"}},
+		{source: "Deployment/napwake container manager", args: []string{"--timezone=UTC", "--default-pause-early=<nil>"}},
+		{source: "Job/napwake-uninstall-guard container guard", args: []string{"--guard=uninstall"}},
 	}, containers)
 }
 
@@ -77,7 +77,7 @@ func TestCheckReportsRefusedArguments(t *testing.T) {
 	}
 	err := check([]byte(rendered), refuseNil)
 	require.Error(t, err)
-	assert.Contains(t, err.Error(), "Deployment/hybernate container manager")
+	assert.Contains(t, err.Error(), "Deployment/napwake container manager")
 	assert.NotContains(t, err.Error(), "uninstall-guard")
 
 	assert.NoError(t, check([]byte(rendered), func([]string) error { return nil }))

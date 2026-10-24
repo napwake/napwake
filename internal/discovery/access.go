@@ -94,7 +94,7 @@ var deniedConsequence = map[reading]string{
 	readingPods: "so sidecars added at pod creation aren't priced, and pods are matched to workloads by " +
 		"labels alone",
 	readingMetrics:    "so CPU there couldn't be measured",
-	readingManaged:    "so workloads Hybernate manages there are judged as if it didn't",
+	readingManaged:    "so workloads Napwake manages there are judged as if it didn't",
 	readingNamespace:  "so a protected label on them isn't seen",
 	readingServices:   "so dependencies on workloads there aren't found",
 	readingConfigMaps: "so dependencies set in them aren't found",

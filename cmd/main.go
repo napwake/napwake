@@ -59,15 +59,15 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/metrics/filters"
 	metricsserver "sigs.k8s.io/controller-runtime/pkg/metrics/server"
 
-	v1alpha1 "github.com/okedeji/hybernate/api/v1alpha1"
-	"github.com/okedeji/hybernate/internal/capacity"
-	"github.com/okedeji/hybernate/internal/controller"
-	scan "github.com/okedeji/hybernate/internal/discovery"
-	"github.com/okedeji/hybernate/internal/doorman"
-	"github.com/okedeji/hybernate/internal/forwarder"
-	"github.com/okedeji/hybernate/internal/guard"
-	opmetrics "github.com/okedeji/hybernate/internal/metrics"
-	"github.com/okedeji/hybernate/internal/nodescale"
+	v1alpha1 "github.com/napwake/napwake/api/v1alpha1"
+	"github.com/napwake/napwake/internal/capacity"
+	"github.com/napwake/napwake/internal/controller"
+	scan "github.com/napwake/napwake/internal/discovery"
+	"github.com/napwake/napwake/internal/doorman"
+	"github.com/napwake/napwake/internal/forwarder"
+	"github.com/napwake/napwake/internal/guard"
+	opmetrics "github.com/napwake/napwake/internal/metrics"
+	"github.com/napwake/napwake/internal/nodescale"
 	// +kubebuilder:scaffold:imports
 )
 
@@ -113,9 +113,9 @@ func main() {
 	flag.BoolVar(&enableHTTP2, "enable-http2", false, "Enable HTTP/2 for the metrics server.")
 	flag.BoolVar(&runDoorman, "doorman", false,
 		"Run as the doorman, which holds connections to paused workloads and wakes them, instead of the operator.")
-	flag.StringVar(&doormanService, "doorman-service", "hybernate-doorman",
+	flag.StringVar(&doormanService, "doorman-service", "napwake-doorman",
 		"Name of the doorman's Service. Empty disables waking on request.")
-	flag.StringVar(&doormanNamespace, "doorman-namespace", envOr("POD_NAMESPACE", "hybernate-system"),
+	flag.StringVar(&doormanNamespace, "doorman-namespace", envOr("POD_NAMESPACE", "napwake-system"),
 		"Namespace of the doorman's Service.")
 	var wakeKeySecret string
 	flag.StringVar(&wakeKeySecret, "wake-key-secret", "",
@@ -142,7 +142,7 @@ func main() {
 	flag.IntVar(&negForwarderReplicas, "neg-forwarder-replicas", 2, "How many pods each forwarder runs.")
 	flag.StringVar(&negForwarderResources, "neg-forwarder-resources", defaultForwarderResources,
 		"Each forwarder pod's resources, as JSON with requests and limits.")
-	flag.StringVar(&negForwarderDoorman, "neg-forwarder-doorman-service", "hybernate-doorman-pods",
+	flag.StringVar(&negForwarderDoorman, "neg-forwarder-doorman-service", "napwake-doorman-pods",
 		"Headless Service in --doorman-namespace selecting the doorman's pods, which forwarders find them through.")
 	flag.StringVar(&prometheusURL, "prometheus-url", "",
 		"Base URL of the Prometheus API used for activity queries, e.g. http://prometheus.monitoring.svc:9090.")
@@ -167,7 +167,7 @@ func main() {
 		"The DNS name that resolves to the doorman's Ready pods, which the forwarder passes connections to.")
 	optIn := controller.DefaultOptInDefaults
 	flag.DurationVar(&optIn.IdleAfter, "default-idle-after", optIn.IdleAfter,
-		"idleAfter, at least 1m, for workloads opted in with the hybernate.io/managed label, unless annotated otherwise.")
+		"idleAfter, at least 1m, for workloads opted in with the napwake.dev/managed label, unless annotated otherwise.")
 	flag.IntVar(&optIn.CPUThreshold, "default-cpu-threshold", optIn.CPUThreshold,
 		"CPU threshold, as a percentage of requests, for workloads opted in with the label, unless annotated otherwise.")
 	flag.BoolVar(&optIn.DryRun, "default-dry-run", optIn.DryRun,
@@ -188,7 +188,7 @@ func main() {
 		"Comma-separated namespaces to work in, with a Role in each. Empty means every namespace.")
 	var protected stringList
 	flag.Var(&protected, "protected-namespaces",
-		"Comma-separated name patterns, such as prod-*, of namespaces Hybernate never manages, as if labelled "+
+		"Comma-separated name patterns, such as prod-*, of namespaces Napwake never manages, as if labelled "+
 			v1alpha1.LabelProtected+", unless labelled "+v1alpha1.LabelAllowProtected+".")
 
 	var opts zap.Options
@@ -265,7 +265,7 @@ func main() {
 		metricsServerOptions.KeyName = metricsCertKey
 	}
 
-	own := hybernateNamespaces(os.Getenv("POD_NAMESPACE"), doormanNamespace, doormanService)
+	own := napwakeNamespaces(os.Getenv("POD_NAMESPACE"), doormanNamespace, doormanService)
 	protected = slices.Concat(protected, own)
 
 	cacheOpts := doormanCacheOptions(watched)
@@ -295,7 +295,7 @@ func main() {
 		os.Exit(1)
 	}
 
-	// Writes are made under Hybernate's own field manager, so the replicas
+	// Writes are made under Napwake's own field manager, so the replicas
 	// it pauses are attributed to it rather than to the binary's name.
 	c := client.WithFieldOwner(mgr.GetClient(), v1alpha1.FieldManager)
 	readyz := healthz.Ping
@@ -305,7 +305,7 @@ func main() {
 			setupLog.Error(err, "unable to create API server client")
 			os.Exit(1)
 		}
-		server := doorman.NewServer(c, mgr.GetEventRecorder("hybernate-doorman"), doorman.Options{
+		server := doorman.NewServer(c, mgr.GetEventRecorder("napwake-doorman"), doorman.Options{
 			Informers:         mgr.GetCache(),
 			APIReader:         mgr.GetAPIReader(),
 			HealthCheckAgents: strings.Split(doormanHealthCheckAgents, ","),
@@ -343,7 +343,7 @@ func main() {
 		if err := (&controller.Reconciler{
 			Client:                   c,
 			Scheme:                   mgr.GetScheme(),
-			Recorder:                 mgr.GetEventRecorder("hybernate"),
+			Recorder:                 mgr.GetEventRecorder("napwake"),
 			PrometheusURL:            prometheusURL,
 			PrometheusSelector:       selector,
 			DoormanService:           doormanService,
@@ -354,7 +354,7 @@ func main() {
 			PodReader:                mgr.GetAPIReader(),
 			ProtectedNamespaces:      protected,
 			WatchNamespaces:          watched,
-			HybernateNamespaces:      own,
+			NapwakeNamespaces:      own,
 			OperatorNamespace:        os.Getenv("POD_NAMESPACE"),
 			MaxConcurrentReconciles:  maxConcurrentReconciles,
 			Savings:                  savings,
@@ -367,12 +367,12 @@ func main() {
 			if err := (&controller.OptInReconciler{
 				Client:              c,
 				Scheme:              mgr.GetScheme(),
-				Recorder:            mgr.GetEventRecorder("hybernate"),
+				Recorder:            mgr.GetEventRecorder("napwake"),
 				Kind:                kind,
 				Defaults:            optIn,
 				ProtectedNamespaces: protected,
 				WatchNamespaces:     watched,
-				HybernateNamespaces: own,
+				NapwakeNamespaces: own,
 				OperatorNamespace:   os.Getenv("POD_NAMESPACE"),
 			}).SetupWithManager(mgr); err != nil {
 				setupLog.Error(err, "unable to create controller", "controller", "OptIn", "kind", kind)
@@ -559,7 +559,7 @@ func forwarderProbes(f *forwarder.Forwarder) http.Handler {
 // the lease is released.
 func withLeaderElection(opts ctrl.Options, enabled bool) ctrl.Options {
 	opts.LeaderElection = enabled
-	opts.LeaderElectionID = "479a98fc.hybernate.io"
+	opts.LeaderElectionID = "479a98fc.napwake.dev"
 	opts.LeaderElectionReleaseOnCancel = true
 	return opts
 }
@@ -583,10 +583,10 @@ func softMemoryLimit(gomemlimit, containerLimit string) (int64, bool) {
 	return limit / 10 * 9, true
 }
 
-// hybernateNamespaces are where the operator and, when waking on request is
+// napwakeNamespaces are where the operator and, when waking on request is
 // on, the doorman run. They're protected like --protected-namespaces, so
-// labelling one managed can't have Hybernate pause itself.
-func hybernateNamespaces(podNamespace, doormanNamespace, doormanService string) []string {
+// labelling one managed can't have Napwake pause itself.
+func napwakeNamespaces(podNamespace, doormanNamespace, doormanService string) []string {
 	var out []string
 	if podNamespace != "" {
 		out = append(out, podNamespace)
@@ -651,7 +651,7 @@ func parsePrometheusSelector(raw, prometheusURL string) (scan.Selector, error) {
 	return selector, nil
 }
 
-// wakeFlag sets mode from --default-wake, spelt as hybernate.io/wake is.
+// wakeFlag sets mode from --default-wake, spelt as napwake.dev/wake is.
 func wakeFlag(mode *v1alpha1.WakeMode) func(string) error {
 	return func(v string) error {
 		parsed, ok := v1alpha1.ParseWake(v)

@@ -21,7 +21,7 @@ limitations under the License.
 // two in step. It reads the rendered chart from stdin and compares the
 // rules of every Role and ClusterRole whose name ends in -manager.
 //
-//	helm template hybernate charts/hybernate | go run ./hack/rbaccheck config/rbac/role.yaml
+//	helm template napwake charts/napwake | go run ./hack/rbaccheck config/rbac/role.yaml
 package main
 
 import (
@@ -71,7 +71,7 @@ func run(chart io.Reader, rolePath string) error {
 	}
 	var b strings.Builder
 	fmt.Fprintf(&b, "the chart's operator RBAC differs from %s; "+
-		"update hybernate.managerRules in charts/hybernate/templates/_helpers.tpl\n", rolePath)
+		"update napwake.managerRules in charts/napwake/templates/_helpers.tpl\n", rolePath)
 	for _, g := range missing {
 		fmt.Fprintf(&b, "  missing from the chart: %s\n", g)
 	}

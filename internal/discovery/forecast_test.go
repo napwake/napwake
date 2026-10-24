@@ -36,7 +36,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 	"sigs.k8s.io/controller-runtime/pkg/client/interceptor"
 
-	v1alpha1 "github.com/okedeji/hybernate/api/v1alpha1"
+	v1alpha1 "github.com/napwake/napwake/api/v1alpha1"
 )
 
 // officeCores is a pod requesting 100m busy at 40m on weekdays from 09:10
@@ -107,7 +107,7 @@ func TestScanCluster_ReplaysTheForecast(t *testing.T) {
 	}
 }
 
-// A workload Hybernate manages is replayed with its own settings, and its
+// A workload Napwake manages is replayed with its own settings, and its
 // forecast's own outlook is shown beside the replay.
 func TestScanCluster_ReplaysAManagedWorkloadsForecast(t *testing.T) {
 	starts := metav1.NewTime(scanTime.Add(48 * time.Hour))
@@ -132,7 +132,7 @@ func TestScanCluster_ReplaysAManagedWorkloadsForecast(t *testing.T) {
 	assert.True(t, starts.Time.Equal(*w.Forecast.Live.StartsActing))
 }
 
-// The replay wakes a paused workload as Hybernate would: through the doorman
+// The replay wakes a paused workload as Napwake would: through the doorman
 // when one of its Services can be routed there, with its activity query
 // when it has one, and by hand otherwise, the hours it's paused then going
 // unseen. Two weeks of history leave the forecast a week to learn before it
@@ -236,7 +236,7 @@ func TestReplayWakes(t *testing.T) {
 		{name: "a node-local Service", services: service(func(s *corev1.Service) {
 			s.Spec.InternalTrafficPolicy = &local
 		}), want: ReplayWakes{NoRequest: noRequestNodeLocal}},
-		{name: "Services not read, as Hybernate's default", want: ReplayWakes{Request: true}},
+		{name: "Services not read, as Napwake's default", want: ReplayWakes{Request: true}},
 		{name: "asking, by the annotation it would be opted in with", services: service(nil), asks: true,
 			want: ReplayWakes{People: true, NoRequest: noRequestAsks}},
 		{name: "managed, asking", services: service(nil), mw: managed(func(mw *v1alpha1.ManagedWorkload) {
@@ -298,7 +298,7 @@ func TestScanCluster_ReplaysWithTheInstallsDoorman(t *testing.T) {
 }
 
 // A workload not yet managed would have the doorman ask before waking it
-// as the ManagedWorkload opting it in would: by its own hybernate.io/wake,
+// as the ManagedWorkload opting it in would: by its own napwake.dev/wake,
 // then its namespace's, then its install's default, where a value that
 // can't be read asks.
 func TestOptedInAsks(t *testing.T) {
@@ -398,19 +398,19 @@ func TestScanCluster_SaysWhenTheInstallCouldntBeRead(t *testing.T) {
 		return ""
 	}
 
-	inItsNamespace := forecastReportOf(t, 14*24*time.Hour, deploymentsOnlyIn(testNamespace, "hybernate-system"),
+	inItsNamespace := forecastReportOf(t, 14*24*time.Hour, deploymentsOnlyIn(testNamespace, "napwake-system"),
 		service, operator)
 	assert.Equal(t, ReplayWakes{NoRequest: noRequestDoormanOff}, byName(inItsNamespace)["api"].Forecast.Wakes,
 		"read in the operator's own namespace")
 	assert.Empty(t, installNote(inItsNamespace.Notes))
 
 	unread := forecastReportOf(t, 14*24*time.Hour, deploymentsOnlyIn(testNamespace), service, operator)
-	assert.Equal(t, ReplayWakes{Request: true}, byName(unread)["api"].Forecast.Wakes, "Hybernate's defaults")
+	assert.Equal(t, ReplayWakes{Request: true}, byName(unread)["api"].Forecast.Wakes, "Napwake's defaults")
 	note := installNote(unread.Notes)
-	assert.Contains(t, note, "couldn't read Hybernate's operator to see whether its doorman and NEG forwarder are on")
+	assert.Contains(t, note, "couldn't read Napwake's operator to see whether its doorman and NEG forwarder are on")
 	assert.Contains(t, note, "not allowed in the cluster", "why")
-	assert.Contains(t, note, "so the replay assumes Hybernate's defaults, the doorman on and the forwarder off")
-	assert.Contains(t, note, "let your user list Deployments in the operator's namespace, hybernate-system by "+
+	assert.Contains(t, note, "so the replay assumes Napwake's defaults, the doorman on and the forwarder off")
+	assert.Contains(t, note, "let your user list Deployments in the operator's namespace, napwake-system by "+
 		"default, or across the cluster")
 
 	c := interceptor.NewClient(fake.NewClientBuilder().WithScheme(newScheme()).

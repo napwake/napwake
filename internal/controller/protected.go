@@ -30,7 +30,7 @@ import (
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
-	v1alpha1 "github.com/okedeji/hybernate/api/v1alpha1"
+	v1alpha1 "github.com/napwake/napwake/api/v1alpha1"
 )
 
 const (
@@ -43,7 +43,7 @@ const (
 // is looked at again, as a fallback to the watch on its namespace.
 const protectedRecheckInterval = 10 * time.Minute
 
-// inProtectedNamespace says the workload's namespace is one Hybernate must
+// inProtectedNamespace says the workload's namespace is one Napwake must
 // not manage.
 func (r *Reconciler) inProtectedNamespace(ctx context.Context, workload *v1alpha1.ManagedWorkload) (bool, error) {
 	var ns corev1.Namespace
@@ -57,7 +57,7 @@ func (r *Reconciler) inProtectedNamespace(ctx context.Context, workload *v1alpha
 	return v1alpha1.Protected(ns.Name, ns.Labels, r.ProtectedNamespaces), nil
 }
 
-// protectionOf is why Hybernate mustn't pause the workload, or nil when it
+// protectionOf is why Napwake mustn't pause the workload, or nil when it
 // may.
 func (r *Reconciler) protectionOf(ctx context.Context, workload *v1alpha1.ManagedWorkload,
 	target client.Object) (*protection, error) {
@@ -68,8 +68,8 @@ func (r *Reconciler) protectionOf(ctx context.Context, workload *v1alpha1.Manage
 	case protected:
 		p := namespaceProtection(workload.Namespace)
 		return &p, nil
-	case r.isHybernate(target):
-		p := hybernateProtection(workload)
+	case r.isNapwake(target):
+		p := napwakeProtection(workload)
 		return &p, nil
 	case deletesClaimsOnScaleDown(target):
 		p := claimsProtection(workload)
@@ -92,11 +92,11 @@ func deletesClaimsOnScaleDown(target client.Object) bool {
 // controlPlaneLabel marks the operator's and the doorman's Deployments.
 const controlPlaneLabel = "control-plane"
 
-// isHybernate reports whether target is the operator's or the doorman's own
-// Deployment, which Hybernate never pauses, however its namespace is
+// isNapwake reports whether target is the operator's or the doorman's own
+// Deployment, which Napwake never pauses, however its namespace is
 // labelled: paused, there'd be nothing left to wake it, or anything else.
-func (r *Reconciler) isHybernate(target client.Object) bool {
-	if !slices.Contains(r.HybernateNamespaces, target.GetNamespace()) {
+func (r *Reconciler) isNapwake(target client.Object) bool {
+	if !slices.Contains(r.NapwakeNamespaces, target.GetNamespace()) {
 		return false
 	}
 	switch target.GetLabels()[controlPlaneLabel] {
@@ -113,26 +113,26 @@ type protection struct {
 }
 
 func namespaceProtection(namespace string) protection {
-	why := fmt.Sprintf("namespace %s is protected, so Hybernate doesn't pause workloads in it", namespace)
+	why := fmt.Sprintf("namespace %s is protected, so Napwake doesn't pause workloads in it", namespace)
 	return protection{reason: "ProtectedNamespace", why: why,
 		message: fmt.Sprintf("%s; label it %s=%s to allow it", why, v1alpha1.LabelAllowProtected, v1alpha1.True)}
 }
 
-func hybernateProtection(workload *v1alpha1.ManagedWorkload) protection {
-	why := fmt.Sprintf("%s %s runs Hybernate itself, which never pauses its own components",
+func napwakeProtection(workload *v1alpha1.ManagedWorkload) protection {
+	why := fmt.Sprintf("%s %s runs Napwake itself, which never pauses its own components",
 		workload.Spec.Target.Kind, workload.Spec.Target.Name)
-	return protection{reason: "HybernateComponent", why: why, message: why}
+	return protection{reason: "NapwakeComponent", why: why, message: why}
 }
 
 func claimsProtection(workload *v1alpha1.ManagedWorkload) protection {
 	why := fmt.Sprintf("StatefulSet %s deletes its PersistentVolumeClaims when scaled down "+
-		"(persistentVolumeClaimRetentionPolicy.whenScaled: Delete), so Hybernate doesn't pause it: "+
+		"(persistentVolumeClaimRetentionPolicy.whenScaled: Delete), so Napwake doesn't pause it: "+
 		"pausing it would delete its data", workload.Spec.Target.Name)
 	return protection{reason: reasonPVCsDeletedOnScaleDown, why: why,
-		message: why + "; set whenScaled to Retain to let Hybernate pause it"}
+		message: why + "; set whenScaled to Retain to let Napwake pause it"}
 }
 
-// reconcileProtected keeps a protected workload running: Hybernate pauses
+// reconcileProtected keeps a protected workload running: Napwake pauses
 // nothing in a protected namespace, nor its own components, nor a
 // StatefulSet that deletes its claims as it scales down, and hands back
 // what it had paused, or was pausing, before it was protected, so

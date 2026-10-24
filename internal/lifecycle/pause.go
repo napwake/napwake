@@ -28,8 +28,8 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
-	v1alpha1 "github.com/okedeji/hybernate/api/v1alpha1"
-	"github.com/okedeji/hybernate/internal/autoscaler"
+	v1alpha1 "github.com/napwake/napwake/api/v1alpha1"
+	"github.com/napwake/napwake/internal/autoscaler"
 )
 
 // ErrNotPrepared means Pause was called without the record Prepare makes,
@@ -166,7 +166,7 @@ const ServingWait = 2 * time.Minute
 // scaled back to, how many of them are Ready, and whether the resume is
 // over, with all of them Ready or with as many as became Ready in the time
 // they were given. A resume is also over once something other than
-// Hybernate has scaled the target back to zero, which leaves it off.
+// Napwake has scaled the target back to zero, which leaves it off.
 type Resumption struct {
 	Replicas, Ready int32
 	Settled         bool
@@ -263,7 +263,7 @@ func (p *Pauser) Resume(ctx context.Context, workload *v1alpha1.ManagedWorkload,
 
 // Restore hands a paused workload back without waiting for it: scaled back
 // to its recorded replicas if it's still at zero, and its ScaledObject
-// released. It's for when Hybernate stops managing the workload, or someone
+// released. It's for when Napwake stops managing the workload, or someone
 // else has already woken it, so it never scales down what's running. It
 // returns the replicas the target is left with: zero when it's gone, or was
 // at zero before the pause. The pause record is left for the caller to
@@ -331,7 +331,7 @@ func (p *Pauser) release(ctx context.Context, workload *v1alpha1.ManagedWorkload
 // autoscaler found for it, if any: what it ran before, kept within that
 // autoscaler's range should it have changed, and at least one. A workload
 // that was at zero before its pause goes back to zero: whoever scaled it
-// there meant it to stay off, and Hybernate never starts what it didn't
+// there meant it to stay off, and Napwake never starts what it didn't
 // stop.
 func (p *Pauser) resumeReplicas(ctx context.Context, workload *v1alpha1.ManagedWorkload) (
 	int32, autoscaler.Autoscaler, error) {

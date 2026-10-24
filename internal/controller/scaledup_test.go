@@ -34,9 +34,9 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/interceptor"
 
-	v1alpha1 "github.com/okedeji/hybernate/api/v1alpha1"
-	"github.com/okedeji/hybernate/internal/autoscaler"
-	"github.com/okedeji/hybernate/internal/gitops"
+	v1alpha1 "github.com/napwake/napwake/api/v1alpha1"
+	"github.com/napwake/napwake/internal/autoscaler"
+	"github.com/napwake/napwake/internal/gitops"
 )
 
 // scaledBy is the target as the API server returns it after manager last
@@ -82,7 +82,7 @@ func TestWakeOnScaleUp_ByAPerson(t *testing.T) {
 	assert.Equal(t, v1alpha1.ActivitySourceScaledUp, w.Status.Activity.LastActivitySource, "the idle clock starts again")
 	assert.Nil(t, meta.FindStatusCondition(w.Status.Conditions, conditionGitOpsConflict))
 	assert.Equal(t, int32(5), targetReplicas(t, r), "left as they set it")
-	assert.Contains(t, drainEvents(t, r), "scaled up to 5 replicas by kubectl-edit outside Hybernate")
+	assert.Contains(t, drainEvents(t, r), "scaled up to 5 replicas by kubectl-edit outside Napwake")
 	assert.Zero(t, r.awakeDemand(w, 80), "starting up after the scale-up isn't demand the forecast should learn")
 }
 
@@ -94,9 +94,9 @@ func TestWakeOnScaleUp_ByGitOps(t *testing.T) {
 		manager, tool, fix string
 	}{
 		{"argocd-controller", "Argo CD",
-			"To stop it, have Argo CD ignore replicas, as for an HPA: https://okedeji.io/hybernate/guides/gitops/#argo-cd"},
+			"To stop it, have Argo CD ignore replicas, as for an HPA: https://docs.napwake.dev/guides/gitops/#argo-cd"},
 		{"kustomize-controller", "Flux",
-			"To stop it, leave replicas out of what Flux applies: https://okedeji.io/hybernate/guides/gitops/#flux"},
+			"To stop it, leave replicas out of what Flux applies: https://docs.napwake.dev/guides/gitops/#flux"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.tool, func(t *testing.T) {
@@ -111,7 +111,7 @@ func TestWakeOnScaleUp_ByGitOps(t *testing.T) {
 			c := meta.FindStatusCondition(w.Status.Conditions, conditionGitOpsConflict)
 			require.NotNil(t, c)
 			assert.Equal(t, metav1.ConditionTrue, c.Status)
-			assert.Equal(t, tt.tool+" set the replicas from Git, undoing the pause; Hybernate pauses it again from "+
+			assert.Equal(t, tt.tool+" set the replicas from Git, undoing the pause; Napwake pauses it again from "+
 				"13:00 UTC. "+tt.fix, c.Message)
 			assert.Contains(t, drainEvents(t, r), "Warning GitOpsConflict api: "+c.Message)
 		})
@@ -130,7 +130,7 @@ func conflicted(scaledUp time.Time) *v1alpha1.ManagedWorkload {
 
 // After a GitOps tool undoes a pause, the idle clock waits before pausing
 // again, so it doesn't restart the workload in a loop with the tool.
-// Every GitOps tool Hybernate recognises gets its own label on
+// Every GitOps tool Napwake recognises gets its own label on
 // external_scale_ups_total, not only Argo CD and Flux.
 func TestScaledUpBy(t *testing.T) {
 	for tool, want := range map[gitops.Tool]string{
@@ -191,7 +191,7 @@ func TestGitOpsConflict_ClearsWhenAPauseHolds(t *testing.T) {
 		require.NoError(t, err)
 
 		assert.Nil(t, meta.FindStatusCondition(getWorkload(t, r, "api").Status.Conditions, conditionGitOpsConflict))
-		assert.Contains(t, drainEvents(t, r), "a pause held, so Argo CD leaves the replicas to Hybernate now")
+		assert.Contains(t, drainEvents(t, r), "a pause held, so Argo CD leaves the replicas to Napwake now")
 	})
 	t.Run("not yet", func(t *testing.T) {
 		workload := conflicted(fixedTime.Add(-3 * time.Hour))
@@ -205,15 +205,15 @@ func TestGitOpsConflict_ClearsWhenAPauseHolds(t *testing.T) {
 
 		assert.NotNil(t, meta.FindStatusCondition(getWorkload(t, r, "api").Status.Conditions, conditionGitOpsConflict))
 	})
-	// A tool that syncs less often than Hybernate wakes the workload could
+	// A tool that syncs less often than Napwake wakes the workload could
 	// still undo the next pause, so a wake only shows a pause held if it
 	// held for the hour.
 	for name, tt := range map[string]struct {
 		paused  time.Duration
 		cleared bool
 	}{
-		"woken by Hybernate within the hour": {paused: 10 * time.Minute},
-		"woken by Hybernate after it":        {paused: 61 * time.Minute, cleared: true},
+		"woken by Napwake within the hour": {paused: 10 * time.Minute},
+		"woken by Napwake after it":        {paused: 61 * time.Minute, cleared: true},
 	} {
 		t.Run(name, func(t *testing.T) {
 			workload := conflicted(fixedTime.Add(-3 * time.Hour))
@@ -233,7 +233,7 @@ func TestGitOpsConflict_ClearsWhenAPauseHolds(t *testing.T) {
 	}
 }
 
-// A workload an autoscaler scales says so, and how Hybernate pauses it
+// A workload an autoscaler scales says so, and how Napwake pauses it
 // alongside.
 func TestReportAutoscaler(t *testing.T) {
 	scheme := testScheme(t)
@@ -248,7 +248,7 @@ func TestReportAutoscaler(t *testing.T) {
 		want string
 	}{
 		{name: "an HPA", objs: []client.Object{hpa},
-			want: "HPA api-hpa scales it between 2 and 6 replicas; Hybernate pauses it at zero, where the HPA stops scaling"},
+			want: "HPA api-hpa scales it between 2 and 6 replicas; Napwake pauses it at zero, where the HPA stops scaling"},
 		{name: "nothing"},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
@@ -328,7 +328,7 @@ func TestWakeOnScaleUp_StaleCacheIsNotAScaleUp(t *testing.T) {
 	assert.Nil(t, got.Status.LastScaledUp)
 }
 
-// A workload scaled to zero outside Hybernate is meant to be off. Hybernate
+// A workload scaled to zero outside Napwake is meant to be off. Napwake
 // neither pauses it, which would record zero replicas to restore, nor ever
 // starts it: not on idle, not on a pause request, not on a later wake.
 func TestScaledToZero_IsLeftOff(t *testing.T) {
@@ -362,14 +362,14 @@ func TestScaledToZero_IsLeftOff(t *testing.T) {
 			assert.Equal(t, int32(0), targetReplicas(t, r))
 			assert.True(t, meta.IsStatusConditionTrue(got.Status.Conditions, conditionScaledToZero))
 			events := drainEvents(t, r)
-			assert.Equal(t, 1, strings.Count(events, "scaled to zero outside Hybernate; left off"), events)
+			assert.Equal(t, 1, strings.Count(events, "scaled to zero outside Napwake; left off"), events)
 			assert.NotContains(t, events, ReasonPaused)
 		})
 	}
 }
 
 // A cache that still shows the replicas a target had before someone scaled
-// it to zero mustn't make Hybernate pause it with zero to restore.
+// it to zero mustn't make Napwake pause it with zero to restore.
 func TestScaledToZero_StaleCacheDoesntPause(t *testing.T) {
 	stale := interceptor.Funcs{Get: func(ctx context.Context, c client.WithWatch, key client.ObjectKey,
 		obj client.Object, opts ...client.GetOption) error {
@@ -440,7 +440,7 @@ func TestHandBack_KeepsAWorkloadThatWasAtZero(t *testing.T) {
 	}
 }
 
-// A resume of Hybernate's own scales the workload up too. The cache can
+// A resume of Napwake's own scales the workload up too. The cache can
 // still hold the workload as Paused once that has begun, which mustn't be
 // taken for someone else waking it: that would release KEDA, which could
 // scale the workload back down while it starts.
@@ -450,7 +450,7 @@ func TestWakeOnScaleUp_StaleCacheDuringAResume(t *testing.T) {
 	stale := getWorkload(t, r, "api")
 	stale.Status.Phase = v1alpha1.PhasePaused
 
-	require.NoError(t, r.wakeOnScaleUp(context.Background(), stale, scaledBy("hybernate", 3)))
+	require.NoError(t, r.wakeOnScaleUp(context.Background(), stale, scaledBy("napwake", 3)))
 
 	assert.Zero(t, pauser.restoreCalls, "KEDA is still held")
 	got := getWorkload(t, r, "api")
@@ -458,7 +458,7 @@ func TestWakeOnScaleUp_StaleCacheDuringAResume(t *testing.T) {
 	assert.Nil(t, got.Status.LastScaledUp)
 }
 
-// Someone scaling a workload up once Hybernate has scaled it to zero, while
+// Someone scaling a workload up once Napwake has scaled it to zero, while
 // its pods are still stopping, wakes it as it would a paused one, rather
 // than having the pause scale it straight back down. Before that, the pause
 // hasn't scaled anything, so the replicas are still what it records.
@@ -495,9 +495,9 @@ func TestWakeOnScaleUp_WhilePausing(t *testing.T) {
 	}
 }
 
-// Someone scaling a resuming workload back to zero after Hybernate has
+// Someone scaling a resuming workload back to zero after Napwake has
 // scaled it up means it to be off: it's left there, as a running workload
-// scaled to zero outside Hybernate is, rather than scaled up again.
+// scaled to zero outside Napwake is, rather than scaled up again.
 func TestResume_ScaledToZeroWhileResumingIsLeftOff(t *testing.T) {
 	workload := pausedWorkload(v1alpha1.PhaseResuming)
 	workload.Status.Pause.ScaledObject = apiScaler

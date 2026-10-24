@@ -34,7 +34,7 @@ func hourAt(offset int) time.Time {
 }
 
 // officeHours is 50% of the CPU requested on weekdays from 9 to 17 in t's
-// location, and nothing otherwise: the workload Hybernate exists for.
+// location, and nothing otherwise: the workload Napwake exists for.
 func officeHours(t time.Time) float64 {
 	if t.Weekday() == time.Saturday || t.Weekday() == time.Sunday {
 		return 0

@@ -41,9 +41,9 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 
-	v1alpha1 "github.com/okedeji/hybernate/api/v1alpha1"
-	"github.com/okedeji/hybernate/internal/doorman"
-	"github.com/okedeji/hybernate/internal/forwarder"
+	v1alpha1 "github.com/napwake/napwake/api/v1alpha1"
+	"github.com/napwake/napwake/internal/doorman"
+	"github.com/napwake/napwake/internal/forwarder"
 )
 
 // A Service behind GKE container-native load balancing can't be pointed at
@@ -70,25 +70,25 @@ const (
 
 	// labelForwarded marks a doorman EndpointSlice that points a Service at
 	// its workload's forwarder rather than at the doorman.
-	labelForwarded = "hybernate.io/forwarded"
+	labelForwarded = "napwake.dev/forwarded"
 
 	// annotationDoormanPorts, on a forwarded slice, maps each Service port's
 	// name to its doorman port, as JSON. The slice's own ports are the
 	// forwarder's, which aren't the doorman's, and a doorman port a slice
 	// still sends traffic to must never go to another workload.
-	annotationDoormanPorts = "hybernate.io/doorman-ports"
+	annotationDoormanPorts = "napwake.dev/doorman-ports"
 
 	// annotationForwarderSpec, on a forwarder Deployment, is a hash of what
 	// the operator last wrote, so it's written again only when that
 	// changes, not on every reconcile for the API server's defaults.
-	annotationForwarderSpec = "hybernate.io/forwarder-spec"
+	annotationForwarderSpec = "napwake.dev/forwarder-spec"
 
 	// annotationForwarderRoutes, on a forwarder Deployment, is the routes it
 	// passes connections on for, as JSON (see forwarderDeployment).
-	annotationForwarderRoutes = "hybernate.io/doorman-routes"
+	annotationForwarderRoutes = "napwake.dev/doorman-routes"
 
 	labelAppName       = "app.kubernetes.io/name"
-	forwarderAppName   = "hybernate-forwarder"
+	forwarderAppName   = "napwake-forwarder"
 	forwarderPrefix    = forwarderAppName + "-"
 	forwarderContainer = "forwarder"
 
@@ -261,7 +261,7 @@ func forwarderSelector(workload *v1alpha1.ManagedWorkload) map[string]string {
 // forwarderDeployment is the forwarder the workload's listen ports need,
 // each passed to its doorman port, for routes.
 //
-// It records routes in hybernate.io/doorman-routes: until a forwarder pod
+// It records routes in napwake.dev/doorman-routes: until a forwarder pod
 // is Ready no slice holds their ports, and a reconcile reading status from
 // before they were written would otherwise give them new ones, rolling the
 // forwarder out again.
@@ -270,9 +270,9 @@ func forwarderSelector(workload *v1alpha1.ManagedWorkload) map[string]string {
 // ServiceAccount without its token, so a namespace's own image pull secrets
 // apply. They keep Istio's and Linkerd's sidecars out: the forwarder passes
 // TCP on untouched, and a sidecar would cost far more than it does. They
-// carry hybernate.io/operator, which the chart's doorman NetworkPolicy
-// admits them by, and the Deployment carries hybernate.io/ignore, so a
-// namespace opted in with its label doesn't have Hybernate manage it.
+// carry napwake.dev/operator, which the chart's doorman NetworkPolicy
+// admits them by, and the Deployment carries napwake.dev/ignore, so a
+// namespace opted in with its label doesn't have Napwake manage it.
 func (r *Reconciler) forwarderDeployment(workload *v1alpha1.ManagedWorkload, listen map[int32]int32,
 	routes []v1alpha1.DoormanRoute) (*appsv1.Deployment, error) {
 	opts := r.NEGForwarder

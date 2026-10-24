@@ -41,8 +41,8 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/event"
 	metricsserver "sigs.k8s.io/controller-runtime/pkg/metrics/server"
 
-	v1alpha1 "github.com/okedeji/hybernate/api/v1alpha1"
-	"github.com/okedeji/hybernate/internal/metrics"
+	v1alpha1 "github.com/napwake/napwake/api/v1alpha1"
+	"github.com/napwake/napwake/internal/metrics"
 )
 
 func optInNamespace(labels, annotations map[string]string) *corev1.Namespace {
@@ -160,7 +160,7 @@ func TestOptIn_NotOptedIn(t *testing.T) {
 	assert.Contains(t, ignored[0], "settings such as dry-run are annotations")
 }
 
-// A chart's podLabels put the label on the pod template, where Hybernate
+// A chart's podLabels put the label on the pod template, where Napwake
 // doesn't look: that's pointed out, since nothing else would say why the
 // workload isn't managed. In a managed namespace it's in anyway.
 func TestOptIn_LabelOnThePodTemplate(t *testing.T) {
@@ -177,7 +177,7 @@ func TestOptIn_LabelOnThePodTemplate(t *testing.T) {
 	assert.False(t, ok)
 	ignored := recorded(recorder, ReasonLabelIgnored)
 	require.Len(t, ignored, 1)
-	assert.Contains(t, ignored[0], "hybernate.io/managed is on the pod template, where Hybernate doesn't look")
+	assert.Contains(t, ignored[0], "napwake.dev/managed is on the pod template, where Napwake doesn't look")
 
 	r, recorder = optInReconciler(t, optInNamespace(managedLabel, nil), onPods("api"))
 	reconcileOptIn(t, r, "api")
@@ -210,7 +210,7 @@ func TestOptIn_InvalidSettingIsReported(t *testing.T) {
 	assert.Equal(t, time.Hour, mw.Spec.IdlePolicy.IdleAfter.Duration)
 	warnings := recorded(recorder, ReasonInvalidSetting)
 	require.Len(t, warnings, 1)
-	assert.Contains(t, warnings[0], `hybernate.io/idle-after="soon"`)
+	assert.Contains(t, warnings[0], `napwake.dev/idle-after="soon"`)
 }
 
 func TestOptIn_AnnotationChangesFollow(t *testing.T) {
@@ -354,7 +354,7 @@ func TestOptIn_SystemNamespacesAreProtected(t *testing.T) {
 // The operator's and the doorman's own Deployments are never opted in, even
 // where their namespace is allowed to be managed, and one opted in before is
 // released. The same labels on a workload elsewhere mean nothing.
-func TestOptIn_HybernateItselfIsNeverManaged(t *testing.T) {
+func TestOptIn_NapwakeItselfIsNeverManaged(t *testing.T) {
 	allowed := optInNamespace(map[string]string{v1alpha1.LabelManaged: "true", v1alpha1.LabelAllowProtected: "true"}, nil)
 	tests := []struct {
 		name       string
@@ -364,26 +364,26 @@ func TestOptIn_HybernateItselfIsNeverManaged(t *testing.T) {
 	}{
 		{name: "the operator", component: "controller-manager", namespaces: []string{"dev"}},
 		{name: "the doorman", component: "doorman", namespaces: []string{"other", "dev"}},
-		{name: "another app in Hybernate's namespace", component: "", namespaces: []string{"dev"}, want: true},
-		{name: "the same labels outside Hybernate's namespace", component: "controller-manager",
-			namespaces: []string{"hybernate-system"}, want: true},
+		{name: "another app in Napwake's namespace", component: "", namespaces: []string{"dev"}, want: true},
+		{name: "the same labels outside Napwake's namespace", component: "controller-manager",
+			namespaces: []string{"napwake-system"}, want: true},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			d := optInDeployment("hybernate", map[string]string{labelComponent: tt.component}, nil)
-			stale := &v1alpha1.ManagedWorkload{ObjectMeta: metav1.ObjectMeta{Name: "hybernate", Namespace: "dev",
+			d := optInDeployment("napwake", map[string]string{labelComponent: tt.component}, nil)
+			stale := &v1alpha1.ManagedWorkload{ObjectMeta: metav1.ObjectMeta{Name: "napwake", Namespace: "dev",
 				Labels: map[string]string{v1alpha1.LabelFromLabel: "true"}},
 				Spec: v1alpha1.ManagedWorkloadSpec{Target: v1alpha1.WorkloadRef{Kind: v1alpha1.TargetKindDeployment,
-					Name: "hybernate"}}}
+					Name: "napwake"}}}
 			r, recorder := optInReconciler(t, allowed, d, stale)
-			r.HybernateNamespaces = tt.namespaces
+			r.NapwakeNamespaces = tt.namespaces
 
-			reconcileOptIn(t, r, "hybernate")
+			reconcileOptIn(t, r, "napwake")
 
-			_, ok := managedWorkload(t, r, "hybernate")
+			_, ok := managedWorkload(t, r, "napwake")
 			assert.Equal(t, tt.want, ok)
 			if !tt.want {
-				assert.Len(t, recorded(recorder, "Hybernate's own"), 1)
+				assert.Len(t, recorded(recorder, "Napwake's own"), 1)
 			}
 		})
 	}
@@ -590,7 +590,7 @@ func TestOptIn_InvalidNamespaceSettingIsReported(t *testing.T) {
 
 	warnings := recorded(recorder, ReasonInvalidSetting)
 	require.Len(t, warnings, 1)
-	assert.Contains(t, warnings[0], `hybernate.io/idle-after="soon" on the namespace`)
+	assert.Contains(t, warnings[0], `napwake.dev/idle-after="soon" on the namespace`)
 }
 
 // Labelling a namespace, or removing its label, reaches its workloads

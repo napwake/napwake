@@ -41,8 +41,8 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/interceptor"
 
-	v1alpha1 "github.com/okedeji/hybernate/api/v1alpha1"
-	"github.com/okedeji/hybernate/internal/doorman"
+	v1alpha1 "github.com/napwake/napwake/api/v1alpha1"
+	"github.com/napwake/napwake/internal/doorman"
 )
 
 // doormanEndpoints is the doorman Service's own slice, as the EndpointSlice
@@ -50,8 +50,8 @@ import (
 func doormanEndpoints(ips ...string) *discoveryv1.EndpointSlice {
 	slice := &discoveryv1.EndpointSlice{
 		ObjectMeta: metav1.ObjectMeta{
-			Name: "hybernate-doorman-abc", Namespace: "hybernate-system",
-			Labels: map[string]string{discoveryv1.LabelServiceName: "hybernate-doorman"},
+			Name: "napwake-doorman-abc", Namespace: "napwake-system",
+			Labels: map[string]string{discoveryv1.LabelServiceName: "napwake-doorman"},
 		},
 		AddressType: discoveryv1.AddressTypeIPv4,
 	}
@@ -61,7 +61,7 @@ func doormanEndpoints(ips ...string) *discoveryv1.EndpointSlice {
 			Conditions: discoveryv1.EndpointConditions{Ready: ptr.To(true)},
 			NodeName:   ptr.To(fmt.Sprintf("node-%d", i)),
 			Zone:       ptr.To("zone-a"),
-			TargetRef:  &corev1.ObjectReference{Kind: "Pod", Namespace: "hybernate-system", Name: fmt.Sprintf("doorman-%d", i)},
+			TargetRef:  &corev1.ObjectReference{Kind: "Pod", Namespace: "napwake-system", Name: fmt.Sprintf("doorman-%d", i)},
 		})
 	}
 	return slice
@@ -69,7 +69,7 @@ func doormanEndpoints(ips ...string) *discoveryv1.EndpointSlice {
 
 func doormanEndpointsV6(ips ...string) *discoveryv1.EndpointSlice {
 	slice := doormanEndpoints(ips...)
-	slice.Name = "hybernate-doorman-v6"
+	slice.Name = "napwake-doorman-v6"
 	slice.AddressType = discoveryv1.AddressTypeIPv6
 	return slice
 }
@@ -134,8 +134,8 @@ func doormanReconciler(t *testing.T, objs ...client.Object) *Reconciler {
 // routeThroughDoorman points r at the doorman whose slice doormanEndpoints
 // is.
 func routeThroughDoorman(r *Reconciler) {
-	r.DoormanService = "hybernate-doorman"
-	r.DoormanNamespace = "hybernate-system"
+	r.DoormanService = "napwake-doorman"
+	r.DoormanNamespace = "napwake-system"
 }
 
 func doormanSlices(t *testing.T, r *Reconciler) []discoveryv1.EndpointSlice {
@@ -876,7 +876,7 @@ func TestReconcileDoorman_WarnsWhenPodsHaveNoReadinessProbe(t *testing.T) {
 			assert.Equal(t, "requests are held and wake the workload; its pods have no readiness probe, so held "+
 				"requests reach them as soon as they start, which may be before the app can answer them", cond.Message)
 			require.Len(t, warnings, 1, "once, not on every reconcile")
-			assert.Contains(t, warnings[0], "https://okedeji.io/hybernate/concepts/wake-on-request/#readiness-probes")
+			assert.Contains(t, warnings[0], "https://docs.napwake.dev/concepts/wake-on-request/#readiness-probes")
 		})
 	}
 }
@@ -1046,7 +1046,7 @@ func TestReconcileDoorman_WarnsOnceAboutASkippedService(t *testing.T) {
 	assert.Contains(t, warnings[0], "api")
 }
 
-// pausedRouted is a workload Hybernate paused, with its Service routed to
+// pausedRouted is a workload Napwake paused, with its Service routed to
 // the doorman.
 func pausedRouted(t *testing.T) (*Reconciler, *stubPauser) {
 	t.Helper()
@@ -1067,7 +1067,7 @@ func pausedRouted(t *testing.T) (*Reconciler, *stubPauser) {
 	return r, pauser
 }
 
-// Every way Hybernate stops managing a paused workload hands it back with
+// Every way Napwake stops managing a paused workload hands it back with
 // its Services routed to its own pods again.
 func TestReconcile_StoppingManagementRemovesDoormanRouting(t *testing.T) {
 	tests := []struct {
@@ -1275,7 +1275,7 @@ func TestReconcile_DoormanFailureDoesNotBlockTheLifecycle(t *testing.T) {
 		List: func(ctx context.Context, c client.WithWatch, list client.ObjectList, opts ...client.ListOption) error {
 			o := client.ListOptions{}
 			o.ApplyOptions(opts)
-			if o.Namespace == "hybernate-system" {
+			if o.Namespace == "napwake-system" {
 				return fmt.Errorf("unable to list: %v because of unknown namespace for the cache", o.Namespace)
 			}
 			return c.List(ctx, list, opts...)
@@ -1510,7 +1510,7 @@ func TestReconcileDoorman_AllocatesWithOnlyNamespacedAccess(t *testing.T) {
 			o := client.ListOptions{}
 			o.ApplyOptions(opts)
 			if o.Namespace == "" {
-				return errors.New(`managedworkloads.hybernate.io is forbidden: cannot list resource at the cluster scope`)
+				return errors.New(`managedworkloads.napwake.dev is forbidden: cannot list resource at the cluster scope`)
 			}
 			return c.List(ctx, list, opts...)
 		}})

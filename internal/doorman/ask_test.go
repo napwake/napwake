@@ -43,7 +43,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 
-	v1alpha1 "github.com/okedeji/hybernate/api/v1alpha1"
+	v1alpha1 "github.com/napwake/napwake/api/v1alpha1"
 )
 
 const chrome = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) " +
@@ -157,7 +157,7 @@ func TestServer_AsksAPersonBeforeWaking(t *testing.T) {
 	tokenIn(t, body)
 	assert.NotContains(t, body, "dev/api", "the page names nothing inside the cluster")
 	assert.NotContains(t, body, "uid-api")
-	assert.Contains(t, body, `href="https://okedeji.io/hybernate/guides/pause/#wake-now"`, "how tooling wakes it")
+	assert.Contains(t, body, `href="https://docs.napwake.dev/guides/pause/#wake-now"`, "how tooling wakes it")
 
 	stop()
 	assert.Empty(t, lastRequest(t, c), "nothing wakes it")
@@ -426,8 +426,8 @@ func TestServer_AClickThatDoesntSayWhereItCameFromSaysHowElseToWake(t *testing.T
 			assert.Equal(t, http.StatusOK, resp.StatusCode, "the asleep page again")
 			tokenIn(t, body)
 			for _, how := range []string{
-				"didn&#39;t say the click came from this page", "kubectl hybernate wake",
-				"hybernate.io/wake-requested", "a current browser", `href="` + asleepDocs + `"`,
+				"didn&#39;t say the click came from this page", "kubectl napwake wake",
+				"napwake.dev/wake-requested", "a current browser", `href="` + asleepDocs + `"`,
 			} {
 				assert.Contains(t, body, how)
 			}
@@ -602,9 +602,9 @@ func assertSaysHowToWake(t *testing.T, resp *http.Response, body string, wantJSO
 	} else {
 		assert.Equal(t, "text/plain; charset=utf-8", resp.Header.Get("Content-Type"))
 	}
-	for _, how := range []string{"Wake it", "hybernate.io/wake-requested", "kubectl hybernate wake",
-		"https://okedeji.io/hybernate/concepts/wake-on-request/#asking-before-waking",
-		"https://okedeji.io/hybernate/guides/pause/#wake-now"} {
+	for _, how := range []string{"Wake it", "napwake.dev/wake-requested", "kubectl napwake wake",
+		"https://docs.napwake.dev/concepts/wake-on-request/#asking-before-waking",
+		"https://docs.napwake.dev/guides/pause/#wake-now"} {
 		assert.Contains(t, body, how)
 	}
 	assert.NotContains(t, body, "dev/api", "it names nothing inside the cluster")
@@ -693,7 +693,7 @@ func TestServer_ClickWakesAreRateLimited(t *testing.T) {
 // it, and the others use it.
 func TestServer_ReplicasShareTheWakeKey(t *testing.T) {
 	port := freePort(t)
-	secret := &corev1.Secret{ObjectMeta: metav1.ObjectMeta{Name: "hybernate-doorman-wake-key", Namespace: "hybernate-system"}}
+	secret := &corev1.Secret{ObjectMeta: metav1.ObjectMeta{Name: "napwake-doorman-wake-key", Namespace: "napwake-system"}}
 	c := fake.NewClientBuilder().WithScheme(testScheme(t)).WithObjects(askingWorkload(port), secret,
 		apiPod("127.0.0.1")).Build()
 	key := client.ObjectKeyFromObject(secret)

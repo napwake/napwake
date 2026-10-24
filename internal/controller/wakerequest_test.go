@@ -33,7 +33,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/interceptor"
 
-	v1alpha1 "github.com/okedeji/hybernate/api/v1alpha1"
+	v1alpha1 "github.com/napwake/napwake/api/v1alpha1"
 )
 
 const wakeToken = "2026-03-14T12:00:30.123456789Z"
@@ -213,7 +213,7 @@ func TestWakeRequest_DuringATransition(t *testing.T) {
 	}
 }
 
-// A request Hybernate can't act on is answered once, with the reason, so
+// A request Napwake can't act on is answered once, with the reason, so
 // the tool that asked can say why, and it isn't tried again on every
 // reconcile.
 func TestWakeRequest_Refused(t *testing.T) {
@@ -232,8 +232,8 @@ func TestWakeRequest_Refused(t *testing.T) {
 			wantEvent:  "Warning Protected api: wake requested, but namespace default is protected",
 		},
 		{
-			name: "scaled to zero outside Hybernate", replicas: 0, wantReason: ReasonScaledToZero,
-			wantEvent: "Normal ScaledToZero api: wake requested, but it's scaled to zero outside Hybernate, " +
+			name: "scaled to zero outside Napwake", replicas: 0, wantReason: ReasonScaledToZero,
+			wantEvent: "Normal ScaledToZero api: wake requested, but it's scaled to zero outside Napwake, " +
 				"which leaves it off until its replicas are set above zero",
 		},
 		{
@@ -250,7 +250,7 @@ func TestWakeRequest_Refused(t *testing.T) {
 					d.Labels = map[string]string{v1alpha1.LabelIgnore: v1alpha1.True}
 				})
 			},
-			wantEvent: "Warning TargetIgnored api: wake requested, but Deployment api has the hybernate.io/ignore label",
+			wantEvent: "Warning TargetIgnored api: wake requested, but Deployment api has the napwake.dev/ignore label",
 		},
 		{
 			name: "another ManagedWorkload manages the target", replicas: 3,
@@ -293,7 +293,7 @@ func TestWakeRequest_Refused(t *testing.T) {
 }
 
 // A wake request for a ManagedWorkload being deleted is answered before it
-// goes: Hybernate hands the workload back with the replicas it had, rather
+// goes: Napwake hands the workload back with the replicas it had, rather
 // than wake it to manage it on.
 func TestWakeRequest_RefusedWhileBeingDeleted(t *testing.T) {
 	workload := pausedWorkload(v1alpha1.PhasePaused)
@@ -319,15 +319,15 @@ func TestWakeRequest_RefusedWhileBeingDeleted(t *testing.T) {
 	assert.Equal(t, wakeToken, token)
 	assert.Equal(t, metav1.ConditionFalse, answered.Status)
 	assert.Equal(t, reasonBeingDeleted, answered.Reason)
-	assert.Equal(t, "not woken at 2026-03-14 12:00 UTC: its ManagedWorkload is being deleted, so Hybernate hands "+
+	assert.Equal(t, "not woken at 2026-03-14 12:00 UTC: its ManagedWorkload is being deleted, so Napwake hands "+
 		"the workload back, with the replicas it had, as it lets go", answered.Message)
 	assert.Equal(t, int32(3), targetReplicas(t, r), "handed back")
 	assert.Equal(t, 1, strings.Count(drainEvents(t, r), "wake requested, but"))
 }
 
 // A tool that creates a ManagedWorkload and asks for its wake at once, as a
-// pull request's first push does, may set the request before Hybernate has
-// taken the ManagedWorkload on. Hybernate takes it on Running, so the
+// pull request's first push does, may set the request before Napwake has
+// taken the ManagedWorkload on. Napwake takes it on Running, so the
 // request is answered as for any awake workload, under dry-run too, rather
 // than refused as one that came before its record: the worst a stale one
 // can do is restart the idle clock.
@@ -357,7 +357,7 @@ func TestWakeRequest_OnAManagedWorkloadJustCreated(t *testing.T) {
 // lostStatus is a ManagedWorkload as a backup restored without its status,
 // a kubectl replace --force or an exported manifest applied again leaves
 // it: its annotations, and the requests in them, but nothing of what
-// Hybernate recorded.
+// Napwake recorded.
 func lostStatus(t *testing.T, r *Reconciler) {
 	t.Helper()
 	w := getWorkload(t, r, "api")
@@ -394,7 +394,7 @@ func TestWakeRequest_NotActedOnAgainAfterStatusIsLost(t *testing.T) {
 	assert.Equal(t, metav1.ConditionFalse, c.Status)
 	assert.Equal(t, reasonPredatesStatus, c.Reason)
 	assert.Equal(t, "not woken at 2026-03-14 12:00 UTC: the request was on the ManagedWorkload before "+
-		"Hybernate's record of it began, as when it's restored without its status, so it may have been answered "+
+		"Napwake's record of it began, as when it's restored without its status, so it may have been answered "+
 		"already; set a new value to ask again", c.Message)
 	recorded := drainEvents(t, r)
 	assert.Contains(t, recorded, "PauseRecovered")

@@ -24,21 +24,21 @@ import (
 	"slices"
 	"strings"
 
-	v1alpha1 "github.com/okedeji/hybernate/api/v1alpha1"
+	v1alpha1 "github.com/napwake/napwake/api/v1alpha1"
 )
 
-// The Platform of the infrastructure Hybernate itself protects.
+// The Platform of the infrastructure Napwake itself protects.
 const (
 	PlatformKubernetes = "Kubernetes"
-	PlatformHybernate  = "Hybernate"
+	PlatformNapwake  = "Napwake"
 )
 
-// hybernateApp is the name Hybernate's manifests and chart label its
+// napwakeApp is the name Napwake's manifests and chart label its
 // workloads with, and the chart's own.
-const hybernateApp = "hybernate"
+const napwakeApp = "napwake"
 
 // kubernetesNamespaces are Kubernetes' own namespaces, and the platform
-// namespaces distributions add, which Hybernate never pauses.
+// namespaces distributions add, which Napwake never pauses.
 var kubernetesNamespaces = []string{"kube-*", "openshift-*", "cattle-*", "gke-*", "gmp-*"}
 
 // platformNamespaces are where well-known cluster infrastructure installs
@@ -46,7 +46,7 @@ var kubernetesNamespaces = []string{"kube-*", "openshift-*", "cattle-*", "gke-*"
 // monitoring, storage and the like, which run the cluster rather than an
 // app, and are never idle in the sense pausing means.
 var platformNamespaces = []string{
-	"hybernate-system",
+	"napwake-system",
 	"monitoring", "prometheus", "observability", "kube-prometheus-stack", "grafana", "loki", "logging", "tempo",
 	"jaeger", "datadog", "newrelic", "dynatrace", "elastic-system", "amazon-cloudwatch", "aws-observability",
 	"ingress-nginx", "nginx-ingress", "traefik", "kong", "contour", "projectcontour", "envoy-gateway-system",
@@ -64,7 +64,7 @@ var platformNamespaces = []string{
 // labelled with, in app.kubernetes.io/name, app.kubernetes.io/part-of, app
 // or k8s-app, or the Helm chart that installed it, wherever it runs.
 var platformApps = []string{
-	hybernateApp,
+	napwakeApp,
 	"cert-manager", "external-dns", "external-secrets", "sealed-secrets", "vault",
 	"ingress-nginx", "traefik", "kong", "contour", "aws-load-balancer-controller",
 	"argocd", "argo-cd", "argo-rollouts", "flux",
@@ -86,8 +86,8 @@ func namespacePlatform(namespace string) string {
 			return PlatformKubernetes
 		}
 	}
-	if namespace == "hybernate-system" {
-		return PlatformHybernate
+	if namespace == "napwake-system" {
+		return PlatformNapwake
 	}
 	if slices.Contains(platformNamespaces, namespace) {
 		return namespace
@@ -112,8 +112,8 @@ func appPlatform(wl workload) string {
 }
 
 func platformName(app string) string {
-	if app == hybernateApp {
-		return PlatformHybernate
+	if app == napwakeApp {
+		return PlatformNapwake
 	}
 	return app
 }
@@ -133,11 +133,11 @@ func chartName(label string) string {
 }
 
 // platformOf says what part of the cluster's own infrastructure each of a
-// namespace's workloads is, by kind and name. A namespace Hybernate runs in
-// is all Hybernate's, as the operator protects it. A namespace labelled
-// allow-protected is scanned like any other, as Hybernate manages it then,
-// and so is a workload someone already has Hybernate managing. The
-// operator's and the doorman's own Deployments are Hybernate's however their
+// namespace's workloads is, by kind and name. A namespace Napwake runs in
+// is all Napwake's, as the operator protects it. A namespace labelled
+// allow-protected is scanned like any other, as Napwake manages it then,
+// and so is a workload someone already has Napwake managing. The
+// operator's and the doorman's own Deployments are Napwake's however their
 // namespace is labelled, as the operator never pauses its own components.
 //
 // Other infrastructure, found by its namespace's name or its labels, is left
@@ -156,8 +156,8 @@ func platformOf(namespace string, namespaceLabels map[string]string, workloads [
 	apps := make(map[string]string, len(workloads))
 	for _, wl := range workloads {
 		app := appPlatform(wl)
-		if app == PlatformHybernate && !allowed {
-			whole = PlatformHybernate
+		if app == PlatformNapwake && !allowed {
+			whole = PlatformNapwake
 		}
 		apps[string(wl.kind)+"/"+wl.obj.GetName()] = app
 	}
@@ -166,10 +166,10 @@ func platformOf(namespace string, namespaceLabels map[string]string, workloads [
 		key := string(wl.kind) + "/" + wl.obj.GetName()
 		app := apps[key]
 		switch {
-		case hybernateComponent(wl):
-			out[key] = PlatformHybernate
+		case napwakeComponent(wl):
+			out[key] = PlatformNapwake
 		case allowed:
-		case whole == PlatformKubernetes || whole == PlatformHybernate:
+		case whole == PlatformKubernetes || whole == PlatformNapwake:
 			out[key] = whole
 		case managed[key] != nil, optedIn:
 		case whole != "":
@@ -181,20 +181,20 @@ func platformOf(namespace string, namespaceLabels map[string]string, workloads [
 	return out
 }
 
-// hybernateComponent says the workload is the operator or the doorman, by
-// the labels Hybernate's manifests and chart give their Deployments.
-func hybernateComponent(wl workload) bool {
+// napwakeComponent says the workload is the operator or the doorman, by
+// the labels Napwake's manifests and chart give their Deployments.
+func napwakeComponent(wl workload) bool {
 	labels := wl.obj.GetLabels()
 	switch labels["control-plane"] {
 	case "controller-manager", "doorman":
-		return labels["app.kubernetes.io/name"] == hybernateApp || chartName(labels["helm.sh/chart"]) == hybernateApp
+		return labels["app.kubernetes.io/name"] == napwakeApp || chartName(labels["helm.sh/chart"]) == napwakeApp
 	}
 	return false
 }
 
 // splitPlatform separates the apps from the cluster's own infrastructure,
-// and drops apps' dependencies on Kubernetes' and Hybernate's, which
-// Hybernate never pauses, so needn't wake. A dependency on other
+// and drops apps' dependencies on Kubernetes' and Napwake's, which
+// Napwake never pauses, so needn't wake. A dependency on other
 // infrastructure stays, as the operator pauses that once it's opted in.
 func splitPlatform(workloads []Workload) (apps, platform []Workload) {
 	neverPaused := map[workloadKey]bool{}
@@ -203,7 +203,7 @@ func splitPlatform(workloads []Workload) (apps, platform []Workload) {
 			continue
 		}
 		platform = append(platform, w)
-		if w.Platform == PlatformKubernetes || w.Platform == PlatformHybernate {
+		if w.Platform == PlatformKubernetes || w.Platform == PlatformNapwake {
 			neverPaused[workloadKey{w.Namespace, w.Kind, w.Name}] = true
 		}
 	}
@@ -222,7 +222,7 @@ func splitPlatform(workloads []Workload) (apps, platform []Workload) {
 
 // platformNote says which workloads were left out as the cluster's own
 // infrastructure, by namespace, most first, and then, apart, which of it
-// Hybernate would pause: what's left out of a scan's totals isn't what the
+// Napwake would pause: what's left out of a scan's totals isn't what the
 // operator protects.
 func platformNote(platform []Workload) string {
 	byNamespace := map[string]int{}
@@ -236,7 +236,7 @@ func platformNote(platform []Workload) string {
 	for _, ns := range namespaces {
 		listed = append(listed, fmt.Sprintf("%s (%d)", ns, byNamespace[ns]))
 	}
-	return fmt.Sprintf("%s left out of the totals and next steps: %s. Hybernate never pauses Kubernetes' own "+
+	return fmt.Sprintf("%s left out of the totals and next steps: %s. Napwake never pauses Kubernetes' own "+
 		"workloads or itself; anything else, infrastructure included, pauses only if you opt it in",
 		plural(len(platform), "infrastructure workload is", "infrastructure workloads are"), listSome(listed))
 }

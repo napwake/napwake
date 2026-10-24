@@ -41,10 +41,10 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/interceptor"
 
-	v1alpha1 "github.com/okedeji/hybernate/api/v1alpha1"
-	"github.com/okedeji/hybernate/internal/forecast"
-	opmetrics "github.com/okedeji/hybernate/internal/metrics"
-	"github.com/okedeji/hybernate/internal/signal"
+	v1alpha1 "github.com/napwake/napwake/api/v1alpha1"
+	"github.com/napwake/napwake/internal/forecast"
+	opmetrics "github.com/napwake/napwake/internal/metrics"
+	"github.com/napwake/napwake/internal/signal"
 )
 
 // idleCPU is usage well under the 10% default threshold: 5m of 1000m.
@@ -152,7 +152,7 @@ func TestActivityClock_PausesAfterIdleAfter(t *testing.T) {
 }
 
 // The IdleDetected event says, in words, how long the workload has been
-// idle, since what, and what Hybernate does about it: in dry-run, only what
+// idle, since what, and what Napwake does about it: in dry-run, only what
 // it would have done.
 func TestActivityClock_IdleDetectedSaysWhatHappens(t *testing.T) {
 	tests := []struct {
@@ -162,7 +162,7 @@ func TestActivityClock_IdleDetectedSaysWhatHappens(t *testing.T) {
 		want   string
 	}{
 		{name: "dry-run", dryRun: true, source: v1alpha1.ActivitySourceCreated,
-			want: "[dry-run] api: idle for 2 hours, since Hybernate started managing it; would have paused"},
+			want: "[dry-run] api: idle for 2 hours, since Napwake started managing it; would have paused"},
 		{name: "pausing", source: v1alpha1.ActivitySourceRequest,
 			want: "api: idle for 2 hours, since a request woke it; pausing"},
 	}
@@ -451,7 +451,7 @@ func TestActivityClock_AnOutageIsNotIdleTime(t *testing.T) {
 			gaps := recorded(r.Recorder.(*events.FakeRecorder), ReasonUnobserved)
 			require.Len(t, gaps, 1, "the outage is announced once, as it ends")
 			// From the last evaluation, 30 seconds before the outage.
-			assert.Contains(t, gaps[0], "Hybernate couldn't read its activity for 41 minutes, "+
+			assert.Contains(t, gaps[0], "Napwake couldn't read its activity for 41 minutes, "+
 				"so its idle clock starts again")
 		})
 	}
@@ -480,7 +480,7 @@ func TestActivityClock_AGapEndsAnIdleWorkloadsWaitAsAGap(t *testing.T) {
 	assert.Equal(t, v1alpha1.PhaseRunning, workload.Status.Phase)
 	emitted := drainEvents(t, r)
 	assert.Contains(t, emitted,
-		"Hybernate wasn't watching for 20 minutes, so its idle clock starts again; no longer idle")
+		"Napwake wasn't watching for 20 minutes, so its idle clock starts again; no longer idle")
 	assert.NotContains(t, emitted, ReasonActivityResumed)
 }
 
@@ -1288,7 +1288,7 @@ func TestActivityClock_NoPrometheusConditionWithoutQueries(t *testing.T) {
 
 // A paused workload wakes for any activity annotation set since the pause
 // began, whatever time it states: the doorman stamps to the second, so a
-// request can share the pause's second, and kubectl hybernate wake stamps
+// request can share the pause's second, and kubectl napwake wake stamps
 // from a laptop clock that may be behind.
 func TestWokenByActivity(t *testing.T) {
 	pausedAt := metav1.NewTime(fixedTime.Add(-time.Hour))

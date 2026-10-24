@@ -2,14 +2,14 @@
 
 A paused workload has no pods, so nothing answers its Service. With wake on request, the first request wakes it instead: the connection is held while the workload starts, then passed to one of its Ready pods. The caller usually sees one slow response, not an error; [What the caller sees](#what-the-caller-sees) lists when it doesn't.
 
-It's on by default for every workload Hybernate pauses on its own. There's nothing to configure. For a workload on a public URL, which crawlers and scanners would wake every few minutes, the doorman can [ask before waking](#asking-before-waking) it, so that only a person's click does.
+It's on by default for every workload Napwake pauses on its own. There's nothing to configure. For a workload on a public URL, which crawlers and scanners would wake every few minutes, the doorman can [ask before waking](#asking-before-waking) it, so that only a person's click does.
 
 ## How it works
 
-Hybernate runs a small proxy, the **doorman**, as its own Deployment (two replicas, with a PodDisruptionBudget) next to the operator.
+Napwake runs a small proxy, the **doorman**, as its own Deployment (two replicas, with a PodDisruptionBudget) next to the operator.
 
 1. When a workload pauses, the operator finds every Service that selects its pods and adds an extra EndpointSlice to each, one per IP family, pointing at the doorman's pods on a port of their own (20000-29999). The Service, its ClusterIP, and its DNS name don't change, so callers and Ingresses need no changes. IPv4, IPv6 and dual-stack Services are all supported.
-2. A connection to the Service reaches the doorman. If one of the Service's pods is already Ready, because the workload is waking or another workload's pods serve the Service, the connection goes straight to it. Otherwise, once the caller has sent something, the doorman holds the connection and sets `hybernate.io/last-request` on the ManagedWorkload, which wakes it the same way as an [activity annotation](idle-detection.md#activity-annotations). A `WokenByRequest` event names the Service, and once the workload is Running, its clock shows `lastActivitySource: request`.
+2. A connection to the Service reaches the doorman. If one of the Service's pods is already Ready, because the workload is waking or another workload's pods serve the Service, the connection goes straight to it. Otherwise, once the caller has sent something, the doorman holds the connection and sets `napwake.dev/last-request` on the ManagedWorkload, which wakes it the same way as an [activity annotation](idle-detection.md#activity-annotations). A `WokenByRequest` event names the Service, and once the workload is Running, its clock shows `lastActivitySource: request`.
 3. The doorman watches the Service's own EndpointSlices. As soon as a pod is Ready, it connects to one of the Ready pods and passes the held connection through, including any bytes the caller already sent. Ready is what the pod's readiness probe says, so the app needs one that passes only once it can serve; see [Readiness probes](#readiness-probes).
 4. Once the workload is `Running`, the operator removes the doorman's EndpointSlices and traffic goes straight to the pods again. For 30 seconds after that, the doorman still passes connections that reach it to the Ready pods, without waking anything, while kube-proxy and load balancers catch up.
 
@@ -38,7 +38,7 @@ spec:
             periodSeconds: 2
 ```
 
-A short `periodSeconds` passes held requests on sooner once the app is ready. A `startupProbe` gates readiness too, and a `tcpSocket` probe on the app's port is enough for an app that only listens once it's ready. Hybernate reads the workload's pod template when it routes a paused workload: when none of its containers has a readiness or startup probe, and the pod has no readiness gates, the `WakeOnRequest` condition says so, and a `NoReadinessProbe` warning event points here, once each pause.
+A short `periodSeconds` passes held requests on sooner once the app is ready. A `startupProbe` gates readiness too, and a `tcpSocket` probe on the app's port is enough for an app that only listens once it's ready. Napwake reads the workload's pod template when it routes a paused workload: when none of its containers has a readiness or startup probe, and the pod has no readiness gates, the `WakeOnRequest` condition says so, and a `NoReadinessProbe` warning event points here, once each pause.
 
 ### What wakes a workload, and what doesn't
 
@@ -66,7 +66,7 @@ To keep the doorman off a port altogether, such as a metrics port something else
 kind: Service
 metadata:
   annotations:
-    hybernate.io/doorman-ignore-ports: "metrics"   # or "9090", or both: "metrics,9090"
+    napwake.dev/doorman-ignore-ports: "metrics"   # or "9090", or both: "metrics,9090"
 spec:
   ports:
     - name: http
@@ -75,7 +75,7 @@ spec:
       port: 9090
 ```
 
-Listed ports are never routed, so connections to them fail while the workload is paused, as they would without Hybernate.
+Listed ports are never routed, so connections to them fail while the workload is paused, as they would without Napwake.
 
 ### Health checks the doorman can't recognise
 
@@ -84,12 +84,12 @@ The doorman can only tell a health check from a real caller by reading it. Two k
 - **HTTPS and other TLS health checks.** The request is encrypted, so the doorman can't see its `User-Agent`. AWS target groups that use HTTPS check over HTTPS by default, as do Google Cloud backend services that use HTTPS or HTTP/2.
 - **HTTP checks and scrapers whose `User-Agent` isn't recognised**, such as an uptime monitor you haven't added to `doorman.healthCheckUserAgents`.
 
-`hybernate.io/doorman-ignore-ports` can't help when the checked port is the traffic port, since ignoring it would stop requests waking the workload too. Instead, either:
+`napwake.dev/doorman-ignore-ports` can't help when the checked port is the traffic port, since ignoring it would stop requests waking the workload too. Instead, either:
 
 - **Check over plain HTTP.** The AWS and Google Cloud health checkers send a `User-Agent` the doorman recognises, so it answers them without waking anything: AWS's `503`, Google's `200`, as below.
-- **Check a port of its own,** one the workload serves only for health checks, and list it in `hybernate.io/doorman-ignore-ports`. Not behind a GKE Ingress or Gateway: nothing answers an ignored port while the workload is paused, so Google's load balancer sees no healthy backend and sends nothing on; keep its check on the traffic port, over plain HTTP.
+- **Check a port of its own,** one the workload serves only for health checks, and list it in `napwake.dev/doorman-ignore-ports`. Not behind a GKE Ingress or Gateway: nothing answers an ignored port while the workload is paused, so Google's load balancer sees no healthy backend and sends nothing on; keep its check on the traffic port, over plain HTTP.
 
-Either way, most load balancers see the workload as unhealthy while it's paused, as they would without Hybernate, and still send requests when every target is unhealthy: AWS's Application and Network Load Balancers fail open, so the first request reaches the doorman and wakes the workload. Google Cloud's Application Load Balancers, behind a GKE Ingress or Gateway, don't: until a backend passes its health check they answer `502` and send nothing on. So the doorman answers Google's health check, `GoogleHC/`, with `200 OK` while the workload is paused, without waking it, and holds the request that follows. Check any other load balancer before relying on wake on request behind it.
+Either way, most load balancers see the workload as unhealthy while it's paused, as they would without Napwake, and still send requests when every target is unhealthy: AWS's Application and Network Load Balancers fail open, so the first request reaches the doorman and wakes the workload. Google Cloud's Application Load Balancers, behind a GKE Ingress or Gateway, don't: until a backend passes its health check they answer `502` and send nothing on. So the doorman answers Google's health check, `GoogleHC/`, with `200 OK` while the workload is paused, without waking it, and holds the request that follows. Check any other load balancer before relying on wake on request behind it.
 
 ### Environments on the public internet
 
@@ -104,7 +104,7 @@ The doorman turns away the scanners hunting for leaked secrets in hidden files, 
 
 A Service is routed to the doorman only while none of its pods is Ready. When several workloads sit behind one Service, such as a canary and a stable Deployment, traffic goes to whichever has Ready pods, and a paused one behind it reports `WakeOnRequest=False` with reason `ServedByOtherPods`. Once every workload behind the Service is paused, the Service is routed and a request wakes them.
 
-The operator reads the Service's own EndpointSlices from the API server when it decides, since it doesn't cache other workloads' endpoints, and decides again every 30 seconds while another workload's pods serve the Service. So a Service whose other pods all go is routed within 30 seconds; until then, requests to it fail as they would without Hybernate.
+The operator reads the Service's own EndpointSlices from the API server when it decides, since it doesn't cache other workloads' endpoints, and decides again every 30 seconds while another workload's pods serve the Service. So a Service whose other pods all go is routed within 30 seconds; until then, requests to it fail as they would without Napwake.
 
 ## Browsers
 
@@ -126,7 +126,7 @@ spec:
     page: false
 ```
 
-For a workload opted in with the label, set the annotation `hybernate.io/wake-page: "false"` on it instead.
+For a workload opted in with the label, set the annotation `napwake.dev/wake-page: "false"` on it instead.
 
 ## Asking before waking
 
@@ -138,7 +138,7 @@ spec:
     mode: Ask     # the default is Request: any request wakes it
 ```
 
-For a workload opted in with the label, set the annotation `hybernate.io/wake: ask` on it or on its namespace instead, or make it the default for the cluster with the Helm value `defaults.wake: ask`. A value other than `request` or `ask` is read as `ask`, with an `InvalidSetting` warning, so a typo never lets robots wake a workload meant to wake only for people. The `WakeOnRequest` condition says the doorman asks:
+For a workload opted in with the label, set the annotation `napwake.dev/wake: ask` on it or on its namespace instead, or make it the default for the cluster with the Helm value `defaults.wake: ask`. A value other than `request` or `ask` is read as `ask`, with an `InvalidSetting` warning, so a typo never lets robots wake a workload meant to wake only for people. The `WakeOnRequest` condition says the doorman asks:
 
 ```
 WakeOnRequest=True   DoormanRouted   the doorman asks a person's browser before waking the workload, and turns away other requests
@@ -149,8 +149,8 @@ WakeOnRequest=True   DoormanRouted   the doorman asks a person's browser before 
 | The caller | What happens |
 |------------|--------------|
 | A person's browser opening a page: a `GET` with `Sec-Fetch-Mode: navigate`, or asking for HTML, whose `User-Agent` starts with `Mozilla/` and doesn't name a crawler | A page saying the environment is asleep, with a **Wake it** button. It's a `200` with `Cache-Control: no-store`, `X-Robots-Tag: noindex` and `Referrer-Policy: same-origin`, and nothing wakes. It reloads itself every minute, so a tab left open goes on to the app once someone has woken it |
-| A click on **Wake it** | The workload wakes, as for a held request: `hybernate.io/last-request` is stamped, and a `WokenByRequest` event says a person asked. The waking-up page follows, and reloads the page the person opened until the app answers |
-| A click on **Wake it** in a browser that doesn't say the click came from the page, one from before about 2020 | The asleep page again, saying so, and that `kubectl hybernate wake`, the `hybernate.io/wake-requested` annotation or a current browser wakes it instead. Nothing wakes |
+| A click on **Wake it** | The workload wakes, as for a held request: `napwake.dev/last-request` is stamped, and a `WokenByRequest` event says a person asked. The waking-up page follows, and reloads the page the person opened until the app answers |
+| A click on **Wake it** in a browser that doesn't say the click came from the page, one from before about 2020 | The asleep page again, saying so, and that `kubectl napwake wake`, the `napwake.dev/wake-requested` annotation or a current browser wakes it instead. Nothing wakes |
 | A browser posting a form that isn't the button's, such as the app's login form submitted after the workload paused: URL-encoded, and up to 1 KiB, or sent on chunked by a proxy | The asleep page, a `200`, as for a page load. Nothing wakes, and it isn't counted as [turned away](#what-it-turns-away) |
 | Anything else: `curl`, scripts and API clients, crawlers and link previewers such as `Googlebot` and `facebookexternalhit`, headless browsers, scanners, a `HEAD`, a WebSocket, a browser's `fetch`, a larger form or a file upload | `503 Service Unavailable`, with `Retry-After: 300`, and a short body, JSON for a client that asks for it and plain text otherwise, saying it's asleep and how to wake it. Nothing wakes |
 | A connection that isn't HTTP, such as a database protocol, or TLS the doorman can't read | Closed; nothing wakes |
@@ -164,7 +164,7 @@ A robot that presents itself as a browser gets the page, and wakes nothing eithe
 
 So a spider that fetches the page and posts its token wakes nothing, even with a browser's `User-Agent`, nor does a script that submits the form. What this can't stop is a robot that forges those headers on purpose, or drives a real browser and clicks the button: that's rare, and costs at most a wake a minute.
 
-A browser from before about 2020 may send neither, and its click can't be told from a spider's, so it wakes nothing. The asleep page comes back saying the browser didn't say the click came from the page, and to wake it with `kubectl hybernate wake`, the `hybernate.io/wake-requested` annotation, or a current browser.
+A browser from before about 2020 may send neither, and its click can't be told from a spider's, so it wakes nothing. The asleep page comes back saying the browser didn't say the click came from the page, and to wake it with `kubectl napwake wake`, the `napwake.dev/wake-requested` annotation, or a current browser.
 
 The pages name no namespace, workload or Service, so they give nothing away to whoever reaches them.
 
@@ -172,15 +172,15 @@ The pages name no namespace, workload or Service, so they give nothing away to w
 
 The button posts back to the address of the page the person opened, so it reaches the same workload however an ingress routes it, a path prefix included. What it posts is a token the doorman signed for that workload and that pause: it's good for 10 minutes, and wakes no other workload, nor the same one in a later pause. The page reloads itself every minute, which keeps its token fresh, and takes a tab left open on to the app once someone has woken it, rather than leaving a button there that would post to the app. A token that has expired anyway, as on a page whose reloads failed, wakes nothing, and the page says so and offers the button again. A click from a page of another site, another subdomain or another port, which the browser says with `Sec-Fetch-Site` or its `Origin`, wakes nothing either, and no other site can show the page in a frame.
 
-The doorman's replicas sign with one key, since a click can reach any of them. It's kept in a Secret the chart creates empty, `hybernate-doorman-wake-key` for a release named `hybernate`, and the first doorman pod to find it empty fills it with a random key. Helm and GitOps tools never set its data, so they leave the key alone. To change the key, empty the Secret: each doorman pod uses the new one within a minute, and stops accepting the old one 11 minutes after it switches, once every token signed with it has expired:
+The doorman's replicas sign with one key, since a click can reach any of them. It's kept in a Secret the chart creates empty, `napwake-doorman-wake-key` for a release named `napwake`, and the first doorman pod to find it empty fills it with a random key. Helm and GitOps tools never set its data, so they leave the key alone. To change the key, empty the Secret: each doorman pod uses the new one within a minute, and stops accepting the old one 11 minutes after it switches, once every token signed with it has expired:
 
 ```sh
-kubectl patch secret hybernate-doorman-wake-key -n hybernate-system --type=json -p '[{"op":"remove","path":"/data"}]'
+kubectl patch secret napwake-doorman-wake-key -n napwake-system --type=json -p '[{"op":"remove","path":"/data"}]'
 ```
 
 A click wakes a workload at most once a minute, whichever doorman pod it reaches: a click within a minute of the last wake request, such as one moments before the workload paused again, is asked to try again shortly.
 
-People's tooling can wake it too, without a browser: a pull request bot, a developer portal or a chat command, with the `hybernate.io/wake-requested` annotation or `kubectl hybernate wake`. Both work whatever `wake.mode` says.
+People's tooling can wake it too, without a browser: a pull request bot, a developer portal or a chat command, with the `napwake.dev/wake-requested` annotation or `kubectl napwake wake`. Both work whatever `wake.mode` says.
 
 ### What it turns away
 
@@ -193,7 +193,7 @@ status:
     requests: 312
 ```
 
-[`kubectl hybernate status`](../getting-started/kubectl-plugin.md#see-what-hybernate-is-doing) lists the workloads that turned requests away, and `hybernate_doorman_wakes_total{result="turned_away"}` counts them as they happen; see [Metrics](../reference/metrics.md#doorman). Many mean something automated calls the workload: a monitor, a webhook, or another service. A person can't be turned away, so it's worth finding out what it is.
+[`kubectl napwake status`](../getting-started/kubectl-plugin.md#see-what-napwake-is-doing) lists the workloads that turned requests away, and `napwake_doorman_wakes_total{result="turned_away"}` counts them as they happen; see [Metrics](../reference/metrics.md#doorman). Many mean something automated calls the workload: a monitor, a webhook, or another service. A person can't be turned away, so it's worth finding out what it is.
 
 ### When to keep waking on request
 
@@ -211,7 +211,7 @@ spec:
     maxWait: 5m     # a slow starter, such as a database replaying its log
 ```
 
-For a workload opted in with the label, set the annotation `hybernate.io/wake-max-wait: "5m"` on it instead.
+For a workload opted in with the label, set the annotation `napwake.dev/wake-max-wait: "5m"` on it instead.
 
 Callers have their own timeouts. Most HTTP clients wait at least 30 seconds, and browsers wait minutes. A proxy in front of the Service can give up sooner: ingress-nginx closes an upstream request after 60 seconds by default. For a workload that takes longer than that to start, raise the Ingress timeout to match `maxWait`:
 
@@ -242,14 +242,14 @@ When a workload stops being routed, the doorman goes on serving its port for 30 
 There's no setting to turn waking off for one workload: a paused workload whose requests just fail is rarely what anyone wants. Instead:
 
 - **For a workload on a public URL,** which crawlers and scanners would keep awake, have the doorman [ask before waking](#asking-before-waking) it: only a person's click wakes it.
-- **For one port of a Service,** such as a metrics port something scrapes, list it in `hybernate.io/doorman-ignore-ports` on the Service. That port then fails while the workload is paused, as it would without Hybernate.
+- **For one port of a Service,** such as a metrics port something scrapes, list it in `napwake.dev/doorman-ignore-ports` on the Service. That port then fails while the workload is paused, as it would without Napwake.
 - **For the whole cluster,** set the Helm value `doorman.enabled: false`, or run the operator with `--doorman-service=""`. Requests to paused workloads then fail, and they report `WakeOnRequest=False` with reason `DoormanDisabled`.
 
 ## When a workload isn't routed
 
 | Situation | What happens |
 |-----------|--------------|
-| No Service selects the workload, or none has a TCP port that isn't in `hybernate.io/doorman-ignore-ports` | `WakeOnRequest=False`, reason `NoServices`. A workload no request reaches, such as a queue worker, wakes on a [Prometheus activity query](../guides/prometheus-signals.md#while-the-workload-is-paused) that sees its demand instead, such as its queue's length, and its forecast learns the hours it's paused from it |
+| No Service selects the workload, or none has a TCP port that isn't in `napwake.dev/doorman-ignore-ports` | `WakeOnRequest=False`, reason `NoServices`. A workload no request reaches, such as a queue worker, wakes on a [Prometheus activity query](../guides/prometheus-signals.md#while-the-workload-is-paused) that sees its demand instead, such as its queue's length, and its forecast learns the hours it's paused from it |
 | A headless Service (`clusterIP: None`) | Not routed. Callers resolve pod IPs from DNS and never reach the doorman; wake the workload with an [activity annotation](idle-detection.md#activity-annotations) instead |
 | A Service without a selector, or an `ExternalName` Service | Not routed, since its endpoints aren't the workload's pods |
 | UDP or SCTP ports | Not routed; only TCP ports are |
@@ -258,17 +258,17 @@ There's no setting to turn waking off for one workload: a paused workload whose 
 | A Service in an IP family no doorman pod has an address in | Not routed; reason `UnsupportedIPFamily` if no Service is |
 | A Service behind GKE container-native load balancing: one a GKE Ingress uses, one with standalone NEGs, or one `cloud.google.com/neg-status` lists NEGs for | Not routed, with a warning event, unless the optional [forwarder](#gke-container-native-load-balancing-negs) is on. Reason `UnsupportedLoadBalancer` if no Service is routed; otherwise the condition stays `True` and its message names the Services left out. GKE's own `cloud.google.com/neg: '{"ingress": true}'` on every Service doesn't count by itself; see [On GKE](#on-gke) |
 | A Service behind GKE container-native load balancing, with the forwarder on, before a forwarder pod is Ready | Not routed until one is, usually a few seconds after the pause. Reason `ForwarderNotReady` if no Service is routed, saying why, such as an image that can't be pulled or a quota that refuses the forwarder's pods; otherwise the condition's message names the Service. See [GKE container-native load balancing](#gke-container-native-load-balancing-negs) |
-| The Deployment or StatefulSet is deleted | Routing is removed, since nothing would start the pods a held request waits for. `TargetAvailable=False`, reason `TargetNotFound`; requests fail as they would without Hybernate |
+| The Deployment or StatefulSet is deleted | Routing is removed, since nothing would start the pods a held request waits for. `TargetAvailable=False`, reason `TargetNotFound`; requests fail as they would without Napwake |
 | No doorman pod is Ready | `WakeOnRequest=False`, reason `DoormanUnavailable`, and routing is removed. Requests fail until a doorman pod is back |
 | All doorman ports are in use | `WakeOnRequest=False`, reason `NoFreePort`. The doorman has 10,000 ports, one per paused Service port in the cluster |
 | The workload would hold more than 32 doorman ports, or its namespace more than 256 | `WakeOnRequest=False`, reason `TooManyPorts`, so one tenant can't use up the ports every namespace shares. Set the caps with the Helm values `doorman.portsPerWorkload` and `doorman.portsPerNamespace` |
 | Routing failed, such as an EndpointSlice write being refused, or an EndpointSlice that isn't the doorman's already having the name the doorman's would take (`<service>-o<hash>`), which it never overwrites | `WakeOnRequest=False`, reason `RoutingFailed`, with a warning event. It's retried with backoff, from 5 seconds up to 5 minutes. Routing problems never hold up a pause or a wake |
 
-Once the workload is awake, `WakeOnRequest` goes to `False`, reason `NotPaused`, unless the last pause found a problem with its Services: `ServedByOtherPods`, `NodeLocalTraffic`, `UnsupportedIPFamily`, `UnsupportedLoadBalancer` or `TooManyPorts`. That stays, its message starting `at its last pause:`, since the next pause meets it again unless it's fixed, and [`kubectl hybernate status`](../getting-started/kubectl-plugin.md#see-what-hybernate-is-doing) lists it under Needs attention while the workload runs. Every pause works routing out afresh.
+Once the workload is awake, `WakeOnRequest` goes to `False`, reason `NotPaused`, unless the last pause found a problem with its Services: `ServedByOtherPods`, `NodeLocalTraffic`, `UnsupportedIPFamily`, `UnsupportedLoadBalancer` or `TooManyPorts`. That stays, its message starting `at its last pause:`, since the next pause meets it again unless it's fixed, and [`kubectl napwake status`](../getting-started/kubectl-plugin.md#see-what-napwake-is-doing) lists it under Needs attention while the workload runs. Every pause works routing out afresh.
 
 ### On GKE
 
-GKE adds `cloud.google.com/neg: '{"ingress": true}'` to every new Service of a VPC-native cluster, which is the default. It asks GKE to use container-native load balancing, network endpoint groups (NEGs) of the Service's pods, only should a GKE Ingress use the Service, so Hybernate routes a Service with it like any other: callers in the cluster, and ingress controllers that read EndpointSlices, such as ingress-nginx, wake the workload.
+GKE adds `cloud.google.com/neg: '{"ingress": true}'` to every new Service of a VPC-native cluster, which is the default. It asks GKE to use container-native load balancing, network endpoint groups (NEGs) of the Service's pods, only should a GKE Ingress use the Service, so Napwake routes a Service with it like any other: callers in the cluster, and ingress controllers that read EndpointSlices, such as ingress-nginx, wake the workload.
 
 A Service that really is in NEGs isn't routed, unless the optional [forwarder](#gke-container-native-load-balancing-negs) is on, with reason `UnsupportedLoadBalancer`: GKE's NEG controller refuses endpoints whose pods are in another namespace, as the doorman's are, and can stop syncing the load balancer altogether. That's a Service:
 
@@ -276,13 +276,13 @@ A Service that really is in NEGs isn't routed, unless the optional [forwarder](#
 - with standalone NEGs, `exposed_ports` in its `cloud.google.com/neg`, as GKE Gateway sets on the Services its routes use
 - that GKE's NEG controller lists NEGs of pods for in `cloud.google.com/neg-status`
 
-Hybernate looks again whenever an Ingress or a Service in the namespace changes, so a Service is taken off the doorman as soon as a GKE Ingress starts using it, and routed again once none does. To see what GKE has set on a Service:
+Napwake looks again whenever an Ingress or a Service in the namespace changes, so a Service is taken off the doorman as soon as a GKE Ingress starts using it, and routed again once none does. To see what GKE has set on a Service:
 
 ```bash
 kubectl get service api -n preview-42 -o jsonpath='{.metadata.annotations}'
 ```
 
-Requests through a GKE Ingress on instance groups, whose Service has `cloud.google.com/neg: '{"ingress": false}'`, reach the doorman through the Service's node port and wake a paused workload, since the doorman tells Google's health check it's up. Without the [forwarder](#gke-container-native-load-balancing-negs), requests through a GKE Ingress whose Service is in NEGs, or through a GKE Gateway, which always uses NEGs, don't: the Service isn't routed, and the load balancer answers `502` while the workload is paused. Wake it another way, such as `kubectl hybernate wake`, an [activity annotation](idle-detection.md#activity-annotations) from your developer portal, or the forecast's `autoResume`. Or reach it through an ingress controller that reads EndpointSlices, such as ingress-nginx, in place of the GKE Ingress or behind it: the GKE Ingress then uses the ingress controller's Service, which never pauses, and the controller sends requests on to the workload's Service, which is routed.
+Requests through a GKE Ingress on instance groups, whose Service has `cloud.google.com/neg: '{"ingress": false}'`, reach the doorman through the Service's node port and wake a paused workload, since the doorman tells Google's health check it's up. Without the [forwarder](#gke-container-native-load-balancing-negs), requests through a GKE Ingress whose Service is in NEGs, or through a GKE Gateway, which always uses NEGs, don't: the Service isn't routed, and the load balancer answers `502` while the workload is paused. Wake it another way, such as `kubectl napwake wake`, an [activity annotation](idle-detection.md#activity-annotations) from your developer portal, or the forecast's `autoResume`. Or reach it through an ingress controller that reads EndpointSlices, such as ingress-nginx, in place of the GKE Ingress or behind it: the GKE Ingress then uses the ingress controller's Service, which never pauses, and the controller sends requests on to the workload's Service, which is routed.
 
 With the forwarder on, callers in the cluster wake the workload through the Ingress's own Service too. Without it, for callers in the cluster to wake a workload whose Service a GKE Ingress uses, give them a Service of their own, which no GKE Ingress uses, so it's routed:
 
@@ -315,18 +315,18 @@ doorman:
 
 ### What it runs
 
-While a workload with a Service behind NEGs is paused, the operator runs a Deployment beside it, `hybernate-forwarder-<workload>`, in the workload's namespace, and points that Service at the forwarder's pods instead of the doorman's. GKE's NEG controller accepts them, since they're in the Service's namespace. The forwarder passes every connection to the doorman, bytes untouched, and the doorman holds it and wakes the workload as it does any other. Once the workload is `Running` and its route has drained, a minute later, the operator deletes the forwarder. The ManagedWorkload owns it, so deleting the ManagedWorkload deletes it too. The workload's other Services, those no NEG uses, are routed to the doorman directly, as usual.
+While a workload with a Service behind NEGs is paused, the operator runs a Deployment beside it, `napwake-forwarder-<workload>`, in the workload's namespace, and points that Service at the forwarder's pods instead of the doorman's. GKE's NEG controller accepts them, since they're in the Service's namespace. The forwarder passes every connection to the doorman, bytes untouched, and the doorman holds it and wakes the workload as it does any other. Once the workload is `Running` and its route has drained, a minute later, the operator deletes the forwarder. The ManagedWorkload owns it, so deleting the ManagedWorkload deletes it too. The workload's other Services, those no NEG uses, are routed to the doorman directly, as usual.
 
 - **Size and cost**: two pods by default (`doorman.negForwarder.replicas`), spread across nodes, so a node drain doesn't leave the workload unreachable while GKE registers a new pod. Each requests 10m of CPU and 32Mi of memory, limited to 64Mi (`doorman.negForwarder.resources`), and runs only while the workload is paused.
-- **Access**: it runs the operator's image as the namespace's `default` ServiceAccount, without its token, and needs no access to the API server. Its pods meet the Pod Security Standards' restricted level, and keep Istio's and Linkerd's sidecars out. It carries `hybernate.io/ignore`, so a namespace opted in with its label doesn't have Hybernate manage it.
+- **Access**: it runs the operator's image as the namespace's `default` ServiceAccount, without its token, and needs no access to the API server. Its pods meet the Pod Security Standards' restricted level, and keep Istio's and Linkerd's sidecars out. It carries `napwake.dev/ignore`, so a namespace opted in with its label doesn't have Napwake manage it.
 - **Ports**: it listens on the ports the workload's own pods serve, the Services' target ports, since those are the ports GKE's firewall rules let Google's load balancers reach. For a port below 1024 it sets the `net.ipv4.ip_unprivileged_port_start` sysctl, which the restricted level allows, rather than run as root.
-- **Readiness**: a forwarder pod is Ready only while it reaches the doorman on every port it passes connections to. It finds the doorman's pods through a headless Service the chart adds, `hybernate-doorman-pods` for a release named `hybernate`. Until a forwarder pod is Ready, the Service isn't routed, and the workload reports `WakeOnRequest=False`, reason `ForwarderNotReady`, with why.
+- **Readiness**: a forwarder pod is Ready only while it reaches the doorman on every port it passes connections to. It finds the doorman's pods through a headless Service the chart adds, `napwake-doorman-pods` for a release named `napwake`. Until a forwarder pod is Ready, the Service isn't routed, and the workload reports `WakeOnRequest=False`, reason `ForwarderNotReady`, with why.
 
 To see it:
 
 ```bash
-kubectl get deployments -n preview-42 -l app.kubernetes.io/name=hybernate-forwarder
-kubectl get endpointslices -n preview-42 -l hybernate.io/forwarded=true
+kubectl get deployments -n preview-42 -l app.kubernetes.io/name=napwake-forwarder
+kubectl get endpointslices -n preview-42 -l napwake.dev/forwarded=true
 ```
 
 The route of a Service sent through the forwarder shows `forwarded: true` in the ManagedWorkload's `status.doorman`.
@@ -353,7 +353,7 @@ For a GKE Gateway, set `spec.default.timeoutSec` in a GCPBackendPolicy.
 
 ### Network policies behind NEGs
 
-The chart's doorman NetworkPolicy (`networkPolicy.enabled`) admits forwarders besides `doorman.networkPolicy.ingressFrom`, by their labels, `app.kubernetes.io/name: hybernate-forwarder` and `hybernate.io/operator` naming Hybernate's namespace, from any namespace. Anyone who can create pods can give them those labels, and so reach the doorman's routing ports, as any caller in `ingressFrom` can.
+The chart's doorman NetworkPolicy (`networkPolicy.enabled`) admits forwarders besides `doorman.networkPolicy.ingressFrom`, by their labels, `app.kubernetes.io/name: napwake-forwarder` and `napwake.dev/operator` naming Napwake's namespace, from any namespace. Anyone who can create pods can give them those labels, and so reach the doorman's routing ports, as any caller in `ingressFrom` can.
 
 In the workload's namespace, a default-deny policy must let the forwarder's pods be reached by whatever reaches the workload, Google's load balancers and health checks from `130.211.0.0/22` and `35.191.0.0/16` among them, and let them reach the doorman and DNS:
 
@@ -361,11 +361,11 @@ In the workload's namespace, a default-deny policy must let the forwarder's pods
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata:
-  name: allow-hybernate-forwarder
+  name: allow-napwake-forwarder
   namespace: preview-42
 spec:
   podSelector:
-    matchLabels: {app.kubernetes.io/name: hybernate-forwarder}
+    matchLabels: {app.kubernetes.io/name: napwake-forwarder}
   policyTypes: [Ingress, Egress]
   ingress:
     - from:
@@ -374,7 +374,7 @@ spec:
   egress:
     - to:
         - namespaceSelector:
-            matchLabels: {kubernetes.io/metadata.name: hybernate-system}
+            matchLabels: {kubernetes.io/metadata.name: napwake-system}
           podSelector:
             matchLabels: {control-plane: doorman}
       ports:
@@ -391,18 +391,18 @@ Add your in-cluster callers to `ingress.from` if apps in the cluster call the Se
 - **Right after a pause**: GKE takes a while, typically under a minute, to register the forwarder's pods in the NEG and see them pass health checks. Until it has, requests through the load balancer can get a `502`, as after any scale-down, and the Service can show a `SyncNetworkEndpointGroupFailed` warning event from GKE, `endpoint count from endpointPodMap cannot be zero`, for the moment between the workload's pods going and the forwarder's arriving; GKE retries it within seconds. After a wake, the Service goes back to the workload's own pods as soon as one is Ready; the forwarder goes on passing what still reaches it to the doorman, which passes it to the workload for the 30 seconds its route drains, and is deleted a minute after the wake.
 - **The caller's address**: the doorman sees the forwarder's, not the caller's, so dependencies aren't [learned](dependencies.md#learned-dependencies) from requests that come through it, and the doorman's per-source [limits](#limits) count each forwarder pod as one source. Through a load balancer, the caller is one of Google's proxies anyway.
 - **Images from a private registry**: the forwarder pulls the operator's image in the workload's namespace, as its `default` ServiceAccount, so a mirror that needs a pull secret needs it there too. GKE nodes pull from Artifact Registry in their own project without one.
-- **Turning it off** leaves running forwarders in place, since the operator no longer may delete them: `kubectl delete deployments -A -l app.kubernetes.io/name=hybernate-forwarder`.
+- **Turning it off** leaves running forwarders in place, since the operator no longer may delete them: `kubectl delete deployments -A -l app.kubernetes.io/name=napwake-forwarder`.
 - **With the Kustomize manifests**, set it up by hand: run the operator with `--neg-forwarder`, `--neg-forwarder-image` naming its own image, and `--neg-forwarder-doorman-service`, grant it `create` and `delete` on Deployments, and add a headless Service selecting the doorman's pods. See [Configuration](../reference/configuration.md#operator-flags).
 
 ## Network policies
 
-The doorman connects to woken pods directly, from the Hybernate namespace. If a workload's namespace has a default-deny NetworkPolicy, allow ingress from the doorman:
+The doorman connects to woken pods directly, from the Napwake namespace. If a workload's namespace has a default-deny NetworkPolicy, allow ingress from the doorman:
 
 ```yaml
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata:
-  name: allow-hybernate-doorman
+  name: allow-napwake-doorman
   namespace: preview-42
 spec:
   podSelector: {}
@@ -410,12 +410,12 @@ spec:
   ingress:
     - from:
         - namespaceSelector:
-            matchLabels: {kubernetes.io/metadata.name: hybernate-system}
+            matchLabels: {kubernetes.io/metadata.name: napwake-system}
           podSelector:
             matchLabels: {control-plane: doorman}
 ```
 
-Callers reach the doorman on ports 20000-29999, so a default-deny policy on the Hybernate namespace needs to allow those too.
+Callers reach the doorman on ports 20000-29999, so a default-deny policy on the Napwake namespace needs to allow those too.
 
 ### Restricting who can reach the doorman
 
@@ -446,8 +446,8 @@ With `install.yaml` or the Kustomize manifests, write the policy yourself:
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata:
-  name: hybernate-doorman-callers
-  namespace: hybernate-system
+  name: napwake-doorman-callers
+  namespace: napwake-system
 spec:
   podSelector:
     matchLabels:
@@ -484,17 +484,17 @@ doorman:
 
 List every IP family your cluster uses, and the node CIDRs too if a routed workload uses `hostNetwork`. `apiServer` is the API server's endpoint addresses, not the `kubernetes` Service's ClusterIP, since policies apply after the Service is resolved.
 
-The doorman's ServiceAccount can patch ManagedWorkloads, to set `hybernate.io/last-request`. The chart's ValidatingAdmissionPolicy (`doorman.admissionPolicy.enabled`, on by default, and in the Kustomize manifests too) narrows that: it lets the ServiceAccount change only the `hybernate.io/last-request` and `hybernate.io/last-request-from` annotations, and `hybernate.io/turned-away`, where it counts what it [turned away](#what-it-turns-away). Besides those, it reads one Secret, its own [wake key](#the-wake-it-button), by name, and writes it once to fill it. A second policy lets no one else set those two, so only the doorman can say a request woke a workload, or where it came from. See [Security](../reference/security.md#the-doorman-is-a-way-in-to-paused-workloads).
+The doorman's ServiceAccount can patch ManagedWorkloads, to set `napwake.dev/last-request`. The chart's ValidatingAdmissionPolicy (`doorman.admissionPolicy.enabled`, on by default, and in the Kustomize manifests too) narrows that: it lets the ServiceAccount change only the `napwake.dev/last-request` and `napwake.dev/last-request-from` annotations, and `napwake.dev/turned-away`, where it counts what it [turned away](#what-it-turns-away). Besides those, it reads one Secret, its own [wake key](#the-wake-it-button), by name, and writes it once to fill it. A second policy lets no one else set those two, so only the doorman can say a request woke a workload, or where it came from. See [Security](../reference/security.md#the-doorman-is-a-way-in-to-paused-workloads).
 
 ## What the caller sees
 
 - **A browser**: the waking-up page at once, then the app on the first reload after one of its pods is Ready. With [`wake.mode: Ask`](#asking-before-waking), first a page asking whether to wake it.
 - **With `wake.mode: Ask`, anything but a person's browser**: a `503` saying it's asleep and how to wake it, until someone does.
 - **Anything else, from a pod in the cluster or through an Ingress**: usually one slow response while the workload starts, then a normal one. Not when something between the caller and the workload gives up first: behind ingress-nginx, a workload that takes longer than its 60-second default `proxy-read-timeout` gets the caller a 504 (see [How long a connection is held](#how-long-a-connection-is-held)); with Istio's STRICT mTLS, the woken pod's sidecar refuses the doorman and the caller gets a 503 (see [Compatibility](../reference/compatibility.md#service-meshes)). The cases below are the others.
-- **The client's source IP**: the woken pod sees the doorman's IP for held connections, not the caller's. Only the connections that arrive while the workload is paused or waking go through the doorman. The doorman records the caller's address on the ManagedWorkload as `hybernate.io/last-request-from`, so Hybernate can [learn](dependencies.md#learned-dependencies) which workload sent it.
+- **The client's source IP**: the woken pod sees the doorman's IP for held connections, not the caller's. Only the connections that arrive while the workload is paused or waking go through the doorman. The doorman records the caller's address on the ManagedWorkload as `napwake.dev/last-request-from`, so Napwake can [learn](dependencies.md#learned-dependencies) which workload sent it.
 - **Right after a wake, an error from the app itself**, such as a `503`: the workload's pods were Ready before the app could answer, because they have no readiness probe, or one that passes too soon. See [Readiness probes](#readiness-probes).
 - **Right after the pause**: for a few seconds, until kube-proxy, ingress controllers and the doorman itself pick up the new route, a request can be refused or get a 502 from an ingress, as after any scale-down. A retry is held.
 - **A connection held past `maxWait`, or one whose woken pods can't be reached**: it's closed with no response, which most clients report as an empty reply or a connection reset. A `RequestNotServed` warning event on the ManagedWorkload names the Service, how long the request waited and why; each doorman pod emits it at most once a minute per workload.
 - **A connection over a [limit](#limits)**: over the held-connection caps, closed at once with nothing sent; over the wake rate limits, held, or shown the waking-up page, while the wake is retried.
 
-Track wakes with `hybernate_doorman_wakes_total` and `hybernate_doorman_wait_seconds`; see [Metrics](../reference/metrics.md#doorman). The `HybernateDoormanWakesFailing` alert fires when held connections keep timing out or failing for a workload.
+Track wakes with `napwake_doorman_wakes_total` and `napwake_doorman_wait_seconds`; see [Metrics](../reference/metrics.md#doorman). The `NapwakeDoormanWakesFailing` alert fires when held connections keep timing out or failing for a workload.

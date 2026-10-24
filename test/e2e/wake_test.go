@@ -28,7 +28,7 @@ import (
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
-	"github.com/okedeji/hybernate/test/utils"
+	"github.com/napwake/napwake/test/utils"
 )
 
 // Each spec has a namespace and an app of its own, so they run in any
@@ -46,7 +46,7 @@ var _ = Describe("Wake on request", func() {
 	}
 
 	It("wakes a paused app on a request to its Service, with every replica it had", func() {
-		ns := createNamespace("hybernate-e2e-wake-service")
+		ns := createNamespace("napwake-e2e-wake-service")
 		const name = "e2e-web"
 		startWebApp(name, ns, 3)
 		manage(ns, "Deployment", name, "1m")
@@ -59,7 +59,7 @@ var _ = Describe("Wake on request", func() {
 	})
 
 	It("wakes a paused app on a request through ingress-nginx", func() {
-		ns := createNamespace("hybernate-e2e-wake-ingress")
+		ns := createNamespace("napwake-e2e-wake-ingress")
 		const name = "e2e-web"
 		host := routeThroughIngress(ns, name)
 		manage(ns, "Deployment", name, "1m")
@@ -76,7 +76,7 @@ var _ = Describe("Wake on request", func() {
 	})
 
 	It("shows a browser a waking-up page through ingress-nginx, then the app", func() {
-		ns := createNamespace("hybernate-e2e-wake-page")
+		ns := createNamespace("napwake-e2e-wake-page")
 		const name = "e2e-web"
 		host := routeThroughIngress(ns, name)
 		manage(ns, "Deployment", name, "1m")
@@ -112,7 +112,7 @@ var _ = Describe("Wake on request", func() {
 
 	It("asks before waking a paused app through ingress-nginx: curl is turned away, and a click on the asleep page "+
 		"over plain HTTP wakes it", func() {
-		ns := createNamespace("hybernate-e2e-wake-ask")
+		ns := createNamespace("napwake-e2e-wake-ask")
 		const name = "e2e-web"
 		host := routeThroughIngress(ns, name)
 		manage(ns, "Deployment", name, "1m")
@@ -131,7 +131,7 @@ var _ = Describe("Wake on request", func() {
 			out, _ := runCurl(fmt.Sprintf("curl-ask-%d", attempt), ns, ingressURL, "-H", "Host: "+host,
 				"-s", "--max-time", "30", "-w", "\nstatus=%{http_code}")
 			g.Expect(out).To(ContainSubstring("status=503"))
-			g.Expect(out).To(ContainSubstring("kubectl hybernate wake"), "it says how to wake it")
+			g.Expect(out).To(ContainSubstring("kubectl napwake wake"), "it says how to wake it")
 			g.Expect(out).NotTo(ContainSubstring(ns), "it names nothing inside the cluster")
 		}, 2*time.Minute, time.Second).Should(Succeed())
 		Consistently(func(g Gomega) {
@@ -147,10 +147,10 @@ var _ = Describe("Wake on request", func() {
 		clickWith := func(headers string) string {
 			return fmt.Sprintf(`set -e
 page=$(curl -sS -A '%[1]s' -H 'Host: %[2]s' -H 'Accept: text/html' -H 'Sec-Fetch-Mode: navigate' %[3]s)
-token=$(echo "$page" | sed -n 's/.*name="hybernate-wake" value="\([^"]*\)".*/\1/p')
+token=$(echo "$page" | sed -n 's/.*name="napwake-wake" value="\([^"]*\)".*/\1/p')
 test -n "$token"
 curl -sS -w '\nstatus=%%{http_code}' -A '%[1]s' -H 'Host: %[2]s' %[4]s \
-  --data-urlencode "hybernate-wake=$token" %[3]s`, browser, host, ingressURL, headers)
+  --data-urlencode "napwake-wake=$token" %[3]s`, browser, host, ingressURL, headers)
 		}
 
 		By("posting the page's token as a browser that says nothing of where the click came from")
@@ -160,7 +160,7 @@ curl -sS -w '\nstatus=%%{http_code}' -A '%[1]s' -H 'Host: %[2]s' %[4]s \
 		Expect(ok).To(BeTrue(), "the post failed: %s", out)
 		Expect(out).To(ContainSubstring("status=200"), "the asleep page again")
 		Expect(out).To(ContainSubstring("didn&#39;t say the click came from this page"), "it says how else to wake it")
-		Expect(jsonpath("managedworkload", name, ns, `{.metadata.annotations.hybernate\.io/last-request}`)).
+		Expect(jsonpath("managedworkload", name, ns, `{.metadata.annotations.napwake\.dev/last-request}`)).
 			To(BeEmpty(), "nothing stamped a wake")
 
 		By("opening the app in a browser and clicking Wake it, sending what Chrome does over plain HTTP")
@@ -172,11 +172,11 @@ curl -sS -w '\nstatus=%%{http_code}' -A '%[1]s' -H 'Host: %[2]s' %[4]s \
 		Expect(out).To(ContainSubstring("status=503"),
 			"the click, its Origin passed on by nginx, is answered by the waking-up page")
 		expectWokenByRequest(ns, "deployment", name, 1)
-		key, err := jsonpath("secret", "hybernate-doorman-wake-key", namespace, "{.data.key}")
+		key, err := jsonpath("secret", "napwake-doorman-wake-key", namespace, "{.data.key}")
 		Expect(err).NotTo(HaveOccurred())
 		Expect(key).NotTo(BeEmpty(), "a doorman pod filled the wake key every replica signs with")
 
-		By("checking the requests turned away are counted in status and by kubectl hybernate status")
+		By("checking the requests turned away are counted in status and by kubectl napwake status")
 		Eventually(func(g Gomega) {
 			count, err := jsonpath("managedworkload", name, ns, "{.status.turnedAway.requests}")
 			g.Expect(err).NotTo(HaveOccurred())
@@ -188,13 +188,13 @@ curl -sS -w '\nstatus=%%{http_code}' -A '%[1]s' -H 'Host: %[2]s' %[4]s \
 		Expect(loggedErrors(ns)).To(BeEmpty())
 	})
 
-	It("learns that a workload Hybernate manages depends on the one its request woke", func() {
-		ns := createNamespace("hybernate-e2e-wake-learn")
+	It("learns that a workload Napwake manages depends on the one its request woke", func() {
+		ns := createNamespace("napwake-e2e-wake-learn")
 		const (
 			name       = "e2e-web"
 			callerName = "e2e-caller"
 		)
-		By("running a caller that Hybernate manages, with nothing in its environment naming the app")
+		By("running a caller that Napwake manages, with nothing in its environment naming the app")
 		startWebApp(name, ns, 1)
 		startCaller(callerName, ns)
 		manage(ns, "Deployment", callerName, "1h")
@@ -227,7 +227,7 @@ curl -sS -w '\nstatus=%%{http_code}' -A '%[1]s' -H 'Host: %[2]s' %[4]s \
 	})
 
 	It("answers a Prometheus scrape of a paused app without waking it, and wakes it for a client", func() {
-		ns := createNamespace("hybernate-e2e-wake-scrape")
+		ns := createNamespace("napwake-e2e-wake-scrape")
 		const name = "e2e-scraped"
 		startWebApp(name, ns, 1)
 		manage(ns, "Deployment", name, "1m")
@@ -255,7 +255,7 @@ curl -sS -w '\nstatus=%%{http_code}' -A '%[1]s' -H 'Host: %[2]s' %[4]s \
 	})
 
 	It("wakes a paused app on a request to its NodePort", func() {
-		ns := createNamespace("hybernate-e2e-wake-nodeport")
+		ns := createNamespace("napwake-e2e-wake-nodeport")
 		const name = "e2e-web"
 		startWebApp(name, ns, 2)
 		_, err := utils.Run(exec.Command("kubectl", "patch", "service", name, "-n", ns,
@@ -278,7 +278,7 @@ curl -sS -w '\nstatus=%%{http_code}' -A '%[1]s' -H 'Host: %[2]s' %[4]s \
 	})
 
 	It("pauses a StatefulSet and wakes it on a request, with every replica it had", func() {
-		ns := createNamespace("hybernate-e2e-wake-statefulset")
+		ns := createNamespace("napwake-e2e-wake-statefulset")
 		const name = "e2e-stateful"
 		Expect(kubectlApply(fmt.Sprintf(`
 apiVersion: apps/v1
@@ -320,7 +320,7 @@ spec:
 	})
 
 	It("restores a paused workload and stops routing it when its ManagedWorkload is deleted", func() {
-		ns := createNamespace("hybernate-e2e-wake-delete")
+		ns := createNamespace("napwake-e2e-wake-delete")
 		const name = "e2e-web"
 		startWebApp(name, ns, 2)
 		manage(ns, "Deployment", name, "1m")
@@ -342,7 +342,7 @@ spec:
 	})
 
 	It("wakes one of two paused workloads behind one Service, and leaves the other to it", func() {
-		ns := createNamespace("hybernate-e2e-wake-canary")
+		ns := createNamespace("napwake-e2e-wake-canary")
 		const service = "e2e-shop"
 		tracks := []string{"e2e-stable", "e2e-canary"}
 		for _, track := range tracks {
@@ -407,7 +407,7 @@ spec:
 // after every other spec.
 var _ = Describe("Operator restart", Serial, func() {
 	It("keeps a paused workload paused across a restart of the operator and the doorman, and still wakes it", func() {
-		ns := createNamespace("hybernate-e2e-restart")
+		ns := createNamespace("napwake-e2e-restart")
 		const name = "e2e-web"
 		// A restart is a gap in watching, which doesn't wake a paused
 		// workload, so it doesn't end a would-be pause either.
@@ -416,7 +416,7 @@ var _ = Describe("Operator restart", Serial, func() {
 		startWebApp(measured, ns, 1)
 		manage(ns, "Deployment", name, "1m")
 		Expect(kubectlApply(fmt.Sprintf(`
-apiVersion: hybernate.io/v1alpha1
+apiVersion: napwake.dev/v1alpha1
 kind: ManagedWorkload
 metadata: {name: %[1]s, namespace: %[2]s}
 spec:
@@ -452,8 +452,8 @@ spec:
 
 		By("deleting the operator's and the doorman's pods")
 		for _, d := range []struct{ deployment, label string }{
-			{"hybernate-controller-manager", "control-plane=controller-manager"},
-			{"hybernate-doorman", "control-plane=doorman"},
+			{"napwake-controller-manager", "control-plane=controller-manager"},
+			{"napwake-doorman", "control-plane=doorman"},
 		} {
 			_, err := utils.Run(exec.Command("kubectl", "delete", "pods", "-n", namespace, "-l", d.label,
 				"--timeout=2m"))
@@ -640,7 +640,7 @@ func doormanSlices(ns, workload string) (string, error) {
 
 func doormanSliceField(ns, workload, path string) (string, error) {
 	return utils.Output(exec.Command("kubectl", "get", "endpointslices", "-n", ns,
-		"-l", "endpointslice.kubernetes.io/managed-by=doorman.hybernate.io,hybernate.io/managed-workload="+workload,
+		"-l", "endpointslice.kubernetes.io/managed-by=doorman.napwake.dev,napwake.dev/managed-workload="+workload,
 		"-o", "jsonpath="+path))
 }
 

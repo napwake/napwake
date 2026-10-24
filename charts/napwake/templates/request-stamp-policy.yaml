@@ -1,0 +1,56 @@
+{{- include "napwake.defaults" . -}}
+{{- if .Values.doorman.admissionPolicy.enabled }}
+{{- /*
+The operator learns which workload depends on which from the address in
+napwake.dev/last-request-from, so a forged one would have it write a
+dependency into whatever workload's pod has that address. Only the
+doorman sets the two request annotations; this holds everyone else to
+that. The operator still checks that its own field manager set the
+address, for clusters without this policy. It's scoped to the watched
+namespaces, so another install's doorman isn't refused in its own.
+*/}}
+apiVersion: admissionregistration.k8s.io/v1
+kind: ValidatingAdmissionPolicy
+metadata:
+  name: {{ include "napwake.fullname" . }}-request-stamps
+  labels:
+    {{- include "napwake.labels" . | nindent 4 }}
+spec:
+  failurePolicy: Fail
+  matchConstraints:
+    resourceRules:
+      - apiGroups: [napwake.dev]
+        apiVersions: ["*"]
+        operations: [CREATE, UPDATE]
+        resources: [managedworkloads]
+    {{- with .Values.watchNamespaces }}
+    namespaceSelector:
+      matchExpressions:
+        - key: kubernetes.io/metadata.name
+          operator: In
+          values:
+            {{- toYaml . | nindent 12 }}
+    {{- end }}
+  matchConditions:
+    - name: sets-a-stamp
+      expression: >-
+        ['napwake.dev/last-request', 'napwake.dev/last-request-from'].exists(k,
+          has(object.metadata.annotations) && k in object.metadata.annotations
+          && !(oldObject != null && has(oldObject.metadata.annotations) && k in oldObject.metadata.annotations
+            && oldObject.metadata.annotations[k] == object.metadata.annotations[k]))
+  validations:
+    - expression: request.userInfo.username == "system:serviceaccount:{{ .Release.Namespace }}:{{ include "napwake.doormanName" . }}"
+      message: >-
+        Only Napwake's doorman may set the napwake.dev/last-request and napwake.dev/last-request-from
+        annotations; set napwake.dev/wake-requested to wake a workload.
+---
+apiVersion: admissionregistration.k8s.io/v1
+kind: ValidatingAdmissionPolicyBinding
+metadata:
+  name: {{ include "napwake.fullname" . }}-request-stamps
+  labels:
+    {{- include "napwake.labels" . | nindent 4 }}
+spec:
+  policyName: {{ include "napwake.fullname" . }}-request-stamps
+  validationActions: [Deny]
+{{- end }}

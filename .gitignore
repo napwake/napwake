@@ -6,7 +6,7 @@
 *.dylib
 bin/*
 main
-/kubectl-hybernate
+/kubectl-napwake
 Dockerfile.cross
 
 # Test binary, built with `go test -c`

@@ -21,121 +21,121 @@ import (
 	"strings"
 )
 
-// True is the value that turns a Hybernate label or boolean annotation on.
+// True is the value that turns a Napwake label or boolean annotation on.
 // Any other value, "True" and "yes" included, leaves it off.
 const True = "true"
 
-// FieldManager is the name Hybernate's writes, such as the replica count it
+// FieldManager is the name Napwake's writes, such as the replica count it
 // pauses, are made under, so the API server attributes them to it where it
 // records who set a field.
-const FieldManager = "hybernate"
+const FieldManager = "napwake"
 
 const (
 	// LabelManaged opts a Deployment or StatefulSet, or every one in a
-	// namespace, in to Hybernate: "true" gets it a ManagedWorkload.
-	LabelManaged = "hybernate.io/managed"
+	// namespace, in to Napwake: "true" gets it a ManagedWorkload.
+	LabelManaged = "napwake.dev/managed"
 
-	// LabelProtected marks a namespace Hybernate must never manage, such as
+	// LabelProtected marks a namespace Napwake must never manage, such as
 	// production: nothing in it is opted in or paused, whatever its labels.
-	LabelProtected = "hybernate.io/protected"
+	LabelProtected = "napwake.dev/protected"
 
-	// LabelAllowProtected lets Hybernate manage a protected namespace, one
+	// LabelAllowProtected lets Napwake manage a protected namespace, one
 	// marked with LabelProtected or matching the operator's protected
-	// namespace patterns. It's set on purpose, never by Hybernate.
-	LabelAllowProtected = "hybernate.io/allow-protected"
+	// namespace patterns. It's set on purpose, never by Napwake.
+	LabelAllowProtected = "napwake.dev/allow-protected"
 
 	// LabelIgnore excludes a workload from management, even in a managed
 	// namespace.
-	LabelIgnore = "hybernate.io/ignore"
+	LabelIgnore = "napwake.dev/ignore"
 
 	// LabelFromLabel marks a ManagedWorkload created because its workload
 	// or namespace carries LabelManaged. Its spec follows the annotations
 	// and is rewritten from them.
-	LabelFromLabel = "hybernate.io/from-label"
+	LabelFromLabel = "napwake.dev/from-label"
 
 	// LabelOperator, on the doorman EndpointSlices an operator writes, is
 	// the namespace of its install, like AnnotationOperator on the
 	// ManagedWorkloads it takes on. Another install leaves them alone.
-	LabelOperator = "hybernate.io/operator"
+	LabelOperator = "napwake.dev/operator"
 
 	// AnnotationLastActivity records activity seen by another tool, such as a
 	// developer portal or CI pipeline, as an RFC 3339 time. Set on the ManagedWorkload
 	// or its target. A newer value wakes a paused workload.
-	AnnotationLastActivity = "hybernate.io/last-activity"
+	AnnotationLastActivity = "napwake.dev/last-activity"
 
 	// AnnotationActiveUntil keeps a workload awake until an RFC 3339 time.
 	// Set on the ManagedWorkload or its target.
-	AnnotationActiveUntil = "hybernate.io/active-until"
+	AnnotationActiveUntil = "napwake.dev/active-until"
 
 	// AnnotationLastRequest records, as an RFC 3339 time, a request the
 	// doorman is holding for a paused workload. It wakes the workload like
 	// AnnotationLastActivity, and the clock records the wake as a request.
-	AnnotationLastRequest = "hybernate.io/last-request"
+	AnnotationLastRequest = "napwake.dev/last-request"
 
 	// AnnotationLastRequestFrom is the address the request that woke a
 	// paused workload came from, stamped by the doorman with
 	// AnnotationLastRequest, so the operator can learn which workload sent
 	// it.
-	AnnotationLastRequestFrom = "hybernate.io/last-request-from"
+	AnnotationLastRequestFrom = "napwake.dev/last-request-from"
 
 	// AnnotationTurnedAway is where the doorman counts the requests it
 	// turned away from a paused workload whose wake.mode is Ask, as a JSON
 	// TurnedAway. The operator copies it to status.turnedAway. Don't set
 	// it.
-	AnnotationTurnedAway = "hybernate.io/turned-away"
+	AnnotationTurnedAway = "napwake.dev/turned-away"
 
-	// AnnotationPauseRequested asks Hybernate to pause a ManagedWorkload's
+	// AnnotationPauseRequested asks Napwake to pause a ManagedWorkload's
 	// workload now rather than when its idle clock runs out. The value is a
 	// token, such as the time of the request, that only needs to differ from
-	// the last request's: Hybernate acts on each value once, recording it in
-	// status.lastPauseRequest. kubectl hybernate pause sets it.
-	AnnotationPauseRequested = "hybernate.io/pause-requested"
+	// the last request's: Napwake acts on each value once, recording it in
+	// status.lastPauseRequest. kubectl napwake pause sets it.
+	AnnotationPauseRequested = "napwake.dev/pause-requested"
 
 	// AnnotationPauseOverridesForecast, set to "true" with a pause request,
 	// pauses the workload even when the forecast expects demand within the
 	// hour. Without it, such a request is declined, saying when the demand
 	// is expected, so the person asking can decide.
-	AnnotationPauseOverridesForecast = "hybernate.io/pause-overrides-forecast"
+	AnnotationPauseOverridesForecast = "napwake.dev/pause-overrides-forecast"
 
-	// AnnotationWakeRequested asks Hybernate to wake a ManagedWorkload's
+	// AnnotationWakeRequested asks Napwake to wake a ManagedWorkload's
 	// workload now, as a person's tooling does for them: a pull request
 	// bot, a portal or a chat command. It wakes a paused workload whatever
 	// the wake setting, and restarts an awake one's idle clock. The value is
 	// a token, such as the time of the request, that only needs to differ
-	// from the last request's: Hybernate acts on each value once, recording
-	// it in status.lastWakeRequest. kubectl hybernate wake sets it.
-	AnnotationWakeRequested = "hybernate.io/wake-requested"
+	// from the last request's: Napwake acts on each value once, recording
+	// it in status.lastWakeRequest. kubectl napwake wake sets it.
+	AnnotationWakeRequested = "napwake.dev/wake-requested"
 
 	// Settings for a workload opted in with LabelManaged, set on the
 	// workload or its namespace; the workload's own wins.
-	AnnotationDryRun       = "hybernate.io/dry-run"
-	AnnotationIdleAfter    = "hybernate.io/idle-after"
-	AnnotationCPUThreshold = "hybernate.io/cpu-threshold"
-	AnnotationAutoResume   = "hybernate.io/auto-resume"
-	AnnotationPauseEarly   = "hybernate.io/pause-early"
-	AnnotationForecast     = "hybernate.io/forecast"
-	AnnotationDependsOn    = "hybernate.io/depends-on"
-	AnnotationWakeMaxWait  = "hybernate.io/wake-max-wait"
-	AnnotationWakePage     = "hybernate.io/wake-page"
+	AnnotationDryRun       = "napwake.dev/dry-run"
+	AnnotationIdleAfter    = "napwake.dev/idle-after"
+	AnnotationCPUThreshold = "napwake.dev/cpu-threshold"
+	AnnotationAutoResume   = "napwake.dev/auto-resume"
+	AnnotationPauseEarly   = "napwake.dev/pause-early"
+	AnnotationForecast     = "napwake.dev/forecast"
+	AnnotationDependsOn    = "napwake.dev/depends-on"
+	AnnotationWakeMaxWait  = "napwake.dev/wake-max-wait"
+	AnnotationWakePage     = "napwake.dev/wake-page"
 
 	// AnnotationWake is what wakes a paused workload opted in with
 	// LabelManaged through the doorman, as wake.mode: "request" or "ask".
 	// Any other value is read as "ask", so a typo never lets crawlers wake
 	// a workload meant to wake only for people.
-	AnnotationWake = "hybernate.io/wake"
+	AnnotationWake = "napwake.dev/wake"
 
-	// AnnotationPausedFrom is set by Hybernate on a Deployment or
+	// AnnotationPausedFrom is set by Napwake on a Deployment or
 	// StatefulSet it has paused, before scaling it to zero, and removed when
 	// it hands it back: a JSON copy of what the pause changed (the replicas,
 	// and the KEDA ScaledObject with its own paused-replicas value), so the
 	// pause is undone exactly even if the ManagedWorkload's status is lost,
 	// as to a backup restored without it. Don't set or edit it.
-	AnnotationPausedFrom = "hybernate.io/paused-from"
+	AnnotationPausedFrom = "napwake.dev/paused-from"
 
-	// AnnotationIgnoreDependencies lists dependencies Hybernate shouldn't
+	// AnnotationIgnoreDependencies lists dependencies Napwake shouldn't
 	// learn for a workload, comma-separated, as namespace/name or a name in
 	// its own namespace. Set on the workload or its ManagedWorkload.
-	AnnotationIgnoreDependencies = "hybernate.io/ignore-dependencies"
+	AnnotationIgnoreDependencies = "napwake.dev/ignore-dependencies"
 
 	// AnnotationDependentsFrom, on a namespace, lists the other namespaces,
 	// comma-separated, whose workloads may depend on its workloads, or "*"
@@ -143,20 +143,20 @@ const (
 	// only held awake and woken for its dependents when its namespace lists
 	// theirs: anyone who can write a ManagedWorkload in one namespace could
 	// otherwise keep another namespace's workloads awake.
-	AnnotationDependentsFrom = "hybernate.io/dependents-from"
+	AnnotationDependentsFrom = "napwake.dev/dependents-from"
 
 	// FinalizerCleanup is the finalizer added to ManagedWorkloads, so deleting
 	// one scales its paused workload back up first.
-	FinalizerCleanup = "hybernate.io/cleanup"
+	FinalizerCleanup = "napwake.dev/cleanup"
 
-	// AnnotationOperator is the namespace of the Hybernate install whose
+	// AnnotationOperator is the namespace of the Napwake install whose
 	// operator added FinalizerCleanup to a ManagedWorkload. Another install
 	// leaves that ManagedWorkload alone, and its uninstall and upgrade
 	// guards don't count it.
-	AnnotationOperator = "hybernate.io/operator"
+	AnnotationOperator = "napwake.dev/operator"
 )
 
-// ParseWake reads a wake setting as hybernate.io/wake and the Helm default
+// ParseWake reads a wake setting as napwake.dev/wake and the Helm default
 // spell it, "request" or "ask".
 func ParseWake(v string) (WakeMode, bool) {
 	switch v {
@@ -171,11 +171,11 @@ func ParseWake(v string) (WakeMode, bool) {
 
 // SystemNamespacePrefix starts the names of the namespaces Kubernetes itself
 // runs in, such as kube-system, which are always protected: pausing CoreDNS
-// or metrics-server would take down the cluster's DNS, or Hybernate's own
+// or metrics-server would take down the cluster's DNS, or Napwake's own
 // view of activity.
 const SystemNamespacePrefix = "kube-"
 
-// Protected says Hybernate must not manage the namespace: it's a system
+// Protected says Napwake must not manage the namespace: it's a system
 // namespace, it's labelled protected, or its name matches one of patterns
 // (shell globs, such as prod-*), and it isn't labelled to allow it anyway.
 func Protected(name string, labels map[string]string, patterns []string) bool {

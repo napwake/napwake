@@ -25,9 +25,9 @@ import (
 
 	corev1 "k8s.io/api/core/v1"
 
-	"github.com/okedeji/hybernate/internal/cost"
-	"github.com/okedeji/hybernate/internal/forecast"
-	"github.com/okedeji/hybernate/internal/metrics"
+	"github.com/napwake/napwake/internal/cost"
+	"github.com/napwake/napwake/internal/forecast"
+	"github.com/napwake/napwake/internal/metrics"
 )
 
 // minStep is the finest history a replay reads: the activity clock checks
@@ -75,7 +75,7 @@ func spelled(d time.Duration) string {
 }
 
 // History is what replaying the activity clock over a workload's recorded
-// CPU and rollouts found: what Hybernate would have done had it managed the
+// CPU and rollouts found: what Napwake would have done had it managed the
 // workload with these settings.
 type History struct {
 	Hours float64 `json:"hours"`
@@ -85,7 +85,7 @@ type History struct {
 	// and no rollout. A workload sleeps through fewer, since after each
 	// activity the clock waits idleAfter before pausing it.
 	QuietHours float64 `json:"quietHours"`
-	// SleepHours were running while the clock had run out, so Hybernate
+	// SleepHours were running while the clock had run out, so Napwake
 	// would have had the workload paused.
 	SleepHours float64 `json:"sleepHours"`
 	// Wakes is how many times activity after a would-be pause would have
@@ -425,11 +425,11 @@ func workloadReplay(w Workload, spec corev1.PodSpec, ownCPU int64, history []con
 	}, true
 }
 
-// CouldFree is what pausing a workload Hybernate doesn't pause yet would
+// CouldFree is what pausing a workload Napwake doesn't pause yet would
 // free a month: measured, for one in dry-run, or estimated from history,
-// for one Hybernate doesn't manage. It's 0 for a live workload, whose
+// for one Napwake doesn't manage. It's 0 for a live workload, whose
 // freeing is already happening, for one already scaled to zero, which
-// pausing can't free any more of, and for one Hybernate refuses to pause.
+// pausing can't free any more of, and for one Napwake refuses to pause.
 func CouldFree(w Workload) float64 {
 	switch {
 	case w.ScaledByHand || w.WontPause != "":

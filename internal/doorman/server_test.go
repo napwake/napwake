@@ -46,8 +46,8 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 	"sigs.k8s.io/controller-runtime/pkg/client/interceptor"
 
-	v1alpha1 "github.com/okedeji/hybernate/api/v1alpha1"
-	opmetrics "github.com/okedeji/hybernate/internal/metrics"
+	v1alpha1 "github.com/napwake/napwake/api/v1alpha1"
+	opmetrics "github.com/napwake/napwake/internal/metrics"
 )
 
 var apiKey = types.NamespacedName{Namespace: "dev", Name: "api"}

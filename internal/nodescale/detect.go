@@ -15,7 +15,7 @@ limitations under the License.
 */
 
 // Package nodescale finds what scales a cluster's nodes, and what keeps a
-// node from being scaled down. Hybernate never manages nodes, but freed
+// node from being scaled down. Napwake never manages nodes, but freed
 // capacity only comes off the bill once a node autoscaler removes it.
 package nodescale
 

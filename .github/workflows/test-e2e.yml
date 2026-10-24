@@ -16,7 +16,7 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          # The oldest Kubernetes Hybernate supports, on the last kind
+          # The oldest Kubernetes Napwake supports, on the last kind
           # release with a node image for it.
           - kubernetes: "1.30"
             kind: v0.29.0

@@ -20,7 +20,7 @@ import (
 	"slices"
 	"time"
 
-	"github.com/okedeji/hybernate/internal/forecast"
+	"github.com/napwake/napwake/internal/forecast"
 )
 
 // Reached is how long after the start the forecast first reached phase, or

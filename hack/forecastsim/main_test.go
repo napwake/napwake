@@ -29,7 +29,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/okedeji/hybernate/internal/forecast/sim"
+	"github.com/napwake/napwake/internal/forecast/sim"
 )
 
 func defaults() options {

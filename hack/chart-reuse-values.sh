@@ -12,7 +12,7 @@ shift
 
 dir=$(mktemp -d)
 trap 'rm -rf "$dir"' EXIT
-cp -R charts/hybernate "$dir/"
-cp "$defaults" "$dir/hybernate/values.yaml"
+cp -R charts/napwake "$dir/"
+cp "$defaults" "$dir/napwake/values.yaml"
 
-helm template hybernate "$dir/hybernate" --namespace hybernate-system "$@"
+helm template napwake "$dir/napwake" --namespace napwake-system "$@"

@@ -1,7 +1,7 @@
 # Lets only the doorman's ServiceAccount set the two annotations that
 # record a request on ManagedWorkloads, as the Helm chart's
 # doorman.admissionPolicy does: the operator learns dependencies from the
-# address in hybernate.io/last-request-from. Like the doorman's policy, it
+# address in napwake.dev/last-request-from. Like the doorman's policy, it
 # takes the doorman's ServiceAccount as its parameter, so it follows any
 # namespace and name prefix.
 apiVersion: admissionregistration.k8s.io/v1
@@ -9,7 +9,7 @@ kind: ValidatingAdmissionPolicy
 metadata:
   name: request-stamps
   labels:
-    app.kubernetes.io/name: hybernate
+    app.kubernetes.io/name: napwake
     app.kubernetes.io/managed-by: kustomize
 spec:
   failurePolicy: Fail
@@ -18,29 +18,29 @@ spec:
     kind: ServiceAccount
   matchConstraints:
     resourceRules:
-      - apiGroups: [hybernate.io]
+      - apiGroups: [napwake.dev]
         apiVersions: ["*"]
         operations: [CREATE, UPDATE]
         resources: [managedworkloads]
   matchConditions:
     - name: sets-a-stamp
       expression: >-
-        ['hybernate.io/last-request', 'hybernate.io/last-request-from'].exists(k,
+        ['napwake.dev/last-request', 'napwake.dev/last-request-from'].exists(k,
           has(object.metadata.annotations) && k in object.metadata.annotations
           && !(oldObject != null && has(oldObject.metadata.annotations) && k in oldObject.metadata.annotations
             && oldObject.metadata.annotations[k] == object.metadata.annotations[k]))
   validations:
     - expression: request.userInfo.username == "system:serviceaccount:" + params.metadata.namespace + ":" + params.metadata.name
       message: >-
-        Only Hybernate's doorman may set the hybernate.io/last-request and hybernate.io/last-request-from
-        annotations; set hybernate.io/wake-requested to wake a workload.
+        Only Napwake's doorman may set the napwake.dev/last-request and napwake.dev/last-request-from
+        annotations; set napwake.dev/wake-requested to wake a workload.
 ---
 apiVersion: admissionregistration.k8s.io/v1
 kind: ValidatingAdmissionPolicyBinding
 metadata:
   name: request-stamps
   labels:
-    app.kubernetes.io/name: hybernate
+    app.kubernetes.io/name: napwake
     app.kubernetes.io/managed-by: kustomize
 spec:
   policyName: request-stamps

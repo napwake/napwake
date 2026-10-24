@@ -11,7 +11,7 @@
 set -euo pipefail
 
 src=${1:-config/crd/bases}
-dst=${2:-charts/hybernate/templates/crds}
+dst=${2:-charts/napwake/templates/crds}
 
 mkdir -p "$dst"
 rm -f "$dst"/*.yaml
@@ -26,14 +26,14 @@ for crd in "$src"/*.yaml; do
     exit 1
   fi
   {
-    echo '{{- include "hybernate.defaults" . -}}'
+    echo '{{- include "napwake.defaults" . -}}'
     echo '{{- if .Values.crds.install }}'
     awk '
       /^---$/ && NR == 1 { next }
       { print }
       /^metadata:$/ && !labelled {
         print "  labels:"
-        print "    {{- include \"hybernate.labels\" . | nindent 4 }}"
+        print "    {{- include \"napwake.labels\" . | nindent 4 }}"
         labelled = 1
       }
       /^  annotations:$/ && !annotated {

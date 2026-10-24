@@ -22,7 +22,7 @@ limitations under the License.
 // one is accepted.
 //
 //	go build -o bin/manager ./cmd
-//	helm template hybernate charts/hybernate | go run ./hack/chartflags bin/manager
+//	helm template napwake charts/napwake | go run ./hack/chartflags bin/manager
 package main
 
 import (

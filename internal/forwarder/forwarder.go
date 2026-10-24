@@ -20,7 +20,7 @@ limitations under the License.
 // GKE's NEG controller only accepts endpoints whose pods are in the
 // Service's own namespace, so a Service behind container-native load
 // balancing can't be pointed at the doorman's pods, which are in
-// Hybernate's. It's pointed at a forwarder's instead, which runs beside the
+// Napwake's. It's pointed at a forwarder's instead, which runs beside the
 // paused workload. Every decision about a connection, whether to hold it,
 // wake the workload, or answer it, stays with the doorman.
 package forwarder
