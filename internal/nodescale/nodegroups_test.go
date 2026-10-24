@@ -36,6 +36,10 @@ import (
 //   - ca-1.32-gke.yaml is the same, as GKE's writes it for the pre-launch
 //     test cluster: an instance group per node pool and zone, the default
 //     pool at its minimum of one node;
+//   - gke-prelaunch-2026-10-24.yaml is what GKE's wrote for that cluster on
+//     2026-10-24, as it wrote it, but for its project's name: the default
+//     pool at its minimum of one node, and the workloads pool emptied, at
+//     its minimum of none;
 //   - ca-1.29-text.txt is the text it wrote before 1.30, laid out as its
 //     clusterstate package wrote it, for an EKS managed node group and an
 //     AKS scale set.
@@ -57,6 +61,12 @@ func TestParseNodeGroups(t *testing.T) {
 				"instanceGroups/gke-prelaunch-default-pool-3f9c1a2b-grp", MinSize: 1, MaxSize: 3, Target: 1},
 			{Name: "https://www.googleapis.com/compute/v1/projects/staging-412907/zones/europe-west1-b/" +
 				"instanceGroups/gke-prelaunch-workloads-7d2e94c1-grp", MinSize: 0, MaxSize: 4, Target: 0},
+		}},
+		{sample: "gke-prelaunch-2026-10-24.yaml", want: []NodeGroup{
+			{Name: "https://www.googleapis.com/compute/v1/projects/staging-412907/zones/europe-west1-b/" +
+				"instanceGroups/gke-prelaunch-default-pool-aa1b8ba9-grp", MinSize: 1, MaxSize: 2, Target: 1},
+			{Name: "https://www.googleapis.com/compute/v1/projects/staging-412907/zones/europe-west1-b/" +
+				"instanceGroups/gke-prelaunch-workloads-050c6831-grp", MinSize: 0, MaxSize: 3, Target: 0},
 		}},
 		{sample: "ca-1.29-text.txt", want: []NodeGroup{
 			{Name: "eks-system-6ac6b9e2-1f3d-4c8b-9a7e-2d5f8b3c1e04", MinSize: 2, MaxSize: 4, Target: 2},
@@ -92,6 +102,10 @@ func TestBlockers_ANodeGroupAtItsMinimum(t *testing.T) {
 			node: gkeNode("gke-prelaunch-default-pool-3f9c1a2b-x7k2", "default-pool"),
 			reason: []Reason{{Code: CodeAtMinimum,
 				Detail: "its node group, gke-prelaunch-default-pool-3f9c1a2b-grp, is at its minimum of 1 node"}}},
+		{name: "the test cluster's last node, on 2026-10-24", sample: "gke-prelaunch-2026-10-24.yaml",
+			node: gkeNode("gke-prelaunch-default-pool-aa1b8ba9-a0b2", "default-pool"),
+			reason: []Reason{{Code: CodeAtMinimum,
+				Detail: "its node group, gke-prelaunch-default-pool-aa1b8ba9-grp, is at its minimum of 1 node"}}},
 		{name: "an EKS managed node group at its minimum", sample: "ca-1.29-text.txt",
 			node: annotatedNode("ip-10-0-1-23.ec2.internal", map[string]string{"eks.amazonaws.com/nodegroup": "system"}, nil),
 			reason: []Reason{{Code: CodeAtMinimum,
