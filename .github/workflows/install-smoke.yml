@@ -55,11 +55,16 @@ jobs:
           newest=$(gh release list --repo "$GITHUB_REPOSITORY" --exclude-drafts --limit 1 --json tagName --jq '.[0].tagName')
           tag=${INPUT:-$newest}
           gh release view "$tag" --repo "$GITHUB_REPOSITORY" --json tagName >/dev/null
-          # The tap brews release candidates only until the first stable
-          # release, and after it, the newest stable release.
-          stable=$(gh release list --repo "$GITHUB_REPOSITORY" --exclude-drafts --exclude-pre-releases --limit 1 \
-            --json tagName --jq '.[0].tagName // empty')
-          brewed=${stable:-$newest}
+          # The release workflow brews every release, but a release candidate
+          # never replaces a stable release in the tap. So the tap holds the
+          # newest release, unless that's a candidate and the tap holds a
+          # stable one, which it keeps. The formula is read as anyone can.
+          formula=$(curl -fsSL "https://raw.githubusercontent.com/${GITHUB_REPOSITORY_OWNER}/homebrew-tap/HEAD/Formula/kubectl-napwake.rb" |
+            sed -n 's/^ *version "\(.*\)"$/\1/p')
+          brewed=$newest
+          if [[ "$newest" == *-* && -n "$formula" && "$formula" != *-* ]]; then
+            brewed=v$formula
+          fi
           echo "Checking $tag; Homebrew should give $brewed"
           {
             echo "tag=$tag"
