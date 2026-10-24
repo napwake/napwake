@@ -411,7 +411,7 @@ func gap(name string) string { return fmt.Sprint(guide + name, guide+"#kapp") }
 const base = "https://docs.napwake.dev/"
 `)
 	joined := joinedStrings(t, dir, []string{"a.go", "b.go"})
-	var addresses []string
+	addresses := make([]string, 0, len(joined["a.go"]))
 	for _, s := range joined["a.go"] {
 		addresses = append(addresses, docsAddresses("a.go", s)...)
 	}
