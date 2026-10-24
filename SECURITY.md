@@ -27,8 +27,8 @@ If you discover a security vulnerability, please report it responsibly.
 
 Instead, report it privately using one of the following methods:
 
-- Email: tobiokedeji@gmail.com
-- Or: Open a private GitHub security advisory (preferred)
+- Open a private GitHub security advisory (preferred)
+- Or email security@napwake.dev
 
 To create a private advisory:
 1. Go to the "Security" tab of this repository
@@ -96,4 +96,4 @@ If you're deploying this project:
 
 For any security-related concerns, please contact:
 
-tobiokedeji@gmail.com
+security@napwake.dev
