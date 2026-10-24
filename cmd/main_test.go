@@ -438,15 +438,15 @@ func TestOperatorCacheSeesOnlyDoormanSlices(t *testing.T) {
 			watched: []string{"shop"},
 			want: map[string][]string{
 				"napwake-system": {"napwake-system/napwake-doorman-abc"},
-				"shop":             {"shop/web-napwake-doorman"},
+				"shop":           {"shop/web-napwake-doorman"},
 			},
 		},
 		{
 			name: "watching every namespace",
 			want: map[string][]string{
 				"napwake-system": {"napwake-system/napwake-doorman-abc"},
-				"shop":             {"shop/web-napwake-doorman"},
-				"other":            {"other/api-napwake-doorman"},
+				"shop":           {"shop/web-napwake-doorman"},
+				"other":          {"other/api-napwake-doorman"},
 			},
 		},
 	}

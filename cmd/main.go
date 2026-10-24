@@ -354,7 +354,7 @@ func main() {
 			PodReader:                mgr.GetAPIReader(),
 			ProtectedNamespaces:      protected,
 			WatchNamespaces:          watched,
-			NapwakeNamespaces:      own,
+			NapwakeNamespaces:        own,
 			OperatorNamespace:        os.Getenv("POD_NAMESPACE"),
 			MaxConcurrentReconciles:  maxConcurrentReconciles,
 			Savings:                  savings,
@@ -372,7 +372,7 @@ func main() {
 				Defaults:            optIn,
 				ProtectedNamespaces: protected,
 				WatchNamespaces:     watched,
-				NapwakeNamespaces: own,
+				NapwakeNamespaces:   own,
 				OperatorNamespace:   os.Getenv("POD_NAMESPACE"),
 			}).SetupWithManager(mgr); err != nil {
 				setupLog.Error(err, "unable to create controller", "controller", "OptIn", "kind", kind)

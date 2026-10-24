@@ -30,7 +30,7 @@ import (
 // The Platform of the infrastructure Napwake itself protects.
 const (
 	PlatformKubernetes = "Kubernetes"
-	PlatformNapwake  = "Napwake"
+	PlatformNapwake    = "Napwake"
 )
 
 // napwakeApp is the name Napwake's manifests and chart label its

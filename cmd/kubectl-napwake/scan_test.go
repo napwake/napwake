@@ -199,7 +199,7 @@ func TestShortClusterName(t *testing.T) {
 		"arn:aws:eks:eu-west-2:123456789012:cluster/my-dev":  "my-dev (EKS eu-west-2)",
 		"gke_myproject_europe-west1_dev":                     "dev (GKE europe-west1)",
 		"gke_my-project-123_us-central1-a_dev":               "dev (GKE us-central1-a)",
-		"kind-napwake-scan":                                "kind-napwake-scan",
+		"kind-napwake-scan":                                  "kind-napwake-scan",
 		"staging-admin":                                      "staging-admin",
 		"arn:aws:eks:us-east-1:123:nodegroup/x":              "arn:aws:eks:us-east-1:123:nodegroup/x",
 		"gke_only_two":                                       "gke_only_two",

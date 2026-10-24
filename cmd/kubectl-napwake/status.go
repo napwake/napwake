@@ -280,11 +280,11 @@ const reasonTargetIgnored = "TargetIgnored"
 // nobody's attention: it reports what the user set up on purpose, or the
 // normal state of a workload that's awake.
 var untroubled = map[string]bool{
-	"NoServices":         true,
-	reasonTargetIgnored:  true,
-	"NapwakeComponent": true,
-	"DoormanDisabled":    true,
-	"NotPaused":          true,
+	"NoServices":        true,
+	reasonTargetIgnored: true,
+	"NapwakeComponent":  true,
+	"DoormanDisabled":   true,
+	"NotPaused":         true,
 }
 
 // wakeCauses are the event reasons that say what woke a workload. The

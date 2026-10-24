@@ -71,11 +71,11 @@ func TestScanCluster_LeavesOutThePlatform(t *testing.T) {
 		platform[w.Namespace+"/"+w.Name] = w.Platform
 	}
 	assert.Equal(t, map[string]string{
-		"kube-flannel/coredns":  "Kubernetes",
-		"ops/napwake":         "Napwake",
-		"ops/napwake-doorman": "Napwake",
-		"cert-manager/webhook":  "cert-manager",
-		"edge/controller":       "ingress-nginx",
+		"kube-flannel/coredns": "Kubernetes",
+		"ops/napwake":          "Napwake",
+		"ops/napwake-doorman":  "Napwake",
+		"cert-manager/webhook": "cert-manager",
+		"edge/controller":      "ingress-nginx",
 	}, platform)
 	assert.Contains(t, report.Notes, "5 infrastructure workloads are left out of the totals and next steps: "+
 		"ops (2), cert-manager (1), edge (1) and 1 more. Napwake never pauses Kubernetes' own workloads or "+
@@ -161,7 +161,7 @@ func TestScanCluster_CountsInfrastructureInAnOptedInNamespace(t *testing.T) {
 	}
 	assert.Equal(t, map[string]string{
 		"preview-7/napwake": PlatformNapwake,
-		"preview-8/vault":     "vault",
+		"preview-8/vault":   "vault",
 	}, platform)
 	assert.Equal(t, 3, report.Totals.Workloads)
 }
@@ -190,7 +190,7 @@ func TestScanCluster_NapwakeInAnAllowedNamespace(t *testing.T) {
 	}
 	assert.Equal(t, map[string]string{
 		"controller-manager": PlatformNapwake,
-		"napwake-doorman":  PlatformNapwake,
+		"napwake-doorman":    PlatformNapwake,
 	}, platform)
 }
 
