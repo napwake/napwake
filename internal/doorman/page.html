@@ -7,6 +7,7 @@
 <meta name="robots" content="noindex">
 <meta name="referrer" content="no-referrer">
 <title>Waking up{{with .Address}} {{.}}{{end}}</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cstyle%3E.r%7Bfill:%23FFE3A1;stroke:%239A6400%7D.l%7Bfill:%235B6B86%7D@media(prefers-color-scheme:dark)%7B.r%7Bstroke:%23F5B53F%7D.l%7Bfill:%232A3944%7D%7D%3C/style%3E%3Cpath class='r' stroke-width='1.6' d='M6 22V10a6 6 0 0 1 12 0v12z'/%3E%3Cpath class='l' d='M6 22V10a6 6 0 0 1 3.5-5.4L12 6v16z'/%3E%3C/svg%3E">
 <style>
 :root{
   --mono:ui-monospace,"SF Mono",SFMono-Regular,"JetBrains Mono","Cascadia Code",Menlo,Consolas,monospace;
@@ -65,7 +66,7 @@ footer a:hover{color:var(--text)}footer svg{width:18px;height:18px;color:var(--c
       <h1>Waking up <span>{{with .Address}}{{.}}{{else}}this app{{end}}</span></h1>
       <p class="lede">This environment was paused while nobody was using it. It's starting now, and this page opens it on its own when it's ready.</p>
       <ol>
-        <li class="done"><span class="i"><svg viewBox="0 0 24 26" aria-hidden="true"><path d="M5 25V11a7 7 0 0 1 14 0v14z" fill="var(--done)"/><g transform="translate(6 9)" style="color:#fff">{{template "check"}}</g></svg></span>Request received</li>
+        <li class="done"><span class="i"><svg viewBox="0 0 24 26" aria-hidden="true"><path d="M5 25V11a7 7 0 0 1 14 0v14z" fill="var(--done)"/><g transform="translate(6 9)" color="#fff">{{template "check"}}</g></svg></span>Request received</li>
         <li class="now"><span class="i"><svg viewBox="0 0 24 26" aria-hidden="true"><path d="M5 25V11a7 7 0 0 1 14 0v14z" fill="var(--room)" stroke="var(--wake)" stroke-width="1.6"/><path d="M5 25V11a7 7 0 0 1 4-6.3L12 6.5V25z" fill="var(--leaf)"/></svg></span>Starting{{if .Elapsed}}<span class="t">{{.Elapsed}}</span>{{end}}</li>
         <li><span class="i"><svg viewBox="0 0 24 26" aria-hidden="true"><path d="M5 25V11a7 7 0 0 1 14 0v14z" fill="none" stroke="var(--line)" stroke-width="1.6"/></svg></span>Ready</li>
       </ol>

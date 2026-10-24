@@ -309,6 +309,7 @@ There's no upgrade path from Hybernate 0.1.x or a 0.2.0 release candidate. Unins
 - With no node autoscaler found, `scan` and `status` say the bill won't drop until something removes nodes. They no longer say nothing will.
 - The scan report's Workloads section mentions what pausing freed and saved only once something is live.
 - The scan's headline says what was freed "pausing 1 live workload and others before they were protected", in place of "and workloads since protected".
+- The waking-up page draws its own tab icon, so browsers no longer ask the doorman for `/favicon.ico`, which it held until the workload was Ready. Its Content-Security-Policy allows its own style, no script, and images only from `data:`.
 
 ## [0.1.7] - 2026-04-08
 

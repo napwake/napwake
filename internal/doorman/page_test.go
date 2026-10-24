@@ -203,6 +203,30 @@ func TestWritePage(t *testing.T) {
 		`"/></svg>Paused by Napwake</a>`)
 }
 
+// The waking-up page draws its tab icon inline, so a browser never asks the
+// doorman for /favicon.ico, which it would hold until the workload is
+// Ready. Its policy lets it show images from data: alone, and run only its
+// own style, which the policy names by its hash.
+func TestWritePage_HasItsOwnTabIcon(t *testing.T) {
+	var out bytes.Buffer
+
+	require.NoError(t, writePage(&out, pageLoad(t, http.MethodGet), pageData{Address: "shop", Elapsed: "3s"}))
+
+	resp, body := readPage(t, out.Bytes(), http.MethodGet)
+	assert.Contains(t, body, `<link rel="icon" href="data:image/svg+xml,`)
+	policy := resp.Header.Get("Content-Security-Policy")
+	assert.Contains(t, policy, "default-src 'none'")
+	assert.Contains(t, policy, "img-src data:;", "images from data: alone")
+	assert.NotContains(t, policy, "unsafe")
+	assert.NotContains(t, policy, "frame-ancestors", "an app framed by another site still shows its waking-up page")
+	styles := regexp.MustCompile(`(?s)<style>(.*?)</style>`).FindAllStringSubmatch(body, -1)
+	require.Len(t, styles, 1)
+	sum := sha256.Sum256([]byte(styles[0][1]))
+	assert.Contains(t, policy, "style-src 'sha256-"+base64.StdEncoding.EncodeToString(sum[:])+"'")
+	assert.NotContains(t, body, ` style="`, "the policy would block a style attribute")
+	assert.NotContains(t, body, "<script", "the page runs no script")
+}
+
 // The asleep page runs only its own style and script, which the policy
 // names by their hashes, so nothing injected into it could run, and loads
 // nothing: its one image is its tab icon, inline, so a browser never asks

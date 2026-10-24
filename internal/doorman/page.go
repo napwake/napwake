@@ -266,6 +266,18 @@ func isPageLoad(req *http.Request) bool {
 	return strings.Contains(req.Header.Get("Accept"), "text/html")
 }
 
+// wakingPolicy lets the waking-up page run only its own style, with no
+// script, and show only its inline tab icon. It leaves framing alone, so an
+// app another site frames still shows its waking-up page there, and reaches
+// the app once it's Ready.
+var wakingPolicy = func() string {
+	var page bytes.Buffer
+	if err := pageTemplate.Execute(&page, pageData{}); err != nil {
+		panic(fmt.Sprintf("rendering the waking-up page: %v", err)) // the embedded template is fixed at build time
+	}
+	return "default-src 'none'; style-src " + inlineHash(page.String(), "style") + "; img-src data:; base-uri 'none'"
+}()
+
 // writePage answers a page load with the waking-up page. It's a 503 so that
 // nothing caches it or mistakes it for the app, and the connection closes
 // after it.
@@ -282,7 +294,8 @@ func writePage(w io.Writer, req *http.Request, data pageData) error {
 		"Cache-Control: no-store\r\n"+
 		"Retry-After: %d\r\n"+
 		"X-Robots-Tag: noindex\r\n"+
-		"Connection: close\r\n\r\n", body.Len(), data.Refresh)
+		"Content-Security-Policy: %s\r\n"+
+		"Connection: close\r\n\r\n", body.Len(), data.Refresh, wakingPolicy)
 	if _, err := io.WriteString(w, header); err != nil {
 		return fmt.Errorf("writing page header: %w", err)
 	}
