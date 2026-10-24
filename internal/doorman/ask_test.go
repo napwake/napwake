@@ -1011,3 +1011,61 @@ func TestServer_ReadsAClickSentInPieces(t *testing.T) {
 	assert.Equal(t, http.StatusServiceUnavailable, resp.StatusCode, "the waking-up page")
 	assert.NotEmpty(t, lastRequest(t, c))
 }
+
+// The doorman fronts a workload from the moment its pause starts. Until its
+// pods have gone, a browser's page load passes to them as any request does,
+// and once none is Ready it gets the page it would get were the workload
+// paused: the asleep page, whose click calls the pause off, for one that
+// asks first, and the waking-up page, which calls it off at once, for one
+// that doesn't.
+func TestServer_APageLoadAsItPausesGetsWhatAPausedWorkloadGives(t *testing.T) {
+	pausing := func(port int32, asks bool) *v1alpha1.ManagedWorkload {
+		w := pausingWorkload(port)
+		w.UID = "uid-api"
+		if asks {
+			w.Spec.Wake.Mode = v1alpha1.WakeOnAsk
+		}
+		return w
+	}
+
+	t.Run("a pod still Ready", func(t *testing.T) {
+		for _, asks := range []bool{true, false} {
+			port := freePort(t)
+			_, c := startServer(t, pausing(port, asks), readySlice(echoPort(t)))
+
+			conn := dial(t, port)
+			send(t, conn, personGET)
+			echoed(t, conn, personGET)
+			if asks {
+				require.Never(t, func() bool { return lastRequest(t, c) != "" }, 300*time.Millisecond,
+					20*time.Millisecond, "only a click calls off the pause of a workload that asks")
+			} else {
+				require.Eventually(t, func() bool { return lastRequest(t, c) != "" }, 5*time.Second,
+					20*time.Millisecond, "a page load passed on calls the pause off")
+			}
+		}
+	})
+
+	t.Run("asks, its pods gone", func(t *testing.T) {
+		port := freePort(t)
+		_, c := startServer(t, pausing(port, true))
+
+		token := askedPage(t, port)
+		assert.Empty(t, lastRequest(t, c), "the asleep page wakes nothing")
+
+		resp, body := click(t, port, clickRequest(token))
+		assert.Equal(t, http.StatusServiceUnavailable, resp.StatusCode, body)
+		assert.Contains(t, body, "<title>Waking up pr-42.preview.example.dev</title>")
+		assert.NotEmpty(t, lastRequest(t, c), "the click calls the pause off")
+	})
+
+	t.Run("wakes on any request, its pods gone", func(t *testing.T) {
+		port := freePort(t)
+		_, c := startServer(t, pausing(port, false))
+
+		resp, body := click(t, port, personGET)
+		assert.Equal(t, http.StatusServiceUnavailable, resp.StatusCode, body)
+		assert.Contains(t, body, "<title>Waking up pr-42.preview.example.dev</title>")
+		assert.NotEmpty(t, lastRequest(t, c), "the page load calls the pause off")
+	})
+}
