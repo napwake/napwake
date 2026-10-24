@@ -564,8 +564,8 @@ func (r *Reconciler) handlePause(ctx context.Context, workload *v1alpha1.Managed
 		if why != nil {
 			r.emitEvent(workload, false, "Normal", why.reason, actionPause, "%s", why.message)
 		}
-		if r.routeAsPauseBegins(ctx, workload, target) {
-			return &ctrl.Result{RequeueAfter: doormanListenWait}, nil
+		if routed, recheck := r.routeAsPauseBegins(ctx, workload, target); routed {
+			return &ctrl.Result{RequeueAfter: recheck}, nil
 		}
 	case v1alpha1.PhasePausing:
 		if wait, err := r.untilFronted(ctx, workload); err != nil {

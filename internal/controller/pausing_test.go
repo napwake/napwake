@@ -18,6 +18,7 @@ package controller
 
 import (
 	"context"
+	"errors"
 	"testing"
 	"time"
 
@@ -477,4 +478,37 @@ func TestPause_TheDoormanListensOnlyOnRoutesStored(t *testing.T) {
 	*now = now.Add(doormanTakeover)
 	reconcileAPI(t, r)
 	assert.Equal(t, 1, pauser.pauseCalls)
+}
+
+// A conflict on the write that stores the routes, as a reconcile reading a
+// cache that hasn't seen the move to Pausing gets, is a stale read to
+// retry soon, not a routing failure: nothing warns, WakeOnRequest isn't
+// set False, and routing isn't backed off.
+func TestPause_AConflictStoringTheRoutesIsRetriedQuietly(t *testing.T) {
+	r, pauser, now := pausingReconciler(t, nil)
+	conflicts := 0
+	r.Client = interceptor.NewClient(r.Client.(client.WithWatch), interceptor.Funcs{
+		SubResourceUpdate: func(ctx context.Context, c client.Client, sub string, obj client.Object,
+			opts ...client.SubResourceUpdateOption) error {
+			if w, ok := obj.(*v1alpha1.ManagedWorkload); ok && len(w.Status.Doorman) > 0 && conflicts == 0 {
+				conflicts++
+				return apierrors.NewConflict(v1alpha1.GroupVersion.WithResource("managedworkloads").GroupResource(),
+					w.Name, errors.New("the object has been modified"))
+			}
+			return c.SubResource(sub).Update(ctx, obj, opts...)
+		}})
+
+	reconcileAPI(t, r)
+	w := fetch(t, r, "api")
+	require.Equal(t, v1alpha1.PhasePausing, w.Status.Phase)
+	require.Equal(t, 1, conflicts)
+	assert.False(t, conditionFalseWith(w, conditionWakeOnRequest, reasonRoutingFailed))
+	assert.Empty(t, recorded(r.Recorder.(*events.FakeRecorder), reasonRoutingFailed))
+	assert.NotContains(t, r.doormanFailures.failures, w.UID, "routing isn't backed off")
+
+	*now = now.Add(staleCacheRetry)
+	reconcileAPI(t, r)
+	require.NotNil(t, fetch(t, r, "api").Status.Pause.RoutesWrittenAt, "stored on the retry")
+	assert.Empty(t, doormanSlices(t, r))
+	assert.Zero(t, pauser.pauseCalls)
 }

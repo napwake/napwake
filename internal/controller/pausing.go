@@ -21,6 +21,7 @@ import (
 	"fmt"
 	"time"
 
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -51,21 +52,23 @@ const ReasonPauseCancelled = "PauseCancelled"
 
 // routeAsPauseBegins stores the routes of a workload that has just started
 // pausing in status, for the doorman to listen on, and reports whether
-// there are any, which the scale-down then waits for the doorman to front.
+// there are any, which the scale-down then waits for the doorman to front,
+// and how soon to look again.
 func (r *Reconciler) routeAsPauseBegins(ctx context.Context, workload *v1alpha1.ManagedWorkload,
-	target client.Object) bool {
+	target client.Object) (bool, time.Duration) {
 	if r.DoormanService == "" {
-		return false
+		return false, 0
 	}
-	r.routeDoorman(ctx, workload, target)
-	return len(workload.Status.Doorman) > 0
+	recheck := r.routeDoorman(ctx, workload, target)
+	return len(workload.Status.Doorman) > 0, shortest(doormanListenWait, recheck)
 }
 
 // untilDoormanListens is how long the doorman's slices for a workload that
 // has started pausing, and whose pods still run, wait for every doorman
 // replica to listen on its routes: doormanListenWait from when they were
 // stored in status, where the doorman reads them. Routes not yet stored are
-// written now, and timed from then.
+// written now, and timed from then. A write that conflicts, as one from a
+// cache that hasn't seen the move to Pausing does, is tried again soon.
 func (r *Reconciler) untilDoormanListens(ctx context.Context, workload *v1alpha1.ManagedWorkload) (time.Duration, error) {
 	pause := workload.Status.Pause
 	if workload.Status.Phase != v1alpha1.PhasePausing || pause == nil || scaledDownByNapwake(workload) ||
@@ -75,7 +78,12 @@ func (r *Reconciler) untilDoormanListens(ctx context.Context, workload *v1alpha1
 	if pause.RoutesWrittenAt == nil {
 		now := r.clockTime()
 		pause.RoutesWrittenAt = &now
-		if err := r.Status().Update(ctx, workload); err != nil {
+		err := r.Status().Update(ctx, workload)
+		switch {
+		case apierrors.IsConflict(err):
+			pause.RoutesWrittenAt = nil
+			return staleCacheRetry, nil
+		case err != nil:
 			pause.RoutesWrittenAt = nil
 			return 0, fmt.Errorf("storing the doorman's routes as the pause begins: %w", err)
 		}
