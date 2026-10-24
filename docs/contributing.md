@@ -214,7 +214,7 @@ go run ./hack/docsite -tag v0.2.0 -dry-run
 
 `mkdocs serve` previews the docs you're editing, without versions; `mike serve` serves the versions on your local `gh-pages`.
 
-The site has no domain of its own: `okedeji.io` belongs to the owner's user site, `okedeji/okedeji.github.io`, and GitHub serves this repository's Pages under it, at `/napwake/`. So `gh-pages` has no `CNAME` file, and mustn't get one: it would claim `okedeji.io` for this repository.
+The site is served from the root of `docs.napwake.dev`, which `mkdocs.yml`'s `site_url` names. `hack/docsite`'s 404 page sends links on from that root, and a test keeps the two the same. For GitHub Pages to serve `gh-pages` there, the domain needs a DNS `CNAME` record pointing at `napwake.github.io`, and the repository's Pages settings need it as their custom domain. Setting it commits a `CNAME` file to `gh-pages`, which mike leaves alone, as it does `404.html`.
 
 Moving the site from the old Actions deployment to `gh-pages` takes two settings, once the docs workflow has published the first release or release candidate since versioning, which creates the branch:
 
