@@ -36,6 +36,7 @@ The operator moves a workload on from its activity, its forecast, and pauses ask
 | Idle → Pausing | At once, unless it's in dry-run, or a GitOps tool undid its last pause within the hour |
 | Idle → Running | Activity resumes while dry-run or a GitOps tool's undoing holds the pause off. Or it's scaled to zero outside Napwake |
 | Paused → Resuming | A request to its Service, or with [`wake.mode: Ask`](/concepts/wake-on-request/#asking-before-waking) a person's click on **Wake it**. A new `napwake.dev/wake-requested` value. A change to an activity annotation since the pause. A [Prometheus activity query](/guides/prometheus-signals/#while-the-workload-is-paused) showing activity. `autoResume` ahead of forecast demand. Dry-run turned on |
+| Pausing → Resuming → Running | Whatever would wake it once paused comes as it pauses, which [calls the pause off](/guides/pause/#a-request-calls-the-pause-off). A `PauseCancelled` event says what came. It's then scaled back up if its pods had begun to stop |
 | Paused → Running | Something else scales it up ([GitOps tools](/guides/gitops/)), or Napwake [lets go of it](/guides/pause/#when-napwake-lets-go). Also from `Pausing`, once it's at zero (`status.pause.pausedAt`) while its pods stop. It isn't scaled back down |
 | Resuming → Running | Every replica it was restored to is Ready, or Napwake stops waiting (below). Scaled back to zero by something else after the resume scaled it up (`status.pause.resumedAt`), it's left off with `ScaledToZero` |
 
@@ -48,6 +49,7 @@ The resume's wait starts once its `waitForReady` [dependencies](/concepts/depend
 | Running or Idle → Pausing → Paused | [`kubectl napwake pause`](/guides/pause/#pause-now), which sets a new `napwake.dev/pause-requested` value |
 | Running → Idle | The same in dry-run, as a would-be pause |
 | Paused → Resuming → Running | [`kubectl napwake wake`](/guides/pause/#wake-now), which sets a new `napwake.dev/wake-requested` value, whatever the wake setting. Or any automatic wake. A requested pause wakes like any other |
+| Pausing → Resuming → Running | `kubectl napwake wake` as it pauses, which calls the pause off, with a `PauseCancelled` event |
 | Idle → Running | The same in dry-run, ending a would-be pause. Awake, a wake request restarts the idle clock |
 
 A request runs the idle clock out at once, and the rules of an idle pause apply. The hour after a GitOps conflict doesn't hold it back. A forecast expecting demand within the hour declines it, saying when, unless the request overrides the forecast.
