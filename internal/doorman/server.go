@@ -141,6 +141,10 @@ type route struct {
 	pausedAt time.Time
 	waking   bool
 
+	// pausing says the workload was pausing as of the last sync: its pods
+	// may still serve what the doorman passes on.
+	pausing bool
+
 	// drainUntil is set once the route has left status. Until then, the
 	// port passes connections to the workload's Ready pods, if any, without
 	// waking it.
@@ -507,6 +511,7 @@ func (s *Server) syncRoutes(ctx, connCtx context.Context) error {
 				uid:      w.UID,
 				pausedAt: pausedAt(&w),
 				waking:   isWaking(&w),
+				pausing:  w.Status.Phase == v1alpha1.PhasePausing,
 			})
 		}
 	}
