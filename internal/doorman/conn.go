@@ -276,7 +276,7 @@ func (h *heldConn) await(ctx, waitCtx context.Context, wakeErr error) (net.Conn,
 				return nil, resultCanceled
 			case errors.Is(wakeErr, errWakeLimited) || proxyLimited:
 				return nil, resultLimited
-			case dialFailed || wakeErr != nil:
+			case dialFailed || wakeErr != nil && !errors.Is(wakeErr, errNotAsleep):
 				return nil, resultError
 			default:
 				return nil, resultTimeout

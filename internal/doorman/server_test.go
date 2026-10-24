@@ -1464,6 +1464,21 @@ func TestNeedsWake(t *testing.T) {
 			w.Status.Phase = v1alpha1.PhaseResuming
 			return w
 		}()},
+		{name: "pausing, never stamped", want: true, workload: func() *v1alpha1.ManagedWorkload {
+			w := paused("", nil)
+			w.Status.Phase = v1alpha1.PhasePausing
+			return w
+		}()},
+		{name: "pausing, stamped since the pause began", workload: func() *v1alpha1.ManagedWorkload {
+			w := paused(after, map[string]string{v1alpha1.AnnotationLastRequest: before})
+			w.Status.Phase = v1alpha1.PhasePausing
+			return w
+		}()},
+		{name: "awake", workload: func() *v1alpha1.ManagedWorkload {
+			w := paused("", nil)
+			w.Status.Phase = v1alpha1.PhaseRunning
+			return w
+		}()},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -1555,6 +1570,50 @@ func TestServer_LeavesAPendingWakeAlone(t *testing.T) {
 
 	assert.Equal(t, pending, lastRequest(t, c))
 	assert.Equal(t, 0, wokenEvents(recorder))
+}
+
+// The operator routes a workload's Services through the doorman from the
+// moment its pause starts. A request held once its pods have gone, while
+// it's still Pausing, wakes it: the operator ends the pause.
+func TestServer_StampsARequestHeldWhileThePauseIsUnderWay(t *testing.T) {
+	port := freePort(t)
+	w := pausedWorkload("api", port, time.Minute)
+	w.Status.Phase = v1alpha1.PhasePausing
+	_, c := startServer(t, w)
+
+	conn := dial(t, port)
+	send(t, conn, "hello\n")
+	require.Eventually(t, func() bool { return lastRequest(t, c) != "" }, 5*time.Second, 20*time.Millisecond,
+		"a request held while the workload pauses must stamp it")
+
+	require.NoError(t, c.Create(context.Background(), readySlice(echoPort(t))))
+	echoed(t, conn, "hello\n")
+}
+
+// A held connection whose workload the doorman's cache still shows awake,
+// as it can for a moment around a pause, is stamped once the cache shows
+// it paused, rather than held unstamped until maxWait with the workload
+// left asleep.
+func TestServer_StampsAHeldRequestOnceTheWorkloadShowsPaused(t *testing.T) {
+	port := freePort(t)
+	w := pausedWorkload("api", port, time.Minute)
+	w.Status.Phase = v1alpha1.PhaseRunning
+	_, c := startServer(t, w)
+
+	conn := dial(t, port)
+	send(t, conn, "hello\n")
+	require.Never(t, func() bool { return lastRequest(t, c) != "" }, 500*time.Millisecond, 50*time.Millisecond,
+		"an awake workload isn't stamped")
+
+	var live v1alpha1.ManagedWorkload
+	require.NoError(t, c.Get(context.Background(), apiKey, &live))
+	live.Status.Phase = v1alpha1.PhasePaused
+	require.NoError(t, c.Update(context.Background(), &live))
+	require.Eventually(t, func() bool { return lastRequest(t, c) != "" }, 5*time.Second, 20*time.Millisecond,
+		"the held request must stamp the workload once it shows paused")
+
+	require.NoError(t, c.Create(context.Background(), readySlice(echoPort(t))))
+	echoed(t, conn, "hello\n")
 }
 
 // staleReads makes Get return a copy of the workload as it was when the

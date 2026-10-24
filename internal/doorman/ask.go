@@ -332,13 +332,14 @@ func (h *heldConn) waking() bool {
 	return ok && last.pausedAt.Equal(rt.pausedAt) && h.now().Sub(last.at) < wakeStampInterval
 }
 
-// isWaking reports whether a paused workload has been asked to wake: it's
-// Resuming, or a request's stamp is waiting for the operator.
+// isWaking reports whether a paused workload, or one pausing, has been
+// asked to wake: it's Resuming, or a request's stamp is waiting for the
+// operator.
 func isWaking(w *v1alpha1.ManagedWorkload) bool {
 	switch w.Status.Phase {
 	case v1alpha1.PhaseResuming:
 		return true
-	case v1alpha1.PhasePaused:
+	case v1alpha1.PhasePaused, v1alpha1.PhasePausing:
 		return !needsWake(w)
 	default:
 		return false

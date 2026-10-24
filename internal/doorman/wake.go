@@ -47,6 +47,12 @@ const (
 // errWakeLimited means the caller has started too many wakes lately.
 var errWakeLimited = errors.New("too many wakes from this source")
 
+// errNotAsleep means the doorman's cache shows a routed workload awake, as
+// it can for a moment around a pause, so it isn't stamped yet. A held
+// connection asks again until the cache shows it paused, or a pod is
+// Ready.
+var errNotAsleep = errors.New("the workload shows as awake")
+
 // wakeCall is one stamp in flight, shared by every connection that needs
 // the same workload woken at the same time.
 type wakeCall struct {
@@ -99,7 +105,8 @@ func (s *Server) requestWake(ctx, waitCtx context.Context, rt route, from netip.
 		delete(s.wakeCalls, rt.workload)
 		s.mu.Unlock()
 		close(call.done)
-		if call.err != nil && !errors.Is(call.err, errWakeLimited) && !errors.Is(call.err, errClickLimited) {
+		if call.err != nil && !errors.Is(call.err, errWakeLimited) && !errors.Is(call.err, errClickLimited) &&
+			!errors.Is(call.err, errNotAsleep) {
 			log.FromContext(ctx).Error(call.err, "waking workload",
 				"workload", rt.workload.Name, "namespace", rt.workload.Namespace, "service", rt.service)
 		}
@@ -120,6 +127,9 @@ func (s *Server) stamp(ctx context.Context, rt route, from netip.Addr) error {
 		return fmt.Errorf("getting managed workload: %w", err)
 	}
 	if !needsWake(&w) {
+		if awake(&w) {
+			return errNotAsleep
+		}
 		return nil
 	}
 	now := s.now()
@@ -203,13 +213,13 @@ func setStamp(w *v1alpha1.ManagedWorkload, from netip.Addr, now time.Time) {
 	w.Annotations[v1alpha1.AnnotationLastRequestFrom] = from.Unmap().String()
 }
 
-// needsWake reports whether a paused workload has no wake pending. The
-// operator takes a last-request value as a wake when it's set and differs
-// from the one recorded when the pause began, so one that's empty, or
-// removed since, is no wake. A workload that isn't Paused is awake, or
-// already waking.
+// needsWake reports whether a paused workload, or one pausing, has no wake
+// pending. The operator takes a last-request value as a wake when it's set
+// and differs from the one recorded when the pause began, so one that's
+// empty, or removed since, is no wake. A stamp while it's pausing ends the
+// pause. A workload in any other phase is awake, or already waking.
 func needsWake(w *v1alpha1.ManagedWorkload) bool {
-	if w.Status.Phase != v1alpha1.PhasePaused {
+	if !asleep(w) {
 		return false
 	}
 	current := w.Annotations[v1alpha1.AnnotationLastRequest]
@@ -225,6 +235,18 @@ func needsWake(w *v1alpha1.ManagedWorkload) bool {
 		return true
 	}
 	return stamped.Before(pause.PausedAt.Time)
+}
+
+// asleep reports whether the workload is paused, or pausing, which the
+// doorman fronts it for from the moment the pause starts.
+func asleep(w *v1alpha1.ManagedWorkload) bool {
+	return w.Status.Phase == v1alpha1.PhasePaused || w.Status.Phase == v1alpha1.PhasePausing
+}
+
+// awake reports whether the workload's phase shows it awake: neither
+// asleep nor waking.
+func awake(w *v1alpha1.ManagedWorkload) bool {
+	return !asleep(w) && w.Status.Phase != v1alpha1.PhaseResuming
 }
 
 // recordedLastRequest is the last-request value the pause recorded.
