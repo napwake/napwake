@@ -1159,7 +1159,7 @@ func countPhases(workloads []statusWorkload, say func(phase v1alpha1.WorkloadPha
 	var parts []string
 	for _, phase := range order {
 		if n := counts[phase]; n > 0 {
-			parts = append(parts, say(phase, fmt.Sprintf("%d %s", n, strings.ToLower(string(phase)))))
+			parts = append(parts, say(phase, number(n)+" "+strings.ToLower(string(phase))))
 		}
 	}
 	s := strings.Join(parts, ", ")
@@ -1181,7 +1181,7 @@ func dryRunSummary(workloads []statusWorkload) string {
 			paused = paused || wl.wouldBePaused
 		}
 	}
-	s := fmt.Sprintf("%d in dry-run, never paused", n)
+	s := number(n) + " in dry-run, never paused"
 	if since != nil {
 		s += fmt.Sprintf(": pausing %s would have freed %s since %s", pronounObject(n), wouldFreeDollars(wouldFree, paused),
 			since.Format("Jan 2"))

@@ -804,7 +804,7 @@ func liveProtected(t discovery.Totals) string {
 	if t.Live > 0 {
 		more = " more"
 	}
-	s := fmt.Sprintf("%d%s live workloads are protected, so Napwake never pauses them", t.LiveProtected, more)
+	s := number(t.LiveProtected) + more + " live workloads are protected, so Napwake never pauses them"
 	they, were := "they", "were"
 	if t.LiveProtected == 1 {
 		s, they, were = "1"+more+" live workload is protected, so Napwake never pauses it", "it", "was"
@@ -855,16 +855,16 @@ func notReplayed(workloads []Workload) string {
 	}
 	var parts []string
 	for _, reason := range reasons {
-		parts = append(parts, fmt.Sprintf("%d that won't pause (%s)", wontPause[reason], reason))
+		parts = append(parts, fmt.Sprintf("%s that won't pause (%s)", number(wontPause[reason]), reason))
 	}
 	if protected > 0 {
-		parts = append(parts, fmt.Sprintf("%d in protected namespaces", protected))
+		parts = append(parts, number(protected)+" in protected namespaces")
 	}
 	if scaledByHand > 0 {
-		parts = append(parts, fmt.Sprintf("%d scaled to zero by hand", scaledByHand))
+		parts = append(parts, number(scaledByHand)+" scaled to zero by hand")
 	}
 	if noHistory > 0 {
-		parts = append(parts, fmt.Sprintf("%d without CPU history to replay", noHistory))
+		parts = append(parts, number(noHistory)+" without CPU history to replay")
 	}
 	return joinAnd(parts)
 }
@@ -1432,7 +1432,7 @@ func plural(n int, one, many string) string {
 	if n == 1 {
 		return "1 " + one
 	}
-	return fmt.Sprintf("%d %s", n, many)
+	return number(n) + " " + many
 }
 
 func pronoun(n int) string {
@@ -1469,7 +1469,7 @@ func countOf(n int, noun string) string {
 	if n == 1 {
 		return "1 " + noun
 	}
-	return fmt.Sprintf("%d %ss", n, noun)
+	return number(n) + " " + noun + "s"
 }
 
 func vcpu(millis int64) string {
@@ -1509,6 +1509,12 @@ func dollars(amount float64) string {
 }
 
 // thousands writes n with its thousands separated by commas.
+// number writes a count as the product's sentences do, its thousands
+// separated: 5,775.
+func number(n int) string {
+	return thousands(int64(n))
+}
+
 func thousands(n int64) string {
 	s := strconv.FormatInt(n, 10)
 	for i := len(s) - 3; i > 0; i -= 3 {

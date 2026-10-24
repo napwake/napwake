@@ -326,3 +326,25 @@ func TestReportPage_IdleAfterPerRow(t *testing.T) {
 	assert.Equal(t, "1h", page.Workloads[0].IdleAfter)
 	assert.Equal(t, "1h30m", page.Workloads[1].IdleAfter, "a managed workload's own")
 }
+
+// The counts the product writes have their thousands separated, as the
+// page's own do.
+func TestReportPage_CountsInThousands(t *testing.T) {
+	result := scanResult{ClusterReport: &discovery.ClusterReport{Mode: discovery.ModeHistory,
+		History: &discovery.HistorySource{Hours: 168},
+		Totals: discovery.Totals{Workloads: 8887, Idle: 5775, DryRun: 1200, Live: 1100,
+			Replayed: discovery.ReplayTotals{Workloads: 8887, Sleepers: 7960}}}}
+
+	_, facts := headlineFor(result)
+
+	values := make([]string, 0, len(facts))
+	for _, f := range facts {
+		values = append(values, f.Value)
+	}
+	assert.Contains(t, values, "5,775")
+	assert.Contains(t, values, "7,960 of 8,887")
+	assert.Contains(t, values, "2,300 of 8,887")
+	assert.Equal(t, "managed by Napwake: 1,100 live, 1,200 in dry-run", facts[len(facts)-1].Label)
+	assert.Equal(t, "1,234 workloads", countOf(1234, "workload"))
+	assert.Equal(t, "1 workload", countOf(1, "workload"))
+}

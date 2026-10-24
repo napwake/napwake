@@ -26,7 +26,6 @@ import (
 	"os/exec"
 	"runtime"
 	"slices"
-	"strconv"
 	"strings"
 	"time"
 
@@ -523,7 +522,7 @@ func headlineFor(result scanResult) (headline, []fact) {
 		}
 	}
 
-	idle := fact{Value: strconv.Itoa(t.Idle), Label: "idle right now"}
+	idle := fact{Value: number(t.Idle), Label: "idle right now"}
 	if t.Idle > 0 {
 		idle.Label = fmt.Sprintf("idle right now, reserving %s and %s of memory",
 			vcpu(t.IdleCPUMillis), gib(t.IdleMemoryBytes))
@@ -537,12 +536,12 @@ func headlineFor(result scanResult) (headline, []fact) {
 		if t.Workloads == 1 {
 			workloads = "workload"
 		}
-		facts[0] = fact{Value: strconv.Itoa(t.Workloads),
+		facts[0] = fact{Value: number(t.Workloads),
 			Label: workloads + " in " + countOf(namespacesOf(result.Workloads), "namespace")}
 	}
 	over, notCounted := replayedOver(result.History), notReplayed(result.Workloads)
 	if r := t.Replayed; r.Workloads > 0 {
-		replayed := fact{Value: fmt.Sprintf("%d of %d", r.Sleepers, r.Workloads),
+		replayed := fact{Value: number(r.Sleepers) + " of " + number(r.Workloads),
 			Label: fmt.Sprintf("unmanaged workloads would have slept over %s", over)}
 		if notCounted != "" {
 			replayed.Label += "; not counted: " + notCounted
@@ -551,10 +550,10 @@ func headlineFor(result scanResult) (headline, []fact) {
 	} else {
 		facts = append(facts, fact{Value: cents(t.IdleHourlyCost), Label: "an hour, what idle workloads cost while running"})
 	}
-	managed := fact{Value: fmt.Sprintf("%d of %d", t.Live+t.LiveProtected+t.DryRun, t.Workloads),
-		Label: fmt.Sprintf("managed by Napwake: %d live, %d in dry-run", t.Live, t.DryRun)}
+	managed := fact{Value: number(t.Live+t.LiveProtected+t.DryRun) + " of " + number(t.Workloads),
+		Label: "managed by Napwake: " + number(t.Live) + " live, " + number(t.DryRun) + " in dry-run"}
 	if t.LiveProtected > 0 {
-		managed.Label += fmt.Sprintf(", %d live but protected, so never paused", t.LiveProtected)
+		managed.Label += ", " + number(t.LiveProtected) + " live but protected, so never paused"
 	}
 	facts = append(facts, managed)
 	return h, facts
