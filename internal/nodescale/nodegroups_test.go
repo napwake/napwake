@@ -53,9 +53,9 @@ func TestParseNodeGroups(t *testing.T) {
 	}{
 		{sample: "ca-1.32-upstream.yaml", want: []NodeGroup{{Name: "sample-node-group", MinSize: 2, MaxSize: 12, Target: 8}}},
 		{sample: "ca-1.32-gke.yaml", want: []NodeGroup{
-			{Name: "https://www.googleapis.com/compute/v1/projects/hybernate-prelaunch/zones/europe-west1-b/" +
+			{Name: "https://www.googleapis.com/compute/v1/projects/staging-412907/zones/europe-west1-b/" +
 				"instanceGroups/gke-prelaunch-default-pool-3f9c1a2b-grp", MinSize: 1, MaxSize: 3, Target: 1},
-			{Name: "https://www.googleapis.com/compute/v1/projects/hybernate-prelaunch/zones/europe-west1-b/" +
+			{Name: "https://www.googleapis.com/compute/v1/projects/staging-412907/zones/europe-west1-b/" +
 				"instanceGroups/gke-prelaunch-workloads-7d2e94c1-grp", MinSize: 0, MaxSize: 4, Target: 0},
 		}},
 		{sample: "ca-1.29-text.txt", want: []NodeGroup{

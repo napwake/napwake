@@ -22,7 +22,7 @@ clusterWide:
     lastTransitionTime: "2026-10-23T19:21:07.455810Z"
 nodeGroups:
   -
-    name: "https://www.googleapis.com/compute/v1/projects/hybernate-prelaunch/zones/europe-west1-b/instanceGroups/gke-prelaunch-default-pool-3f9c1a2b-grp"
+    name: "https://www.googleapis.com/compute/v1/projects/staging-412907/zones/europe-west1-b/instanceGroups/gke-prelaunch-default-pool-3f9c1a2b-grp"
     health:
       status: "Healthy"
       nodeCounts:
@@ -46,7 +46,7 @@ nodeGroups:
       lastProbeTime: "2026-10-24T06:12:41.026170354Z"
       lastTransitionTime: "2026-10-23T19:21:07.455810Z"
   -
-    name: "https://www.googleapis.com/compute/v1/projects/hybernate-prelaunch/zones/europe-west1-b/instanceGroups/gke-prelaunch-workloads-7d2e94c1-grp"
+    name: "https://www.googleapis.com/compute/v1/projects/staging-412907/zones/europe-west1-b/instanceGroups/gke-prelaunch-workloads-7d2e94c1-grp"
     health:
       status: "Healthy"
       nodeCounts:
