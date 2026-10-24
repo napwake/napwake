@@ -648,7 +648,7 @@ doorman:
 <details class="nw-details">
 <summary>With install.yaml or the Kustomize manifests</summary>
 
-Write the policy yourself. Its second rule keeps the doorman's metrics port reachable for Prometheus. Leave it out if you don't scrape it.
+Write the policy yourself. Keep the operator's pods in its first rule, as the chart does. Its second rule keeps the doorman's metrics port reachable for Prometheus. Leave it out if you don't scrape it.
 
 ```yaml
 apiVersion: networking.k8s.io/v1
@@ -667,6 +667,8 @@ spec:
             matchLabels: {kubernetes.io/metadata.name: ingress-nginx}
         - namespaceSelector:
             matchLabels: {team: checkout}
+        - podSelector:
+            matchLabels: {control-plane: controller-manager}   # the operator
       ports:
         - {port: 20000, endPort: 29999, protocol: TCP}
     - from:
