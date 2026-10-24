@@ -163,6 +163,7 @@ func (s *Scanner) scanNamespace(ctx, historyCtx context.Context, namespace strin
 			Platform:  platform[string(wl.kind)+"/"+obj.GetName()],
 
 			protectedByNapwake: napwakeProtects(mw),
+			neverPaused:        napwakeNeverPauses(mw),
 		}
 		w.recordGitOps(reads.gitOps.Replicas(ctx, obj))
 		rollouts := owners.rollouts[obj.GetUID()]
@@ -264,6 +265,28 @@ func napwakeProtects(mw *v1alpha1.ManagedWorkload) bool {
 	return mw != nil && meta.IsStatusConditionTrue(mw.Status.Conditions, "Protected")
 }
 
+// napwakeNeverPauses says why the operator never pauses a workload, by its
+// ManagedWorkload, or "" when it may: why it's Protected, or that it has no
+// idlePolicy to pause it by.
+func napwakeNeverPauses(mw *v1alpha1.ManagedWorkload) string {
+	if mw == nil {
+		return ""
+	}
+	if c := meta.FindStatusCondition(mw.Status.Conditions, "Protected"); c != nil && c.Status == metav1.ConditionTrue {
+		switch c.Reason {
+		case "NapwakeComponent":
+			return "part of Napwake"
+		case "PVCsDeletedOnScaleDown":
+			return pvcsDeletedOnScaleDown
+		}
+		return namespaceProtected
+	}
+	if mw.Spec.IdlePolicy == nil {
+		return "no idlePolicy"
+	}
+	return ""
+}
+
 // wontPause says why the operator refuses to pause a workload whatever its
 // activity: a StatefulSet whose PVCs are deleted when it's scaled down
 // would lose its data to a pause.
@@ -274,7 +297,7 @@ func wontPause(obj client.Object) string {
 	}
 	if p := sts.Spec.PersistentVolumeClaimRetentionPolicy; p != nil &&
 		p.WhenScaled == appsv1.DeletePersistentVolumeClaimRetentionPolicyType {
-		return "PVCs deleted on scale-down"
+		return pvcsDeletedOnScaleDown
 	}
 	return ""
 }

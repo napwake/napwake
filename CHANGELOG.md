@@ -217,7 +217,7 @@ There's no upgrade path from Hybernate 0.1.x or a 0.2.0 release candidate. Unins
 
 ### Fixed
 
-- The scan report keeps an idle workload's light on in the With Napwake picture when Napwake won't pause it, such as a StatefulSet that deletes its PVCs. It missed one whose state had its evidence first
+- The scan report keeps an idle workload's light on in the With Napwake picture when Napwake never pauses it: a StatefulSet that deletes its PVCs, a protected namespace, part of Napwake, or a ManagedWorkload without an `idlePolicy`. Before, only such a StatefulSet kept it, and only when its line led with the reason
 - The status page's meter shows what came off the bill as the exact share of what was freed. A freed figure of `<$1` draws no bar
 - The scan report and the status page read what they show from the data, never from the product's sentences, so a reworded line can't change them
 - In dry-run, an operator restart no longer ends every would-be pause with `activity resumed (unobserved)`. A gap in watching doesn't wake a paused workload, so it no longer ends the would-be pause that stands for one either; activity seen after the gap still does. Before, every upgrade, and on spot nodes every preemption, split each would-be pause in two and added an hour awake, so dry-run understated what pausing would free

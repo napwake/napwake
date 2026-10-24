@@ -348,3 +348,15 @@ func TestReportPage_CountsInThousands(t *testing.T) {
 	assert.Equal(t, "1,234 workloads", countOf(1234, "workload"))
 	assert.Equal(t, "1 workload", countOf(1, "workload"))
 }
+
+// Every workload Napwake never pauses keeps its light in the With Napwake
+// picture, with the reason, not only a StatefulSet that deletes its PVCs.
+func TestReportPage_ProtectedKeepsItsLight(t *testing.T) {
+	result := historyResult()
+	result.Workloads[0].Protected = true
+
+	got := renderHTML(t, result)
+
+	pageHas(t, got, `<tr id="wl-0" data-stays="">`, "an idle workload in a protected namespace")
+	assert.Equal(t, "namespace protected", buildReport(result, time.Hour).Workloads[0].WontPause)
+}

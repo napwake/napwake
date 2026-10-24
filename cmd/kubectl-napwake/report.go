@@ -181,8 +181,9 @@ type workloadRow struct {
 	SleptSort                                float64
 	CouldSleepSort, FreedSort, CouldFreeSort float64
 	Because                                  string
-	// WontPause is why Napwake refuses to pause it however idle it is,
-	// which Because also says, or "" for one it would pause.
+	// WontPause is why Napwake never pauses it however idle it is, as
+	// status says it, such as "namespace protected", or "" for one it
+	// would pause.
 	WontPause string
 	// IdleAfter is how long without activity Napwake waits before pausing
 	// it, such as "1h": its own idleAfter, or the scan's.
@@ -669,7 +670,7 @@ func workloadRowFor(wl Workload) workloadRow {
 		CostSort:   wl.MonthlyCost,
 		Freed:      freedCell(wl), FreedSort: -1, Saved: scanSavedCell(wl),
 		CouldFree: couldFreeCell(wl), CouldFreeSort: -1,
-		Because: because(wl), WontPause: wl.WontPause,
+		Because: because(wl), WontPause: wl.NeverPaused(),
 	}
 	if d := wl.IdleAfter.Duration; d > 0 {
 		row.IdleAfter = roundedDuration(d)

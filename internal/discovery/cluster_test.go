@@ -764,3 +764,46 @@ func TestScanCluster_LastMonthsSavingsArentThisMonths(t *testing.T) {
 	assert.Zero(t, byName(report)["stale"].SavedThisMonth)
 	assert.Zero(t, report.Totals.SavedThisMonth)
 }
+
+// Why Napwake never pauses a workload however idle it is, in the words
+// status gives it: its namespace is protected, by label or by the
+// operator's protectedNamespaces; it's part of Napwake; it deletes its
+// PVCs on scale-down; or its ManagedWorkload has no idlePolicy.
+func TestScanCluster_NeverPaused(t *testing.T) {
+	protectedAs := func(name, reason string) *v1alpha1.ManagedWorkload {
+		mw := managedFor(name, v1alpha1.ManagedWorkloadStatus{Phase: v1alpha1.PhaseRunning,
+			Conditions: []metav1.Condition{{Type: "Protected", Status: metav1.ConditionTrue, Reason: reason}}})
+		mw.Spec.IdlePolicy = &v1alpha1.IdlePolicySpec{}
+		return mw
+	}
+	policied := managedFor("policied", v1alpha1.ManagedWorkloadStatus{Phase: v1alpha1.PhaseRunning})
+	policied.Spec.IdlePolicy = &v1alpha1.IdlePolicySpec{}
+	names := []string{"plain", "guarded", "own", "claims", "policyless", "policied"}
+	objs := make([]runtime.Object, 0, 2*len(names)+8)
+	for _, name := range names {
+		objs = append(objs, deploymentWithRollout(name, testNamespace, 1, 30*24*time.Hour)...)
+	}
+	objs = append(objs, deploymentWithRollout("locked", "preview-918", 1, 30*24*time.Hour)...)
+	objs = append(objs,
+		protectedAs("guarded", "ProtectedNamespace"), protectedAs("own", "NapwakeComponent"),
+		protectedAs("claims", "PVCsDeletedOnScaleDown"),
+		managedFor("policyless", v1alpha1.ManagedWorkloadStatus{Phase: v1alpha1.PhaseRunning}), policied,
+		&corev1.Namespace{ObjectMeta: metav1.ObjectMeta{Name: "preview-918",
+			Labels: map[string]string{v1alpha1.LabelProtected: v1alpha1.True}}})
+
+	got := byName(scanWorkloads(t, objs...))
+
+	for name, want := range map[string]string{
+		"plain":      "",
+		"policied":   "",
+		"locked":     "namespace protected",
+		"guarded":    "namespace protected",
+		"own":        "part of Napwake",
+		"claims":     "PVCs deleted on scale-down",
+		"policyless": "no idlePolicy",
+	} {
+		assert.Equal(t, want, got[name].NeverPaused(), name)
+	}
+	assert.Equal(t, "PVCs deleted on scale-down",
+		Workload{WontPause: "PVCs deleted on scale-down", Protected: true}.NeverPaused(), "what the scan sees itself first")
+}
