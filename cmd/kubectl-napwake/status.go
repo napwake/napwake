@@ -270,6 +270,7 @@ var troubles = map[string]metav1.ConditionStatus{
 	"WakeOnRequest":        metav1.ConditionFalse,
 	"ResumeIncomplete":     metav1.ConditionTrue,
 	"PauseIncomplete":      metav1.ConditionTrue,
+	"PausedWhileInUse":     metav1.ConditionTrue,
 }
 
 // reasonTargetIgnored is TargetAvailable's reason when the workload is

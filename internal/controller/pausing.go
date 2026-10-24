@@ -119,16 +119,17 @@ func (r *Reconciler) pauseCancelled(ctx context.Context, workload *v1alpha1.Mana
 		return nil, nil
 	}
 	var what string
+	var cause v1alpha1.WakeCause
 	switch {
 	case r.takeWakeRequest(workload):
-		what = "a wake request came"
+		what, cause = "a wake request came", v1alpha1.WokenByWakeRequest
 	case !r.wokenByActivity(workload, target):
 		return nil, nil
-	case requestedSince(workload, pause) && workload.Spec.Wake.Asks():
-		what = "a person asked to wake it"
 	case requestedSince(workload, pause):
-		what = "a request came"
+		cause = requestCause(workload)
+		what = wakeCauses[cause]
 	default:
+		cause = v1alpha1.WokenByAnnotation
 		holds, err := r.heldByDependencies(ctx, workload)
 		if err != nil {
 			return nil, err
@@ -146,5 +147,5 @@ func (r *Reconciler) pauseCancelled(ctx context.Context, workload *v1alpha1.Mana
 		r.setCondition(workload, conditionPauseRequest, metav1.ConditionFalse, ReasonPauseCancelled,
 			fmt.Sprintf("not paused at %s: %s", answeredAt(r.now()), why))
 	}
-	return &phaseEvent{reason: ReasonPauseCancelled, message: why + "; the pause is cancelled"}, nil
+	return &phaseEvent{reason: ReasonPauseCancelled, message: why + "; the pause is cancelled", cause: cause}, nil
 }

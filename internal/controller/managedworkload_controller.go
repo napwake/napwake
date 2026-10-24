@@ -160,6 +160,7 @@ type Reconciler struct {
 	prometheus      *signal.Prometheus
 	history         historyReader
 	doormanFamilies doormanFamilies
+	quietCPU        quietCPU
 	uids            workloadUIDs
 	graph           *workloadGraph
 	clock           func() time.Time
@@ -535,6 +536,9 @@ func (r *Reconciler) handlePause(ctx context.Context, workload *v1alpha1.Managed
 			return nil, err
 		}
 		workload.Status.Pause.Requested = requested
+		if !requested {
+			r.recordCPUBefore(workload)
+		}
 		// The cache showed replicas the target no longer has: it was scaled
 		// to zero outside Napwake, which the next reconcile sees.
 		if workload.Status.Pause.PreviousReplicas == 0 {
@@ -753,9 +757,11 @@ func (r *Reconciler) forgetLostPause(ctx context.Context, workload *v1alpha1.Man
 
 // phaseEvent says why a workload pauses or wakes. It's emitted once the
 // workload is Pausing or Resuming, so a retried pause or wake doesn't
-// announce itself twice.
+// announce itself twice. cause is the workload's own use that wakes it, if
+// that's what does, which makes a pause it ends soon after wrong.
 type phaseEvent struct {
 	reason, message string
+	cause           v1alpha1.WakeCause
 }
 
 // handleResume drives the workload to Running: a paused one, or one pausing,
@@ -775,12 +781,14 @@ func (r *Reconciler) handleResume(ctx context.Context, workload *v1alpha1.Manage
 				"workload", workload.Name, "namespace", workload.Namespace, "error", err.Error())
 		}
 		r.wakeDependencies(ctx, workload)
+		judged := r.judgePause(ctx, workload, why)
 		if err := r.transition(ctx, workload, v1alpha1.PhaseResuming, "ResumeRequested"); err != nil {
 			return nil, err
 		}
 		if why != nil {
 			r.emitEvent(workload, false, "Normal", why.reason, actionResume, "%s", why.message)
 		}
+		judged()
 	case v1alpha1.PhaseResuming:
 	default:
 		return nil, nil
@@ -1046,6 +1054,7 @@ func (r *Reconciler) abandonHandBack(ctx context.Context, workload *v1alpha1.Man
 // Its doorman ports drain before another workload may have them.
 func (r *Reconciler) forgetWorkload(uid types.UID) {
 	r.activityMemo.forget(uid)
+	r.quietCPU.forget(uid)
 	r.querySeries.forget(uid)
 	r.activityWarned.forget(uid)
 	r.templateHashes.forget(uid)

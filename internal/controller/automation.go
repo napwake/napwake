@@ -338,15 +338,18 @@ func (r *Reconciler) reconcileWake(ctx context.Context, workload *v1alpha1.Manag
 	r.updatePredictionStatus(ctx, workload, engine)
 
 	if requested {
-		return r.handleResume(ctx, workload, &phaseEvent{reason: ReasonWakeRequested, message: wakeRequestedMessage})
+		return r.handleResume(ctx, workload, &phaseEvent{reason: ReasonWakeRequested, message: wakeRequestedMessage,
+			cause: v1alpha1.WokenByWakeRequest})
 	}
 	if woken {
-		message := "activity annotation is newer than the pause, waking"
+		why := &phaseEvent{reason: ReasonWokeByActivity, message: "activity annotation is newer than the pause, waking",
+			cause: v1alpha1.WokenByAnnotation}
 		if wakeSource(workload) == v1alpha1.ActivitySourceRequest {
-			message = "a request is waiting, waking"
+			why.message, why.cause = "a request is waiting, waking", requestCause(workload)
 		}
-		return r.handleResume(ctx, workload, &phaseEvent{reason: ReasonWokeByActivity, message: message})
+		return r.handleResume(ctx, workload, why)
 	}
+	r.endBackOffIfHeld(workload)
 	if queries.wake {
 		r.recordQueryWake(workload)
 		return r.handleResume(ctx, workload, &phaseEvent{reason: ReasonWokeByActivity, message: queryWakeMessage})
@@ -368,6 +371,15 @@ func (r *Reconciler) reconcileWake(ctx context.Context, workload *v1alpha1.Manag
 	return r.handleResume(ctx, workload, &phaseEvent{reason: ReasonAutoResume, message: fmt.Sprintf(
 		"forecast expects %.0f%% utilization %s (threshold %s%%), waking ahead of demand", predicted, when,
 		v1alpha1.FormatCPUThreshold(threshold))})
+}
+
+// requestCause is what a request the doorman stamped is: a person's click,
+// for a workload that asks before waking, or any request.
+func requestCause(workload *v1alpha1.ManagedWorkload) v1alpha1.WakeCause {
+	if workload.Spec.Wake.Asks() {
+		return v1alpha1.WokenByClick
+	}
+	return v1alpha1.WokenByRequest
 }
 
 func (r *Reconciler) untilNextHour(now time.Time) time.Duration {

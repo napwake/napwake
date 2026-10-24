@@ -22,6 +22,7 @@ import (
 	"regexp"
 	"strconv"
 	"strings"
+	"time"
 
 	"k8s.io/apimachinery/pkg/util/intstr"
 )
@@ -89,4 +90,22 @@ func (a *ActivitySpec) CPUThresholdPercent() (float64, bool) {
 	}
 	percent, err := ParseCPUThreshold(a.CPUThreshold.StrVal)
 	return percent, err == nil
+}
+
+// MaxIdleWaitAfterWrongPauses is how much longer than idleAfter the idle
+// clock waits, at most, after pauses made while the workload was in use.
+const MaxIdleWaitAfterWrongPauses = time.Hour
+
+// IdleWait is how long a workload's idle clock waits without activity
+// before a pause: idleAfter, doubled for each of wrongPauses, the pauses in
+// a row something undid soon after they began, and never more than
+// idleAfter plus MaxIdleWaitAfterWrongPauses. It's never less than
+// idleAfter.
+func IdleWait(idleAfter time.Duration, wrongPauses int32) time.Duration {
+	limit := idleAfter + MaxIdleWaitAfterWrongPauses
+	wait := idleAfter
+	for n := int32(0); n < wrongPauses && wait > 0 && wait < limit; n++ {
+		wait *= 2
+	}
+	return min(wait, limit)
 }

@@ -222,7 +222,7 @@ func (r *Reconciler) resetActivity(workload *v1alpha1.ManagedWorkload, source v1
 	if workload.Status.Activity != nil {
 		hash = workload.Status.Activity.TemplateHash
 	}
-	pauseAt := metav1.NewTime(now.Add(idleAfterFor(workload)))
+	pauseAt := metav1.NewTime(now.Add(idleWaitFor(workload)))
 	workload.Status.Activity = &v1alpha1.ActivityStatus{
 		LastActivityTime:   now,
 		LastActivitySource: source,
@@ -321,7 +321,10 @@ func (r *Reconciler) observeActivity(ctx context.Context, workload *v1alpha1.Man
 		evaluated := metav1.NewTime(now)
 		status.LastEvaluatedTime = &evaluated
 	}
-	pauseAt := metav1.NewTime(status.LastActivityTime.Add(idleAfterFor(workload)))
+	if load.err == nil && !forecast.Busy(load.percent, cpuThresholdFor(workload)) {
+		r.quietCPU.see(workload.UID, status.LastActivityTime.Time, now, load.percent, wrongPauseWindow(workload))
+	}
+	pauseAt := metav1.NewTime(status.LastActivityTime.Add(idleWaitFor(workload)))
 	status.PauseAt = &pauseAt
 	r.activityMemo.put(workload.UID, *status.DeepCopy(), now, obs.gap)
 	recordIdleSeconds(workload, now)

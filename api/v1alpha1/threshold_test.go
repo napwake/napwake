@@ -18,6 +18,7 @@ package v1alpha1
 
 import (
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -68,3 +69,47 @@ func TestCPUThreshold_ReadsAndWritesBothForms(t *testing.T) {
 }
 
 func ptrTo[T any](v T) *T { return &v }
+
+// The back-off only ever delays a pause: for every idleAfter and every
+// count of wrong pauses, the idle clock waits at least idleAfter, at most an
+// hour more, and no less after more wrong pauses than after fewer. Counts
+// it doesn't expect, below zero or past any cap, and idleAfter at its
+// extremes, change none of that.
+func TestIdleWait_OnlyEverDelaysAPause(t *testing.T) {
+	var idleAfters []time.Duration
+	for d := time.Minute; d <= 48*time.Hour; d += 7 * time.Minute {
+		idleAfters = append(idleAfters, d)
+	}
+	idleAfters = append(idleAfters, 0, time.Nanosecond, 90*time.Second, 59*time.Minute, time.Hour, 61*time.Minute,
+		1000*time.Hour)
+	for _, idleAfter := range idleAfters {
+		previous := time.Duration(0)
+		for n := int32(-5); n <= 70; n++ {
+			wait := IdleWait(idleAfter, n)
+			require.GreaterOrEqual(t, wait, idleAfter, "idleAfter %s, %d wrong pauses", idleAfter, n)
+			require.LessOrEqual(t, wait, idleAfter+time.Hour, "idleAfter %s, %d wrong pauses", idleAfter, n)
+			require.GreaterOrEqual(t, wait, previous, "idleAfter %s, %d wrong pauses", idleAfter, n)
+			previous = wait
+		}
+	}
+	assert.Equal(t, IdleWait(time.Hour, 70), IdleWait(time.Hour, 1<<30), "a count past any cap is the cap")
+	done := make(chan time.Duration)
+	go func() { done <- IdleWait(0, 1<<30) }()
+	select {
+	case wait := <-done:
+		assert.Zero(t, wait)
+	case <-time.After(50 * time.Millisecond):
+		t.Fatal("an idleAfter of zero, with a count past any cap, must not loop for ever")
+	}
+}
+
+func TestIdleWait_DoublesUpToAnHourMore(t *testing.T) {
+	five := []time.Duration{5 * time.Minute, 10 * time.Minute, 20 * time.Minute, 40 * time.Minute, 65 * time.Minute,
+		65 * time.Minute}
+	for n, want := range five {
+		assert.Equal(t, want, IdleWait(5*time.Minute, int32(n)), "%d wrong pauses", n)
+	}
+	assert.Equal(t, 2*time.Hour, IdleWait(time.Hour, 1))
+	assert.Equal(t, 2*time.Hour, IdleWait(time.Hour, 5))
+	assert.Equal(t, 30*time.Minute, IdleWait(30*time.Minute, 0))
+}
