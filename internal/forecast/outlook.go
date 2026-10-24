@@ -156,7 +156,7 @@ func (e *Engine) clone() *Engine {
 // utilization by Demand, with cpuThreshold the activity threshold. Hours up
 // to the last one observed are skipped: unlike a clock that has gone back,
 // history is meant to be older. It returns how many hours it learned.
-func (e *Engine) Learn(hours []Hour, cpuThreshold int) (int, error) {
+func (e *Engine) Learn(hours []Hour, cpuThreshold float64) (int, error) {
 	learned := 0
 	for _, h := range hours {
 		if e.lastHour != 0 && hourStart(e.local(h.Start)) <= e.lastHour {

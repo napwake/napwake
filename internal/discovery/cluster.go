@@ -21,6 +21,7 @@ import (
 	"context"
 	"fmt"
 	"maps"
+	"math"
 	"slices"
 	"strconv"
 	"strings"
@@ -29,12 +30,14 @@ import (
 	"golang.org/x/sync/errgroup"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/meta"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	v1alpha1 "github.com/napwake/napwake/api/v1alpha1"
 	"github.com/napwake/napwake/internal/cost"
 	"github.com/napwake/napwake/internal/forecast"
 	"github.com/napwake/napwake/internal/gitops"
+	"github.com/napwake/napwake/internal/human"
 )
 
 // State is how a scan judges a workload's use.
@@ -131,6 +134,10 @@ type Workload struct {
 	PodCPURequestMillis   int64      `json:"podCPURequestMillis"`
 	PodMemoryRequestBytes int64      `json:"podMemoryRequestBytes"`
 	LastDeployed          *time.Time `json:"lastDeployed,omitempty"`
+	// IdleAfter is how long without activity makes it idle, which is when
+	// Napwake would pause it: its own idleAfter when Napwake manages it,
+	// otherwise the scan's.
+	IdleAfter metav1.Duration `json:"idleAfter"`
 	// Reason is the evidence for State, e.g. "CPU 64% of its request" or "deployed 20m ago".
 	Reason string `json:"reason,omitempty"`
 	// Unmeasured says why CPU couldn't be measured.
@@ -164,6 +171,9 @@ type Workload struct {
 	// never pauses it, for a reason the scan may not see, such as the
 	// operator's protectedNamespaces.
 	protectedByNapwake bool
+	// neverPaused is why its ManagedWorkload has Napwake never pause it:
+	// why it's Protected, or that it has no idlePolicy.
+	neverPaused string
 	// Platform is the part of the cluster's own infrastructure it runs, such
 	// as Kubernetes, Napwake or cert-manager, for one the scan leaves out
 	// of what pausing could free.
@@ -201,6 +211,29 @@ type Workload struct {
 	// becomes money only if the autoscaler removes that capacity.
 	HourlyCost  float64 `json:"hourlyCost"`
 	MonthlyCost float64 `json:"monthlyCost"`
+}
+
+// What status says of a workload Napwake never pauses.
+const (
+	namespaceProtected     = "namespace protected"
+	pvcsDeletedOnScaleDown = "PVCs deleted on scale-down"
+)
+
+// NeverPaused says why Napwake never pauses the workload however idle it
+// is, as status says it, or "" for one it would: WontPause, which the scan
+// sees itself, then what its ManagedWorkload says, as for part of Napwake
+// or a namespace the operator's protectedNamespaces protects, then a
+// namespace labelled protected.
+func (w Workload) NeverPaused() string {
+	switch {
+	case w.WontPause != "":
+		return w.WontPause
+	case w.neverPaused != "":
+		return w.neverPaused
+	case w.Protected:
+		return namespaceProtected
+	}
+	return ""
 }
 
 // Measured is what Napwake would have done to a workload in dry-run.
@@ -291,7 +324,7 @@ type ClusterOptions struct {
 	// CPUThreshold is the CPU use, as a percentage of requests, at which a
 	// workload Napwake doesn't manage counts as active; managed ones use
 	// their own. Zero means the activity clock's default.
-	CPUThreshold int
+	CPUThreshold float64
 	// Rates price what node prices can't: pods on nodes the price table
 	// doesn't have, or every workload when nodes can't be read.
 	Rates cost.Rates
@@ -626,18 +659,22 @@ func judgePaused(w *Workload, mw *v1alpha1.ManagedWorkload, now time.Time) {
 }
 
 // judgeManaged reads the activity clock Napwake keeps for the workload,
-// which already combines every activity source it's configured with.
-func judgeManaged(w *Workload, mw *v1alpha1.ManagedWorkload, now time.Time, threshold int) {
-	idleAfter := idleAfterFor(mw, ClusterOptions{})
+// which already combines every activity source it's configured with, and
+// waits longer than idleAfter after pauses made in use.
+func judgeManaged(w *Workload, mw *v1alpha1.ManagedWorkload, now time.Time, threshold float64) {
 	a := mw.Status.Activity
 	since := now.Sub(a.LastActivityTime.Time)
+	pauseAt := pauseAtOf(mw)
+	waiting := now.Before(pauseAt)
 	switch {
 	case mw.Status.Phase == v1alpha1.PhaseResuming:
 		w.State, w.Reason = StateActive, "waking"
-	case since < idleAfter && clockStarted(a.LastActivitySource) != "":
-		w.State, w.Reason = StateActive, "not idle yet: "+clockStarted(a.LastActivitySource)+" "+ago(since)
-	case since < idleAfter:
-		w.State, w.Reason = StateActive, fmt.Sprintf("active %s (%s)", ago(since), a.LastActivitySource)
+	case waiting && clockStarted(a.LastActivitySource) != "":
+		w.State, w.Reason = StateActive, "not idle yet: "+clockStarted(a.LastActivitySource)+" "+ago(since)+
+			longerWait(mw, pauseAt)
+	case waiting:
+		w.State, w.Reason = StateActive, fmt.Sprintf("active %s (%s)", ago(since), a.LastActivitySource)+
+			longerWait(mw, pauseAt)
 	case w.CPUPercent != nil && forecast.Busy(w.cpuShare, threshold):
 		w.State, w.Reason = StateActive, cpuReason(*w)
 	default:
@@ -646,6 +683,36 @@ func judgeManaged(w *Workload, mw *v1alpha1.ManagedWorkload, now time.Time, thre
 			w.Reason += ", held awake by dependents"
 		}
 	}
+}
+
+// pauseAtOf is when Napwake pauses the workload if no activity comes: the
+// pauseAt its clock last wrote, or, before it has written one, the wait
+// after the last activity, idleAfter doubled for each pause made in use.
+func pauseAtOf(mw *v1alpha1.ManagedWorkload) time.Time {
+	a := mw.Status.Activity
+	if a.PauseAt != nil {
+		return a.PauseAt.Time
+	}
+	return a.LastActivityTime.Add(v1alpha1.IdleWait(idleAfterFor(mw, ClusterOptions{}), wrongPauses(mw)))
+}
+
+// longerWait says how long the workload's clock waits after pauses made in
+// use, when that's longer than idleAfter, to follow why it's active.
+func longerWait(mw *v1alpha1.ManagedWorkload, pauseAt time.Time) string {
+	idleAfter := idleAfterFor(mw, ClusterOptions{})
+	wait := pauseAt.Sub(mw.Status.Activity.LastActivityTime.Time)
+	if wrongPauses(mw) == 0 || wait <= idleAfter {
+		return ""
+	}
+	return fmt.Sprintf("; after pauses made in use it waits %s, not %s", human.Duration(wait),
+		human.Duration(idleAfter))
+}
+
+func wrongPauses(mw *v1alpha1.ManagedWorkload) int32 {
+	if w := mw.Status.IdleWait; w != nil {
+		return w.WrongPauses
+	}
+	return 0
 }
 
 // clockStarted says what started a workload's activity clock without being
@@ -680,10 +747,12 @@ func idleAfterFor(mw *v1alpha1.ManagedWorkload, opts ClusterOptions) time.Durati
 // thresholdFor is the CPU use, as a percentage of requests, at which a
 // workload counts as active: its own setting when Napwake manages it,
 // otherwise the scan's.
-func thresholdFor(mw *v1alpha1.ManagedWorkload, opts ClusterOptions) int {
+func thresholdFor(mw *v1alpha1.ManagedWorkload, opts ClusterOptions) float64 {
 	if mw != nil {
-		if p := mw.Spec.IdlePolicy; p != nil && p.Activity != nil && p.Activity.CPUThreshold > 0 {
-			return p.Activity.CPUThreshold
+		if p := mw.Spec.IdlePolicy; p != nil {
+			if percent, ok := p.Activity.CPUThresholdPercent(); ok {
+				return percent
+			}
 		}
 		return defaultCPUThreshold
 	}
@@ -695,7 +764,7 @@ func thresholdFor(mw *v1alpha1.ManagedWorkload, opts ClusterOptions) int {
 
 // judgeUnmanaged applies the activity clock's sources a scan can see
 // without Napwake: activity annotations, a recent rollout, and CPU.
-func judgeUnmanaged(w *Workload, obj client.Object, now time.Time, threshold int, idleAfter time.Duration) {
+func judgeUnmanaged(w *Workload, obj client.Object, now time.Time, threshold float64, idleAfter time.Duration) {
 	if w.CPUPercent != nil && forecast.Busy(w.cpuShare, threshold) {
 		w.State, w.Reason = StateActive, cpuReason(*w)
 		return
@@ -725,8 +794,12 @@ func cpuReason(w Workload) string {
 	switch {
 	case w.CPUMillisUsed == 0:
 		return "no CPU use"
-	case *w.CPUPercent == 0:
-		return "CPU under 1% of its request"
+	case w.cpuShare < 0.1:
+		return "CPU under 0.1% of its request"
+	case w.cpuShare < 10:
+		// To a tenth, rounded down as CPUPercent is, which a decimal
+		// threshold such as 0.5 tells apart.
+		return fmt.Sprintf("CPU %s%% of its request", strconv.FormatFloat(math.Floor(w.cpuShare*10)/10, 'f', -1, 64))
 	default:
 		return fmt.Sprintf("CPU %d%% of its request", *w.CPUPercent)
 	}

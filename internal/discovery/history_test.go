@@ -22,6 +22,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -156,6 +157,60 @@ func TestReplay_RolloutIsActivity(t *testing.T) {
 
 	assert.Equal(t, 1, h.Wakes, "a deploy wakes it like any activity")
 	assert.InDelta(t, 168-1-1, h.SleepHours, 0.01, "and keeps it awake for idleAfter")
+}
+
+// busyAt is CPU above the threshold at each of these times into the week,
+// and none otherwise.
+func busyAt(offsets ...time.Duration) func(time.Time) float64 {
+	return func(t time.Time) float64 {
+		if slices.Contains(offsets, t.Sub(weekStart)) {
+			return 1
+		}
+		return 0
+	}
+}
+
+// Use soon after a pause shows the pause was wrong, so the replay waits
+// longer before the next, as the operator does: idleAfter doubled for each
+// wrong pause in a row. Use every 70 minutes, under an idleAfter of an
+// hour, is paused once and woken 10 minutes later, within the window of 15
+// minutes. The clock then waits two hours, which the use never leaves.
+func TestReplay_WaitsLongerAfterAWrongPause(t *testing.T) {
+	var every70m []time.Duration
+	for at := time.Duration(0); at < 7*24*time.Hour; at += 70 * time.Minute {
+		every70m = append(every70m, at)
+	}
+
+	h := week(busyAt(every70m...)).run()
+
+	assert.Equal(t, 1, h.Wakes, "after the first wrong pause, it isn't paused while in use")
+	assert.InDelta(t, 10.0/60, h.SleepHours, 0.001, "asleep only from 60 to 70 minutes in")
+}
+
+// A pause that lasts the window held, so the wait is idleAfter again.
+func TestReplay_APauseThatHoldsEndsTheLongerWait(t *testing.T) {
+	// Paused at 60m and woken at 70m, wrongly: the clock waits 2h, so it
+	// pauses at 190m. The pause holds until 400m, and the clock waits an
+	// hour again, so it pauses at 460m, and is woken wrongly at 470m. It
+	// then waits 2h and pauses at 590m, to the end of the week.
+	h := week(busyAt(0, 70*time.Minute, 400*time.Minute, 470*time.Minute)).run()
+
+	assert.Equal(t, 3, h.Wakes)
+	asleep := (65-60)/5 + 1 + (395-190)/5 + 1 + (465-460)/5 + 1 + (7*24*60-5-590)/5 + 1
+	assert.InDelta(t, float64(asleep)*5/60, h.SleepHours, 0.001)
+}
+
+// A deploy isn't the workload's use, so one soon after a pause doesn't
+// lengthen the wait, as the operator doesn't count a pause it didn't
+// misjudge.
+func TestReplay_ADeployAfterAPauseIsntAWrongPause(t *testing.T) {
+	r := week(busyAt())
+	r.rollouts = []time.Time{weekStart.Add(68 * time.Minute)}
+
+	h := r.run()
+
+	assert.Equal(t, 1, h.Wakes, "a deploy wakes it like any activity")
+	assert.InDelta(t, 168-2, h.SleepHours, 0.01, "and the clock waits idleAfter after it, not two hours")
 }
 
 // Steps without pods, such as while something else had it scaled to zero,
@@ -446,7 +501,7 @@ func TestScanCluster_EachWithItsCPUThreshold(t *testing.T) {
 	mw := managedFor("managed", v1alpha1.ManagedWorkloadStatus{Phase: v1alpha1.PhaseRunning,
 		Activity: &v1alpha1.ActivityStatus{LastActivityTime: metav1.NewTime(scanTime.Add(-5 * time.Hour)),
 			LastActivitySource: v1alpha1.ActivitySourceCPU}})
-	mw.Spec.IdlePolicy = &v1alpha1.IdlePolicySpec{Activity: &v1alpha1.ActivitySpec{CPUThreshold: 50}}
+	mw.Spec.IdlePolicy = &v1alpha1.IdlePolicySpec{Activity: &v1alpha1.ActivitySpec{CPUThreshold: v1alpha1.CPUThresholdValue(50)}}
 	objs = append(objs, makePodMetrics("managed", testNamespace, "20m", "20Mi"), mw)
 	opts := scanOptions(testNamespace)
 	opts.History, opts.Window, opts.IdleAfter = newFakePrometheus(t, f), 7*24*time.Hour, time.Hour

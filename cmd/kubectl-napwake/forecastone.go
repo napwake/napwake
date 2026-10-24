@@ -380,9 +380,11 @@ func targetUnavailable(mw *v1alpha1.ManagedWorkload) string {
 
 // cpuThresholdOf is the CPU use, as a percentage of requests, the operator
 // counts the workload as in use above, and expects it busy at.
-func cpuThresholdOf(mw *v1alpha1.ManagedWorkload) int {
-	if p := mw.Spec.IdlePolicy; p != nil && p.Activity != nil && p.Activity.CPUThreshold > 0 {
-		return p.Activity.CPUThreshold
+func cpuThresholdOf(mw *v1alpha1.ManagedWorkload) float64 {
+	if p := mw.Spec.IdlePolicy; p != nil {
+		if percent, ok := p.Activity.CPUThresholdPercent(); ok {
+			return percent
+		}
 	}
 	return defaultCPUThreshold
 }
@@ -390,7 +392,8 @@ func cpuThresholdOf(mw *v1alpha1.ManagedWorkload) int {
 // learnedFrom reads the forecast's saved state as the operator restores
 // it, for what it has learned and the hours of the next day it expects
 // busy, or says why it can't.
-func learnedFrom(p *v1alpha1.PredictionStatus, threshold, cpuThreshold int, now time.Time) (*forecastLearned, string) {
+func learnedFrom(p *v1alpha1.PredictionStatus, threshold int, cpuThreshold float64, now time.Time) (*forecastLearned,
+	string) {
 	if p.State == "" {
 		return nil, "the forecast hasn't saved what it has learned yet"
 	}
@@ -412,7 +415,7 @@ func learnedFrom(p *v1alpha1.PredictionStatus, threshold, cpuThreshold int, now 
 	start := forecast.HourStart(now, loc)
 	for h := range busyAhead {
 		demand := engine.Predict(h, now)
-		if demand < float64(cpuThreshold) {
+		if demand < cpuThreshold {
 			continue
 		}
 		from := start.Add(time.Duration(h) * time.Hour)

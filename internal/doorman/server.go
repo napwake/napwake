@@ -44,10 +44,10 @@ import (
 const (
 	defaultMaxWait = 2 * time.Minute
 
-	// routeSyncInterval is how often listeners are matched to the routes in
+	// RouteSyncInterval is how often listeners are matched to the routes in
 	// ManagedWorkload status. A connection to a newly paused workload in the
 	// gap is refused, as it would be without the doorman.
-	routeSyncInterval = 2 * time.Second
+	RouteSyncInterval = 2 * time.Second
 
 	// backendPollInterval is how often held connections look for a Ready
 	// pod when nothing tells the doorman that endpoints changed. With an
@@ -133,13 +133,23 @@ type route struct {
 	page     bool
 
 	// asks is set for a workload whose wake.mode is Ask, which only a
-	// person's click wakes. uid and pausedAt name the pause its asleep
-	// page's tokens are good for, and waking says it has been asked to
-	// wake already, as of the last sync.
+	// person's click wakes. uid and began name the pause its asleep page's
+	// tokens are good for, from its first moment, and waking says it has
+	// been asked to wake already, as of the last sync. pausedAt is when the
+	// pause scaled it to zero, which names the pause its stamps and the
+	// requests turned away are counted for.
 	asks     bool
 	uid      types.UID
+	began    time.Time
 	pausedAt time.Time
 	waking   bool
+
+	// pausing says the workload was pausing as of the last sync: its pods
+	// may still serve what the doorman passes on. awake says it was
+	// neither paused, pausing nor waking: its pause was called off, or it's
+	// Running before the operator takes the route down.
+	pausing bool
+	awake   bool
 
 	// drainUntil is set once the route has left status. Until then, the
 	// port passes connections to the workload's Ready pods, if any, without
@@ -156,7 +166,7 @@ func (r route) sameAs(o route) bool {
 }
 
 func (r route) scope() tokenScope {
-	return tokenScope{workload: r.workload, uid: r.uid, pausedAt: r.pausedAt}
+	return tokenScope{workload: r.workload, uid: r.uid, began: r.began}
 }
 
 func (r route) backendKey() backendKey {
@@ -295,7 +305,7 @@ func (s *Server) Start(ctx context.Context) error {
 		defer stop()
 		poll = s.resyncEvery
 	}
-	syncTicker := time.NewTicker(routeSyncInterval)
+	syncTicker := time.NewTicker(RouteSyncInterval)
 	defer syncTicker.Stop()
 	pollTicker := time.NewTicker(poll)
 	defer pollTicker.Stop()
@@ -505,8 +515,11 @@ func (s *Server) syncRoutes(ctx, connCtx context.Context) error {
 				page:     page,
 				asks:     w.Spec.Wake.Asks(),
 				uid:      w.UID,
+				began:    pauseBegan(&w),
 				pausedAt: pausedAt(&w),
 				waking:   isWaking(&w),
+				pausing:  w.Status.Phase == v1alpha1.PhasePausing,
+				awake:    awake(&w),
 			})
 		}
 	}

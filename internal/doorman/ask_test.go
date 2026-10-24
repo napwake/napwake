@@ -40,6 +40,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/client-go/tools/events"
+	"k8s.io/utils/ptr"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 
@@ -151,13 +152,13 @@ func TestServer_AsksAPersonBeforeWaking(t *testing.T) {
 	assert.Contains(t, body, `<meta name="robots" content="noindex">`)
 	assert.Contains(t, body, `<meta http-equiv="refresh" content="60">`,
 		"a tab left open reloads itself, into the app once someone has woken it, and with a fresh token until then")
-	assert.Contains(t, body, "<title>Asleep pr-42.preview.example.dev</title>")
-	assert.Contains(t, body, `<form method="post">`, "the button posts back to the page it's on")
+	assert.Contains(t, body, "<title>Asleep · pr-42.preview.example.dev</title>")
+	assert.Contains(t, body, `<form class="ask" id="wake" method="post">`, "the button posts back to the page it's on")
+	assert.NotContains(t, body, `name="next"`, "with nowhere else to go")
 	assert.Contains(t, body, "Wake it")
 	tokenIn(t, body)
 	assert.NotContains(t, body, "dev/api", "the page names nothing inside the cluster")
 	assert.NotContains(t, body, "uid-api")
-	assert.Contains(t, body, `href="https://docs.napwake.dev/guides/pause/#wake-now"`, "how tooling wakes it")
 
 	stop()
 	assert.Empty(t, lastRequest(t, c), "nothing wakes it")
@@ -228,10 +229,11 @@ func TestServer_AsksNothingWhileItWakes(t *testing.T) {
 func TestServer_AClickWithoutAGoodTokenWakesNothing(t *testing.T) {
 	good := func(s *Server, scope tokenScope) string { return s.wakeKeys.sign(scope, time.Now().Add(tokenTTL)) }
 	tests := []struct {
-		name  string
-		token func(*Server, tokenScope) string
-		site  string
-		wakes bool
+		name   string
+		token  func(*Server, tokenScope) string
+		site   string
+		wakes  bool
+		notice notice
 	}{
 		{name: "a good token, which the others are measured against", token: good, wakes: true},
 		{name: "no token", token: func(*Server, tokenScope) string { return "" }},
@@ -248,14 +250,14 @@ func TestServer_AClickWithoutAGoodTokenWakesNothing(t *testing.T) {
 			return good(s, scope)
 		}},
 		{name: "an earlier pause's", token: func(s *Server, scope tokenScope) string {
-			scope.pausedAt = scope.pausedAt.Add(-24 * time.Hour)
+			scope.began = scope.began.Add(-24 * time.Hour)
 			return good(s, scope)
 		}},
 		{name: "signed with another key", token: func(_ *Server, scope tokenScope) string {
 			return newWakeKeys().sign(scope, time.Now().Add(tokenTTL))
 		}},
-		{name: "a good token, from another site", token: good, site: "cross-site"},
-		{name: "a good token, from another subdomain", token: good, site: "same-site"},
+		{name: "a good token, from another site", token: good, site: "cross-site", notice: noticeElsewhere},
+		{name: "a good token, from another subdomain", token: good, site: "same-site", notice: noticeElsewhere},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -265,7 +267,7 @@ func TestServer_AClickWithoutAGoodTokenWakesNothing(t *testing.T) {
 			stop := run(t, s)
 			var stored v1alpha1.ManagedWorkload
 			require.NoError(t, c.Get(context.Background(), apiKey, &stored))
-			scope := tokenScope{workload: apiKey, uid: stored.UID, pausedAt: pausedAt(&stored)}
+			scope := tokenScope{workload: apiKey, uid: stored.UID, began: pauseBegan(&stored)}
 
 			request := clickRequest(tt.token(s, scope))
 			if tt.site != "" {
@@ -279,8 +281,13 @@ func TestServer_AClickWithoutAGoodTokenWakesNothing(t *testing.T) {
 				assert.NotEmpty(t, lastRequest(t, c))
 				return
 			}
-			assert.Equal(t, http.StatusOK, resp.StatusCode, "the asleep page again")
-			assert.Contains(t, body, noticeExpired.text)
+			want, other := noticeExpired, noticeElsewhere
+			if tt.notice == noticeElsewhere {
+				want, other = noticeElsewhere, noticeExpired
+			}
+			assert.Equal(t, http.StatusForbidden, resp.StatusCode, "the asleep page again, refused")
+			assert.Contains(t, body, template.HTMLEscapeString(want.title))
+			assert.NotContains(t, body, template.HTMLEscapeString(other.title))
 			tokenIn(t, body)
 			assert.Empty(t, lastRequest(t, c), "nothing wakes it")
 		})
@@ -317,9 +324,9 @@ func TestServer_AClickMustComeFromAPerson(t *testing.T) {
 		{name: "Chrome, marked as a person's but saying nothing of where it came from", agent: chrome, page: true,
 			headers: "Sec-Fetch-User: ?1\r\n", notice: noticeNoFetchMetadata},
 		{name: "Safari, from another site", agent: safari, page: true, headers: fromSite(safariClick, "cross-site"),
-			notice: noticeExpired},
+			notice: noticeElsewhere},
 		{name: "Safari, from another subdomain", agent: safari, page: true, headers: fromSite(safariClick, "same-site"),
-			notice: noticeExpired},
+			notice: noticeElsewhere},
 		{name: "Safari, from no page at all", agent: safari, page: true, headers: fromSite(safariClick, "none"),
 			notice: noticeExpired},
 		{name: "Chrome, a script submitting the form", agent: chrome, page: true, headers: scripted},
@@ -346,15 +353,19 @@ func TestServer_AClickMustComeFromAPerson(t *testing.T) {
 				assert.NotEmpty(t, lastRequest(t, c))
 				return
 			case tt.page:
-				assert.Equal(t, http.StatusOK, resp.StatusCode, "the asleep page again")
+				status := http.StatusOK
+				if tt.notice == noticeExpired || tt.notice == noticeElsewhere {
+					status = http.StatusForbidden
+				}
+				assert.Equal(t, status, resp.StatusCode, "the asleep page again")
 				tokenIn(t, body)
-				for _, other := range []notice{noticeExpired, noticeNoFetchMetadata} {
+				for _, other := range []notice{noticeExpired, noticeElsewhere, noticeNoFetchMetadata} {
 					if other != tt.notice {
-						assert.NotContains(t, body, template.HTMLEscapeString(other.text))
+						assert.NotContains(t, body, template.HTMLEscapeString(other.title))
 					}
 				}
 				if tt.notice != (notice{}) {
-					assert.Contains(t, body, template.HTMLEscapeString(tt.notice.text))
+					assert.Contains(t, body, template.HTMLEscapeString(tt.notice.title))
 				}
 			default:
 				assert.Equal(t, http.StatusServiceUnavailable, resp.StatusCode)
@@ -391,7 +402,7 @@ func TestServer_AnAppsOwnFormFromABrowserIsAsked(t *testing.T) {
 
 			stop()
 			assert.Equal(t, http.StatusOK, resp.StatusCode, "the asleep page")
-			assert.NotContains(t, body, `class="notice"`)
+			assert.NotContains(t, body, `class="note`)
 			tokenIn(t, body)
 			assert.Empty(t, lastRequest(t, c))
 			assert.Equal(t, asked+1, wakes(resultAsked))
@@ -426,8 +437,8 @@ func TestServer_AClickThatDoesntSayWhereItCameFromSaysHowElseToWake(t *testing.T
 			assert.Equal(t, http.StatusOK, resp.StatusCode, "the asleep page again")
 			tokenIn(t, body)
 			for _, how := range []string{
-				"didn&#39;t say the click came from this page", "kubectl napwake wake",
-				"napwake.dev/wake-requested", "a current browser", `href="` + asleepDocs + `"`,
+				"didn&#39;t say the click came from this page", "<code>kubectl napwake wake</code>",
+				"Use a current browser", `href="` + asleepDocs + `"`,
 			} {
 				assert.Contains(t, body, how)
 			}
@@ -468,15 +479,17 @@ func TestServer_AClickOverPlainHTTPIsJudgedByItsOrigin(t *testing.T) {
 			wakes: true},
 		{name: "no Origin", agent: chrome, notice: noticeNoFetchMetadata},
 		{name: "a null Origin", agent: safari, origin: "null", notice: noticeNoFetchMetadata},
-		{name: "another site", agent: chrome, origin: "http://attacker.example", notice: noticeExpired},
-		{name: "another subdomain", agent: chrome, origin: "http://pr-43.preview.example.dev", notice: noticeExpired},
+		{name: "another site", agent: chrome, origin: "http://attacker.example", notice: noticeElsewhere},
+		{name: "another subdomain", agent: chrome, origin: "http://pr-43.preview.example.dev", notice: noticeElsewhere},
 		{name: "another port", agent: chrome, host: "localhost:8080", origin: "http://localhost:8081",
-			notice: noticeExpired},
+			notice: noticeElsewhere},
 		{name: "the default port, for a page on another", agent: chrome, host: "localhost:8080",
-			origin: "http://localhost", notice: noticeExpired},
+			origin: "http://localhost", notice: noticeElsewhere},
 		{name: "HTTPS on its default port, for a page on port 80", agent: chrome, host: page + ":80",
-			origin: "https://" + page, notice: noticeExpired},
-		{name: "not a web origin", agent: chrome, origin: "file://", notice: noticeExpired},
+			origin: "https://" + page, notice: noticeElsewhere},
+		{name: "behind a proxy that rewrites Host", agent: chrome, host: "web.preview-42.svc.cluster.local",
+			origin: "http://" + page, notice: noticeElsewhere},
+		{name: "not a web origin", agent: chrome, origin: "file://", notice: noticeElsewhere},
 		{name: "a spider sending the page's Origin", agent: "python-requests/2.32.3", origin: "http://" + page,
 			turnedAway: true},
 	}
@@ -504,9 +517,13 @@ func TestServer_AClickOverPlainHTTPIsJudgedByItsOrigin(t *testing.T) {
 				assert.Equal(t, http.StatusServiceUnavailable, resp.StatusCode)
 				assert.Contains(t, body, asleepMessage)
 			default:
-				assert.Equal(t, http.StatusOK, resp.StatusCode, "the asleep page again")
+				status := http.StatusOK
+				if tt.notice == noticeExpired || tt.notice == noticeElsewhere {
+					status = http.StatusForbidden
+				}
+				assert.Equal(t, status, resp.StatusCode, "the asleep page again")
 				tokenIn(t, body)
-				assert.Contains(t, body, template.HTMLEscapeString(tt.notice.text))
+				assert.Contains(t, body, template.HTMLEscapeString(tt.notice.title))
 			}
 			assert.Empty(t, lastRequest(t, c), "nothing wakes it")
 		})
@@ -595,16 +612,25 @@ func assertSaysHowToWake(t *testing.T, resp *http.Response, body string, wantJSO
 	t.Helper()
 	if wantJSON {
 		assert.Equal(t, "application/json", resp.Header.Get("Content-Type"))
-		var answer map[string]string
+		var answer struct {
+			Status, Message, Docs string
+			Wake                  []string
+		}
 		require.NoError(t, json.Unmarshal([]byte(body), &answer), body)
-		assert.Equal(t, "asleep", answer["status"])
-		body = answer["message"] + " " + answer["wake"] + " " + answer["docs"]
+		assert.Equal(t, "asleep", answer.Status)
+		assert.Len(t, answer.Wake, 3, "each way to wake it")
+		body = answer.Message + " " + strings.Join(answer.Wake, " ") + " " + answer.Docs
 	} else {
 		assert.Equal(t, "text/plain; charset=utf-8", resp.Header.Get("Content-Type"))
+		assert.Equal(t, "This environment is asleep. Napwake paused it while nobody was using it, to save money.\n"+
+			"Requests don't wake it. To wake it, do one of these, then try again:\n"+
+			"- Open it in a browser and press Wake it.\n"+
+			"- Run kubectl napwake wake NAME -n NAMESPACE.\n"+
+			"- From tooling, set the annotation napwake.dev/wake-requested to a new value on its ManagedWorkload.\n"+
+			"More at https://docs.napwake.dev/guides/preview-environments/\n", body)
 	}
-	for _, how := range []string{"Wake it", "napwake.dev/wake-requested", "kubectl napwake wake",
-		"https://docs.napwake.dev/concepts/wake-on-request/#asking-before-waking",
-		"https://docs.napwake.dev/guides/pause/#wake-now"} {
+	for _, how := range []string{"Requests don't wake it", "Wake it", "napwake.dev/wake-requested",
+		"kubectl napwake wake", "https://docs.napwake.dev/guides/preview-environments/"} {
 		assert.Contains(t, body, how)
 	}
 	assert.NotContains(t, body, "dev/api", "it names nothing inside the cluster")
@@ -681,8 +707,9 @@ func TestServer_ClickWakesAreRateLimited(t *testing.T) {
 				assert.NotEqual(t, stamp, lastRequest(t, c))
 				return
 			}
-			assert.Equal(t, http.StatusOK, resp.StatusCode, "asked again")
-			assert.Contains(t, body, noticeLimited.text)
+			assert.Equal(t, http.StatusTooManyRequests, resp.StatusCode, "asked again")
+			assert.Equal(t, "60", resp.Header.Get("Retry-After"), "when a click may wake it")
+			assert.Contains(t, body, template.HTMLEscapeString(noticeLimited.text))
 			assert.Equal(t, stamp, lastRequest(t, c), "no new wake")
 		})
 	}
@@ -706,7 +733,7 @@ func TestServer_ReplicasShareTheWakeKey(t *testing.T) {
 	var filled corev1.Secret
 	require.NoError(t, c.Get(context.Background(), key, &filled))
 	assert.Len(t, filled.Data[WakeKeyField], wakeKeySize, "filled with a key")
-	scope := tokenScope{workload: apiKey, uid: "uid-api", pausedAt: time.Now().Truncate(time.Second)}
+	scope := tokenScope{workload: apiKey, uid: "uid-api", began: time.Now().Truncate(time.Second)}
 	token := first.wakeKeys.sign(scope, time.Now().Add(tokenTTL))
 	assert.True(t, second.wakeKeys.valid(token, scope, time.Now()), "a page shown by one is clicked through another")
 }
@@ -715,7 +742,7 @@ func TestServer_ReplicasShareTheWakeKey(t *testing.T) {
 // click on a page shown just before.
 func TestWakeKeys_APageShownBeforeTheKeyChangedStillWorks(t *testing.T) {
 	keys := newWakeKeys()
-	scope := tokenScope{workload: apiKey, uid: "uid-api", pausedAt: time.Now().Truncate(time.Second)}
+	scope := tokenScope{workload: apiKey, uid: "uid-api", began: time.Now().Truncate(time.Second)}
 	token := keys.sign(scope, time.Now().Add(tokenTTL))
 
 	keys.use(newWakeKey(), time.Now())
@@ -731,7 +758,7 @@ func TestWakeKeys_APageShownBeforeTheKeyChangedStillWorks(t *testing.T) {
 func TestWakeKeys_RetireTheKeyBefore(t *testing.T) {
 	keys := newWakeKeys()
 	leaked := &wakeKeys{current: keys.current}
-	scope := tokenScope{workload: apiKey, uid: "uid-api", pausedAt: time.Now().Truncate(time.Second)}
+	scope := tokenScope{workload: apiKey, uid: "uid-api", began: time.Now().Truncate(time.Second)}
 	changed := time.Now()
 	keys.use(newWakeKey(), changed)
 
@@ -747,7 +774,7 @@ func TestWakeKeys_RetireTheKeyBefore(t *testing.T) {
 // claiming a lifetime longer than any doorman gives is forged.
 func TestWakeKeys_Lifetime(t *testing.T) {
 	keys := newWakeKeys()
-	scope := tokenScope{workload: apiKey, uid: "uid-api"}
+	scope := tokenScope{workload: apiKey, uid: "uid-api", began: time.Now().Truncate(time.Second)}
 	now := time.Now()
 	issued := keys.sign(scope, now.Add(tokenTTL))
 
@@ -984,4 +1011,234 @@ func TestServer_ReadsAClickSentInPieces(t *testing.T) {
 
 	assert.Equal(t, http.StatusServiceUnavailable, resp.StatusCode, "the waking-up page")
 	assert.NotEmpty(t, lastRequest(t, c))
+}
+
+// The doorman fronts a workload from the moment its pause starts. Until its
+// pods have gone, a browser's page load passes to them as any request does,
+// and once none is Ready it gets the page it would get were the workload
+// paused: the asleep page, whose click calls the pause off, for one that
+// asks first, and the waking-up page, which calls it off at once, for one
+// that doesn't.
+func TestServer_APageLoadAsItPausesGetsWhatAPausedWorkloadGives(t *testing.T) {
+	pausing := func(port int32, asks bool) *v1alpha1.ManagedWorkload {
+		w := pausingWorkload(port)
+		w.UID = "uid-api"
+		if asks {
+			w.Spec.Wake.Mode = v1alpha1.WakeOnAsk
+		}
+		return w
+	}
+
+	t.Run("a pod still Ready", func(t *testing.T) {
+		for _, asks := range []bool{true, false} {
+			port := freePort(t)
+			_, c := startServer(t, pausing(port, asks), readySlice(echoPort(t)))
+
+			conn := dial(t, port)
+			send(t, conn, personGET)
+			echoed(t, conn, personGET)
+			if asks {
+				require.Never(t, func() bool { return lastRequest(t, c) != "" }, 300*time.Millisecond,
+					20*time.Millisecond, "only a click calls off the pause of a workload that asks")
+			} else {
+				require.Eventually(t, func() bool { return lastRequest(t, c) != "" }, 5*time.Second,
+					20*time.Millisecond, "a page load passed on calls the pause off")
+			}
+		}
+	})
+
+	t.Run("asks, its pods gone", func(t *testing.T) {
+		port := freePort(t)
+		_, c := startServer(t, pausing(port, true))
+
+		token := askedPage(t, port)
+		assert.Empty(t, lastRequest(t, c), "the asleep page wakes nothing")
+
+		resp, body := click(t, port, clickRequest(token))
+		assert.Equal(t, http.StatusServiceUnavailable, resp.StatusCode, body)
+		assert.Contains(t, body, "<title>Waking up pr-42.preview.example.dev</title>")
+		assert.NotEmpty(t, lastRequest(t, c), "the click calls the pause off")
+	})
+
+	t.Run("wakes on any request, its pods gone", func(t *testing.T) {
+		port := freePort(t)
+		_, c := startServer(t, pausing(port, false))
+
+		resp, body := click(t, port, personGET)
+		assert.Equal(t, http.StatusServiceUnavailable, resp.StatusCode, body)
+		assert.Contains(t, body, "<title>Waking up pr-42.preview.example.dev</title>")
+		require.Eventually(t, func() bool { return lastRequest(t, c) != "" }, 5*time.Second, 20*time.Millisecond,
+			"the page load calls the pause off, as the page is shown")
+	})
+}
+
+// A click can come while the doorman's cache shows the workload awake with
+// its route still listed: its pause was called off, or it's Running and the
+// operator hasn't yet taken the route down. It's awake, or waking, so the
+// waking-up page follows, which reloads into the app, rather than a notice
+// that it didn't wake, and it isn't counted as a wake that failed.
+func TestServer_AClickOnAWorkloadTheCacheShowsAwakeGetsTheWakingUpPage(t *testing.T) {
+	port := freePort(t)
+	_, c := startServer(t, askingWorkload(port))
+	token := askedPage(t, port)
+	failed, paged := wakes(resultError), wakes(resultPage)
+
+	var live v1alpha1.ManagedWorkload
+	require.NoError(t, c.Get(context.Background(), apiKey, &live))
+	live.Status.Phase = v1alpha1.PhaseRunning
+	require.NoError(t, c.Update(context.Background(), &live))
+
+	resp, body := click(t, port, clickRequest(token))
+
+	assert.Equal(t, http.StatusServiceUnavailable, resp.StatusCode, body)
+	assert.Contains(t, body, "<title>Waking up pr-42.preview.example.dev</title>")
+	assert.NotContains(t, body, "It didn&#39;t wake")
+	require.Eventually(t, func() bool { return wakes(resultPage) == paged+1 }, 5*time.Second, 20*time.Millisecond,
+		"counted as a browser shown the waking-up page, once the connection is done")
+	assert.Equal(t, failed, wakes(resultError), "not a wake that failed")
+	assert.Empty(t, lastRequest(t, c), "an awake workload isn't stamped")
+}
+
+// synced waits for the server to sync its routes once more, so they show
+// what the test has just written.
+func synced(t *testing.T, s *Server) {
+	t.Helper()
+	since := time.Now().UnixNano()
+	require.Eventually(t, func() bool { return s.lastSync.Load() > since }, 5*time.Second, 20*time.Millisecond)
+}
+
+// pausingAsks is a workload that asks first, its pause begun at began and
+// under way, its pods gone.
+func pausingAsks(port int32, began time.Time) *v1alpha1.ManagedWorkload {
+	w := askingWorkload(port)
+	w.Status.Phase = v1alpha1.PhasePausing
+	w.Status.Pause.StartedAt = ptr.To(metav1.NewTime(began))
+	w.Status.Pause.PausedAt = nil
+	return w
+}
+
+// An asleep page shown as the workload pauses is for that pause from its
+// first moment, so its button wakes the workload once it's Paused, rather
+// than being refused as expired.
+func TestServer_APageShownAsItPausesWakesItOncePaused(t *testing.T) {
+	port := freePort(t)
+	s, c := startServer(t, pausingAsks(port, time.Now().Add(-time.Minute)))
+	token := askedPage(t, port)
+
+	var live v1alpha1.ManagedWorkload
+	require.NoError(t, c.Get(context.Background(), apiKey, &live))
+	live.Status.Phase = v1alpha1.PhasePaused
+	live.Status.Pause.PausedAt = ptr.To(metav1.Now())
+	require.NoError(t, c.Update(context.Background(), &live))
+	synced(t, s)
+
+	resp, body := click(t, port, clickRequest(token))
+
+	assert.Equal(t, http.StatusServiceUnavailable, resp.StatusCode, "the waking-up page")
+	assert.Contains(t, body, "<title>Waking up pr-42.preview.example.dev</title>")
+	assert.NotEmpty(t, lastRequest(t, c), "the click wakes it")
+}
+
+// A page's button is good for its own pause alone: one shown as an earlier
+// pause began wakes nothing in a later one, though neither had scaled the
+// workload to zero when it was shown.
+func TestServer_APageFromAnEarlierPauseIsRefusedInALaterOne(t *testing.T) {
+	port := freePort(t)
+	first := time.Now().Add(-5 * time.Minute)
+	s, c := startServer(t, pausingAsks(port, first))
+	token := askedPage(t, port)
+
+	var live v1alpha1.ManagedWorkload
+	require.NoError(t, c.Get(context.Background(), apiKey, &live))
+	live.Status.Pause.StartedAt = ptr.To(metav1.NewTime(first.Add(3 * time.Minute)))
+	require.NoError(t, c.Update(context.Background(), &live))
+	synced(t, s)
+
+	resp, body := click(t, port, clickRequest(token))
+
+	assert.Equal(t, http.StatusForbidden, resp.StatusCode, "refused as a page left open")
+	assert.Contains(t, body, template.HTMLEscapeString(noticeExpired.title))
+	tokenIn(t, body)
+	assert.Empty(t, lastRequest(t, c), "nothing wakes it")
+}
+
+// A token for no pause, as one signed for a route whose pause the cache
+// hasn't recorded, is good for none.
+func TestWakeKeys_ATokenForNoPauseIsRefused(t *testing.T) {
+	keys := newWakeKeys()
+	none := tokenScope{workload: apiKey, uid: "uid-api"}
+	now := time.Now()
+
+	assert.False(t, keys.valid(keys.sign(none, now.Add(tokenTTL)), none, now))
+}
+
+// A pause is named by when it began, and one an operator from before
+// status.pause.startedAt began, by when it scaled the workload to zero.
+func TestPauseBegan(t *testing.T) {
+	began := time.Date(2026, 10, 24, 9, 0, 0, 0, time.UTC)
+	scaled := began.Add(12 * time.Second)
+	tests := []struct {
+		name  string
+		pause *v1alpha1.PauseStatus
+		want  time.Time
+	}{
+		{name: "pausing", pause: &v1alpha1.PauseStatus{StartedAt: ptr.To(metav1.NewTime(began.Add(300 * time.Millisecond)))},
+			want: began},
+		{name: "paused", pause: &v1alpha1.PauseStatus{StartedAt: ptr.To(metav1.NewTime(began)),
+			PausedAt: ptr.To(metav1.NewTime(scaled))}, want: began},
+		{name: "paused by an earlier operator", pause: &v1alpha1.PauseStatus{PausedAt: ptr.To(metav1.NewTime(scaled))},
+			want: scaled},
+		{name: "no pause"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			w := &v1alpha1.ManagedWorkload{Status: v1alpha1.ManagedWorkloadStatus{Pause: tt.pause}}
+			assert.True(t, tt.want.Equal(pauseBegan(w)), "got %s", pauseBegan(w))
+		})
+	}
+}
+
+// Once the doorman's routes show the workload Running, its pause record
+// gone, before the operator takes the route down, a click from a page shown
+// while it was paused gets the waking-up page too: it's awake, and there's
+// no pause left for a button to be good for.
+func TestServer_AClickOnARouteSyncedAwakeGetsTheWakingUpPage(t *testing.T) {
+	port := freePort(t)
+	s, c := startServer(t, askingWorkload(port))
+	token := askedPage(t, port)
+	failed, paged := wakes(resultError), wakes(resultPage)
+
+	var live v1alpha1.ManagedWorkload
+	require.NoError(t, c.Get(context.Background(), apiKey, &live))
+	live.Status.Phase, live.Status.Pause = v1alpha1.PhaseRunning, nil
+	require.NoError(t, c.Update(context.Background(), &live))
+	synced(t, s)
+
+	resp, body := click(t, port, clickRequest(token))
+
+	assert.Equal(t, http.StatusServiceUnavailable, resp.StatusCode, body)
+	assert.Contains(t, body, "<title>Waking up pr-42.preview.example.dev</title>")
+	require.Eventually(t, func() bool { return wakes(resultPage) == paged+1 }, 5*time.Second, 20*time.Millisecond,
+		"counted as a browser shown the waking-up page, once the connection is done")
+	assert.Equal(t, failed, wakes(resultError))
+	assert.Empty(t, lastRequest(t, c), "an awake workload isn't stamped")
+}
+
+// A click this replica stamped in one pause doesn't make the next look
+// waking, though it begins within wakeStampInterval: a person opening the
+// workload gets the asleep page, not a waking-up page with nothing waking,
+// and a click within the minute is told to try again in a minute.
+func TestServer_AClickInOnePauseDoesntMakeTheNextLookWaking(t *testing.T) {
+	port := freePort(t)
+	s, c := startServer(t, pausingAsks(port, time.Now().Add(-time.Minute)))
+	resp, _ := click(t, port, clickRequest(askedPage(t, port)))
+	require.Equal(t, http.StatusServiceUnavailable, resp.StatusCode, "the first pause called off")
+
+	nextPauseBegins(t, c)
+	synced(t, s)
+
+	token := askedPage(t, port)
+	resp, body := click(t, port, clickRequest(token))
+	assert.Equal(t, http.StatusTooManyRequests, resp.StatusCode, body)
+	assert.Contains(t, body, template.HTMLEscapeString(noticeLimited.title))
 }

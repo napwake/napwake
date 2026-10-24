@@ -180,9 +180,12 @@ Cache-Control: no-store
 Retry-After: 300
 X-Robots-Tag: noindex
 
-This environment is asleep. A request doesn't wake it: only a person who opens it in a browser and clicks Wake it, or their tooling, can.
-Open it in a browser and click Wake it; set the napwake.dev/wake-requested annotation on its ManagedWorkload; or run kubectl napwake wake: https://docs.napwake.dev/guides/pause/#wake-now
-https://docs.napwake.dev/concepts/wake-on-request/#asking-before-waking
+This environment is asleep. Napwake paused it while nobody was using it, to save money.
+Requests don't wake it. To wake it, do one of these, then try again:
+- Open it in a browser and press Wake it.
+- Run kubectl napwake wake NAME -n NAMESPACE.
+- From tooling, set the annotation napwake.dev/wake-requested to a new value on its ManagedWorkload.
+More at https://docs.napwake.dev/guides/preview-environments/
 ```
 
 A client that sends `Accept: application/json` gets the same in JSON. Probes and health checks the doorman recognises are answered as for any workload, and a connection that isn't HTTP is closed. Once someone has woken the preview, every caller is served as usual. See [What browsers, robots and API clients see](../concepts/wake-on-request.md#what-browsers-robots-and-api-clients-see).
@@ -222,7 +225,7 @@ jobs:
           kubectl wait managedworkload web -n "$NS" --for=jsonpath='{.status.phase}'=Running --timeout=10m
 ```
 
-On a pull request's first push, Napwake makes the ManagedWorkload from the label moments after the deploy, so the first `kubectl wait` waits for it to exist; `--for=create` needs kubectl 1.31 or later. A request set before Napwake has taken the ManagedWorkload on is answered as for any awake preview, `already awake`. The token is the run's ID and attempt, so each run asks afresh, a re-run included. The next `kubectl wait` waits for Napwake to take the request up. A request made while a pause or a wake is under way is answered once that finishes, as [Wake Now](pause.md#wake-now) says, so while the preview is starting this wait lasts as long as its start does, and has the same 10 minutes as the last. When Napwake won't wake the preview, the step fails with its reason, such as `not woken at 2026-10-23 21:01 UTC: it's scaled to zero outside Napwake, which leaves it off until its replicas are set above zero`. The last waits until the preview is Running. Its dependencies wake with it; to wait for them too, add a `kubectl wait` for each.
+On a pull request's first push, Napwake makes the ManagedWorkload from the label moments after the deploy, so the first `kubectl wait` waits for it to exist; `--for=create` needs kubectl 1.31 or later. A request set before Napwake has taken the ManagedWorkload on is answered as for any awake preview, `already awake`. The token is the run's ID and attempt, so each run asks afresh, a re-run included. The next `kubectl wait` waits for Napwake to take the request up. A request made as the preview pauses is answered at once, and calls the pause off. One made as it wakes is answered once the wake finishes, as [Wake Now](pause.md#wake-now) says. So while the preview is starting, this wait lasts as long as its start does, and has the same 10 minutes as the last. When Napwake won't wake the preview, the step fails with its reason, such as `not woken at 2026-10-23 21:01 UTC: it's scaled to zero outside Napwake, which leaves it off until its replicas are set above zero`. The last waits until the preview is Running. Its dependencies wake with it; to wait for them too, add a `kubectl wait` for each.
 
 ### From a terminal
 
@@ -235,7 +238,7 @@ waking preview-42/web...
 preview-42/web is Running after 2s
 ```
 
-`--wait`, the default, waits for Napwake's answer and then until the workload is Running, both within `--timeout`, 5 minutes by default. A request made while a pause or a wake is under way is answered once that finishes, and the same 5 minutes covers that wait too; for a preview that takes longer to start, give it more, such as `--timeout 10m`. See [Wake a Workload](../getting-started/kubectl-plugin.md#wake-a-workload).
+`--wait`, the default, waits for Napwake's answer and then until the workload is Running, both within `--timeout`, 5 minutes by default. A request made as the preview pauses calls the pause off. One made as it wakes is answered once the wake finishes, and the same 5 minutes covers that wait too. For a preview that takes longer to start, give it more, such as `--timeout 10m`. See [Wake a Workload](../getting-started/kubectl-plugin.md#wake-a-workload).
 
 ### From a portal or a chat bot
 
@@ -251,7 +254,7 @@ curl --fail-with-body -sS -o /dev/null --cacert ca.crt -X PATCH \
   "$APISERVER/apis/napwake.dev/v1alpha1/namespaces/$NS/managedworkloads/web"
 ```
 
-Then read the ManagedWorkload until Napwake has answered that request, every second or two. A request made while the preview is pausing or waking is answered once that finishes, so keep reading for as long as the preview takes to start:
+Then read the ManagedWorkload until Napwake has answered that request, every second or two. A request made as the preview pauses is answered at once, and calls the pause off. One made as it wakes is answered once the wake finishes, so keep reading for as long as the preview takes to start:
 
 ```bash
 curl --fail-with-body -sS --cacert ca.crt -H "Authorization: Bearer $KUBE_TOKEN" \

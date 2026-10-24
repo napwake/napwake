@@ -21,6 +21,7 @@ import (
 
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/util/intstr"
 )
 
 // +kubebuilder:object:root=true
@@ -277,12 +278,15 @@ type IdlePolicySpec struct {
 // ActivitySpec configures the activity sources for idle detection.
 type ActivitySpec struct {
 	// CPUThreshold is the CPU utilization, as a percentage of the workload's
-	// CPU requests, above which the workload counts as active.
-	// +kubebuilder:validation:Minimum=1
-	// +kubebuilder:validation:Maximum=100
+	// CPU requests, above which the workload counts as active: from 0.1 to
+	// 100, a whole number such as 10, or a decimal written as a string, such
+	// as "0.5", to at most two places.
+	// +kubebuilder:validation:XIntOrString
+	// +kubebuilder:validation:Pattern=`^[0-9]{1,3}(\.[0-9]{1,2})?$`
+	// +kubebuilder:validation:XValidation:rule="type(self) == string ? double(self) >= 0.1 && double(self) <= 100.0 : self >= 1 && self <= 100",message="must be a percentage from 0.1 to 100, such as 10 or \"0.5\""
 	// +kubebuilder:default=10
 	// +optional
-	CPUThreshold int `json:"cpuThreshold,omitempty"`
+	CPUThreshold *intstr.IntOrString `json:"cpuThreshold,omitempty"`
 
 	// Prometheus queries that measure activity, such as an ingress request
 	// rate. A result above zero counts as activity; an empty result or zero
@@ -406,6 +410,12 @@ type ManagedWorkloadStatus struct {
 	// Activity tracks when the workload was last active, for idle detection.
 	// +optional
 	Activity *ActivityStatus `json:"activity,omitempty"`
+
+	// IdleWait records the pauses made while the workload was in use, which
+	// lengthen how long its idle clock waits, and what Napwake measured of
+	// its CPU in use and idle, from which it suggests a CPU threshold.
+	// +optional
+	IdleWait *IdleWaitStatus `json:"idleWait,omitempty"`
 
 	// DryRun is what dry-run has measured: what Napwake would have done
 	// had it been allowed to pause the workload. Set only while spec.dryRun
@@ -599,6 +609,68 @@ type ActivityStatus struct {
 	ForecastQuietUntil *metav1.Time `json:"forecastQuietUntil,omitempty"`
 }
 
+// IdleWaitStatus records the pauses made while the workload was in use, and
+// its CPU use idle.
+type IdleWaitStatus struct {
+	// WrongPauses counts the pauses in a row that something undid soon after
+	// they began, within idleAfter or 15 minutes, whichever is shorter: a
+	// request, a person's click, a wake request or an activity annotation.
+	// The workload was in use, unseen. Each doubles how long its idle clock
+	// waits without activity before a pause, up to idleAfter plus an hour. A
+	// pause nothing undoes that soon sets it back to zero.
+	// +optional
+	WrongPauses int32 `json:"wrongPauses,omitempty"`
+
+	// LastWrongPause is the latest of them.
+	// +optional
+	LastWrongPause *WrongPause `json:"lastWrongPause,omitempty"`
+
+	// IdleCPU is the most CPU the workload used, as a percentage of its
+	// requests, in the minutes before its pauses that nothing undid, over
+	// the last week: what it uses idle. Unset until such a pause.
+	// +optional
+	IdleCPU string `json:"idleCPU,omitempty"`
+
+	// IdleCPUAt is when IdleCPU was last measured.
+	// +optional
+	IdleCPUAt *metav1.Time `json:"idleCPUAt,omitempty"`
+}
+
+// WrongPause is a pause something undid soon after it began.
+type WrongPause struct {
+	// PausedAt is when the pause began.
+	PausedAt metav1.Time `json:"pausedAt"`
+
+	// After is how soon after the pause began it was undone.
+	After metav1.Duration `json:"after"`
+
+	// By is what undid it.
+	By WakeCause `json:"by"`
+
+	// From is where the request that undid it came from, as the doorman
+	// recorded it.
+	// +optional
+	From string `json:"from,omitempty"`
+
+	// InUseCPU is the most CPU the workload used, as a percentage of its
+	// requests, through the stretch without activity that ran its clock out,
+	// in which, as it turned out, it was in use. Unset when none was
+	// measured.
+	// +optional
+	InUseCPU string `json:"inUseCPU,omitempty"`
+}
+
+// WakeCause is what woke a workload from a pause.
+// +kubebuilder:validation:Enum=request;click;wakeRequest;annotation
+type WakeCause string
+
+const (
+	WokenByRequest     WakeCause = "request"
+	WokenByClick       WakeCause = "click"
+	WokenByWakeRequest WakeCause = "wakeRequest"
+	WokenByAnnotation  WakeCause = "annotation"
+)
+
 // DryRunStatus sums up the pauses Napwake would have made in dry-run. A
 // would-be pause starts when the activity clock runs out and ends at the
 // next activity, when a paused workload would have been woken.
@@ -684,6 +756,29 @@ type PauseStatus struct {
 	// restore on resume.
 	PreviousReplicas int32 `json:"previousReplicas"`
 
+	// StartedAt is when the pause began, as the workload went Pausing,
+	// before anything was scaled, or when Napwake took up a pause whose
+	// record was lost. It names this pause from its first moment: the
+	// asleep page's Wake it button is good for it alone.
+	// +optional
+	StartedAt *metav1.Time `json:"startedAt,omitempty"`
+
+	// RoutesWrittenAt is when the doorman's routes for this pause were
+	// stored in status, where every doorman replica reads the ports to
+	// listen on. Its EndpointSlices go in only once each has had time to.
+	// Unset for a workload the doorman doesn't route, and again should the
+	// routes be taken down before the scale-down.
+	// +optional
+	RoutesWrittenAt *metav1.Time `json:"routesWrittenAt,omitempty"`
+
+	// RoutedAt is when the doorman's EndpointSlices first stood in front of
+	// the workload's Services for this pause, beside its pods, which still
+	// served. It's scaled to zero a few seconds after, once proxies send new
+	// connections to the doorman too, so none is refused as the pods stop.
+	// Unset for a workload the doorman doesn't route.
+	// +optional
+	RoutedAt *metav1.Time `json:"routedAt,omitempty"`
+
 	// PausedAt is when the workload was scaled to zero. Unset until then.
 	// The pause waits from then for its pods to stop.
 	// +optional
@@ -731,6 +826,23 @@ type PauseStatus struct {
 	// pause at once.
 	// +optional
 	QueryActiveSincePause bool `json:"queryActiveSincePause,omitempty"`
+
+	// Requested says the pause was asked for, with the
+	// napwake.dev/pause-requested annotation, rather than decided by the
+	// idle clock or the forecast.
+	// +optional
+	Requested bool `json:"requested,omitempty"`
+
+	// CPUBefore is the most CPU the workload used, as a percentage of its
+	// requests, through the stretch without activity that ran its clock out,
+	// and CPUJustBefore the most in its last minutes: within idleAfter or 15
+	// minutes of the pause, whichever is shorter. A pause undone soon after
+	// shows what it uses in use; one that holds, what it uses idle. Unset
+	// when the clock measured none, as for a requested pause.
+	// +optional
+	CPUBefore string `json:"cpuBefore,omitempty"`
+	// +optional
+	CPUJustBefore string `json:"cpuJustBefore,omitempty"`
 }
 
 // WakeAnnotations are the napwake.dev/last-activity, last-request and

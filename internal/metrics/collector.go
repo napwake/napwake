@@ -84,10 +84,16 @@ var (
 		Help: "Times each workload's idle clock ran out.",
 	}, []string{"namespace", "workload"})
 
+	WrongPauses = prometheus.NewCounterVec(prometheus.CounterOpts{
+		Name: "napwake_wrong_pauses_total",
+		Help: "Pauses made while each workload was in use: undone soon after by a request, a click, a wake " +
+			"request or an activity annotation.",
+	}, []string{"namespace", "workload"})
+
 	ExternalScaleUps = prometheus.NewCounterVec(prometheus.CounterOpts{
 		Name: "napwake_external_scale_ups_total",
-		Help: "Paused workloads scaled up outside Napwake, by what did it: argo-cd, flux, or other.",
-	}, []string{"by"})
+		Help: "Times each paused workload was scaled up outside Napwake, by what did it: argo-cd, flux, or other.",
+	}, []string{"namespace", "workload", "by"})
 )
 
 // --- Tier 3: Debugging ---
@@ -111,6 +117,23 @@ var (
 	TargetUnavailable = prometheus.NewCounterVec(prometheus.CounterOpts{
 		Name: "napwake_target_unavailable_total",
 		Help: "Total times the target workload was not found.",
+	}, []string{"namespace", "workload"})
+)
+
+// --- Alerts ---
+
+// Each of these is 1 while a workload's condition holds, and has no series
+// otherwise, so one that has cleared leaves nothing for an alert to fire on.
+var (
+	ActivityUnreadable = prometheus.NewGaugeVec(prometheus.GaugeOpts{
+		Name: "napwake_activity_unreadable",
+		Help: "1 while Napwake can't read an activity source of the workload: cpu, from the Metrics API " +
+			"while it's awake, or prometheus, its Prometheus activity queries.",
+	}, []string{"namespace", "workload", "source"})
+
+	ResumeIncomplete = prometheus.NewGaugeVec(prometheus.GaugeOpts{
+		Name: "napwake_resume_incomplete",
+		Help: "1 while the workload's last resume finished with replicas not Ready.",
 	}, []string{"namespace", "workload"})
 )
 
@@ -236,6 +259,7 @@ func init() {
 		PredictionDataPoints,
 		PredictionAnomalies,
 		IdleDetections,
+		WrongPauses,
 		ExternalScaleUps,
 
 		// Tier 3
@@ -243,6 +267,10 @@ func init() {
 		PredictionRegimeChanges,
 		DryrunActions,
 		TargetUnavailable,
+
+		// Alerts
+		ActivityUnreadable,
+		ResumeIncomplete,
 
 		// Savings
 		CapacityPausedCPUCores,
@@ -273,10 +301,14 @@ var perWorkload = []interface {
 	PredictionDataPoints,
 	PredictionAnomalies,
 	IdleDetections,
+	WrongPauses,
+	ExternalScaleUps,
 	IdleSeconds,
 	PredictionRegimeChanges,
 	TargetUnavailable,
 	DoormanWakes,
+	ActivityUnreadable,
+	ResumeIncomplete,
 }
 
 // DeleteWorkload drops every series of a deleted ManagedWorkload, so its

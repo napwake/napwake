@@ -98,13 +98,12 @@ func earlyPause(t *testing.T, idle time.Duration, engine *stubForecaster, setup 
 // out its idleAfter, and the event and status say the forecast brought
 // the pause forward, until when it expects quiet.
 func TestEarlyPause_PausesBeforeIdleAfterRunsOut(t *testing.T) {
-	r, workload, target, pauser := earlyPause(t, 20*time.Minute, quietForecast(), nil)
+	r, workload, target, _ := earlyPause(t, 20*time.Minute, quietForecast(), nil)
 
 	_, err := r.reconcileAutomation(context.Background(), workload, target)
 	require.NoError(t, err)
 
-	assert.Equal(t, 1, pauser.pauseCalls)
-	assert.Equal(t, v1alpha1.PhasePaused, workload.Status.Phase)
+	assert.Equal(t, v1alpha1.PhasePausing, workload.Status.Phase, "it starts pausing, the doorman fronting it first")
 	require.NotNil(t, workload.Status.Activity.ForecastQuietUntil)
 	assert.Equal(t, fixedTime.Add(2*time.Hour), workload.Status.Activity.ForecastQuietUntil.UTC())
 	early := recorded(r.Recorder.(*events.FakeRecorder), ReasonPausedEarly)
@@ -119,7 +118,7 @@ func TestEarlyPause_PausesBeforeIdleAfterRunsOut(t *testing.T) {
 // such as one only a scraper uses, is meant to fail while the workload is
 // paused, so it doesn't hold an early pause back.
 func TestEarlyPause_IgnoredPortsDontHoldItBack(t *testing.T) {
-	r, workload, target, pauser := earlyPause(t, 30*time.Minute, quietForecast(), nil)
+	r, workload, target, _ := earlyPause(t, 30*time.Minute, quietForecast(), nil)
 	metrics := service("api-metrics", apiPods, corev1.ServicePort{Name: "metrics", Port: 9100})
 	metrics.Annotations = map[string]string{doorman.AnnotationIgnorePorts: "metrics"}
 	require.NoError(t, r.Create(context.Background(), metrics))
@@ -127,7 +126,7 @@ func TestEarlyPause_IgnoredPortsDontHoldItBack(t *testing.T) {
 	_, err := r.reconcileAutomation(context.Background(), workload, target)
 	require.NoError(t, err)
 
-	assert.Equal(t, 1, pauser.pauseCalls)
+	assert.Equal(t, v1alpha1.PhasePausing, workload.Status.Phase)
 }
 
 // requestWouldWake says why a request wouldn't wake the workload, for the
@@ -272,18 +271,19 @@ func TestEarlyPause_CoversEveryHourItWouldBeAwake(t *testing.T) {
 	threeHours := func(w *v1alpha1.ManagedWorkload) {
 		w.Spec.IdlePolicy.IdleAfter = &metav1.Duration{Duration: 3 * time.Hour}
 	}
-	r, workload, target, pauser := earlyPause(t, 30*time.Minute, engine, threeHours)
+	r, workload, target, _ := earlyPause(t, 30*time.Minute, engine, threeHours)
 
 	_, err := r.reconcileAutomation(context.Background(), workload, target)
 	require.NoError(t, err)
-	require.Equal(t, 1, pauser.pauseCalls, "quiet until 15:00, the hour it would pause at 14:30 in included")
+	require.Equal(t, v1alpha1.PhasePausing, workload.Status.Phase,
+		"quiet until 15:00, the hour it would pause at 14:30 in included")
 	assert.Equal(t, "15:00", workload.Status.Activity.ForecastQuietUntil.UTC().Format("15:04"))
 
 	engine.predictByHour = map[int]float64{2: 30}
-	r, workload, target, pauser = earlyPause(t, 30*time.Minute, engine, threeHours)
+	r, workload, target, _ = earlyPause(t, 30*time.Minute, engine, threeHours)
 	_, err = r.reconcileAutomation(context.Background(), workload, target)
 	require.NoError(t, err)
-	assert.Zero(t, pauser.pauseCalls, "demand forecast from 14:00, before the clock would pause it")
+	assert.Equal(t, v1alpha1.PhaseRunning, workload.Status.Phase, "demand forecast from 14:00, before the clock would pause it")
 }
 
 // Awake dependents hold an early pause as they hold any.
@@ -357,7 +357,7 @@ func TestEarlyPause_TheClocksPauseIsNotEarly(t *testing.T) {
 	_, err := r.reconcileAutomation(context.Background(), workload, target)
 	require.NoError(t, err)
 
-	assert.Equal(t, v1alpha1.PhasePaused, workload.Status.Phase)
+	assert.Equal(t, v1alpha1.PhasePausing, workload.Status.Phase)
 	assert.Nil(t, workload.Status.Activity.ForecastQuietUntil)
 	assert.Len(t, recorded(r.Recorder.(*events.FakeRecorder), ReasonIdleDetected), 1)
 }

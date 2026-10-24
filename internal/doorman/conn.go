@@ -140,7 +140,7 @@ func (s *Server) handle(ctx context.Context, port int32, rt route, conn net.Conn
 	defer opmetrics.DoormanProxiedConnections.Dec()
 	s.track(upstream)
 	defer s.forget(upstream)
-	s.proxy(port, rt, conn, h.reader(), upstream)
+	s.proxy(port, rt, conn, h.watched(ctx), upstream)
 }
 
 func (s *Server) record(rt route, result string, start time.Time) {
@@ -168,6 +168,10 @@ type heldConn struct {
 	// background while the connection is held so that a caller who leaves
 	// frees its place at once.
 	stream *clientStream
+
+	// passedOn says the connection went straight to a Ready pod, before
+	// anything was read from it.
+	passedOn bool
 }
 
 // hold decides what becomes of the connection, and returns the connection
@@ -189,6 +193,7 @@ func (h *heldConn) hold(ctx context.Context) (net.Conn, string) {
 	// server speaks first, such as MySQL, sends nothing until it has.
 	if addrs, _, err := h.backends.get(waitCtx, key); err == nil && len(addrs) > 0 {
 		if upstream, _ := h.dial(waitCtx, addrs); upstream != nil {
+			h.passedOn = true
 			return upstream, resultSuccess
 		}
 	}
@@ -276,7 +281,7 @@ func (h *heldConn) await(ctx, waitCtx context.Context, wakeErr error) (net.Conn,
 				return nil, resultCanceled
 			case errors.Is(wakeErr, errWakeLimited) || proxyLimited:
 				return nil, resultLimited
-			case dialFailed || wakeErr != nil:
+			case dialFailed || wakeErr != nil && !errors.Is(wakeErr, errNotAsleep):
 				return nil, resultError
 			default:
 				return nil, resultTimeout
@@ -331,6 +336,63 @@ func (h *heldConn) reader() io.Reader {
 		rest = h.stream
 	}
 	return io.MultiReader(bytes.NewReader(h.head), rest)
+}
+
+// watched is everything the caller sends, as reader gives it. What's
+// passed straight to a Ready pod of a workload that's pausing is watched on
+// its way: a request that would wake the workload were it paused shows it's
+// in use, and is stamped, which calls the pause off. The caller doesn't
+// wait for it. A workload that asks first is called off only by a person's
+// click, which only its asleep page asks for.
+func (h *heldConn) watched(ctx context.Context) io.Reader {
+	r := h.reader()
+	if !h.passedOn || !h.route.pausing || h.route.asks {
+		return r
+	}
+	return &firstRequest{r: r, seen: func(head []byte) { h.seenAsItPauses(ctx, head) }}
+}
+
+// seenAsItPauses stamps the workload for a request passed on as it pauses,
+// unless it's one that wouldn't wake it were it paused: a recognised probe
+// or scrape, or a hunt for hidden files.
+func (h *heldConn) seenAsItPauses(ctx context.Context, head []byte) {
+	if req, isHTTP := parseRequest(head); isHTTP && (isHealthCheck(req, failClosedCheckAgents) ||
+		isHealthCheck(req, h.healthCheckAgents) || isHiddenFileRequest(req)) {
+		return
+	}
+	h.handling.Go(func() {
+		wakeCtx, cancel := context.WithTimeout(ctx, apiTimeout)
+		defer cancel()
+		_ = h.requestWake(ctx, wakeCtx, h.route, h.from) // logged by requestWake
+	})
+}
+
+// firstRequest passes on what a caller sends, and once it holds the start
+// of it, its first bytes or, for HTTP, the request's headers, hands those to
+// seen, once. A caller that sends nothing, as a TCP check doesn't, is never
+// seen.
+type firstRequest struct {
+	r    io.Reader
+	head []byte
+	seen func(head []byte)
+	done bool
+}
+
+func (f *firstRequest) Read(p []byte) (int, error) {
+	n, err := f.r.Read(p)
+	if f.done {
+		return n, err
+	}
+	f.head = append(f.head, p[:n]...)
+	whole := !startsMethod(f.head) && (!looksLikeHTTP(f.head) || headersEnded(f.head) || len(f.head) >= maxPeek)
+	if err != nil || len(f.head) > 0 && whole {
+		f.done = true
+		if len(f.head) > 0 {
+			f.seen(f.head)
+		}
+		f.head = nil
+	}
+	return n, err
 }
 
 func (h *heldConn) close() {

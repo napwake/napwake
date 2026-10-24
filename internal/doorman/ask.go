@@ -74,23 +74,39 @@ const (
 	resultTurnedAway = "turned_away"
 )
 
-// A notice is what the asleep page says when a click woke nothing, and,
+// A notice is what the asleep page says when a click woke nothing: its
+// title, its text, in which a command is set between backticks, and,
 // where clicking again won't help, the docs that say how else to wake it.
+// The page comes with its status, a 200 unless it says otherwise, and when
+// to try again, if it says when.
 type notice struct {
-	text string
-	docs string
+	title, text, docs string
+	status            int
+	retryAfter        time.Duration
 }
 
 // The notices the asleep page gives when a click woke nothing.
 var (
-	noticeExpired = notice{text: "That page had expired, so nothing woke. Click Wake it again."}
-	noticeLimited = notice{text: "It was asked to wake less than a minute ago. Try again in a minute."}
-	noticeFailed  = notice{text: "It couldn't be woken just now. Try again in a moment."}
+	noticeExpired = notice{title: "This page was open too long", text: "Nothing woke. Press Wake it again.",
+		status: http.StatusForbidden}
+	noticeLimited = notice{title: "Try again in a minute",
+		text:   "It was asked to wake less than a minute ago. Wake it works once a minute at most.",
+		status: http.StatusTooManyRequests, retryAfter: clickWakeInterval}
+	noticeFailed = notice{title: "It didn't wake",
+		text: "Something went wrong at the cluster's end. Try again in a moment."}
+	// noticeElsewhere answers a person's click that the browser says came
+	// from a page at another address: another site's, or, behind a proxy
+	// that rewrites Host, this page's under an address the doorman doesn't
+	// see. Pressing again won't help, so it says how else to wake it.
+	noticeElsewhere = notice{title: "The click came from another address",
+		text: "Nothing woke. Someone with access to the cluster can wake it with `kubectl napwake wake`.",
+		docs: wakeItDocs, status: http.StatusForbidden,
+	}
 	// noticeNoFetchMetadata answers a browser that said nothing of where its
 	// click came from; see sameOrigin.
-	noticeNoFetchMetadata = notice{
-		text: "This browser didn't say the click came from this page, so nothing woke. Wake it with kubectl " +
-			"napwake wake, the napwake.dev/wake-requested annotation, or a current browser.",
+	noticeNoFetchMetadata = notice{title: "Try a current browser",
+		text: "This browser didn't say the click came from this page, so nothing woke. Use a current browser, " +
+			"or someone with access to the cluster can wake it with `kubectl napwake wake`.",
 		docs: asleepDocs,
 	}
 )
@@ -131,9 +147,10 @@ func (h *heldConn) ask(ctx, waitCtx context.Context, req *http.Request) (net.Con
 // by a person's browser from the page, wakes it as a held request does,
 // and the waking-up page follows. Anything else wakes nothing: a browser
 // is asked again, and anything else turned away. Once the workload is
-// waking, every click gets the waking-up page.
+// waking, or awake with its route not yet taken down, every click gets the
+// waking-up page, which reloads into the app.
 func (h *heldConn) click(ctx, waitCtx context.Context, req *http.Request) string {
-	if h.waking() {
+	if h.waking() || h.currentRoute(h.port, h.route).awake {
 		h.servePage(waitCtx, req)
 		return resultPage
 	}
@@ -152,16 +169,18 @@ func (h *heldConn) click(ctx, waitCtx context.Context, req *http.Request) string
 
 // clickNotice is what the asleep page says to a browser whose post woke
 // nothing. A form of the app's own, posted with no token, gets the page as
-// any page load does. A click that doesn't say where it came from is told
-// how else to wake the workload, since clicking again won't do it. A
-// person's click whose token had expired, or that came from another site,
-// is asked to click again; a script's is just shown the page.
+// any page load does. A click that doesn't say where it came from, or that
+// says it came from a page at another address, is told how else to wake the
+// workload, since clicking again won't do it. A person's click whose token
+// had expired is asked to click again; a script's is just shown the page.
 func clickNotice(req *http.Request, posted bool) notice {
 	switch {
 	case !posted:
 		return notice{}
 	case req.Header.Get("Sec-Fetch-Site") == "" && !namesAnOrigin(req):
 		return noticeNoFetchMetadata
+	case clickedByAPerson(req) && fromAnotherPage(req):
+		return noticeElsewhere
 	case clickedByAPerson(req):
 		return noticeExpired
 	default:
@@ -169,11 +188,29 @@ func clickNotice(req *http.Request, posted bool) notice {
 	}
 }
 
+// fromAnotherPage reports whether the browser says a click came from a page
+// at another address than the asleep page's: another site or subdomain, by
+// its fetch metadata, or, where it sends none, an Origin that isn't the
+// address the page was served at. A click from no page at all, as a form
+// posted again on reload is, isn't one: its page is this one, gone stale.
+func fromAnotherPage(req *http.Request) bool {
+	switch req.Header.Get("Sec-Fetch-Site") {
+	case "cross-site", "same-site":
+		return true
+	case "":
+		return namesAnOrigin(req) && !fromPageAddress(req)
+	}
+	return false
+}
+
 // wakeForClick wakes the workload for a person's click, and answers with
-// the waking-up page, or the asleep page again saying why it didn't.
+// the waking-up page, or the asleep page again saying why it didn't. A
+// workload the cache shows awake behind a route still listed had its pause
+// called off, or is Running before its route comes down: there's nothing to
+// wake, and the waking-up page reloads into the app.
 func (h *heldConn) wakeForClick(ctx, waitCtx context.Context, req *http.Request) string {
 	switch err := h.requestWake(ctx, waitCtx, h.route, h.from); {
-	case err == nil:
+	case err == nil, errors.Is(err, errNotAsleep):
 		h.servePage(waitCtx, req)
 		return resultPage
 	case errors.Is(err, errClickLimited):
@@ -307,12 +344,10 @@ func (h *heldConn) readClick() (string, bool) {
 // it button signed for this pause of the workload.
 func (h *heldConn) serveAsleepPage(ctx context.Context, req *http.Request, n notice) {
 	data := pageData{
-		Address:    pageAddress(req),
-		Token:      h.wakeKeys.sign(h.route.scope(), h.now().Add(tokenTTL)),
-		Notice:     n.text,
-		NoticeDocs: n.docs,
+		Address: pageAddress(req),
+		Token:   h.wakeKeys.sign(h.route.scope(), h.now().Add(tokenTTL)),
 	}
-	if err := h.reply(func(w io.Writer) error { return writeAsleepPage(w, data) }); err != nil {
+	if err := h.reply(func(w io.Writer) error { return writeAsleepPage(w, data, n) }); err != nil {
 		log.FromContext(ctx).V(1).Info("writing asleep page", "error", err.Error(),
 			"workload", h.route.workload.Name, "namespace", h.route.workload.Namespace)
 	}
@@ -329,16 +364,17 @@ func (h *heldConn) waking() bool {
 	h.mu.Lock()
 	last, ok := h.stamped[rt.workload]
 	h.mu.Unlock()
-	return ok && last.pausedAt.Equal(rt.pausedAt) && h.now().Sub(last.at) < wakeStampInterval
+	return ok && last.began.Equal(rt.began) && h.now().Sub(last.at) < wakeStampInterval
 }
 
-// isWaking reports whether a paused workload has been asked to wake: it's
-// Resuming, or a request's stamp is waiting for the operator.
+// isWaking reports whether a paused workload, or one pausing, has been
+// asked to wake: it's Resuming, or a request's stamp is waiting for the
+// operator.
 func isWaking(w *v1alpha1.ManagedWorkload) bool {
 	switch w.Status.Phase {
 	case v1alpha1.PhaseResuming:
 		return true
-	case v1alpha1.PhasePaused:
+	case v1alpha1.PhasePaused, v1alpha1.PhasePausing:
 		return !needsWake(w)
 	default:
 		return false

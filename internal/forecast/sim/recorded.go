@@ -97,7 +97,7 @@ func (r Recorded) at(t time.Time) (float64, bool) {
 // Traffic replays the recording as traffic: the workload was in use
 // whenever its CPU was above cpuThreshold, the activity clock's measure,
 // and quiet whenever none of its pods ran.
-func (r Recorded) Traffic(cpuThreshold int) Traffic {
+func (r Recorded) Traffic(cpuThreshold float64) Traffic {
 	return func(t time.Time) Use {
 		percent, running := r.at(t)
 		if !running {

@@ -17,11 +17,14 @@ limitations under the License.
 package main
 
 import (
+	"bytes"
 	"cmp"
 	"context"
 	"errors"
 	"fmt"
 	"io"
+	"os"
+	"runtime"
 	"slices"
 	"strconv"
 	"strings"
@@ -35,6 +38,7 @@ import (
 	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime/schema"
+	"k8s.io/apimachinery/pkg/types"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	v1alpha1 "github.com/napwake/napwake/api/v1alpha1"
@@ -227,29 +231,42 @@ type statusWorkload struct {
 	// namedApart is set for a ManagedWorkload written by hand under a name
 	// other than its target's, which the table then shows beside it.
 	namedApart bool
+	// uid is its ManagedWorkload's, which its events name.
+	uid types.UID
 	// TurnedAway is what the doorman turned away during its current or
 	// last pause, for a workload whose doorman asks before waking it.
 	TurnedAway *v1alpha1.TurnedAway `json:"turnedAway,omitempty"`
+	// WokenBy is what woke it, as wakeCauses names it, from the latest wake
+	// the cluster's events hold, unless a pause has come since. Empty for
+	// one paused, and for one whose wake's cause wasn't recorded or whose
+	// events have expired.
+	WokenBy string `json:"wokenBy,omitempty"`
 }
 
 // problem is something about a workload that keeps Napwake from doing
 // its job, and needs a person. Workload is the target's name, which is how
-// status names workloads; ManagedWorkload is what to kubectl describe.
+// status names workloads, and Target its kind and name, as the workloads'
+// rows give it; ManagedWorkload is what to kubectl describe.
 type problem struct {
 	Namespace       string `json:"namespace"`
 	Workload        string `json:"workload"`
+	Target          string `json:"target"`
 	ManagedWorkload string `json:"managedWorkload"`
 	Type            string `json:"type"`
 	Message         string `json:"message"`
 }
 
-// happening is one pause or wake.
+// happening is one pause or wake. Kind is pause, wake, or notServed for a
+// request the doorman closed without reaching the workload, and WokenBy
+// what woke it, for a wake whose cause was recorded.
 type happening struct {
 	At              time.Time `json:"at"`
 	Namespace       string    `json:"namespace"`
 	Workload        string    `json:"workload"`
 	ManagedWorkload string    `json:"managedWorkload"`
+	Kind            string    `json:"kind"`
 	Reason          string    `json:"reason"`
+	WokenBy         string    `json:"wokenBy,omitempty"`
 	Message         string    `json:"message"`
 }
 
@@ -270,6 +287,7 @@ var troubles = map[string]metav1.ConditionStatus{
 	"WakeOnRequest":        metav1.ConditionFalse,
 	"ResumeIncomplete":     metav1.ConditionTrue,
 	"PauseIncomplete":      metav1.ConditionTrue,
+	"PausedWhileInUse":     metav1.ConditionTrue,
 }
 
 // reasonTargetIgnored is TargetAvailable's reason when the workload is
@@ -287,17 +305,35 @@ var untroubled = map[string]bool{
 	"NotPaused":         true,
 }
 
-// wakeCauses are the event reasons that say what woke a workload. The
-// Resumed that follows one adds nothing, so it's left out; a Resumed with no
-// cause before it, such as a hand-back on protecting the namespace, is the
-// only record of that wake, so it's kept.
-var wakeCauses = map[string]bool{
-	"WokeByActivity": true,
-	"WokenByRequest": true,
-	"WakeRequested":  true,
-	"AutoResume":     true,
-	"ScaledUp":       true,
+// wakeCauses are the event reasons that say what woke a workload, and what
+// each says woke it, as WokenBy gives it. The Resumed that follows one adds
+// nothing, so it's left out; a Resumed with no cause before it, such as a
+// hand-back on protecting the namespace, is the only record of that wake,
+// so it's kept, with no cause. One reason stands for every cause it's
+// written for: WokeByActivity for an activity annotation, a dependent
+// waking it or a Prometheus activity query, and PauseCancelled for any of
+// what would wake a paused workload, come as it paused, which only its
+// message names.
+var wakeCauses = map[string]string{
+	"WokeByActivity": "activity",
+	"WokenByRequest": wokenByRequest,
+	"WakeRequested":  "wakeRequest",
+	"AutoResume":     "forecast",
+	"ScaledUp":       "outside",
+	"PauseCancelled": "pauseCancelled",
 }
+
+// wokenByRequest is a wake by a request on one of the workload's Services,
+// which the doorman held or passed on, a person's click on one that asks
+// first included.
+const wokenByRequest = "request"
+
+// What a pause or wake is, as status's recent events give it.
+const (
+	happeningPause     = "pause"
+	happeningWake      = "wake"
+	happeningNotServed = "notServed"
+)
 
 // happenings are the event reasons that say a workload paused or woke.
 var happenings = map[string]bool{
@@ -309,11 +345,12 @@ var happenings = map[string]bool{
 	"AutoResume":       true,
 	"ScaledUp":         true,
 	"RequestNotServed": true,
+	"PauseCancelled":   true,
 }
 
 // A wake by a request the doorman held is reported by the doorman's
 // WokenByRequest, which names the Service, so the operator's own
-// WokeByActivity for it is left out.
+// WokeByActivity for it is left out, and taken for the request it is.
 const requestWakeMessage = "a request is waiting, waking"
 
 // targetKey is a Deployment or StatefulSet.
@@ -362,7 +399,14 @@ func clusterStatus(ctx context.Context, c client.Client, home string, opts statu
 	}
 	slices.Sort(result.ForecastTimeZones)
 	sumFreedAndSaved(&result)
-	result.Recent = append(result.Recent, recentHappenings(events, targets, now.Add(-opts.since))...)
+	recent, woke := recentHappenings(events, targets, now.Add(-opts.since))
+	result.Recent = append(result.Recent, recent...)
+	for i := range result.Workloads {
+		row := &result.Workloads[i]
+		if row.Phase != v1alpha1.PhasePaused {
+			row.WokenBy = woke[row.uid]
+		}
+	}
 	return result, nil
 }
 
@@ -516,6 +560,12 @@ func activeUntil(annotations map[string]string) time.Time {
 	return until
 }
 
+// targetRef names a ManagedWorkload's target by kind and name, as status
+// names workloads: deployment/api.
+func targetRef(w *v1alpha1.ManagedWorkload) string {
+	return strings.ToLower(string(w.Spec.Target.Kind)) + "/" + w.Spec.Target.Name
+}
+
 func targetOfManaged(w *v1alpha1.ManagedWorkload) targetKey {
 	return targetKey{w.Namespace, w.Spec.Target.Kind, w.Spec.Target.Name}
 }
@@ -526,13 +576,14 @@ func workloadStatus(w *v1alpha1.ManagedWorkload, targetActiveUntil, now time.Tim
 	row := statusWorkload{
 		Namespace:      w.Namespace,
 		Name:           w.Name,
-		Target:         strings.ToLower(string(w.Spec.Target.Kind)) + "/" + w.Spec.Target.Name,
+		Target:         targetRef(w),
 		Phase:          w.Status.Phase,
 		DryRun:         w.Spec.DryRun,
 		Next:           nextFor(w, targetActiveUntil, now),
 		FreedThisMonth: discovery.FreedThisMonth(w, now),
 		SavedThisMonth: discovery.SavedThisMonth(w, now),
 		namedApart:     w.Name != w.Spec.Target.Name && w.Labels[v1alpha1.LabelFromLabel] != v1alpha1.True,
+		uid:            w.UID,
 	}
 	if c := w.Status.Cost; c != nil {
 		row.SavingsUnknown = c.SavingsUnknown
@@ -801,14 +852,15 @@ func reviewGitOpsConflict(ctx context.Context, c client.Client, checker *gitops.
 }
 
 func problemsOf(w *v1alpha1.ManagedWorkload, now time.Time) []problem {
+	target := targetRef(w)
 	var out []problem
 	for _, c := range w.Status.Conditions {
 		bad, ok := troubles[c.Type]
 		if !ok || c.Status != bad || untroubled[c.Reason] {
 			continue
 		}
-		out = append(out, problem{Namespace: w.Namespace, Workload: w.Spec.Target.Name, ManagedWorkload: w.Name,
-			Type: c.Type, Message: cmp.Or(c.Message, c.Reason)})
+		out = append(out, problem{Namespace: w.Namespace, Workload: w.Spec.Target.Name, Target: target,
+			ManagedWorkload: w.Name, Type: c.Type, Message: cmp.Or(c.Message, c.Reason)})
 	}
 	phase := w.Status.Phase
 	if t := w.Status.LastTransitionTime; t != nil && (phase == v1alpha1.PhasePausing || phase == v1alpha1.PhaseResuming) {
@@ -818,19 +870,28 @@ func problemsOf(w *v1alpha1.ManagedWorkload, now time.Time) []problem {
 				c.Status == metav1.ConditionTrue {
 				msg += ": " + c.Message
 			}
-			out = append(out, problem{Namespace: w.Namespace, Workload: w.Spec.Target.Name, ManagedWorkload: w.Name,
-				Type: "Stuck", Message: msg})
+			out = append(out, problem{Namespace: w.Namespace, Workload: w.Spec.Target.Name, Target: target,
+				ManagedWorkload: w.Name, Type: "Stuck", Message: msg})
 		}
 	}
 	return out
 }
 
 // recentHappenings lists the pauses and wakes since a time, newest first,
-// from events sorted oldest first. Dry-run events are left out: nothing
-// paused or woke. The operator starts its messages with the target's name,
-// which is dropped, since status shows the workload beside it.
-func recentHappenings(events []corev1.Event, targets map[client.ObjectKey]string, since time.Time) []happening {
-	caused := map[client.ObjectKey]bool{}
+// from events sorted oldest first, and what woke each ManagedWorkload that
+// a pause hasn't come to since, over all of them, by its UID. Dry-run
+// events are left out: nothing paused or woke. The operator starts its
+// messages with the target's name, which is dropped, since status shows
+// the workload beside it.
+//
+// Events outlive their ManagedWorkload, so one deleted and made again under
+// the same name, as a preview environment's can be on every push, has the
+// old one's events beside its own. Napwake's events name the
+// ManagedWorkload's UID, which tells them apart.
+func recentHappenings(events []corev1.Event, targets map[client.ObjectKey]string, since time.Time) (
+	[]happening, map[types.UID]string) {
+	caused := map[types.UID]bool{}
+	woke := map[types.UID]string{}
 	var out []happening
 	for i := range events {
 		ev := &events[i]
@@ -838,31 +899,38 @@ func recentHappenings(events []corev1.Event, targets map[client.ObjectKey]string
 			continue
 		}
 		key := client.ObjectKey{Namespace: ev.InvolvedObject.Namespace, Name: ev.InvolvedObject.Name}
-		switch {
-		case ev.Reason == "Paused":
-			caused[key] = false
-		case ev.Reason == "Resumed" && caused[key]:
-			caused[key] = false
-			continue
-		case wakeCauses[ev.Reason]:
-			caused[key] = true
-		}
-		at := eventTime(ev).UTC()
-		if at.Before(since) {
-			continue
-		}
+		uid := ev.InvolvedObject.UID
 		// Events outlive the ManagedWorkload they're for; one that's gone
 		// is named as it was.
 		target := cmp.Or(targets[key], key.Name)
 		message := strings.TrimPrefix(ev.Message, target+": ")
-		if ev.Reason == "WokeByActivity" && message == requestWakeMessage {
+		heldRequest := ev.Reason == "WokeByActivity" && message == requestWakeMessage
+		kind, cause := happeningWake, wakeCauses[ev.Reason]
+		if heldRequest {
+			cause = wokenByRequest
+		}
+		switch {
+		case ev.Reason == "Paused":
+			kind, caused[uid], woke[uid] = happeningPause, false, ""
+		case ev.Reason == "RequestNotServed":
+			kind = happeningNotServed
+		case ev.Reason == "Resumed" && caused[uid]:
+			caused[uid] = false
+			continue
+		case ev.Reason == "Resumed":
+			woke[uid] = ""
+		default:
+			caused[uid], woke[uid] = true, cause
+		}
+		at := eventTime(ev).UTC()
+		if at.Before(since) || heldRequest {
 			continue
 		}
 		out = append(out, happening{At: at, Namespace: key.Namespace, Workload: target, ManagedWorkload: key.Name,
-			Reason: ev.Reason, Message: message})
+			Kind: kind, Reason: ev.Reason, WokenBy: cause, Message: message})
 	}
 	slices.SortStableFunc(out, func(a, b happening) int { return b.At.Compare(a.At) })
-	return out
+	return out, woke
 }
 
 // eventTime is when an event last happened. Events recorded through
@@ -951,14 +1019,16 @@ func findManaged(ctx context.Context, c client.Client, namespace, arg string) (*
 }
 
 func writeStatus(w io.Writer, result statusResult, output string, now time.Time) error {
-	return writeOutput(w, output, result, func() error { return writeStatusTable(w, result, now) })
+	return writeOutput(w, output, result, func() error {
+		return writeStatusTable(w, result, now, paletteFor(isTerminal(w), runtime.GOOS, os.Getenv))
+	})
 }
 
-func writeStatusTable(w io.Writer, result statusResult, now time.Time) error {
+func writeStatusTable(w io.Writer, result statusResult, now time.Time, pl palette) error {
 	p := &printer{w: w}
 	if len(result.Workloads) == 0 {
 		p.line("%s: Napwake manages no workloads here.", result.Cluster)
-		p.line("%s", nodeAutoscalerLine(result.NodeAutoscaler))
+		p.line("%s", billLine(result.NodeAutoscaler))
 		if result.Note != "" {
 			p.line("%s", result.Note)
 		}
@@ -966,8 +1036,8 @@ func writeStatusTable(w io.Writer, result statusResult, now time.Time) error {
 		return p.err
 	}
 	p.line("%s: Napwake manages %s.", result.Cluster, countOf(len(result.Workloads), "workload"))
-	p.line("  %s", phaseCounts(result.Workloads))
-	p.line("  %s", nodeAutoscalerLine(result.NodeAutoscaler))
+	p.line("  %s", pl.phaseCounts(result.Workloads))
+	p.line("  %s", billLine(result.NodeAutoscaler))
 	if zone := timeZoneLine(result.ForecastTimeZones); zone != "" {
 		p.line("  %s", zone)
 	}
@@ -987,22 +1057,25 @@ func writeStatusTable(w io.Writer, result statusResult, now time.Time) error {
 
 	if len(result.Problems) > 0 || result.NodesNotScalingDown {
 		p.line("")
-		p.line("Needs attention:")
+		p.line("%s", pl.paint(sgrAttention, "Needs attention:"))
 		if result.NodesNotScalingDown {
 			p.line("  Pausing freed %s this month, but only %s of it came off the bill: nodes aren't scaling down.",
 				dollars(result.FreedThisMonth), dollars(result.SavedThisMonth))
 			p.line("  kubectl napwake nodes shows why.")
 		}
-		tw := tabwriter.NewWriter(p, 0, 0, 3, ' ', 0)
+		var problems bytes.Buffer
+		tw := tabwriter.NewWriter(&problems, 0, 0, 3, ' ', 0)
 		for _, pr := range result.Problems {
 			_, _ = fmt.Fprintf(tw, "  %s/%s\t%s\t%s\n", pr.Namespace, pr.Workload, pr.Type, oneLine(pr.Message))
 		}
-		_ = tw.Flush() // writes through p, which keeps the first error
+		_ = tw.Flush() // a bytes.Buffer takes every write
+		_, _ = io.WriteString(p, pl.paintProblems(problems.String(), result.Problems))
 	}
 
 	p.line("")
 	dryRun := slices.ContainsFunc(result.Workloads, func(wl statusWorkload) bool { return wl.DryRun })
-	tw := tabwriter.NewWriter(p, 0, 0, 3, ' ', 0)
+	var table bytes.Buffer
+	tw := tabwriter.NewWriter(&table, 0, 0, 3, ' ', 0)
 	header := "  NAMESPACE\tWORKLOAD\tSTATE\tFOR\tLAST ACTIVITY\tNEXT\tFORECAST\tFREED THIS MONTH\tSAVED"
 	if dryRun {
 		header += "\tWOULD FREE"
@@ -1010,14 +1083,15 @@ func writeStatusTable(w io.Writer, result statusResult, now time.Time) error {
 	_, _ = fmt.Fprintln(tw, header)
 	for _, wl := range result.Workloads {
 		_, _ = fmt.Fprintf(tw, "  %s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s", wl.Namespace, workloadCell(wl),
-			stateCell(wl), sinceCell(wl.Since, now), activityCell(wl, now), wl.Next, forecastCell(wl),
+			pl.stateCell(wl), sinceCell(wl.Since, now), activityCell(wl, now), wl.Next, forecastCell(wl),
 			statusFreedCell(wl), statusSavedCell(wl))
 		if dryRun {
 			_, _ = fmt.Fprintf(tw, "\t%s", wouldFreeCell(wl))
 		}
 		_, _ = fmt.Fprintln(tw)
 	}
-	_ = tw.Flush() // writes through p, which keeps the first error
+	_ = tw.Flush() // a bytes.Buffer takes every write
+	_, _ = io.WriteString(p, pl.paintTable(table.String(), result.Workloads))
 	writeTurnedAway(p, result.Workloads, now)
 
 	p.line("")
@@ -1027,7 +1101,7 @@ func writeStatusTable(w io.Writer, result statusResult, now time.Time) error {
 	case len(result.Recent) == 0:
 		p.line("No pauses or wakes in this period.")
 	default:
-		p.line("Recent pauses and wakes:")
+		p.line("%s", pl.paint(sgrHeading, "Recent pauses and wakes:"))
 		tw := tabwriter.NewWriter(p, 0, 0, 3, ' ', 0)
 		for i, h := range result.Recent {
 			if i == recentLimit {
@@ -1077,6 +1151,11 @@ func workloadCell(wl statusWorkload) string {
 
 // phaseCounts is how many workloads are in each phase, busiest phases first.
 func phaseCounts(workloads []statusWorkload) string {
+	return countPhases(workloads, func(_ v1alpha1.WorkloadPhase, count string) string { return count })
+}
+
+// countPhases is phaseCounts with each phase's count as say says it.
+func countPhases(workloads []statusWorkload, say func(phase v1alpha1.WorkloadPhase, count string) string) string {
 	order := []v1alpha1.WorkloadPhase{v1alpha1.PhasePaused, v1alpha1.PhaseRunning, v1alpha1.PhaseIdle,
 		v1alpha1.PhasePausing, v1alpha1.PhaseResuming, v1alpha1.PhaseCreating}
 	counts := map[v1alpha1.WorkloadPhase]int{}
@@ -1090,7 +1169,7 @@ func phaseCounts(workloads []statusWorkload) string {
 	var parts []string
 	for _, phase := range order {
 		if n := counts[phase]; n > 0 {
-			parts = append(parts, fmt.Sprintf("%d %s", n, strings.ToLower(string(phase))))
+			parts = append(parts, say(phase, number(n)+" "+strings.ToLower(string(phase))))
 		}
 	}
 	s := strings.Join(parts, ", ")
@@ -1112,7 +1191,7 @@ func dryRunSummary(workloads []statusWorkload) string {
 			paused = paused || wl.wouldBePaused
 		}
 	}
-	s := fmt.Sprintf("%d in dry-run, never paused", n)
+	s := number(n) + " in dry-run, never paused"
 	if since != nil {
 		s += fmt.Sprintf(": pausing %s would have freed %s since %s", pronounObject(n), wouldFreeDollars(wouldFree, paused),
 			since.Format("Jan 2"))

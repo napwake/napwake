@@ -25,6 +25,7 @@ import (
 
 	corev1 "k8s.io/api/core/v1"
 
+	v1alpha1 "github.com/napwake/napwake/api/v1alpha1"
 	"github.com/napwake/napwake/internal/cost"
 	"github.com/napwake/napwake/internal/forecast"
 	"github.com/napwake/napwake/internal/metrics"
@@ -121,40 +122,53 @@ type replay struct {
 	// what one pod, sidecars included, costs an hour.
 	requestCores float64
 	podHourly    float64
-	threshold    int
+	threshold    float64
 	idleAfter    time.Duration
 }
 
 // run walks the history a step at a time under the activity clock's rules:
 // CPU above the threshold, or a rollout, is activity, and once there
 // has been none for idleAfter the workload would be paused until the next.
-// The clock starts at the beginning of the history, as it does for a new
-// ManagedWorkload.
+// CPU that wakes it within v1alpha1.WrongPauseWindow of the pause is use
+// the clock missed, so the next wait is longer, by v1alpha1.IdleWait, until
+// a pause lasts the window, as the operator's is. A rollout isn't use, so
+// it wakes the workload without judging the pause. The clock starts at the
+// beginning of the history, as it does for a new ManagedWorkload.
 func (r replay) run() History {
 	stepHours := r.step.Hours()
 	var h History
 	lastActive := r.start
 	asleep := false
+	var pausedAt time.Time
+	var wrongPauses int32
+	window := v1alpha1.WrongPauseWindow(r.idleAfter)
 	rollouts := slices.Clone(r.rollouts)
 	slices.SortFunc(rollouts, func(a, b time.Time) int { return a.Compare(b) })
 
 	for t := r.start; !t.After(r.end); t = t.Add(r.step) {
 		at := t.Unix()
 		pods := r.pods[at]
-		active := rolledOutBetween(rollouts, t.Add(-r.step), t)
+		used := false
 		if pods > 0 && r.requestCores > 0 {
 			percent := r.usedCores[at] / (float64(pods) * r.requestCores) * 100
-			active = active || forecast.Busy(percent, r.threshold)
+			used = forecast.Busy(percent, r.threshold)
 		}
+		active := used || rolledOutBetween(rollouts, t.Add(-r.step), t)
 		switch {
 		case active:
 			if asleep {
 				h.Wakes++
 				asleep = false
+				switch {
+				case t.Sub(pausedAt) >= window:
+					wrongPauses = 0
+				case used:
+					wrongPauses++
+				}
 			}
 			lastActive, h.lastActive = t, t
-		case t.Sub(lastActive) >= r.idleAfter:
-			asleep = true
+		case !asleep && t.Sub(lastActive) >= v1alpha1.IdleWait(r.idleAfter, wrongPauses):
+			asleep, pausedAt = true, t
 		}
 
 		h.Hours += stepHours
@@ -394,7 +408,7 @@ func (s *Scanner) readHistory(ctx context.Context, namespace string, opts Cluste
 // requests and prices are today's, since the history only records CPU:
 // ownCPU is what one of its pods requests now for its own containers.
 func workloadReplay(w Workload, spec corev1.PodSpec, ownCPU int64, history []containerCPU, podsOf podNames,
-	since time.Time, rollouts []time.Time, threshold int, idleAfter time.Duration, opts ClusterOptions) (replay, bool) {
+	since time.Time, rollouts []time.Time, threshold float64, idleAfter time.Duration, opts ClusterOptions) (replay, bool) {
 	containers := make([]string, 0, len(spec.Containers))
 	for _, c := range metrics.WorkloadContainers(spec) {
 		containers = append(containers, c.Name)

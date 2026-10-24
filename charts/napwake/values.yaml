@@ -110,6 +110,9 @@ protectedNamespaces: []
 # their own annotations and their namespace's don't say otherwise.
 defaults:
   idleAfter: 1h
+  # The CPU use, as a percentage of requests from 0.1 to 100, above which a
+  # workload is in use. A decimal such as 0.5 suits one that idles at a
+  # fraction of a percent.
   cpuThreshold: 10
   dryRun: false
   # Let a confident forecast pause a workload before idleAfter runs out,

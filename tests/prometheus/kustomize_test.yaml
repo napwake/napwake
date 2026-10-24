@@ -126,3 +126,306 @@ tests:
             exp_annotations:
               summary: Target workload not found for web
               description: ManagedWorkload shop/web cannot find its target. It may have been deleted or renamed.
+
+  - name: a workload left in Pausing is stuck
+    interval: 1m
+    input_series:
+      - series: napwake_workload_phase{namespace="shop", workload="web", phase="Pausing"}
+        values: 1x30
+    alert_rule_test:
+      - eval_time: 10m
+        alertname: NapwakeWorkloadStuck
+        exp_alerts: []
+      - eval_time: 20m
+        alertname: NapwakeWorkloadStuck
+        exp_alerts:
+          - exp_labels:
+              severity: warning
+              namespace: shop
+              workload: web
+              phase: Pausing
+            exp_annotations:
+              summary: Workload web stuck in Pausing
+              description: ManagedWorkload shop/web has been Pausing for 15 minutes. Check its events and conditions.
+
+  # The operator takes a workload's phase series down as it leaves the
+  # phase, so a scrape stops finding it and Prometheus marks it stale. One
+  # left at 1 would keep the alert firing for a workload that has moved on.
+  - name: workloads that paused or woke are not stuck
+    interval: 1m
+    input_series:
+      - series: napwake_workload_phase{namespace="shop", workload="web", phase="Running"}
+        values: 1x3 stale
+      - series: napwake_workload_phase{namespace="shop", workload="web", phase="Pausing"}
+        values: _x3 1x2 stale
+      - series: napwake_workload_phase{namespace="shop", workload="web", phase="Paused"}
+        values: _x6 1x40
+      - series: napwake_workload_phase{namespace="shop", workload="db", phase="Paused"}
+        values: 1x3 stale
+      - series: napwake_workload_phase{namespace="shop", workload="db", phase="Resuming"}
+        values: _x3 1x2 stale
+      - series: napwake_workload_phase{namespace="shop", workload="db", phase="Running"}
+        values: _x6 1x40
+    alert_rule_test:
+      - eval_time: 30m
+        alertname: NapwakeWorkloadStuck
+        exp_alerts: []
+
+  # The doorman's gauges carry no namespace of their own, so a scrape gives
+  # them the doorman pod's.
+  - name: a doorman pod that can't listen, or ports claimed twice, can't wake workloads
+    interval: 1m
+    input_series:
+      - series: napwake_doorman_listen_failures{namespace="napwake-system", pod="napwake-doorman-a"}
+        values: 1x15
+      - series: napwake_doorman_listen_failures{namespace="napwake-system", pod="napwake-doorman-b"}
+        values: 0x15
+      - series: napwake_doorman_port_conflicts{namespace="napwake-system", pod="napwake-doorman-a"}
+        values: 2x15
+      - series: napwake_doorman_port_conflicts{namespace="napwake-system", pod="napwake-doorman-b"}
+        values: 2x15
+    alert_rule_test:
+      - eval_time: 4m
+        alertname: NapwakeDoormanCantListen
+        exp_alerts: []
+      - eval_time: 10m
+        alertname: NapwakeDoormanCantListen
+        exp_alerts:
+          - exp_labels:
+              severity: critical
+              namespace: napwake-system
+              pod: napwake-doorman-a
+              cause: listen_failure
+            exp_annotations:
+              summary: Napwake doorman can't serve some ports
+              description: The doorman can't serve 1 of its routed ports (listen_failure), so requests to the paused workloads behind them fail instead of waking them. Its logs name the ports and why.
+          - exp_labels:
+              severity: critical
+              namespace: napwake-system
+              cause: port_conflict
+            exp_annotations:
+              summary: Napwake doorman can't serve some ports
+              description: The doorman can't serve 2 of its routed ports (port_conflict), so requests to the paused workloads behind them fail instead of waking them. Its logs name the ports and why.
+
+  - name: a doorman pod that can't listen only while it starts is fine
+    interval: 1m
+    input_series:
+      - series: napwake_doorman_listen_failures{namespace="napwake-system", pod="napwake-doorman-a"}
+        values: 1x2 0x15
+    alert_rule_test:
+      - eval_time: 10m
+        alertname: NapwakeDoormanCantListen
+        exp_alerts: []
+
+  # Each wake lets many requests straight through to the woken pods, in the
+  # first bucket. Counted as waits, they'd hide the slow wakes.
+  - name: wakes are slow, even among requests passed straight through
+    interval: 1m
+    input_series:
+      - series: napwake_doorman_wait_seconds_bucket{result="success", le="0.25"}
+        values: 0+4x60
+      - series: napwake_doorman_wait_seconds_bucket{result="success", le="64"}
+        values: 0+4x60
+      - series: napwake_doorman_wait_seconds_bucket{result="success", le="128"}
+        values: 0+4x60
+      - series: napwake_doorman_wait_seconds_bucket{result="success", le="+Inf"}
+        values: 0+4x60
+      - series: napwake_doorman_wait_seconds_bucket{result="timeout", le="0.25"}
+        values: 0x60
+      - series: napwake_doorman_wait_seconds_bucket{result="timeout", le="64"}
+        values: 0x60
+      - series: napwake_doorman_wait_seconds_bucket{result="timeout", le="128"}
+        values: 0+0.2x60
+      - series: napwake_doorman_wait_seconds_bucket{result="timeout", le="+Inf"}
+        values: 0+0.2x60
+    alert_rule_test:
+      - eval_time: 45m
+        alertname: NapwakeWakesSlow
+        exp_alerts:
+          - exp_labels:
+              severity: warning
+            exp_annotations:
+              summary: Wakes through the Napwake doorman are slow
+              description: One in ten requests the doorman held in the last 30 minutes waited over a minute for its workload to wake. At wake.maxWait, 2 minutes by default, they're cut off. Check how long the woken workloads' pods take to be Ready.
+
+  - name: wakes of a few seconds are fine
+    interval: 1m
+    input_series:
+      - series: napwake_doorman_wait_seconds_bucket{result="success", le="0.25"}
+        values: 0+4x60
+      - series: napwake_doorman_wait_seconds_bucket{result="success", le="8"}
+        values: 0+4x60
+      - series: napwake_doorman_wait_seconds_bucket{result="success", le="16"}
+        values: 0+4.2x60
+      - series: napwake_doorman_wait_seconds_bucket{result="success", le="64"}
+        values: 0+4.2x60
+      - series: napwake_doorman_wait_seconds_bucket{result="success", le="+Inf"}
+        values: 0+4.2x60
+    alert_rule_test:
+      - eval_time: 45m
+        alertname: NapwakeWakesSlow
+        exp_alerts: []
+
+  - name: too few slow wakes to tell
+    interval: 1m
+    input_series:
+      - series: napwake_doorman_wait_seconds_bucket{result="timeout", le="0.25"}
+        values: 0x60
+      - series: napwake_doorman_wait_seconds_bucket{result="timeout", le="64"}
+        values: 0x60
+      - series: napwake_doorman_wait_seconds_bucket{result="timeout", le="128"}
+        values: 0+0.05x60
+      - series: napwake_doorman_wait_seconds_bucket{result="timeout", le="+Inf"}
+        values: 0+0.05x60
+    alert_rule_test:
+      - eval_time: 45m
+        alertname: NapwakeWakesSlow
+        exp_alerts: []
+
+  - name: a doorman pod near its caps on held or proxied connections
+    interval: 1m
+    input_series:
+      - series: napwake_doorman_held_connections{namespace="napwake-system", pod="napwake-doorman-a"}
+        values: 1700x15
+      - series: napwake_doorman_proxied_connections{namespace="napwake-system", pod="napwake-doorman-a"}
+        values: 900x15
+      - series: napwake_doorman_held_connections{namespace="napwake-system", pod="napwake-doorman-b"}
+        values: 1000x15
+      - series: napwake_doorman_proxied_connections{namespace="napwake-system", pod="napwake-doorman-b"}
+        values: 2000x2 100x15
+    alert_rule_test:
+      - eval_time: 10m
+        alertname: NapwakeDoormanNearCapacity
+        exp_alerts:
+          - exp_labels:
+              severity: warning
+              namespace: napwake-system
+              pod: napwake-doorman-a
+              connections: held
+            exp_annotations:
+              summary: Napwake doorman near its cap on held connections
+              description: Doorman pod napwake-doorman-a has carried over 80% of the held connections it takes for 5 minutes. Past the cap, it refuses new held connections, and makes new proxied ones wait. Add doorman replicas with doorman.replicaCount, or find what opens so many.
+          - exp_labels:
+              severity: warning
+              namespace: napwake-system
+              pod: napwake-doorman-a
+              connections: proxied
+            exp_annotations:
+              summary: Napwake doorman near its cap on proxied connections
+              description: Doorman pod napwake-doorman-a has carried over 80% of the proxied connections it takes for 5 minutes. Past the cap, it refuses new held connections, and makes new proxied ones wait. Add doorman replicas with doorman.replicaCount, or find what opens so many.
+
+  # A counter's series starts at its first count, which increase() can't
+  # see, so a series younger than the window counts from zero.
+  - name: something keeps scaling paused workloads back up
+    interval: 1m
+    input_series:
+      # New since the operator started at 400m: three in 2 hours.
+      - series: napwake_external_scale_ups_total{namespace="preview", workload="web", by="argo-cd"}
+        values: _x399 1x59 2x59 3x30
+      # Counted for 7 hours: three more in the last 2 hours.
+      - series: napwake_external_scale_ups_total{namespace="preview", workload="api", by="other"}
+        values: 5x420 6x29 7x29 8x80
+      # Two tools, one count each in the last 6 hours: under three.
+      - series: napwake_external_scale_ups_total{namespace="preview", workload="db", by="flux"}
+        values: 1x420 2x200
+      - series: napwake_external_scale_ups_total{namespace="preview", workload="db", by="other"}
+        values: _x450 1x100
+    alert_rule_test:
+      - eval_time: 430m
+        alertname: NapwakePausesUndone
+        exp_alerts: []
+      - eval_time: 530m
+        alertname: NapwakePausesUndone
+        exp_alerts:
+          - exp_labels:
+              severity: warning
+              namespace: preview
+              workload: web
+            exp_annotations:
+              summary: Pauses of web keep being undone
+              description: Something scaled paused workload preview/web back up at least 3 times in 6 hours, so pausing it saves little. Its status.lastScaledUp names what did it. A GitOps tool needs to leave the replicas to Napwake (https://docs.napwake.dev/guides/gitops/).
+          - exp_labels:
+              severity: warning
+              namespace: preview
+              workload: api
+            exp_annotations:
+              summary: Pauses of api keep being undone
+              description: Something scaled paused workload preview/api back up at least 3 times in 6 hours, so pausing it saves little. Its status.lastScaledUp names what did it. A GitOps tool needs to leave the replicas to Napwake (https://docs.napwake.dev/guides/gitops/).
+
+  - name: activity Napwake can't read for half an hour
+    interval: 1m
+    input_series:
+      - series: napwake_activity_unreadable{namespace="shop", workload="web", source="cpu"}
+        values: 1x45
+      - series: napwake_activity_unreadable{namespace="shop", workload="db", source="prometheus"}
+        values: 1x45
+      # Back after 20 minutes, as through a metrics-server restart.
+      - series: napwake_activity_unreadable{namespace="shop", workload="api", source="cpu"}
+        values: 1x20 stale
+    alert_rule_test:
+      - eval_time: 25m
+        alertname: NapwakeActivityUnreadable
+        exp_alerts: []
+      - eval_time: 40m
+        alertname: NapwakeActivityUnreadable
+        exp_alerts:
+          - exp_labels:
+              severity: warning
+              namespace: shop
+              workload: db
+              source: prometheus
+            exp_annotations:
+              summary: Napwake can't read the prometheus activity of db
+              description: Napwake hasn't read the prometheus activity of ManagedWorkload shop/db for 30 minutes. While it can't, it doesn't pause the workload, and a paused one's Prometheus queries can't wake it. Its MetricsAvailable or PrometheusAvailable condition says why.
+          - exp_labels:
+              severity: warning
+              namespace: shop
+              workload: web
+              source: cpu
+            exp_annotations:
+              summary: Napwake can't read the cpu activity of web
+              description: Napwake hasn't read the cpu activity of ManagedWorkload shop/web for 30 minutes. While it can't, it doesn't pause the workload, and a paused one's Prometheus queries can't wake it. Its MetricsAvailable or PrometheusAvailable condition says why.
+
+  - name: a workload left running without all its replicas Ready
+    interval: 1m
+    input_series:
+      - series: napwake_resume_incomplete{namespace="shop", workload="web"}
+        values: 1x30
+      # A StatefulSet's last pods Ready 10 minutes after the resume.
+      - series: napwake_resume_incomplete{namespace="shop", workload="db"}
+        values: 1x10 stale
+    alert_rule_test:
+      - eval_time: 20m
+        alertname: NapwakeResumeIncomplete
+        exp_alerts:
+          - exp_labels:
+              severity: warning
+              namespace: shop
+              workload: web
+            exp_annotations:
+              summary: Workload web woke without all its replicas Ready
+              description: ManagedWorkload shop/web has run with some of its replicas not Ready for 15 minutes since it woke. Check its pods, and its ResumeIncomplete condition.
+
+  - name: a workload paused while in use three times in a day
+    interval: 1m
+    input_series:
+      # New since the operator started a day in: three in 4 hours.
+      - series: napwake_wrong_pauses_total{namespace="shop", workload="web"}
+        values: _x1440 1x119 2x119 3x100
+      # Counted for over a day: one more since.
+      - series: napwake_wrong_pauses_total{namespace="shop", workload="api"}
+        values: 10x1600 11x200
+    alert_rule_test:
+      - eval_time: 1620m
+        alertname: NapwakePausedWhileInUse
+        exp_alerts: []
+      - eval_time: 1700m
+        alertname: NapwakePausedWhileInUse
+        exp_alerts:
+          - exp_labels:
+              severity: warning
+              namespace: shop
+              workload: web
+            exp_annotations:
+              summary: Napwake keeps pausing web while it's in use
+              description: Napwake paused ManagedWorkload shop/web at least 3 times in a day while it was in use, and something woke it soon after each. Its idle signal misses that use. Lower napwake.dev/cpu-threshold to between its CPU in use and idle, or add a request-rate query (https://docs.napwake.dev/guides/prometheus-signals/#example-queries).

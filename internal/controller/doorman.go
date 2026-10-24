@@ -94,13 +94,15 @@ const (
 )
 
 // doormanEligible reports whether doorman routes should exist now. They're
-// added when a workload is paused and kept through Resuming, so connections
-// arriving mid-wake are held too; they're removed once it's Running, which
-// its resume reaches with some pods Ready, or, past its progress deadline,
-// with none, when holding requests would only fail them later.
+// added as a workload starts pausing, before its pods stop, so a request
+// that comes while they do is held rather than refused, and kept through
+// Resuming, so connections arriving mid-wake are held too; they're removed
+// once it's Running, which its resume reaches with some pods Ready, or,
+// past its progress deadline, with none, when holding requests would only
+// fail them later.
 func doormanEligible(workload *v1alpha1.ManagedWorkload) bool {
 	switch workload.Status.Phase {
-	case v1alpha1.PhasePaused:
+	case v1alpha1.PhasePausing, v1alpha1.PhasePaused:
 		return true
 	case v1alpha1.PhaseResuming:
 		return len(workload.Status.Doorman) > 0
@@ -305,6 +307,9 @@ func (r *Reconciler) reconcileDoorman(ctx context.Context, workload *v1alpha1.Ma
 	// on every retry.
 	r.recordDrains(workload, routes)
 	workload.Status.Doorman = routes
+	if wait, err := r.untilDoormanListens(ctx, workload); err != nil || wait > 0 {
+		return wait, err
+	}
 	fwd, fwdErr := r.reconcileForwarder(ctx, workload, target, plan.services, routes)
 	recheck = shortest(recheck, fwd.recheck)
 
@@ -356,9 +361,21 @@ func (r *Reconciler) reconcileDoorman(ctx context.Context, workload *v1alpha1.Ma
 		return 0, errors.Join(errs...)
 	}
 	plan.skipped.forwarder = fwd.unready
+	fronted, err := r.reportRouted(ctx, workload, target, routes, routed, plan.skipped)
+	return shortest(recheck, fronted), err
+}
+
+// reportRouted reports the routes the doorman's slices now stand in front
+// of, those of the Services in routed, and, for a workload pausing, records
+// it fronted once any do.
+func (r *Reconciler) reportRouted(ctx context.Context, workload *v1alpha1.ManagedWorkload, target client.Object,
+	routes []v1alpha1.DoormanRoute, routed map[string]bool, skipped skippedServices) (time.Duration, error) {
 	live := slices.DeleteFunc(slices.Clone(routes), func(rt v1alpha1.DoormanRoute) bool { return !routed[rt.Service] })
-	r.reportDoorman(ctx, workload, target, live, plan.skipped)
-	return recheck, nil
+	r.reportDoorman(ctx, workload, target, live, skipped)
+	if len(live) == 0 {
+		return 0, nil
+	}
+	return r.recordFronted(ctx, workload)
 }
 
 // lastingRoutingProblems are the WakeOnRequest reasons that come from how the
@@ -421,6 +438,11 @@ func (r *Reconciler) removeDoorman(ctx context.Context, workload *v1alpha1.Manag
 	}
 	r.doormanPorts.release(workload.UID, r.now())
 	r.recordDrains(workload, nil)
+	// Routes taken down before the scale-down are stored, listened on and
+	// stood in front of afresh should they come back.
+	if pause := workload.Status.Pause; len(workload.Status.Doorman) > 0 && pause != nil && pause.PausedAt == nil {
+		pause.RoutesWrittenAt, pause.RoutedAt = nil, nil
+	}
 	workload.Status.Doorman = nil
 	return r.retireForwarder(ctx, workload)
 }
@@ -671,12 +693,12 @@ type doormanPlan struct {
 // them: requests reach a running workload, and waking the paused one for
 // them would be no use. Once every workload behind it is paused, it's
 // routed by each, so a request wakes one of them. For an awake workload,
-// planned ahead of its pause, its own pods serve its Services, and aren't
-// counted among those other pods.
+// planned ahead of its pause, and one pausing, its own pods serve its
+// Services until they stop, and aren't counted among those other pods.
 func (r *Reconciler) planDoorman(ctx context.Context, workload *v1alpha1.ManagedWorkload, target client.Object,
 	endpoints map[discoveryv1.AddressType][]discoveryv1.Endpoint, awake bool) (doormanPlan, error) {
 	var own client.Object
-	if awake {
+	if awake || workload.Status.Phase == v1alpha1.PhasePausing {
 		own = target
 	}
 	podLabels := labels.Set(podTemplateLabels(target))
@@ -1399,3 +1421,23 @@ func (r *Reconciler) findWorkloadsInNamespace(ctx context.Context, obj client.Ob
 	}
 	return requests
 }
+
+const (
+	// doormanListenWait is how long after a workload starts pausing its
+	// Services are routed through the doorman: the routes reach every
+	// doorman replica through status, which each loads every
+	// doorman.RouteSyncInterval, and a slice sending connections to a port
+	// it doesn't listen on yet would refuse them while the pods still serve.
+	doormanListenWait = 2*doorman.RouteSyncInterval + time.Second
+
+	// doormanTakeover is how long a pause waits, once the doorman's slices
+	// stand beside the pods, before it scales them down: kube-proxy and
+	// ingress controllers pick up endpoint changes about once a second, and
+	// until they do, a connection sent to a pod that has stopped is refused.
+	doormanTakeover = 5 * time.Second
+
+	// doormanFrontLimit bounds the wait for the doorman before a pause
+	// scales down, from when the pause began: whatever keeps the doorman
+	// from fronting the workload, the pause goes on as it would without it.
+	doormanFrontLimit = time.Minute
+)

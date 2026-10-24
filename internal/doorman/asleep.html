@@ -1,0 +1,152 @@
+{{- /*
+asleep.html: the page the doorman shows a person's browser on a paused workload set to wake: ask.
+Napwake brand (Kede, CMO), 2026-10-23, fitted to the click flow the doorman runs (CTO decision 0009).
+Self-contained: system fonts, an inline tab icon, no external requests. It names nothing inside the
+cluster: no namespace, workload or Service, and not when it paused.
+
+Fields (pageData):
+  .Address      The host the browser asked for, without its port. Empty leaves it out.
+  .Field        The form field the token is posted in. The form posts back to the page's own address.
+  .Token        The token the doorman signed for this page and this pause of the workload.
+  .Refresh      Seconds between reloads, which keep the token fresh.
+  .Notice       Why the last click woke nothing, in runs of text and of code, each a command, with
+                .NoticeTitle above it and .NoticeDocs, where clicking again won't help, the docs that
+                say how else to wake it.
+  .Mark         The doorman mark's path.
+The style and the script are hashed into the page's Content-Security-Policy, so they hold no actions.
+*/ -}}
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta http-equiv="refresh" content="{{.Refresh}}">
+<meta name="robots" content="noindex">
+<meta name="referrer" content="same-origin">
+<title>Asleep{{with .Address}} · {{.}}{{end}}</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cstyle%3Epath%7Bfill:%235B6B86%7D@media(prefers-color-scheme:dark)%7Bpath%7Bfill:%238C9BB5%7D%7D%3C/style%3E%3Cpath d='M6 22V10a6 6 0 0 1 12 0v12z'/%3E%3Ccircle cx='15.3' cy='15' r='1.2' fill='%23F8F8F5'/%3E%3C/svg%3E">
+<style>
+:root{
+  --mono:ui-monospace,"SF Mono",SFMono-Regular,"JetBrains Mono","Cascadia Code",Menlo,Consolas,monospace;
+  --sans:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,"Helvetica Neue",Arial,sans-serif;
+  --bg:#F8F8F5;--surface:#FFFFFF;--text:#0F1716;--muted:#4E5957;--line:#DEDBD2;--paper:#F8F8F5;
+  --coat:#14695F;--coat-dk:#0D3F3A;--face:#3A9A8B;--brass:#F5B53F;--ink:#0F1716;--hat:#141B1A;--glove:#2A3534;--shoe:#0F1716;--shoe-rim:#0F1716;
+  --room:#FFE3A1;--glow:#F5B53F;--frame:#E3E0D7;--leaf:#5B6B86;--seam:#4A5872;
+  --asleep:#56657F;--slate:#5B6B86;--wake:#9A6400;--action:#14695F;--on-action:#F8F8F5;
+}
+@media (prefers-color-scheme:dark){:root{
+  --bg:#0F1716;--surface:#16201F;--text:#EEF0EC;--muted:#A3ADAA;--line:#263331;
+  --coat:#1E7A6E;--coat-dk:#12524B;--face:#45A898;--hat:#2B3735;--glove:#3E4E4C;--shoe:#2B4743;--shoe-rim:#4C7069;
+  --frame:#1B2A2C;--leaf:#2A3944;--seam:#22303A;
+  --asleep:#93A3BE;--slate:#8C9BB5;--wake:#F5B53F;--action:#F5B53F;--on-action:#0F1716;
+}}
+*{box-sizing:border-box}html,body{height:100%}
+body{margin:0;min-height:100%;display:flex;flex-direction:column;background:var(--bg);color:var(--text);font-family:var(--sans);-webkit-font-smoothing:antialiased}
+header{padding:22px 32px;font:13px var(--mono);color:var(--muted);overflow-wrap:anywhere}
+main{flex:1;display:flex;align-items:center;justify-content:center;padding:16px 24px 56px}
+.wrap{width:100%;max-width:880px;display:grid;grid-template-columns:300px minmax(0,1fr);gap:48px;align-items:center}
+.scene{width:100%;height:auto;display:block;overflow:visible}
+.frame{fill:var(--frame)}.leaf{fill:var(--leaf)}.seam{stroke:var(--seam);stroke-width:1.6}.floor{stroke:var(--line);stroke-width:2}
+.room{fill:var(--room);opacity:0}.cast{fill:#000;opacity:0}
+.wedge{fill:var(--glow);opacity:0;transform-origin:190px 210px}
+.glint{fill:var(--glow);opacity:0}.glint.crack{fill:none;stroke:var(--glow);stroke-width:2.6;stroke-linecap:round}
+.door{transform-origin:150px 210px}
+.eye.glance,.eye.shut{opacity:0}
+.eye.look{animation:blink-open 6s infinite}.eye.shut{animation:blink-shut 6s infinite}
+@keyframes blink-open{0%,93%,97%,100%{opacity:1}94%,96%{opacity:0}}
+@keyframes blink-shut{0%,93%,97%,100%{opacity:0}94%,96%{opacity:1}}
+.room,.cast,.wedge,.glint,.door,.seam,.eye{transition:opacity .3s cubic-bezier(.45,0,.2,1),transform .6s cubic-bezier(.45,0,.2,1)}
+/* Wake it, hovered or focused: light under the door, and he glances at it */
+.wrap:has(.wake:hover,.wake:focus-visible) .glint{opacity:1}
+.wrap:has(.wake:hover,.wake:focus-visible) .glint.spill{opacity:.4}
+.wrap:has(.wake:hover,.wake:focus-visible) .eye.look,.waking .eye.look,.waking .eye.shut{animation:none;opacity:0}
+.wrap:has(.wake:hover,.wake:focus-visible) .eye.glance,.waking .eye.glance{opacity:1}
+/* pressed (with JavaScript): the room lights first, then the door swings ajar, as on the waking page */
+.waking .room{opacity:1}.waking .cast{opacity:.12;transition-delay:.15s}
+.waking .door{transform:scaleX(.5);transition-delay:.1s}.waking .seam,.waking .glint{opacity:0}
+.waking .wedge{opacity:.55;transition-delay:.2s;animation:breathe 2.8s ease-in-out .8s infinite}
+@keyframes breathe{50%{opacity:.3;transform:scaleX(.88)}}
+.state{display:flex;align-items:center;gap:10px;margin-bottom:16px;font:700 12.5px var(--mono);letter-spacing:.06em;text-transform:uppercase;color:var(--asleep)}
+.state svg{width:18px;height:18px}
+.waking .state{color:var(--wake)}
+.g-waking,.w,.waking .g-asleep,.waking .a{display:none}.waking .g-waking,.waking span.w{display:inline}.waking p.w{display:block}
+h1{margin:0 0 12px;font:800 34px/1.08 var(--sans);letter-spacing:-.02em;overflow-wrap:anywhere}
+h1 .at{display:block;font:500 17px/1.4 var(--mono);color:var(--muted);letter-spacing:0;margin-top:6px}
+.lede{margin:0 0 24px;max-width:440px;color:var(--muted);font-size:15.5px;line-height:1.6}
+.note{max-width:440px;margin:0 0 22px;padding:14px 18px;background:var(--surface);border:1px solid var(--line);border-radius:8px;font-size:15.5px;line-height:1.55}
+.note b{display:block;margin-bottom:2px}
+.note a{color:inherit}
+.ask{display:flex;align-items:center;flex-wrap:wrap;gap:12px 18px;max-width:440px;margin:0 0 26px}
+.wake{flex:none;margin:0;font:700 16px/1.6 var(--sans);padding:.625em 2em;min-width:9.5em;border:2px solid var(--action);border-radius:6px;background:var(--action);color:var(--on-action);cursor:pointer}
+.wake:focus-visible{outline:2px solid transparent;outline-offset:2px;box-shadow:0 0 0 2px var(--bg),0 0 0 4px var(--action)}
+.wake[aria-disabled=true]{cursor:progress}
+.takes{flex:1 1 180px;margin:0;color:var(--muted);font-size:14px;line-height:1.5}
+.why{display:flex;align-items:center;gap:12px;max-width:440px;margin:0;padding-top:12px;border-top:1px solid var(--line);font:13.5px/1.5 var(--mono);color:var(--muted)}
+.why svg{flex:none;width:18px;height:18px;color:var(--coat)}
+.vh{position:absolute;width:1px;height:1px;margin:-1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap}
+footer{display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:16px;padding:22px 32px;font:12px var(--mono);color:var(--muted)}
+footer a{display:inline-flex;align-items:center;gap:8px;color:inherit;text-decoration:none;border-radius:2px}
+footer a:hover{color:var(--text)}footer svg{width:18px;height:18px;color:var(--coat)}
+footer a:focus-visible{outline:2px solid transparent;box-shadow:0 0 0 2px var(--bg),0 0 0 4px var(--action)}
+@media (prefers-reduced-motion:reduce){.scene *{animation:none!important;transition:none!important}}
+@media (max-width:720px){.wrap{grid-template-columns:minmax(0,1fr);gap:20px}.scene{max-width:240px}header,footer{padding:18px 22px}main{padding:8px 22px 40px}h1{font-size:27px}}
+@media (max-width:480px){.wake{flex:1 1 100%}}
+</style>
+</head>
+<body>
+<header>{{.Address}}</header>
+<main>
+  <div class="wrap">
+    <svg class="scene" viewBox="0 0 300 236" aria-hidden="true">
+<path class="frame" d="M144 210V82a46 46 0 0 1 92 0v128z"/>
+<path class="room" d="M150 210V82a40 40 0 0 1 80 0v128z"/>
+<path class="wedge" d="M190 210h40l70 26H214z"/>
+<path class="cast" d="M98.6 210h56l-70 22h-70z"/>
+<g class="door"><path class="leaf" d="M150 210V82a40 40 0 0 1 80 0v128z"/><path class="seam" d="M190 82V210"/><circle cx="215" cy="136" r="3" fill="var(--brass)"/></g>
+<path class="glint spill" d="M150 210h80l22 9H140z"/><path class="glint" d="M151 205.8h78v4.2h-78z"/><path class="glint crack" d="M228.9 209V82a38.9 38.9 0 0 0-11.4-27.5"/>
+<g transform="translate(128.6 210) scale(0.86)"><ellipse cx="4.1" cy="2" rx="46" ry="5.5" fill="var(--ink)" opacity=".13"/><g transform="rotate(3)"><ellipse cx="-12" cy="-1" rx="10" ry="6" transform="rotate(0 -12 -1)" fill="var(--shoe)" stroke="var(--shoe-rim)" stroke-width="1.4"/><ellipse cx="12" cy="-1" rx="10" ry="6" transform="rotate(0 12 -1)" fill="var(--shoe)" stroke="var(--shoe-rim)" stroke-width="1.4"/><path d="M-31 -102 Q-31 -114 -19 -114 H19 Q31 -114 31 -102 Q32.5 -54 36.7 -6 Q37 -2 33 -2 Q0 1 -33 -2 Q-37 -2 -37.1 -6 Q-35.2 -54 -31 -102 Z" fill="var(--coat)"/><clipPath id="c1"><path d="M-31 -102 Q-31 -114 -19 -114 H19 Q31 -114 31 -102 Q32.5 -54 36.7 -6 Q37 -2 33 -2 Q0 1 -33 -2 Q-37 -2 -37.1 -6 Q-35.2 -54 -31 -102 Z"/></clipPath><g clip-path="url(#c1)"><path d="M-43 -118 H-19.6 L-23.4 4 H-43Z" fill="var(--ink)" opacity="0.1"/><path d="M28 -118 H39 V4 H33Z" fill="#FFF6DD" opacity=".1"/></g><path d="M6.2 -112 Q5.7 -54 9.2 -3" stroke="var(--coat-dk)" stroke-width="2.2" fill="none"/><circle cx="-7.7" cy="-98" r="3" fill="var(--brass)"/><circle cx="17.7" cy="-98" r="2.9" fill="var(--brass)"/><circle cx="-7.4" cy="-78" r="3" fill="var(--brass)"/><circle cx="18.0" cy="-78" r="2.9" fill="var(--brass)"/><circle cx="-7.1" cy="-58" r="3" fill="var(--brass)"/><circle cx="18.3" cy="-58" r="2.9" fill="var(--brass)"/><g clip-path="url(#c1)"><path d="M-47 -14 H47 V-4 H-47Z" fill="var(--coat-dk)" opacity=".45"/></g><rect x="-23.3" y="-46" width="14" height="4" rx="2" fill="var(--coat-dk)"/><rect x="16.5" y="-46" width="12.6" height="4" rx="2" fill="var(--coat-dk)"/><g transform="rotate(-4.5 -28.6 -64)"><circle cx="-28.6" cy="-58" r="4.6" fill="none" stroke="var(--brass)" stroke-width="1.8"/><rect x="-32.2" y="-55" width="2.6" height="10" rx="1" fill="var(--brass)" transform="rotate(14 -28.6 -55)"/><rect x="-28" y="-54.5" width="2.6" height="8.5" rx="1" fill="var(--brass)" transform="rotate(-10 -28.6 -55)"/></g><path d="M-26 -110 Q-30 -80 -7.7 -98 M-25 -110 Q-35 -64 -7.7 -98" stroke="var(--brass)" stroke-width="2.4" fill="none" stroke-linecap="round"/><path d="M-29.5 -81 l-1 9" stroke="var(--brass)" stroke-width="3.2" stroke-linecap="round"/><rect x="-30" y="-113" width="13" height="6" rx="3" fill="var(--brass)"/><g transform="translate(0 0) rotate(-10 0 -126)"><path d="M-27 -120 V-156 Q-27 -172 -11 -172 H11 Q27 -172 27 -156 V-120 Z" fill="var(--face)"/><clipPath id="h2"><path d="M-27 -120 V-156 Q-27 -172 -11 -172 H11 Q27 -172 27 -156 V-120 Z"/></clipPath><path clip-path="url(#h2)" d="M-29 -172 H-16.8 V-118 H-29Z" fill="var(--ink)" opacity="0.1"/><g class="eye look"><g transform="translate(-10.8 -146) scale(1 1)"><clipPath id="e3"><circle cx="0" cy="0" r="9.5"/></clipPath><circle cx="0" cy="0" r="9.2" fill="#fff"/><g clip-path="url(#e3)"><circle cx="0" cy="0.1" r="4.6" fill="var(--ink)"/><rect x="-14.7" y="-18.4" width="29.4" height="13.6" fill="var(--face)" transform="rotate(-14 0 0)"/></g><rect x="-10.8" y="-6.5" width="21.7" height="3.5" rx="1.7" fill="var(--ink)" transform="rotate(-14 0 0)"/></g><g transform="translate(12.4 -146) scale(0.9 1)"><clipPath id="e4"><circle cx="0" cy="0" r="9.5"/></clipPath><circle cx="0" cy="0" r="9.2" fill="#fff"/><g clip-path="url(#e4)"><circle cx="0" cy="0.1" r="4.6" fill="var(--ink)"/><rect x="-14.7" y="-18.4" width="29.4" height="18.7" fill="var(--face)" transform="rotate(4 0 0)"/></g><rect x="-10.8" y="-1.3" width="21.7" height="3.5" rx="1.7" fill="var(--ink)" transform="rotate(4 0 0)"/></g></g><g class="eye glance"><g transform="translate(-10.8 -146) scale(1 1)"><clipPath id="e7"><circle cx="0" cy="0" r="9.5"/></clipPath><circle cx="0" cy="0" r="9.2" fill="#fff"/><g clip-path="url(#e7)"><circle cx="3.2" cy="0.4" r="4.6" fill="var(--ink)"/><rect x="-14.7" y="-18.4" width="29.4" height="15.4" fill="var(--face)" transform="rotate(-8 0 0)"/></g><rect x="-10.8" y="-4.6" width="21.7" height="3.5" rx="1.7" fill="var(--ink)" transform="rotate(-8 0 0)"/></g><g transform="translate(12.4 -146) scale(0.9 1)"><clipPath id="e8"><circle cx="0" cy="0" r="9.5"/></clipPath><circle cx="0" cy="0" r="9.2" fill="#fff"/><g clip-path="url(#e8)"><circle cx="3.2" cy="0.4" r="4.6" fill="var(--ink)"/><rect x="-14.7" y="-18.4" width="29.4" height="17.6" fill="var(--face)" transform="rotate(4 0 0)"/></g><rect x="-10.8" y="-2.4" width="21.7" height="3.5" rx="1.7" fill="var(--ink)" transform="rotate(4 0 0)"/></g></g><g class="eye shut"><g transform="translate(-10.8 -146) scale(1 1)"><path d="M-8.4 2.1 Q2 8.0 8.4 -2.1" fill="none" stroke="var(--ink)" stroke-width="3.8" stroke-linecap="round"/></g><g transform="translate(12.4 -146) scale(0.9 1)"><path d="M-8.7 -0.6 Q-0.5 8.2 8.7 0.6" fill="none" stroke="var(--ink)" stroke-width="3.8" stroke-linecap="round"/></g></g><g transform="rotate(-5 0 -168)"><path d="M-19.6 -170 L-21.3 -198.4 Q-21.3 -201.4 -17.3 -201.4 Q0.3 -203.9 17.9 -201.4 Q21.9 -201.4 21.9 -198.4 L20.2 -170 Z" fill="var(--hat)"/><path d="M-19.4 -171 L-20.5 -178.8 H21.1 L20.0 -171 Z" fill="var(--brass)"/><path d="M-21.3 -198.4 L-17.6 -199.4 L-15.6 -171 L-19.6 -170 Z" fill="#000" opacity=".22"/><path d="M-35.1 -172.5 Q-32.1 -169 -25.1 -169.5 H25.1 Q32.1 -169 35.1 -172.5 Q36.1 -165 27.1 -164.5 H-27.1 Q-36.1 -165 -35.1 -172.5 Z" fill="var(--hat)"/></g></g><path d="M-31 -128 H31 V-110 Q0.6 -106 -31 -110 Z" fill="var(--coat-dk)"/><rect x="-31" y="-129" width="62" height="2.6" rx="1.3" fill="var(--brass)"/></g><circle cx="-21.3" cy="-104.2" r="7.2" fill="var(--coat-dk)"/><circle cx="-25.3" cy="-74.2" r="5.9" fill="var(--coat-dk)"/><path d="M-28.5 -105.2 L-31.2 -75.0 L-19.5 -73.4 L-14.2 -103.3 Z" fill="var(--coat-dk)"/><circle cx="-25.3" cy="-74.2" r="5.9" fill="var(--coat-dk)"/><circle cx="-21.8" cy="-56.1" r="5.1" fill="var(--coat-dk)"/><path d="M-31.1 -73.1 L-26.8 -55.1 L-16.8 -57.0 L-19.5 -75.3 Z" fill="var(--coat-dk)"/><rect x="-3.2" y="-6.6" width="6.4" height="13.2" rx="2" fill="var(--brass)" transform="translate(-21.8 -56.1) rotate(79.1)"/><g transform="translate(-20.3 -48.2) rotate(79.1)"><ellipse cx="0.5" cy="5.6" rx="3.9" ry="3" transform="rotate(-38 0.5 5.6)" fill="var(--glove)"/><ellipse cx="2" cy="0" rx="7.6" ry="6.6" fill="var(--glove)"/><ellipse cx="3" cy="-2.7" rx="4.1" ry="1.8" fill="#FFFFFF" opacity=".16"/></g><circle cx="31.3" cy="-101.5" r="7.2" fill="var(--coat-dk)"/><circle cx="44.3" cy="-79.5" r="5.9" fill="var(--coat-dk)"/><path d="M25.1 -97.8 L39.2 -76.5 L49.4 -82.5 L37.5 -105.1 Z" fill="var(--coat-dk)"/><circle cx="44.3" cy="-79.5" r="5.9" fill="var(--coat-dk)"/><circle cx="59.3" cy="-87.6" r="5.1" fill="var(--coat-dk)"/><path d="M47.1 -74.3 L61.7 -83.1 L56.8 -92.1 L41.5 -84.6 Z" fill="var(--coat-dk)"/><path d="M42.0 -84.4 Q44.9 -81.8 48.8 -82.6" stroke="var(--ink)" stroke-width="1.5" fill="none" opacity=".35" stroke-linecap="round"/><rect x="-3.2" y="-6.6" width="6.4" height="13.2" rx="2" fill="var(--brass)" transform="translate(59.3 -87.6) rotate(-28.6)"/><g transform="translate(66.3 -91.5) rotate(-28.6)"><ellipse cx="0.5" cy="-5.6" rx="3.9" ry="3" transform="rotate(38 0.5 -5.6)" fill="var(--glove)"/><ellipse cx="2.5" cy="0" rx="8.4" ry="5.2" fill="var(--glove)"/><ellipse cx="3.5" cy="2.1" rx="4.6" ry="1.4" fill="#FFFFFF" opacity=".16"/></g></g>
+<path class="floor" d="M0 210h300"/>
+</svg>
+    <div>
+      <div class="state"><svg class="g-asleep" viewBox="0 0 24 24" aria-hidden="true"><path d="M6 22V10a6 6 0 0 1 12 0v12z" fill="var(--slate)"/><circle cx="15.3" cy="15" r="1.2" fill="var(--paper)"/></svg><svg class="g-waking" viewBox="0 0 24 24" aria-hidden="true"><path d="M6 22V10a6 6 0 0 1 12 0v12z" fill="var(--room)" stroke="currentColor" stroke-width="1.6"/><path d="M6 22V10a6 6 0 0 1 3.5-5.4L12 6v16z" fill="var(--leaf)"/></svg><span class="a">Asleep</span><span class="w">Waking</span></div>
+      <h1><span class="a">{{if .Notice}}Still asleep{{else}}Wake it up?{{end}}</span><span class="w">Waking up</span>{{with .Address}} <span class="at">{{.}}</span>{{end}}</h1>
+      {{- with .Notice}}
+      <p class="note a">{{with $.NoticeTitle}}<b>{{.}}</b>{{end}}{{range .}}{{if .Code}}<code>{{.Text}}</code>{{else}}{{.Text}}{{end}}{{end}}{{with $.NoticeDocs}} <a href="{{.}}" target="_blank" rel="noopener noreferrer">How to wake it</a>{{end}}</p>
+      {{- else}}
+      <p class="lede a">This environment was paused while nobody was using it, to save money. Press Wake it to start it again. This page opens it when it's ready.</p>
+      {{- end}}
+      <p class="lede w">This environment was paused while nobody was using it. It's starting now, and the next page opens it on its own when it's ready.</p>
+      <form class="ask" id="wake" method="post">
+        <input type="hidden" name="{{.Field}}" value="{{.Token}}">
+        <button class="wake" type="submit" aria-describedby="takes"><span class="a">Wake it</span><span class="w">Waking it</span></button>
+        <p class="takes" id="takes">Starting takes as long as the app needs.</p>
+      </form>
+      <p class="why"><svg viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" fill-rule="evenodd" d="{{.Mark}}"/></svg>The doorman asks first. Crawlers, scanners and API calls wake nothing.</p>
+      <p class="vh" id="say" role="status"></p>
+    </div>
+  </div>
+</main>
+<footer>
+  <span>Kept out of search engines</span>
+  <a href="https://napwake.dev/" target="_blank" rel="noopener noreferrer"><svg viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" fill-rule="evenodd" d="{{.Mark}}"/></svg>Paused by Napwake</a>
+</footer>
+<script>
+(function(){
+  var d=document.documentElement,f=document.getElementById("wake"),b=f&&f.querySelector("button"),t0=Date.now();
+  if(!f)return;
+  f.addEventListener("submit",function(e){
+    if(d.classList.contains("waking")){e.preventDefault();return}
+    d.classList.add("waking");
+    b.setAttribute("aria-disabled","true");
+    document.getElementById("say").textContent="Waking it. The next page shows how it's going.";
+  });
+  // Back from the history cache, or back to a tab left open past the token's life: load it fresh.
+  // A GET never wakes anything, and a fresh page carries a fresh token.
+  addEventListener("pageshow",function(e){if(e.persisted)location.reload()});
+  document.addEventListener("visibilitychange",function(){
+    if(!document.hidden&&!d.classList.contains("waking")&&Date.now()-t0>300000)location.reload();
+  });
+})();
+</script>
+</body>
+</html>

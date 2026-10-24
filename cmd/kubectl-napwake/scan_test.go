@@ -785,8 +785,8 @@ func TestWriteScan_FreedBeforeGoingBackToDryRun(t *testing.T) {
 	require.NoError(t, writeScan(&out, result, scanOptions{output: "table"}))
 
 	got := out.String()
-	assert.Contains(t, got, "Napwake has freed $7 this month, and saved $2 of it, pausing workloads since put back "+
-		"in dry-run.")
+	assert.Contains(t, got, "Napwake has freed $7 this month, and saved $2 of it, pausing workloads before they "+
+		"went back to dry-run.")
 	assert.Regexp(t, `preview-3\s+deployment/web\s+idle \(dry-run\)\s+measuring since Jan 1\s+\$0\s+\$0.00\s+\$7\s+\$2\s`,
 		got)
 }
@@ -854,7 +854,7 @@ func TestWriteScan_FreedBeforeProtected(t *testing.T) {
 	h, _ := headlineFor(result)
 	require.NotEmpty(t, h.Figures)
 	assert.Equal(t, "$12", h.Figures[0].Value)
-	assert.Equal(t, "so far, pausing workloads since protected; $5 of it saved as nodes scaled down",
+	assert.Equal(t, "so far, pausing workloads before they were protected; $5 of it saved as nodes scaled down",
 		h.Figures[0].Detail)
 
 	result.Workloads = append(result.Workloads, Workload{Namespace: "orders", Kind: "Deployment", Name: "api",
@@ -867,8 +867,8 @@ func TestWriteScan_FreedBeforeProtected(t *testing.T) {
 		"and saved $5 of that.\n")
 	h, _ = headlineFor(result)
 	assert.Equal(t, "$15", h.Figures[0].Value)
-	assert.Equal(t, "so far, pausing 1 live workload and workloads since protected; $6 of it saved as nodes "+
-		"scaled down", h.Figures[0].Detail)
+	assert.Equal(t, "so far, pausing 1 live workload and others before they were protected; $6 of it saved as "+
+		"nodes scaled down", h.Figures[0].Detail)
 }
 
 // What protected workloads freed before they were is said of one or of
@@ -890,7 +890,7 @@ func TestLiveProtected(t *testing.T) {
 }
 
 // The node autoscaler decides whether what pausing frees is ever saved, so
-// the scan names it, and says so.
+// the scan says what the bill rests on.
 func TestWriteScan_NodeAutoscaler(t *testing.T) {
 	tests := []struct {
 		name string
@@ -899,10 +899,10 @@ func TestWriteScan_NodeAutoscaler(t *testing.T) {
 	}{
 		{name: "found", a: nodescale.Autoscaler{Scalers: []nodescale.Scaler{{Kind: nodescale.ClusterAutoscaler,
 			Provider: "AKS"}}},
-			want: "staging: 1 workload in 1 namespace\nNode autoscaler: Cluster Autoscaler on AKS\n" +
-				"What pausing frees comes off the bill only as nodes scale down.\n\n"},
-		{name: "none", want: "staging: 1 workload in 1 namespace\nNode autoscaler: none found — freed capacity " +
-			"won't lower the bill until nodes scale down; see https://docs.napwake.dev/guides/cluster-autoscaler/\n\n"},
+			want: "staging: 1 workload in 1 namespace\nYour bill: drops only as Cluster Autoscaler on AKS removes " +
+				"nodes\n\n"},
+		{name: "none", want: "staging: 1 workload in 1 namespace\nYour bill: won't drop until something removes " +
+			"nodes, and no node autoscaler was found. See https://docs.napwake.dev/guides/cluster-autoscaler/\n\n"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -965,16 +965,22 @@ func TestNextSteps_SkipProtected(t *testing.T) {
 			if tt.want == nil {
 				assert.Empty(t, table.String())
 				assert.NotContains(t, page, "Next steps")
+				assert.Nil(t, buildReport(result, time.Hour).NextSteps)
 				return
 			}
 			for _, command := range tt.want {
 				assert.Contains(t, table.String(), command)
 			}
 			steps := buildReport(result, time.Hour).NextSteps
-			require.Len(t, steps, len(tt.want))
-			for _, step := range steps {
-				assert.NotContains(t, string(step), "payments")
+			require.NotNil(t, steps)
+			require.Len(t, steps.Measure, 2, "annotate, then label")
+			require.NotNil(t, steps.Enable, "then go live")
+			for _, c := range append(steps.Measure, *steps.Enable) {
+				assert.NotContains(t, string(c.Line), "payments")
+				assert.Equal(t, "dev", c.Namespace, "each command's target")
+				assert.Equal(t, "deployment/preview", c.Workload)
 			}
+			assert.Contains(t, string(steps.Enable.Line), "napwake enable")
 			assert.NotContains(t, table.String(), "payments")
 		})
 	}

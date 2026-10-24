@@ -49,7 +49,7 @@ type forecastOptions struct {
 	window       string
 	setting      string
 	timezone     string
-	cpuThreshold int
+	cpuThreshold float64
 	idleAfter    time.Duration
 	timeout      time.Duration
 	prometheus   prometheusOptions
@@ -150,8 +150,8 @@ Examples:
 			if err != nil {
 				return fmt.Errorf("--timezone: %w", err)
 			}
-			if opts.cpuThreshold < 1 || opts.cpuThreshold > 100 {
-				return errors.New("--cpu-threshold must be a percentage from 1 to 100")
+			if err := checkCPUThreshold(opts.cpuThreshold); err != nil {
+				return err
 			}
 			if err := checkPositive("idle-after", opts.idleAfter); err != nil {
 				return err
@@ -201,9 +201,9 @@ Examples:
 	cmd.Flags().StringVar(&opts.timezone, "timezone", opts.timezone,
 		"The time zone whose hours and weekdays the forecast learns and times are shown in; by default the "+
 			"operator's, as its ManagedWorkloads record it, or UTC")
-	cmd.Flags().IntVar(&opts.cpuThreshold, "cpu-threshold", opts.cpuThreshold,
-		"CPU use, as a percentage of requests from 1 to 100, above which a workload is in use; managed workloads "+
-			"use their own")
+	cmd.Flags().Float64Var(&opts.cpuThreshold, "cpu-threshold", opts.cpuThreshold,
+		"CPU use, as a percentage of requests from 0.1 to 100, such as 10 or 0.5, above which a workload is in use; "+
+			"managed workloads use their own")
 	cmd.Flags().DurationVar(&opts.idleAfter, "idle-after", opts.idleAfter,
 		"How long without use before a pause, as Napwake's idleAfter; managed workloads use their own")
 	cmd.Flags().DurationVar(&opts.timeout, "timeout", opts.timeout, "How long the replay may take before it gives up")

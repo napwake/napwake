@@ -34,7 +34,7 @@ kubectl get managedworkload my-api -n staging -o jsonpath='{.status.activity}'
 
 `lastActivitySource` says what last kept it awake, and `pauseAt` is when it will pause if nothing else happens. If `pauseAt` keeps moving forward, something is still counting as activity:
 
-- **`cpu`**: usage is above `activity.cpuThreshold`% of requests. Background work (polling, cron loops) can keep a workload busy; raise the threshold if that's expected.
+- **`cpu`**: usage is above `activity.cpuThreshold`% of requests. Background work (polling, cron loops) can keep a workload busy; raise the threshold if that's expected. It takes a decimal, such as `"0.5"`.
 - **`annotation`**: a `napwake.dev/last-activity` annotation is being refreshed, or `napwake.dev/active-until` is in the future. Check both the ManagedWorkload and its target.
 - **`rollout`**: the pod template changed recently.
 - **`prometheus`**: one of `activity.prometheus` returns a value above zero.
@@ -147,10 +147,9 @@ If the condition is `DoormanRouted` but requests still fail:
 - **The connection is closed at once, with nothing sent**: a [limit](../concepts/wake-on-request.md#limits) on held connections or wakes was hit; `napwake_doorman_wakes_total{result="limited"}` counts these.
 - **An error from the app itself, such as a `503` with the app's own body, on the first requests after a wake**: its pods were Ready before it could answer, as a pod with no readiness probe is as soon as its containers start. A `NoReadinessProbe` warning event, and the `WakeOnRequest` message, say when that's so. Give the app a readiness probe that passes only once it can serve; see [Readiness probes](../concepts/wake-on-request.md#readiness-probes).
 - **A `503` with no body**: the caller's `User-Agent` looks like a health check or scraper, such as `kube-probe/` or `Prometheus/`, which the doorman never lets wake a workload. It answers them this way only while none of the workload's pods is Ready.
-- **A 502 from ingress-nginx right after the workload paused**: nginx hadn't picked up the change yet and sent the request to the removed pod. A retry a second later is held and wakes the workload.
+- **A 502 from ingress-nginx, or a refused request, as the workload paused**: a pod exited the moment it got `SIGTERM`, before kube-proxy and nginx dropped it. The doorman stands in front of the Service before the pods stop, so it's the pod's shutdown. Give the app a `preStop` sleep of a few seconds; see [Work in Progress at a Pause](../guides/pause.md#work-in-progress-at-a-pause).
 - **A 502 from a GKE Ingress or GKE Gateway while the workload is paused**: its Service is in NEGs and the optional forwarder isn't on, so the Service isn't routed and Google's load balancer has no healthy backend; see [On GKE](../concepts/wake-on-request.md#on-gke). Right after a pause, GKE also takes up to a minute to see the doorman, or the forwarder, pass its health checks.
 - **A 504 from an Ingress after 60 seconds**: the ingress controller gave up first. Raise its upstream timeout, for ingress-nginx `nginx.ingress.kubernetes.io/proxy-read-timeout`.
-- **The request is refused right after the workload paused**: the Service's backends hadn't switched to the doorman yet, which takes a second or two. A retry is held and wakes the workload.
 - **The request is refused or times out right away, every time**: a NetworkPolicy may block traffic to the doorman (ports 20000-29999) or from it to the workload's pods. See [Network policies](../concepts/wake-on-request.md#network-policies).
 
 The doorman's logs name the workload and Service for each held connection: `kubectl logs -n napwake-system -l control-plane=doorman` (use the namespace you installed into).
@@ -159,16 +158,41 @@ The doorman's logs name the workload and Service for each held connection: `kube
 
 Something keeps waking it. Check the events for `WokeByActivity` (an activity annotation changed since the pause, or a held request: `WokenByRequest` names the Service) or `AutoResume` (the forecast expected demand). A health check or monitor that calls the Service on a timer and sends a request wakes the workload each time. The doorman already ignores connections that close without sending anything, and HTTP requests from common probes and scrapers (see [Wake on Request](../concepts/wake-on-request.md#what-wakes-a-workload-and-what-doesnt)); for anything else, point it elsewhere, or list its port in `napwake.dev/doorman-ignore-ports` on the Service. On a public URL, where crawlers and scanners wake it, have the doorman [ask before waking](../concepts/wake-on-request.md#asking-before-waking) it, with `wake.mode: Ask` (`napwake.dev/wake: ask`), so only a person's click does. A tool that refreshes `napwake.dev/last-activity` on a timer, rather than on real use, will keep waking the workload.
 
+A `PausedWhileInUse` warning means its use undid a pause soon after it: see [Workload paused while in use](#workload-paused-while-in-use).
+
 `ScaledUp` means something scaled it up outside Napwake, named in the event and `status.lastScaledUp`. If it's a GitOps tool, the workload also reports `GitOpsConflict=True`: it sets the replicas from Git and will undo every pause until it's told to leave them; see [GitOps tools](../guides/gitops.md).
+
+### Workload paused while in use
+
+A `PausedWhileInUse` warning event, and `kubectl napwake status` under Needs attention, say Napwake paused the workload while it was in use. A request, a click, a wake request or an activity annotation undid the pause soon after it began. Napwake didn't see the use, usually because the workload uses less CPU in use than its threshold:
+
+```bash
+kubectl describe managedworkload my-api -n staging
+```
+
+```text
+Warning  PausedWhileInUse  a request came 40 seconds after it paused, so it was in use: it now waits 10 minutes
+without activity before pausing, not 5 minutes, until a pause holds. It used up to 0.6% of its CPU requests while
+in use, and up to 0.2% idle: try napwake.dev/cpu-threshold: "0.4"
+```
+
+Its idle clock waits longer meanwhile, doubling with each wrong pause up to `idleAfter` plus an hour, so it's paused in use less often. Fix the cause, and it pauses on time again:
+
+1. **A suggested threshold:** set it, on the workload or the ManagedWorkload's `idlePolicy.activity.cpuThreshold`. Napwake suggests one only when the workload's CPU in use sits clearly above its idle CPU.
+2. **No threshold suggested:** CPU can't tell its use from its idle. Count its requests with a [Prometheus activity query](../guides/prometheus-signals.md#example-queries), such as its ingress's request rate.
+3. **A caller that keeps a connection open,** such as a gRPC client or a connection pool from another workload: add that workload with `dependsOn`, or opt it in, so it holds this one awake.
+
+The warning stops once a pause lasts 15 minutes, or `idleAfter` if that's shorter, without being undone. See [Paused while in use](../concepts/idle-detection.md#paused-while-in-use).
 
 ### Wake it doesn't wake the workload
 
 With `wake.mode: Ask`, a click on the asleep page's **Wake it** button wakes the workload and shows the waking-up page. When the asleep page comes back instead, its notice says why:
 
-- **"That page had expired"**: the page's token expired because its reloads failed, as after a laptop slept, since the page reloads with a fresh one every minute; or it was shown during an earlier pause; or the click came from a page of another site. Over plain HTTP, it also means the click's `Origin` isn't the address the doorman saw the page at, the one at the top of the page, as when a proxy in front of it rewrites the `Host` header, such as ingress-nginx's `upstream-vhost`; pass the browser's `Host` on, or serve the preview over HTTPS. Click the button on the page shown now. If it keeps coming back with this notice, the doorman's replicas may be signing with different keys: their logs say `loading the key the Wake it button is signed with` when they can't read the wake key Secret, `napwake-doorman-wake-key` in the Napwake namespace. Check it exists and the doorman's Role still allows reading it; with the Kustomize manifests, or your own, include the Secret and its Role.
-- **"This browser didn't say the click came from this page"**: the click came with neither `Sec-Fetch-Site` nor an `Origin`, or with `Origin: null`, as some browsers from before about 2020 send it, so the doorman can't tell it from a spider posting the page's token. Open it in a current browser, or wake it with `kubectl napwake wake` or the `napwake.dev/wake-requested` annotation. If a current browser gets this, something between the browser and the doorman drops those headers, or a browser extension does: ingress-nginx and most proxies pass them on as they are. See [What browsers, robots and API clients see](../concepts/wake-on-request.md#what-browsers-robots-and-api-clients-see).
-- **"It was asked to wake less than a minute ago"**: a click wakes a workload at most once a minute. Try again shortly.
-- **"It couldn't be woken just now"**: the doorman couldn't stamp the wake, such as when the API server didn't answer, or a wake rate limit was hit. Its logs say which.
+- **"This page was open too long"**, a `403`: the page's token expired because its reloads failed, as after a laptop slept, since the page reloads with a fresh one every minute; or it was shown during an earlier pause. Click the button on the page shown now. If it keeps coming back with this notice, the doorman's replicas may be signing with different keys: their logs say `loading the key the Wake it button is signed with` when they can't read the wake key Secret, `napwake-doorman-wake-key` in the Napwake namespace. Check it exists and the doorman's Role still allows reading it; with the Kustomize manifests, or your own, include the Secret and its Role.
+- **"The click came from another address"**, a `403`: the browser says the click came from a page at another address. It came from another site or subdomain, by its `Sec-Fetch-Site`. Or, over plain HTTP, its `Origin` isn't the address the doorman saw the page at, the one at the top of the page. That happens when a proxy in front of the doorman rewrites the `Host` header, such as ingress-nginx's `upstream-vhost`. Pass the browser's `Host` on, or serve the preview over HTTPS. Clicking again won't help, so wake it with `kubectl napwake wake` or the `napwake.dev/wake-requested` annotation meanwhile.
+- **"Try a current browser"**: the click came with neither `Sec-Fetch-Site` nor an `Origin`, or with `Origin: null`, as some browsers from before about 2020 send it, so the doorman can't tell it from a spider posting the page's token. Open it in a current browser, or wake it with `kubectl napwake wake` or the `napwake.dev/wake-requested` annotation. If a current browser gets this, something between the browser and the doorman drops those headers, or a browser extension does: ingress-nginx and most proxies pass them on as they are. See [What browsers, robots and API clients see](../concepts/wake-on-request.md#what-browsers-robots-and-api-clients-see).
+- **"Try again in a minute"**, a `429` with `Retry-After: 60`: a click wakes a workload at most once a minute. Try again shortly.
+- **"It didn't wake"**: the doorman couldn't stamp the wake, such as when the API server didn't answer, or a wake rate limit was hit. Its logs say which.
 
 A browser that gets a plain-text `503` instead of the page doesn't look like a person's browser to the doorman: its `User-Agent` names a crawler or a headless browser, or doesn't start with `Mozilla/`. Wake it with `kubectl napwake wake` or `napwake.dev/wake-requested` instead.
 

@@ -603,7 +603,8 @@ func TestWake_FromEachPhase(t *testing.T) {
 		wantOut string
 	}{
 		{phase: v1alpha1.PhasePausing, reason: "Woken",
-			wantOut: "preview-42/api is pausing; it wakes once the pause finishes...\npreview-42/api is Running after 0s\n"},
+			wantOut: "preview-42/api is pausing; the pause is called off and it stays up...\n" +
+				"preview-42/api is Running after 0s\n"},
 		{phase: v1alpha1.PhaseResuming, reason: "AlreadyAwake",
 			wantOut: "preview-42/api is already waking...\npreview-42/api is Running after 0s\n"},
 		{phase: v1alpha1.PhaseIdle, reason: "AlreadyAwake",

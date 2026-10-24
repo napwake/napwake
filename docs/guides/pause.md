@@ -6,13 +6,45 @@ Napwake's one action is to **pause**: scale a workload to zero replicas. The Dep
 
 ### What Happens When a Workload Is Paused
 
-1. What the pause will change is recorded in `status.pause`, in the same status write that moves the phase to `Pausing`, before anything is scaled: the replica count (`previousReplicas`), the KEDA ScaledObject and its own `autoscaling.keda.sh/paused-replicas` value if it has one, what each replica requests (for [cost tracking](../concepts/cost-tracking.md)), and the activity annotations as they stand
-2. A copy of what undoing the pause needs, the replica count and the KEDA ScaledObject with its own `paused-replicas` value, is written to the workload's `napwake.dev/paused-from` annotation, where it stays until the workload is handed back. Should the ManagedWorkload lose its status while the workload is paused, such as to a Velero restore without status, or being deleted without its finalizer and created again, Napwake takes the pause up again from it, with a `PauseRecovered` event, and the workload wakes as it would have
-3. A KEDA ScaledObject, if the workload has one, is held at zero with `autoscaling.keda.sh/paused-replicas: "0"`
-4. The workload is scaled to 0 through its scale subresource. The API server records no field manager for a write that way, so the replicas show as no one's rather than Napwake's
-5. `status.pause.pausedAt` is set. Once its pods have stopped, the phase moves to `Paused`, with a `Paused` event. Pods that don't stop, such as a StatefulSet's under `OrderedReady` pod management waiting on one that isn't Ready, are waited for as long as their termination grace period and a minute more (one pod after another for a StatefulSet); then it's `Paused` anyway, with `PauseIncomplete=True` and a `PauseIncomplete` warning event in place of `Paused`, until they've gone
+1. What the pause will change is recorded in `status.pause`, in the same status write that moves the phase to `Pausing`, before anything is scaled: when the pause began (`startedAt`), the replica count (`previousReplicas`), the KEDA ScaledObject and its own `autoscaling.keda.sh/paused-replicas` value if it has one, what each replica requests (for [cost tracking](../concepts/cost-tracking.md)), and the activity annotations as they stand
+2. The [doorman](../concepts/wake-on-request.md) steps in front of the workload's Services, beside its pods, so no request is refused as they stop. Its routes go into `status.doorman` with the move to `Pausing`, and every doorman pod listens on them. `status.pause.routesWrittenAt` records when they were stored. Five seconds after, its EndpointSlice stands beside the pods' own, and it passes what it gets straight to a Ready pod. `status.pause.routedAt` records when. Five seconds after that, once kube-proxy and ingress controllers send to it too, the pause goes on, however late Napwake gets to it. A workload the doorman doesn't route goes on at once, and none waits more than a minute for the doorman
+3. A copy of what undoing the pause needs, the replica count and the KEDA ScaledObject with its own `paused-replicas` value, is written to the workload's `napwake.dev/paused-from` annotation, where it stays until the workload is handed back. Should the ManagedWorkload lose its status while the workload is paused, such as to a Velero restore without status, or being deleted without its finalizer and created again, Napwake takes the pause up again from it, with a `PauseRecovered` event, and the workload wakes as it would have
+4. A KEDA ScaledObject, if the workload has one, is held at zero with `autoscaling.keda.sh/paused-replicas: "0"`
+5. The workload is scaled to 0 through its scale subresource. The API server records no field manager for a write that way, so the replicas show as no one's rather than Napwake's
+6. `status.pause.pausedAt` is set. Once its pods have stopped, the phase moves to `Paused`, with a `Paused` event. Pods that don't stop, such as a StatefulSet's under `OrderedReady` pod management waiting on one that isn't Ready, are waited for as long as their termination grace period and a minute more (one pod after another for a StatefulSet); then it's `Paused` anyway, with `PauseIncomplete=True` and a `PauseIncomplete` warning event in place of `Paused`, until they've gone
 
 Because the record is written first, a pause interrupted at any point, by an operator restart or a conflicting write, is finished or undone from the record, and a resume always goes back to the replica count the workload had.
+
+### Work in Progress at a Pause
+
+The pods stop as Kubernetes stops any pod. Each gets `SIGTERM`, and its `terminationGracePeriodSeconds` (30 seconds by default) to finish what it's doing before `SIGKILL`. Napwake waits for them to stop. Requests that come meanwhile go to the doorman, which holds them.
+
+An app that should finish a job or drain connections needs to handle `SIGTERM` the way it would in a rollout. One that exits the moment it gets `SIGTERM` can refuse a connection kube-proxy sends it in the second before it drops the pod. A `preStop` sleep of a few seconds closes that gap, in a pause as in any rollout.
+
+### A Request Calls the Pause Off
+
+A request while a workload pauses shows it's in use. Whatever would wake it once paused, coming while it's `Pausing`, calls the pause off:
+
+- a request that reaches the doorman, which holds it, or passes it on to a pod that's still Ready
+- for a workload that [asks before waking](../concepts/wake-on-request.md#asking-before-waking), only a person's click on the asleep page
+- a [wake request](#wake-now)
+- an activity annotation, which a waking [dependent](../concepts/dependencies.md) stamps
+
+The workload is `Running` again, scaled back up if its pods had begun to stop, and the request is answered, held while no pod is Ready. A `PauseCancelled` event says what came:
+
+```text
+a request came as it paused; the pause is cancelled
+```
+
+The doorman doesn't see every request as a workload pauses. The pods answer these, and the pause goes on:
+
+- requests in the first 5 seconds, before the doorman's EndpointSlice stands beside the pods' own
+- the share kube-proxy and ingress controllers still send to the pods, for about 5 seconds more, until they're scaled down
+- requests on connections opened before the pause
+- every request after the first on a connection the doorman passed on
+- traffic from a GKE load balancer through [NEGs](../concepts/wake-on-request.md#gke-container-native-load-balancing-negs), which goes to the pods' own addresses
+
+A probe, a scrape, a hunt for hidden files, or a TCP check that sends nothing, doesn't call it off. Dry-run never pauses, so there's nothing to call off. A pause the idle clock made, called off this way, counts as [made in use](../concepts/idle-detection.md#paused-while-in-use), and the clock waits longer before the next.
 
 ### Triggering a Pause
 
@@ -48,6 +80,7 @@ The request runs the idle clock out now, and the workload is paused by the same 
 | The workload | What Napwake does | `PauseRequest` condition |
 |--------------|-------------------|--------------------------|
 | `Running` or `Idle` | Pauses it, with a `PauseRequested` event, then `Paused` | `True`, `Paused` |
+| A request comes as it pauses | [Calls the pause off](#a-request-calls-the-pause-off), and says so. `kubectl napwake pause` says it wasn't paused | `False`, `PauseCancelled` |
 | A confident forecast expects demand within the hour | Leaves it running and says when the demand is expected, since a pause would likely be woken straight back. `kubectl napwake pause` asks whether to pause it anyway; a request with `napwake.dev/pause-overrides-forecast: "true"`, which `--yes` sets, pauses it | `False`, `ForecastExpectsDemand` |
 | Within the hour Napwake waits after a GitOps tool (Argo CD, Flux, Fleet, kapp or Kluctl) undid its last pause | Pauses it: you asked. If the tool undoes it again, that's a new [`GitOpsConflict`](gitops.md) | `True`, `Paused` |
 | `Pausing` | Finishes the pause, then marks the request handled | `True`, `AlreadyPaused` |
@@ -105,7 +138,7 @@ Napwake acts on each value once: it records the value it handled in `status.last
 | The workload | What Napwake does | `WakeRequest` condition |
 |--------------|-------------------|-------------------------|
 | `Paused` | Wakes it, with a `WakeRequested` event, then `Resumed` once it's Ready | `True`, `Woken` |
-| `Pausing` | Finishes the pause, then wakes it | `True`, `Woken` |
+| `Pausing` | [Calls the pause off](#a-request-calls-the-pause-off), and has it `Running` again | `True`, `Woken` |
 | `Resuming` | Lets the wake finish, then marks the request handled | `True`, `AlreadyAwake` |
 | `Running` or `Idle` | Restarts its idle clock, as activity does | `True`, `AlreadyAwake` |
 | In [dry-run](dry-run.md) | Never paused, so it's awake: restarts its idle clock, which ends a would-be pause, as activity does | `True`, `AlreadyAwake` |

@@ -341,6 +341,41 @@ func TestScanCluster_ReadsNapwakesClock(t *testing.T) {
 	assert.True(t, got["measuring"].Managed)
 }
 
+// After pauses made in use, Napwake waits longer than idleAfter before the
+// next, so a managed workload is idle only once its clock's pauseAt has
+// come, or, before the operator has written one, once the longer wait has.
+func TestScanCluster_ManagedWaitsLongerAfterPausesMadeInUse(t *testing.T) {
+	backedOff := func(name string, quiet time.Duration, pauseAt *metav1.Time) *v1alpha1.ManagedWorkload {
+		mw := managedFor(name, v1alpha1.ManagedWorkloadStatus{Phase: v1alpha1.PhaseRunning,
+			Activity: &v1alpha1.ActivityStatus{LastActivityTime: metav1.NewTime(scanTime.Add(-quiet)),
+				LastActivitySource: v1alpha1.ActivitySourceWoke, PauseAt: pauseAt},
+			IdleWait: &v1alpha1.IdleWaitStatus{WrongPauses: 2}})
+		mw.Spec.IdlePolicy = &v1alpha1.IdlePolicySpec{IdleAfter: &metav1.Duration{Duration: 5 * time.Minute}}
+		return mw
+	}
+	written := backedOff("written", 6*time.Minute, ptr.To(metav1.NewTime(scanTime.Add(14*time.Minute))))
+	unwritten := backedOff("unwritten", 6*time.Minute, nil)
+	due := backedOff("due", 21*time.Minute, ptr.To(metav1.NewTime(scanTime.Add(-time.Minute))))
+	dueUnwritten := backedOff("due-unwritten", 21*time.Minute, nil)
+
+	objs := make([]runtime.Object, 0, 12)
+	objs = append(objs, written, unwritten, due, dueUnwritten)
+	for _, name := range []string{"written", "unwritten", "due", "due-unwritten"} {
+		objs = append(objs, idleNow(name)...)
+	}
+	got := byName(scanWorkloads(t, objs...))
+
+	for _, name := range []string{"written", "unwritten"} {
+		assert.Equal(t, StateActive, got[name].State, "%s: Napwake doesn't pause it for 20 minutes", name)
+		assert.Equal(t, "not idle yet: it woke 6m ago; after pauses made in use it waits 20 minutes, not 5 minutes",
+			got[name].Reason, name)
+	}
+	for _, name := range []string{"due", "due-unwritten"} {
+		assert.Equal(t, StateIdle, got[name].State, "%s: its 20 minutes have run out", name)
+		assert.Equal(t, "no activity for 21m", got[name].Reason, name)
+	}
+}
+
 func TestScanCluster_ShowsWhatNapwakeHasPaused(t *testing.T) {
 	mw := managedFor("asleep", v1alpha1.ManagedWorkloadStatus{Phase: v1alpha1.PhasePaused,
 		Pause: &v1alpha1.PauseStatus{PreviousReplicas: 3, PausedAt: ptr.To(metav1.NewTime(scanTime.Add(-5 * time.Hour))),
@@ -434,6 +469,7 @@ func TestScanCluster_UnmanagedIdleAfter(t *testing.T) {
 		report, err := NewScanner(c, c).ScanCluster(context.Background(), opts)
 		require.NoError(t, err)
 		assert.Equal(t, want, byName(report)["deployed"].State, "deployed 90m ago, with idleAfter %s", idleAfter)
+		assert.Equal(t, idleAfter, byName(report)["deployed"].IdleAfter.Duration, "and says which")
 	}
 }
 
@@ -448,6 +484,7 @@ func TestScanCluster_ManagedBeforeItsClockStarts(t *testing.T) {
 	got := byName(scanWorkloads(t, objs...))
 
 	assert.Equal(t, StateActive, got["deployed"].State, "deployed 90m ago, with its own idleAfter of 2h")
+	assert.Equal(t, 2*time.Hour, got["deployed"].IdleAfter.Duration, "its own, not the scan's")
 }
 
 // What Napwake saved, what dry-run measured, and what history estimates
@@ -570,9 +607,16 @@ func TestClusterReport_LeavesOutTimesItDoesntHave(t *testing.T) {
 func TestCPUReason(t *testing.T) {
 	percent := func(n int) *int { return &n }
 	assert.Equal(t, "no CPU use", cpuReason(Workload{CPUPercent: percent(0)}))
-	assert.Equal(t, "CPU under 1% of its request", cpuReason(Workload{CPUPercent: percent(0), CPUMillisUsed: 3}),
+	assert.Equal(t, "CPU under 0.1% of its request",
+		cpuReason(Workload{CPUPercent: percent(0), CPUMillisUsed: 1, cpuShare: 0.05}),
 		"a little use that rounds to 0% isn't none")
-	assert.Equal(t, "CPU 64% of its request", cpuReason(Workload{CPUPercent: percent(64), CPUMillisUsed: 640}))
+	assert.Equal(t, "CPU 0.4% of its request",
+		cpuReason(Workload{CPUPercent: percent(0), CPUMillisUsed: 3, cpuShare: 0.48}),
+		"under 10%, to a tenth, which a decimal threshold such as 0.5 tells apart")
+	assert.Equal(t, "CPU 6.2% of its request",
+		cpuReason(Workload{CPUPercent: percent(6), CPUMillisUsed: 62, cpuShare: 6.25}))
+	assert.Equal(t, "CPU 64% of its request",
+		cpuReason(Workload{CPUPercent: percent(64), CPUMillisUsed: 640, cpuShare: 64.8}))
 }
 
 // A would-be pause still under way hasn't been ended by a wake yet.
@@ -754,4 +798,47 @@ func TestScanCluster_LastMonthsSavingsArentThisMonths(t *testing.T) {
 
 	assert.Zero(t, byName(report)["stale"].SavedThisMonth)
 	assert.Zero(t, report.Totals.SavedThisMonth)
+}
+
+// Why Napwake never pauses a workload however idle it is, in the words
+// status gives it: its namespace is protected, by label or by the
+// operator's protectedNamespaces; it's part of Napwake; it deletes its
+// PVCs on scale-down; or its ManagedWorkload has no idlePolicy.
+func TestScanCluster_NeverPaused(t *testing.T) {
+	protectedAs := func(name, reason string) *v1alpha1.ManagedWorkload {
+		mw := managedFor(name, v1alpha1.ManagedWorkloadStatus{Phase: v1alpha1.PhaseRunning,
+			Conditions: []metav1.Condition{{Type: "Protected", Status: metav1.ConditionTrue, Reason: reason}}})
+		mw.Spec.IdlePolicy = &v1alpha1.IdlePolicySpec{}
+		return mw
+	}
+	policied := managedFor("policied", v1alpha1.ManagedWorkloadStatus{Phase: v1alpha1.PhaseRunning})
+	policied.Spec.IdlePolicy = &v1alpha1.IdlePolicySpec{}
+	names := []string{"plain", "guarded", "own", "claims", "policyless", "policied"}
+	objs := make([]runtime.Object, 0, 2*len(names)+8)
+	for _, name := range names {
+		objs = append(objs, deploymentWithRollout(name, testNamespace, 1, 30*24*time.Hour)...)
+	}
+	objs = append(objs, deploymentWithRollout("locked", "preview-918", 1, 30*24*time.Hour)...)
+	objs = append(objs,
+		protectedAs("guarded", "ProtectedNamespace"), protectedAs("own", "NapwakeComponent"),
+		protectedAs("claims", "PVCsDeletedOnScaleDown"),
+		managedFor("policyless", v1alpha1.ManagedWorkloadStatus{Phase: v1alpha1.PhaseRunning}), policied,
+		&corev1.Namespace{ObjectMeta: metav1.ObjectMeta{Name: "preview-918",
+			Labels: map[string]string{v1alpha1.LabelProtected: v1alpha1.True}}})
+
+	got := byName(scanWorkloads(t, objs...))
+
+	for name, want := range map[string]string{
+		"plain":      "",
+		"policied":   "",
+		"locked":     "namespace protected",
+		"guarded":    "namespace protected",
+		"own":        "part of Napwake",
+		"claims":     "PVCs deleted on scale-down",
+		"policyless": "no idlePolicy",
+	} {
+		assert.Equal(t, want, got[name].NeverPaused(), name)
+	}
+	assert.Equal(t, "PVCs deleted on scale-down",
+		Workload{WontPause: "PVCs deleted on scale-down", Protected: true}.NeverPaused(), "what the scan sees itself first")
 }

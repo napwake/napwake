@@ -37,10 +37,22 @@ import (
 	"k8s.io/client-go/rest"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
+	v1alpha1 "github.com/napwake/napwake/api/v1alpha1"
 	"github.com/napwake/napwake/internal/cost"
 	"github.com/napwake/napwake/internal/discovery"
 	"github.com/napwake/napwake/internal/nodescale"
 )
+
+// checkCPUThreshold says what's wrong with a --cpu-threshold that isn't a
+// percentage the operator would take: from 0.1 to 100, to at most two
+// decimal places.
+func checkCPUThreshold(percent float64) error {
+	if _, err := v1alpha1.ParseCPUThreshold(strconv.FormatFloat(percent, 'f', -1, 64)); err != nil {
+		return errors.New("--cpu-threshold must be a percentage from 0.1 to 100, such as 10 or 0.5, to at most " +
+			"two decimal places")
+	}
+	return nil
+}
 
 // defaultCPUThreshold matches the activity clock's default, so the scan
 // calls idle what Napwake would pause.
@@ -52,7 +64,7 @@ type scanOptions struct {
 	exclude      []string
 	output       string
 	limit        int
-	cpuThreshold int
+	cpuThreshold float64
 	cpuPrice     float64
 	memoryPrice  float64
 	// ownCPUPrice and ownMemoryPrice say the user gave the price, which
@@ -110,9 +122,9 @@ type scanResult struct {
 
 // settings are the rules the scan judged with, so a report can state them.
 type settings struct {
-	CPUThreshold int    `json:"cpuThreshold"`
-	IdleAfter    string `json:"idleAfter"`
-	Window       string `json:"window"`
+	CPUThreshold float64 `json:"cpuThreshold"`
+	IdleAfter    string  `json:"idleAfter"`
+	Window       string  `json:"window"`
 }
 
 func scanCmd(kube *kubeFlags) *cobra.Command {
@@ -181,8 +193,8 @@ Examples:
 			if err != nil {
 				return err
 			}
-			if opts.cpuThreshold < 1 || opts.cpuThreshold > 100 {
-				return errors.New("--cpu-threshold must be a percentage from 1 to 100")
+			if err := checkCPUThreshold(opts.cpuThreshold); err != nil {
+				return err
 			}
 			if opts.idleAfter <= 0 {
 				return errors.New("--idle-after must be more than zero")
@@ -227,9 +239,9 @@ Examples:
 	cmd.Flags().IntVar(&opts.limit, "limit", 25,
 		"Workloads to list in the table, idle first, then paused, then active, each by what pausing could free "+
 			"(0 for all)")
-	cmd.Flags().IntVar(&opts.cpuThreshold, "cpu-threshold", defaultCPUThreshold,
-		"CPU use, as a percentage of requests from 1 to 100, above which a workload counts as active; managed workloads "+
-			"use their own")
+	cmd.Flags().Float64Var(&opts.cpuThreshold, "cpu-threshold", defaultCPUThreshold,
+		"CPU use, as a percentage of requests from 0.1 to 100, such as 10 or 0.5, above which a workload counts as "+
+			"active; managed workloads use their own")
 	cmd.Flags().Float64Var(&opts.cpuPrice, "cpu-price", opts.cpuPrice, "Your price per vCPU-hour, in dollars")
 	cmd.Flags().Float64Var(&opts.memoryPrice, "memory-price", opts.memoryPrice,
 		"Your price per GiB-hour of memory, in dollars")
@@ -667,10 +679,7 @@ func writeScan(w io.Writer, result scanResult, opts scanOptions) error {
 func writeTable(w io.Writer, result scanResult, limit int) error {
 	p := &printer{w: w}
 	p.line("%s: %s", result.Cluster, workloadsIn(result))
-	p.line("%s", nodeAutoscalerLine(result.NodeAutoscaler))
-	if s := freedBecomesSaved(result.NodeAutoscaler); s != "" {
-		p.line("%s", s)
-	}
+	p.line("%s", billLine(result.NodeAutoscaler))
 	if s := historyLine(result); s != "" {
 		p.line("%s", s)
 	}
@@ -703,7 +712,7 @@ func writeTable(w io.Writer, result scanResult, limit int) error {
 		p.line("")
 	}
 	if result.Prices.CPUAssumed || result.Prices.MemoryAssumed {
-		p.line("%s", result.costsSentence())
+		p.line("%s", result.pricesLine())
 		p.line("Pass --cpu-price and --memory-price for yours.")
 		p.line("")
 	}
@@ -729,7 +738,7 @@ func writeHeadline(p *printer, result scanResult) {
 		p.line("  Napwake has freed %s this month pausing %s, and saved %s of it.", dollars(freed),
 			countOf(t.Live, "live workload"), dollars(saved))
 	case anyMoney(freed) && t.DryRun > 0:
-		p.line("  Napwake has freed %s this month, and saved %s of it, pausing workloads since put back in dry-run.",
+		p.line("  Napwake has freed %s this month, and saved %s of it, pausing workloads before they went back to dry-run.",
 			dollars(freed), dollars(saved))
 	case anyMoney(freed):
 		p.line("  Napwake has freed %s this month, and saved %s of it.", dollars(freed), dollars(saved))
@@ -795,7 +804,7 @@ func liveProtected(t discovery.Totals) string {
 	if t.Live > 0 {
 		more = " more"
 	}
-	s := fmt.Sprintf("%d%s live workloads are protected, so Napwake never pauses them", t.LiveProtected, more)
+	s := number(t.LiveProtected) + more + " live workloads are protected, so Napwake never pauses them"
 	they, were := "they", "were"
 	if t.LiveProtected == 1 {
 		s, they, were = "1"+more+" live workload is protected, so Napwake never pauses it", "it", "was"
@@ -846,16 +855,16 @@ func notReplayed(workloads []Workload) string {
 	}
 	var parts []string
 	for _, reason := range reasons {
-		parts = append(parts, fmt.Sprintf("%d that won't pause (%s)", wontPause[reason], reason))
+		parts = append(parts, fmt.Sprintf("%s that won't pause (%s)", number(wontPause[reason]), reason))
 	}
 	if protected > 0 {
-		parts = append(parts, fmt.Sprintf("%d in protected namespaces", protected))
+		parts = append(parts, number(protected)+" in protected namespaces")
 	}
 	if scaledByHand > 0 {
-		parts = append(parts, fmt.Sprintf("%d scaled to zero by hand", scaledByHand))
+		parts = append(parts, number(scaledByHand)+" scaled to zero by hand")
 	}
 	if noHistory > 0 {
-		parts = append(parts, fmt.Sprintf("%d without CPU history to replay", noHistory))
+		parts = append(parts, number(noHistory)+" without CPU history to replay")
 	}
 	return joinAnd(parts)
 }
@@ -1098,15 +1107,6 @@ func hasPaused(wl Workload) bool {
 // scan and status alike.
 func showsFreed(dryRun bool, freed, saved float64) bool {
 	return !dryRun || freed > 0 || saved > 0
-}
-
-// freedBecomesSaved says what turns freed capacity into savings, once a
-// node autoscaler has been found; without one, the autoscaler line says so.
-func freedBecomesSaved(a nodescale.Autoscaler) string {
-	if len(a.Scalers) == 0 {
-		return ""
-	}
-	return "What pausing frees comes off the bill only as nodes scale down."
 }
 
 // couldFreeCell is what pausing a workload Napwake doesn't pause yet
@@ -1421,11 +1421,18 @@ func lowerFirst(s string) string {
 	return strings.ToLower(s[:1]) + s[1:]
 }
 
+func upperFirst(s string) string {
+	if s == "" {
+		return s
+	}
+	return strings.ToUpper(s[:1]) + s[1:]
+}
+
 func plural(n int, one, many string) string {
 	if n == 1 {
 		return "1 " + one
 	}
-	return fmt.Sprintf("%d %s", n, many)
+	return number(n) + " " + many
 }
 
 func pronoun(n int) string {
@@ -1462,7 +1469,7 @@ func countOf(n int, noun string) string {
 	if n == 1 {
 		return "1 " + noun
 	}
-	return fmt.Sprintf("%d %ss", n, noun)
+	return number(n) + " " + noun + "s"
 }
 
 func vcpu(millis int64) string {
@@ -1502,6 +1509,12 @@ func dollars(amount float64) string {
 }
 
 // thousands writes n with its thousands separated by commas.
+// number writes a count as the product's sentences do, its thousands
+// separated: 5,775.
+func number(n int) string {
+	return thousands(int64(n))
+}
+
 func thousands(n int64) string {
 	s := strconv.FormatInt(n, 10)
 	for i := len(s) - 3; i > 0; i -= 3 {

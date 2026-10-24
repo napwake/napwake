@@ -15,7 +15,7 @@
 | `target.name` | string | Yes | | Target name (same namespace) |
 | `idlePolicy` | `IdlePolicySpec` | No | | Idle detection configuration. Without it, the workload is never paused automatically |
 | `idlePolicy.idleAfter` | duration (at least `1m`) | No | `1h` | Time without activity before pausing |
-| `idlePolicy.activity.cpuThreshold` | int | No | `10` | CPU utilization % of requests above which the workload is active (1-100) |
+| `idlePolicy.activity.cpuThreshold` | int or string | No | `10` | CPU utilization % of requests above which the workload is active: 0.1 to 100, to two places, a decimal written as a string, such as `"0.5"` |
 | `idlePolicy.activity.prometheus[].promQL` | string | Yes (per entry) | | PromQL instant query; a result above zero is activity. At most 10 queries |
 | `idlePolicy.autoResume` | bool | No | `false` | Wake ahead of confident forecast demand |
 | `idlePolicy.pauseEarly` | bool | No | `false` | Pause before `idleAfter` runs out, once idle for 20 minutes, when a confident forecast expects the hours until then to be quiet and a request would wake the workload through the doorman. See [Pausing Early](../concepts/forecasting.md#pausing-early) |
@@ -65,6 +65,11 @@ A duration is a Go duration above zero, such as `45s`, `90m` or `1h30m`. Days an
 | `activity.forecastQuietUntil` | time | The end of the hours the forecast expected to be quiet when it brought the workload's pause forward (`PausedEarly`), until the pause, or the would-be pause in dry-run, ends |
 | `pause` | `PauseStatus` | What a pause changed, from before the workload is scaled to zero until it's running again |
 | `pause.previousReplicas` | int32 | Replicas before the pause, restored on resume |
+| `pause.startedAt` | time | When the pause began, as the workload went `Pausing`, before anything was scaled, or when Napwake took up a pause whose record was lost. The asleep page's **Wake it** button is good for this pause alone. See [The Wake it button](../concepts/wake-on-request.md#the-wake-it-button) |
+| `pause.routesWrittenAt` | time | When the doorman's routes for this pause were stored in status, which every doorman pod listens on. Its EndpointSlices go in 5 seconds after. Unset for a workload the doorman doesn't route |
+| `pause.routedAt` | time | When the doorman's EndpointSlices first stood in front of the workload's Services for this pause, beside its pods. It's scaled to zero a few seconds after. Unset for a workload the doorman doesn't route. See [Pause](../guides/pause.md#what-happens-when-a-workload-is-paused) |
+| `pause.requested` | bool | The pause was asked for, with `napwake.dev/pause-requested`, rather than decided by the idle clock or the forecast |
+| `pause.cpuBefore`, `pause.cpuJustBefore` | string | The most CPU the workload used, as a percentage of its requests, through the stretch without activity that ran its clock out, and in its last 15 minutes, or `idleAfter` if shorter. Unset when none was measured. See [Paused while in use](../concepts/idle-detection.md#paused-while-in-use) |
 | `pause.pausedAt` | time | When it was scaled to zero; unset until then. The pause is `Paused` once its pods have stopped |
 | `pause.resumedAt` | time | When the resume under way scaled it back up; scaled to zero after that by something other than Napwake, it's left off |
 | `pause.firstReadyAt` | time | When the resume under way first saw one of its replicas Ready; the rest get 2 minutes from then |
@@ -78,6 +83,10 @@ A duration is a Go duration above zero, such as `45s`, `90m` or `1h30m`. Days an
 | `turnedAway` | `TurnedAway` | With `wake.mode: Ask`, the requests the doorman turned away during the current pause, or the last one once it's awake: `pausedAt`, when that pause began, and `requests`. Brought up to date about once a minute. See [What it turns away](../concepts/wake-on-request.md#what-it-turns-away) |
 | `doorman[]` | `DoormanRoute` | Service ports routed to the doorman while paused: `service`, `portName`, `doormanPort`, and `forwarded`, set for a Service behind GKE NEGs routed through the [forwarder](../concepts/wake-on-request.md#gke-container-native-load-balancing-negs) |
 | `doormanDraining[]` | `DrainingPort` | Doorman ports that routed the workload until it woke: `port`, and `until`, before which no other workload is given it, so a client still sending the workload's traffic there never reaches another. Kept in status so an operator that restarts or takes over leadership honours it |
+| `idleWait` | `IdleWaitStatus` | Pauses made while the workload was in use, which lengthen its idle clock, and its CPU use idle. See [Paused while in use](../concepts/idle-detection.md#paused-while-in-use) |
+| `idleWait.wrongPauses` | int32 | Pauses in a row the workload's own use undid soon after they began. Each doubles how long the idle clock waits, up to `idleAfter` plus an hour. A pause that holds sets it back to zero |
+| `idleWait.lastWrongPause` | `WrongPause` | The latest: `pausedAt`, `after` (how soon it was undone), `by` (`request`, `click`, `wakeRequest` or `annotation`), `from` (the caller's address, for a request), and `inUseCPU` |
+| `idleWait.idleCPU`, `idleWait.idleCPUAt` | string, time | The most CPU the workload used, as a percentage of its requests, before its pauses that held, over the last week, and when it was last measured |
 | `dryRun` | `DryRunStatus` | What dry-run has measured; only while `spec.dryRun` is true |
 | `dryRun.since` | time | When dry-run started measuring |
 | `dryRun.pauses` | int32 | Times the workload would have been paused, one under way included |

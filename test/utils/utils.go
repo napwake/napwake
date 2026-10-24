@@ -72,13 +72,18 @@ func prepare(cmd *exec.Cmd) string {
 	return command
 }
 
+// KindCluster is the kind cluster the e2e run is for: KIND_CLUSTER, which
+// make test-e2e names after the checkout, or kind's own default.
+func KindCluster() string {
+	if v, ok := os.LookupEnv("KIND_CLUSTER"); ok && v != "" {
+		return v
+	}
+	return defaultKindCluster
+}
+
 // LoadImageToKindClusterWithName loads a local docker image to the kind cluster
 func LoadImageToKindClusterWithName(name string) error {
-	cluster := defaultKindCluster
-	if v, ok := os.LookupEnv("KIND_CLUSTER"); ok {
-		cluster = v
-	}
-	kindOptions := []string{"load", "docker-image", name, "--name", cluster}
+	kindOptions := []string{"load", "docker-image", name, "--name", KindCluster()}
 	kindBinary := defaultKindBinary
 	if v, ok := os.LookupEnv("KIND"); ok {
 		kindBinary = v

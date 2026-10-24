@@ -39,26 +39,37 @@ const statusPagePattern = "napwake-status-*.html"
 // statusPage is what the status web page shows, worded from the same
 // status and helpers as the terminal table, so the two never disagree.
 type statusPage struct {
-	Cluster        string
-	At             string
-	Summary        string
-	NodeAutoscaler string
-	TimeZone       string
-	Spot           string
-	Figures        []figure
-	Notes          []string
-	Attention      []attentionRow
-	Workloads      []statusPageRow
-	DryRun         bool
-	Recent         []recentRow
+	Cluster   string
+	At        string
+	Summary   string
+	NodeScale nodeScale
+	TimeZone  string
+	Spot      string
+	Figures   []figure
+	// FreedThisMonth and SavedThisMonth are what the first two figures
+	// say, as numbers, for the page to lead with and draw the meter from.
+	// SavedMeasurable says what's saved can be measured for every
+	// workload; without it, SavedThisMonth is of those it can.
+	FreedThisMonth, SavedThisMonth float64
+	SavedMeasurable                bool
+	Notes                          []string
+	Attention                      []attentionRow
+	Workloads                      []statusPageRow
+	DryRun                         bool
+	Recent                         []recentRow
 	// NoRecent says why no pauses and wakes are listed, when none are.
 	NoRecent string
 	Since    string
 	Mark     string
 }
 
+// attentionRow is a problem as the page lists it. Workload is the
+// target's name, as the table shows it; Target is its kind and name, as
+// the Workloads table names it, for a page to match the two by, and
+// ManagedWorkload what to kubectl describe.
 type attentionRow struct {
 	Workload, Namespace, Type, Message string
+	Target, ManagedWorkload            string
 }
 
 type statusPageRow struct {
@@ -67,10 +78,15 @@ type statusPageRow struct {
 	LastActivity, Next, Forecast         string
 	Freed, SavedNote, WouldFree          string
 	ForSort, FreedSort, WouldFreeSort    float64
+	// WokenBy is what woke it, as status -o json gives it.
+	WokenBy string
 }
 
+// recentRow is a pause or wake, with its Kind and, for a wake, what woke
+// it, as status -o json gives them.
 type recentRow struct {
 	At, Ago, Workload, Namespace, Message string
+	Kind, WokenBy                         string
 	AtSort                                int64
 }
 
@@ -101,14 +117,18 @@ func writeStatusHTML(w io.Writer, result statusResult, since time.Duration, now 
 
 func buildStatusPage(result statusResult, since time.Duration, now time.Time) statusPage {
 	page := statusPage{
-		Cluster:        result.Cluster,
-		At:             now.UTC().Format("2 January 2006, 15:04 MST"),
-		NodeAutoscaler: reportAutoscaler(result.NodeAutoscaler),
-		TimeZone:       timeZoneLine(result.ForecastTimeZones),
-		Spot:           spotLine(result.Workloads),
-		Since:          span(since),
-		Mark:           doorman.Mark,
-		Figures:        statusFigures(result),
+		Cluster:   result.Cluster,
+		At:        now.UTC().Format("2 January 2006, 15:04 MST"),
+		NodeScale: nodeScaleFor(result.NodeAutoscaler),
+		TimeZone:  timeZoneLine(result.ForecastTimeZones),
+		Spot:      spotLine(result.Workloads),
+		Since:     span(since),
+		Mark:      doorman.Mark,
+		Figures:   statusFigures(result),
+
+		FreedThisMonth:  result.FreedThisMonth,
+		SavedThisMonth:  result.SavedThisMonth,
+		SavedMeasurable: len(result.SavingsUnknown) == 0,
 	}
 	if len(result.Workloads) == 0 {
 		page.Summary = "Napwake manages no workloads here. kubectl napwake scan finds idle ones; label one " +
@@ -131,7 +151,7 @@ func buildStatusPage(result statusResult, since time.Duration, now time.Time) st
 	}
 	for _, pr := range result.Problems {
 		page.Attention = append(page.Attention, attentionRow{Workload: pr.Workload, Namespace: pr.Namespace,
-			Type: pr.Type, Message: oneLine(pr.Message)})
+			Type: pr.Type, Message: oneLine(pr.Message), Target: pr.Target, ManagedWorkload: pr.ManagedWorkload})
 	}
 
 	for _, wl := range result.Workloads {
@@ -150,6 +170,7 @@ func buildStatusPage(result statusResult, since time.Duration, now time.Time) st
 			SavedNote:     savedNote(wl),
 			WouldFree:     wouldFreeCell(wl),
 			WouldFreeSort: -1,
+			WokenBy:       wl.WokenBy,
 		}
 		if wl.namedApart {
 			row.ManagedWorkload = wl.Name
@@ -171,7 +192,8 @@ func buildStatusPage(result statusResult, since time.Duration, now time.Time) st
 	}
 	for _, h := range result.Recent {
 		page.Recent = append(page.Recent, recentRow{At: h.At.UTC().Format("Jan 2, 15:04 MST"), Ago: ago(h.At, now),
-			Workload: h.Workload, Namespace: h.Namespace, Message: oneLine(h.Message), AtSort: h.At.Unix()})
+			Workload: h.Workload, Namespace: h.Namespace, Message: oneLine(h.Message), Kind: h.Kind,
+			WokenBy: h.WokenBy, AtSort: h.At.Unix()})
 	}
 	return page
 }
@@ -181,19 +203,20 @@ func buildStatusPage(result statusResult, since time.Duration, now time.Time) st
 // measured pausing would have freed.
 func statusFigures(result statusResult) []figure {
 	saved := figure{Value: dollars(result.SavedThisMonth), Label: "saved of it",
-		Detail: "what came off the bill as nodes scaled down"}
+		Detail: "what came off the bill as nodes scaled down", Kind: figureSaved, Amount: result.SavedThisMonth}
 	if len(result.SavingsUnknown) > 0 {
 		saved.Detail = "for the workloads whose savings can be measured"
 	}
 	figures := []figure{
 		{Value: dollars(result.FreedThisMonth), Label: "freed by pausing this month",
-			Detail: "what the paused replicas request, at list price"},
+			Detail: "what the paused replicas request, at list price", Kind: figureFreed,
+			Amount: result.FreedThisMonth},
 		saved,
 	}
 	if n, since := dryRunMeasured(result.Workloads); n > 0 && since != nil {
 		figures = append(figures, figure{Value: dollars(result.WouldFree), Label: "pausing would have freed",
 			Detail: fmt.Sprintf("measured in dry-run since %s, for %s", since.Format("Jan 2"),
-				countOf(n, "workload"))})
+				countOf(n, "workload")), Kind: figureWouldHaveFreed, Amount: result.WouldFree})
 	}
 	return figures
 }
@@ -214,8 +237,9 @@ func savedNote(wl statusWorkload) string {
 	}
 }
 
-// stateClass is the dot a phase gets on the page, coloured as the scan
-// report colours its states: paused, idle, or running.
+// stateClass is the door a phase gets on the page: paused, idle and
+// running as the scan report draws them, as paused, idle and active, and
+// pausing, resuming and creating, Creating for a workload with no phase yet.
 func stateClass(phase v1alpha1.WorkloadPhase) string {
 	switch phase {
 	case v1alpha1.PhasePaused:
@@ -224,6 +248,10 @@ func stateClass(phase v1alpha1.WorkloadPhase) string {
 		return "idle"
 	case v1alpha1.PhaseRunning:
 		return "active"
+	case v1alpha1.PhasePausing:
+		return "pausing"
+	case v1alpha1.PhaseResuming:
+		return "resuming"
 	}
-	return ""
+	return "creating"
 }

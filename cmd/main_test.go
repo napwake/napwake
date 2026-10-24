@@ -17,11 +17,21 @@ limitations under the License.
 package main
 
 import (
+	"bytes"
 	"context"
+	"encoding/json"
+	"fmt"
+	"math"
+	"math/big"
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"os/exec"
 	"path/filepath"
+	"regexp"
+	"slices"
+	"strconv"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -48,6 +58,35 @@ import (
 	"github.com/napwake/napwake/internal/forwarder"
 	"github.com/napwake/napwake/internal/gitops"
 )
+
+// The image is built from a context .dockerignore keeps to what the build
+// needs, so every file the manager embeds has to be let back in by name,
+// or the image doesn't build.
+func TestImageBuildContext_KeepsEveryEmbeddedFile(t *testing.T) {
+	root, err := filepath.Abs("..")
+	require.NoError(t, err)
+	out, err := exec.Command("go", "list", "-deps",
+		"-f", "{{.Dir}}{{range .EmbedFiles}} {{.}}{{end}}", ".").Output()
+	require.NoError(t, err)
+	ignore, err := os.ReadFile(filepath.Join(root, ".dockerignore"))
+	require.NoError(t, err)
+	kept := strings.Split(string(ignore), "\n")
+
+	var embedded []string
+	for line := range strings.Lines(string(out)) {
+		dir, files, _ := strings.Cut(strings.TrimSpace(line), " ")
+		rel, err := filepath.Rel(root, dir)
+		if err != nil || strings.HasPrefix(rel, "..") || files == "" {
+			continue
+		}
+		for f := range strings.FieldsSeq(files) {
+			path := filepath.ToSlash(filepath.Join(rel, f))
+			embedded = append(embedded, path)
+			assert.Contains(t, kept, "!"+path, ".dockerignore leaves %s out of the image's build context", path)
+		}
+	}
+	assert.True(t, slices.Contains(embedded, "internal/doorman/page.html"), "found the manager's embedded files")
+}
 
 // The garbage collector aims below the container's limit, leaving room for
 // memory outside the heap, rather than at it, where the kernel kills first.
@@ -138,6 +177,11 @@ func TestValidateOptInDefaults(t *testing.T) {
 		{name: "built-in defaults", mutate: func(*controller.OptInDefaults) {}},
 		{name: "threshold of 100", mutate: func(d *controller.OptInDefaults) { d.CPUThreshold = 100 }},
 		{name: "threshold of 1", mutate: func(d *controller.OptInDefaults) { d.CPUThreshold = 1 }},
+		{name: "a decimal threshold", mutate: func(d *controller.OptInDefaults) { d.CPUThreshold = 0.5 }},
+		{name: "threshold below the CRD's minimum", mutate: func(d *controller.OptInDefaults) { d.CPUThreshold = 0.05 },
+			wantErr: true},
+		{name: "threshold with more places than the CRD takes",
+			mutate: func(d *controller.OptInDefaults) { d.CPUThreshold = 0.125 }, wantErr: true},
 		{name: "threshold above the CRD's maximum", mutate: func(d *controller.OptInDefaults) { d.CPUThreshold = 150 },
 			wantErr: true},
 		{name: "threshold of 0, which the CRD turns into 10",
@@ -174,6 +218,103 @@ func TestValidateOptInDefaults(t *testing.T) {
 			assert.NoError(t, err)
 		})
 	}
+}
+
+// TestChartCPUThresholdIsOneTheOperatorTakes checks every threshold written
+// with up to three digits and two places: a defaults.cpuThreshold the
+// chart's schema takes, as a number or a string, has to be one the operator
+// starts with, or the install succeeds and the operator crash-loops. Every
+// threshold the operator takes, written plainly, has to pass the schema too.
+// It reads anyOf as Helm does, with multipleOf compared exactly.
+func TestChartCPUThresholdIsOneTheOperatorTakes(t *testing.T) {
+	number, pattern := chartCPUThresholdSchema(t)
+	operatorTakes := func(written string) bool {
+		percent, err := strconv.ParseFloat(written, 64)
+		require.NoError(t, err)
+		d := controller.DefaultOptInDefaults
+		d.CPUThreshold = percent
+		return validateOptInDefaults(d) == nil
+	}
+
+	for whole := range 1000 {
+		for _, places := range []int{0, 1, 2} {
+			for fraction := range int(math.Pow10(places)) {
+				written := strconv.Itoa(whole)
+				if places > 0 {
+					written += fmt.Sprintf(".%0*d", places, fraction)
+				}
+				if pattern.MatchString(written) && !operatorTakes(written) {
+					t.Errorf("the chart takes the string %q, which the operator refuses to start with", written)
+				}
+			}
+		}
+	}
+
+	for thousandths := range 101_001 {
+		value := new(big.Rat).SetFrac64(int64(thousandths), 1000)
+		written := strings.TrimSuffix(strings.TrimRight(value.FloatString(3), "0"), ".")
+		takes := operatorTakes(written)
+		if number(value) != takes {
+			t.Errorf("the chart takes the number %s: %t, the operator: %t", written, !takes, takes)
+		}
+		if pattern.MatchString(written) != takes {
+			t.Errorf("the chart takes the string %q: %t, the operator: %t", written, !takes, takes)
+		}
+	}
+}
+
+// chartCPUThresholdSchema reads defaults.cpuThreshold from the chart's
+// values.schema.json: an anyOf of one number and one string.
+func chartCPUThresholdSchema(t *testing.T) (number func(*big.Rat) bool, pattern *regexp.Regexp) {
+	t.Helper()
+	data, err := os.ReadFile(filepath.Join("..", "charts", "napwake", "values.schema.json"))
+	require.NoError(t, err)
+	var schema struct {
+		Properties struct {
+			Defaults struct {
+				Properties struct {
+					CPUThreshold struct {
+						AnyOf []struct {
+							Type       string      `json:"type"`
+							Minimum    json.Number `json:"minimum"`
+							Maximum    json.Number `json:"maximum"`
+							MultipleOf json.Number `json:"multipleOf"`
+							Pattern    string      `json:"pattern"`
+						} `json:"anyOf"`
+					} `json:"cpuThreshold"`
+				} `json:"properties"`
+			} `json:"defaults"`
+		} `json:"properties"`
+	}
+	decoder := json.NewDecoder(bytes.NewReader(data))
+	decoder.UseNumber()
+	require.NoError(t, decoder.Decode(&schema))
+
+	rat := func(n json.Number) *big.Rat {
+		if n == "" {
+			return nil
+		}
+		r, ok := new(big.Rat).SetString(n.String())
+		require.True(t, ok, "%s is a number", n)
+		return r
+	}
+	for _, branch := range schema.Properties.Defaults.Properties.CPUThreshold.AnyOf {
+		switch branch.Type {
+		case "number":
+			minimum, maximum, step := rat(branch.Minimum), rat(branch.Maximum), rat(branch.MultipleOf)
+			number = func(v *big.Rat) bool {
+				return (minimum == nil || v.Cmp(minimum) >= 0) && (maximum == nil || v.Cmp(maximum) <= 0) &&
+					(step == nil || new(big.Rat).Quo(v, step).IsInt())
+			}
+		case "string":
+			pattern = regexp.MustCompile(branch.Pattern)
+		default:
+			t.Fatalf("defaults.cpuThreshold has a %q branch the test doesn't read", branch.Type)
+		}
+	}
+	require.NotNil(t, number, "defaults.cpuThreshold takes a number")
+	require.NotNil(t, pattern, "defaults.cpuThreshold takes a string")
+	return number, pattern
 }
 
 func TestNapwakeNamespaces(t *testing.T) {

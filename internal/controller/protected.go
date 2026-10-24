@@ -141,6 +141,7 @@ func (r *Reconciler) reconcileProtected(ctx context.Context, workload *v1alpha1.
 	p protection) (ctrl.Result, error) {
 	reported := meta.IsStatusConditionTrue(workload.Status.Conditions, conditionProtected)
 	r.setCondition(workload, conditionProtected, metav1.ConditionTrue, p.reason, p.message)
+	backedOff := r.endBackOff(workload, ReasonProtected)
 	if err := r.refuseRequests(ctx, workload, ReasonProtected, p.why); err != nil {
 		return ctrl.Result{}, err
 	}
@@ -156,7 +157,7 @@ func (r *Reconciler) reconcileProtected(ctx context.Context, workload *v1alpha1.
 		if err := r.transition(ctx, workload, v1alpha1.PhaseRunning, "Protected"); err != nil {
 			return ctrl.Result{}, err
 		}
-	case !reported || routed:
+	case !reported || routed || backedOff:
 		if err := r.Status().Update(ctx, workload); err != nil {
 			return ctrl.Result{}, fmt.Errorf("updating status of a protected workload: %w", err)
 		}

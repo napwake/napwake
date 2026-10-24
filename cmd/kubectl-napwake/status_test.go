@@ -36,6 +36,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime/schema"
+	"k8s.io/apimachinery/pkg/types"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 	"sigs.k8s.io/controller-runtime/pkg/client/interceptor"
@@ -56,7 +57,7 @@ func before(d time.Duration) *metav1.Time {
 func statusWorkloadObj(namespace, name string, kind v1alpha1.TargetKind, phase v1alpha1.WorkloadPhase,
 	inPhase time.Duration) *v1alpha1.ManagedWorkload {
 	return &v1alpha1.ManagedWorkload{
-		ObjectMeta: metav1.ObjectMeta{Name: name, Namespace: namespace},
+		ObjectMeta: metav1.ObjectMeta{Name: name, Namespace: namespace, UID: testUID(namespace, name)},
 		Spec: v1alpha1.ManagedWorkloadSpec{Target: v1alpha1.WorkloadRef{Kind: kind, Name: name},
 			IdlePolicy: &v1alpha1.IdlePolicySpec{}},
 		Status: v1alpha1.ManagedWorkloadStatus{Phase: phase, LastTransitionTime: before(inPhase)},
@@ -72,13 +73,20 @@ func condition(condType string, status metav1.ConditionStatus, reason, message s
 	return metav1.Condition{Type: condType, Status: status, Reason: reason, Message: message}
 }
 
+// testUID is the UID of the ManagedWorkload statusWorkloadObj makes, which
+// its events from statusEvent name.
+func testUID(namespace, name string) types.UID {
+	return types.UID(namespace + "-" + name)
+}
+
 func statusEvent(namespace, workload, reason, message string, at time.Duration) *corev1.Event {
 	return &corev1.Event{
-		ObjectMeta:     metav1.ObjectMeta{Name: workload + "." + reason + "." + at.String(), Namespace: namespace},
-		InvolvedObject: corev1.ObjectReference{Kind: "ManagedWorkload", Namespace: namespace, Name: workload},
-		Reason:         reason,
-		Message:        message,
-		EventTime:      metav1.NewMicroTime(statusNow.Add(-at)),
+		ObjectMeta: metav1.ObjectMeta{Name: workload + "." + reason + "." + at.String(), Namespace: namespace},
+		InvolvedObject: corev1.ObjectReference{Kind: "ManagedWorkload", Namespace: namespace, Name: workload,
+			UID: testUID(namespace, workload)},
+		Reason:    reason,
+		Message:   message,
+		EventTime: metav1.NewMicroTime(statusNow.Add(-at)),
 	}
 }
 
@@ -179,7 +187,7 @@ func TestStatus(t *testing.T) {
 	//nolint:lll // the expected screen is as wide as the command prints it
 	assert.Equal(t, `staging (EKS us-east-1): Napwake manages 4 workloads.
   1 paused, 2 running, 1 resuming; 1 in dry-run, never paused: pausing it would have freed $7 since Oct 1
-  Node autoscaler: none found — freed capacity won't lower the bill until nodes scale down; see https://docs.napwake.dev/guides/cluster-autoscaler/
+  Your bill: won't drop until something removes nodes, and no node autoscaler was found. See https://docs.napwake.dev/guides/cluster-autoscaler/
   Forecast time zone: Europe/London
   Freed $42 this month, and saved $35 of it.
 
@@ -685,6 +693,42 @@ func TestStatus_WakeRequested(t *testing.T) {
 `)
 }
 
+// A pause a request called off is listed, with what came, and the resume
+// that follows it adds nothing.
+func TestStatus_PauseCancelled(t *testing.T) {
+	w := statusWorkloadObj("shop", "api", v1alpha1.TargetKindDeployment, v1alpha1.PhaseRunning, time.Hour)
+	out := runStatus(t, newStatusClient(t, interceptor.Funcs{}, w,
+		statusEvent("shop", "api", "Paused", "api: paused", 3*time.Hour),
+		statusEvent("shop", "api", "PauseCancelled", "api: a request came as it paused; the pause is cancelled",
+			30*time.Minute),
+		statusEvent("shop", "api", "Resumed", "api: resumed", 29*time.Minute),
+	), statusOpts())
+
+	assert.Contains(t, out, `Recent pauses and wakes:
+  30m ago   shop/api   a request came as it paused; the pause is cancelled
+  3h ago    shop/api   paused
+`)
+}
+
+// A pause made while the workload was in use needs attention, with what to
+// change, until a pause holds.
+func TestStatus_PausedWhileInUse(t *testing.T) {
+	w := statusWorkloadObj("shop", "api", v1alpha1.TargetKindDeployment, v1alpha1.PhaseRunning, time.Hour)
+	w.Status.Conditions = []metav1.Condition{condition("PausedWhileInUse", metav1.ConditionTrue, "WokenSoonAfterPause",
+		`a request came 40 seconds after it paused, so it was in use: it now waits 10 minutes without activity `+
+			`before pausing, not 5 minutes, until a pause holds. It used up to 0.6% of its CPU requests while in `+
+			`use, and up to 0.2% idle: try napwake.dev/cpu-threshold: "0.4"`)}
+
+	problems := problemsOf(w, statusNow)
+
+	require.Len(t, problems, 1)
+	assert.Equal(t, "PausedWhileInUse", problems[0].Type)
+	assert.Contains(t, problems[0].Message, `try napwake.dev/cpu-threshold: "0.4"`)
+
+	w.Status.Conditions = []metav1.Condition{condition("PausedWhileInUse", metav1.ConditionFalse, "PauseHeld", "")}
+	assert.Empty(t, problemsOf(w, statusNow), "a pause that held needs nobody")
+}
+
 // A workload deliberately labelled napwake.dev/ignore needs nobody's
 // attention.
 func TestStatus_IgnoredIsntAProblem(t *testing.T) {
@@ -800,7 +844,7 @@ func TestStatus_NothingManaged(t *testing.T) {
 	out := runStatus(t, newStatusClient(t, interceptor.Funcs{}), statusOpts())
 
 	assert.Equal(t, "staging (EKS us-east-1): Napwake manages no workloads here.\n"+
-		"Node autoscaler: none found — freed capacity won't lower the bill until nodes scale down; see "+
+		"Your bill: won't drop until something removes nodes, and no node autoscaler was found. See "+
 		"https://docs.napwake.dev/guides/cluster-autoscaler/\n"+
 		"kubectl napwake scan finds idle ones; label one napwake.dev/managed=true for Napwake to manage it.\n", out)
 }
@@ -1075,14 +1119,15 @@ func TestStatus_SavingsUnknown(t *testing.T) {
 	assert.Regexp(t, `deployment/a .* \$4\s+unknown\n`, out.String())
 }
 
-// The node autoscaler line comes from what status can see of the cluster.
+// The Your bill line comes from what status can see of the cluster's node
+// autoscaler.
 func TestStatus_NodeAutoscaler(t *testing.T) {
 	ca := &corev1.ConfigMap{ObjectMeta: metav1.ObjectMeta{Name: "cluster-autoscaler-status", Namespace: "kube-system"}}
 	objs := append(statusCluster(), ca)
 
 	out := runStatus(t, newStatusClient(t, interceptor.Funcs{}, objs...), statusOpts())
 
-	assert.Contains(t, out, "  Node autoscaler: Cluster Autoscaler\n")
+	assert.Contains(t, out, "  Your bill: drops only as Cluster Autoscaler removes nodes\n")
 }
 
 func TestStatus_Since(t *testing.T) {
@@ -1120,6 +1165,9 @@ func TestStatus_JSON(t *testing.T) {
 	require.NoError(t, json.Unmarshal(out.Bytes(), &got))
 	assert.Len(t, got.Workloads, 4)
 	assert.Len(t, got.Problems, 2)
+	for _, pr := range got.Problems {
+		assert.Equal(t, "deployment/worker", pr.Target, "a problem names the workload as its row does")
+	}
 	assert.Len(t, got.Recent, 3)
 	assert.InDelta(t, 42.45, got.FreedThisMonth, 0.001)
 	assert.InDelta(t, 35.0, got.SavedThisMonth, 0.001)

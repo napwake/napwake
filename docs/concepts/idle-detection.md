@@ -9,8 +9,10 @@ spec:
   idlePolicy:
     idleAfter: 1h        # default
     activity:
-      cpuThreshold: 10   # percent of CPU requests; default
+      cpuThreshold: 10   # percent of CPU requests, 0.1 to 100; default
 ```
+
+A threshold that isn't a whole number is written as a string, such as `cpuThreshold: "0.5"`, as Kubernetes APIs write decimals. It suits a workload that idles at a fraction of a percent.
 
 ## What counts as activity
 
@@ -18,7 +20,7 @@ Every source is checked, and the most recent one wins. None has priority over an
 
 | Source | Counts as activity when | Setup |
 |--------|------------------------|-------|
-| **CPU** | Usage is above `activity.cpuThreshold`% of the CPU requested by the pods reporting it | Requires metrics-server |
+| **CPU** | Usage is above `activity.cpuThreshold`% of the CPU requested by the pods reporting it, from 0.1 to 100 | Requires metrics-server |
 | **Deploy** | The target's pod template changes: a new image, environment variable, or other template edit | None |
 | **`napwake.dev/last-activity`** | The annotation holds a time newer than the last recorded activity | Set by your own tooling |
 | **`napwake.dev/active-until`** | The annotation holds a time in the future (a hold, not an activity time) | Set by your own tooling |
@@ -59,7 +61,7 @@ A workload at zero replicas that Napwake didn't pause isn't checked at all: it's
 
 1. CPU, or a configured Prometheus query, can't be read: stay awake (see [below](#when-a-source-cant-be-read)).
 2. `active-until` is in the future: stay awake.
-3. The last activity is less than `idleAfter` ago: stay awake, unless `pauseEarly` is on and the [forecast brings the pause forward](forecasting.md#pausing-early): the last activity was at least 20 minutes ago, the forecast is confident every hour until `idleAfter` would run out, and at least the hour under way and the next, is quiet, and a request would wake the workload through the doorman once it's paused. Then the pause goes on through the steps below, as if the clock had run out.
+3. The last activity is less than `idleAfter` ago, or longer after [a pause made in use](#paused-while-in-use): stay awake, unless `pauseEarly` is on and the [forecast brings the pause forward](forecasting.md#pausing-early): the last activity was at least 20 minutes ago, the forecast is confident every hour until `idleAfter` would run out, and at least the hour under way and the next, is quiet, and a request would wake the workload through the doorman once it's paused. Then the pause goes on through the steps below, as if the clock had run out.
 4. The [forecast](forecasting.md) is confident (shown as `DailyActive` or later, `dailyPhase: Active`) and predicts utilization above `cpuThreshold` in the hour under way or the next: stay awake. The `IdleVetoed` condition is `True`, with reason `ForecastExpectsDemand` and a message naming the hour, while this holds the pause back, and an `IdleVetoed` event marks the start of each veto. The hour after one far quieter than it forecast, as on a holiday, the forecast doubts what it expects and holds nothing back (see [Anomaly Detection](forecasting.md#anomaly-detection)).
 5. Another workload that [depends on](dependencies.md) this one is awake, or `dependsOn` forms a cycle: stay awake (`HeldByDependents` or `DependencyCycle`).
 6. Otherwise the clock has run out, or the forecast brought the pause forward. The phase becomes `Idle`, with an `IdleDetected` event, or a `PausedEarly` event naming the hours the forecast expects to be quiet, and the workload is [paused](../guides/pause.md).
@@ -71,6 +73,72 @@ A [pause request](../guides/pause.md#pause-now), from `kubectl napwake pause`, r
 With `dryRun: true`, the phase still becomes `Idle` and the `IdleDetected` or `PausedEarly` event carries a `[dry-run]` prefix, but nothing is changed. If activity resumes, the phase goes back to `Running`. See [Dry Run](../guides/dry-run.md).
 
 The forecast never blocks a pause until it's confident, so a workload with no history is handled by the clock alone.
+
+## Paused while in use
+
+Napwake can't see requests to an awake workload. One in steady light use, under its CPU threshold, can look idle and be paused while people use it. The next request wakes it, with a cold start.
+
+A pause is wrong when the workload's own use undoes it soon after it begins, within `idleAfter` or 15 minutes, whichever is shorter. Any of these undoes it:
+
+- a request, or a person's click for a workload that [asks first](wake-on-request.md#asking-before-waking)
+- a [wake request](../guides/pause.md#wake-now)
+- an activity annotation
+
+One that comes while the workload is still pausing [calls the pause off](../guides/pause.md#a-request-calls-the-pause-off). That pause was wrong too.
+
+After a wrong pause, the idle clock waits longer before the next. Each wrong pause in a row doubles the wait, up to `idleAfter` plus an hour:
+
+| Wrong pauses in a row | Wait with `idleAfter: 5m` | Wait with `idleAfter: 1h` |
+|---|---|---|
+| 0 | 5 minutes | 1 hour |
+| 1 | 10 minutes | 2 hours |
+| 2 | 20 minutes | 2 hours |
+| 3 | 40 minutes | 2 hours |
+| 4 or more | 1 hour 5 minutes | 2 hours |
+
+A pause that lasts the window ends the wait. So do dry-run, protecting the workload, removing its `idlePolicy`, ignoring it and its target going, which no pause can last through, and a would-be pause in dry-run never waits longer. The count is kept in `status.idleWait`, so a restart keeps it. The wait only ever delays a pause.
+
+These don't make a pause wrong, since Napwake didn't misjudge the workload's use:
+
+- a pause someone asked for
+- the forecast waking it ahead of demand
+- a Prometheus activity query
+- a wake for an awake dependent that uses it
+
+Steady light use wakes a wrong pause within seconds or a minute or two. A pause that lasted a quarter of an hour paid for its cold start, and a short `idleAfter` is what you said idle means. Hence the window. In the simulator, `orders/api` on the test cluster, with `idleAfter: 5m` under steady requests all working day, goes from 79 cold starts a working day to 10, and is awake about 3.5 hours a week more, on weekday evenings.
+
+### What Napwake tells you
+
+A `PausedWhileInUse` warning event says how soon the pause was undone, how long the clock waits now, and what to change. The `PausedWhileInUse` condition says the same until a pause holds, or the wait ends otherwise, and [`kubectl napwake status`](../getting-started/kubectl-plugin.md#see-what-napwake-is-doing) lists it under Needs attention.
+
+```text
+a request came 40 seconds after it paused, so it was in use: it now waits 10 minutes without activity
+before pausing, not 5 minutes, until a pause holds. It used up to 0.6% of its CPU requests while in use,
+and up to 0.2% idle: try napwake.dev/cpu-threshold: "0.4"
+```
+
+The suggested number comes from the CPU Napwake measures through each stretch the clock counts as idle:
+
+- A wrong pause shows what the workload uses in use: the most in the stretch before it.
+- A pause that holds shows what it uses idle: the most in the 15 minutes before it, or `idleAfter` if shorter. Napwake keeps the most over the last week.
+
+When the CPU in use is at least twice the idle CPU, and 0.2 points more, Napwake suggests a threshold halfway between, to a tenth. A workload you opted in with the label is told the annotation, and one you wrote the field. Otherwise CPU can't tell its use from its idle, and Napwake suggests a [Prometheus query](../guides/prometheus-signals.md#example-queries) that counts its requests. Until a pause has held, it hasn't measured idle use, and says so rather than guess.
+
+```yaml
+status:
+  idleWait:
+    wrongPauses: 1
+    lastWrongPause:
+      pausedAt: "2026-10-26T09:02:11Z"
+      after: 40s
+      by: request          # request, click, wakeRequest or annotation
+      from: 10.4.1.7
+      inUseCPU: "0.6"
+    idleCPU: "0.2"
+    idleCPUAt: "2026-10-25T17:06:00Z"
+```
+
+`napwake_wrong_pauses_total` counts wrong pauses, by workload. Dry-run never pauses, so its would-be pauses aren't judged.
 
 ## When a source can't be read
 
@@ -115,4 +183,6 @@ A paused workload wakes when:
 - Something other than Napwake scales it up, such as `kubectl scale`.
 - Dry-run is turned on: dry-run never leaves a workload paused.
 
-Each wake restarts the clock, so a woken workload gets a full `idleAfter` before it can pause again, unless [`pauseEarly`](forecasting.md#pausing-early) is on and the forecast expects the coming hours quiet: then the pause can come 20 minutes after the wake. The clock records `lastActivitySource: request` when a held request woke it, `prometheus` when an activity query did, `scaled-up` when something else scaled it up, and `woke` for any other wake.
+Whatever would wake it, coming while it's still pausing, [calls the pause off](../guides/pause.md#a-request-calls-the-pause-off) instead.
+
+Each wake restarts the clock, so a woken workload gets a full `idleAfter` before it can pause again, or longer after [a pause made in use](#paused-while-in-use), unless [`pauseEarly`](forecasting.md#pausing-early) is on and the forecast expects the coming hours quiet: then the pause can come 20 minutes after the wake. The clock records `lastActivitySource: request` when a held request woke it, `prometheus` when an activity query did, `scaled-up` when something else scaled it up, and `woke` for any other wake.

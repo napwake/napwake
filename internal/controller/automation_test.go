@@ -836,6 +836,7 @@ func doormanDays(t *testing.T, monday time.Time, days int, policy v1alpha1.IdleP
 	}
 
 	var history []lifecycleEvent
+	var pauseBegan time.Time
 	for end := monday.AddDate(0, 0, days); fr.now.Before(end); {
 		require.NoError(t, fr.Get(ctx, client.ObjectKeyFromObject(workload), workload))
 		paused := workload.Status.Phase == v1alpha1.PhasePaused
@@ -849,15 +850,26 @@ func doormanDays(t *testing.T, monday time.Time, days int, policy v1alpha1.IdleP
 		}
 
 		observed := workload.Status.DeepCopy()
-		result, err := fr.reconcileAutomation(ctx, workload, target)
+		result, err := automate(ctx, fr.Reconciler, workload, target)
 		require.NoError(t, err, "at %s", fr.now)
 		require.NoError(t, fr.persistStatus(ctx, workload, observed))
+		if observed.Phase != v1alpha1.PhasePausing && workload.Status.Phase == v1alpha1.PhasePausing {
+			pauseBegan = fr.now
+		}
 		for len(recorder.Events) > 0 {
 			e := <-recorder.Events
 			for _, reason := range []string{ReasonAutoResume, ReasonWokeByActivity, ReasonPaused, ReasonPausedEarly} {
-				if strings.HasPrefix(e, "Normal "+reason+" ") {
-					history = append(history, lifecycleEvent{at: fr.now, reason: reason})
+				if !strings.HasPrefix(e, "Normal "+reason+" ") {
+					continue
 				}
+				at := fr.now
+				// A pause is when it began: the seconds it waits for the
+				// doorman to front the workload are below the simulator's
+				// step.
+				if reason == ReasonPaused {
+					at = pauseBegan
+				}
+				history = append(history, lifecycleEvent{at: at, reason: reason})
 			}
 		}
 

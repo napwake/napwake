@@ -160,6 +160,7 @@ type Reconciler struct {
 	prometheus      *signal.Prometheus
 	history         historyReader
 	doormanFamilies doormanFamilies
+	quietCPU        quietCPU
 	uids            workloadUIDs
 	graph           *workloadGraph
 	clock           func() time.Time
@@ -222,9 +223,11 @@ func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (res ctrl.
 		return ctrl.Result{RequeueAfter: wait}, err
 	}
 
-	// Re-published every reconcile so the gauge is populated after an
-	// operator restart, not only after the next transition.
+	// Re-published every reconcile so the gauges are populated after an
+	// operator restart, not only after the next transition, and follow
+	// each status write, whose watch event brings a reconcile.
 	recordPhase(&workload)
+	recordConditions(&workload)
 
 	// The status as last written, to tell what this reconcile changed.
 	observed := workload.Status.DeepCopy()
@@ -408,8 +411,9 @@ func (r *Reconciler) observeTarget(ctx context.Context, workload *v1alpha1.Manag
 // readWorkload reads the workload, and reports whether it exists and is
 // this install's to reconcile. One deleted without its finalizer running
 // would otherwise leave its metric series and what's kept in memory for it,
-// and one created again under the same name what was kept for the one
-// before.
+// one created again under the same name what was kept for the one before,
+// and one another install's annotation now names what this one kept while
+// it managed it.
 func (r *Reconciler) readWorkload(ctx context.Context, name types.NamespacedName,
 	workload *v1alpha1.ManagedWorkload) (bool, error) {
 	err := r.Get(ctx, name, workload)
@@ -423,15 +427,22 @@ func (r *Reconciler) readWorkload(ctx context.Context, name types.NamespacedName
 	if err != nil {
 		return false, fmt.Errorf("getting managed workload: %w", err)
 	}
-	if replaced, ok := r.uids.see(name, workload.UID); ok {
-		r.forgetWorkload(replaced)
-	}
 	if owner := otherInstall(workload, r.OperatorNamespace); owner != "" {
+		// Only a workload this install has read as its own since it
+		// started can have series or state here, so later events find
+		// nothing to drop.
+		if uid, ok := r.uids.take(name); ok {
+			r.forgetWorkload(uid)
+			metrics.DeleteWorkload(name.Namespace, name.Name)
+		}
 		r.emitEvent(workload, false, "Warning", ReasonManagedByAnotherInstall, actionCheckInstall,
 			"the Napwake installed in %s manages this ManagedWorkload, so the one in %s leaves it alone; "+
 				"installs must watch different namespaces. If the one in %s is gone, remove the %s annotation",
 			owner, r.OperatorNamespace, owner, v1alpha1.AnnotationOperator)
 		return false, nil
+	}
+	if replaced, ok := r.uids.see(name, workload.UID); ok {
+		r.forgetWorkload(replaced)
 	}
 	return true, nil
 }
@@ -494,7 +505,8 @@ func (r *Reconciler) staleForRouting(ctx context.Context, workload *v1alpha1.Man
 // resumeTransition finishes a pause or resume that an earlier reconcile
 // started but didn't complete, without which a transient failure would strand
 // the workload in the intermediate phase. It also turns back a pause the
-// workload must no longer be in: dry-run never leaves a workload paused.
+// workload must no longer be in: dry-run never leaves a workload paused, and
+// a pause that whatever would wake it came during is called off.
 func (r *Reconciler) resumeTransition(ctx context.Context, workload *v1alpha1.ManagedWorkload, target client.Object) (*ctrl.Result, error) {
 	phase := workload.Status.Phase
 	if workload.Spec.DryRun && (phase == v1alpha1.PhasePausing || phase == v1alpha1.PhasePaused) {
@@ -503,6 +515,12 @@ func (r *Reconciler) resumeTransition(ctx context.Context, workload *v1alpha1.Ma
 	}
 	switch phase {
 	case v1alpha1.PhasePausing:
+		if why, err := r.pauseCancelled(ctx, workload, target); err != nil || why != nil {
+			if err != nil {
+				return nil, err
+			}
+			return r.handleResume(ctx, workload, why)
+		}
 		return r.handlePause(ctx, workload, target, nil)
 	case v1alpha1.PhaseResuming:
 		return r.handleResume(ctx, workload, nil)
@@ -527,6 +545,13 @@ func (r *Reconciler) handlePause(ctx context.Context, workload *v1alpha1.Managed
 		if err := r.preparePause(ctx, workload, target, requested); err != nil {
 			return nil, err
 		}
+		began := r.clockTime()
+		workload.Status.Pause.StartedAt, workload.Status.Pause.Requested = &began, requested
+		// The replicas its last resume left not Ready are what it now pauses.
+		r.clearCondition(workload, conditionResumeIncomplete, ReasonPaused)
+		if !requested {
+			r.recordCPUBefore(workload)
+		}
 		// The cache showed replicas the target no longer has: it was scaled
 		// to zero outside Napwake, which the next reconcile sees.
 		if workload.Status.Pause.PreviousReplicas == 0 {
@@ -539,7 +564,13 @@ func (r *Reconciler) handlePause(ctx context.Context, workload *v1alpha1.Managed
 		if why != nil {
 			r.emitEvent(workload, false, "Normal", why.reason, actionPause, "%s", why.message)
 		}
+		if routed, recheck := r.routeAsPauseBegins(ctx, workload, target); routed {
+			return &ctrl.Result{RequeueAfter: recheck}, nil
+		}
 	case v1alpha1.PhasePausing:
+		if wait := r.untilFronted(workload); wait > 0 {
+			return &ctrl.Result{RequeueAfter: wait}, nil
+		}
 	default:
 		return nil, nil
 	}
@@ -670,7 +701,7 @@ func (r *Reconciler) recoverPause(ctx context.Context, workload *v1alpha1.Manage
 	}
 
 	now := r.clockTime()
-	pause.PausedAt = &now
+	pause.StartedAt, pause.PausedAt = &now, &now
 	if snap := r.captureResourceSnapshot(ctx, workload); snap != nil {
 		snap.Replicas = pause.PreviousReplicas
 		pause.Resources = snap
@@ -735,9 +766,11 @@ func (r *Reconciler) forgetLostPause(ctx context.Context, workload *v1alpha1.Man
 
 // phaseEvent says why a workload pauses or wakes. It's emitted once the
 // workload is Pausing or Resuming, so a retried pause or wake doesn't
-// announce itself twice.
+// announce itself twice. cause is the workload's own use that wakes it, if
+// that's what does, which makes a pause it ends soon after wrong.
 type phaseEvent struct {
 	reason, message string
+	cause           v1alpha1.WakeCause
 }
 
 // handleResume drives the workload to Running: a paused one, or one pausing,
@@ -756,14 +789,20 @@ func (r *Reconciler) handleResume(ctx context.Context, workload *v1alpha1.Manage
 			log.FromContext(ctx).Info("couldn't learn what sent the request that woke the workload",
 				"workload", workload.Name, "namespace", workload.Namespace, "error", err.Error())
 		}
-		r.wakeDependencies(ctx, workload)
+		judged := r.judgePause(ctx, workload, why)
 		if err := r.transition(ctx, workload, v1alpha1.PhaseResuming, "ResumeRequested"); err != nil {
 			return nil, err
 		}
+		// Its dependencies are woken once it's written Resuming, so one
+		// reconciled for the stamp finds it awake, holding it, rather than
+		// judging its own pause wrong.
+		r.wakeDependencies(ctx, workload)
 		if why != nil {
 			r.emitEvent(workload, false, "Normal", why.reason, actionResume, "%s", why.message)
 		}
+		judged()
 	case v1alpha1.PhaseResuming:
+		r.wakePausedDependencies(ctx, workload)
 	default:
 		return nil, nil
 	}
@@ -1028,6 +1067,7 @@ func (r *Reconciler) abandonHandBack(ctx context.Context, workload *v1alpha1.Man
 // Its doorman ports drain before another workload may have them.
 func (r *Reconciler) forgetWorkload(uid types.UID) {
 	r.activityMemo.forget(uid)
+	r.quietCPU.forget(uid)
 	r.querySeries.forget(uid)
 	r.activityWarned.forget(uid)
 	r.templateHashes.forget(uid)
@@ -1151,6 +1191,7 @@ func (r *Reconciler) reconcileIgnored(ctx context.Context, workload *v1alpha1.Ma
 	}
 
 	routed := len(workload.Status.Doorman) > 0
+	backedOff := r.endBackOff(workload, "TargetIgnored")
 	released, replicas, err := r.releaseTarget(ctx, workload)
 	if err != nil {
 		return ctrl.Result{}, err
@@ -1161,7 +1202,7 @@ func (r *Reconciler) reconcileIgnored(ctx context.Context, workload *v1alpha1.Ma
 		if err := r.transition(ctx, workload, v1alpha1.PhaseRunning, "TargetIgnored"); err != nil {
 			return ctrl.Result{}, err
 		}
-	case !reported || routed:
+	case !reported || routed || backedOff:
 		if err := r.Status().Update(ctx, workload); err != nil {
 			return ctrl.Result{}, fmt.Errorf("updating target condition: %w", err)
 		}
@@ -1185,8 +1226,11 @@ func (r *Reconciler) reconcileTargetMissing(ctx context.Context, workload *v1alp
 	if err := r.removeDoorman(ctx, workload); err != nil {
 		return ctrl.Result{}, fmt.Errorf("removing doorman routes: %w", err)
 	}
-	if routed {
-		r.clearCondition(workload, conditionWakeOnRequest, "TargetNotFound")
+	backedOff := r.endBackOff(workload, ReasonTargetNotFound)
+	if routed || backedOff {
+		if routed {
+			r.clearCondition(workload, conditionWakeOnRequest, "TargetNotFound")
+		}
 		if err := r.Status().Update(ctx, workload); err != nil {
 			return ctrl.Result{}, fmt.Errorf("recording doorman routes removed: %w", err)
 		}
@@ -1194,11 +1238,28 @@ func (r *Reconciler) reconcileTargetMissing(ctx context.Context, workload *v1alp
 	return ctrl.Result{RequeueAfter: targetRecheckInterval}, nil
 }
 
+// workloadPhases are every phase the API allows a workload to be in.
+var workloadPhases = []v1alpha1.WorkloadPhase{
+	v1alpha1.PhaseCreating, v1alpha1.PhaseRunning, v1alpha1.PhaseIdle,
+	v1alpha1.PhasePausing, v1alpha1.PhasePaused, v1alpha1.PhaseResuming,
+}
+
+// recordPhase publishes the workload's phase as the only one it's in. The
+// phase can come from a cache that hasn't yet seen this operator's last
+// write, so the phase it replaces isn't always the one before it. Every
+// other phase is taken down by name, rather than all of the workload's
+// series at once, so a scrape never finds the workload in none.
 func recordPhase(workload *v1alpha1.ManagedWorkload) {
-	if workload.Status.Phase == "" {
+	phase := workload.Status.Phase
+	if phase == "" {
 		return
 	}
-	metrics.WorkloadPhase.WithLabelValues(workload.Namespace, workload.Name, string(workload.Status.Phase)).Set(1)
+	for _, other := range workloadPhases {
+		if other != phase {
+			metrics.WorkloadPhase.DeleteLabelValues(workload.Namespace, workload.Name, string(other))
+		}
+	}
+	metrics.WorkloadPhase.WithLabelValues(workload.Namespace, workload.Name, string(phase)).Set(1)
 }
 
 const (
@@ -1588,7 +1649,6 @@ func (r *Reconciler) transition(ctx context.Context, workload *v1alpha1.ManagedW
 		return fmt.Errorf("updating phase to %s: %w", phase, err)
 	}
 	r.phaseWrites.record(workload.UID, now.Time)
-	metrics.WorkloadPhase.DeleteLabelValues(workload.Namespace, workload.Name, string(old))
 	recordPhase(workload)
 	metrics.LifecycleTransitions.WithLabelValues(string(old), string(phase)).Inc()
 	logger.Info("phase transition", "from", old, "to", phase, "reason", reason)

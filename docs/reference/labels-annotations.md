@@ -43,7 +43,7 @@ Set on an opted-in Deployment or StatefulSet, or on its Namespace to apply to ev
 |------------|-----------------|---------|-------------|
 | `napwake.dev/dry-run` | exactly `"true"` or `"false"` | `"false"` | Measure without pausing |
 | `napwake.dev/idle-after` | a Go duration of at least `1m`, such as `"90m"` or `"2h"` | `1h` | How long without activity before pausing |
-| `napwake.dev/cpu-threshold` | a whole number, `"1"` to `"100"` | `10` | CPU use, as a percentage of requests, above which the workload counts as active |
+| `napwake.dev/cpu-threshold` | a percentage from `"0.1"` to `"100"`, to two places, such as `"10"` or `"0.5"` | `10` | CPU use, as a percentage of requests, above which the workload counts as active |
 | `napwake.dev/auto-resume` | exactly `"true"` or `"false"` | `"false"` | Wake ahead of forecast demand |
 | `napwake.dev/pause-early` | exactly `"true"` or `"false"` | `"false"` | Pause before `idle-after` runs out, once idle for 20 minutes, when a confident forecast expects the hours until then to be quiet and a request would wake the workload through the doorman, so never with `wake: ask`. Sets `spec.idlePolicy.pauseEarly`. See [Pausing Early](../concepts/forecasting.md#pausing-early) |
 | `napwake.dev/forecast` | exactly `"eager"`, `"balanced"` or `"cautious"` | `"balanced"` | How soon the forecast acts: at a confidence of 60, 75 or 85. Eager acts sooner and wakes the workload for nothing more often; cautious acts later, for workloads costly to keep awake. Sets `spec.prediction.mode`; a `spec.prediction.confidence` set on the ManagedWorkload overrides it. See [Forecast setting](../concepts/forecasting.md#forecast-setting) |

@@ -218,6 +218,13 @@ func TestPause_Answers(t *testing.T) {
 			wantErr:  "preview-42/api wasn't paused: kept awake for preview-42/web",
 		},
 		{
+			name: "a request as it paused",
+			answer: refuses(v1alpha1.PhaseRunning, "PauseCancelled",
+				"not paused at 2026-10-21 03:32 UTC: a request came as it paused"),
+			wantStep: "pausing preview-42/api...\n",
+			wantErr:  "preview-42/api wasn't paused: a request came as it paused",
+		},
+		{
 			name:     "an answer without its time, from an operator before 0.2.0",
 			answer:   refuses(v1alpha1.PhaseRunning, "HeldByDependents", "not paused: kept awake for preview-42/web"),
 			wantStep: "pausing preview-42/api...\n",

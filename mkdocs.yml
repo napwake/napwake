@@ -4,6 +4,10 @@ site_url: https://docs.napwake.dev/
 repo_url: https://github.com/napwake/napwake
 repo_name: napwake/napwake
 edit_uri: edit/main/docs/
+# A link to a heading a page doesn't have fails the strict build, as one to a missing page does.
+validation:
+  links:
+    anchors: warn
 
 theme:
   name: material
