@@ -32,7 +32,7 @@ import NextSteps from '../../../components/NextSteps.astro';
 
     ```bash
     helm install napwake oci://ghcr.io/napwake/charts/napwake \
-      --version 0.2.0 \
+      --version 0.2.0-rc.9 \
       --namespace napwake-system \
       --create-namespace \
       -f napwake-values.yaml
@@ -54,7 +54,7 @@ Check any install this way.
 
 </StartCheckpoint>
 
-Keep the file and upgrade with it, since an upgrade given `--set` alone drops your other values ([Keeping your settings](/operations/upgrading/#keeping-your-settings)). The chart installs and upgrades the ManagedWorkload CRD. The chart's version has no `v`. Its image's tag has one, such as `v0.2.0`. [Helm values](/reference/helm-values/) lists every value.
+Keep the file and upgrade with it, since an upgrade given `--set` alone drops your other values ([Keeping your settings](/operations/upgrading/#keeping-your-settings)). The chart installs and upgrades the ManagedWorkload CRD. The chart's version has no `v`. Its image's tag has one, such as `v0.2.0-rc.9`. [Helm values](/reference/helm-values/) lists every value.
 
 ## With Argo CD or Flux
 
@@ -74,7 +74,7 @@ spec:
   source:
     repoURL: ghcr.io/napwake/charts
     chart: napwake
-    targetRevision: 0.2.0
+    targetRevision: 0.2.0-rc.9
     helm:
       valuesObject:
         timezone: Europe/London
@@ -104,7 +104,7 @@ spec:
   interval: 1h
   url: oci://ghcr.io/napwake/charts/napwake
   ref:
-    tag: 0.2.0
+    tag: 0.2.0-rc.9
   layerSelector:
     mediaType: application/vnd.cncf.helm.chart.content.v1.tar+gzip
     operation: copy
@@ -199,7 +199,7 @@ Both install the CRD, RBAC, the operator (`deployment/napwake-controller-manager
 <TabItem label="install.yaml">
 
 ```bash
-kubectl apply -f https://github.com/napwake/napwake/releases/download/v0.2.0/install.yaml
+kubectl apply -f https://github.com/napwake/napwake/releases/download/v0.2.0-rc.9/install.yaml
 ```
 
 `install.yaml` is the Kustomize manifests in one file. Set your users' [time zone](#time-zone) on the operator:
@@ -218,7 +218,7 @@ An `install.yaml` that changes the operator's arguments replaces them. After upg
 apiVersion: kustomize.config.k8s.io/v1beta1
 kind: Kustomization
 resources:
-  - https://github.com/napwake/napwake//config/default?ref=v0.2.0
+  - https://github.com/napwake/napwake//config/default?ref=v0.2.0-rc.9
 patches:
   - target:
       kind: Deployment
@@ -268,7 +268,7 @@ make deploy IMG=<registry>/napwake:dev
 Two more bases, pinned to the same release, add what these chart values turn on. Add them to your kustomization's `resources`, or apply one alone:
 
 ```bash
-kubectl apply -k "https://github.com/napwake/napwake//config/prometheus?ref=v0.2.0"
+kubectl apply -k "https://github.com/napwake/napwake//config/prometheus?ref=v0.2.0-rc.9"
 ```
 
 From a clone:
@@ -280,8 +280,8 @@ kubectl apply -k config/network-policy
 
 | Base | Adds | Chart values |
 |------|------|--------------|
-| `https://github.com/napwake/napwake//config/prometheus?ref=v0.2.0` | ServiceMonitors for the operator and the doorman, and the [alerting rules](/operations/monitoring/#alerting-rules). Needs the Prometheus Operator's CRDs, and your Prometheus [allowed to read the metrics](/operations/monitoring/#scraping) | `metrics.serviceMonitor.enabled`, `metrics.prometheusRule.enabled` |
-| `https://github.com/napwake/napwake//config/network-policy?ref=v0.2.0` | NetworkPolicies. Only namespaces labelled `metrics: enabled` may scrape the operator and the doorman. The doorman's routing ports (TCP 20000-29999) stay open to every caller of a paused workload's Services | `networkPolicy.enabled` |
+| `https://github.com/napwake/napwake//config/prometheus?ref=v0.2.0-rc.9` | ServiceMonitors for the operator and the doorman, and the [alerting rules](/operations/monitoring/#alerting-rules). Needs the Prometheus Operator's CRDs, and your Prometheus [allowed to read the metrics](/operations/monitoring/#scraping) | `metrics.serviceMonitor.enabled`, `metrics.prometheusRule.enabled` |
+| `https://github.com/napwake/napwake//config/network-policy?ref=v0.2.0-rc.9` | NetworkPolicies. Only namespaces labelled `metrics: enabled` may scrape the operator and the doorman. The doorman's routing ports (TCP 20000-29999) stay open to every caller of a paused workload's Services | `networkPolicy.enabled` |
 
 ## Time zone
 
@@ -301,7 +301,7 @@ timezone: America/New_York
 
 ```bash
 helm upgrade napwake oci://ghcr.io/napwake/charts/napwake \
-  --version 0.2.0 \
+  --version 0.2.0-rc.9 \
   --namespace napwake-system \
   -f napwake-values.yaml
 ```

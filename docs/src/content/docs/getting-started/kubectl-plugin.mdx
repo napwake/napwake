@@ -51,7 +51,7 @@ With [krew](https://krew.sigs.k8s.io/docs/user-guide/setup/install/), kubectl's 
 
 ```bash
 kubectl krew install --manifest-url \
-  https://github.com/napwake/napwake/releases/download/v0.2.0/krew-napwake.yaml
+  https://github.com/napwake/napwake/releases/download/v0.2.0-rc.9/krew-napwake.yaml
 kubectl napwake version
 ```
 
@@ -65,13 +65,13 @@ Download your platform's archive from the release, and put the binary on your `P
 ```bash
 os=$(uname -s | tr '[:upper:]' '[:lower:]')
 arch=$(uname -m | sed -e 's/x86_64/amd64/' -e 's/aarch64/arm64/')
-curl -fLO "https://github.com/napwake/napwake/releases/download/v0.2.0/kubectl-napwake-${os}-${arch}.tar.gz"
+curl -fLO "https://github.com/napwake/napwake/releases/download/v0.2.0-rc.9/kubectl-napwake-${os}-${arch}.tar.gz"
 tar xzf "kubectl-napwake-${os}-${arch}.tar.gz"
 sudo install "kubectl-napwake-${os}-${arch}" /usr/local/bin/kubectl-napwake
 kubectl napwake version
 ```
 
-On Windows, download `kubectl-napwake-windows-amd64.tar.gz` from the [release](https://github.com/napwake/napwake/releases/tag/v0.2.0) and extract it with `tar xzf`. Rename `kubectl-napwake-windows-amd64.exe` to `kubectl-napwake.exe`, in a folder on your `PATH`. To check an archive came from the release workflow, see [Verifying a release](/reference/security/#verifying-a-release).
+On Windows, download `kubectl-napwake-windows-amd64.tar.gz` from the [release](https://github.com/napwake/napwake/releases/tag/v0.2.0-rc.9) and extract it with `tar xzf`. Rename `kubectl-napwake-windows-amd64.exe` to `kubectl-napwake.exe`, in a folder on your `PATH`. To check an archive came from the release workflow, see [Verifying a release](/reference/security/#verifying-a-release).
 
 </TabItem>
 <TabItem label="Source">
