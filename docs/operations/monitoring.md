@@ -95,9 +95,16 @@ The Helm chart creates these rules when `metrics.prometheusRule.enabled` is `tru
 | `NapwakeReconcileErrorsHigh` | Reconcile errors exceed 0.1/sec for 10 minutes | critical |
 | `NapwakeDown` | No healthy operator target has been scraped for 5 minutes, so nothing is paused or woken | critical |
 | `NapwakeDoormanDown` | No healthy doorman target has been scraped for 5 minutes, so requests to paused workloads fail instead of waking them. Only with the doorman enabled | critical |
+| `NapwakeDoormanCantListen` | For 5 minutes, a doorman pod can't listen on a routed port, or two routes claim one port, which every pod refuses. Requests to the paused workloads behind those ports fail | critical |
 | `NapwakeWorkloadStuck` | A workload stays in `Pausing` or `Resuming` for 15 minutes | warning |
 | `NapwakeTargetUnavailable` | A ManagedWorkload's target goes missing more than 3 times in an hour | warning |
 | `NapwakeDoormanWakesFailing` | More than 3 requests to one paused workload timed out or failed (`result` `timeout` or `error`) in 15 minutes, for 5 minutes | warning |
+| `NapwakeWakesSlow` | For 5 minutes, one in ten requests the doorman held in the last 30 minutes waited over a minute, half the default `wake.maxWait`. Requests passed straight to woken pods aren't counted, and it takes 3 waits at least | warning |
+| `NapwakeDoormanNearCapacity` | For 5 minutes, a doorman pod carries over 80% of the 2048 held or 1024 proxied connections it takes. Past them it refuses or delays requests, as [Limits](../concepts/wake-on-request.md#limits) says | warning |
+| `NapwakePausesUndone` | Something outside Napwake, such as a GitOps tool, scaled one paused workload back up 3 times or more in 6 hours | warning |
+| `NapwakeActivityUnreadable` | For 30 minutes, Napwake can't read a workload's CPU while it's awake, or its Prometheus activity queries. Until it can, it doesn't pause the workload | warning |
+| `NapwakeResumeIncomplete` | A woken workload has run with replicas not Ready for 15 minutes (`ResumeIncomplete`) | warning |
+| `NapwakePausedWhileInUse` | Napwake paused a workload while it was in use, so something woke it soon after, 3 times or more in a day | warning |
 
 `NapwakeDown` and `NapwakeDoormanDown` match the scrape job of the operator's and the doorman's metrics Service that the ServiceMonitors above make, so the chart creates them only with `metrics.serviceMonitor.enabled`: with no such job, they'd fire forever. If you scrape Napwake some other way, write them on your own job's `up` series.
 
