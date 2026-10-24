@@ -1,5 +1,143 @@
 # Upgrading
 
+Napwake upgrades in place from one Napwake release to the next. On 0.1.x or a 0.2.0 release candidate, [move to Napwake](#moving-to-napwake) instead.
+
+## Moving from Hybernate { #moving-to-napwake }
+
+Napwake is Hybernate's new name, from 0.2.0. Hybernate 0.1.x and the 0.2.0 release candidates can't upgrade to it. Every name in the cluster changes:
+
+| Hybernate | Napwake |
+|-----------|---------|
+| `hybernate.io/...` labels, annotations and finalizer | `napwake.dev/...` |
+| `apiVersion: hybernate.io/v1alpha1`, CRD `managedworkloads.hybernate.io` | `apiVersion: napwake.dev/v1alpha1`, CRD `managedworkloads.napwake.dev` |
+| Chart `oci://ghcr.io/okedeji/charts/hybernate`, image `ghcr.io/okedeji/hybernate` | Chart `oci://ghcr.io/napwake/charts/napwake`, image `ghcr.io/napwake/napwake` |
+| Namespace `hybernate-system`, release `hybernate` | Namespace `napwake-system`, release `napwake` |
+| `kubectl hybernate` | `kubectl napwake` |
+| Metrics `hybernate_*`, alerts `Hybernate*` | Metrics `napwake_*`, alerts `Napwake*` |
+
+So you hand your workloads back, uninstall Hybernate, rename your labels and install Napwake. Hybernate scales each paused workload back up as it lets it go. None is left at zero with no operator.
+
+### 1. Hand your workloads back
+
+Do this while Hybernate still runs.
+
+=== "0.2.0 release candidate"
+
+    Move the opt-in label to its new name. Hybernate sees its label go and deletes the ManagedWorkload it made, which scales a paused workload back to the replicas it had. Napwake isn't installed yet, so nothing acts on the new label:
+
+    ```bash
+    kubectl get deployments,statefulsets,namespaces -A -l hybernate.io/managed -o json | jq -r '.items[] | @sh "kubectl label \(.kind | ascii_downcase)/\(.metadata.name) -n \(.metadata.namespace // "default") napwake.dev/managed=\(.metadata.labels["hybernate.io/managed"]) hybernate.io/managed-"' | sh
+    ```
+
+    If the label is in Git, rename it there instead, and sync.
+
+    Then save the ManagedWorkloads you wrote, if they aren't in Git, and delete them. Hybernate hands their workloads back too:
+
+    ```bash
+    kubectl get managedworkloads.hybernate.io -A -o yaml > hybernate-managedworkloads.yaml
+    kubectl delete managedworkloads.hybernate.io --all -A
+    ```
+
+=== "0.1.x"
+
+    Deleting a ManagedWorkload in 0.1.x doesn't wake its workload. So scale each paused one back to the replicas its ManagedWorkload records. Then delete the WorkloadPolicies, which would make ManagedWorkloads again, and the ManagedWorkloads:
+
+    ```bash
+    kubectl get managedworkloads.hybernate.io -A -o jsonpath='{range .items[?(@.status.pause)]}{.metadata.namespace} {.spec.target.kind} {.spec.target.name} {.status.pause.previousReplicas}{"\n"}{end}' |
+      while read -r ns kind name replicas; do
+        kubectl scale "$kind/$name" -n "$ns" --replicas="$replicas"
+      done
+    kubectl get managedworkloads.hybernate.io -A -o yaml > hybernate-managedworkloads.yaml
+    kubectl delete workloadpolicies.hybernate.io --all -A
+    kubectl delete managedworkloads.hybernate.io --all -A
+    ```
+
+### 2. Uninstall Hybernate
+
+```bash
+helm uninstall hybernate -n hybernate-system
+kubectl delete crd managedworkloads.hybernate.io
+kubectl delete namespace hybernate-system
+```
+
+Use your release's name and namespace if they differ. A 0.2.0 release candidate's `helm uninstall` refuses while any ManagedWorkload is left, and names them. Installed from `install.yaml` or Kustomize, delete what you applied instead, with `kubectl delete -f` or `kubectl delete -k`. 0.1.x has two more CRDs:
+
+```bash
+kubectl delete crd hybernatereports.hybernate.io workloadpolicies.hybernate.io
+```
+
+### 3. Rename the rest
+
+This lists every object that still has a `hybernate.io` label or annotation:
+
+```bash
+kubectl api-resources --verbs=list -o name | xargs -n 1 kubectl get -A -o json | jq -r '.items[] | select([(.metadata.labels // {} | to_entries[] | .key, .value), (.metadata.annotations // {} | keys[])] | any(contains("hybernate.io"))) | "\(.kind) \(.metadata.namespace // "-")/\(.metadata.name)"'
+```
+
+Change each where it's defined, such as in Git. Every key keeps its name after the prefix, so `hybernate.io/idle-after` becomes `napwake.dev/idle-after`. Two keys don't move:
+
+- `hybernate.io/wake-on-request` has no new name. Where it was `"false"`, set `napwake.dev/wake: ask`. See [Wake on request, from before 0.2.0](#wake-on-request-from-before-020).
+- `hybernate.io/paused-from` on a workload means Hybernate never handed it back. Scale the workload to the `replicas` the annotation records, then remove it.
+
+For keys you set by hand, this prints a `kubectl patch` for each object that moves them. Add `| sh` to the end to run them:
+
+```bash
+kubectl get deployments,statefulsets,services,namespaces -A -o json | jq -r '
+  def moved: with_entries(select(.key | startswith("hybernate.io/")) | select(.key != "hybernate.io/wake-on-request" and .key != "hybernate.io/paused-from"))
+    | to_entries | map({(.key): null}, {("napwake.dev/" + (.key | ltrimstr("hybernate.io/"))): .value}) | add;
+  .items[] | {labels: (.metadata.labels // {} | moved), annotations: (.metadata.annotations // {} | moved)} as $m
+  | select($m.labels or $m.annotations)
+  | @sh "kubectl patch \(.kind | ascii_downcase)/\(.metadata.name) -n \(.metadata.namespace // "default") --type=merge -p \({metadata: ($m | with_entries(select(.value)))} | tojson)"'
+```
+
+### 4. Install Napwake
+
+Install it as [Installation](../getting-started/installation.md) says. A values file from a 0.2.0 release candidate works as it is, except an `image.repository` of `ghcr.io/okedeji/hybernate`. Remove that. From 0.1.x, start from the chart's defaults.
+
+Apply the ManagedWorkloads you wrote with their new names. Change `apiVersion: hybernate.io/v1alpha1` to `napwake.dev/v1alpha1`, and each `hybernate.io/` annotation:
+
+```bash
+sed 's|hybernate\.io/|napwake.dev/|g' my-api.yaml | kubectl apply -f -
+```
+
+Apply them from your own manifests. A copy saved with `kubectl get` has Hybernate's status, and may have settings that are gone, as below.
+
+Napwake starts each workload afresh:
+
+- Each forecast learns again. With `prometheus.url`, it first reads up to four weeks of the workload's [CPU history](../concepts/forecasting.md#learning-from-history).
+- Savings and cost totals start from zero.
+- Dashboards and alert rules need the new metric and alert names. NetworkPolicies and Roles that name `hybernate-system` or the `hybernate.io` API group need the new ones.
+- The plugin is `kubectl napwake`. Install it as [the plugin page](../getting-started/kubectl-plugin.md#installation) says, then remove `kubectl-hybernate`.
+
+### The forecast setting, from before 0.2.0
+
+Before 0.2.0, `spec.prediction.confidence` defaulted to `75`, so a ManagedWorkload saved from Hybernate with `kubectl get` has it stored. A confidence overrides the [forecast setting](../concepts/forecasting.md#forecast-setting). Leave it out of what you apply to Napwake, unless you chose it, so `spec.prediction.mode` applies.
+
+### Wake on request, from before 0.2.0
+
+Before 0.2.0, `spec.wake.onRequest: false`, or `hybernate.io/wake-on-request: "false"` with the label, turned waking on request off for one workload. That setting is gone. Napwake ignores the annotation, so the workload wakes on request.
+
+Napwake refuses a ManagedWorkload that sets `spec.wake.onRequest`. `kubectl apply` answers `strict decoding error: unknown field "spec.wake.onRequest"`. A server-side apply, as a GitOps sync can be, answers `.spec.wake.onRequest: field not declared in schema`. So take it out of your manifests. Where it was `true`, remove it, since waking on request is the default. Where it was `false`, put what fits in its place, usually `mode: Ask`:
+
+```yaml
+spec:
+  wake:
+    mode: Ask   # in place of onRequest: false
+```
+
+- On a public URL, which crawlers and scanners keep awake, have the doorman ask before waking. Set `spec.wake.mode: Ask`, or `napwake.dev/wake: ask` with the label. Only a person's click on the page the doorman shows wakes it. Anything else gets a `503`. See [Asking before waking](../concepts/wake-on-request.md#asking-before-waking).
+- For one port of a Service, list it in `napwake.dev/doorman-ignore-ports` on the Service. That port fails while the workload is paused.
+- For the whole cluster, set the Helm value `doorman.enabled: false`.
+
+To find what had it, run these before step 1:
+
+```bash
+kubectl get managedworkloads.hybernate.io -A -o json | jq -r '.items[] | select(.spec.wake.onRequest == false) | "\(.metadata.namespace)/\(.metadata.name)"'
+kubectl get deployments,statefulsets,namespaces -A -o json | jq -r '.items[] | select(.metadata.annotations["hybernate.io/wake-on-request"] == "false") | "\(.kind) \(.metadata.namespace // "-")/\(.metadata.name)"'
+```
+
+The `WakeOnRequest` reason `TurnedOff` is gone with it.
+
 ## General Upgrade Process
 
 1. **Read the release notes** in the [changelog](https://github.com/napwake/napwake/blob/main/CHANGELOG.md) for the target version. Check for breaking changes, CRD schema changes, or required steps.
@@ -81,7 +219,7 @@ helm upgrade napwake oci://ghcr.io/napwake/charts/napwake \
   --set timezone=America/New_York
 ```
 
-Upgrading to a newer version with it, Helm renders with the installed version's defaults rather than the new one's, and those lack every value added since. From 0.2.0 on, the chart fills those in from its own defaults, so upgrading with `--reuse-values` from any 0.2.0 release candidate works, in Helm 3 and Helm 4 alike. From 0.1.x it doesn't: 0.1.x's values have settings 0.2.0 no longer takes, such as `grafana`, so install 0.2.0 new, as [0.2.0's changelog](https://github.com/napwake/napwake/blob/main/CHANGELOG.md) says. What `--reuse-values` still keeps is the installed version's default for each value both versions have, so a default the new version changes isn't picked up. Helm keeps those older defaults with the release, too, and goes on reusing them, which has one more catch: after such an upgrade, a default you remove by setting it to `null` doesn't stay removed. Helm 4 renders the default for the upgrade that sets it to `null`, and removes it from the next; Helm 3 brings it back at every other `--reuse-values` upgrade. To remove a default after such an upgrade, upgrade once with the values file, or with `--reset-then-reuse-values` (Helm 3.14 and later), which renders with the new version's defaults and keeps your values over them. From then on, `--reuse-values` keeps a removed default removed.
+Upgrading to a newer version with it, Helm renders with the installed version's defaults rather than the new one's, and those lack every value added since. From 0.2.0 on, the chart fills those in from its own defaults, so upgrading with `--reuse-values` works, in Helm 3 and Helm 4 alike. Releases before 0.2.0 can't be upgraded: [move to Napwake](#moving-to-napwake) instead. What `--reuse-values` still keeps is the installed version's default for each value both versions have, so a default the new version changes isn't picked up. Helm keeps those older defaults with the release, too, and goes on reusing them, which has one more catch: after such an upgrade, a default you remove by setting it to `null` doesn't stay removed. Helm 4 renders the default for the upgrade that sets it to `null`, and removes it from the next; Helm 3 brings it back at every other `--reuse-values` upgrade. To remove a default after such an upgrade, upgrade once with the values file, or with `--reset-then-reuse-values` (Helm 3.14 and later), which renders with the new version's defaults and keeps your values over them. From then on, `--reuse-values` keeps a removed default removed.
 
 ## Narrowing watchNamespaces
 
@@ -121,47 +259,6 @@ The forecast engine state is serialized in each ManagedWorkload's status, in `st
 - Compatible state versions are imported automatically
 - State an older version saved is discarded, with a `ForecastReset` event, and the engine learns again: from the workload's [CPU history](../concepts/forecasting.md#learning-from-history), read again, when `prometheus.url` is set, otherwise from scratch
 - State that can't be read otherwise, such as after a hand edit, is discarded the same way, with a `ForecastReset` warning
-
-### The forecast setting, from before 0.2.0
-
-Before 0.2.0, `spec.prediction.confidence` defaulted to `75`, so every ManagedWorkload created then has it stored, and a confidence overrides the [forecast setting](../concepts/forecasting.md#forecast-setting). On one created from the label, Napwake drops a stored `75`, balanced's own threshold, so `napwake.dev/forecast` and `defaults.forecast` apply. On one you wrote, remove it for `spec.prediction.mode` to apply:
-
-```bash
-kubectl patch managedworkload my-api -n staging --type=json \
-  -p '[{"op":"remove","path":"/spec/prediction/confidence"}]'
-```
-
-## Wake on request, from before 0.2.0
-
-Before 0.2.0, `spec.wake.onRequest: false`, or `napwake.dev/wake-on-request: "false"` with the label, turned waking on request off for one workload, so requests to it failed while it was paused. That setting is gone: once the new CRD is installed, the field is dropped from every ManagedWorkload stored with it, the annotation is ignored, and those workloads wake on request again.
-
-A manifest that still sets `spec.wake.onRequest` is refused, though. `kubectl apply` checks fields strictly by default, and answers `strict decoding error: unknown field "spec.wake.onRequest"`; a server-side apply, as Flux's and Argo CD's with `ServerSideApply=true` are, answers `.spec.wake.onRequest: field not declared in schema`, so a GitOps sync of it fails too. So take `wake.onRequest` out of the ManagedWorkloads in your manifests, in Git, as you upgrade. Where it was `true`, just remove it: waking on request is the default, `spec.wake.mode: Request`. Where it was `false`, remove it, and put in its place what fits below, usually `mode: Ask`:
-
-```yaml
-spec:
-  wake:
-    mode: Ask   # in place of onRequest: false
-```
-
-Instead of turning it off:
-
-- **For a workload on a public URL,** which crawlers and scanners would keep awake, which is what turning it off was usually for, have the doorman ask before waking it: `spec.wake.mode: Ask`, or `napwake.dev/wake: ask` with the label. Only a person's click on the page the doorman shows a browser wakes it, and anything else gets a `503`. See [Asking before waking](../concepts/wake-on-request.md#asking-before-waking).
-- **For one port of a Service,** list it in `napwake.dev/doorman-ignore-ports` on the Service. That port fails while the workload is paused, as it did with waking turned off.
-- **For the whole cluster,** set the Helm value `doorman.enabled: false`, as before.
-
-To find the ManagedWorkloads that had it, before you upgrade:
-
-```bash
-kubectl get managedworkloads -A -o json | jq -r '.items[] | select(.spec.wake.onRequest == false) | "\(.metadata.namespace)/\(.metadata.name)"'
-```
-
-and the workloads and namespaces that set the annotation:
-
-```bash
-kubectl get deployments,statefulsets,namespaces -A -o json | jq -r '.items[] | select(.metadata.annotations["napwake.dev/wake-on-request"] == "false") | "\(.kind) \(.metadata.namespace // "")/\(.metadata.name)"'
-```
-
-The `WakeOnRequest` reason `TurnedOff` is gone with it.
 
 ## Rollback
 
