@@ -61,6 +61,9 @@ const (
 	CodeConsolidationOff Code = "ConsolidateAfterNever"
 	// CodeNotAutoscaled is a node no autoscaler found scales.
 	CodeNotAutoscaled Code = "NotAutoscaled"
+	// CodeAtMinimum is a node Cluster Autoscaler scales whose node group is
+	// at its minimum size, so it stays whatever runs on it.
+	CodeAtMinimum Code = "NodeGroupAtMinimum"
 )
 
 const (
@@ -86,13 +89,19 @@ type Cluster struct {
 	Nodes []corev1.Node
 	Pods  []corev1.Pod
 	PDBs  []policyv1.PodDisruptionBudget
+	// NodeGroups are Cluster Autoscaler's, as its status ConfigMap reports
+	// them.
+	NodeGroups []NodeGroup
 	// Unread names what the caller wasn't allowed to read. Without pods
-	// or PodDisruptionBudgets, the reasons that come from them are missing.
+	// or PodDisruptionBudgets, the reasons that come from them are missing,
+	// and without the status ConfigMap, which nodes are at their node
+	// group's minimum.
 	Unread []string
 }
 
-// Read lists the cluster's nodes, pods and PodDisruptionBudgets. A list
-// the caller isn't allowed is noted in Unread rather than failing.
+// Read lists the cluster's nodes, pods and PodDisruptionBudgets, and reads
+// Cluster Autoscaler's node groups from its status ConfigMap. A read the
+// caller isn't allowed is noted in Unread rather than failing.
 func Read(ctx context.Context, r client.Reader) (*Cluster, error) {
 	c := &Cluster{}
 	reads := []struct {
@@ -122,6 +131,14 @@ func Read(ctx context.Context, r client.Reader) (*Cluster, error) {
 		}
 	}
 	slices.SortFunc(c.Nodes, func(a, b corev1.Node) int { return strings.Compare(a.Name, b.Name) })
+	groups, ok, err := readNodeGroups(ctx, r)
+	if err != nil {
+		return nil, err
+	}
+	if !ok {
+		c.Unread = append(c.Unread, unreadStatus)
+	}
+	c.NodeGroups = groups
 	return c, nil
 }
 
@@ -148,8 +165,9 @@ func (c *Cluster) PodsOn(node string) []corev1.Pod {
 // node it scales, Karpenter's for one a NodePool owns. A node no autoscaler
 // found scales gets CodeNotAutoscaled. While what scales the nodes isn't
 // known, a node Karpenter doesn't own is judged by Cluster Autoscaler's
-// rules, the stricter of the two. Nodes with nothing in the way have no
-// entry.
+// rules, the stricter of the two. A node whose node group is at its
+// minimum gets CodeAtMinimum alone: Cluster Autoscaler can't remove it,
+// whatever runs on it. Nodes with nothing in the way have no entry.
 func (c *Cluster) Blockers(a Autoscaler) map[string][]Reason {
 	pdbs := pdbsByNamespace(c.PDBs)
 	podsByNode := map[string][]*corev1.Pod{}
@@ -170,6 +188,10 @@ func (c *Cluster) Blockers(a Autoscaler) map[string][]Reason {
 		case pool != "":
 			reasons = karpenterBlockers(node, pool, pods, pdbs, a)
 		case caScales:
+			if g, ok := c.groupOf(node); ok && g.atMinimum() {
+				reasons = []Reason{atMinimumReason(g)}
+				break
+			}
 			reasons = clusterAutoscalerBlockers(node, pods, pdbs)
 		default:
 			reasons = []Reason{{Code: CodeNotAutoscaled, Detail: notAutoscaled(a)}}

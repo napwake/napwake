@@ -21,6 +21,8 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"os"
+	"path/filepath"
 	"slices"
 	"testing"
 
@@ -260,6 +262,33 @@ func TestNodes_NoAutoscaler(t *testing.T) {
 		"down; see https://docs.napwake.dev/guides/cluster-autoscaler/")
 	assert.Contains(t, out, "not autoscaled")
 	assert.Contains(t, out, "1. No node autoscaler scales these nodes")
+}
+
+// A node whose node group is at its minimum, as Cluster Autoscaler's status
+// ConfigMap reports it, stays whatever runs on it, so nodes says why rather
+// than giving steps that would save nothing. The test cluster's last node,
+// in default-pool at its minimum of one, was given two.
+func TestNodes_ANodeAtItsGroupsMinimum(t *testing.T) {
+	status, err := os.ReadFile(filepath.Join("..", "..", "internal", "nodescale", "testdata", "ca-1.32-gke.yaml"))
+	require.NoError(t, err)
+	node := testNode("gke-prelaunch-default-pool-3f9c1a2b-x7k2", "", "e2-standard-4", "3920m", "13Gi")
+	node.Labels = map[string]string{"cloud.google.com/gke-nodepool": "default-pool",
+		"node.kubernetes.io/instance-type": "e2-standard-4"}
+	redis := testPod("argocd", "argocd-redis", node.Name, "100m", "128Mi")
+	redis.Spec.Volumes = []corev1.Volume{{Name: "data", VolumeSource: corev1.VolumeSource{EmptyDir: &corev1.EmptyDirVolumeSource{}}}}
+	objs := []client.Object{node, redis, testPod("kube-system", "kube-dns", node.Name, "260m", "110Mi"),
+		&corev1.ConfigMap{ObjectMeta: metav1.ObjectMeta{Namespace: "kube-system", Name: "cluster-autoscaler-status"},
+			Data: map[string]string{"status": string(status)}}}
+
+	out := runNodes(t, newStatusClient(t, interceptor.Funcs{}, objs...))
+
+	assert.Contains(t, out, "node group at its minimum")
+	assert.NotContains(t, out, "Next steps:")
+	assert.NotContains(t, out, "safe-to-evict-local-volumes")
+	assert.Contains(t, out, "These nodes stay at their node group's minimum, which Cluster Autoscaler doesn't go "+
+		"below, whatever runs on them:\n"+
+		"  gke-prelaunch-default-pool-3f9c1a2b-x7k2: its node group, gke-prelaunch-default-pool-3f9c1a2b-grp, is at "+
+		"its minimum of 1 node\n")
 }
 
 func TestNodeAutoscalerLine(t *testing.T) {

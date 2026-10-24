@@ -1,0 +1,35 @@
+Cluster-autoscaler status at 2024-01-15 10:31:22.104735216 +0000 UTC:
+Cluster-wide:
+  Health:      Healthy (ready=5 unready=0 (resourceUnready=0) notStarted=0 longNotStarted=0 registered=5 longUnregistered=0)
+               LastProbeTime:      2024-01-15 10:31:21.891523905 +0000 UTC m=+86321.712839046
+               LastTransitionTime: 2024-01-14 10:32:30.512049227 +0000 UTC m=+29.333364368
+  ScaleUp:     NoActivity (ready=5 registered=5)
+               LastProbeTime:      2024-01-15 10:31:21.891523905 +0000 UTC m=+86321.712839046
+               LastTransitionTime: 2024-01-15 02:12:09.719322305 +0000 UTC m=+56408.540637446
+  ScaleDown:   NoCandidates (candidates=0)
+               LastProbeTime:      2024-01-15 10:31:21.891523905 +0000 UTC m=+86321.712839046
+               LastTransitionTime: 2024-01-15 02:23:17.098140951 +0000 UTC m=+57075.919456092
+
+NodeGroups:
+  Name:        eks-system-6ac6b9e2-1f3d-4c8b-9a7e-2d5f8b3c1e04
+  Health:      Healthy (ready=2 unready=0 (resourceUnready=0) notStarted=0 longNotStarted=0 registered=2 longUnregistered=0 cloudProviderTarget=2 (minSize=2, maxSize=4))
+               LastProbeTime:      2024-01-15 10:31:21.891523905 +0000 UTC m=+86321.712839046
+               LastTransitionTime: 2024-01-14 10:32:30.512049227 +0000 UTC m=+29.333364368
+  ScaleUp:     NoActivity (ready=2 cloudProviderTarget=2)
+               LastProbeTime:      2024-01-15 10:31:21.891523905 +0000 UTC m=+86321.712839046
+               LastTransitionTime: 2024-01-14 10:32:30.512049227 +0000 UTC m=+29.333364368
+  ScaleDown:   NoCandidates (candidates=0)
+               LastProbeTime:      2024-01-15 10:31:21.891523905 +0000 UTC m=+86321.712839046
+               LastTransitionTime: 2024-01-14 10:32:30.512049227 +0000 UTC m=+29.333364368
+
+  Name:        aks-workloads-18537295-vmss
+  Health:      Healthy (ready=3 unready=0 (resourceUnready=0) notStarted=0 longNotStarted=0 registered=3 longUnregistered=0 cloudProviderTarget=3 (minSize=1, maxSize=6))
+               LastProbeTime:      2024-01-15 10:31:21.891523905 +0000 UTC m=+86321.712839046
+               LastTransitionTime: 2024-01-14 10:32:30.512049227 +0000 UTC m=+29.333364368
+  ScaleUp:     NoActivity (ready=3 cloudProviderTarget=3)
+               LastProbeTime:      2024-01-15 10:31:21.891523905 +0000 UTC m=+86321.712839046
+               LastTransitionTime: 2024-01-14 10:32:30.512049227 +0000 UTC m=+29.333364368
+  ScaleDown:   CandidatesPresent (candidates=1)
+               LastProbeTime:      2024-01-15 10:31:21.891523905 +0000 UTC m=+86321.712839046
+               LastTransitionTime: 2024-01-15 02:23:17.098140951 +0000 UTC m=+57075.919456092
+
