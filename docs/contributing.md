@@ -36,6 +36,28 @@ make test-e2e
 make test-helm-smoke
 ```
 
+### Run the E2E Tests from Several Worktrees
+
+Each checkout gets its own Kind cluster, so you can run `make test-e2e` in two worktrees at once.
+
+| What | Default | Set it with |
+|---|---|---|
+| Kind cluster | `napwake-e2e-<directory>-<hash of its path>` | `KIND_CLUSTER` |
+| Kubeconfig | `bin/e2e/<cluster>/kubeconfig` | `E2E_KUBECONFIG` |
+| Manager image | `napwake:<cluster>` | `E2E_IMG` |
+| kubectl plugin | `bin/e2e/<cluster>/kubectl-napwake` | `E2E_PLUGIN` |
+
+The run reaches its cluster only through its own kubeconfig. Your `~/.kube/config` and its current context stay as they are. The suite stops before it changes anything if kubectl's current context isn't `kind-<cluster>`.
+
+A second run from the same checkout needs its own name, such as `make test-e2e KIND_CLUSTER=napwake-e2e-second`. `make test-helm-smoke` names its cluster and image the same way, starting `napwake-smoke-`.
+
+If a run fails, its cluster stays for you to look into. The last lines say how:
+
+```bash
+KUBECONFIG=bin/e2e/<cluster>/kubeconfig kubectl get pods -A
+make cleanup-test-e2e   # deletes the cluster, its kubeconfig, image and plugin
+```
+
 ### Run Locally
 
 ```bash
