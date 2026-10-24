@@ -1222,6 +1222,15 @@ spec:
                       Unset for a workload the doorman doesn't route.
                     format: date-time
                     type: string
+                  routesWrittenAt:
+                    description: |-
+                      RoutesWrittenAt is when the doorman's routes for this pause were
+                      stored in status, where every doorman replica reads the ports to
+                      listen on. Its EndpointSlices go in only once each has had time to.
+                      Unset for a workload the doorman doesn't route, and again should the
+                      routes be taken down before the scale-down.
+                    format: date-time
+                    type: string
                   scaledObject:
                     description: |-
                       ScaledObject is the KEDA ScaledObject held at zero while the workload

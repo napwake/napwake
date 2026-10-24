@@ -550,6 +550,10 @@ func (in *PauseStatus) DeepCopyInto(out *PauseStatus) {
 		in, out := &in.StartedAt, &out.StartedAt
 		*out = (*in).DeepCopy()
 	}
+	if in.RoutesWrittenAt != nil {
+		in, out := &in.RoutesWrittenAt, &out.RoutesWrittenAt
+		*out = (*in).DeepCopy()
+	}
 	if in.RoutedAt != nil {
 		in, out := &in.RoutedAt, &out.RoutedAt
 		*out = (*in).DeepCopy()
