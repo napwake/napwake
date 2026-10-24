@@ -752,7 +752,7 @@ html:not(.js) th { position: static; }
           {{if .CouldFree}}<th class="n"><button type="button" class="tip" title="{{.Tips.CouldFree}}">Could free / month</button></th>{{end}}
         </tr></thead>
         <tbody>
-          {{range $i, $w := .Workloads}}<tr id="wl-{{$i}}"{{if and (ge (len .Because) 11) (eq (slice .Because 0 11) "won't pause")}} data-stays=""{{end}}>
+          {{range $i, $w := .Workloads}}<tr id="wl-{{$i}}"{{if and .WontPause (eq .StateClass "idle")}} data-stays=""{{end}}>
             <td class="ref">{{.Workload}}<span class="sub">{{.Namespace}}</span></td>
             <td class="wide"><span class="state {{.StateClass}}"><span class="dot"></span>{{.State}}</span>{{if .Because}}<span class="because">{{.Because}}</span>{{end}}</td>
             <td class="n" data-v="{{.CostSort}}">{{.Cost}}</td>

@@ -131,3 +131,27 @@ func TestReportPage_NextStepsWithTheirTargets(t *testing.T) {
 	assert.Equal(t, "deployment/api", steps.Enable.Workload)
 	assert.Contains(t, string(steps.Enable.Line), "napwake enable deployment/api")
 }
+
+// An idle workload Napwake won't pause keeps its light in the With Napwake
+// picture, which the page knows from the row's own field, wherever its
+// reason sits in the line under the state.
+func TestReportPage_WontPauseWhateverTheReasonSays(t *testing.T) {
+	result := historyResult()
+	postgres := &result.Workloads[0]
+	postgres.WontPause = "PVCs deleted on scale-down"
+	postgres.Clues = []string{"won't pause: PVCs deleted on scale-down"}
+
+	got := renderHTML(t, result)
+	pageHas(t, got, `<tr id="wl-0" data-stays="">`, "its reason after the evidence for its state")
+
+	page := buildReport(result, time.Hour)
+	page.Workloads[0].Because = "Napwake never pauses it: PVCs deleted on scale-down"
+	got = renderReportPage(t, page)
+	pageHas(t, got, `<tr id="wl-0" data-stays="">`, "reworded")
+
+	result.Workloads[3].WontPause = "PVCs deleted on scale-down"
+	got = renderHTML(t, result)
+	pageHas(t, got, `<tr id="wl-3">`, "one in use stays on anyway, and isn't counted as kept lit")
+	assert.Equal(t, "PVCs deleted on scale-down", buildReport(result, time.Hour).Workloads[3].WontPause,
+		"the reason, as its own field")
+}

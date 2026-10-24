@@ -182,6 +182,9 @@ type workloadRow struct {
 	SleptSort                                float64
 	CouldSleepSort, FreedSort, CouldFreeSort float64
 	Because                                  string
+	// WontPause is why Napwake refuses to pause it however idle it is,
+	// which Because also says, or "" for one it would pause.
+	WontPause string
 }
 
 // nextSteps keep the commands that measure a workload in dry-run apart
@@ -664,7 +667,7 @@ func workloadRowFor(wl Workload) workloadRow {
 		CostSort:   wl.MonthlyCost,
 		Freed:      freedCell(wl), FreedSort: -1, Saved: scanSavedCell(wl),
 		CouldFree: couldFreeCell(wl), CouldFreeSort: -1,
-		Because: because(wl),
+		Because: because(wl), WontPause: wl.WontPause,
 	}
 	row.State += " (" + management(wl) + ")"
 	row.CouldSleep, row.Wakes, row.Since, row.CouldSleepSort = sleepCells(wl)
