@@ -173,13 +173,22 @@ spec:
                       activity annotations that always count.
                     properties:
                       cpuThreshold:
+                        anyOf:
+                        - type: integer
+                        - type: string
                         default: 10
                         description: |-
                           CPUThreshold is the CPU utilization, as a percentage of the workload's
-                          CPU requests, above which the workload counts as active.
-                        maximum: 100
-                        minimum: 1
-                        type: integer
+                          CPU requests, above which the workload counts as active: from 0.1 to
+                          100, a whole number such as 10, or a decimal written as a string, such
+                          as "0.5", to at most two places.
+                        pattern: ^[0-9]{1,3}(\.[0-9]{1,2})?$
+                        x-kubernetes-int-or-string: true
+                        x-kubernetes-validations:
+                        - message: must be a percentage from 0.1 to 100, such as 10
+                            or "0.5"
+                          rule: 'type(self) == string ? double(self) >= 0.1 && double(self)
+                            <= 100.0 : self >= 1 && self <= 100'
                       prometheus:
                         description: |-
                           Prometheus queries that measure activity, such as an ingress request
