@@ -304,7 +304,7 @@ func TestStatusPage_DoormanWhateverTheEventSays(t *testing.T) {
 func TestReportPage_NamespaceSavedWhateverTheAmountReads(t *testing.T) {
 	page := buildReport(historyResult(), time.Hour)
 	for i := range page.Namespaces {
-		if page.Namespaces[i].Namespace == "preview-3" {
+		if page.Namespaces[i].FreedSort > 0 {
 			page.Namespaces[i].Freed = "$0"
 		}
 	}
