@@ -126,3 +126,47 @@ tests:
             exp_annotations:
               summary: Target workload not found for web
               description: ManagedWorkload shop/web cannot find its target. It may have been deleted or renamed.
+
+  - name: a workload left in Pausing is stuck
+    interval: 1m
+    input_series:
+      - series: napwake_workload_phase{namespace="shop", workload="web", phase="Pausing"}
+        values: 1x30
+    alert_rule_test:
+      - eval_time: 10m
+        alertname: NapwakeWorkloadStuck
+        exp_alerts: []
+      - eval_time: 20m
+        alertname: NapwakeWorkloadStuck
+        exp_alerts:
+          - exp_labels:
+              severity: warning
+              namespace: shop
+              workload: web
+              phase: Pausing
+            exp_annotations:
+              summary: Workload web stuck in Pausing
+              description: ManagedWorkload shop/web has been Pausing for 15 minutes. Check its events and conditions.
+
+  # The operator takes a workload's phase series down as it leaves the
+  # phase, so a scrape stops finding it and Prometheus marks it stale. One
+  # left at 1 would keep the alert firing for a workload that has moved on.
+  - name: workloads that paused or woke are not stuck
+    interval: 1m
+    input_series:
+      - series: napwake_workload_phase{namespace="shop", workload="web", phase="Running"}
+        values: 1x3 stale
+      - series: napwake_workload_phase{namespace="shop", workload="web", phase="Pausing"}
+        values: _x3 1x2 stale
+      - series: napwake_workload_phase{namespace="shop", workload="web", phase="Paused"}
+        values: _x6 1x40
+      - series: napwake_workload_phase{namespace="shop", workload="db", phase="Paused"}
+        values: 1x3 stale
+      - series: napwake_workload_phase{namespace="shop", workload="db", phase="Resuming"}
+        values: _x3 1x2 stale
+      - series: napwake_workload_phase{namespace="shop", workload="db", phase="Running"}
+        values: _x6 1x40
+    alert_rule_test:
+      - eval_time: 30m
+        alertname: NapwakeWorkloadStuck
+        exp_alerts: []
