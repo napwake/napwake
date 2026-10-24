@@ -74,6 +74,12 @@ func askedPage(t *testing.T, port int32) string {
 
 var tokenInput = regexp.MustCompile(`name="` + wakeField + `" value="([^"]+)"`)
 
+// shownTitle is a notice's title as the asleep page shows it, in bold:
+// one notice's title can begin another's text, as "Nothing woke" does.
+func shownTitle(n notice) string {
+	return "<b>" + template.HTMLEscapeString(n.title) + "</b>"
+}
+
 func tokenIn(t *testing.T, page string) string {
 	t.Helper()
 	m := tokenInput.FindStringSubmatch(page)
@@ -286,8 +292,8 @@ func TestServer_AClickWithoutAGoodTokenWakesNothing(t *testing.T) {
 				want, other = noticeElsewhere, noticeExpired
 			}
 			assert.Equal(t, http.StatusForbidden, resp.StatusCode, "the asleep page again, refused")
-			assert.Contains(t, body, template.HTMLEscapeString(want.title))
-			assert.NotContains(t, body, template.HTMLEscapeString(other.title))
+			assert.Contains(t, body, shownTitle(want))
+			assert.NotContains(t, body, shownTitle(other))
 			tokenIn(t, body)
 			assert.Empty(t, lastRequest(t, c), "nothing wakes it")
 		})
@@ -361,11 +367,11 @@ func TestServer_AClickMustComeFromAPerson(t *testing.T) {
 				tokenIn(t, body)
 				for _, other := range []notice{noticeExpired, noticeElsewhere, noticeNoFetchMetadata} {
 					if other != tt.notice {
-						assert.NotContains(t, body, template.HTMLEscapeString(other.title))
+						assert.NotContains(t, body, shownTitle(other))
 					}
 				}
 				if tt.notice != (notice{}) {
-					assert.Contains(t, body, template.HTMLEscapeString(tt.notice.title))
+					assert.Contains(t, body, shownTitle(tt.notice))
 				}
 			default:
 				assert.Equal(t, http.StatusServiceUnavailable, resp.StatusCode)
@@ -523,7 +529,7 @@ func TestServer_AClickOverPlainHTTPIsJudgedByItsOrigin(t *testing.T) {
 				}
 				assert.Equal(t, status, resp.StatusCode, "the asleep page again")
 				tokenIn(t, body)
-				assert.Contains(t, body, template.HTMLEscapeString(tt.notice.title))
+				assert.Contains(t, body, shownTitle(tt.notice))
 			}
 			assert.Empty(t, lastRequest(t, c), "nothing wakes it")
 		})
@@ -622,7 +628,7 @@ func assertSaysHowToWake(t *testing.T, resp *http.Response, body string, wantJSO
 		body = answer.Message + " " + strings.Join(answer.Wake, " ") + " " + answer.Docs
 	} else {
 		assert.Equal(t, "text/plain; charset=utf-8", resp.Header.Get("Content-Type"))
-		assert.Equal(t, "This environment is asleep. Napwake paused it while nobody was using it, to save money.\n"+
+		assert.Equal(t, "This environment is asleep. It was paused because it looked unused, to save money.\n"+
 			"Requests don't wake it. To wake it, do one of these, then try again:\n"+
 			"- Open it in a browser and press Wake it.\n"+
 			"- Run kubectl napwake wake NAME -n NAMESPACE.\n"+
@@ -1157,7 +1163,7 @@ func TestServer_APageFromAnEarlierPauseIsRefusedInALaterOne(t *testing.T) {
 	resp, body := click(t, port, clickRequest(token))
 
 	assert.Equal(t, http.StatusForbidden, resp.StatusCode, "refused as a page left open")
-	assert.Contains(t, body, template.HTMLEscapeString(noticeExpired.title))
+	assert.Contains(t, body, shownTitle(noticeExpired))
 	tokenIn(t, body)
 	assert.Empty(t, lastRequest(t, c), "nothing wakes it")
 }
@@ -1240,5 +1246,5 @@ func TestServer_AClickInOnePauseDoesntMakeTheNextLookWaking(t *testing.T) {
 	token := askedPage(t, port)
 	resp, body := click(t, port, clickRequest(token))
 	assert.Equal(t, http.StatusTooManyRequests, resp.StatusCode, body)
-	assert.Contains(t, body, template.HTMLEscapeString(noticeLimited.title))
+	assert.Contains(t, body, shownTitle(noticeLimited))
 }

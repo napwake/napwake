@@ -32,15 +32,16 @@ The style and the script are hashed into the page's Content-Security-Policy, so 
   --bg:#F8F8F5;--surface:#FFFFFF;--text:#0F1716;--muted:#4E5957;--line:#DEDBD2;--paper:#F8F8F5;
   --coat:#14695F;--coat-dk:#0D3F3A;--face:#3A9A8B;--brass:#F5B53F;--ink:#0F1716;--hat:#141B1A;--glove:#2A3534;--shoe:#0F1716;--shoe-rim:#0F1716;
   --room:#FFE3A1;--glow:#F5B53F;--frame:#E3E0D7;--leaf:#5B6B86;--seam:#4A5872;
-  --asleep:#56657F;--slate:#5B6B86;--wake:#9A6400;--action:#14695F;--on-action:#F8F8F5;
+  --asleep:#56657F;--slate:#5B6B86;--wake:#9A6400;--action:#14695F;--on-action:#F8F8F5;--code-bg:#eeeeea;
 }
 @media (prefers-color-scheme:dark){:root{
   --bg:#0F1716;--surface:#16201F;--text:#EEF0EC;--muted:#A3ADAA;--line:#263331;
   --coat:#1E7A6E;--coat-dk:#12524B;--face:#45A898;--hat:#2B3735;--glove:#3E4E4C;--shoe:#2B4743;--shoe-rim:#4C7069;
   --frame:#1B2A2C;--leaf:#2A3944;--seam:#22303A;
-  --asleep:#93A3BE;--slate:#8C9BB5;--wake:#F5B53F;--action:#F5B53F;--on-action:#0F1716;
+  --asleep:#93A3BE;--slate:#8C9BB5;--wake:#F5B53F;--action:#F5B53F;--on-action:#0F1716;--code-bg:#16201f;
 }}
 *{box-sizing:border-box}html,body{height:100%}
+code{font:.92em var(--mono);padding:.1em .35em;border-radius:4px;background:var(--code-bg)}
 body{margin:0;min-height:100%;display:flex;flex-direction:column;background:var(--bg);color:var(--text);font-family:var(--sans);-webkit-font-smoothing:antialiased}
 header{padding:22px 32px;font:13px var(--mono);color:var(--muted);overflow-wrap:anywhere}
 main{flex:1;display:flex;align-items:center;justify-content:center;padding:16px 24px 56px}
@@ -113,9 +114,9 @@ footer a:focus-visible{outline:2px solid transparent;box-shadow:0 0 0 2px var(--
       {{- with .Notice}}
       <p class="note a">{{with $.NoticeTitle}}<b>{{.}}</b>{{end}}{{range .}}{{if .Code}}<code>{{.Text}}</code>{{else}}{{.Text}}{{end}}{{end}}{{with $.NoticeDocs}} <a href="{{.}}" target="_blank" rel="noopener noreferrer">How to wake it</a>{{end}}</p>
       {{- else}}
-      <p class="lede a">This environment was paused while nobody was using it, to save money. Press Wake it to start it again. This page opens it when it's ready.</p>
+      <p class="lede a">This environment was paused because it looked unused, to save money. Press Wake it to start it again. This page opens it when it's ready.</p>
       {{- end}}
-      <p class="lede w">This environment was paused while nobody was using it. It's starting now, and the next page opens it on its own when it's ready.</p>
+      <p class="lede w">This environment was paused because it looked unused. It's starting now, and the next page opens it on its own when it's ready.</p>
       <form class="ask" id="wake" method="post">
         <input type="hidden" name="{{.Field}}" value="{{.Token}}">
         <button class="wake" type="submit" aria-describedby="takes"><span class="a">Wake it</span><span class="w">Waking it</span></button>

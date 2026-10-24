@@ -87,13 +87,13 @@ type notice struct {
 
 // The notices the asleep page gives when a click woke nothing.
 var (
-	noticeExpired = notice{title: "This page was open too long", text: "Nothing woke. Press Wake it again.",
+	noticeExpired = notice{title: "Nothing woke", text: "The page may have been open too long. Press Wake it again.",
 		status: http.StatusForbidden}
 	noticeLimited = notice{title: "Try again in a minute",
 		text:   "It was asked to wake less than a minute ago. Wake it works once a minute at most.",
 		status: http.StatusTooManyRequests, retryAfter: clickWakeInterval}
 	noticeFailed = notice{title: "It didn't wake",
-		text: "Something went wrong at the cluster's end. Try again in a moment."}
+		text: "Napwake couldn't wake it just now. Try again in a moment."}
 	// noticeElsewhere answers a person's click that the browser says came
 	// from a page at another address: another site's, or, behind a proxy
 	// that rewrites Host, this page's under an address the doorman doesn't

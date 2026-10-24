@@ -17,6 +17,7 @@ limitations under the License.
 package controller
 
 import (
+	"bytes"
 	"context"
 	"fmt"
 	"strings"
@@ -39,6 +40,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/interceptor"
 	"sigs.k8s.io/controller-runtime/pkg/config"
+	"sigs.k8s.io/controller-runtime/pkg/log/zap"
 	metricsserver "sigs.k8s.io/controller-runtime/pkg/metrics/server"
 
 	v1alpha1 "github.com/napwake/napwake/api/v1alpha1"
@@ -571,11 +573,14 @@ func TestPauseRequest_AcrossARestart(t *testing.T) {
 // returned stop is called, or the test ends.
 func startOperator(t *testing.T, cfg *rest.Config, scheme *runtime.Scheme) func() {
 	t.Helper()
+	logs := &operatorLog{}
 	mgr, err := ctrl.NewManager(cfg, ctrl.Options{Scheme: scheme,
+		Logger:     zap.New(zap.WriteTo(logs), zap.UseDevMode(true)),
 		Metrics:    metricsserver.Options{BindAddress: "0"},
 		Controller: config.Controller{SkipNameValidation: ptr.To(true)}})
 	require.NoError(t, err)
-	r := &Reconciler{Client: mgr.GetClient(), Scheme: scheme, Recorder: events.NewFakeRecorder(1000),
+	recorder := events.NewFakeRecorder(1000)
+	r := &Reconciler{Client: mgr.GetClient(), Scheme: scheme, Recorder: recorder,
 		PodReader: mgr.GetAPIReader()}
 	require.NoError(t, r.SetupWithManager(mgr))
 	ctx, cancel := context.WithCancel(context.Background())
@@ -588,6 +593,36 @@ func startOperator(t *testing.T, cfg *rest.Config, scheme *runtime.Scheme) func(
 			running.Wait()
 		})
 	}
+	// Cleanups run last first, so this prints once the operator has stopped.
+	t.Cleanup(func() {
+		if !t.Failed() {
+			return
+		}
+		t.Logf("the operator's log:\n%s", logs)
+		for len(recorder.Events) > 0 {
+			t.Log("event: " + <-recorder.Events)
+		}
+	})
 	t.Cleanup(stop)
 	return stop
+}
+
+// operatorLog keeps what an operator started by startOperator logs, for a
+// failed test to print: an envtest failure that shows only the state it
+// ended in can't say how it got there (P43).
+type operatorLog struct {
+	mu  sync.Mutex
+	buf bytes.Buffer
+}
+
+func (l *operatorLog) Write(p []byte) (int, error) {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	return l.buf.Write(p)
+}
+
+func (l *operatorLog) String() string {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	return l.buf.String()
 }

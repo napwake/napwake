@@ -201,6 +201,8 @@ func TestWritePage(t *testing.T) {
 	assert.Contains(t, body, `<a href="https://napwake.dev/" target="_blank" rel="noopener noreferrer">`+
 		`<svg viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" fill-rule="evenodd" d="`+Mark+
 		`"/></svg>Paused by Napwake</a>`)
+	assert.Contains(t, body, `<p class="lede">This environment was paused because it looked unused. It's starting now`)
+	assert.NotContains(t, body, "nobody", "it says what Napwake saw, signs of use, not people")
 }
 
 // The waking-up page draws its tab icon inline, so a browser never asks the
@@ -278,7 +280,9 @@ func TestWriteAsleepPage_PostsBackToItself(t *testing.T) {
 	assert.Contains(t, body, "<title>Asleep · pr-42.preview.example.dev</title>")
 	assert.Contains(t, body, `<span class="a">Wake it up?</span>`)
 	assert.Contains(t, body, "Starting takes as long as the app needs.")
-	assert.Contains(t, body, `<p class="lede a">This environment was paused while nobody was using it`)
+	assert.Contains(t, body, `<p class="lede a">This environment was paused because it looked unused, to save money.`)
+	assert.Contains(t, body, `<p class="lede w">This environment was paused because it looked unused. It's starting now`)
+	assert.NotContains(t, body, "nobody", "it says what Napwake saw, signs of use, not people")
 	assert.NotContains(t, body, `class="note`)
 }
 
@@ -294,7 +298,7 @@ func TestWriteAsleepPage_Notices(t *testing.T) {
 		says       string
 	}{
 		{name: "expired", notice: noticeExpired, status: http.StatusForbidden,
-			says: "<b>This page was open too long</b>Nothing woke. Press Wake it again."},
+			says: "<b>Nothing woke</b>The page may have been open too long. Press Wake it again."},
 		{name: "from another address", notice: noticeElsewhere, status: http.StatusForbidden,
 			says: "<b>The click came from another address</b>Nothing woke. Someone with access to the cluster can " +
 				"wake it with <code>kubectl napwake wake</code>. <a href=\"" + wakeItDocs +
@@ -303,7 +307,7 @@ func TestWriteAsleepPage_Notices(t *testing.T) {
 			says: "<b>Try again in a minute</b>It was asked to wake less than a minute ago. Wake it works once a " +
 				"minute at most."},
 		{name: "couldn't wake", notice: noticeFailed, status: http.StatusOK,
-			says: "<b>It didn&#39;t wake</b>Something went wrong at the cluster&#39;s end. Try again in a moment."},
+			says: "<b>It didn&#39;t wake</b>Napwake couldn&#39;t wake it just now. Try again in a moment."},
 		{name: "no fetch metadata", notice: noticeNoFetchMetadata, status: http.StatusOK,
 			says: "<b>Try a current browser</b>This browser didn&#39;t say the click came from this page, so nothing " +
 				"woke. Use a current browser, or someone with access to the cluster can wake it with " +
@@ -337,6 +341,10 @@ func TestWriteAsleepPage_SetsACommandAsCode(t *testing.T) {
 	_, body := readPage(t, out.Bytes(), http.MethodGet)
 	assert.Contains(t, body, `<p class="note a"><b>Wake it another way</b>Run <code>kubectl napwake wake &lt;name&gt;</code> `+
 		`or ask <code>ops</code>.</p>`)
+	assert.Contains(t, body, `code{font:.92em var(--mono);padding:.1em .35em;border-radius:4px;background:var(--code-bg)}`,
+		"set apart in the brand's code colours")
+	assert.Contains(t, body, `--code-bg:#eeeeea`)
+	assert.Contains(t, body, `--code-bg:#16201f`, "in dark too")
 }
 
 // The page is shown to whoever reaches the Service, so it says nothing about
