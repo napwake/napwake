@@ -494,7 +494,8 @@ func (r *Reconciler) staleForRouting(ctx context.Context, workload *v1alpha1.Man
 // resumeTransition finishes a pause or resume that an earlier reconcile
 // started but didn't complete, without which a transient failure would strand
 // the workload in the intermediate phase. It also turns back a pause the
-// workload must no longer be in: dry-run never leaves a workload paused.
+// workload must no longer be in: dry-run never leaves a workload paused, and
+// a pause that whatever would wake it came during is called off.
 func (r *Reconciler) resumeTransition(ctx context.Context, workload *v1alpha1.ManagedWorkload, target client.Object) (*ctrl.Result, error) {
 	phase := workload.Status.Phase
 	if workload.Spec.DryRun && (phase == v1alpha1.PhasePausing || phase == v1alpha1.PhasePaused) {
@@ -503,6 +504,12 @@ func (r *Reconciler) resumeTransition(ctx context.Context, workload *v1alpha1.Ma
 	}
 	switch phase {
 	case v1alpha1.PhasePausing:
+		if why, err := r.pauseCancelled(ctx, workload, target); err != nil || why != nil {
+			if err != nil {
+				return nil, err
+			}
+			return r.handleResume(ctx, workload, why)
+		}
 		return r.handlePause(ctx, workload, target, nil)
 	case v1alpha1.PhaseResuming:
 		return r.handleResume(ctx, workload, nil)
@@ -527,6 +534,7 @@ func (r *Reconciler) handlePause(ctx context.Context, workload *v1alpha1.Managed
 		if err := r.preparePause(ctx, workload, target, requested); err != nil {
 			return nil, err
 		}
+		workload.Status.Pause.Requested = requested
 		// The cache showed replicas the target no longer has: it was scaled
 		// to zero outside Napwake, which the next reconcile sees.
 		if workload.Status.Pause.PreviousReplicas == 0 {

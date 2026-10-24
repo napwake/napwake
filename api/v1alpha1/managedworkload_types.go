@@ -739,6 +739,12 @@ type PauseStatus struct {
 	// pause at once.
 	// +optional
 	QueryActiveSincePause bool `json:"queryActiveSincePause,omitempty"`
+
+	// Requested says the pause was asked for, with the
+	// napwake.dev/pause-requested annotation, rather than decided by the
+	// idle clock or the forecast.
+	// +optional
+	Requested bool `json:"requested,omitempty"`
 }
 
 // WakeAnnotations are the napwake.dev/last-activity, last-request and

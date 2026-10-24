@@ -26,7 +26,9 @@ import (
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	discoveryv1 "k8s.io/api/discovery/v1"
+	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/client-go/tools/events"
 	"k8s.io/utils/ptr"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -83,11 +85,15 @@ func apiOwnPod() (*corev1.Pod, *discoveryv1.EndpointSlice) {
 }
 
 // pausingReconciler is a reconciler for the running api workload, whose
-// clock has run out, its Service, its own Ready pod, and the doorman, with
-// a clock the test moves.
-func pausingReconciler(t *testing.T, objs ...client.Object) (*Reconciler, *stubPauser, *time.Time) {
+// clock has run out, as setup leaves it, its Service, its own Ready pod, and
+// the doorman, with a clock the test moves.
+func pausingReconciler(t *testing.T, setup func(*v1alpha1.ManagedWorkload), objs ...client.Object) (
+	*Reconciler, *stubPauser, *time.Time) {
 	t.Helper()
 	workload := depWorkload("default", "api", v1alpha1.TargetKindDeployment, v1alpha1.PhaseRunning)
+	if setup != nil {
+		setup(workload)
+	}
 	pod, slice := apiOwnPod()
 	pauser := &stubPauser{pauseDone: true, resumeDone: true}
 	all := append([]client.Object{workload, runningAPI(), defaultNamespace(nil), doormanEndpoints("10.0.0.7"),
@@ -95,6 +101,7 @@ func pausingReconciler(t *testing.T, objs ...client.Object) (*Reconciler, *stubP
 		objs...)
 	r := doormanReconciler(t, all...)
 	r.pauser = pauser
+	r.Recorder = events.NewFakeRecorder(100)
 	now := monotonic(fixedTime)
 	r.clock = func() time.Time { return now }
 	return r, pauser, &now
@@ -112,7 +119,7 @@ func reconcileAPI(t *testing.T, r *Reconciler) {
 // doorman to listen on; the slice follows once it does; and the pods stop
 // once proxies send to the slice too.
 func TestPause_TheDoormanFrontsTheWorkloadBeforeItsPodsStop(t *testing.T) {
-	r, pauser, now := pausingReconciler(t)
+	r, pauser, now := pausingReconciler(t, nil)
 
 	reconcileAPI(t, r)
 	w := fetch(t, r, "api")
@@ -141,7 +148,7 @@ func TestPause_TheDoormanFrontsTheWorkloadBeforeItsPodsStop(t *testing.T) {
 // A workload the doorman doesn't route pauses as it always has, with nothing
 // to wait for.
 func TestPause_AWorkloadTheDoormanDoesNotRoutePausesAtOnce(t *testing.T) {
-	r, pauser, _ := pausingReconciler(t)
+	r, pauser, _ := pausingReconciler(t, nil)
 	r.DoormanService = ""
 
 	reconcileAPI(t, r)
@@ -152,7 +159,7 @@ func TestPause_AWorkloadTheDoormanDoesNotRoutePausesAtOnce(t *testing.T) {
 
 // However the doorman fails to front it, a pause is never held up for long.
 func TestPause_WaitsForTheDoormanOnlySoLong(t *testing.T) {
-	r, pauser, now := pausingReconciler(t)
+	r, pauser, now := pausingReconciler(t, nil)
 	reconcileAPI(t, r)
 	require.Equal(t, v1alpha1.PhasePausing, fetch(t, r, "api").Status.Phase)
 
@@ -173,4 +180,216 @@ func automate(ctx context.Context, r *Reconciler, workload *v1alpha1.ManagedWork
 		return r.resumeTransition(ctx, workload, target)
 	}
 	return r.reconcileAutomation(ctx, workload, target)
+}
+
+// annotate sets an annotation on the ManagedWorkload named, as the doorman,
+// kubectl napwake wake, or another tool does.
+func annotate(t *testing.T, r *Reconciler, name, key, value string) {
+	t.Helper()
+	w := fetch(t, r, name)
+	if w.Annotations == nil {
+		w.Annotations = map[string]string{}
+	}
+	w.Annotations[key] = value
+	require.NoError(t, r.Update(context.Background(), w))
+}
+
+// stampRequest stamps the api workload with a request at now, as the
+// doorman does for one it holds or passes on while the workload pauses.
+func stampRequest(t *testing.T, r *Reconciler, now time.Time) {
+	t.Helper()
+	annotate(t, r, "api", v1alpha1.AnnotationLastRequest, now.UTC().Format(time.RFC3339))
+	annotate(t, r, "api", v1alpha1.AnnotationLastRequestFrom, "10.244.3.8")
+}
+
+// A request the doorman sees while a workload pauses means it's in use: the
+// pause is called off, and the workload is Running again, its pods never
+// stopped. The doorman stops fronting it.
+func TestPause_ARequestAsItPausesCancelsIt(t *testing.T) {
+	r, pauser, now := pausingReconciler(t, nil)
+	reconcileAPI(t, r)
+	*now = now.Add(doormanListenWait)
+	reconcileAPI(t, r)
+	require.Equal(t, v1alpha1.PhasePausing, fetch(t, r, "api").Status.Phase)
+	require.NotEmpty(t, doormanSlices(t, r))
+
+	stampRequest(t, r, *now)
+	reconcileAPI(t, r)
+
+	w := fetch(t, r, "api")
+	assert.Equal(t, v1alpha1.PhaseRunning, w.Status.Phase)
+	assert.Zero(t, pauser.pauseCalls, "its pods never stopped")
+	assert.Equal(t, v1alpha1.ActivitySourceRequest, w.Status.Activity.LastActivitySource)
+	reconcileAPI(t, r)
+	assert.Empty(t, doormanSlices(t, r), "once Running, its own pods serve it alone")
+	cancelled := recorded(r.Recorder.(*events.FakeRecorder), ReasonPauseCancelled)
+	require.Len(t, cancelled, 1)
+	assert.Contains(t, cancelled[0], "Normal PauseCancelled")
+	assert.Contains(t, cancelled[0], "a request came as it paused; the pause is cancelled")
+}
+
+// A request that comes once the pods have begun to stop has the workload
+// scaled back up, and its pause cancelled, without waiting for the pods to
+// be gone first.
+func TestPause_ARequestAfterTheScaleDownScalesItBackUp(t *testing.T) {
+	r, pauser, now := pausingReconciler(t, nil)
+	pauser.pauseDone = false
+	reconcileAPI(t, r)
+	*now = now.Add(doormanListenWait)
+	reconcileAPI(t, r)
+	*now = now.Add(doormanTakeover)
+	reconcileAPI(t, r)
+	require.Equal(t, 1, pauser.pauseCalls)
+	require.Equal(t, v1alpha1.PhasePausing, fetch(t, r, "api").Status.Phase, "its pods are still stopping")
+	scaledDown := runningAPI()
+	require.NoError(t, r.Get(context.Background(), client.ObjectKeyFromObject(scaledDown), scaledDown))
+	scaledDown.Spec.Replicas = ptr.To(int32(0))
+	require.NoError(t, r.Update(context.Background(), scaledDown))
+
+	stampRequest(t, r, *now)
+	reconcileAPI(t, r)
+
+	assert.Equal(t, 1, pauser.pauseCalls, "it isn't scaled down further")
+	assert.Equal(t, 1, pauser.resumeCalls)
+	assert.Equal(t, v1alpha1.PhaseRunning, fetch(t, r, "api").Status.Phase)
+	assert.Len(t, recorded(r.Recorder.(*events.FakeRecorder), ReasonPauseCancelled), 1)
+}
+
+// Whatever would wake a paused workload calls off a pause under way: a
+// person asking for a workload that asks first, a wake request, and an
+// activity annotation. Each says what came.
+func TestPause_WhatWouldWakeItCancelsThePause(t *testing.T) {
+	tests := []struct {
+		name  string
+		setup func(*v1alpha1.ManagedWorkload)
+		come  func(t *testing.T, r *Reconciler, now time.Time)
+		want  string
+	}{
+		{name: "a person's click on a workload that asks", want: "a person asked to wake it as it paused",
+			setup: func(w *v1alpha1.ManagedWorkload) { w.Spec.Wake = &v1alpha1.WakeSpec{Mode: v1alpha1.WakeOnAsk} },
+			come:  stampRequest},
+		{name: "a wake request", want: "a wake request came as it paused",
+			come: func(t *testing.T, r *Reconciler, _ time.Time) {
+				annotate(t, r, "api", v1alpha1.AnnotationWakeRequested, "wake-1")
+			}},
+		{name: "an activity annotation", want: "an activity annotation came as it paused",
+			come: func(t *testing.T, r *Reconciler, now time.Time) {
+				annotate(t, r, "api", v1alpha1.AnnotationLastActivity, now.UTC().Format(time.RFC3339))
+			}},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			r, pauser, now := pausingReconciler(t, tt.setup)
+			reconcileAPI(t, r)
+			require.Equal(t, v1alpha1.PhasePausing, fetch(t, r, "api").Status.Phase)
+
+			tt.come(t, r, *now)
+			reconcileAPI(t, r)
+
+			assert.Equal(t, v1alpha1.PhaseRunning, fetch(t, r, "api").Status.Phase)
+			assert.Zero(t, pauser.pauseCalls)
+			cancelled := recorded(r.Recorder.(*events.FakeRecorder), ReasonPauseCancelled)
+			require.Len(t, cancelled, 1)
+			assert.Contains(t, cancelled[0], tt.want)
+		})
+	}
+}
+
+// A wake request that calls a pause off is answered as having woken it.
+func TestPause_AWakeRequestThatCancelsAPauseIsAnswered(t *testing.T) {
+	r, _, _ := pausingReconciler(t, nil)
+	reconcileAPI(t, r)
+
+	annotate(t, r, "api", v1alpha1.AnnotationWakeRequested, "wake-1")
+	reconcileAPI(t, r)
+
+	w := fetch(t, r, "api")
+	assert.Equal(t, "wake-1", w.Status.LastWakeRequest)
+	c := meta.FindStatusCondition(w.Status.Conditions, conditionWakeRequest)
+	require.NotNil(t, c)
+	assert.Equal(t, metav1.ConditionTrue, c.Status)
+	assert.Equal(t, reasonWoken, c.Reason)
+}
+
+// A pause someone asked for, with kubectl napwake pause, that a request
+// calls off says so in its answer, so the command doesn't wait for a pause
+// that won't come.
+func TestPause_ARequestedPauseCancelledSaysSo(t *testing.T) {
+	r, _, now := pausingReconciler(t, func(w *v1alpha1.ManagedWorkload) {
+		w.Status.Activity.LastActivityTime = metav1.NewTime(fixedTime.Add(-time.Minute))
+		w.Annotations = map[string]string{v1alpha1.AnnotationPauseRequested: "pause-1"}
+	})
+	reconcileAPI(t, r)
+	w := fetch(t, r, "api")
+	require.Equal(t, v1alpha1.PhasePausing, w.Status.Phase)
+	require.True(t, w.Status.Pause.Requested)
+
+	stampRequest(t, r, *now)
+	reconcileAPI(t, r)
+
+	w = fetch(t, r, "api")
+	assert.Equal(t, v1alpha1.PhaseRunning, w.Status.Phase)
+	c := meta.FindStatusCondition(w.Status.Conditions, conditionPauseRequest)
+	require.NotNil(t, c)
+	assert.Equal(t, metav1.ConditionFalse, c.Status)
+	assert.Equal(t, ReasonPauseCancelled, c.Reason)
+	assert.Equal(t, "not paused at 2026-03-14 12:00 UTC: a request came as it paused", c.Message)
+}
+
+// A dependency whose dependent wakes as it pauses was woken for its
+// dependent, which the cancelled pause names.
+func TestPause_ADependentWakingCancelsItsDependencysPause(t *testing.T) {
+	web := depWorkload("default", "web", v1alpha1.TargetKindDeployment, v1alpha1.PhasePaused,
+		v1alpha1.DependencyRef{Kind: v1alpha1.TargetKindDeployment, Name: "api"})
+	r, _, now := pausingReconciler(t, nil, web, targetDeploymentWithReplicas("web", "default", 0))
+	reconcileAPI(t, r)
+	require.Equal(t, v1alpha1.PhasePausing, fetch(t, r, "api").Status.Phase)
+
+	waking := fetch(t, r, "web")
+	waking.Status.Phase = v1alpha1.PhaseResuming
+	require.NoError(t, r.Status().Update(context.Background(), waking))
+	annotate(t, r, "api", v1alpha1.AnnotationLastActivity, now.UTC().Format(time.RFC3339))
+	reconcileAPI(t, r)
+
+	assert.Equal(t, v1alpha1.PhaseRunning, fetch(t, r, "api").Status.Phase)
+	cancelled := recorded(r.Recorder.(*events.FakeRecorder), ReasonPauseCancelled)
+	require.Len(t, cancelled, 1)
+	assert.Contains(t, cancelled[0], "its dependent default/web woke as it paused")
+}
+
+// A cancelled pause didn't hold, so it doesn't show a GitOps tool now
+// leaves the replicas to Napwake.
+func TestPause_ACancelledPauseKeepsAGitOpsConflict(t *testing.T) {
+	r, _, now := pausingReconciler(t, func(w *v1alpha1.ManagedWorkload) {
+		w.Status.LastScaledUp = &v1alpha1.ScaledUp{At: metav1.NewTime(fixedTime.Add(-2 * time.Hour)),
+			By: "argocd-controller", GitOps: "Argo CD", Replicas: 1}
+		meta.SetStatusCondition(&w.Status.Conditions, metav1.Condition{Type: conditionGitOpsConflict,
+			Status: metav1.ConditionTrue, Reason: "PauseUndone"})
+	})
+	reconcileAPI(t, r)
+	require.Equal(t, v1alpha1.PhasePausing, fetch(t, r, "api").Status.Phase, "the hour after the conflict is over")
+
+	stampRequest(t, r, *now)
+	reconcileAPI(t, r)
+
+	w := fetch(t, r, "api")
+	assert.Equal(t, v1alpha1.PhaseRunning, w.Status.Phase)
+	assert.True(t, meta.IsStatusConditionTrue(w.Status.Conditions, conditionGitOpsConflict))
+}
+
+// Dry-run never pauses, so there's no pause to call off: activity ends the
+// would-be pause as it always has.
+func TestPause_DryRunHasNoPauseToCancel(t *testing.T) {
+	r, pauser, now := pausingReconciler(t, func(w *v1alpha1.ManagedWorkload) { w.Spec.DryRun = true })
+	reconcileAPI(t, r)
+	require.Equal(t, v1alpha1.PhaseIdle, fetch(t, r, "api").Status.Phase)
+	assert.Empty(t, fetch(t, r, "api").Status.Doorman, "nothing is routed")
+
+	*now = now.Add(time.Minute)
+	annotate(t, r, "api", v1alpha1.AnnotationLastActivity, now.UTC().Format(time.RFC3339))
+	reconcileAPI(t, r)
+
+	assert.Equal(t, v1alpha1.PhaseRunning, fetch(t, r, "api").Status.Phase)
+	assert.Zero(t, pauser.pauseCalls)
+	assert.Empty(t, recorded(r.Recorder.(*events.FakeRecorder), ReasonPauseCancelled))
 }

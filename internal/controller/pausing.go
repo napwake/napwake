@@ -22,10 +22,15 @@ import (
 	"time"
 
 	"k8s.io/apimachinery/pkg/api/meta"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	v1alpha1 "github.com/napwake/napwake/api/v1alpha1"
 )
+
+// ReasonPauseCancelled says a pause under way was called off: something
+// that would have woken the workload came as it paused.
+const ReasonPauseCancelled = "PauseCancelled"
 
 // A pause of a workload the doorman routes goes in three steps, so that no
 // request is refused while its pods stop:
@@ -98,4 +103,48 @@ func (r *Reconciler) untilFronted(ctx context.Context, workload *v1alpha1.Manage
 		return doormanTakeover, nil
 	}
 	return max(doormanTakeover-r.now().Sub(pause.RoutedAt.Time), 0), nil
+}
+
+// pauseCancelled says what calls off a workload's pause under way, or nil
+// if nothing does: whatever would wake it once paused, come since the pause
+// began, which shows it's in use. That's a request the doorman held or
+// passed on, a person asking for a workload that asks first, a wake
+// request, or an activity annotation, which a waking dependent stamps. The
+// wake request, and the pause request the pause was for, are answered here,
+// for the wake to write.
+func (r *Reconciler) pauseCancelled(ctx context.Context, workload *v1alpha1.ManagedWorkload,
+	target client.Object) (*phaseEvent, error) {
+	pause := workload.Status.Pause
+	if pause == nil {
+		return nil, nil
+	}
+	var what string
+	switch {
+	case r.takeWakeRequest(workload):
+		what = "a wake request came"
+	case !r.wokenByActivity(workload, target):
+		return nil, nil
+	case requestedSince(workload, pause) && workload.Spec.Wake.Asks():
+		what = "a person asked to wake it"
+	case requestedSince(workload, pause):
+		what = "a request came"
+	default:
+		holds, err := r.heldByDependencies(ctx, workload)
+		if err != nil {
+			return nil, err
+		}
+		what = "an activity annotation came"
+		switch n := len(holds.holders); {
+		case n == 1:
+			what = "its dependent " + holds.holders[0] + " woke"
+		case n > 1:
+			what = "its dependents " + listNames(holds.holders) + " woke"
+		}
+	}
+	why := what + " as it paused"
+	if pause.Requested {
+		r.setCondition(workload, conditionPauseRequest, metav1.ConditionFalse, ReasonPauseCancelled,
+			fmt.Sprintf("not paused at %s: %s", answeredAt(r.now()), why))
+	}
+	return &phaseEvent{reason: ReasonPauseCancelled, message: why + "; the pause is cancelled"}, nil
 }

@@ -297,6 +297,7 @@ var wakeCauses = map[string]bool{
 	"WakeRequested":  true,
 	"AutoResume":     true,
 	"ScaledUp":       true,
+	"PauseCancelled": true,
 }
 
 // happenings are the event reasons that say a workload paused or woke.
@@ -309,6 +310,7 @@ var happenings = map[string]bool{
 	"AutoResume":       true,
 	"ScaledUp":         true,
 	"RequestNotServed": true,
+	"PauseCancelled":   true,
 }
 
 // A wake by a request the doorman held is reported by the doorman's

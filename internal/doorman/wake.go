@@ -155,7 +155,9 @@ func (s *Server) stamp(ctx context.Context, rt route, from netip.Addr) error {
 	s.mu.Lock()
 	s.stamped[rt.workload] = stampRecord{pausedAt: pausedAt, at: now}
 	s.mu.Unlock()
-	if s.recorder != nil && won {
+	// A stamp while the workload pauses calls the pause off, which the
+	// operator's PauseCancelled announces.
+	if s.recorder != nil && won && w.Status.Phase == v1alpha1.PhasePaused {
 		what := "request"
 		if rt.asks {
 			what = "a person asked"

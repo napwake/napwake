@@ -2161,3 +2161,18 @@ func TestServer_ReadsARequestSplitInsideItsMethod(t *testing.T) {
 	resp, _ := readResponse(t, conn)
 	assert.Equal(t, http.StatusServiceUnavailable, resp.StatusCode)
 }
+
+// A request that calls off a pause under way is announced by the operator,
+// as PauseCancelled, not as a wake.
+func TestServer_LeavesAPauseItCallsOffToTheOperatorToAnnounce(t *testing.T) {
+	w := pausedWorkload("api", freePort(t), time.Minute)
+	w.Status.Phase = v1alpha1.PhasePausing
+	recorder := events.NewFakeRecorder(10)
+	s, c := newTestServer(t, nil, w)
+	s.recorder = recorder
+
+	require.NoError(t, s.stamp(context.Background(), route{workload: apiKey, service: "api"}, caller))
+
+	assert.NotEmpty(t, lastRequest(t, c))
+	assert.Equal(t, 0, wokenEvents(recorder))
+}
