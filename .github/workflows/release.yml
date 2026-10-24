@@ -104,7 +104,9 @@ jobs:
 
       # A pre-release's notes are those of the version it rehearses. The
       # notes link the release's docs: its minor's, or next's for a
-      # pre-release.
+      # pre-release. GitHub refuses notes over 125,000 characters, so a
+      # longer section is cut at the last whole line that fits, and links
+      # to the rest in the changelog at the tag.
       - name: Extract the changelog for the release
         run: |
           base="${TAG#v}"
@@ -114,6 +116,12 @@ jobs:
           if ! grep -q '[^[:space:]]' release-notes.md; then
             echo "CHANGELOG.md's section for ${base} is empty or missing" >&2
             exit 1
+          fi
+          if [ "$(wc -c < release-notes.md)" -gt 120000 ]; then
+            head -c 120000 release-notes.md | sed '$d' > release-notes.cut
+            mv release-notes.cut release-notes.md
+            printf '\nThe list goes on in [CHANGELOG.md](https://github.com/%s/blob/%s/CHANGELOG.md).\n' \
+              "$GITHUB_REPOSITORY" "$TAG" >> release-notes.md
           fi
           docs="${base%.*}"
           if [[ "$TAG" == *-* ]]; then
