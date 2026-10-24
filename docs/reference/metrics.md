@@ -10,7 +10,7 @@ These metrics show whether the operator is healthy and what phase each workload 
 |--------|------|--------|-------------|
 | `napwake_build_info` | Gauge | `version` | Always 1, labelled with the release the pod runs, such as `v0.2.0`. Served by the doorman too |
 | `napwake_workload_phase` | Gauge | `namespace`, `workload`, `phase` | 1 for each workload's current lifecycle phase |
-| `napwake_activity_unreadable` | Gauge | `namespace`, `workload`, `source` | 1 while Napwake can't read one of the workload's activity sources: `cpu` from metrics-server while it's awake (`MetricsAvailable` is `False`), or `prometheus`, its activity queries (`PrometheusAvailable` is `False`). No series otherwise |
+| `napwake_activity_unreadable` | Gauge | `namespace`, `workload`, `source` | 1 while Napwake can't read one of the workload's activity sources: `cpu` from metrics-server while it's awake (`MetricsAvailable` is `False`), or `prometheus`, its activity queries (`PrometheusAvailable` is `False`). No series otherwise, nor for a workload Napwake doesn't read: ignored, protected, or whose target is gone |
 | `napwake_resume_incomplete` | Gauge | `namespace`, `workload` | 1 while the workload runs after a resume that finished with replicas not Ready (`ResumeIncomplete` is `True`). A pause clears it. No series otherwise |
 | `napwake_reconcile_errors_total` | Counter | `controller` | Reconciles that returned an error, by `controller`: `managedworkload`, or `optin` for the controller that creates ManagedWorkloads from the `napwake.dev/managed` label |
 | `napwake_lifecycle_transitions_total` | Counter | `from`, `to` | Phase transitions |

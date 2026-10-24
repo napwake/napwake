@@ -186,6 +186,39 @@ func TestRecordConditions(t *testing.T) {
 			name: "every replica Ready since", phase: v1alpha1.PhaseRunning,
 			conditions: []metav1.Condition{condition(conditionResumeIncomplete, metav1.ConditionFalse, ReasonAllReplicasReady)},
 		},
+		{
+			name: "ignored, its activity no longer read", phase: v1alpha1.PhaseRunning, queries: true,
+			conditions: []metav1.Condition{
+				condition(conditionTargetAvailable, metav1.ConditionFalse, "TargetIgnored"),
+				condition(conditionMetricsAvailable, metav1.ConditionFalse, reasonNoPodMetrics),
+				condition(conditionPrometheusAvailable, metav1.ConditionFalse, "QueryFailed"),
+			},
+		},
+		{
+			name: "protected, its activity no longer read", phase: v1alpha1.PhaseRunning, queries: true,
+			conditions: []metav1.Condition{
+				condition(conditionProtected, metav1.ConditionTrue, "ProtectedNamespace"),
+				condition(conditionMetricsAvailable, metav1.ConditionFalse, reasonNoPodMetrics),
+				condition(conditionPrometheusAvailable, metav1.ConditionFalse, "QueryFailed"),
+			},
+		},
+		{
+			name: "its target gone", phase: v1alpha1.PhaseRunning, queries: true,
+			conditions: []metav1.Condition{
+				condition(conditionTargetAvailable, metav1.ConditionFalse, ReasonTargetNotFound),
+				condition(conditionMetricsAvailable, metav1.ConditionFalse, reasonNoPodMetrics),
+				condition(conditionPrometheusAvailable, metav1.ConditionFalse, "QueryFailed"),
+			},
+		},
+		{
+			name: "protected no longer", phase: v1alpha1.PhaseRunning,
+			conditions: []metav1.Condition{
+				condition(conditionTargetAvailable, metav1.ConditionTrue, "TargetExists"),
+				condition(conditionProtected, metav1.ConditionFalse, "NotProtected"),
+				condition(conditionMetricsAvailable, metav1.ConditionFalse, reasonNoPodMetrics),
+			},
+			unreadable: []string{"cpu"},
+		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -398,4 +431,30 @@ func TestPause_ClearsAResumeLeftIncomplete(t *testing.T) {
 		recordConditions(stale)
 		assert.Empty(t, seriesOf(t, metrics.ResumeIncomplete, "stale-app", ""), "%s", phase)
 	}
+}
+
+// A workload Napwake stops reading, here one whose target is labelled
+// napwake.dev/ignore, has NapwakeActivityUnreadable's series dropped, though
+// its status keeps the condition from when it was read.
+func TestReconcile_AnIgnoredWorkloadsActivityIsntUnreadable(t *testing.T) {
+	workload := lifecycleWorkload("ignored-app", v1alpha1.PhaseRunning)
+	workload.Finalizers = []string{finalizerName}
+	workload.Status.Conditions = []metav1.Condition{{Type: conditionMetricsAvailable, Status: metav1.ConditionFalse,
+		Reason: reasonNoPodMetrics, LastTransitionTime: metav1.NewTime(fixedTime)}}
+	r := newTestReconciler(t, workload, &stubPauser{})
+	t.Cleanup(func() { metrics.DeleteWorkload("default", "ignored-app") })
+	_, err := r.Reconcile(context.Background(), reconcileFor("ignored-app"))
+	require.NoError(t, err)
+	require.Equal(t, map[string]float64{"cpu": 1}, seriesOf(t, metrics.ActivityUnreadable, "ignored-app", "source"))
+
+	var target appsv1.Deployment
+	require.NoError(t, r.Get(context.Background(), client.ObjectKey{Namespace: "default", Name: "ignored-app"}, &target))
+	target.Labels = map[string]string{v1alpha1.LabelIgnore: v1alpha1.True}
+	require.NoError(t, r.Update(context.Background(), &target))
+	for range 2 {
+		_, err = r.Reconcile(context.Background(), reconcileFor("ignored-app"))
+		require.NoError(t, err)
+	}
+
+	assert.Empty(t, seriesOf(t, metrics.ActivityUnreadable, "ignored-app", "source"))
 }

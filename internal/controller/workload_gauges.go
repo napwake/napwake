@@ -25,19 +25,23 @@ import (
 )
 
 // recordConditions publishes the conditions alerts watch, as the status
-// says them. A source counts as unreadable only where Napwake reads it:
-// CPU while the workload is awake, since a paused one has none and keeps
-// the condition from before, and Prometheus while it has queries, since
-// removing them leaves the condition behind. A resume left incomplete
-// counts only while the workload runs, its replicas not Ready.
+// says them. A source counts as unreadable only where Napwake reads it,
+// which it doesn't for a workload ignored, protected or whose target is
+// gone, which keep the condition from before: CPU while the workload is
+// awake, since a paused one has none, and Prometheus while it has queries,
+// since removing them leaves the condition behind. A resume left
+// incomplete counts only while the workload runs, its replicas not Ready.
 func recordConditions(workload *v1alpha1.ManagedWorkload) {
 	ns, name := workload.Namespace, workload.Name
 	conditions := workload.Status.Conditions
 	awake := workload.Status.Phase == v1alpha1.PhaseRunning || workload.Status.Phase == v1alpha1.PhaseIdle
+	read := !meta.IsStatusConditionFalse(conditions, conditionTargetAvailable) &&
+		!meta.IsStatusConditionTrue(conditions, conditionProtected)
 
-	setWhile(awake && meta.IsStatusConditionFalse(conditions, conditionMetricsAvailable),
+	setWhile(read && awake && meta.IsStatusConditionFalse(conditions, conditionMetricsAvailable),
 		metrics.ActivityUnreadable, ns, name, "cpu")
-	setWhile(hasPrometheusActivity(workload) && meta.IsStatusConditionFalse(conditions, conditionPrometheusAvailable),
+	setWhile(read && hasPrometheusActivity(workload) &&
+		meta.IsStatusConditionFalse(conditions, conditionPrometheusAvailable),
 		metrics.ActivityUnreadable, ns, name, "prometheus")
 	setWhile(awake && meta.IsStatusConditionTrue(conditions, conditionResumeIncomplete),
 		metrics.ResumeIncomplete, ns, name)
