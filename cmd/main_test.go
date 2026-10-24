@@ -72,7 +72,7 @@ func TestImageBuildContext_KeepsEveryEmbeddedFile(t *testing.T) {
 		if err != nil || strings.HasPrefix(rel, "..") || files == "" {
 			continue
 		}
-		for _, f := range strings.Fields(files) {
+		for f := range strings.FieldsSeq(files) {
 			path := filepath.ToSlash(filepath.Join(rel, f))
 			embedded = append(embedded, path)
 			assert.Contains(t, kept, "!"+path, ".dockerignore leaves %s out of the image's build context", path)
