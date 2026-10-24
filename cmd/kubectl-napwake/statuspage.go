@@ -225,8 +225,9 @@ func savedNote(wl statusWorkload) string {
 	}
 }
 
-// stateClass is the dot a phase gets on the page, coloured as the scan
-// report colours its states: paused, idle, or running.
+// stateClass is the door a phase gets on the page: paused, idle and
+// running as the scan report draws them, as paused, idle and active, and
+// pausing, resuming and creating, Creating for a workload with no phase yet.
 func stateClass(phase v1alpha1.WorkloadPhase) string {
 	switch phase {
 	case v1alpha1.PhasePaused:
@@ -235,6 +236,10 @@ func stateClass(phase v1alpha1.WorkloadPhase) string {
 		return "idle"
 	case v1alpha1.PhaseRunning:
 		return "active"
+	case v1alpha1.PhasePausing:
+		return "pausing"
+	case v1alpha1.PhaseResuming:
+		return "resuming"
 	}
-	return ""
+	return "creating"
 }

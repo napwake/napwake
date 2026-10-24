@@ -216,3 +216,28 @@ func TestStatusPage_Amounts(t *testing.T) {
 	objs[0].(*v1alpha1.ManagedWorkload).Status.Cost.SavingsUnknown = "pods outside watchNamespaces aren't visible"
 	assert.False(t, statusPageOf(t, objs...).SavedMeasurable)
 }
+
+// A workload waking is told by its state's class, whatever its state says.
+func TestStatusPage_WakingWhateverItsStateSays(t *testing.T) {
+	web := statusWorkloadObj("preview-7", "web", v1alpha1.TargetKindDeployment, v1alpha1.PhaseResuming,
+		30*time.Second)
+	page := statusPageOf(t, web)
+	page.Workloads[0].State = "waking up"
+
+	got := renderStatusPageData(t, page)
+
+	pageHas(t, got, `<p class="bldg-say">Napwake is waking deployment/web.</p>`)
+	pageHas(t, got, `<span class="state resuming"><span class="dot"></span>waking up</span>`, "its door ajar")
+}
+
+// Every phase has its own class, which draws its door: a workload with no
+// phase yet is being created.
+func TestStateClass(t *testing.T) {
+	for phase, want := range map[v1alpha1.WorkloadPhase]string{
+		v1alpha1.PhasePaused: "paused", v1alpha1.PhaseIdle: "idle", v1alpha1.PhaseRunning: "active",
+		v1alpha1.PhasePausing: "pausing", v1alpha1.PhaseResuming: "resuming", v1alpha1.PhaseCreating: "creating",
+		"": "creating",
+	} {
+		assert.Equal(t, want, stateClass(phase), phase)
+	}
+}
