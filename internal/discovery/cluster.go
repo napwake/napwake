@@ -30,6 +30,7 @@ import (
 	"golang.org/x/sync/errgroup"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/meta"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	v1alpha1 "github.com/napwake/napwake/api/v1alpha1"
@@ -132,6 +133,10 @@ type Workload struct {
 	PodCPURequestMillis   int64      `json:"podCPURequestMillis"`
 	PodMemoryRequestBytes int64      `json:"podMemoryRequestBytes"`
 	LastDeployed          *time.Time `json:"lastDeployed,omitempty"`
+	// IdleAfter is how long without activity makes it idle, which is when
+	// Napwake would pause it: its own idleAfter when Napwake manages it,
+	// otherwise the scan's.
+	IdleAfter metav1.Duration `json:"idleAfter"`
 	// Reason is the evidence for State, e.g. "CPU 64% of its request" or "deployed 20m ago".
 	Reason string `json:"reason,omitempty"`
 	// Unmeasured says why CPU couldn't be measured.

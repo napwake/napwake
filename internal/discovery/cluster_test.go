@@ -434,6 +434,7 @@ func TestScanCluster_UnmanagedIdleAfter(t *testing.T) {
 		report, err := NewScanner(c, c).ScanCluster(context.Background(), opts)
 		require.NoError(t, err)
 		assert.Equal(t, want, byName(report)["deployed"].State, "deployed 90m ago, with idleAfter %s", idleAfter)
+		assert.Equal(t, idleAfter, byName(report)["deployed"].IdleAfter.Duration, "and says which")
 	}
 }
 
@@ -448,6 +449,7 @@ func TestScanCluster_ManagedBeforeItsClockStarts(t *testing.T) {
 	got := byName(scanWorkloads(t, objs...))
 
 	assert.Equal(t, StateActive, got["deployed"].State, "deployed 90m ago, with its own idleAfter of 2h")
+	assert.Equal(t, 2*time.Hour, got["deployed"].IdleAfter.Duration, "its own, not the scan's")
 }
 
 // What Napwake saved, what dry-run measured, and what history estimates

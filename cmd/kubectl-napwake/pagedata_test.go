@@ -25,6 +25,7 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/interceptor"
 
@@ -312,4 +313,16 @@ func TestReportPage_NamespaceSavedWhateverTheAmountReads(t *testing.T) {
 	got := renderReportPage(t, page)
 
 	pageHas(t, got, `$0<span class="sub">$1 saved</span>`, "preview-3's $3.50 freed, shown as reworded")
+}
+
+// Each row says when Napwake would pause it, by its own idle-after.
+func TestReportPage_IdleAfterPerRow(t *testing.T) {
+	result := historyResult()
+	result.Workloads[0].IdleAfter = metav1.Duration{Duration: time.Hour}
+	result.Workloads[1].IdleAfter = metav1.Duration{Duration: 90 * time.Minute}
+
+	page := buildReport(result, time.Hour)
+
+	assert.Equal(t, "1h", page.Workloads[0].IdleAfter)
+	assert.Equal(t, "1h30m", page.Workloads[1].IdleAfter, "a managed workload's own")
 }

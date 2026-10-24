@@ -199,6 +199,7 @@ func (s *Scanner) scanNamespace(ctx, historyCtx context.Context, namespace strin
 			}
 		}
 		w.WontPause = wontPause(obj)
+		w.IdleAfter = metav1.Duration{Duration: idleAfterFor(mw, opts)}
 		w.Clues = clues(w, now)
 		w.rates, w.OnSpot, w.SpotAtOnDemand = pricing.ratesFor(running, mw, opts)
 		w.HourlyCost = hourlyCost(w, w.rates)

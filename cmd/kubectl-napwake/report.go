@@ -185,6 +185,9 @@ type workloadRow struct {
 	// WontPause is why Napwake refuses to pause it however idle it is,
 	// which Because also says, or "" for one it would pause.
 	WontPause string
+	// IdleAfter is how long without activity Napwake waits before pausing
+	// it, such as "1h": its own idleAfter, or the scan's.
+	IdleAfter string
 }
 
 // nextSteps keep the commands that measure a workload in dry-run apart
@@ -668,6 +671,9 @@ func workloadRowFor(wl Workload) workloadRow {
 		Freed:      freedCell(wl), FreedSort: -1, Saved: scanSavedCell(wl),
 		CouldFree: couldFreeCell(wl), CouldFreeSort: -1,
 		Because: because(wl), WontPause: wl.WontPause,
+	}
+	if d := wl.IdleAfter.Duration; d > 0 {
+		row.IdleAfter = roundedDuration(d)
 	}
 	row.State += " (" + management(wl) + ")"
 	row.CouldSleep, row.Wakes, row.Since, row.CouldSleepSort = sleepCells(wl)

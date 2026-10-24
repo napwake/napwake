@@ -225,7 +225,7 @@ kubectl napwake scan --open=false
 | `--cpu-price` | | `0.031` | Your price per vCPU-hour, in dollars, zero or more |
 | `--memory-price` | | `0.004` | Your price per GiB-hour of memory, in dollars, zero or more |
 | `--window` | | `7d` | How much Prometheus history to replay, such as `7d` or `36h`, up to `366d`; `0` judges from CPU right now only |
-| `--idle-after` | | `1h` | How long without activity makes a workload idle, now and in the replay, as Napwake's `idleAfter`. Workloads Napwake manages use their own setting |
+| `--idle-after` | | `1h` | How long without activity makes a workload idle, now and in the replay, as Napwake's `idleAfter`. Workloads Napwake manages use their own setting. JSON and YAML give each workload's as `idleAfter` |
 | `--prometheus-service` | | the one found in the cluster with the most history | Prometheus Service in the cluster to read history from, as `namespace/name` or `namespace/name:port`, through the API server |
 | `--prometheus-url` | | the one found in the cluster with the most history | Prometheus API to read history from, such as Thanos, Mimir, or Google Cloud Managed Service for Prometheus |
 | `--prometheus-selector` | | | Label matchers added to every history query, such as `'cluster="prod"'`, for a Prometheus that holds more than one cluster. Values are double-quoted, as in PromQL |
