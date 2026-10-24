@@ -74,7 +74,9 @@ This lists every object that still has a `hybernate.io` label or annotation:
 kubectl api-resources --verbs=list -o name | xargs -n 1 kubectl get -A -o json | jq -r '.items[] | select([(.metadata.labels // {} | to_entries[] | .key, .value), (.metadata.annotations // {} | keys[])] | any(contains("hybernate.io"))) | "\(.kind) \(.metadata.namespace // "-")/\(.metadata.name)"'
 ```
 
-Change each where it's defined, such as in Git. Every key keeps its name after the prefix, so `hybernate.io/idle-after` becomes `napwake.dev/idle-after`. Two keys don't move:
+A Deployment's ReplicaSets keep copies of its annotations, and Kubernetes never removes them. Leave those. Napwake doesn't read them.
+
+Change the rest where they're defined, such as in Git. Every key keeps its name after the prefix, so `hybernate.io/idle-after` becomes `napwake.dev/idle-after`. Two keys don't move:
 
 - `hybernate.io/wake-on-request` has no new name. Where it was `"false"`, set `napwake.dev/wake: ask`. See [Wake on request, from before 0.2.0](#wake-on-request-from-before-020).
 - `hybernate.io/paused-from` on a workload means Hybernate never handed it back. Scale the workload to the `replicas` the annotation records, then remove it.
