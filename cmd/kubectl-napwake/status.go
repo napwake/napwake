@@ -38,6 +38,7 @@ import (
 	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime/schema"
+	"k8s.io/apimachinery/pkg/types"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	v1alpha1 "github.com/napwake/napwake/api/v1alpha1"
@@ -230,6 +231,8 @@ type statusWorkload struct {
 	// namedApart is set for a ManagedWorkload written by hand under a name
 	// other than its target's, which the table then shows beside it.
 	namedApart bool
+	// uid is its ManagedWorkload's, which its events name.
+	uid types.UID
 	// TurnedAway is what the doorman turned away during its current or
 	// last pause, for a workload whose doorman asks before waking it.
 	TurnedAway *v1alpha1.TurnedAway `json:"turnedAway,omitempty"`
@@ -401,7 +404,7 @@ func clusterStatus(ctx context.Context, c client.Client, home string, opts statu
 	for i := range result.Workloads {
 		row := &result.Workloads[i]
 		if row.Phase != v1alpha1.PhasePaused {
-			row.WokenBy = woke[client.ObjectKey{Namespace: row.Namespace, Name: row.Name}]
+			row.WokenBy = woke[row.uid]
 		}
 	}
 	return result, nil
@@ -580,6 +583,7 @@ func workloadStatus(w *v1alpha1.ManagedWorkload, targetActiveUntil, now time.Tim
 		FreedThisMonth: discovery.FreedThisMonth(w, now),
 		SavedThisMonth: discovery.SavedThisMonth(w, now),
 		namedApart:     w.Name != w.Spec.Target.Name && w.Labels[v1alpha1.LabelFromLabel] != v1alpha1.True,
+		uid:            w.UID,
 	}
 	if c := w.Status.Cost; c != nil {
 		row.SavingsUnknown = c.SavingsUnknown
@@ -875,14 +879,19 @@ func problemsOf(w *v1alpha1.ManagedWorkload, now time.Time) []problem {
 
 // recentHappenings lists the pauses and wakes since a time, newest first,
 // from events sorted oldest first, and what woke each ManagedWorkload that
-// a pause hasn't come to since, over all of them. Dry-run events are left
-// out: nothing paused or woke. The operator starts its messages with the
-// target's name, which is dropped, since status shows the workload beside
-// it.
+// a pause hasn't come to since, over all of them, by its UID. Dry-run
+// events are left out: nothing paused or woke. The operator starts its
+// messages with the target's name, which is dropped, since status shows
+// the workload beside it.
+//
+// Events outlive their ManagedWorkload, so one deleted and made again under
+// the same name, as a preview environment's can be on every push, has the
+// old one's events beside its own. Napwake's events name the
+// ManagedWorkload's UID, which tells them apart.
 func recentHappenings(events []corev1.Event, targets map[client.ObjectKey]string, since time.Time) (
-	[]happening, map[client.ObjectKey]string) {
-	caused := map[client.ObjectKey]bool{}
-	woke := map[client.ObjectKey]string{}
+	[]happening, map[types.UID]string) {
+	caused := map[types.UID]bool{}
+	woke := map[types.UID]string{}
 	var out []happening
 	for i := range events {
 		ev := &events[i]
@@ -890,6 +899,7 @@ func recentHappenings(events []corev1.Event, targets map[client.ObjectKey]string
 			continue
 		}
 		key := client.ObjectKey{Namespace: ev.InvolvedObject.Namespace, Name: ev.InvolvedObject.Name}
+		uid := ev.InvolvedObject.UID
 		// Events outlive the ManagedWorkload they're for; one that's gone
 		// is named as it was.
 		target := cmp.Or(targets[key], key.Name)
@@ -901,16 +911,16 @@ func recentHappenings(events []corev1.Event, targets map[client.ObjectKey]string
 		}
 		switch {
 		case ev.Reason == "Paused":
-			kind, caused[key], woke[key] = happeningPause, false, ""
+			kind, caused[uid], woke[uid] = happeningPause, false, ""
 		case ev.Reason == "RequestNotServed":
 			kind = happeningNotServed
-		case ev.Reason == "Resumed" && caused[key]:
-			caused[key] = false
+		case ev.Reason == "Resumed" && caused[uid]:
+			caused[uid] = false
 			continue
 		case ev.Reason == "Resumed":
-			woke[key] = ""
+			woke[uid] = ""
 		default:
-			caused[key], woke[key] = true, cause
+			caused[uid], woke[uid] = true, cause
 		}
 		at := eventTime(ev).UTC()
 		if at.Before(since) || heldRequest {

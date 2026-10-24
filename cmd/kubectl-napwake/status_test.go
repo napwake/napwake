@@ -36,6 +36,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime/schema"
+	"k8s.io/apimachinery/pkg/types"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 	"sigs.k8s.io/controller-runtime/pkg/client/interceptor"
@@ -56,7 +57,7 @@ func before(d time.Duration) *metav1.Time {
 func statusWorkloadObj(namespace, name string, kind v1alpha1.TargetKind, phase v1alpha1.WorkloadPhase,
 	inPhase time.Duration) *v1alpha1.ManagedWorkload {
 	return &v1alpha1.ManagedWorkload{
-		ObjectMeta: metav1.ObjectMeta{Name: name, Namespace: namespace},
+		ObjectMeta: metav1.ObjectMeta{Name: name, Namespace: namespace, UID: testUID(namespace, name)},
 		Spec: v1alpha1.ManagedWorkloadSpec{Target: v1alpha1.WorkloadRef{Kind: kind, Name: name},
 			IdlePolicy: &v1alpha1.IdlePolicySpec{}},
 		Status: v1alpha1.ManagedWorkloadStatus{Phase: phase, LastTransitionTime: before(inPhase)},
@@ -72,13 +73,20 @@ func condition(condType string, status metav1.ConditionStatus, reason, message s
 	return metav1.Condition{Type: condType, Status: status, Reason: reason, Message: message}
 }
 
+// testUID is the UID of the ManagedWorkload statusWorkloadObj makes, which
+// its events from statusEvent name.
+func testUID(namespace, name string) types.UID {
+	return types.UID(namespace + "-" + name)
+}
+
 func statusEvent(namespace, workload, reason, message string, at time.Duration) *corev1.Event {
 	return &corev1.Event{
-		ObjectMeta:     metav1.ObjectMeta{Name: workload + "." + reason + "." + at.String(), Namespace: namespace},
-		InvolvedObject: corev1.ObjectReference{Kind: "ManagedWorkload", Namespace: namespace, Name: workload},
-		Reason:         reason,
-		Message:        message,
-		EventTime:      metav1.NewMicroTime(statusNow.Add(-at)),
+		ObjectMeta: metav1.ObjectMeta{Name: workload + "." + reason + "." + at.String(), Namespace: namespace},
+		InvolvedObject: corev1.ObjectReference{Kind: "ManagedWorkload", Namespace: namespace, Name: workload,
+			UID: testUID(namespace, workload)},
+		Reason:    reason,
+		Message:   message,
+		EventTime: metav1.NewMicroTime(statusNow.Add(-at)),
 	}
 }
 

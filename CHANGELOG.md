@@ -154,7 +154,7 @@ There's no upgrade path from Hybernate 0.1.x or a 0.2.0 release candidate. Unins
 - The simulator models how long a wake takes, and the back-off after a wrong pause, which the scan's replay uses too
 - `kubectl napwake status` is in colour at a terminal. Paused is blue beside a shut door, resuming yellow beside one ajar, running green beside an open one. Needs attention is red. Set `NO_COLOR` for no colour. Piped or redirected output is plain text, as before
 - The scan report and the status page have a share card your browser draws, wide or square, with totals only. **Copy summary** gives three plain lines, and **Save as PDF** prints the page. The cluster's name, and the scan's Prometheus source, are left out unless you tick the box. The page sends nothing anywhere
-- `kubectl napwake status -o json` says what woke each workload. Its `wokenBy` is `request`, `activity`, `wakeRequest`, `forecast`, `outside` or `pauseCancelled`, from its latest wake, until it pauses again. Each recent event has a `kind`, `pause`, `wake` or `notServed`, and each wake its own `wokenBy`. Each problem names its workload's `target`, such as `deployment/worker`
+- `kubectl napwake status -o json` says what woke each workload. Its `wokenBy` is `request`, `activity`, `wakeRequest`, `forecast`, `outside` or `pauseCancelled`, from its latest wake, until it pauses again. A ManagedWorkload deleted and made again under the same name doesn't take on the old one's. Each recent event has a `kind`, `pause`, `wake` or `notServed`, and each wake its own `wokenBy`. Each problem names its workload's `target`, such as `deployment/worker`
 - `kubectl napwake scan -o json` gives each workload's `idleAfter`: its own when Napwake manages it, otherwise `--idle-after`
 
 ### Changed

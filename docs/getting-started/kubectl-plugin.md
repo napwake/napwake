@@ -423,7 +423,7 @@ In a terminal, the states are in colour, paused blue, running green and resuming
     - `outside`: a scale-up from outside Napwake
     - `pauseCancelled`: whatever came as it paused, which the event's message names
 
-    It's left out when the cause wasn't recorded, and once the events have expired. The API server keeps events for an hour unless its `--event-ttl` says otherwise, so on most clusters that's what `status` can show.
+    It's left out when the cause wasn't recorded, and once the events have expired. A ManagedWorkload deleted and made again under the same name starts without one, since the old one's events name its UID, not the new one's. The API server keeps events for an hour unless its `--event-ttl` says otherwise, so on most clusters that's what `status` can show.
 
 ```bash
 kubectl napwake status --context staging -n preview-42

@@ -28,6 +28,7 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	corev1 "k8s.io/api/core/v1"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/interceptor"
 
@@ -126,6 +127,38 @@ func TestStatus_WokenBy(t *testing.T) {
 type eventAt struct {
 	reason, message string
 	ago             time.Duration
+}
+
+// Events outlive their ManagedWorkload, so what woke one deleted and made
+// again under the same name, as a preview environment's is on each push,
+// says nothing of what woke the new one. The recent list still names the
+// old one's wake as it was.
+func TestStatus_WokenByIsTheManagedWorkloadsOwn(t *testing.T) {
+	w := statusWorkloadObj("shop", "web", v1alpha1.TargetKindDeployment, v1alpha1.PhaseRunning, 10*time.Minute)
+	w.UID = "web-recreated"
+	old := []*corev1.Event{
+		statusEvent("shop", "web", "WokenByRequest", "request on Service web, waking", 2*time.Hour+time.Second),
+		statusEvent("shop", "web", "WokeByActivity", "web: a request is waiting, waking", 2*time.Hour),
+	}
+	objs := make([]client.Object, 0, 1+len(old))
+	objs = append(objs, w)
+	for _, ev := range old {
+		ev.InvolvedObject.UID = "web-deleted"
+		objs = append(objs, ev)
+	}
+
+	result, err := clusterStatus(context.Background(), newStatusClient(t, interceptor.Funcs{}, objs...), "shop",
+		statusOpts())
+
+	require.NoError(t, err)
+	assert.Empty(t, result.Workloads[0].WokenBy, "the request woke the ManagedWorkload since deleted")
+	var listed []string
+	for _, h := range result.Recent {
+		if h.Kind == happeningWake {
+			listed = append(listed, h.Workload+" "+h.WokenBy)
+		}
+	}
+	assert.Equal(t, []string{"web request"}, listed, "the old one's wake is still listed")
 }
 
 // -o json gives what woke each workload, and each recent event's kind and
