@@ -76,7 +76,7 @@ See [Idle Detection](../concepts/idle-detection.md) for how the activity clock w
 | Field | Type | Default | Description |
 |-------|------|---------|-------------|
 | `idleAfter` | duration, at least `1m` | `1h` | How long without any activity before pausing |
-| `activity.cpuThreshold` | int (percent) | `10` | CPU utilization, as % of requests, above which the workload counts as active (1-100) |
+| `activity.cpuThreshold` | int or string (percent) | `10` | CPU utilization, as % of requests, above which the workload counts as active: 0.1 to 100, a decimal written as a string, such as `"0.5"` |
 | `activity.prometheus[].promQL` | string | _(none)_ | PromQL query; a result above zero counts as activity. At most 10. See the [Prometheus Activity Guide](prometheus-signals.md) |
 | `autoResume` | bool | `false` | Wake ahead of the demand a confident forecast predicts |
 | `pauseEarly` | bool | `false` | Pause before `idleAfter` runs out, once idle for 20 minutes, when a confident forecast expects the hours until then to be quiet and a request would wake the workload through the doorman. See [Pausing Early](../concepts/forecasting.md#pausing-early) |

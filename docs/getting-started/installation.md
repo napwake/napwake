@@ -44,7 +44,7 @@ Napwake is packaged two ways: a Helm chart, and the Kustomize manifests, the rep
         | `timezone` | `UTC` | Time zone the forecast learns hours and weekdays in |
         | `watchNamespaces` | `[]` | Namespaces to work in; empty means all |
         | `defaults.idleAfter` | `1h` | Idle time before pausing, for opted-in workloads that don't set their own |
-        | `defaults.cpuThreshold` | `10` | CPU percentage of requests that counts as active |
+        | `defaults.cpuThreshold` | `10` | CPU percentage of requests, from 0.1 to 100, that counts as active |
         | `defaults.dryRun` | `false` | Measure every opted-in workload without pausing, unless it sets its own |
         | `defaults.pauseEarly` | `false` | Let a confident forecast pause workloads before `idleAfter` runs out |
         | `defaults.forecast` | `balanced` | How soon the forecast acts: `eager`, `balanced` or `cautious` |

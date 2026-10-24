@@ -25,6 +25,7 @@ These metrics help you understand what the operator is doing and why.
 | `napwake_prediction_data_points` | Gauge | `namespace`, `workload` | Data points collected |
 | `napwake_prediction_anomalies_total` | Counter | `namespace`, `workload` | Anomalies detected |
 | `napwake_idle_detections_total` | Counter | `namespace`, `workload` | Times each workload's idle clock ran out |
+| `napwake_wrong_pauses_total` | Counter | `namespace`, `workload` | Pauses made while the workload was in use: undone soon after by a request, a click, a wake request or an activity annotation. See [Paused while in use](../concepts/idle-detection.md#paused-while-in-use) |
 | `napwake_external_scale_ups_total` | Counter | `by` | Paused workloads scaled up outside Napwake, by the GitOps tool that did it (`argo-cd`, `flux`, `fleet`, `kapp`, `kluctl`), or `other` |
 
 ## Tier 3: Debugging
