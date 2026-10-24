@@ -513,7 +513,7 @@ func headlineFor(result scanResult) (headline, []fact) {
 	var h headline
 	if live {
 		h.Figures = append(h.Figures, figure{Value: dollars(t.FreedThisMonth), Label: "freed by Napwake this month",
-			Detail: fmt.Sprintf("so far, pausing %s; %s of it saved as nodes scaled down", freedBy(t),
+			Detail: fmt.Sprintf("from %s; %s of it saved as nodes scaled down", freedBy(t),
 				dollars(t.SavedThisMonth)), Kind: figureFreed, Amount: t.FreedThisMonth})
 	}
 	if f, shortHistory, ok := couldFree(result, live); ok {
@@ -577,20 +577,20 @@ func freedBy(t discovery.Totals) string {
 	var by string
 	switch {
 	case t.Live > 0:
-		by = countOf(t.Live, "live workload")
+		by = "the " + countOf(t.Live, "live workload") + " it pauses"
 	case anyMoney(freed) && t.DryRun > 0:
-		by = "workloads before they went back to dry-run"
+		by = "workloads it paused before they went back to dry-run"
 	case anyMoney(freed):
-		by = "workloads"
+		by = "workloads it paused"
 	}
 	switch {
 	case !anyMoney(t.ProtectedFreedThisMonth):
 	case by == "":
-		by = "workloads before they were protected"
+		by = "workloads it paused before they were protected"
 	default:
-		by += " and others before they were protected"
+		by += " and others it paused before they were protected"
 	}
-	return cmp.Or(by, "workloads")
+	return cmp.Or(by, "workloads it paused")
 }
 
 // couldFree is the headline's figure for what pausing could free a month:

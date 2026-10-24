@@ -87,3 +87,14 @@ func TestReportAndStatusPage_Words(t *testing.T) {
 		pageLacks(t, page, "Nothing has been paused", name)
 	}
 }
+
+// The status page's callout says how many things need a look, not that they
+// stop Napwake working: a protected workload or a back-off doesn't (P55). The
+// scan page's bar names where "What the numbers mean" goes (P56). Kede's
+// words (cmo-036).
+func TestReportAndStatusPage_CalloutAndBar(t *testing.T) {
+	pageHas(t, statusPageHTML, `<b>Needs you:</b> {{len .Attention}} {{if eq (len .Attention) 1}}thing{{else}}things{{end}} to look at. See what, and why.`)
+	pageLacks(t, statusPageHTML, "keeps</span>")
+	pageHas(t, reportHTML, `<a href="#meaning">What the numbers mean</a>`)
+	pageLacks(t, reportHTML, `>The numbers<`)
+}

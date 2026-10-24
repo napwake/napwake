@@ -854,7 +854,7 @@ func TestWriteScan_FreedBeforeProtected(t *testing.T) {
 	h, _ := headlineFor(result)
 	require.NotEmpty(t, h.Figures)
 	assert.Equal(t, "$12", h.Figures[0].Value)
-	assert.Equal(t, "so far, pausing workloads before they were protected; $5 of it saved as nodes scaled down",
+	assert.Equal(t, "from workloads it paused before they were protected; $5 of it saved as nodes scaled down",
 		h.Figures[0].Detail)
 
 	result.Workloads = append(result.Workloads, Workload{Namespace: "orders", Kind: "Deployment", Name: "api",
@@ -868,7 +868,7 @@ func TestWriteScan_FreedBeforeProtected(t *testing.T) {
 		"and saved $5 of that.\n")
 	h, _ = headlineFor(result)
 	assert.Equal(t, "$15", h.Figures[0].Value)
-	assert.Equal(t, "so far, pausing 1 live workload and others before they were protected; $6 of it saved as "+
+	assert.Equal(t, "from the 1 live workload it pauses and others it paused before they were protected; $6 of it saved as "+
 		"nodes scaled down", h.Figures[0].Detail)
 }
 

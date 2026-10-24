@@ -625,7 +625,7 @@ html:not(.js) th { position: static; }
           {{range $i, $f := .Figures}}<div class="slot s{{$i}}{{if eq $i $lead}} lead{{end}}"><div class="figure{{if not .Amount}} zero{{end}}"><b>{{.Value}}</b><span>{{.Label}}</span>{{if .Detail}}<small>{{.Detail}}</small>{{end}}</div>{{if and (eq $i 1) $.FreedThisMonth}}{{if or $.SavedThisMonth $.SavedMeasurable}}<div class="meter" hidden data-of="{{$.FreedThisMonth}}" data-part="{{$.SavedThisMonth}}" aria-hidden="true"><i></i></div>{{end}}<p class="meter-t">{{if not $.SavedThisMonth}}{{if $.SavedMeasurable}}None of the {{$freed}} freed has come off the bill yet.{{else}}Napwake can&#39;t tell here how much of the {{$freed}} freed came off the bill.{{end}}{{else if $.SavedMeasurable}}{{.Value}} of the {{$freed}} freed came off the bill.{{else}}At least {{.Value}} of the {{$freed}} freed came off the bill.{{end}}</p>{{end}}{{if eq $i 2}} <a class="dry-link" href="#managed">See the workloads</a>{{end}}</div>{{end}}
         </div>
         {{if .Attention}}
-        <a class="callout" href="#attention"><span class="door-g" aria-hidden="true"></span><span><b>Needs you:</b> {{len .Attention}} {{if eq (len .Attention) 1}}thing keeps{{else}}things keep{{end}} Napwake from doing its job. See what, and why.</span></a>
+        <a class="callout" href="#attention"><span class="door-g" aria-hidden="true"></span><span><b>Needs you:</b> {{len .Attention}} {{if eq (len .Attention) 1}}thing{{else}}things{{end}} to look at. See what, and why.</span></a>
         {{end}}
         {{if .Workloads}}<p class="lede">{{.Summary}}</p>{{end}}
         <div class="actions needs-js" role="group" aria-label="Share this page">

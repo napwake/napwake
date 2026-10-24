@@ -106,7 +106,7 @@ func TestWriteHTML_History(t *testing.T) {
 		"and CPU at the time of the scan.", "which Prometheus the history is from")
 	assert.Contains(t, got, "Costs use assumed list prices: $0.031 per vCPU-hour and $0.004 per GiB-hour of memory")
 	assert.Contains(t, got, `<div class="figure"><b>$4</b><span>freed by Napwake this month</span>`+
-		`<small>so far, pausing 1 live workload; $1 of it saved as nodes scaled down</small></div>`)
+		`<small>from the 1 live workload it pauses; $1 of it saved as nodes scaled down</small></div>`)
 	assert.Contains(t, got, `<p class="prices">won&#39;t drop until something removes nodes, and no node autoscaler `+
 		`was found. <a href="https://docs.napwake.dev/guides/cluster-autoscaler/">How to fix it</a></p>`)
 	assert.Contains(t, got, `<div class="figure"><b>$179</b><span>could be freed a month</span>`+
@@ -353,7 +353,7 @@ func TestHeadlineFor_LiveProtected(t *testing.T) {
 	h, facts := headlineFor(result)
 
 	assert.Equal(t, "<$1", h.Figures[0].Value)
-	assert.Equal(t, "so far, pausing 1 live workload; $0 of it saved as nodes scaled down", h.Figures[0].Detail)
+	assert.Equal(t, "from the 1 live workload it pauses; $0 of it saved as nodes scaled down", h.Figures[0].Detail)
 	assert.Equal(t, fact{Value: "2 of 3", Label: "managed by Napwake: 1 live, 0 in dry-run, 1 live but protected, " +
 		"so never paused"}, facts[len(facts)-1])
 }
