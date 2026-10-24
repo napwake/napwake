@@ -600,10 +600,10 @@ html:not(.js) th { position: static; }
   </div>
 </nav>
 <main>
-  {{/* Who's waking, and whether it's stuck: a resuming workload with a Stuck row in Needs attention. Rows name
-       the target by name ("worker"), the board by kind and name ("deployment/worker"). */}}
+  {{/* Who's waking, and whether it's stuck: a resuming workload with a Stuck row in Needs attention. A row's
+       Target names the workload as the board does ("deployment/worker"). */}}
   {{$waking := ""}}{{$wakingNS := ""}}{{$stuck := ""}}{{$stuckMsg := ""}}{{$asleep := true}}
-  {{range $w := .Workloads}}{{if ne .StateClass "paused"}}{{$asleep = false}}{{end}}{{if eq .StateClass "resuming"}}{{$msg := ""}}{{range $.Attention}}{{if and (eq .Type "Stuck") (eq .Namespace $w.Namespace) (or (eq (printf "deployment/%s" .Workload) $w.Workload) (eq (printf "statefulset/%s" .Workload) $w.Workload))}}{{$msg = .Message}}{{end}}{{end}}{{if $msg}}{{if not $stuck}}{{$stuck = $w.Workload}}{{$stuckMsg = $msg}}{{end}}{{else if not $waking}}{{$waking = $w.Workload}}{{$wakingNS = $w.Namespace}}{{end}}{{end}}{{end}}
+  {{range $w := .Workloads}}{{if ne .StateClass "paused"}}{{$asleep = false}}{{end}}{{if eq .StateClass "resuming"}}{{$msg := ""}}{{range $.Attention}}{{if and (eq .Type "Stuck") (eq .Namespace $w.Namespace) (eq .Target $w.Workload)}}{{$msg = .Message}}{{end}}{{end}}{{if $msg}}{{if not $stuck}}{{$stuck = $w.Workload}}{{$stuckMsg = $msg}}{{end}}{{else if not $waking}}{{$waking = $w.Workload}}{{$wakingNS = $w.Namespace}}{{end}}{{end}}{{end}}
   {{/* Whether a request woke it: its newest pause or wake (Recent is newest first) is the doorman's
        "request on Service …". Only then does the caption name the doorman (decision 0013). HANDOFF request 16. */}}
   {{$request := false}}{{$seen := false}}
@@ -721,7 +721,7 @@ html:not(.js) th { position: static; }
         {{if .DryRun}}<th class="n"><button type="button">Would free</button></th>{{end}}
       </tr></thead>
       <tbody>
-        {{range $i, $w := .Workloads}}{{$needs := false}}{{range $.Attention}}{{if and (eq .Namespace $w.Namespace) (or (eq (printf "deployment/%s" .Workload) $w.Workload) (eq (printf "statefulset/%s" .Workload) $w.Workload))}}{{$needs = true}}{{end}}{{end}}<tr id="mw-{{$i}}"{{if $needs}} data-needs=""{{end}}>
+        {{range $i, $w := .Workloads}}{{$needs := false}}{{range $.Attention}}{{if and (eq .Namespace $w.Namespace) (eq .Target $w.Workload)}}{{$needs = true}}{{end}}{{end}}<tr id="mw-{{$i}}"{{if $needs}} data-needs=""{{end}}>
           <td class="ref">{{.Workload}}{{if .ManagedWorkload}} ({{.ManagedWorkload}}){{end}}<span class="sub">{{.Namespace}}</span></td>
           <td class="wide" data-v="{{.ForSort}}"><span class="state {{template "door" .}}"><span class="dot"></span>{{.State}}</span><span class="sub">for {{.For}}</span></td>
           <td>{{.LastActivity}}</td>

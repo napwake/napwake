@@ -237,10 +237,12 @@ type statusWorkload struct {
 
 // problem is something about a workload that keeps Napwake from doing
 // its job, and needs a person. Workload is the target's name, which is how
-// status names workloads; ManagedWorkload is what to kubectl describe.
+// status names workloads, and Target its kind and name, as the workloads'
+// rows give it; ManagedWorkload is what to kubectl describe.
 type problem struct {
 	Namespace       string `json:"namespace"`
 	Workload        string `json:"workload"`
+	Target          string `json:"target"`
 	ManagedWorkload string `json:"managedWorkload"`
 	Type            string `json:"type"`
 	Message         string `json:"message"`
@@ -522,6 +524,12 @@ func activeUntil(annotations map[string]string) time.Time {
 	return until
 }
 
+// targetRef names a ManagedWorkload's target by kind and name, as status
+// names workloads: deployment/api.
+func targetRef(w *v1alpha1.ManagedWorkload) string {
+	return strings.ToLower(string(w.Spec.Target.Kind)) + "/" + w.Spec.Target.Name
+}
+
 func targetOfManaged(w *v1alpha1.ManagedWorkload) targetKey {
 	return targetKey{w.Namespace, w.Spec.Target.Kind, w.Spec.Target.Name}
 }
@@ -532,7 +540,7 @@ func workloadStatus(w *v1alpha1.ManagedWorkload, targetActiveUntil, now time.Tim
 	row := statusWorkload{
 		Namespace:      w.Namespace,
 		Name:           w.Name,
-		Target:         strings.ToLower(string(w.Spec.Target.Kind)) + "/" + w.Spec.Target.Name,
+		Target:         targetRef(w),
 		Phase:          w.Status.Phase,
 		DryRun:         w.Spec.DryRun,
 		Next:           nextFor(w, targetActiveUntil, now),
@@ -807,14 +815,15 @@ func reviewGitOpsConflict(ctx context.Context, c client.Client, checker *gitops.
 }
 
 func problemsOf(w *v1alpha1.ManagedWorkload, now time.Time) []problem {
+	target := targetRef(w)
 	var out []problem
 	for _, c := range w.Status.Conditions {
 		bad, ok := troubles[c.Type]
 		if !ok || c.Status != bad || untroubled[c.Reason] {
 			continue
 		}
-		out = append(out, problem{Namespace: w.Namespace, Workload: w.Spec.Target.Name, ManagedWorkload: w.Name,
-			Type: c.Type, Message: cmp.Or(c.Message, c.Reason)})
+		out = append(out, problem{Namespace: w.Namespace, Workload: w.Spec.Target.Name, Target: target,
+			ManagedWorkload: w.Name, Type: c.Type, Message: cmp.Or(c.Message, c.Reason)})
 	}
 	phase := w.Status.Phase
 	if t := w.Status.LastTransitionTime; t != nil && (phase == v1alpha1.PhasePausing || phase == v1alpha1.PhaseResuming) {
@@ -824,8 +833,8 @@ func problemsOf(w *v1alpha1.ManagedWorkload, now time.Time) []problem {
 				c.Status == metav1.ConditionTrue {
 				msg += ": " + c.Message
 			}
-			out = append(out, problem{Namespace: w.Namespace, Workload: w.Spec.Target.Name, ManagedWorkload: w.Name,
-				Type: "Stuck", Message: msg})
+			out = append(out, problem{Namespace: w.Namespace, Workload: w.Spec.Target.Name, Target: target,
+				ManagedWorkload: w.Name, Type: "Stuck", Message: msg})
 		}
 	}
 	return out

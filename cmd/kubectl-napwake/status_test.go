@@ -1157,6 +1157,9 @@ func TestStatus_JSON(t *testing.T) {
 	require.NoError(t, json.Unmarshal(out.Bytes(), &got))
 	assert.Len(t, got.Workloads, 4)
 	assert.Len(t, got.Problems, 2)
+	for _, pr := range got.Problems {
+		assert.Equal(t, "deployment/worker", pr.Target, "a problem names the workload as its row does")
+	}
 	assert.Len(t, got.Recent, 3)
 	assert.InDelta(t, 42.45, got.FreedThisMonth, 0.001)
 	assert.InDelta(t, 35.0, got.SavedThisMonth, 0.001)

@@ -241,3 +241,44 @@ func TestStateClass(t *testing.T) {
 		assert.Equal(t, want, stateClass(phase), phase)
 	}
 }
+
+// A waking workload, and one stuck waking, are told apart by their state's
+// class and by the problem's target, whatever the state's words and however
+// the problem names the workload.
+func TestStatusPage_WakingAndStuckWhateverTheyreCalled(t *testing.T) {
+	page := statusPageOf(t, statusCluster()...)
+	for i := range page.Workloads {
+		page.Workloads[i].State = strings.ReplaceAll(page.Workloads[i].State, "resuming", "waking up")
+	}
+	for i := range page.Attention {
+		if page.Attention[i].Workload == "worker" {
+			page.Attention[i].Workload = "deployment/worker"
+		}
+	}
+
+	got := renderStatusPageData(t, page)
+
+	pageHas(t, got, `deployment/worker is stuck: <span class="sub-say">resuming for 25m: waiting for `+
+		`preview-42/postgres</span>`, "the stuck wake's caption")
+	pageHas(t, got, `<tr id="mw-3" data-needs="">`, "a note pinned on its room")
+	pageHas(t, got, `<span class="state resuming"><span class="dot"></span>waking up</span>`, "its door ajar")
+}
+
+// A problem names its workload's target as the Workloads table does, and
+// the ManagedWorkload to kubectl describe.
+func TestStatusPage_AttentionKeyedByTarget(t *testing.T) {
+	page := statusPageOf(t, statusCluster()...)
+
+	require.NotEmpty(t, page.Attention)
+	for _, a := range page.Attention {
+		assert.Equal(t, "deployment/worker", a.Target, a.Type)
+		assert.Equal(t, "worker", a.ManagedWorkload, a.Type)
+	}
+
+	w := statusWorkloadObj("shop", "db", v1alpha1.TargetKindStatefulSet, v1alpha1.PhasePausing, time.Hour)
+	w.Name = "shop-db"
+	problems := problemsOf(w, statusNow)
+	require.Len(t, problems, 1)
+	assert.Equal(t, problem{Namespace: "shop", Workload: "db", Target: "statefulset/db", ManagedWorkload: "shop-db",
+		Type: "Stuck", Message: "pausing for 1h"}, problems[0])
+}

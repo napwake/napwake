@@ -63,8 +63,13 @@ type statusPage struct {
 	Mark     string
 }
 
+// attentionRow is a problem as the page lists it. Workload is the
+// target's name, as the table shows it; Target is its kind and name, as
+// the Workloads table names it, for a page to match the two by, and
+// ManagedWorkload what to kubectl describe.
 type attentionRow struct {
 	Workload, Namespace, Type, Message string
+	Target, ManagedWorkload            string
 }
 
 type statusPageRow struct {
@@ -141,7 +146,7 @@ func buildStatusPage(result statusResult, since time.Duration, now time.Time) st
 	}
 	for _, pr := range result.Problems {
 		page.Attention = append(page.Attention, attentionRow{Workload: pr.Workload, Namespace: pr.Namespace,
-			Type: pr.Type, Message: oneLine(pr.Message)})
+			Type: pr.Type, Message: oneLine(pr.Message), Target: pr.Target, ManagedWorkload: pr.ManagedWorkload})
 	}
 
 	for _, wl := range result.Workloads {
