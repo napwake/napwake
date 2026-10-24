@@ -267,4 +267,4 @@ logEncoder: json
 # The chart version these defaults are from. Leave it as it is: helm
 # upgrade --reuse-values renders with the previous release's defaults,
 # and this tells the chart to fill in the values added since from its own.
-defaultsVersion: 0.2.0
+defaultsVersion: 0.2.0-rc.7

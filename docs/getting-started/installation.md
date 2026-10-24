@@ -23,13 +23,13 @@ Hybernate is packaged two ways: a Helm chart, and the Kustomize manifests, the r
 
     ```bash
     helm install hybernate oci://ghcr.io/okedeji/charts/hybernate \
-      --version 0.2.0 \
+      --version 0.2.0-rc.7 \
       --namespace hybernate-system \
       --create-namespace \
       -f hybernate-values.yaml
     ```
 
-    Keep the file, and upgrade with it too: Helm reuses a release's values only on an upgrade given none, so one given `--set` alone drops the rest; see [Keeping your settings](../operations/upgrading.md#keeping-your-settings). The chart's version has no `v`; the image it runs is tagged with one, such as `v0.2.0`. The chart installs the ManagedWorkload CRD too, and upgrades it with each `helm upgrade`.
+    Keep the file, and upgrade with it too: Helm reuses a release's values only on an upgrade given none, so one given `--set` alone drops the rest; see [Keeping your settings](../operations/upgrading.md#keeping-your-settings). The chart's version has no `v`; the image it runs is tagged with one, such as `v0.2.0-rc.7`. The chart installs the ManagedWorkload CRD too, and upgrades it with each `helm upgrade`.
 
     ??? tip "Helm Values"
 
@@ -58,7 +58,7 @@ Hybernate is packaged two ways: a Helm chart, and the Kustomize manifests, the r
     Apply `install.yaml`, the Kustomize manifests built into one file:
 
     ```bash
-    kubectl apply -f https://github.com/okedeji/hybernate/releases/download/v0.2.0/install.yaml
+    kubectl apply -f https://github.com/okedeji/hybernate/releases/download/v0.2.0-rc.7/install.yaml
     ```
 
     This installs the CRD, RBAC, the operator Deployment, and the doorman Deployment, Service and PodDisruptionBudget into the `hybernate-system` namespace. The operator is `deployment/hybernate-controller-manager`.
@@ -80,7 +80,7 @@ Hybernate is packaged two ways: a Helm chart, and the Kustomize manifests, the r
     apiVersion: kustomize.config.k8s.io/v1beta1
     kind: Kustomization
     resources:
-      - https://github.com/okedeji/hybernate//config/default?ref=v0.2.0
+      - https://github.com/okedeji/hybernate//config/default?ref=v0.2.0-rc.7
     patches:
       - target:
           kind: Deployment
@@ -125,12 +125,12 @@ Hybernate is packaged two ways: a Helm chart, and the Kustomize manifests, the r
 
 ### Prometheus and NetworkPolicies without Helm
 
-With `install.yaml` or the Kustomize manifests, two more bases, pinned to the same release, add what these chart values turn on in a Helm install. Add them to your kustomization's `resources`, or apply one on its own, such as `kubectl apply -k "https://github.com/okedeji/hybernate//config/prometheus?ref=v0.2.0"`.
+With `install.yaml` or the Kustomize manifests, two more bases, pinned to the same release, add what these chart values turn on in a Helm install. Add them to your kustomization's `resources`, or apply one on its own, such as `kubectl apply -k "https://github.com/okedeji/hybernate//config/prometheus?ref=v0.2.0-rc.7"`.
 
 | Base | Adds | Chart values |
 |------|------|--------------|
-| `https://github.com/okedeji/hybernate//config/prometheus?ref=v0.2.0` | ServiceMonitors for the operator and the doorman, and the [alerting rules](../operations/monitoring.md#alerting-rules). Needs the Prometheus Operator's CRDs, and your Prometheus [allowed to read the metrics](../operations/monitoring.md#scraping) | `metrics.serviceMonitor.enabled`, `metrics.prometheusRule.enabled` |
-| `https://github.com/okedeji/hybernate//config/network-policy?ref=v0.2.0` | NetworkPolicies: only namespaces labelled `metrics: enabled` may scrape the operator and the doorman, and the doorman's routing ports (TCP 20000-29999) stay open to every caller of a paused workload's Services | `networkPolicy.enabled` |
+| `https://github.com/okedeji/hybernate//config/prometheus?ref=v0.2.0-rc.7` | ServiceMonitors for the operator and the doorman, and the [alerting rules](../operations/monitoring.md#alerting-rules). Needs the Prometheus Operator's CRDs, and your Prometheus [allowed to read the metrics](../operations/monitoring.md#scraping) | `metrics.serviceMonitor.enabled`, `metrics.prometheusRule.enabled` |
+| `https://github.com/okedeji/hybernate//config/network-policy?ref=v0.2.0-rc.7` | NetworkPolicies: only namespaces labelled `metrics: enabled` may scrape the operator and the doorman, and the doorman's routing ports (TCP 20000-29999) stay open to every caller of a paused workload's Services | `networkPolicy.enabled` |
 
 ### With Argo CD or Flux
 
@@ -149,7 +149,7 @@ The chart is published only to an OCI registry, which Argo CD and Flux each name
       source:
         repoURL: ghcr.io/okedeji/charts
         chart: hybernate
-        targetRevision: 0.2.0
+        targetRevision: 0.2.0-rc.7
         helm:
           valuesObject:
             timezone: Europe/London
@@ -176,7 +176,7 @@ The chart is published only to an OCI registry, which Argo CD and Flux each name
       interval: 1h
       url: oci://ghcr.io/okedeji/charts/hybernate
       ref:
-        tag: 0.2.0
+        tag: 0.2.0-rc.7
       layerSelector:
         mediaType: application/vnd.cncf.helm.chart.content.v1.tar+gzip
         operation: copy
@@ -257,7 +257,7 @@ and upgrade with the file, at the version you run, which `helm list -n hybernate
 
 ```bash
 helm upgrade hybernate oci://ghcr.io/okedeji/charts/hybernate \
-  --version 0.2.0 \
+  --version 0.2.0-rc.7 \
   --namespace hybernate-system \
   -f hybernate-values.yaml
 ```
