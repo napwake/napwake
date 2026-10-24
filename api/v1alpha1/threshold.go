@@ -111,8 +111,11 @@ func IdleWait(idleAfter time.Duration, wrongPauses int32) time.Duration {
 }
 
 // MaxWrongPauseWindow caps how soon after a pause began the workload's own
-// use makes it wrong: a pause that saved a quarter of an hour paid for its
-// cold start.
+// use makes it wrong. Steady light use wakes a wrong pause within seconds
+// or a minute or two; a pause that saved a quarter of an hour paid for its
+// cold start, and a wake after that is the next use, which idleAfter
+// allows for. Under a short idleAfter, the window is idleAfter itself: the
+// user said that's how long without use is idle.
 const MaxWrongPauseWindow = 15 * time.Minute
 
 // WrongPauseWindow is how soon after a pause began the workload's own use

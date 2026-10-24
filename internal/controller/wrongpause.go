@@ -47,14 +47,6 @@ const (
 	reasonPauseHeld           = "PauseHeld"
 	reasonNoIdlePolicy        = "NoIdlePolicy"
 
-	// wrongPauseWindowMax caps how soon after a pause a wake makes it wrong.
-	// Steady light use wakes a wrong pause within seconds or a minute or two;
-	// a pause that saved a quarter of an hour paid for its cold start, and a
-	// wake after that is the next use, which idleAfter allows for. Under a
-	// short idleAfter, the window is idleAfter itself: the user said that's
-	// how long without use is idle.
-	wrongPauseWindowMax = 15 * time.Minute
-
 	// idleCPUKept is how long what a workload used idle stands while lower
 	// readings come in, so one quiet night doesn't set a threshold that the
 	// next, busier one would cross.
@@ -68,9 +60,9 @@ const (
 )
 
 // wrongPauseWindow is how soon after a pause the workload's own use makes
-// it wrong: idleAfter, or wrongPauseWindowMax if that's shorter.
+// it wrong, as v1alpha1.WrongPauseWindow has it for its idleAfter.
 func wrongPauseWindow(workload *v1alpha1.ManagedWorkload) time.Duration {
-	return min(idleAfterFor(workload), wrongPauseWindowMax)
+	return v1alpha1.WrongPauseWindow(idleAfterFor(workload))
 }
 
 // idleWaitFor is how long the workload's idle clock waits without activity
