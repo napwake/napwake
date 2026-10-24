@@ -19,8 +19,11 @@ package doorman
 import (
 	"bufio"
 	"bytes"
+	"crypto/sha256"
+	"encoding/base64"
 	"io"
 	"net/http"
+	"regexp"
 	"strings"
 	"testing"
 	"time"
@@ -192,7 +195,107 @@ func TestWritePage(t *testing.T) {
 	assert.Contains(t, body, "<header>admin.preview-42.example.dev</header>")
 	assert.Contains(t, body, `<li class="now">`)
 	assert.Contains(t, body, ">14s<")
-	assert.Contains(t, body, "Paused by Napwake")
+	assert.Contains(t, body, `<svg class="scene" viewBox="0 0 300 236" aria-hidden="true">`,
+		"the doorman holds the door of the waking room")
+	assert.Contains(t, body, `<meta name="referrer" content="no-referrer">`, "the address stays with the page")
+	assert.Contains(t, body, `<a href="https://napwake.dev/" target="_blank" rel="noopener noreferrer">`+
+		`<svg viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" fill-rule="evenodd" d="`+Mark+
+		`"/></svg>Paused by Napwake</a>`)
+}
+
+// The asleep page runs only its own style and script, which the policy
+// names by their hashes, so nothing injected into it could run, and loads
+// nothing: its one image is its tab icon, inline, so a browser never asks
+// for /favicon.ico, which a workload that asks would turn away.
+func TestWriteAsleepPage_RunsOnlyItsOwnStyleAndScript(t *testing.T) {
+	var out bytes.Buffer
+
+	require.NoError(t, writeAsleepPage(&out, pageData{Address: "pr-42.preview.example.dev", Token: "t"}, notice{}))
+
+	resp, body := readPage(t, out.Bytes(), http.MethodGet)
+	policy := resp.Header.Get("Content-Security-Policy")
+	for _, directive := range []string{"default-src 'none'", "img-src data:", "form-action 'self'", "base-uri 'none'",
+		"frame-ancestors 'none'"} {
+		assert.Contains(t, policy, directive)
+	}
+	assert.NotContains(t, policy, "unsafe")
+	inline := regexp.MustCompile(`(?s)<(style|script)>(.*?)</(?:style|script)>`).FindAllStringSubmatch(body, -1)
+	require.Len(t, inline, 2, "a style and a script")
+	for _, m := range inline {
+		sum := sha256.Sum256([]byte(m[2]))
+		assert.Contains(t, policy, m[1]+"-src 'sha256-"+base64.StdEncoding.EncodeToString(sum[:])+"'",
+			"the policy names the page's %s", m[1])
+	}
+	assert.Contains(t, body, `<link rel="icon" href="data:image/svg+xml,`)
+	for _, external := range regexp.MustCompile(`(?:src|href|action)="([^"#]*)"`).FindAllStringSubmatch(body, -1) {
+		if !strings.HasPrefix(external[1], "data:") {
+			assert.Equal(t, "https://napwake.dev/", external[1], "only the footer links elsewhere, and loads nothing")
+		}
+	}
+}
+
+// The asleep page's button posts its token back to the page's own address,
+// with nothing else: no address to go to after, which would need guarding
+// against redirects elsewhere. It reloads every minute, so its token stays
+// fresh, and says nothing of how long the app takes to start.
+func TestWriteAsleepPage_PostsBackToItself(t *testing.T) {
+	var out bytes.Buffer
+
+	require.NoError(t, writeAsleepPage(&out, pageData{Address: "pr-42.preview.example.dev", Token: "tok"}, notice{}))
+
+	resp, body := readPage(t, out.Bytes(), http.MethodGet)
+	assert.Equal(t, http.StatusOK, resp.StatusCode)
+	assert.Empty(t, resp.Header.Get("Retry-After"))
+	assert.Contains(t, body, `<form class="ask" id="wake" method="post">`+"\n"+
+		`        <input type="hidden" name="napwake-wake" value="tok">`)
+	assert.Equal(t, 1, strings.Count(body, "<input"), "the token alone")
+	assert.Contains(t, body, `<meta http-equiv="refresh" content="60">`)
+	assert.Contains(t, body, `<meta name="referrer" content="same-origin">`)
+	assert.Contains(t, body, "<title>Asleep · pr-42.preview.example.dev</title>")
+	assert.Contains(t, body, `<span class="a">Wake it up?</span>`)
+	assert.Contains(t, body, "Starting takes as long as the app needs.")
+	assert.Contains(t, body, `<p class="lede a">This environment was paused while nobody was using it`)
+	assert.NotContains(t, body, `class="note`)
+}
+
+// When a click woke nothing, the page says why, with the status that
+// fits: an expired button is refused, and a click the rate limit turned
+// down says when to try again.
+func TestWriteAsleepPage_Notices(t *testing.T) {
+	tests := []struct {
+		name       string
+		notice     notice
+		status     int
+		retryAfter string
+		says       string
+	}{
+		{name: "expired", notice: noticeExpired, status: http.StatusForbidden,
+			says: "<b>The button had run out</b>This page was open a while, so nothing woke. Press Wake it again."},
+		{name: "rate-limited", notice: noticeLimited, status: http.StatusTooManyRequests, retryAfter: "60",
+			says: "<b>Try again in a minute</b>Wake it was pressed a moment ago. Wakes are limited, so robots can&#39;t " +
+				"keep it awake."},
+		{name: "couldn't wake", notice: noticeFailed, status: http.StatusOK,
+			says: "It couldn&#39;t be woken just now. Try again in a moment."},
+		{name: "no fetch metadata", notice: noticeNoFetchMetadata, status: http.StatusOK,
+			says: "This browser didn&#39;t say the click came from this page, so nothing woke. Wake it with kubectl " +
+				"napwake wake, the napwake.dev/wake-requested annotation, or a current browser. " +
+				`<a href="` + asleepDocs + `" target="_blank" rel="noopener noreferrer">How to wake it</a>`},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			var out bytes.Buffer
+
+			require.NoError(t, writeAsleepPage(&out, pageData{Token: "tok"}, tt.notice))
+
+			resp, body := readPage(t, out.Bytes(), http.MethodGet)
+			assert.Equal(t, tt.status, resp.StatusCode)
+			assert.Equal(t, tt.retryAfter, resp.Header.Get("Retry-After"))
+			assert.Contains(t, body, `<p class="note a">`+tt.says+`</p>`)
+			assert.Contains(t, body, `<span class="a">Still asleep</span>`)
+			assert.Contains(t, body, `name="napwake-wake" value="tok"`, "a fresh button with every notice")
+			assert.NotContains(t, body, `<p class="lede a">`)
+		})
+	}
 }
 
 // The page is shown to whoever reaches the Service, so it says nothing about

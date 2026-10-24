@@ -74,18 +74,24 @@ const (
 	resultTurnedAway = "turned_away"
 )
 
-// A notice is what the asleep page says when a click woke nothing, and,
-// where clicking again won't help, the docs that say how else to wake it.
+// A notice is what the asleep page says when a click woke nothing, under
+// its title, and, where clicking again won't help, the docs that say how
+// else to wake it. The page comes with its status, a 200 unless it says
+// otherwise, and when to try again, if it says when.
 type notice struct {
-	text string
-	docs string
+	title, text, docs string
+	status            int
+	retryAfter        time.Duration
 }
 
 // The notices the asleep page gives when a click woke nothing.
 var (
-	noticeExpired = notice{text: "That page had expired, so nothing woke. Click Wake it again."}
-	noticeLimited = notice{text: "It was asked to wake less than a minute ago. Try again in a minute."}
-	noticeFailed  = notice{text: "It couldn't be woken just now. Try again in a moment."}
+	noticeExpired = notice{title: "The button had run out",
+		text: "This page was open a while, so nothing woke. Press Wake it again.", status: http.StatusForbidden}
+	noticeLimited = notice{title: "Try again in a minute",
+		text:   "Wake it was pressed a moment ago. Wakes are limited, so robots can't keep it awake.",
+		status: http.StatusTooManyRequests, retryAfter: clickWakeInterval}
+	noticeFailed = notice{text: "It couldn't be woken just now. Try again in a moment."}
 	// noticeNoFetchMetadata answers a browser that said nothing of where its
 	// click came from; see sameOrigin.
 	noticeNoFetchMetadata = notice{
@@ -307,12 +313,10 @@ func (h *heldConn) readClick() (string, bool) {
 // it button signed for this pause of the workload.
 func (h *heldConn) serveAsleepPage(ctx context.Context, req *http.Request, n notice) {
 	data := pageData{
-		Address:    pageAddress(req),
-		Token:      h.wakeKeys.sign(h.route.scope(), h.now().Add(tokenTTL)),
-		Notice:     n.text,
-		NoticeDocs: n.docs,
+		Address: pageAddress(req),
+		Token:   h.wakeKeys.sign(h.route.scope(), h.now().Add(tokenTTL)),
 	}
-	if err := h.reply(func(w io.Writer) error { return writeAsleepPage(w, data) }); err != nil {
+	if err := h.reply(func(w io.Writer) error { return writeAsleepPage(w, data, n) }); err != nil {
 		log.FromContext(ctx).V(1).Info("writing asleep page", "error", err.Error(),
 			"workload", h.route.workload.Name, "namespace", h.route.workload.Namespace)
 	}

@@ -5,142 +5,77 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta http-equiv="refresh" content="{{.Refresh}}">
 <meta name="robots" content="noindex">
-<meta name="referrer" content="{{if .Asleep}}same-origin{{else}}no-referrer{{end}}">
-<title>{{if .Asleep}}Asleep{{else}}Waking up{{end}}{{with .Address}} {{.}}{{end}}</title>
+<meta name="referrer" content="no-referrer">
+<title>Waking up{{with .Address}} {{.}}{{end}}</title>
 <style>
-:root {
-  --mono: ui-monospace, "SF Mono", SFMono-Regular, "JetBrains Mono", "Cascadia Code", Menlo, Consolas, monospace;
-  --sans: -apple-system, BlinkMacSystemFont, "Segoe UI", Inter, Roboto, "Helvetica Neue", Arial, sans-serif;
-  --bg: #ffffff;
-  --text: #000000;
-  --muted: #6f6f6f;
-  --faint: #b4b4b4;
-  --line: #ececec;
-  --track: #efefef;
-  --amber: #f5a623;
+:root{
+  --mono:ui-monospace,"SF Mono",SFMono-Regular,"JetBrains Mono","Cascadia Code",Menlo,Consolas,monospace;
+  --sans:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,"Helvetica Neue",Arial,sans-serif;
+  --bg:#F8F8F5;--text:#0F1716;--muted:#4E5957;--faint:#7C8683;--line:#DEDBD2;
+  --coat:#14695F;--coat-dk:#0D3F3A;--face:#3A9A8B;--brass:#F5B53F;--ink:#0F1716;--hat:#141B1A;--glove:#2A3534;--shoe:#0F1716;--shoe-rim:#0F1716;
+  --room:#FFE3A1;--glow:#F2B347;--wake:#9A6400;--frame:#E3E0D7;--leaf:#5B6B86;--done:#14695F;
 }
-@media (prefers-color-scheme: dark) {
-  :root {
-    --bg: #000000;
-    --text: #ffffff;
-    --muted: #8f8f8f;
-    --faint: #4a4a4a;
-    --line: #1c1c1c;
-    --track: #161616;
-    --amber: #f5b041;
-  }
-}
-* { box-sizing: border-box; }
-html, body { height: 100%; }
-body {
-  margin: 0;
-  min-height: 100%;
-  display: flex;
-  flex-direction: column;
-  background: var(--bg);
-  color: var(--text);
-  font-family: var(--sans);
-  -webkit-font-smoothing: antialiased;
-}
-header { padding: 22px 32px; font: 13px var(--mono); color: var(--muted); overflow-wrap: anywhere; }
-main { flex: 1; display: flex; align-items: center; justify-content: center; padding: 32px 24px 72px; }
-.wrap { width: 100%; max-width: 560px; }
-.state {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  margin-bottom: 20px;
-  font: 500 12.5px var(--mono);
-  letter-spacing: .02em;
-  text-transform: uppercase;
-  color: var(--muted);
-}
-.dot {
-  width: 8px;
-  height: 8px;
-  border-radius: 50%;
-  background: var(--amber);
-  box-shadow: 0 0 0 0 color-mix(in srgb, var(--amber) 55%, transparent);
-  animation: pulse 1.6s ease-out infinite;
-}
-@keyframes pulse { to { box-shadow: 0 0 0 9px transparent; } }
-.asleep .dot { background: var(--faint); animation: none; }
-h1 { margin: 0 0 14px; font: 600 30px/1.2 var(--mono); letter-spacing: -.02em; overflow-wrap: anywhere; }
-h1 span { color: var(--muted); font-weight: 500; }
-.lede { margin: 0 0 36px; max-width: 470px; color: var(--muted); font-size: 15px; line-height: 1.65; }
-.bar { height: 2px; margin-bottom: 30px; background: var(--track); overflow: hidden; }
-.bar i { display: block; width: 30%; height: 100%; background: var(--amber); animation: slide 1.8s cubic-bezier(.65, 0, .35, 1) infinite; }
-@keyframes slide { from { transform: translateX(-100%); } to { transform: translateX(340%); } }
-ol { list-style: none; margin: 0 0 36px; padding: 0; font: 14px var(--mono); }
-li { display: flex; align-items: center; gap: 14px; padding: 10px 0; color: var(--faint); }
-li.done, li.now { color: var(--text); }
-li .t { margin-left: auto; font-size: 12.5px; color: var(--muted); font-variant-numeric: tabular-nums; }
-.i { flex: none; width: 18px; height: 18px; border-radius: 50%; border: 1.5px solid var(--line); display: grid; place-items: center; }
-li.done .i { background: var(--text); border-color: var(--text); }
-li.done .i svg { width: 10px; height: 10px; color: var(--bg); }
-li.now .i { border-color: var(--line); border-top-color: var(--amber); animation: spin .9s linear infinite; }
-@keyframes spin { to { transform: rotate(360deg); } }
-.notice { margin: -16px 0 28px; padding: 10px 14px; border-left: 2px solid var(--amber); color: var(--text); font-size: 14px; line-height: 1.5; }
-form { margin: 0 0 18px; }
-button {
-  padding: 12px 22px;
-  border: 0;
-  border-radius: 6px;
-  background: var(--text);
-  color: var(--bg);
-  font: 600 14px var(--mono);
-  cursor: pointer;
-}
-button:hover { opacity: .85; }
-button:focus-visible { outline: 2px solid var(--amber); outline-offset: 3px; }
-.hint { margin: 0; color: var(--muted); font-size: 13px; line-height: 1.6; }
-.hint a, .notice a { color: inherit; }
-footer { display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 16px; padding: 22px 32px; font: 12px var(--mono); color: var(--muted); }
-footer a { display: inline-flex; align-items: center; gap: 7px; color: inherit; text-decoration: none; }
-footer a:hover { color: var(--text); }
-footer svg { width: 13px; height: 13px; }
-@media (prefers-reduced-motion: reduce) { .dot, .bar i, li.now .i { animation: none; } }
-@media (max-width: 560px) {
-  header, footer { padding: 18px 22px; }
-  main { padding: 24px 22px 56px; }
-  h1 { font-size: 24px; }
-}
+@media (prefers-color-scheme:dark){:root{
+  --bg:#0F1716;--text:#EEF0EC;--muted:#A3ADAA;--faint:#7D8784;--line:#263331;
+  --coat:#1E7A6E;--coat-dk:#12524B;--face:#45A898;--hat:#2B3735;--glove:#3E4E4C;--shoe:#2B4743;--shoe-rim:#4C7069;
+  --frame:#1B2A2C;--leaf:#2A3944;--wake:#F5B53F;--done:#1E7A6E;
+}}
+*{box-sizing:border-box}html,body{height:100%}
+body{margin:0;min-height:100%;display:flex;flex-direction:column;background:var(--bg);color:var(--text);font-family:var(--sans);-webkit-font-smoothing:antialiased}
+header{padding:22px 32px;font:13px var(--mono);color:var(--muted);overflow-wrap:anywhere}
+main{flex:1;display:flex;align-items:center;justify-content:center;padding:16px 24px 56px}
+.wrap{width:100%;max-width:880px;display:grid;grid-template-columns:300px minmax(0,1fr);gap:48px;align-items:center}
+.scene{width:100%;height:auto;display:block}
+.frame{fill:var(--frame)}.room{fill:var(--room)}.leaf{fill:var(--leaf)}.cast{fill:#000;opacity:.12}.floor{stroke:var(--line);stroke-width:2}
+.wedge{fill:var(--glow);opacity:.55;transform-origin:190px 210px;animation:breathe 2.8s ease-in-out infinite}
+@keyframes breathe{50%{opacity:.3;transform:scaleX(.88)}}
+.state{display:flex;align-items:center;gap:10px;margin-bottom:16px;font:700 12.5px var(--mono);letter-spacing:.06em;text-transform:uppercase;color:var(--wake)}
+.state svg{width:18px;height:18px}
+h1{margin:0 0 12px;font:800 34px/1.08 var(--sans);letter-spacing:-.02em;overflow-wrap:anywhere}
+h1 span{display:block;font:500 17px/1.4 var(--mono);color:var(--muted);letter-spacing:0;margin-top:6px}
+.lede{margin:0 0 26px;max-width:440px;color:var(--muted);font-size:15.5px;line-height:1.6}
+ol{list-style:none;margin:0;padding:0;font:14px var(--mono);max-width:440px}
+li{display:flex;align-items:center;gap:14px;padding:9px 0;color:var(--faint);border-top:1px solid var(--line)}
+li.done,li.now{color:var(--text)}
+li .t{margin-left:auto;font-size:12.5px;color:var(--muted);font-variant-numeric:tabular-nums}
+.i{flex:none;width:18px;height:20px;display:grid;place-items:center}
+.i svg{width:18px;height:20px}
+footer{display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:16px;padding:22px 32px;font:12px var(--mono);color:var(--muted)}
+footer a{display:inline-flex;align-items:center;gap:8px;color:inherit;text-decoration:none}
+footer a:hover{color:var(--text)}footer svg{width:18px;height:18px;color:var(--coat)}
+@media (prefers-reduced-motion:reduce){.wedge{animation:none}}
+@media (max-width:720px){.wrap{grid-template-columns:minmax(0,1fr);gap:20px}.scene{max-width:240px}header,footer{padding:18px 22px}main{padding:8px 22px 40px}h1{font-size:27px}}
 </style>
 </head>
 <body>
 <header>{{.Address}}</header>
-{{if .Asleep}}<main class="asleep">
+<main role="status" aria-live="polite">
   <div class="wrap">
-    <div class="state"><span class="dot"></span>Asleep</div>
-    <h1>{{with .Address}}{{.}}{{else}}This app{{end}} <span>is asleep</span></h1>
-    <p class="lede">This environment was paused while nobody was using it. It wakes when someone asks, so crawlers and bots can't keep it running.</p>
-    {{with .Notice}}<p class="notice" role="alert">{{.}}{{with $.NoticeDocs}} <a href="{{.}}" target="_blank" rel="noopener noreferrer">How to wake it</a>{{end}}</p>{{end}}
-    <form method="post">
-      <input type="hidden" name="{{.Field}}" value="{{.Token}}">
-      <button type="submit">Wake it</button>
-    </form>
-    <p class="hint">It takes a minute or so to start, and opens here once it's up. Your team's tooling can wake it too, with a <a href="{{.WakeRequestDocs}}" target="_blank" rel="noopener noreferrer">wake request</a>.</p>
-  </div>
-</main>
-<footer>
-  <span>Nothing runs until you ask</span>
-{{else}}<main role="status" aria-live="polite">
-  <div class="wrap">
-    <div class="state"><span class="dot"></span>Starting</div>
-    <h1>Waking up <span>{{with .Address}}{{.}}{{else}}this app{{end}}</span></h1>
-    <p class="lede">This environment was paused while nobody was using it. It's starting now and will open here on its own.</p>
-    <div class="bar"><i></i></div>
-    <ol>
-      <li class="done"><span class="i">{{template "check"}}</span>Request received</li>
-      <li class="now"><span class="i"></span>Starting{{if .Elapsed}}<span class="t">{{.Elapsed}}</span>{{end}}</li>
-      <li><span class="i"></span>Ready</li>
-    </ol>
+    <svg class="scene" viewBox="0 0 300 236" aria-hidden="true">
+<path class="frame" d="M144 210V82a46 46 0 0 1 92 0v128z"/>
+<path class="room" d="M150 210V82a40 40 0 0 1 80 0v128z"/>
+<path class="wedge" d="M190 210h40l70 26H214z"/>
+<path class="leaf" d="M150 210V82a40 40 0 0 1 24-36.7l16 6.7v158z"/><circle cx="182" cy="140" r="3" fill="var(--brass)"/>
+<path class="cast" d="M102.6 210h56l-70 22h-70z"/>
+<g transform="translate(128.6 210) scale(0.86)"><circle cx="34.3" cy="-99.5" r="7.2" fill="var(--coat-dk)"/><circle cx="56.3" cy="-89.5" r="5.9" fill="var(--coat-dk)"/><path d="M31.4 -93 L53.9 -84.1 L58.8 -94.9 L37.3 -106.1 Z" fill="var(--coat-dk)"/><circle cx="56.3" cy="-89.5" r="5.9" fill="var(--coat-dk)"/><circle cx="66.8" cy="-104.9" r="5.1" fill="var(--coat-dk)"/><path d="M61.2 -86.2 L71.1 -102.0 L62.6 -107.8 L51.5 -92.8 Z" fill="var(--coat-dk)"/><path d="M51.8 -92.6 Q55.7 -91.8 58.6 -94.5" stroke="var(--ink)" stroke-width="1.5" fill="none" opacity=".35" stroke-linecap="round"/><rect x="-3.2" y="-6.6" width="6.4" height="13.2" rx="2" fill="var(--brass)" transform="translate(66.8 -104.9) rotate(-55.7)"/><g transform="translate(71.3 -111.5) rotate(-55.7)"><ellipse cx="-1" cy="-4.5" rx="3.9" ry="3" transform="rotate(38 -1 -4.5)" fill="var(--glove)"/><ellipse cx="0" cy="0" rx="6.4" ry="6.8" fill="var(--glove)"/><ellipse cx="1" cy="2.8" rx="3.5" ry="1.9" fill="#FFFFFF" opacity=".16"/></g><g transform="rotate(7)"><ellipse cx="-17" cy="-2.5" rx="10" ry="6" transform="rotate(-9 -17 -2.5)" fill="var(--shoe)" stroke="var(--shoe-rim)" stroke-width="1.4"/><ellipse cx="13" cy="-1" rx="10" ry="6" transform="rotate(0 13 -1)" fill="var(--shoe)" stroke="var(--shoe-rim)" stroke-width="1.4"/><path d="M-31 -102 Q-31 -114 -19 -114 H19 Q31 -114 31 -102 Q25.5 -54 35.5 -6 Q37 -2 33 -2 Q0 1 -33 -2 Q-37 -2 -37.6 -6 Q-41 -54 -31 -102 Z" fill="var(--coat)"/><clipPath id="c1"><path d="M-31 -102 Q-31 -114 -19 -114 H19 Q31 -114 31 -102 Q25.5 -54 35.5 -6 Q37 -2 33 -2 Q0 1 -33 -2 Q-37 -2 -37.6 -6 Q-41 -54 -31 -102 Z"/></clipPath><g clip-path="url(#c1)"><path d="M-43 -118 H-14 L-17 4 H-43Z" fill="var(--ink)" opacity="0.1"/><path d="M28 -118 H39 V4 H33Z" fill="#FFF6DD" opacity=".1"/></g><path d="M11 -112 Q8 -54 14 -3" stroke="var(--coat-dk)" stroke-width="2.2" fill="none"/><circle cx="-2.9" cy="-98" r="3" fill="var(--brass)"/><circle cx="20.5" cy="-98" r="2.7" fill="var(--brass)"/><circle cx="-3.0" cy="-78" r="3" fill="var(--brass)"/><circle cx="20.4" cy="-78" r="2.7" fill="var(--brass)"/><circle cx="-3.2" cy="-58" r="3" fill="var(--brass)"/><circle cx="20.2" cy="-58" r="2.7" fill="var(--brass)"/><g clip-path="url(#c1)"><path d="M-47 -14 H47 V-4 H-47Z" fill="var(--coat-dk)" opacity=".45"/></g><rect x="-20.8" y="-46" width="14" height="4" rx="2" fill="var(--coat-dk)"/><rect x="18.2" y="-46" width="11" height="4" rx="2" fill="var(--coat-dk)"/><g transform="rotate(-10.5 -27.2 -64)"><circle cx="-27.2" cy="-58" r="4.6" fill="none" stroke="var(--brass)" stroke-width="1.8"/><rect x="-30.8" y="-55" width="2.6" height="10" rx="1" fill="var(--brass)" transform="rotate(14 -27.2 -55)"/><rect x="-26.6" y="-54.5" width="2.6" height="8.5" rx="1" fill="var(--brass)" transform="rotate(-10 -27.2 -55)"/></g><path d="M-26 -110 Q-30 -80 -2.5 -98 M-25 -110 Q-35 -64 -2.5 -98" stroke="var(--brass)" stroke-width="2.4" fill="none" stroke-linecap="round"/><path d="M-29.5 -81 l-1 9" stroke="var(--brass)" stroke-width="3.2" stroke-linecap="round"/><rect x="-30" y="-113" width="13" height="6" rx="3" fill="var(--brass)"/><g transform="translate(0 0) rotate(5 0 -126)"><path d="M-27 -120 V-156 Q-27 -172 -11 -172 H11 Q27 -172 27 -156 V-120 Z" fill="var(--face)"/><clipPath id="h2"><path d="M-27 -120 V-156 Q-27 -172 -11 -172 H11 Q27 -172 27 -156 V-120 Z"/></clipPath><path clip-path="url(#h2)" d="M-29 -172 H-12 V-118 H-29Z" fill="var(--ink)" opacity="0.1"/><g transform="translate(-6.2 -146) scale(1 1)"><clipPath id="e3"><circle cx="0" cy="0" r="9.5"/></clipPath><circle cx="0" cy="0" r="9.2" fill="#fff"/><g clip-path="url(#e3)"><circle cx="-0.7" cy="0.9" r="4.6" fill="var(--ink)"/><rect x="-14.7" y="-18.4" width="29.4" height="17.4" fill="var(--face)" transform="rotate(-2 0 0)"/></g><rect x="-10.8" y="-2.6" width="21.7" height="3.5" rx="1.7" fill="var(--ink)" transform="rotate(-2 0 0)"/></g><g transform="translate(14.2 -146) scale(0.8 1)"><clipPath id="e4"><circle cx="0" cy="0" r="9.5"/></clipPath><circle cx="0" cy="0" r="9.2" fill="#fff"/><g clip-path="url(#e4)"><circle cx="-0.7" cy="0.9" r="4.6" fill="var(--ink)"/><rect x="-14.7" y="-18.4" width="29.4" height="17.4" fill="var(--face)" transform="rotate(6 0 0)"/></g><rect x="-10.8" y="-2.6" width="21.7" height="3.5" rx="1.7" fill="var(--ink)" transform="rotate(6 0 0)"/></g><g transform="rotate(-5 0 -168)"><path d="M-18.4 -170 L-20.1 -198.4 Q-20.1 -201.4 -16.1 -201.4 Q1.5 -203.9 19.1 -201.4 Q23.1 -201.4 23.1 -198.4 L21.4 -170 Z" fill="var(--hat)"/><path d="M-18.2 -171 L-19.3 -178.8 H22.3 L21.2 -171 Z" fill="var(--brass)"/><path d="M-20.1 -198.4 L-13.6 -199.4 L-10.4 -171 L-18.4 -170 Z" fill="#000" opacity=".22"/><path d="M-35.1 -172.5 Q-32.1 -169 -25.1 -169.5 H25.1 Q32.1 -169 35.1 -172.5 Q36.1 -165 27.1 -164.5 H-27.1 Q-36.1 -165 -35.1 -172.5 Z" fill="var(--hat)"/></g></g><path d="M-31 -128 H31 V-110 Q3 -106 -31 -110 Z" fill="var(--coat-dk)"/><rect x="-31" y="-129" width="62" height="2.6" rx="1.3" fill="var(--brass)"/></g><circle cx="-13.2" cy="-105.4" r="7.2" fill="var(--coat-dk)"/><circle cx="-17.2" cy="-75.4" r="5.9" fill="var(--coat-dk)"/><path d="M-20.3 -106.3 L-23.1 -76.1 L-11.4 -74.6 L-6.1 -104.4 Z" fill="var(--coat-dk)"/><circle cx="-17.2" cy="-75.4" r="5.9" fill="var(--coat-dk)"/><circle cx="-13.7" cy="-57.2" r="5.1" fill="var(--coat-dk)"/><path d="M-23.0 -74.2 L-18.7 -56.2 L-8.7 -58.2 L-11.4 -76.5 Z" fill="var(--coat-dk)"/><rect x="-3.2" y="-6.6" width="6.4" height="13.2" rx="2" fill="var(--brass)" transform="translate(-13.7 -57.2) rotate(79.1)"/><g transform="translate(-12.2 -49.4) rotate(79.1)"><ellipse cx="0.5" cy="5.6" rx="3.9" ry="3" transform="rotate(-38 0.5 5.6)" fill="var(--glove)"/><ellipse cx="2" cy="0" rx="7.6" ry="6.6" fill="var(--glove)"/><ellipse cx="3" cy="-2.7" rx="4.1" ry="1.8" fill="#FFFFFF" opacity=".16"/></g></g>
+<path class="floor" d="M0 210h300"/>
+</svg>
+    <div>
+      <div class="state"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 22V10a6 6 0 0 1 12 0v12z" fill="var(--room)" stroke="currentColor" stroke-width="1.6"/><path d="M6 22V10a6 6 0 0 1 3.5-5.4L12 6v16z" fill="var(--leaf)"/></svg>Waking</div>
+      <h1>Waking up <span>{{with .Address}}{{.}}{{else}}this app{{end}}</span></h1>
+      <p class="lede">This environment was paused while nobody was using it. It's starting now, and this page opens it on its own when it's ready.</p>
+      <ol>
+        <li class="done"><span class="i"><svg viewBox="0 0 24 26" aria-hidden="true"><path d="M5 25V11a7 7 0 0 1 14 0v14z" fill="var(--done)"/><g transform="translate(6 9)" style="color:#fff">{{template "check"}}</g></svg></span>Request received</li>
+        <li class="now"><span class="i"><svg viewBox="0 0 24 26" aria-hidden="true"><path d="M5 25V11a7 7 0 0 1 14 0v14z" fill="var(--room)" stroke="var(--wake)" stroke-width="1.6"/><path d="M5 25V11a7 7 0 0 1 4-6.3L12 6.5V25z" fill="var(--leaf)"/></svg></span>Starting{{if .Elapsed}}<span class="t">{{.Elapsed}}</span>{{end}}</li>
+        <li><span class="i"><svg viewBox="0 0 24 26" aria-hidden="true"><path d="M5 25V11a7 7 0 0 1 14 0v14z" fill="none" stroke="var(--line)" stroke-width="1.6"/></svg></span>Ready</li>
+      </ol>
+    </div>
   </div>
 </main>
 <footer>
   <span>Refreshes automatically</span>
-{{end}}  <a href="https://docs.napwake.dev/" target="_blank" rel="noopener noreferrer"><svg viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" d="{{.Mark}}"/></svg>Paused by Napwake</a>
+  <a href="https://napwake.dev/" target="_blank" rel="noopener noreferrer"><svg viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" fill-rule="evenodd" d="{{.Mark}}"/></svg>Paused by Napwake</a>
 </footer>
 </body>
 </html>
-{{define "check"}}<svg viewBox="0 0 12 12" aria-hidden="true"><path fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" d="M2.5 6.2 5 8.5l4.5-5"/></svg>{{end}}
+{{define "check"}}<svg viewBox="0 0 12 12" width="12" height="12" aria-hidden="true"><path fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" d="M2.5 6.2 5 8.5l4.5-5"/></svg>{{end}}

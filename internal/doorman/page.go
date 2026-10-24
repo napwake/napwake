@@ -19,7 +19,10 @@ package doorman
 import (
 	"bufio"
 	"bytes"
+	"cmp"
+	"crypto/sha256"
 	_ "embed"
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"html/template"
@@ -30,10 +33,15 @@ import (
 	"time"
 )
 
-//go:embed page.html
-var pageHTML string
+var (
+	//go:embed page.html
+	pageHTML string
+	//go:embed asleep.html
+	asleepHTML string
 
-var pageTemplate = template.Must(template.New("page").Parse(pageHTML))
+	pageTemplate   = template.Must(template.New("page").Parse(pageHTML))
+	asleepTemplate = template.Must(template.New("asleep").Parse(asleepHTML))
+)
 
 // Mark is the Napwake doorman, his hat, his face and his shoulders, as an
 // SVG path on a 24 grid, drawn on the waking-up and asleep pages and on the
@@ -62,18 +70,16 @@ type pageData struct {
 	Refresh int
 	Mark    string
 
-	// Asleep shows the page that asks, whose Wake it button posts Token
-	// back to the page's own address as the form field Field. Notice says
-	// why an earlier click woke nothing, and NoticeDocs, if clicking again
-	// won't help, where the docs say how else to wake it.
-	Asleep     bool
-	Field      string
-	Token      string
-	Notice     string
-	NoticeDocs string
-	// WakeRequestDocs is where the asleep page says tooling can wake the
-	// workload instead.
-	WakeRequestDocs string
+	// Field and Token are the asleep page's Wake it button, which posts the
+	// token back to the page's own address in the form field Field. Notice
+	// says why an earlier click woke nothing, under NoticeTitle, and
+	// NoticeDocs, if clicking again won't help, where the docs say how else
+	// to wake it.
+	Field       string
+	Token       string
+	Notice      string
+	NoticeTitle string
+	NoticeDocs  string
 }
 
 // pageAddress is the host the browser asked for, without its port.
@@ -294,37 +300,62 @@ func writePage(w io.Writer, req *http.Request, data pageData) error {
 // a stale click to the app, and its button's token never expires.
 const asleepRefresh = time.Minute
 
-// asleepPolicy keeps the asleep page to itself: no script runs on it, its
-// button posts only back to the page's own address, and no other site can
-// frame it, to trick someone into clicking it.
-const asleepPolicy = "default-src 'none'; style-src 'unsafe-inline'; form-action 'self'; base-uri 'none'; " +
-	"frame-ancestors 'none'"
+// asleepPolicy keeps the asleep page to itself: only its own style and
+// script run on it, its one image is its inline tab icon, its button posts
+// only back to the page's own address, and no other site can frame it, to
+// trick someone into clicking it.
+var asleepPolicy = func() string {
+	var page bytes.Buffer
+	if err := asleepTemplate.Execute(&page, pageData{}); err != nil {
+		panic(fmt.Sprintf("rendering the asleep page: %v", err)) // the embedded template is fixed at build time
+	}
+	return "default-src 'none'; style-src " + inlineHash(page.String(), "style") + "; script-src " +
+		inlineHash(page.String(), "script") + "; img-src data:; form-action 'self'; base-uri 'none'; " +
+		"frame-ancestors 'none'"
+}()
+
+// inlineHash is the CSP source for a rendered page's inline element named
+// tag: the SHA-256 of what's between its tags. It's of the page as served,
+// since html/template drops the comments in a style or a script, and the
+// same for every render, since they hold no template actions.
+func inlineHash(page, tag string) string {
+	_, rest, _ := strings.Cut(page, "<"+tag+">")
+	body, _, _ := strings.Cut(rest, "</"+tag+">")
+	sum := sha256.Sum256([]byte(body))
+	return "'sha256-" + base64.StdEncoding.EncodeToString(sum[:]) + "'"
+}
 
 // writeAsleepPage answers a person's browser with the page that asks before
-// waking the workload. It's a 200, as a page that works is, and like the
-// waking-up page, nothing may cache or index it. Its referrer policy is
-// same-origin, not no-referrer, under which a browser posts the click with
-// Origin: null: over plain HTTP, its Origin is all that says the click came
-// from the page, and other sites still get nothing.
-func writeAsleepPage(w io.Writer, data pageData) error {
+// waking the workload, saying n, why an earlier click woke nothing. It's a
+// 200 as a page that works is, or n's status, and like the waking-up page,
+// nothing may cache or index it. Its referrer policy is same-origin, not
+// no-referrer, under which a browser posts the click with Origin: null:
+// over plain HTTP, its Origin is all that says the click came from the
+// page, and other sites still get nothing.
+func writeAsleepPage(w io.Writer, data pageData, n notice) error {
 	data.Mark = Mark
 	data.Refresh = int(asleepRefresh.Seconds())
-	data.Asleep = true
 	data.Field = wakeField
-	data.WakeRequestDocs = wakeRequestDocs
+	data.Notice, data.NoticeTitle, data.NoticeDocs = n.text, n.title, n.docs
 	var body bytes.Buffer
-	if err := pageTemplate.Execute(&body, data); err != nil {
+	if err := asleepTemplate.Execute(&body, data); err != nil {
 		return fmt.Errorf("rendering page: %w", err)
 	}
-	header := fmt.Sprintf("HTTP/1.1 200 OK\r\n"+
+	status := cmp.Or(n.status, http.StatusOK)
+	var retry string
+	if n.retryAfter > 0 {
+		retry = fmt.Sprintf("Retry-After: %d\r\n", int(n.retryAfter.Seconds()))
+	}
+	header := fmt.Sprintf("HTTP/1.1 %d %s\r\n"+
 		"Content-Type: text/html; charset=utf-8\r\n"+
 		"Content-Length: %d\r\n"+
 		"Cache-Control: no-store\r\n"+
+		"%s"+
 		"X-Robots-Tag: noindex\r\n"+
 		"Content-Security-Policy: %s\r\n"+
 		"X-Frame-Options: DENY\r\n"+
 		"Referrer-Policy: same-origin\r\n"+
-		"Connection: close\r\n\r\n", body.Len(), asleepPolicy)
+		"Connection: close\r\n\r\n", status, http.StatusText(status), body.Len(), retry, asleepPolicy)
 	if _, err := io.WriteString(w, header); err != nil {
 		return fmt.Errorf("writing page header: %w", err)
 	}
@@ -343,28 +374,33 @@ const asleepRetryAfter = 5 * time.Minute
 // browser: what it is, and how to wake it. It names nothing inside the
 // cluster, since anyone who reaches the Service reads it.
 const (
-	asleepMessage = "This environment is asleep. A request doesn't wake it: only a person who opens it in a " +
-		"browser and clicks Wake it, or their tooling, can."
-	asleepHowTo = "Open it in a browser and click Wake it; set the napwake.dev/wake-requested annotation on its " +
-		"ManagedWorkload; or run kubectl napwake wake: " + wakeRequestDocs
-	asleepDocs = "https://docs.napwake.dev/concepts/wake-on-request/#asking-before-waking"
+	asleepMessage = "This environment is asleep. Napwake paused it while nobody was using it, to save money."
+	asleepGuide   = "https://docs.napwake.dev/guides/preview-environments/"
 
-	// wakeRequestDocs says how tooling wakes a workload, for the people
-	// whose tooling reaches it.
-	wakeRequestDocs = "https://docs.napwake.dev/guides/pause/#wake-now"
+	// asleepDocs is where the docs say how a workload that asks is woken,
+	// for a browser whose click can't wake it.
+	asleepDocs = "https://docs.napwake.dev/concepts/wake-on-request/#asking-before-waking"
 )
 
+// asleepWays are the ways to wake a workload that asks.
+var asleepWays = []string{
+	"Open it in a browser and press Wake it.",
+	"Run kubectl napwake wake NAME -n NAMESPACE.",
+	"From tooling, set the annotation napwake.dev/wake-requested to a new value on its ManagedWorkload.",
+}
+
 var asleepJSON = func() string {
-	body, _ := json.Marshal(struct { // a struct of strings always marshals
-		Status  string `json:"status"`
-		Message string `json:"message"`
-		Wake    string `json:"wake"`
-		Docs    string `json:"docs"`
-	}{"asleep", asleepMessage, asleepHowTo, asleepDocs})
+	body, _ := json.Marshal(struct { // strings always marshal
+		Status  string   `json:"status"`
+		Message string   `json:"message"`
+		Wake    []string `json:"wake"`
+		Docs    string   `json:"docs"`
+	}{"asleep", asleepMessage + " Requests don't wake it.", asleepWays, asleepGuide})
 	return string(body) + "\n"
 }()
 
-const asleepText = asleepMessage + "\n" + asleepHowTo + "\n" + asleepDocs + "\n"
+var asleepText = asleepMessage + "\nRequests don't wake it. To wake it, do one of these, then try again:\n- " +
+	strings.Join(asleepWays, "\n- ") + "\nMore at " + asleepGuide + "\n"
 
 // writeAsleep answers a request that doesn't wake the workload: a 503,
 // with a short body in JSON for a client that asks for it, and in plain

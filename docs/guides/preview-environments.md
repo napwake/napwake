@@ -180,9 +180,12 @@ Cache-Control: no-store
 Retry-After: 300
 X-Robots-Tag: noindex
 
-This environment is asleep. A request doesn't wake it: only a person who opens it in a browser and clicks Wake it, or their tooling, can.
-Open it in a browser and click Wake it; set the napwake.dev/wake-requested annotation on its ManagedWorkload; or run kubectl napwake wake: https://docs.napwake.dev/guides/pause/#wake-now
-https://docs.napwake.dev/concepts/wake-on-request/#asking-before-waking
+This environment is asleep. Napwake paused it while nobody was using it, to save money.
+Requests don't wake it. To wake it, do one of these, then try again:
+- Open it in a browser and press Wake it.
+- Run kubectl napwake wake NAME -n NAMESPACE.
+- From tooling, set the annotation napwake.dev/wake-requested to a new value on its ManagedWorkload.
+More at https://docs.napwake.dev/guides/preview-environments/
 ```
 
 A client that sends `Accept: application/json` gets the same in JSON. Probes and health checks the doorman recognises are answered as for any workload, and a connection that isn't HTTP is closed. Once someone has woken the preview, every caller is served as usual. See [What browsers, robots and API clients see](../concepts/wake-on-request.md#what-browsers-robots-and-api-clients-see).
