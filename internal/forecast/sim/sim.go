@@ -44,7 +44,7 @@ type Settings struct {
 	Confidence int
 	// CPUThreshold is the CPU use, as a percentage of requests, above which
 	// the workload is active, and the demand the decision rules act on.
-	CPUThreshold int
+	CPUThreshold float64
 	IdleAfter    time.Duration
 	AutoResume   bool
 	// PauseEarly lets a confident forecast that expects quiet hours pause

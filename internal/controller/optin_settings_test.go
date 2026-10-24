@@ -23,6 +23,7 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"k8s.io/apimachinery/pkg/util/intstr"
 
 	v1alpha1 "github.com/napwake/napwake/api/v1alpha1"
 )
@@ -36,7 +37,7 @@ func TestOptInSpec_Defaults(t *testing.T) {
 	assert.Equal(t, apiTarget, spec.Target)
 	assert.False(t, spec.DryRun)
 	assert.Equal(t, time.Hour, spec.IdlePolicy.IdleAfter.Duration)
-	assert.Equal(t, 10, spec.IdlePolicy.Activity.CPUThreshold)
+	assert.Equal(t, v1alpha1.CPUThresholdValue(10), spec.IdlePolicy.Activity.CPUThreshold)
 	assert.False(t, spec.IdlePolicy.AutoResume)
 	assert.False(t, spec.IdlePolicy.PauseEarly, "the forecast brings no pause forward unless asked to")
 	assert.Equal(t, v1alpha1.WakeOnRequest, spec.Wake.Mode)
@@ -177,7 +178,7 @@ func TestOptInSpec_Precedence(t *testing.T) {
 
 	require.Empty(t, problems)
 	assert.Equal(t, 30*time.Minute, spec.IdlePolicy.IdleAfter.Duration, "the workload's own wins")
-	assert.Equal(t, 15, spec.IdlePolicy.Activity.CPUThreshold, "then its namespace's")
+	assert.Equal(t, v1alpha1.CPUThresholdValue(15), spec.IdlePolicy.Activity.CPUThreshold, "then its namespace's")
 	assert.True(t, spec.DryRun, "then the cluster default")
 }
 
@@ -246,10 +247,13 @@ func TestOptInSpec_InvalidValues(t *testing.T) {
 			assert.Len(t, s.DependsOn, v1alpha1.MaxDependsOn, "the first as many as the CRD takes")
 		}},
 		{v1alpha1.AnnotationCPUThreshold, "0", func(t *testing.T, s v1alpha1.ManagedWorkloadSpec) {
-			assert.Equal(t, 10, s.IdlePolicy.Activity.CPUThreshold)
+			assert.Equal(t, v1alpha1.CPUThresholdValue(10), s.IdlePolicy.Activity.CPUThreshold)
 		}},
 		{v1alpha1.AnnotationCPUThreshold, "150", func(t *testing.T, s v1alpha1.ManagedWorkloadSpec) {
-			assert.Equal(t, 10, s.IdlePolicy.Activity.CPUThreshold)
+			assert.Equal(t, v1alpha1.CPUThresholdValue(10), s.IdlePolicy.Activity.CPUThreshold)
+		}},
+		{v1alpha1.AnnotationCPUThreshold, "0.05", func(t *testing.T, s v1alpha1.ManagedWorkloadSpec) {
+			assert.Equal(t, v1alpha1.CPUThresholdValue(10), s.IdlePolicy.Activity.CPUThreshold, "under 0.1")
 		}},
 		{v1alpha1.AnnotationWakePage, "False", func(t *testing.T, s v1alpha1.ManagedWorkloadSpec) { assert.True(t, *s.Wake.Page) }},
 	}
@@ -338,7 +342,7 @@ func TestOptInSpec_InvalidWorkloadValueFallsThrough(t *testing.T) {
 			workload:  map[string]string{v1alpha1.AnnotationCPUThreshold: "0"},
 			namespace: map[string]string{v1alpha1.AnnotationCPUThreshold: "25"},
 			check: func(t *testing.T, s v1alpha1.ManagedWorkloadSpec) {
-				assert.Equal(t, 25, s.IdlePolicy.Activity.CPUThreshold)
+				assert.Equal(t, v1alpha1.CPUThresholdValue(25), s.IdlePolicy.Activity.CPUThreshold)
 			},
 			wantOutcome: "the namespace's value is used"},
 		{name: "wake-page",
@@ -435,8 +439,24 @@ func TestOptInSpec_TrimsWhitespace(t *testing.T) {
 
 	require.Empty(t, problems)
 	assert.Equal(t, 2*time.Hour, spec.IdlePolicy.IdleAfter.Duration)
-	assert.Equal(t, 15, spec.IdlePolicy.Activity.CPUThreshold)
+	assert.Equal(t, v1alpha1.CPUThresholdValue(15), spec.IdlePolicy.Activity.CPUThreshold)
 	assert.True(t, spec.DryRun)
 	assert.Equal(t, 90*time.Second, spec.Wake.MaxWait.Duration)
 	assert.True(t, spec.IdlePolicy.AutoResume)
+}
+
+// The CPU threshold can be a decimal, for a workload that idles at a
+// fraction of a percent of its requests, written into the spec as a string,
+// as the field takes one. A whole number stays a number.
+func TestOptInSpec_ADecimalCPUThreshold(t *testing.T) {
+	for value, want := range map[string]intstr.IntOrString{
+		"0.5": intstr.FromString("0.5"), "0.25": intstr.FromString("0.25"), "10": intstr.FromInt32(10),
+		"10.0": intstr.FromInt32(10),
+	} {
+		spec, problems := optInSpec("dev", apiTarget, map[string]string{v1alpha1.AnnotationCPUThreshold: value}, nil,
+			DefaultOptInDefaults)
+
+		assert.Empty(t, problems, value)
+		assert.Equal(t, want, *spec.IdlePolicy.Activity.CPUThreshold, value)
+	}
 }

@@ -37,10 +37,22 @@ import (
 	"k8s.io/client-go/rest"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
+	v1alpha1 "github.com/napwake/napwake/api/v1alpha1"
 	"github.com/napwake/napwake/internal/cost"
 	"github.com/napwake/napwake/internal/discovery"
 	"github.com/napwake/napwake/internal/nodescale"
 )
+
+// checkCPUThreshold says what's wrong with a --cpu-threshold that isn't a
+// percentage the operator would take: from 0.1 to 100, to at most two
+// decimal places.
+func checkCPUThreshold(percent float64) error {
+	if _, err := v1alpha1.ParseCPUThreshold(strconv.FormatFloat(percent, 'f', -1, 64)); err != nil {
+		return errors.New("--cpu-threshold must be a percentage from 0.1 to 100, such as 10 or 0.5, to at most " +
+			"two decimal places")
+	}
+	return nil
+}
 
 // defaultCPUThreshold matches the activity clock's default, so the scan
 // calls idle what Napwake would pause.
@@ -52,7 +64,7 @@ type scanOptions struct {
 	exclude      []string
 	output       string
 	limit        int
-	cpuThreshold int
+	cpuThreshold float64
 	cpuPrice     float64
 	memoryPrice  float64
 	// ownCPUPrice and ownMemoryPrice say the user gave the price, which
@@ -110,9 +122,9 @@ type scanResult struct {
 
 // settings are the rules the scan judged with, so a report can state them.
 type settings struct {
-	CPUThreshold int    `json:"cpuThreshold"`
-	IdleAfter    string `json:"idleAfter"`
-	Window       string `json:"window"`
+	CPUThreshold float64 `json:"cpuThreshold"`
+	IdleAfter    string  `json:"idleAfter"`
+	Window       string  `json:"window"`
 }
 
 func scanCmd(kube *kubeFlags) *cobra.Command {
@@ -181,8 +193,8 @@ Examples:
 			if err != nil {
 				return err
 			}
-			if opts.cpuThreshold < 1 || opts.cpuThreshold > 100 {
-				return errors.New("--cpu-threshold must be a percentage from 1 to 100")
+			if err := checkCPUThreshold(opts.cpuThreshold); err != nil {
+				return err
 			}
 			if opts.idleAfter <= 0 {
 				return errors.New("--idle-after must be more than zero")
@@ -227,9 +239,9 @@ Examples:
 	cmd.Flags().IntVar(&opts.limit, "limit", 25,
 		"Workloads to list in the table, idle first, then paused, then active, each by what pausing could free "+
 			"(0 for all)")
-	cmd.Flags().IntVar(&opts.cpuThreshold, "cpu-threshold", defaultCPUThreshold,
-		"CPU use, as a percentage of requests from 1 to 100, above which a workload counts as active; managed workloads "+
-			"use their own")
+	cmd.Flags().Float64Var(&opts.cpuThreshold, "cpu-threshold", defaultCPUThreshold,
+		"CPU use, as a percentage of requests from 0.1 to 100, such as 10 or 0.5, above which a workload counts as "+
+			"active; managed workloads use their own")
 	cmd.Flags().Float64Var(&opts.cpuPrice, "cpu-price", opts.cpuPrice, "Your price per vCPU-hour, in dollars")
 	cmd.Flags().Float64Var(&opts.memoryPrice, "memory-price", opts.memoryPrice,
 		"Your price per GiB-hour of memory, in dollars")

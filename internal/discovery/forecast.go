@@ -326,7 +326,7 @@ func replayForecast(r replay, threshold int, mw *v1alpha1.ManagedWorkload, wakes
 	return fr
 }
 
-func learnedEngine(hours []forecast.Hour, settings forecast.Settings, cpuThreshold int) *forecast.Engine {
+func learnedEngine(hours []forecast.Hour, settings forecast.Settings, cpuThreshold float64) *forecast.Engine {
 	e := forecast.NewEngine(forecast.DefaultParams(), settings)
 	// History parsed from Prometheus is finite and never negative, which is
 	// all an observation is checked for.

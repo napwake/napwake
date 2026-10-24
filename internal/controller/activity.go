@@ -195,9 +195,13 @@ func idleAfterFor(workload *v1alpha1.ManagedWorkload) time.Duration {
 	return defaultIdleAfter
 }
 
-func cpuThresholdFor(workload *v1alpha1.ManagedWorkload) int {
-	if p := workload.Spec.IdlePolicy; p != nil && p.Activity != nil && p.Activity.CPUThreshold > 0 {
-		return p.Activity.CPUThreshold
+// cpuThresholdFor is the CPU use, as a percentage of the workload's
+// requests, above which it's in use.
+func cpuThresholdFor(workload *v1alpha1.ManagedWorkload) float64 {
+	if p := workload.Spec.IdlePolicy; p != nil {
+		if percent, ok := p.Activity.CPUThresholdPercent(); ok {
+			return percent
+		}
 	}
 	return defaultCPUThreshold
 }

@@ -129,7 +129,7 @@ var _ = ginkgo.Describe("ManagedWorkload validation", func() {
 		gomega.Expect(k8sClient.Create(ctx, w)).To(gomega.Succeed())
 		var created v1alpha1.ManagedWorkload
 		gomega.Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(w), &created)).To(gomega.Succeed())
-		gomega.Expect(created.Spec.IdlePolicy.Activity.CPUThreshold).To(gomega.Equal(10))
+		gomega.Expect(created.Spec.IdlePolicy.Activity.CPUThreshold).To(gomega.Equal(v1alpha1.CPUThresholdValue(10)))
 	})
 })
 

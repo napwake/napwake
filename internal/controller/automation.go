@@ -366,7 +366,8 @@ func (r *Reconciler) reconcileWake(ctx context.Context, workload *v1alpha1.Manag
 	}
 
 	return r.handleResume(ctx, workload, &phaseEvent{reason: ReasonAutoResume, message: fmt.Sprintf(
-		"forecast expects %.0f%% utilization %s (threshold %d%%), waking ahead of demand", predicted, when, threshold)})
+		"forecast expects %.0f%% utilization %s (threshold %s%%), waking ahead of demand", predicted, when,
+		v1alpha1.FormatCPUThreshold(threshold))})
 }
 
 func (r *Reconciler) untilNextHour(now time.Time) time.Duration {

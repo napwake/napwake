@@ -121,7 +121,7 @@ type replay struct {
 	// what one pod, sidecars included, costs an hour.
 	requestCores float64
 	podHourly    float64
-	threshold    int
+	threshold    float64
 	idleAfter    time.Duration
 }
 
@@ -394,7 +394,7 @@ func (s *Scanner) readHistory(ctx context.Context, namespace string, opts Cluste
 // requests and prices are today's, since the history only records CPU:
 // ownCPU is what one of its pods requests now for its own containers.
 func workloadReplay(w Workload, spec corev1.PodSpec, ownCPU int64, history []containerCPU, podsOf podNames,
-	since time.Time, rollouts []time.Time, threshold int, idleAfter time.Duration, opts ClusterOptions) (replay, bool) {
+	since time.Time, rollouts []time.Time, threshold float64, idleAfter time.Duration, opts ClusterOptions) (replay, bool) {
 	containers := make([]string, 0, len(spec.Containers))
 	for _, c := range metrics.WorkloadContainers(spec) {
 		containers = append(containers, c.Name)

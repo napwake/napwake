@@ -21,6 +21,7 @@ import (
 
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/util/intstr"
 )
 
 // +kubebuilder:object:root=true
@@ -277,12 +278,15 @@ type IdlePolicySpec struct {
 // ActivitySpec configures the activity sources for idle detection.
 type ActivitySpec struct {
 	// CPUThreshold is the CPU utilization, as a percentage of the workload's
-	// CPU requests, above which the workload counts as active.
-	// +kubebuilder:validation:Minimum=1
-	// +kubebuilder:validation:Maximum=100
+	// CPU requests, above which the workload counts as active: from 0.1 to
+	// 100, a whole number such as 10, or a decimal written as a string, such
+	// as "0.5", to at most two places.
+	// +kubebuilder:validation:XIntOrString
+	// +kubebuilder:validation:Pattern=`^[0-9]{1,3}(\.[0-9]{1,2})?$`
+	// +kubebuilder:validation:XValidation:rule="type(self) == string ? double(self) >= 0.1 && double(self) <= 100.0 : self >= 1 && self <= 100",message="must be a percentage from 0.1 to 100, such as 10 or \"0.5\""
 	// +kubebuilder:default=10
 	// +optional
-	CPUThreshold int `json:"cpuThreshold,omitempty"`
+	CPUThreshold *intstr.IntOrString `json:"cpuThreshold,omitempty"`
 
 	// Prometheus queries that measure activity, such as an ingress request
 	// rate. A result above zero counts as activity; an empty result or zero

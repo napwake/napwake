@@ -69,8 +69,8 @@ func acting(p Predictor) bool {
 // expectsDemand reports whether a forecast of predicted is demand the
 // workload must be awake for: at or above threshold, the activity
 // threshold.
-func expectsDemand(predicted float64, threshold int) bool {
-	return predicted >= float64(threshold)
+func expectsDemand(predicted, threshold float64) bool {
+	return predicted >= threshold
 }
 
 // HoldPause reports whether a confident forecast expects demand at or
@@ -78,7 +78,7 @@ func expectsDemand(predicted float64, threshold int) bool {
 // next. It covers every hour WakeAhead would wake the workload for, so a
 // workload is never paused only to be woken straight back. It returns the
 // busier of the two hours' forecasts, and when that hour begins.
-func HoldPause(p Predictor, now time.Time, loc *time.Location, threshold int) (hold bool, predicted float64,
+func HoldPause(p Predictor, now time.Time, loc *time.Location, threshold float64) (hold bool, predicted float64,
 	hour time.Time) {
 	if !acting(p) {
 		return false, 0, time.Time{}
@@ -95,7 +95,7 @@ func HoldPause(p Predictor, now time.Time, loc *time.Location, threshold int) (h
 // confident forecast expects demand at or above threshold in the hour under
 // way, or, within AutoResumeLead of the next hour, in that one. It returns
 // the forecast it acted on, and whether that was the next hour's.
-func WakeAhead(p Predictor, now time.Time, loc *time.Location, threshold int) (wake bool, predicted float64,
+func WakeAhead(p Predictor, now time.Time, loc *time.Location, threshold float64) (wake bool, predicted float64,
 	nextHour bool) {
 	if !acting(p) {
 		return false, 0, false
@@ -144,7 +144,7 @@ const (
 // forecast for: one it hasn't seen, or one after an hour far quieter than
 // forecast, which it doubts, isn't known to be quiet. It returns when the
 // quiet hours it expects begin and end.
-func PauseEarly(p Predictor, now, lastActivity, pauseAt time.Time, loc *time.Location, threshold int) (early bool,
+func PauseEarly(p Predictor, now, lastActivity, pauseAt time.Time, loc *time.Location, threshold float64) (early bool,
 	from, until time.Time) {
 	if !acting(p) || now.Sub(lastActivity) < EarlyPauseIdle || !now.Before(pauseAt) {
 		return false, time.Time{}, time.Time{}
@@ -164,8 +164,8 @@ func PauseEarly(p Predictor, now, lastActivity, pauseAt time.Time, loc *time.Loc
 // however little the workload then uses: twice the activity threshold. The
 // forecast approaches a pattern it is learning from below, so an hour seen
 // at the threshold itself would never quite be forecast to reach it.
-func RequestDemand(threshold int) float64 {
-	return 2 * float64(threshold)
+func RequestDemand(threshold float64) float64 {
+	return 2 * threshold
 }
 
 // AwakeDemand is the demand one look at an awake workload shows, at
@@ -183,7 +183,7 @@ func RequestDemand(threshold int) float64 {
 // another source; taught its own light utilization on the days autoResume
 // had it ready, and a request's demand on the days people woke it, the
 // forecast would have it ready only every other morning.
-func AwakeDemand(now, wokeAt time.Time, loc *time.Location, percent float64, threshold int,
+func AwakeDemand(now, wokeAt time.Time, loc *time.Location, percent, threshold float64,
 	usedSince func(since time.Time) bool) float64 {
 	since := HourStart(now, loc)
 	if !wokeAt.IsZero() {
@@ -202,14 +202,14 @@ func AwakeDemand(now, wokeAt time.Time, loc *time.Location, percent float64, thr
 // requests is in use by its CPU: above threshold, the activity threshold.
 // The activity clock, the forecast and the scan's replay of the clock all
 // count use this way, so the scan predicts what the operator does.
-func Busy(percent float64, threshold int) bool {
-	return percent > float64(threshold)
+func Busy(percent, threshold float64) bool {
+	return percent > threshold
 }
 
 // Demand is the demand a workload at utilization percent shows: at least
 // RequestDemand once it's Busy, or once inUse says another activity source
 // saw it in use, and percent otherwise.
-func Demand(percent float64, threshold int, inUse bool) float64 {
+func Demand(percent, threshold float64, inUse bool) float64 {
 	if Busy(percent, threshold) || inUse {
 		return max(percent, RequestDemand(threshold))
 	}

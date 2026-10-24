@@ -145,14 +145,24 @@ func TestCommands_GiveUpAtTimeout(t *testing.T) {
 }
 
 // A threshold of 0 would be judged as the default 10% while the report
-// said 0%, and one over 100% can never be reached; both are refused.
+// said 0%, and one over 100% can never be reached; both are refused, as is
+// one the operator wouldn't take.
 func TestScan_RejectsACPUThresholdOutsideAPercentage(t *testing.T) {
-	for _, threshold := range []string{"0", "-5", "101"} {
+	for _, threshold := range []string{"0", "-5", "101", "0.05", "0.125"} {
 		t.Run(threshold, func(t *testing.T) {
 			err := runRoot("scan", "--cpu-threshold", threshold)
 
-			assert.EqualError(t, err, "--cpu-threshold must be a percentage from 1 to 100")
+			assert.EqualError(t, err, "--cpu-threshold must be a percentage from 0.1 to 100, such as 10 or 0.5, "+
+				"to at most two decimal places")
 		})
+	}
+}
+
+// A decimal threshold, as the operator takes, is a threshold the scan and
+// the forecast take too.
+func TestCheckCPUThreshold_TakesDecimals(t *testing.T) {
+	for _, threshold := range []float64{0.1, 0.5, 2.25, 10, 100} {
+		assert.NoError(t, checkCPUThreshold(threshold), "%v", threshold)
 	}
 }
 

@@ -20,11 +20,11 @@ import (
 	"fmt"
 	"math"
 	"slices"
-	"strconv"
 	"strings"
 	"time"
 
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/util/intstr"
 	"k8s.io/utils/ptr"
 
 	v1alpha1 "github.com/napwake/napwake/api/v1alpha1"
@@ -35,7 +35,7 @@ import (
 // the managed label, from the Helm values. Annotations override them.
 type OptInDefaults struct {
 	IdleAfter    time.Duration
-	CPUThreshold int
+	CPUThreshold float64
 	DryRun       bool
 	PauseEarly   bool
 	Forecast     v1alpha1.PredictionMode
@@ -195,17 +195,19 @@ func (s *settings) forecastMode(key string, fallback v1alpha1.PredictionMode) v1
 }
 
 // percent accepts a whole number from 1 to 100.
-func (s *settings) percent(key string, fallback int) int {
-	n := fallback
-	s.resolve(key, "isn't a whole number from 1 to 100", func(v, _ string) bool {
-		parsed, err := strconv.Atoi(v)
-		if err != nil || parsed < 1 || parsed > 100 {
+// cpuThreshold reads a percentage from 0.1 to 100, a whole number or a
+// decimal such as "0.5", as the CRD's field takes it.
+func (s *settings) cpuThreshold(key string, fallback float64) *intstr.IntOrString {
+	percent := fallback
+	s.resolve(key, `isn't a percentage from 0.1 to 100, like "10" or "0.5"`, func(v, _ string) bool {
+		parsed, err := v1alpha1.ParseCPUThreshold(v)
+		if err != nil {
 			return false
 		}
-		n = parsed
+		percent = parsed
 		return true
 	})
-	return n
+	return v1alpha1.CPUThresholdValue(percent)
 }
 
 // dependencies reads a comma-separated list of "kind/name" or
@@ -300,7 +302,7 @@ func optInSpec(namespace string, target v1alpha1.WorkloadRef, workloadAnnotation
 		DryRun: s.dryRun(d.DryRun),
 		IdlePolicy: &v1alpha1.IdlePolicySpec{
 			IdleAfter:  &metav1.Duration{Duration: s.duration(v1alpha1.AnnotationIdleAfter, d.IdleAfter)},
-			Activity:   &v1alpha1.ActivitySpec{CPUThreshold: s.percent(v1alpha1.AnnotationCPUThreshold, d.CPUThreshold)},
+			Activity:   &v1alpha1.ActivitySpec{CPUThreshold: s.cpuThreshold(v1alpha1.AnnotationCPUThreshold, d.CPUThreshold)},
 			AutoResume: s.boolean(v1alpha1.AnnotationAutoResume, false),
 			PauseEarly: s.boolean(v1alpha1.AnnotationPauseEarly, d.PauseEarly),
 		},
