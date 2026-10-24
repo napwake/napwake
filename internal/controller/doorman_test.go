@@ -678,6 +678,39 @@ func TestReconcileDoorman_SharedService(t *testing.T) {
 	assert.Contains(t, cond.Message, "shop")
 }
 
+// A workload just paused still has its own pods behind its Services for a
+// moment: Ready in their slice until the EndpointSlice controller sees them
+// stopping. They're on their way out, so they don't move the doorman
+// aside, which would leave the Service with nothing once they stop. Pods
+// of a paused workload scaled up by hand do: they serve its requests.
+func TestReconcileDoorman_APausedWorkloadsStoppingPodsLeaveItRouted(t *testing.T) {
+	const name, hash = "shop", "5f8b5f6f4b"
+	run := func(t *testing.T, replicas int32) (*Reconciler, *v1alpha1.ManagedWorkload) {
+		workload := lifecycleWorkload(name, v1alpha1.PhasePaused)
+		target := appTarget()
+		target.Name = name
+		target.Spec.Replicas = ptr.To(replicas)
+		target.Spec.Template.Labels = map[string]string{"app": name}
+		own := servingSlice()
+		own.Endpoints[0].TargetRef.Name = name + "-" + hash + "-x7k2p"
+		pod := servingPod()
+		pod.Name = own.Endpoints[0].TargetRef.Name
+		pod.Labels = map[string]string{"app": name, appsv1.DefaultDeploymentUniqueLabelKey: hash}
+		shop := service(name, map[string]string{"app": name}, corev1.ServicePort{Name: "http", Port: 80})
+		r := doormanReconciler(t, workload, doormanEndpoints("10.0.0.7"), shop, own, pod)
+		require.NoError(t, doormanErr(context.Background(), r, workload, target))
+		return r, workload
+	}
+
+	r, workload := run(t, 0)
+	assert.Len(t, doormanSlices(t, r), 1, "its own pods are stopping, so the doorman stays in front")
+	assert.NotEqual(t, "ServedByOtherPods", wakeCondition(t, workload).Reason)
+
+	r, workload = run(t, 2)
+	assert.Empty(t, doormanSlices(t, r), "scaled up by hand, its pods serve")
+	assert.Equal(t, "ServedByOtherPods", wakeCondition(t, workload).Reason)
+}
+
 // GKE annotates every Service of a VPC-native cluster for NEGs, but only a
 // Service a GKE Ingress uses, or one with standalone NEGs, is in any, and
 // only those are left off the doorman.

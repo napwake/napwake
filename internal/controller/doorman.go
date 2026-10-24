@@ -694,11 +694,14 @@ type doormanPlan struct {
 // them would be no use. Once every workload behind it is paused, it's
 // routed by each, so a request wakes one of them. For an awake workload,
 // planned ahead of its pause, and one pausing, its own pods serve its
-// Services until they stop, and aren't counted among those other pods.
+// Services until they stop, and aren't counted among those other pods; nor
+// are a paused one's while its target is held at zero, as those are still
+// stopping, and can be listed Ready for a moment after the scale-down.
 func (r *Reconciler) planDoorman(ctx context.Context, workload *v1alpha1.ManagedWorkload, target client.Object,
 	endpoints map[discoveryv1.AddressType][]discoveryv1.Endpoint, awake bool) (doormanPlan, error) {
 	var own client.Object
-	if awake || workload.Status.Phase == v1alpha1.PhasePausing {
+	if awake || workload.Status.Phase == v1alpha1.PhasePausing ||
+		(workload.Status.Phase == v1alpha1.PhasePaused && replicasFromTarget(target) == 0) {
 		own = target
 	}
 	podLabels := labels.Set(podTemplateLabels(target))
