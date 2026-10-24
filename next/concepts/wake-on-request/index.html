@@ -93,7 +93,7 @@
             <div class="md-banner__inner md-grid md-typeset">
               
   
-    These docs are for Hybernate 0.2.0-rc.6, a release candidate, and may change before it's released.
+    These docs are for Hybernate 0.2.0-rc.7, a release candidate, and may change before it's released.
   
   <a href="../../.."><strong>Read the docs for the latest release.</strong></a>
 
@@ -913,6 +913,67 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#asking-before-waking" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Asking before waking
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Asking before waking">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#what-browsers-robots-and-api-clients-see" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        What browsers, robots and API clients see
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#the-wake-it-button" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        The Wake it button
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#what-it-turns-away" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        What it turns away
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#when-to-keep-waking-on-request" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        When to keep waking on request
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#how-long-a-connection-is-held" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -1203,6 +1264,34 @@
     
   
     Opting In
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../guides/preview-environments/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Public Preview Environments
   
 
     
@@ -2014,6 +2103,67 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#asking-before-waking" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Asking before waking
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Asking before waking">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#what-browsers-robots-and-api-clients-see" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        What browsers, robots and API clients see
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#the-wake-it-button" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        The Wake it button
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#what-it-turns-away" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        What it turns away
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#when-to-keep-waking-on-request" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        When to keep waking on request
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#how-long-a-connection-is-held" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -2218,7 +2368,7 @@
 
 <h1 id="wake-on-request">Wake on Request<a class="headerlink" href="#wake-on-request" title="Permanent link">&para;</a></h1>
 <p>A paused workload has no pods, so nothing answers its Service. With wake on request, the first request wakes it instead: the connection is held while the workload starts, then passed to one of its Ready pods. The caller usually sees one slow response, not an error; <a href="#what-the-caller-sees">What the caller sees</a> lists when it doesn't.</p>
-<p>It's on by default for every workload Hybernate pauses on its own. There's nothing to configure.</p>
+<p>It's on by default for every workload Hybernate pauses on its own. There's nothing to configure. For a workload on a public URL, which crawlers and scanners would wake every few minutes, the doorman can <a href="#asking-before-waking">ask before waking</a> it, so that only a person's click does.</p>
 <h2 id="how-it-works">How it works<a class="headerlink" href="#how-it-works" title="Permanent link">&para;</a></h2>
 <p>Hybernate runs a small proxy, the <strong>doorman</strong>, as its own Deployment (two replicas, with a PodDisruptionBudget) next to the operator.</p>
 <ol>
@@ -2319,7 +2469,11 @@
 <p>Either way, most load balancers see the workload as unhealthy while it's paused, as they would without Hybernate, and still send requests when every target is unhealthy: AWS's Application and Network Load Balancers fail open, so the first request reaches the doorman and wakes the workload. Google Cloud's Application Load Balancers, behind a GKE Ingress or Gateway, don't: until a backend passes its health check they answer <code>502</code> and send nothing on. So the doorman answers Google's health check, <code>GoogleHC/</code>, with <code>200 OK</code> while the workload is paused, without waking it, and holds the request that follows. Check any other load balancer before relying on wake on request behind it.</p>
 <h3 id="environments-on-the-public-internet">Environments on the public internet<a class="headerlink" href="#environments-on-the-public-internet" title="Permanent link">&para;</a></h3>
 <p>Wake on request wakes a paused workload for any request it can't recognise as a health check, and on the public internet most requests are robots: search engine crawlers, and scanners that try every address for known weaknesses. Many of them present an ordinary browser's <code>User-Agent</code> on purpose, so no list of agents can keep up with them. A paused workload anyone on the internet can reach is woken by them every few minutes, and frees little.</p>
-<p>The doorman turns away the scanners hunting for leaked secrets in hidden files, as above, but not the rest. Put non-production environments behind a VPN, single sign-on at the ingress, or an allowlist of your offices' and VPN's addresses. That keeps the robots away from them, which pausing needs, and keeps unfinished work away from the internet, which a staging or preview environment needs anyway.</p>
+<p>The doorman turns away the scanners hunting for leaked secrets in hidden files, as above, but not the rest. So for an environment anyone on the internet can reach, such as a preview environment for each pull request, either:</p>
+<ul>
+<li><strong>Have the doorman ask before waking it,</strong> with <code>wake.mode: Ask</code>: a browser gets a page with a <strong>Wake it</strong> button, and only a click wakes the workload. See <a href="#asking-before-waking">Asking before waking</a>.</li>
+<li><strong>Put it behind a VPN,</strong> single sign-on at the ingress, or an allowlist of your offices' and VPN's addresses. That keeps the robots away from it, and unfinished work away from the internet, and any request wakes it, as usual.</li>
+</ul>
 <h3 id="services-shared-with-other-workloads">Services shared with other workloads<a class="headerlink" href="#services-shared-with-other-workloads" title="Permanent link">&para;</a></h3>
 <p>A Service is routed to the doorman only while none of its pods is Ready. When several workloads sit behind one Service, such as a canary and a stable Deployment, traffic goes to whichever has Ready pods, and a paused one behind it reports <code>WakeOnRequest=False</code> with reason <code>ServedByOtherPods</code>. Once every workload behind the Service is paused, the Service is routed and a request wakes them.</p>
 <p>The operator reads the Service's own EndpointSlices from the API server when it decides, since it doesn't cache other workloads' endpoints, and decides again every 30 seconds while another workload's pods serve the Service. So a Service whose other pods all go is routed within 30 seconds; until then, requests to it fail as they would without Hybernate.</p>
@@ -2335,23 +2489,102 @@
 </span><span id="__span-4-3"><a id="__codelineno-4-3" name="__codelineno-4-3" href="#__codelineno-4-3"></a><span class="w">    </span><span class="nt">page</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">false</span>
 </span></code></pre></div>
 <p>For a workload opted in with the label, set the annotation <code>hybernate.io/wake-page: "false"</code> on it instead.</p>
-<h2 id="how-long-a-connection-is-held">How long a connection is held<a class="headerlink" href="#how-long-a-connection-is-held" title="Permanent link">&para;</a></h2>
-<p>The doorman holds each connection for up to <code>wake.maxWait</code>, 2 minutes by default and at most 1 hour, which is the most the ManagedWorkload accepts. If no pod is Ready by then, it closes the connection. The wake carries on, so a retry a little later succeeds.</p>
+<h2 id="asking-before-waking">Asking before waking<a class="headerlink" href="#asking-before-waking" title="Permanent link">&para;</a></h2>
+<p>A workload with <code>wake.mode: Ask</code> wakes only when a person asks: crawlers, scanners and API clients reach the doorman as before, and nothing they send wakes it. It's for environments on a public URL, such as a preview environment for each pull request, which robots would otherwise keep awake. <a href="../../guides/preview-environments/">Public Preview Environments</a> walks through setting it up for them, waking them from a pull request's workflow, and having them up before people come.</p>
 <div class="language-yaml highlight"><pre><span></span><code><span id="__span-5-1"><a id="__codelineno-5-1" name="__codelineno-5-1" href="#__codelineno-5-1"></a><span class="nt">spec</span><span class="p">:</span>
 </span><span id="__span-5-2"><a id="__codelineno-5-2" name="__codelineno-5-2" href="#__codelineno-5-2"></a><span class="w">  </span><span class="nt">wake</span><span class="p">:</span>
-</span><span id="__span-5-3"><a id="__codelineno-5-3" name="__codelineno-5-3" href="#__codelineno-5-3"></a><span class="w">    </span><span class="nt">maxWait</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">5m</span><span class="w">     </span><span class="c1"># a slow starter, such as a database replaying its log</span>
+</span><span id="__span-5-3"><a id="__codelineno-5-3" name="__codelineno-5-3" href="#__codelineno-5-3"></a><span class="w">    </span><span class="nt">mode</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">Ask</span><span class="w">     </span><span class="c1"># the default is Request: any request wakes it</span>
+</span></code></pre></div>
+<p>For a workload opted in with the label, set the annotation <code>hybernate.io/wake: ask</code> on it or on its namespace instead, or make it the default for the cluster with the Helm value <code>defaults.wake: ask</code>. A value other than <code>request</code> or <code>ask</code> is read as <code>ask</code>, with an <code>InvalidSetting</code> warning, so a typo never lets robots wake a workload meant to wake only for people. The <code>WakeOnRequest</code> condition says the doorman asks:</p>
+<div class="language-text highlight"><pre><span></span><code><span id="__span-6-1"><a id="__codelineno-6-1" name="__codelineno-6-1" href="#__codelineno-6-1"></a>WakeOnRequest=True   DoormanRouted   the doorman asks a person's browser before waking the workload, and turns away other requests
+</span></code></pre></div>
+<h3 id="what-browsers-robots-and-api-clients-see">What browsers, robots and API clients see<a class="headerlink" href="#what-browsers-robots-and-api-clients-see" title="Permanent link">&para;</a></h3>
+<table>
+<thead>
+<tr>
+<th>The caller</th>
+<th>What happens</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>A person's browser opening a page: a <code>GET</code> with <code>Sec-Fetch-Mode: navigate</code>, or asking for HTML, whose <code>User-Agent</code> starts with <code>Mozilla/</code> and doesn't name a crawler</td>
+<td>A page saying the environment is asleep, with a <strong>Wake it</strong> button. It's a <code>200</code> with <code>Cache-Control: no-store</code>, <code>X-Robots-Tag: noindex</code> and <code>Referrer-Policy: same-origin</code>, and nothing wakes. It reloads itself every minute, so a tab left open goes on to the app once someone has woken it</td>
+</tr>
+<tr>
+<td>A click on <strong>Wake it</strong></td>
+<td>The workload wakes, as for a held request: <code>hybernate.io/last-request</code> is stamped, and a <code>WokenByRequest</code> event says a person asked. The waking-up page follows, and reloads the page the person opened until the app answers</td>
+</tr>
+<tr>
+<td>A click on <strong>Wake it</strong> in a browser that doesn't say the click came from the page, one from before about 2020</td>
+<td>The asleep page again, saying so, and that <code>kubectl hybernate wake</code>, the <code>hybernate.io/wake-requested</code> annotation or a current browser wakes it instead. Nothing wakes</td>
+</tr>
+<tr>
+<td>A browser posting a form that isn't the button's, such as the app's login form submitted after the workload paused: URL-encoded, and up to 1 KiB, or sent on chunked by a proxy</td>
+<td>The asleep page, a <code>200</code>, as for a page load. Nothing wakes, and it isn't counted as <a href="#what-it-turns-away">turned away</a></td>
+</tr>
+<tr>
+<td>Anything else: <code>curl</code>, scripts and API clients, crawlers and link previewers such as <code>Googlebot</code> and <code>facebookexternalhit</code>, headless browsers, scanners, a <code>HEAD</code>, a WebSocket, a browser's <code>fetch</code>, a larger form or a file upload</td>
+<td><code>503 Service Unavailable</code>, with <code>Retry-After: 300</code>, and a short body, JSON for a client that asks for it and plain text otherwise, saying it's asleep and how to wake it. Nothing wakes</td>
+</tr>
+<tr>
+<td>A connection that isn't HTTP, such as a database protocol, or TLS the doorman can't read</td>
+<td>Closed; nothing wakes</td>
+</tr>
+<tr>
+<td>A known probe, health check or hidden file</td>
+<td>Answered as for any workload; see <a href="#what-wakes-a-workload-and-what-doesnt">What wakes a workload</a></td>
+</tr>
+<tr>
+<td>Anything, once the workload is waking: someone has clicked, or something else woke it</td>
+<td>As for a workload that wakes on any request: a browser gets the waking-up page, and anything else is held until the workload is Ready</td>
+</tr>
+</tbody>
+</table>
+<p>A robot that presents itself as a browser gets the page, and wakes nothing either. What wakes the workload is a post of the page's token, still fresh, from a browser's <code>User-Agent</code>, one the page would be shown to, that says the click came from the page:</p>
+<ul>
+<li><strong>Where the browser sends fetch metadata,</strong> as current ones do over HTTPS, with <code>Sec-Fetch-Site: same-origin</code>, which says it came from a page of the same scheme, host and port. Chrome, Edge, Firefox and the other browsers built on Chromium must also send <code>Sec-Fetch-User: ?1</code>, which marks a navigation a person started; Safari, and every browser on iOS, never send it, so a click from them is judged by the rest.</li>
+<li><strong>Where it doesn't,</strong> as no browser does over plain HTTP, with an <code>Origin</code> that's the address the page was served at: the host its request named, which the page shows at its top, and its port. The page's <code>Referrer-Policy: same-origin</code> lets the browser send it, and still sends nothing to other sites. Behind a proxy that rewrites the <code>Host</code> header, the two differ, so serve the workload over HTTPS there.</li>
+</ul>
+<p>So a spider that fetches the page and posts its token wakes nothing, even with a browser's <code>User-Agent</code>, nor does a script that submits the form. What this can't stop is a robot that forges those headers on purpose, or drives a real browser and clicks the button: that's rare, and costs at most a wake a minute.</p>
+<p>A browser from before about 2020 may send neither, and its click can't be told from a spider's, so it wakes nothing. The asleep page comes back saying the browser didn't say the click came from the page, and to wake it with <code>kubectl hybernate wake</code>, the <code>hybernate.io/wake-requested</code> annotation, or a current browser.</p>
+<p>The pages name no namespace, workload or Service, so they give nothing away to whoever reaches them.</p>
+<h3 id="the-wake-it-button">The Wake it button<a class="headerlink" href="#the-wake-it-button" title="Permanent link">&para;</a></h3>
+<p>The button posts back to the address of the page the person opened, so it reaches the same workload however an ingress routes it, a path prefix included. What it posts is a token the doorman signed for that workload and that pause: it's good for 10 minutes, and wakes no other workload, nor the same one in a later pause. The page reloads itself every minute, which keeps its token fresh, and takes a tab left open on to the app once someone has woken it, rather than leaving a button there that would post to the app. A token that has expired anyway, as on a page whose reloads failed, wakes nothing, and the page says so and offers the button again. A click from a page of another site, another subdomain or another port, which the browser says with <code>Sec-Fetch-Site</code> or its <code>Origin</code>, wakes nothing either, and no other site can show the page in a frame.</p>
+<p>The doorman's replicas sign with one key, since a click can reach any of them. It's kept in a Secret the chart creates empty, <code>hybernate-doorman-wake-key</code> for a release named <code>hybernate</code>, and the first doorman pod to find it empty fills it with a random key. Helm and GitOps tools never set its data, so they leave the key alone. To change the key, empty the Secret: each doorman pod uses the new one within a minute, and stops accepting the old one 11 minutes after it switches, once every token signed with it has expired:</p>
+<div class="language-sh highlight"><pre><span></span><code><span id="__span-7-1"><a id="__codelineno-7-1" name="__codelineno-7-1" href="#__codelineno-7-1"></a>kubectl<span class="w"> </span>patch<span class="w"> </span>secret<span class="w"> </span>hybernate-doorman-wake-key<span class="w"> </span>-n<span class="w"> </span>hybernate-system<span class="w"> </span>--type<span class="o">=</span>json<span class="w"> </span>-p<span class="w"> </span><span class="s1">'[{"op":"remove","path":"/data"}]'</span>
+</span></code></pre></div>
+<p>A click wakes a workload at most once a minute, whichever doorman pod it reaches: a click within a minute of the last wake request, such as one moments before the workload paused again, is asked to try again shortly.</p>
+<p>People's tooling can wake it too, without a browser: a pull request bot, a developer portal or a chat command, with the <code>hybernate.io/wake-requested</code> annotation or <code>kubectl hybernate wake</code>. Both work whatever <code>wake.mode</code> says.</p>
+<h3 id="what-it-turns-away">What it turns away<a class="headerlink" href="#what-it-turns-away" title="Permanent link">&para;</a></h3>
+<p>The doorman counts the requests it turns away during each pause: the <code>503</code>s and closed connections, not a person shown the page, nor probes and health checks. It's a count only, with nothing of the requests themselves: no paths, addresses or headers. It's in the ManagedWorkload's status, brought up to date about once a minute, for the current pause or, once the workload is awake, the last one:</p>
+<div class="language-yaml highlight"><pre><span></span><code><span id="__span-8-1"><a id="__codelineno-8-1" name="__codelineno-8-1" href="#__codelineno-8-1"></a><span class="nt">status</span><span class="p">:</span>
+</span><span id="__span-8-2"><a id="__codelineno-8-2" name="__codelineno-8-2" href="#__codelineno-8-2"></a><span class="w">  </span><span class="nt">turnedAway</span><span class="p">:</span>
+</span><span id="__span-8-3"><a id="__codelineno-8-3" name="__codelineno-8-3" href="#__codelineno-8-3"></a><span class="w">    </span><span class="nt">pausedAt</span><span class="p">:</span><span class="w"> </span><span class="s">"2026-10-23T18:04:12Z"</span>
+</span><span id="__span-8-4"><a id="__codelineno-8-4" name="__codelineno-8-4" href="#__codelineno-8-4"></a><span class="w">    </span><span class="nt">requests</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">312</span>
+</span></code></pre></div>
+<p><a href="../../getting-started/kubectl-plugin/#see-what-hybernate-is-doing"><code>kubectl hybernate status</code></a> lists the workloads that turned requests away, and <code>hybernate_doorman_wakes_total{result="turned_away"}</code> counts them as they happen; see <a href="../../reference/metrics/#doorman">Metrics</a>. Many mean something automated calls the workload: a monitor, a webhook, or another service. A person can't be turned away, so it's worth finding out what it is.</p>
+<h3 id="when-to-keep-waking-on-request">When to keep waking on request<a class="headerlink" href="#when-to-keep-waking-on-request" title="Permanent link">&para;</a></h3>
+<p>Asking suits what people open in a browser. Keep <code>Request</code>, the default, for a workload that other workloads, scripts or webhooks call: they're turned away while it's paused, and nothing they send wakes it. It needs plain HTTP/1.1 to reach the doorman, so TLS ended at an ingress or a load balancer in front of it, which then speaks HTTP/1.1 to its backends, as they do unless told otherwise. A browser's HTTP/2 or HTTP/3 to the ingress is fine, and so is a click's form sent on chunked. A workload that ends TLS itself is never woken by a click, nor is one behind a proxy told to speak HTTP/2 or gRPC to it, such as ingress-nginx with <code>backend-protocol: GRPC</code>: the doorman turns that away.</p>
+<p>A workload that asks never <a href="../forecasting/#pausing-early">pauses early</a>, even with <code>pauseEarly</code> on: a request doesn't wake it, so someone who came while the forecast expected quiet would find it asleep and have to ask. It pauses when <code>idleAfter</code> runs out.</p>
+<h2 id="how-long-a-connection-is-held">How long a connection is held<a class="headerlink" href="#how-long-a-connection-is-held" title="Permanent link">&para;</a></h2>
+<p>The doorman holds each connection for up to <code>wake.maxWait</code>, 2 minutes by default and at most 1 hour, which is the most the ManagedWorkload accepts. If no pod is Ready by then, it closes the connection. The wake carries on, so a retry a little later succeeds.</p>
+<div class="language-yaml highlight"><pre><span></span><code><span id="__span-9-1"><a id="__codelineno-9-1" name="__codelineno-9-1" href="#__codelineno-9-1"></a><span class="nt">spec</span><span class="p">:</span>
+</span><span id="__span-9-2"><a id="__codelineno-9-2" name="__codelineno-9-2" href="#__codelineno-9-2"></a><span class="w">  </span><span class="nt">wake</span><span class="p">:</span>
+</span><span id="__span-9-3"><a id="__codelineno-9-3" name="__codelineno-9-3" href="#__codelineno-9-3"></a><span class="w">    </span><span class="nt">maxWait</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">5m</span><span class="w">     </span><span class="c1"># a slow starter, such as a database replaying its log</span>
 </span></code></pre></div>
 <p>For a workload opted in with the label, set the annotation <code>hybernate.io/wake-max-wait: "5m"</code> on it instead.</p>
 <p>Callers have their own timeouts. Most HTTP clients wait at least 30 seconds, and browsers wait minutes. A proxy in front of the Service can give up sooner: ingress-nginx closes an upstream request after 60 seconds by default. For a workload that takes longer than that to start, raise the Ingress timeout to match <code>maxWait</code>:</p>
-<div class="language-yaml highlight"><pre><span></span><code><span id="__span-6-1"><a id="__codelineno-6-1" name="__codelineno-6-1" href="#__codelineno-6-1"></a><span class="nt">metadata</span><span class="p">:</span>
-</span><span id="__span-6-2"><a id="__codelineno-6-2" name="__codelineno-6-2" href="#__codelineno-6-2"></a><span class="w">  </span><span class="nt">annotations</span><span class="p">:</span>
-</span><span id="__span-6-3"><a id="__codelineno-6-3" name="__codelineno-6-3" href="#__codelineno-6-3"></a><span class="w">    </span><span class="nt">nginx.ingress.kubernetes.io/proxy-read-timeout</span><span class="p">:</span><span class="w"> </span><span class="s">"120"</span>
+<div class="language-yaml highlight"><pre><span></span><code><span id="__span-10-1"><a id="__codelineno-10-1" name="__codelineno-10-1" href="#__codelineno-10-1"></a><span class="nt">metadata</span><span class="p">:</span>
+</span><span id="__span-10-2"><a id="__codelineno-10-2" name="__codelineno-10-2" href="#__codelineno-10-2"></a><span class="w">  </span><span class="nt">annotations</span><span class="p">:</span>
+</span><span id="__span-10-3"><a id="__codelineno-10-3" name="__codelineno-10-3" href="#__codelineno-10-3"></a><span class="w">    </span><span class="nt">nginx.ingress.kubernetes.io/proxy-read-timeout</span><span class="p">:</span><span class="w"> </span><span class="s">"120"</span>
 </span></code></pre></div>
 <h3 id="limits">Limits<a class="headerlink" href="#limits" title="Permanent link">&para;</a></h3>
 <p>So that a flood of connections can't exhaust the doorman, or wake workloads faster than the cluster can start them:</p>
 <ul>
 <li>Each doorman pod holds at most 2048 connections: at most 256 for one workload, at most 1024 from one source IP, and at most 128 from one source IP for one workload. A connection over these caps is closed at once, with nothing sent.</li>
 <li>Each doorman pod passes through at most 1024 connections at once, at most 512 from one source IP. A connection over these caps is held, as if the workload weren't Ready yet, until a place frees or <code>maxWait</code> runs out. A passed-through connection that carries nothing either way for 10 minutes is closed, so a caller that vanished without closing doesn't keep its place; one whose client or server pings, as WebSockets and database pools do, stays open. Once the workload is awake and its route starts draining, connections still passing through the doorman are closed after 5 minutes, so long-lived callers reconnect to the pods directly.</li>
+<li>A click on the asleep page's <strong>Wake it</strong> button wakes a workload at most once a minute; see <a href="#the-wake-it-button">Asking before waking</a>.</li>
 <li>Wakes are rate-limited per source IP (a burst of 30, then one every 2 seconds) and overall (a burst of 200, then 10 a second). Only a request that would actually wake a paused workload counts, and one refused overall doesn't use up its source's allowance. A caller whose wake is over the limit isn't turned away: a browser gets the waking-up page, anything else is held, and the wake is retried every 2 seconds until the allowance lets it through or <code>maxWait</code> runs out.</li>
 <li>While a connection is held, the doorman reads what the caller sends, so that a caller who gives up is let go at once: up to 1MiB per connection, and 32MiB across all of them. The first 8KiB of each doesn't count towards the 32MiB, so a caller who sent an ordinary request and left is let go at once even while large uploads have used it up. A larger request body waits in the network until the workload is up, or until other held connections free some of the 32MiB, and a caller who leaves partway through one is let go only then. A caller that closes its connection has left, whatever its protocol, and is never passed to the workload: over TCP, closing and shutting down only the sending side look the same, and nearly every caller that does either has given up. So a client that sends its request and then shuts down its side to wait for the answer, as <code>nc -N</code> does, is dropped while the workload is asleep; leave the connection open instead.</li>
 </ul>
@@ -2359,11 +2592,12 @@
 <p>When a doorman pod shuts down, it reports itself not Ready at once, so the operator moves paused workloads' EndpointSlices to the other doorman pods: it rewrites only their endpoints, many at once, so a thousand paused Services move in about ten seconds. A rollout of the doorman starts each new pod, and waits 5 seconds after it's Ready, before stopping an old one. Only the operator can move them, and when it's being upgraded or restarted at the same time it takes a few seconds to take over, so the stopping pod goes on holding and passing through new connections for 15 seconds. Then it stops accepting them, and gives those it holds or passes through the rest of 25 seconds to finish. The chart gives the pod 40 seconds in all, after a 5-second sleep that lets kube-proxy and load balancers stop sending it new connections.</p>
 <p>When a workload stops being routed, the doorman goes on serving its port for 30 seconds, so a browser's last refresh of the waking-up page doesn't land on a closed port, and the operator gives that port to no other workload for a minute. The operator records the minute in the ManagedWorkload's status, so a newly elected leader honours it too, and a deleted ManagedWorkload stays until it's over, up to a minute after its routing is removed.</p>
 <h2 id="turning-it-off">Turning it off<a class="headerlink" href="#turning-it-off" title="Permanent link">&para;</a></h2>
-<div class="language-yaml highlight"><pre><span></span><code><span id="__span-7-1"><a id="__codelineno-7-1" name="__codelineno-7-1" href="#__codelineno-7-1"></a><span class="nt">spec</span><span class="p">:</span>
-</span><span id="__span-7-2"><a id="__codelineno-7-2" name="__codelineno-7-2" href="#__codelineno-7-2"></a><span class="w">  </span><span class="nt">wake</span><span class="p">:</span>
-</span><span id="__span-7-3"><a id="__codelineno-7-3" name="__codelineno-7-3" href="#__codelineno-7-3"></a><span class="w">    </span><span class="nt">onRequest</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">false</span>
-</span></code></pre></div>
-<p>Requests to the paused workload then fail, as they would without Hybernate, and it reports <code>WakeOnRequest=False</code> with reason <code>TurnedOff</code>. With the label, set <code>hybernate.io/wake-on-request: "false"</code>. To turn it off for the whole cluster, set the Helm value <code>doorman.enabled: false</code>, or run the operator with <code>--doorman-service=""</code>; workloads then report <code>WakeOnRequest=False</code> with reason <code>DoormanDisabled</code>.</p>
+<p>There's no setting to turn waking off for one workload: a paused workload whose requests just fail is rarely what anyone wants. Instead:</p>
+<ul>
+<li><strong>For a workload on a public URL,</strong> which crawlers and scanners would keep awake, have the doorman <a href="#asking-before-waking">ask before waking</a> it: only a person's click wakes it.</li>
+<li><strong>For one port of a Service,</strong> such as a metrics port something scrapes, list it in <code>hybernate.io/doorman-ignore-ports</code> on the Service. That port then fails while the workload is paused, as it would without Hybernate.</li>
+<li><strong>For the whole cluster,</strong> set the Helm value <code>doorman.enabled: false</code>, or run the operator with <code>--doorman-service=""</code>. Requests to paused workloads then fail, and they report <code>WakeOnRequest=False</code> with reason <code>DoormanDisabled</code>.</li>
+</ul>
 <h2 id="when-a-workload-isnt-routed">When a workload isn't routed<a class="headerlink" href="#when-a-workload-isnt-routed" title="Permanent link">&para;</a></h2>
 <table>
 <thead>
@@ -2441,29 +2675,29 @@
 <li>that GKE's NEG controller lists NEGs of pods for in <code>cloud.google.com/neg-status</code></li>
 </ul>
 <p>Hybernate looks again whenever an Ingress or a Service in the namespace changes, so a Service is taken off the doorman as soon as a GKE Ingress starts using it, and routed again once none does. To see what GKE has set on a Service:</p>
-<div class="language-bash highlight"><pre><span></span><code><span id="__span-8-1"><a id="__codelineno-8-1" name="__codelineno-8-1" href="#__codelineno-8-1"></a>kubectl<span class="w"> </span>get<span class="w"> </span>service<span class="w"> </span>api<span class="w"> </span>-n<span class="w"> </span>preview-42<span class="w"> </span>-o<span class="w"> </span><span class="nv">jsonpath</span><span class="o">=</span><span class="s1">'{.metadata.annotations}'</span>
+<div class="language-bash highlight"><pre><span></span><code><span id="__span-11-1"><a id="__codelineno-11-1" name="__codelineno-11-1" href="#__codelineno-11-1"></a>kubectl<span class="w"> </span>get<span class="w"> </span>service<span class="w"> </span>api<span class="w"> </span>-n<span class="w"> </span>preview-42<span class="w"> </span>-o<span class="w"> </span><span class="nv">jsonpath</span><span class="o">=</span><span class="s1">'{.metadata.annotations}'</span>
 </span></code></pre></div>
 <p>Requests through a GKE Ingress on instance groups, whose Service has <code>cloud.google.com/neg: '{"ingress": false}'</code>, reach the doorman through the Service's node port and wake a paused workload, since the doorman tells Google's health check it's up. Without the <a href="#gke-container-native-load-balancing-negs">forwarder</a>, requests through a GKE Ingress whose Service is in NEGs, or through a GKE Gateway, which always uses NEGs, don't: the Service isn't routed, and the load balancer answers <code>502</code> while the workload is paused. Wake it another way, such as <code>kubectl hybernate wake</code>, an <a href="../idle-detection/#activity-annotations">activity annotation</a> from your developer portal, or the forecast's <code>autoResume</code>. Or reach it through an ingress controller that reads EndpointSlices, such as ingress-nginx, in place of the GKE Ingress or behind it: the GKE Ingress then uses the ingress controller's Service, which never pauses, and the controller sends requests on to the workload's Service, which is routed.</p>
 <p>With the forwarder on, callers in the cluster wake the workload through the Ingress's own Service too. Without it, for callers in the cluster to wake a workload whose Service a GKE Ingress uses, give them a Service of their own, which no GKE Ingress uses, so it's routed:</p>
-<div class="language-yaml highlight"><pre><span></span><code><span id="__span-9-1"><a id="__codelineno-9-1" name="__codelineno-9-1" href="#__codelineno-9-1"></a><span class="nt">apiVersion</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">v1</span>
-</span><span id="__span-9-2"><a id="__codelineno-9-2" name="__codelineno-9-2" href="#__codelineno-9-2"></a><span class="nt">kind</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">Service</span>
-</span><span id="__span-9-3"><a id="__codelineno-9-3" name="__codelineno-9-3" href="#__codelineno-9-3"></a><span class="nt">metadata</span><span class="p">:</span>
-</span><span id="__span-9-4"><a id="__codelineno-9-4" name="__codelineno-9-4" href="#__codelineno-9-4"></a><span class="w">  </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">api-internal</span>
-</span><span id="__span-9-5"><a id="__codelineno-9-5" name="__codelineno-9-5" href="#__codelineno-9-5"></a><span class="w">  </span><span class="nt">namespace</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">preview-42</span>
-</span><span id="__span-9-6"><a id="__codelineno-9-6" name="__codelineno-9-6" href="#__codelineno-9-6"></a><span class="nt">spec</span><span class="p">:</span>
-</span><span id="__span-9-7"><a id="__codelineno-9-7" name="__codelineno-9-7" href="#__codelineno-9-7"></a><span class="w">  </span><span class="nt">selector</span><span class="p">:</span>
-</span><span id="__span-9-8"><a id="__codelineno-9-8" name="__codelineno-9-8" href="#__codelineno-9-8"></a><span class="w">    </span><span class="nt">app</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">api</span>
-</span><span id="__span-9-9"><a id="__codelineno-9-9" name="__codelineno-9-9" href="#__codelineno-9-9"></a><span class="w">  </span><span class="nt">ports</span><span class="p">:</span>
-</span><span id="__span-9-10"><a id="__codelineno-9-10" name="__codelineno-9-10" href="#__codelineno-9-10"></a><span class="w">    </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">http</span>
-</span><span id="__span-9-11"><a id="__codelineno-9-11" name="__codelineno-9-11" href="#__codelineno-9-11"></a><span class="w">      </span><span class="nt">port</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">80</span>
-</span><span id="__span-9-12"><a id="__codelineno-9-12" name="__codelineno-9-12" href="#__codelineno-9-12"></a><span class="w">      </span><span class="nt">targetPort</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">8080</span>
+<div class="language-yaml highlight"><pre><span></span><code><span id="__span-12-1"><a id="__codelineno-12-1" name="__codelineno-12-1" href="#__codelineno-12-1"></a><span class="nt">apiVersion</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">v1</span>
+</span><span id="__span-12-2"><a id="__codelineno-12-2" name="__codelineno-12-2" href="#__codelineno-12-2"></a><span class="nt">kind</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">Service</span>
+</span><span id="__span-12-3"><a id="__codelineno-12-3" name="__codelineno-12-3" href="#__codelineno-12-3"></a><span class="nt">metadata</span><span class="p">:</span>
+</span><span id="__span-12-4"><a id="__codelineno-12-4" name="__codelineno-12-4" href="#__codelineno-12-4"></a><span class="w">  </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">api-internal</span>
+</span><span id="__span-12-5"><a id="__codelineno-12-5" name="__codelineno-12-5" href="#__codelineno-12-5"></a><span class="w">  </span><span class="nt">namespace</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">preview-42</span>
+</span><span id="__span-12-6"><a id="__codelineno-12-6" name="__codelineno-12-6" href="#__codelineno-12-6"></a><span class="nt">spec</span><span class="p">:</span>
+</span><span id="__span-12-7"><a id="__codelineno-12-7" name="__codelineno-12-7" href="#__codelineno-12-7"></a><span class="w">  </span><span class="nt">selector</span><span class="p">:</span>
+</span><span id="__span-12-8"><a id="__codelineno-12-8" name="__codelineno-12-8" href="#__codelineno-12-8"></a><span class="w">    </span><span class="nt">app</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">api</span>
+</span><span id="__span-12-9"><a id="__codelineno-12-9" name="__codelineno-12-9" href="#__codelineno-12-9"></a><span class="w">  </span><span class="nt">ports</span><span class="p">:</span>
+</span><span id="__span-12-10"><a id="__codelineno-12-10" name="__codelineno-12-10" href="#__codelineno-12-10"></a><span class="w">    </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">http</span>
+</span><span id="__span-12-11"><a id="__codelineno-12-11" name="__codelineno-12-11" href="#__codelineno-12-11"></a><span class="w">      </span><span class="nt">port</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">80</span>
+</span><span id="__span-12-12"><a id="__codelineno-12-12" name="__codelineno-12-12" href="#__codelineno-12-12"></a><span class="w">      </span><span class="nt">targetPort</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">8080</span>
 </span></code></pre></div>
 <p>Turning NEGs off on the Ingress's own Service, with <code>cloud.google.com/neg: '{"ingress": false}'</code>, gets it routed too, so requests through the Ingress wake the workload, but moves a <code>gce</code> Ingress onto instance groups, which needs the Service to be <code>type: NodePort</code>, and a <code>gce-internal</code> Ingress can't do without NEGs. GKE warns against changing the annotation on a Service a load balancer uses, since the change replaces the load balancer's backends.</p>
 <h2 id="gke-container-native-load-balancing-negs">GKE container-native load balancing (NEGs)<a class="headerlink" href="#gke-container-native-load-balancing-negs" title="Permanent link">&para;</a></h2>
 <p>GKE's NEG controller only accepts endpoints whose pods are in the Service's own namespace, so a Service in NEGs can't be pointed at the doorman's pods, and by default isn't routed (see <a href="#on-gke">On GKE</a>). So <strong>a request through a GKE Ingress whose Service is in NEGs, or through a GKE Gateway, wakes a paused workload only with the forwarder on</strong>, an optional mode, off by default, for teams whose paused environments are reached that way. GKE uses NEGs for an Ingress's Services by default on VPC-native clusters, and always for a Gateway's. Requests to Services no GKE Ingress or Gateway uses, from inside the cluster or through other ingress controllers and load balancers, wake workloads without it.</p>
-<div class="language-yaml highlight"><pre><span></span><code><span id="__span-10-1"><a id="__codelineno-10-1" name="__codelineno-10-1" href="#__codelineno-10-1"></a><span class="nt">doorman</span><span class="p">:</span>
-</span><span id="__span-10-2"><a id="__codelineno-10-2" name="__codelineno-10-2" href="#__codelineno-10-2"></a><span class="w">  </span><span class="nt">negForwarder</span><span class="p">:</span>
-</span><span id="__span-10-3"><a id="__codelineno-10-3" name="__codelineno-10-3" href="#__codelineno-10-3"></a><span class="w">    </span><span class="nt">enabled</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">true</span>
+<div class="language-yaml highlight"><pre><span></span><code><span id="__span-13-1"><a id="__codelineno-13-1" name="__codelineno-13-1" href="#__codelineno-13-1"></a><span class="nt">doorman</span><span class="p">:</span>
+</span><span id="__span-13-2"><a id="__codelineno-13-2" name="__codelineno-13-2" href="#__codelineno-13-2"></a><span class="w">  </span><span class="nt">negForwarder</span><span class="p">:</span>
+</span><span id="__span-13-3"><a id="__codelineno-13-3" name="__codelineno-13-3" href="#__codelineno-13-3"></a><span class="w">    </span><span class="nt">enabled</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">true</span>
 </span></code></pre></div>
 <h3 id="what-it-runs">What it runs<a class="headerlink" href="#what-it-runs" title="Permanent link">&para;</a></h3>
 <p>While a workload with a Service behind NEGs is paused, the operator runs a Deployment beside it, <code>hybernate-forwarder-&lt;workload&gt;</code>, in the workload's namespace, and points that Service at the forwarder's pods instead of the doorman's. GKE's NEG controller accepts them, since they're in the Service's namespace. The forwarder passes every connection to the doorman, bytes untouched, and the doorman holds it and wakes the workload as it does any other. Once the workload is <code>Running</code> and its route has drained, a minute later, the operator deletes the forwarder. The ManagedWorkload owns it, so deleting the ManagedWorkload deletes it too. The workload's other Services, those no NEG uses, are routed to the doorman directly, as usual.</p>
@@ -2474,50 +2708,50 @@
 <li><strong>Readiness</strong>: a forwarder pod is Ready only while it reaches the doorman on every port it passes connections to. It finds the doorman's pods through a headless Service the chart adds, <code>hybernate-doorman-pods</code> for a release named <code>hybernate</code>. Until a forwarder pod is Ready, the Service isn't routed, and the workload reports <code>WakeOnRequest=False</code>, reason <code>ForwarderNotReady</code>, with why.</li>
 </ul>
 <p>To see it:</p>
-<div class="language-bash highlight"><pre><span></span><code><span id="__span-11-1"><a id="__codelineno-11-1" name="__codelineno-11-1" href="#__codelineno-11-1"></a>kubectl<span class="w"> </span>get<span class="w"> </span>deployments<span class="w"> </span>-n<span class="w"> </span>preview-42<span class="w"> </span>-l<span class="w"> </span>app.kubernetes.io/name<span class="o">=</span>hybernate-forwarder
-</span><span id="__span-11-2"><a id="__codelineno-11-2" name="__codelineno-11-2" href="#__codelineno-11-2"></a>kubectl<span class="w"> </span>get<span class="w"> </span>endpointslices<span class="w"> </span>-n<span class="w"> </span>preview-42<span class="w"> </span>-l<span class="w"> </span>hybernate.io/forwarded<span class="o">=</span><span class="nb">true</span>
+<div class="language-bash highlight"><pre><span></span><code><span id="__span-14-1"><a id="__codelineno-14-1" name="__codelineno-14-1" href="#__codelineno-14-1"></a>kubectl<span class="w"> </span>get<span class="w"> </span>deployments<span class="w"> </span>-n<span class="w"> </span>preview-42<span class="w"> </span>-l<span class="w"> </span>app.kubernetes.io/name<span class="o">=</span>hybernate-forwarder
+</span><span id="__span-14-2"><a id="__codelineno-14-2" name="__codelineno-14-2" href="#__codelineno-14-2"></a>kubectl<span class="w"> </span>get<span class="w"> </span>endpointslices<span class="w"> </span>-n<span class="w"> </span>preview-42<span class="w"> </span>-l<span class="w"> </span>hybernate.io/forwarded<span class="o">=</span><span class="nb">true</span>
 </span></code></pre></div>
 <p>The route of a Service sent through the forwarder shows <code>forwarded: true</code> in the ManagedWorkload's <code>status.doorman</code>.</p>
 <h3 id="health-checks-behind-negs">Health checks behind NEGs<a class="headerlink" href="#health-checks-behind-negs" title="Permanent link">&para;</a></h3>
 <p>The endpoint Google's load balancer checks is now the forwarder, which passes the check to the doorman, and the doorman answers Google's health check (<code>User-Agent: GoogleHC/</code>) with <code>200 OK</code>, as on every route, without waking anything; every other checker still gets <code>503</code>. As anywhere, an HTTPS or HTTP/2 health check can't be read, and wakes the workload every time it runs: keep the backend service's health check on the traffic port, over plain HTTP, as a GKE Ingress sets up for an HTTP backend. A port of its own doesn't work here: the forwarder listens only on the ports it routes, so a check on another fails, and Google's load balancer then sends nothing on (see <a href="#health-checks-the-doorman-cant-recognise">Health checks the doorman can't recognise</a>).</p>
 <h3 id="timeouts-behind-negs">Timeouts behind NEGs<a class="headerlink" href="#timeouts-behind-negs" title="Permanent link">&para;</a></h3>
 <p>Google's load balancer waits 30 seconds for a backend's answer by default. A browser gets the waking-up page at once, but anything else waits for the workload, so for a workload that takes longer to start, raise the backend service's timeout to match <code>wake.maxWait</code>. For a GKE Ingress, with a BackendConfig, which the Service names in its <code>cloud.google.com/backend-config</code> annotation, <code>'{"default": "slow-start"}'</code>:</p>
-<div class="language-yaml highlight"><pre><span></span><code><span id="__span-12-1"><a id="__codelineno-12-1" name="__codelineno-12-1" href="#__codelineno-12-1"></a><span class="nt">apiVersion</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">cloud.google.com/v1</span>
-</span><span id="__span-12-2"><a id="__codelineno-12-2" name="__codelineno-12-2" href="#__codelineno-12-2"></a><span class="nt">kind</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">BackendConfig</span>
-</span><span id="__span-12-3"><a id="__codelineno-12-3" name="__codelineno-12-3" href="#__codelineno-12-3"></a><span class="nt">metadata</span><span class="p">:</span>
-</span><span id="__span-12-4"><a id="__codelineno-12-4" name="__codelineno-12-4" href="#__codelineno-12-4"></a><span class="w">  </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">slow-start</span>
-</span><span id="__span-12-5"><a id="__codelineno-12-5" name="__codelineno-12-5" href="#__codelineno-12-5"></a><span class="w">  </span><span class="nt">namespace</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">preview-42</span>
-</span><span id="__span-12-6"><a id="__codelineno-12-6" name="__codelineno-12-6" href="#__codelineno-12-6"></a><span class="nt">spec</span><span class="p">:</span>
-</span><span id="__span-12-7"><a id="__codelineno-12-7" name="__codelineno-12-7" href="#__codelineno-12-7"></a><span class="w">  </span><span class="nt">timeoutSec</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">120</span>
+<div class="language-yaml highlight"><pre><span></span><code><span id="__span-15-1"><a id="__codelineno-15-1" name="__codelineno-15-1" href="#__codelineno-15-1"></a><span class="nt">apiVersion</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">cloud.google.com/v1</span>
+</span><span id="__span-15-2"><a id="__codelineno-15-2" name="__codelineno-15-2" href="#__codelineno-15-2"></a><span class="nt">kind</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">BackendConfig</span>
+</span><span id="__span-15-3"><a id="__codelineno-15-3" name="__codelineno-15-3" href="#__codelineno-15-3"></a><span class="nt">metadata</span><span class="p">:</span>
+</span><span id="__span-15-4"><a id="__codelineno-15-4" name="__codelineno-15-4" href="#__codelineno-15-4"></a><span class="w">  </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">slow-start</span>
+</span><span id="__span-15-5"><a id="__codelineno-15-5" name="__codelineno-15-5" href="#__codelineno-15-5"></a><span class="w">  </span><span class="nt">namespace</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">preview-42</span>
+</span><span id="__span-15-6"><a id="__codelineno-15-6" name="__codelineno-15-6" href="#__codelineno-15-6"></a><span class="nt">spec</span><span class="p">:</span>
+</span><span id="__span-15-7"><a id="__codelineno-15-7" name="__codelineno-15-7" href="#__codelineno-15-7"></a><span class="w">  </span><span class="nt">timeoutSec</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">120</span>
 </span></code></pre></div>
 <p>For a GKE Gateway, set <code>spec.default.timeoutSec</code> in a GCPBackendPolicy.</p>
 <h3 id="network-policies-behind-negs">Network policies behind NEGs<a class="headerlink" href="#network-policies-behind-negs" title="Permanent link">&para;</a></h3>
 <p>The chart's doorman NetworkPolicy (<code>networkPolicy.enabled</code>) admits forwarders besides <code>doorman.networkPolicy.ingressFrom</code>, by their labels, <code>app.kubernetes.io/name: hybernate-forwarder</code> and <code>hybernate.io/operator</code> naming Hybernate's namespace, from any namespace. Anyone who can create pods can give them those labels, and so reach the doorman's routing ports, as any caller in <code>ingressFrom</code> can.</p>
 <p>In the workload's namespace, a default-deny policy must let the forwarder's pods be reached by whatever reaches the workload, Google's load balancers and health checks from <code>130.211.0.0/22</code> and <code>35.191.0.0/16</code> among them, and let them reach the doorman and DNS:</p>
-<div class="language-yaml highlight"><pre><span></span><code><span id="__span-13-1"><a id="__codelineno-13-1" name="__codelineno-13-1" href="#__codelineno-13-1"></a><span class="nt">apiVersion</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">networking.k8s.io/v1</span>
-</span><span id="__span-13-2"><a id="__codelineno-13-2" name="__codelineno-13-2" href="#__codelineno-13-2"></a><span class="nt">kind</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">NetworkPolicy</span>
-</span><span id="__span-13-3"><a id="__codelineno-13-3" name="__codelineno-13-3" href="#__codelineno-13-3"></a><span class="nt">metadata</span><span class="p">:</span>
-</span><span id="__span-13-4"><a id="__codelineno-13-4" name="__codelineno-13-4" href="#__codelineno-13-4"></a><span class="w">  </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">allow-hybernate-forwarder</span>
-</span><span id="__span-13-5"><a id="__codelineno-13-5" name="__codelineno-13-5" href="#__codelineno-13-5"></a><span class="w">  </span><span class="nt">namespace</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">preview-42</span>
-</span><span id="__span-13-6"><a id="__codelineno-13-6" name="__codelineno-13-6" href="#__codelineno-13-6"></a><span class="nt">spec</span><span class="p">:</span>
-</span><span id="__span-13-7"><a id="__codelineno-13-7" name="__codelineno-13-7" href="#__codelineno-13-7"></a><span class="w">  </span><span class="nt">podSelector</span><span class="p">:</span>
-</span><span id="__span-13-8"><a id="__codelineno-13-8" name="__codelineno-13-8" href="#__codelineno-13-8"></a><span class="w">    </span><span class="nt">matchLabels</span><span class="p">:</span><span class="w"> </span><span class="p p-Indicator">{</span><span class="nt">app.kubernetes.io/name</span><span class="p">:</span><span class="w"> </span><span class="nv">hybernate-forwarder</span><span class="p p-Indicator">}</span>
-</span><span id="__span-13-9"><a id="__codelineno-13-9" name="__codelineno-13-9" href="#__codelineno-13-9"></a><span class="w">  </span><span class="nt">policyTypes</span><span class="p">:</span><span class="w"> </span><span class="p p-Indicator">[</span><span class="nv">Ingress</span><span class="p p-Indicator">,</span><span class="w"> </span><span class="nv">Egress</span><span class="p p-Indicator">]</span>
-</span><span id="__span-13-10"><a id="__codelineno-13-10" name="__codelineno-13-10" href="#__codelineno-13-10"></a><span class="w">  </span><span class="nt">ingress</span><span class="p">:</span>
-</span><span id="__span-13-11"><a id="__codelineno-13-11" name="__codelineno-13-11" href="#__codelineno-13-11"></a><span class="w">    </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">from</span><span class="p">:</span>
-</span><span id="__span-13-12"><a id="__codelineno-13-12" name="__codelineno-13-12" href="#__codelineno-13-12"></a><span class="w">        </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">ipBlock</span><span class="p">:</span><span class="w"> </span><span class="p p-Indicator">{</span><span class="nt">cidr</span><span class="p">:</span><span class="w"> </span><span class="nv">130.211.0.0/22</span><span class="p p-Indicator">}</span>
-</span><span id="__span-13-13"><a id="__codelineno-13-13" name="__codelineno-13-13" href="#__codelineno-13-13"></a><span class="w">        </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">ipBlock</span><span class="p">:</span><span class="w"> </span><span class="p p-Indicator">{</span><span class="nt">cidr</span><span class="p">:</span><span class="w"> </span><span class="nv">35.191.0.0/16</span><span class="p p-Indicator">}</span>
-</span><span id="__span-13-14"><a id="__codelineno-13-14" name="__codelineno-13-14" href="#__codelineno-13-14"></a><span class="w">  </span><span class="nt">egress</span><span class="p">:</span>
-</span><span id="__span-13-15"><a id="__codelineno-13-15" name="__codelineno-13-15" href="#__codelineno-13-15"></a><span class="w">    </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">to</span><span class="p">:</span>
-</span><span id="__span-13-16"><a id="__codelineno-13-16" name="__codelineno-13-16" href="#__codelineno-13-16"></a><span class="w">        </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">namespaceSelector</span><span class="p">:</span>
-</span><span id="__span-13-17"><a id="__codelineno-13-17" name="__codelineno-13-17" href="#__codelineno-13-17"></a><span class="w">            </span><span class="nt">matchLabels</span><span class="p">:</span><span class="w"> </span><span class="p p-Indicator">{</span><span class="nt">kubernetes.io/metadata.name</span><span class="p">:</span><span class="w"> </span><span class="nv">hybernate-system</span><span class="p p-Indicator">}</span>
-</span><span id="__span-13-18"><a id="__codelineno-13-18" name="__codelineno-13-18" href="#__codelineno-13-18"></a><span class="w">          </span><span class="nt">podSelector</span><span class="p">:</span>
-</span><span id="__span-13-19"><a id="__codelineno-13-19" name="__codelineno-13-19" href="#__codelineno-13-19"></a><span class="w">            </span><span class="nt">matchLabels</span><span class="p">:</span><span class="w"> </span><span class="p p-Indicator">{</span><span class="nt">control-plane</span><span class="p">:</span><span class="w"> </span><span class="nv">doorman</span><span class="p p-Indicator">}</span>
-</span><span id="__span-13-20"><a id="__codelineno-13-20" name="__codelineno-13-20" href="#__codelineno-13-20"></a><span class="w">      </span><span class="nt">ports</span><span class="p">:</span>
-</span><span id="__span-13-21"><a id="__codelineno-13-21" name="__codelineno-13-21" href="#__codelineno-13-21"></a><span class="w">        </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="p p-Indicator">{</span><span class="nt">port</span><span class="p">:</span><span class="w"> </span><span class="nv">20000</span><span class="p p-Indicator">,</span><span class="nt"> endPort</span><span class="p">:</span><span class="w"> </span><span class="nv">29999</span><span class="p p-Indicator">,</span><span class="nt"> protocol</span><span class="p">:</span><span class="w"> </span><span class="nv">TCP</span><span class="p p-Indicator">}</span>
-</span><span id="__span-13-22"><a id="__codelineno-13-22" name="__codelineno-13-22" href="#__codelineno-13-22"></a><span class="w">    </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">ports</span><span class="p">:</span>
-</span><span id="__span-13-23"><a id="__codelineno-13-23" name="__codelineno-13-23" href="#__codelineno-13-23"></a><span class="w">        </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="p p-Indicator">{</span><span class="nt">port</span><span class="p">:</span><span class="w"> </span><span class="nv">53</span><span class="p p-Indicator">,</span><span class="nt"> protocol</span><span class="p">:</span><span class="w"> </span><span class="nv">UDP</span><span class="p p-Indicator">}</span>
-</span><span id="__span-13-24"><a id="__codelineno-13-24" name="__codelineno-13-24" href="#__codelineno-13-24"></a><span class="w">        </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="p p-Indicator">{</span><span class="nt">port</span><span class="p">:</span><span class="w"> </span><span class="nv">53</span><span class="p p-Indicator">,</span><span class="nt"> protocol</span><span class="p">:</span><span class="w"> </span><span class="nv">TCP</span><span class="p p-Indicator">}</span>
+<div class="language-yaml highlight"><pre><span></span><code><span id="__span-16-1"><a id="__codelineno-16-1" name="__codelineno-16-1" href="#__codelineno-16-1"></a><span class="nt">apiVersion</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">networking.k8s.io/v1</span>
+</span><span id="__span-16-2"><a id="__codelineno-16-2" name="__codelineno-16-2" href="#__codelineno-16-2"></a><span class="nt">kind</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">NetworkPolicy</span>
+</span><span id="__span-16-3"><a id="__codelineno-16-3" name="__codelineno-16-3" href="#__codelineno-16-3"></a><span class="nt">metadata</span><span class="p">:</span>
+</span><span id="__span-16-4"><a id="__codelineno-16-4" name="__codelineno-16-4" href="#__codelineno-16-4"></a><span class="w">  </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">allow-hybernate-forwarder</span>
+</span><span id="__span-16-5"><a id="__codelineno-16-5" name="__codelineno-16-5" href="#__codelineno-16-5"></a><span class="w">  </span><span class="nt">namespace</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">preview-42</span>
+</span><span id="__span-16-6"><a id="__codelineno-16-6" name="__codelineno-16-6" href="#__codelineno-16-6"></a><span class="nt">spec</span><span class="p">:</span>
+</span><span id="__span-16-7"><a id="__codelineno-16-7" name="__codelineno-16-7" href="#__codelineno-16-7"></a><span class="w">  </span><span class="nt">podSelector</span><span class="p">:</span>
+</span><span id="__span-16-8"><a id="__codelineno-16-8" name="__codelineno-16-8" href="#__codelineno-16-8"></a><span class="w">    </span><span class="nt">matchLabels</span><span class="p">:</span><span class="w"> </span><span class="p p-Indicator">{</span><span class="nt">app.kubernetes.io/name</span><span class="p">:</span><span class="w"> </span><span class="nv">hybernate-forwarder</span><span class="p p-Indicator">}</span>
+</span><span id="__span-16-9"><a id="__codelineno-16-9" name="__codelineno-16-9" href="#__codelineno-16-9"></a><span class="w">  </span><span class="nt">policyTypes</span><span class="p">:</span><span class="w"> </span><span class="p p-Indicator">[</span><span class="nv">Ingress</span><span class="p p-Indicator">,</span><span class="w"> </span><span class="nv">Egress</span><span class="p p-Indicator">]</span>
+</span><span id="__span-16-10"><a id="__codelineno-16-10" name="__codelineno-16-10" href="#__codelineno-16-10"></a><span class="w">  </span><span class="nt">ingress</span><span class="p">:</span>
+</span><span id="__span-16-11"><a id="__codelineno-16-11" name="__codelineno-16-11" href="#__codelineno-16-11"></a><span class="w">    </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">from</span><span class="p">:</span>
+</span><span id="__span-16-12"><a id="__codelineno-16-12" name="__codelineno-16-12" href="#__codelineno-16-12"></a><span class="w">        </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">ipBlock</span><span class="p">:</span><span class="w"> </span><span class="p p-Indicator">{</span><span class="nt">cidr</span><span class="p">:</span><span class="w"> </span><span class="nv">130.211.0.0/22</span><span class="p p-Indicator">}</span>
+</span><span id="__span-16-13"><a id="__codelineno-16-13" name="__codelineno-16-13" href="#__codelineno-16-13"></a><span class="w">        </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">ipBlock</span><span class="p">:</span><span class="w"> </span><span class="p p-Indicator">{</span><span class="nt">cidr</span><span class="p">:</span><span class="w"> </span><span class="nv">35.191.0.0/16</span><span class="p p-Indicator">}</span>
+</span><span id="__span-16-14"><a id="__codelineno-16-14" name="__codelineno-16-14" href="#__codelineno-16-14"></a><span class="w">  </span><span class="nt">egress</span><span class="p">:</span>
+</span><span id="__span-16-15"><a id="__codelineno-16-15" name="__codelineno-16-15" href="#__codelineno-16-15"></a><span class="w">    </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">to</span><span class="p">:</span>
+</span><span id="__span-16-16"><a id="__codelineno-16-16" name="__codelineno-16-16" href="#__codelineno-16-16"></a><span class="w">        </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">namespaceSelector</span><span class="p">:</span>
+</span><span id="__span-16-17"><a id="__codelineno-16-17" name="__codelineno-16-17" href="#__codelineno-16-17"></a><span class="w">            </span><span class="nt">matchLabels</span><span class="p">:</span><span class="w"> </span><span class="p p-Indicator">{</span><span class="nt">kubernetes.io/metadata.name</span><span class="p">:</span><span class="w"> </span><span class="nv">hybernate-system</span><span class="p p-Indicator">}</span>
+</span><span id="__span-16-18"><a id="__codelineno-16-18" name="__codelineno-16-18" href="#__codelineno-16-18"></a><span class="w">          </span><span class="nt">podSelector</span><span class="p">:</span>
+</span><span id="__span-16-19"><a id="__codelineno-16-19" name="__codelineno-16-19" href="#__codelineno-16-19"></a><span class="w">            </span><span class="nt">matchLabels</span><span class="p">:</span><span class="w"> </span><span class="p p-Indicator">{</span><span class="nt">control-plane</span><span class="p">:</span><span class="w"> </span><span class="nv">doorman</span><span class="p p-Indicator">}</span>
+</span><span id="__span-16-20"><a id="__codelineno-16-20" name="__codelineno-16-20" href="#__codelineno-16-20"></a><span class="w">      </span><span class="nt">ports</span><span class="p">:</span>
+</span><span id="__span-16-21"><a id="__codelineno-16-21" name="__codelineno-16-21" href="#__codelineno-16-21"></a><span class="w">        </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="p p-Indicator">{</span><span class="nt">port</span><span class="p">:</span><span class="w"> </span><span class="nv">20000</span><span class="p p-Indicator">,</span><span class="nt"> endPort</span><span class="p">:</span><span class="w"> </span><span class="nv">29999</span><span class="p p-Indicator">,</span><span class="nt"> protocol</span><span class="p">:</span><span class="w"> </span><span class="nv">TCP</span><span class="p p-Indicator">}</span>
+</span><span id="__span-16-22"><a id="__codelineno-16-22" name="__codelineno-16-22" href="#__codelineno-16-22"></a><span class="w">    </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">ports</span><span class="p">:</span>
+</span><span id="__span-16-23"><a id="__codelineno-16-23" name="__codelineno-16-23" href="#__codelineno-16-23"></a><span class="w">        </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="p p-Indicator">{</span><span class="nt">port</span><span class="p">:</span><span class="w"> </span><span class="nv">53</span><span class="p p-Indicator">,</span><span class="nt"> protocol</span><span class="p">:</span><span class="w"> </span><span class="nv">UDP</span><span class="p p-Indicator">}</span>
+</span><span id="__span-16-24"><a id="__codelineno-16-24" name="__codelineno-16-24" href="#__codelineno-16-24"></a><span class="w">        </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="p p-Indicator">{</span><span class="nt">port</span><span class="p">:</span><span class="w"> </span><span class="nv">53</span><span class="p p-Indicator">,</span><span class="nt"> protocol</span><span class="p">:</span><span class="w"> </span><span class="nv">TCP</span><span class="p p-Indicator">}</span>
 </span></code></pre></div>
 <p>Add your in-cluster callers to <code>ingress.from</code> if apps in the cluster call the Service too.</p>
 <h3 id="limits-behind-negs">Limits behind NEGs<a class="headerlink" href="#limits-behind-negs" title="Permanent link">&para;</a></h3>
@@ -2530,20 +2764,20 @@
 </ul>
 <h2 id="network-policies">Network policies<a class="headerlink" href="#network-policies" title="Permanent link">&para;</a></h2>
 <p>The doorman connects to woken pods directly, from the Hybernate namespace. If a workload's namespace has a default-deny NetworkPolicy, allow ingress from the doorman:</p>
-<div class="language-yaml highlight"><pre><span></span><code><span id="__span-14-1"><a id="__codelineno-14-1" name="__codelineno-14-1" href="#__codelineno-14-1"></a><span class="nt">apiVersion</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">networking.k8s.io/v1</span>
-</span><span id="__span-14-2"><a id="__codelineno-14-2" name="__codelineno-14-2" href="#__codelineno-14-2"></a><span class="nt">kind</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">NetworkPolicy</span>
-</span><span id="__span-14-3"><a id="__codelineno-14-3" name="__codelineno-14-3" href="#__codelineno-14-3"></a><span class="nt">metadata</span><span class="p">:</span>
-</span><span id="__span-14-4"><a id="__codelineno-14-4" name="__codelineno-14-4" href="#__codelineno-14-4"></a><span class="w">  </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">allow-hybernate-doorman</span>
-</span><span id="__span-14-5"><a id="__codelineno-14-5" name="__codelineno-14-5" href="#__codelineno-14-5"></a><span class="w">  </span><span class="nt">namespace</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">preview-42</span>
-</span><span id="__span-14-6"><a id="__codelineno-14-6" name="__codelineno-14-6" href="#__codelineno-14-6"></a><span class="nt">spec</span><span class="p">:</span>
-</span><span id="__span-14-7"><a id="__codelineno-14-7" name="__codelineno-14-7" href="#__codelineno-14-7"></a><span class="w">  </span><span class="nt">podSelector</span><span class="p">:</span><span class="w"> </span><span class="p p-Indicator">{}</span>
-</span><span id="__span-14-8"><a id="__codelineno-14-8" name="__codelineno-14-8" href="#__codelineno-14-8"></a><span class="w">  </span><span class="nt">policyTypes</span><span class="p">:</span><span class="w"> </span><span class="p p-Indicator">[</span><span class="nv">Ingress</span><span class="p p-Indicator">]</span>
-</span><span id="__span-14-9"><a id="__codelineno-14-9" name="__codelineno-14-9" href="#__codelineno-14-9"></a><span class="w">  </span><span class="nt">ingress</span><span class="p">:</span>
-</span><span id="__span-14-10"><a id="__codelineno-14-10" name="__codelineno-14-10" href="#__codelineno-14-10"></a><span class="w">    </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">from</span><span class="p">:</span>
-</span><span id="__span-14-11"><a id="__codelineno-14-11" name="__codelineno-14-11" href="#__codelineno-14-11"></a><span class="w">        </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">namespaceSelector</span><span class="p">:</span>
-</span><span id="__span-14-12"><a id="__codelineno-14-12" name="__codelineno-14-12" href="#__codelineno-14-12"></a><span class="w">            </span><span class="nt">matchLabels</span><span class="p">:</span><span class="w"> </span><span class="p p-Indicator">{</span><span class="nt">kubernetes.io/metadata.name</span><span class="p">:</span><span class="w"> </span><span class="nv">hybernate-system</span><span class="p p-Indicator">}</span>
-</span><span id="__span-14-13"><a id="__codelineno-14-13" name="__codelineno-14-13" href="#__codelineno-14-13"></a><span class="w">          </span><span class="nt">podSelector</span><span class="p">:</span>
-</span><span id="__span-14-14"><a id="__codelineno-14-14" name="__codelineno-14-14" href="#__codelineno-14-14"></a><span class="w">            </span><span class="nt">matchLabels</span><span class="p">:</span><span class="w"> </span><span class="p p-Indicator">{</span><span class="nt">control-plane</span><span class="p">:</span><span class="w"> </span><span class="nv">doorman</span><span class="p p-Indicator">}</span>
+<div class="language-yaml highlight"><pre><span></span><code><span id="__span-17-1"><a id="__codelineno-17-1" name="__codelineno-17-1" href="#__codelineno-17-1"></a><span class="nt">apiVersion</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">networking.k8s.io/v1</span>
+</span><span id="__span-17-2"><a id="__codelineno-17-2" name="__codelineno-17-2" href="#__codelineno-17-2"></a><span class="nt">kind</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">NetworkPolicy</span>
+</span><span id="__span-17-3"><a id="__codelineno-17-3" name="__codelineno-17-3" href="#__codelineno-17-3"></a><span class="nt">metadata</span><span class="p">:</span>
+</span><span id="__span-17-4"><a id="__codelineno-17-4" name="__codelineno-17-4" href="#__codelineno-17-4"></a><span class="w">  </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">allow-hybernate-doorman</span>
+</span><span id="__span-17-5"><a id="__codelineno-17-5" name="__codelineno-17-5" href="#__codelineno-17-5"></a><span class="w">  </span><span class="nt">namespace</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">preview-42</span>
+</span><span id="__span-17-6"><a id="__codelineno-17-6" name="__codelineno-17-6" href="#__codelineno-17-6"></a><span class="nt">spec</span><span class="p">:</span>
+</span><span id="__span-17-7"><a id="__codelineno-17-7" name="__codelineno-17-7" href="#__codelineno-17-7"></a><span class="w">  </span><span class="nt">podSelector</span><span class="p">:</span><span class="w"> </span><span class="p p-Indicator">{}</span>
+</span><span id="__span-17-8"><a id="__codelineno-17-8" name="__codelineno-17-8" href="#__codelineno-17-8"></a><span class="w">  </span><span class="nt">policyTypes</span><span class="p">:</span><span class="w"> </span><span class="p p-Indicator">[</span><span class="nv">Ingress</span><span class="p p-Indicator">]</span>
+</span><span id="__span-17-9"><a id="__codelineno-17-9" name="__codelineno-17-9" href="#__codelineno-17-9"></a><span class="w">  </span><span class="nt">ingress</span><span class="p">:</span>
+</span><span id="__span-17-10"><a id="__codelineno-17-10" name="__codelineno-17-10" href="#__codelineno-17-10"></a><span class="w">    </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">from</span><span class="p">:</span>
+</span><span id="__span-17-11"><a id="__codelineno-17-11" name="__codelineno-17-11" href="#__codelineno-17-11"></a><span class="w">        </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">namespaceSelector</span><span class="p">:</span>
+</span><span id="__span-17-12"><a id="__codelineno-17-12" name="__codelineno-17-12" href="#__codelineno-17-12"></a><span class="w">            </span><span class="nt">matchLabels</span><span class="p">:</span><span class="w"> </span><span class="p p-Indicator">{</span><span class="nt">kubernetes.io/metadata.name</span><span class="p">:</span><span class="w"> </span><span class="nv">hybernate-system</span><span class="p p-Indicator">}</span>
+</span><span id="__span-17-13"><a id="__codelineno-17-13" name="__codelineno-17-13" href="#__codelineno-17-13"></a><span class="w">          </span><span class="nt">podSelector</span><span class="p">:</span>
+</span><span id="__span-17-14"><a id="__codelineno-17-14" name="__codelineno-17-14" href="#__codelineno-17-14"></a><span class="w">            </span><span class="nt">matchLabels</span><span class="p">:</span><span class="w"> </span><span class="p p-Indicator">{</span><span class="nt">control-plane</span><span class="p">:</span><span class="w"> </span><span class="nv">doorman</span><span class="p p-Indicator">}</span>
 </span></code></pre></div>
 <p>Callers reach the doorman on ports 20000-29999, so a default-deny policy on the Hybernate namespace needs to allow those too.</p>
 <h3 id="restricting-who-can-reach-the-doorman">Restricting who can reach the doorman<a class="headerlink" href="#restricting-who-can-reach-the-doorman" title="Permanent link">&para;</a></h3>
@@ -2552,58 +2786,59 @@
 <p>Any client that can reach a doorman pod can reach every routed, paused workload, in any namespace, on its Service ports. The workload's own NetworkPolicy sees the doorman as the source, not the client, so a policy that admits the doorman admits everyone who can reach it. The rate limits slow a port scan through the doorman; they don't stop one.</p>
 </div>
 <p>The chart's NetworkPolicy (<code>networkPolicy.enabled</code>, off by default) leaves the routing ports open to every source unless you say who may use them. List the callers your paused workloads really have, such as your ingress controller's namespace and the namespaces whose apps call paused services, in <code>doorman.networkPolicy.ingressFrom</code>:</p>
-<div class="language-yaml highlight"><pre><span></span><code><span id="__span-15-1"><a id="__codelineno-15-1" name="__codelineno-15-1" href="#__codelineno-15-1"></a><span class="nt">networkPolicy</span><span class="p">:</span>
-</span><span id="__span-15-2"><a id="__codelineno-15-2" name="__codelineno-15-2" href="#__codelineno-15-2"></a><span class="w">  </span><span class="nt">enabled</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">true</span>
-</span><span id="__span-15-3"><a id="__codelineno-15-3" name="__codelineno-15-3" href="#__codelineno-15-3"></a><span class="nt">doorman</span><span class="p">:</span>
-</span><span id="__span-15-4"><a id="__codelineno-15-4" name="__codelineno-15-4" href="#__codelineno-15-4"></a><span class="w">  </span><span class="nt">networkPolicy</span><span class="p">:</span>
-</span><span id="__span-15-5"><a id="__codelineno-15-5" name="__codelineno-15-5" href="#__codelineno-15-5"></a><span class="w">    </span><span class="nt">ingressFrom</span><span class="p">:</span>
-</span><span id="__span-15-6"><a id="__codelineno-15-6" name="__codelineno-15-6" href="#__codelineno-15-6"></a><span class="w">      </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">namespaceSelector</span><span class="p">:</span>
-</span><span id="__span-15-7"><a id="__codelineno-15-7" name="__codelineno-15-7" href="#__codelineno-15-7"></a><span class="w">          </span><span class="nt">matchLabels</span><span class="p">:</span><span class="w"> </span><span class="p p-Indicator">{</span><span class="nt">kubernetes.io/metadata.name</span><span class="p">:</span><span class="w"> </span><span class="nv">ingress-nginx</span><span class="p p-Indicator">}</span>
-</span><span id="__span-15-8"><a id="__codelineno-15-8" name="__codelineno-15-8" href="#__codelineno-15-8"></a><span class="w">      </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">namespaceSelector</span><span class="p">:</span>
-</span><span id="__span-15-9"><a id="__codelineno-15-9" name="__codelineno-15-9" href="#__codelineno-15-9"></a><span class="w">          </span><span class="nt">matchLabels</span><span class="p">:</span><span class="w"> </span><span class="p p-Indicator">{</span><span class="nt">team</span><span class="p">:</span><span class="w"> </span><span class="nv">checkout</span><span class="p p-Indicator">}</span>
+<div class="language-yaml highlight"><pre><span></span><code><span id="__span-18-1"><a id="__codelineno-18-1" name="__codelineno-18-1" href="#__codelineno-18-1"></a><span class="nt">networkPolicy</span><span class="p">:</span>
+</span><span id="__span-18-2"><a id="__codelineno-18-2" name="__codelineno-18-2" href="#__codelineno-18-2"></a><span class="w">  </span><span class="nt">enabled</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">true</span>
+</span><span id="__span-18-3"><a id="__codelineno-18-3" name="__codelineno-18-3" href="#__codelineno-18-3"></a><span class="nt">doorman</span><span class="p">:</span>
+</span><span id="__span-18-4"><a id="__codelineno-18-4" name="__codelineno-18-4" href="#__codelineno-18-4"></a><span class="w">  </span><span class="nt">networkPolicy</span><span class="p">:</span>
+</span><span id="__span-18-5"><a id="__codelineno-18-5" name="__codelineno-18-5" href="#__codelineno-18-5"></a><span class="w">    </span><span class="nt">ingressFrom</span><span class="p">:</span>
+</span><span id="__span-18-6"><a id="__codelineno-18-6" name="__codelineno-18-6" href="#__codelineno-18-6"></a><span class="w">      </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">namespaceSelector</span><span class="p">:</span>
+</span><span id="__span-18-7"><a id="__codelineno-18-7" name="__codelineno-18-7" href="#__codelineno-18-7"></a><span class="w">          </span><span class="nt">matchLabels</span><span class="p">:</span><span class="w"> </span><span class="p p-Indicator">{</span><span class="nt">kubernetes.io/metadata.name</span><span class="p">:</span><span class="w"> </span><span class="nv">ingress-nginx</span><span class="p p-Indicator">}</span>
+</span><span id="__span-18-8"><a id="__codelineno-18-8" name="__codelineno-18-8" href="#__codelineno-18-8"></a><span class="w">      </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">namespaceSelector</span><span class="p">:</span>
+</span><span id="__span-18-9"><a id="__codelineno-18-9" name="__codelineno-18-9" href="#__codelineno-18-9"></a><span class="w">          </span><span class="nt">matchLabels</span><span class="p">:</span><span class="w"> </span><span class="p p-Indicator">{</span><span class="nt">team</span><span class="p">:</span><span class="w"> </span><span class="nv">checkout</span><span class="p p-Indicator">}</span>
 </span></code></pre></div>
 <p>Each entry is a NetworkPolicy peer, so <code>podSelector</code> and <code>ipBlock</code> work too. Everyone else is refused before reaching the doorman. The chart's policy also keeps the doorman's metrics port open to namespaces labelled <code>metrics: enabled</code>. Setting <code>ingressFrom</code> without <code>networkPolicy.enabled</code> is refused at install, since it would create no policy and leave the doorman open. Don't add a policy of your own beside the chart's: NetworkPolicies add up, so the chart's open routing ports would still admit everyone.</p>
 <p>Traffic from outside the cluster through a NodePort or LoadBalancer Service usually arrives with a node's address, since kube-proxy rewrites the source of connections it forwards to another node. A namespace or pod selector doesn't match a node, so with <code>ingressFrom</code> set those callers are refused: add your nodes' CIDRs as an <code>ipBlock</code> entry, or the load balancer's addresses if it preserves the client's. A routed Service with <code>externalTrafficPolicy: Local</code> keeps the client's address, but kube-proxy then sends it only to endpoints on the node it arrived at, so external callers reach the doorman only through nodes that run a doorman pod.</p>
 <p>With <code>install.yaml</code> or the Kustomize manifests, write the policy yourself:</p>
-<div class="language-yaml highlight"><pre><span></span><code><span id="__span-16-1"><a id="__codelineno-16-1" name="__codelineno-16-1" href="#__codelineno-16-1"></a><span class="nt">apiVersion</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">networking.k8s.io/v1</span>
-</span><span id="__span-16-2"><a id="__codelineno-16-2" name="__codelineno-16-2" href="#__codelineno-16-2"></a><span class="nt">kind</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">NetworkPolicy</span>
-</span><span id="__span-16-3"><a id="__codelineno-16-3" name="__codelineno-16-3" href="#__codelineno-16-3"></a><span class="nt">metadata</span><span class="p">:</span>
-</span><span id="__span-16-4"><a id="__codelineno-16-4" name="__codelineno-16-4" href="#__codelineno-16-4"></a><span class="w">  </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">hybernate-doorman-callers</span>
-</span><span id="__span-16-5"><a id="__codelineno-16-5" name="__codelineno-16-5" href="#__codelineno-16-5"></a><span class="w">  </span><span class="nt">namespace</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">hybernate-system</span>
-</span><span id="__span-16-6"><a id="__codelineno-16-6" name="__codelineno-16-6" href="#__codelineno-16-6"></a><span class="nt">spec</span><span class="p">:</span>
-</span><span id="__span-16-7"><a id="__codelineno-16-7" name="__codelineno-16-7" href="#__codelineno-16-7"></a><span class="w">  </span><span class="nt">podSelector</span><span class="p">:</span>
-</span><span id="__span-16-8"><a id="__codelineno-16-8" name="__codelineno-16-8" href="#__codelineno-16-8"></a><span class="w">    </span><span class="nt">matchLabels</span><span class="p">:</span>
-</span><span id="__span-16-9"><a id="__codelineno-16-9" name="__codelineno-16-9" href="#__codelineno-16-9"></a><span class="w">      </span><span class="nt">control-plane</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">doorman</span>
-</span><span id="__span-16-10"><a id="__codelineno-16-10" name="__codelineno-16-10" href="#__codelineno-16-10"></a><span class="w">  </span><span class="nt">policyTypes</span><span class="p">:</span><span class="w"> </span><span class="p p-Indicator">[</span><span class="nv">Ingress</span><span class="p p-Indicator">]</span>
-</span><span id="__span-16-11"><a id="__codelineno-16-11" name="__codelineno-16-11" href="#__codelineno-16-11"></a><span class="w">  </span><span class="nt">ingress</span><span class="p">:</span>
-</span><span id="__span-16-12"><a id="__codelineno-16-12" name="__codelineno-16-12" href="#__codelineno-16-12"></a><span class="w">    </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">from</span><span class="p">:</span>
-</span><span id="__span-16-13"><a id="__codelineno-16-13" name="__codelineno-16-13" href="#__codelineno-16-13"></a><span class="w">        </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">namespaceSelector</span><span class="p">:</span>
-</span><span id="__span-16-14"><a id="__codelineno-16-14" name="__codelineno-16-14" href="#__codelineno-16-14"></a><span class="w">            </span><span class="nt">matchLabels</span><span class="p">:</span><span class="w"> </span><span class="p p-Indicator">{</span><span class="nt">kubernetes.io/metadata.name</span><span class="p">:</span><span class="w"> </span><span class="nv">ingress-nginx</span><span class="p p-Indicator">}</span>
-</span><span id="__span-16-15"><a id="__codelineno-16-15" name="__codelineno-16-15" href="#__codelineno-16-15"></a><span class="w">        </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">namespaceSelector</span><span class="p">:</span>
-</span><span id="__span-16-16"><a id="__codelineno-16-16" name="__codelineno-16-16" href="#__codelineno-16-16"></a><span class="w">            </span><span class="nt">matchLabels</span><span class="p">:</span><span class="w"> </span><span class="p p-Indicator">{</span><span class="nt">team</span><span class="p">:</span><span class="w"> </span><span class="nv">checkout</span><span class="p p-Indicator">}</span>
-</span><span id="__span-16-17"><a id="__codelineno-16-17" name="__codelineno-16-17" href="#__codelineno-16-17"></a><span class="w">      </span><span class="nt">ports</span><span class="p">:</span>
-</span><span id="__span-16-18"><a id="__codelineno-16-18" name="__codelineno-16-18" href="#__codelineno-16-18"></a><span class="w">        </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="p p-Indicator">{</span><span class="nt">port</span><span class="p">:</span><span class="w"> </span><span class="nv">20000</span><span class="p p-Indicator">,</span><span class="nt"> endPort</span><span class="p">:</span><span class="w"> </span><span class="nv">29999</span><span class="p p-Indicator">,</span><span class="nt"> protocol</span><span class="p">:</span><span class="w"> </span><span class="nv">TCP</span><span class="p p-Indicator">}</span>
-</span><span id="__span-16-19"><a id="__codelineno-16-19" name="__codelineno-16-19" href="#__codelineno-16-19"></a><span class="w">    </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">from</span><span class="p">:</span>
-</span><span id="__span-16-20"><a id="__codelineno-16-20" name="__codelineno-16-20" href="#__codelineno-16-20"></a><span class="w">        </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">namespaceSelector</span><span class="p">:</span>
-</span><span id="__span-16-21"><a id="__codelineno-16-21" name="__codelineno-16-21" href="#__codelineno-16-21"></a><span class="w">            </span><span class="nt">matchLabels</span><span class="p">:</span><span class="w"> </span><span class="p p-Indicator">{</span><span class="nt">kubernetes.io/metadata.name</span><span class="p">:</span><span class="w"> </span><span class="nv">monitoring</span><span class="p p-Indicator">}</span>
-</span><span id="__span-16-22"><a id="__codelineno-16-22" name="__codelineno-16-22" href="#__codelineno-16-22"></a><span class="w">      </span><span class="nt">ports</span><span class="p">:</span>
-</span><span id="__span-16-23"><a id="__codelineno-16-23" name="__codelineno-16-23" href="#__codelineno-16-23"></a><span class="w">        </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="p p-Indicator">{</span><span class="nt">port</span><span class="p">:</span><span class="w"> </span><span class="nv">8443</span><span class="p p-Indicator">,</span><span class="nt"> protocol</span><span class="p">:</span><span class="w"> </span><span class="nv">TCP</span><span class="p p-Indicator">}</span>
+<div class="language-yaml highlight"><pre><span></span><code><span id="__span-19-1"><a id="__codelineno-19-1" name="__codelineno-19-1" href="#__codelineno-19-1"></a><span class="nt">apiVersion</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">networking.k8s.io/v1</span>
+</span><span id="__span-19-2"><a id="__codelineno-19-2" name="__codelineno-19-2" href="#__codelineno-19-2"></a><span class="nt">kind</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">NetworkPolicy</span>
+</span><span id="__span-19-3"><a id="__codelineno-19-3" name="__codelineno-19-3" href="#__codelineno-19-3"></a><span class="nt">metadata</span><span class="p">:</span>
+</span><span id="__span-19-4"><a id="__codelineno-19-4" name="__codelineno-19-4" href="#__codelineno-19-4"></a><span class="w">  </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">hybernate-doorman-callers</span>
+</span><span id="__span-19-5"><a id="__codelineno-19-5" name="__codelineno-19-5" href="#__codelineno-19-5"></a><span class="w">  </span><span class="nt">namespace</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">hybernate-system</span>
+</span><span id="__span-19-6"><a id="__codelineno-19-6" name="__codelineno-19-6" href="#__codelineno-19-6"></a><span class="nt">spec</span><span class="p">:</span>
+</span><span id="__span-19-7"><a id="__codelineno-19-7" name="__codelineno-19-7" href="#__codelineno-19-7"></a><span class="w">  </span><span class="nt">podSelector</span><span class="p">:</span>
+</span><span id="__span-19-8"><a id="__codelineno-19-8" name="__codelineno-19-8" href="#__codelineno-19-8"></a><span class="w">    </span><span class="nt">matchLabels</span><span class="p">:</span>
+</span><span id="__span-19-9"><a id="__codelineno-19-9" name="__codelineno-19-9" href="#__codelineno-19-9"></a><span class="w">      </span><span class="nt">control-plane</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">doorman</span>
+</span><span id="__span-19-10"><a id="__codelineno-19-10" name="__codelineno-19-10" href="#__codelineno-19-10"></a><span class="w">  </span><span class="nt">policyTypes</span><span class="p">:</span><span class="w"> </span><span class="p p-Indicator">[</span><span class="nv">Ingress</span><span class="p p-Indicator">]</span>
+</span><span id="__span-19-11"><a id="__codelineno-19-11" name="__codelineno-19-11" href="#__codelineno-19-11"></a><span class="w">  </span><span class="nt">ingress</span><span class="p">:</span>
+</span><span id="__span-19-12"><a id="__codelineno-19-12" name="__codelineno-19-12" href="#__codelineno-19-12"></a><span class="w">    </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">from</span><span class="p">:</span>
+</span><span id="__span-19-13"><a id="__codelineno-19-13" name="__codelineno-19-13" href="#__codelineno-19-13"></a><span class="w">        </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">namespaceSelector</span><span class="p">:</span>
+</span><span id="__span-19-14"><a id="__codelineno-19-14" name="__codelineno-19-14" href="#__codelineno-19-14"></a><span class="w">            </span><span class="nt">matchLabels</span><span class="p">:</span><span class="w"> </span><span class="p p-Indicator">{</span><span class="nt">kubernetes.io/metadata.name</span><span class="p">:</span><span class="w"> </span><span class="nv">ingress-nginx</span><span class="p p-Indicator">}</span>
+</span><span id="__span-19-15"><a id="__codelineno-19-15" name="__codelineno-19-15" href="#__codelineno-19-15"></a><span class="w">        </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">namespaceSelector</span><span class="p">:</span>
+</span><span id="__span-19-16"><a id="__codelineno-19-16" name="__codelineno-19-16" href="#__codelineno-19-16"></a><span class="w">            </span><span class="nt">matchLabels</span><span class="p">:</span><span class="w"> </span><span class="p p-Indicator">{</span><span class="nt">team</span><span class="p">:</span><span class="w"> </span><span class="nv">checkout</span><span class="p p-Indicator">}</span>
+</span><span id="__span-19-17"><a id="__codelineno-19-17" name="__codelineno-19-17" href="#__codelineno-19-17"></a><span class="w">      </span><span class="nt">ports</span><span class="p">:</span>
+</span><span id="__span-19-18"><a id="__codelineno-19-18" name="__codelineno-19-18" href="#__codelineno-19-18"></a><span class="w">        </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="p p-Indicator">{</span><span class="nt">port</span><span class="p">:</span><span class="w"> </span><span class="nv">20000</span><span class="p p-Indicator">,</span><span class="nt"> endPort</span><span class="p">:</span><span class="w"> </span><span class="nv">29999</span><span class="p p-Indicator">,</span><span class="nt"> protocol</span><span class="p">:</span><span class="w"> </span><span class="nv">TCP</span><span class="p p-Indicator">}</span>
+</span><span id="__span-19-19"><a id="__codelineno-19-19" name="__codelineno-19-19" href="#__codelineno-19-19"></a><span class="w">    </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">from</span><span class="p">:</span>
+</span><span id="__span-19-20"><a id="__codelineno-19-20" name="__codelineno-19-20" href="#__codelineno-19-20"></a><span class="w">        </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">namespaceSelector</span><span class="p">:</span>
+</span><span id="__span-19-21"><a id="__codelineno-19-21" name="__codelineno-19-21" href="#__codelineno-19-21"></a><span class="w">            </span><span class="nt">matchLabels</span><span class="p">:</span><span class="w"> </span><span class="p p-Indicator">{</span><span class="nt">kubernetes.io/metadata.name</span><span class="p">:</span><span class="w"> </span><span class="nv">monitoring</span><span class="p p-Indicator">}</span>
+</span><span id="__span-19-22"><a id="__codelineno-19-22" name="__codelineno-19-22" href="#__codelineno-19-22"></a><span class="w">      </span><span class="nt">ports</span><span class="p">:</span>
+</span><span id="__span-19-23"><a id="__codelineno-19-23" name="__codelineno-19-23" href="#__codelineno-19-23"></a><span class="w">        </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="p p-Indicator">{</span><span class="nt">port</span><span class="p">:</span><span class="w"> </span><span class="nv">8443</span><span class="p p-Indicator">,</span><span class="nt"> protocol</span><span class="p">:</span><span class="w"> </span><span class="nv">TCP</span><span class="p p-Indicator">}</span>
 </span></code></pre></div>
 <p>The second rule keeps the doorman's metrics port reachable for Prometheus; leave it out if you don't scrape it.</p>
 <p>Limit the doorman's egress too. It only ever dials Pod-backed IP endpoints of EndpointSlices the EndpointSlice controller manages, never loopback, link-local, or cloud metadata addresses (AWS's <code>fd00:ec2::254</code> and Alibaba Cloud's <code>100.100.100.200</code> included), and only an address that the pod the endpoint names, in the Service's namespace, really has. Anyone who can write EndpointSlices in a namespace can forge the controller's label, but that sends the doorman only to the namespace's own pods. An egress policy enforces the same bounds in the network. The chart can create one, allowing only your pod CIDRs and the API server:</p>
-<div class="language-yaml highlight"><pre><span></span><code><span id="__span-17-1"><a id="__codelineno-17-1" name="__codelineno-17-1" href="#__codelineno-17-1"></a><span class="nt">doorman</span><span class="p">:</span>
-</span><span id="__span-17-2"><a id="__codelineno-17-2" name="__codelineno-17-2" href="#__codelineno-17-2"></a><span class="w">  </span><span class="nt">networkPolicy</span><span class="p">:</span>
-</span><span id="__span-17-3"><a id="__codelineno-17-3" name="__codelineno-17-3" href="#__codelineno-17-3"></a><span class="w">    </span><span class="nt">egress</span><span class="p">:</span>
-</span><span id="__span-17-4"><a id="__codelineno-17-4" name="__codelineno-17-4" href="#__codelineno-17-4"></a><span class="w">      </span><span class="nt">enabled</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">true</span>
-</span><span id="__span-17-5"><a id="__codelineno-17-5" name="__codelineno-17-5" href="#__codelineno-17-5"></a><span class="w">      </span><span class="nt">podCIDRs</span><span class="p">:</span><span class="w"> </span><span class="p p-Indicator">[</span><span class="nv">10.244.0.0/16</span><span class="p p-Indicator">]</span>
-</span><span id="__span-17-6"><a id="__codelineno-17-6" name="__codelineno-17-6" href="#__codelineno-17-6"></a><span class="w">      </span><span class="nt">apiServer</span><span class="p">:</span><span class="w"> </span><span class="p p-Indicator">[</span><span class="nv">172.18.0.2/32</span><span class="p p-Indicator">]</span><span class="w">   </span><span class="c1"># kubectl get endpointslices -n default -l kubernetes.io/service-name=kubernetes</span>
-</span><span id="__span-17-7"><a id="__codelineno-17-7" name="__codelineno-17-7" href="#__codelineno-17-7"></a><span class="w">      </span><span class="nt">apiServerPorts</span><span class="p">:</span><span class="w"> </span><span class="p p-Indicator">[</span><span class="nv">443</span><span class="p p-Indicator">,</span><span class="w"> </span><span class="nv">6443</span><span class="p p-Indicator">]</span>
+<div class="language-yaml highlight"><pre><span></span><code><span id="__span-20-1"><a id="__codelineno-20-1" name="__codelineno-20-1" href="#__codelineno-20-1"></a><span class="nt">doorman</span><span class="p">:</span>
+</span><span id="__span-20-2"><a id="__codelineno-20-2" name="__codelineno-20-2" href="#__codelineno-20-2"></a><span class="w">  </span><span class="nt">networkPolicy</span><span class="p">:</span>
+</span><span id="__span-20-3"><a id="__codelineno-20-3" name="__codelineno-20-3" href="#__codelineno-20-3"></a><span class="w">    </span><span class="nt">egress</span><span class="p">:</span>
+</span><span id="__span-20-4"><a id="__codelineno-20-4" name="__codelineno-20-4" href="#__codelineno-20-4"></a><span class="w">      </span><span class="nt">enabled</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">true</span>
+</span><span id="__span-20-5"><a id="__codelineno-20-5" name="__codelineno-20-5" href="#__codelineno-20-5"></a><span class="w">      </span><span class="nt">podCIDRs</span><span class="p">:</span><span class="w"> </span><span class="p p-Indicator">[</span><span class="nv">10.244.0.0/16</span><span class="p p-Indicator">]</span>
+</span><span id="__span-20-6"><a id="__codelineno-20-6" name="__codelineno-20-6" href="#__codelineno-20-6"></a><span class="w">      </span><span class="nt">apiServer</span><span class="p">:</span><span class="w"> </span><span class="p p-Indicator">[</span><span class="nv">172.18.0.2/32</span><span class="p p-Indicator">]</span><span class="w">   </span><span class="c1"># kubectl get endpointslices -n default -l kubernetes.io/service-name=kubernetes</span>
+</span><span id="__span-20-7"><a id="__codelineno-20-7" name="__codelineno-20-7" href="#__codelineno-20-7"></a><span class="w">      </span><span class="nt">apiServerPorts</span><span class="p">:</span><span class="w"> </span><span class="p p-Indicator">[</span><span class="nv">443</span><span class="p p-Indicator">,</span><span class="w"> </span><span class="nv">6443</span><span class="p p-Indicator">]</span>
 </span></code></pre></div>
 <p>List every IP family your cluster uses, and the node CIDRs too if a routed workload uses <code>hostNetwork</code>. <code>apiServer</code> is the API server's endpoint addresses, not the <code>kubernetes</code> Service's ClusterIP, since policies apply after the Service is resolved.</p>
-<p>The doorman's ServiceAccount can patch ManagedWorkloads, to set <code>hybernate.io/last-request</code>. The chart's ValidatingAdmissionPolicy (<code>doorman.admissionPolicy.enabled</code>, on by default, and in the Kustomize manifests too) narrows that: it lets the ServiceAccount change only the <code>hybernate.io/last-request</code> and <code>hybernate.io/last-request-from</code> annotations. A second policy lets no one else set those two, so only the doorman can say a request woke a workload, or where it came from. See <a href="../../reference/security/#the-doorman-is-a-way-in-to-paused-workloads">Security</a>.</p>
+<p>The doorman's ServiceAccount can patch ManagedWorkloads, to set <code>hybernate.io/last-request</code>. The chart's ValidatingAdmissionPolicy (<code>doorman.admissionPolicy.enabled</code>, on by default, and in the Kustomize manifests too) narrows that: it lets the ServiceAccount change only the <code>hybernate.io/last-request</code> and <code>hybernate.io/last-request-from</code> annotations, and <code>hybernate.io/turned-away</code>, where it counts what it <a href="#what-it-turns-away">turned away</a>. Besides those, it reads one Secret, its own <a href="#the-wake-it-button">wake key</a>, by name, and writes it once to fill it. A second policy lets no one else set those two, so only the doorman can say a request woke a workload, or where it came from. See <a href="../../reference/security/#the-doorman-is-a-way-in-to-paused-workloads">Security</a>.</p>
 <h2 id="what-the-caller-sees">What the caller sees<a class="headerlink" href="#what-the-caller-sees" title="Permanent link">&para;</a></h2>
 <ul>
-<li><strong>A browser</strong>: the waking-up page at once, then the app on the first reload after one of its pods is Ready.</li>
+<li><strong>A browser</strong>: the waking-up page at once, then the app on the first reload after one of its pods is Ready. With <a href="#asking-before-waking"><code>wake.mode: Ask</code></a>, first a page asking whether to wake it.</li>
+<li><strong>With <code>wake.mode: Ask</code>, anything but a person's browser</strong>: a <code>503</code> saying it's asleep and how to wake it, until someone does.</li>
 <li><strong>Anything else, from a pod in the cluster or through an Ingress</strong>: usually one slow response while the workload starts, then a normal one. Not when something between the caller and the workload gives up first: behind ingress-nginx, a workload that takes longer than its 60-second default <code>proxy-read-timeout</code> gets the caller a 504 (see <a href="#how-long-a-connection-is-held">How long a connection is held</a>); with Istio's STRICT mTLS, the woken pod's sidecar refuses the doorman and the caller gets a 503 (see <a href="../../reference/compatibility/#service-meshes">Compatibility</a>). The cases below are the others.</li>
 <li><strong>The client's source IP</strong>: the woken pod sees the doorman's IP for held connections, not the caller's. Only the connections that arrive while the workload is paused or waking go through the doorman. The doorman records the caller's address on the ManagedWorkload as <code>hybernate.io/last-request-from</code>, so Hybernate can <a href="../dependencies/#learned-dependencies">learn</a> which workload sent it.</li>
 <li><strong>Right after a wake, an error from the app itself</strong>, such as a <code>503</code>: the workload's pods were Ready before the app could answer, because they have no readiness probe, or one that passes too soon. See <a href="#readiness-probes">Readiness probes</a>.</li>

@@ -93,7 +93,7 @@
             <div class="md-banner__inner md-grid md-typeset">
               
   
-    These docs are for Hybernate 0.2.0-rc.6, a release candidate, and may change before it's released.
+    These docs are for Hybernate 0.2.0-rc.7, a release candidate, and may change before it's released.
   
   <a href="../../.."><strong>Read the docs for the latest release.</strong></a>
 
@@ -912,6 +912,34 @@
   
   
     <li class="md-nav__item">
+      <a href="../../guides/preview-environments/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Public Preview Environments
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
       <a href="../../guides/managed-workload/" class="md-nav__link">
         
   
@@ -1673,6 +1701,17 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#wake-on-request-from-before-020" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Wake on request, from before 0.2.0
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#rollback" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -1836,6 +1875,17 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#wake-on-request-from-before-020" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Wake on request, from before 0.2.0
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#rollback" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -1985,16 +2035,36 @@
 <div class="language-bash highlight"><pre><span></span><code><span id="__span-9-1"><a id="__codelineno-9-1" name="__codelineno-9-1" href="#__codelineno-9-1"></a>kubectl<span class="w"> </span>patch<span class="w"> </span>managedworkload<span class="w"> </span>my-api<span class="w"> </span>-n<span class="w"> </span>staging<span class="w"> </span>--type<span class="o">=</span>json<span class="w"> </span><span class="se">\</span>
 </span><span id="__span-9-2"><a id="__codelineno-9-2" name="__codelineno-9-2" href="#__codelineno-9-2"></a><span class="w">  </span>-p<span class="w"> </span><span class="s1">'[{"op":"remove","path":"/spec/prediction/confidence"}]'</span>
 </span></code></pre></div>
+<h2 id="wake-on-request-from-before-020">Wake on request, from before 0.2.0<a class="headerlink" href="#wake-on-request-from-before-020" title="Permanent link">&para;</a></h2>
+<p>Before 0.2.0, <code>spec.wake.onRequest: false</code>, or <code>hybernate.io/wake-on-request: "false"</code> with the label, turned waking on request off for one workload, so requests to it failed while it was paused. That setting is gone: once the new CRD is installed, the field is dropped from every ManagedWorkload stored with it, the annotation is ignored, and those workloads wake on request again.</p>
+<p>A manifest that still sets <code>spec.wake.onRequest</code> is refused, though. <code>kubectl apply</code> checks fields strictly by default, and answers <code>strict decoding error: unknown field "spec.wake.onRequest"</code>; a server-side apply, as Flux's and Argo CD's with <code>ServerSideApply=true</code> are, answers <code>.spec.wake.onRequest: field not declared in schema</code>, so a GitOps sync of it fails too. So take <code>wake.onRequest</code> out of the ManagedWorkloads in your manifests, in Git, as you upgrade. Where it was <code>true</code>, just remove it: waking on request is the default, <code>spec.wake.mode: Request</code>. Where it was <code>false</code>, remove it, and put in its place what fits below, usually <code>mode: Ask</code>:</p>
+<div class="language-yaml highlight"><pre><span></span><code><span id="__span-10-1"><a id="__codelineno-10-1" name="__codelineno-10-1" href="#__codelineno-10-1"></a><span class="nt">spec</span><span class="p">:</span>
+</span><span id="__span-10-2"><a id="__codelineno-10-2" name="__codelineno-10-2" href="#__codelineno-10-2"></a><span class="w">  </span><span class="nt">wake</span><span class="p">:</span>
+</span><span id="__span-10-3"><a id="__codelineno-10-3" name="__codelineno-10-3" href="#__codelineno-10-3"></a><span class="w">    </span><span class="nt">mode</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">Ask</span><span class="w">   </span><span class="c1"># in place of onRequest: false</span>
+</span></code></pre></div>
+<p>Instead of turning it off:</p>
+<ul>
+<li><strong>For a workload on a public URL,</strong> which crawlers and scanners would keep awake, which is what turning it off was usually for, have the doorman ask before waking it: <code>spec.wake.mode: Ask</code>, or <code>hybernate.io/wake: ask</code> with the label. Only a person's click on the page the doorman shows a browser wakes it, and anything else gets a <code>503</code>. See <a href="../../concepts/wake-on-request/#asking-before-waking">Asking before waking</a>.</li>
+<li><strong>For one port of a Service,</strong> list it in <code>hybernate.io/doorman-ignore-ports</code> on the Service. That port fails while the workload is paused, as it did with waking turned off.</li>
+<li><strong>For the whole cluster,</strong> set the Helm value <code>doorman.enabled: false</code>, as before.</li>
+</ul>
+<p>To find the ManagedWorkloads that had it, before you upgrade:</p>
+<div class="language-bash highlight"><pre><span></span><code><span id="__span-11-1"><a id="__codelineno-11-1" name="__codelineno-11-1" href="#__codelineno-11-1"></a>kubectl<span class="w"> </span>get<span class="w"> </span>managedworkloads<span class="w"> </span>-A<span class="w"> </span>-o<span class="w"> </span>json<span class="w"> </span><span class="p">|</span><span class="w"> </span>jq<span class="w"> </span>-r<span class="w"> </span><span class="s1">'.items[] | select(.spec.wake.onRequest == false) | "\(.metadata.namespace)/\(.metadata.name)"'</span>
+</span></code></pre></div>
+<p>and the workloads and namespaces that set the annotation:</p>
+<div class="language-bash highlight"><pre><span></span><code><span id="__span-12-1"><a id="__codelineno-12-1" name="__codelineno-12-1" href="#__codelineno-12-1"></a>kubectl<span class="w"> </span>get<span class="w"> </span>deployments,statefulsets,namespaces<span class="w"> </span>-A<span class="w"> </span>-o<span class="w"> </span>json<span class="w"> </span><span class="p">|</span><span class="w"> </span>jq<span class="w"> </span>-r<span class="w"> </span><span class="s1">'.items[] | select(.metadata.annotations["hybernate.io/wake-on-request"] == "false") | "\(.kind) \(.metadata.namespace // "")/\(.metadata.name)"'</span>
+</span></code></pre></div>
+<p>The <code>WakeOnRequest</code> reason <code>TurnedOff</code> is gone with it.</p>
 <h2 id="rollback">Rollback<a class="headerlink" href="#rollback" title="Permanent link">&para;</a></h2>
 <p>If something goes wrong:</p>
 <div class="tabbed-set tabbed-alternate" data-tabs="2:3"><input checked="checked" id="__tabbed_2_1" name="__tabbed_2" type="radio" /><input id="__tabbed_2_2" name="__tabbed_2" type="radio" /><input id="__tabbed_2_3" name="__tabbed_2" type="radio" /><div class="tabbed-labels"><label for="__tabbed_2_1">Helm</label><label for="__tabbed_2_2">kubectl</label><label for="__tabbed_2_3">Kustomize, Argo CD or Flux</label></div>
 <div class="tabbed-content">
 <div class="tabbed-block">
-<div class="language-bash highlight"><pre><span></span><code><span id="__span-10-1"><a id="__codelineno-10-1" name="__codelineno-10-1" href="#__codelineno-10-1"></a>helm<span class="w"> </span>rollback<span class="w"> </span>hybernate<span class="w"> </span>-n<span class="w"> </span>hybernate-system
+<div class="language-bash highlight"><pre><span></span><code><span id="__span-13-1"><a id="__codelineno-13-1" name="__codelineno-13-1" href="#__codelineno-13-1"></a>helm<span class="w"> </span>rollback<span class="w"> </span>hybernate<span class="w"> </span>-n<span class="w"> </span>hybernate-system
 </span></code></pre></div>
 </div>
 <div class="tabbed-block">
-<div class="language-bash highlight"><pre><span></span><code><span id="__span-11-1"><a id="__codelineno-11-1" name="__codelineno-11-1" href="#__codelineno-11-1"></a>kubectl<span class="w"> </span>apply<span class="w"> </span>-f<span class="w"> </span>https://github.com/okedeji/hybernate/releases/download/vPREVIOUS/install.yaml
+<div class="language-bash highlight"><pre><span></span><code><span id="__span-14-1"><a id="__codelineno-14-1" name="__codelineno-14-1" href="#__codelineno-14-1"></a>kubectl<span class="w"> </span>apply<span class="w"> </span>-f<span class="w"> </span>https://github.com/okedeji/hybernate/releases/download/vPREVIOUS/install.yaml
 </span></code></pre></div>
 </div>
 <div class="tabbed-block">

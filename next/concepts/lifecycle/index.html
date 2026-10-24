@@ -93,7 +93,7 @@
             <div class="md-banner__inner md-grid md-typeset">
               
   
-    These docs are for Hybernate 0.2.0-rc.6, a release candidate, and may change before it's released.
+    These docs are for Hybernate 0.2.0-rc.7, a release candidate, and may change before it's released.
   
   <a href="../../.."><strong>Read the docs for the latest release.</strong></a>
 
@@ -1045,6 +1045,34 @@
   
   
     <li class="md-nav__item">
+      <a href="../../guides/preview-environments/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Public Preview Environments
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
       <a href="../../guides/managed-workload/" class="md-nav__link">
         
   
@@ -1916,7 +1944,7 @@
 <h3 id="on-request">On request<a class="headerlink" href="#on-request" title="Permanent link">&para;</a></h3>
 <ul>
 <li><strong>Running or Idle → Pausing → Paused</strong>: <code>kubectl hybernate pause</code>, which sets a new <code>hybernate.io/pause-requested</code> value. The idle clock runs out at once, and the workload is paused by the rules of an idle pause, except that the hour after a GitOps conflict doesn't hold it back. A forecast expecting demand within the hour declines it, saying when, unless the request overrides the forecast. In dry-run it goes <strong>Running → Idle</strong> instead, as a would-be pause. See <a href="../../guides/pause/#pause-now">Pause Now</a></li>
-<li><strong>Paused → Resuming → Running</strong>: <code>kubectl hybernate wake</code>, which changes an activity annotation, or any of the automatic wakes above: a requested pause wakes like any other</li>
+<li><strong>Paused → Resuming → Running</strong>: <code>kubectl hybernate wake</code>, which sets a new <code>hybernate.io/wake-requested</code> value, whatever the workload's wake setting, or any of the automatic wakes above: a requested pause wakes like any other. A request that finds the workload awake restarts its idle clock. See <a href="../../guides/pause/#wake-now">Wake Now</a></li>
 </ul>
 <h2 id="idempotency">Idempotency<a class="headerlink" href="#idempotency" title="Permanent link">&para;</a></h2>
 <p>Every lifecycle operation is idempotent. What a pause changes is recorded in <code>status.pause</code> (<code>previousReplicas</code>, the KEDA ScaledObject and its own <code>paused-replicas</code> value) in the same status write that enters <code>Pausing</code>, before anything is scaled, so that:</p>
@@ -1966,7 +1994,7 @@
 <tr>
 <td><code>WakeOnRequest</code></td>
 <td>Requests to the paused workload's Services wake it</td>
-<td><code>DoormanRouted</code>; <code>False</code>: see <a href="../wake-on-request/#when-a-workload-isnt-routed">When a workload isn't routed</a> (<code>NoServices</code>, <code>ServedByOtherPods</code>, <code>UnsupportedIPFamily</code>, <code>UnsupportedLoadBalancer</code>, <code>ForwarderNotReady</code>, <code>DoormanUnavailable</code>, <code>NoFreePort</code>, <code>TooManyPorts</code>, <code>RoutingFailed</code>, <code>DoormanDisabled</code>, <code>NodeLocalTraffic</code>), <code>TurnedOff</code> while its <code>wake.onRequest</code> is <code>false</code>, or <code>NotPaused</code>, <code>TargetNotFound</code>, <code>DuplicateTarget</code> once routing is removed. A problem with its Services stays once it's awake, its message starting <code>at its last pause:</code></td>
+<td><code>DoormanRouted</code>; <code>False</code>: see <a href="../wake-on-request/#when-a-workload-isnt-routed">When a workload isn't routed</a> (<code>NoServices</code>, <code>ServedByOtherPods</code>, <code>UnsupportedIPFamily</code>, <code>UnsupportedLoadBalancer</code>, <code>ForwarderNotReady</code>, <code>DoormanUnavailable</code>, <code>NoFreePort</code>, <code>TooManyPorts</code>, <code>RoutingFailed</code>, <code>DoormanDisabled</code>, <code>NodeLocalTraffic</code>), or <code>NotPaused</code>, <code>TargetNotFound</code>, <code>DuplicateTarget</code> once routing is removed. A problem with its Services stays once it's awake, its message starting <code>at its last pause:</code></td>
 </tr>
 <tr>
 <td><code>HeldByDependents</code></td>
@@ -2006,7 +2034,12 @@
 <tr>
 <td><code>PauseRequest</code></td>
 <td>The last <a href="../../guides/pause/#pause-now">pause request</a> paused the workload, or found it paused; <code>False</code> says why it didn't. It stays until the next request, saying what happened and when, such as <code>paused as requested at 2026-10-21 03:32 UTC</code></td>
-<td><code>Paused</code>, <code>AlreadyPaused</code>; <code>False</code>: <code>DryRun</code>, <code>ForecastExpectsDemand</code>, <code>ActiveUntil</code>, <code>HeldByDependents</code>, <code>DependencyCycle</code>, <code>Protected</code>, <code>ScaledToZero</code>, <code>TargetNotFound</code>, <code>TargetIgnored</code>, <code>DuplicateTarget</code></td>
+<td><code>Paused</code>, <code>AlreadyPaused</code>; <code>False</code>: <code>DryRun</code>, <code>ForecastExpectsDemand</code>, <code>ActiveUntil</code>, <code>HeldByDependents</code>, <code>DependencyCycle</code>, <code>Protected</code>, <code>ScaledToZero</code>, <code>TargetNotFound</code>, <code>TargetIgnored</code>, <code>DuplicateTarget</code>, <code>PredatesStatus</code></td>
+</tr>
+<tr>
+<td><code>WakeRequest</code></td>
+<td>The last <a href="../../guides/pause/#wake-now">wake request</a> woke the workload, or found it awake; <code>False</code> says why it didn't. It stays until the next request, saying what happened and when, such as <code>woken as requested at 2026-10-23 09:05 UTC</code></td>
+<td><code>Woken</code>, <code>AlreadyAwake</code>; <code>False</code>: <code>ScaledToZero</code>, <code>Protected</code>, <code>TargetNotFound</code>, <code>TargetIgnored</code>, <code>DuplicateTarget</code>, <code>BeingDeleted</code>, <code>PredatesStatus</code></td>
 </tr>
 <tr>
 <td><code>GitOpsConflict</code></td>
@@ -2040,8 +2073,8 @@
 <ul>
 <li>Lifecycle: <code>IdleDetected</code>, <code>PausedEarly</code> (the forecast brought the pause forward, with <a href="../forecasting/#pausing-early"><code>pauseEarly</code></a>), <code>PauseRequested</code>, <code>Paused</code>, <code>Resumed</code>, <code>ActivityResumed</code> (in dry-run, with what the would-be pause would have freed), <code>Unobserved</code> (a gap in watching restarted the idle clock, and how long it was)</li>
 <li>A pause record lost from status: <code>PauseRecovered</code> (taken up again from the target's <code>hybernate.io/paused-from</code>), <code>PauseRecordLost</code> (a warning: nothing to finish it from)</li>
-<li>A pause request Hybernate didn't act on: an event whose reason says why, the same as the <code>PauseRequest</code> condition's</li>
-<li>What woke it: <code>WokeByActivity</code>, <code>WokenByRequest</code> (from the doorman), <code>AutoResume</code>, <code>ScaledUp</code>, <code>DryRunWake</code></li>
+<li>A pause or wake request Hybernate didn't act on: an event whose reason says why, the same as the <code>PauseRequest</code> or <code>WakeRequest</code> condition's</li>
+<li>What woke it: <code>WakeRequested</code> (a <a href="../../guides/pause/#wake-now">wake request</a>, as <code>kubectl hybernate wake</code> sets), <code>WokeByActivity</code>, <code>WokenByRequest</code> (from the doorman), <code>AutoResume</code>, <code>ScaledUp</code>, <code>DryRunWake</code></li>
 <li>Scaled to zero outside Hybernate, and left off: <code>ScaledToZero</code></li>
 <li>What holds it awake: <code>IdleVetoed</code>, <code>HeldByDependents</code>, <code>DependencyCycle</code></li>
 <li>A GitOps tool undoing a pause, and the conflict ending: <code>GitOpsConflict</code>, <code>GitOpsConflictResolved</code></li>

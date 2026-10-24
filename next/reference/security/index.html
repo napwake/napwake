@@ -93,7 +93,7 @@
             <div class="md-banner__inner md-grid md-typeset">
               
   
-    These docs are for Hybernate 0.2.0-rc.6, a release candidate, and may change before it's released.
+    These docs are for Hybernate 0.2.0-rc.7, a release candidate, and may change before it's released.
   
   <a href="../../.."><strong>Read the docs for the latest release.</strong></a>
 
@@ -892,6 +892,34 @@
     
   
     Opting In
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../guides/preview-environments/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Public Preview Environments
   
 
     
@@ -1821,7 +1849,8 @@
 <h2 id="what-it-can-do">What it can do<a class="headerlink" href="#what-it-can-do" title="Permanent link">&para;</a></h2>
 <ul>
 <li><strong>It never deletes your resources.</strong> Its one action is to scale a Deployment or StatefulSet to zero, through the scale subresource, and back. The only other change it makes to a workload is its own <code>hybernate.io/paused-from</code> annotation while the workload is paused, though its role may patch workloads, and the only things it deletes are its own ManagedWorkloads and EndpointSlices, and with the optional forwarder below, its own forwarder Deployments.</li>
-<li><strong>It never reads Secrets.</strong></li>
+<li><strong>It never reads your Secrets.</strong> The doorman reads one Secret of its own, by name: the key it signs the <a href="../../concepts/wake-on-request/#the-wake-it-button">Wake it button</a> with, which the chart creates empty and the doorman fills. Its Role names that Secret alone, so it can't read or list any other. The operator has no RBAC on Secrets. Like any role that may patch Deployments and StatefulSets, though, whoever holds its token could change a pod template to mount one, and read it from the pod that runs.</li>
+<li><strong>What the doorman shows the internet names nothing inside the cluster.</strong> For a workload that <a href="../../concepts/wake-on-request/#asking-before-waking">asks before waking</a>, its pages and its <code>503</code>s name no namespace, workload or Service. The asleep page runs no script, and no other site may frame it, so none can trick someone into clicking <strong>Wake it</strong>. Its button carries a token signed for that workload and pause, good for 10 minutes and checked in constant time. Only a post of the page's token, still fresh, wakes the workload, from a browser's <code>User-Agent</code> that says the click came from the page: with <code>Sec-Fetch-Site: same-origin</code> where browsers send it, over HTTPS, and <code>Sec-Fetch-User: ?1</code> from Chromium and Firefox; with an <code>Origin</code> that's the page's own address where they don't, over plain HTTP. The page's <code>Referrer-Policy: same-origin</code> lets a browser send that <code>Origin</code>, and sends nothing to other sites. A browser from before about 2020, which may say neither, is asked to wake it another way. A robot that forges those headers on purpose, or drives a real browser, can still click it, at most once a minute.</li>
 <li><strong>It can write any EndpointSlice in the namespaces it works in.</strong> It only ever creates, changes and deletes its own, labelled <code>endpointslice.kubernetes.io/managed-by: doorman.hybernate.io</code>, and never overwrites one without that label, but RBAC can't limit a role by label, so its ServiceAccount is allowed the rest too. Whoever holds its token could redirect any Service there.</li>
 <li><strong>The optional GKE NEG forwarder needs more.</strong> With <code>doorman.negForwarder.enabled</code> (off by default), the operator may also create and delete Deployments in the namespaces it works in, to run a <a href="../../concepts/wake-on-request/#gke-container-native-load-balancing-negs">forwarder</a> beside each paused workload behind GKE container-native load balancing. RBAC can't limit that to its own, so whoever holds its token could create Deployments there, as well as patch them, which it can already. It only ever deletes a Deployment of the forwarder's name that its ManagedWorkload owns. The forwarders run as their namespace's <code>default</code> ServiceAccount without its token, with no access to the API server, at the Pod Security Standards' restricted level.</li>
 <li><strong>It can be confined to namespaces.</strong> With <a href="../helm-values/#namespaces"><code>watchNamespaces</code></a>, the operator and doorman get a Role in each of those namespaces instead of a ClusterRole, so Kubernetes itself refuses them anything elsewhere. The operator keeps one ClusterRole, read-only, on Namespaces, Nodes and Karpenter NodePools, and a Role in its own namespace to read the doorman's EndpointSlices. With secure metrics (the default), both also keep a ClusterRoleBinding to <code>system:auth-delegator</code>, which only lets them check the tokens of whoever scrapes their metrics.</li>
@@ -1886,12 +1915,12 @@
 <li>With <code>doorman.negForwarder.enabled</code>, the chart's policy also admits the forwarders, from any namespace, by their labels: <code>app.kubernetes.io/name: hybernate-forwarder</code>, and <code>hybernate.io/operator</code> naming Hybernate's namespace. Anyone who can create pods can give them those labels, and so reach the doorman's routing ports as a caller in <code>ingressFrom</code> can. A forwarder passes on only its own workload's ports, but the doorman can't tell its connections from those of a pod that only claims to be one.</li>
 <li>Its rate limits (see <a href="../../concepts/wake-on-request/#limits">Limits</a>) slow a port scan through the doorman; they don't stop one. One workload can hold at most 256 of a doorman pod's 2048 places, so a workload that never becomes Ready can't stop other workloads' requests from being held.</li>
 </ul>
-<p>The doorman's ServiceAccount can patch ManagedWorkloads, to set <code>hybernate.io/last-request</code> and <code>hybernate.io/last-request-from</code>, the caller's IP address. The chart's <code>&lt;fullname&gt;-doorman</code> ValidatingAdmissionPolicy (<code>doorman.admissionPolicy.enabled</code>, on by default) holds it to those two annotations: the API server refuses a patch from it that changes a ManagedWorkload's spec, labels, finalizers, owners or any other annotation. The Kustomize manifests include it too, taking the doorman's ServiceAccount as its parameter, so it follows the <code>namespace</code> and <code>namePrefix</code> set in <code>config/default</code> or in an overlay on top of it.</p>
-<p>The operator learns which workload depends on which from <code>hybernate.io/last-request-from</code>, so the doorman must be the only one who sets it. With the same <code>doorman.admissionPolicy.enabled</code>, the chart's <code>&lt;fullname&gt;-request-stamps</code> ValidatingAdmissionPolicy refuses anyone but the doorman's ServiceAccount, the operator and cluster admins included, a create or change that sets <code>hybernate.io/last-request</code> or <code>hybernate.io/last-request-from</code> on a ManagedWorkload; removing one is allowed. To wake a workload, set <code>hybernate.io/last-activity</code>, as <code>kubectl hybernate wake</code> does. With <code>watchNamespaces</code>, it applies in those namespaces only. Without it, the operator still ignores an address that wasn't written under Hybernate's field manager, but anyone who can patch a ManagedWorkload can write under that name with <code>--field-manager=hybernate</code>. The Kustomize manifests include it too, named <code>hybernate-request-stamps</code>, taking the doorman's ServiceAccount as its parameter like the doorman's policy, so it follows any <code>namespace</code> and <code>namePrefix</code>. If that ServiceAccount is deleted, both of the Kustomize manifests' policies let every write through, leaving stamps to the operator's field-manager check: the API server looks a policy's parameter up before anything else, so refusing without it would refuse every write to every ManagedWorkload, the operator's too.</p>
+<p>The doorman's ServiceAccount can patch ManagedWorkloads, to set <code>hybernate.io/last-request</code> and <code>hybernate.io/last-request-from</code>, the caller's IP address, and <code>hybernate.io/turned-away</code>, where it counts the requests it <a href="../../concepts/wake-on-request/#what-it-turns-away">turned away</a> from a workload that asks before waking. The chart's <code>&lt;fullname&gt;-doorman</code> ValidatingAdmissionPolicy (<code>doorman.admissionPolicy.enabled</code>, on by default) holds it to those three annotations: the API server refuses a patch from it that changes a ManagedWorkload's spec, labels, finalizers, owners or any other annotation. The Kustomize manifests include it too, taking the doorman's ServiceAccount as its parameter, so it follows the <code>namespace</code> and <code>namePrefix</code> set in <code>config/default</code> or in an overlay on top of it.</p>
+<p>The operator learns which workload depends on which from <code>hybernate.io/last-request-from</code>, so the doorman must be the only one who sets it. With the same <code>doorman.admissionPolicy.enabled</code>, the chart's <code>&lt;fullname&gt;-request-stamps</code> ValidatingAdmissionPolicy refuses anyone but the doorman's ServiceAccount, the operator and cluster admins included, a create or change that sets <code>hybernate.io/last-request</code> or <code>hybernate.io/last-request-from</code> on a ManagedWorkload; removing one is allowed. To wake a workload, set <code>hybernate.io/wake-requested</code>, as <code>kubectl hybernate wake</code> does. With <code>watchNamespaces</code>, it applies in those namespaces only. Without it, the operator still ignores an address that wasn't written under Hybernate's field manager, but anyone who can patch a ManagedWorkload can write under that name with <code>--field-manager=hybernate</code>. The Kustomize manifests include it too, named <code>hybernate-request-stamps</code>, taking the doorman's ServiceAccount as its parameter like the doorman's policy, so it follows any <code>namespace</code> and <code>namePrefix</code>. If that ServiceAccount is deleted, both of the Kustomize manifests' policies let every write through, leaving stamps to the operator's field-manager check: the API server looks a policy's parameter up before anything else, so refusing without it would refuse every write to every ManagedWorkload, the operator's too.</p>
 <h2 id="verifying-a-release">Verifying a release<a class="headerlink" href="#verifying-a-release" title="Permanent link">&para;</a></h2>
 <p>Every release is built by the <a href="https://github.com/okedeji/hybernate/blob/main/.github/workflows/release.yml">release workflow</a> from a tag, and signed keylessly with <a href="https://www.sigstore.dev/">Sigstore</a>: the signature is bound to that workflow and tag, so there's no key to steal. Each command below fails unless the artifact came from that workflow. The signatures are made with cosign 3, so verify them with cosign 3 or later.</p>
 <p><strong>The image</strong>, its signature, an SBOM for each platform, and build provenance:</p>
-<div class="language-bash highlight"><pre><span></span><code><span id="__span-0-1"><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a><span class="nv">IMAGE</span><span class="o">=</span>ghcr.io/okedeji/hybernate:v0.2.0-rc.6
+<div class="language-bash highlight"><pre><span></span><code><span id="__span-0-1"><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a><span class="nv">IMAGE</span><span class="o">=</span>ghcr.io/okedeji/hybernate:v0.2.0-rc.7
 </span><span id="__span-0-2"><a id="__codelineno-0-2" name="__codelineno-0-2" href="#__codelineno-0-2"></a>cosign<span class="w"> </span>verify<span class="w"> </span><span class="nv">$IMAGE</span><span class="w"> </span><span class="se">\</span>
 </span><span id="__span-0-3"><a id="__codelineno-0-3" name="__codelineno-0-3" href="#__codelineno-0-3"></a><span class="w">  </span>--certificate-identity-regexp<span class="w"> </span><span class="s1">'^https://github.com/okedeji/hybernate/.github/workflows/release.yml@refs/tags/v'</span><span class="w"> </span><span class="se">\</span>
 </span><span id="__span-0-4"><a id="__codelineno-0-4" name="__codelineno-0-4" href="#__codelineno-0-4"></a><span class="w">  </span>--certificate-oidc-issuer<span class="w"> </span>https://token.actions.githubusercontent.com
@@ -1901,7 +1930,7 @@
 </span><span id="__span-0-8"><a id="__codelineno-0-8" name="__codelineno-0-8" href="#__codelineno-0-8"></a>gh<span class="w"> </span>attestation<span class="w"> </span>verify<span class="w"> </span>oci://<span class="nv">$IMAGE</span><span class="w"> </span>--repo<span class="w"> </span>okedeji/hybernate
 </span></code></pre></div>
 <p><strong>The Helm chart:</strong></p>
-<div class="language-bash highlight"><pre><span></span><code><span id="__span-1-1"><a id="__codelineno-1-1" name="__codelineno-1-1" href="#__codelineno-1-1"></a>cosign<span class="w"> </span>verify<span class="w"> </span>ghcr.io/okedeji/charts/hybernate:0.2.0-rc.6<span class="w"> </span><span class="se">\</span>
+<div class="language-bash highlight"><pre><span></span><code><span id="__span-1-1"><a id="__codelineno-1-1" name="__codelineno-1-1" href="#__codelineno-1-1"></a>cosign<span class="w"> </span>verify<span class="w"> </span>ghcr.io/okedeji/charts/hybernate:0.2.0-rc.7<span class="w"> </span><span class="se">\</span>
 </span><span id="__span-1-2"><a id="__codelineno-1-2" name="__codelineno-1-2" href="#__codelineno-1-2"></a><span class="w">  </span>--certificate-identity-regexp<span class="w"> </span><span class="s1">'^https://github.com/okedeji/hybernate/.github/workflows/release.yml@refs/tags/v'</span><span class="w"> </span><span class="se">\</span>
 </span><span id="__span-1-3"><a id="__codelineno-1-3" name="__codelineno-1-3" href="#__codelineno-1-3"></a><span class="w">  </span>--certificate-oidc-issuer<span class="w"> </span>https://token.actions.githubusercontent.com
 </span></code></pre></div>

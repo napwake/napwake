@@ -93,7 +93,7 @@
             <div class="md-banner__inner md-grid md-typeset">
               
   
-    These docs are for Hybernate 0.2.0-rc.6, a release candidate, and may change before it's released.
+    These docs are for Hybernate 0.2.0-rc.7, a release candidate, and may change before it's released.
   
   <a href="../../.."><strong>Read the docs for the latest release.</strong></a>
 
@@ -915,6 +915,34 @@
   
   
     <li class="md-nav__item">
+      <a href="../preview-environments/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Public Preview Environments
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
       <a href="../managed-workload/" class="md-nav__link">
         
   
@@ -1060,6 +1088,23 @@
       
     </span>
   </a>
+  
+    <nav class="md-nav" aria-label="Resume">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#wake-now" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Wake Now
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
   
 </li>
       
@@ -1844,6 +1889,23 @@
     </span>
   </a>
   
+    <nav class="md-nav" aria-label="Resume">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#wake-now" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Wake Now
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
 </li>
       
         <li class="md-nav__item">
@@ -2028,26 +2090,109 @@
 <td>Nothing, with a Warning event</td>
 <td><code>False</code>, <code>TargetNotFound</code>, <code>TargetIgnored</code> or <code>DuplicateTarget</code></td>
 </tr>
+<tr>
+<td>Already on the ManagedWorkload as Hybernate takes it on, or takes a pause up again after its status was lost</td>
+<td>Nothing: it may have been answered before, and brought back with the ManagedWorkload, as by a backup restored without status. Set a new value to ask</td>
+<td><code>False</code>, <code>PredatesStatus</code></td>
+</tr>
 </tbody>
 </table>
 <p>The condition answers the last request until the next one, through any wakes and idle pauses since, so its message says what happened and when, in UTC: <code>paused as requested at 2026-10-21 03:32 UTC</code>, <code>already paused at …</code>, or <code>not paused at 2026-10-21 03:32 UTC:</code> and why. Hybernate keeps it rather than dropping it at the next wake, so <code>kubectl hybernate pause</code>, or a script that set the annotation, can always read the answer to its request, and <code>kubectl describe</code> shows why last night's pause didn't happen long after its events have expired. <code>status.lastPauseRequest</code> says which request it answers.</p>
-<p>A request Hybernate won't act on is answered once, not retried: ask again once the reason is gone. Activity from before the request doesn't undo it: the pause records the activity annotations as they stood, and only a change made since wakes the workload.</p>
+<p>A request Hybernate won't act on is answered once, not retried: ask again once the reason is gone. Hybernate's record of which requests it answered is the ManagedWorkload's status, so a request already on it as Hybernate takes it on is taken as answered, not acted on: a backup restored without status, <code>kubectl replace --force</code> or an exported manifest applied again would otherwise bring back requests answered long ago. Set the annotation once the ManagedWorkload is <code>Running</code>. Activity from before the request doesn't undo it: the pause records the activity annotations as they stood, and only a change made since wakes the workload.</p>
 <h2 id="resume">Resume<a class="headerlink" href="#resume" title="Permanent link">&para;</a></h2>
 <p>Resuming wakes the workload's <a href="../../concepts/dependencies/">dependencies</a>, scales it back to <code>status.pause.previousReplicas</code> (kept within its HPA's or ScaledObject's range if that changed), and moves it to <code>Running</code> once all those replicas are Ready, by a status its Deployment or StatefulSet controller wrote after seeing the scale-up. A workload that wasn't wholly Ready before its pause, such as one with a pod crash-looping, would never get there, so Hybernate stops waiting 2 minutes after the first replica is Ready, or, while none is, once the Deployment's <code>progressDeadlineSeconds</code> has passed since the scale-up (10 minutes by default, and for a StatefulSet). It's then <code>Running</code> with the replicas that are Ready, and <code>ResumeIncomplete=True</code> until they all are. With none Ready, its doorman routes are removed all the same, so requests fail until a pod is Ready rather than wait at the doorman for a workload its own controller reports stuck. A StatefulSet with the default <code>OrderedReady</code> pod management starts its pods one at a time, so a slow-starting one may have only its first pods Ready when the 2 minutes are up: it runs with those, and the rest follow. Once it's scaled back up, its replicas are left to its autoscaler, so an HPA scaling it down as it starts isn't undone. A KEDA ScaledObject is held at the restored count until then, and afterwards gets back the <code>paused-replicas</code> value it had before the pause, or none.</p>
 <p><strong>Automatically:</strong></p>
 <ul>
 <li>A request to the workload's Service, through <a href="../../concepts/wake-on-request/">wake on request</a></li>
-<li>A change to <code>hybernate.io/last-activity</code>, <code>hybernate.io/last-request</code> or <code>hybernate.io/active-until</code> on the ManagedWorkload or its target since the pause began, whatever time the new value states; <a href="../../getting-started/kubectl-plugin/#wake-a-workload"><code>kubectl hybernate wake</code></a> sets one</li>
+<li>A change to <code>hybernate.io/last-activity</code>, <code>hybernate.io/last-request</code> or <code>hybernate.io/active-until</code> on the ManagedWorkload or its target since the pause began, whatever time the new value states</li>
 <li>A <a href="../prometheus-signals/#while-the-workload-is-paused">Prometheus activity query</a> showing activity, such as messages waiting for a queue worker</li>
 <li>With <code>autoResume: true</code>, 15 minutes ahead of the hour a confident forecast expects demand in</li>
 <li>Something else scaling it up, such as <code>kubectl scale</code>: it's counted as activity and the workload goes straight to <code>Running</code>; see <a href="../gitops/">GitOps tools</a> for when that's a GitOps tool</li>
 <li>Turning on <a href="../dry-run/">dry-run</a>, which never leaves a workload paused (<code>DryRunWake</code> event)</li>
 </ul>
 <p>A paused workload is looked at again at least every 5 minutes, or every minute when it has Prometheus activity queries, 15 minutes before each hour and on the hour, as well as whenever it or its target changes.</p>
-<p><strong>On demand:</strong></p>
+<p><strong>On demand:</strong> with <a href="#wake-now"><code>kubectl hybernate wake</code></a>, or the <code>hybernate.io/wake-requested</code> annotation it sets, from any tool.</p>
+<h3 id="wake-now">Wake Now<a class="headerlink" href="#wake-now" title="Permanent link">&para;</a></h3>
 <div class="language-bash highlight"><pre><span></span><code><span id="__span-2-1"><a id="__codelineno-2-1" name="__codelineno-2-1" href="#__codelineno-2-1"></a>kubectl<span class="w"> </span>hybernate<span class="w"> </span>wake<span class="w"> </span>my-api<span class="w"> </span>-n<span class="w"> </span>staging
 </span></code></pre></div>
-<p><code>wake</code> marks the workload active, which wakes it and restarts its idle clock, so it pauses again once it's had no activity for <code>idleAfter</code>. <code>--for 2h</code> keeps it awake for at least that long, as for a demo. To keep a workload running for good, remove the <code>idlePolicy</code> of a ManagedWorkload you wrote. One created from the <code>hybernate.io/managed</code> label always has an <code>idlePolicy</code>, rewritten from its annotations, so label the workload <code>hybernate.io/ignore: "true"</code> instead: Hybernate stops managing it, and wakes it first if it's paused. See <a href="../../getting-started/kubectl-plugin/#wake-a-workload">kubectl Plugin</a>.</p>
+<p><code>wake</code> asks Hybernate to wake the workload now, whatever its <a href="../../concepts/wake-on-request/">wake setting</a>, so it wakes one whose doorman asks before waking (<code>wake: ask</code>) too. A paused workload wakes, with the workloads it <a href="../../concepts/dependencies/">depends on</a>, and a running one has its idle clock restarted; either way it pauses again once it's had no activity for <code>idleAfter</code>. <code>--for 2h</code> keeps it awake for at least that long, as for a demo. <code>wake</code> waits for Hybernate's answer, then until the workload is Running. To keep a workload running for good, remove the <code>idlePolicy</code> of a ManagedWorkload you wrote. One created from the <code>hybernate.io/managed</code> label always has an <code>idlePolicy</code>, rewritten from its annotations, so label the workload <code>hybernate.io/ignore: "true"</code> instead: Hybernate stops managing it, and wakes it first if it's paused. See <a href="../../getting-started/kubectl-plugin/#wake-a-workload">kubectl Plugin</a>.</p>
+<p>The plugin asks by setting the <code>hybernate.io/wake-requested</code> annotation on the ManagedWorkload to a token, the time of the request, as <code>pause</code> sets <code>hybernate.io/pause-requested</code>. Any tool can do the same, such as a pull request bot, a developer portal or a chat command waking a preview environment for someone. The value only has to differ from the last request's, such as the time or a CI run's ID:</p>
+<div class="language-bash highlight"><pre><span></span><code><span id="__span-3-1"><a id="__codelineno-3-1" name="__codelineno-3-1" href="#__codelineno-3-1"></a>kubectl<span class="w"> </span>annotate<span class="w"> </span>managedworkload<span class="w"> </span>my-api<span class="w"> </span>-n<span class="w"> </span>staging<span class="w"> </span>--overwrite<span class="w"> </span><span class="se">\</span>
+</span><span id="__span-3-2"><a id="__codelineno-3-2" name="__codelineno-3-2" href="#__codelineno-3-2"></a><span class="w">  </span>hybernate.io/wake-requested<span class="o">=</span><span class="s2">"</span><span class="k">$(</span>date<span class="w"> </span>-u<span class="w"> </span>+%Y-%m-%dT%H:%M:%SZ<span class="k">)</span><span class="s2">"</span>
+</span></code></pre></div>
+<p>A ManagedWorkload created from the <code>hybernate.io/managed</code> label is named after its workload, or after the workload and its kind, such as <code>my-api-statefulset</code>, when that name is taken. Setting the annotation takes <code>get</code> and <code>patch</code> on <code>managedworkloads</code> in the namespace with <code>kubectl annotate</code>, or <code>patch</code> alone from an HTTP client. Waiting for the answer with <code>kubectl wait</code> takes <code>get</code>, <code>list</code> and <code>watch</code> too, and <code>kubectl hybernate wake</code> takes <code>get</code>, <code>list</code> and <code>patch</code>. Kubernetes' built-in <code>edit</code> and <code>admin</code> roles include all of them once Hybernate is installed; the <a href="../preview-environments/#waking-it-from-tooling">preview environments guide</a> gives a minimal Role. It's an annotation, like <code>pause-requested</code>, so a GitOps tool that owns the ManagedWorkload's spec leaves it alone.</p>
+<p>Hybernate acts on each value once: it records the value it handled in <code>status.lastWakeRequest</code>, which survives an operator restart, and says what came of it in the <code>WakeRequest</code> condition, so the tool can tell its request was taken up:</p>
+<table>
+<thead>
+<tr>
+<th>The workload</th>
+<th>What Hybernate does</th>
+<th><code>WakeRequest</code> condition</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>Paused</code></td>
+<td>Wakes it, with a <code>WakeRequested</code> event, then <code>Resumed</code> once it's Ready</td>
+<td><code>True</code>, <code>Woken</code></td>
+</tr>
+<tr>
+<td><code>Pausing</code></td>
+<td>Finishes the pause, then wakes it</td>
+<td><code>True</code>, <code>Woken</code></td>
+</tr>
+<tr>
+<td><code>Resuming</code></td>
+<td>Lets the wake finish, then marks the request handled</td>
+<td><code>True</code>, <code>AlreadyAwake</code></td>
+</tr>
+<tr>
+<td><code>Running</code> or <code>Idle</code></td>
+<td>Restarts its idle clock, as activity does</td>
+<td><code>True</code>, <code>AlreadyAwake</code></td>
+</tr>
+<tr>
+<td>In <a href="../dry-run/">dry-run</a></td>
+<td>Never paused, so it's awake: restarts its idle clock, which ends a would-be pause, as activity does</td>
+<td><code>True</code>, <code>AlreadyAwake</code></td>
+</tr>
+<tr>
+<td>Scaled to zero outside Hybernate</td>
+<td>Leaves it off: Hybernate only wakes what it paused</td>
+<td><code>False</code>, <code>ScaledToZero</code></td>
+</tr>
+<tr>
+<td>In a <a href="../opt-in/#protected-namespaces">protected namespace</a>, Hybernate's own operator or doorman, or a StatefulSet that deletes its PVCs when scaled down</td>
+<td>Nothing: Hybernate never pauses it</td>
+<td><code>False</code>, <code>Protected</code></td>
+</tr>
+<tr>
+<td>Its workload is missing, labelled <code>hybernate.io/ignore</code>, or managed by another ManagedWorkload</td>
+<td>Nothing, with a Warning event</td>
+<td><code>False</code>, <code>TargetNotFound</code>, <code>TargetIgnored</code> or <code>DuplicateTarget</code></td>
+</tr>
+<tr>
+<td>Its ManagedWorkload is being deleted</td>
+<td>Hands the workload back, with the replicas it had, as it lets go</td>
+<td><code>False</code>, <code>BeingDeleted</code></td>
+</tr>
+<tr>
+<td>Set before Hybernate has taken the ManagedWorkload on, as by a tool that creates it and asks for its wake at once</td>
+<td>Takes it on <code>Running</code>, so it's awake: restarts its idle clock, as for any awake workload</td>
+<td><code>True</code>, <code>AlreadyAwake</code></td>
+</tr>
+<tr>
+<td>Already on the ManagedWorkload as Hybernate takes up a pause again after its status was lost</td>
+<td>Nothing: it may have been answered before, and brought back with the ManagedWorkload, as by a backup restored without status, so it leaves the workload paused. Set a new value to ask</td>
+<td><code>False</code>, <code>PredatesStatus</code></td>
+</tr>
+</tbody>
+</table>
+<p>As with a pause request, the condition answers the last request until the next one, through the pauses and wakes since, so its message says what happened and when, in UTC: <code>woken as requested at 2026-10-23 09:05 UTC</code>, <code>already awake at …</code>, or <code>not woken at 2026-10-23 09:05 UTC:</code> and why:</p>
+<div class="language-bash highlight"><pre><span></span><code><span id="__span-4-1"><a id="__codelineno-4-1" name="__codelineno-4-1" href="#__codelineno-4-1"></a>kubectl<span class="w"> </span>get<span class="w"> </span>managedworkload<span class="w"> </span>my-api<span class="w"> </span>-n<span class="w"> </span>staging<span class="w"> </span><span class="se">\</span>
+</span><span id="__span-4-2"><a id="__codelineno-4-2" name="__codelineno-4-2" href="#__codelineno-4-2"></a><span class="w">  </span>-o<span class="w"> </span><span class="nv">jsonpath</span><span class="o">=</span><span class="s1">'{.status.conditions[?(@.type=="WakeRequest")]}'</span>
+</span></code></pre></div>
+<p>A request Hybernate can't act on is answered once, not retried: ask again once the reason is gone. Unlike a pause request, a wake request may be set at any time, even on a ManagedWorkload Hybernate hasn't taken on yet: it takes the ManagedWorkload on <code>Running</code> and answers the request as already awake, since at worst an old request restarts the idle clock. Only one already there when Hybernate takes a pause up again, after the ManagedWorkload's status was lost, is answered <code>PredatesStatus</code> and left paused.</p>
 <h2 id="when-hybernate-lets-go">When Hybernate Lets Go<a class="headerlink" href="#when-hybernate-lets-go" title="Permanent link">&para;</a></h2>
 <p>Hybernate hands a paused workload back, scaled to the replicas it had and released from KEDA without waiting for it to be Ready, and stops routing its Services to the doorman, whenever it stops managing it:</p>
 <ul>

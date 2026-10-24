@@ -93,7 +93,7 @@
             <div class="md-banner__inner md-grid md-typeset">
               
   
-    These docs are for Hybernate 0.2.0-rc.6, a release candidate, and may change before it's released.
+    These docs are for Hybernate 0.2.0-rc.7, a release candidate, and may change before it's released.
   
   <a href="../../.."><strong>Read the docs for the latest release.</strong></a>
 
@@ -892,6 +892,34 @@
     
   
     Opting In
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../guides/preview-environments/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Public Preview Environments
   
 
     
@@ -1886,9 +1914,14 @@
 <td>Its own configuration</td>
 <td>Watched</td>
 </tr>
+<tr>
+<td>Its wake key Secret, <code>&lt;fullname&gt;-doorman-wake-key</code></td>
+<td>The doorman's: the key it signs the asleep page's <a href="../../concepts/wake-on-request/#the-wake-it-button">Wake it button</a> with, shared by its replicas</td>
+<td>Read by name every minute, from the API server, not cached; written once, to fill it when it's empty</td>
+</tr>
 </tbody>
 </table>
-<p><strong>Never read:</strong> Secrets, of any kind, anywhere. An address set in a Secret is learned only from the request it's used for.</p>
+<p><strong>Never read:</strong> any other Secret, of any kind, anywhere. An address set in a Secret is learned only from the request it's used for.</p>
 <h2 id="what-it-writes">What it writes<a class="headerlink" href="#what-it-writes" title="Permanent link">&para;</a></h2>
 <table>
 <thead>
@@ -1916,7 +1949,11 @@
 </tr>
 <tr>
 <td>ManagedWorkloads</td>
-<td>Its own status, including each workload's forecast state; the ones it creates for labelled workloads; the <code>hybernate.io/cleanup</code> finalizer, added to each so that deleting it restores its workload first, and removed once it has, with <code>hybernate.io/operator</code>, the operator's namespace; <code>hybernate.io/last-activity</code> on a dependency it wakes; and, from the doorman, <code>hybernate.io/last-request</code> and <code>hybernate.io/last-request-from</code> (the caller's IP address) on one a request wakes</td>
+<td>Its own status, including each workload's forecast state; the ones it creates for labelled workloads; the <code>hybernate.io/cleanup</code> finalizer, added to each so that deleting it restores its workload first, and removed once it has, with <code>hybernate.io/operator</code>, the operator's namespace; <code>hybernate.io/last-activity</code> on a dependency it wakes; and, from the doorman, <code>hybernate.io/last-request</code> and <code>hybernate.io/last-request-from</code> (the caller's IP address) on one a request wakes, and <code>hybernate.io/turned-away</code>, a count of the requests it turned away from one that <a href="../../concepts/wake-on-request/#what-it-turns-away">asks before waking</a>, with nothing of the requests themselves</td>
+</tr>
+<tr>
+<td>Its wake key Secret</td>
+<td>The doorman fills it with a random key when it's empty, and changes nothing else</td>
 </tr>
 <tr>
 <td>Events</td>
@@ -2108,12 +2145,31 @@
 </tr>
 </tbody>
 </table>
+<p>And a Role and RoleBinding <code>hybernate-doorman-wake-key</code> in the release namespace, for its <a href="../../concepts/wake-on-request/#the-wake-it-button">wake key</a>, the one Secret it may read:</p>
+<table>
+<thead>
+<tr>
+<th>API group</th>
+<th>Resources</th>
+<th>Resource names</th>
+<th>Verbs</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>""</code></td>
+<td><code>secrets</code></td>
+<td><code>hybernate-doorman-wake-key</code></td>
+<td><code>get</code>, <code>update</code></td>
+</tr>
+</tbody>
+</table>
 <p><strong>Guards</strong>, with <code>guard.uninstall</code> and, with <code>watchNamespaces</code>, <code>guard.upgrade</code> (the defaults): a ServiceAccount <code>hybernate-uninstall-guard</code>, and a ClusterRole and ClusterRoleBinding of the same name, allowing <code>list</code> on <code>hybernate.io</code> <code>managedworkloads</code>, cluster-wide even with <code>watchNamespaces</code>; and the same named <code>hybernate-upgrade-guard</code>. They're Helm hooks, like the Jobs that use them: they exist only while <code>helm uninstall</code> runs its pre-delete hook, or <code>helm upgrade</code> or <code>helm rollback</code> its pre-upgrade or pre-rollback hook, which refuse to leave ManagedWorkloads without an operator.</p>
 <p><strong>People</strong>: ClusterRoles <code>hybernate-view</code> and <code>hybernate-edit</code>, which grant nothing to Hybernate itself. They're aggregated into Kubernetes' built-in roles: <code>view</code>, <code>edit</code> and <code>admin</code> gain <code>get</code>, <code>list</code> and <code>watch</code> on <code>hybernate.io</code> <code>managedworkloads</code>, and <code>get</code> on their status; <code>edit</code> and <code>admin</code> gain <code>create</code>, <code>update</code>, <code>patch</code> and <code>delete</code>.</p>
-<p><strong>Admission policy</strong>, with <code>doorman.admissionPolicy.enabled</code> (the default): a ValidatingAdmissionPolicy and binding <code>hybernate-doorman</code>, cluster-scoped, which refuse any change the doorman's ServiceAccount makes to a ManagedWorkload other than to its <code>hybernate.io/last-request</code> and <code>last-request-from</code> annotations; and a ValidatingAdmissionPolicy and binding <code>hybernate-request-stamps</code>, cluster-scoped, which refuse anyone else setting those two annotations, limited to <code>watchNamespaces</code> when set.</p>
+<p><strong>Admission policy</strong>, with <code>doorman.admissionPolicy.enabled</code> (the default): a ValidatingAdmissionPolicy and binding <code>hybernate-doorman</code>, cluster-scoped, which refuse any change the doorman's ServiceAccount makes to a ManagedWorkload other than to its <code>hybernate.io/last-request</code>, <code>last-request-from</code> and <code>turned-away</code> annotations; and a ValidatingAdmissionPolicy and binding <code>hybernate-request-stamps</code>, cluster-scoped, which refuse anyone else setting those two annotations, limited to <code>watchNamespaces</code> when set.</p>
 <p><strong>Metrics</strong>, with <code>metrics.enabled</code> and <code>metrics.secure</code> (the defaults): ClusterRoleBindings <code>hybernate-auth-delegator</code> and <code>hybernate-doorman-auth-delegator</code> to the built-in <code>system:auth-delegator</code> ClusterRole, so the operator and the doorman can check the tokens of whoever scrapes them; and a ClusterRole <code>hybernate-metrics-reader</code> allowing <code>get</code> on the <code>/metrics</code> URL, bound to <code>metrics.readerSubjects</code> by a ClusterRoleBinding of the same name.</p>
 <h2 id="the-plugin">The plugin<a class="headerlink" href="#the-plugin" title="Permanent link">&para;</a></h2>
-<p><code>kubectl hybernate</code> runs with your own kubeconfig and permissions, reads the same kinds of resources and their events, and changes nothing except for <code>wake</code> (activity annotations on a ManagedWorkload), <code>pause</code> (the <code>hybernate.io/pause-requested</code> annotation on a ManagedWorkload, with <code>hybernate.io/pause-overrides-forecast</code> when told to pause one the forecast expects demand for, and, with <code>--clear-hold</code>, removing its <code>hybernate.io/active-until</code>) and <code>enable</code> (the <code>hybernate.io/dry-run</code> annotation, on a workload or its namespace, or <code>spec.dryRun</code> on a ManagedWorkload you wrote). <code>scan</code> reads Prometheus through the API server's service proxy, or at <code>--prometheus-url</code>, and writes its report only to your machine, in a file only you can read, as <code>status --html</code> does its page. For a workload Argo CD applies, <code>scan</code>, <code>status</code>, <code>pause</code> and <code>enable</code> read Argo CD's Applications and its <code>argocd-cm</code> ConfigMap, to tell whether it leaves the workload's replicas to Hybernate.</p>
+<p><code>kubectl hybernate</code> runs with your own kubeconfig and permissions, reads the same kinds of resources and their events, and changes nothing except for <code>wake</code> (the <code>hybernate.io/wake-requested</code> annotation on a ManagedWorkload, with <code>hybernate.io/active-until</code> for <code>--for</code>), <code>pause</code> (the <code>hybernate.io/pause-requested</code> annotation on a ManagedWorkload, with <code>hybernate.io/pause-overrides-forecast</code> when told to pause one the forecast expects demand for, and, with <code>--clear-hold</code>, removing its <code>hybernate.io/active-until</code>) and <code>enable</code> (the <code>hybernate.io/dry-run</code> annotation, on a workload or its namespace, or <code>spec.dryRun</code> on a ManagedWorkload you wrote). <code>scan</code> reads Prometheus through the API server's service proxy, or at <code>--prometheus-url</code>, and writes its report only to your machine, in a file only you can read, as <code>status --html</code> does its page. For a workload Argo CD applies, <code>scan</code>, <code>status</code>, <code>pause</code> and <code>enable</code> read Argo CD's Applications and its <code>argocd-cm</code> ConfigMap, to tell whether it leaves the workload's replicas to Hybernate.</p>
 
 
 

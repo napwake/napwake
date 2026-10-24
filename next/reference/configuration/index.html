@@ -93,7 +93,7 @@
             <div class="md-banner__inner md-grid md-typeset">
               
   
-    These docs are for Hybernate 0.2.0-rc.6, a release candidate, and may change before it's released.
+    These docs are for Hybernate 0.2.0-rc.7, a release candidate, and may change before it's released.
   
   <a href="../../.."><strong>Read the docs for the latest release.</strong></a>
 
@@ -892,6 +892,34 @@
     
   
     Opting In
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../guides/preview-environments/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Public Preview Environments
   
 
     
@@ -1968,6 +1996,11 @@
 <td>How soon the forecast acts, <code>eager</code>, <code>balanced</code> or <code>cautious</code>, for opted-in workloads that don't set <code>hybernate.io/forecast</code></td>
 </tr>
 <tr>
+<td><code>--default-wake</code></td>
+<td><code>request</code></td>
+<td>What wakes a paused opted-in workload that doesn't set <code>hybernate.io/wake</code> through the doorman: <code>request</code>, any request, or <code>ask</code>, only a person's click on the page the doorman shows a browser. Helm value <code>defaults.wake</code></td>
+</tr>
+<tr>
 <td><code>--doorman</code></td>
 <td><code>false</code></td>
 <td>Run as the doorman instead of the operator. The doorman Deployment sets it</td>
@@ -1996,6 +2029,11 @@
 <td><code>--doorman-health-check-user-agents</code></td>
 <td></td>
 <td>Comma-separated <code>User-Agent</code> prefixes of health checkers and scrapers, besides the built-in ones, whose <code>GET</code> and <code>HEAD</code> requests don't wake a paused workload. Helm value <code>doorman.healthCheckUserAgents</code></td>
+</tr>
+<tr>
+<td><code>--wake-key-secret</code></td>
+<td></td>
+<td>The doorman's: a Secret in its namespace holding the key it signs the asleep page's <strong>Wake it</strong> button with, which it fills when empty. Every replica must share it, since a click can reach any of them; without it, each signs with its own, which works only for one replica. The chart sets <code>&lt;fullname&gt;-doorman-wake-key</code></td>
 </tr>
 <tr>
 <td><code>--neg-forwarder</code></td>
@@ -2064,7 +2102,7 @@
 </tr>
 </tbody>
 </table>
-<p>The operator checks its flags at startup and exits with an error naming the flag when one is invalid: a <code>--protected-namespaces</code> pattern that isn't a valid glob, a <code>--prometheus-url</code> that isn't <code>http</code> or <code>https</code> with a host, a <code>--prometheus-selector</code> that isn't label matchers or is set without <code>--prometheus-url</code>, a <code>--default-idle-after</code> under <code>1m</code>, a <code>--default-cpu-threshold</code> outside 1 to 100, a <code>--default-forecast</code> that isn't <code>eager</code>, <code>balanced</code> or <code>cautious</code>, a <code>--max-concurrent-reconciles</code>, <code>--doorman-ports-per-workload</code> or <code>--doorman-ports-per-namespace</code> below 1, or a <code>--timezone</code> that isn't a known IANA zone.</p>
+<p>The operator checks its flags at startup and exits with an error naming the flag when one is invalid: a <code>--protected-namespaces</code> pattern that isn't a valid glob, a <code>--prometheus-url</code> that isn't <code>http</code> or <code>https</code> with a host, a <code>--prometheus-selector</code> that isn't label matchers or is set without <code>--prometheus-url</code>, a <code>--default-idle-after</code> under <code>1m</code>, a <code>--default-cpu-threshold</code> outside 1 to 100, a <code>--default-forecast</code> that isn't <code>eager</code>, <code>balanced</code> or <code>cautious</code>, a <code>--default-wake</code> that isn't <code>request</code> or <code>ask</code>, a <code>--max-concurrent-reconciles</code>, <code>--doorman-ports-per-workload</code> or <code>--doorman-ports-per-namespace</code> below 1, or a <code>--timezone</code> that isn't a known IANA zone.</p>
 <h2 id="endpoints">Endpoints<a class="headerlink" href="#endpoints" title="Permanent link">&para;</a></h2>
 <table>
 <thead>

@@ -93,7 +93,7 @@
             <div class="md-banner__inner md-grid md-typeset">
               
   
-    These docs are for Hybernate 0.2.0-rc.6, a release candidate, and may change before it's released.
+    These docs are for Hybernate 0.2.0-rc.7, a release candidate, and may change before it's released.
   
   <a href="../../.."><strong>Read the docs for the latest release.</strong></a>
 
@@ -892,6 +892,34 @@
     
   
     Opting In
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../guides/preview-environments/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Public Preview Environments
   
 
     
@@ -2121,6 +2149,14 @@
 <tr>
 <td><code>refused</code></td>
 <td>The workload's route is draining and none of its pods is Ready</td>
+</tr>
+<tr>
+<td><code>asked</code></td>
+<td>With <code>wake.mode: Ask</code>, a person's browser was shown the page that asks before waking the workload. See <a href="../../concepts/wake-on-request/#asking-before-waking">Asking before waking</a></td>
+</tr>
+<tr>
+<td><code>turned_away</code></td>
+<td>With <code>wake.mode: Ask</code>, anything else, such as a crawler, a scanner or an API client, was told the workload is asleep, and nothing woke. Many mean something automated calls it; <code>status.turnedAway</code> counts them for each pause</td>
 </tr>
 </tbody>
 </table>

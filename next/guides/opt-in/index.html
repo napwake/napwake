@@ -16,7 +16,7 @@
         <link rel="prev" href="../../concepts/cost-tracking/">
       
       
-        <link rel="next" href="../managed-workload/">
+        <link rel="next" href="../preview-environments/">
       
       
         
@@ -93,7 +93,7 @@
             <div class="md-banner__inner md-grid md-typeset">
               
   
-    These docs are for Hybernate 0.2.0-rc.6, a release candidate, and may change before it's released.
+    These docs are for Hybernate 0.2.0-rc.7, a release candidate, and may change before it's released.
   
   <a href="../../.."><strong>Read the docs for the latest release.</strong></a>
 
@@ -1044,6 +1044,34 @@
   
 </nav>
       
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../preview-environments/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Public Preview Environments
+  
+
+    
+  </span>
+  
+  
+
+      </a>
     </li>
   
 
@@ -2036,7 +2064,7 @@
 <td><code>hybernate.io/pause-early</code></td>
 <td><code>"true"</code>, <code>"false"</code></td>
 <td><code>"false"</code></td>
-<td>Pause before <code>idle-after</code> runs out when a confident forecast expects the hours until then to be quiet and a request would wake the workload; see <a href="../../concepts/forecasting/#pausing-early">Pausing Early</a></td>
+<td>Pause before <code>idle-after</code> runs out when a confident forecast expects the hours until then to be quiet and a request would wake the workload, so never with <code>wake: ask</code>; see <a href="../../concepts/forecasting/#pausing-early">Pausing Early</a></td>
 </tr>
 <tr>
 <td><code>hybernate.io/forecast</code></td>
@@ -2051,10 +2079,10 @@
 <td>Workloads this one needs; see <a href="../../concepts/dependencies/">Dependencies</a></td>
 </tr>
 <tr>
-<td><code>hybernate.io/wake-on-request</code></td>
-<td><code>"true"</code>, <code>"false"</code></td>
-<td><code>"true"</code></td>
-<td>Wake when a request reaches the workload's Service; see <a href="../../concepts/wake-on-request/">Wake on Request</a></td>
+<td><code>hybernate.io/wake</code></td>
+<td><code>"request"</code>, <code>"ask"</code></td>
+<td><code>"request"</code></td>
+<td>What wakes the paused workload through the doorman: any request, or, with <code>ask</code>, only a person who clicks <strong>Wake it</strong> on the page the doorman shows a browser, for an environment on a public URL that crawlers would keep awake. Sets <code>spec.wake.mode</code>; see <a href="../../concepts/wake-on-request/#asking-before-waking">Asking before waking</a></td>
 </tr>
 <tr>
 <td><code>hybernate.io/wake-max-wait</code></td>
@@ -2071,7 +2099,7 @@
 </tbody>
 </table>
 <p>Leaving an annotation out means its default. A value that can't be read, such as <code>idle-after: "soon"</code> or <code>dry-run: "True"</code>, is reported in an <code>InvalidSetting</code> warning event on the workload and skipped, as if it weren't there: the setting comes from the next place in <a href="#which-setting-wins">Which setting wins</a>, and the others still apply. Booleans are exactly <code>"true"</code> or <code>"false"</code>; <code>idle-after</code> is at least <code>1m</code>, and <code>wake-max-wait</code> above zero and at most <code>1h</code>. In <code>depends-on</code>, an entry that can't be read is skipped and the rest apply.</p>
-<p><code>dry-run</code> is the exception: a value that can't be read turns dry-run on, whatever comes after it, since a typo in the setting meant to stop pauses must never start them.</p>
+<p><code>dry-run</code> and <code>wake</code> are the exceptions: a value of <code>dry-run</code> that can't be read turns dry-run on, and one of <code>wake</code> has the doorman ask, whatever comes after it, since a typo in a setting meant to keep a workload from pausing or waking must never undo it.</p>
 <div class="language-yaml highlight"><pre><span></span><code><span id="__span-7-1"><a id="__codelineno-7-1" name="__codelineno-7-1" href="#__codelineno-7-1"></a><span class="nt">hybernate.io/depends-on</span><span class="p">:</span><span class="w"> </span><span class="s">"statefulset/postgres,</span><span class="nv"> </span><span class="s">messaging/statefulset/nats"</span>
 </span></code></pre></div>
 <p>On a namespace, <code>depends-on</code> reaches every workload in it except those it names, and those they depend on by their own <code>depends-on</code>: they're what the others depend on, and taking the list too would make them depend on each other, so none could pause.</p>
@@ -2080,7 +2108,7 @@
 <ol>
 <li>The workload's own annotation.</li>
 <li>Its namespace's annotation.</li>
-<li>The cluster-wide defaults, set in the Helm values (<code>defaults.idleAfter</code>, <code>defaults.cpuThreshold</code>, <code>defaults.dryRun</code>, <code>defaults.pauseEarly</code>, <code>defaults.forecast</code>).</li>
+<li>The cluster-wide defaults, set in the Helm values (<code>defaults.idleAfter</code>, <code>defaults.cpuThreshold</code>, <code>defaults.dryRun</code>, <code>defaults.pauseEarly</code>, <code>defaults.forecast</code>, <code>defaults.wake</code>).</li>
 <li>The built-in default.</li>
 </ol>
 <p>So a namespace can measure everything with <code>dry-run: "true"</code> while one workload in it goes live with <code>dry-run: "false"</code>.</p>

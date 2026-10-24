@@ -93,7 +93,7 @@
             <div class="md-banner__inner md-grid md-typeset">
               
   
-    These docs are for Hybernate 0.2.0-rc.6, a release candidate, and may change before it's released.
+    These docs are for Hybernate 0.2.0-rc.7, a release candidate, and may change before it's released.
   
   <a href="../../.."><strong>Read the docs for the latest release.</strong></a>
 
@@ -892,6 +892,34 @@
     
   
     Opting In
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../guides/preview-environments/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Public Preview Environments
   
 
     
@@ -1938,11 +1966,11 @@
 <td>Waking on request while paused</td>
 </tr>
 <tr>
-<td><code>wake.onRequest</code></td>
-<td>bool</td>
+<td><code>wake.mode</code></td>
+<td><code>Request</code> or <code>Ask</code></td>
 <td>No</td>
-<td><code>true</code></td>
-<td>Route the workload's Services to the doorman while paused</td>
+<td><code>Request</code></td>
+<td>What wakes the paused workload through the doorman: any request, or only a person who clicks <strong>Wake it</strong> on the page the doorman shows a browser</td>
 </tr>
 <tr>
 <td><code>wake.maxWait</code></td>
@@ -2065,6 +2093,11 @@
 <td>The last <code>hybernate.io/pause-requested</code> value acted on, so each request is acted on once; the <code>PauseRequest</code> condition says what came of it. See <a href="../../guides/pause/#pause-now">Pause Now</a></td>
 </tr>
 <tr>
+<td><code>lastWakeRequest</code></td>
+<td>string</td>
+<td>The last <code>hybernate.io/wake-requested</code> value acted on, so each request is acted on once; the <code>WakeRequest</code> condition says what came of it. See <a href="../../guides/pause/#wake-now">Wake Now</a></td>
+</tr>
+<tr>
 <td><code>lastTransitionTime</code></td>
 <td>time</td>
 <td>Last phase change</td>
@@ -2168,6 +2201,11 @@
 <td><code>lastScaledUp</code></td>
 <td><code>ScaledUp</code></td>
 <td>The last time the workload was scaled up outside Hybernate while paused, which wakes it: <code>at</code>, <code>replicas</code>, <code>by</code> (the field manager, such as <code>argocd-controller</code>, or <code>unknown</code> for a scale through the scale subresource, as <code>kubectl scale</code> makes, which records none), and <code>gitOps</code> (<code>Argo CD</code>, <code>Flux</code>, <code>Fleet</code>, <code>kapp</code> or <code>Kluctl</code>, when it was set from Git; see <a href="../../guides/gitops/">GitOps tools</a>)</td>
+</tr>
+<tr>
+<td><code>turnedAway</code></td>
+<td><code>TurnedAway</code></td>
+<td>With <code>wake.mode: Ask</code>, the requests the doorman turned away during the current pause, or the last one once it's awake: <code>pausedAt</code>, when that pause began, and <code>requests</code>. Brought up to date about once a minute. See <a href="../../concepts/wake-on-request/#what-it-turns-away">What it turns away</a></td>
 </tr>
 <tr>
 <td><code>doorman[]</code></td>

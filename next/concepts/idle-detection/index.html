@@ -93,7 +93,7 @@
             <div class="md-banner__inner md-grid md-typeset">
               
   
-    These docs are for Hybernate 0.2.0-rc.6, a release candidate, and may change before it's released.
+    These docs are for Hybernate 0.2.0-rc.7, a release candidate, and may change before it's released.
   
   <a href="../../.."><strong>Read the docs for the latest release.</strong></a>
 
@@ -1034,6 +1034,34 @@
   
   
     <li class="md-nav__item">
+      <a href="../../guides/preview-environments/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Public Preview Environments
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
       <a href="../../guides/managed-workload/" class="md-nav__link">
         
   
@@ -1908,7 +1936,7 @@
 </span><span id="__span-1-6"><a id="__codelineno-1-6" name="__codelineno-1-6" href="#__codelineno-1-6"></a>kubectl<span class="w"> </span>annotate<span class="w"> </span>deployment<span class="w"> </span>my-api<span class="w"> </span>-n<span class="w"> </span>staging<span class="w"> </span>--overwrite<span class="w"> </span><span class="se">\</span>
 </span><span id="__span-1-7"><a id="__codelineno-1-7" name="__codelineno-1-7" href="#__codelineno-1-7"></a><span class="w">  </span>hybernate.io/active-until<span class="o">=</span><span class="s2">"2026-10-03T18:00:00Z"</span>
 </span></code></pre></div>
-<p>From a terminal, <a href="../../getting-started/kubectl-plugin/#wake-a-workload"><code>kubectl hybernate wake</code></a> sets them for you and waits until the workload is Running.</p>
+<p>To wake a workload on purpose, rather than record its use, ask for it with <a href="../../guides/pause/#wake-now"><code>hybernate.io/wake-requested</code></a>, which Hybernate answers, and which wakes it whatever its wake setting; <a href="../../getting-started/kubectl-plugin/#wake-a-workload"><code>kubectl hybernate wake</code></a> sets it for you and waits until the workload is Running.</p>
 <ul>
 <li>A <code>last-activity</code> time in the future is treated as now. Use <code>active-until</code> for a deliberate hold, since it says when the hold ends.</li>
 <li>Annotations can only keep a workload awake or wake it. They never cause a pause.</li>
@@ -1969,7 +1997,8 @@
 <p>A paused workload wakes when:</p>
 <ul>
 <li>A request reaches one of its Services. The request is held while the workload starts, then answered; see <a href="../wake-on-request/">Wake on Request</a>.</li>
-<li>A <code>hybernate.io/last-activity</code>, <code>last-request</code> or <code>active-until</code> annotation on the ManagedWorkload or its target changes after the pause began to an RFC 3339 time, whatever time it states, so a clock that's behind the operator's can't lose a wake. Only a change counts: the pause records the annotations as they stood, so a value set before it, even one stating a later time, doesn't wake it. <code>kubectl hybernate wake</code> sets one, and this is how a "start environment" button in a developer portal works.</li>
+<li>A <code>hybernate.io/last-activity</code>, <code>last-request</code> or <code>active-until</code> annotation on the ManagedWorkload or its target changes after the pause began to an RFC 3339 time, whatever time it states, so a clock that's behind the operator's can't lose a wake. Only a change counts: the pause records the annotations as they stood, so a value set before it, even one stating a later time, doesn't wake it.</li>
+<li>A <a href="../../guides/pause/#wake-now">wake request</a>: a new value of <code>hybernate.io/wake-requested</code> on the ManagedWorkload, whatever its wake setting. <code>kubectl hybernate wake</code> sets it, and so can a "start environment" button in a developer portal, which can then read Hybernate's answer in the <code>WakeRequest</code> condition.</li>
 <li>A <a href="../../guides/prometheus-signals/#while-the-workload-is-paused">Prometheus activity query</a> shows activity: the queries are run about once a minute while it's paused, as while it's awake. One that already showed activity as a <a href="../../guides/pause/#pause-now">requested pause</a> began wakes it only once it has been quiet, so it doesn't undo the request, and one that can't be evaluated never wakes it.</li>
 <li><code>autoResume: true</code> is set and a confident forecast (<code>dailyPhase: Active</code>) predicts utilization above <code>cpuThreshold</code> for the current hour, or for the next hour once it's 15 minutes away, so the workload is ready before people arrive; not the hour after one far quieter than it forecast.</li>
 <li>Something other than Hybernate scales it up, such as <code>kubectl scale</code>.</li>

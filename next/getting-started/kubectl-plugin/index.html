@@ -93,7 +93,7 @@
             <div class="md-banner__inner md-grid md-typeset">
               
   
-    These docs are for Hybernate 0.2.0-rc.6, a release candidate, and may change before it's released.
+    These docs are for Hybernate 0.2.0-rc.7, a release candidate, and may change before it's released.
   
   <a href="../../.."><strong>Read the docs for the latest release.</strong></a>
 
@@ -1156,6 +1156,34 @@
   
   
     <li class="md-nav__item">
+      <a href="../../guides/preview-environments/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Public Preview Environments
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
       <a href="../../guides/managed-workload/" class="md-nav__link">
         
   
@@ -2158,7 +2186,7 @@
 <div class="tabbed-block">
 <p>With <a href="https://krew.sigs.k8s.io/docs/user-guide/setup/install/">krew</a>, kubectl's plugin manager, installed:</p>
 <div class="language-bash highlight"><pre><span></span><code><span id="__span-1-1"><a id="__codelineno-1-1" name="__codelineno-1-1" href="#__codelineno-1-1"></a>kubectl<span class="w"> </span>krew<span class="w"> </span>install<span class="w"> </span>--manifest-url<span class="w"> </span><span class="se">\</span>
-</span><span id="__span-1-2"><a id="__codelineno-1-2" name="__codelineno-1-2" href="#__codelineno-1-2"></a><span class="w">  </span>https://github.com/okedeji/hybernate/releases/download/v0.2.0-rc.6/krew-hybernate.yaml
+</span><span id="__span-1-2"><a id="__codelineno-1-2" name="__codelineno-1-2" href="#__codelineno-1-2"></a><span class="w">  </span>https://github.com/okedeji/hybernate/releases/download/v0.2.0-rc.7/krew-hybernate.yaml
 </span><span id="__span-1-3"><a id="__codelineno-1-3" name="__codelineno-1-3" href="#__codelineno-1-3"></a>kubectl<span class="w"> </span>hybernate<span class="w"> </span>version
 </span></code></pre></div>
 <p>Krew installs the plugin on Linux and macOS (amd64 and arm64) and on Windows (amd64). <code>kubectl krew upgrade</code> doesn't upgrade a plugin installed from a manifest URL: to move to a later release, run <code>kubectl krew uninstall hybernate</code>, then install that release's manifest.</p>
@@ -2171,12 +2199,12 @@
 <p>Download the archive for your platform from the release, and put the binary on your <code>PATH</code> as <code>kubectl-hybernate</code>. On macOS and Linux:</p>
 <div class="language-bash highlight"><pre><span></span><code><span id="__span-2-1"><a id="__codelineno-2-1" name="__codelineno-2-1" href="#__codelineno-2-1"></a><span class="nv">os</span><span class="o">=</span><span class="k">$(</span>uname<span class="w"> </span>-s<span class="w"> </span><span class="p">|</span><span class="w"> </span>tr<span class="w"> </span><span class="s1">'[:upper:]'</span><span class="w"> </span><span class="s1">'[:lower:]'</span><span class="k">)</span>
 </span><span id="__span-2-2"><a id="__codelineno-2-2" name="__codelineno-2-2" href="#__codelineno-2-2"></a><span class="nv">arch</span><span class="o">=</span><span class="k">$(</span>uname<span class="w"> </span>-m<span class="w"> </span><span class="p">|</span><span class="w"> </span>sed<span class="w"> </span>-e<span class="w"> </span><span class="s1">'s/x86_64/amd64/'</span><span class="w"> </span>-e<span class="w"> </span><span class="s1">'s/aarch64/arm64/'</span><span class="k">)</span>
-</span><span id="__span-2-3"><a id="__codelineno-2-3" name="__codelineno-2-3" href="#__codelineno-2-3"></a>curl<span class="w"> </span>-fLO<span class="w"> </span><span class="s2">"https://github.com/okedeji/hybernate/releases/download/v0.2.0-rc.6/kubectl-hybernate-</span><span class="si">${</span><span class="nv">os</span><span class="si">}</span><span class="s2">-</span><span class="si">${</span><span class="nv">arch</span><span class="si">}</span><span class="s2">.tar.gz"</span>
+</span><span id="__span-2-3"><a id="__codelineno-2-3" name="__codelineno-2-3" href="#__codelineno-2-3"></a>curl<span class="w"> </span>-fLO<span class="w"> </span><span class="s2">"https://github.com/okedeji/hybernate/releases/download/v0.2.0-rc.7/kubectl-hybernate-</span><span class="si">${</span><span class="nv">os</span><span class="si">}</span><span class="s2">-</span><span class="si">${</span><span class="nv">arch</span><span class="si">}</span><span class="s2">.tar.gz"</span>
 </span><span id="__span-2-4"><a id="__codelineno-2-4" name="__codelineno-2-4" href="#__codelineno-2-4"></a>tar<span class="w"> </span>xzf<span class="w"> </span><span class="s2">"kubectl-hybernate-</span><span class="si">${</span><span class="nv">os</span><span class="si">}</span><span class="s2">-</span><span class="si">${</span><span class="nv">arch</span><span class="si">}</span><span class="s2">.tar.gz"</span>
 </span><span id="__span-2-5"><a id="__codelineno-2-5" name="__codelineno-2-5" href="#__codelineno-2-5"></a>sudo<span class="w"> </span>install<span class="w"> </span><span class="s2">"kubectl-hybernate-</span><span class="si">${</span><span class="nv">os</span><span class="si">}</span><span class="s2">-</span><span class="si">${</span><span class="nv">arch</span><span class="si">}</span><span class="s2">"</span><span class="w"> </span>/usr/local/bin/kubectl-hybernate
 </span><span id="__span-2-6"><a id="__codelineno-2-6" name="__codelineno-2-6" href="#__codelineno-2-6"></a>kubectl<span class="w"> </span>hybernate<span class="w"> </span>version
 </span></code></pre></div>
-<p>On Windows, download <code>kubectl-hybernate-windows-amd64.tar.gz</code> from the <a href="https://github.com/okedeji/hybernate/releases/tag/v0.2.0-rc.6">release</a>, extract it with <code>tar xzf</code>, and rename <code>kubectl-hybernate-windows-amd64.exe</code> to <code>kubectl-hybernate.exe</code> in a folder on your <code>PATH</code>. To check that an archive came from the release workflow, see <a href="../../reference/security/#verifying-a-release">Verifying a release</a>.</p>
+<p>On Windows, download <code>kubectl-hybernate-windows-amd64.tar.gz</code> from the <a href="https://github.com/okedeji/hybernate/releases/tag/v0.2.0-rc.7">release</a>, extract it with <code>tar xzf</code>, and rename <code>kubectl-hybernate-windows-amd64.exe</code> to <code>kubectl-hybernate.exe</code> in a folder on your <code>PATH</code>. To check that an archive came from the release workflow, see <a href="../../reference/security/#verifying-a-release">Verifying a release</a>.</p>
 </div>
 <div class="tabbed-block">
 <div class="language-bash highlight"><pre><span></span><code><span id="__span-3-1"><a id="__codelineno-3-1" name="__codelineno-3-1" href="#__codelineno-3-1"></a>git<span class="w"> </span>clone<span class="w"> </span>https://github.com/okedeji/hybernate.git
@@ -2491,7 +2519,7 @@
 <ul>
 <li><strong>FORECAST</strong> is when the forecast would act if the workload were opted in today, having <a href="../../concepts/forecasting/#learning-from-history">learned all its history</a> as the operator does for a new workload: <code>acts from day one</code>, from a date it projects, or <code>not within 4 weeks</code> for a pattern too irregular for the setting. For a workload Hybernate already manages, marked <code>(managed)</code> beside its name, it's that forecast's own, from <code>status.prediction</code>: <code>acting</code>, <code>learning</code>, from a date it projects, <code>not within 4 weeks</code> when it's earning its confidence, or relearning, and isn't expected to act within four weeks, or, while it's paused with nothing to see its demand, <code>not learning while paused:</code> and why, such as <code>no Service routes requests to it</code>. <a href="#one-workloads-forecast">Name the workload</a> to see what its forecast is doing in full, and the fix, from its <code>status.prediction.message</code>.</li>
 <li><strong>READY</strong>, <strong>COLD</strong>, <strong>WOKEN FOR NOTHING</strong> and <strong>WOKEN</strong> replay the last half of the history as Hybernate with <code>autoResume</code> would have managed it, from a forecast that learned only the first half: the mornings it had the workload up before its first use, those whose first use found it paused and woke it, the wakes ahead of demand that didn't come and how long they kept it up, and when it usually woke it. Having learned less, the replay is a little less ready than opting in now would be.</li>
-<li><strong>WAKES ON</strong> is what wakes the workload once it's paused, in the replay, as it would under Hybernate: <code>request</code>, through the <a href="../../concepts/wake-on-request/">doorman</a>, when a Service with a cluster IP selects its pods on a TCP port, keeps traffic cluster-wide, and isn't in GKE NEGs, unless the doorman's <a href="../../concepts/wake-on-request/#gke-container-native-load-balancing-negs">forwarder</a> is on; <code>query</code>, when its ManagedWorkload has a <a href="../../guides/prometheus-signals/#while-the-workload-is-paused">Prometheus activity query</a>, so only for a workload Hybernate manages; <code>request, query</code> for both; or <code>nothing</code>, so people wake it by hand, and the forecast doesn't learn the hours it's paused. For a workload Hybernate manages, what its operator found of its routing stands, as at its last pause, such as Services served by other workloads' pods. A workload not yet managed is judged by the ManagedWorkload opting it in would make, with <code>hybernate.io/wake-on-request</code> from its own annotations, then its namespace's, as opting in reads it. Whether the doorman is on (<code>doorman.enabled</code>), and its NEG forwarder, are read from the flags of the operator that manages the namespace, whose Deployment <code>forecast</code> finds by its labels across the cluster, or, without access to list Deployments there, in the operator's namespace, <code>hybernate-system</code> or the one a ManagedWorkload's <code>hybernate.io/operator</code> annotation names; when it can't read one, it assumes Hybernate's defaults, the doorman on and the forwarder off, and says so in its notes, with why and the access that reads it. The JSON has it in <code>forecast.wakes</code>: <code>request</code>, <code>query</code>, and <code>noRequest</code>, why a request wouldn't wake it.</li>
+<li><strong>WAKES ON</strong> is what wakes the workload once it's paused, in the replay, as it would under Hybernate: <code>request</code>, through the <a href="../../concepts/wake-on-request/">doorman</a>, when a Service with a cluster IP selects its pods on a TCP port, keeps traffic cluster-wide, and isn't in GKE NEGs, unless the doorman's <a href="../../concepts/wake-on-request/#gke-container-native-load-balancing-negs">forwarder</a> is on; <code>query</code>, when its ManagedWorkload has a <a href="../../guides/prometheus-signals/#while-the-workload-is-paused">Prometheus activity query</a>, so only for a workload Hybernate manages; <code>request, query</code> for both; <code>people</code>, with <a href="../../concepts/wake-on-request/"><code>wake: ask</code></a>, when only people wake it and the doorman would route its Services for them to, so the forecast learns the hours it's paused from whether they do, as it does behind the doorman (<code>people, query</code> with a query too), where a workload the doorman wouldn't route is <code>nothing</code> or <code>query</code>; or <code>nothing</code>, so people wake it by hand, and the forecast doesn't learn the hours it's paused. For a workload Hybernate manages, what its operator found of its routing stands, as at its last pause, such as Services served by other workloads' pods. A workload not yet managed is judged by the ManagedWorkload opting it in would make, with <code>hybernate.io/wake</code> from its own annotations, then its namespace's, then the operator's <code>--default-wake</code>, as opting in reads it. Whether the doorman is on (<code>doorman.enabled</code>), and its NEG forwarder, are read from the flags of the operator that manages the namespace, whose Deployment <code>forecast</code> finds by its labels across the cluster, or, without access to list Deployments there, in the operator's namespace, <code>hybernate-system</code> or the one a ManagedWorkload's <code>hybernate.io/operator</code> annotation names; when it can't read one, it assumes Hybernate's defaults, the doorman on and the forwarder off, and says so in its notes, with why and the access that reads it. The JSON has it in <code>forecast.wakes</code>: <code>request</code>, <code>query</code>, <code>people</code>, and <code>noRequest</code>, why a request wouldn't wake it.</li>
 </ul>
 <p>A workload counts as used whenever its CPU is above <code>--cpu-threshold</code>, as the activity clock counts it; use that shows only in requests or activity annotations isn't in Prometheus.</p>
 <p>It reads Prometheus as <a href="#scan-a-cluster">scan</a> does, found in the cluster or at <code>--prometheus-url</code>, with the same <a href="#a-prometheus-elsewhere">flags</a> and <a href="#permissions">permissions</a>, and fails when there's no history to read. With less than two days of it, a day to learn from and a day to replay, it says so and when there will be enough, and, when Hybernate manages a workload, how to see its own forecast, which needs no history. It leaves out scan's notes on dependencies, GitOps tools and the cluster's infrastructure, which are about what pausing could free. It only reads.</p>
@@ -2649,11 +2677,12 @@
 <li>when it pauses: <code>pauses in 45m</code>, <code>pauses now</code> once it's <code>Idle</code>, with or without an <code>idlePolicy</code>, as after a pause request, and <code>would pause …</code> in dry-run; <code>pauses now, early: the forecast expects quiet until Fri 20:00 UTC</code> once the forecast has <a href="../../concepts/forecasting/#pausing-early">brought the pause forward</a>, or <code>expected</code> once that time has passed, as for a would-be pause in dry-run, which stays <code>Idle</code> until activity. After a GitOps tool undid its last pause, Hybernate waits an hour before pausing it again, which reads <code>pauses at 14:20 UTC (after GitOps conflict)</code>; see <a href="../../guides/gitops/#what-hybernate-does">GitOps tools</a>. Status is written every few minutes, so for up to 7 minutes after the time it showed, a workload still running reads <code>pauses soon</code>; after that, <code>overdue to pause</code>, which means something the table can't see holds it, and <code>kubectl describe managedworkload</code> says what</li>
 <li>why it won't pause yet, and until when: <code>held awake while preview-7/worker uses it</code> (its dependents, until they pause), <code>held awake for 2h (active-until)</code> (<code>hybernate.io/active-until</code> on the ManagedWorkload or the workload, as <code>wake --for</code> sets), or <code>held awake by the forecast: busy from 13:00 UTC</code> (the hour the forecast expects demand in)</li>
 <li>why it won't pause at all: <code>never pauses: no idlePolicy</code>, <code>never pauses: namespace protected</code>, <code>never pauses: part of Hybernate</code> (the operator's or the doorman's own Deployment), <code>never pauses: PVCs deleted on scale-down</code> (a StatefulSet whose <code>persistentVolumeClaimRetentionPolicy.whenScaled</code> is <code>Delete</code>), <code>nothing: labelled hybernate.io/ignore</code>, <code>nothing: workload not found</code>, <code>nothing: another ManagedWorkload has it</code>, <code>won't pause: dependsOn cycle</code>, <code>won't pause: no CPU metrics</code>, or <code>won't pause: Prometheus failing</code></li>
-<li>for a paused one, what wakes it: <code>wakes on a request or activity</code>, or <code>wakes on activity</code> without the doorman. When the forecast <a href="../../concepts/forecasting/#pausing-early">brought the pause forward</a>, before <code>idleAfter</code> ran out, it says so first, and until when the forecast expected quiet: <code>paused early: the forecast expected quiet until Fri 20:00 UTC; wakes on a request or activity</code></li>
+<li>for a paused one, what wakes it: <code>wakes on a request or activity</code>, <code>wakes on a click, a wake request or activity</code> for one whose doorman <a href="../../concepts/wake-on-request/#asking-before-waking">asks before waking</a> it, or <code>wakes on activity</code> without the doorman. When the forecast <a href="../../concepts/forecasting/#pausing-early">brought the pause forward</a>, before <code>idleAfter</code> ran out, it says so first, and until when the forecast expected quiet: <code>paused early: the forecast expected quiet until Fri 20:00 UTC; wakes on a request or activity</code></li>
 </ul>
 </li>
 <li><strong>FORECAST:</strong> whether the workload's <a href="../../concepts/forecasting/#when-it-acts">forecast</a> acts: <code>acting</code>; <code>learning</code>, with <code>acts from Oct 8</code> when the operator expects it to start, if the coming days repeat the last week it saw; <code>relearning</code>, after demand broke from what it had learned; or <code>not learning while paused:</code> and why, such as <code>no Service routes requests to it</code>, while it's paused with neither the doorman nor a <a href="../../guides/prometheus-signals/#while-the-workload-is-paused">Prometheus activity query</a> to see its demand; its <code>status.prediction.message</code> says how to fix it. <code>-</code> until the operator has recorded one. JSON gives the reason from <code>status.prediction.reason</code> in <code>forecast</code>, and <code>forecastStartsActing</code>.</li>
-<li><strong>Recent pauses and wakes,</strong> newest first, as far back as the cluster keeps events, or <code>--since</code>: each pause, and each wake with its cause, a request on a Service, an activity annotation (including <code>kubectl hybernate wake</code> and a dependent waking), the forecast, or a scale-up from outside Hybernate. Requests the doorman closed without reaching the workload are listed too, and a wake whose cause wasn't recorded, such as a hand-back when a namespace becomes protected, is listed by its <code>resumed</code> event alone. The table shows the latest 10; <code>-o json</code> has every one. The API server keeps events for an hour unless its <code>--event-ttl</code> says otherwise, so on most clusters that's what <code>status</code> can show.</li>
+<li><strong>Turned away while asleep,</strong> under the table, when a workload whose doorman asks before waking it turned requests away during its current or last pause: <code>preview-42/web   312 requests during the pause from 3h ago</code>. A person shown the page that asks isn't counted, so many mean something automated calls it, such as a monitor, a webhook or another service. <code>-o json</code> has them as <code>turnedAway</code>, from the ManagedWorkload's <code>status.turnedAway</code>; see <a href="../../concepts/wake-on-request/#what-it-turns-away">What it turns away</a>.</li>
+<li><strong>Recent pauses and wakes,</strong> newest first, as far back as the cluster keeps events, or <code>--since</code>: each pause, and each wake with its cause, a request on a Service, a wake request (including <code>kubectl hybernate wake</code>), an activity annotation (including a dependent waking), the forecast, or a scale-up from outside Hybernate. Requests the doorman closed without reaching the workload are listed too, and a wake whose cause wasn't recorded, such as a hand-back when a namespace becomes protected, is listed by its <code>resumed</code> event alone. The table shows the latest 10; <code>-o json</code> has every one. The API server keeps events for an hour unless its <code>--event-ttl</code> says otherwise, so on most clusters that's what <code>status</code> can show.</li>
 </ul>
 <div class="language-bash highlight"><pre><span></span><code><span id="__span-16-1"><a id="__codelineno-16-1" name="__codelineno-16-1" href="#__codelineno-16-1"></a>kubectl<span class="w"> </span>hybernate<span class="w"> </span>status<span class="w"> </span>--context<span class="w"> </span>staging<span class="w"> </span>-n<span class="w"> </span>preview-42
 </span><span id="__span-16-2"><a id="__codelineno-16-2" name="__codelineno-16-2" href="#__codelineno-16-2"></a>kubectl<span class="w"> </span>hybernate<span class="w"> </span>status<span class="w"> </span>--since<span class="w"> </span>1h<span class="w"> </span>-o<span class="w"> </span>json
@@ -2790,7 +2819,7 @@
 <div class="language-text highlight"><pre><span></span><code><span id="__span-22-1"><a id="__codelineno-22-1" name="__codelineno-22-1" href="#__codelineno-22-1"></a>pausing staging/my-api...
 </span><span id="__span-22-2"><a id="__codelineno-22-2" name="__codelineno-22-2" href="#__codelineno-22-2"></a>staging/my-api is Paused after 4s; a request to it, or kubectl hybernate wake, wakes it
 </span></code></pre></div>
-<p><code>pause</code> asks Hybernate to pause a workload now, instead of when its idle clock runs out: a preview environment at the end of the day, say. It's an ordinary pause, the same as an idle one: a request to the workload through the <a href="../../concepts/wake-on-request/">doorman</a>, <a href="../../concepts/idle-detection/#activity-annotations">activity</a>, <code>autoResume</code> or <a href="#wake-a-workload"><code>wake</code></a> wakes it. It works whether or not the workload has an <code>idlePolicy</code>. See <a href="../../guides/pause/#pause-now">Pause and Resume</a> for exactly what Hybernate does with the request.</p>
+<p><code>pause</code> asks Hybernate to pause a workload now, instead of when its idle clock runs out: a preview environment at the end of the day, say. It's an ordinary pause, the same as an idle one: a request to the workload through the <a href="../../concepts/wake-on-request/">doorman</a>, <a href="../../concepts/idle-detection/#activity-annotations">activity</a>, <code>autoResume</code> or <a href="#wake-a-workload"><code>wake</code></a> wakes it; with <a href="../../concepts/wake-on-request/#asking-before-waking"><code>wake: ask</code></a>, a person's click on its asleep page, not any request, and <code>pause</code> says so. It works whether or not the workload has an <code>idlePolicy</code>. On a ManagedWorkload Hybernate hasn't taken on yet, such as one created a moment ago, it waits until Hybernate has, since a request already on it then isn't acted on. See <a href="../../guides/pause/#pause-now">Pause and Resume</a> for exactly what Hybernate does with the request.</p>
 <div class="language-bash highlight"><pre><span></span><code><span id="__span-23-1"><a id="__codelineno-23-1" name="__codelineno-23-1" href="#__codelineno-23-1"></a><span class="c1"># Pause it even if the forecast expects it to be busy soon, without asking</span>
 </span><span id="__span-23-2"><a id="__codelineno-23-2" name="__codelineno-23-2" href="#__codelineno-23-2"></a>kubectl<span class="w"> </span>hybernate<span class="w"> </span>pause<span class="w"> </span>my-api<span class="w"> </span>-n<span class="w"> </span>staging<span class="w"> </span>--yes
 </span><span id="__span-23-3"><a id="__codelineno-23-3" name="__codelineno-23-3" href="#__codelineno-23-3"></a>
@@ -2900,7 +2929,7 @@
 <div class="language-text highlight"><pre><span></span><code><span id="__span-28-1"><a id="__codelineno-28-1" name="__codelineno-28-1" href="#__codelineno-28-1"></a>waking staging/my-api...
 </span><span id="__span-28-2"><a id="__codelineno-28-2" name="__codelineno-28-2" href="#__codelineno-28-2"></a>staging/my-api is Running after 23s
 </span></code></pre></div>
-<p><code>wake</code> marks the ManagedWorkload as active now by setting its <code>hybernate.io/last-activity</code> annotation, the same <a href="../../concepts/idle-detection/#activity-annotations">activity annotation</a> a developer portal would set. A paused workload wakes, along with the workloads it <a href="../../concepts/dependencies/">depends on</a>; a running one has its idle clock restarted. It then waits until the workload is Running.</p>
+<p><code>wake</code> asks Hybernate to wake the workload now, whatever its <a href="../../concepts/wake-on-request/">wake setting</a>, by setting the <code>hybernate.io/wake-requested</code> annotation on its ManagedWorkload to a fresh token, as any tool can; see <a href="../../guides/pause/#wake-now">Wake Now</a>, and <a href="../../guides/preview-environments/#waking-it-from-tooling">Public Preview Environments</a> for waking a preview from a pull request's workflow or a chat bot. A paused workload wakes, along with the workloads it <a href="../../concepts/dependencies/">depends on</a>; a running one has its idle clock restarted. It then waits for Hybernate's answer, in the ManagedWorkload's <code>WakeRequest</code> condition, and until the workload is Running. Another tool asking meanwhile replaces <code>wake</code>'s token with its own, and Hybernate's answer to that one stands for both.</p>
 <div class="language-bash highlight"><pre><span></span><code><span id="__span-29-1"><a id="__codelineno-29-1" name="__codelineno-29-1" href="#__codelineno-29-1"></a><span class="c1"># Keep it awake for the next two hours, e.g. for a demo</span>
 </span><span id="__span-29-2"><a id="__codelineno-29-2" name="__codelineno-29-2" href="#__codelineno-29-2"></a>kubectl<span class="w"> </span>hybernate<span class="w"> </span>wake<span class="w"> </span>my-api<span class="w"> </span>-n<span class="w"> </span>staging<span class="w"> </span>--for<span class="w"> </span>2h
 </span><span id="__span-29-3"><a id="__codelineno-29-3" name="__codelineno-29-3" href="#__codelineno-29-3"></a>
@@ -2931,20 +2960,20 @@
 </tr>
 <tr>
 <td><code>Idle</code></td>
-<td>Marked active, so it stays up</td>
+<td>Its idle clock restarts, so it stays up</td>
 </tr>
 <tr>
 <td><code>Running</code></td>
-<td>Already running; its idle clock restarts, and <code>wake</code> returns at once</td>
+<td>Already running; its idle clock restarts, and <code>wake</code> returns once Hybernate has answered</td>
 </tr>
 <tr>
 <td>dry-run, not paused</td>
-<td>Never paused; its idle clock restarts, and <code>wake</code> returns at once</td>
+<td>Never paused; its idle clock restarts, and <code>wake</code> returns once Hybernate has answered</td>
 </tr>
 </tbody>
 </table>
-<p>It refuses, and says why, when activity can't wake the workload: the workload doesn't exist or is labelled <code>hybernate.io/ignore</code>, or another ManagedWorkload manages it.</p>
-<p>If the workload isn't <code>Running</code> within <code>--timeout</code>, <code>wake</code> exits 1 with its phase and the <code>kubectl describe</code> command that says why.</p>
+<p>It refuses, and says why, before asking, when Hybernate isn't managing the workload: it doesn't exist or is labelled <code>hybernate.io/ignore</code>, or another ManagedWorkload manages it. When Hybernate answers that it won't wake it, <code>wake</code> exits 1 with Hybernate's reason, such as <code>preview-42/api wasn't woken: it's scaled to zero outside Hybernate, which leaves it off until its replicas are set above zero</code>; the reasons are in <a href="../../guides/pause/#wake-now">Wake Now</a>.</p>
+<p>If the workload isn't <code>Running</code> within <code>--timeout</code>, <code>wake</code> exits 1 with its phase, whether Hybernate had taken the request up, and the <code>kubectl describe</code> command that says why. The timeout covers the whole wait, Hybernate's answer and then <code>Running</code>, and a request made while a pause or a wake is under way is answered only once that finishes; for a workload that takes longer than 5 minutes to start, raise it, such as <code>--timeout 10m</code>. Hybernate not taking it up at all usually means its operator isn't running.</p>
 <table>
 <thead>
 <tr>
@@ -2971,7 +3000,7 @@
 <td><code>--wait</code></td>
 <td></td>
 <td><code>true</code></td>
-<td>Wait until the workload is Running</td>
+<td>Wait for Hybernate's answer, and then until the workload is Running</td>
 </tr>
 <tr>
 <td><code>--timeout</code></td>

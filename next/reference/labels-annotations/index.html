@@ -93,7 +93,7 @@
             <div class="md-banner__inner md-grid md-typeset">
               
   
-    These docs are for Hybernate 0.2.0-rc.6, a release candidate, and may change before it's released.
+    These docs are for Hybernate 0.2.0-rc.7, a release candidate, and may change before it's released.
   
   <a href="../../.."><strong>Read the docs for the latest release.</strong></a>
 
@@ -892,6 +892,34 @@
     
   
     Opting In
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../guides/preview-environments/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Public Preview Environments
   
 
     
@@ -1918,7 +1946,7 @@
 <div class="language-bash highlight"><pre><span></span><code><span id="__span-2-1"><a id="__codelineno-2-1" name="__codelineno-2-1" href="#__codelineno-2-1"></a>kubectl<span class="w"> </span>get<span class="w"> </span>managedworkloads<span class="w"> </span>-l<span class="w"> </span>hybernate.io/from-label<span class="o">=</span><span class="nb">true</span><span class="w"> </span>--all-namespaces
 </span></code></pre></div>
 <h2 id="settings-annotations">Settings Annotations<a class="headerlink" href="#settings-annotations" title="Permanent link">&para;</a></h2>
-<p>Set on an opted-in Deployment or StatefulSet, or on its Namespace to apply to every workload in it. Each setting is the first value that can be read from: the workload's annotation, its namespace's, the <a href="../helm-values/#opt-in-defaults">Helm defaults</a> (only <code>idle-after</code>, <code>cpu-threshold</code>, <code>dry-run</code>, <code>pause-early</code> and <code>forecast</code> have one), and the built-in default. See <a href="../../guides/opt-in/#settings">Opting In</a>.</p>
+<p>Set on an opted-in Deployment or StatefulSet, or on its Namespace to apply to every workload in it. Each setting is the first value that can be read from: the workload's annotation, its namespace's, the <a href="../helm-values/#opt-in-defaults">Helm defaults</a> (only <code>idle-after</code>, <code>cpu-threshold</code>, <code>dry-run</code>, <code>pause-early</code>, <code>forecast</code> and <code>wake</code> have one), and the built-in default. See <a href="../../guides/opt-in/#settings">Opting In</a>.</p>
 <table>
 <thead>
 <tr>
@@ -1957,7 +1985,7 @@
 <td><code>hybernate.io/pause-early</code></td>
 <td>exactly <code>"true"</code> or <code>"false"</code></td>
 <td><code>"false"</code></td>
-<td>Pause before <code>idle-after</code> runs out, once idle for 20 minutes, when a confident forecast expects the hours until then to be quiet and a request would wake the workload through the doorman. Sets <code>spec.idlePolicy.pauseEarly</code>. See <a href="../../concepts/forecasting/#pausing-early">Pausing Early</a></td>
+<td>Pause before <code>idle-after</code> runs out, once idle for 20 minutes, when a confident forecast expects the hours until then to be quiet and a request would wake the workload through the doorman, so never with <code>wake: ask</code>. Sets <code>spec.idlePolicy.pauseEarly</code>. See <a href="../../concepts/forecasting/#pausing-early">Pausing Early</a></td>
 </tr>
 <tr>
 <td><code>hybernate.io/forecast</code></td>
@@ -1972,10 +2000,10 @@
 <td>Workloads this one needs. An empty value declares none, so a workload can drop its namespace's. On a namespace, it leaves out the workloads it names, and those they depend on by their own <code>depends-on</code>, which are dependencies rather than dependents. One in another namespace needs that namespace's <code>hybernate.io/dependents-from</code></td>
 </tr>
 <tr>
-<td><code>hybernate.io/wake-on-request</code></td>
-<td>exactly <code>"true"</code> or <code>"false"</code></td>
-<td><code>"true"</code></td>
-<td>Wake when a request reaches the workload's Service</td>
+<td><code>hybernate.io/wake</code></td>
+<td>exactly <code>"request"</code> or <code>"ask"</code></td>
+<td><code>"request"</code></td>
+<td>What wakes the paused workload through the doorman: any request, or, with <code>ask</code>, only a person who clicks <strong>Wake it</strong> on the page the doorman shows a browser; everything else gets a <code>503</code> and wakes nothing. Sets <code>spec.wake.mode</code> to <code>Request</code> or <code>Ask</code>. See <a href="../../concepts/wake-on-request/#asking-before-waking">Asking before waking</a></td>
 </tr>
 <tr>
 <td><code>hybernate.io/wake-max-wait</code></td>
@@ -1994,6 +2022,7 @@
 <p>A value that can't be read, such as <code>"True"</code>, <code>"yes"</code>, <code>"soon"</code> or <code>"0"</code>, is reported in an <code>InvalidSetting</code> warning event on the workload and skipped: the setting comes from the next place in the order above, never from the default in place of a namespace's value, and the other settings still apply. Two exceptions:</p>
 <ul>
 <li><strong><code>dry-run</code></strong>: a value that can't be read turns dry-run on, wherever it is, since a typo in the setting meant to stop pauses must never start them.</li>
+<li><strong><code>wake</code></strong>: a value that can't be read, such as <code>"Ask"</code> or <code>"true"</code>, has the doorman ask, wherever it is, since a typo must never let crawlers wake a workload meant to wake only for people.</li>
 <li><strong><code>depends-on</code></strong>: an entry that can't be read is skipped and the rest apply; only a value with no readable entry at all falls through to the namespace's.</li>
 </ul>
 <h2 id="activity-annotations">Activity Annotations<a class="headerlink" href="#activity-annotations" title="Permanent link">&para;</a></h2>
@@ -2023,13 +2052,19 @@
 <td><code>hybernate.io/last-request</code></td>
 <td>RFC 3339 time</td>
 <td>ManagedWorkloads</td>
-<td>Set by the doorman when it holds a request for a paused workload, and, with <code>doorman.admissionPolicy.enabled</code>, by no one else; set <code>last-activity</code> to wake a workload yourself. Wakes it like <code>last-activity</code>, and the clock records the wake as <code>request</code>. See <a href="../../concepts/wake-on-request/">Wake on Request</a></td>
+<td>Set by the doorman when it holds a request for a paused workload, and, with <code>doorman.admissionPolicy.enabled</code>, by no one else; set <code>hybernate.io/wake-requested</code> to wake a workload yourself. Wakes it like <code>last-activity</code>, and the clock records the wake as <code>request</code>. See <a href="../../concepts/wake-on-request/">Wake on Request</a></td>
 </tr>
 <tr>
 <td><code>hybernate.io/last-request-from</code></td>
 <td>IP address</td>
 <td>ManagedWorkloads</td>
 <td>Set by the doorman with <code>last-request</code>, and by no one else, like it: where the request that woke the workload came from, so the operator can <a href="../../concepts/dependencies/#learned-dependencies">learn</a> which workload depends on it</td>
+</tr>
+<tr>
+<td><code>hybernate.io/turned-away</code></td>
+<td>JSON, set by the doorman</td>
+<td>ManagedWorkloads</td>
+<td>Where the doorman counts the requests it turned away during a pause, for a workload with <code>wake.mode: Ask</code>; the operator copies it into <code>status.turnedAway</code>. Don't set or edit it. See <a href="../../concepts/wake-on-request/#what-it-turns-away">What it turns away</a></td>
 </tr>
 </tbody>
 </table>
@@ -2056,6 +2091,12 @@
 <td><code>"true"</code></td>
 <td>ManagedWorkloads</td>
 <td>With a pause request, pauses the workload even when a confident forecast expects demand within the hour; without it, such a request is declined, saying when. It applies to the request it comes with, so set or remove it with every request; <code>kubectl hybernate pause --yes</code> sets it. See <a href="../../guides/pause/#pause-now">Pause Now</a></td>
+</tr>
+<tr>
+<td><code>hybernate.io/wake-requested</code></td>
+<td>any value that differs from the last request's, such as the time</td>
+<td>ManagedWorkloads</td>
+<td>Asks Hybernate to wake the workload now, whatever its <code>wake</code> setting, as a pull request bot, a portal or a chat command does for someone; set by <code>kubectl hybernate wake</code>. An awake one has its idle clock restarted. Each value is acted on once and recorded in <code>status.lastWakeRequest</code>, and the <code>WakeRequest</code> condition says what came of it. An annotation, so a GitOps tool that owns the spec leaves it alone. See <a href="../../guides/pause/#wake-now">Wake Now</a></td>
 </tr>
 <tr>
 <td><code>hybernate.io/dependents-from</code></td>

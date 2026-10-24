@@ -93,7 +93,7 @@
             <div class="md-banner__inner md-grid md-typeset">
               
   
-    These docs are for Hybernate 0.2.0-rc.6, a release candidate, and may change before it's released.
+    These docs are for Hybernate 0.2.0-rc.7, a release candidate, and may change before it's released.
   
   <a href="../../.."><strong>Read the docs for the latest release.</strong></a>
 
@@ -912,6 +912,34 @@
   
   
     <li class="md-nav__item">
+      <a href="../../guides/preview-environments/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Public Preview Environments
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
       <a href="../../guides/managed-workload/" class="md-nav__link">
         
   
@@ -1684,6 +1712,17 @@
 </li>
         
           <li class="md-nav__item">
+  <a href="#wake-it-doesnt-wake-the-workload" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Wake it doesn't wake the workload
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
   <a href="#a-dependency-isnt-held-awake-woken-or-waited-for" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -2084,6 +2123,17 @@
 </li>
         
           <li class="md-nav__item">
+  <a href="#wake-it-doesnt-wake-the-workload" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Wake it doesn't wake the workload
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
   <a href="#a-dependency-isnt-held-awake-woken-or-waited-for" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -2367,7 +2417,7 @@
 <h3 id="waking-a-workload-by-hand">Waking a workload by hand<a class="headerlink" href="#waking-a-workload-by-hand" title="Permanent link">&para;</a></h3>
 <div class="language-bash highlight"><pre><span></span><code><span id="__span-6-1"><a id="__codelineno-6-1" name="__codelineno-6-1" href="#__codelineno-6-1"></a>kubectl<span class="w"> </span>hybernate<span class="w"> </span>wake<span class="w"> </span>my-api<span class="w"> </span>-n<span class="w"> </span>staging
 </span></code></pre></div>
-<p>It waits until the workload is Running, or tells you why it can't wake it. See the <a href="../../getting-started/kubectl-plugin/#wake-a-workload">kubectl plugin</a>.</p>
+<p>It wakes the workload whatever its wake setting, and waits until it's Running, or tells you why Hybernate won't wake it. The answer to the last request stays in the <code>WakeRequest</code> condition until the next, as for a pause below: <code>False</code>, with a message starting <code>not woken at</code> and the time, gives the reason. See <a href="../../guides/pause/#wake-now">Wake Now</a> and the <a href="../../getting-started/kubectl-plugin/#wake-a-workload">kubectl plugin</a>.</p>
 <h3 id="pausing-a-workload-by-hand">Pausing a workload by hand<a class="headerlink" href="#pausing-a-workload-by-hand" title="Permanent link">&para;</a></h3>
 <div class="language-bash highlight"><pre><span></span><code><span id="__span-7-1"><a id="__codelineno-7-1" name="__codelineno-7-1" href="#__codelineno-7-1"></a>kubectl<span class="w"> </span>hybernate<span class="w"> </span>pause<span class="w"> </span>my-api<span class="w"> </span>-n<span class="w"> </span>staging
 </span></code></pre></div>
@@ -2375,13 +2425,12 @@
 <div class="language-bash highlight"><pre><span></span><code><span id="__span-8-1"><a id="__codelineno-8-1" name="__codelineno-8-1" href="#__codelineno-8-1"></a>kubectl<span class="w"> </span>get<span class="w"> </span>managedworkload<span class="w"> </span>my-api<span class="w"> </span>-n<span class="w"> </span>staging<span class="w"> </span><span class="se">\</span>
 </span><span id="__span-8-2"><a id="__codelineno-8-2" name="__codelineno-8-2" href="#__codelineno-8-2"></a><span class="w">  </span>-o<span class="w"> </span><span class="nv">jsonpath</span><span class="o">=</span><span class="s1">'{.status.conditions[?(@.type=="PauseRequest")]}'</span>
 </span></code></pre></div>
-<p><code>True</code> is <code>Paused</code>, or <code>AlreadyPaused</code> when it was paused already. <code>False</code>, with a message starting <code>not paused at</code> and the time, gives the reason: a confident forecast expects demand within the hour (<code>ForecastExpectsDemand</code>; <code>kubectl hybernate pause --yes</code> pauses it anyway), workloads that depend on it are awake (<code>HeldByDependents</code>) or it's in a <code>dependsOn</code> cycle (<code>DependencyCycle</code>), a <code>hybernate.io/active-until</code> annotation holds it (<code>ActiveUntil</code>), it's in dry-run (<code>DryRun</code>) or protected (<code>Protected</code>), it's scaled to zero already (<code>ScaledToZero</code>), or its target is missing, ignored or managed by another ManagedWorkload (<code>TargetNotFound</code>, <code>TargetIgnored</code>, <code>DuplicateTarget</code>). Each request is answered once: fix the reason, then run <code>pause</code> again. See <a href="../../guides/pause/#pause-now">Pause Now</a>.</p>
+<p><code>True</code> is <code>Paused</code>, or <code>AlreadyPaused</code> when it was paused already. <code>False</code>, with a message starting <code>not paused at</code> and the time, gives the reason: a confident forecast expects demand within the hour (<code>ForecastExpectsDemand</code>; <code>kubectl hybernate pause --yes</code> pauses it anyway), workloads that depend on it are awake (<code>HeldByDependents</code>) or it's in a <code>dependsOn</code> cycle (<code>DependencyCycle</code>), a <code>hybernate.io/active-until</code> annotation holds it (<code>ActiveUntil</code>), it's in dry-run (<code>DryRun</code>) or protected (<code>Protected</code>), it's scaled to zero already (<code>ScaledToZero</code>), or its target is missing, ignored or managed by another ManagedWorkload (<code>TargetNotFound</code>, <code>TargetIgnored</code>, <code>DuplicateTarget</code>), or the request was already on the ManagedWorkload as Hybernate took it on, as after a backup restored without status (<code>PredatesStatus</code>). Each request is answered once: fix the reason, then run <code>pause</code> again. See <a href="../../guides/pause/#pause-now">Pause Now</a>.</p>
 <h3 id="requests-to-a-paused-workload-fail-instead-of-waking-it">Requests to a paused workload fail instead of waking it<a class="headerlink" href="#requests-to-a-paused-workload-fail-instead-of-waking-it" title="Permanent link">&para;</a></h3>
 <div class="language-bash highlight"><pre><span></span><code><span id="__span-9-1"><a id="__codelineno-9-1" name="__codelineno-9-1" href="#__codelineno-9-1"></a>kubectl<span class="w"> </span>get<span class="w"> </span>managedworkload<span class="w"> </span>my-api<span class="w"> </span>-n<span class="w"> </span>staging<span class="w"> </span><span class="se">\</span>
 </span><span id="__span-9-2"><a id="__codelineno-9-2" name="__codelineno-9-2" href="#__codelineno-9-2"></a><span class="w">  </span>-o<span class="w"> </span><span class="nv">jsonpath</span><span class="o">=</span><span class="s1">'{.status.conditions[?(@.type=="WakeOnRequest")]}'</span>
 </span></code></pre></div>
 <ul>
-<li><strong><code>TurnedOff</code></strong>: its <code>wake.onRequest</code> is <code>false</code>, or <code>hybernate.io/wake-on-request: "false"</code> when it's opted in with the label, so it doesn't wake on request.</li>
 <li><strong>No condition, or <code>NotPaused</code></strong>: the workload isn't paused, so nothing is routed yet.</li>
 <li><strong>A message starting <code>at its last pause:</code></strong>: the workload is awake now, and what follows is what its last pause found with its Services. The next pause meets it again unless it's fixed, so fix it now, by the reason below.</li>
 <li><strong><code>NoServices</code></strong>: no Service with a selector and a ClusterIP selects the workload's pods on a TCP port, or every such port is in <code>hybernate.io/doorman-ignore-ports</code>. Headless Services aren't routed; see <a href="../../concepts/wake-on-request/#when-a-workload-isnt-routed">Wake on Request</a>. A workload no request reaches, such as a queue worker, can wake on a <a href="../../guides/prometheus-signals/#while-the-workload-is-paused">Prometheus activity query</a> instead.</li>
@@ -2399,7 +2448,12 @@
 </ul>
 <p>If the condition is <code>DoormanRouted</code> but requests still fail:</p>
 <ul>
-<li><strong>The request is closed after a while with no response</strong>: the workload didn't become Ready within <code>wake.maxWait</code>, or its pods couldn't be reached. A <code>RequestNotServed</code> warning event says which, and <code>hybernate_doorman_wakes_total{result=~"timeout|error"}</code> counts these. Raise <code>maxWait</code>, or check why the pods are slow to become Ready.</li>
+<li>
+<p><strong>A <code>503</code> whose body says the environment is asleep, and how to wake it</strong>: the workload's <code>wake.mode</code> is <code>Ask</code>, so the doorman wakes it only for a person who clicks <strong>Wake it</strong> on the page it shows a browser, or for <code>hybernate.io/wake-requested</code> and <code>kubectl hybernate wake</code>. That's what it's for: see <a href="../../concepts/wake-on-request/#asking-before-waking">Asking before waking</a>. If something that isn't a browser must wake it, such as another service or a webhook, set <code>wake.mode: Request</code>, or <code>hybernate.io/wake: request</code> with the label. <code>status.turnedAway</code> counts these requests.</p>
+</li>
+<li>
+<p><strong>The request is closed after a while with no response</strong>: the workload didn't become Ready within <code>wake.maxWait</code>, or its pods couldn't be reached. A <code>RequestNotServed</code> warning event says which, and <code>hybernate_doorman_wakes_total{result=~"timeout|error"}</code> counts these. Raise <code>maxWait</code>, or check why the pods are slow to become Ready.</p>
+</li>
 <li><strong>The connection is closed at once, with nothing sent</strong>: a <a href="../../concepts/wake-on-request/#limits">limit</a> on held connections or wakes was hit; <code>hybernate_doorman_wakes_total{result="limited"}</code> counts these.</li>
 <li><strong>An error from the app itself, such as a <code>503</code> with the app's own body, on the first requests after a wake</strong>: its pods were Ready before it could answer, as a pod with no readiness probe is as soon as its containers start. A <code>NoReadinessProbe</code> warning event, and the <code>WakeOnRequest</code> message, say when that's so. Give the app a readiness probe that passes only once it can serve; see <a href="../../concepts/wake-on-request/#readiness-probes">Readiness probes</a>.</li>
 <li><strong>A <code>503</code> with no body</strong>: the caller's <code>User-Agent</code> looks like a health check or scraper, such as <code>kube-probe/</code> or <code>Prometheus/</code>, which the doorman never lets wake a workload. It answers them this way only while none of the workload's pods is Ready.</li>
@@ -2411,8 +2465,17 @@
 </ul>
 <p>The doorman's logs name the workload and Service for each held connection: <code>kubectl logs -n hybernate-system -l control-plane=doorman</code> (use the namespace you installed into).</p>
 <h3 id="workload-keeps-cycling-between-paused-and-running">Workload keeps cycling between paused and running<a class="headerlink" href="#workload-keeps-cycling-between-paused-and-running" title="Permanent link">&para;</a></h3>
-<p>Something keeps waking it. Check the events for <code>WokeByActivity</code> (an activity annotation changed since the pause, or a held request: <code>WokenByRequest</code> names the Service) or <code>AutoResume</code> (the forecast expected demand). A health check or monitor that calls the Service on a timer and sends a request wakes the workload each time. The doorman already ignores connections that close without sending anything, and HTTP requests from common probes and scrapers (see <a href="../../concepts/wake-on-request/#what-wakes-a-workload-and-what-doesnt">Wake on Request</a>); for anything else, point it elsewhere, list its port in <code>hybernate.io/doorman-ignore-ports</code> on the Service, or opt the workload out with <code>wake.onRequest: false</code> (<code>hybernate.io/wake-on-request: "false"</code>). A tool that refreshes <code>hybernate.io/last-activity</code> on a timer, rather than on real use, will keep waking the workload.</p>
+<p>Something keeps waking it. Check the events for <code>WokeByActivity</code> (an activity annotation changed since the pause, or a held request: <code>WokenByRequest</code> names the Service) or <code>AutoResume</code> (the forecast expected demand). A health check or monitor that calls the Service on a timer and sends a request wakes the workload each time. The doorman already ignores connections that close without sending anything, and HTTP requests from common probes and scrapers (see <a href="../../concepts/wake-on-request/#what-wakes-a-workload-and-what-doesnt">Wake on Request</a>); for anything else, point it elsewhere, or list its port in <code>hybernate.io/doorman-ignore-ports</code> on the Service. On a public URL, where crawlers and scanners wake it, have the doorman <a href="../../concepts/wake-on-request/#asking-before-waking">ask before waking</a> it, with <code>wake.mode: Ask</code> (<code>hybernate.io/wake: ask</code>), so only a person's click does. A tool that refreshes <code>hybernate.io/last-activity</code> on a timer, rather than on real use, will keep waking the workload.</p>
 <p><code>ScaledUp</code> means something scaled it up outside Hybernate, named in the event and <code>status.lastScaledUp</code>. If it's a GitOps tool, the workload also reports <code>GitOpsConflict=True</code>: it sets the replicas from Git and will undo every pause until it's told to leave them; see <a href="../../guides/gitops/">GitOps tools</a>.</p>
+<h3 id="wake-it-doesnt-wake-the-workload">Wake it doesn't wake the workload<a class="headerlink" href="#wake-it-doesnt-wake-the-workload" title="Permanent link">&para;</a></h3>
+<p>With <code>wake.mode: Ask</code>, a click on the asleep page's <strong>Wake it</strong> button wakes the workload and shows the waking-up page. When the asleep page comes back instead, its notice says why:</p>
+<ul>
+<li><strong>"That page had expired"</strong>: the page's token expired because its reloads failed, as after a laptop slept, since the page reloads with a fresh one every minute; or it was shown during an earlier pause; or the click came from a page of another site. Over plain HTTP, it also means the click's <code>Origin</code> isn't the address the doorman saw the page at, the one at the top of the page, as when a proxy in front of it rewrites the <code>Host</code> header, such as ingress-nginx's <code>upstream-vhost</code>; pass the browser's <code>Host</code> on, or serve the preview over HTTPS. Click the button on the page shown now. If it keeps coming back with this notice, the doorman's replicas may be signing with different keys: their logs say <code>loading the key the Wake it button is signed with</code> when they can't read the wake key Secret, <code>hybernate-doorman-wake-key</code> in the Hybernate namespace. Check it exists and the doorman's Role still allows reading it; with the Kustomize manifests, or your own, include the Secret and its Role.</li>
+<li><strong>"This browser didn't say the click came from this page"</strong>: the click came with neither <code>Sec-Fetch-Site</code> nor an <code>Origin</code>, or with <code>Origin: null</code>, as some browsers from before about 2020 send it, so the doorman can't tell it from a spider posting the page's token. Open it in a current browser, or wake it with <code>kubectl hybernate wake</code> or the <code>hybernate.io/wake-requested</code> annotation. If a current browser gets this, something between the browser and the doorman drops those headers, or a browser extension does: ingress-nginx and most proxies pass them on as they are. See <a href="../../concepts/wake-on-request/#what-browsers-robots-and-api-clients-see">What browsers, robots and API clients see</a>.</li>
+<li><strong>"It was asked to wake less than a minute ago"</strong>: a click wakes a workload at most once a minute. Try again shortly.</li>
+<li><strong>"It couldn't be woken just now"</strong>: the doorman couldn't stamp the wake, such as when the API server didn't answer, or a wake rate limit was hit. Its logs say which.</li>
+</ul>
+<p>A browser that gets a plain-text <code>503</code> instead of the page doesn't look like a person's browser to the doorman: its <code>User-Agent</code> names a crawler or a headless browser, or doesn't start with <code>Mozilla/</code>. Wake it with <code>kubectl hybernate wake</code> or <code>hybernate.io/wake-requested</code> instead.</p>
 <h3 id="a-dependency-isnt-held-awake-woken-or-waited-for">A dependency isn't held awake, woken or waited for<a class="headerlink" href="#a-dependency-isnt-held-awake-woken-or-waited-for" title="Permanent link">&para;</a></h3>
 <div class="language-bash highlight"><pre><span></span><code><span id="__span-10-1"><a id="__codelineno-10-1" name="__codelineno-10-1" href="#__codelineno-10-1"></a>kubectl<span class="w"> </span>hybernate<span class="w"> </span>deps<span class="w"> </span>my-api<span class="w"> </span>-n<span class="w"> </span>preview-42
 </span></code></pre></div>
