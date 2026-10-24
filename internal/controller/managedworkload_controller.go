@@ -1194,11 +1194,28 @@ func (r *Reconciler) reconcileTargetMissing(ctx context.Context, workload *v1alp
 	return ctrl.Result{RequeueAfter: targetRecheckInterval}, nil
 }
 
+// workloadPhases are every phase the API allows a workload to be in.
+var workloadPhases = []v1alpha1.WorkloadPhase{
+	v1alpha1.PhaseCreating, v1alpha1.PhaseRunning, v1alpha1.PhaseIdle,
+	v1alpha1.PhasePausing, v1alpha1.PhasePaused, v1alpha1.PhaseResuming,
+}
+
+// recordPhase publishes the workload's phase as the only one it's in. The
+// phase can come from a cache that hasn't yet seen this operator's last
+// write, so the phase it replaces isn't always the one before it. Every
+// other phase is taken down by name, rather than all of the workload's
+// series at once, so a scrape never finds the workload in none.
 func recordPhase(workload *v1alpha1.ManagedWorkload) {
-	if workload.Status.Phase == "" {
+	phase := workload.Status.Phase
+	if phase == "" {
 		return
 	}
-	metrics.WorkloadPhase.WithLabelValues(workload.Namespace, workload.Name, string(workload.Status.Phase)).Set(1)
+	for _, other := range workloadPhases {
+		if other != phase {
+			metrics.WorkloadPhase.DeleteLabelValues(workload.Namespace, workload.Name, string(other))
+		}
+	}
+	metrics.WorkloadPhase.WithLabelValues(workload.Namespace, workload.Name, string(phase)).Set(1)
 }
 
 const (
@@ -1588,7 +1605,6 @@ func (r *Reconciler) transition(ctx context.Context, workload *v1alpha1.ManagedW
 		return fmt.Errorf("updating phase to %s: %w", phase, err)
 	}
 	r.phaseWrites.record(workload.UID, now.Time)
-	metrics.WorkloadPhase.DeleteLabelValues(workload.Namespace, workload.Name, string(old))
 	recordPhase(workload)
 	metrics.LifecycleTransitions.WithLabelValues(string(old), string(phase)).Inc()
 	logger.Info("phase transition", "from", old, "to", phase, "reason", reason)
