@@ -159,7 +159,7 @@ func (r scanResult) nodePricing() nodePricing {
 // What a pricing's prices are.
 const (
 	pricedAtList  = "list"
-	pricedYours   = "custom"
+	pricedYours   = "yours"
 	pricedAssumed = "assumed"
 )
 

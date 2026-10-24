@@ -181,19 +181,20 @@ func buildStatusPage(result statusResult, since time.Duration, now time.Time) st
 // measured pausing would have freed.
 func statusFigures(result statusResult) []figure {
 	saved := figure{Value: dollars(result.SavedThisMonth), Label: "saved of it",
-		Detail: "what came off the bill as nodes scaled down"}
+		Detail: "what came off the bill as nodes scaled down", Kind: figureSaved, Amount: result.SavedThisMonth}
 	if len(result.SavingsUnknown) > 0 {
 		saved.Detail = "for the workloads whose savings can be measured"
 	}
 	figures := []figure{
 		{Value: dollars(result.FreedThisMonth), Label: "freed by pausing this month",
-			Detail: "what the paused replicas request, at list price"},
+			Detail: "what the paused replicas request, at list price", Kind: figureFreed,
+			Amount: result.FreedThisMonth},
 		saved,
 	}
 	if n, since := dryRunMeasured(result.Workloads); n > 0 && since != nil {
 		figures = append(figures, figure{Value: dollars(result.WouldFree), Label: "pausing would have freed",
 			Detail: fmt.Sprintf("measured in dry-run since %s, for %s", since.Format("Jan 2"),
-				countOf(n, "workload"))})
+				countOf(n, "workload")), Kind: figureWouldHaveFreed, Amount: result.WouldFree})
 	}
 	return figures
 }

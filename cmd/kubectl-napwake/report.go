@@ -132,9 +132,23 @@ func termsFor(page reportPage) []term {
 	return terms
 }
 
+// figure is a headline amount. Kind says which it is, and Amount is it in
+// dollars, unrounded, so a page can tell figures apart and spot a zero
+// without reading Value or Label, which are worded for people.
 type figure struct {
 	Value, Label, Detail string
+	Kind                 string
+	Amount               float64
 }
+
+// What a figure counts.
+const (
+	figureFreed          = "freed"
+	figureCouldFree      = "couldFree"
+	figureCost           = "cost"
+	figureSaved          = "saved"
+	figureWouldHaveFreed = "wouldHaveFreed"
+)
 
 type fact struct {
 	Value, Label string
@@ -438,7 +452,7 @@ func headlineFor(result scanResult) (headline, []fact) {
 	if live {
 		h.Figures = append(h.Figures, figure{Value: dollars(t.FreedThisMonth), Label: "freed by Napwake this month",
 			Detail: fmt.Sprintf("so far, pausing %s; %s of it saved as nodes scaled down", freedBy(t),
-				dollars(t.SavedThisMonth))})
+				dollars(t.SavedThisMonth)), Kind: figureFreed, Amount: t.FreedThisMonth})
 	}
 	if f, ok := couldFree(result, live); ok {
 		h.Figures = append(h.Figures, f)
@@ -452,7 +466,8 @@ func headlineFor(result scanResult) (headline, []fact) {
 	cost := fact{Value: dollars(t.MonthlyCost), Label: "a month, what these workloads cost while running"}
 	facts := []fact{cost, idle}
 	if !live {
-		h.Figures = append(h.Figures, figure{Value: cost.Value, Label: cost.Label})
+		h.Figures = append(h.Figures, figure{Value: cost.Value, Label: cost.Label, Kind: figureCost,
+			Amount: t.MonthlyCost})
 		workloads := "workloads"
 		if t.Workloads == 1 {
 			workloads = "workload"
@@ -520,7 +535,7 @@ func couldFree(result scanResult, live bool) (figure, bool) {
 	switch {
 	case r.Sleepers > 0 || t.DryRun > 0:
 		could := r.MonthlyFreed + t.Measured.MonthlyFreed
-		f := figure{Value: dollars(could), Label: "could be freed a month"}
+		f := figure{Value: dollars(could), Label: "could be freed a month", Kind: figureCouldFree, Amount: could}
 		// The share is of what the workloads cost on the estimate's own
 		// basis. A workload that ran more pods in its history than it runs
 		// now would otherwise be shown freeing more than it costs.
@@ -549,7 +564,8 @@ func couldFree(result scanResult, live bool) (figure, bool) {
 		}
 		f := figure{Value: dollars(t.IdleMonthlyCost), Label: "could be freed a month, at most",
 			Detail: fmt.Sprintf("what the %s idle right now %s while running, %s an hour",
-				countOf(t.Idle, "workload"), costs, cents(t.IdleHourlyCost))}
+				countOf(t.Idle, "workload"), costs, cents(t.IdleHourlyCost)), Kind: figureCouldFree,
+			Amount: t.IdleMonthlyCost}
 		if short {
 			f.Detail += "; " + tooEarly
 		}
@@ -558,7 +574,8 @@ func couldFree(result scanResult, live bool) (figure, bool) {
 		return figure{}, false
 	}
 	f := figure{Value: dollars(0), Label: "could be freed a month",
-		Detail: "nothing is idle right now; Prometheus history, or measuring in dry-run, shows how often workloads are"}
+		Detail: "nothing is idle right now; Prometheus history, or measuring in dry-run, shows how often workloads are",
+		Kind:   figureCouldFree}
 	switch {
 	case short:
 		f.Detail = tooEarly
