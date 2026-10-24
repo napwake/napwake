@@ -298,3 +298,18 @@ func TestStatusPage_DoormanWhateverTheEventSays(t *testing.T) {
 
 	pageHas(t, got, `<p class="bldg-say">The doorman holds the door while deployment/web wakes.</p>`)
 }
+
+// A namespace shows what came off the bill under what pausing freed in it,
+// whenever it freed anything, whatever the amount reads.
+func TestReportPage_NamespaceSavedWhateverTheAmountReads(t *testing.T) {
+	page := buildReport(historyResult(), time.Hour)
+	for i := range page.Namespaces {
+		if page.Namespaces[i].Namespace == "preview-3" {
+			page.Namespaces[i].Freed = "$0"
+		}
+	}
+
+	got := renderReportPage(t, page)
+
+	pageHas(t, got, `$0<span class="sub">$1 saved</span>`, "preview-3's $3.50 freed, shown as reworded")
+}

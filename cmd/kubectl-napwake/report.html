@@ -712,7 +712,7 @@ html:not(.js) th { position: static; }
             <td class="n" data-v="{{.Workloads}}">{{.Workloads}}</td>
             <td class="n" data-v="{{.Idle}}">{{.Idle}}</td>
             <td class="n{{if not $.CouldFree}} bar{{end}}" data-v="{{.CostSort}}">{{.Cost}}</td>
-            {{if $.Freeing}}<td class="n" data-v="{{.FreedSort}}">{{.Freed}}{{if ne .Freed "$0"}}<span class="sub">{{.Saved}} saved</span>{{end}}</td>{{end}}
+            {{if $.Freeing}}<td class="n" data-v="{{.FreedSort}}">{{.Freed}}{{if .FreedSort}}<span class="sub">{{.Saved}} saved</span>{{end}}</td>{{end}}
             {{if $.CouldFree}}<td class="n bar" data-v="{{.CouldFreeSort}}">{{.CouldFree}}</td>{{end}}
           </tr>{{end}}
         </tbody>
