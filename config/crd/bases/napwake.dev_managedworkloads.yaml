@@ -1124,6 +1124,15 @@ spec:
                       workload is left off rather than scaled up again.
                     format: date-time
                     type: string
+                  routedAt:
+                    description: |-
+                      RoutedAt is when the doorman's EndpointSlices first stood in front of
+                      the workload's Services for this pause, beside its pods, which still
+                      served. It's scaled to zero a few seconds after, once proxies send new
+                      connections to the doorman too, so none is refused as the pods stop.
+                      Unset for a workload the doorman doesn't route.
+                    format: date-time
+                    type: string
                   scaledObject:
                     description: |-
                       ScaledObject is the KEDA ScaledObject held at zero while the workload
