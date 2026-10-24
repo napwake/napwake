@@ -19,12 +19,16 @@ package controller
 import (
 	"context"
 	"fmt"
+	"net"
+	"strconv"
 	"time"
 
+	discoveryv1 "k8s.io/api/discovery/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/controller-runtime/pkg/log"
 
 	v1alpha1 "github.com/napwake/napwake/api/v1alpha1"
 )
@@ -90,6 +94,61 @@ func (r *Reconciler) untilDoormanListens(ctx context.Context, workload *v1alpha1
 		return doormanListenWait, nil
 	}
 	return max(doormanListenWait-r.now().Sub(pause.RoutesWrittenAt.Time), 0), nil
+}
+
+// untilDoormanReady is how long a pausing workload's first doorman slices
+// wait: for every doorman replica to have had time to read its routes, then
+// for each to answer on them.
+func (r *Reconciler) untilDoormanReady(ctx context.Context, workload *v1alpha1.ManagedWorkload,
+	endpoints map[discoveryv1.AddressType][]discoveryv1.Endpoint) (time.Duration, error) {
+	if wait, err := r.untilDoormanListens(ctx, workload); err != nil || wait > 0 {
+		return wait, err
+	}
+	return r.untilDoormanAnswers(ctx, workload, endpoints), nil
+}
+
+// doormanDialTimeout is how long a doorman replica is given to accept a
+// connection on a route's port before it's taken as not listening yet.
+const doormanDialTimeout = 500 * time.Millisecond
+
+// untilDoormanAnswers is how long a pausing workload's first doorman slices
+// wait for every Ready doorman replica to accept connections on the
+// workload's routes. The listen wait gives the replicas time to read the
+// routes, and this checks each did: a slow one, as on a busy node, would
+// refuse what its slice is sent while the pods still serve. A connection
+// that sends nothing is a TCP check to the doorman, which wakes nothing and
+// calls no pause off. It waits no longer than the scale-down does, which
+// untilFronted lets go on after doormanFrontLimit whatever this finds.
+func (r *Reconciler) untilDoormanAnswers(ctx context.Context, workload *v1alpha1.ManagedWorkload,
+	endpoints map[discoveryv1.AddressType][]discoveryv1.Endpoint) time.Duration {
+	pause := workload.Status.Pause
+	if r.DialDoorman == nil || workload.Status.Phase != v1alpha1.PhasePausing || pause == nil ||
+		pause.RoutedAt != nil || scaledDownByNapwake(workload) {
+		return 0
+	}
+	for _, family := range []discoveryv1.AddressType{discoveryv1.AddressTypeIPv4, discoveryv1.AddressTypeIPv6} {
+		for _, ep := range endpoints[family] {
+			for _, route := range workload.Status.Doorman {
+				addr := net.JoinHostPort(ep.Addresses[0], strconv.Itoa(int(route.DoormanPort)))
+				if err := r.DialDoorman(ctx, addr); err != nil {
+					log.FromContext(ctx).V(1).Info("a doorman replica doesn't answer on a pausing workload's route yet",
+						"workload", workload.Name, "namespace", workload.Namespace, "address", addr, "error", err.Error())
+					return staleCacheRetry
+				}
+			}
+		}
+	}
+	return 0
+}
+
+// DialTCP opens a TCP connection to addr and closes it, sending nothing.
+func DialTCP(ctx context.Context, addr string) error {
+	d := net.Dialer{Timeout: doormanDialTimeout}
+	conn, err := d.DialContext(ctx, "tcp", addr)
+	if err != nil {
+		return err
+	}
+	return conn.Close()
 }
 
 // untilFronted is how long a pausing workload's scale-down waits for the

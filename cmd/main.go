@@ -349,6 +349,7 @@ func main() {
 			PrometheusSelector:       selector,
 			DoormanService:           doormanService,
 			DoormanNamespace:         doormanNamespace,
+			DialDoorman:              controller.DialTCP,
 			DoormanPortsPerWorkload:  doormanPortsPerWorkload,
 			DoormanPortsPerNamespace: doormanPortsPerNamespace,
 			NEGForwarder:             forwarders,

@@ -307,7 +307,7 @@ func (r *Reconciler) reconcileDoorman(ctx context.Context, workload *v1alpha1.Ma
 	// on every retry.
 	r.recordDrains(workload, routes)
 	workload.Status.Doorman = routes
-	if wait, err := r.untilDoormanListens(ctx, workload); err != nil || wait > 0 {
+	if wait, err := r.untilDoormanReady(ctx, workload, endpoints); err != nil || wait > 0 {
 		return wait, err
 	}
 	fwd, fwdErr := r.reconcileForwarder(ctx, workload, target, plan.services, routes)
@@ -694,11 +694,15 @@ type doormanPlan struct {
 // them would be no use. Once every workload behind it is paused, it's
 // routed by each, so a request wakes one of them. For an awake workload,
 // planned ahead of its pause, and one pausing, its own pods serve its
-// Services until they stop, and aren't counted among those other pods.
+// Services until they stop, and aren't counted among those other pods; nor
+// are a paused one's, which are still stopping, and can be listed Ready for
+// a moment after the scale-down, while the cache may still show its target
+// as before it. One scaled up by hand doesn't stay Paused: wakeOnScaleUp,
+// which asks the API server, wakes it.
 func (r *Reconciler) planDoorman(ctx context.Context, workload *v1alpha1.ManagedWorkload, target client.Object,
 	endpoints map[discoveryv1.AddressType][]discoveryv1.Endpoint, awake bool) (doormanPlan, error) {
 	var own client.Object
-	if awake || workload.Status.Phase == v1alpha1.PhasePausing {
+	if awake || workload.Status.Phase == v1alpha1.PhasePausing || workload.Status.Phase == v1alpha1.PhasePaused {
 		own = target
 	}
 	podLabels := labels.Set(podTemplateLabels(target))

@@ -60,6 +60,13 @@ spec:
       {{- with .Values.doorman.networkPolicy.ingressFrom }}
       from:
         {{- toYaml . | nindent 8 }}
+        {{- /*
+        The operator checks every doorman replica answers on a pausing
+        workload's routes before sending its Services there.
+        */}}
+        - podSelector:
+            matchLabels:
+              {{- include "napwake.selectorLabels" $ | nindent 14 }}
         {{- if $.Values.doorman.negForwarder.enabled }}
         {{- /*
         Forwarders pass on the callers of paused workloads behind GKE NEGs,
