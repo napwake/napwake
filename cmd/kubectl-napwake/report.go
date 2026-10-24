@@ -79,12 +79,12 @@ type reportPage struct {
 	Method           []string
 	// NextSteps are the commands to opt a workload in, or nil for none.
 	NextSteps *nextSteps
-	Threshold        float64
-	IdleAfter        string
-	Over             string
-	Tips             tips
-	Terms            []term
-	Mark             string
+	Threshold float64
+	IdleAfter string
+	Over      string
+	Tips      tips
+	Terms     []term
+	Mark      string
 	// Unjudged is how many workloads the notes list instead of Workloads.
 	Unjudged int
 }
