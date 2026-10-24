@@ -512,3 +512,30 @@ func TestPause_AConflictStoringTheRoutesIsRetriedQuietly(t *testing.T) {
 	assert.Empty(t, doormanSlices(t, r))
 	assert.Zero(t, pauser.pauseCalls)
 }
+
+// The takeover is timed from the reconcile that put the doorman's slice in
+// place, not from the clock passing the listen wait: a reconcile whose
+// routing ran a moment before the wait ended put no slice in, so the pause
+// waits for the next to, and only then the takeover.
+func TestPause_TheTakeoverIsTimedFromTheSliceGoingIn(t *testing.T) {
+	r, pauser, now := pausingReconciler(t, nil)
+	reconcileAPI(t, r)
+	require.Equal(t, v1alpha1.PhasePausing, fetch(t, r, "api").Status.Phase)
+
+	*now = now.Add(doormanListenWait)
+	wait := r.untilFronted(fetch(t, r, "api"))
+	assert.Positive(t, wait)
+	assert.Less(t, wait, doormanTakeover, "the next reconcile puts the slice in")
+	assert.Nil(t, fetch(t, r, "api").Status.Pause.RoutedAt, "nothing stands in front of it yet")
+	assert.Empty(t, doormanSlices(t, r))
+
+	*now = now.Add(wait)
+	reconcileAPI(t, r)
+	require.Len(t, doormanSlices(t, r), 1)
+	require.NotNil(t, fetch(t, r, "api").Status.Pause.RoutedAt)
+	assert.Zero(t, pauser.pauseCalls, "proxies haven't seen the slice yet")
+
+	*now = now.Add(doormanTakeover)
+	reconcileAPI(t, r)
+	assert.Equal(t, 1, pauser.pauseCalls)
+}

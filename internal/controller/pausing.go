@@ -95,32 +95,53 @@ func (r *Reconciler) untilDoormanListens(ctx context.Context, workload *v1alpha1
 // untilFronted is how long a pausing workload's scale-down waits for the
 // doorman to stand in front of its Services, or zero once it may go ahead:
 // it's scaled down already, isn't routed, the doorman can't front it after
-// all, or it has waited doormanFrontLimit for it to. Once the doorman's
-// slices stand, from doormanListenWait after its routes were stored, the
-// pause always waits doormanTakeover from when they first did, which is
-// recorded in status, so neither a restart nor a late reconcile cuts the
-// wait short.
-func (r *Reconciler) untilFronted(ctx context.Context, workload *v1alpha1.ManagedWorkload) (time.Duration, error) {
+// all, or it has waited doormanFrontLimit for its routes to be listened on.
+// Once its routes are, the reconcile that puts the slices in place records
+// it in status.pause.routedAt, and the pause always waits doormanTakeover
+// from then, so neither a restart nor a late reconcile cuts the wait short.
+func (r *Reconciler) untilFronted(workload *v1alpha1.ManagedWorkload) time.Duration {
 	pause := workload.Status.Pause
 	if pause == nil || pause.PausedAt != nil || len(workload.Status.Doorman) == 0 {
-		return 0, nil
+		return 0
 	}
 	if pause.RoutedAt != nil {
-		return max(doormanTakeover-r.now().Sub(pause.RoutedAt.Time), 0), nil
+		return max(doormanTakeover-r.now().Sub(pause.RoutedAt.Time), 0)
 	}
 	listening := doormanListenWait
 	if pause.RoutesWrittenAt != nil {
 		listening = max(doormanListenWait-r.now().Sub(pause.RoutesWrittenAt.Time), 0)
 	}
-	if listening > 0 {
-		return min(listening, max(doormanFrontLimit-r.sinceTransition(workload), 0)), nil
+	frontLimit := max(doormanFrontLimit-r.sinceTransition(workload), 0)
+	switch {
+	case listening > 0:
+		return min(listening, frontLimit)
+	case meta.IsStatusConditionFalse(workload.Status.Conditions, conditionWakeOnRequest):
+		return 0
 	}
-	if !meta.IsStatusConditionTrue(workload.Status.Conditions, conditionWakeOnRequest) {
+	// Listened on, but this reconcile's routing came before the listen wait
+	// ended, or couldn't record the slices: the next puts them in place.
+	return min(staleCacheRetry, frontLimit)
+}
+
+// recordFronted records in status.pause.routedAt that the doorman's slices
+// now stand in front of a pausing workload, still up, for the first time
+// this pause, from which the scale-down waits doormanTakeover. A write that
+// conflicts is tried again soon.
+func (r *Reconciler) recordFronted(ctx context.Context, workload *v1alpha1.ManagedWorkload) (time.Duration, error) {
+	pause := workload.Status.Pause
+	if workload.Status.Phase != v1alpha1.PhasePausing || pause == nil || pause.RoutedAt != nil ||
+		scaledDownByNapwake(workload) {
 		return 0, nil
 	}
 	now := r.clockTime()
 	pause.RoutedAt = &now
-	if err := r.Status().Update(ctx, workload); err != nil {
+	err := r.Status().Update(ctx, workload)
+	switch {
+	case apierrors.IsConflict(err):
+		pause.RoutedAt = nil
+		return staleCacheRetry, nil
+	case err != nil:
+		pause.RoutedAt = nil
 		return 0, fmt.Errorf("recording the doorman in front of the workload: %w", err)
 	}
 	return doormanTakeover, nil

@@ -568,9 +568,7 @@ func (r *Reconciler) handlePause(ctx context.Context, workload *v1alpha1.Managed
 			return &ctrl.Result{RequeueAfter: recheck}, nil
 		}
 	case v1alpha1.PhasePausing:
-		if wait, err := r.untilFronted(ctx, workload); err != nil {
-			return nil, err
-		} else if wait > 0 {
+		if wait := r.untilFronted(workload); wait > 0 {
 			return &ctrl.Result{RequeueAfter: wait}, nil
 		}
 	default:

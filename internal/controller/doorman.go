@@ -361,9 +361,21 @@ func (r *Reconciler) reconcileDoorman(ctx context.Context, workload *v1alpha1.Ma
 		return 0, errors.Join(errs...)
 	}
 	plan.skipped.forwarder = fwd.unready
+	fronted, err := r.reportRouted(ctx, workload, target, routes, routed, plan.skipped)
+	return shortest(recheck, fronted), err
+}
+
+// reportRouted reports the routes the doorman's slices now stand in front
+// of, those of the Services in routed, and, for a workload pausing, records
+// it fronted once any do.
+func (r *Reconciler) reportRouted(ctx context.Context, workload *v1alpha1.ManagedWorkload, target client.Object,
+	routes []v1alpha1.DoormanRoute, routed map[string]bool, skipped skippedServices) (time.Duration, error) {
 	live := slices.DeleteFunc(slices.Clone(routes), func(rt v1alpha1.DoormanRoute) bool { return !routed[rt.Service] })
-	r.reportDoorman(ctx, workload, target, live, plan.skipped)
-	return recheck, nil
+	r.reportDoorman(ctx, workload, target, live, skipped)
+	if len(live) == 0 {
+		return 0, nil
+	}
+	return r.recordFronted(ctx, workload)
 }
 
 // lastingRoutingProblems are the WakeOnRequest reasons that come from how the
