@@ -529,6 +529,70 @@ func TestPause_AsksWhenTheForecastExpectsDemand(t *testing.T) {
 	}
 }
 
+// Hybernate answers a pause request already on a ManagedWorkload as it
+// takes it on as one from before its record began, and doesn't pause it,
+// so pause waits until a new ManagedWorkload is taken on before asking.
+func TestPause_WaitsForANewManagedWorkloadToBeTakenOn(t *testing.T) {
+	for _, phase := range []v1alpha1.WorkloadPhase{"", v1alpha1.PhaseCreating} {
+		t.Run(string(phase), func(t *testing.T) {
+			reads, takenOn := 0, false
+			askedBeforeTakenOn := false
+			funcs := interceptor.Funcs{
+				Get: func(ctx context.Context, c client.WithWatch, key client.ObjectKey, obj client.Object,
+					opts ...client.GetOption) error {
+					if err := c.Get(ctx, key, obj, opts...); err != nil {
+						return err
+					}
+					w, ok := obj.(*v1alpha1.ManagedWorkload)
+					if !ok {
+						return nil
+					}
+					reads++
+					switch {
+					case reads < 3:
+					case w.Annotations[v1alpha1.AnnotationPauseRequested] == "":
+						takenOn = true
+						w.Status.Phase = v1alpha1.PhaseRunning
+					default:
+						pauses(w)
+					}
+					return nil
+				},
+				Patch: func(ctx context.Context, c client.WithWatch, obj client.Object, patch client.Patch,
+					opts ...client.PatchOption) error {
+					if _, ok := obj.(*v1alpha1.ManagedWorkload); ok && !takenOn {
+						askedBeforeTakenOn = true
+					}
+					return c.Patch(ctx, obj, patch, opts...)
+				},
+			}
+			c := newClient(t, funcs, managedWorkload(phase))
+			opts := pauseOptions{wait: true, pollInterval: time.Millisecond, now: time.Now}
+			var out bytes.Buffer
+
+			err := pause(stepsOn(c, 5*time.Second), apiKey, opts, &out, io.Discard)
+
+			require.NoError(t, err)
+			assert.False(t, askedBeforeTakenOn, "the request is set only once Hybernate has taken it on")
+			assert.Contains(t, out.String(), "preview-42/api is Paused after")
+		})
+	}
+}
+
+// A ManagedWorkload Hybernate never takes on, as with the operator not
+// running, leaves pause saying so once --timeout runs out, having asked
+// nothing.
+func TestPause_ANewManagedWorkloadNeverTakenOn(t *testing.T) {
+	c := newClient(t, interceptor.Funcs{}, managedWorkload(""))
+	opts := pauseOptions{wait: true, pollInterval: time.Millisecond, now: time.Now}
+
+	err := pause(stepsOn(c, 100*time.Millisecond), apiKey, opts, io.Discard, io.Discard)
+
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "Hybernate hasn't taken preview-42/api on yet")
+	assert.Empty(t, pauseRequested(t, c), "nothing is asked of a ManagedWorkload not yet taken on")
+}
+
 // stepsOn runs each step against c, within timeout.
 func stepsOn(c client.Client, timeout time.Duration) clusterSteps {
 	return clusterSteps{parent: context.Background(), timeout: timeout,

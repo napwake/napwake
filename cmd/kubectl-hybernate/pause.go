@@ -239,6 +239,9 @@ func pause(s clusterSteps, key client.ObjectKey, opts pauseOptions, out, errOut 
 		}
 		key = client.ObjectKeyFromObject(w)
 		ref = key.Namespace + "/" + w.Spec.Target.Name
+		if err := waitToBeTakenOn(ctx, c, w, ref, opts.pollInterval); err != nil {
+			return err
+		}
 
 		switch w.Status.Phase {
 		case v1alpha1.PhasePaused:
@@ -394,6 +397,32 @@ func ellipsis(wait bool) string {
 		return "..."
 	}
 	return ""
+}
+
+// waitToBeTakenOn waits, reading w again every interval, until Hybernate
+// has taken the ManagedWorkload on and given it a phase. A pause request
+// already on it as it's taken on may be one its lost status had answered,
+// so Hybernate answers it without pausing; asked only once it's taken on,
+// it pauses.
+func waitToBeTakenOn(ctx context.Context, c client.Client, w *v1alpha1.ManagedWorkload, ref string,
+	interval time.Duration) error {
+	ticker := time.NewTicker(interval)
+	defer ticker.Stop()
+	for w.Status.Phase == "" || w.Status.Phase == v1alpha1.PhaseCreating {
+		select {
+		case <-ctx.Done():
+			return fmt.Errorf("%s %w: Hybernate hasn't taken %s on yet, so nothing was asked; is its operator "+
+				"running? (%w)", ref, errNotPausedYet, ref, ctx.Err())
+		case <-ticker.C:
+		}
+		if err := c.Get(ctx, client.ObjectKeyFromObject(w), w); err != nil {
+			if ctx.Err() != nil {
+				continue
+			}
+			return fmt.Errorf("waiting for Hybernate to take %s on: %w", ref, err)
+		}
+	}
+	return nil
 }
 
 // wakesIt says what wakes a paused workload: a request to it, or, for one

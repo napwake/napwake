@@ -505,7 +505,7 @@ pausing staging/my-api...
 staging/my-api is Paused after 4s; a request to it, or kubectl hybernate wake, wakes it
 ```
 
-`pause` asks Hybernate to pause a workload now, instead of when its idle clock runs out: a preview environment at the end of the day, say. It's an ordinary pause, the same as an idle one: a request to the workload through the [doorman](../concepts/wake-on-request.md), [activity](../concepts/idle-detection.md#activity-annotations), `autoResume` or [`wake`](#wake-a-workload) wakes it. It works whether or not the workload has an `idlePolicy`. See [Pause and Resume](../guides/pause.md#pause-now) for exactly what Hybernate does with the request.
+`pause` asks Hybernate to pause a workload now, instead of when its idle clock runs out: a preview environment at the end of the day, say. It's an ordinary pause, the same as an idle one: a request to the workload through the [doorman](../concepts/wake-on-request.md), [activity](../concepts/idle-detection.md#activity-annotations), `autoResume` or [`wake`](#wake-a-workload) wakes it; with [`wake: ask`](../concepts/wake-on-request.md#asking-before-waking), a person's click on its asleep page, not any request, and `pause` says so. It works whether or not the workload has an `idlePolicy`. On a ManagedWorkload Hybernate hasn't taken on yet, such as one created a moment ago, it waits until Hybernate has, since a request already on it then isn't acted on. See [Pause and Resume](../guides/pause.md#pause-now) for exactly what Hybernate does with the request.
 
 ```bash
 # Pause it even if the forecast expects it to be busy soon, without asking
