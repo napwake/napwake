@@ -17,13 +17,20 @@ limitations under the License.
 package main
 
 import (
+	"bytes"
 	"context"
+	"encoding/json"
+	"fmt"
+	"math"
+	"math/big"
 	"net/http"
 	"net/http/httptest"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"regexp"
 	"slices"
+	"strconv"
 	"strings"
 	"sync"
 	"testing"
@@ -211,6 +218,103 @@ func TestValidateOptInDefaults(t *testing.T) {
 			assert.NoError(t, err)
 		})
 	}
+}
+
+// TestChartCPUThresholdIsOneTheOperatorTakes checks every threshold written
+// with up to three digits and two places: a defaults.cpuThreshold the
+// chart's schema takes, as a number or a string, has to be one the operator
+// starts with, or the install succeeds and the operator crash-loops. Every
+// threshold the operator takes, written plainly, has to pass the schema too.
+// It reads anyOf as Helm does, with multipleOf compared exactly.
+func TestChartCPUThresholdIsOneTheOperatorTakes(t *testing.T) {
+	number, pattern := chartCPUThresholdSchema(t)
+	operatorTakes := func(written string) bool {
+		percent, err := strconv.ParseFloat(written, 64)
+		require.NoError(t, err)
+		d := controller.DefaultOptInDefaults
+		d.CPUThreshold = percent
+		return validateOptInDefaults(d) == nil
+	}
+
+	for whole := range 1000 {
+		for _, places := range []int{0, 1, 2} {
+			for fraction := range int(math.Pow10(places)) {
+				written := strconv.Itoa(whole)
+				if places > 0 {
+					written += fmt.Sprintf(".%0*d", places, fraction)
+				}
+				if pattern.MatchString(written) && !operatorTakes(written) {
+					t.Errorf("the chart takes the string %q, which the operator refuses to start with", written)
+				}
+			}
+		}
+	}
+
+	for thousandths := range 101_001 {
+		value := new(big.Rat).SetFrac64(int64(thousandths), 1000)
+		written := strings.TrimSuffix(strings.TrimRight(value.FloatString(3), "0"), ".")
+		takes := operatorTakes(written)
+		if number(value) != takes {
+			t.Errorf("the chart takes the number %s: %t, the operator: %t", written, !takes, takes)
+		}
+		if pattern.MatchString(written) != takes {
+			t.Errorf("the chart takes the string %q: %t, the operator: %t", written, !takes, takes)
+		}
+	}
+}
+
+// chartCPUThresholdSchema reads defaults.cpuThreshold from the chart's
+// values.schema.json: an anyOf of one number and one string.
+func chartCPUThresholdSchema(t *testing.T) (number func(*big.Rat) bool, pattern *regexp.Regexp) {
+	t.Helper()
+	data, err := os.ReadFile(filepath.Join("..", "charts", "napwake", "values.schema.json"))
+	require.NoError(t, err)
+	var schema struct {
+		Properties struct {
+			Defaults struct {
+				Properties struct {
+					CPUThreshold struct {
+						AnyOf []struct {
+							Type       string      `json:"type"`
+							Minimum    json.Number `json:"minimum"`
+							Maximum    json.Number `json:"maximum"`
+							MultipleOf json.Number `json:"multipleOf"`
+							Pattern    string      `json:"pattern"`
+						} `json:"anyOf"`
+					} `json:"cpuThreshold"`
+				} `json:"properties"`
+			} `json:"defaults"`
+		} `json:"properties"`
+	}
+	decoder := json.NewDecoder(bytes.NewReader(data))
+	decoder.UseNumber()
+	require.NoError(t, decoder.Decode(&schema))
+
+	rat := func(n json.Number) *big.Rat {
+		if n == "" {
+			return nil
+		}
+		r, ok := new(big.Rat).SetString(n.String())
+		require.True(t, ok, "%s is a number", n)
+		return r
+	}
+	for _, branch := range schema.Properties.Defaults.Properties.CPUThreshold.AnyOf {
+		switch branch.Type {
+		case "number":
+			minimum, maximum, step := rat(branch.Minimum), rat(branch.Maximum), rat(branch.MultipleOf)
+			number = func(v *big.Rat) bool {
+				return (minimum == nil || v.Cmp(minimum) >= 0) && (maximum == nil || v.Cmp(maximum) <= 0) &&
+					(step == nil || new(big.Rat).Quo(v, step).IsInt())
+			}
+		case "string":
+			pattern = regexp.MustCompile(branch.Pattern)
+		default:
+			t.Fatalf("defaults.cpuThreshold has a %q branch the test doesn't read", branch.Type)
+		}
+	}
+	require.NotNil(t, number, "defaults.cpuThreshold takes a number")
+	require.NotNil(t, pattern, "defaults.cpuThreshold takes a string")
+	return number, pattern
 }
 
 func TestNapwakeNamespaces(t *testing.T) {

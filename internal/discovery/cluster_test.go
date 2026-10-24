@@ -341,6 +341,41 @@ func TestScanCluster_ReadsNapwakesClock(t *testing.T) {
 	assert.True(t, got["measuring"].Managed)
 }
 
+// After pauses made in use, Napwake waits longer than idleAfter before the
+// next, so a managed workload is idle only once its clock's pauseAt has
+// come, or, before the operator has written one, once the longer wait has.
+func TestScanCluster_ManagedWaitsLongerAfterPausesMadeInUse(t *testing.T) {
+	backedOff := func(name string, quiet time.Duration, pauseAt *metav1.Time) *v1alpha1.ManagedWorkload {
+		mw := managedFor(name, v1alpha1.ManagedWorkloadStatus{Phase: v1alpha1.PhaseRunning,
+			Activity: &v1alpha1.ActivityStatus{LastActivityTime: metav1.NewTime(scanTime.Add(-quiet)),
+				LastActivitySource: v1alpha1.ActivitySourceWoke, PauseAt: pauseAt},
+			IdleWait: &v1alpha1.IdleWaitStatus{WrongPauses: 2}})
+		mw.Spec.IdlePolicy = &v1alpha1.IdlePolicySpec{IdleAfter: &metav1.Duration{Duration: 5 * time.Minute}}
+		return mw
+	}
+	written := backedOff("written", 6*time.Minute, ptr.To(metav1.NewTime(scanTime.Add(14*time.Minute))))
+	unwritten := backedOff("unwritten", 6*time.Minute, nil)
+	due := backedOff("due", 21*time.Minute, ptr.To(metav1.NewTime(scanTime.Add(-time.Minute))))
+	dueUnwritten := backedOff("due-unwritten", 21*time.Minute, nil)
+
+	objs := make([]runtime.Object, 0, 12)
+	objs = append(objs, written, unwritten, due, dueUnwritten)
+	for _, name := range []string{"written", "unwritten", "due", "due-unwritten"} {
+		objs = append(objs, idleNow(name)...)
+	}
+	got := byName(scanWorkloads(t, objs...))
+
+	for _, name := range []string{"written", "unwritten"} {
+		assert.Equal(t, StateActive, got[name].State, "%s: Napwake doesn't pause it for 20 minutes", name)
+		assert.Equal(t, "not idle yet: it woke 6m ago; after pauses made in use it waits 20 minutes, not 5 minutes",
+			got[name].Reason, name)
+	}
+	for _, name := range []string{"due", "due-unwritten"} {
+		assert.Equal(t, StateIdle, got[name].State, "%s: its 20 minutes have run out", name)
+		assert.Equal(t, "no activity for 21m", got[name].Reason, name)
+	}
+}
+
 func TestScanCluster_ShowsWhatNapwakeHasPaused(t *testing.T) {
 	mw := managedFor("asleep", v1alpha1.ManagedWorkloadStatus{Phase: v1alpha1.PhasePaused,
 		Pause: &v1alpha1.PauseStatus{PreviousReplicas: 3, PausedAt: ptr.To(metav1.NewTime(scanTime.Add(-5 * time.Hour))),

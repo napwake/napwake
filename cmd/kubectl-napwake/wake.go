@@ -275,7 +275,7 @@ func wakeMessage(ref string, phase v1alpha1.WorkloadPhase, wait bool) string {
 	case v1alpha1.PhaseIdle:
 		msg = ref + " was idle; marked active, it stays up"
 	case v1alpha1.PhasePausing:
-		msg = ref + " is pausing; it wakes once the pause finishes"
+		msg = ref + " is pausing; the pause is called off and it stays up"
 	case v1alpha1.PhaseResuming:
 		msg = ref + " is already waking"
 	default:

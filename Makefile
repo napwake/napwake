@@ -184,6 +184,18 @@ check-chart: ## Lint the Helm chart, render it for each provider's Kubernetes ve
 	@for d in 1h30m 1m 90s 0h5m 1.5h; do \
 		helm template napwake charts/napwake --set defaults.idleAfter=$$d >/dev/null || exit 1; \
 	done
+	@for v in --set=defaults.cpuThreshold=0.05 --set-string=defaults.cpuThreshold=0 --set-string=defaults.cpuThreshold=150 \
+		--set-string=defaults.cpuThreshold=0.125 --set-string=defaults.cpuThreshold=100.01 \
+		--set-json=defaults.cpuThreshold=0.05 --set-json=defaults.cpuThreshold=0.125 --set-json=defaults.cpuThreshold=150; do \
+		! helm template napwake charts/napwake $$v >/dev/null 2>&1 || { \
+			echo "the chart accepts $$v, outside 0.1 to 100 or past two decimal places, which the operator refuses to start with"; exit 1; }; \
+	done
+	@for v in --set=defaults.cpuThreshold=0.1 --set-string=defaults.cpuThreshold=0.5 --set=defaults.cpuThreshold=10 \
+		--set-string=defaults.cpuThreshold=100 --set-string=defaults.cpuThreshold=99.99 \
+		--set-json=defaults.cpuThreshold=0.1 --set-json=defaults.cpuThreshold=0.29 --set-json=defaults.cpuThreshold=100; do \
+		helm template napwake charts/napwake $$v >/dev/null || { \
+			echo "the chart refuses $$v, a CPU threshold the operator takes"; exit 1; }; \
+	done
 	@helm template napwake charts/napwake --set networkPolicy.enabled=true \
 		--set 'doorman.networkPolicy.ingressFrom[0].namespaceSelector.matchLabels.team=checkout' \
 		--show-only templates/networkpolicy.yaml | grep -q 'team: checkout' || { \

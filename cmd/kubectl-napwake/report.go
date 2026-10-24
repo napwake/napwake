@@ -697,13 +697,14 @@ func methodFor(result scanResult, history, dependencies bool, idleAfter time.Dur
 			"--cpu-threshold), it was deployed, or an activity annotation says so. It's idle once it has had no "+
 			"activity for %s (the scan's --idle-after), which is when Napwake would pause it. Workloads Napwake "+
 			"manages are judged by the activity clock it keeps for them, with their own CPU threshold and "+
-			"idle-after.",
+			"idle-after, which Napwake lengthens after pauses made while they were in use.",
 			v1alpha1.FormatCPUThreshold(result.Settings.CPUThreshold), roundedDuration(idleAfter)),
 	}
 	if history {
 		method = append(method, fmt.Sprintf("The history replay applies Napwake's rules to recorded CPU and "+
 			"rollouts: after its idle-after with no activity (%s, or a managed workload's own), a workload would "+
-			"be paused until the next activity, which wakes it. "+
+			"be paused until the next activity, which wakes it. CPU soon after a pause shows it was in use, so the "+
+			"replay waits longer before the next, as Napwake does. "+
 			"Requests and activity annotations aren't recorded in Prometheus, so a workload used with little CPU "+
 			"can look like it would sleep more than it would. Requests and prices are today's. The total counts "+
 			"only workloads Napwake doesn't pause yet.", roundedDuration(idleAfter)))

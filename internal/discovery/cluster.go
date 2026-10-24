@@ -37,6 +37,7 @@ import (
 	"github.com/napwake/napwake/internal/cost"
 	"github.com/napwake/napwake/internal/forecast"
 	"github.com/napwake/napwake/internal/gitops"
+	"github.com/napwake/napwake/internal/human"
 )
 
 // State is how a scan judges a workload's use.
@@ -658,18 +659,22 @@ func judgePaused(w *Workload, mw *v1alpha1.ManagedWorkload, now time.Time) {
 }
 
 // judgeManaged reads the activity clock Napwake keeps for the workload,
-// which already combines every activity source it's configured with.
+// which already combines every activity source it's configured with, and
+// waits longer than idleAfter after pauses made in use.
 func judgeManaged(w *Workload, mw *v1alpha1.ManagedWorkload, now time.Time, threshold float64) {
-	idleAfter := idleAfterFor(mw, ClusterOptions{})
 	a := mw.Status.Activity
 	since := now.Sub(a.LastActivityTime.Time)
+	pauseAt := pauseAtOf(mw)
+	waiting := now.Before(pauseAt)
 	switch {
 	case mw.Status.Phase == v1alpha1.PhaseResuming:
 		w.State, w.Reason = StateActive, "waking"
-	case since < idleAfter && clockStarted(a.LastActivitySource) != "":
-		w.State, w.Reason = StateActive, "not idle yet: "+clockStarted(a.LastActivitySource)+" "+ago(since)
-	case since < idleAfter:
-		w.State, w.Reason = StateActive, fmt.Sprintf("active %s (%s)", ago(since), a.LastActivitySource)
+	case waiting && clockStarted(a.LastActivitySource) != "":
+		w.State, w.Reason = StateActive, "not idle yet: "+clockStarted(a.LastActivitySource)+" "+ago(since)+
+			longerWait(mw, pauseAt)
+	case waiting:
+		w.State, w.Reason = StateActive, fmt.Sprintf("active %s (%s)", ago(since), a.LastActivitySource)+
+			longerWait(mw, pauseAt)
 	case w.CPUPercent != nil && forecast.Busy(w.cpuShare, threshold):
 		w.State, w.Reason = StateActive, cpuReason(*w)
 	default:
@@ -678,6 +683,36 @@ func judgeManaged(w *Workload, mw *v1alpha1.ManagedWorkload, now time.Time, thre
 			w.Reason += ", held awake by dependents"
 		}
 	}
+}
+
+// pauseAtOf is when Napwake pauses the workload if no activity comes: the
+// pauseAt its clock last wrote, or, before it has written one, the wait
+// after the last activity, idleAfter doubled for each pause made in use.
+func pauseAtOf(mw *v1alpha1.ManagedWorkload) time.Time {
+	a := mw.Status.Activity
+	if a.PauseAt != nil {
+		return a.PauseAt.Time
+	}
+	return a.LastActivityTime.Add(v1alpha1.IdleWait(idleAfterFor(mw, ClusterOptions{}), wrongPauses(mw)))
+}
+
+// longerWait says how long the workload's clock waits after pauses made in
+// use, when that's longer than idleAfter, to follow why it's active.
+func longerWait(mw *v1alpha1.ManagedWorkload, pauseAt time.Time) string {
+	idleAfter := idleAfterFor(mw, ClusterOptions{})
+	wait := pauseAt.Sub(mw.Status.Activity.LastActivityTime.Time)
+	if wrongPauses(mw) == 0 || wait <= idleAfter {
+		return ""
+	}
+	return fmt.Sprintf("; after pauses made in use it waits %s, not %s", human.Duration(wait),
+		human.Duration(idleAfter))
+}
+
+func wrongPauses(mw *v1alpha1.ManagedWorkload) int32 {
+	if w := mw.Status.IdleWait; w != nil {
+		return w.WrongPauses
+	}
+	return 0
 }
 
 // clockStarted says what started a workload's activity clock without being
