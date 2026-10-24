@@ -263,8 +263,8 @@ func (r *Reconciler) recordCPUBefore(workload *v1alpha1.ManagedWorkload) {
 // minutes. A reading above the threshold moves the clock, so these are all
 // below it. It's in memory only: a restart restarts the clock too.
 type quietCPU struct {
-	mu       sync.Mutex
-	stretchs map[types.UID]*cpuStretch
+	mu        sync.Mutex
+	stretches map[types.UID]*cpuStretch
 }
 
 type cpuStretch struct {
@@ -283,13 +283,13 @@ type cpuReading struct {
 func (q *quietCPU) see(uid types.UID, since, at time.Time, percent float64, keep time.Duration) {
 	q.mu.Lock()
 	defer q.mu.Unlock()
-	if q.stretchs == nil {
-		q.stretchs = map[types.UID]*cpuStretch{}
+	if q.stretches == nil {
+		q.stretches = map[types.UID]*cpuStretch{}
 	}
-	s := q.stretchs[uid]
+	s := q.stretches[uid]
 	if s == nil || !s.since.Equal(since) {
 		s = &cpuStretch{since: since}
-		q.stretchs[uid] = s
+		q.stretches[uid] = s
 	}
 	s.peak = max(s.peak, percent)
 	s.recent = append(s.recent, cpuReading{at: at, percent: percent})
@@ -303,7 +303,7 @@ func (q *quietCPU) see(uid types.UID, since, at time.Time, percent float64, keep
 func (q *quietCPU) peaks(uid types.UID, since, now time.Time, within time.Duration) (all, last float64, ok bool) {
 	q.mu.Lock()
 	defer q.mu.Unlock()
-	s := q.stretchs[uid]
+	s := q.stretches[uid]
 	if s == nil || !s.since.Equal(since) || len(s.recent) == 0 {
 		return 0, 0, false
 	}
@@ -318,5 +318,5 @@ func (q *quietCPU) peaks(uid types.UID, since, now time.Time, within time.Durati
 func (q *quietCPU) forget(uid types.UID) {
 	q.mu.Lock()
 	defer q.mu.Unlock()
-	delete(q.stretchs, uid)
+	delete(q.stretches, uid)
 }

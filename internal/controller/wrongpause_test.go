@@ -34,16 +34,16 @@ import (
 	opmetrics "github.com/napwake/napwake/internal/metrics"
 )
 
-// pausedFor is the named workload, with idleAfter, paused pausedFor ago at
-// the end of a stretch in which its CPU peaked at 0.6% of its requests, and
-// at 0.5% in its last minutes, as setup leaves it, its target at zero, and
-// a reconciler for it whose clock the test moves.
-func pausedFor(t *testing.T, name string, idleAfter, ago time.Duration, setup func(*v1alpha1.ManagedWorkload),
+// pausedFor is the named workload, with idleAfter 5m, paused ago at the end
+// of a stretch in which its CPU peaked at 0.6% of its requests, and at 0.5%
+// in its last minutes, as setup leaves it, its target at zero, and a
+// reconciler for it whose clock the test moves.
+func pausedFor(t *testing.T, name string, ago time.Duration, setup func(*v1alpha1.ManagedWorkload),
 	objs ...client.Object) (*Reconciler, *time.Time) {
 	t.Helper()
 	now := monotonic(fixedTime)
 	workload := depWorkload("default", name, v1alpha1.TargetKindDeployment, v1alpha1.PhasePaused)
-	workload.Spec.IdlePolicy.IdleAfter = &metav1.Duration{Duration: idleAfter}
+	workload.Spec.IdlePolicy.IdleAfter = &metav1.Duration{Duration: 5 * time.Minute}
 	pausedAt := metav1.NewTime(now.Add(-ago))
 	workload.Status.Pause = &v1alpha1.PauseStatus{PreviousReplicas: 1, PausedAt: &pausedAt,
 		WakeAnnotations: &v1alpha1.WakeAnnotations{}, CPUBefore: "0.6", CPUJustBefore: "0.5"}
@@ -76,7 +76,7 @@ func requestCame(t *testing.T, r *Reconciler, name string, now time.Time) {
 // made while it was in use. Its idle clock then waits twice idleAfter
 // before the next, and Napwake says so, with what to change.
 func TestWrongPause_ARequestSoonAfterAPauseLengthensTheIdleClock(t *testing.T) {
-	r, now := pausedFor(t, "api", 5*time.Minute, 40*time.Second, nil)
+	r, now := pausedFor(t, "api", 40*time.Second, nil)
 
 	requestCame(t, r, "api", *now)
 	reconcileNamed(t, r, "api")
@@ -107,7 +107,7 @@ func TestWrongPause_ARequestSoonAfterAPauseLengthensTheIdleClock(t *testing.T) {
 // Each wrong pause in a row doubles the wait again, up to idleAfter plus an
 // hour.
 func TestWrongPause_InARowDoublesAgain(t *testing.T) {
-	r, now := pausedFor(t, "api", 5*time.Minute, time.Minute, func(w *v1alpha1.ManagedWorkload) {
+	r, now := pausedFor(t, "api", time.Minute, func(w *v1alpha1.ManagedWorkload) {
 		w.Status.IdleWait = &v1alpha1.IdleWaitStatus{WrongPauses: 3}
 	})
 
@@ -148,7 +148,7 @@ func TestWrongPause_WhatUndoesAPause(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			r, now := pausedFor(t, "api", 5*time.Minute, 2*time.Minute, tt.setup)
+			r, now := pausedFor(t, "api", 2*time.Minute, tt.setup)
 
 			tt.wake(t, r, *now)
 			reconcileNamed(t, r, "api")
@@ -202,7 +202,7 @@ func TestWrongPause_WhatDoesntMakeAPauseWrong(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			r, now := pausedFor(t, "api", 5*time.Minute, tt.ago, tt.setup, tt.objs...)
+			r, now := pausedFor(t, "api", tt.ago, tt.setup, tt.objs...)
 
 			annotate(t, r, "api", v1alpha1.AnnotationLastActivity, now.UTC().Format(time.RFC3339))
 			reconcileNamed(t, r, "api")
@@ -217,7 +217,7 @@ func TestWrongPause_WhatDoesntMakeAPauseWrong(t *testing.T) {
 	}
 	for _, why := range []*phaseEvent{{reason: ReasonAutoResume}, {reason: ReasonWokeByActivity, message: queryWakeMessage},
 		{reason: reasonDryRunWake}} {
-		r, _ := pausedFor(t, "api", 5*time.Minute, time.Minute, nil)
+		r, _ := pausedFor(t, "api", time.Minute, nil)
 		w := fetch(t, r, "api")
 		if why.message == queryWakeMessage {
 			r.recordQueryWake(w)
@@ -231,7 +231,7 @@ func TestWrongPause_WhatDoesntMakeAPauseWrong(t *testing.T) {
 // back-off ends, and what the workload used in its last minutes before the
 // pause is what it uses idle.
 func TestWrongPause_APauseThatHoldsEndsTheBackOff(t *testing.T) {
-	r, now := pausedFor(t, "api", 5*time.Minute, 20*time.Minute, func(w *v1alpha1.ManagedWorkload) {
+	r, now := pausedFor(t, "api", 20*time.Minute, func(w *v1alpha1.ManagedWorkload) {
 		w.Status.IdleWait = &v1alpha1.IdleWaitStatus{WrongPauses: 3}
 		meta.SetStatusCondition(&w.Status.Conditions, metav1.Condition{Type: conditionPausedWhileInUse,
 			Status: metav1.ConditionTrue, Reason: reasonWokenSoonAfterPause, Message: "earlier"})
@@ -254,7 +254,7 @@ func TestWrongPause_APauseThatHoldsEndsTheBackOff(t *testing.T) {
 // The back-off is ended by a pause that holds whether or not it's still
 // paused: status says so while it is.
 func TestWrongPause_APausedWorkloadPastTheWindowEndsTheBackOff(t *testing.T) {
-	r, _ := pausedFor(t, "api", 5*time.Minute, 6*time.Minute, func(w *v1alpha1.ManagedWorkload) {
+	r, _ := pausedFor(t, "api", 6*time.Minute, func(w *v1alpha1.ManagedWorkload) {
 		w.Status.IdleWait = &v1alpha1.IdleWaitStatus{WrongPauses: 2}
 	})
 
@@ -268,7 +268,7 @@ func TestWrongPause_APausedWorkloadPastTheWindowEndsTheBackOff(t *testing.T) {
 // What the idle clock waits after a wrong pause is in status, so a restart,
 // which restarts the clock, keeps it.
 func TestWrongPause_TheBackOffOutlivesARestart(t *testing.T) {
-	r, now := pausedFor(t, "api", 5*time.Minute, 40*time.Second, nil)
+	r, now := pausedFor(t, "api", 40*time.Second, nil)
 	requestCame(t, r, "api", *now)
 	reconcileNamed(t, r, "api")
 	woken := targetDeploymentWithReplicas("api", "default", 0)
@@ -320,7 +320,7 @@ func TestWrongPause_SaysWhatToChange(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			r, now := pausedFor(t, "api", 5*time.Minute, time.Minute, func(w *v1alpha1.ManagedWorkload) {
+			r, now := pausedFor(t, "api", time.Minute, func(w *v1alpha1.ManagedWorkload) {
 				w.Status.Pause.CPUBefore = tt.inUse
 				if tt.idle != "" {
 					w.Status.IdleWait = &v1alpha1.IdleWaitStatus{IdleCPU: tt.idle, IdleCPUAt: ptr.To(metav1.NewTime(fixedTime))}
@@ -358,7 +358,7 @@ func TestWrongPause_IdleUseIsTheMostOverAWeek(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			r, now := pausedFor(t, "api", 5*time.Minute, 20*time.Minute, func(w *v1alpha1.ManagedWorkload) {
+			r, now := pausedFor(t, "api", 20*time.Minute, func(w *v1alpha1.ManagedWorkload) {
 				w.Status.IdleWait = &v1alpha1.IdleWaitStatus{IdleCPU: tt.before,
 					IdleCPUAt: ptr.To(metav1.NewTime(fixedTime.Add(-tt.measured)))}
 			})
@@ -410,19 +410,19 @@ func TestWrongPause_IsCounted(t *testing.T) {
 		return testutil.ToFloat64(opmetrics.WrongPauses.WithLabelValues("default", name))
 	}
 	wrong := counted("counted")
-	r, now := pausedFor(t, "counted", 5*time.Minute, time.Minute, nil)
+	r, now := pausedFor(t, "counted", time.Minute, nil)
 	requestCame(t, r, "counted", *now)
 	reconcileNamed(t, r, "counted")
 	assert.Equal(t, wrong+1, counted("counted"), "a pause a request undid")
 
 	held := counted("held")
-	r, now = pausedFor(t, "held", 5*time.Minute, time.Hour, nil)
+	r, now = pausedFor(t, "held", time.Hour, nil)
 	requestCame(t, r, "held", *now)
 	reconcileNamed(t, r, "held")
 	assert.Equal(t, held, counted("held"), "a pause that held")
 
 	asked := counted("asked")
-	r, now = pausedFor(t, "asked", 5*time.Minute, time.Minute, func(w *v1alpha1.ManagedWorkload) {
+	r, now = pausedFor(t, "asked", time.Minute, func(w *v1alpha1.ManagedWorkload) {
 		w.Status.Pause.Requested = true
 	})
 	requestCame(t, r, "asked", *now)

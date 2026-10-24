@@ -275,7 +275,8 @@ func TestNodes_ANodeAtItsGroupsMinimum(t *testing.T) {
 	node.Labels = map[string]string{"cloud.google.com/gke-nodepool": "default-pool",
 		"node.kubernetes.io/instance-type": "e2-standard-4"}
 	redis := testPod("argocd", "argocd-redis", node.Name, "100m", "128Mi")
-	redis.Spec.Volumes = []corev1.Volume{{Name: "data", VolumeSource: corev1.VolumeSource{EmptyDir: &corev1.EmptyDirVolumeSource{}}}}
+	redis.Spec.Volumes = []corev1.Volume{{Name: "data",
+		VolumeSource: corev1.VolumeSource{EmptyDir: &corev1.EmptyDirVolumeSource{}}}}
 	objs := []client.Object{node, redis, testPod("kube-system", "kube-dns", node.Name, "260m", "110Mi"),
 		&corev1.ConfigMap{ObjectMeta: metav1.ObjectMeta{Namespace: "kube-system", Name: "cluster-autoscaler-status"},
 			Data: map[string]string{"status": string(status)}}}
