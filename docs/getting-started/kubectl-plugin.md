@@ -619,7 +619,7 @@ What it says depends on the phase:
 
 It refuses, and says why, before asking, when Napwake isn't managing the workload: it doesn't exist or is labelled `napwake.dev/ignore`, or another ManagedWorkload manages it. When Napwake answers that it won't wake it, `wake` exits 1 with Napwake's reason, such as `preview-42/api wasn't woken: it's scaled to zero outside Napwake, which leaves it off until its replicas are set above zero`; the reasons are in [Wake Now](../guides/pause.md#wake-now).
 
-If the workload isn't `Running` within `--timeout`, `wake` exits 1 with its phase, whether Napwake had taken the request up, and the `kubectl describe` command that says why. The timeout covers the whole wait, Napwake's answer and then `Running`, and a request made while a pause or a wake is under way is answered only once that finishes; for a workload that takes longer than 5 minutes to start, raise it, such as `--timeout 10m`. Napwake not taking it up at all usually means its operator isn't running.
+If the workload isn't `Running` within `--timeout`, `wake` exits 1 with its phase, whether Napwake had taken the request up, and the `kubectl describe` command that says why. The timeout covers the whole wait, Napwake's answer and then `Running`. A request made as the workload pauses is answered at once, and calls the pause off. One made as it wakes is answered only once the wake finishes. For a workload that takes longer than 5 minutes to start, raise it, such as `--timeout 10m`. Napwake not taking it up at all usually means its operator isn't running.
 
 | Flag | Short | Default | Description |
 |------|-------|---------|-------------|
