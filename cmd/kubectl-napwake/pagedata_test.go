@@ -158,8 +158,8 @@ func TestReportPage_NextStepsWithTheirTargets(t *testing.T) {
 func TestReportPage_EachRowNapwakeWontPauseSaysWhy(t *testing.T) {
 	result := historyResult()
 	result.Workloads[0].Protected = true
-	result.Workloads[1].WontPause = "PVCs deleted on scale-down"
-	result.Workloads[1].Clues = []string{"won't pause: PVCs deleted on scale-down"}
+	result.Workloads[1].WontPause = pvcsDeleted
+	result.Workloads[1].Clues = []string{"won't pause: " + pvcsDeleted}
 
 	page := buildReport(result, time.Hour)
 
@@ -176,8 +176,8 @@ func TestReportPage_EachRowNapwakeWontPauseSaysWhy(t *testing.T) {
 func TestReportPage_WontPauseWhateverTheReasonSays(t *testing.T) {
 	result := historyResult()
 	postgres := &result.Workloads[0]
-	postgres.WontPause = "PVCs deleted on scale-down"
-	postgres.Clues = []string{"won't pause: PVCs deleted on scale-down"}
+	postgres.WontPause = pvcsDeleted
+	postgres.Clues = []string{"won't pause: " + pvcsDeleted}
 
 	got := renderHTML(t, result)
 	pageHas(t, got, `<tr id="wl-0" data-stays="">`, "its reason after the evidence for its state")
@@ -187,19 +187,27 @@ func TestReportPage_WontPauseWhateverTheReasonSays(t *testing.T) {
 	got = renderReportPage(t, page)
 	pageHas(t, got, `<tr id="wl-0" data-stays="">`, "reworded")
 
-	result.Workloads[3].WontPause = "PVCs deleted on scale-down"
+	result.Workloads[3].WontPause = pvcsDeleted
 	got = renderHTML(t, result)
 	pageHas(t, got, `<tr id="wl-3">`, "one in use stays on anyway, and isn't counted as kept lit")
-	assert.Equal(t, "PVCs deleted on scale-down", buildReport(result, time.Hour).Workloads[3].WontPause,
+	assert.Equal(t, pvcsDeleted, buildReport(result, time.Hour).Workloads[3].WontPause,
 		"the reason, as its own field")
 }
+
+// freedWords and savedWords are the status figures as a test rewords them,
+// so a page that read their digits would show the wrong thing.
+const freedWords, savedWords = "42 dollars", "35 dollars"
+
+// pvcsDeleted is a reason the scan sees itself that Napwake won't pause a
+// workload.
+const pvcsDeleted = "PVCs deleted on scale-down"
 
 // The status page leads with what came off the bill, under what was freed,
 // and draws the meter between them, from the amounts as numbers, not from
 // the digits of "$35".
 func TestStatusPage_MoneyWhateverTheFiguresRead(t *testing.T) {
 	page := statusPageOf(t, statusCluster()...)
-	page.Figures[0].Value, page.Figures[1].Value = "42 dollars", "35 dollars"
+	page.Figures[0].Value, page.Figures[1].Value = freedWords, savedWords
 
 	got := renderStatusPageData(t, page)
 
@@ -213,7 +221,7 @@ func TestStatusPage_MoneyWhateverTheFiguresRead(t *testing.T) {
 		}
 	}
 	page = statusPageOf(t, objs...)
-	page.Figures[0].Value, page.Figures[1].Value = "42 dollars", "0 dollars"
+	page.Figures[0].Value, page.Figures[1].Value = freedWords, "0 dollars"
 	got = renderStatusPageData(t, page)
 	pageHas(t, got, `<div class="slot s0 lead">`, "with nothing saved, what was freed leads")
 	pageHas(t, got, `None of the 42 dollars freed has come off the bill yet.`)
@@ -233,7 +241,7 @@ func TestStatusPage_MeterSaysOnlyWhatNapwakeCanSee(t *testing.T) {
 		}
 		page := statusPageOf(t, objs...)
 		require.False(t, page.SavedMeasurable)
-		page.Figures[0].Value, page.Figures[1].Value = "42 dollars", "35 dollars"
+		page.Figures[0].Value, page.Figures[1].Value = freedWords, savedWords
 		return page
 	}
 
@@ -249,7 +257,7 @@ func TestStatusPage_MeterSaysOnlyWhatNapwakeCanSee(t *testing.T) {
 	pageHas(t, got, `data-detail="for the workloads whose savings can be measured"`, "the card says what it's of")
 
 	page := statusPageOf(t, statusCluster()...)
-	page.Figures[0].Value, page.Figures[1].Value = "42 dollars", "35 dollars"
+	page.Figures[0].Value, page.Figures[1].Value = freedWords, savedWords
 	got = renderStatusPageData(t, page)
 	pageHas(t, got, `<p class="meter-t">35 dollars of the 42 dollars freed came off the bill.</p>`, "measured for all")
 	pageHas(t, got, `data-detail=""`, "the card needs no caveat")
