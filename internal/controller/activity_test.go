@@ -1263,6 +1263,8 @@ func TestActivityClock_QueryThatNeverMatchesIsPointedOut(t *testing.T) {
 	require.NotNil(t, cond)
 	assert.Equal(t, metav1.ConditionTrue, cond.Status)
 	assert.Contains(t, cond.Message, query)
+	assert.Contains(t, cond.Message, "or nothing has made the series yet, as with a request counter before the first request",
+		"a right query on a counter nothing has counted yet looks the same (P47)")
 	assert.True(t, meta.IsStatusConditionTrue(workload.Status.Conditions, conditionPrometheusAvailable),
 		"the query was evaluated: it isn't a failure")
 	check()

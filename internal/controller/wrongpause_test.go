@@ -18,6 +18,8 @@ package controller
 
 import (
 	"context"
+	"slices"
+	"strings"
 	"testing"
 	"time"
 
@@ -124,7 +126,7 @@ func TestWrongPause_InARowDoublesAgain(t *testing.T) {
 // Whatever a person or a tool does to wake a workload counts: a request, a
 // person's click for a workload that asks first, a wake request, an
 // activity annotation. A pause something called off as it began counts
-// too.
+// too. The wake's own event says what woke it, a person for a click (P48).
 func TestWrongPause_WhatUndoesAPause(t *testing.T) {
 	tests := []struct {
 		name  string
@@ -132,10 +134,13 @@ func TestWrongPause_WhatUndoesAPause(t *testing.T) {
 		wake  func(t *testing.T, r *Reconciler, now time.Time)
 		want  v1alpha1.WakeCause
 		says  string
+		woke  string
 	}{
 		{name: "a request", wake: func(t *testing.T, r *Reconciler, now time.Time) { requestCame(t, r, "api", now) },
-			want: v1alpha1.WokenByRequest, says: "a request came 2 minutes after it paused"},
+			want: v1alpha1.WokenByRequest, says: "a request came 2 minutes after it paused",
+			woke: "WokeByActivity api: a request is waiting, waking"},
 		{name: "a person's click", want: v1alpha1.WokenByClick, says: "a person asked to wake it 2 minutes after it paused",
+			woke: "WokeByActivity api: a person asked to wake it, waking",
 			setup: func(w *v1alpha1.ManagedWorkload) { w.Spec.Wake = &v1alpha1.WakeSpec{Mode: v1alpha1.WakeOnAsk} },
 			wake:  func(t *testing.T, r *Reconciler, now time.Time) { requestCame(t, r, "api", now) }},
 		{name: "a wake request", want: v1alpha1.WokenByWakeRequest, says: "a wake request came 2 minutes after it paused",
@@ -159,9 +164,15 @@ func TestWrongPause_WhatUndoesAPause(t *testing.T) {
 			require.NotNil(t, w.Status.IdleWait)
 			assert.Equal(t, int32(1), w.Status.IdleWait.WrongPauses)
 			assert.Equal(t, tt.want, w.Status.IdleWait.LastWrongPause.By)
-			warned := recorded(r.Recorder.(*events.FakeRecorder), ReasonPausedWhileInUse)
+			emitted := recorded(r.Recorder.(*events.FakeRecorder), "")
+			warned := slices.DeleteFunc(slices.Clone(emitted), func(e string) bool {
+				return !strings.Contains(e, ReasonPausedWhileInUse)
+			})
 			require.Len(t, warned, 1)
 			assert.Contains(t, warned[0], tt.says)
+			if tt.woke != "" {
+				assert.Contains(t, emitted, "Normal "+tt.woke)
+			}
 		})
 	}
 }

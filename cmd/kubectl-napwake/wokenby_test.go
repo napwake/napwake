@@ -53,6 +53,10 @@ func TestStatus_WokenBy(t *testing.T) {
 		{name: "a person's click, on a workload that asks", events: []*eventAt{
 			{"WokenByRequest", "a person asked on Service web, waking", time.Minute},
 		}, want: "request", wantListed: []string{"request"}},
+		{name: "a person's click, with the operator's own event", events: []*eventAt{
+			{"WokenByRequest", "a person asked on Service web, waking", 2 * time.Minute},
+			{"WokeByActivity", "web: a person asked to wake it, waking", time.Minute},
+		}, want: "request", wantListed: []string{"request"}},
 		{name: "a request, without the doorman's own event", events: []*eventAt{
 			{"WokeByActivity", "web: a request is waiting, waking", time.Minute},
 		}, want: "request"},
