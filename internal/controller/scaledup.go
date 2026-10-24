@@ -101,7 +101,7 @@ func (r *Reconciler) wakeOnScaleUp(ctx context.Context, workload *v1alpha1.Manag
 
 	log.FromContext(ctx).Info("paused workload scaled up outside Napwake",
 		"workload", workload.Name, "namespace", workload.Namespace, "replicas", replicas, "by", by)
-	metrics.ExternalScaleUps.WithLabelValues(scaledUpBy(writer)).Inc()
+	metrics.ExternalScaleUps.WithLabelValues(workload.Namespace, workload.Name, scaledUpBy(writer)).Inc()
 	r.emitEvent(workload, false, "Normal", ReasonScaledUp, actionCheckReplicas,
 		"scaled up to %d replicas by %s outside Napwake; counted as activity", replicas, by)
 	if conflict != "" {

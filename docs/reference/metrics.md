@@ -10,6 +10,8 @@ These metrics show whether the operator is healthy and what phase each workload 
 |--------|------|--------|-------------|
 | `napwake_build_info` | Gauge | `version` | Always 1, labelled with the release the pod runs, such as `v0.2.0`. Served by the doorman too |
 | `napwake_workload_phase` | Gauge | `namespace`, `workload`, `phase` | 1 for each workload's current lifecycle phase |
+| `napwake_activity_unreadable` | Gauge | `namespace`, `workload`, `source` | 1 while Napwake can't read one of the workload's activity sources: `cpu` from metrics-server while it's awake (`MetricsAvailable` is `False`), or `prometheus`, its activity queries (`PrometheusAvailable` is `False`). No series otherwise |
+| `napwake_resume_incomplete` | Gauge | `namespace`, `workload` | 1 while the workload's last resume finished with replicas not Ready (`ResumeIncomplete` is `True`). No series otherwise |
 | `napwake_reconcile_errors_total` | Counter | `controller` | Reconciles that returned an error, by `controller`: `managedworkload`, or `optin` for the controller that creates ManagedWorkloads from the `napwake.dev/managed` label |
 | `napwake_lifecycle_transitions_total` | Counter | `from`, `to` | Phase transitions |
 | `napwake_lifecycle_action_duration_seconds` | Histogram | `action` | Duration of lifecycle actions (pause, resume) |
@@ -25,7 +27,7 @@ These metrics help you understand what the operator is doing and why.
 | `napwake_prediction_data_points` | Gauge | `namespace`, `workload` | Data points collected |
 | `napwake_prediction_anomalies_total` | Counter | `namespace`, `workload` | Anomalies detected |
 | `napwake_idle_detections_total` | Counter | `namespace`, `workload` | Times each workload's idle clock ran out |
-| `napwake_external_scale_ups_total` | Counter | `by` | Paused workloads scaled up outside Napwake, by the GitOps tool that did it (`argo-cd`, `flux`, `fleet`, `kapp`, `kluctl`), or `other` |
+| `napwake_external_scale_ups_total` | Counter | `namespace`, `workload`, `by` | Times each paused workload was scaled up outside Napwake, by the GitOps tool that did it (`argo-cd`, `flux`, `fleet`, `kapp`, `kluctl`), or `other` |
 
 ## Tier 3: Debugging
 

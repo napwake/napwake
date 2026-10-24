@@ -222,9 +222,11 @@ func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (res ctrl.
 		return ctrl.Result{RequeueAfter: wait}, err
 	}
 
-	// Re-published every reconcile so the gauge is populated after an
-	// operator restart, not only after the next transition.
+	// Re-published every reconcile so the gauges are populated after an
+	// operator restart, not only after the next transition, and follow
+	// each status write, whose watch event brings a reconcile.
 	recordPhase(&workload)
+	recordConditions(&workload)
 
 	// The status as last written, to tell what this reconcile changed.
 	observed := workload.Status.DeepCopy()
