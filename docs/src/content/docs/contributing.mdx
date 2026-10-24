@@ -121,15 +121,17 @@ make manifests  # CRD YAML, RBAC
 
 ### Docs examples
 
-The docs are built with mkdocs. Run `pip install --require-hashes -r docs/requirements.txt`, then `mkdocs serve`. `make test` checks their examples:
+The docs are an Astro Starlight site in `docs/`, with their pages in `docs/src/content/docs/`. Run `npm ci`, then `npm run dev`, in `docs/`. `npm run build` fails on a broken link or anchor between pages. `make test` checks their examples:
 
 | A block | What `make test` does |
 |---|---|
 | A ManagedWorkload in a `yaml` block in `README.md` or `docs/`, or in `config/samples/` | Creates it against the real CRD, so an example that doesn't validate fails the build |
 | A partial one, a `spec:` block or spec fields such as `dependsOn` on their own | Wraps it into a whole ManagedWorkload first. Title it `managedworkload.yaml` or leave it untitled, since a block titled as another file, such as `application.yaml`, isn't read as one |
 | Helm values, titled `napwake-values.yaml`, `values.yaml` or `values-<name>.yaml`, or untitled with only the chart's keys | Checks it against `charts/napwake/values.schema.json`. Every value it sets must be one the chart has |
-| One after a `<!-- snippet -->` line | Nothing, for a block that's partial on purpose |
+| One after a `<!-- snippet -->` line, or `{/* snippet */}` in an `.mdx` page | Nothing, for a block that's partial on purpose |
 | A link to `https://docs.napwake.dev` in the code | Fails unless it points at a page in `docs/` |
+
+A pull request's docs build also checks every `https://docs.napwake.dev` address outside `docs/`, in the code, the chart and the README. Each must land on a page and anchor of the built site. To check it yourself, build the docs, then run `go test ./test/docs -run TestDocsAddressesLandInTheBuiltSite`.
 
 ## Where things are
 
@@ -152,8 +154,7 @@ config/                        # CRD, RBAC, kustomize manifests
 test/e2e/                      # End-to-end tests, in Kind
 test/docs/                     # Validates the docs' ManagedWorkloads against the CRD, and Helm values against the chart
 tests/prometheus/              # promtool tests for the alert rules
-docs/                          # This site (mkdocs)
-overrides/                     # The site's theme overrides: the banner on every version but the latest
+docs/                          # This site (Astro Starlight)
 hack/docsite/                  # Publishes a release's docs as a version of the site
 hack/brewformula/              # Writes a release's Homebrew formula
 ```
@@ -265,34 +266,36 @@ For each later release, open a pull request to krew-index that sets `plugins/nap
 
 ### The docs site
 
-Each minor release, `0.2`, `0.3` and so on, has its own version of the docs, built from its newest patch's tag, so every page's install commands name the release it documents. Once the release workflow succeeds, the docs workflow publishes them with [mike](https://github.com/jimporter/mike) to the `gh-pages` branch, which GitHub Pages serves.
+Each minor release, `0.2`, `0.3` and so on, has its own version of the docs, built from its newest patch's tag, so every page's install commands name the release it documents. Once the release workflow succeeds, the docs workflow builds them and commits them to the `gh-pages` branch, which GitHub Pages serves. Each version's folder is its own build, under its own base path.
 
 | Docs for | Go to |
 |---|---|
 | A release | Its minor version, and `latest` when it's the newest release |
 | A release candidate | `next`, with a banner saying they're for a release candidate. The release it rehearses removes `next` |
 | The site's root | Sends readers to `latest`, or to `next` until there's a release |
-| A link without a version, such as `https://docs.napwake.dev/guides/gitops/`, as the operator and the plugin print | The same page in the version the root sends readers to, through the `404.html` at the branch's root |
+| A link without a version, such as `https://docs.napwake.dev/guides/gitops/#argo-cd`, as the operator and the plugin print | The same page in the version the root sends readers to, anchor kept. Every page of that version has a small page at its address without a version, which sends the browser on. Anything else goes through the `404.html` at the branch's root |
 
-[`hack/docsite`](https://github.com/napwake/napwake/tree/main/hack/docsite) decides what a tag publishes, and never replaces a version's docs with an older release's.
+[`hack/docsite`](https://github.com/napwake/napwake/tree/main/hack/docsite) decides what a tag publishes, and never replaces a version's docs with an older release's. It lists what's published in `versions.json`, at the branch's root, which the version switcher reads.
 
 | To | Run |
 |---|---|
 | Republish a release's docs | The docs workflow, by hand, with its tag |
-| Preview the docs you're editing, without versions | `mkdocs serve` |
-| Serve the versions on your local `gh-pages` | `mike serve` |
-| See what a tag would publish | This, from a checkout with the docs requirements installed and the `gh-pages` branch fetched from `origin` |
+| Preview the docs you're editing, without versions | `npm run dev`, in `docs/` |
+| See the version switcher and banners, with two sample versions | `npm run site:local`, in `docs/` |
+| See what a tag would publish | This, with a checkout of the `gh-pages` branch at `../gh-pages` |
 
 ```bash
-go run ./hack/docsite -tag v0.2.0 -dry-run
+go run ./hack/docsite -tag v0.2.0 -site ../gh-pages -dry-run
 ```
+
+Without `-dry-run`, it builds each folder and commits them to that checkout, without pushing.
 
 <details class="nw-details">
 <summary>The domain, and moving to `gh-pages`</summary>
 
-The site is served from the root of `docs.napwake.dev`, which `mkdocs.yml`'s `site_url` names. `hack/docsite`'s 404 page sends links on from that root, and a test keeps the two the same.
+The site is served from the root of `docs.napwake.dev`, which `docs/astro.config.mjs` names as its site and base. `hack/docsite`'s redirects and 404 page send links on from that root, and a test keeps the two the same.
 
-For GitHub Pages to serve `gh-pages` there, the domain needs a DNS `CNAME` record pointing at `napwake.github.io`. The repository's Pages settings need it as their custom domain. Setting it commits a `CNAME` file to `gh-pages`, which mike leaves alone, as it does `404.html`.
+For GitHub Pages to serve `gh-pages` there, the domain needs a DNS `CNAME` record pointing at `napwake.github.io`. The repository's Pages settings need it as their custom domain. Setting it commits a `CNAME` file to `gh-pages`. `hack/docsite` writes the same file on every publish, so a publish never drops the domain.
 
 Moving from the old Actions deployment to `gh-pages` takes two settings, once the docs workflow has published the first release or release candidate since versioning, which creates the branch. Until then the old site stays as it is.
 
@@ -301,6 +304,6 @@ Moving from the old Actions deployment to `gh-pages` takes two settings, once th
 | Settings, Environments, `github-pages` | Add `gh-pages` to the deployment branches. Only `main` is allowed today, and GitHub's own Pages workflow deploys from the branch it serves |
 | Settings, Pages, Build and deployment | Source *Deploy from a branch*, branch `gh-pages`, folder `/ (root)` |
 
-Tags from before versioning can't be published this way, since their docs have no mike configuration.
+Tags from before the Starlight docs can't be published this way, since their docs have no Astro project.
 
 </details>
