@@ -44,10 +44,10 @@ import (
 const (
 	defaultMaxWait = 2 * time.Minute
 
-	// routeSyncInterval is how often listeners are matched to the routes in
+	// RouteSyncInterval is how often listeners are matched to the routes in
 	// ManagedWorkload status. A connection to a newly paused workload in the
 	// gap is refused, as it would be without the doorman.
-	routeSyncInterval = 2 * time.Second
+	RouteSyncInterval = 2 * time.Second
 
 	// backendPollInterval is how often held connections look for a Ready
 	// pod when nothing tells the doorman that endpoints changed. With an
@@ -295,7 +295,7 @@ func (s *Server) Start(ctx context.Context) error {
 		defer stop()
 		poll = s.resyncEvery
 	}
-	syncTicker := time.NewTicker(routeSyncInterval)
+	syncTicker := time.NewTicker(RouteSyncInterval)
 	defer syncTicker.Stop()
 	pollTicker := time.NewTicker(poll)
 	defer pollTicker.Stop()

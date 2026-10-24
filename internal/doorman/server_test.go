@@ -1177,7 +1177,7 @@ func TestServer_DropsADeletedWorkloadsSeries(t *testing.T) {
 	require.Eventually(t, func() bool { return series() == before+1 }, 5*time.Second, 10*time.Millisecond)
 
 	require.NoError(t, c.Delete(context.Background(), w))
-	assert.Eventually(t, func() bool { return series() == before }, 3*routeSyncInterval, 20*time.Millisecond)
+	assert.Eventually(t, func() bool { return series() == before }, 3*RouteSyncInterval, 20*time.Millisecond)
 }
 
 // A workload that never becomes Ready, called from many sources, can't take
@@ -1808,7 +1808,7 @@ func TestServer_APortReassignedWhileDrainingWaitsForTheDrain(t *testing.T) {
 	other.Namespace = "other-team"
 	require.NoError(t, c.Create(ctx, other))
 	for range 3 {
-		clock.Advance(routeSyncInterval)
+		clock.Advance(RouteSyncInterval)
 		require.NoError(t, s.syncRoutes(ctx, ctx))
 		assert.True(t, refused(t, port), "the port is served for neither while the old route drains")
 		assert.Equal(t, float64(1), testutil.ToFloat64(opmetrics.DoormanPortConflicts))

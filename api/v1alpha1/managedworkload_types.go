@@ -684,6 +684,14 @@ type PauseStatus struct {
 	// restore on resume.
 	PreviousReplicas int32 `json:"previousReplicas"`
 
+	// RoutedAt is when the doorman's EndpointSlices first stood in front of
+	// the workload's Services for this pause, beside its pods, which still
+	// served. It's scaled to zero a few seconds after, once proxies send new
+	// connections to the doorman too, so none is refused as the pods stop.
+	// Unset for a workload the doorman doesn't route.
+	// +optional
+	RoutedAt *metav1.Time `json:"routedAt,omitempty"`
+
 	// PausedAt is when the workload was scaled to zero. Unset until then.
 	// The pause waits from then for its pods to stop.
 	// +optional
