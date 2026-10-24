@@ -1,0 +1,36 @@
+---
+// A card: a title, its words, and a door glyph or one of the six UI icons when the brand has one for it.
+// With href, the whole card links there. A hidden separator keeps the eyebrow apart from the title in
+// the page's Markdown copy and for screen readers.
+import Icon from './Icon.astro';
+import StateDoor from './StateDoor.astro';
+import { link, type State } from './lib';
+interface Props { title: string; href?: string; icon?: 'cost' | 'forecast' | 'pause' | 'scan' | 'status' | 'wake'; door?: State; eyebrow?: string; code?: boolean }
+const { title, href, icon, door, eyebrow, code } = Astro.props;
+const Tag = href ? 'a' : 'div';
+// `code` in a title is set as code
+const titleHtml = title.replace(/[&<>]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' })[c]!).replace(/`([^`]+)`/g, '<code>$1</code>');
+---
+<Tag class:list={['nw-card', href && 'nw-card--link']} href={href ? link(href) : undefined}>
+  {(icon || door) && <span class="nw-card__mark">{icon ? <Icon name={icon} size={26} /> : <StateDoor state={door!} size={26} />}</span>}
+  {eyebrow && <span class="nw-card__eyebrow">{eyebrow}<span class="sr-only"> · </span></span>}
+  <span class:list={['nw-card__title', code && 'nw-card__title--code']}><Fragment set:html={titleHtml} />{href && <span class="nw-card__arrow" aria-hidden="true"> →</span>}</span>
+  <div class="nw-card__body"><slot /></div>
+</Tag>
+<style>
+  .nw-card { display: flex; flex-direction: column; gap: 0.4rem; padding: 1.1rem 1.2rem 1.2rem; background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius-lg); color: var(--text); text-decoration: none; min-width: 0; }
+  .nw-card--link { transition: border-color var(--duration-ui-short) var(--ease-calm); }
+  .nw-card--link:hover { border-color: var(--action); }
+  .nw-card--link:hover .nw-card__arrow { color: var(--link); }
+  .nw-card__mark { display: flex; margin-bottom: 0.35rem; }
+  .nw-card__eyebrow { font: 700 0.6875rem/1.4 var(--font-mono); letter-spacing: 0.06em; text-transform: uppercase; color: var(--brand); }
+  .nw-card__title { font: 700 1.0625rem/1.35 var(--font-sans); color: var(--text); }
+  .nw-card__title--code { font: 700 0.9375rem/1.4 var(--font-mono); }
+  .nw-card__title :global(code) { font: 700 0.9em var(--font-mono); background: var(--code-bg); padding: 0.05em 0.3em; border-radius: var(--radius-sm); }
+  .nw-card__arrow { color: var(--muted); transition: color var(--duration-ui-short) var(--ease-calm); }
+  .nw-card__body { font-size: 0.9375rem; line-height: 1.55; color: var(--muted); }
+  .nw-card__body :global(p) { margin: 0; }
+  .nw-card__body :global(p + p) { margin-top: 0.5rem; }
+  .nw-card__body :global(code) { font: 400 0.85em var(--font-mono); background: var(--code-bg); color: var(--code-text); padding: 0.08em 0.35em; border-radius: var(--radius-sm); }
+  .nw-card__body :global(a) { color: var(--link); }
+</style>

@@ -49,7 +49,7 @@ var number = regexp.MustCompile(`\d+(\.\d+)?|never`)
 // header row has header in it.
 func readDocsTable(t *testing.T, heading, header string) docsTable {
 	t.Helper()
-	page, err := os.ReadFile(filepath.Join("..", "..", "..", "docs", "concepts", "forecasting.md"))
+	page, err := os.ReadFile(filepath.Join("..", "..", "..", "docs", "src", "content", "docs", "concepts", "forecasting.mdx"))
 	require.NoError(t, err)
 	_, section, ok := strings.Cut(string(page), "\n"+heading+"\n")
 	require.True(t, ok, "the page has %q", heading)
@@ -155,7 +155,7 @@ func TestDocs_HowLongItTakes(t *testing.T) {
 			return Working(time.UTC, Weekdays, 9*time.Hour+5*time.Minute, 17*time.Hour+30*time.Minute, 40)
 		}, 1, asks},
 	}
-	table := readDocsTable(t, "### How Long It Takes", "`balanced` (75)")
+	table := readDocsTable(t, "### How long it takes", "`balanced` (75)")
 	require.Len(t, table.rows, len(scenarios), "a row for each scenario the test measures")
 	for _, sc := range scenarios {
 		var row [][]float64
@@ -205,7 +205,7 @@ func assertDays(t *testing.T, measured, page float64, msgAndArgs ...any) {
 // wakes it for nothing for longer.
 func TestDocs_WhatEachSettingTrades(t *testing.T) {
 	t.Parallel()
-	table := readDocsTable(t, "## Forecast Setting", "Mornings ready")
+	table := readDocsTable(t, "## Forecast setting", "Mornings ready")
 	require.Len(t, table.rows, len(forecast.Modes))
 	const seeds = 20
 	ready, wasted := make([]float64, 0, len(forecast.Modes)), make([]float64, 0, len(forecast.Modes))

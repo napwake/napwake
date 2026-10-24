@@ -37,9 +37,3 @@ go.work
 
 # Internal planning docs
 .docs
-
-# Python virtual environment
-.venv
-
-# MkDocs build output
-site/

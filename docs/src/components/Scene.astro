@@ -1,0 +1,25 @@
+---
+// The corridor at night: one arched door per workload, each drawn from its state, the doorman holding
+// the waking one. One idea per scene, captioned in plain words.
+import { scene } from '../rig/draw.mjs';
+import { WORDS, type State } from './lib';
+interface Room { state: State; label?: string }
+interface Props {
+  rooms: Room[]; doormanAt?: number; width?: number; height?: number; x0?: number; floorY?: number; scale?: number;
+  labels?: boolean; stateLabels?: boolean; finish?: boolean; label?: string; caption?: string; class?: string; framed?: boolean;
+}
+const { rooms, width = 1280, height = 400, x0 = 40, floorY, scale = 1, labels = true, stateLabels = true, finish = true, caption, class: cls, framed = true } = Astro.props;
+let doormanAt = Astro.props.doormanAt ?? rooms.findIndex((r) => r.state === 'waking');
+const s = scene({ w: width, h: height, rooms, x0, floorY, sc: scale, doormanAt, labels, stateLabels, hand: finish });
+const label = Astro.props.label ?? `A corridor of doors: ${rooms.map((r) => `${r.label ? r.label + ' ' : ''}${WORDS.plain[r.state].toLowerCase()}`).join(', ')}${doormanAt >= 0 ? '. The doorman holds the waking door.' : '.'}`;
+---
+<figure class:list={['nw-scene', 'not-content', framed && 'nw-scene--framed', cls]}>
+  <svg viewBox={s.viewBox} role="img" aria-label={label} set:html={s.svg} />
+  {caption && <figcaption>{caption}</figcaption>}
+</figure>
+<style>
+  .nw-scene { margin: 0; }
+  .nw-scene svg { display: block; width: 100%; height: auto; }
+  .nw-scene--framed svg { border-radius: var(--radius-lg); border: 1px solid var(--line); }
+  figcaption { margin-top: 0.7rem; font-size: 0.875rem; line-height: 1.5; color: var(--muted); max-width: 42rem; }
+</style>

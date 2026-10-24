@@ -4,7 +4,7 @@ Thanks for your interest in contributing to Napwake!
 
 For development setup, coding standards, commit conventions, and PR guidelines, see the full guide:
 
-**[docs/contributing.md](docs/contributing.md)**
+**[docs/src/content/docs/contributing.mdx](docs/src/content/docs/contributing.mdx)**
 
 ## Quick Start
 

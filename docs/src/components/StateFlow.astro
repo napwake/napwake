@@ -1,0 +1,89 @@
+---
+// States in order, each a door with its words, the arrows between them saying what moves a workload
+// on. With `loop`, the last arrow returns to the first: the lifecycle. Real text, so it reads aloud
+// and reflows to one column wherever it's narrow: across becomes the down rail below 52rem of its own
+// width, so three doors and their badges never spill out of the docs' column.
+import StateDoor from './StateDoor.astro';
+import StateBadge from './StateBadge.astro';
+import type { State } from './lib';
+interface Step { state: State; title?: string; text?: string }
+interface Props { steps: Step[]; between?: string[]; loop?: string; numbered?: boolean; vocabulary?: 'plain' | 'product' | 'both'; label: string; layout?: 'across' | 'down' }
+const { steps, between = [], loop, numbered = false, vocabulary = 'both', label, layout = 'down' } = Astro.props;
+const n = steps.length;
+const cols = Array.from({ length: n }, (_, i) => (i < n - 1 ? 'minmax(0, 1fr) minmax(6rem, 0.95fr)' : 'minmax(0, 1fr)')).join(' ');
+const lastShare = 100 / (n + 0.95 * (n - 1));
+---
+<figure class:list={['nw-flow', `nw-flow--${layout}`, 'not-content']} aria-label={label} role="group">
+  <ol class:list={['nw-flow__track', numbered && 'nw-flow__track--numbered']} style={`--nw-cols:${cols}`}>
+    {steps.map((s, i) => (
+      <>
+        <li class:list={['nw-flow__step', `nw-flow__step--${s.state}`]}>
+          <div class="nw-flow__head">
+            {numbered && <span class="nw-flow__n">{i + 1}</span>}
+            <StateDoor state={s.state} size={34} />
+          </div>
+          <StateBadge state={s.state} vocabulary={vocabulary} glyph={false} />
+          {s.title && <p class="nw-flow__title">{s.title}</p>}
+          {s.text && <p class="nw-flow__text" set:html={s.text} />}
+        </li>
+        {i < steps.length - 1 && (
+          <li class="nw-flow__arrow" aria-hidden={between[i] ? undefined : 'true'}>
+            <span class="nw-flow__line" aria-hidden="true"></span>
+            {between[i] && <span class="nw-flow__why" set:html={between[i]} />}
+          </li>
+        )}
+      </>
+    ))}
+  </ol>
+  {loop && (
+    <p class="nw-flow__loop"><span class="nw-flow__loopline" aria-hidden="true" style={`margin-inline: 16px calc(${lastShare.toFixed(2)}% - 18px)`}></span><span class="nw-flow__why" set:html={loop} /></p>
+  )}
+</figure>
+<style>
+  .nw-flow { margin: 1.75rem 0 0; padding: 1.4rem; background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius-xl); container: nw-flow / inline-size; }
+  @media (max-width: 44rem) { .nw-flow { padding: 1.1rem; } }
+  .nw-flow__track { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: var(--nw-cols); align-items: start; gap: 0; }
+  .nw-flow__step { display: flex; flex-direction: column; gap: 0.45rem; min-width: 0; margin: 0 !important; }
+  .nw-flow__head { display: flex; align-items: flex-end; gap: 0.5rem; height: 40px; }
+  .nw-flow__n { font: 700 0.75rem/1 var(--font-mono); color: var(--on-action); background: var(--action); border-radius: 999px; width: 1.4rem; height: 1.4rem; display: grid; place-items: center; margin-bottom: 0.15rem; }
+  .nw-flow__title { margin: 0.1rem 0 0; font: 700 0.9375rem/1.35 var(--font-sans); color: var(--text); }
+  .nw-flow__text { margin: 0; font-size: 0.875rem; line-height: 1.5; color: var(--muted); }
+  .nw-flow__text :global(code), .nw-flow__why :global(code) { font: 400 0.85em var(--font-mono); background: var(--code-bg); color: var(--code-text); padding: 0.05em 0.3em; border-radius: var(--radius-sm); }
+  .nw-flow__arrow { display: flex; flex-direction: column; align-items: stretch; gap: 0.5rem; padding: 18px 1rem 0; margin: 0 !important; min-width: 0; }
+  .nw-flow__line { position: relative; height: 2px; background: var(--line); border-radius: 2px; }
+  .nw-flow__line::after { content: ''; position: absolute; right: -2px; top: -4px; border: 5px solid transparent; border-left: 7px solid var(--muted); border-right: 0; }
+  .nw-flow__why { font: 400 0.8125rem/1.45 var(--font-sans); color: var(--muted); text-align: center; text-wrap: balance; }
+  .nw-flow__loop { display: flex; flex-direction: column; gap: 0.45rem; margin: 1.2rem 0 0; }
+  .nw-flow__loopline { height: 14px; border: 2px solid var(--line); border-top: 0; border-radius: 0 0 10px 10px; position: relative; }
+  .nw-flow__loopline::before { content: ''; position: absolute; left: -7px; top: -9px; border: 5px solid transparent; border-bottom: 7px solid var(--muted); border-top: 0; }
+  .nw-flow__loop .nw-flow__why { text-align: center; }
+  @container nw-flow (max-width: 52rem) {
+    .nw-flow__track { grid-template-columns: minmax(0, 1fr); }
+    .nw-flow__arrow { flex-direction: row; align-items: center; padding: 0.6rem 0 0.6rem 15px; gap: 0.9rem; }
+    .nw-flow__line { width: 2px; height: 2.2rem; flex: none; }
+    .nw-flow__line::after { right: auto; left: -4px; top: auto; bottom: -2px; border: 5px solid transparent; border-top: 7px solid var(--muted); border-bottom: 0; }
+    .nw-flow__why { text-align: start; }
+    .nw-flow__loopline { display: none; }
+    .nw-flow__loop .nw-flow__why { text-align: start; }
+    .nw-flow__loop .nw-flow__why::before { content: '↺ '; color: var(--muted); }
+  }
+
+  /* down: a rail of doors, the reason for each move between them; for flows inside a page */
+
+  .nw-flow.nw-flow--down { padding: 1.2rem 1.3rem; }
+  .nw-flow--down .nw-flow__track { grid-template-columns: minmax(0, 1fr); }
+  .nw-flow--down .nw-flow__arrow { flex-direction: row; align-items: center; padding: 0.6rem 0 0.6rem 15px; gap: 0.9rem; }
+  .nw-flow--down .nw-flow__line { width: 2px; height: 2.2rem; flex: none; }
+  .nw-flow--down .nw-flow__line::after { right: auto; left: -4px; top: auto; bottom: -2px; border: 5px solid transparent; border-top: 7px solid var(--muted); border-bottom: 0; }
+  .nw-flow--down .nw-flow__why { text-align: start; }
+  .nw-flow--down .nw-flow__loopline { display: none; }
+  .nw-flow--down .nw-flow__loop .nw-flow__why { text-align: start; }
+  .nw-flow--down .nw-flow__loop .nw-flow__why::before { content: '↺ '; color: var(--muted); }
+
+  .nw-flow--down .nw-flow__step { display: grid; grid-template-columns: 34px minmax(0, 1fr); column-gap: 1rem; row-gap: 0.25rem; align-items: start; }
+  .nw-flow--down .nw-flow__head { grid-row: 1 / span 3; height: auto; flex-direction: column; align-items: center; gap: 0.3rem; }
+  .nw-flow--down .nw-flow__step > :not(.nw-flow__head) { grid-column: 2; }
+  .nw-flow--down .nw-flow__arrow { padding: 0.35rem 0 0.45rem 16px; }
+  .nw-flow--down .nw-flow__line { height: 1.9rem; }
+  .nw-flow--down .nw-flow__why { font-style: italic; }
+</style>

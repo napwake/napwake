@@ -1,0 +1,14 @@
+---
+// The docs' button: one primary per view for the thing the page is for, secondary for the rest.
+// Hover and focus fill it with `action`, its label in `on-action`.
+import { link } from './lib';
+interface Props { href: string; variant?: 'primary' | 'secondary' }
+const { href, variant = 'secondary' } = Astro.props;
+---
+<a class:list={['nw-btn', `nw-btn--${variant}`]} href={link(href)}><slot /></a>
+<style>
+  .nw-btn { display: inline-flex; align-items: center; gap: 0.5rem; box-sizing: border-box; font: 700 1rem/1.6 var(--font-sans); padding: 0.55em 1.6em; border: 2px solid var(--action); border-radius: var(--radius-md); background: transparent; color: var(--action); text-decoration: none; transition: color var(--duration-ui-short) var(--ease-calm), background-color var(--duration-ui-short) var(--ease-calm); }
+  .nw-btn--primary { background: var(--action); color: var(--on-action); }
+  .nw-btn:hover, .nw-btn:focus-visible { background: var(--action); border-color: var(--action); color: var(--on-action); }
+  .nw-btn:focus-visible { outline: 2px solid transparent; box-shadow: var(--focus-ring); }
+</style>

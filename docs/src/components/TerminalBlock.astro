@@ -1,0 +1,21 @@
+---
+// A command and its output, as Napwake's pages show them: the brand's mono on the code background,
+// each command after a muted "$ " that copying skips. Copy output from the real CLI and its docs;
+// trim columns to fit, never invent them. `status` prints colour only at a terminal, so these blocks show it plain, as when piped.
+interface Props { command?: string | string[]; output?: string[]; label?: string; title?: string }
+const { command, output = [], label, title } = Astro.props;
+const commands = command === undefined ? [] : [].concat(command as never);
+---
+<figure class="nw-term-wrap not-content">
+  {title && <figcaption class="nw-term__title">{title}</figcaption>}
+  <pre class="nw-term" aria-label={label} tabindex="0"><code>{commands.map((c, i) => <>{i > 0 && '\n'}<span class="nw-term__prompt" aria-hidden="true">$ </span><span class="nw-term__cmd">{c}</span></>)}{commands.length > 0 && output.length > 0 && '\n'}{output.length > 0 && <span class="nw-term__out">{output.join('\n')}</span>}</code></pre>
+</figure>
+<style>
+  .nw-term-wrap { margin: 0; }
+  .nw-term__title { font: 700 0.75rem/1.4 var(--font-mono); letter-spacing: 0.06em; text-transform: uppercase; color: var(--muted); margin: 0 0 0.5rem; }
+  .nw-term { margin: 0; box-sizing: border-box; background: var(--code-bg); color: var(--code-text); border: 1px solid var(--line); border-radius: var(--radius-md); padding: var(--space-4) 18px 20px; font: 400 0.8125rem/1.55 var(--font-mono); white-space: pre; overflow-x: auto; tab-size: 4; }
+  .nw-term code { font: inherit; background: none; padding: 0; color: inherit; }
+  .nw-term__prompt { color: var(--muted); user-select: none; -webkit-user-select: none; }
+  .nw-term__cmd { font-weight: 700; }
+  .nw-term__out { color: var(--code-text); }
+</style>

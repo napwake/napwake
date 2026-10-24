@@ -1,0 +1,61 @@
+---
+// For readers who work with an assistant: the page as Markdown (copied, or opened at its .md URL),
+// and links that open Claude or ChatGPT with a prompt naming this page's Markdown. Plain links:
+// no tracking parameters, no referrer. Words, not borrowed icons (the brand allows no other set).
+import { mdPath } from './lib';
+interface Props { id: string; class?: string }
+const { id, class: cls } = Astro.props;
+const md = mdPath(id);
+const mdUrl = new URL(md, Astro.site).href;
+const prompt = `Read ${mdUrl}, a page of Napwake's docs, and answer my questions about it.`;
+const claude = `https://claude.ai/new?q=${encodeURIComponent(prompt)}`;
+const chatgpt = `https://chatgpt.com/?q=${encodeURIComponent(prompt)}`;
+---
+<nw-page-tools class:list={['nw-tools', 'not-content', cls]} data-md={md} data-pagefind-ignore>
+  <span class="nw-tools__label" aria-hidden="true">For your assistant</span>
+  <button type="button" class="nw-tools__btn" data-copy>Copy as Markdown</button>
+  <a class="nw-tools__btn" href={md} type="text/markdown">View .md</a>
+  <a class="nw-tools__btn" href={claude} target="_blank" rel="noopener noreferrer">Ask Claude <span aria-hidden="true">↗</span><span class="sr-only"> (opens claude.ai)</span></a>
+  <a class="nw-tools__btn" href={chatgpt} target="_blank" rel="noopener noreferrer">Ask ChatGPT <span aria-hidden="true">↗</span><span class="sr-only"> (opens chatgpt.com)</span></a>
+  <span class="sr-only" role="status" aria-live="polite" data-status></span>
+</nw-page-tools>
+
+<script>
+  class NwPageTools extends HTMLElement {
+    connectedCallback() {
+      const button = this.querySelector<HTMLButtonElement>('[data-copy]');
+      const status = this.querySelector<HTMLElement>('[data-status]');
+      const md = this.dataset.md;
+      if (!button || !md) return;
+      const label = button.textContent;
+      button.addEventListener('click', async () => {
+        try {
+          const text = await fetch(md).then((r) => (r.ok ? r.text() : Promise.reject(r.status)));
+          await navigator.clipboard.writeText(text);
+          button.textContent = 'Copied';
+          if (status) status.textContent = 'The page is copied as Markdown.';
+        } catch {
+          // no clipboard (or no .md): open the Markdown instead
+          location.href = md;
+          return;
+        }
+        setTimeout(() => { button.textContent = label; if (status) status.textContent = ''; }, 2000);
+      });
+    }
+  }
+  customElements.define('nw-page-tools', NwPageTools);
+</script>
+
+<style>
+  .nw-tools { display: flex; flex-wrap: wrap; align-items: center; gap: 0.4rem; margin-top: 1.1rem; }
+  .nw-tools__label { font: 700 0.6875rem/1.4 var(--font-mono); letter-spacing: 0.06em; text-transform: uppercase; color: var(--muted); margin-inline-end: 0.3rem; }
+  .nw-tools__btn {
+    display: inline-flex; align-items: center; gap: 0.3rem; min-height: 1.85rem; box-sizing: border-box;
+    padding: 0.2rem 0.65rem; font: 700 0.8125rem/1.3 var(--font-sans); color: var(--muted);
+    background: transparent; border: 1px solid var(--line); border-radius: var(--radius-md);
+    text-decoration: none; cursor: pointer; transition: color var(--duration-ui-short) var(--ease-calm), border-color var(--duration-ui-short) var(--ease-calm);
+  }
+  .nw-tools__btn:hover, .nw-tools__btn:focus-visible { color: var(--text); border-color: var(--action); }
+  .nw-tools__btn span[aria-hidden] { font-weight: 400; }
+  @media (max-width: 30rem) { .nw-tools__label { flex-basis: 100%; } }
+</style>

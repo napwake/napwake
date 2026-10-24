@@ -1,0 +1,19 @@
+---
+// A state as a door card: the door, the state in both vocabularies (plain first), and what it means.
+import StateDoor from './StateDoor.astro';
+import StateBadge from './StateBadge.astro';
+import type { State } from './lib';
+interface Props { state: State }
+const { state } = Astro.props;
+---
+<div class:list={['nw-statecard', `nw-statecard--${state}`]}>
+  <StateDoor state={state} size={44} />
+  <StateBadge state={state} vocabulary="both" glyph={false} />
+  <div class="nw-statecard__body"><slot /></div>
+</div>
+<style>
+  .nw-statecard { display: flex; flex-direction: column; align-items: flex-start; gap: 0.6rem; padding: 1.25rem 1.25rem 1.3rem; background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius-xl); }
+  .nw-statecard__body { font-size: 0.9375rem; line-height: 1.55; color: var(--text); }
+  .nw-statecard__body :global(p) { margin: 0; }
+  .nw-statecard__body :global(code) { font: 400 0.85em var(--font-mono); background: var(--code-bg); padding: 0.08em 0.35em; border-radius: var(--radius-sm); }
+</style>

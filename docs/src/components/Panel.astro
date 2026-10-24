@@ -1,0 +1,15 @@
+---
+// A part of a page set apart: what to have before you start, a summary. A title, then the page's
+// own content.
+interface Props { title: string }
+const { title } = Astro.props;
+---
+<section class="nw-panel" aria-label={title}>
+  <p class="nw-panel__title not-content">{title}</p>
+  <div class="nw-panel__body"><slot /></div>
+</section>
+<style>
+  .nw-panel { margin-top: 1.75rem; padding: 1.1rem 1.3rem 1.25rem; background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius-xl); }
+  .nw-panel__title { margin: 0 0 0.25rem; font: 700 0.75rem/1.4 var(--font-mono); letter-spacing: 0.06em; text-transform: uppercase; color: var(--brand); }
+  .nw-panel__body > :global(:first-child) { margin-top: 0.4rem; }
+</style>

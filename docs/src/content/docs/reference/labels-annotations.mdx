@@ -1,0 +1,127 @@
+---
+title: "Labels and annotations"
+description: "Every label, annotation and finalizer Napwake reads or writes, with its values, where it goes and what it does."
+tableOfContents: false
+lede: "Every label, annotation and finalizer Napwake reads or writes: the values it takes, where it goes, and what it does."
+---
+
+import Ref from '../../../components/Ref.astro';
+import RefIndex from '../../../components/RefIndex.astro';
+import Precedence from '../../../components/Precedence.astro';
+import NextSteps from '../../../components/NextSteps.astro';
+
+<RefIndex groups={[{"title": "Labels", "href": "#labels", "names": [{"id": "label-napwake-dev-managed", "name": "napwake.dev/managed"}, {"id": "label-napwake-dev-ignore", "name": "napwake.dev/ignore"}, {"id": "label-napwake-dev-protected", "name": "napwake.dev/protected"}, {"id": "label-napwake-dev-allow-protected", "name": "napwake.dev/allow-protected"}, {"id": "label-napwake-dev-from-label", "name": "napwake.dev/from-label"}, {"id": "label-napwake-dev-managed-workload", "name": "napwake.dev/managed-workload"}, {"id": "label-napwake-dev-operator", "name": "napwake.dev/operator"}, {"id": "label-napwake-dev-forwarded", "name": "napwake.dev/forwarded"}, {"id": "label-app-kubernetes-io-name", "name": "app.kubernetes.io/name"}]}, {"title": "Settings", "href": "#settings-annotations", "names": [{"id": "setting-napwake-dev-dry-run", "name": "napwake.dev/dry-run"}, {"id": "setting-napwake-dev-idle-after", "name": "napwake.dev/idle-after"}, {"id": "setting-napwake-dev-cpu-threshold", "name": "napwake.dev/cpu-threshold"}, {"id": "setting-napwake-dev-auto-resume", "name": "napwake.dev/auto-resume"}, {"id": "setting-napwake-dev-pause-early", "name": "napwake.dev/pause-early"}, {"id": "setting-napwake-dev-forecast", "name": "napwake.dev/forecast"}, {"id": "setting-napwake-dev-depends-on", "name": "napwake.dev/depends-on"}, {"id": "setting-napwake-dev-wake", "name": "napwake.dev/wake"}, {"id": "setting-napwake-dev-wake-max-wait", "name": "napwake.dev/wake-max-wait"}, {"id": "setting-napwake-dev-wake-page", "name": "napwake.dev/wake-page"}]}, {"title": "Activity", "href": "#activity-annotations", "names": [{"id": "activity-napwake-dev-last-activity", "name": "napwake.dev/last-activity"}, {"id": "activity-napwake-dev-active-until", "name": "napwake.dev/active-until"}, {"id": "activity-napwake-dev-last-request", "name": "napwake.dev/last-request"}, {"id": "activity-napwake-dev-last-request-from", "name": "napwake.dev/last-request-from"}]}, {"title": "Other annotations", "href": "#other-annotations", "names": [{"id": "annotation-napwake-dev-pause-requested", "name": "napwake.dev/pause-requested"}, {"id": "annotation-napwake-dev-pause-overrides-forecast", "name": "napwake.dev/pause-overrides-forecast"}, {"id": "annotation-napwake-dev-wake-requested", "name": "napwake.dev/wake-requested"}, {"id": "annotation-napwake-dev-dependents-from", "name": "napwake.dev/dependents-from"}, {"id": "annotation-napwake-dev-paused-from", "name": "napwake.dev/paused-from"}, {"id": "annotation-napwake-dev-turned-away", "name": "napwake.dev/turned-away"}, {"id": "annotation-napwake-dev-ignore-dependencies", "name": "napwake.dev/ignore-dependencies"}, {"id": "annotation-napwake-dev-operator", "name": "napwake.dev/operator"}, {"id": "annotation-napwake-dev-doorman-ignore-ports", "name": "napwake.dev/doorman-ignore-ports"}]}, {"title": "Finalizers", "href": "#finalizers", "names": [{"id": "finalizer-napwake-dev-cleanup", "name": "napwake.dev/cleanup"}]}]} />
+
+## Labels
+
+| Label | Value | On | Description |
+|-------|-------|----|-------------|
+| <Ref id="label-napwake-dev-managed">napwake.dev/managed</Ref> | `"true"` | Deployments, StatefulSets, Namespaces | Opts in the workload, or every Deployment and StatefulSet in the namespace, with a ManagedWorkload made from its annotations. `"false"` on a workload leaves it out of a managed namespace, like `napwake.dev/ignore`. Other values don't opt in, and an event says so ([Opting in](/guides/opt-in/)) |
+| <Ref id="label-napwake-dev-ignore">napwake.dev/ignore</Ref> | `"true"` | Deployments, StatefulSets | Leaves the workload out, even in a managed namespace, scaled back up first if paused. A ManagedWorkload you wrote for it does nothing and reports `TargetAvailable=False`, reason `TargetIgnored` |
+| <Ref id="label-napwake-dev-protected">napwake.dev/protected</Ref> | `"true"` | Namespaces | Nothing here is managed, whatever its labels, and what was paused wakes. `kube-*` and Napwake's own namespace are protected without it ([Protected namespaces](/guides/opt-in/#protected-namespaces)) |
+| <Ref id="label-napwake-dev-allow-protected">napwake.dev/allow-protected</Ref> | `"true"` | Namespaces | Lets Napwake manage a namespace labelled protected, matching `protectedNamespaces`, or always protected, such as `kube-system` or its own. The operator's and doorman's Deployments are never managed. Set it on purpose. Napwake never does |
+| <Ref id="label-napwake-dev-from-label">napwake.dev/from-label</Ref> | `"true"` | ManagedWorkloads | On ManagedWorkloads made from the `managed` label, the only ones Napwake updates and deletes. Those without it are yours |
+| <Ref id="label-napwake-dev-managed-workload">napwake.dev/managed-workload</Ref> | ManagedWorkload name | EndpointSlices | On the EndpointSlices routing a paused workload's Services to the doorman or its forwarder, with `endpointslice.kubernetes.io/managed-by: doorman.napwake.dev`. Names over 63 characters are shortened with a hash. Removed once Running |
+| <Ref id="label-napwake-dev-operator">napwake.dev/operator</Ref> | namespace | EndpointSlices, forwarder pods | The install's namespace, on the doorman EndpointSlices an operator writes and its [forwarders'](/concepts/wake-on-request/#gke-container-native-load-balancing-negs) pods. Another install doesn't move them to its doorman ([More than one install](/getting-started/installation/#more-than-one-install)) |
+| <Ref id="label-napwake-dev-forwarded">napwake.dev/forwarded</Ref> | `"true"` | EndpointSlices | On a doorman EndpointSlice pointing a Service behind GKE NEGs at the workload's [forwarder](/concepts/wake-on-request/#gke-container-native-load-balancing-negs), not the doorman |
+| <Ref id="label-app-kubernetes-io-name">app.kubernetes.io/name</Ref> | `napwake-forwarder` | Deployments, pods | On each forwarder Deployment the operator runs beside a paused workload behind GKE NEGs, and its pods. The Deployment also has `napwake.dev/ignore: "true"`, so Napwake doesn't manage it in a namespace opted in by label |
+
+### Usage
+
+```bash
+kubectl label deployment my-api napwake.dev/managed=true
+kubectl label namespace preview-42 napwake.dev/managed=true
+```
+
+Opt in a workload, or a namespace.
+
+```bash
+kubectl label deployment my-critical-service napwake.dev/ignore=true
+```
+
+Leave one out of a managed namespace.
+
+```bash
+kubectl get managedworkloads -l napwake.dev/from-label=true --all-namespaces
+```
+
+List the ManagedWorkloads made from labels.
+
+## Settings annotations
+
+On an opted-in Deployment or StatefulSet, or its Namespace for all its workloads. A setting is the first of these that can be read ([Opting in](/guides/opt-in/#settings), [Helm defaults](/reference/helm-values/#opt-in-defaults)).
+
+<Precedence
+  label="Where a setting comes from, the first of these that can be read"
+  items={[
+    { title: "The workload's annotation" },
+    { title: "Its namespace's" },
+    { title: 'The Helm defaults', text: 'only <code>idle-after</code>, <code>cpu-threshold</code>, <code>dry-run</code>, <code>pause-early</code>, <code>forecast</code> and <code>wake</code> have one' },
+    { title: 'The built-in default' },
+  ]}
+/>
+
+| Annotation | Accepted values | Default | Description |
+|------------|-----------------|---------|-------------|
+| <Ref id="setting-napwake-dev-dry-run">napwake.dev/dry-run</Ref> | exactly `"true"` or `"false"` | `"false"` | Measure without pausing |
+| <Ref id="setting-napwake-dev-idle-after">napwake.dev/idle-after</Ref> | a Go duration of at least `1m`, such as `"90m"` or `"2h"` | `1h` | Time without activity before pausing |
+| <Ref id="setting-napwake-dev-cpu-threshold">napwake.dev/cpu-threshold</Ref> | a percentage from `"0.1"` to `"100"`, to two places, such as `"10"` or `"0.5"` | `10` | CPU % of requests above which the workload is active |
+| <Ref id="setting-napwake-dev-auto-resume">napwake.dev/auto-resume</Ref> | exactly `"true"` or `"false"` | `"false"` | Wake ahead of forecast demand |
+| <Ref id="setting-napwake-dev-pause-early">napwake.dev/pause-early</Ref> | exactly `"true"` or `"false"` | `"false"` | Pause after 20 idle minutes, before `idle-after`, when a confident forecast expects quiet until then and the doorman would wake it. Sets `spec.idlePolicy.pauseEarly` ([Pausing early](/concepts/forecasting/#pausing-early)). Never with `napwake.dev/wake: "ask"` |
+| <Ref id="setting-napwake-dev-forecast">napwake.dev/forecast</Ref> | exactly `"eager"`, `"balanced"` or `"cautious"` | `"balanced"` | How soon the forecast acts, at confidence 60, 75 or 85. Eager acts sooner, waking it for nothing more often. Cautious acts later, for workloads costly to keep awake. Sets `spec.prediction.mode`, which `spec.prediction.confidence` overrides ([Forecast setting](/concepts/forecasting/#forecast-setting)) |
+| <Ref id="setting-napwake-dev-depends-on">napwake.dev/depends-on</Ref> | comma-separated `kind/name` or `namespace/kind/name`, kind `deployment` or `statefulset` | none | Workloads this one needs. Empty declares none, dropping the namespace's. On a namespace, it leaves out the workloads it names and those they depend on by their own `depends-on`, as dependencies rather than dependents. One in another namespace needs its `napwake.dev/dependents-from` |
+| <Ref id="setting-napwake-dev-wake">napwake.dev/wake</Ref> | exactly `"request"` or `"ask"` | `"request"` | What wakes it through the doorman. `"request"` is any request. `"ask"` is only a person's click on **Wake it**. Sets `spec.wake.mode` ([Asking before waking](/concepts/wake-on-request/#asking-before-waking)) |
+| <Ref id="setting-napwake-dev-wake-max-wait">napwake.dev/wake-max-wait</Ref> | a Go duration above zero, at most `1h` | `2m` | How long a request is held while it wakes |
+| <Ref id="setting-napwake-dev-wake-page">napwake.dev/wake-page</Ref> | exactly `"true"` or `"false"` | `"true"` | Show browsers a waking-up page |
+
+Values that can't be read, such as `"True"`, `"yes"`, `"soon"` or `"0"`.
+
+| Annotation | A value that can't be read |
+|------------|----------------------------|
+| Any setting | Skipped, with an `InvalidSetting` warning event on the workload. The setting comes from the next place in the order, never the default in place of a namespace's value. Others still apply |
+| `dry-run` | Turns dry-run on, wherever it is. A typo in the setting meant to stop pauses must never start them |
+| `wake` | Asks before waking, wherever it is. A typo in the setting meant to keep robots out must never let them in |
+| `depends-on` | A bad entry is skipped, the rest apply. Only a value with no readable entry falls through to the namespace's |
+
+## Activity annotations
+
+| Annotation | Value | On | Description |
+|------------|-------|----|-------------|
+| <Ref id="activity-napwake-dev-last-activity">napwake.dev/last-activity</Ref> | RFC 3339 time | ManagedWorkloads, Deployments, StatefulSets | Activity another tool saw, such as a developer portal. A future time counts as now. A change while paused wakes it ([Activity annotations](/concepts/idle-detection/#activity-annotations)) |
+| <Ref id="activity-napwake-dev-active-until">napwake.dev/active-until</Ref> | RFC 3339 time | ManagedWorkloads, Deployments, StatefulSets | Awake until then, woken if paused |
+| <Ref id="activity-napwake-dev-last-request">napwake.dev/last-request</Ref> | RFC 3339 time | ManagedWorkloads | Set by the doorman when it holds a request for a paused workload, and with `doorman.admissionPolicy.enabled` by no one else. To wake a workload yourself, set `wake-requested`. Wakes it like `last-activity`, the clock recording `request` ([Wake on request](/concepts/wake-on-request/)) |
+| <Ref id="activity-napwake-dev-last-request-from">napwake.dev/last-request-from</Ref> | IP address | ManagedWorkloads | Where the waking request came from, set by the doorman with `last-request` and, like it, by no one else. The operator [learns](/concepts/dependencies/#learned-dependencies) from it which workload depends on this one |
+| The three that take a time | not an RFC 3339 time, such as epoch seconds | as above | Ignored. It neither keeps the workload awake nor wakes it, and an `InvalidActivityAnnotation` warning event on the ManagedWorkload says so, once per value |
+
+## Other annotations
+
+| Annotation | Value | On | Description |
+|------------|-------|----|-------------|
+| <Ref id="annotation-napwake-dev-pause-requested">napwake.dev/pause-requested</Ref> | any value that differs from the last request's, such as the time | ManagedWorkloads | Pause now, as if the idle clock had run out. Set by `kubectl napwake pause`. Each value acts once, recorded in `status.lastPauseRequest`. An annotation, so a GitOps tool owning the spec leaves it alone ([Pause now](/guides/pause/#pause-now)) |
+| <Ref id="annotation-napwake-dev-pause-overrides-forecast">napwake.dev/pause-overrides-forecast</Ref> | `"true"` | ManagedWorkloads | With a pause request, pauses even when a confident forecast expects demand within the hour. Without it, such a request is declined, saying when. It applies to the request it comes with, so set or remove it with each. `kubectl napwake pause --yes` sets it ([Pause now](/guides/pause/#pause-now)) |
+| <Ref id="annotation-napwake-dev-wake-requested">napwake.dev/wake-requested</Ref> | any value that differs from the last request's, such as the time | ManagedWorkloads | Wake now, whatever the wake setting, as for a pull request bot, a portal or a chat command. An awake workload's idle clock restarts. Set by `kubectl napwake wake`. Each value acts once, recorded in `status.lastWakeRequest`, and the `WakeRequest` condition says what came of it. An annotation, so a GitOps tool owning the spec leaves it alone ([Wake now](/guides/pause/#wake-now)) |
+| <Ref id="annotation-napwake-dev-dependents-from">napwake.dev/dependents-from</Ref> | comma-separated namespace names, or `"*"` for any | Namespaces | Lets those namespaces' workloads depend on this one's. A dependency in another namespace, declared or learned, is held awake, woken and waited for only if its namespace lists the dependent's. Otherwise the dependent reports `DependencyNotAllowed=True` ([Across namespaces](/concepts/dependencies/#across-namespaces)) |
+| <Ref id="annotation-napwake-dev-paused-from">napwake.dev/paused-from</Ref> | JSON, set by Napwake | Deployments, StatefulSets | What the pause changed, the replicas and the KEDA ScaledObject with its own `paused-replicas`. Written before scaling to zero, removed when handed back. If the ManagedWorkload's status is lost while paused, as in a backup restored without status, Napwake takes the pause up from it, so it still wakes to its replicas. Don't set or edit it |
+| <Ref id="annotation-napwake-dev-turned-away">napwake.dev/turned-away</Ref> | JSON, set by the doorman | ManagedWorkloads | Where the doorman counts the requests it turned away during a pause, for a workload with `wake.mode: Ask`. The operator copies it into `status.turnedAway`. Don't set or edit it ([What it turns away](/concepts/wake-on-request/#what-it-turns-away)) |
+| <Ref id="annotation-napwake-dev-ignore-dependencies">napwake.dev/ignore-dependencies</Ref> | comma-separated `namespace/name`, or a name in the workload's own namespace | Deployments, StatefulSets, ManagedWorkloads | Dependencies Napwake shouldn't [learn](/concepts/dependencies/#learned-dependencies) |
+| <Ref id="annotation-napwake-dev-operator">napwake.dev/operator</Ref> | namespace, set by Napwake | ManagedWorkloads | The install that took it on, written with its `napwake.dev/cleanup` finalizer. Other installs leave it alone and don't count it in their uninstall and upgrade guards ([More than one install](/getting-started/installation/#more-than-one-install)) |
+| <Ref id="annotation-napwake-dev-doorman-ignore-ports">napwake.dev/doorman-ignore-ports</Ref> | comma-separated port names or numbers | Services | Ports the doorman never routes, such as a metrics port scraped elsewhere. They fail while paused ([what wakes a workload](/concepts/wake-on-request/#what-wakes-a-workload-and-what-doesnt)) |
+
+## Finalizers
+
+| Finalizer | On | Description |
+|-----------|----|-------------|
+| <Ref id="finalizer-napwake-dev-cleanup">napwake.dev/cleanup</Ref> | ManagedWorkloads | Added by the operator, and removed once a paused workload is scaled back up and its Services stop routing to the doorman, so the ManagedWorkload can be deleted |
+
+:::caution
+Don't remove `napwake.dev/cleanup` by hand. Without it, a deleted ManagedWorkload leaves a paused workload at zero replicas, and its KEDA ScaledObject held there, until a new ManagedWorkload for it takes the pause up from `napwake.dev/paused-from`.
+:::
+
+<NextSteps
+  doorman={false}
+  items={[
+    { href: '/guides/opt-in/', title: 'Opting in', text: 'Labels and settings in use.' },
+    { href: '/reference/helm-values/#opt-in-defaults', title: 'Opt-in defaults', text: 'The Helm defaults for six settings.' },
+    { href: '/reference/api/', title: 'API reference', text: 'The ManagedWorkload these labels create.' },
+  ]}
+/>

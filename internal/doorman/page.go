@@ -405,7 +405,7 @@ const asleepRetryAfter = 5 * time.Minute
 // browser: what it is, and how to wake it. It names nothing inside the
 // cluster, since anyone who reaches the Service reads it.
 const (
-	asleepMessage = "This environment is asleep. Napwake paused it while nobody was using it, to save money."
+	asleepMessage = "This environment is asleep. It was paused because it looked unused, to save money."
 	asleepGuide   = "https://docs.napwake.dev/guides/preview-environments/"
 
 	// asleepDocs is where the docs say how a workload that asks is woken,

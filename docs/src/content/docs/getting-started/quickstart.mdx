@@ -1,0 +1,198 @@
+---
+title: "Quickstart"
+description: "Take one workload from idle and costing money to paused while idle and woken when used. You measure it first, so nothing pauses until you say so."
+lede: "Take one workload from idle and costing money to paused while idle and woken when used. You measure it first, so nothing pauses until you say so."
+---
+
+import Journey from '../../../components/Journey.astro';
+import Panel from '../../../components/Panel.astro';
+import StartCheckpoint from '../../../components/StartCheckpoint.astro';
+import NextSteps from '../../../components/NextSteps.astro';
+
+<Journey
+  label="The steps, and the sample workload's state after each"
+  steps={[
+    { href: '#1-a-sample-workload', title: 'A sample workload', state: 'awake' },
+    { href: '#2-see-whats-idle', title: "See what's idle", state: 'awake' },
+    { href: '#3-opt-it-in-measuring-first', title: 'Opt it in, measuring first', state: 'awake', note: 'dry-run' },
+    { href: '#4-watch-it-measure', title: 'Watch it measure', state: 'awake', note: 'dry-run' },
+    { href: '#5-let-it-pause', title: 'Let it pause', state: 'asleep' },
+    { href: '#6-wake-it-with-a-request', title: 'Wake it with a request', state: 'awake' },
+    { href: '#7-stop-managing-it', title: 'Stop managing it', state: 'awake', note: 'not managed' },
+  ]}
+/>
+
+<Panel title="Before you start">
+
+You need Napwake [installed](/getting-started/installation/), the [kubectl plugin](/getting-started/kubectl-plugin/) and metrics-server. Napwake reads CPU from it, and won't pause a workload whose CPU it can't read.
+
+```bash
+kubectl get apiservice v1beta1.metrics.k8s.io
+```
+
+If the Metrics API is missing or not `Available`, install metrics-server:
+
+| Cluster | metrics-server |
+|---|---|
+| GKE, AKS | Runs by default |
+| minikube | Off when new. `minikube addons enable metrics-server` |
+| EKS | Off. The `metrics-server` add-on, or the manifest |
+| kind | Off. The manifest, then the patch |
+| Others | The manifest |
+
+```bash
+kubectl apply -f https://github.com/kubernetes-sigs/metrics-server/releases/latest/download/components.yaml
+```
+
+On kind, kubelet certificates aren't signed for their addresses. The patch tells metrics-server not to verify them. Local test clusters only.
+
+```bash
+kubectl patch deployment metrics-server -n kube-system --type=json \
+  -p '[{"op":"add","path":"/spec/template/spec/containers/0/args/-","value":"--kubelet-insecure-tls"}]'
+```
+
+`kubectl top pods -A` shows numbers within a minute or so once it works. If a workload still won't pause, see [Troubleshooting](/operations/troubleshooting/#workload-is-idle-but-not-being-paused).
+
+</Panel>
+
+## 1. A sample workload
+
+Skip it to use your own.
+
+```bash
+kubectl create namespace dev
+kubectl create deployment my-api --image=nginx:1.27-alpine --replicas=2 -n dev
+kubectl set resources deployment my-api -n dev --requests=cpu=100m,memory=64Mi
+kubectl expose deployment my-api -n dev --port=80
+kubectl rollout status deployment/my-api -n dev
+```
+
+<StartCheckpoint state="awake">
+`my-api` runs 2 replicas, with a Service on port 80.
+</StartCheckpoint>
+
+## 2. See what's idle
+
+```bash
+kubectl napwake scan -n dev
+```
+
+The scan shows whether each workload is idle and why, and what it costs while it runs. Leave out `-n` to scan every namespace.
+
+<StartCheckpoint state="awake">
+`my-api` is active, as Napwake would treat any workload deployed in the last hour.
+</StartCheckpoint>
+
+## 3. Opt it in, measuring first
+
+```bash
+kubectl annotate deployment my-api -n dev napwake.dev/dry-run=true napwake.dev/idle-after=5m
+kubectl label deployment my-api -n dev napwake.dev/managed=true
+```
+
+The annotations are its settings, set first so it starts in dry-run, measured and never paused. `idle-after=5m` keeps the example quick. The default is an hour. The label opts it in.
+
+In real use, they go in the manifest or Helm values, or on the namespace for everything in it. See [Opting in](/guides/opt-in/), Kustomize included.
+
+<StartCheckpoint state="awake" note="dry-run">
+Napwake creates a ManagedWorkload for it:
+
+```bash
+kubectl get managedworkloads -n dev
+```
+
+```
+NAME     PHASE     FREED   SAVED   WOULD FREE   AGE
+my-api   Running   $0.00   $0.00   $0.00        10s
+```
+</StartCheckpoint>
+
+## 4. Watch it measure
+
+```bash
+kubectl napwake status -n dev
+```
+
+For `my-api`, STATE reads `running (dry-run)`. LAST ACTIVITY says when it was last active and from what. Until there's been any, it reads `none since Napwake began managing it`. NEXT says when it would pause.
+
+```bash
+kubectl describe managedworkload my-api -n dev
+```
+
+After `idle-after` with no activity, STATE reads `idle (dry-run)` and an event says it would have paused. Nothing is scaled down. Mark it active, as a developer portal or your tooling would, to end the would-be pause:
+
+```bash
+kubectl annotate deployment my-api -n dev --overwrite napwake.dev/last-activity=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+kubectl napwake status -n dev
+kubectl get managedworkloads -n dev
+```
+
+`status` now leads with what dry-run measured. WOULD FREE is what the would-be pauses would have freed.
+
+<details class="nw-details">
+<summary>With a workload of your own</summary>
+
+Measure it a few days, across a weekend if it's used on weekdays, before going live. See [Dry run](/guides/dry-run/#what-dry-run-measured).
+
+Requests to a running workload count only through a [Prometheus query](/guides/prometheus-signals/). So an nginx serving the odd request on almost no CPU would pause. If yours won't turn idle, LAST ACTIVITY and NEXT say why.
+
+</details>
+
+<StartCheckpoint state="awake" note="dry-run">
+WOULD FREE reads `$0.00`. A few minutes of a sample this small free less than a cent.
+</StartCheckpoint>
+
+## 5. Let it pause
+
+:::caution[Applied by Argo CD or Flux?]
+Skip this for the sample. A tool that applies `replicas` from Git undoes every pause, and Napwake waits an hour to pause again (`GitOpsConflict`). Before you enable, have it leave replicas to Napwake, as in [GitOps tools](/guides/gitops/). The scan's notes list affected workloads. Those with an HPA are already set.
+:::
+
+```bash
+kubectl napwake enable my-api -n dev
+```
+
+It sets `napwake.dev/dry-run` to `"false"`. After `idle-after` with no activity, which NEXT counts down, Napwake scales `my-api` to zero and remembers its 2 replicas.
+
+<StartCheckpoint state="asleep">
+```bash
+kubectl get deployment my-api -n dev
+# READY: 0/0
+```
+</StartCheckpoint>
+
+## 6. Wake it with a request
+
+```bash
+kubectl run curl --rm -it --image=curlimages/curl:8.7.1 -n dev --restart=Never -- curl -s http://my-api
+```
+
+The [doorman](/concepts/wake-on-request/) holds the request and wakes `my-api`. A browser coming through an Ingress or a Gateway gets a waking-up page, which loads the app once it's up.
+
+`kubectl port-forward` goes straight to a pod, so it can't reach a paused workload. Wake it first:
+
+```bash
+kubectl napwake wake my-api -n dev
+```
+
+<StartCheckpoint state="awake">
+curl gets its answer once `my-api` is Ready.
+</StartCheckpoint>
+
+## 7. Stop managing it
+
+```bash
+kubectl label deployment my-api -n dev napwake.dev/managed-
+```
+
+<StartCheckpoint state="awake" note="not managed">
+`my-api` has no ManagedWorkload. Had it been paused, it would be scaled back to its replicas first, never left switched off.
+</StartCheckpoint>
+
+<NextSteps
+  items={[
+    { href: '/guides/opt-in/', title: 'Opting in', text: 'Every setting, namespaces, Kustomize and GitOps.' },
+    { href: '/concepts/idle-detection/', title: 'Idle detection', text: 'How the activity clock decides.' },
+    { href: '/concepts/wake-on-request/', title: 'Wake on request', text: 'How a request wakes a paused workload.' },
+  ]}
+/>

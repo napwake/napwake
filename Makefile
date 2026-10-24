@@ -316,7 +316,7 @@ check-chart: ## Lint the Helm chart, render it for each provider's Kubernetes ve
 	done
 	@helm template napwake charts/napwake --namespace napwake-system | go run ./hack/chartflags bin/manager
 	@hack/chart-notes.sh 0.3.1 | awk '/docs.napwake.dev\/0.3\/guides\/gitops\// {gitops = NR} /kubectl napwake enable/ {enable = NR} \
-		END {exit !(gitops && gitops < enable)}' && test -f docs/guides/gitops.md || { \
+		END {exit !(gitops && gitops < enable)}' && test -f $(DOCS_PAGES)/guides/gitops.mdx || { \
 		echo "the chart's NOTES don't send Argo CD and Flux users to the GitOps guide before enable"; exit 1; }
 	@! helm template napwake charts/napwake | grep -qE -- '--neg-forwarder|doorman-pods|verbs: \[create, delete\]' || { \
 		echo "the chart runs NEG forwarders, or lets the operator create Deployments, without doorman.negForwarder.enabled"; exit 1; }
@@ -399,10 +399,13 @@ lint-config: golangci-lint ## Verify golangci-lint linter configuration
 
 ##@ Versioning
 
+# The docs' pages, which Starlight reads from its content folder.
+DOCS_PAGES = docs/src/content/docs
+
 # The docs that name the current release, for installing or verifying it.
-# docs/operations/upgrading.md isn't one: its versions are history.
-VERSIONED_DOCS = README.md docs/getting-started/installation.md docs/getting-started/kubectl-plugin.md \
-	docs/operations/monitoring.md docs/reference/helm-values.md docs/reference/security.md
+# The upgrade guide isn't one: its versions are history.
+VERSIONED_DOCS = README.md $(DOCS_PAGES)/getting-started/installation.mdx $(DOCS_PAGES)/getting-started/kubectl-plugin.mdx \
+	$(DOCS_PAGES)/operations/monitoring.mdx $(DOCS_PAGES)/reference/helm-values.mdx $(DOCS_PAGES)/reference/security.mdx
 
 # Every file bump writes, which release commits. A file bump writes that
 # isn't here is left out of the release commit, and release stops.
@@ -445,9 +448,9 @@ verify-version: ## Fail unless the chart, the kustomize image, the docs and the 
 	done
 	@# Every page's install links name the release the page documents:
 	@# releases/latest installs whatever was released last.
-	@unpinned=$$(grep -rnF 'napwake/napwake/releases/latest' README.md docs || true); [ -z "$$unpinned" ] || { \
+	@unpinned=$$(grep -rnF 'napwake/napwake/releases/latest' README.md $(DOCS_PAGES) || true); [ -z "$$unpinned" ] || { \
 		echo "$$unpinned"; echo "install links must name the release, as releases/download/v$$VERSION/ does"; exit 1; }
-	@stale=$$(grep -rnoE 'napwake/napwake(/releases/(download|tag)/|//config/[a-z-]+\?ref=)v[0-9][0-9A-Za-z.-]*' README.md docs | \
+	@stale=$$(grep -rnoE 'napwake/napwake(/releases/(download|tag)/|//config/[a-z-]+\?ref=)v[0-9][0-9A-Za-z.-]*' README.md $(DOCS_PAGES) | \
 		grep -vE -- "v$${VERSION//./\\.}$$" || true); [ -z "$$stale" ] || { \
 		echo "$$stale"; echo "these install links don't name v$$VERSION; add their pages to VERSIONED_DOCS and run make bump VERSION=$$VERSION"; exit 1; }
 	@base="$${VERSION%%-*}"; heading="^## \[$${base//./\\.}\] - "; \

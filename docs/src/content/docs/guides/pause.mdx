@@ -1,0 +1,260 @@
+---
+title: "Pause and resume"
+description: "Napwake's one action is to pause a workload, scaling it to zero replicas."
+lede: "Napwake's one action is to pause a workload, scaling it to zero replicas. Only the pods go. The Deployment or StatefulSet, its PVCs and their data stay."
+---
+
+import { Steps } from '@astrojs/starlight/components';
+import StateFlow from '../../../components/StateFlow.astro';
+import Outcome from '../../../components/Outcome.astro';
+import StartCheckpoint from '../../../components/StartCheckpoint.astro';
+import NextSteps from '../../../components/NextSteps.astro';
+
+<StateFlow
+  label="A pause and a resume"
+  steps={[
+    { state: 'awake', title: 'Pods running' },
+    { state: 'asleep', title: 'Scaled to zero', text: 'Its PVCs and their data stay.' },
+    { state: 'waking', title: 'Scaled back up', text: 'To the replicas it had, within its HPA\'s or ScaledObject\'s range.' },
+  ]}
+  between={['No activity for <code>idleAfter</code>, or <code>kubectl napwake pause</code>', 'A request, activity, <code>autoResume</code> or <code>kubectl napwake wake</code>']}
+  loop="Its replicas are Ready"
+/>
+
+Napwake never deletes a workload or its storage. A StatefulSet whose `persistentVolumeClaimRetentionPolicy.whenScaled` is `Delete` has its own controller delete its PVCs as it scales down. So Napwake never pauses one. It reports `Protected=True`, reason `PVCsDeletedOnScaleDown`, until `whenScaled` is `Retain`.
+
+## Pause now
+
+When you're done with a workload for the day, such as a preview environment, pause it without waiting for `idleAfter`.
+
+<Steps>
+
+1. Ask for the pause.
+
+    ```bash
+    kubectl napwake pause my-api -n staging
+    ```
+
+    Name the workload as `kubectl napwake status` shows it. It needs no `idlePolicy`, and works on a ManagedWorkload from the label too.
+
+2. Read the answer in the `PauseRequest` condition.
+
+    ```bash
+    kubectl describe managedworkload my-api -n staging
+    ```
+
+    Its message says what happened and when, in UTC. It reads `paused as requested at 2026-10-21 03:32 UTC`, `already paused at …`, or `not paused at 2026-10-21 03:32 UTC:` and why. It answers the last request until the next one, through any wakes and pauses, so it outlives the events.
+
+</Steps>
+
+<StartCheckpoint state="asleep" note="paused">
+The workload is `Paused`, the same as after an idle pause. Anything in [Resume](#resume) wakes it.
+</StartCheckpoint>
+
+The request runs the idle clock out now, and the pause follows the rules of an idle one:
+
+| The workload | What Napwake does | `PauseRequest` |
+|--------------|-------------------|----------------|
+| `Running`, `Idle` or `Resuming` | Pauses it, after the wake if it's `Resuming`, with a `PauseRequested` event, then `Paused` | `True`, `Paused` |
+| A request comes as it pauses | [Calls the pause off](#a-request-calls-the-pause-off), and says so. `kubectl napwake pause` says it wasn't paused | `False`, `PauseCancelled` |
+| `Pausing` or `Paused` | Finishes any pause under way, then marks the request handled | `True`, `AlreadyPaused` |
+| In the hour Napwake waits after a GitOps tool undid its last pause | Pauses it, since you asked. If the tool undoes it again, that's a new [`GitOpsConflict`](/guides/gitops/) | `True`, `Paused` |
+| Busy within the hour, by a confident forecast | Leaves it running and says when, since it would likely be woken straight back. `kubectl napwake pause` asks whether to pause anyway, and `--yes` does | `False`, `ForecastExpectsDemand` |
+| In dry-run | Never scales it, and [counts a would-be pause](/guides/dry-run/#what-happens-in-dry-run) | `False`, `DryRun` |
+| Held awake by `napwake.dev/active-until` on it or its workload, depended on by awake workloads, in a `dependsOn` cycle, in a [protected namespace](/guides/opt-in/#protected-namespaces), or Napwake's own operator or doorman | Leaves it running, with a Warning event, or `HeldByDependents` for dependents | `False`, `ActiveUntil`, `HeldByDependents`, `DependencyCycle` or `Protected` |
+| Scaled to zero outside Napwake | Nothing, since it's off already | `False`, `ScaledToZero` |
+| Missing, labelled `napwake.dev/ignore`, or managed by another ManagedWorkload | Nothing, with a Warning event | `False`, `TargetNotFound`, `TargetIgnored` or `DuplicateTarget` |
+| Already on the ManagedWorkload as Napwake takes it on, or takes a pause up again after its status was lost | Nothing. It may have been answered before, and brought back with the ManagedWorkload, as by a backup restored without status. Set a new value to ask | `False`, `PredatesStatus` |
+
+A request Napwake won't act on is answered once, so ask again once the reason is gone. Napwake keeps its record of answered requests in the ManagedWorkload's status. So a request already on it as Napwake takes it on counts as answered.
+
+Otherwise a backup restored without status would bring back requests answered long ago. So would `kubectl replace --force`, or an old manifest applied again. Set the annotation once the ManagedWorkload is `Running`.
+
+Activity from before the request doesn't undo it. Only an activity annotation changed since wakes it. A query already active at the pause, such as a queue with messages, wakes it once it has been quiet.
+
+<details class="nw-details">
+<summary>Ask from a script</summary>
+
+Set `napwake.dev/pause-requested` on the ManagedWorkload, as `kubectl napwake pause` does. Any value that differs from the last request's works, such as the time:
+
+```bash
+kubectl annotate managedworkload my-api -n staging --overwrite \
+  napwake.dev/pause-requested="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+```
+
+Napwake acts on each value once, recording it in `status.lastPauseRequest`, which survives an operator restart. [`napwake.dev/pause-overrides-forecast`](/reference/labels-annotations/#other-annotations) overrides the forecast for one request.
+
+</details>
+
+## What happens in a pause
+
+Before the pods stop, the [doorman](/concepts/wake-on-request/) steps in front of the workload's Services, beside its pods. So no request is refused as they stop.
+
+| When | What happens |
+|------|--------------|
+| The move to `Pausing` | The doorman's routes go into `status.doorman`, and every doorman pod listens on them. `status.pause.routesWrittenAt` records when they were stored |
+| 5 seconds after, once every doorman pod answers on those ports | The operator checks that by connecting to each. The doorman's EndpointSlice then stands beside the pods' own. The doorman passes what it gets straight to a Ready pod. `status.pause.routedAt` records when |
+| 5 seconds after that | kube-proxy and ingress controllers send to it too. The pause goes on, however late Napwake gets to it |
+| A workload the doorman doesn't route | The pause goes on at once |
+| At most | None waits more than a minute for the doorman |
+
+Then Napwake scales the workload to zero. [Lifecycle](/concepts/lifecycle/#idempotency) has what it records before it scales anything.
+
+### Work in progress at a pause
+
+Kubernetes stops the pods as it stops any pod. Each gets `SIGTERM`, then its `terminationGracePeriodSeconds` (30 seconds by default) to finish before `SIGKILL`. Napwake waits for them to stop ([how long](/operations/troubleshooting/#workload-paused-with-pods-still-running)). Requests that come meanwhile go to the doorman, which holds them.
+
+An app that should finish a job or drain connections needs to handle `SIGTERM`, as in a rollout. One that exits the moment it gets `SIGTERM` can refuse a connection. kube-proxy may send it one in the second before it drops the pod. A `preStop` sleep of a few seconds closes that gap, in a pause as in any rollout.
+
+### A request calls the pause off
+
+A request while a workload pauses shows it's in use. Whatever would wake it once paused calls the pause off, if it comes while it's `Pausing`:
+
+- a request that reaches the doorman, which holds it, or passes it on to a pod that's still Ready
+- for a workload that [asks before waking](/concepts/wake-on-request/#asking-before-waking), only a person's click on the asleep page
+- a [wake request](#wake-now)
+- an activity annotation, which a waking [dependent](/concepts/dependencies/) stamps
+
+The workload is `Running` again, scaled back up if its pods had begun to stop. The request is answered, held while no pod is Ready. A `PauseCancelled` event says what came:
+
+```text
+a request came as it paused; the pause is cancelled
+```
+
+The doorman doesn't see every request as a workload pauses. The pods answer these, and the pause goes on:
+
+- requests in the first 5 seconds or more, before the doorman's EndpointSlice stands beside the pods' own
+- what kube-proxy and ingress controllers still send to the pods, for about 5 seconds more, until they're scaled down
+- requests on connections opened before the pause
+- every request after the first on a connection the doorman passed on
+- traffic from a GKE load balancer through [NEGs](/concepts/wake-on-request/#gke-container-native-load-balancing-negs), which goes to the pods' own addresses
+
+A probe, a scrape, a hunt for hidden files, or a TCP check that sends nothing doesn't call it off. Dry-run never pauses, so there's nothing to call off.
+
+A pause the idle clock made, called off this way, counts as [made in use](/concepts/idle-detection/#paused-while-in-use). The clock then waits longer before the next.
+
+## Resume
+
+| What happens | The paused workload |
+|--------------|---------------------|
+| A request reaches its Service | <Outcome state="waking">Wakes, through [wake on request](/concepts/wake-on-request/)</Outcome> |
+| An [activity annotation](/concepts/idle-detection/#activity-annotations), `napwake.dev/last-activity`, `napwake.dev/last-request` or `napwake.dev/active-until`, changes on the ManagedWorkload or its target | <Outcome state="waking">Wakes, whatever time it states</Outcome> |
+| A new `napwake.dev/wake-requested` value on the ManagedWorkload, as [`kubectl napwake wake`](/getting-started/kubectl-plugin/#wake-a-workload) sets it | <Outcome state="waking">Wakes, whatever the wake setting, with a `WakeRequested` event ([Wake now](#wake-now))</Outcome> |
+| A [Prometheus activity query](/guides/prometheus-signals/#while-the-workload-is-paused) shows activity, such as messages waiting for a queue worker | <Outcome state="waking">Wakes</Outcome> |
+| `autoResume: true`, and a confident forecast expects demand in the coming hour | <Outcome state="waking">Wakes 15 minutes before the hour</Outcome> |
+| Something else scales it up, such as `kubectl scale` | <Outcome state="waking">Counts it as activity, and goes straight to `Running`. For a GitOps tool, see [GitOps tools](/guides/gitops/)</Outcome> |
+| [Dry-run](/guides/dry-run/) is turned on | <Outcome state="waking">Wakes, with a `DryRunWake` event. Dry-run never leaves a workload paused</Outcome> |
+
+Napwake looks at a paused workload at least every 5 minutes, or every minute with Prometheus activity queries. It also looks 15 minutes before each hour, on the hour, and whenever the workload or its target changes.
+
+### Wake now
+
+```bash
+kubectl napwake wake my-api -n staging
+```
+
+`wake` asks Napwake to wake the workload now, whatever its [wake setting](/concepts/wake-on-request/#the-wake-setting). So it wakes one that [asks before waking](/concepts/wake-on-request/#asking-before-waking) too. A paused workload wakes with its [dependencies](/concepts/dependencies/), and an awake one's idle clock restarts. `--for 2h` keeps it awake at least that long, as for a demo. `wake` waits for Napwake's answer, then until it's Running.
+
+Any tool can ask the same way, such as a pull request bot, a developer portal or a chat command. It sets `napwake.dev/wake-requested` on the ManagedWorkload, as `wake` does. The value only has to differ from the last request's, such as the time or a CI run's ID:
+
+```bash
+kubectl annotate managedworkload my-api -n staging --overwrite \
+  napwake.dev/wake-requested="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+```
+
+A ManagedWorkload from the label is named after its workload. When that name is taken, it adds the kind, such as `my-api-statefulset`. It's an annotation, like `pause-requested`, so a GitOps tool that owns the ManagedWorkload's spec leaves it alone.
+
+| To | It takes, on `managedworkloads` in the namespace |
+|----|--------------------------------------------------|
+| Set it with `kubectl annotate` | `get`, `patch` |
+| Set it from an HTTP client | `patch` |
+| Wait for the answer with `kubectl wait` | `get`, `list`, `watch` |
+| Run `kubectl napwake wake` | `get`, `list`, `patch` |
+
+The built-in `edit` and `admin` roles include all of them once Napwake is installed. [Public preview environments](/guides/preview-environments/#the-access-tooling-needs) gives a minimal Role.
+
+Napwake acts on each value once, recording it in `status.lastWakeRequest`, which survives an operator restart. The `WakeRequest` condition says what came of it:
+
+| The workload | What Napwake does | `WakeRequest` |
+|--------------|-------------------|---------------|
+| `Paused` | <Outcome state="waking">Wakes it, with a `WakeRequested` event, then `Resumed` once it's Ready</Outcome> | `True`, `Woken` |
+| `Pausing` | <Outcome state="awake">[Calls the pause off](#a-request-calls-the-pause-off), and has it `Running` again</Outcome> | `True`, `Woken` |
+| `Resuming` | <Outcome state="waking">Lets the wake finish, then marks the request handled</Outcome> | `True`, `AlreadyAwake` |
+| `Running` or `Idle` | <Outcome state="awake">Restarts its idle clock, as activity does</Outcome> | `True`, `AlreadyAwake` |
+| In [dry-run](/guides/dry-run/) | <Outcome state="awake">Restarts its idle clock, which ends a would-be pause</Outcome> | `True`, `AlreadyAwake` |
+| Scaled to zero outside Napwake | <Outcome state="asleep">Leaves it off. Napwake only wakes what it paused</Outcome> | `False`, `ScaledToZero` |
+| In a [protected namespace](/guides/opt-in/#protected-namespaces), Napwake's own operator or doorman, or a StatefulSet that deletes its PVCs when scaled down | Nothing, since Napwake never pauses it | `False`, `Protected` |
+| Missing, labelled `napwake.dev/ignore`, or managed by another ManagedWorkload | Nothing, with a warning event | `False`, `TargetNotFound`, `TargetIgnored` or `DuplicateTarget` |
+| Its ManagedWorkload is being deleted | Hands the workload back, with the replicas it had | `False`, `BeingDeleted` |
+| Set before Napwake has taken the ManagedWorkload on, as by a tool that creates it and asks at once | <Outcome state="awake">Takes it on `Running`, so it's awake, and restarts its idle clock</Outcome> | `True`, `AlreadyAwake` |
+| Already on the ManagedWorkload as Napwake takes a pause up again after its status was lost | <Outcome state="asleep">Nothing. It may have been answered before, as with a backup restored without status, so the workload stays paused. Set a new value to ask</Outcome> | `False`, `PredatesStatus` |
+
+The condition answers the last request until the next one, through every pause and wake since. Its message says what happened and when, in UTC. It reads `woken as requested at 2026-10-23 09:05 UTC`, `already awake at …`, or `not woken at 2026-10-23 09:05 UTC:` and why.
+
+```bash
+kubectl get managedworkload my-api -n staging \
+  -o jsonpath='{.status.conditions[?(@.type=="WakeRequest")]}'
+```
+
+A request Napwake can't act on is answered once, not retried. Ask again once the reason is gone.
+
+Unlike a pause request, a wake request may be set any time, even before Napwake has taken the ManagedWorkload on. At worst an old one restarts the idle clock.
+
+:::tip[Keep it running for good]
+Remove the `idlePolicy` of a ManagedWorkload you wrote. One from the label always has one, so label that workload `napwake.dev/ignore: "true"`. Napwake stops managing it, waking it first.
+:::
+
+A resume wakes the workload's [dependencies](/concepts/dependencies/), then scales it back to `status.pause.previousReplicas`. It's `Running` once those replicas are Ready, by a status its own controller wrote after the scale-up. Once it's scaled back up, its autoscaler owns the replicas. An HPA scaling it down as it starts isn't undone.
+
+A workload with a pod crash-looping before its pause would never get there. So Napwake stops waiting, runs it with its Ready replicas, and sets `ResumeIncomplete=True`. With none Ready, its doorman routes go anyway. Requests then fail until a pod is Ready, rather than wait at the doorman for a workload its own controller reports stuck. A StatefulSet with the default `OrderedReady` pod management starts its pods one at a time. A slow-starting one may have only its first pods Ready when the 2 minutes are up. It runs with those, and the rest follow. [Lifecycle](/concepts/lifecycle/#transition-triggers) has the timings.
+
+## When Napwake lets go
+
+When Napwake stops managing a paused workload, it hands it back. It scales it to the replicas it had and releases it from KEDA, without waiting for Ready. Its Services stop routing to the doorman. A `Resumed` event says why, and how many replicas it has. That happens when:
+
+- The ManagedWorkload is deleted, or the `napwake.dev/managed` label that created it is removed.
+- The workload is labelled `napwake.dev/ignore: "true"`.
+- Its namespace becomes [protected](/guides/opt-in/#protected-namespaces).
+- It's a StatefulSet that deletes its PVCs when scaled down.
+- It's Napwake's own operator or doorman, the Deployments labelled `control-plane: controller-manager` or `doorman` in Napwake's namespace. Those are never paused, whatever the namespace allows.
+- An older ManagedWorkload for the same workload takes it over, and this one becomes the `DuplicateTarget`.
+
+So no longer managing a workload never leaves it switched off. The `napwake.dev/cleanup` finalizer makes sure of it when a ManagedWorkload is deleted, retrying a failed hand-back. In a namespace being deleted, the workload goes too. So after 5 minutes the ManagedWorkload [lets go](/operations/troubleshooting/#a-managedworkload-let-go-of-its-workload-without-handing-it-back) with a `HandBackAbandoned` Warning event.
+
+If the target itself is deleted while paused, its Services stop routing to the doorman. Nothing would start the pods. `TargetAvailable` turns `False`, reason `TargetNotFound`.
+
+## Workloads already at zero
+
+A workload scaled to zero outside Napwake is off on purpose. That's by `kubectl scale`, a pipeline, or KEDA with no active trigger. Napwake leaves it off, so scaling to zero yourself keeps a workload off until someone starts it.
+
+| When | What happens |
+|------|--------------|
+| Its idle clock runs out, or you ask for a pause | Nothing. A [pause request](#pause-now) gets `ScaledToZero`, since a pause would record zero replicas to restore |
+| A request, an activity annotation, `autoResume` or `kubectl napwake wake` | <Outcome state="asleep">Nothing wakes it. Napwake only wakes what it paused</Outcome> |
+| A request to one of its Services | <Outcome state="asleep">It fails, as without Napwake. Its Services aren't routed to the doorman, so nothing waits for pods nothing will start</Outcome> |
+
+The ManagedWorkload stays `Running`, with the `ScaledToZero` condition and one `ScaledToZero` event. Once whoever scaled it down sets its replicas above zero, Napwake manages it again. That counts as activity, so its idle clock starts afresh.
+
+Napwake never scales up a workload it didn't scale down. A pause recorded at zero replicas is handed back at zero, with a `Resumed` event saying so.
+
+## While it's paused
+
+A paused workload costs only its storage. [Cost tracking](/concepts/cost-tracking/), always on, counts the rest:
+
+| While paused | Accrues as |
+|--------------|------------|
+| What its replicas requested in CPU and memory | Freed |
+| The part of that its nodes' spare capacity couldn't hold | Saved |
+| Its PVCs, since they stay | Cost |
+
+To remove one nobody comes back to, delete it the way it was created. That's from Git, by the pipeline that made it, or with a TTL tool such as kube-janitor. Those know when an environment is finished. Napwake only knows it's idle.
+
+Napwake records what a pause changes before it scales anything. A pause interrupted by a restart is then finished or undone from the record. [Lifecycle](/concepts/lifecycle/#idempotency) has how.
+
+<NextSteps
+  items={[
+    { href: '/concepts/wake-on-request/', title: 'Wake on request', text: 'How a request wakes it.' },
+    { href: '/guides/autoscalers/', title: 'HPA and KEDA', text: 'Pausing an autoscaled workload.' },
+    { href: '/concepts/lifecycle/', title: 'Lifecycle', text: 'Every phase, condition and event.' },
+  ]}
+/>

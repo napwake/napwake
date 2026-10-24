@@ -47,9 +47,9 @@ const (
 	renamedHeading = "### Renamed"
 
 	// The upgrade guide's section for people moving from the old name,
-	// whose heading ends with fromOldName, names it to say what changed.
-	upgradeGuide = "docs/operations/upgrading.md"
-	fromOldName  = "{ #moving-to-napwake }"
+	// headed fromOldName, names it to say what changed.
+	upgradeGuide = "docs/src/content/docs/operations/upgrading.mdx"
+	fromOldName  = "## Moving to Napwake"
 )
 
 // releaseHeading is a changelog section for a release, dated once it has
@@ -170,11 +170,32 @@ func sectionFromOldName(lines []string) map[int]bool {
 			fenced = !fenced
 		}
 		if !fenced && strings.HasPrefix(line, "## ") {
-			in = strings.HasSuffix(line, fromOldName)
+			in = strings.TrimSpace(line) == fromOldName
 		}
 		allowed[i] = in
 	}
 	return allowed
+}
+
+// Only the upgrade guide's section for people moving from the old name may
+// name it, from its heading to the next of its level, and not a heading of
+// that level in a code block.
+func TestOnlyTheMovingSectionNamesTheOldName(t *testing.T) {
+	guide := strings.Join([]string{
+		"Napwake upgrades in place.",
+		fromOldName,
+		"Uninstall " + oldName + ", then install Napwake.",
+		"### Wake on request",
+		"`" + oldName + ".io/wake-on-request` is gone.",
+		"```markdown",
+		"## A heading in a code block",
+		"```",
+		"Still " + oldName + "'s section.",
+		"## Upgrade",
+		"Not from " + oldName + ".",
+	}, "\n")
+	assert.Equal(t, []int{11}, oldNameLines(upgradeGuide, []byte(guide)))
+	assert.Equal(t, []int{3, 5, 9, 11}, oldNameLines("docs/src/content/docs/guides/pause.mdx", []byte(guide)))
 }
 
 func TestOldNameLinesSkipsBinaryFiles(t *testing.T) {

@@ -1,0 +1,22 @@
+---
+// A screenshot of a page as a browser shows it: a mock-up of a thing in the world, so it's the one
+// place a shadow goes (shadow-window).
+interface Props { caption?: string }
+const { caption } = Astro.props;
+---
+<figure class="nw-browser not-content">
+  <div class="nw-browser__window">
+    <div class="nw-browser__bar" aria-hidden="true"><span></span></div>
+    <div class="nw-browser__page"><slot /></div>
+  </div>
+  {caption && <figcaption>{caption}</figcaption>}
+</figure>
+<style>
+  .nw-browser { margin: 1.75rem 0 0; }
+  .nw-browser__window { border: 1px solid var(--line); border-radius: var(--radius-lg); overflow: hidden; box-shadow: var(--shadow-window); background: var(--surface); }
+  .nw-browser__bar { height: 2.1rem; display: flex; align-items: center; padding: 0 0.8rem; background: var(--code-bg); border-bottom: 1px solid var(--line); }
+  .nw-browser__bar span { display: block; height: 1.05rem; width: min(60%, 22rem); margin-inline: auto; border-radius: 999px; background: var(--surface); border: 1px solid var(--line); }
+  .nw-browser__page :global(img) { display: block; width: 100%; height: auto; margin: 0; }
+  .nw-browser__page :global(p) { margin: 0; }
+  figcaption { margin-top: 0.8rem; font-size: 0.875rem; line-height: 1.5; color: var(--muted); }
+</style>

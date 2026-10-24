@@ -1,26 +1,15 @@
-<!doctype html>
-<html lang="en">
-<head>
-<meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Page not found - Napwake</title>
-<style>
-  body { margin: 0; padding: 4rem 1rem; font: 16px/1.5 system-ui, sans-serif; color: #1f2328; background: #fff; text-align: center; }
-  a { color: #0969da; }
-  @media (prefers-color-scheme: dark) {
-    body { color: #e6edf3; background: #0d1117; }
-    a { color: #4493f8; }
-  }
-</style>
+{{- /*
+A link without a version that has no page of its own at the root, or
+predates versioned docs, is sent to the same page in the root version, with
+its anchor. So is one into a version that isn't published, such as next once
+its release is out, or latest before the first release. A missing page
+inside a version is a real 404.
+*/ -}}
+{{define "forward" -}}
 <script>
-  // A link without a version, such as /guides/gitops/, predates
-  // versioned docs or comes from the operator or the plugin: send it to the
-  // same page in the root version. So does one into a version that isn't
-  // published, such as next once its release is out, or latest before the
-  // first release. A missing page inside a version is a real 404.
   (function () {
-    var base = "{{js .Base}}";
-    var root = "{{js .Root}}";
+    var base = {{.Base}};
+    var root = {{.Root}};
     if (location.pathname.indexOf(base) !== 0) return;
     var rest = location.pathname.slice(base.length);
     var first = rest.split("/")[0];
@@ -40,6 +29,22 @@
       });
   })();
 </script>
+{{end -}}
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Page not found - Napwake</title>
+<style>
+  body { margin: 0; padding: 4rem 1rem; font: 16px/1.5 system-ui, sans-serif; color: #1f2328; background: #fff; text-align: center; }
+  a { color: #0969da; }
+  @media (prefers-color-scheme: dark) {
+    body { color: #e6edf3; background: #0d1117; }
+    a { color: #4493f8; }
+  }
+</style>
+{{template "forward" .}}
 </head>
 <body>
 <h1>Page not found</h1>

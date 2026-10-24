@@ -4,11 +4,12 @@ name: docs
 # tag, so its install commands name that release: a release to its minor,
 # such as 0.2, and to latest, where the site's root goes, when it's the
 # newest; a release candidate to next, with a banner saying so (see
-# hack/docsite). mike commits them to the gh-pages branch, which GitHub
-# Pages serves. It runs once the Release workflow succeeds, so a tag whose
-# release failed publishes nothing. Run it manually, naming a release's
-# tag, to republish that release's docs. A pull request only builds them,
-# so a broken link or page fails it rather than the next release's docs.
+# hack/docsite). Each is an Astro build of docs/, committed to the gh-pages
+# branch, which GitHub Pages serves. It runs once the Release workflow
+# succeeds, so a tag whose release failed publishes nothing. Run it
+# manually, naming a release's tag, to republish that release's docs. A
+# pull request only builds them, so a broken link, anchor or page fails it
+# rather than the next release's docs.
 on:
   pull_request:
   workflow_run:
@@ -35,13 +36,30 @@ jobs:
     timeout-minutes: 30
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
-          python-version: "3.12"
+          node-version-file: docs/.nvmrc
+          cache: npm
+          cache-dependency-path: docs/package-lock.json
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: go.mod
 
-      - run: pip install --require-hashes -r docs/requirements.txt
+      - run: npm ci
+        working-directory: docs
 
-      - run: mkdocs build --strict
+      # Fails on any broken link or anchor between the docs' pages. Mermaid
+      # diagrams and the social cards are drawn with the runner's Chrome.
+      - run: npm run build
+        working-directory: docs
+
+      # Every docs address the code, the chart and the README give lands
+      # on a page and anchor of the built site, and the pages that answer
+      # without a version keep the anchor they're opened with.
+      - name: Check the docs addresses and redirects against the build
+        env:
+          NAPWAKE_DOCS_DIST: ${{ github.workspace }}/docs/dist
+        run: go test -count=1 ./test/docs ./hack/docsite -run 'TestDocsAddressesLandInTheBuiltSite|TestBuiltSiteRedirectsKeepTheAnchor'
 
   publish:
     if: >-
@@ -58,27 +76,31 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           ref: ${{ inputs.tag || github.event.workflow_run.head_sha }}
-      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
-          python-version: "3.12"
+          node-version-file: docs/.nvmrc
+          cache: npm
+          cache-dependency-path: docs/package-lock.json
       - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
           go-version-file: go.mod
 
-      - run: pip install --require-hashes -r docs/requirements.txt
+      - run: npm ci
+        working-directory: docs
 
-      - run: mkdocs build --strict
-
-      # mike commits on top of the published site, which doesn't exist
-      # before the first publish.
-      - name: Fetch the published site
+      # The versions already published stay as they are, so the publish
+      # starts from the branch, which doesn't exist before the first.
+      - name: Check out the published site
         run: |
           if git ls-remote --exit-code --heads origin gh-pages >/dev/null; then
             git fetch --depth=1 origin gh-pages:refs/remotes/origin/gh-pages
+            git worktree add -B gh-pages "$RUNNER_TEMP/gh-pages" origin/gh-pages
+          else
+            git worktree add --orphan -b gh-pages "$RUNNER_TEMP/gh-pages"
           fi
 
       - name: Publish the release's docs
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          go run ./hack/docsite -tag "$TAG" -push
+          go run ./hack/docsite -tag "$TAG" -site "$RUNNER_TEMP/gh-pages" -push

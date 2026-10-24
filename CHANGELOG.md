@@ -214,6 +214,7 @@ There's no upgrade path from Hybernate 0.1.x or a 0.2.0 release candidate. Unins
 - The waking-up page and the asleep page show the doorman at the door, in Napwake's colours, light and dark. The doorman's mark replaces the snowflake on every page. Each of the asleep page's notices has a title, and sets `kubectl napwake wake` as code where it names it
 - The asleep page answers an expired **Wake it** button with a `403`, and a click inside the one-a-minute limit with a `429` and `Retry-After: 60`. The page is the same. Its Content-Security-Policy allows only its own style and script, by their hashes, and an inline tab icon, so browsers don't ask for `/favicon.ico`
 - The `503` a workload that asks gives `curl`, scripts and crawlers lists each way to wake it, one a line. The JSON's `wake` is a list
+- The docs move to Astro Starlight, with the brand's look and plainer words, at the same addresses. A link without a version, such as one the plugin prints, opens the same page in `latest`, anchor kept. Before the first release, it opens `next`. Every page is also served as Markdown, at its address with `.md` added, and `llms.txt` is at the root. [The docs site](https://docs.napwake.dev/contributing/#the-docs-site) says how they're published
 
 ### Fixed
 

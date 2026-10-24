@@ -1,0 +1,83 @@
+---
+// The version switcher. It reads /versions.json at the site's root, in mike's shape:
+//   [{ "version": "0.2", "title": "0.2", "aliases": ["latest"], "properties": { "release": "0.2.0" } }, ...]
+// and moves to the same page in the version chosen. Without the file (a pull request's build, or
+// local dev) it shows this build's version and nothing else.
+const version = import.meta.env.NAPWAKE_DOCS_VERSION || 'dev';
+const release = import.meta.env.NAPWAKE_DOCS_RELEASE || '';
+const base = import.meta.env.BASE_URL.replace(/\/?$/, '/');
+const root = base.replace(/[^/]+\/$/, '');
+const versionsUrl = import.meta.env.NAPWAKE_DOCS_VERSIONS_URL || `${root}versions.json`;
+const label = version === 'next' ? `next${release ? ` · ${release}` : ''}` : version === 'dev' ? 'dev' : version;
+---
+<nw-version-select data-versions={versionsUrl} data-current={version} data-base={base} data-root={root}>
+  <label class="nw-version">
+    <span class="sr-only">Docs version</span>
+    <select disabled aria-label="Docs version">
+      <option value={version} selected>{label}</option>
+    </select>
+    <svg aria-hidden="true" viewBox="0 0 12 12" width="10" height="10"><path d="M2.5 4.5 6 8l3.5-3.5" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg>
+  </label>
+</nw-version-select>
+
+<script>
+  type Version = { version: string; title?: string; aliases?: string[]; properties?: { release?: string } };
+  class NwVersionSelect extends HTMLElement {
+    connectedCallback() {
+      const { versions, current = 'dev', base = '/', root = '/' } = this.dataset;
+      const select = this.querySelector('select');
+      if (!select || !versions) return;
+      fetch(versions)
+        .then((r) => (r.ok ? r.json() : Promise.reject(r.status)))
+        .then((list: Version[]) => {
+          if (!Array.isArray(list) || !list.length) return;
+          select.replaceChildren(...list.map((v) => {
+            const o = document.createElement('option');
+            const tag = v.aliases?.includes('latest') ? ' · latest' : v.version === 'next' && v.properties?.release ? ` · ${v.properties.release}` : '';
+            o.value = v.version;
+            o.textContent = (v.version === 'next' ? 'next' : v.title || v.version) + tag;
+            o.selected = v.version === current || (v.aliases ?? []).includes(current);
+            return o;
+          }));
+          select.disabled = false;
+          this.toggleAttribute('data-ready', true);
+          // the outdated banner: shown on a release that isn't latest
+          const me = list.find((v) => v.version === current || (v.aliases ?? []).includes(current));
+          if (me && current !== 'next' && !(me.aliases ?? []).includes('latest')) {
+            document.querySelectorAll<HTMLElement>('[data-nw-outdated]').forEach((b) => { b.hidden = false; });
+          }
+          select.addEventListener('change', () => {
+            const rest = location.pathname.startsWith(base) ? location.pathname.slice(base.length) : '';
+            location.href = `${root}${select.value}/${rest}${location.hash}`;
+          });
+        })
+        .catch(() => {});
+    }
+  }
+  customElements.define('nw-version-select', NwVersionSelect);
+</script>
+
+<style>
+  .nw-version {
+    position: relative;
+    display: inline-flex;
+    align-items: center;
+    color: var(--on-docs-header);
+  }
+  .nw-version select {
+    appearance: none;
+    font: 700 0.75rem/1 var(--font-mono);
+    letter-spacing: 0.02em;
+    color: inherit;
+    background: color-mix(in srgb, var(--paper) 12%, transparent);
+    border: 1px solid color-mix(in srgb, var(--paper) 32%, transparent);
+    border-radius: 999px;
+    padding: 0.4rem 1.7rem 0.4rem 0.7rem;
+    cursor: pointer;
+  }
+  .nw-version select:disabled { cursor: default; opacity: 1; padding-inline-end: 0.7rem; }
+  .nw-version select option { color: var(--text); background: var(--surface); }
+  .nw-version svg { position: absolute; inset-inline-end: 0.6rem; pointer-events: none; display: none; }
+  nw-version-select[data-ready] .nw-version svg { display: block; }
+  .nw-version select:hover:not(:disabled) { border-color: var(--paper); }
+</style>

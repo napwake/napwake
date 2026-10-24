@@ -1,0 +1,59 @@
+---
+// Freed against saved in one node pool, drawn from a page's own worked example. For each of CPU and
+// memory, a bar of what Napwake holds paused there: the part the pool's spare capacity could hold
+// (freed, not saved) and the shortfall (freed, and saved). Each row says its numbers in words, so it
+// reads aloud; the bars only repeat them. Not state colours: this is capacity, not a workload's state.
+interface Row { resource: string; unit: string; paused: number; spare: number }
+interface Props { rows: Row[]; label: string; caption?: string }
+const { rows, label, caption } = Astro.props;
+const q = (n: number, u: string) => `${n} ${u}`;
+---
+<figure class="nw-short not-content" aria-label={label} role="group">
+  <div class="nw-short__rows">
+    {rows.map((r) => {
+      const fits = Math.min(r.paused, r.spare);
+      const short = Math.max(0, r.paused - r.spare);
+      return (
+        <div class="nw-short__row">
+          <p class="nw-short__name">{r.resource}</p>
+          <div class="nw-short__bar" aria-hidden="true">
+            {fits > 0 && <span class="nw-short__fits" style={`flex:${fits}`}>{q(fits, r.unit)}</span>}
+            {short > 0 && <span class="nw-short__gap" style={`flex:${short}`}>{q(short, r.unit)}</span>}
+          </div>
+          <p class="nw-short__say">
+            {q(r.paused, r.unit)} paused, {q(r.spare, r.unit)} spare.{' '}
+            <strong>{short > 0 ? `${q(short, r.unit)} short: saved` : 'None short: nothing saved'}</strong>
+          </p>
+        </div>
+      );
+    })}
+  </div>
+  <div class="nw-short__legend" aria-hidden="true">
+    <span><i class="nw-short__key nw-short__key--fits"></i>Fits in spare capacity: freed</span>
+    <span><i class="nw-short__key nw-short__key--gap"></i>Wouldn't fit: freed, and saved</span>
+  </div>
+  {caption && <figcaption set:html={caption} />}
+</figure>
+<style>
+  .nw-short { margin: 1.75rem 0 0; padding: 1.3rem 1.4rem 1.2rem; background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius-xl); }
+  .nw-short__rows { display: grid; gap: 0.9rem; }
+  .nw-short__row { display: grid; grid-template-columns: 5.5rem minmax(0, 1fr); column-gap: 1rem; row-gap: 0.3rem; align-items: center; }
+  .nw-short__name { margin: 0; font: 700 0.875rem/1.3 var(--font-sans); color: var(--text); grid-row: span 2; align-self: start; padding-top: 0.3rem; }
+  .nw-short__bar { display: flex; height: 1.7rem; border-radius: var(--radius-sm); overflow: hidden; gap: 2px; }
+  .nw-short__bar span { display: flex; align-items: center; padding-inline: 0.5rem; min-width: 0; white-space: nowrap; overflow: hidden; font: 700 0.75rem/1 var(--font-mono); }
+  .nw-short__fits, .nw-short__key--fits { background: color-mix(in srgb, var(--muted) 22%, var(--surface)); color: var(--text); }
+  .nw-short__gap, .nw-short__key--gap { background: var(--brand); color: var(--on-action); }
+  .nw-short__say { margin: 0; font-size: 0.875rem; line-height: 1.45; color: var(--muted); }
+  .nw-short__say strong { color: var(--text); }
+  .nw-short__legend { display: flex; flex-wrap: wrap; gap: 0.4rem 1.1rem; margin-top: 1rem; font: 400 0.75rem/1.4 var(--font-mono); color: var(--muted); }
+  .nw-short__legend span { display: inline-flex; align-items: center; gap: 0.4rem; }
+  .nw-short__key { display: inline-block; width: 0.9rem; height: 0.9rem; border-radius: 3px; }
+  figcaption { margin-top: 0.8rem; font-size: 0.8125rem; line-height: 1.5; color: var(--muted); }
+  figcaption :global(code) { font: 400 0.9em var(--font-mono); background: var(--code-bg); padding: 0.05em 0.3em; border-radius: var(--radius-sm); }
+  figcaption :global(a) { color: var(--link); }
+  @media (max-width: 30rem) {
+    .nw-short { padding: 1rem; }
+    .nw-short__row { grid-template-columns: minmax(0, 1fr); }
+    .nw-short__name { grid-row: auto; padding-top: 0; }
+  }
+</style>

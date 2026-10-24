@@ -1,0 +1,14 @@
+---
+// What happens to a workload, with its door: `waking` where it wakes, `asleep` where nothing wakes.
+// For tables of cases, so the outcome reads at a glance. The words stay as they are. `label` names the
+// door for screen readers when the default doesn't fit, such as "Pauses" on an asleep door.
+import StateDoor from './StateDoor.astro';
+import type { State } from './lib';
+interface Props { state: State; label?: string }
+const { state, label } = Astro.props;
+---
+<span class="nw-outcome"><StateDoor state={state} size={18} label={label ?? (state === 'waking' ? 'Wakes' : state === 'asleep' ? 'Stays asleep' : undefined)} /><span><slot /></span></span>
+<style>
+  .nw-outcome { display: inline-flex; gap: 0.55rem; align-items: flex-start; }
+  .nw-outcome :global(.nw-door) { margin-top: 0.15rem; }
+</style>

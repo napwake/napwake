@@ -1,0 +1,116 @@
+---
+// The home's "What it does": six things, one room each, drawn by the rig (src/rig, the brand's, unchanged) in
+// the theme's tokens with the illustrations' finish. Two of them play once, when they come into view: a room
+// lit for nobody goes dark (the activity clock: light first, then the door, as the scan report's building does),
+// and a room wakes before demand (the forecast: the room lights before the door opens). Reduced motion shows
+// where each ends, still. No doorman here: the page already has him at the door and at Get started.
+import '../rig/draw.mjs';
+import { door, THEME } from '../rig/scene.mjs';
+import { handFilter } from '../rig/doorman.mjs';
+import { link } from './lib';
+
+const T = THEME.light; // draw.mjs points both themes at the tokens
+const W = 78, H = 156, sc = 0.58, VW = 300, VH = 126, fy = 112, x = (VW - W * sc) / 2;
+const pin = (s: string) => s.replace(/"#D9443A"/gi, '"var(--note-pin)"');
+const parts = (state: string, at = x) => pin(door(state, at, fy, W * sc, H * sc, T, { sc })).match(/<g[\s\S]*?<\/g>|<(path|circle|rect)\b[^>]*\/>/g) ?? [];
+const f = (n: number) => Math.round(n * 100) / 100;
+const arch = (ax: number, ay: number, w: number, h: number) => `M${f(ax)} ${f(ay + h)} V${f(ay + w / 2)} A${f(w / 2)} ${f(w / 2)} 0 0 1 ${f(ax + w)} ${f(ay + w / 2)} V${f(ay + h)} Z`;
+const dw = W * sc, dh = H * sc, top = fy - dh;
+const A = parts('asleep'), K = parts('awake'), Wk = parts('waking');
+const darkRoom = `<path d="${arch(x, top, dw, dh)}" fill="var(--scene-floor)"/>`;
+// someone in the light: in use (the scan report's guest, an arch and a circle in Night)
+const guest = `<path d="${arch(x + 43 * sc, top + 101 * sc, 24 * sc, 51 * sc)}" fill="var(--night)"/><circle cx="${f(x + 55 * sc)}" cy="${f(top + 88 * sc)}" r="${f(9.5 * sc)}" fill="var(--night)"/>`;
+// the doorway with nothing in it yet: what Napwake can't measure, it leaves alone
+const empty = A[0] + `<path d="${arch(x, top, dw, dh)}" fill="var(--scene-wall)"/><path d="${arch(x + 3, top + 3, dw - 6, dh - 3)}" fill="none" stroke="var(--scene-label)" stroke-width="2.2" stroke-dasharray="5 4.4"/>`;
+
+const rooms: Record<string, string> = {
+  optin: K[0] + K[1] + guest + K.slice(2).join(''),
+  clock: K[0] + darkRoom + `<g class="r-lit">${K[1]}${K[2]}</g><g class="r-open">${K[3]}</g><g class="r-lamp">${K[4]}${K[5]}</g>` +
+    `<g class="r-shut" style="transform-origin:${f(x)}px ${f(fy)}px">${A[1]}${A[2]}${A[3]}</g>`,
+  forecast: A[0] + `<g class="r-amber">${Wk[1]}</g><g class="r-wedge">${Wk[2]}</g><g class="r-ajar">${Wk[3]}${Wk[4]}</g><g class="r-closed">${A[1]}${A[2]}${A[3]}</g>`,
+  safe: empty,
+  // rooms asleep beside one in use: what pausing frees is what the dark rooms requested
+  cost: (() => { const g = W * sc + 22, l = parts('asleep', x - g), r = parts('asleep', x + g), m = parts('awake');
+    return l.join('') + r.join('') + m[0] + m[1] + guest + m.slice(2).join(''); })(),
+  alerts: parts('error').join(''),
+};
+let n = 0;
+const art = (k: string) => {
+  const id = `wid${++n}`;
+  return `<defs>${handFilter(id + 'f', 1.4, 0.13)}<filter id="${id}g" x="0" y="0" width="100%" height="100%"><feTurbulence type="fractalNoise" baseFrequency=".9" numOctaves="2" seed="4"/><feColorMatrix values="0 0 0 0 0  0 0 0 0 0  0 0 0 0 0  0 0 0 1 0"/></filter></defs>` +
+    `<rect width="${VW}" height="${VH}" fill="var(--scene-wall)"/><rect y="${fy}" width="${VW}" height="${VH - fy}" fill="var(--scene-floor)"/>` +
+    `<rect width="${VW}" height="${VH}" filter="url(#${id}g)" style="opacity:var(--nw-grain)"/><g filter="url(#${id}f)">${rooms[k]}</g>`;
+};
+const items = [
+  { k: 'optin', title: 'Opt in with a label', alt: 'A room in use: open and lit, someone inside.',
+    html: 'Label a workload or namespace <code>napwake.dev/managed: "true"</code>. Settings are annotations in your Git, so Argo CD and Flux work as today.' },
+  { k: 'clock', title: 'Activity clock', alt: 'A room lit for nobody goes dark: its lamp, then its light, then its door.', alive: true,
+    html: 'Napwake records each workload\'s last activity: CPU over <code>cpuThreshold</code>, a deploy, an activity annotation or a Prometheus query. After <code>idleAfter</code> with none, it pauses. No learning period.' },
+  { k: 'forecast', title: 'Demand forecasting', alt: 'An asleep room wakes: its light comes on, then its door opens.', alive: true,
+    html: 'A Holt-Winters double seasonal model learns each workload\'s day and week from up to four weeks of Prometheus. It scores itself from week two and acts when accurate enough: <code>eager</code>, <code>balanced</code> or <code>cautious</code>. It re-learns after drift, never from a holiday.' },
+  { k: 'safe', title: 'Safe by default', alt: 'An empty doorway, its arch dashed: a room Napwake can\'t see into.',
+    html: 'Napwake never pauses what it can\'t measure. A confident forecast can hold a pause off. <code>dryRun</code> pauses nothing and shows what would. Anyone else\'s scale-up is a wake. If a GitOps tool undoes a pause, Napwake tells you how to fix it.' },
+  { k: 'cost', title: 'Cost tracking', alt: 'Two rooms asleep, shut and dark, either side of a room in use.',
+    html: `Napwake tracks each workload\'s cost, what pausing frees, and what came off the bill, from each node pool\'s spare capacity. Freed capacity is money once an autoscaler removes nodes. <code>kubectl napwake nodes</code> shows what keeps them. <a href="${link('/guides/node-pools/')}">How to let them go</a>.` },
+  { k: 'alerts', title: 'Metrics and alerts', alt: 'A shut room with a note pinned on it: something needs you.',
+    html: 'Prometheus metrics for operator health, lifecycle transitions, wakes on request and forecast confidence, with alerting rules.' },
+];
+---
+<ul class="nw-does not-content">
+  {items.map((it) => (
+    <li class="nw-does__item">
+      <svg class:list={['nw-does__art', it.alive && 'nw-alive', `nw-does__art--${it.k}`]} viewBox={`0 0 ${VW} ${VH}`} preserveAspectRatio="xMidYMid slice" role="img" aria-label={it.alt} focusable="false" set:html={art(it.k)} />
+      <div class="nw-does__text">
+        <h3 class="nw-does__title">{it.title}</h3>
+        <p set:html={it.html} />
+      </div>
+    </li>
+  ))}
+</ul>
+
+<script>
+  // Each living room plays once, a beat after it's in view. Reduced motion: the CSS shows the end.
+  const rooms = document.querySelectorAll<SVGSVGElement>('.nw-alive');
+  if ('IntersectionObserver' in window && !matchMedia('(prefers-reduced-motion: reduce)').matches) {
+    const io = new IntersectionObserver((entries) => {
+      for (const e of entries) if (e.isIntersecting) { io.unobserve(e.target); setTimeout(() => e.target.classList.add('is-on'), 600); }
+    }, { threshold: 0.6 });
+    rooms.forEach((r) => io.observe(r));
+  } else rooms.forEach((r) => r.classList.add('is-on'));
+</script>
+
+<style>
+  .nw-does { list-style: none; margin: 1.75rem 0 0; padding: 0; display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 1rem; }
+  .nw-does__item { margin: 0 !important; display: flex; flex-direction: column; background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius-xl); overflow: hidden; }
+  .nw-does__art { display: block; width: 100%; height: 9rem; border-bottom: 1px solid var(--line); }
+  .nw-does__text { padding: 0.9rem 1.1rem 1.1rem; }
+  .nw-does__title { margin: 0 0 0.35rem !important; font: 700 1.0625rem/1.35 var(--font-sans) !important; color: var(--text); }
+  .nw-does__text p { margin: 0; font-size: 0.9375rem; line-height: 1.55; color: var(--muted); }
+  .nw-does__text :global(code) { font: 400 0.85em var(--font-mono); background: var(--code-bg); color: var(--code-text); padding: 0.08em 0.35em; border-radius: var(--radius-sm); }
+  .nw-does__text :global(a) { color: var(--link); }
+
+  /* the activity clock: light first, then the door (lamp 300 ms, light 600 ms from 150 ms, door 600 ms from 600 ms) */
+  .nw-does__art--clock :global(.r-shut) { opacity: 0; transform: scaleX(0.06); }
+  .nw-does__art--clock :global(.r-lamp), .nw-does__art--clock :global(.r-lit), .nw-does__art--clock :global(.r-open) { opacity: 1; }
+  .nw-does__art--clock.is-on :global(.r-lamp) { opacity: 0; transition: opacity var(--duration-ui-short) var(--ease-calm); }
+  .nw-does__art--clock.is-on :global(.r-lit) { opacity: 0; transition: opacity var(--duration-ui-long) var(--ease-calm) 150ms; }
+  .nw-does__art--clock.is-on :global(.r-open) { opacity: 0; transition: opacity var(--duration-ui-short) var(--ease-calm) 600ms; }
+  .nw-does__art--clock.is-on :global(.r-shut) { opacity: 1; transform: scaleX(1); transition: transform var(--duration-ui-long) var(--ease-calm) 600ms, opacity 150ms var(--ease-calm) 600ms; }
+  /* the forecast: the room lights amber before the door finishes opening (light leads) */
+  .nw-does__art--forecast :global(.r-amber), .nw-does__art--forecast :global(.r-wedge), .nw-does__art--forecast :global(.r-ajar) { opacity: 0; }
+  .nw-does__art--forecast.is-on :global(.r-amber) { opacity: 1; transition: opacity var(--duration-ui-long) var(--ease-calm); }
+  .nw-does__art--forecast.is-on :global(.r-closed) { opacity: 0; transition: opacity var(--duration-ui-long) var(--ease-calm) 300ms; }
+  .nw-does__art--forecast.is-on :global(.r-ajar) { opacity: 1; transition: opacity var(--duration-ui-long) var(--ease-calm) 300ms; }
+  .nw-does__art--forecast.is-on :global(.r-wedge) { opacity: 1; transition: opacity var(--duration-ui-long) var(--ease-calm) 600ms; }
+  @media (prefers-reduced-motion: reduce) {
+    .nw-does__art--clock :global(.r-lamp), .nw-does__art--clock :global(.r-lit), .nw-does__art--clock :global(.r-open), .nw-does__art--forecast :global(.r-closed) { opacity: 0 !important; transition: none !important; }
+    .nw-does__art--clock :global(.r-shut) { opacity: 1 !important; transform: none !important; transition: none !important; }
+    .nw-does__art--forecast :global(.r-amber), .nw-does__art--forecast :global(.r-wedge), .nw-does__art--forecast :global(.r-ajar) { opacity: 1 !important; transition: none !important; }
+  }
+  @media (max-width: 56rem) { .nw-does { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+  @media (max-width: 36rem) {
+    .nw-does { grid-template-columns: minmax(0, 1fr); gap: 0.6rem; }
+    .nw-does__item { flex-direction: row; align-items: stretch; }
+    .nw-does__art { width: 6.5rem; height: auto; min-height: 8rem; flex: none; border-bottom: 0; border-right: 1px solid var(--line); }
+  }
+</style>

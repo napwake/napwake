@@ -18,10 +18,14 @@ updates:
       actions:
         patterns: ["*"]
 
-  - package-ecosystem: pip
+  # The docs' Astro project. Its versions are pinned exactly, each released
+  # at least two weeks before it's taken, so hold an update to that.
+  - package-ecosystem: npm
     directory: /docs
     schedule:
       interval: weekly
+    cooldown:
+      default-days: 14
     groups:
       docs:
         patterns: ["*"]

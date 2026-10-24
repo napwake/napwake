@@ -1,0 +1,43 @@
+---
+// Starlight's header, with the version switcher beside the site title.
+import config from 'virtual:starlight/user-config';
+import LanguageSelect from 'virtual:starlight/components/LanguageSelect';
+import Search from 'virtual:starlight/components/Search';
+import SiteTitle from 'virtual:starlight/components/SiteTitle';
+import SocialIcons from 'virtual:starlight/components/SocialIcons';
+import ThemeSelect from 'virtual:starlight/components/ThemeSelect';
+import VersionSelect from '../VersionSelect.astro';
+const shouldRenderSearch = config.pagefind || config.components.Search !== '@astrojs/starlight/components/Search.astro';
+---
+<div class="header">
+  <div class="title-wrapper sl-flex">
+    <SiteTitle />
+    <span class="nw-version-wrap"><VersionSelect /></span>
+  </div>
+  <div class="sl-flex print:hidden">{shouldRenderSearch && <Search />}</div>
+  <div class="sl-hidden md:sl-flex print:hidden right-group">
+    <div class="sl-flex social-icons"><SocialIcons /></div>
+    <ThemeSelect />
+    <LanguageSelect />
+  </div>
+</div>
+
+<style>
+  .header { display: flex; gap: var(--sl-nav-gap); justify-content: space-between; align-items: center; height: 100%; }
+  .title-wrapper { overflow: clip; padding: 0.25rem; margin: -0.25rem; min-width: 0; align-items: center; gap: 0.9rem; }
+  .right-group, .social-icons { gap: 1rem; align-items: center; }
+  .social-icons::after { content: ''; height: 2rem; border-inline-end: 1px solid color-mix(in srgb, var(--paper) 30%, transparent); }
+  .nw-version-wrap { display: none; }
+  @media (min-width: 36em) { .nw-version-wrap { display: inline-flex; } }
+  @media (min-width: 50rem) {
+    :global(:root[data-has-sidebar]) { --__sidebar-pad: calc(2 * var(--sl-nav-pad-x)); }
+    :global(:root:not([data-has-toc])) { --__toc-width: 0rem; }
+    .header {
+      --__sidebar-width: max(0rem, var(--sl-content-inline-start, 0rem) - var(--sl-nav-pad-x));
+      --__main-column-fr: calc((100% + var(--__sidebar-pad, 0rem) - var(--__toc-width, var(--sl-sidebar-width)) - (2 * var(--__toc-width, var(--sl-nav-pad-x))) - var(--sl-content-inline-start, 0rem) - var(--sl-content-width)) / 2);
+      display: grid;
+      grid-template-columns: minmax(calc(var(--__sidebar-width) + max(0rem, var(--__main-column-fr) - var(--sl-nav-gap))), auto) 1fr auto;
+      align-content: center;
+    }
+  }
+</style>

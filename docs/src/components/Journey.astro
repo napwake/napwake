@@ -1,0 +1,34 @@
+---
+// A guide's steps as a map: each step's number and name, linking to it, and the door the workload
+// is behind once it's done. Reads as an ordered list.
+import StateDoor from './StateDoor.astro';
+import { WORDS, type State } from './lib';
+interface Props { steps: { href: string; title: string; state: State; note?: string }[]; label: string }
+const { steps, label } = Astro.props;
+---
+<nav class="nw-journey not-content" aria-label={label}>
+  <ol>
+    {steps.map((s, i) => (
+      <li>
+        <a href={s.href}>
+          <span class="nw-journey__n">{i + 1}</span>
+          <StateDoor state={s.state} size={26} label={`${WORDS.plain[s.state]} after this step`} />
+          <span class="nw-journey__title">{s.title}</span>
+          {s.note && <span class="nw-journey__note">{s.note}</span>}
+        </a>
+      </li>
+    ))}
+  </ol>
+</nav>
+<style>
+  .nw-journey { margin-top: 1.75rem; }
+  ol { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 0.6rem; counter-reset: none; }
+  li { margin: 0 !important; }
+  a { position: relative; display: grid; grid-template-columns: auto 1fr; grid-template-rows: auto auto; align-items: center; gap: 0.15rem 0.6rem; height: 100%; box-sizing: border-box; padding: 0.7rem 0.8rem 0.75rem; border: 1px solid var(--line); border-radius: var(--radius-lg); background: var(--surface); color: var(--text); text-decoration: none; transition: border-color var(--duration-ui-short) var(--ease-calm); }
+  a:hover { border-color: var(--action); }
+  .nw-journey__n { position: absolute; top: 0.55rem; right: 0.7rem; font: 700 0.75rem/1 var(--font-mono); color: var(--muted); }
+  a :global(.nw-door) { grid-row: span 2; }
+  .nw-journey__title { font: 700 0.875rem/1.3 var(--font-sans); padding-right: 1rem; }
+  .nw-journey__note { font: 400 0.75rem/1.3 var(--font-mono); color: var(--muted); }
+  @media (max-width: 56rem) { ol { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+</style>

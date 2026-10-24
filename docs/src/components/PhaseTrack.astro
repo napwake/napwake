@@ -1,0 +1,30 @@
+---
+// A sequence of named phases, in order, as a track: the forecast's phase lifecycle.
+interface Props { phases: { name: string; note?: string }[]; label: string }
+const { phases, label } = Astro.props;
+---
+<ol class="nw-phases not-content" aria-label={label}>
+  {phases.map((p, i) => (
+    <li style={`--i:${i}`}>
+      <code>{p.name}</code>
+      {p.note && <span set:html={p.note} />}
+    </li>
+  ))}
+</ol>
+<style>
+  .nw-phases { list-style: none; margin: 1.5rem 0 0; padding: 0; display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 0; }
+  li { position: relative; margin: 0 !important; padding: 1.35rem 0.6rem 0 0; display: flex; flex-direction: column; gap: 0.35rem; min-width: 0; }
+  li::before { content: ''; position: absolute; top: 0.38rem; left: 0; right: 0; height: 2px; background: color-mix(in srgb, var(--brand) calc(25% + var(--i) * 18%), var(--line)); }
+  li::after { content: ''; position: absolute; top: 0; left: 0; width: 0.8rem; height: 0.8rem; border-radius: 50%; background: var(--surface); border: 2px solid color-mix(in srgb, var(--brand) calc(25% + var(--i) * 18%), var(--line)); box-sizing: border-box; }
+  li:last-child::before { right: auto; width: 0.8rem; }
+  li:last-child::after { background: var(--brand); border-color: var(--brand); }
+  code { font: 700 0.8125rem/1.3 var(--font-mono); color: var(--text); background: none; padding: 0; overflow-wrap: anywhere; }
+  span { font-size: 0.8125rem; line-height: 1.45; color: var(--muted); }
+  @media (max-width: 44rem) {
+    .nw-phases { grid-template-columns: minmax(0, 1fr); }
+    li { padding: 0 0 1rem 1.6rem; }
+    li::before { top: 0.8rem; bottom: 0; left: 0.33rem; right: auto; width: 2px; height: auto; }
+    li:last-child::before { display: none; }
+    li::after { top: 0.15rem; }
+  }
+</style>

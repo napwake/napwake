@@ -1,0 +1,136 @@
+---
+title: "Security"
+description: "What a security review of Napwake needs: what it can do in a cluster, what it talks to, and how to check that what you install is what was released."
+lede: "What a security review needs: what Napwake can do in a cluster, what it talks to, and how to check that what you install is what was released."
+---
+
+import { Tabs, TabItem } from '@astrojs/starlight/components';
+
+## What it can do
+
+Each power Napwake has, and what limits it. [Data and access](/reference/data-and-access/) lists everything it reads, writes and sends, and [Helm values](/reference/helm-values/#rbac) the exact RBAC.
+
+| It | And the limit |
+|---|---|
+| Never deletes your resources | Its one action is to scale a Deployment or StatefulSet to zero and back, through the scale subresource. Its role may patch workloads, but its only other change is its own `napwake.dev/paused-from` annotation while paused. It deletes only its own ManagedWorkloads, EndpointSlices and forwarder Deployments |
+| Never reads your Secrets | The doorman reads one Secret of its own, by name, the key it signs the [Wake it button](/concepts/wake-on-request/#the-wake-it-button) with. The chart creates it empty and the doorman fills it. Its Role names that Secret alone. The operator has no RBAC on Secrets. Like any role that may patch Deployments and StatefulSets, though, its token could change a pod template to mount one |
+| Shows the internet nothing of the cluster | For a workload that [asks before waking](/concepts/wake-on-request/#asking-before-waking), its pages and `503`s name no namespace, workload or Service. The asleep page runs only its own script, and no other site may frame it, so none can trick someone into clicking **Wake it** |
+| Wakes on a click only from the page | The button's token is signed for that workload and pause, good for 10 minutes, and checked in constant time. It wakes only from a browser's `User-Agent` that says the click came from the page. That's `Sec-Fetch-Site: same-origin` over HTTPS, with `Sec-Fetch-User: ?1` from Chromium and Firefox, or the page's own `Origin` over plain HTTP. A robot that forges those, or drives a real browser, can still click, at most once a minute |
+| Can write any EndpointSlice in the namespaces it works in | It only creates, changes and deletes its own, labelled `endpointslice.kubernetes.io/managed-by: doorman.napwake.dev`, and never overwrites one without it. RBAC can't limit a role by label, so whoever holds its token could redirect any Service there |
+| Can create and delete Deployments there, with the GKE NEG forwarder | Only with `doorman.negForwarder.enabled`, off by default, to run a [forwarder](/concepts/wake-on-request/#gke-container-native-load-balancing-negs) beside each paused workload behind GKE container-native load balancing. RBAC can't limit it to its own, so whoever holds its token could create Deployments there, and patch them, as it already can. It deletes only a Deployment of the forwarder's name that its ManagedWorkload owns. Forwarders run at the Pod Security Standards' restricted level, as the namespace's `default` ServiceAccount, without its token or any API access |
+| Can be confined to namespaces | With [`watchNamespaces`](/reference/helm-values/#namespaces), the operator and doorman get a Role in each of those namespaces instead of a ClusterRole, so Kubernetes refuses them anything elsewhere. What stays cluster-wide only reads Namespaces, Nodes and Karpenter NodePools, or checks scrapers' tokens ([RBAC](/reference/data-and-access/#rbac)) |
+| Can be kept out of namespaces | One labelled `napwake.dev/protected=true`, or matching [`protectedNamespaces`](/reference/helm-values/#namespaces), is never managed ([Protected namespaces](/guides/opt-in/#protected-namespaces)) |
+| Keeps a workload awake for another namespace only where allowed | A dependency in another namespace, declared in `dependsOn` or learned, is held awake, woken and waited for only if its namespace's `napwake.dev/dependents-from` lists the dependent's. If not, it's ignored as `DependencyNotAllowed`, with the same message whether it exists or not, so it can't probe another namespace ([Across namespaces](/concepts/dependencies/#across-namespaces)) |
+| Learns dependencies from requests only through the doorman | Only from a `napwake.dev/last-request-from` the doorman wrote, which the `<fullname>-request-stamps` admission policy lets no one else set. The operator also checks the field manager the API server records, and counts only a sender in a namespace the woken workload's namespace allows |
+| Doesn't fight people or tools | A paused workload scaled up by anything else wakes. A GitOps tool undoing a pause is reported, not fought ([GitOps tools](/guides/gitops/)) |
+| Runs locked down | The images run as a non-root user on a distroless base, with a read-only root filesystem. So do the chart's guards, hook Jobs from the operator's image that run only during `helm uninstall`, `helm upgrade` and `helm rollback`, each with a ServiceAccount that may only list ManagedWorkloads |
+
+## What it talks to
+
+Nothing leaves the cluster. There's no telemetry, usage reporting or update checks. Inside it, these are the connections.
+
+| From | To | Why |
+|---|---|---|
+| Operator, doorman | The Kubernetes API server | Everything it does |
+| Operator | Prometheus, at `prometheus.url` | Only if set, for [the queries listed here](/reference/data-and-access/#what-it-sends) |
+| Any client of a paused workload's Service (a pod, an ingress controller, or a load balancer through a NodePort) | Doorman | It holds the connection, wakes the workload, and forwards it |
+| Doorman | The woken workload's pods, in any routed namespace, on their Service ports | Passing the held connection through |
+| Google's load balancers, and any other client of a paused workload's Service behind GKE NEGs | Forwarder, in the workload's namespace, with `doorman.negForwarder.enabled` | It stands in for the workload's pods |
+| Forwarder | Doorman, on its routing ports | Passing connections on, untouched |
+| Prometheus | Operator and doorman metrics | Only with a token allowed to get `/metrics`, unless `metrics.secure` is off |
+
+## The doorman is a way in to paused workloads
+
+Any client that can reach a doorman pod can reach every routed, paused workload, in any namespace, on its Service ports. A workload's own NetworkPolicy sees the doorman as the source, never the client. So the control that matters is a NetworkPolicy on the doorman.
+
+The doorman listens on all its pod's interfaces, since binding to the pod IP would only shut out its own pod's containers. The chart's NetworkPolicy (`networkPolicy.enabled`, off by default) leaves the routing ports open to every source unless you restrict them. Where untrusted pods share the network, enable `networkPolicy` and set `doorman.networkPolicy.ingressFrom`.
+
+### What narrows it
+
+| Control | What it does |
+|---|---|
+| `doorman.networkPolicy.ingressFrom` | Admits only the callers your paused workloads really have, such as your ingress controller's namespace and the namespaces whose apps call paused services ([how](/concepts/wake-on-request/#restricting-who-can-reach-the-doorman)) |
+| `doorman.networkPolicy.egress`, off by default | An egress policy allowing only your pod CIDRs and the API server ([Helm values](/reference/helm-values/#network-policy)). It enforces in the network the bounds the doorman keeps itself, the next two rows |
+| What the doorman dials | Only Pod-backed IP endpoints of EndpointSlices the EndpointSlice controller manages. Never loopback, link-local or cloud metadata addresses, AWS's `fd00:ec2::254` and Alibaba Cloud's `100.100.100.200` included |
+| Forged EndpointSlices | Anyone who can write EndpointSlices in a namespace can forge those labels. So the doorman also reads the pod each endpoint names, and dials only if that pod is in the Service's namespace and has the address. A forged slice can send it only to that namespace's own pods, never past a NetworkPolicy into another. The operator checks the same way before leaving a Service to pods it says already serve it, so a forged slice can't stop a paused workload waking either |
+| Forwarders, with `doorman.negForwarder.enabled` | The chart's policy admits them from any namespace by their labels, `app.kubernetes.io/name: napwake-forwarder` and `napwake.dev/operator` naming Napwake's namespace. Anyone who can create pods can set those labels, and reach the routing ports as a caller in `ingressFrom` can. A forwarder passes on only its own workload's ports, but the doorman can't tell it from a pod that claims to be one |
+| [Rate limits](/concepts/wake-on-request/#limits) | Slow a port scan through the doorman, but don't stop one |
+| A cap per workload | One workload holds at most 256 of a doorman pod's 2048 places, so one that never becomes Ready can't stop other workloads' requests being held |
+
+### The request stamps
+
+The doorman's ServiceAccount can patch ManagedWorkloads, to set `napwake.dev/last-request` and `napwake.dev/last-request-from`, the caller's IP address. It also sets `napwake.dev/turned-away`, where it counts what it [turned away](/concepts/wake-on-request/#what-it-turns-away) from a workload that asks.
+
+The operator learns which workload depends on which from `last-request-from`, so the doorman must be the only one who sets it. Two ValidatingAdmissionPolicies, both on with `doorman.admissionPolicy.enabled` (the default), make sure of it.
+
+| Policy | Refuses | Scope |
+|---|---|---|
+| `<fullname>-doorman` | A patch from the doorman's ServiceAccount that changes a ManagedWorkload's spec, labels, finalizers, owners or any annotation but those three | Cluster |
+| `<fullname>-request-stamps` | A create or change that sets `napwake.dev/last-request` or `napwake.dev/last-request-from` on a ManagedWorkload, from anyone but the doorman's ServiceAccount, the operator and cluster admins included. Removing one is allowed | `watchNamespaces` if set, else the cluster |
+
+To wake a workload yourself, set `napwake.dev/wake-requested`, as `kubectl napwake wake` does. Without the request-stamps policy, the operator still ignores an address not written under Napwake's field manager, but anyone who can patch a ManagedWorkload can write under that name with `--field-manager=napwake`.
+
+<details class="nw-details">
+<summary>With the Kustomize manifests</summary>
+
+They include both policies, the second named `napwake-request-stamps`. Each takes the doorman's ServiceAccount as its parameter, so it follows the `namespace` and `namePrefix` set in `config/default` or in an overlay on top of it.
+
+If that ServiceAccount is deleted, both let every write through, leaving stamps to the operator's field-manager check. The API server looks a policy's parameter up before anything else, so refusing without it would refuse every write to every ManagedWorkload, the operator's too.
+
+</details>
+
+## Verifying a release
+
+Every release is built from a tag by the [release workflow](https://github.com/napwake/napwake/blob/main/.github/workflows/release.yml) and signed keylessly with [Sigstore](https://www.sigstore.dev/). The signature is bound to that workflow and tag, so there's no key to steal. Each command fails unless the artifact came from that workflow. The signatures are made with cosign 3, so verify them with cosign 3 or later.
+
+<Tabs>
+<TabItem label="Image">
+
+Its signature, an SBOM for each platform, and build provenance:
+
+```bash
+IMAGE=ghcr.io/napwake/napwake:v0.2.0
+cosign verify $IMAGE \
+  --certificate-identity-regexp '^https://github.com/napwake/napwake/.github/workflows/release.yml@refs/tags/v' \
+  --certificate-oidc-issuer https://token.actions.githubusercontent.com
+cosign verify-attestation $IMAGE --type spdxjson \
+  --certificate-identity-regexp '^https://github.com/napwake/napwake/.github/workflows/release.yml@refs/tags/v' \
+  --certificate-oidc-issuer https://token.actions.githubusercontent.com
+gh attestation verify oci://$IMAGE --repo napwake/napwake
+```
+
+</TabItem>
+<TabItem label="Helm chart">
+
+```bash
+cosign verify ghcr.io/napwake/charts/napwake:0.2.0 \
+  --certificate-identity-regexp '^https://github.com/napwake/napwake/.github/workflows/release.yml@refs/tags/v' \
+  --certificate-oidc-issuer https://token.actions.githubusercontent.com
+```
+
+</TabItem>
+<TabItem label="Plugin and release files">
+
+The plugin, `install.yaml` and the other release files, through their signed checksums:
+
+```bash
+cosign verify-blob checksums.txt --bundle checksums.txt.sigstore.json \
+  --certificate-identity-regexp '^https://github.com/napwake/napwake/.github/workflows/release.yml@refs/tags/v' \
+  --certificate-oidc-issuer https://token.actions.githubusercontent.com
+sha256sum --check --ignore-missing checksums.txt
+gh attestation verify kubectl-napwake-linux-amd64.tar.gz --repo napwake/napwake
+```
+
+</TabItem>
+</Tabs>
+
+## Vulnerabilities
+
+| When | What runs |
+|---|---|
+| Every pull request | [govulncheck](https://go.dev/doc/security/vuln/) on the Go code, failing on any known vulnerability the code can reach. [Trivy](https://trivy.dev/) on the built image, failing on critical and high vulnerabilities that have a fix. One with no fix yet is reported, not blocking |
+| Every release | Both again, before anything is published. Trivy's full report for each platform goes on the GitHub release, as `vulnerabilities-linux-amd64.txt` and `vulnerabilities-linux-arm64.txt`, beside the SBOMs, `sbom-linux-amd64.spdx.json` and `sbom-linux-arm64.spdx.json` |
+| Every day | Both against `main`, and Trivy against the released image, `ghcr.io/napwake/napwake:latest`, for both platforms. A vulnerability disclosed after a release is reported then, not at the next pull request |
+| Every week | Dependabot updates the Go modules, GitHub Actions and base images. Every Action is pinned to a commit, and the base images to a digest |
+
+To report a vulnerability, do it privately, through a GitHub security advisory, as [SECURITY.md](https://github.com/napwake/napwake/blob/main/SECURITY.md) describes.

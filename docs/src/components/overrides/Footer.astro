@@ -1,0 +1,55 @@
+---
+// Starlight's footer (edit link, previous and next), then the site's own: the mark, the licences and
+// the illustrations' credit line.
+import EditLink from 'virtual:starlight/components/EditLink';
+import LastUpdated from 'virtual:starlight/components/LastUpdated';
+import Pagination from 'virtual:starlight/components/Pagination';
+import PageTools from '../PageTools.astro';
+const home = import.meta.env.BASE_URL;
+const { entry, id } = Astro.locals.starlightRoute;
+// splash pages draw their own title, so the home's tools sit here; the 404 has none
+const tools = entry.data.template === 'splash' && entry.data.title !== 'Page not found';
+---
+<footer class="sl-flex nw-foot">
+  <div class="meta sl-flex">
+    <EditLink />
+    <LastUpdated />
+  </div>
+  <Pagination />
+  {tools && <PageTools id={id} class="nw-tools--foot" />}
+  <div class="nw-site-foot">
+    <a class="nw-site-foot__mark" href={home} aria-label="Napwake docs home">
+      <svg viewBox="0 0 24 24" width="22" height="22" aria-hidden="true"><path fill="currentColor" fill-rule="evenodd" d="M7.6 9.9L7.2 3.6Q7.2 2.6 8.2 2.6Q12 2.2 15.8 2.6Q16.8 2.6 16.8 3.6L16.4 9.9ZM3.4 10.7Q3.4 9.8 4.6 9.9H19.4Q20.6 9.8 20.6 10.7Q20.6 11.7 19.4 11.7H4.6Q3.4 11.7 3.4 10.7ZM6.6 19.2V13.8Q6.6 12.5 7.9 12.5H16.1Q17.4 12.5 17.4 13.8V19.2ZM8 15.4A1.9 1.9 0 0 0 11.8 15.4Z M12.2 15.4A1.9 1.9 0 0 0 16 15.4ZM3 24V22.2Q3 20 5.2 20H18.8Q21 20 21 22.2V24Z"/></svg>
+    </a>
+    <p>
+      Napwake is open source under <a href="https://github.com/napwake/napwake/blob/main/LICENSE">Apache 2.0</a>.{' '}
+      <a href="https://github.com/napwake/napwake">GitHub</a>{' · '}<a href="https://napwake.dev/">napwake.dev</a>
+    </p>
+    <p class="nw-site-foot__credit">Doorman illustrations by Napwake, <a href="https://github.com/napwake/brand">CC BY 4.0</a>.</p>
+  </div>
+</footer>
+
+<style>
+  footer { flex-direction: column; gap: 1.5rem; }
+  .meta { gap: 0.75rem 3rem; justify-content: space-between; flex-wrap: wrap; margin-top: 3rem; font-size: var(--sl-text-sm); color: var(--muted); }
+  .meta > :global(p:only-child) { margin-inline-start: auto; }
+  .meta :global(a) { color: var(--muted); }
+  .meta :global(a:hover) { color: var(--link); }
+  .nw-site-foot {
+    margin-top: 1.5rem;
+    padding: 1.5rem 0 2rem;
+    border-top: 1px solid var(--line);
+    display: grid;
+    grid-template-columns: auto 1fr;
+    gap: 0.25rem 0.9rem;
+    align-items: start;
+    font-size: 0.875rem;
+    line-height: 1.5;
+    color: var(--muted);
+  }
+  .nw-site-foot p { margin: 0; grid-column: 2; }
+  .nw-site-foot__mark { grid-row: span 2; color: var(--doorman-coat); display: inline-flex; padding-top: 0.1rem; }
+  .nw-site-foot a { color: var(--muted); text-underline-offset: 0.2em; }
+  .nw-site-foot a:hover { color: var(--link); }
+  .nw-site-foot__credit { font-size: 0.8125rem; }
+</style>

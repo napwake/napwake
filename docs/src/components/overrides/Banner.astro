@@ -1,0 +1,53 @@
+---
+// The banners: a release candidate's ("next"), decided when it's built; a release that isn't the
+// latest, shown once versions.json says so (VersionSelect); and a page's own, from its front matter.
+// The words are overrides/main.html's, the MkDocs site's, with the new name.
+const { banner } = Astro.locals.starlightRoute.entry.data;
+const version = import.meta.env.NAPWAKE_DOCS_VERSION || 'dev';
+const release = import.meta.env.NAPWAKE_DOCS_RELEASE || '';
+const base = import.meta.env.BASE_URL.replace(/\/?$/, '/');
+const root = base.replace(/[^/]+\/$/, '');
+const shown = release || version;
+---
+{version === 'next' && (
+  <div class="nw-banner nw-banner--next" role="note" data-pagefind-ignore>
+    <span class="nw-banner__tag">Release candidate</span>
+    <span>These docs are for Napwake {shown}, a release candidate, and may change before it's released. <a href={root}><strong>Read the docs for the latest release.</strong></a></span>
+  </div>
+)}
+{version !== 'next' && version !== 'dev' && (
+  <div class="nw-banner" role="note" data-pagefind-ignore data-nw-outdated hidden>
+    <span>These docs are for Napwake {shown}, not the latest release. <a href={root}><strong>Read the docs for the latest release.</strong></a></span>
+  </div>
+)}
+{banner && <div class="nw-banner" data-pagefind-ignore set:html={banner.content} />}
+
+<style>
+  .nw-banner {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: center;
+    gap: 0.4rem 0.75rem;
+    padding: 0.6rem var(--sl-nav-pad-x);
+    background: color-mix(in srgb, var(--lamp) 22%, var(--bg));
+    border-bottom: 1px solid color-mix(in srgb, var(--lamp) 55%, var(--bg));
+    color: var(--text);
+    font-size: 0.9375rem;
+    line-height: 1.45;
+    text-align: center;
+    text-wrap: balance;
+  }
+  .nw-banner[hidden] { display: none; }
+  .nw-banner a { color: var(--text); text-underline-offset: 0.2em; }
+  .nw-banner__tag {
+    font: 700 0.6875rem/1.4 var(--font-mono);
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    color: var(--on-action);
+    background: var(--accent-text);
+    border-radius: 999px;
+    padding: 0.2rem 0.55rem;
+  }
+  :global([data-theme='dark']) .nw-banner__tag { color: var(--night); background: var(--lamp); }
+</style>

@@ -1,0 +1,435 @@
+---
+title: "Installation"
+description: "Install Napwake's operator and doorman with the Helm chart, or with the Kustomize manifests that install.yaml is built from."
+lede: "Install the operator and the doorman with Helm. If your cluster's config is kept as Kustomize, use the Kustomize manifests. Both install the same."
+---
+
+import { Steps, Tabs, TabItem } from '@astrojs/starlight/components';
+import Panel from '../../../components/Panel.astro';
+import StartCheckpoint from '../../../components/StartCheckpoint.astro';
+import NextSteps from '../../../components/NextSteps.astro';
+
+<Panel title="Before you start">
+
+- Kubernetes v1.30+, tested in CI on 1.30 and 1.37
+- kubectl v1.30+
+- [metrics-server](https://github.com/kubernetes-sigs/metrics-server), for pod CPU through the Kubernetes Metrics API
+- Helm v3.8+, to install the OCI chart
+
+</Panel>
+
+## Install with Helm
+
+<Steps>
+
+1. Put your settings in a values file, starting with your users' [time zone](#time-zone):
+
+    ```yaml title="napwake-values.yaml"
+    timezone: Europe/London
+    ```
+
+2. Install from the OCI registry, with no `helm repo` to add:
+
+    ```bash
+    helm install napwake oci://ghcr.io/napwake/charts/napwake \
+      --version 0.2.0 \
+      --namespace napwake-system \
+      --create-namespace \
+      -f napwake-values.yaml
+    ```
+
+</Steps>
+
+<StartCheckpoint>
+
+```bash
+# Check the operator and the doorman are running
+kubectl get pods -n napwake-system
+
+# Verify the CRD is installed
+kubectl get crd managedworkloads.napwake.dev
+```
+
+Check any install this way.
+
+</StartCheckpoint>
+
+Keep the file and upgrade with it, since an upgrade given `--set` alone drops your other values ([Keeping your settings](/operations/upgrading/#keeping-your-settings)). The chart installs and upgrades the ManagedWorkload CRD. The chart's version has no `v`. Its image's tag has one, such as `v0.2.0`. [Helm values](/reference/helm-values/) lists every value.
+
+## With Argo CD or Flux
+
+The chart is only in an OCI registry, which Argo CD and Flux name differently. Commit one of these where your GitOps tool syncs from.
+
+<Tabs syncKey="gitops">
+<TabItem label="Argo CD">
+
+```yaml title="application.yaml"
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: napwake
+  namespace: argocd
+spec:
+  project: default
+  source:
+    repoURL: ghcr.io/napwake/charts
+    chart: napwake
+    targetRevision: 0.2.0
+    helm:
+      valuesObject:
+        timezone: Europe/London
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: napwake-system
+  syncPolicy:
+    automated: {}
+    syncOptions:
+      - CreateNamespace=true
+```
+
+- `repoURL` is the registry and path without `oci://`, which tells Argo CD it's OCI. `chart` is the chart's name.
+- The registry is public, so Argo CD needs no credentials.
+- For the Kustomize manifests, point an Application's `path` at your kustomization.
+
+</TabItem>
+<TabItem label="Flux">
+
+```yaml title="napwake.yaml"
+apiVersion: source.toolkit.fluxcd.io/v1
+kind: OCIRepository
+metadata:
+  name: napwake
+  namespace: flux-system
+spec:
+  interval: 1h
+  url: oci://ghcr.io/napwake/charts/napwake
+  ref:
+    tag: 0.2.0
+  layerSelector:
+    mediaType: application/vnd.cncf.helm.chart.content.v1.tar+gzip
+    operation: copy
+---
+apiVersion: helm.toolkit.fluxcd.io/v2
+kind: HelmRelease
+metadata:
+  name: napwake
+  namespace: flux-system
+spec:
+  interval: 1h
+  chartRef:
+    kind: OCIRepository
+    name: napwake
+  releaseName: napwake
+  targetNamespace: napwake-system
+  storageNamespace: napwake-system
+  install:
+    createNamespace: true
+  values:
+    timezone: Europe/London
+```
+
+- It needs Flux 2.6 or later, where `OCIRepository` is `v1`.
+- `releaseName` keeps the release `napwake`, as these docs call it, instead of Flux's default, `napwake-system-napwake`.
+- `storageNamespace` keeps its Helm history beside it, where `helm list -n napwake-system` shows it.
+- For the Kustomize manifests, point a Flux `Kustomization` at your kustomization.
+
+</TabItem>
+</Tabs>
+
+To upgrade, change `targetRevision` or `tag` to the new version.
+
+### Moving a Helm install to Argo CD or Flux
+
+Argo CD or Flux can take over a `helm install` where it runs, with the same values. Nothing is reinstalled or restarted, and paused workloads stay paused.
+
+Don't uninstall first. Doing what [`helm uninstall`](#uninstall) asks, stopping managing every workload, wakes every paused one. It also loses each one's forecast and its tally of what pausing freed.
+
+```bash
+helm get values napwake -n napwake-system
+```
+
+Give the tool these values, and the version in the `CHART` column of `helm list -n napwake-system`.
+
+<Tabs syncKey="gitops">
+<TabItem label="Argo CD">
+
+<Steps>
+
+1. Commit the Application above, with those values in `valuesObject` and that version as `targetRevision`. Argo CD finds every resource as it would make it. It shows `Synced` and `Healthy` without applying anything, so an automated sync doesn't start.
+
+2. Sync it once by hand, with **Sync** in its UI or with kubectl, giving the Application's sync options:
+
+    ```bash
+    kubectl patch application napwake -n argocd --type merge -p '{"operation":{"sync":{"syncOptions":["CreateNamespace=true"]}}}'
+    ```
+
+    This applies the resources and marks them as the Application's own, with `argocd.argoproj.io/tracking-id`. It warns that each lacks `kubectl.kubernetes.io/last-applied-configuration`, which Helm doesn't set and the sync adds.
+
+3. Check it's `Synced` and `Healthy`:
+
+    ```bash
+    kubectl get application napwake -n argocd
+    ```
+
+4. Delete Helm's record of the release, its `sh.helm.release.v1.napwake.v<revision>` Secrets, so `helm` no longer acts on it:
+
+    ```bash
+    kubectl delete secrets -n napwake-system -l owner=helm,name=napwake
+    ```
+
+</Steps>
+
+`helm list -n napwake-system` no longer shows it. From now on, change the values or `targetRevision` in Git.
+
+</TabItem>
+<TabItem label="Flux">
+
+Commit the `OCIRepository` and `HelmRelease` above, with those values in `values` and that version as `tag`. Their `releaseName` and `storageNamespace` are the release's own. So Flux's helm-controller finds it in Helm's storage and takes it over in place. It upgrades it to a new revision, with the same values, and deletes nothing.
+
+`helm list -n napwake-system` still shows it, its chart version followed by `+` and the start of the chart's digest. From now on, change it in Git, since Flux undoes a `helm upgrade` by hand at its next reconcile.
+
+</TabItem>
+</Tabs>
+
+## Install without Helm
+
+Both install the CRD, RBAC, the operator (`deployment/napwake-controller-manager`), and the doorman's Deployment, Service and PodDisruptionBudget, all in `napwake-system`.
+
+<Tabs syncKey="install">
+<TabItem label="install.yaml">
+
+```bash
+kubectl apply -f https://github.com/napwake/napwake/releases/download/v0.2.0/install.yaml
+```
+
+`install.yaml` is the Kustomize manifests in one file. Set your users' [time zone](#time-zone) on the operator:
+
+```bash
+kubectl patch deployment napwake-controller-manager -n napwake-system --type=json \
+  -p '[{"op":"add","path":"/spec/template/spec/containers/0/args/-","value":"--timezone=Europe/London"}]'
+```
+
+An `install.yaml` that changes the operator's arguments replaces them. After upgrading, check `--timezone` is still there, or use Kustomize, which keeps it.
+
+</TabItem>
+<TabItem label="Kustomize">
+
+```yaml title="kustomization.yaml"
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+resources:
+  - https://github.com/napwake/napwake//config/default?ref=v0.2.0
+patches:
+  - target:
+      kind: Deployment
+      name: napwake-controller-manager
+    patch: |-
+      - op: add
+        path: /spec/template/spec/containers/0/args/-
+        value: --timezone=Europe/London
+```
+
+```bash
+kubectl apply -k .
+```
+
+This uses the manifests as a remote base, pinned to the release, in your own kustomization. It sets your users' [time zone](#time-zone) on the operator. Set its other [flags](/reference/configuration/) the same way. To upgrade, change `ref`. Kustomize fetches bases with git, so `kubectl` or the GitOps tool running it must reach github.com.
+
+</TabItem>
+<TabItem label="From source">
+
+```bash
+git clone https://github.com/napwake/napwake.git
+cd napwake
+make docker-build IMG=napwake:dev
+```
+
+The image is only in your local Docker. On a [Kind](https://kind.sigs.k8s.io/) cluster, load it into the nodes:
+
+```bash
+kind load docker-image napwake:dev --name <cluster>
+make deploy IMG=napwake:dev
+```
+
+Elsewhere, push it to a registry the nodes can pull from:
+
+```bash
+make docker-build docker-push IMG=<registry>/napwake:dev
+make deploy IMG=<registry>/napwake:dev
+```
+
+`make deploy` installs the Kustomize manifests, `config/default`, with the operator and the doorman running `IMG`. It writes `IMG` into `config/manager/kustomization.yaml`, and `git checkout config/manager` puts it back.
+
+</TabItem>
+</Tabs>
+
+### Prometheus and NetworkPolicies without Helm
+
+Two more bases, pinned to the same release, add what these chart values turn on. Add them to your kustomization's `resources`, or apply one alone:
+
+```bash
+kubectl apply -k "https://github.com/napwake/napwake//config/prometheus?ref=v0.2.0"
+```
+
+From a clone:
+
+```bash
+kubectl apply -k config/prometheus
+kubectl apply -k config/network-policy
+```
+
+| Base | Adds | Chart values |
+|------|------|--------------|
+| `https://github.com/napwake/napwake//config/prometheus?ref=v0.2.0` | ServiceMonitors for the operator and the doorman, and the [alerting rules](/operations/monitoring/#alerting-rules). Needs the Prometheus Operator's CRDs, and your Prometheus [allowed to read the metrics](/operations/monitoring/#scraping) | `metrics.serviceMonitor.enabled`, `metrics.prometheusRule.enabled` |
+| `https://github.com/napwake/napwake//config/network-policy?ref=v0.2.0` | NetworkPolicies. Only namespaces labelled `metrics: enabled` may scrape the operator and the doorman. The doorman's routing ports (TCP 20000-29999) stay open to every caller of a paused workload's Services | `networkPolicy.enabled` |
+
+## Time zone
+
+The [forecast](/concepts/forecasting/) learns when each workload is busy, by hour of day and day of week, in the operator's time zone. It holds off pausing before busy hours and, with `autoResume`, wakes workloads ahead of them.
+
+Set Helm's `timezone` value, or the operator's `--timezone` flag, to your users' IANA zone, such as `Europe/London`, `America/New_York` or `Asia/Kolkata`. The chart's install notes say which zone the forecast uses.
+
+- UTC is the default. A team on daylight saving then finds its workloads woken an hour early or late for half the year.
+- Teams in different zones can pick the zone most of them work in, or have [an install each](#more-than-one-install).
+- [Wall-clock alignment](/concepts/forecasting/#wall-clock-alignment) has the details.
+
+To change it on a Helm install, change your values file. Then upgrade with it at the version you run, as in [Keeping your settings](/operations/upgrading/#keeping-your-settings):
+
+```yaml title="napwake-values.yaml"
+timezone: America/New_York
+```
+
+```bash
+helm upgrade napwake oci://ghcr.io/napwake/charts/napwake \
+  --version 0.2.0 \
+  --namespace napwake-system \
+  -f napwake-values.yaml
+```
+
+The operator restarts with it. With Argo CD or Flux, change `valuesObject` or the HelmRelease's `values` in Git.
+
+## More than one install
+
+One install per cluster is usual. Several can share one, such as one per team, if each:
+
+- has a namespace and a release name of its own, since the chart names its ClusterRoles and admission policies after the release
+- sets `watchNamespaces`, with no namespace in two installs' lists
+
+All but one set `crds.install: false`. They share the ManagedWorkload CRD, which belongs to the release that installed it and is upgraded with it. Make that one the newest Napwake. The Kustomize manifests, and so `install.yaml`, are a single install, in `napwake-system`, watching every namespace.
+
+Each operator marks the ManagedWorkloads it takes on, and the doorman EndpointSlices it writes, with [`napwake.dev/operator`](/reference/labels-annotations/#annotation-napwake-dev-operator), its namespace. Another install leaves those alone, with a `ManagedByAnotherInstall` warning event. So two installs watching one namespace by mistake don't both pause and wake its workloads. The first to take each one on keeps it.
+
+## Uninstall
+
+Stop managing workloads while the operator still runs, so it can scale paused ones back up.
+
+<Steps>
+
+1. Remove the `napwake.dev/managed` label from your workloads and namespaces, in Git if they live there. Napwake deletes the ManagedWorkloads it created from them.
+
+2. Delete the ManagedWorkloads you wrote yourself. Each scales its workload back to the replicas it had before the pause.
+
+    ```bash
+    kubectl delete managedworkloads --all --all-namespaces
+    ```
+
+3. Remove the operator:
+
+    ```bash
+    helm uninstall napwake -n napwake-system
+    ```
+
+    This keeps the CRD, since deleting it deletes every ManagedWorkload. Once none is left, delete it yourself:
+
+    ```bash
+    kubectl delete crd managedworkloads.napwake.dev
+    ```
+
+    Without Helm, delete what you applied: `kubectl delete -f` with the `install.yaml` URL, `kubectl delete -k .` in your kustomization, or `make undeploy` from a clone. These delete the CRD too, unguarded, so first check `kubectl get managedworkloads -A` lists none.
+
+</Steps>
+
+:::caution
+Removing the operator or the CRD first skips step 2's restore. Paused workloads stay at zero replicas, and their Services still send traffic to the doorman's deleted pods. [Restore them by hand](#restoring-workloads-after-the-operator-is-gone).
+:::
+
+### When `helm uninstall` refuses
+
+`helm uninstall` refuses while any ManagedWorkload is left. Its pre-delete hook, the `<fullname>-uninstall-guard` Job, first waits up to two and a half minutes for those being deleted. That lets the operator restore them and drain their doorman ports, which takes up to a minute. Then the hook lists any left and fails, before anything is removed. One deleted moments before you uninstall doesn't hold it up.
+
+| Helm | Error | Above it |
+|---|---|---|
+| 3, before 3.18 (such as 3.16) | `job napwake-uninstall-guard failed` | Nothing |
+| 3.18 and later | `job napwake-uninstall-guard failed` | The hook's output |
+| 4 | `resource Job/napwake-system/napwake-uninstall-guard not ready` | The hook's output, as one log message with its line breaks escaped |
+
+The output names the ManagedWorkloads left after the wait, says what to do and links here. After the first `\n`, it lists each one with the steps above. From Helm 4:
+
+```text
+level=INFO msg="Napwake refuses to uninstall: these ManagedWorkloads' workloads would stay paused with no operator: staging/web. Remove the napwake.dev/managed label from them and their namespaces, and delete ManagedWorkloads you created, then uninstall again; see https://docs.napwake.dev/getting-started/installation/#uninstall\n\n..."
+```
+
+When Helm prints only the error, `kubectl logs job/napwake-uninstall-guard -n napwake-system` shows the output, line breaks and all, for an hour. No Helm prints it for a revision that a Helm before 3.18 wrote, as a `helm rollback` after a refused uninstall can. That Helm drops the hook's `helm.sh/hook-output-log-policy` until a newer Helm upgrades the release.
+
+<details class="nw-details">
+<summary>What a refused uninstall leaves, and Argo CD</summary>
+
+- The release is marked `uninstalling`, which `helm list` shows only with `-a`, though everything still runs. Uninstalling again, once the ManagedWorkloads are gone, finishes it.
+- Until then, `helm upgrade` fails with `has no deployed releases`. `helm rollback napwake <revision>`, with the last revision `helm history napwake` lists, marks it deployed again.
+- `--no-hooks` skips the guard, and `guard.uninstall: false` drops it. [Guards](/reference/helm-values/#guards) has what it counts and runs.
+- Argo CD 3.3 and later runs the guard as a PreDelete hook. Deleting the Application while ManagedWorkloads are left is blocked, with a `DeletionError` condition. Argo CD retries the hook until they're gone. To delete it anyway, set `guard.uninstall: false` in Git and sync first.
+- Earlier Argo CD doesn't run Helm's pre-delete hooks, so stop managing the workloads before deleting the Application.
+
+</details>
+
+### Restoring workloads after the operator is gone
+
+If the operator was removed while ManagedWorkloads were left, nothing restores their workloads. That happens with `helm uninstall --no-hooks`, `kubectl delete -f install.yaml`, or deleting an Argo CD Application before Argo CD 3.3. Their `napwake.dev/cleanup` finalizers, which only the operator removes, also leave the ManagedWorkloads, and the CRD, hanging in `Terminating` when deleted.
+
+The simplest fix is to reinstall the operator and follow the steps above. Without it:
+
+<Steps>
+
+1. Scale each paused workload back to the replicas its ManagedWorkload records:
+
+    ```bash
+    kubectl get managedworkloads -A -o jsonpath='{range .items[?(@.status.pause)]}{.metadata.namespace} {.spec.target.kind} {.spec.target.name} {.status.pause.previousReplicas}{"\n"}{end}' |
+      while read -r ns kind name replicas; do
+        kubectl scale "$kind/$name" -n "$ns" --replicas="$replicas"
+      done
+    ```
+
+    A workload scaled by KEDA was held at zero through the ScaledObject in its ManagedWorkload's `status.pause.scaledObject`. Remove that ScaledObject's `autoscaling.keda.sh/paused-replicas` annotation, or set it back to `status.pause.scaledObjectPausedReplicas` if that's set.
+
+    Each paused workload carries the same record in its `napwake.dev/paused-from` annotation, readable once its ManagedWorkload is gone. Remove it once restored:
+
+    ```bash
+    kubectl annotate deployments,statefulsets --all -A napwake.dev/paused-from-
+    ```
+
+2. Delete the EndpointSlices that route paused workloads' Services to the doorman, so the Services use their own pods again:
+
+    ```bash
+    kubectl delete endpointslices -A -l endpointslice.kubernetes.io/managed-by=doorman.napwake.dev
+    ```
+
+3. Remove the finalizers, so the ManagedWorkloads and the CRD can be deleted:
+
+    ```bash
+    kubectl get managedworkloads -A -o jsonpath='{range .items[*]}{.metadata.namespace} {.metadata.name}{"\n"}{end}' |
+      while read -r ns name; do
+        kubectl patch managedworkload "$name" -n "$ns" --type=merge -p '{"metadata":{"finalizers":null}}'
+      done
+    kubectl delete managedworkloads --all --all-namespaces
+    kubectl delete crd managedworkloads.napwake.dev
+    ```
+
+</Steps>
+
+<NextSteps
+  items={[
+    { href: '/getting-started/quickstart/', title: 'Quickstart', text: 'Manage your first workload.' },
+    { href: '/getting-started/kubectl-plugin/', title: 'kubectl plugin', text: 'The <code>kubectl napwake</code> commands the Quickstart uses.' },
+    { href: '/operations/upgrading/', title: 'Upgrading', text: 'Keep your settings from one release to the next.' },
+  ]}
+/>

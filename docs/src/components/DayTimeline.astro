@@ -1,0 +1,68 @@
+---
+// One day, hour by hour, as rows of states: when a workload is asleep, waking up and awake. Built from
+// the times a page gives, never invented. The words carry it too: each row has its spans in text.
+import StateDoor from './StateDoor.astro';
+import { WORDS, type State } from './lib';
+interface Span { from: string; to: string; state: State }
+interface Row { label: string; spans: Span[]; note?: string }
+interface Mark { at: string; label: string }
+interface Props { rows: Row[]; marks?: Mark[]; caption?: string; label: string; from?: number; to?: number }
+const { rows, marks = [], caption, label, from = 6, to = 22 } = Astro.props;
+const h = (t: string) => { const [a, b] = t.split(':').map(Number); return a + b / 60; };
+const pct = (t: string) => `${(((Math.min(Math.max(h(t), from), to) - from) / (to - from)) * 100).toFixed(3)}%`;
+const ticks = Array.from({ length: Math.floor((to - from) / 2) + 1 }, (_, i) => from + i * 2);
+const say = (r: Row) => r.spans.map((s) => `${WORDS.plain[s.state].toLowerCase()} from ${s.from} to ${s.to}`).join(', ');
+---
+<figure class="nw-day not-content" aria-label={label} role="group">
+  <div class="nw-day__grid">
+    {rows.map((r) => (
+      <div class="nw-day__row">
+        <p class="nw-day__label">{r.label}{r.note && <span>{r.note}</span>}</p>
+        <div class="nw-day__bar" role="img" aria-label={`${r.label}: ${say(r)}`}>
+          {r.spans.map((s) => <span class:list={['nw-day__span', `nw-day__span--${s.state}`]} style={`left:${pct(s.from)};width:calc(${pct(s.to)} - ${pct(s.from)})`} title={`${WORDS.plain[s.state]}, ${s.from} to ${s.to}`}></span>)}
+          {marks.map((m) => <span class="nw-day__mark" style={`left:${pct(m.at)}`}></span>)}
+          <span class="sr-only">{r.label}: {say(r)}.</span>
+        </div>
+      </div>
+    ))}
+    <div class="nw-day__row nw-day__row--axis" aria-hidden="true">
+      <span></span>
+      <div class="nw-day__axis">
+        {ticks.map((t) => <span style={`left:${(((t - from) / (to - from)) * 100).toFixed(3)}%`}>{String(t).padStart(2, '0')}:00</span>)}
+      </div>
+    </div>
+  </div>
+  <div class="nw-day__legend">
+    {(['asleep', 'waking', 'awake'] as State[]).map((s) => <span><StateDoor state={s} size={16} /> {WORDS.plain[s]}</span>)}
+    {marks.map((m) => <span class="nw-day__legendmark"><i aria-hidden="true"></i>{m.at} {m.label}</span>)}
+  </div>
+  {caption && <figcaption set:html={caption} />}
+</figure>
+<style>
+  .nw-day { margin: 1.75rem 0 0; padding: 1.3rem 1.4rem 1.2rem; background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius-xl); }
+  .nw-day__grid { display: grid; gap: 0.55rem; }
+  .nw-day__row { display: grid; grid-template-columns: 9.5rem minmax(0, 1fr); align-items: center; gap: 1rem; }
+  .nw-day__label { margin: 0; font: 700 0.875rem/1.3 var(--font-sans); color: var(--text); }
+  .nw-day__label span { display: block; font: 400 0.75rem/1.35 var(--font-mono); color: var(--muted); margin-top: 0.15rem; }
+  .nw-day__bar { position: relative; height: 1.6rem; border-radius: var(--radius-sm); background: color-mix(in srgb, var(--asleep) 16%, var(--surface)); overflow: hidden; }
+  .nw-day__span { position: absolute; top: 0; bottom: 0; }
+  .nw-day__span--asleep { background: color-mix(in srgb, var(--asleep) 16%, var(--surface)); }
+  .nw-day__span--waking { background: var(--lamp); min-width: 5px; }
+  .nw-day__span--awake { background: color-mix(in srgb, var(--awake) 55%, var(--surface)); }
+  .nw-day__mark { position: absolute; top: -2px; bottom: -2px; width: 0; border-left: 2px dashed var(--text); opacity: 0.55; }
+  .nw-day__axis { position: relative; height: 1.1rem; }
+  .nw-day__axis span { position: absolute; transform: translateX(-50%); font: 400 0.6875rem/1 var(--font-mono); color: var(--muted); white-space: nowrap; }
+  .nw-day__axis span:first-child { transform: none; }
+  .nw-day__axis span:last-child { transform: translateX(-100%); }
+  .nw-day__legend { display: flex; flex-wrap: wrap; gap: 0.4rem 1.1rem; margin-top: 0.9rem; font: 400 0.75rem/1.4 var(--font-mono); color: var(--muted); }
+  .nw-day__legend span { display: inline-flex; align-items: center; gap: 0.35rem; }
+  .nw-day__legendmark i { display: inline-block; width: 0; height: 0.9rem; border-left: 2px dashed var(--text); opacity: 0.55; }
+  figcaption { margin-top: 0.8rem; font-size: 0.8125rem; line-height: 1.5; color: var(--muted); }
+  figcaption :global(a) { color: var(--link); }
+  @media (max-width: 44rem) {
+    .nw-day { padding: 1rem; }
+    .nw-day__row { grid-template-columns: minmax(0, 1fr); gap: 0.35rem; }
+    .nw-day__row--axis > span { display: none; }
+    .nw-day__axis span:nth-child(2n) { display: none; }
+  }
+</style>

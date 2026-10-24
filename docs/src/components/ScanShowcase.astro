@@ -1,0 +1,56 @@
+---
+// The home's "See what's idle first": the real scan report's first screen, as the website shows it (the
+// example cluster, made up, rendered by Napwake's own code from the reports' templates), the command with the
+// docs' copy button (the page passes it in as a code block), and what the scan does in three plain lines.
+// The screenshot is the report's still before-and-after: the cluster as a hotel at night, Now and With Napwake.
+import BrowserFrame from './BrowserFrame.astro';
+import { link } from './lib';
+const report = 'https://napwake.dev/examples/scan-report/';
+---
+<div class="nw-scan not-content">
+  <div class="nw-scan__shot">
+    <a class="nw-scan__link" href={report} aria-label="Open the example report on napwake.dev">
+      <BrowserFrame>
+        {/* a phone gets the report's own phone view of the building, a screen gets its first screen */}
+        <picture class="nw-scan__img nw-scan__img--light">
+          <source media="(max-width: 36rem)" srcset={link('/home/scan-report-phone-light.webp')} width="390" height="560" />
+          <img src={link('/home/scan-report-light.webp')} width="1280" height="820" loading="lazy" decoding="async"
+            alt="The scan report for an example cluster. It leads with 19 of 31 workloads running for nobody and $691 that could be freed a month. Beside it, the cluster drawn as a hotel at night, twice: now, with most rooms lit, and with Napwake, the rooms lit for nobody dark." />
+        </picture>
+        <picture class="nw-scan__img nw-scan__img--dark">
+          <source media="(max-width: 36rem)" srcset={link('/home/scan-report-phone-dark.webp')} width="390" height="560" />
+          <img src={link('/home/scan-report-dark.webp')} width="1280" height="820" loading="lazy" decoding="async" alt="" />
+        </picture>
+      </BrowserFrame>
+    </a>
+  </div>
+  <div class="nw-scan__side">
+    <div class="nw-scan__cmd"><slot /></div>
+    <ul class="nw-scan__points">
+      <li>It runs with your kubeconfig and installs nothing in the cluster.</li>
+      <li>It shows what's idle right now as rooms lit for nobody, and what each costs at your nodes' list prices.</li>
+      <li>With Prometheus, it replays the last week of each workload's CPU and rollouts, and says what pausing would have freed.</li>
+    </ul>
+    <p class="nw-scan__send">One file to send your team. It loads nothing from elsewhere and prints to PDF.</p>
+    <p class="nw-scan__go"><a href={report}>Open the example report <span aria-hidden="true">↗</span></a> <a href={link('/getting-started/kubectl-plugin/#scan-a-cluster')}>Scan, in the plugin's docs</a></p>
+  </div>
+</div>
+<style>
+  .nw-scan { display: grid; grid-template-columns: minmax(0, 1.55fr) minmax(0, 1fr); gap: 2rem 2.5rem; align-items: start; margin-top: 1.75rem; }
+  .nw-scan__link { display: block; color: inherit; text-decoration: none; border-radius: var(--radius-lg); }
+  .nw-scan__link :global(.nw-browser) { margin: 0; }
+  .nw-scan__link :global(.nw-browser__window) { transition: border-color var(--duration-ui-short) var(--ease-calm); }
+  .nw-scan__link:hover :global(.nw-browser__window) { border-color: var(--action); }
+  .nw-scan__img { display: block; }
+  .nw-scan__img--dark { display: none !important; }
+  :global(:root[data-theme='dark']) .nw-scan__img--light { display: none !important; }
+  :global(:root[data-theme='dark']) .nw-scan__img--dark { display: block !important; }
+  .nw-scan__cmd :global(.expressive-code) { margin: 0; }
+  .nw-scan__points { list-style: none; margin: 1.25rem 0 0; padding: 0; display: grid; gap: 0.85rem; counter-reset: pt; }
+  .nw-scan__points li { counter-increment: pt; position: relative; margin: 0; padding-left: 2.1rem; font-size: 0.9375rem; line-height: 1.55; color: var(--text); }
+  .nw-scan__points li::before { content: counter(pt); position: absolute; left: 0; top: 0.1rem; width: 1.35rem; height: 1.35rem; border-radius: 50%; display: grid; place-items: center; background: var(--brand); color: var(--bg); font: 700 0.75rem/1 var(--font-mono); }
+  .nw-scan__send { margin: 1.25rem 0 0; padding-top: 1rem; border-top: 1px solid var(--line); font-size: 0.9375rem; line-height: 1.55; color: var(--muted); }
+  .nw-scan__go { display: flex; flex-wrap: wrap; gap: 0.5rem 1.25rem; margin: 0.75rem 0 0; font-weight: 700; }
+  .nw-scan__go a { color: var(--link); }
+  @media (max-width: 56rem) { .nw-scan { grid-template-columns: minmax(0, 1fr); } }
+</style>
