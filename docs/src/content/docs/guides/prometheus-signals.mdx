@@ -29,6 +29,26 @@ helm upgrade napwake oci://ghcr.io/napwake/charts/napwake --version X.Y.Z \
 
 Installed without a values file, see [Keeping your settings](/operations/upgrading/#keeping-your-settings).
 
+With Argo CD or Flux, don't run `helm upgrade`, since the next sync undoes it. Put `prometheus.url` in Git with your other values, in the Application's `valuesObject` or the HelmRelease's `values`, as on [Installation](/getting-started/installation/). The operator restarts with it.
+
+```yaml title="Argo CD Application"
+spec:
+  source:
+    helm:
+      valuesObject:
+        timezone: Europe/London
+        prometheus:
+          url: http://prometheus.monitoring.svc.cluster.local:9090
+```
+
+```yaml title="Flux HelmRelease"
+spec:
+  values:
+    timezone: Europe/London
+    prometheus:
+      url: http://prometheus.monitoring.svc.cluster.local:9090
+```
+
 | URL | Rule |
 |-----|------|
 | Is | The base of the Prometheus HTTP API, `http` or `https`. The operator refuses to start with any other |
