@@ -21,7 +21,10 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"os/exec"
 	"path/filepath"
+	"slices"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -48,6 +51,35 @@ import (
 	"github.com/napwake/napwake/internal/forwarder"
 	"github.com/napwake/napwake/internal/gitops"
 )
+
+// The image is built from a context .dockerignore keeps to what the build
+// needs, so every file the manager embeds has to be let back in by name,
+// or the image doesn't build.
+func TestImageBuildContext_KeepsEveryEmbeddedFile(t *testing.T) {
+	root, err := filepath.Abs("..")
+	require.NoError(t, err)
+	out, err := exec.Command("go", "list", "-deps",
+		"-f", "{{.Dir}}{{range .EmbedFiles}} {{.}}{{end}}", ".").Output()
+	require.NoError(t, err)
+	ignore, err := os.ReadFile(filepath.Join(root, ".dockerignore"))
+	require.NoError(t, err)
+	kept := strings.Split(string(ignore), "\n")
+
+	var embedded []string
+	for line := range strings.Lines(string(out)) {
+		dir, files, _ := strings.Cut(strings.TrimSpace(line), " ")
+		rel, err := filepath.Rel(root, dir)
+		if err != nil || strings.HasPrefix(rel, "..") || files == "" {
+			continue
+		}
+		for _, f := range strings.Fields(files) {
+			path := filepath.ToSlash(filepath.Join(rel, f))
+			embedded = append(embedded, path)
+			assert.Contains(t, kept, "!"+path, ".dockerignore leaves %s out of the image's build context", path)
+		}
+	}
+	assert.True(t, slices.Contains(embedded, "internal/doorman/page.html"), "found the manager's embedded files")
+}
 
 // The garbage collector aims below the container's limit, leaving room for
 // memory outside the heap, rather than at it, where the kernel kills first.
