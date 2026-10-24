@@ -31,7 +31,7 @@ const md = (path) => new URL(`${base}${path}.md`, site).href;
 const plainLine = 'Pauses idle Kubernetes workloads in staging, preview and dev, and wakes them on the first request.';
 const llmsDetails = `Napwake pauses idle Kubernetes workloads in staging, preview and dev, and wakes them on the first request. It never deletes a workload or its data. It's open source (Apache 2.0): an operator, a \`kubectl napwake\` plugin, a Helm chart, and these docs.
 
-It's for platform and infrastructure engineers who run non-production environments on their own Kubernetes clusters. Behind a VPN, SSO or an IP allowlist, a paused environment wakes on its first request. On the public internet, robots would wake it every few minutes, so set it to ask first. A browser then gets a Wake it button, so people wake it and robots don't. Tooling wakes it with an annotation, and the forecast learns when people come.
+It's for platform and infrastructure engineers who run non-production environments on their own Kubernetes clusters. Behind a VPN, SSO or an IP allowlist, a paused environment wakes on its first request. On the public internet, robots would wake it every few minutes, so set it to ask first. A browser then gets a Wake it button, and crawlers, scanners and API calls wake nothing. Tooling wakes it with an annotation, and the forecast learns when people come.
 
 In short: label a Deployment, StatefulSet or namespace \`napwake.dev/managed: "true"\`. Napwake pauses the workload, scaling it to zero, once nothing has been active for \`idleAfter\` (an hour by default): CPU above its threshold, a deploy, an activity annotation or a Prometheus query all count as activity. While it's paused, its Services are routed to the doorman, a proxy that holds the first request and wakes it. With \`autoResume\`, a forecast wakes it 15 minutes before an hour it expects to be busy. \`kubectl napwake scan\` shows what's idle with nothing installed in the cluster.
 
@@ -41,7 +41,7 @@ Key pages, each as Markdown:
 - [Quickstart](${md('getting-started/quickstart')}): one workload from idle to paused while idle and woken when used, measured first
 - [kubectl plugin](${md('getting-started/kubectl-plugin')}): scan, forecast, status, nodes, pause, wake, deps and enable
 - [Opting in](${md('guides/opt-in')}): the label, every setting as an annotation, namespaces, Kustomize and GitOps
-- [Public preview environments](${md('guides/preview-environments')}): asking before waking, so people wake an environment on a public URL and robots don't
+- [Public preview environments](${md('guides/preview-environments')}): asking before waking, so on a public URL a click on the page wakes it, and crawlers, scanners and API calls wake nothing
 - [Idle detection](${md('concepts/idle-detection')}): what counts as activity, and when a workload pauses
 - [Wake on request](${md('concepts/wake-on-request')}): how the doorman holds a request and wakes a paused workload
 - [Forecasting](${md('concepts/forecasting')}): the Holt-Winters model, \`autoResume\` and \`pauseEarly\`
