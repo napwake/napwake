@@ -739,7 +739,7 @@ html:not(.js) th { position: static; }
 
   <section class="part" id="recent">
     <h2>Recent pauses and wakes</h2>
-    <p>Each pause, and each wake with what caused it, over the last {{.Since}}, as far back as the cluster keeps events: an hour, unless its API server keeps more.</p>
+    <p>Each pause, and each wake with what caused it, over the last {{.Since}}, or as far back as the cluster keeps events if that&#39;s less: an hour, unless its API server keeps more.</p>
     {{if .Recent}}
     <div class="tools">
       <p class="count">{{len .Recent}} shown, newest first</p>
@@ -1165,10 +1165,10 @@ html:not(.js) th { position: static; }
   var WORD = { paused: "asleep", idle: "lit for nobody", active: "in use", resuming: "waking up", pausing: "going to sleep", needs: "needing you", unjudged: "not judged", other: "setting up" };
   var CLI = { paused: "paused", idle: "idle", active: page === "status" ? "running" : "active", resuming: "resuming", pausing: "pausing", needs: "needs attention", unjudged: "see the notes", other: "creating" };
   var DESC = page === "status" ? {
-    paused: "Paused by Napwake while nobody used it. It wakes when it's used.", resuming: "Waking up now.", active: "Running, and in use.",
-    idle: "Running with nothing using it. Napwake pauses it after its idle-after.", pausing: "Being paused now.", other: "Napwake is setting it up.",
+    paused: "Paused by Napwake. It wakes when someone needs it.", resuming: "Waking up now.", active: "Running, and in use.",
+    idle: "Running with no activity. The table says what Napwake does next.", pausing: "Being paused now.", other: "Napwake is setting it up.",
     needs: "Something keeps Napwake from doing its job." } : {
-    idle: "Running, with nothing using it right now.", active: "Running, and in use.", paused: "Scaled to zero.", unjudged: "The scan couldn't judge these. The notes list them, with the reason." };
+    idle: "Running, with no activity right now.", active: "Running, and in use.", paused: "Scaled to zero.", unjudged: "The scan couldn't judge these. The notes list them, with the reason." };
   // The order kinds are placed in: the events by the street door first, then the rest.
   var KINDS = page === "status"
     ? [{ k: "needs", event: true }, { k: "resuming", event: true }, { k: "pausing", event: true }, { k: "paused" }, { k: "active" }, { k: "idle" }, { k: "other" }]
@@ -1213,7 +1213,7 @@ html:not(.js) th { position: static; }
     var a = counts.active || 0, stayWords = stays ? fmt(stays) + " Napwake won't pause" : "";
     afterSay = "<b>With Napwake,</b> " + (goN === 1 ? "the workload" : "the " + fmt(goN) + " workloads") + " lit for nobody would be paused until someone uses " + plural(goN, "it.", "them.") +
       (a ? " The " + fmt(a) + " in use stay on" + (stays ? ", and so " + plural(stays, "does ", "do ") + stayWords : "") + "." : stays ? " " + plural(stays, "One", fmt(stays)) + " Napwake won't pause stay" + plural(stays, "s", "") + " on." : "") +
-      "<small>Nothing has been paused: this is what Napwake would do.</small>";
+      "<small>The scan paused nothing: this is what Napwake would do.</small>";
   }
   each($$("[data-after-t]"), function (p) { p.innerHTML = afterSay; });
 

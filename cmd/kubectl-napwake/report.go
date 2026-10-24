@@ -486,25 +486,26 @@ func headlineFor(result scanResult) (headline, []fact) {
 
 // freedBy says which workloads what Napwake freed this month came from:
 // those live now, or with none live, those put back in dry-run, and those
-// since protected.
+// protected since.
 func freedBy(t discovery.Totals) string {
 	freed, _ := unprotectedFreed(t)
-	var by []string
+	var by string
 	switch {
 	case t.Live > 0:
-		by = append(by, countOf(t.Live, "live workload"))
+		by = countOf(t.Live, "live workload")
 	case anyMoney(freed) && t.DryRun > 0:
-		by = append(by, "workloads since put back in dry-run")
+		by = "workloads before they went back to dry-run"
 	case anyMoney(freed):
-		by = append(by, "workloads")
+		by = "workloads"
 	}
-	if anyMoney(t.ProtectedFreedThisMonth) {
-		by = append(by, "workloads since protected")
+	switch {
+	case !anyMoney(t.ProtectedFreedThisMonth):
+	case by == "":
+		by = "workloads before they were protected"
+	default:
+		by += " and others before they were protected"
 	}
-	if len(by) == 0 {
-		return "workloads"
-	}
-	return strings.Join(by, " and ")
+	return cmp.Or(by, "workloads")
 }
 
 // couldFree is the headline's figure for what pausing could free a month:

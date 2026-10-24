@@ -729,7 +729,7 @@ func writeHeadline(p *printer, result scanResult) {
 		p.line("  Napwake has freed %s this month pausing %s, and saved %s of it.", dollars(freed),
 			countOf(t.Live, "live workload"), dollars(saved))
 	case anyMoney(freed) && t.DryRun > 0:
-		p.line("  Napwake has freed %s this month, and saved %s of it, pausing workloads since put back in dry-run.",
+		p.line("  Napwake has freed %s this month, and saved %s of it, pausing workloads before they went back to dry-run.",
 			dollars(freed), dollars(saved))
 	case anyMoney(freed):
 		p.line("  Napwake has freed %s this month, and saved %s of it.", dollars(freed), dollars(saved))
