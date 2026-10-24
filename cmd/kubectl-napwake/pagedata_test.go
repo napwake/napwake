@@ -282,3 +282,19 @@ func TestStatusPage_AttentionKeyedByTarget(t *testing.T) {
 	assert.Equal(t, problem{Namespace: "shop", Workload: "db", Target: "statefulset/db", ManagedWorkload: "shop-db",
 		Type: "Stuck", Message: "pausing for 1h"}, problems[0])
 }
+
+// The doorman holds the door only for a workload a request woke, which the
+// page knows from what woke it, not from the event's words.
+func TestStatusPage_DoormanWhateverTheEventSays(t *testing.T) {
+	web := statusWorkloadObj("preview-7", "web", v1alpha1.TargetKindDeployment, v1alpha1.PhaseResuming,
+		30*time.Second)
+	objs := []client.Object{web,
+		statusEvent("preview-7", "web", "Paused", "web: paused", 2*time.Hour),
+		statusEvent("preview-7", "web", "WokenByRequest", "Service web got a request; waking", 40*time.Second),
+		statusEvent("preview-7", "web", "WokeByActivity", "web: a request is waiting, waking", 39*time.Second),
+	}
+
+	got := renderStatusPageData(t, statusPageOf(t, objs...))
+
+	pageHas(t, got, `<p class="bldg-say">The doorman holds the door while deployment/web wakes.</p>`)
+}

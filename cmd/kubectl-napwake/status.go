@@ -233,6 +233,11 @@ type statusWorkload struct {
 	// TurnedAway is what the doorman turned away during its current or
 	// last pause, for a workload whose doorman asks before waking it.
 	TurnedAway *v1alpha1.TurnedAway `json:"turnedAway,omitempty"`
+	// WokenBy is what woke it, as wakeCauses names it, from the latest wake
+	// the cluster's events hold, unless a pause has come since. Empty for
+	// one paused, and for one whose wake's cause wasn't recorded or whose
+	// events have expired.
+	WokenBy string `json:"wokenBy,omitempty"`
 }
 
 // problem is something about a workload that keeps Napwake from doing
@@ -248,13 +253,17 @@ type problem struct {
 	Message         string `json:"message"`
 }
 
-// happening is one pause or wake.
+// happening is one pause or wake. Kind is pause, wake, or notServed for a
+// request the doorman closed without reaching the workload, and WokenBy
+// what woke it, for a wake whose cause was recorded.
 type happening struct {
 	At              time.Time `json:"at"`
 	Namespace       string    `json:"namespace"`
 	Workload        string    `json:"workload"`
 	ManagedWorkload string    `json:"managedWorkload"`
+	Kind            string    `json:"kind"`
 	Reason          string    `json:"reason"`
+	WokenBy         string    `json:"wokenBy,omitempty"`
 	Message         string    `json:"message"`
 }
 
@@ -293,18 +302,35 @@ var untroubled = map[string]bool{
 	"NotPaused":         true,
 }
 
-// wakeCauses are the event reasons that say what woke a workload. The
-// Resumed that follows one adds nothing, so it's left out; a Resumed with no
-// cause before it, such as a hand-back on protecting the namespace, is the
-// only record of that wake, so it's kept.
-var wakeCauses = map[string]bool{
-	"WokeByActivity": true,
-	"WokenByRequest": true,
-	"WakeRequested":  true,
-	"AutoResume":     true,
-	"ScaledUp":       true,
-	"PauseCancelled": true,
+// wakeCauses are the event reasons that say what woke a workload, and what
+// each says woke it, as WokenBy gives it. The Resumed that follows one adds
+// nothing, so it's left out; a Resumed with no cause before it, such as a
+// hand-back on protecting the namespace, is the only record of that wake,
+// so it's kept, with no cause. One reason stands for every cause it's
+// written for: WokeByActivity for an activity annotation, a dependent
+// waking it or a Prometheus activity query, and PauseCancelled for any of
+// what would wake a paused workload, come as it paused, which only its
+// message names.
+var wakeCauses = map[string]string{
+	"WokeByActivity": "activity",
+	"WokenByRequest": wokenByRequest,
+	"WakeRequested":  "wakeRequest",
+	"AutoResume":     "forecast",
+	"ScaledUp":       "outside",
+	"PauseCancelled": "pauseCancelled",
 }
+
+// wokenByRequest is a wake by a request on one of the workload's Services,
+// which the doorman held or passed on, a person's click on one that asks
+// first included.
+const wokenByRequest = "request"
+
+// What a pause or wake is, as status's recent events give it.
+const (
+	happeningPause     = "pause"
+	happeningWake      = "wake"
+	happeningNotServed = "notServed"
+)
 
 // happenings are the event reasons that say a workload paused or woke.
 var happenings = map[string]bool{
@@ -321,7 +347,7 @@ var happenings = map[string]bool{
 
 // A wake by a request the doorman held is reported by the doorman's
 // WokenByRequest, which names the Service, so the operator's own
-// WokeByActivity for it is left out.
+// WokeByActivity for it is left out, and taken for the request it is.
 const requestWakeMessage = "a request is waiting, waking"
 
 // targetKey is a Deployment or StatefulSet.
@@ -370,7 +396,14 @@ func clusterStatus(ctx context.Context, c client.Client, home string, opts statu
 	}
 	slices.Sort(result.ForecastTimeZones)
 	sumFreedAndSaved(&result)
-	result.Recent = append(result.Recent, recentHappenings(events, targets, now.Add(-opts.since))...)
+	recent, woke := recentHappenings(events, targets, now.Add(-opts.since))
+	result.Recent = append(result.Recent, recent...)
+	for i := range result.Workloads {
+		row := &result.Workloads[i]
+		if row.Phase != v1alpha1.PhasePaused {
+			row.WokenBy = woke[client.ObjectKey{Namespace: row.Namespace, Name: row.Name}]
+		}
+	}
 	return result, nil
 }
 
@@ -841,11 +874,15 @@ func problemsOf(w *v1alpha1.ManagedWorkload, now time.Time) []problem {
 }
 
 // recentHappenings lists the pauses and wakes since a time, newest first,
-// from events sorted oldest first. Dry-run events are left out: nothing
-// paused or woke. The operator starts its messages with the target's name,
-// which is dropped, since status shows the workload beside it.
-func recentHappenings(events []corev1.Event, targets map[client.ObjectKey]string, since time.Time) []happening {
+// from events sorted oldest first, and what woke each ManagedWorkload that
+// a pause hasn't come to since, over all of them. Dry-run events are left
+// out: nothing paused or woke. The operator starts its messages with the
+// target's name, which is dropped, since status shows the workload beside
+// it.
+func recentHappenings(events []corev1.Event, targets map[client.ObjectKey]string, since time.Time) (
+	[]happening, map[client.ObjectKey]string) {
 	caused := map[client.ObjectKey]bool{}
+	woke := map[client.ObjectKey]string{}
 	var out []happening
 	for i := range events {
 		ev := &events[i]
@@ -853,31 +890,37 @@ func recentHappenings(events []corev1.Event, targets map[client.ObjectKey]string
 			continue
 		}
 		key := client.ObjectKey{Namespace: ev.InvolvedObject.Namespace, Name: ev.InvolvedObject.Name}
-		switch {
-		case ev.Reason == "Paused":
-			caused[key] = false
-		case ev.Reason == "Resumed" && caused[key]:
-			caused[key] = false
-			continue
-		case wakeCauses[ev.Reason]:
-			caused[key] = true
-		}
-		at := eventTime(ev).UTC()
-		if at.Before(since) {
-			continue
-		}
 		// Events outlive the ManagedWorkload they're for; one that's gone
 		// is named as it was.
 		target := cmp.Or(targets[key], key.Name)
 		message := strings.TrimPrefix(ev.Message, target+": ")
-		if ev.Reason == "WokeByActivity" && message == requestWakeMessage {
+		heldRequest := ev.Reason == "WokeByActivity" && message == requestWakeMessage
+		kind, cause := happeningWake, wakeCauses[ev.Reason]
+		if heldRequest {
+			cause = wokenByRequest
+		}
+		switch {
+		case ev.Reason == "Paused":
+			kind, caused[key], woke[key] = happeningPause, false, ""
+		case ev.Reason == "RequestNotServed":
+			kind = happeningNotServed
+		case ev.Reason == "Resumed" && caused[key]:
+			caused[key] = false
+			continue
+		case ev.Reason == "Resumed":
+			woke[key] = ""
+		default:
+			caused[key], woke[key] = true, cause
+		}
+		at := eventTime(ev).UTC()
+		if at.Before(since) || heldRequest {
 			continue
 		}
 		out = append(out, happening{At: at, Namespace: key.Namespace, Workload: target, ManagedWorkload: key.Name,
-			Reason: ev.Reason, Message: message})
+			Kind: kind, Reason: ev.Reason, WokenBy: cause, Message: message})
 	}
 	slices.SortStableFunc(out, func(a, b happening) int { return b.At.Compare(a.At) })
-	return out
+	return out, woke
 }
 
 // eventTime is when an event last happened. Events recorded through

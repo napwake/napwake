@@ -602,12 +602,11 @@ html:not(.js) th { position: static; }
 <main>
   {{/* Who's waking, and whether it's stuck: a resuming workload with a Stuck row in Needs attention. A row's
        Target names the workload as the board does ("deployment/worker"). */}}
-  {{$waking := ""}}{{$wakingNS := ""}}{{$stuck := ""}}{{$stuckMsg := ""}}{{$asleep := true}}
-  {{range $w := .Workloads}}{{if ne .StateClass "paused"}}{{$asleep = false}}{{end}}{{if eq .StateClass "resuming"}}{{$msg := ""}}{{range $.Attention}}{{if and (eq .Type "Stuck") (eq .Namespace $w.Namespace) (eq .Target $w.Workload)}}{{$msg = .Message}}{{end}}{{end}}{{if $msg}}{{if not $stuck}}{{$stuck = $w.Workload}}{{$stuckMsg = $msg}}{{end}}{{else if not $waking}}{{$waking = $w.Workload}}{{$wakingNS = $w.Namespace}}{{end}}{{end}}{{end}}
-  {{/* Whether a request woke it: its newest pause or wake (Recent is newest first) is the doorman's
-       "request on Service …". Only then does the caption name the doorman (decision 0013). HANDOFF request 16. */}}
-  {{$request := false}}{{$seen := false}}
-  {{if $waking}}{{range .Recent}}{{if and (not $seen) (eq .Namespace $wakingNS) (or (eq (printf "deployment/%s" .Workload) $waking) (eq (printf "statefulset/%s" .Workload) $waking))}}{{$seen = true}}{{if and (ge (len .Message) 18) (eq (slice .Message 0 18) "request on Service")}}{{$request = true}}{{end}}{{end}}{{end}}{{end}}
+  {{$waking := ""}}{{$wakingBy := ""}}{{$stuck := ""}}{{$stuckMsg := ""}}{{$asleep := true}}
+  {{range $w := .Workloads}}{{if ne .StateClass "paused"}}{{$asleep = false}}{{end}}{{if eq .StateClass "resuming"}}{{$msg := ""}}{{range $.Attention}}{{if and (eq .Type "Stuck") (eq .Namespace $w.Namespace) (eq .Target $w.Workload)}}{{$msg = .Message}}{{end}}{{end}}{{if $msg}}{{if not $stuck}}{{$stuck = $w.Workload}}{{$stuckMsg = $msg}}{{end}}{{else if not $waking}}{{$waking = $w.Workload}}{{$wakingBy = $w.WokenBy}}{{end}}{{end}}{{end}}
+  {{/* Whether a request woke it, as the product says what woke each workload. Only then does the caption name
+       the doorman (decision 0013). HANDOFF request 16. */}}
+  {{$request := eq $wakingBy "request"}}
   {{$freed := ""}}{{$freedLabel := ""}}{{$saved := ""}}{{$lead := 1}}{{if not .SavedThisMonth}}{{$lead = 0}}{{end}}
   {{range $i, $f := .Figures}}{{if eq $i 0}}{{$freed = .Value}}{{$freedLabel = .Label}}{{end}}{{if eq $i 1}}{{$saved = .Value}}{{end}}{{end}}
   {{$calm := and .Workloads $asleep}}{{$group := gt (len .Workloads) 400}}

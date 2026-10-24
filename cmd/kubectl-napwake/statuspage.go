@@ -78,10 +78,15 @@ type statusPageRow struct {
 	LastActivity, Next, Forecast         string
 	Freed, SavedNote, WouldFree          string
 	ForSort, FreedSort, WouldFreeSort    float64
+	// WokenBy is what woke it, as status -o json gives it.
+	WokenBy string
 }
 
+// recentRow is a pause or wake, with its Kind and, for a wake, what woke
+// it, as status -o json gives them.
 type recentRow struct {
 	At, Ago, Workload, Namespace, Message string
+	Kind, WokenBy                         string
 	AtSort                                int64
 }
 
@@ -165,6 +170,7 @@ func buildStatusPage(result statusResult, since time.Duration, now time.Time) st
 			SavedNote:     savedNote(wl),
 			WouldFree:     wouldFreeCell(wl),
 			WouldFreeSort: -1,
+			WokenBy:       wl.WokenBy,
 		}
 		if wl.namedApart {
 			row.ManagedWorkload = wl.Name
@@ -186,7 +192,8 @@ func buildStatusPage(result statusResult, since time.Duration, now time.Time) st
 	}
 	for _, h := range result.Recent {
 		page.Recent = append(page.Recent, recentRow{At: h.At.UTC().Format("Jan 2, 15:04 MST"), Ago: ago(h.At, now),
-			Workload: h.Workload, Namespace: h.Namespace, Message: oneLine(h.Message), AtSort: h.At.Unix()})
+			Workload: h.Workload, Namespace: h.Namespace, Message: oneLine(h.Message), Kind: h.Kind,
+			WokenBy: h.WokenBy, AtSort: h.At.Unix()})
 	}
 	return page
 }
