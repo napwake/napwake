@@ -51,6 +51,10 @@ type reportPage struct {
 	// Empty says why there are no workloads, when there are none.
 	Empty string
 	Basis string
+	// BasisPublic is Basis without the Prometheus it names, which can be
+	// a host, a path or a project, for what the page shares unless the
+	// reader ticks the box.
+	BasisPublic string
 	// Prices is what costs were priced at, in full, for a Pricing too
 	// mixed to say in short.
 	Prices  string
@@ -86,6 +90,10 @@ type reportPage struct {
 
 type headline struct {
 	Figures []figure
+	// ShortHistory is the caveat on the lead figure, as a sentence, when
+	// it's estimated from too little history: the page says it before the
+	// figure, and offers no card of an estimate that will change.
+	ShortHistory string
 }
 
 // tips explain the money and sleep columns, on their headers and in the
@@ -336,17 +344,18 @@ func writeHTML(w io.Writer, result scanResult, idleAfter time.Duration) error {
 func buildReport(result scanResult, idleAfter time.Duration) reportPage {
 	history := result.Mode == discovery.ModeHistory
 	page := reportPage{
-		Cluster:   result.Cluster,
-		ScannedAt: result.ScannedAt.Format("2 January 2006, 15:04 MST"),
-		Basis:     basisSentence(result),
-		Prices:    result.costsSentence(),
-		Pricing:   result.pricing(),
-		NodeScale: nodeScaleFor(result.NodeAutoscaler),
-		History:   history,
-		Threshold: result.Settings.CPUThreshold,
-		IdleAfter: roundedDuration(idleAfter),
-		Over:      replayedOver(result.History),
-		Mark:      doorman.Mark,
+		Cluster:     result.Cluster,
+		ScannedAt:   result.ScannedAt.Format("2 January 2006, 15:04 MST"),
+		Basis:       basisSentence(result),
+		BasisPublic: publicBasis(result),
+		Prices:      result.costsSentence(),
+		Pricing:     result.pricing(),
+		NodeScale:   nodeScaleFor(result.NodeAutoscaler),
+		History:     history,
+		Threshold:   result.Settings.CPUThreshold,
+		IdleAfter:   roundedDuration(idleAfter),
+		Over:        replayedOver(result.History),
+		Mark:        doorman.Mark,
 	}
 	if result.Totals.Workloads == 0 {
 		page.Empty = emptySentence(result)
@@ -438,6 +447,18 @@ func basisSentence(result scanResult) string {
 		result.History.Prometheus)
 }
 
+// publicBasis is basisSentence without the Prometheus history was read
+// from.
+func publicBasis(result scanResult) string {
+	if result.Mode != discovery.ModeHistory || result.History == nil {
+		return basisSentence(result)
+	}
+	if over := replayedOver(result.History); over != "" {
+		return fmt.Sprintf("Based on %s of Prometheus history, and CPU at the time of the scan.", over)
+	}
+	return "A snapshot of CPU at the time of the scan: Prometheus has no CPU history of the namespaces scanned."
+}
+
 // headlineFor leads with two figures. Until Napwake has paused anything,
 // they're the opportunity, what pausing could free a month, and what the
 // workloads it comes from cost; a zero that's down to too little history
@@ -454,8 +475,11 @@ func headlineFor(result scanResult) (headline, []fact) {
 			Detail: fmt.Sprintf("so far, pausing %s; %s of it saved as nodes scaled down", freedBy(t),
 				dollars(t.SavedThisMonth)), Kind: figureFreed, Amount: t.FreedThisMonth})
 	}
-	if f, ok := couldFree(result, live); ok {
+	if f, shortHistory, ok := couldFree(result, live); ok {
 		h.Figures = append(h.Figures, f)
+		if !live {
+			h.ShortHistory = shortHistory
+		}
 	}
 
 	idle := fact{Value: strconv.Itoa(t.Idle), Label: "idle right now"}
@@ -523,19 +547,20 @@ func freedBy(t discovery.Totals) string {
 // what dry-run measured and history shows, or, without either, what's idle
 // right now costs, as the most pausing it could free. Before anything is
 // live it's always shown, a zero with why; after, only when there's
-// something to free.
-func couldFree(result scanResult, live bool) (figure, bool) {
+// something to free. An estimate from too little history says so in its
+// detail, and that caveat comes back as a sentence of its own too.
+func couldFree(result scanResult, live bool) (f figure, shortHistory string, ok bool) {
 	t, r := result.Totals, result.Totals.Replayed
 	short := tooLittleHistory(result.History)
-	var tooEarly string
+	var onlyHas, tooEarly string
 	if short {
-		tooEarly = "too little history yet: Prometheus has only " + result.History.Span() + " of it; run the scan " +
-			"again after a few days"
+		onlyHas = "Prometheus has only " + result.History.Span() + " of it; run the scan again after a few days"
+		tooEarly = "too little history yet: " + onlyHas
 	}
 	switch {
 	case r.Sleepers > 0 || t.DryRun > 0:
 		could := r.MonthlyFreed + t.Measured.MonthlyFreed
-		f := figure{Value: dollars(could), Label: "could be freed a month", Kind: figureCouldFree, Amount: could}
+		f = figure{Value: dollars(could), Label: "could be freed a month", Kind: figureCouldFree, Amount: could}
 		// The share is of what the workloads cost on the estimate's own
 		// basis. A workload that ran more pods in its history than it runs
 		// now would otherwise be shown freeing more than it costs.
@@ -549,12 +574,13 @@ func couldFree(result scanResult, live bool) (figure, bool) {
 		if short && r.Sleepers > 0 {
 			steadier := "from only " + result.History.Span() + " of history, so run the scan again after a few " +
 				"days for a steadier figure"
+			shortHistory = upperFirst(steadier) + "."
 			if f.Detail != "" {
 				steadier = f.Detail + "; " + steadier
 			}
 			f.Detail = steadier
 		}
-		return f, true
+		return f, shortHistory, true
 	case t.Idle > 0 && (r.Workloads == 0 || short):
 		// A whole window replayed in which nothing would have slept says
 		// more than one moment's idleness, so this is only for without one.
@@ -562,27 +588,28 @@ func couldFree(result scanResult, live bool) (figure, bool) {
 		if t.Idle == 1 {
 			costs = "costs"
 		}
-		f := figure{Value: dollars(t.IdleMonthlyCost), Label: "could be freed a month, at most",
+		f = figure{Value: dollars(t.IdleMonthlyCost), Label: "could be freed a month, at most",
 			Detail: fmt.Sprintf("what the %s idle right now %s while running, %s an hour",
 				countOf(t.Idle, "workload"), costs, cents(t.IdleHourlyCost)), Kind: figureCouldFree,
 			Amount: t.IdleMonthlyCost}
 		if short {
 			f.Detail += "; " + tooEarly
+			shortHistory = onlyHas + "."
 		}
-		return f, true
+		return f, shortHistory, true
 	case live:
-		return figure{}, false
+		return figure{}, "", false
 	}
-	f := figure{Value: dollars(0), Label: "could be freed a month",
+	f = figure{Value: dollars(0), Label: "could be freed a month",
 		Detail: "nothing is idle right now; Prometheus history, or measuring in dry-run, shows how often workloads are",
 		Kind:   figureCouldFree}
 	switch {
 	case short:
-		f.Detail = tooEarly
+		f.Detail, shortHistory = tooEarly, onlyHas+"."
 	case r.Workloads > 0:
 		f.Detail = "no unmanaged workload would have slept over " + replayedOver(result.History)
 	}
-	return f, true
+	return f, shortHistory, true
 }
 
 // tooLittleHistory says the replay had less than a day of history, short

@@ -18,9 +18,11 @@ package main
 
 import (
 	"bytes"
+	"strings"
 	"testing"
 	"time"
 
+	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
 	v1alpha1 "github.com/napwake/napwake/api/v1alpha1"
@@ -66,4 +68,38 @@ func TestReportPage_GoodNewsWhateverTheAmountReads(t *testing.T) {
 
 	pageHas(t, got, `<p class="statement big">Every room is in use.</p>`, "nothing idle, nothing to free")
 	pageHas(t, got, `<div class="figure zero"><b>US$0</b>`, "a zero is drawn as one")
+}
+
+// With too little history, the page says so before the figure, from the
+// caveat the product gives as its own field, whatever the figure's detail
+// says around it.
+func TestReportPage_TooLittleHistoryFromItsOwnField(t *testing.T) {
+	result := historyResult()
+	result.History.Hours, result.History.Partial = 0.5, true
+	result.Workloads[2].Managed, result.Totals.Live = false, 0
+	result.Workloads[2].FreedThisMonth, result.Workloads[2].SavedThisMonth = 0, 0
+	result.Totals.FreedThisMonth, result.Totals.SavedThisMonth = 0, 0
+	page := buildReport(result, time.Hour)
+	page.Headline.Figures[0].Detail = strings.ReplaceAll(page.Headline.Figures[0].Detail, "from only", "with just")
+
+	got := renderReportPage(t, page)
+
+	pageHas(t, got, `data-short-history="From only 30 minutes of history, so run the scan again after a few days `+
+		`for a steadier figure."`, "the caveat the page shows, in full")
+	pageLacks(t, reportHTML, "too little history yet|", "the script reads the field, not the detail")
+}
+
+// What the page shares says what the history covers, but not the Prometheus
+// it was read from unless the reader ticks the box.
+func TestReportPage_BasisPublicLeavesOutTheSource(t *testing.T) {
+	got := renderHTML(t, historyResult())
+
+	pageHas(t, got, `<span data-private>Based on the last 7 days of Prometheus history, from `+
+		`monitoring/prometheus-operated, and CPU at the time of the scan.</span>`)
+	pageHas(t, got, `<span data-public>Based on the last 7 days of Prometheus history, and CPU at the time of the `+
+		`scan.</span>`)
+
+	snapshot := sampleCluster()
+	assert.Equal(t, basisSentence(snapshot), buildReport(snapshot, time.Hour).BasisPublic,
+		"a snapshot names no source")
 }

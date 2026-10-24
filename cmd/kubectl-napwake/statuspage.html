@@ -1364,21 +1364,16 @@ html:not(.js) th { position: static; }
   }
   addEventListener("scroll", hideKind, { passive: true });
   // Too little history: the page says so before the figure, in full, and offers no card for an estimate that
-  // will change. The product's own sentence is the lead figure's detail.
-  var leadSmall = $(".hero-figs .lead small"), hero = $(".hero");
-  var early = !!(leadSmall && /too little history yet|from only .+ of history/.test(leadSmall.textContent));
-  if (early && hero) {
+  // will change. The product gives the caveat as a sentence of its own: "Prometheus has only 30 minutes of it;
+  // run the scan again after a few days."
+  var hero = $(".hero"), early = hero ? hero.dataset.shortHistory || "" : "";
+  if (early) {
     hero.classList.add("early");
-    // The caveat, from its first mention of history to the end, never cut: "Prometheus has only 30 minutes of it;
-    // run the scan again after a few days".
-    var parts = leadSmall.textContent.split("; "), from = 0;
-    while (from < parts.length && !/history/.test(parts[from])) from++;
-    var warn = parts.slice(from).join("; ").replace(/^too little history yet: /, "");
     var note = doc.createElement("p");
     note.className = "callout early-note";
     note.innerHTML = '<span class="door-g" aria-hidden="true"></span><span><b></b> <span></span></span>';
     note.querySelector("b").textContent = "Too little history yet.";
-    note.querySelector("span > span").textContent = warn.charAt(0).toUpperCase() + warn.slice(1) + ".";
+    note.querySelector("span > span").textContent = early;
     var figs = $(".hero-figs");
     figs.classList.add("quiet");
     figs.parentNode.insertBefore(note, figs);

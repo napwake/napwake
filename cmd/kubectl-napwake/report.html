@@ -610,7 +610,7 @@ html:not(.js) th { position: static; }
   {{$group := gt (len .Workloads) 400}}
   {{$calm := and .Workloads (not $awake) (not .Unjudged)}}{{$good := and .Workloads $zero (not $idle)}}
   <section id="summary">
-    <div class="hero{{if not (or .Workloads .Unjudged)}} no-building{{end}}">
+    <div class="hero{{if not (or .Workloads .Unjudged)}} no-building{{end}}"{{with .Headline.ShortHistory}} data-short-history="{{.}}"{{end}}>
       <div class="hero-main">
         <p class="eyebrow">kubectl napwake scan</p>
         <div class="hero-title"><h1>Workload scan</h1><p class="meta"><span>{{.Cluster}}</span><span>{{.ScannedAt}}</span></p></div>
@@ -676,11 +676,10 @@ html:not(.js) th { position: static; }
 
     {{/* What the share card and the summary say. Infrastructure names (the cluster, the Prometheus source) sit in
          data-private and go out only when the reader ticks the box; data-public stands in for them otherwise. */}}
-    {{$public := ""}}{{if and .History .Over}}{{$public = printf "Based on %s of Prometheus history, and CPU at the time of the scan." .Over}}{{else if .History}}{{$public = "A snapshot of CPU at the time of the scan: Prometheus has no CPU history of the namespaces scanned."}}{{else}}{{$public = .Basis}}{{end}}
     <div hidden id="summary-lines">
       <p>Workload scan<span data-private> of {{.Cluster}}</span>, {{.ScannedAt}}: {{range $i, $f := .Headline.Figures}}{{if eq $i 0}}{{.Value}} {{.Label}}{{if .Detail}} ({{.Detail}}){{end}}.{{end}}{{end}}</p>
       <p>{{range $i, $f := .Headline.Figures}}{{if eq $i 1}}{{if $live}}{{.Value}} more {{.Label}}{{else}}{{.Value}} {{.Label}}{{end}}{{if .Detail}} ({{.Detail}}){{end}}. {{end}}{{end}}{{range $i, $f := .Facts}}{{if eq $i 1}}{{.Value}} {{.Label}}.{{end}}{{end}}</p>
-      <p><span data-private>{{.Basis}}</span><span data-public>{{$public}}</span> Measured with kubectl napwake scan, napwake.dev</p>
+      <p><span data-private>{{.Basis}}</span><span data-public>{{.BasisPublic}}</span> Measured with kubectl napwake scan, napwake.dev</p>
     </div>
     <div hidden id="card-data" data-eyebrow="Workload scan" data-cluster="{{.Cluster}}"{{range $i, $f := .Headline.Figures}}{{if eq $i 0}}{{if $calm}} data-statement="Every room is asleep."{{else if $good}} data-statement="{{if $busy}}Every room is in use.{{else}}No room is lit for nobody.{{end}}"{{end}} data-value="{{.Value}}" data-label="{{.Label}}" data-detail="{{.Detail}}"{{end}}{{end}}{{if $live}} data-more="{{$more}} more {{$moreLabel}}"{{end}} data-source="{{if and .History .Over}}{{.Over}} of Prometheus history{{else}}a snapshot, without history{{end}}{{template "price-kind" .}}" data-hook="kubectl napwake scan" data-hook-note="nothing to install in the cluster"></div>
   </section>
@@ -1414,21 +1413,16 @@ html:not(.js) th { position: static; }
   }
   addEventListener("scroll", hideKind, { passive: true });
   // Too little history: the page says so before the figure, in full, and offers no card for an estimate that
-  // will change. The product's own sentence is the lead figure's detail.
-  var leadSmall = $(".hero-figs .lead small"), hero = $(".hero");
-  var early = !!(leadSmall && /too little history yet|from only .+ of history/.test(leadSmall.textContent));
-  if (early && hero) {
+  // will change. The product gives the caveat as a sentence of its own: "Prometheus has only 30 minutes of it;
+  // run the scan again after a few days."
+  var hero = $(".hero"), early = hero ? hero.dataset.shortHistory || "" : "";
+  if (early) {
     hero.classList.add("early");
-    // The caveat, from its first mention of history to the end, never cut: "Prometheus has only 30 minutes of it;
-    // run the scan again after a few days".
-    var parts = leadSmall.textContent.split("; "), from = 0;
-    while (from < parts.length && !/history/.test(parts[from])) from++;
-    var warn = parts.slice(from).join("; ").replace(/^too little history yet: /, "");
     var note = doc.createElement("p");
     note.className = "callout early-note";
     note.innerHTML = '<span class="door-g" aria-hidden="true"></span><span><b></b> <span></span></span>';
     note.querySelector("b").textContent = "Too little history yet.";
-    note.querySelector("span > span").textContent = warn.charAt(0).toUpperCase() + warn.slice(1) + ".";
+    note.querySelector("span > span").textContent = early;
     var figs = $(".hero-figs");
     figs.classList.add("quiet");
     figs.parentNode.insertBefore(note, figs);

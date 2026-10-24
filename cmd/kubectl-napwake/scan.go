@@ -1421,6 +1421,13 @@ func lowerFirst(s string) string {
 	return strings.ToLower(s[:1]) + s[1:]
 }
 
+func upperFirst(s string) string {
+	if s == "" {
+		return s
+	}
+	return strings.ToUpper(s[:1]) + s[1:]
+}
+
 func plural(n int, one, many string) string {
 	if n == 1 {
 		return "1 " + one
