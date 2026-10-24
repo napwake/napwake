@@ -37,25 +37,33 @@ import (
 // answered, by a pod or by the doorman, and none is refused or reset.
 var _ = Describe("Requests across a pause", func() {
 	// steadyRequests is a pod that sends a request through the Service every
-	// fifth of a second for seconds, and prints each one's HTTP status, or curl's
-	// exit code for one that got no answer: 7 refused, 56 reset, 52 empty, 28
-	// not connected within 5 seconds, as to a pod that has gone. A request the
-	// doorman holds is connected, and waits.
+	// fifth of a second for seconds, and prints each one's curl exit code and
+	// HTTP status, when it ended, and curl's error for one that got no
+	// answer: 7 refused, 56 reset, 52 empty, 28 not connected within 5
+	// seconds, as to a pod that has gone. A request the doorman holds is
+	// connected, and waits. It starts once the Service has answered: kube-proxy
+	// can take a moment to send a new Service's traffic to its pods, and
+	// refuses it until then, with no pause in sight.
 	steadyRequests := func(name, ns, service string, seconds int) {
-		script := fmt.Sprintf(`end=$(( $(date +%%s) + %d ))
-while [ "$(date +%%s)" -lt "$end" ]; do
-  code=$(curl -s -o /dev/null -w '%%{http_code}' --connect-timeout 5 --max-time 150 http://%s/hostname)
-  echo "request $? $code"
+		script := fmt.Sprintf(`until curl -s -o /dev/null --connect-timeout 2 --max-time 5 http://%[1]s/hostname; do
   sleep 0.2
-done`, seconds, service)
+done
+echo answering
+end=$(( $(date +%%s) + %[2]d ))
+while [ "$(date +%%s)" -lt "$end" ]; do
+  code=$(curl -sS -o /dev/null -w '%%{http_code}' --connect-timeout 5 --max-time 150 http://%[1]s/hostname 2>/tmp/err)
+  echo "request $? $code $(date -u +%%T) $(cat /tmp/err)"
+  sleep 0.2
+done`, service, seconds)
 		_, err := utils.Run(exec.Command("kubectl", "run", name, "-n", ns, "--restart=Never",
 			"--image=curlimages/curl:8.7.1", "--image-pull-policy=IfNotPresent", "--command", "--", "sh", "-c", script))
 		Expect(err).NotTo(HaveOccurred())
 		DeferCleanup(func() {
 			_, _ = utils.Run(exec.Command("kubectl", "delete", "pod", name, "-n", ns, "--wait=false"))
 		})
-		Eventually(func() (string, error) { return jsonpath("pod", name, ns, "{.status.phase}") }).
-			Should(Equal("Running"))
+		Eventually(func() (string, error) {
+			return utils.Run(exec.Command("kubectl", "logs", name, "-n", ns))
+		}, time.Minute, time.Second).Should(ContainSubstring("answering"), "the Service answers before the pause")
 	}
 
 	// unanswered are the requests a steadyRequests pod sent that got no
@@ -64,7 +72,7 @@ done`, seconds, service)
 		logs, _ := finishedPodLogs(name, ns)
 		for _, line := range utils.GetNonEmptyLines(logs) {
 			fields := strings.Fields(line)
-			if len(fields) != 3 || fields[0] != "request" {
+			if len(fields) < 4 || fields[0] != "request" {
 				continue
 			}
 			sent++
