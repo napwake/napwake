@@ -227,7 +227,7 @@ SAVED:.status.cost.savedThisMonth,PROJECTED:.status.cost.projectedMonthlyCost
 
 ## Status fields
 
-The hours are the record. The dollar figures are worked out from them, rounded to the cent for display.
+The hours are the record. The dollar figures are worked out from them, rounded to the cent for display. An amount above zero that rounds to nothing reads `<$0.01`, so `$0.00` is none.
 
 ```yaml title="status.cost"
 status:
