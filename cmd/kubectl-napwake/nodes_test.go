@@ -133,7 +133,7 @@ Napwake's 2 paused workloads would request 2.0 vCPU and 4.0 GiB of memory if awa
 
 Next steps:
   1. A NodePool consolidates only empty nodes, which a node running anything never is. Set spec.disruption.consolidationPolicy: WhenEmptyOrUnderutilized.
-     For example: NodePool batch consolidates only empty nodes, and this one runs 1 pod
+     For example: node batch-1: NodePool batch consolidates only empty nodes, and this one runs 1 pod
   2. A PodDisruptionBudget allows no disruptions, so its pods can't be moved. Raise maxUnavailable, lower minAvailable, or run more replicas than it requires.
      For example: shop/db: PodDisruptionBudget db allows no disruptions
   See https://docs.napwake.dev/guides/cluster-autoscaler/
@@ -258,10 +258,12 @@ func TestNodes_NoAutoscaler(t *testing.T) {
 
 	out := runNodes(t, newStatusClient(t, interceptor.Funcs{}, objs...))
 
-	assert.Contains(t, out, "Node autoscaler: none found — freed capacity won't lower the bill until nodes scale "+
+	assert.Contains(t, out, "Node autoscaler: none found, so freed capacity won't lower the bill until nodes scale "+
 		"down; see https://docs.napwake.dev/guides/cluster-autoscaler/")
 	assert.Contains(t, out, "not autoscaled")
 	assert.Contains(t, out, "1. No node autoscaler scales these nodes")
+	assert.Contains(t, out, "For example: node n1: no node autoscaler found",
+		"a reason without a pod is shown on its node, as an instance")
 }
 
 // A node whose node group is at its minimum, as Cluster Autoscaler's status

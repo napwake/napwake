@@ -441,7 +441,9 @@ var blockerFixes = []struct {
 // and why the nodes at their node group's minimum stay, for which no step
 // would save anything.
 func writeNodeNextSteps(p *printer, nodes []nodeRow) {
-	examples := map[nodescale.Code]nodescale.Reason{}
+	// An example names the pod that blocks, or the node a reason without a
+	// pod is about, so it reads as an instance and not the reason again.
+	examples := map[nodescale.Code]string{}
 	var atMinimum []string
 	for _, n := range nodes {
 		for _, r := range n.BlockedBy {
@@ -450,7 +452,11 @@ func writeNodeNextSteps(p *printer, nodes []nodeRow) {
 				continue
 			}
 			if _, seen := examples[r.Code]; !seen {
-				examples[r.Code] = r
+				where := r.Pod
+				if where == "" {
+					where = "node " + n.Name
+				}
+				examples[r.Code] = where + ": " + r.Detail
 			}
 		}
 	}
@@ -468,13 +474,13 @@ func writeNodeNextSteps(p *printer, nodes []nodeRow) {
 	p.line("Next steps:")
 	step := 0
 	for _, f := range blockerFixes {
-		r, ok := examples[f.code]
+		example, ok := examples[f.code]
 		if !ok {
 			continue
 		}
 		step++
 		p.line("  %d. %s", step, f.fix)
-		p.line("     For example: %s", oneLine(strings.TrimPrefix(r.Pod+": "+r.Detail, ": ")))
+		p.line("     For example: %s", oneLine(example))
 	}
 	p.line("  See %s", nodeScalingGuide)
 	p.line("  To have pausing empty whole nodes, put non-production workloads on a node pool of their own: %s",
@@ -491,7 +497,7 @@ func nodeAutoscalerLine(a nodescale.Autoscaler) string {
 			"comes off the bill only as nodes scale down", joinOr(a.Unread))
 	}
 	if len(a.Scalers) == 0 {
-		return "Node autoscaler: none found — freed capacity won't lower the bill until nodes scale down; see " +
+		return "Node autoscaler: none found, so freed capacity won't lower the bill until nodes scale down; see " +
 			nodeScalingGuide
 	}
 	parts := make([]string, 0, len(a.Scalers))
