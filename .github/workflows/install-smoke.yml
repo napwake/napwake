@@ -147,9 +147,14 @@ jobs:
           cosign-release: v3.1.3
       - name: Nothing signed in
         run: docker logout ghcr.io || true
+      # Each check takes under a minute, so one that hangs fails with its
+      # log rather than the job's limit cancelling it without one.
       - name: The image, as the docs say
+        timeout-minutes: 5
         env:
           GH_TOKEN: ${{ github.token }}
+        # The SBOMs go to a file: printed, each is a line of megabytes that
+        # the runner's log takes longer than the job's limit to write.
         run: |
           IMAGE=ghcr.io/napwake/napwake:v${VERSION}
           cosign verify $IMAGE \
@@ -157,19 +162,23 @@ jobs:
             --certificate-oidc-issuer https://token.actions.githubusercontent.com
           cosign verify-attestation $IMAGE --type spdxjson \
             --certificate-identity-regexp '^https://github.com/napwake/napwake/.github/workflows/release.yml@refs/tags/v' \
-            --certificate-oidc-issuer https://token.actions.githubusercontent.com
+            --certificate-oidc-issuer https://token.actions.githubusercontent.com > sbom.intoto.jsonl
+          test "$(wc -l < sbom.intoto.jsonl)" -eq 2 # one for each platform
           gh attestation verify oci://$IMAGE --repo napwake/napwake
       - name: The chart, as the docs say
+        timeout-minutes: 5
         run: |
           cosign verify ghcr.io/napwake/charts/napwake:${VERSION} \
             --certificate-identity-regexp '^https://github.com/napwake/napwake/.github/workflows/release.yml@refs/tags/v' \
             --certificate-oidc-issuer https://token.actions.githubusercontent.com
       - name: The release's files
+        timeout-minutes: 5
         run: |
           for file in checksums.txt checksums.txt.sigstore.json kubectl-napwake-linux-amd64.tar.gz install.yaml; do
             curl -fsSLO "https://github.com/napwake/napwake/releases/download/v${VERSION}/${file}"
           done
       - name: The plugin and release files, as the docs say
+        timeout-minutes: 5
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
