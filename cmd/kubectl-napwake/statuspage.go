@@ -109,7 +109,7 @@ func writeStatusPage(stderr io.Writer, path string, result statusResult, since t
 }
 
 func writeStatusHTML(w io.Writer, result statusResult, since time.Duration, now time.Time) error {
-	if err := statusPageTemplate.Execute(w, buildStatusPage(result, since, now)); err != nil {
+	if err := executeWithPolicy(w, statusPageTemplate, buildStatusPage(result, since, now)); err != nil {
 		return fmt.Errorf("writing the status page: %w", err)
 	}
 	return nil

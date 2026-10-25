@@ -358,7 +358,7 @@ func writePage(path, pattern string, write func(io.Writer) error) (string, error
 }
 
 func writeHTML(w io.Writer, result scanResult, idleAfter time.Duration) error {
-	if err := reportTemplate.Execute(w, buildReport(result, idleAfter)); err != nil {
+	if err := executeWithPolicy(w, reportTemplate, buildReport(result, idleAfter)); err != nil {
 		return fmt.Errorf("writing the report: %w", err)
 	}
 	return nil
