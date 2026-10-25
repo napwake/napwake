@@ -669,6 +669,10 @@ func TestServer_AskingAnswersProbesAsBefore(t *testing.T) {
 			conn := dial(t, port)
 			if tt.closeNow {
 				require.NoError(t, conn.Close())
+				// The dial returns before the doorman accepts, so stopping
+				// now could close the listener on it uncounted.
+				require.Eventually(t, func() bool { return wakes(resultIgnored) == before+1 },
+					5*time.Second, 10*time.Millisecond)
 			} else {
 				send(t, conn, tt.request)
 				resp, body := readResponse(t, conn)
