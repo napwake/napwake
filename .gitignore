@@ -32,8 +32,12 @@ go.work
 # Kubeconfig might contain secrets
 *.kubeconfig
 
-# AI instructions
-*.claude
+# Claude Code. The skills are shared, so they're tracked. Everything else
+# under .claude/, such as worktrees and local settings, stays on your
+# machine, and so does CLAUDE.local.md.
+/.claude/*
+!/.claude/skills/
+CLAUDE.local.md
 
 # Internal planning docs
 .docs
