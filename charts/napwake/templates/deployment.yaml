@@ -82,8 +82,10 @@ spec:
             - {{ printf "--default-pause-early=%v" .Values.defaults.pauseEarly | quote }}
             - {{ printf "--default-forecast=%v" .Values.defaults.forecast | quote }}
             - {{ printf "--default-wake=%v" .Values.defaults.wake | quote }}
-            {{- if not .Values.pausing.enabled }}
+            {{- with .Values.pausing }}
+            {{- if eq (toString .enabled) "false" }}
             - --pausing=false
+            {{- end }}
             {{- end }}
             - {{ printf "--doorman-service=%s" (ternary (include "napwake.doormanName" .) "" .Values.doorman.enabled) | quote }}
             - {{ printf "--doorman-ports-per-workload=%v" .Values.doorman.portsPerWorkload | quote }}

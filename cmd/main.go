@@ -175,8 +175,8 @@ func main() {
 		"Measure workloads opted in with the label without pausing them, unless annotated otherwise.")
 	pausing := true
 	flag.BoolVar(&pausing, "pausing", pausing,
-		"Pause idle workloads. False stops every pause in the cluster at once: each workload is measured as in "+
-			"dry-run, whatever it sets, and those paused are woken.")
+		"Pause idle workloads. False stops every pause this install makes, at once: each workload it manages is "+
+			"measured as in dry-run, whatever it sets, and those paused are woken.")
 	flag.BoolVar(&optIn.PauseEarly, "default-pause-early", optIn.PauseEarly,
 		"Let a confident forecast that expects quiet hours pause workloads opted in with the label before their "+
 			"idleAfter runs out, unless annotated otherwise.")

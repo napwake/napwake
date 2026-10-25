@@ -179,7 +179,8 @@ func awakeMessage(ref string, w *v1alpha1.ManagedWorkload) string {
 	switch phase := w.Status.Phase; {
 	case discovery.DryRun(w) && phase != v1alpha1.PhasePaused && phase != v1alpha1.PhasePausing:
 		if discovery.PausingOff(w) {
-			return ref + " isn't paused while pausing is off for the whole cluster; its idle clock restarts now"
+			return ref + " isn't paused while pausing is off for the install that manages it; its idle clock " +
+				"restarts now"
 		}
 		return ref + " is in dry-run, so Napwake never paused it; its idle clock restarts now"
 	case phase == v1alpha1.PhaseRunning, phase == "", phase == v1alpha1.PhaseCreating:

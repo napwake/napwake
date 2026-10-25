@@ -19,7 +19,9 @@ package controller
 import (
 	"bytes"
 	"context"
+	"errors"
 	"fmt"
+	"slices"
 	"sync"
 	"testing"
 	"time"
@@ -30,6 +32,7 @@ import (
 	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
+	"k8s.io/apimachinery/pkg/watch"
 	"k8s.io/client-go/rest"
 	"k8s.io/client-go/tools/events"
 	"k8s.io/utils/ptr"
@@ -143,6 +146,22 @@ func (e *switchEnv) watchDryRun(c client.WithWatch) client.WithWatch {
 	})
 }
 
+// written is how many writes of ManagedWorkloads the env's reconcilers have
+// made, and those of them that carried spec.dryRun.
+func (e *switchEnv) written() (int, []string) {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	return e.writes, slices.Clone(e.dryRunWrites)
+}
+
+// watchless is a client that doesn't watch, such as a manager's, for
+// watchDryRun to wrap.
+type watchless struct{ client.Client }
+
+func (watchless) Watch(context.Context, client.ObjectList, ...client.ListOption) (watch.Interface, error) {
+	return nil, errors.New("the manager's client doesn't watch")
+}
+
 func (e *switchEnv) workload(t *testing.T, key client.ObjectKey) *v1alpha1.ManagedWorkload {
 	t.Helper()
 	var w v1alpha1.ManagedWorkload
@@ -182,7 +201,7 @@ func pausingOffCondition(w *v1alpha1.ManagedWorkload) *metav1.Condition {
 	return meta.FindStatusCondition(w.Status.Conditions, conditionPausing)
 }
 
-// With pausing off for the whole cluster, nothing pauses, while a workload
+// With pausing off for the install, nothing it manages pauses, while a workload
 // is measured as in dry-run, every one paused wakes, and the dependency
 // graph lets go of dependencies as dry-run does. Turned back on, pausing
 // picks up again. spec.dryRun, which the operator writes back with every
@@ -207,7 +226,7 @@ func TestPausingOff(t *testing.T) {
 		require.NotNil(t, c, "the workload says pausing is off")
 		assert.Equal(t, metav1.ConditionFalse, c.Status)
 		assert.Equal(t, reasonTurnedOffForTheCluster, c.Reason)
-		assert.Contains(t, c.Message, "pausing is off for the whole cluster")
+		assert.Contains(t, c.Message, "pausing is off for this install")
 		idle := drainEvents(t, r)
 		assert.Contains(t, idle, "Normal "+ReasonIdleDetected+" [dry-run] api: idle for 5 minutes")
 		assert.Contains(t, idle, "would have paused")
@@ -224,7 +243,7 @@ func TestPausingOff(t *testing.T) {
 
 		assert.Equal(t, int32(3), env.replicas(t, key), "woken to the replicas it had")
 		woken := drainEvents(t, off)
-		assert.Contains(t, woken, "Normal "+reasonPausingOffWake+" api: pausing is off for the whole cluster, "+
+		assert.Contains(t, woken, "Normal "+reasonPausingOffWake+" api: pausing is off for this install, "+
 			"so Napwake wakes the workload it had paused")
 		assert.NotContains(t, woken, reasonDryRunWake)
 		require.NotNil(t, pausingOffCondition(env.workload(t, key)))
@@ -249,6 +268,33 @@ func TestPausingOff(t *testing.T) {
 		assert.Nil(t, w.Status.DryRun, "nor that it's measured")
 	})
 
+	t.Run("a wrong-pause back-off carries through pausing off and back on", func(t *testing.T) {
+		key := env.create(t, "backed-off", nil)
+		w := env.workload(t, key)
+		w.Status.IdleWait = &v1alpha1.IdleWaitStatus{WrongPauses: 2}
+		w.Status.Conditions = []metav1.Condition{{Type: conditionPausedWhileInUse, Status: metav1.ConditionTrue,
+			Reason: reasonWokenSoonAfterPause, Message: "a request came 1 minute after it paused",
+			LastTransitionTime: metav1.Now()}}
+		require.NoError(t, env.admin.Status().Update(env.ctx, w))
+		clock := time.Now()
+		off := env.reconciler(t, true, func() time.Time { return clock })
+
+		env.watch(t, off, key, &clock, 10, v1alpha1.PhaseIdle)
+
+		measured := env.workload(t, key)
+		assert.Equal(t, v1alpha1.PhaseIdle, measured.Status.Phase, "a would-be pause waits idleAfter alone")
+		require.NotNil(t, measured.Status.IdleWait)
+		assert.Equal(t, int32(2), measured.Status.IdleWait.WrongPauses, "pausing off keeps the back-off")
+		assert.True(t, meta.IsStatusConditionTrue(measured.Status.Conditions, conditionPausedWhileInUse))
+
+		on := env.reconciler(t, false, func() time.Time { return clock })
+		env.watch(t, on, key, &clock, 15, v1alpha1.PhasePaused)
+		require.Equal(t, v1alpha1.PhaseRunning, env.workload(t, key).Status.Phase,
+			"back on, it waits the back-off's 20 minutes, not idleAfter's 5")
+		env.watch(t, on, key, &clock, 10, v1alpha1.PhasePaused)
+		assert.Equal(t, v1alpha1.PhasePaused, env.workload(t, key).Status.Phase)
+	})
+
 	t.Run("a pause request is answered as dry-run answers it, naming the switch", func(t *testing.T) {
 		key := env.create(t, "requested", func(w *v1alpha1.ManagedWorkload) { withPauseRequested(w) })
 		r := env.reconciler(t, true, time.Now)
@@ -262,7 +308,7 @@ func TestPausingOff(t *testing.T) {
 		require.NotNil(t, c)
 		assert.Equal(t, metav1.ConditionFalse, c.Status)
 		assert.Equal(t, reasonTurnedOffForTheCluster, c.Reason)
-		assert.Contains(t, c.Message, ": pausing is off for the whole cluster, so Napwake counted a would-be pause "+
+		assert.Contains(t, c.Message, ": pausing is off for this install, so Napwake counted a would-be pause "+
 			"and left the workload running")
 	})
 
@@ -287,7 +333,9 @@ func TestPausingOff(t *testing.T) {
 			Controller: config.Controller{SkipNameValidation: ptr.To(true)},
 			Cache:      cache.Options{DefaultNamespaces: map[string]cache.Config{ns: {}}}})
 		require.NoError(t, err)
-		r := &Reconciler{Client: mgr.GetClient(), Scheme: opScheme, Recorder: events.NewFakeRecorder(1000),
+		writesBefore, _ := env.written()
+		r := &Reconciler{Client: env.watchDryRun(watchless{mgr.GetClient()}), Scheme: opScheme,
+			Recorder:  events.NewFakeRecorder(1000),
 			PodReader: mgr.GetAPIReader(), PausingOff: true,
 			metrics: &stubMetrics{cpuPerReplica: 100, memoryPerReplica: 1 << 30, replicas: 1},
 			engines: newEngineRegistry(func() forecaster { return &stubForecaster{} })}
@@ -349,12 +397,13 @@ func TestPausingOff(t *testing.T) {
 			assert.Equal(t, int32(1), env.replicas(t, client.ObjectKey{Namespace: ns, Name: name}),
 				"%s never paused", name)
 		}
+		writes, dryRun := env.written()
+		assert.Greater(t, writes, writesBefore, "the manager's reconciler wrote ManagedWorkloads")
+		assert.Empty(t, dryRun, "none of its writes set spec.dryRun")
 	})
 
 	t.Run("spec.dryRun is never written", func(t *testing.T) {
-		env.mu.Lock()
-		writes, dryRun := env.writes, env.dryRunWrites
-		env.mu.Unlock()
+		writes, dryRun := env.written()
 		if writes == 0 {
 			// Run alone, this case pauses, wakes, measures and answers a
 			// request itself.
@@ -364,9 +413,7 @@ func TestPausingOff(t *testing.T) {
 			env.watch(t, on, key, &clock, 30, v1alpha1.PhasePaused)
 			off := env.reconciler(t, true, func() time.Time { return clock })
 			env.watch(t, off, key, &clock, 30, v1alpha1.PhaseIdle)
-			env.mu.Lock()
-			writes, dryRun = env.writes, env.dryRunWrites
-			env.mu.Unlock()
+			writes, dryRun = env.written()
 		}
 		require.Positive(t, writes, "the operator wrote ManagedWorkloads")
 		assert.Empty(t, dryRun, "none of its writes set spec.dryRun")

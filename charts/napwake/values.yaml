@@ -106,10 +106,11 @@ watchNamespaces: []
 # and the doorman's namespace, are always protected, besides these.
 protectedNamespaces: []
 
-# False stops all pausing in the cluster at once, as on a bad day: every
-# workload is measured as in dry-run, whatever it sets, and those paused
-# are woken. Requests, activity and autoResume still wake. Set it back to
-# true to pause again. Each ManagedWorkload says so with Pausing=False.
+# False stops all pausing by this install at once, as on a bad day: every
+# workload it manages is measured as in dry-run, whatever it sets, and
+# those paused are woken. Requests, activity and autoResume still wake. Set
+# it back to true to pause again. Each ManagedWorkload says so with
+# Pausing=False.
 pausing:
   enabled: true
 

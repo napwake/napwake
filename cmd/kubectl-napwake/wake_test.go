@@ -615,8 +615,8 @@ func TestWake_FromEachPhase(t *testing.T) {
 		{phase: v1alpha1.PhasePaused, dryRun: true, reason: "Woken",
 			wantOut: "waking preview-42/api...\npreview-42/api is Running after 0s\n"},
 		{phase: v1alpha1.PhaseIdle, pausingOff: true, reason: "AlreadyAwake",
-			wantOut: "preview-42/api isn't paused while pausing is off for the whole cluster; its idle clock " +
-				"restarts now\n"},
+			wantOut: "preview-42/api isn't paused while pausing is off for the install that manages it; its " +
+				"idle clock restarts now\n"},
 		{phase: v1alpha1.PhasePaused, pausingOff: true, reason: "Woken",
 			wantOut: "waking preview-42/api...\npreview-42/api is Running after 0s\n"},
 	}

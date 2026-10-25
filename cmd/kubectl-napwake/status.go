@@ -75,11 +75,6 @@ const savedShareExpected = 0.5
 // one screen; -o json has them all.
 const recentLimit = 10
 
-// pausingOffLine is what status, and its page, say first while a workload
-// says pausing is off for the whole cluster.
-const pausingOffLine = "Pausing is off for the whole cluster (pausing.enabled: false); " +
-	"nothing pauses, and everything wakes."
-
 type statusOptions struct {
 	namespaces namespaceFlags
 	output     string
@@ -195,9 +190,9 @@ type statusResult struct {
 	// NodesNotScalingDown is set when pausing freed far more than came off
 	// the bill this month, for the workloads whose savings are measured.
 	NodesNotScalingDown bool `json:"nodesNotScalingDown,omitempty"`
-	// PausingOff is set when a workload says pausing is off for the whole
-	// cluster.
-	PausingOff bool             `json:"pausingOff,omitempty"`
+	// PausingOff is how many of the workloads say pausing is off for the
+	// install that manages them: all, or with several installs, some.
+	PausingOff int              `json:"pausingOff,omitempty"`
 	Workloads  []statusWorkload `json:"workloads"`
 	Problems   []problem        `json:"problems"`
 	Recent     []happening      `json:"recent"`
@@ -396,7 +391,9 @@ func clusterStatus(ctx context.Context, c client.Client, home string, opts statu
 		targets[client.ObjectKeyFromObject(w)] = w.Spec.Target.Name
 		row := workloadStatus(w, activeUntil[targetOfManaged(w)], now)
 		result.Workloads = append(result.Workloads, row)
-		result.PausingOff = result.PausingOff || discovery.PausingOff(w)
+		if discovery.PausingOff(w) {
+			result.PausingOff++
+		}
 		problems := reviewGitOpsConflict(ctx, c, checker, w, problemsOf(w, now), now)
 		result.Problems = append(result.Problems, problems...)
 		if p := w.Status.Prediction; p != nil && p.TimeZone != "" && !slices.Contains(result.ForecastTimeZones, p.TimeZone) {
@@ -552,6 +549,21 @@ func targetActiveUntil(ctx context.Context, c client.Client, namespaces []string
 		}
 	}
 	return out, nil
+}
+
+// pausingOffLine is what status, and its page, say first while workloads
+// it lists say pausing is off for the install that manages them, or "".
+// Each install has its own, so with several, only some may.
+func pausingOffLine(result statusResult) string {
+	switch n := result.PausingOff; n {
+	case 0:
+		return ""
+	case len(result.Workloads):
+		return "Pausing is off (pausing.enabled: false): nothing here pauses, and everything wakes."
+	default:
+		return fmt.Sprintf("Pausing is off for %s of these workloads (pausing.enabled: false on the install that "+
+			"manages them): they pause nothing, and still wake.", number(n))
+	}
 }
 
 func mayPause(w *v1alpha1.ManagedWorkload) bool {
@@ -1060,8 +1072,8 @@ func writeStatusTable(w io.Writer, result statusResult, now time.Time, pl palett
 		p.line("kubectl napwake scan finds idle ones; label one napwake.dev/managed=true for Napwake to manage it.")
 		return p.err
 	}
-	if result.PausingOff {
-		p.line("%s", pl.paint(sgrAttention, pausingOffLine))
+	if off := pausingOffLine(result); off != "" {
+		p.line("%s", pl.paint(sgrAttention, off))
 	}
 	p.line("%s: Napwake manages %s.", result.Cluster, countOf(len(result.Workloads), "workload"))
 	p.line("  %s", pl.phaseCounts(result.Workloads))

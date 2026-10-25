@@ -210,27 +210,52 @@ Recent pauses and wakes:
 `, out)
 }
 
-// While the operator has pausing off for the whole cluster, as the Pausing
-// condition on its workloads says, status says so first, and in -o json.
-func TestStatus_SaysFirstThatPausingIsOff(t *testing.T) {
+// withPausingOff is statusCluster with the first n of its workloads saying
+// pausing is off for the install that manages them.
+func withPausingOff(t *testing.T, n int) []client.Object {
+	t.Helper()
 	objs := statusCluster()
-	api, ok := objs[0].(*v1alpha1.ManagedWorkload)
-	require.True(t, ok)
-	api.Status.Conditions = append(api.Status.Conditions, pausingOff())
+	for _, obj := range objs[:n] {
+		w, ok := obj.(*v1alpha1.ManagedWorkload)
+		require.True(t, ok)
+		w.Status.Conditions = append(w.Status.Conditions, pausingOff())
+	}
+	return objs
+}
 
-	out := runStatus(t, newStatusClient(t, interceptor.Funcs{}, objs...), statusOpts())
+// While the install that manages them has pausing off, as the Pausing
+// condition on each workload says, status says so first, and in -o json.
+// Each install has its own, so with several only some workloads may say so.
+func TestStatus_SaysFirstThatPausingIsOff(t *testing.T) {
+	tests := []struct {
+		name string
+		off  int
+		want string
+	}{
+		{name: "every workload", off: 4,
+			want: "Pausing is off (pausing.enabled: false): nothing here pauses, and everything wakes."},
+		{name: "some workloads", off: 1,
+			want: "Pausing is off for 1 of these workloads (pausing.enabled: false on the install that manages " +
+				"them): they pause nothing, and still wake."},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			objs := withPausingOff(t, tt.off)
 
-	first, rest, _ := strings.Cut(out, "\n")
-	assert.Equal(t, "Pausing is off for the whole cluster (pausing.enabled: false); nothing pauses, and everything "+
-		"wakes.", first)
-	assert.True(t, strings.HasPrefix(rest, testCluster+": Napwake manages 4 workloads.\n"), rest)
-	result, err := clusterStatus(context.Background(), newStatusClient(t, interceptor.Funcs{}, objs...),
-		"preview-42", statusOpts())
-	require.NoError(t, err)
-	assert.True(t, result.PausingOff)
+			out := runStatus(t, newStatusClient(t, interceptor.Funcs{}, objs...), statusOpts())
+
+			first, rest, _ := strings.Cut(out, "\n")
+			assert.Equal(t, tt.want, first)
+			assert.True(t, strings.HasPrefix(rest, testCluster+": Napwake manages 4 workloads.\n"), rest)
+			result, err := clusterStatus(context.Background(), newStatusClient(t, interceptor.Funcs{}, objs...),
+				"preview-42", statusOpts())
+			require.NoError(t, err)
+			assert.Equal(t, tt.off, result.PausingOff)
+		})
+	}
 
 	assert.NotContains(t, runStatus(t, newStatusClient(t, interceptor.Funcs{}, statusCluster()...), statusOpts()),
-		"Pausing is off", "a cluster that pauses doesn't say so")
+		"Pausing is off", "workloads that pause don't say so")
 }
 
 // A workload whose doorman asks before waking it says so in NEXT, and the
@@ -592,14 +617,14 @@ func TestNextFor_DryRunAfterAGitOpsConflict(t *testing.T) {
 	assert.Equal(t, "would pause now", nextFor(w, time.Time{}, statusNow))
 }
 
-// pausingOff is the condition the operator puts on every workload while
-// pausing is off for the whole cluster.
+// pausingOff is the condition the operator puts on every workload it
+// manages while its pausing is off.
 func pausingOff() metav1.Condition {
 	return condition(discovery.ConditionPausing, metav1.ConditionFalse, discovery.ReasonTurnedOffForTheCluster,
-		"pausing is off for the whole cluster")
+		"pausing is off for this install")
 }
 
-// With pausing off for the whole cluster, as the workload's Pausing
+// With pausing off for its install, as the workload's Pausing
 // condition says, status reads it as in dry-run, whatever its spec says: it
 // would pause, what it would have freed shows, and a GitOps conflict holds
 // nothing back.

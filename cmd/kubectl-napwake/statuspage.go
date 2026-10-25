@@ -61,8 +61,8 @@ type statusPage struct {
 	NoRecent string
 	Since    string
 	Mark     string
-	// PausingOff is the line status leads with while pausing is off for the
-	// whole cluster, or empty.
+	// PausingOff is the line status leads with while pausing is off for
+	// some or all of the workloads, or empty.
 	PausingOff string
 }
 
@@ -133,9 +133,7 @@ func buildStatusPage(result statusResult, since time.Duration, now time.Time) st
 		SavedThisMonth:  result.SavedThisMonth,
 		SavedMeasurable: len(result.SavingsUnknown) == 0,
 	}
-	if result.PausingOff {
-		page.PausingOff = pausingOffLine
-	}
+	page.PausingOff = pausingOffLine(result)
 	if len(result.Workloads) == 0 {
 		page.Summary = "Napwake manages no workloads here. kubectl napwake scan finds idle ones; label one " +
 			v1alpha1.LabelManaged + "=true for Napwake to manage it."

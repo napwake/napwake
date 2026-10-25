@@ -382,7 +382,8 @@ func pauseMessage(ref string, w *v1alpha1.ManagedWorkload, wait bool) string {
 	var msg string
 	switch {
 	case discovery.PausingOff(w):
-		msg = "pausing is off for the whole cluster, so Napwake counts a would-be pause and leaves " + ref + " running"
+		msg = "pausing is off for the install that manages " + ref + ", so Napwake counts a would-be pause and " +
+			"leaves it running"
 	case discovery.DryRun(w):
 		msg = ref + " is in dry-run, so Napwake counts a would-be pause and leaves it running"
 	case w.Status.Phase == v1alpha1.PhaseIdle:
