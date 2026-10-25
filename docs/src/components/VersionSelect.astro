@@ -41,6 +41,10 @@ const label = version === 'next' ? `next${release ? ` · ${release}` : ''}` : ve
           }));
           select.disabled = false;
           this.toggleAttribute('data-ready', true);
+          // the release candidate's link to the latest release: shown once there is one
+          if (list.some((v) => (v.aliases ?? []).includes('latest'))) {
+            document.querySelectorAll<HTMLElement>('[data-nw-latest-link]').forEach((l) => { l.hidden = false; });
+          }
           // the outdated banner: shown on a release that isn't latest
           const me = list.find((v) => v.version === current || (v.aliases ?? []).includes(current));
           if (me && current !== 'next' && !(me.aliases ?? []).includes('latest')) {
