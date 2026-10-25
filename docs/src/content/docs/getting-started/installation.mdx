@@ -59,8 +59,9 @@ Keep the file and upgrade with it, since an upgrade given `--set` alone drops yo
 ### On EKS Fargate
 
 EKS Fargate requires every container's CPU and memory requests to equal its
-limits. Keep Napwake's default limits and raise its requests to match them in
-`napwake-values.yaml`:
+limits. This includes the guard Jobs run during Helm upgrades and uninstalls.
+Keep Napwake's default limits and raise the operator, doorman, and guard
+requests to match them in `napwake-values.yaml`:
 
 ```yaml title="napwake-values.yaml"
 resources:
@@ -79,6 +80,15 @@ doorman:
     requests:
       cpu: 500m
       memory: 256Mi
+
+guard:
+  resources:
+    limits:
+      cpu: 100m
+      memory: 128Mi
+    requests:
+      cpu: 100m
+      memory: 128Mi
 ```
 
 See [Fargate Pod configuration](https://docs.aws.amazon.com/eks/latest/userguide/fargate-pod-configuration.html)
