@@ -289,7 +289,7 @@ check-chart: ## Lint the Helm chart, render it for each provider's Kubernetes ve
 	@cmp -s charts/napwake/values.yaml charts/napwake/files/defaults.yaml || { \
 		echo "charts/napwake/files/defaults.yaml isn't a copy of values.yaml, which the chart fills in missing values from; run make manifests"; exit 1; }
 	@[ "$$(awk '$$1 == "defaultsVersion:" {print $$2}' charts/napwake/values.yaml)" = \
-		"$$(awk '$$1 == "version:" {print $$2}' charts/napwake/Chart.yaml)" ] || { \
+		"$$(awk '/^version:/ {print $$2}' charts/napwake/Chart.yaml)" ] || { \
 		echo "values.yaml's defaultsVersion isn't Chart.yaml's version, so the chart can't tell its own defaults from an older release's"; exit 1; }
 	@missing=$$(grep -L '^{{- include "napwake.defaults" . -}}$$' charts/napwake/templates/*.yaml \
 		charts/napwake/templates/crds/*.yaml charts/napwake/templates/NOTES.txt || true); [ -z "$$missing" ] || { \
