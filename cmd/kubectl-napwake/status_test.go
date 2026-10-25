@@ -43,6 +43,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client/interceptor"
 
 	v1alpha1 "github.com/napwake/napwake/api/v1alpha1"
+	"github.com/napwake/napwake/internal/discovery"
 )
 
 var statusNow = time.Date(2026, 10, 5, 12, 0, 0, 0, time.UTC)
@@ -215,8 +216,7 @@ func TestStatus_SaysFirstThatPausingIsOff(t *testing.T) {
 	objs := statusCluster()
 	api, ok := objs[0].(*v1alpha1.ManagedWorkload)
 	require.True(t, ok)
-	api.Status.Conditions = append(api.Status.Conditions, condition("Pausing", metav1.ConditionFalse,
-		"TurnedOffForTheCluster", "pausing is off for the whole cluster"))
+	api.Status.Conditions = append(api.Status.Conditions, pausingOff())
 
 	out := runStatus(t, newStatusClient(t, interceptor.Funcs{}, objs...), statusOpts())
 
@@ -590,6 +590,37 @@ func TestNextFor_DryRunAfterAGitOpsConflict(t *testing.T) {
 	w.Spec.DryRun = true
 
 	assert.Equal(t, "would pause now", nextFor(w, time.Time{}, statusNow))
+}
+
+// pausingOff is the condition the operator puts on every workload while
+// pausing is off for the whole cluster.
+func pausingOff() metav1.Condition {
+	return condition(discovery.ConditionPausing, metav1.ConditionFalse, discovery.ReasonTurnedOffForTheCluster,
+		"pausing is off for the whole cluster")
+}
+
+// With pausing off for the whole cluster, as the workload's Pausing
+// condition says, status reads it as in dry-run, whatever its spec says: it
+// would pause, what it would have freed shows, and a GitOps conflict holds
+// nothing back.
+func TestStatus_PausingOffReadsAsDryRun(t *testing.T) {
+	api := statusWorkloadObj("shop", "api", v1alpha1.TargetKindDeployment, v1alpha1.PhaseRunning, 2*time.Hour)
+	api.Status.Activity = activity(v1alpha1.ActivitySourceRollout, 15*time.Minute, 45*time.Minute)
+	api.Status.DryRun = &v1alpha1.DryRunStatus{Since: *before(99 * time.Hour), Pauses: 4, EstimatedFreed: "$7.40"}
+	api.Status.Conditions = []metav1.Condition{pausingOff()}
+
+	row := onlyWorkload(t, newStatusClient(t, interceptor.Funcs{}, api))
+
+	assert.True(t, row.DryRun)
+	assert.Equal(t, "would pause in 45m", row.Next)
+	require.NotNil(t, row.WouldFree, "WOULD FREE shows what it would have freed")
+	assert.InDelta(t, 7.40, *row.WouldFree, 0.001)
+	assert.Equal(t, "running (dry-run)", stateCell(row))
+
+	undone := statusWorkloadObj("ns", "api", v1alpha1.TargetKindDeployment, v1alpha1.PhaseIdle, time.Hour)
+	undoneBy(undone, "Argo CD", 10*time.Minute)
+	undone.Status.Conditions = append(undone.Status.Conditions, pausingOff())
+	assert.Equal(t, "would pause now", nextFor(undone, time.Time{}, statusNow))
 }
 
 func deployment(namespace, name string, annotations map[string]string) *appsv1.Deployment {

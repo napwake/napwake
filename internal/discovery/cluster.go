@@ -588,7 +588,7 @@ func pausedByNapwake(mw *v1alpha1.ManagedWorkload) bool {
 // measured reads the dry-run summary Napwake keeps for the workload. The
 // summary adds a would-be pause when it ends, so one under way is added here.
 func measured(mw *v1alpha1.ManagedWorkload, hourlyCost float64, now time.Time) *Measured {
-	if mw == nil || !mw.Spec.DryRun || mw.Status.DryRun == nil {
+	if mw == nil || !DryRun(mw) || mw.Status.DryRun == nil {
 		return nil
 	}
 	d := mw.Status.DryRun

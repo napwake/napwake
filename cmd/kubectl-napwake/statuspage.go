@@ -61,6 +61,9 @@ type statusPage struct {
 	NoRecent string
 	Since    string
 	Mark     string
+	// PausingOff is the line status leads with while pausing is off for the
+	// whole cluster, or empty.
+	PausingOff string
 }
 
 // attentionRow is a problem as the page lists it. Workload is the
@@ -129,6 +132,9 @@ func buildStatusPage(result statusResult, since time.Duration, now time.Time) st
 		FreedThisMonth:  result.FreedThisMonth,
 		SavedThisMonth:  result.SavedThisMonth,
 		SavedMeasurable: len(result.SavingsUnknown) == 0,
+	}
+	if result.PausingOff {
+		page.PausingOff = pausingOffLine
 	}
 	if len(result.Workloads) == 0 {
 		page.Summary = "Napwake manages no workloads here. kubectl napwake scan finds idle ones; label one " +

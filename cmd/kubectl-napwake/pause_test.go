@@ -180,12 +180,13 @@ func TestPause_NoWait(t *testing.T) {
 // pause is.
 func TestPause_Answers(t *testing.T) {
 	tests := []struct {
-		name     string
-		dryRun   bool
-		answer   func(*v1alpha1.ManagedWorkload)
-		want     string
-		wantErr  string
-		wantStep string
+		name       string
+		dryRun     bool
+		pausingOff bool
+		answer     func(*v1alpha1.ManagedWorkload)
+		want       string
+		wantErr    string
+		wantStep   string
 	}{
 		{
 			name: "dry-run", dryRun: true,
@@ -196,10 +197,11 @@ func TestPause_Answers(t *testing.T) {
 				"the workload running\n",
 		},
 		{
-			name: "pausing off for the whole cluster",
+			name: "pausing off for the whole cluster", pausingOff: true,
 			answer: refuses(v1alpha1.PhaseIdle, "TurnedOffForTheCluster", "not paused at 2026-10-21 03:32 UTC: "+
 				"pausing is off for the whole cluster, so Napwake counted a would-be pause and left the workload running"),
-			wantStep: "pausing preview-42/api...\n",
+			wantStep: "pausing is off for the whole cluster, so Napwake counts a would-be pause and leaves " +
+				"preview-42/api running...\n",
 			want: "preview-42/api wasn't paused: pausing is off for the whole cluster, so Napwake counted a would-be " +
 				"pause and left the workload running\n",
 		},
@@ -244,6 +246,9 @@ func TestPause_Answers(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			w := managedWorkload(v1alpha1.PhaseRunning)
 			w.Spec.DryRun = tt.dryRun
+			if tt.pausingOff {
+				w.Status.Conditions = []metav1.Condition{pausingOff()}
+			}
 			c := newClient(t, operator(tt.answer), w)
 
 			out, err := runCLI(t, c, "pause", "api")

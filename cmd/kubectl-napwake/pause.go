@@ -32,6 +32,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	v1alpha1 "github.com/napwake/napwake/api/v1alpha1"
+	"github.com/napwake/napwake/internal/discovery"
 	"github.com/napwake/napwake/internal/gitops"
 )
 
@@ -380,7 +381,9 @@ func requestPause(ctx context.Context, c client.Client, w *v1alpha1.ManagedWorkl
 func pauseMessage(ref string, w *v1alpha1.ManagedWorkload, wait bool) string {
 	var msg string
 	switch {
-	case w.Spec.DryRun:
+	case discovery.PausingOff(w):
+		msg = "pausing is off for the whole cluster, so Napwake counts a would-be pause and leaves " + ref + " running"
+	case discovery.DryRun(w):
 		msg = ref + " is in dry-run, so Napwake counts a would-be pause and leaves it running"
 	case w.Status.Phase == v1alpha1.PhaseIdle:
 		msg = ref + " was idle; pausing it now"
@@ -487,7 +490,7 @@ func pauseAnswered(w *v1alpha1.ManagedWorkload, ref string, requested bool, out 
 	}
 	why := refusal("not paused", oneLine(c.Message))
 	switch c.Reason {
-	case reasonDryRun, reasonTurnedOffForTheCluster:
+	case reasonDryRun, discovery.ReasonTurnedOffForTheCluster:
 		_, _ = fmt.Fprintf(out, "%s wasn't paused: %s\n", ref, why)
 		return true, nil
 	case reasonScaledToZero:

@@ -75,15 +75,10 @@ const savedShareExpected = 0.5
 // one screen; -o json has them all.
 const recentLimit = 10
 
-// The operator puts the Pausing condition on every workload, False for this
-// reason, while pausing is off for the whole cluster, and status then says
-// so first.
-const (
-	conditionPausing             = "Pausing"
-	reasonTurnedOffForTheCluster = "TurnedOffForTheCluster"
-
-	pausingOffLine = "Pausing is off for the whole cluster (pausing.enabled: false); nothing pauses, and everything wakes."
-)
+// pausingOffLine is what status, and its page, say first while a workload
+// says pausing is off for the whole cluster.
+const pausingOffLine = "Pausing is off for the whole cluster (pausing.enabled: false); " +
+	"nothing pauses, and everything wakes."
 
 type statusOptions struct {
 	namespaces namespaceFlags
@@ -404,7 +399,7 @@ func clusterStatus(ctx context.Context, c client.Client, home string, opts statu
 		targets[client.ObjectKeyFromObject(w)] = w.Spec.Target.Name
 		row := workloadStatus(w, activeUntil[targetOfManaged(w)], now)
 		result.Workloads = append(result.Workloads, row)
-		result.PausingOff = result.PausingOff || pausingOff(w)
+		result.PausingOff = result.PausingOff || discovery.PausingOff(w)
 		problems := reviewGitOpsConflict(ctx, c, checker, w, problemsOf(w, now), now)
 		result.Problems = append(result.Problems, problems...)
 		if p := w.Status.Prediction; p != nil && p.TimeZone != "" && !slices.Contains(result.ForecastTimeZones, p.TimeZone) {
@@ -562,13 +557,6 @@ func targetActiveUntil(ctx context.Context, c client.Client, namespaces []string
 	return out, nil
 }
 
-// pausingOff reports whether the workload says the operator has pausing off
-// for the whole cluster.
-func pausingOff(w *v1alpha1.ManagedWorkload) bool {
-	c := meta.FindStatusCondition(w.Status.Conditions, conditionPausing)
-	return c != nil && c.Status == metav1.ConditionFalse && c.Reason == reasonTurnedOffForTheCluster
-}
-
 func mayPause(w *v1alpha1.ManagedWorkload) bool {
 	return w.Status.Phase == v1alpha1.PhaseRunning || w.Status.Phase == v1alpha1.PhaseIdle
 }
@@ -599,7 +587,7 @@ func workloadStatus(w *v1alpha1.ManagedWorkload, targetActiveUntil, now time.Tim
 		Name:           w.Name,
 		Target:         targetRef(w),
 		Phase:          w.Status.Phase,
-		DryRun:         w.Spec.DryRun,
+		DryRun:         discovery.DryRun(w),
 		Next:           nextFor(w, targetActiveUntil, now),
 		FreedThisMonth: discovery.FreedThisMonth(w, now),
 		SavedThisMonth: discovery.SavedThisMonth(w, now),
@@ -617,7 +605,7 @@ func workloadStatus(w *v1alpha1.ManagedWorkload, targetActiveUntil, now time.Tim
 			row.ForecastStartsActing = &starts
 		}
 	}
-	if d := w.Status.DryRun; w.Spec.DryRun && d != nil {
+	if d := w.Status.DryRun; discovery.DryRun(w) && d != nil {
 		wouldFree := dollarsIn(d.EstimatedFreed)
 		since := d.Since.UTC()
 		row.WouldFree, row.DryRunSince = &wouldFree, &since
@@ -708,7 +696,7 @@ func pausesNext(w *v1alpha1.ManagedWorkload, idle bool, now time.Time) string {
 	conditions := w.Status.Conditions
 	a := w.Status.Activity
 	verb := "pauses"
-	if w.Spec.DryRun {
+	if discovery.DryRun(w) {
 		verb = "would pause"
 	}
 	retryAt, heldByGitOps := gitOpsHold(w, now)
@@ -749,7 +737,7 @@ func pausesNext(w *v1alpha1.ManagedWorkload, idle bool, now time.Time) string {
 // has none.
 func gitOpsHold(w *v1alpha1.ManagedWorkload, now time.Time) (time.Time, bool) {
 	s := w.Status.LastScaledUp
-	if w.Spec.DryRun || s == nil || !meta.IsStatusConditionTrue(w.Status.Conditions, "GitOpsConflict") {
+	if discovery.DryRun(w) || s == nil || !meta.IsStatusConditionTrue(w.Status.Conditions, "GitOpsConflict") {
 		return time.Time{}, false
 	}
 	until := s.At.Add(gitops.RetryAfter)

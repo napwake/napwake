@@ -236,7 +236,7 @@ The operator restarts with [`--pausing=false`](/reference/configuration/#flag-pa
 | A workload whose idle clock runs out, or that's asked to pause | <Outcome state="awake">Stays up. Napwake measures it as in [dry-run](/guides/dry-run/#what-happens-in-dry-run) and counts the would-be pause, whatever its own `dryRun` says</Outcome> |
 | A workload paused or pausing | <Outcome state="waking">Wakes as the operator starts, with a `PausingOffWake` event</Outcome> |
 | Requests, activity, wake requests and `autoResume` | <Outcome state="waking">Still wake</Outcome> |
-| Each ManagedWorkload | `Pausing=False`, reason `TurnedOffForTheCluster`. `kubectl napwake status` says so on its first line |
+| Each ManagedWorkload | `Pausing=False`, reason `TurnedOffForTheCluster`. `kubectl napwake status` says so on its first line, and atop its `--html` page. It shows each workload in dry-run, as `kubectl napwake scan` does |
 | Events for what it holds back | Start with `[dry-run]`, as in dry-run |
 | `spec.dryRun` | Left as it is |
 
