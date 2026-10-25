@@ -19,6 +19,7 @@ package doorman
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"time"
 
@@ -37,11 +38,19 @@ import (
 const turnedAwayFlush = time.Minute
 
 // awayCount is what this replica turned away from one workload since its
-// last flush, during the pause that began at pausedAt.
+// last flush, during the pause that began at began. pausedAt, when it
+// scaled the workload to zero, is what a count is written under; a request
+// turned away while the workload was still pausing has none yet, and it's
+// filled in at the flush.
 type awayCount struct {
+	began    time.Time
 	pausedAt time.Time
 	requests int64
 }
+
+// errStillPausing keeps a count for the next flush: its pause has begun but
+// has no time to be written under yet.
+var errStillPausing = errors.New("the pause hasn't scaled the workload to zero yet")
 
 // turnedAway notes a request turned away from rt's workload. Requests from
 // an earlier pause not yet flushed are dropped: that pause is over.
@@ -49,11 +58,23 @@ func (s *Server) turnedAway(rt route) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	c := s.away[rt.workload]
-	if !c.pausedAt.Equal(rt.pausedAt) {
-		c = awayCount{pausedAt: rt.pausedAt}
+	if !c.began.Equal(routeBegan(rt)) {
+		c = awayCount{began: routeBegan(rt)}
+	}
+	if c.pausedAt.IsZero() {
+		c.pausedAt = rt.pausedAt
 	}
 	c.requests++
 	s.away[rt.workload] = c
+}
+
+// routeBegan names a route's pause by when it began, or, for one that
+// doesn't say, by when it scaled the workload to zero.
+func routeBegan(rt route) time.Time {
+	if !rt.began.IsZero() {
+		return rt.began
+	}
+	return rt.pausedAt
 }
 
 // watchTurnedAway flushes the requests turned away every turnedAwayFlush
@@ -80,11 +101,16 @@ func (s *Server) flushTurnedAway(ctx context.Context) {
 	s.mu.Unlock()
 	for key, c := range pending {
 		if err := s.addTurnedAway(ctx, key, c); err != nil {
-			log.FromContext(ctx).WithName("doorman").Error(err, "counting requests turned away",
-				"workload", key.Name, "namespace", key.Namespace)
+			if !errors.Is(err, errStillPausing) {
+				log.FromContext(ctx).WithName("doorman").Error(err, "counting requests turned away",
+					"workload", key.Name, "namespace", key.Namespace)
+			}
 			s.mu.Lock()
-			if now := s.away[key]; now.pausedAt.Equal(c.pausedAt) {
+			if now := s.away[key]; now.began.Equal(c.began) {
 				c.requests += now.requests
+				if c.pausedAt.IsZero() {
+					c.pausedAt = now.pausedAt
+				}
 			}
 			s.away[key] = c
 			s.mu.Unlock()
@@ -102,6 +128,16 @@ func (s *Server) addTurnedAway(ctx context.Context, key types.NamespacedName, c 
 		var w v1alpha1.ManagedWorkload
 		if err := s.client.Get(ctx, key, &w); err != nil {
 			return client.IgnoreNotFound(err)
+		}
+		// Turned away as the workload paused: counted under its pause's time
+		// once it has one; nothing, if the pause was called off.
+		if c.pausedAt.IsZero() {
+			if !pauseBegan(&w).Equal(c.began) {
+				return nil
+			}
+			if c.pausedAt = pausedAt(&w); c.pausedAt.IsZero() {
+				return errStillPausing
+			}
 		}
 		count, ok := withTurnedAway(w.Annotations[v1alpha1.AnnotationTurnedAway], c, pausedAt(&w))
 		if !ok {
