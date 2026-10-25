@@ -625,7 +625,7 @@ html:not(.js) th { position: static; }
           {{range $i, $f := .Figures}}<div class="slot s{{$i}}{{if eq $i $lead}} lead{{end}}"><div class="figure{{if not .Amount}} zero{{end}}"><b>{{.Value}}</b><span>{{.Label}}</span>{{if .Detail}}<small>{{.Detail}}</small>{{end}}</div>{{if and (eq $i 1) $.FreedThisMonth}}{{if or $.SavedThisMonth $.SavedMeasurable}}<div class="meter" hidden data-of="{{$.FreedThisMonth}}" data-part="{{$.SavedThisMonth}}" aria-hidden="true"><i></i></div>{{end}}<p class="meter-t">{{if not $.SavedThisMonth}}{{if $.SavedMeasurable}}None of the {{$freed}} freed has come off the bill yet.{{else}}Napwake can&#39;t tell here how much of the {{$freed}} freed came off the bill.{{end}}{{else if $.SavedMeasurable}}{{.Value}} of the {{$freed}} freed came off the bill.{{else}}At least {{.Value}} of the {{$freed}} freed came off the bill.{{end}}</p>{{end}}{{if eq $i 2}} <a class="dry-link" href="#managed">See the workloads</a>{{end}}</div>{{end}}
         </div>
         {{if .Attention}}
-        <a class="callout" href="#attention"><span class="door-g" aria-hidden="true"></span><span><b>Needs you:</b> {{len .Attention}} {{if eq (len .Attention) 1}}thing keeps{{else}}things keep{{end}} Napwake from doing its job. See what, and why.</span></a>
+        <a class="callout" href="#attention"><span class="door-g" aria-hidden="true"></span><span><b>Needs you:</b> {{len .Attention}} {{if eq (len .Attention) 1}}thing{{else}}things{{end}} to look at. See what, and why.</span></a>
         {{end}}
         {{if .Workloads}}<p class="lede">{{.Summary}}</p>{{end}}
         <div class="actions needs-js" role="group" aria-label="Share this page">
@@ -1427,13 +1427,40 @@ html:not(.js) th { position: static; }
       if (here) here.textContent = cur ? "\u00b7 " + cur.textContent : "";
       current = id;
     };
-    var seen = {};
-    var io = new IntersectionObserver(function (entries) {
-      entries.forEach(function (e) { seen[e.target.id] = e.isIntersecting; });
+    var seen = {}, pinned = null, unpin;
+    // At the foot of the page, the last sections never reach the band near
+    // the top that marks one, so the last section in view is marked there.
+    var atFoot = function () { return innerHeight + scrollY >= doc.documentElement.scrollHeight - 2; };
+    var lastInView = function () {
+      for (var i = links.length - 1; i >= 0; i--) {
+        var s = doc.getElementById(links[i].getAttribute("href").slice(1));
+        if (s && s.getBoundingClientRect().top < innerHeight) return s.id;
+      }
+      return null;
+    };
+    var update = function () {
+      if (pinned) { mark(pinned); return; }
+      if (atFoot()) { var last = lastInView(); if (last) { mark(last); return; } }
       for (var i = 0; i < links.length; i++) {
         var id = links[i].getAttribute("href").slice(1);
         if (seen[id]) { mark(id); return; }
       }
+    };
+    // A section picked from the bar stays marked while the page scrolls to
+    // it, wherever its heading comes to rest.
+    each(links, function (a) {
+      a.addEventListener("click", function () {
+        pinned = a.getAttribute("href").slice(1);
+        mark(pinned);
+        clearTimeout(unpin);
+        unpin = setTimeout(function () { pinned = null; }, 1500);
+      });
+    });
+    addEventListener("scrollend", function () { clearTimeout(unpin); pinned = null; });
+    addEventListener("scroll", function () { if (!pinned && atFoot()) update(); }, { passive: true });
+    var io = new IntersectionObserver(function (entries) {
+      entries.forEach(function (e) { seen[e.target.id] = e.isIntersecting; });
+      update();
     }, { rootMargin: "-60px 0px -55% 0px" });
     each($$(".toc a"), function (a) { var s = doc.getElementById(a.getAttribute("href").slice(1)); if (s) io.observe(s); });
   }

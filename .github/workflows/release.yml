@@ -310,8 +310,9 @@ jobs:
   # published archives, the files brew downloads, and pushed to the tap with
   # a fine-grained token that can write only to it. The release is out by
   # now, so a missing token or a failure here leaves the tap on the last
-  # release with a warning, and doesn't fail the run, whose success
-  # publishes the docs.
+  # release. That mustn't fail the run, whose success publishes the docs, so
+  # the job opens an issue saying so, which GitHub emails the repository's
+  # watchers about, and a run that then updates the tap closes it.
   homebrew:
     name: Homebrew formula
     needs: [release]
@@ -320,30 +321,26 @@ jobs:
     continue-on-error: true
     permissions:
       contents: read
+      issues: write # the issue that says the tap wasn't updated
     env:
       TAG: ${{ github.ref_name }}
+      ISSUE_TITLE: "Homebrew: kubectl-napwake ${{ github.ref_name }} isn't in the tap"
     steps:
       - name: Check for the tap's token
-        id: token
         env:
           TAP_TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN }}
         run: |
           if [ -z "$TAP_TOKEN" ]; then
-            echo "::warning title=Homebrew tap not updated::The HOMEBREW_TAP_TOKEN secret isn't set, so napwake/homebrew-tap stays on the last release. Add a fine-grained token with Contents read and write on that repository only, then re-run this job."
-            echo "present=false" >> "$GITHUB_OUTPUT"
-          else
-            echo "present=true" >> "$GITHUB_OUTPUT"
+            echo "::error title=Homebrew tap not updated::The HOMEBREW_TAP_TOKEN secret isn't set, so napwake/homebrew-tap stays on the last release. Add a fine-grained token with Contents read and write on that repository only, then re-run this job."
+            exit 1
           fi
 
-      - if: steps.token.outputs.present == 'true'
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-      - if: steps.token.outputs.present == 'true'
-        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
           go-version-file: go.mod
 
       - name: Write the formula from the release's archives
-        if: steps.token.outputs.present == 'true'
         env:
           GH_TOKEN: ${{ github.token }}
           REPOSITORY: ${{ github.repository }}
@@ -352,15 +349,13 @@ jobs:
             --pattern 'kubectl-napwake-darwin-*.tar.gz' --pattern 'kubectl-napwake-linux-*.tar.gz'
           go run ./hack/brewformula -tag "$TAG" -repo "$REPOSITORY" -dir release > kubectl-napwake.rb
 
-      - if: steps.token.outputs.present == 'true'
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           repository: ${{ github.repository_owner }}/homebrew-tap
           token: ${{ secrets.HOMEBREW_TAP_TOKEN }}
           path: tap
 
       - name: Push the formula to the tap
-        if: steps.token.outputs.present == 'true'
         working-directory: tap
         run: |
           # Until the first stable release, release candidates are brewed, so
@@ -382,3 +377,32 @@ jobs:
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git commit -m "kubectl-napwake ${TAG#v}"
           git push
+
+      # One open issue per release: a re-run that fails again comments on it.
+      - name: Open an issue when the tap isn't updated
+        if: failure()
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          body="The release's Homebrew job failed, so \`brew install napwake/tap/kubectl-napwake\` still installs the last release: $RUN_URL
+
+          Check the \`HOMEBREW_TAP_TOKEN\` secret: a fine-grained token owned by ${GITHUB_REPOSITORY_OWNER}, with Contents read and write on ${GITHUB_REPOSITORY_OWNER}/homebrew-tap only. Then re-run the failed job: \`gh run rerun ${GITHUB_RUN_ID} --failed\`. A run that updates the tap closes this issue."
+          open=$(gh issue list --repo "$GITHUB_REPOSITORY" --state open --search "in:title \"$ISSUE_TITLE\"" \
+            --json number,title --jq "map(select(.title == \"$ISSUE_TITLE\"))[0].number // empty")
+          if [ -n "$open" ]; then
+            gh issue comment "$open" --repo "$GITHUB_REPOSITORY" --body "$body"
+          else
+            gh issue create --repo "$GITHUB_REPOSITORY" --title "$ISSUE_TITLE" --body "$body"
+          fi
+
+      - name: Close the issue once the tap is updated
+        if: success()
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh issue list --repo "$GITHUB_REPOSITORY" --state open --search "in:title \"$ISSUE_TITLE\"" \
+            --json number,title --jq "map(select(.title == \"$ISSUE_TITLE\")) | .[].number" |
+            while read -r n; do
+              gh issue close "$n" --repo "$GITHUB_REPOSITORY" --comment "The tap has kubectl-napwake ${TAG#v} now."
+            done

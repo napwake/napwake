@@ -513,7 +513,7 @@ func headlineFor(result scanResult) (headline, []fact) {
 	var h headline
 	if live {
 		h.Figures = append(h.Figures, figure{Value: dollars(t.FreedThisMonth), Label: "freed by Napwake this month",
-			Detail: fmt.Sprintf("so far, pausing %s; %s of it saved as nodes scaled down", freedBy(t),
+			Detail: fmt.Sprintf("from %s; %s of it saved as nodes scaled down", freedBy(t),
 				dollars(t.SavedThisMonth)), Kind: figureFreed, Amount: t.FreedThisMonth})
 	}
 	if f, shortHistory, ok := couldFree(result, live); ok {
@@ -527,6 +527,15 @@ func headlineFor(result scanResult) (headline, []fact) {
 	if t.Idle > 0 {
 		idle.Label = fmt.Sprintf("idle right now, reserving %s and %s of memory",
 			vcpu(t.IdleCPUMillis), gib(t.IdleMemoryBytes))
+	}
+	switch {
+	case t.IdleNeverPaused == 0:
+	case t.IdleNeverPaused == t.Idle && t.Idle == 1:
+		idle.Label += "; Napwake never pauses it"
+	case t.IdleNeverPaused == t.Idle:
+		idle.Label += "; Napwake never pauses them"
+	default:
+		idle.Label += fmt.Sprintf("; Napwake never pauses %s of them", number(t.IdleNeverPaused))
 	}
 	cost := fact{Value: dollars(t.MonthlyCost), Label: "a month, what these workloads cost while running"}
 	facts := []fact{cost, idle}
@@ -568,20 +577,20 @@ func freedBy(t discovery.Totals) string {
 	var by string
 	switch {
 	case t.Live > 0:
-		by = countOf(t.Live, "live workload")
+		by = "the " + countOf(t.Live, "live workload") + " it pauses"
 	case anyMoney(freed) && t.DryRun > 0:
-		by = "workloads before they went back to dry-run"
+		by = "workloads it paused before they went back to dry-run"
 	case anyMoney(freed):
-		by = "workloads"
+		by = "workloads it paused"
 	}
 	switch {
 	case !anyMoney(t.ProtectedFreedThisMonth):
 	case by == "":
-		by = "workloads before they were protected"
+		by = "workloads it paused before they were protected"
 	default:
-		by += " and others before they were protected"
+		by += " and others it paused before they were protected"
 	}
-	return cmp.Or(by, "workloads")
+	return cmp.Or(by, "workloads it paused")
 }
 
 // couldFree is the headline's figure for what pausing could free a month:
@@ -592,6 +601,7 @@ func freedBy(t discovery.Totals) string {
 // detail, and that caveat comes back as a sentence of its own too.
 func couldFree(result scanResult, live bool) (f figure, shortHistory string, ok bool) {
 	t, r := result.Totals, result.Totals.Replayed
+	pausable, idleHourly, idleMonthly := t.IdlePausable()
 	short := tooLittleHistory(result.History)
 	var onlyHas, tooEarly string
 	if short {
@@ -622,17 +632,19 @@ func couldFree(result scanResult, live bool) (f figure, shortHistory string, ok 
 			f.Detail = steadier
 		}
 		return f, shortHistory, true
-	case t.Idle > 0 && (r.Workloads == 0 || short):
+	case pausable > 0 && (r.Workloads == 0 || short):
 		// A whole window replayed in which nothing would have slept says
 		// more than one moment's idleness, so this is only for without one.
-		costs := "cost"
-		if t.Idle == 1 {
-			costs = "costs"
+		// What Napwake never pauses isn't something pausing can free.
+		costs := costsFor(pausable)
+		which := "idle right now"
+		if pausable < t.Idle {
+			which = "idle right now that Napwake would pause"
 		}
-		f = figure{Value: dollars(t.IdleMonthlyCost), Label: "could be freed a month, at most",
-			Detail: fmt.Sprintf("what the %s idle right now %s while running, %s an hour",
-				countOf(t.Idle, "workload"), costs, cents(t.IdleHourlyCost)), Kind: figureCouldFree,
-			Amount: t.IdleMonthlyCost}
+		f = figure{Value: dollars(idleMonthly), Label: "could be freed a month, at most",
+			Detail: fmt.Sprintf("what the %s %s %s while running, %s an hour",
+				countOf(pausable, "workload"), which, costs, cents(idleHourly)), Kind: figureCouldFree,
+			Amount: idleMonthly}
 		if short {
 			f.Detail += "; " + tooEarly
 			shortHistory = onlyHas + "."
@@ -642,7 +654,7 @@ func couldFree(result scanResult, live bool) (f figure, shortHistory string, ok 
 		return figure{}, "", false
 	}
 	f = figure{Value: dollars(0), Label: "could be freed a month",
-		Detail: "nothing is idle right now; Prometheus history, or measuring in dry-run, shows how often workloads are",
+		Detail: nothingIdle(t) + "; Prometheus history, or measuring in dry-run, shows how often workloads are",
 		Kind:   figureCouldFree}
 	switch {
 	case short:
@@ -651,6 +663,15 @@ func couldFree(result scanResult, live bool) (f figure, shortHistory string, ok 
 		f.Detail = "no unmanaged workload would have slept over " + replayedOver(result.History)
 	}
 	return f, shortHistory, true
+}
+
+// nothingIdle says nothing pausing could free is idle: nothing is idle, or
+// only what Napwake never pauses.
+func nothingIdle(t discovery.Totals) string {
+	if t.Idle > 0 {
+		return "nothing Napwake would pause is idle right now"
+	}
+	return "nothing is idle right now"
 }
 
 // tooLittleHistory says the replay had less than a day of history, short

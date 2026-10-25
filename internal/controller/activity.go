@@ -703,8 +703,9 @@ func (r *Reconciler) reportEmptyQueries(workload *v1alpha1.ManagedWorkload) {
 		return
 	}
 	began := !meta.IsStatusConditionTrue(workload.Status.Conditions, conditionPrometheusQueryEmpty)
-	msg := fmt.Sprintf("Prometheus activity queries have matched no series since they were first evaluated: %s; "+
-		"check their metric and label names in Prometheus, since until a query matches, it can't keep the workload awake",
+	msg := fmt.Sprintf("Prometheus activity queries have matched no series since they were first evaluated: %s. "+
+		"Either a metric or label name is wrong, or nothing has made the series yet, as with a request counter "+
+		"before the first request; check them in Prometheus. Until a query matches, it can't keep the workload awake",
 		strings.Join(quoted(empty), ", "))
 	r.setCondition(workload, conditionPrometheusQueryEmpty, metav1.ConditionTrue, "NoSeries", msg)
 	if began {

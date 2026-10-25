@@ -766,7 +766,7 @@ func TestWriteScan_FreedAndSavedThisMonth(t *testing.T) {
 	require.NoError(t, writeScan(&out, historyResult(), scanOptions{output: "table"}))
 
 	got := out.String()
-	assert.Contains(t, got, "Napwake has freed $4 this month pausing 1 live workload, and saved $1 of it.")
+	assert.Contains(t, got, "Napwake has freed $4 this month from the 1 live workload it pauses, and saved $1 of it.")
 	assert.Regexp(t, `FREED THIS MONTH\s+SAVED\s+COULD SLEEP`, got)
 	assert.Regexp(t, `preview-3\s+deployment/web\s+paused \(live\)\s+paused 3h ago\s+\$48\s+\$4\s+\$1\s+-\s+-\s+-`,
 		got, "a live workload's freed and saved are in their columns, with nothing estimated")
@@ -825,7 +825,7 @@ func TestCLI_ScanAndStatusAgreeOnMoney(t *testing.T) {
 	status, err := runCLI(t, newStatusClient(t, interceptor.Funcs{}, objs...), "status", "-n", "orders")
 	require.NoError(t, err, status)
 
-	assert.Contains(t, scan, "Napwake has freed <$1 this month pausing 1 live workload, and saved $0 of it.\n"+
+	assert.Contains(t, scan, "Napwake has freed <$1 this month from the 1 live workload it pauses, and saved $0 of it.\n"+
 		"  1 more live workload is protected, so Napwake never pauses it.\n")
 	assert.Regexp(t, `orders\s+deployment/api\s+paused \(live\)\s+.*\s<\$1\s+\$0\s`, scan)
 	assert.Contains(t, status, "Freed <$1 this month, and saved $0 of it.")
@@ -854,7 +854,7 @@ func TestWriteScan_FreedBeforeProtected(t *testing.T) {
 	h, _ := headlineFor(result)
 	require.NotEmpty(t, h.Figures)
 	assert.Equal(t, "$12", h.Figures[0].Value)
-	assert.Equal(t, "so far, pausing workloads before they were protected; $5 of it saved as nodes scaled down",
+	assert.Equal(t, "from workloads it paused before they were protected; $5 of it saved as nodes scaled down",
 		h.Figures[0].Detail)
 
 	result.Workloads = append(result.Workloads, Workload{Namespace: "orders", Kind: "Deployment", Name: "api",
@@ -862,12 +862,14 @@ func TestWriteScan_FreedBeforeProtected(t *testing.T) {
 	result.Totals.Live, result.Totals.FreedThisMonth, result.Totals.SavedThisMonth = 1, 15, 6
 	out.Reset()
 	require.NoError(t, writeScan(&out, result, scanOptions{output: "table"}))
-	assert.Contains(t, out.String(), "  Napwake has freed $3 this month pausing 1 live workload, and saved $1 of it.\n"+
+	assert.Contains(t, out.String(), "  Napwake has freed $3 this month from the 1 live workload it pauses, "+
+		"and saved $1 of it.\n"+
 		"  1 more live workload is protected, so Napwake never pauses it; it freed $12 this month before it was, "+
 		"and saved $5 of that.\n")
 	h, _ = headlineFor(result)
 	assert.Equal(t, "$15", h.Figures[0].Value)
-	assert.Equal(t, "so far, pausing 1 live workload and others before they were protected; $6 of it saved as "+
+	assert.Equal(t, "from the 1 live workload it pauses and others it paused before they were protected; "+
+		"$6 of it saved as "+
 		"nodes scaled down", h.Figures[0].Detail)
 }
 
@@ -1364,4 +1366,37 @@ func TestEmptyCluster(t *testing.T) {
 
 	result.Notes = []string{"your access doesn't allow reading workloads in 3 namespaces"}
 	assert.Contains(t, renderHTML(t, result), "the notes say what it couldn&#39;t")
+}
+
+// neverPausedIdle is a cluster whose only idle workload is one Napwake never
+// pauses, small and live, with the rest already managed: as the test
+// cluster's reports StatefulSet was.
+func neverPausedIdle() scanResult {
+	reports := discovery.Workload{Namespace: "reports", Kind: v1alpha1.TargetKindStatefulSet, Name: "reports",
+		Replicas: 1, State: discovery.StateIdle, Managed: true, WontPause: "PVCs deleted on scale-down",
+		PodCPURequestMillis: 20, PodMemoryRequestBytes: 32 << 20, HourlyCost: 0.001, MonthlyCost: 0.73}
+	api := discovery.Workload{Namespace: "orders", Kind: v1alpha1.TargetKindDeployment, Name: "api",
+		Replicas: 1, State: discovery.StateActive, Managed: true, HourlyCost: 0.002, MonthlyCost: 1.46}
+	return scanResult{Context: "napwake", Cluster: "napwake", ClusterReport: &discovery.ClusterReport{
+		Mode: discovery.ModeSnapshot, Namespaces: 2, Workloads: []discovery.Workload{reports, api},
+		Totals: discovery.Totals{Workloads: 2, Live: 1, LiveProtected: 1, Idle: 1, IdleNeverPaused: 1,
+			IdleCPUMillis: 20, IdleMemoryBytes: 32 << 20, IdleHourlyCost: 0.001, IdleMonthlyCost: 0.73,
+			IdleNeverPausedHourlyCost: 0.001, IdleNeverPausedMonthlyCost: 0.73, MonthlyCost: 2.19},
+	}}
+}
+
+// What's idle but never paused frees nothing (P50); a small reservation
+// isn't shown as none (P51); and with nothing left to opt in, the scan
+// doesn't point at next steps below that aren't there (P53).
+func TestWriteTable_IdleNapwakeNeverPauses(t *testing.T) {
+	var out bytes.Buffer
+
+	require.NoError(t, writeScan(&out, neverPausedIdle(), scanOptions{output: "table", limit: 25}))
+
+	got := out.String()
+	assert.Contains(t, got, "1 workload is idle right now, reserving 0.02 vCPU and 0.03 GiB of memory.")
+	assert.Contains(t, got, "Napwake never pauses it, so its idling frees nothing.")
+	assert.NotContains(t, got, "each hour asleep frees that")
+	assert.NotContains(t, got, "depends on how often they'd be woken", "nothing is left to opt in")
+	assert.NotContains(t, got, "below")
 }

@@ -25,6 +25,7 @@ import (
 	"path/filepath"
 	"regexp"
 	"runtime"
+	"strings"
 	"testing"
 	"time"
 
@@ -105,7 +106,7 @@ func TestWriteHTML_History(t *testing.T) {
 		"and CPU at the time of the scan.", "which Prometheus the history is from")
 	assert.Contains(t, got, "Costs use assumed list prices: $0.031 per vCPU-hour and $0.004 per GiB-hour of memory")
 	assert.Contains(t, got, `<div class="figure"><b>$4</b><span>freed by Napwake this month</span>`+
-		`<small>so far, pausing 1 live workload; $1 of it saved as nodes scaled down</small></div>`)
+		`<small>from the 1 live workload it pauses; $1 of it saved as nodes scaled down</small></div>`)
 	assert.Contains(t, got, `<p class="prices">won&#39;t drop until something removes nodes, and no node autoscaler `+
 		`was found. <a href="https://docs.napwake.dev/guides/cluster-autoscaler/">How to fix it</a></p>`)
 	assert.Contains(t, got, `<div class="figure"><b>$179</b><span>could be freed a month</span>`+
@@ -352,7 +353,7 @@ func TestHeadlineFor_LiveProtected(t *testing.T) {
 	h, facts := headlineFor(result)
 
 	assert.Equal(t, "<$1", h.Figures[0].Value)
-	assert.Equal(t, "so far, pausing 1 live workload; $0 of it saved as nodes scaled down", h.Figures[0].Detail)
+	assert.Equal(t, "from the 1 live workload it pauses; $0 of it saved as nodes scaled down", h.Figures[0].Detail)
 	assert.Equal(t, fact{Value: "2 of 3", Label: "managed by Napwake: 1 live, 0 in dry-run, 1 live but protected, " +
 		"so never paused"}, facts[len(facts)-1])
 }
@@ -633,4 +634,21 @@ func TestRoundedDuration(t *testing.T) {
 	for in, want := range tests {
 		assert.Equal(t, want, roundedDuration(in), in.String())
 	}
+}
+
+// The page doesn't offer what's idle but never paused as something still to
+// free, and says why it's idle anyway (P50, P51).
+func TestBuildReport_IdleNapwakeNeverPauses(t *testing.T) {
+	page := buildReport(neverPausedIdle(), time.Hour)
+
+	for _, f := range page.Headline.Figures {
+		assert.NotEqual(t, figureCouldFree, f.Kind, "pausing can't free what Napwake never pauses: %+v", f)
+	}
+	var idle string
+	for _, f := range page.Facts {
+		if strings.HasPrefix(f.Label, "idle right now") {
+			idle = f.Value + " " + f.Label
+		}
+	}
+	assert.Equal(t, "1 idle right now, reserving 0.02 vCPU and 0.03 GiB of memory; Napwake never pauses it", idle)
 }

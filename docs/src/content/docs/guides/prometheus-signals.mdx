@@ -70,8 +70,7 @@ The operator restarts with it. From the manifests, `--prometheus-url` is the ope
 The operator runs with your URL. This prints it:
 
 ```bash
-kubectl get deployment napwake-controller-manager \
-  -n napwake-system -o yaml | grep prometheus-url
+kubectl get deployments -n napwake-system -o yaml | grep -- '- --prometheus-url'
 ```
 </StartCheckpoint>
 
