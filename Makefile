@@ -402,9 +402,10 @@ lint-config: golangci-lint ## Verify golangci-lint linter configuration
 # The docs' pages, which Starlight reads from its content folder.
 DOCS_PAGES = docs/src/content/docs
 
-# The docs that name the current release, for installing or verifying it.
-# The upgrade guide isn't one: its versions are history.
-VERSIONED_DOCS = README.md $(DOCS_PAGES)/getting-started/installation.mdx $(DOCS_PAGES)/getting-started/kubectl-plugin.mdx \
+# The docs that name the current release, for installing or verifying it,
+# the chart's README, which Artifact Hub shows, among them. The upgrade
+# guide isn't one: its versions are history.
+VERSIONED_DOCS = README.md charts/napwake/README.md $(DOCS_PAGES)/getting-started/installation.mdx $(DOCS_PAGES)/getting-started/kubectl-plugin.mdx \
 	$(DOCS_PAGES)/operations/monitoring.mdx $(DOCS_PAGES)/reference/helm-values.mdx $(DOCS_PAGES)/reference/security.mdx
 
 # Every file bump writes, which release commits. A file bump writes that

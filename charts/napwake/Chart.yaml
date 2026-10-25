@@ -1,11 +1,12 @@
 apiVersion: v2
 name: napwake
-description: Kubernetes operator that pauses idle workloads and wakes them when used — idle detection, wake on request, forecasting, and cost tracking.
+description: Pauses idle Kubernetes workloads in staging, preview and dev, and wakes them on the first request.
 type: application
 version: 0.2.0
 appVersion: "v0.2.0"
 kubeVersion: ">=1.30.0-0"
 home: https://napwake.dev
+icon: https://raw.githubusercontent.com/napwake/brand/main/logo/symbol.svg
 sources:
   - https://github.com/napwake/napwake
 maintainers:
