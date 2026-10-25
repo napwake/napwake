@@ -249,6 +249,33 @@ func TestPausingOff(t *testing.T) {
 		assert.Nil(t, w.Status.DryRun, "nor that it's measured")
 	})
 
+	t.Run("a wrong-pause back-off carries through pausing off and back on", func(t *testing.T) {
+		key := env.create(t, "backed-off", nil)
+		w := env.workload(t, key)
+		w.Status.IdleWait = &v1alpha1.IdleWaitStatus{WrongPauses: 2}
+		w.Status.Conditions = []metav1.Condition{{Type: conditionPausedWhileInUse, Status: metav1.ConditionTrue,
+			Reason: reasonWokenSoonAfterPause, Message: "a request came 1 minute after it paused",
+			LastTransitionTime: metav1.Now()}}
+		require.NoError(t, env.admin.Status().Update(env.ctx, w))
+		clock := time.Now()
+		off := env.reconciler(t, true, func() time.Time { return clock })
+
+		env.watch(t, off, key, &clock, 10, v1alpha1.PhaseIdle)
+
+		measured := env.workload(t, key)
+		assert.Equal(t, v1alpha1.PhaseIdle, measured.Status.Phase, "a would-be pause waits idleAfter alone")
+		require.NotNil(t, measured.Status.IdleWait)
+		assert.Equal(t, int32(2), measured.Status.IdleWait.WrongPauses, "pausing off keeps the back-off")
+		assert.True(t, meta.IsStatusConditionTrue(measured.Status.Conditions, conditionPausedWhileInUse))
+
+		on := env.reconciler(t, false, func() time.Time { return clock })
+		env.watch(t, on, key, &clock, 15, v1alpha1.PhasePaused)
+		require.Equal(t, v1alpha1.PhaseRunning, env.workload(t, key).Status.Phase,
+			"back on, it waits the back-off's 20 minutes, not idleAfter's 5")
+		env.watch(t, on, key, &clock, 10, v1alpha1.PhasePaused)
+		assert.Equal(t, v1alpha1.PhasePaused, env.workload(t, key).Status.Phase)
+	})
+
 	t.Run("a pause request is answered as dry-run answers it, naming the switch", func(t *testing.T) {
 		key := env.create(t, "requested", func(w *v1alpha1.ManagedWorkload) { withPauseRequested(w) })
 		r := env.reconciler(t, true, time.Now)

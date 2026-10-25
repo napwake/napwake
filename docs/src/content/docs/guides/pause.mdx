@@ -240,7 +240,7 @@ The operator restarts with [`--pausing=false`](/reference/configuration/#flag-pa
 | Events for what it holds back | Start with `[dry-run]`, as in dry-run |
 | `spec.dryRun` | Left as it is |
 
-Set `pausing.enabled` back to `true` the same way to pause again. The condition goes. The operator restarts, so each idle clock starts afresh, and the first pauses come an `idleAfter` later.
+Set `pausing.enabled` back to `true` the same way to pause again. The condition goes. The operator restarts, so each idle clock starts afresh, and the first pauses come an `idleAfter` later. A workload [paused while in use](/concepts/idle-detection/#paused-while-in-use) before still waits longer, since pausing off keeps its back-off.
 
 To wake everything paused at once, without changing the release, ask each ManagedWorkload for a [wake](#wake-now):
 

@@ -27,9 +27,10 @@ import (
 )
 
 // dryRun reports whether the workload is measured rather than paused: its
-// own spec.dryRun, or pausing off for the whole cluster. Every decision
-// dry-run changes asks it, never spec.dryRun, and the switch is never
-// written to the workload, whose spec the reconciler writes back.
+// own spec.dryRun, or pausing off for this install. Every decision dry-run
+// changes asks it rather than spec.dryRun, but for ending the back-off of
+// wrong pauses, which only a workload's own dry-run does. The switch is
+// never written to the workload, whose spec the reconciler writes back.
 func (r *Reconciler) dryRun(workload *v1alpha1.ManagedWorkload) bool {
 	return workload.Spec.DryRun || r.PausingOff
 }
