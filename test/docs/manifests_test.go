@@ -324,7 +324,10 @@ func docsPages(t *testing.T) []string {
 
 func markdownManifests(t *testing.T) []manifest {
 	t.Helper()
-	files := append([]string{filepath.Join(repoRoot, "README.md")}, docsPages(t)...)
+	files := append([]string{
+		filepath.Join(repoRoot, "README.md"),
+		filepath.Join(repoRoot, "charts", "napwake", "README.md"),
+	}, docsPages(t)...)
 
 	out := make([]manifest, 0, len(files))
 	for _, file := range files {

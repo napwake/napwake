@@ -50,14 +50,7 @@ func TestInstallSmokeRunsTheDocsCommands(t *testing.T) {
 		{"reference/security.mdx", "cosign verify ghcr.io/napwake/charts/napwake"},
 		{"reference/security.mdx", "cosign verify-blob checksums.txt"},
 	} {
-		data, err := os.ReadFile(filepath.Join(repoRoot, contentDir, c.page))
-		require.NoError(t, err)
-		var found []string
-		for _, b := range shellBlocks(string(data)) {
-			if strings.Contains(b, c.command) {
-				found = append(found, b)
-			}
-		}
+		found := blocksRunning(t, filepath.Join(contentDir, c.page), c.command)
 		require.Len(t, found, 1, "one block on %s runs %q", c.page, c.command)
 		for line := range strings.SplitSeq(found[0], "\n") {
 			line = strings.TrimSpace(line)
@@ -68,6 +61,31 @@ func TestInstallSmokeRunsTheDocsCommands(t *testing.T) {
 			assert.True(t, lines[line], "install-smoke.yml doesn't run %s's line %q", c.page, line)
 		}
 	}
+}
+
+// Artifact Hub shows the chart's README, so its install command is the
+// installation page's, the one the install smoke test runs.
+func TestChartREADMEInstallsAsTheDocsDo(t *testing.T) {
+	const command = "helm install napwake oci://"
+	docs := blocksRunning(t, filepath.Join(contentDir, "getting-started", "installation.mdx"), command)
+	require.Len(t, docs, 1, "one block on the installation page runs %q", command)
+	assert.Equal(t, docs, blocksRunning(t, filepath.Join("charts", "napwake", "README.md"), command),
+		"the chart's README doesn't install as the installation page does")
+}
+
+// blocksRunning returns the shell blocks of a file, named from the repo's
+// root, that run a command.
+func blocksRunning(t *testing.T, file, command string) []string {
+	t.Helper()
+	data, err := os.ReadFile(filepath.Join(repoRoot, file))
+	require.NoError(t, err)
+	var found []string
+	for _, b := range shellBlocks(string(data)) {
+		if strings.Contains(b, command) {
+			found = append(found, b)
+		}
+	}
+	return found
 }
 
 var chartVersionLine = regexp.MustCompile(`(?m)^version: (\S+)$`)

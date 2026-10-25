@@ -99,6 +99,8 @@ cosign verify-attestation $IMAGE --type spdxjson \
 gh attestation verify oci://$IMAGE --repo napwake/napwake
 ```
 
+`gh attestation verify` needs the GitHub CLI signed in (`gh auth login`). The cosign checks need nothing.
+
 </TabItem>
 <TabItem label="Helm chart">
 
@@ -120,6 +122,8 @@ cosign verify-blob checksums.txt --bundle checksums.txt.sigstore.json \
 sha256sum --check --ignore-missing checksums.txt
 gh attestation verify kubectl-napwake-linux-amd64.tar.gz --repo napwake/napwake
 ```
+
+`gh attestation verify` needs the GitHub CLI signed in (`gh auth login`). The cosign checks need nothing.
 
 </TabItem>
 </Tabs>
