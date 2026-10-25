@@ -1,0 +1,6 @@
+# Artifact Hub's metadata for oci://ghcr.io/napwake/charts/napwake. The
+# release workflow pushes it to the chart's artifacthub.io tag, where
+# Artifact Hub looks for it, so it isn't packaged in the chart. Artifact
+# Hub gave the repository this ID, and finding it there earns the chart's
+# page the Verified publisher label.
+repositoryID: 245dd5d4-1521-43f6-9bb3-28b2710b8799
