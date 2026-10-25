@@ -5,7 +5,7 @@ type: application
 version: 0.2.0
 appVersion: "v0.2.0"
 kubeVersion: ">=1.30.0-0"
-home: https://github.com/napwake/napwake
+home: https://napwake.dev
 sources:
   - https://github.com/napwake/napwake
 maintainers:
@@ -17,3 +17,26 @@ keywords:
   - scaling
   - cost-optimization
   - lifecycle
+# Artifact Hub reads these. make bump keeps the image's tag and prerelease
+# with the chart's version, and verify-version holds them to it.
+annotations:
+  artifacthub.io/license: Apache-2.0
+  artifacthub.io/operator: "true"
+  artifacthub.io/prerelease: "false"
+  artifacthub.io/images: |
+    - name: napwake
+      image: ghcr.io/napwake/napwake:v0.2.0
+      platforms:
+        - linux/amd64
+        - linux/arm64
+  artifacthub.io/crds: |
+    - kind: ManagedWorkload
+      version: v1alpha1
+      name: managedworkloads.napwake.dev
+      displayName: ManagedWorkload
+      description: One workload Napwake manages, its settings, and what Napwake is doing with it.
+  artifacthub.io/links: |
+    - name: Documentation
+      url: https://docs.napwake.dev
+    - name: Questions
+      url: https://github.com/napwake/napwake/discussions
