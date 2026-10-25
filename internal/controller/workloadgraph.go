@@ -39,7 +39,9 @@ type workloadNode struct {
 	phase   v1alpha1.WorkloadPhase
 	// acts is actsOnTarget: one that doesn't neither holds its
 	// dependencies awake nor pauses to let them go.
-	acts   bool
+	acts bool
+	// dryRun is whether it's measured rather than paused, as the
+	// Reconciler's dryRun has it.
 	dryRun bool
 	// dependsOn are those its dependsOn declares, and waitsFor those of
 	// them it waits to be Ready.
@@ -49,9 +51,9 @@ type workloadNode struct {
 	dependencies []workloadID
 }
 
-func newWorkloadNode(w *v1alpha1.ManagedWorkload) *workloadNode {
+func newWorkloadNode(w *v1alpha1.ManagedWorkload, dryRun bool) *workloadNode {
 	n := &workloadNode{key: client.ObjectKeyFromObject(w), uid: w.UID, created: w.CreationTimestamp,
-		target: targetID(w), phase: w.Status.Phase, acts: actsOnTarget(w), dryRun: w.Spec.DryRun}
+		target: targetID(w), phase: w.Status.Phase, acts: actsOnTarget(w), dryRun: dryRun}
 	for _, ref := range w.Spec.DependsOn {
 		id := dependencyID(w, ref)
 		n.dependsOn = append(n.dependsOn, id)
@@ -65,6 +67,12 @@ func newWorkloadNode(w *v1alpha1.ManagedWorkload) *workloadNode {
 		n.dependencies = append(n.dependencies, dependencyID(w, ref))
 	}
 	return n
+}
+
+// node is what the dependency graph keeps of w, measured rather than
+// paused when r measures it.
+func (r *Reconciler) node(w *v1alpha1.ManagedWorkload) *workloadNode {
+	return newWorkloadNode(w, r.dryRun(w))
 }
 
 func declaredEdges(n *workloadNode) []workloadID     { return n.dependsOn }
@@ -97,22 +105,21 @@ func newWorkloadGraph() *workloadGraph {
 	}
 }
 
-// workloadGraphOf is a graph of the workloads given.
-func workloadGraphOf(workloads []v1alpha1.ManagedWorkload) *workloadGraph {
+// workloadGraphOf is a graph of the workloads given, as r sees them.
+func (r *Reconciler) workloadGraphOf(workloads []v1alpha1.ManagedWorkload) *workloadGraph {
 	g := newWorkloadGraph()
 	for i := range workloads {
-		g.set(&workloads[i])
+		g.set(r.node(&workloads[i]))
 	}
 	return g
 }
 
-// set adds the workload to the graph, or replaces what the graph has of it.
-// A Reconciler not set up with a manager has no graph to keep.
-func (g *workloadGraph) set(w *v1alpha1.ManagedWorkload) {
+// set adds the node's workload to the graph, or replaces what the graph has
+// of it. A Reconciler not set up with a manager has no graph to keep.
+func (g *workloadGraph) set(n *workloadNode) {
 	if g == nil {
 		return
 	}
-	n := newWorkloadNode(w)
 	g.mu.Lock()
 	defer g.mu.Unlock()
 	if old, ok := g.nodes[n.uid]; ok {

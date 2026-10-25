@@ -231,8 +231,9 @@ func (r *Reconciler) reconcileAutomation(ctx context.Context, workload *v1alpha1
 		return nil, err
 	}
 	switch {
-	case workload.Spec.DryRun:
-		r.endBackOff(workload, reasonDryRun)
+	case r.dryRun(workload):
+		reason, _ := r.whyMeasured()
+		r.endBackOff(workload, reason)
 	case workload.Spec.IdlePolicy == nil:
 		r.endBackOff(workload, reasonNoIdlePolicy)
 	}
@@ -266,7 +267,7 @@ func (r *Reconciler) reconcileAutomation(ctx context.Context, workload *v1alpha1
 
 	// Under dry-run, Idle is a would-be pause being measured, which a pause
 	// request begins whatever the idle policy, and only activity ends.
-	measuring := workload.Spec.DryRun && phase == v1alpha1.PhaseIdle
+	measuring := r.dryRun(workload) && phase == v1alpha1.PhaseIdle
 	if workload.Spec.IdlePolicy == nil && !measuring {
 		r.clearIdleVeto(workload)
 		if phase == v1alpha1.PhaseIdle {

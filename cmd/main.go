@@ -173,6 +173,10 @@ func main() {
 			"label, unless annotated otherwise.")
 	flag.BoolVar(&optIn.DryRun, "default-dry-run", optIn.DryRun,
 		"Measure workloads opted in with the label without pausing them, unless annotated otherwise.")
+	pausing := true
+	flag.BoolVar(&pausing, "pausing", pausing,
+		"Pause idle workloads. False stops every pause in the cluster at once: each workload is measured as in "+
+			"dry-run, whatever it sets, and those paused are woken.")
 	flag.BoolVar(&optIn.PauseEarly, "default-pause-early", optIn.PauseEarly,
 		"Let a confident forecast that expects quiet hours pause workloads opted in with the label before their "+
 			"idleAfter runs out, unless annotated otherwise.")
@@ -361,6 +365,7 @@ func main() {
 			MaxConcurrentReconciles:  maxConcurrentReconciles,
 			Savings:                  savings,
 			Timezone:                 location,
+			PausingOff:               !pausing,
 		}).SetupWithManager(mgr); err != nil {
 			setupLog.Error(err, "unable to create controller", "controller", "ManagedWorkload")
 			os.Exit(1)
