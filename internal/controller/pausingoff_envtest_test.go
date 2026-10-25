@@ -19,7 +19,9 @@ package controller
 import (
 	"bytes"
 	"context"
+	"errors"
 	"fmt"
+	"slices"
 	"sync"
 	"testing"
 	"time"
@@ -30,6 +32,7 @@ import (
 	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
+	"k8s.io/apimachinery/pkg/watch"
 	"k8s.io/client-go/rest"
 	"k8s.io/client-go/tools/events"
 	"k8s.io/utils/ptr"
@@ -141,6 +144,22 @@ func (e *switchEnv) watchDryRun(c client.WithWatch) client.WithWatch {
 			return c.SubResource(sub).Patch(ctx, obj, p, opts...)
 		},
 	})
+}
+
+// written is how many writes of ManagedWorkloads the env's reconcilers have
+// made, and those of them that carried spec.dryRun.
+func (e *switchEnv) written() (int, []string) {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	return e.writes, slices.Clone(e.dryRunWrites)
+}
+
+// watchless is a client that doesn't watch, such as a manager's, for
+// watchDryRun to wrap.
+type watchless struct{ client.Client }
+
+func (watchless) Watch(context.Context, client.ObjectList, ...client.ListOption) (watch.Interface, error) {
+	return nil, errors.New("the manager's client doesn't watch")
 }
 
 func (e *switchEnv) workload(t *testing.T, key client.ObjectKey) *v1alpha1.ManagedWorkload {
@@ -314,7 +333,9 @@ func TestPausingOff(t *testing.T) {
 			Controller: config.Controller{SkipNameValidation: ptr.To(true)},
 			Cache:      cache.Options{DefaultNamespaces: map[string]cache.Config{ns: {}}}})
 		require.NoError(t, err)
-		r := &Reconciler{Client: mgr.GetClient(), Scheme: opScheme, Recorder: events.NewFakeRecorder(1000),
+		writesBefore, _ := env.written()
+		r := &Reconciler{Client: env.watchDryRun(watchless{mgr.GetClient()}), Scheme: opScheme,
+			Recorder:  events.NewFakeRecorder(1000),
 			PodReader: mgr.GetAPIReader(), PausingOff: true,
 			metrics: &stubMetrics{cpuPerReplica: 100, memoryPerReplica: 1 << 30, replicas: 1},
 			engines: newEngineRegistry(func() forecaster { return &stubForecaster{} })}
@@ -376,12 +397,13 @@ func TestPausingOff(t *testing.T) {
 			assert.Equal(t, int32(1), env.replicas(t, client.ObjectKey{Namespace: ns, Name: name}),
 				"%s never paused", name)
 		}
+		writes, dryRun := env.written()
+		assert.Greater(t, writes, writesBefore, "the manager's reconciler wrote ManagedWorkloads")
+		assert.Empty(t, dryRun, "none of its writes set spec.dryRun")
 	})
 
 	t.Run("spec.dryRun is never written", func(t *testing.T) {
-		env.mu.Lock()
-		writes, dryRun := env.writes, env.dryRunWrites
-		env.mu.Unlock()
+		writes, dryRun := env.written()
 		if writes == 0 {
 			// Run alone, this case pauses, wakes, measures and answers a
 			// request itself.
@@ -391,9 +413,7 @@ func TestPausingOff(t *testing.T) {
 			env.watch(t, on, key, &clock, 30, v1alpha1.PhasePaused)
 			off := env.reconciler(t, true, func() time.Time { return clock })
 			env.watch(t, off, key, &clock, 30, v1alpha1.PhaseIdle)
-			env.mu.Lock()
-			writes, dryRun = env.writes, env.dryRunWrites
-			env.mu.Unlock()
+			writes, dryRun = env.written()
 		}
 		require.Positive(t, writes, "the operator wrote ManagedWorkloads")
 		assert.Empty(t, dryRun, "none of its writes set spec.dryRun")
