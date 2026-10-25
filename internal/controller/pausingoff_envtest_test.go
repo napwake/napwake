@@ -162,6 +162,22 @@ func (watchless) Watch(context.Context, client.ObjectList, ...client.ListOption)
 	return nil, errors.New("the manager's client doesn't watch")
 }
 
+// createWatched creates w as a workload Napwake has taken on and checked:
+// Running, with activity five minutes ago, so a pause request finds its idle
+// clock running, as one does once Napwake has checked the workload.
+func createWatched(ctx context.Context, c client.Client, w *v1alpha1.ManagedWorkload) error {
+	if err := createTakenOn(ctx, c, w); err != nil {
+		return err
+	}
+	now := time.Now()
+	w.Status.Activity = &v1alpha1.ActivityStatus{
+		LastActivityTime:   metav1.NewTime(now.Add(-5 * time.Minute)),
+		LastActivitySource: v1alpha1.ActivitySourceCPU,
+		PauseAt:            ptr.To(metav1.NewTime(now.Add(55 * time.Minute))),
+	}
+	return c.Status().Update(ctx, w)
+}
+
 func (e *switchEnv) workload(t *testing.T, key client.ObjectKey) *v1alpha1.ManagedWorkload {
 	t.Helper()
 	var w v1alpha1.ManagedWorkload
@@ -322,10 +338,10 @@ func TestPausingOff(t *testing.T) {
 		}
 		api := withPauseRequested(envtestWorkload(ns))
 		api.Spec.DependsOn = []v1alpha1.DependencyRef{{Kind: v1alpha1.TargetKindDeployment, Name: dependency}}
-		require.NoError(t, createTakenOn(env.ctx, env.admin, api))
+		require.NoError(t, createWatched(env.ctx, env.admin, api))
 		postgres := envtestWorkload(ns)
 		postgres.Name, postgres.Spec.Target.Name = dependency, dependency
-		require.NoError(t, createTakenOn(env.ctx, env.admin, postgres))
+		require.NoError(t, createWatched(env.ctx, env.admin, postgres))
 
 		opScheme := testScheme(t)
 		mgr, err := ctrl.NewManager(env.cfg, ctrl.Options{Scheme: opScheme,
@@ -377,11 +393,12 @@ func TestPausingOff(t *testing.T) {
 		}, 30*time.Second, 100*time.Millisecond, "api's pause request is a would-be pause, in the graph as measured")
 
 		patch(dependency, v1alpha1.AnnotationPauseRequested, "now")
-		require.Eventually(t, func() bool {
+		if !assert.Eventually(t, func() bool {
 			return get(dependency).Status.Phase == v1alpha1.PhaseIdle && pauses(dependency) == 1
-		}, 30*time.Second, 100*time.Millisecond,
-			"api's would-be pause lets postgres go, as it would were both in dry-run: %v",
-			meta.FindStatusCondition(get(dependency).Status.Conditions, conditionPauseRequest))
+		}, 30*time.Second, 100*time.Millisecond, "api's would-be pause lets postgres go, as it would were both in dry-run") {
+			t.Fatalf("postgres's pause request: %v",
+				meta.FindStatusCondition(get(dependency).Status.Conditions, conditionPauseRequest))
+		}
 		for _, name := range []string{"api", dependency} {
 			assert.Equal(t, int32(1), env.replicas(t, client.ObjectKey{Namespace: ns, Name: name}),
 				"%s stays up", name)
