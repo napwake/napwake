@@ -22,6 +22,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -85,6 +86,23 @@ func TestWriteStatusHTML(t *testing.T) {
 
 // Messages come from conditions and events that anyone who can write a
 // ManagedWorkload or an event can set, so they're escaped, never markup.
+// While pausing is off for the whole cluster, the page says so at its top,
+// as the terminal does.
+func TestWriteStatusHTML_SaysFirstThatPausingIsOff(t *testing.T) {
+	objs := statusCluster()
+	api, ok := objs[0].(*v1alpha1.ManagedWorkload)
+	require.True(t, ok)
+	api.Status.Conditions = append(api.Status.Conditions, pausingOff())
+
+	got := renderStatusPage(t, objs...)
+
+	line := `<p class="callout" data-pausing-off><span><b>Pausing is off for the whole cluster ` +
+		`(pausing.enabled: false); nothing pauses, and everything wakes.</b></span></p>`
+	require.Contains(t, got, line)
+	assert.Less(t, strings.Index(got, line), strings.Index(got, `<div class="money`), "at the top, before the money")
+	assert.NotContains(t, renderStatusPage(t, statusCluster()...), "data-pausing-off")
+}
+
 func TestWriteStatusHTML_Escapes(t *testing.T) {
 	w := statusWorkloadObj("shop", "api", v1alpha1.TargetKindDeployment, v1alpha1.PhaseRunning, time.Hour)
 	w.Status.Conditions = []metav1.Condition{condition("GitOpsConflict", metav1.ConditionTrue, "PauseUndone",

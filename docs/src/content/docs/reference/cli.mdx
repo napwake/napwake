@@ -76,6 +76,7 @@ import NextSteps from '../../../components/NextSteps.astro';
     { id: 'status-html', name: '--html' },
     { id: 'status-open', name: '--open' },
     { id: 'status-timeout', name: '--timeout' },
+    { id: 'status-json-pausingoff', name: 'pausingOff' },
     { id: 'status-json-forecast', name: 'forecast' },
     { id: 'status-json-forecaststartsacting', name: 'forecastStartsActing' },
     { id: 'status-json-turnedaway', name: 'turnedAway' },
@@ -772,6 +773,7 @@ The JSON and YAML fields this page names, and what each holds.
 
 | Field | What it holds |
 |---|---|
+| <Ref id="status-json-pausingoff">pausingOff</Ref> | `true` while [pausing is off](/guides/pause/#stop-all-pausing-now) for the whole cluster, by a ManagedWorkload's `Pausing` condition |
 | <Ref id="status-json-forecast">forecast</Ref> | The reason, from `status.prediction.reason` |
 | <Ref id="status-json-forecaststartsacting">forecastStartsActing</Ref> | When the operator expects the forecast to start acting, as `acts from` shows |
 | <Ref id="status-json-turnedaway">turnedAway</Ref> | For a workload that asks, `pausedAt` and `requests`, what the doorman turned away during that pause, from `status.turnedAway` |

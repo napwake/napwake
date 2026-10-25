@@ -538,12 +538,13 @@ func TestWrongPause_TheBackOffEndsOnceNoPauseCanHold(t *testing.T) {
 			require.NotNil(t, w.Status.IdleWait)
 			assert.Zero(t, w.Status.IdleWait.WrongPauses)
 			assert.False(t, meta.IsStatusConditionTrue(w.Status.Conditions, conditionPausedWhileInUse))
-			assert.Equal(t, idleAfterFor(w), idleWaitFor(w))
+			assert.Equal(t, idleAfterFor(w), idleWaitFor(w, r.dryRun(w)))
 		})
 	}
 
 	inDryRun := backedOff(t, "api", func(w *v1alpha1.ManagedWorkload) { w.Spec.DryRun = true }, target())
-	assert.Equal(t, 5*time.Minute, idleWaitFor(fetch(t, inDryRun, "api")),
+	measured := fetch(t, inDryRun, "api")
+	assert.Equal(t, 5*time.Minute, idleWaitFor(measured, inDryRun.dryRun(measured)),
 		"a would-be pause doesn't wait the back-off, even before it's written as ended")
 }
 

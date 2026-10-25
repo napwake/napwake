@@ -333,6 +333,17 @@ check-chart: ## Lint the Helm chart, render it for each provider's Kubernetes ve
 	@helm template napwake charts/napwake --set leaderElection.enabled=false --show-only templates/deployment.yaml | grep -q 'type: Recreate' && \
 		! helm template napwake charts/napwake --show-only templates/deployment.yaml | grep -q 'type: Recreate' || { \
 		echo "without leader election, a rolling update runs two operators at once"; exit 1; }
+	@for old in /dev/null hack/testdata/chart-values/*.yaml; do \
+		for on in '' --set=pausing.enabled=true; do \
+			! hack/chart-reuse-values.sh "$$old" $$on --show-only templates/deployment.yaml | grep -q -- '--pausing' || { \
+				echo "the operator is given --pausing with pausing.enabled not false, with $$old as the chart's defaults"; exit 1; }; \
+		done; \
+		hack/chart-reuse-values.sh "$$old" --set pausing.enabled=false --show-only templates/deployment.yaml | \
+			grep -qx -- ' *- --pausing=false' || { \
+			echo "pausing.enabled=false doesn't reach the operator as --pausing=false, with $$old as the chart's defaults"; exit 1; }; \
+	done
+	@helm template napwake charts/napwake --namespace napwake-system --set pausing.enabled=false | \
+		go run ./hack/chartflags bin/manager
 
 .PHONY: test-doorman-policy
 test-doorman-policy: setup-envtest kustomize ## Check against envtest that the chart's and kustomize's admission policies, and an overlay's, hold the doorman to stamping requests, and keep the stamps to it

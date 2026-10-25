@@ -75,6 +75,11 @@ const savedShareExpected = 0.5
 // one screen; -o json has them all.
 const recentLimit = 10
 
+// pausingOffLine is what status, and its page, say first while a workload
+// says pausing is off for the whole cluster.
+const pausingOffLine = "Pausing is off for the whole cluster (pausing.enabled: false); " +
+	"nothing pauses, and everything wakes."
+
 type statusOptions struct {
 	namespaces namespaceFlags
 	output     string
@@ -189,10 +194,13 @@ type statusResult struct {
 	ForecastTimeZones []string `json:"forecastTimeZones,omitempty"`
 	// NodesNotScalingDown is set when pausing freed far more than came off
 	// the bill this month, for the workloads whose savings are measured.
-	NodesNotScalingDown bool             `json:"nodesNotScalingDown,omitempty"`
-	Workloads           []statusWorkload `json:"workloads"`
-	Problems            []problem        `json:"problems"`
-	Recent              []happening      `json:"recent"`
+	NodesNotScalingDown bool `json:"nodesNotScalingDown,omitempty"`
+	// PausingOff is set when a workload says pausing is off for the whole
+	// cluster.
+	PausingOff bool             `json:"pausingOff,omitempty"`
+	Workloads  []statusWorkload `json:"workloads"`
+	Problems   []problem        `json:"problems"`
+	Recent     []happening      `json:"recent"`
 	// Note says when fewer namespaces were read than were asked for.
 	Note string `json:"note,omitempty"`
 	// EventsHidden is set when the user can't read events, so Recent is
@@ -388,6 +396,7 @@ func clusterStatus(ctx context.Context, c client.Client, home string, opts statu
 		targets[client.ObjectKeyFromObject(w)] = w.Spec.Target.Name
 		row := workloadStatus(w, activeUntil[targetOfManaged(w)], now)
 		result.Workloads = append(result.Workloads, row)
+		result.PausingOff = result.PausingOff || discovery.PausingOff(w)
 		problems := reviewGitOpsConflict(ctx, c, checker, w, problemsOf(w, now), now)
 		result.Problems = append(result.Problems, problems...)
 		if p := w.Status.Prediction; p != nil && p.TimeZone != "" && !slices.Contains(result.ForecastTimeZones, p.TimeZone) {
@@ -575,7 +584,7 @@ func workloadStatus(w *v1alpha1.ManagedWorkload, targetActiveUntil, now time.Tim
 		Name:           w.Name,
 		Target:         targetRef(w),
 		Phase:          w.Status.Phase,
-		DryRun:         w.Spec.DryRun,
+		DryRun:         discovery.DryRun(w),
 		Next:           nextFor(w, targetActiveUntil, now),
 		FreedThisMonth: discovery.FreedThisMonth(w, now),
 		SavedThisMonth: discovery.SavedThisMonth(w, now),
@@ -593,7 +602,7 @@ func workloadStatus(w *v1alpha1.ManagedWorkload, targetActiveUntil, now time.Tim
 			row.ForecastStartsActing = &starts
 		}
 	}
-	if d := w.Status.DryRun; w.Spec.DryRun && d != nil {
+	if d := w.Status.DryRun; discovery.DryRun(w) && d != nil {
 		wouldFree := dollarsIn(d.EstimatedFreed)
 		since := d.Since.UTC()
 		row.WouldFree, row.DryRunSince = &wouldFree, &since
@@ -683,7 +692,7 @@ func pausesNext(w *v1alpha1.ManagedWorkload, idle bool, now time.Time) string {
 	conditions := w.Status.Conditions
 	a := w.Status.Activity
 	verb := "pauses"
-	if w.Spec.DryRun {
+	if discovery.DryRun(w) {
 		verb = "would pause"
 	}
 	retryAt, heldByGitOps := gitOpsHold(w, now)
@@ -724,7 +733,7 @@ func pausesNext(w *v1alpha1.ManagedWorkload, idle bool, now time.Time) string {
 // has none.
 func gitOpsHold(w *v1alpha1.ManagedWorkload, now time.Time) (time.Time, bool) {
 	s := w.Status.LastScaledUp
-	if w.Spec.DryRun || s == nil || !meta.IsStatusConditionTrue(w.Status.Conditions, "GitOpsConflict") {
+	if discovery.DryRun(w) || s == nil || !meta.IsStatusConditionTrue(w.Status.Conditions, "GitOpsConflict") {
 		return time.Time{}, false
 	}
 	until := s.At.Add(gitops.RetryAfter)
@@ -1050,6 +1059,9 @@ func writeStatusTable(w io.Writer, result statusResult, now time.Time, pl palett
 		}
 		p.line("kubectl napwake scan finds idle ones; label one napwake.dev/managed=true for Napwake to manage it.")
 		return p.err
+	}
+	if result.PausingOff {
+		p.line("%s", pl.paint(sgrAttention, pausingOffLine))
 	}
 	p.line("%s: Napwake manages %s.", result.Cluster, countOf(len(result.Workloads), "workload"))
 	p.line("  %s", pl.phaseCounts(result.Workloads))

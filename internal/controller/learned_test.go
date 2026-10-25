@@ -291,7 +291,8 @@ func TestLearnedMessage(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			g := &dependencyGraph{workloadGraph: workloadGraphOf(tt.managed), dependentsFrom: tt.dependentsFrom}
+			g := &dependencyGraph{workloadGraph: (&Reconciler{}).workloadGraphOf(tt.managed),
+				dependentsFrom: tt.dependentsFrom}
 			assert.Equal(t, tt.want, learnedMessage(api, tt.learned, g))
 		})
 	}

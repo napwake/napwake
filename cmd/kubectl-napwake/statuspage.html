@@ -618,6 +618,7 @@ html:not(.js) th { position: static; }
       <div class="hero-main">
         <p class="eyebrow">kubectl napwake status</p>
         <div class="hero-title"><h1>Napwake status</h1><p class="meta"><span>{{.Cluster}} &middot; {{.At}}</span></p></div>
+        {{if .PausingOff}}<p class="callout" data-pausing-off><span><b>{{.PausingOff}}</b></span></p>{{end}}
         {{if not .Workloads}}
         <div class="vacant"><p class="vacant-title">{{.Summary}}</p></div>
         <div class="vacant-art"><pre class="shell"><span class="line"><span class="sh-cmd">kubectl</span> napwake scan</span>
