@@ -140,6 +140,27 @@ func TestBlockers(t *testing.T) {
 			reason: []Reason{{Code: CodeLocalStorage, Pod: "shop/api", Detail: "local storage in cache, logs"}},
 		},
 		{
+			name: "local storage on EKS, whose autoscaler keeps upstream's default",
+			a:    Autoscaler{Scalers: []Scaler{{Kind: ClusterAutoscaler, Provider: "EKS"}}}, node: plain,
+			pods:   []corev1.Pod{pod("shop", "api", "n1", volume(emptyDir("cache", "")))},
+			reason: []Reason{{Code: CodeLocalStorage, Pod: "shop/api", Detail: "local storage in cache"}},
+		},
+		{
+			name: "local storage on GKE, whose autoscaler ignores it from 1.22",
+			a:    Autoscaler{Scalers: []Scaler{{Kind: ClusterAutoscaler, Provider: "GKE"}}}, node: plain,
+			pods: []corev1.Pod{pod("shop", "api", "n1", volume(emptyDir("cache", "")))},
+		},
+		{
+			name: "local storage on GKE Autopilot",
+			a:    Autoscaler{Scalers: []Scaler{{Kind: GKEAutopilot, Provider: "GKE"}}}, node: plain,
+			pods: []corev1.Pod{pod("shop", "api", "n1", volume(emptyDir("cache", "")))},
+		},
+		{
+			name: "local storage on AKS, which turns the check off by default",
+			a:    Autoscaler{Scalers: []Scaler{{Kind: ClusterAutoscaler, Provider: "AKS"}}}, node: plain,
+			pods: []corev1.Pod{pod("shop", "api", "n1", volume(emptyDir("cache", "")))},
+		},
+		{
 			name: "local volumes declared safe to evict", a: withCA, node: plain,
 			pods: []corev1.Pod{pod("shop", "api", "n1", volume(emptyDir("cache", "")),
 				annotated(annotationSafeToEvictLocalVolumes, "scratch, cache"))},
