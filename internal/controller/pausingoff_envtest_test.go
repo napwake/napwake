@@ -182,7 +182,7 @@ func pausingOffCondition(w *v1alpha1.ManagedWorkload) *metav1.Condition {
 	return meta.FindStatusCondition(w.Status.Conditions, conditionPausing)
 }
 
-// With pausing off for the whole cluster, nothing pauses, while a workload
+// With pausing off for the install, nothing it manages pauses, while a workload
 // is measured as in dry-run, every one paused wakes, and the dependency
 // graph lets go of dependencies as dry-run does. Turned back on, pausing
 // picks up again. spec.dryRun, which the operator writes back with every
@@ -207,7 +207,7 @@ func TestPausingOff(t *testing.T) {
 		require.NotNil(t, c, "the workload says pausing is off")
 		assert.Equal(t, metav1.ConditionFalse, c.Status)
 		assert.Equal(t, reasonTurnedOffForTheCluster, c.Reason)
-		assert.Contains(t, c.Message, "pausing is off for the whole cluster")
+		assert.Contains(t, c.Message, "pausing is off for this install")
 		idle := drainEvents(t, r)
 		assert.Contains(t, idle, "Normal "+ReasonIdleDetected+" [dry-run] api: idle for 5 minutes")
 		assert.Contains(t, idle, "would have paused")
@@ -224,7 +224,7 @@ func TestPausingOff(t *testing.T) {
 
 		assert.Equal(t, int32(3), env.replicas(t, key), "woken to the replicas it had")
 		woken := drainEvents(t, off)
-		assert.Contains(t, woken, "Normal "+reasonPausingOffWake+" api: pausing is off for the whole cluster, "+
+		assert.Contains(t, woken, "Normal "+reasonPausingOffWake+" api: pausing is off for this install, "+
 			"so Napwake wakes the workload it had paused")
 		assert.NotContains(t, woken, reasonDryRunWake)
 		require.NotNil(t, pausingOffCondition(env.workload(t, key)))
@@ -289,7 +289,7 @@ func TestPausingOff(t *testing.T) {
 		require.NotNil(t, c)
 		assert.Equal(t, metav1.ConditionFalse, c.Status)
 		assert.Equal(t, reasonTurnedOffForTheCluster, c.Reason)
-		assert.Contains(t, c.Message, ": pausing is off for the whole cluster, so Napwake counted a would-be pause "+
+		assert.Contains(t, c.Message, ": pausing is off for this install, so Napwake counted a would-be pause "+
 			"and left the workload running")
 	})
 

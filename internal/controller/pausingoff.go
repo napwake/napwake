@@ -28,19 +28,21 @@ import (
 
 const (
 	// conditionPausing is False, reason TurnedOffForTheCluster, on every
-	// workload while pausing is off for the whole cluster, and removed once
-	// it's on again: there's nothing to say about a cluster that pauses.
+	// workload while pausing is off for the install that manages it, and
+	// removed once it's on again: there's nothing to say about one that
+	// pauses. Several installs can share a cluster, each with its own.
 	conditionPausing             = "Pausing"
 	reasonTurnedOffForTheCluster = "TurnedOffForTheCluster"
 
 	reasonPausingOffWake = "PausingOffWake"
 
-	pausingOffMessage = "pausing is off for the whole cluster (pausing.enabled: false, or the operator's " +
-		"--pausing=false): nothing pauses, and everything wakes. Napwake measures this workload as in dry-run"
+	pausingOffMessage = "pausing is off for this install (pausing.enabled: false, or the operator's " +
+		"--pausing=false): nothing it manages pauses, and everything wakes. Napwake measures this workload as in " +
+		"dry-run"
 )
 
-// reportPausing says on the workload whether pausing is off for the whole
-// cluster, writing its status when that changes it. It's written apart, as
+// reportPausing says on the workload whether pausing is off for this
+// install, writing its status when that changes it. It's written apart, as
 // the reconcile begins, so every workload says so whatever else its
 // reconcile does: one protected, or whose target is gone, writes nothing
 // more. The condition only tells, so a write that fails is logged and made
@@ -58,17 +60,17 @@ func (r *Reconciler) reportPausing(ctx context.Context, workload *v1alpha1.Manag
 		meta.RemoveStatusCondition(&workload.Status.Conditions, conditionPausing)
 	}
 	if err := r.Status().Update(ctx, workload); err != nil {
-		log.FromContext(ctx).Info("couldn't record whether pausing is off for the whole cluster",
+		log.FromContext(ctx).Info("couldn't record whether pausing is off for this install",
 			"workload", workload.Name, "namespace", workload.Namespace, "error", err.Error())
 	}
 }
 
 // whyMeasured is why a workload is measured rather than paused, as a
-// condition's reason and in words. Pausing off for the whole cluster is
-// named first: it holds whatever the workload's own dry-run says.
+// condition's reason and in words. Pausing off for this install is named
+// first: it holds whatever the workload's own dry-run says.
 func (r *Reconciler) whyMeasured() (reason, because string) {
 	if r.PausingOff {
-		return reasonTurnedOffForTheCluster, "pausing is off for the whole cluster"
+		return reasonTurnedOffForTheCluster, "pausing is off for this install"
 	}
 	return reasonDryRun, "dry-run is on"
 }

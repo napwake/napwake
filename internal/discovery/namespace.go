@@ -259,16 +259,16 @@ func (s *Scanner) readHistoryOf(ctx, historyCtx context.Context, scan *namespace
 	return history
 }
 
-// The operator puts the Pausing condition on every ManagedWorkload, False
-// for ReasonTurnedOffForTheCluster, while pausing is off for the whole
-// cluster, its --pausing=false.
+// The operator puts the Pausing condition on every ManagedWorkload it
+// manages, False for ReasonTurnedOffForTheCluster, while its pausing is off,
+// with --pausing=false. Each install of several has its own.
 const (
 	ConditionPausing             = "Pausing"
 	ReasonTurnedOffForTheCluster = "TurnedOffForTheCluster"
 )
 
-// PausingOff reports whether the ManagedWorkload says its operator has
-// pausing off for the whole cluster.
+// PausingOff reports whether the ManagedWorkload says the install that
+// manages it has pausing off.
 func PausingOff(mw *v1alpha1.ManagedWorkload) bool {
 	c := meta.FindStatusCondition(mw.Status.Conditions, ConditionPausing)
 	return c != nil && c.Status == metav1.ConditionFalse && c.Reason == ReasonTurnedOffForTheCluster
@@ -276,7 +276,7 @@ func PausingOff(mw *v1alpha1.ManagedWorkload) bool {
 
 // DryRun reports whether Napwake measures the workload rather than pausing
 // it, as the operator does: in dry-run of its own, or with pausing off for
-// the whole cluster, which leaves spec.dryRun as it is.
+// the install that manages it, which leaves spec.dryRun as it is.
 func DryRun(mw *v1alpha1.ManagedWorkload) bool {
 	return mw.Spec.DryRun || PausingOff(mw)
 }

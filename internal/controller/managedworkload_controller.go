@@ -150,9 +150,9 @@ type Reconciler struct {
 	// saving changes. Nil means UTC.
 	Timezone *time.Location
 
-	// PausingOff stops every pause in the cluster at once: each workload is
-	// measured as in dry-run, and one paused is woken, while spec.dryRun is
-	// left as it is. The zero value pauses.
+	// PausingOff stops every pause this install makes, at once: each
+	// workload it manages is measured as in dry-run, and one paused is woken,
+	// while spec.dryRun is left as it is. The zero value pauses.
 	PausingOff bool
 
 	pauser          lifecyclePauser

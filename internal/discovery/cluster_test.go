@@ -519,7 +519,7 @@ func TestScanCluster_SavingsBySource(t *testing.T) {
 	assert.InDelta(t, got["dry"].Measured.MonthlyFreed, report.Totals.Measured.MonthlyFreed, 0.001)
 }
 
-// With pausing off for the whole cluster, as the ManagedWorkload's Pausing
+// With pausing off for its install, as the ManagedWorkload's Pausing
 // condition says, the scan counts the workload as in dry-run, whatever its
 // spec says, with what dry-run measured, and not as live.
 func TestScanCluster_PausingOffIsDryRun(t *testing.T) {
