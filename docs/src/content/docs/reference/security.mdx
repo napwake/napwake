@@ -86,7 +86,7 @@ Every release is built from a tag by the [release workflow](https://github.com/n
 <Tabs>
 <TabItem label="Image">
 
-Its signature, an SBOM for each platform, and build provenance:
+Its signature, an SBOM for each platform, and build provenance. The SBOMs, a few megabytes, are saved to `sbom.intoto.jsonl`:
 
 ```bash
 IMAGE=ghcr.io/napwake/napwake:v0.2.0
@@ -95,7 +95,7 @@ cosign verify $IMAGE \
   --certificate-oidc-issuer https://token.actions.githubusercontent.com
 cosign verify-attestation $IMAGE --type spdxjson \
   --certificate-identity-regexp '^https://github.com/napwake/napwake/.github/workflows/release.yml@refs/tags/v' \
-  --certificate-oidc-issuer https://token.actions.githubusercontent.com
+  --certificate-oidc-issuer https://token.actions.githubusercontent.com > sbom.intoto.jsonl
 gh attestation verify oci://$IMAGE --repo napwake/napwake
 ```
 
