@@ -1,0 +1,227 @@
+name: Install smoke
+
+# Every way the docs install and verify Napwake, run as a stranger would:
+# on clean macOS and Ubuntu runners, signed in to nothing, against what's
+# published for one release. The commands are the docs' own, with the
+# release's version as ${VERSION}, and test/docs fails when the two drift
+# apart. The workflow's token is used only to find the release, since the
+# GitHub API rate-limits shared runners that ask anonymously, and for gh
+# attestation verify, which needs a GitHub login for anyone.
+#
+# It runs once a release's docs are published, on demand for any release,
+# and every hour while the repository variable INSTALL_SMOKE_HOURLY is
+# true, as in launch week.
+on:
+  workflow_run:
+    workflows: [docs]
+    types: [completed]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: The release to check, such as v0.2.0-rc.9. The newest release when empty
+        required: false
+  schedule:
+    - cron: "17 * * * *"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: install-smoke
+  cancel-in-progress: false
+
+jobs:
+  release:
+    name: Which release
+    # After the docs workflow publishes a release's docs, not after it
+    # builds a pull request's.
+    if: >-
+      github.event_name == 'workflow_dispatch' ||
+      (github.event_name == 'schedule' && vars.INSTALL_SMOKE_HOURLY == 'true') ||
+      (github.event_name == 'workflow_run' && github.event.workflow_run.conclusion == 'success' &&
+        github.event.workflow_run.event != 'pull_request')
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    outputs:
+      tag: ${{ steps.release.outputs.tag }}
+      version: ${{ steps.release.outputs.version }}
+      brewed: ${{ steps.release.outputs.brewed }}
+    steps:
+      - id: release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          INPUT: ${{ inputs.tag }}
+        run: |
+          newest=$(gh release list --repo "$GITHUB_REPOSITORY" --exclude-drafts --limit 1 --json tagName --jq '.[0].tagName')
+          tag=${INPUT:-$newest}
+          gh release view "$tag" --repo "$GITHUB_REPOSITORY" --json tagName >/dev/null
+          # The release workflow brews every release, but a release candidate
+          # never replaces a stable release in the tap. So the tap holds the
+          # newest release, unless that's a candidate and the tap holds a
+          # stable one, which it keeps. The formula is read as anyone can.
+          formula=$(curl -fsSL "https://raw.githubusercontent.com/${GITHUB_REPOSITORY_OWNER}/homebrew-tap/HEAD/Formula/kubectl-napwake.rb" |
+            sed -n 's/^ *version "\(.*\)"$/\1/p')
+          brewed=$newest
+          if [[ "$newest" == *-* && -n "$formula" && "$formula" != *-* ]]; then
+            brewed=v$formula
+          fi
+          echo "Checking $tag; Homebrew should give $brewed"
+          {
+            echo "tag=$tag"
+            echo "version=${tag#v}"
+            echo "brewed=$brewed"
+          } >> "$GITHUB_OUTPUT"
+
+  # Homebrew installs the newest release it brews, whichever is checked.
+  homebrew:
+    name: Homebrew (${{ matrix.os }})
+    needs: release
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [macos-15, ubuntu-24.04]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 15
+    env:
+      BREWED: ${{ needs.release.outputs.brewed }}
+      HOMEBREW_NO_AUTO_UPDATE: "1"
+      HOMEBREW_NO_INSTALL_CLEANUP: "1"
+    steps:
+      - name: Homebrew on the path
+        if: runner.os == 'Linux'
+        run: echo "/home/linuxbrew/.linuxbrew/bin" >> "$GITHUB_PATH"
+      - name: kubectl, which the docs assume
+        run: command -v kubectl || brew install kubectl
+      - name: Install as the docs say
+        run: |
+          brew install napwake/tap/kubectl-napwake
+          kubectl napwake version
+      - name: It's the release the tap brews
+        run: kubectl napwake version | grep -Fx "kubectl-napwake $BREWED"
+
+  krew:
+    name: Krew (${{ matrix.os }})
+    needs: release
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [macos-15, ubuntu-24.04]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 15
+    env:
+      VERSION: ${{ needs.release.outputs.version }}
+    steps:
+      - name: kubectl, which the docs assume
+        run: command -v kubectl || brew install kubectl
+      # As krew's own install guide has it.
+      - name: Install krew
+        run: |
+          cd "$(mktemp -d)"
+          OS="$(uname | tr '[:upper:]' '[:lower:]')"
+          ARCH="$(uname -m | sed -e 's/x86_64/amd64/' -e 's/\(arm\)\(64\)\?.*/\1\2/' -e 's/aarch64$/arm64/')"
+          KREW="krew-${OS}_${ARCH}"
+          curl -fsSLO "https://github.com/kubernetes-sigs/krew/releases/latest/download/${KREW}.tar.gz"
+          tar zxvf "${KREW}.tar.gz"
+          ./"${KREW}" install krew
+          echo "${KREW_ROOT:-$HOME/.krew}/bin" >> "$GITHUB_PATH"
+      - name: Install as the docs say
+        run: |
+          kubectl krew install --manifest-url \
+            https://github.com/napwake/napwake/releases/download/v${VERSION}/krew-napwake.yaml
+          kubectl napwake version
+      - name: It's the release checked
+        run: kubectl napwake version | grep -Fx "kubectl-napwake v${VERSION}"
+
+  # The image and the chart pull with no login: cosign reads them from the
+  # registry anonymously, as the clusters below do.
+  signatures:
+    name: Signatures
+    needs: release
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    env:
+      VERSION: ${{ needs.release.outputs.version }}
+    steps:
+      - uses: sigstore/cosign-installer@6f9f17788090df1f26f669e9d70d6ae9567deba6 # v4.1.2
+        with:
+          cosign-release: v3.1.3
+      - name: Nothing signed in
+        run: docker logout ghcr.io || true
+      - name: The image, as the docs say
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          IMAGE=ghcr.io/napwake/napwake:v${VERSION}
+          cosign verify $IMAGE \
+            --certificate-identity-regexp '^https://github.com/napwake/napwake/.github/workflows/release.yml@refs/tags/v' \
+            --certificate-oidc-issuer https://token.actions.githubusercontent.com
+          cosign verify-attestation $IMAGE --type spdxjson \
+            --certificate-identity-regexp '^https://github.com/napwake/napwake/.github/workflows/release.yml@refs/tags/v' \
+            --certificate-oidc-issuer https://token.actions.githubusercontent.com
+          gh attestation verify oci://$IMAGE --repo napwake/napwake
+      - name: The chart, as the docs say
+        run: |
+          cosign verify ghcr.io/napwake/charts/napwake:${VERSION} \
+            --certificate-identity-regexp '^https://github.com/napwake/napwake/.github/workflows/release.yml@refs/tags/v' \
+            --certificate-oidc-issuer https://token.actions.githubusercontent.com
+      - name: The release's files
+        run: |
+          for file in checksums.txt checksums.txt.sigstore.json kubectl-napwake-linux-amd64.tar.gz install.yaml; do
+            curl -fsSLO "https://github.com/napwake/napwake/releases/download/v${VERSION}/${file}"
+          done
+      - name: The plugin and release files, as the docs say
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          cosign verify-blob checksums.txt --bundle checksums.txt.sigstore.json \
+            --certificate-identity-regexp '^https://github.com/napwake/napwake/.github/workflows/release.yml@refs/tags/v' \
+            --certificate-oidc-issuer https://token.actions.githubusercontent.com
+          sha256sum --check --ignore-missing checksums.txt
+          gh attestation verify kubectl-napwake-linux-amd64.tar.gz --repo napwake/napwake
+
+  cluster:
+    name: Install on a new cluster (${{ matrix.how }})
+    needs: release
+    strategy:
+      fail-fast: false
+      matrix:
+        how: [helm, install.yaml]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    env:
+      VERSION: ${{ needs.release.outputs.version }}
+    steps:
+      - name: A new kind cluster
+        run: kind create cluster --name smoke --wait 2m
+      - name: Nothing signed in
+        run: docker logout ghcr.io || true
+
+      - name: Install with Helm, as the docs say
+        if: matrix.how == 'helm'
+        run: |
+          printf 'timezone: Europe/London\n' > napwake-values.yaml
+          helm install napwake oci://ghcr.io/napwake/charts/napwake \
+            --version ${VERSION} \
+            --namespace napwake-system \
+            --create-namespace \
+            -f napwake-values.yaml
+          kubectl -n napwake-system rollout status deployment/napwake --timeout=3m
+
+      - name: Install with install.yaml, as the docs say
+        if: matrix.how == 'install.yaml'
+        run: |
+          kubectl apply -f https://github.com/napwake/napwake/releases/download/v${VERSION}/install.yaml
+          kubectl -n napwake-system rollout status deployment/napwake-controller-manager --timeout=3m
+
+      # The installation guide's checkpoint.
+      - name: The operator and the doorman run, and the CRD is served
+        run: |
+          kubectl -n napwake-system rollout status deployment/napwake-doorman --timeout=3m
+          kubectl get pods -n napwake-system
+          kubectl get crd managedworkloads.napwake.dev
+      - name: What went wrong
+        if: failure()
+        run: |
+          kubectl get pods -A
+          kubectl -n napwake-system describe pods
+          kubectl -n napwake-system logs --all-containers --prefix --tail=100 -l app.kubernetes.io/name=napwake || true

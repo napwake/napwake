@@ -218,6 +218,10 @@ There's no upgrade path from Hybernate 0.1.x or a 0.2.0 release candidate. Unins
 
 ### Fixed
 
+- `kubectl napwake scan` no longer offers what's idle but never paused as something pausing could free: a workload Napwake never pauses, protected or deleting its PVCs when scaled down, is counted as idle, and the scan says Napwake never pauses it. Small reservations show to the hundredth, not as `0.0`. The note on infrastructure left out says how many workloads its remaining namespaces hold, so its counts add up, and the scan points at next steps only when there are some
+- The scan and status pages' top bar marks the section you're at, the last one included: "The numbers" and "Pauses and wakes" were never marked
+- For a person's click on a workload that asks first, the `WokeByActivity` event says "a person asked to wake it", and `PrometheusQueryEmpty` says a query matching nothing may be right but have nothing to match yet, such as a request counter before the first request
+- A release whose Homebrew formula isn't written, for a missing or read-only `HOMEBREW_TAP_TOKEN`, opens an issue saying so, instead of only a warning. A run that writes it closes the issue
 - The scan report keeps an idle workload's light on in the With Napwake picture when Napwake never pauses it: a StatefulSet that deletes its PVCs, a protected namespace, part of Napwake, or a ManagedWorkload without an `idlePolicy`. Before, only such a StatefulSet kept it, and only when its line led with the reason
 - The status page's meter shows what came off the bill as the exact share of what was freed. A freed figure of `<$1` draws no bar
 - The scan report and the status page read what they show from the data, never from the product's sentences, so a reworded line can't change them

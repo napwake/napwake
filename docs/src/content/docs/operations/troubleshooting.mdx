@@ -335,7 +335,7 @@ That lists its dependencies and their sources. The ManagedWorkload's conditions 
 
 ### A Prometheus query never matches
 
-`PrometheusQueryEmpty=True`, reason `NoSeries`, with a warning event, means an activity query has matched no series since Napwake first ran it. It's usually a misspelt metric or label. It can't keep the workload awake or hold off a pause. [Test it in Prometheus](/guides/prometheus-signals/#test-the-query-directly).
+`PrometheusQueryEmpty=True`, reason `NoSeries`, with a warning event, means an activity query has matched no series since Napwake first ran it. It's usually a misspelt metric or label, or a series nothing has made yet: ingress-nginx's request counter, for one, appears only once a request has gone through. It can't keep the workload awake or hold off a pause. [Test it in Prometheus](/guides/prometheus-signals/#test-the-query-directly).
 
 ### An activity annotation is ignored
 

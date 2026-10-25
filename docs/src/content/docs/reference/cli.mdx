@@ -195,7 +195,7 @@ It uses the signals Napwake uses to pause.
 | Workload | How it's judged |
 |---|---|
 | Managed by Napwake | By the activity clock Napwake keeps for it. Idle is no activity until the clock's `pauseAt`. That's `idleAfter` after the last activity, or longer after [pauses made in use](/concepts/idle-detection/#paused-while-in-use). |
-| Managed, after pauses made in use | BECAUSE says so, such as `not idle yet: it woke 6m ago; after pauses made in use it waits 20 minutes, not 5 minutes` |
+| Managed, after pauses made in use | BECAUSE says so, such as `not idle yet: it woke 6m ago; after pauses made while it was in use, it waits 20 minutes, not 5 minutes` |
 | Managed, its activity clock | Combines every source configured, Prometheus queries too |
 | Managed, held awake | The scan says so, such as for its dependents |
 | Managed, its clock started without activity | BECAUSE says what started it |

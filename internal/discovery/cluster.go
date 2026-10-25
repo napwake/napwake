@@ -285,6 +285,12 @@ type Totals struct {
 	IdleMemoryBytes int64   `json:"idleMemoryBytes"`
 	IdleHourlyCost  float64 `json:"idleHourlyCost"`
 	IdleMonthlyCost float64 `json:"idleMonthlyCost"`
+	// IdleNeverPaused is how many of the idle workloads Napwake never
+	// pauses, protected or deleting their PVCs when scaled down, and what
+	// they cost: idle, but not something pausing can free.
+	IdleNeverPaused            int     `json:"idleNeverPaused"`
+	IdleNeverPausedHourlyCost  float64 `json:"idleNeverPausedHourlyCost"`
+	IdleNeverPausedMonthlyCost float64 `json:"idleNeverPausedMonthlyCost"`
 	// Replayed sums the history of unmanaged workloads, Measured what
 	// Napwake measured for those in dry-run, and FreedThisMonth and
 	// SavedThisMonth what it has freed and saved this month pausing managed
@@ -704,7 +710,7 @@ func longerWait(mw *v1alpha1.ManagedWorkload, pauseAt time.Time) string {
 	if wrongPauses(mw) == 0 || wait <= idleAfter {
 		return ""
 	}
-	return fmt.Sprintf("; after pauses made in use it waits %s, not %s", human.Duration(wait),
+	return fmt.Sprintf("; after pauses made while it was in use, it waits %s, not %s", human.Duration(wait),
 		human.Duration(idleAfter))
 }
 
@@ -858,6 +864,13 @@ func hourlyCost(w Workload, rates cost.Rates) float64 {
 	return cost.ComputeHourly(cores, gib, rates) * float64(w.Replicas)
 }
 
+// IdlePausable is how many idle workloads Napwake would pause and what they
+// cost while running: what pausing them would free.
+func (t Totals) IdlePausable() (n int, hourly, monthly float64) {
+	return t.Idle - t.IdleNeverPaused, t.IdleHourlyCost - t.IdleNeverPausedHourlyCost,
+		t.IdleMonthlyCost - t.IdleNeverPausedMonthlyCost
+}
+
 func totals(workloads []Workload) Totals {
 	var t Totals
 	for _, w := range workloads {
@@ -914,6 +927,11 @@ func totals(workloads []Workload) Totals {
 			t.IdleMemoryBytes += w.PodMemoryRequestBytes * int64(w.Replicas)
 			t.IdleHourlyCost += w.HourlyCost
 			t.IdleMonthlyCost += w.MonthlyCost
+			if w.NeverPaused() != "" || w.protectedByNapwake {
+				t.IdleNeverPaused++
+				t.IdleNeverPausedHourlyCost += w.HourlyCost
+				t.IdleNeverPausedMonthlyCost += w.MonthlyCost
+			}
 		}
 	}
 	return t

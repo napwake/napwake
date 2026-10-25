@@ -367,7 +367,7 @@ func TestScanCluster_ManagedWaitsLongerAfterPausesMadeInUse(t *testing.T) {
 
 	for _, name := range []string{"written", "unwritten"} {
 		assert.Equal(t, StateActive, got[name].State, "%s: Napwake doesn't pause it for 20 minutes", name)
-		assert.Equal(t, "not idle yet: it woke 6m ago; after pauses made in use it waits 20 minutes, not 5 minutes",
+		assert.Equal(t, "not idle yet: it woke 6m ago; after pauses made while it was in use, it waits 20 minutes, not 5 minutes",
 			got[name].Reason, name)
 	}
 	for _, name := range []string{"due", "due-unwritten"} {
@@ -841,4 +841,23 @@ func TestScanCluster_NeverPaused(t *testing.T) {
 	}
 	assert.Equal(t, "PVCs deleted on scale-down",
 		Workload{WontPause: "PVCs deleted on scale-down", Protected: true}.NeverPaused(), "what the scan sees itself first")
+}
+
+// An idle workload Napwake never pauses is idle, but pausing can't free
+// what it costs, so the totals keep it apart (P50).
+func TestTotals_IdleNapwakeNeverPausesIsntFreeable(t *testing.T) {
+	got := totals([]Workload{
+		{Name: "reports", State: StateIdle, Managed: true, WontPause: "PVCs deleted on scale-down",
+			Replicas: 1, PodCPURequestMillis: 20, HourlyCost: 0.001, MonthlyCost: 0.73},
+		{Name: "admin", State: StateIdle, Managed: true, protectedByNapwake: true, neverPaused: "namespace protected",
+			Replicas: 1, HourlyCost: 0.002, MonthlyCost: 1.46},
+		{Name: "web", State: StateIdle, Replicas: 2, PodCPURequestMillis: 250, HourlyCost: 0.05, MonthlyCost: 36.5},
+	})
+
+	assert.Equal(t, 3, got.Idle, "all three are idle")
+	assert.Equal(t, 2, got.IdleNeverPaused)
+	n, hourly, monthly := got.IdlePausable()
+	assert.Equal(t, 1, n)
+	assert.InDelta(t, 0.05, hourly, 1e-9)
+	assert.InDelta(t, 36.5, monthly, 1e-9)
 }

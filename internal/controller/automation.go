@@ -351,7 +351,11 @@ func (r *Reconciler) reconcileWake(ctx context.Context, workload *v1alpha1.Manag
 		why := &phaseEvent{reason: ReasonWokeByActivity, message: "activity annotation is newer than the pause, waking",
 			cause: v1alpha1.WokenByAnnotation}
 		if wakeSource(workload) == v1alpha1.ActivitySourceRequest {
-			why.message, why.cause = "a request is waiting, waking", requestCause(workload)
+			why.cause = requestCause(workload)
+			why.message = "a request is waiting, waking"
+			if why.cause == v1alpha1.WokenByClick {
+				why.message = "a person asked to wake it, waking"
+			}
 		}
 		return r.handleResume(ctx, workload, why)
 	}

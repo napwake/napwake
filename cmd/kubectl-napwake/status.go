@@ -348,10 +348,10 @@ var happenings = map[string]bool{
 	"PauseCancelled":   true,
 }
 
-// A wake by a request the doorman held is reported by the doorman's
-// WokenByRequest, which names the Service, so the operator's own
-// WokeByActivity for it is left out, and taken for the request it is.
-const requestWakeMessage = "a request is waiting, waking"
+// A wake by a request the doorman held, or a person's click, is reported by
+// the doorman's WokenByRequest, which names the Service, so the operator's
+// own WokeByActivity for it is left out, and taken for the request it is.
+var requestWakeMessages = []string{"a request is waiting, waking", "a person asked to wake it, waking"}
 
 // targetKey is a Deployment or StatefulSet.
 type targetKey struct {
@@ -904,7 +904,7 @@ func recentHappenings(events []corev1.Event, targets map[client.ObjectKey]string
 		// is named as it was.
 		target := cmp.Or(targets[key], key.Name)
 		message := strings.TrimPrefix(ev.Message, target+": ")
-		heldRequest := ev.Reason == "WokeByActivity" && message == requestWakeMessage
+		heldRequest := ev.Reason == "WokeByActivity" && slices.Contains(requestWakeMessages, message)
 		kind, cause := happeningWake, wakeCauses[ev.Reason]
 		if heldRequest {
 			cause = wokenByRequest

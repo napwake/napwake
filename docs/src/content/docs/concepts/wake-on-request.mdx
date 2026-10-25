@@ -24,7 +24,7 @@ On a public URL, the doorman can [ask before waking](#asking-before-waking) inst
 <AtAGlance
   items={[
     { label: 'Default', value: 'On for every workload Napwake pauses on its own, with nothing to configure' },
-    { label: 'On a public URL', value: '<code>ask</code>: a browser gets a <b>Wake it</b> button, and robots wake nothing' },
+    { label: 'On a public URL', value: '<code>ask</code>: a browser gets a <b>Wake it</b> button, and crawlers, scanners and API calls wake nothing' },
     { label: 'Protocols', value: 'Any TCP, such as HTTP, gRPC, Postgres and Redis' },
     { label: 'Holds a request', value: 'Up to <code>wake.maxWait</code>, 2 minutes by default' },
     { label: 'Browsers', value: 'A waking-up page that reloads every 3 seconds' },
@@ -157,7 +157,7 @@ Most load balancers see a paused workload as unhealthy, as they would without Na
 
 ### Environments on the public internet
 
-On the public internet, have the doorman [ask before waking](#asking-before-waking), with `napwake.dev/wake: "ask"`. A browser then gets a **Wake it** button, and robots wake nothing. [Public preview environments](/guides/preview-environments/) walks through it.
+On the public internet, have the doorman [ask before waking](#asking-before-waking), with `napwake.dev/wake: "ask"`. A browser then gets a **Wake it** button, and crawlers, scanners and API calls wake nothing. [Public preview environments](/guides/preview-environments/) walks through it.
 
 | The environment | `wake` | A request while it's paused |
 |-----------------|--------|-----------------------------|
