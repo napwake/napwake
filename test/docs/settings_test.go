@@ -19,7 +19,7 @@ package docs_test
 import (
 	"os"
 	"path/filepath"
-	"strings"
+	"regexp"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -41,7 +41,9 @@ func TestDocsDontNameTheWakeSettingThatWent(t *testing.T) {
 		data, err := os.ReadFile(path)
 		require.NoError(t, err)
 		for _, name := range gone {
-			assert.False(t, strings.Contains(string(data), name), "%s names %s, which is gone", path, name)
+			// A whole name: TurnedOffForTheCluster, the stop switch's reason, isn't TurnedOff.
+			whole := regexp.MustCompile(regexp.QuoteMeta(name) + `\b`)
+			assert.False(t, whole.MatchString(string(data)), "%s names %s, which is gone", path, name)
 		}
 	}
 }
