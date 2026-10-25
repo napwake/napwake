@@ -1,5 +1,5 @@
 /*
-Copyright 2026.
+Copyright 2026 The Napwake Authors.
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
@@ -201,4 +201,36 @@ func TestDeps_NotFound(t *testing.T) {
 
 	require.True(t, apierrors.IsNotFound(err))
 	assert.Contains(t, err.Error(), "no ManagedWorkload in preview-42 is named nope or manages a workload of that name")
+	assert.NotContains(t, err.Error(), "kubectl label", "there's no such workload to label")
+}
+
+// Naming a workload nothing manages, pause, wake and deps say the label
+// that has Napwake manage it, unless it's labelled managed or ignored
+// already.
+func TestFindManaged_NamesTheLabelForAWorkloadNothingManages(t *testing.T) {
+	tests := []struct {
+		name   string
+		labels map[string]string
+		hint   bool
+	}{
+		{name: "unlabelled", hint: true},
+		{name: "labelled managed", labels: map[string]string{v1alpha1.LabelManaged: "true"}},
+		{name: "labelled ignore", labels: map[string]string{v1alpha1.LabelIgnore: "true"}},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			c := newClient(t, interceptor.Funcs{}, enableDeployment("api", tt.labels, nil))
+
+			_, err := findManaged(context.Background(), c, "dev", "api")
+
+			require.True(t, apierrors.IsNotFound(err))
+			hint := "; deployment/api isn't managed, and kubectl label deployment api -n dev napwake.dev/managed=true " +
+				"manages it"
+			if tt.hint {
+				assert.Contains(t, err.Error(), hint)
+			} else {
+				assert.NotContains(t, err.Error(), "kubectl label")
+			}
+		})
+	}
 }

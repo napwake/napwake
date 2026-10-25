@@ -1,5 +1,5 @@
 /*
-Copyright 2026.
+Copyright 2026 The Napwake Authors.
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
@@ -138,6 +138,27 @@ func TestBlockers(t *testing.T) {
 			pods: []corev1.Pod{pod("shop", "api", "n1", volume(emptyDir("cache", "")), volume(emptyDir("tmp", "Memory")),
 				volume(corev1.Volume{Name: "logs", VolumeSource: corev1.VolumeSource{HostPath: &corev1.HostPathVolumeSource{Path: "/var/log"}}}))},
 			reason: []Reason{{Code: CodeLocalStorage, Pod: "shop/api", Detail: "local storage in cache, logs"}},
+		},
+		{
+			name: "local storage on EKS, whose autoscaler keeps upstream's default",
+			a:    Autoscaler{Scalers: []Scaler{{Kind: ClusterAutoscaler, Provider: "EKS"}}}, node: plain,
+			pods:   []corev1.Pod{pod("shop", "api", "n1", volume(emptyDir("cache", "")))},
+			reason: []Reason{{Code: CodeLocalStorage, Pod: "shop/api", Detail: "local storage in cache"}},
+		},
+		{
+			name: "local storage on GKE, whose autoscaler ignores it from 1.22",
+			a:    Autoscaler{Scalers: []Scaler{{Kind: ClusterAutoscaler, Provider: "GKE"}}}, node: plain,
+			pods: []corev1.Pod{pod("shop", "api", "n1", volume(emptyDir("cache", "")))},
+		},
+		{
+			name: "local storage on GKE Autopilot",
+			a:    Autoscaler{Scalers: []Scaler{{Kind: GKEAutopilot, Provider: "GKE"}}}, node: plain,
+			pods: []corev1.Pod{pod("shop", "api", "n1", volume(emptyDir("cache", "")))},
+		},
+		{
+			name: "local storage on AKS, which turns the check off by default",
+			a:    Autoscaler{Scalers: []Scaler{{Kind: ClusterAutoscaler, Provider: "AKS"}}}, node: plain,
+			pods: []corev1.Pod{pod("shop", "api", "n1", volume(emptyDir("cache", "")))},
 		},
 		{
 			name: "local volumes declared safe to evict", a: withCA, node: plain,

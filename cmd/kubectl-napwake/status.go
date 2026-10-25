@@ -1,5 +1,5 @@
 /*
-Copyright 2026.
+Copyright 2026 The Napwake Authors.
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
@@ -1005,8 +1005,8 @@ func findManaged(ctx context.Context, c client.Client, namespace, arg string) (*
 			notFound = apierrors.NewNotFound(
 				schema.GroupResource{Group: v1alpha1.GroupVersion.Group, Resource: "managedworkloads"}, arg)
 		}
-		return nil, fmt.Errorf("no ManagedWorkload in %s is named %s or manages a workload of that name: %w",
-			namespace, arg, notFound)
+		return nil, fmt.Errorf("no ManagedWorkload in %s is named %s or manages a workload of that name%s: %w",
+			namespace, arg, labelHint(ctx, c, namespace, arg), notFound)
 	}
 	names := make([]string, 0, len(matches))
 	for _, w := range matches {
@@ -1016,6 +1016,26 @@ func findManaged(ctx context.Context, c client.Client, namespace, arg string) (*
 	return nil, fmt.Errorf("%s in %s %w: %s; name one by its workload's kind and name, such as %s/%s", arg,
 		namespace, errAmbiguous, strings.Join(names, ", "), strings.ToLower(string(matches[0].Spec.Target.Kind)),
 		matches[0].Spec.Target.Name)
+}
+
+// labelHint says how to have Napwake manage the Deployment or StatefulSet
+// arg names, for the error that says nothing manages it: nothing when
+// there's no such workload, or it's labelled managed or ignored already.
+func labelHint(ctx context.Context, c client.Client, namespace, arg string) string {
+	w, err := getWorkload(ctx, c, namespace, arg)
+	if err != nil {
+		return ""
+	}
+	labels := w.GetLabels()
+	if labels[v1alpha1.LabelManaged] != "" || labels[v1alpha1.LabelIgnore] != "" {
+		return ""
+	}
+	kind := kindDeployment
+	if _, ok := w.(*appsv1.StatefulSet); ok {
+		kind = kindStatefulSet
+	}
+	return fmt.Sprintf("; %s/%s isn't managed, and kubectl label %s %s -n %s %s=true manages it",
+		kind, w.GetName(), kind, w.GetName(), namespace, v1alpha1.LabelManaged)
 }
 
 func writeStatus(w io.Writer, result statusResult, output string, now time.Time) error {

@@ -185,7 +185,12 @@ jobs:
           outputs: type=image,name=${{ env.REGISTRY }}/${{ env.IMAGE_NAME }},push-by-digest=true,name-canonical=true,push=true
           build-args: VERSION=${{ env.TAG }}
           labels: |
+            org.opencontainers.image.title=napwake
+            org.opencontainers.image.url=https://napwake.dev
+            org.opencontainers.image.documentation=https://docs.napwake.dev
             org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }}
+            org.opencontainers.image.licenses=Apache-2.0
+            org.opencontainers.image.vendor=The Napwake Authors
             org.opencontainers.image.version=${{ env.TAG }}
             org.opencontainers.image.revision=${{ github.sha }}
 

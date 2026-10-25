@@ -1,5 +1,5 @@
 /*
-Copyright 2026.
+Copyright 2026 The Napwake Authors.
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
@@ -178,6 +178,7 @@ func (c *Cluster) Blockers(a Autoscaler) map[string][]Reason {
 		}
 	}
 	caScales := a.Has(ClusterAutoscaler) || a.Has(GKEAutopilot) || !a.Known()
+	localStorageBlocks := !a.ignoresLocalStorage()
 
 	out := map[string][]Reason{}
 	for i := range c.Nodes {
@@ -192,7 +193,7 @@ func (c *Cluster) Blockers(a Autoscaler) map[string][]Reason {
 				reasons = []Reason{atMinimumReason(g)}
 				break
 			}
-			reasons = clusterAutoscalerBlockers(node, pods, pdbs)
+			reasons = clusterAutoscalerBlockers(node, pods, pdbs, localStorageBlocks)
 		default:
 			reasons = []Reason{{Code: CodeNotAutoscaled, Detail: notAutoscaled(a)}}
 		}
@@ -214,9 +215,10 @@ func notAutoscaled(a Autoscaler) string {
 // removing a node, from its FAQ's "What types of pods can prevent CA from
 // removing a node?". DaemonSet and mirror pods never block it. A pod
 // annotated safe-to-evict "true" is moved whatever its storage, owner or
-// namespace, though its PodDisruptionBudget still holds.
+// namespace, though its PodDisruptionBudget still holds. Local storage
+// blocks only where the autoscaler skips nodes with it.
 func clusterAutoscalerBlockers(node *corev1.Node, pods []*corev1.Pod,
-	pdbs map[string][]policyv1.PodDisruptionBudget) []Reason {
+	pdbs map[string][]policyv1.PodDisruptionBudget, localStorageBlocks bool) []Reason {
 	var out []Reason
 	if node.Annotations[annotationScaleDownDisabled] == enabled {
 		out = append(out, Reason{Code: CodeScaleDownDisabled, Detail: annotationScaleDownDisabled + "=true on the node"})
@@ -232,7 +234,7 @@ func clusterAutoscalerBlockers(node *corev1.Node, pods []*corev1.Pod,
 		case enabled:
 			continue
 		}
-		if volumes := unsafeLocalVolumes(p); len(volumes) > 0 {
+		if volumes := unsafeLocalVolumes(p); localStorageBlocks && len(volumes) > 0 {
 			out = append(out, Reason{Code: CodeLocalStorage, Pod: ref,
 				Detail: "local storage in " + strings.Join(volumes, ", ")})
 		}

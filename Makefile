@@ -289,7 +289,7 @@ check-chart: ## Lint the Helm chart, render it for each provider's Kubernetes ve
 	@cmp -s charts/napwake/values.yaml charts/napwake/files/defaults.yaml || { \
 		echo "charts/napwake/files/defaults.yaml isn't a copy of values.yaml, which the chart fills in missing values from; run make manifests"; exit 1; }
 	@[ "$$(awk '$$1 == "defaultsVersion:" {print $$2}' charts/napwake/values.yaml)" = \
-		"$$(awk '$$1 == "version:" {print $$2}' charts/napwake/Chart.yaml)" ] || { \
+		"$$(awk '/^version:/ {print $$2}' charts/napwake/Chart.yaml)" ] || { \
 		echo "values.yaml's defaultsVersion isn't Chart.yaml's version, so the chart can't tell its own defaults from an older release's"; exit 1; }
 	@missing=$$(grep -L '^{{- include "napwake.defaults" . -}}$$' charts/napwake/templates/*.yaml \
 		charts/napwake/templates/crds/*.yaml charts/napwake/templates/NOTES.txt || true); [ -z "$$missing" ] || { \
@@ -426,6 +426,9 @@ bump: ## Bump the version in the chart, the kustomize image, and docs, and date 
 		perl -pi -e 's/(?<![\d.])\Q$$ENV{OLD}\E(?!\.?[\w-])/$$ENV{VERSION}/g' $(VERSIONED_DOCS)
 	@perl -pi -e 's/^version:.*/version: $$ENV{VERSION}/' charts/napwake/Chart.yaml
 	@perl -pi -e 's/^appVersion:.*/appVersion: "v$$ENV{VERSION}"/' charts/napwake/Chart.yaml
+	@perl -pi -e 's/^(      image: ghcr\.io\/napwake\/napwake:).*/$${1}v$$ENV{VERSION}/' charts/napwake/Chart.yaml
+	@PRE="$$([[ "$$VERSION" == *-* ]] && echo true || echo false)" \
+		perl -pi -e 's/^(  artifacthub\.io\/prerelease:).*/$$1 "$$ENV{PRE}"/' charts/napwake/Chart.yaml
 	@perl -pi -e 's/^defaultsVersion:.*/defaultsVersion: $$ENV{VERSION}/' charts/napwake/values.yaml charts/napwake/files/defaults.yaml
 	@perl -pi -e 's/^  newTag:.*/  newTag: v$$ENV{VERSION}/' config/manager/kustomization.yaml
 	@[[ "$$VERSION" == *-* ]] || TODAY="$$(date -u +%F)" \
@@ -437,6 +440,9 @@ verify-version: ## Fail unless the chart, the kustomize image, the docs and the 
 	@$(CHECK_VERSION)
 	@grep -qxF "version: $$VERSION" charts/napwake/Chart.yaml || { echo "Chart.yaml's version isn't $$VERSION"; exit 1; }
 	@grep -qxF "appVersion: \"v$$VERSION\"" charts/napwake/Chart.yaml || { echo "Chart.yaml's appVersion isn't v$$VERSION"; exit 1; }
+	@grep -qxF "      image: ghcr.io/napwake/napwake:v$$VERSION" charts/napwake/Chart.yaml || { echo "Chart.yaml's Artifact Hub image isn't v$$VERSION"; exit 1; }
+	@PRE="$$([[ "$$VERSION" == *-* ]] && echo true || echo false)"; \
+		grep -qxF "  artifacthub.io/prerelease: \"$$PRE\"" charts/napwake/Chart.yaml || { echo "Chart.yaml's Artifact Hub prerelease isn't $$PRE"; exit 1; }
 	@grep -qxF "defaultsVersion: $$VERSION" charts/napwake/values.yaml || { echo "values.yaml's defaultsVersion isn't $$VERSION"; exit 1; }
 	@grep -qxF "  newTag: v$$VERSION" config/manager/kustomization.yaml || { echo "config/manager's image isn't v$$VERSION"; exit 1; }
 	@# The install and verify commands name the version whole: after

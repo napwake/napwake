@@ -1,5 +1,5 @@
 /*
-Copyright 2026.
+Copyright 2026 The Napwake Authors.
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
@@ -358,7 +358,7 @@ func writePage(path, pattern string, write func(io.Writer) error) (string, error
 }
 
 func writeHTML(w io.Writer, result scanResult, idleAfter time.Duration) error {
-	if err := reportTemplate.Execute(w, buildReport(result, idleAfter)); err != nil {
+	if err := executeWithPolicy(w, reportTemplate, buildReport(result, idleAfter)); err != nil {
 		return fmt.Errorf("writing the report: %w", err)
 	}
 	return nil

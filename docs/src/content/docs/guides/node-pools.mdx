@@ -98,7 +98,7 @@ With Cluster Autoscaler, managed or your own, the pool is its own node group. It
 ```bash
 gcloud container node-pools create non-prod \
   --cluster my-cluster --location us-central1 \
-  --machine-type e2-standard-4 --spot \
+  --machine-type e2-standard-4 --spot --num-nodes 0 \
   --enable-autoscaling --total-min-nodes 0 --total-max-nodes 20 \
   --node-labels example.com/tier=non-prod \
   --node-taints example.com/tier=non-prod:NoSchedule
@@ -110,6 +110,7 @@ gcloud container clusters update my-cluster --location us-central1 \
 | For GKE Standard | |
 |---|---|
 | Zero nodes | GKE never scales a Standard cluster to zero, since system pods need a home. Keep another pool for them. This one can go to zero |
+| `--num-nodes 0` | Starts the pool empty. gcloud's default is 3 nodes in each of the cluster's zones, 9 for a regional cluster, until the autoscaler removes them |
 | Labels | Its nodes also carry `cloud.google.com/gke-nodepool: non-prod`, which you can select instead |
 | `optimize-utilization` | Scales down sooner and more often than the default `balanced`, across the whole cluster |
 

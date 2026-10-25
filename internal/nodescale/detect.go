@@ -1,5 +1,5 @@
 /*
-Copyright 2026.
+Copyright 2026 The Napwake Authors.
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
@@ -111,6 +111,16 @@ func (a Autoscaler) Known() bool {
 // Has says whether an autoscaler of kind k was found.
 func (a Autoscaler) Has(k Kind) bool {
 	return slices.ContainsFunc(a.Scalers, func(s Scaler) bool { return s.Kind == k })
+}
+
+// ignoresLocalStorage says whether the Cluster Autoscaler here moves pods
+// with local storage: GKE's has since 1.22, for Standard and Autopilot, and
+// AKS's turns --skip-nodes-with-local-storage off by default. Upstream's
+// keeps it on.
+func (a Autoscaler) ignoresLocalStorage() bool {
+	return slices.ContainsFunc(a.Scalers, func(s Scaler) bool {
+		return (s.Kind == ClusterAutoscaler || s.Kind == GKEAutopilot) && (s.Provider == "GKE" || s.Provider == "AKS")
+	})
 }
 
 // NodePool is the Karpenter NodePool named name, and false when there's

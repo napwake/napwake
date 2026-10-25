@@ -1,5 +1,5 @@
 /*
-Copyright 2026.
+Copyright 2026 The Napwake Authors.
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
@@ -198,7 +198,7 @@ func TestWritePage(t *testing.T) {
 	assert.Contains(t, body, `<svg class="scene" viewBox="0 0 300 236" aria-hidden="true">`,
 		"the doorman holds the door of the waking room")
 	assert.Contains(t, body, `<meta name="referrer" content="no-referrer">`, "the address stays with the page")
-	assert.Contains(t, body, `<a href="https://napwake.dev/" target="_blank" rel="noopener noreferrer">`+
+	assert.Contains(t, body, `<a href="https://napwake.dev/?ref=waking-page" target="_blank" rel="noopener noreferrer">`+
 		`<svg viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" fill-rule="evenodd" d="`+Mark+
 		`"/></svg>Paused by Napwake</a>`)
 	assert.Contains(t, body, `<p class="lede">This environment was paused because it looked unused. It's starting now`)
@@ -255,7 +255,8 @@ func TestWriteAsleepPage_RunsOnlyItsOwnStyleAndScript(t *testing.T) {
 	assert.Contains(t, body, `<link rel="icon" href="data:image/svg+xml,`)
 	for _, external := range regexp.MustCompile(`(?:src|href|action)="([^"#]*)"`).FindAllStringSubmatch(body, -1) {
 		if !strings.HasPrefix(external[1], "data:") {
-			assert.Equal(t, "https://napwake.dev/", external[1], "only the footer links elsewhere, and loads nothing")
+			assert.Equal(t, "https://napwake.dev/?ref=asleep-page", external[1],
+				"only the footer links elsewhere, saying which page it's from, and loads nothing")
 		}
 	}
 }

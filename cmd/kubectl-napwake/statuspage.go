@@ -1,5 +1,5 @@
 /*
-Copyright 2026.
+Copyright 2026 The Napwake Authors.
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
@@ -109,7 +109,7 @@ func writeStatusPage(stderr io.Writer, path string, result statusResult, since t
 }
 
 func writeStatusHTML(w io.Writer, result statusResult, since time.Duration, now time.Time) error {
-	if err := statusPageTemplate.Execute(w, buildStatusPage(result, since, now)); err != nil {
+	if err := executeWithPolicy(w, statusPageTemplate, buildStatusPage(result, since, now)); err != nil {
 		return fmt.Errorf("writing the status page: %w", err)
 	}
 	return nil
