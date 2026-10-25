@@ -23,6 +23,7 @@ import (
 	"errors"
 	"fmt"
 	"slices"
+	"strings"
 	"testing"
 	"time"
 
@@ -206,6 +207,30 @@ Recent pauses and wakes:
   3h ago    preview-42/api     paused
   5h ago    preview-42/api     request on Service api, waking
 `, out)
+}
+
+// While the operator has pausing off for the whole cluster, as the Pausing
+// condition on its workloads says, status says so first, and in -o json.
+func TestStatus_SaysFirstThatPausingIsOff(t *testing.T) {
+	objs := statusCluster()
+	api, ok := objs[0].(*v1alpha1.ManagedWorkload)
+	require.True(t, ok)
+	api.Status.Conditions = append(api.Status.Conditions, condition("Pausing", metav1.ConditionFalse,
+		"TurnedOffForTheCluster", "pausing is off for the whole cluster"))
+
+	out := runStatus(t, newStatusClient(t, interceptor.Funcs{}, objs...), statusOpts())
+
+	first, rest, _ := strings.Cut(out, "\n")
+	assert.Equal(t, "Pausing is off for the whole cluster (pausing.enabled: false); nothing pauses, and everything "+
+		"wakes.", first)
+	assert.True(t, strings.HasPrefix(rest, testCluster+": Napwake manages 4 workloads.\n"), rest)
+	result, err := clusterStatus(context.Background(), newStatusClient(t, interceptor.Funcs{}, objs...),
+		"preview-42", statusOpts())
+	require.NoError(t, err)
+	assert.True(t, result.PausingOff)
+
+	assert.NotContains(t, runStatus(t, newStatusClient(t, interceptor.Funcs{}, statusCluster()...), statusOpts()),
+		"Pausing is off", "a cluster that pauses doesn't say so")
 }
 
 // A workload whose doorman asks before waking it says so in NEXT, and the

@@ -487,7 +487,7 @@ func pauseAnswered(w *v1alpha1.ManagedWorkload, ref string, requested bool, out 
 	}
 	why := refusal("not paused", oneLine(c.Message))
 	switch c.Reason {
-	case reasonDryRun:
+	case reasonDryRun, reasonTurnedOffForTheCluster:
 		_, _ = fmt.Fprintf(out, "%s wasn't paused: %s\n", ref, why)
 		return true, nil
 	case reasonScaledToZero:

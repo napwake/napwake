@@ -175,8 +175,9 @@ func TestPause_NoWait(t *testing.T) {
 	assert.NotEmpty(t, pauseRequested(t, c))
 }
 
-// Napwake's answer when it doesn't pause: dry-run and a workload off
-// already aren't failures; a reason it won't pause is.
+// Napwake's answer when it doesn't pause: dry-run, pausing off for the whole
+// cluster and a workload off already aren't failures; a reason it won't
+// pause is.
 func TestPause_Answers(t *testing.T) {
 	tests := []struct {
 		name     string
@@ -193,6 +194,14 @@ func TestPause_Answers(t *testing.T) {
 			wantStep: "preview-42/api is in dry-run, so Napwake counts a would-be pause and leaves it running...\n",
 			want: "preview-42/api wasn't paused: dry-run is on, so Napwake counted a would-be pause and left " +
 				"the workload running\n",
+		},
+		{
+			name: "pausing off for the whole cluster",
+			answer: refuses(v1alpha1.PhaseIdle, "TurnedOffForTheCluster", "not paused at 2026-10-21 03:32 UTC: "+
+				"pausing is off for the whole cluster, so Napwake counted a would-be pause and left the workload running"),
+			wantStep: "pausing preview-42/api...\n",
+			want: "preview-42/api wasn't paused: pausing is off for the whole cluster, so Napwake counted a would-be " +
+				"pause and left the workload running\n",
 		},
 		{
 			name: "scaled to zero",

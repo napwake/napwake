@@ -75,6 +75,16 @@ const savedShareExpected = 0.5
 // one screen; -o json has them all.
 const recentLimit = 10
 
+// The operator puts the Pausing condition on every workload, False for this
+// reason, while pausing is off for the whole cluster, and status then says
+// so first.
+const (
+	conditionPausing             = "Pausing"
+	reasonTurnedOffForTheCluster = "TurnedOffForTheCluster"
+
+	pausingOffLine = "Pausing is off for the whole cluster (pausing.enabled: false); nothing pauses, and everything wakes."
+)
+
 type statusOptions struct {
 	namespaces namespaceFlags
 	output     string
@@ -189,10 +199,13 @@ type statusResult struct {
 	ForecastTimeZones []string `json:"forecastTimeZones,omitempty"`
 	// NodesNotScalingDown is set when pausing freed far more than came off
 	// the bill this month, for the workloads whose savings are measured.
-	NodesNotScalingDown bool             `json:"nodesNotScalingDown,omitempty"`
-	Workloads           []statusWorkload `json:"workloads"`
-	Problems            []problem        `json:"problems"`
-	Recent              []happening      `json:"recent"`
+	NodesNotScalingDown bool `json:"nodesNotScalingDown,omitempty"`
+	// PausingOff is set when a workload says pausing is off for the whole
+	// cluster.
+	PausingOff bool             `json:"pausingOff,omitempty"`
+	Workloads  []statusWorkload `json:"workloads"`
+	Problems   []problem        `json:"problems"`
+	Recent     []happening      `json:"recent"`
 	// Note says when fewer namespaces were read than were asked for.
 	Note string `json:"note,omitempty"`
 	// EventsHidden is set when the user can't read events, so Recent is
@@ -391,6 +404,7 @@ func clusterStatus(ctx context.Context, c client.Client, home string, opts statu
 		targets[client.ObjectKeyFromObject(w)] = w.Spec.Target.Name
 		row := workloadStatus(w, activeUntil[targetOfManaged(w)], now)
 		result.Workloads = append(result.Workloads, row)
+		result.PausingOff = result.PausingOff || pausingOff(w)
 		problems := reviewGitOpsConflict(ctx, c, checker, w, problemsOf(w, now), now)
 		result.Problems = append(result.Problems, problems...)
 		if p := w.Status.Prediction; p != nil && p.TimeZone != "" && !slices.Contains(result.ForecastTimeZones, p.TimeZone) {
@@ -546,6 +560,13 @@ func targetActiveUntil(ctx context.Context, c client.Client, namespaces []string
 		}
 	}
 	return out, nil
+}
+
+// pausingOff reports whether the workload says the operator has pausing off
+// for the whole cluster.
+func pausingOff(w *v1alpha1.ManagedWorkload) bool {
+	c := meta.FindStatusCondition(w.Status.Conditions, conditionPausing)
+	return c != nil && c.Status == metav1.ConditionFalse && c.Reason == reasonTurnedOffForTheCluster
 }
 
 func mayPause(w *v1alpha1.ManagedWorkload) bool {
@@ -1054,6 +1075,9 @@ func writeStatusTable(w io.Writer, result statusResult, now time.Time, pl palett
 		}
 		p.line("kubectl napwake scan finds idle ones; label one napwake.dev/managed=true for Napwake to manage it.")
 		return p.err
+	}
+	if result.PausingOff {
+		p.line("%s", pl.paint(sgrAttention, pausingOffLine))
 	}
 	p.line("%s: Napwake manages %s.", result.Cluster, countOf(len(result.Workloads), "workload"))
 	p.line("  %s", pl.phaseCounts(result.Workloads))
