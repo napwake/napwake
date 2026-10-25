@@ -893,6 +893,44 @@ func TestServer_CountsTheRequestsItTurnsAway(t *testing.T) {
 	assert.True(t, got.PausedAt.Equal(&metav1.Time{Time: next}))
 }
 
+// A request turned away while the workload is still pausing, before its
+// pause has a time to be counted under, counts for that pause once it has
+// one; and nothing counts for a pause called off before it had a time
+// (P57).
+func TestServer_CountsWhatItTurnsAwayBeforeThePauseHasATime(t *testing.T) {
+	ctx := context.Background()
+	w := askingWorkload(freePort(t))
+	began := time.Now().Add(-time.Minute).Truncate(time.Second).UTC()
+	w.Status.Phase = v1alpha1.PhasePausing
+	w.Status.Pause = &v1alpha1.PauseStatus{PreviousReplicas: 2, StartedAt: &metav1.Time{Time: began},
+		WakeAnnotations: &v1alpha1.WakeAnnotations{}}
+	s, c := newTestServer(t, nil, w)
+
+	s.turnedAway(route{workload: apiKey, began: began})
+	s.turnedAway(route{workload: apiKey, began: began})
+	s.flushTurnedAway(ctx)
+	assert.Zero(t, turnedAwayOf(t, c).Requests, "nothing to count them under yet")
+
+	paused := metav1.NewTime(time.Now().Truncate(time.Second).UTC())
+	require.NoError(t, c.Get(ctx, apiKey, w))
+	w.Status.Phase, w.Status.Pause.PausedAt = v1alpha1.PhasePaused, &paused
+	require.NoError(t, c.Update(ctx, w))
+	s.turnedAway(route{workload: apiKey, began: began, pausedAt: paused.Time})
+	s.flushTurnedAway(ctx)
+	got := turnedAwayOf(t, c)
+	assert.Equal(t, int64(3), got.Requests, "those turned away as it paused count too")
+	assert.True(t, got.PausedAt.Equal(&paused), "counted for the pause")
+
+	calledOff := began.Add(time.Hour)
+	s.turnedAway(route{workload: apiKey, began: calledOff})
+	require.NoError(t, c.Get(ctx, apiKey, w))
+	w.Status.Phase, w.Status.Pause = v1alpha1.PhaseRunning, nil
+	require.NoError(t, c.Update(ctx, w))
+	s.flushTurnedAway(ctx)
+	assert.Equal(t, int64(3), turnedAwayOf(t, c).Requests, "a pause called off counts nothing")
+	assert.Empty(t, s.away, "and isn't kept for later")
+}
+
 // A count is always written with the pause it counts, and one in the
 // annotation without a pause, or with one later than the workload's
 // current pause, as one edited by hand might be, is started again rather
