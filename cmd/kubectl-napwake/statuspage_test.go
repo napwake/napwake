@@ -98,6 +98,27 @@ func TestWriteStatusHTML_Escapes(t *testing.T) {
 	assert.Contains(t, got, `&lt;img src=x onerror=alert(1)&gt;`)
 }
 
+// Under a cent freed, saved or measured in dry-run, which the operator
+// writes <$0.01, is <$1 on the page, in the figures and the rows, never
+// $0, which says there was none.
+func TestWriteStatusHTML_UnderACent(t *testing.T) {
+	api := statusWorkloadObj("preview-42", "api", v1alpha1.TargetKindDeployment, v1alpha1.PhasePaused, time.Hour)
+	api.Status.Cost = &v1alpha1.CostStatus{FreedThisMonth: "<$0.01", SavedThisMonth: "<$0.01"}
+	web := statusWorkloadObj("preview-7", "web", v1alpha1.TargetKindDeployment, v1alpha1.PhaseIdle, time.Hour)
+	web.Spec.DryRun = true
+	web.Status.DryRun = &v1alpha1.DryRunStatus{Since: *before(3 * time.Hour), Pauses: 1, EstimatedFreed: "<$0.01"}
+
+	got := renderStatusPage(t, api, web)
+
+	assert.Contains(t, got, `<div class="figure"><b>&lt;$1</b><span>freed by pausing this month</span>`)
+	assert.Contains(t, got, `<div class="figure"><b>&lt;$1</b><span>saved of it</span>`)
+	assert.Contains(t, got, `<div class="figure"><b>&lt;$1</b><span>pausing would have freed</span>`)
+	assert.Contains(t, got, "pausing it would have freed &lt;$1 since Oct 5.")
+	assert.Regexp(t, `<td class="n" data-v="0\.00\d+">&lt;\$1<span class="sub">&lt;\$1 saved</span></td>`, got)
+	assert.Regexp(t, `<td class="n" data-v="0\.00\d+">&lt;\$1</td>`, got, "what dry-run measured")
+	assert.NotContains(t, got, "<b>$0</b>")
+}
+
 func TestWriteStatusHTML_NothingManaged(t *testing.T) {
 	got := renderStatusPage(t)
 

@@ -26,7 +26,6 @@ import (
 	"os"
 	"runtime"
 	"slices"
-	"strconv"
 	"strings"
 	"text/tabwriter"
 	"time"
@@ -42,6 +41,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	v1alpha1 "github.com/napwake/napwake/api/v1alpha1"
+	"github.com/napwake/napwake/internal/cost"
 	"github.com/napwake/napwake/internal/discovery"
 	"github.com/napwake/napwake/internal/gitops"
 	"github.com/napwake/napwake/internal/nodescale"
@@ -217,9 +217,6 @@ type statusWorkload struct {
 	// freed, and since when it has been measured. Unset for one that isn't.
 	WouldFree   *float64   `json:"wouldFree,omitempty"`
 	DryRunSince *time.Time `json:"dryRunSince,omitempty"`
-	// wouldBePaused is whether dry-run has measured a would-be pause, which
-	// has freed something however little the estimate shows.
-	wouldBePaused bool
 	// AtSpot is set when its money figures are at spot prices, from the
 	// spot nodes it runs on, rather than on-demand.
 	AtSpot bool `json:"atSpot,omitempty"`
@@ -600,7 +597,6 @@ func workloadStatus(w *v1alpha1.ManagedWorkload, targetActiveUntil, now time.Tim
 		wouldFree := dollarsIn(d.EstimatedFreed)
 		since := d.Since.UTC()
 		row.WouldFree, row.DryRunSince = &wouldFree, &since
-		row.wouldBePaused = d.Pauses > 0
 	}
 	if t := w.Status.LastTransitionTime; t != nil {
 		since := t.UTC()
@@ -799,10 +795,10 @@ func clockTime(t time.Time) string {
 	return t.UTC().Format("15:04 UTC")
 }
 
-// dollarsIn reads an amount the operator wrote, such as "$12.40", as zero
-// when it can't.
+// dollarsIn reads an amount the operator wrote, such as "$12.40" or
+// "<$0.01", as zero when it can't.
 func dollarsIn(s string) float64 {
-	amount, err := strconv.ParseFloat(strings.TrimPrefix(s, "$"), 64)
+	amount, err := cost.ParseDollars(s)
 	if err != nil {
 		return 0
 	}
@@ -1204,16 +1200,14 @@ func countPhases(workloads []statusWorkload, say func(phase v1alpha1.WorkloadPha
 func dryRunSummary(workloads []statusWorkload) string {
 	n, since := dryRunMeasured(workloads)
 	var wouldFree float64
-	paused := false
 	for _, wl := range workloads {
 		if wl.WouldFree != nil {
 			wouldFree += *wl.WouldFree
-			paused = paused || wl.wouldBePaused
 		}
 	}
 	s := number(n) + " in dry-run, never paused"
 	if since != nil {
-		s += fmt.Sprintf(": pausing %s would have freed %s since %s", pronounObject(n), wouldFreeDollars(wouldFree, paused),
+		s += fmt.Sprintf(": pausing %s would have freed %s since %s", pronounObject(n), dollars(wouldFree),
 			since.Format("Jan 2"))
 	}
 	return s
@@ -1354,18 +1348,7 @@ func wouldFreeCell(wl statusWorkload) string {
 	if wl.WouldFree == nil {
 		return "-"
 	}
-	return wouldFreeDollars(*wl.WouldFree, wl.wouldBePaused)
-}
-
-// wouldFreeDollars is dollars for what dry-run measured. The operator's
-// estimate is to the cent, so would-be pauses that have freed less than a
-// cent read $0.00 there; any would-be pause has freed something, which
-// reads <$1, as any amount above zero does.
-func wouldFreeDollars(amount float64, paused bool) string {
-	if paused && amount == 0 {
-		return "<$1"
-	}
-	return dollars(amount)
+	return dollars(*wl.WouldFree)
 }
 
 func ago(t, now time.Time) string {

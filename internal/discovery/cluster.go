@@ -644,7 +644,7 @@ func thisMonth(mw *v1alpha1.ManagedWorkload, now time.Time, figure func(*v1alpha
 			return 0
 		}
 	}
-	amount, err := strconv.ParseFloat(strings.TrimPrefix(figure(c), "$"), 64)
+	amount, err := cost.ParseDollars(figure(c))
 	if err != nil {
 		return 0
 	}

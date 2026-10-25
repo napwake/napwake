@@ -774,6 +774,8 @@ func TestFreedAndSavedThisMonth(t *testing.T) {
 		{name: "last month's",
 			cost: &v1alpha1.CostStatus{FreedThisMonth: "$40.00", SavedThisMonth: "$12.50", LastAccumulatedAt: &lastMonth}},
 		{name: "unreadable", cost: &v1alpha1.CostStatus{FreedThisMonth: "pending", SavedThisMonth: ""}},
+		{name: "under a cent", freed: 0.0025, saved: 0.0025,
+			cost: &v1alpha1.CostStatus{FreedThisMonth: "<$0.01", SavedThisMonth: "<$0.01", LastAccumulatedAt: &thisMonth}},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -783,6 +785,32 @@ func TestFreedAndSavedThisMonth(t *testing.T) {
 			assert.InDelta(t, tt.saved, SavedThisMonth(mw, scanTime), 0.001)
 		})
 	}
+}
+
+// Under a cent freed and saved, which the operator writes <$0.01, is above
+// zero for the workload and in the totals, so the scan never says nothing.
+func TestScanCluster_FreedUnderACent(t *testing.T) {
+	thisMonth := metav1.NewTime(scanTime.Add(-time.Hour))
+	objs := make([]runtime.Object, 0, 8)
+	for _, name := range []string{"api", "web"} {
+		mw := managedFor(name, v1alpha1.ManagedWorkloadStatus{Phase: v1alpha1.PhaseRunning,
+			Cost: &v1alpha1.CostStatus{FreedThisMonth: "<$0.01", SavedThisMonth: "<$0.01",
+				LastAccumulatedAt: &thisMonth}})
+		objs = append(objs, mw, makePodMetrics(name, testNamespace, "1m", "10Mi"))
+		objs = append(objs, deploymentWithRollout(name, testNamespace, 1, 30*24*time.Hour)...)
+	}
+
+	report := scanWorkloads(t, objs...)
+
+	require.Len(t, report.Workloads, 2)
+	for name, w := range byName(report) {
+		assert.Positive(t, w.FreedThisMonth, name)
+		assert.Less(t, w.FreedThisMonth, 0.005, name)
+		assert.Positive(t, w.SavedThisMonth, name)
+	}
+	assert.Positive(t, report.Totals.FreedThisMonth)
+	assert.Less(t, report.Totals.FreedThisMonth, 0.01, "two amounts under a cent")
+	assert.Positive(t, report.Totals.SavedThisMonth)
 }
 
 // Until the operator's first reconcile in a new month, a workload's record

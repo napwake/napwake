@@ -18,6 +18,8 @@ package cost
 
 import (
 	"fmt"
+	"strconv"
+	"strings"
 	"time"
 )
 
@@ -98,7 +100,31 @@ func Project(amount float64, tracked time.Duration, t time.Time) (float64, bool)
 	return amount * month.Hours() / tracked.Hours(), true
 }
 
-// FormatDollars formats a cost value as a dollar string.
+// underACent is what FormatDollars writes for an amount above zero that
+// rounds to nothing.
+const underACent = "<$0.01"
+
+// FormatDollars writes amount to the cent, as $12.40. An amount above zero
+// that rounds to nothing is <$0.01, so $0.00 is only ever none.
 func FormatDollars(amount float64) string {
-	return fmt.Sprintf("$%.2f", amount)
+	s := fmt.Sprintf("$%.2f", amount)
+	if amount > 0 && s == "$0.00" {
+		return underACent
+	}
+	return s
+}
+
+// ParseDollars reads an amount FormatDollars wrote. <$0.01 reads as a
+// quarter of a cent, the middle of what it stands for, as $0.01 reads as
+// the middle of what rounds to it: above zero, so a sum of them is too,
+// and written again it's <$0.01.
+func ParseDollars(s string) (float64, error) {
+	if s == underACent {
+		return 0.0025, nil
+	}
+	amount, err := strconv.ParseFloat(strings.TrimPrefix(s, "$"), 64)
+	if err != nil {
+		return 0, fmt.Errorf("reading dollars: %w", err)
+	}
+	return amount, nil
 }

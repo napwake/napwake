@@ -953,13 +953,13 @@ func TestStatus_DryRunLeadsWithWhatItWouldFree(t *testing.T) {
 	assert.NotContains(t, out.String(), "WOULD FREE", "no column without a workload in dry-run")
 }
 
-// A would-be pause that has freed less than a cent reads $0.00 in the
+// A would-be pause that has freed less than a cent reads <$0.01 in the
 // operator's estimate. It has freed something, so it reads <$1, as any
 // amount above zero does; $0 is for a workload still waiting for its first.
 func TestStatus_WouldFreeBelowACent(t *testing.T) {
 	small := statusWorkloadObj("preview-7", "redis", v1alpha1.TargetKindDeployment, v1alpha1.PhaseIdle, time.Hour)
 	small.Spec.DryRun = true
-	small.Status.DryRun = &v1alpha1.DryRunStatus{Since: *before(3 * time.Hour), Pauses: 1, EstimatedFreed: "$0.00"}
+	small.Status.DryRun = &v1alpha1.DryRunStatus{Since: *before(3 * time.Hour), Pauses: 1, EstimatedFreed: "<$0.01"}
 	waiting := statusWorkloadObj("preview-7", "api", v1alpha1.TargetKindDeployment, v1alpha1.PhaseRunning, time.Hour)
 	waiting.Spec.DryRun = true
 	waiting.Status.DryRun = &v1alpha1.DryRunStatus{Since: *before(2 * time.Hour), EstimatedFreed: "$0.00"}
