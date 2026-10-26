@@ -117,11 +117,21 @@ import NextSteps from '../../../components/NextSteps.astro';
 
 The request limit and the connection flags every command shares. [Namespaces and connections](/getting-started/kubectl-plugin/#namespaces-and-connections) says which namespaces each command reads.
 
-Each request to the API server gives up after 30 seconds. So a cluster that stops answering ends a command with an error. `--request-timeout` changes the limit. Its `0` keeps 30 seconds, where kubectl's means no limit.
+| | |
+|---|---|
+| Each request to the API server | Gives up after 30 seconds, so a cluster that stops answering ends a command with an error |
+| `--request-timeout` | Changes that limit. Its `0` keeps 30 seconds, where kubectl's means no limit |
 
 Every command takes kubectl's connection flags:
 
 `--kubeconfig`, `--context`, `--cluster`, `--user`, `--as`, `--as-group`, `--as-uid`, `--token`, `--server`, `--certificate-authority`, `--client-certificate`, `--client-key`, `--insecure-skip-tls-verify`, `--tls-server-name`, `--proxy-url`, `--username`, `--password`, `--disable-compression` and `--request-timeout`.
+
+The two commands with no section of their own:
+
+| Command | What it does |
+|---|---|
+| `version` | Prints the plugin's version. It needs no operator |
+| `completion` | Writes a shell completion script, for bash, zsh, fish or PowerShell |
 
 ## `scan`
 
@@ -129,20 +139,20 @@ Its flags, with their defaults. [Scan a cluster](/getting-started/kubectl-plugin
 
 | Flag | Default | What it does |
 |---|---|---|
-| <Ref id="scan-namespace" name="--namespace" /> `-n` | all you can read | Namespace to scan. Repeat for several. |
-| <Ref id="scan-all-namespaces" name="--all-namespaces" /> `-A` | | Every namespace, failing rather than falling back. Not with `-n`. |
+| <Ref id="scan-namespace" name="--namespace" /> `-n` | all you can read | Namespace to scan. Repeat for several |
+| <Ref id="scan-all-namespaces" name="--all-namespaces" /> `-A` | `false` | Every namespace, failing rather than falling back. Not with `-n` |
 | <Ref id="scan-exclude-namespaces" name="--exclude-namespaces" /> | `kube-system`, `kube-public`, `kube-node-lease` | Namespaces to skip |
 | <Ref id="scan-output" name="--output" /> `-o` | `table` | `table`, `json` or `yaml` |
 | <Ref id="scan-limit" name="--limit" /> | `25` | Rows in the table, idle first, then paused, then active, each by what pausing could free |
-| <Ref id="scan-cpu-threshold" name="--cpu-threshold" /> | `10` | CPU use, as a percentage of requests from 0.1 to 100, such as `10` or `0.5`, above which a workload is active |
-| <Ref id="scan-cpu-price" name="--cpu-price" /> | `0.031` | Your price per vCPU-hour, in dollars, zero or more, for every workload. Unset, each node is priced at its type's list price, and one with none at AWS on-demand in us-east-1. |
-| <Ref id="scan-memory-price" name="--memory-price" /> | `0.004` | Your price per GiB-hour of memory, in dollars, zero or more, for every workload. Unset, each node is priced at its type's list price, and one with none at AWS on-demand in us-east-1. |
-| <Ref id="scan-window" name="--window" /> | `7d` | Prometheus history to replay, such as `7d` or `36h`, up to `366d`. `0` judges from CPU now. |
+| <Ref id="scan-cpu-threshold" name="--cpu-threshold" /> | `10` | CPU use above which a workload is active, as a percentage of requests. From 0.1 to 100, such as `10` or `0.5` |
+| <Ref id="scan-cpu-price" name="--cpu-price" /> | `0.031` | Your price per vCPU-hour, in dollars, zero or more, for every workload. Unset, each node is priced at its type's list price, and one with none at AWS on-demand in us-east-1 |
+| <Ref id="scan-memory-price" name="--memory-price" /> | `0.004` | Your price per GiB-hour of memory, in dollars, zero or more, for every workload. Unset, each node is priced at its type's list price, and one with none at AWS on-demand in us-east-1 |
+| <Ref id="scan-window" name="--window" /> | `7d` | Prometheus history to replay, such as `7d` or `36h`, up to `366d`. `0` judges from CPU now |
 | <Ref id="scan-idle-after" name="--idle-after" /> | `1h` | Time without activity that makes a workload idle, as Napwake's `idleAfter` |
 | <Ref id="scan-prometheus-service" name="--prometheus-service" /> | the one in the cluster with the most history | Prometheus Service in the cluster, as `namespace/name` or `namespace/name:port`, read through the API server |
 | <Ref id="scan-prometheus-url" name="--prometheus-url" /> | the one in the cluster with the most history | Prometheus API to read, such as Thanos, Mimir, or Google Cloud Managed Service for Prometheus |
 | <Ref id="scan-prometheus-selector" name="--prometheus-selector" /> | | Label matchers added to every history query, such as `'cluster="prod"'`, for a Prometheus of several clusters |
-| <Ref id="scan-prometheus-header" name="--prometheus-header" /> | | Header for `--prometheus-url`, as `"Name: value"`, such as `"X-Scope-OrgID: tenant"` for Mimir. Repeat for several. |
+| <Ref id="scan-prometheus-header" name="--prometheus-header" /> | | Header for `--prometheus-url`, as `"Name: value"`, such as `"X-Scope-OrgID: tenant"` for Mimir. Repeat for several |
 | <Ref id="scan-prometheus-bearer-token-file" name="--prometheus-bearer-token-file" /> | | File holding a bearer token for `--prometheus-url` |
 | <Ref id="scan-prometheus-ca-file" name="--prometheus-ca-file" /> | | PEM file of CA certificates to trust for `--prometheus-url`, besides the system's |
 | <Ref id="scan-prometheus-insecure-skip-verify" name="--prometheus-insecure-skip-verify" /> | `false` | Don't verify `--prometheus-url`'s certificate |
@@ -179,11 +189,17 @@ JSON and YAML keep the full context name. Their `namespaces` counts every namesp
 | None found | It `won't drop until something removes nodes`, with the guide to setting an autoscaler up |
 | Your access doesn't allow reading what would tell | It says so, and names what it couldn't read |
 
-Before Napwake runs, the scan can't know what of COULD FREE/MO would be saved. So it never calls it a saving. Each money and history cell has the one source the table gives. A live workload isn't replayed, as there are no pods for Prometheus to record while it's paused. Its pauses are what FREED THIS MONTH and SAVED count.
+What the columns count, and leave out:
 
-A StatefulSet that deletes its PVCs when scaled down would lose its data to a pause. So Napwake refuses to pause it. It's left out of what pausing could free and of the next steps.
-
-A protected workload is left out of what pausing could free and the next steps. The scan sees only the label, not the operator's `protectedNamespaces` patterns. A workload scaled to zero by hand is counted apart in the headline. It counts toward nothing the scan says could be freed.
+| Case | What the scan does |
+|---|---|
+| COULD FREE/MO | Never calls it a saving. Before Napwake runs, the scan can't know what of it would be saved |
+| Each money and history cell | Has the one source the table gives |
+| A live workload | Isn't replayed, as there are no pods for Prometheus to record while it's paused. Its pauses are what FREED THIS MONTH and SAVED count |
+| A StatefulSet that deletes its PVCs when scaled down | Would lose its data to a pause, so Napwake refuses to pause it. It's left out of what pausing could free and of the next steps |
+| A protected workload | Left out of what pausing could free and the next steps |
+| Which are protected | Those labelled `napwake.dev/protected`, and those matching a built-in pattern (`kube-*`, `openshift-*`, `cattle-*`, `gke-*`, `gmp-*`). The operator's own `protectedNamespaces` patterns show only through a managed workload's `Protected=True` |
+| A workload scaled to zero by hand | Counted apart in the headline. It counts toward nothing the scan says could be freed |
 
 </section>
 
@@ -195,7 +211,7 @@ It uses the signals Napwake uses to pause.
 
 | Workload | How it's judged |
 |---|---|
-| Managed by Napwake | By the activity clock Napwake keeps for it. Idle is no activity until the clock's `pauseAt`. That's `idleAfter` after the last activity, or longer after [pauses made in use](/concepts/idle-detection/#paused-while-in-use). |
+| Managed by Napwake | By the activity clock Napwake keeps for it. Idle is no activity until the clock's `pauseAt`. That's `idleAfter` after the last activity, or longer after [pauses made in use](/concepts/idle-detection/#paused-while-in-use) |
 | Managed, after pauses made in use | BECAUSE says so, such as `not idle yet: it woke 6m ago; after pauses made while it was in use, it waits 20 minutes, not 5 minutes` |
 | Managed, its activity clock | Combines every source configured, Prometheus queries too |
 | Managed, held awake | The scan says so, such as for its dependents |
@@ -208,9 +224,9 @@ It uses the signals Napwake uses to pause.
 | Any other, active | A `napwake.dev/last-activity` annotation within `--idle-after` |
 | Any other, active | A `napwake.dev/active-until` in the future |
 | Any other, idle | None of those, with its CPU measured |
-| Unmanaged, without metrics-server | As on EKS by default. Judged from its CPU history, and BECAUSE says so. |
+| Unmanaged, without metrics-server | As on EKS by default. Judged from its CPU history, and BECAUSE says so |
 | Its state then | Where the replay left the activity clock |
-| No CPU requests, or no metrics yet | Can't be judged. It's in the notes, not the table, and out of the headline's totals. |
+| No CPU requests, or no metrics yet | Can't be judged. It's in the notes, not the table, and out of the headline's totals |
 
 </section>
 
@@ -221,14 +237,14 @@ It uses the signals Napwake uses to pause.
 | In the notes | What it means |
 |---|---|
 | Replicas set from Git | A GitOps tool last set the workload's replicas, by the field managers the API server records |
-| Which tools | Argo CD, Flux, Fleet, kapp or Kluctl. Workloads are listed by tool. |
-| Why it matters | The tool would undo every pause until told, once, to leave replicas to Napwake. See [GitOps tools](/guides/gitops/). |
+| Which tools | Argo CD, Flux, Fleet, kapp or Kluctl. Workloads are listed by tool |
+| Why it matters | The tool would undo every pause until told, once, to leave replicas to Napwake. See [GitOps tools](/guides/gitops/) |
 | Once the tool is told | The workload isn't listed |
 | For Argo CD | The scan reads that from the Application and `argocd-cm`, as [`enable`](#enable) does |
 | Without access to them | The note says so, and lists the workload to check |
 | In JSON | The tool in `replicasFromGit`, `gitOpsLeavesReplicas` once told, and `gitOpsUnchecked` for why it couldn't check |
 | In the next steps | Never suggested, as the tool would revert a label put on by hand too |
-| The cluster's own infrastructure | Left out of the table, the totals and the next steps. A note counts it by namespace. |
+| The cluster's own infrastructure | Left out of the table, the totals and the next steps. A note counts it by namespace |
 | Infrastructure in JSON and YAML | Listed in `platform`, each with what it is |
 
 | Left out | Found by |
@@ -242,7 +258,15 @@ It uses the signals Napwake uses to pause.
 | The same, by label | `app.kubernetes.io/name`, `app.kubernetes.io/part-of`, `app`, `k8s-app` or `helm.sh/chart` |
 | Workloads labelled `napwake.dev/ignore=true` | They aren't listed at all |
 
-Napwake never needs to wake what it never pauses, so apps' dependencies on those aren't listed. The guessed infrastructure is left out of the estimate only, and the operator has no such rule. Opted in, Napwake pauses it like any app, so dependencies on it are listed. There's no guessing for a workload Napwake manages. Nor in a namespace labelled `napwake.dev/managed=true`, such as a preview with its own Vault. A namespace labelled `napwake.dev/allow-protected=true` is scanned like any other, apart from Napwake's own Deployments.
+What leaving them out changes:
+
+| Left out | What changes |
+|---|---|
+| What Napwake never pauses | Apps' dependencies on it aren't listed, as Napwake never needs to wake it |
+| The guessed infrastructure | Left out of the estimate only. The operator has no such rule |
+| The same, opted in | Napwake pauses it like any app, so dependencies on it are listed |
+| No guessing | For a workload Napwake manages, or in a namespace labelled `napwake.dev/managed=true`, such as a preview with its own Vault |
+| A namespace labelled `napwake.dev/allow-protected=true` | Scanned like any other, apart from Napwake's own Deployments |
 
 </section>
 
@@ -259,10 +283,10 @@ With a Prometheus in the cluster, the scan replays each workload's last week of 
 | Naming it | The `History:` line and the report's subtitle (JSON `history.prometheus`) |
 | How much was replayed | On the same line and subtitle (JSON `history.hours`) |
 | Several | It reads the one with the most of the window's CPU history, ranked as below |
-| How many | It tries five at most. The `History:` line lists the others (JSON `history.others`). |
+| How many | It tries five at most. The `History:` line lists the others (JSON `history.others`) |
 | `--prometheus-service namespace/name` | Reads that Service instead, found or not, through the API server |
 | Its port | Its API port, or the one you add, as in `monitoring/thanos-query:http` |
-| `--prometheus-url` | Reads one outside the cluster, such as Thanos or Mimir. See [A Prometheus elsewhere](#a-prometheus-elsewhere). |
+| `--prometheus-url` | Reads one outside the cluster, such as Thanos or Mimir. See [A Prometheus elsewhere](#a-prometheus-elsewhere) |
 | Either, unreadable | The scan fails, rather than going on without history |
 | CPU | Per container, from cAdvisor's `container_cpu_usage_seconds_total`, which every common setup scrapes |
 | Steps | Five minutes, coarser for windows over about 34 days |
@@ -270,17 +294,15 @@ With a Prometheus in the cluster, the scan replays each workload's last week of 
 | A Deployment's pods | Those of deleted ReplicaSets too, named `<deployment>-<hash>-<suffix>` |
 | A long Deployment name | If Kubernetes cut its pods' names short, only current ReplicaSets' pods are replayed |
 | Sidecars | Those added at pod creation are left out of activity, as for the activity clock |
-| An active step | A rollout, or the workload's own CPU above the threshold of its running pods' requests |
+| An active step | A rollout, or the workload's own CPU above the threshold of its running pods' requests, as the operator counts it |
 | After `--idle-after` with none | It sleeps until the next active step, which is one wake |
 | CPU within 15 minutes of a pause, or within `--idle-after` if that's shorter | Shows it was in use |
 | Each such pause in a row | Doubles the next wait, up to `--idle-after` plus an hour, as Napwake does after [a pause made in use](/concepts/idle-detection/#paused-while-in-use) |
 | A pause that lasts past that window | Ends the longer wait |
 | A rollout | Wakes it, without counting either way |
-| What it can't see | Requests and activity annotations, which aren't in Prometheus. It sees only CPU and rollouts. |
+| What it can't see | Requests and activity annotations, which aren't in Prometheus. It sees only CPU and rollouts |
 | So | A workload used with little CPU can look like it would sleep more than it would |
 | Requests and prices | Today's |
-
-The active-step threshold is as the operator counts it.
 
 | Rank | Preferred |
 |---|---|
@@ -295,17 +317,15 @@ The active-step threshold is as the operator counts it.
 | History's share | The first 60% of `--timeout`, so a slow Prometheus or Thanos can't use up the scan |
 | A namespace's reads | Its API reads come before its history query, sharing that time |
 | Once it's spent | A namespace reached after that isn't queried |
-| A slow query | It may take whatever is left, however long. `--request-timeout` doesn't cut it short. |
-| Not read in time | Judged from CPU right now. The notes name these namespaces. |
+| A slow query | It may take whatever is left, however long. `--request-timeout` doesn't cut it short |
+| Not read in time | Judged from CPU right now. The notes name these namespaces |
 | The notes' advice | A longer `--timeout` gives history more time, or `--window 0` skips it |
-| A query given up with time left | By Prometheus or the API server's proxy. The notes name the namespaces, and suggest a shorter `--window`. |
+| A query given up with time left | By Prometheus or the API server's proxy. The notes name the namespaces, and suggest a shorter `--window`. A longer `--timeout` wouldn't help with it |
 | Less history than the window | The replay covers what there is, and says how much, such as "Replaying the last 30 minutes" |
 | The same, in the notes | A note says it's shorter than asked |
-| Under a day | It can't show a day's pattern. The headline says so, in the terminal and the report. |
+| Under a day | It can't show a day's pattern. The headline says so, in the terminal and the report |
 | The headline's advice | Scan again after a few days |
 | No Prometheus, or no permission to reach it | The scan judges from CPU right now, and says why |
-
-A longer `--timeout` wouldn't help with a query Prometheus gave up on by itself, which is why the advice differs.
 
 </section>
 
@@ -318,16 +338,16 @@ A longer `--timeout` wouldn't help with a query Prometheus gave up on by itself,
 | A store of several clusters, such as Thanos or Mimir | Pass `--prometheus-selector` with the label that tells them apart |
 | The notes' hint | They suggest it when they see series from more than one source |
 | Authentication | `--prometheus-header`, such as `X-Scope-OrgID` for a Mimir tenant, or `Authorization` |
-| Or | `--prometheus-bearer-token-file`. Not both for one header. |
+| Or | `--prometheus-bearer-token-file`. Not both for one header |
 | Its certificate | `--prometheus-ca-file` and `--prometheus-insecure-skip-verify` |
-| A Prometheus in the cluster | These flags don't apply. It's reached through the API server, with your kubeconfig. |
+| A Prometheus in the cluster | These flags don't apply. It's reached through the API server, with your kubeconfig |
 | Google Cloud Managed Service for Prometheus | GKE's keeps its data in Cloud Monitoring, so the scan doesn't find it |
-| Its collectors | In `gmp-system`, with nothing to query. The scan reads another Prometheus if the cluster has one. |
+| Its collectors | In `gmp-system`, with nothing to query. The scan reads another Prometheus if the cluster has one |
 | To read it | Give it an access token, and name your project and cluster, as below |
 | Its frontend, deployed in the cluster | `--prometheus-service NAMESPACE/frontend` reads through that, with the frontend's credentials |
 | Either way | The replay's CPU is there only if it collects cAdvisor's metrics |
 | Turning those on | `kubeletScraping` in its OperatorConfig |
-| Amazon Managed Service for Prometheus | It needs SigV4 signing, which the scan doesn't do. Point `--prometheus-url` at a signing proxy. |
+| Amazon Managed Service for Prometheus | It needs SigV4 signing, which the scan doesn't do. Point `--prometheus-url` at a signing proxy |
 
 Name the cluster too, since the store holds every cluster in the project.
 
@@ -357,7 +377,7 @@ kubectl napwake scan \
 
 The protected line reads like this. Its workloads are in a protected namespace, part of Napwake, or StatefulSets deleting PVCs on scale-down (`Protected=True`).
 
-```
+```text
 1 more live workload is protected, so Napwake never pauses it; it freed $12 this month before it was, and saved $5 of that.
 ```
 
@@ -388,14 +408,14 @@ The scan lists the workloads each workload's environment variables point at, lit
 | Where | In a URL, a `host:port`, or a list of either |
 | The workload | The one the Service's selector picks |
 | Not an address | A bare word on its own, such as `MODE=postgres` |
-| Names | Variable names don't matter. Service names come from the cluster, not a list the scan keeps. |
+| Names | Variable names don't matter. Service names come from the cluster, not a list the scan keeps |
 | Shown | Only its scheme, host and port, such as `postgres://postgres:5432` |
 | Hidden | A user, password, path and query string, any of which could hold a credential |
-| In the terminal | The variable it was found in. Only JSON and YAML carry the address. |
-| Secrets | Never read, so addresses there aren't found. The notes name workloads that take variables from Secrets. |
+| In the terminal | The variable it was found in. Only JSON and YAML carry the address |
+| Secrets | Never read, so addresses there aren't found. The notes name workloads that take variables from Secrets |
 | Code and files | Addresses built in code or read from files aren't found either |
 
-When Napwake manages both, it wakes a dependency with the workload that needs it. It keeps it up while that workload is. So the first request doesn't wait for it too. See [Dependencies](/concepts/dependencies/).
+When Napwake manages both, it wakes a dependency with the workload that needs it. It keeps it up while that workload is, so the first request doesn't wait for it too ([Dependencies](/concepts/dependencies/)).
 
 | Last column | When |
 |---|---|
@@ -415,25 +435,23 @@ Before Napwake manages any workload that needs them, every dependency would say 
 
 | Case | Price |
 |---|---|
-| Any workload | Its requests while running, sidecars included. See [Prices](/concepts/cost-tracking/#prices). |
+| Any workload | Its requests while running, sidecars included. See [Prices](/concepts/cost-tracking/#prices) |
 | The rate | The list price of each pod's node, by instance type and region |
 | No pod on a node | Where Napwake last saw it run, or the cluster's most common node type |
-| A node with no list price | Assumed prices, AWS on-demand in us-east-1. The report says which. |
+| A node with no list price | Assumed prices, AWS on-demand in us-east-1. The report says which |
 | No access to list nodes | Every workload at those assumed prices |
 | `--cpu-price` and `--memory-price` | Yours, in place of list prices, for discounts, savings plans or negotiated rates |
-| Spot and preemptible nodes | Their type's spot price. The report says how many workloads run on them. |
-| A spot node of a type not sold as spot | On-demand. The report names those types, and says they cost less than shown. |
+| Spot and preemptible nodes | Their type's spot price. The report says how many workloads run on them |
+| A spot node of a type not sold as spot | On-demand. The report names those types, and says they cost less than shown |
 | In JSON, per workload | `onSpot` and `spotAtOnDemand` |
-| In JSON, per node type | `spot` and `atSpot`, in `nodePrices`. See [Spot nodes](/concepts/cost-tracking/#spot-nodes). |
-| An hour asleep | Frees capacity. It's money only when a node autoscaler removes it. |
-
-`kubectl napwake nodes` shows what keeps nodes from scaling down.
+| In JSON, per node type | `spot` and `atSpot`, in `nodePrices`. See [Spot nodes](/concepts/cost-tracking/#spot-nodes) |
+| An hour paused | Frees capacity. It's money only when a node autoscaler removes it. `kubectl napwake nodes` shows what keeps nodes from scaling down |
 
 The `Prices:` line at the end sums up what costs were priced at:
 
 | Priced at | The line gives |
 |---|---|
-| List prices | Their provider and region, the node type or how many there are, and how many workloads are on spot, priced at spot |
+| List prices | Their provider and region, and the node type or how many there are. Then how many workloads are on spot, priced at spot |
 | Your prices | `yours` |
 | Assumed prices, when no node has a list price | `assumed` |
 | Too mixed for that | Each in full |
@@ -449,11 +467,12 @@ It's written for whoever you send it to.
 
 | Part | What it shows |
 |---|---|
-| Top | The cluster drawn as a hotel at night, one room per workload up to 35. Past that, the mix is rounded to 35 rooms, with the exact counts beside it |
-| On a scan | The idle workloads' lit rooms go dark by themselves once, to show what Napwake would do. Nothing is paused |
+| Top | Each workload's state, drawn as a door, one per workload up to 35. Past that, the mix is rounded to 35 doors, with the exact counts beside it |
+| On a scan | The idle workloads' doors close by themselves once, to show what Napwake would pause. Nothing is paused |
 | Then | **Prices** and **Your bill**, as the terminal's lines say them |
 | A share card | Your browser draws it, wide or square, with totals only. The cluster's name is on it only if you tick it |
-| Buttons | **Copy summary**, three plain lines without the cluster's name or the Prometheus source unless you tick it, and **Save as PDF** |
+| Buttons | **Copy summary** and **Save as PDF** |
+| Copy summary | Three plain lines. They leave out the cluster's name and the Prometheus source unless you tick it |
 | What it sends | Nothing, anywhere |
 | Headline figures | Two, below |
 | Fact one | How many workloads, in how many namespaces, with their cost once that's left the headline |
@@ -472,12 +491,20 @@ It's written for whoever you send it to.
 | Once it has | What it freed this month, with what of it was saved | What pausing could free, while there's something to |
 | A zero | Says why | |
 
-Before anything is paused, the first figure is measured for dry-run and estimated from history for unmanaged workloads. It says "over the same time" when history was replayed. Then it's measured against what they cost over the history, with the pods they ran. Without either, it's what's idle now costs while running, the most pausing could free. A zero with under a day of history, short of the window, says that's too little history yet. Scan again after a few days.
+How the first figure is worked out before anything is paused:
+
+| Case | The first figure |
+|---|---|
+| Workloads in dry-run | Measured |
+| Unmanaged workloads | Estimated from history |
+| Its share, with history replayed | Of what they cost over the history, with the pods they ran. It says "over the same time" |
+| Without either | What the idle workloads cost while running, the most pausing could free |
+| A zero, with under a day of history, short of the window | It says that's too little history yet. Scan again after a few days |
 
 | The file | |
 |---|---|
-| Loads | No scripts, fonts or images. Sorting and filtering are built in. |
-| Leaves out | Dependency addresses, as it's meant to be passed around. JSON and YAML keep them. |
+| Loads | No scripts, fonts or images. Sorting and filtering are built in |
+| Leaves out | Dependency addresses, as it's meant to be passed around. JSON and YAML keep them |
 | Hides | Any password in the history source's URL |
 | Access | Readable only by you |
 | Where | Your temporary directory, unless you pass `--html FILE` |
@@ -495,8 +522,8 @@ The JSON and YAML fields this page names, and what each holds.
 | Field | What it holds |
 |---|---|
 | <Ref id="scan-json-nodeautoscaler">nodeAutoscaler</Ref> | What would turn freed capacity into savings, the `Your bill:` line |
-| <Ref id="scan-json-wontpause">wontPause</Ref> | A StatefulSet whose `persistentVolumeClaimRetentionPolicy.whenScaled` is `Delete`. BECAUSE says `won't pause: PVCs deleted on scale-down`. |
-| <Ref id="scan-json-namespaces">namespaces</Ref> | Every namespace read. The first line counts only the namespaces listed workloads are in. |
+| <Ref id="scan-json-wontpause">wontPause</Ref> | A StatefulSet whose `persistentVolumeClaimRetentionPolicy.whenScaled` is `Delete`. BECAUSE says `won't pause: PVCs deleted on scale-down` |
+| <Ref id="scan-json-namespaces">namespaces</Ref> | Every namespace read. The first line counts only the namespaces listed workloads are in |
 | <Ref id="scan-json-history-prometheus">history.prometheus</Ref> | The Prometheus read, named on the `History:` line and the report's subtitle |
 | <Ref id="scan-json-history-hours">history.hours</Ref> | How much was replayed |
 | <Ref id="scan-json-history-others">history.others</Ref> | The others found, which the `History:` line lists |
@@ -506,12 +533,12 @@ The JSON and YAML fields this page names, and what each holds.
 | <Ref id="scan-json-platform">platform</Ref> | The cluster's own infrastructure, each with what it is |
 | <Ref id="scan-json-totals-live">totals.live</Ref> | Live workloads Napwake pauses, as the headline counts them |
 | <Ref id="scan-json-totals-liveprotected">totals.liveProtected</Ref> | Protected live workloads, which the headline gives a line of their own |
-| <Ref id="scan-json-totals-protectedfreedthismonth">totals.protectedFreedThisMonth</Ref> | What those freed this month before protection. Part of `freedThisMonth`. |
-| <Ref id="scan-json-totals-protectedsavedthismonth">totals.protectedSavedThisMonth</Ref> | What of that was saved. Part of `savedThisMonth`. |
+| <Ref id="scan-json-totals-protectedfreedthismonth">totals.protectedFreedThisMonth</Ref> | What those freed this month before protection. Part of `freedThisMonth` |
+| <Ref id="scan-json-totals-protectedsavedthismonth">totals.protectedSavedThisMonth</Ref> | What of that was saved. Part of `savedThisMonth` |
 | <Ref id="scan-json-onspot">onSpot</Ref> | Per workload, on spot or preemptible nodes, priced at its type's spot price |
 | <Ref id="scan-json-spotatondemand">spotAtOnDemand</Ref> | Per workload, on a spot node of a type not sold as spot, priced on-demand |
-| <Ref id="scan-json-nodeprices">nodePrices</Ref> | Per node type, with `spot` and `atSpot`. See [Spot nodes](/concepts/cost-tracking/#spot-nodes). |
-| <Ref id="scan-json-incomplete">incomplete</Ref> | The namespaces, by why, as `missing`, `denied`, `failed` or `unscanned`. See [Exit status](#exit-status). |
+| <Ref id="scan-json-nodeprices">nodePrices</Ref> | Per node type, with `spot` and `atSpot`. See [Spot nodes](/concepts/cost-tracking/#spot-nodes) |
+| <Ref id="scan-json-incomplete">incomplete</Ref> | The namespaces, by why, as `missing`, `denied`, `failed` or `unscanned`. See [Exit status](#exit-status) |
 | <Ref id="scan-json-workloads">workloads</Ref> | `[]` when there are none |
 
 ### Exit status
@@ -525,10 +552,11 @@ The JSON and YAML fields this page names, and what each holds.
 | `1`, named namespaces | A `403` or missing namespace among those you named with `-n` |
 | `1`, no report | Only a scan that ran out of `--timeout` having scanned none |
 
-A `403` changes the exit status only for a namespace you named with `-n`. On `1`, the notes say what was missed. The error says to check a namespace's name, ask for access, or retry with a longer `--timeout`. Out of `--timeout`, the scan still reports the namespaces it scanned in time, and lists the rest as `unscanned`.
-
 | | |
 |---|---|
+| A `403` | Changes the exit status only for a namespace you named with `-n` |
+| On `1` | The notes say what was missed. The error says to check a namespace's name, ask for access, or retry with a longer `--timeout` |
+| Out of `--timeout` | The scan still reports the namespaces it scanned in time, and lists the rest as `unscanned` |
 | JSON and YAML | The namespaces in `incomplete`, by why, as `missing`, `denied`, `failed` or `unscanned` |
 | No workloads | JSON and YAML give `"workloads": []` |
 | Every namespace | It lists each kind cluster-wide, a page at a time |
@@ -548,7 +576,15 @@ A `403` changes the exit status only for a namespace you named with `-n`. On `1`
 | `get` on `services/proxy` for the Prometheus Service | To read history through the service proxy |
 | `get` on a Service you name with `--prometheus-service` | To find its port |
 
-The standard `view` role covers the namespaced reads, ManagedWorkloads too, as Napwake's chart and manifests add them to it. It doesn't cover nodes, which are cluster-wide, or `services/proxy`. Without a read, the scan carries on, and the notes say what it couldn't see. Without `services/proxy`, it judges from CPU right now. It prints what an admin can run for that one Service and nothing else.
+| | |
+|---|---|
+| The standard `view` role | Covers the namespaced reads, ManagedWorkloads too, as Napwake's chart and manifests add them to it |
+| Not in `view` | Nodes, which are cluster-wide, and `services/proxy` |
+| Without a read | The scan carries on, and the notes say what it couldn't see |
+| Without `services/proxy` | It judges from CPU right now. It prints what an admin can run for that one Service and nothing else, as below |
+| The same, for a Prometheus you name with `--prometheus-service` | The scan fails instead, with the same commands in its error. `view` covers its `get` |
+| Only when | The API server refuses you the proxy |
+| A `403` from behind the proxy, such as a `kube-rbac-proxy` in front of Prometheus | Shows as Prometheus's own answer. A Role for `services/proxy` wouldn't change it |
 
 <TerminalBlock
   label="What the scan prints when it can't reach Prometheus"
@@ -560,27 +596,23 @@ The standard `view` role covers the namespaced reads, ManagedWorkloads too, as N
   ]}
 />
 
-A Prometheus you name with `--prometheus-service` fails the scan instead, with the same commands in its error. `view` covers its `get`. All this is only when the API server refuses you the proxy. A `403` from behind it, such as a `kube-rbac-proxy` in front of Prometheus, shows as Prometheus's own answer. A Role for `services/proxy` wouldn't change it.
-
 ## `forecast`
 
 Its flags, with their defaults. [Replay the forecast](/getting-started/kubectl-plugin/#replay-the-forecast) shows it in use.
 
 | Flag | Default | What it does |
 |---|---|---|
-| <Ref id="forecast-namespace" name="--namespace" /> `-n` | all you can read | Namespace to replay. Repeat for several. |
+| <Ref id="forecast-namespace" name="--namespace" /> `-n` | all you can read | Namespace to replay. Repeat for several |
 | <Ref id="forecast-all-namespaces" name="--all-namespaces" /> `-A` | `false` | Every namespace, failing rather than falling back |
-| <Ref id="forecast-exclude-namespaces" name="--exclude-namespaces" /> | system namespaces | Namespaces to skip |
-| <Ref id="forecast-window" name="--window" /> | `28d` | History to read, from `2d` to `34d`. The operator learns up to four weeks. |
-| <Ref id="forecast-forecast" name="--forecast" /> | `balanced` | How soon the forecast acts for unmanaged workloads. See [Forecast setting](/concepts/forecasting/#forecast-setting). |
-| <Ref id="forecast-timezone" name="--timezone" /> | the operator's | The zone whose hours and weekdays the forecast learns, and times show in |
-| <Ref id="forecast-cpu-threshold" name="--cpu-threshold" /> | `10` | CPU use, as a percentage of requests from 0.1 to 100, such as `10` or `0.5`, above which a workload is in use |
-| <Ref id="forecast-idle-after" name="--idle-after" /> | `1h` | How long without use before a pause |
-| <Ref id="forecast-output" name="--output" /> `-o` | `table` | `table`, `json` or `yaml`. JSON and YAML give every workload's days. |
+| <Ref id="forecast-exclude-namespaces" name="--exclude-namespaces" /> | `kube-system`, `kube-public`, `kube-node-lease` | Namespaces to skip |
+| <Ref id="forecast-window" name="--window" /> | `28d` | History to read, from `2d` to `34d`. The operator learns up to four weeks |
+| <Ref id="forecast-forecast" name="--forecast" /> | `balanced` | How soon the forecast acts for unmanaged workloads, `eager`, `balanced` or `cautious`. See [Forecast setting](/concepts/forecasting/#forecast-setting) |
+| <Ref id="forecast-timezone" name="--timezone" /> | the operator's | The zone whose hours and weekdays the forecast learns, and times show in. Unset, the operator's `timezone`, from `status.prediction.timeZone`, or `UTC` if you can read none |
+| <Ref id="forecast-cpu-threshold" name="--cpu-threshold" /> | `10` | CPU use above which a workload is in use, as a percentage of requests. From 0.1 to 100, such as `10` or `0.5`. Managed workloads use their own |
+| <Ref id="forecast-idle-after" name="--idle-after" /> | `1h` | How long without use before a pause. Managed workloads use their own |
+| <Ref id="forecast-output" name="--output" /> `-o` | `table` | `table`, `json` or `yaml`. JSON and YAML give every workload's days |
 | <Ref id="forecast-timeout" name="--timeout" /> | `5m` | How long the replay may take before it gives up |
 | `--prometheus-url` and the other `--prometheus-*` flags | | As for [`scan`](#a-prometheus-elsewhere) |
-
-`--forecast` is `eager`, `balanced` or `cautious`. `--timezone` defaults to the operator's `timezone`, from `status.prediction.timeZone`, or `UTC` if you can read none. Managed workloads use their own `--cpu-threshold` and `--idle-after`.
 
 <section id="forecast-history">
 
@@ -590,7 +622,7 @@ Its flags, with their defaults. [Replay the forecast](/getting-started/kubectl-p
 |---|---|
 | Prometheus | Read as [`scan`](#scan-history) reads it, with the same flags and [permissions](#permissions) |
 | No history | It fails |
-| Under two days | A day to learn and a day to replay. It says so, and when there will be enough. |
+| Under two days | A day to learn and a day to replay. It says so, and when there will be enough |
 | The same, managed | It says how to see the workload's own forecast, which needs no history |
 | Left out | Scan's notes on dependencies, GitOps tools and infrastructure, which are about what pausing could free |
 | A managed workload's routing | What its operator found at its last pause, including Services served by other workloads' pods |
@@ -615,7 +647,7 @@ Its flags, with their defaults. [Replay the forecast](/getting-started/kubectl-p
 |---|---|
 | NAME | Looked for in every namespace `forecast` reads, or those given with `-n` |
 | What it matches | A Deployment or StatefulSet, or a ManagedWorkload's own name, for one written under another name |
-| Several matches | Such as `api` in two namespaces. `forecast` names them, and asks for `-n` or `kind/name`. |
+| Several matches | Such as `api` in two namespaces. `forecast` names them, and asks for `-n` or `kind/name` |
 | No match | It says so |
 | No match, in a `-n` namespace | It names a workload labelled `napwake.dev/ignore=true`, which the forecast leaves out, as Napwake does |
 | No forecast recorded yet | It says so, and what to check |
@@ -654,8 +686,8 @@ Its flags, with their defaults. [See what Napwake is doing](/getting-started/kub
 
 | Flag | Default | What it does |
 |---|---|---|
-| <Ref id="status-namespace" name="--namespace" /> `-n` | all you can read | Namespace to show. Repeat for several. |
-| <Ref id="status-all-namespaces" name="--all-namespaces" /> `-A` | | Every namespace, failing rather than falling back. Not with `-n`. |
+| <Ref id="status-namespace" name="--namespace" /> `-n` | all you can read | Namespace to show. Repeat for several |
+| <Ref id="status-all-namespaces" name="--all-namespaces" /> `-A` | `false` | Every namespace, failing rather than falling back. Not with `-n` |
 | <Ref id="status-output" name="--output" /> `-o` | `table` | `table`, `json` or `yaml` |
 | <Ref id="status-since" name="--since" /> | `24h` | How far back to list pauses and wakes |
 | <Ref id="status-html" name="--html" /> | | Also write the status as a web page to this file, or without one, to a temporary file |
@@ -667,21 +699,32 @@ Its flags, with their defaults. [See what Napwake is doing](/getting-started/kub
 | Needs attention shows | Shown as |
 |---|---|
 | A GitOps tool undoing pauses | `GitOpsConflict` |
-| A dependency that's missing, in a cycle, or in a namespace that doesn't allow it | `DependencyNotAllowed` |
-| Two ManagedWorkloads for one target | |
-| A protected namespace | |
-| A target that's gone | |
-| Metrics or Prometheus that can't be read | |
+| A `dependsOn` cycle through it | `DependencyCycle` |
+| A dependency that doesn't exist, or can't be seen | `DependencyNotFound` |
+| A dependency in a namespace that doesn't allow it | `DependencyNotAllowed` |
+| Two ManagedWorkloads for one target | `DuplicateTarget` |
+| A protected namespace, or a StatefulSet that deletes its PVCs when scaled down | `Protected` |
+| A target that's gone | `TargetAvailable` |
+| Metrics that can't be read | `MetricsAvailable` |
+| Prometheus that can't be read | `PrometheusAvailable` |
 | A Prometheus query that has never matched a series | `PrometheusQueryEmpty` |
 | A workload whose requests can't wake it while it's paused | `WakeOnRequest` |
 | A resume that stopped with replicas not Ready | `ResumeIncomplete` |
 | A pause that stopped waiting with pods still running | `PauseIncomplete` |
-| A pause made while it was in use, until a pause holds, with what to change, such as a CPU threshold | `PausedWhileInUse` ([Paused while in use](/concepts/idle-detection/#paused-while-in-use)) |
+| A pause made while it was in use, until a pause holds. It says what to change, such as a CPU threshold | `PausedWhileInUse` ([Paused while in use](/concepts/idle-detection/#paused-while-in-use)) |
 | A pause or wake taking over 10 minutes, with what it waits for | `Stuck` |
 
-For an awake workload, `WakeOnRequest` is what its last pause found with its Services, to fix before the next. Its being awake (`NotPaused`) isn't shown, nor the doorman being turned off.
+For an awake workload, `WakeOnRequest` is what its last pause found with its Services, to fix before the next. In `-o json`, each problem's `target` names its workload as the table does, such as `deployment/worker`.
 
-In `-o json`, each problem's `target` names its workload as the table does, such as `deployment/worker`.
+Not shown, as each is set up on purpose or normal:
+
+| Not shown | Its condition and reason |
+|---|---|
+| A workload labelled `napwake.dev/ignore` | `TargetAvailable`, reason `TargetIgnored` |
+| Napwake's own operator and doorman | `Protected`, reason `NapwakeComponent` |
+| A workload with no Services | `WakeOnRequest`, reason `NoServices` |
+| The doorman turned off | `WakeOnRequest`, reason `DoormanDisabled` |
+| A workload's being awake | `WakeOnRequest`, reason `NotPaused` |
 
 ### The LAST ACTIVITY column
 
@@ -700,18 +743,18 @@ In `-o json`, each problem's `target` names its workload as the table does, such
 | `would pause …` | The same, in dry-run |
 | `pauses now, early: the forecast expects quiet until Fri 20:00 UTC` | The forecast [brought the pause forward](/concepts/forecasting/#pausing-early) |
 | `expected`, for `expects` | That time has passed, as for a dry-run would-be pause, which stays `Idle` until activity |
-| `pauses at 14:20 UTC (after GitOps conflict)` | A GitOps tool undid its last pause, so Napwake waits an hour. See [GitOps tools](/guides/gitops/#what-napwake-does). |
+| `pauses at 14:20 UTC (after GitOps conflict)` | A GitOps tool undid its last pause, so Napwake waits an hour. See [GitOps tools](/guides/gitops/#what-napwake-does) |
 | `pauses soon` | Still running up to 7 minutes past the time shown, as status is written every few minutes |
-| `overdue to pause` | After that. Something the table can't see holds it. |
-| `held awake while preview-7/worker uses it` | Not yet. Its dependents hold it, until they pause. |
-| `held awake for 2h (active-until)` | Not yet. `napwake.dev/active-until`, on the ManagedWorkload or the workload, as `wake --for` sets. |
-| `held awake by the forecast: busy from 13:00 UTC` | Not yet. The forecast expects demand that hour. |
+| `overdue to pause` | After that. Something the table can't see holds it |
+| `held awake while preview-7/worker uses it` | Not yet. Its dependents hold it, until they pause |
+| `held awake for 2h (active-until)` | Not yet. `napwake.dev/active-until`, on the ManagedWorkload or the workload, as `wake --for` sets |
+| `held awake by the forecast: busy from 13:00 UTC` | Not yet. The forecast expects demand that hour |
 | `never pauses: no idlePolicy`, `never pauses: namespace protected` | Never |
-| `never pauses: part of Napwake` | Never. It's the operator's or the doorman's own Deployment. |
-| `never pauses: PVCs deleted on scale-down` | Never. A StatefulSet with `persistentVolumeClaimRetentionPolicy.whenScaled: Delete`. |
+| `never pauses: part of Napwake` | Never. It's the operator's or the doorman's own Deployment |
+| `never pauses: PVCs deleted on scale-down` | Never. A StatefulSet with `persistentVolumeClaimRetentionPolicy.whenScaled: Delete` |
 | `nothing: labelled napwake.dev/ignore`, `nothing: workload not found`, `nothing: another ManagedWorkload has it` | Never |
 | `won't pause: dependsOn cycle`, `won't pause: no CPU metrics`, `won't pause: Prometheus failing` | Never |
-| `wakes on a request or activity` | Paused, and what wakes it. Without the doorman, `wakes on activity`. |
+| `wakes on a request or activity` | Paused, and what wakes it. Without the doorman, `wakes on activity` |
 | `wakes on a click, a wake request or activity` | Paused, and its doorman [asks before waking](/concepts/wake-on-request/#asking-before-waking) it |
 | `paused early: the forecast expected quiet until Fri 20:00 UTC; wakes on a request or activity` | The forecast [brought the pause forward](/concepts/forecasting/#pausing-early), before `idleAfter` ran out |
 
@@ -725,13 +768,13 @@ For `overdue to pause`, `kubectl describe managedworkload` says what holds it.
 | `learning`, with `acts from Oct 8` | When the operator expects it to start, if the coming days repeat the last week it saw |
 | `relearning` | Demand broke from what it had learned |
 | `not learning while paused:` and why | Paused, with neither the doorman nor a [Prometheus activity query](/guides/prometheus-signals/#while-the-workload-is-paused) to see its demand |
-| Such as | `no Service routes requests to it`. `status.prediction.message` says how to fix it. |
+| Such as | `no Service routes requests to it`. `status.prediction.message` says how to fix it |
 | `-` | The operator hasn't recorded one yet |
 | In JSON | The reason, from `status.prediction.reason`, in `forecast`, and `forecastStartsActing` |
 
 ### Turned away while asleep
 
-Under the table, when a workload whose doorman asks before waking it turned requests away during its current or last pause:
+Under the table, when a workload that asks before waking turned requests away in its current or last pause:
 
 ```text
 Turned away while asleep, by a doorman that asks before waking: something automated may call these.
@@ -754,9 +797,7 @@ A person shown the asleep page isn't counted. So many mean something automated c
 | `wokenBy`, in `-o json` | On each wake. Each workload carries it too, for its latest wake until it pauses again |
 | `wokenBy` left out | When the cause wasn't recorded, and once the events have expired |
 | A ManagedWorkload deleted and made again under the same name | Starts without one, since the old one's events name its UID, not the new one's |
-| How far back | The API server keeps events for an hour, unless its `--event-ttl` says otherwise |
-
-So on most clusters, an hour is what `status` can show.
+| How far back | The API server keeps events for an hour, unless its `--event-ttl` says otherwise. So on most clusters, an hour is what `status` can show |
 
 | `wokenBy` | What woke it |
 |---|---|
@@ -824,7 +865,7 @@ Its flags, with their defaults. [See why nodes don't scale down](/getting-starte
 | Any | DaemonSet and static pods never block |
 | Any | A pod annotated `safe-to-evict: "true"` blocks only by its PodDisruptionBudget, as with Cluster Autoscaler |
 | Local storage and `kube-system` pods | Block only while `--skip-nodes-with-local-storage` and `--skip-nodes-with-system-pods` are on |
-| Those flags | On by default upstream. AKS turns the first off. |
+| Those flags | On by default upstream. AKS turns the first off |
 | Not Karpenter's, autoscaler unknown | Cluster Autoscaler's rules |
 | No autoscaler found scales it | `not autoscaled` |
 | A Cluster Autoscaler node whose node group is at its minimum size | `node group at its minimum`. It stays, whatever runs on it, so no step would free it. Above the next steps, a line names its group and minimum instead of steps |
@@ -840,12 +881,12 @@ Its flags, with their defaults. [See why nodes don't scale down](/getting-starte
 |---|---|
 | Karpenter | The `nodepools.karpenter.sh` CRD, or nodes labelled `karpenter.sh/nodepool` |
 | Karpenter's detail | Each NodePool's `spec.disruption.consolidationPolicy` and `consolidateAfter` |
-| EKS Auto Mode | Nodes labelled `eks.amazonaws.com/compute-type: auto`. Its NodePools are Karpenter's, read the same way. |
+| EKS Auto Mode | Nodes labelled `eks.amazonaws.com/compute-type: auto`. Its NodePools are Karpenter's, read the same way |
 | Cluster Autoscaler | The `cluster-autoscaler-status` ConfigMap it writes in `kube-system` |
 | Which | Self-managed, or run for you by GKE Standard and AKS |
 | Its detail | The cloud its nodes are on |
 | Without the ConfigMap | A `kube-system` Deployment ending in `cluster-autoscaler` is named, as a hint it may not be running |
-| GKE Autopilot | That ConfigMap, and nodes all named `gk3-`, as Autopilot names them. It scales nodes itself. |
+| GKE Autopilot | That ConfigMap, and nodes all named `gk3-`, as Autopilot names them. It scales nodes itself |
 | `none found` | Nothing, with every place read |
 | Then | Freed capacity won't come off the bill until something removes nodes |
 | `unknown` | Your access didn't allow reading what would tell, which it names |
@@ -878,10 +919,8 @@ Its flags, with their defaults. [Pause a workload](/getting-started/kubectl-plug
 | <Ref id="pause-namespace" name="--namespace" /> `-n` | your kubeconfig context's | Namespace of the workload |
 | <Ref id="pause-wait" name="--wait" /> | `true` | Wait until it's Paused, or Napwake says why not |
 | <Ref id="pause-yes" name="--yes" /> `-y` | `false` | Pause even if the forecast expects it busy within the hour, without asking |
-| <Ref id="pause-clear-hold" name="--clear-hold" /> | `false` | Clear a `napwake.dev/active-until` hold, on its ManagedWorkload or the workload, without asking |
-| <Ref id="pause-timeout" name="--timeout" /> | `5m` | How long to wait, cluster calls included. It starts again after you answer a question. |
-
-On the ManagedWorkload, `wake --for` sets that hold.
+| <Ref id="pause-clear-hold" name="--clear-hold" /> | `false` | Clear a `napwake.dev/active-until` hold, on its ManagedWorkload, as `wake --for` sets it, or on the workload, without asking |
+| <Ref id="pause-timeout" name="--timeout" /> | `5m` | How long to wait, cluster calls included. It starts again after you answer a question |
 
 With [`wake: ask`](/concepts/wake-on-request/#asking-before-waking), its answer says a person's click on the asleep page, or `kubectl napwake wake`, wakes it, not a request. On a ManagedWorkload Napwake hasn't taken on yet, such as one created a moment ago, `pause` waits until Napwake has. A request already on it then isn't acted on.
 
@@ -978,11 +1017,9 @@ Its flags, with their defaults. [Wake a workload](/getting-started/kubectl-plugi
 | Flag | Default | What it does |
 |---|---|---|
 | <Ref id="wake-namespace" name="--namespace" /> `-n` | your kubeconfig context's | Namespace of the workload |
-| <Ref id="wake-for" name="--for" /> | | Also keep it awake this long, by setting `napwake.dev/active-until` on its ManagedWorkload |
+| <Ref id="wake-for" name="--for" /> | | Also keep it awake this long, by setting `napwake.dev/active-until` on its ManagedWorkload. A hold there that ends later stays, and `wake` says so |
 | <Ref id="wake-wait" name="--wait" /> | `true` | Wait for Napwake's answer to the request, then until it's Running |
 | <Ref id="wake-timeout" name="--timeout" /> | `5m` | How long to wait, cluster calls included |
-
-With `--for`, a hold on the ManagedWorkload that ends later stays, and `wake` says so.
 
 `wake` sets a fresh `napwake.dev/wake-requested` value on the ManagedWorkload, as any tool can. So it wakes the workload whatever its wake setting.
 
@@ -1044,7 +1081,7 @@ Its flags, with their defaults. [Enable a workload](/getting-started/kubectl-plu
 | The workload is left out | Labelled `napwake.dev/ignore=true` |
 | Or opted out | Its own `napwake.dev/managed` is anything but `"true"`, in a managed namespace |
 | No ManagedWorkload manages it | The operator isn't running, doesn't watch the namespace, or protects it by its own settings |
-| Right after you label it | Its ManagedWorkload may not exist yet. Run `enable` again a few seconds later. |
+| Right after you label it | Its ManagedWorkload may not exist yet. Run `enable` again a few seconds later |
 | Its ManagedWorkload says Napwake never pauses it | `Protected=True`, a target labelled `napwake.dev/ignore`, or `DuplicateTarget=True` |
 | `Protected=True` | Such as by a `protectedNamespaces` pattern, or for Napwake's own operator and doorman |
 | No ManagedWorkload CRD | It says Napwake isn't installed |
@@ -1081,7 +1118,7 @@ Its flags, with their defaults. [Enable a workload](/getting-started/kubectl-plu
 
 ### When a GitOps tool or Helm applies the setting
 
-A GitOps tool would put a changed setting straight back, so `enable` changes nothing it applies. The tool is Argo CD, Flux, Fleet, kapp or Kluctl. The setting is the `napwake.dev/dry-run` annotation on the workload or its namespace, or `spec.dryRun`. `enable` names the tool, prints the change to make in Git, and exits non-zero.
+A GitOps tool would put a changed setting straight back, so `enable` changes nothing it applies. It names the tool, prints the change to make in Git, and exits non-zero.
 
 <TerminalBlock
   label="enable naming the GitOps tool that applies the setting"
@@ -1094,17 +1131,18 @@ A GitOps tool would put a changed setting straight back, so `enable` changes not
 
 | | |
 |---|---|
+| The tools | Argo CD, Flux, Fleet, kapp and Kluctl |
+| The setting | The `napwake.dev/dry-run` annotation on the workload or its namespace, or `spec.dryRun` |
 | How it tells | From the field managers the API server records, as `pause` does for replicas |
 | So | How the tool tracks what it applies doesn't matter |
 | With none recorded | By the tracking label or annotation Argo CD or Flux adds |
-| The tool applies the workload, not the annotation | Such as when Git doesn't have it. The tool leaves a change to it alone. |
+| The tool applies the workload, not the annotation | Such as when Git doesn't have it. The tool leaves a change to it alone |
 | Set by Helm | It changes it, since Helm only applies a chart when you run it |
 | Then | It warns that the next `helm upgrade` puts the chart's value back, so set it in the chart too |
 | Replicas set from Git | It warns as [`pause`](#pause) does, with the one-time fix, unless the tool is told |
 | When it warns | Whether it ends dry-run, finds it ended already, or leaves the change to Git |
 | With `--all` | Workloads a tool treats alike, such as one Argo CD application's, share one warning |
-
-Ending dry-run lets Napwake pause the workload. The tool then scales it back up on the next sync after each pause. That's why it warns. See [Ending dry-run](/guides/gitops/#ending-dry-run).
+| Why it warns | Ending dry-run lets Napwake pause the workload. The tool then scales it back up on the next sync after each pause ([Ending dry-run](/guides/gitops/#ending-dry-run)) |
 
 </section>
 
@@ -1115,12 +1153,10 @@ Ending dry-run lets Napwake pause the workload. The tool then scales it back up 
 | Your user needs | Without it |
 |---|---|
 | `get` and `patch` on the workload, and `get` on its namespace | |
-| `list` on `managedworkloads` in the namespace | It goes by the annotations alone, and says so |
+| `list` on `managedworkloads` in the namespace | It goes by the annotations alone, and says so. Then it can't check that Napwake manages the workload, nor see a cluster-default dry-run |
 | With `--all`, `list` on Deployments and StatefulSets | |
 | With `--all`, `patch` on the namespace, to end its dry-run there | Each workload gets its own annotation instead |
 | For the GitOps warning, what `pause` reads of Argo CD | |
-
-Going by the annotations alone, `enable` can't check that Napwake manages the workload. Nor can it see a cluster-default dry-run.
 
 </section>
 

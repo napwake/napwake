@@ -324,7 +324,9 @@ waking preview-42/web...
 preview-42/web is Running after 2s
 ```
 
-`--wait`, the default, waits for Napwake's answer, then until it's Running. Both fit in `--timeout`, 5 minutes by default, even for a request made as the preview wakes. For a slower start, give it more, such as `--timeout 10m` ([Wake a workload](/getting-started/kubectl-plugin/#wake-a-workload)).
+`--wait`, the default, waits for Napwake's answer, then until it's Running. Both fit in `--timeout`, 5 minutes by default, even for a request made as the preview wakes. A request made as the preview pauses calls the pause off.
+
+For a slower start, give it more, such as `--timeout 10m` ([Wake a workload](/getting-started/kubectl-plugin/#wake-a-workload)).
 
 ### From a portal or a chat bot
 
