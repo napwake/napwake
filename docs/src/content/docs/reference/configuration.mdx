@@ -1,5 +1,5 @@
 ---
-title: "Configuration reference"
+title: "Configuration"
 description: "The flags of the binary, /manager, which runs as the operator, the doorman or a forwarder, with their defaults, endpoints, leader election, TLS and logs."
 tableOfContents: false
 lede: "Every flag of the binary, with its default, for running Napwake from your own manifests."
@@ -97,7 +97,7 @@ The binary is `/manager`. The Helm chart sets its flags from its [values](/refer
 | Flag | Default | Description |
 |------|---------|-------------|
 | <Ref id="flag-leader-elect">{'--leader-elect'}</Ref> | `false` | One replica reconciles. A leader that stops releases its lease, so the next, or a rollout's new one, takes over at once. Ignored by the doorman, where every replica serves traffic. See [Leader election](#leader-election) |
-| <Ref id="flag-max-concurrent-reconciles">{'--max-concurrent-reconciles'}</Ref> | `8` | ManagedWorkloads reconciled at once, so a slow metrics or Prometheus query doesn't hold up wakes, which queue ahead of periodic checks. At least 1 |
+| <Ref id="flag-max-concurrent-reconciles">{'--max-concurrent-reconciles'}</Ref> | `8` | ManagedWorkloads reconciled at once, so a slow metrics or Prometheus query doesn't hold up wakes. Wakes queue ahead of periodic checks. At least 1 |
 | <Ref id="flag-timezone">{'--timezone'}</Ref> | `UTC` | IANA zone, such as `Europe/London`, for forecasts' hours and weekdays, so they follow daylight saving. Zone database built in |
 | <Ref id="flag-pausing">{'--pausing'}</Ref> | `true` | Pause idle workloads. `false` stops every pause this install makes, at once, and wakes those paused. Each workload is measured as in dry-run, whatever it sets. Helm value `pausing.enabled`. See [Stop all pausing now](/guides/pause/#stop-all-pausing-now) |
 | <Ref id="flag-kubeconfig">{'--kubeconfig'}</Ref> | in-cluster | Kubeconfig path, outside the cluster only |
@@ -144,7 +144,7 @@ For workloads opted in with the label, when neither they nor their namespace set
 
 | Flag | Default | Description |
 |------|---------|-------------|
-| <Ref id="flag-neg-forwarder">{'--neg-forwarder'}</Ref> | `false` | Route Services behind GKE NEGs through a forwarder Deployment the operator runs in each paused workload's namespace, instead of leaving them unrouted. Needs `create` and `delete` on Deployments. Helm value `doorman.negForwarder.enabled`. See [GKE container-native load balancing](/concepts/wake-on-request/#gke-container-native-load-balancing-negs) |
+| <Ref id="flag-neg-forwarder">{'--neg-forwarder'}</Ref> | `false` | Route Services behind GKE NEGs through a forwarder Deployment, instead of leaving them unrouted. The operator runs one in each paused workload's namespace. Needs `create` and `delete` on Deployments. Helm value `doorman.negForwarder.enabled`. See [GKE container-native load balancing](/concepts/wake-on-request/#gke-container-native-load-balancing-negs) |
 | <Ref id="flag-neg-forwarder-image">{'--neg-forwarder-image'}</Ref> | | The forwarders' image, the operator's own. Required with `--neg-forwarder` |
 | <Ref id="flag-neg-forwarder-replicas">{'--neg-forwarder-replicas'}</Ref> | `2` | Pods per forwarder. At least 1 |
 | <Ref id="flag-neg-forwarder-resources">{'--neg-forwarder-resources'}</Ref> | `{"requests":{"cpu":"10m","memory":"32Mi"},"limits":{"memory":"64Mi"}}` | Each forwarder pod's resources, as JSON |
@@ -156,11 +156,11 @@ For workloads opted in with the label, when neither they nor their namespace set
 |------|---------|-------------|
 | <Ref id="flag-doorman">{'--doorman'}</Ref> | `false` | Run as the doorman instead of the operator. The doorman Deployment sets it |
 | <Ref id="flag-forwarder">{'--forwarder'}</Ref> | `false` | Run as a [forwarder](/concepts/wake-on-request/#gke-container-native-load-balancing-negs) instead of the operator. The operator's forwarder Deployments set it, with `--forward` (routes, comma-separated `listen=doorman` port pairs) and `--forwarder-doorman` (the doorman pods' DNS name) |
-| <Ref id="flag-guard">{'--guard'}</Ref> | | Run as the chart's `uninstall` or `upgrade` hook (`guard.uninstall`, `guard.upgrade`). Waits up to two and a half minutes for ManagedWorkloads being deleted, then exits 1, listing those left without an operator. `uninstall` counts every one in `--watch-namespaces` (all when empty) or with the `napwake.dev/cleanup` finalizer. `upgrade` counts those with the finalizer outside the new `--watch-namespaces` |
+| <Ref id="flag-guard">{'--guard'}</Ref> | | Run as the chart's `uninstall` or `upgrade` hook (`guard.uninstall`, `guard.upgrade`). Waits up to two and a half minutes for ManagedWorkloads being deleted. Then it exits 1, listing those left without an operator. `uninstall` counts every one in `--watch-namespaces` (all when empty) or with the `napwake.dev/cleanup` finalizer. `upgrade` counts those with the finalizer outside the new `--watch-namespaces` |
 
 ### Checked at startup
 
-The operator exits with an error naming the flag.
+The binary exits 1, with an error naming the flag.
 
 | Flag | Refused when |
 |------|--------------|
@@ -173,6 +173,13 @@ The operator exits with an error naming the flag.
 | `--default-wake` | Not `request` or `ask` |
 | `--max-concurrent-reconciles`, `--doorman-ports-per-workload`, `--doorman-ports-per-namespace` | Below 1 |
 | `--timezone` | Not a known IANA zone |
+| `--neg-forwarder` | Set with `--doorman-service` empty, which turns off the doorman it routes to |
+| `--neg-forwarder-image`, `--neg-forwarder-doorman-service` | Empty, with `--neg-forwarder` |
+| `--neg-forwarder-replicas` | Below 1, with `--neg-forwarder` |
+| `--neg-forwarder-resources` | Not a JSON ResourceRequirements, with `--neg-forwarder` |
+| `--guard` | Not `uninstall` or `upgrade` |
+| `--forward`, as a forwarder | Empty, not `listen=doorman` port pairs, or a listen port twice |
+| `--forwarder-doorman`, as a forwarder | Empty |
 
 ## Endpoints
 
@@ -185,7 +192,7 @@ The operator exits with an error naming the flag.
 
 ## Leader election
 
-```
+```text
 --leader-elect=true
 ```
 
@@ -193,13 +200,13 @@ For HA, with more than one replica. The leader holds the Lease `479a98fc.napwake
 
 ## TLS configuration
 
-```
+```text
 --metrics-secure=false --metrics-bind-address=:8080
 ```
 
-Plain HTTP. Not for production.
+Plain HTTP. Not for a shared cluster.
 
-```
+```text
 --metrics-cert-path=/certs/metrics
 ```
 
