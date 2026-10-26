@@ -10,4 +10,4 @@
 
 - [ ] Every commit is signed off with `git commit -s`, under the [Developer Certificate of Origin](https://developercertificate.org/).
 
-To sign off commits you've already made, run `git rebase --signoff origin/main`, then `git push --force-with-lease`.
+To sign off commits you've already made, run `git rebase --signoff` with the commit the Sign-off check names, or `origin/main` if your `origin` is napwake/napwake and up to date. Then `git push --force-with-lease`.

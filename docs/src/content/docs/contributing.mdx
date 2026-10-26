@@ -226,7 +226,7 @@ For maintainers. A release is a tag on `main`, `vX.Y.Z`, made and pushed like th
 | Step | What it does |
 |---|---|
 | `make release VERSION=X.Y.Z` | Bumps the chart's version and appVersion, and the kustomize image. Bumps the docs' install and verify commands and download links, on the pages in the Makefile's `VERSIONED_DOCS`. Dates the version's section of `CHANGELOG.md`, commits that, and tags it. Pushing the tag starts the release workflow's four steps |
-| 1. Check | `make verify-version` checks the chart, the kustomize image, the docs and the dated changelog name the tag's version. It also checks no page's install link is to `releases/latest` or another release. Then the step runs every check a pull request does, Trivy on the image included |
+| 1. Check | `make verify-version` checks the chart, the kustomize image, the docs and the dated changelog name the tag's version. It also checks no page's install link is to `releases/latest` or another release. Then it runs the tests, lint, the end-to-end and Helm smoke tests, and Trivy on the image, as a pull request does |
 | 2. Build and draft | Builds the plugin archives, the krew manifest, `install.yaml` and the chart. Pushes the image by digest, untagged, signs it and attaches its SBOMs and provenance. Drafts the GitHub release with every file and its signed checksums, and [notes](#release-notes) from the changelog |
 | 3. Publish | Tags the image, pushes and signs the chart, tags the image `latest`, and publishes the GitHub release, which moves `releases/latest` |
 | 4. Brew | Writes the Homebrew formula from the published archives, and pushes it to [the tap](#the-homebrew-tap). For a release, and for a release candidate until the first stable release |

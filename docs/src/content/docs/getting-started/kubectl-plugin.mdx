@@ -176,7 +176,7 @@ Run it before you install Napwake, or after, to see what's left to opt in. Once 
 | `unmanaged` | Napwake isn't involved |
 | `dry-run` | Napwake measures it, and never pauses it |
 | `live` | Napwake pauses it while idle |
-| `protected` | Its namespace is labelled `napwake.dev/protected`, so Napwake won't manage it |
+| `protected` | Its namespace is labelled `napwake.dev/protected` or matches a built-in pattern, such as `kube-*`, so Napwake won't manage it |
 | `paused (unmanaged)` | Someone scaled it to zero. It costs nothing, but nothing wakes it on a request |
 
 Run in a terminal, the scan also writes the report as a web page and opens it in your browser. It's one self-contained file to email or attach, and it prints cleanly to PDF. See [The web report](/reference/cli/#scan-report).

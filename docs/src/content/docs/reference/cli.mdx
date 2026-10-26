@@ -198,7 +198,7 @@ What the columns count, and leave out:
 | A live workload | Isn't replayed, as there are no pods for Prometheus to record while it's paused. Its pauses are what FREED THIS MONTH and SAVED count |
 | A StatefulSet that deletes its PVCs when scaled down | Would lose its data to a pause, so Napwake refuses to pause it. It's left out of what pausing could free and of the next steps |
 | A protected workload | Left out of what pausing could free and the next steps |
-| Which are protected | The scan sees only the label, not the operator's `protectedNamespaces` patterns |
+| Which are protected | Those labelled `napwake.dev/protected`, and those matching a built-in pattern (`kube-*`, `openshift-*`, `cattle-*`, `gke-*`, `gmp-*`). The operator's own `protectedNamespaces` patterns show only through a managed workload's `Protected=True` |
 | A workload scaled to zero by hand | Counted apart in the headline. It counts toward nothing the scan says could be freed |
 
 </section>
@@ -498,7 +498,7 @@ How the first figure is worked out before anything is paused:
 | Workloads in dry-run | Measured |
 | Unmanaged workloads | Estimated from history |
 | Its share, with history replayed | Of what they cost over the history, with the pods they ran. It says "over the same time" |
-| Without either | What what's idle now costs while running, the most pausing could free |
+| Without either | What the idle workloads cost while running, the most pausing could free |
 | A zero, with under a day of history, short of the window | It says that's too little history yet. Scan again after a few days |
 
 | The file | |

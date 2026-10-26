@@ -425,7 +425,7 @@ Helm stops before changing anything and prints the list.
 | Uninstall | Every ManagedWorkload in the watched namespaces (all, without `watchNamespaces`), and any elsewhere with this operator's `napwake.dev/cleanup` finalizer. None another install stamped with its namespace in `napwake.dev/operator` |
 | Upgrade | Those the operator took on in namespaces the new `watchNamespaces` leaves out |
 
-- Each runs as a ServiceAccount of its own name. Its ClusterRole may only list ManagedWorkloads' metadata, cluster-wide even with `watchNamespaces`, since those it looks for may be outside it.
+- Each runs as a ServiceAccount of its own name. Its ClusterRole may only list ManagedWorkloads, and the guard reads only their metadata. It's cluster-wide even with `watchNamespaces`, since those it looks for may be outside it.
 - The ServiceAccounts and RBAC are hooks too, deleted after the run. A failed Job stays an hour, for `kubectl logs`.
 - The hooks use `image`, `imagePullSecrets` and `logLevel`.
 - Mesh sidecars are kept out, since a running sidecar would keep the Job from finishing.
@@ -510,9 +510,9 @@ What changes with `watchNamespaces`.
 
 Everything Napwake reads, writes and sends is in [Data and access](/reference/data-and-access/).
 
-## A hardened install
+## A highly available install
 
-```yaml title="values-hardened.yaml"
+```yaml title="values-ha.yaml"
 replicaCount: 2
 
 leaderElection:
@@ -560,7 +560,7 @@ affinity:
 ```bash
 helm install napwake oci://ghcr.io/napwake/charts/napwake \
   --version 0.2.0 \
-  -f values-hardened.yaml \
+  -f values-ha.yaml \
   -n napwake-system --create-namespace
 ```
 
