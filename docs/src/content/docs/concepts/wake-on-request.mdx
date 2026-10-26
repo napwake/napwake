@@ -58,7 +58,7 @@ The doorman is a small proxy, its own Deployment beside the operator, with two r
 
 The doorman works on TCP connections, not HTTP requests. Waking a workload wakes its [dependencies](/concepts/dependencies/) too.
 
-Anything that reads EndpointSlices reaches the doorman the same way. That includes ingress controllers, Gateway API implementations and cloud load balancers ([the ones checked](/reference/compatibility/)). A routed workload reports this:
+Ingress controllers, Gateway API implementations and cloud load balancers that read EndpointSlices reach the doorman the same way ([the ones checked](/reference/compatibility/)). A routed workload reports this:
 
 ```
 WakeOnRequest=True   DoormanRouted   requests are held and wake the workload

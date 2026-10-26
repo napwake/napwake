@@ -408,7 +408,7 @@ Traffic patterns change, with a marketing campaign, a new feature or a change of
 
 2. If $$z(t) > 3.0$$, the hour is an anomaly. The model learns from it only up to 3 standard deviations, so a single spike isn't learned as a pattern.
 
-    But if the last error in its hour of the week went the same way, it isn't an anomaly. It's a weekly pattern, such as a Tuesday night batch job, and it's learned in full.
+    But if the last error in its hour of the week was as far out, the same way, it isn't an anomaly. It's a weekly pattern, such as a Tuesday night batch job, and it's learned in full.
 
 3. 3 or more anomalies within 24 observed hours are a regime change.
 

@@ -74,7 +74,7 @@ Set either on the ManagedWorkload or its target, as an RFC 3339 time.
 kubectl annotate deployment my-api -n staging --overwrite \
   napwake.dev/last-activity="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
 
-# Keep the workload awake until 18:00 UTC today, e.g. during a demo
+# Keep the workload awake until 18:00 UTC today, such as during a demo. Run it before then, since a time already past does nothing
 kubectl annotate deployment my-api -n staging --overwrite \
   napwake.dev/active-until="$(date -u +%Y-%m-%dT18:00:00Z)"
 ```
