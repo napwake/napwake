@@ -1529,7 +1529,7 @@ func cents(amount float64) string {
 // rounds to nothing isn't nothing, so it's <$1: $0 is only for none. Every
 // command shows money this way, so scan and status agree.
 func dollars(amount float64) string {
-	if amount > 0 && amount < 0.5 {
+	if underADollar(amount) {
 		return "<$1"
 	}
 	sign := ""
@@ -1541,6 +1541,12 @@ func dollars(amount float64) string {
 		sign = ""
 	}
 	return sign + "$" + thousands(rounded)
+}
+
+// underADollar says dollars writes amount as <$1: above zero, but rounding
+// to no whole dollar.
+func underADollar(amount float64) bool {
+	return amount > 0 && amount < 0.5
 }
 
 // thousands writes n with its thousands separated by commas.
