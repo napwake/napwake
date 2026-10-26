@@ -30,9 +30,9 @@ Freed becomes saved only once nodes go. The two numbers answer different questio
 | Freed | `freedThisMonth` | What the paused replicas requested, at their nodes' list price, while paused. What pausing released on its nodes |
 | Saved | `savedThisMonth` | The part of that which provably came off your bill |
 
-Napwake works at the workload layer, and your bill is for nodes. Pausing removes pods, which frees what they requested.
+Napwake works at the workload layer, and your bill is for nodes. Pausing removes pods, which frees what they requested. That's money only once a node autoscaler removes nodes, such as Cluster Autoscaler, Karpenter or a managed equivalent.
 
-That's money only once a node autoscaler removes nodes, such as Cluster Autoscaler, Karpenter or a managed equivalent. With none, or with scale-down blocked, a pause saves nothing, and `savedThisMonth` says so.
+With none, or with scale-down blocked, a pause saves nothing, and `savedThisMonth` says so.
 
 ### How saved is measured
 

@@ -427,7 +427,7 @@ When Helm prints only the error, the Job's log keeps the output for an hour, lin
 kubectl logs job/napwake-uninstall-guard -n napwake-system
 ```
 
-No Helm prints it for a revision written by a Helm before 3.18. Such a revision can come from a `helm rollback` after a refused uninstall. That Helm drops the hook's `helm.sh/hook-output-log-policy` until a newer Helm upgrades the release.
+No Helm prints it for a revision written by a Helm before 3.18. Such a revision can come from a `helm rollback` after a refused uninstall. A Helm before 3.18 drops the hook's `helm.sh/hook-output-log-policy` until a newer Helm upgrades the release.
 
 <details class="nw-details">
 <summary>What a refused uninstall leaves, and Argo CD</summary>
