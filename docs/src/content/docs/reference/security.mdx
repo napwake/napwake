@@ -28,7 +28,7 @@ Each power Napwake has, and what limits it. [Data and access](/reference/data-an
 
 ## What it talks to
 
-Nothing leaves the cluster. There's no telemetry, usage reporting or update checks. Inside it, these are the connections.
+Nothing leaves the cluster unless `prometheus.url` points outside it, such as at a hosted Prometheus. Then the operator's queries go there, with workload names in them. There's no telemetry, usage reporting or update checks. Inside the cluster, these are the connections.
 
 | From | To | Why |
 |---|---|---|
