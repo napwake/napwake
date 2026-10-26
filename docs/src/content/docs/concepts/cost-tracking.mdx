@@ -1,6 +1,6 @@
 ---
 title: "Cost tracking"
-description: "Napwake tracks what each workload costs, what pausing it frees, and what that has saved, in its ManagedWorkload's status.cost."
+description: "What pausing a workload frees, and how much of that comes off your bill."
 lede: "What pausing a workload frees, and how much of that comes off your bill."
 ---
 
@@ -17,7 +17,9 @@ import NextSteps from '../../../components/NextSteps.astro';
   caption="The <a href='#worked-example'>worked example</a>'s node pool. Pausing freed all of it. Only what the pool couldn't take back, 3 vCPU, came off the bill."
 />
 
-Napwake tracks what each workload costs, frees and saves, in its ManagedWorkload's `status.cost`. Tracking is always on. The figures cover the current calendar month in UTC. Each month starts from zero, and last month's figures aren't kept.
+Napwake tracks what each workload costs, frees and saves, in its ManagedWorkload's `status.cost`. Tracking is always on.
+
+The figures cover the current calendar month in UTC. Each month starts from zero, and last month's figures aren't kept.
 
 ## Freed and saved
 
@@ -28,11 +30,13 @@ Freed becomes saved only once nodes go. The two numbers answer different questio
 | Freed | `freedThisMonth` | What the paused replicas requested, at their nodes' list price, while paused. What pausing released on its nodes |
 | Saved | `savedThisMonth` | The part of that which provably came off your bill |
 
-Napwake works at the workload layer, and your bill is for nodes. Pausing removes pods, which frees what they requested. That's money only once a cluster autoscaler removes nodes, such as Cluster Autoscaler, Karpenter or a managed equivalent. With none, or with scale-down blocked, a pause saves nothing, and `savedThisMonth` says so.
+Napwake works at the workload layer, and your bill is for nodes. Pausing removes pods, which frees what they requested. That's money only once a node autoscaler removes nodes, such as Cluster Autoscaler, Karpenter or a managed equivalent.
+
+With none, or with scale-down blocked, a pause saves nothing, and `savedThisMonth` says so.
 
 ### How saved is measured
 
-Saved is what the pauses hold off the bill right now. Every 5 minutes, the operator's leader measures it in each node pool, asking how much of what's paused there its nodes could hold if it came back:
+Saved is what the pauses hold off the bill right now. Every 5 minutes, the operator's leader measures it in each node pool. It asks how much of what's paused there the pool's nodes could hold if it came back:
 
 | | In CPU and in memory |
 |-|----------------------|
@@ -43,7 +47,9 @@ Saved is what the pauses hold off the bill right now. Every 5 minutes, the opera
 | Priced | `savedThisMonth` is those hours at the workload's rates, as for freed, `costTracking.rates` included |
 | Recorded | A pause records its pools, and its pods in each, in `status.pause.resources.nodePools` |
 
-Saved is a **lower bound**. CPU and memory are compared apart, and spare is summed across the pool's nodes, as if pods could be split between them. Real scheduling only ever needs more. So saved never credits capacity that's still there, and can undercount but never overcount.
+Saved is a **lower bound**. CPU and memory are compared apart. Spare is summed across the pool's nodes, as if pods could be split between them.
+
+Real scheduling only ever needs more. So saved never credits capacity that's still there, and can undercount but never overcount.
 
 Nodes removed for any reason count, if the paused replicas would need them back. That's by an autoscaler after a pause, by consolidation, or by hand. If other workloads scale down, the paused replicas fit in what they leave, so the credit falls.
 
@@ -87,7 +93,9 @@ Nodes removed for any reason count, if the paused replicas would need them back.
 
 ## How costs are calculated
 
-Everything is priced on what the pods **request**, not what they use. Requests are what a pod reserves on a node. So they're its cost in capacity, and what a pause frees. Sidecars injected when the pods were created count too, such as a service mesh proxy. The template doesn't list them, but pausing frees them.
+Everything is priced on what the pods **request**, not what they use. Requests are what a pod reserves on a node. So they're its cost in capacity, and what a pause frees.
+
+Sidecars injected when the pods were created count too, such as a service mesh proxy. The template doesn't list them, but pausing frees them.
 
 ### Resource hours
 
@@ -142,8 +150,8 @@ Resource-hours become dollars at a rate per vCPU-hour, per GiB-hour of memory, a
 
 | Resource | Default rate | Source |
 |----------|--------------|--------|
-| CPU | $0.031/vCPU-hour | AWS on-demand (m6i.large, us-east-1, 2026) |
-| Memory | $0.004/GiB-hour | AWS on-demand (m6i.large, us-east-1, 2026) |
+| CPU | $0.031/vCPU-hour | AWS on-demand, an `m6i.large` in us-east-1, 2026. Its $0.0317 a vCPU-hour, rounded down |
+| Memory | $0.004/GiB-hour | AWS on-demand, an `m6i.large` in us-east-1, 2026. Its $0.0041 a GiB-hour, rounded down |
 | Storage | $0.08/GiB-month (priced at 730 hours a month) | AWS EBS gp3, us-east-1 |
 
 Rates apply to the whole month's hours each time dollars are worked out. So changing `costTracking.rates` reprices the month so far, not only what follows.
@@ -156,7 +164,7 @@ Rates apply to the whole month's hours each time dollars are worked out. So chan
 | Splitting a price | A provider prices an instance whole. Napwake splits it between its vCPUs and memory |
 | In the defaults' proportion | A vCPU costs as much as 7.75 GiB |
 | For example | An `m6i.large` (2 vCPU, 8 GiB, $0.096 an hour) comes out at $0.0317 per vCPU-hour and $0.0041 per GiB-hour |
-| Instance families | A memory-optimized instance's memory, and a compute-optimized one's CPU, cost what they cost there |
+| Instance families | A memory-optimised instance's memory, and a compute-optimised one's CPU, cost what they cost there |
 | A pod | Pays for the share of the node it requests |
 | The price table | The on-demand Linux list price of every AWS, Google Cloud and Azure instance type, in every region it's sold |
 | Spot | Its spot price wherever it's sold as spot |
@@ -187,20 +195,22 @@ A node labelled as spot or preemptible is priced at its type's spot price in its
 
 ### Custom rates
 
-Set your own rates to match what you pay:
+Set your own rates to match what you pay. These are example rates:
 
 ```yaml title="managedworkload.yaml"
 spec:
   costTracking:
     rates:
-      cpuPerHour: "0.045"      # GKE Autopilot pricing
-      memoryPerHour: "0.005"    # GKE Autopilot pricing
-      storagePerMonth: "0.10"   # Premium SSD
+      cpuPerHour: "0.045"
+      memoryPerHour: "0.005"
+      storagePerMonth: "0.10"
 ```
 
 ## In dry-run
 
-Dry-run measures what pausing would free, never what it would save. A workload in [dry-run](/guides/dry-run/) is never paused, so all its time is awake time. Saved depends on whether the nodes would have gone, which they can't while it runs. What pausing would have freed is kept apart in `status.dryRun`:
+Dry-run measures what pausing would free, never what it would save. A workload in [dry-run](/guides/dry-run/) is never paused, so all its time is awake time.
+
+Saved depends on whether the nodes would have gone, which they can't while it runs. What pausing would have freed is kept apart in `status.dryRun`:
 
 | Field | |
 |-------|-|
@@ -209,7 +219,7 @@ Dry-run measures what pausing would free, never what it would save. A workload i
 
 ## Viewing costs across workloads
 
-`kubectl get managedworkloads -A` shows what pausing each workload has `Freed` this month, what of that it `Saved`, and, in dry-run, what it `Would Free`. For more:
+`kubectl get managedworkloads -A` shows what pausing each workload has `Freed` this month, and what of that it `Saved`. In dry-run, it shows what it `Would Free`. For more:
 
 ```bash
 kubectl get managedworkloads -A -o custom-columns=\
@@ -227,7 +237,9 @@ SAVED:.status.cost.savedThisMonth,PROJECTED:.status.cost.projectedMonthlyCost
 
 ## Status fields
 
-The hours are the record. The dollar figures are worked out from them, rounded to the cent for display. Anything above zero that rounds to nothing reads `<$0.01`. `$0.00` is none.
+The hours are the record. The dollar figures are worked out from them, rounded to the cent for display.
+
+Anything above zero that rounds to nothing reads `<$0.01`. `$0.00` is none.
 
 ```yaml title="status.cost"
 status:

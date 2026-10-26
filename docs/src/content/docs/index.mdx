@@ -30,18 +30,18 @@ kubectl napwake scan
 
 </ScanShowcase>
 
-## Four doors
+## Four states, four doors
 
 <Cards even>
   <StateCard state="asleep">Scaled to zero. Its Services are routed to the doorman, which wakes it on the first request.</StateCard>
   <StateCard state="waking">A request, an activity annotation, or `autoResume` ahead of demand woke it. Its replicas are restored and its dependencies woken.</StateCard>
   <StateCard state="awake">Its pods are Ready and held requests passed through. With no activity for `idleAfter`, and no forecast of demand, it pauses again.</StateCard>
-  <StateCard state="error">A note pinned on the door. Something stops Napwake doing its job, and `kubectl napwake status` says what to fix.</StateCard>
+  <StateCard state="error">Something stops Napwake doing its job, and `kubectl napwake status` says what to fix. Its door has a note pinned on it.</StateCard>
 </Cards>
 
 ## How it works
 
-Label a Deployment, StatefulSet or namespace `napwake.dev/managed: "true"` and Napwake creates a ManagedWorkload for it, with its settings from annotations. Then it keeps an activity clock: CPU, deploys, activity annotations, and Prometheus.
+Label a Deployment, StatefulSet or namespace `napwake.dev/managed: "true"` and Napwake creates a ManagedWorkload for it, with its settings from annotations. Then it keeps an activity clock, fed by CPU, deploys, activity annotations and Prometheus.
 
 <StateFlow
   layout="across"
@@ -80,12 +80,15 @@ metadata:
     napwake.dev/idle-after: "1h"
 ```
 
-Napwake watches `my-api` and records each time it's active: CPU above `cpuThreshold` (10% of its requests by default), a deploy, or an activity annotation, and, with a [Prometheus query](/guides/prometheus-signals/), its request rate. In dry-run it only measures. Once you run `kubectl napwake enable my-api -n dev`, it pauses the Deployment after an hour with no activity, and wakes it when a request reaches its Service.
+Napwake watches `my-api` and records each time it's active. Activity is CPU above `cpuThreshold` (10% of its requests by default), a deploy or an activity annotation. With a [Prometheus query](/guides/prometheus-signals/), it's also the request rate.
+
+In dry-run it only measures. Once you run `kubectl napwake enable my-api -n dev`, it pauses the Deployment after an hour with no activity. It wakes it when a request reaches its Service.
 
 For every setting, see [Opting in](/guides/opt-in/). For settings annotations don't cover, write a [ManagedWorkload](/guides/managed-workload/) yourself.
 
 <NextSteps
   title="Get started"
+  doorman={false}
   items={[
     { href: '/getting-started/installation/', title: 'Installation', text: 'Helm or the Kustomize manifests, with Argo CD or Flux.' },
     { href: '/getting-started/quickstart/', title: 'Quickstart', text: 'One workload from idle to paused while idle, woken when used.' },

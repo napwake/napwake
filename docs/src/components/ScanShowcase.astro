@@ -15,7 +15,7 @@ const report = 'https://napwake.dev/examples/scan-report/';
         <picture class="nw-scan__img nw-scan__img--light">
           <source media="(max-width: 36rem)" srcset={link('/home/scan-report-phone-light.webp')} width="390" height="560" />
           <img src={link('/home/scan-report-light.webp')} width="1280" height="820" loading="lazy" decoding="async"
-            alt="The scan report for an example cluster. It leads with 19 of 31 workloads running for nobody and $691 that could be freed a month. Beside it, the cluster drawn as a hotel at night, twice: now, with most rooms lit, and with Napwake, the rooms lit for nobody dark." />
+            alt="The scan report for an example cluster. It leads with 19 of 31 workloads running for nobody and $691 that could be freed a month. Beside it, the same workloads drawn twice, as they run now and with Napwake pausing the idle ones." />
         </picture>
         <picture class="nw-scan__img nw-scan__img--dark">
           <source media="(max-width: 36rem)" srcset={link('/home/scan-report-phone-dark.webp')} width="390" height="560" />
@@ -28,7 +28,7 @@ const report = 'https://napwake.dev/examples/scan-report/';
     <div class="nw-scan__cmd"><slot /></div>
     <ul class="nw-scan__points">
       <li>It runs with your kubeconfig and installs nothing in the cluster.</li>
-      <li>It shows what's idle right now as rooms lit for nobody, and what each costs at your nodes' list prices.</li>
+      <li>It shows which workloads are idle right now, and what each costs at your nodes' list prices.</li>
       <li>With Prometheus, it replays the last week of each workload's CPU and rollouts, and says what pausing would have freed.</li>
     </ul>
     <p class="nw-scan__send">One file to send your team. It loads nothing from elsewhere and prints to PDF.</p>

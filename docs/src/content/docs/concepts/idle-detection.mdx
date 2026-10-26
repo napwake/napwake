@@ -1,6 +1,6 @@
 ---
 title: "Idle detection"
-description: "Napwake keeps an activity clock for every ManagedWorkload: the last time anything showed the workload was in use."
+description: "When Napwake pauses a workload, and what wakes it again."
 lede: "When Napwake pauses a workload, and what wakes it again."
 ---
 
@@ -19,7 +19,9 @@ import NextSteps from '../../../components/NextSteps.astro';
   caption="The <a href='#restarts-and-outages'>status example</a>. The last activity was at 09:14. With the default <code>idleAfter</code> of an hour, it pauses at 10:14."
 />
 
-Napwake keeps an **activity clock** for every ManagedWorkload. It's the last time anything showed the workload was in use. Any sign of activity resets it. Once the clock is older than `idlePolicy.idleAfter`, Napwake pauses the workload. It's scaled to zero, keeping its replica count and a resource snapshot.
+Napwake keeps an **activity clock** for every ManagedWorkload. It's the last time anything showed the workload was in use. Any sign of activity resets it.
+
+Once the clock is older than `idlePolicy.idleAfter`, Napwake pauses the workload. It's scaled to zero, keeping its replica count and a resource snapshot.
 
 - There's no learning period. A new workload can pause after its first `idleAfter` without activity.
 - With `idlePolicy.pauseEarly`, a confident forecast can pause it sooner ([Pausing early](/concepts/forecasting/#pausing-early)).
@@ -55,7 +57,7 @@ Every source is checked. The most recent wins, and none has priority.
 
 - Only containers in the target's pod template count, with native sidecars (init containers with `restartPolicy: Always`).
 - Sidecars injected at pod creation, such as Istio or Linkerd proxies, don't. Their work isn't use, and the template doesn't request it. [Cost](/concepts/cost-tracking/) counts them, as they cost the same and pausing frees them too.
-- Usage is measured over the pods metrics-server reports, against those pods' requests. One pod serving while others are Pending, crash-looping, or not yet reporting after a scale-up reads at its own utilization.
+- Usage is measured over the pods metrics-server reports, against those pods' requests. One pod serving while others are Pending, crash-looping, or not yet reporting after a scale-up reads at its own utilisation.
 - Requests come from a running pod, not the template. So a LimitRange default or a Vertical Pod Autoscaler's recommendation counts.
 - That pod is a running one of the target's current revision. A failed pod, such as an evicted one, isn't read. It keeps its own revision's requests until it's cleaned up.
 - Requests are read again every 5 minutes, and when the target's spec changes. While a replica's revision is unclear, as in a rollout, they're read on each check.
@@ -72,9 +74,9 @@ Set either on the ManagedWorkload or its target, as an RFC 3339 time.
 kubectl annotate deployment my-api -n staging --overwrite \
   napwake.dev/last-activity="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
 
-# Keep the workload awake until a time, e.g. during a demo
+# Keep the workload awake until 18:00 UTC today, such as during a demo. Run it before then, since a time already past does nothing
 kubectl annotate deployment my-api -n staging --overwrite \
-  napwake.dev/active-until="2026-10-03T18:00:00Z"
+  napwake.dev/active-until="$(date -u +%Y-%m-%dT18:00:00Z)"
 ```
 
 [`kubectl napwake wake`](/getting-started/kubectl-plugin/#wake-a-workload) wakes it through [`napwake.dev/wake-requested`](/guides/pause/#wake-now) instead, and waits until it's Running.
@@ -99,10 +101,12 @@ Each check runs these steps in order. The first that holds decides.
 With `pauseEarly`, step 3 goes on to step 4 as if the clock had run out, when:
 
 - the last activity was at least 20 minutes ago,
-- the forecast is confident that every hour until `idleAfter` runs out is quiet, and at least this hour and the next,
+- the forecast is confident every hour until `idleAfter` runs out is quiet, and at least this hour and the next,
 - and a request would wake the workload through the doorman once it's paused.
 
-While step 4 holds a pause off, `IdleVetoed` is `True` with reason `ForecastExpectsDemand`, its message naming the hour. An `IdleVetoed` event marks each veto's start. After an hour far quieter than forecast, as on a holiday, the forecast doubts what it expects. For the next hour it holds nothing back ([Anomaly detection](/concepts/forecasting/#anomaly-detection)). It never blocks a pause until it's confident, so a workload with no history is left to the clock.
+While step 4 holds a pause off, `IdleVetoed` is `True` with reason `ForecastExpectsDemand`, its message naming the hour. An `IdleVetoed` event marks each veto's start.
+
+After an hour far quieter than forecast, as on a holiday, the forecast doubts what it expects. For the next hour it holds nothing back ([Anomaly detection](/concepts/forecasting/#anomaly-detection)). It never blocks a pause until it's confident, so a workload with no history is left to the clock.
 
 | Case | What changes |
 |------|--------------|
@@ -158,13 +162,15 @@ These don't make a pause wrong, since Napwake didn't misjudge the workload's use
 
 Steady light use wakes a wrong pause within seconds, or a minute or two. A pause that lasted a quarter of an hour paid for its cold start. And a short `idleAfter` is what you said idle means.
 
-In the simulator, `orders/api` on the test cluster has `idleAfter: 5m` and steady requests all working day. It goes from 79 cold starts a working day to 10. It's awake about 3.5 hours a week more, on weekday evenings.
+The simulator runs a workload with `idleAfter: 5m` and steady requests all working day. It goes from 79 cold starts a working day to 10. It's awake about 3.5 hours a week more, on weekday evenings.
 
 </details>
 
 ### What Napwake tells you
 
-A `PausedWhileInUse` warning event says how soon the pause was undone. It also says how long the clock waits now, and what to change. The `PausedWhileInUse` condition says the same until a pause holds, or the wait ends otherwise. [`kubectl napwake status`](/getting-started/kubectl-plugin/#see-what-napwake-is-doing) lists it under Needs attention.
+A `PausedWhileInUse` warning event says how soon the pause was undone. It also says how long the clock waits now, and what to change.
+
+The `PausedWhileInUse` condition says the same until a pause holds, or the wait ends otherwise. [`kubectl napwake status`](/getting-started/kubectl-plugin/#see-what-napwake-is-doing) lists it under Needs attention.
 
 ```text
 a request came 40 seconds after it paused, so it was in use: it now waits 10 minutes without activity
@@ -218,12 +224,14 @@ A target at zero isn't an error, as no usage is real data. Nor are new pods, wit
 | `NoReadyPods` | `Unknown` | After a wake or rollout, none of the target's pods is Ready yet. No warning | |
 | `AwaitingPodMetrics` | `Unknown` | Then, for up to 3 minutes, Ready pods without metrics yet. No warning | |
 | `NoPodMetrics` | `False` | Ready pods with no metrics for over 3 minutes. One warning event says so | Check metrics-server is installed and reports them (`kubectl top pods`) |
-| `NoCPURequests` | `False` | The running pods, or with none the pod template, request no CPU for its containers. Utilization can't be measured | Set CPU requests, or a default in the namespace's LimitRange |
+| `NoCPURequests` | `False` | The running pods, or with none the pod template, request no CPU for its containers. Utilisation can't be measured | Set CPU requests, or a default in the namespace's LimitRange |
 | `MetricsUnavailable` | `False` | The Metrics API failed, or didn't answer in 2 seconds. The message has the error | |
 
 After a `MetricsUnavailable`, the API isn't read again for a minute. So every workload's check fails at once, instead of waiting out a timeout.
 
-For queries, `PrometheusAvailable` reports `EndpointNotConfigured` or `QueryFailed`. A query that answers but has never matched a series, as with a missing metric or label, can never keep the workload awake. `PrometheusQueryEmpty=True` and a warning event say so ([When a query can't be evaluated](/guides/prometheus-signals/#when-a-query-cant-be-evaluated)).
+For queries, `PrometheusAvailable` reports `EndpointNotConfigured` or `QueryFailed`.
+
+Some queries answer but have never matched a series, as with a missing metric or label. Such a query can never keep the workload awake. `PrometheusQueryEmpty=True` and a warning event say so ([When a query can't be evaluated](/guides/prometheus-signals/#when-a-query-cant-be-evaluated)).
 
 </details>
 
@@ -281,7 +289,9 @@ If the operator stops watching for a while, it can't know what happened. So an a
 
 Whatever would wake it, coming while it's still pausing, [calls the pause off](/guides/pause/#a-request-calls-the-pause-off) instead.
 
-Each wake restarts the clock, so the next pause is a full `idleAfter` away. After [a pause made in use](#paused-while-in-use), it's longer. With `pauseEarly` and a quiet forecast, the pause can come 20 minutes after the wake. `lastActivitySource` says what woke it:
+Each wake restarts the clock, so the next pause is a full `idleAfter` away. After [a pause made in use](#paused-while-in-use), it's longer. With `pauseEarly` and a quiet forecast, the pause can come 20 minutes after the wake.
+
+`lastActivitySource` says what woke it:
 
 | `lastActivitySource` | Woken by |
 |----------------------|----------|

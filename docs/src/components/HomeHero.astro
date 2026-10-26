@@ -21,7 +21,7 @@ import StateDoor from './StateDoor.astro';
       <Scene
         rooms={[{ state: 'asleep', label: 'dev' }, { state: 'waking', label: 'staging' }, { state: 'awake', label: 'preview' }]}
         width={560} height={330} x0={34} floorY={278} scale={1.12} doormanAt={1}
-        label="The doorman holds the door of a waking room. The rooms on either side are asleep or awake."
+        label="A request wakes staging, and the doorman holds it at the door while staging starts. Dev is asleep, and preview is awake."
         caption="A request has reached staging while it was asleep. The doorman holds it at the door while staging wakes, then lets it through. Dev stays asleep. Preview is already awake."
       />
     </div>
