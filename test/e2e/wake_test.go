@@ -176,15 +176,48 @@ curl -sS -w '\nstatus=%%{http_code}' -A '%[1]s' -H 'Host: %[2]s' %[4]s \
 		Expect(err).NotTo(HaveOccurred())
 		Expect(key).NotTo(BeEmpty(), "a doorman pod filled the wake key every replica signs with")
 
+		By("keeping the app awake until its count is checked")
+		// status.turnedAway counts only the latest pause, and on its idle
+		// clock of a minute the app pauses again within minutes of the
+		// click: a count landing after that would never show.
+		_, err = utils.Run(exec.Command("kubectl", "annotate", "managedworkload", name, "-n", ns, "--overwrite",
+			"napwake.dev/active-until="+time.Now().Add(time.Hour).UTC().Format(time.RFC3339)))
+		Expect(err).NotTo(HaveOccurred())
+
 		By("checking the requests turned away are counted in status and by kubectl napwake status")
+		// The doorman adds what it turned away to its annotation once a
+		// minute (turnedAwayFlush, in internal/doorman), and the operator
+		// copies it to status when it sees the change: four minutes is room
+		// for both on a slow runner.
+		const countShows = 4 * time.Minute
 		Eventually(func(g Gomega) {
 			count, err := jsonpath("managedworkload", name, ns, "{.status.turnedAway.requests}")
 			g.Expect(err).NotTo(HaveOccurred())
 			g.Expect(strconv.Atoi(count)).To(BeNumerically(">=", 1))
-		}, 3*time.Minute, 5*time.Second).Should(Succeed())
+		}, countShows, 5*time.Second).Should(Succeed(), func() string {
+			// A description func is called only when the wait fails, so this
+			// reads the ManagedWorkload as the wait left it, not as it began.
+			read := func(path string) string {
+				out, err := jsonpath("managedworkload", name, ns, path)
+				switch {
+				case err != nil:
+					return "unreadable: " + err.Error()
+				case out == "":
+					return "none"
+				}
+				return out
+			}
+			return fmt.Sprintf("the doorman's count, in napwake.dev/turned-away: %s\nstatus.turnedAway: %s",
+				read(`{.metadata.annotations.napwake\.dev/turned-away}`), read("{.status.turnedAway}"))
+		})
 		status, err := utils.Run(exec.Command(pluginBinary, "status", "-n", ns))
 		Expect(err).NotTo(HaveOccurred())
 		Expect(status).To(ContainSubstring("Turned away while asleep"))
+
+		By("letting the app go")
+		_, err = utils.Run(exec.Command("kubectl", "annotate", "managedworkload", name, "-n", ns,
+			"napwake.dev/active-until-"))
+		Expect(err).NotTo(HaveOccurred())
 		Expect(loggedErrors(ns)).To(BeEmpty())
 	})
 
