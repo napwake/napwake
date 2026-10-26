@@ -10,7 +10,8 @@ icon: https://raw.githubusercontent.com/napwake/brand/main/logo/symbol.svg
 sources:
   - https://github.com/napwake/napwake
 maintainers:
-  - name: Tobi Okedeji
+  - name: The Napwake Authors
+    url: https://github.com/napwake/napwake
 keywords:
   - kubernetes
   - operator
