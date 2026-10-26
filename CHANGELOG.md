@@ -9,7 +9,48 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [0.2.0] - Unreleased
 
-The relaunch. The 0.1.x releases were early experiments, and 0.2.0 is a fresh start: install it new rather than upgrading.
+Napwake pauses idle Kubernetes workloads in staging, preview and dev, and wakes them on the first request. It never deletes a workload or its data.
+
+0.2.0 is the first release as Napwake, and a fresh start after the 0.1.x experiments.
+
+See what's idle in your cluster, with nothing installed in it:
+
+```bash
+brew install napwake/tap/kubectl-napwake
+kubectl napwake scan
+```
+
+Then install it. Put your users' time zone in `napwake-values.yaml` first, such as `timezone: Europe/London`.
+
+```bash
+helm install napwake oci://ghcr.io/napwake/charts/napwake \
+  --version 0.2.0 \
+  --namespace napwake-system \
+  --create-namespace \
+  -f napwake-values.yaml
+```
+
+[Installation](https://docs.napwake.dev/getting-started/installation/) also has install.yaml, Kustomize, Argo CD and Flux.
+
+What it does:
+
+- Pauses a workload after `idleAfter` with no activity, an hour by default, and wakes it on the next request. The doorman holds that connection until a pod is Ready, for any TCP.
+- On a public URL, it can ask first. A browser gets a **Wake it** button, and crawlers, scanners and API calls wake nothing.
+- A forecast learns each workload's week. Once confident, it holds off pauses before busy hours. With `autoResume`, it also wakes the workload 15 minutes early.
+- Dry-run measures before anything pauses, and `pausing.enabled: false` stops every pause at once.
+- It reports what pausing freed apart from what came off the bill.
+
+Hybernate is now Napwake, and no old name is kept:
+
+| Before | After |
+|---|---|
+| `hybernate.io/…` labels, annotations and API group | `napwake.dev/…` |
+| `kubectl hybernate` | `kubectl napwake` |
+| `ghcr.io/okedeji/hybernate`, `oci://ghcr.io/okedeji/charts/hybernate` | `ghcr.io/napwake/napwake`, `oci://ghcr.io/napwake/charts/napwake` |
+| `hybernate-system` | `napwake-system` |
+| `okedeji/tap/kubectl-hybernate` | `napwake/tap/kubectl-napwake` |
+
+From 0.2.0-rc.9, `helm upgrade` works in place. From Hybernate 0.1.x or its release candidates rc.1 to rc.7, uninstall, then install Napwake and opt your workloads in again ([Moving to Napwake](https://docs.napwake.dev/operations/upgrading/#moving-to-napwake)).
 
 ### Renamed
 

@@ -102,7 +102,7 @@ After `idleAfter` with no activity, an hour by default, Napwake pauses `my-api`.
 
 If Argo CD or Flux applies the workload, first have it [leave the replicas to Napwake](https://docs.napwake.dev/guides/gitops/). Otherwise it undoes every pause. The [Quickstart](https://docs.napwake.dev/getting-started/quickstart/) runs the whole loop on a sample app.
 
-On a bad day, `pausing.enabled: false` stops every pause at once and wakes what's paused ([Pause and resume](https://docs.napwake.dev/guides/pause/)).
+On a bad day, `pausing.enabled: false` stops every pause at once and wakes what's paused ([Stop all pausing now](https://docs.napwake.dev/guides/pause/#stop-all-pausing-now)).
 
 ## How it works
 
