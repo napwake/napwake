@@ -1081,18 +1081,20 @@ func TestNextSteps_InstallFirstWhenNapwakeIsntFound(t *testing.T) {
 
 	writeNextSteps(&printer{w: &table}, sampleCluster())
 
-	assert.Equal(t, `Next steps:
-  1. Install Napwake, if the cluster doesn't have it yet. Put your users' time zone in
-     napwake-values.yaml first, such as timezone: Europe/London. Then:
-       helm install napwake oci://ghcr.io/napwake/charts/napwake --version 0.2.0 --namespace napwake-system --create-namespace -f napwake-values.yaml
-     See https://docs.napwake.dev/getting-started/installation/
-  2. Measure a workload first, in dry-run, which pauses nothing:
-       kubectl annotate deployment checkout-api -n preview-42 napwake.dev/dry-run=true
-       kubectl label deployment checkout-api -n preview-42 napwake.dev/managed=true
-  3. When you're happy with what it measures, start pausing it while idle:
-       kubectl napwake enable deployment/checkout-api -n preview-42
-
-`, table.String())
+	assert.Equal(t, strings.Join([]string{
+		"Next steps:",
+		"  1. Install Napwake, if the cluster doesn't have it yet. Put your users' time zone in",
+		"     napwake-values.yaml first, such as timezone: Europe/London. Then:",
+		"       helm install napwake oci://ghcr.io/napwake/charts/napwake --version 0.2.0 --namespace napwake-system " +
+			"--create-namespace -f napwake-values.yaml",
+		"     See https://docs.napwake.dev/getting-started/installation/",
+		"  2. Measure a workload first, in dry-run, which pauses nothing:",
+		"       kubectl annotate deployment checkout-api -n preview-42 napwake.dev/dry-run=true",
+		"       kubectl label deployment checkout-api -n preview-42 napwake.dev/managed=true",
+		"  3. When you're happy with what it measures, start pausing it while idle:",
+		"       kubectl napwake enable deployment/checkout-api -n preview-42",
+		"", "",
+	}, "\n"), table.String())
 }
 
 // With Napwake found, by a workload it manages or its own Deployment, the
