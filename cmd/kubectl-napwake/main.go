@@ -331,3 +331,20 @@ func oneLine(s string) string {
 	}, s)
 	return strings.Join(strings.Fields(printable), " ")
 }
+
+// firstSentence is an operator's message up to the end of its first
+// sentence, and whether more follows. The operator ends it with ". ";
+// 0.2.0-rc.9 and earlier ended it with "; ", which this reads too, so the
+// plugin shows the same against either.
+func firstSentence(message string) (string, bool) {
+	end := -1
+	for _, sep := range []string{". ", "; "} {
+		if i := strings.Index(message, sep); i >= 0 && (end < 0 || i < end) {
+			end = i
+		}
+	}
+	if end < 0 {
+		return message, false
+	}
+	return message[:end], true
+}

@@ -462,7 +462,7 @@ func forecastNow(w forecastWorkload, loc *time.Location) string {
 // notLearning is a forecast that can't learn while its workload is paused,
 // for a table: the cause its message leads with, before what fixes it.
 func notLearning(message string) string {
-	if cause, _, ok := strings.Cut(message, "; "); ok && strings.HasPrefix(cause, "not learning") {
+	if cause, ok := firstSentence(message); ok && strings.HasPrefix(cause, "not learning") {
 		return cause
 	}
 	return "not learning"
