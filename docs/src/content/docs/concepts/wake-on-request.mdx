@@ -287,9 +287,9 @@ To change the key, empty the Secret. Each doorman pod uses the new one within a 
 kubectl patch secret napwake-doorman-wake-key -n napwake-system --type=json -p '[{"op":"remove","path":"/data"}]'
 ```
 
-A click wakes a workload at most once a minute, whichever doorman pod it reaches. A click within a minute of the last wake request gets a `429`, with `Retry-After: 60`.
+A click wakes a workload at most once a minute, whichever doorman pod it reaches.
 
-It asks to try again in a minute. That can be one moments before the workload paused again.
+A click within a minute of the last wake request gets a `429`, with `Retry-After: 60`. It asks to try again in a minute. That can be one moments before the workload paused again.
 
 People's tooling can wake it too, without a browser. A pull request bot, a developer portal or a chat command sets [`napwake.dev/wake-requested`](/guides/pause/#wake-now), as `kubectl napwake wake` does. Both work whatever `wake.mode` says.
 
@@ -395,7 +395,7 @@ So a client that sends, then shuts its side to wait, as `nc -N` does, is dropped
 
 The caps are per workload as well as per source, since the source IP is the address the doorman sees. Through an ingress controller, that's the controller's pod, shared by every user behind it.
 
-A burst to one environment then can't crowd out the rest. The per-workload cap also stops one that never becomes Ready from taking every place.
+The per-workload cap means a burst to one environment can't crowd out the rest. It also stops one that never becomes Ready from taking every place.
 
 <details class="nw-details">
 <summary>When a doorman pod stops, and when a route is removed</summary>
@@ -480,7 +480,7 @@ Requests to a Service that isn't routed fail, as they would without Napwake. Rou
 
 GKE adds `cloud.google.com/neg: '{"ingress": true}'` to every new Service of a VPC-native cluster, the default kind. It asks for container-native load balancing, with network endpoint groups (NEGs) of the Service's pods.
 
-It does so only if a GKE Ingress uses the Service. So on its own it doesn't count, and Napwake routes such a Service like any other.
+The annotation takes effect only if a GKE Ingress uses the Service. So on its own it doesn't count, and Napwake routes such a Service like any other.
 
 A Service that really is in NEGs isn't routed without the [forwarder](#gke-container-native-load-balancing-negs), reason `UnsupportedLoadBalancer`. GKE's NEG controller refuses endpoints whose pods are in another namespace, as the doorman's are. It can also stop syncing the load balancer altogether.
 

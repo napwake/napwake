@@ -82,7 +82,7 @@ metadata:
 
 Napwake watches `my-api` and records each time it's active. Activity is CPU above `cpuThreshold` (10% of its requests by default), a deploy or an activity annotation. With a [Prometheus query](/guides/prometheus-signals/), it's also the request rate.
 
-In dry-run it only measures. Then run `kubectl napwake enable my-api -n dev`. It pauses the Deployment after an hour with no activity, and wakes it when a request reaches its Service.
+In dry-run it only measures. Once you run `kubectl napwake enable my-api -n dev`, it pauses the Deployment after an hour with no activity. It wakes it when a request reaches its Service.
 
 For every setting, see [Opting in](/guides/opt-in/). For settings annotations don't cover, write a [ManagedWorkload](/guides/managed-workload/) yourself.
 
