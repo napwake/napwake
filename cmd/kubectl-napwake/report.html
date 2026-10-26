@@ -1216,7 +1216,7 @@ html:not(.js) th { position: static; }
   var fmt = function (n) { return n.toLocaleString("en-US"); };
   // the product's dollars(): "<$1" under 50 cents, else whole dollars with thousands separators
   var dollars = function (v) { return v > 0 && v < .5 ? "<$1" : "$" + fmt(Math.round(v)); };
-  var WORD = { paused: "asleep", idle: "lit, no one seen", active: "in use", resuming: "waking up", pausing: "going to sleep", needs: "needing you", unjudged: "not judged", other: "setting up" };
+  var WORD = { paused: "asleep", idle: "no sign of use", active: "in use", resuming: "waking up", pausing: "going to sleep", needs: "needing you", unjudged: "not judged", other: "setting up" };
   var CLI = { paused: "paused", idle: "idle", active: page === "status" ? "running" : "active", resuming: "resuming", pausing: "pausing", needs: "needs attention", unjudged: "see the notes", other: "creating" };
   var DESC = page === "status" ? {
     paused: "Paused by Napwake. It wakes when someone needs it.", resuming: "Waking up now.", active: "Running, and in use.",
