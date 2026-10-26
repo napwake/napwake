@@ -1,6 +1,6 @@
 ---
-title: "Dry run guide"
-description: "Dry run mode lets you observe what Napwake would do without it ever reducing a workload's availability."
+title: "Dry run"
+description: "Measure what Napwake would do, without it ever reducing a workload's availability."
 lede: "See what Napwake would do without it ever reducing a workload's availability. The activity clock, dependency holds and the forecast run as live, and only the scale to zero is skipped."
 ---
 
@@ -104,7 +104,7 @@ Use it when you first opt a workload or namespace in, after changing its setting
 
     [`kubectl napwake status`](/getting-started/kubectl-plugin/#see-what-napwake-is-doing) leads with it too, in its summary and `WOULD FREE` column. `kubectl napwake scan` adds how often it would have paused, and for how long. The [events](#events) say when.
 
-3. End dry run.
+3. End dry-run.
 
     ```bash
     kubectl napwake enable my-api -n staging
@@ -119,14 +119,14 @@ Use it when you first opt a workload or namespace in, after changing its setting
 `status.dryRun` is gone, and `status.cost` records what pausing actually frees.
 </StartCheckpoint>
 
-## What happens in dry run
+## What happens in dry-run
 
 | | In dry-run |
 |-|------------|
 | Idle detection | The clock runs, and the phase becomes `Idle` when it runs out. No pause |
 | Forecast veto and dependency holds | Applied and reported, as `IdleVetoed`, `HeldByDependents` and `DependencyCycle`. A dry-run dependent that would have paused stops holding its dry-run dependencies. So a whole app counts every pause it would make. When its would-be pause ends, theirs end too and their clocks restart, as its wake would have woken them. See [Dependencies](/concepts/dependencies/#edge-cases) |
 | A [pause request](/guides/pause/#pause-now) | A would-be pause. The phase becomes `Idle`, with a `[dry-run]` `PauseRequested` event and `PauseRequest=False`, reason `DryRun`. Later activity ends it. A Prometheus query already active when it was asked ends it only once it has been quiet |
-| A gap in watching, such as an operator restart, or metrics-server or Prometheus out | Doesn't end a would-be pause. Activity seen after the gap does. For use during it, see [What dry run measured](#what-dry-run-measured) |
+| A gap in watching, such as an operator restart, or metrics-server or Prometheus out | Doesn't end a would-be pause. Activity seen after the gap does. For use during it, see [What dry-run measured](#what-dry-run-measured) |
 | A workload not in a would-be pause, after a gap | Its clock restarts as usual, with an `Unobserved` event saying how long Napwake wasn't watching. See [Restarts and outages](/concepts/idle-detection/#restarts-and-outages) |
 | A workload Napwake had paused | Woken at once, with a `DryRunWake` event. Dry-run never leaves a workload paused |
 | Wakes | Never held back. `kubectl napwake wake` and activity work as usual |
@@ -134,9 +134,15 @@ Use it when you first opt a workload or namespace in, after changing its setting
 | The forecast | Learns, and builds confidence, as usual |
 | Status and events | Say what would happen. `status.dryRun` sums it up, and events for what dry-run holds back carry a `[dry-run]` prefix |
 
-## What dry run measured
+## What dry-run measured
 
-Real pauses can be shorter than would-be ones, since some wakes don't show in dry-run. A would-be pause starts when the activity clock runs out. It ends at the next activity, when a paused workload would have woken. It also ends, counted up to then, when Napwake stops measuring the workload. That's when it's scaled to zero outside Napwake, labelled `napwake.dev/ignore`, or its namespace becomes protected (see [When Napwake lets go](/guides/pause/#when-napwake-lets-go)).
+Real pauses can be shorter than would-be ones, since some wakes don't show in dry-run.
+
+| A would-be pause | When |
+|------------------|------|
+| Starts | When the activity clock runs out |
+| Ends | At the next activity, when a paused workload would have woken |
+| Also ends, counted up to then | When Napwake stops measuring the workload. That's when it's scaled to zero outside Napwake, labelled `napwake.dev/ignore`, or its namespace becomes protected ([When Napwake lets go](/guides/pause/#when-napwake-lets-go)) |
 
 | A wake that doesn't show | In dry-run |
 |--------------------------|------------|
@@ -148,7 +154,9 @@ An activity annotation outlasts a gap, and so does a Prometheus query whose rang
 
 A request in the gap would have woken a workload paused for real. So a long gap can keep a would-be pause going, and overstate what pausing would have freed.
 
-For a workload that serves the odd light request, add a query on its request rate at its ingress. It needs the operator's `prometheus.url` set. Dry-run then sees requests as the doorman would. Use the ingress's metrics, since a paused workload has no pods to export the app's own. On a labelled workload, the ManagedWorkload Napwake created keeps it:
+For a workload that serves only the odd request, add a query on its request rate at its ingress. Dry-run then sees requests as the doorman would. It needs the operator's `prometheus.url` set.
+
+Use the ingress's metrics, since a paused workload has no pods to export the app's own. On a labelled workload, the ManagedWorkload Napwake created keeps the query:
 
 ```bash
 kubectl patch managedworkload my-api -n staging --type=json -p '[{"op":"add","path":"/spec/idlePolicy/activity/prometheus","value":[{"promQL":"sum(rate(nginx_ingress_controller_requests{exported_namespace=\"staging\",exported_service=\"my-api\"}[5m]))"}]}]'
@@ -184,7 +192,9 @@ freedMemoryHours: "384800m"
 estimatedFreed: $7.50
 ```
 
-The hours are the record, to a billionth of an hour. A would-be pause under way, since `status.lastTransitionTime`, is added when it ends. `estimatedFreed` prices them at the workload's [cost rates](/concepts/cost-tracking/#prices) for display. It counts up to the last status write, at most 5 minutes ago. Freed becomes money only once [nodes go](/concepts/cost-tracking/#how-saved-is-measured). The [API reference](/reference/api/) has every field.
+The hours are the record, to a billionth of an hour. A would-be pause under way, since `status.lastTransitionTime`, is added when it ends. The [API reference](/reference/api/) has every field.
+
+`estimatedFreed` prices the hours at the workload's [cost rates](/concepts/cost-tracking/#prices), for display. It counts up to the last status write, at most 5 minutes ago. Freed becomes money only once [nodes go](/concepts/cost-tracking/#how-saved-is-measured).
 
 ## Events
 
@@ -194,7 +204,7 @@ kubectl describe managedworkload my-api -n staging
 
 When the clock runs out, and when activity ends the would-be pause:
 
-```
+```text
 [dry-run] my-api: idle for 1 hour, since its CPU use was last above the activity threshold; would have paused
 [dry-run] my-api: activity resumed (cpu): would have slept 3 hours 12 minutes, freeing $0.25; since Oct 1: would have paused 4 times, slept 4 days, freeing $7.50
 ```

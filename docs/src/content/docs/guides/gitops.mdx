@@ -4,14 +4,16 @@ description: "Tell Argo CD, Flux, Fleet, kapp or Kluctl once to leave a workload
 lede: "Tell your GitOps tool once to leave the replicas to Napwake, so its syncs don't undo pauses."
 ---
 
-import { Tabs, TabItem } from '@astrojs/starlight/components';
+import { Steps, Tabs, TabItem } from '@astrojs/starlight/components';
 import StateFlow from '../../../components/StateFlow.astro';
 import Panel from '../../../components/Panel.astro';
 import NextSteps from '../../../components/NextSteps.astro';
 import GuidesTabAnchor from '../../../components/GuidesTabAnchor.astro';
 import StartCheckpoint from '../../../components/StartCheckpoint.astro';
 
-Napwake pauses by setting replicas to zero. A GitOps tool that applies `replicas` from Git sees the drift and sets them back. With an HPA or KEDA under Argo CD or Flux, you usually have the fix, since autoscalers change replicas too.
+Napwake pauses by setting replicas to zero. A GitOps tool that applies `replicas` from Git sees the drift and sets them back.
+
+Under Argo CD or Flux with an HPA or KEDA, you likely have the fix already. Autoscalers change replicas too.
 
 <Panel title="Before you start">
 
@@ -25,10 +27,12 @@ kubectl napwake scan
 
 ## Leave the replicas to Napwake
 
-<Tabs>
+<Tabs syncKey="gitops">
 <TabItem label="Argo CD">
 
 <GuidesTabAnchor id="argo-cd" />
+
+<Steps>
 
 1. Ignore Deployment and StatefulSet replicas for every app, in `argocd-cm`:
 
@@ -63,6 +67,8 @@ kubectl napwake scan
         syncOptions:
           - RespectIgnoreDifferences=true
     ```
+
+</Steps>
 
 It's Argo CD's HPA setting, so apps with it need nothing more. For some apps only, put the `jsonPointers` in their `spec.ignoreDifferences`.
 
@@ -175,7 +181,7 @@ Napwake never fights Git.
 
 For Argo CD, Flux, Rancher Fleet, kapp and Kluctl, the condition links to the tool's tab:
 
-```
+```text
 GitOpsConflict=True   Argo CD set the replicas from Git, undoing the pause; Napwake pauses it again from 14:20 UTC. To stop it, have Argo CD ignore replicas, as for an HPA: https://docs.napwake.dev/guides/gitops/#argo-cd
 ```
 
@@ -194,7 +200,7 @@ The opt-in label is on the Namespace, which isn't in Git when the tool creates i
 
 Dry-run is the workload's `napwake.dev/dry-run` annotation, its namespace's, or a ManagedWorkload's `spec.dryRun`. If Git has it, change it there, or the tool's next sync puts it back.
 
-[`kubectl napwake enable`](/getting-started/kubectl-plugin/#enable-a-workload) finds the tool, Argo CD by label (`app.kubernetes.io/instance`, its default) or annotation.
+[`kubectl napwake enable`](/getting-started/kubectl-plugin/#enable-a-workload) finds the tool from what set `replicas`. It finds the Argo CD application by its tracking annotation, Argo CD's default since 3.0, or its label.
 
 | Who set it | `enable` |
 |------------|----------|
