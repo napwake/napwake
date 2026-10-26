@@ -144,10 +144,10 @@ The chart creates these with `metrics.prometheusRule.enabled: true`. For `instal
 | `NapwakeDoormanCantListen` | For 5 minutes, a doorman pod can't listen on a routed port. Or two routes claim one port, which every pod refuses. Requests to the paused workloads behind those ports fail | critical |
 | `NapwakeWorkloadStuck` | A workload stays in `Pausing` or `Resuming` for 15 minutes | warning |
 | `NapwakeTargetUnavailable` | A ManagedWorkload's target goes missing more than 3 times in an hour | warning |
-| `NapwakeDoormanWakesFailing` | More than 3 requests to one paused workload timed out or failed (`result` `timeout` or `error`) in 15 minutes, for 5 minutes | warning |
+| `NapwakeDoormanWakesFailing` | More than 3 requests to one paused workload timed out or failed in 15 minutes, for 5 minutes. That's `result` `timeout` or `error` | warning |
 | `NapwakeWakesSlow` | For 5 minutes, one in ten requests the doorman held in the last 30 minutes waited over a minute. A minute is half the default `wake.maxWait`. Requests passed straight to woken pods don't count, and it takes 3 waits at least | warning |
 | `NapwakeDoormanNearCapacity` | For 5 minutes, a doorman pod carries over 80% of the 2048 held or 1024 proxied connections it takes. Past them it refuses or delays requests ([Limits](/concepts/wake-on-request/#limits)) | warning |
-| `NapwakePausesUndone` | Something outside Napwake, such as a GitOps tool, scaled a paused workload back up at least 3 times in 6 hours | warning |
+| `NapwakePausesUndone` | Something outside Napwake, such as a GitOps tool, scaled a paused workload back up. It did so at least 3 times in 6 hours | warning |
 | `NapwakeActivityUnreadable` | For 30 minutes, Napwake can't read a workload's CPU while it's awake, or its Prometheus activity queries. Until it can, it doesn't pause the workload | warning |
 | `NapwakeResumeIncomplete` | A woken workload has run with replicas not Ready for 15 minutes (`ResumeIncomplete`) | warning |
 | `NapwakePausedWhileInUse` | At least 3 times in a day, Napwake paused a workload while it was in use. Each time, something soon woke it | warning |

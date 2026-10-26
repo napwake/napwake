@@ -48,7 +48,7 @@ Whoever reaches a doorman pod reaches every routed, paused workload, in any name
 
 | Control | What it does |
 |---|---|
-| `networkPolicy.enabled`, off by default | The chart's NetworkPolicy. Enable it where untrusted pods share the network. It leaves the routing ports open to every source until you set `ingressFrom`, next row. The doorman listens on all its pod's interfaces, since binding to the pod IP would only shut out its own pod's containers |
+| `networkPolicy.enabled`, off by default | The chart's NetworkPolicy. Enable it where untrusted pods share the network. It leaves the routing ports open to every source until you set `ingressFrom`, next row. The doorman listens on all its pod's interfaces. Binding to the pod IP would only shut out its own pod's containers |
 | `doorman.networkPolicy.ingressFrom` | Admits only the callers your paused workloads really have ([how](/concepts/wake-on-request/#restricting-who-can-reach-the-doorman)). For example, your ingress controller's namespace, and the namespaces whose apps call paused services |
 | `doorman.networkPolicy.egress`, off by default | An egress policy allowing only your pod CIDRs and the API server ([Helm values](/reference/helm-values/#network-policy)). It enforces in the network the bounds the doorman keeps itself, the next two rows |
 | What the doorman dials | Only Pod-backed IP endpoints of EndpointSlices the EndpointSlice controller manages. Never loopback, link-local or cloud metadata addresses, AWS's `fd00:ec2::254` and Alibaba Cloud's `100.100.100.200` included |
