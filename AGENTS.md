@@ -162,6 +162,7 @@ NAPWAKE_DOCS_DIST=$PWD/docs/dist go test -count=1 ./test/docs ./hack/docsite \
 | `charts/napwake/files/defaults.yaml` is a copy of `values.yaml`, and the chart fills in values an older release's `--reuse-values` lacks | `make check-chart`, which also checks every template starts with `{{- include "napwake.defaults" . -}}`. `make manifests` writes the copy |
 | Every docs link answers | `npm run build` in `docs/` (links and anchors between pages), `TestDocsAddressesLandInTheBuiltSite` in `test/docs` (every docs address outside `docs/`, after a build), and `TestDocsLinksExist` in `cmd/kubectl-napwake` |
 | No em dash anywhere, in code, comments, strings, docs or commit messages: write a full stop or a comma | `TestNoEmDashes` in `test/docs` |
+| Every Go file starts with the licence header in `hack/boilerplate.go.txt` | `TestGoFilesHaveTheLicenceHeader` in `test/docs` |
 | Generated files are current, and `go.mod` is tidy | `make verify-generated` |
 | Every commit in a pull request is signed off by its author | The DCO workflow, `hack/dco/check.sh` |
 | The docs' ManagedWorkloads, annotations and Helm values are valid | `TestDocsManifestsAreValid` and `TestDocsHelmValuesAreValid` in `test/docs`, `TestDocsAnnotationsAreReadable` in `internal/controller` |
