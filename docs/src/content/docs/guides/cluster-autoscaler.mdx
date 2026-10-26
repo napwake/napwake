@@ -57,7 +57,7 @@ extraArgs:
 
   # A node is unneeded when the CPU or memory its pods request, whichever is
   # higher, is below this fraction of what it can allocate. 0.5 is the default.
-  # It counts requests, not usage: a node frees up once paused pods are gone,
+  # It counts requests, not usage. A node frees up once paused pods are gone,
   # not when they go quiet.
   scale-down-utilization-threshold: "0.5"
 

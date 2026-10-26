@@ -20,7 +20,7 @@ import NextSteps from '../../../components/NextSteps.astro';
       -o jsonpath='{.status.conditions[?(@.type=="Autoscaled")].message}'
     ```
 
-    ```text
+    ```text wrap
     HPA my-api scales it between 2 and 10 replicas; Napwake pauses it at zero, where the HPA stops scaling, and resumes it within that range
     ```
 
