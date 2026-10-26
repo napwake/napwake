@@ -56,6 +56,44 @@ Check any install this way.
 
 Keep the file and upgrade with it, since an upgrade given `--set` alone drops your other values ([Keeping your settings](/operations/upgrading/#keeping-your-settings)). The chart installs and upgrades the ManagedWorkload CRD. The chart's version has no `v`. Its image's tag has one, such as `v0.2.0`. [Helm values](/reference/helm-values/) lists every value.
 
+### On EKS Fargate
+
+EKS Fargate requires every container's CPU and memory requests to equal its
+limits. This includes the guard Jobs run during Helm upgrades and uninstalls.
+Keep Napwake's default limits and raise the operator, doorman, and guard
+requests to match them in `napwake-values.yaml`:
+
+```yaml title="napwake-values.yaml"
+resources:
+  limits:
+    cpu: 500m
+    memory: 512Mi
+  requests:
+    cpu: 500m
+    memory: 512Mi
+
+doorman:
+  resources:
+    limits:
+      cpu: 500m
+      memory: 256Mi
+    requests:
+      cpu: 500m
+      memory: 256Mi
+
+guard:
+  resources:
+    limits:
+      cpu: 100m
+      memory: 128Mi
+    requests:
+      cpu: 100m
+      memory: 128Mi
+```
+
+See [Fargate Pod configuration](https://docs.aws.amazon.com/eks/latest/userguide/fargate-pod-configuration.html)
+for the EKS resource requirement.
+
 ## With Argo CD or Flux
 
 The chart is only in an OCI registry, which Argo CD and Flux name differently. Commit one of these where your GitOps tool syncs from.
