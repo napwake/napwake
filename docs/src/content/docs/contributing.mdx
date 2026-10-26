@@ -58,12 +58,13 @@ import Panel from '../../components/Panel.astro';
 | If you changed | Check |
 |---|---|
 | Anything | Tests pass (`make test`), and lint passes (`make lint`) |
+| Every commit | It's [signed off](#sign-off), with `git commit -s` |
 | CRD types | CRD manifests regenerated (`make manifests`), DeepCopy regenerated (`make generate`), and generated code current (`make verify-generated`) |
 | The chart, or RBAC | The chart still lints and renders, with RBAC matching `config/rbac` (`make check-chart`) |
 | Alert rules | They still pass their tests (`make test-alerts`) |
 | User-facing behaviour | The documentation is updated |
 
-CI also runs the end-to-end tests on Kubernetes 1.30 and 1.37, the Helm smoke test, and `make vulncheck`.
+CI also runs the end-to-end tests on Kubernetes 1.30 and 1.37, the Helm smoke test, `make vulncheck` and the DCO check.
 
 ### Run the E2E tests from several worktrees
 
@@ -89,6 +90,8 @@ make cleanup-test-e2e   # deletes the cluster, its kubeconfig, image and plugin
 
 ## The rules
 
+Everyone taking part follows the [Code of Conduct](https://github.com/napwake/napwake/blob/main/CODE_OF_CONDUCT.md). [`AGENTS.md`](https://github.com/napwake/napwake/blob/main/AGENTS.md) has every rule for code, tests, commits and reviews, for you and the AI assistant you work with. These are the ones a first change meets.
+
 ### Code
 
 - Comments say why, never what. None restate what the code does.
@@ -99,15 +102,24 @@ make cleanup-test-e2e   # deletes the cluster, its kubeconfig, image and plugin
 
 ### Commits
 
-Use [Conventional Commits](https://www.conventionalcommits.org/), one logical change per commit:
+Use [Conventional Commits](https://www.conventionalcommits.org/), one logical change per commit. The scope is the package or area, such as `controller`, `doorman`, `plugin`, `api`, `crd`, `chart`, `forecast`, `e2e` or `docs`:
 
 ```
-feat(idle): add idle detection with detector and webhook signal
-fix(idle): reset idle timer on active signal
-refactor(forecast): extract confidence scoring into separate type
+feat(api): take a decimal CPU threshold, from 0.1 to 100
+fix(doorman): stamp a request held while its workload pauses
+refactor(controller): judge a wrong pause by v1alpha1.WrongPauseWindow
 chore(crd): regenerate CRD manifests
-docs(guides): add Prometheus signals guide
-test(policy): add table tests for scale constraints
+docs(plugin): say which command to use, and which need the operator
+test(e2e): answer every request through a Service across a pause
+```
+
+### Sign-off
+
+Contributions are made under the [Developer Certificate of Origin](https://developercertificate.org/). Sign off every commit with `git commit -s`, which adds a `Signed-off-by:` line with your name and email. The DCO check fails a pull request with a commit that has no such line for its author. To sign off commits you've already made:
+
+```bash
+git rebase --signoff <base>   # the commit your branch starts from, which the check names
+git push --force-with-lease
 ```
 
 ### Generated code
@@ -136,27 +148,50 @@ A pull request's docs build also checks every `https://docs.napwake.dev` address
 ## Where things are
 
 ```
-cmd/main.go                    # Operator entrypoint
-cmd/kubectl-napwake/main.go  # kubectl plugin
-api/v1alpha1/                  # CRD type definitions
-internal/controller/           # Reconcilers
-internal/forecast/             # Holt-Winters engine
-internal/signal/               # Prometheus activity queries
-internal/lifecycle/            # Pause and resume
-internal/autoscaler/           # HPA and KEDA
-internal/gitops/               # GitOps tool detection
-internal/discovery/            # Cluster scan for kubectl napwake scan
-internal/doorman/              # Wake on request
-internal/cost/                 # Cost rates and node list prices
-internal/metrics/              # Prometheus metrics, and the Metrics API reader
-charts/napwake/              # Helm chart
-config/                        # CRD, RBAC, kustomize manifests
-test/e2e/                      # End-to-end tests, in Kind
-test/docs/                     # Validates the docs' ManagedWorkloads against the CRD, and Helm values against the chart
-tests/prometheus/              # promtool tests for the alert rules
-docs/                          # This site (Astro Starlight)
-hack/docsite/                  # Publishes a release's docs as a version of the site
-hack/brewformula/              # Writes a release's Homebrew formula
+cmd/main.go                # The one binary: the operator, doorman, chart guard or NEG forwarder
+cmd/kubectl-napwake/       # The kubectl plugin, and the pages scan and status write
+api/v1alpha1/              # The CRD's types, and every label, annotation and finalizer
+internal/controller/       # The reconcilers: opt-in, lifecycle, doorman routing, NEG forwarders
+internal/lifecycle/        # Pause and resume, through the scale subresource
+internal/doorman/          # Wake on request, and the asleep and waking-up pages
+internal/forwarder/        # Passes connections to the doorman, for GKE's NEGs
+internal/forecast/         # The Holt-Winters forecast, and the rules that act on it
+internal/forecast/sim/     # Runs the forecast and the rules through simulated time
+internal/signal/           # Prometheus activity queries
+internal/metrics/          # Prometheus metrics, and the Metrics API reader
+internal/cost/             # Cost rates, the month's totals, and node list prices
+internal/capacity/         # What pausing took off the bill, in nodes
+internal/nodescale/        # The node autoscaler, and what keeps a node from scaling down
+internal/autoscaler/       # HPA and KEDA
+internal/gitops/           # Who sets a workload's replicas, and whether GitOps leaves them to Napwake
+internal/discovery/        # The cluster scan behind kubectl napwake scan
+internal/guard/            # Refuses a Helm uninstall or upgrade that would orphan ManagedWorkloads
+internal/human/            # Values written as people say them, for events and conditions
+charts/napwake/            # The Helm chart
+config/                    # The Kustomize install, generated CRD and RBAC, and alert rules
+test/e2e/, test/utils/     # End-to-end tests on Kind, and their helpers
+test/docs/                 # The docs against the code, and the repository's rules
+test/oldname/              # Keeps the product's old name out, except in history
+tests/prometheus/          # promtool tests for the alert rules
+docs/                      # This site (Astro Starlight)
+hack/chartflags/           # Checks the operator takes every flag the chart passes
+hack/rbaccheck/            # Checks the chart grants what config/rbac/role.yaml does
+hack/doormanpolicy/        # Tests the doorman's admission policies on a real API server
+hack/promrules/            # Turns a PrometheusRule into a file promtool tests
+hack/dco/                  # The DCO check every pull request runs
+hack/docsite/              # Publishes a release's docs as a version of the site
+hack/releasenotes/         # Writes a release's notes from CHANGELOG.md
+hack/brewformula/          # Writes a release's Homebrew formula
+hack/krew-manifest.sh      # Writes a release's krew manifest
+hack/prices/               # Regenerates the node list prices
+hack/forecastsim/          # What the forecast would have done, on simulated or recorded traffic
+hack/chart-*.sh            # Write the chart's CRDs, and render its NOTES, defaults and --reuse-values
+hack/helm-smoke.sh         # The Helm smoke test, on Kind
+hack/kind-cluster-name.sh  # Names each checkout's own Kind clusters
+hack/artifacthub-repo.yml  # Artifact Hub's metadata for the chart
+hack/boilerplate.go.txt    # The licence header every Go file starts with
+.claude/skills/            # Claude Code skills: verify, fix-a-bug, add-a-setting, write-docs, e2e
+.github/workflows/         # CI, the release, and the docs' publishing
 ```
 
 To run the operator against your current cluster, and to build the plugin:
@@ -190,7 +225,7 @@ Once it succeeds, the docs workflow publishes the tag's docs, as [the docs site]
 
 ### Release notes
 
-A version's section of `CHANGELOG.md` can open with a summary, the text above its first `###` heading. The release's notes are then the summary and a link to the whole section, so a long list of changes stays in the changelog. A section without a summary is the notes, cut at the last whole line under 120,000 characters, since GitHub refuses notes over 125,000, with a link to the rest. Either way they end with a link to the release's docs.
+A version's section of `CHANGELOG.md` can open with a summary, above its first `###` heading. The release's notes are then the summary and a link to the whole section. A section without a summary is the notes. Over 120,000 characters, it's cut at the last whole line, with a link to the rest. GitHub refuses notes over 125,000. Both end with a link to the release's docs.
 
 To see a tag's notes before you push it:
 
