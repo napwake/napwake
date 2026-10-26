@@ -3,7 +3,7 @@
 // the theme's tokens with the illustrations' finish. Two of them play once, when they come into view: a room
 // lit for nobody goes dark (the activity clock: light first, then the door, as the scan report's building does),
 // and a room wakes before demand (the forecast: the room lights before the door opens). Reduced motion shows
-// where each ends, still. No doorman here: the page already has him at the door and at Get started.
+// where each ends, still. No doorman here: the page has him once, at the door in the hero.
 import '../rig/draw.mjs';
 import { door, THEME } from '../rig/scene.mjs';
 import { handFilter } from '../rig/doorman.mjs';
@@ -42,17 +42,17 @@ const art = (k: string) => {
     `<rect width="${VW}" height="${VH}" filter="url(#${id}g)" style="opacity:var(--nw-grain)"/><g filter="url(#${id}f)">${rooms[k]}</g>`;
 };
 const items = [
-  { k: 'optin', title: 'Opt in with a label', alt: 'A room in use: open and lit, someone inside.',
+  { k: 'optin', title: 'Opt in with a label', alt: 'A workload in use, drawn as an open door with someone inside.',
     html: 'Label a workload or namespace <code>napwake.dev/managed: "true"</code>. Settings are annotations in your Git, so Argo CD and Flux work as today.' },
-  { k: 'clock', title: 'Activity clock', alt: 'A room lit for nobody goes dark: its lamp, then its light, then its door.', alive: true,
+  { k: 'clock', title: 'Activity clock', alt: 'An idle workload pauses. Its door, open with nobody inside, shuts.', alive: true,
     html: 'Napwake records each workload\'s last activity: CPU over <code>cpuThreshold</code>, a deploy, an activity annotation or a Prometheus query. After <code>idleAfter</code> with none, it pauses. No learning period.' },
-  { k: 'forecast', title: 'Demand forecasting', alt: 'An asleep room wakes: its light comes on, then its door opens.', alive: true,
+  { k: 'forecast', title: 'Demand forecasting', alt: 'A paused workload wakes before demand. Its shut door opens.', alive: true,
     html: 'A Holt-Winters double seasonal model learns each workload\'s day and week from up to four weeks of Prometheus. It scores itself from week two and acts when accurate enough: <code>eager</code>, <code>balanced</code> or <code>cautious</code>. It re-learns after drift, never from a holiday.' },
-  { k: 'safe', title: 'Safe by default', alt: 'An empty doorway, its arch dashed: a room Napwake can\'t see into.',
+  { k: 'safe', title: 'Safe by default', alt: 'A workload Napwake can\'t measure, drawn as an empty doorway with a dashed outline. Napwake leaves it alone.',
     html: 'Napwake never pauses what it can\'t measure. A confident forecast can hold a pause off. <code>dryRun</code> pauses nothing and shows what would. Anyone else\'s scale-up is a wake. If a GitOps tool undoes a pause, Napwake tells you how to fix it.' },
-  { k: 'cost', title: 'Cost tracking', alt: 'Two rooms asleep, shut and dark, either side of a room in use.',
+  { k: 'cost', title: 'Cost tracking', alt: 'Two paused workloads, their doors shut, either side of one in use.',
     html: `Napwake tracks each workload\'s cost, what pausing frees, and what came off the bill, from each node pool\'s spare capacity. Freed capacity is money once an autoscaler removes nodes. <code>kubectl napwake nodes</code> shows what keeps them. <a href="${link('/guides/node-pools/')}">How to let them go</a>.` },
-  { k: 'alerts', title: 'Metrics and alerts', alt: 'A shut room with a note pinned on it: something needs you.',
+  { k: 'alerts', title: 'Metrics and alerts', alt: 'A workload that needs you, drawn as a shut door with a note pinned on it.',
     html: 'Prometheus metrics for operator health, lifecycle transitions, wakes on request and forecast confidence, with alerting rules.' },
 ];
 ---
