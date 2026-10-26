@@ -82,7 +82,7 @@ func notes(changelog, tag, repo string) (string, error) {
 
 	var b strings.Builder
 	if summary, ok := summaryOf(section); ok {
-		fmt.Fprintf(&b, "%s\n\nEvery change in %s is in [CHANGELOG.md](https://github.com/%s/blob/%s/CHANGELOG.md#%s).\n",
+		fmt.Fprintf(&b, "%s\n\nAll of %s's changes are listed in [CHANGELOG.md](https://github.com/%s/blob/%s/CHANGELOG.md#%s).\n",
 			summary, version, repo, tag, anchor(heading))
 	} else if len(section) > maxSection {
 		cut := section[:maxSection]

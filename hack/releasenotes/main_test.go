@@ -66,7 +66,7 @@ Install it new.
 
 Install it new.
 
-Every change in 0.2.0 is in [CHANGELOG.md](https://github.com/o/r/blob/v0.2.0/CHANGELOG.md#020---2026-10-30).
+All of 0.2.0's changes are listed in [CHANGELOG.md](https://github.com/o/r/blob/v0.2.0/CHANGELOG.md#020---2026-10-30).
 
 **Docs for this release:** https://docs.napwake.dev/0.2/
 `,
@@ -103,7 +103,7 @@ The summary.
 			tag: "v0.3.0-rc.2",
 			want: `The summary.
 
-Every change in 0.3.0 is in [CHANGELOG.md](https://github.com/o/r/blob/v0.3.0-rc.2/CHANGELOG.md#030---unreleased).
+All of 0.3.0's changes are listed in [CHANGELOG.md](https://github.com/o/r/blob/v0.3.0-rc.2/CHANGELOG.md#030---unreleased).
 
 **Docs for this release:** https://docs.napwake.dev/next/
 `,
