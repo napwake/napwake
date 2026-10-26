@@ -230,7 +230,7 @@ On a bad day, one value stops every pause an install makes. Everything it manage
       --set pausing.enabled=false
     ```
 
-    Use the version in the `CHART` column of `helm list -n napwake-system`, so Napwake isn't upgraded too. With a values file, set it there instead:
+    Use the version in the `CHART` column of `helm list -n napwake-system`, so Napwake isn't upgraded too. It lasts until your next upgrade. One with `-f napwake-values.yaml` turns pausing back on, unless the file sets it too. To keep it off, put it in the file:
 
     ```yaml title="napwake-values.yaml"
     pausing:
@@ -249,6 +249,8 @@ On a bad day, one value stops every pause an install makes. Everything it manage
               enabled: false
     ```
 
+    Argo CD keeps no Helm release, so `helm upgrade` fails on an install it manages. Change it here.
+
     </TabItem>
     <TabItem label="Flux">
 
@@ -258,6 +260,8 @@ On a bad day, one value stops every pause an install makes. Everything it manage
         pausing:
           enabled: false
     ```
+
+    Flux puts its own values back at its next reconcile, so a `helm upgrade` doesn't last. Change it here.
 
     </TabItem>
     </Tabs>

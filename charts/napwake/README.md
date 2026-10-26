@@ -36,6 +36,7 @@ Upgrade with the same file, since `--set` alone drops your other values.
 | `defaults.forecast` | `balanced` | How soon the forecast acts, `eager`, `balanced` or `cautious` |
 | `defaults.wake` | `request` | What wakes a paused workload through the doorman. `request` is any request but a known probe's. `ask` is only a person's click on **Wake it** |
 | `doorman.enabled` | `true` | Deploy the doorman, which wakes a paused workload on the first request. With `false`, requests to paused workloads fail |
+| `pausing.enabled` | `true` | `false` stops every pause this install makes, and wakes what it paused. See [Stop all pausing now](https://docs.napwake.dev/guides/pause/#stop-all-pausing-now) |
 | `watchNamespaces` | `[]` | Namespaces Napwake works in, all if empty. When set, it gets a Role in each, not a ClusterRole |
 | `protectedNamespaces` | `[]` | Name patterns, such as `prod-*`, of namespaces Napwake never manages, unless labelled `napwake.dev/allow-protected=true`. `kube-*` and Napwake's own namespace are protected as well |
 | `prometheus.url` | `""` | The Prometheus API, such as `http://prometheus.monitoring.svc:9090`, for activity queries and to start each new workload's forecast from up to four weeks of its CPU history |
