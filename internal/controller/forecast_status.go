@@ -64,15 +64,15 @@ func forecastOutlook(workload *v1alpha1.ManagedWorkload, o forecast.Outlook) (re
 		fmt.Fprintf(&b, "learning: its forecasts of the last day were %d%% right, and it acts from %d%%",
 			o.Confidence, o.Threshold)
 		if !o.WeekSeen {
-			b.WriteString("; it hasn't seen a whole week yet")
+			b.WriteString(". It hasn't seen a whole week yet")
 		}
 	}
 	switch {
 	case !o.StartsActing.IsZero():
-		fmt.Fprintf(&b, "; expected to start acting around %s, if the coming days repeat the last week",
+		fmt.Fprintf(&b, ". It's expected to start acting around %s, if the coming days repeat the last week",
 			o.StartsActing.UTC().Format("Mon 2 Jan 15:04 UTC"))
 	case reason != v1alpha1.ForecastObserving:
-		b.WriteString("; not expected to start within four weeks if the coming days repeat the last week")
+		b.WriteString(". It isn't expected to start within four weeks, if the coming days repeat the last week")
 	}
 	if seen := pausedSeenBy(workload); seen != "" {
 		fmt.Fprintf(&b, ". While it's paused, it learns from %s", seen)
