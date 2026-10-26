@@ -88,7 +88,7 @@ With `ask`, a person's browser gets a page with a **Wake it** button, and only t
     </TabItem>
     <TabItem label="Kustomize">
 
-    With Flux, or anything that applies a kustomization, add the Namespace from the Namespace tab to it, as `namespace.yaml` beside it.
+    With Flux, or anything that applies a kustomization, put the Namespace in it. That's the Namespace tab's `namespace.yaml`, beside the kustomization.
 
     ```yaml title="kustomization.yaml"
     apiVersion: kustomize.config.k8s.io/v1beta1
@@ -330,7 +330,7 @@ A request made as the preview pauses calls the pause off. One made as it wakes i
 
 ### From a portal or a chat bot
 
-Anything that talks to the Kubernetes API can ask. A portal that has just made the environment gets `404 Not Found` at first. Napwake makes its ManagedWorkload a moment after the workload, so the portal retries until it exists.
+Anything that talks to the Kubernetes API can ask. A portal that made the environment moments ago gets `404 Not Found` at first. Napwake makes its ManagedWorkload a moment after the workload, so the portal retries until it exists.
 
 With `curl`, a `PATCH` sets the annotation, and prints nothing unless it fails. `$APISERVER` is the API server's address, `ca.crt` its CA certificate, and `$KUBE_TOKEN` a token for the bot's ServiceAccount:
 

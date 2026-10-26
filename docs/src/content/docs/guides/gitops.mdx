@@ -11,7 +11,7 @@ import NextSteps from '../../../components/NextSteps.astro';
 import GuidesTabAnchor from '../../../components/GuidesTabAnchor.astro';
 import StartCheckpoint from '../../../components/StartCheckpoint.astro';
 
-Napwake pauses by setting replicas to zero. A GitOps tool that applies `replicas` from Git sees the drift and sets them back. With an HPA or KEDA under Argo CD or Flux, you likely have the fix already, since autoscalers change replicas too.
+Napwake pauses by setting replicas to zero. A GitOps tool that applies `replicas` from Git sees the drift and sets them back. Under Argo CD or Flux with an HPA or KEDA, you likely have the fix already. Autoscalers change replicas too.
 
 <Panel title="Before you start">
 
@@ -198,7 +198,7 @@ The opt-in label is on the Namespace, which isn't in Git when the tool creates i
 
 Dry-run is the workload's `napwake.dev/dry-run` annotation, its namespace's, or a ManagedWorkload's `spec.dryRun`. If Git has it, change it there, or the tool's next sync puts it back.
 
-[`kubectl napwake enable`](/getting-started/kubectl-plugin/#enable-a-workload) finds the tool from what set `replicas`, and the Argo CD application by its tracking annotation, Argo CD's default since 3.0, or its label.
+[`kubectl napwake enable`](/getting-started/kubectl-plugin/#enable-a-workload) finds the tool from what set `replicas`. It finds the Argo CD application by its tracking annotation, Argo CD's default since 3.0, or its label.
 
 | Who set it | `enable` |
 |------------|----------|

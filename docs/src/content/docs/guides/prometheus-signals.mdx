@@ -10,7 +10,7 @@ import NextSteps from '../../../components/NextSteps.astro';
 import StartCheckpoint from '../../../components/StartCheckpoint.astro';
 import GuidesTabAnchor from '../../../components/GuidesTabAnchor.astro';
 
-CPU tells Napwake whether a workload is working. A Prometheus query tells it whether anyone uses it, such as requests through an ingress, open connections or messages on a queue.
+CPU tells Napwake whether a workload is working. A Prometheus query tells it whether anyone uses it. That's requests through an ingress, open connections or messages on a queue.
 
 Any result above zero keeps the workload awake, and [wakes it](#while-the-workload-is-paused) once it's paused.
 
