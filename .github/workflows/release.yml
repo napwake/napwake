@@ -92,6 +92,7 @@ jobs:
       # A pre-release, such as v0.3.0-rc.1, has a hyphen. It rehearses the
       # release: everything is published but latest, so it's installed only
       # by asking for it, and its docs are the site's next, not its latest.
+      # The image is described as the chart is.
       - name: Read the release's version
         id: version
         run: |
@@ -101,6 +102,12 @@ jobs:
             echo "prerelease=false" >> "$GITHUB_OUTPUT"
           fi
           echo "chart=${TAG#v}" >> "$GITHUB_OUTPUT"
+          description=$(sed -n 's/^description: //p' charts/napwake/Chart.yaml)
+          if [ -z "$description" ]; then
+            echo "charts/napwake/Chart.yaml has no description" >&2
+            exit 1
+          fi
+          echo "description=${description}" >> "$GITHUB_OUTPUT"
 
       # A pre-release's notes are those of the version it rehearses. A
       # version's section that opens with a summary, above its first ###,
@@ -157,6 +164,8 @@ jobs:
         uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
 
       # Pushed by digest, untagged, so nothing pulls it until it's tagged.
+      # GitHub's package page reads a multi-arch image's description,
+      # licence and source from its index's annotations, not the labels.
       - name: Build and push the multi-arch image by digest
         id: build
         uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
@@ -165,6 +174,10 @@ jobs:
           platforms: linux/amd64,linux/arm64
           outputs: type=image,name=${{ env.REGISTRY }}/${{ env.IMAGE_NAME }},push-by-digest=true,name-canonical=true,push=true
           build-args: VERSION=${{ env.TAG }}
+          annotations: |
+            index:org.opencontainers.image.description=${{ steps.version.outputs.description }}
+            index:org.opencontainers.image.licenses=Apache-2.0
+            index:org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }}
           labels: |
             org.opencontainers.image.title=napwake
             org.opencontainers.image.url=https://napwake.dev
