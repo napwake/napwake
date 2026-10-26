@@ -644,7 +644,7 @@ html:not(.js) th { position: static; }
       <figure class="bldg scene status" data-bldg="status" aria-describedby="doors-sum">
         <div class="pics" data-pics></div>
         <figcaption class="bldg-cap">
-          <p class="bldg-say">{{if $request}}The doorman holds the door while {{$waking}} wakes.{{else if $waking}}Napwake is waking {{$waking}}.{{else if $stuck}}{{$stuck}} is stuck: <span class="sub-say">{{$stuckMsg}}</span>{{else if .Attention}}Napwake pins a note: something needs you.{{else if $calm}}Every room is asleep.{{else}}<span data-asleep-say></span>{{end}}</p>
+          <p class="bldg-say">{{if $request}}The doorman holds the door while {{$waking}} wakes.{{else if $waking}}Napwake is waking {{$waking}}.{{else if $stuck}}{{$stuck}} is stuck: <span class="sub-say">{{$stuckMsg}}</span>{{else if .Attention}}Napwake pins a note: something needs you.{{else if $calm}}Every workload is asleep.{{else}}<span data-asleep-say></span>{{end}}</p>
           <ul class="legend" data-legend="rooms">
             <li data-state="paused"><button type="button" data-kind="paused"><svg viewBox="-12 -30 102 192" aria-hidden="true" data-mini="asleep"></svg><span><b data-n="paused"></b> <em>asleep</em> &middot; paused</span></button></li>
             <li data-state="resuming"><button type="button" data-kind="resuming"><svg viewBox="-12 -30 102 192" aria-hidden="true" data-mini="waking"></svg><span><b data-n="resuming"></b> <em>waking up</em> &middot; resuming</span></button></li>
@@ -673,7 +673,7 @@ html:not(.js) th { position: static; }
       <p>{{.Summary}}</p>
       <p>{{if .Attention}}{{len .Attention}} {{if eq (len .Attention) 1}}thing needs{{else}}things need{{end}} attention: {{range $i, $a := .Attention}}{{if $i}}, {{end}}{{.Type}}{{end}}. {{else}}Nothing needs attention. {{end}}From kubectl napwake status, <a href="https://napwake.dev/?ref=status-page" target="_blank" rel="noopener noreferrer">napwake.dev</a></p>
     </div>
-    <div hidden id="card-data" data-eyebrow="Napwake status" data-cluster="{{.Cluster}}"{{range $i, $f := .Figures}}{{if eq $i $lead}} data-value="{{.Value}}" data-label="{{if eq $lead 1}}came off the bill this month{{else}}{{.Label}}{{end}}" data-detail="{{if eq $lead 1}}{{if not $.SavedMeasurable}}{{.Detail}}{{end}}{{else}}{{.Detail}}{{if $.FreedThisMonth}}{{if $.SavedMeasurable}}; none of it off the bill yet{{else}}; Napwake can&#39;t tell here how much came off the bill{{end}}{{end}}{{end}}"{{end}}{{end}}{{if and (eq $lead 1) (not $.FreedUnderADollar)}} data-meter-label="of the {{$freed}} {{$freedLabel}}"{{end}} data-bracket="no"{{if $calm}} data-statement="Every room is asleep."{{end}}></div>
+    <div hidden id="card-data" data-eyebrow="Napwake status" data-cluster="{{.Cluster}}"{{range $i, $f := .Figures}}{{if eq $i $lead}} data-value="{{.Value}}" data-label="{{if eq $lead 1}}came off the bill this month{{else}}{{.Label}}{{end}}" data-detail="{{if eq $lead 1}}{{if not $.SavedMeasurable}}{{.Detail}}{{end}}{{else}}{{.Detail}}{{if $.FreedThisMonth}}{{if $.SavedMeasurable}}; none of it off the bill yet{{else}}; Napwake can&#39;t tell here how much came off the bill{{end}}{{end}}{{end}}"{{end}}{{end}}{{if and (eq $lead 1) (not $.FreedUnderADollar)}} data-meter-label="of the {{$freed}} {{$freedLabel}}"{{end}} data-bracket="no"{{if $calm}} data-statement="Every workload is asleep."{{end}}></div>
   </section>
 
   {{if .Attention}}
@@ -1192,29 +1192,29 @@ html:not(.js) th { position: static; }
     if (mini) mini.innerHTML = B.room(mini.dataset.mini);
   });
   // how the picture counts: one room each, or the mix rounded to the building's rooms
-  var drawnAs = plan && plan.exact ? "one room each" : "drawn as " + B.ROOMS + " rooms";
+  var drawnAs = plan && plan.exact ? "one door each" : "drawn as " + B.ROOMS + " doors";
   var sumEl = $("#doors-sum"), describe = function () {
     return KINDS.filter(function (x) { return x.n; }).map(function (x) { return fmt(x.n) + " " + WORD[x.k] + " (" + CLI[x.k] + ")"; }).join(", ");
   };
   if (sumEl && total) sumEl.textContent = fmt(total) + plural(total, " workload", " workloads") + ", " + drawnAs + ": " + describe() + ".";
   each($$("[data-drawn]"), function (p) {
     p.innerHTML = fmt(total) + plural(total, " workload", " workloads") + ", " + drawnAs + ". <span class=\"screen-only\">" +
-      (matchMedia("(hover: hover)").matches ? "Hover a room, or select a kind, for its numbers." : "Tap a kind for its numbers.") + "</span>";
+      (matchMedia("(hover: hover)").matches ? "Hover a door, or select a kind, for its numbers." : "Tap a kind for its numbers.") + "</span>";
   });
   // the scan's statement: workloads, counted exactly (the picture counts rooms)
   each($$("[data-statement]"), function (p) {
     if (!total) return;
-    p.textContent = fmt(idleN) + " of " + fmt(total) + plural(total, " workload ", " workloads ") + plural(idleN, "is", "are") + " running with no one seen.";
+    p.textContent = fmt(idleN) + " of " + fmt(total) + plural(total, " workload ", " workloads ") + plural(idleN, "is", "are") + " running with no sign of use.";
   });
   // the status page's default caption: how much of it is asleep
   var asleepN = counts.paused || 0;
-  var asleepSay = !total ? "" : asleepN === total && !counts.needs ? "Every room is asleep." : asleepN ? fmt(asleepN) + " of " + fmt(total) + plural(total, " workload", " workloads") + " asleep until someone uses " + plural(asleepN, "it.", "them.") : "No room is asleep right now.";
+  var asleepSay = !total ? "" : asleepN === total && !counts.needs ? "Every workload is asleep." : asleepN ? fmt(asleepN) + " of " + fmt(total) + plural(total, " workload", " workloads") + " asleep until someone uses " + plural(asleepN, "it.", "them.") : "No workload is asleep right now.";
   each($$("[data-asleep-say]"), function (s) { s.textContent = asleepSay; });
   // what Napwake would do, in words that say "would"
   var afterSay = "";
   if (page === "scan" && goN > 0) {
     var a = counts.active || 0, stayWords = stays ? fmt(stays) + " Napwake won't pause" : "";
-    afterSay = "<b>With Napwake,</b> " + (goN === 1 ? "the workload" : "the " + fmt(goN) + " workloads") + " with no one seen would be paused until someone uses " + plural(goN, "it.", "them.") +
+    afterSay = "<b>With Napwake,</b> " + (goN === 1 ? "the workload" : "the " + fmt(goN) + " workloads") + " with no sign of use would be paused until someone uses " + plural(goN, "it.", "them.") +
       (a ? " The " + fmt(a) + " in use stay on" + (stays ? ", and so " + plural(stays, "does ", "do ") + stayWords : "") + "." : stays ? " " + plural(stays, "One", fmt(stays)) + " Napwake won't pause stay" + plural(stays, "s", "") + " on." : "") +
       "<small>The scan paused nothing: this is what Napwake would do.</small>";
   }
@@ -1224,7 +1224,7 @@ html:not(.js) th { position: static; }
   var still = matchMedia("(prefers-reduced-motion: reduce)").matches || !("IntersectionObserver" in window) || !window.requestAnimationFrame;
   var pics = bEl && $("[data-pics]", bEl), live = null, liveRooms = [], played = false, anim = null;
   var label = function (after) {
-    return after ? "The same hotel with Napwake: the lit rooms with no one seen dark, the rest as they were." : "A hotel at night, the cluster " + (plan.exact ? "with one room per workload" : "drawn as " + B.ROOMS + " rooms") + ": " + describe() + (plan.exact && total < B.ROOMS ? ". The rooms it doesn't fill are shuttered." : ".");
+    return after ? "The same cluster with Napwake: the workloads with no sign of use paused, the rest as they were." : "The cluster " + (plan.exact ? "drawn as a building, one door per workload" : "drawn as " + B.ROOMS + " doors") + ": " + describe() + (plan.exact && total < B.ROOMS ? ". The doors it doesn't fill are shut." : ".");
   };
   function pic(cls, title, after) {
     var f = doc.createElement("div");
@@ -1739,7 +1739,7 @@ html:not(.js) th { position: static; }
       }
       ctx.restore();
       var alt = (sp.statement ? sp.statement + " " : "") + sp.value + " " + sp.label + (sp.detail ? ", " + sp.detail : "") + (sp.more ? ". " + sp.more : "") + (sp.meterLabel ? ". " + sp.meterLabel : "") +
-        ". A hotel at night: " + describe() + "." + (sp.hook ? " See your own: " + sp.hook + "." : "") + " " + site;
+        ". The cluster drawn as a building: " + describe() + "." + (sp.hook ? " See your own: " + sp.hook + "." : "") + " " + site;
       canvas.setAttribute("aria-label", "The share card: " + alt);
     }
   }
