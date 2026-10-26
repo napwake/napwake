@@ -319,14 +319,15 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: gh release edit "$TAG" --draft=false
 
-  # brew install napwake/tap/kubectl-napwake installs the newest release,
-  # so release candidates aren't brewed. The formula is written from the
-  # published archives, the files brew downloads, and pushed to the tap with
-  # a fine-grained token that can write only to it. The release is out by
-  # now, so a missing token or a failure here leaves the tap on the last
-  # release. That mustn't fail the run, whose success publishes the docs, so
-  # the job opens an issue saying so, which GitHub emails the repository's
-  # watchers about, and a run that then updates the tap closes it.
+  # brew install napwake/tap/kubectl-napwake installs what the tap has: each
+  # release, and each release candidate until the first stable release, as
+  # the push step says. The formula is written from the published archives,
+  # the files brew downloads, and pushed to the tap with a fine-grained
+  # token that can write only to it. The release is out by now, so a
+  # missing token or a failure here leaves the tap on the last release.
+  # That mustn't fail the run, whose success publishes the docs, so the job
+  # opens an issue saying so, which GitHub emails the repository's watchers
+  # about, and a run that then updates the tap closes it.
   homebrew:
     name: Homebrew formula
     needs: [release]
