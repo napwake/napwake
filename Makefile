@@ -164,6 +164,10 @@ test-alerts: ## Unit-test the chart's and config/prometheus's alert rules with p
 .PHONY: check-chart
 check-chart: ## Lint the Helm chart, render it for each provider's Kubernetes versions, and check its RBAC matches config/rbac
 	helm lint charts/napwake --strict
+	@# Without one of Artifact Hub's categories, it guesses one from the
+	@# keywords, and it guessed Security.
+	@grep -Eqx '  artifacthub.io/category: (ai-machine-learning|database|integration-delivery|monitoring-logging|networking|security|storage|streaming-messaging)' \
+		charts/napwake/Chart.yaml || { echo "Chart.yaml's artifacthub.io/category isn't one of Artifact Hub's, so it guesses one"; exit 1; }
 	@for v in v1.30.0 v1.30.2-eks-1552ad0 v1.31.1-gke.1678000 v1.32.5 v1.34.1 v1.37.0; do \
 		echo "rendering for Kubernetes $$v"; \
 		helm template napwake charts/napwake --kube-version $$v >/dev/null || exit 1; \
