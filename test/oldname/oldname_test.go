@@ -16,8 +16,9 @@ limitations under the License.
 
 // Package oldname_test keeps the product's old name, Hybernate, out of the
 // tree. It's allowed only where it's history: the changelog's sections for
-// the releases that shipped under it and its entry for the rename, and the
-// upgrade guide's section for people moving from it.
+// the releases that shipped under it, and the first release under the new
+// name's summary and its entry for the rename, and the upgrade guide's
+// section for people moving from it.
 package oldname_test
 
 import (
@@ -40,8 +41,9 @@ const (
 	thisFile = "test/oldname/oldname_test.go"
 
 	// The changelog's sections for releases before renamedIn, the first
-	// under the new name, keep the name they shipped under, and
-	// renamedIn's own renamedHeading subsection says what it was.
+	// under the new name, keep the name they shipped under. renamedIn's
+	// summary, above its first subsection, and its renamedHeading
+	// subsection say what it was: the summary is its release's notes.
 	changelog      = "CHANGELOG.md"
 	renamedIn      = "v0.2.0"
 	renamedHeading = "### Renamed"
@@ -57,6 +59,9 @@ const (
 var (
 	releaseHeading = regexp.MustCompile(`^## \[(\d+\.\d+\.\d+)\] - (.+)$`)
 	shipped        = regexp.MustCompile(`^\d{4}-\d{2}-\d{2}$`)
+
+	// linkReference is a link's definition, as the changelog ends with.
+	linkReference = regexp.MustCompile(`^\[[^\]]+\]: `)
 )
 
 func TestOldNameIsGone(t *testing.T) {
@@ -136,26 +141,28 @@ func allowedLines(path string, lines []string) map[int]bool {
 }
 
 // changelogHistory marks the changelog's sections for releases shipped
-// before renamedIn, and renamedIn's entry for the rename. The link
-// references at the end of the file are neither.
+// before renamedIn, and renamedIn's summary and entry for the rename. The
+// link references at the end of the file are none of them.
 func changelogHistory(lines []string) map[int]bool {
 	allowed := map[int]bool{}
-	var before, renaming, renamed bool
+	var before, renaming, summary, renamed bool
 	for i, line := range lines {
 		switch {
 		case strings.HasPrefix(line, "## "):
-			before, renaming, renamed = false, false, false
+			before, renaming, summary, renamed = false, false, false, false
 			if m := releaseHeading.FindStringSubmatch(line); m != nil {
 				version := "v" + m[1]
 				before = shipped.MatchString(m[2]) && semver.Compare(version, renamedIn) < 0
 				renaming = version == renamedIn
+				summary = renaming
 			}
 		case strings.HasPrefix(line, "### "):
+			summary = false
 			renamed = renaming && line == renamedHeading
-		case strings.HasPrefix(line, "["):
-			before, renaming, renamed = false, false, false
+		case linkReference.MatchString(line):
+			before, renaming, summary, renamed = false, false, false, false
 		}
-		allowed[i] = before || renamed
+		allowed[i] = before || summary || renamed
 	}
 	return allowed
 }
