@@ -257,6 +257,19 @@ func TestCLI_ForecastNeedsHistory(t *testing.T) {
 	require.ErrorContains(t, err, "no Prometheus found in the cluster")
 }
 
+// --timezone's help shows no default of its own, as the zone is the
+// operator's unless it's given, and UTC only when that can't be read.
+func TestForecastHelp_TimezoneHasNoFalseDefault(t *testing.T) {
+	out, err := runCLI(t, nil, "forecast", "--help")
+	require.NoError(t, err)
+
+	i := strings.Index(out, "--timezone string")
+	require.GreaterOrEqual(t, i, 0)
+	line, _, _ := strings.Cut(out[i:], "\n")
+	assert.Contains(t, line, "by default the operator's, as its ManagedWorkloads record it, or UTC")
+	assert.NotContains(t, line, "(default")
+}
+
 func TestCLI_ForecastRejectsBadFlags(t *testing.T) {
 	for _, args := range [][]string{
 		{"--window", "60d"},

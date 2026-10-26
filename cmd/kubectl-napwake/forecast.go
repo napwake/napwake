@@ -97,7 +97,6 @@ func forecastCmd(kube *kubeFlags) *cobra.Command {
 		kube:         kube,
 		window:       "28d",
 		setting:      string(forecast.Balanced),
-		timezone:     "UTC",
 		cpuThreshold: defaultCPUThreshold,
 		idleAfter:    time.Hour,
 		timeout:      5 * time.Minute,
@@ -165,10 +164,7 @@ Examples:
 			}
 			ctx, cancel := context.WithTimeout(cmd.Context(), opts.timeout)
 			defer cancel()
-			zone := ""
-			if cmd.Flags().Changed("timezone") {
-				zone = opts.timezone
-			}
+			zone := opts.timezone
 			if len(args) == 1 {
 				return forecastNamed(ctx, cmd.OutOrStdout(), args[0], forecastRun{window: window, prom: prom,
 					mode: mode, zone: zone}, opts)
