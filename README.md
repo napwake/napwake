@@ -67,7 +67,7 @@ The chart installs the operator and the doorman, as the Deployments `napwake` an
 [Installation](https://docs.napwake.dev/getting-started/installation/) also has `install.yaml`, Kustomize, Argo CD and Flux.
 
 <details>
-<summary>The plugin without Homebrew, and moving from 0.1.x</summary>
+<summary>The plugin without Homebrew, and upgrading from earlier versions</summary>
 
 With [krew](https://krew.sigs.k8s.io/docs/user-guide/setup/install/):
 
@@ -78,7 +78,7 @@ kubectl krew install --manifest-url \
 
 Or [download it](https://docs.napwake.dev/getting-started/kubectl-plugin/#installation) for Linux, macOS or Windows.
 
-There's no upgrade path from 0.1.x. Uninstall it, then install fresh, as [Moving to Napwake](https://docs.napwake.dev/operations/upgrading/#moving-to-napwake) says.
+From 0.2.0-rc.9, `helm upgrade` works in place. From 0.1.x or 0.2.0-rc.1 to rc.7, uninstall, then install fresh, as [Moving to Napwake](https://docs.napwake.dev/operations/upgrading/#moving-to-napwake) says.
 
 </details>
 
@@ -102,19 +102,23 @@ After `idleAfter` with no activity, an hour by default, Napwake pauses `my-api`.
 
 If Argo CD or Flux applies the workload, first have it [leave the replicas to Napwake](https://docs.napwake.dev/guides/gitops/). Otherwise it undoes every pause. The [Quickstart](https://docs.napwake.dev/getting-started/quickstart/) runs the whole loop on a sample app.
 
+On a bad day, `pausing.enabled: false` stops every pause at once and wakes what's paused ([Stop all pausing now](https://docs.napwake.dev/guides/pause/#stop-all-pausing-now)).
+
 ## How it works
 
 1. You label a Deployment, StatefulSet or namespace `napwake.dev/managed=true`.
 2. Napwake keeps an activity clock for each workload. CPU above `cpuThreshold` (10% of the pods' CPU request by default) resets it. So do deploys, activity annotations from your tools, and Prometheus queries you give it.
 3. After `idleAfter` with no activity, Napwake pauses the workload. Its replicas go to zero, and its Services and PVCs stay.
 4. While it's paused, the doorman holds the first connection until a pod is Ready. That works for any TCP, such as HTTP, gRPC, Postgres and Redis. Your Ingress doesn't change.
-5. A forecast learns each workload's daily and weekly pattern. With `autoResume`, it wakes the workload 15 minutes before an hour it expects to be busy.
+5. A forecast learns each workload's daily and weekly pattern. Once confident, it holds off pauses in hours it expects to be busy. With `autoResume`, it also wakes the workload 15 minutes before them.
 
 Behind a VPN, SSO or an allowlist, the first request wakes a paused workload. Public ones can ask first, with `napwake.dev/wake: ask`. A browser then gets a **Wake it** button, and crawlers, scanners and API calls wake nothing ([Public preview environments](https://docs.napwake.dev/guides/preview-environments/)).
 
+On GKE, behind an Ingress or Gateway that uses container-native load balancing (NEGs), set `doorman.negForwarder.enabled`. Without it, the load balancer answers 502 and the request wakes nothing ([Wake on request](https://docs.napwake.dev/concepts/wake-on-request/)).
+
 ## What it won't do
 
-- Delete anything. A pause sets replicas to zero, and a wake restores them.
+- Delete anything. A pause sets replicas to zero, and a wake restores them. What lives only in the pods, such as an `emptyDir` or memory, goes with them.
 - Pause on a timetable. It pauses on idleness.
 - Pause anything but Deployments and StatefulSets.
 - Replace your autoscaler. While a workload runs, its HPA or KEDA ScaledObject sets the replicas.
@@ -129,8 +133,9 @@ Napwake can't see requests to an awake workload. One in steady light use, under 
 - The operator and the doorman talk to the API server. The operator talks to Prometheus only if you set one.
 - Nothing leaves the cluster.
 - It never reads your Secrets. The doorman reads one of its own, by name, the key it signs the **Wake it** button with.
-- With `watchNamespaces`, the operator and the doorman get a Role in each listed namespace in place of a ClusterRole.
-- A namespace labelled `napwake.dev/protected=true` is never managed.
+- With `watchNamespaces`, the operator and the doorman get a Role in each listed namespace in place of a ClusterRole. What stays cluster-wide only reads namespaces, nodes and Karpenter NodePools.
+- A namespace labelled `napwake.dev/protected=true` is never managed, unless also labelled `napwake.dev/allow-protected=true`.
+- It writes only a workload's replicas, through the scale subresource, its `napwake.dev/paused-from` annotation, and its own ManagedWorkloads and EndpointSlices.
 
 [Security](https://docs.napwake.dev/reference/security/) and [Data and access](https://docs.napwake.dev/reference/data-and-access/) have the exact RBAC, and how to verify a release.
 
@@ -174,9 +179,9 @@ Every flag is in the [kubectl plugin reference](https://docs.napwake.dev/referen
 
 Napwake is at 0.2.0. Its API is `napwake.dev/v1alpha1`, which may change before 1.0. It has no telemetry, usage reporting or update checks.
 
-Every change lands through a reviewed pull request. Each one runs the unit tests, and end-to-end tests on kind with Kubernetes 1.30 and 1.37. Napwake is also tested by hand on GKE Standard. EKS, AKS and GKE Autopilot aren't tested yet.
+Code lands through pull requests. Each one runs the unit tests, and end-to-end tests on kind with Kubernetes 1.30 and 1.37. Napwake is also tested by hand on GKE Standard. EKS, AKS and GKE Autopilot aren't tested yet.
 
-Each release signs its image, chart and checksums with Sigstore, keylessly. It carries an SPDX SBOM for each platform, and GitHub build provenance. Then the install smoke test runs every install path in the docs on clean macOS and Ubuntu.
+Each release signs its image, chart and checksums with Sigstore, keylessly. It carries an SPDX SBOM for each platform, and GitHub build provenance. Then the install smoke test installs it as the docs say, with Homebrew and krew on clean macOS and Ubuntu, and with Helm and install.yaml on a new kind cluster, and checks its signatures.
 
 ## Help and contributing
 
