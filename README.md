@@ -1,63 +1,56 @@
-# Napwake
+<h1 align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="https://raw.githubusercontent.com/napwake/brand/main/logo/lockup-horizontal-dark.svg">
+    <img alt="Napwake" src="https://raw.githubusercontent.com/napwake/brand/main/logo/lockup-horizontal.svg" width="300">
+  </picture>
+</h1>
 
-[![Go](https://img.shields.io/badge/Go-1.26+-00ADD8?logo=go)](https://go.dev)
-[![License](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](LICENSE)
-[![Kubernetes](https://img.shields.io/badge/Kubernetes-1.30+-326CE5?logo=kubernetes&logoColor=white)](https://kubernetes.io)
+<p align="center"><strong>Non-prod environments that sleep when nobody's using them, and wake when someone does.</strong></p>
 
-**Your Kubernetes workloads are running 24/7. Your users aren't.**
+<p align="center">Pauses idle Kubernetes workloads in staging, preview and dev, and wakes them on the first request.<br>It never deletes a workload or its data.</p>
 
-Napwake is a Kubernetes operator that detects idle workloads, learns their demand patterns, and automatically pauses them, scaling to zero without deleting anything. It brings them back on the first request or before traffic returns, turning your non-production clusters from always-on cost centers into pay-for-what-you-use environments.
+<p align="center">
+  <a href="https://napwake.dev">Website</a> ·
+  <a href="https://docs.napwake.dev">Docs</a> ·
+  <a href="https://docs.napwake.dev/getting-started/quickstart/">Quickstart</a> ·
+  <a href="https://napwake.dev/compare/">How it compares</a> ·
+  <a href="https://github.com/napwake/napwake/discussions">Discussions</a>
+</p>
 
-## Why Napwake?
+<p align="center">
+  <a href="https://github.com/napwake/napwake/actions/workflows/test.yml"><img alt="Tests" src="https://github.com/napwake/napwake/actions/workflows/test.yml/badge.svg?branch=main"></a>
+  <a href="https://github.com/napwake/napwake/releases"><img alt="Release" src="https://img.shields.io/github/v/release/napwake/napwake"></a>
+  <a href="https://artifacthub.io/packages/search?repo=napwake"><img alt="Artifact Hub" src="https://img.shields.io/endpoint?url=https://artifacthub.io/badge/repository/napwake"></a>
+  <a href="LICENSE"><img alt="Licence: Apache 2.0" src="https://img.shields.io/badge/License-Apache_2.0-blue.svg"></a>
+  <a href="https://docs.napwake.dev/getting-started/installation/"><img alt="Kubernetes 1.30 and later" src="https://img.shields.io/badge/Kubernetes-1.30+-326CE5?logo=kubernetes&logoColor=white"></a>
+</p>
 
-Most staging, dev, and test workloads sit idle 60-80% of the time: nights, weekends, holidays. You're paying for compute that nobody is using.
+<picture>
+  <source media="(max-width: 600px) and (prefers-color-scheme: dark)" srcset="https://raw.githubusercontent.com/napwake/brand/main/illustrations/scenes/readme-phone-dark.svg">
+  <source media="(max-width: 600px)" srcset="https://raw.githubusercontent.com/napwake/brand/main/illustrations/scenes/readme-phone-light.svg">
+  <source media="(prefers-color-scheme: dark)" srcset="https://raw.githubusercontent.com/napwake/brand/main/illustrations/scenes/readme-dark.svg">
+  <img alt="A corridor of doors named like environments, some asleep and some awake, with the doorman holding staging's door as it wakes up. Below, the four steps: in use, idle for idleAfter, paused at zero replicas, and woken by a request the doorman holds until a pod is Ready." src="https://raw.githubusercontent.com/napwake/brand/main/illustrations/scenes/readme-light.svg">
+</picture>
 
-Napwake fixes this by:
+## See what's idle first
 
-- **Detecting idle workloads** with a per-workload activity clock: CPU, deploys, Prometheus queries, and activity annotations from your own tooling, with no learning period
-- **Learning demand patterns** via a per-workload Holt-Winters forecasting model that tracks daily and weekly seasonality
-- **Acting automatically** by pausing idle workloads, waking them on the first request, and, with `autoResume`, resuming them before users arrive
-- **Tracking cost** per workload on what pods request: what each pause frees, and what of that measurably came off the bill as nodes scaled down, from the spare capacity left on each node pool, with cluster-wide totals in `kubectl napwake status`. Freed capacity becomes money only once a node autoscaler removes nodes
-
-## How It Works
-
-```mermaid
-flowchart TD
-    label["Deployment, StatefulSet, or namespace<br/>labelled napwake.dev/managed: &quot;true&quot;"] --> mw["ManagedWorkload<br/>settings from annotations"]
-    mw --> running["Running<br/>activity clock: CPU, deploys,<br/>activity annotations, Prometheus"]
-    running -- "no activity for idleAfter,<br/>and no forecast of demand" --> paused["Paused<br/>scaled to zero; Services<br/>routed to the doorman"]
-    paused -- "a request, an activity annotation,<br/>or autoResume ahead of demand" --> resuming["Resuming<br/>replicas restored,<br/>dependencies woken"]
-    resuming -- "pods Ready;<br/>held requests passed through" --> running
-```
-
-1. You label a Deployment, StatefulSet, or namespace `napwake.dev/managed: "true"`
-2. The operator tracks when the workload was last active: CPU, deploys, activity annotations, and any Prometheus query you give it
-3. A per-workload forecast model learns when the workload is typically busy
-4. When nothing has been active for `idleAfter` (default 1 hour), the workload is paused
-5. A request to its Service wakes it, and with `autoResume` the forecast wakes it ahead of the next busy period
-
-## Quick Start
-
-**See what's idle across your cluster, with nothing installed in it:**
+A team that works 10 hours a day, five days a week, uses staging 50 of 168 hours. That leaves 118 hours, 70% of the week, idle. `kubectl napwake scan` shows what's idle in your cluster now, and what it costs.
 
 ```bash
 brew install napwake/tap/kubectl-napwake
 kubectl napwake scan
 ```
 
-Homebrew installs the newest release, or the newest release candidate until the first stable release. Without Homebrew, or for exactly this version, install the plugin with [krew](https://krew.sigs.k8s.io/docs/user-guide/setup/install/):
+It only reads, with your kubeconfig, and installs nothing in the cluster. It never reads Secrets, and its report stays on your machine.
 
-```bash
-kubectl krew install --manifest-url \
-  https://github.com/napwake/napwake/releases/download/v0.2.0/krew-napwake.yaml
-```
+## Install
 
-or [download it](https://docs.napwake.dev/getting-started/kubectl-plugin/#installation) for Linux, macOS or Windows.
+You need Kubernetes 1.30 or later, Helm 3.8 or later, and metrics-server. GKE and AKS run metrics-server already. On EKS, kind and minikube, [add it first](https://docs.napwake.dev/getting-started/quickstart/).
 
-**Install the operator**, with your settings in a values file, `napwake-values.yaml`, starting with your users' time zone:
+Put your users' time zone in `napwake-values.yaml`. It defaults to UTC, which puts the forecast an hour off their mornings for a while after each daylight-saving change.
 
 ```yaml title="napwake-values.yaml"
-timezone: Europe/London
+timezone: America/New_York
 ```
 
 ```bash
@@ -66,113 +59,133 @@ helm install napwake oci://ghcr.io/napwake/charts/napwake \
   --namespace napwake-system \
   --create-namespace \
   -f napwake-values.yaml
+kubectl get pods -n napwake-system
 ```
 
-The forecast learns your users' busy hours in their time zone, so it wakes workloads for their mornings all year, through daylight saving. Keep the file and upgrade with it too, so upgrades keep your settings; see [Keeping your settings](https://docs.napwake.dev/operations/upgrading/#keeping-your-settings). To install with `install.yaml`, Kustomize, Argo CD or Flux instead, see [Installation](https://docs.napwake.dev/getting-started/installation/).
+The chart installs the operator and the doorman, as the Deployments `napwake` and `napwake-doorman`, and the ManagedWorkload CRD. Keep the values file, and upgrade with it ([Keeping your settings](https://docs.napwake.dev/operations/upgrading/#keeping-your-settings)).
 
-Napwake supports Kubernetes 1.30 and later, and is tested in CI on 1.30 and 1.37. The chart installs the operator, the doorman that wakes paused workloads on request, and the ManagedWorkload CRD.
+[Installation](https://docs.napwake.dev/getting-started/installation/) also has `install.yaml`, Kustomize, Argo CD and Flux.
 
-**Opt a workload in, measuring first:**
+<details>
+<summary>The plugin without Homebrew, and moving from 0.1.x</summary>
 
-```yaml
-apiVersion: apps/v1
-kind: Deployment
-metadata:
-  name: my-api
-  namespace: staging
-  labels:
-    napwake.dev/managed: "true"
-  annotations:
-    napwake.dev/dry-run: "true"
-    napwake.dev/idle-after: "2h"
+With [krew](https://krew.sigs.k8s.io/docs/user-guide/setup/install/):
+
+```bash
+kubectl krew install --manifest-url \
+  https://github.com/napwake/napwake/releases/download/v0.2.0/krew-napwake.yaml
 ```
 
-The label opts it in; the annotations are its settings. Label a namespace instead to cover every workload in it. In dry-run, Napwake tracks the workload's activity and what pausing would free, without pausing it. If Argo CD or Flux applies the workload, first have it [leave the replicas to Napwake](https://docs.napwake.dev/guides/gitops/), or it undoes every pause. When you're confident:
+Or [download it](https://docs.napwake.dev/getting-started/kubectl-plugin/#installation) for Linux, macOS or Windows.
+
+There's no upgrade path from 0.1.x. Uninstall it, then install fresh, as [Moving to Napwake](https://docs.napwake.dev/operations/upgrading/#moving-to-napwake) says.
+
+</details>
+
+## Your first pause
+
+Opt one workload in, in dry-run. Napwake measures it and pauses nothing.
+
+```bash
+kubectl annotate deployment my-api -n staging napwake.dev/dry-run=true
+kubectl label deployment my-api -n staging napwake.dev/managed=true
+kubectl napwake status -n staging
+```
+
+The annotation goes first, so it starts in dry-run. `status` shows its state as `running (dry-run)`, with its last activity and when it would pause. When you trust what it measured, end dry-run:
 
 ```bash
 kubectl napwake enable my-api -n staging
 ```
 
-## Features
+After `idleAfter` with no activity, an hour by default, Napwake pauses `my-api`. Its replicas go to zero. The next request to its Service wakes it. So does `kubectl napwake wake my-api -n staging`, which waits until it's Running.
 
-### Core
+If Argo CD or Flux applies the workload, first have it [leave the replicas to Napwake](https://docs.napwake.dev/guides/gitops/). Otherwise it undoes every pause. The [Quickstart](https://docs.napwake.dev/getting-started/quickstart/) runs the whole loop on a sample app.
 
-- **Activity-based idle detection**: any sign of use (CPU, a deploy, a Prometheus query such as request rate, an activity annotation) keeps a workload awake; it pauses after `idleAfter` with none
-- **Demand forecasting** via a Holt-Winters double seasonal model that learns daily and weekly patterns per workload, with confidence scoring and anomaly detection
-- **Works with HPA, KEDA, and GitOps tools** (Argo CD, Flux, Fleet, kapp, Kluctl): an HPA leaves a paused workload at zero, a KEDA one is held there through KEDA, and a GitOps tool undoing a pause is reported with the fix rather than fought
-- **Wake on request**: a request to a paused workload's Service wakes it and is held until the workload is Ready, so callers usually see a slow response instead of an error ([when they don't](https://docs.napwake.dev/concepts/wake-on-request/#what-the-caller-sees)). Browsers get a waking-up page that reloads until the app is up. On a public URL, which crawlers and scanners would keep awake, the doorman can [ask before waking](https://docs.napwake.dev/concepts/wake-on-request/#asking-before-waking) it, so only a person's click does; see [Public Preview Environments](https://docs.napwake.dev/guides/preview-environments/)
-- **Pause and resume** with scale to zero and forecast-driven resume. Napwake never deletes a workload or its storage
+## How it works
 
-### Operations
+1. You label a Deployment, StatefulSet or namespace `napwake.dev/managed=true`.
+2. Napwake keeps an activity clock for each workload. CPU above `cpuThreshold` (10% of the pods' CPU request by default) resets it. So do deploys, activity annotations from your tools, and Prometheus queries you give it.
+3. After `idleAfter` with no activity, Napwake pauses the workload. Its replicas go to zero, and its Services and PVCs stay.
+4. While it's paused, the doorman holds the first connection until a pod is Ready. That works for any TCP, such as HTTP, gRPC, Postgres and Redis. Your Ingress doesn't change.
+5. A forecast learns each workload's daily and weekly pattern. With `autoResume`, it wakes the workload 15 minutes before an hour it expects to be busy.
 
-Not sure which command to use? The plugin page opens with [a table of them](https://docs.napwake.dev/getting-started/kubectl-plugin/#which-command): what each is for, and which need the operator installed.
+Behind a VPN, SSO or an allowlist, the first request wakes a paused workload. Public ones can ask first, with `napwake.dev/wake: ask`. A browser then gets a **Wake it** button, and crawlers, scanners and API calls wake nothing ([Public preview environments](https://docs.napwake.dev/guides/preview-environments/)).
 
-- **Label opt-in**: `napwake.dev/managed: "true"` on a workload or namespace, with settings as annotations, all in the manifests you already keep in Git
-- **`kubectl napwake scan`** finds idle workloads in a cluster and what they cost, with nothing installed, and with Prometheus replays the last week to show how long each would have slept and what that frees, in a report that opens in your browser to share
-- **`kubectl napwake status`** shows what Napwake is doing in a cluster on one screen: each workload's state, when it pauses next or what holds it awake, what needs attention, what pausing has freed and what of that it saved, and the latest pauses and wakes with what caused them
-- **`kubectl napwake pause`** pauses a workload now, such as a preview environment at the end of the day, to wake on its next request
-- **`kubectl napwake wake`** wakes a paused workload from the terminal and waits until it's Running
-- **`kubectl napwake forecast`** replays the forecast over your cluster's own Prometheus history, to show when it would have woken each workload and how often for nothing, before you trust `autoResume` with it; named, as `forecast api -n staging`, it also shows what Napwake's own forecast of a workload it manages is doing: whether it's acting and why, what it has learned, and the hours it expects busy
-- **`kubectl napwake nodes`** names the node autoscaler and shows, for each node, what keeps it from being removed, so what pausing frees can come off the bill
-- **`kubectl napwake enable`** ends dry-run once you trust what you've measured, and says what to change in Git when a GitOps tool applies the workload
-- **Cost tracking** per workload, for the current month: what it cost, what pausing freed, what that saved once nodes went, and a projection for the month, priced at the list price of the nodes it runs on
-- **Dry-run mode** to see every pause the operator would make, and what it would free, without it pausing anything
+## What it won't do
 
-### Observability
+- Delete anything. A pause sets replicas to zero, and a wake restores them.
+- Pause on a timetable. It pauses on idleness.
+- Pause anything but Deployments and StatefulSets.
+- Replace your autoscaler. While a workload runs, its HPA or KEDA ScaledObject sets the replicas.
 
-- **Prometheus metrics** for operator health, lifecycle transitions, wakes on request, and prediction state, with alerting rules in the Helm chart
-- **Kubernetes events** for every state change, visible in `kubectl describe`, and status conditions that say why a workload isn't paused or woken
+It's for non-production. Pausing frees the CPU and memory a workload requested. That's money once your node autoscaler removes nodes, so Napwake reports freed and saved apart.
 
-## Architecture
+Napwake can't see requests to an awake workload. One in steady light use, under its `cpuThreshold`, can look idle and be paused while people use it. The next request wakes it, with a cold start. To stop that, give Napwake a [Prometheus query](https://docs.napwake.dev/guides/prometheus-signals/) for its traffic, such as your ingress's request rate. Then every request keeps it awake.
 
-```mermaid
-flowchart TB
-    subgraph operator["Operator Deployment"]
-        optin["Opt-in reconcilers<br/>Deployments, StatefulSets"]
-        mwr["ManagedWorkload reconciler<br/>activity clock, pause and resume,<br/>dependencies, cost"]
-        forecast["Forecast engine<br/>one per workload"]
-        optin --> mwr
-        mwr --- forecast
-    end
-    subgraph doorman["Doorman Deployment"]
-        door["Holds requests to paused workloads,<br/>wakes them, passes requests through"]
-    end
-    clients["Clients, ingress controllers,<br/>load balancers"] -- "Service of a paused workload" --> door
-    door -- "napwake.dev/last-request" --> api
-    mwr --> api["Kubernetes API server"]
-    mwr --> ms["metrics-server"]
-    mwr -.-> prom["Prometheus<br/>optional"]
-```
+<details>
+<summary>What it reads, writes and sends</summary>
 
-| Component | Description |
-|-----------|-------------|
-| **ManagedWorkload** | Per-workload CR that defines idle policy, wake behaviour, and cost tracking |
-| **Opt-in controller** | Creates and updates a ManagedWorkload for each labelled workload, from its annotations |
-| **Doorman** | Holds requests to a paused workload's Services, wakes it, and passes them through once it's Ready |
-| **Forecast Engine** | Per-workload Holt-Winters model that learns demand patterns, holds off a pause when demand is expected, and wakes workloads ahead of it |
+- The operator and the doorman talk to the API server. The operator talks to Prometheus only if you set one.
+- Nothing leaves the cluster.
+- It never reads your Secrets. The doorman reads one of its own, by name, the key it signs the **Wake it** button with.
+- With `watchNamespaces`, the operator and the doorman get a Role in each listed namespace in place of a ClusterRole.
+- A namespace labelled `napwake.dev/protected=true` is never managed.
 
-## Documentation
+[Security](https://docs.napwake.dev/reference/security/) and [Data and access](https://docs.napwake.dev/reference/data-and-access/) have the exact RBAC, and how to verify a release.
 
-Full docs at **[docs.napwake.dev](https://docs.napwake.dev)**
+</details>
 
-- [Installation](https://docs.napwake.dev/getting-started/installation/): Helm, kubectl, and source
-- [Quickstart](https://docs.napwake.dev/getting-started/quickstart/): manage your first workload
-- [Opting In](https://docs.napwake.dev/guides/opt-in/): the label, every setting, and GitOps
-- [Idle Detection](https://docs.napwake.dev/concepts/idle-detection/): how the activity clock decides when to pause
-- [Forecasting](https://docs.napwake.dev/concepts/forecasting/): the Holt-Winters prediction engine
-- [Cost Tracking](https://docs.napwake.dev/concepts/cost-tracking/): what a workload costs, what pausing frees, and what that saves
-- [Node Pools for Real Savings](https://docs.napwake.dev/guides/node-pools/): turning what pausing frees into nodes off the bill
-- [API Reference](https://docs.napwake.dev/reference/api/): complete CRD field reference
-- [Metrics Reference](https://docs.napwake.dev/reference/metrics/): all Prometheus metrics
+## Docs
 
-## Contributing
+The full docs are at [docs.napwake.dev](https://docs.napwake.dev). Start here:
 
-We welcome contributions. See [CONTRIBUTING.md](CONTRIBUTING.md) for development setup, coding standards, and PR guidelines.
+- [Quickstart](https://docs.napwake.dev/getting-started/quickstart/)
+- [kubectl plugin](https://docs.napwake.dev/getting-started/kubectl-plugin/)
+- [Opting in](https://docs.napwake.dev/guides/opt-in/)
+- [Idle detection](https://docs.napwake.dev/concepts/idle-detection/)
+- [Wake on request](https://docs.napwake.dev/concepts/wake-on-request/)
+- [Forecasting](https://docs.napwake.dev/concepts/forecasting/)
+- [Public preview environments](https://docs.napwake.dev/guides/preview-environments/)
+- [Cost tracking](https://docs.napwake.dev/concepts/cost-tracking/)
+- [Security](https://docs.napwake.dev/reference/security/)
+- [How it compares](https://napwake.dev/compare/)
 
-## Security
+<details>
+<summary>Every command</summary>
 
-To report a security vulnerability, see [SECURITY.md](SECURITY.md).
+| Command | What it does | Needs the operator |
+|---|---|---|
+| `scan` | Shows what's idle, what it costs, and what pausing could free | No |
+| `nodes` | Shows why what pausing frees isn't coming off the bill | No |
+| `forecast` | Replays the forecast over your Prometheus history, before you turn on `autoResume` | No, but it needs Prometheus history |
+| `status` | Shows what Napwake is doing with each workload it manages | Yes |
+| `enable` | Ends dry-run for a workload or namespace | Yes |
+| `pause` | Pauses a workload now, to wake on its next request | Yes |
+| `wake` | Wakes a paused workload and waits until it's Running | Yes |
+| `deps` | Shows what Napwake wakes and holds awake with a workload, and what depends on it | Yes |
+| `version` | Prints the plugin's version | No |
 
-## License
+Every flag is in the [kubectl plugin reference](https://docs.napwake.dev/reference/cli/).
 
-Copyright 2026. Licensed under the [Apache License, Version 2.0](LICENSE).
+</details>
+
+## How it's built
+
+Napwake is at 0.2.0. Its API is `napwake.dev/v1alpha1`, which may change before 1.0. It has no telemetry, usage reporting or update checks.
+
+Every change lands through a reviewed pull request. Each one runs the unit tests, and end-to-end tests on kind with Kubernetes 1.30 and 1.37. Napwake is also tested by hand on GKE Standard. EKS, AKS and GKE Autopilot aren't tested yet.
+
+Each release signs its image, chart and checksums with Sigstore, keylessly. It carries an SPDX SBOM for each platform, and GitHub build provenance. Then the install smoke test runs every install path in the docs on clean macOS and Ubuntu.
+
+## Help and contributing
+
+- Ask questions in [Discussions](https://github.com/napwake/napwake/discussions). If your team uses Napwake, tell us there too.
+- Report bugs in [issues](https://github.com/napwake/napwake/issues).
+- Report a vulnerability privately, as [SECURITY.md](SECURITY.md) says.
+- Pull requests are welcome. [CONTRIBUTING.md](CONTRIBUTING.md) has the setup and the standards.
+- Everyone taking part follows the [Code of Conduct](CODE_OF_CONDUCT.md).
+
+## Licence
+
+Copyright 2026 The Napwake Authors. Licensed under the [Apache License, Version 2.0](LICENSE).
