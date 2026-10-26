@@ -58,11 +58,21 @@ func TestWriteHTML_WorkloadsIntroSaysWhatTheColumnsShow(t *testing.T) {
 func TestReportAndStatusPage_SayOnlyWhatNapwakeSees(t *testing.T) {
 	for name, page := range map[string]string{"scan": reportHTML, "status": statusPageHTML} {
 		pageLacks(t, page, "nobody", name)
-		pageHas(t, page, `<em>lit, no one seen</em> &middot; idle`, name, "the legend")
 		pageHas(t, page, `idle: "lit, no one seen"`, name, "the rooms' word")
 		pageHas(t, page, `" workloads") + " with no one seen would be paused until someone uses "`, name)
 	}
+	pageHas(t, statusPageHTML, `<em>lit, no one seen</em> &middot; idle`, "the legend")
 	pageHas(t, reportHTML, "Every lit room shows signs of use.")
+}
+
+// The scan report's legend and the switch for its picture say what they
+// show in plain words, the picture beside them, not in its place
+// (cmo-053).
+func TestReportPage_PlainWordsForThePicture(t *testing.T) {
+	pageHas(t, reportHTML, `<em>no sign of use</em> &middot; idle`, "the legend")
+	pageLacks(t, reportHTML, `<em>lit, no one seen</em>`, "the legend")
+	pageHas(t, reportHTML, `role="group" aria-label="Show the cluster as a picture"`, "the picture's switch")
+	pageLacks(t, reportHTML, "Show the building")
 }
 
 // A dependency Napwake manages stays up while what depends on it is awake,
