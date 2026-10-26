@@ -268,7 +268,39 @@ func TestTakeUpHistory_WithoutPrometheus(t *testing.T) {
 	h := workload.Status.Prediction.History
 	require.NotNil(t, h)
 	assert.Equal(t, HistoryNoPrometheusURL, h.Reason)
-	assert.Contains(t, h.Message, "--prometheus-url")
+	assert.Equal(t, "when Napwake took it on, the operator had no --prometheus-url, so the forecast learned from "+
+		"live CPU from the start, rather than from the workload's last four weeks", h.Message,
+		"said in the past tense, so it stays true once a URL is set")
+}
+
+// A workload taken on before the operator had a Prometheus to read keeps
+// that reason, which an earlier operator wrote in the present tense: once a
+// URL is set, it's said in the past, and the history isn't read again.
+func TestTakeUpHistory_NoURLReasonIsPastOnceAURLIsSet(t *testing.T) {
+	for _, tt := range []struct {
+		name string
+		url  bool
+	}{{"with a URL now", true}, {"still without one", false}} {
+		t.Run(tt.name, func(t *testing.T) {
+			workload := forecastWorkload()
+			workload.Status.Prediction = &v1alpha1.PredictionStatus{History: &v1alpha1.PredictionHistory{
+				Reason: HistoryNoPrometheusURL,
+				Message: "the operator has no --prometheus-url, so the forecast learns from live CPU from the start, " +
+					"rather than from the workload's last four weeks"}}
+			fr := newForecastReconciler(t, workload, nil)
+			if tt.url {
+				fr.history = &stubHistory{}
+			}
+
+			fr.reconcile(t, workload)
+
+			h := workload.Status.Prediction.History
+			require.NotNil(t, h)
+			assert.Equal(t, HistoryNoPrometheusURL, h.Reason, "what happened at take-on stays")
+			assert.True(t, strings.HasPrefix(h.Message, "when Napwake took it on, the operator had no --prometheus-url"),
+				"got %q", h.Message)
+		})
+	}
 }
 
 func TestTakeUpHistory_UnavailableIsAWarning(t *testing.T) {

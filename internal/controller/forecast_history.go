@@ -145,18 +145,23 @@ func needsHistory(workload *v1alpha1.ManagedWorkload) bool {
 		(workload.Status.Prediction == nil || workload.Status.Prediction.History == nil)
 }
 
+// noPrometheusURLMessage says why a workload's forecast learned live from
+// the start. It's what was so when Napwake took the workload on, so it's in
+// the past tense, and stays true once the operator is given a URL.
+const noPrometheusURLMessage = "when Napwake took it on, the operator had no --prometheus-url, so the forecast " +
+	"learned from live CPU from the start, rather than from the workload's last four weeks"
+
 // takeUpHistory records in status what came of reading the workload's
 // history, and the first time, has its forecast take up what it learned.
 // Without a Prometheus to read, the forecast learns live from the start.
 func (r *Reconciler) takeUpHistory(workload *v1alpha1.ManagedWorkload, engine forecaster,
 	settings forecast.Settings) forecaster {
 	if !needsHistory(workload) {
+		sayNoURLInThePast(workload)
 		return engine
 	}
 	if r.history == nil {
-		setHistory(workload, v1alpha1.PredictionHistory{Reason: HistoryNoPrometheusURL,
-			Message: "the operator has no --prometheus-url, so the forecast learns from live CPU from the start, " +
-				"rather than from the workload's last four weeks"})
+		setHistory(workload, v1alpha1.PredictionHistory{Reason: HistoryNoPrometheusURL, Message: noPrometheusURLMessage})
 		return engine
 	}
 	seed, first, ok := r.engines.adoptSeed(workload.UID, settings)
@@ -185,6 +190,14 @@ func (r *Reconciler) takeUpHistory(workload *v1alpha1.ManagedWorkload, engine fo
 			seed.history.Message)
 	}
 	return engine
+}
+
+// sayNoURLInThePast rewrites a no-Prometheus-URL reason an earlier operator
+// wrote in the present tense, which turned false once a URL was set.
+func sayNoURLInThePast(workload *v1alpha1.ManagedWorkload) {
+	if p := workload.Status.Prediction; p != nil && p.History != nil && p.History.Reason == HistoryNoPrometheusURL {
+		p.History.Message = noPrometheusURLMessage
+	}
 }
 
 func setHistory(workload *v1alpha1.ManagedWorkload, history v1alpha1.PredictionHistory) {

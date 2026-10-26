@@ -273,6 +273,7 @@ There's no upgrade path from Hybernate 0.1.x or a 0.2.0 release candidate. Unins
 
 ### Fixed
 
+- A workload taken on before the operator had `--prometheus-url` says so in the past tense, in `status.prediction.history`: "when Napwake took it on, the operator had no --prometheus-url". It said the operator had none, which turned false once a URL was set, and an upgrade corrects the old wording
 - The security page says `gh attestation verify` needs the GitHub CLI signed in (`gh auth login`), and the cosign checks need nothing
 - `kubectl napwake nodes` no longer lists local storage as blocking scale-down on GKE or AKS, whose Cluster Autoscalers ignore it (GKE since 1.22, AKS by default). Upstream's and EKS's still block on it
 - `kubectl napwake nodes` shows a reason without a pod on its node, such as "For example: node gke-…: no node autoscaler found", not the reason again, and its no-autoscaler line has no dash
