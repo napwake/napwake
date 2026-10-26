@@ -221,7 +221,7 @@ func TestPublish(t *testing.T) {
 	write(t, filepath.Join(site, "next", "requirements.txt"), "mkdocs, from an earlier publish")
 	write(t, filepath.Join(site, "google1234.html"), "a site verification")
 	write(t, filepath.Join(site, "keep", "notes.txt"), "not a redirect")
-	old, err := redirectPage("/", "next", "guides/gone")
+	old, err := redirectPage("/", "next", "guides/gone", nil)
 	require.NoError(t, err)
 	write(t, filepath.Join(site, "guides", "gone", "index.html"), string(old))
 	versions := []deployed{published("0.1", "0.1.3")}
@@ -297,7 +297,7 @@ func TestPublish(t *testing.T) {
 // address's anchor, which a meta refresh would drop, and its query. The
 // meta refresh is there for a browser without scripts.
 func TestRedirectPageKeepsTheAnchor(t *testing.T) {
-	page, err := redirectPage("/", "latest", "concepts/forecasting")
+	page, err := redirectPage("/", "latest", "concepts/forecasting", nil)
 	require.NoError(t, err)
 	assertRedirects(t, string(page), "/latest/concepts/forecasting/")
 }
@@ -328,8 +328,56 @@ func TestBuiltSiteRedirectsKeepTheAnchor(t *testing.T) {
 
 	forecasting := read(t, filepath.Join(site, "concepts", "forecasting", "index.html"))
 	assertRedirects(t, forecasting, "/latest/concepts/forecasting/")
-	assertRedirects(t, read(t, filepath.Join(site, "index.html")), "/latest/")
+	root := read(t, filepath.Join(site, "index.html"))
+	assertRedirects(t, root, "/latest/")
 	assert.Contains(t, read(t, filepath.Join(site, "404.html")), "No room by that name", "the docs' own 404 page")
+
+	// Shared, an address without a version previews as the page it goes
+	// to, card and all: a link preview's fetcher runs no script.
+	card := regexp.MustCompile(`<meta property="og:image" ` +
+		`content="https://docs\.napwake\.dev/(?:[^"]*/)?og/([^"/]+)\.png"\s*/?>`)
+	for name, page := range map[string]string{"index": root, "concepts-forecasting": forecasting} {
+		m := card.FindStringSubmatch(page)
+		require.NotNil(t, m, "the redirect for %s has its page's card", name)
+		assert.Equal(t, name, m[1], "and it's that page's own")
+		assert.Contains(t, page, `<meta property="og:title"`, name)
+		assert.Contains(t, page, `<meta name="twitter:card" content="summary_large_image"`, name)
+	}
+	assert.Contains(t, root, `<meta name="description" content="Pauses idle Kubernetes workloads`,
+		"the docs home's own line")
+}
+
+// A redirect carries the preview tags of the page it goes to, and nothing
+// else of that page: link previews read them, and a fetcher that runs no
+// script would otherwise show a bare link.
+func TestRedirectPage_CarriesItsPagesPreview(t *testing.T) {
+	built := []byte(`<!doctype html><html><head><meta charset="utf-8">
+<title>GitOps tools | Napwake</title>
+<meta name="description" content="Tell Argo CD once.">
+<meta property="og:title" content="GitOps tools">
+<meta property="og:url" content="https://docs.napwake.dev/latest/guides/gitops/">
+<meta property="og:image" content="https://docs.napwake.dev/latest/og/guides-gitops.png"/>
+<meta name="twitter:card" content="summary_large_image"/>
+<meta name="robots" content="index"/>
+<script>window.track = true</script>
+</head><body>the page</body></html>`)
+
+	page, err := redirectPage("/", "latest", "guides/gitops", built)
+	require.NoError(t, err)
+
+	got := string(page)
+	for _, tag := range []string{
+		`<meta name="description" content="Tell Argo CD once.">`,
+		`<meta property="og:title" content="GitOps tools">`,
+		`<meta property="og:url" content="https://docs.napwake.dev/latest/guides/gitops/">`,
+		`<meta property="og:image" content="https://docs.napwake.dev/latest/og/guides-gitops.png"/>`,
+		`<meta name="twitter:card" content="summary_large_image"/>`,
+	} {
+		assert.Contains(t, got, tag)
+	}
+	assert.NotContains(t, got, `content="index"`, "the redirect stays unindexed")
+	assert.NotContains(t, got, "window.track", "none of the page's scripts")
+	assertRedirects(t, got, "/latest/guides/gitops/")
 }
 
 // assertRedirects checks a redirect page sends a browser to target with the
