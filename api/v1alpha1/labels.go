@@ -16,10 +16,7 @@ limitations under the License.
 
 package v1alpha1
 
-import (
-	"path"
-	"strings"
-)
+import "path"
 
 // True is the value that turns a Napwake label or boolean annotation on.
 // Any other value, "True" and "yes" included, leaves it off.
@@ -169,11 +166,13 @@ func ParseWake(v string) (WakeMode, bool) {
 	}
 }
 
-// SystemNamespacePrefix starts the names of the namespaces Kubernetes itself
-// runs in, such as kube-system, which are always protected: pausing CoreDNS
-// or metrics-server would take down the cluster's DNS, or Napwake's own
-// view of activity.
-const SystemNamespacePrefix = "kube-"
+// SystemNamespacePatterns name the namespaces Kubernetes itself runs in,
+// such as kube-system, and those OpenShift, Rancher and GKE run their own
+// components in, such as openshift-dns, cattle-system and gmp-system. They
+// are always protected: pausing what runs there would take down the
+// cluster's DNS, its link to its platform, or the metrics Napwake reads
+// activity from. The scan leaves them out by the same list.
+var SystemNamespacePatterns = []string{"kube-*", "openshift-*", "cattle-*", "gke-*", "gmp-*"}
 
 // Protected says Napwake must not manage the namespace: it's a system
 // namespace, it's labelled protected, or its name matches one of patterns
@@ -182,12 +181,12 @@ func Protected(name string, labels map[string]string, patterns []string) bool {
 	if labels[LabelAllowProtected] == True {
 		return false
 	}
-	if labels[LabelProtected] == True {
-		return true
-	}
-	if strings.HasPrefix(name, SystemNamespacePrefix) {
-		return true
-	}
+	return labels[LabelProtected] == True || matchesAny(name, SystemNamespacePatterns) || matchesAny(name, patterns)
+}
+
+// matchesAny says name matches one of patterns. A pattern that isn't a
+// valid glob matches nothing.
+func matchesAny(name string, patterns []string) bool {
 	for _, pattern := range patterns {
 		if ok, err := path.Match(pattern, name); err == nil && ok {
 			return true

@@ -114,7 +114,7 @@ The binary is `/manager`. The Helm chart sets its flags from its [values](/refer
 | Flag | Default | Description |
 |------|---------|-------------|
 | <Ref id="flag-watch-namespaces">{'--watch-namespaces'}</Ref> | every namespace | Comma-separated namespaces to work in, a Role in each |
-| <Ref id="flag-protected-namespaces">{'--protected-namespaces'}</Ref> | | Comma-separated patterns, such as `prod-*`, of namespaces never managed, as if labelled `napwake.dev/protected=true`, unless labelled `napwake.dev/allow-protected=true`. `kube-*`, `$POD_NAMESPACE` and the doorman's namespace are always protected. See [Protected namespaces](/guides/opt-in/#protected-namespaces) |
+| <Ref id="flag-protected-namespaces">{'--protected-namespaces'}</Ref> | | Comma-separated patterns, such as `prod-*`, of namespaces never managed, as if labelled `napwake.dev/protected=true`, unless labelled `napwake.dev/allow-protected=true`. `kube-*`, `openshift-*`, `cattle-*`, `gke-*`, `gmp-*`, `$POD_NAMESPACE` and the doorman's namespace are always protected. See [Protected namespaces](/guides/opt-in/#protected-namespaces) |
 
 ### Opt-in defaults
 

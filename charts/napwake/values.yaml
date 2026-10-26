@@ -102,8 +102,9 @@ watchNamespaces: []
 
 # Name patterns, such as prod-*, of namespaces Napwake never manages,
 # as if labelled napwake.dev/protected=true, unless a namespace is
-# labelled napwake.dev/allow-protected=true. kube-*, and the operator's
-# and the doorman's namespace, are always protected, besides these.
+# labelled napwake.dev/allow-protected=true. kube-*, openshift-*,
+# cattle-*, gke-* and gmp-*, and the operator's and the doorman's
+# namespace, are always protected, besides these.
 protectedNamespaces: []
 
 # False stops all pausing by this install at once, as on a bad day: every

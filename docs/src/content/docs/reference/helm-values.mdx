@@ -246,7 +246,7 @@ Go's garbage collector, in the operator and the doorman, gets a soft limit of 90
 | Value | Default | Description |
 |-------|---------|-------------|
 | <Ref id="watchnamespaces">watchNamespaces</Ref> | `[]` | Namespaces Napwake works in, all if empty. Set, it gets a Role in each, not a ClusterRole, so Kubernetes refuses it anything elsewhere ([RBAC](#rbac)). Sets [`--watch-namespaces`](/reference/configuration/#flag-watch-namespaces), for the doorman too. Each install in a cluster needs its own ([more than one install](/getting-started/installation/#more-than-one-install)) |
-| <Ref id="protectednamespaces">protectedNamespaces</Ref> | `[]` | Patterns, such as `prod-*`, of namespaces never managed, as if labelled `napwake.dev/protected=true`, unless labelled `napwake.dev/allow-protected=true`. `kube-*` and the operator's and doorman's namespace always are, with the same exception ([protected namespaces](/guides/opt-in/#protected-namespaces)). Sets [`--protected-namespaces`](/reference/configuration/#flag-protected-namespaces) |
+| <Ref id="protectednamespaces">protectedNamespaces</Ref> | `[]` | Patterns, such as `prod-*`, of namespaces never managed, as if labelled `napwake.dev/protected=true`, unless labelled `napwake.dev/allow-protected=true`. `kube-*`, `openshift-*`, `cattle-*`, `gke-*`, `gmp-*` and the operator's and doorman's namespace always are, with the same exception ([protected namespaces](/guides/opt-in/#protected-namespaces)). Sets [`--protected-namespaces`](/reference/configuration/#flag-protected-namespaces) |
 
 ```yaml title="values.yaml"
 watchNamespaces: [preview-1, preview-2, staging]

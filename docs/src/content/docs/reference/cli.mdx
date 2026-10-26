@@ -233,7 +233,7 @@ It uses the signals Napwake uses to pause.
 
 | Left out | Found by |
 |---|---|
-| Kubernetes' namespaces, never paused | `kube-*`, `openshift-*`, `cattle-*`, `gke-*` and `gmp-*` |
+| Kubernetes' and platforms' namespaces, never paused | `kube-*`, `openshift-*`, `cattle-*`, `gke-*` and `gmp-*` |
 | Napwake's namespace, never paused | Its Deployment's `app.kubernetes.io/name: napwake` label |
 | The operator's and the doorman's Deployments, never paused | `control-plane: controller-manager` or `control-plane: doorman`, in any namespace |
 | The same, also needed | `app.kubernetes.io/name: napwake`, or a `napwake` `helm.sh/chart` label |
@@ -1039,7 +1039,7 @@ Its flags, with their defaults. [Enable a workload](/getting-started/kubectl-plu
 
 | Reason | What it means |
 |---|---|
-| The namespace is protected | Labelled `napwake.dev/protected=true`, or a `kube-*` namespace |
+| The namespace is protected | Labelled `napwake.dev/protected=true`, or a `kube-*`, `openshift-*`, `cattle-*`, `gke-*` or `gmp-*` namespace |
 | Unless | It's labelled `napwake.dev/allow-protected=true` |
 | The workload is left out | Labelled `napwake.dev/ignore=true` |
 | Or opted out | Its own `napwake.dev/managed` is anything but `"true"`, in a managed namespace |

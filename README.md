@@ -134,7 +134,7 @@ Napwake can't see requests to an awake workload. One in steady light use, under 
 - Nothing leaves the cluster.
 - It never reads your Secrets. The doorman reads one of its own, by name, the key it signs the **Wake it** button with.
 - With `watchNamespaces`, the operator and the doorman get a Role in each listed namespace in place of a ClusterRole. What stays cluster-wide only reads namespaces, nodes and Karpenter NodePools.
-- A namespace labelled `napwake.dev/protected=true` is never managed, unless also labelled `napwake.dev/allow-protected=true`.
+- Kubernetes' and platforms' own namespaces (`kube-*`, `openshift-*`, `cattle-*`, `gke-*`, `gmp-*`), and a namespace labelled `napwake.dev/protected=true`, are never managed, unless also labelled `napwake.dev/allow-protected=true`.
 - It writes only a workload's replicas, through the scale subresource, its `napwake.dev/paused-from` annotation, and its own ManagedWorkloads and EndpointSlices.
 
 [Security](https://docs.napwake.dev/reference/security/) and [Data and access](https://docs.napwake.dev/reference/data-and-access/) have the exact RBAC, and how to verify a release.

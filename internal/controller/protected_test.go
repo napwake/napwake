@@ -18,6 +18,7 @@ package controller
 
 import (
 	"context"
+	"fmt"
 	"testing"
 	"time"
 
@@ -28,6 +29,7 @@ import (
 	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 
 	v1alpha1 "github.com/napwake/napwake/api/v1alpha1"
 )
@@ -79,6 +81,46 @@ func TestReconcile_ProtectedNamespace(t *testing.T) {
 			assert.Equal(t, metav1.ConditionTrue, c.Status)
 			assert.Contains(t, c.Message, "label it napwake.dev/allow-protected=true to allow it")
 		})
+	}
+}
+
+// A workload Napwake paused in a platform's own namespace, as a release
+// that protected only kube-* would, is woken and left alone, unless the
+// namespace is labelled to allow it.
+func TestReconcile_PlatformNamespacesAreProtected(t *testing.T) {
+	for _, namespace := range []string{"openshift-dns", "cattle-system", "gke-managed-system", "gmp-system"} {
+		for _, allowed := range []bool{false, true} {
+			t.Run(fmt.Sprintf("%s, allowed %t", namespace, allowed), func(t *testing.T) {
+				ns := &corev1.Namespace{ObjectMeta: metav1.ObjectMeta{Name: namespace}}
+				if allowed {
+					ns.Labels = map[string]string{v1alpha1.LabelAllowProtected: v1alpha1.True}
+				}
+				workload := depWorkload(namespace, "api", v1alpha1.TargetKindDeployment, v1alpha1.PhasePaused)
+				pausedAt := metav1.NewTime(fixedTime.Add(-time.Hour))
+				workload.Status.Pause = &v1alpha1.PauseStatus{PreviousReplicas: 2, PausedAt: &pausedAt}
+				pauser := &stubPauser{pauseDone: true, resumeDone: true}
+				r := depReconciler(t, pauser, workload, ns, targetDeploymentWithReplicas("api", namespace, 0))
+				key := client.ObjectKey{Namespace: namespace, Name: "api"}
+
+				_, err := r.Reconcile(context.Background(), reconcile.Request{NamespacedName: key})
+				require.NoError(t, err)
+
+				var got v1alpha1.ManagedWorkload
+				require.NoError(t, r.Get(context.Background(), key, &got))
+				protected := meta.FindStatusCondition(got.Status.Conditions, conditionProtected)
+				if allowed {
+					assert.Nil(t, protected, "managed, as the namespace allows it")
+					assert.Zero(t, pauser.restoreCalls, "left paused")
+					return
+				}
+				require.NotNil(t, protected, "protected")
+				assert.Equal(t, metav1.ConditionTrue, protected.Status)
+				assert.Equal(t, "ProtectedNamespace", protected.Reason)
+				assert.Equal(t, v1alpha1.PhaseRunning, got.Status.Phase)
+				assert.Positive(t, pauser.restoreCalls, "woken")
+				assert.Nil(t, got.Status.Pause)
+			})
+		}
 	}
 }
 
