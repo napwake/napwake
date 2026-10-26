@@ -1,7 +1,7 @@
 Napwake
 Copyright 2026 The Napwake Authors.
 
-This product is licensed under the Apache License, Version 2.0; see LICENSE.
+This product is licensed under the Apache License, Version 2.0. See LICENSE.
 
 The operator and the kubectl-napwake plugin embed on-demand instance prices
 (internal/cost/prices.csv.gz) derived from the instance data published by

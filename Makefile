@@ -102,23 +102,35 @@ setup-test-e2e: ## Set up this checkout's Kind cluster for e2e tests, with a kub
 	fi
 	@echo "Its kubeconfig is $(E2E_KUBECONFIG)"
 
-E2E_IMAGES ?= curlimages/curl:8.7.1 registry.k8s.io/pause:3.10 registry.k8s.io/metrics-server/metrics-server:v0.7.2 \
-	registry.k8s.io/e2e-test-images/agnhost:2.52 registry.k8s.io/ingress-nginx/controller:v1.15.1 \
-	registry.k8s.io/ingress-nginx/kube-webhook-certgen:v1.6.9 ghcr.io/kedacore/keda:2.20.2 \
-	ghcr.io/kedacore/keda-metrics-apiserver:2.20.2 ghcr.io/kedacore/keda-admission-webhooks:2.20.2
+# Each by tag and digest, so a retagged image can't change what the specs
+# run against. The specs name them by tag, which load-test-e2e-images gives
+# the image it pulls by digest.
+E2E_IMAGES ?= \
+	curlimages/curl:8.7.1@sha256:25d29daeb9b14b89e2fa8cc17c70e4b188bca1466086907c2d9a4b56b59d8e21 \
+	registry.k8s.io/pause:3.10@sha256:ee6521f290b2168b6e0935a181d4cff9be1ac3f505666ef0e3c98fae8199917a \
+	registry.k8s.io/metrics-server/metrics-server:v0.7.2@sha256:ffcb2bf004d6aa0a17d90e0247cf94f2865c8901dcab4427034c341951c239f9 \
+	registry.k8s.io/e2e-test-images/agnhost:2.52@sha256:b173c7d0ffe3d805d49f4dfe48375169b7b8d2e1feb81783efd61eb9d08042e6 \
+	registry.k8s.io/ingress-nginx/controller:v1.15.1@sha256:594ceea76b01c592858f803f9ff4d2cb40542cae2060410b2c95f75907d659e1 \
+	registry.k8s.io/ingress-nginx/kube-webhook-certgen:v1.6.9@sha256:01038e7de14b78d702d2849c3aad72fd25903c4765af63cf16aa3398f5d5f2dd \
+	ghcr.io/kedacore/keda:2.20.2@sha256:fe74c7b8849586a67ad2201bcb89e7f5ac221ff90399ecaa8fd28427f1ef11e6 \
+	ghcr.io/kedacore/keda-metrics-apiserver:2.20.2@sha256:27286536a8a775aeeee37a7e343f8ecebb27ebf680ee1181a4f99e82eefb253b \
+	ghcr.io/kedacore/keda-admission-webhooks:2.20.2@sha256:41f74102aba7959c6e8d08b433ab8a5fd6cae7c5646c78f7fe3de40a52df3439
 E2E_PROCS ?= 4
 E2E_PLATFORM ?= linux/$(shell go env GOARCH)
 
 # Streams each image into the Kind node's containerd for one platform only.
 # `kind load docker-image` imports all platforms, which fails under Docker
 # Desktop's containerd image store: a pull only fetches the host platform,
-# so the other platforms' content is missing.
+# so the other platforms' content is missing. An image pulled by digest has
+# no tag, so it's tagged before it's saved, and the node has it by its tag.
 .PHONY: load-test-e2e-images
 load-test-e2e-images: ## Preload the images the e2e specs run into the Kind cluster
 	@for img in $(E2E_IMAGES); do \
+		ref=$${img%@*}; \
 		echo "Loading $$img ($(E2E_PLATFORM)) into $(KIND_CLUSTER)"; \
 		docker pull --quiet --platform $(E2E_PLATFORM) $$img >/dev/null && \
-		docker save $$img | docker exec -i $(KIND_CLUSTER)-control-plane \
+		docker tag $$img $$ref && \
+		docker save $$ref | docker exec -i $(KIND_CLUSTER)-control-plane \
 			ctr --namespace=k8s.io images import --platform $(E2E_PLATFORM) --snapshotter=overlayfs - >/dev/null \
 		|| exit 1; \
 	done
@@ -164,6 +176,10 @@ test-alerts: ## Unit-test the chart's and config/prometheus's alert rules with p
 .PHONY: check-chart
 check-chart: ## Lint the Helm chart, render it for each provider's Kubernetes versions, and check its RBAC matches config/rbac
 	helm lint charts/napwake --strict
+	@# Without one of Artifact Hub's categories, it guesses one from the
+	@# keywords, and it guessed Security.
+	@grep -Eqx '  artifacthub.io/category: (ai-machine-learning|database|integration-delivery|monitoring-logging|networking|security|storage|streaming-messaging)' \
+		charts/napwake/Chart.yaml || { echo "Chart.yaml's artifacthub.io/category isn't one of Artifact Hub's, so it guesses one"; exit 1; }
 	@for v in v1.30.0 v1.30.2-eks-1552ad0 v1.31.1-gke.1678000 v1.32.5 v1.34.1 v1.37.0; do \
 		echo "rendering for Kubernetes $$v"; \
 		helm template napwake charts/napwake --kube-version $$v >/dev/null || exit 1; \
@@ -607,6 +623,12 @@ ENVTEST_K8S_VERSION ?= $(shell v='$(call gomodver,k8s.io/api)'; \
   printf '%s\n' "$$v" | sed -E 's/^v?[0-9]+\.([0-9]+).*/1.\1/')
 
 GOLANGCI_LINT_VERSION ?= v2.8.0
+# make lint runs golangci-lint built with .custom-gcl.yml's plugins, which
+# takes about a minute. The build is named for golangci-lint's version and
+# .custom-gcl.yml's checksum, so it's redone only when it's missing or one
+# of them changes, and bin/golangci-lint links to it.
+GOLANGCI_LINT_CUSTOM = $(GOLANGCI_LINT)-$(GOLANGCI_LINT_VERSION)-custom-$(shell cksum < .custom-gcl.yml | cut -d ' ' -f 1)
+
 .PHONY: kustomize
 kustomize: $(KUSTOMIZE) ## Download kustomize locally if necessary.
 $(KUSTOMIZE): $(LOCALBIN)
@@ -631,14 +653,12 @@ $(ENVTEST): $(LOCALBIN)
 	$(call go-install-tool,$(ENVTEST),sigs.k8s.io/controller-runtime/tools/setup-envtest,$(ENVTEST_VERSION))
 
 .PHONY: golangci-lint
-golangci-lint: $(GOLANGCI_LINT) ## Download golangci-lint locally if necessary.
-$(GOLANGCI_LINT): $(LOCALBIN)
+golangci-lint: $(GOLANGCI_LINT_CUSTOM) ## Download golangci-lint and build it with .custom-gcl.yml's plugins, if necessary.
+	@ln -sfn "$(GOLANGCI_LINT_CUSTOM)" "$(GOLANGCI_LINT)"
+$(GOLANGCI_LINT_CUSTOM): | $(LOCALBIN)
 	$(call go-install-tool,$(GOLANGCI_LINT),github.com/golangci/golangci-lint/v2/cmd/golangci-lint,$(GOLANGCI_LINT_VERSION))
-	@test -f .custom-gcl.yml && { \
-		echo "Building custom golangci-lint with plugins..." && \
-		$(GOLANGCI_LINT) custom --destination $(LOCALBIN) --name golangci-lint-custom && \
-		mv -f $(LOCALBIN)/golangci-lint-custom $(GOLANGCI_LINT); \
-	} || true
+	@echo "Building custom golangci-lint with plugins..."
+	@"$(GOLANGCI_LINT)" custom --destination "$(LOCALBIN)" --name "$(notdir $@)"
 
 # go-install-tool will 'go install' any package with custom target and name of binary, if it doesn't exist
 # $1 - target path with name of binary

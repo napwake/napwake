@@ -92,6 +92,7 @@ jobs:
       # A pre-release, such as v0.3.0-rc.1, has a hyphen. It rehearses the
       # release: everything is published but latest, so it's installed only
       # by asking for it, and its docs are the site's next, not its latest.
+      # The image is described as the chart is.
       - name: Read the release's version
         id: version
         run: |
@@ -101,33 +102,20 @@ jobs:
             echo "prerelease=false" >> "$GITHUB_OUTPUT"
           fi
           echo "chart=${TAG#v}" >> "$GITHUB_OUTPUT"
-
-      # A pre-release's notes are those of the version it rehearses. The
-      # notes link the release's docs: its minor's, or next's for a
-      # pre-release. GitHub refuses notes over 125,000 characters, so a
-      # longer section is cut at the last whole line that fits, and links
-      # to the rest in the changelog at the tag.
-      - name: Extract the changelog for the release
-        run: |
-          base="${TAG#v}"
-          base="${base%%-*}"
-          awk -v heading="## [${base}]" 'index($0, heading) == 1 {found = 1; next} /^## \[/ {if (found) exit} found' \
-            CHANGELOG.md > release-notes.md
-          if ! grep -q '[^[:space:]]' release-notes.md; then
-            echo "CHANGELOG.md's section for ${base} is empty or missing" >&2
+          description=$(sed -n 's/^description: //p' charts/napwake/Chart.yaml)
+          if [ -z "$description" ]; then
+            echo "charts/napwake/Chart.yaml has no description" >&2
             exit 1
           fi
-          if [ "$(wc -c < release-notes.md)" -gt 120000 ]; then
-            head -c 120000 release-notes.md | sed '$d' > release-notes.cut
-            mv release-notes.cut release-notes.md
-            printf '\nThe list goes on in [CHANGELOG.md](https://github.com/%s/blob/%s/CHANGELOG.md).\n' \
-              "$GITHUB_REPOSITORY" "$TAG" >> release-notes.md
-          fi
-          docs="${base%.*}"
-          if [[ "$TAG" == *-* ]]; then
-            docs=next
-          fi
-          printf '\n**Docs for this release:** https://docs.napwake.dev/%s/\n' "$docs" >> release-notes.md
+          echo "description=${description}" >> "$GITHUB_OUTPUT"
+
+      # A pre-release's notes are those of the version it rehearses. A
+      # version's section that opens with a summary, above its first ###,
+      # gives the summary and a link to the whole section; one without
+      # gives the whole section, cut to fit GitHub's limit. The notes link
+      # the release's docs: its minor's, or next's for a pre-release.
+      - name: Write the release's notes from the changelog
+        run: go run ./hack/releasenotes -tag "$TAG" -repo "$GITHUB_REPOSITORY" > release-notes.md
 
       # Static, so the Linux binaries run on Alpine and Amazon Linux as well
       # as glibc distributions. krew-index requires the LICENSE in each, and
@@ -176,6 +164,8 @@ jobs:
         uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
 
       # Pushed by digest, untagged, so nothing pulls it until it's tagged.
+      # GitHub's package page reads a multi-arch image's description,
+      # licence and source from its index's annotations, not the labels.
       - name: Build and push the multi-arch image by digest
         id: build
         uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
@@ -184,6 +174,10 @@ jobs:
           platforms: linux/amd64,linux/arm64
           outputs: type=image,name=${{ env.REGISTRY }}/${{ env.IMAGE_NAME }},push-by-digest=true,name-canonical=true,push=true
           build-args: VERSION=${{ env.TAG }}
+          annotations: |
+            index:org.opencontainers.image.description=${{ steps.version.outputs.description }}
+            index:org.opencontainers.image.licenses=Apache-2.0
+            index:org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }}
           labels: |
             org.opencontainers.image.title=napwake
             org.opencontainers.image.url=https://napwake.dev
@@ -325,14 +319,15 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: gh release edit "$TAG" --draft=false
 
-  # brew install napwake/tap/kubectl-napwake installs the newest release,
-  # so release candidates aren't brewed. The formula is written from the
-  # published archives, the files brew downloads, and pushed to the tap with
-  # a fine-grained token that can write only to it. The release is out by
-  # now, so a missing token or a failure here leaves the tap on the last
-  # release. That mustn't fail the run, whose success publishes the docs, so
-  # the job opens an issue saying so, which GitHub emails the repository's
-  # watchers about, and a run that then updates the tap closes it.
+  # brew install napwake/tap/kubectl-napwake installs what the tap has: each
+  # release, and each release candidate until the first stable release, as
+  # the push step says. The formula is written from the published archives,
+  # the files brew downloads, and pushed to the tap with a fine-grained
+  # token that can write only to it. The release is out by now, so a
+  # missing token or a failure here leaves the tap on the last release.
+  # That mustn't fail the run, whose success publishes the docs, so the job
+  # opens an issue saying so, which GitHub emails the repository's watchers
+  # about, and a run that then updates the tap closes it.
   homebrew:
     name: Homebrew formula
     needs: [release]

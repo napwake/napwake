@@ -33,13 +33,11 @@ type Rates struct {
 // DefaultRates are derived from AWS on-demand pricing (us-east-1, 2026)
 // and serve as reasonable defaults when users don't configure their own.
 var DefaultRates = Rates{
-	// ~$0.029-0.035/vCPU-hour depending on instance family.
-	// Based on m6i.large ($0.096/hr, 2 vCPU, 60% CPU cost weight).
-	// GKE Autopilot charges $0.0445/vCPU-hour for comparison.
-	CPUPerHour: 0.031,
-	// ~$0.004-0.005/GiB-hour depending on instance family.
-	// Based on m6i.large ($0.096/hr, 8 GiB, 40% memory cost weight).
-	// GKE Autopilot charges $0.0049/GiB-hour for comparison.
+	// An m6i.large's on-demand price in us-east-1, $0.096 an hour for 2
+	// vCPUs and 8 GiB, split 7.75 to 1 between a vCPU-hour and a GiB-hour,
+	// as splitHourly splits every list price: $0.0317 a vCPU-hour and
+	// $0.0041 a GiB-hour, each rounded down.
+	CPUPerHour:    0.031,
 	MemoryPerHour: 0.004,
 	// AWS EBS gp3 (General Purpose SSD) in us-east-1.
 	// Billed on provisioned capacity, not actual usage.

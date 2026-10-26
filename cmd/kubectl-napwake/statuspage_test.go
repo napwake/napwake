@@ -19,6 +19,7 @@ package main
 import (
 	"bytes"
 	"context"
+	"fmt"
 	"io"
 	"os"
 	"path/filepath"
@@ -135,6 +136,67 @@ func TestWriteStatusHTML_UnderACent(t *testing.T) {
 	assert.Regexp(t, `<td class="n" data-v="0\.00\d+">&lt;\$1<span class="sub">&lt;\$1 saved</span></td>`, got)
 	assert.Regexp(t, `<td class="n" data-v="0\.00\d+">&lt;\$1</td>`, got, "what dry-run measured")
 	assert.NotContains(t, got, "<b>$0</b>")
+}
+
+// With what was freed, or what came off the bill, under a dollar, which
+// the page shows as <$1, the meter says so in words (cmo-043), and the
+// share card leaves out what it's of when freed is under a dollar, as the
+// page leaves out the bar. Every other case keeps its line.
+func TestWriteStatusHTML_MeterUnderADollar(t *testing.T) {
+	const unknown = "the operator can't list nodes"
+	tests := []struct {
+		name       string
+		costs      []v1alpha1.CostStatus
+		want       string
+		meterLabel bool
+	}{
+		{name: "freed under a dollar, some saved",
+			costs: []v1alpha1.CostStatus{{FreedThisMonth: "$0.30", SavedThisMonth: "$0.10"}},
+			want:  "Under a dollar freed this month. Some of it came off the bill."},
+		{name: "freed under a dollar, at least some saved",
+			costs: []v1alpha1.CostStatus{{FreedThisMonth: "$0.20", SavedThisMonth: "$0.10"},
+				{FreedThisMonth: "$0.10", SavingsUnknown: unknown}},
+			want: "Under a dollar freed this month. Some of it came off the bill."},
+		{name: "freed under a dollar, measured, none saved yet",
+			costs: []v1alpha1.CostStatus{{FreedThisMonth: "$0.30", SavedThisMonth: "$0.00"}},
+			want:  "Under a dollar freed this month. None of it has come off the bill yet."},
+		{name: "freed under a dollar, can't measure",
+			costs: []v1alpha1.CostStatus{{FreedThisMonth: "$0.30", SavingsUnknown: unknown}},
+			want:  "Under a dollar freed this month. Napwake can&#39;t tell here how much came off the bill."},
+		{name: "freed $12, saved under a dollar, measured",
+			costs: []v1alpha1.CostStatus{{FreedThisMonth: "$12.00", SavedThisMonth: "$0.20"}},
+			want:  "Under $1 of the $12 freed came off the bill.", meterLabel: true},
+		{name: "freed $12, saved under a dollar, at least",
+			costs: []v1alpha1.CostStatus{{FreedThisMonth: "$11.80", SavedThisMonth: "$0.20"},
+				{FreedThisMonth: "$0.20", SavingsUnknown: unknown}},
+			want: "Some of the $12 freed came off the bill.", meterLabel: true},
+		{name: "freed $12, saved $5",
+			costs: []v1alpha1.CostStatus{{FreedThisMonth: "$12.00", SavedThisMonth: "$5.00"}},
+			want:  "$5 of the $12 freed came off the bill.", meterLabel: true},
+		{name: "freed reading $1, none saved yet",
+			costs: []v1alpha1.CostStatus{{FreedThisMonth: "$0.60", SavedThisMonth: "$0.00"}},
+			want:  "None of the $1 freed has come off the bill yet."},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			objs := make([]client.Object, 0, len(tt.costs))
+			for i, cost := range tt.costs {
+				w := statusWorkloadObj("preview-42", fmt.Sprintf("w%d", i), v1alpha1.TargetKindDeployment,
+					v1alpha1.PhasePaused, time.Hour)
+				w.Status.Cost = &cost
+				objs = append(objs, w)
+			}
+
+			got := renderStatusPage(t, objs...)
+
+			pageHas(t, got, `<p class="meter-t">`+tt.want+`</p>`)
+			if tt.meterLabel {
+				pageHas(t, got, ` data-meter-label="of the $12 freed by pausing this month"`, "the card says what it's of")
+			} else {
+				pageLacks(t, got, `data-meter-label`, "the card has no bar to say what it's of")
+			}
+		})
+	}
 }
 
 func TestWriteStatusHTML_NothingManaged(t *testing.T) {

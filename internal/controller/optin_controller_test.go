@@ -323,8 +323,9 @@ func TestOptIn_ProtectedNamespace(t *testing.T) {
 	assert.Len(t, recorded(recorder, ReasonProtected), 1)
 }
 
-// kube-system and the other kube-* namespaces are protected without any
-// label, so labelling every namespace managed can't pause CoreDNS.
+// kube-system and the other kube-* namespaces, and OpenShift's, Rancher's
+// and GKE's own, are protected without any label, so labelling every
+// namespace managed can't pause CoreDNS or a platform's DNS and metrics.
 func TestOptIn_SystemNamespacesAreProtected(t *testing.T) {
 	tests := []struct {
 		name   string
@@ -335,19 +336,22 @@ func TestOptIn_SystemNamespacesAreProtected(t *testing.T) {
 		{name: "allowed on purpose", labels: map[string]string{v1alpha1.LabelManaged: "true",
 			v1alpha1.LabelAllowProtected: "true"}, want: true},
 	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			ns := &corev1.Namespace{ObjectMeta: metav1.ObjectMeta{Name: "kube-system", Labels: tt.labels}}
-			coredns := &appsv1.Deployment{ObjectMeta: metav1.ObjectMeta{Name: "coredns", Namespace: "kube-system", UID: "uid-dns"}}
-			r, _ := optInReconciler(t, ns, coredns)
+	for _, namespace := range []string{"kube-system", "openshift-dns", "cattle-system", "gke-managed-system",
+		"gmp-system"} {
+		for _, tt := range tests {
+			t.Run(namespace+", "+tt.name, func(t *testing.T) {
+				ns := &corev1.Namespace{ObjectMeta: metav1.ObjectMeta{Name: namespace, Labels: tt.labels}}
+				dns := &appsv1.Deployment{ObjectMeta: metav1.ObjectMeta{Name: "dns", Namespace: namespace, UID: "uid-dns"}}
+				r, _ := optInReconciler(t, ns, dns)
 
-			_, err := r.Reconcile(context.Background(), ctrl.Request{NamespacedName: client.ObjectKeyFromObject(coredns)})
-			require.NoError(t, err)
+				_, err := r.Reconcile(context.Background(), ctrl.Request{NamespacedName: client.ObjectKeyFromObject(dns)})
+				require.NoError(t, err)
 
-			var list v1alpha1.ManagedWorkloadList
-			require.NoError(t, r.List(context.Background(), &list, client.InNamespace("kube-system")))
-			assert.Equal(t, tt.want, len(list.Items) == 1)
-		})
+				var list v1alpha1.ManagedWorkloadList
+				require.NoError(t, r.List(context.Background(), &list, client.InNamespace(namespace)))
+				assert.Equal(t, tt.want, len(list.Items) == 1)
+			})
+		}
 	}
 }
 

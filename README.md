@@ -102,7 +102,7 @@ After `idleAfter` with no activity, an hour by default, Napwake pauses `my-api`.
 
 If Argo CD or Flux applies the workload, first have it [leave the replicas to Napwake](https://docs.napwake.dev/guides/gitops/). Otherwise it undoes every pause. The [Quickstart](https://docs.napwake.dev/getting-started/quickstart/) runs the whole loop on a sample app.
 
-On a bad day, `pausing.enabled: false` stops every pause at once and wakes what's paused ([Pause and resume](https://docs.napwake.dev/guides/pause/)).
+On a bad day, `pausing.enabled: false` stops every pause at once and wakes what's paused ([Stop all pausing now](https://docs.napwake.dev/guides/pause/#stop-all-pausing-now)).
 
 ## How it works
 
@@ -134,7 +134,7 @@ Napwake can't see requests to an awake workload. One in steady light use, under 
 - Nothing leaves the cluster.
 - It never reads your Secrets. The doorman reads one of its own, by name, the key it signs the **Wake it** button with.
 - With `watchNamespaces`, the operator and the doorman get a Role in each listed namespace in place of a ClusterRole. What stays cluster-wide only reads namespaces, nodes and Karpenter NodePools.
-- A namespace labelled `napwake.dev/protected=true` is never managed, unless also labelled `napwake.dev/allow-protected=true`.
+- Kubernetes' and platforms' own namespaces (`kube-*`, `openshift-*`, `cattle-*`, `gke-*`, `gmp-*`), and a namespace labelled `napwake.dev/protected=true`, are never managed, unless also labelled `napwake.dev/allow-protected=true`.
 - It writes only a workload's replicas, through the scale subresource, its `napwake.dev/paused-from` annotation, and its own ManagedWorkloads and EndpointSlices.
 
 [Security](https://docs.napwake.dev/reference/security/) and [Data and access](https://docs.napwake.dev/reference/data-and-access/) have the exact RBAC, and how to verify a release.

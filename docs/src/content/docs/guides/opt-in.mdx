@@ -254,6 +254,7 @@ Napwake never manages anything in a protected namespace, such as production, wha
 | Always protected, with no label | So that |
 |---------------------------------|---------|
 | `kube-system` and every other `kube-*` | Labelling every namespace can't pause CoreDNS or metrics-server |
+| `openshift-*`, `cattle-*`, `gke-*` and `gmp-*` | Labelling every namespace can't pause OpenShift's, Rancher's or GKE's own components, such as `openshift-dns`, `cattle-system` or `gmp-system` |
 | Napwake's own namespace, and the doorman's if it runs elsewhere | Napwake can't pause itself |
 
 Protect more by name, such as every `prod-*`, with the Helm value `protectedNamespaces`. Only `napwake.dev/allow-protected: "true"`, set on purpose, lets Napwake manage a protected namespace. Napwake never sets either label. The operator's and the doorman's own Deployments are never managed, since nothing would be left to wake them. To keep Napwake out by Kubernetes RBAC, install it with [`watchNamespaces`](/reference/helm-values/#namespaces).

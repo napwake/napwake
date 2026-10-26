@@ -84,6 +84,16 @@ func TestScanCluster_LeavesOutThePlatform(t *testing.T) {
 		"what the scan leaves out, then, apart, what Napwake would pause")
 }
 
+// What the scan leaves out as Kubernetes', which it says Napwake never
+// pauses, is exactly what the operator always protects.
+func TestNamespacePlatform_KubernetesIsWhatTheOperatorProtects(t *testing.T) {
+	for _, ns := range []string{"kube-system", "kube-flannel", "openshift-dns", "openshift-monitoring",
+		"cattle-system", "cattle-fleet-system", "gke-managed-system", "gmp-system", "gmp-public",
+		"kubeflow", "openshift", "preview-gke-1", "preview-42", "napwake-system", "monitoring"} {
+		assert.Equal(t, v1alpha1.Protected(ns, nil, nil), namespacePlatform(ns) == PlatformKubernetes, ns)
+	}
+}
+
 func TestPlatformNote_One(t *testing.T) {
 	assert.Equal(t, "1 infrastructure workload is left out of the totals and next steps: argocd (1). Napwake "+
 		"never pauses Kubernetes' own workloads or itself; anything else, infrastructure included, pauses only "+

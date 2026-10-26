@@ -1,99 +1,33 @@
-# Security Policy
+# Security policy
 
-## Supported Versions
+This policy covers every repository in the [napwake](https://github.com/napwake) organization.
 
-We actively support the latest version of this project.
+## Supported versions
 
-| Version | Supported          |
-| ------- | ------------------ |
-| latest  | ✅ Yes              |
-| older   | ❌ No               |
+Only Napwake's newest [release](https://github.com/napwake/napwake/releases) gets security fixes. To get a fix, upgrade to it.
 
-If you are using an older version, we recommend upgrading to the latest release to receive security updates.
+## Report a vulnerability
 
----
+Report it privately, in either of these ways:
 
-## How Releases Are Secured
+- [GitHub's private advisory form](https://github.com/napwake/napwake/security/advisories/new) (preferred)
+- An email to security@napwake.dev
+
+Don't open a public issue, discussion or pull request.
+
+Include what you can:
+
+- The version you run (`kubectl napwake version`, and the operator's image tag)
+- What an attacker could do, and what access they need first
+- Steps to reproduce
+- A fix, if you have one
+
+A flaw in a dependency goes to that project. Tell us too if it affects Napwake.
+
+## After you report
+
+You'll get a reply within 3 working days. A fix ships in a new release, with a GitHub security advisory. The advisory credits you, unless you'd rather not be named.
+
+## How releases are secured
 
 What Napwake can do in a cluster, what it talks to, and how to verify a release's signatures and provenance are on the [Security](https://docs.napwake.dev/reference/security/) page.
-
----
-
-## Reporting a Vulnerability
-
-If you discover a security vulnerability, please report it responsibly.
-
-**Do not open a public GitHub issue.**
-
-Instead, report it privately using one of the following methods:
-
-- Open a private GitHub security advisory (preferred)
-- Or email security@napwake.dev
-
-To create a private advisory:
-1. Go to the "Security" tab of this repository
-2. Click "Report a vulnerability"
-3. Fill in the details
-
----
-
-## What to Include
-
-Please include as much of the following as possible:
-
-- Description of the vulnerability
-- Steps to reproduce
-- Potential impact
-- Suggested fix (if you have one)
-
----
-
-## Response Timeline
-
-We aim to:
-
-- Acknowledge receipt within **48 hours**
-- Provide an initial assessment within **5 days**
-- Work on a fix and release a patch as soon as possible
-
----
-
-## Disclosure Policy
-
-- We follow **responsible disclosure**
-- Once the issue is fixed, we may:
-  - Publish a security advisory
-  - Credit the reporter (if desired)
-
----
-
-## Scope
-
-This policy applies to:
-
-- Core codebase
-- APIs and interfaces
-- Deployment configurations
-
-Out of scope:
-
-- Issues in third-party dependencies (should be reported upstream)
-
----
-
-## Security Best Practices
-
-If you're deploying this project:
-
-- Keep dependencies up to date
-- Restrict access to your cluster and infrastructure
-- Follow Kubernetes security best practices
-- Do not expose internal services publicly without proper authentication
-
----
-
-## Contact
-
-For any security-related concerns, please contact:
-
-security@napwake.dev

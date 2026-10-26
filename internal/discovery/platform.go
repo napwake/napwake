@@ -37,10 +37,6 @@ const (
 // workloads with, and the chart's own.
 const napwakeApp = "napwake"
 
-// kubernetesNamespaces are Kubernetes' own namespaces, and the platform
-// namespaces distributions add, which Napwake never pauses.
-var kubernetesNamespaces = []string{"kube-*", "openshift-*", "cattle-*", "gke-*", "gmp-*"}
-
 // platformNamespaces are where well-known cluster infrastructure installs
 // by default: ingress, certificates, GitOps, service meshes, policy,
 // monitoring, storage and the like, which run the cluster rather than an
@@ -81,7 +77,7 @@ var appLabels = []string{"app.kubernetes.io/name", "app.kubernetes.io/part-of", 
 // namespacePlatform says what infrastructure a namespace holds by its name,
 // or "" for one an app could be in.
 func namespacePlatform(namespace string) string {
-	for _, pattern := range kubernetesNamespaces {
+	for _, pattern := range v1alpha1.SystemNamespacePatterns {
 		if ok, _ := path.Match(pattern, namespace); ok {
 			return PlatformKubernetes
 		}

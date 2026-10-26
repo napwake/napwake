@@ -9,7 +9,48 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [0.2.0] - Unreleased
 
-The relaunch. The 0.1.x releases were early experiments, and 0.2.0 is a fresh start: install it new rather than upgrading.
+Napwake pauses idle Kubernetes workloads in staging, preview and dev, and wakes them on the first request. It never deletes a workload or its data.
+
+0.2.0 is the first release as Napwake, and a fresh start after the 0.1.x experiments.
+
+See what's idle in your cluster, with nothing installed in it:
+
+```bash
+brew install napwake/tap/kubectl-napwake
+kubectl napwake scan
+```
+
+Then install it. Put your users' time zone in `napwake-values.yaml` first, such as `timezone: Europe/London`.
+
+```bash
+helm install napwake oci://ghcr.io/napwake/charts/napwake \
+  --version 0.2.0 \
+  --namespace napwake-system \
+  --create-namespace \
+  -f napwake-values.yaml
+```
+
+[Installation](https://docs.napwake.dev/getting-started/installation/) also has install.yaml, Kustomize, Argo CD and Flux.
+
+What it does:
+
+- Pauses a workload after `idleAfter` with no activity, an hour by default, and wakes it on the next request. The doorman holds that connection until a pod is Ready, for any TCP.
+- On a public URL, it can ask first. A browser gets a **Wake it** button, and crawlers, scanners and API calls wake nothing.
+- A forecast learns each workload's week. Once confident, it holds off pauses before busy hours. With `autoResume`, it also wakes the workload 15 minutes early.
+- Dry-run measures before anything pauses, and `pausing.enabled: false` stops every pause at once.
+- It reports what pausing freed apart from what came off the bill.
+
+Hybernate is now Napwake, and no old name is kept:
+
+| Before | After |
+|---|---|
+| `hybernate.io/…` labels, annotations and API group | `napwake.dev/…` |
+| `kubectl hybernate` | `kubectl napwake` |
+| `ghcr.io/okedeji/hybernate`, `oci://ghcr.io/okedeji/charts/hybernate` | `ghcr.io/napwake/napwake`, `oci://ghcr.io/napwake/charts/napwake` |
+| `hybernate-system` | `napwake-system` |
+| `okedeji/tap/kubectl-hybernate` | `napwake/tap/kubectl-napwake` |
+
+From 0.2.0-rc.9, `helm upgrade` works in place. From Hybernate 0.1.x or its release candidates rc.1 to rc.7, uninstall, then install Napwake and opt your workloads in again ([Moving to Napwake](https://docs.napwake.dev/operations/upgrading/#moving-to-napwake)).
 
 ### Renamed
 
@@ -53,14 +94,18 @@ There's no upgrade path from Hybernate 0.1.x or a 0.2.0 release candidate. Unins
 - Every pull request and release scans the Go code with govulncheck and the image with Trivy, failing on reachable Go vulnerabilities and on critical and high image vulnerabilities with a fix; each release attaches Trivy's report for each platform (`vulnerabilities-linux-amd64.txt`, `vulnerabilities-linux-arm64.txt`). A release is scanned before anything is published, and `main` and the released image are scanned again every day
 - Builds use Go 1.26.10 and `golang.org/x/net` 0.61.0, fixing every reachable vulnerability govulncheck reports, among them those in `net/http`, `crypto/tls` and `html/template` that the doorman and metrics servers reach; CI built with Go 1.25.3. The base images are pinned by digest, every GitHub Action by commit, and Dependabot updates them weekly. Workflows get read-only permissions unless a job needs more
 - A ValidatingAdmissionPolicy (`doorman.admissionPolicy.enabled`, on by default; in the Kustomize manifests too, following the namespace and name prefix of any overlay on them) lets the doorman's ServiceAccount change only the `napwake.dev/last-request`, `last-request-from` and `turned-away` annotations of ManagedWorkloads, though its role can patch them, and a second, `<fullname>-request-stamps`, lets no one else set them, not even under Napwake's field manager, which the operator also checks
-- Kubernetes' own namespaces (`kube-*`) and Napwake's own are always protected unless labelled `napwake.dev/allow-protected: "true"`, and Napwake never manages its own operator or doorman, whatever its namespace allows (`Protected=True`, reason `NapwakeComponent`): labelling every namespace can't pause CoreDNS, metrics-server, or Napwake itself
+- Kubernetes' own namespaces (`kube-*`), OpenShift's, Rancher's and GKE's (`openshift-*`, `cattle-*`, `gke-*`, `gmp-*`) and Napwake's own are always protected unless labelled `napwake.dev/allow-protected: "true"`, and Napwake never manages its own operator or doorman, whatever its namespace allows (`Protected=True`, reason `NapwakeComponent`): labelling every namespace can't pause CoreDNS, metrics-server, or Napwake itself
 
 ### Added
 
 - A stop switch for a bad day: `pausing.enabled: false` in the chart (`--pausing=false`) stops all pausing by this install while everything still wakes. A paused workload is woken, idleness is still measured as in dry-run, and wrong-pause back-offs carry through to when pausing is back on. Each ManagedWorkload carries `PausingOff=True`, and `kubectl napwake status` and its page say so first
 - The chart's page on Artifact Hub: an icon, a description and a README in the chart, and the release publishes Artifact Hub's repository metadata, for its Verified publisher label
 - `AGENTS.md`, `CLAUDE.md` and Claude Code skills (`verify`, `fix-a-bug`, `add-a-setting`, `write-docs`, `e2e`), so contributors and the AI assistants they work with follow the project's conventions
+- A DCO check on every pull request: each commit must be signed off by its author (`git commit -s`), under the Developer Certificate of Origin. A pull request with one that isn't fails, and the check says how to sign it off
+- A bug report form, which asks for the plugin's, the operator's and Kubernetes' versions and how Napwake was installed, and sends questions and ideas to Discussions and vulnerabilities to the security policy, and a pull request template with the DCO sign-off. `SECURITY.md` is rewritten: only the newest release gets security fixes, a vulnerability is reported privately through GitHub's advisory form or to security@napwake.dev, and you'll get a reply within 3 working days
+- The [contributing guide](https://docs.napwake.dev/contributing/) links the Code of Conduct and `AGENTS.md`, says how to sign off commits for the DCO check, lists every package and tool in the repository, and gives commit examples with the scopes in use
 - The chart carries Artifact Hub's annotations (licence, operator, the image and its platforms, the CRD, links), and the image OCI labels for its site, docs, licence and vendor. `make bump` keeps the annotations' image tag and `prerelease` with the chart's version
+- The chart is listed on Artifact Hub under Integration and delivery, which had guessed Security, with keywords for what it does: `idle`, `staging`, `preview-environments`, `non-production`, `wake-on-request` and `cost`
 - `kubectl napwake pause`, `wake` and `deps`, named a Deployment or StatefulSet that nothing manages, end with the `kubectl label` command that has Napwake manage it
 - Asking before waking, for environments on a public URL that crawlers and scanners would keep awake, such as a preview environment for each pull request: with `spec.wake.mode: Ask` (`napwake.dev/wake: ask` with the label, or the Helm value `defaults.wake: ask`), the doorman routes the paused workload as before, but only a person wakes it. A browser opening a page, or posting a small form that isn't the button's, such as the app's login form, gets an asleep page, a `200` with `Cache-Control: no-store`, `X-Robots-Tag: noindex` and `Referrer-Policy: same-origin`, with a **Wake it** button; a click wakes the workload as a held request does, and the waking-up page follows. Everything else, crawlers, `curl`, `HEAD`, API clients and scanners, gets a `503` with `Retry-After: 300` and a short text or JSON body saying how to wake it, and a connection that isn't HTTP is closed; both are counted as turned away, and nothing wakes. Probes, health checks and hidden files are answered as before, and once it's waking, callers are answered as for `Request`. A click wakes a workload at most once a minute, and a workload that asks never pauses early, since someone who came early would find it asleep. `WakeOnRequest` says the doorman asks; `kubectl napwake status` says `wakes on a click, a wake request or activity`. See [Asking before waking](https://docs.napwake.dev/concepts/wake-on-request/#asking-before-waking)
 - What a workload that asks turns away: `status.turnedAway` counts the requests the doorman turned away during its current or last pause, a count only, brought up to date about once a minute from the doorman's `napwake.dev/turned-away` annotation rather than written once a request; `kubectl napwake status` lists the workloads that turned requests away, and `napwake_doorman_wakes_total` gains the results `asked` and `turned_away`. Many mean something automated calls the workload
@@ -165,6 +210,7 @@ There's no upgrade path from Hybernate 0.1.x or a 0.2.0 release candidate. Unins
 
 ### Changed
 
+- The operator always protects `openshift-*`, `cattle-*`, `gke-*` and `gmp-*`, as well as `kube-*`: the namespaces the scan already left out as never paused. Upgrading from 0.2.0-rc.9, a workload Napwake manages in one of them is woken and left alone, unless its namespace is labelled `napwake.dev/allow-protected=true`: a ManagedWorkload the label made is removed, and one you wrote reports `Protected=True`, reason `ProtectedNamespace`
 - A cost figure above zero that rounds to nothing reads `<$0.01`, so `$0.00` is only ever none, in `kubectl get mw` and every cost field; `kubectl napwake status` and `scan` read it as above zero
 - The copyright line is "Copyright 2026 The Napwake Authors.", in NOTICE and every file's header. LICENSE is the Apache License 2.0's text from apache.org, word for word, and the Code of Conduct is the Contributor Covenant 2.1's, with `conduct@napwake.dev`
 - The waking page's, the asleep page's, the scan report's and the status page's links to napwake.dev say which page they're from, as `?ref=`

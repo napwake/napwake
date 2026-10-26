@@ -14,13 +14,16 @@ maintainers:
 keywords:
   - kubernetes
   - operator
-  - idle-detection
-  - scaling
-  - cost-optimization
-  - lifecycle
+  - idle
+  - staging
+  - preview-environments
+  - non-production
+  - wake-on-request
+  - cost
 # Artifact Hub reads these. make bump keeps the image's tag and prerelease
 # with the chart's version, and verify-version holds them to it.
 annotations:
+  artifacthub.io/category: integration-delivery
   artifacthub.io/license: Apache-2.0
   artifacthub.io/operator: "true"
   artifacthub.io/prerelease: "false"

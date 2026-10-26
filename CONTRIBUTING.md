@@ -1,12 +1,8 @@
 # Contributing to Napwake
 
-Thanks for your interest in contributing to Napwake!
+Thanks for helping. The [contributing guide](https://docs.napwake.dev/contributing/) has the setup, the rules for code and commits, and the pull request checklist.
 
-For development setup, coding standards, commit conventions, and PR guidelines, see the full guide:
-
-**[docs/src/content/docs/contributing.mdx](docs/src/content/docs/contributing.mdx)**
-
-## Quick Start
+## Build and test
 
 ```bash
 git clone https://github.com/napwake/napwake.git
@@ -15,10 +11,16 @@ make build
 make test
 ```
 
-## Reporting Issues
+## Sign off every commit
 
-Please open a [GitHub issue](https://github.com/napwake/napwake/issues) with steps to reproduce, expected behavior, and actual behavior.
+Contributions are made under the [Developer Certificate of Origin](https://developercertificate.org/). Sign off each commit with `git commit -s`.
+
+## Bugs and questions
+
+Report a bug as an [issue](https://github.com/napwake/napwake/issues/new/choose). The form asks for the versions and steps needed to reproduce it.
+
+Ask questions in [Discussions](https://github.com/napwake/napwake/discussions/categories/q-a).
 
 ## Security
 
-To report a security vulnerability, see [SECURITY.md](SECURITY.md).
+To report a vulnerability, see [SECURITY.md](SECURITY.md). Don't open a public issue for one.

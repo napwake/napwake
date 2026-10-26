@@ -1,7 +1,11 @@
 name: Tests
 
+# Also on every push to main, so the README's Tests badge, which reads
+# main's runs, shows main as it is.
 on:
   pull_request:
+  push:
+    branches: [main]
   workflow_call:
 
 permissions:

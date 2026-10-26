@@ -31,7 +31,7 @@ A Kubernetes operator that pauses idle workloads in non-production clusters, sca
 | `internal/human/` | Writes values the way people say them, for events and condition messages |
 | `charts/napwake/` | The Helm chart: `values.yaml`, `values.schema.json`, the templates, and `files/defaults.yaml` |
 | `config/` | The kustomize install (`config/default`, which `install.yaml` is built from), generated CRD and RBAC, and alert rules in `config/prometheus/` |
-| `hack/` | Tools for the checks and the release: `chartflags`, `rbaccheck`, `promrules`, `doormanpolicy`, `docsite`, `brewformula`, `prices`, `forecastsim`, and the `chart-*.sh` and `helm-smoke.sh` scripts |
+| `hack/` | Tools for the checks and the release: `chartflags`, `rbaccheck`, `promrules`, `doormanpolicy`, `docsite`, `brewformula`, `releasenotes`, `prices`, `forecastsim`, `dco`, and the `chart-*.sh` and `helm-smoke.sh` scripts |
 | `test/docs/` | Drift tests: the docs' manifests and values against the CRD and the chart's schema, their addresses against the built site, their install commands against the install smoke test |
 | `test/oldname/` | Keeps the product's old name out of the tree, except where it's history |
 | `test/e2e/`, `test/utils/` | The end-to-end suite on kind (Ginkgo, build tag `e2e`), and its helpers |
@@ -65,6 +65,7 @@ What CI runs on every pull request:
 | E2E | `make test-e2e KIND_NODE_IMAGE=<kindest/node image>`, on Kubernetes 1.30 and 1.37 |
 | Helm Smoke Test | `make test-helm-smoke`, with Helm 4 |
 | Security | `make vulncheck`, and Trivy on the image the `Dockerfile` builds |
+| DCO, Sign-off | `hack/dco/check.sh`, on the pull request's commits |
 
 The docs job builds the site, then checks every docs address outside `docs/` against it, from the repository's root:
 
@@ -161,7 +162,10 @@ NAPWAKE_DOCS_DIST=$PWD/docs/dist go test -count=1 ./test/docs ./hack/docsite \
 | `charts/napwake/files/defaults.yaml` is a copy of `values.yaml`, and the chart fills in values an older release's `--reuse-values` lacks | `make check-chart`, which also checks every template starts with `{{- include "napwake.defaults" . -}}`. `make manifests` writes the copy |
 | Every docs link answers | `npm run build` in `docs/` (links and anchors between pages), `TestDocsAddressesLandInTheBuiltSite` in `test/docs` (every docs address outside `docs/`, after a build), and `TestDocsLinksExist` in `cmd/kubectl-napwake` |
 | No em dash anywhere, in code, comments, strings, docs or commit messages: write a full stop or a comma | `TestNoEmDashes` in `test/docs` |
+| Every Go file starts with the licence header in `hack/boilerplate.go.txt` | `TestGoFilesHaveTheLicenceHeader` in `test/docs` |
+| The end-to-end tests' images are pinned by digest, in `E2E_IMAGES` | `TestE2EImagesArePinnedByDigest` in `test/docs` |
 | Generated files are current, and `go.mod` is tidy | `make verify-generated` |
+| Every commit in a pull request is signed off by its author | The DCO workflow, `hack/dco/check.sh` |
 | The docs' ManagedWorkloads, annotations and Helm values are valid | `TestDocsManifestsAreValid` and `TestDocsHelmValuesAreValid` in `test/docs`, `TestDocsAnnotationsAreReadable` in `internal/controller` |
 | The chart grants what `config/rbac/role.yaml` does, and passes flags the operator takes | `make check-chart` (`hack/rbaccheck`, `hack/chartflags`) |
 | The forecasting page's tables are what the simulator measures | `TestDocs_HowLongItTakes`, `TestDocs_WhatEachSettingTrades` and `TestDocs_PausingEarly` in `internal/forecast/sim` |
@@ -181,7 +185,7 @@ NAPWAKE_DOCS_DIST=$PWD/docs/dist go test -count=1 ./test/docs ./hack/docsite \
 - One logical change per commit.
 - Anything a user notices gets a line in `CHANGELOG.md`, in the section of the version being prepared (`## [x.y.z] - Unreleased`), under Added, Changed, Fixed or Security. Keep each line self-contained: they're where branches meet.
 - Pull requests are squash-merged, so the title becomes the commit on `main`. Write it as a Conventional Commit, and say in the description what changed and why.
-- Contributions are made under the [Developer Certificate of Origin](https://developercertificate.org/). Sign off each commit with `git commit -s`.
+- Contributions are made under the [Developer Certificate of Origin](https://developercertificate.org/). Sign off each commit with `git commit -s`. The DCO check fails a pull request with a commit that has no `Signed-off-by:` line for its author, and says how to sign it off.
 
 ## Reviewing a change
 

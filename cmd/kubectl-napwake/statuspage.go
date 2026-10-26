@@ -52,11 +52,14 @@ type statusPage struct {
 	// workload; without it, SavedThisMonth is of those it can.
 	FreedThisMonth, SavedThisMonth float64
 	SavedMeasurable                bool
-	Notes                          []string
-	Attention                      []attentionRow
-	Workloads                      []statusPageRow
-	DryRun                         bool
-	Recent                         []recentRow
+	// FreedUnderADollar and SavedUnderADollar say the first two figures
+	// read <$1, which the meter puts in words.
+	FreedUnderADollar, SavedUnderADollar bool
+	Notes                                []string
+	Attention                            []attentionRow
+	Workloads                            []statusPageRow
+	DryRun                               bool
+	Recent                               []recentRow
 	// NoRecent says why no pauses and wakes are listed, when none are.
 	NoRecent string
 	Since    string
@@ -132,6 +135,9 @@ func buildStatusPage(result statusResult, since time.Duration, now time.Time) st
 		FreedThisMonth:  result.FreedThisMonth,
 		SavedThisMonth:  result.SavedThisMonth,
 		SavedMeasurable: len(result.SavingsUnknown) == 0,
+
+		FreedUnderADollar: underADollar(result.FreedThisMonth),
+		SavedUnderADollar: underADollar(result.SavedThisMonth),
 	}
 	page.PausingOff = pausingOffLine(result)
 	if len(result.Workloads) == 0 {
