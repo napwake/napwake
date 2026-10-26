@@ -25,6 +25,7 @@ import (
 	"net"
 	"net/netip"
 	"strconv"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -341,7 +342,15 @@ func TestForwarder_ClosesWhatItCantPassOn(t *testing.T) {
 	conn := r.dial(t)
 
 	assert.True(t, readsEOF(t, conn), "a caller the doorman can't be reached for would wait for nothing")
-	assert.ErrorContains(t, f.Ready(nil), "can't reach the doorman")
+	// The first check of the doorman runs as the forwarder starts, beside
+	// its listeners, so it may not have ended when the caller is closed.
+	unreachable := func() bool {
+		err := f.Ready(nil)
+		return err != nil && strings.Contains(err.Error(), "can't reach the doorman")
+	}
+	if !assert.Eventually(t, unreachable, 5*time.Second, 10*time.Millisecond) {
+		t.Errorf("readiness says %v, not that the doorman can't be reached", f.Ready(nil))
+	}
 }
 
 func TestForwarder_Readiness(t *testing.T) {
