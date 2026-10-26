@@ -102,23 +102,35 @@ setup-test-e2e: ## Set up this checkout's Kind cluster for e2e tests, with a kub
 	fi
 	@echo "Its kubeconfig is $(E2E_KUBECONFIG)"
 
-E2E_IMAGES ?= curlimages/curl:8.7.1 registry.k8s.io/pause:3.10 registry.k8s.io/metrics-server/metrics-server:v0.7.2 \
-	registry.k8s.io/e2e-test-images/agnhost:2.52 registry.k8s.io/ingress-nginx/controller:v1.15.1 \
-	registry.k8s.io/ingress-nginx/kube-webhook-certgen:v1.6.9 ghcr.io/kedacore/keda:2.20.2 \
-	ghcr.io/kedacore/keda-metrics-apiserver:2.20.2 ghcr.io/kedacore/keda-admission-webhooks:2.20.2
+# Each by tag and digest, so a retagged image can't change what the specs
+# run against. The specs name them by tag, which load-test-e2e-images gives
+# the image it pulls by digest.
+E2E_IMAGES ?= \
+	curlimages/curl:8.7.1@sha256:25d29daeb9b14b89e2fa8cc17c70e4b188bca1466086907c2d9a4b56b59d8e21 \
+	registry.k8s.io/pause:3.10@sha256:ee6521f290b2168b6e0935a181d4cff9be1ac3f505666ef0e3c98fae8199917a \
+	registry.k8s.io/metrics-server/metrics-server:v0.7.2@sha256:ffcb2bf004d6aa0a17d90e0247cf94f2865c8901dcab4427034c341951c239f9 \
+	registry.k8s.io/e2e-test-images/agnhost:2.52@sha256:b173c7d0ffe3d805d49f4dfe48375169b7b8d2e1feb81783efd61eb9d08042e6 \
+	registry.k8s.io/ingress-nginx/controller:v1.15.1@sha256:594ceea76b01c592858f803f9ff4d2cb40542cae2060410b2c95f75907d659e1 \
+	registry.k8s.io/ingress-nginx/kube-webhook-certgen:v1.6.9@sha256:01038e7de14b78d702d2849c3aad72fd25903c4765af63cf16aa3398f5d5f2dd \
+	ghcr.io/kedacore/keda:2.20.2@sha256:fe74c7b8849586a67ad2201bcb89e7f5ac221ff90399ecaa8fd28427f1ef11e6 \
+	ghcr.io/kedacore/keda-metrics-apiserver:2.20.2@sha256:27286536a8a775aeeee37a7e343f8ecebb27ebf680ee1181a4f99e82eefb253b \
+	ghcr.io/kedacore/keda-admission-webhooks:2.20.2@sha256:41f74102aba7959c6e8d08b433ab8a5fd6cae7c5646c78f7fe3de40a52df3439
 E2E_PROCS ?= 4
 E2E_PLATFORM ?= linux/$(shell go env GOARCH)
 
 # Streams each image into the Kind node's containerd for one platform only.
 # `kind load docker-image` imports all platforms, which fails under Docker
 # Desktop's containerd image store: a pull only fetches the host platform,
-# so the other platforms' content is missing.
+# so the other platforms' content is missing. An image pulled by digest has
+# no tag, so it's tagged before it's saved, and the node has it by its tag.
 .PHONY: load-test-e2e-images
 load-test-e2e-images: ## Preload the images the e2e specs run into the Kind cluster
 	@for img in $(E2E_IMAGES); do \
+		ref=$${img%@*}; \
 		echo "Loading $$img ($(E2E_PLATFORM)) into $(KIND_CLUSTER)"; \
 		docker pull --quiet --platform $(E2E_PLATFORM) $$img >/dev/null && \
-		docker save $$img | docker exec -i $(KIND_CLUSTER)-control-plane \
+		docker tag $$img $$ref && \
+		docker save $$ref | docker exec -i $(KIND_CLUSTER)-control-plane \
 			ctr --namespace=k8s.io images import --platform $(E2E_PLATFORM) --snapshotter=overlayfs - >/dev/null \
 		|| exit 1; \
 	done
