@@ -663,7 +663,7 @@ html:not(.js) th { position: static; }
     </div>
 
     {{if .NextSteps}}
-    <div class="next-strip"><b>What to do next</b><span>Opt a workload in, measuring first so nothing is paused, then let Napwake pause it once the measurements look right.</span><a href="#next">See the commands</a></div>
+    <div class="next-strip"><b>What to do next</b><span>{{if .NextSteps.Install}}Install Napwake if the cluster doesn&#39;t have it yet, then opt a workload in. Measure it first, which pauses nothing, then let Napwake pause it once the measurements look right.{{else}}Opt a workload in, measuring first so nothing is paused, then let Napwake pause it once the measurements look right.{{end}}</span><a href="#next">See the commands</a></div>
     {{end}}
 
     {{if .Facts}}
@@ -814,9 +814,10 @@ html:not(.js) th { position: static; }
   {{if .NextSteps}}
   <section class="part" id="next">
     <h2>Next steps</h2>
-    <p>Opt a workload in, measuring first so nothing is paused, then let Napwake pause it once the measurements look right.</p>
+    <p>{{if .NextSteps.Install}}Install Napwake if the cluster doesn&#39;t have it yet, then opt a workload in. Measure it first, which pauses nothing, then let Napwake pause it once the measurements look right.{{else}}Opt a workload in, measuring first so nothing is paused, then let Napwake pause it once the measurements look right.{{end}}</p>
     <div class="next">
-    <pre class="shell">{{range .NextSteps.Measure}}{{.Line}}
+    <pre class="shell">{{with .NextSteps.Install}}<span data-step="install">{{.Line}}</span>
+{{end}}{{range .NextSteps.Measure}}{{.Line}}
 {{end}}{{with .NextSteps.Enable}}<span data-step="enable">{{.Line}}</span>
 {{end}}</pre>
     <svg class="art pose-point-l" viewBox="0 0 240 260" aria-hidden="true" focusable="false"><defs><filter id="fin-point" x="-5%" y="-5%" width="110%" height="110%" color-interpolation-filters="sRGB"><feTurbulence type="fractalNoise" baseFrequency=".045" numOctaves="2" seed="3" result="w"/><feDisplacementMap in="SourceGraphic" in2="w" scale="1.3" xChannelSelector="R" yChannelSelector="G" result="d"/><feTurbulence type="fractalNoise" baseFrequency=".85" numOctaves="2" seed="9" result="n"/><feColorMatrix in="n" values="0 0 0 0 0  0 0 0 0 0  0 0 0 0 0  0 0 0 0.13 0" result="na"/><feComposite in="na" in2="d" operator="in" result="g"/><feTurbulence type="fractalNoise" baseFrequency=".018" numOctaves="2" seed="21" result="m"/><feColorMatrix in="m" values="0 0 0 0 1  0 0 0 0 1  0 0 0 0 1  0 0 0 .09 -.01" result="ma"/><feComposite in="ma" in2="d" operator="in" result="ink"/><feMerge><feMergeNode in="d"/><feMergeNode in="ink"/><feMergeNode in="g"/></feMerge></filter></defs><g transform="translate(140 244) scale(-1 1)" filter="url(#fin-point)"><ellipse cx="-3.5999999999999996" cy="2" rx="46" ry="5.5" fill="var(--doorman-night)" opacity=".13"/><g transform="rotate(-5)"><ellipse cx="-13" cy="-1" rx="10" ry="6" transform="rotate(0 -13 -1)" fill="var(--doorman-shoe)" stroke="var(--doorman-shoe-rim)" stroke-width="1.4"/><ellipse cx="16" cy="-1" rx="10" ry="6" transform="rotate(0 16 -1)" fill="var(--doorman-shoe)" stroke="var(--doorman-shoe-rim)" stroke-width="1.4"/><path d="M-31 -102 Q-31 -114 -19 -114 H19 Q31 -114 31 -102 Q35 -54 35.8 -6 Q37 -2 33 -2 Q0 1 -33 -2 Q-37 -2 -37.48 -6 Q-31.8 -54 -31 -102 Z" fill="var(--doorman-coat)"/><clipPath id="c27"><path d="M-31 -102 Q-31 -114 -19 -114 H19 Q31 -114 31 -102 Q35 -54 35.8 -6 Q37 -2 33 -2 Q0 1 -33 -2 Q-37 -2 -37.48 -6 Q-31.8 -54 -31 -102 Z"/></clipPath><g clip-path="url(#c27)"><path d="M-43 -118 H-15.399999999999999 L-18.6 4 H-43Z" fill="var(--doorman-night)" opacity="0.17200000000000001"/><path d="M28 -118 H39 V4 H33Z" fill="var(--scene-room-amber)" opacity=".1"/></g><path d="M9.8 -112 Q11.3 -54 12.8 -3" stroke="var(--doorman-coat-deep)" stroke-width="2.2" fill="none"/><circle cx="-3.58" cy="-98" r="3" fill="var(--doorman-brass)"/><circle cx="20.42" cy="-98" r="2.76" fill="var(--doorman-brass)"/><circle cx="-2.91" cy="-78" r="3" fill="var(--doorman-brass)"/><circle cx="21.09" cy="-78" r="2.76" fill="var(--doorman-brass)"/><circle cx="-2.24" cy="-58" r="3" fill="var(--doorman-brass)"/><circle cx="21.76" cy="-58" r="2.76" fill="var(--doorman-brass)"/><g clip-path="url(#c27)"><path d="M-47 -14 H47 V-4 H-47Z" fill="var(--doorman-coat-deep)" opacity=".45"/></g><rect x="-19.1" y="-46" width="14" height="4" rx="2" fill="var(--doorman-coat-deep)"/><rect x="20.1" y="-46" width="11.4" height="4" rx="2" fill="var(--doorman-coat-deep)"/><g transform="rotate(7.5 -26 -64)"><circle cx="-26" cy="-58" r="4.6" fill="none" stroke="var(--doorman-brass)" stroke-width="1.8"/><rect x="-29.6" y="-55" width="2.6" height="10" rx="1" fill="var(--doorman-brass)" transform="rotate(14 -26 -55)"/><rect x="-25.4" y="-54.5" width="2.6" height="8.5" rx="1" fill="var(--doorman-brass)" transform="rotate(-10 -26 -55)"/></g><path d="M-26 -110 Q-30 -80 -3.8 -98 M-25 -110 Q-35 -64 -3.8 -98" stroke="var(--doorman-brass)" stroke-width="2.4" fill="none" stroke-linecap="round"/><path d="M-29.5 -81 l-1 9" stroke="var(--doorman-brass)" stroke-width="3.2" stroke-linecap="round"/><rect x="-30" y="-113" width="13" height="6" rx="3" fill="var(--doorman-brass)"/><g transform="translate(0 0) rotate(-4 0 -126)"><path d="M-27 -120 V-156 Q-27 -172 -11 -172 H11 Q27 -172 27 -156 V-120 Z" fill="var(--doorman-face)"/><clipPath id="h28"><path d="M-27 -120 V-156 Q-27 -172 -11 -172 H11 Q27 -172 27 -156 V-120 Z"/></clipPath><path clip-path="url(#h28)" d="M-29 -172 H-13.2 V-118 H-29Z" fill="var(--doorman-night)" opacity="0.158"/><g transform="translate(-7.4 -146) scale(1 1)"><g class="eo"><clipPath id="e29"><circle cx="0" cy="0" r="9.57"/></clipPath><circle cx="0" cy="0" r="9.2" fill="var(--doorman-eye)"/><g clip-path="url(#e29)"><circle cx="3.48" cy="0.58" r="4.6" fill="var(--doorman-night)"/><rect x="-14.719999999999999" y="-18.4" width="29.439999999999998" height="18.03" fill="var(--doorman-face)" transform="rotate(-4 0 0)"/></g><rect x="-10.86" y="-2.12" width="21.71" height="3.5" rx="1.75" fill="var(--doorman-night)" transform="rotate(-4 0 0)"/></g><g class="ec"><circle cx="0" cy="0" r="10.3" fill="var(--doorman-face)"/><path d="M-8.73 -0.46 Q-0.43 8.27 8.73 0.46" fill="none" stroke="var(--doorman-night)" stroke-width="3.86" stroke-linecap="round"/></g></g><g transform="translate(13.8 -146) scale(0.85 1)"><g class="eo"><clipPath id="e30"><circle cx="0" cy="0" r="9.57"/></clipPath><circle cx="0" cy="0" r="9.2" fill="var(--doorman-eye)"/><g clip-path="url(#e30)"><circle cx="3.48" cy="0.58" r="4.6" fill="var(--doorman-night)"/><rect x="-14.719999999999999" y="-18.4" width="29.439999999999998" height="18.03" fill="var(--doorman-face)" transform="rotate(2 0 0)"/></g><rect x="-10.86" y="-2.12" width="21.71" height="3.5" rx="1.75" fill="var(--doorman-night)" transform="rotate(2 0 0)"/></g><g class="ec"><circle cx="0" cy="0" r="10.3" fill="var(--doorman-face)"/><path d="M-8.73 -0.46 Q-0.43 8.27 8.73 0.46" fill="none" stroke="var(--doorman-night)" stroke-width="3.86" stroke-linecap="round"/></g></g><g transform="rotate(-5 0 -168)"><path d="M-18.78 -170 L-20.400000000000002 -198.48 Q-20.400000000000002 -201.48 -16.400000000000002 -201.48 Q1.2000000000000002 -203.98 18.8 -201.48 Q22.8 -201.48 22.8 -198.48 L21.18 -170 Z" fill="var(--doorman-hat)"/><path d="M-18.580000000000002 -171 L-19.68 -178.8 H22.08 L20.98 -171 Z" fill="var(--doorman-brass)"/><path d="M-20.400000000000002 -198.48 L-14.600000000000001 -199.48 L-11.780000000000001 -171 L-18.78 -170 Z" fill="var(--night)" opacity=".22"/><path d="M-35.1 -172.5 Q-32.1 -169 -25.1 -169.5 H25.1 Q32.1 -169 35.1 -172.5 Q36.1 -165 27.1 -164.5 H-27.1 Q-36.1 -165 -35.1 -172.5 Z" fill="var(--doorman-hat)"/></g></g><path d="M-31 -128 H31 V-110 Q2.4 -106 -31 -110 Z" fill="var(--doorman-coat-deep)"/><rect x="-31" y="-129" width="62" height="2.6" rx="1.3" fill="var(--doorman-brass)"/></g><circle cx="-35.08" cy="-100.32" r="7.2" fill="var(--doorman-coat-deep)"/><circle cx="-52.08" cy="-80.32" r="5.9" fill="var(--doorman-coat-deep)"/><path d="M-40.57 -104.98 L-56.58 -84.14 L-47.58 -76.5 L-29.59 -95.66 Z" fill="var(--doorman-coat-deep)"/><circle cx="-52.08" cy="-80.32" r="5.9" fill="var(--doorman-coat-deep)"/><circle cx="-42.67" cy="-66.87" r="5.1" fill="var(--doorman-coat-deep)"/><path d="M-56.91 -76.94 L-46.85 -63.95 L-38.49 -69.8 L-47.25 -83.7 Z" fill="var(--doorman-coat-deep)"/><path d="M-47.72 -83.62 Q-49.68 -80.21 -48.05 -76.63" stroke="var(--doorman-night)" stroke-width="1.5" fill="none" opacity=".35" stroke-linecap="round"/><rect x="-3.2" y="-6.6" width="6.4" height="13.2" rx="2" fill="var(--doorman-brass)" transform="translate(-42.67 -66.87) rotate(55.01)"/><g transform="translate(-38.08 -60.32) rotate(55.01)"><ellipse cx="-1" cy="4.5" rx="3.9" ry="3" transform="rotate(-38 -1 4.5)" fill="var(--doorman-mitten)"/><ellipse cx="0" cy="0" rx="6.4" ry="6.8" fill="var(--doorman-mitten)"/><ellipse cx="1" cy="-2.856" rx="3.5200000000000005" ry="1.9040000000000001" fill="var(--doorman-eye)" opacity=".16"/></g><circle cx="13.94" cy="-104.61" r="7.2" fill="var(--doorman-coat-deep)"/><circle cx="39.94" cy="-102.61" r="5.9" fill="var(--doorman-coat-deep)"/><path d="M13.39 -97.43 L39.49 -96.73 L40.39 -108.49 L14.49 -111.79 Z" fill="var(--doorman-coat-deep)"/><circle cx="39.94" cy="-102.61" r="5.9" fill="var(--doorman-coat-deep)"/><circle cx="60.12" cy="-106.93" r="5.1" fill="var(--doorman-coat-deep)"/><path d="M41.18 -96.84 L61.19 -101.95 L59.05 -111.92 L38.7 -108.38 Z" fill="var(--doorman-coat-deep)"/><rect x="-3.2" y="-6.6" width="6.4" height="13.2" rx="2" fill="var(--doorman-brass)" transform="translate(60.12 -106.93) rotate(-12.09)"/><g transform="translate(67.94 -108.61) rotate(-12.09)"><ellipse cx="0.5" cy="-5.6" rx="3.9" ry="3" transform="rotate(38 0.5 -5.6)" fill="var(--doorman-mitten)"/><ellipse cx="4" cy="0" rx="10.5" ry="5.6" fill="var(--doorman-mitten)"/><ellipse cx="5" cy="2.352" rx="5.775" ry="1.568" fill="var(--doorman-eye)" opacity=".16"/><path d="M6 1.5 h5" stroke="var(--doorman-mitten-line)" stroke-width="1.1" stroke-linecap="round" opacity=".5"/></g></g></svg>
@@ -1533,26 +1534,38 @@ html:not(.js) th { position: static; }
     });
   });
 
-  // ---------------------------------------------------------------- next steps: measure first, then go live
-  // The product lists the measuring commands, then the one that goes live, which it marks data-step="enable". Two
-  // blocks, each with its own Copy, so pasting the first never skips the measuring.
+  // ---------------------------------------------------------------- next steps: install, measure first, then go live
+  // The product lists the command that installs Napwake, when the scan didn't find it, then the measuring commands,
+  // then the one that goes live. It marks the first data-step="install" and the last data-step="enable". A block for
+  // each, with its own Copy, so pasting one never skips the measuring.
   each($$("#next pre.shell"), function (pre) {
     var lines = Array.prototype.slice.call(pre.querySelectorAll(".line"));
-    var live = lines.filter(function (l) { return l.parentNode.getAttribute("data-step") === "enable"; });
-    var measure = lines.filter(function (l) { return live.indexOf(l) < 0; });
+    var marked = function (step) { return lines.filter(function (l) { return l.parentNode.getAttribute("data-step") === step; }); };
+    var install = marked("install"), live = marked("enable");
+    var measure = lines.filter(function (l) { return install.indexOf(l) < 0 && live.indexOf(l) < 0; });
     if (!live.length || !measure.length) return;
     var steps = doc.createElement("div");
     steps.className = "steps";
+    // A note is its text, or its runs: text, ["code", text] or ["a", text, address].
     var block = function (title, note, ls) {
       var wrap = doc.createElement("div"), t = doc.createElement("p"), p = doc.createElement("pre");
       t.className = "step-t"; t.textContent = title;
-      var s = doc.createElement("span"); s.textContent = note; t.appendChild(s);
+      var s = doc.createElement("span");
+      [].concat(note).forEach(function (run) {
+        if (typeof run === "string") { s.appendChild(doc.createTextNode(run)); return; }
+        var el = doc.createElement(run[0]); el.textContent = run[1];
+        if (run[2]) el.href = run[2];
+        s.appendChild(el);
+      });
+      t.appendChild(s);
       p.className = "shell";
       ls.forEach(function (l) { p.appendChild(l); p.appendChild(doc.createTextNode("\n")); });
       wrap.appendChild(t); wrap.appendChild(p); steps.appendChild(wrap);
     };
-    block("1. Measure first", "Dry-run: nothing is paused; Napwake only measures.", measure);
-    block("2. When the measurements look right, let Napwake pause it", "Run this only after step 1 has measured for a while.", live);
+    var n = 0;
+    if (install.length) block(++n + ". Install Napwake, if the cluster doesn't have it yet", ["Put your users' time zone in ", ["code", "napwake-values.yaml"], " first, such as ", ["code", "timezone: Europe/London"], ". The ", ["a", "installation guide", "https://docs.napwake.dev/getting-started/installation/"], " has the rest."], install);
+    block(++n + ". Measure first", "In dry-run, Napwake only measures. Nothing is paused.", measure);
+    block(++n + ". When the measurements look right, let Napwake pause it", "Run this only after step " + (n - 1) + " has measured for a while.", live);
     pre.parentNode.replaceChild(steps, pre);
   });
 

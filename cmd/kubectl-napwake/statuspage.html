@@ -1483,26 +1483,38 @@ html:not(.js) th { position: static; }
     });
   });
 
-  // ---------------------------------------------------------------- next steps: measure first, then go live
-  // The product lists the measuring commands, then the one that goes live, which it marks data-step="enable". Two
-  // blocks, each with its own Copy, so pasting the first never skips the measuring.
+  // ---------------------------------------------------------------- next steps: install, measure first, then go live
+  // The product lists the command that installs Napwake, when the scan didn't find it, then the measuring commands,
+  // then the one that goes live. It marks the first data-step="install" and the last data-step="enable". A block for
+  // each, with its own Copy, so pasting one never skips the measuring.
   each($$("#next pre.shell"), function (pre) {
     var lines = Array.prototype.slice.call(pre.querySelectorAll(".line"));
-    var live = lines.filter(function (l) { return l.parentNode.getAttribute("data-step") === "enable"; });
-    var measure = lines.filter(function (l) { return live.indexOf(l) < 0; });
+    var marked = function (step) { return lines.filter(function (l) { return l.parentNode.getAttribute("data-step") === step; }); };
+    var install = marked("install"), live = marked("enable");
+    var measure = lines.filter(function (l) { return install.indexOf(l) < 0 && live.indexOf(l) < 0; });
     if (!live.length || !measure.length) return;
     var steps = doc.createElement("div");
     steps.className = "steps";
+    // A note is its text, or its runs: text, ["code", text] or ["a", text, address].
     var block = function (title, note, ls) {
       var wrap = doc.createElement("div"), t = doc.createElement("p"), p = doc.createElement("pre");
       t.className = "step-t"; t.textContent = title;
-      var s = doc.createElement("span"); s.textContent = note; t.appendChild(s);
+      var s = doc.createElement("span");
+      [].concat(note).forEach(function (run) {
+        if (typeof run === "string") { s.appendChild(doc.createTextNode(run)); return; }
+        var el = doc.createElement(run[0]); el.textContent = run[1];
+        if (run[2]) el.href = run[2];
+        s.appendChild(el);
+      });
+      t.appendChild(s);
       p.className = "shell";
       ls.forEach(function (l) { p.appendChild(l); p.appendChild(doc.createTextNode("\n")); });
       wrap.appendChild(t); wrap.appendChild(p); steps.appendChild(wrap);
     };
-    block("1. Measure first", "Dry-run: nothing is paused; Napwake only measures.", measure);
-    block("2. When the measurements look right, let Napwake pause it", "Run this only after step 1 has measured for a while.", live);
+    var n = 0;
+    if (install.length) block(++n + ". Install Napwake, if the cluster doesn't have it yet", ["Put your users' time zone in ", ["code", "napwake-values.yaml"], " first, such as ", ["code", "timezone: Europe/London"], ". The ", ["a", "installation guide", "https://docs.napwake.dev/getting-started/installation/"], " has the rest."], install);
+    block(++n + ". Measure first", "In dry-run, Napwake only measures. Nothing is paused.", measure);
+    block(++n + ". When the measurements look right, let Napwake pause it", "Run this only after step " + (n - 1) + " has measured for a while.", live);
     pre.parentNode.replaceChild(steps, pre);
   });
 
