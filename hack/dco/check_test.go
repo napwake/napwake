@@ -133,7 +133,7 @@ func TestCheck(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			r := newRepo(t)
 			base := r.git("rev-parse", "HEAD")
-			var hashes []string
+			hashes := make([]string, 0, len(tt.commits))
 			for _, c := range tt.commits {
 				hashes = append(hashes, r.commit(c.author, c.message))
 			}

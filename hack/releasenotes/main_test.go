@@ -66,7 +66,7 @@ Install it new.
 
 Install it new.
 
-Every change in 0.2.0 is in [CHANGELOG.md](https://github.com/napwake/napwake/blob/v0.2.0/CHANGELOG.md#020---2026-10-30).
+Every change in 0.2.0 is in [CHANGELOG.md](https://github.com/o/r/blob/v0.2.0/CHANGELOG.md#020---2026-10-30).
 
 **Docs for this release:** https://docs.napwake.dev/0.2/
 `,
@@ -103,7 +103,7 @@ The summary.
 			tag: "v0.3.0-rc.2",
 			want: `The summary.
 
-Every change in 0.3.0 is in [CHANGELOG.md](https://github.com/napwake/napwake/blob/v0.3.0-rc.2/CHANGELOG.md#030---unreleased).
+Every change in 0.3.0 is in [CHANGELOG.md](https://github.com/o/r/blob/v0.3.0-rc.2/CHANGELOG.md#030---unreleased).
 
 **Docs for this release:** https://docs.napwake.dev/next/
 `,
@@ -126,7 +126,7 @@ Only the operator's image is rebuilt.
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got, err := notes(tt.changelog, tt.tag, "napwake/napwake")
+			got, err := notes(tt.changelog, tt.tag, "o/r")
 			require.NoError(t, err)
 			assert.Equal(t, tt.want, got)
 		})
@@ -136,33 +136,36 @@ Only the operator's image is rebuilt.
 // A section without a summary that's over GitHub's limit is cut at the
 // last whole line that fits, and links to the rest.
 func TestNotesCutsALongSectionWithoutASummary(t *testing.T) {
+	const change = "- A change that users notice, one of many in this release\n"
 	var list strings.Builder
-	for i := 0; list.Len() <= maxSection; i++ {
-		list.WriteString("- A change that users notice, one of many in this release\n")
+	for list.Len() <= maxSection {
+		list.WriteString(change)
 	}
 	changelog := changelogHead + "## [0.2.0] - 2026-10-30\n\n### Added\n\n" + list.String() + "\n" + olderRelease
 
-	got, err := notes(changelog, "v0.2.0", "napwake/napwake")
+	got, err := notes(changelog, "v0.2.0", "o/r")
 	require.NoError(t, err)
 
-	body, rest, found := strings.Cut(got, "\nThe list goes on in [CHANGELOG.md](https://github.com/napwake/napwake/blob/v0.2.0/CHANGELOG.md).\n")
+	const rest = "\nThe list goes on in [CHANGELOG.md](https://github.com/o/r/blob/v0.2.0/CHANGELOG.md).\n"
+	body, docs, found := strings.Cut(got, rest)
 	require.True(t, found, "the cut notes link to the rest:\n%s", got[len(got)-300:])
 	assert.LessOrEqual(t, len(body), maxSection)
-	assert.True(t, strings.HasSuffix(body, "- A change that users notice, one of many in this release\n"), "cut at a whole line")
-	assert.Equal(t, "\n**Docs for this release:** https://docs.napwake.dev/0.2/\n", rest)
+	assert.True(t, strings.HasSuffix(body, change), "cut at a whole line")
+	assert.Equal(t, "\n**Docs for this release:** https://docs.napwake.dev/0.2/\n", docs)
 }
 
 func TestNotesRefuses(t *testing.T) {
+	const missing = "CHANGELOG.md's section for 0.2.0 is empty or missing"
 	tests := []struct {
 		name, changelog, tag, want string
 	}{
-		{"a missing section", changelogHead + olderRelease, "v0.2.0", "CHANGELOG.md's section for 0.2.0 is empty or missing"},
-		{"an empty section", changelogHead + "## [0.2.0] - Unreleased\n\n" + olderRelease, "v0.2.0", "CHANGELOG.md's section for 0.2.0 is empty or missing"},
+		{"a missing section", changelogHead + olderRelease, "v0.2.0", missing},
+		{"an empty section", changelogHead + "## [0.2.0] - Unreleased\n\n" + olderRelease, "v0.2.0", missing},
 		{"a tag that isn't a version", changelogHead + olderRelease, "v0.1", "isn't a release's tag"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			_, err := notes(tt.changelog, tt.tag, "napwake/napwake")
+			_, err := notes(tt.changelog, tt.tag, "o/r")
 			require.Error(t, err)
 			assert.Contains(t, err.Error(), tt.want)
 		})
@@ -181,5 +184,6 @@ func TestTheNextReleasesNotesFit(t *testing.T) {
 
 	got, err := notes(string(changelog), "v"+string(m[1]), "napwake/napwake")
 	require.NoError(t, err)
-	assert.NotContains(t, got, "The list goes on in", "the release's notes would be cut: open its CHANGELOG.md section with a summary, above its first ###")
+	assert.NotContains(t, got, "The list goes on in",
+		"the release's notes would be cut: open its CHANGELOG.md section with a summary, above its first ###")
 }
