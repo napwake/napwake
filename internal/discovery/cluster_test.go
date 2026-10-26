@@ -519,15 +519,15 @@ func TestScanCluster_SavingsBySource(t *testing.T) {
 	assert.InDelta(t, got["dry"].Measured.MonthlyFreed, report.Totals.Measured.MonthlyFreed, 0.001)
 }
 
-// With pausing off for its install, as the ManagedWorkload's Pausing
+// With pausing off for its install, as the ManagedWorkload's PausingOff
 // condition says, the scan counts the workload as in dry-run, whatever its
 // spec says, with what dry-run measured, and not as live.
 func TestScanCluster_PausingOffIsDryRun(t *testing.T) {
 	off := managedFor("off", v1alpha1.ManagedWorkloadStatus{Phase: v1alpha1.PhaseRunning,
 		DryRun: &v1alpha1.DryRunStatus{Since: metav1.NewTime(scanTime.Add(-73 * time.Hour)), Pauses: 2,
 			Slept: metav1.Duration{Duration: 10 * time.Hour}},
-		Conditions: []metav1.Condition{{Type: ConditionPausing, Status: metav1.ConditionFalse,
-			Reason: ReasonTurnedOffForTheCluster}}})
+		Conditions: []metav1.Condition{{Type: ConditionPausingOff, Status: metav1.ConditionTrue,
+			Reason: "DisabledForTheInstall"}}})
 	objs := make([]runtime.Object, 0, 4)
 	objs = append(objs, off)
 	objs = append(objs, deploymentWithRollout("off", testNamespace, 1, 30*24*time.Hour)...)

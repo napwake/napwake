@@ -41,7 +41,7 @@ func TestDocsDontNameTheWakeSettingThatWent(t *testing.T) {
 		data, err := os.ReadFile(path)
 		require.NoError(t, err)
 		for _, name := range gone {
-			// A whole name: TurnedOffForTheCluster, the stop switch's reason, isn't TurnedOff.
+			// A whole name, so a longer one that starts the same isn't it.
 			whole := regexp.MustCompile(regexp.QuoteMeta(name) + `\b`)
 			assert.False(t, whole.MatchString(string(data)), "%s names %s, which is gone", path, name)
 		}

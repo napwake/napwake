@@ -27,12 +27,16 @@ import (
 )
 
 const (
-	// conditionPausing is False, reason TurnedOffForTheCluster, on every
+	// conditionPausingOff is True, reason DisabledForTheInstall, on every
 	// workload while pausing is off for the install that manages it, and
 	// removed once it's on again: there's nothing to say about one that
 	// pauses. Several installs can share a cluster, each with its own.
-	conditionPausing             = "Pausing"
-	reasonTurnedOffForTheCluster = "TurnedOffForTheCluster"
+	conditionPausingOff         = "PausingOff"
+	reasonDisabledForTheInstall = "DisabledForTheInstall"
+
+	// reasonPausingOff answers a pause request while pausing is off, as
+	// reasonDryRun does in dry-run.
+	reasonPausingOff = "PausingOff"
 
 	reasonPausingOffWake = "PausingOffWake"
 
@@ -49,15 +53,15 @@ const (
 // again by the next reconcile, rather than holding up this one, which may
 // be waking the workload.
 func (r *Reconciler) reportPausing(ctx context.Context, workload *v1alpha1.ManagedWorkload) {
-	reported := meta.FindStatusCondition(workload.Status.Conditions, conditionPausing) != nil
+	reported := meta.FindStatusCondition(workload.Status.Conditions, conditionPausingOff) != nil
 	if reported == r.PausingOff {
 		return
 	}
 	if r.PausingOff {
-		r.setCondition(workload, conditionPausing, metav1.ConditionFalse, reasonTurnedOffForTheCluster,
+		r.setCondition(workload, conditionPausingOff, metav1.ConditionTrue, reasonDisabledForTheInstall,
 			pausingOffMessage)
 	} else {
-		meta.RemoveStatusCondition(&workload.Status.Conditions, conditionPausing)
+		meta.RemoveStatusCondition(&workload.Status.Conditions, conditionPausingOff)
 	}
 	if err := r.Status().Update(ctx, workload); err != nil {
 		log.FromContext(ctx).Info("couldn't record whether pausing is off for this install",
@@ -70,7 +74,7 @@ func (r *Reconciler) reportPausing(ctx context.Context, workload *v1alpha1.Manag
 // first: it holds whatever the workload's own dry-run says.
 func (r *Reconciler) whyMeasured() (reason, because string) {
 	if r.PausingOff {
-		return reasonTurnedOffForTheCluster, "pausing is off for this install"
+		return reasonPausingOff, "pausing is off for this install"
 	}
 	return reasonDryRun, "dry-run is on"
 }

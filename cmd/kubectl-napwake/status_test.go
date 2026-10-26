@@ -620,7 +620,7 @@ func TestNextFor_DryRunAfterAGitOpsConflict(t *testing.T) {
 // pausingOff is the condition the operator puts on every workload it
 // manages while its pausing is off.
 func pausingOff() metav1.Condition {
-	return condition(discovery.ConditionPausing, metav1.ConditionFalse, discovery.ReasonTurnedOffForTheCluster,
+	return condition(discovery.ConditionPausingOff, metav1.ConditionTrue, "DisabledForTheInstall",
 		"pausing is off for this install")
 }
 

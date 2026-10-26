@@ -198,7 +198,7 @@ func TestPause_Answers(t *testing.T) {
 		},
 		{
 			name: "pausing off for its install", pausingOff: true,
-			answer: refuses(v1alpha1.PhaseIdle, "TurnedOffForTheCluster", "not paused at 2026-10-21 03:32 UTC: "+
+			answer: refuses(v1alpha1.PhaseIdle, "PausingOff", "not paused at 2026-10-21 03:32 UTC: "+
 				"pausing is off for this install, so Napwake counted a would-be pause and left the workload running"),
 			wantStep: "pausing is off for the install that manages preview-42/api, so Napwake counts a would-be " +
 				"pause and leaves it running...\n",

@@ -214,7 +214,7 @@ func (e *switchEnv) watch(t *testing.T, r *Reconciler, key client.ObjectKey, clo
 }
 
 func pausingOffCondition(w *v1alpha1.ManagedWorkload) *metav1.Condition {
-	return meta.FindStatusCondition(w.Status.Conditions, conditionPausing)
+	return meta.FindStatusCondition(w.Status.Conditions, conditionPausingOff)
 }
 
 // With pausing off for the install, nothing it manages pauses, while a workload
@@ -240,8 +240,8 @@ func TestPausingOff(t *testing.T) {
 		assert.Nil(t, w.Status.Pause)
 		c := pausingOffCondition(w)
 		require.NotNil(t, c, "the workload says pausing is off")
-		assert.Equal(t, metav1.ConditionFalse, c.Status)
-		assert.Equal(t, reasonTurnedOffForTheCluster, c.Reason)
+		assert.Equal(t, metav1.ConditionTrue, c.Status)
+		assert.Equal(t, reasonDisabledForTheInstall, c.Reason)
 		assert.Contains(t, c.Message, "pausing is off for this install")
 		idle := drainEvents(t, r)
 		assert.Contains(t, idle, "Normal "+ReasonIdleDetected+" [dry-run] api: idle for 5 minutes")
@@ -323,7 +323,7 @@ func TestPausingOff(t *testing.T) {
 		c := meta.FindStatusCondition(w.Status.Conditions, conditionPauseRequest)
 		require.NotNil(t, c)
 		assert.Equal(t, metav1.ConditionFalse, c.Status)
-		assert.Equal(t, reasonTurnedOffForTheCluster, c.Reason)
+		assert.Equal(t, reasonPausingOff, c.Reason)
 		assert.Contains(t, c.Message, ": pausing is off for this install, so Napwake counted a would-be pause "+
 			"and left the workload running")
 	})

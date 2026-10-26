@@ -57,7 +57,7 @@ There's no upgrade path from Hybernate 0.1.x or a 0.2.0 release candidate. Unins
 
 ### Added
 
-- A stop switch for a bad day: `pausing.enabled: false` in the chart (`--pausing=false`) stops all pausing by this install while everything still wakes. A paused workload is woken, idleness is still measured as in dry-run, and wrong-pause back-offs carry through to when pausing is back on. Each ManagedWorkload carries `Pausing=False`, and `kubectl napwake status` and its page say so first
+- A stop switch for a bad day: `pausing.enabled: false` in the chart (`--pausing=false`) stops all pausing by this install while everything still wakes. A paused workload is woken, idleness is still measured as in dry-run, and wrong-pause back-offs carry through to when pausing is back on. Each ManagedWorkload carries `PausingOff=True`, and `kubectl napwake status` and its page say so first
 - The chart's page on Artifact Hub: an icon, a description and a README in the chart, and the release publishes Artifact Hub's repository metadata, for its Verified publisher label
 - `AGENTS.md`, `CLAUDE.md` and Claude Code skills (`verify`, `fix-a-bug`, `add-a-setting`, `write-docs`, `e2e`), so contributors and the AI assistants they work with follow the project's conventions
 - The chart carries Artifact Hub's annotations (licence, operator, the image and its platforms, the CRD, links), and the image OCI labels for its site, docs, licence and vendor. `make bump` keeps the annotations' image tag and `prerelease` with the chart's version
