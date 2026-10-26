@@ -5,6 +5,7 @@ lede: "What sends a paused workload's traffic to the doorman, and how far each i
 ---
 
 import AtAGlance from '../../../components/AtAGlance.astro';
+import NextSteps from '../../../components/NextSteps.astro';
 
 <AtAGlance items={[
   { label: 'Kubernetes', value: '1.30 and later' },
@@ -25,14 +26,14 @@ import AtAGlance from '../../../components/AtAGlance.astro';
 |-------|--------|-------|
 | kube-proxy, kind's default mode | Tested | ClusterIP Services, from pods and through ingress-nginx |
 | kube-proxy, other modes (ipvs, nftables), and NodePort and LoadBalancer Services | Not tested yet | Same EndpointSlices as ClusterIP. [Admit nodes' addresses](/concepts/wake-on-request/#restricting-who-can-reach-the-doorman) in `doorman.networkPolicy.ingressFrom` as an `ipBlock` |
-| NodePort and LoadBalancer Services with `externalTrafficPolicy: Local` | **Partial** | Routed, but external traffic stays on its node, so at a node with no doorman pod it's dropped and nothing wakes |
+| NodePort and LoadBalancer Services with `externalTrafficPolicy: Local` | **Partial** | Routed, but external traffic stays on its node. At a node with no doorman pod, it's dropped and nothing wakes |
 | Cilium kube-proxy replacement (v1.20) | Checked against source | |
 
 ## Ingress controllers and Gateway API
 
 | Controller | Status | Notes |
 |------------|--------|-------|
-| ingress-nginx (v1.15) | Tested | Reads endpoints on a timer, so for a second or two after a pause it can send a request to the removed pod. [Closes upstream requests](/concepts/wake-on-request/#how-long-a-connection-is-held) after 60 seconds by default |
+| ingress-nginx (v1.15) | Tested | Reads endpoints on a timer. For a second or two after a pause, it can send a request to the removed pod. [Closes upstream requests](/concepts/wake-on-request/#how-long-a-connection-is-held) after 60 seconds by default |
 | Traefik (v3.7), for Ingress, IngressRoute and Gateway API | Checked against source | |
 | Envoy Gateway (v1.9) | Checked against source | |
 | Contour (v1.33) | Checked against source | |
@@ -46,11 +47,11 @@ import AtAGlance from '../../../components/AtAGlance.astro';
 |---------------|--------|-------|
 | AWS Load Balancer Controller, target type `instance` | Checked against source | Through the NodePort |
 | AWS Load Balancer Controller, target type `ip` | Checked against source | Registers the doorman pods as targets, if it watches the Napwake namespace, as it does without `--watch-namespace` |
-| GKE Ingress (GKE 1.36) on instance groups, its Service with `cloud.google.com/neg: '{"ingress": false}'` | Tried by hand | Through the NodePort. The doorman [answers Google's health check](/concepts/wake-on-request/#on-gke) `200`, so the backend stayed healthy while paused, and a request through the Ingress woke it |
+| GKE Ingress (GKE 1.36) on instance groups, its Service with `cloud.google.com/neg: '{"ingress": false}'` | Tried by hand | Through the NodePort. The doorman [answers Google's health check](/concepts/wake-on-request/#on-gke) `200`, so the backend stayed healthy while paused. A request through the Ingress woke it |
 | HTTPS health checks on the traffic port, any provider | **Partial** | [Each check wakes the workload.](/concepts/wake-on-request/#health-checks-the-doorman-cant-recognise) Check over HTTP, or on a port of its own in `napwake.dev/doorman-ignore-ports` |
 | Services on GKE (1.36) that no GKE Ingress uses | Tried by hand | Routed like any other, since [GKE's default NEG annotation](/concepts/wake-on-request/#on-gke) alone makes no NEG. A request through ingress-nginx woke a paused workload |
 | GKE container-native load balancing (NEGs) | **Not supported** by default | [Not routed](/concepts/wake-on-request/#on-gke), with a warning event naming the Service. With no other Service routed, the workload reports `WakeOnRequest=False`, reason `UnsupportedLoadBalancer`. The forwarder, next row, routes it |
-| GKE Ingress with NEGs (GKE 1.36), with `doorman.negForwarder.enabled` | Tried by hand | [Optional](/concepts/wake-on-request/#gke-container-native-load-balancing-negs), off by default. The NEG kept the forwarder healthy, a request woke the workload and showed a browser the waking-up page, and nothing failed as the forwarder went. For under a minute after a pause, a request can get a `502`. GKE Gateway is checked against ingress-gce's source only |
+| GKE Ingress with NEGs (GKE 1.36), with `doorman.negForwarder.enabled` | Tried by hand | [Optional](/concepts/wake-on-request/#gke-container-native-load-balancing-negs), off by default. The NEG kept the forwarder healthy. A request woke the workload and showed a browser the waking-up page. Nothing failed as the forwarder went. For under a minute after a pause, a request can get a `502`. GKE Gateway is checked against ingress-gce's source only |
 
 ## Service meshes
 
@@ -62,4 +63,13 @@ import AtAGlance from '../../../components/AtAGlance.astro';
 | Istio ambient mode (v1.31) | **Not supported** | ztunnel builds backends from pods and ignores EndpointSlices, so callers in the mesh never reach the doorman. Callers outside the mesh still do |
 | Istio AuthorizationPolicies that match on the caller's identity | **Not supported** (not tried) | The doorman's connections carry no caller identity, so a policy allowing only certain callers denies them |
 
-For a workload on a public URL, which crawlers would wake, have the doorman [ask before waking](/concepts/wake-on-request/#asking-before-waking). To keep the doorman off a port, or the whole cluster, see [Turning it off](/concepts/wake-on-request/#turning-it-off). To report something, [open an issue](https://github.com/napwake/napwake/issues).
+To report something, [open an issue](https://github.com/napwake/napwake/issues).
+
+<NextSteps
+  doorman={false}
+  items={[
+    { href: '/concepts/wake-on-request/#asking-before-waking', title: 'Asking before waking', text: 'For a workload on a public URL, which crawlers would wake.' },
+    { href: '/concepts/wake-on-request/#turning-it-off', title: 'Turning it off', text: 'Keep the doorman off a port, or the whole cluster.' },
+    { href: '/reference/security/', title: 'Security', text: 'What the doorman can reach, and what narrows it.' },
+  ]}
+/>
