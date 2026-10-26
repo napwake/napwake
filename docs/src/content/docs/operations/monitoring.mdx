@@ -108,7 +108,7 @@ The ServiceMonitors authenticate with the Prometheus's own ServiceAccount token,
 
 ```promql
 # Is the operator acting on workloads?
-rate(napwake_lifecycle_transitions_total[1h])
+sum by (to) (rate(napwake_lifecycle_transitions_total[1h]))
 
 # Are there errors?
 rate(napwake_reconcile_errors_total[5m]) > 0
@@ -123,8 +123,8 @@ sum by (result) (rate(napwake_doorman_wakes_total[1h]))
 # Is the forecast learning?
 napwake_prediction_confidence_percent{season="daily"}
 
-# Are workloads cycling too fast?
-rate(napwake_lifecycle_transitions_total[1h])
+# Is a workload cycling too fast? More than 6 times idle in 6 hours
+increase(napwake_idle_detections_total[6h]) > 6
 
 # Is a workload paused while it's in use?
 increase(napwake_wrong_pauses_total[1h]) > 0
@@ -156,10 +156,11 @@ The chart creates these with `metrics.prometheusRule.enabled: true`. For `instal
 
 ## Health checks
 
-Both serve health endpoints on port 8081, which the chart and the Kustomize manifests use as liveness and readiness probes. Forward the port to check one, here the operator's from a Helm install named `napwake`:
+Both serve health endpoints on port 8081, which the chart and the Kustomize manifests use as liveness and readiness probes. Forward the port to check the operator's. The command finds it by its label, so it works for every install:
 
 ```bash
-kubectl port-forward -n napwake-system deployment/napwake 8081:8081
+kubectl port-forward -n napwake-system \
+  "$(kubectl get deployment -n napwake-system -l control-plane=controller-manager -o name)" 8081:8081
 
 # Liveness
 curl http://localhost:8081/healthz
