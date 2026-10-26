@@ -182,7 +182,7 @@ It's `True` (`Paused`, `AlreadyPaused`), as in `paused as requested at 2026-10-2
 | `DryRun`, `Protected`, `ScaledToZero` | Dry-run, protected, or at zero already |
 | `TargetNotFound`, `TargetIgnored`, `DuplicateTarget` | Its target is missing, ignored, or another ManagedWorkload's |
 | `PausingOff` | Pausing is off for its install ([Stop all pausing now](/guides/pause/#stop-all-pausing-now)) |
-| `PauseCancelled` | A request came as it paused, so the pause was [called off](/guides/pause/#a-request-calls-the-pause-off) |
+| `PauseCancelled` | Something that would wake it, such as a request, came as it paused, so the pause was [called off](/guides/pause/#a-request-calls-the-pause-off) |
 | `PredatesStatus` | The request was already on the ManagedWorkload as Napwake took it on, as after a backup restored without status. Set a new value |
 
 ### Workload paused with pods still running
