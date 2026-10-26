@@ -104,7 +104,7 @@ Everyone taking part follows the [Code of Conduct](https://github.com/napwake/na
 
 Use [Conventional Commits](https://www.conventionalcommits.org/), one logical change per commit. The scope is the package or area, such as `controller`, `doorman`, `plugin`, `api`, `crd`, `chart`, `forecast`, `e2e` or `docs`:
 
-```
+```text
 feat(api): take a decimal CPU threshold, from 0.1 to 100
 fix(doorman): stamp a request held while its workload pauses
 refactor(controller): judge a wrong pause by v1alpha1.WrongPauseWindow
@@ -157,7 +157,7 @@ A pull request's docs build also checks every `https://docs.napwake.dev` address
 
 ## Where things are
 
-```
+```text
 cmd/main.go                # The one binary: the operator, doorman, chart guard or NEG forwarder
 cmd/kubectl-napwake/       # The kubectl plugin, and the pages scan and status write
 api/v1alpha1/              # The CRD's types, and every label, annotation and finalizer
