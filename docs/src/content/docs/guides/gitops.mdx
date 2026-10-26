@@ -11,7 +11,9 @@ import NextSteps from '../../../components/NextSteps.astro';
 import GuidesTabAnchor from '../../../components/GuidesTabAnchor.astro';
 import StartCheckpoint from '../../../components/StartCheckpoint.astro';
 
-Napwake pauses by setting replicas to zero. A GitOps tool that applies `replicas` from Git sees the drift and sets them back. Under Argo CD or Flux with an HPA or KEDA, you likely have the fix already. Autoscalers change replicas too.
+Napwake pauses by setting replicas to zero. A GitOps tool that applies `replicas` from Git sees the drift and sets them back.
+
+Under Argo CD or Flux with an HPA or KEDA, you likely have the fix already. Autoscalers change replicas too.
 
 <Panel title="Before you start">
 

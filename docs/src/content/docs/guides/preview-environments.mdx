@@ -342,7 +342,7 @@ curl --fail-with-body -sS -o /dev/null --cacert ca.crt -X PATCH \
   "$APISERVER/apis/napwake.dev/v1alpha1/namespaces/$NS/managedworkloads/web"
 ```
 
-Then read the ManagedWorkload every second or two until Napwake has answered. A request made as the preview wakes is answered once the wake finishes, so keep reading as long as it takes to start:
+Then read the ManagedWorkload every second or two until Napwake has answered. A request made as the preview wakes is answered once the wake finishes. So keep reading as long as it takes to start:
 
 ```bash
 curl --fail-with-body -sS --cacert ca.crt -H "Authorization: Bearer $KUBE_TOKEN" \
