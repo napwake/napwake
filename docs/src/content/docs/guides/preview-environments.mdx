@@ -88,7 +88,7 @@ With `ask`, a person's browser gets a page with a **Wake it** button, and only t
     </TabItem>
     <TabItem label="Kustomize">
 
-    With Flux, or anything that applies a kustomization, put the Namespace in it, as `namespace.yaml` beside it.
+    With Flux, or anything that applies a kustomization, add the Namespace from the Namespace tab to it, as `namespace.yaml` beside it.
 
     ```yaml title="kustomization.yaml"
     apiVersion: kustomize.config.k8s.io/v1beta1
@@ -135,9 +135,9 @@ With `ask`, a person's browser gets a page with a **Wake it** button, and only t
     ```
 
     ```text
-    NAME   WAKE      PHASE    DOORMAN
-    api    Request   Paused   DoormanRouted
-    web    Ask       Paused   DoormanRouted
+    NAME   WAKE   PHASE    DOORMAN
+    api    Ask    Paused   DoormanRouted
+    web    Ask    Paused   DoormanRouted
     ```
 
     Any other reason under DOORMAN says why requests can't reach the doorman ([When a workload isn't routed](/concepts/wake-on-request/#when-a-workload-isnt-routed)).
@@ -159,7 +159,7 @@ The waking-up page carries on until a pod is Ready, then the page you opened loa
 </StartCheckpoint>
 
 :::caution[It needs plain HTTP]
-The doorman reads each request to tell a browser from a robot. So end TLS at the ingress or load balancer in front of the preview, as is usual.
+Napwake's doorman, the proxy in front of a paused workload, reads each request to tell a browser from a robot. So end TLS at the ingress or load balancer in front of the preview, as is usual.
 
 A workload that ends TLS itself is never woken by a click. Behind a GKE Ingress or Gateway, it also needs the doorman's [forwarder](/concepts/wake-on-request/#gke-container-native-load-balancing-negs).
 :::
@@ -275,7 +275,7 @@ A deploy that leaves the replicas to Napwake, as each tab above sets up, doesn't
 
 One that sets `replicas` scales the preview up, which wakes it as a scale-up from outside. Under Flux, that's a `GitOpsConflict`, and the next pause waits an hour ([GitOps tools](/guides/gitops/)).
 
-To have it up for whoever reviews each push, wake it from the workflow that deploys it, and wait until it's Running. In GitHub Actions:
+To have it up for whoever reviews each push, wake it from the workflow that deploys it. Then wait until it's Running. In GitHub Actions:
 
 ```yaml title=".github/workflows/preview.yaml"
 name: Preview
@@ -324,9 +324,9 @@ waking preview-42/web...
 preview-42/web is Running after 2s
 ```
 
-`--wait`, the default, waits for Napwake's answer, then until it's Running. Both fit in `--timeout`, 5 minutes by default. A request made as the preview pauses calls the pause off. One made as it wakes is answered once the wake finishes.
+`--wait`, the default, waits for Napwake's answer, then until it's Running. Both fit in `--timeout`, 5 minutes by default.
 
-That's inside the same 5 minutes. For a slower start, give it more, such as `--timeout 10m` ([Wake a workload](/getting-started/kubectl-plugin/#wake-a-workload)).
+A request made as the preview pauses calls the pause off. One made as it wakes is answered once the wake finishes, inside the same 5 minutes. For a slower start, give it more, such as `--timeout 10m` ([Wake a workload](/getting-started/kubectl-plugin/#wake-a-workload)).
 
 ### From a portal or a chat bot
 
@@ -344,7 +344,9 @@ curl --fail-with-body -sS -o /dev/null --cacert ca.crt -X PATCH \
   "$APISERVER/apis/napwake.dev/v1alpha1/namespaces/$NS/managedworkloads/web"
 ```
 
-Then read the ManagedWorkload every second or two until Napwake has answered. A request made as the preview pauses is answered at once, and calls the pause off. One made as it wakes is answered once the wake finishes. So keep reading as long as it takes to start:
+Then read the ManagedWorkload every second or two until Napwake has answered.
+
+A request made as the preview pauses is answered at once, and calls the pause off. One made as it wakes is answered once the wake finishes. So keep reading as long as it takes to start:
 
 ```bash
 curl --fail-with-body -sS --cacert ca.crt -H "Authorization: Bearer $KUBE_TOKEN" \
