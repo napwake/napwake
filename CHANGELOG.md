@@ -210,6 +210,7 @@ There's no upgrade path from Hybernate 0.1.x or a 0.2.0 release candidate. Unins
 
 ### Changed
 
+- The chart's maintainer is The Napwake Authors, as the copyright line has it, linking the repository
 - The operator always protects `openshift-*`, `cattle-*`, `gke-*` and `gmp-*`, as well as `kube-*`: the namespaces the scan already left out as never paused. Upgrading from 0.2.0-rc.9, a workload Napwake manages in one of them is woken and left alone, unless its namespace is labelled `napwake.dev/allow-protected=true`: a ManagedWorkload the label made is removed, and one you wrote reports `Protected=True`, reason `ProtectedNamespace`
 - A cost figure above zero that rounds to nothing reads `<$0.01`, so `$0.00` is only ever none, in `kubectl get mw` and every cost field; `kubectl napwake status` and `scan` read it as above zero
 - The copyright line is "Copyright 2026 The Napwake Authors.", in NOTICE and every file's header. LICENSE is the Apache License 2.0's text from apache.org, word for word, and the Code of Conduct is the Contributor Covenant 2.1's, with `conduct@napwake.dev`
