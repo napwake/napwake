@@ -1,0 +1,11 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Ask a question
+    url: https://github.com/napwake/napwake/discussions/categories/q-a
+    about: Questions and help with setup go to Discussions, in Q&A.
+  - name: Suggest a feature
+    url: https://github.com/napwake/napwake/discussions/categories/ideas
+    about: Ideas go to Discussions, where others can add to them.
+  - name: Report a vulnerability
+    url: https://github.com/napwake/napwake/security/policy
+    about: Report it privately, as SECURITY.md says. Don't open an issue.

@@ -1,0 +1,70 @@
+name: Bug report
+description: Something in Napwake doesn't work, or doesn't do what the docs say.
+labels: ["bug", "triage"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for reporting it. Questions go to [Discussions](https://github.com/napwake/napwake/discussions/categories/q-a). Report a vulnerability privately, as [SECURITY.md](https://github.com/napwake/napwake/security/policy) says, never in an issue.
+  - type: input
+    id: plugin-version
+    attributes:
+      label: Plugin version
+      description: "What `kubectl napwake version` prints."
+      placeholder: kubectl-napwake v0.2.0
+    validations:
+      required: true
+  - type: input
+    id: operator-version
+    attributes:
+      label: Operator version
+      description: "The image tag that `kubectl get deployments -A -l app.kubernetes.io/name=napwake -o wide` shows. Leave it empty if only the plugin is installed."
+      placeholder: ghcr.io/napwake/napwake:v0.2.0
+  - type: input
+    id: kubernetes-version
+    attributes:
+      label: Kubernetes version
+      description: "The server version from `kubectl version`."
+      placeholder: v1.33.1
+    validations:
+      required: true
+  - type: input
+    id: distribution
+    attributes:
+      label: Kubernetes distribution
+      description: Where the cluster runs.
+      placeholder: Such as EKS, GKE, AKS, k3s or kind
+    validations:
+      required: true
+  - type: dropdown
+    id: install
+    attributes:
+      label: How you installed the operator
+      options:
+        - Helm
+        - Argo CD or Flux
+        - install.yaml
+        - Kustomize
+        - From source
+        - Not installed, only the plugin
+    validations:
+      required: true
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: What happened
+      description: What you ran or did, and what you saw. Paste errors and output as text.
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: What you expected
+    validations:
+      required: true
+  - type: textarea
+    id: logs
+    attributes:
+      label: Logs and output
+      description: "Anything else that helps, such as `kubectl napwake status`, the ManagedWorkload's YAML, or the operator's logs from `kubectl logs -n napwake-system -l control-plane=controller-manager --tail=200`."
+      render: shell

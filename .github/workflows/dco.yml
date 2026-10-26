@@ -1,0 +1,27 @@
+name: DCO
+
+# Contributions are made under the Developer Certificate of Origin, so every
+# commit in a pull request is signed off by its author (git commit -s). One
+# that isn't fails the check, which says how to sign it off.
+on:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  dco:
+    name: Sign-off
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      # Every commit, so the pull request's own are there to read.
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Check every commit is signed off by its author
+        env:
+          BASE: ${{ github.event.pull_request.base.sha }}
+          HEAD: ${{ github.event.pull_request.head.sha }}
+        run: hack/dco/check.sh "$BASE" "$HEAD"
