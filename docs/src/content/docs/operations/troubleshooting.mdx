@@ -536,7 +536,7 @@ Put your install's namespace for `napwake-system`.
 | Operator running | `kubectl get pods -n napwake-system` |
 | CRDs installed | `kubectl get crd managedworkloads.napwake.dev` |
 | Metrics server running | `kubectl top nodes` |
-| RBAC correct | `kubectl auth can-i get pods --as=system:serviceaccount:napwake-system:napwake`. The ServiceAccount is `napwake` for a Helm release named `napwake`, and `napwake-controller-manager` with `install.yaml` or the Kustomize manifests |
+| RBAC correct | `kubectl auth can-i get pods --as=system:serviceaccount:napwake-system:<its ServiceAccount>`. Read the ServiceAccount from the operator's Deployment, for any install: `kubectl get deployment -n napwake-system -l control-plane=controller-manager -o jsonpath='{.items[0].spec.template.spec.serviceAccountName}'` |
 | Events | `kubectl describe managedworkload <name> -n <ns>` |
 | Logs | `kubectl logs -n napwake-system -l control-plane=controller-manager` |
 | Status | `kubectl get managedworkload <name> -n <ns> -o yaml` |
