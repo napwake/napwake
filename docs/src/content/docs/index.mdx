@@ -41,7 +41,7 @@ kubectl napwake scan
 
 ## How it works
 
-Label a Deployment, StatefulSet or namespace `napwake.dev/managed: "true"` and Napwake creates a ManagedWorkload for it, with its settings from annotations. Then it keeps an activity clock: CPU, deploys, activity annotations, and Prometheus.
+Label a Deployment, StatefulSet or namespace `napwake.dev/managed: "true"` and Napwake creates a ManagedWorkload for it, with its settings from annotations. Then it keeps an activity clock, fed by CPU, deploys, activity annotations and Prometheus.
 
 <StateFlow
   layout="across"
