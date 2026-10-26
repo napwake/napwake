@@ -317,6 +317,11 @@ func TestForecastNow(t *testing.T) {
 			"learning"},
 		{"managed, paused with no Service", forecastWorkload{Managed: true, Forecast: &discovery.ForecastReplay{
 			Live: &discovery.ForecastOutlook{Waiting: v1alpha1.ForecastNotLearning,
+				Message: "not learning while paused: no Service routes requests to it. A request can't wake it, so " +
+					"its demand can't be seen"}}},
+			"not learning while paused: no Service routes requests to it"},
+		{"managed, paused with no Service, by 0.2.0-rc.9", forecastWorkload{Managed: true,
+			Forecast: &discovery.ForecastReplay{Live: &discovery.ForecastOutlook{Waiting: v1alpha1.ForecastNotLearning,
 				Message: "not learning while paused: no Service routes requests to it; a request can't wake it, so " +
 					"its demand can't be seen"}}},
 			"not learning while paused: no Service routes requests to it"},
@@ -335,9 +340,43 @@ func TestForecastNow(t *testing.T) {
 // operator's message leads with it.
 func TestForecastCell_SaysWhyItIsntLearning(t *testing.T) {
 	wl := statusWorkload{Forecast: v1alpha1.ForecastNotLearning,
-		forecastMessage: "not learning while paused: no Service routes requests to it; a request can't wake it, so " +
+		forecastMessage: "not learning while paused: no Service routes requests to it. A request can't wake it, so " +
 			"its demand can't be seen"}
 	assert.Equal(t, "not learning while paused: no Service routes requests to it", forecastCell(wl))
+}
+
+// The cause a forecast that isn't learning leads with ends at the first
+// full stop, as the operator words it, or at the first semicolon, as
+// 0.2.0-rc.9 did, so the plugin shows the same cause against either.
+func TestNotLearning_ReadsTheCauseFromEitherOperator(t *testing.T) {
+	tests := []struct {
+		name, message, want string
+	}{
+		{"no Service", "not learning while paused: no Service routes requests to it. A request can't wake it, so " +
+			"its demand can't be seen. It learns only the hours it's awake. To learn the hours it's paused too, " +
+			"give it a Service: https://docs.napwake.dev/concepts/wake-on-request/#when-a-workload-isnt-routed",
+			"not learning while paused: no Service routes requests to it"},
+		{"no Service, by 0.2.0-rc.9", "not learning while paused: no Service routes requests to it; a request " +
+			"can't wake it, so its demand can't be seen, and it learns only the hours it's awake. To learn the " +
+			"hours it's paused too, give it a Service: " +
+			"https://docs.napwake.dev/concepts/wake-on-request/#when-a-workload-isnt-routed",
+			"not learning while paused: no Service routes requests to it"},
+		{"queries failing", "not learning while paused: its Prometheus activity queries can't be evaluated. They " +
+			"can't show its demand until Prometheus answers. PrometheusAvailable says why: " +
+			"https://docs.napwake.dev/guides/prometheus-signals/#when-a-query-cant-be-evaluated",
+			"not learning while paused: its Prometheus activity queries can't be evaluated"},
+		{"queries failing, by 0.2.0-rc.9", "not learning while paused: its Prometheus activity queries can't be " +
+			"evaluated; they can't show its demand until Prometheus answers, and PrometheusAvailable says why: " +
+			"https://docs.napwake.dev/guides/prometheus-signals/#when-a-query-cant-be-evaluated",
+			"not learning while paused: its Prometheus activity queries can't be evaluated"},
+		{"no message", "", "not learning"},
+		{"one sentence", "not learning while paused", "not learning"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			assert.Equal(t, tt.want, notLearning(tt.message))
+		})
+	}
 }
 
 // What wakes a paused workload in the replay, as the table and the named

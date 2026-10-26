@@ -86,7 +86,7 @@ func TestReportPage_GoodNewsWhateverTheAmountReads(t *testing.T) {
 
 	got := renderReportPage(t, page)
 
-	pageHas(t, got, `<p class="statement big">Every room is in use.</p>`, "nothing idle, nothing to free")
+	pageHas(t, got, `<p class="statement big">Every workload is in use.</p>`, "nothing idle, nothing to free")
 	pageHas(t, got, `<div class="figure zero"><b>US$0</b>`, "a zero is drawn as one")
 }
 

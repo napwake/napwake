@@ -347,9 +347,9 @@ func TestPredictionStatus_Outlook(t *testing.T) {
 	assert.False(t, p.Acting)
 	assert.Equal(t, 85, p.Threshold)
 	assert.Equal(t, v1alpha1.ForecastEarningConfidence, p.Reason)
-	assert.Equal(t, "learning: its forecasts of the last day were 62% right, and it acts from 85%; it hasn't seen "+
-		"a whole week yet; expected to start acting around Mon 16 Mar 14:00 UTC, if the coming days repeat the last "+
-		"week", p.Message)
+	assert.Equal(t, "learning: its forecasts of the last day were 62% right, and it acts from 85%. It hasn't seen "+
+		"a whole week yet. It's expected to start acting around Mon 16 Mar 14:00 UTC, if the coming days repeat the "+
+		"last week", p.Message)
 	require.NotNil(t, p.StartsActing)
 	assert.True(t, starts.Equal(p.StartsActing.Time))
 }
@@ -423,38 +423,44 @@ func TestForecastOutlook(t *testing.T) {
 			HoursOfWeekSeen: 100, StartsActing: starts},
 			wantReason: v1alpha1.ForecastObserving,
 			wantMessage: "learning: it has seen 100 of the 168 hours of the week, and scores its forecast of an hour " +
-				"from the second time it sees it; expected to start acting around Mon 30 Mar 16:00 UTC, if the " +
+				"from the second time it sees it. It's expected to start acting around Mon 30 Mar 16:00 UTC, if the " +
 				"coming days repeat the last week"},
 		{name: "needs another weekend", outlook: forecast.Outlook{Waiting: forecast.WaitingForConfidence,
 			WeekSeen: true, Confidence: 40, Threshold: 75, StartsActing: starts},
 			wantReason: v1alpha1.ForecastEarningConfidence,
-			wantMessage: "learning: its forecasts of the last day were 40% right, and it acts from 75%; expected to " +
-				"start acting around Mon 30 Mar 16:00 UTC, if the coming days repeat the last week"},
+			wantMessage: "learning: its forecasts of the last day were 40% right, and it acts from 75%. It's expected " +
+				"to start acting around Mon 30 Mar 16:00 UTC, if the coming days repeat the last week"},
 		{name: "too irregular to act", outlook: forecast.Outlook{Waiting: forecast.WaitingForConfidence,
 			WeekSeen: true, Confidence: 30, Threshold: 85},
 			wantReason: v1alpha1.ForecastEarningConfidence,
-			wantMessage: "learning: its forecasts of the last day were 30% right, and it acts from 85%; not expected " +
-				"to start within four weeks if the coming days repeat the last week"},
+			wantMessage: "learning: its forecasts of the last day were 30% right, and it acts from 85%. It isn't " +
+				"expected to start within four weeks, if the coming days repeat the last week"},
+		{name: "before a whole week, too irregular", outlook: forecast.Outlook{Waiting: forecast.WaitingForConfidence,
+			Confidence: 30, Threshold: 85},
+			wantReason: v1alpha1.ForecastEarningConfidence,
+			wantMessage: "learning: its forecasts of the last day were 30% right, and it acts from 85%. It hasn't " +
+				"seen a whole week yet. It isn't expected to start within four weeks, if the coming days repeat the " +
+				"last week"},
 		{name: "relearning", outlook: forecast.Outlook{Waiting: forecast.WaitingToRelearn, Confidence: 0,
 			Threshold: 75, StartsActing: starts},
 			wantReason: v1alpha1.ForecastRelearning,
 			wantMessage: "relearning: demand stopped matching what it had learned, so it's earning its confidence " +
-				"again; its forecasts of the last day were 0% right, and it acts from 75%; expected to start acting " +
-				"around Mon 30 Mar 16:00 UTC, if the coming days repeat the last week"},
+				"again; its forecasts of the last day were 0% right, and it acts from 75%. It's expected to start " +
+				"acting around Mon 30 Mar 16:00 UTC, if the coming days repeat the last week"},
 		{name: "paused without the doorman", outlook: forecast.Outlook{Waiting: forecast.WaitingForDay},
 			workload: paused, wantReason: v1alpha1.ForecastNotLearning,
-			wantMessage: "not learning while paused: requests don't wake it; a request can't wake it, so its demand " +
-				"can't be seen, and it learns only the hours it's awake. To learn the hours it's paused too, see why " +
+			wantMessage: "not learning while paused: requests don't wake it. A request can't wake it, so its demand " +
+				"can't be seen. It learns only the hours it's awake. To learn the hours it's paused too, see why " +
 				"in its WakeOnRequest condition: " +
 				"https://docs.napwake.dev/concepts/wake-on-request/#when-a-workload-isnt-routed"},
 		{name: "paused behind the doorman learns", outlook: forecast.Outlook{Waiting: forecast.WaitingForDay,
 			HoursOfDaySeen: 20}, workload: routed, wantReason: v1alpha1.ForecastObserving,
 			wantMessage: "learning: it has seen 20 of the 24 hours of the day, and can't act until it has seen them " +
-				"all; while it's paused, it learns from requests through the doorman"},
+				"all. While it's paused, it learns from requests through the doorman"},
 		{name: "a paused worker its query watches learns", outlook: forecast.Outlook{Waiting: forecast.WaitingForDay,
 			HoursOfDaySeen: 20}, workload: watched, wantReason: v1alpha1.ForecastObserving,
 			wantMessage: "learning: it has seen 20 of the 24 hours of the day, and can't act until it has seen them " +
-				"all; while it's paused, it learns from its Prometheus activity queries"},
+				"all. While it's paused, it learns from its Prometheus activity queries"},
 		{name: "paused behind the doorman, its query failing", outlook: forecast.Outlook{Waiting: forecast.WaitingForDay,
 			HoursOfDaySeen: 20}, workload: func(w *v1alpha1.ManagedWorkload) {
 			watched(w)
@@ -463,7 +469,7 @@ func TestForecastOutlook(t *testing.T) {
 				Status: metav1.ConditionFalse, Reason: "EndpointNotConfigured"})
 		}, wantReason: v1alpha1.ForecastObserving,
 			wantMessage: "learning: it has seen 20 of the 24 hours of the day, and can't act until it has seen them " +
-				"all; while it's paused, it learns from requests through the doorman, its Prometheus activity " +
+				"all. While it's paused, it learns from requests through the doorman, its Prometheus activity " +
 				"queries failing"},
 		{name: "a paused worker whose query fails", outlook: forecast.Outlook{Waiting: forecast.WaitingForDay},
 			workload: func(w *v1alpha1.ManagedWorkload) {
@@ -471,8 +477,8 @@ func TestForecastOutlook(t *testing.T) {
 				meta.SetStatusCondition(&w.Status.Conditions, metav1.Condition{Type: conditionPrometheusAvailable,
 					Status: metav1.ConditionFalse, Reason: "QueryFailed"})
 			}, wantReason: v1alpha1.ForecastNotLearning,
-			wantMessage: "not learning while paused: its Prometheus activity queries can't be evaluated; they can't " +
-				"show its demand until Prometheus answers, and PrometheusAvailable says why: " +
+			wantMessage: "not learning while paused: its Prometheus activity queries can't be evaluated. They can't " +
+				"show its demand until Prometheus answers. PrometheusAvailable says why: " +
 				"https://docs.napwake.dev/guides/prometheus-signals/#when-a-query-cant-be-evaluated"},
 	}
 	for _, tt := range tests {
@@ -485,13 +491,17 @@ func TestForecastOutlook(t *testing.T) {
 			reason, message := forecastOutlook(workload, tt.outlook)
 			assert.Equal(t, tt.wantReason, reason)
 			assert.Equal(t, tt.wantMessage, message)
+			if strings.HasPrefix(message, "learning: ") {
+				assert.NotContains(t, message, ";", "a learning message is in sentences")
+			}
 		})
 	}
 }
 
 // A forecast that can't learn while its workload is paused says why, from
 // the WakeOnRequest condition's reason, what fixes it, and where the docs
-// say how; the cause comes first, which kubectl napwake's tables show.
+// say how. The cause comes first, up to the first full stop, which kubectl
+// napwake's tables show.
 func TestForecastOutlook_SaysWhyItIsntLearningWhilePaused(t *testing.T) {
 	tests := []struct {
 		reason, cause, fix, section string
@@ -519,8 +529,9 @@ func TestForecastOutlook_SaysWhyItIsntLearningWhilePaused(t *testing.T) {
 			reason, message := forecastOutlook(workload, forecast.Outlook{Waiting: forecast.WaitingForDay})
 
 			assert.Equal(t, v1alpha1.ForecastNotLearning, reason)
-			cause, rest, _ := strings.Cut(message, "; ")
+			cause, rest, _ := strings.Cut(message, ". ")
 			assert.Equal(t, "not learning while paused: "+tt.cause, cause)
+			assert.NotContains(t, message, ";", "the cause ends at a full stop, not a semicolon")
 			assert.Contains(t, rest, "To learn the hours it's paused too, "+tt.fix+": ")
 			assert.True(t, strings.HasSuffix(message, wakeOnRequestGuide+tt.section), "%s", message)
 		})

@@ -1063,6 +1063,86 @@ func TestNextSteps_SkipGitOpsAndKnowNapwakeIsInstalled(t *testing.T) {
 	assert.NotContains(t, got, "helm install", "Napwake's own Deployment shows it's installed")
 }
 
+// releasedAs has the plugin built as a release, as the release workflow
+// builds it.
+func releasedAs(t *testing.T, tag string) {
+	t.Helper()
+	built := version
+	version = tag
+	t.Cleanup(func() { version = built })
+}
+
+// With no Napwake found, the next steps start by installing it, as the
+// installation guide does, with the values file it asks for; measuring and
+// going live follow, numbered after it.
+func TestNextSteps_InstallFirstWhenNapwakeIsntFound(t *testing.T) {
+	releasedAs(t, "v0.2.0")
+	var table bytes.Buffer
+
+	writeNextSteps(&printer{w: &table}, sampleCluster())
+
+	assert.Equal(t, strings.Join([]string{
+		"Next steps:",
+		"  1. Install Napwake, if the cluster doesn't have it yet. Put your users' time zone in",
+		"     napwake-values.yaml first, such as timezone: Europe/London. Then:",
+		"       helm install napwake oci://ghcr.io/napwake/charts/napwake --version 0.2.0 --namespace napwake-system " +
+			"--create-namespace -f napwake-values.yaml",
+		"     See https://docs.napwake.dev/getting-started/installation/",
+		"  2. Measure a workload first, in dry-run, which pauses nothing:",
+		"       kubectl annotate deployment checkout-api -n preview-42 napwake.dev/dry-run=true",
+		"       kubectl label deployment checkout-api -n preview-42 napwake.dev/managed=true",
+		"  3. When you're happy with what it measures, start pausing it while idle:",
+		"       kubectl napwake enable deployment/checkout-api -n preview-42",
+		"", "",
+	}, "\n"), table.String())
+}
+
+// With Napwake found, by a workload it manages or its own Deployment, the
+// next steps start with measuring, as they always have.
+func TestNextSteps_NoInstallStepWhenNapwakeIsFound(t *testing.T) {
+	releasedAs(t, "v0.2.0")
+	managed := sampleCluster()
+	managed.Workloads = append(managed.Workloads, Workload{Namespace: "preview-7", Kind: v1alpha1.TargetKindDeployment,
+		Name: "web", State: discovery.StateActive, Managed: true})
+	own := sampleCluster()
+	own.Platform = []Workload{{Namespace: "napwake-system", Kind: v1alpha1.TargetKindDeployment,
+		Name: "napwake-controller-manager", Platform: discovery.PlatformNapwake}}
+	for name, result := range map[string]scanResult{"a workload it manages": managed, "its own Deployment": own} {
+		t.Run(name, func(t *testing.T) {
+			var table bytes.Buffer
+
+			writeNextSteps(&printer{w: &table}, result)
+
+			assert.Equal(t, `Next steps:
+  1. Measure a workload first, in dry-run, which pauses nothing:
+       kubectl annotate deployment checkout-api -n preview-42 napwake.dev/dry-run=true
+       kubectl label deployment checkout-api -n preview-42 napwake.dev/managed=true
+  2. When you're happy with what it measures, start pausing it while idle:
+       kubectl napwake enable deployment/checkout-api -n preview-42
+
+`, table.String())
+		})
+	}
+}
+
+// The install step installs the chart of the plugin's own release, so the
+// two match, release candidates included. A build that isn't a release
+// leaves the version to Helm.
+func TestInstallCommand_PinsThePluginsRelease(t *testing.T) {
+	for plugin, want := range map[string]string{
+		"v0.2.0": "helm install napwake oci://ghcr.io/napwake/charts/napwake --version 0.2.0 " +
+			"--namespace napwake-system --create-namespace -f napwake-values.yaml",
+		"v0.2.0-rc.9": "helm install napwake oci://ghcr.io/napwake/charts/napwake --version 0.2.0-rc.9 " +
+			"--namespace napwake-system --create-namespace -f napwake-values.yaml",
+		"dev": "helm install napwake oci://ghcr.io/napwake/charts/napwake " +
+			"--namespace napwake-system --create-namespace -f napwake-values.yaml",
+	} {
+		t.Run(plugin, func(t *testing.T) {
+			assert.Equal(t, want, installCommand(plugin))
+		})
+	}
+}
+
 // A workload in dry-run that someone scaled to zero has nothing for going
 // live to free, so next steps take the next one measuring instead.
 func TestNextSteps_SkipDryRunScaledByHand(t *testing.T) {

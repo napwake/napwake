@@ -485,23 +485,48 @@ func TestPause_GitOpsWarningWithoutAccessToArgoCD(t *testing.T) {
 	assert.NotContains(t, out, "so its next sync will likely")
 }
 
-// expectsDemand answers a request the way the operator does when the
+// The operator's answer when the forecast expects the workload to be busy
+// within the hour, as it words it, with the override in a sentence of its
+// own, and as 0.2.0-rc.9 and earlier did, after a semicolon.
+const (
+	expectsDemandMessage = "not paused at 2026-10-21 08:20 UTC: the forecast expects demand at 80% of requests " +
+		"in the hour from 09:00 UTC. Ask again overriding the forecast to pause anyway"
+	expectsDemandMessageRC9 = "not paused at 2026-10-21 08:20 UTC: the forecast expects demand at 80% of requests " +
+		"in the hour from 09:00 UTC; ask again overriding the forecast to pause anyway"
+)
+
+// expectsDemandWith answers a request the way the operator does when the
 // forecast expects the workload to be busy within the hour: it declines one
-// that doesn't override the forecast, and pauses one that does.
-func expectsDemand(w *v1alpha1.ManagedWorkload) {
-	if w.Annotations[v1alpha1.AnnotationPauseOverridesForecast] == v1alpha1.True {
-		pauses(w)
-		return
+// that doesn't override the forecast, with message, and pauses one that
+// does. expectsDemand answers as the operator words it.
+func expectsDemandWith(message string) func(*v1alpha1.ManagedWorkload) {
+	return func(w *v1alpha1.ManagedWorkload) {
+		if w.Annotations[v1alpha1.AnnotationPauseOverridesForecast] == v1alpha1.True {
+			pauses(w)
+			return
+		}
+		refuses(v1alpha1.PhaseRunning, "ForecastExpectsDemand", message)(w)
 	}
-	refuses(v1alpha1.PhaseRunning, "ForecastExpectsDemand", "not paused at 2026-10-21 08:20 UTC: the forecast "+
-		"expects demand at 80% of requests in the hour from 09:00 UTC; ask again overriding the forecast to pause "+
-		"anyway")(w)
 }
+
+var expectsDemand = expectsDemandWith(expectsDemandMessage)
 
 // When the forecast expects the workload to be busy soon, pause says when
 // and asks; it pauses only if the answer is yes, and without anyone to ask,
-// says how to pause it anyway.
+// says how to pause it anyway. It leaves out the operator's own advice on
+// overriding, as the operator words it and as 0.2.0-rc.9 did.
 func TestPause_AsksWhenTheForecastExpectsDemand(t *testing.T) {
+	for operatorVersion, message := range map[string]string{"0.2.0": expectsDemandMessage,
+		"0.2.0-rc.9": expectsDemandMessageRC9} {
+		t.Run(operatorVersion, func(t *testing.T) {
+			asksWhenTheForecastExpectsDemand(t, expectsDemandWith(message))
+		})
+	}
+}
+
+// asksWhenTheForecastExpectsDemand is the test against an operator that
+// answers so.
+func asksWhenTheForecastExpectsDemand(t *testing.T, answers func(*v1alpha1.ManagedWorkload)) {
 	const declined = "preview-42/api wasn't paused: the forecast expects demand at 80% of requests in the hour " +
 		"from 09:00 UTC"
 	tests := []struct {
@@ -520,7 +545,7 @@ func TestPause_AsksWhenTheForecastExpectsDemand(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			c := newClient(t, operator(expectsDemand), managedWorkload(v1alpha1.PhaseRunning))
+			c := newClient(t, operator(answers), managedWorkload(v1alpha1.PhaseRunning))
 			var asked string
 			opts := pauseOptions{wait: true, pollInterval: time.Millisecond, now: time.Now}
 			if tt.confirm != nil {

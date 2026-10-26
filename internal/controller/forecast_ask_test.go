@@ -160,8 +160,8 @@ func TestPausedHour_AskWorkerLearnsFromItsQueries(t *testing.T) {
 // queries are failing.
 func TestForecastOutlook_InAsk(t *testing.T) {
 	learning := forecast.Outlook{Waiting: forecast.WaitingForDay, HoursOfDaySeen: 20}
-	const prefix = "learning: it has seen 20 of the 24 hours of the day, and can't act until it has seen them all; " +
-		"while it's paused, it learns from "
+	const prefix = "learning: it has seen 20 of the 24 hours of the day, and can't act until it has seen them all. " +
+		"While it's paused, it learns from "
 	queries := func(w *v1alpha1.ManagedWorkload) {
 		w.Spec.IdlePolicy = &v1alpha1.IdlePolicySpec{Activity: &v1alpha1.ActivitySpec{
 			Prometheus: []v1alpha1.PrometheusActivity{{PromQL: `sum(rabbitmq_queue_messages{queue="tasks"})`}}}}
@@ -192,15 +192,15 @@ func TestForecastOutlook_InAsk(t *testing.T) {
 			wantReason: v1alpha1.ForecastObserving, want: prefix + "its Prometheus activity queries"},
 		{name: "not routed", workload: []func(*v1alpha1.ManagedWorkload){noServices},
 			wantReason: v1alpha1.ForecastNotLearning,
-			want: "not learning while paused: no Service routes requests to it; nobody can click Wake it on its " +
-				"asleep page, so an hour nobody woke it in can't be told from one they couldn't, and it learns only " +
+			want: "not learning while paused: no Service routes requests to it. Nobody can click \"Wake it\" on " +
+				"its asleep page. So an hour nobody woke it in can't be told from one they couldn't. It learns only " +
 				"the hours it's awake. To learn the hours it's paused too, give it a Service, or, for a workload no " +
 				"request reaches, such as a queue worker, a Prometheus activity query that sees its demand: " +
 				"https://docs.napwake.dev/concepts/wake-on-request/#when-a-workload-isnt-routed"},
 		{name: "its queries failing", workload: []func(*v1alpha1.ManagedWorkload){routedThroughTheDoorman, failing},
 			wantReason: v1alpha1.ForecastNotLearning,
-			want: "not learning while paused: its Prometheus activity queries can't be evaluated; they can't show " +
-				"its demand until Prometheus answers, and PrometheusAvailable says why: " +
+			want: "not learning while paused: its Prometheus activity queries can't be evaluated. They can't show " +
+				"its demand until Prometheus answers. PrometheusAvailable says why: " +
 				"https://docs.napwake.dev/guides/prometheus-signals/#when-a-query-cant-be-evaluated"},
 	}
 	for _, tt := range tests {

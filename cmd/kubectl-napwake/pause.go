@@ -499,8 +499,9 @@ func pauseAnswered(w *v1alpha1.ManagedWorkload, ref string, requested bool, out 
 		return true, nil
 	case reasonForecastExpectsDemand:
 		// The operator's message also says how to override it through the
-		// annotation, which the plugin asks about instead.
-		why, _, _ = strings.Cut(why, ";")
+		// annotation, in a sentence of its own, which the plugin asks about
+		// instead.
+		why, _ = firstSentence(why)
 		return true, demandExpected{msg: fmt.Sprintf("%s %s: %s", ref, errNotPaused, why)}
 	}
 	return true, fmt.Errorf("%s %w: %s", ref, errNotPaused, why)

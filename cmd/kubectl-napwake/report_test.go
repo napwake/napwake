@@ -434,6 +434,65 @@ func TestWriteHTML_Snapshot(t *testing.T) {
 	assert.NotContains(t, got, "Freed this month", "nothing live")
 }
 
+// With no Napwake found, the report's next steps start by installing it, as
+// the terminal's do: the strip and the section say so, the install command
+// comes first, marked apart, and the page gives it a block of its own,
+// numbered before measuring.
+func TestWriteHTML_InstallFirstWhenNapwakeIsntFound(t *testing.T) {
+	releasedAs(t, "v0.2.0")
+	result := sampleCluster()
+
+	steps := buildReport(result, time.Hour).NextSteps
+
+	require.NotNil(t, steps)
+	require.NotNil(t, steps.Install)
+	assert.Equal(t, command{Line: shellHTML("helm install napwake oci://ghcr.io/napwake/charts/napwake --version " +
+		"0.2.0 --namespace napwake-system --create-namespace -f napwake-values.yaml")}, *steps.Install,
+		"the terminal's command, for no one workload")
+
+	got := renderHTML(t, result)
+	const lead = "Install Napwake if the cluster doesn&#39;t have it yet, then opt a workload in. Measure it first, " +
+		"which pauses nothing, then let Napwake pause it once the measurements look right."
+	pageHas(t, got, "<span>"+lead+`</span><a href="#next">See the commands</a>`, "the strip")
+	pageHas(t, got, "<p>"+lead+"</p>", "the section")
+	pageLacks(t, got, "Opt a workload in, measuring first")
+	pageHas(t, got, `<pre class="shell"><span data-step="install"><span class="line"><span class="sh-cmd">helm</span> `+
+		`install napwake oci://ghcr.io/napwake/charts/napwake <span class="sh-flag">--version</span> 0.2.0 `,
+		"the install command first, marked apart")
+	install, measure := strings.Index(got, `<span data-step="install">`), strings.Index(got, "</span> annotate ")
+	enable := strings.Index(got, `<span data-step="enable">`)
+	assert.True(t, install < measure && measure < enable, "install, then measure, then go live")
+
+	pageHas(t, reportHTML, `if (install.length) block(++n + ". Install Napwake, if the cluster doesn't have it yet", `+
+		`["Put your users' time zone in ", ["code", "napwake-values.yaml"], " first, such as ", `+
+		`["code", "timezone: Europe/London"], ". The ", `+
+		`["a", "installation guide", "https://docs.napwake.dev/getting-started/installation/"], " has the rest."], `+
+		`install);`, "the install block, its code as code and the guide linked")
+	pageHas(t, reportHTML, `block(++n + ". Measure first", "In dry-run, Napwake only measures. Nothing is paused.", `+
+		`measure);`)
+	pageHas(t, reportHTML, `block(++n + ". When the measurements look right, let Napwake pause it", `+
+		`"Run this only after step " + (n - 1) + " has measured for a while.", live);`,
+		"numbered after the install block, when there is one")
+}
+
+// With Napwake found, the report's next steps start with measuring, and the
+// strip and the section say what they always have.
+func TestWriteHTML_NoInstallStepWhenNapwakeIsFound(t *testing.T) {
+	result := historyResult()
+
+	steps := buildReport(result, time.Hour).NextSteps
+
+	require.NotNil(t, steps)
+	assert.Nil(t, steps.Install, "a workload Napwake manages shows it's installed")
+	got := renderHTML(t, result)
+	const lead = "Opt a workload in, measuring first so nothing is paused, then let Napwake pause it once the " +
+		"measurements look right."
+	pageHas(t, got, "<span>"+lead+`</span><a href="#next">See the commands</a>`, "the strip")
+	pageHas(t, got, "<p>"+lead+"</p>", "the section")
+	pageLacks(t, got, `<span data-step="install">`)
+	pageLacks(t, got, "Install Napwake if the cluster")
+}
+
 func TestWriteHTMLFile(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "report.html")
 

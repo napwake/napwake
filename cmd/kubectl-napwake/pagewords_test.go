@@ -54,15 +54,40 @@ func TestWriteHTML_WorkloadsIntroSaysWhatTheColumnsShow(t *testing.T) {
 }
 
 // The pages say only what Napwake can see, signs of use, never people:
-// an idle room is lit with no one seen, not lit for nobody.
+// an idle room shows no sign of use, not that nobody is there.
 func TestReportAndStatusPage_SayOnlyWhatNapwakeSees(t *testing.T) {
 	for name, page := range map[string]string{"scan": reportHTML, "status": statusPageHTML} {
 		pageLacks(t, page, "nobody", name)
-		pageHas(t, page, `<em>lit, no one seen</em> &middot; idle`, name, "the legend")
-		pageHas(t, page, `idle: "lit, no one seen"`, name, "the rooms' word")
-		pageHas(t, page, `" workloads") + " with no one seen would be paused until someone uses "`, name)
+		pageHas(t, page, `" workloads") + " with no sign of use would be paused until someone uses "`, name)
 	}
-	pageHas(t, reportHTML, "Every lit room shows signs of use.")
+	pageHas(t, reportHTML, "Every running workload shows signs of use.")
+}
+
+// The pages say an idle workload shows no sign of use, in plain words, the
+// picture beside them, not in its place: in the legend, and in the word
+// the room cards and the picture's summary for screen readers use. The
+// scan report's switch for its picture says what it shows (cmo-053).
+func TestReportAndStatusPage_PlainWordsForThePicture(t *testing.T) {
+	for name, page := range map[string]string{"scan": renderHTML(t, historyResult()),
+		"status": renderStatusPage(t, statusCluster()...)} {
+		pageHas(t, page, `<em>no sign of use</em> &middot; idle`, name, "the legend")
+		pageHas(t, page, `idle: "no sign of use"`, name, "the room cards' and the summary's word")
+		pageLacks(t, page, "lit, no one seen", name, "anywhere the page shows")
+		// What a reader sees, screen readers and the share card included, says
+		// what happens: workloads and doors, not hotel rooms and lights.
+		for _, old := range []string{"Every room is", "Every lit room", "with no one seen", "The same hotel",
+			"A hotel at night", "one room per workload", "one room each", `" rooms"`, "are shuttered",
+			"Hover a room", "No room is asleep"} {
+			pageLacks(t, page, old, name, "the picture's old words")
+		}
+		pageHas(t, page, "Every workload is asleep.", name, "the calm statement")
+		pageHas(t, page, " running with no sign of use.", name, "the scan's statement")
+		pageHas(t, page, `"The same cluster with Napwake: the workloads with no sign of use paused, `+
+			`the rest as they were."`, name, "what Napwake would do, for screen readers")
+	}
+	got := renderHTML(t, historyResult())
+	pageHas(t, got, `role="group" aria-label="Show the cluster as a picture"`, "the picture's switch")
+	pageLacks(t, got, "Show the building")
 }
 
 // A dependency Napwake manages stays up while what depends on it is awake,
