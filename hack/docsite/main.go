@@ -417,7 +417,11 @@ func writeRoot(site, base, root string) error {
 		if first, _, _ := strings.Cut(page, "/"); versionFolder.MatchString(first) {
 			continue // a version's folder, never a redirect
 		}
-		data, err := redirectPage(base, root, page)
+		built, err := os.ReadFile(filepath.Join(from, filepath.FromSlash(page), "index.html"))
+		if err != nil {
+			return fmt.Errorf("reading /%s/%s for its preview: %w", root, page, err)
+		}
+		data, err := redirectPage(base, root, page, built)
 		if err != nil {
 			return err
 		}
@@ -538,6 +542,19 @@ type redirectData struct {
 	Mark      template.HTML
 	Target    string
 	Canonical string
+	Preview   template.HTML
+}
+
+// previewTag is a tag link previews read: the page's description, and its
+// Open Graph and Twitter card tags, as the docs build writes them.
+var previewTag = regexp.MustCompile(`<meta (?:name="description"|property="og:[a-z:_]+"|name="twitter:[a-z]+")` +
+	` content="[^"]*"\s*/?>`)
+
+// previewOf is the preview tags of built, a page of the docs, for the page
+// that redirects to it to carry: a link preview's fetcher runs no script
+// and follows no meta refresh, so it reads the redirect's own.
+func previewOf(built []byte) template.HTML {
+	return template.HTML(bytes.Join(previewTag.FindAll(built, -1), []byte("\n"))) // our own build's escaped HTML
 }
 
 // redirectPage is the page at an address without a version, such as
@@ -545,14 +562,15 @@ type redirectData struct {
 // version, with its anchor and query. GitHub Pages can't redirect, so it's
 // a script, with a meta refresh, which drops the anchor, for a browser
 // without scripts. It names the page it goes to as canonical, and isn't
-// indexed itself.
-func redirectPage(base, root, page string) ([]byte, error) {
+// indexed itself. It previews as that page, with built's preview tags.
+func redirectPage(base, root, page string, built []byte) ([]byte, error) {
 	target := path.Join(base, root, page) + "/"
 	var b bytes.Buffer
 	err := redirect.Execute(&b, redirectData{
 		Mark:      template.HTML(redirectMark),
 		Target:    target,
 		Canonical: "https://" + domain + target,
+		Preview:   previewOf(built),
 	})
 	if err != nil {
 		return nil, fmt.Errorf("rendering the redirect to %s: %w", target, err)
