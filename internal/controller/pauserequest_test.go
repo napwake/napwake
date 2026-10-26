@@ -435,6 +435,8 @@ func TestPauseRequest_ForecastDeclinesUnlessOverridden(t *testing.T) {
 	assert.Equal(t, reasonForecastExpectsDemand, cond.Reason)
 	assert.Contains(t, cond.Message, "the forecast expects demand")
 	assert.Contains(t, cond.Message, "in the hour from")
+	assert.True(t, strings.HasSuffix(cond.Message, " UTC. Ask again overriding the forecast to pause anyway"),
+		"the override in a sentence of its own, which kubectl napwake pause cuts off: %s", cond.Message)
 	assert.Equal(t, got.Annotations[v1alpha1.AnnotationPauseRequested], got.Status.LastPauseRequest,
 		"answered, so it isn't asked again on every reconcile")
 	assert.Equal(t, 1, strings.Count(drainEvents(t, r), reasonForecastExpectsDemand))

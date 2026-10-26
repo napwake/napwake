@@ -75,7 +75,7 @@ func forecastOutlook(workload *v1alpha1.ManagedWorkload, o forecast.Outlook) (re
 		b.WriteString("; not expected to start within four weeks if the coming days repeat the last week")
 	}
 	if seen := pausedSeenBy(workload); seen != "" {
-		fmt.Fprintf(&b, "; while it's paused, it learns from %s", seen)
+		fmt.Fprintf(&b, ". While it's paused, it learns from %s", seen)
 	}
 	return reason, b.String()
 }
@@ -136,14 +136,14 @@ func pausedSeenBy(workload *v1alpha1.ManagedWorkload) string {
 // where the docs say how; it's empty when something watches the workload,
 // or it isn't paused. Without activity queries, the cause is why requests
 // don't wake it, by its WakeOnRequest condition's reason. The cause comes
-// first, up to the first semicolon, for kubectl napwake's tables.
+// first, up to the first full stop, for kubectl napwake's tables.
 func pausedUnseen(workload *v1alpha1.ManagedWorkload) string {
 	if workload.Status.Phase != v1alpha1.PhasePaused || pausedSeenBy(workload) != "" {
 		return ""
 	}
 	if hasPrometheusActivity(workload) {
-		return "its Prometheus activity queries can't be evaluated; they can't show its demand until Prometheus " +
-			"answers, and PrometheusAvailable says why: " + queriesGuide + "#when-a-query-cant-be-evaluated"
+		return "its Prometheus activity queries can't be evaluated. They can't show its demand until Prometheus " +
+			"answers. PrometheusAvailable says why: " + queriesGuide + "#when-a-query-cant-be-evaluated"
 	}
 	var reason string
 	if c := meta.FindStatusCondition(workload.Status.Conditions, conditionWakeOnRequest); c != nil {
@@ -180,11 +180,11 @@ func pausedUnseen(workload *v1alpha1.ManagedWorkload) string {
 	case reasonRoutingFailed:
 		why = "routing its Services through the doorman is failing, and being retried"
 	}
-	unseen := "a request can't wake it, so its demand can't be seen"
+	unseen := "A request can't wake it, so its demand can't be seen"
 	if workload.Spec.Wake.Asks() {
-		unseen = "nobody can click Wake it on its asleep page, so an hour nobody woke it in can't be told from one " +
-			"they couldn't"
+		unseen = `Nobody can click "Wake it" on its asleep page. So an hour nobody woke it in can't be told from ` +
+			"one they couldn't"
 	}
-	return fmt.Sprintf("%s; %s, and it learns only the hours it's awake. To learn the hours it's paused too, "+
+	return fmt.Sprintf("%s. %s. It learns only the hours it's awake. To learn the hours it's paused too, "+
 		"%s: %s%s", why, unseen, fix, wakeOnRequestGuide, section)
 }

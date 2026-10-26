@@ -143,7 +143,7 @@ func (r *Reconciler) reconcilePauseRequest(ctx context.Context, workload *v1alph
 	if workload.Annotations[v1alpha1.AnnotationPauseOverridesForecast] != v1alpha1.True {
 		if vetoed, predicted, hour := r.forecastVeto(workload, r.forecastEngine(workload)); vetoed {
 			return nil, r.refusePauseRequest(ctx, workload, "Normal", reasonForecastExpectsDemand, fmt.Sprintf(
-				"the forecast expects demand at %.0f%% of requests in the hour from %s; ask again overriding the forecast to pause anyway",
+				"the forecast expects demand at %.0f%% of requests in the hour from %s. Ask again overriding the forecast to pause anyway",
 				predicted, hour.UTC().Format("15:04 UTC")))
 		}
 	}
