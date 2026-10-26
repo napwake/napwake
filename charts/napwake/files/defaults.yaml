@@ -110,7 +110,7 @@ protectedNamespaces: []
 # workload it manages is measured as in dry-run, whatever it sets, and
 # those paused are woken. Requests, activity and autoResume still wake. Set
 # it back to true to pause again. Each ManagedWorkload says so with
-# Pausing=False.
+# PausingOff=True.
 pausing:
   enabled: true
 
