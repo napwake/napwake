@@ -127,6 +127,11 @@ type settings struct {
 	Window       string  `json:"window"`
 }
 
+// listPricesUnset is what the scan prices workloads at without
+// --cpu-price and --memory-price.
+const listPricesUnset = "Unset, each node is priced at its type's list price, and one with none at AWS on-demand " +
+	"in us-east-1."
+
 func scanCmd(kube *kubeFlags) *cobra.Command {
 	opts := scanOptions{
 		kube:         kube,
@@ -242,9 +247,10 @@ Examples:
 	cmd.Flags().Float64Var(&opts.cpuThreshold, "cpu-threshold", defaultCPUThreshold,
 		"CPU use, as a percentage of requests from 0.1 to 100, such as 10 or 0.5, above which a workload counts as "+
 			"active; managed workloads use their own")
-	cmd.Flags().Float64Var(&opts.cpuPrice, "cpu-price", opts.cpuPrice, "Your price per vCPU-hour, in dollars")
+	cmd.Flags().Float64Var(&opts.cpuPrice, "cpu-price", opts.cpuPrice,
+		"Your price per vCPU-hour, in dollars, for every workload. "+listPricesUnset)
 	cmd.Flags().Float64Var(&opts.memoryPrice, "memory-price", opts.memoryPrice,
-		"Your price per GiB-hour of memory, in dollars")
+		"Your price per GiB-hour of memory, in dollars, for every workload. "+listPricesUnset)
 	cmd.Flags().StringVar(&opts.window, "window", opts.window,
 		"How much Prometheus history to replay, such as 7d or 36h, up to 366d; 0 judges from CPU right now only")
 	cmd.Flags().DurationVar(&opts.idleAfter, "idle-after", opts.idleAfter,

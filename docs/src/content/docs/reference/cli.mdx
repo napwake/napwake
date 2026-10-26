@@ -135,8 +135,8 @@ Its flags, with their defaults. [Scan a cluster](/getting-started/kubectl-plugin
 | <Ref id="scan-output" name="--output" /> `-o` | `table` | `table`, `json` or `yaml` |
 | <Ref id="scan-limit" name="--limit" /> | `25` | Rows in the table, idle first, then paused, then active, each by what pausing could free |
 | <Ref id="scan-cpu-threshold" name="--cpu-threshold" /> | `10` | CPU use, as a percentage of requests from 0.1 to 100, such as `10` or `0.5`, above which a workload is active |
-| <Ref id="scan-cpu-price" name="--cpu-price" /> | `0.031` | Your price per vCPU-hour, in dollars, zero or more |
-| <Ref id="scan-memory-price" name="--memory-price" /> | `0.004` | Your price per GiB-hour of memory, in dollars, zero or more |
+| <Ref id="scan-cpu-price" name="--cpu-price" /> | `0.031` | Your price per vCPU-hour, in dollars, zero or more, for every workload. Unset, each node is priced at its type's list price, and one with none at AWS on-demand in us-east-1. |
+| <Ref id="scan-memory-price" name="--memory-price" /> | `0.004` | Your price per GiB-hour of memory, in dollars, zero or more, for every workload. Unset, each node is priced at its type's list price, and one with none at AWS on-demand in us-east-1. |
 | <Ref id="scan-window" name="--window" /> | `7d` | Prometheus history to replay, such as `7d` or `36h`, up to `366d`. `0` judges from CPU now. |
 | <Ref id="scan-idle-after" name="--idle-after" /> | `1h` | Time without activity that makes a workload idle, as Napwake's `idleAfter` |
 | <Ref id="scan-prometheus-service" name="--prometheus-service" /> | the one in the cluster with the most history | Prometheus Service in the cluster, as `namespace/name` or `namespace/name:port`, read through the API server |

@@ -207,8 +207,8 @@ kubectl napwake scan --open=false
 | `--namespace` `-n` | all you can read | Namespace to scan. Repeat for several. |
 | `--output` `-o` | `table` | `table`, `json` or `yaml` |
 | `--window` | `7d` | Prometheus history to replay, such as `7d` or `36h`, up to `366d`. `0` judges from CPU now. |
-| `--cpu-price` | `0.031` | Your price per vCPU-hour, in dollars, zero or more |
-| `--memory-price` | `0.004` | Your price per GiB-hour of memory, in dollars, zero or more |
+| `--cpu-price` | `0.031` | Your price per vCPU-hour, in dollars, zero or more, for every workload. Unset, each node is priced at its type's list price, and one with none at AWS on-demand in us-east-1. |
+| `--memory-price` | `0.004` | Your price per GiB-hour of memory, in dollars, zero or more, for every workload. Unset, each node is priced at its type's list price, and one with none at AWS on-demand in us-east-1. |
 
 The [`scan` reference](/reference/cli/#scan) has every flag, JSON field, exit status and permission. It also says how the scan judges idle, reads history and prices workloads.
 

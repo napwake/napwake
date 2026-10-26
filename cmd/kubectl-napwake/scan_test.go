@@ -679,6 +679,22 @@ func TestScanHelp_Limit(t *testing.T) {
 	assert.Contains(t, limit.Usage, "idle first, then paused, then active")
 }
 
+// The price flags say they replace every node's list price, and what's
+// used without them, as pricing does (PW-23).
+func TestScanHelp_Prices(t *testing.T) {
+	flags := scanCmd(&kubeFlags{}).Flags()
+	for flag, want := range map[string]string{
+		"cpu-price": "Your price per vCPU-hour, in dollars, for every workload. Unset, each node is priced at its " +
+			"type's list price, and one with none at AWS on-demand in us-east-1.",
+		"memory-price": "Your price per GiB-hour of memory, in dollars, for every workload. Unset, each node is " +
+			"priced at its type's list price, and one with none at AWS on-demand in us-east-1.",
+	} {
+		f := flags.Lookup(flag)
+		require.NotNil(t, f, flag)
+		assert.Equal(t, want, f.Usage, flag)
+	}
+}
+
 func TestPricesFor(t *testing.T) {
 	tests := []struct {
 		name              string
