@@ -100,6 +100,11 @@ jobs:
           fi
 
       - name: Publish the release's docs
+        env:
+          # Cloudflare Web Analytics' beacon on every published page, for
+          # docs.napwake.dev's site. The token is public by design, in every
+          # page's source. A pull request's build has none, so no beacon.
+          PUBLIC_CF_BEACON_TOKEN: 48ee7e8b6c8d4e86b14263e5763a185f
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
