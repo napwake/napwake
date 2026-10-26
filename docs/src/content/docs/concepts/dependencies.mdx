@@ -37,7 +37,7 @@ spec:
 | Goes on | The workload that **needs** the other |
 | Names | The dependency's Deployment or StatefulSet, not its ManagedWorkload |
 | `namespace` | Defaults to the ManagedWorkload's own |
-| As a label | `napwake.dev/depends-on: "statefulset/postgres, messaging/statefulset/nats"` on the workload. See [Opting in](/guides/opt-in/#settings) |
+| As an annotation | `napwake.dev/depends-on: "statefulset/postgres, messaging/statefulset/nats"` on the workload or its namespace. See [Opting in](/guides/opt-in/#settings) |
 
 ## The rules
 
