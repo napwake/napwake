@@ -98,7 +98,7 @@ func (r *Reconciler) loadDependencyGraph(ctx context.Context) (*dependencyGraph,
 		if err := r.List(ctx, &list, client.UnsafeDisableDeepCopy); err != nil {
 			return nil, fmt.Errorf("listing managed workloads: %w", err)
 		}
-		graph = workloadGraphOf(list.Items)
+		graph = r.workloadGraphOf(list.Items)
 	}
 	g := &dependencyGraph{workloadGraph: graph, dependentsFrom: map[string]string{}}
 	for _, ns := range graph.crossedNamespaces() {
@@ -203,13 +203,12 @@ func (g *dependencyGraph) holds(dependent, workload *workloadNode) bool {
 	return !g.reaches(workload, dependent.target, allEdges)
 }
 
-// holdsOf finds what keeps workload from pausing for the workloads around
-// it. Following dependsOn from it back to it is a cycle, in which each
-// holds the other awake so neither could pause; learned dependencies don't
-// count, as for holds. Otherwise it's held by its awake dependents,
-// declared or learned, where it allows them.
-func (g *dependencyGraph) holdsOf(workload *v1alpha1.ManagedWorkload) dependencyHolds {
-	self := newWorkloadNode(workload)
+// holdsOf finds what keeps the workload self is from pausing for the
+// workloads around it. Following dependsOn from it back to it is a cycle,
+// in which each holds the other awake so neither could pause; learned
+// dependencies don't count, as for holds. Otherwise it's held by its awake
+// dependents, declared or learned, where it allows them.
+func (g *dependencyGraph) holdsOf(self *workloadNode) dependencyHolds {
 	g.mu.RLock()
 	defer g.mu.RUnlock()
 	if g.reaches(self, self.target, declaredEdges) {
@@ -228,10 +227,9 @@ func (g *dependencyGraph) holdsOf(workload *v1alpha1.ManagedWorkload) dependency
 	return h
 }
 
-// dependentsOf lists the workloads that would hold workload awake were they
-// awake, whatever phase the graph has them in.
-func (g *dependencyGraph) dependentsOf(workload *v1alpha1.ManagedWorkload) []types.NamespacedName {
-	self := newWorkloadNode(workload)
+// dependentsOf lists the workloads that would hold the workload self is
+// awake were they awake, whatever phase the graph has them in.
+func (g *dependencyGraph) dependentsOf(self *workloadNode) []types.NamespacedName {
 	g.mu.RLock()
 	defer g.mu.RUnlock()
 	var keys []types.NamespacedName
@@ -255,8 +253,8 @@ func (r *Reconciler) heldByDependentsNow(ctx context.Context, workload *v1alpha1
 	if err != nil {
 		return false, err
 	}
-	self := newWorkloadNode(workload)
-	for _, key := range g.dependentsOf(workload) {
+	self := r.node(workload)
+	for _, key := range g.dependentsOf(self) {
 		var dependent v1alpha1.ManagedWorkload
 		err := r.apiReader().Get(ctx, key, &dependent)
 		switch {
@@ -265,7 +263,7 @@ func (r *Reconciler) heldByDependentsNow(ctx context.Context, workload *v1alpha1
 		case err != nil:
 			return false, fmt.Errorf("getting dependent %s: %w", key, err)
 		}
-		if awakeFor(newWorkloadNode(&dependent), self) {
+		if awakeFor(r.node(&dependent), self) {
 			return true, nil
 		}
 	}
@@ -305,7 +303,7 @@ func (r *Reconciler) dependencyHold(ctx context.Context, workload *v1alpha1.Mana
 
 	if h.cycle {
 		if !meta.IsStatusConditionTrue(workload.Status.Conditions, conditionDependencyCycle) {
-			r.emitEvent(workload, workload.Spec.DryRun, "Warning", conditionDependencyCycle, actionEvaluateIdle, "%s",
+			r.emitEvent(workload, r.dryRun(workload), "Warning", conditionDependencyCycle, actionEvaluateIdle, "%s",
 				h.message())
 		}
 		r.setCondition(workload, conditionDependencyCycle, metav1.ConditionTrue, conditionDependencyCycle, h.message())
@@ -320,7 +318,7 @@ func (r *Reconciler) dependencyHold(ctx context.Context, workload *v1alpha1.Mana
 		return nil, nil
 	}
 	if !meta.IsStatusConditionTrue(workload.Status.Conditions, conditionHeldByDependents) {
-		r.emitEvent(workload, workload.Spec.DryRun, "Normal", conditionHeldByDependents, actionEvaluateIdle,
+		r.emitEvent(workload, r.dryRun(workload), "Normal", conditionHeldByDependents, actionEvaluateIdle,
 			"idle, but %s", h.message())
 	}
 	r.setCondition(workload, conditionHeldByDependents, metav1.ConditionTrue, "DependentsAwake", h.message())
@@ -390,7 +388,7 @@ func (r *Reconciler) heldByDependencies(ctx context.Context, workload *v1alpha1.
 	if err != nil {
 		return dependencyHolds{}, err
 	}
-	return g.holdsOf(workload), nil
+	return g.holdsOf(r.node(workload)), nil
 }
 
 // actsOnTarget reports whether a ManagedWorkload manages a workload that's

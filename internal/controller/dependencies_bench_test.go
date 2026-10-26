@@ -79,8 +79,8 @@ func BenchmarkLoadDependencyGraph(b *testing.B) {
 			r := &Reconciler{
 				Client:   fakeClientBuilder(testScheme(b)).Build(),
 				Recorder: events.NewFakeRecorder(1),
-				graph:    workloadGraphOf(workloads),
 			}
+			r.graph = r.workloadGraphOf(workloads)
 			postgres := workloads[0].DeepCopy()
 			ctx := context.Background()
 			b.ReportAllocs()
@@ -99,11 +99,12 @@ func BenchmarkWorkloadGraphUpdate(b *testing.B) {
 	for _, n := range []int{1000, 5000} {
 		b.Run(fmt.Sprint(n), func(b *testing.B) {
 			workloads := benchWorkloads(n)
-			g := workloadGraphOf(workloads)
+			r := &Reconciler{}
+			g := r.workloadGraphOf(workloads)
 			api := &workloads[1]
 			b.ReportAllocs()
 			for b.Loop() {
-				g.set(api)
+				g.set(r.node(api))
 			}
 		})
 	}

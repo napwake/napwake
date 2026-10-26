@@ -158,7 +158,7 @@ func (s *Scanner) scanNamespace(ctx, historyCtx context.Context, namespace strin
 			Replicas:  n,
 			State:     StateUnknown,
 			Managed:   mw != nil,
-			DryRun:    mw != nil && mw.Spec.DryRun,
+			DryRun:    mw != nil && DryRun(mw),
 			Protected: protected,
 			Platform:  platform[string(wl.kind)+"/"+obj.GetName()],
 
@@ -257,6 +257,28 @@ func (s *Scanner) readHistoryOf(ctx, historyCtx context.Context, scan *namespace
 		scan.historySince = time.Unix(first, 0).UTC()
 	}
 	return history
+}
+
+// The operator puts the PausingOff condition, True, on every ManagedWorkload
+// it manages while its pausing is off, with --pausing=false, and answers a
+// pause request then with ReasonPausingOff. Each install of several has its
+// own.
+const (
+	ConditionPausingOff = "PausingOff"
+	ReasonPausingOff    = "PausingOff"
+)
+
+// PausingOff reports whether the ManagedWorkload says the install that
+// manages it has pausing off.
+func PausingOff(mw *v1alpha1.ManagedWorkload) bool {
+	return meta.IsStatusConditionTrue(mw.Status.Conditions, ConditionPausingOff)
+}
+
+// DryRun reports whether Napwake measures the workload rather than pausing
+// it, as the operator does: in dry-run of its own, or with pausing off for
+// the install that manages it, which leaves spec.dryRun as it is.
+func DryRun(mw *v1alpha1.ManagedWorkload) bool {
+	return mw.Spec.DryRun || PausingOff(mw)
 }
 
 // napwakeProtects reports whether a workload's ManagedWorkload says

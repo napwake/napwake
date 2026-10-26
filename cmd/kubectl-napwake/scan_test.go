@@ -833,6 +833,36 @@ func TestCLI_ScanAndStatusAgreeOnMoney(t *testing.T) {
 	assert.NotContains(t, scan+status, "$0 this month")
 }
 
+// A workload that has freed under a cent, which the operator writes
+// <$0.01, is <$1 in the scan and its report, in the headline and its row,
+// never $0, which says nothing was freed.
+func TestCLI_ScanFreedUnderACent(t *testing.T) {
+	api := &appsv1.Deployment{ObjectMeta: metav1.ObjectMeta{Name: "api", Namespace: "orders"},
+		Spec: appsv1.DeploymentSpec{Replicas: ptr.To[int32](0),
+			Selector: &metav1.LabelSelector{MatchLabels: map[string]string{"app": "api"}},
+			Template: corev1.PodTemplateSpec{ObjectMeta: metav1.ObjectMeta{Labels: map[string]string{"app": "api"}},
+				Spec: corev1.PodSpec{Containers: []corev1.Container{{Name: "main"}}}}}}
+	apiMW := statusWorkloadObj("orders", "api", v1alpha1.TargetKindDeployment, v1alpha1.PhasePaused, time.Hour)
+	apiMW.Status.Cost = &v1alpha1.CostStatus{FreedThisMonth: "<$0.01", SavedThisMonth: "<$0.01"}
+	apiMW.Status.Pause = &v1alpha1.PauseStatus{PreviousReplicas: 2}
+	objs := []client.Object{&corev1.Namespace{ObjectMeta: metav1.ObjectMeta{Name: "orders"}}, api, apiMW}
+	page := filepath.Join(t.TempDir(), "scan.html")
+
+	out, err := runCLI(t, newStatusClient(t, interceptor.Funcs{}, objs...), "scan", "-n", "orders", "--window", "0",
+		"--html", page, "--open=false")
+	require.NoError(t, err, out)
+	report, err := os.ReadFile(page)
+	require.NoError(t, err)
+
+	assert.Contains(t, out, "Napwake has freed <$1 this month from the 1 live workload it pauses, and saved <$1 of it.")
+	assert.Regexp(t, `orders\s+deployment/api\s+paused \(live\)\s+.*\s<\$1\s+<\$1\n`, out)
+	assert.Contains(t, string(report), `<div class="figure"><b>&lt;$1</b><span>freed by Napwake this month</span>`+
+		`<small>from the 1 live workload it pauses; &lt;$1 of it saved as nodes scaled down</small>`)
+	assert.Regexp(t, `<td class="n" data-v="0\.00\d+">&lt;\$1<span class="sub">&lt;\$1 saved</span></td>`,
+		string(report))
+	assert.NotContains(t, string(report), "<b>$0</b>")
+}
+
 // What a workload freed before it was protected is said as its own, never
 // as freed by workloads put back in dry-run when none were.
 func TestWriteScan_FreedBeforeProtected(t *testing.T) {

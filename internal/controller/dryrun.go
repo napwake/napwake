@@ -26,10 +26,19 @@ import (
 	"github.com/napwake/napwake/internal/human"
 )
 
+// dryRun reports whether the workload is measured rather than paused: its
+// own spec.dryRun, or pausing off for this install. Every decision dry-run
+// changes asks it rather than spec.dryRun, but for ending the back-off of
+// wrong pauses, which only a workload's own dry-run does. The switch is
+// never written to the workload, whose spec the reconciler writes back.
+func (r *Reconciler) dryRun(workload *v1alpha1.ManagedWorkload) bool {
+	return workload.Spec.DryRun || r.PausingOff
+}
+
 // trackDryRun starts the dry-run summary when a workload enters dry-run and
 // drops it when it leaves, since it describes a measurement that's over.
 func (r *Reconciler) trackDryRun(workload *v1alpha1.ManagedWorkload) {
-	if !workload.Spec.DryRun {
+	if !r.dryRun(workload) {
 		workload.Status.DryRun = nil
 		return
 	}
@@ -67,8 +76,8 @@ func (r *Reconciler) beginWouldBePause(ctx context.Context, workload *v1alpha1.M
 
 // inWouldBePause reports whether the workload is in a pause dry-run holds
 // back: Idle in dry-run, where it stands for a paused workload.
-func inWouldBePause(workload *v1alpha1.ManagedWorkload) bool {
-	return workload.Spec.DryRun && workload.Status.Phase == v1alpha1.PhaseIdle
+func inWouldBePause(workload *v1alpha1.ManagedWorkload, dryRun bool) bool {
+	return dryRun && workload.Status.Phase == v1alpha1.PhaseIdle
 }
 
 // heldByWouldBePause reports whether a Prometheus activity query's
@@ -76,9 +85,9 @@ func inWouldBePause(workload *v1alpha1.ManagedWorkload) bool {
 // pause, as it would be from waking a real one: the queries have shown
 // activity at every check since the pause was asked for. A check that finds
 // them quiet releases it.
-func heldByWouldBePause(workload *v1alpha1.ManagedWorkload, active bool) bool {
+func heldByWouldBePause(workload *v1alpha1.ManagedWorkload, dryRun, active bool) bool {
 	d := workload.Status.DryRun
-	if !workload.Spec.DryRun || workload.Status.Phase != v1alpha1.PhaseIdle || d == nil || !d.QueryActiveSincePause {
+	if !inWouldBePause(workload, dryRun) || d == nil || !d.QueryActiveSincePause {
 		return false
 	}
 	d.QueryActiveSincePause = active
@@ -112,7 +121,7 @@ func (r *Reconciler) endWouldBePauseNow(workload *v1alpha1.ManagedWorkload) {
 // end.
 func (r *Reconciler) endWouldBePauseAt(workload *v1alpha1.ManagedWorkload, end time.Time) (time.Duration, float64, bool) {
 	d := workload.Status.DryRun
-	if !workload.Spec.DryRun || d == nil || d.Pauses == 0 || workload.Status.LastTransitionTime == nil {
+	if !r.dryRun(workload) || d == nil || d.Pauses == 0 || workload.Status.LastTransitionTime == nil {
 		return 0, 0, false
 	}
 	slept := max(end.Sub(workload.Status.LastTransitionTime.Time), 0)

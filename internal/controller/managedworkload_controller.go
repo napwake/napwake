@@ -150,6 +150,11 @@ type Reconciler struct {
 	// saving changes. Nil means UTC.
 	Timezone *time.Location
 
+	// PausingOff stops every pause this install makes, at once: each
+	// workload it manages is measured as in dry-run, and one paused is woken,
+	// while spec.dryRun is left as it is. The zero value pauses.
+	PausingOff bool
+
 	pauser          lifecyclePauser
 	metrics         metricsReader
 	prices          listPricer
@@ -234,6 +239,8 @@ func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (res ctrl.
 	// each status write, whose watch event brings a reconcile.
 	recordPhase(&workload)
 	recordConditions(&workload)
+
+	r.reportPausing(ctx, &workload)
 
 	// The status as last written, to tell what this reconcile changed.
 	observed := workload.Status.DeepCopy()
@@ -511,13 +518,13 @@ func (r *Reconciler) staleForRouting(ctx context.Context, workload *v1alpha1.Man
 // resumeTransition finishes a pause or resume that an earlier reconcile
 // started but didn't complete, without which a transient failure would strand
 // the workload in the intermediate phase. It also turns back a pause the
-// workload must no longer be in: dry-run never leaves a workload paused, and
-// a pause that whatever would wake it came during is called off.
+// workload must no longer be in: dry-run, and pausing off for the whole
+// cluster, never leave a workload paused, and a pause that whatever would
+// wake it came during is called off.
 func (r *Reconciler) resumeTransition(ctx context.Context, workload *v1alpha1.ManagedWorkload, target client.Object) (*ctrl.Result, error) {
 	phase := workload.Status.Phase
-	if workload.Spec.DryRun && (phase == v1alpha1.PhasePausing || phase == v1alpha1.PhasePaused) {
-		return r.handleResume(ctx, workload, &phaseEvent{reason: reasonDryRunWake,
-			message: "dry-run is on, so Napwake wakes the workload it had paused"})
+	if r.dryRun(workload) && (phase == v1alpha1.PhasePausing || phase == v1alpha1.PhasePaused) {
+		return r.handleResume(ctx, workload, r.measuredWake())
 	}
 	switch phase {
 	case v1alpha1.PhasePausing:
@@ -542,7 +549,7 @@ func (r *Reconciler) resumeTransition(ctx context.Context, workload *v1alpha1.Ma
 // announced once the workload is Pausing.
 func (r *Reconciler) handlePause(ctx context.Context, workload *v1alpha1.ManagedWorkload, target client.Object,
 	why *phaseEvent) (*ctrl.Result, error) {
-	if workload.Spec.DryRun {
+	if r.dryRun(workload) {
 		return nil, nil
 	}
 	switch workload.Status.Phase {
@@ -1519,7 +1526,7 @@ func (r *Reconciler) relatedHandler() handler.EventHandler {
 			if !ok {
 				return
 			}
-			r.graph.set(w)
+			r.graph.set(r.node(w))
 			enqueue(q, r.findRelatedWorkloads(ctx, w))
 		},
 		UpdateFunc: func(ctx context.Context, e event.UpdateEvent, q workqueue.TypedRateLimitingInterface[reconcile.Request]) {
@@ -1528,7 +1535,7 @@ func (r *Reconciler) relatedHandler() handler.EventHandler {
 			if !okOld || !okNew {
 				return
 			}
-			r.graph.set(cur)
+			r.graph.set(r.node(cur))
 			if !relationsChanged(old, cur) {
 				return
 			}

@@ -22,6 +22,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -85,6 +86,23 @@ func TestWriteStatusHTML(t *testing.T) {
 
 // Messages come from conditions and events that anyone who can write a
 // ManagedWorkload or an event can set, so they're escaped, never markup.
+// While pausing is off for some or all of the workloads, the page says so
+// at its top, as the terminal does.
+func TestWriteStatusHTML_SaysFirstThatPausingIsOff(t *testing.T) {
+	for off, want := range map[int]string{
+		4: "Pausing is off (pausing.enabled: false): nothing here pauses, and everything wakes.",
+		1: "Pausing is off for 1 of these workloads (pausing.enabled: false on the install that manages them): " +
+			"they pause nothing, and still wake.",
+	} {
+		got := renderStatusPage(t, withPausingOff(t, off)...)
+
+		line := `<p class="callout" data-pausing-off><span><b>` + want + `</b></span></p>`
+		require.Contains(t, got, line)
+		assert.Less(t, strings.Index(got, line), strings.Index(got, `<div class="money`), "at the top, before the money")
+	}
+	assert.NotContains(t, renderStatusPage(t, statusCluster()...), "data-pausing-off")
+}
+
 func TestWriteStatusHTML_Escapes(t *testing.T) {
 	w := statusWorkloadObj("shop", "api", v1alpha1.TargetKindDeployment, v1alpha1.PhaseRunning, time.Hour)
 	w.Status.Conditions = []metav1.Condition{condition("GitOpsConflict", metav1.ConditionTrue, "PauseUndone",
@@ -96,6 +114,27 @@ func TestWriteStatusHTML_Escapes(t *testing.T) {
 	assert.NotContains(t, got, `<img src=x`)
 	assert.Contains(t, got, `&lt;script&gt;alert(&#34;x&#34;)&lt;/script&gt;`)
 	assert.Contains(t, got, `&lt;img src=x onerror=alert(1)&gt;`)
+}
+
+// Under a cent freed, saved or measured in dry-run, which the operator
+// writes <$0.01, is <$1 on the page, in the figures and the rows, never
+// $0, which says there was none.
+func TestWriteStatusHTML_UnderACent(t *testing.T) {
+	api := statusWorkloadObj("preview-42", "api", v1alpha1.TargetKindDeployment, v1alpha1.PhasePaused, time.Hour)
+	api.Status.Cost = &v1alpha1.CostStatus{FreedThisMonth: "<$0.01", SavedThisMonth: "<$0.01"}
+	web := statusWorkloadObj("preview-7", "web", v1alpha1.TargetKindDeployment, v1alpha1.PhaseIdle, time.Hour)
+	web.Spec.DryRun = true
+	web.Status.DryRun = &v1alpha1.DryRunStatus{Since: *before(3 * time.Hour), Pauses: 1, EstimatedFreed: "<$0.01"}
+
+	got := renderStatusPage(t, api, web)
+
+	assert.Contains(t, got, `<div class="figure"><b>&lt;$1</b><span>freed by pausing this month</span>`)
+	assert.Contains(t, got, `<div class="figure"><b>&lt;$1</b><span>saved of it</span>`)
+	assert.Contains(t, got, `<div class="figure"><b>&lt;$1</b><span>pausing would have freed</span>`)
+	assert.Contains(t, got, "pausing it would have freed &lt;$1 since Oct 5.")
+	assert.Regexp(t, `<td class="n" data-v="0\.00\d+">&lt;\$1<span class="sub">&lt;\$1 saved</span></td>`, got)
+	assert.Regexp(t, `<td class="n" data-v="0\.00\d+">&lt;\$1</td>`, got, "what dry-run measured")
+	assert.NotContains(t, got, "<b>$0</b>")
 }
 
 func TestWriteStatusHTML_NothingManaged(t *testing.T) {

@@ -106,6 +106,14 @@ watchNamespaces: []
 # and the doorman's namespace, are always protected, besides these.
 protectedNamespaces: []
 
+# False stops all pausing by this install at once, as on a bad day: every
+# workload it manages is measured as in dry-run, whatever it sets, and
+# those paused are woken. Requests, activity and autoResume still wake. Set
+# it back to true to pause again. Each ManagedWorkload says so with
+# PausingOff=True.
+pausing:
+  enabled: true
+
 # Settings for workloads opted in with the napwake.dev/managed label, where
 # their own annotations and their namespace's don't say otherwise.
 defaults:

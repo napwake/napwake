@@ -19,8 +19,6 @@ package controller
 import (
 	"context"
 	"errors"
-	"strconv"
-	"strings"
 	"testing"
 	"time"
 
@@ -73,7 +71,7 @@ func pausedWith(w *v1alpha1.ManagedWorkload, rs v1alpha1.ResourceSnapshot) {
 
 func dollars(t *testing.T, s string) float64 {
 	t.Helper()
-	v, err := strconv.ParseFloat(strings.TrimPrefix(s, "$"), 64)
+	v, err := cost.ParseDollars(s)
 	require.NoError(t, err, "a dollar figure: %q", s)
 	return v
 }
@@ -141,6 +139,22 @@ func TestAccumulateCost_PausedFreesComputeButNotStorage(t *testing.T) {
 	assert.Equal(t, cost.FormatDollars(1.5*0.031+6*0.004), c.FreedThisMonth)
 	require.NotNil(t, c.ResourceReduction)
 	assert.Equal(t, int64(1500), c.ResourceReduction.CPUMillis)
+}
+
+// A pause that has freed under a cent so far says so: <$0.01, not $0.00,
+// which is for none. What it runs while paused, nothing, is still $0.00.
+func TestAccumulateCost_FreedUnderACent(t *testing.T) {
+	w := costWorkload(v1alpha1.PhasePaused)
+	w.Status.Cost = accumulatedAt(fixedTime.Add(-statusFlushInterval))
+	pausedWith(w, v1alpha1.ResourceSnapshot{Replicas: 1, CPUMillis: 10, MemoryBytes: 64 << 20})
+
+	costReconciler(fixedTime, &stubMetrics{}).accumulateCost(context.Background(), w)
+
+	c := w.Status.Cost
+	assert.Equal(t, "<$0.01", c.FreedThisMonth)
+	assert.Equal(t, "<$0.01", c.CostWithoutNapwakeThisMonth)
+	assert.Equal(t, "$0.00", c.CostThisMonth)
+	assert.Positive(t, dollars(t, c.FreedThisMonth))
 }
 
 // Totals are kept to a billionth of an hour, so they add up to what the

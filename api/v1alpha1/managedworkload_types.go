@@ -960,7 +960,8 @@ type PredictionHistory struct {
 // dollar figures are derived from them at the workload's current rates
 // whenever they're brought up to date, and are rounded to the cent for
 // display, so CostThisMonth plus FreedThisMonth is
-// CostWithoutNapwakeThisMonth to within a cent.
+// CostWithoutNapwakeThisMonth to within a cent. An amount above zero that
+// rounds to nothing is <$0.01, so $0.00 is none.
 type CostStatus struct {
 	// Tracked is how much of the month the totals cover. It's less than
 	// the time since the month began when the workload was created during

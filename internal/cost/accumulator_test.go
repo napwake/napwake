@@ -17,10 +17,12 @@ limitations under the License.
 package cost
 
 import (
+	"math"
 	"testing"
 	"time"
 
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 func TestHoursPrice(t *testing.T) {
@@ -85,8 +87,76 @@ func TestProject(t *testing.T) {
 	}
 }
 
+// An amount above zero that rounds to nothing is <$0.01, never $0.00,
+// which is for none. A negative amount is written as it always was.
 func TestFormatDollars(t *testing.T) {
-	assert.Equal(t, "$0.00", FormatDollars(0))
-	assert.Equal(t, "$1.50", FormatDollars(1.5))
-	assert.Equal(t, "$123.46", FormatDollars(123.456))
+	tests := []struct {
+		amount float64
+		want   string
+	}{
+		{0, "$0.00"},
+		{math.SmallestNonzeroFloat64, "<$0.01"},
+		{0.001, "<$0.01"},
+		{0.004, "<$0.01"},
+		{0.0049, "<$0.01"},
+		{0.005, "$0.01"},
+		{0.01, "$0.01"},
+		{1.5, "$1.50"},
+		{123.456, "$123.46"},
+		{-0.001, "$-0.00"},
+		{-1.5, "$-1.50"},
+	}
+	for _, tt := range tests {
+		assert.Equal(t, tt.want, FormatDollars(tt.amount), "%g", tt.amount)
+	}
+}
+
+func TestParseDollars(t *testing.T) {
+	tests := []struct {
+		s    string
+		want float64
+	}{
+		{"$0.00", 0},
+		{"$0.01", 0.01},
+		{"$12.40", 12.40},
+		{"$-1.50", -1.5},
+	}
+	for _, tt := range tests {
+		got, err := ParseDollars(tt.s)
+		require.NoError(t, err, tt.s)
+		assert.InDelta(t, tt.want, got, 1e-12, tt.s)
+	}
+
+	under, err := ParseDollars("<$0.01")
+	require.NoError(t, err)
+	assert.Greater(t, under, 0.0, "under a cent is above zero")
+	assert.Less(t, under, 0.005, "and rounds to nothing")
+
+	for _, s := range []string{"", "pending", "unknown", "$", "<$1"} {
+		_, err := ParseDollars(s)
+		assert.Error(t, err, "%q", s)
+	}
+}
+
+// What FormatDollars writes reads back above zero exactly when the amount
+// was, and written again is the same, for every amount to a millionth of a
+// dollar up to ten cents and beyond.
+func TestParseDollars_ReadsWhatFormatDollarsWrites(t *testing.T) {
+	const steps = 100_000
+	amounts := make([]float64, 0, steps+6)
+	amounts = append(amounts, math.SmallestNonzeroFloat64, 1e-9, 0.0049999, 1234.5, 1e6)
+	for i := range steps + 1 {
+		amounts = append(amounts, float64(i)/1e6)
+	}
+	for _, amount := range amounts {
+		written := FormatDollars(amount)
+		read, err := ParseDollars(written)
+		require.NoError(t, err, written)
+		if (read > 0) != (amount > 0) {
+			t.Fatalf("%g written as %s reads as %g", amount, written, read)
+		}
+		if again := FormatDollars(read); again != written {
+			t.Fatalf("%g written as %s reads as %g, written again as %s", amount, written, read, again)
+		}
+	}
 }

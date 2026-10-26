@@ -65,6 +65,7 @@ Values are checked against `values.schema.json`. A typo (`logLevel: warn`, `defa
     { id: 'leaderelection-enabled', name: 'leaderElection.enabled' },
     { id: 'maxconcurrentreconciles', name: 'maxConcurrentReconciles' },
     { id: 'timezone', name: 'timezone' },
+    { id: 'pausing-enabled', name: 'pausing.enabled' },
     { id: 'loglevel', name: 'logLevel' },
     { id: 'logencoder', name: 'logEncoder' },
   ] },
@@ -210,6 +211,7 @@ Deleting the CRD would delete every ManagedWorkload, so it's a chart template wi
 | <Ref id="leaderelection-enabled">leaderElection.enabled</Ref> | `true` | One replica reconciles, through a Lease. Without it, upgrades stop the old operator before starting the new (`strategy: Recreate`), so two never act at once |
 | <Ref id="maxconcurrentreconciles">maxConcurrentReconciles</Ref> | `8` | Reconciled at once, so a slow metrics or Prometheus query doesn't hold up waking another. Sets [`--max-concurrent-reconciles`](/reference/configuration/#flag-max-concurrent-reconciles) |
 | <Ref id="timezone">timezone</Ref> | `UTC` | IANA zone, such as `Europe/London`, for the [forecast's](/concepts/forecasting/#wall-clock-alignment) hours and weekdays. Use your users' zone, so forecasts follow daylight saving. Sets [`--timezone`](/reference/configuration/#flag-timezone) |
+| <Ref id="pausing-enabled">pausing.enabled</Ref> | `true` | `false` stops every pause this install makes, at once, and wakes what it paused. Requests, activity and `autoResume` still wake. Sets [`--pausing=false`](/reference/configuration/#flag-pausing). See [Stop all pausing now](/guides/pause/#stop-all-pausing-now) |
 | <Ref id="loglevel">logLevel</Ref> | `info` | `debug`, `info`, `error`, `panic`, or a whole number above 0 for more verbose debug levels. Operator and doorman |
 | <Ref id="logencoder">logEncoder</Ref> | `json` | `json`, or `console` to read by eye. Operator and doorman |
 

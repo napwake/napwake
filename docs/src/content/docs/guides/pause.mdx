@@ -4,8 +4,9 @@ description: "Napwake's one action is to pause a workload, scaling it to zero re
 lede: "Napwake's one action is to pause a workload, scaling it to zero replicas. Only the pods go. The Deployment or StatefulSet, its PVCs and their data stay."
 ---
 
-import { Steps } from '@astrojs/starlight/components';
+import { Steps, Tabs, TabItem } from '@astrojs/starlight/components';
 import StateFlow from '../../../components/StateFlow.astro';
+import TerminalBlock from '../../../components/TerminalBlock.astro';
 import Outcome from '../../../components/Outcome.astro';
 import StartCheckpoint from '../../../components/StartCheckpoint.astro';
 import NextSteps from '../../../components/NextSteps.astro';
@@ -61,6 +62,7 @@ The request runs the idle clock out now, and the pause follows the rules of an i
 | In the hour Napwake waits after a GitOps tool undid its last pause | Pauses it, since you asked. If the tool undoes it again, that's a new [`GitOpsConflict`](/guides/gitops/) | `True`, `Paused` |
 | Busy within the hour, by a confident forecast | Leaves it running and says when, since it would likely be woken straight back. `kubectl napwake pause` asks whether to pause anyway, and `--yes` does | `False`, `ForecastExpectsDemand` |
 | In dry-run | Never scales it, and [counts a would-be pause](/guides/dry-run/#what-happens-in-dry-run) | `False`, `DryRun` |
+| With pausing [off](#stop-all-pausing-now) for its install | As in dry-run | `False`, `PausingOff` |
 | Held awake by `napwake.dev/active-until` on it or its workload, depended on by awake workloads, in a `dependsOn` cycle, in a [protected namespace](/guides/opt-in/#protected-namespaces), or Napwake's own operator or doorman | Leaves it running, with a Warning event, or `HeldByDependents` for dependents | `False`, `ActiveUntil`, `HeldByDependents`, `DependencyCycle` or `Protected` |
 | Scaled to zero outside Napwake | Nothing, since it's off already | `False`, `ScaledToZero` |
 | Missing, labelled `napwake.dev/ignore`, or managed by another ManagedWorkload | Nothing, with a Warning event | `False`, `TargetNotFound`, `TargetIgnored` or `DuplicateTarget` |
@@ -144,6 +146,7 @@ A pause the idle clock made, called off this way, counts as [made in use](/conce
 | `autoResume: true`, and a confident forecast expects demand in the coming hour | <Outcome state="waking">Wakes 15 minutes before the hour</Outcome> |
 | Something else scales it up, such as `kubectl scale` | <Outcome state="waking">Counts it as activity, and goes straight to `Running`. For a GitOps tool, see [GitOps tools](/guides/gitops/)</Outcome> |
 | [Dry-run](/guides/dry-run/) is turned on | <Outcome state="waking">Wakes, with a `DryRunWake` event. Dry-run never leaves a workload paused</Outcome> |
+| Pausing is [turned off](#stop-all-pausing-now) for its install | <Outcome state="waking">Wakes, with a `PausingOffWake` event</Outcome> |
 
 Napwake looks at a paused workload at least every 5 minutes, or every minute with Prometheus activity queries. It also looks 15 minutes before each hour, on the hour, and whenever the workload or its target changes.
 
@@ -181,7 +184,7 @@ Napwake acts on each value once, recording it in `status.lastWakeRequest`, which
 | `Pausing` | <Outcome state="awake">[Calls the pause off](#a-request-calls-the-pause-off), and has it `Running` again</Outcome> | `True`, `Woken` |
 | `Resuming` | <Outcome state="waking">Lets the wake finish, then marks the request handled</Outcome> | `True`, `AlreadyAwake` |
 | `Running` or `Idle` | <Outcome state="awake">Restarts its idle clock, as activity does</Outcome> | `True`, `AlreadyAwake` |
-| In [dry-run](/guides/dry-run/) | <Outcome state="awake">Restarts its idle clock, which ends a would-be pause</Outcome> | `True`, `AlreadyAwake` |
+| In [dry-run](/guides/dry-run/), or with pausing [off](#stop-all-pausing-now) for its install | <Outcome state="awake">Restarts its idle clock, which ends a would-be pause</Outcome> | `True`, `AlreadyAwake` |
 | Scaled to zero outside Napwake | <Outcome state="asleep">Leaves it off. Napwake only wakes what it paused</Outcome> | `False`, `ScaledToZero` |
 | In a [protected namespace](/guides/opt-in/#protected-namespaces), Napwake's own operator or doorman, or a StatefulSet that deletes its PVCs when scaled down | Nothing, since Napwake never pauses it | `False`, `Protected` |
 | Missing, labelled `napwake.dev/ignore`, or managed by another ManagedWorkload | Nothing, with a warning event | `False`, `TargetNotFound`, `TargetIgnored` or `DuplicateTarget` |
@@ -207,6 +210,114 @@ Remove the `idlePolicy` of a ManagedWorkload you wrote. One from the label alway
 A resume wakes the workload's [dependencies](/concepts/dependencies/), then scales it back to `status.pause.previousReplicas`. It's `Running` once those replicas are Ready, by a status its own controller wrote after the scale-up. Once it's scaled back up, its autoscaler owns the replicas. An HPA scaling it down as it starts isn't undone.
 
 A workload with a pod crash-looping before its pause would never get there. So Napwake stops waiting, runs it with its Ready replicas, and sets `ResumeIncomplete=True`. With none Ready, its doorman routes go anyway. Requests then fail until a pod is Ready, rather than wait at the doorman for a workload its own controller reports stuck. A StatefulSet with the default `OrderedReady` pod management starts its pods one at a time. A slow-starting one may have only its first pods Ready when the 2 minutes are up. It runs with those, and the rest follow. [Lifecycle](/concepts/lifecycle/#transition-triggers) has the timings.
+
+## Stop all pausing now
+
+On a bad day, one value stops every pause an install makes. Everything it manages still wakes.
+
+<Steps>
+
+1. Turn pausing off.
+
+    <Tabs syncKey="gitops">
+    <TabItem label="Helm">
+
+    ```bash
+    helm upgrade napwake oci://ghcr.io/napwake/charts/napwake \
+      --version X.Y.Z \
+      --namespace napwake-system \
+      --reuse-values \
+      --set pausing.enabled=false
+    ```
+
+    Use the version in the `CHART` column of `helm list -n napwake-system`, so Napwake isn't upgraded too. It lasts until your next upgrade. One with `-f napwake-values.yaml` turns pausing back on, unless the file sets it too. To keep it off, put it in the file:
+
+    ```yaml title="napwake-values.yaml"
+    pausing:
+      enabled: false
+    ```
+
+    </TabItem>
+    <TabItem label="Argo CD">
+
+    ```yaml title="Argo CD Application"
+    spec:
+      source:
+        helm:
+          valuesObject:
+            pausing:
+              enabled: false
+    ```
+
+    Argo CD keeps no Helm release, so `helm upgrade` fails on an install it manages. Change it here.
+
+    </TabItem>
+    <TabItem label="Flux">
+
+    ```yaml title="Flux HelmRelease"
+    spec:
+      values:
+        pausing:
+          enabled: false
+    ```
+
+    Flux puts its own values back at its next reconcile, so a `helm upgrade` doesn't last. Change it here.
+
+    </TabItem>
+    </Tabs>
+
+    The operator restarts with [`--pausing=false`](/reference/configuration/#flag-pausing).
+
+2. Check it.
+
+    <TerminalBlock
+      label="kubectl napwake status, with pausing off"
+      command="kubectl napwake status"
+      output={[
+        'Pausing is off (pausing.enabled: false): nothing here pauses, and everything wakes.',
+        'staging (EKS us-east-1): Napwake manages 4 workloads.',
+      ]}
+    />
+
+</Steps>
+
+<StartCheckpoint state="awake" note="pausing off">
+Every ManagedWorkload of the install has `PausingOff=True`, reason `DisabledForTheInstall`.
+</StartCheckpoint>
+
+| | With pausing off |
+|---|---|
+| A workload whose idle clock runs out, or that's asked to pause | <Outcome state="awake">Stays up. Napwake measures it as in [dry-run](/guides/dry-run/#what-happens-in-dry-run) and counts the would-be pause, whatever its own `dryRun` says</Outcome> |
+| A workload paused or pausing | <Outcome state="waking">Wakes as the operator starts, with a `PausingOffWake` event</Outcome> |
+| Requests, activity, wake requests and `autoResume` | <Outcome state="waking">Still wake</Outcome> |
+| `kubectl napwake status` | Says so first, and atop its `--html` page. Counts the workloads when only some are off. Shows each in dry-run, as `kubectl napwake scan` does |
+| Events for what it holds back | Start with `[dry-run]`, as in dry-run |
+| `spec.dryRun` | Left as it is |
+| [More than one install](/getting-started/installation/#more-than-one-install) | Each install has its own switch, on its release |
+
+<details class="nw-details">
+<summary>Wake everything at once, without changing the release</summary>
+
+Ask each ManagedWorkload for a [wake](#wake-now):
+
+```bash
+kubectl annotate managedworkloads --all -A --overwrite \
+  napwake.dev/wake-requested="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+```
+
+It takes `list` and `patch` on `managedworkloads` in every namespace. With pausing on, they pause again once idle.
+
+</details>
+
+### Turn pausing back on
+
+Set `pausing.enabled` back to `true` the same way.
+
+| | Once pausing is on again |
+|---|---|
+| The `PausingOff` condition | Removed |
+| Idle clocks | Start afresh, since the operator restarts. The first pauses come an `idleAfter` later |
+| A workload [paused while in use](/concepts/idle-detection/#paused-while-in-use) before | Still waits longer. Pausing off kept its back-off |
 
 ## When Napwake lets go
 

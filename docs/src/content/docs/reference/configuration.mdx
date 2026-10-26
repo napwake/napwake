@@ -25,6 +25,7 @@ The binary is `/manager`. The Helm chart sets its flags from its [values](/refer
     { id: 'flag-leader-elect', name: '--leader-elect' },
     { id: 'flag-max-concurrent-reconciles', name: '--max-concurrent-reconciles' },
     { id: 'flag-timezone', name: '--timezone' },
+    { id: 'flag-pausing', name: '--pausing' },
     { id: 'flag-kubeconfig', name: '--kubeconfig' },
   ] },
   { title: 'Prometheus', href: '#prometheus', names: [
@@ -98,6 +99,7 @@ The binary is `/manager`. The Helm chart sets its flags from its [values](/refer
 | <Ref id="flag-leader-elect">{'--leader-elect'}</Ref> | `false` | One replica reconciles. A leader that stops releases its lease, so the next, or a rollout's new one, takes over at once. Ignored by the doorman, where every replica serves traffic. See [Leader election](#leader-election) |
 | <Ref id="flag-max-concurrent-reconciles">{'--max-concurrent-reconciles'}</Ref> | `8` | ManagedWorkloads reconciled at once, so a slow metrics or Prometheus query doesn't hold up wakes, which queue ahead of periodic checks. At least 1 |
 | <Ref id="flag-timezone">{'--timezone'}</Ref> | `UTC` | IANA zone, such as `Europe/London`, for forecasts' hours and weekdays, so they follow daylight saving. Zone database built in |
+| <Ref id="flag-pausing">{'--pausing'}</Ref> | `true` | Pause idle workloads. `false` stops every pause this install makes, at once, and wakes those paused. Each workload is measured as in dry-run, whatever it sets. Helm value `pausing.enabled`. See [Stop all pausing now](/guides/pause/#stop-all-pausing-now) |
 | <Ref id="flag-kubeconfig">{'--kubeconfig'}</Ref> | in-cluster | Kubeconfig path, outside the cluster only |
 
 ### Prometheus

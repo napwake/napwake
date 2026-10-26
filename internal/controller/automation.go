@@ -230,6 +230,10 @@ func (r *Reconciler) reconcileAutomation(ctx context.Context, workload *v1alpha1
 	if err := r.checkDependenciesExist(ctx, workload); err != nil {
 		return nil, err
 	}
+	// Only a workload's own dry-run ends its back-off. Pausing off for this
+	// install is a stop for a bad day, which the workloads it paused wrongly
+	// may have caused, so their back-off carries through to when it's on
+	// again. Meanwhile idleWaitFor leaves it out, as for any would-be pause.
 	switch {
 	case workload.Spec.DryRun:
 		r.endBackOff(workload, reasonDryRun)
@@ -266,7 +270,7 @@ func (r *Reconciler) reconcileAutomation(ctx context.Context, workload *v1alpha1
 
 	// Under dry-run, Idle is a would-be pause being measured, which a pause
 	// request begins whatever the idle policy, and only activity ends.
-	measuring := workload.Spec.DryRun && phase == v1alpha1.PhaseIdle
+	measuring := r.dryRun(workload) && phase == v1alpha1.PhaseIdle
 	if workload.Spec.IdlePolicy == nil && !measuring {
 		r.clearIdleVeto(workload)
 		if phase == v1alpha1.PhaseIdle {

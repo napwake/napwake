@@ -222,7 +222,7 @@ func (r *Reconciler) resetActivity(workload *v1alpha1.ManagedWorkload, source v1
 	if workload.Status.Activity != nil {
 		hash = workload.Status.Activity.TemplateHash
 	}
-	pauseAt := metav1.NewTime(now.Add(idleWaitFor(workload)))
+	pauseAt := metav1.NewTime(now.Add(idleWaitFor(workload, r.dryRun(workload))))
 	workload.Status.Activity = &v1alpha1.ActivityStatus{
 		LastActivityTime:   now,
 		LastActivitySource: source,
@@ -252,9 +252,10 @@ func (r *Reconciler) observeActivity(ctx context.Context, workload *v1alpha1.Man
 	}
 
 	var obs activityObservation
+	dryRun := r.dryRun(workload)
 	// A gap in watching doesn't wake a paused workload, so it doesn't end
 	// the pause dry-run stands in for either.
-	if last := status.LastEvaluatedTime; last != nil && !inWouldBePause(workload) {
+	if last := status.LastEvaluatedTime; last != nil && !inWouldBePause(workload, dryRun) {
 		pending := r.activityMemo.pending(workload.UID)
 		gap, restart := r.unwatched(workload, last.Time, inMemory, now)
 		switch {
@@ -304,7 +305,7 @@ func (r *Reconciler) observeActivity(ctx context.Context, workload *v1alpha1.Man
 		switch {
 		case err != nil:
 			obs.prometheusErr = err
-		case heldByWouldBePause(workload, active):
+		case heldByWouldBePause(workload, dryRun, active):
 		case active:
 			recordActivity(status, now, v1alpha1.ActivitySourcePrometheus)
 		}
@@ -324,7 +325,7 @@ func (r *Reconciler) observeActivity(ctx context.Context, workload *v1alpha1.Man
 	if load.err == nil && !forecast.Busy(load.percent, cpuThresholdFor(workload)) {
 		r.quietCPU.see(workload.UID, status.LastActivityTime.Time, now, load.percent, wrongPauseWindow(workload))
 	}
-	pauseAt := metav1.NewTime(status.LastActivityTime.Add(idleWaitFor(workload)))
+	pauseAt := metav1.NewTime(status.LastActivityTime.Add(idleWaitFor(workload, dryRun)))
 	status.PauseAt = &pauseAt
 	r.activityMemo.put(workload.UID, *status.DeepCopy(), now, obs.gap)
 	recordIdleSeconds(workload, now)
@@ -790,6 +791,7 @@ func podTemplateHash(target client.Object) string {
 func (r *Reconciler) reconcileIdleClock(ctx context.Context, workload *v1alpha1.ManagedWorkload, target client.Object,
 	engine forecaster, load cpuLoad) (*ctrl.Result, error) {
 	now := r.now()
+	dryRun := r.dryRun(workload)
 	vetoed := false
 	defer func() {
 		if !vetoed {
@@ -838,7 +840,7 @@ func (r *Reconciler) reconcileIdleClock(ctx context.Context, workload *v1alpha1.
 			return nil, err
 		}
 		r.reportActivityResumed(workload, source, slept, freed, measured)
-		if workload.Spec.DryRun {
+		if dryRun {
 			r.wakeDryRunDependencies(ctx, workload)
 		}
 		return result, nil
@@ -861,7 +863,7 @@ func (r *Reconciler) reconcileIdleClock(ctx context.Context, workload *v1alpha1.
 	idleFor := now.Sub(workload.Status.Activity.LastActivityTime.Time)
 
 	if workload.Status.Phase != v1alpha1.PhaseIdle {
-		if workload.Spec.DryRun {
+		if dryRun {
 			r.beginWouldBePause(ctx, workload)
 		}
 		reason, action := ReasonIdleDetected, "idle_pause"
@@ -874,26 +876,26 @@ func (r *Reconciler) reconcileIdleClock(ctx context.Context, workload *v1alpha1.
 			return nil, err
 		}
 		opmetrics.IdleDetections.WithLabelValues(workload.Namespace, workload.Name).Inc()
-		if workload.Spec.DryRun {
+		if dryRun {
 			opmetrics.DryrunActions.WithLabelValues(action).Inc()
 		}
 		outcome := "pausing"
-		if workload.Spec.DryRun {
+		if dryRun {
 			outcome = "would have paused"
 		}
 		idle := fmt.Sprintf("idle for %s, %s", human.Duration(idleFor), sinceActivity(workload.Status.Activity.LastActivitySource))
 		if pausingEarly {
-			r.emitEvent(workload, workload.Spec.DryRun, "Normal", ReasonPausedEarly, actionEvaluateIdle,
+			r.emitEvent(workload, dryRun, "Normal", ReasonPausedEarly, actionEvaluateIdle,
 				"%s, and the forecast expects the hours from %s to %s to be quiet; %s before idleAfter (%s) runs out",
 				idle, early.from.UTC().Format("15:04"), early.until.UTC().Format("15:04 UTC"), outcome,
 				human.Duration(idleAfterFor(workload)))
 		} else {
-			r.emitEvent(workload, workload.Spec.DryRun, "Normal", ReasonIdleDetected, actionEvaluateIdle,
+			r.emitEvent(workload, dryRun, "Normal", ReasonIdleDetected, actionEvaluateIdle,
 				"%s; %s", idle, outcome)
 		}
 	}
 
-	if workload.Spec.DryRun {
+	if dryRun {
 		return &ctrl.Result{RequeueAfter: activityCheckInterval}, nil
 	}
 	if until, held := gitOpsHold(workload, now); held {
@@ -998,7 +1000,7 @@ func (r *Reconciler) reportGap(workload *v1alpha1.ManagedWorkload, gap watchGap,
 func (r *Reconciler) reportActivityResumed(workload *v1alpha1.ManagedWorkload, source v1alpha1.ActivitySource,
 	slept time.Duration, freed float64, measured bool) {
 	if !measured {
-		r.emitEvent(workload, workload.Spec.DryRun, "Normal", ReasonActivityResumed, actionEvaluateIdle,
+		r.emitEvent(workload, r.dryRun(workload), "Normal", ReasonActivityResumed, actionEvaluateIdle,
 			"activity resumed (%s), no longer idle", source)
 		return
 	}
@@ -1023,7 +1025,7 @@ func (r *Reconciler) reportIdleVetoed(ctx context.Context, workload *v1alpha1.Ma
 		if err := r.Status().Update(ctx, workload); err != nil {
 			return nil, fmt.Errorf("recording the forecast's veto: %w", err)
 		}
-		r.emitEvent(workload, workload.Spec.DryRun, "Normal", ReasonIdleVetoed, actionEvaluateIdle, "%s", msg)
+		r.emitEvent(workload, r.dryRun(workload), "Normal", ReasonIdleVetoed, actionEvaluateIdle, "%s", msg)
 	}
 	return &ctrl.Result{RequeueAfter: activityCheckInterval}, nil
 }

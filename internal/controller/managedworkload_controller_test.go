@@ -674,7 +674,7 @@ func TestReconcile_DuplicateTargetBlocksNewer(t *testing.T) {
 		clock:    func() time.Time { return fixedTime },
 	}
 
-	// Reconcile the newer one — should be blocked.
+	// Reconcile the newer one, which should be blocked.
 	_, err := r.Reconcile(context.Background(), reconcileFor("duplicate-idle-app"))
 	require.NoError(t, err)
 
@@ -770,7 +770,7 @@ func TestReconcile_DuplicateTargetAllowsOlder(t *testing.T) {
 		clock:    func() time.Time { return fixedTime },
 	}
 
-	// Reconcile the older one — should proceed normally.
+	// Reconcile the older one, which should proceed normally.
 	_, err := r.Reconcile(context.Background(), reconcileFor("deployment-idle-app"))
 	require.NoError(t, err)
 
@@ -823,7 +823,7 @@ func TestReconcile_DuplicateTargetClearsWhenResolved(t *testing.T) {
 		clock:    func() time.Time { return fixedTime },
 	}
 
-	// No duplicate exists anymore — condition should clear.
+	// No duplicate exists anymore, so the condition should clear.
 	_, err := r.Reconcile(context.Background(), reconcileFor("deployment-idle-app"))
 	require.NoError(t, err)
 

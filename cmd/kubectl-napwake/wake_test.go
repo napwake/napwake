@@ -597,10 +597,11 @@ func TestWake_SharedWorkloadName(t *testing.T) {
 // Napwake's answer and then until it's Running.
 func TestWake_FromEachPhase(t *testing.T) {
 	tests := []struct {
-		phase   v1alpha1.WorkloadPhase
-		dryRun  bool
-		reason  string
-		wantOut string
+		phase      v1alpha1.WorkloadPhase
+		dryRun     bool
+		pausingOff bool
+		reason     string
+		wantOut    string
 	}{
 		{phase: v1alpha1.PhasePausing, reason: "Woken",
 			wantOut: "preview-42/api is pausing; the pause is called off and it stays up...\n" +
@@ -613,11 +614,19 @@ func TestWake_FromEachPhase(t *testing.T) {
 			wantOut: "preview-42/api is in dry-run, so Napwake never paused it; its idle clock restarts now\n"},
 		{phase: v1alpha1.PhasePaused, dryRun: true, reason: "Woken",
 			wantOut: "waking preview-42/api...\npreview-42/api is Running after 0s\n"},
+		{phase: v1alpha1.PhaseIdle, pausingOff: true, reason: "AlreadyAwake",
+			wantOut: "preview-42/api isn't paused while pausing is off for the install that manages it; its " +
+				"idle clock restarts now\n"},
+		{phase: v1alpha1.PhasePaused, pausingOff: true, reason: "Woken",
+			wantOut: "waking preview-42/api...\npreview-42/api is Running after 0s\n"},
 	}
 	for _, tt := range tests {
-		t.Run(fmt.Sprintf("%s dry-run=%t", tt.phase, tt.dryRun), func(t *testing.T) {
+		t.Run(fmt.Sprintf("%s dry-run=%t pausing-off=%t", tt.phase, tt.dryRun, tt.pausingOff), func(t *testing.T) {
 			w := managedWorkload(tt.phase)
 			w.Spec.DryRun = tt.dryRun
+			if tt.pausingOff {
+				w.Status.Conditions = []metav1.Condition{pausingOff()}
+			}
 			c := newClient(t, wakes(tt.reason, 3), w)
 			var out bytes.Buffer
 

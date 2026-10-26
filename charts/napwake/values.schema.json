@@ -130,6 +130,7 @@
       "items": {"type": "string", "minLength": 1},
       "uniqueItems": true
     },
+    "pausing": {"$ref": "#/definitions/enabled"},
     "protectedNamespaces": {
       "type": "array",
       "items": {"type": "string", "minLength": 1}

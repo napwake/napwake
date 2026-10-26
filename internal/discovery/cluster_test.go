@@ -519,6 +519,31 @@ func TestScanCluster_SavingsBySource(t *testing.T) {
 	assert.InDelta(t, got["dry"].Measured.MonthlyFreed, report.Totals.Measured.MonthlyFreed, 0.001)
 }
 
+// With pausing off for its install, as the ManagedWorkload's PausingOff
+// condition says, the scan counts the workload as in dry-run, whatever its
+// spec says, with what dry-run measured, and not as live.
+func TestScanCluster_PausingOffIsDryRun(t *testing.T) {
+	off := managedFor("off", v1alpha1.ManagedWorkloadStatus{Phase: v1alpha1.PhaseRunning,
+		DryRun: &v1alpha1.DryRunStatus{Since: metav1.NewTime(scanTime.Add(-73 * time.Hour)), Pauses: 2,
+			Slept: metav1.Duration{Duration: 10 * time.Hour}},
+		Conditions: []metav1.Condition{{Type: ConditionPausingOff, Status: metav1.ConditionTrue,
+			Reason: "DisabledForTheInstall"}}})
+	objs := make([]runtime.Object, 0, 4)
+	objs = append(objs, off)
+	objs = append(objs, deploymentWithRollout("off", testNamespace, 1, 30*24*time.Hour)...)
+	objs = append(objs, makePodMetrics("off", testNamespace, "1m", "10Mi"))
+
+	report := scanWorkloads(t, objs...)
+	got := byName(report)["off"]
+
+	assert.False(t, off.Spec.DryRun)
+	assert.True(t, got.Managed)
+	assert.True(t, got.DryRun, "measured, not live")
+	require.NotNil(t, got.Measured, "with what dry-run measured")
+	assert.Zero(t, report.Totals.Live)
+	assert.Equal(t, 1, report.Totals.DryRun)
+}
+
 // A workload in dry-run that someone scaled to zero can't sleep any more
 // than it does, so what dry-run measured before isn't in the totals, though
 // it's still one of the workloads in dry-run.
@@ -774,6 +799,8 @@ func TestFreedAndSavedThisMonth(t *testing.T) {
 		{name: "last month's",
 			cost: &v1alpha1.CostStatus{FreedThisMonth: "$40.00", SavedThisMonth: "$12.50", LastAccumulatedAt: &lastMonth}},
 		{name: "unreadable", cost: &v1alpha1.CostStatus{FreedThisMonth: "pending", SavedThisMonth: ""}},
+		{name: "under a cent", freed: 0.0025, saved: 0.0025,
+			cost: &v1alpha1.CostStatus{FreedThisMonth: "<$0.01", SavedThisMonth: "<$0.01", LastAccumulatedAt: &thisMonth}},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -783,6 +810,32 @@ func TestFreedAndSavedThisMonth(t *testing.T) {
 			assert.InDelta(t, tt.saved, SavedThisMonth(mw, scanTime), 0.001)
 		})
 	}
+}
+
+// Under a cent freed and saved, which the operator writes <$0.01, is above
+// zero for the workload and in the totals, so the scan never says nothing.
+func TestScanCluster_FreedUnderACent(t *testing.T) {
+	thisMonth := metav1.NewTime(scanTime.Add(-time.Hour))
+	objs := make([]runtime.Object, 0, 8)
+	for _, name := range []string{"api", "web"} {
+		mw := managedFor(name, v1alpha1.ManagedWorkloadStatus{Phase: v1alpha1.PhaseRunning,
+			Cost: &v1alpha1.CostStatus{FreedThisMonth: "<$0.01", SavedThisMonth: "<$0.01",
+				LastAccumulatedAt: &thisMonth}})
+		objs = append(objs, mw, makePodMetrics(name, testNamespace, "1m", "10Mi"))
+		objs = append(objs, deploymentWithRollout(name, testNamespace, 1, 30*24*time.Hour)...)
+	}
+
+	report := scanWorkloads(t, objs...)
+
+	require.Len(t, report.Workloads, 2)
+	for name, w := range byName(report) {
+		assert.Positive(t, w.FreedThisMonth, name)
+		assert.Less(t, w.FreedThisMonth, 0.005, name)
+		assert.Positive(t, w.SavedThisMonth, name)
+	}
+	assert.Positive(t, report.Totals.FreedThisMonth)
+	assert.Less(t, report.Totals.FreedThisMonth, 0.01, "two amounts under a cent")
+	assert.Positive(t, report.Totals.SavedThisMonth)
 }
 
 // Until the operator's first reconcile in a new month, a workload's record

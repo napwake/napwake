@@ -56,5 +56,5 @@ How every page of Napwake's docs is written. Kede (CMO) owns the words. Ara (CTO
 ## Checks before a page is done
 - Prose (everything but code, tables and component props) down by half. Tables don't excuse prose. Moving a fact into a table is fine, but the page's prose still has to halve.
 - Every fact in the old page is in the new one, or listed in the page's facts ledger as moved (to `<details>` or the reference) with where.
-- No line from the "Never" list. Search for "—", "not just", "Note that", ";".
+- No line from the "Never" list. Search for em dashes, "not just", "Note that", ";".
 - The build passes with no broken links.

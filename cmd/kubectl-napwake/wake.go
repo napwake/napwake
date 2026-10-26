@@ -30,6 +30,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	v1alpha1 "github.com/napwake/napwake/api/v1alpha1"
+	"github.com/napwake/napwake/internal/discovery"
 )
 
 // errNotWakeable means Napwake isn't managing the workload, so a wake
@@ -176,7 +177,11 @@ func wake(ctx context.Context, c client.Client, key client.ObjectKey, opts wakeO
 // taken on yet, with no phase, is taken on Running.
 func awakeMessage(ref string, w *v1alpha1.ManagedWorkload) string {
 	switch phase := w.Status.Phase; {
-	case w.Spec.DryRun && phase != v1alpha1.PhasePaused && phase != v1alpha1.PhasePausing:
+	case discovery.DryRun(w) && phase != v1alpha1.PhasePaused && phase != v1alpha1.PhasePausing:
+		if discovery.PausingOff(w) {
+			return ref + " isn't paused while pausing is off for the install that manages it; its idle clock " +
+				"restarts now"
+		}
 		return ref + " is in dry-run, so Napwake never paused it; its idle clock restarts now"
 	case phase == v1alpha1.PhaseRunning, phase == "", phase == v1alpha1.PhaseCreating:
 		return ref + " is already running; its idle clock restarts now"

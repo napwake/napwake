@@ -84,7 +84,7 @@ func (r *Reconciler) refusePauseRequest(ctx context.Context, workload *v1alpha1.
 	if err := r.Status().Update(ctx, workload); err != nil {
 		return fmt.Errorf("answering the pause request: %w", err)
 	}
-	r.emitEvent(workload, workload.Spec.DryRun, eventType, reason, actionPause, "pause requested, but %s", why)
+	r.emitEvent(workload, r.dryRun(workload), eventType, reason, actionPause, "pause requested, but %s", why)
 	return nil
 }
 
@@ -136,7 +136,7 @@ func (r *Reconciler) reconcilePauseRequest(ctx context.Context, workload *v1alph
 		return nil, r.refusePauseRequest(ctx, workload, eventType, holds.condition(), holds.message())
 	}
 
-	if workload.Spec.DryRun {
+	if r.dryRun(workload) {
 		return r.pauseRequestedInDryRun(ctx, workload)
 	}
 
@@ -182,16 +182,17 @@ func (r *Reconciler) heldAwakeUntil(ctx context.Context, workload *v1alpha1.Mana
 // stays up, until activity after the request ends it. One already Idle is
 // in a would-be pause already.
 func (r *Reconciler) pauseRequestedInDryRun(ctx context.Context, workload *v1alpha1.ManagedWorkload) (*ctrl.Result, error) {
+	reason, because := r.whyMeasured()
 	if workload.Status.Phase == v1alpha1.PhaseIdle {
-		r.answerPauseRequest(workload, metav1.ConditionFalse, reasonDryRun, fmt.Sprintf(
-			"not paused at %s: dry-run is on, and a would-be pause was already under way", answeredAt(r.now())))
+		r.answerPauseRequest(workload, metav1.ConditionFalse, reason, fmt.Sprintf(
+			"not paused at %s: %s, and a would-be pause was already under way", answeredAt(r.now()), because))
 		return nil, nil
 	}
 	r.beginWouldBePause(ctx, workload)
 	workload.Status.DryRun.QueryActiveSincePause = r.queryActiveAtPause(ctx, workload)
-	r.answerPauseRequest(workload, metav1.ConditionFalse, reasonDryRun, fmt.Sprintf(
-		"not paused at %s: dry-run is on, so Napwake counted a would-be pause and left the workload running",
-		answeredAt(r.now())))
+	r.answerPauseRequest(workload, metav1.ConditionFalse, reason, fmt.Sprintf(
+		"not paused at %s: %s, so Napwake counted a would-be pause and left the workload running",
+		answeredAt(r.now()), because))
 	if err := r.transition(ctx, workload, v1alpha1.PhaseIdle, ReasonPauseRequested); err != nil {
 		return nil, err
 	}

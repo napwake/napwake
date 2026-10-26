@@ -69,9 +69,9 @@ func wrongPauseWindow(workload *v1alpha1.ManagedWorkload) time.Duration {
 // before a pause: idleAfter, longer after wrong pauses. It's never shorter
 // than idleAfter. A would-be pause in dry-run waits idleAfter, since
 // dry-run judges no pause wrong.
-func idleWaitFor(workload *v1alpha1.ManagedWorkload) time.Duration {
+func idleWaitFor(workload *v1alpha1.ManagedWorkload, dryRun bool) time.Duration {
 	var wrong int32
-	if w := workload.Status.IdleWait; w != nil && !workload.Spec.DryRun {
+	if w := workload.Status.IdleWait; w != nil && !dryRun {
 		wrong = w.WrongPauses
 	}
 	return v1alpha1.IdleWait(idleAfterFor(workload), wrong)
@@ -118,7 +118,7 @@ func (r *Reconciler) pauseBegan(workload *v1alpha1.ManagedWorkload) time.Time {
 func (r *Reconciler) judgePause(ctx context.Context, workload *v1alpha1.ManagedWorkload, why *phaseEvent) func() {
 	pause := workload.Status.Pause
 	nothing := func() {}
-	if pause == nil || why == nil || workload.Spec.DryRun {
+	if pause == nil || why == nil || r.dryRun(workload) {
 		return nothing
 	}
 	began := r.pauseBegan(workload)
@@ -169,8 +169,9 @@ func (r *Reconciler) judgePause(ctx context.Context, workload *v1alpha1.ManagedW
 	}
 	idleAfter := idleAfterFor(workload)
 	message := fmt.Sprintf("%s%s, so it was in use: it now waits %s without activity before pausing, not %s, "+
-		"until a pause holds. %s", wakeCauses[why.cause], when, human.Duration(idleWaitFor(workload)),
-		human.Duration(idleAfter), r.whatToChange(workload, pause.CPUBefore))
+		"until a pause holds. %s", wakeCauses[why.cause], when,
+		human.Duration(idleWaitFor(workload, r.dryRun(workload))), human.Duration(idleAfter),
+		r.whatToChange(workload, pause.CPUBefore))
 	r.setCondition(workload, conditionPausedWhileInUse, metav1.ConditionTrue, reason, message)
 	return func() {
 		opmetrics.WrongPauses.WithLabelValues(workload.Namespace, workload.Name).Inc()
@@ -189,7 +190,7 @@ var wakeCauses = map[v1alpha1.WakeCause]string{
 // endBackOffIfHeld ends the back-off of a paused workload whose pause has
 // lasted the window, so status says so while it's still paused.
 func (r *Reconciler) endBackOffIfHeld(workload *v1alpha1.ManagedWorkload) {
-	if workload.Status.Pause == nil || workload.Status.Pause.PausedAt == nil || workload.Spec.DryRun ||
+	if workload.Status.Pause == nil || workload.Status.Pause.PausedAt == nil || r.dryRun(workload) ||
 		r.now().Sub(r.pauseBegan(workload)) < wrongPauseWindow(workload) {
 		return
 	}
