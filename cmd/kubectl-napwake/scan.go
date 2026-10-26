@@ -1518,13 +1518,10 @@ func quantity(v float64) string {
 	return fmt.Sprintf("%.1f", v)
 }
 
-// cents formats an amount to the cent, for costs per hour. A cost below a
-// cent isn't free, so it isn't shown as $0.00.
+// cents formats an amount to the cent, for costs per hour, as the operator
+// writes costs: a cost below a cent isn't free, so it isn't shown as $0.00.
 func cents(amount float64) string {
-	if amount > 0 && amount < 0.005 {
-		return "<$0.01"
-	}
-	return fmt.Sprintf("$%.2f", amount)
+	return cost.FormatDollars(amount)
 }
 
 // dollars formats whole dollars with thousands separators, a negative
