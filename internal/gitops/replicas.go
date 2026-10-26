@@ -181,8 +181,9 @@ func (c *Checker) argoCD(ctx context.Context, workload client.Object, writer Wri
 }
 
 // argoApplicationOf is the Application that applies obj, by the tracking
-// annotation Argo CD adds, then the label it tracks by: its own instance
-// label, or app.kubernetes.io/instance, the default. An Application in a
+// annotation Argo CD adds, its default since 3.0, then the label it tracks
+// by when set to: its own instance label, or app.kubernetes.io/instance,
+// the default before 3.0. An Application in a
 // namespace other than Argo CD's own is named namespace_name. The namespace
 // is empty when the name doesn't say.
 func argoApplicationOf(obj client.Object) (client.ObjectKey, bool) {

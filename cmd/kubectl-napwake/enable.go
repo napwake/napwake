@@ -851,8 +851,8 @@ func appliedBy(obj client.Object, path []string) applier {
 
 // gitOpsName is the tool that applies obj, with the application when its
 // tracking metadata names one. With the manager known to be Argo CD, the
-// app.kubernetes.io/instance label it tracks by default names the
-// application.
+// app.kubernetes.io/instance label names the application: Argo CD tracks
+// by it when set to track by label, as it did by default before 3.0.
 func gitOpsName(tool gitops.Tool, obj client.Object) string {
 	if tracked := trackedBy(obj); tracked != "" {
 		return tracked
@@ -879,8 +879,9 @@ func ownsField(raw []byte, path []string) bool {
 
 // trackedBy names the GitOps tool and application that apply an object,
 // from the tracking metadata each one adds, or "" if none does. Argo CD
-// tracks by the app.kubernetes.io/instance label by default, which Helm
-// charts set too, so that label alone doesn't say Argo CD applies it.
+// tracks by its tracking annotation by default since 3.0, and can track by
+// the app.kubernetes.io/instance label, which Helm charts set too, so that
+// label alone doesn't say Argo CD applies it.
 func trackedBy(obj client.Object) string {
 	annotations, labels := obj.GetAnnotations(), obj.GetLabels()
 	switch {

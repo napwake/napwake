@@ -25,6 +25,21 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+// The default rates are an m6i.large's on-demand price in us-east-1, $0.096
+// an hour for 2 vCPUs and 8 GiB, split 7.75 to 1 between a vCPU-hour and a
+// GiB-hour, each rounded down to a tenth of a cent, as their comment says.
+func TestDefaultRates_AreAnM6iLarge(t *testing.T) {
+	const hourly, vcpu, memoryGiB, split = 0.096, 2, 8, 7.75
+	require.InDelta(t, split, cpuToMemory, 1e-9, "the split every list price is given")
+
+	got := splitHourly(hourly, vcpu, memoryGiB)
+
+	assert.InDelta(t, 0.0317, got.CPUPerHour, 0.00005)
+	assert.InDelta(t, 0.0041, got.MemoryPerHour, 0.00005)
+	assert.InDelta(t, DefaultRates.CPUPerHour, math.Floor(got.CPUPerHour*1000)/1000, 1e-12, "rounded down")
+	assert.InDelta(t, DefaultRates.MemoryPerHour, math.Floor(got.MemoryPerHour*1000)/1000, 1e-12, "rounded down")
+}
+
 func TestHoursPrice(t *testing.T) {
 	h := Hours{CPU: 100, Memory: 400, Storage: 200}
 
