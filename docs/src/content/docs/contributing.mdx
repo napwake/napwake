@@ -182,11 +182,21 @@ For maintainers. A release is a tag on `main`, `vX.Y.Z`, made and pushed like th
 |---|---|
 | `make release VERSION=X.Y.Z` | Bumps the chart's version and appVersion, the kustomize image, and the docs' install and verify commands and download links (the pages in the Makefile's `VERSIONED_DOCS`). Dates the version's section of `CHANGELOG.md`, commits that, and tags it. Pushing the tag starts the release workflow's four steps |
 | 1. Check | Checks the chart, the kustomize image, the docs and the dated changelog name the tag's version, and that no page's install link is to `releases/latest` or another release (`make verify-version`). Then runs every check a pull request does, Trivy on the image included |
-| 2. Build and draft | Builds the plugin archives, the krew manifest, `install.yaml` and the chart. Pushes the image by digest, untagged, signs it and attaches its SBOMs and provenance. Drafts the GitHub release with every file, its signed checksums, and the changelog section, with a link to the release's docs, as its notes |
+| 2. Build and draft | Builds the plugin archives, the krew manifest, `install.yaml` and the chart. Pushes the image by digest, untagged, signs it and attaches its SBOMs and provenance. Drafts the GitHub release with every file and its signed checksums, and [notes](#release-notes) from the changelog |
 | 3. Publish | Tags the image, pushes and signs the chart, tags the image `latest`, and publishes the GitHub release, which moves `releases/latest` |
 | 4. Brew | Writes the Homebrew formula from the published archives and pushes it to [the tap](#the-homebrew-tap), for a release, and for a release candidate until the first stable release |
 
 Once it succeeds, the docs workflow publishes the tag's docs, as [the docs site](#the-docs-site) describes. Nothing users install changes until step 3, so a run that fails earlier can be run again, and replaces its draft. So can one that fails in step 3.
+
+### Release notes
+
+A version's section of `CHANGELOG.md` can open with a summary, the text above its first `###` heading. The release's notes are then the summary and a link to the whole section, so a long list of changes stays in the changelog. A section without a summary is the notes, cut at the last whole line under 120,000 characters, since GitHub refuses notes over 125,000, with a link to the rest. Either way they end with a link to the release's docs.
+
+To see a tag's notes before you push it:
+
+```bash
+go run ./hack/releasenotes -tag v0.2.0
+```
 
 ### Rehearse with a release candidate
 

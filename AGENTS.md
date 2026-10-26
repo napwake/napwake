@@ -31,7 +31,7 @@ A Kubernetes operator that pauses idle workloads in non-production clusters, sca
 | `internal/human/` | Writes values the way people say them, for events and condition messages |
 | `charts/napwake/` | The Helm chart: `values.yaml`, `values.schema.json`, the templates, and `files/defaults.yaml` |
 | `config/` | The kustomize install (`config/default`, which `install.yaml` is built from), generated CRD and RBAC, and alert rules in `config/prometheus/` |
-| `hack/` | Tools for the checks and the release: `chartflags`, `rbaccheck`, `promrules`, `doormanpolicy`, `docsite`, `brewformula`, `prices`, `forecastsim`, `dco`, and the `chart-*.sh` and `helm-smoke.sh` scripts |
+| `hack/` | Tools for the checks and the release: `chartflags`, `rbaccheck`, `promrules`, `doormanpolicy`, `docsite`, `brewformula`, `releasenotes`, `prices`, `forecastsim`, `dco`, and the `chart-*.sh` and `helm-smoke.sh` scripts |
 | `test/docs/` | Drift tests: the docs' manifests and values against the CRD and the chart's schema, their addresses against the built site, their install commands against the install smoke test |
 | `test/oldname/` | Keeps the product's old name out of the tree, except where it's history |
 | `test/e2e/`, `test/utils/` | The end-to-end suite on kind (Ginkgo, build tag `e2e`), and its helpers |

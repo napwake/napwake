@@ -102,32 +102,13 @@ jobs:
           fi
           echo "chart=${TAG#v}" >> "$GITHUB_OUTPUT"
 
-      # A pre-release's notes are those of the version it rehearses. The
-      # notes link the release's docs: its minor's, or next's for a
-      # pre-release. GitHub refuses notes over 125,000 characters, so a
-      # longer section is cut at the last whole line that fits, and links
-      # to the rest in the changelog at the tag.
-      - name: Extract the changelog for the release
-        run: |
-          base="${TAG#v}"
-          base="${base%%-*}"
-          awk -v heading="## [${base}]" 'index($0, heading) == 1 {found = 1; next} /^## \[/ {if (found) exit} found' \
-            CHANGELOG.md > release-notes.md
-          if ! grep -q '[^[:space:]]' release-notes.md; then
-            echo "CHANGELOG.md's section for ${base} is empty or missing" >&2
-            exit 1
-          fi
-          if [ "$(wc -c < release-notes.md)" -gt 120000 ]; then
-            head -c 120000 release-notes.md | sed '$d' > release-notes.cut
-            mv release-notes.cut release-notes.md
-            printf '\nThe list goes on in [CHANGELOG.md](https://github.com/%s/blob/%s/CHANGELOG.md).\n' \
-              "$GITHUB_REPOSITORY" "$TAG" >> release-notes.md
-          fi
-          docs="${base%.*}"
-          if [[ "$TAG" == *-* ]]; then
-            docs=next
-          fi
-          printf '\n**Docs for this release:** https://docs.napwake.dev/%s/\n' "$docs" >> release-notes.md
+      # A pre-release's notes are those of the version it rehearses. A
+      # version's section that opens with a summary, above its first ###,
+      # gives the summary and a link to the whole section; one without
+      # gives the whole section, cut to fit GitHub's limit. The notes link
+      # the release's docs: its minor's, or next's for a pre-release.
+      - name: Write the release's notes from the changelog
+        run: go run ./hack/releasenotes -tag "$TAG" -repo "$GITHUB_REPOSITORY" > release-notes.md
 
       # Static, so the Linux binaries run on Alpine and Amazon Linux as well
       # as glibc distributions. krew-index requires the LICENSE in each, and
