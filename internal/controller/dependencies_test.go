@@ -320,6 +320,44 @@ func TestDependencies_HeldByWhatTheDependentIsNow(t *testing.T) {
 	}
 }
 
+// A pause whose hold was decided as it began is checked once more just
+// before its scale-down: a dependent awake then, as one that has learned
+// it depends on the workload since, calls it off before anything is
+// scaled. The pause request it was for says why, and as the dependent's
+// use, not the workload's own, it isn't counted as made in use.
+func TestDependencies_HeldJustBeforeTheScaleDown(t *testing.T) {
+	for _, requested := range []bool{false, true} {
+		t.Run(fmt.Sprintf("pause requested %t", requested), func(t *testing.T) {
+			startedAt := metav1.NewTime(fixedTime.Add(-10 * time.Second))
+			postgres := depWorkload("default", "postgres", v1alpha1.TargetKindStatefulSet, v1alpha1.PhasePausing)
+			postgres.Status.LastTransitionTime = &startedAt
+			postgres.Status.Pause = &v1alpha1.PauseStatus{PreviousReplicas: 1, StartedAt: &startedAt,
+				Requested: requested}
+			api := depWorkload("default", "api", v1alpha1.TargetKindDeployment, v1alpha1.PhaseRunning, postgresRef())
+			pauser := &stubPauser{pauseDone: true, resumeDone: true}
+			r := depReconciler(t, pauser, postgres, api)
+
+			_, err := r.resumeTransition(context.Background(), postgres, postgresTarget(1, 1))
+			require.NoError(t, err)
+
+			assert.Zero(t, pauser.pauseCalls, "nothing is scaled")
+			assert.Equal(t, v1alpha1.PhaseRunning, fetch(t, r, "postgres").Status.Phase)
+			assert.Nil(t, postgres.Status.IdleWait, "not counted as made in use")
+			assert.Contains(t, drainEvents(t, r), "Normal "+ReasonPauseCancelled+
+				" postgres: its dependent default/api is awake as it paused; the pause is cancelled")
+			c := meta.FindStatusCondition(postgres.Status.Conditions, conditionPauseRequest)
+			if !requested {
+				assert.Nil(t, c)
+				return
+			}
+			require.NotNil(t, c)
+			assert.Equal(t, metav1.ConditionFalse, c.Status)
+			assert.Equal(t, ReasonPauseCancelled, c.Reason)
+			assert.Contains(t, c.Message, ": its dependent default/api is awake as it paused")
+		})
+	}
+}
+
 // A condition's message over 32768 bytes fails the whole status write, so
 // a dependency with many dependents names only some.
 // A held workload whose clock restarts is up for its own activity, so the

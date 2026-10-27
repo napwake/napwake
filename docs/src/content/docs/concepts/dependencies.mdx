@@ -46,7 +46,7 @@ spec:
 | A dependency doesn't pause while anything that depends on it is awake | Its own clock keeps running meanwhile |
 | The last dependent pauses | The dependency pauses on its next check, if its own clock has run out |
 | A dependent that's waking holds it too | Paused, with a wake already asked for: a request the doorman holds for it, an [activity annotation](/concepts/idle-detection/#activity-annotations) or a wake request set since its pause. So the dependency doesn't start to pause as the dependent wakes |
-| The dependents are read again before it pauses | From the API server, which can have a wake the operator's cache hasn't seen yet |
+| The dependents are read again before it pauses | From the API server, which can have a wake the operator's cache hasn't seen yet. Once more just before it's scaled to zero, after the doorman's takeover. A dependent awake then, such as one that learned it depends on it since, calls the pause off (`PauseCancelled`) |
 | Waking a workload wakes its dependencies | Before it resumes, Napwake sets `napwake.dev/last-activity` on each dependency's ManagedWorkload, the usual [activity annotation](/concepts/idle-detection/#activity-annotations) wake |
 | Seeing it | `kubectl describe` shows it |
 | It chains | If Postgres depends on something, that wakes too |

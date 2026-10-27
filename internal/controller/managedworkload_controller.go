@@ -589,6 +589,14 @@ func (r *Reconciler) handlePause(ctx context.Context, workload *v1alpha1.Managed
 	}
 
 	scaledDown := workload.Status.Pause.PausedAt != nil
+	if !scaledDown {
+		if why, err := r.heldAsItPauses(ctx, workload); err != nil || why != nil {
+			if err != nil {
+				return nil, err
+			}
+			return r.handleResume(ctx, workload, why)
+		}
+	}
 	paused, err := r.pauser.Pause(ctx, workload)
 	if err != nil {
 		return nil, fmt.Errorf("pausing workload: %w", err)
