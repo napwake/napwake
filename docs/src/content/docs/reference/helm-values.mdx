@@ -270,7 +270,7 @@ What changes with `watchNamespaces`.
 
 - Wake on request still works. The operator always reads the doorman's EndpointSlices in the release namespace through a `<fullname>-doorman-endpoints` Role.
 - A `dependsOn` into an unwatched namespace that allows the dependent's (`napwake.dev/dependents-from`) shows as `DependencyNotFound=True`, reason `DependencyNotVisible`, and never blocks it.
-- An upgrade or rollback is refused while managed workloads are in a namespace it leaves out. That includes setting `watchNamespaces` where it was empty. They'd stay paused with no operator ([narrowing `watchNamespaces`](/operations/upgrading/#narrowing-watchnamespaces)).
+- An upgrade or rollback is refused while managed workloads are in a namespace it leaves out. That includes setting `watchNamespaces` where it was empty. With no operator, their ManagedWorkloads would be stuck on their finalizers, and paused ones would stay at 0 replicas ([narrowing `watchNamespaces`](/operations/upgrading/#narrowing-watchnamespaces)).
 
 ## Opt-in defaults
 
@@ -399,7 +399,7 @@ The operator's ServiceAccount. The doorman always gets its own, `<fullname>-door
 
 ## Guards
 
-Without the operator, a ManagedWorkload's finalizer never runs. Its workload stays paused at 0 replicas, its Services routed to the doorman. The guards stop Helm first.
+Without the operator, every ManagedWorkload is stuck on its finalizer, which only the operator runs. A paused workload also stays at 0 replicas, its Services routed to the doorman. The guards stop Helm first.
 
 | Value | Default | Description |
 |-------|---------|-------------|
