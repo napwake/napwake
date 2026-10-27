@@ -1037,11 +1037,13 @@ func (r *Reconciler) reconcileDelete(ctx context.Context, workload *v1alpha1.Man
 		return 0, err
 	}
 	if wait := r.drainLeft(workload); wait > 0 {
-		// Handed back, the workload runs again while its ports drain, up to
-		// a minute, so it isn't shown Paused meanwhile. The cost isn't
-		// settled: nothing reads it once the ManagedWorkload is gone.
+		// Handed back with replicas, the workload runs again while its ports
+		// drain, up to a minute, so it isn't shown Paused meanwhile. One
+		// released at zero, its target gone or at zero before its pause,
+		// stays as it was. The cost isn't settled: nothing reads it once the
+		// ManagedWorkload is gone.
 		old := workload.Status.Phase
-		if released && old != v1alpha1.PhaseRunning {
+		if released && replicas > 0 && old != v1alpha1.PhaseRunning {
 			now := r.clockTime()
 			workload.Status.Phase, workload.Status.LastTransitionTime = v1alpha1.PhaseRunning, &now
 		}
