@@ -303,6 +303,11 @@ var troubles = map[string]metav1.ConditionStatus{
 // labelled napwake.dev/ignore, so Napwake leaves it alone.
 const reasonTargetIgnored = "TargetIgnored"
 
+// reasonSeriesLost is PrometheusAvailable's reason while a query that lost
+// its series, as after Prometheus restarts without its data, holds a pause
+// for a few minutes: a short wait, not a failure.
+const reasonSeriesLost = "SeriesLost"
+
 // untroubled are the reasons a trouble condition carries when it needs
 // nobody's attention: it reports what the user set up on purpose, or the
 // normal state of a workload that's awake.
@@ -312,6 +317,7 @@ var untroubled = map[string]bool{
 	"NapwakeComponent":  true,
 	"DoormanDisabled":   true,
 	"NotPaused":         true,
+	reasonSeriesLost:    true,
 }
 
 // wakeCauses are the event reasons that say what woke a workload, and what
@@ -785,10 +791,24 @@ func nextFor(w *v1alpha1.ManagedWorkload, targetActiveUntil, now time.Time) stri
 		return "won't pause: dependsOn cycle"
 	case meta.IsStatusConditionFalse(conditions, "MetricsAvailable"):
 		return "won't pause: no CPU metrics"
+	case conditionReason(conditions, "PrometheusAvailable", metav1.ConditionFalse) == reasonSeriesLost:
+		if a := w.Status.Activity; idle || a == nil || a.PauseAt == nil || a.PauseAt.After(now) {
+			return pausesNext(w, idle, now)
+		}
+		return "waits a few minutes for Prometheus's series"
 	case meta.IsStatusConditionFalse(conditions, "PrometheusAvailable"):
 		return "won't pause: Prometheus failing"
 	}
 	return pausesNext(w, idle, now)
+}
+
+// conditionReason is the reason of the condition of type condType, when
+// it has status, or "".
+func conditionReason(conditions []metav1.Condition, condType string, status metav1.ConditionStatus) string {
+	if c := meta.FindStatusCondition(conditions, condType); c != nil && c.Status == status {
+		return c.Reason
+	}
+	return ""
 }
 
 // pausesNext says when a workload that may pause does: now, for one Idle,

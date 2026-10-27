@@ -383,6 +383,9 @@ func TestNextFor_WhatKeepsItUp(t *testing.T) {
 		{name: "a failing Prometheus query",
 			mutate: withCondition(condition("PrometheusAvailable", metav1.ConditionFalse, "QueryFailed", "")),
 			want:   "won't pause: Prometheus failing"},
+		{name: "a query in its grace after lost series, as after Prometheus restarts without its data",
+			mutate: withCondition(condition("PrometheusAvailable", metav1.ConditionFalse, "SeriesLost", "")),
+			want:   "waits a few minutes for Prometheus's series"},
 		{name: "a dependsOn cycle",
 			mutate: withCondition(condition("DependencyCycle", metav1.ConditionTrue, "DependencyCycle", "")),
 			want:   "won't pause: dependsOn cycle"},
@@ -1202,6 +1205,23 @@ func TestStatus_SavingsUnknown(t *testing.T) {
 
 // The Your bill line comes from what status can see of the cluster's node
 // autoscaler.
+// A query in its grace after lost series, as after Prometheus restarts
+// without its data, holds a pause a few minutes. It's a short wait, not a
+// failure: Needs attention leaves it out (the review of 8bdae63f, P65).
+func TestStatus_SeriesLostIsntATrouble(t *testing.T) {
+	w := statusWorkloadObj("shop", "web", v1alpha1.TargetKindDeployment, v1alpha1.PhaseRunning, time.Hour)
+	w.Status.Activity = activity(v1alpha1.ActivitySourcePrometheus, 3*time.Minute, -time.Minute)
+	w.Status.Conditions = []metav1.Condition{condition("PrometheusAvailable", metav1.ConditionFalse, "SeriesLost",
+		"the query matched series, then none")}
+
+	result, err := clusterStatus(context.Background(), newStatusClient(t, interceptor.Funcs{}, w), "shop",
+		statusOpts())
+
+	require.NoError(t, err)
+	assert.Equal(t, "waits a few minutes for Prometheus's series", result.Workloads[0].Next)
+	assert.Empty(t, result.Problems, "nothing to look at")
+}
+
 func TestStatus_NodeAutoscaler(t *testing.T) {
 	ca := &corev1.ConfigMap{ObjectMeta: metav1.ObjectMeta{Name: "cluster-autoscaler-status", Namespace: "kube-system"}}
 	objs := append(statusCluster(), ca)
