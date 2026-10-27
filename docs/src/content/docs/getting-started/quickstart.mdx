@@ -192,7 +192,7 @@ Send the request, timed:
 kubectl exec -n dev curl -- curl -s -o /dev/null -w '%{http_code} after %{time_total}s\n' http://my-api
 ```
 
-```
+```text
 200 after 1.084523s
 ```
 
@@ -227,7 +227,7 @@ kubectl annotate deployment my-api -n dev napwake.dev/dry-run- napwake.dev/idle-
 ```
 
 <StartCheckpoint state="awake" note="not managed">
-`my-api` has no ManagedWorkload within a minute, as the doorman's port drains. Had it been paused, it would be scaled back to its replicas at once, never left switched off.
+Within a minute, as the doorman's port drains, `my-api`'s ManagedWorkload is gone. Had it been paused, it would be scaled back to its replicas at once, never left switched off.
 </StartCheckpoint>
 
 <NextSteps
