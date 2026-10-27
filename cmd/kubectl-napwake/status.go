@@ -393,11 +393,11 @@ func clusterStatus(ctx context.Context, c client.Client, home string, opts statu
 		return statusResult{}, fmt.Errorf("finding the node autoscaler: %w", err)
 	}
 
-	targets := map[client.ObjectKey]string{}
+	targets := map[types.UID]string{}
 	checker := gitops.NewChecker(c)
 	for i := range workloads {
 		w := &workloads[i]
-		targets[client.ObjectKeyFromObject(w)] = w.Spec.Target.Name
+		targets[w.UID] = w.Spec.Target.Name
 		row := workloadStatus(w, activeUntil[targetOfManaged(w)], now)
 		result.Workloads = append(result.Workloads, row)
 		if discovery.PausingOff(w) {
@@ -996,10 +996,12 @@ func problemsOf(w *v1alpha1.ManagedWorkload, now time.Time) []problem {
 // the workload beside it.
 //
 // Events outlive their ManagedWorkload, so one deleted and made again under
-// the same name, as a preview environment's can be on every push, has the
-// old one's events beside its own. Napwake's events name the
-// ManagedWorkload's UID, which tells them apart.
-func recentHappenings(events []corev1.Event, targets map[client.ObjectKey]string, since time.Time) (
+// the same name, as a preview environment's can be on every push and every
+// one is after a reinstall, has the old one's events beside its own.
+// Napwake's events name the ManagedWorkload's UID, which tells them apart:
+// only those of the ManagedWorkloads there now, targets by their UID, are
+// listed.
+func recentHappenings(events []corev1.Event, targets map[types.UID]string, since time.Time) (
 	[]happening, map[types.UID]string) {
 	caused := map[types.UID]bool{}
 	woke := map[types.UID]string{}
@@ -1011,9 +1013,10 @@ func recentHappenings(events []corev1.Event, targets map[client.ObjectKey]string
 		}
 		key := client.ObjectKey{Namespace: ev.InvolvedObject.Namespace, Name: ev.InvolvedObject.Name}
 		uid := ev.InvolvedObject.UID
-		// Events outlive the ManagedWorkload they're for; one that's gone
-		// is named as it was.
-		target := cmp.Or(targets[key], key.Name)
+		target, current := targets[uid]
+		if !current {
+			continue
+		}
 		message := strings.TrimPrefix(ev.Message, target+": ")
 		heldRequest := ev.Reason == "WokeByActivity" && slices.Contains(requestWakeMessages, message)
 		kind, cause := happeningWake, wakeCauses[ev.Reason]

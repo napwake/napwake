@@ -29,6 +29,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	corev1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/types"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/interceptor"
 
@@ -135,8 +136,8 @@ type eventAt struct {
 
 // Events outlive their ManagedWorkload, so what woke one deleted and made
 // again under the same name, as a preview environment's is on each push,
-// says nothing of what woke the new one. The recent list still names the
-// old one's wake as it was.
+// says nothing of what woke the new one. Nor does the recent list name the
+// old one's wake (P65).
 func TestStatus_WokenByIsTheManagedWorkloadsOwn(t *testing.T) {
 	w := statusWorkloadObj("shop", "web", v1alpha1.TargetKindDeployment, v1alpha1.PhaseRunning, 10*time.Minute)
 	w.UID = "web-recreated"
@@ -162,7 +163,38 @@ func TestStatus_WokenByIsTheManagedWorkloadsOwn(t *testing.T) {
 			listed = append(listed, h.Workload+" "+h.WokenBy)
 		}
 	}
-	assert.Equal(t, []string{"web request"}, listed, "the old one's wake is still listed")
+	assert.Empty(t, listed, "the old one's wake isn't the new one's")
+}
+
+// After a reinstall, as after a workload unlabelled and labelled again,
+// each ManagedWorkload is a new one under the same name. Recent pauses and
+// wakes lists only the events of the ManagedWorkloads there now, by their
+// UID, not the previous install's, nor those of one since deleted (P65).
+func TestStatus_RecentIsTheCurrentManagedWorkloadsOwn(t *testing.T) {
+	web := statusWorkloadObj("shop", "web", v1alpha1.TargetKindDeployment, v1alpha1.PhasePaused, 10*time.Minute)
+	web.UID = "web-reinstalled"
+	event := func(workload, uid, reason, message string, ago time.Duration) *corev1.Event {
+		ev := statusEvent("shop", workload, reason, message, ago)
+		ev.InvolvedObject.UID = types.UID(uid)
+		return ev
+	}
+	objs := []client.Object{web,
+		event("web", "web-before", "Paused", "web: paused", 50*time.Minute),
+		event("web", "web-before", "WokenByRequest", "request on Service web, waking", 40*time.Minute+time.Second),
+		event("web", "web-before", "WokeByActivity", "web: a request is waiting, waking", 40*time.Minute),
+		event("cart", "cart-gone", "Paused", "cart: paused", 30*time.Minute),
+		event("web", "web-reinstalled", "Paused", "web: paused", 10*time.Minute),
+	}
+
+	result, err := clusterStatus(context.Background(), newStatusClient(t, interceptor.Funcs{}, objs...), "shop",
+		statusOpts())
+
+	require.NoError(t, err)
+	var listed []string
+	for _, h := range result.Recent {
+		listed = append(listed, h.Workload+" "+h.Kind+" "+h.At.Format("15:04"))
+	}
+	assert.Equal(t, []string{"web pause 11:50"}, listed, "only the ManagedWorkload there now")
 }
 
 // -o json gives what woke each workload, and each recent event's kind and

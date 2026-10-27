@@ -794,6 +794,7 @@ A person shown the asleep page isn't counted. So many mean something automated c
 | A wake's cause | A request on a Service, an activity annotation, a wake request, the forecast, or a scale-up from outside Napwake |
 | Activity annotations | Including a dependent waking |
 | Wake requests | From `kubectl napwake wake`, or a tool setting `napwake.dev/wake-requested`, by their `WakeRequested` event |
+| Whose | Only the ManagedWorkloads there now, by their UID. Not a deleted one's, nor those of the one before one made again under the same name, as after a reinstall |
 | Requests the doorman closed without reaching the workload | Listed too |
 | A wake with no recorded cause | Listed by its `resumed` event alone, such as a hand-back when a namespace becomes protected |
 | How many | The table shows the latest 10, and `-o json` every one |
