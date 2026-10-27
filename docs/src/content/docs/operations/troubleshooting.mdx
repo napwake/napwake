@@ -549,6 +549,8 @@ helm upgrade napwake oci://ghcr.io/napwake/charts/napwake \
   --set 'watchNamespaces={team-a,team-b}'
 ```
 
+With no `--watch-namespaces`, the operator watches every namespace. Then leave out `--set`, as `--reuse-values` alone keeps the `deployed` revision's values. Avoid `--set watchNamespaces=null`, which passes but fails the next `--reuse-values` upgrade.
+
 It marks the release deployed, and leaves the operator's pods running.
 
 <details class="nw-details">
