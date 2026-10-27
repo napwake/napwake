@@ -19,12 +19,16 @@ package main
 import (
 	"bytes"
 	"errors"
+	"fmt"
 	"io"
+	"math"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"regexp"
 	"runtime"
+	"slices"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -35,6 +39,7 @@ import (
 
 	v1alpha1 "github.com/napwake/napwake/api/v1alpha1"
 	"github.com/napwake/napwake/internal/discovery"
+	"github.com/napwake/napwake/internal/nodescale"
 )
 
 // historyResult is a cluster replayed over a week of history, with dry-run
@@ -710,4 +715,322 @@ func TestBuildReport_IdleNapwakeNeverPauses(t *testing.T) {
 		}
 	}
 	assert.Equal(t, "1 idle right now, reserving 0.02 vCPU and 0.03 GiB of memory; Napwake never pauses it", idle)
+}
+
+// What scales a cluster's nodes, as the scan finds it.
+var (
+	karpenterFound = nodescale.Autoscaler{Scalers: []nodescale.Scaler{{Kind: nodescale.Karpenter}}}
+	autopilotFound = nodescale.Autoscaler{Scalers: []nodescale.Scaler{{Kind: nodescale.GKEAutopilot}}}
+	scalerUnknown  = nodescale.Autoscaler{Unread: []string{"Karpenter's NodePools"}}
+	noScaler       = nodescale.Autoscaler{}
+)
+
+// couldResult is historyResult before anything is live, with what scales
+// its nodes: dry-run measured and history shows $179 a month pausing could
+// free, of the $446 the workloads cost on the same basis, 40%.
+func couldResult(scales nodescale.Autoscaler) scanResult {
+	result := historyResult()
+	result.NodeAutoscaler = scales
+	result.Workloads = slices.Delete(result.Workloads, 2, 3)
+	result.Totals.Workloads, result.Totals.Paused, result.Totals.PausedHourlyCost = 4, 0, 0
+	result.Totals.Live, result.Totals.FreedThisMonth, result.Totals.SavedThisMonth = 0, 0, 0
+	return result
+}
+
+// shortHistoryResult is couldResult replayed over too little history for
+// a steady figure.
+func shortHistoryResult() scanResult {
+	result := couldResult(karpenterFound)
+	result.History.Hours, result.History.Partial = 0.5, true
+	return result
+}
+
+// goodNewsResult is a scan with nothing idle and nothing to free.
+func goodNewsResult() scanResult {
+	return scanResult{Cluster: "c", ScannedAt: statusNow, ClusterReport: &discovery.ClusterReport{
+		Mode: discovery.ModeSnapshot,
+		Workloads: []discovery.Workload{{Namespace: "shop", Kind: v1alpha1.TargetKindDeployment, Name: "api",
+			State: discovery.StateActive, Reason: "CPU 64% of its request", MonthlyCost: 30}},
+		Totals: discovery.Totals{Workloads: 1, MonthlyCost: 30}}}
+}
+
+// reportPageParts are the parts of the scan page each lead changes: the
+// before and after's block, empty without one, the share card's data,
+// and the Copy summary's first two lines.
+type reportPageParts struct {
+	lead, card, summary, summary2 string
+}
+
+func reportPartsOf(t *testing.T, page string) reportPageParts {
+	t.Helper()
+	var parts reportPageParts
+	parts.lead = regexp.MustCompile(`(?s)<div class="pace[ "].*?</div>`).FindString(page)
+	parts.card = regexp.MustCompile(`<div hidden id="card-data"[^>]*></div>`).FindString(page)
+	require.NotEmpty(t, parts.card, "the share card's data")
+	summary := regexp.MustCompile(`(?s)<div hidden id="summary-lines">\s*<p>(.*?)</p>\s*<p>(.*?)</p>`).
+		FindStringSubmatch(page)
+	require.Len(t, summary, 3, "the Copy summary")
+	parts.summary, parts.summary2 = summary[1], summary[2]
+	return parts
+}
+
+// Each lead the scan page can take, as the notes' states table has them
+// (cmo-069): what pausing could free as a month's before and after, "40%
+// less" where nodes scale down, with a note where the scan can't see what
+// scales them, and "Not on the bill yet" where nothing does; and, as
+// headlineFor has them, unchanged, what Napwake freed once it's live, the
+// most pausing could free from a snapshot, nothing to free, and an
+// estimate from too little history. Each checks the lead's words and
+// figures, the share card's data, and the Copy summary's first line.
+func TestReportPage_ScanStates(t *testing.T) {
+	const at = "Workload scan<span data-private> of staging (EKS us-east-1)</span>, 3 October 2026, 09:00 UTC: "
+	const couldFigure = "$179 could be freed a month (40% of what these workloads cost over the same time)."
+	atMost := sampleCluster()
+	atMost.ScannedAt = historyResult().ScannedAt
+	tests := []struct {
+		name   string
+		result scanResult
+		could  *could
+		// lead is the before and after's block, or "" for none.
+		lead    string
+		card    []string
+		summary string
+		also    []string
+	}{
+		{name: "could, with a node autoscaler found", result: couldResult(karpenterFound),
+			could: &could{Without: "$446", With: "$267", Percent: 40},
+			lead: `<div class="pace"><p class="pace-fig"><b>40% less</b><span>Paused when idle, these workloads could ` +
+				`cost about $267 a month instead of $446.</span></p></div>`,
+			card: []string{`data-pace="yes"`, `data-value="40% less"`,
+				`data-label="Paused when idle, these workloads could cost about $267 a month instead of $446"`,
+				`data-detail=""`},
+			summary: at + "paused when idle, these workloads could cost about $267 a month instead of $446, 40% less. " +
+				couldFigure,
+			also: []string{`<div class="hero-figs paced">`, `<b>$179</b><span>could be freed a month</span>`,
+				`<b>$446</b><span>a month, what these workloads cost while running</span>`}},
+		{name: "could, with what scales nodes unknown", result: couldResult(scalerUnknown),
+			could: &could{Without: "$446", With: "$267", Percent: 40},
+			lead: `<div class="pace"><p class="pace-fig"><b>40% less</b><span>Paused when idle, these workloads could ` +
+				`cost about $267 a month instead of $446.</span></p><p class="pace-note">The bill drops by that much ` +
+				`only as nodes scale down, and this scan can&#39;t see what scales them.</p></div>`,
+			card: []string{`data-pace="yes"`, `data-value="40% less"`,
+				`data-label="Paused when idle, these workloads could cost about $267 a month instead of $446"`},
+			summary: at + "paused when idle, these workloads could cost about $267 a month instead of $446, 40% less. " +
+				couldFigure},
+		{name: "could, with no node autoscaler", result: couldResult(noScaler),
+			could: &could{Without: "$446", With: "$267", Percent: 40},
+			lead: `<div class="pace possible"><p class="pace-k label">Not on the bill yet</p><p class="pace-fig"><span>` +
+				`Paused when idle, these workloads could free 40% of what they cost.</span></p><p class="pace-note">` +
+				`Nothing removes nodes on this cluster yet, so the bill wouldn&#39;t drop until something does.</p></div>`,
+			card: []string{`data-value="$179"`, `data-label="could be freed a month"`,
+				`data-detail="40% of what these workloads cost over the same time"`},
+			summary: at + "paused when idle, these workloads could free 40% of what they cost; the bill drops only once " +
+				"something removes nodes. " + couldFigure},
+		{name: "live", result: historyResult(),
+			card: []string{`data-value="$4"`, `data-label="freed by Napwake this month"`,
+				`data-more="$179 more could be freed a month"`},
+			summary: at + "$4 freed by Napwake this month (from the 1 live workload it pauses; $1 of it saved as " +
+				"nodes scaled down).",
+			also: []string{`<div class="hero-figs live">`}},
+		{name: "at most", result: atMost,
+			card: []string{`data-value="$1,240"`, `data-label="could be freed a month, at most"`},
+			summary: "Workload scan<span data-private> of staging</span>, 3 October 2026, 09:00 UTC: $1,240 could be " +
+				"freed a month, at most (what the 1 workload idle right now costs while running, $1.70 an hour).",
+			also: []string{`<div class="hero-figs">`}},
+		{name: "nothing to free", result: goodNewsResult(),
+			card: []string{`data-statement="Every workload is in use."`, `data-value="$0"`,
+				`data-label="could be freed a month"`},
+			summary: "Workload scan<span data-private> of c</span>, 5 October 2026, 12:00 UTC: $0 could be freed a " +
+				"month (nothing is idle right now; Prometheus history, or measuring in dry-run, shows how often " +
+				"workloads are).",
+			also: []string{`<div class="hero-figs quiet">`}},
+		{name: "short history", result: shortHistoryResult(),
+			card: []string{`data-value="$179"`, `data-label="could be freed a month"`},
+			summary: at + "$179 could be freed a month (40% of what these workloads cost over the same time; from only " +
+				"30 minutes of history, so run the scan again after a few days for a steadier figure).",
+			also: []string{`data-short-history="From only 30 minutes of history, so run the scan again after a few ` +
+				`days for a steadier figure."`}},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			assert.Equal(t, tt.could, buildReport(tt.result, time.Hour).Could)
+
+			page := renderHTML(t, tt.result)
+			got := reportPartsOf(t, page)
+
+			assert.Equal(t, tt.lead, got.lead, "the before and after")
+			for _, passage := range tt.card {
+				assert.Contains(t, got.card, passage, "the share card")
+			}
+			if tt.lead == "" || strings.Contains(tt.lead, "possible") {
+				assert.NotContains(t, got.card, "data-pace", "the card is the one it was")
+			}
+			assert.Equal(t, tt.summary, got.summary, "the Copy summary's first line")
+			for _, passage := range tt.also {
+				pageHas(t, page, passage)
+			}
+		})
+	}
+}
+
+// The scan says "less" only where the bill can drop by it (cmo-069): where
+// something scales nodes, or pods are billed, and where it can't see what
+// scales them, with a note that says so. With nothing to remove nodes, the
+// same share is what pausing could free, "Not on the bill yet", and no
+// "less" anywhere it leads: the page, its card or its summary.
+func TestReportPage_LessOnlyWhereTheBillCanDrop(t *testing.T) {
+	const unseen = "this scan can&#39;t see what scales them"
+	for name, scales := range map[string]nodescale.Autoscaler{"Karpenter": karpenterFound,
+		"GKE Autopilot": autopilotFound, "what scales nodes unknown": scalerUnknown} {
+		t.Run(name, func(t *testing.T) {
+			got := reportPartsOf(t, renderHTML(t, couldResult(scales)))
+
+			assert.Contains(t, got.lead, "<b>40% less</b>")
+			assert.Contains(t, got.card, `data-value="40% less"`)
+			assert.Contains(t, got.summary, ", 40% less.")
+			if scales.Known() {
+				assert.NotContains(t, got.lead, unseen)
+			} else {
+				assert.Contains(t, got.lead, unseen, "a note that the scan can't see what scales them")
+			}
+		})
+	}
+
+	t.Run("nothing removes nodes", func(t *testing.T) {
+		got := reportPartsOf(t, renderHTML(t, couldResult(noScaler)))
+
+		assert.Contains(t, got.lead, `<p class="pace-k label">Not on the bill yet</p>`)
+		assert.Contains(t, got.lead, "could free 40% of what they cost")
+		for part, text := range map[string]string{"lead": got.lead, "card": got.card, "summary": got.summary} {
+			assert.NotContains(t, text, " less", "no less in the %s", part)
+		}
+	})
+}
+
+// With the before and after leading, what the workloads cost is one number
+// on the page (cmo-070): the figure under the lead, and the Copy summary's
+// line for it, are on the share's basis, as "instead of" is, though the
+// workloads cost a different amount with the pods they run now. Without
+// it, the figure is what they cost with today's pods, as before.
+func TestReportPage_OneNumberForWhatTheWorkloadsCost(t *testing.T) {
+	const onTheBasis, today = "$500", "$446"
+	ranMorePods := func(result scanResult) scanResult {
+		result.Totals.FreeableBasis = 500
+		return result
+	}
+	for name, tt := range map[string]struct {
+		result scanResult
+		want   string
+	}{
+		"found":              {result: ranMorePods(couldResult(karpenterFound)), want: onTheBasis},
+		"no node autoscaler": {result: ranMorePods(couldResult(noScaler)), want: onTheBasis},
+		"short history":      {result: ranMorePods(shortHistoryResult()), want: today},
+	} {
+		t.Run(name, func(t *testing.T) {
+			page := renderHTML(t, tt.result)
+			got := reportPartsOf(t, page)
+
+			pageHas(t, page, `<b>`+tt.want+`</b><span>a month, what these workloads cost while running</span>`)
+			line := tt.want + " a month, what these workloads cost while running. "
+			assert.True(t, strings.HasPrefix(got.summary2, line), "the Copy summary's second line: %s", got.summary2)
+			if c := buildReport(tt.result, time.Hour).Could; c != nil {
+				assert.Equal(t, tt.want, c.Without, "the lead's instead of")
+			}
+			if strings.Contains(got.card, `data-pace="yes"`) {
+				assert.Contains(t, got.card, "a month instead of "+tt.want+`"`)
+			}
+			pageHas(t, page, `<b>$179</b><span>could be freed a month</span>`, "what could be freed is one sum")
+		})
+	}
+}
+
+// dollarsRange is the amounts an amount dollars wrote stands for, from lo
+// up to hi: $0 is none, <$1 above it but under 50 cents, and whole dollars
+// the half dollar either side.
+func dollarsRange(t *testing.T, written string) (lo, hi float64) {
+	t.Helper()
+	switch written {
+	case "$0":
+		return 0, 0
+	case "<$1":
+		return 0, 0.5
+	}
+	n, err := strconv.ParseFloat(strings.ReplaceAll(strings.TrimPrefix(written, "$"), ",", ""), 64)
+	require.NoError(t, err, "dollars wrote %q", written)
+	return n - 0.5, n + 0.5
+}
+
+// The scan's before and after always agrees with itself, and with the
+// figures under it (cmo-069, cmo-070): for every basis and every amount
+// pausing could free, from a cent to a million dollars a month and from
+// none to more than the basis, Percent is the share the could-free figure's
+// detail gives, Without is the share's own basis, not what the workloads
+// cost now, and so is the cost figure under it, the could-free figure is
+// the sum With is taken from, With is never below zero, and read back as
+// written, With and Without give Percent, within what writing them in whole
+// dollars rounds away. Where that can't hold, a share under 1% or over
+// 100%, there's none, and the cost figure is what they cost now.
+func TestCouldFor_PercentWithAndWithoutAgree(t *testing.T) {
+	share := regexp.MustCompile(`^(\d+)% of `)
+	checked := 0
+	for e := -2.0; e <= 6; e += 0.25 {
+		for _, k := range []float64{1, 1.37, 2.9, 7.3} {
+			basis := float64(math.Pow(10, e) * k)
+			for _, part := range []float64{0, 0.001, 0.0049, 0.005, 0.0051, 0.01, 0.1, 1.0 / 3, 0.4, 0.5, 0.73, 0.994,
+				0.995, 0.999, 1, 1.004, 1.0049, 1.005, 1.006, 1.2, 4} {
+				could := basis * part
+				// Converted, each amount is rounded as it's stored, so a sum
+				// below can't fuse with a product, as Go may, and differ from
+				// the same sum of the stored amounts.
+				replayed, measured := float64(could*0.7), float64(could*0.3)
+				result := scanResult{ClusterReport: &discovery.ClusterReport{Mode: discovery.ModeHistory,
+					History: &discovery.HistorySource{Hours: 168}, Totals: discovery.Totals{Workloads: 3,
+						MonthlyCost: basis*0.6 + 17, FreeableBasis: basis, DryRun: 1,
+						Replayed: discovery.ReplayTotals{Workloads: 2, Sleepers: 1, MonthlyFreed: replayed},
+						Measured: discovery.Measured{MonthlyFreed: measured}}}}
+				name := fmt.Sprintf("%v of %v", could, basis)
+
+				page := buildReport(result, time.Hour)
+
+				require.Len(t, page.Headline.Figures, 2, name)
+				couldFigure, costFigure := page.Headline.Figures[0], page.Headline.Figures[1]
+				require.Equal(t, figureCost, costFigure.Kind, name)
+				m := share.FindStringSubmatch(couldFigure.Detail)
+				require.Len(t, m, 2, "%s: the figure gives its share: %q", name, couldFigure.Detail)
+				detail, err := strconv.Atoi(m[1])
+				require.NoError(t, err)
+				got := page.Could
+				if detail < 1 || detail > 100 {
+					assert.Nil(t, got, "%s: a share of %d%%", name, detail)
+					assert.Equal(t, dollars(result.Totals.MonthlyCost), costFigure.Value, "%s: what they cost now", name)
+					continue
+				}
+				if !assert.NotNil(t, got, "%s: a share of %d%%", name, detail) {
+					continue
+				}
+				checked++
+				assert.Equal(t, got.Without, costFigure.Value, "%s: one number for what they cost", name)
+				assert.Equal(t, replayed+measured, couldFigure.Amount, "%s: the sum With is taken from", name)
+				assert.Equal(t, detail, got.Percent, "%s: the figure's share", name)
+				assert.Equal(t, dollars(basis), got.Without, "%s: on the share's own basis", name)
+				if left := basis - (replayed + measured); left < basis*floatNoise {
+					assert.Equal(t, "$0", got.With, "%s: none left", name)
+				} else {
+					assert.Equal(t, dollars(left), got.With, "%s", name)
+				}
+				assert.False(t, strings.HasPrefix(got.With, "-"), "%s: With below zero: %s", name, got.With)
+				withLo, withHi := dollarsRange(t, got.With)
+				withoutLo, withoutHi := dollarsRange(t, got.Without)
+				most := 100 * (1 - withLo/withoutHi)
+				least := math.Inf(-1)
+				if withoutLo > 0 {
+					least = 100 * (1 - withHi/withoutLo)
+				}
+				assert.True(t, float64(got.Percent) >= least-0.5-1e-9 && float64(got.Percent) <= most+0.5+1e-9,
+					"%s: %d%% less, %s instead of %s, which give %.2f%% to %.2f%%", name, got.Percent, got.With,
+					got.Without, least, most)
+			}
+		}
+	}
+	assert.Greater(t, checked, 1000, "the range is covered")
 }

@@ -186,6 +186,28 @@ html:not(.js) .hero, .hero.no-building { grid-template-columns: minmax(0, 1fr); 
 .dry-link { white-space: nowrap; }
 .hero-main > .lede { margin: var(--space-6) 0 0; max-width: 620px; font-size: 14px; line-height: 1.5; color: var(--muted); }
 
+/* the month's before and after (cmo-068): the percentage leads in the display face, both amounts under it, then
+   what it rests on. Freed and saved (status), or the scan's two figures, step down under it to the size of the rest. */
+.pace { margin: var(--space-8) 0 0; }
+.pace-fig { margin: 0; }
+.pace-fig b { display: block; margin-left: -.03em; font: 800 clamp(104px, 11vw, 150px)/.82 var(--font-display); color: var(--text); }
+.pace-fig span { display: block; margin-top: var(--space-4); max-width: 560px; font: 700 21px/1.3 var(--font-sans); color: var(--text); }
+.pace-early, .pace-note, .pace-wait { margin: var(--space-3) 0 0; max-width: 560px; font: 400 14px/1.5 var(--font-sans); color: var(--muted); }
+.pace-early b { color: var(--accent-text); }
+.pace-early + .pace-note { margin-top: var(--space-1); }
+.pace-k { margin: 0 0 var(--space-2); color: var(--accent-text); }
+.pace.possible .pace-fig span { margin: 0; max-width: 620px; font: 700 28px/1.25 var(--font-sans); text-wrap: balance; }
+.pace.quiet .pace-fig b { margin: 0; font: 700 28px/1.1 var(--font-sans); }
+.pace.quiet .pace-fig span { margin-top: var(--space-1); font-size: 17px; }
+.money.paced { margin-top: var(--space-6); padding-top: var(--space-4); max-width: 560px; border-top: 1px solid var(--line); }
+.money.paced .s0 .figure, .money.paced .s1 .figure, .hero-figs.paced .lead .figure { display: grid; grid-template-columns: auto minmax(0, 1fr); column-gap: var(--space-3); align-items: baseline; }
+.money.paced .s0 .figure b, .money.paced .s1 .figure b, .hero-figs.paced .lead .figure b { margin: 0; font: 700 28px/1.1 var(--font-sans); }
+.money.paced .s0 .figure span, .money.paced .s1 .figure span, .hero-figs.paced .lead .figure span { margin: 0; font-size: 17px; }
+.hero-figs.paced .lead .figure span { font-weight: 400; }
+.money.paced .s0 .figure small, .money.paced .s1 .figure small, .hero-figs.paced .lead .figure small { grid-column: 2; }
+.money.paced .s1 { margin-top: var(--space-4); }
+.hero-figs.paced .lead { padding-top: var(--space-4); border-top: 1px solid var(--line); }
+
 /* Callout, the design system's: needs-you is the pinned note, calm */
 .callout { display: flex; gap: var(--space-3); align-items: flex-start; max-width: 620px; margin: var(--space-6) 0 0; padding: var(--space-4) 18px; background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius-lg); color: var(--text); font: 400 17px/1.6 var(--font-sans); text-decoration: none; }
 .callout .door-g { flex: none; width: 20px; height: 20px; margin-top: 3px; background: var(--g-error) center / contain no-repeat; }
@@ -434,6 +456,10 @@ footer { margin-top: 110px; border-top: 1px solid var(--line); }
   .statement.big { font-size: 48px; }
   .hero-figs .lead .figure b { font-size: 96px; }
   .money .lead .figure b { font-size: 88px; }
+  .pace { margin-top: var(--space-6); }
+  .pace-fig b { font-size: 96px; }
+  .pace-fig span { margin-top: var(--space-3); font-size: 19px; }
+  .pace.possible .pace-fig span { font-size: 21px; }
   .actions .btn { flex: 1 1 auto; padding: .5em 1em; }
   .bldg-art { max-height: 470px; }
   .meta { flex-direction: column; gap: 0; }
@@ -518,6 +544,15 @@ html:not(.js) th { position: static; }
   .hero-figs .figure span, .money .figure span { font-size: 11px; }
   .hero-figs .figure small, .money .figure small, .hero-basis, .hero-main > .lede, .meter-t, .money .s2, .money .s2 .figure b, .money .s2 .figure span, .money .s2 .figure small, .dry-link { font-size: 9.5px !important; }
   .money .lead .figure b { margin-top: var(--space-3); }
+  .pace { margin-top: var(--space-3); }
+  .pace-fig b { font-size: 76px; }
+  .pace-fig span, .pace.possible .pace-fig span { margin-top: var(--space-2); font-size: 13px; }
+  .pace-k { font-size: 8.5px; }
+  .pace-early, .pace-note, .pace-wait { font-size: 9.5px; }
+  .money.paced, .hero-figs.paced .lead { margin-top: var(--space-3); padding-top: var(--space-2); }
+  .money.paced .s0 .figure b, .money.paced .s1 .figure b, .hero-figs.paced .lead .figure b { font-size: 17px; }
+  .money.paced .s0 .figure span, .money.paced .s1 .figure span, .hero-figs.paced .lead .figure span { font-size: 11px; }
+  .money.paced .s1 { margin-top: var(--space-2); }
   .callout { font-size: 11px; padding: var(--space-2) var(--space-3); margin-top: var(--space-3); }
   .bldg { break-inside: avoid; }
   .bldg .pics { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); padding-top: var(--space-2); }
@@ -612,6 +647,12 @@ html:not(.js) th { position: static; }
   {{if .Unjudged}}{{$busy = false}}{{end}}
   {{$group := gt (len .Workloads) 400}}
   {{$calm := and .Workloads (not $awake) (not .Unjudged)}}{{$good := and .Workloads $zero (not $idle)}}
+  {{/* What pausing could free, as a month's before and after (cmo-068): .Could, set only before anything is live, with
+       the share couldFree computes and enough history. Every other lead stays as headlineFor has it. */}}
+  {{$could := and .Workloads .Could}}
+  {{/* With nothing to remove nodes, the bill wouldn't drop: the lead says what pausing could free instead, and the
+       card keeps the could-free figure. With what scales nodes unknown, the lead says the drop depends on it. */}}
+  {{$offbill := and $could (eq .NodeScale.State "none")}}{{$paced := and $could (not $offbill)}}
   <section id="summary">
     <div class="hero{{if not (or .Workloads .Unjudged)}} no-building{{end}}"{{with .Headline.ShortHistory}} data-short-history="{{.}}"{{end}}>
       <div class="hero-main">
@@ -625,7 +666,8 @@ html:not(.js) th { position: static; }
         {{else if $calm}}<p class="statement big">Every workload is asleep.</p>
         {{else if $good}}<p class="statement big">{{if $busy}}Every workload is in use.{{else}}Every running workload shows signs of use.{{end}}</p>
         {{else}}<p class="statement needs-js" data-statement></p>{{end}}
-        <div class="hero-figs{{if or (not .Workloads) $good $calm}} quiet{{end}}{{if $live}} live{{end}}">{{range $i, $f := .Headline.Figures}}<div class="slot s{{$i}}{{if eq $i 0}} lead{{end}}">{{if and $live (eq $i 1)}}<span class="kicker label">Still to free</span>{{end}}<div class="figure{{if not .Amount}} zero{{end}}"><b>{{.Value}}</b><span>{{.Label}}</span>{{if .Detail}}<small>{{.Detail}}</small>{{end}}</div></div>{{end}}</div>
+        {{if $paced}}<div class="pace"><p class="pace-fig"><b>{{.Could.Percent}}% less</b><span>Paused when idle, these workloads could cost about {{.Could.With}} a month instead of {{.Could.Without}}.</span></p>{{if eq .NodeScale.State "unknown"}}<p class="pace-note">The bill drops by that much only as nodes scale down, and this scan can&#39;t see what scales them.</p>{{end}}</div>{{else if $offbill}}<div class="pace possible"><p class="pace-k label">Not on the bill yet</p><p class="pace-fig"><span>Paused when idle, these workloads could free {{.Could.Percent}}% of what they cost.</span></p><p class="pace-note">Nothing removes nodes on this cluster yet, so the bill wouldn&#39;t drop until something does.</p></div>{{end}}
+        <div class="hero-figs{{if or (not .Workloads) $good $calm}} quiet{{end}}{{if $live}} live{{end}}{{if $could}} paced{{end}}">{{range $i, $f := .Headline.Figures}}<div class="slot s{{$i}}{{if eq $i 0}} lead{{end}}">{{if and $live (eq $i 1)}}<span class="kicker label">Still to free</span>{{end}}<div class="figure{{if not .Amount}} zero{{end}}"><b>{{.Value}}</b><span>{{.Label}}</span>{{if .Detail}}<small>{{.Detail}}</small>{{end}}</div></div>{{end}}</div>
         <p class="hero-basis">{{.Basis}} <a href="#meaning">{{if .History}}What these numbers mean{{else}}What a snapshot can&#39;t show{{end}}</a></p>
         <div class="actions needs-js" role="group" aria-label="Share this report">
           {{if .Workloads}}<button type="button" class="btn primary" data-share>Share card</button>{{end}}
@@ -680,11 +722,11 @@ html:not(.js) th { position: static; }
     {{/* What the share card and the summary say. Infrastructure names (the cluster, the Prometheus source) sit in
          data-private and go out only when the reader ticks the box; data-public stands in for them otherwise. */}}
     <div hidden id="summary-lines">
-      <p>Workload scan<span data-private> of {{.Cluster}}</span>, {{.ScannedAt}}: {{range $i, $f := .Headline.Figures}}{{if eq $i 0}}{{.Value}} {{.Label}}{{if .Detail}} ({{.Detail}}){{end}}.{{end}}{{end}}</p>
+      <p>Workload scan<span data-private> of {{.Cluster}}</span>, {{.ScannedAt}}: {{if $paced}}paused when idle, these workloads could cost about {{.Could.With}} a month instead of {{.Could.Without}}, {{.Could.Percent}}% less. {{else if $offbill}}paused when idle, these workloads could free {{.Could.Percent}}% of what they cost; the bill drops only once something removes nodes. {{end}}{{range $i, $f := .Headline.Figures}}{{if eq $i 0}}{{.Value}} {{.Label}}{{if .Detail}} ({{.Detail}}){{end}}.{{end}}{{end}}</p>
       <p>{{range $i, $f := .Headline.Figures}}{{if eq $i 1}}{{if $live}}{{.Value}} more {{.Label}}{{else}}{{.Value}} {{.Label}}{{end}}{{if .Detail}} ({{.Detail}}){{end}}. {{end}}{{end}}{{range $i, $f := .Facts}}{{if eq $i 1}}{{.Value}} {{.Label}}.{{end}}{{end}}</p>
       <p><span data-private>{{.Basis}}</span><span data-public>{{.BasisPublic}}</span> Measured with kubectl napwake scan, <a href="https://napwake.dev/?ref=scan-report" target="_blank" rel="noopener noreferrer">napwake.dev</a></p>
     </div>
-    <div hidden id="card-data" data-eyebrow="Workload scan" data-cluster="{{.Cluster}}"{{range $i, $f := .Headline.Figures}}{{if eq $i 0}}{{if $calm}} data-statement="Every workload is asleep."{{else if $good}} data-statement="{{if $busy}}Every workload is in use.{{else}}Every running workload shows signs of use.{{end}}"{{end}} data-value="{{.Value}}" data-label="{{.Label}}" data-detail="{{.Detail}}"{{end}}{{end}}{{if $live}} data-more="{{$more}} more {{$moreLabel}}"{{end}} data-source="{{if and .History .Over}}{{.Over}} of Prometheus history{{else}}a snapshot, without history{{end}}{{template "price-kind" .}}" data-hook="kubectl napwake scan" data-hook-note="nothing to install in the cluster"></div>
+    {{if $paced}}<div hidden id="card-data" data-eyebrow="Workload scan" data-cluster="{{.Cluster}}" data-pace="yes" data-value="{{.Could.Percent}}% less" data-label="Paused when idle, these workloads could cost about {{.Could.With}} a month instead of {{.Could.Without}}" data-detail="" data-source="{{if and .History .Over}}{{.Over}} of Prometheus history{{else}}a snapshot, without history{{end}}{{template "price-kind" .}}" data-hook="kubectl napwake scan" data-hook-note="nothing to install in the cluster"></div>{{else}}<div hidden id="card-data" data-eyebrow="Workload scan" data-cluster="{{.Cluster}}"{{range $i, $f := .Headline.Figures}}{{if eq $i 0}}{{if $calm}} data-statement="Every workload is asleep."{{else if $good}} data-statement="{{if $busy}}Every workload is in use.{{else}}Every running workload shows signs of use.{{end}}"{{end}} data-value="{{.Value}}" data-label="{{.Label}}" data-detail="{{.Detail}}"{{end}}{{end}}{{if $live}} data-more="{{$more}} more {{$moreLabel}}"{{end}} data-source="{{if and .History .Over}}{{.Over}} of Prometheus history{{else}}a snapshot, without history{{end}}{{template "price-kind" .}}" data-hook="kubectl napwake scan" data-hook-note="nothing to install in the cluster"></div>{{end}}
   </section>
 
   {{if .Namespaces}}
@@ -1428,9 +1470,10 @@ html:not(.js) th { position: static; }
     note.innerHTML = '<span class="door-g" aria-hidden="true"></span><span><b></b> <span></span></span>';
     note.querySelector("b").textContent = "Too little history yet.";
     note.querySelector("span > span").textContent = early;
-    var figs = $(".hero-figs");
+    var figs = $(".hero-figs"), pace = $(".pace");
     figs.classList.add("quiet");
-    figs.parentNode.insertBefore(note, figs);
+    if (pace) pace.classList.add("quiet");
+    figs.parentNode.insertBefore(note, pace || figs);
     each($$("[data-share]"), function (b) { b.remove(); });
   }
 
@@ -1671,10 +1714,11 @@ html:not(.js) th { position: static; }
     if (!statement) { var st = page === "status" ? null : $(".statement"); statement = st ? st.textContent.trim() : page === "status" ? asleepSay : ""; }
     return {
       eyebrow: d.eyebrow || "", cluster: named() ? d.cluster || "" : "", statement: statement,
-      value: d.value || "", label: d.label || "", detail: d.detail || "", more: d.more || "",
+      value: d.value || "", label: d.label || "", detail: d.detail || "", detailLead: d.detailLead || "", more: d.more || "",
       source: d.source ? fmt(total) + plural(total, " workload", " workloads") + " · " + d.source : "",
-      hook: d.hook || "", hookNote: d.hookNote || "", meterLabel: d.meterLabel || "",
-      meter: meter && !meter.hidden ? parseFloat(meter.dataset.share) : null
+      hook: d.hook || "", hookNote: d.hookNote || "", meterLabel: d.meterLabel || "", pace: !!d.pace,
+      // with the month's before and after on the card, the bar for what came off the bill stays on the page
+      meter: !d.pace && meter && !meter.hidden ? parseFloat(meter.dataset.share) : null
     };
   }
   function wrapText(ctx, text, maxW) {
@@ -1691,10 +1735,22 @@ html:not(.js) th { position: static; }
     for (var fs = start; fs >= min; fs--) {
       ctx.font = weight + " " + fs + "px " + family;
       var lines = wrapText(ctx, text, maxW);
-      if (lines.length <= max) return { fs: fs, lines: lines };
+      if (lines.length <= max && lines.every(function (l) { return ctx.measureText(l).width <= maxW; })) return { fs: fs, lines: lines };
     }
     ctx.font = weight + " " + min + "px " + family;
     return { fs: min, lines: wrapText(ctx, text, maxW) };
+  }
+  // The logo, the design system's dark horizontal lockup (character/logo/lockup-horizontal-dark.svg), as the dark
+  // versions go on Night: the symbol, its markup copied as it is with its clip ids renamed, drawn with the building;
+  // the wordmark, one path in Paper, 86 units to its right. Units: x-height 60, ascender 22 above it, descender 20
+  // under the baseline, 408.5 wide. The whole lockup, not the wordmark alone: the doorman at the street door is too
+  // small at a chat's size to say whose card it is (1-logo.md).
+  var SYMBOL = '<g transform="translate(-10 -27.7) scale(0.95)"><path d="M12 96 V88 Q12 79 22 79 H74 Q84 79 84 88 V96 Z" fill="#1E7A6E"/><rect x="16" y="80" width="13" height="5.5" rx="2.75" fill="#F5B53F"/><circle cx="40" cy="91" r="2.6" fill="#F5B53F"/><circle cx="58" cy="91" r="2.6" fill="#F5B53F"/><path d="M26 76 V44 Q26 36 34 36 H62 Q70 36 70 44 V76 Z" fill="#45A898"/><clipPath id="lk1"><circle cx="38.3" cy="55" r="7.8"/></clipPath><circle cx="38.3" cy="55" r="7.5" fill="#FFFFFF"/><g clip-path="url(#lk1)"><circle cx="38.3" cy="55.95" r="3.75" fill="#0F1716"/><rect x="26.299999999999997" y="40" width="24" height="15" fill="#45A898" transform="rotate(-5 38.3 55)"/></g><rect x="29.45" y="53.58" width="17.7" height="2.85" rx="1.43" fill="#0F1716" transform="rotate(-5 38.3 55)"/><clipPath id="lk2"><circle cx="57.7" cy="55" r="7.8"/></clipPath><circle cx="57.7" cy="55" r="7.5" fill="#FFFFFF"/><g clip-path="url(#lk2)"><circle cx="57.7" cy="55.95" r="3.75" fill="#0F1716"/><rect x="45.7" y="40" width="24" height="15" fill="#45A898" transform="rotate(3 57.7 55)"/></g><rect x="48.85" y="53.58" width="17.7" height="2.85" rx="1.43" fill="#0F1716" transform="rotate(3 57.7 55)"/><path d="M23 71 H73 V80 Q48 83 23 80 Z" fill="#12524B"/><rect x="23" y="70" width="50" height="2.4" rx="1.2" fill="#F5B53F"/><g transform="rotate(-5 48 38)"><path d="M31 38 L29.5 13 Q29.5 10 32.5 10 Q48 8.5 63.5 10 Q66.5 10 66.5 13 L65 38 Z" fill="#2B3735"/><path d="M30.6 31 L30.2 25 H65.8 L65.4 31 Z" fill="#F5B53F"/><path d="M14 37 Q15 34 20 34.5 H76 Q81 34 82 37 Q82 41.5 76 41.5 H20 Q14 41.5 14 37 Z" fill="#2B3735"/></g></g>';
+  var WORDMARK = "M0 60 V18 A18 18 0 0 1 36 18 V60 ZM24 60 V18 A6 6 0 0 0 12 18 V60 ZM46.5 60 V18 A18 18 0 0 1 64.5 4 H65.5 L71.5 13 V60 ZM70.5 0 H82.5 V60 H70.5 ZM70.5 48 V23.25 A6.25 6.25 0 0 0 58 23.25 V48 ZM94.5 60 V0 H112.5 A18 18 0 0 1 130.5 18 V60 ZM118.5 48 V18 A6 6 0 0 0 106.5 18 V48 ZM94.5 59 H106.5 V80 H94.5 ZM136.5 0 L149 0 L156.5 60 L144 60 ZM156.25 16 L168.75 16 L156.5 60 L144 60 ZM156.25 16 L168.75 16 L181 60 L168.5 60 ZM176 0 L188.5 0 L181 60 L168.5 60 ZM194.5 60 V18 A18 18 0 0 1 212.5 4 H213.5 L219.5 13 V60 ZM218.5 0 H230.5 V60 H218.5 ZM218.5 48 V23.25 A6.25 6.25 0 0 0 206 23.25 V48 ZM242.5 -22 H254.5 V60 H242.5 ZM267 0 L279.5 0 L254.5 44 L254.5 23 ZM261.5 31 L270 26 L280.5 60 L267.5 60 ZM286.5 28 V18 A18 18 0 0 1 322.5 18 V28 ZM310.5 28 V18 A6 6 0 0 0 298.5 18 V28 ZM286.5 26 H322.5 V38 H286.5 ZM286.5 26 H298.5 V60 H286.5 ZM286.5 48 H320.5 V60 H286.5 Z";
+  function drawWordmark(ctx, x, top, s) {
+    if (typeof Path2D !== "function") return 0;
+    ctx.save(); ctx.translate(x + 86 * s, top + 22 * s); ctx.scale(s, s); ctx.fillStyle = C.paper; ctx.fill(new Path2D(WORDMARK)); ctx.restore();
+    return 408.5 * s;
   }
   function roundRect(ctx, x, y, w, h, r) {
     ctx.beginPath(); ctx.moveTo(x + r, y); ctx.arcTo(x + w, y, x + w, y + h, r); ctx.arcTo(x + w, y + h, x, y + h, r);
@@ -1712,7 +1768,10 @@ html:not(.js) th { position: static; }
     // A flat wall, no grain: noise can't be compressed, and a card has to stay small enough to post (X takes 5 MB).
     var art = resolve(B.svg(plan.at, { lobby: lobbyArt, grain: false })).replace(/class="ec"/g, 'class="ec" opacity="0"');
     art = art.replace('<svg class="bldg-art"', '<svg class="bldg-art" x="' + bx.toFixed(1) + '" y="' + by.toFixed(1) + '" width="' + bw.toFixed(1) + '" height="' + bh.toFixed(1) + '"');
-    var svg = '<svg xmlns="http://www.w3.org/2000/svg" width="' + W * S + '" height="' + H * S + '" viewBox="0 0 ' + W + " " + H + '"><rect width="' + W + '" height="' + H + '" fill="' + C.ground + '"/>' + art + "</svg>";
+    // the logo's symbol, top left, where words() sets the wordmark beside it
+    var ws = sq ? .68 : .5636, wTop = sq ? 80 : 54;
+    var mark = '<g transform="translate(' + pad + " " + (wTop + 22 * ws).toFixed(2) + ") scale(" + ws + ')">' + SYMBOL + "</g>";
+    var svg = '<svg xmlns="http://www.w3.org/2000/svg" width="' + W * S + '" height="' + H * S + '" viewBox="0 0 ' + W + " " + H + '"><rect width="' + W + '" height="' + H + '" fill="' + C.ground + '"/>' + art + mark + "</svg>";
     return font().then(function () {
       return new Promise(function (done) {
         var img = new Image();
@@ -1723,34 +1782,49 @@ html:not(.js) th { position: static; }
     });
     function words() {
       ctx.save(); ctx.scale(S, S); ctx.textBaseline = "alphabetic"; ctx.textAlign = "left";
-      var y = sq ? 104 : 78;
       var ls = function (px) { if ("letterSpacing" in ctx) ctx.letterSpacing = px; };
-      // the eyebrow (state-label), the cluster's name only if ticked, and the site
-      ctx.font = "700 " + (sq ? 20 : 16) + "px " + MONO; ls(sq ? "1.2px" : "1px"); ctx.fillStyle = C.muted;
-      var eb = sp.eyebrow.toUpperCase(); ctx.fillText(eb, pad, y);
+      // the wordmark, beside the symbol, at the size napwake.dev's own cards set it (scripts/cards.mjs); the eyebrow
+      // (state-label) on its baseline at the column's end, or on a row of its own when the cluster's name, ticked,
+      // makes it too long to sit beside it
+      var y = wTop + 82 * ws, wW = drawWordmark(ctx, pad, wTop, ws);
+      var ebPx = sq ? 20 : 16, eb = sp.eyebrow.toUpperCase(), cl = sp.cluster ? "· " + sp.cluster : "";
+      ctx.font = "700 " + ebPx + "px " + MONO; ls(sq ? "1.2px" : "1px");
       var ew = ctx.measureText(eb).width; ls("0px");
-      if (sp.cluster) { ctx.font = "400 " + (sq ? 20 : 16) + "px " + MONO; ctx.fillStyle = C.text; ctx.fillText("· " + sp.cluster, pad + ew + 12, y); }
-      ctx.textAlign = "right"; ctx.fillStyle = C.paper; ctx.font = "800 " + (sq ? 44 : 34) + "px " + DISPLAY;
-      ctx.fillText(site, pad + colW, y + (sq ? 6 : 5)); ctx.textAlign = "left";
-      // the statement, the figure, its label and detail
+      ctx.font = "400 " + ebPx + "px " + MONO;
+      var cw = cl ? ctx.measureText(cl).width + 12 : 0, ex = pad + colW - ew - cw;
+      if (!wW) ex = pad;
+      else if (ex < pad + wW + (sq ? 40 : 32)) { ex = pad; y += sq ? 56 : 44; }
+      ctx.font = "700 " + ebPx + "px " + MONO; ls(sq ? "1.2px" : "1px"); ctx.fillStyle = C.muted;
+      ctx.fillText(eb, ex, y); ls("0px");
+      if (cl) { ctx.font = "400 " + ebPx + "px " + MONO; ctx.fillStyle = C.text; ctx.fillText(cl, ex + ew + 12, y); }
+      // the statement, on one line if it fits at a readable size, the figure, its label and detail
       if (sp.statement) {
-        var stf = fitLines(ctx, sp.statement, "700", SANS, sq ? 44 : 32, 22, colW, 2);
+        var stf = fitLines(ctx, sp.statement, "700", SANS, sq ? 44 : 32, sq ? 34 : 24, colW, 1);
+        if (stf.lines.length > 1) stf = fitLines(ctx, sp.statement, "700", SANS, sq ? 44 : 32, 22, colW, 2);
         y += (sq ? 44 : 30) + stf.fs;
         stf.lines.forEach(function (l, i) { ctx.font = "700 " + stf.fs + "px " + SANS; ctx.fillStyle = C.paper; ctx.fillText(l, pad, y + i * stf.fs * 1.2); });
         y += (stf.lines.length - 1) * stf.fs * 1.2;
       }
-      var big = fitLines(ctx, sp.value, "800", DISPLAY, sq ? 260 : 168, 60, colW, 1);
+      // the figure: one line on a wide card; on a square one it may take two ("73%" over "less") to stay large
+      var big = fitLines(ctx, sp.value, "800", DISPLAY, sq ? 260 : 168, 60, colW, sq ? 2 : 1);
       ctx.font = "800 " + big.fs + "px " + DISPLAY;
       var asc = ctx.measureText(big.lines[0]).actualBoundingBoxAscent || big.fs * .8;
-      y += (sq ? 36 : 22) + asc; ctx.fillStyle = C.paper; ctx.fillText(big.lines[0], pad - big.fs * .02, y);
-      var lf = fitLines(ctx, sp.label, "700", SANS, sq ? 40 : 28, 18, colW, 2);
+      y += (sq ? 36 : 22) + asc; ctx.fillStyle = C.paper;
+      big.lines.forEach(function (l, i) { ctx.fillText(l, pad - big.fs * .02, y + i * big.fs * .86); });
+      y += (big.lines.length - 1) * big.fs * .86;
+      var lf = fitLines(ctx, sp.label, "700", SANS, sq ? 40 : 28, 18, colW, sq ? 3 : 2);
       y += lf.fs * 1.45;
       lf.lines.forEach(function (l, i) { ctx.font = "700 " + lf.fs + "px " + SANS; ctx.fillStyle = C.paper; ctx.fillText(l, pad, y + i * lf.fs * 1.2); });
       y += (lf.lines.length - 1) * lf.fs * 1.2;
       if (sp.detail) {
-        var df = fitLines(ctx, sp.detail, "400", SANS, sq ? 26 : 19, 14, colW, 2);
+        var df = fitLines(ctx, sp.detail, "400", SANS, sq ? 26 : 19, 14, colW, sq ? 3 : 2);
         y += df.fs * 1.5;
-        df.lines.forEach(function (l, i) { ctx.font = "400 " + df.fs + "px " + SANS; ctx.fillStyle = C.muted; ctx.fillText(l, pad, y + i * df.fs * 1.4); });
+        // its lead word, such as "Early:", in the amber the page gives it
+        df.lines.forEach(function (l, i) {
+          var dx = pad; ctx.font = "400 " + df.fs + "px " + SANS;
+          if (!i && sp.detailLead && l.indexOf(sp.detailLead) === 0) { ctx.fillStyle = C.lamp; ctx.fillText(sp.detailLead, dx, y); dx += ctx.measureText(sp.detailLead).width; l = l.slice(sp.detailLead.length); }
+          ctx.fillStyle = C.muted; ctx.fillText(l, dx, y + i * df.fs * 1.4);
+        });
         y += (df.lines.length - 1) * df.fs * 1.4;
       }
       if (sp.more) {
@@ -1766,30 +1840,57 @@ html:not(.js) th { position: static; }
         ctx.fillStyle = C.line; roundRect(ctx, pad, y, mw, mh, mh / 2); ctx.fill();
         ctx.fillStyle = C.brand; roundRect(ctx, pad, y, Math.max(mh, mw * sp.meter), mh, mh / 2); ctx.fill();
         y += mh;
-        if (sp.meterLabel) { ctx.font = "700 " + (sq ? 21 : 16) + "px " + MONO; ctx.fillStyle = C.brand; y += sq ? 34 : 26; ctx.fillText(sp.meterLabel, pad, y); }
+        if (sp.meterLabel) {
+          var ml = fitLines(ctx, sp.meterLabel, "700", MONO, sq ? 21 : 16, 12, colW, 2);
+          y += sq ? 34 : 26;
+          ml.lines.forEach(function (l, i) { ctx.font = "700 " + ml.fs + "px " + MONO; ctx.fillStyle = C.brand; ctx.fillText(l, pad, y + i * ml.fs * 1.4); });
+          y += (ml.lines.length - 1) * ml.fs * 1.4;
+        }
       }
       if (sp.source) {
         var sf = fitLines(ctx, sp.source, "400", MONO, sq ? 20 : 15, 12, colW, 2);
         y += sf.fs * 1.9;
         sf.lines.forEach(function (l, i) { ctx.font = "400 " + sf.fs + "px " + MONO; ctx.fillStyle = C.muted; ctx.fillText(l, pad, y + i * sf.fs * 1.4); });
       }
-      // how to get your own, on the floor of the card
+      // how to get your own, and where, on the floor of the card
       var foot = H - (sq ? 80 : 56);
       if (sp.hook) {
         ctx.font = "700 " + (sq ? 28 : 22) + "px " + MONO;
-        var cmd = "$ " + sp.hook, cw = ctx.measureText(cmd).width, ph = sq ? 58 : 46, px = pad, py = foot - ph + (sq ? 10 : 8);
-        ctx.fillStyle = C.night; roundRect(ctx, px, py, cw + (sq ? 40 : 32), ph, 6); ctx.fill();
-        ctx.strokeStyle = C.line; ctx.lineWidth = 1.5; roundRect(ctx, px, py, cw + (sq ? 40 : 32), ph, 6); ctx.stroke();
+        var cmd = "$ " + sp.hook, cmw = ctx.measureText(cmd).width, boxW = cmw + (sq ? 40 : 32), ph = sq ? 58 : 46, px = pad;
+        // the note and the address beside the command when they fit the column, each on a line under it when not
+        var nPx = sq ? 21 : 16, sPx = sq ? 20 : 16, dot = sp.hookNote && site ? " · " : "";
+        ctx.font = "400 " + nPx + "px " + SANS;
+        var nw = ctx.measureText(sp.hookNote + dot).width;
+        ctx.font = "700 " + sPx + "px " + MONO;
+        var beside = px + boxW + 16 + nw + ctx.measureText(site).width <= pad + colW;
+        var py = foot - ph + (sq ? 10 : 8) - (beside ? 0 : (sp.hookNote ? nPx * 1.45 : 0) + (site ? sPx * 1.6 : 0) + 6);
+        ctx.font = "700 " + (sq ? 28 : 22) + "px " + MONO;
+        ctx.fillStyle = C.night; roundRect(ctx, px, py, boxW, ph, 6); ctx.fill();
+        ctx.strokeStyle = C.line; ctx.lineWidth = 1.5; roundRect(ctx, px, py, boxW, ph, 6); ctx.stroke();
         ctx.fillStyle = C.paper; ctx.fillText(cmd, px + (sq ? 20 : 16), py + ph * .66);
         ctx.font = "700 " + (sq ? 18 : 14) + "px " + MONO; ls("1px"); ctx.fillStyle = C.lamp;
         ctx.fillText("SEE YOUR OWN", px, py - (sq ? 14 : 11)); ls("0px");
-        if (sp.hookNote) { ctx.font = "400 " + (sq ? 21 : 16) + "px " + SANS; ctx.fillStyle = C.muted; ctx.fillText(sp.hookNote, px + cw + (sq ? 40 : 32) + 16, py + ph * .64); }
-      } else if (plain) {
-        var pf = fitLines(ctx, plain, "400", SANS, sq ? 22 : 17, 13, colW, 2);
-        pf.lines.forEach(function (l, i) { ctx.font = "400 " + pf.fs + "px " + SANS; ctx.fillStyle = C.muted; ctx.fillText(l, pad, foot - (pf.lines.length - 1 - i) * pf.fs * 1.4); });
+        var nx = beside ? px + boxW + 16 : px, ny = beside ? py + ph * .64 : py + ph + 6;
+        if (sp.hookNote) {
+          if (!beside) ny += nPx * 1.45;
+          ctx.font = "400 " + nPx + "px " + SANS; ctx.fillStyle = C.muted; ctx.fillText(sp.hookNote + (beside ? dot : ""), nx, ny);
+        }
+        if (site) {
+          if (beside) nx += nw; else ny += sPx * 1.6;
+          ctx.font = "700 " + sPx + "px " + MONO; ctx.fillStyle = C.lamp; ctx.fillText(site, nx, ny);
+        }
+      } else {
+        // the brand's plain line, and the address under it
+        ctx.font = "700 " + (sq ? 22 : 18) + "px " + MONO; ctx.fillStyle = C.lamp; ctx.fillText(site, pad, foot);
+        if (plain) {
+          var pf = fitLines(ctx, plain, "400", SANS, sq ? 22 : 17, 13, colW, 2), pb = foot - (sq ? 44 : 34);
+          pf.lines.forEach(function (l, i) { ctx.font = "400 " + pf.fs + "px " + SANS; ctx.fillStyle = C.muted; ctx.fillText(l, pad, pb - (pf.lines.length - 1 - i) * pf.fs * 1.4); });
+        }
       }
       ctx.restore();
-      var alt = (sp.statement ? sp.statement + " " : "") + sp.value + " " + sp.label + (sp.detail ? ", " + sp.detail : "") + (sp.more ? ". " + sp.more : "") + (sp.meterLabel ? ". " + sp.meterLabel : "") +
+      // the card's words as sentences: the month's before and after reads "73% less. $8.60 a month instead of ..."
+      var sep = sp.pace ? ". " : ", ", trim = function (t) { return t.replace(/\.$/, ""); };
+      var alt = (sp.statement ? sp.statement + " " : "") + sp.value + (sp.pace ? ". " : " ") + trim(sp.label) + (sp.detail ? sep + trim(sp.detail) : "") + (sp.more ? ". " + sp.more : "") + (sp.meterLabel ? ". " + sp.meterLabel : "") +
         ". The cluster drawn as a building: " + describe() + "." + (sp.hook ? " See your own: " + sp.hook + "." : "") + " " + site;
       canvas.setAttribute("aria-label", "The share card: " + alt);
     }

@@ -59,8 +59,11 @@ type reportPage struct {
 	Prices  string
 	Pricing *pricing
 	// NodeScale is what would turn freed capacity into savings.
-	NodeScale    nodeScale
-	Headline     headline
+	NodeScale nodeScale
+	Headline  headline
+	// Could is what pausing could free as a month's before and after, for
+	// the page to lead with, or nil when it doesn't.
+	Could        *could
 	Facts        []fact
 	History      bool
 	Sleep        bool
@@ -86,6 +89,17 @@ type reportPage struct {
 	Mark      string
 	// Unjudged is how many workloads the notes list instead of Workloads.
 	Unjudged int
+}
+
+// could is what pausing could free a month, as the share less and the two
+// amounts it's of, all three from one basis, the share's own, so they
+// always agree: Without is what the workloads cost a month on it, With
+// that less what pausing could free, never below zero, and Percent the
+// share the could-free figure's detail gives. The amounts are written as
+// dollars writes the figures beside them.
+type could struct {
+	Without, With string
+	Percent       int
 }
 
 type headline struct {
@@ -388,6 +402,10 @@ func buildReport(result scanResult, idleAfter time.Duration) reportPage {
 		page.Empty = emptySentence(result)
 	}
 	page.Headline, page.Facts = headlineFor(result)
+	page.Could = couldFor(result, page.Headline)
+	if page.Could != nil {
+		costOnTheSharesBasis(page.Headline.Figures, result.Totals.FreeableBasis)
+	}
 	page.Freeing, page.CouldFree = moneyColumns(result.Workloads)
 	page.Sleep = sleepColumns(history, result.Workloads)
 	page.Slept = sleptColumn(result.Workloads)
@@ -516,7 +534,7 @@ func publicBasis(result scanResult) string {
 // act on, and how far Napwake's rollout has got.
 func headlineFor(result scanResult) (headline, []fact) {
 	t := result.Totals
-	live := t.Live > 0 || t.FreedThisMonth > 0
+	live := liveScan(t)
 	var h headline
 	if live {
 		h.Figures = append(h.Figures, figure{Value: dollars(t.FreedThisMonth), Label: "freed by Napwake this month",
@@ -615,9 +633,9 @@ func couldFree(result scanResult, live bool) (f figure, shortHistory string, ok 
 		onlyHas = "Prometheus has only " + result.History.Span() + " of it; run the scan again after a few days"
 		tooEarly = "too little history yet: " + onlyHas
 	}
+	could, measured := measuredCouldFree(t)
 	switch {
-	case r.Sleepers > 0 || t.DryRun > 0:
-		could := r.MonthlyFreed + t.Measured.MonthlyFreed
+	case measured:
 		f = figure{Value: dollars(could), Label: "could be freed a month", Kind: figureCouldFree, Amount: could}
 		// The share is of what the workloads cost on the estimate's own
 		// basis. A workload that ran more pods in its history than it runs
@@ -627,7 +645,7 @@ func couldFree(result scanResult, live bool) (f figure, shortHistory string, ok 
 			if r.Workloads > 0 {
 				of += " over the same time"
 			}
-			f.Detail = fmt.Sprintf("%d%% of %s", int(could/t.FreeableBasis*100+0.5), of)
+			f.Detail = fmt.Sprintf("%d%% of %s", freeableShare(could, t.FreeableBasis), of)
 		}
 		if short && r.Sleepers > 0 {
 			steadier := "from only " + result.History.Span() + " of history, so run the scan again after a few " +
@@ -670,6 +688,64 @@ func couldFree(result scanResult, live bool) (f figure, shortHistory string, ok 
 		f.Detail = "no unmanaged workload would have slept over " + replayedOver(result.History)
 	}
 	return f, shortHistory, true
+}
+
+// liveScan says Napwake pauses some of the workloads, or has freed
+// something pausing them this month, so the page leads with that.
+func liveScan(t discovery.Totals) bool {
+	return t.Live > 0 || t.FreedThisMonth > 0
+}
+
+// measuredCouldFree is what pausing could free a month as dry-run measured
+// it and history shows it, and whether either has anything to say, which
+// is couldFree's first case.
+func measuredCouldFree(t discovery.Totals) (float64, bool) {
+	return t.Replayed.MonthlyFreed + t.Measured.MonthlyFreed, t.Replayed.Sleepers > 0 || t.DryRun > 0
+}
+
+// floatNoise is how far, as a share of an amount, two sums of the same
+// amounts can differ by the order they're added in.
+const floatNoise = 1e-9
+
+// freeableShare is could as a whole percent of basis, rounded half up.
+func freeableShare(could, basis float64) int {
+	return int(could/basis*100 + 0.5)
+}
+
+// couldFor is the page's before and after for what pausing could free, in
+// couldFree's first case, before anything is live: what dry-run measured
+// or history shows, on enough history, and at least 1%. A share over 100%
+// would need With below zero, so it's left to the figure, which says it.
+// What could be freed, summed from its parts, can be all of the basis but
+// for a float's last digits, which leaves none, not <$1.
+func couldFor(result scanResult, h headline) *could {
+	t := result.Totals
+	amount, measured := measuredCouldFree(t)
+	if !measured || liveScan(t) || h.ShortHistory != "" || t.FreeableBasis <= 0 {
+		return nil
+	}
+	percent := freeableShare(amount, t.FreeableBasis)
+	if percent < 1 || percent > 100 {
+		return nil
+	}
+	with := t.FreeableBasis - amount
+	if with < t.FreeableBasis*floatNoise {
+		with = 0
+	}
+	return &could{Without: dollars(t.FreeableBasis), With: dollars(with), Percent: percent}
+}
+
+// costOnTheSharesBasis puts the figure for what the workloads cost on the
+// basis the could-free share is of, for when the before and after leads,
+// so "instead of $446" and "$446 a month" under it are one number
+// (cmo-070). The could-free figure beside it is the share's own sum
+// already.
+func costOnTheSharesBasis(figures []figure, basis float64) {
+	for i := range figures {
+		if figures[i].Kind == figureCost {
+			figures[i].Value, figures[i].Amount = dollars(basis), basis
+		}
+	}
 }
 
 // nothingIdle says nothing pausing could free is idle: nothing is idle, or

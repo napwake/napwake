@@ -77,6 +77,7 @@ import NextSteps from '../../../components/NextSteps.astro';
     { id: 'status-open', name: '--open' },
     { id: 'status-timeout', name: '--timeout' },
     { id: 'status-json-pausingoff', name: 'pausingOff' },
+    { id: 'status-json-monthatpace', name: 'monthAtPace' },
     { id: 'status-json-forecast', name: 'forecast' },
     { id: 'status-json-forecaststartsacting', name: 'forecastStartsActing' },
     { id: 'status-json-turnedaway', name: 'turnedAway' },
@@ -474,6 +475,8 @@ It's written for whoever you send it to.
 | Buttons | **Copy summary** and **Save as PDF** |
 | Copy summary | Three plain lines. They leave out the cluster's name and the Prometheus source unless you tick it |
 | What it sends | Nothing, anywhere |
+| Before and after | Before anything is live, with history or dry-run to go on. The percentage less, then what the workloads could cost a month paused when idle, and what they cost running, all on the same basis. Not shown for an estimate from under a day of history, or under 1% |
+| No node autoscaler | Instead, "Not on the bill yet", and the share pausing could free. The bill wouldn't drop until something removes nodes |
 | Headline figures | Two, below |
 | Fact one | How many workloads, in how many namespaces, with their cost once that's left the headline |
 | Fact two | What's idle right now |
@@ -815,6 +818,7 @@ The JSON and YAML fields this page names, and what each holds.
 | Field | What it holds |
 |---|---|
 | <Ref id="status-json-pausingoff">pausingOff</Ref> | How many of the workloads say [pausing is off](/guides/pause/#stop-all-pausing-now) for their install, by their `PausingOff` condition |
+| <Ref id="status-json-monthatpace">monthAtPace</Ref> | A month of the workloads at this month's pace, from each one's projection in `status.cost`: `without` Napwake (cost plus what pausing frees); what comes off the bill as nodes go, `saved`, the `bill` that leaves, and `savedPercent`; all that pausing frees, `freed`, what the workloads cost `with` it, and `freedPercent`; `savedMeasurable`, false when saved can't be measured for some; the whole `days` counted; and a `state`: `pending` before a day is counted, `early` before a week, then `steady`, or `none` when nothing is priced or pausing frees nothing |
 | <Ref id="status-json-forecast">forecast</Ref> | The reason, from `status.prediction.reason` |
 | <Ref id="status-json-forecaststartsacting">forecastStartsActing</Ref> | When the operator expects the forecast to start acting, as `acts from` shows |
 | <Ref id="status-json-turnedaway">turnedAway</Ref> | For a workload that asks, `pausedAt` and `requests`, what the doorman turned away during that pause, from `status.turnedAway` |

@@ -812,6 +812,46 @@ func TestFreedAndSavedThisMonth(t *testing.T) {
 	}
 }
 
+// A workload's month at this month's pace is the operator's projection of
+// it, read once there is one: not while it's pending, before a day is
+// tracked, and not from last month's record.
+func TestMonthAtPace(t *testing.T) {
+	thisMonth := metav1.NewTime(scanTime.Add(-time.Hour))
+	lastMonth := metav1.NewTime(scanTime.AddDate(0, -1, 0))
+	tracked := metav1.Duration{Duration: 53 * time.Hour}
+	projected := func(spent, freed, saved string, at *metav1.Time) *v1alpha1.CostStatus {
+		return &v1alpha1.CostStatus{ProjectedMonthlyCost: spent, ProjectedMonthlyFreed: freed,
+			ProjectedMonthlySavings: saved, Tracked: tracked, LastAccumulatedAt: at}
+	}
+	tests := []struct {
+		name string
+		cost *v1alpha1.CostStatus
+		want Month
+		ok   bool
+	}{
+		{name: "no cost yet"},
+		{name: "projected", cost: projected("$7.45", "$24.54", "$23.20", &thisMonth), ok: true,
+			want: Month{Spent: 7.45, Freed: 24.54, Saved: 23.2, Tracked: tracked.Duration}},
+		{name: "pending, before a day is tracked", cost: projected("pending", "pending", "pending", &thisMonth)},
+		{name: "last month's", cost: projected("$7.45", "$24.54", "$23.20", &lastMonth)},
+		{name: "under a cent freed", cost: projected("$3.00", "<$0.01", "<$0.01", &thisMonth), ok: true,
+			want: Month{Spent: 3, Freed: 0.0025, Saved: 0.0025, Tracked: tracked.Duration}},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			mw := &v1alpha1.ManagedWorkload{Status: v1alpha1.ManagedWorkloadStatus{Cost: tt.cost}}
+
+			got, ok := MonthAtPace(mw, scanTime)
+
+			assert.Equal(t, tt.ok, ok)
+			assert.InDelta(t, tt.want.Spent, got.Spent, 0.001)
+			assert.InDelta(t, tt.want.Freed, got.Freed, 0.001)
+			assert.InDelta(t, tt.want.Saved, got.Saved, 0.001)
+			assert.Equal(t, tt.want.Tracked, got.Tracked)
+		})
+	}
+}
+
 // Under a cent freed and saved, which the operator writes <$0.01, is above
 // zero for the workload and in the totals, so the scan never says nothing.
 func TestScanCluster_FreedUnderACent(t *testing.T) {

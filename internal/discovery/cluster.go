@@ -634,21 +634,59 @@ func SavedThisMonth(mw *v1alpha1.ManagedWorkload, now time.Time) float64 {
 // month. A workload put back in dry-run keeps what it freed and saved while
 // live: dry-run never pauses, so it adds nothing to the record.
 func thisMonth(mw *v1alpha1.ManagedWorkload, now time.Time, figure func(*v1alpha1.CostStatus) string) float64 {
-	if mw == nil || mw.Status.Cost == nil {
+	if !recordIsThisMonths(mw, now) {
 		return 0
 	}
-	c := mw.Status.Cost
-	if c.LastAccumulatedAt != nil {
-		last, now := c.LastAccumulatedAt.UTC(), now.UTC()
-		if last.Year() != now.Year() || last.Month() != now.Month() {
-			return 0
-		}
-	}
-	amount, err := cost.ParseDollars(figure(c))
+	amount, err := cost.ParseDollars(figure(mw.Status.Cost))
 	if err != nil {
 		return 0
 	}
 	return amount
+}
+
+// recordIsThisMonths reports whether a workload's cost record is of the
+// calendar month now falls in, in UTC, as the operator keeps it.
+func recordIsThisMonths(mw *v1alpha1.ManagedWorkload, now time.Time) bool {
+	if mw == nil || mw.Status.Cost == nil {
+		return false
+	}
+	if at := mw.Status.Cost.LastAccumulatedAt; at != nil {
+		last, now := at.UTC(), now.UTC()
+		return last.Year() == now.Year() && last.Month() == now.Month()
+	}
+	return true
+}
+
+// Month is a workload's month at this month's pace, as the operator
+// projects it: what it costs, what pausing frees, and the part of that
+// which comes off the bill, carried from the part of the month tracked to
+// the whole.
+type Month struct {
+	Spent, Freed, Saved float64
+	Tracked             time.Duration
+}
+
+// MonthAtPace reads a workload's month at this month's pace. ok is false
+// while the record is last month's, and before a day is tracked, when the
+// operator writes "pending".
+func MonthAtPace(mw *v1alpha1.ManagedWorkload, now time.Time) (Month, bool) {
+	if !recordIsThisMonths(mw, now) {
+		return Month{}, false
+	}
+	c := mw.Status.Cost
+	var m Month
+	for _, f := range []struct {
+		to    *float64
+		value string
+	}{{&m.Spent, c.ProjectedMonthlyCost}, {&m.Freed, c.ProjectedMonthlyFreed}, {&m.Saved, c.ProjectedMonthlySavings}} {
+		amount, err := cost.ParseDollars(f.value)
+		if err != nil {
+			return Month{}, false
+		}
+		*f.to = amount
+	}
+	m.Tracked = c.Tracked.Duration
+	return m, true
 }
 
 // judgePaused describes a workload Napwake has paused, priced on what it

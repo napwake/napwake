@@ -52,14 +52,17 @@ type statusPage struct {
 	// workload; without it, SavedThisMonth is of those it can.
 	FreedThisMonth, SavedThisMonth float64
 	SavedMeasurable                bool
-	// FreedUnderADollar and SavedUnderADollar say the first two figures
-	// read <$1, which the meter puts in words.
-	FreedUnderADollar, SavedUnderADollar bool
-	Notes                                []string
-	Attention                            []attentionRow
-	Workloads                            []statusPageRow
-	DryRun                               bool
-	Recent                               []recentRow
+	// Month is the workloads' month at this month's pace, the page's
+	// before and after, or nil with no workloads.
+	Month *pageMonth
+	// FreedUnderACent and SavedUnderACent say the first two figures read
+	// <$0.01, which the meter puts in words.
+	FreedUnderACent, SavedUnderACent bool
+	Notes                            []string
+	Attention                        []attentionRow
+	Workloads                        []statusPageRow
+	DryRun                           bool
+	Recent                           []recentRow
 	// NoRecent says why no pauses and wakes are listed, when none are.
 	NoRecent string
 	Since    string
@@ -135,9 +138,10 @@ func buildStatusPage(result statusResult, since time.Duration, now time.Time) st
 		FreedThisMonth:  result.FreedThisMonth,
 		SavedThisMonth:  result.SavedThisMonth,
 		SavedMeasurable: len(result.SavingsUnknown) == 0,
+		Month:           pageMonthOf(result.MonthAtPace),
 
-		FreedUnderADollar: underADollar(result.FreedThisMonth),
-		SavedUnderADollar: underADollar(result.SavedThisMonth),
+		FreedUnderACent: underACent(result.FreedThisMonth),
+		SavedUnderACent: underACent(result.SavedThisMonth),
 	}
 	page.PausingOff = pausingOffLine(result)
 	if len(result.Workloads) == 0 {
@@ -208,17 +212,51 @@ func buildStatusPage(result statusResult, since time.Duration, now time.Time) st
 	return page
 }
 
-// statusFigures leads with what pausing has freed this month and what of
-// that was saved, then, when any workload is in dry-run, what dry-run
+// pageMonth is the month at this month's pace as the status page writes
+// it: monthAtPace's amounts as money, and which of its leads it takes.
+type pageMonth struct {
+	Without, Saved, Bill, Freed, With string
+	SavedPercent, FreedPercent        int
+	SavedMeasurable                   bool
+	Days                              int
+	State                             string
+	// OnTheBill says what comes off the bill leads, as a share of Without:
+	// it's measured for every workload, and it's at least 1%. Without it,
+	// the page leads with what pausing frees, as what's possible, with no
+	// big figure, since a share of the bill that isn't coming off it would
+	// claim more than it shows.
+	OnTheBill bool
+	// NothingSaved says none of what pausing frees comes off the bill, as
+	// measured, which the page says apart from a little.
+	NothingSaved bool
+}
+
+// pageMonthOf is m as the page writes it, or nil for none.
+func pageMonthOf(m *monthAtPace) *pageMonth {
+	if m == nil {
+		return nil
+	}
+	return &pageMonth{
+		Without: money(m.Without), Saved: money(m.Saved), Bill: money(m.Bill), Freed: money(m.Freed),
+		With: money(m.With), SavedPercent: m.SavedPercent, FreedPercent: m.FreedPercent,
+		SavedMeasurable: m.SavedMeasurable, Days: m.Days, State: m.State,
+		OnTheBill:    m.SavedMeasurable && m.SavedPercent >= 1,
+		NothingSaved: m.Saved == 0,
+	}
+}
+
+// statusFigures leads with what pausing has freed so far this month and
+// what of that was saved, to the cent under $100, so they add up under the
+// month at this pace, then, when any workload is in dry-run, what dry-run
 // measured pausing would have freed.
 func statusFigures(result statusResult) []figure {
-	saved := figure{Value: dollars(result.SavedThisMonth), Label: "saved of it",
+	saved := figure{Value: money(result.SavedThisMonth), Label: "saved of it",
 		Detail: "what came off the bill as nodes scaled down", Kind: figureSaved, Amount: result.SavedThisMonth}
 	if len(result.SavingsUnknown) > 0 {
 		saved.Detail = "for the workloads whose savings can be measured"
 	}
 	figures := []figure{
-		{Value: dollars(result.FreedThisMonth), Label: "freed by pausing this month",
+		{Value: money(result.FreedThisMonth), Label: "freed by pausing so far this month",
 			Detail: "what the paused replicas request, at list price", Kind: figureFreed,
 			Amount: result.FreedThisMonth},
 		saved,

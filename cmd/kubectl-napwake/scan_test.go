@@ -188,6 +188,40 @@ func TestDollars(t *testing.T) {
 	}
 }
 
+// The pages write a month's money to the cent under $100, so a small
+// cluster's figures add up, and in whole dollars from $100, as dollars
+// does. Under a cent isn't nothing, so only none is $0.
+func TestMoney(t *testing.T) {
+	tests := []struct {
+		in   float64
+		want string
+	}{
+		{0, "$0"},
+		{0.0001, "<$0.01"},
+		{0.0049, "<$0.01"},
+		{0.0099, "<$0.01"},
+		{0.01, "$0.01"},
+		{0.304, "$0.30"},
+		{1.65, "$1.65"},
+		{8.6, "$8.60"},
+		{31.94, "$31.94"},
+		{99.99, "$99.99"},
+		{99.996, "$100"},
+		{100, "$100"},
+		{445.6, "$446"},
+		{1240.4, "$1,240"},
+		{1234567.8, "$1,234,568"},
+		{-8.6, "-$8.60"},
+		{-1240.4, "-$1,240"},
+		{-0.004, "$0"},
+	}
+	for _, tt := range tests {
+		t.Run(fmt.Sprint(tt.in), func(t *testing.T) {
+			assert.Equal(t, tt.want, money(tt.in))
+		})
+	}
+}
+
 func TestHoursTotal(t *testing.T) {
 	assert.Equal(t, "0 hours", hoursTotal(0.3), "hours aren't money")
 	assert.Equal(t, "6,120 hours", hoursTotal(6120.4))
