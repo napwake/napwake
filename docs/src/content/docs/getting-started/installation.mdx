@@ -456,7 +456,7 @@ No Helm prints it for a revision written by a Helm before 3.18. Such a revision 
 <summary>What a refused uninstall leaves, and Argo CD</summary>
 
 - The release is marked `uninstalling`, which `helm list` shows only with `-a`, though everything still runs. Uninstalling again, once the ManagedWorkloads are gone, finishes it.
-- Until then, if no revision is `deployed`, `helm upgrade` fails with `has no deployed releases`. To keep Napwake, mark the release deployed again ([After a refusal](/operations/troubleshooting/#after-a-refusal-the-release-isnt-deployed)). With no `deployed` revision, run `helm rollback napwake <revision>`, with the last revision `helm history napwake` lists. With one, as after a refused upgrade, run an upgrade instead.
+- Until then, if no revision is `deployed`, `helm upgrade` fails with `has no deployed releases`. To keep Napwake, mark the release deployed again ([After a refusal](/operations/troubleshooting/#after-a-refusal-the-release-isnt-deployed)). With no `deployed` revision, run `helm rollback napwake <revision>`, with the last revision `helm history napwake` lists. With one, as after a refused upgrade, run an upgrade with `--reuse-values` alone instead.
 - `--no-hooks` skips the guard, and `guard.uninstall: false` drops it. [Guards](/reference/helm-values/#guards) has what it counts and runs.
 - Argo CD 3.3 and later runs the guard as a PreDelete hook. Deleting the Application while ManagedWorkloads are left is blocked, with a `DeletionError` condition. Argo CD retries the hook until they're gone.
 - To delete the Application anyway, set `guard.uninstall: false` in Git and sync first.

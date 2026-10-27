@@ -9,10 +9,10 @@
 # enable ends dry-run. Neither the operator nor the doorman logs an error.
 # An upgrade that stops watching the namespace is refused. Last, helm
 # uninstall is refused while ManagedWorkloads are left, an upgrade with
-# the namespaces the operator watches marks the release deployed again,
-# and the uninstall goes ahead once the workloads are no longer opted in,
-# which restores the paused StatefulSet. The e2e suite installs through kustomize, with a
-# ClusterRole, so this is what tests the chart.
+# --reuse-values alone marks the release deployed again, and the
+# uninstall goes ahead once the workloads are no longer opted in, which
+# restores the paused StatefulSet. The e2e suite installs through
+# kustomize, with a ClusterRole, so this is what tests the chart.
 #
 # KIND_CLUSTER names the cluster, which is created and deleted here, so it
 # must not already exist. It's this checkout's own by default, and the
@@ -332,26 +332,24 @@ if ! grep -qF "$WATCHED/$APP" <<<"$lead" || ! grep -qF "$WATCHED/$DB" <<<"$lead"
 fi
 is deployment/napwake "$RELEASE_NAMESPACE" '{.status.readyReplicas}' 1
 
-# After a refused upgrade, the docs recover with an upgrade that keeps the
-# namespaces the operator watches, read from its flags. Helm 3 fails a
-# helm rollback here: it compares the rollback with the refused revision,
-# which lacks the Roles that run.
-echo "checking an upgrade with the operator's namespaces marks the release deployed again, as the docs say"
-running=$(kubectl get deployment -n "$RELEASE_NAMESPACE" -l control-plane=controller-manager \
-  -o 'jsonpath={.items[0].spec.template.spec.containers[0].args}' | grep -o -- '--watch-namespaces=[^"]*' | cut -d= -f2)
-if [ "$running" != "$WATCHED" ]; then
-  echo "the operator watches '$running', not $WATCHED" >&2
-  exit 1
-fi
+# After a refused upgrade, the docs recover with an upgrade with
+# --reuse-values alone, which takes the deployed revision's values, not the
+# refused one's. Helm 3 fails a helm rollback here: it compares the
+# rollback with the refused revision, which lacks the Roles that run.
+echo "checking an upgrade with --reuse-values alone marks the release deployed again, as the docs say"
 generations=$(kubectl get deployments -n "$RELEASE_NAMESPACE" -l app.kubernetes.io/instance=napwake \
   -o 'jsonpath={.items[*].metadata.generation}')
-helm upgrade napwake charts/napwake --namespace "$RELEASE_NAMESPACE" --reuse-values \
-  --set "watchNamespaces={$running}" --wait --timeout 5m
+helm upgrade napwake charts/napwake --namespace "$RELEASE_NAMESPACE" --reuse-values --wait --timeout 5m
 status=$(helm status napwake --namespace "$RELEASE_NAMESPACE" | awk '/^STATUS:/ {print $2}')
 if [ "$status" != deployed ]; then
   echo "after the upgrade the release is $status, not deployed" >&2
   exit 1
 fi
+kubectl get deployment napwake -n "$RELEASE_NAMESPACE" -o 'jsonpath={.spec.template.spec.containers[0].args}' |
+  grep -qF -- "--watch-namespaces=$WATCHED" || {
+  echo "the upgrade that marks the release deployed changed the operator's namespaces" >&2
+  exit 1
+}
 if [ "$(kubectl get deployments -n "$RELEASE_NAMESPACE" -l app.kubernetes.io/instance=napwake \
   -o 'jsonpath={.items[*].metadata.generation}')" != "$generations" ]; then
   echo "the upgrade that marks the release deployed changed the operator's or the doorman's Deployment" >&2

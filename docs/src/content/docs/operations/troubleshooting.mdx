@@ -511,7 +511,7 @@ kubectl logs job/napwake-upgrade-guard -n napwake-system
 
 Keep those namespaces, or stop managing their workloads first ([Narrowing `watchNamespaces`](/operations/upgrading/#narrowing-watchnamespaces)). Under Argo CD it fails the sync, in the PreSync hook.
 
-Helm marks the release `failed`, though the operator runs on unchanged. An upgrade that keeps the namespaces marks it deployed again ([After a refusal](#after-a-refusal-the-release-isnt-deployed)).
+Helm marks the release `failed`, though the operator runs on unchanged. An upgrade with `--reuse-values` alone marks it deployed again ([After a refusal](#after-a-refusal-the-release-isnt-deployed)).
 
 <details class="nw-details">
 <summary>After a refused `helm rollback`</summary>
@@ -532,26 +532,16 @@ A refused `helm upgrade`, `helm uninstall` or `helm rollback` changes nothing in
 | No `deployed` revision, after a refused uninstall | `helm rollback napwake <revision> -n napwake-system`, with the last revision's number, the `uninstalling` one |
 | `pending-rollback` last, after a refused rollback | `helm rollback napwake <revision> -n napwake-system`, with the `deployed` revision's number. On Helm 3 the first try fails with `no Role ... found`. Run it again, and it passes |
 
-The upgrade keeps the namespaces the operator watches now. The operator's `--watch-namespaces` argument lists them:
-
-```bash
-kubectl get deployment -n napwake-system -l control-plane=controller-manager \
-  -o jsonpath='{.items[0].spec.template.spec.containers[0].args}'
-```
-
-Upgrade with those, such as `team-a,team-b`. For `X.Y.Z`, use the version in the `deployed` revision's `CHART` column, `0.2.0` for `napwake-0.2.0`:
+The upgrade takes `--reuse-values` alone, with no `--set`. For `X.Y.Z`, use the version in the `deployed` revision's `CHART` column, `0.2.0` for `napwake-0.2.0`:
 
 ```bash
 helm upgrade napwake oci://ghcr.io/napwake/charts/napwake \
   --version X.Y.Z \
   --namespace napwake-system \
-  --reuse-values \
-  --set 'watchNamespaces={team-a,team-b}'
+  --reuse-values
 ```
 
-With no `--watch-namespaces`, the operator watches every namespace. Then leave out `--set`, as `--reuse-values` alone keeps the `deployed` revision's values. Avoid `--set watchNamespaces=null`, which passes but fails the next `--reuse-values` upgrade.
-
-It marks the release deployed, and leaves the operator's pods running.
+`--reuse-values` takes the `deployed` revision's values, not the refused one's, so keeps whichever namespaces the operator watches now. It marks the release deployed, and leaves the operator's pods running.
 
 <details class="nw-details">
 <summary>When `helm rollback` fails</summary>

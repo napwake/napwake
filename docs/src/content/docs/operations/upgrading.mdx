@@ -194,7 +194,7 @@ So the chart's upgrade guard refuses. Stop managing them first, while the operat
 | What it reads | ManagedWorkloads' metadata cluster-wide, through a ClusterRole that, like its ServiceAccount, exists only while it runs |
 | When it runs | Only when `watchNamespaces` is set, since widening to every namespace strands nothing. Argo CD runs it as a PreSync hook, before every sync |
 | How to skip it | `helm upgrade --no-hooks` skips it, and `guard.upgrade: false` drops it. Then restore the workloads left behind there by hand ([Restoring workloads after the operator is gone](/getting-started/installation/#restoring-workloads-after-the-operator-is-gone)) |
-| What a refusal leaves | A failed revision, and the release running the previous one. An upgrade that keeps the namespaces marks it deployed again ([After a refusal](/operations/troubleshooting/#after-a-refusal-the-release-isnt-deployed)). `helm uninstall` stays guarded. It runs with the failed revision's values, so it also counts ManagedWorkloads the operator took on outside them |
+| What a refusal leaves | A failed revision, and the release running the previous one. An upgrade with `--reuse-values` alone marks it deployed again ([After a refusal](/operations/troubleshooting/#after-a-refusal-the-release-isnt-deployed)). `helm uninstall` stays guarded. It runs with the failed revision's values, so it also counts ManagedWorkloads the operator took on outside them |
 
 </details>
 
@@ -229,7 +229,7 @@ Each ManagedWorkload keeps its forecast's state in `status.prediction.state`. On
 helm rollback napwake -n napwake-system
 ```
 
-After a refused upgrade, uninstall or rollback, recover with an upgrade instead, or a rollback by revision number ([After a refusal](/operations/troubleshooting/#after-a-refusal-the-release-isnt-deployed)). Straight after a refused upgrade or rollback, Helm 3's `helm rollback` fails with `no Role ... found`.
+After a refused upgrade, uninstall or rollback, recover instead with `helm upgrade --reuse-values` alone, or a rollback by revision number ([After a refusal](/operations/troubleshooting/#after-a-refusal-the-release-isnt-deployed)). Straight after a refused upgrade or rollback, Helm 3's `helm rollback` fails with `no Role ... found`.
 
 </TabItem>
 <TabItem label="install.yaml">
