@@ -243,10 +243,10 @@ networkPolicy:
   enabled: false
 
 # Hook Jobs, running the operator image, that refuse what would leave
-# ManagedWorkloads with no operator, so their workloads would stay paused at
-# 0 replicas. Each waits two and a half minutes for any being deleted, then
-# lists those left and fails. helm uninstall --no-hooks, or upgrade
-# --no-hooks, skips them.
+# ManagedWorkloads with no operator: each would be stuck on its finalizer,
+# and a paused workload would stay at 0 replicas. Each waits two and a half
+# minutes for any being deleted, then lists those left and fails. helm
+# uninstall --no-hooks, or upgrade --no-hooks, skips them.
 guard:
   # Refuses helm uninstall while ManagedWorkloads remain. Argo CD 3.3 and
   # later runs it as a PreDelete hook, blocking the Application's deletion.
