@@ -247,11 +247,7 @@ func (r *Reconciler) observeActivity(ctx context.Context, workload *v1alpha1.Man
 	}
 	status := workload.Status.Activity
 	remembered, inMemory := r.activityMemo.get(workload.UID)
-	// A query showed activity at the last check the operator before this
-	// one wrote, so it matched series then.
-	if !inMemory && status.LastActivitySource == v1alpha1.ActivitySourcePrometheus && hasPrometheusActivity(workload) {
-		r.querySeries.seed(workload.UID, workload.Spec.IdlePolicy.Activity.Prometheus)
-	}
+	r.seedQuerySeries(workload, inMemory)
 	if inMemory {
 		recordActivity(status, remembered.LastActivityTime.Time, remembered.LastActivitySource)
 		if remembered.LastEvaluatedTime != nil &&
@@ -339,6 +335,18 @@ func (r *Reconciler) observeActivity(ctx context.Context, workload *v1alpha1.Man
 	r.activityMemo.put(workload.UID, *status.DeepCopy(), now, obs.gap)
 	recordIdleSeconds(workload, now)
 	return obs
+}
+
+// seedQuerySeries takes a workload's queries to have matched series at the
+// last check, at this operator's first check of it, when the clock the one
+// before it wrote has a query's activity last: a query showed activity, so
+// it matched series then.
+func (r *Reconciler) seedQuerySeries(workload *v1alpha1.ManagedWorkload, inMemory bool) {
+	if inMemory || workload.Status.Activity.LastActivitySource != v1alpha1.ActivitySourcePrometheus ||
+		!hasPrometheusActivity(workload) {
+		return
+	}
+	r.querySeries.seed(workload.UID, workload.Spec.IdlePolicy.Activity.Prometheus)
 }
 
 // gapTolerance is the longest gap in watching counted as idle time rather

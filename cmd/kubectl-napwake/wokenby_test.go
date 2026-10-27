@@ -190,7 +190,7 @@ func TestStatus_RecentIsTheCurrentManagedWorkloadsOwn(t *testing.T) {
 		statusOpts())
 
 	require.NoError(t, err)
-	var listed []string
+	listed := make([]string, 0, len(result.Recent))
 	for _, h := range result.Recent {
 		listed = append(listed, h.Workload+" "+h.Kind+" "+h.At.Format("15:04"))
 	}
