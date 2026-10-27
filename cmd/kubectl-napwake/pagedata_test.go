@@ -224,7 +224,7 @@ func TestStatusPage_MoneyWhateverTheFiguresRead(t *testing.T) {
 	page.Figures[0].Value, page.Figures[1].Value = freedWords, "0 dollars"
 	got = renderStatusPageData(t, page)
 	pageHas(t, got, `<div class="slot s0 lead">`, "with nothing saved, what was freed leads")
-	pageHas(t, got, `None of the 42 dollars freed has come off the bill yet.`)
+	pageHas(t, got, `None of the 42 dollars freed has come off the bill.`, "with no node autoscaler, nothing will")
 }
 
 // The meter says only what Napwake can see: where what's saved can't be

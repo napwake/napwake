@@ -276,6 +276,7 @@ There's no upgrade path from Hybernate 0.1.x or a 0.2.0 release candidate. Unins
 
 ### Fixed
 
+- The status page writes what each workload freed and saved as the figures above them do, to the cent under $100 and `<$0.01` under a cent, so a row no longer reads `<$1` under a lead of `<$0.01`. Where it finds no node autoscaler, it says none of what was freed has come off the bill, without "yet". The terminal's table is unchanged
 - The Quickstart wakes `my-api` with a timed request from a pod that stays, which prints `200 after` a second or two. Its `kubectl run --rm -it` could print nothing, as kubectl attached after curl had finished, so the wake looked as if it had failed
 - The Quickstart and Wake on request say how long a woken request waits: as long as the pods take to start and pass their readiness probe, a second or two for the Quickstart's nginx
 - The Quickstart's last step, and Installation's Uninstall, say a workload keeps its `napwake.dev/` settings annotations when its label is removed, so labelled again it's taken on with them, live after `enable`. Each gives the command that removes them

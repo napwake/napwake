@@ -179,7 +179,7 @@ func buildStatusPage(result statusResult, since time.Duration, now time.Time) st
 			LastActivity:  activityCell(wl, now),
 			Next:          wl.Next,
 			Forecast:      forecastCell(wl),
-			Freed:         statusFreedCell(wl),
+			Freed:         pageFreedCell(wl),
 			FreedSort:     wl.FreedThisMonth,
 			SavedNote:     savedNote(wl),
 			WouldFree:     wouldFreeCell(wl),
@@ -269,19 +269,30 @@ func statusFigures(result statusResult) []figure {
 	return figures
 }
 
+// pageFreedCell is what pausing a workload has freed this month, as the
+// page writes money: like the figures above the table, so a row never
+// reads <$1 under a lead of <$0.01. The terminal's FREED THIS MONTH keeps
+// whole dollars.
+func pageFreedCell(wl statusWorkload) string {
+	if !showsFreed(wl.DryRun, wl.FreedThisMonth, wl.SavedThisMonth) {
+		return "-"
+	}
+	return money(wl.FreedThisMonth)
+}
+
 // savedNote says, under what pausing a workload freed, what of it was
-// saved.
+// saved, as the page writes money.
 func savedNote(wl statusWorkload) string {
 	if wl.FreedThisMonth == 0 {
 		return ""
 	}
-	switch saved := statusSavedCell(wl); {
-	case saved == "unknown":
+	switch {
+	case statusSavedCell(wl) == "unknown":
 		return "saved can't be measured"
 	case wl.SavedThisMonth == 0:
 		return "none of it saved yet"
 	default:
-		return saved + " saved"
+		return money(wl.SavedThisMonth) + " saved"
 	}
 }
 
