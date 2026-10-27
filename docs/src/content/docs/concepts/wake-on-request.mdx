@@ -22,6 +22,8 @@ A paused workload has no pods, so nothing answers its Service. The first request
 
 The doorman holds the connection until a pod is Ready, then passes it through. The caller usually sees one slow response ([the exceptions](#what-the-caller-sees)).
 
+The wait is as long as the pods take to start and pass their readiness probe. For the [Quickstart's](/getting-started/quickstart/#6-wake-it-with-a-request) nginx, that's a second or two.
+
 On a public URL, the doorman can [ask before waking](#asking-before-waking) instead. Then only a person's click wakes it.
 
 <AtAGlance

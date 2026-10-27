@@ -26,6 +26,8 @@ import NextSteps from '../../../components/NextSteps.astro';
 
 You need Napwake [installed](/getting-started/installation/), the [kubectl plugin](/getting-started/kubectl-plugin/) and metrics-server. Napwake reads CPU from it, and won't pause a workload whose CPU it can't read.
 
+<section id="metrics-server">
+
 ```bash
 kubectl get apiservice v1beta1.metrics.k8s.io
 ```
@@ -52,6 +54,8 @@ kubectl patch deployment metrics-server -n kube-system --type=json \
 ```
 
 `kubectl top pods -A` shows numbers within a minute or so once it works. If a workload still won't pause, see [Troubleshooting](/operations/troubleshooting/#workload-is-idle-but-not-being-paused).
+
+</section>
 
 </Panel>
 
@@ -175,11 +179,30 @@ kubectl get deployment my-api -n dev
 
 Wait 5 minutes after READY reads `0/0`. A request or a wake sooner makes it a [wrong pause](/concepts/idle-detection/#paused-while-in-use). Napwake would then warn `PausedWhileInUse`, and wait 10 minutes before pausing again.
 
+Start a pod to send the request from, and wait until it runs:
+
 ```bash
-kubectl run curl --rm -it --image=curlimages/curl:8.7.1 -n dev --restart=Never -- curl -s http://my-api
+kubectl run curl -n dev --image=curlimages/curl:8.7.1 --restart=Never --command -- sleep 600
+kubectl wait pod/curl -n dev --for=condition=Ready --timeout=2m
 ```
 
-The [doorman](/concepts/wake-on-request/) holds the request and wakes `my-api`. A browser coming through an Ingress or a Gateway gets a waking-up page, which loads the app once it's up.
+Send the request, timed:
+
+```bash
+kubectl exec -n dev curl -- curl -s -o /dev/null -w '%{http_code} after %{time_total}s\n' http://my-api
+```
+
+```
+200 after 1.084523s
+```
+
+The [doorman](/concepts/wake-on-request/) holds the request and wakes `my-api`. The request waits a second or two, while `my-api`'s pods start and pass their readiness probe. A browser coming through an Ingress or a Gateway gets a waking-up page, which loads the app once it's up.
+
+Then remove the pod:
+
+```bash
+kubectl delete pod curl -n dev --now
+```
 
 `kubectl port-forward` goes straight to a pod, so it can't reach a paused workload. Wake it first:
 
@@ -188,7 +211,7 @@ kubectl napwake wake my-api -n dev
 ```
 
 <StartCheckpoint state="awake">
-curl gets its answer once `my-api` is Ready.
+curl printed `200 after` a second or two, once `my-api` was Ready.
 </StartCheckpoint>
 
 ## 7. Stop managing it
@@ -197,8 +220,14 @@ curl gets its answer once `my-api` is Ready.
 kubectl label deployment my-api -n dev napwake.dev/managed-
 ```
 
+`my-api` keeps the settings annotations `napwake.dev/dry-run`, now `"false"`, `idle-after` and `last-activity`. Labelled again, it's taken on with them, so it's live from the start, with no dry-run. To start again from step 3, remove them:
+
+```bash
+kubectl annotate deployment my-api -n dev napwake.dev/dry-run- napwake.dev/idle-after- napwake.dev/last-activity-
+```
+
 <StartCheckpoint state="awake" note="not managed">
-`my-api` has no ManagedWorkload. Had it been paused, it would be scaled back to its replicas first, never left switched off.
+`my-api` has no ManagedWorkload within a minute, as the doorman's port drains. Had it been paused, it would be scaled back to its replicas at once, never left switched off.
 </StartCheckpoint>
 
 <NextSteps

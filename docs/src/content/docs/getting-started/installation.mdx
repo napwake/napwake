@@ -13,7 +13,7 @@ import NextSteps from '../../../components/NextSteps.astro';
 
 - Kubernetes v1.30+, tested in CI on 1.30 and 1.37
 - kubectl v1.30+
-- [metrics-server](https://github.com/kubernetes-sigs/metrics-server), for pod CPU through the Kubernetes Metrics API
+- [metrics-server](https://github.com/kubernetes-sigs/metrics-server), for pod CPU through the Kubernetes Metrics API. The Quickstart has [the commands to install it](/getting-started/quickstart/#metrics-server), with kind's patch
 - Helm v3.8+, to install the OCI chart
 
 </Panel>
@@ -48,6 +48,15 @@ kubectl get pods -n napwake-system
 
 # Verify the CRD is installed
 kubectl get crd managedworkloads.napwake.dev
+```
+
+Within a minute, there's one `napwake-...` pod, the operator, and two `napwake-doorman-...` pods, all `1/1 Running`:
+
+```
+NAME                               READY   STATUS    RESTARTS   AGE
+napwake-7d9f8c6b5-x2k8p            1/1     Running   0          40s
+napwake-doorman-5c8b7d9f6-4qzrt    1/1     Running   0          40s
+napwake-doorman-5c8b7d9f6-hm2vw    1/1     Running   0          40s
 ```
 
 Check any install this way.
@@ -371,6 +380,13 @@ Stop managing workloads while the operator still runs, so it can scale paused on
 
 1. Remove the `napwake.dev/managed` label from your workloads and namespaces, in Git if they live there. Napwake deletes the ManagedWorkloads it created from them.
 
+    Their settings annotations stay, such as `napwake.dev/dry-run`, `idle-after` and `last-activity`. So a workload labelled again is taken on with them. After [`enable`](/getting-started/kubectl-plugin/#enable-a-workload), that's live, with no dry-run. To remove them from every Deployment and StatefulSet, adding any other `napwake.dev/` annotation you set:
+
+    ```bash
+    kubectl annotate deployments,statefulsets --all -A \
+      napwake.dev/dry-run- napwake.dev/idle-after- napwake.dev/last-activity-
+    ```
+
 2. Delete the ManagedWorkloads you wrote yourself. Each scales its workload back to the replicas it had before the pause.
 
     ```bash
@@ -396,6 +412,12 @@ Stop managing workloads while the operator still runs, so it can scale paused on
     - `make undeploy` from a clone
 
     These delete the CRD too, unguarded, so first check `kubectl get managedworkloads -A` lists none.
+
+4. After `helm uninstall`, delete the namespace. Helm doesn't delete one that `--create-namespace` made:
+
+    ```bash
+    kubectl delete namespace napwake-system
+    ```
 
 </Steps>
 

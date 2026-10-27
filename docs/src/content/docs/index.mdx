@@ -20,11 +20,14 @@ import NextSteps from '../../components/NextSteps.astro';
 
 ## See what's idle first
 
-A team that works 10 hours a day, five days a week, uses staging 50 of 168 hours. The other 70%, it's idle. `kubectl napwake scan` shows your cluster's own number before you install anything.
+A team that works 10 hours a day, five days a week, uses staging 50 of 168 hours. The other 70%, it's idle. `kubectl napwake scan` shows your cluster's own number before you install anything in it.
+
+Install the plugin first, with Homebrew or [another way](/getting-started/kubectl-plugin/#installation).
 
 <ScanShowcase>
 
 ```sh
+brew install napwake/tap/kubectl-napwake
 kubectl napwake scan
 ```
 
