@@ -4,13 +4,13 @@
 
 Source: https://docs.napwake.dev/next/operations/upgrading/
 
-Napwake upgrades in place from one Napwake release to the next. On 0.1.x or a 0.2.0 release candidate, [move to Napwake](https://docs.napwake.dev/next/operations/upgrading/#moving-to-napwake) instead.
+Napwake upgrades in place from one release to the next, 0.2.0-rc.9 to 0.2.0 included. From 0.1.x or the 0.2.0 release candidates rc.1 to rc.7, [move to Napwake](https://docs.napwake.dev/next/operations/upgrading/#moving-to-napwake) instead.
 
 ## Moving to Napwake
 
-Hybernate was this project’s name before 0.2.0. There’s no upgrade path from it. Uninstall Hybernate, then install Napwake fresh, and opt your workloads in again with the `napwake.dev/` labels and annotations.
+Hybernate was this project’s name, up to 0.2.0-rc.7. There’s no upgrade path from it. Uninstall Hybernate, then install Napwake fresh, and opt your workloads in again with the `napwake.dev/` labels and annotations.
 
-Uninstalling a 0.2.0 release candidate as its docs say hands paused workloads back. On 0.1.x, delete its ManagedWorkloads, then scale the paused workloads back up by hand. 0.1.x leaves them at zero.
+Uninstalling one of Hybernate’s release candidates as its docs say hands paused workloads back. On 0.1.x, delete its ManagedWorkloads, then scale the paused workloads back up by hand. 0.1.x leaves them at zero.
 
 The [changelog](https://github.com/napwake/napwake/blob/main/CHANGELOG.md) lists every name that changed.
 
@@ -64,7 +64,7 @@ The `WakeOnRequest` reason `TurnedOff` is gone with it.
      | The chart           | Published only as an OCI artifact, so there’s no `helm repo` to update. Its version has no `v`                                     |
      | The CRD             | A template in the chart, so `helm upgrade` upgrades it too. Not if you installed with `crds.install: false` and manage it yourself |
 
-   * kubectl
+   * install.yaml
 
      ```bash
      kubectl apply -f https://github.com/napwake/napwake/releases/download/vX.Y.Z/install.yaml
@@ -97,7 +97,7 @@ The `WakeOnRequest` reason `TurnedOff` is gone with it.
 
 ## Keeping your settings
 
-Keep every Helm value you set in one file, and give it to `helm install` and every `helm upgrade`. Helm reuses a release’s values only on an upgrade given none. Given any, by `--set` or `-f`, it starts from the chart’s defaults and adds only those. Helm 3 and 4 do the same.
+Keep every Helm value you set in one file, and give it to `helm install` and every `helm upgrade`. Helm, 3 or 4, reuses a release’s values only on an upgrade given none. Given any, by `--set` or `-f`, it starts from the chart’s defaults and adds only those.
 
 | Installed with                  | Upgraded with                     | Keeps                                    |
 | ------------------------------- | --------------------------------- | ---------------------------------------- |
@@ -121,7 +121,7 @@ helm upgrade napwake oci://ghcr.io/napwake/charts/napwake \
   -f napwake-values.yaml
 ```
 
-Upgrading with `–reuse-values`
+Upgrading with `--reuse-values`
 
 Without a file, `--reuse-values` keeps the release’s values and adds yours.
 
@@ -135,21 +135,21 @@ helm upgrade napwake oci://ghcr.io/napwake/charts/napwake \
 
 To a newer version, Helm then renders with the installed version’s defaults, which lack every value added since.
 
-| Case                                                | With `--reuse-values`                                                                                                                                                                                               |
-| --------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| From 0.2.0 on                                       | Works in Helm 3 and 4. The chart fills in the missing values from its own defaults                                                                                                                                  |
-| Before 0.2.0, as 0.1.x or a 0.2.0 release candidate | Can’t be upgraded. [Move to Napwake](https://docs.napwake.dev/next/operations/upgrading/#moving-to-napwake) instead                                                                                                                                                    |
-| A value both versions have                          | Keeps the installed version’s default, so a default the new version changes isn’t picked up                                                                                                                         |
-| A default you remove by setting it to `null`        | Doesn’t stay removed, since Helm keeps the old defaults with the release. Helm 4 renders it for the upgrade that sets `null` and drops it from the next. Helm 3 brings it back every other `--reuse-values` upgrade |
-| Removing a default for good                         | Upgrade once with the values file, or with `--reset-then-reuse-values` (Helm 3.14 and later). That uses the new version’s defaults under your values. After that, `--reuse-values` keeps it removed                 |
+| Case                                         | With `--reuse-values`                                                                                                                                                                                               |
+| -------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| From Napwake 0.2.0-rc.9 on                   | Works in Helm 3 and 4. The chart fills in the missing values from its own defaults                                                                                                                                  |
+| From 0.1.x, or 0.2.0-rc.1 to rc.7            | Can’t be upgraded. [Move to Napwake](https://docs.napwake.dev/next/operations/upgrading/#moving-to-napwake) instead                                                                                                                                                    |
+| A value both versions have                   | Keeps the installed version’s default, so a default the new version changes isn’t picked up                                                                                                                         |
+| A default you remove by setting it to `null` | Doesn’t stay removed, since Helm keeps the old defaults with the release. Helm 4 renders it for the upgrade that sets `null` and drops it from the next. Helm 3 brings it back every other `--reuse-values` upgrade |
+| Removing a default for good                  | Upgrade once with the values file, or with `--reset-then-reuse-values` (Helm 3.14 and later). That uses the new version’s defaults under your values. After that, `--reuse-values` keeps it removed                 |
 
-## Narrowing watchNamespaces
+## Narrowing `watchNamespaces`
 
 `helm upgrade` stops with `job napwake-upgrade-guard failed`, or with Helm 4 `resource Job/napwake-system/napwake-upgrade-guard not ready`.
 
-Stop managing a namespace’s workloads before you drop it from `watchNamespaces`. Dropping one, or setting `watchNamespaces` where it was empty, removes the operator’s and the doorman’s Roles there. They stop watching it. Workloads paused there would stay at zero, their Services routed to doorman ports nothing serves. Their ManagedWorkloads’ finalizers would never run. So the chart’s upgrade guard refuses.
+The upgrade leaves a namespace with ManagedWorkloads out of `watchNamespaces`, by dropping it or by setting `watchNamespaces` where it was empty. That ends the operator’s and the doorman’s access there, so they’d stop watching it. Paused workloads there would stay at zero, with Services routed to doorman ports nothing serves and finalizers that never run.
 
-While the operator still watches them, so it scales each one back up:
+So the chart’s upgrade guard refuses. Stop managing them first, while the operator still watches them and can scale each one back up:
 
 1. Remove the `napwake.dev/managed` label from the workloads and namespaces there.
 
@@ -182,17 +182,19 @@ How the guard works
 | A new field                          | Not breaking. New fields are optional, with defaults            |
 | A field removed, or its type changed | Breaking, and called out in the release notes                   |
 
-The CRD is kept when the chart is uninstalled, so uninstalling and reinstalling never deletes your ManagedWorkloads.
+`helm uninstall` keeps the CRD. ManagedWorkloads left behind, by an uninstall with `--no-hooks` or `guard.uninstall: false`, are still there after a reinstall.
 
-## Forecast engine state
+Uninstalling isn’t a way to reinstall, though. [`helm uninstall`](https://docs.napwake.dev/next/getting-started/installation/#uninstall) refuses while any ManagedWorkload is left. Deleting `install.yaml` or the Kustomize manifests deletes the CRD and every ManagedWorkload.
+
+## Forecast state
 
 Each ManagedWorkload keeps its forecast’s state in `status.prediction.state`. On upgrade:
 
-| State                                           | What happens                                                                                                                                                                                                             |
-| ----------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| A compatible version                            | Imported                                                                                                                                                                                                                 |
-| Saved by an older version                       | Discarded, with a `ForecastReset` event. The engine learns again, from the workload’s [CPU history](https://docs.napwake.dev/next/concepts/forecasting/#learning-from-history), read again, when `prometheus.url` is set, otherwise from scratch |
-| Unreadable otherwise, such as after a hand edit | Discarded the same way, with a `ForecastReset` warning                                                                                                                                                                   |
+| State                                           | What happens                                                                                                                                                                                                               |
+| ----------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| A compatible version                            | Imported                                                                                                                                                                                                                   |
+| Saved by an older version                       | Discarded, with a `ForecastReset` event. The forecast learns again, from the workload’s [CPU history](https://docs.napwake.dev/next/concepts/forecasting/#learning-from-history), read again, when `prometheus.url` is set, otherwise from scratch |
+| Unreadable otherwise, such as after a hand edit | Discarded the same way, with a `ForecastReset` warning                                                                                                                                                                     |
 
 ## Rollback
 
@@ -202,15 +204,19 @@ Each ManagedWorkload keeps its forecast’s state in `status.prediction.state`. 
   helm rollback napwake -n napwake-system
   ```
 
-* kubectl
+* install.yaml
 
   ```bash
   kubectl apply -f https://github.com/napwake/napwake/releases/download/vPREVIOUS/install.yaml
   ```
 
-* Kustomize, Argo CD or Flux
+* Kustomize
 
-  Put the previous release’s `ref`, `targetRevision` or `tag` back, and apply or sync it.
+  Put the previous release’s `ref` back, and apply it with `kubectl apply -k .`.
+
+* Argo CD or Flux
+
+  Put the previous release’s `targetRevision` or `tag` back in Git, and let it sync.
 
 Paused workloads stay paused during a rollback, and the previous operator version goes on managing them. Rolling back across a breaking API change isn’t supported.
 

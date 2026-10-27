@@ -1,31 +1,107 @@
-# Prometheus activity guide
+# Prometheus activity
 
 > Count requests, connections or queue messages as activity, so a workload stays awake while it's used and wakes when it's needed.
 
 Source: https://docs.napwake.dev/next/guides/prometheus-signals/
 
-CPU tells Napwake whether a workload is working. A Prometheus query tells it whether anyone uses it. That’s requests through an ingress, open connections or messages on a queue. Any result above zero keeps the workload awake, and [wakes it](https://docs.napwake.dev/next/guides/prometheus-signals/#while-the-workload-is-paused) once it’s paused.
+CPU tells Napwake whether a workload is working. A Prometheus query tells it whether anyone uses it. That’s requests through an ingress, open connections or messages on a queue.
 
-## Point Napwake at Prometheus
+Any result above zero keeps the workload awake, and [wakes it](https://docs.napwake.dev/next/guides/prometheus-signals/#while-the-workload-is-paused) once it’s paused.
 
-Set `prometheus.url` in your Helm values. It passes `--prometheus-url` to the operator:
+1. Give the operator your Prometheus’s address in the Helm value `prometheus.url`, where you keep your other values.
 
-napwake-values.yaml
+   * Helm
 
-```yaml
-timezone: Europe/London
-prometheus:
-  url: http://prometheus.monitoring.svc.cluster.local:9090
-```
+     napwake-values.yaml
 
-Upgrade with the file, at the chart version you run (`helm list -n napwake-system`), or Helm upgrades the chart too:
+     ```yaml
+     timezone: Europe/London
+     prometheus:
+       url: http://prometheus.monitoring.svc.cluster.local:9090
+     ```
 
-```bash
-helm upgrade napwake oci://ghcr.io/napwake/charts/napwake --version X.Y.Z \
-  --namespace napwake-system -f napwake-values.yaml
-```
+     Upgrade with the file, at the chart version you run (`helm list -n napwake-system`), or Helm upgrades the chart too:
 
-Installed without a values file, see [Keeping your settings](https://docs.napwake.dev/next/operations/upgrading/#keeping-your-settings).
+     ```bash
+     helm upgrade napwake oci://ghcr.io/napwake/charts/napwake --version X.Y.Z \
+       --namespace napwake-system -f napwake-values.yaml
+     ```
+
+     Installed without a values file, see [Keeping your settings](https://docs.napwake.dev/next/operations/upgrading/#keeping-your-settings).
+
+   * Argo CD
+
+     Add it to the Application’s `valuesObject`, as on [Installation](https://docs.napwake.dev/next/getting-started/installation/), and commit. Don’t run `helm upgrade`, since the next sync undoes it.
+
+     Argo CD Application
+
+     ```yaml
+     spec:
+       source:
+         helm:
+           valuesObject:
+             timezone: Europe/London
+             prometheus:
+               url: http://prometheus.monitoring.svc.cluster.local:9090
+     ```
+
+   * Flux
+
+     Add it to the HelmRelease’s `values`, as on [Installation](https://docs.napwake.dev/next/getting-started/installation/), and commit. Don’t run `helm upgrade`, since the next reconcile undoes it.
+
+     Flux HelmRelease
+
+     ```yaml
+     spec:
+       values:
+         timezone: Europe/London
+         prometheus:
+           url: http://prometheus.monitoring.svc.cluster.local:9090
+     ```
+
+   The operator restarts with it. From the manifests, add the operator flag `--prometheus-url`, as [Installation](https://docs.napwake.dev/next/getting-started/installation/) adds `--timezone`. This prints the URL it runs with:
+
+   ```bash
+   kubectl get deployments -n napwake-system -o yaml | grep -- '- --prometheus-url'
+   ```
+
+2. Add a query to the ManagedWorkload.
+
+   managedworkload.yaml
+
+   ```yaml
+   spec:
+     idlePolicy:
+       idleAfter: 1h
+       activity:
+         prometheus:
+           - promQL: 'sum(rate(nginx_ingress_controller_requests{exported_namespace="staging", exported_service="my-api"}[5m]))'
+   ```
+
+   Queries add to CPU, deploys and activity annotations, the other activity sources. Any one keeps the workload awake.
+
+   There’s no annotation for queries. On a ManagedWorkload created from the `napwake.dev/managed` label, add them to its `spec.idlePolicy.activity.prometheus`. The opt-in controller keeps them when it updates the rest from the annotations.
+
+3. Test the same query in Prometheus.
+
+   ```bash
+   curl -s 'http://prometheus:9090/api/v1/query' \
+     --data-urlencode 'query=sum(rate(nginx_ingress_controller_requests{exported_namespace="staging", exported_service="my-api"}[5m]))'
+   ```
+
+   A result above zero is activity ([How a result counts](https://docs.napwake.dev/next/guides/prometheus-signals/#how-a-result-counts)).
+
+4. Once the workload has had requests, check what kept it awake.
+
+   ```bash
+   kubectl get managedworkload my-api -n staging -o jsonpath='{.status.activity.lastActivitySource}'
+   ```
+
+CheckpointAwake
+
+`prometheus` means a query was the most recent source of activity.
+
+## The Prometheus address
 
 | URL   | Rule                                                                                                       |
 | ----- | ---------------------------------------------------------------------------------------------------------- |
@@ -33,41 +109,9 @@ Installed without a values file, see [Keeping your settings](https://docs.napwak
 | Gets  | `/api/v1/query` appended, with any path prefix kept, so `https://mimir.example.com/prometheus` works as-is |
 | Sends | No credentials or headers. Reach a Prometheus that needs them through a proxy that adds them               |
 
-With a URL, each new workload’s forecast also starts from up to four weeks of CPU history. So `autoResume` can act from day one ([Learning from history](https://docs.napwake.dev/next/concepts/forecasting/#learning-from-history)). Where Prometheus holds several clusters’ series, `prometheus.selector` (`--prometheus-selector`), such as `cluster="staging"`, narrows that history query to this cluster. Activity queries run as written, so narrow those in the query.
+With a URL, each new workload’s forecast also starts from up to four weeks of CPU history. So `autoResume` can act from day one ([Learning from history](https://docs.napwake.dev/next/concepts/forecasting/#learning-from-history)).
 
-## Add a query
-
-managedworkload.yaml
-
-```yaml
-spec:
-  idlePolicy:
-    idleAfter: 1h
-    activity:
-      prometheus:
-        - promQL: 'sum(rate(nginx_ingress_controller_requests{exported_namespace="staging", exported_service="my-api"}[5m]))'
-```
-
-Queries add to CPU, deploys and activity annotations, the other activity sources. Any one keeps the workload awake.
-
-There’s no annotation for queries. On a ManagedWorkload created from the `napwake.dev/managed` label, add them to its `spec.idlePolicy.activity.prometheus`. The opt-in controller keeps them when it updates the rest from the annotations.
-
-## Test the query directly
-
-```bash
-curl -s 'http://prometheus:9090/api/v1/query' \
-  --data-urlencode 'query=sum(rate(nginx_ingress_controller_requests{exported_namespace="staging", exported_service="api"}[5m]))'
-```
-
-Then check what kept the workload awake:
-
-```bash
-kubectl get managedworkload my-api -n staging -o jsonpath='{.status.activity.lastActivitySource}'
-```
-
-CheckpointAwake
-
-`prometheus` means a query was the most recent source of activity.
+Where Prometheus holds several clusters’ series, `prometheus.selector` (`--prometheus-selector`), such as `cluster="staging"`, narrows that history query to this cluster. Activity queries run as written, so narrow those in the query.
 
 ## How a result counts
 
@@ -127,7 +171,9 @@ spec:
 
 ## When a query can’t be evaluated
 
-Napwake can’t see that activity. It doesn’t pause the workload, and a failing query doesn’t wake a paused one. The time isn’t counted as idle either ([When a source can’t be read](https://docs.napwake.dev/next/concepts/idle-detection/#when-a-source-cant-be-read)). `PrometheusAvailable`, only on workloads with queries, says why:
+Napwake can’t see that activity. So it doesn’t pause the workload, and a failing query doesn’t wake a paused one. The time isn’t counted as idle either ([When a source can’t be read](https://docs.napwake.dev/next/concepts/idle-detection/#when-a-source-cant-be-read)).
+
+`PrometheusAvailable`, only on workloads with queries, says why:
 
 | Reason                  | Meaning                                                                                                                                                                           |
 | ----------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -162,27 +208,31 @@ When Prometheus fails, every workload’s queries fail at once. When one query f
 
 ## Example queries
 
-| Use case                       | PromQL                                                                                                   |
-| ------------------------------ | -------------------------------------------------------------------------------------------------------- |
-| Requests through ingress-nginx | `sum(rate(nginx_ingress_controller_requests{exported_namespace="staging", exported_service="api"}[5m]))` |
-| Requests seen by the app       | `sum(rate(http_requests_total{service="api"}[5m]))`                                                      |
-| Open WebSocket connections     | `sum(websocket_connections{service="api"})`                                                              |
-| Messages waiting on a queue    | `sum(rabbitmq_queue_messages{queue="tasks"})`                                                            |
-| Kafka consumer lag             | `sum(kafka_consumer_lag{group="worker"})`                                                                |
+| Use case                       | PromQL                                                                                                      |
+| ------------------------------ | ----------------------------------------------------------------------------------------------------------- |
+| Requests through ingress-nginx | `sum(rate(nginx_ingress_controller_requests{exported_namespace="staging", exported_service="my-api"}[5m]))` |
+| Requests seen by the app       | `sum(rate(http_requests_total{service="my-api"}[5m]))`                                                      |
+| Open WebSocket connections     | `sum(websocket_connections{service="my-api"})`                                                              |
+| Messages waiting on a queue    | `sum(rabbitmq_queue_messages{queue="tasks"})`                                                               |
+| Kafka consumer lag             | `sum(kafka_consumer_lag{group="worker"})`                                                                   |
 
-ingress-nginx labels each request with its namespace and Service. Scraped by the Prometheus Operator, which keeps `namespace` and `service` for the scrape target, they become `exported_namespace` and `exported_service`. Give both. Preview environments often share Service names, and another’s traffic would keep this one awake.
+ingress-nginx labels each request with its namespace and Service. Scraped by the Prometheus Operator, which keeps `namespace` and `service` for the scrape target, they become `exported_namespace` and `exported_service`.
+
+Give both. Preview environments often share Service names, and another’s traffic would keep this one awake.
+
+ingress-nginx is retired upstream, its repository archived, and it’s still the controller Napwake’s tests run on.
 
 In [dry-run](https://docs.napwake.dev/next/guides/dry-run/#what-dry-run-measured), nothing goes through the doorman, so a request-rate query is how it sees requests. Without one, a request counts only through the CPU it uses.
 
 ## Writing good queries
 
-* Measure activity, not idleness. Ask “how many requests per second”, not “are there no requests”.
+* Count activity, such as requests per second. A result above zero means use, so a query for “no requests” reads the wrong way round.
 * `rate(...[5m])` stays above zero for about five minutes after the last request. That’s usually right. One request keeps the workload awake, and the clock starts once traffic stops.
 * Keep queries cheap. Aggregate, and use recording rules for anything heavy.
 * Leave out traffic that isn’t people. Health checks, uptime monitors and scrapers counted by the query keep a workload awake, and wake it once paused. Filter them by path or user agent where your metrics allow:
 
 ```promql
-sum(rate(nginx_ingress_controller_requests{exported_namespace="staging", exported_service="api", path!~"/healthz|/metrics"}[5m]))
+sum(rate(nginx_ingress_controller_requests{exported_namespace="staging", exported_service="my-api", path!~"/healthz|/metrics"}[5m]))
 ```
 
 Next

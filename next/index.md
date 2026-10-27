@@ -20,7 +20,7 @@ A request has reached staging while it was asleep. The doorman holds it at the d
 
 A team that works 10 hours a day, five days a week, uses staging 50 of 168 hours. The other 70%, it’s idle. `kubectl napwake scan` shows your cluster’s own number before you install anything.
 
-[![The scan report for an example cluster. It leads with 19 of 31 workloads running for nobody and $691 that could be freed a month. Beside it, the cluster drawn as a hotel at night, twice: now, with most rooms lit, and with Napwake, the rooms lit for nobody dark.](https://docs.napwake.dev/next/home/scan-report-light.webp)](https://napwake.dev/examples/scan-report/)
+[![The scan report for an example cluster. It leads with 19 of 31 workloads running for nobody and $691 that could be freed a month. Beside it, the same workloads drawn twice, as they run now and with Napwake pausing the idle ones.](https://docs.napwake.dev/next/home/scan-report-light.webp)](https://napwake.dev/examples/scan-report/)
 
 [![](https://docs.napwake.dev/next/home/scan-report-dark.webp)](https://napwake.dev/examples/scan-report/)
 
@@ -29,14 +29,14 @@ kubectl napwake scan
 ```
 
 * It runs with your kubeconfig and installs nothing in the cluster.
-* It shows what's idle right now as rooms lit for nobody, and what each costs at your nodes' list prices.
+* It shows which workloads are idle right now, and what each costs at your nodes' list prices.
 * With Prometheus, it replays the last week of each workload's CPU and rollouts, and says what pausing would have freed.
 
 One file to send your team. It loads nothing from elsewhere and prints to PDF.
 
 [Open the example report ↗](https://napwake.dev/examples/scan-report/) [Scan, in the plugin's docs](https://docs.napwake.dev/next/getting-started/kubectl-plugin/#scan-a-cluster)
 
-## Four doors
+## Four states, four doors
 
 Asleep · paused
 
@@ -52,11 +52,11 @@ Its pods are Ready and held requests passed through. With no activity for `idleA
 
 Needs you · needs attention
 
-A note pinned on the door. Something stops Napwake doing its job, and `kubectl napwake status` says what to fix.
+Something stops Napwake doing its job, and `kubectl napwake status` says what to fix. Its door has a note pinned on it.
 
 ## How it works
 
-Label a Deployment, StatefulSet or namespace `napwake.dev/managed: "true"` and Napwake creates a ManagedWorkload for it, with its settings from annotations. Then it keeps an activity clock: CPU, deploys, activity annotations, and Prometheus.
+Label a Deployment, StatefulSet or namespace `napwake.dev/managed: "true"` and Napwake creates a ManagedWorkload for it, with its settings from annotations. Then it keeps an activity clock, fed by CPU, deploys, activity annotations and Prometheus.
 
 1. Awake · running
 
@@ -86,7 +86,7 @@ Private or public
 
 Napwake is for non-production environments on your own clusters. Behind a VPN, SSO or an allowlist, the first request wakes a paused workload.
 
-Public ones ask first. A browser gets a **Wake it** button, so people wake them and robots don’t. [Public preview environments](https://docs.napwake.dev/next/guides/preview-environments/) says how.
+Public ones can ask first. A browser gets a **Wake it** button, and crawlers, scanners and API calls wake nothing. [Public preview environments](https://docs.napwake.dev/next/guides/preview-environments/) says how.
 
 ## What it does
 
@@ -131,7 +131,9 @@ metadata:
     napwake.dev/idle-after: "1h"
 ```
 
-Napwake watches `my-api` and records each time it’s active: CPU above `cpuThreshold` (10% of its requests by default), a deploy, or an activity annotation, and, with a [Prometheus query](https://docs.napwake.dev/next/guides/prometheus-signals/), its request rate. In dry-run it only measures. Once you run `kubectl napwake enable my-api -n dev`, it pauses the Deployment after an hour with no activity, and wakes it when a request reaches its Service.
+Napwake watches `my-api` and records each time it’s active. Activity is CPU above `cpuThreshold` (10% of its requests by default), a deploy or an activity annotation. With a [Prometheus query](https://docs.napwake.dev/next/guides/prometheus-signals/), it’s also the request rate.
+
+In dry-run it only measures. Once you run `kubectl napwake enable my-api -n dev`, it pauses the Deployment after an hour with no activity. It wakes it when a request reaches its Service.
 
 For every setting, see [Opting in](https://docs.napwake.dev/next/guides/opt-in/). For settings annotations don’t cover, write a [ManagedWorkload](https://docs.napwake.dev/next/guides/managed-workload/) yourself.
 

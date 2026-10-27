@@ -2,4 +2,4 @@
 User-agent: *
 Allow: /
 
-Sitemap: https://docs.napwake.dev/latest/sitemap-index.xml
+Sitemap: https://docs.napwake.dev/next/sitemap-index.xml

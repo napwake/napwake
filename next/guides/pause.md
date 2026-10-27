@@ -1,6 +1,6 @@
 # Pause and resume
 
-> Napwake's one action is to pause a workload, scaling it to zero replicas. Only the pods go. The Deployment or StatefulSet, its PVCs and their data stay.
+> A pause scales a workload to zero replicas. Only the pods go. The Deployment or StatefulSet, its PVCs and their data stay.
 
 Source: https://docs.napwake.dev/next/guides/pause/
 
@@ -26,7 +26,13 @@ Source: https://docs.napwake.dev/next/guides/pause/
 
 Its replicas are Ready
 
-Napwake never deletes a workload or its storage. A StatefulSet whose `persistentVolumeClaimRetentionPolicy.whenScaled` is `Delete` has its own controller delete its PVCs as it scales down. So Napwake never pauses one. It reports `Protected=True`, reason `PVCsDeletedOnScaleDown`, until `whenScaled` is `Retain`.
+Napwake never deletes a workload or its PVCs. A pause removes the pods, as any scale to zero does, so what lives only in them goes too:
+
+* an `emptyDir`, on disk or in memory
+* a generic ephemeral volume
+* the app’s memory, such as a preview database run without a PVC
+
+A StatefulSet whose `persistentVolumeClaimRetentionPolicy.whenScaled` is `Delete` has its own controller delete its PVCs as it scales down. So Napwake never pauses one, and reports `Protected=True`, reason `PVCsDeletedOnScaleDown`, until `whenScaled` is `Retain`.
 
 ## Pause now
 
@@ -46,7 +52,13 @@ When you’re done with a workload for the day, such as a preview environment, p
    kubectl describe managedworkload my-api -n staging
    ```
 
-   Its message says what happened and when, in UTC. It reads `paused as requested at 2026-10-21 03:32 UTC`, `already paused at …`, or `not paused at 2026-10-21 03:32 UTC:` and why. It answers the last request until the next one, through any wakes and pauses, so it outlives the events.
+   Its message says what happened and when, in UTC:
+
+   * `paused as requested at 2026-10-21 03:32 UTC`
+   * `already paused at …`
+   * `not paused at 2026-10-21 03:32 UTC:` and why
+
+   It answers the last request until the next one, through any wakes and pauses, so it outlives the events.
 
 CheckpointAsleep · paused
 
@@ -54,18 +66,20 @@ The workload is `Paused`, the same as after an idle pause. Anything in [Resume](
 
 The request runs the idle clock out now, and the pause follows the rules of an idle one:
 
-| The workload                                                                                                                                                                                                                        | What Napwake does                                                                                                                                     | `PauseRequest`                                                               |
-| ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------- |
-| `Running`, `Idle` or `Resuming`                                                                                                                                                                                                     | Pauses it, after the wake if it’s `Resuming`, with a `PauseRequested` event, then `Paused`                                                            | `True`, `Paused`                                                             |
-| A request comes as it pauses                                                                                                                                                                                                        | [Calls the pause off](https://docs.napwake.dev/next/guides/pause/#a-request-calls-the-pause-off), and says so. `kubectl napwake pause` says it wasn’t paused                                     | `False`, `PauseCancelled`                                                    |
-| `Pausing` or `Paused`                                                                                                                                                                                                               | Finishes any pause under way, then marks the request handled                                                                                          | `True`, `AlreadyPaused`                                                      |
-| In the hour Napwake waits after a GitOps tool undid its last pause                                                                                                                                                                  | Pauses it, since you asked. If the tool undoes it again, that’s a new [`GitOpsConflict`](https://docs.napwake.dev/next/guides/gitops/)                                        | `True`, `Paused`                                                             |
-| Busy within the hour, by a confident forecast                                                                                                                                                                                       | Leaves it running and says when, since it would likely be woken straight back. `kubectl napwake pause` asks whether to pause anyway, and `--yes` does | `False`, `ForecastExpectsDemand`                                             |
-| In dry-run                                                                                                                                                                                                                          | Never scales it, and [counts a would-be pause](https://docs.napwake.dev/next/guides/dry-run/#what-happens-in-dry-run)                                                         | `False`, `DryRun`                                                            |
-| Held awake by `napwake.dev/active-until` on it or its workload, depended on by awake workloads, in a `dependsOn` cycle, in a [protected namespace](https://docs.napwake.dev/next/guides/opt-in/#protected-namespaces), or Napwake’s own operator or doorman | Leaves it running, with a Warning event, or `HeldByDependents` for dependents                                                                         | `False`, `ActiveUntil`, `HeldByDependents`, `DependencyCycle` or `Protected` |
-| Scaled to zero outside Napwake                                                                                                                                                                                                      | Nothing, since it’s off already                                                                                                                       | `False`, `ScaledToZero`                                                      |
-| Missing, labelled `napwake.dev/ignore`, or managed by another ManagedWorkload                                                                                                                                                       | Nothing, with a Warning event                                                                                                                         | `False`, `TargetNotFound`, `TargetIgnored` or `DuplicateTarget`              |
-| Already on the ManagedWorkload as Napwake takes it on, or takes a pause up again after its status was lost                                                                                                                          | Nothing. It may have been answered before, and brought back with the ManagedWorkload, as by a backup restored without status. Set a new value to ask  | `False`, `PredatesStatus`                                                    |
+| The workload                                                                                                                                                                                        | What Napwake does                                                                                                                                     | `PauseRequest`                                                  |
+| --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------- |
+| `Running`, `Idle` or `Resuming`                                                                                                                                                                     | Pauses it, after the wake if it’s `Resuming`, with a `PauseRequested` event, then `Paused`                                                            | `True`, `Paused`                                                |
+| A request comes as it pauses                                                                                                                                                                        | [Calls the pause off](https://docs.napwake.dev/next/guides/pause/#a-request-calls-the-pause-off), and says so. `kubectl napwake pause` says it wasn’t paused                                     | `False`, `PauseCancelled`                                       |
+| `Pausing` or `Paused`                                                                                                                                                                               | Finishes any pause under way, then marks the request handled                                                                                          | `True`, `AlreadyPaused`                                         |
+| In the hour Napwake waits after a GitOps tool undid its last pause                                                                                                                                  | Pauses it, since you asked. If the tool undoes it again, that’s a new [`GitOpsConflict`](https://docs.napwake.dev/next/guides/gitops/)                                        | `True`, `Paused`                                                |
+| Busy within the hour, by a confident forecast                                                                                                                                                       | Leaves it running and says when, since it would likely be woken straight back. `kubectl napwake pause` asks whether to pause anyway, and `--yes` does | `False`, `ForecastExpectsDemand`                                |
+| In dry-run                                                                                                                                                                                          | Never scales it, and [counts a would-be pause](https://docs.napwake.dev/next/guides/dry-run/#what-happens-in-dry-run)                                                         | `False`, `DryRun`                                               |
+| With pausing [off](https://docs.napwake.dev/next/guides/pause/#stop-all-pausing-now) for its install                                                                                                                                           | As in dry-run                                                                                                                                         | `False`, `PausingOff`                                           |
+| Held awake by `napwake.dev/active-until` on it or its workload, in a `dependsOn` cycle, in a [protected namespace](https://docs.napwake.dev/next/guides/opt-in/#protected-namespaces), or Napwake’s own operator or doorman | Leaves it running, with a warning event                                                                                                               | `False`, `ActiveUntil`, `DependencyCycle` or `Protected`        |
+| Depended on by awake workloads                                                                                                                                                                      | Leaves it running, with a `HeldByDependents` event                                                                                                    | `False`, `HeldByDependents`                                     |
+| Scaled to zero outside Napwake                                                                                                                                                                      | Nothing, since it’s off already                                                                                                                       | `False`, `ScaledToZero`                                         |
+| Missing, labelled `napwake.dev/ignore`, or managed by another ManagedWorkload                                                                                                                       | Nothing, with a warning event                                                                                                                         | `False`, `TargetNotFound`, `TargetIgnored` or `DuplicateTarget` |
+| Already on the ManagedWorkload as Napwake takes it on, or takes a pause up again after its status was lost                                                                                          | Nothing. It may have been answered before, and brought back with the ManagedWorkload, as by a backup restored without status. Set a new value to ask  | `False`, `PredatesStatus`                                       |
 
 A request Napwake won’t act on is answered once, so ask again once the reason is gone. Napwake keeps its record of answered requests in the ManagedWorkload’s status. So a request already on it as Napwake takes it on counts as answered.
 
@@ -86,7 +100,7 @@ Napwake acts on each value once, recording it in `status.lastPauseRequest`, whic
 
 ## What happens in a pause
 
-Before the pods stop, the [doorman](https://docs.napwake.dev/next/concepts/wake-on-request/) steps in front of the workload’s Services, beside its pods. So no request is refused as they stop.
+Before the pods stop, Napwake adds its [doorman](https://docs.napwake.dev/next/concepts/wake-on-request/), a proxy that holds requests, to the workload’s Services, beside the pods. So no request is refused as they stop.
 
 | When                                                           | What happens                                                                                                                                                                                                |
 | -------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -100,9 +114,13 @@ Then Napwake scales the workload to zero. [Lifecycle](https://docs.napwake.dev/n
 
 ### Work in progress at a pause
 
-Kubernetes stops the pods as it stops any pod. Each gets `SIGTERM`, then its `terminationGracePeriodSeconds` (30 seconds by default) to finish before `SIGKILL`. Napwake waits for them to stop ([how long](https://docs.napwake.dev/next/operations/troubleshooting/#workload-paused-with-pods-still-running)). Requests that come meanwhile go to the doorman, which holds them.
+Kubernetes stops the pods as it stops any pod. Each gets `SIGTERM`, then its `terminationGracePeriodSeconds` (30 seconds by default) to finish before `SIGKILL`.
 
-An app that should finish a job or drain connections needs to handle `SIGTERM`, as in a rollout. One that exits the moment it gets `SIGTERM` can refuse a connection. kube-proxy may send it one in the second before it drops the pod. A `preStop` sleep of a few seconds closes that gap, in a pause as in any rollout.
+Napwake waits for them to stop ([how long](https://docs.napwake.dev/next/operations/troubleshooting/#workload-paused-with-pods-still-running)). Requests that come meanwhile go to the doorman, which holds them.
+
+An app that should finish a job or drain connections needs to handle `SIGTERM`, as in a rollout.
+
+One that exits the moment it gets `SIGTERM` can refuse a connection. kube-proxy may send it one in the second before it drops the pod. A `preStop` sleep of a few seconds closes that gap, in a pause as in any rollout.
 
 ### A request calls the pause off
 
@@ -112,6 +130,7 @@ A request while a workload pauses shows it’s in use. Whatever would wake it on
 * for a workload that [asks before waking](https://docs.napwake.dev/next/concepts/wake-on-request/#asking-before-waking), only a person’s click on the asleep page
 * a [wake request](https://docs.napwake.dev/next/guides/pause/#wake-now)
 * an activity annotation, which a waking [dependent](https://docs.napwake.dev/next/concepts/dependencies/) stamps
+* a dependent awake just before it’s scaled to zero, as one that has learned it depends on it since the pause began
 
 The workload is `Running` again, scaled back up if its pods had begun to stop. The request is answered, held while no pod is Ready. A `PauseCancelled` event says what came:
 
@@ -129,7 +148,7 @@ The doorman doesn’t see every request as a workload pauses. The pods answer th
 
 A probe, a scrape, a hunt for hidden files, or a TCP check that sends nothing doesn’t call it off. Dry-run never pauses, so there’s nothing to call off.
 
-A pause the idle clock made, called off this way, counts as [made in use](https://docs.napwake.dev/next/concepts/idle-detection/#paused-while-in-use). The clock then waits longer before the next.
+A pause the idle clock made, called off this way, counts as [made in use](https://docs.napwake.dev/next/concepts/idle-detection/#paused-while-in-use). The clock then waits longer before the next. One its dependents call off doesn’t, as it was their use.
 
 ## Resume
 
@@ -142,6 +161,7 @@ A pause the idle clock made, called off this way, counts as [made in use](https:
 | `autoResume: true`, and a confident forecast expects demand in the coming hour                                                                                                                                     | Wakes 15 minutes before the hour                                                                                   |
 | Something else scales it up, such as `kubectl scale`                                                                                                                                                               | Counts it as activity, and goes straight to `Running`. For a GitOps tool, see [GitOps tools](https://docs.napwake.dev/next/guides/gitops/) |
 | [Dry-run](https://docs.napwake.dev/next/guides/dry-run/) is turned on                                                                                                                                                                      | Wakes, with a `DryRunWake` event. Dry-run never leaves a workload paused                                           |
+| Pausing is [turned off](https://docs.napwake.dev/next/guides/pause/#stop-all-pausing-now) for its install                                                                                                                                                     | Wakes, with a `PausingOffWake` event                                                                               |
 
 Napwake looks at a paused workload at least every 5 minutes, or every minute with Prometheus activity queries. It also looks 15 minutes before each hour, on the hour, and whenever the workload or its target changes.
 
@@ -151,7 +171,9 @@ Napwake looks at a paused workload at least every 5 minutes, or every minute wit
 kubectl napwake wake my-api -n staging
 ```
 
-`wake` asks Napwake to wake the workload now, whatever its [wake setting](https://docs.napwake.dev/next/concepts/wake-on-request/#the-wake-setting). So it wakes one that [asks before waking](https://docs.napwake.dev/next/concepts/wake-on-request/#asking-before-waking) too. A paused workload wakes with its [dependencies](https://docs.napwake.dev/next/concepts/dependencies/), and an awake one’s idle clock restarts. `--for 2h` keeps it awake at least that long, as for a demo. `wake` waits for Napwake’s answer, then until it’s Running.
+`wake` asks Napwake to wake the workload now, whatever its [wake setting](https://docs.napwake.dev/next/concepts/wake-on-request/#the-wake-setting). So it wakes one that [asks before waking](https://docs.napwake.dev/next/concepts/wake-on-request/#asking-before-waking) too. A paused workload wakes with its [dependencies](https://docs.napwake.dev/next/concepts/dependencies/), and an awake one’s idle clock restarts.
+
+`--for 2h` keeps it awake at least that long, as for a demo. `wake` waits for Napwake’s answer, then until it’s Running.
 
 Any tool can ask the same way, such as a pull request bot, a developer portal or a chat command. It sets `napwake.dev/wake-requested` on the ManagedWorkload, as `wake` does. The value only has to differ from the last request’s, such as the time or a CI run’s ID:
 
@@ -179,7 +201,7 @@ Napwake acts on each value once, recording it in `status.lastWakeRequest`, which
 | `Pausing`                                                                                                                                                         | [Calls the pause off](https://docs.napwake.dev/next/guides/pause/#a-request-calls-the-pause-off), and has it `Running` again                                                         | `True`, `Woken`                                                 |
 | `Resuming`                                                                                                                                                        | Lets the wake finish, then marks the request handled                                                                                      | `True`, `AlreadyAwake`                                          |
 | `Running` or `Idle`                                                                                                                                               | Restarts its idle clock, as activity does                                                                                                 | `True`, `AlreadyAwake`                                          |
-| In [dry-run](https://docs.napwake.dev/next/guides/dry-run/)                                                                                                                               | Restarts its idle clock, which ends a would-be pause                                                                                      | `True`, `AlreadyAwake`                                          |
+| In [dry-run](https://docs.napwake.dev/next/guides/dry-run/), or with pausing [off](https://docs.napwake.dev/next/guides/pause/#stop-all-pausing-now) for its install                                                                 | Restarts its idle clock, which ends a would-be pause                                                                                      | `True`, `AlreadyAwake`                                          |
 | Scaled to zero outside Napwake                                                                                                                                    | Leaves it off. Napwake only wakes what it paused                                                                                          | `False`, `ScaledToZero`                                         |
 | In a [protected namespace](https://docs.napwake.dev/next/guides/opt-in/#protected-namespaces), Napwake’s own operator or doorman, or a StatefulSet that deletes its PVCs when scaled down | Nothing, since Napwake never pauses it                                                                                                    | `False`, `Protected`                                            |
 | Missing, labelled `napwake.dev/ignore`, or managed by another ManagedWorkload                                                                                     | Nothing, with a warning event                                                                                                             | `False`, `TargetNotFound`, `TargetIgnored` or `DuplicateTarget` |
@@ -187,7 +209,11 @@ Napwake acts on each value once, recording it in `status.lastWakeRequest`, which
 | Set before Napwake has taken the ManagedWorkload on, as by a tool that creates it and asks at once                                                                | Takes it on `Running`, so it’s awake, and restarts its idle clock                                                                         | `True`, `AlreadyAwake`                                          |
 | Already on the ManagedWorkload as Napwake takes a pause up again after its status was lost                                                                        | Nothing. It may have been answered before, as with a backup restored without status, so the workload stays paused. Set a new value to ask | `False`, `PredatesStatus`                                       |
 
-The condition answers the last request until the next one, through every pause and wake since. Its message says what happened and when, in UTC. It reads `woken as requested at 2026-10-23 09:05 UTC`, `already awake at …`, or `not woken at 2026-10-23 09:05 UTC:` and why.
+The condition answers the last request until the next one, through every pause and wake since. Its message says what happened and when, in UTC:
+
+* `woken as requested at 2026-10-23 09:05 UTC`
+* `already awake at …`
+* `not woken at 2026-10-23 09:05 UTC:` and why
 
 ```bash
 kubectl get managedworkload my-api -n staging \
@@ -202,13 +228,121 @@ Keep it running for good
 
 Remove the `idlePolicy` of a ManagedWorkload you wrote. One from the label always has one, so label that workload `napwake.dev/ignore: "true"`. Napwake stops managing it, waking it first.
 
-A resume wakes the workload’s [dependencies](https://docs.napwake.dev/next/concepts/dependencies/), then scales it back to `status.pause.previousReplicas`. It’s `Running` once those replicas are Ready, by a status its own controller wrote after the scale-up. Once it’s scaled back up, its autoscaler owns the replicas. An HPA scaling it down as it starts isn’t undone.
+A resume wakes the workload’s [dependencies](https://docs.napwake.dev/next/concepts/dependencies/), then scales it back to `status.pause.previousReplicas`. It’s `Running` once those replicas are Ready, by a status its own controller wrote after the scale-up.
 
-A workload with a pod crash-looping before its pause would never get there. So Napwake stops waiting, runs it with its Ready replicas, and sets `ResumeIncomplete=True`. With none Ready, its doorman routes go anyway. Requests then fail until a pod is Ready, rather than wait at the doorman for a workload its own controller reports stuck. A StatefulSet with the default `OrderedReady` pod management starts its pods one at a time. A slow-starting one may have only its first pods Ready when the 2 minutes are up. It runs with those, and the rest follow. [Lifecycle](https://docs.napwake.dev/next/concepts/lifecycle/#transition-triggers) has the timings.
+Once it’s scaled back up, its autoscaler owns the replicas. An HPA scaling it down as it starts isn’t undone.
+
+A pod crash-looping since before the pause would hold the resume for good. So once one replica is Ready, the rest get 2 minutes. Then Napwake runs the workload with its Ready replicas, and sets `ResumeIncomplete=True`.
+
+With none Ready, its doorman routes go anyway, so requests fail until a pod is Ready. They don’t wait at the doorman for a workload its own controller reports stuck. [Lifecycle](https://docs.napwake.dev/next/concepts/lifecycle/#transition-triggers) has the timings.
+
+A StatefulSet with the default `OrderedReady` pod management starts its pods one at a time. A slow-starting one may have only its first pods Ready when the 2 minutes are up. It runs with those, and the rest follow.
+
+## Stop all pausing now
+
+On a bad day, one value stops every pause an install makes. Everything it manages still wakes.
+
+1. Turn pausing off.
+
+   * Helm
+
+     ```bash
+     helm upgrade napwake oci://ghcr.io/napwake/charts/napwake \
+       --version X.Y.Z \
+       --namespace napwake-system \
+       --reuse-values \
+       --set pausing.enabled=false
+     ```
+
+     Use the version in the `CHART` column of `helm list -n napwake-system`, so Napwake isn’t upgraded too.
+
+     It lasts until your next upgrade. One with `-f napwake-values.yaml` turns pausing back on, unless the file sets it too. To keep it off, put it in the file:
+
+     napwake-values.yaml
+
+     ```yaml
+     pausing:
+       enabled: false
+     ```
+
+   * Argo CD
+
+     Argo CD Application
+
+     ```yaml
+     spec:
+       source:
+         helm:
+           valuesObject:
+             pausing:
+               enabled: false
+     ```
+
+     Argo CD keeps no Helm release, so `helm upgrade` fails on an install it manages. Change it here.
+
+   * Flux
+
+     Flux HelmRelease
+
+     ```yaml
+     spec:
+       values:
+         pausing:
+           enabled: false
+     ```
+
+     Flux puts its own values back at its next reconcile, so a `helm upgrade` doesn’t last. Change it here.
+
+   The operator restarts with [`--pausing=false`](https://docs.napwake.dev/next/reference/configuration/#flag-pausing).
+
+2. Check it.
+
+   ```
+   kubectl napwake status
+   Pausing is off (pausing.enabled: false): nothing here pauses, and everything wakes.
+   staging (EKS us-east-1): Napwake manages 4 workloads.
+   ```
+
+CheckpointAwake · pausing off
+
+Every ManagedWorkload of the install has `PausingOff=True`, reason `DisabledForTheInstall`.
+
+|                                                                                    | With pausing off                                                                                                                                           |
+| ---------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| A workload whose idle clock runs out, or that’s asked to pause                     | Stays up. Napwake measures it as in [dry-run](https://docs.napwake.dev/next/guides/dry-run/#what-happens-in-dry-run) and counts the would-be pause, whatever its own `dryRun` says |
+| A workload paused or pausing                                                       | Wakes as the operator starts, with a `PausingOffWake` event                                                                                                |
+| Requests, activity, wake requests and `autoResume`                                 | Still wake                                                                                                                                                 |
+| `kubectl napwake status`                                                           | Says so first, and atop its `--html` page. Counts the workloads when only some are off. Shows each in dry-run, as `kubectl napwake scan` does              |
+| Events for what it holds back                                                      | Start with `[dry-run]`, as in dry-run                                                                                                                      |
+| `spec.dryRun`                                                                      | Left as it is                                                                                                                                              |
+| [More than one install](https://docs.napwake.dev/next/getting-started/installation/#more-than-one-install) | Each install has its own switch, on its release                                                                                                            |
+
+Wake everything at once, without changing the release
+
+Ask each ManagedWorkload for a [wake](https://docs.napwake.dev/next/guides/pause/#wake-now):
+
+```bash
+kubectl annotate managedworkloads --all -A --overwrite \
+  napwake.dev/wake-requested="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+```
+
+It takes `list` and `patch` on `managedworkloads` in every namespace. With pausing on, they pause again once idle.
+
+### Turn pausing back on
+
+Set `pausing.enabled` back to `true` the same way.
+
+|                                                                                             | Once pausing is on again                                                              |
+| ------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------- |
+| The `PausingOff` condition                                                                  | Removed                                                                               |
+| Idle clocks                                                                                 | Start afresh, since the operator restarts. The first pauses come an `idleAfter` later |
+| A workload [paused while in use](https://docs.napwake.dev/next/concepts/idle-detection/#paused-while-in-use) before | Still waits longer. Pausing off kept its back-off                                     |
 
 ## When Napwake lets go
 
-When Napwake stops managing a paused workload, it hands it back. It scales it to the replicas it had and releases it from KEDA, without waiting for Ready. Its Services stop routing to the doorman. A `Resumed` event says why, and how many replicas it has. That happens when:
+When Napwake stops managing a paused workload, it hands it back. It scales it to the replicas it had and releases it from KEDA, without waiting for Ready. Its Services stop routing to the doorman.
+
+A `Resumed` event says why, and how many replicas it has. That happens when:
 
 * The ManagedWorkload is deleted, or the `napwake.dev/managed` label that created it is removed.
 * The workload is labelled `napwake.dev/ignore: "true"`.
@@ -217,7 +351,9 @@ When Napwake stops managing a paused workload, it hands it back. It scales it to
 * It’s Napwake’s own operator or doorman, the Deployments labelled `control-plane: controller-manager` or `doorman` in Napwake’s namespace. Those are never paused, whatever the namespace allows.
 * An older ManagedWorkload for the same workload takes it over, and this one becomes the `DuplicateTarget`.
 
-So no longer managing a workload never leaves it switched off. The `napwake.dev/cleanup` finalizer makes sure of it when a ManagedWorkload is deleted, retrying a failed hand-back. In a namespace being deleted, the workload goes too. So after 5 minutes the ManagedWorkload [lets go](https://docs.napwake.dev/next/operations/troubleshooting/#a-managedworkload-let-go-of-its-workload-without-handing-it-back) with a `HandBackAbandoned` Warning event.
+So no longer managing a workload never leaves it paused. The `napwake.dev/cleanup` finalizer makes sure of it when a ManagedWorkload is deleted, retrying a failed hand-back.
+
+In a namespace being deleted, the workload goes too. So after 5 minutes the ManagedWorkload [lets go](https://docs.napwake.dev/next/operations/troubleshooting/#a-managedworkload-let-go-of-its-workload-without-handing-it-back) with a `HandBackAbandoned` warning event.
 
 If the target itself is deleted while paused, its Services stop routing to the doorman. Nothing would start the pods. `TargetAvailable` turns `False`, reason `TargetNotFound`.
 
@@ -245,7 +381,9 @@ A paused workload costs only its storage. [Cost tracking](https://docs.napwake.d
 | The part of that its nodes’ spare capacity couldn’t hold | Saved      |
 | Its PVCs, since they stay                                | Cost       |
 
-To remove one nobody comes back to, delete it the way it was created. That’s from Git, by the pipeline that made it, or with a TTL tool such as kube-janitor. Those know when an environment is finished. Napwake only knows it’s idle.
+To remove one nobody comes back to, delete it the way it was created. That’s from Git, by the pipeline that made it, or with a TTL tool such as kube-janitor.
+
+Those know when an environment is finished. Napwake only knows it’s idle.
 
 Napwake records what a pause changes before it scales anything. A pause interrupted by a restart is then finished or undone from the record. [Lifecycle](https://docs.napwake.dev/next/concepts/lifecycle/#idempotency) has how.
 

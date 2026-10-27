@@ -51,13 +51,17 @@ Skip it to use your own.
 kubectl create namespace dev
 kubectl create deployment my-api --image=nginx:1.27-alpine --replicas=2 -n dev
 kubectl set resources deployment my-api -n dev --requests=cpu=100m,memory=64Mi
+kubectl patch deployment my-api -n dev --type=json \
+  -p '[{"op":"add","path":"/spec/template/spec/containers/0/readinessProbe","value":{"httpGet":{"path":"/","port":80}}}]'
 kubectl expose deployment my-api -n dev --port=80
 kubectl rollout status deployment/my-api -n dev
 ```
 
+The readiness probe marks a pod Ready only once nginx answers. So a woken pod gets requests only then. Without a probe, Napwake warns `NoReadinessProbe` ([Readiness probes](https://docs.napwake.dev/next/concepts/wake-on-request/#readiness-probes)).
+
 CheckpointAwake
 
-`my-api` runs 2 replicas, with a Service on port 80.
+`my-api` runs 2 replicas, with a readiness probe and a Service on port 80.
 
 ## 2. See what’s idle
 
@@ -66,6 +70,8 @@ kubectl napwake scan -n dev
 ```
 
 The scan shows whether each workload is idle and why, and what it costs while it runs. Leave out `-n` to scan every namespace.
+
+In a terminal on your desktop, it also opens the report in your browser. `--open=false` keeps it in the terminal.
 
 CheckpointAwake
 
@@ -78,7 +84,9 @@ kubectl annotate deployment my-api -n dev napwake.dev/dry-run=true napwake.dev/i
 kubectl label deployment my-api -n dev napwake.dev/managed=true
 ```
 
-The annotations are its settings, set first so it starts in dry-run, measured and never paused. `idle-after=5m` keeps the example quick. The default is an hour. The label opts it in.
+The annotations are its settings, set first so it starts in dry-run, measured and never paused. The label opts it in.
+
+`idle-after=5m` keeps the example quick. The default is an hour.
 
 In real use, they go in the manifest or Helm values, or on the namespace for everything in it. See [Opting in](https://docs.napwake.dev/next/guides/opt-in/), Kustomize included.
 
@@ -101,7 +109,7 @@ my-api   Running   $0.00   $0.00   $0.00        10s
 kubectl napwake status -n dev
 ```
 
-For `my-api`, STATE reads `running (dry-run)`. LAST ACTIVITY says when it was last active and from what. Until there’s been any, it reads `none since Napwake began managing it`. NEXT says when it would pause.
+For `my-api`, STATE reads `running (dry-run)`, and NEXT says when it would pause. LAST ACTIVITY says when it was last active and from what. Until there’s been any, it reads `none since Napwake began managing it`.
 
 ```bash
 kubectl describe managedworkload my-api -n dev
@@ -125,13 +133,15 @@ Requests to a running workload count only through a [Prometheus query](https://d
 
 CheckpointAwake · dry-run
 
-WOULD FREE reads `$0.00`. A few minutes of a sample this small free less than a cent.
+WOULD FREE reads `<$0.01`, and `<$1` in `status`. A few minutes of a sample this small free less than a cent.
 
 ## 5. Let it pause
 
-Applied by Argo CD or Flux?
+If Argo CD or Flux applies it
 
-Skip this for the sample. A tool that applies `replicas` from Git undoes every pause, and Napwake waits an hour to pause again (`GitOpsConflict`). Before you enable, have it leave replicas to Napwake, as in [GitOps tools](https://docs.napwake.dev/next/guides/gitops/). The scan’s notes list affected workloads. Those with an HPA are already set.
+Skip this for the sample. A tool that applies `replicas` from Git undoes every pause. Napwake then waits an hour to pause again (`GitOpsConflict`).
+
+Before you enable, have it leave replicas to Napwake, as in [GitOps tools](https://docs.napwake.dev/next/guides/gitops/). The scan’s notes list affected workloads. Those with an HPA are already set.
 
 ```bash
 kubectl napwake enable my-api -n dev
@@ -147,6 +157,8 @@ kubectl get deployment my-api -n dev
 ```
 
 ## 6. Wake it with a request
+
+Wait 5 minutes after READY reads `0/0`. A request or a wake sooner makes it a [wrong pause](https://docs.napwake.dev/next/concepts/idle-detection/#paused-while-in-use). Napwake would then warn `PausedWhileInUse`, and wait 10 minutes before pausing again.
 
 ```bash
 kubectl run curl --rm -it --image=curlimages/curl:8.7.1 -n dev --restart=Never -- curl -s http://my-api

@@ -1,4 +1,4 @@
-# Helm values reference
+# Helm values
 
 > Every value of the chart, with its default and what it does.
 
@@ -13,7 +13,7 @@ timezone: Europe/London
 Put the values you set in a file, starting with your users’ [time zone](https://docs.napwake.dev/next/getting-started/installation/#time-zone).
 
 ```bash
-helm install napwake oci://ghcr.io/napwake/charts/napwake --version 0.2.0-rc.9 \
+helm install napwake oci://ghcr.io/napwake/charts/napwake --version 0.2.0-rc.11 \
   --namespace napwake-system --create-namespace \
   -f napwake-values.yaml
 ```
@@ -21,7 +21,7 @@ helm install napwake oci://ghcr.io/napwake/charts/napwake --version 0.2.0-rc.9 \
 Install with it, and upgrade with it to [keep your settings](https://docs.napwake.dev/next/operations/upgrading/#keeping-your-settings).
 
 ```bash
-helm show values oci://ghcr.io/napwake/charts/napwake --version 0.2.0-rc.9
+helm show values oci://ghcr.io/napwake/charts/napwake --version 0.2.0-rc.11
 ```
 
 Every default.
@@ -32,15 +32,23 @@ Every default.
 
 * Chart version
 
-  `0.2.0-rc.9`, no `v`
+  `0.2.0-rc.11`, no `v`
 
 * Image tags
 
-  `v0.2.0-rc.9`, with a `v`
+  `v0.2.0-rc.11`, with a `v`
 
 What the schema catches
 
-Values are checked against `values.schema.json`. A typo (`logLevel: warn`, `defaults.cpuThreshold: 0`) or an unknown value (`watchNamespace` for `watchNamespaces`), which Helm would ignore, fails the install or upgrade, not the operator. Kubernetes checks only what passes through as is, such as `resources`, `affinity`, `tolerations`, `nodeSelector`, pod annotations and labels. The schema can’t list every IANA zone, so an unknown `timezone` fails at startup instead. The operator exits with `invalid --timezone` and `unknown time zone` in its log, and the rollout doesn’t finish.
+Values are checked against `values.schema.json`.
+
+| A value                                                                                                               | Caught by                                                                                                                                                                 |
+| --------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| A typo, such as `logLevel: warn` or `defaults.cpuThreshold: 0`                                                        | The schema. The install or upgrade fails, so the operator never gets it                                                                                                   |
+| An unknown one, such as `watchNamespace` for `watchNamespaces`, which Helm would ignore                               | The same                                                                                                                                                                  |
+| What passes through as is, such as `resources`, `affinity`, `tolerations`, `nodeSelector`, pod annotations and labels | Kubernetes only                                                                                                                                                           |
+| An unknown `timezone`                                                                                                 | The operator, at startup, as the schema can’t list every IANA zone. It exits with `invalid --timezone` and `unknown time zone` in its log, and the rollout doesn’t finish |
+| :::                                                                                                                   |                                                                                                                                                                           |
 
 [Names 2](https://docs.napwake.dev/next/reference/helm-values/#names)
 
@@ -62,12 +70,13 @@ Values are checked against `values.schema.json`. A typo (`logLevel: warn`, `defa
 
 * [`defaultsVersion`](https://docs.napwake.dev/next/reference/helm-values/#defaultsversion)
 
-[Operator 6](https://docs.napwake.dev/next/reference/helm-values/#operator)
+[Operator 7](https://docs.napwake.dev/next/reference/helm-values/#operator)
 
 * [`replicaCount`](https://docs.napwake.dev/next/reference/helm-values/#replicacount)
 * [`leaderElection.enabled`](https://docs.napwake.dev/next/reference/helm-values/#leaderelection-enabled)
 * [`maxConcurrentReconciles`](https://docs.napwake.dev/next/reference/helm-values/#maxconcurrentreconciles)
 * [`timezone`](https://docs.napwake.dev/next/reference/helm-values/#timezone)
+* [`pausing.enabled`](https://docs.napwake.dev/next/reference/helm-values/#pausing-enabled)
 * [`logLevel`](https://docs.napwake.dev/next/reference/helm-values/#loglevel)
 * [`logEncoder`](https://docs.napwake.dev/next/reference/helm-values/#logencoder)
 
@@ -173,22 +182,22 @@ Values are checked against `values.schema.json`. A typo (`logLevel: warn`, `defa
 
 The names and labels the chart gives.
 
-|                                        |                                                                                                                                                                                    |
-| -------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Full name                              | The release name if it contains `napwake`, else `<release>-napwake`, cut to 40 characters so names built from it, the longest being `<fullname>-doorman-auth-delegator`, fit in 63 |
-| Operator Deployment and ServiceAccount | `napwake`, for a release named `napwake`                                                                                                                                           |
-| The doorman’s                          | `napwake-doorman`                                                                                                                                                                  |
-| Operator pod labels                    | `app.kubernetes.io/name: napwake`, `app.kubernetes.io/instance: <release>`, `control-plane: controller-manager`                                                                    |
-| Doorman pod labels                     | The same, with `control-plane: doorman`                                                                                                                                            |
+|                                        |                                                                                                                                                                                      |
+| -------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| Full name                              | The release name if it contains `napwake`, else `<release>-napwake`. It’s cut to 40 characters, so names built from it fit in 63. The longest is `<fullname>-doorman-auth-delegator` |
+| Operator Deployment and ServiceAccount | `napwake`, for a release named `napwake`                                                                                                                                             |
+| The doorman’s                          | `napwake-doorman`                                                                                                                                                                    |
+| Operator pod labels                    | `app.kubernetes.io/name: napwake`, `app.kubernetes.io/instance: <release>`, `control-plane: controller-manager`                                                                      |
+| Doorman pod labels                     | The same, with `control-plane: doorman`                                                                                                                                              |
 
 ## Image
 
-| Value              | Default                                               | Description                                 |
-| ------------------ | ----------------------------------------------------- | ------------------------------------------- |
-| `image.repository` | `ghcr.io/napwake/napwake`                             | Container image repository                  |
-| `image.tag`        | `""`, the chart’s `appVersion`, such as `v0.2.0-rc.9` | Image tag, for the operator and the doorman |
-| `image.pullPolicy` | `IfNotPresent`                                        | Image pull policy                           |
-| `imagePullSecrets` | `[]`                                                  | Private registry credentials                |
+| Value              | Default                                                | Description                                 |
+| ------------------ | ------------------------------------------------------ | ------------------------------------------- |
+| `image.repository` | `ghcr.io/napwake/napwake`                              | Container image repository                  |
+| `image.tag`        | `""`, the chart’s `appVersion`, such as `v0.2.0-rc.11` | Image tag, for the operator and the doorman |
+| `image.pullPolicy` | `IfNotPresent`                                         | Image pull policy                           |
+| `imagePullSecrets` | `[]`                                                   | Private registry credentials                |
 
 ## CRD
 
@@ -198,28 +207,33 @@ The names and labels the chart gives.
 
 Uninstall keeps the CRD
 
-Deleting the CRD would delete every ManagedWorkload, so it’s a chart template with `helm.sh/resource-policy: keep`, and `helm uninstall` leaves it and every ManagedWorkload. For Argo CD, which ignores that, it also carries `argocd.argoproj.io/sync-options: Delete=false`, so deleting or pruning the Application leaves it too.
+Deleting the CRD would delete every ManagedWorkload. So it’s a chart template with `helm.sh/resource-policy: keep`, and `helm uninstall` leaves it. ManagedWorkloads left behind, by an uninstall with `--no-hooks` or `guard.uninstall: false`, are still there when Napwake is reinstalled.
+
+For Argo CD, which ignores that, it also carries `argocd.argoproj.io/sync-options: Delete=false`, so deleting or pruning the Application leaves it too.
 
 ## Defaults version
 
-| Value             | Default                                   | Description                                                                                                                            |
-| ----------------- | ----------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------- |
-| `defaultsVersion` | the chart’s version, such as `0.2.0-rc.9` | Which chart version Helm’s defaults are from. Leave it. See [Keeping your settings](https://docs.napwake.dev/next/operations/upgrading/#keeping-your-settings) |
+| Value             | Default                                    | Description                                                                                                                            |
+| ----------------- | ------------------------------------------ | -------------------------------------------------------------------------------------------------------------------------------------- |
+| `defaultsVersion` | the chart’s version, such as `0.2.0-rc.11` | Which chart version Helm’s defaults are from. Leave it. See [Keeping your settings](https://docs.napwake.dev/next/operations/upgrading/#keeping-your-settings) |
 
 What it’s for
 
-`helm upgrade --reuse-values` to a newer version renders with the old version’s defaults, missing every value added since. Seeing `defaultsVersion` differ, the chart fills each missing value from its own defaults, `files/defaults.yaml`, a copy of `values.yaml`, which templates can’t read. Values that are there stay, `false`, `0` and `""` included. With its own defaults it fills nothing, so a default removed with `null` stays removed.
+`helm upgrade --reuse-values` to a newer version renders with the old version’s defaults, missing every value added since. Seeing `defaultsVersion` differ, the chart fills each missing value from its own defaults. They’re in `files/defaults.yaml`, a copy of `values.yaml`, which templates can’t read.
+
+Values that are there stay, `false`, `0` and `""` included. With its own defaults it fills nothing, so a default removed with `null` stays removed.
 
 ## Operator
 
-| Value                     | Default | Description                                                                                                                                                                                                                                                 |
-| ------------------------- | ------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `replicaCount`            | `1`     | Operator replicas. More than one needs `leaderElection.enabled`, or the schema refuses it                                                                                                                                                                   |
-| `leaderElection.enabled`  | `true`  | One replica reconciles, through a Lease. Without it, upgrades stop the old operator before starting the new (`strategy: Recreate`), so two never act at once                                                                                                |
-| `maxConcurrentReconciles` | `8`     | Reconciled at once, so a slow metrics or Prometheus query doesn’t hold up waking another. Sets [`--max-concurrent-reconciles`](https://docs.napwake.dev/next/reference/configuration/#flag-max-concurrent-reconciles)                                                               |
-| `timezone`                | `UTC`   | IANA zone, such as `Europe/London`, for the [forecast’s](https://docs.napwake.dev/next/concepts/forecasting/#wall-clock-alignment) hours and weekdays. Use your users’ zone, so forecasts follow daylight saving. Sets [`--timezone`](https://docs.napwake.dev/next/reference/configuration/#flag-timezone) |
-| `logLevel`                | `info`  | `debug`, `info`, `error`, `panic`, or a whole number above 0 for more verbose debug levels. Operator and doorman                                                                                                                                            |
-| `logEncoder`              | `json`  | `json`, or `console` to read by eye. Operator and doorman                                                                                                                                                                                                   |
+| Value                     | Default | Description                                                                                                                                                                                                                                                                  |
+| ------------------------- | ------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `replicaCount`            | `1`     | Operator replicas. More than one needs `leaderElection.enabled`, or the schema refuses it                                                                                                                                                                                    |
+| `leaderElection.enabled`  | `true`  | One replica reconciles, through a Lease. Without it, upgrades stop the old operator before starting the new (`strategy: Recreate`), so two never act at once                                                                                                                 |
+| `maxConcurrentReconciles` | `8`     | Reconciled at once, so a slow metrics or Prometheus query doesn’t hold up waking another. Sets [`--max-concurrent-reconciles`](https://docs.napwake.dev/next/reference/configuration/#flag-max-concurrent-reconciles)                                                                                |
+| `timezone`                | `UTC`   | IANA zone, such as `Europe/London`, for the [forecast’s](https://docs.napwake.dev/next/concepts/forecasting/#wall-clock-alignment) hours and weekdays. Use your users’ zone, so forecasts follow daylight saving. Sets [`--timezone`](https://docs.napwake.dev/next/reference/configuration/#flag-timezone)                  |
+| `pausing.enabled`         | `true`  | `false` stops every pause this install makes, at once, and wakes what it paused. Requests, activity and `autoResume` still wake. Sets [`--pausing=false`](https://docs.napwake.dev/next/reference/configuration/#flag-pausing). See [Stop all pausing now](https://docs.napwake.dev/next/guides/pause/#stop-all-pausing-now) |
+| `logLevel`                | `info`  | `debug`, `info`, `error`, `panic`, or a whole number above 0 for more verbose debug levels. Operator and doorman                                                                                                                                                             |
+| `logEncoder`              | `json`  | `json`, or `console` to read by eye. Operator and doorman                                                                                                                                                                                                                    |
 
 ## Resources
 
@@ -242,14 +256,16 @@ Its memory grows with the cluster.
 | The EndpointSlices it writes, the doorman Service’s                                      | Cached                                                                                                                   |
 | Other EndpointSlices, ConfigMaps, KEDA ScaledObjects                                     | Read when needed, not cached                                                                                             |
 
-Go’s garbage collector, in the operator and the doorman, gets a soft limit of 90% of the memory limit, leaving the rest for memory outside its heap. It works harder near the limit instead of being OOM-killed. `GOMEMLIMIT` in the pod overrides it.
+Go’s garbage collector, in the operator and the doorman, gets a soft limit of 90% of the memory limit. That leaves the rest for memory outside its heap.
+
+It works harder near the limit instead of being OOM-killed. `GOMEMLIMIT` in the pod overrides it.
 
 ## Namespaces
 
-| Value                 | Default | Description                                                                                                                                                                                                                                                                                                                                                                                                      |
-| --------------------- | ------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `watchNamespaces`     | `[]`    | Namespaces Napwake works in, all if empty. Set, it gets a Role in each, not a ClusterRole, so Kubernetes refuses it anything elsewhere ([RBAC](https://docs.napwake.dev/next/reference/helm-values/#rbac)). Sets [`--watch-namespaces`](https://docs.napwake.dev/next/reference/configuration/#flag-watch-namespaces), for the doorman too. Each install in a cluster needs its own ([more than one install](https://docs.napwake.dev/next/getting-started/installation/#more-than-one-install))                     |
-| `protectedNamespaces` | `[]`    | Patterns, such as `prod-*`, of namespaces never managed, as if labelled `napwake.dev/protected=true`, unless labelled `napwake.dev/allow-protected=true`. `kube-*` and the operator’s and doorman’s namespace always are, with the same exception ([protected namespaces](https://docs.napwake.dev/next/guides/opt-in/#protected-namespaces)). Sets [`--protected-namespaces`](https://docs.napwake.dev/next/reference/configuration/#flag-protected-namespaces) |
+| Value                 | Default | Description                                                                                                                                                                                                                                                                                                                                                                                                                                                   |
+| --------------------- | ------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `watchNamespaces`     | `[]`    | Namespaces Napwake works in, all if empty. Set, it gets a Role in each, not a ClusterRole, so Kubernetes refuses it anything elsewhere ([RBAC](https://docs.napwake.dev/next/reference/helm-values/#rbac)). Sets [`--watch-namespaces`](https://docs.napwake.dev/next/reference/configuration/#flag-watch-namespaces), for the doorman too. Each install in a cluster needs its own ([more than one install](https://docs.napwake.dev/next/getting-started/installation/#more-than-one-install))                                                                  |
+| `protectedNamespaces` | `[]`    | Patterns, such as `prod-*`, of namespaces never managed, as if labelled `napwake.dev/protected=true`, unless labelled `napwake.dev/allow-protected=true`. `kube-*`, `openshift-*`, `cattle-*`, `gke-*`, `gmp-*` and the operator’s and doorman’s namespace always are, with the same exception ([protected namespaces](https://docs.napwake.dev/next/guides/opt-in/#protected-namespaces)). Sets [`--protected-namespaces`](https://docs.napwake.dev/next/reference/configuration/#flag-protected-namespaces) |
 
 values.yaml
 
@@ -262,7 +278,7 @@ What changes with `watchNamespaces`.
 
 * Wake on request still works. The operator always reads the doorman’s EndpointSlices in the release namespace through a `<fullname>-doorman-endpoints` Role.
 * A `dependsOn` into an unwatched namespace that allows the dependent’s (`napwake.dev/dependents-from`) shows as `DependencyNotFound=True`, reason `DependencyNotVisible`, and never blocks it.
-* An upgrade or rollback that leaves out a namespace with managed workloads, or sets `watchNamespaces` where it was empty, is refused while they’re there, since they’d stay paused with no operator ([narrowing watchNamespaces](https://docs.napwake.dev/next/operations/upgrading/#narrowing-watchnamespaces)).
+* An upgrade or rollback is refused while managed workloads are in a namespace it leaves out. That includes setting `watchNamespaces` where it was empty. They’d stay paused with no operator ([narrowing `watchNamespaces`](https://docs.napwake.dev/next/operations/upgrading/#narrowing-watchnamespaces)).
 
 ## Opt-in defaults
 
@@ -271,7 +287,7 @@ For workloads opted in with the `napwake.dev/managed` label, when neither they n
 | Value                   | Default    | Description                                                                                                                                                                                                                                                  |
 | ----------------------- | ---------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
 | `defaults.idleAfter`    | `1h`       | Time without activity before pausing, a Go duration of at least `1m`, such as `90s` or `1h30m`. Sets [`--default-idle-after`](https://docs.napwake.dev/next/reference/configuration/#flag-default-idle-after)                                                                        |
-| `defaults.cpuThreshold` | `10`       | CPU % of requests, from 0.1 to 100 to at most two decimal places, such as `10` or `0.5`, above which it’s active. Sets [`--default-cpu-threshold`](https://docs.napwake.dev/next/reference/configuration/#flag-default-cpu-threshold)                                                |
+| `defaults.cpuThreshold` | `10`       | CPU % of requests above which it’s active. From 0.1 to 100, to at most two decimal places, such as `10` or `0.5`. Sets [`--default-cpu-threshold`](https://docs.napwake.dev/next/reference/configuration/#flag-default-cpu-threshold)                                                |
 | `defaults.dryRun`       | `false`    | Measure without pausing. `true` rolls Napwake out across a cluster measuring first. Sets [`--default-dry-run`](https://docs.napwake.dev/next/reference/configuration/#flag-default-dry-run)                                                                                          |
 | `defaults.pauseEarly`   | `false`    | Let a confident forecast of quiet hours [pause before `idleAfter`](https://docs.napwake.dev/next/concepts/forecasting/#pausing-early) runs out. Sets [`--default-pause-early`](https://docs.napwake.dev/next/reference/configuration/#flag-default-pause-early)                                              |
 | `defaults.forecast`     | `balanced` | How soon the forecast acts, `eager`, `balanced` or `cautious` ([Forecast setting](https://docs.napwake.dev/next/concepts/forecasting/#forecast-setting)). Sets [`--default-forecast`](https://docs.napwake.dev/next/reference/configuration/#flag-default-forecast)                                          |
@@ -279,10 +295,10 @@ For workloads opted in with the `napwake.dev/managed` label, when neither they n
 
 ## Prometheus activity
 
-| Value                 | Default | Description                                                                                                                                                                                                                                                                                                                                                                                                 |
-| --------------------- | ------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `prometheus.url`      | `""`    | Prometheus API base URL, such as `http://prometheus.monitoring.svc:9090`, for activity queries and to start new workloads’ forecasts from up to four weeks of CPU [history](https://docs.napwake.dev/next/concepts/forecasting/#learning-from-history). Sets [`--prometheus-url`](https://docs.napwake.dev/next/reference/configuration/#flag-prometheus-url)                                                                                               |
-| `prometheus.selector` | `""`    | Label matchers for the operator’s history query, such as `cluster="staging"`, when Prometheus holds several clusters’ series (Thanos, Mimir, a shared one). Written as inside PromQL’s braces, as `kubectl napwake scan --prometheus-selector` takes them. Activity queries run as written. Needs `prometheus.url`. Sets [`--prometheus-selector`](https://docs.napwake.dev/next/reference/configuration/#flag-prometheus-selector) |
+| Value                 | Default | Description                                                                                                                                                                                                                                                                                                                                                                                                             |
+| --------------------- | ------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `prometheus.url`      | `""`    | Prometheus API base URL, such as `http://prometheus.monitoring.svc:9090`, for activity queries. It also starts new workloads’ forecasts from up to four weeks of CPU [history](https://docs.napwake.dev/next/concepts/forecasting/#learning-from-history). Sets [`--prometheus-url`](https://docs.napwake.dev/next/reference/configuration/#flag-prometheus-url)                                                                                                        |
+| `prometheus.selector` | `""`    | Label matchers for the operator’s history query, such as `cluster="staging"`. For a Prometheus holding several clusters’ series, such as Thanos, Mimir or a shared one. Written as inside PromQL’s braces, as `kubectl napwake scan --prometheus-selector` takes them. Activity queries run as written. Needs `prometheus.url`. Sets [`--prometheus-selector`](https://docs.napwake.dev/next/reference/configuration/#flag-prometheus-selector) |
 
 ## Metrics
 
@@ -328,9 +344,9 @@ The doorman holds requests to paused workloads and wakes them ([Wake on request]
 | ------------------------------------------------ | ------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `doorman.enabled`                                | `true`  | Deploy the doorman. With `false`, requests to paused workloads fail                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                         |
 | `doorman.replicaCount`                           | `2`     | Replicas, each serving traffic                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                              |
-| `doorman.portsPerWorkload`                       | `32`    | Most ports one workload may hold, one per routed Service port, 1 to 10000, so one tenant can’t take all 10,000 the cluster shares. Over it, it isn’t routed (`WakeOnRequest=False`, reason `TooManyPorts`). Sets [`--doorman-ports-per-workload`](https://docs.napwake.dev/next/reference/configuration/#flag-doorman-ports-per-workload)                                                                                                                                                                                                                                                                           |
+| `doorman.portsPerWorkload`                       | `32`    | Most ports one workload may hold, one per routed Service port, 1 to 10000. So one tenant can’t take all 10,000 the cluster shares. Over it, it isn’t routed (`WakeOnRequest=False`, reason `TooManyPorts`). Sets [`--doorman-ports-per-workload`](https://docs.napwake.dev/next/reference/configuration/#flag-doorman-ports-per-workload)                                                                                                                                                                                                                                                                           |
 | `doorman.portsPerNamespace`                      | `256`   | Most ports one namespace’s workloads may hold together, 1 to 10000. Sets [`--doorman-ports-per-namespace`](https://docs.napwake.dev/next/reference/configuration/#flag-doorman-ports-per-namespace)                                                                                                                                                                                                                                                                                                                                                                                                                 |
-| `doorman.healthCheckUserAgents`                  | `[]`    | Health checkers’ and scrapers’ `User-Agent` prefixes, or names after `(compatible; `in a browser-style one, whose `GET` and `HEAD` don’t wake a workload, such as `["MyCorpMonitor/"]`. The built-in ones are `kube-probe`, Prometheus, load balancers’ checks, `Blackbox Exporter/`, `Datadog/Synthetics`, `Amazon-Route53-Health-Check-Service`, `GoogleStackdriverMonitoring-UptimeChecks`, `UptimeRobot`, `Pingdom.com_bot`, `NewRelicPinger/`, `Uptime-Kuma/`, `Gatus/` and others. See [What wakes a workload](https://docs.napwake.dev/next/concepts/wake-on-request/#what-wakes-a-workload-and-what-doesnt) |
+| `doorman.healthCheckUserAgents`                  | `[]`    | Health checkers’ and scrapers’ `User-Agent` prefixes, whose `GET` and `HEAD` don’t wake a workload, such as `["MyCorpMonitor/"]`. Or names after `(compatible; `in a browser-style one. The built-in ones are `kube-probe`, Prometheus, load balancers’ checks, `Blackbox Exporter/`, `Datadog/Synthetics`, `Amazon-Route53-Health-Check-Service`, `GoogleStackdriverMonitoring-UptimeChecks`, `UptimeRobot`, `Pingdom.com_bot`, `NewRelicPinger/`, `Uptime-Kuma/`, `Gatus/` and others. See [What wakes a workload](https://docs.napwake.dev/next/concepts/wake-on-request/#what-wakes-a-workload-and-what-doesnt) |
 | `doorman.admissionPolicy.enabled`                | `true`  | Two ValidatingAdmissionPolicies. The doorman’s ServiceAccount may change only `napwake.dev/last-request`, `napwake.dev/last-request-from` and `napwake.dev/turned-away` on ManagedWorkloads, though its role may patch them. No one else may set the first two, so a forged `last-request-from` can’t teach the operator a dependency. See [Security](https://docs.napwake.dev/next/reference/security/#the-doorman-is-a-way-in-to-paused-workloads)                                                                                                                                                                |
 | `doorman.podDisruptionBudget.enabled`            | `true`  | Keeps one doorman serving through node drains, when `replicaCount` is above 1                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                               |
 | `doorman.nodeSelector`                           | `{}`    | Empty uses the operator’s                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                   |
@@ -345,7 +361,7 @@ The doorman holds requests to paused workloads and wakes them ([Wake on request]
 | `doorman.resources.requests.memory`              | `64Mi`  | Memory request                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                              |
 | `doorman.resources.limits.cpu`                   | `500m`  | CPU limit                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                   |
 | `doorman.resources.limits.memory`                | `256Mi` | Memory limit, enough for some 100,000 pods. Raise it beyond                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                 |
-| `doorman.negForwarder.enabled`                   | `false` | Optional, for GKE. Routes paused workloads’ Services behind container-native load balancing (NEGs), as a GKE Ingress’s or Gateway’s are, through a forwarder Deployment the operator runs in the workload’s namespace while it’s paused, so requests through the load balancer wake them. Grants the operator `create` and `delete` on Deployments ([RBAC](https://docs.napwake.dev/next/reference/helm-values/#rbac)), adds a headless Service `<fullname>-doorman-pods`, and needs `doorman.enabled`. See [GKE NEGs](https://docs.napwake.dev/next/concepts/wake-on-request/#gke-container-native-load-balancing-negs)                                                |
+| `doorman.negForwarder.enabled`                   | `false` | Optional, for GKE. Routes paused workloads’ Services behind container-native load balancing (NEGs), as a GKE Ingress’s or Gateway’s are. They go through a forwarder Deployment the operator runs in the workload’s namespace while it’s paused. So requests through the load balancer wake them. Grants the operator `create` and `delete` on Deployments ([RBAC](https://docs.napwake.dev/next/reference/helm-values/#rbac)), adds a headless Service `<fullname>-doorman-pods`, and needs `doorman.enabled`. See [GKE NEGs](https://docs.napwake.dev/next/concepts/wake-on-request/#gke-container-native-load-balancing-negs)                                        |
 | `doorman.negForwarder.replicas`                  | `2`     | Pods per forwarder, spread across nodes so one stays while a node drains                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    |
 | `doorman.negForwarder.resources.requests.cpu`    | `10m`   | CPU request, per pod                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                        |
 | `doorman.negForwarder.resources.requests.memory` | `32Mi`  | Memory request, per pod                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                     |
@@ -353,9 +369,9 @@ The doorman holds requests to paused workloads and wakes them ([Wake on request]
 
 The doorman’s memory, shutdown and rollouts
 
-* It caches ManagedWorkloads and the EndpointSlice controller’s EndpointSlices in watched namespaces, cut to what it reads, about 300 bytes a pod and 700 a Service. Held connections take up to 72Mi more under a flood.
-* On Kubernetes 1.30 and later, it sleeps 5 seconds before shutting down, so kube-proxy and load balancers stop sending new connections first.
-* Rollouts wait 5 seconds after a new pod is Ready (`minReadySeconds`) before stopping an old one, so the operator has moved routes to it.
+* It caches ManagedWorkloads and the EndpointSlice controller’s EndpointSlices in watched namespaces, cut to what it reads. That’s about 300 bytes a pod and 700 a Service. Held connections take up to 72Mi more under a flood.
+* On Kubernetes 1.30 and later, it sleeps 5 seconds before shutting down. So kube-proxy and load balancers stop sending new connections first.
+* Rollouts wait 5 seconds after a new pod is Ready (`minReadySeconds`) before stopping an old one. By then the operator has moved routes to it.
 
 ## Network policy
 
@@ -392,28 +408,30 @@ The operator’s ServiceAccount. The doorman always gets its own, `<fullname>-do
 
 Without the operator, a ManagedWorkload’s finalizer never runs. Its workload stays paused at 0 replicas, its Services routed to the doorman. The guards stop Helm first.
 
-| Value                     | Default                              | Description                                                                                                                                                                                                                                                                                                                                     |
-| ------------------------- | ------------------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `guard.uninstall`         | `true`                               | Refuse `helm uninstall` while ManagedWorkloads are left, through a pre-delete hook Job, `<fullname>-uninstall-guard`. Argo CD 3.3 and later runs it as PreDelete, blocking Application deletion too. Earlier versions skip it ([uninstall](https://docs.napwake.dev/next/getting-started/installation/#uninstall))                                                      |
-| `guard.upgrade`           | `true`                               | Refuse `helm upgrade` or `helm rollback` to a `watchNamespaces` leaving out namespaces with managed workloads, through a pre-upgrade and pre-rollback hook Job, `<fullname>-upgrade-guard`, only with `watchNamespaces` set. Argo CD runs it as PreSync, before every sync ([narrowing](https://docs.napwake.dev/next/operations/upgrading/#narrowing-watchnamespaces)) |
-| `guard.nodeSelector`      | `{}`                                 | The hooks’ node selector. Empty uses the operator’s                                                                                                                                                                                                                                                                                             |
-| `guard.tolerations`       | `[]`                                 | Empty uses the operator’s                                                                                                                                                                                                                                                                                                                       |
-| `guard.affinity`          | `{}`                                 | Empty uses the operator’s                                                                                                                                                                                                                                                                                                                       |
-| `guard.priorityClassName` | `""`                                 | Empty uses the operator’s                                                                                                                                                                                                                                                                                                                       |
-| `guard.podAnnotations`    | `{}`                                 | Over `sidecar.istio.io/inject: "false"` and `linkerd.io/inject: disabled`                                                                                                                                                                                                                                                                       |
-| `guard.podLabels`         | `{}`                                 | Over `sidecar.istio.io/inject: "false"`. Can’t replace the chart’s labels                                                                                                                                                                                                                                                                       |
-| `guard.resources`         | 10m/64Mi requests, 100m/128Mi limits | The hooks’ resources                                                                                                                                                                                                                                                                                                                            |
+| Value                     | Default                              | Description                                                                                                                                                                                                                                                                                                                                  |
+| ------------------------- | ------------------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `guard.uninstall`         | `true`                               | Refuse `helm uninstall` while ManagedWorkloads are left, through a pre-delete hook Job, `<fullname>-uninstall-guard`. Argo CD 3.3 and later runs it as PreDelete, blocking Application deletion too. Earlier versions skip it ([uninstall](https://docs.napwake.dev/next/getting-started/installation/#uninstall))                                                   |
+| `guard.upgrade`           | `true`                               | Refuse `helm upgrade` or `helm rollback` to a `watchNamespaces` leaving out namespaces with managed workloads. It’s a pre-upgrade and pre-rollback hook Job, `<fullname>-upgrade-guard`, only with `watchNamespaces` set. Argo CD runs it as PreSync, before every sync ([narrowing](https://docs.napwake.dev/next/operations/upgrading/#narrowing-watchnamespaces)) |
+| `guard.nodeSelector`      | `{}`                                 | The hooks’ node selector. Empty uses the operator’s                                                                                                                                                                                                                                                                                          |
+| `guard.tolerations`       | `[]`                                 | Empty uses the operator’s                                                                                                                                                                                                                                                                                                                    |
+| `guard.affinity`          | `{}`                                 | Empty uses the operator’s                                                                                                                                                                                                                                                                                                                    |
+| `guard.priorityClassName` | `""`                                 | Empty uses the operator’s                                                                                                                                                                                                                                                                                                                    |
+| `guard.podAnnotations`    | `{}`                                 | Over `sidecar.istio.io/inject: "false"` and `linkerd.io/inject: disabled`                                                                                                                                                                                                                                                                    |
+| `guard.podLabels`         | `{}`                                 | Over `sidecar.istio.io/inject: "false"`. Can’t replace the chart’s labels                                                                                                                                                                                                                                                                    |
+| `guard.resources`         | 10m/64Mi requests, 100m/128Mi limits | The hooks’ resources                                                                                                                                                                                                                                                                                                                         |
 
 How the guards work
 
-Each runs the operator’s image with [`--guard`](https://docs.napwake.dev/next/reference/configuration/#flag-guard), waits two and a half minutes for ManagedWorkloads being deleted, lists those it would leave without an operator, and fails. Helm stops before changing anything and prints the list.
+Each runs the operator’s image with [`--guard`](https://docs.napwake.dev/next/reference/configuration/#flag-guard). It waits two and a half minutes for ManagedWorkloads being deleted. Then it lists those it would leave without an operator, and fails.
+
+Helm stops before changing anything and prints the list.
 
 | Guard     | Counts                                                                                                                                                                                                                              |
 | --------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | Uninstall | Every ManagedWorkload in the watched namespaces (all, without `watchNamespaces`), and any elsewhere with this operator’s `napwake.dev/cleanup` finalizer. None another install stamped with its namespace in `napwake.dev/operator` |
 | Upgrade   | Those the operator took on in namespaces the new `watchNamespaces` leaves out                                                                                                                                                       |
 
-* Each runs as a ServiceAccount of its own name, with a ClusterRole that may only list ManagedWorkloads’ metadata, cluster-wide even with `watchNamespaces`, since those it looks for may be outside it.
+* Each runs as a ServiceAccount of its own name. Its ClusterRole may only list ManagedWorkloads, and the guard reads only their metadata. It’s cluster-wide even with `watchNamespaces`, since those it looks for may be outside it.
 * The ServiceAccounts and RBAC are hooks too, deleted after the run. A failed Job stays an hour, for `kubectl logs`.
 * The hooks use `image`, `imagePullSecrets` and `logLevel`.
 * Mesh sidecars are kept out, since a running sidecar would keep the Job from finishing.
@@ -424,15 +442,15 @@ Each runs the operator’s image with [`--guard`](https://docs.napwake.dev/next/
 
 For the operator, and for the doorman unless its own `doorman.*` value is set.
 
-| Value               | Default | Description                                                                                                                                                |
-| ------------------- | ------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `nodeSelector`      | `{}`    | Node selector                                                                                                                                              |
-| `tolerations`       | `[]`    | Tolerations                                                                                                                                                |
-| `affinity`          | `{}`    | Affinity and anti-affinity rules                                                                                                                           |
-| `podAnnotations`    | `{}`    | Pod annotations                                                                                                                                            |
-| `podLabels`         | `{}`    | Pod labels. Can’t replace the labels the chart selects pods by                                                                                             |
-| `priorityClassName` | `""`    | PriorityClass. Paused workloads’ requests wait on the doorman and operator, so on a cluster that preempts, give them a class above the workloads they wake |
-| `extraEnv`          | `[]`    | Extra environment variables, operator only, as container `env` entries, such as `GOMAXPROCS`                                                               |
+| Value               | Default | Description                                                                                                                                             |
+| ------------------- | ------- | ------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `nodeSelector`      | `{}`    | Node selector                                                                                                                                           |
+| `tolerations`       | `[]`    | Tolerations                                                                                                                                             |
+| `affinity`          | `{}`    | Affinity and anti-affinity rules                                                                                                                        |
+| `podAnnotations`    | `{}`    | Pod annotations                                                                                                                                         |
+| `podLabels`         | `{}`    | Pod labels. Can’t replace the labels the chart selects pods by                                                                                          |
+| `priorityClassName` | `""`    | PriorityClass. Paused workloads’ requests wait on the doorman and operator. On a cluster that preempts, give them a class above the workloads they wake |
+| `extraEnv`          | `[]`    | Extra environment variables, operator only, as container `env` entries, such as `GOMAXPROCS`                                                            |
 
 ## Security
 
@@ -448,7 +466,7 @@ Fixed by the chart, not values. Override them with Helm post-rendering or Kustom
 
 ## Health probes
 
-| Pod      | Probe     | Path       | Port | Initial Delay | Period |
+| Pod      | Probe     | Path       | Port | Initial delay | Period |
 | -------- | --------- | ---------- | ---- | ------------- | ------ |
 | Operator | Liveness  | `/healthz` | 8081 | 15s           | 20s    |
 | Operator | Readiness | `/readyz`  | 8081 | 5s            | 10s    |
@@ -477,15 +495,15 @@ What the operator’s ClusterRole, `<fullname>-manager`, grants by default.
 
 The other roles.
 
-| Role                           | Kind, and when                                                                    | Grants                                                                                                                                                                                                                                                                                                                                                                  |
-| ------------------------------ | --------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `<fullname>-doorman`           | ClusterRole, for the doorman’s own ServiceAccount                                 | Read ManagedWorkloads and EndpointSlices, get the pods a woken workload’s endpoints name (to check each address is its pod’s), patch ManagedWorkloads to wake them, create Events. With `doorman.admissionPolicy.enabled`, patches only set the two request annotations, and the one counting what it [turned away](https://docs.napwake.dev/next/concepts/wake-on-request/#what-it-turns-away) |
-| `<fullname>-doorman-wake-key`  | Role in the release namespace, for the doorman                                    | `get` and `update` on one Secret of the same name, which the chart creates empty. The doorman fills it with the key it signs the [Wake it button](https://docs.napwake.dev/next/concepts/wake-on-request/#the-wake-it-button) with. It can’t read or list any other                                                                                                                             |
-| `<fullname>-leader-election`   | Role in the release namespace, with leader election                               | Leases (`get`, `create`, `update`) and Events                                                                                                                                                                                                                                                                                                                           |
-| `<fullname>-doorman-endpoints` | Role in the release namespace, with `watchNamespaces`                             | Read the doorman’s EndpointSlices                                                                                                                                                                                                                                                                                                                                       |
-| `<fullname>-forwarder`         | ClusterRole, or a Role per watched namespace, with `doorman.negForwarder.enabled` | `create` and `delete` Deployments for the [forwarders](https://docs.napwake.dev/next/concepts/wake-on-request/#gke-container-native-load-balancing-negs). Deletes only its own, owned by a ManagedWorkload. Forwarders run as the namespace’s `default` ServiceAccount, without its token or API access                                                                                         |
-| `<fullname>-view`              | Aggregated into `view`, `edit`, `admin`                                           | Namespace viewers may `get`, `list`, `watch` its ManagedWorkloads, as `kubectl napwake status` and `scan` do. Kustomize’s `managedworkload-viewer-role` is aggregated alike                                                                                                                                                                                             |
-| `<fullname>-edit`              | Aggregated into `edit`, `admin`                                                   | Namespace editors may `create`, `update`, `patch`, `delete` its ManagedWorkloads, as `pause`, `wake` and `enable` do. Kustomize’s `managedworkload-editor-role` is aggregated alike                                                                                                                                                                                     |
+| Role                           | Kind, and when                                                                    | Grants                                                                                                                                                                                                                                                                                                                                                                     |
+| ------------------------------ | --------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `<fullname>-doorman`           | ClusterRole, for the doorman’s own ServiceAccount                                 | Read ManagedWorkloads and EndpointSlices. Get the pods a woken workload’s endpoints name, to check each address is its pod’s. Patch ManagedWorkloads to wake them, and create Events. With `doorman.admissionPolicy.enabled`, patches only set the two request annotations, and the one counting what it [turned away](https://docs.napwake.dev/next/concepts/wake-on-request/#what-it-turns-away) |
+| `<fullname>-doorman-wake-key`  | Role in the release namespace, for the doorman                                    | `get` and `update` on one Secret of the same name, which the chart creates empty. The doorman fills it with the key it signs the [Wake it button](https://docs.napwake.dev/next/concepts/wake-on-request/#the-wake-it-button) with. It can’t read or list any other                                                                                                                                |
+| `<fullname>-leader-election`   | Role in the release namespace, with leader election                               | Leases (`get`, `create`, `update`) and Events                                                                                                                                                                                                                                                                                                                              |
+| `<fullname>-doorman-endpoints` | Role in the release namespace, with `watchNamespaces`                             | Read the doorman’s EndpointSlices                                                                                                                                                                                                                                                                                                                                          |
+| `<fullname>-forwarder`         | ClusterRole, or a Role per watched namespace, with `doorman.negForwarder.enabled` | `create` and `delete` Deployments for the [forwarders](https://docs.napwake.dev/next/concepts/wake-on-request/#gke-container-native-load-balancing-negs). Deletes only its own, owned by a ManagedWorkload. Forwarders run as the namespace’s `default` ServiceAccount, without its token or API access                                                                                            |
+| `<fullname>-view`              | Aggregated into `view`, `edit`, `admin`                                           | Namespace viewers may `get`, `list`, `watch` its ManagedWorkloads, as `kubectl napwake status` and `scan` do. Kustomize’s `managedworkload-viewer-role` is aggregated alike                                                                                                                                                                                                |
+| `<fullname>-edit`              | Aggregated into `edit`, `admin`                                                   | Namespace editors may `create`, `update`, `patch`, `delete` its ManagedWorkloads, as `pause`, `wake` and `enable` do. Kustomize’s `managedworkload-editor-role` is aggregated alike                                                                                                                                                                                        |
 
 What changes with `watchNamespaces`.
 
@@ -496,9 +514,9 @@ What changes with `watchNamespaces`.
 
 Everything Napwake reads, writes and sends is in [Data and access](https://docs.napwake.dev/next/reference/data-and-access/).
 
-## Example production configuration
+## A highly available install
 
-values-production.yaml
+values-ha.yaml
 
 ```yaml
 replicaCount: 2
@@ -553,8 +571,8 @@ affinity:
 
 ```bash
 helm install napwake oci://ghcr.io/napwake/charts/napwake \
-  --version 0.2.0-rc.9 \
-  -f values-production.yaml \
+  --version 0.2.0-rc.11 \
+  -f values-ha.yaml \
   -n napwake-system --create-namespace
 ```
 

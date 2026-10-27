@@ -1,4 +1,4 @@
-# ManagedWorkload guide
+# ManagedWorkload
 
 > The ManagedWorkload is Napwake's core resource. Each one names a Deployment or StatefulSet whose lifecycle Napwake manages.
 
@@ -24,7 +24,7 @@ The `napwake.dev/managed` label creates one from annotations, as in [Opting in](
        name: my-api
    ```
 
-   Only `target` is required, and the rest takes its defaults. Napwake watches it, tracks its cost and learns its forecast, but pauses it only when you ask, with [`kubectl napwake pause`](https://docs.napwake.dev/next/guides/pause/#pause-now).
+   Only `target` is required, and the rest takes its defaults. Napwake then watches the workload, tracks its cost and learns its forecast. It pauses it only when you ask, with [`kubectl napwake pause`](https://docs.napwake.dev/next/guides/pause/#pause-now).
 
 2. Add an idle policy, and what else you need.
 
@@ -93,13 +93,15 @@ Once `my-api` has had no activity for `idleAfter`, Napwake pauses it. A request 
 
 Settings with more than one value aren’t annotations. Set them on the label’s ManagedWorkload, such as with `kubectl patch`, and Napwake keeps them.
 
-| The annotations own these. Edits are overwritten                                                                                   | Yours, and kept                                                                                                                                                           |
-| ---------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `dryRun`, `idlePolicy` (`idleAfter`, `activity.cpuThreshold`, `autoResume`, `pauseEarly`), the workloads `dependsOn` lists, `wake` | `idlePolicy.activity.prometheus`, `waitForReady` on a listed dependency, `costTracking`, and `prediction`, whose `confidence` percentage overrides `napwake.dev/forecast` |
+| The annotations own these. Edits are overwritten                                                                                                                                        | Yours, and kept                                                                                                                                            |
+| --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `dryRun`, `idlePolicy` (`idleAfter`, `activity.cpuThreshold`, `autoResume`, `pauseEarly`), the workloads that `dependsOn` lists, `wake`, and `prediction.mode` (`napwake.dev/forecast`) | `idlePolicy.activity.prometheus`, `waitForReady` on a listed dependency, `costTracking`, and `prediction.confidence`, which overrides the mode’s threshold |
 
 ## Scaled up outside Napwake
 
-A paused workload scaled up by anything else, such as `kubectl scale` or a deploy, wakes. Whoever did it wants it running. `status.lastScaledUp` records when, and what did it. For GitOps, see [GitOps tools](https://docs.napwake.dev/next/guides/gitops/). While it runs, Napwake leaves its replicas to its team or HPA.
+A paused workload scaled up by anything else, such as `kubectl scale` or a deploy, wakes. Whoever did it wants it running. `status.lastScaledUp` records when, and what did it.
+
+While it runs, Napwake leaves its replicas to its team or HPA. For GitOps, see [GitOps tools](https://docs.napwake.dev/next/guides/gitops/).
 
 ## One workload per target
 

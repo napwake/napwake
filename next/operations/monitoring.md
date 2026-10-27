@@ -4,7 +4,7 @@
 
 Source: https://docs.napwake.dev/next/operations/monitoring/
 
-The operator and the doorman serve Prometheus metrics, and Napwake ships alerting rules. Every metric is in the [Metrics reference](https://docs.napwake.dev/next/reference/metrics/).
+Every metric is in the [Metrics reference](https://docs.napwake.dev/next/reference/metrics/).
 
 ## Prometheus
 
@@ -30,12 +30,30 @@ Metrics are served over HTTPS, only to a scraper whose token may `get` the `/met
         namespace: monitoring
   ```
 
-* install.yaml or Kustomize
+* install.yaml
 
-  Apply the ServiceMonitors and alerting rules into `napwake-system` from the `config/prometheus` base, pinned to your release. Or add it to your kustomization’s `resources`:
+  Apply the ServiceMonitors and alerting rules into `napwake-system` from the `config/prometheus` base, pinned to your release:
 
   ```bash
-  kubectl apply -k "https://github.com/napwake/napwake//config/prometheus?ref=v0.2.0-rc.9"
+  kubectl apply -k "https://github.com/napwake/napwake//config/prometheus?ref=v0.2.0-rc.11"
+  ```
+
+  Then bind your Prometheus’s ServiceAccount to the `napwake-metrics-reader` ClusterRole:
+
+  ```bash
+  kubectl create clusterrolebinding napwake-metrics-reader \
+    --clusterrole=napwake-metrics-reader --serviceaccount=monitoring:prometheus-k8s
+  ```
+
+* Kustomize
+
+  Add the `config/prometheus` base, pinned to your release, to your kustomization’s `resources`. It puts the ServiceMonitors and alerting rules in `napwake-system`:
+
+  kustomization.yaml
+
+  ```yaml
+  resources:
+    - https://github.com/napwake/napwake//config/prometheus?ref=v0.2.0-rc.11
   ```
 
   Then bind your Prometheus’s ServiceAccount to the `napwake-metrics-reader` ClusterRole:
@@ -83,11 +101,11 @@ The ServiceMonitors authenticate with the Prometheus’s own ServiceAccount toke
 
 ### Key metrics to watch
 
-**Cluster health dashboard:**
+#### Cluster health
 
 ```promql
 # Is the operator acting on workloads?
-rate(napwake_lifecycle_transitions_total[1h])
+sum by (to) (rate(napwake_lifecycle_transitions_total[1h]))
 
 
 # Are there errors?
@@ -98,15 +116,15 @@ rate(napwake_reconcile_errors_total[5m]) > 0
 sum by (result) (rate(napwake_doorman_wakes_total[1h]))
 ```
 
-**Per-workload health:**
+#### Per-workload health
 
 ```promql
-# Is the prediction engine learning?
+# Is the forecast learning?
 napwake_prediction_confidence_percent{season="daily"}
 
 
-# Are workloads cycling too fast?
-rate(napwake_lifecycle_transitions_total[1h])
+# Is a workload cycling too fast? More than 6 times idle in 6 hours
+increase(napwake_idle_detections_total[6h]) > 6
 
 
 # Is a workload paused while it's in use?
@@ -127,22 +145,23 @@ The chart creates these with `metrics.prometheusRule.enabled: true`. For `instal
 | `NapwakeDoormanCantListen`   | For 5 minutes, a doorman pod can’t listen on a routed port. Or two routes claim one port, which every pod refuses. Requests to the paused workloads behind those ports fail                                                     | critical |
 | `NapwakeWorkloadStuck`       | A workload stays in `Pausing` or `Resuming` for 15 minutes                                                                                                                                                                      | warning  |
 | `NapwakeTargetUnavailable`   | A ManagedWorkload’s target goes missing more than 3 times in an hour                                                                                                                                                            | warning  |
-| `NapwakeDoormanWakesFailing` | More than 3 requests to one paused workload timed out or failed (`result` `timeout` or `error`) in 15 minutes, for 5 minutes                                                                                                    | warning  |
+| `NapwakeDoormanWakesFailing` | More than 3 requests to one paused workload timed out or failed in 15 minutes, for 5 minutes. That’s `result` `timeout` or `error`                                                                                              | warning  |
 | `NapwakeWakesSlow`           | For 5 minutes, one in ten requests the doorman held in the last 30 minutes waited over a minute. A minute is half the default `wake.maxWait`. Requests passed straight to woken pods don’t count, and it takes 3 waits at least | warning  |
 | `NapwakeDoormanNearCapacity` | For 5 minutes, a doorman pod carries over 80% of the 2048 held or 1024 proxied connections it takes. Past them it refuses or delays requests ([Limits](https://docs.napwake.dev/next/concepts/wake-on-request/#limits))                                 | warning  |
-| `NapwakePausesUndone`        | Something outside Napwake, such as a GitOps tool, scaled a paused workload back up at least 3 times in 6 hours                                                                                                                  | warning  |
+| `NapwakePausesUndone`        | Something outside Napwake, such as a GitOps tool, scaled a paused workload back up. It did so at least 3 times in 6 hours                                                                                                       | warning  |
 | `NapwakeActivityUnreadable`  | For 30 minutes, Napwake can’t read a workload’s CPU while it’s awake, or its Prometheus activity queries. Until it can, it doesn’t pause the workload                                                                           | warning  |
 | `NapwakeResumeIncomplete`    | A woken workload has run with replicas not Ready for 15 minutes (`ResumeIncomplete`)                                                                                                                                            | warning  |
 | `NapwakePausedWhileInUse`    | At least 3 times in a day, Napwake paused a workload while it was in use. Each time, something soon woke it                                                                                                                     | warning  |
 
-`NapwakeDown` and `NapwakeDoormanDown` match the ServiceMonitors’ scrape job. Without it they’d fire forever, so the chart creates them only with `metrics.serviceMonitor.enabled`. Scraping Napwake another way, write them on your own job’s `up` series.
+`NapwakeDown` and `NapwakeDoormanDown` match the ServiceMonitors’ scrape job. Without it they’d fire forever, so the chart creates them only with `metrics.serviceMonitor.enabled`. If you scrape Napwake another way, write them on your own job’s `up` series.
 
 ## Health checks
 
-Both serve health endpoints on port 8081, which the chart and the Kustomize manifests use as liveness and readiness probes. Forward the port to check one, here the operator’s from a Helm install named `napwake`:
+Both serve health endpoints on port 8081, which the chart and the Kustomize manifests use as liveness and readiness probes. Forward the port to check the operator’s. The command finds it by its label, so it works for every install:
 
 ```bash
-kubectl port-forward -n napwake-system deployment/napwake 8081:8081
+kubectl port-forward -n napwake-system \
+  "$(kubectl get deployment -n napwake-system -l control-plane=controller-manager -o name)" 8081:8081
 
 
 # Liveness

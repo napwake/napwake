@@ -77,7 +77,7 @@ One for Deployments, one for StatefulSets. Each watches its workloads, their nam
 | `internal/discovery`  | `kubectl napwake scan`                                                                              |
 | `internal/doorman`    | The doorman                                                                                         |
 | `internal/cost`       | Rates, node list prices, monthly projection                                                         |
-| `internal/metrics`    | Metric definitions, and the K8s Metrics API reader                                                  |
+| `internal/metrics`    | Metric definitions, and the Kubernetes Metrics API reader                                           |
 
 ## External dependencies
 
@@ -90,7 +90,9 @@ One for Deployments, one for StatefulSets. Each watches its workloads, their nam
 
 ## Freed and saved
 
-Napwake works at the workload layer, and doesn’t manage nodes. What a pause or scale-down frees comes off the bill once a cluster autoscaler removes nodes. Every 5 minutes, the leader measures what’s [saved](https://docs.napwake.dev/next/concepts/cost-tracking/#how-saved-is-measured), from cached nodes and pods. Every 10 minutes, it exports which node autoscaler runs as `napwake_node_autoscaler`.
+Napwake works at the workload layer, and doesn’t manage nodes. What a pause or scale-down frees comes off the bill once a node autoscaler removes nodes.
+
+Every 5 minutes, the leader measures what’s [saved](https://docs.napwake.dev/next/concepts/cost-tracking/#how-saved-is-measured), from cached nodes and pods. Every 10 minutes, it exports which node autoscaler runs as `napwake_node_autoscaler`.
 
 ## Leader election
 

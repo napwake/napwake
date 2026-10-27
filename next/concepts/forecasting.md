@@ -1,6 +1,6 @@
 # Forecasting
 
-> Napwake learns each workload's daily and weekly pattern of demand with a Holt-Winters double seasonal model. It forecasts demand from it.
+> Napwake learns each workload's daily and weekly pattern of CPU demand with a Holt-Winters double seasonal model. It forecasts each hour from it.
 
 Source: https://docs.napwake.dev/next/concepts/forecasting/
 
@@ -34,7 +34,9 @@ Off by default. It also pauses an idle workload before `idleAfter` runs out.
 
 It does so when it’s sure the hours ahead are quiet, and a request would wake it, never with `ask`. Otherwise the [activity clock](https://docs.napwake.dev/next/concepts/idle-detection/) decides every pause.
 
-The forecast learns the shape of a day, busy in business hours and quiet at night. It also learns how each weekday departs from that shape. It learns the two apart, from each hour’s CPU utilisation. The [simulator](https://docs.napwake.dev/next/concepts/forecasting/#proving-it), which runs the operator’s own engine and rules, measured every figure on this page.
+The forecast learns the shape of a day, busy in business hours and quiet at night. It also learns how each weekday departs from that shape. It learns the two apart, from each hour’s CPU utilisation.
+
+The [simulator](https://docs.napwake.dev/next/concepts/forecasting/#proving-it), which runs the operator’s own engine and rules, measured every figure on this page.
 
 ## Phase lifecycle
 
@@ -90,7 +92,9 @@ metadata:
 | A threshold below 60 |                         | Gains a morning or so on the most irregular patterns, for two more hours woken for nothing                   |
 | A threshold above 85 |                         | Loses mornings about as fast as it saves hours                                                               |
 
-A wrong forecast costs a little money, never availability. It only wakes a workload early or keeps it up longer. A paused workload still wakes on a request through the doorman, or with [`ask`](https://docs.napwake.dev/next/concepts/wake-on-request/#asking-before-waking) on a person’s click. So the choice is between mornings ready and hours awake for nothing. Twenty simulated workloads averaged this over eight weeks of loosely kept office hours. People arrived up to an hour either side of 09:10, and were away one weekday in four.
+A wrong forecast costs a little money, never availability. It only wakes a workload early or keeps it up longer. A paused workload still wakes on a request through the doorman, or with [`ask`](https://docs.napwake.dev/next/concepts/wake-on-request/#asking-before-waking) on a person’s click.
+
+So the choice is between mornings ready and hours awake for nothing. Twenty simulated workloads averaged this over eight weeks of loosely kept office hours. People arrived up to an hour either side of 09:10, and were away one weekday in four.
 
 | Setting    | Mornings ready, of 30 | Hours woken for nothing |
 | ---------- | --------------------- | ----------------------- |
@@ -102,7 +106,9 @@ On steadily kept office hours, every setting acts after 8 days. Every morning af
 
 ### How long it takes
 
-Days to `DailyActive` / `FullyActive`, learning live from a fresh start, at 40% of the CPU request in use and 1% otherwise. `autoResume` is on, behind the doorman. The queue worker is woken by a Prometheus activity query instead. The public preview is woken only by people, with `wake: ask`. “Never” means not within ten weeks.
+Days to `DailyActive` / `FullyActive`, learning live from a fresh start. Each workload uses 40% of its CPU request in use and 1% otherwise. `autoResume` is on, behind the doorman.
+
+The queue worker is woken by a Prometheus activity query instead. The public preview is woken only by people, with `wake: ask`. “Never” means not within ten weeks.
 
 | Workload                                                                                                                                 | `eager` (60) | `balanced` (75) | `cautious` (85) |
 | ---------------------------------------------------------------------------------------------------------------------------------------- | ------------ | --------------- | --------------- |
@@ -124,7 +130,7 @@ A test in the repo runs these, and fails if they drift from this table.
 | One it can’t get right every day, as in the third row | A higher threshold waits for more evidence                                                                                                                                                                                                                               |
 | Always busy, or always idle                           | Acting changes nothing. One is never paused, and the other never woken or held awake by its forecast of no demand                                                                                                                                                        |
 | Any, before the forecast acts                         | Idle detection and wake on request work from the first hour. The first request of the morning wakes the workload, or with `ask` the first click                                                                                                                          |
-| Any, with a Prometheus                                | The forecast [learns from its history](https://docs.napwake.dev/next/concepts/forecasting/#learning-from-history) first, so a few weeks of a steady pattern acts from the first day                                                                                                                                         |
+| Any, with Prometheus history                          | The forecast [learns from its history](https://docs.napwake.dev/next/concepts/forecasting/#learning-from-history) first, so a few weeks of a steady pattern acts from the first day                                                                                                                                         |
 
 ## When it acts
 
@@ -156,11 +162,11 @@ A test in the repo runs these, and fails if they drift from this table.
 A message while learning, then one while not learning, which says why and how to fix it, with a link:
 
 ```text
-learning: it has seen 100 of the 168 hours of the week, and scores its forecast of an hour from the second time it sees it; expected to start acting around Tue 24 Mar 00:00 UTC, if the coming days repeat the last week
+learning: it has seen 100 of the 168 hours of the week, and scores its forecast of an hour from the second time it sees it. It's expected to start acting around Tue 24 Mar 00:00 UTC, if the coming days repeat the last week
 ```
 
 ```text
-not learning while paused: no Service routes requests to it; a request can't wake it, so its demand can't be seen, and it learns only the hours it's awake. To learn the hours it's paused too, give it a Service, or, for a workload no request reaches, such as a queue worker, a Prometheus activity query that sees its demand: https://docs.napwake.dev/concepts/wake-on-request/#when-a-workload-isnt-routed
+not learning while paused: no Service routes requests to it. A request can't wake it, so its demand can't be seen. It learns only the hours it's awake. To learn the hours it's paused too, give it a Service, or, for a workload no request reaches, such as a queue worker, a Prometheus activity query that sees its demand: https://docs.napwake.dev/concepts/wake-on-request/#when-a-workload-isnt-routed
 ```
 
 | `startsActing`      |                                                                                                                                                                                                               |
@@ -205,7 +211,9 @@ metadata:
     napwake.dev/pause-early: "true"
 ```
 
-An early pause has a `PausedEarly` event in place of `IdleDetected`, naming the hours it expects quiet. Until the workload wakes, `status.activity.forecastQuietUntil` holds when those hours end. [`kubectl napwake status`](https://docs.napwake.dev/next/getting-started/kubectl-plugin/#see-what-napwake-is-doing) says so in NEXT. The event comes first here, then the status line:
+An early pause has a `PausedEarly` event in place of `IdleDetected`, naming the hours it expects quiet. Until the workload wakes, `status.activity.forecastQuietUntil` holds when those hours end. [`kubectl napwake status`](https://docs.napwake.dev/next/getting-started/kubectl-plugin/#see-what-napwake-is-doing) says so in NEXT.
+
+The event comes first here, then the status line:
 
 ```text
 idle for 20 minutes, since its CPU use was last above the activity threshold, and the forecast expects the hours from 18:00 to 20:00 UTC to be quiet; pausing before idleAfter (1 hour) runs out
@@ -217,7 +225,9 @@ paused early: the forecast expected quiet until Fri 20:00 UTC; wakes on a reques
 
 ### What it saves and costs
 
-The pause comes once the hour people leave in is over, since that hour is learned as busy. On office hours ending at 17:30, it comes at 18:00. The activity clock would have paused at 18:29, an `idleAfter` after the last busy minute. The longer `idleAfter`, the more that saves. The cost is a cold start for anyone who comes in an hour forecast quiet, before `idleAfter` would have run out.
+The pause comes once the hour people leave in is over, since that hour is learned as busy. On office hours ending at 17:30, it comes at 18:00. The activity clock would have paused at 18:29, an `idleAfter` after the last busy minute.
+
+The longer `idleAfter`, the more that saves. Anyone who comes in an hour forecast quiet, before `idleAfter` would have run out, pays a cold start.
 
 The simulator measures both at `balanced`, for a workload at 40% of its CPU request in use. It counts the weeks after the forecast acts. For a holiday that’s its week, and for a change of hours the two weeks after.
 
@@ -249,7 +259,9 @@ Turn it on for workloads used to a pattern. There, an hour after the last use is
 
 ## Learning from history
 
-With a Prometheus URL (`prometheus.url`, `--prometheus-url`), a new ManagedWorkload’s forecast starts from the workload’s history. The operator reads up to the last four weeks of its CPU. It learns them in one go, as it would have live. Then it carries on live. A steady pattern acts from the first day. An irregular or short history goes on learning, through the same phase gates and confidence.
+With a Prometheus URL (`prometheus.url`, `--prometheus-url`), a new ManagedWorkload’s forecast starts from the workload’s history. The operator reads up to the last four weeks of its CPU. It learns them in one go, as it would have live.
+
+Then it carries on live. A steady pattern acts from the first day. An irregular or short history goes on learning, through the same phase gates and confidence.
 
 | History                                                                                    | How it’s read                                                                                                                                                                                                                     |
 | ------------------------------------------------------------------------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -282,7 +294,9 @@ With a Prometheus URL (`prometheus.url`, `--prometheus-url`), a new ManagedWorkl
 
 ## What an hour records
 
-The forecast learns CPU utilisation, as a percentage of what the workload’s own containers request, in the pods reporting it. That’s the measure `cpuThreshold` is set in ([Idle detection](https://docs.napwake.dev/next/concepts/idle-detection/#what-counts-as-activity)). The veto and the wake ahead compare the forecast with `cpuThreshold` directly. So a forecast that keeps an idle workload awake would also wake it once paused.
+The forecast learns CPU utilisation, as a percentage of what the workload’s own containers request, in the pods reporting it. That’s the measure `cpuThreshold` is set in ([Idle detection](https://docs.napwake.dev/next/concepts/idle-detection/#what-counts-as-activity)).
+
+The veto and the wake ahead compare the forecast with `cpuThreshold` directly. So a forecast that keeps an idle workload awake would also wake it once paused.
 
 Each hour is fed in once it’s over, as the busiest moment seen in it. It’s recorded only if it was checked from its start to its end.
 
@@ -322,7 +336,9 @@ Holt-Winters keeps four components, and moves each a small step towards every ho
 | Daily components  | 24 offsets, one per hour of day, the shape of an average day                | γ1​=0.1             |
 | Weekly components | 168 offsets, one per hour of week, how each weekday departs from that shape | γ2​=0.5             |
 
-Each hour, the model compares the hour’s utilisation Y(t) with what it predicted, for confidence scoring. Then it updates all four by exponential smoothing. It’s additive, since idle workloads spend much of their time at zero demand. A multiplicative model, which divides by the level and the seasonal factors, diverges there.
+Each hour, the model compares the hour’s utilisation Y(t) with what it predicted, for confidence scoring. Then it updates all four by exponential smoothing.
+
+It’s additive, since idle workloads spend much of their time at zero demand. A multiplicative model, which divides by the level and the seasonal factors, diverges there.
 
 The forecast h hours ahead adds the level, h hours of trend, and that hour’s daily and weekly offsets. It’s never negative:
 
@@ -334,7 +350,9 @@ L(t)T(t)D(t)W(t)​=max(0,α⋅(Y(t)−D(t)−W(t))+(1−α)⋅(L(t−k)+k⋅T(t
 
 s1​=24 is the daily season’s length, and s2​=168 the weekly one’s. k is the hours since the previous observation, 1 unless observations were missed.
 
-After each update, the components are renormalised. The daily components sum to zero, and for each hour of the day, so do the weekly components across the seven days. The shift moves into the component above. That leaves every forecast unchanged, and keeps the level the mean demand, so it’s never negative.
+After each update, the components are renormalised. The daily components sum to zero. For each hour of the day, so do the weekly components across the seven days.
+
+The shift moves into the component above. That leaves every forecast unchanged, and keeps the level the mean demand, so it’s never negative.
 
 |                                                                                                                                      | What the model does                                                                                                                                                                                                                                        |
 | ------------------------------------------------------------------------------------------------------------------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -368,7 +386,9 @@ Traffic patterns change, with a marketing campaign, a new feature or a change of
 
    z(t)=max(σ,f)∣e(t)−μ∣​
 
-2. If z(t)>3.0, the hour is an anomaly. The model learns from it only up to 3 standard deviations, so a single spike isn’t learned as a pattern. An error that large in the same direction as the last one in its hour of the week isn’t an anomaly. It’s a weekly pattern, such as a Tuesday night batch job, and it’s learned in full.
+2. If z(t)>3.0, the hour is an anomaly. The model learns from it only up to 3 standard deviations, so a single spike isn’t learned as a pattern.
+
+   But if the last error in its hour of the week was as far out, the same way, it isn’t an anomaly. It’s a weekly pattern, such as a Tuesday night batch job, and it’s learned in full.
 
 3. 3 or more anomalies within 24 observed hours are a regime change.
 
@@ -392,7 +412,9 @@ Traffic patterns change, with a marketing campaign, a new feature or a change of
 | A lasting change of hours, such as 09:00 to 13:00 | A regime change within the day, learned into the week from its second day. For about a week people wake the workload themselves. At `balanced`, every afternoon from the second Tuesday is ready. Within two weeks it stops waking the workload for nothing. Until then it does a few times, for the old hours and, on weekends, the new ones                                                                                                                                                                                                                 |
 | A workload nobody uses any more                   | Woken for its old hours twice, on its first quiet morning and the same weekday a week later. Then it’s left paused                                                                                                                                                                                                                                                                                                                                                                                                                                            |
 
-Idle detection and wake on request carry on throughout. A single deviant day can’t be told from the start of a new pattern until the next day shows which it was. So the forecast doesn’t guess. It costs the next morning, and nothing after.
+Idle detection and wake on request carry on throughout.
+
+A single deviant day looks like the start of a new pattern, until the next day shows which it was. So the forecast doesn’t guess. It costs the next morning, and nothing after.
 
 ## Wall-clock alignment
 
@@ -400,10 +422,10 @@ Seasonal slots are keyed to wall-clock time, not a running counter. So Monday 9a
 
 | Case                                                                                            | What happens                                                                                                                                                                                                                                            |
 | ----------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| The timezone                                                                                    | The operator’s, `--timezone` or the Helm value `timezone`, UTC by default. Each workload records it in `status.prediction.timeZone`, and [`kubectl napwake status`](https://docs.napwake.dev/next/getting-started/kubectl-plugin/#see-what-napwake-is-doing) shows it           |
+| The time zone                                                                                   | The operator’s, `--timezone` or the Helm value `timezone`, UTC by default. Each workload records it in `status.prediction.timeZone`, and [`kubectl napwake status`](https://docs.napwake.dev/next/getting-started/kubectl-plugin/#see-what-napwake-is-doing) shows it           |
 | Daylight saving                                                                                 | Business hours keep their slots when the clocks change. Set `--timezone` to its users’ zone, and a workload in New York or London is up at 08:45 local time every weekday. That holds through the change                                                |
 | Left at UTC                                                                                     | The operator’s clock is an hour off its users’ after the change, so the forecast has to learn their mornings again. In the simulator, four mornings that week find the workload paused. It’s held awake for nothing on others, until about two weeks on |
-| A timezone whose hours start at half or quarter past the hour in UTC, such as India’s           | Hours are counted on the local clock, and so are the 15 minutes `autoResume` wakes ahead                                                                                                                                                                |
+| A time zone whose hours start at half or quarter past the hour in UTC, such as India’s          | Hours are counted on the local clock, and so are the 15 minutes `autoResume` wakes ahead                                                                                                                                                                |
 | A workload paused for 6 hours without the doorman                                               | It keeps its alignment. The next observation goes into the right hour-of-day slot                                                                                                                                                                       |
 | An hour paused behind the doorman, asking before waking or not, or watched by an activity query | Recorded as no demand. That’s how the model learns that nights and weekends are quiet                                                                                                                                                                   |
 
@@ -429,13 +451,27 @@ The [forecast setting](https://docs.napwake.dev/next/concepts/forecasting/#forec
 | γ1​       | 0.1   | Daily pattern adapts faster           |
 | γ2​       | 0.5   | Weekly pattern adapts faster          |
 
-Lower values give smoother, steadier forecasts, and higher ones a more reactive but noisier model. A weekly component updates once a week. So γ2​ is high enough for a lasting change in a weekday’s hours to be half learned the week after. The first week sets each one outright ([The model](https://docs.napwake.dev/next/concepts/forecasting/#the-model)). The values were chosen by simulating office-hours, always-on, idle and noisy workloads.
+Lower values give smoother, steadier forecasts, and higher ones a more reactive but noisier model. The values were chosen by simulating office-hours, always-on, idle and noisy workloads.
+
+A weekly component updates once a week. So γ2​ is high enough for a lasting change in a weekday’s hours to be half learned the week after. The first week sets each one outright ([The model](https://docs.napwake.dev/next/concepts/forecasting/#the-model)).
 
 ## Proving it
 
-A forecasting mistake would otherwise show only after weeks in a real cluster. Such mistakes are a wrong slot, a late wake or a false wake at the weekend. The repo’s simulator, `internal/forecast/sim`, runs the operator’s own forecast engine and decision rules. It runs them through simulated time a minute at a time, as the operator looks at a ManagedWorkload.
+A forecasting mistake would otherwise show only after weeks in a real cluster. Such mistakes are a wrong slot, a late wake or a false wake at the weekend.
 
-It covers the activity clock pausing, the veto, `autoResume` waking 15 minutes ahead, and the doorman or a query waking the workload. It covers the warm-up after a wake, each hour’s peak fed to the forecast, and restarts through the state saved in status. Months of traffic take milliseconds. A test runs six weeks of office hours through both the reconciler and the simulator. It finds the same wakes and pauses at the same minutes.
+The repo’s simulator, `internal/forecast/sim`, runs the operator’s own forecast engine and decision rules. It runs them through simulated time a minute at a time, as the operator looks at a ManagedWorkload.
+
+It covers:
+
+* the activity clock pausing
+* the veto
+* `autoResume` waking 15 minutes ahead
+* the doorman or a query waking the workload
+* the warm-up after a wake
+* each hour’s peak fed to the forecast
+* restarts, through the state saved in status
+
+A quarter of office hours runs in about 30 milliseconds on an M3 Max (`BenchmarkOfficeHoursQuarter`). A test runs six weeks of office hours through both the reconciler and the simulator. It finds the same wakes and pauses at the same minutes.
 
 The tests run in CI on every change. Besides [How long it takes](https://docs.napwake.dev/next/concepts/forecasting/#how-long-it-takes), they check these:
 
@@ -461,9 +497,13 @@ Run the simulator with `go run ./hack/forecastsim`. It runs every scenario at ev
 | `-wake-on-ask`                           | Runs a scenario as a workload only people wake, as `wake: ask` does                                                                                                                 |
 | `-history`                               | Replays a workload’s recorded CPU, as a percentage of its requests. It takes a Prometheus range query’s JSON, or CSV of `time,percent` rows, with steps at most seven minutes apart |
 
-On your own cluster, [`kubectl napwake forecast`](https://docs.napwake.dev/next/getting-started/kubectl-plugin/#replay-the-forecast) replays the forecast over each workload’s Prometheus history. It says whether the forecast would act if opted in today. For the last two weeks, it counts the mornings each workload would have been ready. It also counts how often one would have been woken for nothing.
+On your own cluster, [`kubectl napwake forecast`](https://docs.napwake.dev/next/getting-started/kubectl-plugin/#replay-the-forecast) replays the forecast over each workload’s Prometheus history. It says whether the forecast would act if opted in today.
 
-Named, as `kubectl napwake forecast api -n orders`, it shows [one workload’s forecast](https://docs.napwake.dev/next/getting-started/kubectl-plugin/#one-workloads-forecast). For a workload Napwake manages, that’s its own forecast, from its status and saved state, whatever history Prometheus has. It shows the phase, the hours of the day and week seen, and the hours learned from history and live. It shows whether it’s acting or when it should, why, and the hours of the next day it expects busy. Then comes the replay of its history, day by day, when there’s enough of it.
+For the last two weeks, it counts the mornings each workload would have been ready. It also counts how often one would have been woken for nothing.
+
+Named, as `kubectl napwake forecast api -n orders`, it shows [one workload’s forecast](https://docs.napwake.dev/next/getting-started/kubectl-plugin/#one-workloads-forecast). For a workload Napwake manages, that’s its own forecast, from its status and saved state, whatever history Prometheus has.
+
+It shows the phase, the hours of the day and week seen, and the hours learned from history and live. It shows whether it’s acting or when it should, why, and the hours of the next day it expects busy. Then comes the replay of its history, day by day, when there’s enough of it.
 
 Next
 

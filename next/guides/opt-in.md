@@ -17,7 +17,7 @@ Source: https://docs.napwake.dev/next/guides/opt-in/
      labels:
        napwake.dev/managed: "true"
      annotations:
-       napwake.dev/dry-run: "true"      # measure first; nothing is paused
+       napwake.dev/dry-run: "true"      # measure first, nothing is paused
        napwake.dev/idle-after: "2h"
    ```
 
@@ -53,6 +53,8 @@ A chart’s `podLabels` and `podAnnotations` label the pods, where Napwake doesn
 Label a namespace to opt in every Deployment and StatefulSet in it, with its annotations as their defaults. It suits dev and preview namespaces, and third-party charts you can’t label.
 
 * Namespace
+
+  namespace.yaml
 
   ```yaml
   apiVersion: v1
@@ -109,7 +111,7 @@ Label a namespace to opt in every Deployment and StatefulSet in it, with its ann
 
 * Flux
 
-  Flux doesn’t create a Kustomization’s namespace, so it’s in Git. Label and annotate it there, as `namespace.yaml` beside the kustomization:
+  Flux doesn’t create a Kustomization’s namespace, so it’s in Git. Label and annotate it there, as in the Namespace tab’s `namespace.yaml`, and list it in the kustomization:
 
   kustomization.yaml
 
@@ -149,7 +151,9 @@ Use one of these. Each leaves the workloads’ selectors alone.
       includeSelectors: false
   ```
 
-  Leave out `includeTemplates`. It labels the pods too, restarting them for nothing. It also labels a StatefulSet’s `volumeClaimTemplates`, which fails as the selector does. Services and ConfigMaps get the label, which Napwake ignores. So does a Namespace in the kustomization, opting in the whole namespace.
+  Leave out `includeTemplates`. It labels the pods too, restarting them for nothing. It also labels a StatefulSet’s `volumeClaimTemplates`, which fails as the selector does.
+
+  Services and ConfigMaps get the label, which Napwake ignores. A Namespace in the kustomization gets it too, which opts in the whole namespace.
 
 * Chosen workloads
 
@@ -176,7 +180,9 @@ Use one of these. Each leaves the workloads’ selectors alone.
             napwake.dev/idle-after: "2h"
   ```
 
-  Keep the `target`. Without it, the build fails with `no resource matches strategic merge patch` if the manifest has a namespace the patch doesn’t give. For every Deployment and StatefulSet, target `kind: Deployment|StatefulSet` with no name, and keep the patch’s `name`, which is ignored.
+  Keep the `target`. Without it, the build fails with `no resource matches strategic merge patch` if the manifest has a namespace the patch doesn’t give.
+
+  For every Deployment and StatefulSet, target `kind: Deployment|StatefulSet` with no name. Keep the patch’s `name`, which is ignored.
 
 Don’t use `commonLabels`
 
@@ -190,7 +196,9 @@ It changes selectors, which Kubernetes doesn’t let change. Kustomize puts it i
 
 `labels` with `includeSelectors: true`, which `kustomize edit fix` makes of `commonLabels`, does the same.
 
-`commonAnnotations` puts settings on the pod templates too. Adding or changing one, such as `dry-run`, then restarts every workload’s pods. Napwake counts each restart as a [deploy](https://docs.napwake.dev/next/concepts/idle-detection/#what-counts-as-activity), which is activity. Use the Namespace or a patch.
+`commonAnnotations` puts settings on the pod templates too. Adding or changing one, such as `dry-run`, then restarts every workload’s pods. Napwake counts each restart as a [deploy](https://docs.napwake.dev/next/concepts/idle-detection/#what-counts-as-activity), which is activity.
+
+Use the Namespace or a patch.
 
 ## Settings
 
@@ -234,12 +242,15 @@ Napwake never manages anything in a protected namespace, such as production, wha
 | A ManagedWorkload you wrote   | It reports `Protected=True` and never pauses        |
 | A workload Napwake had paused | It’s woken, so protecting never leaves anything off |
 
-| Always protected, with no label                                 | So that                                                         |
-| --------------------------------------------------------------- | --------------------------------------------------------------- |
-| `kube-system` and every other `kube-*`                          | Labelling every namespace can’t pause CoreDNS or metrics-server |
-| Napwake’s own namespace, and the doorman’s if it runs elsewhere | Napwake can’t pause itself                                      |
+| Always protected, with no label                                 | So that                                                                                                                                        |
+| --------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------- |
+| `kube-system` and every other `kube-*`                          | Labelling every namespace can’t pause CoreDNS or metrics-server                                                                                |
+| `openshift-*`, `cattle-*`, `gke-*` and `gmp-*`                  | Labelling every namespace can’t pause OpenShift’s, Rancher’s or GKE’s own components, such as `openshift-dns`, `cattle-system` or `gmp-system` |
+| Napwake’s own namespace, and the doorman’s if it runs elsewhere | Napwake can’t pause itself                                                                                                                     |
 
-Protect more by name, such as every `prod-*`, with the Helm value `protectedNamespaces`. Only `napwake.dev/allow-protected: "true"`, set on purpose, lets Napwake manage a protected namespace. Napwake never sets either label. The operator’s and the doorman’s own Deployments are never managed, since nothing would be left to wake them. To keep Napwake out by Kubernetes RBAC, install it with [`watchNamespaces`](https://docs.napwake.dev/next/reference/helm-values/#namespaces).
+Protect more by name, such as every `prod-*`, with the Helm value `protectedNamespaces`. Only `napwake.dev/allow-protected: "true"`, set on purpose, lets Napwake manage a protected namespace. Napwake never sets either label.
+
+The operator’s and the doorman’s own Deployments are never managed, since nothing would be left to wake them. To keep Napwake out by Kubernetes RBAC, install it with [`watchNamespaces`](https://docs.napwake.dev/next/reference/helm-values/#namespaces).
 
 ## With GitOps
 
@@ -255,7 +266,7 @@ A tool would scale a paused workload back up. [GitOps tools](https://docs.napwak
 | Change its annotations                                      | Updates the ManagedWorkload within seconds                                                                                                                                                                                                                  |
 | Remove the label, or add `napwake.dev/ignore`               | Deletes it, first scaling a paused workload back to its replicas                                                                                                                                                                                            |
 | Delete the workload                                         | Deletes its ManagedWorkload too                                                                                                                                                                                                                             |
-| Wrote a ManagedWorkload for it                              | Yours wins, and the label does nothing                                                                                                                                                                                                                      |
+| Write a ManagedWorkload for it                              | Yours wins, and the label does nothing                                                                                                                                                                                                                      |
 | Set the label to anything but `"true"`, such as `"dry-run"` | Doesn’t opt it in, and says so in an event. Settings like dry-run are annotations                                                                                                                                                                           |
 
 Settings with more than one value, such as Prometheus activity queries, aren’t annotations. [Set them on the ManagedWorkload](https://docs.napwake.dev/next/guides/managed-workload/#edit-the-one-the-label-created) the label created, which keeps them.

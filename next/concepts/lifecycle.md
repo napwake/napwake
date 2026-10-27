@@ -1,6 +1,6 @@
 # Lifecycle
 
-> Every ManagedWorkload moves through a defined set of phases. Napwake's one action is to pause. It never deletes a workload or its storage.
+> Every ManagedWorkload moves through a defined set of phases. Napwake pauses a workload and wakes it again. It never deletes a workload or its PVCs.
 
 Source: https://docs.napwake.dev/next/concepts/lifecycle/
 
@@ -63,7 +63,9 @@ The operator moves a workload on from its activity, its forecast, and pauses ask
 | Paused → Running             | Something else scales it up ([GitOps tools](https://docs.napwake.dev/next/guides/gitops/)), or Napwake [lets go of it](https://docs.napwake.dev/next/guides/pause/#when-napwake-lets-go). Also from `Pausing`, once it’s at zero (`status.pause.pausedAt`) while its pods stop. It isn’t scaled back down                                                                                                                                                         |
 | Resuming → Running           | Every replica it was restored to is Ready, or Napwake stops waiting (below). Scaled back to zero by something else after the resume scaled it up (`status.pause.resumedAt`), it’s left off with `ScaledToZero`                                                                                                                                                                                                    |
 
-The resume’s wait starts once its `waitForReady` [dependencies](https://docs.napwake.dev/next/concepts/dependencies/) serve. Napwake stops waiting 2 minutes after the first replica is Ready. With none Ready, it stops at the Deployment’s `progressDeadlineSeconds` after the scale-up. That’s 10 minutes by default, and for a StatefulSet. Stopping short sets `ResumeIncomplete`. [Resume](https://docs.napwake.dev/next/guides/pause/#resume) has what follows.
+The resume’s wait starts once its `waitForReady` [dependencies](https://docs.napwake.dev/next/concepts/dependencies/) serve. Napwake stops waiting 2 minutes after the first replica is Ready. With none Ready, it stops at the Deployment’s `progressDeadlineSeconds` after the scale-up.
+
+That’s 10 minutes by default. A StatefulSet has no such field, so it gets 10 minutes too. Stopping short sets `ResumeIncomplete`, and [Resume](https://docs.napwake.dev/next/guides/pause/#resume) has what follows.
 
 ### On request
 
@@ -99,7 +101,9 @@ Before scaling, the record is also copied to the target’s `napwake.dev/paused-
 
 ## Status conditions
 
-A ManagedWorkload’s conditions report what the operator found, such as what holds it awake or why it won’t pause. [`IdleVetoed`](https://docs.napwake.dev/next/reference/conditions-and-events/#condition-idlevetoed) and [`HeldByDependents`](https://docs.napwake.dev/next/reference/conditions-and-events/#condition-heldbydependents) hold a pause off. [`ScaledToZero`](https://docs.napwake.dev/next/reference/conditions-and-events/#condition-scaledtozero) leaves a workload off. [`ResumeIncomplete`](https://docs.napwake.dev/next/reference/conditions-and-events/#condition-resumeincomplete) says a resume stopped waiting. [Conditions and events](https://docs.napwake.dev/next/reference/conditions-and-events/#status-conditions) lists every condition, with each reason.
+A ManagedWorkload’s conditions report what the operator found, such as what holds it awake or why it won’t pause. [`IdleVetoed`](https://docs.napwake.dev/next/reference/conditions-and-events/#condition-idlevetoed) and [`HeldByDependents`](https://docs.napwake.dev/next/reference/conditions-and-events/#condition-heldbydependents) hold a pause off. [`ScaledToZero`](https://docs.napwake.dev/next/reference/conditions-and-events/#condition-scaledtozero) leaves a workload off.
+
+[`ResumeIncomplete`](https://docs.napwake.dev/next/reference/conditions-and-events/#condition-resumeincomplete) says a resume stopped waiting. [Conditions and events](https://docs.napwake.dev/next/reference/conditions-and-events/#status-conditions) lists every condition, with each reason.
 
 ## Events
 

@@ -1,12 +1,14 @@
 # Wake on request
 
-> A paused workload has no pods, so nothing answers its Service.
+> How the first request wakes a paused workload, held by the doorman until a pod is Ready.
 
 Source: https://docs.napwake.dev/next/concepts/wake-on-request/
 
 A request reached staging while it was paused. The doorman holds it while staging starts, then passes it to the first Ready pod.
 
-A paused workload has no pods, so nothing answers its Service. The first request wakes it. The doorman holds the connection until a pod is Ready, then passes it through. The caller usually sees one slow response ([the exceptions](https://docs.napwake.dev/next/concepts/wake-on-request/#what-the-caller-sees)).
+A paused workload has no pods, so nothing answers its Service. The first request wakes it.
+
+The doorman holds the connection until a pod is Ready, then passes it through. The caller usually sees one slow response ([the exceptions](https://docs.napwake.dev/next/concepts/wake-on-request/#what-the-caller-sees)).
 
 On a public URL, the doorman can [ask before waking](https://docs.napwake.dev/next/concepts/wake-on-request/#asking-before-waking) instead. Then only a person’s click wakes it.
 
@@ -16,7 +18,7 @@ On a public URL, the doorman can [ask before waking](https://docs.napwake.dev/ne
 
 * On a public URL
 
-  `ask`: a browser gets a **Wake it** button, and robots wake nothing
+  `ask`: a browser gets a **Wake it** button, and crawlers, scanners and API calls wake nothing
 
 * Protocols
 
@@ -64,7 +66,9 @@ The doorman is a small proxy, its own Deployment beside the operator, with two r
 | A pod is Ready               | The doorman, watching the Service’s own EndpointSlices, passes the held connection to a Ready pod, with the bytes already sent                                                                                                                                                                                                                                                                                                                       |
 | The workload is `Running`    | The operator removes the doorman’s EndpointSlices. For 30 seconds the doorman still passes stray connections to Ready pods, waking nothing, while kube-proxy and load balancers catch up                                                                                                                                                                                                                                                             |
 
-The doorman works on TCP connections, not HTTP requests. Waking a workload wakes its [dependencies](https://docs.napwake.dev/next/concepts/dependencies/) too. Ingress controllers, Gateway API implementations and cloud load balancers that read EndpointSlices reach the doorman the same way ([the ones checked](https://docs.napwake.dev/next/reference/compatibility/)). A routed workload reports this:
+The doorman works on TCP connections, not HTTP requests. Waking a workload wakes its [dependencies](https://docs.napwake.dev/next/concepts/dependencies/) too.
+
+Ingress controllers, Gateway API implementations and cloud load balancers that read EndpointSlices reach the doorman the same way ([the ones checked](https://docs.napwake.dev/next/reference/compatibility/)). A routed workload reports this:
 
 ```plaintext
 WakeOnRequest=True   DoormanRouted   requests are held and wake the workload
@@ -72,7 +76,9 @@ WakeOnRequest=True   DoormanRouted   requests are held and wake the workload
 
 ### Readiness probes
 
-The doorman lets a held request through once a pod is Ready. Ready comes from the readiness probe. Without one, a pod is Ready when its containers start, often before the app can serve. The request then gets whatever the app answers, such as a `503`. Give the app a probe that passes only once it can serve. If the app isn’t listening yet, the doorman retries every second until `maxWait`.
+The doorman lets a held request through once a pod is Ready. Ready comes from the readiness probe. Without one, a pod is Ready when its containers start, often before the app can serve.
+
+The request then gets whatever the app answers, such as a `503`. Give the app a probe that passes only once it can serve. If the app isn’t listening yet, the doorman retries every second until `maxWait`.
 
 deployment.yaml
 
@@ -167,7 +173,7 @@ Most load balancers see a paused workload as unhealthy, as they would without Na
 
 ### Environments on the public internet
 
-On the public internet, have the doorman [ask before waking](https://docs.napwake.dev/next/concepts/wake-on-request/#asking-before-waking), with `napwake.dev/wake: "ask"`. A browser then gets a **Wake it** button, and robots wake nothing. [Public preview environments](https://docs.napwake.dev/next/guides/preview-environments/) walks through it.
+On the public internet, have the doorman [ask before waking](https://docs.napwake.dev/next/concepts/wake-on-request/#asking-before-waking), with `napwake.dev/wake: "ask"`. A browser then gets a **Wake it** button, and crawlers, scanners and API calls wake nothing. [Public preview environments](https://docs.napwake.dev/next/guides/preview-environments/) walks through it.
 
 | The environment                                                                                     | `wake`                 | A request while it’s paused                                     |
 | --------------------------------------------------------------------------------------------------- | ---------------------- | --------------------------------------------------------------- |
@@ -259,7 +265,7 @@ The page’s `Referrer-Policy: same-origin` lets the browser send that `Origin`,
 
 A robot that forges those headers on purpose, or drives a real browser and clicks, still can. That’s rare, and costs at most a wake a minute. A browser from before about 2020 may send neither.
 
-Its click can’t be told from a spider’s, so it wakes nothing. The page says so. It says to use a current browser, or that someone with access to the cluster can wake it with `kubectl napwake wake`.
+Its click can’t be told from a spider’s, so it wakes nothing, and the page says so. It says to use a current browser, or to have someone with cluster access run `kubectl napwake wake`.
 
 The pages name no namespace, workload or Service, so they give nothing away to whoever reaches them.
 
@@ -287,7 +293,9 @@ To change the key, empty the Secret. Each doorman pod uses the new one within a 
 kubectl patch secret napwake-doorman-wake-key -n napwake-system --type=json -p '[{"op":"remove","path":"/data"}]'
 ```
 
-A click wakes a workload at most once a minute, whichever doorman pod it reaches. A click within a minute of the last wake request gets a `429`, with `Retry-After: 60`. It asks to try again in a minute. That can be one moments before the workload paused again.
+A click wakes a workload at most once a minute, whichever doorman pod it reaches.
+
+A click within a minute of the last wake request gets a `429`, with `Retry-After: 60`. It asks to try again in a minute. That can be one moments before the workload paused again.
 
 People’s tooling can wake it too, without a browser. A pull request bot, a developer portal or a chat command sets [`napwake.dev/wake-requested`](https://docs.napwake.dev/next/guides/pause/#wake-now), as `kubectl napwake wake` does. Both work whatever `wake.mode` says.
 
@@ -304,7 +312,9 @@ status:
     requests: 312
 ```
 
-[`kubectl napwake status`](https://docs.napwake.dev/next/getting-started/kubectl-plugin/#see-what-napwake-is-doing) lists the workloads that turned requests away. `napwake_doorman_wakes_total{result="turned_away"}` counts them as they happen ([Metrics](https://docs.napwake.dev/next/reference/metrics/#doorman)). Many mean something automated calls the workload, such as a monitor, a webhook or another service. A person can’t be turned away, so find out what it is.
+[`kubectl napwake status`](https://docs.napwake.dev/next/getting-started/kubectl-plugin/#see-what-napwake-is-doing) lists the workloads that turned requests away. `napwake_doorman_wakes_total{result="turned_away"}` counts them as they happen ([Metrics](https://docs.napwake.dev/next/reference/metrics/#doorman)).
+
+Many mean something automated calls the workload, such as a monitor, a webhook or another service. A person can’t be turned away, so find out what it is.
 
 ### When to keep waking on request
 
@@ -347,7 +357,9 @@ spec:
 
 ## How long a connection is held
 
-The doorman holds a connection for up to `wake.maxWait`. That’s 2 minutes by default, and at most 1 hour, the most the ManagedWorkload accepts. With no Ready pod by then, it closes the connection. The wake carries on, so a retry a little later succeeds. With the label, set the annotation `napwake.dev/wake-max-wait: "5m"` instead.
+The doorman holds a connection for up to `wake.maxWait`. That’s 2 minutes by default, and at most 1 hour, the most the ManagedWorkload accepts.
+
+With no Ready pod by then, it closes the connection. The wake carries on, so a retry a little later succeeds. With the label, set the annotation `napwake.dev/wake-max-wait: "5m"` instead.
 
 ```yaml
 spec:
@@ -355,7 +367,9 @@ spec:
     maxWait: 5m     # a slow starter, such as a database replaying its log
 ```
 
-Callers time out too. Most HTTP clients wait at least 30 seconds, and browsers minutes. A proxy can give up sooner, and ingress-nginx closes an upstream request after 60 seconds by default. For a slower starter, raise it to match `maxWait`:
+Callers time out too. Most HTTP clients wait at least 30 seconds, and browsers minutes.
+
+A proxy can give up sooner, and ingress-nginx closes an upstream request after 60 seconds by default. For a slower starter, raise it to match `maxWait`:
 
 ```yaml
 metadata:
@@ -379,21 +393,25 @@ The caps stop a flood of connections exhausting the doorman, or waking workloads
 
 The doorman reads what held callers send, so it can let go at once of one who gives up. The uncounted 8KiB keeps that working for ordinary requests while uploads fill the 32MiB. A caller who leaves partway through a larger body is let go once it’s read.
 
-A caller that closes its connection has left, whatever its protocol, and is never passed on. Over TCP, closing and shutting only the sending side look the same, and nearly every caller that does either has given up. So a client that sends, then shuts its side to wait, as `nc -N` does, is dropped while the workload is paused. Leave the connection open instead.
+A caller that closes its connection has left, whatever its protocol, and is never passed on. Over TCP, closing and shutting only the sending side look the same. Nearly every caller that does either has given up.
 
-The caps are per workload as well as per source, since the source IP is the address the doorman sees. Through an ingress controller, that’s the controller’s pod, shared by every user behind it. A burst to one environment then can’t crowd out the rest. The per-workload cap also stops one that never becomes Ready from taking every place.
+So a client that sends, then shuts its side to wait, as `nc -N` does, is dropped while paused. Leave the connection open instead.
+
+The caps are per workload as well as per source, since the source IP is the address the doorman sees. Through an ingress controller, that’s the controller’s pod, shared by every user behind it.
+
+The per-workload cap means a burst to one environment can’t crowd out the rest. It also stops one that never becomes Ready from taking every place.
 
 When a doorman pod stops, and when a route is removed
 
-| When                                                   | What happens                                                                                                                                                                                                           |
-| ------------------------------------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| A doorman pod shuts down                               | It reports itself not Ready at once. The operator moves paused workloads’ EndpointSlices to the other doorman pods, rewriting only their endpoints, many at once. A thousand paused Services move in about ten seconds |
-| A rollout of the doorman                               | Each new pod starts, and 5 seconds after it’s Ready an old one stops                                                                                                                                                   |
-| The operator is upgraded or restarted at the same time | Only it can move routes, and it takes a few seconds to take over. So a stopping pod goes on holding and passing through new connections for 15 seconds                                                                 |
-| After those 15 seconds                                 | The pod stops accepting connections, and gives those it has the rest of 25 seconds to finish                                                                                                                           |
-| The chart’s grace period                               | 40 seconds in all, after a 5-second sleep that lets kube-proxy and load balancers stop sending the pod new connections                                                                                                 |
-| A workload stops being routed                          | The doorman serves its port for 30 seconds more, so a browser’s last refresh doesn’t land on a closed port                                                                                                             |
-| The port afterwards                                    | No other workload gets it for a minute. The operator records the minute in the ManagedWorkload’s status, so a newly elected leader honours it. A deleted ManagedWorkload stays until the minute is over                |
+| When                                                   | What happens                                                                                                                                                                                                                                                              |
+| ------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| A doorman pod shuts down                               | It reports itself not Ready at once. The operator moves paused workloads’ EndpointSlices to the other doorman pods, rewriting only their endpoints, many at once. It rewrites up to 100 of these slices a second, so a thousand paused Services move in about ten seconds |
+| A rollout of the doorman                               | Each new pod starts, and 5 seconds after it’s Ready an old one stops                                                                                                                                                                                                      |
+| The operator is upgraded or restarted at the same time | Only it can move routes, and it takes a few seconds to take over. So a stopping pod goes on holding and passing through new connections for 15 seconds                                                                                                                    |
+| After those 15 seconds                                 | The pod stops accepting connections, and gives those it has the rest of 25 seconds to finish                                                                                                                                                                              |
+| The chart’s grace period                               | 40 seconds in all, after a 5-second sleep that lets kube-proxy and load balancers stop sending the pod new connections                                                                                                                                                    |
+| A workload stops being routed                          | The doorman serves its port for 30 seconds more, so a browser’s last refresh doesn’t land on a closed port                                                                                                                                                                |
+| The port afterwards                                    | No other workload gets it for a minute. The operator records the minute in the ManagedWorkload’s status, so a newly elected leader honours it. A deleted ManagedWorkload stays until the minute is over                                                                   |
 
 ## What the caller sees
 
@@ -424,7 +442,9 @@ It says what wakes a paused workload through the doorman. `request`, the default
 | A workload opted in with the label                                    | `napwake.dev/wake` on it, or on its namespace                                 | Exactly `"request"` or `"ask"`   |
 | Labelled workloads whose own and namespace’s annotations don’t set it | The Helm value `defaults.wake`, which sets the operator flag `--default-wake` | `request`, the default, or `ask` |
 
-The workload’s annotation wins, then its namespace’s, then `defaults.wake`. An annotation that can’t be read, such as `"Ask"` or `"true"`, asks. An `InvalidSetting` warning event on the workload says so. It asks whatever its namespace says, so a typo never lets robots wake it.
+The workload’s annotation wins, then its namespace’s, then `defaults.wake`.
+
+An annotation that can’t be read, such as `"Ask"` or `"true"`, asks. An `InvalidSetting` warning event on the workload says so. It asks whatever its namespace says, so a typo never lets robots wake it.
 
 ### Turning it off
 
@@ -459,9 +479,13 @@ Requests to a Service that isn’t routed fail, as they would without Napwake. R
 
 ### On GKE
 
-GKE adds `cloud.google.com/neg: '{"ingress": true}'` to every new Service of a VPC-native cluster, the default kind. It asks for container-native load balancing, with network endpoint groups (NEGs) of the Service’s pods. It does so only if a GKE Ingress uses the Service. So on its own it doesn’t count, and Napwake routes such a Service like any other.
+GKE adds `cloud.google.com/neg: '{"ingress": true}'` to every new Service of a VPC-native cluster, the default kind. It asks for container-native load balancing, with network endpoint groups (NEGs) of the Service’s pods.
 
-A Service that really is in NEGs isn’t routed without the [forwarder](https://docs.napwake.dev/next/concepts/wake-on-request/#gke-container-native-load-balancing-negs), reason `UnsupportedLoadBalancer`. GKE’s NEG controller refuses endpoints whose pods are in another namespace, as the doorman’s are. It can also stop syncing the load balancer altogether. Napwake looks again whenever an Ingress or a Service in the namespace changes. A Service comes off the doorman once a GKE Ingress uses it, and is routed again once none does.
+The annotation takes effect only if a GKE Ingress uses the Service. So on its own it doesn’t count, and Napwake routes such a Service like any other.
+
+A Service that really is in NEGs isn’t routed without the [forwarder](https://docs.napwake.dev/next/concepts/wake-on-request/#gke-container-native-load-balancing-negs), reason `UnsupportedLoadBalancer`. GKE’s NEG controller refuses endpoints whose pods are in another namespace, as the doorman’s are. It can also stop syncing the load balancer altogether.
+
+Napwake looks again whenever an Ingress or a Service in the namespace changes. A Service comes off the doorman once a GKE Ingress uses it, and is routed again once none does.
 
 | A Service is in NEGs when                               | What GKE looks at                                                                                                                                                                                                         |
 | ------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -484,7 +508,9 @@ With the forwarder off, requests reach a paused workload like this:
 | An ingress controller that reads EndpointSlices, such as ingress-nginx, in place of the GKE Ingress or behind it | It wakes the workload. The GKE Ingress uses the controller’s Service, which never pauses. The controller sends requests on to the workload’s Service, which is routed                                                                                                                                                                                                                                                                                    |
 | A caller in the cluster, through a Service a GKE Ingress uses                                                    | Not routed. Give such callers a Service of their own (below)                                                                                                                                                                                                                                                                                                                                                                                             |
 
-With the forwarder on, the second and last rows wake the workload too. Without it, wake the workload another way, with `kubectl napwake wake`, an [activity annotation](https://docs.napwake.dev/next/concepts/idle-detection/#activity-annotations) from your developer portal, or the forecast’s `autoResume`. No GKE Ingress uses a Service like this one, so it’s routed, and callers in the cluster can use it:
+With the forwarder on, the second and last rows wake the workload too. Without it, wake the workload another way. Use `kubectl napwake wake`, an [activity annotation](https://docs.napwake.dev/next/concepts/idle-detection/#activity-annotations) from your developer portal, or the forecast’s `autoResume`.
+
+No GKE Ingress uses a Service like this one, so it’s routed, and callers in the cluster can use it:
 
 ```yaml
 apiVersion: v1
@@ -511,7 +537,9 @@ doorman:
     enabled: true
 ```
 
-GKE’s NEG controller accepts only endpoints whose pods are in the Service’s own namespace. So a Service in NEGs can’t point at the doorman. GKE uses NEGs for an Ingress’s Services by default on VPC-native clusters, and always for a Gateway’s. Services neither uses wake workloads without the forwarder.
+GKE’s NEG controller accepts only endpoints whose pods are in the Service’s own namespace. So a Service in NEGs can’t point at the doorman.
+
+GKE uses NEGs for an Ingress’s Services by default on VPC-native clusters, and always for a Gateway’s. Services neither uses wake workloads without the forwarder.
 
 ### What it runs
 
@@ -537,11 +565,17 @@ A route through the forwarder shows `forwarded: true` in the ManagedWorkload’s
 
 ### Health checks behind NEGs
 
-Keep the backend service’s health check on the traffic port, over plain HTTP. A GKE Ingress sets that up for an HTTP backend. Google’s load balancer now checks the forwarder, which passes the check to the doorman. `GoogleHC/` gets `200 OK`, as on every route, and every other checker `503`. HTTPS and HTTP/2 checks can’t be read here either, so they wake the workload every run. A port of its own fails here, since the forwarder listens only on the ports it routes. The load balancer then sends nothing on.
+Keep the backend service’s health check on the traffic port, over plain HTTP. A GKE Ingress sets that up for an HTTP backend.
+
+Google’s load balancer now checks the forwarder, which passes the check to the doorman. `GoogleHC/` gets `200 OK`, as on every route, and every other checker `503`. HTTPS and HTTP/2 checks can’t be read here either, so they wake the workload every run.
+
+A port of its own fails here, since the forwarder listens only on the ports it routes. The load balancer then sends nothing on.
 
 ### Timeouts behind NEGs
 
-For a slower starter, raise the backend service’s timeout to match `wake.maxWait`. Google’s load balancer waits 30 seconds for a backend by default, and only browsers get an answer at once. On a GKE Ingress, use a BackendConfig, which the Service names in its `cloud.google.com/backend-config` annotation as `'{"default": "slow-start"}'`. On a GKE Gateway, set `spec.default.timeoutSec` in a GCPBackendPolicy.
+For a slower starter, raise the backend service’s timeout to match `wake.maxWait`. Google’s load balancer waits 30 seconds for a backend by default, and only browsers get an answer at once.
+
+On a GKE Ingress, use a BackendConfig, which the Service names in its `cloud.google.com/backend-config` annotation as `'{"default": "slow-start"}'`. On a GKE Gateway, set `spec.default.timeoutSec` in a GCPBackendPolicy.
 
 ```yaml
 apiVersion: cloud.google.com/v1
@@ -555,9 +589,11 @@ spec:
 
 ### Network policies behind NEGs
 
-The chart’s doorman NetworkPolicy admits forwarders from any namespace, by their labels, `app.kubernetes.io/name: napwake-forwarder` and `napwake.dev/operator` naming Napwake’s namespace. Anyone who can create pods can give them those labels, and so reach the routing ports, as a caller in `ingressFrom` can.
+The chart’s doorman NetworkPolicy admits forwarders from any namespace, by their labels, `app.kubernetes.io/name: napwake-forwarder` and `napwake.dev/operator` naming Napwake’s namespace. Anyone who can create pods can give them those labels. So they can reach the routing ports, as a caller in `ingressFrom` can.
 
-With a default-deny policy in the workload’s namespace, let whatever reaches the workload reach the forwarder. That includes Google’s load balancers and health checks, from `130.211.0.0/22` and `35.191.0.0/16`. Let the forwarder reach the doorman and DNS. If apps in the cluster call the Service too, add them to `ingress.from`.
+With a default-deny policy in the workload’s namespace, let whatever reaches the workload reach the forwarder. That includes Google’s load balancers and health checks, from `130.211.0.0/22` and `35.191.0.0/16`.
+
+Let the forwarder reach the doorman and DNS. If apps in the cluster call the Service too, add them to `ingress.from`.
 
 ```yaml
 apiVersion: networking.k8s.io/v1
@@ -588,14 +624,14 @@ spec:
 
 ### Limits behind NEGs
 
-| When                           | What happens                                                                                                                                                                                                                                                                                                                                                                                                                                                      |
-| ------------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Right after a pause            | GKE takes a while, typically under a minute, to register the forwarder’s pods and see them pass health checks. Until then, requests through the load balancer can get a `502`, as after any scale-down. The Service can also show GKE’s warning event `SyncNetworkEndpointGroupFailed`, `endpoint count from endpointPodMap cannot be zero`. That’s for the moment between the workload’s pods going and the forwarder’s arriving, and GKE retries within seconds |
-| After a wake                   | The Service goes back to the workload’s pods as soon as one is Ready. While the route drains, for 30 seconds, the forwarder passes what still reaches it to the doorman, and on to the workload                                                                                                                                                                                                                                                                   |
-| The caller’s address           | The doorman sees the forwarder’s. So dependencies aren’t [learned](https://docs.napwake.dev/next/concepts/dependencies/#learned-dependencies) from requests through it, and the per-source [limits](https://docs.napwake.dev/next/concepts/wake-on-request/#limits) count each forwarder pod as one source. Through a load balancer, the caller is one of Google’s proxies anyway                                                                                                                                                                |
-| Images from a private registry | The forwarder pulls the operator’s image in the workload’s namespace, as its `default` ServiceAccount. A mirror that needs a pull secret needs it there too. GKE nodes pull from Artifact Registry in their own project without one                                                                                                                                                                                                                               |
-| Turning it off                 | Running forwarders stay, since the operator may no longer delete them. Remove them with `kubectl delete deployments -A -l app.kubernetes.io/name=napwake-forwarder`                                                                                                                                                                                                                                                                                               |
-| The Kustomize manifests        | Set it up by hand. Run the operator with the `--neg-forwarder` flags ([Configuration](https://docs.napwake.dev/next/reference/configuration/#operator-flags)). Grant it `create` and `delete` on Deployments, and add a headless Service selecting the doorman’s pods                                                                                                                                                                                                                     |
+| When                           | What happens                                                                                                                                                                                                                                                                                                                                                                                                                                                    |
+| ------------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Right after a pause            | GKE takes a while, usually under a minute, to register the forwarder’s pods and see them pass health checks. Until then, requests through the load balancer can get a `502`, as after any scale-down. The Service can also show GKE’s warning event `SyncNetworkEndpointGroupFailed`, `endpoint count from endpointPodMap cannot be zero`. That’s for the moment between the workload’s pods going and the forwarder’s arriving, and GKE retries within seconds |
+| After a wake                   | The Service goes back to the workload’s pods as soon as one is Ready. While the route drains, for 30 seconds, the forwarder passes what still reaches it to the doorman, and on to the workload                                                                                                                                                                                                                                                                 |
+| The caller’s address           | The doorman sees the forwarder’s. So dependencies aren’t [learned](https://docs.napwake.dev/next/concepts/dependencies/#learned-dependencies) from requests through it, and the per-source [limits](https://docs.napwake.dev/next/concepts/wake-on-request/#limits) count each forwarder pod as one source. Through a load balancer, the caller is one of Google’s proxies anyway                                                                                                                                                              |
+| Images from a private registry | The forwarder pulls the operator’s image in the workload’s namespace, as its `default` ServiceAccount. A mirror that needs a pull secret needs it there too. GKE nodes pull from Artifact Registry in their own project without one                                                                                                                                                                                                                             |
+| Turning it off                 | Running forwarders stay, since the operator may no longer delete them. Remove them with `kubectl delete deployments -A -l app.kubernetes.io/name=napwake-forwarder`                                                                                                                                                                                                                                                                                             |
+| The Kustomize manifests        | Set it up by hand. Run the operator with the `--neg-forwarder` flags ([Configuration](https://docs.napwake.dev/next/reference/configuration/#operator-flags)). Grant it `create` and `delete` on Deployments, and add a headless Service selecting the doorman’s pods                                                                                                                                                                                                                   |
 
 ## Network policies
 
@@ -622,9 +658,11 @@ spec:
 
 The doorman is a way in to every paused workload
 
-Any client that reaches a doorman pod can reach every routed, paused workload, in any namespace, on its Service ports. A workload’s own NetworkPolicy sees the doorman as the source. So a policy that admits the doorman admits everyone who can reach it. The rate limits slow a port scan through the doorman, but don’t stop one.
+Any client that reaches a doorman pod can reach every routed, paused workload, in any namespace, on its Service ports. A workload’s own NetworkPolicy sees the doorman as the source. So a policy that admits the doorman admits everyone who can reach it.
 
-The chart’s NetworkPolicy (`networkPolicy.enabled`, off by default) leaves the routing ports open to all, until you say who may use them. List your paused workloads’ real callers in `doorman.networkPolicy.ingressFrom`, such as your ingress controller’s namespace and the namespaces whose apps call paused services:
+The rate limits slow a port scan through the doorman, but don’t stop one.
+
+The chart’s NetworkPolicy (`networkPolicy.enabled`, off by default) leaves the routing ports open until you say who may use them. List your paused workloads’ real callers in `doorman.networkPolicy.ingressFrom`. Such callers include your ingress controller’s namespace, and the namespaces whose apps call paused services:
 
 ```yaml
 networkPolicy:
@@ -650,7 +688,9 @@ doorman:
 
 With install.yaml or the Kustomize manifests
 
-Write the policy yourself. Keep the operator’s pods in its first rule, as the chart does. Its second rule keeps the doorman’s metrics port reachable for Prometheus. Leave it out if you don’t scrape it.
+Write the policy yourself. Keep the operator’s pods in its first rule, as the chart does.
+
+Its second rule keeps the doorman’s metrics port reachable for Prometheus. Leave it out if you don’t scrape it.
 
 ```yaml
 apiVersion: networking.k8s.io/v1
@@ -680,7 +720,9 @@ spec:
         - {port: 8443, protocol: TCP}
 ```
 
-Limit the doorman’s egress too. It dials only Pod-backed endpoints of EndpointSlices that the EndpointSlice controller manages. It never dials loopback, link-local or cloud metadata addresses ([Security](https://docs.napwake.dev/next/reference/security/#the-doorman-is-a-way-in-to-paused-workloads) has the rules). An egress policy enforces the same bounds in the network. The chart can create one that allows only your pod CIDRs and the API server:
+Limit the doorman’s egress too. It dials only Pod-backed endpoints of EndpointSlices that the EndpointSlice controller manages. It never dials loopback, link-local or cloud metadata addresses ([Security](https://docs.napwake.dev/next/reference/security/#the-doorman-is-a-way-in-to-paused-workloads) has the rules).
+
+An egress policy enforces the same bounds in the network. The chart can create one that allows only your pod CIDRs and the API server:
 
 ```yaml
 doorman:

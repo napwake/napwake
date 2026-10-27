@@ -26,25 +26,27 @@ spec:
   prediction: {}                                                  # the default, balanced
 ```
 
-| `dependsOn` |                                                                                                                                              |
-| ----------- | -------------------------------------------------------------------------------------------------------------------------------------------- |
-| Goes on     | The workload that **needs** the other                                                                                                        |
-| Names       | The dependency’s Deployment or StatefulSet, not its ManagedWorkload                                                                          |
-| `namespace` | Defaults to the ManagedWorkload’s own                                                                                                        |
-| As a label  | `napwake.dev/depends-on: "statefulset/postgres, messaging/statefulset/nats"` on the workload. See [Opting in](https://docs.napwake.dev/next/guides/opt-in/#settings) |
+| `dependsOn`      |                                                                                                                                                               |
+| ---------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Goes on          | The workload that **needs** the other                                                                                                                         |
+| Names            | The dependency’s Deployment or StatefulSet, not its ManagedWorkload                                                                                           |
+| `namespace`      | Defaults to the ManagedWorkload’s own                                                                                                                         |
+| As an annotation | `napwake.dev/depends-on: "statefulset/postgres, messaging/statefulset/nats"` on the workload or its namespace. See [Opting in](https://docs.napwake.dev/next/guides/opt-in/#settings) |
 
 ## The rules
 
-| Rule                                                                  |                                                                                                                                                                                             |
-| --------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| A dependency doesn’t pause while anything that depends on it is awake | Its own clock keeps running meanwhile                                                                                                                                                       |
-| The last dependent pauses                                             | The dependency pauses on its next check, if its own clock has run out                                                                                                                       |
-| Waking a workload wakes its dependencies                              | Before it resumes, Napwake sets `napwake.dev/last-activity` on each dependency’s ManagedWorkload, the usual [activity annotation](https://docs.napwake.dev/next/concepts/idle-detection/#activity-annotations) wake |
-| Seeing it                                                             | `kubectl describe` shows it                                                                                                                                                                 |
-| It chains                                                             | If Postgres depends on something, that wakes too                                                                                                                                            |
-| Everything wakes at once                                              | By default, so a chain doesn’t add up to cold starts in a row                                                                                                                               |
-| Waking a dependency never holds up its dependent                      | The dependent wakes, or is handed back or deleted, regardless                                                                                                                               |
-| A dependency can’t be woken                                           | As when a policy engine won’t let Napwake annotate its ManagedWorkload. The dependent gets a `DependencyWakeFailed` Warning event                                                           |
+| Rule                                                                  |                                                                                                                                                                                                                                                                                                                                                     |
+| --------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| A dependency doesn’t pause while anything that depends on it is awake | Its own clock keeps running meanwhile                                                                                                                                                                                                                                                                                                               |
+| The last dependent pauses                                             | The dependency pauses on its next check, if its own clock has run out                                                                                                                                                                                                                                                                               |
+| A dependent that’s waking holds it too                                | Paused, with a wake already asked for: a request the doorman holds for it, an [activity annotation](https://docs.napwake.dev/next/concepts/idle-detection/#activity-annotations) on its ManagedWorkload or its workload, or a wake request, set since its pause. So the dependency doesn’t start to pause as the dependent wakes                                            |
+| The dependents are read again before it pauses                        | From the API server, which can have a wake, or a dependency just learned, that the operator’s cache hasn’t seen yet. Not in dry-run, where nothing pauses. Once more just before it’s scaled to zero, after the doorman’s takeover. A dependent awake then, such as one that learned it depends on it since, calls the pause off (`PauseCancelled`) |
+| Waking a workload wakes its dependencies                              | Before it resumes, Napwake sets `napwake.dev/last-activity` on each dependency’s ManagedWorkload, the usual [activity annotation](https://docs.napwake.dev/next/concepts/idle-detection/#activity-annotations) wake                                                                                                                                                         |
+| Seeing it                                                             | `kubectl describe` shows it                                                                                                                                                                                                                                                                                                                         |
+| It chains                                                             | If Postgres depends on something, that wakes too                                                                                                                                                                                                                                                                                                    |
+| Everything wakes at once                                              | By default, so a chain doesn’t add up to cold starts in a row                                                                                                                                                                                                                                                                                       |
+| Waking a dependency never holds up its dependent                      | The dependent wakes, or is handed back or deleted, regardless                                                                                                                                                                                                                                                                                       |
+| A dependency can’t be woken                                           | As when a policy engine won’t let Napwake annotate its ManagedWorkload. The dependent gets a `DependencyWakeFailed` warning event                                                                                                                                                                                                                   |
 
 A dependency held awake says why:
 
@@ -54,7 +56,7 @@ HeldByDependents=True   kept awake for preview-42/api, preview-43/api
 
 ## Waiting for a dependency to be ready
 
-`waitForReady` keeps the dependent from starting until the dependency serves. Set it for an app that fails if it starts first, such as an API that gives up after a few retries while its database replays its write-ahead log:
+`waitForReady` keeps the dependent from starting until the dependency serves. Set it for an app that fails if it starts first. An example is an API that gives up after a few retries while its database replays its write-ahead log:
 
 ```yaml
 dependsOn:
@@ -84,7 +86,7 @@ WaitingForDependencies=True   waiting for preview-42/statefulset/postgres (0 rea
 | Why it’s long                                         | A slow start is why you set it                                                                                                            |
 | Why a limit                                           | Otherwise a dependency that’s up but never Ready would leave the dependent at zero for good                                               |
 | Never Ready, such as                                  | Crash-looping, or with an image that can’t be pulled                                                                                      |
-| Past the limit                                        | The dependent starts anyway, with `WaitingForDependencies=False`, reason `DependencyWontStart`, and a Warning event naming the dependency |
+| Past the limit                                        | The dependent starts anyway, with `WaitingForDependencies=False`, reason `DependencyWontStart`, and a warning event naming the dependency |
 | No wait, for an unmanaged dependency at zero          | Waiting can’t start it. It’s reported the same way                                                                                        |
 | No wait, for one that waits for the dependent in turn | Through `waitForReady`, directly or through others, as each would wait for the other                                                      |
 | Then                                                  | Reason `DependencyCycle`, and both start together                                                                                         |
@@ -204,7 +206,7 @@ metadata:
 
 `dependsOn` still applies alongside, and is the only way to set `waitForReady`. [`kubectl napwake deps`](https://docs.napwake.dev/next/getting-started/kubectl-plugin/#show-a-workloads-dependencies) shows a workload’s links both ways, and where each came from.
 
-## When you need dependsOn
+## When you need `dependsOn`
 
 [Wake on request](https://docs.napwake.dev/next/concepts/wake-on-request/) wakes a workload behind a normal Service by itself. Learned dependencies cover its environment, headless addresses included. `dependsOn` is for the rest:
 

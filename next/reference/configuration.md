@@ -1,4 +1,4 @@
-# Configuration reference
+# Configuration
 
 > Every flag of the binary, with its default, for running Napwake from your own manifests.
 
@@ -16,11 +16,12 @@ The binary is `/manager`. The Helm chart sets its flags from its [values](https:
 * [`--enable-http2`](https://docs.napwake.dev/next/reference/configuration/#flag-enable-http2)
 * [`--health-probe-bind-address`](https://docs.napwake.dev/next/reference/configuration/#flag-health-probe-bind-address)
 
-[Operator 4](https://docs.napwake.dev/next/reference/configuration/#operator)
+[Operator 5](https://docs.napwake.dev/next/reference/configuration/#operator)
 
 * [`--leader-elect`](https://docs.napwake.dev/next/reference/configuration/#flag-leader-elect)
 * [`--max-concurrent-reconciles`](https://docs.napwake.dev/next/reference/configuration/#flag-max-concurrent-reconciles)
 * [`--timezone`](https://docs.napwake.dev/next/reference/configuration/#flag-timezone)
+* [`--pausing`](https://docs.napwake.dev/next/reference/configuration/#flag-pausing)
 * [`--kubeconfig`](https://docs.napwake.dev/next/reference/configuration/#flag-kubeconfig)
 
 [Prometheus 2](https://docs.napwake.dev/next/reference/configuration/#prometheus)
@@ -95,12 +96,13 @@ The binary is `/manager`. The Helm chart sets its flags from its [values](https:
 
 ### Operator
 
-| Flag                          | Default    | Description                                                                                                                                                                                                                  |
-| ----------------------------- | ---------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `--leader-elect`              | `false`    | One replica reconciles. A leader that stops releases its lease, so the next, or a rollout’s new one, takes over at once. Ignored by the doorman, where every replica serves traffic. See [Leader election](https://docs.napwake.dev/next/reference/configuration/#leader-election) |
-| `--max-concurrent-reconciles` | `8`        | ManagedWorkloads reconciled at once, so a slow metrics or Prometheus query doesn’t hold up wakes, which queue ahead of periodic checks. At least 1                                                                           |
-| `--timezone`                  | `UTC`      | IANA zone, such as `Europe/London`, for forecasts’ hours and weekdays, so they follow daylight saving. Zone database built in                                                                                                |
-| `--kubeconfig`                | in-cluster | Kubeconfig path, outside the cluster only                                                                                                                                                                                    |
+| Flag                          | Default    | Description                                                                                                                                                                                                                                                        |
+| ----------------------------- | ---------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `--leader-elect`              | `false`    | One replica reconciles. A leader that stops releases its lease, so the next, or a rollout’s new one, takes over at once. Ignored by the doorman, where every replica serves traffic. See [Leader election](https://docs.napwake.dev/next/reference/configuration/#leader-election)                                       |
+| `--max-concurrent-reconciles` | `8`        | ManagedWorkloads reconciled at once, so a slow metrics or Prometheus query doesn’t hold up wakes. Wakes queue ahead of periodic checks. At least 1                                                                                                                 |
+| `--timezone`                  | `UTC`      | IANA zone, such as `Europe/London`, for forecasts’ hours and weekdays, so they follow daylight saving. Zone database built in                                                                                                                                      |
+| `--pausing`                   | `true`     | Pause idle workloads. `false` stops every pause this install makes, at once, and wakes those paused. Each workload is measured as in dry-run, whatever it sets. Helm value `pausing.enabled`. See [Stop all pausing now](https://docs.napwake.dev/next/guides/pause/#stop-all-pausing-now) |
+| `--kubeconfig`                | in-cluster | Kubeconfig path, outside the cluster only                                                                                                                                                                                                                          |
 
 ### Prometheus
 
@@ -111,10 +113,10 @@ The binary is `/manager`. The Helm chart sets its flags from its [values](https:
 
 ### Namespaces
 
-| Flag                     | Default         | Description                                                                                                                                                                                                                                                                                                                  |
-| ------------------------ | --------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `--watch-namespaces`     | every namespace | Comma-separated namespaces to work in, a Role in each                                                                                                                                                                                                                                                                        |
-| `--protected-namespaces` |                 | Comma-separated patterns, such as `prod-*`, of namespaces never managed, as if labelled `napwake.dev/protected=true`, unless labelled `napwake.dev/allow-protected=true`. `kube-*`, `$POD_NAMESPACE` and the doorman’s namespace are always protected. See [Protected namespaces](https://docs.napwake.dev/next/guides/opt-in/#protected-namespaces) |
+| Flag                     | Default         | Description                                                                                                                                                                                                                                                                                                                                                               |
+| ------------------------ | --------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `--watch-namespaces`     | every namespace | Comma-separated namespaces to work in, a Role in each                                                                                                                                                                                                                                                                                                                     |
+| `--protected-namespaces` |                 | Comma-separated patterns, such as `prod-*`, of namespaces never managed, as if labelled `napwake.dev/protected=true`, unless labelled `napwake.dev/allow-protected=true`. `kube-*`, `openshift-*`, `cattle-*`, `gke-*`, `gmp-*`, `$POD_NAMESPACE` and the doorman’s namespace are always protected. See [Protected namespaces](https://docs.napwake.dev/next/guides/opt-in/#protected-namespaces) |
 
 ### Opt-in defaults
 
@@ -142,37 +144,44 @@ For workloads opted in with the label, when neither they nor their namespace set
 
 ### GKE forwarder
 
-| Flag                              | Default                                                                 | Description                                                                                                                                                                                                                                                                                                                                                       |
-| --------------------------------- | ----------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `--neg-forwarder`                 | `false`                                                                 | Route Services behind GKE NEGs through a forwarder Deployment the operator runs in each paused workload’s namespace, instead of leaving them unrouted. Needs `create` and `delete` on Deployments. Helm value `doorman.negForwarder.enabled`. See [GKE container-native load balancing](https://docs.napwake.dev/next/concepts/wake-on-request/#gke-container-native-load-balancing-negs) |
-| `--neg-forwarder-image`           |                                                                         | The forwarders’ image, the operator’s own. Required with `--neg-forwarder`                                                                                                                                                                                                                                                                                        |
-| `--neg-forwarder-replicas`        | `2`                                                                     | Pods per forwarder. At least 1                                                                                                                                                                                                                                                                                                                                    |
-| `--neg-forwarder-resources`       | `{"requests":{"cpu":"10m","memory":"32Mi"},"limits":{"memory":"64Mi"}}` | Each forwarder pod’s resources, as JSON                                                                                                                                                                                                                                                                                                                           |
-| `--neg-forwarder-doorman-service` | `napwake-doorman-pods`                                                  | Headless Service in `--doorman-namespace` selecting the doorman’s pods, whose DNS name forwarders resolve                                                                                                                                                                                                                                                         |
+| Flag                              | Default                                                                 | Description                                                                                                                                                                                                                                                                                                                                                            |
+| --------------------------------- | ----------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `--neg-forwarder`                 | `false`                                                                 | Route Services behind GKE NEGs through a forwarder Deployment, instead of leaving them unrouted. The operator runs one in each paused workload’s namespace. Needs `create` and `delete` on Deployments. Helm value `doorman.negForwarder.enabled`. See [GKE container-native load balancing](https://docs.napwake.dev/next/concepts/wake-on-request/#gke-container-native-load-balancing-negs) |
+| `--neg-forwarder-image`           |                                                                         | The forwarders’ image, the operator’s own. Required with `--neg-forwarder`                                                                                                                                                                                                                                                                                             |
+| `--neg-forwarder-replicas`        | `2`                                                                     | Pods per forwarder. At least 1                                                                                                                                                                                                                                                                                                                                         |
+| `--neg-forwarder-resources`       | `{"requests":{"cpu":"10m","memory":"32Mi"},"limits":{"memory":"64Mi"}}` | Each forwarder pod’s resources, as JSON                                                                                                                                                                                                                                                                                                                                |
+| `--neg-forwarder-doorman-service` | `napwake-doorman-pods`                                                  | Headless Service in `--doorman-namespace` selecting the doorman’s pods, whose DNS name forwarders resolve                                                                                                                                                                                                                                                              |
 
 ### Modes
 
-| Flag          | Default | Description                                                                                                                                                                                                                                                                                                                                                                                                           |
-| ------------- | ------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `--doorman`   | `false` | Run as the doorman instead of the operator. The doorman Deployment sets it                                                                                                                                                                                                                                                                                                                                            |
-| `--forwarder` | `false` | Run as a [forwarder](https://docs.napwake.dev/next/concepts/wake-on-request/#gke-container-native-load-balancing-negs) instead of the operator. The operator’s forwarder Deployments set it, with `--forward` (routes, comma-separated `listen=doorman` port pairs) and `--forwarder-doorman` (the doorman pods’ DNS name)                                                                                                                    |
-| `--guard`     |         | Run as the chart’s `uninstall` or `upgrade` hook (`guard.uninstall`, `guard.upgrade`). Waits up to two and a half minutes for ManagedWorkloads being deleted, then exits 1, listing those left without an operator. `uninstall` counts every one in `--watch-namespaces` (all when empty) or with the `napwake.dev/cleanup` finalizer. `upgrade` counts those with the finalizer outside the new `--watch-namespaces` |
+| Flag          | Default | Description                                                                                                                                                                                                                                                                                                                                                                                                              |
+| ------------- | ------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `--doorman`   | `false` | Run as the doorman instead of the operator. The doorman Deployment sets it                                                                                                                                                                                                                                                                                                                                               |
+| `--forwarder` | `false` | Run as a [forwarder](https://docs.napwake.dev/next/concepts/wake-on-request/#gke-container-native-load-balancing-negs) instead of the operator. The operator’s forwarder Deployments set it, with `--forward` (routes, comma-separated `listen=doorman` port pairs) and `--forwarder-doorman` (the doorman pods’ DNS name)                                                                                                                       |
+| `--guard`     |         | Run as the chart’s `uninstall` or `upgrade` hook (`guard.uninstall`, `guard.upgrade`). Waits up to two and a half minutes for ManagedWorkloads being deleted. Then it exits 1, listing those left without an operator. `uninstall` counts every one in `--watch-namespaces` (all when empty) or with the `napwake.dev/cleanup` finalizer. `upgrade` counts those with the finalizer outside the new `--watch-namespaces` |
 
 ### Checked at startup
 
-The operator exits with an error naming the flag.
+The binary exits 1, with an error naming the flag.
 
-| Flag                                                                                           | Refused when                                          |
-| ---------------------------------------------------------------------------------------------- | ----------------------------------------------------- |
-| `--protected-namespaces`                                                                       | A pattern isn’t a valid glob                          |
-| `--prometheus-url`                                                                             | Not `http` or `https` with a host                     |
-| `--prometheus-selector`                                                                        | Not label matchers, or set without `--prometheus-url` |
-| `--default-idle-after`                                                                         | Under `1m`                                            |
-| `--default-cpu-threshold`                                                                      | Outside 0.1 to 100, or more than two decimal places   |
-| `--default-forecast`                                                                           | Not `eager`, `balanced` or `cautious`                 |
-| `--default-wake`                                                                               | Not `request` or `ask`                                |
-| `--max-concurrent-reconciles`, `--doorman-ports-per-workload`, `--doorman-ports-per-namespace` | Below 1                                               |
-| `--timezone`                                                                                   | Not a known IANA zone                                 |
+| Flag                                                                                           | Refused when                                                                 |
+| ---------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------- |
+| `--protected-namespaces`                                                                       | A pattern isn’t a valid glob                                                 |
+| `--prometheus-url`                                                                             | Not `http` or `https` with a host                                            |
+| `--prometheus-selector`                                                                        | Not label matchers, or set without `--prometheus-url`                        |
+| `--default-idle-after`                                                                         | Under `1m`                                                                   |
+| `--default-cpu-threshold`                                                                      | Outside 0.1 to 100, or more than two decimal places                          |
+| `--default-forecast`                                                                           | Not `eager`, `balanced` or `cautious`                                        |
+| `--default-wake`                                                                               | Not `request` or `ask`                                                       |
+| `--max-concurrent-reconciles`, `--doorman-ports-per-workload`, `--doorman-ports-per-namespace` | Below 1                                                                      |
+| `--timezone`                                                                                   | Not a known IANA zone                                                        |
+| `--neg-forwarder`                                                                              | Set with `--doorman-service` empty, which turns off the doorman it routes to |
+| `--neg-forwarder-image`, `--neg-forwarder-doorman-service`                                     | Empty, with `--neg-forwarder`                                                |
+| `--neg-forwarder-replicas`                                                                     | Below 1, with `--neg-forwarder`                                              |
+| `--neg-forwarder-resources`                                                                    | Not a JSON ResourceRequirements, with `--neg-forwarder`                      |
+| `--guard`                                                                                      | Not `uninstall` or `upgrade`                                                 |
+| `--forward`, as a forwarder                                                                    | Empty, not `listen=doorman` port pairs, or a listen port twice               |
+| `--forwarder-doorman`, as a forwarder                                                          | Empty                                                                        |
 
 ## Endpoints
 
@@ -185,7 +194,7 @@ The operator exits with an error naming the flag.
 
 ## Leader election
 
-```plaintext
+```text
 --leader-elect=true
 ```
 
@@ -193,13 +202,13 @@ For HA, with more than one replica. The leader holds the Lease `479a98fc.napwake
 
 ## TLS configuration
 
-```plaintext
+```text
 --metrics-secure=false --metrics-bind-address=:8080
 ```
 
-Plain HTTP. Not for production.
+Plain HTTP. Not for a shared cluster.
 
-```plaintext
+```text
 --metrics-cert-path=/certs/metrics
 ```
 

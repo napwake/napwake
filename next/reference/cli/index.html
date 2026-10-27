@@ -1,4 +1,4 @@
-<!DOCTYPE html><html lang="en" dir="ltr" data-theme="dark" data-has-toc data-has-sidebar class="astro-g5ptsecz"><head><link rel="preload" href="/next/_astro/AtkinsonHyperlegibleNext.Cw9WDUCC.woff2" as="font" type="font/woff2" crossorigin><link rel="preload" href="/next/_astro/BigShouldersDisplay-800.CSQhGSAK.woff2" as="font" type="font/woff2" crossorigin><meta charset="utf-8"/><meta name="viewport" content="width=device-width, initial-scale=1"/><title>kubectl plugin reference | Napwake</title><link rel="canonical" href="https://docs.napwake.dev/latest/reference/cli/"/><link rel="sitemap" href="/next/sitemap-index.xml"/><link rel="icon" href="/next/favicon.ico" sizes="32x32"/><link rel="apple-touch-icon" href="/next/apple-touch-icon.png"/><link rel="manifest" href="/next/site.webmanifest"/><link rel="shortcut icon" href="/next/favicon.svg" type="image/svg+xml"/><meta name="generator" content="Astro v7.3.8"/><meta name="generator" content="Starlight v0.42.6"/><meta property="og:title" content="kubectl plugin reference"/><meta property="og:type" content="article"/><meta property="og:url" content="https://docs.napwake.dev/next/reference/cli/"/><meta property="og:locale" content="en"/><meta property="og:description" content="Every kubectl napwake command's flags, JSON fields, exit status and permissions, and how each reads the cluster."/><meta property="og:site_name" content="Napwake"/><meta name="twitter:card" content="summary_large_image"/><meta name="description" content="Every kubectl napwake command's flags, JSON fields, exit status and permissions, and how each reads the cluster."/><meta property="og:image" content="https://docs.napwake.dev/next/og/reference-cli.png"/><meta property="og:image:width" content="1200"/><meta property="og:image:height" content="630"/><meta property="og:image:alt" content="kubectl plugin reference, Napwake docs"/><meta name="twitter:image" content="https://docs.napwake.dev/next/og/reference-cli.png"/><link rel="alternate" type="text/markdown" href="/next/reference/cli.md" title="This page as Markdown"/><meta name="theme-color" content="#14695f" media="(prefers-color-scheme: light)"><meta name="theme-color" content="#0d3f3a" media="(prefers-color-scheme: dark)"><script>
+<!DOCTYPE html><html lang="en" dir="ltr" data-theme="dark" data-has-toc data-has-sidebar class="astro-g5ptsecz"><head><link rel="preload" href="/next/_astro/AtkinsonHyperlegibleNext.Cw9WDUCC.woff2" as="font" type="font/woff2" crossorigin><link rel="preload" href="/next/_astro/BigShouldersDisplay-800.CSQhGSAK.woff2" as="font" type="font/woff2" crossorigin><meta charset="utf-8"/><meta name="viewport" content="width=device-width, initial-scale=1"/><title>kubectl plugin reference | Napwake</title><link rel="canonical" href="https://docs.napwake.dev/next/reference/cli/"/><link rel="sitemap" href="/next/sitemap-index.xml"/><link rel="icon" href="/next/favicon.ico" sizes="32x32"/><link rel="apple-touch-icon" href="/next/apple-touch-icon.png"/><link rel="manifest" href="/next/site.webmanifest"/><link rel="shortcut icon" href="/next/favicon.svg" type="image/svg+xml"/><meta name="generator" content="Astro v7.3.8"/><meta name="generator" content="Starlight v0.42.6"/><meta property="og:title" content="kubectl plugin reference"/><meta property="og:type" content="article"/><meta property="og:url" content="https://docs.napwake.dev/next/reference/cli/"/><meta property="og:locale" content="en"/><meta property="og:description" content="Every kubectl napwake command's flags, JSON fields, exit status and permissions, and how each reads the cluster."/><meta property="og:site_name" content="Napwake"/><meta name="twitter:card" content="summary_large_image"/><meta name="description" content="Every kubectl napwake command's flags, JSON fields, exit status and permissions, and how each reads the cluster."/><meta property="og:image" content="https://docs.napwake.dev/next/og/reference-cli.png"/><meta property="og:image:width" content="1200"/><meta property="og:image:height" content="630"/><meta property="og:image:alt" content="kubectl plugin reference, Napwake docs"/><meta name="twitter:image" content="https://docs.napwake.dev/next/og/reference-cli.png"/><link rel="alternate" type="text/markdown" href="/next/reference/cli.md" title="This page as Markdown"/><meta name="theme-color" content="#14695f" media="(prefers-color-scheme: light)"><meta name="theme-color" content="#0d3f3a" media="(prefers-color-scheme: dark)"><script type="module" src="https://static.cloudflareinsights.com/beacon.min.js" data-cf-beacon="{&quot;token&quot;:&quot;48ee7e8b6c8d4e86b14263e5763a185f&quot;}"></script><script>
 	window.StarlightThemeProvider = (() => {
 		const storedTheme =
 			typeof localStorage !== 'undefined' && localStorage.getItem('starlight-theme');
@@ -30,7 +30,7 @@
 </style><style>.nw-ref:where(.astro-cbhc5gqx){scroll-margin-top:calc(var(--sl-nav-height) + 1.5rem);display:inline-block;position:relative}.nw-ref:where(.astro-cbhc5gqx) code:where(.astro-cbhc5gqx){font-weight:700}.nw-ref__link:where(.astro-cbhc5gqx){color:var(--muted);opacity:0;font:700 .875rem/1.4 var(--font-mono);text-decoration:none;position:absolute;top:.05rem;left:-1.05rem}.nw-ref:where(.astro-cbhc5gqx):hover .nw-ref__link:where(.astro-cbhc5gqx),.nw-ref__link:where(.astro-cbhc5gqx):focus-visible{opacity:1}.nw-ref:where(.astro-cbhc5gqx):target code:where(.astro-cbhc5gqx){background:color-mix(in srgb, var(--lamp) 35%, var(--code-bg))}
 </style><style>.nw-refindex:where(.astro-layzjlac){background:var(--surface);border:1px solid var(--line);border-radius:var(--radius-xl);grid-template-columns:repeat(auto-fit,minmax(min(100%,19rem),1fr));gap:1.4rem 2rem;margin-top:1.75rem;padding:1.2rem 1.3rem;display:grid}.nw-refindex__title:where(.astro-layzjlac){font:700 .75rem/1.4 var(--font-mono);letter-spacing:.06em;text-transform:uppercase;color:var(--brand);margin-bottom:.45rem;text-decoration:none;display:inline-block}.nw-refindex__title:where(.astro-layzjlac) span:where(.astro-layzjlac){color:var(--muted);font-weight:400}ul:where(.astro-layzjlac){gap:0;margin:0;padding:0;list-style:none;display:grid}li:where(.astro-layzjlac){font-size:.8125rem;line-height:1.5;margin:0!important}ul:where(.astro-layzjlac) a:where(.astro-layzjlac){color:var(--text);align-items:center;max-width:100%;min-height:1.65rem;text-decoration:none;display:inline-flex}code:where(.astro-layzjlac){font:400 .8125rem/1.6 var(--font-mono);color:inherit;white-space:nowrap;background:0 0;padding:0}ul:where(.astro-layzjlac) a:where(.astro-layzjlac):hover code:where(.astro-layzjlac){color:var(--link);text-underline-offset:.2em;text-decoration:underline}
 </style><style>.nw-term-wrap:where(.astro-66ythkd5){margin:0}.nw-term__title:where(.astro-66ythkd5){font:700 .75rem/1.4 var(--font-mono);letter-spacing:.06em;text-transform:uppercase;color:var(--muted);margin:0 0 .5rem}.nw-term:where(.astro-66ythkd5){box-sizing:border-box;background:var(--code-bg);color:var(--code-text);border:1px solid var(--line);border-radius:var(--radius-md);padding:var(--space-4) 18px 20px;font:400 .8125rem/1.55 var(--font-mono);white-space:pre;tab-size:4;margin:0;overflow-x:auto}.nw-term:where(.astro-66ythkd5) code:where(.astro-66ythkd5){font:inherit;color:inherit;background:0 0;padding:0}.nw-term__prompt:where(.astro-66ythkd5){color:var(--muted);-webkit-user-select:none;user-select:none}.nw-term__cmd:where(.astro-66ythkd5){font-weight:700}.nw-term__out:where(.astro-66ythkd5){color:var(--code-text)}
-</style></head><body class="astro-g5ptsecz"><a class="sl-skip-link astro-qb7clj6f" href="#_top">Skip to content</a><div class="page sl-flex astro-yntsjkba"><header class="header astro-yntsjkba"><div class="header astro-xiqy3rs3"><div class="title-wrapper sl-flex astro-xiqy3rs3"><a href="/next/" class="nw-site-title astro-32trhkrv"><svg class="nw-site-title__logo astro-32trhkrv" viewBox="-12 -32 430.5 124" role="img" aria-label="Napwake" xmlns="http://www.w3.org/2000/svg"><g transform="translate(-10 -27.7) scale(0.95)"><path d="M12 96 V88 Q12 79 22 79 H74 Q84 79 84 88 V96 Z" fill="currentColor"></path><path d="M26 76 V44 Q26 36 34 36 H62 Q70 36 70 44 V76 Z" fill="currentColor"></path><clipPath id="nw-logo-e1"><circle cx="38.3" cy="55" r="7.8"></circle></clipPath><circle cx="38.3" cy="55" r="7.5" fill="var(--nw-cut, var(--docs-header))"></circle><g clip-path="url(#nw-logo-e1)"><circle cx="38.3" cy="55.95" r="3.75" fill="currentColor"></circle><rect x="26.299999999999997" y="40" width="24" height="15" fill="currentColor" transform="rotate(-5 38.3 55)"></rect></g><rect x="29.45" y="53.58" width="17.7" height="2.85" rx="1.43" fill="currentColor" transform="rotate(-5 38.3 55)"></rect><clipPath id="nw-logo-e2"><circle cx="57.7" cy="55" r="7.8"></circle></clipPath><circle cx="57.7" cy="55" r="7.5" fill="var(--nw-cut, var(--docs-header))"></circle><g clip-path="url(#nw-logo-e2)"><circle cx="57.7" cy="55.95" r="3.75" fill="currentColor"></circle><rect x="45.7" y="40" width="24" height="15" fill="currentColor" transform="rotate(3 57.7 55)"></rect></g><rect x="48.85" y="53.58" width="17.7" height="2.85" rx="1.43" fill="currentColor" transform="rotate(3 57.7 55)"></rect><path d="M23 71 H73 V80 Q48 83 23 80 Z" fill="currentColor"></path><g transform="rotate(-5 48 38)"><path d="M31 38 L29.5 13 Q29.5 10 32.5 10 Q48 8.5 63.5 10 Q66.5 10 66.5 13 L65 38 Z" fill="currentColor"></path><path d="M30.6 31 L30.2 25 H65.8 L65.4 31 Z" fill="var(--nw-cut, var(--docs-header))"></path><path d="M14 37 Q15 34 20 34.5 H76 Q81 34 82 37 Q82 41.5 76 41.5 H20 Q14 41.5 14 37 Z" fill="currentColor"></path></g></g><g transform="translate(86 0)"><path fill="currentColor" d="M0 60 V18 A18 18 0 0 1 36 18 V60 ZM24 60 V18 A6 6 0 0 0 12 18 V60 ZM46.5 60 V18 A18 18 0 0 1 64.5 4 H65.5 L71.5 13 V60 ZM70.5 0 H82.5 V60 H70.5 ZM70.5 48 V23.25 A6.25 6.25 0 0 0 58 23.25 V48 ZM94.5 60 V0 H112.5 A18 18 0 0 1 130.5 18 V60 ZM118.5 48 V18 A6 6 0 0 0 106.5 18 V48 ZM94.5 59 H106.5 V80 H94.5 ZM136.5 0 L149 0 L156.5 60 L144 60 ZM156.25 16 L168.75 16 L156.5 60 L144 60 ZM156.25 16 L168.75 16 L181 60 L168.5 60 ZM176 0 L188.5 0 L181 60 L168.5 60 ZM194.5 60 V18 A18 18 0 0 1 212.5 4 H213.5 L219.5 13 V60 ZM218.5 0 H230.5 V60 H218.5 ZM218.5 48 V23.25 A6.25 6.25 0 0 0 206 23.25 V48 ZM242.5 -22 H254.5 V60 H242.5 ZM267 0 L279.5 0 L254.5 44 L254.5 23 ZM261.5 31 L270 26 L280.5 60 L267.5 60 ZM286.5 28 V18 A18 18 0 0 1 322.5 18 V28 ZM310.5 28 V18 A6 6 0 0 0 298.5 18 V28 ZM286.5 26 H322.5 V38 H286.5 ZM286.5 26 H298.5 V60 H286.5 ZM286.5 48 H320.5 V60 H286.5 Z"></path></g></svg><span class="nw-site-title__docs astro-32trhkrv">Docs</span></a><span class="nw-version-wrap astro-xiqy3rs3"><nw-version-select data-versions="/versions.json" data-current="next" data-base="/next/" data-root="/" class="astro-jcjov46q"><label class="nw-version astro-jcjov46q"><span class="sr-only astro-jcjov46q">Docs version</span><select disabled aria-label="Docs version" class="astro-jcjov46q"><option value="next" selected class="astro-jcjov46q">next · 0.2.0-rc.9</option></select><svg aria-hidden="true" viewBox="0 0 12 12" width="10" height="10" class="astro-jcjov46q"><path d="M2.5 4.5 6 8l3.5-3.5" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" class="astro-jcjov46q"></path></svg></label></nw-version-select><script type="module">var e=class extends HTMLElement{connectedCallback(){let{versions:e,current:t=`dev`,base:n=`/`,root:r=`/`}=this.dataset,i=this.querySelector(`select`);i&&e&&fetch(e).then(e=>e.ok?e.json():Promise.reject(e.status)).then(e=>{if(!Array.isArray(e)||!e.length)return;i.replaceChildren(...e.map(e=>{let n=document.createElement(`option`),r=e.aliases?.includes(`latest`)?` · latest`:e.version===`next`&&e.properties?.release?` · ${e.properties.release}`:``;return n.value=e.version,n.textContent=(e.version===`next`?`next`:e.title||e.version)+r,n.selected=e.version===t||(e.aliases??[]).includes(t),n})),i.disabled=!1,this.toggleAttribute(`data-ready`,!0);let a=e.find(e=>e.version===t||(e.aliases??[]).includes(t));a&&t!==`next`&&!(a.aliases??[]).includes(`latest`)&&document.querySelectorAll(`[data-nw-outdated]`).forEach(e=>{e.hidden=!1}),i.addEventListener(`change`,()=>{let e=location.pathname.startsWith(n)?location.pathname.slice(n.length):``;location.href=`${r}${i.value}/${e}${location.hash}`})}).catch(()=>{})}};customElements.define(`nw-version-select`,e);</script></span></div><div class="sl-flex print:hidden astro-xiqy3rs3"><site-search class="astro-xiqy3rs3 astro-b5kgnn7o" data-translations="{&quot;placeholder&quot;:&quot;Search&quot;}"><button data-open-modal disabled aria-label="Search" aria-keyshortcuts="Control+K" class="astro-b5kgnn7o"><svg aria-hidden="true" class="astro-b5kgnn7o astro-hkc32dio" width="16" height="16" viewBox="0 0 24 24" fill="currentColor" style="--sl-icon-size: 1em;"><path d="M21.71 20.29 18 16.61A9 9 0 1 0 16.61 18l3.68 3.68a.999.999 0 0 0 1.42 0 1 1 0 0 0 0-1.39ZM11 18a7 7 0 1 1 0-14 7 7 0 0 1 0 14Z"/></svg><span class="sl-hidden md:sl-block astro-b5kgnn7o" aria-hidden="true">Search</span><kbd class="sl-hidden md:sl-flex astro-b5kgnn7o" style="display: none;"><kbd class="astro-b5kgnn7o">Ctrl</kbd><kbd class="astro-b5kgnn7o">K</kbd></kbd></button><dialog style="padding:0" aria-label="Search" class="astro-b5kgnn7o"><div class="dialog-frame sl-flex astro-b5kgnn7o"><button data-close-modal class="sl-flex md:sl-hidden astro-b5kgnn7o">Cancel</button><div class="search-container astro-b5kgnn7o"><div id="starlight__search" class="astro-b5kgnn7o"></div></div></div></dialog></site-search><script>
+</style></head><body class="astro-g5ptsecz"><a class="sl-skip-link astro-qb7clj6f" href="#_top">Skip to content</a><div class="page sl-flex astro-yntsjkba"><header class="header astro-yntsjkba"><div class="header astro-xiqy3rs3"><div class="title-wrapper sl-flex astro-xiqy3rs3"><a href="/next/" class="nw-site-title astro-32trhkrv"><svg class="nw-site-title__logo astro-32trhkrv" viewBox="-12 -32 430.5 124" role="img" aria-label="Napwake" xmlns="http://www.w3.org/2000/svg"><g transform="translate(-10 -27.7) scale(0.95)"><path d="M12 96 V88 Q12 79 22 79 H74 Q84 79 84 88 V96 Z" fill="currentColor"></path><path d="M26 76 V44 Q26 36 34 36 H62 Q70 36 70 44 V76 Z" fill="currentColor"></path><clipPath id="nw-logo-e1"><circle cx="38.3" cy="55" r="7.8"></circle></clipPath><circle cx="38.3" cy="55" r="7.5" fill="var(--nw-cut, var(--docs-header))"></circle><g clip-path="url(#nw-logo-e1)"><circle cx="38.3" cy="55.95" r="3.75" fill="currentColor"></circle><rect x="26.299999999999997" y="40" width="24" height="15" fill="currentColor" transform="rotate(-5 38.3 55)"></rect></g><rect x="29.45" y="53.58" width="17.7" height="2.85" rx="1.43" fill="currentColor" transform="rotate(-5 38.3 55)"></rect><clipPath id="nw-logo-e2"><circle cx="57.7" cy="55" r="7.8"></circle></clipPath><circle cx="57.7" cy="55" r="7.5" fill="var(--nw-cut, var(--docs-header))"></circle><g clip-path="url(#nw-logo-e2)"><circle cx="57.7" cy="55.95" r="3.75" fill="currentColor"></circle><rect x="45.7" y="40" width="24" height="15" fill="currentColor" transform="rotate(3 57.7 55)"></rect></g><rect x="48.85" y="53.58" width="17.7" height="2.85" rx="1.43" fill="currentColor" transform="rotate(3 57.7 55)"></rect><path d="M23 71 H73 V80 Q48 83 23 80 Z" fill="currentColor"></path><g transform="rotate(-5 48 38)"><path d="M31 38 L29.5 13 Q29.5 10 32.5 10 Q48 8.5 63.5 10 Q66.5 10 66.5 13 L65 38 Z" fill="currentColor"></path><path d="M30.6 31 L30.2 25 H65.8 L65.4 31 Z" fill="var(--nw-cut, var(--docs-header))"></path><path d="M14 37 Q15 34 20 34.5 H76 Q81 34 82 37 Q82 41.5 76 41.5 H20 Q14 41.5 14 37 Z" fill="currentColor"></path></g></g><g transform="translate(86 0)"><path fill="currentColor" d="M0 60 V18 A18 18 0 0 1 36 18 V60 ZM24 60 V18 A6 6 0 0 0 12 18 V60 ZM46.5 60 V18 A18 18 0 0 1 64.5 4 H65.5 L71.5 13 V60 ZM70.5 0 H82.5 V60 H70.5 ZM70.5 48 V23.25 A6.25 6.25 0 0 0 58 23.25 V48 ZM94.5 60 V0 H112.5 A18 18 0 0 1 130.5 18 V60 ZM118.5 48 V18 A6 6 0 0 0 106.5 18 V48 ZM94.5 59 H106.5 V80 H94.5 ZM136.5 0 L149 0 L156.5 60 L144 60 ZM156.25 16 L168.75 16 L156.5 60 L144 60 ZM156.25 16 L168.75 16 L181 60 L168.5 60 ZM176 0 L188.5 0 L181 60 L168.5 60 ZM194.5 60 V18 A18 18 0 0 1 212.5 4 H213.5 L219.5 13 V60 ZM218.5 0 H230.5 V60 H218.5 ZM218.5 48 V23.25 A6.25 6.25 0 0 0 206 23.25 V48 ZM242.5 -22 H254.5 V60 H242.5 ZM267 0 L279.5 0 L254.5 44 L254.5 23 ZM261.5 31 L270 26 L280.5 60 L267.5 60 ZM286.5 28 V18 A18 18 0 0 1 322.5 18 V28 ZM310.5 28 V18 A6 6 0 0 0 298.5 18 V28 ZM286.5 26 H322.5 V38 H286.5 ZM286.5 26 H298.5 V60 H286.5 ZM286.5 48 H320.5 V60 H286.5 Z"></path></g></svg><span class="nw-site-title__docs astro-32trhkrv">Docs</span></a><span class="nw-version-wrap astro-xiqy3rs3"><nw-version-select data-versions="/versions.json" data-current="next" data-base="/next/" data-root="/" class="astro-jcjov46q"><label class="nw-version astro-jcjov46q"><span class="sr-only astro-jcjov46q">Docs version</span><select disabled aria-label="Docs version" class="astro-jcjov46q"><option value="next" selected class="astro-jcjov46q">next · 0.2.0-rc.11</option></select><svg aria-hidden="true" viewBox="0 0 12 12" width="10" height="10" class="astro-jcjov46q"><path d="M2.5 4.5 6 8l3.5-3.5" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" class="astro-jcjov46q"></path></svg></label></nw-version-select><script type="module">var e=class extends HTMLElement{connectedCallback(){let{versions:e,current:t=`dev`,base:n=`/`,root:r=`/`}=this.dataset,i=this.querySelector(`select`);i&&e&&fetch(e).then(e=>e.ok?e.json():Promise.reject(e.status)).then(e=>{if(!Array.isArray(e)||!e.length)return;i.replaceChildren(...e.map(e=>{let n=document.createElement(`option`),r=e.aliases?.includes(`latest`)?` · latest`:e.version===`next`&&e.properties?.release?` · ${e.properties.release}`:``;return n.value=e.version,n.textContent=(e.version===`next`?`next`:e.title||e.version)+r,n.selected=e.version===t||(e.aliases??[]).includes(t),n})),i.disabled=!1,this.toggleAttribute(`data-ready`,!0),e.some(e=>(e.aliases??[]).includes(`latest`))&&document.querySelectorAll(`[data-nw-latest-link]`).forEach(e=>{e.hidden=!1});let a=e.find(e=>e.version===t||(e.aliases??[]).includes(t));a&&t!==`next`&&!(a.aliases??[]).includes(`latest`)&&document.querySelectorAll(`[data-nw-outdated]`).forEach(e=>{e.hidden=!1}),i.addEventListener(`change`,()=>{let e=location.pathname.startsWith(n)?location.pathname.slice(n.length):``;location.href=`${r}${i.value}/${e}${location.hash}`})}).catch(()=>{})}};customElements.define(`nw-version-select`,e);</script></span></div><div class="sl-flex print:hidden astro-xiqy3rs3"><site-search class="astro-xiqy3rs3 astro-b5kgnn7o" data-translations="{&quot;placeholder&quot;:&quot;Search&quot;}"><button data-open-modal disabled aria-label="Search" aria-keyshortcuts="Control+K" class="astro-b5kgnn7o"><svg aria-hidden="true" class="astro-b5kgnn7o astro-hkc32dio" width="16" height="16" viewBox="0 0 24 24" fill="currentColor" style="--sl-icon-size: 1em;"><path d="M21.71 20.29 18 16.61A9 9 0 1 0 16.61 18l3.68 3.68a.999.999 0 0 0 1.42 0 1 1 0 0 0 0-1.39ZM11 18a7 7 0 1 1 0-14 7 7 0 0 1 0 14Z"/></svg><span class="sl-hidden md:sl-block astro-b5kgnn7o" aria-hidden="true">Search</span><kbd class="sl-hidden md:sl-flex astro-b5kgnn7o" style="display: none;"><kbd class="astro-b5kgnn7o">Ctrl</kbd><kbd class="astro-b5kgnn7o">K</kbd></kbd></button><dialog style="padding:0" aria-label="Search" class="astro-b5kgnn7o"><div class="dialog-frame sl-flex astro-b5kgnn7o"><button data-close-modal class="sl-flex md:sl-hidden astro-b5kgnn7o">Cancel</button><div class="search-container astro-b5kgnn7o"><div id="starlight__search" class="astro-b5kgnn7o"></div></div></div></dialog></site-search><script>
 	(() => {
 		const openBtn = document.querySelector('button[data-open-modal]');
 		const shortcut = openBtn?.querySelector('kbd');
@@ -76,12 +76,48 @@
 		})();
 	</script></sl-sidebar-state-persist><div class="md:sl-hidden"><div class="mobile-preferences sl-flex astro-p4azlveh"><div class="social-icons astro-p4azlveh"><a href="https://github.com/napwake/napwake" rel="me" class="sl-flex astro-n2mnl6yq"><span class="sr-only astro-n2mnl6yq">Napwake on GitHub</span><svg aria-hidden="true" class="astro-n2mnl6yq astro-hkc32dio" width="16" height="16" viewBox="0 0 24 24" fill="currentColor" style="--sl-icon-size: 1em;"><path d="M12 .3a12 12 0 0 0-3.8 23.38c.6.12.83-.26.83-.57L9 21.07c-3.34.72-4.04-1.61-4.04-1.61-.55-1.39-1.34-1.76-1.34-1.76-1.08-.74.09-.73.09-.73 1.2.09 1.83 1.24 1.83 1.24 1.08 1.83 2.81 1.3 3.5 1 .1-.78.42-1.31.76-1.61-2.67-.3-5.47-1.33-5.47-5.93 0-1.31.47-2.38 1.24-3.22-.14-.3-.54-1.52.1-3.18 0 0 1-.32 3.3 1.23a11.5 11.5 0 0 1 6 0c2.28-1.55 3.29-1.23 3.29-1.23.64 1.66.24 2.88.12 3.18a4.65 4.65 0 0 1 1.23 3.22c0 4.61-2.8 5.63-5.48 5.92.42.36.81 1.1.81 2.22l-.01 3.29c0 .31.2.69.82.57A12 12 0 0 0 12 .3Z"/></svg></a></div><starlight-theme-select><label style="--sl-select-width: 6.25em" class="astro-2z5xp7gb"><span class="sr-only astro-2z5xp7gb">Select theme</span><svg aria-hidden="true" class="icon label-icon astro-2z5xp7gb astro-hkc32dio" width="16" height="16" viewBox="0 0 24 24" fill="currentColor" style="--sl-icon-size: 1em;"><path d="M21 14h-1V7a3 3 0 0 0-3-3H7a3 3 0 0 0-3 3v7H3a1 1 0 0 0-1 1v2a3 3 0 0 0 3 3h14a3 3 0 0 0 3-3v-2a1 1 0 0 0-1-1ZM6 7a1 1 0 0 1 1-1h10a1 1 0 0 1 1 1v7H6V7Zm14 10a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1v-1h16v1Z"/></svg><select autocomplete="off" class="astro-2z5xp7gb"><option value="dark" class="astro-2z5xp7gb">Dark</option><option value="light" class="astro-2z5xp7gb">Light</option><option value="auto" selected class="astro-2z5xp7gb">Auto</option></select><svg aria-hidden="true" class="icon caret astro-2z5xp7gb astro-hkc32dio" width="16" height="16" viewBox="0 0 24 24" fill="currentColor" style="--sl-icon-size: 1em;"><path d="M17 9.17a1 1 0 0 0-1.41 0L12 12.71 8.46 9.17a1 1 0 1 0-1.41 1.42l4.24 4.24a1.002 1.002 0 0 0 1.42 0L17 10.59a1.002 1.002 0 0 0 0-1.42Z"/></svg></label></starlight-theme-select><script>
 	StarlightThemeProvider.updatePickers();
-</script></div></div></div></sl-sidebar-pane></nav><div class="main-frame astro-yntsjkba"><script type="module">var e=document.getElementById(`starlight__sidebar`),t=e?.querySelector(`sl-sidebar-state-persist`),n=`sl-sidebar-state`,r=()=>{let r=[],i=t?.dataset.hash||``;try{let e=sessionStorage.getItem(n),t=JSON.parse(e||`{}`);Array.isArray(t.open)&&t.hash===i&&(r=t.open)}catch{}return{hash:i,open:r,scroll:e?.scrollTop||0}},i=e=>{try{sessionStorage.setItem(n,JSON.stringify(e))}catch{}},a=()=>i(r()),o=(e,t)=>{let n=r();n.open[t]=e,i(n)};t?.addEventListener(`click`,e=>{if(!(e.target instanceof Element))return;let t=e.target.closest(`summary`)?.closest(`details`);if(!t)return;let n=t.querySelector(`sl-sidebar-restore`),r=parseInt(n?.dataset.index||``);isNaN(r)||o(!t.open,r)}),addEventListener(`visibilitychange`,()=>{document.visibilityState===`hidden`&&a()});</script><div class="lg:sl-flex astro-lrzkfocr"><aside class="right-sidebar-container print:hidden astro-lrzkfocr"><div class="right-sidebar astro-lrzkfocr"><div class="lg:sl-hidden astro-qok35upx"><mobile-starlight-toc data-min-h="2" data-max-h="3" class="astro-66cqc7ze"><nav aria-labelledby="starlight__on-this-page--mobile" class="astro-66cqc7ze"><details id="starlight__mobile-toc" class="astro-66cqc7ze"><summary id="starlight__on-this-page--mobile" class="sl-flex astro-66cqc7ze"><span class="toggle sl-flex astro-66cqc7ze">On this page<svg aria-hidden="true" class="caret astro-66cqc7ze astro-hkc32dio" width="16" height="16" viewBox="0 0 24 24" fill="currentColor" style="--sl-icon-size: 1rem;"><path d="m14.83 11.29-4.24-4.24a1 1 0 1 0-1.42 1.41L12.71 12l-3.54 3.54a1 1 0 0 0 0 1.41 1 1 0 0 0 .71.29 1 1 0 0 0 .71-.29l4.24-4.24a1.002 1.002 0 0 0 0-1.42Z"/></svg></span><span class="display-current astro-66cqc7ze"></span></summary><div class="dropdown astro-66cqc7ze"><ul class="isMobile astro-jugkfwgx" style="--depth: 0;"><li style="--depth: 0;" class="astro-jugkfwgx"><a href="#_top" style="--depth: 0;" class="astro-jugkfwgx"><span style="--depth: 0;" class="astro-jugkfwgx">Overview</span></a></li><li style="--depth: 0;" class="astro-jugkfwgx"><a href="#every-command" style="--depth: 0;" class="astro-jugkfwgx"><span style="--depth: 0;" class="astro-jugkfwgx">Every command</span></a></li><li style="--depth: 0;" class="astro-jugkfwgx"><a href="#scan" style="--depth: 0;" class="astro-jugkfwgx"><span style="--depth: 0;" class="astro-jugkfwgx">scan</span></a><ul class="isMobile astro-jugkfwgx" style="--depth: 1;"><li style="--depth: 1;" class="astro-jugkfwgx"><a href="#more-on-the-flags" style="--depth: 1;" class="astro-jugkfwgx"><span style="--depth: 1;" class="astro-jugkfwgx">More on the flags</span></a></li><li style="--depth: 1;" class="astro-jugkfwgx"><a href="#more-on-the-first-line-and-the-columns" style="--depth: 1;" class="astro-jugkfwgx"><span style="--depth: 1;" class="astro-jugkfwgx">More on the first line and the columns</span></a></li><li style="--depth: 1;" class="astro-jugkfwgx"><a href="#how-it-decides-a-workload-is-idle" style="--depth: 1;" class="astro-jugkfwgx"><span style="--depth: 1;" class="astro-jugkfwgx">How it decides a workload is idle</span></a></li><li style="--depth: 1;" class="astro-jugkfwgx"><a href="#what-the-notes-list-and-what-the-scan-leaves-out" style="--depth: 1;" class="astro-jugkfwgx"><span style="--depth: 1;" class="astro-jugkfwgx">What the notes list, and what the scan leaves out</span></a></li><li style="--depth: 1;" class="astro-jugkfwgx"><a href="#history-from-prometheus" style="--depth: 1;" class="astro-jugkfwgx"><span style="--depth: 1;" class="astro-jugkfwgx">History from Prometheus</span></a></li><li style="--depth: 1;" class="astro-jugkfwgx"><a href="#a-prometheus-elsewhere" style="--depth: 1;" class="astro-jugkfwgx"><span style="--depth: 1;" class="astro-jugkfwgx">A Prometheus elsewhere</span></a></li><li style="--depth: 1;" class="astro-jugkfwgx"><a href="#the-headlines-counts" style="--depth: 1;" class="astro-jugkfwgx"><span style="--depth: 1;" class="astro-jugkfwgx">The headline’s counts</span></a></li><li style="--depth: 1;" class="astro-jugkfwgx"><a href="#dependencies" style="--depth: 1;" class="astro-jugkfwgx"><span style="--depth: 1;" class="astro-jugkfwgx">Dependencies</span></a></li><li style="--depth: 1;" class="astro-jugkfwgx"><a href="#prices" style="--depth: 1;" class="astro-jugkfwgx"><span style="--depth: 1;" class="astro-jugkfwgx">Prices</span></a></li><li style="--depth: 1;" class="astro-jugkfwgx"><a href="#the-web-report" style="--depth: 1;" class="astro-jugkfwgx"><span style="--depth: 1;" class="astro-jugkfwgx">The web report</span></a></li><li style="--depth: 1;" class="astro-jugkfwgx"><a href="#json-and-yaml" style="--depth: 1;" class="astro-jugkfwgx"><span style="--depth: 1;" class="astro-jugkfwgx">JSON and YAML</span></a></li><li style="--depth: 1;" class="astro-jugkfwgx"><a href="#exit-status" style="--depth: 1;" class="astro-jugkfwgx"><span style="--depth: 1;" class="astro-jugkfwgx">Exit status</span></a></li><li style="--depth: 1;" class="astro-jugkfwgx"><a href="#permissions" style="--depth: 1;" class="astro-jugkfwgx"><span style="--depth: 1;" class="astro-jugkfwgx">Permissions</span></a></li></ul></li><li style="--depth: 0;" class="astro-jugkfwgx"><a href="#forecast" style="--depth: 0;" class="astro-jugkfwgx"><span style="--depth: 0;" class="astro-jugkfwgx">forecast</span></a><ul class="isMobile astro-jugkfwgx" style="--depth: 1;"><li style="--depth: 1;" class="astro-jugkfwgx"><a href="#history-and-what-would-wake-a-workload" style="--depth: 1;" class="astro-jugkfwgx"><span style="--depth: 1;" class="astro-jugkfwgx">History, and what would wake a workload</span></a></li><li style="--depth: 1;" class="astro-jugkfwgx"><a href="#finding-the-workload-gaps-and-exit-status" style="--depth: 1;" class="astro-jugkfwgx"><span style="--depth: 1;" class="astro-jugkfwgx">Finding the workload, gaps, and exit status</span></a></li><li style="--depth: 1;" class="astro-jugkfwgx"><a href="#json-and-yaml-1" style="--depth: 1;" class="astro-jugkfwgx"><span style="--depth: 1;" class="astro-jugkfwgx">JSON and YAML</span></a></li></ul></li><li style="--depth: 0;" class="astro-jugkfwgx"><a href="#status" style="--depth: 0;" class="astro-jugkfwgx"><span style="--depth: 0;" class="astro-jugkfwgx">status</span></a><ul class="isMobile astro-jugkfwgx" style="--depth: 1;"><li style="--depth: 1;" class="astro-jugkfwgx"><a href="#needs-attention" style="--depth: 1;" class="astro-jugkfwgx"><span style="--depth: 1;" class="astro-jugkfwgx">Needs attention</span></a></li><li style="--depth: 1;" class="astro-jugkfwgx"><a href="#the-last-activity-column" style="--depth: 1;" class="astro-jugkfwgx"><span style="--depth: 1;" class="astro-jugkfwgx">The LAST ACTIVITY column</span></a></li><li style="--depth: 1;" class="astro-jugkfwgx"><a href="#the-next-column" style="--depth: 1;" class="astro-jugkfwgx"><span style="--depth: 1;" class="astro-jugkfwgx">The NEXT column</span></a></li><li style="--depth: 1;" class="astro-jugkfwgx"><a href="#the-forecast-column" style="--depth: 1;" class="astro-jugkfwgx"><span style="--depth: 1;" class="astro-jugkfwgx">The FORECAST column</span></a></li><li style="--depth: 1;" class="astro-jugkfwgx"><a href="#turned-away-while-asleep" style="--depth: 1;" class="astro-jugkfwgx"><span style="--depth: 1;" class="astro-jugkfwgx">Turned away while asleep</span></a></li><li style="--depth: 1;" class="astro-jugkfwgx"><a href="#recent-pauses-and-wakes" style="--depth: 1;" class="astro-jugkfwgx"><span style="--depth: 1;" class="astro-jugkfwgx">Recent pauses and wakes</span></a></li><li style="--depth: 1;" class="astro-jugkfwgx"><a href="#json-and-yaml-2" style="--depth: 1;" class="astro-jugkfwgx"><span style="--depth: 1;" class="astro-jugkfwgx">JSON and YAML</span></a></li><li style="--depth: 1;" class="astro-jugkfwgx"><a href="#permissions-1" style="--depth: 1;" class="astro-jugkfwgx"><span style="--depth: 1;" class="astro-jugkfwgx">Permissions</span></a></li></ul></li><li style="--depth: 0;" class="astro-jugkfwgx"><a href="#nodes" style="--depth: 0;" class="astro-jugkfwgx"><span style="--depth: 0;" class="astro-jugkfwgx">nodes</span></a><ul class="isMobile astro-jugkfwgx" style="--depth: 1;"><li style="--depth: 1;" class="astro-jugkfwgx"><a href="#the-blocked-by-column" style="--depth: 1;" class="astro-jugkfwgx"><span style="--depth: 1;" class="astro-jugkfwgx">The BLOCKED BY column</span></a></li><li style="--depth: 1;" class="astro-jugkfwgx"><a href="#how-it-finds-the-node-autoscaler" style="--depth: 1;" class="astro-jugkfwgx"><span style="--depth: 1;" class="astro-jugkfwgx">How it finds the node autoscaler</span></a></li><li style="--depth: 1;" class="astro-jugkfwgx"><a href="#permissions-2" style="--depth: 1;" class="astro-jugkfwgx"><span style="--depth: 1;" class="astro-jugkfwgx">Permissions</span></a></li></ul></li><li style="--depth: 0;" class="astro-jugkfwgx"><a href="#pause" style="--depth: 0;" class="astro-jugkfwgx"><span style="--depth: 0;" class="astro-jugkfwgx">pause</span></a><ul class="isMobile astro-jugkfwgx" style="--depth: 1;"><li style="--depth: 1;" class="astro-jugkfwgx"><a href="#when-the-forecast-expects-it-to-be-busy" style="--depth: 1;" class="astro-jugkfwgx"><span style="--depth: 1;" class="astro-jugkfwgx">When the forecast expects it to be busy</span></a></li><li style="--depth: 1;" class="astro-jugkfwgx"><a href="#when-something-holds-it-awake" style="--depth: 1;" class="astro-jugkfwgx"><span style="--depth: 1;" class="astro-jugkfwgx">When something holds it awake</span></a></li><li style="--depth: 1;" class="astro-jugkfwgx"><a href="#when-a-gitops-tool-sets-its-replicas" style="--depth: 1;" class="astro-jugkfwgx"><span style="--depth: 1;" class="astro-jugkfwgx">When a GitOps tool sets its replicas</span></a></li><li style="--depth: 1;" class="astro-jugkfwgx"><a href="#permissions-3" style="--depth: 1;" class="astro-jugkfwgx"><span style="--depth: 1;" class="astro-jugkfwgx">Permissions</span></a></li></ul></li><li style="--depth: 0;" class="astro-jugkfwgx"><a href="#wake" style="--depth: 0;" class="astro-jugkfwgx"><span style="--depth: 0;" class="astro-jugkfwgx">wake</span></a><ul class="isMobile astro-jugkfwgx" style="--depth: 1;"><li style="--depth: 1;" class="astro-jugkfwgx"><a href="#permissions-4" style="--depth: 1;" class="astro-jugkfwgx"><span style="--depth: 1;" class="astro-jugkfwgx">Permissions</span></a></li></ul></li><li style="--depth: 0;" class="astro-jugkfwgx"><a href="#deps" style="--depth: 0;" class="astro-jugkfwgx"><span style="--depth: 0;" class="astro-jugkfwgx">deps</span></a><ul class="isMobile astro-jugkfwgx" style="--depth: 1;"><li style="--depth: 1;" class="astro-jugkfwgx"><a href="#permissions-5" style="--depth: 1;" class="astro-jugkfwgx"><span style="--depth: 1;" class="astro-jugkfwgx">Permissions</span></a></li></ul></li><li style="--depth: 0;" class="astro-jugkfwgx"><a href="#enable" style="--depth: 0;" class="astro-jugkfwgx"><span style="--depth: 0;" class="astro-jugkfwgx">enable</span></a><ul class="isMobile astro-jugkfwgx" style="--depth: 1;"><li style="--depth: 1;" class="astro-jugkfwgx"><a href="#when-it-changes-nothing" style="--depth: 1;" class="astro-jugkfwgx"><span style="--depth: 1;" class="astro-jugkfwgx">When it changes nothing</span></a></li><li style="--depth: 1;" class="astro-jugkfwgx"><a href="#with---all" style="--depth: 1;" class="astro-jugkfwgx"><span style="--depth: 1;" class="astro-jugkfwgx">With --all</span></a></li><li style="--depth: 1;" class="astro-jugkfwgx"><a href="#when-a-gitops-tool-or-helm-applies-the-setting" style="--depth: 1;" class="astro-jugkfwgx"><span style="--depth: 1;" class="astro-jugkfwgx">When a GitOps tool or Helm applies the setting</span></a></li><li style="--depth: 1;" class="astro-jugkfwgx"><a href="#permissions-6" style="--depth: 1;" class="astro-jugkfwgx"><span style="--depth: 1;" class="astro-jugkfwgx">Permissions</span></a></li></ul></li></ul></div></details></nav></mobile-starlight-toc><script type="module" src="/next/_astro/MobileTableOfContents.astro_astro_type_script_index_0_lang.C3fM4Kra.js"></script></div><div class="right-sidebar-panel sl-hidden lg:sl-block astro-qok35upx"><div class="sl-container astro-qok35upx"><starlight-toc data-min-h="2" data-max-h="3"><nav aria-labelledby="starlight__on-this-page"><h2 id="starlight__on-this-page">On this page</h2><ul class="astro-jugkfwgx" style="--depth: 0;"><li style="--depth: 0;" class="astro-jugkfwgx"><a href="#_top" style="--depth: 0;" class="astro-jugkfwgx"><span style="--depth: 0;" class="astro-jugkfwgx">Overview</span></a></li><li style="--depth: 0;" class="astro-jugkfwgx"><a href="#every-command" style="--depth: 0;" class="astro-jugkfwgx"><span style="--depth: 0;" class="astro-jugkfwgx">Every command</span></a></li><li style="--depth: 0;" class="astro-jugkfwgx"><a href="#scan" style="--depth: 0;" class="astro-jugkfwgx"><span style="--depth: 0;" class="astro-jugkfwgx">scan</span></a><ul class="astro-jugkfwgx" style="--depth: 1;"><li style="--depth: 1;" class="astro-jugkfwgx"><a href="#more-on-the-flags" style="--depth: 1;" class="astro-jugkfwgx"><span style="--depth: 1;" class="astro-jugkfwgx">More on the flags</span></a></li><li style="--depth: 1;" class="astro-jugkfwgx"><a href="#more-on-the-first-line-and-the-columns" style="--depth: 1;" class="astro-jugkfwgx"><span style="--depth: 1;" class="astro-jugkfwgx">More on the first line and the columns</span></a></li><li style="--depth: 1;" class="astro-jugkfwgx"><a href="#how-it-decides-a-workload-is-idle" style="--depth: 1;" class="astro-jugkfwgx"><span style="--depth: 1;" class="astro-jugkfwgx">How it decides a workload is idle</span></a></li><li style="--depth: 1;" class="astro-jugkfwgx"><a href="#what-the-notes-list-and-what-the-scan-leaves-out" style="--depth: 1;" class="astro-jugkfwgx"><span style="--depth: 1;" class="astro-jugkfwgx">What the notes list, and what the scan leaves out</span></a></li><li style="--depth: 1;" class="astro-jugkfwgx"><a href="#history-from-prometheus" style="--depth: 1;" class="astro-jugkfwgx"><span style="--depth: 1;" class="astro-jugkfwgx">History from Prometheus</span></a></li><li style="--depth: 1;" class="astro-jugkfwgx"><a href="#a-prometheus-elsewhere" style="--depth: 1;" class="astro-jugkfwgx"><span style="--depth: 1;" class="astro-jugkfwgx">A Prometheus elsewhere</span></a></li><li style="--depth: 1;" class="astro-jugkfwgx"><a href="#the-headlines-counts" style="--depth: 1;" class="astro-jugkfwgx"><span style="--depth: 1;" class="astro-jugkfwgx">The headline’s counts</span></a></li><li style="--depth: 1;" class="astro-jugkfwgx"><a href="#dependencies" style="--depth: 1;" class="astro-jugkfwgx"><span style="--depth: 1;" class="astro-jugkfwgx">Dependencies</span></a></li><li style="--depth: 1;" class="astro-jugkfwgx"><a href="#prices" style="--depth: 1;" class="astro-jugkfwgx"><span style="--depth: 1;" class="astro-jugkfwgx">Prices</span></a></li><li style="--depth: 1;" class="astro-jugkfwgx"><a href="#the-web-report" style="--depth: 1;" class="astro-jugkfwgx"><span style="--depth: 1;" class="astro-jugkfwgx">The web report</span></a></li><li style="--depth: 1;" class="astro-jugkfwgx"><a href="#json-and-yaml" style="--depth: 1;" class="astro-jugkfwgx"><span style="--depth: 1;" class="astro-jugkfwgx">JSON and YAML</span></a></li><li style="--depth: 1;" class="astro-jugkfwgx"><a href="#exit-status" style="--depth: 1;" class="astro-jugkfwgx"><span style="--depth: 1;" class="astro-jugkfwgx">Exit status</span></a></li><li style="--depth: 1;" class="astro-jugkfwgx"><a href="#permissions" style="--depth: 1;" class="astro-jugkfwgx"><span style="--depth: 1;" class="astro-jugkfwgx">Permissions</span></a></li></ul></li><li style="--depth: 0;" class="astro-jugkfwgx"><a href="#forecast" style="--depth: 0;" class="astro-jugkfwgx"><span style="--depth: 0;" class="astro-jugkfwgx">forecast</span></a><ul class="astro-jugkfwgx" style="--depth: 1;"><li style="--depth: 1;" class="astro-jugkfwgx"><a href="#history-and-what-would-wake-a-workload" style="--depth: 1;" class="astro-jugkfwgx"><span style="--depth: 1;" class="astro-jugkfwgx">History, and what would wake a workload</span></a></li><li style="--depth: 1;" class="astro-jugkfwgx"><a href="#finding-the-workload-gaps-and-exit-status" style="--depth: 1;" class="astro-jugkfwgx"><span style="--depth: 1;" class="astro-jugkfwgx">Finding the workload, gaps, and exit status</span></a></li><li style="--depth: 1;" class="astro-jugkfwgx"><a href="#json-and-yaml-1" style="--depth: 1;" class="astro-jugkfwgx"><span style="--depth: 1;" class="astro-jugkfwgx">JSON and YAML</span></a></li></ul></li><li style="--depth: 0;" class="astro-jugkfwgx"><a href="#status" style="--depth: 0;" class="astro-jugkfwgx"><span style="--depth: 0;" class="astro-jugkfwgx">status</span></a><ul class="astro-jugkfwgx" style="--depth: 1;"><li style="--depth: 1;" class="astro-jugkfwgx"><a href="#needs-attention" style="--depth: 1;" class="astro-jugkfwgx"><span style="--depth: 1;" class="astro-jugkfwgx">Needs attention</span></a></li><li style="--depth: 1;" class="astro-jugkfwgx"><a href="#the-last-activity-column" style="--depth: 1;" class="astro-jugkfwgx"><span style="--depth: 1;" class="astro-jugkfwgx">The LAST ACTIVITY column</span></a></li><li style="--depth: 1;" class="astro-jugkfwgx"><a href="#the-next-column" style="--depth: 1;" class="astro-jugkfwgx"><span style="--depth: 1;" class="astro-jugkfwgx">The NEXT column</span></a></li><li style="--depth: 1;" class="astro-jugkfwgx"><a href="#the-forecast-column" style="--depth: 1;" class="astro-jugkfwgx"><span style="--depth: 1;" class="astro-jugkfwgx">The FORECAST column</span></a></li><li style="--depth: 1;" class="astro-jugkfwgx"><a href="#turned-away-while-asleep" style="--depth: 1;" class="astro-jugkfwgx"><span style="--depth: 1;" class="astro-jugkfwgx">Turned away while asleep</span></a></li><li style="--depth: 1;" class="astro-jugkfwgx"><a href="#recent-pauses-and-wakes" style="--depth: 1;" class="astro-jugkfwgx"><span style="--depth: 1;" class="astro-jugkfwgx">Recent pauses and wakes</span></a></li><li style="--depth: 1;" class="astro-jugkfwgx"><a href="#json-and-yaml-2" style="--depth: 1;" class="astro-jugkfwgx"><span style="--depth: 1;" class="astro-jugkfwgx">JSON and YAML</span></a></li><li style="--depth: 1;" class="astro-jugkfwgx"><a href="#permissions-1" style="--depth: 1;" class="astro-jugkfwgx"><span style="--depth: 1;" class="astro-jugkfwgx">Permissions</span></a></li></ul></li><li style="--depth: 0;" class="astro-jugkfwgx"><a href="#nodes" style="--depth: 0;" class="astro-jugkfwgx"><span style="--depth: 0;" class="astro-jugkfwgx">nodes</span></a><ul class="astro-jugkfwgx" style="--depth: 1;"><li style="--depth: 1;" class="astro-jugkfwgx"><a href="#the-blocked-by-column" style="--depth: 1;" class="astro-jugkfwgx"><span style="--depth: 1;" class="astro-jugkfwgx">The BLOCKED BY column</span></a></li><li style="--depth: 1;" class="astro-jugkfwgx"><a href="#how-it-finds-the-node-autoscaler" style="--depth: 1;" class="astro-jugkfwgx"><span style="--depth: 1;" class="astro-jugkfwgx">How it finds the node autoscaler</span></a></li><li style="--depth: 1;" class="astro-jugkfwgx"><a href="#permissions-2" style="--depth: 1;" class="astro-jugkfwgx"><span style="--depth: 1;" class="astro-jugkfwgx">Permissions</span></a></li></ul></li><li style="--depth: 0;" class="astro-jugkfwgx"><a href="#pause" style="--depth: 0;" class="astro-jugkfwgx"><span style="--depth: 0;" class="astro-jugkfwgx">pause</span></a><ul class="astro-jugkfwgx" style="--depth: 1;"><li style="--depth: 1;" class="astro-jugkfwgx"><a href="#when-the-forecast-expects-it-to-be-busy" style="--depth: 1;" class="astro-jugkfwgx"><span style="--depth: 1;" class="astro-jugkfwgx">When the forecast expects it to be busy</span></a></li><li style="--depth: 1;" class="astro-jugkfwgx"><a href="#when-something-holds-it-awake" style="--depth: 1;" class="astro-jugkfwgx"><span style="--depth: 1;" class="astro-jugkfwgx">When something holds it awake</span></a></li><li style="--depth: 1;" class="astro-jugkfwgx"><a href="#when-a-gitops-tool-sets-its-replicas" style="--depth: 1;" class="astro-jugkfwgx"><span style="--depth: 1;" class="astro-jugkfwgx">When a GitOps tool sets its replicas</span></a></li><li style="--depth: 1;" class="astro-jugkfwgx"><a href="#permissions-3" style="--depth: 1;" class="astro-jugkfwgx"><span style="--depth: 1;" class="astro-jugkfwgx">Permissions</span></a></li></ul></li><li style="--depth: 0;" class="astro-jugkfwgx"><a href="#wake" style="--depth: 0;" class="astro-jugkfwgx"><span style="--depth: 0;" class="astro-jugkfwgx">wake</span></a><ul class="astro-jugkfwgx" style="--depth: 1;"><li style="--depth: 1;" class="astro-jugkfwgx"><a href="#permissions-4" style="--depth: 1;" class="astro-jugkfwgx"><span style="--depth: 1;" class="astro-jugkfwgx">Permissions</span></a></li></ul></li><li style="--depth: 0;" class="astro-jugkfwgx"><a href="#deps" style="--depth: 0;" class="astro-jugkfwgx"><span style="--depth: 0;" class="astro-jugkfwgx">deps</span></a><ul class="astro-jugkfwgx" style="--depth: 1;"><li style="--depth: 1;" class="astro-jugkfwgx"><a href="#permissions-5" style="--depth: 1;" class="astro-jugkfwgx"><span style="--depth: 1;" class="astro-jugkfwgx">Permissions</span></a></li></ul></li><li style="--depth: 0;" class="astro-jugkfwgx"><a href="#enable" style="--depth: 0;" class="astro-jugkfwgx"><span style="--depth: 0;" class="astro-jugkfwgx">enable</span></a><ul class="astro-jugkfwgx" style="--depth: 1;"><li style="--depth: 1;" class="astro-jugkfwgx"><a href="#when-it-changes-nothing" style="--depth: 1;" class="astro-jugkfwgx"><span style="--depth: 1;" class="astro-jugkfwgx">When it changes nothing</span></a></li><li style="--depth: 1;" class="astro-jugkfwgx"><a href="#with---all" style="--depth: 1;" class="astro-jugkfwgx"><span style="--depth: 1;" class="astro-jugkfwgx">With --all</span></a></li><li style="--depth: 1;" class="astro-jugkfwgx"><a href="#when-a-gitops-tool-or-helm-applies-the-setting" style="--depth: 1;" class="astro-jugkfwgx"><span style="--depth: 1;" class="astro-jugkfwgx">When a GitOps tool or Helm applies the setting</span></a></li><li style="--depth: 1;" class="astro-jugkfwgx"><a href="#permissions-6" style="--depth: 1;" class="astro-jugkfwgx"><span style="--depth: 1;" class="astro-jugkfwgx">Permissions</span></a></li></ul></li></ul></nav></starlight-toc><script type="module" src="/next/_astro/TableOfContents.astro_astro_type_script_index_0_lang.BpJaGz7G.js"></script></div></div></div></aside><div class="main-pane astro-lrzkfocr"><main data-pagefind-body class="astro-g5ptsecz" lang="en" dir="ltr"><div class="nw-banner nw-banner--next astro-cytafyf4" role="note" data-pagefind-ignore><span class="nw-banner__tag astro-cytafyf4">Release candidate</span><span class="astro-cytafyf4">These docs are for Napwake 0.2.0-rc.9, a release candidate, and may change before it's released. <a href="/" class="astro-cytafyf4"><strong class="astro-cytafyf4">Read the docs for the latest release.</strong></a></span></div><div class="content-panel astro-a7po4psb"><div class="sl-container astro-a7po4psb"><div class="nw-title astro-xrbnetbz"><p class="nw-title__eyebrow astro-xrbnetbz">Reference</p><h1 id="_top" class="astro-xrbnetbz">kubectl plugin reference</h1><p class="nw-title__lede astro-xrbnetbz">Every flag, JSON field, exit status and permission of each kubectl napwake command, and the detail behind what it prints.</p><nw-page-tools data-md="/next/reference/cli.md" data-pagefind-ignore="true" class="astro-luyxfm3r nw-tools not-content astro-xrbnetbz"><span class="nw-tools__label astro-luyxfm3r" aria-hidden="true">For your assistant</span><button type="button" class="nw-tools__btn astro-luyxfm3r" data-copy>Copy as Markdown</button><a class="nw-tools__btn astro-luyxfm3r" href="/next/reference/cli.md" type="text/markdown">View .md</a><a class="nw-tools__btn astro-luyxfm3r" href="https://claude.ai/new?q=Read%20https%3A%2F%2Fdocs.napwake.dev%2Fnext%2Freference%2Fcli.md%2C%20a%20page%20of%20Napwake's%20docs%2C%20and%20answer%20my%20questions%20about%20it." target="_blank" rel="noopener noreferrer">Ask Claude <span aria-hidden="true" class="astro-luyxfm3r">↗</span><span class="sr-only astro-luyxfm3r"> (opens claude.ai)</span></a><a class="nw-tools__btn astro-luyxfm3r" href="https://chatgpt.com/?q=Read%20https%3A%2F%2Fdocs.napwake.dev%2Fnext%2Freference%2Fcli.md%2C%20a%20page%20of%20Napwake's%20docs%2C%20and%20answer%20my%20questions%20about%20it." target="_blank" rel="noopener noreferrer">Ask ChatGPT <span aria-hidden="true" class="astro-luyxfm3r">↗</span><span class="sr-only astro-luyxfm3r"> (opens chatgpt.com)</span></a><span class="sr-only astro-luyxfm3r" role="status" aria-live="polite" data-status></span></nw-page-tools><script type="module">var e=class extends HTMLElement{connectedCallback(){let e=this.querySelector(`[data-copy]`),t=this.querySelector(`[data-status]`),n=this.dataset.md;if(!e||!n)return;let r=e.textContent;e.addEventListener(`click`,async()=>{try{let r=await fetch(n).then(e=>e.ok?e.text():Promise.reject(e.status));await navigator.clipboard.writeText(r),e.textContent=`Copied`,t&&(t.textContent=`The page is copied as Markdown.`)}catch{location.href=n;return}setTimeout(()=>{e.textContent=r,t&&(t.textContent=``)},2e3)})}};customElements.define(`nw-page-tools`,e);</script></div></div></div><div class="content-panel astro-a7po4psb"><div class="sl-container astro-a7po4psb"><div class="sl-markdown-content"><nav class="nw-refindex not-content astro-layzjlac" aria-label="Every flag and JSON field, by command"><div class="nw-refindex__group astro-layzjlac"><a class="nw-refindex__title astro-layzjlac" href="#scan">scan <span class="astro-layzjlac">39</span></a><ul class="astro-layzjlac"><li class="astro-layzjlac"><a href="#scan-namespace" class="astro-layzjlac"><code class="astro-layzjlac">--namespace</code></a></li><li class="astro-layzjlac"><a href="#scan-all-namespaces" class="astro-layzjlac"><code class="astro-layzjlac">--all-namespaces</code></a></li><li class="astro-layzjlac"><a href="#scan-exclude-namespaces" class="astro-layzjlac"><code class="astro-layzjlac">--exclude-namespaces</code></a></li><li class="astro-layzjlac"><a href="#scan-output" class="astro-layzjlac"><code class="astro-layzjlac">--output</code></a></li><li class="astro-layzjlac"><a href="#scan-limit" class="astro-layzjlac"><code class="astro-layzjlac">--limit</code></a></li><li class="astro-layzjlac"><a href="#scan-cpu-threshold" class="astro-layzjlac"><code class="astro-layzjlac">--cpu-threshold</code></a></li><li class="astro-layzjlac"><a href="#scan-cpu-price" class="astro-layzjlac"><code class="astro-layzjlac">--cpu-price</code></a></li><li class="astro-layzjlac"><a href="#scan-memory-price" class="astro-layzjlac"><code class="astro-layzjlac">--memory-price</code></a></li><li class="astro-layzjlac"><a href="#scan-window" class="astro-layzjlac"><code class="astro-layzjlac">--window</code></a></li><li class="astro-layzjlac"><a href="#scan-idle-after" class="astro-layzjlac"><code class="astro-layzjlac">--idle-after</code></a></li><li class="astro-layzjlac"><a href="#scan-prometheus-service" class="astro-layzjlac"><code class="astro-layzjlac">--prometheus-service</code></a></li><li class="astro-layzjlac"><a href="#scan-prometheus-url" class="astro-layzjlac"><code class="astro-layzjlac">--prometheus-url</code></a></li><li class="astro-layzjlac"><a href="#scan-prometheus-selector" class="astro-layzjlac"><code class="astro-layzjlac">--prometheus-selector</code></a></li><li class="astro-layzjlac"><a href="#scan-prometheus-header" class="astro-layzjlac"><code class="astro-layzjlac">--prometheus-header</code></a></li><li class="astro-layzjlac"><a href="#scan-prometheus-bearer-token-file" class="astro-layzjlac"><code class="astro-layzjlac">--prometheus-bearer-token-file</code></a></li><li class="astro-layzjlac"><a href="#scan-prometheus-ca-file" class="astro-layzjlac"><code class="astro-layzjlac">--prometheus-ca-file</code></a></li><li class="astro-layzjlac"><a href="#scan-prometheus-insecure-skip-verify" class="astro-layzjlac"><code class="astro-layzjlac">--prometheus-insecure-skip-verify</code></a></li><li class="astro-layzjlac"><a href="#scan-timeout" class="astro-layzjlac"><code class="astro-layzjlac">--timeout</code></a></li><li class="astro-layzjlac"><a href="#scan-html" class="astro-layzjlac"><code class="astro-layzjlac">--html</code></a></li><li class="astro-layzjlac"><a href="#scan-open" class="astro-layzjlac"><code class="astro-layzjlac">--open</code></a></li><li class="astro-layzjlac"><a href="#scan-json-nodeautoscaler" class="astro-layzjlac"><code class="astro-layzjlac">nodeAutoscaler</code></a></li><li class="astro-layzjlac"><a href="#scan-json-wontpause" class="astro-layzjlac"><code class="astro-layzjlac">wontPause</code></a></li><li class="astro-layzjlac"><a href="#scan-json-namespaces" class="astro-layzjlac"><code class="astro-layzjlac">namespaces</code></a></li><li class="astro-layzjlac"><a href="#scan-json-history-prometheus" class="astro-layzjlac"><code class="astro-layzjlac">history.prometheus</code></a></li><li class="astro-layzjlac"><a href="#scan-json-history-hours" class="astro-layzjlac"><code class="astro-layzjlac">history.hours</code></a></li><li class="astro-layzjlac"><a href="#scan-json-history-others" class="astro-layzjlac"><code class="astro-layzjlac">history.others</code></a></li><li class="astro-layzjlac"><a href="#scan-json-replicasfromgit" class="astro-layzjlac"><code class="astro-layzjlac">replicasFromGit</code></a></li><li class="astro-layzjlac"><a href="#scan-json-gitopsleavesreplicas" class="astro-layzjlac"><code class="astro-layzjlac">gitOpsLeavesReplicas</code></a></li><li class="astro-layzjlac"><a href="#scan-json-gitopsunchecked" class="astro-layzjlac"><code class="astro-layzjlac">gitOpsUnchecked</code></a></li><li class="astro-layzjlac"><a href="#scan-json-platform" class="astro-layzjlac"><code class="astro-layzjlac">platform</code></a></li><li class="astro-layzjlac"><a href="#scan-json-totals-live" class="astro-layzjlac"><code class="astro-layzjlac">totals.live</code></a></li><li class="astro-layzjlac"><a href="#scan-json-totals-liveprotected" class="astro-layzjlac"><code class="astro-layzjlac">totals.liveProtected</code></a></li><li class="astro-layzjlac"><a href="#scan-json-totals-protectedfreedthismonth" class="astro-layzjlac"><code class="astro-layzjlac">totals.protectedFreedThisMonth</code></a></li><li class="astro-layzjlac"><a href="#scan-json-totals-protectedsavedthismonth" class="astro-layzjlac"><code class="astro-layzjlac">totals.protectedSavedThisMonth</code></a></li><li class="astro-layzjlac"><a href="#scan-json-onspot" class="astro-layzjlac"><code class="astro-layzjlac">onSpot</code></a></li><li class="astro-layzjlac"><a href="#scan-json-spotatondemand" class="astro-layzjlac"><code class="astro-layzjlac">spotAtOnDemand</code></a></li><li class="astro-layzjlac"><a href="#scan-json-nodeprices" class="astro-layzjlac"><code class="astro-layzjlac">nodePrices</code></a></li><li class="astro-layzjlac"><a href="#scan-json-incomplete" class="astro-layzjlac"><code class="astro-layzjlac">incomplete</code></a></li><li class="astro-layzjlac"><a href="#scan-json-workloads" class="astro-layzjlac"><code class="astro-layzjlac">workloads</code></a></li></ul></div><div class="nw-refindex__group astro-layzjlac"><a class="nw-refindex__title astro-layzjlac" href="#forecast">forecast <span class="astro-layzjlac">15</span></a><ul class="astro-layzjlac"><li class="astro-layzjlac"><a href="#forecast-namespace" class="astro-layzjlac"><code class="astro-layzjlac">--namespace</code></a></li><li class="astro-layzjlac"><a href="#forecast-all-namespaces" class="astro-layzjlac"><code class="astro-layzjlac">--all-namespaces</code></a></li><li class="astro-layzjlac"><a href="#forecast-exclude-namespaces" class="astro-layzjlac"><code class="astro-layzjlac">--exclude-namespaces</code></a></li><li class="astro-layzjlac"><a href="#forecast-window" class="astro-layzjlac"><code class="astro-layzjlac">--window</code></a></li><li class="astro-layzjlac"><a href="#forecast-forecast" class="astro-layzjlac"><code class="astro-layzjlac">--forecast</code></a></li><li class="astro-layzjlac"><a href="#forecast-timezone" class="astro-layzjlac"><code class="astro-layzjlac">--timezone</code></a></li><li class="astro-layzjlac"><a href="#forecast-cpu-threshold" class="astro-layzjlac"><code class="astro-layzjlac">--cpu-threshold</code></a></li><li class="astro-layzjlac"><a href="#forecast-idle-after" class="astro-layzjlac"><code class="astro-layzjlac">--idle-after</code></a></li><li class="astro-layzjlac"><a href="#forecast-output" class="astro-layzjlac"><code class="astro-layzjlac">--output</code></a></li><li class="astro-layzjlac"><a href="#forecast-timeout" class="astro-layzjlac"><code class="astro-layzjlac">--timeout</code></a></li><li class="astro-layzjlac"><a href="#forecast-json-operator" class="astro-layzjlac"><code class="astro-layzjlac">operator</code></a></li><li class="astro-layzjlac"><a href="#forecast-json-operator-stopped" class="astro-layzjlac"><code class="astro-layzjlac">operator.stopped</code></a></li><li class="astro-layzjlac"><a href="#forecast-json-forecast" class="astro-layzjlac"><code class="astro-layzjlac">forecast</code></a></li><li class="astro-layzjlac"><a href="#forecast-json-forecast-wakes" class="astro-layzjlac"><code class="astro-layzjlac">forecast.wakes</code></a></li><li class="astro-layzjlac"><a href="#forecast-json-noreplay" class="astro-layzjlac"><code class="astro-layzjlac">noReplay</code></a></li></ul></div><div class="nw-refindex__group astro-layzjlac"><a class="nw-refindex__title astro-layzjlac" href="#status">status <span class="astro-layzjlac">13</span></a><ul class="astro-layzjlac"><li class="astro-layzjlac"><a href="#status-namespace" class="astro-layzjlac"><code class="astro-layzjlac">--namespace</code></a></li><li class="astro-layzjlac"><a href="#status-all-namespaces" class="astro-layzjlac"><code class="astro-layzjlac">--all-namespaces</code></a></li><li class="astro-layzjlac"><a href="#status-output" class="astro-layzjlac"><code class="astro-layzjlac">--output</code></a></li><li class="astro-layzjlac"><a href="#status-since" class="astro-layzjlac"><code class="astro-layzjlac">--since</code></a></li><li class="astro-layzjlac"><a href="#status-html" class="astro-layzjlac"><code class="astro-layzjlac">--html</code></a></li><li class="astro-layzjlac"><a href="#status-open" class="astro-layzjlac"><code class="astro-layzjlac">--open</code></a></li><li class="astro-layzjlac"><a href="#status-timeout" class="astro-layzjlac"><code class="astro-layzjlac">--timeout</code></a></li><li class="astro-layzjlac"><a href="#status-json-forecast" class="astro-layzjlac"><code class="astro-layzjlac">forecast</code></a></li><li class="astro-layzjlac"><a href="#status-json-forecaststartsacting" class="astro-layzjlac"><code class="astro-layzjlac">forecastStartsActing</code></a></li><li class="astro-layzjlac"><a href="#status-json-turnedaway" class="astro-layzjlac"><code class="astro-layzjlac">turnedAway</code></a></li><li class="astro-layzjlac"><a href="#status-json-wokenby" class="astro-layzjlac"><code class="astro-layzjlac">wokenBy</code></a></li><li class="astro-layzjlac"><a href="#status-json-kind" class="astro-layzjlac"><code class="astro-layzjlac">kind</code></a></li><li class="astro-layzjlac"><a href="#status-json-target" class="astro-layzjlac"><code class="astro-layzjlac">target</code></a></li></ul></div><div class="nw-refindex__group astro-layzjlac"><a class="nw-refindex__title astro-layzjlac" href="#nodes">nodes <span class="astro-layzjlac">2</span></a><ul class="astro-layzjlac"><li class="astro-layzjlac"><a href="#nodes-output" class="astro-layzjlac"><code class="astro-layzjlac">--output</code></a></li><li class="astro-layzjlac"><a href="#nodes-timeout" class="astro-layzjlac"><code class="astro-layzjlac">--timeout</code></a></li></ul></div><div class="nw-refindex__group astro-layzjlac"><a class="nw-refindex__title astro-layzjlac" href="#pause">pause <span class="astro-layzjlac">5</span></a><ul class="astro-layzjlac"><li class="astro-layzjlac"><a href="#pause-namespace" class="astro-layzjlac"><code class="astro-layzjlac">--namespace</code></a></li><li class="astro-layzjlac"><a href="#pause-wait" class="astro-layzjlac"><code class="astro-layzjlac">--wait</code></a></li><li class="astro-layzjlac"><a href="#pause-yes" class="astro-layzjlac"><code class="astro-layzjlac">--yes</code></a></li><li class="astro-layzjlac"><a href="#pause-clear-hold" class="astro-layzjlac"><code class="astro-layzjlac">--clear-hold</code></a></li><li class="astro-layzjlac"><a href="#pause-timeout" class="astro-layzjlac"><code class="astro-layzjlac">--timeout</code></a></li></ul></div><div class="nw-refindex__group astro-layzjlac"><a class="nw-refindex__title astro-layzjlac" href="#wake">wake <span class="astro-layzjlac">4</span></a><ul class="astro-layzjlac"><li class="astro-layzjlac"><a href="#wake-namespace" class="astro-layzjlac"><code class="astro-layzjlac">--namespace</code></a></li><li class="astro-layzjlac"><a href="#wake-for" class="astro-layzjlac"><code class="astro-layzjlac">--for</code></a></li><li class="astro-layzjlac"><a href="#wake-wait" class="astro-layzjlac"><code class="astro-layzjlac">--wait</code></a></li><li class="astro-layzjlac"><a href="#wake-timeout" class="astro-layzjlac"><code class="astro-layzjlac">--timeout</code></a></li></ul></div><div class="nw-refindex__group astro-layzjlac"><a class="nw-refindex__title astro-layzjlac" href="#deps">deps <span class="astro-layzjlac">2</span></a><ul class="astro-layzjlac"><li class="astro-layzjlac"><a href="#deps-namespace" class="astro-layzjlac"><code class="astro-layzjlac">--namespace</code></a></li><li class="astro-layzjlac"><a href="#deps-timeout" class="astro-layzjlac"><code class="astro-layzjlac">--timeout</code></a></li></ul></div><div class="nw-refindex__group astro-layzjlac"><a class="nw-refindex__title astro-layzjlac" href="#enable">enable <span class="astro-layzjlac">4</span></a><ul class="astro-layzjlac"><li class="astro-layzjlac"><a href="#enable-namespace" class="astro-layzjlac"><code class="astro-layzjlac">--namespace</code></a></li><li class="astro-layzjlac"><a href="#enable-all" class="astro-layzjlac"><code class="astro-layzjlac">--all</code></a></li><li class="astro-layzjlac"><a href="#enable-force" class="astro-layzjlac"><code class="astro-layzjlac">--force</code></a></li><li class="astro-layzjlac"><a href="#enable-timeout" class="astro-layzjlac"><code class="astro-layzjlac">--timeout</code></a></li></ul></div></nav>
+</script></div></div></div></sl-sidebar-pane></nav><div class="main-frame astro-yntsjkba"><script type="module">var e=document.getElementById(`starlight__sidebar`),t=e?.querySelector(`sl-sidebar-state-persist`),n=`sl-sidebar-state`,r=()=>{let r=[],i=t?.dataset.hash||``;try{let e=sessionStorage.getItem(n),t=JSON.parse(e||`{}`);Array.isArray(t.open)&&t.hash===i&&(r=t.open)}catch{}return{hash:i,open:r,scroll:e?.scrollTop||0}},i=e=>{try{sessionStorage.setItem(n,JSON.stringify(e))}catch{}},a=()=>i(r()),o=(e,t)=>{let n=r();n.open[t]=e,i(n)};t?.addEventListener(`click`,e=>{if(!(e.target instanceof Element))return;let t=e.target.closest(`summary`)?.closest(`details`);if(!t)return;let n=t.querySelector(`sl-sidebar-restore`),r=parseInt(n?.dataset.index||``);isNaN(r)||o(!t.open,r)}),addEventListener(`visibilitychange`,()=>{document.visibilityState===`hidden`&&a()});</script><div class="lg:sl-flex astro-lrzkfocr"><aside class="right-sidebar-container print:hidden astro-lrzkfocr"><div class="right-sidebar astro-lrzkfocr"><div class="lg:sl-hidden astro-qok35upx"><mobile-starlight-toc data-min-h="2" data-max-h="3" class="astro-66cqc7ze"><nav aria-labelledby="starlight__on-this-page--mobile" class="astro-66cqc7ze"><details id="starlight__mobile-toc" class="astro-66cqc7ze"><summary id="starlight__on-this-page--mobile" class="sl-flex astro-66cqc7ze"><span class="toggle sl-flex astro-66cqc7ze">On this page<svg aria-hidden="true" class="caret astro-66cqc7ze astro-hkc32dio" width="16" height="16" viewBox="0 0 24 24" fill="currentColor" style="--sl-icon-size: 1rem;"><path d="m14.83 11.29-4.24-4.24a1 1 0 1 0-1.42 1.41L12.71 12l-3.54 3.54a1 1 0 0 0 0 1.41 1 1 0 0 0 .71.29 1 1 0 0 0 .71-.29l4.24-4.24a1.002 1.002 0 0 0 0-1.42Z"/></svg></span><span class="display-current astro-66cqc7ze"></span></summary><div class="dropdown astro-66cqc7ze"><ul class="isMobile astro-jugkfwgx" style="--depth: 0;"><li style="--depth: 0;" class="astro-jugkfwgx"><a href="#_top" style="--depth: 0;" class="astro-jugkfwgx"><span style="--depth: 0;" class="astro-jugkfwgx">Overview</span></a></li><li style="--depth: 0;" class="astro-jugkfwgx"><a href="#every-command" style="--depth: 0;" class="astro-jugkfwgx"><span style="--depth: 0;" class="astro-jugkfwgx">Every command</span></a></li><li style="--depth: 0;" class="astro-jugkfwgx"><a href="#scan" style="--depth: 0;" class="astro-jugkfwgx"><span style="--depth: 0;" class="astro-jugkfwgx">scan</span></a><ul class="isMobile astro-jugkfwgx" style="--depth: 1;"><li style="--depth: 1;" class="astro-jugkfwgx"><a href="#more-on-the-flags" style="--depth: 1;" class="astro-jugkfwgx"><span style="--depth: 1;" class="astro-jugkfwgx">More on the flags</span></a></li><li style="--depth: 1;" class="astro-jugkfwgx"><a href="#more-on-the-first-line-and-the-columns" style="--depth: 1;" class="astro-jugkfwgx"><span style="--depth: 1;" class="astro-jugkfwgx">More on the first line and the columns</span></a></li><li style="--depth: 1;" class="astro-jugkfwgx"><a href="#how-it-decides-a-workload-is-idle" style="--depth: 1;" class="astro-jugkfwgx"><span style="--depth: 1;" class="astro-jugkfwgx">How it decides a workload is idle</span></a></li><li style="--depth: 1;" class="astro-jugkfwgx"><a href="#what-the-notes-list-and-what-the-scan-leaves-out" style="--depth: 1;" class="astro-jugkfwgx"><span style="--depth: 1;" class="astro-jugkfwgx">What the notes list, and what the scan leaves out</span></a></li><li style="--depth: 1;" class="astro-jugkfwgx"><a href="#history-from-prometheus" style="--depth: 1;" class="astro-jugkfwgx"><span style="--depth: 1;" class="astro-jugkfwgx">History from Prometheus</span></a></li><li style="--depth: 1;" class="astro-jugkfwgx"><a href="#a-prometheus-elsewhere" style="--depth: 1;" class="astro-jugkfwgx"><span style="--depth: 1;" class="astro-jugkfwgx">A Prometheus elsewhere</span></a></li><li style="--depth: 1;" class="astro-jugkfwgx"><a href="#the-headlines-counts" style="--depth: 1;" class="astro-jugkfwgx"><span style="--depth: 1;" class="astro-jugkfwgx">The headline’s counts</span></a></li><li style="--depth: 1;" class="astro-jugkfwgx"><a href="#dependencies" style="--depth: 1;" class="astro-jugkfwgx"><span style="--depth: 1;" class="astro-jugkfwgx">Dependencies</span></a></li><li style="--depth: 1;" class="astro-jugkfwgx"><a href="#prices" style="--depth: 1;" class="astro-jugkfwgx"><span style="--depth: 1;" class="astro-jugkfwgx">Prices</span></a></li><li style="--depth: 1;" class="astro-jugkfwgx"><a href="#the-web-report" style="--depth: 1;" class="astro-jugkfwgx"><span style="--depth: 1;" class="astro-jugkfwgx">The web report</span></a></li><li style="--depth: 1;" class="astro-jugkfwgx"><a href="#json-and-yaml" style="--depth: 1;" class="astro-jugkfwgx"><span style="--depth: 1;" class="astro-jugkfwgx">JSON and YAML</span></a></li><li style="--depth: 1;" class="astro-jugkfwgx"><a href="#exit-status" style="--depth: 1;" class="astro-jugkfwgx"><span style="--depth: 1;" class="astro-jugkfwgx">Exit status</span></a></li><li style="--depth: 1;" class="astro-jugkfwgx"><a href="#permissions" style="--depth: 1;" class="astro-jugkfwgx"><span style="--depth: 1;" class="astro-jugkfwgx">Permissions</span></a></li></ul></li><li style="--depth: 0;" class="astro-jugkfwgx"><a href="#forecast" style="--depth: 0;" class="astro-jugkfwgx"><span style="--depth: 0;" class="astro-jugkfwgx">forecast</span></a><ul class="isMobile astro-jugkfwgx" style="--depth: 1;"><li style="--depth: 1;" class="astro-jugkfwgx"><a href="#history-and-what-would-wake-a-workload" style="--depth: 1;" class="astro-jugkfwgx"><span style="--depth: 1;" class="astro-jugkfwgx">History, and what would wake a workload</span></a></li><li style="--depth: 1;" class="astro-jugkfwgx"><a href="#finding-the-workload-gaps-and-exit-status" style="--depth: 1;" class="astro-jugkfwgx"><span style="--depth: 1;" class="astro-jugkfwgx">Finding the workload, gaps, and exit status</span></a></li><li style="--depth: 1;" class="astro-jugkfwgx"><a href="#json-and-yaml-1" style="--depth: 1;" class="astro-jugkfwgx"><span style="--depth: 1;" class="astro-jugkfwgx">JSON and YAML</span></a></li></ul></li><li style="--depth: 0;" class="astro-jugkfwgx"><a href="#status" style="--depth: 0;" class="astro-jugkfwgx"><span style="--depth: 0;" class="astro-jugkfwgx">status</span></a><ul class="isMobile astro-jugkfwgx" style="--depth: 1;"><li style="--depth: 1;" class="astro-jugkfwgx"><a href="#needs-attention" style="--depth: 1;" class="astro-jugkfwgx"><span style="--depth: 1;" class="astro-jugkfwgx">Needs attention</span></a></li><li style="--depth: 1;" class="astro-jugkfwgx"><a href="#the-last-activity-column" style="--depth: 1;" class="astro-jugkfwgx"><span style="--depth: 1;" class="astro-jugkfwgx">The LAST ACTIVITY column</span></a></li><li style="--depth: 1;" class="astro-jugkfwgx"><a href="#the-next-column" style="--depth: 1;" class="astro-jugkfwgx"><span style="--depth: 1;" class="astro-jugkfwgx">The NEXT column</span></a></li><li style="--depth: 1;" class="astro-jugkfwgx"><a href="#the-forecast-column" style="--depth: 1;" class="astro-jugkfwgx"><span style="--depth: 1;" class="astro-jugkfwgx">The FORECAST column</span></a></li><li style="--depth: 1;" class="astro-jugkfwgx"><a href="#turned-away-while-asleep" style="--depth: 1;" class="astro-jugkfwgx"><span style="--depth: 1;" class="astro-jugkfwgx">Turned away while asleep</span></a></li><li style="--depth: 1;" class="astro-jugkfwgx"><a href="#recent-pauses-and-wakes" style="--depth: 1;" class="astro-jugkfwgx"><span style="--depth: 1;" class="astro-jugkfwgx">Recent pauses and wakes</span></a></li><li style="--depth: 1;" class="astro-jugkfwgx"><a href="#json-and-yaml-2" style="--depth: 1;" class="astro-jugkfwgx"><span style="--depth: 1;" class="astro-jugkfwgx">JSON and YAML</span></a></li><li style="--depth: 1;" class="astro-jugkfwgx"><a href="#permissions-1" style="--depth: 1;" class="astro-jugkfwgx"><span style="--depth: 1;" class="astro-jugkfwgx">Permissions</span></a></li></ul></li><li style="--depth: 0;" class="astro-jugkfwgx"><a href="#nodes" style="--depth: 0;" class="astro-jugkfwgx"><span style="--depth: 0;" class="astro-jugkfwgx">nodes</span></a><ul class="isMobile astro-jugkfwgx" style="--depth: 1;"><li style="--depth: 1;" class="astro-jugkfwgx"><a href="#the-blocked-by-column" style="--depth: 1;" class="astro-jugkfwgx"><span style="--depth: 1;" class="astro-jugkfwgx">The BLOCKED BY column</span></a></li><li style="--depth: 1;" class="astro-jugkfwgx"><a href="#how-it-finds-the-node-autoscaler" style="--depth: 1;" class="astro-jugkfwgx"><span style="--depth: 1;" class="astro-jugkfwgx">How it finds the node autoscaler</span></a></li><li style="--depth: 1;" class="astro-jugkfwgx"><a href="#permissions-2" style="--depth: 1;" class="astro-jugkfwgx"><span style="--depth: 1;" class="astro-jugkfwgx">Permissions</span></a></li></ul></li><li style="--depth: 0;" class="astro-jugkfwgx"><a href="#pause" style="--depth: 0;" class="astro-jugkfwgx"><span style="--depth: 0;" class="astro-jugkfwgx">pause</span></a><ul class="isMobile astro-jugkfwgx" style="--depth: 1;"><li style="--depth: 1;" class="astro-jugkfwgx"><a href="#when-the-forecast-expects-it-to-be-busy" style="--depth: 1;" class="astro-jugkfwgx"><span style="--depth: 1;" class="astro-jugkfwgx">When the forecast expects it to be busy</span></a></li><li style="--depth: 1;" class="astro-jugkfwgx"><a href="#when-something-holds-it-awake" style="--depth: 1;" class="astro-jugkfwgx"><span style="--depth: 1;" class="astro-jugkfwgx">When something holds it awake</span></a></li><li style="--depth: 1;" class="astro-jugkfwgx"><a href="#when-a-gitops-tool-sets-its-replicas" style="--depth: 1;" class="astro-jugkfwgx"><span style="--depth: 1;" class="astro-jugkfwgx">When a GitOps tool sets its replicas</span></a></li><li style="--depth: 1;" class="astro-jugkfwgx"><a href="#permissions-3" style="--depth: 1;" class="astro-jugkfwgx"><span style="--depth: 1;" class="astro-jugkfwgx">Permissions</span></a></li></ul></li><li style="--depth: 0;" class="astro-jugkfwgx"><a href="#wake" style="--depth: 0;" class="astro-jugkfwgx"><span style="--depth: 0;" class="astro-jugkfwgx">wake</span></a><ul class="isMobile astro-jugkfwgx" style="--depth: 1;"><li style="--depth: 1;" class="astro-jugkfwgx"><a href="#permissions-4" style="--depth: 1;" class="astro-jugkfwgx"><span style="--depth: 1;" class="astro-jugkfwgx">Permissions</span></a></li></ul></li><li style="--depth: 0;" class="astro-jugkfwgx"><a href="#deps" style="--depth: 0;" class="astro-jugkfwgx"><span style="--depth: 0;" class="astro-jugkfwgx">deps</span></a><ul class="isMobile astro-jugkfwgx" style="--depth: 1;"><li style="--depth: 1;" class="astro-jugkfwgx"><a href="#permissions-5" style="--depth: 1;" class="astro-jugkfwgx"><span style="--depth: 1;" class="astro-jugkfwgx">Permissions</span></a></li></ul></li><li style="--depth: 0;" class="astro-jugkfwgx"><a href="#enable" style="--depth: 0;" class="astro-jugkfwgx"><span style="--depth: 0;" class="astro-jugkfwgx">enable</span></a><ul class="isMobile astro-jugkfwgx" style="--depth: 1;"><li style="--depth: 1;" class="astro-jugkfwgx"><a href="#when-it-changes-nothing" style="--depth: 1;" class="astro-jugkfwgx"><span style="--depth: 1;" class="astro-jugkfwgx">When it changes nothing</span></a></li><li style="--depth: 1;" class="astro-jugkfwgx"><a href="#with---all" style="--depth: 1;" class="astro-jugkfwgx"><span style="--depth: 1;" class="astro-jugkfwgx">With --all</span></a></li><li style="--depth: 1;" class="astro-jugkfwgx"><a href="#when-a-gitops-tool-or-helm-applies-the-setting" style="--depth: 1;" class="astro-jugkfwgx"><span style="--depth: 1;" class="astro-jugkfwgx">When a GitOps tool or Helm applies the setting</span></a></li><li style="--depth: 1;" class="astro-jugkfwgx"><a href="#permissions-6" style="--depth: 1;" class="astro-jugkfwgx"><span style="--depth: 1;" class="astro-jugkfwgx">Permissions</span></a></li></ul></li></ul></div></details></nav></mobile-starlight-toc><script type="module" src="/next/_astro/MobileTableOfContents.astro_astro_type_script_index_0_lang.C3fM4Kra.js"></script></div><div class="right-sidebar-panel sl-hidden lg:sl-block astro-qok35upx"><div class="sl-container astro-qok35upx"><starlight-toc data-min-h="2" data-max-h="3"><nav aria-labelledby="starlight__on-this-page"><h2 id="starlight__on-this-page">On this page</h2><ul class="astro-jugkfwgx" style="--depth: 0;"><li style="--depth: 0;" class="astro-jugkfwgx"><a href="#_top" style="--depth: 0;" class="astro-jugkfwgx"><span style="--depth: 0;" class="astro-jugkfwgx">Overview</span></a></li><li style="--depth: 0;" class="astro-jugkfwgx"><a href="#every-command" style="--depth: 0;" class="astro-jugkfwgx"><span style="--depth: 0;" class="astro-jugkfwgx">Every command</span></a></li><li style="--depth: 0;" class="astro-jugkfwgx"><a href="#scan" style="--depth: 0;" class="astro-jugkfwgx"><span style="--depth: 0;" class="astro-jugkfwgx">scan</span></a><ul class="astro-jugkfwgx" style="--depth: 1;"><li style="--depth: 1;" class="astro-jugkfwgx"><a href="#more-on-the-flags" style="--depth: 1;" class="astro-jugkfwgx"><span style="--depth: 1;" class="astro-jugkfwgx">More on the flags</span></a></li><li style="--depth: 1;" class="astro-jugkfwgx"><a href="#more-on-the-first-line-and-the-columns" style="--depth: 1;" class="astro-jugkfwgx"><span style="--depth: 1;" class="astro-jugkfwgx">More on the first line and the columns</span></a></li><li style="--depth: 1;" class="astro-jugkfwgx"><a href="#how-it-decides-a-workload-is-idle" style="--depth: 1;" class="astro-jugkfwgx"><span style="--depth: 1;" class="astro-jugkfwgx">How it decides a workload is idle</span></a></li><li style="--depth: 1;" class="astro-jugkfwgx"><a href="#what-the-notes-list-and-what-the-scan-leaves-out" style="--depth: 1;" class="astro-jugkfwgx"><span style="--depth: 1;" class="astro-jugkfwgx">What the notes list, and what the scan leaves out</span></a></li><li style="--depth: 1;" class="astro-jugkfwgx"><a href="#history-from-prometheus" style="--depth: 1;" class="astro-jugkfwgx"><span style="--depth: 1;" class="astro-jugkfwgx">History from Prometheus</span></a></li><li style="--depth: 1;" class="astro-jugkfwgx"><a href="#a-prometheus-elsewhere" style="--depth: 1;" class="astro-jugkfwgx"><span style="--depth: 1;" class="astro-jugkfwgx">A Prometheus elsewhere</span></a></li><li style="--depth: 1;" class="astro-jugkfwgx"><a href="#the-headlines-counts" style="--depth: 1;" class="astro-jugkfwgx"><span style="--depth: 1;" class="astro-jugkfwgx">The headline’s counts</span></a></li><li style="--depth: 1;" class="astro-jugkfwgx"><a href="#dependencies" style="--depth: 1;" class="astro-jugkfwgx"><span style="--depth: 1;" class="astro-jugkfwgx">Dependencies</span></a></li><li style="--depth: 1;" class="astro-jugkfwgx"><a href="#prices" style="--depth: 1;" class="astro-jugkfwgx"><span style="--depth: 1;" class="astro-jugkfwgx">Prices</span></a></li><li style="--depth: 1;" class="astro-jugkfwgx"><a href="#the-web-report" style="--depth: 1;" class="astro-jugkfwgx"><span style="--depth: 1;" class="astro-jugkfwgx">The web report</span></a></li><li style="--depth: 1;" class="astro-jugkfwgx"><a href="#json-and-yaml" style="--depth: 1;" class="astro-jugkfwgx"><span style="--depth: 1;" class="astro-jugkfwgx">JSON and YAML</span></a></li><li style="--depth: 1;" class="astro-jugkfwgx"><a href="#exit-status" style="--depth: 1;" class="astro-jugkfwgx"><span style="--depth: 1;" class="astro-jugkfwgx">Exit status</span></a></li><li style="--depth: 1;" class="astro-jugkfwgx"><a href="#permissions" style="--depth: 1;" class="astro-jugkfwgx"><span style="--depth: 1;" class="astro-jugkfwgx">Permissions</span></a></li></ul></li><li style="--depth: 0;" class="astro-jugkfwgx"><a href="#forecast" style="--depth: 0;" class="astro-jugkfwgx"><span style="--depth: 0;" class="astro-jugkfwgx">forecast</span></a><ul class="astro-jugkfwgx" style="--depth: 1;"><li style="--depth: 1;" class="astro-jugkfwgx"><a href="#history-and-what-would-wake-a-workload" style="--depth: 1;" class="astro-jugkfwgx"><span style="--depth: 1;" class="astro-jugkfwgx">History, and what would wake a workload</span></a></li><li style="--depth: 1;" class="astro-jugkfwgx"><a href="#finding-the-workload-gaps-and-exit-status" style="--depth: 1;" class="astro-jugkfwgx"><span style="--depth: 1;" class="astro-jugkfwgx">Finding the workload, gaps, and exit status</span></a></li><li style="--depth: 1;" class="astro-jugkfwgx"><a href="#json-and-yaml-1" style="--depth: 1;" class="astro-jugkfwgx"><span style="--depth: 1;" class="astro-jugkfwgx">JSON and YAML</span></a></li></ul></li><li style="--depth: 0;" class="astro-jugkfwgx"><a href="#status" style="--depth: 0;" class="astro-jugkfwgx"><span style="--depth: 0;" class="astro-jugkfwgx">status</span></a><ul class="astro-jugkfwgx" style="--depth: 1;"><li style="--depth: 1;" class="astro-jugkfwgx"><a href="#needs-attention" style="--depth: 1;" class="astro-jugkfwgx"><span style="--depth: 1;" class="astro-jugkfwgx">Needs attention</span></a></li><li style="--depth: 1;" class="astro-jugkfwgx"><a href="#the-last-activity-column" style="--depth: 1;" class="astro-jugkfwgx"><span style="--depth: 1;" class="astro-jugkfwgx">The LAST ACTIVITY column</span></a></li><li style="--depth: 1;" class="astro-jugkfwgx"><a href="#the-next-column" style="--depth: 1;" class="astro-jugkfwgx"><span style="--depth: 1;" class="astro-jugkfwgx">The NEXT column</span></a></li><li style="--depth: 1;" class="astro-jugkfwgx"><a href="#the-forecast-column" style="--depth: 1;" class="astro-jugkfwgx"><span style="--depth: 1;" class="astro-jugkfwgx">The FORECAST column</span></a></li><li style="--depth: 1;" class="astro-jugkfwgx"><a href="#turned-away-while-asleep" style="--depth: 1;" class="astro-jugkfwgx"><span style="--depth: 1;" class="astro-jugkfwgx">Turned away while asleep</span></a></li><li style="--depth: 1;" class="astro-jugkfwgx"><a href="#recent-pauses-and-wakes" style="--depth: 1;" class="astro-jugkfwgx"><span style="--depth: 1;" class="astro-jugkfwgx">Recent pauses and wakes</span></a></li><li style="--depth: 1;" class="astro-jugkfwgx"><a href="#json-and-yaml-2" style="--depth: 1;" class="astro-jugkfwgx"><span style="--depth: 1;" class="astro-jugkfwgx">JSON and YAML</span></a></li><li style="--depth: 1;" class="astro-jugkfwgx"><a href="#permissions-1" style="--depth: 1;" class="astro-jugkfwgx"><span style="--depth: 1;" class="astro-jugkfwgx">Permissions</span></a></li></ul></li><li style="--depth: 0;" class="astro-jugkfwgx"><a href="#nodes" style="--depth: 0;" class="astro-jugkfwgx"><span style="--depth: 0;" class="astro-jugkfwgx">nodes</span></a><ul class="astro-jugkfwgx" style="--depth: 1;"><li style="--depth: 1;" class="astro-jugkfwgx"><a href="#the-blocked-by-column" style="--depth: 1;" class="astro-jugkfwgx"><span style="--depth: 1;" class="astro-jugkfwgx">The BLOCKED BY column</span></a></li><li style="--depth: 1;" class="astro-jugkfwgx"><a href="#how-it-finds-the-node-autoscaler" style="--depth: 1;" class="astro-jugkfwgx"><span style="--depth: 1;" class="astro-jugkfwgx">How it finds the node autoscaler</span></a></li><li style="--depth: 1;" class="astro-jugkfwgx"><a href="#permissions-2" style="--depth: 1;" class="astro-jugkfwgx"><span style="--depth: 1;" class="astro-jugkfwgx">Permissions</span></a></li></ul></li><li style="--depth: 0;" class="astro-jugkfwgx"><a href="#pause" style="--depth: 0;" class="astro-jugkfwgx"><span style="--depth: 0;" class="astro-jugkfwgx">pause</span></a><ul class="astro-jugkfwgx" style="--depth: 1;"><li style="--depth: 1;" class="astro-jugkfwgx"><a href="#when-the-forecast-expects-it-to-be-busy" style="--depth: 1;" class="astro-jugkfwgx"><span style="--depth: 1;" class="astro-jugkfwgx">When the forecast expects it to be busy</span></a></li><li style="--depth: 1;" class="astro-jugkfwgx"><a href="#when-something-holds-it-awake" style="--depth: 1;" class="astro-jugkfwgx"><span style="--depth: 1;" class="astro-jugkfwgx">When something holds it awake</span></a></li><li style="--depth: 1;" class="astro-jugkfwgx"><a href="#when-a-gitops-tool-sets-its-replicas" style="--depth: 1;" class="astro-jugkfwgx"><span style="--depth: 1;" class="astro-jugkfwgx">When a GitOps tool sets its replicas</span></a></li><li style="--depth: 1;" class="astro-jugkfwgx"><a href="#permissions-3" style="--depth: 1;" class="astro-jugkfwgx"><span style="--depth: 1;" class="astro-jugkfwgx">Permissions</span></a></li></ul></li><li style="--depth: 0;" class="astro-jugkfwgx"><a href="#wake" style="--depth: 0;" class="astro-jugkfwgx"><span style="--depth: 0;" class="astro-jugkfwgx">wake</span></a><ul class="astro-jugkfwgx" style="--depth: 1;"><li style="--depth: 1;" class="astro-jugkfwgx"><a href="#permissions-4" style="--depth: 1;" class="astro-jugkfwgx"><span style="--depth: 1;" class="astro-jugkfwgx">Permissions</span></a></li></ul></li><li style="--depth: 0;" class="astro-jugkfwgx"><a href="#deps" style="--depth: 0;" class="astro-jugkfwgx"><span style="--depth: 0;" class="astro-jugkfwgx">deps</span></a><ul class="astro-jugkfwgx" style="--depth: 1;"><li style="--depth: 1;" class="astro-jugkfwgx"><a href="#permissions-5" style="--depth: 1;" class="astro-jugkfwgx"><span style="--depth: 1;" class="astro-jugkfwgx">Permissions</span></a></li></ul></li><li style="--depth: 0;" class="astro-jugkfwgx"><a href="#enable" style="--depth: 0;" class="astro-jugkfwgx"><span style="--depth: 0;" class="astro-jugkfwgx">enable</span></a><ul class="astro-jugkfwgx" style="--depth: 1;"><li style="--depth: 1;" class="astro-jugkfwgx"><a href="#when-it-changes-nothing" style="--depth: 1;" class="astro-jugkfwgx"><span style="--depth: 1;" class="astro-jugkfwgx">When it changes nothing</span></a></li><li style="--depth: 1;" class="astro-jugkfwgx"><a href="#with---all" style="--depth: 1;" class="astro-jugkfwgx"><span style="--depth: 1;" class="astro-jugkfwgx">With --all</span></a></li><li style="--depth: 1;" class="astro-jugkfwgx"><a href="#when-a-gitops-tool-or-helm-applies-the-setting" style="--depth: 1;" class="astro-jugkfwgx"><span style="--depth: 1;" class="astro-jugkfwgx">When a GitOps tool or Helm applies the setting</span></a></li><li style="--depth: 1;" class="astro-jugkfwgx"><a href="#permissions-6" style="--depth: 1;" class="astro-jugkfwgx"><span style="--depth: 1;" class="astro-jugkfwgx">Permissions</span></a></li></ul></li></ul></nav></starlight-toc><script type="module" src="/next/_astro/TableOfContents.astro_astro_type_script_index_0_lang.BpJaGz7G.js"></script></div></div></div></aside><div class="main-pane astro-lrzkfocr"><main data-pagefind-body class="astro-g5ptsecz" lang="en" dir="ltr"><div class="nw-banner nw-banner--next astro-cytafyf4" role="note" data-pagefind-ignore><span class="nw-banner__tag astro-cytafyf4">Release candidate</span><span class="astro-cytafyf4">These docs are for Napwake 0.2.0-rc.11, a release candidate, and may change before it's released.<span data-nw-latest-link hidden class="astro-cytafyf4"> <a href="/" class="astro-cytafyf4"><strong class="astro-cytafyf4">Read the docs for the latest release.</strong></a></span></span></div><div class="content-panel astro-a7po4psb"><div class="sl-container astro-a7po4psb"><div class="nw-title astro-xrbnetbz"><p class="nw-title__eyebrow astro-xrbnetbz">Reference</p><h1 id="_top" class="astro-xrbnetbz">kubectl plugin reference</h1><p class="nw-title__lede astro-xrbnetbz">Every flag, JSON field, exit status and permission of each kubectl napwake command, and the detail behind what it prints.</p><nw-page-tools data-md="/next/reference/cli.md" data-pagefind-ignore="true" class="astro-luyxfm3r nw-tools not-content astro-xrbnetbz"><span class="nw-tools__label astro-luyxfm3r" aria-hidden="true">For your assistant</span><button type="button" class="nw-tools__btn astro-luyxfm3r" data-copy>Copy as Markdown</button><a class="nw-tools__btn astro-luyxfm3r" href="/next/reference/cli.md" type="text/markdown">View .md</a><a class="nw-tools__btn astro-luyxfm3r" href="https://claude.ai/new?q=Read%20https%3A%2F%2Fdocs.napwake.dev%2Fnext%2Freference%2Fcli.md%2C%20a%20page%20of%20Napwake's%20docs%2C%20and%20answer%20my%20questions%20about%20it." target="_blank" rel="noopener noreferrer">Ask Claude <span aria-hidden="true" class="astro-luyxfm3r">↗</span><span class="sr-only astro-luyxfm3r"> (opens claude.ai)</span></a><a class="nw-tools__btn astro-luyxfm3r" href="https://chatgpt.com/?q=Read%20https%3A%2F%2Fdocs.napwake.dev%2Fnext%2Freference%2Fcli.md%2C%20a%20page%20of%20Napwake's%20docs%2C%20and%20answer%20my%20questions%20about%20it." target="_blank" rel="noopener noreferrer">Ask ChatGPT <span aria-hidden="true" class="astro-luyxfm3r">↗</span><span class="sr-only astro-luyxfm3r"> (opens chatgpt.com)</span></a><span class="sr-only astro-luyxfm3r" role="status" aria-live="polite" data-status></span></nw-page-tools><script type="module">var e=class extends HTMLElement{connectedCallback(){let e=this.querySelector(`[data-copy]`),t=this.querySelector(`[data-status]`),n=this.dataset.md;if(!e||!n)return;let r=e.textContent;e.addEventListener(`click`,async()=>{try{let r=await fetch(n).then(e=>e.ok?e.text():Promise.reject(e.status));await navigator.clipboard.writeText(r),e.textContent=`Copied`,t&&(t.textContent=`The page is copied as Markdown.`)}catch{location.href=n;return}setTimeout(()=>{e.textContent=r,t&&(t.textContent=``)},2e3)})}};customElements.define(`nw-page-tools`,e);</script></div></div></div><div class="content-panel astro-a7po4psb"><div class="sl-container astro-a7po4psb"><div class="sl-markdown-content"><nav class="nw-refindex not-content astro-layzjlac" aria-label="Every flag and JSON field, by command"><div class="nw-refindex__group astro-layzjlac"><a class="nw-refindex__title astro-layzjlac" href="#scan">scan <span class="astro-layzjlac">39</span></a><ul class="astro-layzjlac"><li class="astro-layzjlac"><a href="#scan-namespace" class="astro-layzjlac"><code class="astro-layzjlac">--namespace</code></a></li><li class="astro-layzjlac"><a href="#scan-all-namespaces" class="astro-layzjlac"><code class="astro-layzjlac">--all-namespaces</code></a></li><li class="astro-layzjlac"><a href="#scan-exclude-namespaces" class="astro-layzjlac"><code class="astro-layzjlac">--exclude-namespaces</code></a></li><li class="astro-layzjlac"><a href="#scan-output" class="astro-layzjlac"><code class="astro-layzjlac">--output</code></a></li><li class="astro-layzjlac"><a href="#scan-limit" class="astro-layzjlac"><code class="astro-layzjlac">--limit</code></a></li><li class="astro-layzjlac"><a href="#scan-cpu-threshold" class="astro-layzjlac"><code class="astro-layzjlac">--cpu-threshold</code></a></li><li class="astro-layzjlac"><a href="#scan-cpu-price" class="astro-layzjlac"><code class="astro-layzjlac">--cpu-price</code></a></li><li class="astro-layzjlac"><a href="#scan-memory-price" class="astro-layzjlac"><code class="astro-layzjlac">--memory-price</code></a></li><li class="astro-layzjlac"><a href="#scan-window" class="astro-layzjlac"><code class="astro-layzjlac">--window</code></a></li><li class="astro-layzjlac"><a href="#scan-idle-after" class="astro-layzjlac"><code class="astro-layzjlac">--idle-after</code></a></li><li class="astro-layzjlac"><a href="#scan-prometheus-service" class="astro-layzjlac"><code class="astro-layzjlac">--prometheus-service</code></a></li><li class="astro-layzjlac"><a href="#scan-prometheus-url" class="astro-layzjlac"><code class="astro-layzjlac">--prometheus-url</code></a></li><li class="astro-layzjlac"><a href="#scan-prometheus-selector" class="astro-layzjlac"><code class="astro-layzjlac">--prometheus-selector</code></a></li><li class="astro-layzjlac"><a href="#scan-prometheus-header" class="astro-layzjlac"><code class="astro-layzjlac">--prometheus-header</code></a></li><li class="astro-layzjlac"><a href="#scan-prometheus-bearer-token-file" class="astro-layzjlac"><code class="astro-layzjlac">--prometheus-bearer-token-file</code></a></li><li class="astro-layzjlac"><a href="#scan-prometheus-ca-file" class="astro-layzjlac"><code class="astro-layzjlac">--prometheus-ca-file</code></a></li><li class="astro-layzjlac"><a href="#scan-prometheus-insecure-skip-verify" class="astro-layzjlac"><code class="astro-layzjlac">--prometheus-insecure-skip-verify</code></a></li><li class="astro-layzjlac"><a href="#scan-timeout" class="astro-layzjlac"><code class="astro-layzjlac">--timeout</code></a></li><li class="astro-layzjlac"><a href="#scan-html" class="astro-layzjlac"><code class="astro-layzjlac">--html</code></a></li><li class="astro-layzjlac"><a href="#scan-open" class="astro-layzjlac"><code class="astro-layzjlac">--open</code></a></li><li class="astro-layzjlac"><a href="#scan-json-nodeautoscaler" class="astro-layzjlac"><code class="astro-layzjlac">nodeAutoscaler</code></a></li><li class="astro-layzjlac"><a href="#scan-json-wontpause" class="astro-layzjlac"><code class="astro-layzjlac">wontPause</code></a></li><li class="astro-layzjlac"><a href="#scan-json-namespaces" class="astro-layzjlac"><code class="astro-layzjlac">namespaces</code></a></li><li class="astro-layzjlac"><a href="#scan-json-history-prometheus" class="astro-layzjlac"><code class="astro-layzjlac">history.prometheus</code></a></li><li class="astro-layzjlac"><a href="#scan-json-history-hours" class="astro-layzjlac"><code class="astro-layzjlac">history.hours</code></a></li><li class="astro-layzjlac"><a href="#scan-json-history-others" class="astro-layzjlac"><code class="astro-layzjlac">history.others</code></a></li><li class="astro-layzjlac"><a href="#scan-json-replicasfromgit" class="astro-layzjlac"><code class="astro-layzjlac">replicasFromGit</code></a></li><li class="astro-layzjlac"><a href="#scan-json-gitopsleavesreplicas" class="astro-layzjlac"><code class="astro-layzjlac">gitOpsLeavesReplicas</code></a></li><li class="astro-layzjlac"><a href="#scan-json-gitopsunchecked" class="astro-layzjlac"><code class="astro-layzjlac">gitOpsUnchecked</code></a></li><li class="astro-layzjlac"><a href="#scan-json-platform" class="astro-layzjlac"><code class="astro-layzjlac">platform</code></a></li><li class="astro-layzjlac"><a href="#scan-json-totals-live" class="astro-layzjlac"><code class="astro-layzjlac">totals.live</code></a></li><li class="astro-layzjlac"><a href="#scan-json-totals-liveprotected" class="astro-layzjlac"><code class="astro-layzjlac">totals.liveProtected</code></a></li><li class="astro-layzjlac"><a href="#scan-json-totals-protectedfreedthismonth" class="astro-layzjlac"><code class="astro-layzjlac">totals.protectedFreedThisMonth</code></a></li><li class="astro-layzjlac"><a href="#scan-json-totals-protectedsavedthismonth" class="astro-layzjlac"><code class="astro-layzjlac">totals.protectedSavedThisMonth</code></a></li><li class="astro-layzjlac"><a href="#scan-json-onspot" class="astro-layzjlac"><code class="astro-layzjlac">onSpot</code></a></li><li class="astro-layzjlac"><a href="#scan-json-spotatondemand" class="astro-layzjlac"><code class="astro-layzjlac">spotAtOnDemand</code></a></li><li class="astro-layzjlac"><a href="#scan-json-nodeprices" class="astro-layzjlac"><code class="astro-layzjlac">nodePrices</code></a></li><li class="astro-layzjlac"><a href="#scan-json-incomplete" class="astro-layzjlac"><code class="astro-layzjlac">incomplete</code></a></li><li class="astro-layzjlac"><a href="#scan-json-workloads" class="astro-layzjlac"><code class="astro-layzjlac">workloads</code></a></li></ul></div><div class="nw-refindex__group astro-layzjlac"><a class="nw-refindex__title astro-layzjlac" href="#forecast">forecast <span class="astro-layzjlac">15</span></a><ul class="astro-layzjlac"><li class="astro-layzjlac"><a href="#forecast-namespace" class="astro-layzjlac"><code class="astro-layzjlac">--namespace</code></a></li><li class="astro-layzjlac"><a href="#forecast-all-namespaces" class="astro-layzjlac"><code class="astro-layzjlac">--all-namespaces</code></a></li><li class="astro-layzjlac"><a href="#forecast-exclude-namespaces" class="astro-layzjlac"><code class="astro-layzjlac">--exclude-namespaces</code></a></li><li class="astro-layzjlac"><a href="#forecast-window" class="astro-layzjlac"><code class="astro-layzjlac">--window</code></a></li><li class="astro-layzjlac"><a href="#forecast-forecast" class="astro-layzjlac"><code class="astro-layzjlac">--forecast</code></a></li><li class="astro-layzjlac"><a href="#forecast-timezone" class="astro-layzjlac"><code class="astro-layzjlac">--timezone</code></a></li><li class="astro-layzjlac"><a href="#forecast-cpu-threshold" class="astro-layzjlac"><code class="astro-layzjlac">--cpu-threshold</code></a></li><li class="astro-layzjlac"><a href="#forecast-idle-after" class="astro-layzjlac"><code class="astro-layzjlac">--idle-after</code></a></li><li class="astro-layzjlac"><a href="#forecast-output" class="astro-layzjlac"><code class="astro-layzjlac">--output</code></a></li><li class="astro-layzjlac"><a href="#forecast-timeout" class="astro-layzjlac"><code class="astro-layzjlac">--timeout</code></a></li><li class="astro-layzjlac"><a href="#forecast-json-operator" class="astro-layzjlac"><code class="astro-layzjlac">operator</code></a></li><li class="astro-layzjlac"><a href="#forecast-json-operator-stopped" class="astro-layzjlac"><code class="astro-layzjlac">operator.stopped</code></a></li><li class="astro-layzjlac"><a href="#forecast-json-forecast" class="astro-layzjlac"><code class="astro-layzjlac">forecast</code></a></li><li class="astro-layzjlac"><a href="#forecast-json-forecast-wakes" class="astro-layzjlac"><code class="astro-layzjlac">forecast.wakes</code></a></li><li class="astro-layzjlac"><a href="#forecast-json-noreplay" class="astro-layzjlac"><code class="astro-layzjlac">noReplay</code></a></li></ul></div><div class="nw-refindex__group astro-layzjlac"><a class="nw-refindex__title astro-layzjlac" href="#status">status <span class="astro-layzjlac">15</span></a><ul class="astro-layzjlac"><li class="astro-layzjlac"><a href="#status-namespace" class="astro-layzjlac"><code class="astro-layzjlac">--namespace</code></a></li><li class="astro-layzjlac"><a href="#status-all-namespaces" class="astro-layzjlac"><code class="astro-layzjlac">--all-namespaces</code></a></li><li class="astro-layzjlac"><a href="#status-output" class="astro-layzjlac"><code class="astro-layzjlac">--output</code></a></li><li class="astro-layzjlac"><a href="#status-since" class="astro-layzjlac"><code class="astro-layzjlac">--since</code></a></li><li class="astro-layzjlac"><a href="#status-html" class="astro-layzjlac"><code class="astro-layzjlac">--html</code></a></li><li class="astro-layzjlac"><a href="#status-open" class="astro-layzjlac"><code class="astro-layzjlac">--open</code></a></li><li class="astro-layzjlac"><a href="#status-timeout" class="astro-layzjlac"><code class="astro-layzjlac">--timeout</code></a></li><li class="astro-layzjlac"><a href="#status-json-pausingoff" class="astro-layzjlac"><code class="astro-layzjlac">pausingOff</code></a></li><li class="astro-layzjlac"><a href="#status-json-monthatpace" class="astro-layzjlac"><code class="astro-layzjlac">monthAtPace</code></a></li><li class="astro-layzjlac"><a href="#status-json-forecast" class="astro-layzjlac"><code class="astro-layzjlac">forecast</code></a></li><li class="astro-layzjlac"><a href="#status-json-forecaststartsacting" class="astro-layzjlac"><code class="astro-layzjlac">forecastStartsActing</code></a></li><li class="astro-layzjlac"><a href="#status-json-turnedaway" class="astro-layzjlac"><code class="astro-layzjlac">turnedAway</code></a></li><li class="astro-layzjlac"><a href="#status-json-wokenby" class="astro-layzjlac"><code class="astro-layzjlac">wokenBy</code></a></li><li class="astro-layzjlac"><a href="#status-json-kind" class="astro-layzjlac"><code class="astro-layzjlac">kind</code></a></li><li class="astro-layzjlac"><a href="#status-json-target" class="astro-layzjlac"><code class="astro-layzjlac">target</code></a></li></ul></div><div class="nw-refindex__group astro-layzjlac"><a class="nw-refindex__title astro-layzjlac" href="#nodes">nodes <span class="astro-layzjlac">2</span></a><ul class="astro-layzjlac"><li class="astro-layzjlac"><a href="#nodes-output" class="astro-layzjlac"><code class="astro-layzjlac">--output</code></a></li><li class="astro-layzjlac"><a href="#nodes-timeout" class="astro-layzjlac"><code class="astro-layzjlac">--timeout</code></a></li></ul></div><div class="nw-refindex__group astro-layzjlac"><a class="nw-refindex__title astro-layzjlac" href="#pause">pause <span class="astro-layzjlac">5</span></a><ul class="astro-layzjlac"><li class="astro-layzjlac"><a href="#pause-namespace" class="astro-layzjlac"><code class="astro-layzjlac">--namespace</code></a></li><li class="astro-layzjlac"><a href="#pause-wait" class="astro-layzjlac"><code class="astro-layzjlac">--wait</code></a></li><li class="astro-layzjlac"><a href="#pause-yes" class="astro-layzjlac"><code class="astro-layzjlac">--yes</code></a></li><li class="astro-layzjlac"><a href="#pause-clear-hold" class="astro-layzjlac"><code class="astro-layzjlac">--clear-hold</code></a></li><li class="astro-layzjlac"><a href="#pause-timeout" class="astro-layzjlac"><code class="astro-layzjlac">--timeout</code></a></li></ul></div><div class="nw-refindex__group astro-layzjlac"><a class="nw-refindex__title astro-layzjlac" href="#wake">wake <span class="astro-layzjlac">4</span></a><ul class="astro-layzjlac"><li class="astro-layzjlac"><a href="#wake-namespace" class="astro-layzjlac"><code class="astro-layzjlac">--namespace</code></a></li><li class="astro-layzjlac"><a href="#wake-for" class="astro-layzjlac"><code class="astro-layzjlac">--for</code></a></li><li class="astro-layzjlac"><a href="#wake-wait" class="astro-layzjlac"><code class="astro-layzjlac">--wait</code></a></li><li class="astro-layzjlac"><a href="#wake-timeout" class="astro-layzjlac"><code class="astro-layzjlac">--timeout</code></a></li></ul></div><div class="nw-refindex__group astro-layzjlac"><a class="nw-refindex__title astro-layzjlac" href="#deps">deps <span class="astro-layzjlac">2</span></a><ul class="astro-layzjlac"><li class="astro-layzjlac"><a href="#deps-namespace" class="astro-layzjlac"><code class="astro-layzjlac">--namespace</code></a></li><li class="astro-layzjlac"><a href="#deps-timeout" class="astro-layzjlac"><code class="astro-layzjlac">--timeout</code></a></li></ul></div><div class="nw-refindex__group astro-layzjlac"><a class="nw-refindex__title astro-layzjlac" href="#enable">enable <span class="astro-layzjlac">4</span></a><ul class="astro-layzjlac"><li class="astro-layzjlac"><a href="#enable-namespace" class="astro-layzjlac"><code class="astro-layzjlac">--namespace</code></a></li><li class="astro-layzjlac"><a href="#enable-all" class="astro-layzjlac"><code class="astro-layzjlac">--all</code></a></li><li class="astro-layzjlac"><a href="#enable-force" class="astro-layzjlac"><code class="astro-layzjlac">--force</code></a></li><li class="astro-layzjlac"><a href="#enable-timeout" class="astro-layzjlac"><code class="astro-layzjlac">--timeout</code></a></li></ul></div></nav>
 <div class="sl-heading-wrapper level-h2"><h2 id="every-command">Every command</h2><a class="sl-anchor-link" href="#every-command"><span aria-hidden="true" class="sl-anchor-icon"><svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="m12.11 15.39-3.88 3.88a2.52 2.52 0 0 1-3.5 0 2.47 2.47 0 0 1 0-3.5l3.88-3.88a1 1 0 1 0-1.42-1.42l-3.88 3.89a4.48 4.48 0 0 0 6.33 6.33l3.89-3.88a1 1 0 0 0-1.42-1.42m8.58-12.08a4.49 4.49 0 0 0-6.33 0l-3.89 3.88a1 1 0 1 0 1.42 1.42l3.88-3.88a2.52 2.52 0 0 1 3.5 0 2.47 2.47 0 0 1 0 3.5l-3.88 3.88a1 1 0 0 0 0 1.42 1 1 0 0 0 1.42 0l3.88-3.89a4.49 4.49 0 0 0 0-6.33M8.83 15.17a1 1 0 0 0 .71.29 1 1 0 0 0 .71-.29l4.92-4.92a1 1 0 1 0-1.42-1.42l-4.92 4.92a1 1 0 0 0 0 1.42"></path></svg></span><span class="sr-only" data-pagefind-ignore>Section titled “Every command”</span></a></div>
 <p>The request limit and the connection flags every command shares. <a href="/next/getting-started/kubectl-plugin/#namespaces-and-connections">Namespaces and connections</a> says which namespaces each command reads.</p>
-<p>Each request to the API server gives up after 30 seconds. So a cluster that stops answering ends a command with an error. <code dir="auto">--request-timeout</code> changes the limit. Its <code dir="auto">0</code> keeps 30 seconds, where kubectl’s means no limit.</p>
+<table>
+<thead>
+<tr>
+<th></th>
+<th></th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Each request to the API server</td>
+<td>Gives up after 30 seconds, so a cluster that stops answering ends a command with an error</td>
+</tr>
+<tr>
+<td><code dir="auto">--request-timeout</code></td>
+<td>Changes that limit. Its <code dir="auto">0</code> keeps 30 seconds, where kubectl’s means no limit</td>
+</tr>
+</tbody>
+</table>
 <p>Every command takes kubectl’s connection flags:</p>
 <p><code dir="auto">--kubeconfig</code>, <code dir="auto">--context</code>, <code dir="auto">--cluster</code>, <code dir="auto">--user</code>, <code dir="auto">--as</code>, <code dir="auto">--as-group</code>, <code dir="auto">--as-uid</code>, <code dir="auto">--token</code>, <code dir="auto">--server</code>, <code dir="auto">--certificate-authority</code>, <code dir="auto">--client-certificate</code>, <code dir="auto">--client-key</code>, <code dir="auto">--insecure-skip-tls-verify</code>, <code dir="auto">--tls-server-name</code>, <code dir="auto">--proxy-url</code>, <code dir="auto">--username</code>, <code dir="auto">--password</code>, <code dir="auto">--disable-compression</code> and <code dir="auto">--request-timeout</code>.</p>
+<p>The two commands with no section of their own:</p>
+<table>
+<thead>
+<tr>
+<th>Command</th>
+<th>What it does</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code dir="auto">version</code></td>
+<td>Prints the plugin’s version. It needs no operator</td>
+</tr>
+<tr>
+<td><code dir="auto">completion</code></td>
+<td>Writes a shell completion script, for bash, zsh, fish or PowerShell</td>
+</tr>
+</tbody>
+</table>
 <div class="sl-heading-wrapper level-h2"><h2 id="scan"><code dir="auto">scan</code></h2><a class="sl-anchor-link" href="#scan"><span aria-hidden="true" class="sl-anchor-icon"><svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="m12.11 15.39-3.88 3.88a2.52 2.52 0 0 1-3.5 0 2.47 2.47 0 0 1 0-3.5l3.88-3.88a1 1 0 1 0-1.42-1.42l-3.88 3.89a4.48 4.48 0 0 0 6.33 6.33l3.89-3.88a1 1 0 0 0-1.42-1.42m8.58-12.08a4.49 4.49 0 0 0-6.33 0l-3.89 3.88a1 1 0 1 0 1.42 1.42l3.88-3.88a2.52 2.52 0 0 1 3.5 0 2.47 2.47 0 0 1 0 3.5l-3.88 3.88a1 1 0 0 0 0 1.42 1 1 0 0 0 1.42 0l3.88-3.89a4.49 4.49 0 0 0 0-6.33M8.83 15.17a1 1 0 0 0 .71.29 1 1 0 0 0 .71-.29l4.92-4.92a1 1 0 1 0-1.42-1.42l-4.92 4.92a1 1 0 0 0 0 1.42"></path></svg></span><span class="sr-only" data-pagefind-ignore>Section titled “scan”</span></a></div>
 <p>Its flags, with their defaults. <a href="/next/getting-started/kubectl-plugin/#scan-a-cluster">Scan a cluster</a> shows it in use.</p>
 <table>
@@ -96,12 +132,12 @@
 <tr>
 <td><span class="nw-ref astro-cbhc5gqx" id="scan-namespace"><a href="#scan-namespace" class="nw-ref__link astro-cbhc5gqx" aria-label="Link to this row">#</a><code class="astro-cbhc5gqx">--namespace</code></span> <code dir="auto">-n</code></td>
 <td>all you can read</td>
-<td>Namespace to scan. Repeat for several.</td>
+<td>Namespace to scan. Repeat for several</td>
 </tr>
 <tr>
 <td><span class="nw-ref astro-cbhc5gqx" id="scan-all-namespaces"><a href="#scan-all-namespaces" class="nw-ref__link astro-cbhc5gqx" aria-label="Link to this row">#</a><code class="astro-cbhc5gqx">--all-<wbr>namespaces</code></span> <code dir="auto">-A</code></td>
-<td></td>
-<td>Every namespace, failing rather than falling back. Not with <code dir="auto">-n</code>.</td>
+<td><code dir="auto">false</code></td>
+<td>Every namespace, failing rather than falling back. Not with <code dir="auto">-n</code></td>
 </tr>
 <tr>
 <td><span class="nw-ref astro-cbhc5gqx" id="scan-exclude-namespaces"><a href="#scan-exclude-namespaces" class="nw-ref__link astro-cbhc5gqx" aria-label="Link to this row">#</a><code class="astro-cbhc5gqx">--exclude-<wbr>namespaces</code></span></td>
@@ -121,22 +157,22 @@
 <tr>
 <td><span class="nw-ref astro-cbhc5gqx" id="scan-cpu-threshold"><a href="#scan-cpu-threshold" class="nw-ref__link astro-cbhc5gqx" aria-label="Link to this row">#</a><code class="astro-cbhc5gqx">--cpu-<wbr>threshold</code></span></td>
 <td><code dir="auto">10</code></td>
-<td>CPU use, as a percentage of requests from 0.1 to 100, such as <code dir="auto">10</code> or <code dir="auto">0.5</code>, above which a workload is active</td>
+<td>CPU use above which a workload is active, as a percentage of requests. From 0.1 to 100, such as <code dir="auto">10</code> or <code dir="auto">0.5</code></td>
 </tr>
 <tr>
 <td><span class="nw-ref astro-cbhc5gqx" id="scan-cpu-price"><a href="#scan-cpu-price" class="nw-ref__link astro-cbhc5gqx" aria-label="Link to this row">#</a><code class="astro-cbhc5gqx">--cpu-<wbr>price</code></span></td>
 <td><code dir="auto">0.031</code></td>
-<td>Your price per vCPU-hour, in dollars, zero or more</td>
+<td>Your price per vCPU-hour, in dollars, zero or more, for every workload. Unset, each node is priced at its type’s list price, and one with none at AWS on-demand in us-east-1</td>
 </tr>
 <tr>
 <td><span class="nw-ref astro-cbhc5gqx" id="scan-memory-price"><a href="#scan-memory-price" class="nw-ref__link astro-cbhc5gqx" aria-label="Link to this row">#</a><code class="astro-cbhc5gqx">--memory-<wbr>price</code></span></td>
 <td><code dir="auto">0.004</code></td>
-<td>Your price per GiB-hour of memory, in dollars, zero or more</td>
+<td>Your price per GiB-hour of memory, in dollars, zero or more, for every workload. Unset, each node is priced at its type’s list price, and one with none at AWS on-demand in us-east-1</td>
 </tr>
 <tr>
 <td><span class="nw-ref astro-cbhc5gqx" id="scan-window"><a href="#scan-window" class="nw-ref__link astro-cbhc5gqx" aria-label="Link to this row">#</a><code class="astro-cbhc5gqx">--window</code></span></td>
 <td><code dir="auto">7d</code></td>
-<td>Prometheus history to replay, such as <code dir="auto">7d</code> or <code dir="auto">36h</code>, up to <code dir="auto">366d</code>. <code dir="auto">0</code> judges from CPU now.</td>
+<td>Prometheus history to replay, such as <code dir="auto">7d</code> or <code dir="auto">36h</code>, up to <code dir="auto">366d</code>. <code dir="auto">0</code> judges from CPU now</td>
 </tr>
 <tr>
 <td><span class="nw-ref astro-cbhc5gqx" id="scan-idle-after"><a href="#scan-idle-after" class="nw-ref__link astro-cbhc5gqx" aria-label="Link to this row">#</a><code class="astro-cbhc5gqx">--idle-<wbr>after</code></span></td>
@@ -161,7 +197,7 @@
 <tr>
 <td><span class="nw-ref astro-cbhc5gqx" id="scan-prometheus-header"><a href="#scan-prometheus-header" class="nw-ref__link astro-cbhc5gqx" aria-label="Link to this row">#</a><code class="astro-cbhc5gqx">--prometheus-<wbr>header</code></span></td>
 <td></td>
-<td>Header for <code dir="auto">--prometheus-url</code>, as <code dir="auto">"Name: value"</code>, such as <code dir="auto">"X-Scope-OrgID: tenant"</code> for Mimir. Repeat for several.</td>
+<td>Header for <code dir="auto">--prometheus-url</code>, as <code dir="auto">"Name: value"</code>, such as <code dir="auto">"X-Scope-OrgID: tenant"</code> for Mimir. Repeat for several</td>
 </tr>
 <tr>
 <td><span class="nw-ref astro-cbhc5gqx" id="scan-prometheus-bearer-token-file"><a href="#scan-prometheus-bearer-token-file" class="nw-ref__link astro-cbhc5gqx" aria-label="Link to this row">#</a><code class="astro-cbhc5gqx">--prometheus-<wbr>bearer-<wbr>token-<wbr>file</code></span></td>
@@ -229,7 +265,44 @@
 <td>It says so, and names what it couldn’t read</td>
 </tr>
 </tbody>
-</table><p>Before Napwake runs, the scan can’t know what of COULD FREE/MO would be saved. So it never calls it a saving. Each money and history cell has the one source the table gives. A live workload isn’t replayed, as there are no pods for Prometheus to record while it’s paused. Its pauses are what FREED THIS MONTH and SAVED count.</p><p>A StatefulSet that deletes its PVCs when scaled down would lose its data to a pause. So Napwake refuses to pause it. It’s left out of what pausing could free and of the next steps.</p><p>A protected workload is left out of what pausing could free and the next steps. The scan sees only the label, not the operator’s <code dir="auto">protectedNamespaces</code> patterns. A workload scaled to zero by hand is counted apart in the headline. It counts toward nothing the scan says could be freed.</p></section>
+</table><p>What the columns count, and leave out:</p><table>
+<thead>
+<tr>
+<th>Case</th>
+<th>What the scan does</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>COULD FREE/MO</td>
+<td>Never calls it a saving. Before Napwake runs, the scan can’t know what of it would be saved</td>
+</tr>
+<tr>
+<td>Each money and history cell</td>
+<td>Has the one source the table gives</td>
+</tr>
+<tr>
+<td>A live workload</td>
+<td>Isn’t replayed, as there are no pods for Prometheus to record while it’s paused. Its pauses are what FREED THIS MONTH and SAVED count</td>
+</tr>
+<tr>
+<td>A StatefulSet that deletes its PVCs when scaled down</td>
+<td>Would lose its data to a pause, so Napwake refuses to pause it. It’s left out of what pausing could free and of the next steps</td>
+</tr>
+<tr>
+<td>A protected workload</td>
+<td>Left out of what pausing could free and the next steps</td>
+</tr>
+<tr>
+<td>Which are protected</td>
+<td>Those labelled <code dir="auto">napwake.dev/protected</code>, and those matching a built-in pattern (<code dir="auto">kube-*</code>, <code dir="auto">openshift-*</code>, <code dir="auto">cattle-*</code>, <code dir="auto">gke-*</code>, <code dir="auto">gmp-*</code>). The operator’s own <code dir="auto">protectedNamespaces</code> patterns show only through a managed workload’s <code dir="auto">Protected=True</code></td>
+</tr>
+<tr>
+<td>A workload scaled to zero by hand</td>
+<td>Counted apart in the headline. It counts toward nothing the scan says could be freed</td>
+</tr>
+</tbody>
+</table></section>
 <section id="scan-idle"><div class="sl-heading-wrapper level-h3"><h3 id="how-it-decides-a-workload-is-idle">How it decides a workload is idle</h3><a class="sl-anchor-link" href="#how-it-decides-a-workload-is-idle"><span aria-hidden="true" class="sl-anchor-icon"><svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="m12.11 15.39-3.88 3.88a2.52 2.52 0 0 1-3.5 0 2.47 2.47 0 0 1 0-3.5l3.88-3.88a1 1 0 1 0-1.42-1.42l-3.88 3.89a4.48 4.48 0 0 0 6.33 6.33l3.89-3.88a1 1 0 0 0-1.42-1.42m8.58-12.08a4.49 4.49 0 0 0-6.33 0l-3.89 3.88a1 1 0 1 0 1.42 1.42l3.88-3.88a2.52 2.52 0 0 1 3.5 0 2.47 2.47 0 0 1 0 3.5l-3.88 3.88a1 1 0 0 0 0 1.42 1 1 0 0 0 1.42 0l3.88-3.89a4.49 4.49 0 0 0 0-6.33M8.83 15.17a1 1 0 0 0 .71.29 1 1 0 0 0 .71-.29l4.92-4.92a1 1 0 1 0-1.42-1.42l-4.92 4.92a1 1 0 0 0 0 1.42"></path></svg></span><span class="sr-only" data-pagefind-ignore>Section titled “How it decides a workload is idle”</span></a></div><p>It uses the signals Napwake uses to pause.</p><table>
 <thead>
 <tr>
@@ -240,11 +313,11 @@
 <tbody>
 <tr>
 <td>Managed by Napwake</td>
-<td>By the activity clock Napwake keeps for it. Idle is no activity until the clock’s <code dir="auto">pauseAt</code>. That’s <code dir="auto">idleAfter</code> after the last activity, or longer after <a href="/next/concepts/idle-detection/#paused-while-in-use">pauses made in use</a>.</td>
+<td>By the activity clock Napwake keeps for it. Idle is no activity until the clock’s <code dir="auto">pauseAt</code>. That’s <code dir="auto">idleAfter</code> after the last activity, or longer after <a href="/next/concepts/idle-detection/#paused-while-in-use">pauses made in use</a></td>
 </tr>
 <tr>
 <td>Managed, after pauses made in use</td>
-<td>BECAUSE says so, such as <code dir="auto">not idle yet: it woke 6m ago; after pauses made in use it waits 20 minutes, not 5 minutes</code></td>
+<td>BECAUSE says so, such as <code dir="auto">not idle yet: it woke 6m ago; after pauses made while it was in use, it waits 20 minutes, not 5 minutes</code></td>
 </tr>
 <tr>
 <td>Managed, its activity clock</td>
@@ -292,7 +365,7 @@
 </tr>
 <tr>
 <td>Unmanaged, without metrics-server</td>
-<td>As on EKS by default. Judged from its CPU history, and BECAUSE says so.</td>
+<td>As on EKS by default. Judged from its CPU history, and BECAUSE says so</td>
 </tr>
 <tr>
 <td>Its state then</td>
@@ -300,7 +373,7 @@
 </tr>
 <tr>
 <td>No CPU requests, or no metrics yet</td>
-<td>Can’t be judged. It’s in the notes, not the table, and out of the headline’s totals.</td>
+<td>Can’t be judged. It’s in the notes, not the table, and out of the headline’s totals</td>
 </tr>
 </tbody>
 </table></section>
@@ -318,11 +391,11 @@
 </tr>
 <tr>
 <td>Which tools</td>
-<td>Argo CD, Flux, Fleet, kapp or Kluctl. Workloads are listed by tool.</td>
+<td>Argo CD, Flux, Fleet, kapp or Kluctl. Workloads are listed by tool</td>
 </tr>
 <tr>
 <td>Why it matters</td>
-<td>The tool would undo every pause until told, once, to leave replicas to Napwake. See <a href="/next/guides/gitops/">GitOps tools</a>.</td>
+<td>The tool would undo every pause until told, once, to leave replicas to Napwake. See <a href="/next/guides/gitops/">GitOps tools</a></td>
 </tr>
 <tr>
 <td>Once the tool is told</td>
@@ -346,7 +419,7 @@
 </tr>
 <tr>
 <td>The cluster’s own infrastructure</td>
-<td>Left out of the table, the totals and the next steps. A note counts it by namespace.</td>
+<td>Left out of the table, the totals and the next steps. A note counts it by namespace</td>
 </tr>
 <tr>
 <td>Infrastructure in JSON and YAML</td>
@@ -362,7 +435,7 @@
 </thead>
 <tbody>
 <tr>
-<td>Kubernetes’ namespaces, never paused</td>
+<td>Kubernetes’ and platforms’ namespaces, never paused</td>
 <td><code dir="auto">kube-*</code>, <code dir="auto">openshift-*</code>, <code dir="auto">cattle-*</code>, <code dir="auto">gke-*</code> and <code dir="auto">gmp-*</code></td>
 </tr>
 <tr>
@@ -394,7 +467,36 @@
 <td>They aren’t listed at all</td>
 </tr>
 </tbody>
-</table><p>Napwake never needs to wake what it never pauses, so apps’ dependencies on those aren’t listed. The guessed infrastructure is left out of the estimate only, and the operator has no such rule. Opted in, Napwake pauses it like any app, so dependencies on it are listed. There’s no guessing for a workload Napwake manages. Nor in a namespace labelled <code dir="auto">napwake.dev/managed=true</code>, such as a preview with its own Vault. A namespace labelled <code dir="auto">napwake.dev/allow-protected=true</code> is scanned like any other, apart from Napwake’s own Deployments.</p></section>
+</table><p>What leaving them out changes:</p><table>
+<thead>
+<tr>
+<th>Left out</th>
+<th>What changes</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>What Napwake never pauses</td>
+<td>Apps’ dependencies on it aren’t listed, as Napwake never needs to wake it</td>
+</tr>
+<tr>
+<td>The guessed infrastructure</td>
+<td>Left out of the estimate only. The operator has no such rule</td>
+</tr>
+<tr>
+<td>The same, opted in</td>
+<td>Napwake pauses it like any app, so dependencies on it are listed</td>
+</tr>
+<tr>
+<td>No guessing</td>
+<td>For a workload Napwake manages, or in a namespace labelled <code dir="auto">napwake.dev/managed=true</code>, such as a preview with its own Vault</td>
+</tr>
+<tr>
+<td>A namespace labelled <code dir="auto">napwake.dev/allow-protected=true</code></td>
+<td>Scanned like any other, apart from Napwake’s own Deployments</td>
+</tr>
+</tbody>
+</table></section>
 <section id="scan-history"><div class="sl-heading-wrapper level-h3"><h3 id="history-from-prometheus">History from Prometheus</h3><a class="sl-anchor-link" href="#history-from-prometheus"><span aria-hidden="true" class="sl-anchor-icon"><svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="m12.11 15.39-3.88 3.88a2.52 2.52 0 0 1-3.5 0 2.47 2.47 0 0 1 0-3.5l3.88-3.88a1 1 0 1 0-1.42-1.42l-3.88 3.89a4.48 4.48 0 0 0 6.33 6.33l3.89-3.88a1 1 0 0 0-1.42-1.42m8.58-12.08a4.49 4.49 0 0 0-6.33 0l-3.89 3.88a1 1 0 1 0 1.42 1.42l3.88-3.88a2.52 2.52 0 0 1 3.5 0 2.47 2.47 0 0 1 0 3.5l-3.88 3.88a1 1 0 0 0 0 1.42 1 1 0 0 0 1.42 0l3.88-3.89a4.49 4.49 0 0 0 0-6.33M8.83 15.17a1 1 0 0 0 .71.29 1 1 0 0 0 .71-.29l4.92-4.92a1 1 0 1 0-1.42-1.42l-4.92 4.92a1 1 0 0 0 0 1.42"></path></svg></span><span class="sr-only" data-pagefind-ignore>Section titled “History from Prometheus”</span></a></div><p>With a Prometheus in the cluster, the scan replays each workload’s last week of CPU and rollouts. It runs Napwake’s activity clock over them, as if managing it with <code dir="auto">--idle-after</code> and <code dir="auto">--cpu-threshold</code>.</p><table>
 <thead>
 <tr>
@@ -425,7 +527,7 @@
 </tr>
 <tr>
 <td>How many</td>
-<td>It tries five at most. The <code dir="auto">History:</code> line lists the others (JSON <code dir="auto">history.others</code>).</td>
+<td>It tries five at most. The <code dir="auto">History:</code> line lists the others (JSON <code dir="auto">history.others</code>)</td>
 </tr>
 <tr>
 <td><code dir="auto">--prometheus-service namespace/name</code></td>
@@ -437,7 +539,7 @@
 </tr>
 <tr>
 <td><code dir="auto">--prometheus-url</code></td>
-<td>Reads one outside the cluster, such as Thanos or Mimir. See <a href="#a-prometheus-elsewhere">A Prometheus elsewhere</a>.</td>
+<td>Reads one outside the cluster, such as Thanos or Mimir. See <a href="#a-prometheus-elsewhere">A Prometheus elsewhere</a></td>
 </tr>
 <tr>
 <td>Either, unreadable</td>
@@ -469,7 +571,7 @@
 </tr>
 <tr>
 <td>An active step</td>
-<td>A rollout, or the workload’s own CPU above the threshold of its running pods’ requests</td>
+<td>A rollout, or the workload’s own CPU above the threshold of its running pods’ requests, as the operator counts it</td>
 </tr>
 <tr>
 <td>After <code dir="auto">--idle-after</code> with none</td>
@@ -493,7 +595,7 @@
 </tr>
 <tr>
 <td>What it can’t see</td>
-<td>Requests and activity annotations, which aren’t in Prometheus. It sees only CPU and rollouts.</td>
+<td>Requests and activity annotations, which aren’t in Prometheus. It sees only CPU and rollouts</td>
 </tr>
 <tr>
 <td>So</td>
@@ -504,7 +606,7 @@
 <td>Today’s</td>
 </tr>
 </tbody>
-</table><p>The active-step threshold is as the operator counts it.</p><table>
+</table><table>
 <thead>
 <tr>
 <th>Rank</th>
@@ -555,11 +657,11 @@
 </tr>
 <tr>
 <td>A slow query</td>
-<td>It may take whatever is left, however long. <code dir="auto">--request-timeout</code> doesn’t cut it short.</td>
+<td>It may take whatever is left, however long. <code dir="auto">--request-timeout</code> doesn’t cut it short</td>
 </tr>
 <tr>
 <td>Not read in time</td>
-<td>Judged from CPU right now. The notes name these namespaces.</td>
+<td>Judged from CPU right now. The notes name these namespaces</td>
 </tr>
 <tr>
 <td>The notes’ advice</td>
@@ -567,7 +669,7 @@
 </tr>
 <tr>
 <td>A query given up with time left</td>
-<td>By Prometheus or the API server’s proxy. The notes name the namespaces, and suggest a shorter <code dir="auto">--window</code>.</td>
+<td>By Prometheus or the API server’s proxy. The notes name the namespaces, and suggest a shorter <code dir="auto">--window</code>. A longer <code dir="auto">--timeout</code> wouldn’t help with it</td>
 </tr>
 <tr>
 <td>Less history than the window</td>
@@ -579,7 +681,7 @@
 </tr>
 <tr>
 <td>Under a day</td>
-<td>It can’t show a day’s pattern. The headline says so, in the terminal and the report.</td>
+<td>It can’t show a day’s pattern. The headline says so, in the terminal and the report</td>
 </tr>
 <tr>
 <td>The headline’s advice</td>
@@ -590,7 +692,7 @@
 <td>The scan judges from CPU right now, and says why</td>
 </tr>
 </tbody>
-</table><p>A longer <code dir="auto">--timeout</code> wouldn’t help with a query Prometheus gave up on by itself, which is why the advice differs.</p></section>
+</table></section>
 <div class="sl-heading-wrapper level-h3"><h3 id="a-prometheus-elsewhere">A Prometheus elsewhere</h3><a class="sl-anchor-link" href="#a-prometheus-elsewhere"><span aria-hidden="true" class="sl-anchor-icon"><svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="m12.11 15.39-3.88 3.88a2.52 2.52 0 0 1-3.5 0 2.47 2.47 0 0 1 0-3.5l3.88-3.88a1 1 0 1 0-1.42-1.42l-3.88 3.89a4.48 4.48 0 0 0 6.33 6.33l3.89-3.88a1 1 0 0 0-1.42-1.42m8.58-12.08a4.49 4.49 0 0 0-6.33 0l-3.89 3.88a1 1 0 1 0 1.42 1.42l3.88-3.88a2.52 2.52 0 0 1 3.5 0 2.47 2.47 0 0 1 0 3.5l-3.88 3.88a1 1 0 0 0 0 1.42 1 1 0 0 0 1.42 0l3.88-3.89a4.49 4.49 0 0 0 0-6.33M8.83 15.17a1 1 0 0 0 .71.29 1 1 0 0 0 .71-.29l4.92-4.92a1 1 0 1 0-1.42-1.42l-4.92 4.92a1 1 0 0 0 0 1.42"></path></svg></span><span class="sr-only" data-pagefind-ignore>Section titled “A Prometheus elsewhere”</span></a></div>
 <p><code dir="auto">--prometheus-url</code> reads a Prometheus API your machine can reach, rather than one in the cluster. It needs no cluster permission at all. If it doesn’t answer like a Prometheus API, the scan fails rather than going on without history.</p>
 <table>
@@ -615,7 +717,7 @@
 </tr>
 <tr>
 <td>Or</td>
-<td><code dir="auto">--prometheus-bearer-token-file</code>. Not both for one header.</td>
+<td><code dir="auto">--prometheus-bearer-token-file</code>. Not both for one header</td>
 </tr>
 <tr>
 <td>Its certificate</td>
@@ -623,7 +725,7 @@
 </tr>
 <tr>
 <td>A Prometheus in the cluster</td>
-<td>These flags don’t apply. It’s reached through the API server, with your kubeconfig.</td>
+<td>These flags don’t apply. It’s reached through the API server, with your kubeconfig</td>
 </tr>
 <tr>
 <td>Google Cloud Managed Service for Prometheus</td>
@@ -631,7 +733,7 @@
 </tr>
 <tr>
 <td>Its collectors</td>
-<td>In <code dir="auto">gmp-system</code>, with nothing to query. The scan reads another Prometheus if the cluster has one.</td>
+<td>In <code dir="auto">gmp-system</code>, with nothing to query. The scan reads another Prometheus if the cluster has one</td>
 </tr>
 <tr>
 <td>To read it</td>
@@ -651,7 +753,7 @@
 </tr>
 <tr>
 <td>Amazon Managed Service for Prometheus</td>
-<td>It needs SigV4 signing, which the scan doesn’t do. Point <code dir="auto">--prometheus-url</code> at a signing proxy.</td>
+<td>It needs SigV4 signing, which the scan doesn’t do. Point <code dir="auto">--prometheus-url</code> at a signing proxy</td>
 </tr>
 </tbody>
 </table>
@@ -706,7 +808,7 @@
 <td>Those in protected namespaces, scaled to zero by hand, or without CPU history</td>
 </tr>
 </tbody>
-</table><p>The protected line reads like this. Its workloads are in a protected namespace, part of Napwake, or StatefulSets deleting PVCs on scale-down (<code dir="auto">Protected=True</code>).</p><div class="expressive-code"><figure class="frame not-content"><figcaption class="header"></figcaption><pre data-language="plaintext"><code><div class="ec-line"><div class="code"><span style="--0:#e3e7e4;--1:#0f1716">1 more live workload is protected, so Napwake never pauses it; it freed $12 this month before it was, and saved $5 of that.</span></div></div></code></pre><div class="copy"><div aria-live="polite"></div><button title="Copy to clipboard" data-copied="Copied!" data-code="1 more live workload is protected, so Napwake never pauses it; it freed $12 this month before it was, and saved $5 of that."><div></div></button></div></figure></div><p>JSON gives <code dir="auto">totals.live</code> and <code dir="auto">totals.liveProtected</code>. It also gives <code dir="auto">totals.protectedFreedThisMonth</code> and <code dir="auto">protectedSavedThisMonth</code>, which are part of <code dir="auto">freedThisMonth</code> and <code dir="auto">savedThisMonth</code>.</p></section>
+</table><p>The protected line reads like this. Its workloads are in a protected namespace, part of Napwake, or StatefulSets deleting PVCs on scale-down (<code dir="auto">Protected=True</code>).</p><div class="expressive-code"><figure class="frame not-content"><figcaption class="header"></figcaption><pre data-language="text"><code><div class="ec-line"><div class="code"><span style="--0:#e3e7e4;--1:#0f1716">1 more live workload is protected, so Napwake never pauses it; it freed $12 this month before it was, and saved $5 of that.</span></div></div></code></pre><div class="copy"><div aria-live="polite"></div><button title="Copy to clipboard" data-copied="Copied!" data-code="1 more live workload is protected, so Napwake never pauses it; it freed $12 this month before it was, and saved $5 of that."><div></div></button></div></figure></div><p>JSON gives <code dir="auto">totals.live</code> and <code dir="auto">totals.liveProtected</code>. It also gives <code dir="auto">totals.protectedFreedThisMonth</code> and <code dir="auto">protectedSavedThisMonth</code>, which are part of <code dir="auto">freedThisMonth</code> and <code dir="auto">savedThisMonth</code>.</p></section>
 <section id="scan-deps"><div class="sl-heading-wrapper level-h3"><h3 id="dependencies">Dependencies</h3><a class="sl-anchor-link" href="#dependencies"><span aria-hidden="true" class="sl-anchor-icon"><svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="m12.11 15.39-3.88 3.88a2.52 2.52 0 0 1-3.5 0 2.47 2.47 0 0 1 0-3.5l3.88-3.88a1 1 0 1 0-1.42-1.42l-3.88 3.89a4.48 4.48 0 0 0 6.33 6.33l3.89-3.88a1 1 0 0 0-1.42-1.42m8.58-12.08a4.49 4.49 0 0 0-6.33 0l-3.89 3.88a1 1 0 1 0 1.42 1.42l3.88-3.88a2.52 2.52 0 0 1 3.5 0 2.47 2.47 0 0 1 0 3.5l-3.88 3.88a1 1 0 0 0 0 1.42 1 1 0 0 0 1.42 0l3.88-3.89a4.49 4.49 0 0 0 0-6.33M8.83 15.17a1 1 0 0 0 .71.29 1 1 0 0 0 .71-.29l4.92-4.92a1 1 0 1 0-1.42-1.42l-4.92 4.92a1 1 0 0 0 0 1.42"></path></svg></span><span class="sr-only" data-pagefind-ignore>Section titled “Dependencies”</span></a></div><p>The scan lists the workloads each workload’s environment variables point at, literal or from ConfigMaps.</p><figure class="nw-term-wrap not-content astro-66ythkd5"><pre class="nw-term astro-66ythkd5" aria-label="Dependencies, as the scan lists them" tabindex="0"><code class="astro-66ythkd5"><span class="nw-term__out astro-66ythkd5">  3 dependencies found, and what Napwake does with each:
   preview-42   deployment/checkout-api   -&gt;   statefulset/postgres         DATABASE_URL   declared; woken and held with it
   preview-42   deployment/checkout-api   -&gt;   messaging/statefulset/nats   NATS_URL       not managed, so never paused
@@ -740,7 +842,7 @@
 </tr>
 <tr>
 <td>Names</td>
-<td>Variable names don’t matter. Service names come from the cluster, not a list the scan keeps.</td>
+<td>Variable names don’t matter. Service names come from the cluster, not a list the scan keeps</td>
 </tr>
 <tr>
 <td>Shown</td>
@@ -752,18 +854,18 @@
 </tr>
 <tr>
 <td>In the terminal</td>
-<td>The variable it was found in. Only JSON and YAML carry the address.</td>
+<td>The variable it was found in. Only JSON and YAML carry the address</td>
 </tr>
 <tr>
 <td>Secrets</td>
-<td>Never read, so addresses there aren’t found. The notes name workloads that take variables from Secrets.</td>
+<td>Never read, so addresses there aren’t found. The notes name workloads that take variables from Secrets</td>
 </tr>
 <tr>
 <td>Code and files</td>
 <td>Addresses built in code or read from files aren’t found either</td>
 </tr>
 </tbody>
-</table><p>When Napwake manages both, it wakes a dependency with the workload that needs it. It keeps it up while that workload is. So the first request doesn’t wait for it too. See <a href="/next/concepts/dependencies/">Dependencies</a>.</p><table>
+</table><p>When Napwake manages both, it wakes a dependency with the workload that needs it. It keeps it up while that workload is, so the first request doesn’t wait for it too (<a href="/next/concepts/dependencies/">Dependencies</a>).</p><table>
 <thead>
 <tr>
 <th>Last column</th>
@@ -803,7 +905,7 @@
 <tbody>
 <tr>
 <td>Any workload</td>
-<td>Its requests while running, sidecars included. See <a href="/next/concepts/cost-tracking/#prices">Prices</a>.</td>
+<td>Its requests while running, sidecars included. See <a href="/next/concepts/cost-tracking/#prices">Prices</a></td>
 </tr>
 <tr>
 <td>The rate</td>
@@ -815,7 +917,7 @@
 </tr>
 <tr>
 <td>A node with no list price</td>
-<td>Assumed prices, AWS on-demand in us-east-1. The report says which.</td>
+<td>Assumed prices, AWS on-demand in us-east-1. The report says which</td>
 </tr>
 <tr>
 <td>No access to list nodes</td>
@@ -827,11 +929,11 @@
 </tr>
 <tr>
 <td>Spot and preemptible nodes</td>
-<td>Their type’s spot price. The report says how many workloads run on them.</td>
+<td>Their type’s spot price. The report says how many workloads run on them</td>
 </tr>
 <tr>
 <td>A spot node of a type not sold as spot</td>
-<td>On-demand. The report names those types, and says they cost less than shown.</td>
+<td>On-demand. The report names those types, and says they cost less than shown</td>
 </tr>
 <tr>
 <td>In JSON, per workload</td>
@@ -839,14 +941,14 @@
 </tr>
 <tr>
 <td>In JSON, per node type</td>
-<td><code dir="auto">spot</code> and <code dir="auto">atSpot</code>, in <code dir="auto">nodePrices</code>. See <a href="/next/concepts/cost-tracking/#spot-nodes">Spot nodes</a>.</td>
+<td><code dir="auto">spot</code> and <code dir="auto">atSpot</code>, in <code dir="auto">nodePrices</code>. See <a href="/next/concepts/cost-tracking/#spot-nodes">Spot nodes</a></td>
 </tr>
 <tr>
-<td>An hour asleep</td>
-<td>Frees capacity. It’s money only when a node autoscaler removes it.</td>
+<td>An hour paused</td>
+<td>Frees capacity. It’s money only when a node autoscaler removes it. <code dir="auto">kubectl napwake nodes</code> shows what keeps nodes from scaling down</td>
 </tr>
 </tbody>
-</table><p><code dir="auto">kubectl napwake nodes</code> shows what keeps nodes from scaling down.</p><p>The <code dir="auto">Prices:</code> line at the end sums up what costs were priced at:</p><table>
+</table><p>The <code dir="auto">Prices:</code> line at the end sums up what costs were priced at:</p><table>
 <thead>
 <tr>
 <th>Priced at</th>
@@ -856,7 +958,7 @@
 <tbody>
 <tr>
 <td>List prices</td>
-<td>Their provider and region, the node type or how many there are, and how many workloads are on spot, priced at spot</td>
+<td>Their provider and region, and the node type or how many there are. Then how many workloads are on spot, priced at spot</td>
 </tr>
 <tr>
 <td>Your prices</td>
@@ -886,11 +988,11 @@
 <tbody>
 <tr>
 <td>Top</td>
-<td>The cluster drawn as a hotel at night, one room per workload up to 35. Past that, the mix is rounded to 35 rooms, with the exact counts beside it</td>
+<td>Each workload’s state, drawn as a door, one per workload up to 35. Past that, the mix is rounded to 35 doors, with the exact counts beside it</td>
 </tr>
 <tr>
 <td>On a scan</td>
-<td>The idle workloads’ lit rooms go dark by themselves once, to show what Napwake would do. Nothing is paused</td>
+<td>The idle workloads’ doors close by themselves once, to show what Napwake would pause. Nothing is paused</td>
 </tr>
 <tr>
 <td>Then</td>
@@ -902,11 +1004,23 @@
 </tr>
 <tr>
 <td>Buttons</td>
-<td><strong>Copy summary</strong>, three plain lines without the cluster’s name or the Prometheus source unless you tick it, and <strong>Save as PDF</strong></td>
+<td><strong>Copy summary</strong> and <strong>Save as PDF</strong></td>
+</tr>
+<tr>
+<td>Copy summary</td>
+<td>Three plain lines. They leave out the cluster’s name and the Prometheus source unless you tick it</td>
 </tr>
 <tr>
 <td>What it sends</td>
 <td>Nothing, anywhere</td>
+</tr>
+<tr>
+<td>Before and after</td>
+<td>Before anything is live, with history or dry-run to go on. The percentage less, then what the workloads could cost a month paused when idle, and what they cost running, all on the same basis. Not shown for an estimate from under a day of history, or under 1%</td>
+</tr>
+<tr>
+<td>No node autoscaler</td>
+<td>Instead, “Not on the bill yet”, and the share pausing could free. The bill wouldn’t drop until something removes nodes</td>
 </tr>
 <tr>
 <td>Headline figures</td>
@@ -974,7 +1088,36 @@
 <td></td>
 </tr>
 </tbody>
-</table><p>Before anything is paused, the first figure is measured for dry-run and estimated from history for unmanaged workloads. It says “over the same time” when history was replayed. Then it’s measured against what they cost over the history, with the pods they ran. Without either, it’s what’s idle now costs while running, the most pausing could free. A zero with under a day of history, short of the window, says that’s too little history yet. Scan again after a few days.</p><table>
+</table><p>How the first figure is worked out before anything is paused:</p><table>
+<thead>
+<tr>
+<th>Case</th>
+<th>The first figure</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Workloads in dry-run</td>
+<td>Measured</td>
+</tr>
+<tr>
+<td>Unmanaged workloads</td>
+<td>Estimated from history</td>
+</tr>
+<tr>
+<td>Its share, with history replayed</td>
+<td>Of what they cost over the history, with the pods they ran. It says “over the same time”</td>
+</tr>
+<tr>
+<td>Without either</td>
+<td>What the idle workloads cost while running, the most pausing could free</td>
+</tr>
+<tr>
+<td>A zero, with under a day of history, short of the window</td>
+<td>It says that’s too little history yet. Scan again after a few days</td>
+</tr>
+</tbody>
+</table><table>
 <thead>
 <tr>
 <th>The file</th>
@@ -984,11 +1127,11 @@
 <tbody>
 <tr>
 <td>Loads</td>
-<td>No scripts, fonts or images. Sorting and filtering are built in.</td>
+<td>No scripts, fonts or images. Sorting and filtering are built in</td>
 </tr>
 <tr>
 <td>Leaves out</td>
-<td>Dependency addresses, as it’s meant to be passed around. JSON and YAML keep them.</td>
+<td>Dependency addresses, as it’s meant to be passed around. JSON and YAML keep them</td>
 </tr>
 <tr>
 <td>Hides</td>
@@ -1036,11 +1179,11 @@
 </tr>
 <tr>
 <td><span class="nw-ref astro-cbhc5gqx" id="scan-json-wontpause"><a href="#scan-json-wontpause" class="nw-ref__link astro-cbhc5gqx" aria-label="Link to this row">#</a><code class="astro-cbhc5gqx">wontPause</code></span></td>
-<td>A StatefulSet whose <code dir="auto">persistentVolumeClaimRetentionPolicy.whenScaled</code> is <code dir="auto">Delete</code>. BECAUSE says <code dir="auto">won't pause: PVCs deleted on scale-down</code>.</td>
+<td>A StatefulSet whose <code dir="auto">persistentVolumeClaimRetentionPolicy.whenScaled</code> is <code dir="auto">Delete</code>. BECAUSE says <code dir="auto">won't pause: PVCs deleted on scale-down</code></td>
 </tr>
 <tr>
 <td><span class="nw-ref astro-cbhc5gqx" id="scan-json-namespaces"><a href="#scan-json-namespaces" class="nw-ref__link astro-cbhc5gqx" aria-label="Link to this row">#</a><code class="astro-cbhc5gqx">namespaces</code></span></td>
-<td>Every namespace read. The first line counts only the namespaces listed workloads are in.</td>
+<td>Every namespace read. The first line counts only the namespaces listed workloads are in</td>
 </tr>
 <tr>
 <td><span class="nw-ref astro-cbhc5gqx" id="scan-json-history-prometheus"><a href="#scan-json-history-prometheus" class="nw-ref__link astro-cbhc5gqx" aria-label="Link to this row">#</a><code class="astro-cbhc5gqx">history.<wbr>prometheus</code></span></td>
@@ -1080,11 +1223,11 @@
 </tr>
 <tr>
 <td><span class="nw-ref astro-cbhc5gqx" id="scan-json-totals-protectedfreedthismonth"><a href="#scan-json-totals-protectedfreedthismonth" class="nw-ref__link astro-cbhc5gqx" aria-label="Link to this row">#</a><code class="astro-cbhc5gqx">totals.<wbr>protectedFreedThisMonth</code></span></td>
-<td>What those freed this month before protection. Part of <code dir="auto">freedThisMonth</code>.</td>
+<td>What those freed this month before protection. Part of <code dir="auto">freedThisMonth</code></td>
 </tr>
 <tr>
 <td><span class="nw-ref astro-cbhc5gqx" id="scan-json-totals-protectedsavedthismonth"><a href="#scan-json-totals-protectedsavedthismonth" class="nw-ref__link astro-cbhc5gqx" aria-label="Link to this row">#</a><code class="astro-cbhc5gqx">totals.<wbr>protectedSavedThisMonth</code></span></td>
-<td>What of that was saved. Part of <code dir="auto">savedThisMonth</code>.</td>
+<td>What of that was saved. Part of <code dir="auto">savedThisMonth</code></td>
 </tr>
 <tr>
 <td><span class="nw-ref astro-cbhc5gqx" id="scan-json-onspot"><a href="#scan-json-onspot" class="nw-ref__link astro-cbhc5gqx" aria-label="Link to this row">#</a><code class="astro-cbhc5gqx">onSpot</code></span></td>
@@ -1096,11 +1239,11 @@
 </tr>
 <tr>
 <td><span class="nw-ref astro-cbhc5gqx" id="scan-json-nodeprices"><a href="#scan-json-nodeprices" class="nw-ref__link astro-cbhc5gqx" aria-label="Link to this row">#</a><code class="astro-cbhc5gqx">nodePrices</code></span></td>
-<td>Per node type, with <code dir="auto">spot</code> and <code dir="auto">atSpot</code>. See <a href="/next/concepts/cost-tracking/#spot-nodes">Spot nodes</a>.</td>
+<td>Per node type, with <code dir="auto">spot</code> and <code dir="auto">atSpot</code>. See <a href="/next/concepts/cost-tracking/#spot-nodes">Spot nodes</a></td>
 </tr>
 <tr>
 <td><span class="nw-ref astro-cbhc5gqx" id="scan-json-incomplete"><a href="#scan-json-incomplete" class="nw-ref__link astro-cbhc5gqx" aria-label="Link to this row">#</a><code class="astro-cbhc5gqx">incomplete</code></span></td>
-<td>The namespaces, by why, as <code dir="auto">missing</code>, <code dir="auto">denied</code>, <code dir="auto">failed</code> or <code dir="auto">unscanned</code>. See <a href="#exit-status">Exit status</a>.</td>
+<td>The namespaces, by why, as <code dir="auto">missing</code>, <code dir="auto">denied</code>, <code dir="auto">failed</code> or <code dir="auto">unscanned</code>. See <a href="#exit-status">Exit status</a></td>
 </tr>
 <tr>
 <td><span class="nw-ref astro-cbhc5gqx" id="scan-json-workloads"><a href="#scan-json-workloads" class="nw-ref__link astro-cbhc5gqx" aria-label="Link to this row">#</a><code class="astro-cbhc5gqx">workloads</code></span></td>
@@ -1143,7 +1286,6 @@
 </tr>
 </tbody>
 </table>
-<p>A <code dir="auto">403</code> changes the exit status only for a namespace you named with <code dir="auto">-n</code>. On <code dir="auto">1</code>, the notes say what was missed. The error says to check a namespace’s name, ask for access, or retry with a longer <code dir="auto">--timeout</code>. Out of <code dir="auto">--timeout</code>, the scan still reports the namespaces it scanned in time, and lists the rest as <code dir="auto">unscanned</code>.</p>
 <table>
 <thead>
 <tr>
@@ -1152,6 +1294,18 @@
 </tr>
 </thead>
 <tbody>
+<tr>
+<td>A <code dir="auto">403</code></td>
+<td>Changes the exit status only for a namespace you named with <code dir="auto">-n</code></td>
+</tr>
+<tr>
+<td>On <code dir="auto">1</code></td>
+<td>The notes say what was missed. The error says to check a namespace’s name, ask for access, or retry with a longer <code dir="auto">--timeout</code></td>
+</tr>
+<tr>
+<td>Out of <code dir="auto">--timeout</code></td>
+<td>The scan still reports the namespaces it scanned in time, and lists the rest as <code dir="auto">unscanned</code></td>
+</tr>
 <tr>
 <td>JSON and YAML</td>
 <td>The namespaces in <code dir="auto">incomplete</code>, by why, as <code dir="auto">missing</code>, <code dir="auto">denied</code>, <code dir="auto">failed</code> or <code dir="auto">unscanned</code></td>
@@ -1217,12 +1371,48 @@
 </tr>
 </tbody>
 </table>
-<p>The standard <code dir="auto">view</code> role covers the namespaced reads, ManagedWorkloads too, as Napwake’s chart and manifests add them to it. It doesn’t cover nodes, which are cluster-wide, or <code dir="auto">services/proxy</code>. Without a read, the scan carries on, and the notes say what it couldn’t see. Without <code dir="auto">services/proxy</code>, it judges from CPU right now. It prints what an admin can run for that one Service and nothing else.</p>
+<table>
+<thead>
+<tr>
+<th></th>
+<th></th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>The standard <code dir="auto">view</code> role</td>
+<td>Covers the namespaced reads, ManagedWorkloads too, as Napwake’s chart and manifests add them to it</td>
+</tr>
+<tr>
+<td>Not in <code dir="auto">view</code></td>
+<td>Nodes, which are cluster-wide, and <code dir="auto">services/proxy</code></td>
+</tr>
+<tr>
+<td>Without a read</td>
+<td>The scan carries on, and the notes say what it couldn’t see</td>
+</tr>
+<tr>
+<td>Without <code dir="auto">services/proxy</code></td>
+<td>It judges from CPU right now. It prints what an admin can run for that one Service and nothing else, as below</td>
+</tr>
+<tr>
+<td>The same, for a Prometheus you name with <code dir="auto">--prometheus-service</code></td>
+<td>The scan fails instead, with the same commands in its error. <code dir="auto">view</code> covers its <code dir="auto">get</code></td>
+</tr>
+<tr>
+<td>Only when</td>
+<td>The API server refuses you the proxy</td>
+</tr>
+<tr>
+<td>A <code dir="auto">403</code> from behind the proxy, such as a <code dir="auto">kube-rbac-proxy</code> in front of Prometheus</td>
+<td>Shows as Prometheus’s own answer. A Role for <code dir="auto">services/proxy</code> wouldn’t change it</td>
+</tr>
+</tbody>
+</table>
 <figure class="nw-term-wrap not-content astro-66ythkd5"><pre class="nw-term astro-66ythkd5" aria-label="What the scan prints when it can't reach Prometheus" tabindex="0"><code class="astro-66ythkd5"><span class="nw-term__out astro-66ythkd5">To replay history, an admin can let you read Prometheus, and nothing else, with:
   kubectl create role napwake-scan -n monitoring --verb=get --resource=services/proxy --resource-name=prometheus-operated:web
   kubectl create rolebinding napwake-scan -n monitoring --role=napwake-scan --user=jane@example.com
 Or pass --prometheus-url if Prometheus is reachable from your machine.</span></code></pre></figure>
-<p>A Prometheus you name with <code dir="auto">--prometheus-service</code> fails the scan instead, with the same commands in its error. <code dir="auto">view</code> covers its <code dir="auto">get</code>. All this is only when the API server refuses you the proxy. A <code dir="auto">403</code> from behind it, such as a <code dir="auto">kube-rbac-proxy</code> in front of Prometheus, shows as Prometheus’s own answer. A Role for <code dir="auto">services/proxy</code> wouldn’t change it.</p>
 <div class="sl-heading-wrapper level-h2"><h2 id="forecast"><code dir="auto">forecast</code></h2><a class="sl-anchor-link" href="#forecast"><span aria-hidden="true" class="sl-anchor-icon"><svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="m12.11 15.39-3.88 3.88a2.52 2.52 0 0 1-3.5 0 2.47 2.47 0 0 1 0-3.5l3.88-3.88a1 1 0 1 0-1.42-1.42l-3.88 3.89a4.48 4.48 0 0 0 6.33 6.33l3.89-3.88a1 1 0 0 0-1.42-1.42m8.58-12.08a4.49 4.49 0 0 0-6.33 0l-3.89 3.88a1 1 0 1 0 1.42 1.42l3.88-3.88a2.52 2.52 0 0 1 3.5 0 2.47 2.47 0 0 1 0 3.5l-3.88 3.88a1 1 0 0 0 0 1.42 1 1 0 0 0 1.42 0l3.88-3.89a4.49 4.49 0 0 0 0-6.33M8.83 15.17a1 1 0 0 0 .71.29 1 1 0 0 0 .71-.29l4.92-4.92a1 1 0 1 0-1.42-1.42l-4.92 4.92a1 1 0 0 0 0 1.42"></path></svg></span><span class="sr-only" data-pagefind-ignore>Section titled “forecast”</span></a></div>
 <p>Its flags, with their defaults. <a href="/next/getting-started/kubectl-plugin/#replay-the-forecast">Replay the forecast</a> shows it in use.</p>
 <table>
@@ -1237,7 +1427,7 @@ Or pass --prometheus-url if Prometheus is reachable from your machine.</span></c
 <tr>
 <td><span class="nw-ref astro-cbhc5gqx" id="forecast-namespace"><a href="#forecast-namespace" class="nw-ref__link astro-cbhc5gqx" aria-label="Link to this row">#</a><code class="astro-cbhc5gqx">--namespace</code></span> <code dir="auto">-n</code></td>
 <td>all you can read</td>
-<td>Namespace to replay. Repeat for several.</td>
+<td>Namespace to replay. Repeat for several</td>
 </tr>
 <tr>
 <td><span class="nw-ref astro-cbhc5gqx" id="forecast-all-namespaces"><a href="#forecast-all-namespaces" class="nw-ref__link astro-cbhc5gqx" aria-label="Link to this row">#</a><code class="astro-cbhc5gqx">--all-<wbr>namespaces</code></span> <code dir="auto">-A</code></td>
@@ -1246,38 +1436,38 @@ Or pass --prometheus-url if Prometheus is reachable from your machine.</span></c
 </tr>
 <tr>
 <td><span class="nw-ref astro-cbhc5gqx" id="forecast-exclude-namespaces"><a href="#forecast-exclude-namespaces" class="nw-ref__link astro-cbhc5gqx" aria-label="Link to this row">#</a><code class="astro-cbhc5gqx">--exclude-<wbr>namespaces</code></span></td>
-<td>system namespaces</td>
+<td><code dir="auto">kube-system</code>, <code dir="auto">kube-public</code>, <code dir="auto">kube-node-lease</code></td>
 <td>Namespaces to skip</td>
 </tr>
 <tr>
 <td><span class="nw-ref astro-cbhc5gqx" id="forecast-window"><a href="#forecast-window" class="nw-ref__link astro-cbhc5gqx" aria-label="Link to this row">#</a><code class="astro-cbhc5gqx">--window</code></span></td>
 <td><code dir="auto">28d</code></td>
-<td>History to read, from <code dir="auto">2d</code> to <code dir="auto">34d</code>. The operator learns up to four weeks.</td>
+<td>History to read, from <code dir="auto">2d</code> to <code dir="auto">34d</code>. The operator learns up to four weeks</td>
 </tr>
 <tr>
 <td><span class="nw-ref astro-cbhc5gqx" id="forecast-forecast"><a href="#forecast-forecast" class="nw-ref__link astro-cbhc5gqx" aria-label="Link to this row">#</a><code class="astro-cbhc5gqx">--forecast</code></span></td>
 <td><code dir="auto">balanced</code></td>
-<td>How soon the forecast acts for unmanaged workloads. See <a href="/next/concepts/forecasting/#forecast-setting">Forecast setting</a>.</td>
+<td>How soon the forecast acts for unmanaged workloads, <code dir="auto">eager</code>, <code dir="auto">balanced</code> or <code dir="auto">cautious</code>. See <a href="/next/concepts/forecasting/#forecast-setting">Forecast setting</a></td>
 </tr>
 <tr>
 <td><span class="nw-ref astro-cbhc5gqx" id="forecast-timezone"><a href="#forecast-timezone" class="nw-ref__link astro-cbhc5gqx" aria-label="Link to this row">#</a><code class="astro-cbhc5gqx">--timezone</code></span></td>
 <td>the operator’s</td>
-<td>The zone whose hours and weekdays the forecast learns, and times show in</td>
+<td>The zone whose hours and weekdays the forecast learns, and times show in. Unset, the operator’s <code dir="auto">timezone</code>, from <code dir="auto">status.prediction.timeZone</code>, or <code dir="auto">UTC</code> if you can read none</td>
 </tr>
 <tr>
 <td><span class="nw-ref astro-cbhc5gqx" id="forecast-cpu-threshold"><a href="#forecast-cpu-threshold" class="nw-ref__link astro-cbhc5gqx" aria-label="Link to this row">#</a><code class="astro-cbhc5gqx">--cpu-<wbr>threshold</code></span></td>
 <td><code dir="auto">10</code></td>
-<td>CPU use, as a percentage of requests from 0.1 to 100, such as <code dir="auto">10</code> or <code dir="auto">0.5</code>, above which a workload is in use</td>
+<td>CPU use above which a workload is in use, as a percentage of requests. From 0.1 to 100, such as <code dir="auto">10</code> or <code dir="auto">0.5</code>. Managed workloads use their own</td>
 </tr>
 <tr>
 <td><span class="nw-ref astro-cbhc5gqx" id="forecast-idle-after"><a href="#forecast-idle-after" class="nw-ref__link astro-cbhc5gqx" aria-label="Link to this row">#</a><code class="astro-cbhc5gqx">--idle-<wbr>after</code></span></td>
 <td><code dir="auto">1h</code></td>
-<td>How long without use before a pause</td>
+<td>How long without use before a pause. Managed workloads use their own</td>
 </tr>
 <tr>
 <td><span class="nw-ref astro-cbhc5gqx" id="forecast-output"><a href="#forecast-output" class="nw-ref__link astro-cbhc5gqx" aria-label="Link to this row">#</a><code class="astro-cbhc5gqx">--output</code></span> <code dir="auto">-o</code></td>
 <td><code dir="auto">table</code></td>
-<td><code dir="auto">table</code>, <code dir="auto">json</code> or <code dir="auto">yaml</code>. JSON and YAML give every workload’s days.</td>
+<td><code dir="auto">table</code>, <code dir="auto">json</code> or <code dir="auto">yaml</code>. JSON and YAML give every workload’s days</td>
 </tr>
 <tr>
 <td><span class="nw-ref astro-cbhc5gqx" id="forecast-timeout"><a href="#forecast-timeout" class="nw-ref__link astro-cbhc5gqx" aria-label="Link to this row">#</a><code class="astro-cbhc5gqx">--timeout</code></span></td>
@@ -1291,7 +1481,6 @@ Or pass --prometheus-url if Prometheus is reachable from your machine.</span></c
 </tr>
 </tbody>
 </table>
-<p><code dir="auto">--forecast</code> is <code dir="auto">eager</code>, <code dir="auto">balanced</code> or <code dir="auto">cautious</code>. <code dir="auto">--timezone</code> defaults to the operator’s <code dir="auto">timezone</code>, from <code dir="auto">status.prediction.timeZone</code>, or <code dir="auto">UTC</code> if you can read none. Managed workloads use their own <code dir="auto">--cpu-threshold</code> and <code dir="auto">--idle-after</code>.</p>
 <section id="forecast-history"><div class="sl-heading-wrapper level-h3"><h3 id="history-and-what-would-wake-a-workload">History, and what would wake a workload</h3><a class="sl-anchor-link" href="#history-and-what-would-wake-a-workload"><span aria-hidden="true" class="sl-anchor-icon"><svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="m12.11 15.39-3.88 3.88a2.52 2.52 0 0 1-3.5 0 2.47 2.47 0 0 1 0-3.5l3.88-3.88a1 1 0 1 0-1.42-1.42l-3.88 3.89a4.48 4.48 0 0 0 6.33 6.33l3.89-3.88a1 1 0 0 0-1.42-1.42m8.58-12.08a4.49 4.49 0 0 0-6.33 0l-3.89 3.88a1 1 0 1 0 1.42 1.42l3.88-3.88a2.52 2.52 0 0 1 3.5 0 2.47 2.47 0 0 1 0 3.5l-3.88 3.88a1 1 0 0 0 0 1.42 1 1 0 0 0 1.42 0l3.88-3.89a4.49 4.49 0 0 0 0-6.33M8.83 15.17a1 1 0 0 0 .71.29 1 1 0 0 0 .71-.29l4.92-4.92a1 1 0 1 0-1.42-1.42l-4.92 4.92a1 1 0 0 0 0 1.42"></path></svg></span><span class="sr-only" data-pagefind-ignore>Section titled “History, and what would wake a workload”</span></a></div><table>
 <thead>
 <tr>
@@ -1310,7 +1499,7 @@ Or pass --prometheus-url if Prometheus is reachable from your machine.</span></c
 </tr>
 <tr>
 <td>Under two days</td>
-<td>A day to learn and a day to replay. It says so, and when there will be enough.</td>
+<td>A day to learn and a day to replay. It says so, and when there will be enough</td>
 </tr>
 <tr>
 <td>The same, managed</td>
@@ -1384,7 +1573,7 @@ Or pass --prometheus-url if Prometheus is reachable from your machine.</span></c
 </tr>
 <tr>
 <td>Several matches</td>
-<td>Such as <code dir="auto">api</code> in two namespaces. <code dir="auto">forecast</code> names them, and asks for <code dir="auto">-n</code> or <code dir="auto">kind/name</code>.</td>
+<td>Such as <code dir="auto">api</code> in two namespaces. <code dir="auto">forecast</code> names them, and asks for <code dir="auto">-n</code> or <code dir="auto">kind/name</code></td>
 </tr>
 <tr>
 <td>No match</td>
@@ -1502,12 +1691,12 @@ Or pass --prometheus-url if Prometheus is reachable from your machine.</span></c
 <tr>
 <td><span class="nw-ref astro-cbhc5gqx" id="status-namespace"><a href="#status-namespace" class="nw-ref__link astro-cbhc5gqx" aria-label="Link to this row">#</a><code class="astro-cbhc5gqx">--namespace</code></span> <code dir="auto">-n</code></td>
 <td>all you can read</td>
-<td>Namespace to show. Repeat for several.</td>
+<td>Namespace to show. Repeat for several</td>
 </tr>
 <tr>
 <td><span class="nw-ref astro-cbhc5gqx" id="status-all-namespaces"><a href="#status-all-namespaces" class="nw-ref__link astro-cbhc5gqx" aria-label="Link to this row">#</a><code class="astro-cbhc5gqx">--all-<wbr>namespaces</code></span> <code dir="auto">-A</code></td>
-<td></td>
-<td>Every namespace, failing rather than falling back. Not with <code dir="auto">-n</code>.</td>
+<td><code dir="auto">false</code></td>
+<td>Every namespace, failing rather than falling back. Not with <code dir="auto">-n</code></td>
 </tr>
 <tr>
 <td><span class="nw-ref astro-cbhc5gqx" id="status-output"><a href="#status-output" class="nw-ref__link astro-cbhc5gqx" aria-label="Link to this row">#</a><code class="astro-cbhc5gqx">--output</code></span> <code dir="auto">-o</code></td>
@@ -1550,24 +1739,36 @@ Or pass --prometheus-url if Prometheus is reachable from your machine.</span></c
 <td><code dir="auto">GitOpsConflict</code></td>
 </tr>
 <tr>
-<td>A dependency that’s missing, in a cycle, or in a namespace that doesn’t allow it</td>
+<td>A <code dir="auto">dependsOn</code> cycle through it</td>
+<td><code dir="auto">DependencyCycle</code></td>
+</tr>
+<tr>
+<td>A dependency that doesn’t exist, or can’t be seen</td>
+<td><code dir="auto">DependencyNotFound</code></td>
+</tr>
+<tr>
+<td>A dependency in a namespace that doesn’t allow it</td>
 <td><code dir="auto">DependencyNotAllowed</code></td>
 </tr>
 <tr>
 <td>Two ManagedWorkloads for one target</td>
-<td></td>
+<td><code dir="auto">DuplicateTarget</code></td>
 </tr>
 <tr>
-<td>A protected namespace</td>
-<td></td>
+<td>A protected namespace, or a StatefulSet that deletes its PVCs when scaled down</td>
+<td><code dir="auto">Protected</code></td>
 </tr>
 <tr>
 <td>A target that’s gone</td>
-<td></td>
+<td><code dir="auto">TargetAvailable</code></td>
 </tr>
 <tr>
-<td>Metrics or Prometheus that can’t be read</td>
-<td></td>
+<td>Metrics that can’t be read</td>
+<td><code dir="auto">MetricsAvailable</code></td>
+</tr>
+<tr>
+<td>Prometheus that can’t be read</td>
+<td><code dir="auto">PrometheusAvailable</code></td>
 </tr>
 <tr>
 <td>A Prometheus query that has never matched a series</td>
@@ -1586,7 +1787,7 @@ Or pass --prometheus-url if Prometheus is reachable from your machine.</span></c
 <td><code dir="auto">PauseIncomplete</code></td>
 </tr>
 <tr>
-<td>A pause made while it was in use, until a pause holds, with what to change, such as a CPU threshold</td>
+<td>A pause made while it was in use, until a pause holds. It says what to change, such as a CPU threshold</td>
 <td><code dir="auto">PausedWhileInUse</code> (<a href="/next/concepts/idle-detection/#paused-while-in-use">Paused while in use</a>)</td>
 </tr>
 <tr>
@@ -1595,8 +1796,38 @@ Or pass --prometheus-url if Prometheus is reachable from your machine.</span></c
 </tr>
 </tbody>
 </table>
-<p>For an awake workload, <code dir="auto">WakeOnRequest</code> is what its last pause found with its Services, to fix before the next. Its being awake (<code dir="auto">NotPaused</code>) isn’t shown, nor the doorman being turned off.</p>
-<p>In <code dir="auto">-o json</code>, each problem’s <code dir="auto">target</code> names its workload as the table does, such as <code dir="auto">deployment/worker</code>.</p>
+<p>For an awake workload, <code dir="auto">WakeOnRequest</code> is what its last pause found with its Services, to fix before the next. In <code dir="auto">-o json</code>, each problem’s <code dir="auto">target</code> names its workload as the table does, such as <code dir="auto">deployment/worker</code>.</p>
+<p>Not shown, as each is set up on purpose or normal:</p>
+<table>
+<thead>
+<tr>
+<th>Not shown</th>
+<th>Its condition and reason</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>A workload labelled <code dir="auto">napwake.dev/ignore</code></td>
+<td><code dir="auto">TargetAvailable</code>, reason <code dir="auto">TargetIgnored</code></td>
+</tr>
+<tr>
+<td>Napwake’s own operator and doorman</td>
+<td><code dir="auto">Protected</code>, reason <code dir="auto">NapwakeComponent</code></td>
+</tr>
+<tr>
+<td>A workload with no Services</td>
+<td><code dir="auto">WakeOnRequest</code>, reason <code dir="auto">NoServices</code></td>
+</tr>
+<tr>
+<td>The doorman turned off</td>
+<td><code dir="auto">WakeOnRequest</code>, reason <code dir="auto">DoormanDisabled</code></td>
+</tr>
+<tr>
+<td>A workload’s being awake</td>
+<td><code dir="auto">WakeOnRequest</code>, reason <code dir="auto">NotPaused</code></td>
+</tr>
+</tbody>
+</table>
 <div class="sl-heading-wrapper level-h3"><h3 id="the-last-activity-column">The LAST ACTIVITY column</h3><a class="sl-anchor-link" href="#the-last-activity-column"><span aria-hidden="true" class="sl-anchor-icon"><svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="m12.11 15.39-3.88 3.88a2.52 2.52 0 0 1-3.5 0 2.47 2.47 0 0 1 0-3.5l3.88-3.88a1 1 0 1 0-1.42-1.42l-3.88 3.89a4.48 4.48 0 0 0 6.33 6.33l3.89-3.88a1 1 0 0 0-1.42-1.42m8.58-12.08a4.49 4.49 0 0 0-6.33 0l-3.89 3.88a1 1 0 1 0 1.42 1.42l3.88-3.88a2.52 2.52 0 0 1 3.5 0 2.47 2.47 0 0 1 0 3.5l-3.88 3.88a1 1 0 0 0 0 1.42 1 1 0 0 0 1.42 0l3.88-3.89a4.49 4.49 0 0 0 0-6.33M8.83 15.17a1 1 0 0 0 .71.29 1 1 0 0 0 .71-.29l4.92-4.92a1 1 0 1 0-1.42-1.42l-4.92 4.92a1 1 0 0 0 0 1.42"></path></svg></span><span class="sr-only" data-pagefind-ignore>Section titled “The LAST ACTIVITY column”</span></a></div>
 <table>
 <thead>
@@ -1651,7 +1882,7 @@ Or pass --prometheus-url if Prometheus is reachable from your machine.</span></c
 </tr>
 <tr>
 <td><code dir="auto">pauses at 14:20 UTC (after GitOps conflict)</code></td>
-<td>A GitOps tool undid its last pause, so Napwake waits an hour. See <a href="/next/guides/gitops/#what-napwake-does">GitOps tools</a>.</td>
+<td>A GitOps tool undid its last pause, so Napwake waits an hour. See <a href="/next/guides/gitops/#what-napwake-does">GitOps tools</a></td>
 </tr>
 <tr>
 <td><code dir="auto">pauses soon</code></td>
@@ -1659,19 +1890,19 @@ Or pass --prometheus-url if Prometheus is reachable from your machine.</span></c
 </tr>
 <tr>
 <td><code dir="auto">overdue to pause</code></td>
-<td>After that. Something the table can’t see holds it.</td>
+<td>After that. Something the table can’t see holds it</td>
 </tr>
 <tr>
 <td><code dir="auto">held awake while preview-7/worker uses it</code></td>
-<td>Not yet. Its dependents hold it, until they pause.</td>
+<td>Not yet. Its dependents hold it, until they pause</td>
 </tr>
 <tr>
 <td><code dir="auto">held awake for 2h (active-until)</code></td>
-<td>Not yet. <code dir="auto">napwake.dev/active-until</code>, on the ManagedWorkload or the workload, as <code dir="auto">wake --for</code> sets.</td>
+<td>Not yet. <code dir="auto">napwake.dev/active-until</code>, on the ManagedWorkload or the workload, as <code dir="auto">wake --for</code> sets</td>
 </tr>
 <tr>
 <td><code dir="auto">held awake by the forecast: busy from 13:00 UTC</code></td>
-<td>Not yet. The forecast expects demand that hour.</td>
+<td>Not yet. The forecast expects demand that hour</td>
 </tr>
 <tr>
 <td><code dir="auto">never pauses: no idlePolicy</code>, <code dir="auto">never pauses: namespace protected</code></td>
@@ -1679,11 +1910,11 @@ Or pass --prometheus-url if Prometheus is reachable from your machine.</span></c
 </tr>
 <tr>
 <td><code dir="auto">never pauses: part of Napwake</code></td>
-<td>Never. It’s the operator’s or the doorman’s own Deployment.</td>
+<td>Never. It’s the operator’s or the doorman’s own Deployment</td>
 </tr>
 <tr>
 <td><code dir="auto">never pauses: PVCs deleted on scale-down</code></td>
-<td>Never. A StatefulSet with <code dir="auto">persistentVolumeClaimRetentionPolicy.whenScaled: Delete</code>.</td>
+<td>Never. A StatefulSet with <code dir="auto">persistentVolumeClaimRetentionPolicy.whenScaled: Delete</code></td>
 </tr>
 <tr>
 <td><code dir="auto">nothing: labelled napwake.dev/ignore</code>, <code dir="auto">nothing: workload not found</code>, <code dir="auto">nothing: another ManagedWorkload has it</code></td>
@@ -1695,7 +1926,7 @@ Or pass --prometheus-url if Prometheus is reachable from your machine.</span></c
 </tr>
 <tr>
 <td><code dir="auto">wakes on a request or activity</code></td>
-<td>Paused, and what wakes it. Without the doorman, <code dir="auto">wakes on activity</code>.</td>
+<td>Paused, and what wakes it. Without the doorman, <code dir="auto">wakes on activity</code></td>
 </tr>
 <tr>
 <td><code dir="auto">wakes on a click, a wake request or activity</code></td>
@@ -1735,7 +1966,7 @@ Or pass --prometheus-url if Prometheus is reachable from your machine.</span></c
 </tr>
 <tr>
 <td>Such as</td>
-<td><code dir="auto">no Service routes requests to it</code>. <code dir="auto">status.prediction.message</code> says how to fix it.</td>
+<td><code dir="auto">no Service routes requests to it</code>. <code dir="auto">status.prediction.message</code> says how to fix it</td>
 </tr>
 <tr>
 <td><code dir="auto">-</code></td>
@@ -1748,7 +1979,7 @@ Or pass --prometheus-url if Prometheus is reachable from your machine.</span></c
 </tbody>
 </table>
 <div class="sl-heading-wrapper level-h3"><h3 id="turned-away-while-asleep">Turned away while asleep</h3><a class="sl-anchor-link" href="#turned-away-while-asleep"><span aria-hidden="true" class="sl-anchor-icon"><svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="m12.11 15.39-3.88 3.88a2.52 2.52 0 0 1-3.5 0 2.47 2.47 0 0 1 0-3.5l3.88-3.88a1 1 0 1 0-1.42-1.42l-3.88 3.89a4.48 4.48 0 0 0 6.33 6.33l3.89-3.88a1 1 0 0 0-1.42-1.42m8.58-12.08a4.49 4.49 0 0 0-6.33 0l-3.89 3.88a1 1 0 1 0 1.42 1.42l3.88-3.88a2.52 2.52 0 0 1 3.5 0 2.47 2.47 0 0 1 0 3.5l-3.88 3.88a1 1 0 0 0 0 1.42 1 1 0 0 0 1.42 0l3.88-3.89a4.49 4.49 0 0 0 0-6.33M8.83 15.17a1 1 0 0 0 .71.29 1 1 0 0 0 .71-.29l4.92-4.92a1 1 0 1 0-1.42-1.42l-4.92 4.92a1 1 0 0 0 0 1.42"></path></svg></span><span class="sr-only" data-pagefind-ignore>Section titled “Turned away while asleep”</span></a></div>
-<p>Under the table, when a workload whose doorman asks before waking it turned requests away during its current or last pause:</p>
+<p>Under the table, when a workload that asks before waking turned requests away in its current or last pause:</p>
 <div class="expressive-code"><figure class="frame not-content"><figcaption class="header"></figcaption><pre data-language="text"><code><div class="ec-line"><div class="code"><span style="--0:#e3e7e4;--1:#0f1716">Turned away while asleep, by a doorman that asks before waking: something automated may call these.</span></div></div><div class="ec-line"><div class="code"><span class="indent"><span style="--0:#e3e7e4;--1:#0f1716">  </span></span><span style="--0:#e3e7e4;--1:#0f1716">preview-42/web   312 requests during the pause from 3h ago</span></div></div></code></pre><div class="copy"><div aria-live="polite"></div><button title="Copy to clipboard" data-copied="Copied!" data-code="Turned away while asleep, by a doorman that asks before waking: something automated may call these.  preview-42/web   312 requests during the pause from 3h ago"><div></div></button></div></figure></div>
 <p>A person shown the asleep page isn’t counted. So many mean something automated calls it, such as a monitor, a webhook or another service. <code dir="auto">-o json</code> has them as <code dir="auto">turnedAway</code>, from the ManagedWorkload’s <code dir="auto">status.turnedAway</code> (<a href="/next/concepts/wake-on-request/#what-it-turns-away">What it turns away</a>).</p>
 <div class="sl-heading-wrapper level-h3"><h3 id="recent-pauses-and-wakes">Recent pauses and wakes</h3><a class="sl-anchor-link" href="#recent-pauses-and-wakes"><span aria-hidden="true" class="sl-anchor-icon"><svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="m12.11 15.39-3.88 3.88a2.52 2.52 0 0 1-3.5 0 2.47 2.47 0 0 1 0-3.5l3.88-3.88a1 1 0 1 0-1.42-1.42l-3.88 3.89a4.48 4.48 0 0 0 6.33 6.33l3.89-3.88a1 1 0 0 0-1.42-1.42m8.58-12.08a4.49 4.49 0 0 0-6.33 0l-3.89 3.88a1 1 0 1 0 1.42 1.42l3.88-3.88a2.52 2.52 0 0 1 3.5 0 2.47 2.47 0 0 1 0 3.5l-3.88 3.88a1 1 0 0 0 0 1.42 1 1 0 0 0 1.42 0l3.88-3.89a4.49 4.49 0 0 0 0-6.33M8.83 15.17a1 1 0 0 0 .71.29 1 1 0 0 0 .71-.29l4.92-4.92a1 1 0 1 0-1.42-1.42l-4.92 4.92a1 1 0 0 0 0 1.42"></path></svg></span><span class="sr-only" data-pagefind-ignore>Section titled “Recent pauses and wakes”</span></a></div>
@@ -1802,11 +2033,10 @@ Or pass --prometheus-url if Prometheus is reachable from your machine.</span></c
 </tr>
 <tr>
 <td>How far back</td>
-<td>The API server keeps events for an hour, unless its <code dir="auto">--event-ttl</code> says otherwise</td>
+<td>The API server keeps events for an hour, unless its <code dir="auto">--event-ttl</code> says otherwise. So on most clusters, an hour is what <code dir="auto">status</code> can show</td>
 </tr>
 </tbody>
 </table>
-<p>So on most clusters, an hour is what <code dir="auto">status</code> can show.</p>
 <table>
 <thead>
 <tr>
@@ -1851,6 +2081,14 @@ Or pass --prometheus-url if Prometheus is reachable from your machine.</span></c
 </tr>
 </thead>
 <tbody>
+<tr>
+<td><span class="nw-ref astro-cbhc5gqx" id="status-json-pausingoff"><a href="#status-json-pausingoff" class="nw-ref__link astro-cbhc5gqx" aria-label="Link to this row">#</a><code class="astro-cbhc5gqx">pausingOff</code></span></td>
+<td>How many of the workloads say <a href="/next/guides/pause/#stop-all-pausing-now">pausing is off</a> for their install, by their <code dir="auto">PausingOff</code> condition</td>
+</tr>
+<tr>
+<td><span class="nw-ref astro-cbhc5gqx" id="status-json-monthatpace"><a href="#status-json-monthatpace" class="nw-ref__link astro-cbhc5gqx" aria-label="Link to this row">#</a><code class="astro-cbhc5gqx">monthAtPace</code></span></td>
+<td>A month of the workloads at this month’s pace, from each one’s projection in <code dir="auto">status.cost</code>: <code dir="auto">without</code> Napwake (cost plus what pausing frees); what comes off the bill as nodes go, <code dir="auto">saved</code>, the <code dir="auto">bill</code> that leaves, and <code dir="auto">savedPercent</code>; all that pausing frees, <code dir="auto">freed</code>, what the workloads cost <code dir="auto">with</code> it, and <code dir="auto">freedPercent</code>; <code dir="auto">savedMeasurable</code>, false when saved can’t be measured for some; the whole <code dir="auto">days</code> counted; and a <code dir="auto">state</code>: <code dir="auto">pending</code> before a day is counted, <code dir="auto">early</code> before a week, then <code dir="auto">steady</code>, or <code dir="auto">none</code> when nothing is priced or pausing frees nothing</td>
+</tr>
 <tr>
 <td><span class="nw-ref astro-cbhc5gqx" id="status-json-forecast"><a href="#status-json-forecast" class="nw-ref__link astro-cbhc5gqx" aria-label="Link to this row">#</a><code class="astro-cbhc5gqx">forecast</code></span></td>
 <td>The reason, from <code dir="auto">status.prediction.reason</code></td>
@@ -2003,7 +2241,7 @@ Or pass --prometheus-url if Prometheus is reachable from your machine.</span></c
 </tr>
 <tr>
 <td>Those flags</td>
-<td>On by default upstream. AKS turns the first off.</td>
+<td>On by default upstream. AKS turns the first off</td>
 </tr>
 <tr>
 <td>Not Karpenter’s, autoscaler unknown</td>
@@ -2049,7 +2287,7 @@ Or pass --prometheus-url if Prometheus is reachable from your machine.</span></c
 </tr>
 <tr>
 <td>EKS Auto Mode</td>
-<td>Nodes labelled <code dir="auto">eks.amazonaws.com/compute-type: auto</code>. Its NodePools are Karpenter’s, read the same way.</td>
+<td>Nodes labelled <code dir="auto">eks.amazonaws.com/compute-type: auto</code>. Its NodePools are Karpenter’s, read the same way</td>
 </tr>
 <tr>
 <td>Cluster Autoscaler</td>
@@ -2069,7 +2307,7 @@ Or pass --prometheus-url if Prometheus is reachable from your machine.</span></c
 </tr>
 <tr>
 <td>GKE Autopilot</td>
-<td>That ConfigMap, and nodes all named <code dir="auto">gk3-</code>, as Autopilot names them. It scales nodes itself.</td>
+<td>That ConfigMap, and nodes all named <code dir="auto">gk3-</code>, as Autopilot names them. It scales nodes itself</td>
 </tr>
 <tr>
 <td><code dir="auto">none found</code></td>
@@ -2148,16 +2386,15 @@ Or pass --prometheus-url if Prometheus is reachable from your machine.</span></c
 <tr>
 <td><span class="nw-ref astro-cbhc5gqx" id="pause-clear-hold"><a href="#pause-clear-hold" class="nw-ref__link astro-cbhc5gqx" aria-label="Link to this row">#</a><code class="astro-cbhc5gqx">--clear-<wbr>hold</code></span></td>
 <td><code dir="auto">false</code></td>
-<td>Clear a <code dir="auto">napwake.dev/active-until</code> hold, on its ManagedWorkload or the workload, without asking</td>
+<td>Clear a <code dir="auto">napwake.dev/active-until</code> hold, on its ManagedWorkload, as <code dir="auto">wake --for</code> sets it, or on the workload, without asking</td>
 </tr>
 <tr>
 <td><span class="nw-ref astro-cbhc5gqx" id="pause-timeout"><a href="#pause-timeout" class="nw-ref__link astro-cbhc5gqx" aria-label="Link to this row">#</a><code class="astro-cbhc5gqx">--timeout</code></span></td>
 <td><code dir="auto">5m</code></td>
-<td>How long to wait, cluster calls included. It starts again after you answer a question.</td>
+<td>How long to wait, cluster calls included. It starts again after you answer a question</td>
 </tr>
 </tbody>
 </table>
-<p>On the ManagedWorkload, <code dir="auto">wake --for</code> sets that hold.</p>
 <p>With <a href="/next/concepts/wake-on-request/#asking-before-waking"><code dir="auto">wake: ask</code></a>, its answer says a person’s click on the asleep page, or <code dir="auto">kubectl napwake wake</code>, wakes it, not a request. On a ManagedWorkload Napwake hasn’t taken on yet, such as one created a moment ago, <code dir="auto">pause</code> waits until Napwake has. A request already on it then isn’t acted on.</p>
 <section id="pause-forecast"><div class="sl-heading-wrapper level-h3"><h3 id="when-the-forecast-expects-it-to-be-busy">When the forecast expects it to be busy</h3><a class="sl-anchor-link" href="#when-the-forecast-expects-it-to-be-busy"><span aria-hidden="true" class="sl-anchor-icon"><svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="m12.11 15.39-3.88 3.88a2.52 2.52 0 0 1-3.5 0 2.47 2.47 0 0 1 0-3.5l3.88-3.88a1 1 0 1 0-1.42-1.42l-3.88 3.89a4.48 4.48 0 0 0 6.33 6.33l3.89-3.88a1 1 0 0 0-1.42-1.42m8.58-12.08a4.49 4.49 0 0 0-6.33 0l-3.89 3.88a1 1 0 1 0 1.42 1.42l3.88-3.88a2.52 2.52 0 0 1 3.5 0 2.47 2.47 0 0 1 0 3.5l-3.88 3.88a1 1 0 0 0 0 1.42 1 1 0 0 0 1.42 0l3.88-3.89a4.49 4.49 0 0 0 0-6.33M8.83 15.17a1 1 0 0 0 .71.29 1 1 0 0 0 .71-.29l4.92-4.92a1 1 0 1 0-1.42-1.42l-4.92 4.92a1 1 0 0 0 0 1.42"></path></svg></span><span class="sr-only" data-pagefind-ignore>Section titled “When the forecast expects it to be busy”</span></a></div><p>When a confident forecast expects the workload busy within the hour, Napwake declines the pause and says when. It would likely be woken straight back, so <code dir="auto">pause</code> asks.</p><figure class="nw-term-wrap not-content astro-66ythkd5"><pre class="nw-term astro-66ythkd5" aria-label="pause asking whether to override the forecast" tabindex="0"><code class="astro-66ythkd5"><span class="nw-term__out astro-66ythkd5">preview-42/api wasn&#39;t paused: the forecast expects demand at 80% of requests in the hour from 09:00 UTC
 Pause it anyway? [y/N]</span></code></pre></figure><table>
@@ -2283,7 +2520,7 @@ See https://docs.napwake.dev/guides/gitops/#argo-cd</span></code></pre></figure>
 <tr>
 <td><span class="nw-ref astro-cbhc5gqx" id="wake-for"><a href="#wake-for" class="nw-ref__link astro-cbhc5gqx" aria-label="Link to this row">#</a><code class="astro-cbhc5gqx">--for</code></span></td>
 <td></td>
-<td>Also keep it awake this long, by setting <code dir="auto">napwake.dev/active-until</code> on its ManagedWorkload</td>
+<td>Also keep it awake this long, by setting <code dir="auto">napwake.dev/active-until</code> on its ManagedWorkload. A hold there that ends later stays, and <code dir="auto">wake</code> says so</td>
 </tr>
 <tr>
 <td><span class="nw-ref astro-cbhc5gqx" id="wake-wait"><a href="#wake-wait" class="nw-ref__link astro-cbhc5gqx" aria-label="Link to this row">#</a><code class="astro-cbhc5gqx">--wait</code></span></td>
@@ -2297,7 +2534,6 @@ See https://docs.napwake.dev/guides/gitops/#argo-cd</span></code></pre></figure>
 </tr>
 </tbody>
 </table>
-<p>With <code dir="auto">--for</code>, a hold on the ManagedWorkload that ends later stays, and <code dir="auto">wake</code> says so.</p>
 <p><code dir="auto">wake</code> sets a fresh <code dir="auto">napwake.dev/wake-requested</code> value on the ManagedWorkload, as any tool can. So it wakes the workload whatever its wake setting.</p>
 <p>The <code dir="auto">WakeRequest</code> condition says what came of it (<a href="/next/guides/pause/#wake-now">Wake now</a>). Another tool asking meanwhile replaces <code dir="auto">wake</code>’s token with its own, and Napwake’s answer to that one stands for both.</p>
 <table>
@@ -2394,7 +2630,7 @@ See https://docs.napwake.dev/guides/gitops/#argo-cd</span></code></pre></figure>
 <tbody>
 <tr>
 <td>The namespace is protected</td>
-<td>Labelled <code dir="auto">napwake.dev/protected=true</code>, or a <code dir="auto">kube-*</code> namespace</td>
+<td>Labelled <code dir="auto">napwake.dev/protected=true</code>, or a <code dir="auto">kube-*</code>, <code dir="auto">openshift-*</code>, <code dir="auto">cattle-*</code>, <code dir="auto">gke-*</code> or <code dir="auto">gmp-*</code> namespace</td>
 </tr>
 <tr>
 <td>Unless</td>
@@ -2414,7 +2650,7 @@ See https://docs.napwake.dev/guides/gitops/#argo-cd</span></code></pre></figure>
 </tr>
 <tr>
 <td>Right after you label it</td>
-<td>Its ManagedWorkload may not exist yet. Run <code dir="auto">enable</code> again a few seconds later.</td>
+<td>Its ManagedWorkload may not exist yet. Run <code dir="auto">enable</code> again a few seconds later</td>
 </tr>
 <tr>
 <td>Its ManagedWorkload says Napwake never pauses it</td>
@@ -2500,7 +2736,7 @@ See https://docs.napwake.dev/guides/gitops/#argo-cd</span></code></pre></figure>
 </tr>
 </tbody>
 </table></section>
-<section id="enable-gitops"><div class="sl-heading-wrapper level-h3"><h3 id="when-a-gitops-tool-or-helm-applies-the-setting">When a GitOps tool or Helm applies the setting</h3><a class="sl-anchor-link" href="#when-a-gitops-tool-or-helm-applies-the-setting"><span aria-hidden="true" class="sl-anchor-icon"><svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="m12.11 15.39-3.88 3.88a2.52 2.52 0 0 1-3.5 0 2.47 2.47 0 0 1 0-3.5l3.88-3.88a1 1 0 1 0-1.42-1.42l-3.88 3.89a4.48 4.48 0 0 0 6.33 6.33l3.89-3.88a1 1 0 0 0-1.42-1.42m8.58-12.08a4.49 4.49 0 0 0-6.33 0l-3.89 3.88a1 1 0 1 0 1.42 1.42l3.88-3.88a2.52 2.52 0 0 1 3.5 0 2.47 2.47 0 0 1 0 3.5l-3.88 3.88a1 1 0 0 0 0 1.42 1 1 0 0 0 1.42 0l3.88-3.89a4.49 4.49 0 0 0 0-6.33M8.83 15.17a1 1 0 0 0 .71.29 1 1 0 0 0 .71-.29l4.92-4.92a1 1 0 1 0-1.42-1.42l-4.92 4.92a1 1 0 0 0 0 1.42"></path></svg></span><span class="sr-only" data-pagefind-ignore>Section titled “When a GitOps tool or Helm applies the setting”</span></a></div><p>A GitOps tool would put a changed setting straight back, so <code dir="auto">enable</code> changes nothing it applies. The tool is Argo CD, Flux, Fleet, kapp or Kluctl. The setting is the <code dir="auto">napwake.dev/dry-run</code> annotation on the workload or its namespace, or <code dir="auto">spec.dryRun</code>. <code dir="auto">enable</code> names the tool, prints the change to make in Git, and exits non-zero.</p><figure class="nw-term-wrap not-content astro-66ythkd5"><pre class="nw-term astro-66ythkd5" aria-label="enable naming the GitOps tool that applies the setting" tabindex="0"><code class="astro-66ythkd5"><span class="nw-term__out astro-66ythkd5">deployment/checkout-api is managed by Argo CD application shop, which would undo a change made here. In its manifest:
+<section id="enable-gitops"><div class="sl-heading-wrapper level-h3"><h3 id="when-a-gitops-tool-or-helm-applies-the-setting">When a GitOps tool or Helm applies the setting</h3><a class="sl-anchor-link" href="#when-a-gitops-tool-or-helm-applies-the-setting"><span aria-hidden="true" class="sl-anchor-icon"><svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="m12.11 15.39-3.88 3.88a2.52 2.52 0 0 1-3.5 0 2.47 2.47 0 0 1 0-3.5l3.88-3.88a1 1 0 1 0-1.42-1.42l-3.88 3.89a4.48 4.48 0 0 0 6.33 6.33l3.89-3.88a1 1 0 0 0-1.42-1.42m8.58-12.08a4.49 4.49 0 0 0-6.33 0l-3.89 3.88a1 1 0 1 0 1.42 1.42l3.88-3.88a2.52 2.52 0 0 1 3.5 0 2.47 2.47 0 0 1 0 3.5l-3.88 3.88a1 1 0 0 0 0 1.42 1 1 0 0 0 1.42 0l3.88-3.89a4.49 4.49 0 0 0 0-6.33M8.83 15.17a1 1 0 0 0 .71.29 1 1 0 0 0 .71-.29l4.92-4.92a1 1 0 1 0-1.42-1.42l-4.92 4.92a1 1 0 0 0 0 1.42"></path></svg></span><span class="sr-only" data-pagefind-ignore>Section titled “When a GitOps tool or Helm applies the setting”</span></a></div><p>A GitOps tool would put a changed setting straight back, so <code dir="auto">enable</code> changes nothing it applies. It names the tool, prints the change to make in Git, and exits non-zero.</p><figure class="nw-term-wrap not-content astro-66ythkd5"><pre class="nw-term astro-66ythkd5" aria-label="enable naming the GitOps tool that applies the setting" tabindex="0"><code class="astro-66ythkd5"><span class="nw-term__out astro-66ythkd5">deployment/checkout-api is managed by Argo CD application shop, which would undo a change made here. In its manifest:
   set the annotation  napwake.dev/dry-run: &quot;false&quot;
 Or pass --force to change the cluster anyway.</span></code></pre></figure><table>
 <thead>
@@ -2510,6 +2746,14 @@ Or pass --force to change the cluster anyway.</span></code></pre></figure><table
 </tr>
 </thead>
 <tbody>
+<tr>
+<td>The tools</td>
+<td>Argo CD, Flux, Fleet, kapp and Kluctl</td>
+</tr>
+<tr>
+<td>The setting</td>
+<td>The <code dir="auto">napwake.dev/dry-run</code> annotation on the workload or its namespace, or <code dir="auto">spec.dryRun</code></td>
+</tr>
 <tr>
 <td>How it tells</td>
 <td>From the field managers the API server records, as <code dir="auto">pause</code> does for replicas</td>
@@ -2524,7 +2768,7 @@ Or pass --force to change the cluster anyway.</span></code></pre></figure><table
 </tr>
 <tr>
 <td>The tool applies the workload, not the annotation</td>
-<td>Such as when Git doesn’t have it. The tool leaves a change to it alone.</td>
+<td>Such as when Git doesn’t have it. The tool leaves a change to it alone</td>
 </tr>
 <tr>
 <td>Set by Helm</td>
@@ -2546,8 +2790,12 @@ Or pass --force to change the cluster anyway.</span></code></pre></figure><table
 <td>With <code dir="auto">--all</code></td>
 <td>Workloads a tool treats alike, such as one Argo CD application’s, share one warning</td>
 </tr>
+<tr>
+<td>Why it warns</td>
+<td>Ending dry-run lets Napwake pause the workload. The tool then scales it back up on the next sync after each pause (<a href="/next/guides/gitops/#ending-dry-run">Ending dry-run</a>)</td>
+</tr>
 </tbody>
-</table><p>Ending dry-run lets Napwake pause the workload. The tool then scales it back up on the next sync after each pause. That’s why it warns. See <a href="/next/guides/gitops/#ending-dry-run">Ending dry-run</a>.</p></section>
+</table></section>
 <section id="enable-permissions"><div class="sl-heading-wrapper level-h3"><h3 id="permissions-6">Permissions</h3><a class="sl-anchor-link" href="#permissions-6"><span aria-hidden="true" class="sl-anchor-icon"><svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="m12.11 15.39-3.88 3.88a2.52 2.52 0 0 1-3.5 0 2.47 2.47 0 0 1 0-3.5l3.88-3.88a1 1 0 1 0-1.42-1.42l-3.88 3.89a4.48 4.48 0 0 0 6.33 6.33l3.89-3.88a1 1 0 0 0-1.42-1.42m8.58-12.08a4.49 4.49 0 0 0-6.33 0l-3.89 3.88a1 1 0 1 0 1.42 1.42l3.88-3.88a2.52 2.52 0 0 1 3.5 0 2.47 2.47 0 0 1 0 3.5l-3.88 3.88a1 1 0 0 0 0 1.42 1 1 0 0 0 1.42 0l3.88-3.89a4.49 4.49 0 0 0 0-6.33M8.83 15.17a1 1 0 0 0 .71.29 1 1 0 0 0 .71-.29l4.92-4.92a1 1 0 1 0-1.42-1.42l-4.92 4.92a1 1 0 0 0 0 1.42"></path></svg></span><span class="sr-only" data-pagefind-ignore>Section titled “Permissions”</span></a></div><table>
 <thead>
 <tr>
@@ -2562,7 +2810,7 @@ Or pass --force to change the cluster anyway.</span></code></pre></figure><table
 </tr>
 <tr>
 <td><code dir="auto">list</code> on <code dir="auto">managedworkloads</code> in the namespace</td>
-<td>It goes by the annotations alone, and says so</td>
+<td>It goes by the annotations alone, and says so. Then it can’t check that Napwake manages the workload, nor see a cluster-default dry-run</td>
 </tr>
 <tr>
 <td>With <code dir="auto">--all</code>, <code dir="auto">list</code> on Deployments and StatefulSets</td>
@@ -2577,5 +2825,5 @@ Or pass --force to change the cluster anyway.</span></code></pre></figure><table
 <td></td>
 </tr>
 </tbody>
-</table><p>Going by the annotations alone, <code dir="auto">enable</code> can’t check that Napwake manages the workload. Nor can it see a cluster-default dry-run.</p></section>
-<section class="nw-next not-content astro-zkuglizp" aria-label="Next"><div class="nw-next__list astro-zkuglizp"><p class="nw-next__title astro-zkuglizp">Next</p><ul class="astro-zkuglizp"><li class="astro-zkuglizp"><a href="/next/getting-started/kubectl-plugin/" class="astro-zkuglizp"><span class="nw-next__name astro-zkuglizp">kubectl plugin <span aria-hidden="true" class="astro-zkuglizp">→</span></span><span class="nw-next__text astro-zkuglizp">Each command in use, and what it prints.</span></a></li><li class="astro-zkuglizp"><a href="/next/operations/troubleshooting/" class="astro-zkuglizp"><span class="nw-next__name astro-zkuglizp">Troubleshooting <span aria-hidden="true" class="astro-zkuglizp">→</span></span><span class="nw-next__text astro-zkuglizp">Common problems, and how to fix them.</span></a></li></ul></div></section></div><footer class="sl-flex nw-foot astro-ft5hcqwl"><div class="meta sl-flex astro-ft5hcqwl"><a href="https://github.com/napwake/napwake/edit/main/docs/src/content/docs/reference/cli.mdx" class="sl-flex print:hidden astro-qlekgd3o"><svg aria-hidden="true" class="astro-qlekgd3o astro-hkc32dio" width="16" height="16" viewBox="0 0 24 24" fill="currentColor" style="--sl-icon-size: 1.2em;"><path d="M22 7.24a1 1 0 0 0-.29-.71l-4.24-4.24a1 1 0 0 0-1.1-.22 1 1 0 0 0-.32.22l-2.83 2.83L2.29 16.05a1 1 0 0 0-.29.71V21a1 1 0 0 0 1 1h4.24a1 1 0 0 0 .76-.29l10.87-10.93L21.71 8c.1-.1.17-.2.22-.33a1 1 0 0 0 0-.24v-.14l.07-.05ZM6.83 20H4v-2.83l9.93-9.93 2.83 2.83L6.83 20ZM18.17 8.66l-2.83-2.83 1.42-1.41 2.82 2.82-1.41 1.42Z"/></svg>Edit page</a></div><div class="pagination-links print:hidden astro-b5raizh3" dir="ltr"><a href="/next/reference/api/" rel="prev" class="astro-b5raizh3"><svg aria-hidden="true" class="astro-b5raizh3 astro-hkc32dio" width="16" height="16" viewBox="0 0 24 24" fill="currentColor" style="--sl-icon-size: 1.5rem;"><path d="M17 11H9.41l3.3-3.29a1.004 1.004 0 1 0-1.42-1.42l-5 5a1 1 0 0 0-.21.33 1 1 0 0 0 0 .76 1 1 0 0 0 .21.33l5 5a1.002 1.002 0 0 0 1.639-.325 1 1 0 0 0-.219-1.095L9.41 13H17a1 1 0 0 0 0-2Z"/></svg><span class="astro-b5raizh3">Previous<br class="astro-b5raizh3"><span class="link-title astro-b5raizh3">API</span></span></a><a href="/next/reference/conditions-and-events/" rel="next" class="astro-b5raizh3"><svg aria-hidden="true" class="astro-b5raizh3 astro-hkc32dio" width="16" height="16" viewBox="0 0 24 24" fill="currentColor" style="--sl-icon-size: 1.5rem;"><path d="M17.92 11.62a1.001 1.001 0 0 0-.21-.33l-5-5a1.003 1.003 0 1 0-1.42 1.42l3.3 3.29H7a1 1 0 0 0 0 2h7.59l-3.3 3.29a1.002 1.002 0 0 0 .325 1.639 1 1 0 0 0 1.095-.219l5-5a1 1 0 0 0 .21-.33 1 1 0 0 0 0-.76Z"/></svg><span class="astro-b5raizh3">Next<br class="astro-b5raizh3"><span class="link-title astro-b5raizh3">Conditions and events</span></span></a></div><div class="nw-site-foot astro-ft5hcqwl"><a class="nw-site-foot__mark astro-ft5hcqwl" href="/next/" aria-label="Napwake docs home"><svg viewBox="0 0 24 24" width="22" height="22" aria-hidden="true" class="astro-ft5hcqwl"><path fill="currentColor" fill-rule="evenodd" d="M7.6 9.9L7.2 3.6Q7.2 2.6 8.2 2.6Q12 2.2 15.8 2.6Q16.8 2.6 16.8 3.6L16.4 9.9ZM3.4 10.7Q3.4 9.8 4.6 9.9H19.4Q20.6 9.8 20.6 10.7Q20.6 11.7 19.4 11.7H4.6Q3.4 11.7 3.4 10.7ZM6.6 19.2V13.8Q6.6 12.5 7.9 12.5H16.1Q17.4 12.5 17.4 13.8V19.2ZM8 15.4A1.9 1.9 0 0 0 11.8 15.4Z M12.2 15.4A1.9 1.9 0 0 0 16 15.4ZM3 24V22.2Q3 20 5.2 20H18.8Q21 20 21 22.2V24Z" class="astro-ft5hcqwl"></path></svg></a><p class="astro-ft5hcqwl">Napwake is open source under <a href="https://github.com/napwake/napwake/blob/main/LICENSE" class="astro-ft5hcqwl">Apache 2.0</a>. <a href="https://github.com/napwake/napwake" class="astro-ft5hcqwl">GitHub</a> · <a href="https://napwake.dev/" class="astro-ft5hcqwl">napwake.dev</a></p><p class="nw-site-foot__credit astro-ft5hcqwl">Doorman illustrations by Napwake, <a href="https://github.com/napwake/brand" class="astro-ft5hcqwl">CC BY 4.0</a>.</p></div></footer></div></div></main></div></div></div></div></body></html>
+</table></section>
+<section class="nw-next not-content astro-zkuglizp" aria-label="Next"><div class="nw-next__list astro-zkuglizp"><p class="nw-next__title astro-zkuglizp">Next</p><ul class="astro-zkuglizp"><li class="astro-zkuglizp"><a href="/next/getting-started/kubectl-plugin/" class="astro-zkuglizp"><span class="nw-next__name astro-zkuglizp">kubectl plugin <span aria-hidden="true" class="astro-zkuglizp">→</span></span><span class="nw-next__text astro-zkuglizp">Each command in use, and what it prints.</span></a></li><li class="astro-zkuglizp"><a href="/next/operations/troubleshooting/" class="astro-zkuglizp"><span class="nw-next__name astro-zkuglizp">Troubleshooting <span aria-hidden="true" class="astro-zkuglizp">→</span></span><span class="nw-next__text astro-zkuglizp">Common problems, and how to fix them.</span></a></li></ul></div></section></div><footer class="sl-flex nw-foot astro-ft5hcqwl"><div class="meta sl-flex astro-ft5hcqwl"><a href="https://github.com/napwake/napwake/edit/main/docs/src/content/docs/reference/cli.mdx" class="sl-flex print:hidden astro-qlekgd3o"><svg aria-hidden="true" class="astro-qlekgd3o astro-hkc32dio" width="16" height="16" viewBox="0 0 24 24" fill="currentColor" style="--sl-icon-size: 1.2em;"><path d="M22 7.24a1 1 0 0 0-.29-.71l-4.24-4.24a1 1 0 0 0-1.1-.22 1 1 0 0 0-.32.22l-2.83 2.83L2.29 16.05a1 1 0 0 0-.29.71V21a1 1 0 0 0 1 1h4.24a1 1 0 0 0 .76-.29l10.87-10.93L21.71 8c.1-.1.17-.2.22-.33a1 1 0 0 0 0-.24v-.14l.07-.05ZM6.83 20H4v-2.83l9.93-9.93 2.83 2.83L6.83 20ZM18.17 8.66l-2.83-2.83 1.42-1.41 2.82 2.82-1.41 1.42Z"/></svg>Edit page</a></div><div class="pagination-links print:hidden astro-b5raizh3" dir="ltr"><a href="/next/reference/api/" rel="prev" class="astro-b5raizh3"><svg aria-hidden="true" class="astro-b5raizh3 astro-hkc32dio" width="16" height="16" viewBox="0 0 24 24" fill="currentColor" style="--sl-icon-size: 1.5rem;"><path d="M17 11H9.41l3.3-3.29a1.004 1.004 0 1 0-1.42-1.42l-5 5a1 1 0 0 0-.21.33 1 1 0 0 0 0 .76 1 1 0 0 0 .21.33l5 5a1.002 1.002 0 0 0 1.639-.325 1 1 0 0 0-.219-1.095L9.41 13H17a1 1 0 0 0 0-2Z"/></svg><span class="astro-b5raizh3">Previous<br class="astro-b5raizh3"><span class="link-title astro-b5raizh3">API</span></span></a><a href="/next/reference/conditions-and-events/" rel="next" class="astro-b5raizh3"><svg aria-hidden="true" class="astro-b5raizh3 astro-hkc32dio" width="16" height="16" viewBox="0 0 24 24" fill="currentColor" style="--sl-icon-size: 1.5rem;"><path d="M17.92 11.62a1.001 1.001 0 0 0-.21-.33l-5-5a1.003 1.003 0 1 0-1.42 1.42l3.3 3.29H7a1 1 0 0 0 0 2h7.59l-3.3 3.29a1.002 1.002 0 0 0 .325 1.639 1 1 0 0 0 1.095-.219l5-5a1 1 0 0 0 .21-.33 1 1 0 0 0 0-.76Z"/></svg><span class="astro-b5raizh3">Next<br class="astro-b5raizh3"><span class="link-title astro-b5raizh3">Conditions and events</span></span></a></div><div class="nw-site-foot astro-ft5hcqwl"><a class="nw-site-foot__mark astro-ft5hcqwl" href="/next/" aria-label="Napwake docs home"><svg viewBox="0 0 24 24" width="22" height="22" aria-hidden="true" class="astro-ft5hcqwl"><path fill="currentColor" fill-rule="evenodd" d="M7.6 9.9L7.2 3.6Q7.2 2.6 8.2 2.6Q12 2.2 15.8 2.6Q16.8 2.6 16.8 3.6L16.4 9.9ZM3.4 10.7Q3.4 9.8 4.6 9.9H19.4Q20.6 9.8 20.6 10.7Q20.6 11.7 19.4 11.7H4.6Q3.4 11.7 3.4 10.7ZM6.6 19.2V13.8Q6.6 12.5 7.9 12.5H16.1Q17.4 12.5 17.4 13.8V19.2ZM8 15.4A1.9 1.9 0 0 0 11.8 15.4Z M12.2 15.4A1.9 1.9 0 0 0 16 15.4ZM3 24V22.2Q3 20 5.2 20H18.8Q21 20 21 22.2V24Z" class="astro-ft5hcqwl"></path></svg></a><p class="astro-ft5hcqwl">Napwake is open source under <a href="https://github.com/napwake/napwake/blob/main/LICENSE" class="astro-ft5hcqwl">Apache 2.0</a>. <a href="https://github.com/napwake/napwake" class="astro-ft5hcqwl">GitHub</a> · <a href="https://napwake.dev/" class="astro-ft5hcqwl">napwake.dev</a> · <a href="https://napwake.dev/privacy/" class="astro-ft5hcqwl">Privacy</a></p><p class="nw-site-foot__credit astro-ft5hcqwl">Doorman illustrations by Napwake, <a href="https://github.com/napwake/brand" class="astro-ft5hcqwl">CC BY 4.0</a>.</p></div></footer></div></div></main></div></div></div></div></body></html>

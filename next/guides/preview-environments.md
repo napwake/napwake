@@ -1,6 +1,6 @@
 # Public preview environments
 
-> For an environment per pull request on a public URL. Napwake pauses each preview once it shows no sign of use, and only people wake it. Crawlers, scanners and API calls wake nothing.
+> For an environment per pull request on a public URL. Napwake pauses each preview once it shows no sign of use, and only a click on its page, your own tools or the forecast wake it. Crawlers, scanners and API calls wake nothing.
 
 Source: https://docs.napwake.dev/next/guides/preview-environments/
 
@@ -93,7 +93,7 @@ With `ask`, a person’s browser gets a page with a **Wake it** button, and only
 
    * Kustomize
 
-     With Flux, or anything that applies a kustomization, put the Namespace in it, as `namespace.yaml` beside it.
+     With Flux, or anything that applies a kustomization, put the Namespace in it. That’s the Namespace tab’s `namespace.yaml`, beside the kustomization.
 
      kustomization.yaml
 
@@ -141,9 +141,9 @@ With `ask`, a person’s browser gets a page with a **Wake it** button, and only
    ```
 
    ```text
-   NAME   WAKE      PHASE    DOORMAN
-   api    Request   Paused   DoormanRouted
-   web    Ask       Paused   DoormanRouted
+   NAME   WAKE   PHASE    DOORMAN
+   api    Ask    Paused   DoormanRouted
+   web    Ask    Paused   DoormanRouted
    ```
 
    Any other reason under DOORMAN says why requests can’t reach the doorman ([When a workload isn’t routed](https://docs.napwake.dev/next/concepts/wake-on-request/#when-a-workload-isnt-routed)).
@@ -164,7 +164,7 @@ The waking-up page carries on until a pod is Ready, then the page you opened loa
 
 It needs plain HTTP
 
-The doorman reads each request to tell a browser from a robot. So end TLS at the ingress or load balancer in front of the preview, as is usual.
+Napwake’s doorman, the proxy in front of a paused workload, reads each request to tell a browser from a robot. So end TLS at the ingress or load balancer in front of the preview, as is usual.
 
 A workload that ends TLS itself is never woken by a click. Behind a GKE Ingress or Gateway, it also needs the doorman’s [forwarder](https://docs.napwake.dev/next/concepts/wake-on-request/#gke-container-native-load-balancing-negs).
 
@@ -282,7 +282,7 @@ A deploy that leaves the replicas to Napwake, as each tab above sets up, doesn�
 
 One that sets `replicas` scales the preview up, which wakes it as a scale-up from outside. Under Flux, that’s a `GitOpsConflict`, and the next pause waits an hour ([GitOps tools](https://docs.napwake.dev/next/guides/gitops/)).
 
-To have it up for whoever reviews each push, wake it from the workflow that deploys it, and wait until it’s Running. In GitHub Actions:
+To have it up for whoever reviews each push, wake it from the workflow that deploys it. Then wait until it’s Running. In GitHub Actions:
 
 .github/workflows/preview\.yaml
 
@@ -334,13 +334,13 @@ waking preview-42/web...
 preview-42/web is Running after 2s
 ```
 
-`--wait`, the default, waits for Napwake’s answer, then until it’s Running. Both fit in `--timeout`, 5 minutes by default. A request made as the preview pauses calls the pause off. One made as it wakes is answered once the wake finishes.
+`--wait`, the default, waits for Napwake’s answer, then until it’s Running. Both fit in `--timeout`, 5 minutes by default, even for a request made as the preview wakes. A request made as the preview pauses calls the pause off.
 
-That’s inside the same 5 minutes. For a slower start, give it more, such as `--timeout 10m` ([Wake a workload](https://docs.napwake.dev/next/getting-started/kubectl-plugin/#wake-a-workload)).
+For a slower start, give it more, such as `--timeout 10m` ([Wake a workload](https://docs.napwake.dev/next/getting-started/kubectl-plugin/#wake-a-workload)).
 
 ### From a portal or a chat bot
 
-Anything that talks to the Kubernetes API can ask. A portal that has just made the environment gets `404 Not Found` at first. Napwake makes its ManagedWorkload a moment after the workload, so the portal retries until it exists.
+Anything that talks to the Kubernetes API can ask. A portal that made the environment moments ago gets `404 Not Found` at first. Napwake makes its ManagedWorkload a moment after the workload, so the portal retries until it exists.
 
 With `curl`, a `PATCH` sets the annotation, and prints nothing unless it fails. `$APISERVER` is the API server’s address, `ca.crt` its CA certificate, and `$KUBE_TOKEN` a token for the bot’s ServiceAccount:
 
@@ -354,7 +354,7 @@ curl --fail-with-body -sS -o /dev/null --cacert ca.crt -X PATCH \
   "$APISERVER/apis/napwake.dev/v1alpha1/namespaces/$NS/managedworkloads/web"
 ```
 
-Then read the ManagedWorkload every second or two until Napwake has answered. A request made as the preview pauses is answered at once, and calls the pause off. One made as it wakes is answered once the wake finishes. So keep reading as long as it takes to start:
+Then read the ManagedWorkload every second or two until Napwake has answered. A request made as the preview wakes is answered once the wake finishes. So keep reading as long as it takes to start:
 
 ```bash
 curl --fail-with-body -sS --cacert ca.crt -H "Authorization: Bearer $KUBE_TOKEN" \
@@ -461,7 +461,7 @@ kubectl get managedworkload web -n preview-42 -o jsonpath='{.status.prediction.m
 ```
 
 ```text
-learning: it has seen 0 of the 24 hours of the day, and can't act until it has seen them all; while it's paused, it learns from people waking it (a click on its asleep page, a wake request or an activity annotation)
+learning: it has seen 0 of the 24 hours of the day, and can't act until it has seen them all. While it's paused, it learns from people waking it (a click on its asleep page, a wake request or an activity annotation)
 ```
 
 ## What it turned away

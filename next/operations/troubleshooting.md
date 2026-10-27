@@ -86,15 +86,17 @@ Fix the value. [Settings annotations](https://docs.napwake.dev/next/reference/la
 
 ### Workload is idle but not being paused
 
-1. **Dry-run?**
+1. Check whether it’s in dry-run:
 
    ```bash
    kubectl get managedworkload my-api -n staging -o jsonpath='{.spec.dryRun}'
    ```
 
-   `true` means it evaluates but doesn’t act. `kubectl napwake enable my-api -n staging` ends it, however it was set up. On a labelled workload, `spec.dryRun` follows `napwake.dev/dry-run` (workload, namespace, then `defaults.dryRun`), and an unreadable value, such as `"False"`, means dry-run ([by hand](https://docs.napwake.dev/next/guides/dry-run/)).
+   `true` means it evaluates but doesn’t act. `kubectl napwake enable my-api -n staging` ends it, however it was set up ([Dry run](https://docs.napwake.dev/next/guides/dry-run/)).
 
-2. **Last active?**
+   On a labelled workload, `spec.dryRun` follows `napwake.dev/dry-run` on the workload, then the namespace, then `defaults.dryRun`. An unreadable value, such as `"False"`, means dry-run.
+
+2. Check when it was last active:
 
    ```bash
    kubectl get managedworkload my-api -n staging -o jsonpath='{.status.activity}'
@@ -113,7 +115,7 @@ Fix the value. [Settings annotations](https://docs.napwake.dev/next/reference/la
    | `unobserved`, the clock | The gap outlasted [the one allowed](https://docs.napwake.dev/next/concepts/idle-detection/#restarts-and-outages), so the clock restarted as watching resumed  |
    | `unobserved`, repeating | Check `MetricsAvailable` and `PrometheusAvailable`                                                                                    |
 
-3. **CPU readable?** Without CPU data a busy workload looks idle, so Napwake doesn’t act.
+3. Check Napwake can read its CPU. Without CPU data, a busy workload looks idle, so Napwake doesn’t act.
 
    ```bash
    kubectl get managedworkload my-api -n staging \
@@ -126,9 +128,9 @@ Fix the value. [Settings annotations](https://docs.napwake.dev/next/reference/la
    | `NoCPURequests`      | No CPU requests. Set them, or a LimitRange default, then restart its pods, as a default applies only to new ones         |
    | `MetricsUnavailable` | The Metrics API failed, error in the message. No `metrics.k8s.io` API means no metrics-server                            |
 
-   Zero replicas, and `Unknown` just after a wake or rollout, [aren’t errors](https://docs.napwake.dev/next/concepts/idle-detection/#when-a-source-cant-be-read).
+   Zero replicas, and `Unknown` right after a wake or rollout, [aren’t errors](https://docs.napwake.dev/next/concepts/idle-detection/#when-a-source-cant-be-read).
 
-4. **The forecast?**
+4. Check whether the forecast holds it:
 
    ```bash
    kubectl get managedworkload my-api -n staging \
@@ -137,7 +139,7 @@ Fix the value. [Settings annotations](https://docs.napwake.dev/next/reference/la
 
    A confident forecast expecting demand in the hour under way or the next defers the pause. The `IdleVetoed=True` message says when the forecast expects demand, and an `IdleVetoed` event marks the start.
 
-5. **Anything else?** `kubectl napwake status` gives the reason under NEXT. Or:
+5. Check what else holds it. `kubectl napwake status` gives the reason under NEXT. The ManagedWorkload may show one of these:
 
    | You see                     | Cause and fix                                                                                                                                                                                                          |
    | --------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -146,14 +148,14 @@ Fix the value. [Settings annotations](https://docs.napwake.dev/next/reference/la
    | `Protected=True`            | `ProtectedNamespace`, `NapwakeComponent` (Napwake’s own), or `PVCsDeletedOnScaleDown`, for a StatefulSet whose `persistentVolumeClaimRetentionPolicy.whenScaled: Delete` would lose its PVCs. Set `whenScaled: Retain` |
    | `GitOpsConflict=True`       | A GitOps tool undid the last pause. Napwake retries after an hour                                                                                                                                                      |
 
-6. **Depended on?**
+6. Check whether its dependents hold it awake:
 
    ```bash
    kubectl get managedworkload postgres -n staging \
      -o jsonpath='{.status.conditions[?(@.type=="HeldByDependents")]}'
    ```
 
-   `HeldByDependents=True` names its awake dependents, declared in `dependsOn` or [learned](https://docs.napwake.dev/next/concepts/dependencies/#learned-dependencies). It pauses after them. `kubectl napwake deps postgres -n staging` shows each link’s source. `DependencyCycle=True` means two depend on each other, so break the [cycle](https://docs.napwake.dev/next/concepts/dependencies/).
+   `HeldByDependents=True` names its awake dependents, declared in `dependsOn` or [learned](https://docs.napwake.dev/next/concepts/dependencies/#learned-dependencies), and it pauses after them. `kubectl napwake deps postgres -n staging` shows each link’s source. `DependencyCycle=True` means two depend on each other, so break the [cycle](https://docs.napwake.dev/next/concepts/dependencies/).
 
 ### `kubectl napwake pause` didn’t pause it
 
@@ -163,20 +165,26 @@ kubectl get managedworkload my-api -n staging \
   -o jsonpath='{.status.conditions[?(@.type=="PauseRequest")]}'
 ```
 
-`pause` waits for Paused, or prints why not. `PauseRequest` keeps that answer until the next request, whatever happens since. It’s `True` (`Paused`, `AlreadyPaused`), as in `paused as requested at 2026-10-21 03:32 UTC`, or `False`, starting `not paused at`, with a reason. Each request is answered once, so fix the reason and run `pause` again ([Pause now](https://docs.napwake.dev/next/guides/pause/#pause-now)).
+`pause` waits for Paused, or prints why not. `PauseRequest` keeps that answer until the next request, whatever happens since.
 
-| Reason                                               | Cause                                                                                                                            |
-| ---------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------- |
-| `ForecastExpectsDemand`                              | Demand expected within the hour. `kubectl napwake pause --yes` pauses anyway                                                     |
-| `HeldByDependents`, `DependencyCycle`                | Its dependents are awake, or it’s in a `dependsOn` cycle                                                                         |
-| `ActiveUntil`                                        | `napwake.dev/active-until` holds it                                                                                              |
-| `DryRun`, `Protected`, `ScaledToZero`                | Dry-run, protected, or at zero already                                                                                           |
-| `TargetNotFound`, `TargetIgnored`, `DuplicateTarget` | Its target is missing, ignored, or another ManagedWorkload’s                                                                     |
-| `PredatesStatus`                                     | The request was already on the ManagedWorkload as Napwake took it on, as after a backup restored without status. Set a new value |
+It’s `True` (`Paused`, `AlreadyPaused`), as in `paused as requested at 2026-10-21 03:32 UTC`. Or it’s `False`, starting `not paused at`, with a reason. Each request is answered once, so fix the reason and run `pause` again ([Pause now](https://docs.napwake.dev/next/guides/pause/#pause-now)).
+
+| Reason                                               | Cause                                                                                                                                                |
+| ---------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `ForecastExpectsDemand`                              | Demand expected within the hour. `kubectl napwake pause --yes` pauses anyway                                                                         |
+| `HeldByDependents`, `DependencyCycle`                | Its dependents are awake, or it’s in a `dependsOn` cycle                                                                                             |
+| `ActiveUntil`                                        | `napwake.dev/active-until` holds it                                                                                                                  |
+| `DryRun`, `Protected`, `ScaledToZero`                | Dry-run, protected, or at zero already                                                                                                               |
+| `TargetNotFound`, `TargetIgnored`, `DuplicateTarget` | Its target is missing, ignored, or another ManagedWorkload’s                                                                                         |
+| `PausingOff`                                         | Pausing is off for its install ([Stop all pausing now](https://docs.napwake.dev/next/guides/pause/#stop-all-pausing-now))                                                    |
+| `PauseCancelled`                                     | Something that would wake it, such as a request, came as it paused, so the pause was [called off](https://docs.napwake.dev/next/guides/pause/#a-request-calls-the-pause-off) |
+| `PredatesStatus`                                     | The request was already on the ManagedWorkload as Napwake took it on, as after a backup restored without status. Set a new value                     |
 
 ### Workload paused with pods still running
 
-`PauseIncomplete=True`, with a `PauseIncomplete` warning event instead of `Paused`, means pods outlived their termination grace period by a minute (one after another for a StatefulSet). Normally it’s `Paused` once pods stop. Here Napwake stopped waiting, so it’s `Paused` rather than stuck `Pausing`, and wakes as usual. It turns `False` once they’ve gone, or on a wake.
+`PauseIncomplete=True`, with a `PauseIncomplete` warning event instead of `Paused`, means pods outlived their termination grace period by a minute. A StatefulSet’s grace periods add up, one pod after another.
+
+Normally it’s `Paused` once pods stop. Here Napwake stopped waiting, so it’s `Paused` rather than stuck `Pausing`, and wakes as usual. It turns `False` once they’ve gone, or on a wake.
 
 A StatefulSet with the default `OrderedReady` stops pods one at a time, and not while one isn’t Ready. A Deployment’s can hang terminating on a finalizer or an unreachable node. `kubectl describe` the pods.
 
@@ -203,17 +211,17 @@ kubectl get managedworkload my-api -n staging \
 
 If it’s `DoormanRouted` and requests still fail ([What the caller sees](https://docs.napwake.dev/next/concepts/wake-on-request/#what-the-caller-sees)):
 
-| The caller sees                                                        | Cause and fix                                                                                                                                                                                                                                                                                                   |
-| ---------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| A close after a while, no response                                     | Not Ready by `wake.maxWait`, or pods unreachable, as a `RequestNotServed` warning says. Raise `maxWait`, or see why pods are slow. Counted by `napwake_doorman_wakes_total{result=~"timeout\|error"}`                                                                                                           |
-| A close at once, nothing sent                                          | A [limit](https://docs.napwake.dev/next/concepts/wake-on-request/#limits), counted by `napwake_doorman_wakes_total{result="limited"}`                                                                                                                                                                                                   |
-| The app’s own error, such as a `503`, just after a wake                | Pods Ready before the app was, as with no readiness probe. A `NoReadinessProbe` warning, and the `WakeOnRequest` message, say so. Add a [readiness probe](https://docs.napwake.dev/next/concepts/wake-on-request/#readiness-probes) that passes once it can serve                                                                       |
-| A `503` with no body                                                   | A health check or scraper `User-Agent`, such as `kube-probe/` or `Prometheus/`, which never wakes it                                                                                                                                                                                                            |
-| A `503` saying it’s asleep and how to wake it                          | The workload [asks before waking](https://docs.napwake.dev/next/operations/troubleshooting/#wake-it-doesnt-wake-the-workload). Only a person’s click on **Wake it**, or tooling, wakes it. For a caller that isn’t a browser, such as another service or a webhook, set `napwake.dev/wake: "request"`. `status.turnedAway` counts these requests                         |
-| A 502 from ingress-nginx, or a refused request, as the workload paused | A pod exited the moment it got `SIGTERM`, before kube-proxy and nginx dropped it. The doorman stands in front of the Service before the pods stop, so it’s the pod’s shutdown. Give the app a `preStop` sleep of a few seconds ([Work in progress at a pause](https://docs.napwake.dev/next/guides/pause/#work-in-progress-at-a-pause)) |
-| A 502 from a GKE Ingress or Gateway while paused                       | In NEGs without the forwarder, so there’s no healthy backend. Just after a pause, GKE takes up to a minute to see health checks pass                                                                                                                                                                            |
-| A 504 from an Ingress at 60 seconds                                    | Raise its upstream timeout, for ingress-nginx `nginx.ingress.kubernetes.io/proxy-read-timeout`                                                                                                                                                                                                                  |
-| A refusal or timeout at once, every time                               | A NetworkPolicy blocking the doorman (ports 20000-29999), or it to the pods ([Network policies](https://docs.napwake.dev/next/concepts/wake-on-request/#network-policies))                                                                                                                                                              |
+| The caller sees                                                          | Cause and fix                                                                                                                                                                                                                                                                                                   |
+| ------------------------------------------------------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| A close after a while, no response                                       | Not Ready by `wake.maxWait`, or pods unreachable, as a `RequestNotServed` warning says. Raise `maxWait`, or see why pods are slow. Counted by `napwake_doorman_wakes_total{result=~"timeout\|error"}`                                                                                                           |
+| A close at once, nothing sent                                            | A [limit](https://docs.napwake.dev/next/concepts/wake-on-request/#limits), counted by `napwake_doorman_wakes_total{result="limited"}`                                                                                                                                                                                                   |
+| The app’s own error, such as a `503`, right after a wake                 | Pods Ready before the app was, as with no readiness probe. A `NoReadinessProbe` warning, and the `WakeOnRequest` message, say so. Add a [readiness probe](https://docs.napwake.dev/next/concepts/wake-on-request/#readiness-probes) that passes once it can serve                                                                       |
+| A `503` with no body                                                     | A health check or scraper `User-Agent`, such as `kube-probe/` or `Prometheus/`, which never wakes it                                                                                                                                                                                                            |
+| A `503` saying it’s asleep and how to wake it                            | The workload [asks before waking](https://docs.napwake.dev/next/operations/troubleshooting/#wake-it-doesnt-wake-the-workload). Only a person’s click on **Wake it**, or tooling, wakes it. For a caller that isn’t a browser, such as another service or a webhook, set `napwake.dev/wake: "request"`. `status.turnedAway` counts these requests                         |
+| A `502` from ingress-nginx, or a refused request, as the workload paused | A pod exited the moment it got `SIGTERM`, before kube-proxy and nginx dropped it. The doorman stands in front of the Service before the pods stop, so it’s the pod’s shutdown. Give the app a `preStop` sleep of a few seconds ([Work in progress at a pause](https://docs.napwake.dev/next/guides/pause/#work-in-progress-at-a-pause)) |
+| A `502` from a GKE Ingress or Gateway while paused                       | In NEGs without the forwarder, so there’s no healthy backend. Right after a pause, GKE takes a while, usually under a minute, to see health checks pass                                                                                                                                                         |
+| A `504` from an Ingress at 60 seconds                                    | Raise its upstream timeout, for ingress-nginx `nginx.ingress.kubernetes.io/proxy-read-timeout`                                                                                                                                                                                                                  |
+| A refusal or timeout at once, every time                                 | A NetworkPolicy blocking the doorman (ports 20000-29999), or it to the pods ([Network policies](https://docs.napwake.dev/next/concepts/wake-on-request/#network-policies))                                                                                                                                                              |
 
 The doorman’s logs name the workload and Service of each held connection (in your install’s namespace):
 
@@ -250,13 +258,17 @@ When the asleep page comes back after a click, its notice says why:
 | No asleep page, and the request fails                                 | It isn’t routed ([Requests to a paused workload fail](https://docs.napwake.dev/next/operations/troubleshooting/#requests-to-a-paused-workload-fail-instead-of-waking-it))                                                                                          |
 | `Ask`, though nobody set it                                           | Its namespace or `defaults.wake` says `ask`, or its value can’t be read ([`InvalidSetting`](https://docs.napwake.dev/next/operations/troubleshooting/#an-invalidsetting-warning))                                                                                  |
 
-`status.turnedAway` counts what the doorman turned away during the pause, and `kubectl napwake status` lists the workloads that turned requests away ([What it turns away](https://docs.napwake.dev/next/concepts/wake-on-request/#what-it-turns-away)).
+`status.turnedAway` counts what the doorman turned away during the pause. `kubectl napwake status` lists the workloads that turned requests away ([What it turns away](https://docs.napwake.dev/next/concepts/wake-on-request/#what-it-turns-away)).
 
 ### Workload stuck in Resuming
 
 `WaitingForDependencies=True` means a `waitForReady` dependency isn’t Ready. The condition names it and its ready replicas, so check its pods. Otherwise the workload’s own pods aren’t getting Ready.
 
-Napwake waits for every restored replica, but no longer than 2 minutes after the first is Ready, or, while none is, the Deployment’s `progressDeadlineSeconds` (10 minutes by default, and for a StatefulSet). It’s then `Running` on its Ready replicas, possibly none, with `ResumeIncomplete=True` ([Resuming → Running](https://docs.napwake.dev/next/concepts/lifecycle/#automatic)). A dependency that never gets Ready is [waited for only so long](https://docs.napwake.dev/next/concepts/dependencies/#waiting-for-a-dependency-to-be-ready), then skipped with `DependencyWontStart`. The `NapwakeWorkloadStuck` alert fires at 15 minutes, and `kubectl napwake status` lists it under `Stuck` at 10.
+Napwake waits for every restored replica, but no longer than 2 minutes after the first is Ready. While none is, it waits up to the Deployment’s `progressDeadlineSeconds`, 10 minutes by default. A StatefulSet has none, so it gets 10 minutes.
+
+It’s then `Running` on its Ready replicas, possibly none, with `ResumeIncomplete=True` ([Resuming → Running](https://docs.napwake.dev/next/concepts/lifecycle/#automatic)). A dependency that never gets Ready is [waited for only so long](https://docs.napwake.dev/next/concepts/dependencies/#waiting-for-a-dependency-to-be-ready), then skipped with `DependencyWontStart`.
+
+The `NapwakeWorkloadStuck` alert fires at 15 minutes, and `kubectl napwake status` lists it under `Stuck` at 10.
 
 ### Workload resumed with replicas not Ready
 
@@ -328,17 +340,21 @@ That lists its dependencies and their sources. The ManagedWorkload’s condition
 
 ### A Prometheus query never matches
 
-`PrometheusQueryEmpty=True`, reason `NoSeries`, with a warning event, means an activity query has matched no series since Napwake first ran it. It’s usually a misspelt metric or label. It can’t keep the workload awake or hold off a pause. [Test it in Prometheus](https://docs.napwake.dev/next/guides/prometheus-signals/#test-the-query-directly).
+`PrometheusQueryEmpty=True`, reason `NoSeries`, with a warning event, means an activity query has matched no series since Napwake first ran it. Such a query can’t keep the workload awake or hold off a pause.
+
+Usually a metric or label is misspelt, or nothing has made the series yet. The request counter of ingress-nginx, for one, appears only once a request has gone through. [Test the query in Prometheus](https://docs.napwake.dev/next/guides/prometheus-signals/#test-the-query-directly).
 
 ### An activity annotation is ignored
 
-An `InvalidActivityAnnotation` warning event means a `napwake.dev/last-activity`, `last-request` or `active-until` value isn’t RFC 3339, such as epoch seconds or a bare date. It neither keeps the workload awake nor wakes it. Write it as `date -u +%Y-%m-%dT%H:%M:%SZ` does ([Activity annotations](https://docs.napwake.dev/next/concepts/idle-detection/#activity-annotations)).
+An `InvalidActivityAnnotation` warning event means a `napwake.dev/last-activity`, `last-request` or `active-until` value isn’t RFC 3339. Epoch seconds and bare dates aren’t.
+
+Such a value neither keeps the workload awake nor wakes it. Write it as `date -u +%Y-%m-%dT%H:%M:%SZ` does ([Activity annotations](https://docs.napwake.dev/next/concepts/idle-detection/#activity-annotations)).
 
 ### Prediction confidence stays at 0
 
-Daily confidence needs a full 24-hour window of observed hours, and weekly 168. An hour isn’t observed while the operator is down, CPU is unreadable, or the workload is paused with neither the doorman nor a [Prometheus query](https://docs.napwake.dev/next/guides/prometheus-signals/#while-the-workload-is-paused) to see demand.
+Daily confidence needs a full 24-hour window of observed hours, and weekly 168. An hour isn’t observed while the operator is down or CPU is unreadable. Nor while the workload is paused, with neither the doorman nor a [Prometheus query](https://docs.napwake.dev/next/guides/prometheus-signals/#while-the-workload-is-paused) to see demand.
 
-With [`ask`](https://docs.napwake.dev/next/concepts/wake-on-request/#asking-before-waking), a query that can’t be evaluated leaves it unobserved too, even behind the doorman. Paused that way nightly, it never gets a full day, and `status.prediction.message` says why requests don’t wake it, and the fix.
+With [`ask`](https://docs.napwake.dev/next/concepts/wake-on-request/#asking-before-waking), a query that can’t be evaluated leaves the hour unobserved too, even behind the doorman. Paused that way nightly, it never gets a full day. `status.prediction.message` says why requests don’t wake it, and the fix.
 
 `status.prediction.reason` and `message` say what the forecast awaits, and `startsActing` when it should act ([When it acts](https://docs.napwake.dev/next/concepts/forecasting/#when-it-acts)). With a Prometheus URL, a new workload starts from its history, reported in `status.prediction.history`. Also check metrics-server returns data:
 
@@ -363,9 +379,11 @@ Totals restart at zero each calendar month, in UTC ([Cost tracking](https://docs
 
 FREED THIS MONTH well above SAVED in `kubectl napwake status`, maybe with Needs attention saying nodes aren’t scaling down. The nodes are still there. Saved counts nothing while a pool’s spare capacity could hold everything paused there ([How saved is measured](https://docs.napwake.dev/next/concepts/cost-tracking/#how-saved-is-measured)).
 
-1. **Is anything scaling the nodes?** The first lines of `kubectl napwake status` and `kubectl napwake nodes` name the node autoscaler, as does `napwake_node_autoscaler`. With `none found`, nothing removes nodes or comes off the bill. Enable Cluster Autoscaler on the node groups, or install Karpenter ([Cluster Autoscaler guide](https://docs.napwake.dev/next/guides/cluster-autoscaler/)).
+1. Check that something scales the nodes. The first lines of `kubectl napwake status` and `kubectl napwake nodes` name the node autoscaler, as does `napwake_node_autoscaler`.
 
-2. **What’s keeping the nodes?** BLOCKED BY in `kubectl napwake nodes`, with how to clear each below its table:
+   With `none found`, nothing removes nodes or comes off the bill. Enable Cluster Autoscaler on the node groups, or install Karpenter ([Cluster Autoscaler guide](https://docs.napwake.dev/next/guides/cluster-autoscaler/)).
+
+2. Find what keeps the nodes, in the BLOCKED BY column of `kubectl napwake nodes`. Below its table, it says how to clear each one.
 
    | BLOCKED BY                                                              | Cause                                                                                                                  |
    | ----------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------- |
@@ -378,9 +396,23 @@ FREED THIS MONTH well above SAVED in `kubectl napwake status`, maybe with Needs 
    | `bare pod`                                                              | A pod no controller would recreate                                                                                     |
    | `kube-system pod without PDB`                                           | Kept while `--skip-nodes-with-system-pods` is on                                                                       |
 
-3. **Busy neighbours?** A node goes only once everything on it can, so a cluster of slightly busy nodes keeps them all. Check UTILISATION in `kubectl napwake nodes`. Low, with nothing in BLOCKED BY, means the node awaits the autoscaler’s threshold or delay. Middling means it’s in use. A [node pool of their own](https://docs.napwake.dev/next/guides/node-pools/) lets pausing non-prod empty whole nodes.
+3. Check for busy neighbours. A node goes only once everything on it can, so a cluster of slightly busy nodes keeps them all.
 
-4. **Spare capacity on purpose?** A node group minimum above use, long `scale-down-unneeded-time` or `scale-down-delay-after-add`, a `scale-down-utilization-threshold` under the nodes’ use, long `consolidateAfter`, tight Karpenter disruption `budgets`, or over-provisioning placeholder pods. Saved catches up as those nodes go ([Node pools for real savings](https://docs.napwake.dev/next/guides/node-pools/)).
+   | UTILISATION in `kubectl napwake nodes` | Means                                                                                                                        |
+   | -------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------- |
+   | Low, with nothing in BLOCKED BY        | The node awaits the autoscaler’s threshold or delay                                                                          |
+   | Middling                               | It’s in use. With a [node pool of their own](https://docs.napwake.dev/next/guides/node-pools/), pausing non-production workloads empties whole nodes |
+
+4. Check for spare capacity kept on purpose. Any of these keeps nodes:
+
+   * A node group minimum above use
+   * A long `scale-down-unneeded-time` or `scale-down-delay-after-add`
+   * A `scale-down-utilization-threshold` under the nodes’ use
+   * A long `consolidateAfter`
+   * Tight Karpenter disruption `budgets`
+   * Over-provisioning placeholder pods
+
+   Saved catches up as those nodes go ([Node pools for real savings](https://docs.napwake.dev/next/guides/node-pools/)).
 
 By `pool`, `napwake_capacity_spare_cpu_cores` against `napwake_capacity_paused_cpu_cores` shows which pools still fit what’s paused ([Metrics](https://docs.napwake.dev/next/reference/metrics/#savings)).
 
@@ -392,7 +424,9 @@ By `pool`, `napwake_capacity_spare_cpu_cores` against `napwake_capacity_paused_c
 kubectl get managedworkload my-api -n staging -o jsonpath='{.status.cost.savingsUnknown}'
 ```
 
-Under `watchNamespaces` the operator can’t see other namespaces’ pods, so it can’t tell what’s left on each node for paused replicas. It can’t measure saved, and exports no `napwake_capacity_*` or `napwake_savings_realised_dollars_per_hour` series. Freed is still measured. For saved, install without `watchNamespaces`, which watches pods cluster-wide, caching only each bound pod’s requests ([Data and access](https://docs.napwake.dev/next/reference/data-and-access/)).
+Under `watchNamespaces`, the operator can’t see other namespaces’ pods. So it can’t tell what’s left on each node for paused replicas, or measure saved. It exports no `napwake_capacity_*` or `napwake_savings_realised_dollars_per_hour` series.
+
+Freed is still measured. For saved, install without `watchNamespaces`. That watches pods cluster-wide, caching only each bound pod’s requests ([Data and access](https://docs.napwake.dev/next/reference/data-and-access/)).
 
 ## ManagedWorkloads
 
@@ -420,19 +454,27 @@ Two installs watch its namespace, and the other, in the namespace the event name
 
 ### A paused workload’s ManagedWorkload lost its status
 
-It happens to one restored from a backup without status, or deleted without its finalizer and recreated. A `PauseRecovered` event means Napwake took the pause up again from the workload’s `napwake.dev/paused-from` ([how](https://docs.napwake.dev/next/concepts/lifecycle/#idempotency)). It’s `Paused` again if still at zero, and wakes as usual. Leave that annotation alone. Napwake removes it at hand-back.
+It happens to one restored from a backup without status, or deleted without its finalizer and recreated.
 
-A `PauseRecordLost` warning means there was no record, or the annotation couldn’t be read, as the message says. With no record anywhere, nothing was scaled, and the workload is `Running` again. If its replicas are at zero anyway, Napwake takes it for scaled to zero outside it and leaves it, so scale it up yourself.
+A `PauseRecovered` event means Napwake took the pause up again from the workload’s `napwake.dev/paused-from` ([how](https://docs.napwake.dev/next/concepts/lifecycle/#idempotency)). It’s `Paused` again if still at zero, and wakes as usual. Leave that annotation alone, as Napwake removes it at hand-back.
+
+A `PauseRecordLost` warning means there was no record, or the annotation couldn’t be read, as the message says. With no record anywhere, nothing was scaled, and the workload is `Running` again.
+
+If its replicas are at zero anyway, Napwake takes it as scaled to zero outside Napwake, and leaves it. Scale it up yourself.
 
 ### A ManagedWorkload let go of its workload without handing it back
 
-A `HandBackAbandoned` warning event means its namespace is being deleted, and handing the paused workload back failed for 5 minutes, such as when a KEDA webhook that’s down refuses to release its ScaledObject. It lets go rather than block the deletion, and the workload goes with the namespace. The message has the error.
+A `HandBackAbandoned` warning event means its namespace is being deleted, and handing the paused workload back failed for 5 minutes. A KEDA webhook that’s down can cause it, by refusing to release its ScaledObject.
+
+It lets go rather than block the deletion, and the workload goes with the namespace. The message has the error.
 
 ## Installing and removing
 
 ### `helm uninstall` fails with `job napwake-uninstall-guard failed`
 
-Or, in Helm 4, `resource Job/napwake-system/napwake-uninstall-guard not ready`. ManagedWorkloads are left, whose workloads would stay paused. Helm 3.18 and later list them after `Napwake refuses to uninstall:`. Before 3.18, or in any Helm after a `helm rollback` with one, the guard’s log does:
+Or, in Helm 4, `resource Job/napwake-system/napwake-uninstall-guard not ready`. ManagedWorkloads are left, whose workloads would stay paused.
+
+Helm 3.18 and later list them after `Napwake refuses to uninstall:`. Before 3.18, or in any Helm after a `helm rollback` with one, the guard’s log does:
 
 ```bash
 kubectl logs job/napwake-uninstall-guard -n napwake-system
@@ -440,7 +482,12 @@ kubectl logs job/napwake-uninstall-guard -n napwake-system
 
 Remove the `napwake.dev/managed` label from those workloads and their namespaces, delete the ManagedWorkloads you wrote, and uninstall again.
 
-To keep Napwake, `helm rollback napwake -n napwake-system` marks the release deployed again, and until then `helm upgrade` fails with `has no deployed releases`. One still listed as being deleted is one the operator didn’t finish, usually as it isn’t running. Uninstall with `--no-hooks`, and restore the workloads by hand. With no CRD (`crds.install: false`), nothing is guarded. Argo CD 3.3 and later refuses to delete the Application the same way ([When `helm uninstall` refuses](https://docs.napwake.dev/next/getting-started/installation/#when-helm-uninstall-refuses)).
+| You want, or see                                | What to do, or why                                                                                                                                   |
+| ----------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------- |
+| To keep Napwake                                 | `helm rollback napwake -n napwake-system` marks the release deployed again. Until then, `helm upgrade` fails with `has no deployed releases`         |
+| A ManagedWorkload still listed as being deleted | The operator didn’t finish it, usually as it isn’t running. Uninstall with `--no-hooks`, and restore the workloads by hand                           |
+| No CRD (`crds.install: false`)                  | Nothing is guarded                                                                                                                                   |
+| Argo CD 3.3 and later                           | It refuses to delete the Application the same way ([When `helm uninstall` refuses](https://docs.napwake.dev/next/getting-started/installation/#when-helm-uninstall-refuses)) |
 
 ### `helm upgrade` fails with `job napwake-upgrade-guard failed`
 
@@ -450,15 +497,19 @@ Or, in Helm 4, `resource Job/napwake-system/napwake-upgrade-guard not ready`. Th
 kubectl logs job/napwake-upgrade-guard -n napwake-system
 ```
 
-Keep those namespaces, or stop managing their workloads first ([Narrowing watchNamespaces](https://docs.napwake.dev/next/operations/upgrading/#narrowing-watchnamespaces)). Under Argo CD it fails the sync, in the PreSync hook.
+Keep those namespaces, or stop managing their workloads first ([Narrowing `watchNamespaces`](https://docs.napwake.dev/next/operations/upgrading/#narrowing-watchnamespaces)). Under Argo CD it fails the sync, in the PreSync hook.
 
 After a refused `helm rollback`
 
-A rollback to a narrower `watchNamespaces` is refused the same way, by the pre-rollback hook. Helm still records a revision, `pending-rollback` in `helm history napwake`, while the operator runs on unchanged, and `helm upgrade` fails with `another operation (install/upgrade/rollback) is in progress` until another revision replaces it. `helm rollback napwake -n napwake-system`, with no revision, goes back to the one before, the release as it runs, and marks it deployed.
+A rollback to a narrower `watchNamespaces` is refused the same way, by the pre-rollback hook. Helm still records a revision, `pending-rollback` in `helm history napwake`, while the operator runs on unchanged. Until another revision replaces it, `helm upgrade` fails with `another operation (install/upgrade/rollback) is in progress`.
+
+`helm rollback napwake -n napwake-system`, with no revision, goes back to the one before, the release as it runs. It marks that deployed.
 
 ### Workloads stay at zero after the operator was removed
 
-The operator or its CRD went while ManagedWorkloads were left. Nothing scales their workloads up, their Services still point at the doorman’s deleted pods, and deleting the ManagedWorkloads or CRD hangs in `Terminating` on the `napwake.dev/cleanup` finalizer. Reinstall and stop managing them, or [restore them by hand](https://docs.napwake.dev/next/getting-started/installation/#restoring-workloads-after-the-operator-is-gone).
+The operator or its CRD went while ManagedWorkloads were left. Nothing scales their workloads up, and their Services still point at the doorman’s deleted pods. Deleting the ManagedWorkloads or CRD hangs in `Terminating` on the `napwake.dev/cleanup` finalizer.
+
+Reinstall and stop managing them, or [restore them by hand](https://docs.napwake.dev/next/getting-started/installation/#restoring-workloads-after-the-operator-is-gone).
 
 ## None of these
 
@@ -466,21 +517,21 @@ The operator or its CRD went while ManagedWorkloads were left. Nothing scales th
 
 Put your install’s namespace for `napwake-system`.
 
-| Check                  | Command                                                                                                                                                                                                                              |
-| ---------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| Operator running       | `kubectl get pods -n napwake-system`                                                                                                                                                                                                 |
-| CRDs installed         | `kubectl get crd managedworkloads.napwake.dev`                                                                                                                                                                                       |
-| Metrics server running | `kubectl top nodes`                                                                                                                                                                                                                  |
-| RBAC correct           | `kubectl auth can-i get pods --as=system:serviceaccount:napwake-system:napwake`. The ServiceAccount is `napwake` for a Helm release named `napwake`, and `napwake-controller-manager` with `install.yaml` or the Kustomize manifests |
-| Events                 | `kubectl describe managedworkload <name> -n <ns>`                                                                                                                                                                                    |
-| Logs                   | `kubectl logs -n napwake-system -l control-plane=controller-manager`                                                                                                                                                                 |
-| Status                 | `kubectl get managedworkload <name> -n <ns> -o yaml`                                                                                                                                                                                 |
+| Check                  | Command                                                                                                                                                                                                                                                                                                               |
+| ---------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Operator running       | `kubectl get pods -n napwake-system`                                                                                                                                                                                                                                                                                  |
+| CRDs installed         | `kubectl get crd managedworkloads.napwake.dev`                                                                                                                                                                                                                                                                        |
+| Metrics server running | `kubectl top nodes`                                                                                                                                                                                                                                                                                                   |
+| RBAC correct           | `kubectl auth can-i get pods --as=system:serviceaccount:napwake-system:<its ServiceAccount>`. Read the ServiceAccount from the operator’s Deployment, for any install: `kubectl get deployment -n napwake-system -l control-plane=controller-manager -o jsonpath='{.items[0].spec.template.spec.serviceAccountName}'` |
+| Events                 | `kubectl describe managedworkload <name> -n <ns>`                                                                                                                                                                                                                                                                     |
+| Logs                   | `kubectl logs -n napwake-system -l control-plane=controller-manager`                                                                                                                                                                                                                                                  |
+| Status                 | `kubectl get managedworkload <name> -n <ns> -o yaml`                                                                                                                                                                                                                                                                  |
 
 ### Getting help
 
-Not on this page? Check the [GitHub issues](https://github.com/napwake/napwake/issues) for known problems, then open one with what’s below.
+If it’s not on this page, check the [GitHub issues](https://github.com/napwake/napwake/issues) for known problems. Then open one with what’s below.
 
 * The operator’s version (`kubectl get deploy -n napwake-system -o wide` shows the image), the plugin’s (`kubectl napwake version`), and Kubernetes’
-* The ManagedWorkload’s YAML, sanitized
+* The ManagedWorkload’s YAML, sanitised
 * The relevant operator logs
 * The output of `kubectl describe managedworkload`

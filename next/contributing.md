@@ -11,7 +11,7 @@ Before you start
 | Go 1.26+                          | Everything. `go.mod` pins the toolchain                                            |
 | Docker                            | `make test-alerts`, which runs promtool in a container, so you don’t need promtool |
 | kubectl                           |                                                                                    |
-| [Kind](https://kind.sigs.k8s.io/) | The end-to-end and Helm tests                                                      |
+| [kind](https://kind.sigs.k8s.io/) | The end-to-end and Helm tests                                                      |
 | Helm                              | Only `make check-chart` and `make test-alerts`                                     |
 
 `make` downloads controller-gen, kustomize, setup-envtest and golangci-lint into `bin/` as it needs them.
@@ -31,7 +31,7 @@ Before you start
 3. Run the tests and the linter. `make lint test` must pass.
 
    ```bash
-   # Unit and integration tests (uses envtest for the K8s API)
+   # Unit and integration tests (uses envtest for the Kubernetes API)
    make test
 
 
@@ -39,11 +39,11 @@ Before you start
    make lint
 
 
-   # E2E tests: creates a Kind cluster, runs, and deletes it (KIND_NODE_IMAGE picks the Kubernetes version)
+   # E2E tests: creates a kind cluster, runs, and deletes it (KIND_NODE_IMAGE picks the Kubernetes version)
    make test-e2e
 
 
-   # Install the Helm chart into Kind, and pause and wake a workload through the doorman
+   # Install the Helm chart into kind, and pause and wake a workload through the doorman
    make test-helm-smoke
    ```
 
@@ -52,20 +52,21 @@ Before you start
 | If you changed        | Check                                                                                                                                      |
 | --------------------- | ------------------------------------------------------------------------------------------------------------------------------------------ |
 | Anything              | Tests pass (`make test`), and lint passes (`make lint`)                                                                                    |
+| Every commit          | It’s [signed off](https://docs.napwake.dev/next/contributing/#sign-off), with `git commit -s`                                                                                         |
 | CRD types             | CRD manifests regenerated (`make manifests`), DeepCopy regenerated (`make generate`), and generated code current (`make verify-generated`) |
 | The chart, or RBAC    | The chart still lints and renders, with RBAC matching `config/rbac` (`make check-chart`)                                                   |
 | Alert rules           | They still pass their tests (`make test-alerts`)                                                                                           |
 | User-facing behaviour | The documentation is updated                                                                                                               |
 
-CI also runs the end-to-end tests on Kubernetes 1.30 and 1.37, the Helm smoke test, and `make vulncheck`.
+CI also runs the end-to-end tests on Kubernetes 1.30 and 1.37, the Helm smoke test, `make vulncheck` and the DCO check.
 
 ### Run the E2E tests from several worktrees
 
-Each checkout gets its own Kind cluster, so you can run `make test-e2e` in two worktrees at once.
+Each checkout gets its own kind cluster, so you can run `make test-e2e` in two worktrees at once.
 
 | What           | Default                                      | Set it with      |
 | -------------- | -------------------------------------------- | ---------------- |
-| Kind cluster   | `napwake-e2e-<directory>-<hash of its path>` | `KIND_CLUSTER`   |
+| kind cluster   | `napwake-e2e-<directory>-<hash of its path>` | `KIND_CLUSTER`   |
 | Kubeconfig     | `bin/e2e/<cluster>/kubeconfig`               | `E2E_KUBECONFIG` |
 | Manager image  | `napwake:<cluster>`                          | `E2E_IMG`        |
 | kubectl plugin | `bin/e2e/<cluster>/kubectl-napwake`          | `E2E_PLUGIN`     |
@@ -83,6 +84,8 @@ make cleanup-test-e2e   # deletes the cluster, its kubeconfig, image and plugin
 
 ## The rules
 
+Everyone taking part follows the [Code of Conduct](https://github.com/napwake/napwake/blob/main/CODE_OF_CONDUCT.md). [`AGENTS.md`](https://github.com/napwake/napwake/blob/main/AGENTS.md) has every rule for code, tests, commits and reviews, for you and the AI assistant you work with. These are the ones a first change meets.
+
 ### Code
 
 * Comments say why, never what. None restate what the code does.
@@ -93,15 +96,32 @@ make cleanup-test-e2e   # deletes the cluster, its kubeconfig, image and plugin
 
 ### Commits
 
-Use [Conventional Commits](https://www.conventionalcommits.org/), one logical change per commit:
+Use [Conventional Commits](https://www.conventionalcommits.org/), one logical change per commit. The scope is the package or area, such as `controller`, `doorman`, `plugin`, `api`, `crd`, `chart`, `forecast`, `e2e` or `docs`:
 
-```plaintext
-feat(idle): add idle detection with detector and webhook signal
-fix(idle): reset idle timer on active signal
-refactor(forecast): extract confidence scoring into separate type
+```text
+feat(api): take a decimal CPU threshold, from 0.1 to 100
+fix(doorman): stamp a request held while its workload pauses
+refactor(controller): judge a wrong pause by v1alpha1.WrongPauseWindow
 chore(crd): regenerate CRD manifests
-docs(guides): add Prometheus signals guide
-test(policy): add table tests for scale constraints
+docs(plugin): say which command to use, and which need the operator
+test(e2e): answer every request through a Service across a pause
+```
+
+### Sign-off
+
+Contributions are made under the [Developer Certificate of Origin](https://developercertificate.org/). Sign off every commit:
+
+```bash
+git commit -s
+```
+
+It adds a `Signed-off-by:` line with your name and email. The DCO check fails a pull request with a commit that has no such line for its author.
+
+To sign off commits you’ve already made:
+
+```bash
+git rebase --signoff <base>   # the commit your branch starts from, which the check names
+git push --force-with-lease
 ```
 
 ### Generated code
@@ -115,42 +135,67 @@ make manifests  # CRD YAML, RBAC
 
 ### Docs examples
 
-The docs are an Astro Starlight site in `docs/`, with their pages in `docs/src/content/docs/`. Run `npm ci`, then `npm run dev`, in `docs/`. `npm run build` fails on a broken link or anchor between pages. `make test` checks their examples:
+The docs are an Astro Starlight site in `docs/`, with their pages in `docs/src/content/docs/`. Run `npm ci`, then `npm run dev`, in `docs/`. `npm run build` fails on a broken link or anchor between pages.
 
-| A block                                                                                                                  | What `make test` does                                                                                                                                                                  |
-| ------------------------------------------------------------------------------------------------------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| A ManagedWorkload in a `yaml` block in `README.md` or `docs/`, or in `config/samples/`                                   | Creates it against the real CRD, so an example that doesn’t validate fails the build                                                                                                   |
-| A partial one, a `spec:` block or spec fields such as `dependsOn` on their own                                           | Wraps it into a whole ManagedWorkload first. Title it `managedworkload.yaml` or leave it untitled, since a block titled as another file, such as `application.yaml`, isn’t read as one |
-| Helm values, titled `napwake-values.yaml`, `values.yaml` or `values-<name>.yaml`, or untitled with only the chart’s keys | Checks it against `charts/napwake/values.schema.json`. Every value it sets must be one the chart has                                                                                   |
-| One after a `<!-- snippet -->` line, or `{/* snippet */}` in an `.mdx` page                                              | Nothing, for a block that’s partial on purpose                                                                                                                                         |
-| A link to `https://docs.napwake.dev` in the code                                                                         | Fails unless it points at a page in `docs/`                                                                                                                                            |
+`make test` checks their examples:
+
+| A block                                                                                                                  | What `make test` does                                                                                                                                                             |
+| ------------------------------------------------------------------------------------------------------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| A ManagedWorkload in a `yaml` block in `README.md` or `docs/`, or in `config/samples/`                                   | Creates it against the real CRD, so an example that doesn’t validate fails the build                                                                                              |
+| A partial one, a `spec:` block or spec fields such as `dependsOn` on their own                                           | Wraps it into a whole ManagedWorkload first. Title it `managedworkload.yaml`, or leave it untitled. A block titled as another file, such as `application.yaml`, isn’t read as one |
+| Helm values, titled `napwake-values.yaml`, `values.yaml` or `values-<name>.yaml`, or untitled with only the chart’s keys | Checks it against `charts/napwake/values.schema.json`. Every value it sets must be one the chart has                                                                              |
+| One after a `<!-- snippet -->` line, or `{/* snippet */}` in an `.mdx` page                                              | Nothing, for a block that’s partial on purpose                                                                                                                                    |
+| A link to `https://docs.napwake.dev` in the code                                                                         | Fails unless it points at a page in `docs/`                                                                                                                                       |
 
 A pull request’s docs build also checks every `https://docs.napwake.dev` address outside `docs/`, in the code, the chart and the README. Each must land on a page and anchor of the built site. To check it yourself, build the docs, then run `go test ./test/docs -run TestDocsAddressesLandInTheBuiltSite`.
 
 ## Where things are
 
-```plaintext
-cmd/main.go                    # Operator entrypoint
-cmd/kubectl-napwake/main.go  # kubectl plugin
-api/v1alpha1/                  # CRD type definitions
-internal/controller/           # Reconcilers
-internal/forecast/             # Holt-Winters engine
-internal/signal/               # Prometheus activity queries
-internal/lifecycle/            # Pause and resume
-internal/autoscaler/           # HPA and KEDA
-internal/gitops/               # GitOps tool detection
-internal/discovery/            # Cluster scan for kubectl napwake scan
-internal/doorman/              # Wake on request
-internal/cost/                 # Cost rates and node list prices
-internal/metrics/              # Prometheus metrics, and the Metrics API reader
-charts/napwake/              # Helm chart
-config/                        # CRD, RBAC, kustomize manifests
-test/e2e/                      # End-to-end tests, in Kind
-test/docs/                     # Validates the docs' ManagedWorkloads against the CRD, and Helm values against the chart
-tests/prometheus/              # promtool tests for the alert rules
-docs/                          # This site (Astro Starlight)
-hack/docsite/                  # Publishes a release's docs as a version of the site
-hack/brewformula/              # Writes a release's Homebrew formula
+```text
+cmd/main.go                # The one binary: the operator, doorman, chart guard or NEG forwarder
+cmd/kubectl-napwake/       # The kubectl plugin, and the pages scan and status write
+api/v1alpha1/              # The CRD's types, and every label, annotation and finalizer
+internal/controller/       # The reconcilers: opt-in, lifecycle, doorman routing, NEG forwarders
+internal/lifecycle/        # Pause and resume, through the scale subresource
+internal/doorman/          # Wake on request, and the asleep and waking-up pages
+internal/forwarder/        # Passes connections to the doorman, for GKE's NEGs
+internal/forecast/         # The Holt-Winters forecast, and the rules that act on it
+internal/forecast/sim/     # Runs the forecast and the rules through simulated time
+internal/signal/           # Prometheus activity queries
+internal/metrics/          # Prometheus metrics, and the Metrics API reader
+internal/cost/             # Cost rates, the month's totals, and node list prices
+internal/capacity/         # What pausing took off the bill, in nodes
+internal/nodescale/        # The node autoscaler, and what keeps a node from scaling down
+internal/autoscaler/       # HPA and KEDA
+internal/gitops/           # Who sets a workload's replicas, and whether GitOps leaves them to Napwake
+internal/discovery/        # The cluster scan behind kubectl napwake scan
+internal/guard/            # Refuses a Helm uninstall or upgrade that would orphan ManagedWorkloads
+internal/human/            # Values written as people say them, for events and conditions
+charts/napwake/            # The Helm chart
+config/                    # The Kustomize install, generated CRD and RBAC, and alert rules
+test/e2e/, test/utils/     # End-to-end tests on kind, and their helpers
+test/docs/                 # The docs against the code, and the repository's rules
+test/oldname/              # Keeps the product's old name out, except in history
+tests/prometheus/          # promtool tests for the alert rules
+docs/                      # This site (Astro Starlight)
+hack/chartflags/           # Checks the operator takes every flag the chart passes
+hack/rbaccheck/            # Checks the chart grants what config/rbac/role.yaml does
+hack/doormanpolicy/        # Tests the doorman's admission policies on a real API server
+hack/promrules/            # Turns a PrometheusRule into a file promtool tests
+hack/dco/                  # The DCO check every pull request runs
+hack/docsite/              # Publishes a release's docs as a version of the site
+hack/releasenotes/         # Writes a release's notes from CHANGELOG.md
+hack/brewformula/          # Writes a release's Homebrew formula
+hack/krew-manifest.sh      # Writes a release's krew manifest
+hack/prices/               # Regenerates the node list prices
+hack/forecastsim/          # What the forecast would have done, on simulated or recorded traffic
+hack/chart-*.sh            # Write the chart's CRDs, and render its NOTES, defaults and --reuse-values
+hack/helm-smoke.sh         # The Helm smoke test, on kind
+hack/kind-cluster-name.sh  # Names each checkout's own kind clusters
+hack/artifacthub-repo.yml  # Artifact Hub's metadata for the chart
+hack/boilerplate.go.txt    # The licence header every Go file starts with
+.claude/skills/            # Claude Code skills: verify, fix-a-bug, add-a-setting, write-docs, e2e
+.github/workflows/         # CI, the release, and the docs' publishing
 ```
 
 To run the operator against your current cluster, and to build the plugin:
@@ -173,15 +218,34 @@ make build-plugin
 
 For maintainers. A release is a tag on `main`, `vX.Y.Z`, made and pushed like this:
 
-| Step                         | What it does                                                                                                                                                                                                                                                                                                   |
-| ---------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `make release VERSION=X.Y.Z` | Bumps the chart’s version and appVersion, the kustomize image, and the docs’ install and verify commands and download links (the pages in the Makefile’s `VERSIONED_DOCS`). Dates the version’s section of `CHANGELOG.md`, commits that, and tags it. Pushing the tag starts the release workflow’s four steps |
-| 1. Check                     | Checks the chart, the kustomize image, the docs and the dated changelog name the tag’s version, and that no page’s install link is to `releases/latest` or another release (`make verify-version`). Then runs every check a pull request does, Trivy on the image included                                     |
-| 2. Build and draft           | Builds the plugin archives, the krew manifest, `install.yaml` and the chart. Pushes the image by digest, untagged, signs it and attaches its SBOMs and provenance. Drafts the GitHub release with every file, its signed checksums, and the changelog section, with a link to the release’s docs, as its notes |
-| 3. Publish                   | Tags the image, pushes and signs the chart, tags the image `latest`, and publishes the GitHub release, which moves `releases/latest`                                                                                                                                                                           |
-| 4. Brew                      | Writes the Homebrew formula from the published archives and pushes it to [the tap](https://docs.napwake.dev/next/contributing/#the-homebrew-tap), for a release, and for a release candidate until the first stable release                                                                                                                               |
+| Step                         | What it does                                                                                                                                                                                                                                                                                                              |
+| ---------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `make release VERSION=X.Y.Z` | Bumps the chart’s version and appVersion, and the kustomize image. Bumps the docs’ install and verify commands and download links, on the pages in the Makefile’s `VERSIONED_DOCS`. Dates the version’s section of `CHANGELOG.md`, commits that, and tags it. Pushing the tag starts the release workflow’s four steps    |
+| 1. Check                     | `make verify-version` checks the chart, the kustomize image, the docs and the dated changelog name the tag’s version. It also checks no page’s install link is to `releases/latest` or another release. Then it runs the tests, lint, the end-to-end and Helm smoke tests, and Trivy on the image, as a pull request does |
+| 2. Build and draft           | Builds the plugin archives, the krew manifest, `install.yaml` and the chart. Pushes the image by digest, untagged, signs it and attaches its SBOMs and provenance. Drafts the GitHub release with every file and its signed checksums, and [notes](https://docs.napwake.dev/next/contributing/#release-notes) from the changelog                                     |
+| 3. Publish                   | Tags the image, pushes and signs the chart, tags the image `latest`, and publishes the GitHub release, which moves `releases/latest`                                                                                                                                                                                      |
+| 4. Brew                      | Writes the Homebrew formula from the published archives, and pushes it to [the tap](https://docs.napwake.dev/next/contributing/#the-homebrew-tap). For a release, and for a release candidate until the first stable release                                                                                                                                         |
 
-Once it succeeds, the docs workflow publishes the tag’s docs, as [the docs site](https://docs.napwake.dev/next/contributing/#the-docs-site) describes. Nothing users install changes until step 3, so a run that fails earlier can be run again, and replaces its draft. So can one that fails in step 3.
+Once it succeeds, the docs workflow publishes the tag’s docs, as [the docs site](https://docs.napwake.dev/next/contributing/#the-docs-site) describes.
+
+Nothing users install changes until step 3. So a run that fails earlier can be run again, and replaces its draft. So can one that fails in step 3.
+
+### Release notes
+
+A release’s notes come from its version’s section of `CHANGELOG.md`.
+
+| The section                                         | The notes                                                                                           |
+| --------------------------------------------------- | --------------------------------------------------------------------------------------------------- |
+| Opens with a summary, above its first `###` heading | The summary, and a link to the whole section                                                        |
+| Has no summary                                      | The section                                                                                         |
+| Has no summary, and runs over 120,000 characters    | The section, cut at the last whole line, with a link to the rest. GitHub refuses notes over 125,000 |
+| Either way                                          | They end with a link to the release’s docs                                                          |
+
+To see a tag’s notes before you push it:
+
+```bash
+go run ./hack/releasenotes -tag v0.2.0
+```
 
 ### Rehearse with a release candidate
 
@@ -190,10 +254,12 @@ Do this first. A tag with a hyphen runs the whole workflow as a pre-release:
 | What      | A release candidate                                                                                                   |
 | --------- | --------------------------------------------------------------------------------------------------------------------- |
 | Tag       | Has a hyphen, such as `v0.2.0-rc.1`                                                                                   |
-| Published | Everything but `latest`, so the image, the chart and the GitHub release exist only for those who ask for that version |
+| Published | Everything but `latest`. So the image, the chart and the GitHub release exist only for those who ask for that version |
 | Docs      | Under `next`, with a banner saying it’s a release candidate                                                           |
 | Notes     | Its version’s changelog section, which needn’t be dated yet                                                           |
 | Branch    | A throwaway one, so `main` keeps the release’s version                                                                |
+
+Rehearse from a throwaway branch:
 
 ```bash
 git switch -c rehearse-v0.2.0-rc.1 main
@@ -213,14 +279,14 @@ git push origin main v0.2.0
 
 `brew install napwake/tap/kubectl-napwake` installs the plugin from [napwake/homebrew-tap](https://github.com/napwake/homebrew-tap).
 
-| Part               | How it works                                                                                                                                                                                                                                                   |
-| ------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| The formula        | The release workflow’s last job writes the tap’s `Formula/kubectl-napwake.rb` with [`hack/brewformula`](https://github.com/napwake/napwake/tree/main/hack/brewformula), from the published macOS and Linux archives, and commits it as `kubectl-napwake X.Y.Z` |
-| Release candidates | Brewed only while the tap has no stable release, so people trying one before 0.2.0 can install it with Homebrew. Once a stable release is there, a release candidate never replaces it, since `brew install` and `brew upgrade` take whatever the formula is   |
-| The token          | The `HOMEBREW_TAP_TOKEN` secret, a fine-grained personal access token whose only permission is Contents read and write on `napwake/homebrew-tap`. Fine-grained tokens expire, so renew it before its expiry date                                               |
-| A failed push      | Without the secret, or if the push fails, the job warns and the tap stays on the last release, while the release and its docs go ahead. Once the token is fixed, re-run the job                                                                                |
+| Part               | How it works                                                                                                                                                                                                                                                                                                                                                  |
+| ------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| The formula        | The release workflow’s last job writes the tap’s `Formula/kubectl-napwake.rb` with [`hack/brewformula`](https://github.com/napwake/napwake/tree/main/hack/brewformula), from the published macOS and Linux archives. It commits it as `kubectl-napwake X.Y.Z`                                                                                                 |
+| Release candidates | Brewed only while the tap has no stable release, so people trying one before 0.2.0 can install it with Homebrew. Once a stable release is there, a release candidate never replaces it. `brew install` and `brew upgrade` take whatever the formula is                                                                                                        |
+| The token          | The `HOMEBREW_TAP_TOKEN` secret, a fine-grained personal access token owned by the `napwake` organization. Its only permission is Contents read and write on `napwake/homebrew-tap`. Fine-grained tokens expire, so renew it before its expiry date                                                                                                           |
+| A failed push      | Without the secret, or if the push fails, the job fails. It opens an issue, “Homebrew: kubectl-napwake vX.Y.Z isn’t in the tap”, which GitHub emails the repository’s watchers about. The tap stays on the last release, while the release and its docs go ahead. Once the token is fixed, re-run the failed job. A run that updates the tap closes the issue |
 
-To check a change to the formula, render it from a release’s archives, then audit and install it from a local tap:
+To check a change to the formula, render it from a release’s archives. Then audit and install it from a local tap:
 
 ```bash
 gh release download v0.2.0 -R napwake/napwake -D /tmp/release \
@@ -251,11 +317,15 @@ Each release carries a krew manifest, `krew-napwake.yaml`, which the release wor
 
 3. Once it’s merged, change the README’s and the [plugin page’s](https://docs.napwake.dev/next/getting-started/kubectl-plugin/#installation) Krew instructions to `kubectl krew install napwake`, without a manifest URL.
 
-For each later release, open a pull request to krew-index that sets `plugins/napwake.yaml`’s `version`, `uri`s and `sha256`s to those in the release’s `krew-napwake.yaml`. One that changes only those is tested and merged automatically, and [krew-release-bot](https://github.com/rajatjindal/krew-release-bot) can open it from the release workflow.
+For each later release, open a pull request to krew-index. It sets `plugins/napwake.yaml`’s `version`, `uri`s and `sha256`s to those in the release’s `krew-napwake.yaml`.
+
+One that changes only those is tested and merged automatically. [krew-release-bot](https://github.com/rajatjindal/krew-release-bot) can open it from the release workflow.
 
 ### The docs site
 
-Each minor release, `0.2`, `0.3` and so on, has its own version of the docs, built from its newest patch’s tag, so every page’s install commands name the release it documents. Once the release workflow succeeds, the docs workflow builds them and commits them to the `gh-pages` branch, which GitHub Pages serves. Each version’s folder is its own build, under its own base path.
+Each minor release, `0.2`, `0.3` and so on, has its own version of the docs. It’s built from its newest patch’s tag, so every page’s install commands name the release it documents.
+
+Once the release workflow succeeds, the docs workflow builds them. It commits them to the `gh-pages` branch, which GitHub Pages serves. Each version’s folder is its own build, under its own base path.
 
 | Docs for                                                                                                                  | Go to                                                                                                                                                                                                                                         |
 | ------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -279,17 +349,19 @@ go run ./hack/docsite -tag v0.2.0 -site ../gh-pages -dry-run
 
 Without `-dry-run`, it builds each folder and commits them to that checkout, without pushing.
 
-The domain, and moving to `gh-pages`
+The domain, and the Pages settings
 
 The site is served from the root of `docs.napwake.dev`, which `docs/astro.config.mjs` names as its site and base. `hack/docsite`’s redirects and 404 page send links on from that root, and a test keeps the two the same.
 
-For GitHub Pages to serve `gh-pages` there, the domain needs a DNS `CNAME` record pointing at `napwake.github.io`. The repository’s Pages settings need it as their custom domain. Setting it commits a `CNAME` file to `gh-pages`. `hack/docsite` writes the same file on every publish, so a publish never drops the domain.
+For GitHub Pages to serve `gh-pages` there, the domain needs a DNS `CNAME` record pointing at `napwake.github.io`. The repository’s Pages settings need it as their custom domain.
 
-Moving from the old Actions deployment to `gh-pages` takes two settings, once the docs workflow has published the first release or release candidate since versioning, which creates the branch. Until then the old site stays as it is.
+Setting it commits a `CNAME` file to `gh-pages`. `hack/docsite` writes the same file on every publish, so a publish never drops the domain.
 
-| Setting                                | Change                                                                                                                                     |
-| -------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------ |
-| Settings, Environments, `github-pages` | Add `gh-pages` to the deployment branches. Only `main` is allowed today, and GitHub’s own Pages workflow deploys from the branch it serves |
-| Settings, Pages, Build and deployment  | Source *Deploy from a branch*, branch `gh-pages`, folder `/ (root)`                                                                        |
+The repository’s settings for the site:
+
+| Setting                                | Value                                                                                                                                |
+| -------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------ |
+| Settings, Pages, Build and deployment  | Source *Deploy from a branch*, branch `gh-pages`, folder `/ (root)`                                                                  |
+| Settings, Environments, `github-pages` | Deployment branches `gh-pages` and `main`. `gh-pages` is there because GitHub’s own Pages workflow deploys from the branch it serves |
 
 Tags from before the Starlight docs can’t be published this way, since their docs have no Astro project.

@@ -38,9 +38,9 @@ Source: https://docs.napwake.dev/next/getting-started/kubectl-plugin/
 
 [End dry-run for a workload or namespace, once you trust what Napwake measured.](https://docs.napwake.dev/next/getting-started/kubectl-plugin/#enable-a-workload)
 
-`scan` and `status` both show idle workloads and money, from opposite ends. `scan` surveys a whole cluster, managed or not, for what could pause and what that could free. `status` shows what Napwake does with what it manages. The rest answer narrower questions.
+`scan` and `status` both show idle workloads and money, from opposite ends. `scan` surveys a whole cluster, managed or not, for what could pause and what that could free. `status` shows what Napwake does with what it manages.
 
-Every flag, JSON field, exit status and permission is in the [kubectl plugin reference](https://docs.napwake.dev/next/reference/cli/).
+The rest answer narrower questions. Every flag, JSON field, exit status and permission is in the [kubectl plugin reference](https://docs.napwake.dev/next/reference/cli/).
 
 ## Installation
 
@@ -63,11 +63,13 @@ Every flag, JSON field, exit status and permission is in the [kubectl plugin ref
 
   ```bash
   kubectl krew install --manifest-url \
-    https://github.com/napwake/napwake/releases/download/v0.2.0-rc.9/krew-napwake.yaml
+    https://github.com/napwake/napwake/releases/download/v0.2.0-rc.11/krew-napwake.yaml
   kubectl napwake version
   ```
 
-  Krew installs it on Linux and macOS (amd64 and arm64) and Windows (amd64). `kubectl krew upgrade` doesn’t upgrade a plugin installed from a manifest URL. For a later release, run `kubectl krew uninstall napwake`, then install that release’s manifest. Once the plugin is accepted into the [krew-index](https://github.com/kubernetes-sigs/krew-index), `kubectl krew install napwake` will install it, and `kubectl krew upgrade` upgrade it.
+  Krew installs it on Linux and macOS (amd64 and arm64) and Windows (amd64).
+
+  `kubectl krew upgrade` doesn’t upgrade a plugin installed from a manifest URL. For a later release, run `kubectl krew uninstall napwake`, then install that release’s manifest. Once the plugin is accepted into the [krew-index](https://github.com/kubernetes-sigs/krew-index), `kubectl krew install napwake` will install it, and `kubectl krew upgrade` upgrade it.
 
 * Download
 
@@ -76,13 +78,13 @@ Every flag, JSON field, exit status and permission is in the [kubectl plugin ref
   ```bash
   os=$(uname -s | tr '[:upper:]' '[:lower:]')
   arch=$(uname -m | sed -e 's/x86_64/amd64/' -e 's/aarch64/arm64/')
-  curl -fLO "https://github.com/napwake/napwake/releases/download/v0.2.0-rc.9/kubectl-napwake-${os}-${arch}.tar.gz"
+  curl -fLO "https://github.com/napwake/napwake/releases/download/v0.2.0-rc.11/kubectl-napwake-${os}-${arch}.tar.gz"
   tar xzf "kubectl-napwake-${os}-${arch}.tar.gz"
   sudo install "kubectl-napwake-${os}-${arch}" /usr/local/bin/kubectl-napwake
   kubectl napwake version
   ```
 
-  On Windows, download `kubectl-napwake-windows-amd64.tar.gz` from the [release](https://github.com/napwake/napwake/releases/tag/v0.2.0-rc.9) and extract it with `tar xzf`. Rename `kubectl-napwake-windows-amd64.exe` to `kubectl-napwake.exe`, in a folder on your `PATH`. To check an archive came from the release workflow, see [Verifying a release](https://docs.napwake.dev/next/reference/security/#verifying-a-release).
+  On Windows, download `kubectl-napwake-windows-amd64.tar.gz` from the [release](https://github.com/napwake/napwake/releases/tag/v0.2.0-rc.11) and extract it with `tar xzf`. Rename `kubectl-napwake-windows-amd64.exe` to `kubectl-napwake.exe`, in a folder on your `PATH`. To check an archive came from the release workflow, see [Verifying a release](https://docs.napwake.dev/next/reference/security/#verifying-a-release).
 
 * Source
 
@@ -116,7 +118,7 @@ Your bill: drops only as Karpenter removes nodes (it consolidates when underutil
 History: the last 7 days, from monitoring/prometheus-operated
 
   Napwake has 12 workloads paused right now, freeing $1.84 an hour.
-  Napwake has freed $96 this month pausing 14 live workloads, and saved $71 of it.
+  Napwake has freed $96 this month from the 14 live workloads it pauses, and saved $71 of it.
   3 workloads are in dry-run: measured by Napwake since starting, they would have slept 312 hours, freeing $41,
   about $140 a month.
   4 workloads are scaled to zero by hand; Napwake can pause them while idle and wake them on the
@@ -137,53 +139,59 @@ History: the last 7 days, from monitoring/prometheus-operated
 
 Notes:
   - 2 workloads set no CPU requests, so their use can't be measured: kube-tools/agent, ops/exporter
-  - 23 infrastructure workloads are left out of the totals and next steps: monitoring (9), argocd (7), ingress-nginx (3) and 2 more. Napwake never pauses Kubernetes' own workloads or itself; anything else, infrastructure included, pauses only if you opt it in
+  - 23 infrastructure workloads are left out of the totals and next steps: monitoring (9), argocd (7), ingress-nginx (3) and 4 more in 2 namespaces. Napwake never pauses Kubernetes' own workloads or itself; anything else, infrastructure included, pauses only if you opt it in
   - the history replay sees CPU and rollouts only; requests and activity annotations aren't in Prometheus, so a workload used with little CPU can look like it would sleep more than it would
 
 Prices: AWS us-east-1 list prices · 4 node types · 6 workloads on spot, priced at spot
 Pass --cpu-price and --memory-price for yours.
 ```
 
-`scan` only reads, with your kubeconfig, one cluster at a time. That’s your context, or the one you name with `--context`. Run it before you install Napwake, or after, to see what’s left to opt in. Once Napwake manages a workload, the scan reads its activity clock and shows what Napwake paused and freed.
+`scan` only reads, with your kubeconfig, one cluster at a time. That’s your context, or the one you name with `--context`.
+
+Run it before you install Napwake, or after, to see what’s left to opt in. Once Napwake manages a workload, the scan reads its activity clock and shows what Napwake paused and freed.
 
 | Line or column                                    | What it says                                                                                                                                                                     |
 | ------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | First line                                        | The cluster, and the workloads listed in how many namespaces                                                                                                                     |
-| Its namespace count                               | Only the namespaces listed workloads are in. 15 namespaces, 12 of them infrastructure, read `14 workloads in 3 namespaces`.                                                      |
+| Its namespace count                               | Only the namespaces listed workloads are in. 15 namespaces, 12 of them infrastructure, read `14 workloads in 3 namespaces`                                                       |
 | Its cluster name                                  | Shortened for EKS and GKE, such as `staging (EKS us-east-1)` for `arn:aws:eks:us-east-1:123456789012:cluster/staging`                                                            |
 | Other contexts                                    | Shown as named                                                                                                                                                                   |
 | `Your bill:`                                      | What turns freed capacity into savings, from the node autoscaler [`nodes`](https://docs.napwake.dev/next/reference/cli/#nodes-autoscaler) finds ([what it says](https://docs.napwake.dev/next/reference/cli/#scan-columns-more)) |
-| `History:`                                        | The Prometheus read, how much was replayed, and others found. See [History from Prometheus](https://docs.napwake.dev/next/reference/cli/#scan-history).                                                  |
+| `History:`                                        | The Prometheus read, how much was replayed, and others found. See [History from Prometheus](https://docs.napwake.dev/next/reference/cli/#scan-history)                                                   |
 | STATE                                             | What the workload is doing now, and in brackets how Napwake is involved (below)                                                                                                  |
 | STATE `idle`                                      | No activity for `--idle-after`, or a managed workload’s own wait, so Napwake would pause it now                                                                                  |
 | BECAUSE                                           | The evidence for the state, then facts such as when it was last deployed, if a week or more ago                                                                                  |
 | BECAUSE `won't pause: PVCs deleted on scale-down` | A StatefulSet whose `persistentVolumeClaimRetentionPolicy.whenScaled` is `Delete`                                                                                                |
-| COST/MO                                           | What its requests cost a month while running. See [Prices](https://docs.napwake.dev/next/reference/cli/#scan-prices).                                                                                    |
-| FREED THIS MONTH                                  | Live workloads only. What Napwake freed pausing it since the 1st (`status.cost.freedThisMonth`).                                                                                 |
+| COST/MO                                           | What its requests cost a month while running. See [Prices](https://docs.napwake.dev/next/reference/cli/#scan-prices)                                                                                     |
+| FREED THIS MONTH                                  | Live workloads only. What Napwake freed pausing it since the 1st (`status.cost.freedThisMonth`)                                                                                  |
 | Its rates                                         | Those Napwake uses for the workload                                                                                                                                              |
 | SAVED                                             | The part of that which came off the bill as nodes scaled down (`savedThisMonth`)                                                                                                 |
-| COULD SLEEP, in dry-run                           | The hours Napwake measured it would have slept, since dry-run started. BECAUSE says when.                                                                                        |
-| COULD SLEEP, unmanaged                            | From the replay. The running hours it would have slept, waiting `--idle-after` after each activity, or longer after a pause made in use.                                         |
-| WAKES                                             | How often activity would have woken it, making whoever caused it wait. Measured in dry-run, replayed otherwise.                                                                  |
-| COULD FREE/MO                                     | What pausing would free a month, for workloads Napwake doesn’t pause yet. Never called a saving.                                                                                 |
+| COULD SLEEP, in dry-run                           | The hours Napwake measured it would have slept, since dry-run started. BECAUSE says when                                                                                         |
+| COULD SLEEP, unmanaged                            | From the replay. The running hours it would have slept, waiting `--idle-after` after each activity, or longer after a pause made in use                                          |
+| WAKES                                             | How often activity would have woken it, making whoever caused it wait. Measured in dry-run, replayed otherwise                                                                   |
+| COULD FREE/MO                                     | What pausing would free a month, for workloads Napwake doesn’t pause yet. Never called a saving                                                                                  |
 | COULD FREE/MO, in dry-run                         | What Napwake measured, the figure BECAUSE gives                                                                                                                                  |
 | COULD FREE/MO, unmanaged                          | The replay’s estimate                                                                                                                                                            |
-| Money                                             | Whole dollars, as in `status`. `<$1` is above zero but rounds to nothing. `$0` is none.                                                                                          |
+| Money                                             | Whole dollars, as in `status`. `<$1` is above zero but rounds to nothing. `$0` is none                                                                                           |
 | `Prices:`                                         | At the end, a summary of what costs were priced at ([Prices](https://docs.napwake.dev/next/reference/cli/#scan-prices))                                                                                  |
 
-| In STATE’s brackets  | What it means                                                                   |
-| -------------------- | ------------------------------------------------------------------------------- |
-| `unmanaged`          | Napwake isn’t involved                                                          |
-| `dry-run`            | Napwake measures it, and never pauses it                                        |
-| `live`               | Napwake pauses it while idle                                                    |
-| `protected`          | Its namespace is labelled `napwake.dev/protected`, so Napwake won’t manage it   |
-| `paused (unmanaged)` | Someone scaled it to zero. It costs nothing, but nothing wakes it on a request. |
+| In STATE’s brackets  | What it means                                                                                                                 |
+| -------------------- | ----------------------------------------------------------------------------------------------------------------------------- |
+| `unmanaged`          | Napwake isn’t involved                                                                                                        |
+| `dry-run`            | Napwake measures it, and never pauses it                                                                                      |
+| `live`               | Napwake pauses it while idle                                                                                                  |
+| `protected`          | Its namespace is labelled `napwake.dev/protected` or matches a built-in pattern, such as `kube-*`, so Napwake won’t manage it |
+| `paused (unmanaged)` | Someone scaled it to zero. It costs nothing, but nothing wakes it on a request                                                |
 
 Run in a terminal, the scan also writes the report as a web page and opens it in your browser. It’s one self-contained file to email or attach, and it prints cleanly to PDF. See [The web report](https://docs.napwake.dev/next/reference/cli/#scan-report).
 
 Measure it with dry-run
 
-Without history, the scan can’t tell how often a workload would be woken. So it shows what idle workloads cost and what each hour asleep frees, with no month’s figure. Once Napwake is installed, label workloads `napwake.dev/managed=true` and annotate them `napwake.dev/dry-run=true`. Napwake then measures how often it would have paused them, for how long, and what that would have freed. It never pauses them. See [Dry run](https://docs.napwake.dev/next/guides/dry-run/#what-dry-run-measured). The scan shows it in COULD SLEEP, WAKES and COULD FREE/MO, BECAUSE saying since when. The headline adds a total and the `kubectl napwake enable` command. It’s from Napwake’s own activity clock, which sees more than the replay, so judge going live by it.
+Without history, the scan can’t tell how often a workload would be woken. So it shows what idle workloads cost and what each hour asleep frees, with no month’s figure.
+
+Once Napwake is installed, label workloads `napwake.dev/managed=true` and annotate them `napwake.dev/dry-run=true`. Napwake then measures how often it would have paused them, for how long, and what that would have freed. It never pauses them ([Dry run](https://docs.napwake.dev/next/guides/dry-run/#what-dry-run-measured)).
+
+The scan shows it in COULD SLEEP, WAKES and COULD FREE/MO, BECAUSE saying since when. The headline adds a total and the `kubectl napwake enable` command. It’s from Napwake’s own activity clock, which sees more than the replay, so judge going live by it.
 
 ```bash
 # Another cluster in your kubeconfig
@@ -211,13 +219,13 @@ kubectl napwake scan --html workload-scan.html
 kubectl napwake scan --open=false
 ```
 
-| Flag               | Default          | What it does                                                                                |
-| ------------------ | ---------------- | ------------------------------------------------------------------------------------------- |
-| `--namespace` `-n` | all you can read | Namespace to scan. Repeat for several.                                                      |
-| `--output` `-o`    | `table`          | `table`, `json` or `yaml`                                                                   |
-| `--window`         | `7d`             | Prometheus history to replay, such as `7d` or `36h`, up to `366d`. `0` judges from CPU now. |
-| `--cpu-price`      | `0.031`          | Your price per vCPU-hour, in dollars, zero or more                                          |
-| `--memory-price`   | `0.004`          | Your price per GiB-hour of memory, in dollars, zero or more                                 |
+| Flag               | Default          | What it does                                                                                                                                                                          |
+| ------------------ | ---------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `--namespace` `-n` | all you can read | Namespace to scan. Repeat for several                                                                                                                                                 |
+| `--output` `-o`    | `table`          | `table`, `json` or `yaml`                                                                                                                                                             |
+| `--window`         | `7d`             | Prometheus history to replay, such as `7d` or `36h`, up to `366d`. `0` judges from CPU now                                                                                            |
+| `--cpu-price`      | `0.031`          | Your price per vCPU-hour, in dollars, zero or more, for every workload. Unset, each node is priced at its type’s list price, and one with none at AWS on-demand in us-east-1          |
+| `--memory-price`   | `0.004`          | Your price per GiB-hour of memory, in dollars, zero or more, for every workload. Unset, each node is priced at its type’s list price, and one with none at AWS on-demand in us-east-1 |
 
 The [`scan` reference](https://docs.napwake.dev/next/reference/cli/#scan) has every flag, JSON field, exit status and permission. It also says how the scan judges idle, reads history and prices workloads.
 
@@ -252,7 +260,11 @@ It runs the operator’s own forecast and decision rules over the history `scan`
 | WOKEN                                            | When it usually woke it                                                                                                                    |
 | WAKES ON                                         | What wakes it once paused (below)                                                                                                          |
 
-The forecast learns all its history as the operator does for a new workload. [Name a managed workload](https://docs.napwake.dev/next/getting-started/kubectl-plugin/#one-workloads-forecast) for its whole forecast, and the fix from `status.prediction.message`. READY to WOKEN replay the history’s last half under `autoResume`, from a forecast that learned only the first half. Having learned less, it’s a little less ready than opting in now would be. A workload counts as used when its CPU is above `--cpu-threshold`, as the activity clock counts it. Use seen only in requests or activity annotations isn’t in Prometheus.
+The forecast learns all its history as the operator does for a new workload. [Name a managed workload](https://docs.napwake.dev/next/getting-started/kubectl-plugin/#one-workloads-forecast) for its whole forecast, and the fix from `status.prediction.message`.
+
+READY to WOKEN replay the history’s last half under `autoResume`, from a forecast that learned only the first half. Having learned less, it’s a little less ready than opting in now would be.
+
+A workload counts as used when its CPU is above `--cpu-threshold`, as the activity clock counts it. Use seen only in requests or activity annotations isn’t in Prometheus.
 
 | WAKES ON                   | When                                                                                                                                                                                                         |
 | -------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
@@ -267,13 +279,13 @@ The forecast learns all its history as the operator does for a new workload. [Na
 | `people, query`            | The same, with a query too                                                                                                                                                                                   |
 | `nothing`                  | People wake it by hand, and the forecast doesn’t learn the hours it’s paused                                                                                                                                 |
 
-| Flag               | Default          | What it does                                                                                                              |
-| ------------------ | ---------------- | ------------------------------------------------------------------------------------------------------------------------- |
-| `--namespace` `-n` | all you can read | Namespace to replay. Repeat for several.                                                                                  |
-| `--window`         | `28d`            | History to read, from `2d` to `34d`. The operator learns up to four weeks.                                                |
-| `--forecast`       | `balanced`       | How soon the forecast acts for unmanaged workloads. See [Forecast setting](https://docs.napwake.dev/next/concepts/forecasting/#forecast-setting). |
-| `--timezone`       | the operator’s   | The zone whose hours and weekdays the forecast learns, and times show in                                                  |
-| `--output` `-o`    | `table`          | `table`, `json` or `yaml`. JSON and YAML give every workload’s days.                                                      |
+| Flag               | Default          | What it does                                                                                                             |
+| ------------------ | ---------------- | ------------------------------------------------------------------------------------------------------------------------ |
+| `--namespace` `-n` | all you can read | Namespace to replay. Repeat for several                                                                                  |
+| `--window`         | `28d`            | History to read, from `2d` to `34d`. The operator learns up to four weeks                                                |
+| `--forecast`       | `balanced`       | How soon the forecast acts for unmanaged workloads. See [Forecast setting](https://docs.napwake.dev/next/concepts/forecasting/#forecast-setting) |
+| `--timezone`       | the operator’s   | The zone whose hours and weekdays the forecast learns, and times show in                                                 |
+| `--output` `-o`    | `table`          | `table`, `json` or `yaml`. JSON and YAML give every workload’s days                                                      |
 
 The [`forecast` reference](https://docs.napwake.dev/next/reference/cli/#forecast) has every flag and JSON field, how it reads history, and what would wake a workload.
 
@@ -310,34 +322,34 @@ Ready on 9 of 10 mornings, woken 25m ahead; it never woke it for nothing.
 
 For a managed workload it first shows Napwake’s own forecast. That’s from `status.prediction` and the state saved there, as the operator restores it. Then, for any workload, the replay.
 
-| Line                                                             | What it says                                                                                                                                      |
-| ---------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------- |
-| First line                                                       | `acting`, `learning`, `relearning` or `not learning`, as in `status`’s FORECAST                                                                   |
-| Under it                                                         | The operator’s `status.prediction.message`, what it waits for and why                                                                             |
-| Phase                                                            | Each season’s phase, daily and weekly, `Observing`, `Suggesting` or `Active`. See [Phase Lifecycle](https://docs.napwake.dev/next/concepts/forecasting/#phase-lifecycle). |
-| Hours seen                                                       | Hours of the day seen since it started or last relearned, and hours of the week                                                                   |
-| To act                                                           | It needs all 24 hours of the day                                                                                                                  |
-| Learned                                                          | Hours of demand learned                                                                                                                           |
-| Learned, from history                                            | How many came from Prometheus history when Napwake began managing it (`status.prediction.history`)                                                |
-| Learned, live                                                    | How many it learned since, out of how long it’s been managed                                                                                      |
-| **History**                                                      | With no history learned, the operator’s reason                                                                                                    |
-| Confidence                                                       | How right the last day’s and last week’s forecasts were, and the confidence it acts from                                                          |
-| Acts from `now`                                                  | It’s acting                                                                                                                                       |
-| Acts from a time                                                 | When it’s expected to start (`status.prediction.startsActing`), if the coming days repeat the last week                                           |
-| Acts from `not known until it has seen every hour of the day`    | While it’s still observing                                                                                                                        |
-| Acts from `not known until it has scored a day of its forecasts` | While it’s still observing                                                                                                                        |
-| Acts from `not expected within 4 weeks`                          | A pattern too irregular for its setting                                                                                                           |
-| Busy hours                                                       | Hours of the next 24 it expects demand in, at or above `cpuThreshold`                                                                             |
-| Busy hours, peak                                                 | The most it expects, as a share of the CPU requested                                                                                              |
-| Busy hours, effect                                               | It holds off a pause before each. With `autoResume`, it wakes the workload 15 minutes ahead.                                                      |
-| Busy hours, none                                                 | Until it’s acting                                                                                                                                 |
-| autoResume                                                       | Whether it’s on, and what that changes                                                                                                            |
-| autoResume, off                                                  | How to turn it on (below)                                                                                                                         |
-| Its state                                                        | Why the plugin couldn’t read the saved state, such as a plugin of another version than the operator                                               |
-| Its state, then                                                  | The lines read from it are left out                                                                                                               |
-| Replayed                                                         | When the forecast would act if the workload were opted in today                                                                                   |
-| The days                                                         | The history’s last half, one row a day                                                                                                            |
-| Each day                                                         | Its first use, how it found the workload, when it woke it, and whether it was acting                                                              |
+| Line                                                             | What it says                                                                                                                                     |
+| ---------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------ |
+| First line                                                       | `acting`, `learning`, `relearning` or `not learning`, as in `status`’s FORECAST                                                                  |
+| Under it                                                         | The operator’s `status.prediction.message`, what it waits for and why                                                                            |
+| Phase                                                            | Each season’s phase, daily and weekly, `Observing`, `Suggesting` or `Active`. See [Phase lifecycle](https://docs.napwake.dev/next/concepts/forecasting/#phase-lifecycle) |
+| Hours seen                                                       | Hours of the day seen since it started or last relearned, and hours of the week                                                                  |
+| To act                                                           | It needs all 24 hours of the day                                                                                                                 |
+| Learned                                                          | Hours of demand learned                                                                                                                          |
+| Learned, from history                                            | How many came from Prometheus history when Napwake began managing it (`status.prediction.history`)                                               |
+| Learned, live                                                    | How many it learned since, out of how long it’s been managed                                                                                     |
+| History                                                          | With no history learned, the operator’s reason                                                                                                   |
+| Confidence                                                       | How right the last day’s and last week’s forecasts were, and the confidence it acts from                                                         |
+| Acts from `now`                                                  | It’s acting                                                                                                                                      |
+| Acts from a time                                                 | When it’s expected to start (`status.prediction.startsActing`), if the coming days repeat the last week                                          |
+| Acts from `not known until it has seen every hour of the day`    | While it’s still observing                                                                                                                       |
+| Acts from `not known until it has scored a day of its forecasts` | While it’s still observing                                                                                                                       |
+| Acts from `not expected within 4 weeks`                          | A pattern too irregular for its setting                                                                                                          |
+| Busy hours                                                       | Hours of the next 24 it expects demand in, at or above `cpuThreshold`                                                                            |
+| Busy hours, peak                                                 | The most it expects, as a share of the CPU requested                                                                                             |
+| Busy hours, effect                                               | It holds off a pause before each. With `autoResume`, it wakes the workload 15 minutes ahead                                                      |
+| Busy hours, none                                                 | Until it’s acting                                                                                                                                |
+| autoResume                                                       | Whether it’s on, and what that changes                                                                                                           |
+| autoResume, off                                                  | How to turn it on (below)                                                                                                                        |
+| Its state                                                        | Why the plugin couldn’t read the saved state, such as a plugin of another version than the operator                                              |
+| Its state, then                                                  | The lines read from it are left out                                                                                                              |
+| Replayed                                                         | When the forecast would act if the workload were opted in today                                                                                  |
+| The days                                                         | The history’s last half, one row a day                                                                                                           |
+| Each day                                                         | Its first use, how it found the workload, when it woke it, and whether it was acting                                                             |
 
 To turn on `autoResume` for a workload opted in with the label, annotate it `napwake.dev/auto-resume: "true"`. For a ManagedWorkload written by hand, which annotations don’t change, set `spec.idlePolicy.autoResume: true`.
 
@@ -381,21 +393,25 @@ In a terminal, the states are in colour, each beside a door, so they read withou
 | `running`  | Green  | Open |
 | `resuming` | Yellow | Ajar |
 
-What needs attention is red, and the table’s header and dry-run grey. Set `NO_COLOR` for no colour. Piped or redirected, as scripts read it, the output is plain text, with no colour and no doors. Doors need a UTF-8 locale. They aren’t drawn in Chinese, Japanese or Korean ones, where terminals may draw them two characters wide.
+What needs attention is red, and the table’s header and dry-run grey. Set `NO_COLOR` for no colour. Piped or redirected, as scripts read it, the output is plain text, with no colour and no doors.
+
+Doors need a UTF-8 locale. They aren’t drawn in Chinese, Japanese or Korean ones, where terminals may draw them two characters wide.
 
 | Line or column                              | What it says                                                                                                                                                                                                                                                                             |
 | ------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `Pausing is off`                            | First, and atop the `--html` page, while [pausing is off](https://docs.napwake.dev/next/guides/pause/#stop-all-pausing-now) for their install. Those workloads show in dry-run                                                                                                                                   |
+| `Pausing is off for 2 of these workloads`   | The same, when only some are off, as with [more than one install](https://docs.napwake.dev/next/getting-started/installation/#more-than-one-install)                                                                                                                                                             |
 | Summary                                     | How many workloads are in each phase                                                                                                                                                                                                                                                     |
 | Summary, dry-run                            | How many are in dry-run, with what pausing them would have freed since the first started measuring                                                                                                                                                                                       |
 | That figure                                 | What dry-run measured (`status.dryRun.estimatedFreed`), the would-be pause under way included                                                                                                                                                                                            |
 | `Your bill:`                                | From the node autoscaler [`nodes`](https://docs.napwake.dev/next/reference/cli/#nodes-autoscaler) finds, as `scan` says it                                                                                                                                                                                       |
 | `Forecast time zone:`                       | The zone the [forecast](https://docs.napwake.dev/next/concepts/forecasting/#wall-clock-alignment) counts hours in, from each `status.prediction.timeZone`                                                                                                                                                        |
-| That zone                                   | The operator’s `timezone`. When it’s UTC, the default, it says how to set your users’ zone.                                                                                                                                                                                              |
+| That zone                                   | The operator’s `timezone`. When it’s UTC, the default, it says how to set your users’ zone                                                                                                                                                                                               |
 | Why set it                                  | So `autoResume` follows your users’ clock through daylight saving                                                                                                                                                                                                                        |
 | `Freed … this month`                        | What pausing live workloads freed this month, its requests at list price                                                                                                                                                                                                                 |
 | `… and saved`                               | How much of that came off the bill as nodes scaled down                                                                                                                                                                                                                                  |
 | Saved unmeasured                            | It says why, once per reason                                                                                                                                                                                                                                                             |
-| `Needs attention:`                          | What keeps Napwake from its job ([every case](https://docs.napwake.dev/next/reference/cli/#needs-attention)). `kubectl describe managedworkload` has the rest.                                                                                                                                                   |
+| `Needs attention:`                          | What keeps Napwake from its job ([every case](https://docs.napwake.dev/next/reference/cli/#needs-attention)). `kubectl describe managedworkload` has the rest                                                                                                                                                    |
 | Nodes not scaling down                      | The first line, pointing at `kubectl napwake nodes`                                                                                                                                                                                                                                      |
 | When                                        | Pausing freed at least a dollar this month, and under half was saved                                                                                                                                                                                                                     |
 | Counting                                    | Only workloads whose savings are measured                                                                                                                                                                                                                                                |
@@ -412,7 +428,7 @@ What needs attention is red, and the table’s header and dry-run grey. Set `NO_
 | In dry-run now                              | A workload keeps what its pauses freed and saved before                                                                                                                                                                                                                                  |
 | WOULD FREE                                  | What pausing would have freed since dry-run started measuring it                                                                                                                                                                                                                         |
 | WOULD FREE, shown                           | When any workload is in dry-run                                                                                                                                                                                                                                                          |
-| WOULD FREE `$0` or `-`                      | `$0` until a would-be pause has. `-` if it isn’t in dry-run.                                                                                                                                                                                                                             |
+| WOULD FREE `$0` or `-`                      | `$0` until a would-be pause has freed something. `-` if it isn’t in dry-run                                                                                                                                                                                                              |
 | `Turned away while asleep`                  | Under the table, the workloads that ask and turned requests away in their current or last pause. One reads `preview-42/web 312 requests during the pause from 3h ago`. Many mean something automated calls it ([What it turns away](https://docs.napwake.dev/next/concepts/wake-on-request/#what-it-turns-away)) |
 | `Recent pauses and wakes:`                  | Newest first, as far back as the cluster keeps events, or `--since` ([more](https://docs.napwake.dev/next/reference/cli/#recent-pauses-and-wakes))                                                                                                                                                               |
 
@@ -425,7 +441,7 @@ kubectl napwake status --since 1h -o json
 
 | Flag               | Default          | What it does                                                                          |
 | ------------------ | ---------------- | ------------------------------------------------------------------------------------- |
-| `--namespace` `-n` | all you can read | Namespace to show. Repeat for several.                                                |
+| `--namespace` `-n` | all you can read | Namespace to show. Repeat for several                                                 |
 | `--output` `-o`    | `table`          | `table`, `json` or `yaml`                                                             |
 | `--since`          | `24h`            | How far back to list pauses and wakes                                                 |
 | `--html`           |                  | Also write the status as a web page to this file, or without one, to a temporary file |
@@ -439,18 +455,22 @@ kubectl napwake status --html              # opens it in your browser
 kubectl napwake status --html status.html  # saves it, to send around
 ```
 
-`--html` writes the same status as a web page, for a team or a manager. It writes to the file you give, or a new temporary file. Either is readable only by you, since it names the cluster’s workloads. In a terminal, it opens in your browser, as the [`scan`](https://docs.napwake.dev/next/getting-started/kubectl-plugin/#scan-a-cluster) report does, unless `--open=false`. Otherwise it prints where the page is. The terminal table, or `-o json`, prints as well.
+`--html` writes the same status as a web page, for a team or a manager. It writes to the file you give, or a new temporary file. Either is readable only by you, since it names the cluster’s workloads.
 
-| The page holds         |                                                                                         |
-| ---------------------- | --------------------------------------------------------------------------------------- |
-| The summary            | With your bill and the forecast’s time zone                                             |
-| Money                  | What pausing freed this month, and what of that was saved                               |
-| Dry-run                | What dry-run measured pausing would have freed                                          |
-| Needs attention        | What needs attention                                                                    |
-| Workloads              | Every workload, in a table to sort and filter                                           |
-| Each workload          | Its state and for how long, last activity, what’s next, and what it freed or would free |
-| Pauses and wakes       | Every one since `--since`, with its cause, at its time in UTC                           |
-| Nothing from elsewhere | It loads nothing, so it works offline and attached to an email                          |
+In a terminal, it opens in your browser, as the [`scan`](https://docs.napwake.dev/next/getting-started/kubectl-plugin/#scan-a-cluster) report does, unless `--open=false`. Otherwise it prints where the page is. The terminal table, or `-o json`, prints as well.
+
+| The page holds         |                                                                                                                                                  |
+| ---------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------ |
+| The summary            | With your bill and the forecast’s time zone                                                                                                      |
+| The month              | Once a day is counted, what the workloads cost a month at this pace, with Napwake and without, and the percentage less. Early for the first week |
+| Not on the bill yet    | Instead, what pausing frees, with no percentage, while saved can’t be measured or is under 1%                                                    |
+| Money                  | What pausing freed so far this month, and what of that was saved, to the cent under $100                                                         |
+| Dry-run                | What dry-run measured pausing would have freed                                                                                                   |
+| Needs attention        | What needs attention                                                                                                                             |
+| Workloads              | Every workload, in a table to sort and filter                                                                                                    |
+| Each workload          | Its state and for how long, last activity, what’s next, and what it freed or would free                                                          |
+| Pauses and wakes       | Every one since `--since`, with its cause, at its time in UTC                                                                                    |
+| Nothing from elsewhere | It loads nothing, so it works offline and attached to an email                                                                                   |
 
 ## See why nodes don’t scale down
 
@@ -478,24 +498,24 @@ Next steps:
   To have pausing empty whole nodes, put non-production workloads on a node pool of their own: https://docs.napwake.dev/guides/node-pools/
 ```
 
-| Line or column                                 | What it says                                                                                                                                     |
-| ---------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `Node autoscaler:`                             | What scales the nodes. `status` and `scan` say the same in their `Your bill:` line. See [how it’s found](https://docs.napwake.dev/next/reference/cli/#nodes-autoscaler). |
-| `Napwake's 2 paused workloads would request …` | What paused workloads would request if they woke, once Napwake is installed                                                                      |
-| `in pool …`                                    | The same by node pool their pods ran in, the pools that would need room                                                                          |
-| NODE                                           | Each node, least used first                                                                                                                      |
-| POOL                                           | Karpenter NodePool, EKS node group, GKE node pool or AKS agent pool                                                                              |
-| CPU REQUESTED, MEMORY REQUESTED                | What its running pods request, of what it can allocate                                                                                           |
-| DaemonSet pods                                 | They count, as they do for the autoscaler                                                                                                        |
-| UTILISATION                                    | The larger of the two, as Cluster Autoscaler measures it against its scale-down threshold                                                        |
-| BLOCKED BY                                     | Why the autoscaler won’t remove it, however little is used ([every reason](https://docs.napwake.dev/next/reference/cli/#the-blocked-by-column))                          |
-| BLOCKED BY, how many                           | The first two reasons. `-o json` has all.                                                                                                        |
-| `Next steps:`                                  | How to clear each kind of reason shown, with one example                                                                                         |
-| `Next steps:`, links                           | The [node autoscaler guide](https://docs.napwake.dev/next/guides/cluster-autoscaler/) and the [node pools guide](https://docs.napwake.dev/next/guides/node-pools/)                               |
+| Line or column                                 | What it says                                                                                                                                    |
+| ---------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------- |
+| `Node autoscaler:`                             | What scales the nodes. `status` and `scan` say the same in their `Your bill:` line. See [how it’s found](https://docs.napwake.dev/next/reference/cli/#nodes-autoscaler) |
+| `Napwake's 2 paused workloads would request …` | What paused workloads would request if they woke, once Napwake is installed                                                                     |
+| `in pool …`                                    | The same by node pool their pods ran in, the pools that would need room                                                                         |
+| NODE                                           | Each node, least used first                                                                                                                     |
+| POOL                                           | Karpenter NodePool, EKS node group, GKE node pool or AKS agent pool                                                                             |
+| CPU REQUESTED, MEMORY REQUESTED                | What its running pods request, of what it can allocate                                                                                          |
+| DaemonSet pods                                 | They count, as they do for the autoscaler                                                                                                       |
+| UTILISATION                                    | The larger of the two, as Cluster Autoscaler measures it against its scale-down threshold                                                       |
+| BLOCKED BY                                     | Why the autoscaler won’t remove it, however little is used ([every reason](https://docs.napwake.dev/next/reference/cli/#the-blocked-by-column))                         |
+| BLOCKED BY, how many                           | The first two reasons. `-o json` has all                                                                                                        |
+| `Next steps:`                                  | How to clear each kind of reason shown, with one example                                                                                        |
+| `Next steps:`, links                           | The [node autoscaler guide](https://docs.napwake.dev/next/guides/cluster-autoscaler/) and the [node pools guide](https://docs.napwake.dev/next/guides/node-pools/)                              |
 
 The paused workloads’ requests are what each pause recorded it freed. A workload whose pods ran in several pools is shared between them, by how many ran in each. Pauses that recorded no pool count in all, not by pool.
 
-A node with nothing in BLOCKED BY that stays is still in use, shared by paused and busy workloads. [Node Pools for Real Savings](https://docs.napwake.dev/next/guides/node-pools/) gives non-prod workloads nodes that pausing empties.
+A node with nothing in BLOCKED BY that stays is still in use, shared by paused and busy workloads. [Node pools for real savings](https://docs.napwake.dev/next/guides/node-pools/) gives non-prod workloads nodes that pausing empties.
 
 ```bash
 kubectl napwake nodes --context staging -o json
@@ -520,7 +540,7 @@ staging/my-api is Paused after 4s; a request to it, or kubectl napwake wake, wak
 
 It’s an ordinary pause, the same as an idle one. A request through the [doorman](https://docs.napwake.dev/next/concepts/wake-on-request/), [activity](https://docs.napwake.dev/next/concepts/idle-detection/#activity-annotations), `autoResume` or [`wake`](https://docs.napwake.dev/next/getting-started/kubectl-plugin/#wake-a-workload) wakes it. With [`ask`](https://docs.napwake.dev/next/concepts/wake-on-request/#asking-before-waking), a person’s click on its asleep page does, not any request, and `pause` says so.
 
-It works with or without an `idlePolicy`. On a ManagedWorkload Napwake hasn’t taken on yet, such as one created a moment ago, it waits until Napwake has. [Pause and Resume](https://docs.napwake.dev/next/guides/pause/#pause-now) says exactly what Napwake does with the request.
+It works with or without an `idlePolicy`. On a ManagedWorkload Napwake hasn’t taken on yet, such as one created a moment ago, it waits until Napwake has. [Pause and resume](https://docs.napwake.dev/next/guides/pause/#pause-now) says exactly what Napwake does with the request.
 
 | Phase or case                                                                             | What happens                                                                     |
 | ----------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------- |
@@ -557,7 +577,7 @@ NAME is found as for [`wake`](https://docs.napwake.dev/next/getting-started/kube
 | `--wait`           | `true`                    | Wait until it’s Paused, or Napwake says why not                                                 |
 | `--yes` `-y`       | `false`                   | Pause even if the forecast expects it busy within the hour, without asking                      |
 | `--clear-hold`     | `false`                   | Clear a `napwake.dev/active-until` hold, on its ManagedWorkload or the workload, without asking |
-| `--timeout`        | `5m`                      | How long to wait, cluster calls included. It starts again after you answer a question.          |
+| `--timeout`        | `5m`                      | How long to wait, cluster calls included. It starts again after you answer a question           |
 
 The [`pause` reference](https://docs.napwake.dev/next/reference/cli/#pause) has its questions about the forecast and holds, the GitOps warning, and permissions.
 
@@ -573,7 +593,9 @@ staging/my-api is Running after 23s
 
 `wake` asks Napwake to wake the workload now, whatever its [wake setting](https://docs.napwake.dev/next/concepts/wake-on-request/#the-wake-setting). It sets a fresh `napwake.dev/wake-requested` value on the ManagedWorkload, as any tool can ([Wake now](https://docs.napwake.dev/next/guides/pause/#wake-now)). A paused workload wakes, with the workloads it [depends on](https://docs.napwake.dev/next/concepts/dependencies/).
 
-A running one has its idle clock restarted. `wake` then waits for Napwake’s answer, in the `WakeRequest` condition, and until it’s Running. Another tool asking meanwhile replaces `wake`’s token with its own, and Napwake’s answer to that one stands for both. To wake a preview from a pull request’s workflow or a chat bot, see [Public preview environments](https://docs.napwake.dev/next/guides/preview-environments/#waking-it-from-tooling).
+A running one has its idle clock restarted. `wake` then waits for Napwake’s answer, in the `WakeRequest` condition, and until it’s Running. Another tool asking meanwhile replaces `wake`’s token with its own, and Napwake’s answer to that one stands for both.
+
+To wake a preview from a pull request’s workflow or a chat bot, see [Public preview environments](https://docs.napwake.dev/next/guides/preview-environments/#waking-it-from-tooling).
 
 | Phase or case                                                                             | What happens                                                                                                                                                                                                                                                 |
 | ----------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
@@ -597,7 +619,9 @@ kubectl napwake wake my-api -n staging --for 2h
 kubectl napwake wake my-api -n staging --wait=false
 ```
 
-NAME is the workload as `status` shows it, such as `api` or `statefulset/postgres`, or its ManagedWorkload’s name. A bare name can match more than one ManagedWorkload. A Deployment and a StatefulSet can share it, or one ManagedWorkload can be named after a workload another manages. Then `wake` lists them, and asks for `kind/name`, which matches only workloads.
+NAME is the workload as `status` shows it, such as `api` or `statefulset/postgres`, or its ManagedWorkload’s name.
+
+A bare name can match more than one ManagedWorkload. A Deployment and a StatefulSet can share it, or one ManagedWorkload can be named after a workload another manages. Then `wake` lists them, and asks for `kind/name`, which matches only workloads.
 
 | Flag               | Default                   | What it does                                                                               |
 | ------------------ | ------------------------- | ------------------------------------------------------------------------------------------ |
@@ -623,7 +647,9 @@ Depended on by:
 Learned links come from the dependent's environment or its requests; napwake.dev/ignore-dependencies drops one.
 ```
 
-`deps` reads a ManagedWorkload’s links both ways, in any namespace. Each says where it comes from, a `dependsOn` or what Napwake [learned](https://docs.napwake.dev/next/concepts/dependencies/#learned-dependencies) from the dependent’s environment or a wake. Each also says what the other workload is doing now. One Napwake doesn’t manage shows as `not managed`. NAME is found as for [`wake`](https://docs.napwake.dev/next/getting-started/kubectl-plugin/#wake-a-workload).
+`deps` reads a ManagedWorkload’s links both ways, in any namespace. NAME is found as for [`wake`](https://docs.napwake.dev/next/getting-started/kubectl-plugin/#wake-a-workload).
+
+Each link says where it comes from, a `dependsOn` or what Napwake [learned](https://docs.napwake.dev/next/concepts/dependencies/#learned-dependencies) from the dependent’s environment or a wake. Each also says what the other workload is doing now. One Napwake doesn’t manage shows as `not managed`.
 
 | Flag               | Default                   | What it does                                      |
 | ------------------ | ------------------------- | ------------------------------------------------- |
@@ -641,13 +667,15 @@ kubectl napwake enable checkout-api -n preview-42
 deployment/checkout-api: dry-run ended, Napwake will pause it while idle
 ```
 
-| Dry-run from                                                         | What `enable` does                                                  |
-| -------------------------------------------------------------------- | ------------------------------------------------------------------- |
-| The workload’s own `napwake.dev/dry-run: "true"`, or its namespace’s | Sets the workload’s own `napwake.dev/dry-run` to `"false"`          |
-| The cluster default                                                  | The same. It reads the ManagedWorkload to tell, so this counts too. |
-| `spec.dryRun` on a ManagedWorkload you wrote                         | Sets `spec.dryRun: false`                                           |
+| Dry-run from                                                         | What `enable` does                                                 |
+| -------------------------------------------------------------------- | ------------------------------------------------------------------ |
+| The workload’s own `napwake.dev/dry-run: "true"`, or its namespace’s | Sets the workload’s own `napwake.dev/dry-run` to `"false"`         |
+| The cluster default                                                  | The same. It reads the ManagedWorkload to tell, so this counts too |
+| `spec.dryRun` on a ManagedWorkload you wrote                         | Sets `spec.dryRun: false`                                          |
 
-Setting the annotation is for a workload opted in with the `napwake.dev/managed` label. The workload’s own wins over its namespace’s and the cluster default. `enable` doesn’t wait. Napwake pauses the workload once its clock runs out.
+Setting the annotation is for a workload opted in with the `napwake.dev/managed` label. The workload’s own wins over its namespace’s and the cluster default.
+
+`enable` doesn’t wait. Napwake pauses the workload once its clock runs out.
 
 ```bash
 kubectl napwake enable statefulset/postgres -n preview-42

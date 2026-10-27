@@ -4,7 +4,9 @@
 
 Source: https://docs.napwake.dev/next/guides/gitops/
 
-Napwake pauses by setting replicas to zero. A GitOps tool that applies `replicas` from Git sees the drift and sets them back. With an HPA or KEDA under Argo CD or Flux, you usually have the fix, since autoscalers change replicas too.
+Napwake pauses by setting replicas to zero. A GitOps tool that applies `replicas` from Git sees the drift and sets them back.
+
+Under Argo CD or Flux with an HPA or KEDA, you likely have the fix already. Autoscalers change replicas too.
 
 Before you start
 
@@ -161,7 +163,7 @@ Napwake never fights Git.
 
 For Argo CD, Flux, Rancher Fleet, kapp and Kluctl, the condition links to the tool’s tab:
 
-```plaintext
+```text
 GitOpsConflict=True   Argo CD set the replicas from Git, undoing the pause; Napwake pauses it again from 14:20 UTC. To stop it, have Argo CD ignore replicas, as for an HPA: https://docs.napwake.dev/guides/gitops/#argo-cd
 ```
 
@@ -180,7 +182,7 @@ The opt-in label is on the Namespace, which isn’t in Git when the tool creates
 
 Dry-run is the workload’s `napwake.dev/dry-run` annotation, its namespace’s, or a ManagedWorkload’s `spec.dryRun`. If Git has it, change it there, or the tool’s next sync puts it back.
 
-[`kubectl napwake enable`](https://docs.napwake.dev/next/getting-started/kubectl-plugin/#enable-a-workload) finds the tool, Argo CD by label (`app.kubernetes.io/instance`, its default) or annotation.
+[`kubectl napwake enable`](https://docs.napwake.dev/next/getting-started/kubectl-plugin/#enable-a-workload) finds the tool from what set `replicas`. It finds the Argo CD application by its tracking annotation, Argo CD’s default since 3.0, or its label.
 
 | Who set it              | `enable`                                                                                                             |
 | ----------------------- | -------------------------------------------------------------------------------------------------------------------- |

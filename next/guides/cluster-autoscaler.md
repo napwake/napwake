@@ -1,4 +1,4 @@
-# Cluster Autoscaler configuration
+# Cluster Autoscaler
 
 > Set your node autoscaler to remove the nodes pausing empties, so what Napwake frees comes off the bill.
 
@@ -50,14 +50,14 @@ Every 10 minutes, the operator looks for what scales the nodes. It logs what it 
 
     # A node is unneeded when the CPU or memory its pods request, whichever is
     # higher, is below this fraction of what it can allocate. 0.5 is the default.
-    # It counts requests, not usage: a node frees up once paused pods are gone,
+    # It counts requests, not usage. A node frees up once paused pods are gone,
     # not when they go quiet.
     scale-down-utilization-threshold: "0.5"
 
 
     # How long after a scale-up before scale-down is considered again. The
     # default is 10m. A wake can scale nodes up, so a shorter delay lets the
-    # next pause free them sooner; much shorter, and nodes churn.
+    # next pause free them sooner. Much shorter, and nodes churn.
     scale-down-delay-after-add: 5m
 
 
@@ -77,7 +77,7 @@ Every 10 minutes, the operator looks for what scales the nodes. It logs what it 
   | GKE      | You can’t. Its `optimize-utilization` profile scales down sooner than the default `balanced`   |
   | AKS      | Cluster-wide, in its cluster autoscaler profile (`az aks update --cluster-autoscaler-profile`) |
 
-  See [Node pools](https://docs.napwake.dev/next/guides/node-pools/#cluster-autoscaler-gke-aks-and-eks-managed-node-groups) for both.
+  See [Node pools](https://docs.napwake.dev/next/guides/node-pools/#set-up-the-pool) for both.
 
   | When Napwake          | Cluster Autoscaler                                                                                                                             |
   | --------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -134,9 +134,10 @@ Every 10 minutes, the operator looks for what scales the nodes. It logs what it 
 
 
       # How long after a pod was last added to or removed from a node before
-      # it's considered. A pause is deliberate, not transient, so there's no
-      # need to wait long. Never turns consolidation off.
-      consolidateAfter: 1m
+      # it's considered. It restarts whenever a pod is added or removed, so a
+      # node stays 5 minutes after a pause, and a wake soon after finds it.
+      # Never turns consolidation off.
+      consolidateAfter: 5m
   ```
 
   | With Karpenter    |                                                                                                                                                                                     |
