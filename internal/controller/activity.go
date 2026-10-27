@@ -650,8 +650,9 @@ const prometheusBudget = 5 * time.Second
 //
 // The empty answers in a grace are no activity, and the clock runs on
 // through them, so a quiet workload pauses at the later of its idleAfter
-// and the end of the grace running then, at most this long past its
-// idleAfter. A loss gets one grace. Another needs the query to have
+// and the end of the grace running then. Whatever its queries, the pause
+// is held at most this long and a check past its clock running out, as two
+// queries' graces could otherwise chain. A loss gets one grace. Another needs the query to have
 // answered with series at two checks in a row, and the check where that
 // happens isn't held, so a query that flaps between series and none can't
 // hold a pause, while a second restart minutes after the first gets a
@@ -668,6 +669,22 @@ type seriesLost struct {
 	queries []string
 	until   time.Time
 	missing bool
+}
+
+// capped is the grace after lost series, held to one grace and a check
+// past the clock running out at pauseAt, whatever its queries: two whose
+// graces would chain, one beginning while the other's runs, can't hold a
+// quiet workload longer. A busy workload's clock restarts with each answer
+// that shows activity, so its grace isn't shortened. One capped to now or
+// before holds nothing.
+func (l seriesLost) capped(pauseAt, now time.Time) seriesLost {
+	if limit := pauseAt.Add(seriesLostFor + activityCheckInterval); l.until.After(limit) {
+		l.until = limit
+	}
+	if !l.until.After(now) {
+		return seriesLost{}
+	}
+	return l
 }
 
 // reportSeriesLost says a query lost its series while it's still missing
@@ -959,6 +976,7 @@ func (r *Reconciler) reconcileIdleClock(ctx context.Context, workload *v1alpha1.
 	}()
 	obs := r.observeActivity(ctx, workload, target, load)
 	pauseAt := workload.Status.Activity.PauseAt.Time
+	obs.seriesLost = obs.seriesLost.capped(pauseAt, now)
 
 	if obs.cpuErr != nil {
 		return r.reportMetricsUnavailable(ctx, workload, target, obs.cpuErr)

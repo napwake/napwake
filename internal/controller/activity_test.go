@@ -1522,6 +1522,96 @@ func TestActivityClock_OneAnswerWithSeriesDoesntClearTheGrace(t *testing.T) {
 	assert.Equal(t, v1alpha1.ActivitySourcePrometheus, c.workload.Status.Activity.LastActivitySource)
 }
 
+// Two queries whose graces would chain, one beginning while the other's
+// runs, don't hold a quiet workload past the grace and a check after its
+// clock runs out. On c5f5c009 the hold lasted until the latest grace ended,
+// so two [1m] rates over a 35s scrape at different offsets held it 34
+// minutes past idleAfter, and alternating per-check answers held it for
+// good (the third review of 8bdae63f, P65).
+func TestActivityClock_QueriesDontChainTheirGraces(t *testing.T) {
+	const a, b = `sum(rate(http_requests_total{app="web"}[1m]))`, `sum(rate(grpc_server_handled_total{app="web"}[1m]))`
+	// rate is a [1m] rate scraped every interval from offset: series, at
+	// zero, while its window holds two samples, and none otherwise.
+	rate := func(interval, offset time.Duration) func(_ int, at time.Duration) string {
+		return func(_ int, at time.Duration) string {
+			end, every := (at - offset).Seconds(), interval.Seconds()
+			if math.Floor(end/every)-math.Floor((end-60)/every) < 2 {
+				return emptyVector
+			}
+			return promValue("0")
+		}
+	}
+	// lostAt answers with series, at zero, until from, and none after.
+	lostAt := func(from time.Duration) func(_ int, at time.Duration) string {
+		return func(_ int, at time.Duration) string {
+			if at >= from {
+				return emptyVector
+			}
+			return promValue("0")
+		}
+	}
+	// cycle answers each check in turn from answers, with series at zero
+	// for true and none for false.
+	cycle := func(answers ...bool) func(check int, _ time.Duration) string {
+		return func(check int, _ time.Duration) string {
+			if answers[check%len(answers)] {
+				return promValue("0")
+			}
+			return emptyVector
+		}
+	}
+	type queries struct {
+		a, b func(check int, at time.Duration) string
+	}
+	tests := []struct {
+		name      string
+		idleAfter time.Duration
+		answers   queries
+	}{
+		{"[1m] rates over a 35s scrape at offsets 0 and 17s", time.Minute,
+			queries{rate(35*time.Second, 0), rate(35*time.Second, 17*time.Second)}},
+		{"[1m] rates over a 35s scrape at offsets 0 and 11s", 10 * time.Minute,
+			queries{rate(35*time.Second, 0), rate(35*time.Second, 11*time.Second)}},
+		{"[1m] rates over a 45s scrape at offsets 0 and 22s", time.Minute,
+			queries{rate(45*time.Second, 0), rate(45*time.Second, 22*time.Second)}},
+		{"A series, series, none; B series, none, series", time.Minute,
+			queries{cycle(true, false, true), cycle(true, true, false)}},
+		{"series lost at 1m and at 4m", time.Minute, queries{lostAt(time.Minute), lostAt(4 * time.Minute)}},
+	}
+	for _, tt := range tests {
+		t.Run(fmt.Sprintf("%s, idleAfter %s", tt.name, tt.idleAfter), func(t *testing.T) {
+			var check atomic.Int64
+			var at atomic.Int64
+			srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
+				answer := tt.answers.a
+				if req.URL.Query().Get("query") == b {
+					answer = tt.answers.b
+				}
+				if check.Load() == 0 {
+					_, _ = w.Write([]byte(promValue("0.04")))
+					return
+				}
+				_, _ = w.Write([]byte(answer(int(check.Load()), time.Duration(at.Load()))))
+			}))
+			t.Cleanup(srv.Close)
+			c := newLostSeriesClock(t, v1alpha1.ActivitySourceCPU, true)
+			c.r.prometheus = signal.NewPrometheus(srv.URL)
+			c.workload.Spec.IdlePolicy.IdleAfter = &metav1.Duration{Duration: tt.idleAfter}
+			c.workload.Spec.IdlePolicy.Activity.Prometheus = []v1alpha1.PrometheusActivity{{PromQL: a}, {PromQL: b}}
+			require.False(t, c.check(t, 0, ""), "a request at 0")
+			bound := tt.idleAfter + seriesLostFor + activityCheckInterval + 5*time.Second
+			for n, when := 1, c.next; when <= bound; n, when = n+1, when+c.next {
+				check.Store(int64(n))
+				at.Store(int64(when))
+				if c.check(t, when, "") {
+					return
+				}
+			}
+			t.Fatalf("not paused by %s, idleAfter %s", bound, tt.idleAfter)
+		})
+	}
+}
+
 // A grace used up before a pause doesn't carry through it: the paused
 // checks find the workload's own series gone, and once it's awake again two
 // answers with series in a row make a new loss, as from a Prometheus
