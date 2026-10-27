@@ -138,7 +138,7 @@ func buildStatusPage(result statusResult, since time.Duration, now time.Time) st
 		FreedThisMonth:  result.FreedThisMonth,
 		SavedThisMonth:  result.SavedThisMonth,
 		SavedMeasurable: len(result.SavingsUnknown) == 0,
-		Month:           pageMonthOf(result.MonthAtPace, result.NodesNotScalingDown),
+		Month:           pageMonthOf(result.MonthAtPace),
 
 		FreedUnderACent: underACent(result.FreedThisMonth),
 		SavedUnderACent: underACent(result.SavedThisMonth),
@@ -221,10 +221,10 @@ type pageMonth struct {
 	Days                              int
 	State                             string
 	// OnTheBill says what comes off the bill leads, as a share of Without:
-	// it's measured for every workload, it's at least 1%, and nodes are
-	// scaling down. Without it, the page leads with what pausing frees, as
-	// what's possible, with no big figure, since a share of the bill that
-	// isn't coming off it would claim more than it shows.
+	// it's measured for every workload, and it's at least 1%. Without it,
+	// the page leads with what pausing frees, as what's possible, with no
+	// big figure, since a share of the bill that isn't coming off it would
+	// claim more than it shows.
 	OnTheBill bool
 	// NothingSaved says none of what pausing frees comes off the bill, as
 	// measured, which the page says apart from a little.
@@ -232,10 +232,7 @@ type pageMonth struct {
 }
 
 // pageMonthOf is m as the page writes it, or nil for none.
-// nodesNotScalingDown is status's judgement on this month so far, which
-// keeps what comes off the bill from leading while it's far below what
-// pausing frees.
-func pageMonthOf(m *monthAtPace, nodesNotScalingDown bool) *pageMonth {
+func pageMonthOf(m *monthAtPace) *pageMonth {
 	if m == nil {
 		return nil
 	}
@@ -243,7 +240,7 @@ func pageMonthOf(m *monthAtPace, nodesNotScalingDown bool) *pageMonth {
 		Without: money(m.Without), Saved: money(m.Saved), Bill: money(m.Bill), Freed: money(m.Freed),
 		With: money(m.With), SavedPercent: m.SavedPercent, FreedPercent: m.FreedPercent,
 		SavedMeasurable: m.SavedMeasurable, Days: m.Days, State: m.State,
-		OnTheBill:    m.SavedMeasurable && m.SavedPercent >= 1 && !nodesNotScalingDown,
+		OnTheBill:    m.SavedMeasurable && m.SavedPercent >= 1,
 		NothingSaved: m.Saved == 0,
 	}
 }

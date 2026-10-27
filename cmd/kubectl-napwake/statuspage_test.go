@@ -150,10 +150,10 @@ func TestWriteStatusHTML_UnderACent(t *testing.T) {
 }
 
 // With what was freed, or what came off the bill, under a cent, which the
-// page shows as <$0.01, the meter says so in words (cmo-043), and the share
-// card leaves out what it's of when freed is under a cent, as the page
-// leaves out the bar. Every other case keeps its line, to the cent under
-// $100, as the figures above it (cmo-069).
+// page shows as <$0.01, the meter says so in words (cmo-043, cmo-070), and
+// the share card leaves out what it's of when freed is under a cent, as the
+// page leaves out the bar. Every other case keeps its line, to the cent
+// under $100, as the figures above it (cmo-069).
 func TestWriteStatusHTML_MeterUnderACent(t *testing.T) {
 	const unknown = cantListNodes
 	tests := []struct {
@@ -164,20 +164,20 @@ func TestWriteStatusHTML_MeterUnderACent(t *testing.T) {
 	}{
 		{name: "freed under a cent, some saved",
 			costs: []v1alpha1.CostStatus{{FreedThisMonth: "<$0.01", SavedThisMonth: "<$0.01"}},
-			want:  "Under a dollar freed so far this month. Some of it came off the bill."},
+			want:  "Under a cent freed so far this month. Some of it came off the bill."},
 		{name: "freed under a cent, at least some saved",
 			costs: []v1alpha1.CostStatus{{FreedThisMonth: "<$0.01", SavedThisMonth: "<$0.01"},
 				{FreedThisMonth: "<$0.01", SavingsUnknown: unknown}},
-			want: "Under a dollar freed so far this month. Some of it came off the bill."},
+			want: "Under a cent freed so far this month. Some of it came off the bill."},
 		{name: "freed under a cent, measured, none saved yet",
 			costs: []v1alpha1.CostStatus{{FreedThisMonth: "<$0.01", SavedThisMonth: "$0.00"}},
-			want:  "Under a dollar freed so far this month. None of it has come off the bill yet."},
+			want:  "Under a cent freed so far this month. None of it has come off the bill yet."},
 		{name: "freed under a cent, can't measure",
 			costs: []v1alpha1.CostStatus{{FreedThisMonth: "<$0.01", SavingsUnknown: unknown}},
-			want:  "Under a dollar freed so far this month. Napwake can&#39;t tell here how much came off the bill."},
+			want:  "Under a cent freed so far this month. Napwake can&#39;t tell here how much came off the bill."},
 		{name: "freed $12, saved under a cent, measured",
 			costs:      []v1alpha1.CostStatus{{FreedThisMonth: "$12.00", SavedThisMonth: "<$0.01"}},
-			want:       "Under $1 of the $12.00 freed came off the bill.",
+			want:       "Under a cent of the $12.00 freed came off the bill.",
 			meterLabel: "of the $12.00 freed by pausing so far this month"},
 		{name: "freed $12, saved under a cent, at least",
 			costs: []v1alpha1.CostStatus{{FreedThisMonth: "$11.99", SavedThisMonth: "<$0.01"},
@@ -359,9 +359,10 @@ func statusPartsOf(t *testing.T, page string) statusPageParts {
 }
 
 // Each state of the month at this pace leads the page as the notes'
-// states table has it (cmo-069): what comes off the bill as a share, with
-// both amounts, once it's measured, 1% or more and nodes are scaling down;
-// what pausing frees, as what's possible, where it isn't; and, before a
+// states table has it (cmo-069, cmo-070): what comes off the bill as a
+// share, with both amounts, once it's measured and 1% or more, nodes
+// scaling down or not; what pausing frees, as what's possible, where it
+// isn't; and, before a
 // day is counted, with nothing freed, or with no workloads, the page as it
 // was, freed and saved so far this month leading. Each checks the lead's
 // words and figures, the share card's data, and the Copy summary's first
@@ -442,19 +443,23 @@ func TestStatusPage_MonthStates(t *testing.T) {
 				"$24.62 a month. Under 1% comes off the bill, as nodes have hardly scaled down. Early: 2 days counted. It " +
 				"settles after a week. $0.80 freed by pausing so far this month, &lt;$0.01 saved of it (what came off the " +
 				"bill as nodes scaled down)."},
-		{name: "nodes not scaling down",
+		{name: "nodes not scaling down, 1% or more saved",
 			objs: []client.Object{monthWorkload("api", "$7.32", "$24.62", "$6.00", 53*time.Hour, "$12.40", "$1.00")},
-			lead: []string{`<div class="pace possible">`, `<p class="pace-k label">Not on the bill yet</p>`,
-				`<p class="pace-fig"><span>Pausing frees 77% of what these workloads would cost, $24.62 a month at this ` +
+			lead: []string{`<div class="pace">`,
+				`<p class="pace-fig"><b>19% less</b><span>$25.94 a month instead of $31.94, at this month&#39;s ` +
 					`pace.</span></p>`,
-				`<p class="pace-note">19% comes off the bill, as nodes have hardly scaled down.</p>`},
-			card: []string{`data-value="$1.00"`, `data-label="came off the bill this month"`,
-				`data-meter-label="of the $12.40 freed by pausing so far this month"`},
-			summary: at + "at this month&#39;s pace, pausing frees 77% of what the workloads Napwake manages would cost, " +
-				"$24.62 a month. 19% comes off the bill, as nodes have hardly scaled down. Early: 2 days counted. It " +
-				"settles after a week. $12.40 freed by pausing so far this month, $1.00 saved of it (what came off the " +
-				"bill as nodes scaled down).",
-			also: []string{"Nodes not scaling down"}},
+				`<p class="pace-early"><b>Early:</b> 2 days counted. It settles after a week.</p>`,
+				`<p class="pace-note">Nodes scaling down take at least $6.00 a month off the bill.</p>`},
+			card: []string{`data-pace="yes"`, `data-value="19% less"`,
+				`data-label="$25.94 a month instead of $31.94, at this month&#39;s pace"`, `data-detail-lead="Early:"`},
+			summary: at + "at this month&#39;s pace, the workloads Napwake manages cost $25.94 a month instead of $31.94, " +
+				"19% less, as nodes scale down. Early: 2 days counted. It settles after a week. $12.40 freed by pausing " +
+				"so far this month, $1.00 saved of it (what came off the bill as nodes scaled down).",
+			also: []string{`<b>Needs you:</b> 1 thing to look at.`,
+				`<td class="ref">Nodes not scaling down</td>
+        <td class="message">Pausing freed $12 this month, but only $1 of it came off the bill. kubectl napwake ` +
+					`nodes shows why.</td>`},
+			lacks: []string{"Not on the bill yet", "comes off the bill, as nodes have hardly scaled down"}},
 		{name: "pending",
 			objs: []client.Object{monthWorkload("api", "pending", "pending", "pending", 20*time.Hour, "$0.40", "$0.30")},
 			card: []string{`data-value="$0.30"`, `data-label="came off the bill this month"`,
@@ -510,26 +515,23 @@ func TestStatusPage_MonthStates(t *testing.T) {
 }
 
 // Where what comes off the bill isn't something to headline, the status
-// page says what pausing frees as what's possible, "Not on the bill yet",
-// with no big percentage, on the page or its card (cmo-069): saved can't be
-// measured for some workloads, it's under 1% of what they'd cost, or nodes
-// aren't scaling down. Each alone does it, from a month that would lead
-// with "73% less".
+// page says what pausing frees as what's possible, with no big percentage,
+// on the page or its card (cmo-069, cmo-070): "Saved can't be measured"
+// for some workloads, or "Not on the bill yet" while it's under 1% of what
+// they'd cost. Each alone does it, from a month that would lead with "73%
+// less". Nodes not scaling down don't: with 1% or more saved, that leads.
 func TestStatusPage_NotOnTheBillYetHasNoBigFigure(t *testing.T) {
 	unmeasured := monthWorkload("web", "$1.00", "$3.00", "$0.00", 53*time.Hour, "$0.20", "$0.00")
 	unmeasured.Status.Cost.SavingsUnknown = cantListNodes
 	underAPercent := earlyMonth()
 	underAPercent.Status.Cost.ProjectedMonthlySavings = "$0.15"
-	notScalingDown := earlyMonth()
-	notScalingDown.Status.Cost.SavedThisMonth = "$0.80"
 	for name, tt := range map[string]struct {
 		objs   []client.Object
 		kicker string
 	}{
 		"saved can't be measured": {objs: []client.Object{earlyMonth(), unmeasured},
 			kicker: "Saved can&#39;t be measured"},
-		"under 1% saved":         {objs: []client.Object{underAPercent}, kicker: "Not on the bill yet"},
-		"nodes not scaling down": {objs: []client.Object{notScalingDown}, kicker: "Not on the bill yet"},
+		"under 1% saved": {objs: []client.Object{underAPercent}, kicker: "Not on the bill yet"},
 	} {
 		t.Run(name, func(t *testing.T) {
 			got := statusPartsOf(t, renderStatusPageAt(t, monthNow, tt.objs...))
@@ -546,4 +548,10 @@ func TestStatusPage_NotOnTheBillYetHasNoBigFigure(t *testing.T) {
 
 	got := statusPartsOf(t, renderStatusPageAt(t, monthNow, earlyMonth()))
 	assert.Contains(t, got.lead, "<b>73% less</b>", "the month they start from leads with what comes off the bill")
+
+	notScalingDown := earlyMonth()
+	notScalingDown.Status.Cost.SavedThisMonth = "$0.80"
+	page := renderStatusPageAt(t, monthNow, notScalingDown)
+	assert.Contains(t, statusPartsOf(t, page).lead, "<b>73% less</b>", "nodes not scaling down, 73% saved")
+	pageHas(t, page, `<td class="ref">Nodes not scaling down</td>`, "Needs attention says why the rest isn't off")
 }
