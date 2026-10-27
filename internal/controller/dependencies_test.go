@@ -229,24 +229,36 @@ func withCondition(w *v1alpha1.ManagedWorkload, condType string, status metav1.C
 }
 
 // pausedWithRecord gives w the pause record a pause writes: when it was
-// scaled to zero, an hour ago, and the request the doorman last stamped
-// before then.
+// scaled to zero, an hour ago, and the activity annotations on it and its
+// target then, as apiDeploymentAsked has them unless asked.
 func pausedWithRecord(w *v1alpha1.ManagedWorkload) *v1alpha1.ManagedWorkload {
 	pausedAt := metav1.NewTime(fixedTime.Add(-time.Hour))
-	before := fixedTime.Add(-2 * time.Hour).Format(time.RFC3339)
-	w.Annotations = map[string]string{v1alpha1.AnnotationLastRequest: before}
+	w.Annotations = map[string]string{v1alpha1.AnnotationLastRequest: beforeThePause}
 	w.Status.Pause = &v1alpha1.PauseStatus{PreviousReplicas: 1, StartedAt: &pausedAt, PausedAt: &pausedAt,
-		WakeAnnotations: &v1alpha1.WakeAnnotations{Workload: map[string]string{v1alpha1.AnnotationLastRequest: before}}}
+		WakeAnnotations: &v1alpha1.WakeAnnotations{
+			Workload: map[string]string{v1alpha1.AnnotationLastRequest: beforeThePause},
+			Target:   map[string]string{v1alpha1.AnnotationLastActivity: beforeThePause}}}
 	return w
 }
 
+// beforeThePause is an activity annotation's value set before
+// pausedWithRecord's pause.
+var beforeThePause = fixedTime.Add(-2 * time.Hour).Format(time.RFC3339)
+
+// onTarget asks a paused api to wake with napwake.dev/last-activity on its
+// Deployment rather than its ManagedWorkload.
+const onTarget = "last-activity on its target"
+
 // askedToWake is w paused, with a wake asked for since through annotation:
 // a request the doorman stamps, a dependent's or a tool's activity
-// annotation, a hold, or a wake request.
+// annotation, a hold, or a wake request. One on its target is
+// apiDeploymentAsked's.
 func askedToWake(w *v1alpha1.ManagedWorkload, annotation string) *v1alpha1.ManagedWorkload {
 	pausedWithRecord(w)
 	value := fixedTime.Add(-time.Second).Format(time.RFC3339)
 	switch annotation {
+	case onTarget:
+		return w
 	case v1alpha1.AnnotationWakeRequested:
 		value = "wake-1"
 	case v1alpha1.AnnotationActiveUntil:
@@ -256,105 +268,278 @@ func askedToWake(w *v1alpha1.ManagedWorkload, annotation string) *v1alpha1.Manag
 	return w
 }
 
+// apiDeploymentAsked is default/api's Deployment, with the last-activity
+// its pause recorded, or, asked, one set since.
+func apiDeploymentAsked(asked bool) *appsv1.Deployment {
+	d := targetDeploymentWithReplicas("api", "default", 1)
+	d.Annotations = map[string]string{v1alpha1.AnnotationLastActivity: beforeThePause}
+	if asked {
+		d.Annotations[v1alpha1.AnnotationLastActivity] = fixedTime.Add(-time.Second).Format(time.RFC3339)
+	}
+	return d
+}
+
+// learning has w depend on postgres as Napwake learned it from its
+// environment, not by dependsOn.
+func learning(w *v1alpha1.ManagedWorkload) *v1alpha1.ManagedWorkload {
+	w.Spec.DependsOn = nil
+	w.Status.LearnedDependencies = &v1alpha1.LearnedDependencies{From: "template", At: metav1.NewTime(fixedTime),
+		Dependencies: []v1alpha1.LearnedDependency{{Namespace: "default", Kind: v1alpha1.TargetKindStatefulSet,
+			Name: "postgres", Source: v1alpha1.LearnedFromEnvironment}}}
+	return w
+}
+
+// graphView is what the operator's graph, which follows the watch, can
+// still have of api while the API server has it as it is now: nil for
+// the graph read as it is, and a view of api, or none of it.
+type graphView struct {
+	name string
+	api  func() *v1alpha1.ManagedWorkload
+}
+
+var staleViews = []graphView{
+	{name: "as it is"},
+	{name: "paused, nothing asked", api: func() *v1alpha1.ManagedWorkload {
+		return pausedWithRecord(depWorkload("default", "api", v1alpha1.TargetKindDeployment, v1alpha1.PhasePaused,
+			postgresRef()))
+	}},
+	{name: "without the dependency", api: func() *v1alpha1.ManagedWorkload {
+		return depWorkload("default", "api", v1alpha1.TargetKindDeployment, v1alpha1.PhaseRunning)
+	}},
+	{name: "not acting", api: func() *v1alpha1.ManagedWorkload {
+		return withCondition(depWorkload("default", "api", v1alpha1.TargetKindDeployment, v1alpha1.PhaseRunning,
+			postgresRef()), conditionDuplicateTarget, metav1.ConditionTrue, conditionDuplicateTarget)
+	}},
+	{name: "missing", api: func() *v1alpha1.ManagedWorkload { return nil }},
+}
+
+// seeGraph has r's graph hold the view of api with the workloads given, as
+// its watch would have handed them to it. The view "as it is" leaves r to
+// read the API server's.
+func seeGraph(t *testing.T, r *Reconciler, view graphView, others ...*v1alpha1.ManagedWorkload) {
+	t.Helper()
+	if view.api == nil {
+		return
+	}
+	r.graph = newWorkloadGraph()
+	seen := others
+	if api := view.api(); api != nil {
+		seen = append(seen, api)
+	}
+	for _, w := range seen {
+		r.relatedHandler().Create(context.Background(), event.CreateEvent{Object: w}, newQueue(t))
+	}
+}
+
 // A dependency is held exactly while one of its dependents is awake, or
-// paused with a wake asked for, in every phase a dependent can be in, as
-// the API server has it now. The operator's graph follows the watch, and
-// can still have that dependent paused with nothing asked: a request
-// stamped on it, or its Resuming, may not have reached the graph yet. That
-// doesn't let the dependency begin to pause, from its idle clock or a pause
-// request.
+// paused with a wake asked for, on its ManagedWorkload or its target, in
+// every phase a dependent can be in, depending on it by dependsOn or as
+// learned, as the API server has it now. The operator's graph follows the
+// watch, and can still have that dependent paused with nothing asked,
+// without the dependency it has just learned, as not acting, or not at
+// all. That doesn't let the dependency begin to pause, from its idle clock
+// or a pause request.
 func TestDependencies_HeldByWhatTheDependentIsNow(t *testing.T) {
 	asks := []string{"", v1alpha1.AnnotationLastRequest, v1alpha1.AnnotationLastActivity,
-		v1alpha1.AnnotationActiveUntil, v1alpha1.AnnotationWakeRequested}
+		v1alpha1.AnnotationActiveUntil, v1alpha1.AnnotationWakeRequested, onTarget}
 	for _, phase := range workloadPhases {
 		for _, ask := range asks {
-			for _, stale := range []bool{false, true} {
-				for _, requested := range []bool{false, true} {
-					name := fmt.Sprintf("%s, %q asked, graph stale %t, pause requested %t", phase, ask, stale, requested)
-					t.Run(name, func(t *testing.T) {
-						api := pausedWithRecord(depWorkload("default", "api", v1alpha1.TargetKindDeployment, phase,
-							postgresRef()))
-						if ask != "" {
-							askedToWake(api, ask)
-						}
-						postgres := depWorkload("default", "postgres", v1alpha1.TargetKindStatefulSet,
-							v1alpha1.PhaseRunning)
-						if requested {
-							withPauseRequested(postgres)
-						}
-						pauser := &stubPauser{pauseDone: true}
-						r := depReconciler(t, pauser, postgres, api)
-						if stale {
-							r.graph = newWorkloadGraph()
-							asleep := pausedWithRecord(depWorkload("default", "api", v1alpha1.TargetKindDeployment,
-								v1alpha1.PhasePaused, postgresRef()))
-							for _, w := range []*v1alpha1.ManagedWorkload{postgres, asleep} {
-								r.relatedHandler().Create(context.Background(), event.CreateEvent{Object: w}, newQueue(t))
+			for _, learned := range []bool{false, true} {
+				for _, view := range staleViews {
+					for _, requested := range []bool{false, true} {
+						name := fmt.Sprintf("%s, %q asked, learned %t, graph has it %s, pause requested %t",
+							phase, ask, learned, view.name, requested)
+						t.Run(name, func(t *testing.T) {
+							api := pausedWithRecord(depWorkload("default", "api", v1alpha1.TargetKindDeployment, phase,
+								postgresRef()))
+							if ask != "" {
+								askedToWake(api, ask)
 							}
-						}
+							if learned {
+								learning(api)
+							}
+							postgres := depWorkload("default", "postgres", v1alpha1.TargetKindStatefulSet,
+								v1alpha1.PhaseRunning)
+							if requested {
+								withPauseRequested(postgres)
+							}
+							pauser := &stubPauser{pauseDone: true}
+							r := depReconciler(t, pauser, postgres, api, apiDeploymentAsked(ask == onTarget))
+							seeGraph(t, r, view, postgres)
 
-						var err error
-						if requested {
-							_, err = r.reconcilePauseRequest(context.Background(), postgres, postgresTarget(1, 1))
-						} else {
-							_, err = r.reconcileAutomation(context.Background(), postgres, postgresTarget(1, 1))
-						}
-						require.NoError(t, err)
+							var err error
+							if requested {
+								_, err = r.reconcilePauseRequest(context.Background(), postgres, postgresTarget(1, 1))
+							} else {
+								_, err = r.reconcileAutomation(context.Background(), postgres, postgresTarget(1, 1))
+							}
+							require.NoError(t, err)
 
-						wantHeld := phase != v1alpha1.PhasePaused || ask != ""
-						assert.Equal(t, wantHeld, pauser.pauseCalls == 0, "held")
-						if !wantHeld {
-							return
-						}
-						cond := conditionHeldByDependents
-						if requested {
-							cond = conditionPauseRequest
-						}
-						c := meta.FindStatusCondition(postgres.Status.Conditions, cond)
-						require.NotNil(t, c)
-						assert.Contains(t, c.Message, "kept awake for default/api")
-					})
+							wantHeld := phase != v1alpha1.PhasePaused || ask != ""
+							assert.Equal(t, wantHeld, pauser.pauseCalls == 0, "held")
+							if !wantHeld {
+								return
+							}
+							cond := conditionHeldByDependents
+							if requested {
+								cond = conditionPauseRequest
+							}
+							c := meta.FindStatusCondition(postgres.Status.Conditions, cond)
+							require.NotNil(t, c)
+							assert.Contains(t, c.Message, "kept awake for default/api")
+						})
+					}
 				}
 			}
 		}
 	}
 }
 
-// A pause whose hold was decided as it began is checked once more just
-// before its scale-down: a dependent awake then, as one that has learned
-// it depends on the workload since, calls it off before anything is
-// scaled. The pause request it was for says why, and as the dependent's
-// use, not the workload's own, it isn't counted as made in use.
-func TestDependencies_HeldJustBeforeTheScaleDown(t *testing.T) {
-	for _, requested := range []bool{false, true} {
-		t.Run(fmt.Sprintf("pause requested %t", requested), func(t *testing.T) {
-			startedAt := metav1.NewTime(fixedTime.Add(-10 * time.Second))
-			postgres := depWorkload("default", "postgres", v1alpha1.TargetKindStatefulSet, v1alpha1.PhasePausing)
-			postgres.Status.LastTransitionTime = &startedAt
-			postgres.Status.Pause = &v1alpha1.PauseStatus{PreviousReplicas: 1, StartedAt: &startedAt,
-				Requested: requested}
-			api := depWorkload("default", "api", v1alpha1.TargetKindDeployment, v1alpha1.PhaseRunning, postgresRef())
-			pauser := &stubPauser{pauseDone: true, resumeDone: true}
+// A learned dependency read from the API server holds by the graph's rule:
+// not when the workload depends on its dependent in turn, which two
+// services that call each other would learn. Declared, it holds.
+func TestDependencies_ALearnedCycleReadFromTheAPIServer(t *testing.T) {
+	for _, declared := range []bool{false, true} {
+		t.Run(fmt.Sprintf("declared %t", declared), func(t *testing.T) {
+			api := learning(depWorkload("default", "api", v1alpha1.TargetKindDeployment, v1alpha1.PhaseRunning))
+			if declared {
+				api.Spec.DependsOn = []v1alpha1.DependencyRef{postgresRef()}
+			}
+			postgres := depWorkload("default", "postgres", v1alpha1.TargetKindStatefulSet, v1alpha1.PhaseRunning)
+			postgres.Status.LearnedDependencies = &v1alpha1.LearnedDependencies{At: metav1.NewTime(fixedTime),
+				Dependencies: []v1alpha1.LearnedDependency{{Namespace: "default", Kind: v1alpha1.TargetKindDeployment,
+					Name: "api", Source: v1alpha1.LearnedFromWake, LastSeen: &metav1.Time{Time: fixedTime}}}}
+			pauser := &stubPauser{pauseDone: true}
 			r := depReconciler(t, pauser, postgres, api)
+			seeGraph(t, r, staleViews[2], postgres)
 
-			_, err := r.resumeTransition(context.Background(), postgres, postgresTarget(1, 1))
+			_, err := r.reconcileAutomation(context.Background(), postgres, postgresTarget(1, 1))
 			require.NoError(t, err)
 
-			assert.Zero(t, pauser.pauseCalls, "nothing is scaled")
-			assert.Equal(t, v1alpha1.PhaseRunning, fetch(t, r, "postgres").Status.Phase)
-			assert.Nil(t, postgres.Status.IdleWait, "not counted as made in use")
-			assert.Contains(t, drainEvents(t, r), "Normal "+ReasonPauseCancelled+
-				" postgres: its dependent default/api is awake as it paused; the pause is cancelled")
-			c := meta.FindStatusCondition(postgres.Status.Conditions, conditionPauseRequest)
-			if !requested {
-				assert.Nil(t, c)
-				return
-			}
-			require.NotNil(t, c)
-			assert.Equal(t, metav1.ConditionFalse, c.Status)
-			assert.Equal(t, ReasonPauseCancelled, c.Reason)
-			assert.Contains(t, c.Message, ": its dependent default/api is awake as it paused")
+			assert.Equal(t, declared, pauser.pauseCalls == 0, "held")
 		})
+	}
+}
+
+// countAPIReads has r read the API server through a count of the
+// ManagedWorkloads it gets and lists there.
+func countAPIReads(r *Reconciler) (gets, lists *int) {
+	gets, lists = new(int), new(int)
+	r.PodReader = interceptor.NewClient(r.Client.(client.WithWatch), interceptor.Funcs{
+		Get: func(ctx context.Context, c client.WithWatch, key client.ObjectKey, obj client.Object,
+			opts ...client.GetOption) error {
+			if _, ok := obj.(*v1alpha1.ManagedWorkload); ok {
+				*gets++
+			}
+			return c.Get(ctx, key, obj, opts...)
+		},
+		List: func(ctx context.Context, c client.WithWatch, list client.ObjectList, opts ...client.ListOption) error {
+			if _, ok := list.(*v1alpha1.ManagedWorkloadList); ok {
+				*lists++
+			}
+			return c.List(ctx, list, opts...)
+		}})
+	return gets, lists
+}
+
+// A pause that begins reads the dependents from the API server once, for
+// the hold that lets it go, not again before its scale-down in the same
+// reconcile.
+func TestDependencies_HoldIsReadOnceAsAPauseBegins(t *testing.T) {
+	for _, requested := range []bool{false, true} {
+		t.Run(fmt.Sprintf("pause requested %t", requested), func(t *testing.T) {
+			api := depWorkload("default", "api", v1alpha1.TargetKindDeployment, v1alpha1.PhasePaused, postgresRef())
+			postgres := depWorkload("default", "postgres", v1alpha1.TargetKindStatefulSet, v1alpha1.PhaseRunning)
+			if requested {
+				withPauseRequested(postgres)
+			}
+			pauser := &stubPauser{pauseDone: true}
+			r := depReconciler(t, pauser, postgres, api)
+			_, lists := countAPIReads(r)
+
+			var err error
+			if requested {
+				_, err = r.reconcilePauseRequest(context.Background(), postgres, postgresTarget(1, 1))
+			} else {
+				_, err = r.reconcileAutomation(context.Background(), postgres, postgresTarget(1, 1))
+			}
+			require.NoError(t, err)
+
+			assert.Equal(t, 1, pauser.pauseCalls, "paused")
+			assert.Equal(t, 1, *lists, "the dependents are listed once")
+		})
+	}
+}
+
+// In dry-run, or with pausing off, the hold is the graph's alone, for a
+// would-be pause from the idle clock as from a pause request: nothing is
+// paused, so the API server isn't read.
+func TestDependencies_DryRunHoldReadsTheGraphAlone(t *testing.T) {
+	for _, requested := range []bool{false, true} {
+		t.Run(fmt.Sprintf("pause requested %t", requested), func(t *testing.T) {
+			api := depWorkload("default", "api", v1alpha1.TargetKindDeployment, v1alpha1.PhaseRunning, postgresRef())
+			postgres := depWorkload("default", "postgres", v1alpha1.TargetKindStatefulSet, v1alpha1.PhaseRunning)
+			postgres.Spec.DryRun = true
+			if requested {
+				withPauseRequested(postgres)
+			}
+			r := depReconciler(t, &stubPauser{pauseDone: true}, postgres, api)
+			seeGraph(t, r, staleViews[1], postgres)
+			gets, lists := countAPIReads(r)
+
+			var err error
+			if requested {
+				_, err = r.reconcilePauseRequest(context.Background(), postgres, postgresTarget(1, 1))
+			} else {
+				_, err = r.reconcileAutomation(context.Background(), postgres, postgresTarget(1, 1))
+			}
+			require.NoError(t, err)
+
+			assert.Equal(t, v1alpha1.PhaseIdle, postgres.Status.Phase, "a would-be pause, by the graph")
+			assert.Zero(t, *gets+*lists, "the API server isn't read")
+		})
+	}
+}
+
+// A pause whose hold was decided as it began is checked once more just
+// before its scale-down: a dependent awake then, as one that has learned
+// it depends on the workload since, or one the graph doesn't have as it
+// is, calls it off before anything is scaled. The pause request it was
+// for says why, and as the dependent's use, not the workload's own, it
+// isn't counted as made in use.
+func TestDependencies_HeldJustBeforeTheScaleDown(t *testing.T) {
+	for _, view := range []graphView{staleViews[0], staleViews[2], staleViews[4]} {
+		for _, requested := range []bool{false, true} {
+			t.Run(fmt.Sprintf("graph has it %s, pause requested %t", view.name, requested), func(t *testing.T) {
+				startedAt := metav1.NewTime(fixedTime.Add(-10 * time.Second))
+				postgres := depWorkload("default", "postgres", v1alpha1.TargetKindStatefulSet, v1alpha1.PhasePausing)
+				postgres.Status.LastTransitionTime = &startedAt
+				postgres.Status.Pause = &v1alpha1.PauseStatus{PreviousReplicas: 1, StartedAt: &startedAt,
+					Requested: requested}
+				api := learning(depWorkload("default", "api", v1alpha1.TargetKindDeployment, v1alpha1.PhaseRunning))
+				pauser := &stubPauser{pauseDone: true, resumeDone: true}
+				r := depReconciler(t, pauser, postgres, api)
+				seeGraph(t, r, view, postgres)
+
+				_, err := r.resumeTransition(context.Background(), postgres, postgresTarget(1, 1))
+				require.NoError(t, err)
+
+				assert.Zero(t, pauser.pauseCalls, "nothing is scaled")
+				assert.Equal(t, v1alpha1.PhaseRunning, fetch(t, r, "postgres").Status.Phase)
+				assert.Nil(t, postgres.Status.IdleWait, "not counted as made in use")
+				assert.Contains(t, drainEvents(t, r), "Normal "+ReasonPauseCancelled+
+					" postgres: its dependent default/api is awake as it paused; the pause is cancelled")
+				c := meta.FindStatusCondition(postgres.Status.Conditions, conditionPauseRequest)
+				if !requested {
+					assert.Nil(t, c)
+					return
+				}
+				require.NotNil(t, c)
+				assert.Equal(t, metav1.ConditionFalse, c.Status)
+				assert.Equal(t, ReasonPauseCancelled, c.Reason)
+				assert.Contains(t, c.Message, ": its dependent default/api is awake as it paused")
+			})
+		}
 	}
 }
 
