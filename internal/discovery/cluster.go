@@ -657,25 +657,36 @@ func recordIsThisMonths(mw *v1alpha1.ManagedWorkload, now time.Time) bool {
 	return true
 }
 
-// MonthAtPace reads a workload's month at this month's pace, as the
-// operator projects it: what it costs and what pausing frees, carried from
-// the part of the month tracked to the whole, and how much is tracked. ok
-// is false while the record is last month's, and before a day is tracked,
-// when the operator writes "pending".
-func MonthAtPace(mw *v1alpha1.ManagedWorkload, now time.Time) (spent, freed float64, tracked time.Duration, ok bool) {
+// Month is a workload's month at this month's pace, as the operator
+// projects it: what it costs, what pausing frees, and the part of that
+// which comes off the bill, carried from the part of the month tracked to
+// the whole.
+type Month struct {
+	Spent, Freed, Saved float64
+	Tracked             time.Duration
+}
+
+// MonthAtPace reads a workload's month at this month's pace. ok is false
+// while the record is last month's, and before a day is tracked, when the
+// operator writes "pending".
+func MonthAtPace(mw *v1alpha1.ManagedWorkload, now time.Time) (Month, bool) {
 	if !recordIsThisMonths(mw, now) {
-		return 0, 0, 0, false
+		return Month{}, false
 	}
 	c := mw.Status.Cost
-	spent, err := cost.ParseDollars(c.ProjectedMonthlyCost)
-	if err != nil {
-		return 0, 0, 0, false
+	var m Month
+	for _, f := range []struct {
+		to    *float64
+		value string
+	}{{&m.Spent, c.ProjectedMonthlyCost}, {&m.Freed, c.ProjectedMonthlyFreed}, {&m.Saved, c.ProjectedMonthlySavings}} {
+		amount, err := cost.ParseDollars(f.value)
+		if err != nil {
+			return Month{}, false
+		}
+		*f.to = amount
 	}
-	freed, err = cost.ParseDollars(c.ProjectedMonthlyFreed)
-	if err != nil {
-		return 0, 0, 0, false
-	}
-	return spent, freed, c.Tracked.Duration, true
+	m.Tracked = c.Tracked.Duration
+	return m, true
 }
 
 // judgePaused describes a workload Napwake has paused, priced on what it

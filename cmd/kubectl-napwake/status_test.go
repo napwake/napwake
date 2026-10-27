@@ -1237,16 +1237,17 @@ func TestStatus_EventsForbidden(t *testing.T) {
 
 // The workloads' month at this month's pace sums those the operator
 // projects one for: without Napwake is what they cost and what pausing
-// frees, with it what they cost, and the share is what pausing frees of
-// without. It's pending until one has a day counted, early for a week,
-// then steady, and none when pausing frees nothing.
+// frees; the bill is that less what comes off it, as nodes go; and each
+// share is of without. It's pending until one has a day counted, early
+// for a week, then steady, and none when pausing frees nothing.
 func TestSumMonthAtPace(t *testing.T) {
-	at := func(spent, freed float64, tracked time.Duration) statusWorkload {
-		var w statusWorkload
-		w.month.spent, w.month.freed, w.month.tracked, w.month.ok = spent, freed, tracked, true
-		return w
+	at := func(spent, freed, saved float64, tracked time.Duration) statusWorkload {
+		return statusWorkload{month: discovery.Month{Spent: spent, Freed: freed, Saved: saved, Tracked: tracked},
+			monthOK: true}
 	}
 	pending := statusWorkload{}
+	unmeasured := at(1, 3, 0, 3*24*time.Hour)
+	unmeasured.SavingsUnknown = "no node autoscaler"
 	day := 24 * time.Hour
 	tests := []struct {
 		name string
@@ -1255,16 +1256,21 @@ func TestSumMonthAtPace(t *testing.T) {
 	}{
 		{name: "no workloads"},
 		{name: "none projected yet", rows: []statusWorkload{pending, pending},
-			want: &monthAtPace{State: monthPending}},
+			want: &monthAtPace{State: monthPending, SavedMeasurable: true}},
 		{name: "early, summed over those projected", rows: []statusWorkload{
-			at(5, 20, 53*time.Hour), at(2.45, 4.54, 30*time.Hour), pending},
-			want: &monthAtPace{Without: 31.99, With: 7.45, Percent: 77, Days: 2, State: monthEarly}},
-		{name: "steady from a week", rows: []statusWorkload{at(10, 30, 7*day)},
-			want: &monthAtPace{Without: 40, With: 10, Percent: 75, Days: 7, State: monthSteady}},
-		{name: "nothing paused", rows: []statusWorkload{at(12, 0, 3*day)},
-			want: &monthAtPace{Without: 12, With: 12, Days: 3, State: monthNone}},
-		{name: "nothing priced", rows: []statusWorkload{at(0, 0, 3*day)},
-			want: &monthAtPace{Days: 3, State: monthNone}},
+			at(5, 20, 19, 53*time.Hour), at(2.45, 4.54, 4.2, 30*time.Hour), pending},
+			want: &monthAtPace{Without: 31.99, Saved: 23.2, Bill: 8.79, SavedPercent: 73, Freed: 24.54, With: 7.45,
+				FreedPercent: 77, SavedMeasurable: true, Days: 2, State: monthEarly}},
+		{name: "steady from a week", rows: []statusWorkload{at(10, 30, 30, 7*day)},
+			want: &monthAtPace{Without: 40, Saved: 30, Bill: 10, SavedPercent: 75, Freed: 30, With: 10,
+				FreedPercent: 75, SavedMeasurable: true, Days: 7, State: monthSteady}},
+		{name: "saved unmeasured for one", rows: []statusWorkload{at(10, 30, 30, 7*day), unmeasured},
+			want: &monthAtPace{Without: 44, Saved: 30, Bill: 14, SavedPercent: 68, Freed: 33, With: 11,
+				FreedPercent: 75, Days: 7, State: monthSteady}},
+		{name: "nothing paused", rows: []statusWorkload{at(12, 0, 0, 3*day)},
+			want: &monthAtPace{Without: 12, Bill: 12, With: 12, SavedMeasurable: true, Days: 3, State: monthNone}},
+		{name: "nothing priced", rows: []statusWorkload{at(0, 0, 0, 3*day)},
+			want: &monthAtPace{SavedMeasurable: true, Days: 3, State: monthNone}},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -1274,9 +1280,14 @@ func TestSumMonthAtPace(t *testing.T) {
 				return
 			}
 			require.NotNil(t, got)
-			assert.InDelta(t, tt.want.Without, got.Without, 0.001)
-			assert.InDelta(t, tt.want.With, got.With, 0.001)
-			assert.Equal(t, tt.want.Percent, got.Percent)
+			for name, pair := range map[string][2]float64{"without": {tt.want.Without, got.Without},
+				"saved": {tt.want.Saved, got.Saved}, "bill": {tt.want.Bill, got.Bill},
+				"freed": {tt.want.Freed, got.Freed}, "with": {tt.want.With, got.With}} {
+				assert.InDelta(t, pair[0], pair[1], 0.001, name)
+			}
+			assert.Equal(t, tt.want.SavedPercent, got.SavedPercent, "saved percent")
+			assert.Equal(t, tt.want.FreedPercent, got.FreedPercent, "freed percent")
+			assert.Equal(t, tt.want.SavedMeasurable, got.SavedMeasurable)
 			assert.Equal(t, tt.want.Days, got.Days)
 			assert.Equal(t, tt.want.State, got.State)
 		})

@@ -816,7 +816,7 @@ The JSON and YAML fields this page names, and what each holds.
 | Field | What it holds |
 |---|---|
 | <Ref id="status-json-pausingoff">pausingOff</Ref> | How many of the workloads say [pausing is off](/guides/pause/#stop-all-pausing-now) for their install, by their `PausingOff` condition |
-| <Ref id="status-json-monthatpace">monthAtPace</Ref> | A month of the workloads at this month's pace, from each one's projection in `status.cost`: `without` Napwake (cost plus what pausing frees), `with` it (cost), the `percent` pausing frees, the whole `days` counted, and a `state`: `pending` before a day is counted, `early` before a week, then `steady`, or `none` when nothing is priced or pausing frees nothing |
+| <Ref id="status-json-monthatpace">monthAtPace</Ref> | A month of the workloads at this month's pace, from each one's projection in `status.cost`: `without` Napwake (cost plus what pausing frees); what comes off the bill as nodes go, `saved`, the `bill` that leaves, and `savedPercent`; all that pausing frees, `freed`, what the workloads cost `with` it, and `freedPercent`; `savedMeasurable`, false when saved can't be measured for some; the whole `days` counted; and a `state`: `pending` before a day is counted, `early` before a week, then `steady`, or `none` when nothing is priced or pausing frees nothing |
 | <Ref id="status-json-forecast">forecast</Ref> | The reason, from `status.prediction.reason` |
 | <Ref id="status-json-forecaststartsacting">forecastStartsActing</Ref> | When the operator expects the forecast to start acting, as `acts from` shows |
 | <Ref id="status-json-turnedaway">turnedAway</Ref> | For a workload that asks, `pausedAt` and `requests`, what the doorman turned away during that pause, from `status.turnedAway` |

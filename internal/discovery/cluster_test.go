@@ -819,38 +819,35 @@ func TestMonthAtPace(t *testing.T) {
 	thisMonth := metav1.NewTime(scanTime.Add(-time.Hour))
 	lastMonth := metav1.NewTime(scanTime.AddDate(0, -1, 0))
 	tracked := metav1.Duration{Duration: 53 * time.Hour}
+	projected := func(spent, freed, saved string, at *metav1.Time) *v1alpha1.CostStatus {
+		return &v1alpha1.CostStatus{ProjectedMonthlyCost: spent, ProjectedMonthlyFreed: freed,
+			ProjectedMonthlySavings: saved, Tracked: tracked, LastAccumulatedAt: at}
+	}
 	tests := []struct {
-		name         string
-		cost         *v1alpha1.CostStatus
-		spent, freed float64
-		ok           bool
+		name string
+		cost *v1alpha1.CostStatus
+		want Month
+		ok   bool
 	}{
 		{name: "no cost yet"},
-		{name: "projected", spent: 7.45, freed: 24.54, ok: true,
-			cost: &v1alpha1.CostStatus{ProjectedMonthlyCost: "$7.45", ProjectedMonthlyFreed: "$24.54",
-				Tracked: tracked, LastAccumulatedAt: &thisMonth}},
-		{name: "pending, before a day is tracked",
-			cost: &v1alpha1.CostStatus{ProjectedMonthlyCost: "pending", ProjectedMonthlyFreed: "pending",
-				Tracked: metav1.Duration{Duration: time.Hour}, LastAccumulatedAt: &thisMonth}},
-		{name: "last month's",
-			cost: &v1alpha1.CostStatus{ProjectedMonthlyCost: "$7.45", ProjectedMonthlyFreed: "$24.54",
-				Tracked: tracked, LastAccumulatedAt: &lastMonth}},
-		{name: "under a cent freed", spent: 3, freed: 0.0025, ok: true,
-			cost: &v1alpha1.CostStatus{ProjectedMonthlyCost: "$3.00", ProjectedMonthlyFreed: "<$0.01",
-				Tracked: tracked, LastAccumulatedAt: &thisMonth}},
+		{name: "projected", cost: projected("$7.45", "$24.54", "$23.20", &thisMonth), ok: true,
+			want: Month{Spent: 7.45, Freed: 24.54, Saved: 23.2, Tracked: tracked.Duration}},
+		{name: "pending, before a day is tracked", cost: projected("pending", "pending", "pending", &thisMonth)},
+		{name: "last month's", cost: projected("$7.45", "$24.54", "$23.20", &lastMonth)},
+		{name: "under a cent freed", cost: projected("$3.00", "<$0.01", "<$0.01", &thisMonth), ok: true,
+			want: Month{Spent: 3, Freed: 0.0025, Saved: 0.0025, Tracked: tracked.Duration}},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			mw := &v1alpha1.ManagedWorkload{Status: v1alpha1.ManagedWorkloadStatus{Cost: tt.cost}}
 
-			spent, freed, got, ok := MonthAtPace(mw, scanTime)
+			got, ok := MonthAtPace(mw, scanTime)
 
 			assert.Equal(t, tt.ok, ok)
-			assert.InDelta(t, tt.spent, spent, 0.001)
-			assert.InDelta(t, tt.freed, freed, 0.001)
-			if tt.ok {
-				assert.Equal(t, tracked.Duration, got)
-			}
+			assert.InDelta(t, tt.want.Spent, got.Spent, 0.001)
+			assert.InDelta(t, tt.want.Freed, got.Freed, 0.001)
+			assert.InDelta(t, tt.want.Saved, got.Saved, 0.001)
+			assert.Equal(t, tt.want.Tracked, got.Tracked)
 		})
 	}
 }

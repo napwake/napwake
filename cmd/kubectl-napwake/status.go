@@ -234,12 +234,9 @@ type statusWorkload struct {
 	ForecastStartsActing *time.Time `json:"forecastStartsActing,omitempty"`
 	forecastMessage      string
 	// month is its month at this month's pace, once the operator projects
-	// one: what it costs, what pausing frees, and how much is tracked.
-	month struct {
-		spent, freed float64
-		tracked      time.Duration
-		ok           bool
-	}
+	// one, as monthOK says.
+	month   discovery.Month
+	monthOK bool
 	// namedApart is set for a ManagedWorkload written by hand under a name
 	// other than its target's, which the table then shows beside it.
 	namedApart bool
@@ -467,11 +464,22 @@ const monthSettlesAfter = 7
 // those the operator projects one for.
 type monthAtPace struct {
 	// Without is what they'd cost a month without Napwake: what they cost,
-	// and what pausing frees. With is what they cost.
+	// and what pausing frees.
 	Without float64 `json:"without"`
-	With    float64 `json:"with"`
-	// Percent is what pausing frees of Without, to the whole percent.
-	Percent int `json:"percent"`
+	// Saved is the part of what pausing frees that comes off the bill, as
+	// nodes go, and Bill what the bill comes to: Without less Saved.
+	// SavedPercent is Saved of Without, to the whole percent.
+	Saved        float64 `json:"saved"`
+	Bill         float64 `json:"bill"`
+	SavedPercent int     `json:"savedPercent"`
+	// Freed is all that pausing frees, With what the workloads cost with
+	// it, and FreedPercent Freed of Without.
+	Freed        float64 `json:"freed"`
+	With         float64 `json:"with"`
+	FreedPercent int     `json:"freedPercent"`
+	// SavedMeasurable says what's saved is measured for every workload
+	// counted; without it, Saved is of those it is.
+	SavedMeasurable bool `json:"savedMeasurable"`
 	// Days is the whole days of this month counted, for the workload
 	// counted longest.
 	Days  int    `json:"days"`
@@ -484,25 +492,30 @@ func sumMonthAtPace(rows []statusWorkload) *monthAtPace {
 	if len(rows) == 0 {
 		return nil
 	}
-	m := &monthAtPace{State: monthPending}
+	m := &monthAtPace{State: monthPending, SavedMeasurable: true}
 	var tracked time.Duration
 	projected := false
 	for _, row := range rows {
-		if !row.month.ok {
+		if !row.monthOK {
 			continue
 		}
 		projected = true
-		m.With += row.month.spent
-		m.Without += row.month.spent + row.month.freed
-		tracked = max(tracked, row.month.tracked)
+		m.With += row.month.Spent
+		m.Freed += row.month.Freed
+		m.Saved += row.month.Saved
+		m.Without += row.month.Spent + row.month.Freed
+		tracked = max(tracked, row.month.Tracked)
+		if row.SavingsUnknown != "" {
+			m.SavedMeasurable = false
+		}
 	}
 	if !projected {
 		return m
 	}
+	m.Bill = m.Without - m.Saved
 	m.Days = int(tracked / (24 * time.Hour))
-	freed := m.Without - m.With
 	switch {
-	case m.Without <= 0 || freed <= 0:
+	case m.Without <= 0 || m.Freed <= 0:
 		m.State = monthNone
 	case m.Days < monthSettlesAfter:
 		m.State = monthEarly
@@ -510,7 +523,8 @@ func sumMonthAtPace(rows []statusWorkload) *monthAtPace {
 		m.State = monthSteady
 	}
 	if m.Without > 0 {
-		m.Percent = int(math.Round(freed / m.Without * 100))
+		m.FreedPercent = int(math.Round(m.Freed / m.Without * 100))
+		m.SavedPercent = int(math.Round(m.Saved / m.Without * 100))
 	}
 	return m
 }
@@ -685,7 +699,7 @@ func workloadStatus(w *v1alpha1.ManagedWorkload, targetActiveUntil, now time.Tim
 	if c := w.Status.Cost; c != nil {
 		row.SavingsUnknown = c.SavingsUnknown
 	}
-	row.month.spent, row.month.freed, row.month.tracked, row.month.ok = discovery.MonthAtPace(w, now)
+	row.month, row.monthOK = discovery.MonthAtPace(w, now)
 	row.AtSpot = pricedAtSpot(w)
 	if p := w.Status.Prediction; p != nil {
 		row.Forecast, row.forecastMessage = p.Reason, p.Message
