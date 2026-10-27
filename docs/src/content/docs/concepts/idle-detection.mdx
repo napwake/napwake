@@ -229,7 +229,7 @@ A target at zero isn't an error, as no usage is real data. Nor are new pods, wit
 
 After a `MetricsUnavailable`, the API isn't read again for a minute. So every workload's check fails at once, instead of waiting out a timeout.
 
-For queries, `PrometheusAvailable` reports `EndpointNotConfigured`, `QueryFailed`, or `SeriesLost` while an empty answer after series is unread, as after Prometheus restarts without its data.
+For queries, `PrometheusAvailable` reports `EndpointNotConfigured`, `QueryFailed`, or `SeriesLost` while a query that lost its series, as after Prometheus restarts without its data, keeps the workload from pausing, for up to 5 minutes.
 
 Some queries answer but have never matched a series, as with a missing metric or label. Such a query can never keep the workload awake. `PrometheusQueryEmpty=True` and a warning event say so ([When a query can't be evaluated](/guides/prometheus-signals/#when-a-query-cant-be-evaluated)).
 

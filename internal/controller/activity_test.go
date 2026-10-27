@@ -20,6 +20,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"math"
 	"net/http"
 	"net/http/httptest"
 	"strconv"
@@ -1289,6 +1290,7 @@ type lostSeriesClock struct {
 	pauser   *stubPauser
 	answer   atomic.Value
 	now      time.Time
+	next     time.Duration
 }
 
 func newLostSeriesClock(t *testing.T, source v1alpha1.ActivitySource, remembered bool) *lostSeriesClock {
@@ -1317,13 +1319,18 @@ func newLostSeriesClock(t *testing.T, source v1alpha1.ActivitySource, remembered
 }
 
 // check answers with body at after past fixedTime, and reports whether
-// the workload paused.
+// the workload paused. next is when the operator asks to check again, a
+// minute when it doesn't say, and a second at least.
 func (c *lostSeriesClock) check(t *testing.T, after time.Duration, body string) bool {
 	t.Helper()
 	c.now = monotonic(fixedTime.Add(after))
 	c.answer.Store(body)
-	_, err := c.r.reconcileAutomation(context.Background(), c.workload, c.target)
+	res, err := c.r.reconcileAutomation(context.Background(), c.workload, c.target)
 	require.NoError(t, err)
+	c.next = activityCheckInterval
+	if res != nil && res.RequeueAfter > 0 {
+		c.next = max(res.RequeueAfter, time.Second)
+	}
 	return c.pauser.pauseCalls > 0
 }
 
@@ -1348,26 +1355,22 @@ func TestActivityClock_EmptyAfterSeries(t *testing.T) {
 		require.NotNil(t, cond)
 		assert.Equal(t, metav1.ConditionFalse, cond.Status)
 		assert.Equal(t, reasonSeriesLost, cond.Reason)
-		assert.Contains(t, cond.Message, "for up to 5 minutes")
+		assert.Contains(t, cond.Message, "isn't paused before 12:05:31 UTC while they come back")
 		assert.Equal(t, v1alpha1.PhaseRunning, c.workload.Status.Phase)
 		assert.NotContains(t, drainEvents(t, c.r), "Warning", "expected after a restart, so no warning")
 	})
 
-	t.Run("empty for longer than the bound pauses", func(t *testing.T) {
+	t.Run("empty to the grace's end pauses then", func(t *testing.T) {
 		c := newLostSeriesClock(t, v1alpha1.ActivitySourceCPU, true)
 		require.False(t, c.check(t, 0, promValue("0")))
 		for at := time.Minute; at < time.Minute+seriesLostFor; at += time.Minute {
-			require.False(t, c.check(t, at, emptyVector), "unread %s after the series went", at-time.Minute)
+			require.False(t, c.check(t, at, emptyVector), "held %s after the series went", at-time.Minute)
+			require.NotEqual(t, v1alpha1.ActivitySourceUnobserved, c.workload.Status.Activity.LastActivitySource,
+				"the clock ran on, at %s", at)
 		}
 
-		// Checks every 30 seconds from the bound on. The checks that weren't
-		// evaluations left a gap, which restarts the clock once more, so it
-		// pauses within idle-after and a check or two of the bound.
-		paused := false
-		for at := time.Minute + seriesLostFor; at <= 4*time.Minute+seriesLostFor && !paused; at += 30 * time.Second {
-			paused = c.check(t, at, emptyVector)
-		}
-		assert.True(t, paused, "quiet from the bound on, it pauses")
+		assert.True(t, c.check(t, time.Minute+seriesLostFor, emptyVector),
+			"its clock ran out long ago, so it pauses as the grace ends")
 		assert.True(t, meta.IsStatusConditionTrue(c.workload.Status.Conditions, conditionPrometheusAvailable))
 	})
 
@@ -1380,6 +1383,100 @@ func TestActivityClock_EmptyAfterSeries(t *testing.T) {
 		assert.Equal(t, v1alpha1.ActivitySourcePrometheus, c.workload.Status.Activity.LastActivitySource)
 		assert.True(t, meta.IsStatusConditionTrue(c.workload.Status.Conditions, conditionPrometheusAvailable))
 	})
+}
+
+// A quiet workload whose query answers with series at zero at some checks
+// and with none at others, as a [1m] rate over a 45s scrape does, or a
+// target whose scrapes fail now and then, gets one grace for its first
+// loss, not one for each: flapping can't renew it, and the clock never
+// restarts. It pauses at the later of its idleAfter and that grace's end,
+// with a minute to spare. Before, each match renewed the grace, and the
+// unread checks restarted the clock, so it never paused (the review of
+// 8bdae63f, P65). The checks come when the operator asks for them, from
+// its last activity, a request, at 0, and the empty answers fall at every
+// phase of each pattern.
+func TestActivityClock_FlappingSeriesStillPause(t *testing.T) {
+	everyNth := func(n, phase int) func(check int, _ time.Duration) string {
+		return func(check int, _ time.Duration) string {
+			if (check+phase)%n == 0 {
+				return emptyVector
+			}
+			return promValue("0")
+		}
+	}
+	// A [1m] rate needs two samples in its window. Scraped every 45s from
+	// fixedTime, its window holds one or two.
+	rate1mOver45s := func(_ int, at time.Duration) string {
+		end := at.Seconds()
+		if math.Floor(end/45)-math.Floor((end-60)/45) < 2 {
+			return emptyVector
+		}
+		return promValue("0")
+	}
+	answers := map[string]func(check int, at time.Duration) string{"a [1m] rate over a 45s scrape": rate1mOver45s}
+	for _, n := range []int{3, 4, 6} {
+		for phase := range n {
+			answers[fmt.Sprintf("zero series at every %s check, phase %d", map[int]string{3: "3rd", 4: "4th", 6: "6th"}[n],
+				phase)] = everyNth(n, phase)
+		}
+	}
+	for name, answer := range answers {
+		for _, idleAfter := range []time.Duration{time.Minute, 3 * time.Minute, 5 * time.Minute, 10 * time.Minute} {
+			t.Run(fmt.Sprintf("%s, idleAfter %s", name, idleAfter), func(t *testing.T) {
+				c := newLostSeriesClock(t, v1alpha1.ActivitySourceCPU, true)
+				c.workload.Spec.IdlePolicy.IdleAfter = &metav1.Duration{Duration: idleAfter}
+				require.False(t, c.check(t, 0, promValue("0.04")), "a request at 0")
+				require.Equal(t, v1alpha1.ActivitySourcePrometheus, c.workload.Status.Activity.LastActivitySource)
+				bound := idleAfter + time.Minute
+				lost := false
+				at := c.next
+				for check := 1; at <= bound; check++ {
+					body := answer(check, at)
+					if !lost && body == emptyVector {
+						lost = true
+						bound = max(bound, at+seriesLostFor+time.Minute)
+					}
+					if c.check(t, at, body) {
+						return
+					}
+					require.NotEqual(t, v1alpha1.ActivitySourceUnobserved, c.workload.Status.Activity.LastActivitySource,
+						"the clock never restarts, at %s", at)
+					at += c.next
+				}
+				t.Fatalf("not paused by %s, idleAfter %s", bound, idleAfter)
+			})
+		}
+	}
+}
+
+// With queries [A, B], A busy and B empty, A shows activity first at every
+// check, so B is never evaluated. When Prometheus restarts without its
+// data, A answers with none, in its grace, and so does B. In that check
+// B's empty answer is unread too, so once A has series again B isn't
+// pointed out as a query that never matches (the review of 8bdae63f, P65).
+func TestActivityClock_QueryEmptyBesideALostOneIsntPointedOut(t *testing.T) {
+	const busy, failures = `sum(rate(http_requests_total{app="web"}[1m]))`, `sum(rate(http_errors_total{app="web"}[1m]))`
+	var restarted atomic.Bool
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
+		if req.URL.Query().Get("query") == busy && !restarted.Load() {
+			_, _ = w.Write([]byte(promValue("0.04")))
+			return
+		}
+		_, _ = w.Write([]byte(emptyVector))
+	}))
+	t.Cleanup(srv.Close)
+	c := newLostSeriesClock(t, v1alpha1.ActivitySourceCPU, true)
+	c.r.prometheus = signal.NewPrometheus(srv.URL)
+	c.workload.Spec.IdlePolicy.Activity.Prometheus = []v1alpha1.PrometheusActivity{{PromQL: busy}, {PromQL: failures}}
+
+	c.check(t, 0, "")
+	restarted.Store(true)
+	c.check(t, time.Minute, "")
+	restarted.Store(false)
+	c.check(t, 2*time.Minute, "")
+
+	assert.Nil(t, meta.FindStatusCondition(c.workload.Status.Conditions, conditionPrometheusQueryEmpty))
+	assert.NotContains(t, drainEvents(t, c.r), ReasonPrometheusQueryEmpty)
 }
 
 // PrometheusQueryEmpty points out a query that has never matched a series.

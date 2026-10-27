@@ -23,6 +23,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"slices"
 	"strconv"
 	"strings"
 	"sync"
@@ -152,6 +153,9 @@ type activityObservation struct {
 	// prometheusErr is set when a configured Prometheus query couldn't be
 	// evaluated, which blinds the clock to that source in the same way.
 	prometheusErr error
+	// seriesLost is the queries in a grace after losing their series, and
+	// when the last grace ends, which holds the pause till then.
+	seriesLost seriesLost
 	// gap is the gap in watching that restarted the clock, if one did.
 	gap *watchGap
 }
@@ -306,7 +310,8 @@ func (r *Reconciler) observeActivity(ctx context.Context, workload *v1alpha1.Man
 	// With CPU unreadable nothing is decided this check, so Prometheus
 	// isn't asked.
 	if obs.cpuErr == nil {
-		active, err := r.prometheusActive(ctx, workload, true)
+		active, lost, err := r.prometheusActive(ctx, workload, true)
+		obs.seriesLost = lost
 		switch {
 		case err != nil:
 			obs.prometheusErr = err
@@ -557,7 +562,7 @@ func (r *Reconciler) checkPausedQueries(ctx context.Context, workload *v1alpha1.
 	if !hasPrometheusActivity(workload) {
 		return pausedQueries{}
 	}
-	active, err := r.prometheusActive(ctx, workload, false)
+	active, _, err := r.prometheusActive(ctx, workload, false)
 	if err != nil {
 		r.reportPrometheusUnavailable(ctx, workload, err)
 		return pausedQueries{failed: true}
@@ -590,7 +595,7 @@ func (r *Reconciler) queryActiveAtPause(ctx context.Context, workload *v1alpha1.
 	if !hasPrometheusActivity(workload) {
 		return false
 	}
-	active, err := r.prometheusActive(ctx, workload, false)
+	active, _, err := r.prometheusActive(ctx, workload, false)
 	return err == nil && active
 }
 
@@ -634,61 +639,72 @@ func activityAnnotationChanged(obj client.Object, recorded map[string]string) bo
 // reconcile worker for a timeout each.
 const prometheusBudget = 5 * time.Second
 
-// seriesLostFor bounds how long a query that matched series at its last
-// check, and matches none now, is unread rather than quiet. Prometheus
-// restarted without its data answers rate() and increase() with no series
-// until each has two scrapes: 20 seconds in the break-it table on rc.11.
-// Five checks cover scrape intervals up to two minutes, with time for
-// Prometheus to start. After it an empty answer is quiet, so a workload
-// whose series are gone for good, as when it stops serving, still pauses,
-// at most this much later.
+// seriesLostFor is the grace a query that had series gets when it answers
+// with none: the workload isn't paused before it ends. Prometheus restarted
+// without its data answers rate() and increase() with no series until each
+// has two scrapes, 20 seconds in the break-it table on rc.11, and a busy
+// workload's come back with its activity. Two scrape intervals is what a
+// restart needs, but the operator doesn't know the scrape interval, so five
+// checks cover intervals up to two minutes, with time for Prometheus to
+// start.
+//
+// The empty answers in a grace are no activity, and the clock runs on
+// through them, so a quiet workload pauses at the later of its idleAfter
+// and the grace's end: at most this long after its series went. A loss
+// gets one grace. Another needs the query to have answered with series for
+// this long without a break, so a query that flaps between series and none
+// can't renew it.
 const seriesLostFor = 5 * activityCheckInterval
 
-// errSeriesLost is a check whose queries matched series at the last check
-// and match none now, as after Prometheus restarts without its data. Like a
-// query that fails, it's unread: the check isn't an evaluation.
-type errSeriesLost struct{ queries []string }
+// seriesLost is what a check found of the grace after lost series: the
+// queries in one, when the last ends, zero for none, and whether one of
+// them still answered with none.
+type seriesLost struct {
+	queries []string
+	until   time.Time
+	missing bool
+}
 
-func (e errSeriesLost) Error() string {
-	return fmt.Sprintf("%s matched series at the last check and none now, as when Prometheus restarts without its "+
-		"data", strings.Join(quoted(e.queries), ", "))
+// reportSeriesLost says a query lost its series while it's still missing
+// them, or while they hold a pause: what to expect after every restart of
+// a Prometheus that keeps no data, for every workload with queries, so a
+// condition, not a warning.
+func (r *Reconciler) reportSeriesLost(workload *v1alpha1.ManagedWorkload, lost seriesLost) {
+	r.setCondition(workload, conditionPrometheusAvailable, metav1.ConditionFalse, reasonSeriesLost, fmt.Sprintf(
+		"%s matched series, then none, as when Prometheus restarts without its data, so the workload isn't paused "+
+			"before %s while they come back", strings.Join(quoted(lost.queries), ", "),
+		lost.until.UTC().Format("15:04:05 MST")))
 }
 
 // prometheusActive reports whether any configured Prometheus activity query
-// returns a value above zero. For an awake workload's check, a query that
-// matched series at its last check and matches none now is unread, not
-// quiet, for up to seriesLostFor: the check fails with errSeriesLost unless
-// another query shows activity. A paused workload's own metrics have no
+// returns a value above zero, and, for an awake workload, the grace after
+// lost series its queries are in. A paused workload's own metrics have no
 // series, so its checks take no series as quiet.
-func (r *Reconciler) prometheusActive(ctx context.Context, workload *v1alpha1.ManagedWorkload, awake bool) (bool, error) {
+func (r *Reconciler) prometheusActive(ctx context.Context, workload *v1alpha1.ManagedWorkload, awake bool) (
+	bool, seriesLost, error) {
 	p := workload.Spec.IdlePolicy
 	if p == nil || p.Activity == nil || len(p.Activity.Prometheus) == 0 {
-		return false, nil
+		return false, seriesLost{}, nil
 	}
 	if r.prometheus == nil {
-		return false, signal.ErrEndpointNotConfigured
+		return false, seriesLost{}, signal.ErrEndpointNotConfigured
 	}
 	ctx, cancel := context.WithTimeout(ctx, prometheusBudget)
 	defer cancel()
-	now := r.now()
-	var lost []string
+	answers := make([]queryAnswer, 0, len(p.Activity.Prometheus))
+	active := false
 	for _, q := range p.Activity.Prometheus {
 		res, err := r.prometheus.Check(ctx, q.PromQL)
 		if err != nil {
-			return false, fmt.Errorf("evaluating %q: %w", q.PromQL, err)
+			return false, seriesLost{}, fmt.Errorf("evaluating %q: %w", q.PromQL, err)
 		}
-		if r.querySeries.saw(workload.UID, q.PromQL, !res.NoSeries, now, awake) {
-			lost = append(lost, q.PromQL)
-			continue
-		}
+		answers = append(answers, queryAnswer{query: q.PromQL, matched: !res.NoSeries})
 		if res.Confirm {
-			return true, nil
+			active = true
+			break
 		}
 	}
-	if len(lost) > 0 {
-		return false, errSeriesLost{queries: lost}
-	}
-	return false, nil
+	return active, r.querySeries.record(workload.UID, answers, r.now(), awake), nil
 }
 
 func hasPrometheusActivity(workload *v1alpha1.ManagedWorkload) bool {
@@ -715,9 +731,11 @@ type queryAnswers struct {
 	matched, evaluated bool
 	// hadSeries says it matched series at its last answer that counted.
 	hadSeries bool
-	// lostAt is when it first answered with no series after it had some,
-	// while that's taken as unread.
-	lostAt time.Time
+	// lostAt is when it answered with none after it had series, which
+	// began its grace. seriesSince is when it has answered with series
+	// since, without a break; lostAt clears once that has lasted
+	// seriesLostFor.
+	lostAt, seriesSince time.Time
 }
 
 // answers is the query's record, made if it has none. The caller holds the
@@ -737,28 +755,64 @@ func (s *querySeries) answers(uid types.UID, query string) *queryAnswers {
 	return a
 }
 
-// saw records an answer at now, and reports whether an empty one is unread:
-// unreadIfLost, the query matched series at its last answer, and it has
-// answered with none for less than seriesLostFor. An unread answer doesn't
-// count as quiet, or toward a query that never matches.
-func (s *querySeries) saw(uid types.UID, query string, matched bool, now time.Time, unreadIfLost bool) bool {
+// queryAnswer is one query's answer at a check.
+type queryAnswer struct {
+	query   string
+	matched bool
+}
+
+// record records a check's answers at now, and returns the grace after
+// lost series the workload's queries are in. For an awake workload, a query
+// that had series and answers with none begins a grace, unless one it began
+// hasn't cleared. While any of its queries is in a grace, every empty answer
+// of the check is unread: no activity, but neither quiet nor a sign that a
+// query never matches, which a query that one showing activity has always
+// come before may not have had the chance to show.
+func (s *querySeries) record(uid types.UID, answers []queryAnswer, now time.Time, awake bool) seriesLost {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	a := s.answers(uid, query)
-	if matched {
-		*a = queryAnswers{matched: true, evaluated: true, hadSeries: true}
-		return false
-	}
-	if unreadIfLost && a.hadSeries {
-		if a.lostAt.IsZero() {
-			a.lostAt = now
+	for _, an := range answers {
+		a := s.answers(uid, an.query)
+		switch {
+		case an.matched:
+			a.matched, a.evaluated, a.hadSeries = true, true, true
+			if a.lostAt.IsZero() {
+				continue
+			}
+			if a.seriesSince.IsZero() {
+				a.seriesSince = now
+			}
+			if now.Sub(a.seriesSince) >= seriesLostFor {
+				a.lostAt, a.seriesSince = time.Time{}, time.Time{}
+			}
+		default:
+			a.seriesSince = time.Time{}
+			if awake && a.hadSeries && a.lostAt.IsZero() {
+				a.lostAt = now
+			}
 		}
-		if now.Sub(a.lostAt) < seriesLostFor {
-			return true
+	}
+	var lost seriesLost
+	if awake {
+		for query, a := range s.series[uid] {
+			end := a.lostAt.Add(seriesLostFor)
+			if a.lostAt.IsZero() || !end.After(now) {
+				continue
+			}
+			lost.queries = append(lost.queries, query)
+			if end.After(lost.until) {
+				lost.until = end
+			}
+			lost.missing = lost.missing || slices.Contains(answers, queryAnswer{query: query})
+		}
+		slices.Sort(lost.queries)
+	}
+	for _, an := range answers {
+		if a := s.series[uid][an.query]; !an.matched && lost.until.IsZero() {
+			a.evaluated, a.hadSeries = true, false
 		}
 	}
-	a.evaluated, a.hadSeries, a.lostAt = true, false, time.Time{}
-	return false
+	return lost
 }
 
 // seed takes each query to have matched series at its last answer, as one
@@ -915,7 +969,11 @@ func (r *Reconciler) reconcileIdleClock(ctx context.Context, workload *v1alpha1.
 		return r.reportPrometheusUnavailable(ctx, workload, obs.prometheusErr), nil
 	}
 	if hasPrometheusActivity(workload) {
-		r.setCondition(workload, conditionPrometheusAvailable, metav1.ConditionTrue, "QueriesEvaluated", "")
+		if obs.seriesLost.missing {
+			r.reportSeriesLost(workload, obs.seriesLost)
+		} else {
+			r.setCondition(workload, conditionPrometheusAvailable, metav1.ConditionTrue, "QueriesEvaluated", "")
+		}
 	}
 	r.reportEmptyQueries(workload)
 
@@ -949,6 +1007,14 @@ func (r *Reconciler) reconcileIdleClock(ctx context.Context, workload *v1alpha1.
 			r.wakeDryRunDependencies(ctx, workload)
 		}
 		return result, nil
+	}
+
+	// A query in its grace after lost series holds a pause not yet decided,
+	// but not the clock, which ran on through the empty answers: it pauses
+	// once the grace ends, unless the series come back with activity.
+	if until := obs.seriesLost.until; workload.Status.Phase == v1alpha1.PhaseRunning && until.After(now) {
+		r.reportSeriesLost(workload, obs.seriesLost)
+		return &ctrl.Result{RequeueAfter: min(activityCheckInterval, until.Sub(now))}, nil
 	}
 
 	// The forecast only holds back a pause not yet decided. Idle has decided
@@ -1200,23 +1266,13 @@ func (r *Reconciler) reportPrometheusUnavailable(ctx context.Context, workload *
 	}
 	reason := "QueryFailed"
 	msg := fmt.Sprintf("a Prometheus activity query failed, %s: %v", effect, err)
-	var lost errSeriesLost
-	switch {
-	case errors.Is(err, signal.ErrEndpointNotConfigured):
+	if errors.Is(err, signal.ErrEndpointNotConfigured) {
 		reason = "EndpointNotConfigured"
 		msg = "Prometheus activity queries are configured but the operator has no --prometheus-url, " + effect
-	case errors.As(err, &lost):
-		// Expected after every restart of a Prometheus that keeps no data,
-		// for every workload with queries, so it says so in its condition,
-		// and the clock's Unobserved event if it lasts, not a warning.
-		reason = reasonSeriesLost
-		msg = fmt.Sprintf("%v, so idle detection is paused until it matches series again, for up to %s", err,
-			human.Duration(seriesLostFor))
 	}
 
 	before := meta.FindStatusCondition(workload.Status.Conditions, conditionPrometheusAvailable)
-	firstFailure := reason != reasonSeriesLost &&
-		(before == nil || before.Status != metav1.ConditionFalse || before.Reason == reasonSeriesLost)
+	firstFailure := before == nil || before.Status != metav1.ConditionFalse || before.Reason == reasonSeriesLost
 	r.setCondition(workload, conditionPrometheusAvailable, metav1.ConditionFalse, reason, msg)
 	if firstFailure {
 		r.emitEvent(workload, false, "Warning", reason, actionEvaluateIdle, "%s", msg)

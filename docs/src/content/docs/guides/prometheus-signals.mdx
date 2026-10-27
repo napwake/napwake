@@ -129,7 +129,7 @@ Every check, about once a minute, awake or paused, runs each query in turn as an
 |------------|-------|
 | Any series above zero | Activity. The [activity clock](/concepts/idle-detection/) resets. With a series per pod, one busy pod is enough |
 | Zero, or empty | No activity from this source. The clock keeps running |
-| Empty, awake, where the last check matched series | Unread, not quiet, for up to 5 minutes, as after Prometheus restarts without its data ([below](#when-prometheus-restarts-without-its-data)) |
+| Empty, awake, where the last check had series | No activity, but the workload isn't paused for up to 5 minutes, as after Prometheus restarts without its data ([below](#when-prometheus-restarts-without-its-data)) |
 | `NaN` or infinite | Ignored, as no evidence either way. `NaN` is what a ratio of two idle counters gives (0/0). A result with nothing else in it counts as empty, and the other sources decide |
 | A range vector (`metric[5m]` on its own) | `QueryFailed`. Return an instant vector or a scalar |
 | Over 4 MiB, such as a series per pod across the cluster | Refused too. Aggregate with `sum` or `max` |
@@ -175,7 +175,7 @@ Napwake can't see that activity. So it doesn't pause the workload, and a failing
 |--------|---------|
 | `EndpointNotConfigured` | Queries are configured, but the operator has no `--prometheus-url` |
 | `QueryFailed` | Prometheus returned an error, a range vector or an oversized result. Or it didn't answer a query within 2 seconds, or all of the workload's within 5. The message has the details |
-| `SeriesLost` | A query matched series at the last check and none now, as after Prometheus restarts without its data. No warning event, since that's expected ([below](#when-prometheus-restarts-without-its-data)) |
+| `SeriesLost` | A query that had series has none, as after Prometheus restarts without its data, and the workload isn't paused for up to 5 minutes. No warning event, since that's expected ([below](#when-prometheus-restarts-without-its-data)) |
 
 ```bash
 kubectl get managedworkload my-api -n staging \
@@ -191,7 +191,7 @@ A query that answers but matches no series looks like a quiet workload, as does 
 | Set to `True` | Reason `NoSeries`, naming the queries, for a query that has matched nothing since its first evaluation. A `PrometheusQueryEmpty` warning event marks when it begins |
 | Cleared | Once the query matches a series, even one at zero. A counter created on the first request, as many client libraries' labelled counters are, matches once it exists |
 | After an operator restart | Checked from each query's first evaluation again, since matches are kept in memory |
-| After Prometheus restarts without its data | Not set by the empty answers while a query is unread. Nor after an operator restart, if its clock's last activity was a query's |
+| After Prometheus restarts without its data | Not set by any query's empty answers during a grace. Nor after an operator restart, if its clock's last activity was a query's |
 
 ### When Prometheus is down
 
@@ -210,12 +210,16 @@ A Prometheus that keeps its data on an `emptyDir`, or none, starts empty. Until 
 
 | When | What happens |
 |------|--------------|
-| An awake workload's query matched series at its last check, and matches none now | That answer is unread, as a failed query is. `PrometheusAvailable` is `False`, reason `SeriesLost`, and nothing is decided |
-| Its series come back | It counts as before |
-| None for 5 minutes | From then on an empty answer is quiet, so a workload whose series are gone for good still pauses, about 5 minutes later |
-| Unread for longer than a couple of checks | The clock restarts (`lastActivitySource: unobserved`) |
-| After an operator restart | A query counts as having matched if the clock's last activity was a query's |
+| An awake workload's query had series at its last check, and has none now | A 5-minute grace begins. The empty answers are no activity, and the clock runs on, but the workload isn't paused before the grace ends |
+| Meanwhile | `PrometheusAvailable` is `False`, reason `SeriesLost`, while the series are missing or hold the pause |
+| A busy workload | Its series come back with its activity, which keeps it awake as before |
+| A quiet one | Pauses at the later of its `idleAfter` and the grace's end, at most 5 minutes after its series went |
+| A query that flaps between series and none | Gets one grace for a loss. Another needs 5 minutes of series without a break |
+| The other queries' empty answers during a grace | Neither quiet nor a sign that a query never matches |
+| After an operator restart | A query counts as having had series if the clock's last activity was a query's |
 | While paused | An empty answer is quiet, as the workload's own metrics have no series without pods |
+
+Two scrapes are what a restart needs. Napwake doesn't know the scrape interval, so the grace covers intervals up to 2 minutes, with time for Prometheus to start.
 
 ## Example queries
 
