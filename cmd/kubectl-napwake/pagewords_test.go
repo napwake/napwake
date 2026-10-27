@@ -90,6 +90,21 @@ func TestReportAndStatusPage_PlainWordsForThePicture(t *testing.T) {
 	pageLacks(t, got, "Show the building")
 }
 
+// A running workload is awake in the pages' legends, as on the docs' home
+// page ("Awake · running"), beside each page's own word for it, which stays
+// (P64). The room cards and the picture's summary for screen readers use
+// the legend's word.
+func TestReportAndStatusPage_AwakeForRunning(t *testing.T) {
+	for name, tt := range map[string]struct{ page, legend string }{
+		"scan":   {page: renderHTML(t, historyResult()), legend: `<em>awake</em> &middot; active`},
+		"status": {page: renderStatusPage(t, statusCluster()...), legend: `<em>awake</em> &middot; running`},
+	} {
+		pageHas(t, tt.page, tt.legend, name, "the legend")
+		pageHas(t, tt.page, `active: "awake"`, name, "the room cards' and the summary's word")
+		pageLacks(t, tt.page, `<em>in use</em>`, name, "the legend's old word")
+	}
+}
+
 // A dependency Napwake manages stays up while what depends on it is awake,
 // as the dependencies concept says, and the pages say so plainly.
 func TestReportAndStatusPage_Words(t *testing.T) {
