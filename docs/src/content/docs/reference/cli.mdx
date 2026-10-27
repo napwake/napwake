@@ -194,6 +194,7 @@ What the columns count, and leave out:
 
 | Case | What the scan does |
 |---|---|
+| COST/HOUR | Shown when it judges from CPU now, with no Prometheus it can reach or `--window 0`. What the workload's requests cost an hour while running, to the cent, and `<$0.01` under one. Each hour paused frees that. COST/MO is it times 730 (JSON `hourlyCost` and `monthlyCost`) |
 | COULD FREE/MO | Never calls it a saving. Before Napwake runs, the scan can't know what of it would be saved |
 | Each money and history cell | Has the one source the table gives |
 | A live workload | Isn't replayed, as there are no pods for Prometheus to record while it's paused. Its pauses are what FREED THIS MONTH and SAVED count |

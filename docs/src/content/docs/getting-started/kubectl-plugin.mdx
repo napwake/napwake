@@ -159,6 +159,7 @@ Run it before you install Napwake, or after, to see what's left to opt in. Once 
 | BECAUSE | The evidence for the state, then facts such as when it was last deployed, if a week or more ago |
 | BECAUSE `won't pause: PVCs deleted on scale-down` | A StatefulSet whose `persistentVolumeClaimRetentionPolicy.whenScaled` is `Delete` |
 | COST/MO | What its requests cost a month while running. See [Prices](/reference/cli/#scan-prices) |
+| COST/HOUR | Without history to replay, what its requests cost an hour while running, to the cent. Each hour paused frees that |
 | FREED THIS MONTH | Live workloads only. What Napwake freed pausing it since the 1st (`status.cost.freedThisMonth`) |
 | Its rates | Those Napwake uses for the workload |
 | SAVED | The part of that which came off the bill as nodes scaled down (`savedThisMonth`) |
@@ -540,9 +541,11 @@ Pause a workload now, before its idle clock runs out, such as a preview at the e
   command="kubectl napwake pause my-api -n staging"
   output={[
     "pausing staging/my-api...",
-    "staging/my-api is Paused after 4s; a request to it, or kubectl napwake wake, wakes it",
+    "staging/my-api is Paused after 11s; a request to it, or kubectl napwake wake, wakes it",
   ]}
 />
+
+With a Service, a pause takes at least 10 seconds, as Napwake first routes it to the doorman ([What happens in a pause](/guides/pause/#what-happens-in-a-pause)).
 
 It's an ordinary pause, the same as an idle one. A request through the [doorman](/concepts/wake-on-request/), [activity](/concepts/idle-detection/#activity-annotations), `autoResume` or [`wake`](#wake-a-workload) wakes it. With [`ask`](/concepts/wake-on-request/#asking-before-waking), a person's click on its asleep page does, not any request, and `pause` says so.
 
