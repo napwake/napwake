@@ -10,7 +10,8 @@
 # An upgrade that stops watching the namespace is refused. Last, helm
 # uninstall is refused while ManagedWorkloads are left, and goes
 # ahead once the workloads are no longer opted in, which restores the
-# paused StatefulSet. The e2e suite installs through kustomize, with a
+# paused StatefulSet, and leaves none of the guards' RBAC behind, even
+# after a refusal. The e2e suite installs through kustomize, with a
 # ClusterRole, so this is what tests the chart.
 #
 # KIND_CLUSTER names the cluster, which is created and deleted here, so it
@@ -339,6 +340,19 @@ if [ "$status" != deployed ]; then
   exit 1
 fi
 
+# Helm 3 before 3.19 deletes only the failed hook, so a refusal leaves the
+# upgrade guard's ServiceAccount and RBAC. A later upgrade without the
+# upgrade guard doesn't run it again, so only the uninstall can clear them.
+echo "refusing the narrowing upgrade again, then upgrading without the upgrade guard"
+if refusal=$(helm upgrade napwake charts/napwake --namespace "$RELEASE_NAMESPACE" --reuse-values \
+  --set "watchNamespaces={$UNWATCHED}" --wait --timeout 5m 2>&1); then
+  echo "$refusal" >&2
+  echo "helm upgrade stopped watching $WATCHED, leaving its ManagedWorkloads with no operator" >&2
+  exit 1
+fi
+helm upgrade napwake charts/napwake --namespace "$RELEASE_NAMESPACE" --reuse-values --set guard.upgrade=false \
+  --wait --timeout 5m
+
 echo "stopping managing the workloads, which restores the paused StatefulSet, then uninstalling"
 kubectl label deployment "$APP" -n "$WATCHED" napwake.dev/managed-
 kubectl label statefulset "$DB" -n "$WATCHED" napwake.dev/managed-
@@ -346,4 +360,14 @@ eventually "$DELETE_TIMEOUT" "the Deployment's ManagedWorkload to be deleted" go
 eventually "$DELETE_TIMEOUT" "the StatefulSet's ManagedWorkload to be deleted" gone managedworkload/$DB "$WATCHED"
 is statefulset/$DB "$WATCHED" '{.spec.replicas}' 1
 helm uninstall napwake --namespace "$RELEASE_NAMESPACE" --wait --timeout 5m
+
+echo "checking no guard's ServiceAccount or RBAC outlives the release"
+guards='control-plane in (uninstall-guard,upgrade-guard),app.kubernetes.io/instance=napwake'
+left=$(kubectl get serviceaccounts -n "$RELEASE_NAMESPACE" -l "$guards" -o name &&
+  kubectl get clusterroles,clusterrolebindings -l "$guards" -o name)
+if [ -n "$left" ]; then
+  echo "$left" >&2
+  echo "the guards' ServiceAccounts or RBAC outlived helm uninstall" >&2
+  exit 1
+fi
 echo "ok"

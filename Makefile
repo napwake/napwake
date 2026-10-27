@@ -264,6 +264,19 @@ check-chart: ## Lint the Helm chart, render it for each provider's Kubernetes ve
 	@! helm template napwake charts/napwake | grep -q -- '--guard=upgrade' && \
 		helm template napwake charts/napwake --set 'watchNamespaces={shop}' | grep -q -- '--guard=upgrade' || { \
 		echo "the upgrade guard doesn't run exactly when watchNamespaces is set, so narrowing it can strand paused workloads"; exit 1; }
+	@# Helm 3 before 3.19 deletes only a failed hook, so a refused guard leaves the
+	@# RBAC hooks that ran before it. Every guard's are pre-delete hooks too, with
+	@# any values, so a clean uninstall clears whatever an earlier refusal left.
+	@for v in '' guard.uninstall=false guard.upgrade=false 'watchNamespaces={shop}' \
+		'watchNamespaces={shop},guard.uninstall=false,guard.upgrade=false'; do \
+		n=$$(helm template napwake charts/napwake --show-only templates/guard.yaml $${v:+--set "$$v"} | \
+			awk '/^---/ {k = ""} /^kind:/ {k = $$2} \
+				k ~ /^(ServiceAccount|ClusterRole|ClusterRoleBinding)$$/ && /helm.sh\/hook: .*pre-delete/ {n++} \
+				k ~ /^(ServiceAccount|ClusterRole|ClusterRoleBinding)$$/ && /hook-delete-policy: before-hook-creation,hook-succeeded/ {d++} \
+				END {print n + 0, d + 0}'); \
+		[ "$$n" = "6 6" ] || { \
+			echo "with '$$v', the guards' ServiceAccounts, ClusterRoles and ClusterRoleBindings ($$n) aren't all pre-delete hooks deleted once they've run, so one a refused hook left outlives helm uninstall"; exit 1; }; \
+	done
 	@out=$$(helm template napwake charts/napwake --show-only templates/guard.yaml --set-string guard.podAnnotations.team=checkout \
 		--set-string guard.podLabels.control-plane=other --set 'tolerations[0].operator=Exists'); \
 	grep -q 'sidecar.istio.io/inject: "false"' <<<"$$out" && grep -q 'linkerd.io/inject: disabled' <<<"$$out" && \

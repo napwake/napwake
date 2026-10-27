@@ -191,7 +191,8 @@ So the chart's upgrade guard refuses. Stop managing them first, while the operat
 | When it fails | The running operator took on ManagedWorkloads, with its `napwake.dev/cleanup` finalizer, in the namespaces left out. It fails before anything changes, after waiting two and a half minutes for any being deleted |
 | What it says | With Helm 3.18 and later, a message starting `Napwake refuses this upgrade: ...` that names them and what to do, then the steps above. `kubectl logs job/napwake-upgrade-guard -n napwake-system` shows the same |
 | What else it guards | `helm rollback` to a revision with a narrower `watchNamespaces` |
-| What it reads | ManagedWorkloads' metadata cluster-wide, through a ClusterRole that, like its ServiceAccount, exists only while it runs |
+| What it reads | ManagedWorkloads' metadata cluster-wide, through a ClusterRole that, like its ServiceAccount, Helm deletes once the hooks have run |
+| What a refusal leaves of it | Before Helm 3.19, its ServiceAccount and RBAC, until it runs again or `helm uninstall` deletes them. Its Job, for an hour, for `kubectl logs` |
 | When it runs | Only when `watchNamespaces` is set, since widening to every namespace strands nothing. Argo CD runs it as a PreSync hook, before every sync |
 | How to skip it | `helm upgrade --no-hooks` skips it, and `guard.upgrade: false` drops it. Then restore the workloads left behind there by hand ([Restoring workloads after the operator is gone](/getting-started/installation/#restoring-workloads-after-the-operator-is-gone)) |
 | What a refusal leaves | A failed revision, and the release running the previous one. `helm uninstall` stays guarded. It runs with the failed revision's values, so it also counts ManagedWorkloads the operator took on outside them |

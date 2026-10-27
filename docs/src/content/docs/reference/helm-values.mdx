@@ -426,7 +426,9 @@ Helm stops before changing anything and prints the list.
 | Upgrade | Those the operator took on in namespaces the new `watchNamespaces` leaves out |
 
 - Each runs as a ServiceAccount of its own name. Its ClusterRole may only list ManagedWorkloads, and the guard reads only their metadata. It's cluster-wide even with `watchNamespaces`, since those it looks for may be outside it.
-- The ServiceAccounts and RBAC are hooks too, deleted after the run. A failed Job stays an hour, for `kubectl logs`.
+- The ServiceAccounts and RBAC are hooks too, deleted once the hooks have run. Before Helm 3.19, a refusal leaves those of the hooks that ran before it.
+- So every guard's are pre-delete hooks too, with any values. `helm uninstall` deletes any a refusal left.
+- A failed Job stays an hour, for `kubectl logs`.
 - The hooks use `image`, `imagePullSecrets` and `logLevel`.
 - Mesh sidecars are kept out, since a running sidecar would keep the Job from finishing.
 - Their pods carry `control-plane: uninstall-guard` or `control-plane: upgrade-guard`, so the operator's Service and NetworkPolicy don't select them.

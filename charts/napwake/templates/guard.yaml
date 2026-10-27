@@ -9,21 +9,24 @@ out namespaces the running operator may manage workloads in. Both run the
 operator image with --guard, which waits for ManagedWorkloads being
 deleted, then prints what's left and fails; Helm prints that when the hook
 fails. They read ManagedWorkloads' metadata cluster-wide, even with
-watchNamespaces, since the ones they look for are those outside it. Their
-ServiceAccounts and RBAC are hooks too, so exist only while the hook runs.
+watchNamespaces, since the ones they look for are those outside it.
+
+Their ServiceAccounts and RBAC are hooks too, deleted once the hooks have
+run. Helm 3 before 3.19 deletes only a failed hook, so a refusal leaves the
+RBAC hooks that ran before it, until that guard runs again. So every guard's
+RBAC is also a pre-delete hook, whatever the values: helm uninstall deletes
+any an earlier refusal left, makes its own, and deletes them once its hooks
+have run. A refused Job stays an hour, for kubectl logs.
 */}}
-{{- $guards := list }}
-{{- if .Values.guard.uninstall }}
-{{- $guards = append $guards (dict "op" "uninstall" "hook" "pre-delete") }}
-{{- end }}
-{{- if and .Values.guard.upgrade .Values.watchNamespaces }}
-{{- $guards = append $guards (dict "op" "upgrade" "hook" "pre-upgrade,pre-rollback") }}
-{{- end }}
+{{- $guards := list (dict "op" "uninstall" "hook" "pre-delete" "job" .Values.guard.uninstall) }}
+{{- $upgrade := and .Values.guard.upgrade (not (empty .Values.watchNamespaces)) }}
+{{- $guards = append $guards (dict "op" "upgrade" "hook" (ternary "pre-upgrade,pre-rollback" "" $upgrade) "job" $upgrade) }}
 {{- range $guards }}
 {{- $ctx := dict "root" $ "op" .op }}
 {{- $name := include "napwake.guardName" $ctx }}
 {{- $hook := .hook }}
-{{- $rbacHook := dict "helm.sh/hook" $hook "helm.sh/hook-weight" "-1" "helm.sh/hook-delete-policy" "before-hook-creation,hook-succeeded,hook-failed" }}
+{{- $rbacEvents := without (uniq (concat (splitList "," $hook) (list "pre-delete"))) "" | join "," }}
+{{- $rbacHook := dict "helm.sh/hook" $rbacEvents "helm.sh/hook-weight" "-1" "helm.sh/hook-delete-policy" "before-hook-creation,hook-succeeded,hook-failed" }}
 ---
 apiVersion: v1
 kind: ServiceAccount
@@ -64,6 +67,7 @@ subjects:
   - kind: ServiceAccount
     name: {{ $name }}
     namespace: {{ $.Release.Namespace }}
+{{- if .job }}
 ---
 apiVersion: batch/v1
 kind: Job
@@ -142,4 +146,5 @@ spec:
       tolerations:
         {{- toYaml . | nindent 8 }}
       {{- end }}
+{{- end }}
 {{- end }}

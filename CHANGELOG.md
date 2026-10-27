@@ -276,6 +276,7 @@ There's no upgrade path from Hybernate 0.1.x or a 0.2.0 release candidate. Unins
 
 ### Fixed
 
+- No guard's ServiceAccount, ClusterRole or ClusterRoleBinding outlives the release. Helm 3 before 3.19 deletes only a failed hook, so a refused upgrade left the upgrade guard's, through a clean `helm uninstall` and a reinstall. Every guard's RBAC is now a pre-delete hook too, with any values, which `helm uninstall` deletes once it has run. A refused guard's Job still stays an hour, for `kubectl logs`
 - A refused `helm uninstall`, or an upgrade that stops watching a namespace, no longer says every ManagedWorkload's workload would stay paused, which wasn't so of a running one. It says that with no operator they'd be stuck on their finalizers, and their workloads, if paused, would stay at 0 replicas. What it tells you to do is unchanged
 - The scan report's and the status page's legends call a running workload awake, as the docs' home page does, beside each page's own word for it, as `awake · active` and `awake · running`, and so does each door's card. They said "in use"
 - The status page writes what each workload freed and saved as the figures above them do, to the cent under $100 and `<$0.01` under a cent, so a row no longer reads `<$1` under a lead of `<$0.01`. Where it finds no node autoscaler, it says none of what was freed has come off the bill, without "yet". The terminal's table is unchanged
