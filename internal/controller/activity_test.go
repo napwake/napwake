@@ -1280,6 +1280,157 @@ func TestActivityClock_QueryThatNeverMatchesIsPointedOut(t *testing.T) {
 	assert.Equal(t, v1alpha1.PhaseRunning, workload.Status.Phase)
 }
 
+// lostSeriesClock is a workload at idle-after=1m measured by one Prometheus
+// query, whose answer the test sets, checked at the clock it moves.
+type lostSeriesClock struct {
+	r        *Reconciler
+	workload *v1alpha1.ManagedWorkload
+	target   *appsv1.Deployment
+	pauser   *stubPauser
+	answer   atomic.Value
+	now      time.Time
+}
+
+func newLostSeriesClock(t *testing.T, source v1alpha1.ActivitySource, remembered bool) *lostSeriesClock {
+	t.Helper()
+	c := &lostSeriesClock{now: fixedTime, pauser: &stubPauser{pauseDone: true}}
+	c.answer.Store(promValue("0"))
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		_, _ = w.Write([]byte(c.answer.Load().(string)))
+	}))
+	t.Cleanup(srv.Close)
+	c.target = clockTarget("app:v1", nil)
+	c.workload = clockWorkload(fixedTime.Add(-30*time.Second), c.target)
+	c.workload.Spec.IdlePolicy.IdleAfter = &metav1.Duration{Duration: time.Minute}
+	c.workload.Spec.IdlePolicy.Activity = &v1alpha1.ActivitySpec{Prometheus: []v1alpha1.PrometheusActivity{
+		{PromQL: `sum(rate(http_requests_total{app="web"}[1m]))`}}}
+	c.workload.Status.Activity.LastActivitySource = source
+	metrics := idleCPU
+	c.r = newAutomationReconciler(t, c.workload, &stubForecaster{}, automationOpts{metrics: &metrics, pauser: c.pauser})
+	c.r.Recorder = events.NewFakeRecorder(100)
+	if !remembered {
+		restarted(c.r, c.workload)
+	}
+	c.r.clock = func() time.Time { return c.now }
+	c.r.prometheus = signal.NewPrometheus(srv.URL)
+	return c
+}
+
+// check answers with body at after past fixedTime, and reports whether
+// the workload paused.
+func (c *lostSeriesClock) check(t *testing.T, after time.Duration, body string) bool {
+	t.Helper()
+	c.now = monotonic(fixedTime.Add(after))
+	c.answer.Store(body)
+	_, err := c.r.reconcileAutomation(context.Background(), c.workload, c.target)
+	require.NoError(t, err)
+	return c.pauser.pauseCalls > 0
+}
+
+// The rule the Prometheus restart in the break-it table needs, across its
+// cases (P65): an empty answer is quiet unless the query matched series at
+// its last check. Then it's unread, for up to seriesLostFor, and the
+// workload doesn't pause on it. After that an empty answer is quiet again,
+// so a workload whose series are gone for good still pauses.
+func TestActivityClock_EmptyAfterSeries(t *testing.T) {
+	t.Run("no series before is quiet", func(t *testing.T) {
+		c := newLostSeriesClock(t, v1alpha1.ActivitySourceCPU, true)
+
+		assert.True(t, c.check(t, 31*time.Second, emptyVector), "idle a minute, and nothing says otherwise")
+	})
+
+	t.Run("series at the last check, none now, is unread", func(t *testing.T) {
+		c := newLostSeriesClock(t, v1alpha1.ActivitySourceCPU, true)
+		require.False(t, c.check(t, 0, promValue("0")), "matched, though quiet")
+
+		assert.False(t, c.check(t, 31*time.Second, emptyVector), "the clock ran out, but the answer is unread")
+		cond := meta.FindStatusCondition(c.workload.Status.Conditions, conditionPrometheusAvailable)
+		require.NotNil(t, cond)
+		assert.Equal(t, metav1.ConditionFalse, cond.Status)
+		assert.Equal(t, reasonSeriesLost, cond.Reason)
+		assert.Contains(t, cond.Message, "for up to 5 minutes")
+		assert.Equal(t, v1alpha1.PhaseRunning, c.workload.Status.Phase)
+		assert.NotContains(t, drainEvents(t, c.r), "Warning", "expected after a restart, so no warning")
+	})
+
+	t.Run("empty for longer than the bound pauses", func(t *testing.T) {
+		c := newLostSeriesClock(t, v1alpha1.ActivitySourceCPU, true)
+		require.False(t, c.check(t, 0, promValue("0")))
+		for at := time.Minute; at < time.Minute+seriesLostFor; at += time.Minute {
+			require.False(t, c.check(t, at, emptyVector), "unread %s after the series went", at-time.Minute)
+		}
+
+		// Checks every 30 seconds from the bound on. The checks that weren't
+		// evaluations left a gap, which restarts the clock once more, so it
+		// pauses within idle-after and a check or two of the bound.
+		paused := false
+		for at := time.Minute + seriesLostFor; at <= 4*time.Minute+seriesLostFor && !paused; at += 30 * time.Second {
+			paused = c.check(t, at, emptyVector)
+		}
+		assert.True(t, paused, "quiet from the bound on, it pauses")
+		assert.True(t, meta.IsStatusConditionTrue(c.workload.Status.Conditions, conditionPrometheusAvailable))
+	})
+
+	t.Run("series back keeps it awake", func(t *testing.T) {
+		c := newLostSeriesClock(t, v1alpha1.ActivitySourceCPU, true)
+		require.False(t, c.check(t, 0, promValue("0.04")))
+		require.False(t, c.check(t, time.Minute, emptyVector))
+
+		assert.False(t, c.check(t, 110*time.Second, promValue("0.04")))
+		assert.Equal(t, v1alpha1.ActivitySourcePrometheus, c.workload.Status.Activity.LastActivitySource)
+		assert.True(t, meta.IsStatusConditionTrue(c.workload.Status.Conditions, conditionPrometheusAvailable))
+	})
+}
+
+// PrometheusQueryEmpty points out a query that has never matched a series.
+// An answer that's empty only because Prometheus restarted without its data
+// isn't one: not while the operator runs on, nor when it restarted too, as
+// when a drain moves both, if its clock says a query showed activity before
+// (P65). A query empty for longer than the bound is pointed out as before.
+func TestActivityClock_QueryEmptyAfterARestartIsntPointedOut(t *testing.T) {
+	t.Run("Prometheus restarted", func(t *testing.T) {
+		c := newLostSeriesClock(t, v1alpha1.ActivitySourceCPU, true)
+		require.False(t, c.check(t, 0, promValue("0.04")))
+		c.check(t, time.Minute, emptyVector)
+		c.check(t, 2*time.Minute, promValue("0.04"))
+
+		assert.Nil(t, meta.FindStatusCondition(c.workload.Status.Conditions, conditionPrometheusQueryEmpty))
+		assert.NotContains(t, drainEvents(t, c.r), ReasonPrometheusQueryEmpty)
+	})
+
+	t.Run("the operator restarted with it", func(t *testing.T) {
+		c := newLostSeriesClock(t, v1alpha1.ActivitySourcePrometheus, false)
+
+		assert.False(t, c.check(t, 0, emptyVector))
+		assert.Nil(t, meta.FindStatusCondition(c.workload.Status.Conditions, conditionPrometheusQueryEmpty),
+			"the query showed activity before the restart")
+		assert.Equal(t, reasonSeriesLost,
+			meta.FindStatusCondition(c.workload.Status.Conditions, conditionPrometheusAvailable).Reason)
+		c.check(t, time.Minute, promValue("0.04"))
+		assert.Nil(t, meta.FindStatusCondition(c.workload.Status.Conditions, conditionPrometheusQueryEmpty))
+		assert.NotContains(t, drainEvents(t, c.r), ReasonPrometheusQueryEmpty)
+	})
+
+	t.Run("empty past the bound is pointed out", func(t *testing.T) {
+		c := newLostSeriesClock(t, v1alpha1.ActivitySourcePrometheus, false)
+		for at := time.Duration(0); at < seriesLostFor; at += time.Minute {
+			c.check(t, at, emptyVector)
+		}
+		require.Nil(t, meta.FindStatusCondition(c.workload.Status.Conditions, conditionPrometheusQueryEmpty))
+
+		c.check(t, seriesLostFor+time.Second, emptyVector)
+		assert.True(t, meta.IsStatusConditionTrue(c.workload.Status.Conditions, conditionPrometheusQueryEmpty))
+	})
+
+	t.Run("the operator restarted, with nothing to say a query matched", func(t *testing.T) {
+		c := newLostSeriesClock(t, v1alpha1.ActivitySourceCPU, false)
+
+		c.check(t, 0, emptyVector)
+		assert.True(t, meta.IsStatusConditionTrue(c.workload.Status.Conditions, conditionPrometheusQueryEmpty),
+			"pointed out at once, as before")
+	})
+}
+
 func TestActivityClock_NoPrometheusConditionWithoutQueries(t *testing.T) {
 	target := clockTarget("app:v1", nil)
 	workload := clockWorkload(fixedTime.Add(-30*time.Minute), target)
