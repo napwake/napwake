@@ -143,6 +143,10 @@ func buildStatusPage(result statusResult, since time.Duration, now time.Time) st
 		FreedUnderACent: underACent(result.FreedThisMonth),
 		SavedUnderACent: underACent(result.SavedThisMonth),
 	}
+	noNodeAutoscaler := page.NodeScale.State == scaleNone
+	if page.Month != nil {
+		page.Month.NoNodeAutoscaler = noNodeAutoscaler
+	}
 	page.PausingOff = pausingOffLine(result)
 	if len(result.Workloads) == 0 {
 		page.Summary = "Napwake manages no workloads here. kubectl napwake scan finds idle ones; label one " +
@@ -181,7 +185,7 @@ func buildStatusPage(result statusResult, since time.Duration, now time.Time) st
 			Forecast:      forecastCell(wl),
 			Freed:         pageFreedCell(wl),
 			FreedSort:     wl.FreedThisMonth,
-			SavedNote:     savedNote(wl),
+			SavedNote:     savedNote(wl, noNodeAutoscaler),
 			WouldFree:     wouldFreeCell(wl),
 			WouldFreeSort: -1,
 			WokenBy:       wl.WokenBy,
@@ -229,6 +233,9 @@ type pageMonth struct {
 	// NothingSaved says none of what pausing frees comes off the bill, as
 	// measured, which the page says apart from a little.
 	NothingSaved bool
+	// NoNodeAutoscaler says the page found none, so nothing will scale
+	// nodes down unless something is set up to.
+	NoNodeAutoscaler bool
 }
 
 // pageMonthOf is m as the page writes it, or nil for none.
@@ -281,14 +288,17 @@ func pageFreedCell(wl statusWorkload) string {
 }
 
 // savedNote says, under what pausing a workload freed, what of it was
-// saved, as the page writes money.
-func savedNote(wl statusWorkload) string {
+// saved, as the page writes money. "Yet" says nodes may still scale down,
+// which nothing does with no node autoscaler.
+func savedNote(wl statusWorkload, noNodeAutoscaler bool) string {
 	if wl.FreedThisMonth == 0 {
 		return ""
 	}
 	switch {
 	case statusSavedCell(wl) == "unknown":
 		return "saved can't be measured"
+	case wl.SavedThisMonth == 0 && noNodeAutoscaler:
+		return "none of it saved"
 	case wl.SavedThisMonth == 0:
 		return "none of it saved yet"
 	default:
