@@ -1037,8 +1037,21 @@ func (r *Reconciler) reconcileDelete(ctx context.Context, workload *v1alpha1.Man
 		return 0, err
 	}
 	if wait := r.drainLeft(workload); wait > 0 {
+		// Handed back, the workload runs again while its ports drain, up to
+		// a minute, so it isn't shown Paused meanwhile. The cost isn't
+		// settled: nothing reads it once the ManagedWorkload is gone.
+		old := workload.Status.Phase
+		if released && old != v1alpha1.PhaseRunning {
+			now := r.clockTime()
+			workload.Status.Phase, workload.Status.LastTransitionTime = v1alpha1.PhaseRunning, &now
+		}
 		if err := r.Status().Update(ctx, workload); err != nil {
 			return 0, fmt.Errorf("recording the doorman ports draining: %w", err)
+		}
+		if workload.Status.Phase != old {
+			r.phaseWrites.record(workload.UID, workload.Status.LastTransitionTime.Time)
+			recordPhase(workload)
+			metrics.LifecycleTransitions.WithLabelValues(string(old), string(workload.Status.Phase)).Inc()
 		}
 		if released {
 			r.announceHandBack(workload, replicas, "no longer managed")
