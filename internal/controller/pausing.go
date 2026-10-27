@@ -206,6 +206,35 @@ func (r *Reconciler) recordFronted(ctx context.Context, workload *v1alpha1.Manag
 	return doormanTakeover, nil
 }
 
+// heldAsItPauses says what calls off a pause about to scale the workload to
+// zero because its dependents hold it now, or nil. Its hold was decided as
+// the pause began, from what the graph had then, and nothing re-checked it
+// while the doorman's takeover was waited: a dependent may since have
+// learned it depends on the workload, or woken without the graph showing
+// it yet. So the dependents are read from the API server once more, as the
+// last step before anything is scaled.
+func (r *Reconciler) heldAsItPauses(ctx context.Context, workload *v1alpha1.ManagedWorkload) (*phaseEvent, error) {
+	holds, err := r.heldByDependenciesNow(ctx, workload)
+	if err != nil || !holds.held() {
+		return nil, err
+	}
+	what := "dependsOn formed a cycle through it"
+	switch n := len(holds.holders); {
+	case n == 1:
+		what = "its dependent " + holds.holders[0] + " is awake"
+	case n > 1:
+		what = "its dependents " + listNames(holds.holders) + " are awake"
+	}
+	why := what + " as it paused"
+	if workload.Status.Pause.Requested {
+		r.setCondition(workload, conditionPauseRequest, metav1.ConditionFalse, ReasonPauseCancelled,
+			fmt.Sprintf("not paused at %s: %s", answeredAt(r.now()), why))
+	}
+	// No cause: it was its dependents' use, not its own, so the pause isn't
+	// judged wrong.
+	return &phaseEvent{reason: ReasonPauseCancelled, message: why + "; the pause is cancelled"}, nil
+}
+
 // pauseCancelled says what calls off a workload's pause under way, or nil
 // if nothing does: whatever would wake it once paused, come since the pause
 // began, which shows it's in use. That's a request the doorman held or

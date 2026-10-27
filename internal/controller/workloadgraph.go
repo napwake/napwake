@@ -37,6 +37,8 @@ type workloadNode struct {
 	created metav1.Time
 	target  workloadID
 	phase   v1alpha1.WorkloadPhase
+	// waking is wakePending: paused, with a wake already asked for.
+	waking bool
 	// acts is actsOnTarget: one that doesn't neither holds its
 	// dependencies awake nor pauses to let them go.
 	acts bool
@@ -53,7 +55,7 @@ type workloadNode struct {
 
 func newWorkloadNode(w *v1alpha1.ManagedWorkload, dryRun bool) *workloadNode {
 	n := &workloadNode{key: client.ObjectKeyFromObject(w), uid: w.UID, created: w.CreationTimestamp,
-		target: targetID(w), phase: w.Status.Phase, acts: actsOnTarget(w), dryRun: dryRun}
+		target: targetID(w), phase: w.Status.Phase, waking: wakePending(w), acts: actsOnTarget(w), dryRun: dryRun}
 	for _, ref := range w.Spec.DependsOn {
 		id := dependencyID(w, ref)
 		n.dependsOn = append(n.dependsOn, id)

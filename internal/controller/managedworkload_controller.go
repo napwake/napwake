@@ -552,8 +552,13 @@ func (r *Reconciler) handlePause(ctx context.Context, workload *v1alpha1.Managed
 	if r.dryRun(workload) {
 		return nil, nil
 	}
+	// A pause that begins in this reconcile was let go by its dependents'
+	// hold just now, read from the API server, so it isn't read again
+	// before its scale-down.
+	holdDecided := false
 	switch workload.Status.Phase {
 	case v1alpha1.PhaseRunning, v1alpha1.PhaseIdle:
+		holdDecided = true
 		requested := why != nil && why.reason == ReasonPauseRequested
 		if err := r.preparePause(ctx, workload, target, requested); err != nil {
 			return nil, err
@@ -589,6 +594,14 @@ func (r *Reconciler) handlePause(ctx context.Context, workload *v1alpha1.Managed
 	}
 
 	scaledDown := workload.Status.Pause.PausedAt != nil
+	if !scaledDown && !holdDecided {
+		if why, err := r.heldAsItPauses(ctx, workload); err != nil || why != nil {
+			if err != nil {
+				return nil, err
+			}
+			return r.handleResume(ctx, workload, why)
+		}
+	}
 	paused, err := r.pauser.Pause(ctx, workload)
 	if err != nil {
 		return nil, fmt.Errorf("pausing workload: %w", err)

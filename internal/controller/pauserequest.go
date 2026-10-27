@@ -124,7 +124,11 @@ func (r *Reconciler) reconcilePauseRequest(ctx context.Context, workload *v1alph
 			"the %s annotation on %s keeps it awake until %s; remove it to pause now",
 			v1alpha1.AnnotationActiveUntil, by, until.UTC().Format(time.RFC3339)))
 	}
-	holds, err := r.heldByDependencies(ctx, workload)
+	held := r.heldByDependenciesNow
+	if r.dryRun(workload) {
+		held = r.heldByDependencies
+	}
+	holds, err := held(ctx, workload)
 	if err != nil {
 		return nil, err
 	}

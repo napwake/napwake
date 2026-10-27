@@ -557,12 +557,24 @@ func TestWrongPause_ADependencyReadsItsDependentsPastTheCache(t *testing.T) {
 	web := depWorkload("default", "web", v1alpha1.TargetKindDeployment, v1alpha1.PhasePaused,
 		v1alpha1.DependencyRef{Kind: v1alpha1.TargetKindDeployment, Name: "api"})
 	r, now := pausedFor(t, "api", time.Minute, nil, web)
+	// The API server has web Resuming, which the cache hasn't seen yet.
 	r.PodReader = interceptor.NewClient(r.Client.(client.WithWatch), interceptor.Funcs{
 		Get: func(ctx context.Context, c client.WithWatch, key client.ObjectKey, obj client.Object,
 			opts ...client.GetOption) error {
 			err := c.Get(ctx, key, obj, opts...)
 			if w, ok := obj.(*v1alpha1.ManagedWorkload); ok && err == nil && key == webKey {
 				w.Status.Phase = v1alpha1.PhaseResuming
+			}
+			return err
+		},
+		List: func(ctx context.Context, c client.WithWatch, list client.ObjectList, opts ...client.ListOption) error {
+			err := c.List(ctx, list, opts...)
+			if l, ok := list.(*v1alpha1.ManagedWorkloadList); ok && err == nil {
+				for i := range l.Items {
+					if client.ObjectKeyFromObject(&l.Items[i]) == webKey {
+						l.Items[i].Status.Phase = v1alpha1.PhaseResuming
+					}
+				}
 			}
 			return err
 		}})

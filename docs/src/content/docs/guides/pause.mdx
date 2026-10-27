@@ -133,6 +133,7 @@ A request while a workload pauses shows it's in use. Whatever would wake it once
 - for a workload that [asks before waking](/concepts/wake-on-request/#asking-before-waking), only a person's click on the asleep page
 - a [wake request](#wake-now)
 - an activity annotation, which a waking [dependent](/concepts/dependencies/) stamps
+- a dependent awake just before it's scaled to zero, as one that has learned it depends on it since the pause began
 
 The workload is `Running` again, scaled back up if its pods had begun to stop. The request is answered, held while no pod is Ready. A `PauseCancelled` event says what came:
 
@@ -150,7 +151,7 @@ The doorman doesn't see every request as a workload pauses. The pods answer thes
 
 A probe, a scrape, a hunt for hidden files, or a TCP check that sends nothing doesn't call it off. Dry-run never pauses, so there's nothing to call off.
 
-A pause the idle clock made, called off this way, counts as [made in use](/concepts/idle-detection/#paused-while-in-use). The clock then waits longer before the next.
+A pause the idle clock made, called off this way, counts as [made in use](/concepts/idle-detection/#paused-while-in-use). The clock then waits longer before the next. One its dependents call off doesn't, as it was their use.
 
 ## Resume
 
