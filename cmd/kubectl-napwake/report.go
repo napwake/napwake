@@ -403,6 +403,9 @@ func buildReport(result scanResult, idleAfter time.Duration) reportPage {
 	}
 	page.Headline, page.Facts = headlineFor(result)
 	page.Could = couldFor(result, page.Headline)
+	if page.Could != nil {
+		costOnTheSharesBasis(page.Headline.Figures, result.Totals.FreeableBasis)
+	}
 	page.Freeing, page.CouldFree = moneyColumns(result.Workloads)
 	page.Sleep = sleepColumns(history, result.Workloads)
 	page.Slept = sleptColumn(result.Workloads)
@@ -730,6 +733,19 @@ func couldFor(result scanResult, h headline) *could {
 		with = 0
 	}
 	return &could{Without: dollars(t.FreeableBasis), With: dollars(with), Percent: percent}
+}
+
+// costOnTheSharesBasis puts the figure for what the workloads cost on the
+// basis the could-free share is of, for when the before and after leads,
+// so "instead of $446" and "$446 a month" under it are one number
+// (cmo-070). The could-free figure beside it is the share's own sum
+// already.
+func costOnTheSharesBasis(figures []figure, basis float64) {
+	for i := range figures {
+		if figures[i].Kind == figureCost {
+			figures[i].Value, figures[i].Amount = dollars(basis), basis
+		}
+	}
 }
 
 // nothingIdle says nothing pausing could free is idle: nothing is idle, or

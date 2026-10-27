@@ -756,9 +756,9 @@ func goodNewsResult() scanResult {
 
 // reportPageParts are the parts of the scan page each lead changes: the
 // before and after's block, empty without one, the share card's data,
-// and the Copy summary's first line.
+// and the Copy summary's first two lines.
 type reportPageParts struct {
-	lead, card, summary string
+	lead, card, summary, summary2 string
 }
 
 func reportPartsOf(t *testing.T, page string) reportPageParts {
@@ -767,9 +767,10 @@ func reportPartsOf(t *testing.T, page string) reportPageParts {
 	parts.lead = regexp.MustCompile(`(?s)<div class="pace[ "].*?</div>`).FindString(page)
 	parts.card = regexp.MustCompile(`<div hidden id="card-data"[^>]*></div>`).FindString(page)
 	require.NotEmpty(t, parts.card, "the share card's data")
-	summary := regexp.MustCompile(`(?s)<div hidden id="summary-lines">\s*<p>(.*?)</p>`).FindStringSubmatch(page)
-	require.Len(t, summary, 2, "the Copy summary")
-	parts.summary = summary[1]
+	summary := regexp.MustCompile(`(?s)<div hidden id="summary-lines">\s*<p>(.*?)</p>\s*<p>(.*?)</p>`).
+		FindStringSubmatch(page)
+	require.Len(t, summary, 3, "the Copy summary")
+	parts.summary, parts.summary2 = summary[1], summary[2]
 	return parts
 }
 
@@ -823,8 +824,8 @@ func TestReportPage_ScanStates(t *testing.T) {
 				`Nothing removes nodes on this cluster yet, so the bill wouldn&#39;t drop until something does.</p></div>`,
 			card: []string{`data-value="$179"`, `data-label="could be freed a month"`,
 				`data-detail="40% of what these workloads cost over the same time"`},
-			summary: at + "paused when idle, these workloads could free 40% of what they cost, once nodes scale down. " +
-				couldFigure},
+			summary: at + "paused when idle, these workloads could free 40% of what they cost; the bill drops only once " +
+				"something removes nodes. " + couldFigure},
 		{name: "live", result: historyResult(),
 			card: []string{`data-value="$4"`, `data-label="freed by Napwake this month"`,
 				`data-more="$179 more could be freed a month"`},
@@ -906,6 +907,43 @@ func TestReportPage_LessOnlyWhereTheBillCanDrop(t *testing.T) {
 	})
 }
 
+// With the before and after leading, what the workloads cost is one number
+// on the page (cmo-070): the figure under the lead, and the Copy summary's
+// line for it, are on the share's basis, as "instead of" is, though the
+// workloads cost a different amount with the pods they run now. Without
+// it, the figure is what they cost with today's pods, as before.
+func TestReportPage_OneNumberForWhatTheWorkloadsCost(t *testing.T) {
+	const onTheBasis, today = "$500", "$446"
+	ranMorePods := func(result scanResult) scanResult {
+		result.Totals.FreeableBasis = 500
+		return result
+	}
+	for name, tt := range map[string]struct {
+		result scanResult
+		want   string
+	}{
+		"found":              {result: ranMorePods(couldResult(karpenterFound)), want: onTheBasis},
+		"no node autoscaler": {result: ranMorePods(couldResult(noScaler)), want: onTheBasis},
+		"short history":      {result: ranMorePods(shortHistoryResult()), want: today},
+	} {
+		t.Run(name, func(t *testing.T) {
+			page := renderHTML(t, tt.result)
+			got := reportPartsOf(t, page)
+
+			pageHas(t, page, `<b>`+tt.want+`</b><span>a month, what these workloads cost while running</span>`)
+			line := tt.want + " a month, what these workloads cost while running. "
+			assert.True(t, strings.HasPrefix(got.summary2, line), "the Copy summary's second line: %s", got.summary2)
+			if c := buildReport(tt.result, time.Hour).Could; c != nil {
+				assert.Equal(t, tt.want, c.Without, "the lead's instead of")
+			}
+			if strings.Contains(got.card, `data-pace="yes"`) {
+				assert.Contains(t, got.card, "a month instead of "+tt.want+`"`)
+			}
+			pageHas(t, page, `<b>$179</b><span>could be freed a month</span>`, "what could be freed is one sum")
+		})
+	}
+}
+
 // dollarsRange is the amounts an amount dollars wrote stands for, from lo
 // up to hi: $0 is none, <$1 above it but under 50 cents, and whole dollars
 // the half dollar either side.
@@ -923,13 +961,15 @@ func dollarsRange(t *testing.T, written string) (lo, hi float64) {
 }
 
 // The scan's before and after always agrees with itself, and with the
-// figure under it (cmo-069): for every basis and every amount pausing could
-// free, from a cent to a million dollars a month and from none to more
-// than the basis, Percent is the share the could-free figure's detail
-// gives, Without is the share's own basis, not what the workloads cost now,
-// With is never below zero, and read back as written, With and Without give
-// Percent, within what writing them in whole dollars rounds away. Where
-// that can't hold, a share under 1% or over 100%, there's none.
+// figures under it (cmo-069, cmo-070): for every basis and every amount
+// pausing could free, from a cent to a million dollars a month and from
+// none to more than the basis, Percent is the share the could-free figure's
+// detail gives, Without is the share's own basis, not what the workloads
+// cost now, and so is the cost figure under it, the could-free figure is
+// the sum With is taken from, With is never below zero, and read back as
+// written, With and Without give Percent, within what writing them in whole
+// dollars rounds away. Where that can't hold, a share under 1% or over
+// 100%, there's none, and the cost figure is what they cost now.
 func TestCouldFor_PercentWithAndWithoutAgree(t *testing.T) {
 	share := regexp.MustCompile(`^(\d+)% of `)
 	checked := 0
@@ -949,22 +989,28 @@ func TestCouldFor_PercentWithAndWithoutAgree(t *testing.T) {
 						Replayed: discovery.ReplayTotals{Workloads: 2, Sleepers: 1, MonthlyFreed: replayed},
 						Measured: discovery.Measured{MonthlyFreed: measured}}}}
 				name := fmt.Sprintf("%v of %v", could, basis)
-				h, _ := headlineFor(result)
-				m := share.FindStringSubmatch(h.Figures[0].Detail)
-				require.Len(t, m, 2, "%s: the figure gives its share: %q", name, h.Figures[0].Detail)
+
+				page := buildReport(result, time.Hour)
+
+				require.Len(t, page.Headline.Figures, 2, name)
+				couldFigure, costFigure := page.Headline.Figures[0], page.Headline.Figures[1]
+				require.Equal(t, figureCost, costFigure.Kind, name)
+				m := share.FindStringSubmatch(couldFigure.Detail)
+				require.Len(t, m, 2, "%s: the figure gives its share: %q", name, couldFigure.Detail)
 				detail, err := strconv.Atoi(m[1])
 				require.NoError(t, err)
-
-				got := couldFor(result, h)
-
+				got := page.Could
 				if detail < 1 || detail > 100 {
 					assert.Nil(t, got, "%s: a share of %d%%", name, detail)
+					assert.Equal(t, dollars(result.Totals.MonthlyCost), costFigure.Value, "%s: what they cost now", name)
 					continue
 				}
 				if !assert.NotNil(t, got, "%s: a share of %d%%", name, detail) {
 					continue
 				}
 				checked++
+				assert.Equal(t, got.Without, costFigure.Value, "%s: one number for what they cost", name)
+				assert.Equal(t, replayed+measured, couldFigure.Amount, "%s: the sum With is taken from", name)
 				assert.Equal(t, detail, got.Percent, "%s: the figure's share", name)
 				assert.Equal(t, dollars(basis), got.Without, "%s: on the share's own basis", name)
 				if left := basis - (replayed + measured); left < basis*floatNoise {
