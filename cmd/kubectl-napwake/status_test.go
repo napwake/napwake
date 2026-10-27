@@ -1235,6 +1235,54 @@ func TestStatus_EventsForbidden(t *testing.T) {
 	assert.Contains(t, out, "Recent pauses and wakes aren't shown: your access doesn't allow reading events.")
 }
 
+// The workloads' month at this month's pace sums those the operator
+// projects one for: without Napwake is what they cost and what pausing
+// frees, with it what they cost, and the share is what pausing frees of
+// without. It's pending until one has a day counted, early for a week,
+// then steady, and none when pausing frees nothing.
+func TestSumMonthAtPace(t *testing.T) {
+	at := func(spent, freed float64, tracked time.Duration) statusWorkload {
+		var w statusWorkload
+		w.month.spent, w.month.freed, w.month.tracked, w.month.ok = spent, freed, tracked, true
+		return w
+	}
+	pending := statusWorkload{}
+	day := 24 * time.Hour
+	tests := []struct {
+		name string
+		rows []statusWorkload
+		want *monthAtPace
+	}{
+		{name: "no workloads"},
+		{name: "none projected yet", rows: []statusWorkload{pending, pending},
+			want: &monthAtPace{State: monthPending}},
+		{name: "early, summed over those projected", rows: []statusWorkload{
+			at(5, 20, 53*time.Hour), at(2.45, 4.54, 30*time.Hour), pending},
+			want: &monthAtPace{Without: 31.99, With: 7.45, Percent: 77, Days: 2, State: monthEarly}},
+		{name: "steady from a week", rows: []statusWorkload{at(10, 30, 7*day)},
+			want: &monthAtPace{Without: 40, With: 10, Percent: 75, Days: 7, State: monthSteady}},
+		{name: "nothing paused", rows: []statusWorkload{at(12, 0, 3*day)},
+			want: &monthAtPace{Without: 12, With: 12, Days: 3, State: monthNone}},
+		{name: "nothing priced", rows: []statusWorkload{at(0, 0, 3*day)},
+			want: &monthAtPace{Days: 3, State: monthNone}},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := sumMonthAtPace(tt.rows)
+			if tt.want == nil {
+				assert.Nil(t, got)
+				return
+			}
+			require.NotNil(t, got)
+			assert.InDelta(t, tt.want.Without, got.Without, 0.001)
+			assert.InDelta(t, tt.want.With, got.With, 0.001)
+			assert.Equal(t, tt.want.Percent, got.Percent)
+			assert.Equal(t, tt.want.Days, got.Days)
+			assert.Equal(t, tt.want.State, got.State)
+		})
+	}
+}
+
 func TestStatus_JSON(t *testing.T) {
 	result, err := clusterStatus(context.Background(), newStatusClient(t, interceptor.Funcs{}, statusCluster()...),
 		"preview-42", statusOpts())
@@ -1253,6 +1301,8 @@ func TestStatus_JSON(t *testing.T) {
 	assert.InDelta(t, 42.45, got.FreedThisMonth, 0.001)
 	assert.InDelta(t, 35.0, got.SavedThisMonth, 0.001)
 	assert.Empty(t, got.NodeAutoscaler.Scalers)
+	require.NotNil(t, got.MonthAtPace, "the month at this pace")
+	assert.Equal(t, monthPending, got.MonthAtPace.State, "none of these has a projection yet")
 }
 
 // inZone runs the rest of a test with the machine's time zone set to an

@@ -634,21 +634,48 @@ func SavedThisMonth(mw *v1alpha1.ManagedWorkload, now time.Time) float64 {
 // month. A workload put back in dry-run keeps what it freed and saved while
 // live: dry-run never pauses, so it adds nothing to the record.
 func thisMonth(mw *v1alpha1.ManagedWorkload, now time.Time, figure func(*v1alpha1.CostStatus) string) float64 {
-	if mw == nil || mw.Status.Cost == nil {
+	if !recordIsThisMonths(mw, now) {
 		return 0
 	}
-	c := mw.Status.Cost
-	if c.LastAccumulatedAt != nil {
-		last, now := c.LastAccumulatedAt.UTC(), now.UTC()
-		if last.Year() != now.Year() || last.Month() != now.Month() {
-			return 0
-		}
-	}
-	amount, err := cost.ParseDollars(figure(c))
+	amount, err := cost.ParseDollars(figure(mw.Status.Cost))
 	if err != nil {
 		return 0
 	}
 	return amount
+}
+
+// recordIsThisMonths reports whether a workload's cost record is of the
+// calendar month now falls in, in UTC, as the operator keeps it.
+func recordIsThisMonths(mw *v1alpha1.ManagedWorkload, now time.Time) bool {
+	if mw == nil || mw.Status.Cost == nil {
+		return false
+	}
+	if at := mw.Status.Cost.LastAccumulatedAt; at != nil {
+		last, now := at.UTC(), now.UTC()
+		return last.Year() == now.Year() && last.Month() == now.Month()
+	}
+	return true
+}
+
+// MonthAtPace reads a workload's month at this month's pace, as the
+// operator projects it: what it costs and what pausing frees, carried from
+// the part of the month tracked to the whole, and how much is tracked. ok
+// is false while the record is last month's, and before a day is tracked,
+// when the operator writes "pending".
+func MonthAtPace(mw *v1alpha1.ManagedWorkload, now time.Time) (spent, freed float64, tracked time.Duration, ok bool) {
+	if !recordIsThisMonths(mw, now) {
+		return 0, 0, 0, false
+	}
+	c := mw.Status.Cost
+	spent, err := cost.ParseDollars(c.ProjectedMonthlyCost)
+	if err != nil {
+		return 0, 0, 0, false
+	}
+	freed, err = cost.ParseDollars(c.ProjectedMonthlyFreed)
+	if err != nil {
+		return 0, 0, 0, false
+	}
+	return spent, freed, c.Tracked.Duration, true
 }
 
 // judgePaused describes a workload Napwake has paused, priced on what it

@@ -23,6 +23,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"math"
 	"os"
 	"runtime"
 	"slices"
@@ -192,10 +193,14 @@ type statusResult struct {
 	NodesNotScalingDown bool `json:"nodesNotScalingDown,omitempty"`
 	// PausingOff is how many of the workloads say pausing is off for the
 	// install that manages them: all, or with several installs, some.
-	PausingOff int              `json:"pausingOff,omitempty"`
-	Workloads  []statusWorkload `json:"workloads"`
-	Problems   []problem        `json:"problems"`
-	Recent     []happening      `json:"recent"`
+	PausingOff int `json:"pausingOff,omitempty"`
+	// MonthAtPace is a month of the workloads at this month's pace: what
+	// they'd cost without Napwake, what they cost with it, and the share
+	// pausing frees. Unset with no workloads.
+	MonthAtPace *monthAtPace     `json:"monthAtPace,omitempty"`
+	Workloads   []statusWorkload `json:"workloads"`
+	Problems    []problem        `json:"problems"`
+	Recent      []happening      `json:"recent"`
 	// Note says when fewer namespaces were read than were asked for.
 	Note string `json:"note,omitempty"`
 	// EventsHidden is set when the user can't read events, so Recent is
@@ -228,6 +233,13 @@ type statusWorkload struct {
 	Forecast             string     `json:"forecast,omitempty"`
 	ForecastStartsActing *time.Time `json:"forecastStartsActing,omitempty"`
 	forecastMessage      string
+	// month is its month at this month's pace, once the operator projects
+	// one: what it costs, what pausing frees, and how much is tracked.
+	month struct {
+		spent, freed float64
+		tracked      time.Duration
+		ok           bool
+	}
 	// namedApart is set for a ManagedWorkload written by hand under a name
 	// other than its target's, which the table then shows beside it.
 	namedApart bool
@@ -402,6 +414,7 @@ func clusterStatus(ctx context.Context, c client.Client, home string, opts statu
 	}
 	slices.Sort(result.ForecastTimeZones)
 	sumFreedAndSaved(&result)
+	result.MonthAtPace = sumMonthAtPace(result.Workloads)
 	recent, woke := recentHappenings(events, targets, now.Add(-opts.since))
 	result.Recent = append(result.Recent, recent...)
 	for i := range result.Workloads {
@@ -434,6 +447,72 @@ func sumFreedAndSaved(result *statusResult) {
 		measuredSaved += row.SavedThisMonth
 	}
 	result.NodesNotScalingDown = measuredFreed >= 1 && measuredSaved < measuredFreed*savedShareExpected
+}
+
+// The states of a month at this pace: pending before any workload has a
+// day counted, early before a week, then steady; none when nothing is
+// priced, or pausing frees nothing.
+const (
+	monthPending = "pending"
+	monthEarly   = "early"
+	monthSteady  = "steady"
+	monthNone    = "none"
+)
+
+// monthSettlesAfter is how many days a month at this pace is early for:
+// a week has its working days and its weekend.
+const monthSettlesAfter = 7
+
+// monthAtPace is the workloads' month at this month's pace, summed over
+// those the operator projects one for.
+type monthAtPace struct {
+	// Without is what they'd cost a month without Napwake: what they cost,
+	// and what pausing frees. With is what they cost.
+	Without float64 `json:"without"`
+	With    float64 `json:"with"`
+	// Percent is what pausing frees of Without, to the whole percent.
+	Percent int `json:"percent"`
+	// Days is the whole days of this month counted, for the workload
+	// counted longest.
+	Days  int    `json:"days"`
+	State string `json:"state"`
+}
+
+// sumMonthAtPace totals the workloads' months at this month's pace, or nil
+// with none.
+func sumMonthAtPace(rows []statusWorkload) *monthAtPace {
+	if len(rows) == 0 {
+		return nil
+	}
+	m := &monthAtPace{State: monthPending}
+	var tracked time.Duration
+	projected := false
+	for _, row := range rows {
+		if !row.month.ok {
+			continue
+		}
+		projected = true
+		m.With += row.month.spent
+		m.Without += row.month.spent + row.month.freed
+		tracked = max(tracked, row.month.tracked)
+	}
+	if !projected {
+		return m
+	}
+	m.Days = int(tracked / (24 * time.Hour))
+	freed := m.Without - m.With
+	switch {
+	case m.Without <= 0 || freed <= 0:
+		m.State = monthNone
+	case m.Days < monthSettlesAfter:
+		m.State = monthEarly
+	default:
+		m.State = monthSteady
+	}
+	if m.Without > 0 {
+		m.Percent = int(math.Round(freed / m.Without * 100))
+	}
+	return m
 }
 
 // managedScope is the namespaces status read, and why they're fewer than
@@ -606,6 +685,7 @@ func workloadStatus(w *v1alpha1.ManagedWorkload, targetActiveUntil, now time.Tim
 	if c := w.Status.Cost; c != nil {
 		row.SavingsUnknown = c.SavingsUnknown
 	}
+	row.month.spent, row.month.freed, row.month.tracked, row.month.ok = discovery.MonthAtPace(w, now)
 	row.AtSpot = pricedAtSpot(w)
 	if p := w.Status.Prediction; p != nil {
 		row.Forecast, row.forecastMessage = p.Reason, p.Message

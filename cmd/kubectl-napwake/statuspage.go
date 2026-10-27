@@ -52,6 +52,9 @@ type statusPage struct {
 	// workload; without it, SavedThisMonth is of those it can.
 	FreedThisMonth, SavedThisMonth float64
 	SavedMeasurable                bool
+	// Month is the workloads' month at this month's pace, the page's
+	// before and after, or nil with no workloads.
+	Month *monthAtPace
 	// FreedUnderADollar and SavedUnderADollar say the first two figures
 	// read <$1, which the meter puts in words.
 	FreedUnderADollar, SavedUnderADollar bool
@@ -135,6 +138,7 @@ func buildStatusPage(result statusResult, since time.Duration, now time.Time) st
 		FreedThisMonth:  result.FreedThisMonth,
 		SavedThisMonth:  result.SavedThisMonth,
 		SavedMeasurable: len(result.SavingsUnknown) == 0,
+		Month:           result.MonthAtPace,
 
 		FreedUnderADollar: underADollar(result.FreedThisMonth),
 		SavedUnderADollar: underADollar(result.SavedThisMonth),

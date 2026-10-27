@@ -812,6 +812,49 @@ func TestFreedAndSavedThisMonth(t *testing.T) {
 	}
 }
 
+// A workload's month at this month's pace is the operator's projection of
+// it, read once there is one: not while it's pending, before a day is
+// tracked, and not from last month's record.
+func TestMonthAtPace(t *testing.T) {
+	thisMonth := metav1.NewTime(scanTime.Add(-time.Hour))
+	lastMonth := metav1.NewTime(scanTime.AddDate(0, -1, 0))
+	tracked := metav1.Duration{Duration: 53 * time.Hour}
+	tests := []struct {
+		name         string
+		cost         *v1alpha1.CostStatus
+		spent, freed float64
+		ok           bool
+	}{
+		{name: "no cost yet"},
+		{name: "projected", spent: 7.45, freed: 24.54, ok: true,
+			cost: &v1alpha1.CostStatus{ProjectedMonthlyCost: "$7.45", ProjectedMonthlyFreed: "$24.54",
+				Tracked: tracked, LastAccumulatedAt: &thisMonth}},
+		{name: "pending, before a day is tracked",
+			cost: &v1alpha1.CostStatus{ProjectedMonthlyCost: "pending", ProjectedMonthlyFreed: "pending",
+				Tracked: metav1.Duration{Duration: time.Hour}, LastAccumulatedAt: &thisMonth}},
+		{name: "last month's",
+			cost: &v1alpha1.CostStatus{ProjectedMonthlyCost: "$7.45", ProjectedMonthlyFreed: "$24.54",
+				Tracked: tracked, LastAccumulatedAt: &lastMonth}},
+		{name: "under a cent freed", spent: 3, freed: 0.0025, ok: true,
+			cost: &v1alpha1.CostStatus{ProjectedMonthlyCost: "$3.00", ProjectedMonthlyFreed: "<$0.01",
+				Tracked: tracked, LastAccumulatedAt: &thisMonth}},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			mw := &v1alpha1.ManagedWorkload{Status: v1alpha1.ManagedWorkloadStatus{Cost: tt.cost}}
+
+			spent, freed, got, ok := MonthAtPace(mw, scanTime)
+
+			assert.Equal(t, tt.ok, ok)
+			assert.InDelta(t, tt.spent, spent, 0.001)
+			assert.InDelta(t, tt.freed, freed, 0.001)
+			if tt.ok {
+				assert.Equal(t, tracked.Duration, got)
+			}
+		})
+	}
+}
+
 // Under a cent freed and saved, which the operator writes <$0.01, is above
 // zero for the workload and in the totals, so the scan never says nothing.
 func TestScanCluster_FreedUnderACent(t *testing.T) {
