@@ -8,9 +8,10 @@
 # quickstart does, is measured but not paused until kubectl napwake
 # enable ends dry-run. Neither the operator nor the doorman logs an error.
 # An upgrade that stops watching the namespace is refused. Last, helm
-# uninstall is refused while ManagedWorkloads are left, and goes
-# ahead once the workloads are no longer opted in, which restores the
-# paused StatefulSet. The e2e suite installs through kustomize, with a
+# uninstall is refused while ManagedWorkloads are left, an upgrade with
+# the namespaces the operator watches marks the release deployed again,
+# and the uninstall goes ahead once the workloads are no longer opted in,
+# which restores the paused StatefulSet. The e2e suite installs through kustomize, with a
 # ClusterRole, so this is what tests the chart.
 #
 # KIND_CLUSTER names the cluster, which is created and deleted here, so it
@@ -331,11 +332,29 @@ if ! grep -qF "$WATCHED/$APP" <<<"$lead" || ! grep -qF "$WATCHED/$DB" <<<"$lead"
 fi
 is deployment/napwake "$RELEASE_NAMESPACE" '{.status.readyReplicas}' 1
 
-echo "checking helm rollback recovers the release a refused uninstall left uninstalling, as the docs say"
-helm rollback napwake --namespace "$RELEASE_NAMESPACE" --wait --timeout 5m
+# After a refused upgrade, the docs recover with an upgrade that keeps the
+# namespaces the operator watches, read from its flags. Helm 3 fails a
+# helm rollback here: it compares the rollback with the refused revision,
+# which lacks the Roles that run.
+echo "checking an upgrade with the operator's namespaces marks the release deployed again, as the docs say"
+running=$(kubectl get deployment -n "$RELEASE_NAMESPACE" -l control-plane=controller-manager \
+  -o 'jsonpath={.items[0].spec.template.spec.containers[0].args}' | grep -o -- '--watch-namespaces=[^"]*' | cut -d= -f2)
+if [ "$running" != "$WATCHED" ]; then
+  echo "the operator watches '$running', not $WATCHED" >&2
+  exit 1
+fi
+generations=$(kubectl get deployments -n "$RELEASE_NAMESPACE" -l app.kubernetes.io/instance=napwake \
+  -o 'jsonpath={.items[*].metadata.generation}')
+helm upgrade napwake charts/napwake --namespace "$RELEASE_NAMESPACE" --reuse-values \
+  --set "watchNamespaces={$running}" --wait --timeout 5m
 status=$(helm status napwake --namespace "$RELEASE_NAMESPACE" | awk '/^STATUS:/ {print $2}')
 if [ "$status" != deployed ]; then
-  echo "after helm rollback the release is $status, not deployed" >&2
+  echo "after the upgrade the release is $status, not deployed" >&2
+  exit 1
+fi
+if [ "$(kubectl get deployments -n "$RELEASE_NAMESPACE" -l app.kubernetes.io/instance=napwake \
+  -o 'jsonpath={.items[*].metadata.generation}')" != "$generations" ]; then
+  echo "the upgrade that marks the release deployed changed the operator's or the doorman's Deployment" >&2
   exit 1
 fi
 
