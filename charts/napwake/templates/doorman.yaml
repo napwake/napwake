@@ -137,18 +137,18 @@ spec:
       tolerations:
         {{- toYaml . | nindent 8 }}
       {{- end }}
+      {{- /*
+      One soft constraint, on the hostname, which every node has. The
+      scheduler scores no node for spread when any of a pod's constraints
+      names a key some nodes lack, so a zone constraint on nodes without
+      zone labels, as on kind and many on-premises clusters, spread nothing.
+      */}}
       topologySpreadConstraints:
         {{- with .Values.doorman.topologySpreadConstraints }}
         {{- toYaml . | nindent 8 }}
         {{- else }}
         - maxSkew: 1
           topologyKey: kubernetes.io/hostname
-          whenUnsatisfiable: ScheduleAnyway
-          labelSelector:
-            matchLabels:
-              {{- include "napwake.doormanSelectorLabels" . | nindent 14 }}
-        - maxSkew: 1
-          topologyKey: topology.kubernetes.io/zone
           whenUnsatisfiable: ScheduleAnyway
           labelSelector:
             matchLabels:

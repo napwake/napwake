@@ -342,7 +342,7 @@ The doorman holds requests to paused workloads and wakes them ([Wake on request]
 | <Ref id="doorman-nodeselector">doorman.nodeSelector</Ref> | `{}` | Empty uses the operator's |
 | <Ref id="doorman-tolerations">doorman.tolerations</Ref> | `[]` | Empty uses the operator's |
 | <Ref id="doorman-affinity">doorman.affinity</Ref> | `{}` | Empty uses the operator's |
-| <Ref id="doorman-topologyspreadconstraints">doorman.topologySpreadConstraints</Ref> | `[]` | Empty spreads them across nodes and zones where it can |
+| <Ref id="doorman-topologyspreadconstraints">doorman.topologySpreadConstraints</Ref> | `[]` | Empty spreads them across nodes where it can, softly, on `kubernetes.io/hostname`. Set yours to replace it. Add a zone constraint only if every node has `topology.kubernetes.io/zone`, or the scheduler spreads for none |
 | <Ref id="doorman-podannotations">doorman.podAnnotations</Ref> | `{}` | Empty uses the operator's |
 | <Ref id="doorman-podlabels">doorman.podLabels</Ref> | `{}` | Empty uses the operator's |
 | <Ref id="doorman-priorityclassname">doorman.priorityClassName</Ref> | `""` | Empty uses the operator's |
