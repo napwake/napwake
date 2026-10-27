@@ -227,47 +227,119 @@ func (g *dependencyGraph) holdsOf(self *workloadNode) dependencyHolds {
 	return h
 }
 
-// dependentsOf lists the workloads that would hold the workload self is
-// awake were they awake, whatever phase the graph has them in.
-func (g *dependencyGraph) dependentsOf(self *workloadNode) []types.NamespacedName {
+// dependentsElsewhere lists the workloads in other namespaces the graph has
+// depending on the workload self is, where its namespace allows them,
+// whatever phase it has them in.
+func (g *dependencyGraph) dependentsElsewhere(self *workloadNode) []types.NamespacedName {
 	g.mu.RLock()
 	defer g.mu.RUnlock()
 	var keys []types.NamespacedName
 	for _, d := range g.dependents[self.target] {
-		if d.uid != self.uid && d.acts && g.allows(d.key.Namespace, self.target) && g.holds(d, self) {
+		if d.key.Namespace != self.key.Namespace && g.allows(d.key.Namespace, self.target) {
 			keys = append(keys, d.key)
 		}
 	}
 	return keys
 }
 
-// heldByDependentsNow reports whether one of the workload's dependents is
-// awake, holding it, as the API server has it rather than the cache. A
+// wouldHold is holds, for a dependent the graph may not have as it is.
+func (g *dependencyGraph) wouldHold(dependent, workload *workloadNode) bool {
+	g.mu.RLock()
+	defer g.mu.RUnlock()
+	return g.allows(dependent.key.Namespace, workload.target) && g.holds(dependent, workload)
+}
+
+// heldByDependentsNow lists the workload's dependents that are awake, or
+// waking, holding it, as the API server has them rather than the cache. A
 // dependent's wake stamps the workload once its Resuming is written, and
 // the stamp's event can reach this workload before the cache, or the
-// graph, has that write. One Get each, for the rare check that needs it.
-func (r *Reconciler) heldByDependentsNow(ctx context.Context, workload *v1alpha1.ManagedWorkload) (bool, error) {
+// graph, has that write. So can a dependency a dependent has just learned,
+// or the dependent itself. So the candidates are every ManagedWorkload in
+// the workload's own namespace, listed once, and those in other namespaces
+// the graph has depending on it, and each is judged as the API server has
+// it: one list, and a Get for each of the others, for the rare check that
+// needs it.
+func (r *Reconciler) heldByDependentsNow(ctx context.Context, workload *v1alpha1.ManagedWorkload) ([]string, error) {
 	ctx, cancel := context.WithTimeout(ctx, dependencyTimeout)
 	defer cancel()
 	g, err := r.loadDependencyGraph(ctx)
 	if err != nil {
-		return false, err
+		return nil, err
 	}
 	self := r.node(workload)
-	for _, key := range g.dependentsOf(self) {
+	var near v1alpha1.ManagedWorkloadList
+	if err := r.apiReader().List(ctx, &near, client.InNamespace(workload.Namespace)); err != nil {
+		return nil, fmt.Errorf("listing the managed workloads in %s: %w", workload.Namespace, err)
+	}
+	candidates := near.Items
+	for _, key := range g.dependentsElsewhere(self) {
 		var dependent v1alpha1.ManagedWorkload
 		err := r.apiReader().Get(ctx, key, &dependent)
 		switch {
 		case apierrors.IsNotFound(err):
 			continue
 		case err != nil:
-			return false, fmt.Errorf("getting dependent %s: %w", key, err)
+			return nil, fmt.Errorf("getting dependent %s: %w", key, err)
 		}
-		if awakeFor(r.node(&dependent), self) {
-			return true, nil
+		candidates = append(candidates, dependent)
+	}
+	var holders []string
+	for i := range candidates {
+		held, err := r.holdsNow(ctx, g, &candidates[i], self)
+		if err != nil {
+			return nil, err
+		}
+		if held {
+			holders = append(holders, client.ObjectKeyFromObject(&candidates[i]).String())
 		}
 	}
-	return false, nil
+	slices.Sort(holders)
+	return holders, nil
+}
+
+// holdsNow reports whether dependent, as the API server has it, holds the
+// workload self is: it acts on its target, depends on the workload, by
+// dependsOn or as learned, by the graph's rules for a learned cycle and
+// another namespace, and is awake, or paused with a wake asked for. A wake
+// asked for on its target is read from there, as its own reconcile reads it
+// to wake.
+func (r *Reconciler) holdsNow(ctx context.Context, g *dependencyGraph, dependent *v1alpha1.ManagedWorkload,
+	self *workloadNode) (bool, error) {
+	d := r.node(dependent)
+	if d.uid == self.uid || !d.acts || !slices.Contains(d.dependencies, self.target) || !g.wouldHold(d, self) {
+		return false, nil
+	}
+	if awakeFor(d, self) {
+		return true, nil
+	}
+	if d.phase != v1alpha1.PhasePaused {
+		return false, nil
+	}
+	return r.wakePendingOnTarget(ctx, dependent)
+}
+
+// wakePendingOnTarget reports whether a paused workload's target carries
+// an activity annotation set since its pause began, which its next
+// reconcile wakes it for, as for one on its ManagedWorkload. One whose
+// target is gone has nothing to wake.
+func (r *Reconciler) wakePendingOnTarget(ctx context.Context, w *v1alpha1.ManagedWorkload) (bool, error) {
+	var target client.Object = &appsv1.Deployment{}
+	if w.Spec.Target.Kind == v1alpha1.TargetKindStatefulSet {
+		target = &appsv1.StatefulSet{}
+	}
+	key := types.NamespacedName{Namespace: w.Namespace, Name: w.Spec.Target.Name}
+	err := r.apiReader().Get(ctx, key, target)
+	switch {
+	case apierrors.IsNotFound(err):
+		return false, nil
+	case err != nil:
+		return false, fmt.Errorf("getting the target of dependent %s/%s: %w", w.Namespace, w.Name, err)
+	}
+	var recorded map[string]string
+	if p := w.Status.Pause; p != nil && p.WakeAnnotations != nil {
+		recorded = p.WakeAnnotations.Target
+	}
+	return activityAnnotationChanged(target, recorded), nil
 }
 
 // isAwake reports whether a workload is, or is about to be, running. Pausing
@@ -281,22 +353,49 @@ func isAwake(phase v1alpha1.WorkloadPhase) bool {
 	}
 }
 
+// wakePending reports whether a paused workload has a wake asked for that
+// it hasn't begun, which its next reconcile begins: a wake request not yet
+// answered, or an activity annotation on its ManagedWorkload set since its
+// pause began, as the doorman stamps for a request it holds, and a waking
+// dependent for its dependencies. One on its target, which the graph doesn't
+// keep, is read by heldByDependentsNow.
+func wakePending(w *v1alpha1.ManagedWorkload) bool {
+	if w.Status.Phase != v1alpha1.PhasePaused {
+		return false
+	}
+	if _, ok := pendingWakeRequest(w); ok {
+		return true
+	}
+	var recorded map[string]string
+	if p := w.Status.Pause; p != nil && p.WakeAnnotations != nil {
+		recorded = p.WakeAnnotations.Workload
+	}
+	return activityAnnotationChanged(w, recorded)
+}
+
 // awakeFor reports whether dependent counts as awake for its dependency
-// workload. A dry-run workload's would-be pause, Idle, leaves its pods up,
-// so it holds a dependency that pauses for real. A dependency in dry-run too
-// is measured as it would be live, where the dependent would have paused and
-// let it go.
+// workload. One paused with a wake asked for is waking: let go then, the
+// dependency would begin to pause as the dependent wakes. A dry-run
+// workload's would-be pause, Idle, leaves its pods up, so it holds a
+// dependency that pauses for real. A dependency in dry-run too is measured
+// as it would be live, where the dependent would have paused and let it go.
 func awakeFor(dependent, workload *workloadNode) bool {
 	if dependent.dryRun && workload.dryRun && dependent.phase == v1alpha1.PhaseIdle {
 		return false
 	}
-	return isAwake(dependent.phase)
+	return isAwake(dependent.phase) || dependent.waking
 }
 
 // dependencyHold reports why a workload whose clock has run out must stay
 // up anyway, and records it in conditions. A nil result means it may act.
+// One about to pause for real is checked against the API server too, by
+// heldByDependenciesNow.
 func (r *Reconciler) dependencyHold(ctx context.Context, workload *v1alpha1.ManagedWorkload) (*ctrl.Result, error) {
-	h, err := r.heldByDependencies(ctx, workload)
+	held := r.heldByDependenciesNow
+	if r.dryRun(workload) {
+		held = r.heldByDependencies
+	}
+	h, err := held(ctx, workload)
 	if err != nil {
 		return nil, err
 	}
@@ -389,6 +488,21 @@ func (r *Reconciler) heldByDependencies(ctx context.Context, workload *v1alpha1.
 		return dependencyHolds{}, err
 	}
 	return g.holdsOf(r.node(workload)), nil
+}
+
+// heldByDependenciesNow is heldByDependencies for a workload about to pause.
+// The graph follows the watch, so it can be behind a dependent that has
+// just woken, or been asked to: a dependency let go then would begin to
+// pause as its dependent wakes. So when the graph finds nothing holding
+// the workload, the dependents that would hold it are read from the API
+// server.
+func (r *Reconciler) heldByDependenciesNow(ctx context.Context, workload *v1alpha1.ManagedWorkload) (dependencyHolds, error) {
+	h, err := r.heldByDependencies(ctx, workload)
+	if err != nil || h.held() {
+		return h, err
+	}
+	h.holders, err = r.heldByDependentsNow(ctx, workload)
+	return h, err
 }
 
 // actsOnTarget reports whether a ManagedWorkload manages a workload that's

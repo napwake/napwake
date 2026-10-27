@@ -146,7 +146,7 @@ func (r *Reconciler) judgePause(ctx context.Context, workload *v1alpha1.ManagedW
 				"isn't judged", "workload", workload.Name, "namespace", workload.Namespace, "error", err.Error())
 			return nothing
 		}
-		if held {
+		if len(held) > 0 {
 			return nothing
 		}
 	}
