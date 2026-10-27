@@ -37,6 +37,7 @@ import (
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/util/intstr"
 	"k8s.io/client-go/tools/events"
 	"k8s.io/utils/ptr"
@@ -1387,14 +1388,19 @@ func TestActivityClock_EmptyAfterSeries(t *testing.T) {
 
 // A quiet workload whose query answers with series at zero at some checks
 // and with none at others, as a [1m] rate over a 45s scrape does, or a
-// target whose scrapes fail now and then, gets one grace for its first
-// loss, not one for each: flapping can't renew it, and the clock never
-// restarts. It pauses at the later of its idleAfter and that grace's end,
-// with a minute to spare. Before, each match renewed the grace, and the
-// unread checks restarted the clock, so it never paused (the review of
-// 8bdae63f, P65). The checks come when the operator asks for them, from
-// its last activity, a request, at 0, and the empty answers fall at every
-// phase of each pattern.
+// target whose scrapes fail now and then, isn't held awake by it, and its
+// clock never restarts. It pauses at the later of its idleAfter and the end
+// of the grace running then: at most the grace and a check or two past its
+// idleAfter, as for the [1m] rate, whose answers depend on when each check
+// comes. Where the answers with series come in pairs, as at every 3rd, 4th
+// or 6th check, the check where a pair clears a grace isn't held, so it
+// pauses within three checks of the later of its idleAfter and its first
+// grace's end.
+// Before, each match renewed the grace, and the unread checks restarted
+// the clock, so it never paused (the review of 8bdae63f, P65). The checks
+// come when the operator asks for them, from its last activity, a
+// request, at 0, and the empty answers fall at every phase of each
+// pattern.
 func TestActivityClock_FlappingSeriesStillPause(t *testing.T) {
 	everyNth := func(n, phase int) func(check int, _ time.Duration) string {
 		return func(check int, _ time.Duration) string {
@@ -1413,28 +1419,37 @@ func TestActivityClock_FlappingSeriesStillPause(t *testing.T) {
 		}
 		return promValue("0")
 	}
-	answers := map[string]func(check int, at time.Duration) string{"a [1m] rate over a 45s scrape": rate1mOver45s}
+	type pattern struct {
+		answer func(check int, at time.Duration) string
+		// paired says the answers with series come in pairs, whenever the
+		// checks come.
+		paired bool
+	}
+	answers := map[string]pattern{"a [1m] rate over a 45s scrape": {answer: rate1mOver45s}}
 	for _, n := range []int{3, 4, 6} {
 		for phase := range n {
 			answers[fmt.Sprintf("zero series at every %s check, phase %d", map[int]string{3: "3rd", 4: "4th", 6: "6th"}[n],
-				phase)] = everyNth(n, phase)
+				phase)] = pattern{answer: everyNth(n, phase), paired: true}
 		}
 	}
-	for name, answer := range answers {
+	for name, p := range answers {
 		for _, idleAfter := range []time.Duration{time.Minute, 3 * time.Minute, 5 * time.Minute, 10 * time.Minute} {
 			t.Run(fmt.Sprintf("%s, idleAfter %s", name, idleAfter), func(t *testing.T) {
 				c := newLostSeriesClock(t, v1alpha1.ActivitySourceCPU, true)
 				c.workload.Spec.IdlePolicy.IdleAfter = &metav1.Duration{Duration: idleAfter}
 				require.False(t, c.check(t, 0, promValue("0.04")), "a request at 0")
 				require.Equal(t, v1alpha1.ActivitySourcePrometheus, c.workload.Status.Activity.LastActivitySource)
-				bound := idleAfter + time.Minute
+				bound := idleAfter + seriesLostFor + 2*time.Minute
+				if p.paired {
+					bound = idleAfter + 3*time.Minute
+				}
 				lost := false
 				at := c.next
 				for check := 1; at <= bound; check++ {
-					body := answer(check, at)
-					if !lost && body == emptyVector {
+					body := p.answer(check, at)
+					if !lost && body == emptyVector && p.paired {
 						lost = true
-						bound = max(bound, at+seriesLostFor+time.Minute)
+						bound = max(bound, at+seriesLostFor+3*time.Minute)
 					}
 					if c.check(t, at, body) {
 						return
@@ -1447,6 +1462,93 @@ func TestActivityClock_FlappingSeriesStillPause(t *testing.T) {
 			})
 		}
 	}
+}
+
+// A busy workload at idleAfter 1m, whose Prometheus restarts without its
+// data at 1m and again a few minutes later, each restart answering with no
+// series for a while: a 20s outage, or 4 minutes at a 2-minute scrape. The
+// first restart's grace holds it, its series come back with its activity,
+// and the second restart gets a grace of its own once the series have
+// answered at two checks in a row. It's never paused. On d8cdbabd a new
+// grace needed 5 unbroken minutes of series, so the second restart got
+// none, and the workload paused at 7m, or at 7, 9 and 11m (the second
+// review of 8bdae63f, P65).
+func TestActivityClock_SecondRestartGetsItsOwnGrace(t *testing.T) {
+	type outage struct{ from, to time.Duration }
+	second := func(at, length, skew time.Duration) outage { return outage{at + skew, at + skew + length} }
+	tests := map[string][]outage{}
+	for _, at := range []time.Duration{3 * time.Minute, 5 * time.Minute, 6 * time.Minute, 7 * time.Minute} {
+		// The check at each restart's minute answers with none.
+		tests[fmt.Sprintf("20s outages, the second at %s", at)] = []outage{
+			{time.Minute - 10*time.Second, time.Minute + 10*time.Second}, second(at, 20*time.Second, -10*time.Second)}
+	}
+	for _, at := range []time.Duration{6 * time.Minute, 8 * time.Minute, 10 * time.Minute} {
+		// Two scrapes 2 minutes apart, so 4 minutes with none: the checks at
+		// 1 to 4m, then the four after the second restart's minute.
+		tests[fmt.Sprintf("4m outages at a 2m scrape, the second at %s", at)] = []outage{
+			{time.Minute - 10*time.Second, 5*time.Minute - 10*time.Second}, second(at, 4*time.Minute, 10*time.Second)}
+	}
+	for name, outages := range tests {
+		t.Run(name, func(t *testing.T) {
+			c := newLostSeriesClock(t, v1alpha1.ActivitySourceCPU, true)
+			require.False(t, c.check(t, 0, promValue("0.04")), "busy at 0")
+			for at := c.next; at <= 16*time.Minute; at += c.next {
+				body := promValue("0.04")
+				for _, o := range outages {
+					if at >= o.from && at < o.to {
+						body = emptyVector
+					}
+				}
+				require.False(t, c.check(t, at, body), "paused at %s", at)
+			}
+			assert.Equal(t, v1alpha1.PhaseRunning, c.workload.Status.Phase)
+		})
+	}
+}
+
+// The first answer after a busy workload's series come back can be series
+// at zero, as rate() over the first two samples after a restart can be. One
+// answer with series doesn't clear the grace, so that check is still held,
+// and the next finds the activity. A grace cleared by one answer would
+// pause it there, its clock having run out during the outage.
+func TestActivityClock_OneAnswerWithSeriesDoesntClearTheGrace(t *testing.T) {
+	c := newLostSeriesClock(t, v1alpha1.ActivitySourceCPU, true)
+	require.False(t, c.check(t, 0, promValue("0.04")), "busy at 0")
+	require.False(t, c.check(t, time.Minute, emptyVector), "Prometheus restarted")
+	require.False(t, c.check(t, 2*time.Minute, emptyVector))
+
+	assert.False(t, c.check(t, 3*time.Minute, promValue("0")), "series again, at zero")
+	assert.False(t, c.check(t, 4*time.Minute, promValue("0.04")), "the activity shows")
+	assert.Equal(t, v1alpha1.ActivitySourcePrometheus, c.workload.Status.Activity.LastActivitySource)
+}
+
+// A grace used up before a pause doesn't carry through it: the paused
+// checks find the workload's own series gone, and once it's awake again two
+// answers with series in a row make a new loss, as from a Prometheus
+// restart soon after the wake, get a grace of its own. On d8cdbabd the
+// paused checks broke the 5 unbroken minutes a new grace needed, so a
+// restart soon after the wake got none (the second review of 8bdae63f,
+// P65).
+func TestQuerySeries_AGraceUsedUpBeforeAPauseDoesntCarryThroughIt(t *testing.T) {
+	const uid, query = types.UID("web"), `sum(rate(http_requests_total{app="web"}[1m]))`
+	var s querySeries
+	at := func(m int) time.Time { return monotonic(fixedTime.Add(time.Duration(m) * time.Minute)) }
+	answer := func(m int, matched, awake bool) seriesLost {
+		return s.record(uid, []queryAnswer{{query: query, matched: matched}}, at(m), awake)
+	}
+
+	answer(0, true, true)
+	require.False(t, answer(1, false, true).until.IsZero(), "the series went at 1m: a grace")
+	require.True(t, answer(7, false, true).until.IsZero(), "used up by 6m, so it paused")
+	for m := 8; m < 20; m++ {
+		answer(m, false, false)
+	}
+
+	answer(20, true, true)
+	answer(21, true, true)
+	lost := answer(22, false, true)
+	assert.False(t, lost.until.IsZero(), "a restart a minute after its series came back gets a grace")
+	assert.True(t, lost.until.After(at(26)), "of its own, from 22m")
 }
 
 // With queries [A, B], A busy and B empty, A shows activity first at every

@@ -213,8 +213,10 @@ A Prometheus that keeps its data on an `emptyDir`, or none, starts empty. Until 
 | An awake workload's query had series at its last check, and has none now | A 5-minute grace begins. The empty answers are no activity, and the clock runs on, but the workload isn't paused before the grace ends |
 | Meanwhile | `PrometheusAvailable` is `False`, reason `SeriesLost`, while the series are missing or hold the pause |
 | A busy workload | Its series come back with its activity, which keeps it awake as before |
-| A quiet one | Pauses at the later of its `idleAfter` and the grace's end, at most 5 minutes after its series went |
-| A query that flaps between series and none | Gets one grace for a loss. Another needs 5 minutes of series without a break |
+| A quiet one | Pauses at the later of its `idleAfter` and the end of the grace running then, so at most 5 minutes past its `idleAfter` |
+| A second restart | Gets a grace of its own once the series have answered at two checks in a row. One within a check of the series coming back gets none |
+| A query that flaps between series and none | Can't hold a pause. The check where a second answer with series in a row clears its grace isn't held, and without such pairs a loss gets one grace |
+| A grace used up before a pause | Doesn't carry through it. Once the woken workload's query has answered with series at two checks, a loss gets a grace |
 | The other queries' empty answers during a grace | Neither quiet nor a sign that a query never matches |
 | After an operator restart | A query counts as having had series if the clock's last activity was a query's |
 | While paused | An empty answer is quiet, as the workload's own metrics have no series without pods |

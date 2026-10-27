@@ -650,10 +650,15 @@ const prometheusBudget = 5 * time.Second
 //
 // The empty answers in a grace are no activity, and the clock runs on
 // through them, so a quiet workload pauses at the later of its idleAfter
-// and the grace's end: at most this long after its series went. A loss
-// gets one grace. Another needs the query to have answered with series for
-// this long without a break, so a query that flaps between series and none
-// can't renew it.
+// and the end of the grace running then, at most this long past its
+// idleAfter. A loss gets one grace. Another needs the query to have
+// answered with series at two checks in a row, and the check where that
+// happens isn't held, so a query that flaps between series and none can't
+// hold a pause, while a second restart minutes after the first gets a
+// grace of its own. A grace used up before a pause doesn't carry through
+// it: once the woken workload's query has answered with series at two
+// checks, a loss gets one. A second restart within one check of the series
+// coming back gets none.
 const seriesLostFor = 5 * activityCheckInterval
 
 // seriesLost is what a check found of the grace after lost series: the
@@ -732,10 +737,10 @@ type queryAnswers struct {
 	// hadSeries says it matched series at its last answer that counted.
 	hadSeries bool
 	// lostAt is when it answered with none after it had series, which
-	// began its grace. seriesSince is when it has answered with series
-	// since, without a break; lostAt clears once that has lasted
-	// seriesLostFor.
-	lostAt, seriesSince time.Time
+	// began its grace. It clears once the query has answered with series
+	// at two checks in a row, seriesRun.
+	lostAt    time.Time
+	seriesRun int
 }
 
 // answers is the query's record, made if it has none. The caller holds the
@@ -764,10 +769,11 @@ type queryAnswer struct {
 // record records a check's answers at now, and returns the grace after
 // lost series the workload's queries are in. For an awake workload, a query
 // that had series and answers with none begins a grace, unless one it began
-// hasn't cleared. While any of its queries is in a grace, every empty answer
-// of the check is unread: no activity, but neither quiet nor a sign that a
-// query never matches, which a query that one showing activity has always
-// come before may not have had the chance to show.
+// hasn't cleared, which takes answers with series at two checks in a row.
+// While any of its queries is in a grace, every empty answer of the check is
+// unread: no activity, but neither quiet nor a sign that a query never
+// matches, which a query that one showing activity has always come before
+// may not have had the chance to show.
 func (s *querySeries) record(uid types.UID, answers []queryAnswer, now time.Time, awake bool) seriesLost {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -776,17 +782,11 @@ func (s *querySeries) record(uid types.UID, answers []queryAnswer, now time.Time
 		switch {
 		case an.matched:
 			a.matched, a.evaluated, a.hadSeries = true, true, true
-			if a.lostAt.IsZero() {
-				continue
-			}
-			if a.seriesSince.IsZero() {
-				a.seriesSince = now
-			}
-			if now.Sub(a.seriesSince) >= seriesLostFor {
-				a.lostAt, a.seriesSince = time.Time{}, time.Time{}
+			if a.seriesRun++; a.seriesRun >= 2 {
+				a.lostAt = time.Time{}
 			}
 		default:
-			a.seriesSince = time.Time{}
+			a.seriesRun = 0
 			if awake && a.hadSeries && a.lostAt.IsZero() {
 				a.lostAt = now
 			}
