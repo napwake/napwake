@@ -333,6 +333,10 @@ func (r *Reconciler) takeOn(ctx context.Context, workload *v1alpha1.ManagedWorkl
 		return err
 	}
 	announce()
+	if err := r.announceNowManaged(ctx, workload); err != nil {
+		log.FromContext(ctx).Error(err, "telling the workloads that depend on it that it's now managed",
+			"workload", workload.Name, "namespace", workload.Namespace)
+	}
 	return nil
 }
 

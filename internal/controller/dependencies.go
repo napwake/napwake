@@ -242,6 +242,19 @@ func (g *dependencyGraph) dependentsElsewhere(self *workloadNode) []types.Namesp
 	return keys
 }
 
+// dependentsOf lists the workloads the graph has depending on the workload
+// id, declared or learned, in any namespace.
+func (g *dependencyGraph) dependentsOf(id workloadID) []types.NamespacedName {
+	g.mu.RLock()
+	defer g.mu.RUnlock()
+	keys := make([]types.NamespacedName, 0, len(g.dependents[id]))
+	for _, d := range g.dependents[id] {
+		keys = append(keys, d.key)
+	}
+	slices.SortFunc(keys, func(a, b types.NamespacedName) int { return strings.Compare(a.String(), b.String()) })
+	return keys
+}
+
 // wouldHold is holds, for a dependent the graph may not have as it is.
 func (g *dependencyGraph) wouldHold(dependent, workload *workloadNode) bool {
 	g.mu.RLock()
