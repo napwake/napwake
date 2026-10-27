@@ -1576,6 +1576,34 @@ func underADollar(amount float64) bool {
 	return amount > 0 && amount < 0.5
 }
 
+// money writes an amount as the pages write a month's money: to the cent
+// under $100, where whole dollars would hide most of a small cluster's
+// month, and in whole dollars from $100, as dollars writes them. Above zero
+// but under a cent is <$0.01, since $0 is only for none.
+func money(amount float64) string {
+	if underACent(amount) {
+		return "<$0.01"
+	}
+	sign := ""
+	if amount < 0 {
+		sign, amount = "-", -amount
+	}
+	inCents := int64(math.Round(amount * 100))
+	switch {
+	case inCents == 0:
+		return "$0"
+	case inCents < 100*100:
+		return fmt.Sprintf("%s$%d.%02d", sign, inCents/100, inCents%100)
+	}
+	return sign + "$" + thousands(int64(math.Round(amount)))
+}
+
+// underACent says money writes amount as <$0.01: above zero, but under a
+// cent.
+func underACent(amount float64) bool {
+	return amount > 0 && amount < 0.01
+}
+
 // thousands writes n with its thousands separated by commas.
 // number writes a count as the product's sentences do, its thousands
 // separated: 5,775.
