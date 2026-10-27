@@ -55,7 +55,7 @@ timezone: America/New_York
 
 ```bash
 helm install napwake oci://ghcr.io/napwake/charts/napwake \
-  --version 0.2.0 \
+  --version 0.2.0-rc.11 \
   --namespace napwake-system \
   --create-namespace \
   -f napwake-values.yaml
@@ -73,7 +73,7 @@ With [krew](https://krew.sigs.k8s.io/docs/user-guide/setup/install/):
 
 ```bash
 kubectl krew install --manifest-url \
-  https://github.com/napwake/napwake/releases/download/v0.2.0/krew-napwake.yaml
+  https://github.com/napwake/napwake/releases/download/v0.2.0-rc.11/krew-napwake.yaml
 ```
 
 Or [download it](https://docs.napwake.dev/getting-started/kubectl-plugin/#installation) for Linux, macOS or Windows.
@@ -177,7 +177,7 @@ Every flag is in the [kubectl plugin reference](https://docs.napwake.dev/referen
 
 ## How it's built
 
-Napwake is at 0.2.0. Its API is `napwake.dev/v1alpha1`, which may change before 1.0. It has no telemetry, usage reporting or update checks.
+Napwake is at 0.2.0-rc.11. Its API is `napwake.dev/v1alpha1`, which may change before 1.0. It has no telemetry, usage reporting or update checks.
 
 Code lands through pull requests. Each one runs the unit tests, and end-to-end tests on kind with Kubernetes 1.30 and 1.37. Napwake is also tested by hand on GKE Standard. EKS, AKS and GKE Autopilot aren't tested yet.
 

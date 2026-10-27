@@ -2,8 +2,8 @@ apiVersion: v2
 name: napwake
 description: Pauses idle Kubernetes workloads in staging, preview and dev, and wakes them on the first request.
 type: application
-version: 0.2.0
-appVersion: "v0.2.0"
+version: 0.2.0-rc.11
+appVersion: "v0.2.0-rc.11"
 kubeVersion: ">=1.30.0-0"
 home: https://napwake.dev
 icon: https://raw.githubusercontent.com/napwake/brand/main/logo/symbol.svg
@@ -27,10 +27,10 @@ annotations:
   artifacthub.io/category: integration-delivery
   artifacthub.io/license: Apache-2.0
   artifacthub.io/operator: "true"
-  artifacthub.io/prerelease: "false"
+  artifacthub.io/prerelease: "true"
   artifacthub.io/images: |
     - name: napwake
-      image: ghcr.io/napwake/napwake:v0.2.0
+      image: ghcr.io/napwake/napwake:v0.2.0-rc.11
       platforms:
         - linux/amd64
         - linux/arm64

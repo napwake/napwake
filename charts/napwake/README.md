@@ -14,7 +14,7 @@ Install from the OCI registry, with no `helm repo` to add:
 
 ```bash
 helm install napwake oci://ghcr.io/napwake/charts/napwake \
-  --version 0.2.0 \
+  --version 0.2.0-rc.11 \
   --namespace napwake-system \
   --create-namespace \
   -f napwake-values.yaml

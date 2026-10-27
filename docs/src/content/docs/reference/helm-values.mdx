@@ -17,7 +17,7 @@ timezone: Europe/London
 Put the values you set in a file, starting with your users' [time zone](/getting-started/installation/#time-zone).
 
 ```bash
-helm install napwake oci://ghcr.io/napwake/charts/napwake --version 0.2.0 \
+helm install napwake oci://ghcr.io/napwake/charts/napwake --version 0.2.0-rc.11 \
   --namespace napwake-system --create-namespace \
   -f napwake-values.yaml
 ```
@@ -25,7 +25,7 @@ helm install napwake oci://ghcr.io/napwake/charts/napwake --version 0.2.0 \
 Install with it, and upgrade with it to [keep your settings](/operations/upgrading/#keeping-your-settings).
 
 ```bash
-helm show values oci://ghcr.io/napwake/charts/napwake --version 0.2.0
+helm show values oci://ghcr.io/napwake/charts/napwake --version 0.2.0-rc.11
 ```
 
 Every default.
@@ -34,8 +34,8 @@ Every default.
   label="The chart"
   items={[
     { label: 'Published', value: 'As an OCI artifact only, no <code>helm repo</code>' },
-    { label: 'Chart version', value: '<code>0.2.0</code>, no <code>v</code>' },
-    { label: 'Image tags', value: '<code>v0.2.0</code>, with a <code>v</code>' },
+    { label: 'Chart version', value: '<code>0.2.0-rc.11</code>, no <code>v</code>' },
+    { label: 'Image tags', value: '<code>v0.2.0-rc.11</code>, with a <code>v</code>' },
   ]}
 />
 
@@ -183,7 +183,7 @@ The names and labels the chart gives.
 | Value | Default | Description |
 |-------|---------|-------------|
 | <Ref id="image-repository">image.repository</Ref> | `ghcr.io/napwake/napwake` | Container image repository |
-| <Ref id="image-tag">image.tag</Ref> | `""`, the chart's `appVersion`, such as `v0.2.0` | Image tag, for the operator and the doorman |
+| <Ref id="image-tag">image.tag</Ref> | `""`, the chart's `appVersion`, such as `v0.2.0-rc.11` | Image tag, for the operator and the doorman |
 | <Ref id="image-pullpolicy">image.pullPolicy</Ref> | `IfNotPresent` | Image pull policy |
 | <Ref id="imagepullsecrets">imagePullSecrets</Ref> | `[]` | Private registry credentials |
 
@@ -203,7 +203,7 @@ For Argo CD, which ignores that, it also carries `argocd.argoproj.io/sync-option
 
 | Value | Default | Description |
 |-------|---------|-------------|
-| <Ref id="defaultsversion">defaultsVersion</Ref> | the chart's version, such as `0.2.0` | Which chart version Helm's defaults are from. Leave it. See [Keeping your settings](/operations/upgrading/#keeping-your-settings) |
+| <Ref id="defaultsversion">defaultsVersion</Ref> | the chart's version, such as `0.2.0-rc.11` | Which chart version Helm's defaults are from. Leave it. See [Keeping your settings](/operations/upgrading/#keeping-your-settings) |
 
 <details class="nw-details">
 <summary>What it's for</summary>
@@ -559,7 +559,7 @@ affinity:
 
 ```bash
 helm install napwake oci://ghcr.io/napwake/charts/napwake \
-  --version 0.2.0 \
+  --version 0.2.0-rc.11 \
   -f values-ha.yaml \
   -n napwake-system --create-namespace
 ```
