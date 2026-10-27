@@ -275,6 +275,7 @@ There's no upgrade path from Hybernate 0.1.x or a 0.2.0 release candidate. Unins
 
 ### Fixed
 
+- A dependency no longer starts to pause as its dependent wakes. A dependent that's paused with a wake already asked for, such as a request the doorman holds for it, an activity annotation or a wake request, holds its dependencies as an awake one does. Before, a dependency whose clock had run out could start to pause in the moment between its dependent's pause and that wake, and without the doorman in front of it be scaled to zero. And before a dependency pauses, from its idle clock or a pause request, Napwake reads its dependents from the API server, so one woken that the operator's cache hasn't seen yet still holds it
 - A workload taken on before the operator had `--prometheus-url` says so in the past tense, in `status.prediction.history`: "when Napwake took it on, the operator had no --prometheus-url". It said the operator had none, which turned false once a URL was set, and an upgrade corrects the old wording
 - The security page says `gh attestation verify` needs the GitHub CLI signed in (`gh auth login`), and the cosign checks need nothing
 - `kubectl napwake nodes` no longer lists local storage as blocking scale-down on GKE or AKS, whose Cluster Autoscalers ignore it (GKE since 1.22, AKS by default). Upstream's and EKS's still block on it

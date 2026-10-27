@@ -41,6 +41,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/interceptor"
 	"sigs.k8s.io/controller-runtime/pkg/envtest"
+	"sigs.k8s.io/controller-runtime/pkg/event"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 
 	v1alpha1 "github.com/napwake/napwake/api/v1alpha1"
@@ -125,6 +126,26 @@ func TestDependencies_HoldWhileDependentsAwake(t *testing.T) {
 			wantPause:  true,
 		},
 		{
+			name: "a paused dependent a request waits for is waking, and holds it",
+			dependents: []*v1alpha1.ManagedWorkload{askedToWake(
+				depWorkload("default", "api", v1alpha1.TargetKindDeployment, v1alpha1.PhasePaused, postgresRef()),
+				v1alpha1.AnnotationLastRequest)},
+			wantHeldBy: "kept awake for default/api",
+		},
+		{
+			name: "a paused dependent with a wake request is waking, and holds it",
+			dependents: []*v1alpha1.ManagedWorkload{askedToWake(
+				depWorkload("default", "api", v1alpha1.TargetKindDeployment, v1alpha1.PhasePaused, postgresRef()),
+				v1alpha1.AnnotationWakeRequested)},
+			wantHeldBy: "kept awake for default/api",
+		},
+		{
+			name: "a paused dependent whose annotations are as they were at its pause releases it",
+			dependents: []*v1alpha1.ManagedWorkload{pausedWithRecord(
+				depWorkload("default", "api", v1alpha1.TargetKindDeployment, v1alpha1.PhasePaused, postgresRef()))},
+			wantPause: true,
+		},
+		{
 			name: "any awake dependent is enough",
 			dependents: []*v1alpha1.ManagedWorkload{
 				depWorkload("default", "api", v1alpha1.TargetKindDeployment, v1alpha1.PhasePaused, postgresRef()),
@@ -205,6 +226,98 @@ func withCondition(w *v1alpha1.ManagedWorkload, condType string, status metav1.C
 	reason string) *v1alpha1.ManagedWorkload {
 	meta.SetStatusCondition(&w.Status.Conditions, metav1.Condition{Type: condType, Status: status, Reason: reason})
 	return w
+}
+
+// pausedWithRecord gives w the pause record a pause writes: when it was
+// scaled to zero, an hour ago, and the request the doorman last stamped
+// before then.
+func pausedWithRecord(w *v1alpha1.ManagedWorkload) *v1alpha1.ManagedWorkload {
+	pausedAt := metav1.NewTime(fixedTime.Add(-time.Hour))
+	before := fixedTime.Add(-2 * time.Hour).Format(time.RFC3339)
+	w.Annotations = map[string]string{v1alpha1.AnnotationLastRequest: before}
+	w.Status.Pause = &v1alpha1.PauseStatus{PreviousReplicas: 1, StartedAt: &pausedAt, PausedAt: &pausedAt,
+		WakeAnnotations: &v1alpha1.WakeAnnotations{Workload: map[string]string{v1alpha1.AnnotationLastRequest: before}}}
+	return w
+}
+
+// askedToWake is w paused, with a wake asked for since through annotation:
+// a request the doorman stamps, a dependent's or a tool's activity
+// annotation, a hold, or a wake request.
+func askedToWake(w *v1alpha1.ManagedWorkload, annotation string) *v1alpha1.ManagedWorkload {
+	pausedWithRecord(w)
+	value := fixedTime.Add(-time.Second).Format(time.RFC3339)
+	switch annotation {
+	case v1alpha1.AnnotationWakeRequested:
+		value = "wake-1"
+	case v1alpha1.AnnotationActiveUntil:
+		value = fixedTime.Add(time.Hour).Format(time.RFC3339)
+	}
+	w.Annotations[annotation] = value
+	return w
+}
+
+// A dependency is held exactly while one of its dependents is awake, or
+// paused with a wake asked for, in every phase a dependent can be in, as
+// the API server has it now. The operator's graph follows the watch, and
+// can still have that dependent paused with nothing asked: a request
+// stamped on it, or its Resuming, may not have reached the graph yet. That
+// doesn't let the dependency begin to pause, from its idle clock or a pause
+// request.
+func TestDependencies_HeldByWhatTheDependentIsNow(t *testing.T) {
+	asks := []string{"", v1alpha1.AnnotationLastRequest, v1alpha1.AnnotationLastActivity,
+		v1alpha1.AnnotationActiveUntil, v1alpha1.AnnotationWakeRequested}
+	for _, phase := range workloadPhases {
+		for _, ask := range asks {
+			for _, stale := range []bool{false, true} {
+				for _, requested := range []bool{false, true} {
+					name := fmt.Sprintf("%s, %q asked, graph stale %t, pause requested %t", phase, ask, stale, requested)
+					t.Run(name, func(t *testing.T) {
+						api := pausedWithRecord(depWorkload("default", "api", v1alpha1.TargetKindDeployment, phase,
+							postgresRef()))
+						if ask != "" {
+							askedToWake(api, ask)
+						}
+						postgres := depWorkload("default", "postgres", v1alpha1.TargetKindStatefulSet,
+							v1alpha1.PhaseRunning)
+						if requested {
+							withPauseRequested(postgres)
+						}
+						pauser := &stubPauser{pauseDone: true}
+						r := depReconciler(t, pauser, postgres, api)
+						if stale {
+							r.graph = newWorkloadGraph()
+							asleep := pausedWithRecord(depWorkload("default", "api", v1alpha1.TargetKindDeployment,
+								v1alpha1.PhasePaused, postgresRef()))
+							for _, w := range []*v1alpha1.ManagedWorkload{postgres, asleep} {
+								r.relatedHandler().Create(context.Background(), event.CreateEvent{Object: w}, newQueue(t))
+							}
+						}
+
+						var err error
+						if requested {
+							_, err = r.reconcilePauseRequest(context.Background(), postgres, postgresTarget(1, 1))
+						} else {
+							_, err = r.reconcileAutomation(context.Background(), postgres, postgresTarget(1, 1))
+						}
+						require.NoError(t, err)
+
+						wantHeld := phase != v1alpha1.PhasePaused || ask != ""
+						assert.Equal(t, wantHeld, pauser.pauseCalls == 0, "held")
+						if !wantHeld {
+							return
+						}
+						cond := conditionHeldByDependents
+						if requested {
+							cond = conditionPauseRequest
+						}
+						c := meta.FindStatusCondition(postgres.Status.Conditions, cond)
+						require.NotNil(t, c)
+						assert.Contains(t, c.Message, "kept awake for default/api")
+					})
+				}
+			}
+		}
+	}
 }
 
 // A condition's message over 32768 bytes fails the whole status write, so

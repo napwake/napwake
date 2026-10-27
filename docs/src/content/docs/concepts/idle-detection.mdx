@@ -95,7 +95,7 @@ Each check runs these steps in order. The first that holds decides.
 | 2 | `active-until` is in the future | <Outcome state="awake" label="Stays awake">Stay awake</Outcome> |
 | 3 | The last activity was under `idleAfter` ago, or longer after [a pause made in use](#paused-while-in-use) | <Outcome state="awake" label="Stays awake">Stay awake, unless the forecast pauses it early (below)</Outcome> |
 | 4 | The [forecast](/concepts/forecasting/) is confident (`DailyActive` or later, `dailyPhase: Active`) and predicts above `cpuThreshold` in this hour or the next | <Outcome state="awake" label="Stays awake">Stay awake, with `IdleVetoed`</Outcome> |
-| 5 | An awake workload [depends on](/concepts/dependencies/) this one, or `dependsOn` forms a cycle | <Outcome state="awake" label="Stays awake">Stay awake, with `HeldByDependents` or `DependencyCycle`</Outcome> |
+| 5 | A workload awake, or [waking](/concepts/dependencies/#the-rules), [depends on](/concepts/dependencies/) this one, or `dependsOn` forms a cycle | <Outcome state="awake" label="Stays awake">Stay awake, with `HeldByDependents` or `DependencyCycle`</Outcome> |
 | 6 | None of these | <Outcome state="asleep" label="Pauses">`Idle`, then [paused](/guides/pause/), with an `IdleDetected` event. Or `PausedEarly`, naming the hours forecast quiet</Outcome> |
 
 With `pauseEarly`, step 3 goes on to step 4 as if the clock had run out, when:
