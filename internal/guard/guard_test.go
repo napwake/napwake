@@ -20,6 +20,9 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"os"
+	"path/filepath"
+	"regexp"
 	"strings"
 	"testing"
 	"time"
@@ -212,9 +215,10 @@ func TestRefusalLeadsWithOneLine(t *testing.T) {
 			name: "uninstall",
 			op:   Uninstall,
 			objs: []client.Object{managed("rc-demo", "web", v1alpha1.FinalizerCleanup), managed("blog", "api")},
-			want: "Napwake refuses to uninstall: these ManagedWorkloads' workloads would stay paused with no " +
-				"operator: blog/api, rc-demo/web. Remove the napwake.dev/managed label from them and their " +
-				"namespaces, and delete ManagedWorkloads you created, then uninstall again; " +
+			want: "Napwake refuses to uninstall: with no operator, these ManagedWorkloads would be stuck on " +
+				"their finalizers, and their workloads, if paused, would stay at 0 replicas: blog/api, rc-demo/web. " +
+				"Remove the napwake.dev/managed label from their workloads and namespaces, and delete " +
+				"ManagedWorkloads you created, then uninstall again; " +
 				"see https://docs.napwake.dev/getting-started/installation/#uninstall",
 		},
 		{
@@ -222,10 +226,11 @@ func TestRefusalLeadsWithOneLine(t *testing.T) {
 			op:      Upgrade,
 			watched: []string{"shop"},
 			objs:    []client.Object{managed("blog", "web", v1alpha1.FinalizerCleanup)},
-			want: "Napwake refuses this upgrade: it stops watching namespaces where these ManagedWorkloads' " +
-				"workloads would stay paused with no operator: blog/web. Keep their namespaces in " +
-				"watchNamespaces, or remove the napwake.dev/managed label from them and their namespaces, " +
-				"and delete ManagedWorkloads you created there, then upgrade again; " +
+			want: "Napwake refuses this upgrade: it stops watching the namespaces of these ManagedWorkloads, " +
+				"which with no operator would be stuck on their finalizers, and their workloads, if paused, " +
+				"would stay at 0 replicas: blog/web. Keep their namespaces in watchNamespaces, or remove the " +
+				"napwake.dev/managed label from their workloads and namespaces, and delete ManagedWorkloads you " +
+				"created there, then upgrade again; " +
 				"see https://docs.napwake.dev/operations/upgrading/#narrowing-watchnamespaces",
 		},
 		{
@@ -241,11 +246,12 @@ func TestRefusalLeadsWithOneLine(t *testing.T) {
 			name: "many left",
 			op:   Uninstall,
 			objs: many,
-			want: "Napwake refuses to uninstall: these ManagedWorkloads' workloads would stay paused with no " +
-				"operator: shop/app-00, shop/app-01, shop/app-02, shop/app-03, shop/app-04, shop/app-05, " +
-				"shop/app-06, shop/app-07, shop/app-08, shop/app-09 and 2 more. Remove the napwake.dev/managed " +
-				"label from them and their namespaces, and delete ManagedWorkloads you created, then uninstall " +
-				"again; see https://docs.napwake.dev/getting-started/installation/#uninstall",
+			want: "Napwake refuses to uninstall: with no operator, these ManagedWorkloads would be stuck on " +
+				"their finalizers, and their workloads, if paused, would stay at 0 replicas: shop/app-00, " +
+				"shop/app-01, shop/app-02, shop/app-03, shop/app-04, shop/app-05, shop/app-06, shop/app-07, " +
+				"shop/app-08, shop/app-09 and 2 more. Remove the napwake.dev/managed label from their workloads " +
+				"and namespaces, and delete ManagedWorkloads you created, then uninstall again; " +
+				"see https://docs.napwake.dev/getting-started/installation/#uninstall",
 		},
 	}
 	for _, tt := range tests {
@@ -264,6 +270,52 @@ func TestRefusalLeadsWithOneLine(t *testing.T) {
 			}
 		})
 	}
+}
+
+// The guard reads only the ManagedWorkloads' metadata, so it can't tell
+// whose workloads are paused. Its refusal says what's true of a running one
+// as well as a paused one: every ManagedWorkload would be stuck on its
+// finalizer, and a paused workload would stay at 0 replicas. It never says
+// they'd all stay paused (P64).
+func TestRefusalIsTrueOfRunningWorkloads(t *testing.T) {
+	for op, watched := range map[Operation][]string{Uninstall: nil, Upgrade: {"shop"}} {
+		t.Run(string(op), func(t *testing.T) {
+			c := fake.NewClientBuilder().WithScheme(newScheme(t)).
+				WithObjects(managed("blog", "web", v1alpha1.FinalizerCleanup)).Build()
+			var out strings.Builder
+			g := &Guard{Reader: c, Out: &out, Install: install, Watched: watched,
+				Wait: 20 * time.Millisecond, Poll: 5 * time.Millisecond}
+
+			require.ErrorIs(t, g.Check(context.Background(), op), ErrRefused)
+
+			got := strings.Join(strings.Fields(out.String()), " ")
+			assert.NotContains(t, got, "workloads would stay paused", "a running workload isn't paused")
+			lead, details, _ := strings.Cut(out.String(), "\n")
+			for _, part := range []string{lead, strings.Join(strings.Fields(details), " ")} {
+				assert.Contains(t, part, "stuck on their", "every one keeps its finalizer")
+				assert.Contains(t, part, "their workloads, if paused, would stay at 0 replicas")
+			}
+		})
+	}
+}
+
+// The installation page quotes the refusal Helm 4 prints, so it's the
+// guard's own first line.
+func TestInstallationPageQuotesTheRefusal(t *testing.T) {
+	page, err := os.ReadFile(filepath.Join("..", "..", "docs", "src", "content", "docs", "getting-started",
+		"installation.mdx"))
+	require.NoError(t, err)
+	quoted := regexp.MustCompile(`msg="(Napwake refuses to uninstall: [^\\]*)\\n`).FindSubmatch(page)
+	require.NotNil(t, quoted, "the installation page quotes the refused uninstall's first line")
+
+	c := fake.NewClientBuilder().WithScheme(newScheme(t)).
+		WithObjects(managed("staging", "web", v1alpha1.FinalizerCleanup)).Build()
+	var out strings.Builder
+	g := &Guard{Reader: c, Out: &out, Install: install, Wait: 20 * time.Millisecond, Poll: 5 * time.Millisecond}
+	require.ErrorIs(t, g.Check(context.Background(), Uninstall), ErrRefused)
+
+	lead, _, _ := strings.Cut(out.String(), "\n")
+	assert.Equal(t, lead, string(quoted[1]))
 }
 
 func TestCheckWaitsForThoseBeingDeleted(t *testing.T) {

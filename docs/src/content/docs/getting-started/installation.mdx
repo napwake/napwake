@@ -440,7 +440,7 @@ Then the hook lists any left and fails, before anything is removed. One deleted 
 The output names the ManagedWorkloads left after the wait, says what to do and links here. After the first `\n`, it lists each one with the steps above. From Helm 4:
 
 ```text
-level=INFO msg="Napwake refuses to uninstall: these ManagedWorkloads' workloads would stay paused with no operator: staging/web. Remove the napwake.dev/managed label from them and their namespaces, and delete ManagedWorkloads you created, then uninstall again; see https://docs.napwake.dev/getting-started/installation/#uninstall\n\n..."
+level=INFO msg="Napwake refuses to uninstall: with no operator, these ManagedWorkloads would be stuck on their finalizers, and their workloads, if paused, would stay at 0 replicas: staging/web. Remove the napwake.dev/managed label from their workloads and namespaces, and delete ManagedWorkloads you created, then uninstall again; see https://docs.napwake.dev/getting-started/installation/#uninstall\n\n..."
 ```
 
 When Helm prints only the error, the Job's log keeps the output for an hour, line breaks and all:
