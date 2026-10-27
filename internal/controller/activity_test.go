@@ -1369,8 +1369,8 @@ func TestActivityClock_EmptyAfterSeries(t *testing.T) {
 				"the clock ran on, at %s", at)
 		}
 
-		assert.True(t, c.check(t, time.Minute+seriesLostFor, emptyVector),
-			"its clock ran out long ago, so it pauses as the grace ends")
+		assert.True(t, c.check(t, time.Minute+seriesLostFor+time.Second, emptyVector),
+			"its clock ran out long ago, so it pauses at the first check after the grace")
 		assert.True(t, meta.IsStatusConditionTrue(c.workload.Status.Conditions, conditionPrometheusAvailable))
 	})
 
