@@ -541,7 +541,7 @@ helm upgrade napwake oci://ghcr.io/napwake/charts/napwake \
   --reuse-values
 ```
 
-`--reuse-values` takes the `deployed` revision's values, not the refused one's, so keeps whichever namespaces the operator watches now. It marks the release deployed, and leaves the operator's pods running.
+`--reuse-values` takes the `deployed` revision's values, not the refused one's, so it keeps whichever namespaces the operator watches now. It marks the release deployed, and leaves the operator's pods running.
 
 <details class="nw-details">
 <summary>When `helm rollback` fails</summary>
