@@ -31,6 +31,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/log"
 
 	v1alpha1 "github.com/napwake/napwake/api/v1alpha1"
+	"github.com/napwake/napwake/internal/forecast"
 )
 
 // ReasonPauseCancelled says a pause under way was called off: something
@@ -279,4 +280,21 @@ func (r *Reconciler) pauseCancelled(ctx context.Context, workload *v1alpha1.Mana
 			fmt.Sprintf("not paused at %s: %s", answeredAt(r.now()), why))
 	}
 	return &phaseEvent{reason: ReasonPauseCancelled, message: why + "; the pause is cancelled", cause: cause}, nil
+}
+
+// seeTurnedBack is a look at the demand of a workload whose pause why calls
+// off. A request through the doorman shows forecast.RequestDemand, in the
+// hour of the look, as one that wakes it from zero does in
+// seePausedDemand. No look is made while a workload pauses, and the wake's
+// warm-up hides the request from the looks at its CPU after, so without
+// this a workload whose use shows only in requests, its CPU under the
+// threshold, would learn the hours its pauses are turned back in from its
+// CPU, and the forecast wouldn't hold its pauses there. Anything else that
+// calls a pause off, a click for a workload that asks first included, is
+// learned from what the workload does once awake, as before.
+func (r *Reconciler) seeTurnedBack(ctx context.Context, workload *v1alpha1.ManagedWorkload, why *phaseEvent) {
+	if why.cause != v1alpha1.WokenByRequest {
+		return
+	}
+	r.seeDemand(ctx, workload, r.forecastEngine(workload), forecast.RequestDemand(cpuThresholdFor(workload)), true)
 }

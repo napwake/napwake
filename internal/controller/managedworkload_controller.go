@@ -536,6 +536,7 @@ func (r *Reconciler) resumeTransition(ctx context.Context, workload *v1alpha1.Ma
 			if err != nil {
 				return nil, err
 			}
+			r.seeTurnedBack(ctx, workload, why)
 			return r.handleResume(ctx, workload, why)
 		}
 		return r.handlePause(ctx, workload, target, nil)
