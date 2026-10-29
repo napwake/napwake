@@ -219,7 +219,7 @@ If it's `DoormanRouted` and requests still fail ([What the caller sees](/concept
 
 | The caller sees | Cause and fix |
 |---|---|
-| A close after a while, no response | Not Ready by `wake.maxWait`, or pods unreachable, as a `RequestNotServed` warning says. Raise `maxWait`, or see why pods are slow. Counted by `napwake_doorman_wakes_total{result=~"timeout\|error"}` |
+| A close after a while, no response, or a `502` from ingress-nginx | Not Ready by `wake.maxWait`, or pods unreachable, as a `RequestNotServed` warning says. Raise `maxWait`, or see why pods are slow. Counted by `napwake_doorman_wakes_total{result=~"timeout\|error"}` |
 | A close at once, nothing sent | A [limit](/concepts/wake-on-request/#limits), counted by `napwake_doorman_wakes_total{result="limited"}` |
 | The app's own error, such as a `503`, right after a wake | Pods Ready before the app was, as with no readiness probe. A `NoReadinessProbe` warning, and the `WakeOnRequest` message, say so. Add a [readiness probe](/concepts/wake-on-request/#readiness-probes) that passes once it can serve |
 | A `503` with no body | A health check or scraper `User-Agent`, such as `kube-probe/` or `Prometheus/`, which never wakes it |
