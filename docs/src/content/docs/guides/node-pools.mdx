@@ -304,7 +304,7 @@ Other providers, bigger images and slower apps take longer.
 |----|-----|
 | Raise `wake.maxWait` from its 2-minute default, such as to `5m` (`napwake.dev/wake-max-wait` with the label) | Otherwise the doorman gives up on held requests before the node is ready. The wake carries on ([How long a connection is held](/concepts/wake-on-request/#how-long-a-connection-is-held)) |
 | Raise your ingress controller's timeout to match | ingress-nginx gives up on an upstream after 60 seconds by default. Browsers get the [waking-up page](/concepts/wake-on-request/#browsers) at once |
-| Use `autoResume`, for traffic the forecast can learn such as a team in at 9 every weekday | It wakes the workload 15 minutes before an hour it expects to be busy. The node is up before anyone arrives ([Resume](/guides/pause/#resume)) |
+| Use `autoResume`, for traffic the forecast can learn such as a team in at 9 every weekday | Once the forecast acts, it wakes the workload 15 minutes before an hour it expects to be busy. The node is up before anyone arrives ([Resume](/guides/pause/#resume)). Without Prometheus history, the forecast acts 8 days or more after Napwake starts managing the workload ([How long it takes](/concepts/forecasting/#how-long-it-takes)). Until then, the first request wakes it. `kubectl napwake status` says when, such as `learning, acts from Nov 2` |
 | Keep one node warm, if every first request must be quick | A minimum of one, or in Karpenter a small always-on workload in the pool. You pay for that node, and pausing saves the rest |
 
 ## The metrics
