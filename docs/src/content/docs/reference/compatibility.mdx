@@ -33,7 +33,7 @@ import NextSteps from '../../../components/NextSteps.astro';
 
 | Controller | Status | Notes |
 |------------|--------|-------|
-| ingress-nginx (v1.15) | Tested | Reads endpoints on a timer. For a second or two after a pause, it can send a request to the removed pod. [Closes upstream requests](/concepts/wake-on-request/#how-long-a-connection-is-held) after 60 seconds by default |
+| ingress-nginx (v1.15) | Tested | Reads endpoints on a timer. For a second or two after a pause, it can send a request to the removed pod. Gives up on the doorman after 60 seconds by default. Then it tries a `GET` again, up to 3 tries, and gives a `POST` or `PATCH` a `504` ([What each gets](/concepts/wake-on-request/#how-long-a-connection-is-held)) |
 | Traefik (v3.7), for Ingress, IngressRoute and Gateway API | Checked against source | |
 | Envoy Gateway (v1.9) | Checked against source | |
 | Contour (v1.33) | Checked against source | |
