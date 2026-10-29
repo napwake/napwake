@@ -117,10 +117,11 @@ const doormanDialTimeout = 500 * time.Millisecond
 // workload's routes. The listen wait gives the replicas time to read the
 // routes, and this checks each did: a slow one, as on a busy node, would
 // refuse what its slice is sent while the pods still serve. A connection
-// that sends nothing is a TCP check to the doorman, which wakes nothing,
-// calls no pause off, and isn't counted in the doorman's metrics. It waits
-// no longer than the scale-down does, which untilFronted lets go on after
-// doormanFrontLimit whatever this finds.
+// that sends nothing is a TCP check to the doorman, which wakes nothing and
+// calls no pause off. Passed to a Ready pod, it isn't counted in the
+// doorman's metrics. With none of the workload's pods Ready, it counts as
+// ignored. It waits no longer than the scale-down does, which untilFronted
+// lets go on after doormanFrontLimit whatever this finds.
 func (r *Reconciler) untilDoormanAnswers(ctx context.Context, workload *v1alpha1.ManagedWorkload,
 	endpoints map[discoveryv1.AddressType][]discoveryv1.Endpoint) time.Duration {
 	pause := workload.Status.Pause
