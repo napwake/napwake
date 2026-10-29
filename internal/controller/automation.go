@@ -450,6 +450,48 @@ func (r *Reconciler) seePausedDemand(ctx context.Context, workload *v1alpha1.Man
 	r.seeDemand(ctx, workload, engine, demand, visible)
 }
 
+// heldBlindFor is how long, after a wrong pause a request undid, the hours
+// the forecast holds the workload awake in are learned as unseen: see
+// seeHeld.
+const heldBlindFor = 7 * 24 * time.Hour
+
+// seeHeld is a look at the demand of a workload the forecast holds awake,
+// expecting demand. Behind the doorman, with wake.mode Request and no
+// Prometheus activity query, the workload's use may show only in requests,
+// which wake it from zero or turn its pauses back, and which nothing sees
+// while it's held awake. Its CPU under the threshold, the held hour would
+// be learned as far quieter than the forecast that held it, which would
+// doubt itself and stop holding, for wrong pauses to teach it the hour
+// again. So while the workload's last wrong pause, undone by a request, is
+// under heldBlindFor old, the hour is learned as unseen, as a paused hour
+// nothing could wake it in is. After that, or once a wrong pause has
+// another cause, the hour is its CPU again, so a workload no longer used
+// is held unseen in its old hours for no longer than heldBlindFor.
+func (r *Reconciler) seeHeld(ctx context.Context, workload *v1alpha1.ManagedWorkload, engine forecaster) {
+	if !r.heldBlind(workload) {
+		return
+	}
+	r.seeDemand(ctx, workload, engine, 0, false)
+}
+
+// heldBlind reports whether seeHeld learns the hour the workload is held in
+// as unseen. While the workload is awake, its WakeOnRequest condition is
+// False for NotPaused unless its last pause found a routing problem that
+// lasts, so that reason counts as routed too.
+func (r *Reconciler) heldBlind(workload *v1alpha1.ManagedWorkload) bool {
+	routing := meta.FindStatusCondition(workload.Status.Conditions, conditionWakeOnRequest)
+	routed := routing != nil && (routing.Status == metav1.ConditionTrue || routing.Reason == reasonNotPaused)
+	if !routed || r.DoormanService == "" || workload.Spec.Wake.Asks() || hasPrometheusActivity(workload) ||
+		r.dryRun(workload) {
+		return false
+	}
+	wait := workload.Status.IdleWait
+	if wait == nil || wait.LastWrongPause == nil || wait.LastWrongPause.By != v1alpha1.WokenByRequest {
+		return false
+	}
+	return r.now().Sub(wait.LastWrongPause.PausedAt.Time) < heldBlindFor
+}
+
 // awakeDemand is the demand an awake workload's utilization shows, counting
 // its warm-up from its last wake.
 func (r *Reconciler) awakeDemand(workload *v1alpha1.ManagedWorkload, percent float64) float64 {

@@ -1041,6 +1041,7 @@ func (r *Reconciler) reconcileIdleClock(ctx context.Context, workload *v1alpha1.
 		var predicted float64
 		var hour time.Time
 		if vetoed, predicted, hour = r.forecastVeto(workload, engine); vetoed {
+			r.seeHeld(ctx, workload, engine)
 			return r.reportIdleVetoed(ctx, workload, predicted, hour)
 		}
 	}
