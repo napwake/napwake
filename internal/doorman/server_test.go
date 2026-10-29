@@ -31,6 +31,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/testutil"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -2248,6 +2249,85 @@ func TestServer_WhatWouldntWakeItPassesOnUnstamped(t *testing.T) {
 				echoed(t, conn, tt.request)
 			}
 			assert.Never(t, func() bool { return lastRequest(t, c) != "" }, 500*time.Millisecond, 50*time.Millisecond)
+		})
+	}
+}
+
+// counted is how many connections napwake_doorman_wakes_total has counted,
+// and napwake_doorman_wait_seconds has observed, whatever they ended with.
+func counted(t *testing.T) (connections float64, waits uint64) {
+	t.Helper()
+	reg := prometheus.NewRegistry()
+	require.NoError(t, reg.Register(opmetrics.DoormanWakes))
+	require.NoError(t, reg.Register(opmetrics.DoormanWaitSeconds))
+	families, err := reg.Gather()
+	require.NoError(t, err)
+	for _, f := range families {
+		for _, m := range f.GetMetric() {
+			connections += m.GetCounter().GetValue()
+			waits += m.GetHistogram().GetSampleCount()
+		}
+	}
+	return connections, waits
+}
+
+// openConns is how many connections the doorman has open, its callers' and
+// those it passed them on to: none once it's done with every caller.
+func openConns(s *Server) int {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return len(s.conns)
+}
+
+// Before a pausing workload's pods stop, the operator checks that each
+// doorman replica listens on each of its routes, with a connection it closes
+// having sent nothing (controller.DialTCP). The pods are up, so the doorman
+// passes it straight to one, as it does a load balancer's TCP check, or one
+// as a route drains. Nothing was asked for: a pause adds no connection
+// counted and no wait. A request passed on still counts, once.
+func TestServer_ATCPCheckPassedOnIsNotCounted(t *testing.T) {
+	tests := []struct {
+		name  string
+		start func(t *testing.T, port, pod int32) *Server
+	}{
+		{name: "as the workload pauses", start: func(t *testing.T, port, pod int32) *Server {
+			s, _ := startServer(t, pausingWorkload(port), readySlice(pod))
+			return s
+		}},
+		{name: "as its route drains", start: func(t *testing.T, port, pod int32) *Server {
+			s, c := startServer(t, pausedWorkload("api", port, time.Minute), readySlice(pod))
+			removeRoute(t, s, c)
+			return s
+		}},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			port := freePort(t)
+			pod, accepted := echoServer(t)
+			s := tt.start(t, port, pod)
+			connections, waits := counted(t)
+
+			const replicas = 2
+			for range replicas {
+				require.NoError(t, dial(t, port).Close())
+			}
+			require.Eventually(t, func() bool { return accepted.Load() == replicas }, 5*time.Second, 10*time.Millisecond,
+				"each check is passed straight to the pod")
+			require.Eventually(t, func() bool { return openConns(s) == 0 }, 5*time.Second, 10*time.Millisecond,
+				"and the doorman is done with it")
+			gotConnections, gotWaits := counted(t)
+			assert.Equal(t, connections, gotConnections, "a TCP check is no connection served")
+			assert.Equal(t, waits, gotWaits, "nor a wait")
+
+			const request = "GET /orders HTTP/1.1\r\nHost: api\r\nUser-Agent: curl/8.7.1\r\n\r\n"
+			conn := dial(t, port)
+			send(t, conn, request)
+			echoed(t, conn, request)
+			require.NoError(t, conn.Close())
+			require.Eventually(t, func() bool { return openConns(s) == 0 }, 5*time.Second, 10*time.Millisecond)
+			gotConnections, gotWaits = counted(t)
+			assert.Equal(t, connections+1, gotConnections, "a request passed on is counted")
+			assert.Equal(t, waits+1, gotWaits)
 		})
 	}
 }
