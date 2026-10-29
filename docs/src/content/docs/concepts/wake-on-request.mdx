@@ -367,13 +367,25 @@ spec:
 
 Callers time out too. Most HTTP clients wait at least 30 seconds, and browsers minutes.
 
-A proxy can give up sooner, and ingress-nginx closes an upstream request after 60 seconds by default. For a slower starter, raise it to match `maxWait`:
+A proxy can give up sooner. ingress-nginx waits 60 seconds for an answer by default. Then it tries again, up to 3 tries in all, unless the request is a `POST` or `PATCH`:
+
+| With ingress-nginx's defaults, the workload is Ready | A `GET` gets | A `POST` or `PATCH` gets |
+|---|---|---|
+| Within 60 seconds | Its answer | Its answer |
+| Within 3 minutes | Its answer, on the second or third try | A `504` at 60 seconds |
+| Later | A `504` at 3 minutes | A `504` at 60 seconds |
+
+Each try reaches the same doorman pod or another, which holds it. Each one ingress-nginx gives up on counts as `canceled` ([Metrics](/reference/metrics/#doorman)). A client that gives up first gets no answer, and ingress-nginx logs a `499`.
+
+For a slower starter, raise the timeout to match `maxWait`. The doorman then holds each request once, until a pod is Ready or `maxWait` runs out:
 
 ```yaml
 metadata:
   annotations:
     nginx.ingress.kubernetes.io/proxy-read-timeout: "120"
 ```
+
+Set it higher than `maxWait`, and the doorman lets go first. A `GET` is then tried again, and a `POST` gets a `502`.
 
 ### Limits
 
@@ -420,7 +432,7 @@ A browser gets the waking-up page, or with [`Ask`](#asking-before-waking) first 
 
 | When | The caller gets |
 |------|-----------------|
-| Behind ingress-nginx, a workload slower to start than the 60-second default `proxy-read-timeout` | A `504`. [Raise the timeout](#how-long-a-connection-is-held) |
+| Behind ingress-nginx, a workload slower to start than the 60-second default `proxy-read-timeout` | A `POST` or `PATCH` gets a `504` at 60 seconds. Anything else is tried up to 3 times. So it gets its answer if the workload is Ready within 3 minutes, or a `504` then. [Raise the timeout](#how-long-a-connection-is-held) |
 | Istio's STRICT mTLS | A `503`. The woken pod's sidecar refuses the doorman ([Compatibility](/reference/compatibility/#service-meshes)) |
 | Right after a wake, with no readiness probe, or one that passes too soon | An error from the app itself, such as a `503` ([Readiness probes](#readiness-probes)) |
 | As it pauses | An answer from a pod. A request that reaches the doorman is passed on to a Ready pod, or held, and [calls the pause off](/guides/pause/#a-request-calls-the-pause-off). Some go straight to the pods, unseen, and the pause goes on. That page lists which. The doorman is in front of the Service before the pods stop. So a new connection through it isn't refused for want of a route |

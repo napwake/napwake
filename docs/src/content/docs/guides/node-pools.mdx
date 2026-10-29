@@ -290,7 +290,15 @@ The settings follow these pages. They live outside Napwake and change with your 
 
 On a pool scaled to nothing, a waking workload needs a node first. After a quiet night, the first request waits for one to be provisioned and join. Then the images pull onto the fresh node, and the app starts.
 
-In Napwake's own GKE test, a wake that needed a new node answered in 52 seconds, node and app included. That was nginx on a spot `e2-standard-4` pool at zero. Other providers, bigger images and slower apps take longer.
+Wakes that needed a new node in Napwake's own GKE tests, from a spot pool at zero, node and app included:
+
+| What woke | Pool | From the first request |
+|-----------|------|------------------------|
+| nginx, on 25 Oct 2026 | Spot `e2-standard-4` | Answered in 52 seconds |
+| Online Boutique's 11 Deployments, on 27 Oct 2026 | Spot `e2-standard-2` | Running in 108 to 165 seconds |
+| The same, on 28 Oct 2026 | Spot `e2-standard-2` | Running in a median of 111 seconds, the slowest in 157 |
+
+Other providers, bigger images and slower apps take longer.
 
 | Do | Why |
 |----|-----|
