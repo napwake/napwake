@@ -317,7 +317,9 @@ A workload whose use stays under `cpuThreshold`, with no other source, is idle t
 
 - Without the doorman, `autoResume` can't learn its mornings.
 - Behind the doorman with `wake.mode: Request`, the forecast learns its busy hours from the requests that wake it or call a pause off. Once acting, it holds its pauses off there.
-- An hour it holds isn't learned for 7 days after a request last undid a pause. So a workload no longer used stays awake in its old hours for up to 7 days after its last wrong pause, and a few hours in the week after.
+- An hour it holds isn't learned for 7 days after a request last undid a pause.
+- No longer used at all, it's held awake in its old hours for up to 7 days after its last wrong pause. At a full working day's load, that's up to about 46 hours that week, then a few hours the week after.
+- If it drops some hours and keeps others, the dropped ones can be held for weeks. Wrong pauses in the hours it keeps restart the 7 days. Simulated with a working day's load whose mornings stop, they were awake up to 20 hours a week at first. That came to about 75 hours in all, over up to about 11 weeks.
 - Once no pause has been undone for 7 days, about once a week, a held hour is learned from its CPU. The forecast stops acting for a while, and a few pauses come back for requests to undo.
 
 <details class="nw-details">
@@ -330,7 +332,7 @@ A workload whose use stays under `cpuThreshold`, with no other source, is idle t
 | An hour in use counts as at least twice `cpuThreshold` | A light-use workload's use may show only in an annotation or a query. Without the floor, it would learn light use on mornings `autoResume` had it ready. On mornings people woke it, it would learn a request's twice `cpuThreshold`. The forecast would then have it ready only every other morning |
 | A waking request counts as twice `cpuThreshold` | So the hour people arrive in is learned as busy. A wake request, an activity annotation and a click count the same |
 | A request that calls a pause off counts as one that wakes it | Its pods never stopped, so the 15 minutes after the wake would hide it. A workload whose use shows only in requests, its CPU under `cpuThreshold`, would learn those hours from its CPU. The forecast would never hold its pauses off in them |
-| An hour the forecast holds isn't learned, for 7 days after a request undid a pause | Nothing sees the requests while the workload is held awake. Learned from its CPU, the hour would be far quieter than forecast. Two or three such hours in a day, and the forecast stops acting, for wrong pauses to teach it the hours again. The 7 days bound how long a workload no longer used is held awake in its old hours |
+| An hour the forecast holds isn't learned, for 7 days after a request undid a pause | Nothing sees the requests while the workload is held awake. Learned from its CPU, the hour would be far quieter than forecast. Two or three such hours in a day, and the forecast stops acting, for wrong pauses to teach it the hours again. The 7 days end the holds in the old hours of a workload no longer used. Hours a workload drops while it keeps others can be held for weeks, as wrong pauses in the hours it keeps restart the 7 days |
 | An hour busy before the forecast holds it records as usual | So a load that starts an hour earlier is learned. Unseen, its first hour would be held and dropped, and `autoResume` would never wake it ahead. Use seen after the hold in the same hour, such as CPU above `cpuThreshold`, is dropped with it. The forecast held the hour expecting it busy, so that costs nothing |
 | With `ask`, a paused hour behind the doorman nobody woke it in is quiet | Only people wake it then. Someone who needed it would have clicked or asked |
 | Only where people could have woken it | So an outage can't teach the forecast quiet hours |

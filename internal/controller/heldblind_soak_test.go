@@ -93,3 +93,52 @@ func TestHeldHours_LearnALoadThatStartsEarlier(t *testing.T) {
 		})
 	}
 }
+
+// The test cluster's orders/api, as above, its mornings dropped after 4
+// weeks: weekdays from 14:00 to 17:59, not from 09:00. Its afternoons' wrong
+// pauses keep the 7 days from lapsing, so the forecast holds it awake in
+// its old mornings, unseen, for weeks: up to 20 hours a week at first,
+// until each lapse feeds them its CPU. The forecasting page gives the
+// bound: awake in its old hours about 75 hours in all, and in none after
+// about 11 weeks. Without the 7 days, it's held awake in them for good.
+//
+// It runs 20 weeks of reconciles, several minutes under the race detector,
+// so it's left out of CI. Run it with:
+//
+//	go test -race -tags soak -run TestHeldHours_StopInMorningsDropped ./internal/controller
+func TestHeldHours_StopInMorningsDropped(t *testing.T) {
+	monday := time.Date(2026, 3, 16, 0, 0, 0, 0, time.UTC)
+	moved := monday.AddDate(0, 0, 28)
+	const after = 16
+	// Its old mornings, from 09:00 to 12:59. In the 13:00 hour, autoResume
+	// wakes it ahead of its afternoons.
+	old := weekdays(9, 13)
+	for _, idleAfter := range []time.Duration{time.Minute, 5 * time.Minute, 20 * time.Minute, time.Hour} {
+		t.Run(fmt.Sprintf("idleAfter %s", idleAfter), func(t *testing.T) {
+			t.Parallel()
+			run := soakWeeks(t, monday, soak{idleAfter: idleAfter, weeks: 4 + after, cpu: variedCPU, zero: 0.2,
+				load: switched(moved, loadHours, weekdays(14, 18))})
+
+			var total time.Duration
+			weeks := make([]string, 0, after)
+			for week := range after {
+				from := moved.AddDate(0, 0, 7*week)
+				var awake time.Duration
+				for hour := from; hour.Before(from.AddDate(0, 0, 7)); hour = hour.Add(time.Hour) {
+					if old(hour) {
+						awake += run.awake[hour]
+					}
+				}
+				total += awake
+				weeks = append(weeks, fmt.Sprintf("%.1f", awake.Hours()))
+				if week >= 12 {
+					assert.Zero(t, awake, "awake in its old mornings in week %d after they were dropped", week+1)
+				}
+			}
+			t.Logf("awake in its old mornings, by week after they were dropped: %v hours, %.1f in all", weeks,
+				total.Hours())
+			assert.LessOrEqual(t, total, 75*time.Hour, "awake in its old mornings about 75 hours in all, the "+
+				"forecasting page says")
+		})
+	}
+}
