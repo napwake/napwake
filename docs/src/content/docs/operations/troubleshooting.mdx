@@ -46,6 +46,7 @@ import OperationsSymptoms from '../../../components/OperationsSymptoms.astro';
   { title: 'Installing and removing', items: [
     { href: '#helm-uninstall-fails-with-job-napwake-uninstall-guard-failed', text: '`helm uninstall` refused' },
     { href: '#helm-upgrade-fails-with-job-napwake-upgrade-guard-failed', text: '`helm upgrade` refused' },
+    { href: '#after-a-refusal-the-release-isnt-deployed', text: 'Not `deployed` after a refusal' },
     { href: '#workloads-stay-at-zero-after-the-operator-was-removed', text: 'At zero, operator gone' },
     { href: '#debug-checklist', text: 'None of these' },
   ] },
@@ -495,7 +496,7 @@ Remove the `napwake.dev/managed` label from those workloads and their namespaces
 
 | You want, or see | What to do, or why |
 |---|---|
-| To keep Napwake | `helm rollback napwake -n napwake-system` marks the release deployed again. Until then, `helm upgrade` fails with `has no deployed releases` |
+| To keep Napwake | Mark the release deployed again ([After a refusal](#after-a-refusal-the-release-isnt-deployed)). Until then, if no revision is `deployed`, `helm upgrade` fails with `has no deployed releases` |
 | A ManagedWorkload still listed as being deleted | The operator didn't finish it, usually as it isn't running. Uninstall with `--no-hooks`, and restore the workloads by hand |
 | No CRD (`crds.install: false`) | Nothing is guarded |
 | Argo CD 3.3 and later | It refuses to delete the Application the same way ([When `helm uninstall` refuses](/getting-started/installation/#when-helm-uninstall-refuses)) |
@@ -510,12 +511,45 @@ kubectl logs job/napwake-upgrade-guard -n napwake-system
 
 Keep those namespaces, or stop managing their workloads first ([Narrowing `watchNamespaces`](/operations/upgrading/#narrowing-watchnamespaces)). Under Argo CD it fails the sync, in the PreSync hook.
 
+Helm marks the release `failed`, though the operator runs on unchanged. An upgrade with `--reuse-values` alone marks it deployed again ([After a refusal](#after-a-refusal-the-release-isnt-deployed)).
+
 <details class="nw-details">
 <summary>After a refused `helm rollback`</summary>
 
 A rollback to a narrower `watchNamespaces` is refused the same way, by the pre-rollback hook. Helm still records a revision, `pending-rollback` in `helm history napwake`, while the operator runs on unchanged. Until another revision replaces it, `helm upgrade` fails with `another operation (install/upgrade/rollback) is in progress`.
 
-`helm rollback napwake -n napwake-system`, with no revision, goes back to the one before, the release as it runs. It marks that deployed.
+Roll back to the `deployed` revision, by its number ([After a refusal](#after-a-refusal-the-release-isnt-deployed)).
+
+</details>
+
+### After a refusal, the release isn't `deployed`
+
+A refused `helm upgrade`, `helm uninstall` or `helm rollback` changes nothing in the cluster. The operator runs on with the values it had. Helm still records the refusal, in the release's last revision. To mark the release deployed again, find what `helm history napwake -n napwake-system` shows:
+
+| It shows | Run |
+|---|---|
+| A `deployed` revision, then a refused one, `failed` or `uninstalling` | The upgrade below |
+| No `deployed` revision, after a refused uninstall | `helm rollback napwake <revision> -n napwake-system`, with the last revision's number, the `uninstalling` one |
+| `pending-rollback` last, after a refused rollback | `helm rollback napwake <revision> -n napwake-system`, with the `deployed` revision's number. On Helm 3 the first try fails with `no Role ... found`. Run it again, and it passes |
+
+The upgrade takes `--reuse-values` alone, with no `--set`. For `X.Y.Z`, use the version in the `deployed` revision's `CHART` column, `0.2.0` for `napwake-0.2.0`:
+
+```bash
+helm upgrade napwake oci://ghcr.io/napwake/charts/napwake \
+  --version X.Y.Z \
+  --namespace napwake-system \
+  --reuse-values
+```
+
+`--reuse-values` takes the `deployed` revision's values, not the refused one's, so it keeps whichever namespaces the operator watches now. It marks the release deployed, and leaves the operator's pods running.
+
+<details class="nw-details">
+<summary>When `helm rollback` fails</summary>
+
+- On Helm 3, a `helm rollback` straight after a refused upgrade or rollback fails with `no Role with the name "napwake-manager" found`. Helm 3 compares the rollback with the refused revision, which doesn't list the Roles the cluster has. Nothing in the cluster changes. Helm 4 compares it with the cluster, so it passes.
+- Run it again with the `deployed` revision's number, and it passes. Run it again with no revision, and it goes to the refused revision. The guard refuses that, and leaves the release `pending-rollback`.
+- With no revision, `helm rollback` goes to the revision before the last. After a refused uninstall, that isn't always the one that runs. With only one revision, it fails on every Helm with `release has no 0 version`.
+- After a refused upgrade or rollback, `helm get values napwake -n napwake-system` shows the refused values. For the values that run, add `--revision` and the `deployed` revision's number.
 
 </details>
 

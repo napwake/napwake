@@ -195,7 +195,7 @@ So the chart's upgrade guard refuses. Stop managing them first, while the operat
 | What a refusal leaves of it | Before Helm 3.19, its ServiceAccount and RBAC, until it runs again or `helm uninstall` deletes them. Its Job, for an hour, for `kubectl logs` |
 | When it runs | Only when `watchNamespaces` is set, since widening to every namespace strands nothing. Argo CD runs it as a PreSync hook, before every sync |
 | How to skip it | `helm upgrade --no-hooks` skips it, and `guard.upgrade: false` drops it. Then restore the workloads left behind there by hand ([Restoring workloads after the operator is gone](/getting-started/installation/#restoring-workloads-after-the-operator-is-gone)) |
-| What a refusal leaves | A failed revision, and the release running the previous one. `helm uninstall` stays guarded. It runs with the failed revision's values, so it also counts ManagedWorkloads the operator took on outside them |
+| What a refusal leaves | A failed revision, and the release running the previous one. An upgrade with `--reuse-values` alone marks it deployed again ([After a refusal](/operations/troubleshooting/#after-a-refusal-the-release-isnt-deployed)). `helm uninstall` stays guarded. It runs with the failed revision's values, so it also counts ManagedWorkloads the operator took on outside them |
 
 </details>
 
@@ -229,6 +229,8 @@ Each ManagedWorkload keeps its forecast's state in `status.prediction.state`. On
 ```bash
 helm rollback napwake -n napwake-system
 ```
+
+After a refused upgrade, uninstall or rollback, recover instead with `helm upgrade --reuse-values` alone, or a rollback by revision number ([After a refusal](/operations/troubleshooting/#after-a-refusal-the-release-isnt-deployed)). Straight after a refused upgrade or rollback, Helm 3's `helm rollback` fails with `no Role ... found`.
 
 </TabItem>
 <TabItem label="install.yaml">
