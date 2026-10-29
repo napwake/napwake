@@ -38,7 +38,7 @@ import NextSteps from '../../../components/NextSteps.astro';
 
 The forecast learns the shape of a day, busy in business hours and quiet at night. It also learns how each weekday departs from that shape. It learns the two apart, from each hour's CPU utilisation.
 
-The [simulator](#proving-it), which runs the operator's own engine and rules, measured every figure on this page.
+The [simulator](#proving-it), which runs the operator's own engine and rules, measured every figure on this page but a held hour's. Those come from the operator's tests, which run its reconciles with the same engine.
 
 ## Phase lifecycle
 
@@ -319,7 +319,7 @@ A workload whose use stays under `cpuThreshold`, with no other source, is idle t
 - Behind the doorman with `wake.mode: Request`, the forecast learns its busy hours from the requests that wake it or call a pause off. Once acting, it holds its pauses off there.
 - An hour it holds isn't learned for 7 days after a request last undid a pause.
 - No longer used at all, it's held awake in its old hours for up to 7 days after its last wrong pause. At a full working day's load, that's up to about 46 hours that week, then a few hours the week after.
-- If it drops some hours and keeps others, the dropped ones can be held for weeks. Wrong pauses in the hours it keeps restart the 7 days. Simulated with a working day's load whose mornings stop, they were awake up to 20 hours a week at first. That came to about 75 hours in all, over up to about 11 weeks.
+- If it drops some hours and keeps others, the dropped ones can be held for weeks. Wrong pauses in the hours it keeps restart the 7 days. Simulated with a working day's load whose mornings stop, they were awake up to 20 hours a week at first. That came to up to about 75 hours in all, over up to about 11 weeks.
 - Once no pause has been undone for 7 days, about once a week, a held hour is learned from its CPU. The forecast stops acting for a while, and a few pauses come back for requests to undo.
 
 <details class="nw-details">
