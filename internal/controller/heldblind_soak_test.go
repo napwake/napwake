@@ -19,6 +19,7 @@ limitations under the License.
 package controller
 
 import (
+	"fmt"
 	"testing"
 	"time"
 
@@ -56,4 +57,39 @@ func TestHeldHours_TheSoaksOrdersAPI(t *testing.T) {
 	assert.Equal(t, 25, days)
 	assert.GreaterOrEqual(t, woken, 20, "mornings woken ahead")
 	assert.LessOrEqual(t, len(left), 6, "the forecast leaves acting about once a week at most")
+}
+
+// The test cluster's orders/api, as above, its load moved an hour earlier
+// after 4 weeks: weekdays from 08:00, not 09:00. A request wakes it from
+// zero at 08:00 each load day, and the forecast, expecting the 09:00 hour,
+// holds it awake through the rest of the 08:00 hour, which the request saw
+// busy. That hour is learned as busy, so from the third week after the
+// move, autoResume has it awake for the 08:00 call most mornings. Learned
+// as unseen, as when one look while held made the whole hour unseen, the
+// 08:00 call never found it awake: 0 of 30 mornings over 6 weeks, in P71's
+// second review.
+//
+// It runs 10 weeks of reconciles, a few minutes under the race detector, so
+// it's left out of CI. Run it with:
+//
+//	go test -race -tags soak -run TestHeldHours_LearnALoadThatStartsEarlier ./internal/controller
+func TestHeldHours_LearnALoadThatStartsEarlier(t *testing.T) {
+	monday := time.Date(2026, 3, 16, 0, 0, 0, 0, time.UTC)
+	moved := monday.AddDate(0, 0, 28)
+	for _, idleAfter := range []time.Duration{time.Minute, 5 * time.Minute} {
+		t.Run(fmt.Sprintf("idleAfter %s", idleAfter), func(t *testing.T) {
+			t.Parallel()
+			run := soakWeeks(t, monday, soak{idleAfter: idleAfter, weeks: 10, cpu: variedCPU, zero: 0.2,
+				load: switched(moved, loadHours, weekdays(8, 18))})
+
+			for week := 2; week < 6; week++ {
+				from := moved.AddDate(0, 0, 7*week)
+				woken, days := run.wokenAhead(from, from.AddDate(0, 0, 7))
+				t.Logf("week %d after the move: the 08:00 call found it awake %d of %d mornings", week+1, woken, days)
+				assert.Equal(t, 5, days)
+				assert.GreaterOrEqual(t, woken, 4, "mornings the 08:00 call found it awake in week %d after the move",
+					week+1)
+			}
+		})
+	}
 }

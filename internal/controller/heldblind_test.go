@@ -42,7 +42,7 @@ func TestHeldHours_StopForAWorkloadNoLongerUsed(t *testing.T) {
 	monday := time.Date(2026, 3, 16, 0, 0, 0, 0, time.UTC)
 	retired, end := monday.AddDate(0, 0, 14), monday.AddDate(0, 0, 35)
 	run := soakWeeks(t, monday, soak{idleAfter: 5 * time.Minute, weeks: 5, cpu: variedCPU, zero: 0.2,
-		retired: retired})
+		load: switched(retired, loadHours, never)})
 
 	wrong := run.last.Status.IdleWait.LastWrongPause
 	require.NotNil(t, wrong)

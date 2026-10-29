@@ -36,27 +36,50 @@ import (
 	"github.com/napwake/napwake/internal/forecast"
 )
 
+// weekdays is a load on weekdays from the hour from until the hour until,
+// UTC.
+func weekdays(from, until int) func(now time.Time) bool {
+	return func(now time.Time) bool {
+		if now.Weekday() == time.Saturday || now.Weekday() == time.Sunday {
+			return false
+		}
+		return now.Hour() >= from && now.Hour() < until
+	}
+}
+
 // loadHours is the test cluster's load: weekdays from 09:00 to 17:59 UTC.
 func loadHours(now time.Time) bool {
-	if now.Weekday() == time.Saturday || now.Weekday() == time.Sunday {
-		return false
-	}
-	return now.Hour() >= 9 && now.Hour() < 18
+	return weekdays(9, 18)(now)
 }
+
+// switched is a load that's before until at, and after from then.
+func switched(at time.Time, before, after func(now time.Time) bool) func(now time.Time) bool {
+	return func(now time.Time) bool {
+		if now.Before(at) {
+			return before(now)
+		}
+		return after(now)
+	}
+}
+
+// never is no load at all.
+func never(time.Time) bool { return false }
 
 // loadgenCalls reports whether the test cluster's load generator is calling
-// at now: for 270 seconds of every 5 minutes through the load hours.
-func loadgenCalls(now time.Time) bool {
-	return loadHours(now) && now.Sub(now.Truncate(5*time.Minute)) < 270*time.Second
+// at now: for 270 seconds of every 5 minutes through the hours of load.
+func loadgenCalls(load func(now time.Time) bool, now time.Time) bool {
+	return load(now) && now.Sub(now.Truncate(5*time.Minute)) < 270*time.Second
 }
 
-// nextCall is when the load generator next starts calling after now.
-func nextCall(now time.Time) time.Time {
-	for at := now.Truncate(5 * time.Minute); ; at = at.Add(5 * time.Minute) {
-		if at.After(now) && loadHours(at) {
+// nextCall is when the load generator next starts calling after now, within
+// a week, or zero for no call in that time.
+func nextCall(load func(now time.Time) bool, now time.Time) time.Time {
+	for at := now.Truncate(5 * time.Minute); at.Before(now.AddDate(0, 0, 8)); at = at.Add(5 * time.Minute) {
+		if at.After(now) && load(at) {
 			return at
 		}
 	}
+	return time.Time{}
 }
 
 // soakEngine is the real forecast, noting the peak it's fed for each hour,
@@ -94,8 +117,8 @@ type soak struct {
 	// zero is the share of its pauses in its load hours no call reaches
 	// before it's scaled down, so the next wakes it from zero.
 	zero float64
-	// retired is when its load stops for good, or zero for never.
-	retired time.Time
+	// load reports whether now is in its load hours: loadHours when nil.
+	load func(now time.Time) bool
 }
 
 // steadyCPU is a CPU of 7% through the load hours.
@@ -120,15 +143,16 @@ type soakRun struct {
 	requested map[time.Time]bool
 	// held are the hours the forecast held a pause off in, and blind those
 	// in which it did while the workload's last wrong pause, undone by a
-	// request, was under heldBlindFor old.
+	// request, was under heldBlindFor old, and before any call reached the
+	// doorman in the hour.
 	held, blind map[time.Time]bool
 	// turned and atZero are when each wrong pause was undone, as it paused
 	// or once it was scaled to zero.
 	turned, atZero []time.Time
 	// awake is how long the workload wasn't paused in each hour.
 	awake map[time.Time]time.Duration
-	// mornings is, for each load day by its first hour, whether the
-	// workload was awake for the load generator's first call: woken ahead.
+	// mornings is, for each load day by its date, whether the workload was
+	// awake for the load generator's first call: woken ahead.
 	mornings map[time.Time]bool
 	// last is the workload as the run ended.
 	last *v1alpha1.ManagedWorkload
@@ -176,21 +200,24 @@ func soakWeeks(t *testing.T, monday time.Time, s soak) soakRun {
 		require.NoError(t, fr.Create(ctx, obj))
 	}
 
+	hours := s.load
+	if hours == nil {
+		hours = loadHours
+	}
 	run := soakRun{engine: engine, requested: map[time.Time]bool{}, held: map[time.Time]bool{},
 		blind: map[time.Time]bool{}, awake: map[time.Time]time.Duration{}, mornings: map[time.Time]bool{}}
 	for end := monday.AddDate(0, 0, 7*s.weeks); fr.now.Before(end); {
 		require.NoError(t, fr.Get(ctx, client.ObjectKeyFromObject(workload), workload))
-		retired := !s.retired.IsZero() && !fr.now.Before(s.retired)
 		hour := forecast.HourStart(fr.now, nil)
-		load, calls := loadHours(fr.now) && !retired, loadgenCalls(fr.now) && !retired
+		load, calls := hours(fr.now), loadgenCalls(hours, fr.now)
 		metrics.cpuMillis = 5
 		if load {
 			metrics.cpuMillis = s.cpu(fr.now) * 10
 		}
 		phase := workload.Status.Phase
-		if morning := fr.now.Truncate(24 * time.Hour).Add(9 * time.Hour); load {
-			if _, seen := run.mornings[morning]; !seen {
-				run.mornings[morning] = phase != v1alpha1.PhasePaused && phase != v1alpha1.PhasePausing
+		if day := fr.now.Truncate(24 * time.Hour); load {
+			if _, seen := run.mornings[day]; !seen {
+				run.mornings[day] = phase != v1alpha1.PhasePaused && phase != v1alpha1.PhasePausing
 			}
 		}
 		missed := calls && phase == v1alpha1.PhasePausing &&
@@ -218,18 +245,18 @@ func soakWeeks(t *testing.T, monday time.Time, s soak) soakRun {
 		if meta.IsStatusConditionTrue(workload.Status.Conditions, conditionIdleVetoed) {
 			run.held[hour] = true
 			if wrong := workload.Status.IdleWait.LastWrongPause; wrong != nil && wrong.By == v1alpha1.WokenByRequest &&
-				fr.now.Sub(wrong.PausedAt.Time) < heldBlindFor {
+				fr.now.Sub(wrong.PausedAt.Time) < heldBlindFor && !run.requested[hour] {
 				run.blind[hour] = true
 			}
 		}
 
 		require.NotNil(t, result, "at %s", fr.now)
 		next := fr.now.Add(result.RequeueAfter)
-		if workload.Status.Phase == v1alpha1.PhasePaused && !retired {
-			if call := nextCall(fr.now); call.Before(next) {
+		if workload.Status.Phase == v1alpha1.PhasePaused {
+			if call := nextCall(hours, fr.now); !call.IsZero() && call.Before(next) {
 				next = call
 			}
-			if missed && loadgenCalls(fr.now.Add(20*time.Second)) {
+			if missed && loadgenCalls(hours, fr.now.Add(20*time.Second)) {
 				next = fr.now.Add(20 * time.Second)
 			}
 		}
@@ -313,9 +340,10 @@ func (run soakRun) heldShare(from, until time.Time) (held, load int) {
 // back every pause in its load hours. Each hour a call reached the doorman
 // in, turning a pause back or waking it from zero, is fed as busy, and each
 // hour the forecast held a pause off in, within 7 days of a wrong pause a
-// request undid, isn't fed at all: nothing sees the calls while it's held
-// awake. Every other hour is fed its CPU. So once the forecast acts, it
-// holds pauses off through the load days, and wrong pauses become rare.
+// request undid, and before any call reached the doorman in it, isn't fed
+// at all: nothing sees the calls while it's held awake. Every other hour is
+// fed its CPU. So once the forecast acts, it holds pauses off through the
+// load days, and wrong pauses become rare.
 func TestTurnedBackPauses_TeachTheForecastTheirHours(t *testing.T) {
 	if testing.Short() {
 		t.Skip("simulates weeks of reconciles")
@@ -331,7 +359,8 @@ func TestTurnedBackPauses_TeachTheForecastTheirHours(t *testing.T) {
 
 			var requested int
 			for hour, peak := range run.engine.fed {
-				assert.False(t, run.blind[hour], "the hour from %s was held, blind, and fed %.1f", hour, peak)
+				assert.False(t, run.blind[hour], "the hour from %s was held, blind, before any call, and fed %.1f",
+					hour, peak)
 				if run.requested[hour] {
 					requested++
 					assert.GreaterOrEqual(t, peak, busy, "a call reached the doorman in the hour from %s", hour)

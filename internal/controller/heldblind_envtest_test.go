@@ -150,3 +150,59 @@ func TestHeldHour_IsUnseenFor7DaysAfterARequestUndidAPause(t *testing.T) {
 		})
 	}
 }
+
+// pauseToZero has the operator go on with a pause under way, as often as the
+// doorman's takeover waits, until the workload is scaled to zero.
+func (tc *turnedBackCase) pauseToZero(t *testing.T) {
+	t.Helper()
+	for range 10 {
+		tc.now = tc.now.Add(doormanTakeover)
+		if tc.reconcile(t).Status.Phase == v1alpha1.PhasePaused {
+			return
+		}
+	}
+	t.Fatalf("not paused by %s", tc.now)
+}
+
+// The soak's orders/api, P71, once a request has undone a pause, so the
+// hours the forecast holds it in are unseen: one look while held makes the
+// whole hour unseen. But a request that wakes it from zero early in an
+// hour, as one an hour earlier than its usual load does, is a look that
+// saw the hour busy, and the forecast then holds it awake in that hour
+// expecting it busy. The hour is learned as busy, as the request showed:
+// unseen, autoResume would never learn to wake it ahead of that hour.
+func TestHeldHour_SeenBusyBeforeTheHoldIsLearned(t *testing.T) {
+	env := startTurnedBackEnv(t)
+	start := time.Date(2026, 10, 26, 10, 0, 0, 0, time.UTC)
+	tc := env.create(t, "held-busy", func(w *v1alpha1.ManagedWorkload) {
+		w.Spec.IdlePolicy.IdleAfter = &metav1.Duration{Duration: 5 * time.Minute}
+	})
+	tc.pauseUntilFronted(t)
+	tc.stamp(t)
+	tc.now = tc.now.Add(time.Second)
+	w := tc.reconcile(t)
+	require.Equal(t, v1alpha1.PhaseRunning, w.Status.Phase, "the request turned the pause back")
+	require.Equal(t, v1alpha1.WokenByRequest, w.Status.IdleWait.LastWrongPause.By)
+	tc.pauseAgain(t)
+	tc.pauseToZero(t)
+
+	woken := start.Add(time.Hour)
+	tc.watchUntil(t, woken.Add(30*time.Second))
+	tc.now = monotonic(woken.Add(100 * time.Second))
+	tc.stamp(t)
+	tc.now = tc.now.Add(time.Second)
+	require.NotEqual(t, v1alpha1.PhasePaused, tc.reconcile(t).Status.Phase, "a request woke it from zero")
+
+	tc.forecast.phase, tc.forecast.predictValue = forecast.DailyActive, 20
+	tc.watchUntil(t, woken.Add(30*time.Minute+30*time.Second))
+	w = tc.reconcile(t)
+	require.Equal(t, v1alpha1.PhaseRunning, w.Status.Phase)
+	require.True(t, meta.IsStatusConditionTrue(w.Status.Conditions, conditionIdleVetoed),
+		"the forecast holds its pause off in the hour the request woke it in")
+	require.Equal(t, v1alpha1.WokenByRequest, w.Status.IdleWait.LastWrongPause.By,
+		"a request undid its last wrong pause, under 7 days ago")
+
+	tc.watchUntil(t, woken.Add(time.Hour+30*time.Second))
+	assert.GreaterOrEqual(t, tc.fed(t, woken), forecast.RequestDemand(10),
+		"the hour from %s, which a request woke it in before it was held, is busy", woken.Format("15:04"))
+}
