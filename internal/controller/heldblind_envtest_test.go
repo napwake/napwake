@@ -25,8 +25,10 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	v1alpha1 "github.com/napwake/napwake/api/v1alpha1"
 	"github.com/napwake/napwake/internal/forecast"
@@ -66,7 +68,9 @@ func (tc *turnedBackCase) pauseAgain(t *testing.T) {
 // forecast, the forecast would doubt itself and stop holding. After 7
 // days, or once a wrong pause has another cause, the hour is its CPU
 // again. So is it for a workload whose requests something else sees, a
-// Prometheus query, or that asks a person first, and in dry-run.
+// Prometheus query, or that asks a person first, and in dry-run. So is it
+// for one a request couldn't wake: its last pause found a problem with its
+// Services that lasts, too many ports to route, or the doorman is off.
 func TestHeldHour_IsUnseenFor7DaysAfterARequestUndidAPause(t *testing.T) {
 	env := startTurnedBackEnv(t)
 	start := time.Date(2026, 10, 26, 10, 0, 0, 0, time.UTC)
@@ -110,6 +114,32 @@ func TestHeldHour_IsUnseenFor7DaysAfterARequestUndidAPause(t *testing.T) {
 				})
 			}},
 		{name: "6 days after, in dry-run since", days: 6, then: (*turnedBackCase).setDryRun},
+		{name: "6 days after, its last pause since finding it has too many ports to route", days: 6,
+			then: func(tc *turnedBackCase, t *testing.T) {
+				var api corev1.Service
+				require.NoError(t, tc.admin.Get(tc.ctx, client.ObjectKey{Namespace: tc.key.Namespace, Name: "api"}, &api))
+				api.Spec.Ports = append(api.Spec.Ports, corev1.ServicePort{Name: "grpc", Port: 9090})
+				require.NoError(t, tc.admin.Update(tc.ctx, &api))
+				tc.r.DoormanPortsPerWorkload = 1
+				tc.pauseAgain(t)
+				tc.pauseToZero(t)
+				tc.now = tc.now.Add(time.Hour)
+				tc.change(t, func(w *v1alpha1.ManagedWorkload) {
+					metav1.SetMetaDataAnnotation(&w.ObjectMeta, v1alpha1.AnnotationLastActivity,
+						tc.now.UTC().Format(time.RFC3339))
+				})
+				tc.watchUntil(t, tc.now.Add(2*time.Minute))
+				w := tc.reconcile(t)
+				require.Equal(t, v1alpha1.PhaseRunning, w.Status.Phase, "the annotation woke it, an hour after it paused")
+				require.Equal(t, v1alpha1.WokenByRequest, w.Status.IdleWait.LastWrongPause.By,
+					"its last wrong pause is still the one a request undid")
+				routing := meta.FindStatusCondition(w.Status.Conditions, conditionWakeOnRequest)
+				require.NotNil(t, routing)
+				require.Equal(t, "TooManyPorts", routing.Reason, "awake, it keeps what its last pause found: %s",
+					routing.Message)
+			}},
+		{name: "6 days after, the doorman off since", days: 6,
+			then: func(tc *turnedBackCase, _ *testing.T) { tc.r.DoormanService = "" }},
 	}
 	for i, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
