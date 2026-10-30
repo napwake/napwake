@@ -54,6 +54,11 @@ const (
 	annotationNginxPrefix      = "nginx.ingress.kubernetes.io/"
 	annotationNginxReadTimeout = annotationNginxPrefix + "proxy-read-timeout"
 
+	// F5's NGINX Ingress Controller takes ingress-nginx's class name, nginx,
+	// but reads its own annotations, such as nginx.org/proxy-read-timeout.
+	annotationF5Prefix     = "nginx.org/"
+	annotationF5PlusPrefix = "nginx.com/"
+
 	// nginxReadTimeoutDefault is ingress-nginx's own proxy-read-timeout, which
 	// its ConfigMap can change.
 	nginxReadTimeoutDefault = 60 * time.Second
@@ -65,8 +70,16 @@ const (
 // carries an nginx.ingress.kubernetes.io/ annotation. Which controller an
 // IngressClass names is cluster-scoped, which the operator isn't granted
 // to read, so an Ingress with neither isn't counted, though ingress-nginx
-// may serve it as the cluster's default class.
+// may serve it as the cluster's default class. Nor is one with an
+// annotation of F5's NGINX Ingress Controller, which also takes the class
+// nginx: ingress-nginx's annotation does nothing there, so advising it
+// would be wrong, and it would clear the warning all the same.
 func servedByNginx(ing networkingv1.Ingress) bool {
+	for key := range ing.Annotations {
+		if strings.HasPrefix(key, annotationF5Prefix) || strings.HasPrefix(key, annotationF5PlusPrefix) {
+			return false
+		}
+	}
 	if name := ing.Spec.IngressClassName; name != nil && namesNginx(*name) {
 		return true
 	}

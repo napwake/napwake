@@ -390,8 +390,10 @@ func TestIngressTimeoutShort(t *testing.T) {
 		traefik.Name = "traefik"
 		unclassed := ingressTo("api", nil, nil)
 		unclassed.Name = "unclassed"
+		f5 := nginxIngress("f5", "api", "")
+		f5.Annotations = map[string]string{"nginx.org/proxy-read-timeout": "60s"}
 		c := env.start(t, "others", nil, nginxIngress(storefront, "api", "120"), traefik, unclassed,
-			nginxIngress("elsewhere", "other", ""))
+			nginxIngress("elsewhere", "other", ""), f5)
 		r := c.reconciler(t)
 		c.pause(t, r)
 		c.wake(t, r, c.byRequest(t), 85*time.Second)

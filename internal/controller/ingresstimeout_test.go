@@ -51,6 +51,10 @@ func TestServedByNginx(t *testing.T) {
 		{name: "GKE's class annotation", annotations: map[string]string{annotationIngressClass: "gce"}},
 		{name: "no class and no nginx annotation, though ingress-nginx may be the default"},
 		{name: "another controller's annotations", annotations: map[string]string{"nginx.org/proxy-read-timeout": "120s"}},
+		{name: "class nginx, but F5's NGINX Ingress Controller's annotations",
+			className: ptr.To("nginx"), annotations: map[string]string{"nginx.org/proxy-read-timeout": "120s"}},
+		{name: "class nginx, but F5's NGINX Plus annotations",
+			annotations: map[string]string{annotationIngressClass: "nginx", "nginx.com/sticky-cookie-services": "x"}},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
