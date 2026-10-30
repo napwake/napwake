@@ -254,6 +254,7 @@ func (r *Reconciler) announceRouting(ctx context.Context, workload *v1alpha1.Man
 func (r *Reconciler) reconcileDoorman(ctx context.Context, workload *v1alpha1.ManagedWorkload, target client.Object) (time.Duration, error) {
 	if r.DoormanService == "" {
 		r.clearCondition(workload, conditionWakeOnRequest, "DoormanDisabled")
+		r.forgetNginxIngresses(workload, reasonDoormanDisabled)
 		return 0, r.removeDoorman(ctx, workload)
 	}
 	if !doormanEligible(workload) || target == nil {
@@ -354,6 +355,7 @@ func (r *Reconciler) reconcileDoorman(ctx context.Context, workload *v1alpha1.Ma
 			recheck = shortest(recheck, forwarderRecheckInterval)
 		}
 	}
+	recordNginxIngresses(workload, plan.ingresses, routed)
 	if err := r.deleteDoormanSlices(ctx, current, keep); err != nil {
 		errs = append(errs, err)
 	}
@@ -678,6 +680,9 @@ type doormanPlan struct {
 	// why, planned ahead of its pause. A paused workload's routing leaves
 	// them out as it always does.
 	unroutable []string
+	// ingresses are those in the workload's namespace, the cache's own, to
+	// be read only.
+	ingresses []networkingv1.Ingress
 }
 
 // planDoorman picks the Services in the workload's namespace to route
@@ -714,7 +719,7 @@ func (r *Reconciler) planDoorman(ctx context.Context, workload *v1alpha1.Managed
 	if err := r.List(ctx, &ingresses, client.InNamespace(workload.Namespace), client.UnsafeDisableDeepCopy); err != nil {
 		return doormanPlan{}, fmt.Errorf("listing ingresses: %w", err)
 	}
-	var plan doormanPlan
+	plan := doormanPlan{ingresses: ingresses.Items}
 	for _, svc := range list.Items {
 		if len(svc.Spec.Selector) == 0 || svc.Spec.Type == corev1.ServiceTypeExternalName ||
 			!labels.SelectorFromSet(svc.Spec.Selector).Matches(podLabels) {

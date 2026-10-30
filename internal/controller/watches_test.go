@@ -201,8 +201,10 @@ func TestRequeuePriority(t *testing.T) {
 
 // GKE's ingress controller keeps writing its own annotations and the load
 // balancer's address on an Ingress; only a change to which Services it uses,
-// or which controller serves it, can move one in or out of NEGs.
-func TestIngressBackendsChanged(t *testing.T) {
+// or which controller serves it, can move one in or out of NEGs, and only
+// one to whether ingress-nginx serves it, or how long it waits, changes
+// what's recorded of the timeouts in front of a workload.
+func TestIngressChanged(t *testing.T) {
 	base := gceIngressTo("api")
 	tests := []struct {
 		name   string
@@ -219,12 +221,19 @@ func TestIngressBackendsChanged(t *testing.T) {
 		{name: "its backends", passes: true, change: func(ing *networkingv1.Ingress) {
 			ing.Spec.Rules[0].HTTP.Paths[0].Backend.Service.Name = "web"
 		}},
+		{name: "ingress-nginx's read timeout", passes: true, change: func(ing *networkingv1.Ingress) {
+			ing.Annotations[annotationNginxReadTimeout] = "120"
+		}},
+		{name: "a first ingress-nginx annotation, which makes it ingress-nginx's", passes: true,
+			change: func(ing *networkingv1.Ingress) {
+				ing.Annotations["nginx.ingress.kubernetes.io/proxy-body-size"] = "8m"
+			}},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			cur := base.DeepCopy()
 			tt.change(cur)
-			assert.Equal(t, tt.passes, ingressBackendsChanged().Update(event.UpdateEvent{ObjectOld: &base, ObjectNew: cur}))
+			assert.Equal(t, tt.passes, ingressChanged().Update(event.UpdateEvent{ObjectOld: &base, ObjectNew: cur}))
 		})
 	}
 }
