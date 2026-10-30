@@ -294,7 +294,8 @@ Warning  IngressTimeoutShort  a wake by a request took 85 seconds to its first R
 ingress-nginx waits for an answer through Ingress my-api (60 seconds, its default), so a write held that long gets
 a 504 from ingress-nginx. Set nginx.ingress.kubernetes.io/proxy-read-timeout: "120" on it, its maxWait (2
 minutes, the default) in seconds. ingress-nginx's ConfigMap may already set a longer proxy-read-timeout, which
-Napwake can't see: the annotation settles it
+Napwake can't see: the annotation settles it. If F5's NGINX Ingress Controller, which also takes the class nginx,
+serves it, set nginx.org/proxy-read-timeout: "120s" instead
 ```
 
 Set the annotation it names, `maxWait` in seconds, on each Ingress it names:
@@ -302,6 +303,8 @@ Set the annotation it names, `maxWait` in seconds, on each Ingress it names:
 ```bash
 kubectl annotate ingress my-api -n staging nginx.ingress.kubernetes.io/proxy-read-timeout=120 --overwrite
 ```
+
+F5's NGINX Ingress Controller can take the class `nginx` too, and with that alone its Ingress looks like ingress-nginx's. It ignores that annotation, so the warning would clear while it still waits 60 seconds. If it serves the Ingress, set `nginx.org/proxy-read-timeout` instead, such as `"120s"`.
 
 It turns `False`, `TimeoutsCoverMaxWait`, once every ingress-nginx Ingress in front waits at least `maxWait`. If a timeout under `maxWait` comes back before another slow wake, the condition goes, as before any. If the wake outlasted `maxWait` too, the message says so. Raise `maxWait`, then the annotation to match.
 

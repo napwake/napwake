@@ -287,7 +287,8 @@ func TestIngressTimeoutShort(t *testing.T) {
 			"waits for an answer through Ingress storefront (60 seconds, its default), so a write held that long gets a 504 "+
 			`from ingress-nginx. Set nginx.ingress.kubernetes.io/proxy-read-timeout: "120" on it, its maxWait (2 `+
 			"minutes, the default) in seconds. ingress-nginx's ConfigMap may already set a longer proxy-read-timeout, which Napwake can't "+
-			"see: the annotation settles it", cond.Message)
+			"see: the annotation settles it. If F5's NGINX Ingress Controller, which also takes the class nginx, "+
+			`serves it, set nginx.org/proxy-read-timeout: "120s" instead`, cond.Message)
 		require.NotNil(t, w.Status.LastSlowWake)
 		assert.Equal(t, 85*time.Second, w.Status.LastSlowWake.Took.Duration)
 		assert.Len(t, warnings(r), 1)
@@ -368,7 +369,8 @@ func TestIngressTimeoutShort(t *testing.T) {
 			`a 504 from ingress-nginx. Ingress storefront's proxy-read-timeout "120s" isn't a whole number of seconds, `+
 			`so ingress-nginx ignores it. Set nginx.ingress.kubernetes.io/proxy-read-timeout: "120" on it, its maxWait `+
 			"(2 minutes, the default) in seconds. ingress-nginx's ConfigMap may already set a longer proxy-read-timeout, which Napwake can't "+
-			"see: the annotation settles it", cond.Message)
+			"see: the annotation settles it. If F5's NGINX Ingress Controller, which also takes the class nginx, "+
+			`serves it, set nginx.org/proxy-read-timeout: "120s" instead`, cond.Message)
 		assert.Len(t, warnings(r), 1)
 	})
 

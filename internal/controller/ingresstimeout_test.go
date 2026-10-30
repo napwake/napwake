@@ -182,7 +182,8 @@ func TestIngressTimeoutMessage(t *testing.T) {
 				"seconds. The wake took longer than its maxWait (120 seconds) too: raise napwake.dev/wake-max-wait as " +
 				"well, and the " +
 				"annotation to match. ingress-nginx's ConfigMap may already set a longer proxy-read-timeout, which " +
-				"Napwake can't see: the annotation settles it"},
+				"Napwake can't see: the annotation settles it. If F5's NGINX Ingress Controller, which also takes the " +
+				`class nginx, serves one, set nginx.org/proxy-read-timeout: "120s" on that one instead`},
 		{name: "the one it outlasted raised, another still under maxWait", slow: slow(70 * time.Second),
 			short: []v1alpha1.NginxIngress{api}, maxWait: 5 * time.Minute, setting: "wake.maxWait",
 			want: "a wake by a request took 70 seconds to its first Ready replica, and ingress-nginx answers a write " +

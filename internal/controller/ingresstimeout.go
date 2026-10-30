@@ -453,6 +453,14 @@ func ingressTimeoutMessage(slow v1alpha1.SlowWake, short []v1alpha1.NginxIngress
 	if defaulted {
 		b.WriteString(". ingress-nginx's ConfigMap may already set a longer proxy-read-timeout, which Napwake " +
 			"can't see: the annotation settles it")
+		// F5's controller takes the class nginx too, and with that alone its
+		// Ingress can't be told from ingress-nginx's without IngressClasses.
+		which := "it, set nginx.org/proxy-read-timeout: %q instead"
+		if len(short) > 1 {
+			which = "one, set nginx.org/proxy-read-timeout: %q on that one instead"
+		}
+		fmt.Fprintf(&b, ". If F5's NGINX Ingress Controller, which also takes the class nginx, serves "+which,
+			strconv.Itoa(int(maxWait/time.Second))+"s")
 	}
 	return b.String()
 }
