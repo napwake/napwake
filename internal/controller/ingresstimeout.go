@@ -38,6 +38,7 @@ import (
 
 	v1alpha1 "github.com/napwake/napwake/api/v1alpha1"
 	"github.com/napwake/napwake/internal/doorman"
+	"github.com/napwake/napwake/internal/human"
 )
 
 // ingress-nginx waits proxy-read-timeout for an answer from the doorman,
@@ -392,8 +393,11 @@ func wakeBegan(workload *v1alpha1.ManagedWorkload, pause *v1alpha1.PauseStatus, 
 
 // ingressTimeoutMessage says how long the slow wake took, which Ingresses in
 // front wait less than maxWait for an answer, that ingress-nginx answers a
-// write held longer with a 504, and what to set on each, with setting, what
-// sets maxWait, when the wake outlasted that too. ingress-nginx's ConfigMap
+// write held longer with a 504, and what to set on each. It names setting,
+// what sets maxWait, only where the user may have set it, maxWait being
+// other than the default, or to say to raise it when the wake outlasted
+// that too: a workload Napwake made from a label carries maxWait whether
+// or not its annotation was set. ingress-nginx's ConfigMap
 // can raise the default timeout, which Napwake can't see, so for an Ingress
 // on the default it says the annotation settles it, and for one on the
 // default because ingress-nginx ignores its annotation, why.
@@ -426,8 +430,8 @@ func ingressTimeoutMessage(slow v1alpha1.SlowWake, short []v1alpha1.NginxIngress
 		b.WriteString(", and ingress-nginx answers a write held longer than it waits with a 504")
 	}
 	if len(under) > 0 {
-		fmt.Fprintf(&b, ". %s also %s less than %s (%s)", ingressNames(under), plural(len(under), "waits", "wait"),
-			setting, seconds(maxWait))
+		fmt.Fprintf(&b, ". %s also %s less than its maxWait (%s)", ingressNames(under),
+			plural(len(under), "waits", "wait"), seconds(maxWait))
 	}
 	for _, s := range ignored {
 		b.WriteString(". " + s)
@@ -436,11 +440,15 @@ func ingressTimeoutMessage(slow v1alpha1.SlowWake, short []v1alpha1.NginxIngress
 	if len(short) > 1 {
 		where = "each"
 	}
+	inSeconds := setting
+	if maxWait == v1alpha1.DefaultWakeMaxWait {
+		inSeconds = "its maxWait (" + human.Duration(maxWait) + ", the default)"
+	}
 	fmt.Fprintf(&b, ". Set %s: %q on %s, %s in seconds", annotationNginxReadTimeout,
-		strconv.Itoa(int(maxWait/time.Second)), where, setting)
+		strconv.Itoa(int(maxWait/time.Second)), where, inSeconds)
 	if took > maxWait {
-		fmt.Fprintf(&b, ". The wake took longer than %s (%s) too: raise it as well, and the annotation to match",
-			setting, seconds(maxWait))
+		fmt.Fprintf(&b, ". The wake took longer than its maxWait (%s) too: raise %s as well, and the annotation "+
+			"to match", seconds(maxWait), setting)
 	}
 	if defaulted {
 		b.WriteString(". ingress-nginx's ConfigMap may already set a longer proxy-read-timeout, which Napwake " +

@@ -157,7 +157,20 @@ func TestIngressTimeoutMessage(t *testing.T) {
 			maxWait: 2 * time.Minute, setting: "wake.maxWait",
 			want: "a wake by a request took 45 seconds to its first Ready replica, longer than ingress-nginx waits " +
 				"for an answer through Ingress admin (30 seconds), so a write held that long gets a 504 from " +
-				`ingress-nginx. Set nginx.ingress.kubernetes.io/proxy-read-timeout: "120" on it, wake.maxWait in seconds`},
+				`ingress-nginx. Set nginx.ingress.kubernetes.io/proxy-read-timeout: "120" on it, its maxWait (2 minutes, ` +
+				"the default) in seconds"},
+		{name: "one, made from a label, on the default maxWait", slow: slow(45 * time.Second),
+			short: []v1alpha1.NginxIngress{admin}, maxWait: 2 * time.Minute, setting: v1alpha1.AnnotationWakeMaxWait,
+			want: "a wake by a request took 45 seconds to its first Ready replica, longer than ingress-nginx waits " +
+				"for an answer through Ingress admin (30 seconds), so a write held that long gets a 504 from " +
+				`ingress-nginx. Set nginx.ingress.kubernetes.io/proxy-read-timeout: "120" on it, its maxWait (2 minutes, ` +
+				"the default) in seconds"},
+		{name: "one, made from a label, its maxWait set", slow: slow(45 * time.Second),
+			short: []v1alpha1.NginxIngress{admin}, maxWait: 3 * time.Minute, setting: v1alpha1.AnnotationWakeMaxWait,
+			want: "a wake by a request took 45 seconds to its first Ready replica, longer than ingress-nginx waits " +
+				"for an answer through Ingress admin (30 seconds), so a write held that long gets a 504 from " +
+				`ingress-nginx. Set nginx.ingress.kubernetes.io/proxy-read-timeout: "180" on it, ` +
+				"napwake.dev/wake-max-wait in seconds"},
 		{name: "several, one on the default, one it ignores, past maxWait, set by the annotation",
 			slow: slow(150 * time.Second), short: []v1alpha1.NginxIngress{admin, ignored, shop}, maxWait: 2 * time.Minute,
 			setting: v1alpha1.AnnotationWakeMaxWait,
@@ -165,14 +178,15 @@ func TestIngressTimeoutMessage(t *testing.T) {
 				"for an answer through Ingresses admin (30 seconds), legacy (60 seconds, its default) and shop (60 " +
 				"seconds, its default), so a write held that long gets a 504 from ingress-nginx. Ingress legacy's " +
 				"proxy-read-timeout \"120s\" isn't a whole number of seconds, so ingress-nginx ignores it. Set " +
-				`nginx.ingress.kubernetes.io/proxy-read-timeout: "120" on each, napwake.dev/wake-max-wait in seconds. ` +
-				"The wake took longer than napwake.dev/wake-max-wait (120 seconds) too: raise it as well, and the " +
+				`nginx.ingress.kubernetes.io/proxy-read-timeout: "120" on each, its maxWait (2 minutes, the default) in ` +
+				"seconds. The wake took longer than its maxWait (120 seconds) too: raise napwake.dev/wake-max-wait as " +
+				"well, and the " +
 				"annotation to match. ingress-nginx's ConfigMap may already set a longer proxy-read-timeout, which " +
 				"Napwake can't see: the annotation settles it"},
 		{name: "the one it outlasted raised, another still under maxWait", slow: slow(70 * time.Second),
 			short: []v1alpha1.NginxIngress{api}, maxWait: 5 * time.Minute, setting: "wake.maxWait",
 			want: "a wake by a request took 70 seconds to its first Ready replica, and ingress-nginx answers a write " +
-				"held longer than it waits with a 504. Ingress api (90 seconds) also waits less than wake.maxWait " +
+				"held longer than it waits with a 504. Ingress api (90 seconds) also waits less than its maxWait " +
 				`(300 seconds). Set nginx.ingress.kubernetes.io/proxy-read-timeout: "300" on it, wake.maxWait in seconds`},
 	}
 	for _, tt := range tests {

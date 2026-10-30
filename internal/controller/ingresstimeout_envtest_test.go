@@ -285,8 +285,8 @@ func TestIngressTimeoutShort(t *testing.T) {
 		assert.Equal(t, reasonWakeOutlastedTimeout, cond.Reason)
 		assert.Equal(t, "a wake by a request took 85 seconds to its first Ready replica, longer than ingress-nginx "+
 			"waits for an answer through Ingress storefront (60 seconds, its default), so a write held that long gets a 504 "+
-			`from ingress-nginx. Set nginx.ingress.kubernetes.io/proxy-read-timeout: "120" on it, wake.maxWait in `+
-			"seconds. ingress-nginx's ConfigMap may already set a longer proxy-read-timeout, which Napwake can't "+
+			`from ingress-nginx. Set nginx.ingress.kubernetes.io/proxy-read-timeout: "120" on it, its maxWait (2 `+
+			"minutes, the default) in seconds. ingress-nginx's ConfigMap may already set a longer proxy-read-timeout, which Napwake can't "+
 			"see: the annotation settles it", cond.Message)
 		require.NotNil(t, w.Status.LastSlowWake)
 		assert.Equal(t, 85*time.Second, w.Status.LastSlowWake.Took.Duration)
@@ -366,11 +366,27 @@ func TestIngressTimeoutShort(t *testing.T) {
 		assert.Equal(t, "a wake by a request took 85 seconds to its first Ready replica, longer than ingress-nginx "+
 			"waits for an answer through Ingress storefront (60 seconds, its default), so a write held that long gets "+
 			`a 504 from ingress-nginx. Ingress storefront's proxy-read-timeout "120s" isn't a whole number of seconds, `+
-			`so ingress-nginx ignores it. Set nginx.ingress.kubernetes.io/proxy-read-timeout: "120" on it, wake.maxWait `+
-			"in seconds. ingress-nginx's ConfigMap may already set a longer proxy-read-timeout, which Napwake can't "+
+			`so ingress-nginx ignores it. Set nginx.ingress.kubernetes.io/proxy-read-timeout: "120" on it, its maxWait `+
+			"(2 minutes, the default) in seconds. ingress-nginx's ConfigMap may already set a longer proxy-read-timeout, which Napwake can't "+
 			"see: the annotation settles it", cond.Message)
 		assert.Len(t, warnings(r), 1)
 	})
+
+	t.Run("a workload made from a label, on the default maxWait, isn't told of an annotation it never set",
+		func(t *testing.T) {
+			c := env.start(t, "from-label", func(w *v1alpha1.ManagedWorkload) {
+				w.Labels = map[string]string{v1alpha1.LabelFromLabel: v1alpha1.True}
+				w.Spec.Wake = &v1alpha1.WakeSpec{MaxWait: &metav1.Duration{Duration: v1alpha1.DefaultWakeMaxWait}}
+			}, nginxIngress(storefront, "api", ""))
+			r := c.reconciler(t)
+			c.pause(t, r)
+			c.wake(t, r, c.byRequest(t), 85*time.Second)
+
+			cond := timeoutCondition(c.workload(t))
+			require.NotNil(t, cond)
+			assert.Contains(t, cond.Message, `"120" on it, its maxWait (2 minutes, the default) in seconds`)
+			assert.NotContains(t, cond.Message, v1alpha1.AnnotationWakeMaxWait)
+		})
 
 	t.Run("timed from the request, not from the scale-up", func(t *testing.T) {
 		c := env.start(t, "from-request", nil, nginxIngress(storefront, "api", ""))

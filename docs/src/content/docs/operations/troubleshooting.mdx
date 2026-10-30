@@ -292,9 +292,9 @@ It's common when it wasn't wholly Ready before the pause, with a pod crash-loopi
 ```text
 Warning  IngressTimeoutShort  a wake by a request took 85 seconds to its first Ready replica, longer than
 ingress-nginx waits for an answer through Ingress my-api (60 seconds, its default), so a write held that long gets
-a 504 from ingress-nginx. Set nginx.ingress.kubernetes.io/proxy-read-timeout: "120" on it, wake.maxWait in
-seconds. ingress-nginx's ConfigMap may already set a longer proxy-read-timeout, which Napwake can't see: the
-annotation settles it
+a 504 from ingress-nginx. Set nginx.ingress.kubernetes.io/proxy-read-timeout: "120" on it, its maxWait (2
+minutes, the default) in seconds. ingress-nginx's ConfigMap may already set a longer proxy-read-timeout, which
+Napwake can't see: the annotation settles it
 ```
 
 Set the annotation it names, `maxWait` in seconds, on each Ingress it names:
