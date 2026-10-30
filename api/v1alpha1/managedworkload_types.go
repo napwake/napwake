@@ -161,6 +161,20 @@ func (w *WakeSpec) Asks() bool {
 	return w != nil && w.Mode == WakeOnAsk
 }
 
+// DefaultWakeMaxWait is how long the doorman holds a connection while the
+// workload wakes when wake.maxWait isn't set.
+const DefaultWakeMaxWait = 2 * time.Minute
+
+// HoldFor is how long the doorman holds a connection while the workload
+// wakes: wake.maxWait, DefaultWakeMaxWait when it isn't set, and never more
+// than WakeMaxWaitLimit.
+func (w *WakeSpec) HoldFor() time.Duration {
+	if w == nil || w.MaxWait == nil || w.MaxWait.Duration <= 0 {
+		return DefaultWakeMaxWait
+	}
+	return min(w.MaxWait.Duration, WakeMaxWaitLimit)
+}
+
 // MaxDependsOn is the most dependencies dependsOn may list.
 const MaxDependsOn = 20
 
@@ -407,6 +421,22 @@ type ManagedWorkloadStatus struct {
 	// +optional
 	DoormanDraining []DrainingPort `json:"doormanDraining,omitempty"`
 
+	// NginxIngresses are the Ingresses ingress-nginx serves in front of the
+	// Services the doorman routed for the workload at its last pause, and
+	// how long each waits for an answer. They're read again while it's
+	// awake. A wake by a request that takes longer than one waits, while
+	// that's under wake.maxWait, sets the IngressTimeoutShort condition.
+	// +listType=atomic
+	// +optional
+	NginxIngresses []NginxIngress `json:"nginxIngresses,omitempty"`
+
+	// LastSlowWake is the last wake by a request, or a person's click, that
+	// took longer than one of NginxIngresses waits for an answer, under
+	// wake.maxWait. It's kept while IngressTimeoutShort is True, which it
+	// sets, and goes once that's False.
+	// +optional
+	LastSlowWake *SlowWake `json:"lastSlowWake,omitempty"`
+
 	// Activity tracks when the workload was last active, for idle detection.
 	// +optional
 	Activity *ActivityStatus `json:"activity,omitempty"`
@@ -470,6 +500,41 @@ type DoormanRoute struct {
 type DrainingPort struct {
 	Port  int32       `json:"port"`
 	Until metav1.Time `json:"until"`
+}
+
+// NginxIngress is an Ingress ingress-nginx serves in front of some of a
+// workload's Services, and how long ingress-nginx waits for an answer
+// through it.
+type NginxIngress struct {
+	// Name is the Ingress's name, in the workload's namespace.
+	Name string `json:"name"`
+
+	// Services are the workload's Services it sends traffic to.
+	// +listType=atomic
+	Services []string `json:"services"`
+
+	// ProxyReadTimeout is its nginx.ingress.kubernetes.io/proxy-read-timeout
+	// annotation as written, or empty without one.
+	// +optional
+	ProxyReadTimeout string `json:"proxyReadTimeout,omitempty"`
+
+	// ReadTimeout is how long ingress-nginx waits for an answer through it:
+	// ProxyReadTimeout in seconds, or 60 seconds, ingress-nginx's default,
+	// without one, which its ConfigMap can change unseen by Napwake. Unset
+	// when ProxyReadTimeout isn't a whole number of seconds above zero.
+	// +optional
+	ReadTimeout *metav1.Duration `json:"readTimeout,omitempty"`
+}
+
+// SlowWake is a wake by a request that took longer than an Ingress in
+// front of the workload waits for an answer.
+type SlowWake struct {
+	// Began is when the doorman took the request that woke the workload, or,
+	// when that can't be read, when Napwake scaled it up.
+	Began metav1.Time `json:"began"`
+
+	// Took is how long it took from Began to its first Ready replica.
+	Took metav1.Duration `json:"took"`
 }
 
 // +kubebuilder:validation:Enum=created;woke;request;cpu;rollout;annotation;prometheus;unobserved;scaled-up
