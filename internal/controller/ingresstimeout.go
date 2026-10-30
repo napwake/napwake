@@ -20,6 +20,7 @@ import (
 	"cmp"
 	"context"
 	"fmt"
+	"math"
 	"slices"
 	"strconv"
 	"strings"
@@ -110,19 +111,21 @@ func namesNginx(class string) bool {
 }
 
 // nginxReadTimeout is how long ingress-nginx waits for an answer through an
-// Ingress whose proxy-read-timeout annotation is annotation: that many
-// seconds, or its default without one. A value that isn't a whole number
-// of seconds above zero isn't one Napwake can tell, so it says so rather
-// than guess what ingress-nginx makes of it.
-func nginxReadTimeout(annotation string) (time.Duration, bool) {
-	if annotation == "" {
+// Ingress, as ingress-nginx v1.15 reads its proxy-read-timeout annotation:
+// that many seconds, by strconv.Atoi, and its default without one, or for
+// one Atoi refuses, which it ignores (GetIntAnnotation's error, in
+// internal/ingress/annotations/proxy/main.go). A whole number at or below
+// zero, which it would apply as written, isn't a timeout Napwake judges by,
+// so such an Ingress isn't counted.
+func nginxReadTimeout(ing v1alpha1.NginxIngress) (time.Duration, bool) {
+	if ing.ProxyReadTimeout == "" || ing.TimeoutIgnored() {
 		return nginxReadTimeoutDefault, true
 	}
-	seconds, err := strconv.ParseInt(annotation, 10, 32)
+	seconds, err := strconv.Atoi(ing.ProxyReadTimeout)
 	if err != nil || seconds <= 0 {
 		return 0, false
 	}
-	return time.Duration(seconds) * time.Second, true
+	return time.Duration(min(seconds, math.MaxInt32)) * time.Second, true
 }
 
 // routedService is a Service the doorman routes for a workload, and the
@@ -187,9 +190,11 @@ func nginxIngressesFor(ingresses []networkingv1.Ingress, services []routedServic
 		}
 		entry := v1alpha1.NginxIngress{Name: ing.Name, Services: fronted,
 			ProxyReadTimeout: ing.Annotations[annotationNginxReadTimeout]}
-		if timeout, ok := nginxReadTimeout(entry.ProxyReadTimeout); ok {
-			entry.ReadTimeout = &metav1.Duration{Duration: timeout}
+		timeout, ok := nginxReadTimeout(entry)
+		if !ok {
+			continue
 		}
+		entry.ReadTimeout = metav1.Duration{Duration: timeout}
 		out = append(out, entry)
 	}
 	slices.SortFunc(out, func(a, b v1alpha1.NginxIngress) int { return cmp.Compare(a.Name, b.Name) })
@@ -277,11 +282,11 @@ func (r *Reconciler) readNginxIngresses(ctx context.Context, namespace string,
 }
 
 // shortTimeouts are the Ingresses of ingresses whose timeout is under
-// maxWait, or can't be told.
+// maxWait.
 func shortTimeouts(ingresses []v1alpha1.NginxIngress, maxWait time.Duration) []v1alpha1.NginxIngress {
 	var short []v1alpha1.NginxIngress
 	for _, ing := range ingresses {
-		if ing.ReadTimeout == nil || ing.ReadTimeout.Duration < maxWait {
+		if ing.ReadTimeout.Duration < maxWait {
 			short = append(short, ing)
 		}
 	}
@@ -290,7 +295,7 @@ func shortTimeouts(ingresses []v1alpha1.NginxIngress, maxWait time.Duration) []v
 
 // judgeIngressTimeouts sets IngressTimeoutShort from the workload's last slow
 // wake and the Ingresses in front of it now: True while one waits less than
-// wake.maxWait for an answer, or can't be told, and False, with the slow
+// wake.maxWait for an answer, and False, with the slow
 // wake forgotten, once none does. It reports whether that just made it
 // True. Before any slow wake, it sets nothing.
 func (r *Reconciler) judgeIngressTimeouts(workload *v1alpha1.ManagedWorkload) bool {
@@ -344,7 +349,7 @@ func (r *Reconciler) judgeWakeTime(workload *v1alpha1.ManagedWorkload, firstRead
 	took := firstReady.Truncate(time.Second).Sub(began.Truncate(time.Second))
 	maxWait := workload.Spec.Wake.HoldFor()
 	if !slices.ContainsFunc(workload.Status.NginxIngresses, func(ing v1alpha1.NginxIngress) bool {
-		return ing.ReadTimeout != nil && ing.ReadTimeout.Duration < maxWait && took > ing.ReadTimeout.Duration
+		return ing.ReadTimeout.Duration < maxWait && took > ing.ReadTimeout.Duration
 	}) {
 		return nothing
 	}
@@ -383,20 +388,22 @@ func wakeBegan(workload *v1alpha1.ManagedWorkload, pause *v1alpha1.PauseStatus, 
 // write held longer with a 504, and what to set on each, with setting, what
 // sets maxWait, when the wake outlasted that too. ingress-nginx's ConfigMap
 // can raise the default timeout, which Napwake can't see, so for an Ingress
-// on the default it says the annotation settles it.
+// on the default it says the annotation settles it, and for one on the
+// default because ingress-nginx ignores its annotation, why.
 func ingressTimeoutMessage(slow v1alpha1.SlowWake, short []v1alpha1.NginxIngress, maxWait time.Duration,
 	setting string) string {
 	took := slow.Took.Duration
-	var outlasted, under, unreadable []string
+	var outlasted, under, ignored []string
 	defaulted := false
 	for _, ing := range short {
-		if ing.ProxyReadTimeout == "" {
+		if ing.ProxyReadTimeout == "" || ing.TimeoutIgnored() {
 			defaulted = true
 		}
+		if ing.TimeoutIgnored() {
+			ignored = append(ignored, fmt.Sprintf("Ingress %s's proxy-read-timeout %q isn't a whole number of "+
+				"seconds, so ingress-nginx ignores it", ing.Name, ing.ProxyReadTimeout))
+		}
 		switch {
-		case ing.ReadTimeout == nil:
-			unreadable = append(unreadable, fmt.Sprintf("Ingress %s's proxy-read-timeout %q isn't a whole number of "+
-				"seconds, so how long it waits can't be told", ing.Name, ing.ProxyReadTimeout))
 		case ing.ReadTimeout.Duration < took:
 			outlasted = append(outlasted, ing.Name+" ("+waitsFor(ing)+")")
 		default:
@@ -415,7 +422,7 @@ func ingressTimeoutMessage(slow v1alpha1.SlowWake, short []v1alpha1.NginxIngress
 		fmt.Fprintf(&b, ". %s also %s less than %s (%s)", ingressNames(under), plural(len(under), "waits", "wait"),
 			setting, seconds(maxWait))
 	}
-	for _, s := range unreadable {
+	for _, s := range ignored {
 		b.WriteString(". " + s)
 	}
 	where := "it"
@@ -435,10 +442,10 @@ func ingressTimeoutMessage(slow v1alpha1.SlowWake, short []v1alpha1.NginxIngress
 	return b.String()
 }
 
-// waitsFor says how long ingress-nginx waits through an Ingress whose
-// timeout can be told, and whether that's its default.
+// waitsFor says how long ingress-nginx waits through an Ingress, and
+// whether that's its default.
 func waitsFor(ing v1alpha1.NginxIngress) string {
-	if ing.ProxyReadTimeout == "" {
+	if ing.ProxyReadTimeout == "" || ing.TimeoutIgnored() {
 		return seconds(ing.ReadTimeout.Duration) + ", its default"
 	}
 	return seconds(ing.ReadTimeout.Duration)

@@ -17,6 +17,7 @@ limitations under the License.
 package v1alpha1
 
 import (
+	"strconv"
 	"time"
 
 	"k8s.io/apimachinery/pkg/api/resource"
@@ -520,10 +521,20 @@ type NginxIngress struct {
 
 	// ReadTimeout is how long ingress-nginx waits for an answer through it:
 	// ProxyReadTimeout in seconds, or 60 seconds, ingress-nginx's default,
-	// without one, which its ConfigMap can change unseen by Napwake. Unset
-	// when ProxyReadTimeout isn't a whole number of seconds above zero.
-	// +optional
-	ReadTimeout *metav1.Duration `json:"readTimeout,omitempty"`
+	// without one, or with one that isn't a whole number, which ingress-nginx
+	// ignores. Its ConfigMap can change that default, unseen by Napwake.
+	ReadTimeout metav1.Duration `json:"readTimeout"`
+}
+
+// TimeoutIgnored reports whether ingress-nginx ignores ProxyReadTimeout, as
+// it does a value that isn't a whole number, such as 120s, and waits its
+// default instead.
+func (i *NginxIngress) TimeoutIgnored() bool {
+	if i.ProxyReadTimeout == "" {
+		return false
+	}
+	_, err := strconv.Atoi(i.ProxyReadTimeout)
+	return err != nil
 }
 
 // SlowWake is a wake by a request that took longer than an Ingress in

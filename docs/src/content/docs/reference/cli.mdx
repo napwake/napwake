@@ -790,12 +790,15 @@ A person shown the asleep page isn't counted. So many mean something automated c
 
 ### Behind ingress-nginx
 
-Under the table, each ingress-nginx Ingress in front of a workload that waits less than its `wake.maxWait`, or whose `proxy-read-timeout` isn't whole seconds:
+Under the table, each ingress-nginx Ingress in front of a workload that waits less than its `wake.maxWait`:
 
 ```text
 Behind ingress-nginx, which answers a write held longer than it waits with a 504, if a wake takes that long:
   preview-42/api   Ingress api waits 60s, maxWait is 120s
+  preview-42/web   Ingress web waits 60s, maxWait is 120s. Its proxy-read-timeout "120s" isn't whole seconds, so ingress-nginx ignores it: write "120"
 ```
+
+ingress-nginx ignores a `proxy-read-timeout` that isn't whole seconds, such as `"120s"`, and waits its default. That Ingress's line says so, and what to write.
 
 It's a note, not a problem, since most wakes take seconds. Once a wake by a request has taken longer, `IngressTimeoutShort` lists it under Needs attention instead. It's read from the ManagedWorkload's `status.nginxIngresses`, recorded once it has paused ([A wake that outlasts ingress-nginx's timeout](/concepts/wake-on-request/#a-wake-that-outlasts-ingress-nginxs-timeout)).
 

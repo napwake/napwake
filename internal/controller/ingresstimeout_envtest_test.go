@@ -257,7 +257,7 @@ const storefront = "storefront"
 // proxy-read-timeout annotation and how long that has ingress-nginx wait.
 func recordedStorefront(readTimeout string, timeout time.Duration) v1alpha1.NginxIngress {
 	return v1alpha1.NginxIngress{Name: storefront, Services: []string{"api"}, ProxyReadTimeout: readTimeout,
-		ReadTimeout: &metav1.Duration{Duration: timeout}}
+		ReadTimeout: metav1.Duration{Duration: timeout}}
 }
 
 // The doorman holds a request for up to wake.maxWait while a workload wakes,
@@ -338,21 +338,38 @@ func TestIngressTimeoutShort(t *testing.T) {
 	})
 
 	t.Run("not with the annotation at maxWait, even for a wake past maxWait", func(t *testing.T) {
-		c := env.start(t, "at-max-wait", nil, nginxIngress(storefront, "api", "120"), nginxIngress("admin", "api", "2m"))
+		c := env.start(t, "at-max-wait", nil, nginxIngress(storefront, "api", "120"))
 		r := c.reconciler(t)
 		for _, took := range []time.Duration{85 * time.Second, 150 * time.Second} {
 			c.pause(t, r)
 			c.wake(t, r, c.byRequest(t), took)
 
 			w := c.workload(t)
-			assert.Nil(t, timeoutCondition(w), "after a wake of %s, which no timeout under maxWait was outlasted by", took)
+			assert.Nil(t, timeoutCondition(w), "after a wake of %s", took)
 			assert.Nil(t, w.Status.LastSlowWake)
-			assert.Equal(t, []v1alpha1.NginxIngress{
-				{Name: "admin", Services: []string{"api"}, ProxyReadTimeout: "2m"},
-				recordedStorefront("120", 2*time.Minute),
-			}, w.Status.NginxIngresses, "a timeout that isn't a number of seconds is recorded as written, unread")
+			assert.Equal(t, []v1alpha1.NginxIngress{recordedStorefront("120", 2*time.Minute)}, w.Status.NginxIngresses)
 		}
 		assert.Empty(t, warnings(r))
+	})
+
+	t.Run("a timeout ingress-nginx ignores is its default", func(t *testing.T) {
+		c := env.start(t, "ignored", nil, nginxIngress(storefront, "api", "120s"))
+		r := c.reconciler(t)
+		c.pause(t, r)
+		require.Equal(t, []v1alpha1.NginxIngress{recordedStorefront("120s", time.Minute)},
+			c.workload(t).Status.NginxIngresses, "recorded as written, waiting ingress-nginx's default")
+
+		c.wake(t, r, c.byRequest(t), 85*time.Second)
+
+		cond := timeoutCondition(c.workload(t))
+		require.NotNil(t, cond)
+		assert.Equal(t, "a wake by a request took 85 seconds to its first Ready replica, longer than ingress-nginx "+
+			"waits for an answer through Ingress storefront (60 seconds, its default), so a write held that long gets "+
+			`a 504 from ingress-nginx. Ingress storefront's proxy-read-timeout "120s" isn't a whole number of seconds, `+
+			`so ingress-nginx ignores it. Set nginx.ingress.kubernetes.io/proxy-read-timeout: "120" on it, wake.maxWait `+
+			"in seconds. ingress-nginx's ConfigMap may already set a longer proxy-read-timeout, which Napwake can't "+
+			"see: the annotation settles it", cond.Message)
+		assert.Len(t, warnings(r), 1)
 	})
 
 	t.Run("timed from the request, not from the scale-up", func(t *testing.T) {

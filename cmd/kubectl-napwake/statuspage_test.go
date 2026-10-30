@@ -116,10 +116,10 @@ func TestWriteStatusHTML_SaysFirstThatPausingIsOff(t *testing.T) {
 // A wake that outlasted ingress-nginx's timeout needs attention on the
 // page too, and marks the workload's row, as other troubles do.
 func TestWriteStatusHTML_IngressTimeoutShort(t *testing.T) {
-	slow := behindNginx("orders", &metav1.Duration{Duration: time.Minute}, "")
+	slow := behindNginx("orders", time.Minute, "")
 	slow.Status.Conditions = []metav1.Condition{condition("IngressTimeoutShort", metav1.ConditionTrue,
 		"WakeOutlastedTimeout", "a wake by a request took 85 seconds to its first Ready replica")}
-	fast := behindNginx("api", &metav1.Duration{Duration: time.Minute}, "")
+	fast := behindNginx("api", time.Minute, "")
 
 	got := renderStatusPage(t, slow, fast)
 

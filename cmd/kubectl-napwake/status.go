@@ -27,6 +27,7 @@ import (
 	"os"
 	"runtime"
 	"slices"
+	"strconv"
 	"strings"
 	"text/tabwriter"
 	"time"
@@ -737,8 +738,10 @@ func workloadStatus(w *v1alpha1.ManagedWorkload, targetActiveUntil, now time.Tim
 
 // shortTimeouts says, of each Ingress the operator recorded ingress-nginx
 // serving in front of a workload, how long it waits for an answer, where
-// that's under the workload's wake.maxWait or can't be told, while no wake
-// has taken that long: after one, IngressTimeoutShort says so instead.
+// that's under the workload's wake.maxWait, while no wake has taken that
+// long: after one, IngressTimeoutShort says so instead. One waiting its
+// default because ingress-nginx ignores its annotation says so, and what
+// to write.
 func shortTimeouts(w *v1alpha1.ManagedWorkload) []string {
 	if meta.IsStatusConditionTrue(w.Status.Conditions, "IngressTimeoutShort") {
 		return nil
@@ -746,14 +749,16 @@ func shortTimeouts(w *v1alpha1.ManagedWorkload) []string {
 	maxWait := w.Spec.Wake.HoldFor()
 	var out []string
 	for _, ing := range w.Status.NginxIngresses {
-		switch {
-		case ing.ReadTimeout == nil:
-			out = append(out, fmt.Sprintf("Ingress %s's proxy-read-timeout %q isn't a number of seconds, maxWait is %s",
-				ing.Name, ing.ProxyReadTimeout, inSeconds(maxWait)))
-		case ing.ReadTimeout.Duration < maxWait:
-			out = append(out, fmt.Sprintf("Ingress %s waits %s, maxWait is %s", ing.Name,
-				inSeconds(ing.ReadTimeout.Duration), inSeconds(maxWait)))
+		if ing.ReadTimeout.Duration >= maxWait {
+			continue
 		}
+		line := fmt.Sprintf("Ingress %s waits %s, maxWait is %s", ing.Name, inSeconds(ing.ReadTimeout.Duration),
+			inSeconds(maxWait))
+		if ing.TimeoutIgnored() {
+			line += fmt.Sprintf(". Its proxy-read-timeout %q isn't whole seconds, so ingress-nginx ignores it: write %q",
+				ing.ProxyReadTimeout, strconv.Itoa(int(maxWait/time.Second)))
+		}
+		out = append(out, line)
 	}
 	return out
 }

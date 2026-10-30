@@ -18,6 +18,7 @@ package controller
 
 import (
 	"context"
+	"math"
 	"testing"
 	"time"
 
@@ -100,41 +101,47 @@ func TestNginxIngressesFor_ByRoutedPort(t *testing.T) {
 	assert.Equal(t, []string{"by-name", "by-number", "default-backend"}, names)
 }
 
-// ingress-nginx reads proxy-read-timeout as whole seconds. Anything else is
-// reported as written, not guessed at.
+// ingress-nginx v1.15 reads proxy-read-timeout with strconv.Atoi, and waits
+// its default for a value Atoi refuses, which it ignores. A whole number at
+// or below zero it applies as written, and Napwake doesn't judge by.
 func TestNginxReadTimeout(t *testing.T) {
 	tests := []struct {
 		annotation string
 		want       time.Duration
+		ignored    bool
 		ok         bool
 	}{
 		{annotation: "", want: time.Minute, ok: true},
 		{annotation: "120", want: 2 * time.Minute, ok: true},
+		{annotation: "+120", want: 2 * time.Minute, ok: true},
 		{annotation: "3600", want: time.Hour, ok: true},
-		{annotation: "120s"},
-		{annotation: "2m"},
+		{annotation: "99999999999", want: math.MaxInt32 * time.Second, ok: true},
+		{annotation: "120s", want: time.Minute, ignored: true, ok: true},
+		{annotation: "2m", want: time.Minute, ignored: true, ok: true},
+		{annotation: " 120", want: time.Minute, ignored: true, ok: true},
 		{annotation: "0"},
 		{annotation: "-30"},
-		{annotation: " 120"},
-		{annotation: "99999999999"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.annotation, func(t *testing.T) {
-			got, ok := nginxReadTimeout(tt.annotation)
+			ing := v1alpha1.NginxIngress{ProxyReadTimeout: tt.annotation}
+			got, ok := nginxReadTimeout(ing)
 			assert.Equal(t, tt.ok, ok)
 			assert.Equal(t, tt.want, got)
+			assert.Equal(t, tt.ignored, ing.TimeoutIgnored())
 		})
 	}
 }
 
 func TestIngressTimeoutMessage(t *testing.T) {
-	timeout := func(d time.Duration) *metav1.Duration { return &metav1.Duration{Duration: d} }
+	timeout := func(d time.Duration) metav1.Duration { return metav1.Duration{Duration: d} }
 	shop := v1alpha1.NginxIngress{Name: "shop", Services: []string{"api"}, ReadTimeout: timeout(time.Minute)}
 	admin := v1alpha1.NginxIngress{Name: "admin", Services: []string{"api"}, ProxyReadTimeout: "30",
 		ReadTimeout: timeout(30 * time.Second)}
 	api := v1alpha1.NginxIngress{Name: "api", Services: []string{"api"}, ProxyReadTimeout: "90",
 		ReadTimeout: timeout(90 * time.Second)}
-	unread := v1alpha1.NginxIngress{Name: "legacy", Services: []string{"api"}, ProxyReadTimeout: "120s"}
+	ignored := v1alpha1.NginxIngress{Name: "legacy", Services: []string{"api"}, ProxyReadTimeout: "120s",
+		ReadTimeout: timeout(time.Minute)}
 	slow := func(took time.Duration) v1alpha1.SlowWake {
 		return v1alpha1.SlowWake{Took: metav1.Duration{Duration: took}}
 	}
@@ -151,13 +158,13 @@ func TestIngressTimeoutMessage(t *testing.T) {
 			want: "a wake by a request took 45 seconds to its first Ready replica, longer than ingress-nginx waits " +
 				"for an answer through Ingress admin (30 seconds), so a write held that long gets a 504 from " +
 				`ingress-nginx. Set nginx.ingress.kubernetes.io/proxy-read-timeout: "120" on it, wake.maxWait in seconds`},
-		{name: "several, one on the default, one unread, past maxWait, set by the annotation",
-			slow: slow(150 * time.Second), short: []v1alpha1.NginxIngress{admin, shop, unread}, maxWait: 2 * time.Minute,
+		{name: "several, one on the default, one it ignores, past maxWait, set by the annotation",
+			slow: slow(150 * time.Second), short: []v1alpha1.NginxIngress{admin, ignored, shop}, maxWait: 2 * time.Minute,
 			setting: v1alpha1.AnnotationWakeMaxWait,
 			want: "a wake by a request took 150 seconds to its first Ready replica, longer than ingress-nginx waits " +
-				"for an answer through Ingresses admin (30 seconds) and shop (60 seconds, its default), so a write held " +
-				"that long gets a 504 from ingress-nginx. Ingress legacy's proxy-read-timeout \"120s\" isn't a whole " +
-				"number of seconds, so how long it waits can't be told. Set " +
+				"for an answer through Ingresses admin (30 seconds), legacy (60 seconds, its default) and shop (60 " +
+				"seconds, its default), so a write held that long gets a 504 from ingress-nginx. Ingress legacy's " +
+				"proxy-read-timeout \"120s\" isn't a whole number of seconds, so ingress-nginx ignores it. Set " +
 				`nginx.ingress.kubernetes.io/proxy-read-timeout: "120" on each, napwake.dev/wake-max-wait in seconds. ` +
 				"The wake took longer than napwake.dev/wake-max-wait (120 seconds) too: raise it as well, and the " +
 				"annotation to match. ingress-nginx's ConfigMap may already set a longer proxy-read-timeout, which " +
