@@ -312,7 +312,9 @@ without activity before pausing, not 5 minutes, until a pause holds. It used up 
 in use, and up to 0.2% idle: try napwake.dev/cpu-threshold: "0.4"
 ```
 
-Meanwhile its idle clock waits longer, doubling with each wrong pause up to `idleAfter` plus an hour. So it's paused in use less often. Fix the cause, and it pauses on time again:
+Meanwhile its idle clock waits longer, doubling with each wrong pause up to `idleAfter` plus an hour. So it's paused in use less often, but the wait doesn't last: a pause that holds overnight ends it. Until you fix the cause, the wrong pauses come back every working day, about 10 a day with `idleAfter: 5m`. Each costs at most a cold start for the request that undid it, which the doorman holds through the wake.
+
+Fix the cause, and it pauses on time again:
 
 | You see | Fix |
 |---|---|
