@@ -1024,6 +1024,27 @@ spec:
                 - by
                 - replicas
                 type: object
+              lastSlowWake:
+                description: |-
+                  LastSlowWake is the last wake by a request, or a person's click, that
+                  took longer than one of NginxIngresses waits for an answer, under
+                  wake.maxWait. It's kept while IngressTimeoutShort is True, which it
+                  sets, and goes once that's False.
+                properties:
+                  began:
+                    description: |-
+                      Began is when the doorman took the request that woke the workload, or,
+                      when that can't be read, when Napwake scaled it up.
+                    format: date-time
+                    type: string
+                  took:
+                    description: Took is how long it took from Began to its first
+                      Ready replica.
+                    type: string
+                required:
+                - began
+                - took
+                type: object
               lastTransitionTime:
                 description: LastTransitionTime is when the workload last changed
                   phases.
@@ -1105,6 +1126,47 @@ spec:
                 - at
                 - from
                 type: object
+              nginxIngresses:
+                description: |-
+                  NginxIngresses are the Ingresses ingress-nginx serves in front of the
+                  Services the doorman routed for the workload at its last pause, and
+                  how long each waits for an answer. They're read again while it's
+                  awake. A wake by a request that takes longer than one waits, while
+                  that's under wake.maxWait, sets the IngressTimeoutShort condition.
+                items:
+                  description: |-
+                    NginxIngress is an Ingress ingress-nginx serves in front of some of a
+                    workload's Services, and how long ingress-nginx waits for an answer
+                    through it.
+                  properties:
+                    name:
+                      description: Name is the Ingress's name, in the workload's namespace.
+                      type: string
+                    proxyReadTimeout:
+                      description: |-
+                        ProxyReadTimeout is its nginx.ingress.kubernetes.io/proxy-read-timeout
+                        annotation as written, or empty without one.
+                      type: string
+                    readTimeout:
+                      description: |-
+                        ReadTimeout is how long ingress-nginx waits for an answer through it:
+                        ProxyReadTimeout in seconds, or 60 seconds, ingress-nginx's default,
+                        without one, which its ConfigMap can change unseen by Napwake. Unset
+                        when ProxyReadTimeout isn't a whole number of seconds above zero.
+                      type: string
+                    services:
+                      description: Services are the workload's Services it sends traffic
+                        to.
+                      items:
+                        type: string
+                      type: array
+                      x-kubernetes-list-type: atomic
+                  required:
+                  - name
+                  - services
+                  type: object
+                type: array
+                x-kubernetes-list-type: atomic
               pause:
                 description: |-
                   Pause records what pausing changed, from before the workload is scaled
