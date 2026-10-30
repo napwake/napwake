@@ -22,6 +22,8 @@ import (
 	"time"
 
 	"github.com/stretchr/testify/assert"
+	corev1 "k8s.io/api/core/v1"
+	networkingv1 "k8s.io/api/networking/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/client-go/tools/events"
@@ -66,6 +68,36 @@ func TestServedByNginx(t *testing.T) {
 			assert.Equal(t, tt.want, servedByNginx(ingressTo("api", tt.annotations, tt.className)))
 		})
 	}
+}
+
+// A request held is one to a port the doorman routes, so an Ingress counts
+// only by such a port, by the Service port's name or its number.
+func TestNginxIngressesFor_ByRoutedPort(t *testing.T) {
+	to := func(name string, port networkingv1.ServiceBackendPort) networkingv1.Ingress {
+		ing := ingressTo("api", nil, ptr.To("nginx"))
+		ing.Name = name
+		ing.Spec.Rules[0].HTTP.Paths[0].Backend.Service.Port = port
+		return ing
+	}
+	byDefault := ingressTo("other", nil, ptr.To("nginx"))
+	byDefault.Name = "default-backend"
+	byDefault.Spec.DefaultBackend = &networkingv1.IngressBackend{Service: &networkingv1.IngressServiceBackend{
+		Name: "api", Port: networkingv1.ServiceBackendPort{Number: 80}}}
+	api := routedService{name: "api", ports: []corev1.ServicePort{{Name: "http", Port: 80}}}
+
+	got := nginxIngressesFor([]networkingv1.Ingress{
+		to("by-number", networkingv1.ServiceBackendPort{Number: 80}),
+		to("by-name", networkingv1.ServiceBackendPort{Name: "http"}),
+		to("ignored-port", networkingv1.ServiceBackendPort{Number: 9090}),
+		to("ignored-name", networkingv1.ServiceBackendPort{Name: "metrics"}),
+		byDefault,
+	}, []routedService{api})
+
+	names := make([]string, 0, len(got))
+	for _, ing := range got {
+		names = append(names, ing.Name)
+	}
+	assert.Equal(t, []string{"by-name", "by-number", "default-backend"}, names)
 }
 
 // ingress-nginx reads proxy-read-timeout as whole seconds. Anything else is

@@ -25,14 +25,18 @@ import (
 	"strings"
 	"time"
 
+	corev1 "k8s.io/api/core/v1"
 	networkingv1 "k8s.io/api/networking/v1"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/types"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/log"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 
 	v1alpha1 "github.com/napwake/napwake/api/v1alpha1"
+	"github.com/napwake/napwake/internal/doorman"
 )
 
 // ingress-nginx waits proxy-read-timeout for an answer from the doorman,
@@ -121,10 +125,51 @@ func nginxReadTimeout(annotation string) (time.Duration, bool) {
 	return time.Duration(seconds) * time.Second, true
 }
 
+// routedService is a Service the doorman routes for a workload, and the
+// ports of it that it routes: those doorman.RoutablePorts gives, less those
+// napwake.dev/doorman-ignore-ports lists.
+type routedService struct {
+	name  string
+	ports []corev1.ServicePort
+}
+
+// sendsTo reports whether an Ingress sends any of its traffic to one of the
+// ports the doorman routes of svc, by the Service port's name or number. A
+// request to another port isn't held, so ingress-nginx's timeout there
+// doesn't matter to a wake.
+func sendsTo(ing networkingv1.Ingress, svc routedService) bool {
+	routes := func(b *networkingv1.IngressBackend) bool {
+		if b == nil || b.Service == nil || b.Service.Name != svc.name {
+			return false
+		}
+		port := b.Service.Port
+		return slices.ContainsFunc(svc.ports, func(p corev1.ServicePort) bool {
+			if port.Name != "" {
+				return p.Name == port.Name
+			}
+			return p.Port == port.Number
+		})
+	}
+	if routes(ing.Spec.DefaultBackend) {
+		return true
+	}
+	for _, rule := range ing.Spec.Rules {
+		if rule.HTTP == nil {
+			continue
+		}
+		for i := range rule.HTTP.Paths {
+			if routes(&rule.HTTP.Paths[i].Backend) {
+				return true
+			}
+		}
+	}
+	return false
+}
+
 // nginxIngressesFor are the Ingresses ingress-nginx serves that send traffic
-// to any of services, by name. ingresses are read only: they may be the
-// cache's own.
-func nginxIngressesFor(ingresses []networkingv1.Ingress, services []string) []v1alpha1.NginxIngress {
+// to a port the doorman routes of any of services. ingresses are read only:
+// they may be the cache's own.
+func nginxIngressesFor(ingresses []networkingv1.Ingress, services []routedService) []v1alpha1.NginxIngress {
 	var out []v1alpha1.NginxIngress
 	for i := range ingresses {
 		ing := ingresses[i]
@@ -133,8 +178,8 @@ func nginxIngressesFor(ingresses []networkingv1.Ingress, services []string) []v1
 		}
 		var fronted []string
 		for _, svc := range services {
-			if backsOnto(ing, svc) {
-				fronted = append(fronted, svc)
+			if sendsTo(ing, svc) {
+				fronted = append(fronted, svc.name)
 			}
 		}
 		if len(fronted) == 0 {
@@ -152,20 +197,21 @@ func nginxIngressesFor(ingresses []networkingv1.Ingress, services []string) []v1
 }
 
 // recordNginxIngresses records the Ingresses ingress-nginx serves in front of
-// the Services the doorman now routes for a workload pausing or paused,
-// from ingresses, those in its namespace. A wake removes its routes as its
-// pods come up, so what its pause recorded is kept through it, for the
-// wake to be measured against.
-func recordNginxIngresses(workload *v1alpha1.ManagedWorkload, ingresses []networkingv1.Ingress, routed map[string]bool) {
+// the ports the doorman now routes for a workload pausing or paused: those
+// of the planned Services it routed. ingresses are those in its namespace. A
+// wake removes its routes as its pods come up, so what its pause recorded
+// is kept through it, for the wake to be measured against.
+func recordNginxIngresses(workload *v1alpha1.ManagedWorkload, plan doormanPlan, routed map[string]bool) {
 	if workload.Status.Phase != v1alpha1.PhasePausing && workload.Status.Phase != v1alpha1.PhasePaused {
 		return
 	}
-	services := make([]string, 0, len(routed))
-	for name := range routed {
-		services = append(services, name)
+	var services []routedService
+	for _, s := range plan.services {
+		if routed[s.svc.Name] {
+			services = append(services, routedService{name: s.svc.Name, ports: s.ports})
+		}
 	}
-	slices.Sort(services)
-	workload.Status.NginxIngresses = nginxIngressesFor(ingresses, services)
+	workload.Status.NginxIngresses = nginxIngressesFor(plan.ingresses, services)
 }
 
 // forgetNginxIngresses drops what's recorded of the Ingresses in front of a
@@ -178,8 +224,9 @@ func (r *Reconciler) forgetNginxIngresses(workload *v1alpha1.ManagedWorkload, re
 
 // reviewIngressTimeouts brings what's recorded of the Ingresses in front of
 // an awake workload up to date from the cache, for the Services its last
-// pause routed, so a timeout raised, or an Ingress removed, while it's awake
-// clears IngressTimeoutShort without waiting for its next pause. A paused
+// pause routed, on the ports the doorman would route of them now, so a
+// timeout raised, or an Ingress removed, while it's awake clears
+// IngressTimeoutShort without waiting for its next pause. A paused
 // workload's were recorded as it was routed. Neither fails the reconcile:
 // the Ingresses are read again at the next.
 func (r *Reconciler) reviewIngressTimeouts(ctx context.Context, workload *v1alpha1.ManagedWorkload) {
@@ -190,20 +237,43 @@ func (r *Reconciler) reviewIngressTimeouts(ctx context.Context, workload *v1alph
 	phase := workload.Status.Phase
 	if recorded := workload.Status.NginxIngresses; len(recorded) > 0 &&
 		(phase == v1alpha1.PhaseRunning || phase == v1alpha1.PhaseIdle) {
-		var services []string
-		for _, ing := range recorded {
-			services = append(services, ing.Services...)
-		}
-		slices.Sort(services)
-		var list networkingv1.IngressList
-		if err := r.List(ctx, &list, client.InNamespace(workload.Namespace), client.UnsafeDisableDeepCopy); err != nil {
+		if fresh, err := r.readNginxIngresses(ctx, workload.Namespace, recorded); err != nil {
 			log.FromContext(ctx).Info("couldn't read the Ingresses in front of the workload", "workload", workload.Name,
 				"namespace", workload.Namespace, "error", err.Error())
 		} else {
-			workload.Status.NginxIngresses = nginxIngressesFor(list.Items, slices.Compact(services))
+			workload.Status.NginxIngresses = fresh
 		}
 	}
 	r.judgeIngressTimeouts(workload)
+}
+
+// readNginxIngresses reads from the cache the Ingresses ingress-nginx serves
+// in front of the Services recorded ones are, in namespace, on the ports
+// the doorman routes of them. A Service that's gone has none.
+func (r *Reconciler) readNginxIngresses(ctx context.Context, namespace string,
+	recorded []v1alpha1.NginxIngress) ([]v1alpha1.NginxIngress, error) {
+	names := make([]string, 0, len(recorded))
+	for _, ing := range recorded {
+		names = append(names, ing.Services...)
+	}
+	slices.Sort(names)
+	var services []routedService
+	for _, name := range slices.Compact(names) {
+		var svc corev1.Service
+		err := r.Get(ctx, types.NamespacedName{Namespace: namespace, Name: name}, &svc)
+		switch {
+		case apierrors.IsNotFound(err):
+			continue
+		case err != nil:
+			return nil, fmt.Errorf("reading service %s: %w", name, err)
+		}
+		services = append(services, routedService{name: name, ports: doorman.RoutablePorts(svc)})
+	}
+	var list networkingv1.IngressList
+	if err := r.List(ctx, &list, client.InNamespace(namespace), client.UnsafeDisableDeepCopy); err != nil {
+		return nil, fmt.Errorf("listing ingresses: %w", err)
+	}
+	return nginxIngressesFor(list.Items, services), nil
 }
 
 // shortTimeouts are the Ingresses of ingresses whose timeout is under

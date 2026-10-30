@@ -355,7 +355,7 @@ func (r *Reconciler) reconcileDoorman(ctx context.Context, workload *v1alpha1.Ma
 			recheck = shortest(recheck, forwarderRecheckInterval)
 		}
 	}
-	recordNginxIngresses(workload, plan.ingresses, routed)
+	recordNginxIngresses(workload, plan, routed)
 	if err := r.deleteDoormanSlices(ctx, current, keep); err != nil {
 		errs = append(errs, err)
 	}

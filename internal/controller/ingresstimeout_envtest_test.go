@@ -39,6 +39,7 @@ import (
 
 	v1alpha1 "github.com/napwake/napwake/api/v1alpha1"
 	"github.com/napwake/napwake/internal/autoscaler"
+	"github.com/napwake/napwake/internal/doorman"
 	"github.com/napwake/napwake/internal/forecast"
 	"github.com/napwake/napwake/internal/lifecycle"
 )
@@ -162,6 +163,18 @@ func (c *ingressCase) ready(t *testing.T, n int32) {
 	d.Status.ObservedGeneration = d.Generation
 	d.Status.Replicas, d.Status.ReadyReplicas = *d.Spec.Replicas, n
 	require.NoError(t, c.env.admin.Status().Update(c.env.ctx, &d))
+}
+
+// addIgnoredPort gives the Service api a port the doorman doesn't route,
+// listed in its napwake.dev/doorman-ignore-ports.
+func (c *ingressCase) addIgnoredPort(t *testing.T, port int32) {
+	t.Helper()
+	var svc corev1.Service
+	require.NoError(t, c.env.admin.Get(c.env.ctx, client.ObjectKey{Namespace: c.key.Namespace, Name: "api"}, &svc))
+	name := "port-" + strconv.Itoa(int(port))
+	svc.Spec.Ports = append(svc.Spec.Ports, corev1.ServicePort{Name: name, Port: port})
+	svc.Annotations = map[string]string{doorman.AnnotationIgnorePorts: strconv.Itoa(int(port))}
+	require.NoError(t, c.env.admin.Update(c.env.ctx, &svc))
 }
 
 // annotate sets annotations on the ManagedWorkload, as kubectl napwake and
@@ -393,16 +406,44 @@ func TestIngressTimeoutShort(t *testing.T) {
 		unclassed.Name = "unclassed"
 		f5 := nginxIngress("f5", "api", "")
 		f5.Annotations = map[string]string{"nginx.org/proxy-read-timeout": "60s"}
+		metrics := nginxIngress("metrics", "api", "")
+		metrics.Spec.Rules[0].HTTP.Paths[0].Backend.Service.Port = networkingv1.ServiceBackendPort{Number: 9090}
+		byName := nginxIngress("by-name", "api", "120")
+		byName.Spec.Rules[0].HTTP.Paths[0].Backend.Service.Port = networkingv1.ServiceBackendPort{Name: "http"}
 		c := env.start(t, "others", nil, nginxIngress(storefront, "api", "120"), traefik, unclassed,
-			nginxIngress("elsewhere", "other", ""), f5)
+			nginxIngress("elsewhere", "other", ""), f5, metrics, byName)
+		c.addIgnoredPort(t, 9090)
 		r := c.reconciler(t)
 		c.pause(t, r)
 		c.wake(t, r, c.byRequest(t), 85*time.Second)
 
 		w := c.workload(t)
-		assert.Equal(t, []v1alpha1.NginxIngress{recordedStorefront("120", 2*time.Minute)}, w.Status.NginxIngresses)
+		named := recordedStorefront("120", 2*time.Minute)
+		named.Name = "by-name"
+		assert.Equal(t, []v1alpha1.NginxIngress{named, recordedStorefront("120", 2*time.Minute)}, w.Status.NginxIngresses,
+			"by the routed port's name or number, and not to a port the doorman doesn't route")
 		assert.Nil(t, timeoutCondition(w))
 		assert.Empty(t, warnings(r))
+	})
+
+	t.Run("an Ingress moved to a port the doorman doesn't route no longer counts", func(t *testing.T) {
+		c := env.start(t, "moved", nil, nginxIngress(storefront, "api", ""))
+		c.addIgnoredPort(t, 9090)
+		r := c.reconciler(t)
+		c.pause(t, r)
+		c.wake(t, r, c.byRequest(t), 85*time.Second)
+		require.True(t, meta.IsStatusConditionTrue(c.workload(t).Status.Conditions, conditionIngressTimeoutShort))
+
+		var ing networkingv1.Ingress
+		require.NoError(t, env.admin.Get(env.ctx, client.ObjectKey{Namespace: c.key.Namespace, Name: storefront}, &ing))
+		ing.Spec.Rules[0].HTTP.Paths[0].Backend.Service.Port = networkingv1.ServiceBackendPort{Number: 9090}
+		require.NoError(t, env.admin.Update(env.ctx, &ing))
+		c.now = c.now.Add(time.Minute)
+		c.reconcile(t, r)
+
+		w := c.workload(t)
+		assert.Empty(t, w.Status.NginxIngresses)
+		assert.True(t, conditionFalseWith(w, conditionIngressTimeoutShort, reasonNoNginxIngress))
 	})
 
 	t.Run("raising the timeout to maxWait clears it", func(t *testing.T) {
