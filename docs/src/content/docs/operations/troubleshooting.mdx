@@ -21,6 +21,7 @@ import OperationsSymptoms from '../../../components/OperationsSymptoms.astro';
     { href: '#wake-it-doesnt-wake-the-workload', text: "Wake it doesn't wake it" },
     { href: '#workload-stuck-in-resuming', text: 'Stuck in Resuming' },
     { href: '#workload-resumed-with-replicas-not-ready', text: 'Running, replicas not Ready' },
+    { href: '#an-ingresstimeoutshort-warning', text: '`IngressTimeoutShort`' },
     { href: '#workload-keeps-cycling-between-paused-and-running', text: 'Keeps waking up' },
     { href: '#workload-paused-while-in-use', text: 'Paused while in use' },
     { href: '#you-need-a-paused-workload-awake-now', text: 'Need it awake now' },
@@ -226,7 +227,7 @@ If it's `DoormanRouted` and requests still fail ([What the caller sees](/concept
 | A `503` saying it's asleep and how to wake it | The workload [asks before waking](#wake-it-doesnt-wake-the-workload). Only a person's click on **Wake it**, or tooling, wakes it. For a caller that isn't a browser, such as another service or a webhook, set `napwake.dev/wake: "request"`. `status.turnedAway` counts these requests |
 | A `502` from ingress-nginx, or a refused request, as the workload paused | A pod exited the moment it got `SIGTERM`, before kube-proxy and nginx dropped it. The doorman stands in front of the Service before the pods stop, so it's the pod's shutdown. Give the app a `preStop` sleep of a few seconds ([Work in progress at a pause](/guides/pause/#work-in-progress-at-a-pause)) |
 | A `502` from a GKE Ingress or Gateway while paused | In NEGs without the forwarder, so there's no healthy backend. Right after a pause, GKE takes a while, usually under a minute, to see health checks pass |
-| A `504` from an Ingress at 60 seconds, or from ingress-nginx at 3 minutes. Or the client's own timeout, with a `499` in ingress-nginx's log | The workload took longer to start than the Ingress's upstream timeout, 60 seconds by default. ingress-nginx tries a `POST` or `PATCH` once, and other requests up to 3 times. Raise the timeout to match `maxWait`, for ingress-nginx `nginx.ingress.kubernetes.io/proxy-read-timeout` ([How long a connection is held](/concepts/wake-on-request/#how-long-a-connection-is-held)) |
+| A `504` from an Ingress at 60 seconds, or from ingress-nginx at 3 minutes. Or the client's own timeout, with a `499` in ingress-nginx's log | The workload took longer to start than the Ingress's upstream timeout, 60 seconds by default. ingress-nginx tries a `POST` or `PATCH` once, and other requests up to 3 times. Raise the timeout to match `maxWait`, for ingress-nginx `nginx.ingress.kubernetes.io/proxy-read-timeout` ([How long a connection is held](/concepts/wake-on-request/#how-long-a-connection-is-held)). Behind ingress-nginx, [`IngressTimeoutShort`](#an-ingresstimeoutshort-warning) says so |
 | A refusal or timeout at once, every time | A NetworkPolicy blocking the doorman (ports 20000-29999), or it to the pods ([Network policies](/concepts/wake-on-request/#network-policies)) |
 
 The doorman's logs name the workload and Service of each held connection (in your install's namespace):
@@ -283,6 +284,28 @@ The `NapwakeWorkloadStuck` alert fires at 15 minutes, and `kubectl napwake statu
 `ResumeIncomplete=True`, with a warning event of that name, means the resume stopped waiting with replicas not Ready. It's `Running` on those that are, its KEDA ScaledObject scales it again, and requests go to its Ready pods. With none Ready, the doorman stops holding requests, so they fail until one is.
 
 It's common when it wasn't wholly Ready before the pause, with a pod crash-looping or unschedulable. `kubectl describe` its pods. Once every replica is Ready, later or at the next resume, it turns `False` with an `AllReplicasReady` event.
+
+### An `IngressTimeoutShort` warning
+
+`IngressTimeoutShort=True`, with a warning event of that name, means a wake by a request took longer than ingress-nginx waits for an answer through an Ingress in front. So a write held that long gets a `504` from ingress-nginx, which tries a `GET` again. `kubectl napwake status` lists it under Needs attention.
+
+```text
+Warning  IngressTimeoutShort  a wake by a request took 85 seconds to its first Ready replica, longer than
+ingress-nginx waits for an answer through Ingress my-api (60 seconds, its default), so a write held that long gets
+a 504 from ingress-nginx. Set nginx.ingress.kubernetes.io/proxy-read-timeout: "120" on it, wake.maxWait in
+seconds. ingress-nginx's ConfigMap may already set a longer proxy-read-timeout, which Napwake can't see: the
+annotation settles it
+```
+
+Set the annotation it names, `maxWait` in seconds, on each Ingress it names:
+
+```bash
+kubectl annotate ingress my-api -n staging nginx.ingress.kubernetes.io/proxy-read-timeout=120 --overwrite
+```
+
+It turns `False`, `TimeoutsCoverMaxWait`, once every ingress-nginx Ingress in front waits at least `maxWait`. If the wake outlasted `maxWait` too, the message says so. Raise `maxWait`, then the annotation to match.
+
+Napwake can't see ingress-nginx's ConfigMap. If that already sets a longer `proxy-read-timeout`, the warning is wrong, and the annotation clears it all the same. Which Ingresses it reads, and when, are in [A wake that outlasts ingress-nginx's timeout](/concepts/wake-on-request/#a-wake-that-outlasts-ingress-nginxs-timeout).
 
 ### Workload keeps cycling between paused and running
 

@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- Behind ingress-nginx, a workload says when a wake by a request took longer than an Ingress in front waits for an answer, its `proxy-read-timeout`, 60 seconds by default, while that's under `wake.maxWait`. ingress-nginx answers a write held that long with a `504`. `IngressTimeoutShort=True`, with a warning event, names the Ingress and the annotation to set, `maxWait` in seconds, and `kubectl napwake status` and its page list it under Needs attention. It clears once every ingress-nginx Ingress in front waits at least `maxWait`. Until a wake takes that long, `status` notes each timeout under `maxWait` plainly, as most wakes take seconds. `status.nginxIngresses` records the Ingresses, those with `nginx` in their class or an `nginx.ingress.kubernetes.io/` annotation, and their timeouts. It needs no new permission, so an Ingress with no class and no such annotation isn't checked, nor is ingress-nginx's ConfigMap, which can raise the default
+
 ## [0.2.0] - Unreleased
 
 Napwake pauses idle Kubernetes workloads in staging, preview and dev, and wakes them on the first request. It never deletes a workload or its data.

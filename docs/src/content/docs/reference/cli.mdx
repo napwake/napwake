@@ -716,6 +716,7 @@ Its flags, with their defaults. [See what Napwake is doing](/getting-started/kub
 | A resume that stopped with replicas not Ready | `ResumeIncomplete` |
 | A pause that stopped waiting with pods still running | `PauseIncomplete` |
 | A pause made while it was in use, until a pause holds. It says what to change, such as a CPU threshold | `PausedWhileInUse` ([Paused while in use](/concepts/idle-detection/#paused-while-in-use)) |
+| A wake by a request that took longer than an ingress-nginx Ingress in front waits, under `maxWait`, until every one waits at least `maxWait`. It says the annotation to set | `IngressTimeoutShort` ([A wake that outlasts ingress-nginx's timeout](/concepts/wake-on-request/#a-wake-that-outlasts-ingress-nginxs-timeout)) |
 | A pause or wake taking over 10 minutes, with what it waits for | `Stuck` |
 
 For an awake workload, `WakeOnRequest` is what its last pause found with its Services, to fix before the next. In `-o json`, each problem's `target` names its workload as the table does, such as `deployment/worker`.
@@ -786,6 +787,17 @@ Turned away while asleep, by a doorman that asks before waking: something automa
 ```
 
 A person shown the asleep page isn't counted. So many mean something automated calls it, such as a monitor, a webhook or another service. `-o json` has them as `turnedAway`, from the ManagedWorkload's `status.turnedAway` ([What it turns away](/concepts/wake-on-request/#what-it-turns-away)).
+
+### Behind ingress-nginx
+
+Under the table, each ingress-nginx Ingress in front of a workload that waits less than its `wake.maxWait`, or whose `proxy-read-timeout` isn't whole seconds:
+
+```text
+Behind ingress-nginx, which answers a write held longer than it waits with a 504, if a wake takes that long:
+  preview-42/api   Ingress api waits 60s, maxWait is 120s
+```
+
+It's a note, not a problem, since most wakes take seconds. Once a wake by a request has taken longer, `IngressTimeoutShort` lists it under Needs attention instead. It's read from the ManagedWorkload's `status.nginxIngresses`, recorded once it has paused ([A wake that outlasts ingress-nginx's timeout](/concepts/wake-on-request/#a-wake-that-outlasts-ingress-nginxs-timeout)).
 
 ### Recent pauses and wakes
 
