@@ -400,7 +400,7 @@ Most wakes take seconds, so that's only a note. Once a wake by a request, or a c
 
 | What | How Napwake reads it |
 |---|---|
-| How long the wake took | From when the doorman took the first request to the first Ready pod, when it lets requests through. A wake by the forecast, a wake request or an activity annotation holds no request, so it isn't timed |
+| How long the wake took | From when the doorman took the first request to the first Ready pod, when it lets requests through. A wake the forecast, a wake request or an activity annotation began isn't timed, since no request began it. It holds any request that comes during it all the same |
 | The Ingresses | Those in the workload's namespace whose rules or default backend send to a port the doorman routes for it, by the Service port's name or number. One to a port in `napwake.dev/doorman-ignore-ports` isn't counted. Read at each pause, and again while it's awake |
 | Which are ingress-nginx's | A class with `nginx` in its name, in `spec.ingressClassName` or the `kubernetes.io/ingress.class` annotation. With no class, any `nginx.ingress.kubernetes.io/` annotation |
 | Not checked | An Ingress whose class is named otherwise, whatever its annotations, such as a Traefik one with an ingress-nginx annotation left over. One with no class and no such annotation, even where ingress-nginx is the default class. Napwake isn't allowed to read IngressClasses, which are cluster-wide. Nor are other ingress controllers, Gateway API or cloud load balancers |

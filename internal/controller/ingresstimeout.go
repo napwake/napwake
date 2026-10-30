@@ -338,10 +338,11 @@ func maxWaitSetting(workload *v1alpha1.ManagedWorkload) string {
 // judgeWakeTime measures, as a resume first sees one of the workload's
 // replicas Ready at firstReady, how long a request held through the wake
 // waited, and records the wake if that's longer than an Ingress in front
-// waits for an answer, while that's under wake.maxWait. Only a wake by a
-// request, or a person's click, held one: the forecast's, a wake request's
-// or an activity annotation's didn't. It returns what to announce once the
-// status is written.
+// waits for an answer, while that's under wake.maxWait. Only a wake a
+// request, or a person's click, began is timed, from that request. One the
+// forecast, a wake request or an activity annotation began holds any
+// request that comes during it all the same, but no request began it to
+// time it from. It returns what to announce once the status is written.
 func (r *Reconciler) judgeWakeTime(workload *v1alpha1.ManagedWorkload, firstReady time.Time) func() {
 	nothing := func() {}
 	pause := workload.Status.Pause

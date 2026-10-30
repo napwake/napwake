@@ -399,7 +399,7 @@ func TestIngressTimeoutShort(t *testing.T) {
 		assert.Empty(t, warnings(r))
 	})
 
-	t.Run("not after a slow wake by the forecast, which holds no request", func(t *testing.T) {
+	t.Run("not after a slow wake the forecast began, which no request times", func(t *testing.T) {
 		c := env.start(t, "forecast", func(w *v1alpha1.ManagedWorkload) {
 			w.Spec.IdlePolicy = &v1alpha1.IdlePolicySpec{AutoResume: true}
 		}, nginxIngress(storefront, "api", ""))
