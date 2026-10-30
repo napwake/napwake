@@ -463,7 +463,7 @@ func TestIngressTimeoutShort(t *testing.T) {
 		assert.True(t, conditionFalseWith(w, conditionIngressTimeoutShort, reasonNoNginxIngress))
 	})
 
-	t.Run("raising the timeout to maxWait clears it", func(t *testing.T) {
+	t.Run("raising the timeout to maxWait clears it, and lowering it again removes it", func(t *testing.T) {
 		c := env.start(t, "raised", nil, nginxIngress(storefront, "api", ""))
 		r := c.reconciler(t)
 		c.pause(t, r)
@@ -484,6 +484,17 @@ func TestIngressTimeoutShort(t *testing.T) {
 		assert.Equal(t, reasonTimeoutsCoverMaxWait, cond.Reason)
 		assert.Nil(t, w.Status.LastSlowWake)
 		assert.Equal(t, []v1alpha1.NginxIngress{recordedStorefront("120", 2*time.Minute)}, w.Status.NginxIngresses)
+
+		require.NoError(t, env.admin.Get(env.ctx, client.ObjectKey{Namespace: c.key.Namespace, Name: storefront}, &ing))
+		ing.Annotations = nil
+		require.NoError(t, env.admin.Update(env.ctx, &ing))
+		c.now = c.now.Add(time.Minute)
+		c.reconcile(t, r)
+
+		w = c.workload(t)
+		assert.Nil(t, timeoutCondition(w), "lowered again with no slow wake since, it's as before any")
+		assert.Equal(t, []v1alpha1.NginxIngress{recordedStorefront("", time.Minute)}, w.Status.NginxIngresses)
+		assert.Len(t, warnings(r), 1, "one warning, as it was set")
 	})
 
 	t.Run("an operator that restarts keeps it, and doesn't warn again", func(t *testing.T) {

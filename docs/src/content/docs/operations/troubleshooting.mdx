@@ -303,7 +303,7 @@ Set the annotation it names, `maxWait` in seconds, on each Ingress it names:
 kubectl annotate ingress my-api -n staging nginx.ingress.kubernetes.io/proxy-read-timeout=120 --overwrite
 ```
 
-It turns `False`, `TimeoutsCoverMaxWait`, once every ingress-nginx Ingress in front waits at least `maxWait`. If the wake outlasted `maxWait` too, the message says so. Raise `maxWait`, then the annotation to match.
+It turns `False`, `TimeoutsCoverMaxWait`, once every ingress-nginx Ingress in front waits at least `maxWait`. If a timeout under `maxWait` comes back before another slow wake, the condition goes, as before any. If the wake outlasted `maxWait` too, the message says so. Raise `maxWait`, then the annotation to match.
 
 Napwake can't see ingress-nginx's ConfigMap. If that already sets a longer `proxy-read-timeout`, the warning is wrong, and the annotation clears it all the same. Which Ingresses it reads, and when, are in [A wake that outlasts ingress-nginx's timeout](/concepts/wake-on-request/#a-wake-that-outlasts-ingress-nginxs-timeout).
 

@@ -295,16 +295,22 @@ func shortTimeouts(ingresses []v1alpha1.NginxIngress, maxWait time.Duration) []v
 
 // judgeIngressTimeouts sets IngressTimeoutShort from the workload's last slow
 // wake and the Ingresses in front of it now: True while one waits less than
-// wake.maxWait for an answer, and False, with the slow
-// wake forgotten, once none does. It reports whether that just made it
-// True. Before any slow wake, it sets nothing.
+// wake.maxWait for an answer, and False, with the slow wake forgotten, once
+// none does. It reports whether that just made it True. Before any slow
+// wake it says nothing, and once one is forgotten, a timeout under maxWait
+// that comes back removes the condition, as before any: False would say
+// none is, and nothing has taken that long since.
 func (r *Reconciler) judgeIngressTimeouts(workload *v1alpha1.ManagedWorkload) bool {
 	slow := workload.Status.LastSlowWake
-	if slow == nil {
-		return false
-	}
 	maxWait := workload.Spec.Wake.HoldFor()
 	short := shortTimeouts(workload.Status.NginxIngresses, maxWait)
+	if slow == nil {
+		c := meta.FindStatusCondition(workload.Status.Conditions, conditionIngressTimeoutShort)
+		if c != nil && c.Status == metav1.ConditionFalse && len(short) > 0 {
+			meta.RemoveStatusCondition(&workload.Status.Conditions, conditionIngressTimeoutShort)
+		}
+		return false
+	}
 	if len(short) == 0 {
 		reason := reasonTimeoutsCoverMaxWait
 		if len(workload.Status.NginxIngresses) == 0 {
