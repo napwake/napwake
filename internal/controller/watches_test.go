@@ -208,6 +208,7 @@ func TestIngressChanged(t *testing.T) {
 	gce := gceIngressTo("api")
 	unclassed := ingressTo("api", nil, nil)
 	traefik := ingressTo("api", map[string]string{annotationIngressClass: "traefik"}, nil)
+	nginx := ingressTo("api", map[string]string{annotationNginxReadTimeout: "60"}, ptr.To("nginx"))
 	tests := []struct {
 		name   string
 		base   networkingv1.Ingress
@@ -224,8 +225,11 @@ func TestIngressChanged(t *testing.T) {
 		{name: "its backends", base: gce, passes: true, change: func(ing *networkingv1.Ingress) {
 			ing.Spec.Rules[0].HTTP.Paths[0].Backend.Service.Name = "web"
 		}},
-		{name: "ingress-nginx's read timeout", base: gce, passes: true, change: func(ing *networkingv1.Ingress) {
+		{name: "ingress-nginx's read timeout", base: nginx, passes: true, change: func(ing *networkingv1.Ingress) {
 			ing.Annotations[annotationNginxReadTimeout] = "120"
+		}},
+		{name: "another ingress-nginx annotation", base: nginx, change: func(ing *networkingv1.Ingress) {
+			ing.Annotations["nginx.ingress.kubernetes.io/proxy-body-size"] = "8m"
 		}},
 		{name: "a first ingress-nginx annotation, which makes one with no class ingress-nginx's", base: unclassed,
 			passes: true, change: func(ing *networkingv1.Ingress) {
