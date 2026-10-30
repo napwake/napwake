@@ -23,7 +23,7 @@ import NextSteps from '../../../components/NextSteps.astro';
 | Pods, by the doorman | The pod each endpoint of a woken workload names, to check the address is that pod's | Addresses kept 30 seconds |
 | Pod metrics (`metrics.k8s.io`) | CPU use, the activity clock's main signal | When needed, not cached |
 | Services | Which to route a paused workload's requests through, and which workload an address in an environment names | Watched |
-| Ingresses | Class and backend Services, to find those a GKE Ingress puts behind container-native load balancing. Those can't be routed to the doorman | Watched |
+| Ingresses | Class and backend Services, to find those a GKE Ingress puts behind container-native load balancing. Those can't be routed to the doorman. And class, annotations, and backend Services and ports, to find the ingress-nginx Ingresses in front of a port the doorman routes, and their `proxy-read-timeout`, to warn once a wake outlasts it ([How](/concepts/wake-on-request/#a-wake-that-outlasts-ingress-nginxs-timeout)) | Watched |
 | EndpointSlices | Its own, routing paused workloads to the doorman, and the doorman Service's, to find the doorman's pods | Watched |
 | EndpointSlices, by the doorman | All in the watched namespaces, to find a woken workload's Ready pods | Watched |
 | ConfigMaps | Those a managed workload takes environment variables from, to learn its dependencies. `kube-system/cluster-autoscaler-status`, whose existence shows Cluster Autoscaler runs | One by one with `get`, not cached, never listed or written. Only the metadata of `cluster-autoscaler-status`, every 10 minutes |

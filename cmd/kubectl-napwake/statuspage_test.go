@@ -113,6 +113,25 @@ func TestWriteStatusHTML_SaysFirstThatPausingIsOff(t *testing.T) {
 	assert.NotContains(t, renderStatusPage(t, statusCluster()...), "data-pausing-off")
 }
 
+// A wake that outlasted ingress-nginx's timeout needs attention on the
+// page too, and marks the workload's row, as other troubles do.
+func TestWriteStatusHTML_IngressTimeoutShort(t *testing.T) {
+	slow := behindNginx("orders", time.Minute, "")
+	slow.Status.Conditions = []metav1.Condition{condition("IngressTimeoutShort", metav1.ConditionTrue,
+		"WakeOutlastedTimeout", "a wake by a request took 85 seconds to its first Ready replica")}
+	fast := behindNginx("api", time.Minute, "")
+
+	got := renderStatusPage(t, slow, fast)
+
+	assert.Contains(t, got, `<tr data-workload="orders" data-namespace="shop">
+        <td class="ref">orders<span class="sub">shop</span></td>
+        <td class="ref">IngressTimeoutShort</td>
+        <td class="message">a wake by a request took 85 seconds to its first Ready replica</td>`)
+	assert.Regexp(t, `<tr id="mw-\d+" data-needs="">\s*<td class="ref">deployment/orders<`, got)
+	assert.Regexp(t, `<tr id="mw-\d+">\s*<td class="ref">deployment/api<`, got,
+		"no wake has taken that long behind api's Ingress yet")
+}
+
 func TestWriteStatusHTML_Escapes(t *testing.T) {
 	w := statusWorkloadObj("shop", "api", v1alpha1.TargetKindDeployment, v1alpha1.PhaseRunning, time.Hour)
 	w.Status.Conditions = []metav1.Condition{condition("GitOpsConflict", metav1.ConditionTrue, "PauseUndone",

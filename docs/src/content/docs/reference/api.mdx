@@ -44,6 +44,8 @@ import NextSteps from '../../../components/NextSteps.astro';
     { id: 'status-lastscaledup', name: 'lastScaledUp' },
     { id: 'status-doorman', name: 'doorman' },
     { id: 'status-doormandraining', name: 'doormanDraining' },
+    { id: 'status-nginxingresses', name: 'nginxIngresses' },
+    { id: 'status-lastslowwake', name: 'lastSlowWake' },
     { id: 'status-idlewait', name: 'idleWait' },
     { id: 'status-dryrun', name: 'dryRun' },
     { id: 'prediction', name: 'prediction' },
@@ -131,6 +133,8 @@ For `costTracking.rates` and `cost.listRates`.
 | <Ref id="status-lastscaledup">lastScaledUp</Ref> | `ScaledUp` | Last scale-up outside Napwake while paused, which wakes it. Fields `at`, `replicas`, `by` and `gitOps`. `by` is the field manager, such as `argocd-controller`. It's `unknown` through the scale subresource, which records none, as with `kubectl scale`. `gitOps` is `Argo CD`, `Flux`, `Fleet`, `kapp` or `Kluctl`, if from Git. See [GitOps tools](/guides/gitops/) |
 | <Ref id="status-doorman">doorman[]</Ref> | `DoormanRoute` | Service ports routed to the doorman while paused, with `service`, `portName`, `doormanPort` and `forwarded` (behind GKE NEGs, through the [forwarder](/concepts/wake-on-request/#gke-container-native-load-balancing-negs)) |
 | <Ref id="status-doormandraining">doormanDraining[]</Ref> | `DrainingPort` | Doorman ports that routed it until it woke, with `port` and `until`. No other workload gets the port before `until`, so a late client never reaches another. Kept in status, so an operator that restarts or becomes leader honours it |
+| <Ref id="status-nginxingresses">nginxIngresses[]</Ref> | `NginxIngress` | The ingress-nginx Ingresses in front of the Services its last pause routed, read again while it's awake. Each has `name`, `services`, `proxyReadTimeout` (the annotation as written, unset without one) and `readTimeout`, how long ingress-nginx waits: 60s without the annotation, or with one that isn't a whole number, which ingress-nginx ignores. See [A wake that outlasts ingress-nginx's timeout](/concepts/wake-on-request/#a-wake-that-outlasts-ingress-nginxs-timeout) |
+| <Ref id="status-lastslowwake">lastSlowWake</Ref> | `SlowWake` | The last wake by a request that took longer than one of `nginxIngresses` waits, under `wake.maxWait`. `began`, when the doorman took the request, and `took`, to the first Ready replica. Kept while `IngressTimeoutShort` is `True` |
 
 ### `activity`
 

@@ -201,30 +201,50 @@ func TestRequeuePriority(t *testing.T) {
 
 // GKE's ingress controller keeps writing its own annotations and the load
 // balancer's address on an Ingress; only a change to which Services it uses,
-// or which controller serves it, can move one in or out of NEGs.
-func TestIngressBackendsChanged(t *testing.T) {
-	base := gceIngressTo("api")
+// or which controller serves it, can move one in or out of NEGs, and only
+// one to whether ingress-nginx serves it, or how long it waits, changes
+// what's recorded of the timeouts in front of a workload.
+func TestIngressChanged(t *testing.T) {
+	gce := gceIngressTo("api")
+	unclassed := ingressTo("api", nil, nil)
+	traefik := ingressTo("api", map[string]string{annotationIngressClass: "traefik"}, nil)
+	nginx := ingressTo("api", map[string]string{annotationNginxReadTimeout: "60"}, ptr.To("nginx"))
 	tests := []struct {
 		name   string
+		base   networkingv1.Ingress
 		change func(ing *networkingv1.Ingress)
 		passes bool
 	}{
-		{name: "GKE's annotations and status", change: func(ing *networkingv1.Ingress) {
+		{name: "GKE's annotations and status", base: gce, change: func(ing *networkingv1.Ingress) {
 			ing.Annotations["ingress.kubernetes.io/backends"] = `{"k8s1-abc-default-api-80-1":"HEALTHY"}`
 			ing.Status.LoadBalancer.Ingress = []networkingv1.IngressLoadBalancerIngress{{IP: "34.0.0.1"}}
 		}},
-		{name: "its class", passes: true, change: func(ing *networkingv1.Ingress) {
+		{name: "its class", base: gce, passes: true, change: func(ing *networkingv1.Ingress) {
 			ing.Annotations[annotationIngressClass] = "nginx"
 		}},
-		{name: "its backends", passes: true, change: func(ing *networkingv1.Ingress) {
+		{name: "its backends", base: gce, passes: true, change: func(ing *networkingv1.Ingress) {
 			ing.Spec.Rules[0].HTTP.Paths[0].Backend.Service.Name = "web"
 		}},
+		{name: "ingress-nginx's read timeout", base: nginx, passes: true, change: func(ing *networkingv1.Ingress) {
+			ing.Annotations[annotationNginxReadTimeout] = "120"
+		}},
+		{name: "another ingress-nginx annotation", base: nginx, change: func(ing *networkingv1.Ingress) {
+			ing.Annotations["nginx.ingress.kubernetes.io/proxy-body-size"] = "8m"
+		}},
+		{name: "a first ingress-nginx annotation, which makes one with no class ingress-nginx's", base: unclassed,
+			passes: true, change: func(ing *networkingv1.Ingress) {
+				ing.Annotations = map[string]string{"nginx.ingress.kubernetes.io/proxy-body-size": "8m"}
+			}},
+		{name: "an ingress-nginx annotation on another controller's Ingress", base: traefik,
+			change: func(ing *networkingv1.Ingress) {
+				ing.Annotations["nginx.ingress.kubernetes.io/proxy-body-size"] = "8m"
+			}},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			cur := base.DeepCopy()
+			cur := tt.base.DeepCopy()
 			tt.change(cur)
-			assert.Equal(t, tt.passes, ingressBackendsChanged().Update(event.UpdateEvent{ObjectOld: &base, ObjectNew: cur}))
+			assert.Equal(t, tt.passes, ingressChanged().Update(event.UpdateEvent{ObjectOld: &tt.base, ObjectNew: cur}))
 		})
 	}
 }

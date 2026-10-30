@@ -27,6 +27,7 @@ import (
 	"os"
 	"runtime"
 	"slices"
+	"strconv"
 	"strings"
 	"text/tabwriter"
 	"time"
@@ -250,6 +251,11 @@ type statusWorkload struct {
 	// one paused, and for one whose wake's cause wasn't recorded or whose
 	// events have expired.
 	WokenBy string `json:"wokenBy,omitempty"`
+	// shortTimeouts say how long ingress-nginx waits for an answer through
+	// each Ingress in front of it that waits less than its wake.maxWait,
+	// before any wake has taken that long, which IngressTimeoutShort would
+	// put under Needs attention.
+	shortTimeouts []string
 }
 
 // problem is something about a workload that keeps Napwake from doing
@@ -297,6 +303,7 @@ var troubles = map[string]metav1.ConditionStatus{
 	"ResumeIncomplete":     metav1.ConditionTrue,
 	"PauseIncomplete":      metav1.ConditionTrue,
 	"PausedWhileInUse":     metav1.ConditionTrue,
+	"IngressTimeoutShort":  metav1.ConditionTrue,
 }
 
 // reasonTargetIgnored is TargetAvailable's reason when the workload is
@@ -725,7 +732,40 @@ func workloadStatus(w *v1alpha1.ManagedWorkload, targetActiveUntil, now time.Tim
 	if away := w.Status.TurnedAway; away != nil && w.Spec.Wake.Asks() {
 		row.TurnedAway = &v1alpha1.TurnedAway{PausedAt: metav1.NewTime(away.PausedAt.UTC()), Requests: away.Requests}
 	}
+	row.shortTimeouts = shortTimeouts(w)
 	return row
+}
+
+// shortTimeouts says, of each Ingress the operator recorded ingress-nginx
+// serving in front of a workload, how long it waits for an answer, where
+// that's under the workload's wake.maxWait, while no wake has taken that
+// long: after one, IngressTimeoutShort says so instead. One waiting its
+// default because ingress-nginx ignores its annotation says so, and what
+// to write.
+func shortTimeouts(w *v1alpha1.ManagedWorkload) []string {
+	if meta.IsStatusConditionTrue(w.Status.Conditions, "IngressTimeoutShort") {
+		return nil
+	}
+	maxWait := w.Spec.Wake.HoldFor()
+	var out []string
+	for _, ing := range w.Status.NginxIngresses {
+		if ing.ReadTimeout.Duration >= maxWait {
+			continue
+		}
+		line := fmt.Sprintf("Ingress %s waits %s, maxWait is %s", ing.Name, inSeconds(ing.ReadTimeout.Duration),
+			inSeconds(maxWait))
+		if ing.TimeoutIgnored() {
+			line += fmt.Sprintf(". Its proxy-read-timeout %q isn't whole seconds, so ingress-nginx ignores it: write %q",
+				ing.ProxyReadTimeout, strconv.Itoa(int(maxWait/time.Second)))
+		}
+		out = append(out, line)
+	}
+	return out
+}
+
+// inSeconds writes d in seconds, ingress-nginx's unit for its timeouts.
+func inSeconds(d time.Duration) string {
+	return fmt.Sprintf("%ds", int(d/time.Second))
 }
 
 // pricedAtSpot is whether the operator priced the workload at the spot
@@ -1227,6 +1267,7 @@ func writeStatusTable(w io.Writer, result statusResult, now time.Time, pl palett
 	_ = tw.Flush() // a bytes.Buffer takes every write
 	_, _ = io.WriteString(p, pl.paintTable(table.String(), result.Workloads))
 	writeTurnedAway(p, result.Workloads, now)
+	writeShortTimeouts(p, result.Workloads)
 
 	p.line("")
 	switch {
@@ -1270,6 +1311,26 @@ func writeTurnedAway(p *printer, workloads []statusWorkload, now time.Time) {
 		_, name, _ := strings.Cut(wl.Target, "/")
 		_, _ = fmt.Fprintf(tw, "  %s/%s\t%s during the pause from %s\n", wl.Namespace, name,
 			countOf(int(wl.TurnedAway.Requests), "request"), ago(wl.TurnedAway.PausedAt.Time, now))
+	}
+	_ = tw.Flush() // writes through p, which keeps the first error
+}
+
+// writeShortTimeouts lists the Ingresses ingress-nginx serves in front of
+// workloads that wait less than their wake.maxWait for an answer, before a
+// wake has taken that long. It's plain, not attention: most wakes take
+// seconds.
+func writeShortTimeouts(p *printer, workloads []statusWorkload) {
+	if !slices.ContainsFunc(workloads, func(wl statusWorkload) bool { return len(wl.shortTimeouts) > 0 }) {
+		return
+	}
+	p.line("")
+	p.line("Behind ingress-nginx, which answers a write held longer than it waits with a 504, if a wake takes that long:")
+	tw := tabwriter.NewWriter(p, 0, 0, 3, ' ', 0)
+	for _, wl := range workloads {
+		_, name, _ := strings.Cut(wl.Target, "/")
+		for _, line := range wl.shortTimeouts {
+			_, _ = fmt.Fprintf(tw, "  %s/%s\t%s\n", wl.Namespace, name, line)
+		}
 	}
 	_ = tw.Flush() // writes through p, which keeps the first error
 }

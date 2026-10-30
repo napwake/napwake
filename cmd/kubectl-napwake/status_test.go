@@ -810,6 +810,50 @@ func TestStatus_PausedWhileInUse(t *testing.T) {
 	assert.Empty(t, problemsOf(w, statusNow), "a pause that held needs nobody")
 }
 
+// behindNginx is a running workload behind ingress-nginx's Ingress shop,
+// with the read timeout given, as the operator recorded it, and wake.maxWait
+// at its default of 2 minutes.
+func behindNginx(name string, readTimeout time.Duration, proxyReadTimeout string) *v1alpha1.ManagedWorkload {
+	w := statusWorkloadObj("shop", name, v1alpha1.TargetKindDeployment, v1alpha1.PhaseRunning, time.Hour)
+	w.Status.NginxIngresses = []v1alpha1.NginxIngress{{Name: name, Services: []string{name},
+		ProxyReadTimeout: proxyReadTimeout, ReadTimeout: metav1.Duration{Duration: readTimeout}}}
+	return w
+}
+
+// Before any wake has taken longer than ingress-nginx waits, status shows
+// the timeout beside maxWait, plainly: most wakes take seconds. Once one
+// has, IngressTimeoutShort says so under Needs attention, and the plain
+// line goes. A timeout at maxWait is no concern.
+func TestStatus_IngressTimeoutShort(t *testing.T) {
+	short := behindNginx("api", time.Minute, "")
+	ignored := behindNginx("admin", time.Minute, "2m")
+	covered := behindNginx("web", 2*time.Minute, "120")
+	slow := behindNginx("orders", time.Minute, "")
+	const warning = "a wake by a request took 85 seconds to its first Ready replica, longer than ingress-nginx " +
+		"waits for an answer through Ingress orders (60 seconds, its default), so a write held that long gets a 504"
+	slow.Status.Conditions = []metav1.Condition{
+		condition("IngressTimeoutShort", metav1.ConditionTrue, "WakeOutlastedTimeout", warning)}
+
+	out := runStatus(t, newStatusClient(t, interceptor.Funcs{}, short, ignored, covered, slow), statusOpts())
+
+	assert.Contains(t, out, "Needs attention:\n  shop/orders   IngressTimeoutShort   "+warning+"\n")
+	assert.Contains(t, out, "\nBehind ingress-nginx, which answers a write held longer than it waits with a 504, if "+
+		"a wake takes that long:\n"+
+		"  shop/admin   Ingress admin waits 60s, maxWait is 120s. Its proxy-read-timeout \"2m\" isn't whole seconds, "+
+		"so ingress-nginx ignores it: write \"120\"\n"+
+		"  shop/api     Ingress api waits 60s, maxWait is 120s\n")
+	assert.NotContains(t, out, "Ingress web waits", "a timeout at maxWait")
+	assert.NotContains(t, out, "Ingress orders waits", "Needs attention says it")
+	assert.Equal(t, 1, strings.Count(out, "IngressTimeoutShort"))
+
+	slow.Status.Conditions[0] = condition("IngressTimeoutShort", metav1.ConditionFalse, "TimeoutsCoverMaxWait", "")
+	slow.Status.NginxIngresses[0].ReadTimeout.Duration = 2 * time.Minute
+	assert.Empty(t, problemsOf(slow, statusNow), "a timeout raised to maxWait")
+
+	out = runStatus(t, newStatusClient(t, interceptor.Funcs{}, covered), statusOpts())
+	assert.NotContains(t, out, "Behind ingress-nginx", "nothing to say of timeouts at maxWait")
+}
+
 // A workload deliberately labelled napwake.dev/ignore needs nobody's
 // attention.
 func TestStatus_IgnoredIsntAProblem(t *testing.T) {

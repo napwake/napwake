@@ -387,6 +387,27 @@ metadata:
 
 Set it higher than `maxWait`, and the doorman lets go first. A `GET` is then tried again, and a `POST` gets a `502`.
 
+### A wake that outlasts ingress-nginx's timeout
+
+Napwake reads how long ingress-nginx waits in front of a workload, and says once a wake has taken longer. Until then, `kubectl napwake status` notes each Ingress in front that waits less than `maxWait`:
+
+```text
+Behind ingress-nginx, which answers a write held longer than it waits with a 504, if a wake takes that long:
+  staging/my-api   Ingress my-api waits 60s, maxWait is 120s
+```
+
+Most wakes take seconds, so that's only a note. Once a wake by a request, or a click, takes longer than an Ingress waits, while that's under `maxWait`, the workload gets `IngressTimeoutShort=True` and a warning event. `kubectl napwake status` and its page list it under Needs attention, with the annotation to set. It clears once every ingress-nginx Ingress in front waits at least `maxWait` ([An `IngressTimeoutShort` warning](/operations/troubleshooting/#an-ingresstimeoutshort-warning)).
+
+| What | How Napwake reads it |
+|---|---|
+| How long the wake took | From when the doorman took the first request to the first Ready pod, when it lets requests through. A wake the forecast, a wake request or an activity annotation began isn't timed, since no request began it. It holds any request that comes during it all the same |
+| The Ingresses | Those in the workload's namespace whose rules or default backend send to a port the doorman routes for it, by the Service port's name or number. One to a port in `napwake.dev/doorman-ignore-ports` isn't counted. Read at each pause, and again while it's awake |
+| Which are ingress-nginx's | A class with `nginx` in its name, in `spec.ingressClassName` or the `kubernetes.io/ingress.class` annotation. With no class, any `nginx.ingress.kubernetes.io/` annotation. So once ingress-nginx no longer serves an Ingress with no class, remove those annotations, or it's still counted |
+| Not checked | An Ingress whose class is named otherwise, whatever its annotations, such as a Traefik one with an ingress-nginx annotation left over. One with no class and no such annotation, even where ingress-nginx is the default class. Napwake isn't allowed to read IngressClasses, which are cluster-wide. Nor are other ingress controllers, Gateway API or cloud load balancers |
+| F5's NGINX Ingress Controller | It can take the class `nginx` too. An Ingress with an `nginx.org/` or `nginx.com/` annotation is taken for its and not checked. With the class alone, its Ingress can't be told from ingress-nginx's, so it's counted, and the warning says what to set if it's F5's. It reads `nginx.org/proxy-read-timeout`, so set that to `maxWait` there, such as `"120s"` |
+| The timeout | `nginx.ingress.kubernetes.io/proxy-read-timeout`, in whole seconds, or 60 without it. ingress-nginx ignores a value that isn't a whole number, such as `"120s"`, and waits its default. So Napwake takes it as 60 too, and the warning and `status` say to write `"120"`. Status keeps the value as written. A whole number at or below zero isn't checked |
+| ingress-nginx's ConfigMap | Its `proxy-read-timeout` can raise the default. Napwake can't see it, so it may warn anyway. The annotation on the Ingress settles it |
+
 ### Limits
 
 The caps stop a flood of connections exhausting the doorman, or waking workloads faster than the cluster can start them.
