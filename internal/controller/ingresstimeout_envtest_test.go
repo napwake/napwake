@@ -386,7 +386,8 @@ func TestIngressTimeoutShort(t *testing.T) {
 	})
 
 	t.Run("only ingress-nginx's Ingresses in front of the workload's Services count", func(t *testing.T) {
-		traefik := ingressTo("api", nil, ptr.To("traefik"))
+		traefik := ingressTo("api", map[string]string{"nginx.ingress.kubernetes.io/ssl-redirect": "false"},
+			ptr.To("traefik"))
 		traefik.Name = "traefik"
 		unclassed := ingressTo("api", nil, nil)
 		unclassed.Name = "unclassed"

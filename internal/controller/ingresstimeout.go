@@ -65,26 +65,33 @@ const (
 )
 
 // servedByNginx reports whether ingress-nginx serves an Ingress, as far as
-// the Ingress tells: its class, by spec.ingressClassName or the
-// kubernetes.io/ingress.class annotation, has nginx in its name, or it
-// carries an nginx.ingress.kubernetes.io/ annotation. Which controller an
-// IngressClass names is cluster-scoped, which the operator isn't granted
-// to read, so an Ingress with neither isn't counted, though ingress-nginx
-// may serve it as the cluster's default class. Nor is one with an
-// annotation of F5's NGINX Ingress Controller, which also takes the class
-// nginx: ingress-nginx's annotation does nothing there, so advising it
-// would be wrong, and it would clear the warning all the same.
+// the Ingress tells: every class it names, by spec.ingressClassName or the
+// kubernetes.io/ingress.class annotation, has nginx in its name, or it names
+// none and carries an nginx.ingress.kubernetes.io/ annotation. One whose
+// class is named otherwise isn't counted whatever its annotations, such as
+// a Traefik one with an ingress-nginx annotation left over. Which
+// controller an IngressClass names is cluster-scoped, which the operator
+// isn't granted to read, so one with no class and no such annotation isn't
+// counted either, though ingress-nginx may serve it as the cluster's
+// default class. Nor is one with an annotation of F5's NGINX Ingress
+// Controller, which also takes the class nginx: ingress-nginx's annotation
+// does nothing there, so advising it would be wrong, and it would clear
+// the warning all the same.
 func servedByNginx(ing networkingv1.Ingress) bool {
 	for key := range ing.Annotations {
 		if strings.HasPrefix(key, annotationF5Prefix) || strings.HasPrefix(key, annotationF5PlusPrefix) {
 			return false
 		}
 	}
-	if name := ing.Spec.IngressClassName; name != nil && namesNginx(*name) {
-		return true
+	var classes []string
+	if name := ing.Spec.IngressClassName; name != nil && *name != "" {
+		classes = append(classes, *name)
 	}
-	if namesNginx(ing.Annotations[annotationIngressClass]) {
-		return true
+	if class := ing.Annotations[annotationIngressClass]; class != "" {
+		classes = append(classes, class)
+	}
+	if len(classes) > 0 {
+		return !slices.ContainsFunc(classes, func(class string) bool { return !namesNginx(class) })
 	}
 	for key := range ing.Annotations {
 		if strings.HasPrefix(key, annotationNginxPrefix) {
