@@ -150,6 +150,10 @@ A pause that lasts the window ends the wait. So do these, which no pause can las
 
 A would-be pause in dry-run never waits longer. The count is kept in `status.idleWait`, so a restart keeps it. The wait only ever delays a pause.
 
+So the longer wait doesn't fix anything by itself. A workload quiet overnight has a pause that holds, and the next working day starts again at `idleAfter`. Its wrong pauses come back every working day until you fix the cause, about 10 a day with `idleAfter: 5m` and steady light use. [What Napwake tells you](#what-napwake-tells-you) says what to change.
+
+Each costs a user little. One undone while the workload is still pausing is [called off](/guides/pause/#a-request-calls-the-pause-off): its pods carry on, or are scaled back up if they'd begun to stop. One undone after it reached zero costs the request that undid it a cold start. The doorman holds that request through the wake, as it holds any request to a paused workload.
+
 These don't make a pause wrong, since Napwake didn't misjudge the workload's use:
 
 - a pause someone asked for
