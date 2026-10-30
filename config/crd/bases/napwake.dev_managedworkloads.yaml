@@ -1146,8 +1146,8 @@ spec:
                       description: |-
                         ReadTimeout is how long ingress-nginx waits for an answer through it:
                         ProxyReadTimeout in seconds, or 60 seconds, ingress-nginx's default,
-                        without one, which its ConfigMap can change unseen by Napwake. Unset
-                        when ProxyReadTimeout isn't a whole number of seconds above zero.
+                        without one, or with one that isn't a whole number, which ingress-nginx
+                        ignores. Its ConfigMap can change that default, unseen by Napwake.
                       type: string
                     services:
                       description: Services are the workload's Services it sends traffic
@@ -1158,6 +1158,7 @@ spec:
                       x-kubernetes-list-type: atomic
                   required:
                   - name
+                  - readTimeout
                   - services
                   type: object
                 type: array
