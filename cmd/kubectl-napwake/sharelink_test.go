@@ -299,7 +299,8 @@ func TestShareLink_NumbersOnly(t *testing.T) {
 			for _, m := range got {
 				assert.Equal(t, p.link, html.UnescapeString(m[1]))
 			}
-			assert.Equal(t, 2, strings.Count(p.html, html.EscapeString(p.link)), "the link is only Copy link's")
+			assert.Equal(t, 3, strings.Count(p.html, html.EscapeString(p.link)),
+				"the link is only Copy link's, and the dialog's text of it")
 			otherLinks := regexp.MustCompile(`data-link="([^"]*)"`).FindAllStringSubmatch(p.other, -1)
 			require.NotEmpty(t, otherLinks)
 			assert.Equal(t, p.link, html.UnescapeString(otherLinks[0][1]), "the same whatever the cluster is called")
@@ -378,7 +379,8 @@ func TestPages_CopyLinkOnlyWithALink(t *testing.T) {
 			pageHas(t, p.html, `<button type="button" class="btn" data-copy-summary>Copy summary</button>
           `+button, "in the panel, beside Copy summary")
 			pageHas(t, p.html, `<div class="share-btns" style="margin-top:8px"><button type="button" class="btn" `+
-				`data-copy-summary>Copy summary</button>`+button+`</div>`, "in the dialog, beside Copy summary")
+				`data-copy-summary>Copy summary</button>`+button+`<p class="link-box" data-link-box>`+
+				html.EscapeString(p.link)+`</p></div>`, "in the dialog, beside Copy summary")
 			assert.Equal(t, 2, strings.Count(p.html, "data-copy-link data-link"))
 			pageHas(t, p.html, withLink)
 			pageLacks(t, p.html, noLink)
@@ -518,4 +520,49 @@ func TestShareDays_NamesTheCardsWindow(t *testing.T) {
 	assert.Zero(t, wrong, "of %d spans", len(spans))
 	assert.Greater(t, len(spans), 50000, "the sweep is fine-grained")
 	assert.Equal(t, "0", shareDays(0), "a snapshot")
+}
+
+// sayHandler is the page's script's confirmation, and linkFailure what
+// Copy link does when the browser won't copy.
+var (
+	sayHandler  = regexp.MustCompile(`(?s)  function say\(text, change\) \{.*?\n  \}\n`)
+	linkFailure = regexp.MustCompile(`(?s)if \(!ok\) \{\s*if \(!b\.closest\("dialog"\)\) openShare\(\);\s*` +
+		`selectLink\(\);\s*` +
+		`say\("Your browser didn\\u2019t allow copying; copy the link below instead"\);\s*\}`)
+)
+
+// When the browser won't copy the link, the reader can still have it
+// (brief 03): the share dialog has it as text to select, with no address
+// to follow, and Copy link opens the dialog with it selected, saying so.
+// The confirmation shows inside the dialog while it's open, not under it.
+func TestPages_LinkToSelectWhenCopyingFails(t *testing.T) {
+	statusLink := statusPageAt(t, earlyMonth())
+	pages := map[string]struct{ html, link string }{
+		"scan": {html: renderHTML(t, couldResult(karpenterFound)),
+			link: buildReport(couldResult(karpenterFound), time.Hour).ShareLink},
+		"status": {html: renderStatusPageOf(t, statusLink), link: statusLink.ShareLink},
+	}
+	for name, p := range pages {
+		t.Run(name, func(t *testing.T) {
+			dialog := regexp.MustCompile(`(?s)<dialog class="share".*?</dialog>`).FindString(p.html)
+			require.NotEmpty(t, dialog)
+			pageHas(t, dialog, `<p class="link-box" data-link-box>`+html.EscapeString(p.link)+`</p>`,
+				"the link as text in the dialog")
+			assert.NotRegexp(t, `href="https://napwake\.dev/s/`, p.html, "never an address to follow")
+			pageHas(t, p.html, ".link-box {", "styled to read and select")
+			assert.Regexp(t, linkFailure, p.html, "opened with the link selected, saying so")
+			pageHas(t, p.html, "function selectLink() {")
+			say := sayHandler.FindString(p.html)
+			require.NotEmpty(t, say, "the page's confirmation")
+			assert.Contains(t, say, `var host = doc.querySelector("dialog[open]") || body;`)
+			assert.Contains(t, say, "if (toast.parentNode !== host) host.appendChild(toast);",
+				"inside the open dialog")
+		})
+	}
+
+	t.Run("no link", func(t *testing.T) {
+		for _, page := range []string{renderHTML(t, couldResult(noScaler)), renderStatusPageOf(t, statusPageAt(t))} {
+			pageLacks(t, page, `data-link-box>`)
+		}
+	})
 }
