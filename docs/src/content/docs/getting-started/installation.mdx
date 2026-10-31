@@ -20,25 +20,13 @@ import NextSteps from '../../../components/NextSteps.astro';
 
 ## Install with Helm
 
-<Steps>
+Install from the OCI registry, with no `helm repo` to add. Change `Europe/London` to your users' [time zone](#time-zone).
 
-1. Put your settings in a values file, starting with your users' [time zone](#time-zone):
-
-    ```yaml title="napwake-values.yaml"
-    timezone: Europe/London
-    ```
-
-2. Install from the OCI registry, with no `helm repo` to add:
-
-    ```bash
-    helm install napwake oci://ghcr.io/napwake/charts/napwake \
-      --version 0.2.0 \
-      --namespace napwake-system \
-      --create-namespace \
-      -f napwake-values.yaml
-    ```
-
-</Steps>
+```bash
+echo 'timezone: Europe/London' >> napwake-values.yaml
+helm install napwake oci://ghcr.io/napwake/charts/napwake --version 0.2.0 \
+  --namespace napwake-system --create-namespace -f napwake-values.yaml
+```
 
 <StartCheckpoint>
 
@@ -341,6 +329,8 @@ Set Helm's `timezone` value, or the operator's `--timezone` flag, to your users'
 - UTC is the default. A team on daylight saving then finds its workloads woken an hour early or late for half the year.
 - Teams in different zones can pick the zone most of them work in, or have [an install each](#more-than-one-install).
 - [Wall-clock alignment](/concepts/forecasting/#wall-clock-alignment) has the details.
+
+A zone changed later moves what the forecast has learned onto the new clock. So it learns your users' mornings again, as in [Wall-clock alignment](/concepts/forecasting/#wall-clock-alignment).
 
 To change it on a Helm install, change your values file. Then upgrade with it at the version you run, as in [Keeping your settings](/operations/upgrading/#keeping-your-settings):
 

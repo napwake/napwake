@@ -4,20 +4,12 @@ Napwake pauses idle Kubernetes workloads in staging, preview and dev, and wakes 
 
 ## Install
 
-Put your settings in `napwake-values.yaml`, starting with your users' time zone:
-
-```yaml title="napwake-values.yaml"
-timezone: Europe/London
-```
-
-Install from the OCI registry, with no `helm repo` to add:
+Install from the OCI registry, with no `helm repo` to add. Change `Europe/London` to your users' time zone.
 
 ```bash
-helm install napwake oci://ghcr.io/napwake/charts/napwake \
-  --version 0.2.0 \
-  --namespace napwake-system \
-  --create-namespace \
-  -f napwake-values.yaml
+echo 'timezone: Europe/London' >> napwake-values.yaml
+helm install napwake oci://ghcr.io/napwake/charts/napwake --version 0.2.0 \
+  --namespace napwake-system --create-namespace -f napwake-values.yaml
 ```
 
 Upgrade with the same file, since `--set` alone drops your other values.

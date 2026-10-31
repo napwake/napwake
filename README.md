@@ -47,18 +47,12 @@ It only reads, with your kubeconfig, and installs nothing in the cluster. It nev
 
 You need Kubernetes 1.30 or later, Helm 3.8 or later, and metrics-server. GKE and AKS run metrics-server already. On EKS, kind and minikube, [add it first](https://docs.napwake.dev/getting-started/quickstart/).
 
-Put your users' time zone in `napwake-values.yaml`. It defaults to UTC, which puts the forecast an hour off their mornings for a while after each daylight-saving change.
-
-```yaml title="napwake-values.yaml"
-timezone: America/New_York
-```
+Change `Europe/London` to your users' time zone. It defaults to UTC, which puts the forecast an hour off their mornings for a while after each daylight-saving change.
 
 ```bash
-helm install napwake oci://ghcr.io/napwake/charts/napwake \
-  --version 0.2.0 \
-  --namespace napwake-system \
-  --create-namespace \
-  -f napwake-values.yaml
+echo 'timezone: Europe/London' >> napwake-values.yaml
+helm install napwake oci://ghcr.io/napwake/charts/napwake --version 0.2.0 \
+  --namespace napwake-system --create-namespace -f napwake-values.yaml
 kubectl get pods -n napwake-system
 ```
 
