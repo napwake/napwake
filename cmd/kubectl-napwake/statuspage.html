@@ -1776,16 +1776,30 @@ html:not(.js) th { position: static; }
       // (state-label) on its baseline at the column's end, or on a row of its own when the cluster's name, ticked,
       // makes it too long to sit beside it
       var y = wTop + 82 * ws, wW = drawWordmark(ctx, pad, wTop, ws);
-      var ebPx = sq ? 20 : 16, eb = sp.eyebrow.toUpperCase(), cl = sp.cluster ? "· " + sp.cluster : "";
-      ctx.font = "700 " + ebPx + "px " + MONO; ls(sq ? "1.2px" : "1px");
-      var ew = ctx.measureText(eb).width; ls("0px");
-      ctx.font = "400 " + ebPx + "px " + MONO;
-      var cw = cl ? ctx.measureText(cl).width + 12 : 0, ex = pad + colW - ew - cw;
-      if (!wW) ex = pad;
-      else if (ex < pad + wW + (sq ? 40 : 32)) { ex = pad; y += sq ? 56 : 44; }
-      ctx.font = "700 " + ebPx + "px " + MONO; ls(sq ? "1.2px" : "1px"); ctx.fillStyle = C.muted;
+      // On a row of its own, the eyebrow's row is fitted to the column as the card's other lines are: smaller, down to
+      // a floor, then with the middle of the name cut, its start and end kept, so a long name, such as a GKE context's,
+      // never runs into the building or off the card.
+      var ebPx = sq ? 20 : 16, ebMin = sq ? 14 : 12, spacing = sq ? "1.2px" : "1px", eb = sp.eyebrow.toUpperCase();
+      var name = sp.cluster || "";
+      var row = function (px, n) {
+        ctx.font = "700 " + px + "px " + MONO; ls(spacing);
+        var ew = ctx.measureText(eb).width; ls("0px");
+        ctx.font = "400 " + px + "px " + MONO;
+        return { ew: ew, cw: n ? ctx.measureText("· " + n).width + 12 : 0 };
+      };
+      var m = row(ebPx, name), ex = pad + colW - m.ew - m.cw;
+      if (!wW || ex < pad + wW + (sq ? 40 : 32)) {
+        if (wW) y += sq ? 56 : 44;
+        ex = pad;
+        while (m.ew + m.cw > colW && ebPx > ebMin) m = row(--ebPx, name);
+        for (var keep = name.length - 1; m.ew + m.cw > colW && keep > 1; keep--) {
+          name = sp.cluster.slice(0, Math.ceil(keep / 2)) + "\u2026" + sp.cluster.slice(-Math.floor(keep / 2));
+          m = row(ebPx, name);
+        }
+      }
+      ctx.font = "700 " + ebPx + "px " + MONO; ls(spacing); ctx.fillStyle = C.muted;
       ctx.fillText(eb, ex, y); ls("0px");
-      if (cl) { ctx.font = "400 " + ebPx + "px " + MONO; ctx.fillStyle = C.text; ctx.fillText(cl, ex + ew + 12, y); }
+      if (name) { ctx.font = "400 " + ebPx + "px " + MONO; ctx.fillStyle = C.text; ctx.fillText("· " + name, ex + m.ew + 12, y); }
       // the statement, on one line if it fits at a readable size, the figure, its label and detail
       if (sp.statement) {
         var stf = fitLines(ctx, sp.statement, "700", SANS, sq ? 44 : 32, sq ? 34 : 24, colW, 1);

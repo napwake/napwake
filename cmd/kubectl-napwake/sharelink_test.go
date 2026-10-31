@@ -643,3 +643,28 @@ func TestPages_LinkToSelectIsInView(t *testing.T) {
 		assert.Greater(t, inView, selected, "%s: then brings it into view", name)
 	}
 }
+
+// eyebrowFit is how the card's script fits the eyebrow's row, the label and
+// the cluster's name, to the column when it's on a row of its own: smaller,
+// down to a floor, then the middle of the name cut, start and end kept.
+var eyebrowFit = regexp.MustCompile(`(?s)var ebPx = sq \? 20 : 16, ebMin = sq \? 14 : 12,.*?` +
+	`if \(!wW \|\| ex < pad \+ wW \+ \(sq \? 40 : 32\)\) \{.*?` +
+	`while \(m\.ew \+ m\.cw > colW && ebPx > ebMin\) m = row\(--ebPx, name\);\s*` +
+	`for \(var keep = name\.length - 1; m\.ew \+ m\.cw > colW && keep > 1; keep--\) \{\s*` +
+	`name = sp\.cluster\.slice\(0, Math\.ceil\(keep / 2\)\) \+ "\\u2026" \+ ` +
+	`sp\.cluster\.slice\(-Math\.floor\(keep / 2\)\);\s*` +
+	`m = row\(ebPx, name\);\s*\}.*?` +
+	`ctx\.fillText\("· " \+ name, ex \+ m\.ew \+ 12, y\);`)
+
+// A ticked cluster's name never runs into the building or off the card
+// (brief 05): the eyebrow's row, on a row of its own, is fitted to the
+// column as the card's other lines are, smaller down to a floor, then with
+// the middle of the name cut, its start and end kept, and the name drawn
+// is the fitted one. On both pages.
+func TestShareCard_EyebrowFitsTheColumn(t *testing.T) {
+	pages := map[string]string{"scan": renderHTML(t, couldResult(karpenterFound)),
+		"status": renderStatusPageOf(t, statusPageAt(t, earlyMonth()))}
+	for name, page := range pages {
+		assert.Regexp(t, eyebrowFit, page, "%s: the eyebrow's row is fitted to the column", name)
+	}
+}
