@@ -332,7 +332,7 @@ Set Helm's `timezone` value, or the operator's `--timezone` flag, to your users'
 
 A zone changed later moves what the forecast has learned onto the new clock. So it learns your users' mornings again, as in [Wall-clock alignment](/concepts/forecasting/#wall-clock-alignment).
 
-To change it on a Helm install, change your values file. Then upgrade with it at the version you run, as in [Keeping your settings](/operations/upgrading/#keeping-your-settings):
+To change it on a Helm install, change your values file. If the file has more than one `timezone:` line, Helm uses the last, so keep one. Then upgrade with it at the version you run, as in [Keeping your settings](/operations/upgrading/#keeping-your-settings):
 
 ```yaml title="napwake-values.yaml"
 timezone: America/New_York
