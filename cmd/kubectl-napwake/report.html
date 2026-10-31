@@ -672,6 +672,7 @@ html:not(.js) th { position: static; }
         <div class="actions needs-js" role="group" aria-label="Share this report">
           {{if .Workloads}}<button type="button" class="btn primary" data-share>Share card</button>{{end}}
           <button type="button" class="btn" data-copy-summary>Copy summary</button>
+          {{with .ShareLink}}<button type="button" class="btn" data-copy-link data-link="{{.}}">Copy link</button>{{end}}
           <button type="button" class="btn" data-print>Save as PDF</button>
         </div>
       </div>
@@ -900,9 +901,9 @@ html:not(.js) th { position: static; }
       <div>
         <p class="field-t label">Summary, to paste in an email or chat</p>
         <pre class="summary-box" id="summary-box"></pre>
-        <div class="share-btns" style="margin-top:8px"><button type="button" class="btn" data-copy-summary>Copy summary</button></div>
+        <div class="share-btns" style="margin-top:8px"><button type="button" class="btn" data-copy-summary>Copy summary</button>{{with .ShareLink}}<button type="button" class="btn" data-copy-link data-link="{{.}}">Copy link</button>{{end}}</div>
       </div>
-      <p class="private"><span class="door-g" aria-hidden="true"></span><span><b>This page sends nothing anywhere.</b> Your browser drew the card and wrote the summary here, on this computer. That&#39;s why there&#39;s no link to share: send the image, the summary or the file.</span></p>
+      <p class="private"><span class="door-g" aria-hidden="true"></span><span><b>This page sends nothing anywhere.</b> Your browser drew the card and wrote the summary here, on this computer. {{if .ShareLink}}The link holds the card&#39;s numbers only, never a name. They reach napwake.dev only once someone opens it, or a chat previews it.{{else}}That&#39;s why there&#39;s no link to share: send the image, the summary or the file.{{end}}</span></p>
     </div>
   </div>
 </dialog>
@@ -1683,6 +1684,19 @@ html:not(.js) th { position: static; }
         if (!ok) say("Your browser didn\u2019t allow copying; select the summary in the share dialog instead", true);
         else if (b.closest("dialog")) { b.textContent = what; setTimeout(function () { b.textContent = label; }, 2400); }
         else say(what, true);
+      });
+    });
+  });
+  // The share link: the card's numbers only, which the product wrote into the button, so it never holds the
+  // cluster's name, ticked or not. It's copied as the summary is.
+  each($$("[data-copy-link]"), function (b) {
+    var label = b.textContent;
+    b.addEventListener("click", function () {
+      copyText(b.dataset.link, function (ok) {
+        var what = "Copied, without the cluster\u2019s name";
+        if (!ok) say("Your browser didn\u2019t allow copying the link");
+        else if (b.closest("dialog")) { b.textContent = what; setTimeout(function () { b.textContent = label; }, 2400); }
+        else say(what);
       });
     });
   });

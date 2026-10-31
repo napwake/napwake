@@ -33,11 +33,13 @@ import (
 // The scan report and the status page run only their own style and
 // scripts, which their policy names by hash, and load nothing: every
 // source is inline, so opening one reaches nothing, and a link sends no
-// referrer.
+// referrer. So do pages with a share link to copy.
 func TestPages_LoadNothingFromElsewhere(t *testing.T) {
 	var status bytes.Buffer
 	require.NoError(t, writeStatusHTML(&status, statusResult{Cluster: "staging"}, 24*time.Hour, statusNow))
-	pages := map[string]string{"scan": renderHTML(t, historyResult()), "status": status.String()}
+	pages := map[string]string{"scan": renderHTML(t, historyResult()), "status": status.String(),
+		"scan with a share link":   renderHTML(t, couldResult(karpenterFound)),
+		"status with a share link": renderStatusPageOf(t, statusPageAt(t, earlyMonth()))}
 
 	for name, body := range pages {
 		t.Run(name, func(t *testing.T) {
