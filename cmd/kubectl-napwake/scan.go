@@ -162,7 +162,9 @@ Prometheus it read; with several, it picks the one with the most of the
 week's CPU history, and --prometheus-service picks another. Without one, it
 judges from CPU right now.
 
-Run in a terminal, it also opens the report as a web page, to share.
+Run in a terminal, it also opens the report as a web page, to share. When
+the report leads with a percentage less, the table ends with a share link:
+napwake.dev's page of that card's numbers, never a name.
 
 Examples:
   # Scan the current context
@@ -679,11 +681,16 @@ func bindingSubject(username string) string {
 	return "--user=" + username
 }
 
+// writeScan writes the scan as opts.output asks. The table ends with the
+// report's share link, where it has one, for whoever never opens the
+// report. JSON and YAML, for programs, leave it out.
 func writeScan(w io.Writer, result scanResult, opts scanOptions) error {
-	return writeOutput(w, opts.output, result, func() error { return writeTable(w, result, opts.limit) })
+	return writeOutput(w, opts.output, result, func() error {
+		return writeTable(w, result, opts.limit, buildReport(result, opts.idleAfter).ShareLink)
+	})
 }
 
-func writeTable(w io.Writer, result scanResult, limit int) error {
+func writeTable(w io.Writer, result scanResult, limit int, shareLink string) error {
 	p := &printer{w: w}
 	p.line("%s: %s", result.Cluster, workloadsIn(result))
 	p.line("%s", billLine(result.NodeAutoscaler))
@@ -730,6 +737,9 @@ func writeTable(w io.Writer, result scanResult, limit int) error {
 		p.line("")
 	}
 	writeNextSteps(p, result)
+	if shareLink != "" {
+		p.line("Share these numbers: %s", shareLink)
+	}
 	return p.err
 }
 

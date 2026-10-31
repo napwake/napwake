@@ -89,6 +89,9 @@ type reportPage struct {
 	Mark      string
 	// Unjudged is how many workloads the notes list instead of Workloads.
 	Unjudged int
+	// ShareLink is the share link for the lead's card, which Copy link
+	// copies, or "" for none.
+	ShareLink string
 }
 
 // could is what pausing could free a month, as the share less and the two
@@ -467,6 +470,7 @@ func buildReport(result scanResult, idleAfter time.Duration) reportPage {
 	}
 	page.Method = methodFor(result, history, len(page.Dependencies) > 0, idleAfter)
 	page.NextSteps = nextStepsFor(result)
+	page.ShareLink = scanShareLink(page, result.History)
 	return page
 }
 

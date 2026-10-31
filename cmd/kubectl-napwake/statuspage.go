@@ -70,6 +70,9 @@ type statusPage struct {
 	// PausingOff is the line status leads with while pausing is off for
 	// some or all of the workloads, or empty.
 	PausingOff string
+	// ShareLink is the share link for the month's card, which Copy link
+	// copies, or "" for none.
+	ShareLink string
 }
 
 // attentionRow is a problem as the page lists it. Workload is the
@@ -209,6 +212,7 @@ func buildStatusPage(result statusResult, since time.Duration, now time.Time) st
 			Workload: h.Workload, Namespace: h.Namespace, Message: oneLine(h.Message), Kind: h.Kind,
 			WokenBy: h.WokenBy, AtSort: h.At.Unix()})
 	}
+	page.ShareLink = statusShareLink(page)
 	return page
 }
 

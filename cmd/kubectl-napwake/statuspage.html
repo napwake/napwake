@@ -406,6 +406,7 @@ dialog.share::backdrop { background: var(--night); opacity: .7; }
 .share-btns { display: grid; gap: var(--space-2); }
 .share-btns .btn { padding: .5em 1.25em; }
 .summary-box { margin: 0; padding: var(--space-3) 14px; border: 1px solid var(--line); border-radius: var(--radius-lg); background: var(--bg); font: 400 14px/1.5 var(--font-sans); color: var(--text); white-space: pre-wrap; overflow-wrap: anywhere; max-height: 200px; overflow: auto; }
+.link-box { margin: 0; padding: var(--space-2) 14px; border: 1px solid var(--line); border-radius: var(--radius-lg); background: var(--bg); font: 400 13px/1.5 var(--font-mono); color: var(--text); overflow-wrap: anywhere; user-select: all; }
 .private { display: flex; gap: var(--space-3); align-items: flex-start; margin: auto 0 0; padding: 14px 0 0; border-top: 1px solid var(--line); font-size: 14px; line-height: 1.5; color: var(--muted); }
 .private .door-g { flex: none; width: 18px; height: 18px; margin-top: 2px; background: var(--g-asleep) center / contain no-repeat; }
 .private b { color: var(--text); }
@@ -685,6 +686,7 @@ html:not(.js) th { position: static; }
         <div class="actions needs-js" role="group" aria-label="Share this page">
           {{if .Workloads}}<button type="button" class="btn primary" data-share>Share card</button>{{end}}
           <button type="button" class="btn" data-copy-summary>Copy summary</button>
+          {{with .ShareLink}}<button type="button" class="btn" data-copy-link data-link="{{.}}">Copy link</button>{{end}}
           <button type="button" class="btn" data-print>Save as PDF</button>
         </div>
       </div>
@@ -858,9 +860,9 @@ html:not(.js) th { position: static; }
       <div>
         <p class="field-t label">Summary, to paste in an email or chat</p>
         <pre class="summary-box" id="summary-box"></pre>
-        <div class="share-btns" style="margin-top:8px"><button type="button" class="btn" data-copy-summary>Copy summary</button></div>
+        <div class="share-btns" style="margin-top:8px"><button type="button" class="btn" data-copy-summary>Copy summary</button>{{with .ShareLink}}<button type="button" class="btn" data-copy-link data-link="{{.}}">Copy link</button><p class="link-box" data-link-box>{{.}}</p>{{end}}</div>
       </div>
-      <p class="private"><span class="door-g" aria-hidden="true"></span><span><b>This page sends nothing anywhere.</b> Your browser drew the card and wrote the summary here, on this computer. That&#39;s why there&#39;s no link to share: send the image, the summary or the file.</span></p>
+      <p class="private"><span class="door-g" aria-hidden="true"></span><span><b>This page sends nothing anywhere.</b> Your browser drew the card and wrote the summary here, on this computer. {{if .ShareLink}}The link holds the card&#39;s numbers only, never a name. They reach napwake.dev only once someone opens it, or a chat previews it.{{else}}That&#39;s why there&#39;s no link to share: send the image, the summary or the file.{{end}}</span></p>
     </div>
   </div>
 </dialog>
@@ -1575,6 +1577,9 @@ html:not(.js) th { position: static; }
   // A short confirmation; with `change`, a link that opens the share dialog to change what was copied.
   function say(text, change) {
     if (!toast) return;
+    // Inside the share dialog while it's open: it sits above the page, which would hide the confirmation.
+    var host = doc.querySelector("dialog[open]") || body;
+    if (toast.parentNode !== host) host.appendChild(toast);
     toast.textContent = text;
     if (change) {
       var b = doc.createElement("button");
@@ -1641,6 +1646,31 @@ html:not(.js) th { position: static; }
         if (!ok) say("Your browser didn\u2019t allow copying; select the summary in the share dialog instead", true);
         else if (b.closest("dialog")) { b.textContent = what; setTimeout(function () { b.textContent = label; }, 2400); }
         else say(what, true);
+      });
+    });
+  });
+  // The share link: the card's numbers only, which the product wrote into the button, so it never holds the
+  // cluster's name, ticked or not. It's copied as the summary is. Where the browser won't copy it, the share dialog
+  // opens with the link's text selected, for the reader to copy.
+  function selectLink() {
+    var box = $("[data-link-box]"), sel = window.getSelection ? window.getSelection() : null;
+    if (!box || !sel) return;
+    var range = doc.createRange();
+    range.selectNodeContents(box); sel.removeAllRanges(); sel.addRange(range);
+    // the box sits below the dialog panel's fold, on a laptop as on a phone
+    box.scrollIntoView({ block: "center" });
+  }
+  each($$("[data-copy-link]"), function (b) {
+    var label = b.textContent;
+    b.addEventListener("click", function () {
+      copyText(b.dataset.link, function (ok) {
+        var what = "Copied, without the cluster\u2019s name";
+        if (!ok) {
+          if (!b.closest("dialog")) openShare();
+          selectLink();
+          say("Your browser didn\u2019t allow copying; copy the link below instead");
+        } else if (b.closest("dialog")) { b.textContent = what; setTimeout(function () { b.textContent = label; }, 2400); }
+        else say(what);
       });
     });
   });
@@ -1726,8 +1756,9 @@ html:not(.js) th { position: static; }
     // A flat wall, no grain: noise can't be compressed, and a card has to stay small enough to post (X takes 5 MB).
     var art = resolve(B.svg(plan.at, { lobby: lobbyArt, grain: false })).replace(/class="ec"/g, 'class="ec" opacity="0"');
     art = art.replace('<svg class="bldg-art"', '<svg class="bldg-art" x="' + bx.toFixed(1) + '" y="' + by.toFixed(1) + '" width="' + bw.toFixed(1) + '" height="' + bh.toFixed(1) + '"');
-    // the logo's symbol, top left, where words() sets the wordmark beside it
-    var ws = sq ? .68 : .5636, wTop = sq ? 80 : 54;
+    // the logo's symbol, top left, where words() sets the wordmark beside it: the lockup at .74 is 302 of the card's
+    // 1,200, so 101 px when a chat shows the card 400 px wide, over its smallest, 100 px (1-logo.md, cmo-075)
+    var ws = .74, wTop = sq ? 80 : 54;
     var mark = '<g transform="translate(' + pad + " " + (wTop + 22 * ws).toFixed(2) + ") scale(" + ws + ')">' + SYMBOL + "</g>";
     var svg = '<svg xmlns="http://www.w3.org/2000/svg" width="' + W * S + '" height="' + H * S + '" viewBox="0 0 ' + W + " " + H + '"><rect width="' + W + '" height="' + H + '" fill="' + C.ground + '"/>' + art + mark + "</svg>";
     return font().then(function () {
@@ -1745,16 +1776,30 @@ html:not(.js) th { position: static; }
       // (state-label) on its baseline at the column's end, or on a row of its own when the cluster's name, ticked,
       // makes it too long to sit beside it
       var y = wTop + 82 * ws, wW = drawWordmark(ctx, pad, wTop, ws);
-      var ebPx = sq ? 20 : 16, eb = sp.eyebrow.toUpperCase(), cl = sp.cluster ? "· " + sp.cluster : "";
-      ctx.font = "700 " + ebPx + "px " + MONO; ls(sq ? "1.2px" : "1px");
-      var ew = ctx.measureText(eb).width; ls("0px");
-      ctx.font = "400 " + ebPx + "px " + MONO;
-      var cw = cl ? ctx.measureText(cl).width + 12 : 0, ex = pad + colW - ew - cw;
-      if (!wW) ex = pad;
-      else if (ex < pad + wW + (sq ? 40 : 32)) { ex = pad; y += sq ? 56 : 44; }
-      ctx.font = "700 " + ebPx + "px " + MONO; ls(sq ? "1.2px" : "1px"); ctx.fillStyle = C.muted;
+      // On a row of its own, the eyebrow's row is fitted to the column as the card's other lines are: smaller, down to
+      // a floor, then with the middle of the name cut, its start and end kept, so a long name, such as a GKE context's,
+      // never runs into the building or off the card.
+      var ebPx = sq ? 20 : 16, ebMin = sq ? 14 : 12, spacing = sq ? "1.2px" : "1px", eb = sp.eyebrow.toUpperCase();
+      var name = sp.cluster || "";
+      var row = function (px, n) {
+        ctx.font = "700 " + px + "px " + MONO; ls(spacing);
+        var ew = ctx.measureText(eb).width; ls("0px");
+        ctx.font = "400 " + px + "px " + MONO;
+        return { ew: ew, cw: n ? ctx.measureText("· " + n).width + 12 : 0 };
+      };
+      var m = row(ebPx, name), ex = pad + colW - m.ew - m.cw;
+      if (!wW || ex < pad + wW + (sq ? 40 : 32)) {
+        if (wW) y += sq ? 56 : 44;
+        ex = pad;
+        while (m.ew + m.cw > colW && ebPx > ebMin) m = row(--ebPx, name);
+        for (var keep = name.length - 1; m.ew + m.cw > colW && keep > 1; keep--) {
+          name = sp.cluster.slice(0, Math.ceil(keep / 2)) + "\u2026" + sp.cluster.slice(-Math.floor(keep / 2));
+          m = row(ebPx, name);
+        }
+      }
+      ctx.font = "700 " + ebPx + "px " + MONO; ls(spacing); ctx.fillStyle = C.muted;
       ctx.fillText(eb, ex, y); ls("0px");
-      if (cl) { ctx.font = "400 " + ebPx + "px " + MONO; ctx.fillStyle = C.text; ctx.fillText(cl, ex + ew + 12, y); }
+      if (name) { ctx.font = "400 " + ebPx + "px " + MONO; ctx.fillStyle = C.text; ctx.fillText("· " + name, ex + m.ew + 12, y); }
       // the statement, on one line if it fits at a readable size, the figure, its label and detail
       if (sp.statement) {
         var stf = fitLines(ctx, sp.statement, "700", SANS, sq ? 44 : 32, sq ? 34 : 24, colW, 1);
