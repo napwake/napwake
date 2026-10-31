@@ -375,7 +375,7 @@ A proxy can give up sooner. ingress-nginx waits 60 seconds for an answer by defa
 | Within 3 minutes | Its answer, on the second or third try | A `504` at 60 seconds |
 | Later | A `504` at 3 minutes | A `504` at 60 seconds |
 
-Each try reaches the same doorman pod or another, which holds it. Each one ingress-nginx gives up on counts as `canceled` ([Metrics](/reference/metrics/#doorman)). A client that gives up first gets no answer, and ingress-nginx logs a `499`.
+Each try reaches the same doorman pod or another, which holds it. Each try ingress-nginx gives up on is counted as `canceled` ([Metrics](/reference/metrics/#doorman)). A client that gives up first gets no answer, and ingress-nginx logs a `499`.
 
 For a slower starter, raise the timeout to match `maxWait`. The doorman then holds each request once, until a pod is Ready or `maxWait` runs out:
 
