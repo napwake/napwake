@@ -42,6 +42,7 @@ func TestInstallCommands_AreTheDocs(t *testing.T) {
 
 	for _, file := range []string{
 		"docs/src/content/docs/getting-started/installation.mdx",
+		"docs/src/content/docs/reference/helm-values.mdx",
 		"README.md",
 		"charts/napwake/README.md",
 		"CHANGELOG.md",
