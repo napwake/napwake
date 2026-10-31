@@ -22,6 +22,7 @@ import (
 	"regexp"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/napwake/napwake/internal/discovery"
 )
@@ -76,11 +77,11 @@ func shareAmounts(with, without string, others ...string) ([]string, bool) {
 // scanShareLink is the share link for the scan page's "less" card, the
 // month's before and after it leads with where the bill can drop, from the
 // numbers the card shows: its percentage, what the workloads could cost a
-// month and what they cost, and how many days of Prometheus history they're
-// from, to three places, or 0 for a snapshot. It's "" where the page shows
-// no such card, as for an estimate from too little history, or where an
-// amount on it isn't a number, such as <$1. The page and the terminal both
-// take it from here, so they always agree.
+// month and what they cost, and the days of Prometheus history they're
+// from, as the card names them, or 0 for a snapshot. It's "" where the page
+// shows no such card, as for an estimate from too little history, or where
+// an amount on it isn't a number, such as <$1. The page and the terminal
+// both take it from here, so they always agree.
 func scanShareLink(page reportPage, history *discovery.HistorySource) string {
 	c := page.Could
 	if len(page.Workloads) == 0 || c == nil || page.NodeScale.State == scaleNone ||
@@ -91,12 +92,24 @@ func scanShareLink(page reportPage, history *discovery.HistorySource) string {
 	if !ok {
 		return ""
 	}
-	days := 0.0
-	if page.History && history != nil && history.Hours > 0 {
-		days = math.Round(history.Hours/24*1000) / 1000
+	var span time.Duration
+	if page.History {
+		span = history.RoundedSpan()
 	}
 	return fmt.Sprintf("%s%d/?v=%s&with=%s&without=%s&src=%s", shareSite, c.Percent, shareVersion, amounts[0],
-		amounts[1], strconv.FormatFloat(days, 'f', -1, 64))
+		amounts[1], shareDays(span))
+}
+
+// shareDays is a span of history in days, as a share link carries it, so
+// the page it opens spells the span the card does: to three places, which
+// keeps an hour, or four under an hour, which keeps a minute, a 1,440th of
+// a day; 0 for none.
+func shareDays(span time.Duration) string {
+	unit := 1000.0
+	if span < time.Hour {
+		unit = 10000
+	}
+	return strconv.FormatFloat(math.Round(span.Hours()/24*unit)/unit, 'f', -1, 64)
 }
 
 // statusShareLink is the share link for the status page's "less" card,

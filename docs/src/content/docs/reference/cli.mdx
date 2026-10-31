@@ -513,7 +513,7 @@ The share link carries the before and after's numbers, and nothing else:
 | When | With the before and after's percentage less, from 1% to 100%. Not for "Not on the bill yet", once Napwake is live, or for an estimate from under a day of history |
 | Address | `https://napwake.dev/s/<percent>/?v=1&with=<W>&without=<WO>&src=<days>` |
 | `with` and `without` | What the workloads could cost a month, paused when idle, and what they cost. Whole dollars, as the card writes them, without `$` or commas, such as `267` and `1234` |
-| `src` | The days of Prometheus history, to three places, such as `7` or `1.25`. `0` for a snapshot |
+| `src` | The days of Prometheus history, rounded as the card says them, such as `7` for 7 days and `1.25` for 30 hours. To three places, or four under an hour, such as `0.0208` for 30 minutes. `0` for a snapshot |
 | No link | When an amount reads `<$1`, or what they cost is `$0` |
 | Never | The cluster's name, even if you tick the box. The Prometheus source, a workload's name, or any text |
 | In the terminal | The table's last line: `Share these numbers:` and the link. Never in `-o json` or `-o yaml` |

@@ -19,7 +19,9 @@ package main
 import (
 	"bytes"
 	"context"
+	"fmt"
 	"html"
+	"math"
 	"regexp"
 	"strconv"
 	"strings"
@@ -106,10 +108,14 @@ func TestShareLink_Format(t *testing.T) {
 			want: "https://napwake.dev/s/73/?v=1&with=3346&without=12346&src=7"},
 		"30 hours": {result: lessResult(446, 179, 30),
 			want: "https://napwake.dev/s/40/?v=1&with=267&without=446&src=1.25"},
-		"36 and a half hours": {result: lessResult(446, 179, 36.5),
-			want: "https://napwake.dev/s/40/?v=1&with=267&without=446&src=1.521"},
+		"36 and a half hours, the card's 37": {result: lessResult(446, 179, 36.5),
+			want: "https://napwake.dev/s/40/?v=1&with=267&without=446&src=1.542"},
+		"30.4995 hours, the card's 30": {result: lessResult(446, 179, 30.4995),
+			want: "https://napwake.dev/s/40/?v=1&with=267&without=446&src=1.25"},
+		"a week and a minute and a half, the card's 7 days": {result: lessResult(446, 179, 168.024),
+			want: "https://napwake.dev/s/40/?v=1&with=267&without=446&src=7"},
 		"dry-run, with 30 minutes of history": {result: shortHistoryWithDryRunOnly(),
-			want: "https://napwake.dev/s/9/?v=1&with=406&without=446&src=0.021"},
+			want: "https://napwake.dev/s/9/?v=1&with=406&without=446&src=0.0208"},
 		"a snapshot, measured in dry-run": {result: snapshotLess(),
 			want: "https://napwake.dev/s/40/?v=1&with=267&without=446&src=0"},
 		"100%": {result: lessResult(446, 446, 168),
@@ -128,9 +134,16 @@ func TestShareLink_Format(t *testing.T) {
 			assert.Equal(t, tt.want, page.ShareLink)
 			c := page.Could
 			require.NotNil(t, c)
-			pageHas(t, renderHTML(t, tt.result), "<b>"+strconv.Itoa(c.Percent)+"% less</b><span>Paused when idle, these "+
+			got := renderHTML(t, tt.result)
+			pageHas(t, got, "<b>"+strconv.Itoa(c.Percent)+"% less</b><span>Paused when idle, these "+
 				"workloads could cost about "+c.With+" a month instead of "+c.Without+".</span>",
 				"the card the link is of")
+			if span := tt.result.History.Span(); page.History && span != "" {
+				src := regexp.MustCompile(`&src=([0-9.]+)$`).FindStringSubmatch(page.ShareLink)
+				require.Len(t, src, 2)
+				assert.Equal(t, span, spanOfDays(t, src[1]), "the link names the card's window")
+				pageHas(t, got, `data-source="`+replayedOver(tt.result.History)+` of Prometheus history`)
+			}
 		})
 	}
 
@@ -427,4 +440,82 @@ func TestShareAmounts(t *testing.T) {
 		assert.Equal(t, tt.want != nil, ok, "%q", tt.cards)
 		assert.Equal(t, tt.want, got, "%q", tt.cards)
 	}
+}
+
+// spanOfDays spells a link's src as napwake.dev's page does (share.mjs's
+// history(), cmo-075): minutes under an hour, hours under two days, then
+// days, each rounded half up.
+func spanOfDays(t *testing.T, src string) string {
+	t.Helper()
+	days, err := strconv.ParseFloat(src, 64)
+	require.NoError(t, err, "src %q", src)
+	spell := func(n float64, one string) string {
+		if n == 1 {
+			return "1 " + one
+		}
+		return fmt.Sprintf("%d %ss", int(n), one)
+	}
+	hours := days * 24
+	switch minutes := math.Floor(hours*60 + .5); {
+	case minutes < 60:
+		return spell(math.Max(minutes, 1), "minute")
+	case math.Floor(hours+.5) < 48:
+		return spell(math.Floor(hours+.5), "hour")
+	}
+	return spell(math.Floor(hours/24+.5), "day")
+}
+
+// The link's src names the window the card does (brief 03): read back as
+// napwake.dev's page reads it, it's the span the card's words say, at every
+// edge where they change, a minute's, an hour's, a day's and a unit's, from
+// either side, and every few seconds or minutes between.
+func TestShareDays_NamesTheCardsWindow(t *testing.T) {
+	var spans []time.Duration
+	edge := func(at time.Duration) {
+		for _, e := range []time.Duration{0, time.Nanosecond, time.Millisecond, time.Second} {
+			spans = append(spans, at-e, at+e)
+		}
+	}
+	for m := time.Duration(1); m <= 60; m++ {
+		edge(m*time.Minute - 30*time.Second)
+	}
+	for h := time.Duration(1); h <= 48; h++ {
+		edge(h*time.Hour - 30*time.Minute)
+	}
+	for d := time.Duration(2); d <= 400; d++ {
+		edge(d*24*time.Hour - 12*time.Hour)
+	}
+	for d := time.Second; d < 3*24*time.Hour; d += 7 * time.Second {
+		spans = append(spans, d)
+	}
+	for d := 3 * 24 * time.Hour; d < 400*24*time.Hour; d += 13 * time.Minute {
+		spans = append(spans, d)
+	}
+	page := reportPage{History: true, Workloads: []workloadRow{{}}, NodeScale: nodeScale{State: scaleFound},
+		Could: &could{Without: "$446", With: "$267", Percent: 40}}
+	link := regexp.MustCompile(`&src=([0-9.]+)$`)
+	wrong := 0
+	for _, d := range spans {
+		if d <= 0 {
+			continue
+		}
+		history := &discovery.HistorySource{Hours: d.Hours()}
+		m := link.FindStringSubmatch(scanShareLink(page, history))
+		require.Len(t, m, 2, "%s: a link", d)
+		card, src := history.Span(), m[1]
+		if got := spanOfDays(t, src); got != card {
+			wrong++
+			if wrong <= 10 {
+				t.Errorf("%s of history: the card says %q, src=%s says %q", d, card, src, got)
+			}
+		}
+		if d < 59*time.Minute {
+			assert.Regexp(t, `^0(\.\d{1,4})?$`, src, "%s: four places at most under an hour", d)
+		} else if d > 61*time.Minute {
+			assert.Regexp(t, `^\d+(\.\d{1,3})?$`, src, "%s: three places at most from an hour", d)
+		}
+	}
+	assert.Zero(t, wrong, "of %d spans", len(spans))
+	assert.Greater(t, len(spans), 50000, "the sweep is fine-grained")
+	assert.Equal(t, "0", shareDays(0), "a snapshot")
 }
