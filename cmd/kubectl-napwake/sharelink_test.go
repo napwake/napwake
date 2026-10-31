@@ -624,3 +624,22 @@ func TestShareCard_LockupAtLeastItsSmallest(t *testing.T) {
 		}
 	}
 }
+
+// linkSelect is what the page's script does to show the link to select.
+var linkSelect = regexp.MustCompile(`(?s)  function selectLink\(\) \{.*?\n  \}\n`)
+
+// When copying is refused, the link it selects is brought into view, in
+// the middle of the share dialog's scrolling panel, on a laptop or a phone
+// (brief 05): the box sits below the panel's fold.
+func TestPages_LinkToSelectIsInView(t *testing.T) {
+	pages := map[string]string{"scan": renderHTML(t, couldResult(karpenterFound)),
+		"status": renderStatusPageOf(t, statusPageAt(t, earlyMonth()))}
+	for name, page := range pages {
+		selectLink := linkSelect.FindString(page)
+		require.NotEmpty(t, selectLink, "%s: selectLink", name)
+		selected := strings.Index(selectLink, "sel.addRange(range);")
+		inView := strings.Index(selectLink, `box.scrollIntoView({ block: "center" });`)
+		require.GreaterOrEqual(t, selected, 0, "%s: it selects the link", name)
+		assert.Greater(t, inView, selected, "%s: then brings it into view", name)
+	}
+}

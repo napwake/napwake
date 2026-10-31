@@ -1699,6 +1699,8 @@ html:not(.js) th { position: static; }
     if (!box || !sel) return;
     var range = doc.createRange();
     range.selectNodeContents(box); sel.removeAllRanges(); sel.addRange(range);
+    // the box sits below the dialog panel's fold, on a laptop as on a phone
+    box.scrollIntoView({ block: "center" });
   }
   each($$("[data-copy-link]"), function (b) {
     var label = b.textContent;
