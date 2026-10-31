@@ -277,6 +277,8 @@ There's no upgrade path from Hybernate 0.1.x or a 0.2.0 release candidate. Unins
 
 ### Fixed
 
+- The share card on the scan report and the status page fits a cluster's name, ticked to show, to its column: smaller, then with the middle of the name cut, its start and end kept. A long one, such as a GKE context's, ran into the building or off the card
+- A message on the scan report or the status page, such as **Download PNG**'s, shows inside the share dialog while it's open. It was hidden under it
 - The Quickstart wakes `my-api` with a timed request from a pod that stays, which prints `200 after` a second or two. Its `kubectl run --rm -it` could print nothing, as kubectl attached after curl had finished, so the wake looked as if it had failed
 - The Quickstart and Wake on request say how long a woken request waits: as long as the pods take to start and pass their readiness probe, a second or two for the Quickstart's nginx
 - The Quickstart's last step, and Installation's Uninstall, say a workload keeps its `napwake.dev/` settings annotations when its label is removed, so labelled again it's taken on with them, live after `enable`. Each gives the command that removes them
