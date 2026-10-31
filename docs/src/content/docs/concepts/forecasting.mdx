@@ -458,7 +458,8 @@ The learned state lives in the ManagedWorkload's status, in `status.prediction.s
 | What it holds | The model's components, the scored errors, the anomaly statistics, and the weekly changes held for the next day. Whether the forecast doubts the hour under way. The last hour observed, and the demand last seen in each hour of the week, which [`startsActing`](#when-it-acts) is projected from |
 | Operator restarts and leader changes | The engine survives them. An hour observed before a restart isn't observed twice, and the hour under way at a restart is skipped. Restarted daily, at a different hour each day, the operator loses those hours and nothing else. The forecast acts within hours of when it would have |
 | A last observed hour more than an hour ahead of the operator's clock | Not trusted, since a wrong clock recorded it. The next hour is observed as usual, rather than refused until real time catches up |
-| State that can't be read, from an older version or a hand edit | Discarded with a `ForecastReset` warning event. The engine starts learning again |
+| State from an older version, after an upgrade | Discarded with a normal `ForecastReset` event, not a warning. With a Prometheus URL, the forecast learns again from the workload's [CPU history](#learning-from-history), as a new workload's does. Without one, the engine starts learning again |
+| State that can't be read otherwise, such as after a hand edit | Discarded with a `ForecastReset` warning event. The engine starts learning again |
 
 ## Tuning
 
