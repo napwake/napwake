@@ -1190,29 +1190,35 @@ func nextStepCommands(idle, measuring *Workload) (measure []string, enable strin
 // installationGuide is the docs page the install step points to.
 const installationGuide = "https://docs.napwake.dev/getting-started/installation/"
 
-// installStep is the command that installs Napwake, when the next steps
-// start with it: there's a workload to measure, and the scan found neither
+// installStep is the commands that install Napwake, when the next steps
+// start with them: there's a workload to measure, and the scan found neither
 // a workload Napwake manages nor Napwake's own. Without them it may or may
 // not be installed, so the step says "if the cluster doesn't have it yet".
-// It's "" when the steps start with measuring.
-func installStep(result scanResult, measure []string) string {
+// It's nil when the steps start with measuring.
+func installStep(result scanResult, measure []string) []string {
 	if len(measure) == 0 || slices.ContainsFunc(result.Workloads, func(wl Workload) bool { return wl.Managed }) ||
 		slices.ContainsFunc(result.Platform, func(wl Workload) bool { return wl.Platform == discovery.PlatformNapwake }) {
-		return ""
+		return nil
 	}
-	return installCommand(version)
+	return installCommands(version)
 }
 
-// installCommand is the docs' install line, with the values file the step
-// asks for. A release of the plugin installs the chart of the same release,
-// which is its version without the "v"; another build leaves the version to
-// Helm.
-func installCommand(plugin string) string {
-	line := "helm install napwake oci://ghcr.io/napwake/charts/napwake"
+// installCommands are the docs' install: the users' time zone into the
+// values file, then helm install with the file, so there's nothing to make
+// by hand first. ">>" adds the zone to a file that's already there and keeps
+// its other settings, where ">" would empty it. Helm takes the last of a
+// repeated key. A release of the plugin installs the chart of the same
+// release, which is its version without the "v"; another build leaves the
+// version to Helm.
+func installCommands(plugin string) []string {
+	helm := "helm install napwake oci://ghcr.io/napwake/charts/napwake"
 	if semver.IsValid(plugin) {
-		line += " --version " + strings.TrimPrefix(plugin, "v")
+		helm += " --version " + strings.TrimPrefix(plugin, "v")
 	}
-	return line + " --namespace napwake-system --create-namespace -f napwake-values.yaml"
+	return []string{
+		"echo 'timezone: Europe/London' >> napwake-values.yaml",
+		helm + " --namespace napwake-system --create-namespace -f napwake-values.yaml",
+	}
 }
 
 func writeNextSteps(p *printer, result scanResult) {
@@ -1227,10 +1233,12 @@ func writeNextSteps(p *printer, result scanResult) {
 		step++
 		p.line("  %d. %s", step, title)
 	}
-	if install := installStep(result, measure); install != "" {
-		next("Install Napwake, if the cluster doesn't have it yet. Put your users' time zone in")
-		p.line("     napwake-values.yaml first, such as timezone: Europe/London. Then:")
-		p.line("       %s", install)
+	if install := installStep(result, measure); len(install) > 0 {
+		next("Install Napwake, if the cluster doesn't have it yet.")
+		p.line("     Change Europe/London to your users' time zone.")
+		for _, command := range install {
+			p.line("       %s", command)
+		}
 		p.line("     See %s", installationGuide)
 	}
 	if len(measure) > 0 {

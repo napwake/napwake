@@ -124,3 +124,20 @@ func TestReportAndStatusPage_CalloutAndBar(t *testing.T) {
 	pageHas(t, reportHTML, `<a href="#meaning">What the numbers mean</a>`)
 	pageLacks(t, reportHTML, `>The numbers<`)
 }
+
+// The install step is two commands, each marked install: the users' time
+// zone into the values file, then helm install with the file. Each page puts
+// every marked line in its one install block, under one Copy, and says to
+// change the zone in the command, with no file to make first. Kede's words
+// (cmo-076).
+func TestReportAndStatusPage_InstallBlockHoldsBothCommands(t *testing.T) {
+	for name, page := range map[string]string{"scan": reportHTML, "status": statusPageHTML} {
+		pageHas(t, page, `var marked = function (step) { return lines.filter(function (l) { `+
+			`return l.parentNode.getAttribute("data-step") === step; }); };`, name, "every marked line, not the first")
+		pageHas(t, page, `if (install.length) block(++n + ". Install Napwake, if the cluster doesn't have it yet", `+
+			`["Change ", ["code", "Europe/London"], " to your users' time zone. The ", `+
+			`["a", "installation guide", "https://docs.napwake.dev/getting-started/installation/"], " has the rest."], `+
+			`install);`, name, "the install block, the zone as code and the guide linked")
+		pageLacks(t, page, "Put your users' time zone in", name, "the old words, which had the file made first")
+	}
+}

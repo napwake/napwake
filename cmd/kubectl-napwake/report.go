@@ -205,13 +205,13 @@ type workloadRow struct {
 }
 
 // nextSteps keep the commands that measure a workload in dry-run apart
-// from the one that then has Napwake pause it, and from the one that
-// installs Napwake first, so a page can copy them apart without reading
+// from the one that then has Napwake pause it, and from the ones that
+// install Napwake first, so a page can copy them apart without reading
 // which is which.
 type nextSteps struct {
-	// Install is nil when the scan found Napwake, as the terminal's
+	// Install is empty when the scan found Napwake, as the terminal's
 	// install step is left out then.
-	Install *command
+	Install []command
 	Measure []command
 	// Enable is nil when no workload is measured or idle to go live.
 	Enable *command
@@ -471,7 +471,7 @@ func buildReport(result scanResult, idleAfter time.Duration) reportPage {
 }
 
 // nextStepsFor are the report's next steps: the terminal's commands, each
-// with the workload it's for, and the install command with none.
+// with the workload it's for, and the install commands with none.
 func nextStepsFor(result scanResult) *nextSteps {
 	idle, measuring := nextStepTargets(result.Workloads)
 	measure, enable := nextStepCommands(idle, measuring)
@@ -479,8 +479,8 @@ func nextStepsFor(result scanResult) *nextSteps {
 		return nil
 	}
 	steps := &nextSteps{}
-	if install := installStep(result, measure); install != "" {
-		steps.Install = &command{Line: shellHTML(install)}
+	for _, c := range installStep(result, measure) {
+		steps.Install = append(steps.Install, command{Line: shellHTML(c)})
 	}
 	for _, c := range measure {
 		steps.Measure = append(steps.Measure, commandFor(c, idle))
