@@ -473,8 +473,9 @@ It's written for whoever you send it to.
 | On a scan | The idle workloads' doors close by themselves once, to show what Napwake would pause. Nothing is paused |
 | Then | **Prices** and **Your bill**, as the terminal's lines say them |
 | A share card | Your browser draws it, wide or square, with totals only. The cluster's name is on it only if you tick it |
-| Buttons | **Copy summary** and **Save as PDF** |
+| Buttons | **Copy summary**, **Copy link** where there's a share link, and **Save as PDF** |
 | Copy summary | Three plain lines. They leave out the cluster's name and the Prometheus source unless you tick it |
+| Copy link | A link to napwake.dev's page of the card's numbers, below |
 | What it sends | Nothing, anywhere |
 | Before and after | Before anything is live, with history or dry-run to go on. The percentage less, then what the workloads could cost a month paused when idle, and what they cost running, all on the same basis. Not shown for an estimate from under a day of history, or under 1% |
 | No node autoscaler | Instead, "Not on the bill yet", and the share pausing could free. The bill wouldn't drop until something removes nodes |
@@ -504,6 +505,19 @@ How the first figure is worked out before anything is paused:
 | Its share, with history replayed | Of what they cost over the history, with the pods they ran. It says "over the same time" |
 | Without either | What the idle workloads cost while running, the most pausing could free |
 | A zero, with under a day of history, short of the window | It says that's too little history yet. Scan again after a few days |
+
+The share link carries the before and after's numbers, and nothing else:
+
+| The share link | |
+|---|---|
+| When | With the before and after's percentage less, from 1% to 100%. Not for "Not on the bill yet", once Napwake is live, or for an estimate from under a day of history |
+| Address | `https://napwake.dev/s/<percent>/?v=1&with=<W>&without=<WO>&src=<days>` |
+| `with` and `without` | What the workloads could cost a month, paused when idle, and what they cost. Whole dollars, as the card writes them, without `$` or commas, such as `267` and `1234` |
+| `src` | The days of Prometheus history, to three places, such as `7` or `1.25`. `0` for a snapshot |
+| No link | When an amount reads `<$1`, or what they cost is `$0` |
+| Never | The cluster's name, even if you tick the box. The Prometheus source, a workload's name, or any text |
+| In the terminal | The table's last line: `Share these numbers:` and the link. Never in `-o json` or `-o yaml` |
+| Sent | Nothing, until someone opens it, or a chat fetches it for a preview. Then those numbers go to napwake.dev, which draws the card from them |
 
 | The file | |
 |---|---|

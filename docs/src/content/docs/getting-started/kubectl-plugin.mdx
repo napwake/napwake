@@ -171,6 +171,7 @@ Run it before you install Napwake, or after, to see what's left to opt in. Once 
 | COULD FREE/MO, unmanaged | The replay's estimate |
 | Money | Whole dollars, as in `status`. `<$1` is above zero but rounds to nothing. `$0` is none |
 | `Prices:` | At the end, a summary of what costs were priced at ([Prices](/reference/cli/#scan-prices)) |
+| `Share these numbers:` | The last line, when the report leads with a percentage less. A link to napwake.dev's page of that card's numbers, never a name ([The share link](/reference/cli/#scan-report)) |
 
 | In STATE's brackets | What it means |
 |---|---|
@@ -471,7 +472,20 @@ In a terminal, it opens in your browser, as the [`scan`](#scan-a-cluster) report
 | Workloads | Every workload, in a table to sort and filter |
 | Each workload | Its state and for how long, last activity, what's next, and what it freed or would free |
 | Pauses and wakes | Every one since `--since`, with its cause, at its time in UTC |
+| Copy link | With the month's percentage less, a link to napwake.dev's page of that card's numbers, below |
 | Nothing from elsewhere | It loads nothing, so it works offline and attached to an email |
+
+The share link carries the month's numbers, and nothing else:
+
+| The share link | |
+|---|---|
+| When | Once the month leads with what comes off the bill, from 1% to 100% |
+| Address | `https://napwake.dev/s/less-<percent>/?v=1&bill=<B>&without=<WO>&saved=<S>&days=<D>` |
+| `bill`, `without` and `saved` | The month's bill at this pace, what it would be without Napwake, and what nodes scaling down take off it. As the card writes them, to the cent under $100, without `$` or commas, such as `8.60` and `1234` |
+| `days` | The days of this month counted |
+| No link | When an amount reads `<$0.01`, or what it would be without Napwake is `$0` |
+| Never | The cluster's name, even if you tick the box, a workload's name, or any text |
+| Sent | Nothing, until someone opens it, or a chat fetches it for a preview. Then those numbers go to napwake.dev, which draws the card from them |
 
 ## See why nodes don't scale down
 
