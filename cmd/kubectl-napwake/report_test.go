@@ -451,7 +451,7 @@ func TestWriteHTML_InstallFirstWhenNapwakeIsntFound(t *testing.T) {
 
 	require.NotNil(t, steps)
 	assert.Equal(t, []command{
-		{Line: shellHTML("echo 'timezone: Europe/London' >> napwake-values.yaml")},
+		{Line: shellHTML(`printf '\ntimezone: Europe/London\n' >> napwake-values.yaml`)},
 		{Line: shellHTML("helm install napwake oci://ghcr.io/napwake/charts/napwake --version 0.2.0 " +
 			"--namespace napwake-system --create-namespace -f napwake-values.yaml")},
 	}, steps.Install, "the terminal's two commands, for no one workload")
@@ -462,8 +462,8 @@ func TestWriteHTML_InstallFirstWhenNapwakeIsntFound(t *testing.T) {
 	pageHas(t, got, "<span>"+lead+`</span><a href="#next">See the commands</a>`, "the strip")
 	pageHas(t, got, "<p>"+lead+"</p>", "the section")
 	pageLacks(t, got, "Opt a workload in, measuring first")
-	pageHas(t, got, `<pre class="shell"><span data-step="install"><span class="line"><span class="sh-cmd">echo</span> `+
-		`&#39;timezone: Europe/London&#39; &gt;&gt; napwake-values.yaml</span></span>`+"\n"+
+	pageHas(t, got, `<pre class="shell"><span data-step="install"><span class="line"><span class="sh-cmd">printf</span> `+
+		`&#39;\ntimezone: Europe/London\n&#39; &gt;&gt; napwake-values.yaml</span></span>`+"\n"+
 		`<span data-step="install"><span class="line"><span class="sh-cmd">helm</span> `+
 		`install napwake oci://ghcr.io/napwake/charts/napwake <span class="sh-flag">--version</span> 0.2.0 `,
 		"the time zone into the values file, then helm install with it, first and both marked, for one Copy")

@@ -50,7 +50,7 @@ You need Kubernetes 1.30 or later, Helm 3.8 or later, and metrics-server. GKE an
 Change `Europe/London` to your users' time zone. It defaults to UTC, which puts the forecast an hour off their mornings for a while after each daylight-saving change.
 
 ```bash
-echo 'timezone: Europe/London' >> napwake-values.yaml
+printf '\ntimezone: Europe/London\n' >> napwake-values.yaml
 helm install napwake oci://ghcr.io/napwake/charts/napwake --version 0.2.0 \
   --namespace napwake-system --create-namespace -f napwake-values.yaml
 kubectl get pods -n napwake-system

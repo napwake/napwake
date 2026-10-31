@@ -1207,16 +1207,18 @@ func installStep(result scanResult, measure []string) []string {
 // values file, then helm install with the file, so there's nothing to make
 // by hand first. ">>" adds the zone to a file that's already there and keeps
 // its other settings, where ">" would empty it. Helm takes the last of a
-// repeated key. A release of the plugin installs the chart of the same
-// release, which is its version without the "v"; another build leaves the
-// version to Helm.
+// repeated key. printf's leading line break starts the zone on a line of its
+// own, where echo's line would join a last line that has none, such as a
+// comment, which would take the zone in. A release of the plugin installs
+// the chart of the same release, which is its version without the "v";
+// another build leaves the version to Helm.
 func installCommands(plugin string) []string {
 	helm := "helm install napwake oci://ghcr.io/napwake/charts/napwake"
 	if semver.IsValid(plugin) {
 		helm += " --version " + strings.TrimPrefix(plugin, "v")
 	}
 	return []string{
-		"echo 'timezone: Europe/London' >> napwake-values.yaml",
+		`printf '\ntimezone: Europe/London\n' >> napwake-values.yaml`,
 		helm + " --namespace napwake-system --create-namespace -f napwake-values.yaml",
 	}
 }
