@@ -79,7 +79,7 @@ Served by the doorman pods, on the same port and path as the operator's.
 | Metric | Type | Labels | Description |
 |--------|------|--------|-------------|
 | <Ref id="napwake_doorman_wakes_total">napwake_doorman_wakes_total</Ref> | Counter | `namespace`, `workload`, `result` | Connections the doorman accepted for a paused workload, by `result` (below) |
-| <Ref id="napwake_doorman_wait_seconds">napwake_doorman_wait_seconds</Ref> | Histogram | `result` | How long the doorman held a connection before passing it through or closing it |
+| <Ref id="napwake_doorman_wait_seconds">napwake_doorman_wait_seconds</Ref> | Histogram | `result` | How long the doorman held a connection before passing it through or closing it, for each connection `napwake_doorman_wakes_total` counts |
 | <Ref id="napwake_doorman_held_connections">napwake_doorman_held_connections</Ref> | Gauge | | Connections held right now, waiting for their workload to wake |
 | <Ref id="napwake_doorman_proxied_connections">napwake_doorman_proxied_connections</Ref> | Gauge | | Connections passed to a woken workload and still being carried |
 | <Ref id="napwake_doorman_port_conflicts">napwake_doorman_port_conflicts</Ref> | Gauge | | Doorman ports claimed by more than one route, which the doorman refuses to serve. Should be 0 |
@@ -89,14 +89,14 @@ The values of `result`.
 
 | `result` | Meaning |
 |----------|---------|
-| `success` | Passed to a Ready pod |
+| `success` | Passed to a Ready pod. One passed on as it arrived, as while the workload pauses or its route drains, counts only once its caller sends something. So a TCP check then isn't counted, such as a load balancer's, or the operator's of each doorman pod before a pause stops the workload's pods |
 | `page` | A browser was shown the waking-up page |
 | `asked` | With `wake.mode: Ask`, a person's browser was shown the page that asks before waking ([Asking before waking](/concepts/wake-on-request/#asking-before-waking)) |
 | `turned_away` | With `wake.mode: Ask`, anything else, such as a crawler, a scanner or an API client, was told it's asleep. Nothing woke. Many mean something automated calls it. `status.turnedAway` counts them for each pause |
 | `timeout` | No pod was Ready within `wake.maxWait` |
 | `error` | The woken pods couldn't be reached, or the wake couldn't be recorded, by `wake.maxWait` |
 | `canceled` | The caller left, or the doorman shut down, while the connection was held |
-| `ignored` | A health check or scraper known by its `User-Agent`, answered `503`, or [Google's load balancer health check](/concepts/wake-on-request/#health-checks-the-doorman-cant-recognise), answered `200`. A request for a hidden file such as `/.env`, answered `404`. A connection that closed without sending anything. Each forwarder pod's check that it reaches the doorman does that every 5 seconds |
+| `ignored` | A health check or scraper known by its `User-Agent`, answered `503`, or [Google's load balancer health check](/concepts/wake-on-request/#health-checks-the-doorman-cant-recognise), answered `200`. A request for a hidden file such as `/.env`, answered `404`. A connection that closed without sending anything while no pod was Ready, such as a TCP check of a paused workload. Each forwarder pod's check that it reaches the doorman does that every 5 seconds |
 | `limited` | Refused by a cap on held connections or a wake rate limit ([Limits](/concepts/wake-on-request/#limits)) |
 | `refused` | The workload's route is draining and none of its pods is Ready |
 

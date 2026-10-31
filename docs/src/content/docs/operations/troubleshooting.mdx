@@ -486,7 +486,7 @@ It lets go rather than block the deletion, and the workload goes with the namesp
 
 ### `helm uninstall` fails with `job napwake-uninstall-guard failed`
 
-Or, in Helm 4, `resource Job/napwake-system/napwake-uninstall-guard not ready`. ManagedWorkloads are left, whose workloads would stay paused.
+Or, in Helm 4, `resource Job/napwake-system/napwake-uninstall-guard not ready`. ManagedWorkloads are left. With no operator, each would be stuck on its finalizer, and its workload, if paused, would stay at 0 replicas.
 
 Helm 3.18 and later list them after `Napwake refuses to uninstall:`. Before 3.18, or in any Helm after a `helm rollback` with one, the guard's log does:
 

@@ -758,6 +758,7 @@ Not shown, as each is set up on purpose or normal:
 | `never pauses: PVCs deleted on scale-down` | Never. A StatefulSet with `persistentVolumeClaimRetentionPolicy.whenScaled: Delete` |
 | `nothing: labelled napwake.dev/ignore`, `nothing: workload not found`, `nothing: another ManagedWorkload has it` | Never |
 | `won't pause: dependsOn cycle`, `won't pause: no CPU metrics`, `won't pause: Prometheus failing` | Never |
+| `waits a few minutes for Prometheus's series` | Not yet. A query lost its series, as after Prometheus restarts without its data, so it isn't paused for up to 5 minutes ([why](/guides/prometheus-signals/#when-prometheus-restarts-without-its-data)). Not in Needs attention |
 | `wakes on a request or activity` | Paused, and what wakes it. Without the doorman, `wakes on activity` |
 | `wakes on a click, a wake request or activity` | Paused, and its doorman [asks before waking](/concepts/wake-on-request/#asking-before-waking) it |
 | `paused early: the forecast expected quiet until Fri 20:00 UTC; wakes on a request or activity` | The forecast [brought the pause forward](/concepts/forecasting/#pausing-early), before `idleAfter` ran out |
@@ -794,6 +795,7 @@ A person shown the asleep page isn't counted. So many mean something automated c
 | A wake's cause | A request on a Service, an activity annotation, a wake request, the forecast, or a scale-up from outside Napwake |
 | Activity annotations | Including a dependent waking |
 | Wake requests | From `kubectl napwake wake`, or a tool setting `napwake.dev/wake-requested`, by their `WakeRequested` event |
+| Whose | Only the ManagedWorkloads there now, by their UID. Not a deleted one's, nor those of the one before one made again under the same name, as after a reinstall |
 | Requests the doorman closed without reaching the workload | Listed too |
 | A wake with no recorded cause | Listed by its `resumed` event alone, such as a hand-back when a namespace becomes protected |
 | How many | The table shows the latest 10, and `-o json` every one |

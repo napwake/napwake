@@ -333,6 +333,10 @@ func (r *Reconciler) takeOn(ctx context.Context, workload *v1alpha1.ManagedWorkl
 		return err
 	}
 	announce()
+	if err := r.announceNowManaged(ctx, workload); err != nil {
+		log.FromContext(ctx).Error(err, "telling the workloads that depend on it that it's now managed",
+			"workload", workload.Name, "namespace", workload.Namespace)
+	}
 	return nil
 }
 
@@ -532,6 +536,7 @@ func (r *Reconciler) resumeTransition(ctx context.Context, workload *v1alpha1.Ma
 			if err != nil {
 				return nil, err
 			}
+			r.seeTurnedBack(ctx, workload, why)
 			return r.handleResume(ctx, workload, why)
 		}
 		return r.handlePause(ctx, workload, target, nil)
@@ -1033,8 +1038,23 @@ func (r *Reconciler) reconcileDelete(ctx context.Context, workload *v1alpha1.Man
 		return 0, err
 	}
 	if wait := r.drainLeft(workload); wait > 0 {
+		// Handed back with replicas, the workload runs again while its ports
+		// drain, up to a minute, so it isn't shown Paused meanwhile. One
+		// released at zero, its target gone or at zero before its pause,
+		// stays as it was. The cost isn't settled: nothing reads it once the
+		// ManagedWorkload is gone.
+		old := workload.Status.Phase
+		if released && replicas > 0 && old != v1alpha1.PhaseRunning {
+			now := r.clockTime()
+			workload.Status.Phase, workload.Status.LastTransitionTime = v1alpha1.PhaseRunning, &now
+		}
 		if err := r.Status().Update(ctx, workload); err != nil {
 			return 0, fmt.Errorf("recording the doorman ports draining: %w", err)
+		}
+		if workload.Status.Phase != old {
+			r.phaseWrites.record(workload.UID, workload.Status.LastTransitionTime.Time)
+			recordPhase(workload)
+			metrics.LifecycleTransitions.WithLabelValues(string(old), string(workload.Status.Phase)).Inc()
 		}
 		if released {
 			r.announceHandBack(workload, replicas, "no longer managed")

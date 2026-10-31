@@ -30,6 +30,7 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/interceptor"
@@ -81,7 +82,7 @@ func TestWriteStatusHTML(t *testing.T) {
 	assert.Contains(t, got,
 		`<span class="state paused"><span class="dot"></span>paused</span><span class="sub">for 3h</span>`)
 	assert.Contains(t, got, `<td>held awake while preview-7/worker uses it</td>`)
-	assert.Contains(t, got, `$12<span class="sub">$10 saved</span>`)
+	assert.Contains(t, got, `$12.40<span class="sub">$10.00 saved</span>`)
 	assert.Contains(t, got, `<span class="state active"><span class="dot"></span>running (dry-run)</span>`)
 	assert.Contains(t, got, `<button type="button">Would free</button>`)
 	assert.Contains(t, got, `<td class="n" data-v="7.4">$7</td>`)
@@ -128,9 +129,9 @@ func TestWriteStatusHTML_Escapes(t *testing.T) {
 
 // Under a cent freed, saved or measured in dry-run, which the operator
 // writes <$0.01, is never $0 on the page, which says there was none: <$0.01
-// in what's freed and saved so far this month, which the page writes to the
-// cent, and <$1 in the rows and in what dry-run measured, which it writes in
-// whole dollars, as the terminal does.
+// in what's freed and saved so far this month, in the figures and the rows,
+// which the page writes to the cent, and <$1 in what dry-run measured, which
+// it writes in whole dollars, as the terminal does.
 func TestWriteStatusHTML_UnderACent(t *testing.T) {
 	api := statusWorkloadObj("preview-42", "api", v1alpha1.TargetKindDeployment, v1alpha1.PhasePaused, time.Hour)
 	api.Status.Cost = &v1alpha1.CostStatus{FreedThisMonth: "<$0.01", SavedThisMonth: "<$0.01"}
@@ -144,7 +145,7 @@ func TestWriteStatusHTML_UnderACent(t *testing.T) {
 	assert.Contains(t, got, `<div class="figure"><b>&lt;$0.01</b><span>saved of it</span>`)
 	assert.Contains(t, got, `<div class="figure"><b>&lt;$1</b><span>pausing would have freed</span>`)
 	assert.Contains(t, got, "pausing it would have freed &lt;$1 since Oct 5.")
-	assert.Regexp(t, `<td class="n" data-v="0\.00\d+">&lt;\$1<span class="sub">&lt;\$1 saved</span></td>`, got)
+	assert.Regexp(t, `<td class="n" data-v="0\.00\d+">&lt;\$0\.01<span class="sub">&lt;\$0\.01 saved</span></td>`, got)
 	assert.Regexp(t, `<td class="n" data-v="0\.00\d+">&lt;\$1</td>`, got, "what dry-run measured")
 	assert.NotContains(t, got, "<b>$0</b>")
 }
@@ -169,9 +170,9 @@ func TestWriteStatusHTML_MeterUnderACent(t *testing.T) {
 			costs: []v1alpha1.CostStatus{{FreedThisMonth: "<$0.01", SavedThisMonth: "<$0.01"},
 				{FreedThisMonth: "<$0.01", SavingsUnknown: unknown}},
 			want: "Under a cent freed so far this month. Some of it came off the bill."},
-		{name: "freed under a cent, measured, none saved yet",
+		{name: "freed under a cent, measured, none saved, no node autoscaler",
 			costs: []v1alpha1.CostStatus{{FreedThisMonth: "<$0.01", SavedThisMonth: "$0.00"}},
-			want:  "Under a cent freed so far this month. None of it has come off the bill yet."},
+			want:  "Under a cent freed so far this month. None of it has come off the bill."},
 		{name: "freed under a cent, can't measure",
 			costs: []v1alpha1.CostStatus{{FreedThisMonth: "<$0.01", SavingsUnknown: unknown}},
 			want:  "Under a cent freed so far this month. Napwake can&#39;t tell here how much came off the bill."},
@@ -192,9 +193,9 @@ func TestWriteStatusHTML_MeterUnderACent(t *testing.T) {
 			costs:      []v1alpha1.CostStatus{{FreedThisMonth: "$1.74", SavedThisMonth: "$1.65"}},
 			want:       "$1.65 of the $1.74 freed came off the bill.",
 			meterLabel: "of the $1.74 freed by pausing so far this month"},
-		{name: "freed in cents, none saved yet",
+		{name: "freed in cents, none saved, no node autoscaler",
 			costs: []v1alpha1.CostStatus{{FreedThisMonth: "$0.60", SavedThisMonth: "$0.00"}},
-			want:  "None of the $0.60 freed has come off the bill yet."},
+			want:  "None of the $0.60 freed has come off the bill."},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -214,6 +215,100 @@ func TestWriteStatusHTML_MeterUnderACent(t *testing.T) {
 			} else {
 				pageLacks(t, got, `data-meter-label`, "the card has no bar to say what it's of")
 			}
+		})
+	}
+}
+
+// The Workloads table writes what each workload freed and saved as the
+// figures above it do: to the cent under $100, and <$0.01 under a cent. So a
+// row never reads <$1 under a lead of <$0.01 (P64). The terminal keeps its
+// whole dollars.
+func TestWriteStatusHTML_RowsWriteMoneyAsTheFiguresDo(t *testing.T) {
+	workload := func(name, freed, saved string) client.Object {
+		w := statusWorkloadObj("preview-42", name, v1alpha1.TargetKindDeployment, v1alpha1.PhasePaused, time.Hour)
+		w.Status.Cost = &v1alpha1.CostStatus{FreedThisMonth: freed, SavedThisMonth: saved}
+		return w
+	}
+	objs := []client.Object{workload("tiny", "<$0.01", "<$0.01"), workload("small", "$0.42", "$0.30"),
+		workload("big", "$1234.56", "$1000.00")}
+
+	got := renderStatusPage(t, objs...)
+
+	pageHas(t, got, `<div class="figure"><b>$1,235</b><span>freed by pausing so far this month</span>`)
+	pageHas(t, got, `">&lt;$0.01<span class="sub">&lt;$0.01 saved</span></td>`, "under a cent, as the lead says it")
+	pageHas(t, got, `">$0.42<span class="sub">$0.30 saved</span></td>`, "to the cent under $100")
+	pageHas(t, got, `">$1,235<span class="sub">$1,000 saved</span></td>`, "whole dollars from $100")
+	pageLacks(t, got, `&lt;$1<span class="sub">`)
+
+	terminal := runStatus(t, newStatusClient(t, interceptor.Funcs{}, objs...), statusOpts())
+	assert.Regexp(t, `deployment/tiny .*<\$1\s+<\$1\n`, terminal, "the terminal keeps whole dollars")
+	assert.Regexp(t, `deployment/small .*<\$1\s+<\$1\n`, terminal)
+}
+
+// "Yet" says nodes may still scale down. Where the page finds no node
+// autoscaler, nothing will, so wherever it says none of what was freed has
+// come off the bill, it says so without "yet" (P64, cmo-072): the meter, the
+// share card, a workload's row and, once the month's pace shows, its note.
+// With one, each keeps "yet". The label "Not on the bill yet" stays.
+func TestWriteStatusHTML_NothingSavedWithoutANodeAutoscaler(t *testing.T) {
+	autoscaler := &corev1.ConfigMap{ObjectMeta: metav1.ObjectMeta{Name: "cluster-autoscaler-status",
+		Namespace: "kube-system"}}
+	const detail = `data-detail="what the paused replicas request, at list price. None of it off the bill`
+	tests := []struct {
+		name       string
+		freed      string
+		autoscaler bool
+		want       []string
+	}{
+		{name: "under a cent, no node autoscaler", freed: "<$0.01", want: []string{
+			`<p class="meter-t">Under a cent freed so far this month. None of it has come off the bill.</p>`,
+			detail + `."`, `<span class="sub">none of it saved</span>`}},
+		{name: "under a cent, a node autoscaler", freed: "<$0.01", autoscaler: true, want: []string{
+			`<p class="meter-t">Under a cent freed so far this month. None of it has come off the bill yet.</p>`,
+			detail + ` yet."`, `<span class="sub">none of it saved yet</span>`}},
+		{name: "in cents, no node autoscaler", freed: "$0.60", want: []string{
+			`<p class="meter-t">None of the $0.60 freed has come off the bill.</p>`,
+			detail + `."`, `<span class="sub">none of it saved</span>`}},
+		{name: "in cents, a node autoscaler", freed: "$0.60", autoscaler: true, want: []string{
+			`<p class="meter-t">None of the $0.60 freed has come off the bill yet.</p>`,
+			detail + ` yet."`, `<span class="sub">none of it saved yet</span>`}},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			w := statusWorkloadObj("preview-42", "api", v1alpha1.TargetKindDeployment, v1alpha1.PhasePaused, time.Hour)
+			w.Status.Cost = &v1alpha1.CostStatus{FreedThisMonth: tt.freed, SavedThisMonth: "$0.00"}
+			objs := []client.Object{w}
+			if tt.autoscaler {
+				objs = append(objs, autoscaler)
+			}
+
+			got := renderStatusPage(t, objs...)
+
+			for _, want := range tt.want {
+				pageHas(t, got, want)
+			}
+		})
+	}
+
+	for name, tt := range map[string]struct {
+		autoscaler bool
+		note       string
+	}{
+		"the month, no node autoscaler": {note: "None of it comes off the bill until something removes nodes."},
+		"the month, a node autoscaler": {autoscaler: true,
+			note: "None of it comes off the bill until nodes scale down, and they haven&#39;t yet."},
+	} {
+		t.Run(name, func(t *testing.T) {
+			objs := []client.Object{monthWorkload("api", "$7.32", "$24.62", "$0.00", 53*time.Hour, "$0.80", "$0.00")}
+			if tt.autoscaler {
+				objs = append(objs, autoscaler)
+			}
+
+			got := renderStatusPage(t, objs...)
+
+			pageHas(t, got, `<p class="pace-note">`+tt.note+`</p>`)
+			pageHas(t, got, `. `+tt.note+` Early: 2 days counted.`, "the Copy summary says it too")
+			pageHas(t, got, `<p class="pace-k label">Not on the bill yet</p>`, "the label names the state")
 		})
 	}
 }
@@ -422,16 +517,16 @@ func TestStatusPage_MonthStates(t *testing.T) {
 				"$27.62 a month. It comes off the bill as nodes scale down. Napwake can&#39;t tell here how much does. " +
 				"Early: 2 days counted. It settles after a week. $1.94 freed by pausing so far this month, $1.65 saved of " +
 				"it (for the workloads whose savings can be measured)."},
-		{name: "off the bill",
+		{name: "off the bill, no node autoscaler",
 			objs: []client.Object{monthWorkload("api", "$7.32", "$24.62", "$0.00", 53*time.Hour, "$0.80", "$0.00")},
 			lead: []string{`<div class="pace possible">`, `<p class="pace-k label">Not on the bill yet</p>`,
 				`<p class="pace-fig"><span>Pausing frees 77% of what these workloads would cost, $24.62 a month at this ` +
 					`pace.</span></p>`,
-				`<p class="pace-note">None of it comes off the bill until nodes scale down, and they haven&#39;t yet.</p>`},
+				`<p class="pace-note">None of it comes off the bill until something removes nodes.</p>`},
 			card: []string{`data-value="$0.80"`, `data-label="freed by pausing so far this month"`,
-				`data-detail="what the paused replicas request, at list price; none of it off the bill yet"`},
+				`data-detail="what the paused replicas request, at list price. None of it off the bill."`},
 			summary: at + "at this month&#39;s pace, pausing frees 77% of what the workloads Napwake manages would cost, " +
-				"$24.62 a month. None of it comes off the bill until nodes scale down, and they haven&#39;t yet. Early: 2 " +
+				"$24.62 a month. None of it comes off the bill until something removes nodes. Early: 2 " +
 				"days counted. It settles after a week. $0.80 freed by pausing so far this month, $0 saved of it (what " +
 				"came off the bill as nodes scaled down)."},
 		{name: "off the bill, under 1% of it saved",
