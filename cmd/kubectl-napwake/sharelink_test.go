@@ -598,3 +598,29 @@ func TestDocs_ShareLinkAndShortHistory(t *testing.T) {
 		assert.NotContains(t, line, "from under a day of history", "the row %s", row)
 	}
 }
+
+// lockupScale is the scale the share card draws the logo's horizontal
+// lockup at, for a square card and a wide one.
+var lockupScale = regexp.MustCompile(`var ws = (?:sq \? ([.\d]+) : ([.\d]+)|([.\d]+)),`)
+
+// The share card's lockup is at least the logo's smallest, 100 px wide,
+// when a chat shows the card 400 px wide (cmo-075, 1-logo.md): it's 408.5
+// units wide on a card of 1,200, wide or square, on both pages.
+func TestShareCard_LockupAtLeastItsSmallest(t *testing.T) {
+	const lockupUnits, cardWidth, chatWidth, smallest = 408.5, 1200.0, 400.0, 100.0
+	pages := map[string]string{"scan": renderHTML(t, couldResult(karpenterFound)),
+		"status": renderStatusPageOf(t, statusPageAt(t, earlyMonth()))}
+	for name, page := range pages {
+		m := lockupScale.FindStringSubmatch(page)
+		require.Len(t, m, 4, "%s: the lockup's scale", name)
+		for _, written := range m[1:] {
+			if written == "" {
+				continue
+			}
+			scale, err := strconv.ParseFloat(written, 64)
+			require.NoError(t, err)
+			assert.GreaterOrEqual(t, lockupUnits*scale*chatWidth/cardWidth, smallest,
+				"%s: the lockup at %s is %.0f px wide in a chat", name, written, lockupUnits*scale*chatWidth/cardWidth)
+		}
+	}
+}

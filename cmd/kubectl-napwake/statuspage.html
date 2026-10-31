@@ -1754,8 +1754,9 @@ html:not(.js) th { position: static; }
     // A flat wall, no grain: noise can't be compressed, and a card has to stay small enough to post (X takes 5 MB).
     var art = resolve(B.svg(plan.at, { lobby: lobbyArt, grain: false })).replace(/class="ec"/g, 'class="ec" opacity="0"');
     art = art.replace('<svg class="bldg-art"', '<svg class="bldg-art" x="' + bx.toFixed(1) + '" y="' + by.toFixed(1) + '" width="' + bw.toFixed(1) + '" height="' + bh.toFixed(1) + '"');
-    // the logo's symbol, top left, where words() sets the wordmark beside it
-    var ws = sq ? .68 : .5636, wTop = sq ? 80 : 54;
+    // the logo's symbol, top left, where words() sets the wordmark beside it: the lockup at .74 is 302 of the card's
+    // 1,200, so 101 px when a chat shows the card 400 px wide, over its smallest, 100 px (1-logo.md, cmo-075)
+    var ws = .74, wTop = sq ? 80 : 54;
     var mark = '<g transform="translate(' + pad + " " + (wTop + 22 * ws).toFixed(2) + ") scale(" + ws + ')">' + SYMBOL + "</g>";
     var svg = '<svg xmlns="http://www.w3.org/2000/svg" width="' + W * S + '" height="' + H * S + '" viewBox="0 0 ' + W + " " + H + '"><rect width="' + W + '" height="' + H + '" fill="' + C.ground + '"/>' + art + mark + "</svg>";
     return font().then(function () {
