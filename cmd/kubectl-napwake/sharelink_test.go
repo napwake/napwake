@@ -22,6 +22,8 @@ import (
 	"fmt"
 	"html"
 	"math"
+	"os"
+	"path/filepath"
 	"regexp"
 	"strconv"
 	"strings"
@@ -565,4 +567,34 @@ func TestPages_LinkToSelectWhenCopyingFails(t *testing.T) {
 			pageLacks(t, page, `data-link-box>`)
 		}
 	})
+}
+
+// shortHistoryRule is how the docs say when the scan has no before and
+// after, so no share link, for want of history: as the page decides it.
+const shortHistoryRule = "while the scan says it has too little history yet, " +
+	"which is under a day and short of `--window`"
+
+// The docs say when there's no before and after, and so no link, as the
+// page decides it (brief 03): while the scan says it has too little history
+// yet, under a day and short of --window. Under a day that's all --window
+// asked for, such as --window 12h, has both.
+func TestDocs_ShareLinkAndShortHistory(t *testing.T) {
+	twelveHours := buildReport(lessResult(446, 179, 12), time.Hour)
+	require.NotNil(t, twelveHours.Could, "a before and after from 12 hours of history")
+	assert.Equal(t, "https://napwake.dev/s/40/?v=1&with=267&without=446&src=0.5", twelveHours.ShareLink)
+	short := buildReport(shortHistoryResult(), time.Hour)
+	assert.NotEmpty(t, short.Headline.ShortHistory, "the scan says it has too little history yet")
+	assert.Nil(t, short.Could)
+	assert.Empty(t, short.ShareLink)
+
+	data, err := os.ReadFile(filepath.Join("..", "..", "docs", "src", "content", "docs", "reference", "cli.mdx"))
+	require.NoError(t, err)
+	report := regexp.MustCompile(`(?s)<section id="scan-report">.*?</section>`).FindString(string(data))
+	require.NotEmpty(t, report, "the web report's section")
+	for _, row := range []string{"| Before and after |", "| When |"} {
+		line := regexp.MustCompile(`(?m)^` + regexp.QuoteMeta(row) + `.*$`).FindString(report)
+		require.NotEmpty(t, line, "the row %s", row)
+		assert.Contains(t, line, shortHistoryRule, "the row %s", row)
+		assert.NotContains(t, line, "from under a day of history", "the row %s", row)
+	}
 }
