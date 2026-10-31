@@ -1710,7 +1710,7 @@ html:not(.js) th { position: static; }
         if (!ok) {
           if (!b.closest("dialog")) openShare();
           selectLink();
-          say("Your browser didn\u2019t allow copying; copy the link below instead");
+          say("Your browser didn\u2019t allow copying. Copy the link below instead.");
         } else if (b.closest("dialog")) { b.textContent = what; setTimeout(function () { b.textContent = label; }, 2400); }
         else say(what);
       });

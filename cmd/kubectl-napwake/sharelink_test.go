@@ -530,7 +530,7 @@ var (
 	sayHandler  = regexp.MustCompile(`(?s)  function say\(text, change\) \{.*?\n  \}\n`)
 	linkFailure = regexp.MustCompile(`(?s)if \(!ok\) \{\s*if \(!b\.closest\("dialog"\)\) openShare\(\);\s*` +
 		`selectLink\(\);\s*` +
-		`say\("Your browser didn\\u2019t allow copying; copy the link below instead"\);\s*\}`)
+		`say\("Your browser didn\\u2019t allow copying\. Copy the link below instead\."\);\s*\}`)
 )
 
 // When the browser won't copy the link, the reader can still have it

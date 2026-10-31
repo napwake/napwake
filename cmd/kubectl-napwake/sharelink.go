@@ -29,9 +29,10 @@ import (
 
 // A share link is the address of napwake.dev's page for one share card's
 // percentage, carrying the card's own numbers and nothing else (cmo-075):
-// never the cluster's name, the Prometheus source, or any text. The page
-// on napwake.dev draws the card again from them, so a share leads back to
-// the scan.
+// never the cluster's name, the Prometheus source, or any text. The
+// preview card is drawn ahead of time, one per percentage, and the
+// reader's browser draws the page from the numbers, so a share leads back
+// to the scan.
 const (
 	shareSite    = "https://napwake.dev/s/"
 	shareVersion = "1"
