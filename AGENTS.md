@@ -158,6 +158,7 @@ NAPWAKE_DOCS_DIST=$PWD/docs/dist go test -count=1 ./test/docs ./hack/docsite \
 |---|---|
 | Tests read time as production does | The `monotonic` helper in `internal/controller/helpers_test.go`, and `TestHourStart_CarriesNoMonotonicReading` in `internal/forecast`. Reviews check new tests |
 | The docs' install and verify commands are the ones the install smoke test runs | `TestInstallSmokeRunsTheDocsCommands` in `test/docs`, against `.github/workflows/install-smoke.yml`. Change both together |
+| The Helm install the scan prints is the docs': the installation page's, both READMEs' and the 0.2.0 notes' | `TestInstallCommands_AreTheDocs` in `cmd/kubectl-napwake`, against `installCommands` in `scan.go`. Change them together |
 | Versions change only through `make bump VERSION=x.y.z` | `make verify-version`, which the release workflow runs on the tag. `make release` stops if `bump` changed a file it doesn't commit |
 | `charts/napwake/files/defaults.yaml` is a copy of `values.yaml`, and the chart fills in values an older release's `--reuse-values` lacks | `make check-chart`, which also checks every template starts with `{{- include "napwake.defaults" . -}}`. `make manifests` writes the copy |
 | Every docs link answers | `npm run build` in `docs/` (links and anchors between pages), `TestDocsAddressesLandInTheBuiltSite` in `test/docs` (every docs address outside `docs/`, after a build), and `TestDocsLinksExist` in `cmd/kubectl-napwake` |
