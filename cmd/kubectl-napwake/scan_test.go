@@ -26,6 +26,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -44,6 +45,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 	"sigs.k8s.io/controller-runtime/pkg/client/interceptor"
+	"sigs.k8s.io/yaml"
 
 	v1alpha1 "github.com/napwake/napwake/api/v1alpha1"
 	"github.com/napwake/napwake/internal/discovery"
@@ -1107,28 +1109,38 @@ func releasedAs(t *testing.T, tag string) {
 }
 
 // With no Napwake found, the next steps start by installing it, as the
-// installation guide does, with the values file it asks for; measuring and
-// going live follow, numbered after it.
+// installation guide does: a line that writes the users' time zone into the
+// values file, then helm install with the file, at the plugin's release when
+// it's one (cmo-076). Measuring and going live follow, numbered after it.
 func TestNextSteps_InstallFirstWhenNapwakeIsntFound(t *testing.T) {
-	releasedAs(t, "v0.2.0")
-	var table bytes.Buffer
-
-	writeNextSteps(&printer{w: &table}, sampleCluster())
-
-	assert.Equal(t, strings.Join([]string{
-		"Next steps:",
-		"  1. Install Napwake, if the cluster doesn't have it yet. Put your users' time zone in",
-		"     napwake-values.yaml first, such as timezone: Europe/London. Then:",
-		"       helm install napwake oci://ghcr.io/napwake/charts/napwake --version 0.2.0 --namespace napwake-system " +
+	for plugin, helm := range map[string]string{
+		"v0.2.0": "helm install napwake oci://ghcr.io/napwake/charts/napwake --version 0.2.0 --namespace napwake-system " +
 			"--create-namespace -f napwake-values.yaml",
-		"     See https://docs.napwake.dev/getting-started/installation/",
-		"  2. Measure a workload first, in dry-run, which pauses nothing:",
-		"       kubectl annotate deployment checkout-api -n preview-42 napwake.dev/dry-run=true",
-		"       kubectl label deployment checkout-api -n preview-42 napwake.dev/managed=true",
-		"  3. When you're happy with what it measures, start pausing it while idle:",
-		"       kubectl napwake enable deployment/checkout-api -n preview-42",
-		"", "",
-	}, "\n"), table.String())
+		"dev": "helm install napwake oci://ghcr.io/napwake/charts/napwake --namespace napwake-system " +
+			"--create-namespace -f napwake-values.yaml",
+	} {
+		t.Run(plugin, func(t *testing.T) {
+			releasedAs(t, plugin)
+			var table bytes.Buffer
+
+			writeNextSteps(&printer{w: &table}, sampleCluster())
+
+			assert.Equal(t, strings.Join([]string{
+				"Next steps:",
+				"  1. Install Napwake, if the cluster doesn't have it yet.",
+				"     Change Europe/London to your users' time zone.",
+				`       printf '\ntimezone: Europe/London\n' >> napwake-values.yaml`,
+				"       " + helm,
+				"     See https://docs.napwake.dev/getting-started/installation/",
+				"  2. Measure a workload first, in dry-run, which pauses nothing:",
+				"       kubectl annotate deployment checkout-api -n preview-42 napwake.dev/dry-run=true",
+				"       kubectl label deployment checkout-api -n preview-42 napwake.dev/managed=true",
+				"  3. When you're happy with what it measures, start pausing it while idle:",
+				"       kubectl napwake enable deployment/checkout-api -n preview-42",
+				"", "",
+			}, "\n"), table.String())
+		})
+	}
 }
 
 // With Napwake found, by a workload it manages or its own Deployment, the
@@ -1159,11 +1171,14 @@ func TestNextSteps_NoInstallStepWhenNapwakeIsFound(t *testing.T) {
 	}
 }
 
-// The install step installs the chart of the plugin's own release, so the
-// two match, release candidates included. A build that isn't a release
-// leaves the version to Helm.
-func TestInstallCommand_PinsThePluginsRelease(t *testing.T) {
-	for plugin, want := range map[string]string{
+// The install step writes the users' time zone into the values file with
+// >>, which keeps the other settings of a file that's already there, where >
+// would empty it. Then it installs the chart of the plugin's own release
+// with the file, so the two match, release candidates included. A build
+// that isn't a release leaves the version to Helm.
+func TestInstallCommands_PinsThePluginsRelease(t *testing.T) {
+	const zone = `printf '\ntimezone: Europe/London\n' >> napwake-values.yaml`
+	for plugin, helm := range map[string]string{
 		"v0.2.0": "helm install napwake oci://ghcr.io/napwake/charts/napwake --version 0.2.0 " +
 			"--namespace napwake-system --create-namespace -f napwake-values.yaml",
 		"v0.2.0-rc.9": "helm install napwake oci://ghcr.io/napwake/charts/napwake --version 0.2.0-rc.9 " +
@@ -1172,7 +1187,47 @@ func TestInstallCommand_PinsThePluginsRelease(t *testing.T) {
 			"--namespace napwake-system --create-namespace -f napwake-values.yaml",
 	} {
 		t.Run(plugin, func(t *testing.T) {
-			assert.Equal(t, want, installCommand(plugin))
+			assert.Equal(t, []string{zone, helm}, installCommands(plugin))
+		})
+	}
+}
+
+// The install step's first command puts the users' time zone on a line of
+// its own at the end of napwake-values.yaml, whatever the file ends with.
+// echo's line would join a last line with no line break: a setting's, which
+// Helm refuses, or a comment's, which takes the zone into the comment, so
+// the install runs on UTC with no error. Read as Helm reads a values file,
+// the last zone wins, so it's the one written, and the file's other
+// settings are kept.
+func TestInstallCommands_WriteTheZoneOnALineOfItsOwn(t *testing.T) {
+	const url = "prometheus:\n  url: http://prometheus.monitoring:9090\n"
+	for name, before := range map[string]*string{
+		"no file":                               nil,
+		"a comment last, with no line break":    ptr.To(url + "# settings for staging"),
+		"another zone last, with no line break": ptr.To(url + "timezone: UTC"),
+		"another zone last, with a line break":  ptr.To(url + "timezone: UTC\n"),
+	} {
+		t.Run(name, func(t *testing.T) {
+			dir := t.TempDir()
+			file := filepath.Join(dir, "napwake-values.yaml")
+			if before != nil {
+				require.NoError(t, os.WriteFile(file, []byte(*before), 0o600))
+			}
+
+			shell := exec.Command("sh", "-c", installCommands("v0.2.0")[0])
+			shell.Dir = dir
+			out, err := shell.CombinedOutput()
+			require.NoError(t, err, "the shell runs the line: %s", out)
+
+			data, err := os.ReadFile(file)
+			require.NoError(t, err)
+			var values map[string]any
+			require.NoError(t, yaml.Unmarshal(data, &values), "Helm reads the file:\n%s", data)
+			assert.Equal(t, "Europe/London", values["timezone"], "the zone written, in:\n%s", data)
+			if before != nil {
+				assert.Equal(t, map[string]any{"url": "http://prometheus.monitoring:9090"}, values["prometheus"],
+					"the file's other settings kept, in:\n%s", data)
+			}
 		})
 	}
 }

@@ -208,12 +208,9 @@ jobs:
       - name: Install with Helm, as the docs say
         if: matrix.how == 'helm'
         run: |
-          printf 'timezone: Europe/London\n' > napwake-values.yaml
-          helm install napwake oci://ghcr.io/napwake/charts/napwake \
-            --version ${VERSION} \
-            --namespace napwake-system \
-            --create-namespace \
-            -f napwake-values.yaml
+          printf '\ntimezone: Europe/London\n' >> napwake-values.yaml
+          helm install napwake oci://ghcr.io/napwake/charts/napwake --version ${VERSION} \
+            --namespace napwake-system --create-namespace -f napwake-values.yaml
           kubectl -n napwake-system rollout status deployment/napwake --timeout=3m
 
       - name: Install with install.yaml, as the docs say

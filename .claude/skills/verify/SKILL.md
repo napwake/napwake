@@ -48,5 +48,6 @@ NAPWAKE_DOCS_DIST=$PWD/docs/dist go test -count=1 ./test/docs ./hack/docsite \
 - **The docs build.** The links validator lists each broken link or anchor under the page that has it.
 - **`TestDocsAddressesLandInTheBuiltSite`.** It names the file, the address, and whether the page or the anchor is missing.
 - **`TestInstallSmokeRunsTheDocsCommands`.** A docs install command and `.github/workflows/install-smoke.yml` differ. Change both together.
+- **`TestInstallCommands_AreTheDocs`.** A copy of the Helm install, in the docs, a README or the CHANGELOG, and the one the scan prints, `installCommands` in `cmd/kubectl-napwake/scan.go`, differ. Change them together.
 - **`make test-alerts`.** promtool names the test file, the alert, and what it expected.
 - **The e2e or Helm smoke tests.** See the `e2e` skill.

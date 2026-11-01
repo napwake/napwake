@@ -38,6 +38,7 @@ description: Write or change Napwake's docs, with where pages live, the voice, l
 | Helm values, in a block titled `napwake-values.yaml`, `values.yaml` or `values-<name>.yaml` | `TestDocsHelmValuesAreValid` in `test/docs`, against `charts/napwake/values.schema.json` |
 | A block that's partial on purpose | Nothing, after a `{/* snippet */}` line in `.mdx`, or `<!-- snippet -->` in `.md` |
 | An install or verify command on `installation`, `kubectl-plugin` or `security` | `TestInstallSmokeRunsTheDocsCommands` in `test/docs`: `.github/workflows/install-smoke.yml` runs the same lines. Change both together |
+| The Helm install with `napwake-values.yaml`, on `installation` or `helm-values`, in either README or in the 0.2.0 notes | `TestInstallCommands_AreTheDocs` in `cmd/kubectl-napwake`: the scan's next steps print the same commands, `installCommands` in `scan.go`. Change them together |
 | The forecasting page's tables: "How long it takes", "Forecast setting", and pausing early's "What it saves and costs" | `TestDocs_HowLongItTakes`, `TestDocs_WhatEachSettingTrades` and `TestDocs_PausingEarly` in `internal/forecast/sim`. Change the numbers only to what they measure |
 | A link between pages | `npm run build` |
 | A docs address outside `docs/` | `TestDocsAddressesLandInTheBuiltSite` in `test/docs`, against a build. `TestDocsLinksExist` in `cmd/kubectl-napwake`, for `cmd/` and `internal/` |

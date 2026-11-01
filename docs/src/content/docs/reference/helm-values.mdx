@@ -10,19 +10,13 @@ import Ref from '../../../components/Ref.astro';
 import RefIndex from '../../../components/RefIndex.astro';
 import NextSteps from '../../../components/NextSteps.astro';
 
-```yaml title="napwake-values.yaml"
-timezone: Europe/London
-```
-
-Put the values you set in a file, starting with your users' [time zone](/getting-started/installation/#time-zone).
-
 ```bash
+printf '\ntimezone: Europe/London\n' >> napwake-values.yaml
 helm install napwake oci://ghcr.io/napwake/charts/napwake --version 0.2.0 \
-  --namespace napwake-system --create-namespace \
-  -f napwake-values.yaml
+  --namespace napwake-system --create-namespace -f napwake-values.yaml
 ```
 
-Install with it, and upgrade with it to [keep your settings](/operations/upgrading/#keeping-your-settings).
+Change `Europe/London` to your users' [time zone](/getting-started/installation/#time-zone). Any other value you set goes in `napwake-values.yaml` too. Install with it, and upgrade with it to [keep your settings](/operations/upgrading/#keeping-your-settings).
 
 ```bash
 helm show values oci://ghcr.io/napwake/charts/napwake --version 0.2.0

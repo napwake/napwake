@@ -860,7 +860,7 @@ html:not(.js) th { position: static; }
     <h2>Next steps</h2>
     <p>{{if .NextSteps.Install}}Install Napwake if the cluster doesn&#39;t have it yet, then opt a workload in. Measure it first, which pauses nothing, then let Napwake pause it once the measurements look right.{{else}}Opt a workload in, measuring first so nothing is paused, then let Napwake pause it once the measurements look right.{{end}}</p>
     <div class="next">
-    <pre class="shell">{{with .NextSteps.Install}}<span data-step="install">{{.Line}}</span>
+    <pre class="shell">{{range .NextSteps.Install}}<span data-step="install">{{.Line}}</span>
 {{end}}{{range .NextSteps.Measure}}{{.Line}}
 {{end}}{{with .NextSteps.Enable}}<span data-step="enable">{{.Line}}</span>
 {{end}}</pre>
@@ -1580,9 +1580,9 @@ html:not(.js) th { position: static; }
   });
 
   // ---------------------------------------------------------------- next steps: install, measure first, then go live
-  // The product lists the command that installs Napwake, when the scan didn't find it, then the measuring commands,
-  // then the one that goes live. It marks the first data-step="install" and the last data-step="enable". A block for
-  // each, with its own Copy, so pasting one never skips the measuring.
+  // The product lists the commands that install Napwake, when the scan didn't find it, then the measuring commands,
+  // then the one that goes live. It marks each install command data-step="install", and the last data-step="enable".
+  // A block for each step, with its own Copy, so pasting one never skips the measuring.
   each($$("#next pre.shell"), function (pre) {
     var lines = Array.prototype.slice.call(pre.querySelectorAll(".line"));
     var marked = function (step) { return lines.filter(function (l) { return l.parentNode.getAttribute("data-step") === step; }); };
@@ -1608,7 +1608,7 @@ html:not(.js) th { position: static; }
       wrap.appendChild(t); wrap.appendChild(p); steps.appendChild(wrap);
     };
     var n = 0;
-    if (install.length) block(++n + ". Install Napwake, if the cluster doesn't have it yet", ["Put your users' time zone in ", ["code", "napwake-values.yaml"], " first, such as ", ["code", "timezone: Europe/London"], ". The ", ["a", "installation guide", "https://docs.napwake.dev/getting-started/installation/"], " has the rest."], install);
+    if (install.length) block(++n + ". Install Napwake, if the cluster doesn't have it yet", ["Change ", ["code", "Europe/London"], " to your users' time zone. The ", ["a", "installation guide", "https://docs.napwake.dev/getting-started/installation/"], " has the rest."], install);
     block(++n + ". Measure first", "In dry-run, Napwake only measures. Nothing is paused.", measure);
     block(++n + ". When the measurements look right, let Napwake pause it", "Run this only after step " + (n - 1) + " has measured for a while.", live);
     pre.parentNode.replaceChild(steps, pre);
