@@ -432,6 +432,7 @@ Doors need a UTF-8 locale. They aren't drawn in Chinese, Japanese or Korean ones
 | WOULD FREE, shown | When any workload is in dry-run |
 | WOULD FREE `$0` or `-` | `$0` until a would-be pause has freed something. `-` if it isn't in dry-run |
 | `Turned away while asleep` | Under the table, the workloads that ask and turned requests away in their current or last pause. One reads `preview-42/web   312 requests during the pause from 3h ago`. Many mean something automated calls it ([What it turns away](/concepts/wake-on-request/#what-it-turns-away)) |
+| `Behind ingress-nginx` | Under the table, each ingress-nginx Ingress in front of a workload that waits less than its `maxWait`. One reads `preview-42/api   Ingress api waits 60s, maxWait is 120s`. Once a wake has taken longer, Needs attention says so instead ([more](/reference/cli/#behind-ingress-nginx)) |
 | `Recent pauses and wakes:` | Newest first, as far back as the cluster keeps events, or `--since` ([more](/reference/cli/#recent-pauses-and-wakes)) |
 
 Freed capacity is only money once a node autoscaler removes its nodes. Money is in whole dollars or `<$1`, as in [`scan`](#scan-a-cluster).
@@ -470,7 +471,7 @@ In a terminal, it opens in your browser, as the [`scan`](#scan-a-cluster) report
 | Dry-run | What dry-run measured pausing would have freed |
 | Needs attention | What needs attention |
 | Workloads | Every workload, in a table to sort and filter |
-| Each workload | Its state and for how long, last activity, what's next, and what it freed or would free |
+| Each workload | Its state and for how long, last activity, what's next, and what it freed, to the cent under $100, or would free |
 | Pauses and wakes | Every one since `--since`, with its cause, at its time in UTC |
 | Copy link | With the month's percentage less, a link to napwake.dev's page of that card's numbers, below |
 | Nothing from elsewhere | It loads nothing, so it works offline and attached to an email |

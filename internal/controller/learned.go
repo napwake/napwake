@@ -357,11 +357,7 @@ func learnedMessage(workload *v1alpha1.ManagedWorkload, learned []v1alpha1.Learn
 	}
 	var together, unmanaged, notAllowed []string
 	for _, d := range learned {
-		how := d.Via
-		if d.Source == v1alpha1.LearnedFromWake {
-			how = "a request that woke it"
-		}
-		named := fmt.Sprintf("%s/%s (%s)", d.Namespace, d.Name, how)
+		named := learnedName(d)
 		id := workloadID{namespace: d.Namespace, kind: d.Kind, name: d.Name}
 		switch {
 		case !g.allows(workload.Namespace, id):
@@ -391,9 +387,50 @@ func learnedMessage(workload *v1alpha1.ManagedWorkload, learned []v1alpha1.Learn
 	return "depends on " + strings.Join(parts, "; and on ")
 }
 
+// learnedName names a learned dependency as the events do, with how it
+// was learned.
+func learnedName(d v1alpha1.LearnedDependency) string {
+	how := d.Via
+	if d.Source == v1alpha1.LearnedFromWake {
+		how = "a request that woke it"
+	}
+	return fmt.Sprintf("%s/%s (%s)", d.Namespace, d.Name, how)
+}
+
 // wokenAndHeld is what Napwake does for a dependency it manages: it wakes
 // it with the dependent, and holds it awake while the dependent is.
 const wokenAndHeld = "woken and held with it"
+
+// announceNowManaged tells each workload that learned this one as a
+// dependency that it's now woken and held with it. Its DependenciesLearned
+// event said it isn't, if it learned this one before Napwake managed it,
+// and stays in kubectl describe. It's said once, as Napwake takes this one
+// on, to those whose namespace this one allows.
+func (r *Reconciler) announceNowManaged(ctx context.Context, workload *v1alpha1.ManagedWorkload) error {
+	g, err := r.loadDependencyGraph(ctx)
+	if err != nil {
+		return err
+	}
+	id := targetID(workload)
+	for _, key := range g.dependentsOf(id) {
+		var dependent v1alpha1.ManagedWorkload
+		if err := r.Get(ctx, key, &dependent); apierrors.IsNotFound(err) {
+			continue
+		} else if err != nil {
+			return fmt.Errorf("reading %s, which depends on it: %w", key, err)
+		}
+		i := slices.IndexFunc(learnedList(dependent.Status.LearnedDependencies), func(d v1alpha1.LearnedDependency) bool {
+			return d.Namespace == id.namespace && d.Kind == id.kind && d.Name == id.name
+		})
+		if i < 0 || !g.allows(dependent.Namespace, id) {
+			continue
+		}
+		r.emitEvent(&dependent, false, "Normal", ReasonDependenciesLearned, actionLearnDependencies,
+			"depends on %s, now managed by Napwake, so %s",
+			learnedName(dependent.Status.LearnedDependencies.Dependencies[i]), wokenAndHeld)
+	}
+	return nil
+}
 
 // agreeing is the verb and pronouns that agree with n dependencies.
 func agreeing(n int) (isnt, subject, object string) {

@@ -221,6 +221,16 @@ func (reg *engineRegistry) see(uid types.UID, start, now time.Time, demand float
 	return ended, over && ended.Whole(unobservedGap)
 }
 
+// seenBusy reports whether a look in the hour that began at start already
+// saw demand of at least busy.
+func (reg *engineRegistry) seenBusy(uid types.UID, start time.Time, busy float64) bool {
+	reg.mu.Lock()
+	defer reg.mu.Unlock()
+
+	h := reg.hours[uid]
+	return h.Start.Equal(start) && h.Peak >= busy
+}
+
 func (r *Reconciler) reconcileAutomation(ctx context.Context, workload *v1alpha1.ManagedWorkload, target client.Object) (*ctrl.Result, error) {
 	phase := workload.Status.Phase
 	if phase != v1alpha1.PhasePaused && phase != v1alpha1.PhaseRunning && phase != v1alpha1.PhaseIdle {
@@ -448,6 +458,61 @@ func (r *Reconciler) seePausedDemand(ctx context.Context, workload *v1alpha1.Man
 		visible = busy
 	}
 	r.seeDemand(ctx, workload, engine, demand, visible)
+}
+
+// heldBlindFor is how long, after a wrong pause a request undid, the hours
+// the forecast holds the workload awake in are learned as unseen: see
+// seeHeld.
+const heldBlindFor = 7 * 24 * time.Hour
+
+// seeHeld is a look at the demand of a workload the forecast holds awake,
+// expecting demand. Behind the doorman, with wake.mode Request and no
+// Prometheus activity query, the workload's use may show only in requests,
+// which wake it from zero or turn its pauses back, and which nothing sees
+// while it's held awake. Its CPU under the threshold, the held hour would
+// be learned as far quieter than the forecast that held it, which would
+// doubt itself and stop holding, for wrong pauses to teach it the hour
+// again. So while the workload's last wrong pause, undone by a request, is
+// under heldBlindFor old, the hour is learned as unseen, as a paused hour
+// nothing could wake it in is. After that, or once a wrong pause has
+// another cause, the hour is its CPU again, so a workload no longer used
+// is held unseen in its old hours for no longer than heldBlindFor after
+// its last wrong pause. One that drops some hours and keeps others can be
+// held unseen in the dropped ones for weeks: the wrong pauses of the hours
+// it keeps keep the window open.
+//
+// An hour a look already saw busy, as a request that woke the workload from
+// zero did, or one that turned a pause back, or its use, is learned as
+// usual. One blind look makes the whole hour unseen, so otherwise a load
+// that starts an hour earlier would be dropped once held, and autoResume
+// would never learn to wake it ahead of that hour. Only a busy look before
+// the hold counts. One after it, in the same hour, is dropped with the
+// hour: the forecast held the hour expecting it busy, so that costs
+// nothing.
+func (r *Reconciler) seeHeld(ctx context.Context, workload *v1alpha1.ManagedWorkload, engine forecaster) {
+	if !r.heldBlind(workload) || r.engines.seenBusy(workload.UID, forecast.HourStart(r.now(), r.Timezone),
+		forecast.RequestDemand(cpuThresholdFor(workload))) {
+		return
+	}
+	r.seeDemand(ctx, workload, engine, 0, false)
+}
+
+// heldBlind reports whether seeHeld learns the hour the workload is held in
+// as unseen. While the workload is awake, its WakeOnRequest condition is
+// False for NotPaused unless its last pause found a routing problem that
+// lasts, so that reason counts as routed too.
+func (r *Reconciler) heldBlind(workload *v1alpha1.ManagedWorkload) bool {
+	routing := meta.FindStatusCondition(workload.Status.Conditions, conditionWakeOnRequest)
+	routed := routing != nil && (routing.Status == metav1.ConditionTrue || routing.Reason == reasonNotPaused)
+	if !routed || r.DoormanService == "" || workload.Spec.Wake.Asks() || hasPrometheusActivity(workload) ||
+		r.dryRun(workload) {
+		return false
+	}
+	wait := workload.Status.IdleWait
+	if wait == nil || wait.LastWrongPause == nil || wait.LastWrongPause.By != v1alpha1.WokenByRequest {
+		return false
+	}
+	return r.now().Sub(wait.LastWrongPause.PausedAt.Time) < heldBlindFor
 }
 
 // awakeDemand is the demand an awake workload's utilization shows, counting

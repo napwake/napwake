@@ -333,6 +333,10 @@ func (r *Reconciler) takeOn(ctx context.Context, workload *v1alpha1.ManagedWorkl
 		return err
 	}
 	announce()
+	if err := r.announceNowManaged(ctx, workload); err != nil {
+		log.FromContext(ctx).Error(err, "telling the workloads that depend on it that it's now managed",
+			"workload", workload.Name, "namespace", workload.Namespace)
+	}
 	return nil
 }
 
@@ -479,6 +483,7 @@ func (r *Reconciler) reconcileSettled(ctx context.Context, workload *v1alpha1.Ma
 
 	r.trackDryRun(workload)
 	r.accumulateCost(ctx, workload)
+	r.reviewIngressTimeouts(ctx, workload)
 	if err := r.persistStatus(ctx, workload, observed); err != nil {
 		return ctrl.Result{}, err
 	}
@@ -532,6 +537,7 @@ func (r *Reconciler) resumeTransition(ctx context.Context, workload *v1alpha1.Ma
 			if err != nil {
 				return nil, err
 			}
+			r.seeTurnedBack(ctx, workload, why)
 			return r.handleResume(ctx, workload, why)
 		}
 		return r.handlePause(ctx, workload, target, nil)
@@ -876,6 +882,10 @@ func (r *Reconciler) handleResume(ctx context.Context, workload *v1alpha1.Manage
 
 	r.stampLastActed(workload)
 	took := r.sinceTransition(workload)
+	slowWake := func() {}
+	if resumed.Ready > 0 && workload.Status.Pause != nil && workload.Status.Pause.FirstReadyAt == nil {
+		slowWake = r.judgeWakeTime(workload, r.now())
+	}
 	r.resetActivity(workload, source)
 	tool, resolved := r.clearGitOpsConflict(workload)
 	short := resumed.Ready < resumed.Replicas
@@ -899,6 +909,7 @@ func (r *Reconciler) handleResume(ctx context.Context, workload *v1alpha1.Manage
 	} else {
 		r.emitEvent(workload, false, "Normal", ReasonResumed, actionResume, "resumed")
 	}
+	slowWake()
 	return &ctrl.Result{}, nil
 }
 
@@ -935,8 +946,10 @@ func (r *Reconciler) sinceFirstReady(workload *v1alpha1.ManagedWorkload) time.Du
 // recordResumeProgress writes when a resume scaled the workload up, after
 // which one found at zero was scaled there by someone else, and when it
 // first saw one of its replicas Ready, from which the rest are given
-// lifecycle.ServingWait. They're kept in the pause record, so both survive
-// an operator restart. scaledUp is whether the scale-up was written before.
+// lifecycle.ServingWait, and a request held through the wake is let go. A
+// wake that held one longer than an Ingress in front waits is recorded with
+// it. They're kept in the pause record, so both survive an operator
+// restart. scaledUp is whether the scale-up was written before.
 func (r *Reconciler) recordResumeProgress(ctx context.Context, workload *v1alpha1.ManagedWorkload,
 	resumed lifecycle.Resumption, scaledUp bool) error {
 	pause := workload.Status.Pause
@@ -944,9 +957,11 @@ func (r *Reconciler) recordResumeProgress(ctx context.Context, workload *v1alpha
 		return nil
 	}
 	changed := !scaledUp && pause.ResumedAt != nil
+	slowWake := func() {}
 	if resumed.Ready > 0 && pause.FirstReadyAt == nil {
 		now := r.clockTime()
 		pause.FirstReadyAt = &now
+		slowWake = r.judgeWakeTime(workload, now.Time)
 		changed = true
 	}
 	if !changed {
@@ -955,6 +970,7 @@ func (r *Reconciler) recordResumeProgress(ctx context.Context, workload *v1alpha
 	if err := r.Status().Update(ctx, workload); err != nil {
 		return fmt.Errorf("recording the resume's progress: %w", err)
 	}
+	slowWake()
 	return nil
 }
 
@@ -1033,8 +1049,23 @@ func (r *Reconciler) reconcileDelete(ctx context.Context, workload *v1alpha1.Man
 		return 0, err
 	}
 	if wait := r.drainLeft(workload); wait > 0 {
+		// Handed back with replicas, the workload runs again while its ports
+		// drain, up to a minute, so it isn't shown Paused meanwhile. One
+		// released at zero, its target gone or at zero before its pause,
+		// stays as it was. The cost isn't settled: nothing reads it once the
+		// ManagedWorkload is gone.
+		old := workload.Status.Phase
+		if released && replicas > 0 && old != v1alpha1.PhaseRunning {
+			now := r.clockTime()
+			workload.Status.Phase, workload.Status.LastTransitionTime = v1alpha1.PhaseRunning, &now
+		}
 		if err := r.Status().Update(ctx, workload); err != nil {
 			return 0, fmt.Errorf("recording the doorman ports draining: %w", err)
+		}
+		if workload.Status.Phase != old {
+			r.phaseWrites.record(workload.UID, workload.Status.LastTransitionTime.Time)
+			recordPhase(workload)
+			metrics.LifecycleTransitions.WithLabelValues(string(old), string(workload.Status.Phase)).Inc()
 		}
 		if released {
 			r.announceHandBack(workload, replicas, "no longer managed")
@@ -1612,17 +1643,21 @@ func phaseChanged() predicate.Predicate {
 	}
 }
 
-// ingressBackendsChanged passes the changes to an Ingress that can put a
-// Service behind GKE's NEGs or take it out: its creation and deletion, its
-// class, and its backends. GKE's ingress controller keeps rewriting its
-// own annotations and status, which change neither.
-func ingressBackendsChanged() predicate.Predicate {
+// ingressChanged passes the changes to an Ingress that matter to the
+// workloads behind it: its creation and deletion, its class and its
+// backends, which can put a Service behind GKE's NEGs or take it out, and
+// whether ingress-nginx serves it, and how long it waits for an answer.
+// GKE's ingress controller keeps rewriting its own annotations and status,
+// which change none of them.
+func ingressChanged() predicate.Predicate {
 	return predicate.Funcs{
 		UpdateFunc: func(e event.UpdateEvent) bool {
 			old, okOld := e.ObjectOld.(*networkingv1.Ingress)
 			cur, okNew := e.ObjectNew.(*networkingv1.Ingress)
 			return !okOld || !okNew ||
 				old.Annotations[annotationIngressClass] != cur.Annotations[annotationIngressClass] ||
+				old.Annotations[annotationNginxReadTimeout] != cur.Annotations[annotationNginxReadTimeout] ||
+				servedByNginx(*old) != servedByNginx(*cur) ||
 				!equality.Semantic.DeepEqual(old.Spec, cur.Spec)
 		},
 	}
@@ -1839,8 +1874,8 @@ func (r *Reconciler) SetupWithManager(mgr ctrl.Manager) error {
 		Watches(&discoveryv1.EndpointSlice{}, handler.EnqueueRequestsFromMapFunc(r.findWorkloadsForDoorman),
 			builder.WithPredicates(predicate.NewPredicateFuncs(r.isDoormanEndpoints))).
 		Watches(&corev1.Service{}, handler.EnqueueRequestsFromMapFunc(r.findPausedWorkloadsInNamespace)).
-		Watches(&networkingv1.Ingress{}, handler.EnqueueRequestsFromMapFunc(r.findPausedWorkloadsInNamespace),
-			builder.WithPredicates(ingressBackendsChanged())).
+		Watches(&networkingv1.Ingress{}, handler.EnqueueRequestsFromMapFunc(r.findWorkloadsBehindIngress),
+			builder.WithPredicates(ingressChanged())).
 		Watches(&corev1.Namespace{}, handler.EnqueueRequestsFromMapFunc(r.findWorkloadsInNamespace),
 			builder.WithPredicates(inWatchedNamespaces(r.WatchNamespaces))).
 		Named("managedworkload").
