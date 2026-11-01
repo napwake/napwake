@@ -43,7 +43,7 @@ CPU from the workload's own pods counts as activity, whatever the HPA does. So a
 
 ## When the HPA scales to zero
 
-An HPA with `minReplicas: 0` and an object or external metric can scale a workload to zero itself. From Kubernetes 1.37 that's on by default. Napwake leaves that zero to the HPA, as it does any [workload already at zero](/guides/pause/#workloads-already-at-zero). Nothing holds requests while the HPA has it at zero, so they fail as they would without Napwake. To have the doorman hold the first request while the workload wakes, keep `minReplicas` at 1 or more and let Napwake do the pausing.
+An HPA with `minReplicas: 0` and an object or external metric can scale a workload to zero itself. From Kubernetes 1.37 that's on by default. Napwake leaves that zero to the HPA, as it does any [workload already at zero](/guides/pause/#workloads-already-at-zero). Nothing holds requests while the HPA has it at zero, so they fail as they would without Napwake. Napwake can still pause it while it runs, but while the metric is at zero a wake doesn't last: once the HPA's scale-down window, 5 minutes by default, has passed since it last needed replicas, its next check takes the workload back to zero, and a request the doorman still holds is closed unanswered. To have the doorman hold the first request while the workload wakes, keep `minReplicas` at 1 or more and let Napwake do the pausing.
 
 ## KEDA
 
