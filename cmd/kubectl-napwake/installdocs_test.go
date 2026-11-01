@@ -38,7 +38,11 @@ func TestInstallCommands_AreTheDocs(t *testing.T) {
 	require.NoError(t, err)
 	version := regexp.MustCompile(`(?m)^version: (\S+)$`).FindSubmatch(chart)
 	require.NotNil(t, version, "Chart.yaml has a version")
-	want := installCommands("v" + string(version[1]))
+	release := "v" + string(version[1])
+	// The CHANGELOG names the release it's for, and a release candidate's
+	// bump leaves it alone, so its block installs that release: v0.2.0 at
+	// v0.2.0-rc.12.
+	target, _, _ := strings.Cut(release, "-")
 
 	for _, file := range []string{
 		"docs/src/content/docs/getting-started/installation.mdx",
@@ -48,6 +52,10 @@ func TestInstallCommands_AreTheDocs(t *testing.T) {
 		"CHANGELOG.md",
 	} {
 		t.Run(file, func(t *testing.T) {
+			want := installCommands(release)
+			if file == "CHANGELOG.md" {
+				want = installCommands(target)
+			}
 			page, err := os.ReadFile(filepath.Join(root, filepath.FromSlash(file)))
 			require.NoError(t, err)
 			blocks := helmInstallBlocks(string(page))
