@@ -179,7 +179,7 @@ Each release signs its image, chart and checksums with Sigstore, keylessly. It c
 
 ## Help and contributing
 
-- Ask questions in [Discussions](https://github.com/napwake/napwake/discussions). If your team uses Napwake, tell us there too.
+- Ask questions in [Discussions](https://github.com/napwake/napwake/discussions). If your team uses Napwake, add it to [ADOPTERS.md](ADOPTERS.md), or tell us there.
 - Report bugs in [issues](https://github.com/napwake/napwake/issues).
 - Report a vulnerability privately, as [SECURITY.md](SECURITY.md) says.
 - Pull requests are welcome. [CONTRIBUTING.md](CONTRIBUTING.md) has the setup and the standards.
