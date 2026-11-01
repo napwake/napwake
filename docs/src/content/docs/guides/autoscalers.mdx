@@ -41,7 +41,9 @@ import NextSteps from '../../../components/NextSteps.astro';
 
 CPU from the workload's own pods counts as activity, whatever the HPA does. So a workload busy enough for its HPA to scale it up isn't idle.
 
-An HPA with `minReplicas: 0` and an object or external metric can take the workload to zero itself, on by default from Kubernetes 1.37. Napwake leaves that zero to the HPA, as [already at zero](/guides/pause/#workloads-already-at-zero). Requests at it aren't held, and fail as they would without Napwake. For a workload behind the doorman, keep `minReplicas` at 1 or more and let Napwake pause it, so the doorman holds the first request while it wakes.
+## When the HPA scales to zero
+
+An HPA with `minReplicas: 0` and an object or external metric can scale a workload to zero itself. From Kubernetes 1.37 that's on by default. Napwake leaves that zero to the HPA, as it does any [workload already at zero](/guides/pause/#workloads-already-at-zero). Nothing holds requests while the HPA has it at zero, so they fail as they would without Napwake. To have the doorman hold the first request while the workload wakes, keep `minReplicas` at 1 or more and let Napwake do the pausing.
 
 ## KEDA
 
