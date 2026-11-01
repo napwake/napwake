@@ -8,7 +8,7 @@ Install from the OCI registry, with no `helm repo` to add. Change `Europe/London
 
 ```bash
 printf '\ntimezone: Europe/London\n' >> napwake-values.yaml
-helm install napwake oci://ghcr.io/napwake/charts/napwake --version 0.2.0 \
+helm install napwake oci://ghcr.io/napwake/charts/napwake --version 0.2.0-rc.13 \
   --namespace napwake-system --create-namespace -f napwake-values.yaml
 ```
 
