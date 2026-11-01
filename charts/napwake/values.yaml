@@ -31,11 +31,12 @@ timezone: UTC
 # The operator caches the cluster's ManagedWorkloads, Deployments,
 # StatefulSets, Services, Ingresses, PVCs, HPAs, nodes and namespaces, or only the
 # watched namespaces', the EndpointSlices it writes and the doorman's, and,
-# watching every namespace, what each pod bound to a node requests, about
-# 2.6 KB a pod, so its memory grows with the cluster. Raise the limit on
-# clusters with many thousands of workloads. The garbage collector aims at
-# 90% of the limit, leaving the rest for memory outside its heap, and works
-# harder near it rather than letting the operator be OOM-killed.
+# watching every namespace, what each pod bound to a node requests,
+# measured at about 2.7 KB a pod, so its memory grows with the cluster.
+# Raise the limit on clusters with many thousands of workloads. The garbage
+# collector aims at 90% of the limit, leaving the rest for memory outside
+# its heap, and works harder near it rather than letting the operator be
+# OOM-killed.
 resources:
   limits:
     cpu: 500m
@@ -187,10 +188,14 @@ doorman:
   # where every node has topology.kubernetes.io/zone: a key some nodes lack
   # stops the scheduler spreading for any constraint.
   topologySpreadConstraints: []
-  # The doorman caches ManagedWorkloads, and the Services' EndpointSlices
-  # in the watched namespaces, cut down to about 300 bytes per pod and
-  # 700 per Service. Held connections take up to 72Mi more under a flood.
-  # 256Mi covers a cluster of some 100,000 pods; raise the limit beyond.
+  # The doorman caches ManagedWorkloads, about 9.4 KB each, and the
+  # Services' EndpointSlices in the watched namespaces, cut down to about
+  # 320 bytes a pod and 1.2 KB a Service, as measured with 50,000 of each.
+  # The running doorman takes two to three times what its caches hold, for
+  # the copies it makes as it works and what the garbage collector hasn't
+  # freed yet. Held connections take up to 72Mi more under a flood. 256Mi
+  # covers some 5,000 ManagedWorkloads with a pod and a Service each, or
+  # 50,000 pods each behind a Service of its own. Raise the limit beyond.
   resources:
     limits:
       cpu: 500m
