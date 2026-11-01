@@ -29,6 +29,10 @@ limitations under the License.
 // four minutes, so it's left out of CI. Run it with:
 //
 //	go test -tags sizing -count=1 -timeout 60m -v ./test/sizing
+//
+// Without -race: the race detector turns off the runtime's packing of small
+// objects, so the doorman's EndpointSlices and ManagedWorkloads read up to a
+// tenth more than they cost it.
 package sizing_test
 
 import (
