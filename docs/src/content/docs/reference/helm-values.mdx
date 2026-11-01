@@ -354,7 +354,7 @@ The doorman holds requests to paused workloads and wakes them ([Wake on request]
 <details class="nw-details">
 <summary>The doorman's memory, shutdown and rollouts</summary>
 
-- It caches ManagedWorkloads and the EndpointSlice controller's EndpointSlices in watched namespaces, cut to what it reads. That's about 9.4 KB a ManagedWorkload, 320 bytes a pod and 1.2 KB a Service, as measured with 50,000 of each. Held connections take up to 72Mi more under a flood.
+- It caches ManagedWorkloads and the EndpointSlice controller's EndpointSlices in watched namespaces, cut to what it reads. That's about 9.4 KB a ManagedWorkload, 320 bytes a pod and 1.2 KB a Service, as measured with 50,000 of each. The running doorman takes two to three times what its caches hold, for the copies it makes as it works and what the garbage collector hasn't freed yet. Held connections take up to 72Mi more under a flood.
 - On Kubernetes 1.30 and later, it sleeps 5 seconds before shutting down. So kube-proxy and load balancers stop sending new connections first.
 - Rollouts wait 5 seconds after a new pod is Ready (`minReadySeconds`) before stopping an old one. By then the operator has moved routes to it.
 
