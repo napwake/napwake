@@ -1643,7 +1643,7 @@ html:not(.js) th { position: static; }
     b.addEventListener("click", function () {
       copyText(summary(), function (ok) {
         var what = "Copied, " + (named() ? "with" : "without") + " the cluster\u2019s name";
-        if (!ok) say("Your browser didn\u2019t allow copying; select the summary in the share dialog instead", true);
+        if (!ok) say("Your browser didn\u2019t allow copying. Select the summary in the share dialog instead.", true);
         else if (b.closest("dialog")) { b.textContent = what; setTimeout(function () { b.textContent = label; }, 2400); }
         else say(what, true);
       });
@@ -1932,8 +1932,8 @@ html:not(.js) th { position: static; }
     });
     if (copyBtn) copyBtn.addEventListener("click", function () {
       var item = new ClipboardItem({ "image/png": blob() });
-      navigator.clipboard.write([item]).then(function () { say("Card copied; paste it in a post or a chat"); },
-        function () { say("Your browser didn’t allow copying the image; download it instead"); });
+      navigator.clipboard.write([item]).then(function () { say("Card copied. Paste it in a post or a chat."); },
+        function () { say("Your browser didn’t allow copying the image. Download it instead."); });
     });
   }
   refresh();
