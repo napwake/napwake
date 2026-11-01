@@ -75,7 +75,7 @@ export function ogCards() {
           const lede = html.match(/class="nw-title__lede[^"]*"[^>]*>([\s\S]*?)<\/p>/);
           const desc = lede ?? html.match(/<meta name="description" content="([^"]*)"/);
           const title = h1 ? text(h1[1]) : slug;
-          const data = { eyebrow: eyebrow && slug ? text(eyebrow[1]) : '', title, description: slug ? (desc ? text(desc[1]) : '') : 'Pauses idle Kubernetes workloads in staging, preview and dev, and wakes them on the first request.', poseName: poseFor(slug) };
+          const data = { eyebrow: eyebrow && slug ? text(eyebrow[1]) : '', title, description: slug ? (desc ? text(desc[1]) : '') : 'One read-only scan shows what your idle workloads cost.', poseName: poseFor(slug) };
           cards.push({ name: cardName(slug), html: cardHtml(data) });
         }
         mkdirSync(CACHE, { recursive: true });

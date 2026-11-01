@@ -7,6 +7,10 @@
     "label": "Getting started",
     "items": [
       {
+        "label": "Scan your cluster",
+        "slug": "getting-started/scan"
+      },
+      {
         "label": "Installation",
         "slug": "getting-started/installation"
       },

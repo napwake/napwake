@@ -1,0 +1,36 @@
+---
+// The scan report's first screen, as Scan your cluster shows it: the example cluster the website renders with
+// Napwake's own code (napwake/website scripts/render-scan-example.sh), so it says what the scan says. A phone gets
+// the report's own phone view of its headline, a screen its first screen. It links to the example report itself.
+import BrowserFrame from './BrowserFrame.astro';
+import { link } from './lib';
+interface Props { caption?: string }
+const { caption } = Astro.props;
+const report = 'https://napwake.dev/examples/scan-report/';
+---
+<div class="nw-shot not-content">
+  <a class="nw-shot__link" href={report} aria-label="Open the example report on napwake.dev">
+    <BrowserFrame caption={caption}>
+      <picture class="nw-shot__img nw-shot__img--light">
+        <source media="(max-width: 36rem)" srcset={link('/home/scan-report-top-phone-light.webp')} width="390" height="480" />
+        <img src={link('/home/scan-report-light.webp')} width="1280" height="880" loading="lazy" decoding="async"
+          alt="The scan report for an example cluster. It leads with 19 of 31 workloads running with no sign of use, then 54% less. Paused when idle, they could cost about $600 a month instead of $1,290." />
+      </picture>
+      <picture class="nw-shot__img nw-shot__img--dark">
+        <source media="(max-width: 36rem)" srcset={link('/home/scan-report-top-phone-dark.webp')} width="390" height="480" />
+        <img src={link('/home/scan-report-dark.webp')} width="1280" height="880" loading="lazy" decoding="async" alt="" />
+      </picture>
+    </BrowserFrame>
+  </a>
+</div>
+<style>
+  .nw-shot { margin: 1.5rem 0 0; max-width: 40rem; }
+  .nw-shot__link { display: block; color: inherit; text-decoration: none; border-radius: var(--radius-lg); }
+  .nw-shot__link :global(.nw-browser) { margin: 0; }
+  .nw-shot__link :global(.nw-browser__window) { transition: border-color var(--duration-ui-short) var(--ease-calm); }
+  .nw-shot__link:hover :global(.nw-browser__window) { border-color: var(--action); }
+  .nw-shot__img { display: block; }
+  .nw-shot__img--dark { display: none !important; }
+  :global(:root[data-theme='dark']) .nw-shot__img--light { display: none !important; }
+  :global(:root[data-theme='dark']) .nw-shot__img--dark { display: block !important; }
+</style>

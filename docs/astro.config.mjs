@@ -37,6 +37,7 @@ In short: label a Deployment, StatefulSet or namespace \`napwake.dev/managed: "t
 
 Key pages, each as Markdown:
 
+- [Scan your cluster](${md('getting-started/scan')}): what's idle and what it costs, from \`kubectl napwake scan\`, with nothing installed in the cluster
 - [Installation](${md('getting-started/installation')}): Helm or the Kustomize manifests, with Argo CD or Flux
 - [Quickstart](${md('getting-started/quickstart')}): one workload from idle to paused while idle and woken when used, measured first
 - [kubectl plugin](${md('getting-started/kubectl-plugin')}): scan, forecast, status, nodes, pause, wake, deps and enable

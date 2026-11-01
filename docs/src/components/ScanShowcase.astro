@@ -14,12 +14,12 @@ const report = 'https://napwake.dev/examples/scan-report/';
         {/* a phone gets the report's own phone view of the building, a screen gets its first screen */}
         <picture class="nw-scan__img nw-scan__img--light">
           <source media="(max-width: 36rem)" srcset={link('/home/scan-report-phone-light.webp')} width="390" height="560" />
-          <img src={link('/home/scan-report-light.webp')} width="1280" height="820" loading="lazy" decoding="async"
-            alt="The scan report for an example cluster. It leads with 19 of 31 workloads running for nobody and $691 that could be freed a month. Beside it, the same workloads drawn twice, as they run now and with Napwake pausing the idle ones." />
+          <img src={link('/home/scan-report-light.webp')} width="1280" height="880" loading="lazy" decoding="async"
+            alt="The scan report for an example cluster. It leads with 19 of 31 workloads running with no sign of use, then 54% less. Paused when idle, they could cost about $600 a month instead of $1,290. Beside it, the same workloads drawn twice, as they run now and with Napwake pausing the idle ones." />
         </picture>
         <picture class="nw-scan__img nw-scan__img--dark">
           <source media="(max-width: 36rem)" srcset={link('/home/scan-report-phone-dark.webp')} width="390" height="560" />
-          <img src={link('/home/scan-report-dark.webp')} width="1280" height="820" loading="lazy" decoding="async" alt="" />
+          <img src={link('/home/scan-report-dark.webp')} width="1280" height="880" loading="lazy" decoding="async" alt="" />
         </picture>
       </BrowserFrame>
     </a>
@@ -32,7 +32,7 @@ const report = 'https://napwake.dev/examples/scan-report/';
       <li>With Prometheus, it replays the last week of each workload's CPU and rollouts, and says what pausing would have freed.</li>
     </ul>
     <p class="nw-scan__send">One file to send your team. It loads nothing from elsewhere and prints to PDF.</p>
-    <p class="nw-scan__go"><a href={report}>Open the example report <span aria-hidden="true">↗</span></a> <a href={link('/getting-started/kubectl-plugin/#scan-a-cluster')}>Scan, in the plugin's docs</a></p>
+    <p class="nw-scan__go"><a href={report}>Open the example report <span aria-hidden="true">↗</span></a> <a href={link('/getting-started/scan/')}>Scan your cluster, step by step</a></p>
   </div>
 </div>
 <style>
