@@ -238,7 +238,7 @@ Its memory grows with the cluster.
 |---------|------|
 | ManagedWorkloads, Deployments, StatefulSets, Services, Ingresses, PVCs, HPAs, Namespaces | Cached, only the watched namespaces' with `watchNamespaces` |
 | Nodes | Cached without image lists |
-| Pods | Cached only as spare capacity needs, if bound to a node and not finished, as node, phase and requests. About 2.6 KB each |
+| Pods | Cached only as spare capacity needs, if bound to a node and not finished, as node, phase and requests. Measured at about 2.7 KB each |
 | The EndpointSlices it writes, the doorman Service's | Cached |
 | Other EndpointSlices, ConfigMaps, KEDA ScaledObjects | Read when needed, not cached |
 
@@ -344,7 +344,7 @@ The doorman holds requests to paused workloads and wakes them ([Wake on request]
 | <Ref id="doorman-resources-requests-cpu">doorman.resources.requests.cpu</Ref> | `10m` | CPU request |
 | <Ref id="doorman-resources-requests-memory">doorman.resources.requests.memory</Ref> | `64Mi` | Memory request |
 | <Ref id="doorman-resources-limits-cpu">doorman.resources.limits.cpu</Ref> | `500m` | CPU limit |
-| <Ref id="doorman-resources-limits-memory">doorman.resources.limits.memory</Ref> | `256Mi` | Memory limit, enough for some 100,000 pods. Raise it beyond |
+| <Ref id="doorman-resources-limits-memory">doorman.resources.limits.memory</Ref> | `256Mi` | Memory limit, enough for some 5,000 ManagedWorkloads with a pod and a Service each, or 50,000 pods each behind a Service of its own. Raise it beyond |
 | <Ref id="doorman-negforwarder-enabled">doorman.negForwarder.enabled</Ref> | `false` | Optional, for GKE. Routes paused workloads' Services behind container-native load balancing (NEGs), as a GKE Ingress's or Gateway's are. They go through a forwarder Deployment the operator runs in the workload's namespace while it's paused. So requests through the load balancer wake them. Grants the operator `create` and `delete` on Deployments ([RBAC](#rbac)), adds a headless Service `<fullname>-doorman-pods`, and needs `doorman.enabled`. See [GKE NEGs](/concepts/wake-on-request/#gke-container-native-load-balancing-negs) |
 | <Ref id="doorman-negforwarder-replicas">doorman.negForwarder.replicas</Ref> | `2` | Pods per forwarder, spread across nodes so one stays while a node drains |
 | <Ref id="doorman-negforwarder-resources-requests-cpu">doorman.negForwarder.resources.requests.cpu</Ref> | `10m` | CPU request, per pod |
@@ -354,7 +354,7 @@ The doorman holds requests to paused workloads and wakes them ([Wake on request]
 <details class="nw-details">
 <summary>The doorman's memory, shutdown and rollouts</summary>
 
-- It caches ManagedWorkloads and the EndpointSlice controller's EndpointSlices in watched namespaces, cut to what it reads. That's about 300 bytes a pod and 700 a Service. Held connections take up to 72Mi more under a flood.
+- It caches ManagedWorkloads and the EndpointSlice controller's EndpointSlices in watched namespaces, cut to what it reads. That's about 9.4 KB a ManagedWorkload, 320 bytes a pod and 1.2 KB a Service, as measured with 50,000 of each. Held connections take up to 72Mi more under a flood.
 - On Kubernetes 1.30 and later, it sleeps 5 seconds before shutting down. So kube-proxy and load balancers stop sending new connections first.
 - Rollouts wait 5 seconds after a new pod is Ready (`minReadySeconds`) before stopping an old one. By then the operator has moved routes to it.
 
