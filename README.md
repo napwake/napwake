@@ -5,9 +5,9 @@
   </picture>
 </h1>
 
-<p align="center"><strong>Non-prod environments that sleep when nobody's using them, and wake when someone does.</strong></p>
+<p align="center"><strong>Pause idle Kubernetes workloads in staging, preview and dev. Wake them on the first request.</strong></p>
 
-<p align="center">Pauses idle Kubernetes workloads in staging, preview and dev, and wakes them on the first request.<br>It never deletes a workload or its data.</p>
+<p align="center">It never deletes a workload or its data.</p>
 
 <p align="center">
   <a href="https://napwake.dev">Website</a> ·

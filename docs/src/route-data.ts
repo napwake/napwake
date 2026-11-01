@@ -19,7 +19,7 @@ export const onRequest = defineRouteMiddleware((context) => {
   // a social card per page (src/og/cards.mjs), and the page as Markdown for readers and assistants
   if (!is404) {
     const card = new URL(ogPath(id), context.site).href;
-    const alt = isHome ? 'Napwake docs: non-prod environments that sleep when nobody\'s using them, and wake when someone does.' : `${entry.data.title}, Napwake docs`;
+    const alt = isHome ? 'Napwake docs: pause idle Kubernetes workloads in staging, preview and dev. Wake them on the first request.' : `${entry.data.title}, Napwake docs`;
     head.push(
       { tag: 'meta', attrs: { property: 'og:image', content: card }, content: '' },
       { tag: 'meta', attrs: { property: 'og:image:width', content: '1200' }, content: '' },
