@@ -431,6 +431,7 @@ Doors need a UTF-8 locale. They aren't drawn in Chinese, Japanese or Korean ones
 | WOULD FREE, shown | When any workload is in dry-run |
 | WOULD FREE `$0` or `-` | `$0` until a would-be pause has freed something. `-` if it isn't in dry-run |
 | `Turned away while asleep` | Under the table, the workloads that ask and turned requests away in their current or last pause. One reads `preview-42/web   312 requests during the pause from 3h ago`. Many mean something automated calls it ([What it turns away](/concepts/wake-on-request/#what-it-turns-away)) |
+| `Behind ingress-nginx` | Under the table, each ingress-nginx Ingress in front of a workload that waits less than its `maxWait`. One reads `preview-42/api   Ingress api waits 60s, maxWait is 120s`. Once a wake has taken longer, Needs attention says so instead ([more](/reference/cli/#behind-ingress-nginx)) |
 | `Recent pauses and wakes:` | Newest first, as far back as the cluster keeps events, or `--since` ([more](/reference/cli/#recent-pauses-and-wakes)) |
 
 Freed capacity is only money once a node autoscaler removes its nodes. Money is in whole dollars or `<$1`, as in [`scan`](#scan-a-cluster).
