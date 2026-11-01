@@ -62,9 +62,16 @@ jobs:
         run: go test -count=1 ./test/docs ./hack/docsite -run 'TestDocsAddressesLandInTheBuiltSite|TestBuiltSiteRedirectsKeepTheAnchor'
 
   publish:
+    # Only a run of this repository's own Release workflow, from a tag
+    # pushed here. A fork's pull request can add a workflow named Release
+    # too, and its successful run would start this job on the fork's
+    # commit, with write access to gh-pages.
     if: >-
       github.event_name == 'workflow_dispatch' ||
-      (github.event_name == 'workflow_run' && github.event.workflow_run.conclusion == 'success')
+      (github.event_name == 'workflow_run' && github.event.workflow_run.conclusion == 'success' &&
+        github.event.workflow_run.event == 'push' &&
+        github.event.workflow_run.head_repository.full_name == github.repository &&
+        github.event.workflow_run.path == '.github/workflows/release.yml')
     runs-on: ubuntu-24.04
     timeout-minutes: 30
     permissions:
