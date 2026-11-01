@@ -57,22 +57,45 @@ type HistorySource struct {
 // Span is how much history the replay covered, as people say it: "30
 // minutes", "5 hours", "7 days"; "" when it covered none.
 func (h *HistorySource) Span() string {
-	if h == nil || h.Hours <= 0 {
+	span := h.RoundedSpan()
+	if span == 0 {
 		return ""
 	}
-	return spelled(time.Duration(h.Hours * float64(time.Hour)))
+	return spelled(span)
 }
 
-// spelled says how long d is in the largest unit that reads naturally, to
-// the nearest one: minutes under an hour, hours under two days, then days.
+// RoundedSpan is how much history the replay covered, rounded as Span says
+// it, so whatever else gives the span, such as a share link, names the
+// same window; 0 when it covered none.
+func (h *HistorySource) RoundedSpan() time.Duration {
+	if h == nil || h.Hours <= 0 {
+		return 0
+	}
+	return rounded(time.Duration(h.Hours * float64(time.Hour)))
+}
+
+// rounded is d to the nearest of the largest unit that reads naturally:
+// minutes under an hour, at least one, hours under two days, then days.
+func rounded(d time.Duration) time.Duration {
+	if m := d.Round(time.Minute); m < time.Hour {
+		return max(m, time.Minute)
+	}
+	if h := d.Round(time.Hour); h < 48*time.Hour {
+		return h
+	}
+	return d.Round(24 * time.Hour)
+}
+
+// spelled says how long d is, rounded, in its unit.
 func spelled(d time.Duration) string {
-	if minutes := int(d.Round(time.Minute) / time.Minute); minutes < 60 {
-		return plural(max(minutes, 1), "minute", "minutes")
+	switch r := rounded(d); {
+	case r < time.Hour:
+		return plural(int(r/time.Minute), "minute", "minutes")
+	case r < 48*time.Hour:
+		return plural(int(r/time.Hour), "hour", "hours")
+	default:
+		return plural(int(r/(24*time.Hour)), "day", "days")
 	}
-	if hours := int(d.Round(time.Hour) / time.Hour); hours < 48 {
-		return plural(hours, "hour", "hours")
-	}
-	return plural(int(d.Round(24*time.Hour)/(24*time.Hour)), "day", "days")
 }
 
 // History is what replaying the activity clock over a workload's recorded
