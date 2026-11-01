@@ -318,6 +318,17 @@ func TestNextFor(t *testing.T) {
 			w.Status.Phase = v1alpha1.PhasePaused
 			w.Status.Doorman = []v1alpha1.DoormanRoute{{Service: "api", DoormanPort: 20000}}
 		}, want: "wakes on a request or activity"},
+		// As an HPA or KEDA leaves it at zero: Running, its clock running out.
+		{name: "scaled to zero outside Napwake", mutate: func(w *v1alpha1.ManagedWorkload) {
+			w.Status.Activity = activity(v1alpha1.ActivitySourceCPU, 0, 57*time.Minute)
+			w.Status.Conditions = append(w.Status.Conditions,
+				condition("ScaledToZero", metav1.ConditionTrue, "ScaledToZero", ""))
+		}, want: "nothing: scaled to zero outside Napwake"},
+		{name: "back from a zero outside Napwake", mutate: func(w *v1alpha1.ManagedWorkload) {
+			w.Status.Activity = activity(v1alpha1.ActivitySourceCPU, 0, 57*time.Minute)
+			w.Status.Conditions = append(w.Status.Conditions,
+				condition("ScaledToZero", metav1.ConditionFalse, "HasReplicas", ""))
+		}, want: "pauses in 57m"},
 		{name: "no activity clock yet", mutate: func(*v1alpha1.ManagedWorkload) {}, want: "-"},
 	}
 	for _, tt := range tests {
