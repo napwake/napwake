@@ -16,8 +16,9 @@ limitations under the License.
 
 // Package guard refuses a Helm uninstall, or an upgrade that stops
 // Napwake watching a namespace, while it would leave ManagedWorkloads
-// with no operator to run their finalizers: their workloads would stay
-// paused at 0 replicas, with their Services routed to the doorman.
+// with no operator to run their finalizers: they'd be stuck on them, and
+// their workloads, if paused, would stay at 0 replicas, with their
+// Services routed to the doorman.
 package guard
 
 import (
@@ -237,14 +238,19 @@ var refusal = map[Operation]string{
 	Upgrade:   "Napwake refuses this upgrade",
 }
 
+// keptSummary and leftText say what's true of a running workload as well
+// as a paused one, since the guard reads only metadata and can't tell them
+// apart.
 var keptSummary = map[Operation]string{
-	Uninstall: "Napwake refuses to uninstall: these ManagedWorkloads' workloads would stay paused with no " +
-		"operator: %s. Remove the napwake.dev/managed label from them and their namespaces, and delete " +
-		"ManagedWorkloads you created, then uninstall again; see %s\n",
-	Upgrade: "Napwake refuses this upgrade: it stops watching namespaces where these ManagedWorkloads' " +
-		"workloads would stay paused with no operator: %s. Keep their namespaces in watchNamespaces, or remove " +
-		"the napwake.dev/managed label from them and their namespaces, and delete ManagedWorkloads you created " +
-		"there, then upgrade again; see %s\n",
+	Uninstall: "Napwake refuses to uninstall: with no operator, these ManagedWorkloads would be stuck on their " +
+		"finalizers, and their workloads, if paused, would stay at 0 replicas: %s. Remove the napwake.dev/managed " +
+		"label from their workloads and namespaces, and delete ManagedWorkloads you created, then uninstall " +
+		"again; see %s\n",
+	Upgrade: "Napwake refuses this upgrade: it stops watching the namespaces of these ManagedWorkloads, which " +
+		"with no operator would be stuck on their finalizers, and their workloads, if paused, would stay at 0 " +
+		"replicas: %s. Keep their namespaces in watchNamespaces, or remove the napwake.dev/managed label from " +
+		"their workloads and namespaces, and delete ManagedWorkloads you created there, then upgrade again; " +
+		"see %s\n",
 }
 
 const stuckSummary = "%s: these ManagedWorkloads were still being deleted after %s, so the operator may not be " +
@@ -256,16 +262,18 @@ restore the workloads by hand, as %s says:
 `
 
 var leftText = map[Operation]string{
-	Uninstall: `Without the operator, these ManagedWorkloads' workloads would stay paused at 0 replicas,
+	Uninstall: `Without the operator, these ManagedWorkloads would be stuck on their napwake.dev/cleanup
+finalizers, which only it removes, and their workloads, if paused, would stay at 0 replicas,
 with their Services still routed to the doorman being deleted:
 `,
-	Upgrade: `Without the operator watching their namespaces, these ManagedWorkloads' workloads would
-stay paused at 0 replicas, with their Services still routed to the doorman:
+	Upgrade: `Without the operator watching their namespaces, these ManagedWorkloads would be stuck on their
+napwake.dev/cleanup finalizers, which only it removes, and their workloads, if paused, would
+stay at 0 replicas, with their Services still routed to the doorman:
 `,
 }
 
 var stopText = map[Operation]string{
-	Uninstall: `Stop managing them first, while the operator runs, so it scales each one back up:
+	Uninstall: `Stop managing them first, while the operator runs, so it scales any paused one back up:
   1. Remove the napwake.dev/managed label from these workloads and their namespaces.
   2. Delete the ManagedWorkloads you created yourself:
        kubectl delete managedworkloads --all --all-namespaces
@@ -274,7 +282,7 @@ anyway, and restore the workloads by hand, see
 %s
 `,
 	Upgrade: `Keep their namespaces in watchNamespaces, or stop managing them first, while the operator
-still watches them, so it scales each one back up:
+still watches them, so it scales any paused one back up:
   1. Remove the napwake.dev/managed label from these workloads and their namespaces.
   2. Delete the ManagedWorkloads you created yourself, in each of their namespaces:
        kubectl delete managedworkloads --all --namespace <namespace>

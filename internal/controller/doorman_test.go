@@ -1219,6 +1219,47 @@ func TestReconcile_DeletionWaitsForPortsToDrain(t *testing.T) {
 	assert.True(t, apierrors.IsNotFound(r.Get(context.Background(), reconcileFor("api").NamespacedName, &gone)))
 }
 
+// A paused workload whose ManagedWorkload is deleted is handed back at
+// once, but its ManagedWorkload stays while its doorman ports drain, up to a
+// minute. Meanwhile it shows Running, as its workload is, not Paused, in
+// kubectl get managedworkloads and kubectl napwake status (P65).
+func TestReconcile_HandedBackWhileItsPortsDrainIsRunning(t *testing.T) {
+	r, pauser := pausedRouted(t)
+	r.clock = func() time.Time { return fixedTime }
+	require.Equal(t, v1alpha1.PhasePaused, fetch(t, r, "api").Status.Phase)
+	require.NoError(t, r.Delete(context.Background(), fetch(t, r, "api")))
+
+	result, err := r.Reconcile(context.Background(), reconcileFor("api"))
+	require.NoError(t, err)
+
+	require.Equal(t, portDrain, result.RequeueAfter, "its ports drain")
+	assert.Positive(t, pauser.restoreCalls, "handed back")
+	w := fetch(t, r, "api")
+	assert.Equal(t, v1alpha1.PhaseRunning, w.Status.Phase, "back at its replicas, not paused")
+	assert.Nil(t, w.Status.Pause)
+	assert.WithinDuration(t, fixedTime, w.Status.LastTransitionTime.Time, time.Second, "since the hand-back")
+}
+
+// A paused workload whose target is gone, or was at zero before its pause,
+// is handed back at zero replicas. It isn't running, so while its ports
+// drain it stays as it was, not Running (the review of 4e28a28c, P65).
+func TestReconcile_HandedBackAtZeroWhileItsPortsDrainStaysPaused(t *testing.T) {
+	r, pauser := pausedRouted(t)
+	r.clock = func() time.Time { return fixedTime }
+	w := fetch(t, r, "api")
+	w.Status.Pause.PreviousReplicas = 0
+	require.NoError(t, r.Status().Update(context.Background(), w))
+	require.NoError(t, r.Delete(context.Background(), fetch(t, r, "api")))
+
+	result, err := r.Reconcile(context.Background(), reconcileFor("api"))
+	require.NoError(t, err)
+
+	require.Equal(t, portDrain, result.RequeueAfter, "its ports drain")
+	assert.Positive(t, pauser.restoreCalls, "handed back")
+	assert.Equal(t, v1alpha1.PhasePaused, fetch(t, r, "api").Status.Phase, "released at zero replicas")
+	assert.Contains(t, drainEvents(t, r), "released at zero replicas")
+}
+
 // countSliceLists counts r.PodReader's lists of doorman slices: those
 // made from the API server rather than the cache.
 func countSliceLists(r *Reconciler) *int {

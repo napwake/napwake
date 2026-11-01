@@ -106,7 +106,7 @@ func (s *Server) handle(ctx context.Context, port int32, rt route, conn net.Conn
 		"workload", rt.workload.Name, "namespace", rt.workload.Namespace, "service", rt.service)
 
 	if !s.admission.hold(from, rt.workload, start) {
-		s.record(rt, resultLimited, start)
+		s.record(rt, resultLimited, s.now().Sub(start))
 		logger.V(1).Info("refusing connection: too many held", "source", from.String())
 		return
 	}
@@ -124,31 +124,40 @@ func (s *Server) handle(ctx context.Context, port int32, rt route, conn net.Conn
 	h := &heldConn{Server: s, port: port, route: rt, from: from, conn: conn}
 	defer h.close()
 	upstream, result := h.hold(ctx)
-	s.record(rt, result, start)
+	waited := s.now().Sub(start)
 	if upstream == nil {
+		s.record(rt, result, waited)
 		if result == resultTimeout || result == resultError {
-			waited := s.now().Sub(start)
 			logger.Info("closing held connection", "result", result, "waited", waited.Round(time.Millisecond).String())
 			s.warnUnserved(ctx, rt, result, waited)
 		}
 		return
 	}
 
+	// One passed on before anything was read from it is counted once its
+	// caller sends something. A TCP check, as the operator's of each
+	// replica before a pause scales the workload down, asked for nothing.
+	fromCaller := h.watched(ctx)
+	if h.readNothing() {
+		fromCaller = &firstByte{r: fromCaller, sent: func() { s.record(rt, result, waited) }}
+	} else {
+		s.record(rt, result, waited)
+	}
 	defer s.admission.unproxy(from, s.now())
 	unhold()
 	opmetrics.DoormanProxiedConnections.Inc()
 	defer opmetrics.DoormanProxiedConnections.Dec()
 	s.track(upstream)
 	defer s.forget(upstream)
-	s.proxy(port, rt, conn, h.watched(ctx), upstream)
+	s.proxy(port, rt, conn, fromCaller, upstream)
 }
 
-func (s *Server) record(rt route, result string, start time.Time) {
+func (s *Server) record(rt route, result string, waited time.Duration) {
 	s.mu.Lock()
 	s.metered[rt.workload] = true
 	s.mu.Unlock()
 	opmetrics.DoormanWakes.WithLabelValues(rt.workload.Namespace, rt.workload.Name, result).Inc()
-	opmetrics.DoormanWaitSeconds.WithLabelValues(result).Observe(s.now().Sub(start).Seconds())
+	opmetrics.DoormanWaitSeconds.WithLabelValues(result).Observe(waited.Seconds())
 }
 
 // heldConn is a connection from the moment it's accepted until it's passed
@@ -329,6 +338,13 @@ func (h *heldConn) streamClient() {
 	h.handling.Go(h.stream.run)
 }
 
+// readNothing says the connection was passed on before anything was read
+// from it: as its workload pauses, or its route drains, or another
+// workload's pods serve its Service.
+func (h *heldConn) readNothing() bool {
+	return len(h.head) == 0 && h.stream == nil
+}
+
 // reader is everything the caller sends, in order.
 func (h *heldConn) reader() io.Reader {
 	var rest io.Reader = h.conn
@@ -391,6 +407,23 @@ func (f *firstRequest) Read(p []byte) (int, error) {
 			f.seen(f.head)
 		}
 		f.head = nil
+	}
+	return n, err
+}
+
+// firstByte passes on what a caller sends, and calls sent as the first of it
+// arrives. For a caller that sends nothing, as a TCP check, it never does.
+type firstByte struct {
+	r    io.Reader
+	sent func()
+	done bool
+}
+
+func (f *firstByte) Read(p []byte) (int, error) {
+	n, err := f.r.Read(p)
+	if n > 0 && !f.done {
+		f.done = true
+		f.sent()
 	}
 	return n, err
 }
